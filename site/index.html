@@ -86,6 +86,18 @@ body { overflow-x: clip; }
 #cDim { color: #2e2e3e; -webkit-mask-image: radial-gradient(ellipse 70% 80% at 65% 45%, #000 10%, transparent 75%); mask-image: radial-gradient(ellipse 70% 80% at 65% 45%, #000 10%, transparent 75%); }
 #cLit { color: var(--accent); opacity: 0.55; -webkit-mask-image: radial-gradient(circle 170px at var(--x) var(--y), #000, transparent 100%); mask-image: radial-gradient(circle 170px at var(--x) var(--y), #000, transparent 100%); }
 
+.join { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 10px; width: 100%; max-width: 480px; }
+.join-input { height: 48px; min-width: 0; padding-inline: 16px; border-radius: 999px; border: 1px solid var(--line); background: var(--panel); color: var(--text); font: 400 1rem var(--sans); }
+.join-input:focus { outline: none; border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-soft); }
+.join-msg { grid-column: 1 / -1; font: 400 0.85rem/1.4 var(--mono); color: var(--faint); }
+.join-msg.ok { color: var(--ok); }
+.join-msg.bad { color: #ff7b72; }
+.join.done .join-input, .join.done button { display: none; }
+.cta .join { justify-self: center; text-align: left; }
+.hp { position: absolute; left: -9999px; width: 1px; height: 1px; opacity: 0; }
+.sr-only { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+@media (max-width: 480px) { .join { grid-template-columns: 1fr; } }
+
 /* Hero product cards */
 .visual { position: relative; display: grid; padding: 24px 0 40px; }
 .visual::before { content: ""; position: absolute; inset: 10% 5% 0; background: radial-gradient(closest-side, rgba(244, 183, 40, 0.14), transparent); filter: blur(10px); pointer-events: none; }
@@ -270,7 +282,7 @@ footer { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 12
       <a href="#roadmap">Roadmap</a>
       <a href="#faq">FAQ</a>
     </nav>
-    <a class="btn primary" href="https://app.zigs.app">Try it free</a>
+    <a class="btn primary" href="#join">Get early access</a>
   </div>
 </header>
 
@@ -281,10 +293,13 @@ footer { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 12
       <span class="pill"><i></i>Live on Zcash testnet</span>
       <h1 aria-label="The multisig nobody can see.">The multisig <span class="serif" data-decode>nobody</span> can see.</h1>
       <p class="lede">Share control of your crypto without putting your team on display. Every payment needs your co-signers' approval. <strong class="hl">The blockchain never learns who they are, what you hold, or who signed.</strong></p>
-      <div class="ctas">
-        <a class="btn primary lg" href="https://app.zigs.app">Create a free testnet wallet</a>
-        <a class="btn lg" href="#how">See how it works</a>
-      </div>
+      <form class="join" id="join" novalidate>
+        <label class="sr-only" for="join-email">Email address</label>
+        <input class="join-input" id="join-email" name="email" type="email" placeholder="you@company.com" autocomplete="email" required>
+        <input class="hp" name="website" tabindex="-1" autocomplete="off" aria-hidden="true">
+        <button class="btn primary lg" type="submit">Get early access</button>
+        <p class="join-msg" role="status" aria-live="polite">Launch news only. No trackers, no spam.</p>
+      </form>
       <div class="trust"><span>Open source</span><span>Built on Zcash</span><span>Web and iPhone</span></div>
     </div>
 
@@ -501,8 +516,14 @@ footer { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 12
 
   <div class="card cta">
     <h2>Your team. Your rules. No audience.</h2>
-    <p>Create a free testnet wallet with your team in about five minutes.</p>
-    <a class="btn primary lg" href="https://app.zigs.app">Create a free testnet wallet</a>
+    <p>Join the early access list. We will invite you when Zigs opens to teams.</p>
+    <form class="join" id="join2" novalidate>
+        <label class="sr-only" for="join2-email">Email address</label>
+        <input class="join-input" id="join2-email" name="email" type="email" placeholder="you@company.com" autocomplete="email" required>
+        <input class="hp" name="website" tabindex="-1" autocomplete="off" aria-hidden="true">
+        <button class="btn primary lg" type="submit">Get early access</button>
+        <p class="join-msg" role="status" aria-live="polite">Launch news only. No trackers, no spam.</p>
+      </form>
   </div>
 
   <footer>
@@ -539,5 +560,32 @@ footer { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 12
     if (k < 1) requestAnimationFrame(tick);
   };
   requestAnimationFrame(tick);
+})();
+</script>
+
+<script>
+(() => {
+  for (const form of document.querySelectorAll("form.join")) {
+    const msg = form.querySelector(".join-msg");
+    const say = (text, cls) => { msg.textContent = text; msg.className = "join-msg " + cls; };
+    form.addEventListener("submit", async (ev) => {
+      ev.preventDefault();
+      const email = form.email.value.trim();
+      if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) return say("Enter a valid email address.", "bad");
+      const button = form.querySelector("button");
+      button.disabled = true;
+      try {
+        const res = await fetch("/api/subscribe", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ email, website: form.website.value }) });
+        const out = await res.json().catch(() => ({}));
+        if (!res.ok) throw new Error(out.error || "The list is not available right now. Try again later.");
+        form.classList.add("done");
+        say("You are on the list. We will email " + email + " when Zigs opens.", "ok");
+      } catch (e) {
+        say(e.message || "The list is not available right now. Try again later.", "bad");
+      } finally {
+        button.disabled = false;
+      }
+    });
+  }
 })();
 </script>

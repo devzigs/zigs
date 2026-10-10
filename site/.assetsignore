@@ -1,3 +1,5 @@
 wrangler.jsonc
 .assetsignore
 .wrangler
+worker.js
+migrations
