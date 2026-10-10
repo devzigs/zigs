@@ -1,4 +1,5 @@
 <meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>Zigs</title>
 <meta name="description" content="Zigs is a private multisig for Zcash. Any t of n members co-sign from one shielded address, and the chain sees one ordinary shielded transaction.">
 <meta property="og:title" content="Zigs">
@@ -97,6 +98,9 @@ body { overflow-x: clip; }
 .hp { position: absolute; left: -9999px; width: 1px; height: 1px; opacity: 0; }
 .sr-only { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
 @media (max-width: 480px) { .join { grid-template-columns: 1fr; } }
+
+main.wrap { min-height: calc(100vh - 64px); display: grid; grid-template-rows: 1fr auto; }
+.hero { align-self: center; }
 
 /* Hero product cards */
 .visual { position: relative; display: grid; padding: 24px 0 40px; }
@@ -275,14 +279,6 @@ footer { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 12
       </svg>
       Zigs
     </a>
-    <nav class="links" aria-label="Sections">
-      <a href="#why">Why Zigs</a>
-      <a href="#how">How it works</a>
-      <a href="#security">Security</a>
-      <a href="#roadmap">Roadmap</a>
-      <a href="#faq">FAQ</a>
-    </nav>
-    <a class="btn primary" href="#join">Get early access</a>
   </div>
 </header>
 
@@ -328,202 +324,6 @@ footer { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 12
         <div class="foot"><i></i>1 shielded transaction</div>
       </div>
     </div>
-  </div>
-
-  <div class="metrics" aria-label="Key figures">
-    <div><b>0</b><span>co-signers anyone can see</span></div>
-    <div><b>7 sec</b><span>to sign and prove on an iPhone</span></div>
-    <div><b>0 bytes</b><span>of your data we can read</span></div>
-    <div><b>5</b><span>co-signed payments already on chain</span></div>
-  </div>
-
-  <section id="why">
-    <div class="head">
-      <span class="eyebrow">The problem</span>
-      <h2>Today you pick one: teamwork or privacy.</h2>
-      <p>A shared wallet shows the world your members, your balance and every payment. A private wallet puts everything on one person's key. Neither is safe for a team.</p>
-    </div>
-    <div class="pillars">
-      <div class="card"><span class="ico">1</span><h3>No one acts alone</h3><p>Set how many approvals a payment needs, like 2 of 3. No single person, phone or server can move your funds.</p></div>
-      <div class="card"><span class="ico">2</span><h3>Nothing to trace</h3><p>On chain, each payment looks like any other private Zcash transfer. No members, no rules, no balance.</p></div>
-      <div class="card"><span class="ico">3</span><h3>Nobody in the middle</h3><p>Your keys never leave your devices. Our server passes along encrypted messages it cannot open.</p></div>
-    </div>
-    <div class="card scroll" style="margin-top:16px">
-      <table class="table compare">
-        <thead><tr><th scope="col"></th><th scope="col">Public multisig</th><th scope="col">Custody provider</th><th scope="col">Private single wallet</th><th scope="col" class="us">Zigs</th></tr></thead>
-        <tbody>
-          <tr><th scope="row">Needs more than one approval</th><td><span class="good">Yes</span></td><td><span class="good">Yes</span></td><td><span class="bad">No</span></td><td class="us"><span class="good">Yes</span></td></tr>
-          <tr><th scope="row">Hides who your co-signers are</th><td><span class="bad">No</span></td><td><span class="good">Yes</span></td><td><span class="good">Yes</span></td><td class="us"><span class="good">Yes</span></td></tr>
-          <tr><th scope="row">Hides your balance and payments</th><td><span class="bad">No</span></td><td><span class="bad">Usually not</span></td><td><span class="good">Yes</span></td><td class="us"><span class="good">Yes</span></td></tr>
-          <tr><th scope="row">No company holds your keys</th><td><span class="good">Yes</span></td><td><span class="bad">Often not</span></td><td><span class="good">Yes</span></td><td class="us"><span class="good">Yes</span></td></tr>
-        </tbody>
-      </table>
-    </div>
-  </section>
-
-  <section id="trail">
-    <div class="head">
-      <span class="eyebrow">Follow the money</span>
-      <h2>Every hop is public, until the money reaches Zigs.</h2>
-      <p>Chain analysts trace transparent payments from wallet to wallet. Once funds arrive in a Zigs wallet, the trail goes cold. Example trail.</p>
-    </div>
-    <div class="card trail-card">
-      <div class="svgwrap">
-        <svg class="trail" viewBox="0 0 1000 250" role="img" aria-label="An example trail: an exchange pays a transparent wallet, which pays another, which pays a Zigs treasury. After the treasury, four dotted paths end in question marks.">
-          <path class="edge" d="M70 120 H700"/>
-          <text class="amt" x="175" y="100">250 ZEC</text>
-          <text class="amt" x="385" y="100">249.9 ZEC</text>
-          <text class="amt" x="595" y="100">249.8 ZEC</text>
-          <circle class="node" cx="70" cy="120" r="10"/><text x="70" y="158">Exchange</text>
-          <circle class="node" cx="280" cy="120" r="10"/><text x="280" y="158">t1Kx…9fQ</text>
-          <circle class="node" cx="490" cy="120" r="10"/><text x="490" y="158">t1Pa…3mW</text>
-          <circle class="halo" cx="700" cy="120" r="32"/><circle class="zigs" cx="700" cy="120" r="18"/>
-          <text class="zl" x="700" y="178">Your Zigs wallet</text>
-          <path class="cold" d="M734 120 C800 90, 840 45, 920 40"/><path class="cold" d="M734 120 C810 112, 860 90, 930 92"/>
-          <path class="cold" d="M734 120 C810 128, 860 150, 930 150"/><path class="cold" d="M734 120 C800 150, 840 195, 920 202"/>
-          <text class="q" x="940" y="46">?</text><text class="q" x="950" y="98">?</text><text class="q" x="950" y="156">?</text><text class="q" x="940" y="208">?</text>
-        </svg>
-      </div>
-      <div class="legend"><span><b>Visible:</b> each hop, and the amount that arrives</span><span><b>Invisible:</b> everything you do after that, and who you are</span></div>
-    </div>
-  </section>
-
-  <section id="how">
-    <div class="head">
-      <span class="eyebrow">How it works</span>
-      <h2>Set up in minutes. Nobody ever holds the whole key.</h2>
-      <p>Everything happens on your team's own devices.</p>
-    </div>
-    <ol class="steps">
-      <li class="card"><h3>Invite your team</h3><p>Pick your rule, like 2 of 3, and share one link. The link carries your wallet's secret, so our server never sees it.</p></li>
-      <li class="card"><h3>Create the key together</h3><p>Your devices build the wallet key as a group. Each person gets one piece. The full key never exists anywhere.</p></li>
-      <li class="card"><h3>Review before you sign</h3><p>Your device reads the payment itself and shows you exactly where the money goes. Then you approve.</p></li>
-      <li class="card"><h3>Send it privately</h3><p>Once enough people approve, the payment goes out as one ordinary private transaction.</p></li>
-    </ol>
-  </section>
-
-  <section id="platforms">
-    <div class="head">
-      <span class="eyebrow">Apps</span>
-      <h2>Sign from your laptop or your phone.</h2>
-      <p>Browser and iPhone members share the same wallet, so nobody waits for the person at their desk.</p>
-    </div>
-    <div class="platforms">
-      <article class="card platform">
-        <span class="tag">Web</span>
-        <h3>Zigs for web</h3>
-        <ul><li>Set up wallets and propose payments</li><li>See your balance, synced on your own computer</li><li>Nothing to install</li></ul>
-        <div class="stage" aria-hidden="true">
-          <div class="browser">
-            <div class="chrome"><i></i><i></i><i></i><span></span></div>
-            <div class="mini">
-              <div class="row"><span>Treasury · 2 of 3</span><span class="ok">Verified</span></div>
-              <div class="row"><span>Spendable</span><span>48.20 ZEC</span></div>
-              <div class="row"><span>Pay 12.50 ZEC</span><span>2 of 3 approved</span></div>
-            </div>
-          </div>
-        </div>
-      </article>
-      <article class="card platform">
-        <span class="tag">iPhone</span>
-        <h3>Zigs for iPhone</h3>
-        <ul><li>Join with one tap from an invite link</li><li>Approve payments wherever you are</li><li>Signs in seconds, and your key stays on your phone</li></ul>
-        <div class="stage" aria-hidden="true">
-          <div class="handset">
-            <div class="screen">
-              <h4>12.50 ZEC</h4>
-              <div class="mini">
-                <div class="row"><span>Pay audit firm</span><span>12.50</span></div>
-                <div class="row"><span>Fee</span><span>0.0001</span></div>
-                <div class="row go">Approve this payment</div>
-              </div>
-            </div>
-          </div>
-        </div>
-      </article>
-    </div>
-  </section>
-
-  <section id="security">
-    <div class="head">
-      <span class="eyebrow">Security</span>
-      <h2>Private from the world. Private from us too.</h2>
-      <p>We built Zigs so that we cannot see your wallet, even if someone forces us to look.</p>
-    </div>
-    <div class="security">
-      <div class="card scroll">
-        <table class="table">
-          <thead><tr><th scope="col">Who</th><th scope="col">Can see</th><th scope="col">Can't see</th></tr></thead>
-          <tbody>
-            <tr><th scope="row">The public</th><td>That a private payment happened</td><td class="muted">Your team, your rules, amounts, addresses</td></tr>
-            <tr><th scope="row">Our server</th><td>That a wallet exists, and when it is active</td><td class="muted">Names, balances, payments, keys</td></tr>
-            <tr><th scope="row">The blockchain data service</th><td>Your IP address</td><td class="muted">Which payments are yours. You can run your own.</td></tr>
-            <tr><th scope="row">Your co-signers</th><td>Your shared balance and payments</td><td class="muted">Your piece of the key</td></tr>
-          </tbody>
-        </table>
-      </div>
-      <div class="card stack">
-        <h3>Proven cryptography, no shortcuts</h3>
-        <dl>
-          <div><dt>FROST group signatures (ZIP 312)</dt><dd>The Zcash standard for signing as a group. Each payment uses a fresh key, so nobody can link your payments.</dd></div>
-          <div><dt>Zcash private transactions</dt><dd>The same zero-knowledge proofs that protect every private Zcash payment. No new blockchain, no smart contracts.</dd></div>
-          <div><dt>End-to-end encryption</dt><dd>Your wallet's data is encrypted on your device before it reaches our server.</dd></div>
-        </dl>
-        <p class="status">Zigs runs on testnet and has not been audited yet. Please do not use real funds.</p>
-      </div>
-    </div>
-  </section>
-
-  <section id="proof">
-    <div class="head">
-      <span class="eyebrow">Proof</span>
-      <h2>Try to spot the team. You can't.</h2>
-      <p>A group co-signed every payment below. Open one in the block explorer and look.</p>
-    </div>
-    <ul class="card txs">
-      <li><a href="https://testnet.zcashexplorer.app/transactions/dc716461dcee45f44fd6209b1145af23d8192c9923d3d9c5472e0f9a62b49d16"><span class="blk">Oct 10, 2026</span><span class="what">A laptop and an iPhone co-sign one payment</span><span class="id">dc716461…9d16</span></a></li>
-      <li><a href="https://testnet.zcashexplorer.app/transactions/9859c24b961bb196f9a1de74cc099c32d4f2c9812c12a2db47a504cb88ff2409"><span class="blk">Block 4,485,106</span><span class="what">A wallet with encrypted team data pays out</span><span class="id">9859c24b…2409</span></a></li>
-      <li><a href="https://testnet.zcashexplorer.app/transactions/86807799c1393829e9de9b1158caa0285d198797c4194b2520f23a713b4f45fd"><span class="blk">Block 4,485,097</span><span class="what">One team wallet pays another</span><span class="id">86807799…45fd</span></a></li>
-      <li><a href="https://testnet.zcashexplorer.app/transactions/4838de4c250d85c82657a600bd9886b75080711c37723c7a07f311c96f046612"><span class="blk">Block 4,485,020</span><span class="what">The first co-signed payment</span><span class="id">4838de4c…6612</span></a></li>
-    </ul>
-  </section>
-
-  <section id="roadmap">
-    <div class="head">
-      <span class="eyebrow">Roadmap</span>
-      <h2>What comes next.</h2>
-    </div>
-    <div class="road">
-      <div class="card now"><span class="tag">Now</span><h3>Testnet</h3><ul><li>Web app for teams of any size</li><li>iPhone app for co-signers</li><li>Encrypted team data</li><li>Option to run your own node</li></ul></div>
-      <div class="card"><span class="tag">Next</span><h3>Mainnet</h3><ul><li>Independent security audit</li><li>Launch on Zcash mainnet</li><li>Full iPhone and Android apps</li><li>Spending limits and saved contacts</li></ul></div>
-      <div class="card"><span class="tag">Later</span><h3>For companies</h3><ul><li>Pay suppliers in other currencies</li><li>Receive funds from any blockchain</li><li>Managed servers with uptime guarantees</li></ul></div>
-    </div>
-  </section>
-
-  <section id="faq">
-    <div class="head">
-      <span class="eyebrow">FAQ</span>
-      <h2>Questions, answered.</h2>
-    </div>
-    <div class="faq">
-      <details class="card"><summary>Can Zigs take or freeze my funds?</summary><p>No. We never hold any piece of your key, and we cannot read your wallet's data. At worst our server could slow messages down, and you can run your own.</p></details>
-      <details class="card"><summary>What if someone loses their phone?</summary><p>Your team can still pay as long as enough members remain to meet your rule. Each member can back up their piece of the key. Replacing a member is on the roadmap.</p></details>
-      <details class="card"><summary>Has Zigs been audited?</summary><p>Not yet. An independent audit comes before mainnet.</p></details>
-      <details class="card"><summary>Can my co-signers see our payments?</summary><p>Yes. Everyone in the wallet can check the balance and every payment for themselves. Nobody outside can.</p></details>
-      <details class="card"><summary>When can I use real ZEC?</summary><p>After the audit, once Zcash activates the network upgrade that Zigs is built on.</p></details>
-    </div>
-  </section>
-
-  <div class="card cta">
-    <h2>Your team. Your rules. No audience.</h2>
-    <p>Join the early access list. We will invite you when Zigs opens to teams.</p>
-    <form class="join" id="join2" novalidate>
-        <label class="sr-only" for="join2-email">Email address</label>
-        <input class="join-input" id="join2-email" name="email" type="email" placeholder="you@company.com" autocomplete="email" required>
-        <input class="hp" name="website" tabindex="-1" autocomplete="off" aria-hidden="true">
-        <button class="btn primary lg" type="submit">Get early access</button>
-        <p class="join-msg" role="status" aria-live="polite">Launch news only. No trackers, no spam.</p>
-      </form>
   </div>
 
   <footer>
