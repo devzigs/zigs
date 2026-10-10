@@ -1,3 +1,8 @@
 /target
 /wallet-data
 /wasm/target
+/web/dist
+/cf/node_modules
+/cf/.wrangler
+/cf/.dev.vars
+/.wrangler

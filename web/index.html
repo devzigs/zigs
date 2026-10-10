@@ -368,6 +368,8 @@ function react() {
   // Group creator builds the shared wallet once all group keys agree.
   if (isCreator() && !state.wallet && keysAgree()) {
     once("wallet", async () => {
+      // The wallet snapshot can arrive after the DKG ones; never replace a published wallet.
+      if ((await db.doc(base + "/meta/wallet").get()).exists) return;
       const w = J(Z.walletCreate(state.done[1].publicKeyPackage, g.network || "testnet"));
       await db.doc(base + "/meta/wallet").set({ ...w, at: Date.now() });
       log("wallet created: " + w.address.slice(0, 24) + "…");
@@ -404,8 +406,8 @@ function reactSession(ss) {
       });
     }
   }
-  // Coordinator: aggregate.
-  if (coordinator && ss.package && !ss.signed && !ss.error && (ss.signers || []).every((i) => state.shares[i])) {
+  // Any participant: aggregate. The result is deterministic, so a race is harmless.
+  if (localSeats().length && ss.package && !ss.signed && !ss.error && (ss.signers || []).every((i) => state.shares[i])) {
     once("agg:" + ss.id, async () => {
       const sh = {}; for (const i of ss.signers) sh[i] = J(state.shares[i].shares);
       let r;
@@ -455,7 +457,7 @@ async function approve(ss, i) {
 }
 
 async function finalizeTx(ss) {
-  await db.doc("groups/" + state.gid + "/sessions/" + ss.id).update({ status: "proving" });
+  await db.doc("groups/" + state.gid + "/sessions/" + ss.id).update({ status: "proving", provingAt: Date.now() });
   log("building Halo2 proof (about a minute)…");
   let out;
   try { out = await finalizeOffThread(ss.signed); }
@@ -653,12 +655,14 @@ function statusChip(s) {
   return el("span", { class: "chip " + c }, t);
 }
 
+// A prover that closed its tab leaves status "proving"; let someone else take over.
+const proofStalled = (ss) => Date.now() - (ss.provingAt || 0) > 180000;
+
 function sessionDetail(ss) {
   const g = state.g;
   let ins = inspectCache.get(ss.id);
   if (!ins && Z) { try { ins = J(Z.inspect(ss.pczt, state.wallet.orchard_fvk)); } catch (e) { ins = { error: e.message || String(e) }; } inspectCache.set(ss.id, ins); }
   const approvals = Object.keys(state.commits).map(Number).sort((a, b) => a - b);
-  const coordinator = ss.createdBy === me;
   const myPending = localSeats().filter((i) => sec(state.gid, i).keyPackage && !state.commits[i] && !ss.package);
   const nameOf = (i) => { const s = state.seats[i]; if (!s) return "Seat " + i; if (s.uid === me) return "You (seat " + i + ")"; return ((profiles[s.uid] && profiles[s.uid].name) || "Seat " + i) + " (seat " + i + ")"; };
   const sigs = ss.signatures || [];
@@ -680,9 +684,9 @@ function sessionDetail(ss) {
         ss.error ? el("div", { class: "notice bad" }, ss.error) : null)),
       stepRow(ss.final ? "done" : ss.status === "proving" ? "now" : "", "Proof and final transaction", el("div", { style: "display:grid;gap:8px" },
         ss.final ? el("dl", { class: "kv" }, el("dt", {}, "Transaction id"), el("dd", { class: "hex" }, ss.final.txid), el("dt", {}, "Size"), el("dd", {}, ss.final.size.toLocaleString() + " bytes, " + ss.final.version), el("dt", {}, "Checked"), el("dd", { class: "small" }, "Halo2 proof, spend authorization signature, binding signature")) :
-        ss.status === "proving" ? el("p", { class: "muted small" }, "Building the Halo2 proof in the coordinator's browser. This takes about a minute.") :
-        el("p", { class: "muted small" }, "The coordinator's browser makes the zero-knowledge proof, then checks the whole transaction."),
-        coordinator && ss.signed && !ss.final && ss.status !== "proving" ? el("div", {}, el("button", { class: "primary", type: "button", onclick: act(() => finalizeTx(ss)) }, "Build proof and finish")) : null,
+        ss.status === "proving" ? el("p", { class: "muted small" }, "One browser is building the Halo2 proof. This takes about a minute.") :
+        el("p", { class: "muted small" }, "When the signature is done, anyone can make the zero-knowledge proof and check the whole transaction."),
+        ss.signed && !ss.final && (ss.status !== "proving" || proofStalled(ss)) ? el("div", {}, el("button", { class: "primary", type: "button", onclick: act(() => finalizeTx(ss)) }, "Build proof and finish")) : null,
         ss.final ? el("details", {}, el("summary", {}, "Raw transaction (hex)"), el("div", { class: "addr", style: "margin-top:8px;max-height:160px;overflow:auto" }, ss.final.tx_hex), copyBtn(ss.final.tx_hex, "Copy hex")) : null))));
 }
 

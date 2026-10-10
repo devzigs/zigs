@@ -1,0 +1,4 @@
+dist
+sim.mjs
+bundle.mjs
+.assetsignore
