@@ -1,171 +1,293 @@
-<title>Zcash FROST Multisig</title>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Zigs</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans+Condensed:wght@500;600;700&family=IBM+Plex+Sans:wght@400;500;600&display=swap">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600;700&family=Geist+Mono:wght@400;500&display=swap">
 <style>
-/* Layout: one working column; a seat strip shows every participant, then the
-   three ceremony stages (key ceremony, shared wallet, spends) stack below. */
+/* Layout: app shell. Fixed sidebar (wallets, engine status) + one working column per wallet:
+   page header, tabs, cards. Payments open in a right drawer; Send and Create open as dialogs.
+   Dark-first; a light palette applies when the viewer prefers light. */
 :root {
-  --bg: #f4f6f8;
-  --surface: #ffffff;
-  --sunk: #eaeef2;
-  --ink: #142231;
-  --muted: #586779;
-  --line: #d8dfe6;
-  --gold: #8a6200;          /* gold for text on light ground */
-  --gold-fill: #f4b728;     /* Zcash yellow, for fills */
-  --on-gold: #1b1400;
-  --ok: #17734a;
-  --ok-bg: #e2f3ea;
-  --bad: #b3261e;
-  --bad-bg: #fbe7e5;
-  --wait: #6a7888;
-  --font-display: "IBM Plex Sans Condensed", "Arial Narrow", system-ui, sans-serif;
-  --font-body: "IBM Plex Sans", system-ui, -apple-system, "Segoe UI", sans-serif;
-  --font-mono: "IBM Plex Mono", ui-monospace, "SFMono-Regular", Menlo, monospace;
-  --radius: 10px;
+  color-scheme: dark;
+  --bg: #0b0b10;
+  --side: #0e0e14;
+  --panel: #13131a;
+  --raised: #1a1a23;
+  --sunk: #0f0f15;
+  --line: #24242f;
+  --line-2: #30303d;
+  --text: #ededf2;
+  --muted: #9a9aab;
+  --faint: #6c6c7d;
+  --accent: #f4b728;
+  --accent-text: #f4b728;
+  --on-accent: #17130a;
+  --accent-soft: rgba(244, 183, 40, 0.12);
+  --ok: #4ccb8f;
+  --ok-soft: rgba(76, 203, 143, 0.12);
+  --bad: #ff7b72;
+  --bad-soft: rgba(255, 123, 114, 0.12);
+  --info: #8ab4ff;
+  --info-soft: rgba(138, 180, 255, 0.12);
+  --shadow: 0 24px 60px -24px rgba(0, 0, 0, 0.8);
+  --sans: "Geist", "Segoe UI", system-ui, -apple-system, sans-serif;
+  --mono: "Geist Mono", ui-monospace, "SF Mono", Menlo, monospace;
+  --r: 12px;
 }
-@media (prefers-color-scheme: dark) {
-  :root:not([data-theme="light"]) {
-    --bg: #0d131a; --surface: #141c26; --sunk: #0a0f15; --ink: #e5eaf0; --muted: #94a2b2;
-    --line: #253140; --gold: #f4b728; --gold-fill: #f4b728; --on-gold: #1b1400;
-    --ok: #52c891; --ok-bg: #12301f; --bad: #ff7b72; --bad-bg: #3a1614; --wait: #7d8b9b;
-    color-scheme: dark;
+@media (prefers-color-scheme: light) {
+  :root:not([data-theme="dark"]) {
+    color-scheme: light;
+    --bg: #f6f6f8; --side: #fbfbfc; --panel: #ffffff; --raised: #f3f3f6; --sunk: #f0f0f4;
+    --line: #e4e4ea; --line-2: #d4d4dd; --text: #15151c; --muted: #5d5d6e; --faint: #8a8a99;
+    --accent-text: #8a6200; --accent-soft: rgba(244, 183, 40, 0.18);
+    --ok: #12804f; --ok-soft: rgba(18, 128, 79, 0.1); --bad: #c0362c; --bad-soft: rgba(192, 54, 44, 0.08);
+    --info: #2d5fc4; --info-soft: rgba(45, 95, 196, 0.08); --shadow: 0 24px 60px -28px rgba(20, 20, 40, 0.35);
   }
 }
-:root[data-theme="dark"] {
-  --bg: #0d131a; --surface: #141c26; --sunk: #0a0f15; --ink: #e5eaf0; --muted: #94a2b2;
-  --line: #253140; --gold: #f4b728; --gold-fill: #f4b728; --on-gold: #1b1400;
-  --ok: #52c891; --ok-bg: #12301f; --bad: #ff7b72; --bad-bg: #3a1614; --wait: #7d8b9b;
-  color-scheme: dark;
+:root[data-theme="light"] {
+  color-scheme: light;
+  --bg: #f6f6f8; --side: #fbfbfc; --panel: #ffffff; --raised: #f3f3f6; --sunk: #f0f0f4;
+  --line: #e4e4ea; --line-2: #d4d4dd; --text: #15151c; --muted: #5d5d6e; --faint: #8a8a99;
+  --accent-text: #8a6200; --accent-soft: rgba(244, 183, 40, 0.18);
+  --ok: #12804f; --ok-soft: rgba(18, 128, 79, 0.1); --bad: #c0362c; --bad-soft: rgba(192, 54, 44, 0.08);
+  --info: #2d5fc4; --info-soft: rgba(45, 95, 196, 0.08); --shadow: 0 24px 60px -28px rgba(20, 20, 40, 0.35);
 }
 * { box-sizing: border-box; }
-body { background: var(--bg); color: var(--ink); font: 15px/1.55 var(--font-body); }
-.wrap { max-width: 1080px; margin: 0 auto; padding-inline: 20px; padding-block: 24px 64px; display: grid; gap: 28px; }
-h1, h2, h3 { font-family: var(--font-display); margin: 0; text-wrap: balance; letter-spacing: -0.005em; }
-h1 { font-size: 30px; font-weight: 700; line-height: 1.1; }
-h2 { font-size: 21px; font-weight: 600; }
-h3 { font-size: 16px; font-weight: 600; }
-p { margin: 0; max-width: 68ch; }
-a { color: var(--gold); }
-code, .mono { font-family: var(--font-mono); font-size: 13px; }
+html, body { height: 100%; }
+body { margin: 0; background: var(--bg); color: var(--text); font: 400 14.5px/1.55 var(--sans); -webkit-font-smoothing: antialiased; }
+h1, h2, h3 { margin: 0; font-weight: 600; letter-spacing: -0.02em; text-wrap: balance; }
+p { margin: 0; }
+a { color: var(--accent-text); }
+button { font: inherit; color: inherit; }
+:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 .muted { color: var(--muted); }
+.faint { color: var(--faint); }
 .small { font-size: 13px; }
-.eyebrow { font-family: var(--font-display); font-size: 12px; font-weight: 600; letter-spacing: .12em; text-transform: uppercase; color: var(--muted); }
+.mono, .hex { font-family: var(--mono); font-size: 12.5px; }
+.hex { word-break: break-all; }
+.label { font: 500 11.5px/1.2 var(--mono); text-transform: uppercase; letter-spacing: 0.07em; color: var(--faint); }
+@media (prefers-reduced-motion: reduce) { * { transition: none !important; animation: none !important; } }
 
-header.top { display: flex; flex-wrap: wrap; align-items: end; justify-content: space-between; gap: 12px 24px; border-bottom: 1px solid var(--line); padding-bottom: 18px; }
-.brand { display: flex; align-items: center; gap: 14px; }
-.mark { width: 40px; height: 40px; flex: none; }
-.brand p { font-size: 14px; color: var(--muted); }
-.engine { font-size: 12px; font-family: var(--font-mono); color: var(--muted); display: flex; align-items: center; gap: 8px; }
-.dot { width: 8px; height: 8px; border-radius: 50%; background: var(--wait); flex: none; }
-.dot.ok { background: var(--ok); } .dot.bad { background: var(--bad); } .dot.busy { background: var(--gold-fill); animation: pulse 1.2s infinite; }
-@keyframes pulse { 50% { opacity: .35; } }
-@media (prefers-reduced-motion: reduce) { .dot.busy { animation: none; } }
+/* Shell */
+.shell { display: grid; grid-template-columns: 248px minmax(0, 1fr); min-height: 100%; }
+.side { position: sticky; top: 0; height: 100vh; display: flex; flex-direction: column; gap: 18px; padding: 18px 14px; background: var(--side); border-right: 1px solid var(--line); }
+.logo { display: flex; align-items: center; gap: 10px; padding: 4px 8px; font-weight: 600; font-size: 16px; letter-spacing: -0.02em; text-decoration: none; color: var(--text); }
+.logo svg { width: 24px; height: 24px; flex: none; }
+.net { margin-left: auto; font: 500 10.5px/1 var(--mono); padding: 4px 6px; border-radius: 5px; background: var(--accent-soft); color: var(--accent-text); text-transform: uppercase; letter-spacing: 0.06em; }
+#side-nav { display: grid; gap: 2px; align-content: start; overflow: auto; flex: 1; }
+.side-head { display: flex; align-items: center; justify-content: space-between; padding: 6px 8px 8px; }
+.side-item { display: grid; grid-template-columns: 28px minmax(0, 1fr) auto; align-items: center; gap: 10px; width: 100%; padding: 7px 8px; border: 0; border-radius: 8px; background: transparent; text-align: left; cursor: pointer; color: var(--muted); }
+.side-item:hover { background: var(--raised); color: var(--text); }
+.side-item.active { background: var(--raised); color: var(--text); box-shadow: inset 0 0 0 1px var(--line); }
+.side-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 500; }
+.side-meta { font: 400 11.5px/1 var(--mono); color: var(--faint); }
+.side-empty { padding: 6px 8px; color: var(--faint); font-size: 13px; }
+.side-foot { display: grid; gap: 10px; border-top: 1px solid var(--line); padding: 14px 8px 0; }
+.engine { display: flex; align-items: center; gap: 8px; font-size: 12px; color: var(--muted); }
+.dot { width: 7px; height: 7px; border-radius: 50%; background: var(--faint); flex: none; }
+.dot.ok { background: var(--ok); box-shadow: 0 0 0 3px var(--ok-soft); }
+.dot.bad { background: var(--bad); }
+.dot.busy { background: var(--accent); animation: pulse 1.2s infinite; }
+@keyframes pulse { 50% { opacity: 0.35; } }
+.side-note { font-size: 11.5px; color: var(--faint); line-height: 1.5; }
+.main { min-width: 0; padding: 28px clamp(16px, 4vw, 48px) 64px; }
+.page { max-width: 1040px; margin-inline: auto; display: grid; gap: 22px; }
 
-.panel { background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius); padding: 20px; display: grid; gap: 16px; min-width: 0; }
-.panel-head { display: flex; flex-wrap: wrap; align-items: baseline; justify-content: space-between; gap: 8px 16px; }
-.stage-no { font-family: var(--font-mono); font-size: 12px; color: var(--gold); margin-right: 8px; }
-.row { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; }
-.grid2 { display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 20px; }
+/* Avatars */
+.av { width: 28px; height: 28px; border-radius: 8px; display: grid; place-items: center; flex: none; font: 600 11px/1 var(--sans); background: var(--raised); color: var(--muted); border: 1px solid var(--line); }
+.av.round { border-radius: 50%; }
+.av.lg { width: 36px; height: 36px; font-size: 12.5px; }
+.av.me { background: var(--accent-soft); color: var(--accent-text); border-color: transparent; }
+.stack { display: flex; }
+.stack .av { margin-left: -8px; box-shadow: 0 0 0 2px var(--bg); }
+.stack .av:first-child { margin-left: 0; }
 
-button, .btn { font: 600 14px/1 var(--font-body); border-radius: 8px; padding: 10px 14px; border: 1px solid var(--line); background: var(--surface); color: var(--ink); cursor: pointer; }
-button:hover { border-color: var(--muted); }
-button.primary { background: var(--gold-fill); border-color: var(--gold-fill); color: var(--on-gold); }
-button.primary:hover { filter: brightness(1.05); }
-button.ghost { background: transparent; border-color: transparent; color: var(--gold); padding-inline: 6px; }
-button:disabled { opacity: .5; cursor: not-allowed; }
-button:focus-visible, input:focus-visible, select:focus-visible, summary:focus-visible { outline: 2px solid var(--gold-fill); outline-offset: 2px; }
-label { display: grid; gap: 4px; font-size: 13px; font-weight: 500; color: var(--muted); }
-input, select { font: 15px var(--font-body); padding: 9px 10px; border-radius: 8px; border: 1px solid var(--line); background: var(--surface); color: var(--ink); min-width: 0; }
-input[type=number] { width: 7.5em; }
-form.inline { display: flex; flex-wrap: wrap; gap: 12px; align-items: end; }
+/* Buttons */
+.btn { display: inline-flex; align-items: center; justify-content: center; gap: 8px; height: 36px; padding-inline: 14px; border-radius: 9px; border: 1px solid var(--line-2); background: var(--panel); color: var(--text); font: 500 13.5px/1 var(--sans); cursor: pointer; white-space: nowrap; text-decoration: none; transition: background 0.15s, border-color 0.15s; }
+.btn:hover { background: var(--raised); }
+.btn.primary { background: var(--accent); border-color: var(--accent); color: var(--on-accent); }
+.btn.primary:hover { filter: brightness(1.06); }
+.btn.ghost { background: transparent; border-color: transparent; color: var(--muted); }
+.btn.ghost:hover { color: var(--text); background: var(--raised); }
+.btn.sm { height: 30px; padding-inline: 10px; font-size: 12.5px; border-radius: 8px; }
+.btn.lg { height: 44px; padding-inline: 18px; font-size: 14.5px; }
+.btn.block { width: 100%; }
+.btn:disabled { opacity: 0.45; cursor: not-allowed; filter: none; }
+.icon-btn { width: 28px; height: 28px; display: grid; place-items: center; border-radius: 7px; border: 1px solid var(--line); background: var(--panel); color: var(--muted); cursor: pointer; font-size: 16px; line-height: 1; }
+.icon-btn:hover { color: var(--text); background: var(--raised); }
 
-.chip { display: inline-flex; align-items: center; gap: 6px; font-size: 12px; font-weight: 600; padding: 3px 9px; border-radius: 999px; background: var(--sunk); color: var(--muted); white-space: nowrap; }
-.chip.ok { background: var(--ok-bg); color: var(--ok); }
-.chip.bad { background: var(--bad-bg); color: var(--bad); }
-.chip.gold { background: var(--gold-fill); color: var(--on-gold); }
+/* Badges */
+.badge { display: inline-flex; align-items: center; gap: 6px; height: 22px; padding-inline: 8px; border-radius: 999px; font: 500 12px/1 var(--sans); background: var(--raised); color: var(--muted); white-space: nowrap; }
+.badge::before { content: ""; width: 6px; height: 6px; border-radius: 50%; background: currentColor; opacity: 0.9; }
+.badge.plain::before { display: none; }
+.badge.ok { background: var(--ok-soft); color: var(--ok); }
+.badge.bad { background: var(--bad-soft); color: var(--bad); }
+.badge.warn { background: var(--accent-soft); color: var(--accent-text); }
+.badge.info { background: var(--info-soft); color: var(--info); }
 
-.groups { display: grid; gap: 8px; }
-.group-link { display: flex; flex-wrap: wrap; justify-content: space-between; align-items: center; gap: 8px; padding: 12px 14px; border: 1px solid var(--line); border-radius: 8px; background: var(--surface); text-align: left; width: 100%; font-weight: 500; }
-.group-link .gname { font-family: var(--font-display); font-size: 17px; font-weight: 600; }
+/* Page header and tabs */
+.page-head { display: flex; flex-wrap: wrap; align-items: flex-end; justify-content: space-between; gap: 16px; }
+.ph-left { display: grid; gap: 8px; min-width: 0; }
+.ph-left h1 { font-size: 26px; line-height: 1.15; }
+.ph-meta { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; color: var(--muted); font-size: 13px; }
+.ph-actions { display: flex; flex-wrap: wrap; gap: 8px; }
+.back { display: none; }
+.tabs { display: flex; gap: 4px; border-bottom: 1px solid var(--line); overflow-x: auto; }
+.tab { position: relative; border: 0; background: none; padding: 10px 12px 12px; color: var(--muted); font-weight: 500; cursor: pointer; white-space: nowrap; }
+.tab:hover { color: var(--text); }
+.tab[aria-selected="true"] { color: var(--text); }
+.tab[aria-selected="true"]::after { content: ""; position: absolute; left: 10px; right: 10px; bottom: -1px; height: 2px; border-radius: 2px; background: var(--accent); }
+.tab .count { margin-left: 6px; font: 500 11px/1 var(--mono); padding: 2px 6px; border-radius: 6px; background: var(--raised); color: var(--muted); }
 
-/* Seats */
-.seats { display: grid; grid-template-columns: repeat(auto-fill, minmax(170px, 1fr)); gap: 12px; }
-.seat { border: 1px solid var(--line); border-radius: var(--radius); padding: 14px; display: grid; gap: 10px; background: var(--surface); align-content: start; }
-.seat.mine { border-color: var(--gold-fill); box-shadow: inset 0 0 0 1px var(--gold-fill); }
-.seat-top { display: flex; align-items: center; gap: 10px; min-width: 0; }
-.seat-no { font-family: var(--font-mono); font-size: 12px; color: var(--muted); }
-.avatar { width: 30px; height: 30px; border-radius: 50%; flex: none; background: var(--sunk); object-fit: cover; }
-.seat-name { font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
-.ladder { display: grid; grid-template-columns: repeat(5, 1fr); gap: 3px; }
-.ladder span { height: 5px; border-radius: 3px; background: var(--sunk); }
-.ladder span.on { background: var(--gold-fill); }
-.ladder span.done { background: var(--ok); }
-.ladder-label { font-size: 12px; color: var(--muted); }
+/* Cards */
+.card { background: var(--panel); border: 1px solid var(--line); border-radius: var(--r); min-width: 0; }
+.card-pad { padding: 20px; display: grid; gap: 14px; align-content: start; }
+.card-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.card-head h2 { font-size: 15px; letter-spacing: -0.01em; }
+.grid-ov { display: grid; grid-template-columns: minmax(0, 1.6fr) minmax(0, 1fr); gap: 16px; }
 
-.kv { display: grid; grid-template-columns: max-content minmax(0, 1fr); gap: 6px 14px; align-items: baseline; }
-.kv dt { font-size: 13px; color: var(--muted); }
-.kv dd { margin: 0; min-width: 0; }
-.hex { font-family: var(--font-mono); font-size: 12.5px; word-break: break-all; }
-.addr { font-family: var(--font-mono); font-size: 13px; word-break: break-all; background: var(--sunk); padding: 10px 12px; border-radius: 8px; }
-details summary { cursor: pointer; color: var(--gold); font-weight: 500; font-size: 14px; }
+/* Money */
+.money { font-variant-numeric: tabular-nums; letter-spacing: -0.02em; white-space: nowrap; }
+.money .dec { color: var(--muted); }
+.money .cur { color: var(--faint); font-weight: 500; margin-left: 0.3em; font-size: 0.55em; letter-spacing: 0; }
+.money.xl { font-size: clamp(34px, 5vw, 46px); font-weight: 600; line-height: 1; }
+.money.lg { font-size: 30px; font-weight: 600; line-height: 1; }
+.money.md { font-size: 15px; font-weight: 500; }
+.money.md .cur { font-size: 0.8em; }
+.balance { background: radial-gradient(120% 140% at 100% 0%, var(--accent-soft), transparent 55%), var(--panel); }
+.stats { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 1px; background: var(--line); border-radius: 10px; overflow: hidden; border: 1px solid var(--line); }
+.stats > div { background: var(--panel); padding: 12px 14px; display: grid; gap: 4px; }
+.sync { display: flex; align-items: center; justify-content: space-between; gap: 10px; flex-wrap: wrap; font-size: 12.5px; color: var(--muted); }
+.sync > span { display: inline-flex; align-items: center; gap: 8px; }
+.progress { height: 4px; border-radius: 999px; background: var(--raised); overflow: hidden; }
+.progress i { display: block; height: 100%; background: var(--accent); border-radius: inherit; transition: width 0.3s; }
+.addr-box { min-width: 0; display: flex; align-items: center; gap: 10px; padding: 10px 12px; border-radius: 10px; background: var(--sunk); border: 1px solid var(--line); }
+.addr-box .hex { flex: 1; min-width: 0; color: var(--muted); }
+.addr-full { font-family: var(--mono); font-size: 12px; word-break: break-all; color: var(--muted); padding: 12px; border-radius: 10px; background: var(--sunk); border: 1px solid var(--line); }
 
-.notice { border-radius: 8px; padding: 12px 14px; font-size: 14px; background: var(--sunk); }
-.notice.bad { background: var(--bad-bg); color: var(--bad); }
-.notice.ok { background: var(--ok-bg); color: var(--ok); }
-
-table.tx { width: 100%; border-collapse: collapse; font-size: 14px; }
-table.tx th { text-align: left; font-size: 12px; font-weight: 600; color: var(--muted); padding: 6px 8px; border-bottom: 1px solid var(--line); }
-table.tx td { padding: 8px; border-bottom: 1px solid var(--line); vertical-align: top; }
-table.tx td.num { text-align: right; font-variant-numeric: tabular-nums; font-family: var(--font-mono); font-size: 13px; white-space: nowrap; }
+/* Lists and tables */
+.list { display: grid; }
+.row-item { display: grid; grid-template-columns: 36px minmax(0, 1fr) auto auto; gap: 14px; align-items: center; padding: 12px 20px; border: 0; border-top: 1px solid var(--line); background: none; width: 100%; text-align: left; cursor: pointer; color: var(--text); }
+.row-item:first-child { border-top: 0; }
+.row-item:hover { background: var(--raised); }
+.row-item[aria-current="true"] { background: var(--raised); }
+.ri-main { display: grid; gap: 2px; min-width: 0; }
+.ri-title { font-weight: 500; }
+.ri-sub { font-size: 12.5px; color: var(--faint); }
+.tx-ico { width: 36px; height: 36px; border-radius: 10px; display: grid; place-items: center; background: var(--raised); color: var(--muted); font-size: 15px; }
+.chev { color: var(--faint); }
+.table { width: 100%; border-collapse: collapse; font-size: 13.5px; }
+.table th { text-align: left; font: 500 11.5px/1.2 var(--mono); text-transform: uppercase; letter-spacing: 0.06em; color: var(--faint); padding: 12px 20px; border-bottom: 1px solid var(--line); background: var(--raised); }
+.table td { padding: 13px 20px; border-bottom: 1px solid var(--line); vertical-align: middle; }
+.table tr:last-child td { border-bottom: 0; }
+.table tbody tr { cursor: pointer; }
+.table tbody tr:hover td { background: var(--raised); }
+.table .num { text-align: right; }
 .scroll { overflow-x: auto; }
+.empty { padding: 36px 20px; text-align: center; display: grid; gap: 8px; justify-items: center; color: var(--muted); }
+.empty h3 { color: var(--text); font-size: 15px; }
 
-.sessions { display: grid; gap: 8px; }
-.session-link { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 8px; align-items: center; padding: 10px 12px; border: 1px solid var(--line); border-radius: 8px; background: var(--surface); width: 100%; font-weight: 500; }
-.session-link[aria-current="true"] { border-color: var(--gold-fill); }
+/* Members */
+.member { display: grid; grid-template-columns: 36px minmax(0, 1fr) auto; gap: 14px; align-items: center; padding: 14px 20px; border-top: 1px solid var(--line); }
+.member:first-child { border-top: 0; }
+.member .ri-title { display: flex; align-items: center; gap: 8px; }
+.you { font: 500 11px/1 var(--mono); padding: 3px 6px; border-radius: 5px; background: var(--accent-soft); color: var(--accent-text); }
+.m-actions { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; justify-content: flex-end; }
 
-.steps { display: grid; gap: 0; }
-.step { display: grid; grid-template-columns: 22px minmax(0, 1fr); gap: 12px; padding-block: 10px; border-top: 1px solid var(--line); }
-.step:first-child { border-top: 0; }
-.tick { width: 22px; height: 22px; border-radius: 50%; border: 2px solid var(--line); display: grid; place-items: center; font-size: 12px; font-weight: 700; color: var(--surface); }
-.tick.done { background: var(--ok); border-color: var(--ok); }
-.tick.now { border-color: var(--gold-fill); }
-.tick.bad { background: var(--bad); border-color: var(--bad); }
-.formula { font-family: var(--font-mono); font-size: 13px; color: var(--gold); }
+/* Setup */
+.setup { display: grid; grid-template-columns: minmax(0, 1.2fr) minmax(0, 1fr); gap: 16px; align-items: start; }
+.steps { display: grid; }
+.step { display: grid; grid-template-columns: 28px minmax(0, 1fr); gap: 14px; position: relative; padding-bottom: 20px; }
+.step:last-child { padding-bottom: 0; }
+.step::before { content: ""; position: absolute; left: 13px; top: 30px; bottom: 2px; width: 2px; background: var(--line); }
+.step:last-child::before { display: none; }
+.step.done::before { background: var(--ok); }
+.tick { width: 28px; height: 28px; border-radius: 50%; display: grid; place-items: center; font: 600 12px/1 var(--mono); border: 2px solid var(--line-2); color: var(--faint); background: var(--panel); position: relative; z-index: 1; }
+.step.done .tick { background: var(--ok); border-color: var(--ok); color: var(--panel); }
+.step.now .tick { border-color: var(--accent); color: var(--accent-text); box-shadow: 0 0 0 4px var(--accent-soft); }
+.step.bad .tick { background: var(--bad); border-color: var(--bad); color: var(--panel); }
+.step h3 { font-size: 14.5px; letter-spacing: -0.01em; padding-top: 4px; }
+.step p { color: var(--muted); font-size: 13px; }
+.seat-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 10px; }
+.seat { padding: 14px; border-radius: 10px; border: 1px solid var(--line); background: var(--sunk); display: grid; gap: 10px; justify-items: start; }
+.seat.mine { border-color: rgba(244, 183, 40, 0.5); }
+.seat.open { border-style: dashed; background: transparent; }
 
-.log { font-family: var(--font-mono); font-size: 12px; color: var(--muted); max-height: 180px; overflow: auto; background: var(--sunk); border-radius: 8px; padding: 10px 12px; white-space: pre-wrap; }
-footer { font-size: 13px; color: var(--muted); display: grid; gap: 8px; border-top: 1px solid var(--line); padding-top: 18px; }
-.empty { padding: 18px; border: 1px dashed var(--line); border-radius: var(--radius); color: var(--muted); }
-@media (max-width: 520px) { h1 { font-size: 25px; } .panel { padding: 16px; } .kv { grid-template-columns: 1fr; } }
+/* Drawer and dialogs */
+.scrim { position: fixed; inset: 0; background: rgba(5, 5, 10, 0.55); backdrop-filter: blur(2px); z-index: 40; }
+.drawer { position: fixed; top: 0; right: 0; bottom: 0; width: min(460px, 100%); z-index: 41; background: var(--panel); border-left: 1px solid var(--line); box-shadow: var(--shadow); display: flex; flex-direction: column; }
+.drawer-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 16px 20px; padding-top: calc(16px + env(safe-area-inset-top, 0px)); border-bottom: 1px solid var(--line); }
+.drawer-body { overflow: auto; padding: 22px 20px 32px; display: grid; gap: 22px; align-content: start; }
+.dialog { position: fixed; z-index: 41; left: 50%; top: 50%; transform: translate(-50%, -50%); width: min(460px, calc(100% - 32px)); max-height: calc(100% - 32px); overflow: auto; background: var(--panel); border: 1px solid var(--line); border-radius: 16px; box-shadow: var(--shadow); padding: 22px; display: grid; gap: 18px; }
+.dialog h2 { font-size: 18px; }
+.field { display: grid; gap: 6px; min-width: 0; }
+.field > span { font-size: 12.5px; font-weight: 500; color: var(--muted); }
+.input { width: 100%; height: 42px; padding-inline: 12px; border-radius: 10px; border: 1px solid var(--line-2); background: var(--sunk); color: var(--text); font: 400 14.5px var(--sans); }
+.input.mono { font-family: var(--mono); font-size: 13px; }
+.input:focus { outline: none; border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-soft); }
+.input-wrap { position: relative; }
+.input-wrap .btn { position: absolute; right: 6px; top: 6px; }
+.two { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+.summary { display: grid; gap: 8px; padding: 14px; border-radius: 10px; background: var(--sunk); border: 1px solid var(--line); font-size: 13px; }
+.summary div { display: flex; justify-content: space-between; gap: 12px; }
+.summary dd, .summary span:last-child { font-variant-numeric: tabular-nums; }
+.callout { display: flex; gap: 10px; padding: 12px 14px; border-radius: 10px; font-size: 13px; background: var(--info-soft); color: var(--info); }
+.callout.warn { background: var(--accent-soft); color: var(--accent-text); }
+.callout.bad { background: var(--bad-soft); color: var(--bad); }
+.callout.ok { background: var(--ok-soft); color: var(--ok); }
+.dialog-actions { display: flex; justify-content: flex-end; gap: 8px; }
+.lines { display: grid; border: 1px solid var(--line); border-radius: 10px; overflow: hidden; }
+.lines > div { display: flex; justify-content: space-between; gap: 12px; padding: 11px 14px; border-top: 1px solid var(--line); font-size: 13.5px; }
+.lines > div:first-child { border-top: 0; }
+.lines .neg { color: var(--muted); }
+.kv { display: grid; grid-template-columns: 150px minmax(0, 1fr); gap: 12px 18px; margin: 0; font-size: 13.5px; }
+.kv dt { color: var(--muted); }
+.kv dd { margin: 0; min-width: 0; }
+details > summary { cursor: pointer; color: var(--accent-text); font-weight: 500; font-size: 13px; }
+.log { font-family: var(--mono); font-size: 11.5px; color: var(--muted); max-height: 220px; overflow: auto; background: var(--sunk); border: 1px solid var(--line); border-radius: 10px; padding: 12px; white-space: pre-wrap; margin-top: 10px; }
+
+/* Toast */
+#banner { position: fixed; z-index: 60; left: 50%; bottom: calc(20px + env(safe-area-inset-bottom, 0px)); transform: translateX(-50%); width: min(560px, calc(100% - 32px)); padding: 12px 16px; border-radius: 12px; font-size: 13.5px; box-shadow: var(--shadow); border: 1px solid var(--line); background: var(--panel); color: var(--text); }
+#banner.bad { border-color: var(--bad); color: var(--bad); }
+#banner.ok { border-color: var(--ok); color: var(--ok); }
+
+@media (max-width: 960px) {
+  .grid-ov, .setup { grid-template-columns: 1fr; }
+}
+@media (max-width: 760px) {
+  .shell { grid-template-columns: 1fr; }
+  .side { position: static; height: auto; flex-direction: row; flex-wrap: wrap; align-items: center; padding: 12px 16px; padding-top: calc(12px + env(safe-area-inset-top, 0px)); border-right: 0; border-bottom: 1px solid var(--line); }
+  #side-nav, .side-foot .side-note { display: none; }
+  .side-foot { border: 0; padding: 0; margin-left: auto; }
+  .back { display: inline-flex; justify-self: start; }
+  .main { padding-top: 20px; }
+  .kv { grid-template-columns: 1fr; gap: 2px 0; }
+  .kv dd { margin-bottom: 10px; }
+  .row-item { grid-template-columns: 36px minmax(0, 1fr) auto; }
+  .row-item .chev { display: none; }
+  .table .hide-sm { display: none; }
+}
 </style>
 
-<div class="wrap">
-  <header class="top">
-    <div class="brand">
-      <svg class="mark" viewBox="0 0 40 40" aria-hidden="true">
-        <circle cx="20" cy="20" r="18" fill="var(--gold-fill)"></circle>
-        <g fill="var(--on-gold)">
-          <circle cx="20" cy="9.5" r="3"></circle><circle cx="10.5" cy="25.5" r="3"></circle><circle cx="29.5" cy="25.5" r="3"></circle>
-        </g>
-        <path d="M20 12.5 L12.6 23.4 M20 12.5 L27.4 23.4 M13.5 25.5 H26.5" stroke="var(--on-gold)" stroke-width="1.6" fill="none"></path>
+<div class="shell">
+  <aside class="side" aria-label="Wallets">
+    <a class="logo" href="#" aria-label="Zigs home">
+      <svg viewBox="0 0 24 24" aria-hidden="true">
+        <rect x="1" y="1" width="22" height="22" rx="7" fill="#f4b728"></rect>
+        <path d="M7 8h10l-10 8h10" fill="none" stroke="#17130a" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"></path>
       </svg>
-      <div>
-        <h1>Zcash FROST Multisig</h1>
-        <p>A shielded wallet that t of n people control together. No one ever holds the whole key.</p>
-      </div>
+      Zigs <span class="net">Testnet</span>
+    </a>
+    <nav id="side-nav" aria-label="Your wallets"></nav>
+    <div class="side-foot">
+      <div class="engine" id="engine"><span class="dot busy" id="engine-dot"></span><span id="engine-text">Loading crypto engine…</span></div>
+      <p class="side-note">Keys are made and used in this browser. Testnet only, not audited. Do not send real funds.</p>
     </div>
-    <div class="engine" id="engine"><span class="dot busy" id="engine-dot"></span><span id="engine-text">Loading crypto engine…</span></div>
-  </header>
-
-  <div id="banner" hidden></div>
-  <main id="app" class="wrap" style="padding:0"></main>
-
-  <footer>
-    <p><strong>Prototype.</strong> All key material is made and used in your browser by the Rust code compiled to WebAssembly (FROST over RedPallas, ZIP 312, PCZT). Only public data and encrypted DKG messages go to the shared store. Your key share stays in this browser; use “Back up” to keep a copy.</p>
-    <p>This page works on Zcash testnet only. It reads blocks through a public lightwalletd proxy, which sees your IP address and the block ranges you ask for, but never a key. The page keeps its view of the wallet in memory and syncs again on every load. Do not send real funds to these addresses.</p>
-  </footer>
+  </aside>
+  <main class="main"><div id="app" class="page"></div></main>
 </div>
+<div id="banner" hidden role="status"></div>
 
 <script type="module">
 // ───────────────────────── Engine (WASM) ─────────────────────────
@@ -602,205 +724,390 @@ const el = (tag, attrs = {}, ...kids) => {
 const fmtZec = (zat) => (zat / 1e8).toLocaleString(undefined, { minimumFractionDigits: 3, maximumFractionDigits: 8 }) + " ZEC";
 const short = (h, n = 10) => h ? h.slice(0, n) + "…" + h.slice(-6) : "";
 const act = (fn) => async (ev) => { ev && ev.preventDefault && ev.preventDefault(); const b = ev && ev.currentTarget; if (b) b.disabled = true; try { await fn(ev); } catch (e) { showBanner("bad", e.message || String(e)); } finally { if (b) b.disabled = false; render(); react(); } };
-function copyBtn(text, label = "Copy") {
-  return el("button", { class: "ghost", type: "button", onclick: async (ev) => { const b = ev.currentTarget; try { await navigator.clipboard.writeText(text); b.textContent = "Copied"; } catch { b.textContent = "Select and copy"; } setTimeout(() => b.textContent = label, 1500); } }, label);
+function copyBtn(text, label = "Copy", cls = "btn sm") {
+  return el("button", { class: cls, type: "button", onclick: async (ev) => { const b = ev.currentTarget; try { await navigator.clipboard.writeText(text); b.textContent = "Copied"; } catch { b.textContent = "Select and copy"; } setTimeout(() => b.textContent = label, 1500); } }, label);
+}
+
+// View state that only this browser cares about.
+const ui = { tab: "overview", send: false, create: false };
+const ZEC_FMT = new Intl.NumberFormat("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 8 });
+const FEE_ESTIMATE = 10000;
+const initials = (name) => (name || "?").trim().split(/\s+/).map((w) => w[0]).join("").slice(0, 2).toUpperCase() || "?";
+const when = (ms) => ms ? new Date(ms).toLocaleString(undefined, { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" }) : "";
+
+function money(zat, size = "md") {
+  const [i, d] = ZEC_FMT.format((zat || 0) / 1e8).split(".");
+  return el("span", { class: "money " + size }, i, el("span", { class: "dec" }, "." + (d || "00")), el("span", { class: "cur" }, "ZEC"));
+}
+function seatLabel(i) {
+  const s = state.seats[i];
+  if (!s) return "Open seat";
+  return s.uid === me ? "You" : s.name || "Member " + i;
+}
+function avatar(i, cls = "") {
+  const s = state.seats[i], mine = s && s.uid === me;
+  return el("span", { class: "av round " + cls + (mine ? " me" : ""), title: seatLabel(i) }, s ? initials(mine ? (s.name || "You") : s.name || "M " + i) : "+");
+}
+const myVerified = () => localSeats().some((i) => state.verify[i] && state.verify[i].ok);
+const verifiedCount = () => seatIds().filter((i) => state.verify[i] && state.verify[i].ok).length;
+const rejectedSeats = () => seatIds().filter((i) => state.verify[i] && !state.verify[i].ok);
+const curChain = () => chain && chain.gid === state.gid ? chain : null;
+
+const STATUS = {
+  collecting: ["Needs approval", "warn"], signing: ["Signing", "info"], signed: ["Ready to prove", "info"],
+  proving: ["Building proof", "info"], complete: ["Ready to send", "ok"], broadcast: ["Sent", "ok"], failed: ["Failed", "bad"],
+};
+function statusChip(s) {
+  const [t, c] = STATUS[s.status] || [s.status, ""];
+  return el("span", { class: "badge " + c }, t);
 }
 
 function render() {
+  renderSide();
   const app = document.getElementById("app");
-  // Keep what the viewer is typing across live updates.
+  // Keep what the viewer is typing, open <details>, and the drawer scroll across live updates.
   const kept = {}; const focusId = document.activeElement && document.activeElement.id;
   app.querySelectorAll("input[id], select[id]").forEach((i) => { if (i.type !== "file") kept[i.id] = i.value; });
   const openDetails = new Set([...app.querySelectorAll("details[open] > summary")].map((x) => x.textContent));
-  const view = !dbReady ? el("div", { class: "empty" }, "Connecting to the shared store…") : state.gid ? groupView() : lobby();
-  app.replaceChildren(view);
+  const drawerScroll = app.querySelector(".drawer-body")?.scrollTop || 0;
+  const view = !dbReady ? loadingView() : state.gid ? groupView() : lobby();
+  const ss = state.gid && state.wallet ? curSession() : null;
+  const layers = [];
+  if (ss) layers.push(el("div", { class: "scrim", onclick: () => { closeSession(); render(); } }), sessionDrawer(ss));
+  else if (ui.send && state.gid && state.wallet) layers.push(el("div", { class: "scrim", onclick: () => { ui.send = false; render(); } }), sendDialog());
+  else if (ui.create && !state.gid) layers.push(el("div", { class: "scrim", onclick: () => { ui.create = false; render(); } }), createDialog());
+  app.replaceChildren(view, ...layers);
   for (const [id, v] of Object.entries(kept)) { const i = document.getElementById(id); if (i) i.value = v; }
   app.querySelectorAll("details > summary").forEach((x) => { if (openDetails.has(x.textContent)) x.parentElement.open = true; });
+  const db2 = app.querySelector(".drawer-body"); if (db2) db2.scrollTop = drawerScroll;
   if (focusId) { const f = document.getElementById(focusId); if (f) f.focus(); }
 }
 
+function renderSide() {
+  const nav = document.getElementById("side-nav");
+  const newWallet = () => { openGroup(null); ui.create = true; render(); };
+  nav.replaceChildren(
+    el("div", { class: "side-head" }, el("span", { class: "label" }, "Wallets"),
+      el("button", { class: "icon-btn", type: "button", title: "New wallet", "aria-label": "New wallet", onclick: newWallet }, "+")),
+    ...(state.groups.length ? state.groups.map((g) => el("button", {
+      class: "side-item" + (g.id === state.gid ? " active" : ""), type: "button", "aria-current": g.id === state.gid ? "page" : null,
+      onclick: () => { ui.tab = "overview"; openGroup(g.id); },
+    }, el("span", { class: "av" }, initials(g.name)), el("span", { class: "side-name" }, g.name), el("span", { class: "side-meta" }, g.t + "/" + g.n)))
+      : [el("p", { class: "side-empty" }, dbReady ? "No wallets yet." : "Connecting…")]));
+}
+
+function loadingView() {
+  return el("div", { class: "card empty" }, el("span", { class: "dot busy" }), el("h3", {}, "Connecting to the group server"), el("p", { class: "small" }, "Your wallets appear in a moment."));
+}
+
+// ── Lobby ──
 function lobby() {
-  const f = el("form", { class: "inline", onsubmit: act(async (ev) => {
+  const restoreInput = el("input", { id: "restore", type: "file", accept: "application/json", hidden: true, onchange: (ev) => ev.target.files[0] && restore(ev.target.files[0]) });
+  const head = el("header", { class: "page-head" },
+    el("div", { class: "ph-left" }, el("h1", {}, "Wallets"), el("p", { class: "muted" }, "Shared wallets you hold a seat in. Every payment needs your co-signers' approval.")),
+    el("div", { class: "ph-actions" },
+      el("button", { class: "btn", type: "button", onclick: () => restoreInput.click() }, "Restore from backup"), restoreInput,
+      el("button", { class: "btn primary", type: "button", disabled: !Z || !db || canWrite === false, onclick: () => { ui.create = true; render(); } }, "New wallet")));
+  if (!state.groups.length) {
+    return el("div", { class: "page" }, head, el("section", { class: "card card-pad" },
+      el("div", { class: "empty" },
+        el("h3", {}, "Create your first shared wallet"),
+        el("p", { class: "small", style: "max-width:46ch" }, "Pick a rule like 2 of 3, invite your co-signers with one link, and your devices create the wallet key together. Nobody ever holds the whole key."),
+        el("button", { class: "btn primary lg", type: "button", style: "margin-top:8px", disabled: !Z || !db || canWrite === false, onclick: () => { ui.create = true; render(); } }, "Create wallet"))));
+  }
+  return el("div", { class: "page" }, head,
+    el("section", { class: "card" }, el("div", { class: "list" }, state.groups.map((g) => {
+      const mine = mySeatSecrets(g.id).length;
+      return el("button", { class: "row-item", type: "button", onclick: () => { ui.tab = "overview"; openGroup(g.id); } },
+        el("span", { class: "av lg" }, initials(g.name)),
+        el("span", { class: "ri-main" }, el("span", { class: "ri-title" }, g.name), el("span", { class: "ri-sub" }, "Any " + g.t + " of " + g.n + " approve · created " + when(g.createdAt))),
+        mine ? el("span", { class: "badge warn plain" }, mine > 1 ? "You hold " + mine + " seats" : "You hold a seat") : el("span", { class: "badge plain" }, "Viewer"),
+        el("span", { class: "chev" }, "›"));
+    }))));
+}
+
+function createDialog() {
+  const f = el("form", { class: "dialog", role: "dialog", "aria-modal": "true", "aria-labelledby": "create-title", onsubmit: act(async (ev) => {
     const fd = new FormData(ev.target); const n = Number(fd.get("n")), t = Number(fd.get("t"));
-    if (t < 2 || t > n) throw new Error("The threshold must be between 2 and the number of people.");
+    if (!(n >= 2 && n <= 7)) throw new Error("A wallet needs between 2 and 7 members.");
+    if (t < 2 || t > n) throw new Error("Approvals needed must be at least 2 and at most the number of members.");
+    ui.create = false;
     await createGroup(String(fd.get("name") || "").trim() || "Treasury", n, t);
   }) },
-    el("label", {}, "Wallet name", el("input", { id: "g-name", name: "name", placeholder: "Team treasury", maxlength: "40" })),
-    el("label", {}, "People (n)", el("input", { id: "g-n", name: "n", type: "number", min: "2", max: "7", value: "3" })),
-    el("label", {}, "Signatures needed (t)", el("input", { id: "g-t", name: "t", type: "number", min: "2", max: "7", value: "2" })),
-    el("button", { class: "primary", type: "submit", disabled: !Z || !db || canWrite === false }, "Create and take seat 1"));
-  const restoreInput = el("input", { id: "restore", type: "file", accept: "application/json", hidden: true, onchange: (ev) => ev.target.files[0] && restore(ev.target.files[0]) });
-  return el("div", { class: "wrap", style: "padding:0" },
-    el("section", { class: "panel" },
-      el("div", { class: "panel-head" }, el("h2", {}, "Start a shared wallet"), el("span", { class: "muted small" }, "Testnet addresses · Ironwood and Orchard")),
-      el("p", { class: "muted" }, "Create a group, then send this page to the other people. Each person opens it, takes a seat, and their browser joins the key ceremony. When every seat is taken, the ceremony runs by itself."),
-      f,
-      el("div", { class: "row small muted" }, "Have a backup file?", el("button", { class: "ghost", type: "button", onclick: () => restoreInput.click() }, "Restore a key share"), restoreInput)),
-    el("section", { class: "panel" },
-      el("h2", {}, "Wallets on this page"),
-      state.groups.length ? el("div", { class: "groups" }, state.groups.map((g) => {
-        const mine = mySeatSecrets(g.id).length;
-        return el("button", { class: "group-link", type: "button", onclick: () => openGroup(g.id) },
-          el("span", { class: "gname" }, g.name),
-          el("span", { class: "row" }, mine ? el("span", { class: "chip gold" }, "You hold " + mine + (mine > 1 ? " seats" : " seat")) : null,
-            el("span", { class: "chip" }, g.t + "-of-" + g.n)));
-      })) : el("div", { class: "empty" }, "No wallets yet. Create the first one above.")));
+    el("div", { class: "card-head" }, el("h2", { id: "create-title" }, "New shared wallet"), el("button", { class: "icon-btn", type: "button", "aria-label": "Close", onclick: () => { ui.create = false; render(); } }, "×")),
+    el("label", { class: "field" }, el("span", {}, "Wallet name"), el("input", { class: "input", id: "g-name", name: "name", placeholder: "Team treasury", maxlength: "40", autocomplete: "off" })),
+    el("div", { class: "two" },
+      el("label", { class: "field" }, el("span", {}, "Members"), el("input", { class: "input", id: "g-n", name: "n", type: "number", min: "2", max: "7", value: "3" })),
+      el("label", { class: "field" }, el("span", {}, "Approvals needed"), el("input", { class: "input", id: "g-t", name: "t", type: "number", min: "2", max: "7", value: "2" }))),
+    el("div", { class: "callout" }, "You take seat 1. Then share the invite link with your co-signers. When every seat is taken, your devices create the wallet key together."),
+    el("div", { class: "dialog-actions" },
+      el("button", { class: "btn", type: "button", onclick: () => { ui.create = false; render(); } }, "Cancel"),
+      el("button", { class: "btn primary", type: "submit", disabled: !Z || !db || canWrite === false }, "Create wallet")));
+  return f;
 }
 
-function seatCard(i) {
-  const s = state.seats[i], st = seatStage(i), mine = s && s.uid === me && sec(state.gid, i);
-  const takenByMeElsewhere = s && s.uid === me && !sec(state.gid, i);
-  return el("div", { class: "seat" + (mine ? " mine" : "") },
-    el("div", { class: "seat-top" },
-      el("span", { class: "avatar" }),
-      el("div", { style: "min-width:0;display:grid" },
-        el("span", { class: "seat-no" }, "Seat " + i),
-        el("span", { class: "seat-name" }, s ? (mine ? "You" : s.name || "Someone") : "Open"))),
-    el("div", { class: "ladder", "aria-hidden": "true" }, [1, 2, 3, 4, 5].map((k) => el("span", { class: k <= st ? (st === 5 ? "done" : "on") : "" }))),
-    el("span", { class: "ladder-label" }, STAGE_LABEL[st] + (state.verify[i] && !state.verify[i].ok ? " · rejected wallet" : "")),
-    !s ? el("button", { type: "button", class: localSeats().length ? "" : "primary", disabled: !Z || canWrite === false, onclick: act(() => takeSeat(i)) }, localSeats().length ? "Also play this seat" : "Take this seat") : null,
-    takenByMeElsewhere ? el("span", { class: "small muted" }, "Taken by you in another browser") : null,
-    mine && sec(state.gid, i).keyPackage ? el("button", { type: "button", class: "ghost", onclick: act(() => backup(i)) }, "Back up key share") : null);
-}
-
+// ── Wallet ──
 function groupView() {
   const g = state.g;
-  if (!g) return el("div", { class: "panel" }, el("button", { class: "ghost", type: "button", onclick: () => openGroup(null) }, "← All wallets"), el("p", { class: "muted" }, "Loading this wallet…"));
-  const seated = seatIds().filter((i) => state.seats[i]).length;
-  return el("div", { class: "wrap", style: "padding:0" },
-    el("div", { class: "panel-head" },
-      el("div", { style: "display:grid;gap:4px" }, el("button", { class: "ghost", type: "button", style: "justify-self:start;padding-inline:0", onclick: () => openGroup(null) }, "← All wallets"),
-        el("h2", { style: "font-size:26px" }, g.name)),
-      el("div", { class: "row" }, el("span", { class: "chip gold" }, g.t + "-of-" + g.n), el("span", { class: "chip" }, seated + "/" + g.n + " seats taken"), copyBtn(inviteLink(state.gid), "Copy invite link"))),
-    el("p", { class: "muted small" }, "Invite people as Editors from the Share menu, then send them the invite link. On your own, you can play every seat from this browser to try the full flow."),
-    el("div", { class: "seats" }, seatIds().map(seatCard)),
-    ceremonyPanel(), walletPanel(), spendsPanel(),
-    state.log.length ? el("details", {}, el("summary", {}, "Activity in this browser"), el("div", { class: "log" }, state.log.join("\n"))) : null);
+  if (!g) return el("div", { class: "page" }, el("button", { class: "btn ghost sm", type: "button", onclick: () => openGroup(null) }, "← Wallets"), loadingView());
+  const seated = seatIds().filter((i) => state.seats[i]);
+  const ready = state.wallet && state.wallet.birthday && rejectedSeats().length === 0;
+  const head = el("header", { class: "page-head" },
+    el("div", { class: "ph-left" },
+      el("button", { class: "btn ghost sm back", type: "button", onclick: () => openGroup(null) }, "← Wallets"),
+      el("h1", {}, g.name),
+      el("div", { class: "ph-meta" },
+        el("span", { class: "badge warn plain" }, "Any " + g.t + " of " + g.n + " approve"),
+        el("span", { class: "stack" }, seatIds().map((i) => avatar(i))),
+        el("span", {}, seated.length + " of " + g.n + " members joined"))),
+    el("div", { class: "ph-actions" },
+      copyBtn(inviteLink(state.gid), "Copy invite link", "btn"),
+      ready ? el("button", { class: "btn primary", type: "button", disabled: !myVerified() || !curChain() || !curChain().bal, onclick: () => { ui.send = true; render(); } }, "Send") : null));
+  if (!ready) return el("div", { class: "page" }, head, setupView());
+  const tabs = [["overview", "Overview"], ["payments", "Payments", state.sessions.length], ["members", "Members"], ["details", "Details"]];
+  const body = { overview: overviewTab, payments: paymentsTab, members: membersTab, details: detailsTab }[ui.tab] || overviewTab;
+  return el("div", { class: "page" }, head,
+    el("nav", { class: "tabs", role: "tablist" }, tabs.map(([id, label, count]) => el("button", {
+      class: "tab", type: "button", role: "tab", "aria-selected": ui.tab === id ? "true" : "false", onclick: () => { ui.tab = id; render(); },
+    }, label, count ? el("span", { class: "count" }, count) : null))),
+    body());
 }
 
-function stepRow(status, title, body) {
-  return el("div", { class: "step" }, el("span", { class: "tick " + status }, status === "done" ? "✓" : status === "bad" ? "!" : ""), el("div", { style: "display:grid;gap:4px;min-width:0" }, el("h3", {}, title), body));
-}
-
-function ceremonyPanel() {
-  const n = state.g.n;
+// ── Setup (key ceremony) ──
+function setupView() {
+  const g = state.g, n = g.n, w = state.wallet;
   const r1 = Object.keys(state.dkg1).length, r2 = Object.keys(state.dkg2).length, d = Object.keys(state.done).length;
-  const mismatch = allDone() && !keysAgree();
-  const st = (ok, now) => ok ? "done" : now ? "now" : "";
-  return el("section", { class: "panel" },
-    el("div", { class: "panel-head" }, el("h2", {}, el("span", { class: "stage-no" }, "1"), "Key ceremony"), el("span", { class: "muted small" }, "FROST DKG over Pallas · no dealer")),
-    el("div", { class: "steps" },
-      stepRow(st(allSeated(), true), "Everyone takes a seat", el("p", { class: "muted small" }, Object.keys(state.seats).length + " of " + n + ". Each browser makes an X25519 key so others can send it secret shares.")),
-      stepRow(st(r1 === n, allSeated()), "Round 1: commit", el("p", { class: "muted small" }, r1 + " of " + n + " commitments with proofs of knowledge published.")),
-      stepRow(st(r2 === n * (n - 1), r1 === n), "Round 2: send shares", el("p", { class: "muted small" }, r2 + " of " + n * (n - 1) + " encrypted point-to-point shares sent.")),
-      stepRow(mismatch ? "bad" : st(d === n, r2 === n * (n - 1)), "Each person derives their key share", mismatch
-        ? el("p", { class: "small", style: "color:var(--bad)" }, "Participants computed different group keys. The ceremony failed. Start a new wallet.")
-        : el("div", { style: "display:grid;gap:4px" }, el("p", { class: "muted small" }, d + " of " + n + " done. The secret spend key never exists anywhere."),
-          keysAgree() ? el("p", { class: "small" }, "Group key ", el("span", { class: "hex" }, state.done[1].groupKey)) : null))));
+  const mismatch = allDone() && !keysAgree(), rejected = rejectedSeats(), ver = verifiedCount();
+  const seatedN = seatIds().filter((i) => state.seats[i]).length;
+  const keyStage = mismatch ? "bad" : d === n ? "done" : allSeated() ? "now" : "";
+  const keyText = mismatch ? "Members computed different keys. Create a new wallet."
+    : d === n ? "Each member holds one piece. The full key never existed."
+    : r2 === n * (n - 1) ? "Each device is computing its piece of the key…"
+    : r1 === n ? "Devices are exchanging encrypted shares (" + r2 + " of " + n * (n - 1) + ")…"
+    : allSeated() ? "Devices are publishing their commitments (" + r1 + " of " + n + ")…" : "Starts when every seat is taken.";
+  const addrStage = rejected.length ? "bad" : w && ver === n ? "done" : d === n ? "now" : "";
+  const addrText = rejected.length ? "Seat " + rejected.join(", ") + " rejected the address. Do not use this wallet."
+    : !w ? (d === n ? "Building the shared address…" : "Comes after the key.")
+    : !w.birthday ? "This wallet predates testnet support. Create a new one."
+    : ver + " of " + n + " members checked that the address belongs to the group key.";
+  const step = (cls, no, title, text) => el("div", { class: "step " + cls }, el("span", { class: "tick" }, cls === "done" ? "✓" : cls === "bad" ? "!" : no), el("div", { style: "display:grid;gap:2px" }, el("h3", {}, title), el("p", {}, text)));
+  const total = (seatedN / n + (d === n ? 1 : (r1 / n + r2 / Math.max(1, n * (n - 1))) / 2) + (w ? ver / n : 0)) / 3;
+  return el("div", { class: "setup" },
+    el("section", { class: "card card-pad" },
+      el("div", { class: "card-head" }, el("h2", {}, "Setting up your wallet"), el("span", { class: "mono faint" }, Math.round(total * 100) + "%")),
+      el("div", { class: "progress" }, el("i", { style: "width:" + Math.round(total * 100) + "%" })),
+      el("div", { class: "steps", style: "margin-top:6px" },
+        step(allSeated() ? "done" : "now", 1, "Members join", seatedN + " of " + n + " seats taken. Share the invite link with your co-signers."),
+        step(keyStage, 2, "Create the key together", keyText),
+        step(addrStage, 3, "Check the address", addrText)),
+      state.log.length ? el("details", {}, el("summary", {}, "Activity in this browser"), el("div", { class: "log" }, state.log.join("\n"))) : null),
+    el("section", { class: "card card-pad" },
+      el("div", { class: "card-head" }, el("h2", {}, "Seats"), el("span", { class: "small muted" }, "Any " + g.t + " of " + n + " approve")),
+      el("div", { class: "seat-grid" }, seatIds().map(seatTile)),
+      el("div", { class: "field" }, el("span", {}, "Invite link"),
+        el("div", { class: "addr-box" }, el("span", { class: "hex", style: "white-space:nowrap;overflow:hidden;text-overflow:ellipsis" }, inviteLink(state.gid)), copyBtn(inviteLink(state.gid)))),
+      el("p", { class: "small faint" }, "The link contains the wallet's secret. Send it only to your co-signers, through a private channel.")));
 }
 
-function walletPanel() {
-  const w = state.wallet, n = state.g.n;
-  const ver = seatIds().filter((i) => state.verify[i] && state.verify[i].ok).length;
-  const rejected = seatIds().filter((i) => state.verify[i] && !state.verify[i].ok);
-  return el("section", { class: "panel" },
-    el("div", { class: "panel-head" }, el("h2", {}, el("span", { class: "stage-no" }, "2"), "Shared wallet"), el("span", { class: "muted small" }, "ZIP 312 · Unified address")),
-    !w ? el("div", { class: "empty" }, keysAgree() ? "The group creator's browser is building the wallet…" : "The address appears here after the key ceremony.") :
-    el("div", { style: "display:grid;gap:14px" },
-      el("div", { style: "display:grid;gap:6px" }, el("span", { class: "eyebrow" }, "Testnet address"), el("div", { class: "addr" }, w.address), el("div", { class: "row" }, copyBtn(w.address, "Copy address"))),
-      el("dl", { class: "kv" },
-        el("dt", {}, "Spend key ak"), el("dd", { class: "hex" }, w.group_verifying_key),
-        el("dt", {}, "Checked by"), el("dd", {}, rejected.length ? el("span", { class: "chip bad" }, "Seat " + rejected.join(", ") + " rejected this wallet") : el("span", { class: ver === n ? "chip ok" : "chip" }, ver + " of " + n + " participants"))),
-      chainBlock(w),
-      el("p", { class: "muted small" }, "ak is the FROST group key. Each browser checks it against its own ceremony result before it trusts this address. nk and rivk only give viewing rights, so the whole group shares them."),
-      el("details", {}, el("summary", {}, "Viewing key (UFVK)"), el("div", { class: "addr", style: "margin-top:8px" }, w.ufvk), copyBtn(w.ufvk, "Copy viewing key"))));
+function seatTile(i) {
+  const s = state.seats[i], mine = s && s.uid === me && sec(state.gid, i);
+  const elsewhere = s && s.uid === me && !sec(state.gid, i);
+  const st = seatStage(i);
+  return el("div", { class: "seat" + (mine ? " mine" : "") + (s ? "" : " open") },
+    el("div", { style: "display:flex;align-items:center;gap:10px;min-width:0" }, avatar(i),
+      el("div", { style: "display:grid;min-width:0" }, el("span", { class: "ri-title", style: "overflow:hidden;text-overflow:ellipsis;white-space:nowrap" }, seatLabel(i)), el("span", { class: "ri-sub" }, "Seat " + i))),
+    s ? el("span", { class: "badge " + (st === 5 ? "ok" : "info") }, st === 5 ? "Ready" : STAGE_LABEL[st]) : null,
+    !s ? el("button", { type: "button", class: "btn sm " + (localSeats().length ? "" : "primary"), disabled: !Z || canWrite === false, onclick: act(() => takeSeat(i)) }, localSeats().length ? "Also play this seat" : "Take this seat") : null,
+    elsewhere ? el("span", { class: "small faint" }, "Yours, in another browser") : null);
 }
 
-function chainBlock(w) {
-  if (!w.birthday) return el("div", { class: "notice bad" }, "This wallet was made before testnet support. Create a new group.");
-  const c = chain && chain.gid === state.gid ? chain : null;
-  if (!c) return el("p", { class: "muted small" }, "Testnet sync starts once one of your seats has verified this wallet.");
-  const p = c.prog || c.bal, b = c.bal;
+// ── Overview ──
+function overviewTab() {
+  const w = state.wallet, c = curChain(), b = c && c.bal;
+  return el("div", { class: "page", style: "gap:16px" },
+    el("div", { class: "grid-ov" },
+      el("section", { class: "card card-pad balance" },
+        el("span", { class: "label" }, "Balance"),
+        b ? money(b.spendable + b.pending, "xl") : el("span", { class: "money xl faint" }, "—"),
+        el("div", { class: "stats" },
+          el("div", {}, el("span", { class: "label" }, "Available"), b ? money(b.spendable) : el("span", { class: "faint" }, "…")),
+          el("div", {}, el("span", { class: "label" }, "Incoming"), b ? money(b.pending) : el("span", { class: "faint" }, "…"))),
+        syncLine(c)),
+      el("section", { class: "card card-pad" },
+        el("div", { class: "card-head" }, el("h2", {}, "Receive"), el("span", { class: "badge ok plain" }, "Private address")),
+        el("p", { class: "small muted" }, "Share this address to receive testnet ZEC. Payments to it are shielded."),
+        el("div", { class: "addr-box" }, el("span", { class: "hex" }, short(w.address, 18)), copyBtn(w.address)),
+        el("p", { class: "small faint" }, verifiedCount() + " of " + state.g.n + " members checked this address against their own key."))),
+    el("section", { class: "card" },
+      el("div", { class: "card-head card-pad", style: "padding-bottom:12px" }, el("h2", {}, "Recent payments"),
+        state.sessions.length > 5 ? el("button", { class: "btn ghost sm", type: "button", onclick: () => { ui.tab = "payments"; render(); } }, "View all") : null),
+      paymentRows(state.sessions.slice(0, 5))));
+}
+
+function syncLine(c) {
+  if (!c) return el("div", { class: "sync" }, el("span", {}, el("span", { class: "dot" }), "Sync starts after your seat checks the address."));
+  const p = c.prog || c.bal;
+  const pct = p && p.tip > state.wallet.birthday ? Math.max(0, Math.min(100, ((p.height - state.wallet.birthday) / (p.tip - state.wallet.birthday)) * 100)) : 0;
   return el("div", { style: "display:grid;gap:8px" },
-    el("dl", { class: "kv" },
-      el("dt", {}, "Birthday block"), el("dd", {}, w.birthday.toLocaleString()),
-      el("dt", {}, "Synced"), el("dd", {}, p ? p.height.toLocaleString() + " of " + p.tip.toLocaleString() + (c.syncing ? " · syncing…" : "") : c.syncing ? "Starting…" : "Not synced"),
-      el("dt", {}, "Spendable"), el("dd", {}, b ? fmtZec(b.spendable) : "…"),
-      el("dt", {}, "Pending"), el("dd", {}, b ? fmtZec(b.pending) : "…")),
-    c.error ? el("div", { class: "notice bad" }, c.error) : null,
-    el("div", {}, el("button", { class: "ghost", type: "button", disabled: c.syncing, onclick: act(() => runSync(c)) }, c.syncing ? "Syncing…" : "Sync")));
+    c.syncing && c.prog ? el("div", { class: "progress" }, el("i", { style: "width:" + pct.toFixed(1) + "%" })) : null,
+    el("div", { class: "sync" },
+      el("span", {}, el("span", { class: "dot " + (c.error ? "bad" : c.syncing ? "busy" : "ok") }),
+        c.error ? "Sync failed" : c.syncing ? (p ? "Syncing · block " + p.height.toLocaleString() + " of " + p.tip.toLocaleString() : "Starting sync…") : p ? "Up to date · block " + p.height.toLocaleString() : "Not synced"),
+      el("button", { class: "btn ghost sm", type: "button", disabled: c.syncing, onclick: act(() => runSync(c)) }, c.syncing ? "Syncing…" : "Refresh")),
+    c.error ? el("div", { class: "callout bad" }, c.error) : null);
 }
 
-function spendsPanel() {
-  const w = state.wallet;
-  const myVerified = localSeats().some((i) => state.verify[i] && state.verify[i].ok);
-  const f = !w || !w.birthday ? null : el("form", { class: "inline", onsubmit: act(async (ev) => {
+function paymentRows(list) {
+  if (!list.length) return el("div", { class: "empty", style: "border-top:1px solid var(--line)" }, el("h3", {}, "No payments yet"), el("p", { class: "small" }, "Click Send to propose the first one. It goes out once enough members approve."));
+  return el("div", { class: "list", style: "border-top:1px solid var(--line)" }, list.map((s) => el("button", {
+    class: "row-item", type: "button", "aria-current": s.id === state.sid ? "true" : "false", onclick: () => openSession(s.id),
+  },
+    el("span", { class: "tx-ico", "aria-hidden": "true" }, "↗"),
+    el("span", { class: "ri-main" }, el("span", { class: "ri-title" }, "Payment"), el("span", { class: "ri-sub" }, "Proposed by " + (s.createdBy === me ? "you" : seatNameOf(s.createdBy)) + " · " + when(s.createdAt))),
+    el("span", { style: "display:grid;gap:4px;justify-items:end" }, money(s.amount), statusChip(s)),
+    el("span", { class: "chev" }, "›"))));
+}
+
+// ── Payments ──
+function paymentsTab() {
+  if (!state.sessions.length) return el("section", { class: "card" }, paymentRows([]));
+  return el("section", { class: "card scroll" }, el("table", { class: "table" },
+    el("thead", {}, el("tr", {}, el("th", {}, "Date"), el("th", { class: "hide-sm" }, "Proposed by"), el("th", {}, "Status"), el("th", { class: "num" }, "Amount"), el("th", { class: "num hide-sm" }, "Fee"))),
+    el("tbody", {}, state.sessions.map((s) => el("tr", { tabindex: "0", onclick: () => openSession(s.id), onkeydown: (e) => { if (e.key === "Enter") openSession(s.id); } },
+      el("td", {}, when(s.createdAt)),
+      el("td", { class: "hide-sm muted" }, s.createdBy === me ? "You" : seatNameOf(s.createdBy)),
+      el("td", {}, statusChip(s)),
+      el("td", { class: "num" }, money(s.amount)),
+      el("td", { class: "num hide-sm muted mono" }, ((s.fee || 0) / 1e8).toFixed(4)))))));
+}
+
+// ── Members ──
+function membersTab() {
+  return el("section", { class: "card" },
+    el("div", { class: "card-pad", style: "padding-bottom:14px" }, el("div", { class: "card-head" }, el("h2", {}, "Members"), el("span", { class: "small muted" }, "Any " + state.g.t + " of " + state.g.n + " can approve a payment"))),
+    el("div", { style: "border-top:1px solid var(--line)" }, seatIds().map((i) => {
+      const s = state.seats[i], mine = s && s.uid === me && sec(state.gid, i), v = state.verify[i];
+      return el("div", { class: "member" }, avatar(i, "lg"),
+        el("div", { class: "ri-main" }, el("span", { class: "ri-title" }, s ? (s.uid === me ? (s.name || "You") : s.name || "Member " + i) : "Open seat", mine ? el("span", { class: "you" }, "You") : null),
+          el("span", { class: "ri-sub" }, "Seat " + i + (s ? " · joined " + when(s.at) : ""))),
+        el("div", { class: "m-actions" },
+          v ? el("span", { class: "badge " + (v.ok ? "ok" : "bad") }, v.ok ? "Address checked" : "Rejected address") : el("span", { class: "badge" }, s ? STAGE_LABEL[seatStage(i)] : "Waiting"),
+          mine && sec(state.gid, i).keyPackage ? el("button", { class: "btn sm", type: "button", onclick: act(() => backup(i)) }, "Back up key") : null,
+          !s ? el("button", { class: "btn sm primary", type: "button", disabled: !Z || canWrite === false, onclick: act(() => takeSeat(i)) }, "Take seat") : null));
+    })));
+}
+
+// ── Details ──
+function detailsTab() {
+  const w = state.wallet, rejected = rejectedSeats();
+  return el("div", { class: "page", style: "gap:16px" },
+    el("section", { class: "card card-pad" },
+      el("h2", { style: "font-size:15px" }, "Wallet"),
+      el("dl", { class: "kv" },
+        el("dt", {}, "Address"), el("dd", {}, el("div", { class: "addr-full" }, w.address), el("div", { style: "margin-top:8px" }, copyBtn(w.address, "Copy address"))),
+        el("dt", {}, "Approval rule"), el("dd", {}, "Any " + state.g.t + " of " + state.g.n + " members"),
+        el("dt", {}, "Checked by"), el("dd", {}, rejected.length ? el("span", { class: "badge bad" }, "Seat " + rejected.join(", ") + " rejected this wallet") : el("span", { class: "badge " + (verifiedCount() === state.g.n ? "ok" : "") }, verifiedCount() + " of " + state.g.n + " members")),
+        el("dt", {}, "Network"), el("dd", {}, "Zcash testnet"),
+        el("dt", {}, "Created at block"), el("dd", { class: "mono" }, (w.birthday || 0).toLocaleString()),
+        el("dt", {}, "Group key"), el("dd", { class: "hex" }, w.group_verifying_key))),
+    el("section", { class: "card card-pad" },
+      el("h2", { style: "font-size:15px" }, "Privacy and keys"),
+      el("p", { class: "small muted" }, "Your piece of the key is created and used in this browser only. The group server stores encrypted data it cannot read. This page downloads blocks from " + new URL(LIGHTWALLETD).host + ", which sees your IP address but never a key. The wallet syncs again on every load."),
+      el("details", {}, el("summary", {}, "Viewing key"), el("div", { class: "addr-full", style: "margin-top:10px" }, w.ufvk), el("div", { style: "margin-top:8px" }, copyBtn(w.ufvk, "Copy viewing key"))),
+      el("p", { class: "small faint" }, "The viewing key shows every payment of this wallet. Share it only with people who may see your balance."),
+      state.log.length ? el("details", {}, el("summary", {}, "Activity in this browser"), el("div", { class: "log" }, state.log.join("\n"))) : null));
+}
+
+// ── Send ──
+function sendDialog() {
+  const c = curChain(), spendable = c && c.bal ? c.bal.spendable : 0;
+  const f = el("form", { class: "dialog", role: "dialog", "aria-modal": "true", "aria-labelledby": "send-title", onsubmit: act(async (ev) => {
     const fd = new FormData(ev.target);
     const amt = Math.round(Number(fd.get("amount")) * 1e8);
-    const spendable = chain && chain.bal ? chain.bal.spendable : 0;
     if (!(amt > 0)) throw new Error("Enter an amount greater than zero.");
-    if (amt + 10000 > spendable) throw new Error("Not enough funds: " + fmtZec(spendable) + " spendable, " + fmtZec(amt + 10000) + " needed (amount + fee).");
+    if (amt + FEE_ESTIMATE > spendable) throw new Error("Not enough funds: " + fmtZec(spendable) + " available, " + fmtZec(amt + FEE_ESTIMATE) + " needed (amount + fee).");
     await newSpend(String(fd.get("recipient")).trim(), amt);
+    ui.send = false;
   }) },
-    el("label", {}, "Recipient address", el("input", { id: "s-to", name: "recipient", type: "text", placeholder: "utest1…", required: true, autocomplete: "off", spellcheck: false })),
-    el("label", {}, "Amount (ZEC)", el("input", { id: "s-amt", name: "amount", type: "number", step: "0.0001", min: "0.0001", value: "0.001" })),
-    el("button", { class: "primary", type: "submit", disabled: !w || !myVerified || !Z || !chain || !chain.bal }, "Propose spend"));
-  return el("section", { class: "panel" },
-    el("div", { class: "panel-head" }, el("h2", {}, el("span", { class: "stage-no" }, "3"), "Spends"), el("span", { class: "muted small" }, "Re-randomized FROST · PCZT")),
-    !w ? el("div", { class: "empty" }, "Spends open after the wallet exists.") : el("div", { style: "display:grid;gap:16px" },
-      el("p", { class: "muted small" }, "Pay from the synced testnet balance to a testnet unified address. Any " + state.g.t + " participants approve, their browsers co-sign, and anyone can broadcast the finished transaction."),
-      f,
-      state.sessions.length ? el("div", { class: "sessions" }, state.sessions.map((s) => el("button", { class: "session-link", type: "button", "aria-current": s.id === state.sid ? "true" : "false", onclick: () => s.id === state.sid ? (closeSession(), render()) : openSession(s.id) },
-        el("span", {}, fmtZec(s.amount)),
-        el("span", { class: "row" }, statusChip(s), el("span", { class: "small muted" }, new Date(s.createdAt).toLocaleString()))))) : null,
-      curSession() ? sessionDetail(curSession()) : null));
+    el("div", { class: "card-head" }, el("h2", { id: "send-title" }, "Send ZEC"), el("button", { class: "icon-btn", type: "button", "aria-label": "Close", onclick: () => { ui.send = false; render(); } }, "×")),
+    el("label", { class: "field" }, el("span", {}, "To"), el("input", { class: "input mono", id: "s-to", name: "recipient", type: "text", placeholder: "utest1…", required: true, autocomplete: "off", spellcheck: "false" })),
+    el("label", { class: "field" }, el("span", {}, "Amount"),
+      el("div", { class: "input-wrap" },
+        el("input", { class: "input", id: "s-amt", name: "amount", type: "number", step: "0.0001", min: "0.0001", placeholder: "0.00", required: true }),
+        el("button", { class: "btn sm", type: "button", onclick: () => { const i = document.getElementById("s-amt"); i.value = Math.max(0, (spendable - FEE_ESTIMATE) / 1e8).toFixed(8).replace(/0+$/, "").replace(/\.$/, ""); } }, "Max"))),
+    el("div", { class: "summary" },
+      el("div", {}, el("span", { class: "muted" }, "Available"), money(spendable)),
+      el("div", {}, el("span", { class: "muted" }, "Network fee (estimate)"), money(FEE_ESTIMATE)),
+      el("div", {}, el("span", { class: "muted" }, "Approvals needed"), el("span", {}, state.g.t + " of " + state.g.n))),
+    el("div", { class: "callout" }, "This creates a proposal. Nothing is sent until " + state.g.t + " members approve it on their own devices."),
+    el("div", { class: "dialog-actions" },
+      el("button", { class: "btn", type: "button", onclick: () => { ui.send = false; render(); } }, "Cancel"),
+      el("button", { class: "btn primary", type: "submit", disabled: !myVerified() || !Z || !c || !c.bal }, "Propose payment")));
+  return f;
 }
 
-function statusChip(s) {
-  const m = { collecting: ["Collecting approvals", ""], signing: ["Signing", "gold"], signed: ["Signed", "ok"], proving: ["Proving", "gold"], complete: ["Valid transaction", "ok"], broadcast: ["Broadcast", "ok"], failed: ["Failed", "bad"] };
-  const [t, c] = m[s.status] || [s.status, ""];
-  return el("span", { class: "chip " + c }, t);
-}
-
+// ── Payment drawer ──
 // A prover that closed its tab leaves status "proving"; let someone else take over.
 const proofStalled = (ss) => Date.now() - (ss.provingAt || 0) > 180000;
+const lineRank = (l) => l.kind === "spend" ? 0 : l.who === "external recipient" ? 1 : 2;
 
-function sessionDetail(ss) {
+function sessionDrawer(ss) {
   const g = state.g;
   let ins = inspectCache.get(ss.id);
   if (!ins && Z) { try { ins = J(Z.inspect(ss.pczt, state.wallet.orchard_fvk)); } catch (e) { ins = { error: e.message || String(e) }; } inspectCache.set(ss.id, ins); }
   const approvals = Object.keys(state.commits).map(Number).sort((a, b) => a - b);
   const myPending = localSeats().filter((i) => sec(state.gid, i).keyPackage && !state.commits[i] && !ss.package);
-  const nameOf = (i) => { const s = state.seats[i]; if (!s) return "Seat " + i; if (s.uid === me) return "You (seat " + i + ")"; return (s.name || "Seat " + i) + " (seat " + i + ")"; };
-  const sigs = ss.signatures || [];
-  return el("div", { class: "panel", style: "background:var(--bg)" },
-    el("div", { class: "panel-head" }, el("h3", {}, "Spend proposed by " + (ss.createdBy === me ? "you" : seatNameOf(ss.createdBy))), statusChip(ss)),
-    ins && ins.error ? el("div", { class: "notice bad" }, "Your browser refuses this transaction: " + ins.error) : null,
-    ins && !ins.error ? el("div", { class: "scroll" }, el("table", { class: "tx" },
-      el("thead", {}, el("tr", {}, el("th", {}, "Action"), el("th", {}, "What"), el("th", { style: "text-align:right" }, "Amount"))),
-      el("tbody", {}, ins.lines.map((l) => el("tr", {}, el("td", { class: "mono" }, "#" + l.action), el("td", {}, l.kind === "spend" ? "Spend a note of this wallet" : "Pay " + l.who), el("td", { class: "num" }, (l.kind === "spend" ? "−" : "") + fmtZec(l.value || 0)))),
-        el("tr", {}, el("td", {}), el("td", { class: "muted" }, "Fee (ZIP 317)"), el("td", { class: "num" }, fmtZec(ss.fee)))))) : null,
-    ins && !ins.error ? el("p", { class: "small muted" }, "Your browser decoded this from the transaction itself. Sighash ", el("span", { class: "hex" }, short(ins.sighash, 16)), " · ", ins.tx_version) : null,
-    el("div", { class: "steps" },
-      stepRow(approvals.length >= g.t ? "done" : "now", "Approvals " + approvals.length + " of " + g.t, el("div", { style: "display:grid;gap:8px" },
-        el("p", { class: "muted small" }, approvals.length ? "Approved: " + approvals.map(nameOf).join(", ") : "Each approval publishes a fresh nonce commitment. The nonces stay in the approver's browser."),
-        myPending.length && !(ins && ins.error) ? el("div", { class: "row" }, myPending.map((i) => el("button", { class: "primary", type: "button", onclick: act(() => approve(ss, i)) }, localSeats().length > 1 ? "Approve as seat " + i : "Approve this spend"))) : null)),
-      stepRow(ss.signed ? "done" : ss.package ? "now" : "", "Threshold signature", el("div", { style: "display:grid;gap:4px" },
-        el("p", { class: "muted small" }, ss.package ? "Signers " + (ss.signers || []).join(", ") + ". Each one checks the package against the transaction, then signs. Shares: " + (ss.signers || []).filter((i) => state.shares[i]).length + " of " + (ss.signers || []).length + "." : "Starts when " + g.t + " people approve."),
-        sigs.map((s) => el("div", { class: "small", style: "display:grid;gap:2px" }, el("span", { class: "formula" }, "rk = ak + [α]·G"), el("span", { class: "hex muted" }, "rk " + short(s.rk, 20) + " · sig " + short(s.signature, 20)))),
-        ss.error ? el("div", { class: "notice bad" }, ss.error) : null)),
-      stepRow(ss.final ? "done" : ss.status === "proving" ? "now" : "", "Proof and final transaction", el("div", { style: "display:grid;gap:8px" },
-        ss.final ? el("dl", { class: "kv" }, el("dt", {}, "Transaction id"), el("dd", { class: "hex" }, ss.final.txid), el("dt", {}, "Size"), el("dd", {}, ss.final.size.toLocaleString() + " bytes, " + ss.final.version), el("dt", {}, "Checked"), el("dd", { class: "small" }, "Halo2 proof, spend authorization signature, binding signature")) :
-        ss.status === "proving" ? el("p", { class: "muted small" }, "One browser is building the Halo2 proof. This takes about a minute.") :
-        el("p", { class: "muted small" }, "When the signature is done, anyone can make the zero-knowledge proof and check the whole transaction."),
-        ss.signed && !ss.final && (ss.status !== "proving" || proofStalled(ss)) ? el("div", {}, el("button", { class: "primary", type: "button", onclick: act(() => finalizeTx(ss)) }, "Build proof and finish")) : null,
-        ss.final ? el("details", {}, el("summary", {}, "Raw transaction (hex)"), el("div", { class: "addr", style: "margin-top:8px;max-height:160px;overflow:auto" }, ss.final.tx_hex), copyBtn(ss.final.tx_hex, "Copy hex")) : null)),
-      ss.final ? stepRow(ss.broadcastTxid ? "done" : ss.broadcastError ? "bad" : "now", "Broadcast to testnet", el("div", { style: "display:grid;gap:8px" },
-        ss.broadcastTxid ? el("p", { class: "small" }, "Sent " + new Date(ss.broadcastAt).toLocaleString() + ". ", el("a", { href: EXPLORER_TX + ss.broadcastTxid, target: "_blank", rel: "noopener" }, short(ss.broadcastTxid, 16))) :
-        el("p", { class: "muted small" }, "Any participant can send the finished transaction to the network."),
-        ss.broadcastError && !ss.broadcastTxid ? el("div", { class: "notice bad" }, ss.broadcastError) : null,
-        !ss.broadcastTxid ? el("div", {}, el("button", { class: "primary", type: "button", disabled: !chain || chain.gid !== state.gid, onclick: act(() => broadcastTx(ss)) }, ss.broadcastError ? "Broadcast again" : "Broadcast")) : null)) : null));
+  const signers = ss.signers || [], shared = signers.filter((i) => state.shares[i]).length;
+  const refused = ins && ins.error;
+  const tl = (cls, title, body) => el("div", { class: "step " + cls }, el("span", { class: "tick" }, cls === "done" ? "✓" : cls === "bad" ? "!" : "•"), el("div", { style: "display:grid;gap:6px;min-width:0" }, el("h3", {}, title), body));
+  const canProve = ss.signed && !ss.final && (ss.status !== "proving" || proofStalled(ss));
+  return el("aside", { class: "drawer", role: "dialog", "aria-modal": "true", "aria-label": "Payment details" },
+    el("div", { class: "drawer-head" }, el("div", { style: "display:flex;align-items:center;gap:10px" }, el("h2", { style: "font-size:15px" }, "Payment"), statusChip(ss)),
+      el("button", { class: "icon-btn", type: "button", "aria-label": "Close", onclick: () => { closeSession(); render(); } }, "×")),
+    el("div", { class: "drawer-body" },
+      el("div", { style: "display:grid;gap:6px" }, money(ss.amount, "lg"),
+        el("span", { class: "small muted" }, "Proposed by " + (ss.createdBy === me ? "you" : seatNameOf(ss.createdBy)) + " · " + when(ss.createdAt))),
+      refused ? el("div", { class: "callout bad" }, "Your browser refuses this payment: " + ins.error) : null,
+      ins && !refused ? el("div", { style: "display:grid;gap:8px" },
+        el("span", { class: "label" }, "What this payment does"),
+        el("div", { class: "lines" },
+          [...ins.lines].sort((a, b) => lineRank(a) - lineRank(b)).map((l) => el("div", {}, el("span", { class: l.kind === "spend" ? "neg" : "" }, l.kind === "spend" ? "Uses funds from this wallet" : l.who === "external recipient" ? "Pays the recipient" : "Change back to this wallet"),
+            el("span", { class: "mono" + (l.kind === "spend" ? " neg" : "") }, (l.kind === "spend" ? "−" : "") + ((l.value || 0) / 1e8).toFixed(8)))),
+          el("div", {}, el("span", { class: "muted" }, "Network fee"), el("span", { class: "mono muted" }, ((ss.fee || 0) / 1e8).toFixed(8)))),
+        el("p", { class: "small faint" }, "Your browser decoded this from the transaction itself, not from the proposer's description.")) : null,
+      el("div", { class: "steps" },
+        tl("done", "Proposed", el("p", {}, when(ss.createdAt))),
+        tl(approvals.length >= g.t ? "done" : refused ? "bad" : "now", "Approvals · " + Math.min(approvals.length, g.t) + " of " + g.t,
+          el("div", { style: "display:grid;gap:10px" },
+            el("div", { style: "display:flex;align-items:center;gap:10px;flex-wrap:wrap" }, seatIds().map((i) => el("span", { style: "display:inline-flex;align-items:center;gap:6px;opacity:" + (state.commits[i] ? 1 : 0.45) }, avatar(i), el("span", { class: "small" }, seatLabel(i) + (state.commits[i] ? " ✓" : ""))))),
+            myPending.length && !refused ? el("div", { style: "display:flex;gap:8px;flex-wrap:wrap" }, myPending.map((i) => el("button", { class: "btn primary", type: "button", onclick: act(() => approve(ss, i)) }, localSeats().length > 1 ? "Approve as seat " + i : "Approve payment"))) : null)),
+        tl(ss.error ? "bad" : ss.signed ? "done" : ss.package ? "now" : "", "Group signature",
+          el("p", {}, ss.error ? ss.error : ss.signed ? "All signatures combined and verified." : ss.package ? "Signing · " + shared + " of " + signers.length + " shares" : "Starts after " + g.t + " approvals.")),
+        tl(ss.final ? "done" : ss.status === "proving" ? "now" : "", "Proof",
+          el("div", { style: "display:grid;gap:8px" },
+            el("p", {}, ss.final ? "Proof built and the whole transaction checked." : ss.status === "proving" && !proofStalled(ss) ? "A member's browser is building the proof. This takes about a minute." : "Any member can build the zero-knowledge proof once the payment is signed."),
+            canProve ? el("div", {}, el("button", { class: "btn primary", type: "button", onclick: act(() => finalizeTx(ss)) }, "Build proof")) : null)),
+        tl(ss.broadcastTxid ? "done" : ss.broadcastError ? "bad" : ss.final ? "now" : "", "Sent to the network",
+          el("div", { style: "display:grid;gap:8px" },
+            ss.broadcastTxid ? el("p", {}, when(ss.broadcastAt) + " · ", el("a", { href: EXPLORER_TX + ss.broadcastTxid, target: "_blank", rel: "noopener" }, "View in explorer ↗"))
+              : el("p", {}, ss.final ? "Any member can send the finished transaction." : "Available after the proof."),
+            ss.broadcastError && !ss.broadcastTxid ? el("div", { class: "callout bad" }, ss.broadcastError) : null,
+            ss.final && !ss.broadcastTxid ? el("div", {}, el("button", { class: "btn primary", type: "button", disabled: !curChain(), onclick: act(() => broadcastTx(ss)) }, ss.broadcastError ? "Send again" : "Send to network")) : null))),
+      ss.final ? el("div", { style: "display:grid;gap:10px" },
+        el("span", { class: "label" }, "Transaction"),
+        el("dl", { class: "kv", style: "grid-template-columns:110px minmax(0,1fr)" },
+          el("dt", {}, "ID"), el("dd", { class: "hex" }, ss.final.txid),
+          el("dt", {}, "Size"), el("dd", {}, ss.final.size.toLocaleString() + " bytes")),
+        el("details", {}, el("summary", {}, "Raw transaction"), el("div", { class: "log" }, ss.final.tx_hex), el("div", { style: "margin-top:8px" }, copyBtn(ss.final.tx_hex, "Copy hex")))) : null,
+      ins && !refused ? el("p", { class: "small faint" }, "Signed message " + short(ins.sighash, 12) + " · " + ins.tx_version) : null));
 }
+
+document.getElementById("banner").addEventListener("click", (ev) => { ev.currentTarget.hidden = true; });
+document.addEventListener("keydown", (ev) => {
+  if (ev.key !== "Escape") return;
+  if (state.sid) closeSession(); else { ui.send = false; ui.create = false; }
+  render();
+});
 
 adoptInviteKey();
 loadEngine().then(boot);
