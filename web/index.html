@@ -163,7 +163,7 @@ footer { font-size: 13px; color: var(--muted); display: grid; gap: 8px; border-t
 
   <footer>
     <p><strong>Prototype.</strong> All key material is made and used in your browser by the Rust code compiled to WebAssembly (FROST over RedPallas, ZIP 312, PCZT). Only public data and encrypted DKG messages go to the shared store. Your key share stays in this browser; use “Back up” to keep a copy.</p>
-    <p>Spends use a fabricated incoming note on a local regtest chain, because this page has no connection to a Zcash node. The proof, signatures and transaction are real, but the anchor is not on any public chain. Do not send real funds to these addresses.</p>
+    <p>This page works on Zcash testnet only. It reads blocks through a public lightwalletd proxy, which sees your IP address and the block ranges you ask for, but never a key. The page keeps its view of the wallet in memory and syncs again on every load. Do not send real funds to these addresses.</p>
   </footer>
 </div>
 
@@ -220,6 +220,9 @@ function putSec(gid, seat, patch) { secrets[skey(gid, seat)] = Object.assign(sec
 // ───────────────────────── Platform ─────────────────────────
 let db = null, user = null, downloads = null, me = null, canWrite = null, dbReady = false;
 let profiles = {};
+const LIGHTWALLETD = "https://zcash-testnet.chainsafe.dev";
+const EXPLORER_TX = "https://testnet.zcashexplorer.app/transactions/";
+let chain = null;   // { gid, cw, prog, bal, ms, error, syncing } for the open group
 const state = { groups: [], gid: null, g: null, seats: {}, dkg1: {}, dkg2: {}, done: {}, verify: {}, wallet: null, sessions: [], sid: null, commits: {}, shares: {}, log: [] };
 let unsubGroup = [], unsubSession = [];
 const busy = new Set();
@@ -256,6 +259,7 @@ function sub(path, fn) {
 function openGroup(gid) {
   for (const u of unsubGroup) u(); unsubGroup = [];
   closeSession();
+  dropChain();
   Object.assign(state, { gid, g: null, seats: {}, dkg1: {}, dkg2: {}, done: {}, verify: {}, wallet: null, sessions: [], log: [] });
   if (!gid) { try { history.replaceState(null, "", "#"); } catch {} render(); return; }
   try { history.replaceState(null, "", "#" + gid); } catch {}
@@ -365,13 +369,15 @@ function react() {
       });
     }
   }
+  if (state.wallet && state.wallet.birthday && localSeats().some((i) => state.verify[i] && state.verify[i].ok)) ensureChain();
   // Group creator builds the shared wallet once all group keys agree.
   if (isCreator() && !state.wallet && keysAgree()) {
     once("wallet", async () => {
       // The wallet snapshot can arrive after the DKG ones; never replace a published wallet.
       if ((await db.doc(base + "/meta/wallet").get()).exists) return;
+      const birthday = await Z.latestHeight(LIGHTWALLETD);
       const w = J(Z.walletCreate(state.done[1].publicKeyPackage, g.network || "testnet"));
-      await db.doc(base + "/meta/wallet").set({ ...w, at: Date.now() });
+      await db.doc(base + "/meta/wallet").set({ ...w, birthday, at: Date.now() });
       log("wallet created: " + w.address.slice(0, 24) + "…");
     });
   }
@@ -440,12 +446,42 @@ async function takeSeat(i) {
   log("you took seat " + i);
 }
 
-async function newSpend(amountZat, noteZat, pool) {
-  const t = J(Z.txDemoCreate(state.wallet.orchard_fvk, amountZat, noteZat, pool));
+function dropChain() { const c = chain; chain = null; if (c && !c.syncing) c.cw.free(); }
+
+function ensureChain() {
+  if (!Z || (chain && chain.gid === state.gid)) return;
+  chain = { gid: state.gid, cw: new Z.ChainWallet(state.wallet.ufvk, state.wallet.birthday, LIGHTWALLETD), prog: null, bal: null, ms: 0, error: null, syncing: false };
+  runSync(chain);
+}
+
+async function runSync(c) {
+  if (c.syncing) return;
+  c.syncing = true; c.error = null; render();
+  const t0 = performance.now();
+  try { c.bal = J(await c.cw.sync((p) => { c.prog = J(p); render(); })); c.prog = null; c.ms = Math.round(performance.now() - t0); log("synced to " + c.bal.height + ", spendable " + fmtZec(c.bal.spendable)); }
+  catch (e) { c.error = e.message || String(e); log("sync failed: " + c.error); }
+  finally { c.syncing = false; if (chain !== c) c.cw.free(); render(); }
+}
+
+async function newSpend(recipient, amountZat) {
+  if (!chain || chain.gid !== state.gid || !chain.bal) throw new Error("The wallet has not finished its first sync.");
+  const t = J(await chain.cw.createSpend(recipient, amountZat));
   const ref = db.collection("groups/" + state.gid + "/sessions").doc();
-  await ref.set({ createdBy: me, createdAt: Date.now(), pool, amount: t.amount, change: t.change, fee: t.fee, noteValue: t.note_value, pczt: t.pczt, status: "collecting" });
-  log("new spend: " + fmtZec(t.amount) + " (" + pool + ")");
+  await ref.set({ createdBy: me, createdAt: Date.now(), pool: t.pool, amount: t.amount, change: t.change, fee: t.fee, noteValue: t.note_value, pczt: t.pczt, status: "collecting" });
+  log("new spend: " + fmtZec(t.amount));
   openSession(ref.id);
+}
+
+async function broadcastTx(ss) {
+  const ref = db.doc("groups/" + state.gid + "/sessions/" + ss.id);
+  try {
+    const r = J(await chain.cw.broadcast(ss.final.tx_hex));
+    await ref.update({ broadcastTxid: r.txid || ss.final.txid, broadcastAt: Date.now(), broadcastError: null, status: "broadcast" });
+    log("transaction broadcast: " + (r.txid || ss.final.txid));
+    runSync(chain);
+  } catch (e) {
+    await ref.update({ broadcastError: e.message || String(e) });
+  }
 }
 
 async function approve(ss, i) {
@@ -621,36 +657,53 @@ function walletPanel() {
       el("dl", { class: "kv" },
         el("dt", {}, "Spend key ak"), el("dd", { class: "hex" }, w.group_verifying_key),
         el("dt", {}, "Checked by"), el("dd", {}, rejected.length ? el("span", { class: "chip bad" }, "Seat " + rejected.join(", ") + " rejected this wallet") : el("span", { class: ver === n ? "chip ok" : "chip" }, ver + " of " + n + " participants"))),
+      chainBlock(w),
       el("p", { class: "muted small" }, "ak is the FROST group key. Each browser checks it against its own ceremony result before it trusts this address. nk and rivk only give viewing rights, so the whole group shares them."),
       el("details", {}, el("summary", {}, "Viewing key (UFVK)"), el("div", { class: "addr", style: "margin-top:8px" }, w.ufvk), copyBtn(w.ufvk, "Copy viewing key"))));
+}
+
+function chainBlock(w) {
+  if (!w.birthday) return el("div", { class: "notice bad" }, "This wallet was made before testnet support. Create a new group.");
+  const c = chain && chain.gid === state.gid ? chain : null;
+  if (!c) return el("p", { class: "muted small" }, "Testnet sync starts once one of your seats has verified this wallet.");
+  const p = c.prog || c.bal, b = c.bal;
+  return el("div", { style: "display:grid;gap:8px" },
+    el("dl", { class: "kv" },
+      el("dt", {}, "Birthday block"), el("dd", {}, w.birthday.toLocaleString()),
+      el("dt", {}, "Synced"), el("dd", {}, p ? p.height.toLocaleString() + " of " + p.tip.toLocaleString() + (c.syncing ? " · syncing…" : "") : c.syncing ? "Starting…" : "Not synced"),
+      el("dt", {}, "Spendable"), el("dd", {}, b ? fmtZec(b.spendable) : "…"),
+      el("dt", {}, "Pending"), el("dd", {}, b ? fmtZec(b.pending) : "…")),
+    c.error ? el("div", { class: "notice bad" }, c.error) : null,
+    el("div", {}, el("button", { class: "ghost", type: "button", disabled: c.syncing, onclick: act(() => runSync(c)) }, c.syncing ? "Syncing…" : "Sync")));
 }
 
 function spendsPanel() {
   const w = state.wallet;
   const myVerified = localSeats().some((i) => state.verify[i] && state.verify[i].ok);
-  const f = el("form", { class: "inline", onsubmit: act(async (ev) => {
+  const f = !w || !w.birthday ? null : el("form", { class: "inline", onsubmit: act(async (ev) => {
     const fd = new FormData(ev.target);
-    const amt = Math.round(Number(fd.get("amount")) * 1e8), note = Math.round(Number(fd.get("note")) * 1e8);
-    if (!(amt > 0) || note < amt + 10000) throw new Error("The incoming note must cover the amount plus the 0.0001 ZEC fee.");
-    await newSpend(amt, note, String(fd.get("pool")));
+    const amt = Math.round(Number(fd.get("amount")) * 1e8);
+    const spendable = chain && chain.bal ? chain.bal.spendable : 0;
+    if (!(amt > 0)) throw new Error("Enter an amount greater than zero.");
+    if (amt + 10000 > spendable) throw new Error("Not enough funds: " + fmtZec(spendable) + " spendable, " + fmtZec(amt + 10000) + " needed (amount + fee).");
+    await newSpend(String(fd.get("recipient")).trim(), amt);
   }) },
-    el("label", {}, "Incoming note (ZEC)", el("input", { id: "s-note", name: "note", type: "number", step: "0.0001", min: "0.0002", value: "0.01" })),
-    el("label", {}, "Send (ZEC)", el("input", { id: "s-amt", name: "amount", type: "number", step: "0.0001", min: "0.0001", value: "0.001" })),
-    el("label", {}, "Pool", el("select", { id: "s-pool", name: "pool" }, el("option", { value: "ironwood" }, "Ironwood (v6)"), el("option", { value: "orchard" }, "Orchard (v5, legacy)"))),
-    el("button", { class: "primary", type: "submit", disabled: !w || !myVerified || !Z }, "Propose spend"));
+    el("label", {}, "Recipient address", el("input", { id: "s-to", name: "recipient", type: "text", placeholder: "utest1…", required: true, autocomplete: "off", spellcheck: false })),
+    el("label", {}, "Amount (ZEC)", el("input", { id: "s-amt", name: "amount", type: "number", step: "0.0001", min: "0.0001", value: "0.001" })),
+    el("button", { class: "primary", type: "submit", disabled: !w || !myVerified || !Z || !chain || !chain.bal }, "Propose spend"));
   return el("section", { class: "panel" },
     el("div", { class: "panel-head" }, el("h2", {}, el("span", { class: "stage-no" }, "3"), "Spends"), el("span", { class: "muted small" }, "Re-randomized FROST · PCZT")),
     !w ? el("div", { class: "empty" }, "Spends open after the wallet exists.") : el("div", { style: "display:grid;gap:16px" },
-      el("p", { class: "muted small" }, "The wallet first receives a demo note. Then you propose to pay part of it to an outside address. Any " + state.g.t + " participants approve, and their browsers co-sign."),
+      el("p", { class: "muted small" }, "Pay from the synced testnet balance to a testnet unified address. Any " + state.g.t + " participants approve, their browsers co-sign, and anyone can broadcast the finished transaction."),
       f,
       state.sessions.length ? el("div", { class: "sessions" }, state.sessions.map((s) => el("button", { class: "session-link", type: "button", "aria-current": s.id === state.sid ? "true" : "false", onclick: () => s.id === state.sid ? (closeSession(), render()) : openSession(s.id) },
-        el("span", {}, fmtZec(s.amount) + " · " + (s.pool === "ironwood" ? "Ironwood" : "Orchard")),
+        el("span", {}, fmtZec(s.amount)),
         el("span", { class: "row" }, statusChip(s), el("span", { class: "small muted" }, new Date(s.createdAt).toLocaleString()))))) : null,
       curSession() ? sessionDetail(curSession()) : null));
 }
 
 function statusChip(s) {
-  const m = { collecting: ["Collecting approvals", ""], signing: ["Signing", "gold"], signed: ["Signed", "ok"], proving: ["Proving", "gold"], complete: ["Valid transaction", "ok"], failed: ["Failed", "bad"] };
+  const m = { collecting: ["Collecting approvals", ""], signing: ["Signing", "gold"], signed: ["Signed", "ok"], proving: ["Proving", "gold"], complete: ["Valid transaction", "ok"], broadcast: ["Broadcast", "ok"], failed: ["Failed", "bad"] };
   const [t, c] = m[s.status] || [s.status, ""];
   return el("span", { class: "chip " + c }, t);
 }
@@ -687,7 +740,12 @@ function sessionDetail(ss) {
         ss.status === "proving" ? el("p", { class: "muted small" }, "One browser is building the Halo2 proof. This takes about a minute.") :
         el("p", { class: "muted small" }, "When the signature is done, anyone can make the zero-knowledge proof and check the whole transaction."),
         ss.signed && !ss.final && (ss.status !== "proving" || proofStalled(ss)) ? el("div", {}, el("button", { class: "primary", type: "button", onclick: act(() => finalizeTx(ss)) }, "Build proof and finish")) : null,
-        ss.final ? el("details", {}, el("summary", {}, "Raw transaction (hex)"), el("div", { class: "addr", style: "margin-top:8px;max-height:160px;overflow:auto" }, ss.final.tx_hex), copyBtn(ss.final.tx_hex, "Copy hex")) : null))));
+        ss.final ? el("details", {}, el("summary", {}, "Raw transaction (hex)"), el("div", { class: "addr", style: "margin-top:8px;max-height:160px;overflow:auto" }, ss.final.tx_hex), copyBtn(ss.final.tx_hex, "Copy hex")) : null)),
+      ss.final ? stepRow(ss.broadcastTxid ? "done" : ss.broadcastError ? "bad" : "now", "Broadcast to testnet", el("div", { style: "display:grid;gap:8px" },
+        ss.broadcastTxid ? el("p", { class: "small" }, "Sent " + new Date(ss.broadcastAt).toLocaleString() + ". ", el("a", { href: EXPLORER_TX + ss.broadcastTxid, target: "_blank", rel: "noopener" }, short(ss.broadcastTxid, 16))) :
+        el("p", { class: "muted small" }, "Any participant can send the finished transaction to the network."),
+        ss.broadcastError && !ss.broadcastTxid ? el("div", { class: "notice bad" }, ss.broadcastError) : null,
+        !ss.broadcastTxid ? el("div", {}, el("button", { class: "primary", type: "button", disabled: !chain || chain.gid !== state.gid, onclick: act(() => broadcastTx(ss)) }, ss.broadcastError ? "Broadcast again" : "Broadcast")) : null)) : null));
 }
 
 loadEngine();

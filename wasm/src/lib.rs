@@ -12,11 +12,9 @@ use std::collections::BTreeMap;
 use base64::{engine::general_purpose::STANDARD as B64, Engine};
 use chacha20poly1305::{aead::Aead, ChaCha20Poly1305, KeyInit, Nonce};
 use group::ff::PrimeField;
-use incrementalmerkletree::Retention;
 use orchard::{
     keys::{FullViewingKey, Scope, SpendValidatingKey, SpendingKey},
     primitives::redpallas::{self, SpendAuth},
-    tree::MerkleHashOrchard,
 };
 use pczt::{
     roles::{
@@ -42,10 +40,10 @@ use reddsa::frost::redpallas::{
 };
 use serde::{de::DeserializeOwned, Deserialize, Serialize};
 use serde_json::{json, Value};
-use shardtree::{store::memory::MemoryShardStore, ShardTree};
 use wasm_bindgen::prelude::*;
+
+mod chain;
 use zcash_keys::{address::UnifiedAddress, keys::UnifiedFullViewingKey};
-use zcash_note_encryption::try_note_decryption;
 use zcash_primitives::transaction::{
     builder::{BuildConfig, Builder, BundlePadding, PcztResult},
     fees::zip317,
@@ -56,9 +54,8 @@ use zcash_primitives::transaction::{
     TxVersion,
 };
 use zcash_protocol::{
-    consensus::{BlockHeight, Network},
-    local_consensus::LocalNetwork,
-    memo::{Memo, MemoBytes},
+    consensus::{BlockHeight, Network, Parameters},
+    memo::MemoBytes,
     value::Zatoshis,
 };
 
@@ -184,7 +181,7 @@ fn random_sk() -> SpendingKey {
 
 fn address_of(fvk: &FullViewingKey, net: Network) -> R<String> {
     let a = fvk.address_at(0u32, Scope::External);
-    Ok(UnifiedAddress::from_receivers(Some(a), None, None, None)
+    Ok(UnifiedAddress::from_receivers(Some(a), None, None, None, None)
         .ok_or("cannot build unified address")?
         .encode(&net))
 }
@@ -239,22 +236,6 @@ pub fn wallet_verify(wallet: &str, my_public_key_package: &str) -> R<String> {
 
 // ───────────────────────── Transactions ─────────────────────────
 
-fn regtest(nu6_3: bool) -> LocalNetwork {
-    LocalNetwork {
-        overwinter: Some(BlockHeight::from_u32(1)),
-        sapling: Some(BlockHeight::from_u32(2)),
-        blossom: Some(BlockHeight::from_u32(3)),
-        heartwood: Some(BlockHeight::from_u32(4)),
-        canopy: Some(BlockHeight::from_u32(5)),
-        nu5: Some(BlockHeight::from_u32(6)),
-        nu6: Some(BlockHeight::from_u32(7)),
-        nu6_1: Some(BlockHeight::from_u32(8)),
-        nu6_2: Some(BlockHeight::from_u32(9)),
-        nu6_3: nu6_3.then(|| BlockHeight::from_u32(10)),
-        nu7: None,
-    }
-}
-
 fn pczt_from_b64(s: &str) -> R<Pczt> {
     let bytes = B64.decode(s).map_err(e("pczt base64"))?;
     Pczt::parse(&bytes).map_err(e("pczt parse"))
@@ -264,116 +245,46 @@ fn pczt_to_b64(p: Pczt) -> R<String> {
     Ok(B64.encode(p.serialize().map_err(e("pczt serialize"))?))
 }
 
-/// Demo only: fabricate an incoming note (no chain access), then build an
-/// unsigned, *unproven* PCZT that spends it. Proving happens after signing,
-/// in `finalize`, because the spend authorization signatures do not commit
-/// to the proof.
-pub fn tx_demo_create(fvk_hex: &str, amount: u64, note_value: u64, pool: &str) -> R<String> {
-    let fvk = parse_fvk(fvk_hex)?;
-    let ironwood = match pool {
-        "ironwood" => true,
-        "orchard" => false,
-        _ => return Err("pool must be ironwood or orchard".into()),
-    };
-    let version = if ironwood {
-        orchard::bundle::BundleVersion::ironwood_v3()
-    } else {
-        orchard::bundle::BundleVersion::orchard_v2()
-    };
-    // 1. Someone pays the wallet; the wallet finds the note with its IVK.
-    let note = {
-        let mut b = orchard::builder::Builder::new(
-            orchard::builder::BundleType::DEFAULT,
-            version,
-            version.default_flags(),
-            orchard::Anchor::empty_tree(),
-        )
-        .map_err(e("builder"))?;
-        b.add_output(
-            None,
-            fvk.address_at(0u32, Scope::External),
-            orchard::value::NoteValue::from_raw(note_value),
-            Memo::Empty.encode().into_bytes(),
-        )
-        .map_err(e("output"))?;
-        let (bundle, meta) = b.build::<i64>(rng()).map_err(e("build"))?.ok_or("empty")?;
-        let action = bundle.actions().get(meta.output_action_index(0).unwrap()).unwrap();
-        let ivk = fvk.to_ivk(Scope::External).prepare();
-        let found = if ironwood {
-            try_note_decryption(
-                &orchard::note_encryption::IronwoodDomain::for_action(action),
-                &ivk,
-                action,
-            )
-        } else {
-            try_note_decryption(
-                &orchard::note_encryption::OrchardDomain::for_action(action),
-                &ivk,
-                action,
-            )
-        };
-        found.ok_or("wallet IVK could not decrypt the incoming note")?.0
-    };
-    // 2. One-leaf note commitment tree.
-    let (anchor, path) = {
-        let cmx: orchard::note::ExtractedNoteCommitment = note.commitment().into();
-        let leaf = MerkleHashOrchard::from_cmx(&cmx);
-        let mut tree =
-            ShardTree::<_, 32, 16>::new(MemoryShardStore::<MerkleHashOrchard, u32>::empty(), 100);
-        tree.append(leaf, Retention::Marked).map_err(e("tree"))?;
-        tree.checkpoint(9_999_999).map_err(e("tree"))?;
-        let p = tree
-            .witness_at_checkpoint_depth(0.into(), 0)
-            .map_err(e("witness"))?
-            .ok_or("no witness")?;
-        let a = p.root(leaf);
-        (orchard::Anchor::from(a), orchard::tree::MerklePath::from(p))
-    };
-    // 3. Pay a third party, change back to the wallet's internal address.
-    let fee = 10_000u64;
-    let change = note_value
-        .checked_sub(amount + fee)
-        .ok_or("note value too small for amount + 10000 zat fee")?;
-    let payee = FullViewingKey::from(&random_sk()).address_at(0u32, Scope::External);
+/// Build an unsigned, *unproven* PCZT that spends Ironwood notes and pays
+/// `(payee, amount, change)`. Proving happens after signing, in `finalize`,
+/// because the spend authorization signatures do not commit to the proof.
+fn build_ironwood_pczt<P: Parameters>(
+    params: P,
+    target: BlockHeight,
+    fvk: &FullViewingKey,
+    spends: (Vec<(orchard::Note, orchard::tree::MerklePath)>, orchard::Anchor),
+    outs: (orchard::Address, u64, u64),
+) -> R<Pczt> {
+    let (notes, anchor) = spends;
+    let (payee, amount, change) = outs;
     let mut builder = Builder::new(
-        regtest(ironwood),
-        10_000_000.into(),
+        params,
+        target,
         BuildConfig::Standard {
             sapling_anchor: None,
-            orchard_anchor: (!ironwood).then_some(anchor),
-            ironwood_anchor: ironwood.then_some(anchor),
+            orchard_anchor: None,
+            ironwood_anchor: Some(anchor),
             orchard_padding: BundlePadding::DEFAULT,
             ironwood_padding: BundlePadding::DEFAULT,
         },
     );
+    for (note, path) in notes {
+        builder.add_ironwood_spend::<zip317::FeeRule>(fvk.clone(), note, path).map_err(e("builder"))?;
+    }
     let az = Zatoshis::from_u64(amount).map_err(e("amount"))?;
     let cz = Zatoshis::from_u64(change).map_err(e("change"))?;
     let eo = Some(fvk.to_ovk(Scope::External));
     let io = Some(fvk.to_ovk(Scope::Internal));
     let ca = fvk.address_at(0u32, Scope::Internal);
-    let r = if ironwood {
-        builder
-            .add_ironwood_spend::<zip317::FeeRule>(fvk.clone(), note, path)
-            .and_then(|_| builder.add_ironwood_output::<zip317::FeeRule>(eo, payee, az, MemoBytes::empty()))
-            .and_then(|_| builder.add_ironwood_output::<zip317::FeeRule>(io, ca, cz, MemoBytes::empty()))
-    } else {
-        builder
-            .add_orchard_spend::<zip317::FeeRule>(fvk.clone(), note, path)
-            .and_then(|_| builder.add_orchard_output::<zip317::FeeRule>(eo, payee, az, MemoBytes::empty()))
-            .and_then(|_| builder.add_orchard_output::<zip317::FeeRule>(io, ca, cz, MemoBytes::empty()))
-    };
-    r.map_err(e("builder"))?;
+    builder
+        .add_ironwood_output::<zip317::FeeRule>(eo, payee, az, MemoBytes::empty())
+        .and_then(|_| builder.add_ironwood_output::<zip317::FeeRule>(io, ca, cz, MemoBytes::empty()))
+        .map_err(e("builder"))?;
     let PcztResult { pczt_parts, .. } = builder
         .build_for_pczt(rng(), &zip317::FeeRule::standard())
         .map_err(e("build_for_pczt"))?;
     let pczt = Creator::build_from_parts(pczt_parts).ok_or("creator failed")?;
-    let pczt = IoFinalizer::new(pczt).finalize_io(rng()).map_err(e("io finalizer"))?;
-    Ok(json!({
-        "pczt": pczt_to_b64(pczt)?,
-        "pool": pool,
-        "amount": amount, "change": change, "fee": fee, "note_value": note_value,
-    })
-    .to_string())
+    IoFinalizer::new(pczt).finalize_io(rng()).map_err(e("io finalizer"))
 }
 
 // ─────────────────────────── Signing ───────────────────────────
@@ -722,10 +633,6 @@ pub fn js_wallet_create(pkp: &str, net: &str) -> Result<String, JsError> {
 pub fn js_wallet_verify(wallet: &str, pkp: &str) -> Result<String, JsError> {
     js(wallet_verify(wallet, pkp))
 }
-#[wasm_bindgen(js_name = txDemoCreate)]
-pub fn js_tx_demo_create(fvk: &str, amount: f64, note_value: f64, pool: &str) -> Result<String, JsError> {
-    js(tx_demo_create(fvk, amount as u64, note_value as u64, pool))
-}
 #[wasm_bindgen(js_name = inspect)]
 pub fn js_inspect(pczt: &str, fvk: &str) -> Result<String, JsError> {
     js(inspect(pczt, fvk))
@@ -770,6 +677,135 @@ pub fn js_box_open(sk: &str, pk: &str, ctx: &str, ct: &str) -> Result<String, Js
 #[cfg(test)]
 mod tests {
     use super::*;
+    use incrementalmerkletree::Retention;
+    use orchard::tree::MerkleHashOrchard;
+    use shardtree::{store::memory::MemoryShardStore, ShardTree};
+    use zcash_note_encryption::try_note_decryption;
+    use zcash_protocol::{local_consensus::LocalNetwork, memo::Memo};
+
+    fn regtest(nu6_3: bool) -> LocalNetwork {
+        LocalNetwork {
+            overwinter: Some(BlockHeight::from_u32(1)),
+            sapling: Some(BlockHeight::from_u32(2)),
+            blossom: Some(BlockHeight::from_u32(3)),
+            heartwood: Some(BlockHeight::from_u32(4)),
+            canopy: Some(BlockHeight::from_u32(5)),
+            nu5: Some(BlockHeight::from_u32(6)),
+            nu6: Some(BlockHeight::from_u32(7)),
+            nu6_1: Some(BlockHeight::from_u32(8)),
+            nu6_2: Some(BlockHeight::from_u32(9)),
+            nu6_3: nu6_3.then(|| BlockHeight::from_u32(10)),
+            nu7: None,
+        }
+    }
+
+    /// Test only: fabricate an incoming note (no chain access), then build a
+    /// PCZT that spends it on a regtest chain.
+    fn tx_demo_create(fvk_hex: &str, amount: u64, note_value: u64, pool: &str) -> R<String> {
+        let fvk = parse_fvk(fvk_hex)?;
+        let ironwood = match pool {
+            "ironwood" => true,
+            "orchard" => false,
+            _ => return Err("pool must be ironwood or orchard".into()),
+        };
+        let version = if ironwood {
+            orchard::bundle::BundleVersion::ironwood_v3()
+        } else {
+            orchard::bundle::BundleVersion::orchard_v2()
+        };
+        // 1. Someone pays the wallet; the wallet finds the note with its IVK.
+        let note = {
+            let mut b = orchard::builder::Builder::new(
+                orchard::builder::BundleType::DEFAULT,
+                version,
+                version.default_flags(),
+                orchard::Anchor::empty_tree(),
+            )
+            .map_err(e("builder"))?;
+            b.add_output(
+                None,
+                fvk.address_at(0u32, Scope::External),
+                orchard::value::NoteValue::from_raw(note_value),
+                Memo::Empty.encode().into_bytes(),
+            )
+            .map_err(e("output"))?;
+            let (bundle, meta) = b.build::<i64>(rng()).map_err(e("build"))?.ok_or("empty")?;
+            let action = bundle.actions().get(meta.output_action_index(0).unwrap()).unwrap();
+            let ivk = fvk.to_ivk(Scope::External).prepare();
+            let found = if ironwood {
+                try_note_decryption(
+                    &orchard::note_encryption::IronwoodDomain::for_action(action),
+                    &ivk,
+                    action,
+                )
+            } else {
+                try_note_decryption(
+                    &orchard::note_encryption::OrchardDomain::for_action(action),
+                    &ivk,
+                    action,
+                )
+            };
+            found.ok_or("wallet IVK could not decrypt the incoming note")?.0
+        };
+        // 2. One-leaf note commitment tree.
+        let (anchor, path) = {
+            let cmx: orchard::note::ExtractedNoteCommitment = note.commitment().into();
+            let leaf = MerkleHashOrchard::from_cmx(&cmx);
+            let mut tree =
+                ShardTree::<_, 32, 16>::new(MemoryShardStore::<MerkleHashOrchard, u32>::empty(), 100);
+            tree.append(leaf, Retention::Marked).map_err(e("tree"))?;
+            tree.checkpoint(9_999_999).map_err(e("tree"))?;
+            let p = tree
+                .witness_at_checkpoint_depth(0.into(), 0)
+                .map_err(e("witness"))?
+                .ok_or("no witness")?;
+            let a = p.root(leaf);
+            (orchard::Anchor::from(a), orchard::tree::MerklePath::from(p))
+        };
+        // 3. Pay a third party, change back to the wallet's internal address.
+        let fee = 10_000u64;
+        let change = note_value
+            .checked_sub(amount + fee)
+            .ok_or("note value too small for amount + 10000 zat fee")?;
+        let payee = FullViewingKey::from(&random_sk()).address_at(0u32, Scope::External);
+        let pczt = if ironwood {
+            build_ironwood_pczt(regtest(true), 10_000_000.into(), &fvk, (vec![(note, path)], anchor), (payee, amount, change))?
+        } else {
+            let mut builder = Builder::new(
+                regtest(false),
+                10_000_000.into(),
+                BuildConfig::Standard {
+                    sapling_anchor: None,
+                    orchard_anchor: Some(anchor),
+                    ironwood_anchor: None,
+                    orchard_padding: BundlePadding::DEFAULT,
+                    ironwood_padding: BundlePadding::DEFAULT,
+                },
+            );
+            let az = Zatoshis::from_u64(amount).map_err(e("amount"))?;
+            let cz = Zatoshis::from_u64(change).map_err(e("change"))?;
+            let eo = Some(fvk.to_ovk(Scope::External));
+            let io = Some(fvk.to_ovk(Scope::Internal));
+            let ca = fvk.address_at(0u32, Scope::Internal);
+            builder
+                .add_orchard_spend::<zip317::FeeRule>(fvk.clone(), note, path)
+                .and_then(|_| builder.add_orchard_output::<zip317::FeeRule>(eo, payee, az, MemoBytes::empty()))
+                .and_then(|_| builder.add_orchard_output::<zip317::FeeRule>(io, ca, cz, MemoBytes::empty()))
+                .map_err(e("builder"))?;
+            let PcztResult { pczt_parts, .. } = builder
+                .build_for_pczt(rng(), &zip317::FeeRule::standard())
+                .map_err(e("build_for_pczt"))?;
+            let pczt = Creator::build_from_parts(pczt_parts).ok_or("creator failed")?;
+            IoFinalizer::new(pczt).finalize_io(rng()).map_err(e("io finalizer"))?
+        };
+        Ok(json!({
+            "pczt": pczt_to_b64(pczt)?,
+            "pool": pool,
+            "amount": amount, "change": change, "fee": fee, "note_value": note_value,
+        })
+        .to_string())
+    }
+
 
     fn v(s: &str) -> Value {
         serde_json::from_str(s).unwrap()
