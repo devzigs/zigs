@@ -88,10 +88,6 @@
     can: async () => true,
     isOwner: () => false,
     canEdit: () => true,
-    profiles: async (ids) => {
-      await ready;
-      return Object.fromEntries(ids.map((id) => [id, { id, name: (docs.get("profiles/" + id) || {}).name || "" }]));
-    },
   };
 
   const downloads = {
@@ -110,8 +106,6 @@
     if (!name) name = (prompt("Your name (other participants will see it):") || "").trim();
     if (!name) name = "Guest " + myId().slice(0, 4);
     localStorage.setItem("zf-name", name);
-    const cur = docs.get("profiles/" + myId());
-    if (!cur || cur.name !== name) await send({ op: "set", path: "profiles/" + myId(), data: { name } });
   }
 
   const caps = { db, user, downloads };

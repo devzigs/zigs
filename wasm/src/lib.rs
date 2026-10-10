@@ -9,8 +9,14 @@
 
 use std::collections::BTreeMap;
 
-use base64::{engine::general_purpose::STANDARD as B64, Engine};
-use chacha20poly1305::{aead::Aead, ChaCha20Poly1305, KeyInit, Nonce};
+use base64::{
+    engine::general_purpose::{STANDARD as B64, URL_SAFE_NO_PAD as B64URL},
+    Engine,
+};
+use chacha20poly1305::{
+    aead::{Aead, Payload},
+    ChaCha20Poly1305, KeyInit, Nonce, XChaCha20Poly1305, XNonce,
+};
 use group::ff::PrimeField;
 use orchard::{
     keys::{FullViewingKey, Scope, SpendValidatingKey, SpendingKey},
@@ -602,6 +608,35 @@ pub fn box_open(my_sk: &str, their_pk: &str, ctx: &str, sealed: &str) -> R<Strin
     String::from_utf8(pt).map_err(e("utf8"))
 }
 
+// ──────────────── Group-secret sealing for the shared store ────────────────
+
+fn store_key(secret: &str) -> R<XChaCha20Poly1305> {
+    let raw = B64URL.decode(secret).map_err(e("group secret"))?;
+    ensure(raw.len() == 32, "group secret must be 32 bytes")?;
+    let k = blake2b_simd::Params::new().hash_length(32).personal(b"zf-store-v1").hash(&raw);
+    XChaCha20Poly1305::new_from_slice(k.as_bytes()).map_err(e("key"))
+}
+
+/// `aad` binds the ciphertext to its document path and field name.
+pub fn secret_seal(secret: &str, aad: &str, plaintext: &str) -> R<String> {
+    let mut n = [0u8; 24];
+    OsRng.fill_bytes(&mut n);
+    let ct = store_key(secret)?
+        .encrypt(XNonce::from_slice(&n), Payload { msg: plaintext.as_bytes(), aad: aad.as_bytes() })
+        .map_err(e("encrypt"))?;
+    Ok(B64URL.encode([n.as_slice(), &ct].concat()))
+}
+
+pub fn secret_open(secret: &str, aad: &str, sealed: &str) -> R<String> {
+    let raw = B64URL.decode(sealed).map_err(e("b64"))?;
+    ensure(raw.len() > 24, "sealed value too short")?;
+    let (n, ct) = raw.split_at(24);
+    let pt = store_key(secret)?
+        .decrypt(XNonce::from_slice(n), Payload { msg: ct, aad: aad.as_bytes() })
+        .map_err(|_| "cannot decrypt: wrong key or tampered value".to_string())?;
+    String::from_utf8(pt).map_err(e("utf8"))
+}
+
 // ───────────────────────── JS bindings ─────────────────────────
 
 fn js<T>(r: R<T>) -> Result<T, JsError> {
@@ -670,6 +705,14 @@ pub fn js_box_seal(sk: &str, pk: &str, ctx: &str, pt: &str) -> Result<String, Js
 #[wasm_bindgen(js_name = boxOpen)]
 pub fn js_box_open(sk: &str, pk: &str, ctx: &str, ct: &str) -> Result<String, JsError> {
     js(box_open(sk, pk, ctx, ct))
+}
+#[wasm_bindgen(js_name = secretSeal)]
+pub fn js_secret_seal(secret: &str, aad: &str, pt: &str) -> Result<String, JsError> {
+    js(secret_seal(secret, aad, pt))
+}
+#[wasm_bindgen(js_name = secretOpen)]
+pub fn js_secret_open(secret: &str, aad: &str, ct: &str) -> Result<String, JsError> {
+    js(secret_open(secret, aad, ct))
 }
 
 // ─────────────────────────── Tests ───────────────────────────
@@ -910,6 +953,19 @@ mod tests {
         let branch = BranchId::for_height(&Network::TestNetwork, BlockHeight::from_u32(4_465_026));
         assert_eq!(u32::from(branch), 0x7719_0AD9);
         assert_eq!(TxVersion::suggested_for_branch(branch), TxVersion::V6);
+    }
+
+    #[test]
+    fn store_seal_binds_key_and_aad() {
+        let mut raw = [0u8; 32];
+        OsRng.fill_bytes(&mut raw);
+        let key = B64URL.encode(raw);
+        let other = B64URL.encode([7u8; 32]);
+        let ct = secret_seal(&key, "groups/g\nname", "\"Treasury\"").unwrap();
+        assert_eq!(secret_open(&key, "groups/g\nname", &ct).unwrap(), "\"Treasury\"");
+        assert!(secret_open(&key, "groups/g\nn", &ct).is_err());
+        assert!(secret_open(&other, "groups/g\nname", &ct).is_err());
+        assert!(secret_seal("short", "a", "b").is_err());
     }
 
     #[test]

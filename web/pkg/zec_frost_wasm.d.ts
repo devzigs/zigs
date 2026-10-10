@@ -67,6 +67,10 @@ export function inspect(pczt: string, fvk: string): string;
 
 export function latestHeight(endpoint: string): Promise<number>;
 
+export function secretOpen(secret: string, aad: string, ct: string): string;
+
+export function secretSeal(secret: string, aad: string, pt: string): string;
+
 export function signAggregate(pczt: string, pkp: string, _package: string, shares: string): string;
 
 export function signCommit(pczt: string, fvk: string, kp: string): string;
@@ -113,6 +117,8 @@ export interface InitOutput {
     readonly intounderlyingsource_cancel: (a: number) => void;
     readonly intounderlyingsource_pull: (a: number, b: any) => any;
     readonly latestHeight: (a: number, b: number) => any;
+    readonly secretOpen: (a: number, b: number, c: number, d: number, e: number, f: number) => [number, number, number, number];
+    readonly secretSeal: (a: number, b: number, c: number, d: number, e: number, f: number) => [number, number, number, number];
     readonly signAggregate: (a: number, b: number, c: number, d: number, e: number, f: number, g: number, h: number) => [number, number, number, number];
     readonly signCommit: (a: number, b: number, c: number, d: number, e: number, f: number) => [number, number, number, number];
     readonly signPackage: (a: number, b: number, c: number, d: number, e: number, f: number, g: number) => [number, number, number, number];

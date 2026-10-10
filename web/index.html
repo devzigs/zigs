@@ -218,8 +218,7 @@ function sec(gid, seat) { return secrets[skey(gid, seat)]; }
 function putSec(gid, seat, patch) { secrets[skey(gid, seat)] = Object.assign(secrets[skey(gid, seat)] || {}, patch); saveSecrets(); }
 
 // ───────────────────────── Platform ─────────────────────────
-let db = null, user = null, downloads = null, me = null, canWrite = null, dbReady = false;
-let profiles = {};
+let db = null, sdb = null, user = null, downloads = null, me = null, canWrite = null, dbReady = false;
 const LIGHTWALLETD = "https://zcash-testnet.chainsafe.dev";
 const EXPLORER_TX = "https://testnet.zcashexplorer.app/transactions/";
 let chain = null;   // { gid, cw, prog, bal, ms, error, syncing } for the open group
@@ -232,27 +231,86 @@ let banner = null;
 function showBanner(kind, text) { banner = { kind, text }; const b = document.getElementById("banner"); b.hidden = false; b.className = "notice " + kind; b.textContent = text; }
 function log(msg) { state.log.unshift(new Date().toLocaleTimeString() + "  " + msg); state.log.length = Math.min(state.log.length, 60); }
 
+// ───────────────────────── Encrypted store ─────────────────────────
+// Every field under groups/{gid} is sealed with the group secret. The secret lives in the invite
+// link fragment and in this browser; the server sees paths and field names only.
+let gkeys = {};
+try { gkeys = JSON.parse(localStorage.getItem("zf-keys") || "{}"); } catch { storageOk = false; }
+function putKey(gid, key) { gkeys[gid] = key; try { localStorage.setItem("zf-keys", JSON.stringify(gkeys)); } catch { storageOk = false; } }
+function adoptInviteKey() {
+  const [gid, key] = location.hash.slice(1).split(".");
+  if (!key) return;
+  if (/^[\w-]{43}$/.test(key)) putKey(gid, key);
+  try { history.replaceState(null, "", "#" + gid); } catch {}
+}
+const inviteLink = (gid) => location.href.split("#")[0] + "#" + gid + "." + gkeys[gid];
+const keyOf = (path) => gkeys[path.split("/")[1]];
+
+function sealDoc(path, data) {
+  const out = {};
+  for (const [k, v] of Object.entries(data)) if (v !== undefined) out[k] = Z.secretSeal(keyOf(path), path + "\n" + k, S(v));
+  return out;
+}
+// ponytail: every snapshot decrypts the whole group again; cache by ciphertext if stores grow.
+function openDoc(path, raw) {
+  if (!Z || !keyOf(path) || raw == null) return null;
+  const out = {}; let ok = 0;
+  for (const [k, v] of Object.entries(raw)) {
+    try { out[k] = J(Z.secretOpen(keyOf(path), path + "\n" + k, v)); ok++; }
+    catch (e) { log("dropped undecryptable field " + k + " of " + path); }
+  }
+  return ok || !Object.keys(raw).length ? out : null;
+}
+function openSnap(path, snap) {
+  const data = snap.exists ? openDoc(path, snap.data()) : null;
+  return { id: snap.id, exists: data != null, data: () => data, metadata: snap.metadata };
+}
+function wrapDoc(ref) {
+  return {
+    id: ref.id, path: ref.path,
+    get: async () => openSnap(ref.path, await ref.get()),
+    set: (d) => ref.set(sealDoc(ref.path, d)),
+    update: (d) => ref.update(sealDoc(ref.path, d)),
+    acquire: (o) => ref.acquire(o),
+    onSnapshot: (next, err) => ref.onSnapshot((s) => next(openSnap(ref.path, s)), err),
+  };
+}
+function wrapStore(raw) {
+  return {
+    doc: (path) => wrapDoc(raw.doc(path)),
+    collection: (path) => ({
+      doc: (id) => wrapDoc(raw.collection(path).doc(id)),
+      onSnapshot: (next, err) => raw.collection(path).onSnapshot((snap) => {
+        const docs = snap.docs.map((d) => openSnap(path + "/" + d.id, d)).filter((d) => d.exists);
+        next({ docs, size: docs.length, empty: docs.length === 0 });
+      }, err),
+    }),
+  };
+}
+
 async function boot() {
   const [dbNs, userNs, dlNs] = await Promise.all([zigs.use("db"), zigs.use("user"), zigs.use("downloads")]);
   db = dbNs; user = userNs; downloads = dlNs;
+  if (db) sdb = wrapStore(db);
   if (user) { me = await user.id(); canWrite = await user.can("data.write"); }
   if (!db) { showBanner("bad", "The group server is not available. Reload the page, or try again later."); return; }
   if (!me) showBanner("bad", "This browser cannot tell who you are, so you cannot take a seat.");
   if (canWrite === false) showBanner("bad", "You can view this page but not take part. Ask the owner to invite you as an Editor from the Share menu.");
   if (!storageOk) showBanner("bad", "This browser does not let the page save your key share. Keep this tab open, and use Back up.");
-  db.collection("groups").onSnapshot((snap) => {
+  sdb.collection("groups").onSnapshot((snap) => {
     dbReady = true;
     state.groups = snap.docs.map((d) => ({ id: d.id, ...d.data() })).sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0));
     if (state.gid && !state.g) openGroup(state.gid);
     render();
   }, (e) => showBanner("bad", "Lost connection to the shared store (" + e.code + "). Reload the page."));
   const h = location.hash.replace("#", "");
-  if (h) openGroup(h);
+  if (h && !gkeys[h]) showBanner("bad", "This link is missing its key. Ask for the full invite link.");
+  else if (h) openGroup(h);
   render();
 }
 
 function sub(path, fn) {
-  return db.collection(path).onSnapshot((snap) => { const m = {}; for (const d of snap.docs) m[d.id] = d.data(); fn(m); render(); react(); },
+  return sdb.collection(path).onSnapshot((snap) => { const m = {}; for (const d of snap.docs) m[d.id] = d.data(); fn(m); render(); react(); },
     (e) => log("subscription error on " + path + ": " + e.code));
 }
 
@@ -264,13 +322,13 @@ function openGroup(gid) {
   if (!gid) { try { history.replaceState(null, "", "#"); } catch {} render(); return; }
   try { history.replaceState(null, "", "#" + gid); } catch {}
   const base = "groups/" + gid;
-  unsubGroup.push(db.doc(base).onSnapshot((d) => { state.g = d.exists ? { id: d.id, ...d.data() } : null; render(); react(); }));
+  unsubGroup.push(sdb.doc(base).onSnapshot((d) => { state.g = d.exists ? { id: d.id, ...d.data() } : null; render(); react(); }));
   unsubGroup.push(sub(base + "/seats", (m) => state.seats = m));
   unsubGroup.push(sub(base + "/dkg1", (m) => state.dkg1 = m));
   unsubGroup.push(sub(base + "/dkg2", (m) => state.dkg2 = m));
   unsubGroup.push(sub(base + "/done", (m) => state.done = m));
   unsubGroup.push(sub(base + "/verify", (m) => state.verify = m));
-  unsubGroup.push(db.doc(base + "/meta/wallet").onSnapshot((d) => { state.wallet = d.exists ? d.data() : null; render(); react(); }));
+  unsubGroup.push(sdb.doc(base + "/meta/wallet").onSnapshot((d) => { state.wallet = d.exists ? d.data() : null; render(); react(); }));
   unsubGroup.push(sub(base + "/sessions", (m) => { state.sessions = Object.entries(m).map(([id, v]) => ({ id, ...v })).sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0)); }));
   render();
 }
@@ -294,6 +352,7 @@ const allDone = () => seatIds().every((i) => state.done[i]);
 const keysAgree = () => allDone() && new Set(seatIds().map((i) => state.done[i].groupKey)).size === 1;
 const localSeats = () => state.gid ? mySeatSecrets(state.gid).map(([i]) => i).filter((i) => state.seats[i] && state.seats[i].uid === me) : [];
 const isCreator = () => state.g && state.g.createdBy === me;
+const seatNameOf = (uid) => (Object.values(state.seats).find((s) => s.uid === uid) || {}).name || "someone";
 const curSession = () => state.sessions.find((s) => s.id === state.sid) || null;
 
 function seatStage(i) {
@@ -325,7 +384,7 @@ function react() {
       once("r1:" + i, async () => {
         let secret = s.r1secret, pkg = s.r1package;
         if (!secret) { const r = J(Z.dkgPart1(i, g.n, g.t)); secret = r.secret; pkg = r.package; putSec(gid, i, { r1secret: secret, r1package: pkg }); }
-        await db.doc(base + "/dkg1/" + i).set({ package: pkg, at: Date.now() });
+        await sdb.doc(base + "/dkg1/" + i).set({ package: pkg, at: Date.now() });
         log("seat " + i + ": round 1 commitment published");
       });
       continue;
@@ -337,7 +396,7 @@ function react() {
         const r = J(Z.dkgPart2(S(s.r1secret), S(r1)));
         for (const [to, pkg] of Object.entries(r.outgoing)) {
           const sealed = Z.boxSeal(s.boxSk, state.seats[to].boxPk, gid + ":" + i + "->" + to, S(pkg));
-          await db.doc(base + "/dkg2/" + i + "-" + to).set({ sealed, at: Date.now() });
+          await sdb.doc(base + "/dkg2/" + i + "-" + to).set({ sealed, at: Date.now() });
         }
         putSec(gid, i, { r2secret: r.secret, r1secret: null });
         log("seat " + i + ": " + Object.keys(r.outgoing).length + " encrypted shares sent");
@@ -354,7 +413,7 @@ function react() {
         }
         const r = J(Z.dkgPart3(S(s.r2secret), S(r1), S(r2)));
         putSec(gid, i, { keyPackage: r.key_package, publicKeyPackage: r.public_key_package, groupKey: r.group_key, r2secret: null, r1package: null });
-        await db.doc(base + "/done/" + i).set({ groupKey: r.group_key, publicKeyPackage: S(r.public_key_package), at: Date.now() });
+        await sdb.doc(base + "/done/" + i).set({ groupKey: r.group_key, publicKeyPackage: S(r.public_key_package), at: Date.now() });
         log("seat " + i + ": key share ready, group key " + r.group_key.slice(0, 12) + "…");
       });
       continue;
@@ -364,7 +423,7 @@ function react() {
       once("verify:" + i, async () => {
         let ok = true, error = null;
         try { Z.walletVerify(S(state.wallet), S(s.publicKeyPackage)); } catch (e) { ok = false; error = e.message || String(e); }
-        await db.doc(base + "/verify/" + i).set({ ok, error, at: Date.now() });
+        await sdb.doc(base + "/verify/" + i).set({ ok, error, at: Date.now() });
         log("seat " + i + (ok ? ": wallet verified, ak equals my group key" : ": WALLET REJECTED: " + error));
       });
     }
@@ -374,10 +433,10 @@ function react() {
   if (isCreator() && !state.wallet && keysAgree()) {
     once("wallet", async () => {
       // The wallet snapshot can arrive after the DKG ones; never replace a published wallet.
-      if ((await db.doc(base + "/meta/wallet").get()).exists) return;
+      if ((await sdb.doc(base + "/meta/wallet").get()).exists) return;
       const birthday = await Z.latestHeight(LIGHTWALLETD);
       const w = J(Z.walletCreate(state.done[1].publicKeyPackage, g.network || "testnet"));
-      await db.doc(base + "/meta/wallet").set({ ...w, birthday, at: Date.now() });
+      await sdb.doc(base + "/meta/wallet").set({ ...w, birthday, at: Date.now() });
       log("wallet created: " + w.address.slice(0, 24) + "…");
     });
   }
@@ -396,7 +455,7 @@ function reactSession(ss) {
     if (ids.length >= g.t) once("pkg:" + ss.id, async () => {
       const c = {}; for (const i of ids) c[i] = state.commits[i].commitments;
       const pkg = Z.signPackage(ss.pczt, fvk, S(c), g.t);
-      await db.doc("groups/" + gid + "/sessions/" + ss.id).update({ package: pkg, signers: ids, status: "signing" });
+      await sdb.doc("groups/" + gid + "/sessions/" + ss.id).update({ package: pkg, signers: ids, status: "signing" });
       log("signing package sent to signers " + ids.join(", "));
     });
   }
@@ -407,7 +466,7 @@ function reactSession(ss) {
       if ((ss.signers || []).includes(i) && n && !state.shares[i]) once("share:" + ss.id + ":" + i, async () => {
         const shares = Z.signShare(ss.pczt, fvk, ss.package, S(n.nonces), S(n.commitments), S(s.keyPackage), i);
         const nonces = { ...(s.nonces || {}) }; delete nonces[ss.id]; putSec(gid, i, { nonces });   // burn nonces
-        await db.doc(base + "/shares/" + i).set({ shares, at: Date.now() });
+        await sdb.doc(base + "/shares/" + i).set({ shares, at: Date.now() });
         log("seat " + i + ": signature share sent");
       });
     }
@@ -418,8 +477,8 @@ function reactSession(ss) {
       const sh = {}; for (const i of ss.signers) sh[i] = J(state.shares[i].shares);
       let r;
       try { r = J(Z.signAggregate(ss.pczt, state.done[1].publicKeyPackage, ss.package, S(sh))); }
-      catch (e) { await db.doc("groups/" + gid + "/sessions/" + ss.id).update({ error: e.message || String(e), status: "failed" }); throw e; }
-      await db.doc("groups/" + gid + "/sessions/" + ss.id).update({ signed: r.signed_pczt, signatures: r.signatures, status: "signed" });
+      catch (e) { await sdb.doc("groups/" + gid + "/sessions/" + ss.id).update({ error: e.message || String(e), status: "failed" }); throw e; }
+      await sdb.doc("groups/" + gid + "/sessions/" + ss.id).update({ signed: r.signed_pczt, signatures: r.signatures, status: "signed" });
       log("signatures aggregated and verified under rk");
     });
   }
@@ -427,7 +486,9 @@ function reactSession(ss) {
 
 // ───────────────────────── Actions ─────────────────────────
 async function createGroup(name, n, t) {
-  const ref = db.collection("groups").doc();
+  const ref = sdb.collection("groups").doc();
+  const key = new Uint8Array(32); crypto.getRandomValues(key);
+  putKey(ref.id, btoa(String.fromCharCode(...key)).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, ""));
   await ref.set({ name, n, t, network: "testnet", createdBy: me, createdAt: Date.now() });
   openGroup(ref.id);
   await takeSeat(1);
@@ -435,14 +496,15 @@ async function createGroup(name, n, t) {
 
 async function takeSeat(i) {
   if (!Z) return;
-  const ref = db.doc("groups/" + state.gid + "/seats/" + i);
+  const ref = sdb.doc("groups/" + state.gid + "/seats/" + i);
   const lease = await ref.acquire({ holder: me || "anon", ttlMs: 5000 });
   if (!lease.acquired) { showBanner("bad", "Someone else is taking seat " + i + " right now."); return; }
   const cur = await ref.get();
   if (cur.exists && cur.data().uid) { showBanner("bad", "Seat " + i + " is already taken."); return; }
   const kp = J(Z.boxKeypair());
   putSec(state.gid, i, { boxSk: kp.sk });
-  await ref.set({ uid: me, boxPk: kp.pk, at: Date.now() });
+  const name = user ? (await user.me()).name : "";
+  await ref.set({ uid: me, name, boxPk: kp.pk, at: Date.now() });
   log("you took seat " + i);
 }
 
@@ -466,14 +528,14 @@ async function runSync(c) {
 async function newSpend(recipient, amountZat) {
   if (!chain || chain.gid !== state.gid || !chain.bal) throw new Error("The wallet has not finished its first sync.");
   const t = J(await chain.cw.createSpend(recipient, amountZat));
-  const ref = db.collection("groups/" + state.gid + "/sessions").doc();
+  const ref = sdb.collection("groups/" + state.gid + "/sessions").doc();
   await ref.set({ createdBy: me, createdAt: Date.now(), pool: t.pool, amount: t.amount, change: t.change, fee: t.fee, noteValue: t.note_value, pczt: t.pczt, status: "collecting" });
   log("new spend: " + fmtZec(t.amount));
   openSession(ref.id);
 }
 
 async function broadcastTx(ss) {
-  const ref = db.doc("groups/" + state.gid + "/sessions/" + ss.id);
+  const ref = sdb.doc("groups/" + state.gid + "/sessions/" + ss.id);
   try {
     const r = J(await chain.cw.broadcast(ss.final.tx_hex));
     await ref.update({ broadcastTxid: r.txid || ss.final.txid, broadcastAt: Date.now(), broadcastError: null, status: "broadcast" });
@@ -488,23 +550,23 @@ async function approve(ss, i) {
   const s = sec(state.gid, i);
   const r = J(Z.signCommit(ss.pczt, state.wallet.orchard_fvk, S(s.keyPackage)));
   putSec(state.gid, i, { nonces: { ...(s.nonces || {}), [ss.id]: { nonces: r.nonces, commitments: r.commitments } } });
-  await db.doc("groups/" + state.gid + "/sessions/" + ss.id + "/commits/" + i).set({ commitments: r.commitments, at: Date.now() });
+  await sdb.doc("groups/" + state.gid + "/sessions/" + ss.id + "/commits/" + i).set({ commitments: r.commitments, at: Date.now() });
   log("seat " + i + ": approved the spend, nonce commitment published");
 }
 
 async function finalizeTx(ss) {
-  await db.doc("groups/" + state.gid + "/sessions/" + ss.id).update({ status: "proving", provingAt: Date.now() });
+  await sdb.doc("groups/" + state.gid + "/sessions/" + ss.id).update({ status: "proving", provingAt: Date.now() });
   log("building Halo2 proof (about a minute)…");
   let out;
   try { out = await finalizeOffThread(ss.signed); }
-  catch (e) { await db.doc("groups/" + state.gid + "/sessions/" + ss.id).update({ status: "signed" }); throw e; }
-  await db.doc("groups/" + state.gid + "/sessions/" + ss.id).update({ status: "complete", final: out });
+  catch (e) { await sdb.doc("groups/" + state.gid + "/sessions/" + ss.id).update({ status: "signed" }); throw e; }
+  await sdb.doc("groups/" + state.gid + "/sessions/" + ss.id).update({ status: "complete", final: out });
   log("transaction complete: " + out.txid);
 }
 
 async function backup(i) {
   const s = sec(state.gid, i);
-  const data = S({ kind: "zec-frost-key-share", group: state.gid, groupName: state.g.name, seat: i, threshold: state.g.t, of: state.g.n, wallet: state.wallet, secret: s }, null, 2);
+  const data = S({ kind: "zec-frost-key-share", group: state.gid, groupName: state.g.name, seat: i, threshold: state.g.t, of: state.g.n, key: gkeys[state.gid], wallet: state.wallet, secret: s }, null, 2);
   if (!downloads) { showBanner("bad", "Downloads are not available in this view."); return; }
   try { await downloads.save({ filename: "zec-frost-" + (state.g.name || "group").replace(/\W+/g, "-") + "-seat-" + i + ".json", data }); }
   catch (e) { if (e && e.code !== "declined") showBanner("bad", "Backup was not saved: " + (e.message || e.code)); }
@@ -516,6 +578,7 @@ function restore(file) {
     try {
       const b = JSON.parse(r.result);
       if (b.kind !== "zec-frost-key-share") throw new Error("This is not a key share backup.");
+      if (b.key) putKey(b.group, b.key);
       putSec(b.group, b.seat, b.secret);
       showBanner("ok", "Restored seat " + b.seat + " of " + (b.groupName || "group") + ".");
       openGroup(b.group);
@@ -543,15 +606,8 @@ function copyBtn(text, label = "Copy") {
   return el("button", { class: "ghost", type: "button", onclick: async (ev) => { const b = ev.currentTarget; try { await navigator.clipboard.writeText(text); b.textContent = "Copied"; } catch { b.textContent = "Select and copy"; } setTimeout(() => b.textContent = label, 1500); } }, label);
 }
 
-let renderSeq = 0;
-async function render() {
-  const seq = ++renderSeq;
+function render() {
   const app = document.getElementById("app");
-  const ids = new Set(Object.values(state.seats).map((s) => s.uid).filter(Boolean));
-  state.groups.forEach((g) => g.createdBy && ids.add(g.createdBy));
-  state.sessions.forEach((x) => x.createdBy && ids.add(x.createdBy));
-  if (user && ids.size) { try { profiles = await user.profiles([...ids]); } catch {} }
-  if (seq !== renderSeq) return;   // a newer render is on its way
   // Keep what the viewer is typing across live updates.
   const kept = {}; const focusId = document.activeElement && document.activeElement.id;
   app.querySelectorAll("input[id], select[id]").forEach((i) => { if (i.type !== "file") kept[i.id] = i.value; });
@@ -587,21 +643,19 @@ function lobby() {
         return el("button", { class: "group-link", type: "button", onclick: () => openGroup(g.id) },
           el("span", { class: "gname" }, g.name),
           el("span", { class: "row" }, mine ? el("span", { class: "chip gold" }, "You hold " + mine + (mine > 1 ? " seats" : " seat")) : null,
-            el("span", { class: "chip" }, g.t + "-of-" + g.n),
-            el("span", { class: "small muted" }, "by " + ((profiles[g.createdBy] && profiles[g.createdBy].name) || "someone"))));
+            el("span", { class: "chip" }, g.t + "-of-" + g.n)));
       })) : el("div", { class: "empty" }, "No wallets yet. Create the first one above.")));
 }
 
 function seatCard(i) {
   const s = state.seats[i], st = seatStage(i), mine = s && s.uid === me && sec(state.gid, i);
-  const p = s ? profiles[s.uid] : null;
   const takenByMeElsewhere = s && s.uid === me && !sec(state.gid, i);
   return el("div", { class: "seat" + (mine ? " mine" : "") },
     el("div", { class: "seat-top" },
-      s ? el("img", { class: "avatar", src: p ? p.avatarUrl : "", alt: "" }) : el("span", { class: "avatar" }),
+      el("span", { class: "avatar" }),
       el("div", { style: "min-width:0;display:grid" },
         el("span", { class: "seat-no" }, "Seat " + i),
-        el("span", { class: "seat-name" }, s ? (mine ? "You" : (p && p.name) || "Someone") : "Open"))),
+        el("span", { class: "seat-name" }, s ? (mine ? "You" : s.name || "Someone") : "Open"))),
     el("div", { class: "ladder", "aria-hidden": "true" }, [1, 2, 3, 4, 5].map((k) => el("span", { class: k <= st ? (st === 5 ? "done" : "on") : "" }))),
     el("span", { class: "ladder-label" }, STAGE_LABEL[st] + (state.verify[i] && !state.verify[i].ok ? " · rejected wallet" : "")),
     !s ? el("button", { type: "button", class: localSeats().length ? "" : "primary", disabled: !Z || canWrite === false, onclick: act(() => takeSeat(i)) }, localSeats().length ? "Also play this seat" : "Take this seat") : null,
@@ -617,7 +671,7 @@ function groupView() {
     el("div", { class: "panel-head" },
       el("div", { style: "display:grid;gap:4px" }, el("button", { class: "ghost", type: "button", style: "justify-self:start;padding-inline:0", onclick: () => openGroup(null) }, "← All wallets"),
         el("h2", { style: "font-size:26px" }, g.name)),
-      el("div", { class: "row" }, el("span", { class: "chip gold" }, g.t + "-of-" + g.n), el("span", { class: "chip" }, seated + "/" + g.n + " seats taken"), copyBtn(location.href.split("#")[0] + "#" + state.gid, "Copy invite link"))),
+      el("div", { class: "row" }, el("span", { class: "chip gold" }, g.t + "-of-" + g.n), el("span", { class: "chip" }, seated + "/" + g.n + " seats taken"), copyBtn(inviteLink(state.gid), "Copy invite link"))),
     el("p", { class: "muted small" }, "Invite people as Editors from the Share menu, then send them the invite link. On your own, you can play every seat from this browser to try the full flow."),
     el("div", { class: "seats" }, seatIds().map(seatCard)),
     ceremonyPanel(), walletPanel(), spendsPanel(),
@@ -717,10 +771,10 @@ function sessionDetail(ss) {
   if (!ins && Z) { try { ins = J(Z.inspect(ss.pczt, state.wallet.orchard_fvk)); } catch (e) { ins = { error: e.message || String(e) }; } inspectCache.set(ss.id, ins); }
   const approvals = Object.keys(state.commits).map(Number).sort((a, b) => a - b);
   const myPending = localSeats().filter((i) => sec(state.gid, i).keyPackage && !state.commits[i] && !ss.package);
-  const nameOf = (i) => { const s = state.seats[i]; if (!s) return "Seat " + i; if (s.uid === me) return "You (seat " + i + ")"; return ((profiles[s.uid] && profiles[s.uid].name) || "Seat " + i) + " (seat " + i + ")"; };
+  const nameOf = (i) => { const s = state.seats[i]; if (!s) return "Seat " + i; if (s.uid === me) return "You (seat " + i + ")"; return (s.name || "Seat " + i) + " (seat " + i + ")"; };
   const sigs = ss.signatures || [];
   return el("div", { class: "panel", style: "background:var(--bg)" },
-    el("div", { class: "panel-head" }, el("h3", {}, "Spend proposed by " + (ss.createdBy === me ? "you" : ((profiles[ss.createdBy] && profiles[ss.createdBy].name) || "someone"))), statusChip(ss)),
+    el("div", { class: "panel-head" }, el("h3", {}, "Spend proposed by " + (ss.createdBy === me ? "you" : seatNameOf(ss.createdBy))), statusChip(ss)),
     ins && ins.error ? el("div", { class: "notice bad" }, "Your browser refuses this transaction: " + ins.error) : null,
     ins && !ins.error ? el("div", { class: "scroll" }, el("table", { class: "tx" },
       el("thead", {}, el("tr", {}, el("th", {}, "Action"), el("th", {}, "What"), el("th", { style: "text-align:right" }, "Amount"))),
@@ -748,6 +802,6 @@ function sessionDetail(ss) {
         !ss.broadcastTxid ? el("div", {}, el("button", { class: "primary", type: "button", disabled: !chain || chain.gid !== state.gid, onclick: act(() => broadcastTx(ss)) }, ss.broadcastError ? "Broadcast again" : "Broadcast")) : null)) : null));
 }
 
-loadEngine();
-boot();
+adoptInviteKey();
+loadEngine().then(boot);
 </script>
