@@ -78,6 +78,7 @@ target (for `secp256k1-sys`), and Node.js.
 cd wasm
 CC_wasm32_unknown_unknown=/opt/homebrew/opt/llvm/bin/clang \
 AR_wasm32_unknown_unknown=/opt/homebrew/opt/llvm/bin/llvm-ar \
+RUSTFLAGS="--remap-path-prefix=$HOME=/build" \
 cargo build --release --target wasm32-unknown-unknown
 wasm-bindgen --target web --out-dir ../web/pkg target/wasm32-unknown-unknown/release/zec_frost_wasm.wasm
 cargo test --release
@@ -94,6 +95,25 @@ Open http://localhost:8787. To act as a second person on the same computer, open
 http://127.0.0.1:8787 (a separate origin, so separate local storage).
 
 To deploy: `npx wrangler secret put APP_PASSWORD`, then `npx wrangler deploy` in `cf/`.
+
+### iOS app (prototype)
+
+The iOS app in `ios/` uses the same Rust engine through a C interface (`wasm/src/ffi.rs`) and the
+same group protocol, so iPhones and browsers can sit in one group. It joins groups from invite
+links, runs the key ceremony, approves and signs payments, builds the proof natively and
+broadcasts. Proposing payments and syncing the balance stay in the web app for now.
+
+Needs Xcode 26, XcodeGen, and the Rust targets `aarch64-apple-ios` and `aarch64-apple-ios-sim`.
+
+```bash
+cd ios
+./build-core.sh
+xcodegen generate
+open Zigs.xcodeproj
+```
+
+The app connects to `http://localhost:8787` by default (change it in Settings). Open an invite
+link as `zigs://join#<group-id>.<secret>`, or paste the web invite link in Join.
 
 ## How it works
 

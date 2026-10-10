@@ -49,6 +49,8 @@ use serde_json::{json, Value};
 use wasm_bindgen::prelude::*;
 
 mod chain;
+#[cfg(not(target_arch = "wasm32"))]
+mod ffi;
 use zcash_keys::{address::UnifiedAddress, keys::UnifiedFullViewingKey};
 use zcash_primitives::transaction::{
     builder::{BuildConfig, Builder, BundlePadding, PcztResult},
