@@ -1,0 +1,4 @@
+module ZigsCore {
+    header "zigs_core.h"
+    export *
+}
