@@ -30,7 +30,9 @@ use pczt::{
     },
     Pczt,
 };
+use getrandom04::SysRng;
 use rand::{rngs::OsRng, RngCore};
+use rand_core10::{CryptoRng, UnwrapErr};
 use reddsa::frost::redpallas::{
     self as frost,
     keys::{dkg, KeyPackage, PublicKeyPackage},
@@ -45,7 +47,7 @@ use wasm_bindgen::prelude::*;
 use zcash_keys::{address::UnifiedAddress, keys::UnifiedFullViewingKey};
 use zcash_note_encryption::try_note_decryption;
 use zcash_primitives::transaction::{
-    builder::{BuildConfig, Builder, PcztResult},
+    builder::{BuildConfig, Builder, BundlePadding, PcztResult},
     fees::zip317,
     sighash::SignableInput,
     sighash_v5::v5_signature_hash,
@@ -61,6 +63,10 @@ use zcash_protocol::{
 };
 
 type R<T> = Result<T, String>;
+
+fn rng() -> impl CryptoRng {
+    UnwrapErr(SysRng)
+}
 
 macro_rules! err {
     ($($t:tt)*) => { format!($($t)*) };
@@ -178,7 +184,7 @@ fn random_sk() -> SpendingKey {
 
 fn address_of(fvk: &FullViewingKey, net: Network) -> R<String> {
     let a = fvk.address_at(0u32, Scope::External);
-    Ok(UnifiedAddress::from_receivers(Some(a), None)
+    Ok(UnifiedAddress::from_receivers(Some(a), None, None, None)
         .ok_or("cannot build unified address")?
         .encode(&net))
 }
@@ -206,7 +212,7 @@ pub fn wallet_create(public_key_package: &str, net: &str) -> R<String> {
     Ok(json!({
         "network": if net == Network::MainNetwork { "mainnet" } else { "testnet" },
         "orchard_fvk": hex::encode(fvk.to_bytes()),
-        "ufvk": ufvk.encode(&net),
+        "ufvk": ufvk.encode(&net).map_err(e("ufvk encode"))?,
         "address": address_of(&fvk, net)?,
         "group_verifying_key": hex::encode(ak_bytes),
     })
@@ -245,6 +251,7 @@ fn regtest(nu6_3: bool) -> LocalNetwork {
         nu6_1: Some(BlockHeight::from_u32(8)),
         nu6_2: Some(BlockHeight::from_u32(9)),
         nu6_3: nu6_3.then(|| BlockHeight::from_u32(10)),
+        nu7: None,
     }
 }
 
@@ -289,7 +296,7 @@ pub fn tx_demo_create(fvk_hex: &str, amount: u64, note_value: u64, pool: &str) -
             Memo::Empty.encode().into_bytes(),
         )
         .map_err(e("output"))?;
-        let (bundle, meta) = b.build::<i64>(&mut OsRng).map_err(e("build"))?.ok_or("empty")?;
+        let (bundle, meta) = b.build::<i64>(rng()).map_err(e("build"))?.ok_or("empty")?;
         let action = bundle.actions().get(meta.output_action_index(0).unwrap()).unwrap();
         let ivk = fvk.to_ivk(Scope::External).prepare();
         let found = if ironwood {
@@ -335,7 +342,8 @@ pub fn tx_demo_create(fvk_hex: &str, amount: u64, note_value: u64, pool: &str) -
             sapling_anchor: None,
             orchard_anchor: (!ironwood).then_some(anchor),
             ironwood_anchor: ironwood.then_some(anchor),
-            orchard_pool_bundle_type: orchard::builder::BundleType::DEFAULT,
+            orchard_padding: BundlePadding::DEFAULT,
+            ironwood_padding: BundlePadding::DEFAULT,
         },
     );
     let az = Zatoshis::from_u64(amount).map_err(e("amount"))?;
@@ -356,10 +364,10 @@ pub fn tx_demo_create(fvk_hex: &str, amount: u64, note_value: u64, pool: &str) -
     };
     r.map_err(e("builder"))?;
     let PcztResult { pczt_parts, .. } = builder
-        .build_for_pczt(OsRng, &zip317::FeeRule::standard())
+        .build_for_pczt(rng(), &zip317::FeeRule::standard())
         .map_err(e("build_for_pczt"))?;
     let pczt = Creator::build_from_parts(pczt_parts).ok_or("creator failed")?;
-    let pczt = IoFinalizer::new(pczt).finalize_io().map_err(e("io finalizer"))?;
+    let pczt = IoFinalizer::new(pczt).finalize_io(rng()).map_err(e("io finalizer"))?;
     Ok(json!({
         "pczt": pczt_to_b64(pczt)?,
         "pool": pool,
@@ -401,7 +409,9 @@ struct Custom(#[allow(dead_code)] String);
 
 /// Full participant-side verification. Returns pending spends and a
 /// human-readable list of what the transaction does.
-fn inspect_inner(p: &Pczt, fvk: &FullViewingKey) -> R<(Vec<PendingSpend>, Vec<Value>, [u8; 32], TxVersion)> {
+type Inspected = (Vec<PendingSpend>, Vec<Value>, [u8; 32], TxVersion);
+
+fn inspect_inner(p: &Pczt, fvk: &FullViewingKey) -> R<Inspected> {
     let (version, h) = sighash(p)?;
     let pools: &[Pool] = if version == TxVersion::V6 {
         &[Pool::Orchard, Pool::Ironwood]
@@ -625,13 +635,13 @@ pub fn finalize(signed_pczt: &str) -> R<String> {
     let (v, _) = sighash(&p)?;
     let p = if v == TxVersion::V6 {
         let pk = orchard::circuit::ProvingKey::build(orchard::circuit::OrchardCircuitVersion::PostNu6_3);
-        Prover::new(p).create_ironwood_proof(&pk).map_err(e("prover"))?.finish()
+        Prover::new(p).create_ironwood_proof(rng(), &pk).map_err(e("prover"))?.finish()
     } else {
         let pk = orchard::circuit::ProvingKey::build(orchard::circuit::OrchardCircuitVersion::FixedPostNu6_2);
-        Prover::new(p).create_orchard_proof(&pk).map_err(e("prover"))?.finish()
+        Prover::new(p).create_orchard_proof(rng(), &pk).map_err(e("prover"))?.finish()
     };
     let p = SpendFinalizer::new(p).finalize_spends().map_err(e("spend finalizer"))?;
-    let tx = TransactionExtractor::new(p).extract().map_err(e("extract"))?;
+    let tx = TransactionExtractor::new(p).extract(rng()).map_err(e("extract"))?;
     let mut raw = vec![];
     tx.write(&mut raw).map_err(e("write"))?;
     Ok(json!({"tx_hex": hex::encode(&raw), "txid": tx.txid().to_string(),
@@ -856,6 +866,14 @@ mod tests {
     #[test]
     fn orchard_2_of_3() {
         full_flow("orchard", &[2, 3]);
+    }
+
+    #[test]
+    fn testnet_activates_nu7_with_v6_transactions() {
+        use zcash_protocol::consensus::BranchId;
+        let branch = BranchId::for_height(&Network::TestNetwork, BlockHeight::from_u32(4_465_026));
+        assert_eq!(u32::from(branch), 0x7719_0AD9);
+        assert_eq!(TxVersion::suggested_for_branch(branch), TxVersion::V6);
     }
 
     #[test]
