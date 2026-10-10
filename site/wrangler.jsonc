@@ -1,0 +1,7 @@
+{
+  "$schema": "../cf/node_modules/wrangler/config-schema.json",
+  "name": "zigs-site",
+  "compatibility_date": "2026-10-01",
+  "assets": { "directory": "." },
+  "routes": [{ "pattern": "zigs.app", "custom_domain": true }]
+}
