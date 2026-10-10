@@ -1,0 +1,58 @@
+# Testnet light-wallet backend: Zakura full node -> lightwalletd -> Envoy (grpc-web + CORS).
+# Only Envoy is published. Set LWD_BIND to the address browsers should reach (default: localhost).
+services:
+  zakura:
+    image: zakuracore/zakura:1.6.0
+    restart: unless-stopped
+    environment:
+      - ZAKURA_NETWORK__NETWORK=Testnet
+      - ZAKURA_NETWORK__LISTEN_ADDR=[::]:18233
+      - ZAKURA_RPC__LISTEN_ADDR=0.0.0.0:18232
+      - ZAKURA_RPC__ENABLE_COOKIE_AUTH=false
+    volumes:
+      - zakura-cache:/home/zebra/.cache/zakura
+    deploy:
+      resources:
+        limits:
+          cpus: "4"
+          memory: 16G
+
+  lightwalletd:
+    image: electriccoinco/lightwalletd:v0.5.4
+    restart: unless-stopped
+    depends_on:
+      - zakura
+    command: >
+      --no-tls-very-insecure
+      --grpc-bind-addr=0.0.0.0:9067
+      --http-bind-addr=0.0.0.0:9068
+      --zcash-conf-path=/etc/lightwalletd/zcash.conf
+      --data-dir=/var/lib/lightwalletd/db
+      --log-file=/dev/stdout
+    volumes:
+      - ./zcash.conf:/etc/lightwalletd/zcash.conf:ro
+      - lwd-cache:/var/lib/lightwalletd/db
+    deploy:
+      resources:
+        limits:
+          cpus: "2"
+          memory: 4G
+
+  envoy:
+    image: envoyproxy/envoy:v1.38.6
+    restart: unless-stopped
+    depends_on:
+      - lightwalletd
+    volumes:
+      - ./envoy.yaml:/etc/envoy/envoy.yaml:ro
+    ports:
+      - "${LWD_BIND:-127.0.0.1}:9080:8080"
+    deploy:
+      resources:
+        limits:
+          cpus: "1"
+          memory: 512M
+
+volumes:
+  zakura-cache:
+  lwd-cache:
