@@ -49,6 +49,7 @@ use serde_json::{json, Value};
 use wasm_bindgen::prelude::*;
 
 mod chain;
+mod snapshot;
 #[cfg(not(target_arch = "wasm32"))]
 mod ffi;
 use zcash_keys::{address::UnifiedAddress, keys::UnifiedFullViewingKey};

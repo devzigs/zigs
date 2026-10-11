@@ -777,14 +777,43 @@ async function pickServer() {
   throw new Error("No light-wallet server answers. Check your connection, then click Sync.");
 }
 
-// Switching servers starts a new wallet, which syncs again from the birthday.
+// Wallet sync state, sealed with the group key, so a reload continues from the last block.
+let idbOpen = null;
+function idb(mode, fn) {
+  idbOpen ||= new Promise((res, rej) => {
+    const r = indexedDB.open("zigs", 1);
+    r.onupgradeneeded = () => r.result.createObjectStore("chain");
+    r.onsuccess = () => res(r.result); r.onerror = () => rej(r.error);
+  });
+  return idbOpen.then((db) => new Promise((res, rej) => {
+    const tx = db.transaction("chain", mode), req = fn(tx.objectStore("chain"));
+    tx.oncomplete = () => res(req.result); tx.onerror = () => rej(tx.error);
+  }));
+}
+async function loadSnapshot(gid) {
+  try { const sealed = await idb("readonly", (st) => st.get(gid)); return sealed ? Z.secretOpen(gkeys[gid], "chain\n" + gid, sealed) : null; }
+  catch (e) { log("saved wallet state unreadable: " + (e.message || e)); return null; }
+}
+async function saveSnapshot(c) {
+  try { const sealed = Z.secretSeal(gkeys[c.gid], "chain\n" + c.gid, c.cw.snapshot()); await idb("readwrite", (st) => st.put(sealed, c.gid)); }
+  catch (e) { log("could not save wallet state: " + (e.message || e)); }
+}
+
+// A new server or a reload continues from saved state; without it the wallet syncs from the birthday.
 async function connect(c) {
   const url = await pickServer();
   if (c.cw && c.url === url) return;
+  let snap = null;
+  try { snap = c.cw ? c.cw.snapshot() : await loadSnapshot(c.gid); } catch (e) { log("no usable wallet state: " + (e.message || e)); }
+  let next = null;
+  if (snap) {
+    try { next = Z.ChainWallet.restore(c.ufvk, c.birthday, url, snap); } catch (e) { log("saved wallet state rejected: " + (e.message || e)); }
+  }
   if (c.cw) c.cw.free();
-  c.cw = new Z.ChainWallet(c.ufvk, c.birthday, url);
+  c.cw = next || new Z.ChainWallet(c.ufvk, c.birthday, url);
   c.url = url;
-  log("using " + new URL(url).host);
+  log("using " + new URL(url).host + (next ? ", continuing from saved state" : ""));
+  if (next && !c.bal) { c.bal = J(c.cw.balance()); c.received = J(c.cw.received()); c.sent = new Set(J(c.cw.sent())); render(); }
 }
 
 async function runSync(c) {
@@ -798,6 +827,7 @@ async function runSync(c) {
     c.sent = new Set(J(c.cw.sent()));
     c.prog = null; c.ms = Math.round(performance.now() - t0);
     saveBal(c.gid, c.bal);
+    saveSnapshot(c);
     log("synced to " + c.bal.height + ", spendable " + fmtZec(c.bal.spendable));
   }
   catch (e) { c.error = e.message || String(e); log("sync failed: " + c.error); }

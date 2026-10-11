@@ -17,9 +17,17 @@ export class ChainWallet {
     constructor(ufvk: string, birthday: number, endpoint: string);
     received(): string;
     /**
+     * A wallet that continues from `snapshot` (from `snapshot()`) instead of the birthday.
+     */
+    static restore(ufvk: string, birthday: number, endpoint: string, snapshot: string): ChainWallet;
+    /**
      * Ids of mined transactions that spent this wallet's notes.
      */
     sent(): string;
+    /**
+     * The sync state as JSON: notes, scan position and note commitment tree.
+     */
+    snapshot(): string;
     sync(on_progress: Function): Promise<string>;
 }
 
@@ -108,7 +116,9 @@ export interface InitOutput {
     readonly chainwallet_createSpend: (a: number, b: number, c: number, d: number) => any;
     readonly chainwallet_new: (a: number, b: number, c: number, d: number, e: number) => [number, number, number];
     readonly chainwallet_received: (a: number) => [number, number];
+    readonly chainwallet_restore: (a: number, b: number, c: number, d: number, e: number, f: number, g: number) => [number, number, number];
     readonly chainwallet_sent: (a: number) => [number, number];
+    readonly chainwallet_snapshot: (a: number) => [number, number, number, number];
     readonly chainwallet_sync: (a: number, b: any) => any;
     readonly dkgPart1: (a: number, b: number, c: number) => [number, number, number, number];
     readonly dkgPart2: (a: number, b: number, c: number, d: number) => [number, number, number, number];

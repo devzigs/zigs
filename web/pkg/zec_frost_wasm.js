@@ -1,6 +1,12 @@
 /* @ts-self-types="./zec_frost_wasm.d.ts" */
 
 export class ChainWallet {
+    static __wrap(ptr) {
+        const obj = Object.create(ChainWallet.prototype);
+        obj.__wbg_ptr = ptr;
+        ChainWalletFinalization.register(obj, obj.__wbg_ptr, obj);
+        return obj;
+    }
     __destroy_into_raw() {
         const ptr = this.__wbg_ptr;
         this.__wbg_ptr = 0;
@@ -81,6 +87,27 @@ export class ChainWallet {
         }
     }
     /**
+     * A wallet that continues from `snapshot` (from `snapshot()`) instead of the birthday.
+     * @param {string} ufvk
+     * @param {number} birthday
+     * @param {string} endpoint
+     * @param {string} snapshot
+     * @returns {ChainWallet}
+     */
+    static restore(ufvk, birthday, endpoint, snapshot) {
+        const ptr0 = passStringToWasm0(ufvk, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
+        const len0 = WASM_VECTOR_LEN;
+        const ptr1 = passStringToWasm0(endpoint, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
+        const len1 = WASM_VECTOR_LEN;
+        const ptr2 = passStringToWasm0(snapshot, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
+        const len2 = WASM_VECTOR_LEN;
+        const ret = wasm.chainwallet_restore(ptr0, len0, birthday, ptr1, len1, ptr2, len2);
+        if (ret[2]) {
+            throw takeFromExternrefTable0(ret[1]);
+        }
+        return ChainWallet.__wrap(ret[0]);
+    }
+    /**
      * Ids of mined transactions that spent this wallet's notes.
      * @returns {string}
      */
@@ -94,6 +121,28 @@ export class ChainWallet {
             return getStringFromWasm0(ret[0], ret[1]);
         } finally {
             wasm.__wbindgen_free(deferred1_0, deferred1_1, 1);
+        }
+    }
+    /**
+     * The sync state as JSON: notes, scan position and note commitment tree.
+     * @returns {string}
+     */
+    snapshot() {
+        let deferred2_0;
+        let deferred2_1;
+        try {
+            const ret = wasm.chainwallet_snapshot(this.__wbg_ptr);
+            var ptr1 = ret[0];
+            var len1 = ret[1];
+            if (ret[3]) {
+                ptr1 = 0; len1 = 0;
+                throw takeFromExternrefTable0(ret[2]);
+            }
+            deferred2_0 = ptr1;
+            deferred2_1 = len1;
+            return getStringFromWasm0(ptr1, len1);
+        } finally {
+            wasm.__wbindgen_free(deferred2_0, deferred2_1, 1);
         }
     }
     /**

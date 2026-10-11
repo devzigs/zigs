@@ -5,7 +5,7 @@ use std::{cell::RefCell, convert::Infallible, rc::Rc};
 
 use incrementalmerkletree::{frontier::Frontier, Marking, Position, Retention};
 use orchard::{keys::Scope, note::Nullifier, tree::MerkleHashOrchard};
-use serde_json::json;
+use serde_json::{json, Value};
 use shardtree::{store::memory::MemoryShardStore, ShardTree};
 use wasm_bindgen::prelude::*;
 use zcash_client_backend::{
@@ -20,9 +20,17 @@ use zcash_client_backend::{
     scanning::{scan_block, ScanningKeys, SpendIdentifiers},
 };
 use zcash_keys::{address::Address, keys::UnifiedFullViewingKey};
-use zcash_protocol::consensus::{BlockHeight, Network};
+use zcash_primitives::block::BlockHash;
+use zcash_protocol::{
+    consensus::{BlockHeight, Network},
+    TxId,
+};
 
-use super::{build_ironwood_pczt, e, ensure, pczt_to_b64, R};
+use super::{
+    build_ironwood_pczt, e, ensure, pczt_to_b64,
+    snapshot::{decode_note, decode_store, encode_note, encode_store, hex32},
+    R,
+};
 
 const BATCH: u32 = 1000;
 const CONFIRMATIONS: u32 = 3;
@@ -64,15 +72,13 @@ impl Rec {
     }
 }
 
-// ponytail: all state lives in memory, so each page load re-syncs from the birthday;
-// upgrade path is persisting the tree and notes in IndexedDB. Reorgs are not handled.
+// ponytail: reorgs are not handled; a snapshot taken on a dropped branch stays wrong.
 struct Inner {
     ufvk: UnifiedFullViewingKey,
     birthday: u32,
     endpoint: String,
     tree: Tree,
     keys: ScanningKeys<u32, (u32, Scope)>,
-    ids: SpendIdentifiers<u32>,
     notes: Vec<Rec>,
     /// Transactions that spent our notes, as seen in blocks: proof that a payment went out.
     sent: Vec<String>,
@@ -85,24 +91,23 @@ struct Inner {
 impl Inner {
     fn apply_block(&mut self, block: CompactBlock) -> R<()> {
         let height = u32::try_from(block.height).map_err(e("block height"))?;
+        // Spends are matched against our own notes rather than through the scanner, whose
+        // watch list cannot be rebuilt from a snapshot.
+        let spends: Vec<(String, Vec<Vec<u8>>)> = block
+            .vtx
+            .iter()
+            .map(|tx| (txid_text(&tx.txid), tx.ironwood_actions.iter().map(|a| a.nullifier.clone()).collect()))
+            .collect();
         let sb = scan_block::<_, _, _, Infallible>(
             &Network::TestNetwork,
             block,
             &self.keys,
-            &self.ids,
+            &SpendIdentifiers::empty(),
             self.prior.as_ref(),
         )
         .map_err(|x| format!("scan failed at block {height}: {x:?}"))?;
         for tx in sb.transactions() {
             let txid = tx.txid().to_string();
-            if !tx.ironwood_spends().is_empty() && !self.sent.contains(&txid) {
-                self.sent.push(txid.clone());
-            }
-            for sp in tx.ironwood_spends() {
-                for n in self.notes.iter_mut().filter(|n| n.nf == *sp.nf()) {
-                    n.spent = true;
-                }
-            }
             for out in tx.ironwood_outputs() {
                 let nf = *out.nf().ok_or("decrypted note has no nullifier")?;
                 let note = out.note().0;
@@ -111,7 +116,7 @@ impl Inner {
                 self.notes.push(Rec { note, position, height, nf, spent: false, txid: txid.clone(), change });
             }
         }
-        self.ids.update_with(&sb);
+        self.mark_spent(&spends);
         self.prior = Some(sb.to_block_metadata());
         let commitments = sb.into_commitments().ironwood;
         let checkpointed = commitments.last().is_some_and(|(_, r)| r.is_checkpoint());
@@ -122,6 +127,51 @@ impl Inner {
             self.tree.checkpoint(BlockHeight::from_u32(height)).map_err(e("tree checkpoint"))?;
         }
         self.synced = height;
+        Ok(())
+    }
+
+    fn mark_spent(&mut self, spends: &[(String, Vec<Vec<u8>>)]) {
+        for (txid, nfs) in spends {
+            let mut hit = false;
+            for n in self.notes.iter_mut().filter(|n| !n.spent) {
+                if nfs.iter().any(|nf| nf[..] == n.nf.to_bytes()[..]) {
+                    n.spent = true;
+                    hit = true;
+                }
+            }
+            if hit && !self.sent.contains(txid) {
+                self.sent.push(txid.clone());
+            }
+        }
+    }
+
+    fn snapshot(&self) -> R<String> {
+        let notes: Vec<Value> = self
+            .notes
+            .iter()
+            .map(|n| {
+                json!({"note": encode_note(&n.note), "pos": u64::from(n.position), "h": n.height,
+                    "nf": hex::encode(n.nf.to_bytes()), "spent": n.spent, "txid": n.txid, "change": n.change})
+            })
+            .collect();
+        let prior = self.prior.as_ref().map(|p| {
+            json!({"h": u32::from(p.block_height()), "hash": hex::encode(p.block_hash().0),
+                "s": p.sapling_tree_size(), "o": p.orchard_tree_size(), "i": p.ironwood_tree_size()})
+        });
+        Ok(json!({"v": 1, "birthday": self.birthday, "synced": self.synced, "sent": self.sent,
+            "prior": prior, "notes": notes, "tree": encode_store(self.tree.store())?})
+        .to_string())
+    }
+
+    fn restore(&mut self, text: &str) -> R<()> {
+        let v: Value = serde_json::from_str(text).map_err(e("saved wallet state"))?;
+        ensure(v["v"] == 1, "the saved wallet state has an unknown format")?;
+        ensure(v["birthday"] == self.birthday, "the saved wallet state belongs to another wallet")?;
+        self.tree = ShardTree::new(decode_store(&v["tree"])?, 100);
+        self.notes = v["notes"].as_array().ok_or("saved notes")?.iter().map(rec_of).collect::<R<_>>()?;
+        self.sent = v["sent"].as_array().ok_or("saved sends")?.iter().filter_map(|t| t.as_str().map(String::from)).collect();
+        self.synced = v["synced"].as_u64().and_then(|h| u32::try_from(h).ok()).ok_or("saved height")?;
+        self.prior = if v["prior"].is_null() { None } else { Some(prior_of(&v["prior"])?) };
         Ok(())
     }
 
@@ -161,6 +211,29 @@ impl Inner {
             .collect();
         json!(list).to_string()
     }
+}
+
+fn txid_text(raw: &[u8]) -> String {
+    <[u8; 32]>::try_from(raw).map(|b| TxId::from_bytes(b).to_string()).unwrap_or_default()
+}
+
+fn rec_of(v: &Value) -> R<Rec> {
+    let nf = Option::from(Nullifier::from_bytes(&hex32(&v["nf"], "nullifier")?)).ok_or("saved nullifier")?;
+    Ok(Rec {
+        note: decode_note(v["note"].as_str().unwrap_or_default())?,
+        position: Position::from(v["pos"].as_u64().ok_or("saved position")?),
+        height: v["h"].as_u64().and_then(|h| u32::try_from(h).ok()).ok_or("saved note height")?,
+        nf,
+        spent: v["spent"].as_bool().unwrap_or(false),
+        txid: v["txid"].as_str().unwrap_or_default().to_string(),
+        change: v["change"].as_bool().unwrap_or(false),
+    })
+}
+
+fn prior_of(v: &Value) -> R<BlockMetadata> {
+    let size = |k: &str| v[k].as_u64().and_then(|n| u32::try_from(n).ok());
+    let height = v["h"].as_u64().and_then(|h| u32::try_from(h).ok()).ok_or("saved block height")?;
+    Ok(BlockMetadata::from_parts(BlockHeight::from_u32(height), BlockHash(hex32(&v["hash"], "block hash")?), size("s"), size("o"), size("i")))
 }
 
 fn is_confirmed(note_height: u32, synced: u32) -> bool {
@@ -344,7 +417,6 @@ impl ChainWallet {
             endpoint: endpoint.to_string(),
             tree,
             keys,
-            ids: SpendIdentifiers::empty(),
             notes: vec![],
             sent: vec![],
             synced: 0,
@@ -352,6 +424,18 @@ impl ChainWallet {
             prior: None,
             busy: false,
         }))))
+    }
+
+    /// A wallet that continues from `snapshot` (from `snapshot()`) instead of the birthday.
+    pub fn restore(ufvk: &str, birthday: u32, endpoint: &str, snapshot: &str) -> Result<ChainWallet, JsError> {
+        let cw = ChainWallet::new(ufvk, birthday, endpoint)?;
+        super::js(cw.0.borrow_mut().restore(snapshot))?;
+        Ok(cw)
+    }
+
+    /// The sync state as JSON: notes, scan position and note commitment tree.
+    pub fn snapshot(&self) -> Result<String, JsError> {
+        super::js(self.0.borrow().snapshot())
     }
 
     pub async fn sync(&self, on_progress: js_sys::Function) -> Result<String, JsError> {
