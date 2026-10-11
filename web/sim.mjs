@@ -3,10 +3,10 @@
 // user id and localStorage, and the real WASM engine.
 import fs from "fs";
 import { JSDOM } from "jsdom";
-import * as wasm from "./web/pkg/zec_frost_wasm.js";
-await wasm.default({ module_or_path: fs.readFileSync("./web/pkg/zec_frost_wasm_bg.wasm") });
+import * as wasm from "./pkg/zec_frost_wasm.js";
+await wasm.default({ module_or_path: fs.readFileSync(new URL("./pkg/zec_frost_wasm_bg.wasm", import.meta.url)) });
 
-const html = fs.readFileSync("./web/index.html", "utf8");
+const html = fs.readFileSync(new URL("./index.html", import.meta.url), "utf8");
 const body = html.replace(/<script type="module">[\s\S]*<\/script>/, "");
 let script = fs.readFileSync(new URL("./app.mjs", import.meta.url), "utf8")
   .replace('await import("./pkg/zec_frost_wasm.js")', "window.__wasm");

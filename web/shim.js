@@ -16,7 +16,18 @@
     const d = docs.get(path);
     return { id: lastSeg(path), exists: d != null, data: () => clone(d), metadata: {} };
   };
-  const notify = () => { for (const l of [...listeners]) l(); };
+  // Calls the listeners that watch `path` (a document, or the collection that holds it). With no
+  // path, every listener. `gid` limits a change to one group's listeners and the group list.
+  // One failing listener must not stop the others.
+  const hears = (l, path, gid) => path == null && gid == null
+    || (path != null && (l.path === path || l.path === parentOf(path)))
+    || (gid != null && (gidOf(l.path) === gid || !gidOf(l.path)));
+  const notify = (path, gid) => {
+    for (const l of [...listeners]) {
+      if (!hears(l, path, gid)) continue;
+      try { l(); } catch (e) { console.error("listener failed for", l.path, e); }
+    }
+  };
 
   function join(gid) {
     if (!gid) return null;
@@ -36,10 +47,10 @@
       if (m.type === "init") {
         for (const p of [...docs.keys()]) if (gidOf(p) === gid) docs.delete(p);
         for (const d of m.docs) docs.set(d.path, d.data);
-        g.loaded = true; g.delay = 1000; g.resolve(); notify();
+        g.loaded = true; g.delay = 1000; g.resolve(); notify(null, gid);
       } else if (m.type === "put") {
         if (m.data == null) docs.delete(m.path); else docs.set(m.path, m.data);
-        notify();
+        notify(m.path);
       } else if (m.type === "reply") {
         const w = g.waiting.get(m.rid); g.waiting.delete(m.rid);
         if (w) m.ok ? w.res(m.result) : w.rej({ code: m.code, message: m.message });
@@ -69,6 +80,7 @@
     const g = join(gidOf(path));
     const ok = () => g ? g.loaded : [...groups.values()].every((x) => x.loaded) || Date.now() - started > 4000;
     const l = () => { if (ok()) fn(); };
+    l.path = path;
     listeners.add(l); l();
     if (!g) setTimeout(l, 4100);
     return () => listeners.delete(l);

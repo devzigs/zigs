@@ -1,6 +1,11 @@
+<!doctype html>
+<html lang="en">
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>Zigs</title>
+<meta name="description" content="Zigs is a private shared wallet for shielded Zcash. Any t of n signers approve each payment, and on chain it looks like a shielded payment from a standard wallet.">
+<link rel="modulepreload" href="/pkg/zec_frost_wasm.js">
+<link rel="preload" href="/pkg/zec_frost_wasm_bg.wasm" as="fetch" type="application/wasm" crossorigin>
 <link rel="icon" type="image/png" href="/favicon.png">
 <link rel="apple-touch-icon" href="/apple-touch-icon.png">
 <meta name="referrer" content="no-referrer">
@@ -48,16 +53,16 @@
    Dark-first; a light palette applies when the viewer prefers light. */
 :root {
   color-scheme: dark;
-  --bg: #0b0b10;
-  --side: #0e0e14;
-  --panel: #13131a;
-  --raised: #1a1a23;
-  --sunk: #0f0f15;
-  --line: #24242f;
-  --line-2: #30303d;
-  --text: #ededf2;
-  --muted: #9a9aab;
-  --faint: #8b8b9d;
+  --bg: #0a0a0a;
+  --side: #0d0d0d;
+  --panel: #141414;
+  --raised: #1c1c1c;
+  --sunk: #0f0f0f;
+  --line: #2a2a2a;
+  --line-2: #383838;
+  --text: #f4f4f0;
+  --muted: #a1a1a1;
+  --faint: #8e8e8e;
   --accent: #f4b728;
   --accent-text: #f4b728;
   --on-accent: #17130a;
@@ -79,7 +84,7 @@
     --bg: #f6f6f8; --side: #fbfbfc; --panel: #ffffff; --raised: #f3f3f6; --sunk: #f0f0f4;
     --line: #e4e4ea; --line-2: #d4d4dd; --text: #15151c; --muted: #5d5d6e; --faint: #6d6d7d;
     --accent-text: #8a6200; --accent-soft: rgba(244, 183, 40, 0.18);
-    --ok: #12804f; --ok-soft: rgba(18, 128, 79, 0.1); --bad: #c0362c; --bad-soft: rgba(192, 54, 44, 0.08);
+    --ok: #0f7146; --ok-soft: rgba(15, 113, 70, 0.1); --bad: #c0362c; --bad-soft: rgba(192, 54, 44, 0.08);
     --info: #2d5fc4; --info-soft: rgba(45, 95, 196, 0.08); --shadow: 0 24px 60px -28px rgba(20, 20, 40, 0.35);
   }
 }
@@ -88,7 +93,7 @@
   --bg: #f6f6f8; --side: #fbfbfc; --panel: #ffffff; --raised: #f3f3f6; --sunk: #f0f0f4;
   --line: #e4e4ea; --line-2: #d4d4dd; --text: #15151c; --muted: #5d5d6e; --faint: #6d6d7d;
   --accent-text: #8a6200; --accent-soft: rgba(244, 183, 40, 0.18);
-  --ok: #12804f; --ok-soft: rgba(18, 128, 79, 0.1); --bad: #c0362c; --bad-soft: rgba(192, 54, 44, 0.08);
+  --ok: #0f7146; --ok-soft: rgba(15, 113, 70, 0.1); --bad: #c0362c; --bad-soft: rgba(192, 54, 44, 0.08);
   --info: #2d5fc4; --info-soft: rgba(45, 95, 196, 0.08); --shadow: 0 24px 60px -28px rgba(20, 20, 40, 0.35);
 }
 * { box-sizing: border-box; }
@@ -98,7 +103,7 @@ h1, h2, h3 { margin: 0; font-weight: 600; letter-spacing: -0.02em; text-wrap: ba
 p { margin: 0; }
 a { color: var(--accent-text); }
 button { font: inherit; color: inherit; }
-:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+:focus-visible { outline: 2px solid var(--accent-text); outline-offset: 2px; }
 .muted { color: var(--muted); }
 .faint { color: var(--faint); }
 .small { font-size: 13px; }
@@ -111,8 +116,8 @@ button { font: inherit; color: inherit; }
 .shell { display: grid; grid-template-columns: 248px minmax(0, 1fr); min-height: 100%; }
 .side { position: sticky; top: 0; height: 100vh; display: flex; flex-direction: column; gap: 18px; padding: 18px 14px; background: var(--side); border-right: 1px solid var(--line); }
 .logo { display: flex; align-items: center; gap: 10px; padding: 4px 8px; font-weight: 600; font-size: 16px; letter-spacing: -0.02em; text-decoration: none; color: var(--text); }
-.logo img { width: 24px; height: 24px; flex: none; border-radius: 6px; }
-.net { margin-left: auto; font: 500 10.5px/1 var(--mono); padding: 4px 6px; border-radius: 5px; background: var(--accent-soft); color: var(--accent-text); text-transform: uppercase; letter-spacing: 0.06em; }
+.logo img { width: 28px; height: 28px; flex: none; border-radius: 6px; }
+.net { margin-left: auto; font: 500 10.5px/1 var(--mono); padding: 4px 6px; border-radius: 5px; background: var(--raised); color: var(--muted); text-transform: uppercase; letter-spacing: 0.06em; }
 #side-nav { display: grid; gap: 2px; align-content: start; overflow: auto; flex: 1; }
 .side-head { display: flex; align-items: center; justify-content: space-between; padding: 6px 8px 8px; }
 .side-item { display: grid; grid-template-columns: 28px minmax(0, 1fr) auto; align-items: center; gap: 10px; width: 100%; padding: 7px 8px; border: 0; border-radius: 8px; background: transparent; text-align: left; cursor: pointer; color: var(--muted); }
@@ -130,6 +135,9 @@ button { font: inherit; color: inherit; }
 .dot.busy { background: var(--accent); animation: pulse 1.2s infinite; }
 @keyframes pulse { 50% { opacity: 0.35; } }
 .side-note { font-size: 11.5px; color: var(--faint); line-height: 1.5; }
+.side-note a { color: var(--muted); }
+.app-foot { display: none; font-size: 12px; color: var(--faint); }
+.app-foot a { color: var(--muted); }
 .main { min-width: 0; padding: 28px clamp(16px, 4vw, 48px) 64px; }
 .page { max-width: 1040px; margin-inline: auto; display: grid; gap: 22px; }
 
@@ -137,7 +145,7 @@ button { font: inherit; color: inherit; }
 .av { width: 28px; height: 28px; border-radius: 8px; display: grid; place-items: center; flex: none; font: 600 11px/1 var(--sans); background: var(--raised); color: var(--muted); border: 1px solid var(--line); }
 .av.round { border-radius: 50%; }
 .av.lg { width: 36px; height: 36px; font-size: 12.5px; }
-.av.me { background: var(--accent-soft); color: var(--accent-text); border-color: transparent; }
+.av.me { background: var(--line-2); color: var(--text); border-color: transparent; }
 .stack { display: flex; }
 .stack .av { margin-left: -8px; box-shadow: 0 0 0 2px var(--bg); }
 .stack .av:first-child { margin-left: 0; }
@@ -176,6 +184,7 @@ button { font: inherit; color: inherit; }
 .tabs::-webkit-scrollbar { display: none; }
 .tab { position: relative; border: 0; background: none; padding: 10px 12px 12px; color: var(--muted); font-weight: 500; cursor: pointer; white-space: nowrap; }
 .tab:hover { color: var(--text); }
+.tab:focus-visible { outline-offset: -2px; }
 .tab[aria-selected="true"] { color: var(--text); }
 .tab[aria-selected="true"]::after { content: ""; position: absolute; left: 10px; right: 10px; bottom: -1px; height: 2px; border-radius: 2px; background: var(--accent); }
 .tab .count { margin-left: 6px; font: 500 11px/1 var(--mono); padding: 2px 6px; border-radius: 6px; background: var(--raised); color: var(--muted); }
@@ -196,7 +205,6 @@ button { font: inherit; color: inherit; }
 .money.lg { font-size: 30px; font-weight: 600; line-height: 1; }
 .money.md { font-size: 15px; font-weight: 500; }
 .money.md .cur { font-size: 0.8em; }
-.balance { background: radial-gradient(120% 140% at 100% 0%, var(--accent-soft), transparent 55%), var(--panel); }
 .stats { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 1px; background: var(--line); border-radius: 10px; overflow: hidden; border: 1px solid var(--line); }
 .stats > div { background: var(--panel); padding: 12px 14px; display: grid; gap: 4px; }
 .sync { display: flex; align-items: center; justify-content: space-between; gap: 10px; flex-wrap: wrap; font-size: 12.5px; color: var(--muted); }
@@ -228,7 +236,7 @@ a.row-item { text-decoration: none; }
 .how { list-style: none; margin: 0; padding: 0; display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; }
 .how li { display: grid; gap: 10px; align-content: start; padding: 16px; border-radius: 10px; background: var(--sunk); border: 1px solid var(--line); }
 .how h3 { font-size: 14.5px; letter-spacing: -0.01em; }
-.how-no { width: 26px; height: 26px; border-radius: 50%; display: grid; place-items: center; font: 600 12px/1 var(--mono); background: var(--accent-soft); color: var(--accent-text); }
+.how-no { width: 26px; height: 26px; border-radius: 50%; display: grid; place-items: center; font: 600 12px/1 var(--mono); background: var(--raised); color: var(--muted); }
 .rule { font-size: 13px; color: var(--muted); }
 .rule.bad { color: var(--bad); }
 .hint { font-size: 12px; color: var(--faint); min-height: 1em; }
@@ -257,14 +265,6 @@ a.row-item { text-decoration: none; }
 @keyframes shimmer { to { background-position: -200% 0; } }
 .sending { display: flex; align-items: center; gap: 8px; font-size: 13px; color: var(--muted); }
 .chev { color: var(--faint); }
-.table { width: 100%; border-collapse: collapse; font-size: 13.5px; }
-.table th { text-align: left; font: 500 11.5px/1.2 var(--mono); text-transform: uppercase; letter-spacing: 0.06em; color: var(--faint); padding: 12px 20px; border-bottom: 1px solid var(--line); background: var(--raised); }
-.table td { padding: 13px 20px; border-bottom: 1px solid var(--line); vertical-align: middle; }
-.table tr:last-child td { border-bottom: 0; }
-.table tbody tr { cursor: pointer; }
-.table tbody tr:hover td { background: var(--raised); }
-.table .num { text-align: right; }
-.scroll { overflow-x: auto; }
 .empty { padding: 36px 20px; text-align: center; display: grid; gap: 8px; justify-items: center; color: var(--muted); }
 .empty h3 { color: var(--text); font-size: 15px; }
 
@@ -272,7 +272,7 @@ a.row-item { text-decoration: none; }
 .member { display: grid; grid-template-columns: 36px minmax(0, 1fr) auto; gap: 14px; align-items: center; padding: 14px 20px; border-top: 1px solid var(--line); }
 .member:first-child { border-top: 0; }
 .member .ri-title { display: flex; align-items: center; gap: 8px; }
-.you { font: 500 11px/1 var(--mono); padding: 3px 6px; border-radius: 5px; background: var(--accent-soft); color: var(--accent-text); }
+.you { font: 500 11px/1 var(--mono); padding: 3px 6px; border-radius: 5px; background: var(--raised); color: var(--muted); }
 .m-actions { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; justify-content: flex-end; }
 
 /* Setup */
@@ -295,7 +295,7 @@ a.row-item { text-decoration: none; }
 .seat.open { border-style: dashed; background: transparent; }
 
 /* Drawer and dialogs */
-.scrim { position: fixed; inset: 0; background: rgba(5, 5, 10, 0.55); backdrop-filter: blur(2px); z-index: 40; }
+.scrim { position: fixed; inset: 0; background: rgba(0, 0, 0, 0.6); backdrop-filter: blur(2px); z-index: 40; }
 .drawer { position: fixed; top: 0; right: 0; bottom: 0; width: min(460px, 100%); z-index: 41; background: var(--panel); border-left: 1px solid var(--line); box-shadow: var(--shadow); display: flex; flex-direction: column; }
 .drawer-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 16px 20px; padding-top: calc(16px + env(safe-area-inset-top, 0px)); border-bottom: 1px solid var(--line); }
 .drawer-body { overflow: auto; padding: 22px 20px 32px; display: grid; gap: 22px; align-content: start; }
@@ -332,7 +332,7 @@ a.row-item { text-decoration: none; }
 .summary { display: grid; gap: 8px; padding: 14px; border-radius: 10px; background: var(--sunk); border: 1px solid var(--line); font-size: 13px; }
 .summary div { display: flex; justify-content: space-between; gap: 12px; }
 .summary dd, .summary span:last-child { font-variant-numeric: tabular-nums; }
-.callout { display: flex; gap: 10px; padding: 12px 14px; border-radius: 10px; font-size: 13px; background: var(--info-soft); color: var(--info); }
+.callout { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; padding: 12px 14px; border-radius: 10px; font-size: 13px; background: var(--info-soft); color: var(--info); }
 .callout.warn { background: var(--accent-soft); color: var(--accent-text); }
 .callout.bad { background: var(--bad-soft); color: var(--bad); }
 .callout.ok { background: var(--ok-soft); color: var(--ok); }
@@ -341,6 +341,13 @@ a.row-item { text-decoration: none; }
 .lines > div { display: flex; justify-content: space-between; gap: 12px; padding: 11px 14px; border-top: 1px solid var(--line); font-size: 13.5px; }
 .lines > div:first-child { border-top: 0; }
 .lines .neg { color: var(--muted); }
+.lines .group { padding: 9px 14px; background: var(--sunk); color: var(--muted); font: 500 11.5px/1.2 var(--mono); text-transform: uppercase; letter-spacing: 0.06em; }
+.lines .total { font-weight: 600; }
+.leaves { display: grid; gap: 6px; }
+.redact { display: inline-block; width: 7em; height: 0.8em; border-radius: 3px; background: repeating-linear-gradient(90deg, var(--line-2) 0 6px, transparent 6px 8px); vertical-align: middle; }
+.addr-g { display: inline-block; margin-right: 0.6ch; }
+.send-why { flex-basis: 100%; font-size: 12.5px; color: var(--muted); text-align: right; }
+.bad-card { padding: 14px 20px; font-size: 13px; color: var(--muted); border-top: 1px solid var(--line); }
 .kv { display: grid; grid-template-columns: 150px minmax(0, 1fr); gap: 12px 18px; margin: 0; font-size: 13.5px; }
 .kv dt { color: var(--muted); }
 .kv dd { margin: 0; min-width: 0; }
@@ -348,32 +355,42 @@ details > summary { cursor: pointer; color: var(--accent-text); font-weight: 500
 .log { font-family: var(--mono); font-size: 11.5px; color: var(--muted); max-height: 220px; overflow: auto; background: var(--sunk); border: 1px solid var(--line); border-radius: 10px; padding: 12px; white-space: pre-wrap; margin-top: 10px; }
 
 /* Toast */
-#banner { position: fixed; z-index: 60; left: 50%; bottom: calc(20px + env(safe-area-inset-bottom, 0px)); transform: translateX(-50%); width: min(560px, calc(100% - 32px)); padding: 12px 16px; border-radius: 12px; font-size: 13.5px; box-shadow: var(--shadow); border: 1px solid var(--line); background: var(--panel); color: var(--text); }
+#banner { position: fixed; z-index: 60; left: 50%; bottom: calc(20px + env(safe-area-inset-bottom, 0px)); transform: translateX(-50%); width: min(560px, calc(100% - 32px)); display: flex; align-items: flex-start; gap: 12px; padding: 10px 10px 10px 16px; border-radius: 12px; font-size: 13.5px; box-shadow: var(--shadow); border: 1px solid var(--line); background: var(--panel); color: var(--text); }
+#banner[hidden] { display: none; }
+#banner-text { flex: 1; min-width: 0; padding-top: 3px; overflow-wrap: anywhere; }
 #banner.bad { border-color: var(--bad); color: var(--bad); }
 #banner.ok { border-color: var(--ok); color: var(--ok); }
+#banner .icon-btn { flex: none; color: inherit; }
+/* Keep a toast clear of the buttons at the bottom: the payment drawer and the mobile action bar. */
+body:has(.drawer-foot) #banner { bottom: calc(92px + env(safe-area-inset-bottom, 0px)); }
 
 @media (max-width: 960px) {
   .grid-ov, .setup { grid-template-columns: 1fr; }
   .how { grid-template-columns: 1fr; }
 }
 @media (max-width: 760px) {
-  .shell { grid-template-columns: 1fr; }
-  .side { position: static; height: auto; flex-direction: row; flex-wrap: wrap; align-items: center; padding: 12px 16px; padding-top: calc(12px + env(safe-area-inset-top, 0px)); border-right: 0; border-bottom: 1px solid var(--line); }
+  .shell { grid-template-columns: 1fr; grid-template-rows: auto 1fr; }
+  /* A fixed height keeps the header from jumping when the engine status line goes away. */
+  .side { position: static; height: calc(61px + env(safe-area-inset-top, 0px)); flex-direction: row; flex-wrap: nowrap; align-items: center; padding: 12px 16px; padding-top: calc(12px + env(safe-area-inset-top, 0px)); border-right: 0; border-bottom: 1px solid var(--line); }
   #side-nav, .side-foot .side-note { display: none; }
-  .side-foot { border: 0; padding: 0; margin-left: auto; }
+  .side-foot { border: 0; padding: 0; margin-left: auto; min-width: 0; }
+  #engine-text { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .app-foot { display: block; }
   .back { display: inline-flex; justify-self: start; }
   .main { padding-top: 20px; }
   .kv { grid-template-columns: 1fr; gap: 2px 0; }
   .kv dd { margin-bottom: 10px; }
   .row-item { grid-template-columns: 36px minmax(0, 1fr) auto; }
   .row-item .chev { display: none; }
-  .table .hide-sm { display: none; }
   .side-foot:has(.dot.ok) { display: none; }
   .tab { padding-inline: 9px; }
   .wallet-actions { display: none; }
-  .action-bar { display: flex; gap: 10px; position: fixed; left: 0; right: 0; bottom: 0; z-index: 30; padding: 12px 16px; padding-bottom: calc(12px + env(safe-area-inset-bottom, 0px)); background: color-mix(in srgb, var(--bg) 86%, transparent); backdrop-filter: blur(12px); border-top: 1px solid var(--line); }
+  .action-bar { display: flex; flex-wrap: wrap; gap: 10px; position: fixed; left: 0; right: 0; bottom: 0; z-index: 30; padding: 12px 16px; padding-bottom: calc(12px + env(safe-area-inset-bottom, 0px)); background: color-mix(in srgb, var(--bg) 86%, transparent); backdrop-filter: blur(12px); border-top: 1px solid var(--line); }
   .action-bar .btn { flex: 1; height: 46px; font-size: 15px; }
-  .main { padding-bottom: 104px; }
+  .action-bar .send-why { order: -1; text-align: center; margin: 0; }
+  .main { padding-bottom: 148px; }
+  body:has(.action-bar) #banner { bottom: calc(84px + env(safe-area-inset-bottom, 0px)); }
+  body:has(.send-why) #banner { bottom: calc(128px + env(safe-area-inset-bottom, 0px)); }
   .row-item .btn { display: none; }
 }
 </style>
@@ -381,18 +398,23 @@ details > summary { cursor: pointer; color: var(--accent-text); font-weight: 500
 <div class="shell">
   <aside class="side" aria-label="Wallets">
     <a class="logo" href="#" aria-label="Zigs home">
-      <img src="/logo.png" alt="" width="24" height="24">
-      Zigs <span class="net">Beta</span>
+      <img src="/logo.png" alt="" width="28" height="28">
+      Zigs
+      <span class="net" title="Beta: testnet, and mainnet up to 0.5 ZEC. Not audited.">Beta</span>
     </a>
     <nav id="side-nav" aria-label="Your wallets"></nav>
     <div class="side-foot">
       <div class="engine" id="engine"><span class="dot busy" id="engine-dot"></span><span id="engine-text">Loading crypto engine…</span></div>
-      <p class="side-note">Keys are made and used in this browser. Not audited: mainnet wallets are limited to 0.5 ZEC.</p>
+      <p class="side-note">Keys are made and used in this browser. Beta: testnet, and mainnet up
+        to 0.5 ZEC. Not audited. At 0.5 ZEC the app warns and hides the address. It cannot block
+        deposits.
+        <a href="https://zigs.app" target="_blank" rel="noopener">About Zigs</a></p>
     </div>
   </aside>
   <main class="main"><div id="app" class="page"></div></main>
 </div>
-<div id="banner" hidden role="status"></div>
+<div id="banner" hidden role="status"><span id="banner-text"></span>
+  <button class="icon-btn" id="banner-close" type="button" aria-label="Close">×</button></div>
 <noscript><p class="notice bad">Zigs needs JavaScript and WebAssembly.
   In Tor Browser, set the security level to Standard.</p></noscript>
 
@@ -400,8 +422,9 @@ details > summary { cursor: pointer; color: var(--accent-text); font-weight: 500
 import { qrSvg } from "/qr.js";
 import { parsePayeeList, toZat, zatText } from "/payees.js";
 import { createPasskey, unlockKey, seal, open as openVault, parseVault } from "/vault.js";
+import { chunks, finite, fmtInt, samePackages } from "/util.js";
 // ───────────────────────── Engine (WASM) ─────────────────────────
-let Z = null;
+let Z = null, engineSettled = false;   // settled: the engine loaded or failed
 const engineDot = document.getElementById("engine-dot");
 const engineText = document.getElementById("engine-text");
 function setEngine(state, text) { engineDot.className = "dot " + state; engineText.textContent = text; }
@@ -422,6 +445,7 @@ async function loadEngine() {
         + ". Try a current Chrome, Edge, Firefox or Safari.";
     showBanner("bad", why);
   }
+  engineSettled = true;
   render(); react();
 }
 const J = (s) => JSON.parse(s);
@@ -548,7 +572,6 @@ function putSec(gid, seat, patch) {
 
 // ───────────────────────── Platform ─────────────────────────
 let db = null, sdb = null, user = null, downloads = null, me = null, canWrite = null, dbReady = false;
-// Own node first; ChainSafe's public proxy is the backup.
 // Light-wallet servers in order of preference. Mainnet uses a third-party server, so the group
 // server and the chain server have different operators (see PRIVACY.md).
 const NETWORKS = {
@@ -557,13 +580,16 @@ const NETWORKS = {
   mainnet: { label: "Mainnet", servers: ["https://zcash-mainnet.chainsafe.dev"],
     explorer: "https://zecblock.com/tx/", prefix: "u1", cap: 50000000 },
 };
-const netOf = (g) => NETWORKS[(g && g.network) || "testnet"] || NETWORKS.testnet;
+const netName = (g) => g && Object.hasOwn(NETWORKS, g.network) ? g.network : "testnet";
+const netOf = (g) => NETWORKS[netName(g)];
 const curNet = () => netOf(state.g);
 const capText = (zat) => zat / 1e8 + " ZEC";
 const netBadge = (g) => netOf(g).cap
-  ? el("span", { class: "badge bad", title: "Real ZEC. Not audited: at most " + capText(netOf(g).cap) + "." }, "Mainnet")
+  ? el("span", { class: "badge bad", title: "Real ZEC. Not audited. At " + capText(netOf(g).cap)
+    + " the app warns and hides the address. It cannot block deposits." }, "Mainnet")
   : el("span", { class: "badge plain" }, "Testnet");
 const SERVER_TIMEOUT_MS = 8000;
+const MISSING_SECRET = "This link is missing the wallet secret. Ask for the full invite link.";
 let chain = null;   // { gid, cw, prog, bal, received, ms, error, syncing } for the open group
 // Last known balance per wallet, so the wallet list shows money before a wallet syncs.
 // Balances are sealed with each wallet's key, so the browser's storage does not show amounts.
@@ -598,8 +624,9 @@ let bannerTimer = null;
 function showBanner(kind, text) {
   banner = { kind, text };
   const b = document.getElementById("banner");
-  b.hidden = false; b.className = "notice " + kind; b.textContent = text;
   b.setAttribute("role", kind === "bad" ? "alert" : "status");
+  b.hidden = false; b.className = kind;
+  document.getElementById("banner-text").textContent = text;
   clearTimeout(bannerTimer);
   if (kind === "ok") bannerTimer = setTimeout(() => { b.hidden = true; }, 4000);
 }
@@ -617,7 +644,10 @@ function adoptInviteKey() {
   if (!key) return;
   // A link must not replace a wallet key this browser already has: whoever knows the wallet id
   // could otherwise point the wallet at documents sealed with their own key.
-  if (gkeys[gid] && gkeys[gid] !== key) showBanner("bad", "This invite link has a different key for a wallet you already have, so it was ignored.");
+  if (gkeys[gid] && gkeys[gid] !== key) {
+    showBanner("bad", "This invite link has a different wallet secret for a wallet you already "
+      + "have, so it was ignored.");
+  }
   else if (/^[0-9a-f]{20}$/.test(gid) && /^[\w-]{43}$/.test(key)) putKey(gid, key);
   try { history.replaceState(null, "", "#" + gid); } catch {}
 }
@@ -671,24 +701,36 @@ async function boot() {
   db = dbNs; user = userNs; downloads = dlNs;
   if (db) sdb = wrapStore(db);
   if (user) { me = await user.id(); canWrite = await user.can("data.write"); }
-  if (!db) { showBanner("bad", "The group server is not available. Reload the page, or try again later."); return; }
+  if (!db) {
+    showBanner("bad", "The Zigs server is not available. Reload the page, or try again later.");
+    return;
+  }
   if (!me) showBanner("bad", "This browser cannot tell who you are, so you cannot take a seat.");
-  if (canWrite === false) showBanner("bad", "You can view this page but not take part. Ask the owner to invite you as an Editor from the Share menu.");
+  if (canWrite === false) showBanner("bad", "This page is read-only here. You cannot take part.");
   if (!storageOk) showBanner("bad", "This browser does not let the page save your key share. Keep this tab open, and use Back up.");
-  // The server keeps each group apart, so this browser opens the groups it has keys for.
+  // The server keeps each wallet apart, so this browser opens the wallets it has keys for.
   for (const gid of Object.keys(gkeys)) db.join?.(gid);
   sdb.collection("groups").onSnapshot((snap) => {
     dbReady = true;
-    state.groups = snap.docs.map((d) => ({ id: d.id, ...d.data() })).sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0));
+    state.groups = snap.docs.map((d) => cleanGroup(d.id, d.data()))
+      .sort((a, b) => finite(b.createdAt) - finite(a.createdAt));
     watchInbox();
     if (state.gid && !state.g) openGroup(state.gid);
     render();
-  }, (e) => showBanner("bad", "Lost connection to the shared store (" + e.code + "). Reload the page."));
+  }, (e) => showBanner("bad", "Lost connection to the Zigs server (" + e.code + "). Reload."));
   const h = location.hash.replace("#", "");
-  if (h && !gkeys[h]) showBanner("bad", "This link is missing its key. Ask for the full invite link.");
+  if (h && !gkeys[h]) showBanner("bad", MISSING_SECRET);
   else if (h) openGroup(h);
   render();
 }
+
+// A wallet document comes from another signer. Check the fields the page counts on, so one bad
+// document shows as an unreadable item and never breaks the page.
+const validWallet = (g) => Number.isInteger(g.n) && g.n >= 2 && g.n <= 7
+  && Number.isInteger(g.t) && g.t >= 2 && g.t <= g.n;
+const cleanGroup = (id, d) => ({
+  ...d, id, name: typeof d.name === "string" ? d.name : "Wallet", unreadable: !validWallet(d),
+});
 
 function watchInbox() {
   for (const g of state.groups) {
@@ -721,14 +763,20 @@ function openGroup(gid) {
   if (!gid) { try { history.replaceState(null, "", "#"); } catch {} render(); return; }
   try { history.replaceState(null, "", "#" + gid); } catch {}
   const base = "groups/" + gid;
-  unsubGroup.push(sdb.doc(base).onSnapshot((d) => { state.g = d.exists ? { id: d.id, ...d.data() } : null; render(); react(); }));
+  unsubGroup.push(sdb.doc(base).onSnapshot((d) => {
+    state.g = d.exists ? cleanGroup(d.id, d.data()) : null;
+    render(); react();
+  }));
   unsubGroup.push(sub(base + "/seats", (m) => state.seats = m));
   unsubGroup.push(sub(base + "/dkg1", (m) => state.dkg1 = m));
   unsubGroup.push(sub(base + "/dkg2", (m) => state.dkg2 = m));
   unsubGroup.push(sub(base + "/done", (m) => state.done = m));
   unsubGroup.push(sub(base + "/verify", (m) => state.verify = m));
   unsubGroup.push(sdb.doc(base + "/meta/wallet").onSnapshot((d) => { state.wallet = d.exists ? d.data() : null; render(); react(); }));
-  unsubGroup.push(sub(base + "/sessions", (m) => { state.sessions = Object.entries(m).map(([id, v]) => ({ id, ...v })).sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0)); }));
+  unsubGroup.push(sub(base + "/sessions", (m) => {
+    state.sessions = Object.entries(m).map(([id, v]) => ({ id, ...v }))
+      .sort((a, b) => finite(b.createdAt) - finite(a.createdAt));
+  }));
   render();
 }
 
@@ -744,11 +792,25 @@ function closeSession() { for (const u of unsubSession) u(); unsubSession = []; 
 
 // ───────────────────────── Derived state ─────────────────────────
 const seatIds = () => state.g ? Array.from({ length: state.g.n }, (_, i) => i + 1) : [];
-const allSeated = () => seatIds().every((i) => state.seats[i] && state.seats[i].uid && state.seats[i].boxPk);
+const allSeated = () => seatIds().every((i) => {
+  const s = state.seats[i];
+  return s && s.uid && isStr(s.boxPk);
+});
 const allR1 = () => seatIds().every((i) => state.dkg1[i]);
 const r2For = (to) => seatIds().filter((i) => i !== to).every((i) => state.dkg2[i + "-" + to]);
 const allDone = () => seatIds().every((i) => state.done[i]);
-const keysAgree = () => allDone() && new Set(seatIds().map((i) => state.done[i].groupKey)).size === 1;
+// Every seat's published key package must be identical, and so must the ones this browser made
+// itself. Equal group keys alone are not enough: seats with different packages cannot sign
+// together.
+function keysMatch() {
+  const dones = seatIds().map((i) => state.done[i]);
+  if (!dones.every((d) => isStr(d.publicKeyPackage))) return false;
+  if (new Set(dones.map((d) => d.groupKey)).size !== 1) return false;
+  const mine = localSeats().map((i) => sec(state.gid, i).publicKeyPackage).filter(Boolean);
+  return samePackages([...dones.map((d) => d.publicKeyPackage), ...mine]);
+}
+const keysAgree = () => allDone() && keysMatch();
+const keysDiffer = () => allDone() && !keysAgree();
 // FROST identifiers are the seat number as a 32-byte little-endian scalar.
 const frostId = (i) => i.toString(16).padStart(2, "0") + "0".repeat(62);
 // A restored key share must be the one the wallet published for that seat.
@@ -776,6 +838,8 @@ const myUid = () => { const i = localSeats()[0]; return i ? state.seats[i].uid :
 const isCreator = () => state.g && isMe(state.g.createdBy);
 const seatNameOf = (uid) => (Object.values(state.seats).find((s) => s.uid === uid) || {}).name || "someone";
 const curSession = () => state.sessions.find((s) => s.id === state.sid) || null;
+const isStr = (x) => typeof x === "string";
+const signersOf = (ss) => Array.isArray(ss.signers) ? ss.signers : [];
 
 function seatStage(i) {
   if (!state.seats[i]) return 0;
@@ -798,7 +862,11 @@ async function once(key, fn) {
 }
 
 function react() {
-  if (!Z || !db || !state.g) return;
+  try { reactNow(); } catch (e) { log("✗ react: " + (e && e.message ? e.message : e)); }
+}
+
+function reactNow() {
+  if (!Z || !db || !state.g || state.g.unreadable) return;
   const g = state.g, gid = state.gid, base = "groups/" + gid;
   for (const i of localSeats()) {
     const s = sec(gid, i);
@@ -834,12 +902,14 @@ function react() {
         const r1 = {}, r2 = {};
         for (const j of seatIds()) if (j !== i) {
           r1[j] = state.dkg1[j].package;
-          r2[j] = J(Z.boxOpen(s.boxSk, state.seats[j].boxPk, gid + ":" + j + "->" + i, state.dkg2[j + "-" + i].sealed));
+          const sealed = state.dkg2[j + "-" + i].sealed;
+          if (!isStr(sealed)) throw new Error("Seat " + j + " sent an unreadable message.");
+          r2[j] = J(Z.boxOpen(s.boxSk, state.seats[j].boxPk, gid + ":" + j + "->" + i, sealed));
         }
         const r = J(Z.dkgPart3(S(s.r2secret), S(r1), S(r2)));
         putSec(gid, i, { keyPackage: r.key_package, publicKeyPackage: r.public_key_package, groupKey: r.group_key, r2secret: null, r1package: null });
         await sdb.doc(base + "/done/" + i).set({ groupKey: r.group_key, publicKeyPackage: S(r.public_key_package), at: Date.now() });
-        log("seat " + i + ": key share ready, group key " + r.group_key.slice(0, 12) + "…");
+        log("seat " + i + ": key share ready, wallet key " + r.group_key.slice(0, 12) + "…");
       });
       continue;
     }
@@ -853,11 +923,11 @@ function react() {
         try { Z.walletVerify(S(state.wallet), S(s.publicKeyPackage)); } catch (e) { ok = false; error = e.message || String(e); }
         await putSec(gid, i, ok ? { checkedWallet: wk, rejectedWallet: null } : { rejectedWallet: wk });
         await sdb.doc(base + "/verify/" + i).set({ ok, error, at: Date.now() });
-        log("seat " + i + (ok ? ": wallet verified, ak equals my group key" : ": WALLET REJECTED: " + error));
+        log("seat " + i + (ok ? ": wallet verified, ak equals my wallet key" : ": WALLET REJECTED: " + error));
       });
     }
   }
-  if (state.wallet && state.wallet.birthday && myVerified()) ensureChain();
+  if (state.wallet && state.wallet.birthday && myVerified() && !keysDiffer()) ensureChain();
   // Group creator builds the shared wallet once all group keys agree.
   if (isCreator() && !state.wallet && keysAgree()) {
     once("wallet", async () => {
@@ -877,6 +947,8 @@ function react() {
 function reactSession(ss) {
   const g = state.g, gid = state.gid, base = "groups/" + gid + "/sessions/" + ss.id;
   const fvk = state.wallet.orchard_fvk;
+  // The engine takes only strings. A document with another type would crash it.
+  if (!isStr(ss.pczt) || !isStr(fvk) || (ss.package != null && !isStr(ss.package))) return;
   const coordinator = isMe(ss.createdBy);
   // Coordinator: once t approvals are in, build the signing package.
   if (coordinator && !ss.package && !ss.error) {
@@ -897,7 +969,8 @@ function reactSession(ss) {
   if (ss.package && !ss.error) {
     for (const i of localSeats()) {
       const s = sec(gid, i), n = s.nonces && s.nonces[ss.id];
-      if ((ss.signers || []).includes(i) && n && !state.shares[i]) once("share:" + ss.id + ":" + i, async () => {
+      const mine = signersOf(ss).includes(i) && n && !state.shares[i];
+      if (mine) once("share:" + ss.id + ":" + i, async () => {
         const nonces = { ...(s.nonces || {}) }; delete nonces[ss.id];
         const ins = inspectOf(ss);
         if (!n.sighash || !ins || ins.error || ins.sighash !== n.sighash) {
@@ -917,9 +990,10 @@ function reactSession(ss) {
     }
   }
   // Any participant: aggregate. The result is deterministic, so a race is harmless.
-  if (localSeats().length && ss.package && !ss.signed && !ss.error && (ss.signers || []).every((i) => state.shares[i])) {
+  const shared = signersOf(ss).every((i) => state.shares[i]);
+  if (localSeats().length && ss.package && !ss.signed && !ss.error && shared) {
     once("agg:" + ss.id, async () => {
-      const sh = {}; for (const i of ss.signers) sh[i] = J(state.shares[i].shares);
+      const sh = {}; for (const i of signersOf(ss)) sh[i] = J(state.shares[i].shares);
       let r;
       try { r = J(Z.signAggregate(ss.pczt, state.done[1].publicKeyPackage, ss.package, S(sh))); }
       catch (e) { await sdb.doc("groups/" + gid + "/sessions/" + ss.id).update({ error: e.message || String(e), status: "failed" }); throw e; }
@@ -1066,6 +1140,7 @@ async function cancelMove() {
 async function broadcastTx(ss) {
   const ref = sdb.doc("groups/" + state.gid + "/sessions/" + ss.id);
   try {
+    if (!isStr(ss.final.tx_hex)) throw new Error("The finished transaction cannot be read.");
     const r = await broadcastAnywhere(ss.final.tx_hex);
     await ref.update({ broadcastTxid: r.txid || ss.final.txid, broadcastAt: Date.now(), broadcastError: null, status: "broadcast" });
     log("transaction broadcast: " + (r.txid || ss.final.txid));
@@ -1118,10 +1193,13 @@ async function backup(i) {
   // Nonces stay out: a restored copy must never sign with a nonce this browser may also use.
   const { nonces, backedUp, ...s } = sec(state.gid, i);
   s.uid = s.uid || state.seats[i].uid;
-  const data = S({ kind: "zec-frost-key-share", group: state.gid, groupName: state.g.name, seat: i, threshold: state.g.t, of: state.g.n, key: gkeys[state.gid], wallet: state.wallet, secret: s }, null, 2);
+  const data = JSON.stringify({
+    kind: "zec-frost-key-share", group: state.gid, groupName: state.g.name, seat: i,
+    threshold: state.g.t, of: state.g.n, key: gkeys[state.gid], wallet: state.wallet, secret: s,
+  }, null, 2);
   if (!downloads) { showBanner("bad", "Downloads are not available in this view."); return; }
   try {
-    const name = (state.g.name || "group").replace(/\W+/g, "-");
+    const name = state.g.name.replace(/\W+/g, "-") || "wallet";
     await downloads.save({ filename: "zec-frost-" + name + "-seat-" + i + ".json", data });
     await putSec(state.gid, i, { backedUp: true });
   } catch (e) {
@@ -1140,7 +1218,7 @@ function restore(file) {
       const { nonces, uid, ...secret } = b.secret || {};
       const kept = (sec(b.group, b.seat) || {}).nonces || {};
       putSec(b.group, b.seat, { ...secret, nonces: kept, restored: true, backedUp: true });
-      showBanner("ok", "Restored seat " + b.seat + " of " + (b.groupName || "group") + ".");
+      showBanner("ok", "Restored seat " + b.seat + " of " + (b.groupName || "wallet") + ".");
       openGroup(b.group);
     } catch (e) { showBanner("bad", e.message); }
   };
@@ -1159,15 +1237,43 @@ const el = (tag, attrs = {}, ...kids) => {
   for (const k of kids.flat()) if (k != null && k !== false) n.append(k instanceof Node ? k : document.createTextNode(String(k)));
   return n;
 };
-const fmtZec = (zat) => (zat / 1e8).toLocaleString(undefined, { minimumFractionDigits: 3, maximumFractionDigits: 8 }) + " ZEC";
+const fmtZec = (zat) => Number.isFinite(zat) ? zecText(zat) + " ZEC" : "an unknown amount";
+const zecText = (zat) => ZEC_FMT.format(finite(zat) / 1e8);
 const short = (h, n = 10) => h ? h.slice(0, n) + "…" + h.slice(-6) : "";
 // A success makes an earlier error message obsolete, so it is cleared.
-const act = (fn) => async (ev) => { ev && ev.preventDefault && ev.preventDefault(); const b = ev && ev.currentTarget; if (b) b.disabled = true; try { await fn(ev); if (banner && banner.kind === "bad") { banner = null; document.getElementById("banner").hidden = true; } } catch (e) { showBanner("bad", e.message || String(e)); } finally { if (b) b.disabled = false; render(); react(); } };
+// A disabled button loses focus, so the key of the focused control is kept to give it back.
+const act = (fn) => async (ev) => {
+  ev.preventDefault();
+  const b = ev.currentTarget, key = document.activeElement.dataset.key;
+  if (b) b.disabled = true;
+  try {
+    await fn(ev);
+    if (banner && banner.kind === "bad") {
+      banner = null;
+      document.getElementById("banner").hidden = true;
+    }
+  } catch (e) { showBanner("bad", e.message || String(e)); }
+  finally {
+    if (b) b.disabled = false;
+    wantFocus = key ? { key, force: false } : null;
+    render(); react();
+  }
+};
 function copyBtn(text, label = "Copy", cls = "btn sm") {
   return el("button", { class: cls, type: "button", onclick: async (ev) => { const b = ev.currentTarget; try { await navigator.clipboard.writeText(text); b.textContent = "Copied"; } catch { b.textContent = "Select and copy"; } setTimeout(() => b.textContent = label, 1500); } }, label);
 }
 
+// One bad document from another signer must not break the page: the item it feeds shows as a
+// small unreadable card instead.
+const unreadable = () =>
+  el("div", { class: "bad-card" }, "This item has data this app cannot read.");
+function guard(build, ...args) {
+  try { return build(...args); }
+  catch (e) { log("unreadable item: " + (e && e.message ? e.message : e)); return unreadable(); }
+}
+
 let openLayer = "", tickTimer = null;
+let opener = "", lastTrigger = "", wantFocus = null;   // focus bookkeeping, see draw()
 // View state that only this browser cares about.
 const ui = {
   forget: false, tab: "overview", send: false, pay: null, payKey: 0, listError: "",
@@ -1178,12 +1284,18 @@ const ZEC_FMT = new Intl.NumberFormat("en-US", { minimumFractionDigits: 2, maxim
 const feeEstimate = (payees) => 5000 * Math.max(2, payees + 1);
 const MAX_PAYEES = 20;
 const BLOCK_SECONDS = 25;
-const initials = (name) => (name || "?").trim().split(/\s+/).map((w) => w[0]).join("").slice(0, 2).toUpperCase() || "?";
-const when = (ms) => ms ? new Date(ms).toLocaleString(undefined, { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" }) : "";
+const initials = (name) => String(name || "?").trim().split(/\s+/).map((w) => w[0]).join("")
+  .slice(0, 2).toUpperCase() || "?";
+const when = (ms) => {
+  const d = new Date(Number.isFinite(ms) ? ms : NaN);
+  const fmt = { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" };
+  return isNaN(d) ? "" : d.toLocaleString(undefined, fmt);
+};
 
 // `sign` is "out" or "in" for money leaving or entering the wallet.
 function money(zat, size = "md", sign = "") {
-  const [i, d] = ZEC_FMT.format((zat || 0) / 1e8).split(".");
+  if (!Number.isFinite(zat)) return el("span", { class: "money " + size }, "unknown");
+  const [i, d] = ZEC_FMT.format(zat / 1e8).split(".");
   const pre = sign === "out" ? "−" : sign === "in" ? "+" : "";
   return el("span", { class: "money " + size + (sign ? " " + sign : "") }, pre + i + "." + (d || "00"), el("span", { class: "cur" }, "ZEC"));
 }
@@ -1215,18 +1327,21 @@ const STATUS = {
   proving: ["Building proof", "info"], complete: ["Ready to send", "ok"], broadcast: ["Sent", "ok"], failed: ["Failed", "bad"],
 };
 function statusChip(s) {
-  const [t, c] = STATUS[s.status] || [s.status, ""];
+  const [t, c] = Object.hasOwn(STATUS, s.status) ? STATUS[s.status] : [String(s.status), ""];
   return el("span", { class: "badge " + c }, t);
 }
 
 // Payment wording. `who` comes from the engine: an address for the recipient, or a fixed phrase.
 const OWN_OUTPUT = new Set(["this wallet", "change (back to this wallet)"]);
 const isPayee = (l) => l.kind === "output" && !OWN_OUTPUT.has(l.who);
-const lineRank = (l) => l.kind === "spend" ? 0 : isPayee(l) ? 1 : 2;
 function payTitle(ss) {
   const p = payeesOf(ss);
-  return ss.note || (p.length === 1 ? "Payment to " + short(p[0].to, 8) : p.length ? "Payment to " + p.length + " recipients" : "Payment");
+  if (typeof ss.note === "string" && ss.note) return ss.note;
+  if (p.length === 1) return "Payment to " + short(p[0].to, 8);
+  return p.length ? "Payment to " + p.length + " recipients" : "Payment";
 }
+// What the proposer says leaves the wallet: the payees plus the fee.
+const leavesOf = (ss) => Number.isFinite(ss.amount) ? ss.amount + finite(ss.fee) : NaN;
 const ruleText = (t, n) => "Any " + t + " of " + n + " signers must approve each payment.";
 const groupName = (gid) => (state.groups.find((x) => x.id === gid) || {}).name || "the new wallet";
 const proposer = (ss) => isMe(ss.createdBy) ? "you" : seatNameOf(ss.createdBy);
@@ -1241,12 +1356,17 @@ function inFlight() {
   return state.sessions.filter((ss) => ss.broadcastTxid && ss.final && !c.sent.has(ss.final.txid));
 }
 function balanceNow(b) {
-  const out = inFlight(), sum = (f) => out.reduce((n, ss) => n + (f(ss) || 0), 0);
-  return { spendable: Math.max(0, b.spendable - sum((ss) => ss.noteValue)), pending: b.pending + sum((ss) => ss.change), sending: sum((ss) => ss.amount + (ss.fee || 0)) };
+  const out = inFlight(), sum = (f) => out.reduce((n, ss) => n + finite(f(ss)), 0);
+  return {
+    spendable: Math.max(0, b.spendable - sum((ss) => ss.noteValue)),
+    pending: b.pending + sum((ss) => ss.change),
+    sending: sum(leavesOf),
+  };
 }
 
 function sendBlocker() {
   const c = curChain();
+  if (keysDiffer()) return "The signers hold different wallet keys. Do not use this wallet.";
   if (!localSeats().length) return "You hold no seat in this wallet.";
   if (!myVerified()) return "Your seat is still checking the wallet address.";
   if (!c || !c.bal) return "Wait for the first sync to finish.";
@@ -1257,36 +1377,163 @@ function sendBlocker() {
   return b.pending ? "Incoming funds need 3 confirmations first." : "This wallet has no funds yet.";
 }
 
+// Draws once per frame, however many changes arrive together. A hidden tab gets no frames, so a
+// timer backs it up and the tab title still shows the approvals.
+let drawPending = false;
 function render() {
+  if (drawPending) return;
+  drawPending = true;
+  const run = () => { if (drawPending) { drawPending = false; draw(); } };
+  requestAnimationFrame(run);
+  setTimeout(run, 120);
+}
+
+const FOCUSABLE = "button, a[href], input, select, textarea, summary";
+// A rebuilt control is a new element. A key from its label (or an explicit data-key) lets focus
+// find it again; equal labels get a number.
+function keyControls(root) {
+  const seen = new Map();
+  for (const n of root.querySelectorAll(FOCUSABLE)) {
+    if (n.dataset.key) continue;
+    const base = n.tagName + ":" + controlLabel(n), count = seen.get(base) || 0;
+    seen.set(base, count + 1);
+    n.dataset.key = base + ":" + count;
+  }
+}
+
+function controlLabel(n) {
+  const text = n.textContent.trim().slice(0, 40);
+  return n.id || n.getAttribute("aria-label") || n.name || text || n.type;
+}
+const controlByKey = (root, key) =>
+  [...root.querySelectorAll("[data-key]")].find((n) => n.dataset.key === key);
+
+function focusSnapshot(root) {
+  const a = document.activeElement;
+  if (!a || !root.contains(a) || !a.dataset.key) return null;
+  const snap = { key: a.dataset.key };
+  try {
+    snap.sel = [a.selectionStart, a.selectionEnd, a.selectionDirection];
+  } catch { /* not a text control */ }
+  return snap;
+}
+
+// `wantFocus.force` wins over the old focus (arrow keys in tabs, the opener of a closed layer).
+function restoreFocus(root, snap) {
+  const want = wantFocus; wantFocus = null;
+  const key = want && (want.force || !snap) ? want.key : snap && snap.key;
+  const n = key && controlByKey(root, key);
+  if (!n) return;
+  n.focus({ preventScroll: true });
+  if (snap && snap.key === key) restoreSelection(n, snap.sel);
+}
+
+function restoreSelection(n, sel) {
+  if (!sel || sel[0] == null) return;
+  try { n.setSelectionRange(...sel); } catch { /* not a text control */ }
+}
+
+function focusLayer(layer) {
+  layer.tabIndex = -1;
+  const pick = layer.classList.contains("drawer") ? ".icon-btn" : "input, button.btn";
+  (layer.querySelector(pick) || layer).focus();
+}
+
+// The page behind a dialog or the drawer cannot take focus or clicks while the layer is open.
+function setModal(view, on) {
+  view.toggleAttribute("inert", on);
+  document.querySelector(".side").toggleAttribute("inert", on);
+}
+
+const appFoot = () => el("footer", { class: "app-foot" }, "Beta · not audited · ",
+  el("a", { href: "https://zigs.app", target: "_blank", rel: "noopener" }, "About Zigs"));
+
+function pageView() {
+  try {
+    if (lockedVault) return lockView();
+    return !dbReady ? loadingView() : state.gid ? groupView() : lobby();
+  } catch (e) {
+    log("unreadable page: " + (e && e.message ? e.message : e));
+    const back = el("button", {
+      class: "btn ghost sm", type: "button", onclick: () => openGroup(null),
+    }, "← Wallets");
+    return el("div", { class: "page" }, back,
+      el("div", { class: "card empty" }, el("h3", {}, "This wallet has data this app cannot read"),
+        el("p", { class: "small" }, "Another signer may use a newer version of Zigs. "
+          + "Reload the page, or ask them.")));
+  }
+}
+
+function draw() {
+  const shell = document.querySelector(".shell"), app = document.getElementById("app");
+  const snap = focusSnapshot(shell);
   renderSide();
   const pending = state.groups.reduce((n, g) => n + toApprove(g.id).length, 0);
   document.title = pending ? "(" + pending + ") Zigs" : "Zigs";
-  const app = document.getElementById("app");
-  // Keep what the viewer is typing, open <details>, and the drawer scroll across live updates.
-  const kept = {}; const focusId = document.activeElement && document.activeElement.id;
-  app.querySelectorAll("input[id], select[id], textarea[id]").forEach((i) => { if (i.type !== "file") kept[i.id] = i.value; });
-  const openDetails = new Set([...app.querySelectorAll("details[open] > summary")].map((x) => x.textContent));
-  const drawerScroll = app.querySelector(".drawer-body")?.scrollTop || 0;
-  const page = () => !dbReady ? loadingView() : state.gid ? groupView() : lobby();
-  const view = lockedVault ? lockView() : page();
-  const top = lockedVault ? [] : layers();
-  app.replaceChildren(view, ...top);
-  const layerKey = top.length ? top[1].getAttribute("aria-labelledby") || top[1].getAttribute("aria-label") : "";
-  if (layerKey && layerKey !== openLayer) setTimeout(() => app.querySelector(".dialog input, .dialog button.btn, .drawer .icon-btn")?.focus(), 0);
-  openLayer = layerKey;
+  const form = saveFormState(app);
+  const view = pageView(), top = lockedVault ? [] : layers();
+  app.replaceChildren(view, ...top, appFoot());
+  keyControls(shell);
+  setModal(view, top.length > 0);
+  const entered = trackLayer(top);
   clearTimeout(tickTimer);
   const ss = curSession();
   if (ss && ss.status === "proving") tickTimer = setTimeout(render, 1000);
-  for (const [id, v] of Object.entries(kept)) { const i = document.getElementById(id); if (i) { i.value = v; i.dispatchEvent(new Event("input", { bubbles: true })); } }
-  app.querySelectorAll("details > summary").forEach((x) => { if (openDetails.has(x.textContent)) x.parentElement.open = true; });
-  const db2 = app.querySelector(".drawer-body"); if (db2) db2.scrollTop = drawerScroll;
-  if (focusId) { const f = document.getElementById(focusId); if (f) f.focus(); }
+  restoreFormState(app, form);
+  if (entered) focusLayer(top[1]); else restoreFocus(shell, snap);
 }
 
+// Keep what the viewer is typing, open <details>, and the drawer scroll across live updates.
+function saveFormState(app) {
+  const values = {};
+  for (const i of app.querySelectorAll("input[id], select[id], textarea[id]")) {
+    if (i.type !== "file") values[i.id] = i.value;
+  }
+  const open = new Set([...app.querySelectorAll("details[open] > summary")].map((x) => x.textContent));
+  return { values, open, scroll: app.querySelector(".drawer-body")?.scrollTop || 0 };
+}
+
+function restoreFormState(app, form) {
+  for (const [id, v] of Object.entries(form.values)) {
+    const i = document.getElementById(id);
+    if (!i) continue;
+    i.value = v;
+    i.dispatchEvent(new Event("input", { bubbles: true }));
+  }
+  for (const x of app.querySelectorAll("details > summary")) {
+    if (form.open.has(x.textContent)) x.parentElement.open = true;
+  }
+  const body = app.querySelector(".drawer-body");
+  if (body) body.scrollTop = form.scroll;
+}
+
+// Remembers which control opened a layer, and asks for it back when the layer closes. Returns true
+// when a new layer just opened.
+function trackLayer(top) {
+  const layer = top[1];
+  const key = layer ? layer.getAttribute("aria-labelledby") || layer.getAttribute("aria-label") : "";
+  if (key && !openLayer) { opener = lastTrigger; lastTrigger = ""; }
+  if (!key && openLayer && opener) { wantFocus = { key: opener, force: true }; opener = ""; }
+  const entered = !!key && key !== openLayer;
+  openLayer = key;
+  return entered;
+}
+
+// The control that opened a layer gets focus back when the layer closes.
+document.addEventListener("click", (ev) => {
+  const n = ev.target.closest && ev.target.closest(FOCUSABLE);
+  if (n && n.dataset.key && !n.closest(".dialog, .drawer")) lastTrigger = n.dataset.key;
+}, true);
+
 function layers() {
+  try { return buildLayers(); }
+  catch (e) { log("unreadable layer: " + (e && e.message ? e.message : e)); return []; }
+}
+
+function buildLayers() {
   const scrim = (close) => el("div", { class: "scrim", onclick: () => { close(); render(); } });
   const ss = state.gid && state.wallet ? curSession() : null;
-  if (ss) return [scrim(closeSession), sessionDrawer(ss)];
+  if (ss) return [scrim(closeSession), sessionLayer(ss)];
   const inWallet = state.gid && state.wallet;
   if (ui.send && inWallet) return [scrim(() => ui.send = false), sendDialog()];
   if (ui.receive && inWallet) return [scrim(() => ui.receive = false), receiveDialog()];
@@ -1301,19 +1548,25 @@ function renderSide() {
   nav.replaceChildren(
     el("div", { class: "side-head" }, el("span", { class: "label" }, "Wallets"),
       el("button", { class: "icon-btn", type: "button", title: "New wallet", "aria-label": "New wallet", onclick: newWallet }, "+")),
-    ...(state.groups.length ? state.groups.map(sideItem)
+    ...(state.groups.length ? state.groups.map((g) => guard(sideItem, g))
       : [el("p", { class: "side-empty" }, sideEmpty())]));
 }
 
 const sideEmpty = () => lockedVault ? "Locked." : dbReady ? "No wallets yet." : "Connecting…";
 
 function sideItem(g) {
-  const n = toApprove(g.id).length;
+  const n = toApprove(g.id).length, here = g.id === state.gid;
+  const tail = n
+    ? el("span", { class: "side-count", role: "img", title: n + " to approve",
+      "aria-label": n + " to approve" }, String(n))
+    : el("span", { class: "side-meta", title: ruleText(g.t, g.n) },
+      g.movedTo ? "Moved" : g.t + " of " + g.n);
   return el("button", {
-    class: "side-item" + (g.id === state.gid ? " active" : ""), type: "button", "aria-current": g.id === state.gid ? "page" : null,
+    class: "side-item" + (here ? " active" : ""), type: "button",
+    "aria-current": here ? "page" : null, "data-key": "wallet-" + g.id,
     onclick: () => { ui.tab = "overview"; openGroup(g.id); },
-  }, el("span", { class: "av" }, initials(g.name)), el("span", { class: "side-name" }, g.name),
-    n ? el("span", { class: "side-count", title: n + " to approve", "aria-label": n + " to approve" }, String(n)) : el("span", { class: "side-meta", title: ruleText(g.t, g.n) }, g.movedTo ? "Moved" : g.t + " of " + g.n));
+  }, el("span", { class: "av" }, initials(g.name)),
+  el("span", { class: "side-name" }, g.name), tail);
 }
 
 function forgetBox() {
@@ -1337,7 +1590,9 @@ function lockView() {
   return el("div", { class: "card empty" }, el("h3", {}, "Zigs is locked"),
     el("p", { class: "small" }, text),
     lockedVault.damaged ? null
-      : el("button", { class: "btn primary", type: "button", onclick: act(unlockVault) }, "Unlock"),
+      : el("button", {
+        class: "btn primary", type: "button", disabled: !engineSettled, onclick: act(unlockVault),
+      }, "Unlock"),
     ui.forget ? forgetBox()
       : el("button", { class: "btn ghost sm", type: "button", onclick: ask }, "Lost the passkey?"));
 }
@@ -1354,50 +1609,87 @@ function lockButton() {
 }
 
 function loadingView() {
-  return el("div", { class: "card empty" }, el("span", { class: "dot busy" }), el("h3", {}, "Connecting to the group server"), el("p", { class: "small" }, "Your wallets appear in a moment."));
+  return el("div", { class: "card empty" }, el("span", { class: "dot busy" }),
+    el("h3", {}, Z ? "Connecting to the Zigs server" : "Loading the crypto engine"),
+    el("p", { class: "small" }, "Your wallets appear in a moment."));
 }
 
 // ── Lobby ──
 function lobby() {
-  const restoreInput = el("input", { id: "restore", type: "file", accept: "application/json", hidden: true, onchange: (ev) => ev.target.files[0] && restore(ev.target.files[0]) });
+  const restoreInput = el("input", {
+    id: "restore", type: "file", accept: "application/json", hidden: true,
+    onchange: (ev) => ev.target.files[0] && restore(ev.target.files[0]),
+  });
+  const restoreBtn = (cls) => el("button", {
+    class: cls, type: "button", onclick: () => restoreInput.click(),
+  }, "Restore from backup");
   const canCreate = Z && db && canWrite !== false;
+  const actions = lobbyActions(canCreate, restoreBtn("btn"));
   const head = el("header", { class: "page-head" },
-    el("div", { class: "ph-left" }, el("h1", {}, "Wallets"), el("p", { class: "muted" }, "Each wallet is a separate shared account, with its own address, signers and approval rule.")),
-    el("div", { class: "ph-actions" },
-      lockButton(),
-      el("button", { class: "btn", type: "button", onclick: () => restoreInput.click() }, "Restore from backup"), restoreInput,
-      el("button", { class: "btn primary", type: "button", disabled: !canCreate, onclick: () => { ui.create = true; render(); } }, "New wallet")));
-  if (!state.groups.length) return el("div", { class: "page" }, head, welcome(canCreate));
-  return el("div", { class: "page" }, head, el("section", { class: "card" }, el("div", { class: "list" }, state.groups.map(walletRow))));
+    el("div", { class: "ph-left" }, el("h1", {}, "Wallets"),
+      el("p", { class: "muted" }, "Each wallet is a separate shared account, with its own address, "
+        + "signers and approval rule.")),
+    actions.length ? el("div", { class: "ph-actions" }, ...actions) : null);
+  const rows = state.groups.map((g) => guard(walletRow, g));
+  const body = state.groups.length
+    ? el("section", { class: "card" }, el("div", { class: "list" }, rows))
+    : welcome(canCreate, restoreBtn("btn ghost sm"));
+  return el("div", { class: "page" }, head, body, restoreInput);
+}
+
+// With no wallet yet, the welcome card has the only actions. Locking waits until there is a wallet
+// or a key share to lock.
+function lobbyActions(canCreate, restoreBtn) {
+  const newBtn = el("button", {
+    class: "btn primary", type: "button", disabled: !canCreate,
+    onclick: () => { ui.create = true; render(); },
+  }, "New wallet");
+  if (state.groups.length) return [lockButton(), restoreBtn, newBtn];
+  return Object.keys(secrets).length || vault ? [lockButton()] : [];
 }
 
 function walletRow(g) {
+  if (g.unreadable) return unreadable();
   const seats = mySeatSecrets(g.id).length, n = toApprove(g.id).length, bal = balOf(g.id);
-  return el("button", { class: "row-item", type: "button", onclick: () => { ui.tab = "overview"; openGroup(g.id); } },
-    el("span", { class: "av lg" }, initials(g.name)),
-    el("span", { class: "ri-main" }, el("span", { class: "ri-title" }, g.name),
-      el("span", { class: "ri-sub" }, netOf(g).label + " · " + g.t + " of " + g.n + " signers must approve" + (seats ? "" : " · view only"))),
-    el("span", { class: "ri-end" }, g.movedTo ? el("span", { class: "badge plain" }, "Moved") : ready[g.id] === false ? el("span", { class: "badge info" }, "Setting up")
-      : bal ? money(bal.total) : el("span", { class: "small faint" }, "Open to sync"),
-      n ? el("span", { class: "badge warn" }, n + " to approve") : null),
-    el("span", { class: "chev" }, "›"));
+  const status = g.movedTo ? el("span", { class: "badge plain" }, "Moved")
+    : ready[g.id] === false ? el("span", { class: "badge info" }, "Setting up")
+    : bal ? money(bal.total) : el("span", { class: "small faint" }, "Open to sync");
+  return el("button", {
+    class: "row-item", type: "button", "data-key": "wallet-row-" + g.id,
+    onclick: () => { ui.tab = "overview"; openGroup(g.id); },
+  },
+  el("span", { class: "av lg" }, initials(g.name)),
+  el("span", { class: "ri-main" }, el("span", { class: "ri-title" }, g.name),
+    el("span", { class: "ri-sub" }, netOf(g).label + " · " + g.t + " of " + g.n
+      + " signers must approve" + (seats ? "" : " · view only"))),
+  el("span", { class: "ri-end" }, status,
+    n ? el("span", { class: "badge warn" }, n + " to approve") : null),
+  el("span", { class: "chev" }, "›"));
 }
 
-function welcome(canCreate) {
+function welcome(canCreate, restoreLink) {
   const steps = [
     ["Pick a rule", "For example, any 2 of 3 signers must approve each payment."],
-    ["Invite your signers", "Send one private link. Each device creates its own piece of the key."],
-    ["Approve together", "A payment goes out only after enough signers approve. On chain it looks like any private payment."],
+    ["Invite your signers", "Send one private invite link. Each device creates its own key share."],
+    ["Approve together", "A payment goes out only after enough signers approve. On chain it looks "
+      + "like a shielded payment from a standard wallet."],
   ];
+  const create = el("button", {
+    class: "btn primary lg", type: "button", disabled: !canCreate,
+    onclick: () => { ui.create = true; render(); },
+  }, "Create wallet");
   return el("section", { class: "card card-pad welcome" },
     el("div", { style: "display:grid;gap:6px" }, el("h2", {}, "Create your first shared wallet"),
-      el("p", { class: "muted" }, "Nobody ever holds the whole key, and nobody outside your team can see the wallet.")),
-    el("ol", { class: "how" }, steps.map(([t, d], i) => el("li", {}, el("span", { class: "how-no" }, String(i + 1)),
+      el("p", { class: "muted" }, "Nobody ever holds the whole key, and nobody outside your team "
+        + "can read the wallet.")),
+    el("ol", { class: "how" }, steps.map(([t, d], i) => el("li", {},
+      el("span", { class: "how-no" }, String(i + 1)),
       el("div", { style: "display:grid;gap:2px" }, el("h3", {}, t), el("p", { class: "small muted" }, d))))),
-    el("div", {}, el("button", { class: "btn primary lg", type: "button", disabled: !canCreate, onclick: () => { ui.create = true; render(); } }, "Create wallet")));
+    el("div", { style: "display:flex;align-items:center;gap:12px;flex-wrap:wrap" },
+      create, restoreLink));
 }
 
-// The name co-signers see on your seat; saved in this browser and read when you take a seat.
+// The name other signers see on your seat; saved in this browser and read when you take a seat.
 function nameField(id) {
   let saved = ""; try { saved = localStorage.getItem("zf-name") || ""; } catch {}
   const save = (ev) => { try { localStorage.setItem("zf-name", ev.target.value.trim()); } catch {} };
@@ -1457,7 +1749,8 @@ function networkPick() {
     el("legend", { class: "label" }, "Network"),
     el("div", { class: "two" },
       opt("testnet", "Testnet", "Free test coins, for trying Zigs."),
-      opt("mainnet", "Mainnet", "Real ZEC, at most " + capText(NETWORKS.mainnet.cap) + " per wallet.")),
+      opt("mainnet", "Mainnet", "Real ZEC. At " + capText(NETWORKS.mainnet.cap)
+        + " the app warns and hides the address. It cannot block deposits.")),
     ui.net === "mainnet" ? el("label", { class: "ack" },
       el("input", { type: "checkbox", id: "g-ack", checked: ui.ack, onchange: (ev) => { ui.ack = ev.target.checked; } }),
       el("span", { class: "small" }, "I understand that Zigs is not audited and that I can lose the funds in this wallet.")) : null);
@@ -1466,97 +1759,164 @@ function networkPick() {
 // ── Wallet ──
 function groupView() {
   const g = state.g;
-  if (!g) return el("div", { class: "page" }, el("button", { class: "btn ghost sm", type: "button", onclick: () => openGroup(null) }, "← Wallets"), loadingView());
-  const seated = seatIds().filter((i) => state.seats[i]);
-  const ready = state.wallet && state.wallet.birthday && rejectedSeats().length === 0;
-  const head = el("header", { class: "page-head" },
-    el("div", { class: "ph-left" },
-      el("button", { class: "btn ghost sm back", type: "button", onclick: () => openGroup(null) }, "← Wallets"),
-      el("h1", {}, g.name),
-      el("div", { class: "ph-meta" },
-        netBadge(g),
-        el("span", { class: "badge warn plain", title: ruleText(g.t, g.n) }, g.t + " of " + g.n + " signers must approve"),
-        el("span", { class: "stack" }, seatIds().map((i) => avatar(i))),
-        el("span", {}, seated.length + " of " + g.n + " signers joined"),
-        g.movedFrom ? el("span", {}, "Replaces " + ((state.groups.find((x) => x.id === g.movedFrom) || {}).name || "an older wallet")) : null)),
-    ready ? el("div", { class: "ph-actions wallet-actions" }, ...walletActions()) : null);
-  if (!ready) return el("div", { class: "page" }, head, setupView());
+  const back = el("button", {
+    class: "btn ghost sm", type: "button", onclick: () => openGroup(null),
+  }, "← Wallets");
+  if (!g) return el("div", { class: "page" }, back, loadingView());
+  if (g.unreadable) {
+    return el("div", { class: "page" }, back, el("div", { class: "card" }, unreadable()));
+  }
+  const ready = state.wallet && state.wallet.birthday && rejectedSeats().length === 0
+    && !keysDiffer();
+  const why = ready ? sendBlocker() : null;
+  const head = groupHead(g, ready, why);
+  return ready ? walletView(head, why) : el("div", { class: "page" }, head, setupView());
+}
+
+function walletView(head, why) {
   const unsaved = localSeats().filter((i) => {
     const s = sec(state.gid, i);
     return s.keyPackage && !s.backedUp;
   });
   const n = toApprove(state.gid).length;
-  const tabs = [["overview", "Overview"], ["activity", "Activity", n], ["members", "Signers"], ["details", "Details"]];
-  const body = { overview: overviewTab, activity: activityTab, members: membersTab, details: detailsTab }[ui.tab] || overviewTab;
-  return el("div", { class: "page" }, head,
-    el("nav", { class: "tabs", role: "tablist" }, tabs.map(([id, label, count]) => el("button", {
-      class: "tab", type: "button", role: "tab", "aria-selected": ui.tab === id ? "true" : "false", onclick: () => { ui.tab = id; render(); },
-    }, label, count ? el("span", { class: "count attn", "aria-label": count + " to approve" }, count) : null))),
+  const tabs = [["overview", "Overview"], ["activity", "Activity", n], ["members", "Signers"],
+    ["details", "Details"]];
+  const bodies = {
+    overview: overviewTab, activity: activityTab, members: membersTab, details: detailsTab,
+  };
+  if (!Object.hasOwn(bodies, ui.tab)) ui.tab = "overview";
+  return el("div", { class: "page" }, head, tabBar(tabs),
     unsaved.length ? backupNote(unsaved) : null,
-    body(),
-    el("div", { class: "action-bar" }, ...walletActions()));
+    el("div", { role: "tabpanel", id: "panel-" + ui.tab, "aria-labelledby": "tab-" + ui.tab },
+      bodies[ui.tab]()),
+    el("div", { class: "action-bar" }, ...walletActions(why)));
+}
+
+function groupHead(g, ready, why) {
+  const seated = seatIds().filter((i) => state.seats[i]).length;
+  const old = state.groups.find((x) => x.id === g.movedFrom);
+  return el("header", { class: "page-head" },
+    el("div", { class: "ph-left" },
+      el("button", { class: "btn ghost sm back", type: "button", onclick: () => openGroup(null) },
+        "← Wallets"),
+      el("h1", {}, g.name),
+      el("div", { class: "ph-meta" },
+        netBadge(g),
+        el("span", { class: "badge plain", title: ruleText(g.t, g.n) },
+          g.t + " of " + g.n + " signers must approve"),
+        el("span", { class: "stack" }, seatIds().map((i) => avatar(i))),
+        el("span", {}, seated + " of " + g.n + " signers joined"),
+        g.movedFrom
+          ? el("span", {}, "Replaces " + ((old || {}).name || "an older wallet")) : null)),
+    ready ? el("div", { class: "ph-actions wallet-actions" }, ...walletActions(why)) : null);
+}
+
+// Arrow keys, Home and End move between tabs. Only the selected tab is in the Tab order.
+function tabBar(tabs) {
+  const ids = tabs.map(([id]) => id), last = ids.length - 1, at = ids.indexOf(ui.tab);
+  const target = {
+    ArrowRight: at >= last ? 0 : at + 1, ArrowLeft: at <= 0 ? last : at - 1, Home: 0, End: last,
+  };
+  const onkeydown = (ev) => {
+    if (!(ev.key in target)) return;
+    ev.preventDefault();
+    ui.tab = ids[target[ev.key]];
+    wantFocus = { key: "tab-" + ui.tab, force: true };
+    render();
+  };
+  const tab = ([id, label, count]) => el("button", {
+    class: "tab", type: "button", role: "tab", id: "tab-" + id, "data-key": "tab-" + id,
+    "aria-selected": ui.tab === id ? "true" : "false",
+    "aria-controls": ui.tab === id ? "panel-" + id : null,
+    tabindex: ui.tab === id ? "0" : "-1", onclick: () => { ui.tab = id; render(); },
+  }, label, count
+    ? el("span", { class: "count attn", role: "img", "aria-label": count + " to approve" }, count)
+    : null);
+  return el("div", { class: "tabs", role: "tablist", "aria-label": "Wallet sections", onkeydown },
+    tabs.map(tab));
 }
 
 // Private windows, Tor Browser and cleared site data delete the key share with the browser data.
 function backupNote(seats) {
+  const text = "Back up your key share. This browser can forget it: private windows and Tor "
+    + "Browser delete it when they close. Keep the file safe and offline.";
   return el("div", { class: "callout warn", role: "status" },
-    el("span", { style: "flex:1" }, "Back up your key. This browser can forget it: private "
-      + "windows and Tor Browser delete it when they close. Keep the file safe and offline."),
+    el("span", { style: "flex:1 1 16rem" }, text),
     seats.map((i) => el("button", {
       class: "btn sm", type: "button", onclick: act(() => backup(i)),
-    },
-      seats.length > 1 ? "Back up seat " + i : "Back up key")));
+    }, seats.length > 1 ? "Back up seat " + i : "Back up key share")));
 }
 
-function walletActions() {
-  const why = sendBlocker();
+// `why` is the reason Send is off, shown as text because touch screens have no tooltip.
+function walletActions(why) {
   return [
     el("button", { class: "btn", type: "button", onclick: () => { ui.receive = true; render(); } }, "Receive"),
     el("button", { class: "btn primary", type: "button", disabled: !!why, title: why, onclick: () => { ui.send = true; ui.pay = null; render(); } }, "Send"),
+    why ? el("p", { class: "send-why" }, why) : null,
   ];
 }
 
 // ── Setup (key ceremony) ──
 function setupView() {
   const open = seatIds().filter((i) => !state.seats[i]);
-  const top = !localSeats().length && open.length ? joinCard(open[0]) : open.length ? inviteCard(open.length) : null;
-  return el("div", { class: "page", style: "gap:16px" }, top, el("div", { class: "setup" }, progressCard(), seatsCard(open)));
+  const top = !localSeats().length && open.length ? joinCard(open[0])
+    : open.length ? inviteCard(open.length) : null;
+  const split = keysDiffer() ? el("div", { class: "callout bad", role: "alert" },
+    "The signers made different wallet keys, so this wallet is not safe to use. "
+    + "Do not send funds to it. Create a new wallet.") : null;
+  return el("div", { class: "page", style: "gap:16px" }, split, top,
+    el("div", { class: "setup" }, progressCard(), seatsCard(open)));
 }
 
 function joinCard(seat) {
+  const take = el("button", {
+    class: "btn primary lg", type: "button", disabled: !Z || canWrite === false,
+    onclick: act(() => takeSeat(seat)),
+  }, "Take seat " + seat);
   return el("section", { class: "card card-pad hero-card" },
     el("div", { style: "display:grid;gap:4px" }, el("h2", {}, "Join " + state.g.name),
-      el("p", { class: "small muted" }, "Take a seat to become a signer. Your device creates its own piece of the wallet key; it never leaves this browser.")),
+      el("p", { class: "small muted" }, "Take a seat to become a signer. Your device creates its "
+        + "own key share. It never leaves this browser unless you save a backup.")),
     nameField("seat-name"),
-    el("div", {}, el("button", { class: "btn primary lg", type: "button", disabled: !Z || canWrite === false, onclick: act(() => takeSeat(seat)) }, "Take seat " + seat)));
+    el("div", {}, take));
 }
 
 function inviteCard(openCount) {
   const link = inviteLink(state.gid);
-  const share = navigator.share ? el("button", { class: "btn sm", type: "button", onclick: () => navigator.share({ title: "Join " + state.g.name + " on Zigs", url: link }).catch(() => {}) }, "Share") : null;
+  const share = navigator.share ? el("button", {
+    class: "btn sm", type: "button",
+    onclick: () => navigator.share({ title: "Join " + state.g.name + " on Zigs", url: link })
+      .catch(() => {}),
+  }, "Share") : null;
   return el("section", { class: "card card-pad hero-card" },
-    el("div", { class: "card-head" }, el("h2", {}, "Invite your signers"), el("span", { class: "badge warn plain" }, openCount === 1 ? "1 seat open" : openCount + " seats open")),
-    el("p", { class: "small muted" }, "Send this link to each signer through a private channel. It contains the wallet's secret: anyone who has it can take an open seat."),
-    el("div", { class: "addr-box" }, el("span", { class: "hex nowrap" }, link), copyBtn(link, "Copy link", "btn sm primary"), share),
+    el("div", { class: "card-head" }, el("h2", {}, "Invite your signers"),
+      el("span", { class: "badge plain" },
+        openCount === 1 ? "1 seat open" : openCount + " seats open")),
+    el("p", { class: "small muted" }, "Send this invite link to each signer through a private "
+      + "channel. It contains the wallet secret: anyone who has it can take an open seat."),
+    el("div", { class: "addr-box" }, el("span", { class: "hex nowrap" }, link),
+      copyBtn(link, "Copy link", "btn sm primary"), share),
     secretQr(link));
 }
 
 function progressCard() {
   const g = state.g, n = g.n, w = state.wallet;
   const r1 = Object.keys(state.dkg1).length, r2 = Object.keys(state.dkg2).length, d = Object.keys(state.done).length;
-  const mismatch = allDone() && !keysAgree(), rejected = rejectedSeats(), ver = verifiedCount();
+  const mismatch = keysDiffer(), rejected = rejectedSeats(), ver = verifiedCount();
   const seatedN = seatIds().filter((i) => state.seats[i]).length;
   const keyStage = mismatch ? "bad" : d === n ? "done" : allSeated() ? "now" : "";
-  const keyText = mismatch ? "Signers computed different keys. Create a new wallet."
+  const keyText = mismatch
+    ? "The signers made different wallet keys. Do not use this wallet. Create a new wallet."
     : d === n ? "Each signer holds one piece. The full key never existed."
     : r2 === n * (n - 1) ? "Each device is computing its piece of the key…"
     : r1 === n ? "Devices are exchanging encrypted shares (" + r2 + " of " + n * (n - 1) + ")…"
     : allSeated() ? "Devices are publishing their commitments (" + r1 + " of " + n + ")…" : "Starts when every seat is taken.";
-  const addrStage = rejected.length ? "bad" : w && ver === n ? "done" : d === n ? "now" : "";
+  const addrStage = rejected.length ? "bad" : mismatch ? ""
+    : w && ver === n ? "done" : d === n ? "now" : "";
   const addrText = rejected.length ? "Seat " + rejected.join(", ") + " rejected the address. Do not use this wallet."
     : !w ? (d === n ? "Building the shared address…" : "Comes after the key.")
     : !w.birthday ? "This wallet predates testnet support. Create a new one."
-    : ver + " of " + n + " signers checked that the address belongs to the group key.";
+    : ver + " of " + n + " signers checked that the address belongs to the wallet key.";
   const step = (cls, no, title, text) => el("div", { class: "step " + cls }, el("span", { class: "tick" }, cls === "done" ? "✓" : cls === "bad" ? "!" : no), el("div", { style: "display:grid;gap:2px" }, el("h3", {}, title), el("p", {}, text)));
   const total = (seatedN / n + (d === n ? 1 : (r1 / n + r2 / Math.max(1, n * (n - 1))) / 2) + (w ? ver / n : 0)) / 3;
   return el("section", { class: "card card-pad" },
@@ -1577,7 +1937,7 @@ function seatsCard(open) {
     : null;
   return el("section", { class: "card card-pad" },
     el("div", { class: "card-head" }, el("h2", {}, "Seats"), el("span", { class: "small muted" }, state.g.t + " of " + state.g.n + " signers must approve")),
-    el("div", { class: "seat-grid" }, seatIds().map(seatTile)),
+    el("div", { class: "seat-grid" }, seatIds().map((i) => guard(seatTile, i))),
     testing);
 }
 
@@ -1645,18 +2005,27 @@ function approvalsCard(list) {
   return el("section", { class: "card attention" },
     el("div", { class: "card-head card-pad", style: "padding-bottom:12px" },
       el("h2", {}, list.length === 1 ? "A payment needs your approval" : list.length + " payments need your approval")),
-    el("div", { class: "list" }, list.map((ss) => el("button", { class: "row-item", type: "button", onclick: () => openSession(ss.id) },
-      el("span", { class: "tx-ico out", "aria-hidden": "true" }, "↗"),
-      el("span", { class: "ri-main" }, el("span", { class: "ri-title" }, payTitle(ss)), el("span", { class: "ri-sub" }, "Proposed by " + proposer(ss) + " · " + when(ss.createdAt))),
-      el("span", { class: "ri-end" }, money(ss.amount, "md", "out")),
-      el("span", { class: "btn sm primary", "aria-hidden": "true" }, "Review")))));
+    el("div", { class: "list" }, list.map((ss) => guard(approvalRow, ss))));
+}
+
+function approvalRow(ss) {
+  return el("button", {
+    class: "row-item", type: "button", "data-key": "pay-approve-" + ss.id,
+    onclick: () => openSession(ss.id),
+  },
+  el("span", { class: "tx-ico out", "aria-hidden": "true" }, "↗"),
+  el("span", { class: "ri-main" }, el("span", { class: "ri-title" }, payTitle(ss)),
+    el("span", { class: "ri-sub" }, "Proposed by " + proposer(ss) + " · " + when(ss.createdAt))),
+  el("span", { class: "ri-end" }, money(leavesOf(ss), "md", "out")),
+  el("span", { class: "btn sm primary", "aria-hidden": "true" }, "Review"));
 }
 
 function balanceCard(c) {
   const b = c && c.bal ? balanceNow(c.bal) : null, empty = b && b.spendable + b.pending + b.sending === 0 && !state.g.movedTo;
   return el("section", { class: "card card-pad balance" },
     el("span", { class: "label" }, "Balance"),
-    b ? money(b.spendable + b.pending, "xl") : el("span", { class: "skel xl", "aria-label": "Loading balance" }),
+    b ? money(b.spendable + b.pending, "xl")
+      : el("span", { class: "skel xl", role: "img", "aria-label": "Loading balance" }),
     el("div", { class: "stats" },
       el("div", {}, el("span", { class: "label" }, "Available"), b ? money(b.spendable) : el("span", { class: "skel" })),
       el("div", {}, el("span", { class: "label" }, "Incoming"), b ? money(b.pending) : el("span", { class: "skel" }))),
@@ -1664,7 +2033,9 @@ function balanceCard(c) {
     empty ? el("div", { class: "callout" }, curNet().faucet
       ? el("span", {}, "This wallet is empty. Share its address to receive ZEC, or get free testnet ZEC from a ",
         el("a", { href: curNet().faucet, target: "_blank", rel: "noopener" }, "faucet ↗"), ".")
-      : el("span", {}, "This wallet is empty. Share its address to receive ZEC, " + capText(curNet().cap) + " at most in total.")) : null,
+      : el("span", {}, "This wallet is empty. Share its address to receive ZEC. Keep it under "
+        + capText(curNet().cap) + ": the app warns at that level. It cannot block deposits."))
+      : null,
     atCap() ? capNote() : null,
     syncLine(c));
 }
@@ -1676,10 +2047,13 @@ function atCap() {
   const b = balanceNow(c.bal);
   return b.spendable + b.pending >= cap;
 }
-const capNote = () => el("div", { class: "callout bad" }, "This wallet holds the " + capText(curNet().cap)
-  + " limit for unaudited mainnet wallets. Do not send more to it. Payments out still work.");
+const capNote = () => el("div", { class: "callout bad" },
+  "This wallet holds " + capText(curNet().cap) + ", the warning level for unaudited mainnet "
+  + "wallets. Do not send more to it. The app cannot block deposits. Payments out still work.");
 
-const receiveWhat = () => curNet().cap ? "up to " + capText(curNet().cap) + " in total" : "testnet ZEC";
+const receiveWhat = () => curNet().cap ? "ZEC" : "testnet ZEC";
+const receiveLimit = () => curNet().cap ? " Keep the total under " + capText(curNet().cap)
+  + ". The app warns at that level and cannot block deposits." : "";
 
 function receiveCard() {
   const w = state.wallet;
@@ -1687,7 +2061,8 @@ function receiveCard() {
     el("div", { class: "card-head" }, el("h2", {}, "Receive"), el("span", { class: "badge ok plain" }, "Private address")),
     state.g.movedTo ? el("div", { class: "callout" }, "This wallet moved to " + groupName(state.g.movedTo) + ". Ask senders to use the new wallet's address.")
       : atCap() ? capNote()
-      : el("p", { class: "small muted" }, "Share this address to receive " + receiveWhat() + ". Payments to it are shielded."),
+      : el("p", { class: "small muted" }, "Share this address to receive " + receiveWhat()
+        + ". Payments to it are shielded." + receiveLimit()),
     addrHidden() ? null : el("div", { class: "addr-box" }, el("span", { class: "hex" }, short(w.address, 18)), copyBtn(w.address)),
     el("p", { class: "small faint" }, verifiedCount() + " of " + state.g.n + " signers checked this address against their own key."));
 }
@@ -1714,18 +2089,28 @@ function activity() {
 }
 
 function activityRows(list) {
-  if (!list.length) return el("div", { class: "empty", style: "border-top:1px solid var(--line)" }, el("h3", {}, "No activity yet"),
-    el("p", { class: "small" }, "Money you receive and payments your group proposes show up here."));
-  return el("div", { class: "list", style: "border-top:1px solid var(--line)" }, list.map((a) => a.ss ? sentRow(a.ss) : receivedRow(a.r)));
+  const line = "border-top:1px solid var(--line)";
+  if (!list.length) {
+    return el("div", { class: "empty", style: line }, el("h3", {}, "No activity yet"),
+      el("p", { class: "small" },
+        "Money you receive and payments your signers propose show up here."));
+  }
+  const rows = list.map((a) => guard(a.ss ? sentRow : receivedRow, a.ss || a.r));
+  return el("div", { class: "list", style: line }, rows);
 }
 
 function sentRow(ss) {
-  return el("button", { class: "row-item", type: "button", "aria-current": ss.id === state.sid ? "true" : "false", onclick: () => openSession(ss.id) },
-    el("span", { class: "tx-ico out", "aria-hidden": "true" }, "↗"),
-    el("span", { class: "ri-main" }, el("span", { class: "ri-title" }, payTitle(ss)), el("span", { class: "ri-sub" }, "Proposed by " + proposer(ss) + " · " + when(ss.createdAt))),
-    el("span", { class: "ri-end" }, money(ss.amount, "md", "out"), needsMyApproval(state.gid, ss) ? el("span", { class: "badge warn" }, "Your approval")
-      : inFlight().includes(ss) ? el("span", { class: "badge info" }, "Confirming") : statusChip(ss)),
-    el("span", { class: "chev" }, "›"));
+  const chip = needsMyApproval(state.gid, ss) ? el("span", { class: "badge warn" }, "Your approval")
+    : inFlight().includes(ss) ? el("span", { class: "badge info" }, "Confirming") : statusChip(ss);
+  return el("button", {
+    class: "row-item", type: "button", "data-key": "pay-" + ss.id,
+    "aria-current": ss.id === state.sid ? "true" : "false", onclick: () => openSession(ss.id),
+  },
+  el("span", { class: "tx-ico out", "aria-hidden": "true" }, "↗"),
+  el("span", { class: "ri-main" }, el("span", { class: "ri-title" }, payTitle(ss)),
+    el("span", { class: "ri-sub" }, "Proposed by " + proposer(ss) + " · " + when(ss.createdAt))),
+  el("span", { class: "ri-end" }, money(leavesOf(ss), "md", "out"), chip),
+  el("span", { class: "chev" }, "›"));
 }
 
 function receivedRow(r) {
@@ -1746,11 +2131,14 @@ function membersTab() {
   return el("div", { class: "page", style: "gap:16px" },
     el("section", { class: "card" },
       el("div", { class: "card-pad", style: "padding-bottom:14px" }, el("div", { class: "card-head" }, el("h2", {}, "Signers"), el("span", { class: "small muted" }, ruleText(state.g.t, state.g.n)))),
-      el("div", { style: "border-top:1px solid var(--line)" }, seatIds().map(memberRow))),
+      el("div", { style: "border-top:1px solid var(--line)" },
+        seatIds().map((i) => guard(memberRow, i)))),
     changeSignersCard(),
     el("section", { class: "card card-pad" },
-      el("h2", { style: "font-size:15px" }, "Wallet link"),
-      el("p", { class: "small muted" }, "Signers open this wallet on another device with this link and their key backup. The link contains the wallet's secret, so share it only with signers."),
+      el("h2", { style: "font-size:15px" }, "Invite link"),
+      el("p", { class: "small muted" }, "Signers open this wallet on another device with this "
+        + "invite link and their key share backup. The link contains the wallet secret, so share "
+        + "it only with signers."),
       el("div", { class: "addr-box" }, el("span", { class: "hex nowrap" }, inviteLink(state.gid)), copyBtn(inviteLink(state.gid), "Copy link")),
       secretQr(inviteLink(state.gid))));
 }
@@ -1774,7 +2162,11 @@ function memberRow(i) {
       el("span", { class: "ri-sub" }, "Seat " + i + (s ? " · joined " + when(s.at) : ""))),
     el("div", { class: "m-actions" },
       v !== null ? el("span", { class: "badge " + (v ? "ok" : "bad") }, v ? "Address checked" : "Rejected address") : el("span", { class: "badge" }, STAGE_LABEL[seatStage(i)]),
-      mine && sec(state.gid, i).keyPackage ? el("button", { class: "btn sm", type: "button", onclick: act(() => backup(i)) }, "Back up key") : null));
+      mine && sec(state.gid, i).keyPackage
+        ? el("button", {
+          class: "btn sm", type: "button", onclick: act(() => backup(i)),
+        }, "Back up key share")
+        : null));
 }
 
 // ── Details ──
@@ -1785,19 +2177,30 @@ function detailsTab() {
       el("h2", { style: "font-size:15px" }, "Wallet"),
       el("dl", { class: "kv" },
         el("dt", {}, "Address"), addrHidden() ? el("dd", {}, "Shown after your seat checks it against your key share.")
-          : el("dd", {}, el("div", { class: "addr-full" }, w.address), el("div", { style: "margin-top:8px" }, copyBtn(w.address, "Copy address"))),
+          : el("dd", {}, el("div", { class: "addr-full" }, addrGroups(w.address)),
+            el("div", { style: "margin-top:8px" }, copyBtn(w.address, "Copy address"))),
         el("dt", {}, "Approval rule"), el("dd", {}, "Any " + state.g.t + " of " + state.g.n + " signers"),
         el("dt", {}, "Checked by"), el("dd", {}, rejected.length ? el("span", { class: "badge bad" }, "Seat " + rejected.join(", ") + " rejected this wallet") : el("span", { class: "badge " + (verifiedCount() === state.g.n ? "ok" : "") }, verifiedCount() + " of " + state.g.n + " signers")),
-        el("dt", {}, "Network"), el("dd", {}, "Zcash " + curNet().label.toLowerCase() + (curNet().cap ? " · limit " + capText(curNet().cap) : "")),
-        el("dt", {}, "Created at block"), el("dd", { class: "mono" }, (w.birthday || 0).toLocaleString()),
-        el("dt", {}, "Group key"), el("dd", { class: "hex" }, w.group_verifying_key))),
+        el("dt", {}, "Network"), el("dd", {}, "Zcash " + curNet().label.toLowerCase()
+          + (curNet().cap ? " · warning at " + capText(curNet().cap) : "")),
+        el("dt", {}, "Created at block"), el("dd", { class: "mono" }, fmtInt(w.birthday)),
+        el("dt", {}, "Wallet key"), el("dd", { class: "hex" }, w.group_verifying_key))),
     el("section", { class: "card card-pad" },
       el("h2", { style: "font-size:15px" }, "Privacy and keys"),
-      el("p", { class: "small muted" }, "Your piece of the key is created and used in this browser only. The group server stores encrypted data it cannot read. This page downloads blocks from " + (chain && chain.url ? new URL(chain.url).host : "a light-wallet server") + ", which sees your IP address but never a key. The wallet syncs again on every load."),
+      el("p", { class: "small muted" }, "Your key share is created and used in this browser. "
+        + "It leaves this browser only if you save a backup. The Zigs server stores encrypted "
+        + "data it cannot read. This page downloads blocks from "
+        + (chain && chain.url ? new URL(chain.url).host : "a light-wallet server")
+        + ", which sees your IP address but never a key. The wallet syncs again on every load."),
       el("details", {}, el("summary", {}, "Viewing key"), el("div", { class: "addr-full", style: "margin-top:10px" }, w.ufvk), el("div", { style: "margin-top:8px" }, copyBtn(w.ufvk, "Copy viewing key"))),
       el("p", { class: "small faint" }, "The viewing key shows every payment of this wallet. Share it only with people who may see your balance."),
       state.log.length ? el("details", {}, el("summary", {}, "Activity in this browser"), el("div", { class: "log" }, state.log.join("\n"))) : null));
 }
+
+// Groups of 5 characters help people compare an address by eye. Each group is its own span, so
+// the spaces are only layout and a copied address has none.
+const addrGroups = (addr) =>
+  el("span", {}, chunks(addr).map((c) => el("span", { class: "addr-g" }, c)));
 
 // The SVG comes from our own encoder and holds only path data, so innerHTML is safe here.
 function qrBox(text, label) {
@@ -1808,20 +2211,29 @@ function qrBox(text, label) {
 // A link with the wallet secret stays hidden until asked for: cameras and people can read screens.
 function secretQr(link) {
   return el("details", { class: "qr-toggle" }, el("summary", {}, "Show QR code"),
-    qrBox(link, "Wallet link"), el("p", { class: "small faint" }, "Scan with a phone camera to open the wallet there."));
+    qrBox(link, "Invite link"),
+    el("p", { class: "small faint" }, "Scan with a phone camera to open the wallet there."));
 }
 
 // ── Receive ──
 function receiveDialog() {
-  const w = state.wallet;
+  const w = state.wallet, hidden = addrHidden();
+  const close = el("button", {
+    class: "icon-btn", type: "button", "aria-label": "Close",
+    onclick: () => { ui.receive = false; render(); },
+  }, "×");
+  const faucet = curNet().faucet
+    ? el("a", { class: "btn ghost", href: curNet().faucet, target: "_blank", rel: "noopener" },
+      "Get testnet ZEC ↗") : el("span");
   return el("div", { class: "dialog", role: "dialog", "aria-modal": "true", "aria-labelledby": "recv-title" },
-    el("div", { class: "card-head" }, el("h2", { id: "recv-title" }, "Receive ZEC"), el("button", { class: "icon-btn", type: "button", "aria-label": "Close", onclick: () => { ui.receive = false; render(); } }, "×")),
-    atCap() ? capNote() : el("p", { class: "small muted" }, "Send " + receiveWhat() + " to this shielded address. Senders and the network cannot see the balance or who controls it."),
-    addrHidden() ? null : qrBox(w.address, "Wallet address"),
-    addrHidden() ? null : el("div", { class: "addr-full" }, w.address),
+    el("div", { class: "card-head" }, el("h2", { id: "recv-title" }, "Receive ZEC"), close),
+    atCap() ? capNote() : el("p", { class: "small muted" }, "Send " + receiveWhat()
+      + " to this shielded address. Senders and the network cannot see the balance or who "
+      + "controls it." + receiveLimit()),
+    hidden ? null : qrBox(w.address, "Wallet address"),
+    hidden ? null : el("div", { class: "addr-full" }, addrGroups(w.address)),
     el("div", { class: "dialog-actions", style: "justify-content:space-between" },
-      curNet().faucet ? el("a", { class: "btn ghost", href: curNet().faucet, target: "_blank", rel: "noopener" }, "Get testnet ZEC ↗") : el("span"),
-      addrHidden() ? null : copyBtn(w.address, "Copy address", "btn primary")));
+      faucet, hidden ? null : copyBtn(w.address, "Copy address", "btn primary")));
 }
 
 // ── Send ──
@@ -1918,11 +2330,15 @@ const proofStalled = (ss) => Date.now() - (ss.provingAt || 0) > 180000;
 
 // Keyed by the transaction itself: a session whose transaction is replaced is decoded again.
 function inspectOf(ss) {
-  const key = ss.pczt;
+  const key = ss.pczt, fvk = state.wallet.orchard_fvk;
   let ins = inspectCache.get(key);
   if (!ins && Z && key) {
-    try { ins = J(Z.inspect(key, state.wallet.orchard_fvk)); }
-    catch (e) { ins = { error: e.message || String(e) }; }
+    // The engine takes only strings. A document with another type would crash it.
+    if (!isStr(key) || !isStr(fvk)) ins = { error: "This payment has no readable transaction." };
+    else {
+      try { ins = J(Z.inspect(key, fvk)); }
+      catch (e) { ins = { error: e.message || String(e) }; }
+    }
     inspectCache.set(key, ins);
   }
   return ins;
@@ -1983,7 +2399,7 @@ function recipientBox(ss, rc) {
   // the check.
   if (rc.match === null || (!rc.rows.length && ss.package)) return null;
   return el("div", { class: "to-box" }, checkHead(rc),
-    rc.rows.map((r) => el("div", { class: "payee" }, el("span", { class: "hex" }, String(r.to)),
+    rc.rows.map((r) => el("div", { class: "payee" }, el("span", { class: "hex" }, addrGroups(r.to)),
       el("span", { class: "payee-end" }, money(r.amount), r.ok ? null : el("span", { class: "badge bad" }, "Not in the transaction")))),
     checkWarnings(rc),
     ss.move ? moveNote(ss, rc) : null);
@@ -2008,7 +2424,7 @@ function nextAction(ss, ins, rc) {
 // sign, and the payment waits forever: say so instead of stalling.
 function lostApproval(ss) {
   if (ss.signed || ss.error) return null;
-  const chosen = (i) => !ss.package || (ss.signers || []).includes(i);
+  const chosen = (i) => !ss.package || signersOf(ss).includes(i);
   const lost = localSeats().filter((i) => state.commits[i] && !state.shares[i] && chosen(i)
     && !((sec(state.gid, i).nonces || {})[ss.id]) && !busy.has("share:" + ss.id + ":" + i));
   if (!lost.length) return null;
@@ -2022,43 +2438,84 @@ function sessionDrawer(ss) {
   const actions = nextAction(ss, ins, rc);
   return el("aside", { class: "drawer", role: "dialog", "aria-modal": "true", "aria-label": "Payment details" },
     el("div", { class: "drawer-head" }, el("div", { style: "display:flex;align-items:center;gap:10px;min-width:0" }, el("h2", { class: "nowrap", style: "font-size:15px" }, payTitle(ss)), statusChip(ss)),
-      el("button", { class: "icon-btn", type: "button", "aria-label": "Close", onclick: () => { closeSession(); render(); } }, "×")),
+      closeBtn()),
     el("div", { class: "drawer-body" },
-      el("div", { style: "display:grid;gap:6px" }, money(ss.amount, "lg", "out"),
-        el("span", { class: "small muted" }, "Proposed by " + proposer(ss) + " · " + when(ss.createdAt))),
+      leavesHead(ss, ins && !refused ? ins : null),
       refused ? el("div", { class: "callout bad" }, "Your browser refuses this payment: " + ins.error) : null,
-      recipientBox(ss, rc),
+      guard(recipientBox, ss, rc),
       lostApproval(ss),
-      ins && !refused ? breakdown(ss, ins) : null,
-      timeline(ss, refused),
-      ss.final ? txDetails(ss) : null,
+      ins && !refused ? guard(breakdown, ins) : null,
+      guard(timeline, ss, refused),
+      ss.final ? guard(txDetails, ss) : null,
+      ss.broadcastTxid ? chainSees() : null,
       ins && !refused ? el("p", { class: "small faint" }, "Signed message " + short(ins.sighash, 12) + " · " + ins.tx_version) : null),
     actions.length ? el("div", { class: "drawer-foot" }, ...actions) : null);
 }
 
-// Spent value minus every output: what the network keeps. Zero-value outputs are not listed.
-const decodedFee = (ins) => ins.lines.reduce((n, l) => n + (l.kind === "spend" ? 1 : -1) * (l.value || 0), 0);
+const closeBtn = () => el("button", {
+  class: "icon-btn", type: "button", "aria-label": "Close",
+  onclick: () => { closeSession(); render(); },
+}, "×");
 
-function breakdown(ss, ins) {
-  const label = (l) => l.kind === "spend" ? "From this wallet" : isPayee(l) ? "To " + short(l.who, 10) : "Change back to this wallet";
+// If the payment's document cannot be shown, the drawer still opens and closes.
+function sessionLayer(ss) {
+  try { return sessionDrawer(ss); }
+  catch (e) { log("unreadable payment: " + (e && e.message ? e.message : e)); }
+  return el("aside", {
+    class: "drawer", role: "dialog", "aria-modal": "true", "aria-label": "Payment details",
+  },
+  el("div", { class: "drawer-head" }, el("h2", { style: "font-size:15px" }, "Payment"), closeBtn()),
+  el("div", { class: "drawer-body" }, unreadable()));
+}
+
+// The decoded transaction is the truth. Spent notes minus change is what leaves the wallet: the
+// payees and the fee.
+function decodedTotals(ins) {
+  const sum = (keep) => ins.lines.filter(keep).reduce((n, l) => n + finite(l.value), 0);
+  const spent = sum((l) => l.kind === "spend"), paid = sum(isPayee);
+  const back = sum((l) => l.kind !== "spend" && !isPayee(l));
+  return { spent, paid, back, fee: spent - paid - back, leaves: spent - back };
+}
+
+function leavesHead(ss, ins) {
+  const t = ins ? decodedTotals(ins) : { leaves: leavesOf(ss), fee: finite(ss.fee) };
+  return el("div", { class: "leaves" },
+    el("span", { class: "label" }, ins ? "Leaves the wallet" : "Proposed to leave the wallet"),
+    money(t.leaves, "lg"),
+    el("span", { class: "small muted" }, "includes " + zecText(t.fee) + " fee"),
+    el("span", { class: "small muted" },
+      "Proposed by " + proposer(ss) + " · " + when(ss.createdAt)));
+}
+
+function breakdown(ins) {
+  const t = decodedTotals(ins);
+  const row = (label, zat, cls = "") => el("div", {}, el("span", { class: cls }, label),
+    el("span", { class: "mono " + cls }, zecText(zat)));
+  const own = (l) => l.kind !== "spend" && !isPayee(l);
+  const spent = ins.lines.filter((l) => l.kind === "spend");
   return el("div", { style: "display:grid;gap:8px" },
     el("span", { class: "label" }, "What this payment does"),
     el("div", { class: "lines" },
-      [...ins.lines].sort((a, b) => lineRank(a) - lineRank(b)).map((l) => el("div", {}, el("span", { class: l.kind === "spend" ? "neg" : "" }, label(l)),
-        el("span", { class: "mono" + (l.kind === "spend" ? " neg" : "") }, (l.kind === "spend" ? "−" : "") + ((l.value || 0) / 1e8).toFixed(8)))),
-      el("div", {}, el("span", { class: "muted" }, "Network fee"), el("span", { class: "mono muted" }, (decodedFee(ins) / 1e8).toFixed(8)))),
-    el("p", { class: "small faint" }, "Your browser decoded this from the transaction itself, not from the proposer's description."));
+      ins.lines.filter(isPayee).map((l) => row("To " + short(l.who, 10), l.value)),
+      row("Network fee", t.fee, "neg"),
+      el("div", { class: "total" }, el("span", {}, "Leaves the wallet"),
+        el("span", { class: "mono" }, zecText(t.leaves))),
+      el("div", { class: "group" }, "Notes used"),
+      spent.map((l) => row("Spent from this wallet", l.value, "neg")),
+      ins.lines.filter(own).map((l) => row("Change back to this wallet", l.value, "neg"))),
+    el("p", { class: "small faint" }, "Your browser decoded this from the transaction itself, "
+      + "not from the proposer's description."));
 }
 
 function timeline(ss, refused) {
   const g = state.g, approvals = Object.keys(state.commits).length;
-  const signers = ss.signers || [], shared = signers.filter((i) => state.shares[i]).length;
+  const signers = signersOf(ss), shared = signers.filter((i) => state.shares[i]).length;
   const tl = (cls, title, body) => el("div", { class: "step " + cls }, el("span", { class: "tick" }, cls === "done" ? "✓" : cls === "bad" ? "!" : "•"), el("div", { style: "display:grid;gap:6px;min-width:0" }, el("h3", {}, title), body));
   return el("div", { class: "steps" },
     tl("done", "Proposed", el("p", {}, when(ss.createdAt))),
     tl(approvals >= g.t ? "done" : refused ? "bad" : "now", "Approvals · " + Math.min(approvals, g.t) + " of " + g.t,
       el("div", { style: "display:flex;align-items:center;gap:10px;flex-wrap:wrap" }, seatIds().map((i) => el("span", { class: "approver" + (state.commits[i] ? " yes" : "") }, avatar(i), el("span", { class: "small" }, seatLabel(i) + (state.commits[i] ? " ✓" : "")))))),
-    tl(ss.error ? "bad" : ss.signed ? "done" : ss.package ? "now" : "", "Group signature",
+    tl(ss.error ? "bad" : ss.signed ? "done" : ss.package ? "now" : "", "Combined signature",
       el("p", {}, ss.error ? ss.error : ss.signed ? "All signatures combined and verified." : ss.package ? "Signing · " + shared + " of " + signers.length + " shares" : "Starts after " + g.t + " approvals.")),
     tl(ss.final ? "done" : ss.status === "proving" ? "now" : "", "Proof",
       el("p", {}, ss.final ? "Proof built and the whole transaction checked." : ss.status === "proving" && !proofStalled(ss) ? "A signer's browser is building the proof · " + elapsed(ss.provingAt) + " of about a minute." : "Any signer can build the zero-knowledge proof once the payment is signed.")),
@@ -2070,12 +2527,27 @@ function timeline(ss, refused) {
 }
 
 function txDetails(ss) {
+  const size = Number.isFinite(ss.final.size) ? fmtInt(ss.final.size) + " bytes" : "unknown";
   return el("div", { style: "display:grid;gap:10px" },
     el("span", { class: "label" }, "Transaction"),
     el("dl", { class: "kv", style: "grid-template-columns:110px minmax(0,1fr)" },
       el("dt", {}, "ID"), el("dd", { class: "hex" }, ss.final.txid),
-      el("dt", {}, "Size"), el("dd", {}, ss.final.size.toLocaleString() + " bytes")),
-    el("details", {}, el("summary", {}, "Raw transaction"), el("div", { class: "log" }, ss.final.tx_hex), el("div", { style: "margin-top:8px" }, copyBtn(ss.final.tx_hex, "Copy hex"))));
+      el("dt", {}, "Size"), el("dd", {}, size)),
+    el("details", {}, el("summary", {}, "Raw transaction"),
+      el("div", { class: "log" }, ss.final.tx_hex),
+      el("div", { style: "margin-top:8px" }, copyBtn(ss.final.tx_hex, "Copy hex"))));
+}
+
+// What an observer of the chain learns from a sent payment.
+function chainSees() {
+  const hidden = () => el("span", { class: "redact", role: "img", "aria-label": "Hidden" });
+  const row = (name) => [el("dt", {}, name), el("dd", {}, hidden())];
+  return el("div", { style: "display:grid;gap:10px" },
+    el("span", { class: "label" }, "What the chain sees"),
+    el("p", { class: "small" }, "One shielded transaction."),
+    el("dl", { class: "kv", style: "grid-template-columns:110px minmax(0,1fr)" },
+      ["Recipients", "Amounts", "Signers", "Approval rule"].flatMap(row)),
+    el("p", { class: "small faint" }, "The number of actions is public. So is the fee."));
 }
 
 // Another tab saved: take its secrets, so this tab neither misses nor overwrites them.
@@ -2090,7 +2562,9 @@ window.addEventListener("storage", async (ev) => {
   render();
 });
 
-document.getElementById("banner").addEventListener("click", (ev) => { ev.currentTarget.hidden = true; });
+document.getElementById("banner-close").addEventListener("click", () => {
+  document.getElementById("banner").hidden = true;
+});
 document.addEventListener("keydown", (ev) => {
   if (ev.key !== "Escape") return;
   if (state.sid) closeSession(); else { ui.send = false; ui.create = false; ui.receive = false; ui.move = false; }
@@ -2103,7 +2577,7 @@ window.addEventListener("hashchange", () => {
   if (lockedVault) return;
   const gid = location.hash.slice(1).split(".")[0] || null;
   if (gid === state.gid) return;
-  if (gid && !gkeys[gid]) { showBanner("bad", "This link is missing its key. Ask for the full invite link."); return; }
+  if (gid && !gkeys[gid]) { showBanner("bad", MISSING_SECRET); return; }
   ui.tab = "overview";
   openGroup(gid);
 });
@@ -2111,5 +2585,6 @@ window.addEventListener("hashchange", () => {
 setInterval(() => { const c = curChain(); if (c && !c.syncing && document.visibilityState === "visible") runSync(c); }, 60000);
 
 adoptInviteKey();
+draw();   // the first paint does not wait for the engine
 loadEngine().then(() => lockedVault ? render() : boot());
 </script>
