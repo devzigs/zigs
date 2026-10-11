@@ -89,7 +89,9 @@ struct LockView: View {
 
     var body: some View {
         VStack(spacing: 16) {
-            Image(systemName: "lock.fill").font(.system(size: 40)).foregroundStyle(Color.signal)
+            Image("Logo").resizable().frame(width: 80, height: 80)
+                .clipShape(RoundedRectangle(cornerRadius: 18))
+                .accessibilityHidden(true)
             Text("Zigs is locked").font(.title2.weight(.semibold)).foregroundStyle(.white)
             Text("The key shares on this device are encrypted. "
                  + "Unlock with \(lockName) or your passcode.")

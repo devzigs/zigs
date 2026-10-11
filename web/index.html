@@ -1,6 +1,8 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>Zigs</title>
+<link rel="icon" type="image/png" href="/favicon.png">
+<link rel="apple-touch-icon" href="/apple-touch-icon.png">
 <meta name="referrer" content="no-referrer">
 <style>
 /* latin-ext */
@@ -109,7 +111,7 @@ button { font: inherit; color: inherit; }
 .shell { display: grid; grid-template-columns: 248px minmax(0, 1fr); min-height: 100%; }
 .side { position: sticky; top: 0; height: 100vh; display: flex; flex-direction: column; gap: 18px; padding: 18px 14px; background: var(--side); border-right: 1px solid var(--line); }
 .logo { display: flex; align-items: center; gap: 10px; padding: 4px 8px; font-weight: 600; font-size: 16px; letter-spacing: -0.02em; text-decoration: none; color: var(--text); }
-.logo svg { width: 24px; height: 24px; flex: none; }
+.logo img { width: 24px; height: 24px; flex: none; border-radius: 6px; }
 .net { margin-left: auto; font: 500 10.5px/1 var(--mono); padding: 4px 6px; border-radius: 5px; background: var(--accent-soft); color: var(--accent-text); text-transform: uppercase; letter-spacing: 0.06em; }
 #side-nav { display: grid; gap: 2px; align-content: start; overflow: auto; flex: 1; }
 .side-head { display: flex; align-items: center; justify-content: space-between; padding: 6px 8px 8px; }
@@ -379,10 +381,7 @@ details > summary { cursor: pointer; color: var(--accent-text); font-weight: 500
 <div class="shell">
   <aside class="side" aria-label="Wallets">
     <a class="logo" href="#" aria-label="Zigs home">
-      <svg viewBox="0 0 24 24" aria-hidden="true">
-        <rect x="1" y="1" width="22" height="22" rx="7" fill="#f4b728"></rect>
-        <path d="M7 8h10l-10 8h10" fill="none" stroke="#17130a" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"></path>
-      </svg>
+      <img src="/logo.png" alt="" width="24" height="24">
       Zigs <span class="net">Beta</span>
     </a>
     <nav id="side-nav" aria-label="Your wallets"></nav>
