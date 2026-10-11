@@ -638,23 +638,50 @@ fn store_key(secret: &str) -> R<XChaCha20Poly1305> {
     XChaCha20Poly1305::new_from_slice(k.as_bytes()).map_err(e("key"))
 }
 
+/// Sealed values are padded so the server cannot read lengths: how many digits an amount has,
+/// how long a note is, or roughly how many notes a transaction spends.
+const SEALED_PADDED: char = '~';
+
+/// Pads to at least 64 bytes and then to the next power of two: 0x80, then zeros.
+fn pad(plaintext: &[u8]) -> Vec<u8> {
+    let size = (plaintext.len() + 1).next_power_of_two().max(64);
+    let mut out = Vec::with_capacity(size);
+    out.extend_from_slice(plaintext);
+    out.push(0x80);
+    out.resize(size, 0);
+    out
+}
+
+fn unpad(padded: &[u8]) -> R<&[u8]> {
+    let end = padded.iter().rposition(|&b| b != 0).ok_or("sealed value has no padding mark")?;
+    ensure(padded[end] == 0x80, "sealed value has a bad padding mark")?;
+    Ok(&padded[..end])
+}
+
 /// `aad` binds the ciphertext to its document path and field name.
 pub fn secret_seal(secret: &str, aad: &str, plaintext: &str) -> R<String> {
     let mut n = [0u8; 24];
     OsRng.fill_bytes(&mut n);
+    let msg = pad(plaintext.as_bytes());
     let ct = store_key(secret)?
-        .encrypt(XNonce::from_slice(&n), Payload { msg: plaintext.as_bytes(), aad: aad.as_bytes() })
+        .encrypt(XNonce::from_slice(&n), Payload { msg: &msg, aad: aad.as_bytes() })
         .map_err(e("encrypt"))?;
-    Ok(B64URL.encode([n.as_slice(), &ct].concat()))
+    Ok(format!("{SEALED_PADDED}{}", B64URL.encode([n.as_slice(), &ct].concat())))
 }
 
+/// Opens padded values and the unpadded ones written before padding existed.
 pub fn secret_open(secret: &str, aad: &str, sealed: &str) -> R<String> {
-    let raw = B64URL.decode(sealed).map_err(e("b64"))?;
+    let (padded, body) = match sealed.strip_prefix(SEALED_PADDED) {
+        Some(rest) => (true, rest),
+        None => (false, sealed),
+    };
+    let raw = B64URL.decode(body).map_err(e("b64"))?;
     ensure(raw.len() > 24, "sealed value too short")?;
     let (n, ct) = raw.split_at(24);
     let pt = store_key(secret)?
         .decrypt(XNonce::from_slice(n), Payload { msg: ct, aad: aad.as_bytes() })
         .map_err(|_| "cannot decrypt: wrong key or tampered value".to_string())?;
+    let pt = if padded { unpad(&pt)?.to_vec() } else { pt };
     String::from_utf8(pt).map_err(e("utf8"))
 }
 
@@ -998,6 +1025,29 @@ mod tests {
         assert!(secret_open(&key, "groups/g\nn", &ct).is_err());
         assert!(secret_open(&other, "groups/g\nname", &ct).is_err());
         assert!(secret_seal("short", "a", "b").is_err());
+    }
+
+    #[test]
+    fn sealed_values_hide_their_length() {
+        let key = B64URL.encode([9u8; 32]);
+        let small = secret_seal(&key, "p\nf", "5000").unwrap();
+        let large = secret_seal(&key, "p\nf", "123456789012").unwrap();
+        assert_eq!(small.len(), large.len(), "amounts of different sizes look the same");
+        assert_eq!(secret_open(&key, "p\nf", &large).unwrap(), "123456789012");
+        assert_eq!(secret_open(&key, "p\nf", &secret_seal(&key, "p\nf", "").unwrap()).unwrap(), "");
+        let long = "x".repeat(100);
+        assert_eq!(secret_open(&key, "p\nf", &secret_seal(&key, "p\nf", &long).unwrap()).unwrap(), long);
+        assert!(secret_open(&key, "other", &small).is_err());
+    }
+
+    #[test]
+    fn unpadded_values_from_before_still_open() {
+        let key = B64URL.encode([9u8; 32]);
+        let n = [3u8; 24];
+        let ct = store_key(&key).unwrap()
+            .encrypt(XNonce::from_slice(&n), Payload { msg: b"\"old\"", aad: b"p\nf" }).unwrap();
+        let old = B64URL.encode([n.as_slice(), &ct].concat());
+        assert_eq!(secret_open(&key, "p\nf", &old).unwrap(), "\"old\"");
     }
 
     #[test]

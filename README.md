@@ -37,12 +37,13 @@ These transactions were made by the web app with 2-of-2 groups (NU7 testnet, V6,
 
 ## Privacy model
 
-What each party can see:
+The full threat model, with what each party sees and what Zigs does not protect, is in
+[PRIVACY.md](PRIVACY.md). In short:
 
 | Party | Sees | Does not see |
 |---|---|---|
 | Chain observers | A normal shielded Ironwood transaction | That it is a multisig, members, amounts, addresses |
-| Group server (Cloudflare Durable Object) | Group ids, document paths, field names, timing, an opaque user id per browser | Group names, member names, addresses, viewing key, amounts, recipients, PCZTs, signing data |
+| Group server (Cloudflare Durable Object) | Group ids, document paths, field names, timing, which IP addresses connect to which group, an opaque user id per browser | Group names, member names, addresses, viewing key, amounts or their length (values are padded), recipients, PCZTs, signing data |
 | lightwalletd proxy | Your IP address, the birthday height, the block ranges you download, the transactions you broadcast | Which notes are yours (every browser downloads all compact blocks) |
 | Other group members | Everything about the group wallet | Your key share and your signing nonces |
 

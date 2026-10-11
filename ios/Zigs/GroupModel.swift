@@ -74,7 +74,7 @@ final class GroupModel {
     private(set) var chain: Chain?
     private(set) var connected = false
     private(set) var log: [String] = []
-    private(set) var balances: [String: Int]
+    private(set) var balances: [String: Int] = [:]
     var banner: String?
     var notice: String?
     var path: [String] = []
@@ -97,7 +97,7 @@ final class GroupModel {
         me = d.string(forKey: "zf-uid") ?? ""
         server = d.string(forKey: "zf-server") ?? "https://app.zigs.app"
         name = d.string(forKey: "zf-name") ?? ""
-        balances = d.dictionary(forKey: "zf-bal") as? [String: Int] ?? [:]
+        loadBalances()
         store.onChange = { [weak self] in self?.refresh() }
         reconnect()
     }
@@ -278,9 +278,25 @@ final class GroupModel {
         Task { await c.sync() }
     }
 
+    // Balances are sealed with each wallet's key: settings go into device backups, keys do not.
     private func saveBalance(_ gid: String, _ b: Doc) {
-        balances[gid] = (b.int("spendable") ?? 0) + (b.int("pending") ?? 0)
-        UserDefaults.standard.set(balances, forKey: "zf-bal")
+        let total = (b.int("spendable") ?? 0) + (b.int("pending") ?? 0)
+        balances[gid] = total
+        guard let key = vault.keys[gid], let sealed = try? Engine.call("secretSeal", [key, "bal\n" + gid, String(total)]) else { return }
+        var all = UserDefaults.standard.dictionary(forKey: "zf-bal") as? [String: String] ?? [:]
+        all[gid] = sealed
+        UserDefaults.standard.set(all, forKey: "zf-bal")
+    }
+
+    private func loadBalances() {
+        // Entries from before sealing hold plain amounts; drop them.
+        let all = (UserDefaults.standard.dictionary(forKey: "zf-bal") ?? [:]).compactMapValues { $0 as? String }
+        UserDefaults.standard.set(all, forKey: "zf-bal")
+        for (gid, sealed) in all {
+            guard let key = vault.keys[gid], let text = try? Engine.call("secretOpen", [key, "bal\n" + gid, sealed]),
+                  let total = Int(text) else { continue }
+            balances[gid] = total
+        }
     }
 
     // MARK: Reactor

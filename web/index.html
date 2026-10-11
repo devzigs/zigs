@@ -434,9 +434,25 @@ const SERVER_TIMEOUT_MS = 8000;
 const EXPLORER_TX = "https://testnet.zecblock.com/tx/";
 let chain = null;   // { gid, cw, prog, bal, received, ms, error, syncing } for the open group
 // Last known balance per wallet, so the wallet list shows money before a wallet syncs.
-let balCache = {};
-try { balCache = JSON.parse(localStorage.getItem("zf-bal") || "{}"); } catch {}
-function saveBal(gid, bal) { balCache[gid] = { total: bal.spendable + bal.pending, at: Date.now() }; try { localStorage.setItem("zf-bal", JSON.stringify(balCache)); } catch {} }
+// Balances are sealed with each wallet's key, so the browser's storage does not show amounts.
+let balSealed = {};
+try {
+  balSealed = JSON.parse(localStorage.getItem("zf-bal") || "{}");
+  // Entries from before sealing hold plain amounts; drop them now rather than at the next sync.
+  for (const [gid, v] of Object.entries(balSealed)) if (typeof v !== "string") delete balSealed[gid];
+  localStorage.setItem("zf-bal", JSON.stringify(balSealed));
+} catch {}
+const balCache = {};
+function balOf(gid) {
+  if (!(gid in balCache) && Z && gkeys[gid] && typeof balSealed[gid] === "string") {
+    try { balCache[gid] = J(Z.secretOpen(gkeys[gid], "bal\n" + gid, balSealed[gid])); } catch { balCache[gid] = null; }
+  }
+  return balCache[gid];
+}
+function saveBal(gid, bal) {
+  balCache[gid] = { total: bal.spendable + bal.pending, at: Date.now() };
+  try { balSealed[gid] = Z.secretSeal(gkeys[gid], "bal\n" + gid, S(balCache[gid])); localStorage.setItem("zf-bal", JSON.stringify(balSealed)); } catch {}
+}
 // Payment proposals of every wallet where this browser holds a seat, for the approval counts.
 const inbox = {}, inboxSubs = new Map();
 const ready = {}, readySubs = new Map();
@@ -1098,7 +1114,7 @@ function lobby() {
 }
 
 function walletRow(g) {
-  const seats = mySeatSecrets(g.id).length, n = toApprove(g.id).length, bal = balCache[g.id];
+  const seats = mySeatSecrets(g.id).length, n = toApprove(g.id).length, bal = balOf(g.id);
   return el("button", { class: "row-item", type: "button", onclick: () => { ui.tab = "overview"; openGroup(g.id); } },
     el("span", { class: "av lg" }, initials(g.name)),
     el("span", { class: "ri-main" }, el("span", { class: "ri-title" }, g.name),
