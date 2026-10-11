@@ -447,7 +447,46 @@ let statusLabels: [String: (String, BadgeKind)] = [
 ]
 
 func payTitle(_ ss: Session) -> String {
-    ss.doc.str("note") ?? ss.doc.str("to").map { "Payment to \(short($0, 8))" } ?? "Payment"
+    let payees = ss.doc["payees"] as? [Doc] ?? []
+    if let note = ss.doc.str("note") { return note }
+    if payees.count > 1 { return "Payment to \(payees.count) recipients" }
+    return payees.first?.str("to").map { "Payment to \(short($0, 8))" } ?? "Payment"
+}
+
+/// Most recipients in one payment; the engine enforces the same limit.
+let maxPayees = 20
+
+/// ZIP 317 estimate for a payment to `payees` recipients: one action per output, change included.
+func feeEstimate(_ payees: Int) -> Int { 5_000 * max(2, payees + 1) }
+
+/// The Zcash supply limit, 21 million ZEC, in zatoshis.
+let maxMoney = 2_100_000_000_000_000
+
+/// "1.5" or "1,5" -> 150_000_000 zatoshis. Nil unless it is a positive amount, at most `maxMoney`,
+/// with at most 8 decimals.
+func zatOf(_ s: String) -> Int? {
+    let t = s.trimmingCharacters(in: .whitespaces)
+    guard let m = t.wholeMatch(of: /([0-9]{1,8})(?:[.,]([0-9]{1,8}))?/) else { return nil }
+    let frac = String(m.2 ?? "").padding(toLength: 8, withPad: "0", startingAt: 0)
+    let zat = Int(m.1)! * 100_000_000 + Int(frac)!
+    return zat > 0 && zat <= maxMoney ? zat : nil
+}
+
+/// Reads a pasted payment list: one "address, amount in ZEC" per line. A spreadsheet copy works:
+/// tab, comma, semicolon or spaces may separate the two. If the first line that is not empty names
+/// "address", it is a header. Same rules as `parsePayeeList` in web/payees.js.
+func parsePayeeList(_ text: String) -> (rows: [(to: String, amount: Int)], errors: [String]) {
+    var rows: [(to: String, amount: Int)] = [], errors: [String] = [], first = true
+    for (i, raw) in text.split(omittingEmptySubsequences: false, whereSeparator: \.isNewline).enumerated() {
+        let line = raw.trimmingCharacters(in: .whitespaces)
+        if line.isEmpty { continue }
+        defer { first = false }
+        if first && line.lowercased().contains("address") { continue }
+        let f = line.split(whereSeparator: { $0.isWhitespace || ",;".contains($0) })
+        if f.count == 2, let zat = zatOf(String(f[1])) { rows.append((String(f[0]), zat)) }
+        else { errors.append("Line \(i + 1): write an address and an amount, like u1…, 0.5") }
+    }
+    return (rows, errors)
 }
 
 struct SentRow: View {
@@ -667,51 +706,47 @@ struct ReceiveSheet: View {
 struct SendSheet: View {
     @Environment(GroupModel.self) private var model
     @Environment(\.dismiss) private var dismiss
-    @State private var to = ""
-    @State private var amount = ""
+    @State private var rows = [PayRow()]
     @State private var note = ""
+    @State private var listError: String?
     @State private var working = false
 
-    private static let feeEstimate = 10_000
+    struct PayRow: Identifiable {
+        let id = UUID()
+        var to = ""
+        var amount = ""
+    }
 
     var body: some View {
-        let zat = Int(((Double(amount.replacingOccurrences(of: ",", with: ".")) ?? 0) * 1e8).rounded())
-        let valid = to.isEmpty ? nil : model.onNetwork(to.trimmingCharacters(in: .whitespacesAndNewlines))
-        let netName = model.state.net.label.lowercased()
-        let available = model.balanceNow()?.spendable ?? 0
+        let sum = rows.reduce(0) { $0 + (zatOf($1.amount) ?? 0) }
+        let ready = rows.allSatisfy { model.onNetwork($0.to.trimmingCharacters(in: .whitespacesAndNewlines)) && zatOf($0.amount) != nil }
         NavigationStack {
             Form {
                 Section {
-                    TextField("utest1…", text: $to, axis: .vertical)
-                        .font(.body.monospaced()).codeEntry()
-                    PasteButton(payloadType: String.self) { s in Task { @MainActor in to = s.first ?? "" } }
+                    ForEach($rows) { $r in
+                        RecipientRow(row: $r, showMax: rows.count == 1).deleteDisabled(rows.count == 1)
+                    }
+                    .onDelete { rows.remove(atOffsets: $0) }
+                    Button("Add recipient", systemImage: "plus") { rows.append(PayRow()) }
+                        .disabled(rows.count >= maxPayees)
+                    PasteButton(payloadType: String.self) { s in Task { @MainActor in paste(s.first ?? "") } }
                 } header: {
-                    Text("To")
+                    Text(rows.count > 1 ? "\(rows.count) recipients, one transaction" : "To")
                 } footer: {
-                    if let valid {
-                        Text(valid ? "Valid \(netName) address" : "Not a \(netName) unified address with an Orchard receiver")
-                            .foregroundStyle(valid ? Color.good : Color.bad)
-                    }
-                }
-                Section("Amount") {
-                    HStack {
-                        TextField("0.00", text: $amount).decimalEntry().font(.title3.monospacedDigit())
-                        Text("ZEC").foregroundStyle(Color.mist)
-                        Button("Max") { amount = (Double(model.maxSend) / 1e8).formatted(.number.precision(.fractionLength(0...8)).grouping(.never).locale(Locale(identifier: "en_US"))) }
-                            .buttonStyle(.bordered)
-                    }
+                    Text(listError ?? "Paste one address, or a list with one address and amount per line. A spreadsheet copy works.")
+                        .foregroundStyle(listError == nil ? Color.mist : Color.bad)
                 }
                 Section {
-                    TextField("Pay the audit firm", text: $note)
+                    TextField(rows.count > 1 ? "October payroll" : "Pay the audit firm", text: $note)
                 } header: {
                     Text("Note for signers (optional)")
                 } footer: {
                     Text("Encrypted. Only signers of this wallet can read it.")
                 }
                 Section {
-                    LabeledContent("Available") { Money(zat: available, size: 15) }
-                    LabeledContent("Network fee (estimate)") { Money(zat: Self.feeEstimate, size: 15) }
-                    LabeledContent("Total leaving the wallet") { Money(zat: zat + Self.feeEstimate, size: 15) }
+                    LabeledContent("Available") { Money(zat: model.balanceNow()?.spendable ?? 0, size: 15) }
+                    LabeledContent("Network fee (estimate)") { Money(zat: feeEstimate(rows.count), size: 15) }
+                    LabeledContent("Total leaving the wallet") { Money(zat: sum + feeEstimate(rows.count), size: 15) }
                     LabeledContent("Approvals needed", value: "\(model.state.t) of \(model.state.n)")
                 }
             }
@@ -720,24 +755,80 @@ struct SendSheet: View {
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) { Button("Cancel") { dismiss() } }
                 ToolbarItem(placement: .confirmationAction) {
-                    Button("Propose") { propose(zat) }.disabled(working || valid != true || zat <= 0)
+                    Button("Propose") { propose() }.disabled(working || !ready)
                 }
             }
         }
     }
 
-    private func propose(_ zat: Int) {
+    /// One address goes into the first empty row. A list replaces every row.
+    private func paste(_ text: String) {
+        let t = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        listError = nil
+        if !t.contains(where: { $0.isWhitespace || ",;".contains($0) }) {
+            if let i = rows.firstIndex(where: { $0.to.isEmpty }) { rows[i].to = t; return }
+            if rows.count >= maxPayees { listError = "A payment can have at most \(maxPayees) recipients."; return }
+            rows.append(PayRow(to: t))
+            return
+        }
+        let list = parsePayeeList(t)
+        if let e = list.errors.first { listError = e; return }
+        if list.rows.isEmpty || list.rows.count > maxPayees { listError = "Paste 1 to \(maxPayees) lines."; return }
+        rows = list.rows.map { PayRow(to: $0.to, amount: zecText($0.amount)) }
+    }
+
+    private func propose() {
         working = true
         Task {
             do {
-                if zat > model.maxSend { throw ZigsError("Not enough funds: you can send at most \(zec(model.maxSend)).") }
+                let payees = rows.map { (to: $0.to.trimmingCharacters(in: .whitespacesAndNewlines), amount: zatOf($0.amount) ?? 0) }
+                let own = model.state.wallet?.str("address").flatMap { model.normalized($0) }
+                if let own, let i = payees.firstIndex(where: { model.normalized($0.to) == own }) {
+                    throw ZigsError("Recipient \(i + 1) is the address of this wallet. Enter the address of someone else.")
+                }
+                let need = payees.reduce(0) { $0 + $1.amount } + feeEstimate(payees.count)
+                let available = model.balanceNow()?.spendable ?? 0
+                if need > available { throw ZigsError("Not enough funds: \(zec(available)) available, \(zec(need)) needed (amounts + fee).") }
                 let n = note.trimmingCharacters(in: .whitespaces)
-                try await model.propose(to: to.trimmingCharacters(in: .whitespacesAndNewlines), amount: zat, note: n.isEmpty ? nil : n)
+                try await model.propose(payees: payees, note: n.isEmpty ? nil : n)
                 dismiss()
             } catch {
                 model.banner = error.localizedDescription
             }
             working = false
+        }
+    }
+}
+
+/// 150_000_000 -> "1.5", for an amount field.
+func zecText(_ zat: Int) -> String {
+    (Double(zat) / 1e8).formatted(.number.precision(.fractionLength(0...8)).grouping(.never).locale(Locale(identifier: "en_US")))
+}
+
+/// One recipient of a payment: address, amount, and whether the address fits this wallet's network.
+struct RecipientRow: View {
+    @Environment(GroupModel.self) private var model
+    @Binding var row: SendSheet.PayRow
+    let showMax: Bool
+
+    var body: some View {
+        let net = model.state.net
+        let to = row.to.trimmingCharacters(in: .whitespacesAndNewlines)
+        VStack(alignment: .leading, spacing: 8) {
+            TextField("\(net.prefix)…", text: $row.to, axis: .vertical)
+                .font(.body.monospaced()).codeEntry()
+            HStack {
+                TextField("0.00", text: $row.amount).decimalEntry().font(.title3.monospacedDigit())
+                Text("ZEC").foregroundStyle(Color.mist)
+                if showMax {
+                    Button("Max") { row.amount = zecText(model.maxSend) }.buttonStyle(.bordered)
+                }
+            }
+            if !to.isEmpty {
+                let ok = model.onNetwork(to)
+                Text(ok ? "Valid \(net.label.lowercased()) address" : "Not a \(net.label.lowercased()) unified address with an Orchard receiver")
+                    .font(.caption).foregroundStyle(ok ? Color.good : Color.bad)
+            }
         }
     }
 }

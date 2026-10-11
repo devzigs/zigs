@@ -277,17 +277,17 @@ fn pczt_to_b64(p: Pczt) -> R<String> {
 }
 
 /// Build an unsigned, *unproven* PCZT that spends Ironwood notes and pays
-/// `(payee, amount, change)`. Proving happens after signing, in `finalize`,
+/// each `(payee, amount)` plus `change`. Proving happens after signing, in `finalize`,
 /// because the spend authorization signatures do not commit to the proof.
 fn build_ironwood_pczt<P: Parameters>(
     params: P,
     target: BlockHeight,
     fvk: &FullViewingKey,
     spends: (Vec<(orchard::Note, orchard::tree::MerklePath)>, orchard::Anchor),
-    outs: (orchard::Address, u64, u64),
+    outs: (&[(orchard::Address, u64)], u64),
 ) -> R<Pczt> {
     let (notes, anchor) = spends;
-    let (payee, amount, change) = outs;
+    let (payees, change) = outs;
     let mut builder = Builder::new(
         params,
         target,
@@ -302,14 +302,18 @@ fn build_ironwood_pczt<P: Parameters>(
     for (note, path) in notes {
         builder.add_ironwood_spend::<zip317::FeeRule>(fvk.clone(), note, path).map_err(e("builder"))?;
     }
-    let az = Zatoshis::from_u64(amount).map_err(e("amount"))?;
-    let cz = Zatoshis::from_u64(change).map_err(e("change"))?;
     let eo = Some(fvk.to_ovk(Scope::External));
+    for &(payee, amount) in payees {
+        let az = Zatoshis::from_u64(amount).map_err(e("amount"))?;
+        builder
+            .add_ironwood_output::<zip317::FeeRule>(eo.clone(), payee, az, MemoBytes::empty())
+            .map_err(e("builder"))?;
+    }
+    let cz = Zatoshis::from_u64(change).map_err(e("change"))?;
     let io = Some(fvk.to_ovk(Scope::Internal));
     let ca = fvk.address_at(0u32, Scope::Internal);
     builder
-        .add_ironwood_output::<zip317::FeeRule>(eo, payee, az, MemoBytes::empty())
-        .and_then(|_| builder.add_ironwood_output::<zip317::FeeRule>(io, ca, cz, MemoBytes::empty()))
+        .add_ironwood_output::<zip317::FeeRule>(io, ca, cz, MemoBytes::empty())
         .map_err(e("builder"))?;
     let PcztResult { pczt_parts, .. } = builder
         .build_for_pczt(rng(), &zip317::FeeRule::standard())
@@ -365,6 +369,8 @@ fn inspect_inner(p: &Pczt, fvk: &FullViewingKey) -> R<Inspected> {
     let ext = fvk.address_at(0u32, Scope::External);
     let mut pending = vec![];
     let mut lines = vec![];
+    // Value that leaves the shielded pools, and the number of actions that the fee pays for.
+    let (mut outflow, mut actions) = (0i128, 0usize);
     for &pool in pools {
         let mut found = vec![];
         let mut ls = vec![];
@@ -372,13 +378,17 @@ fn inspect_inner(p: &Pczt, fvk: &FullViewingKey) -> R<Inspected> {
             for (i, a) in b.actions().iter().enumerate() {
                 a.verify_cv_net()?;
                 let s = a.spend();
+                let redacted = || OrchardError::Custom(Custom(format!("action {i}: no value")));
+                let (sv, ov) = s.value().zip(*a.output().value()).ok_or_else(redacted)?;
+                let (sv, ov) = (sv.inner(), ov.inner());
+                outflow += i128::from(sv) - i128::from(ov);
+                actions += 1;
                 if s.spend_auth_sig().is_none() {
                     let alpha = s
                         .alpha()
                         .ok_or_else(|| OrchardError::Custom(Custom(format!("action {i}: no alpha"))))?;
                     s.verify_rk(Some(fvk))?;
                     s.verify_nullifier(Some(fvk))?;
-                    a.output().verify_note_commitment(s)?;
                     ls.push(json!({"kind": "spend", "action": i, "pool": format!("{pool:?}"),
                         "value": s.value().map(|v| v.inner()), "who": "this wallet"}));
                     found.push(PendingSpend {
@@ -390,6 +400,11 @@ fn inspect_inner(p: &Pczt, fvk: &FullViewingKey) -> R<Inspected> {
                 }
                 let o = a.output();
                 let v = o.value().map(|v| v.inner());
+                // Bind every output that carries value to the recipient shown, also next to a dummy
+                // spend that the builder already signed. A redacted recipient or value fails here.
+                if v != Some(0) {
+                    o.verify_note_commitment(s)?;
+                }
                 let who = match o.recipient() {
                     Some(x) if *x == change => "change (back to this wallet)".to_string(),
                     Some(x) if *x == ext => "this wallet".to_string(),
@@ -412,6 +427,12 @@ fn inspect_inner(p: &Pczt, fvk: &FullViewingKey) -> R<Inspected> {
         lines.extend(ls);
     }
     ensure(!pending.is_empty(), "this transaction spends nothing from this wallet")?;
+    // Anything beyond the standard fee leaves through a part this check cannot show, such as a
+    // transparent output, so refuse it.
+    let fee = chain::zip317_fee(actions, 0);
+    ensure(outflow == i128::from(fee), &format!(
+        "the transaction moves {outflow} zat out of the shielded pool, but the network fee for \
+         {actions} actions is {fee} zat"))?;
     Ok((pending, lines, h, version))
 }
 
@@ -862,14 +883,20 @@ mod tests {
             let a = p.root(leaf);
             (orchard::Anchor::from(a), orchard::tree::MerklePath::from(p))
         };
-        // 3. Pay a third party, change back to the wallet's internal address.
-        let fee = 10_000u64;
+        // 3. Pay third parties (four in one Ironwood batch), change back to the wallet's internal
+        // address. The builder rejects the PCZT if this fee differs from ZIP 317.
+        let count = if ironwood { 4 } else { 1 };
+        let fee = 5_000 * (count as u64 + 1).max(2);
         let change = note_value
-            .checked_sub(amount + fee)
-            .ok_or("note value too small for amount + 10000 zat fee")?;
-        let payee = FullViewingKey::from(&random_sk()).address_at(0u32, Scope::External);
+            .checked_sub(amount * count as u64 + fee)
+            .ok_or("note value too small for the amounts and the fee")?;
+        let payees: Vec<_> = (0..count)
+            .map(|_| (FullViewingKey::from(&random_sk()).address_at(0u32, Scope::External), amount))
+            .collect();
+        let payee = payees[0].0;
         let pczt = if ironwood {
-            build_ironwood_pczt(regtest(true), 10_000_000.into(), &fvk, (vec![(note, path)], anchor), (payee, amount, change))?
+            let spends = (vec![(note, path)], anchor);
+            build_ironwood_pczt(regtest(true), 10_000_000.into(), &fvk, spends, (&payees, change))?
         } else {
             let mut builder = Builder::new(
                 regtest(false),
@@ -966,10 +993,12 @@ mod tests {
         let ins = v(&inspect(pczt, fvk).unwrap());
         assert_eq!(ins["spends"].as_array().unwrap().len(), 1);
         let paid: Vec<&str> = ins["lines"].as_array().unwrap().iter()
-            .filter(|l| l["kind"] == "output")
+            .filter(|l| l["kind"] == "output" && l["value"] == 100_000)
             .filter_map(|l| l["who"].as_str().filter(|w| w.starts_with("utest1")))
             .collect();
-        assert_eq!(paid.len(), 1, "inspect names the recipient by address");
+        let count = if pool == "ironwood" { 4 } else { 1 };
+        assert_eq!(paid.len(), count, "inspect names each recipient by address, with its amount");
+        assert_eq!(paid.iter().collect::<std::collections::BTreeSet<_>>().len(), count);
         assert_eq!(normalize_address(paid[0]).unwrap(), paid[0]);
         assert!(normalize_address("not an address").is_err());
 
@@ -999,6 +1028,37 @@ mod tests {
         bad.insert(b.clone(), shares[&a].clone());
         let r = sign_aggregate(pczt, &pkp, &pkg, &Value::Object(bad).to_string());
         assert!(r.unwrap_err().contains(&format!("participant {b}")));
+    }
+
+    /// The builder signs dummy spends early, so most payee outputs sit next to a spend that is not
+    /// ours. Each one must still be bound to the recipient that `inspect` shows.
+    #[test]
+    fn inspect_binds_every_output_to_its_recipient() {
+        let fvk = hex::encode(FullViewingKey::from(&random_sk()).to_bytes());
+        let tx = v(&tx_demo_create(&fvk, 100_000, 1_000_000, "ironwood").unwrap());
+        let pczt = tx["pczt"].as_str().unwrap();
+        let raw = B64.decode(pczt).unwrap();
+        let lines = v(&inspect(pczt, &fvk).unwrap())["lines"].as_array().unwrap().clone();
+        let payees: Vec<[u8; 43]> = lines.iter()
+            .filter_map(|l| l["who"].as_str().filter(|w| w.starts_with("utest1")))
+            .map(|ua| match zcash_keys::address::Address::decode(&Network::TestNetwork, ua) {
+                Some(zcash_keys::address::Address::Unified(u)) => {
+                    u.orchard().unwrap().to_raw_address_bytes()
+                }
+                _ => panic!("payee is not a unified address"),
+            })
+            .collect();
+        assert_eq!(payees.len(), 4);
+        let thief = FullViewingKey::from(&random_sk())
+            .address_at(0u32, Scope::External)
+            .to_raw_address_bytes();
+        for p in payees {
+            let at = raw.windows(43).position(|w| w == p).expect("recipient bytes in the PCZT");
+            let mut bad = raw.clone();
+            bad[at..at + 43].copy_from_slice(&thief);
+            let r = inspect(&B64.encode(&bad), &fvk);
+            assert!(r.is_err(), "a payee output with a swapped recipient was accepted");
+        }
     }
 
     #[test]

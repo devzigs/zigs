@@ -301,6 +301,19 @@ a.row-item { text-decoration: none; }
 .dialog h2 { font-size: 18px; }
 .field { display: grid; gap: 6px; min-width: 0; }
 .field > span { font-size: 12.5px; font-weight: 500; color: var(--muted); }
+.pay-row { display: grid; grid-template-columns: minmax(0, 1fr) 8.5rem auto; gap: 4px 8px; align-items: center; }
+.pay-row .hint { grid-column: 1 / -1; }
+.pay-row .input-wrap .input { padding-right: 56px; }
+.row-actions { display: flex; flex-wrap: wrap; gap: 8px; align-items: flex-start; }
+.paste { display: grid; gap: 8px; justify-items: start; }
+.paste[open] { flex-basis: 100%; }
+.paste > summary { list-style: none; }
+.paste > summary::-webkit-details-marker { display: none; }
+.paste textarea { height: auto; min-height: 6rem; padding-block: 10px; resize: vertical; font-size: 12.5px; }
+.payee { display: flex; justify-content: space-between; gap: 12px; align-items: baseline; }
+.payee .hex { min-width: 0; overflow-wrap: anywhere; }
+.payee-end { display: flex; gap: 8px; align-items: center; flex: none; }
+@media (max-width: 520px) { .pay-row { grid-template-columns: minmax(0, 1fr) auto; } .pay-row .input-wrap { grid-row: 2; } }
 .input { width: 100%; height: 42px; padding-inline: 12px; border-radius: 10px; border: 1px solid var(--line-2); background: var(--sunk); color: var(--text); font: 400 14.5px var(--sans); }
 .input.mono { font-family: var(--mono); font-size: 13px; }
 .input:focus { outline: none; border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-soft); }
@@ -384,6 +397,7 @@ details > summary { cursor: pointer; color: var(--accent-text); font-weight: 500
 
 <script type="module">
 import { qrSvg } from "/qr.js";
+import { parsePayeeList, toZat, zatText } from "/payees.js";
 // ───────────────────────── Engine (WASM) ─────────────────────────
 let Z = null;
 const engineDot = document.getElementById("engine-dot");
@@ -875,12 +889,13 @@ async function runSync(c) {
   finally { c.syncing = false; if (chain !== c && c.cw) c.cw.free(); render(); }
 }
 
-// `to` and `note` are the proposer's words; approvers check `to` against the transaction itself.
-async function newSpend(recipient, amountZat, note, move = null) {
+// `payees` and `note` are the proposer's words; approvers check `payees` against the transaction.
+async function newSpend(payees, note, move = null) {
   if (!chain || chain.gid !== state.gid || !chain.bal) throw new Error("The wallet has not finished its first sync.");
-  const t = J(await chain.cw.createSpend(recipient, amountZat));
+  payees = payees.map(({ to, amount }) => ({ to, amount }));
+  const t = J(await chain.cw.createSpend(S(payees)));
   const ref = sdb.collection("groups/" + state.gid + "/sessions").doc();
-  await ref.set({ createdBy: me, createdAt: Date.now(), to: recipient, note: note || null, pool: t.pool, amount: t.amount, change: t.change, fee: t.fee, noteValue: t.note_value, pczt: t.pczt, move, status: "collecting" });
+  await ref.set({ createdBy: me, createdAt: Date.now(), payees, note: note || null, pool: t.pool, amount: t.amount, change: t.change, fee: t.fee, noteValue: t.note_value, pczt: t.pczt, move, status: "collecting" });
   log("new spend: " + fmtZec(t.amount));
   showBanner("ok", "Payment proposed. It needs " + state.g.t + " approvals.");
   openSession(ref.id);
@@ -892,7 +907,7 @@ async function proposeMove() {
   if (!tw) throw new Error("The new wallet has no address yet.");
   const amount = c && c.bal ? c.bal.max_send : 0;
   if (!(amount > 0)) throw new Error("No confirmed funds to move yet.");
-  await newSpend(tw.address, amount, "Move to " + groupName(to), to);
+  await newSpend([{ to: tw.address, amount }], "Move to " + groupName(to), to);
 }
 
 async function cancelMove() {
@@ -990,9 +1005,11 @@ function copyBtn(text, label = "Copy", cls = "btn sm") {
 
 let openLayer = "", tickTimer = null;
 // View state that only this browser cares about.
-const ui = { tab: "overview", send: false, create: false, receive: false, move: false, net: "testnet", ack: false };
+const ui = { tab: "overview", send: false, pay: null, payKey: 0, listError: "", create: false, receive: false, move: false, net: "testnet", ack: false };
 const ZEC_FMT = new Intl.NumberFormat("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 8 });
-const FEE_ESTIMATE = 10000;
+// ZIP 317 for a payment from up to `outputs` notes: one action per output, change included.
+const feeEstimate = (payees) => 5000 * Math.max(2, payees + 1);
+const MAX_PAYEES = 20;
 const BLOCK_SECONDS = 25;
 const initials = (name) => (name || "?").trim().split(/\s+/).map((w) => w[0]).join("").slice(0, 2).toUpperCase() || "?";
 const when = (ms) => ms ? new Date(ms).toLocaleString(undefined, { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" }) : "";
@@ -1030,7 +1047,10 @@ function statusChip(s) {
 const OWN_OUTPUT = new Set(["this wallet", "change (back to this wallet)"]);
 const isPayee = (l) => l.kind === "output" && !OWN_OUTPUT.has(l.who);
 const lineRank = (l) => l.kind === "spend" ? 0 : isPayee(l) ? 1 : 2;
-const payTitle = (ss) => ss.note || (ss.to ? "Payment to " + short(ss.to, 8) : "Payment");
+function payTitle(ss) {
+  const p = payeesOf(ss);
+  return ss.note || (p.length === 1 ? "Payment to " + short(p[0].to, 8) : p.length ? "Payment to " + p.length + " recipients" : "Payment");
+}
 const ruleText = (t, n) => "Any " + t + " of " + n + " signers must approve each payment.";
 const groupName = (gid) => (state.groups.find((x) => x.id === gid) || {}).name || "the new wallet";
 const proposer = (ss) => ss.createdBy === me ? "you" : seatNameOf(ss.createdBy);
@@ -1057,7 +1077,7 @@ function sendBlocker() {
   // ponytail: the engine does not know about unmined spends and would pick the same notes again.
   if (inFlight().length) return "A payment is waiting for its block. Send again in a minute.";
   const b = balanceNow(c.bal);
-  if (b.spendable > FEE_ESTIMATE) return null;
+  if (b.spendable > feeEstimate(1)) return null;
   return b.pending ? "Incoming funds need 3 confirmations first." : "This wallet has no funds yet.";
 }
 
@@ -1068,7 +1088,7 @@ function render() {
   const app = document.getElementById("app");
   // Keep what the viewer is typing, open <details>, and the drawer scroll across live updates.
   const kept = {}; const focusId = document.activeElement && document.activeElement.id;
-  app.querySelectorAll("input[id], select[id]").forEach((i) => { if (i.type !== "file") kept[i.id] = i.value; });
+  app.querySelectorAll("input[id], select[id], textarea[id]").forEach((i) => { if (i.type !== "file") kept[i.id] = i.value; });
   const openDetails = new Set([...app.querySelectorAll("details[open] > summary")].map((x) => x.textContent));
   const drawerScroll = app.querySelector(".drawer-body")?.scrollTop || 0;
   const view = !dbReady ? loadingView() : state.gid ? groupView() : lobby();
@@ -1258,7 +1278,7 @@ function walletActions() {
   const why = sendBlocker();
   return [
     el("button", { class: "btn", type: "button", onclick: () => { ui.receive = true; render(); } }, "Receive"),
-    el("button", { class: "btn primary", type: "button", disabled: !!why, title: why, onclick: () => { ui.send = true; render(); } }, "Send"),
+    el("button", { class: "btn primary", type: "button", disabled: !!why, title: why, onclick: () => { ui.send = true; ui.pay = null; render(); } }, "Send"),
   ];
 }
 
@@ -1570,43 +1590,89 @@ function receiveDialog() {
 }
 
 // ── Send ──
+function addressHint(hint, to) {
+  const v = to.trim(), ok = v ? onNetwork(v) : null, net = curNet().label.toLowerCase();
+  hint.textContent = !v ? "" : ok ? "Valid " + net + " address" : "Not a " + net + " unified address with an Orchard receiver";
+  hint.className = "hint " + (!v ? "" : ok ? "ok" : "bad");
+}
+
+function payRow(r, i, rows, sumUp) {
+  const c = curChain(), hint = el("span", { class: "hint" }), n = rows.length > 1 ? " " + (i + 1) : "";
+  const amt = el("input", { class: "input", id: "s-amt-" + r.k, type: "text", inputmode: "decimal", placeholder: "0.00", required: true, autocomplete: "off", "aria-label": "Amount" + n, value: r.amt, oninput: (ev) => { r.amt = ev.target.value.trim(); sumUp(); } });
+  const max = () => { r.amt = zatText(Math.max(0, c && c.bal ? c.bal.max_send : 0)); amt.value = r.amt; sumUp(); };
+  addressHint(hint, r.to);
+  return el("div", { class: "pay-row" },
+    el("input", { class: "input mono", id: "s-to-" + r.k, type: "text", placeholder: curNet().prefix + "…", required: true, autocomplete: "off", spellcheck: "false", "aria-label": "Recipient address" + n, value: r.to, oninput: (ev) => { r.to = ev.target.value; addressHint(hint, r.to); } }),
+    el("div", { class: "input-wrap" }, amt, rows.length === 1 ? el("button", { class: "btn sm", type: "button", onclick: max }, "Max") : null),
+    rows.length > 1 ? el("button", { class: "icon-btn", type: "button", "aria-label": "Remove recipient" + n, onclick: () => { rows.splice(i, 1); render(); } }, "×") : null,
+    hint);
+}
+
+function useList() {
+  const box = document.getElementById("s-list"), { rows, errors } = parsePayeeList(box.value);
+  ui.listError = errors[0] || (!rows.length ? "Paste at least one line." : rows.length > MAX_PAYEES ? "A payment can have at most " + MAX_PAYEES + " recipients." : "");
+  if (!ui.listError) {
+    ui.pay = rows.map((p) => ({ k: ++ui.payKey, to: p.to, amt: zatText(p.amount) }));
+    box.value = ""; box.closest("details").open = false;
+  }
+  render();
+}
+
+// Checks each row and returns the payees in zatoshis, or throws with the row number.
+function readPayees(rows) {
+  const net = curNet(), own = normalized(state.wallet.address);
+  return rows.map((r, i) => {
+    const to = r.to.trim(), amount = toZat(r.amt), who = rows.length > 1 ? "Recipient " + (i + 1) + ": " : "";
+    if (!onNetwork(to)) throw new Error(who + "Enter a " + net.label.toLowerCase() + " unified address with an Orchard receiver (it starts with " + net.prefix + ").");
+    if (normalized(to) === own) throw new Error(who + "This is the address of this wallet. Enter the address of someone else.");
+    if (!amount) throw new Error(who + "Enter an amount greater than zero, with at most 8 decimals.");
+    return { to, amount };
+  });
+}
+
+function pasteList(net) {
+  return el("details", { class: "paste" }, el("summary", { class: "btn sm" }, "Paste a list"),
+    el("textarea", { class: "input mono", id: "s-list", rows: "5", spellcheck: "false", "aria-label": "Payment list", placeholder: net.prefix + "…, 0.5\n" + net.prefix + "…, 1.25" }),
+    el("span", { class: "hint" }, "One address and amount per line. A spreadsheet copy works."),
+    ui.listError ? el("span", { class: "hint bad" }, ui.listError) : null,
+    el("button", { class: "btn sm", type: "button", onclick: useList }, "Use this list"));
+}
+
 function sendDialog() {
-  const c = curChain(), spendable = c && c.bal ? c.bal.spendable : 0;
-  const hint = el("span", { class: "hint", id: "s-to-hint" });
-  const total = el("span", { id: "s-total" }, money(FEE_ESTIMATE));
-  const checkTo = (ev) => {
-    const v = ev.target.value.trim();
-    const ok = v ? onNetwork(v) : null;
-    hint.textContent = !v ? "" : ok ? "Valid " + curNet().label.toLowerCase() + " address" : "Not a " + curNet().label.toLowerCase() + " unified address with an Orchard receiver";
-    hint.className = "hint " + (!v ? "" : ok ? "ok" : "bad");
+  const c = curChain(), bal = c && c.bal, spendable = bal ? bal.spendable : 0, net = curNet();
+  if (!ui.pay) { ui.pay = [{ k: ++ui.payKey, to: "", amt: "" }]; ui.listError = ""; }
+  const rows = ui.pay;
+  const fee = el("span", {}), total = el("span", { id: "s-total" });
+  const sumUp = () => {
+    const f = feeEstimate(rows.length);
+    fee.replaceChildren(money(f));
+    total.replaceChildren(money(rows.reduce((n, r) => n + (toZat(r.amt) || 0), 0) + f));
   };
-  const sumUp = (ev) => total.replaceChildren(money(Math.round((Number(ev.target.value) || 0) * 1e8) + FEE_ESTIMATE));
   const f = el("form", { class: "dialog", role: "dialog", "aria-modal": "true", "aria-labelledby": "send-title", onsubmit: act(async (ev) => {
-    const fd = new FormData(ev.target);
-    const amt = Math.round(Number(fd.get("amount")) * 1e8), to = String(fd.get("recipient")).trim();
-    if (!onNetwork(to)) throw new Error("Enter a " + curNet().label.toLowerCase() + " unified address with an Orchard receiver (it starts with " + curNet().prefix + ").");
-    if (!(amt > 0)) throw new Error("Enter an amount greater than zero.");
-    if (amt + FEE_ESTIMATE > spendable) throw new Error("Not enough funds: " + fmtZec(spendable) + " available, " + fmtZec(amt + FEE_ESTIMATE) + " needed (amount + fee).");
-    await newSpend(to, amt, String(fd.get("note") || "").trim());
+    const payees = readPayees(rows);
+    const need = payees.reduce((n, p) => n + p.amount, 0) + feeEstimate(payees.length);
+    if (need > spendable) throw new Error("Not enough funds: " + fmtZec(spendable) + " available, " + fmtZec(need) + " needed (amounts + fee).");
+    await newSpend(payees, String(new FormData(ev.target).get("note") || "").trim());
     ui.send = false;
   }) },
     el("div", { class: "card-head" }, el("h2", { id: "send-title" }, "Send ZEC"), el("button", { class: "icon-btn", type: "button", "aria-label": "Close", onclick: () => { ui.send = false; render(); } }, "×")),
-    el("label", { class: "field" }, el("span", {}, "To"), el("input", { class: "input mono", id: "s-to", name: "recipient", type: "text", placeholder: "utest1…", required: true, autocomplete: "off", spellcheck: "false", oninput: checkTo }), hint),
-    el("label", { class: "field" }, el("span", {}, "Amount"),
-      el("div", { class: "input-wrap" },
-        el("input", { class: "input", id: "s-amt", name: "amount", type: "number", step: "0.0001", min: "0.0001", placeholder: "0.00", required: true, oninput: sumUp }),
-        el("button", { class: "btn sm", type: "button", onclick: () => { const i = document.getElementById("s-amt"); i.value = Math.max(0, (c && c.bal ? c.bal.max_send : 0) / 1e8).toFixed(8).replace(/0+$/, "").replace(/\.$/, ""); i.dispatchEvent(new Event("input", { bubbles: true })); } }, "Max"))),
+    el("div", { class: "field" }, el("span", {}, rows.length > 1 ? rows.length + " recipients, one transaction" : "To and amount"),
+      rows.map((r, i) => payRow(r, i, rows, sumUp)),
+      el("div", { class: "row-actions" },
+        el("button", { class: "btn sm", type: "button", disabled: rows.length >= MAX_PAYEES, onclick: () => { rows.push({ k: ++ui.payKey, to: "", amt: "" }); render(); } }, "Add recipient"),
+        pasteList(net))),
     el("label", { class: "field" }, el("span", {}, "Note for signers (optional)"),
-      el("input", { class: "input", id: "s-note", name: "note", type: "text", maxlength: "80", placeholder: "Pay the audit firm", autocomplete: "off" }),
+      el("input", { class: "input", id: "s-note", name: "note", type: "text", maxlength: "80", placeholder: rows.length > 1 ? "October payroll" : "Pay the audit firm", autocomplete: "off" }),
       el("span", { class: "hint" }, "Encrypted. Only signers of this wallet can read it.")),
     el("div", { class: "summary" },
       el("div", {}, el("span", { class: "muted" }, "Available"), money(spendable)),
-      el("div", {}, el("span", { class: "muted" }, "Network fee (estimate)"), money(FEE_ESTIMATE)),
+      el("div", {}, el("span", { class: "muted" }, "Network fee (estimate)"), fee),
       el("div", { class: "total" }, el("span", {}, "Total leaving the wallet"), total),
       el("div", {}, el("span", { class: "muted" }, "Approvals needed"), el("span", {}, state.g.t + " of " + state.g.n))),
     el("div", { class: "dialog-actions" },
       el("button", { class: "btn", type: "button", onclick: () => { ui.send = false; render(); } }, "Cancel"),
-      el("button", { class: "btn primary", type: "submit", disabled: !myVerified() || !Z || !c || !c.bal }, "Propose payment")));
+      el("button", { class: "btn primary", type: "submit", disabled: !(myVerified() && Z && bal) }, "Propose payment")));
+  sumUp();
   return f;
 }
 
@@ -1621,23 +1687,57 @@ function inspectOf(ss) {
   return ins;
 }
 
-// The decoded recipient is the truth; the typed address only helps people recognise it.
+// The proposer's list, without entries that have no address text.
+const payeesOf = (ss) => Array.isArray(ss.payees) ? ss.payees.filter((p) => p && typeof p.to === "string") : [];
+
+// Pairs each proposed payee with one decoded output of the same address and amount. Returns the
+// rows with `ok`, and the decoded outputs that no payee claimed.
+function pairPayees(payees, outputs) {
+  const left = [...outputs];
+  const rows = payees.map((p) => {
+    const i = left.findIndex((l) => l.who === normalized(p.to) && l.value === p.amount);
+    if (i >= 0) left.splice(i, 1);
+    return { ...p, ok: i >= 0 };
+  });
+  return { rows, extra: left };
+}
+
+// The decoded outputs are the truth. Each one must be a proposed payee with the same amount, and
+// the proposal must list nothing else. The typed addresses only help people recognise them.
+function allPaid(rows, extra, total) {
+  if (!rows.length || extra.length || !rows.every((r) => r.ok)) return false;
+  return rows.reduce((n, r) => n + r.amount, 0) === total;
+}
+
 function recipientCheck(ss, ins) {
-  const payee = ins && !ins.error ? ins.lines.find(isPayee) : null;
-  if (!payee) return { payee: null, match: null };
+  if (!ins || ins.error) return { rows: [], extra: [], match: null };
+  const paid = ins.lines.filter(isPayee), { rows, extra } = pairPayees(payeesOf(ss), paid);
+  const match = allPaid(rows, extra, ss.amount);
   const tw = ss.move ? ready[ss.move] : null;
-  const intoNew = tw ? normalized(tw.address) === payee.who : null;
-  return { payee, match: ss.to ? normalized(ss.to) === payee.who : null, intoNew };
+  const intoNew = tw ? paid.length === 1 && normalized(tw.address) === paid[0].who : null;
+  return { rows, extra, match, intoNew };
+}
+
+function checkWarnings(rc) {
+  const out = rc.extra.map((l) => "The transaction also pays " + fmtZec(l.value) + " to " + short(l.who, 12) + ", which the proposer did not list. Do not approve it.");
+  if (!rc.rows.length) out.push("The proposal lists no recipients. Do not approve it.");
+  else if (!rc.match && !rc.extra.length) out.push("The transaction does not pay what the proposer listed. Do not approve it.");
+  return out.map((t) => el("div", { class: "callout bad" }, t));
+}
+
+function checkHead(rc) {
+  return el("div", { class: "card-head" }, el("span", { class: "label" }, rc.rows.length > 1 ? rc.rows.length + " recipients" : "To"),
+    el("span", { class: "badge " + (rc.match ? "ok" : "bad") }, rc.match ? "Matches the transaction" : "Does not match the transaction"));
 }
 
 function recipientBox(ss, rc) {
-  if (!rc.payee) return null;
-  const badge = rc.match === null ? el("span", { class: "small faint" }, "Decoded from the transaction")
-    : el("span", { class: "badge " + (rc.match ? "ok" : "bad") }, rc.match ? "Matches the transaction" : "Does not match the transaction");
-  return el("div", { class: "to-box" },
-    el("div", { class: "card-head" }, el("span", { class: "label" }, "To"), badge),
-    el("div", { class: "hex" }, ss.to || rc.payee.who),
-    rc.match === false ? el("div", { class: "callout bad" }, "The transaction pays " + short(rc.payee.who, 12) + ", not the address the proposer typed. Do not approve it.") : null,
+  // Payments proposed before batch payments have no list; only one still open for approval needs
+  // the check.
+  if (rc.match === null || (!rc.rows.length && ss.package)) return null;
+  return el("div", { class: "to-box" }, checkHead(rc),
+    rc.rows.map((r) => el("div", { class: "payee" }, el("span", { class: "hex" }, String(r.to)),
+      el("span", { class: "payee-end" }, money(r.amount), r.ok ? null : el("span", { class: "badge bad" }, "Not in the transaction")))),
+    checkWarnings(rc),
     ss.move ? moveNote(ss, rc) : null);
 }
 
@@ -1649,7 +1749,7 @@ function moveNote(ss, rc) {
 
 function nextAction(ss, ins, rc) {
   const myPending = localSeats().filter((i) => sec(state.gid, i).keyPackage && !state.commits[i] && !ss.package);
-  const canApprove = myPending.length && !(ins && ins.error) && rc.match !== false && rc.intoNew !== false;
+  const canApprove = myPending.length && rc.match === true && rc.intoNew !== false;
   if (canApprove) return myPending.map((i) => el("button", { class: "btn primary lg", type: "button", onclick: act(() => approve(ss, i)) }, localSeats().length > 1 ? "Approve as seat " + i : "Approve payment"));
   if (ss.signed && !ss.final && (ss.status !== "proving" || proofStalled(ss))) return [el("button", { class: "btn primary lg", type: "button", onclick: act(() => finalizeTx(ss)) }, "Build proof")];
   if (ss.final && !ss.broadcastTxid) return [el("button", { class: "btn primary lg", type: "button", disabled: !curChain(), onclick: act(() => broadcastTx(ss)) }, ss.broadcastError ? "Send again" : "Send to network")];
@@ -1674,6 +1774,9 @@ function sessionDrawer(ss) {
     actions.length ? el("div", { class: "drawer-foot" }, ...actions) : null);
 }
 
+// Spent value minus every output: what the network keeps. Zero-value outputs are not listed.
+const decodedFee = (ins) => ins.lines.reduce((n, l) => n + (l.kind === "spend" ? 1 : -1) * (l.value || 0), 0);
+
 function breakdown(ss, ins) {
   const label = (l) => l.kind === "spend" ? "From this wallet" : isPayee(l) ? "To " + short(l.who, 10) : "Change back to this wallet";
   return el("div", { style: "display:grid;gap:8px" },
@@ -1681,7 +1784,7 @@ function breakdown(ss, ins) {
     el("div", { class: "lines" },
       [...ins.lines].sort((a, b) => lineRank(a) - lineRank(b)).map((l) => el("div", {}, el("span", { class: l.kind === "spend" ? "neg" : "" }, label(l)),
         el("span", { class: "mono" + (l.kind === "spend" ? " neg" : "") }, (l.kind === "spend" ? "−" : "") + ((l.value || 0) / 1e8).toFixed(8)))),
-      el("div", {}, el("span", { class: "muted" }, "Network fee"), el("span", { class: "mono muted" }, ((ss.fee || 0) / 1e8).toFixed(8)))),
+      el("div", {}, el("span", { class: "muted" }, "Network fee"), el("span", { class: "mono muted" }, (decodedFee(ins) / 1e8).toFixed(8)))),
     el("p", { class: "small faint" }, "Your browser decoded this from the transaction itself, not from the proposer's description."));
 }
 

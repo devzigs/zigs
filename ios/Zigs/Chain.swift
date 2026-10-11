@@ -80,10 +80,11 @@ final class Chain {
     }
 
     /// Builds an unsigned payment (a PCZT) from this wallet's confirmed notes.
-    func spend(to: String, amount: Int) async throws -> Doc {
+    /// `payees` is `[{"to": address, "amount": zatoshis}]`.
+    func spend(payees: [Doc]) async throws -> Doc {
         try openIfNeeded()
         let tip = try await Lightwalletd.latestHeight(try await pickServer())
-        return try Engine.object("walletSpend", [gid, to, amount, tip])
+        return try Engine.object("walletSpend", [gid, payees, tip])
     }
 
     private func openIfNeeded() throws {

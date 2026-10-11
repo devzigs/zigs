@@ -10,7 +10,7 @@ export const boxOpen: (a: number, b: number, c: number, d: number, e: number, f:
 export const boxSeal: (a: number, b: number, c: number, d: number, e: number, f: number, g: number, h: number) => [number, number, number, number];
 export const chainwallet_balance: (a: number) => [number, number];
 export const chainwallet_broadcast: (a: number, b: number, c: number) => any;
-export const chainwallet_createSpend: (a: number, b: number, c: number, d: number) => any;
+export const chainwallet_createSpend: (a: number, b: number, c: number) => any;
 export const chainwallet_new: (a: number, b: number, c: number, d: number, e: number) => [number, number, number];
 export const chainwallet_received: (a: number) => [number, number];
 export const chainwallet_restore: (a: number, b: number, c: number, d: number, e: number, f: number, g: number) => [number, number, number];

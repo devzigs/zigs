@@ -33,8 +33,13 @@ uses. We checked each visible property:
 | Change | One note to the wallet's internal address | Same |
 | Memos | Empty | Empty unless the user writes one |
 | Transparent parts | None | None for a shielded payment |
+| Several recipients | One output per recipient, plus change | Same for a multi-recipient payment (ZIP 321) |
 
 The code is `build_ironwood_pczt` and `spend_pczt` in `wasm/src`.
+
+The number of actions is visible on chain, as for every Zcash transaction: it is the larger of
+the inputs and the outputs, at least 2. A payment to 4 recipients has at least 5 actions, so it
+shows that it is a larger payment, but not who or how much.
 
 ## Group server (Cloudflare Worker and Durable Objects)
 
@@ -103,8 +108,10 @@ alone cannot move funds: a payment needs a full threshold of signers.
 
 - A threshold of signers who agree can move the funds. That is the rule they chose.
 - A compromised device can sign with its own share, and can show its user false information.
-  Each approving device decodes the transaction itself and checks the recipient, so one honest
-  signer sees the true payment.
+  Each approving device decodes the transaction itself. It ties every output that carries value
+  to the recipient it shows, checks that the outputs are exactly the listed recipients and
+  amounts, and refuses a transaction that moves more than the standard fee out of the shielded
+  pool. So one honest signer sees the true payment.
 - The group server can refuse service or drop messages. It cannot forge or read them.
 - Chain reorganisations are not handled in the sync state yet.
 - The code is not audited. Mainnet wallets are limited to 0.5 ZEC: at that balance the app stops

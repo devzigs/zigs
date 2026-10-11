@@ -553,14 +553,16 @@ final class GroupModel {
         takeSeat(1)
     }
 
-    /// Proposes a payment; `to` and `note` are the proposer's words, which approvers check
-    /// against the transaction itself.
-    func propose(to: String, amount: Int, note: String?, move: String? = nil) async throws {
+    /// Proposes a payment to one or more recipients, in one transaction. `payees` and `note` are
+    /// the proposer's words, which approvers check against the transaction itself.
+    func propose(payees: [(to: String, amount: Int)], note: String?, move: String? = nil) async throws {
         guard let gid, let chain, chain.balance != nil else { throw ZigsError("The wallet has not finished its first sync.") }
-        let t = try await chain.spend(to: to, amount: amount)
+        let list: [Doc] = payees.map { ["to": $0.to, "amount": $0.amount] }
+        let amount = payees.reduce(0) { $0 + $1.amount }
+        let t = try await chain.spend(payees: list)
         let sid = randomHex(10)
         try await put("groups/\(gid)/sessions/\(sid)", [
-            "createdBy": me, "createdAt": now(), "to": to, "note": note ?? NSNull(), "pool": t["pool"] ?? "ironwood",
+            "createdBy": me, "createdAt": now(), "payees": list, "note": note ?? NSNull(), "pool": t["pool"] ?? "ironwood",
             "amount": t["amount"] ?? amount, "change": t["change"] ?? 0, "fee": t["fee"] ?? 0,
             "noteValue": t["note_value"] ?? 0, "pczt": t["pczt"] ?? "", "move": move ?? NSNull(), "status": "collecting",
         ])
@@ -574,7 +576,7 @@ final class GroupModel {
             throw ZigsError("The new wallet has no address yet.")
         }
         guard maxSend > 0 else { throw ZigsError("No confirmed funds to move yet.") }
-        try await propose(to: address, amount: maxSend, note: "Move to \(groupName(to))", move: to)
+        try await propose(payees: [(address, maxSend)], note: "Move to \(groupName(to))", move: to)
     }
 
     func cancelMove() async throws {

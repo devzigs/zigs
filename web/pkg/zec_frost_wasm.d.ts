@@ -13,7 +13,10 @@ export class ChainWallet {
     [Symbol.dispose](): void;
     balance(): string;
     broadcast(tx_hex: string): Promise<string>;
-    createSpend(recipient: string, amount: number): Promise<string>;
+    /**
+     * `payees` is a JSON list: `[{"to": "<unified address>", "amount": <zat>}, …]`.
+     */
+    createSpend(payees: string): Promise<string>;
     constructor(ufvk: string, birthday: number, endpoint: string);
     received(): string;
     /**
@@ -113,7 +116,7 @@ export interface InitOutput {
     readonly boxSeal: (a: number, b: number, c: number, d: number, e: number, f: number, g: number, h: number) => [number, number, number, number];
     readonly chainwallet_balance: (a: number) => [number, number];
     readonly chainwallet_broadcast: (a: number, b: number, c: number) => any;
-    readonly chainwallet_createSpend: (a: number, b: number, c: number, d: number) => any;
+    readonly chainwallet_createSpend: (a: number, b: number, c: number) => any;
     readonly chainwallet_new: (a: number, b: number, c: number, d: number, e: number) => [number, number, number];
     readonly chainwallet_received: (a: number) => [number, number];
     readonly chainwallet_restore: (a: number, b: number, c: number, d: number, e: number, f: number, g: number) => [number, number, number];

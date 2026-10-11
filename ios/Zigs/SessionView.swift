@@ -42,7 +42,7 @@ struct SessionView: View {
                 }
             }
             .safeAreaInset(edge: .bottom) {
-                NextAction(ss: ss, blocked: (try? ins.get()) == nil || rc.match == false || rc.intoNew == false)
+                NextAction(ss: ss, blocked: rc.match != true || rc.intoNew == false)
             }
             .modifier(Banners())
         } else {
@@ -58,25 +58,61 @@ struct SessionView: View {
     }
 }
 
-/// The decoded recipient is the truth; the typed address only helps people recognise it.
+/// The decoded outputs are the truth. Each one must be a proposed payee with the same amount, and
+/// the proposal must list nothing else. The typed addresses only help people recognise them.
 struct RecipientCheck {
-    let payee: String?
+    struct Row { let to: String; let amount: Int; let ok: Bool }
+    let rows: [Row]
+    /// Decoded payments that the proposal does not list.
+    let extra: [(who: String, value: Int)]
     let match: Bool?
-    /// For a move: whether the payee is the new wallet's own address (nil when unknown here).
+    /// For a move: whether the only payee is the new wallet's own address (nil when unknown here).
     let intoNew: Bool?
 
     @MainActor
     init(model: GroupModel, ss: Session, ins: Doc?) {
-        let own: Set<String> = ["this wallet", "change (back to this wallet)"]
-        let lines = ins?["lines"] as? [Doc] ?? []
-        let payee = lines.first { $0.str("kind") == "output" && !own.contains($0.str("who") ?? "") }?.str("who")
-        self.payee = payee
-        guard let payee else { match = nil; intoNew = nil; return }
-        match = ss.doc.str("to").map { model.normalized($0) == payee }
+        guard let ins else { rows = []; extra = []; match = nil; intoNew = nil; return }
+        let paid = (ins["lines"] as? [Doc] ?? [])
+            .filter { $0.str("kind") == "output" && !ownOutputs.contains($0.str("who") ?? "") }
+            .map { (who: $0.str("who") ?? "", value: $0.int("value") ?? 0) }
+        var left = paid
+        rows = (ss.doc["payees"] as? [Doc] ?? []).map { p in
+            let to = p.str("to") ?? "", amount = wholeZat(p["amount"]), address = model.normalized(to)
+            guard let amount, let i = left.firstIndex(where: { $0.who == address && $0.value == amount }) else {
+                return Row(to: to, amount: amount ?? 0, ok: false)
+            }
+            left.remove(at: i)
+            return Row(to: to, amount: amount, ok: true)
+        }
+        extra = left
+        match = Self.allPaid(rows, extra: left.count, total: wholeZat(ss.doc["amount"]) ?? -1)
         let newAddress = ss.doc.str("move").flatMap { model.wallets[$0]?.str("address") }
-        intoNew = newAddress.map { model.normalized($0) == payee }
+        intoNew = newAddress.map { a in paid.count == 1 && model.normalized(a) == paid[0].who }
+    }
+
+    private static func allPaid(_ rows: [Row], extra: Int, total: Int) -> Bool {
+        // At most `maxPayees` amounts of at most `maxMoney` each, so the sum cannot overflow.
+        guard !rows.isEmpty, rows.count <= maxPayees, extra == 0, rows.allSatisfy(\.ok) else { return false }
+        return rows.reduce(0) { $0 + $1.amount } == total
+    }
+
+    /// Warnings to show next to the recipients, most serious first.
+    var warnings: [String] {
+        var out = extra.map { "The transaction also pays \(zec($0.value)) to \(short($0.who)), which the proposer did not list. Do not approve it." }
+        if rows.isEmpty { out.append("The proposal lists no recipients. Do not approve it.") }
+        else if match == false && extra.isEmpty { out.append("The transaction does not pay what the proposer listed. Do not approve it.") }
+        return out
     }
 }
+
+/// A whole number of zatoshis, from 1 to `maxMoney`, or nil. JSON booleans and fractions are nil.
+func wholeZat(_ v: Any?) -> Int? {
+    guard let n = v as? NSNumber, CFGetTypeID(n) != CFBooleanGetTypeID() else { return nil }
+    let d = n.doubleValue
+    return d == d.rounded() && d >= 1 && d <= Double(maxMoney) ? n.intValue : nil
+}
+
+let ownOutputs: Set<String> = ["this wallet", "change (back to this wallet)"]
 
 struct RecipientBox: View {
     @Environment(GroupModel.self) private var model
@@ -84,30 +120,48 @@ struct RecipientBox: View {
     let rc: RecipientCheck
 
     var body: some View {
-        if let payee = rc.payee {
+        // Payments proposed before batch payments have no list; only one still open for approval
+        // needs the check.
+        if let match = rc.match, !rc.rows.isEmpty || ss.doc["package"] == nil {
             Card {
                 HStack {
-                    SectionLabel(text: "To")
+                    SectionLabel(text: rc.rows.count > 1 ? "\(rc.rows.count) recipients" : "To")
                     Spacer()
-                    if let m = rc.match {
-                        Badge(text: m ? "Matches the transaction" : "Does not match the transaction", kind: m ? .ok : .bad)
-                    } else {
-                        Text("Decoded from the transaction").font(.caption).foregroundStyle(Color.mist)
-                    }
+                    Badge(text: match ? "Matches the transaction" : "Does not match the transaction", kind: match ? .ok : .bad)
                 }
-                Text(ss.doc.str("to") ?? payee).font(.caption.monospaced()).textSelection(.enabled)
-                if rc.match == false {
-                    Text("The transaction pays \(short(payee)), not the address the proposer typed. Do not approve it.")
-                        .font(.subheadline).foregroundStyle(Color.bad)
-                }
-                if let move = ss.doc.str("move") {
-                    Text(rc.intoNew == false ? "This is not the address of \(model.groupName(move)). Do not approve it."
-                         : rc.intoNew == true ? "This moves all funds to \(model.groupName(move)), the wallet that replaces this one. This iPhone checked its address."
-                         : "This moves all funds to a new wallet that replaces this one. You are not one of its signers, so this iPhone cannot check its address.")
-                        .font(.subheadline).foregroundStyle(rc.intoNew == false ? Color.bad : Color.mist)
-                }
+                ForEach(Array(rc.rows.enumerated()), id: \.offset) { _, r in PayeeLine(row: r) }
+                ForEach(rc.warnings, id: \.self) { Text($0).font(.subheadline).foregroundStyle(Color.bad) }
+                if let move = ss.doc.str("move") { MoveNote(move: move, intoNew: rc.intoNew) }
             }
         }
+    }
+}
+
+struct PayeeLine: View {
+    let row: RecipientCheck.Row
+
+    var body: some View {
+        HStack(alignment: .firstTextBaseline) {
+            Text(row.to).font(.caption.monospaced()).textSelection(.enabled)
+            Spacer()
+            VStack(alignment: .trailing, spacing: 4) {
+                Money(zat: row.amount, size: 15)
+                if !row.ok { Badge(text: "Not in the transaction", kind: .bad) }
+            }
+        }
+    }
+}
+
+struct MoveNote: View {
+    @Environment(GroupModel.self) private var model
+    let move: String
+    let intoNew: Bool?
+
+    var body: some View {
+        Text(intoNew == false ? "This is not the address of \(model.groupName(move)). Do not approve it."
+             : intoNew == true ? "This moves all funds to \(model.groupName(move)), the wallet that replaces this one. This iPhone checked its address."
+             : "This moves all funds to a new wallet that replaces this one. You are not one of its signers, so this iPhone cannot check its address.")
+            .font(.subheadline).foregroundStyle(intoNew == false ? Color.bad : Color.mist)
     }
 }
 
@@ -116,8 +170,10 @@ struct Breakdown: View {
     let ins: Doc
 
     var body: some View {
-        let own: Set<String> = ["this wallet", "change (back to this wallet)"]
+        let own = ownOutputs
         let lines = (ins["lines"] as? [Doc] ?? []).sorted { rank($0, own) < rank($1, own) }
+        // Spent value minus every output: what the network keeps. Zero-value outputs are not listed.
+        let fee = lines.reduce(0) { $0 + ($1.str("kind") == "spend" ? 1 : -1) * ($1.int("value") ?? 0) }
         Card {
             SectionLabel(text: "What this payment does")
             ForEach(Array(lines.enumerated()), id: \.offset) { _, l in
@@ -133,7 +189,7 @@ struct Breakdown: View {
             HStack {
                 Text("Network fee").font(.subheadline).foregroundStyle(Color.mist)
                 Spacer()
-                Text(String(format: "%.8f", Double(ss.doc.int("fee") ?? 0) / 1e8)).font(.subheadline.monospacedDigit()).foregroundStyle(Color.mist)
+                Text(String(format: "%.8f", Double(fee) / 1e8)).font(.subheadline.monospacedDigit()).foregroundStyle(Color.mist)
             }
             Text("This iPhone decoded this from the transaction itself, not from the proposer's description.")
                 .font(.caption).foregroundStyle(Color.mist)

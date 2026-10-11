@@ -289,12 +289,14 @@ struct Pick {
     total: u64,
 }
 
-fn zip317_fee(spends: usize) -> u64 {
-    MARGINAL_FEE * spends.max(2) as u64
+/// ZIP 317 fee for an Ironwood bundle: one action per spend or output, whichever is more.
+pub(crate) fn zip317_fee(spends: usize, outputs: usize) -> u64 {
+    MARGINAL_FEE * spends.max(outputs).max(2) as u64
 }
 
 /// `notes` is `(value, height)` of each unspent note. Picks confirmed notes, largest first.
-fn select_notes(notes: &[(u64, u32)], amount: u64, synced: u32) -> R<Pick> {
+/// `outputs` counts every output, change included.
+fn select_notes(notes: &[(u64, u32)], amount: u64, outputs: usize, synced: u32) -> R<Pick> {
     ensure(amount > 0, "amount must be greater than zero")?;
     let mut eligible: Vec<usize> =
         (0..notes.len()).filter(|&i| is_confirmed(notes[i].1, synced)).collect();
@@ -303,12 +305,12 @@ fn select_notes(notes: &[(u64, u32)], amount: u64, synced: u32) -> R<Pick> {
     for i in eligible {
         picked.push(i);
         total += notes[i].0;
-        let fee = zip317_fee(picked.len());
+        let fee = zip317_fee(picked.len(), outputs);
         if total >= amount.saturating_add(fee) {
             return Ok(Pick { picked, fee, change: total - amount - fee, total });
         }
     }
-    let need = amount.saturating_add(zip317_fee(picked.len()));
+    let need = amount.saturating_add(zip317_fee(picked.len(), outputs));
     Err(format!("not enough funds: {total} zat spendable, {need} zat needed (amount + fee)"))
 }
 
@@ -317,7 +319,30 @@ fn max_send(notes: &[(u64, u32)], synced: u32) -> u64 {
     let confirmed: Vec<u64> =
         notes.iter().filter(|n| is_confirmed(n.1, synced)).map(|n| n.0).collect();
     let total: u64 = confirmed.iter().sum();
-    if confirmed.is_empty() { 0 } else { total.saturating_sub(zip317_fee(confirmed.len())) }
+    if confirmed.is_empty() { 0 } else { total.saturating_sub(zip317_fee(confirmed.len(), 2)) }
+}
+
+/// Most recipients in one payment. ponytail: proof time grows with each action; raise this after
+/// a timing test on a phone.
+const MAX_PAYEES: usize = 20;
+
+/// Parses `[{"to": "<unified address>", "amount": <zat>}, …]`. Errors name the row, from 1.
+fn parse_payees(rows: &[Value], net: Network) -> R<Vec<(orchard::Address, u64)>> {
+    ensure(!rows.is_empty(), "add at least one recipient")?;
+    let most = format!("a payment can have at most {MAX_PAYEES} recipients");
+    ensure(rows.len() <= MAX_PAYEES, &most)?;
+    let mut out = vec![];
+    for (i, row) in rows.iter().enumerate() {
+        let n = i + 1;
+        let to = row["to"].as_str().ok_or(format!("recipient {n}: missing address"))?;
+        let amount = row["amount"]
+            .as_u64()
+            .ok_or(format!("recipient {n}: amount must be a whole number of zatoshis"))?;
+        ensure(amount > 0, &format!("recipient {n}: amount must be greater than zero"))?;
+        let payee = parse_recipient(to, net).map_err(|err| format!("recipient {n}: {err}"))?;
+        out.push((payee, amount));
+    }
+    Ok(out)
 }
 
 pub(crate) fn parse_recipient(s: &str, net: Network) -> R<orchard::Address> {
@@ -386,11 +411,15 @@ async fn sync(state: &RefCell<Inner>, on_progress: &js_sys::Function) -> R<Strin
     Ok(state.borrow().balance())
 }
 
-fn spend_pczt(s: &Inner, payee: orchard::Address, amount: u64, tip: u32) -> R<String> {
+fn spend_pczt(s: &Inner, payees: &[(orchard::Address, u64)], tip: u32) -> R<String> {
     let fvk = s.ufvk.orchard().ok_or("the viewing key has no Orchard component")?;
+    let amount = payees
+        .iter()
+        .try_fold(0u64, |sum, p| sum.checked_add(p.1))
+        .ok_or("the amounts add up to more than any wallet can hold")?;
     let unspent: Vec<&Rec> = s.notes.iter().filter(|n| !n.spent).collect();
     let values: Vec<(u64, u32)> = unspent.iter().map(|n| (n.value(), n.height)).collect();
-    let pick = select_notes(&values, amount, s.synced)?;
+    let pick = select_notes(&values, amount, payees.len() + 1, s.synced)?;
     let depth = (CONFIRMATIONS - 1) as usize;
     let root = s
         .tree
@@ -411,20 +440,21 @@ fn spend_pczt(s: &Inner, payee: orchard::Address, amount: u64, tip: u32) -> R<St
         BlockHeight::from_u32(tip + 1),
         fvk,
         (inputs, orchard::Anchor::from(root)),
-        (payee, amount, pick.change),
+        (payees, pick.change),
     )?;
     Ok(json!({"pczt": pczt_to_b64(pczt)?, "pool": "ironwood", "amount": amount,
         "change": pick.change, "fee": pick.fee, "note_value": pick.total})
     .to_string())
 }
 
-async fn create_spend(state: &RefCell<Inner>, recipient: &str, amount: u64) -> R<String> {
-    let payee = parse_recipient(recipient, state.borrow().net)?;
+async fn create_spend(state: &RefCell<Inner>, payees: &str) -> R<String> {
+    let rows: Vec<Value> = serde_json::from_str(payees).map_err(e("recipient list"))?;
+    let payees = parse_payees(&rows, state.borrow().net)?;
     let endpoint = state.borrow().endpoint.clone();
     let tip = tip_of(&endpoint).await?;
     let mut s = state.borrow_mut();
     s.tip = tip;
-    spend_pczt(&s, payee, amount, tip)
+    spend_pczt(&s, &payees, tip)
 }
 
 async fn broadcast(endpoint: &str, tx_hex: &str) -> R<String> {
@@ -482,9 +512,10 @@ impl ChainWallet {
         json!(self.0.borrow().sent).to_string()
     }
 
+    /// `payees` is a JSON list: `[{"to": "<unified address>", "amount": <zat>}, …]`.
     #[wasm_bindgen(js_name = createSpend)]
-    pub async fn create_spend(&self, recipient: String, amount: f64) -> Result<String, JsError> {
-        super::js(create_spend(&self.0, &recipient, amount as u64).await)
+    pub async fn create_spend(&self, payees: String) -> Result<String, JsError> {
+        super::js(create_spend(&self.0, &payees).await)
     }
 
     pub async fn broadcast(&self, tx_hex: String) -> Result<String, JsError> {
@@ -583,11 +614,11 @@ pub(crate) mod native {
         with(key, |w| w.snapshot())
     }
 
-    pub(crate) fn spend(key: &str, recipient: &str, amount: u64, tip: u32) -> R<String> {
+    pub(crate) fn spend(key: &str, payees: &[Value], tip: u32) -> R<String> {
         with(key, |w| {
-            let payee = parse_recipient(recipient, w.net)?;
+            let payees = parse_payees(payees, w.net)?;
             w.tip = w.tip.max(tip);
-            spend_pczt(w, payee, amount, tip)
+            spend_pczt(w, &payees, tip)
         })
     }
 }
@@ -600,23 +631,23 @@ mod tests {
 
     #[test]
     fn exact_amount_uses_one_note_and_no_change() {
-        let p = select_notes(&[(110_000, 50)], 100_000, SYNCED).unwrap();
+        let p = select_notes(&[(110_000, 50)], 100_000, 2, SYNCED).unwrap();
         assert_eq!((p.picked, p.fee, p.change, p.total), (vec![0], 10_000, 0, 110_000));
     }
 
     #[test]
     fn not_enough_funds_reports_need() {
-        let err = select_notes(&[(109_999, 50)], 100_000, SYNCED).unwrap_err();
+        let err = select_notes(&[(109_999, 50)], 100_000, 2, SYNCED).unwrap_err();
         assert!(err.contains("not enough funds"), "{err}");
         assert!(err.contains("109999") && err.contains("110000"), "{err}");
-        assert!(select_notes(&[], 1, SYNCED).unwrap_err().contains("not enough funds"));
-        assert!(select_notes(&[(1, 50)], 0, SYNCED).is_err());
+        assert!(select_notes(&[], 1, 2, SYNCED).unwrap_err().contains("not enough funds"));
+        assert!(select_notes(&[(1, 50)], 0, 2, SYNCED).is_err());
     }
 
     #[test]
     fn fee_grows_with_three_spends_largest_first() {
         let notes = [(40_000, 10), (90_000, 11), (50_000, 12), (5, 13)];
-        let p = select_notes(&notes, 150_000, SYNCED).unwrap();
+        let p = select_notes(&notes, 150_000, 2, SYNCED).unwrap();
         assert_eq!(p.picked, vec![1, 2, 0]);
         assert_eq!((p.fee, p.total, p.change), (15_000, 180_000, 15_000));
     }
@@ -626,9 +657,9 @@ mod tests {
         let notes = [(40_000, 10), (90_000, 11), (50_000, 12), (7_000_000, SYNCED)];
         let max = max_send(&notes, SYNCED);
         assert_eq!(max, 165_000);
-        let p = select_notes(&notes, max, SYNCED).unwrap();
+        let p = select_notes(&notes, max, 2, SYNCED).unwrap();
         assert_eq!((p.picked.len(), p.change), (3, 0));
-        assert!(select_notes(&notes, max + 1, SYNCED).is_err());
+        assert!(select_notes(&notes, max + 1, 2, SYNCED).is_err());
         assert_eq!(max_send(&[(9_000, 10)], SYNCED), 0);
         assert_eq!(max_send(&[], SYNCED), 0);
     }
@@ -653,7 +684,8 @@ mod tests {
         let snap = native::snapshot(k).unwrap();
         assert_eq!(native::open(k, &ufvk, 500, Some(&snap)).unwrap(), r#"{"restored":true}"#);
         assert_eq!(native::needs(k).unwrap(), r#"{"from":500}"#);
-        assert!(native::spend(k, "nope", 1, 600).is_err());
+        let err = native::spend(k, &[json!({"to": "nope", "amount": 1})], 600).unwrap_err();
+        assert!(err.contains("recipient 1"), "{err}");
         native::close(k).unwrap();
         assert!(native::needs(k).is_err());
     }
@@ -668,7 +700,8 @@ mod tests {
         native::open(k, &ufvk.encode(&Network::MainNetwork).unwrap(), 3_500_000, None).unwrap();
         let ua = |net| zcash_keys::address::UnifiedAddress::from_receivers(
             Some(fvk.address_at(0u32, Scope::External)), None, None, None, None).unwrap().encode(&net);
-        let err = native::spend(k, &ua(Network::TestNetwork), 1000, 3_500_100).unwrap_err();
+        let rows = [json!({"to": ua(Network::TestNetwork), "amount": 1000})];
+        let err = native::spend(k, &rows, 3_500_100).unwrap_err();
         assert!(err.contains("mainnet unified address"), "{err}");
         assert!(super::super::normalize_address(&ua(Network::MainNetwork)).unwrap().starts_with("u1"));
         assert!(super::super::normalize_address(&ua(Network::TestNetwork)).unwrap().starts_with("utest1"));
@@ -676,10 +709,44 @@ mod tests {
     }
 
     #[test]
+    fn fee_counts_outputs_when_they_outnumber_spends() {
+        let p = select_notes(&[(1_000_000, 50)], 500_000, 6, SYNCED).unwrap();
+        assert_eq!((p.picked.len(), p.fee, p.change), (1, 30_000, 470_000));
+        let notes = [(40_000, 10), (90_000, 11), (50_000, 12)];
+        assert_eq!(select_notes(&notes, 150_000, 3, SYNCED).unwrap().fee, 15_000);
+    }
+
+    #[test]
+    fn payee_lists_are_checked_row_by_row() {
+        use orchard::keys::{FullViewingKey, Scope, SpendingKey};
+        let sk = Option::<SpendingKey>::from(SpendingKey::from_bytes([9; 32])).unwrap();
+        let fvk = FullViewingKey::from(&sk);
+        let ua = zcash_keys::address::UnifiedAddress::from_receivers(
+            Some(fvk.address_at(0u32, Scope::External)), None, None, None, None).unwrap()
+            .encode(&Network::TestNetwork);
+        let net = Network::TestNetwork;
+        let ok = json!({"to": ua, "amount": 5});
+        assert_eq!(parse_payees(&[ok.clone(), ok.clone()], net).unwrap().len(), 2);
+        let err = |rows: &[Value]| parse_payees(rows, net).unwrap_err();
+        assert!(err(&[]).contains("at least one"));
+        assert!(err(&vec![ok.clone(); MAX_PAYEES + 1]).contains("at most 20"));
+        let zero = json!({"to": ua, "amount": 0});
+        assert!(err(&[ok.clone(), zero]).contains("recipient 2: amount must be greater"));
+        let half = json!({"to": ua, "amount": 1.5});
+        assert!(err(&[half]).contains("recipient 1: amount must be a whole"));
+        assert!(err(&[json!({"amount": 1})]).contains("recipient 1: missing address"));
+        let bad = json!({"to": "u1nope", "amount": 1});
+        let third = err(&[ok.clone(), ok, bad]);
+        assert!(third.contains("recipient 3: the recipient must be a testnet"), "{third}");
+        let main = parse_payees(&[json!({"to": ua, "amount": 1})], Network::MainNetwork);
+        assert!(main.unwrap_err().contains("mainnet"));
+    }
+
+    #[test]
     fn unconfirmed_notes_are_excluded() {
         let notes = [(1_000_000, SYNCED - 1), (60_000, SYNCED - 2)];
-        let err = select_notes(&notes, 100_000, SYNCED).unwrap_err();
+        let err = select_notes(&notes, 100_000, 2, SYNCED).unwrap_err();
         assert!(err.contains("60000 zat spendable"), "{err}");
-        assert!(select_notes(&notes, 50_000, SYNCED).is_ok());
+        assert!(select_notes(&notes, 50_000, 2, SYNCED).is_ok());
     }
 }

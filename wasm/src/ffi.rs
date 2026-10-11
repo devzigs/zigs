@@ -65,7 +65,7 @@ const METHODS: &[(&str, Method)] = &[
     ("walletReceived", |a| native::received(s(a, 0)?)),
     ("walletSent", |a| native::sent(s(a, 0)?)),
     ("walletSnapshot", |a| native::snapshot(s(a, 0)?)),
-    ("walletSpend", |a| native::spend(s(a, 0)?, s(a, 1)?, u(a, 2)?, h(a, 3)?)),
+    ("walletSpend", |a| native::spend(s(a, 0)?, list(a, 1)?, h(a, 2)?)),
 ];
 
 fn call(method: &str, args: &str) -> R<String> {

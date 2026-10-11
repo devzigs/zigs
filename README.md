@@ -25,7 +25,8 @@ You can play every signer from one browser. Use a desktop browser with Zigs in o
    balance appears as **Incoming**, then as **Available** after 3 confirmations (a few
    minutes).
 4. Click **Send**, paste any testnet unified address (`utest1…`), enter an amount, and click
-   **Propose payment**.
+   **Propose payment**. For a payroll, click **Add recipient** or **Paste a list**: up to 20
+   recipients go into one transaction with one approval round.
 5. In the payment panel, click **Approve as seat 1** and **Approve as seat 2**. Read **What this
    payment does**: your browser decoded it from the transaction itself.
 6. Click **Build proof** (about one minute in the browser), then **Send to network**, then
@@ -39,8 +40,8 @@ To see signer changes, open **Signers**, then **Change signers**. To see the pri
 | Criterion | Evidence |
 |---|---|
 | **Privacy** | On chain, the transaction shape matches the standard wallet library: same builder, padding, fee, expiry and anchor depth ([comparison](PRIVACY.md#on-chain)). The server stores only encrypted values, padded so that even their length hides amounts. The server keeps no logs. Every remaining leak is listed in [PRIVACY.md](PRIVACY.md). |
-| **Usefulness** | It works for team treasuries, DAOs and families today: web, iPhone and Mac; invite links and QR codes; signer changes; mainnet with a safety limit. |
-| **Execution** | The live app works end to end. Seven testnet transactions made by the apps are [listed below](#proof-on-testnet). The engine has 20 tests, and a command-line suite runs adversarial cases. |
+| **Usefulness** | It works for team treasuries, DAOs and families today: web, iPhone and Mac; invite links and QR codes; batch payments for payroll and grants (up to 20 recipients, one approval round, pasted from a spreadsheet); signer changes; mainnet with a safety limit. |
+| **Execution** | The live app works end to end. Nine testnet transactions made by the apps are [listed below](#proof-on-testnet). The engine has 23 tests, and a command-line suite runs adversarial cases. |
 | **Originality** | Built during the Zecathon window: the first commit is from October 10, 2026. No command line, no trusted dealer, no server that can read the wallet. |
 
 ## Architecture
@@ -114,9 +115,11 @@ is caught by every signer's check.
 
 ## Making a payment
 
-Any signer proposes; the others approve on their own devices. Each approving device decodes the
-unsigned transaction (PCZT) itself, so a proposer cannot hide a different recipient behind the text
-they typed.
+Any signer proposes; the others approve on their own devices. A payment can have up to 20
+recipients. Each approving device decodes the unsigned transaction (PCZT) itself and checks that
+its outputs are exactly the listed recipients and amounts, and that nothing beyond the standard
+fee leaves the shielded pool. A proposer cannot hide a different recipient, amount or extra output
+behind the text they typed.
 
 ```mermaid
 sequenceDiagram
@@ -127,8 +130,8 @@ sequenceDiagram
   participant L as Light-wallet server
   participant Z as Zcash network
   P->>P: Pick confirmed notes and build the unsigned transaction (PCZT)
-  P->>S: Payment: PCZT, amount, recipient and note, sealed
-  Q->>Q: Decode the PCZT, then check recipient, amounts and change
+  P->>S: Payment: PCZT, recipients, amounts and note, sealed
+  Q->>Q: Decode the PCZT, then check every recipient, amount and the change
   P->>S: Approval: FROST nonce commitment
   Q->>S: Approval: FROST nonce commitment
   P->>S: Signing package, once t approvals are in
@@ -196,6 +199,8 @@ transactions, Ironwood pool):
 | [`6572ce88…80a8`](https://testnet.zecblock.com/tx/6572ce88c248350c71225889819c23eefd5e5f8df2af07e9cc216f87337380a8) | 4,488,977 | Web wallet pays a wallet created on an iPhone |
 | [`4dc4fd73…7049`](https://testnet.zecblock.com/tx/4dc4fd73274936b81b8ef1897490f0ffc17ec1ec6827f1e92715f7d8115a7049) | 4,488,995 | **iPhone:** proposed, approved, proved and sent from the phone |
 | [`b87248fa…3636`](https://testnet.zecblock.com/tx/b87248fa7a06b7a42f082e07c1c4f5da94d1673d7c0fc98d8be2745209f73636) | 4,489,104 | Payment with the padded store format |
+| [`9822e109…a43f`](https://testnet.zecblock.com/tx/9822e109ef8416a44b28777971ec661f8e83961a2c57f9c74b6a1f5fb535a43f) | 4,489,326 | **Batch payment** from the web app: 4 recipients, pasted as a list, one transaction |
+| [`fb7da6ae…ffde`](https://testnet.zecblock.com/tx/fb7da6ae2fe90c1e1b39637b6608c59b13b701286b6f917762d9b5b82408ffde) | 4,489,332 | **Batch payment** from the iPhone: 2 recipients |
 
 A 2-of-2 mainnet wallet was also created and synced to the mainnet tip in the web app and on the
 iPhone.
@@ -209,7 +214,7 @@ iPhone.
 | [`wasm/src/snapshot.rs`](wasm/src/snapshot.rs) | Saved sync state: notes and the note commitment tree |
 | [`wasm/src/ffi.rs`](wasm/src/ffi.rs) | C interface for the iPhone and Mac apps |
 | [`web/index.html`](web/index.html) | The web app |
-| [`web/shim.js`](web/shim.js), [`web/qr.js`](web/qr.js) | Store client and QR encoder (no third-party code) |
+| [`web/shim.js`](web/shim.js), [`web/qr.js`](web/qr.js), [`web/payees.js`](web/payees.js) | Store client, QR encoder and payment list parser (no third-party code) |
 | [`cf/src/index.js`](cf/src/index.js) | Group server: Cloudflare Worker with one Durable Object per wallet, limits against abuse |
 | [`ios/Zigs/`](ios/Zigs) | SwiftUI app for iPhone and Mac |
 | [`src/`](src), [`tests/e2e.sh`](tests/e2e.sh) | Command-line version of the ceremony and adversarial tests |
@@ -259,11 +264,14 @@ Use the `Zigs` scheme for iPhone and `ZigsMac` for Mac (Apple silicon). The apps
 
 ## Tests
 
-- `cargo test --release` in `wasm/` (20 tests): full 2-of-3 signing flows for Ironwood and Orchard,
-  with a bad share that is attributed to its sender; mainnet and testnet upgrade rules; note
+- `cargo test --release` in `wasm/` (23 tests): full 2-of-3 signing flows for Ironwood (paying 4
+  recipients in one transaction) and Orchard, with a bad share that is attributed to its sender;
+  a swapped recipient on any payee output is refused; recipient lists checked row by row; fees
+  that count outputs; mainnet and testnet upgrade rules; note
   selection, fees and the largest sendable amount; padded sealing, old values, wrong keys and moved
   values; the saved sync state; the native wallet interface; key ceremony routing.
 - `node cf/test/limits.mjs ws://localhost:8787`: the group server's size, rate and path limits.
+- `node web/test/payees.mjs`: the pasted payment list parser.
 - `node web/test/qr.mjs`: the QR encoder against libqrencode (needs the `qrencode` command).
 - `bash tests/e2e.sh`: the command-line ceremony in separate processes, with attacks: wallet
   substitution, fewer than t signers, tampered randomizer and sighash, nonce reuse, wrong share
