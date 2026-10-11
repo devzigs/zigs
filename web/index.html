@@ -412,7 +412,13 @@ async function loadEngine() {
     setEngine("ok", "Crypto engine ready (WebAssembly)");
   } catch (e) {
     setEngine("bad", "Crypto engine failed to load");
-    showBanner("bad", "The WebAssembly engine did not load: " + (e && e.message ? e.message : e) + ". Try a current Chrome, Edge, Firefox or Safari.");
+    // Tor Browser's Safer and Safest levels turn WebAssembly off.
+    const why = typeof WebAssembly === "undefined"
+      ? "This browser blocks WebAssembly, which Zigs needs for its cryptography. "
+        + "In Tor Browser, set the security level to Standard, then reload."
+      : "The WebAssembly engine did not load: " + (e && e.message ? e.message : e)
+        + ". Try a current Chrome, Edge, Firefox or Safari.";
+    showBanner("bad", why);
   }
   render(); react();
 }
@@ -738,8 +744,13 @@ const allR1 = () => seatIds().every((i) => state.dkg1[i]);
 const r2For = (to) => seatIds().filter((i) => i !== to).every((i) => state.dkg2[i + "-" + to]);
 const allDone = () => seatIds().every((i) => state.done[i]);
 const keysAgree = () => allDone() && new Set(seatIds().map((i) => state.done[i].groupKey)).size === 1;
-const localSeats = () => state.gid ? mySeatSecrets(state.gid).map(([i]) => i).filter((i) => state.seats[i] && state.seats[i].uid === me) : [];
-const isCreator = () => state.g && state.g.createdBy === me;
+// A seat secret keeps the identity its seat was taken with, so a seat restored into a new browser
+// (or a Tor Browser session, which forgets its identity) is still this browser's.
+const isMe = (uid) => !!uid
+  && (uid === me || Object.values(secrets).some((s) => s && s.uid === uid));
+const localSeats = () => !state.gid ? [] : mySeatSecrets(state.gid).map(([i]) => i)
+  .filter((i) => state.seats[i] && isMe(state.seats[i].uid));
+const isCreator = () => state.g && isMe(state.g.createdBy);
 const seatNameOf = (uid) => (Object.values(state.seats).find((s) => s.uid === uid) || {}).name || "someone";
 const curSession = () => state.sessions.find((s) => s.id === state.sid) || null;
 
@@ -768,6 +779,8 @@ function react() {
   const g = state.g, gid = state.gid, base = "groups/" + gid;
   for (const i of localSeats()) {
     const s = sec(gid, i);
+    // Seats taken before secrets kept their identity: record it while this browser still knows it.
+    if (!s.uid) putSec(gid, i, { uid: state.seats[i].uid });
     // Round 1
     if (!state.dkg1[i] && !s.keyPackage) {
       once("r1:" + i, async () => {
@@ -837,7 +850,7 @@ function react() {
 function reactSession(ss) {
   const g = state.g, gid = state.gid, base = "groups/" + gid + "/sessions/" + ss.id;
   const fvk = state.wallet.orchard_fvk;
-  const coordinator = ss.createdBy === me;
+  const coordinator = isMe(ss.createdBy);
   // Coordinator: once t approvals are in, build the signing package.
   if (coordinator && !ss.package && !ss.error) {
     const ids = Object.keys(state.commits).map(Number).sort((a, b) => a - b).slice(0, g.t);
@@ -898,7 +911,7 @@ async function takeSeat(i) {
   const cur = await ref.get();
   if (cur.exists && cur.data().uid) { showBanner("bad", "Seat " + i + " is already taken."); return; }
   const kp = J(Z.boxKeypair());
-  putSec(state.gid, i, { boxSk: kp.sk });
+  putSec(state.gid, i, { boxSk: kp.sk, uid: me });
   const name = user ? (await user.me()).name : "";
   await ref.set({ uid: me, name, boxPk: kp.pk, at: Date.now() });
   log("you took seat " + i);
@@ -1060,11 +1073,18 @@ async function finalizeTx(ss) {
 }
 
 async function backup(i) {
-  const s = sec(state.gid, i);
+  // Nonces stay out: a restored copy must never sign with a nonce this browser may also use.
+  const { nonces, backedUp, ...s } = sec(state.gid, i);
+  s.uid = s.uid || state.seats[i].uid;
   const data = S({ kind: "zec-frost-key-share", group: state.gid, groupName: state.g.name, seat: i, threshold: state.g.t, of: state.g.n, key: gkeys[state.gid], wallet: state.wallet, secret: s }, null, 2);
   if (!downloads) { showBanner("bad", "Downloads are not available in this view."); return; }
-  try { await downloads.save({ filename: "zec-frost-" + (state.g.name || "group").replace(/\W+/g, "-") + "-seat-" + i + ".json", data }); }
-  catch (e) { if (e && e.code !== "declined") showBanner("bad", "Backup was not saved: " + (e.message || e.code)); }
+  try {
+    const name = (state.g.name || "group").replace(/\W+/g, "-");
+    await downloads.save({ filename: "zec-frost-" + name + "-seat-" + i + ".json", data });
+    await putSec(state.gid, i, { backedUp: true });
+  } catch (e) {
+    if (e && e.code !== "declined") showBanner("bad", "Backup not saved: " + (e.message || e.code));
+  }
 }
 
 function restore(file) {
@@ -1074,7 +1094,7 @@ function restore(file) {
       const b = JSON.parse(r.result);
       if (b.kind !== "zec-frost-key-share") throw new Error("This is not a key share backup.");
       if (b.key) putKey(b.group, b.key);
-      putSec(b.group, b.seat, b.secret);
+      putSec(b.group, b.seat, { ...b.secret, backedUp: true });
       showBanner("ok", "Restored seat " + b.seat + " of " + (b.groupName || "group") + ".");
       openGroup(b.group);
     } catch (e) { showBanner("bad", e.message); }
@@ -1125,10 +1145,10 @@ function money(zat, size = "md", sign = "") {
 function seatLabel(i) {
   const s = state.seats[i];
   if (!s) return "Open seat";
-  return s.uid === me ? "You" : s.name || "Signer " + i;
+  return isMe(s.uid) ? "You" : s.name || "Signer " + i;
 }
 function avatar(i, cls = "") {
-  const s = state.seats[i], mine = s && s.uid === me;
+  const s = state.seats[i], mine = s && isMe(s.uid);
   return el("span", { class: "av round " + cls + (mine ? " me" : ""), title: seatLabel(i) }, s ? initials(mine ? (s.name || "You") : s.name || "M " + i) : "+");
 }
 const myVerified = () => localSeats().some((i) => state.verify[i] && state.verify[i].ok);
@@ -1155,7 +1175,7 @@ function payTitle(ss) {
 }
 const ruleText = (t, n) => "Any " + t + " of " + n + " signers must approve each payment.";
 const groupName = (gid) => (state.groups.find((x) => x.id === gid) || {}).name || "the new wallet";
-const proposer = (ss) => ss.createdBy === me ? "you" : seatNameOf(ss.createdBy);
+const proposer = (ss) => isMe(ss.createdBy) ? "you" : seatNameOf(ss.createdBy);
 function normalized(addr) { try { return Z.normalizeAddress(addr); } catch { return null; } }
 const onNetwork = (addr) => (normalized(addr) || "").startsWith(curNet().prefix);
 
@@ -1407,6 +1427,10 @@ function groupView() {
         g.movedFrom ? el("span", {}, "Replaces " + ((state.groups.find((x) => x.id === g.movedFrom) || {}).name || "an older wallet")) : null)),
     ready ? el("div", { class: "ph-actions wallet-actions" }, ...walletActions()) : null);
   if (!ready) return el("div", { class: "page" }, head, setupView());
+  const unsaved = localSeats().filter((i) => {
+    const s = sec(state.gid, i);
+    return s.keyPackage && !s.backedUp;
+  });
   const n = toApprove(state.gid).length;
   const tabs = [["overview", "Overview"], ["activity", "Activity", n], ["members", "Signers"], ["details", "Details"]];
   const body = { overview: overviewTab, activity: activityTab, members: membersTab, details: detailsTab }[ui.tab] || overviewTab;
@@ -1414,8 +1438,20 @@ function groupView() {
     el("nav", { class: "tabs", role: "tablist" }, tabs.map(([id, label, count]) => el("button", {
       class: "tab", type: "button", role: "tab", "aria-selected": ui.tab === id ? "true" : "false", onclick: () => { ui.tab = id; render(); },
     }, label, count ? el("span", { class: "count attn", "aria-label": count + " to approve" }, count) : null))),
+    unsaved.length ? backupNote(unsaved) : null,
     body(),
     el("div", { class: "action-bar" }, ...walletActions()));
+}
+
+// Private windows, Tor Browser and cleared site data delete the key share with the browser data.
+function backupNote(seats) {
+  return el("div", { class: "callout warn", role: "status" },
+    el("span", { style: "flex:1" }, "Back up your key. This browser can forget it: private "
+      + "windows and Tor Browser delete it when they close. Keep the file safe and offline."),
+    seats.map((i) => el("button", {
+      class: "btn sm", type: "button", onclick: act(() => backup(i)),
+    },
+      seats.length > 1 ? "Back up seat " + i : "Back up key")));
 }
 
 function walletActions() {
@@ -1492,8 +1528,8 @@ function seatsCard(open) {
 }
 
 function seatTile(i) {
-  const s = state.seats[i], mine = s && s.uid === me && sec(state.gid, i);
-  const elsewhere = s && s.uid === me && !sec(state.gid, i);
+  const s = state.seats[i], mine = s && isMe(s.uid) && sec(state.gid, i);
+  const elsewhere = s && isMe(s.uid) && !sec(state.gid, i);
   const st = seatStage(i);
   return el("div", { class: "seat" + (mine ? " mine" : "") + (s ? "" : " open") },
     el("div", { style: "display:flex;align-items:center;gap:10px;min-width:0" }, avatar(i),
@@ -1678,9 +1714,9 @@ function changeSignersCard() {
 }
 
 function memberRow(i) {
-  const s = state.seats[i], mine = s && s.uid === me && sec(state.gid, i), v = state.verify[i];
+  const s = state.seats[i], mine = s && isMe(s.uid) && sec(state.gid, i), v = state.verify[i];
   return el("div", { class: "member" }, avatar(i, "lg"),
-    el("div", { class: "ri-main" }, el("span", { class: "ri-title" }, s ? (s.uid === me ? (s.name || "You") : s.name || "Signer " + i) : "Open seat", mine ? el("span", { class: "you" }, "You") : null),
+    el("div", { class: "ri-main" }, el("span", { class: "ri-title" }, s ? (isMe(s.uid) ? (s.name || "You") : s.name || "Signer " + i) : "Open seat", mine ? el("span", { class: "you" }, "You") : null),
       el("span", { class: "ri-sub" }, "Seat " + i + (s ? " · joined " + when(s.at) : ""))),
     el("div", { class: "m-actions" },
       v ? el("span", { class: "badge " + (v.ok ? "ok" : "bad") }, v.ok ? "Address checked" : "Rejected address") : el("span", { class: "badge" }, STAGE_LABEL[seatStage(i)]),
@@ -1900,6 +1936,18 @@ function nextAction(ss, ins, rc) {
   return [];
 }
 
+// An approval is a published commitment plus nonces kept here. Without the nonces the seat cannot
+// sign, and the payment waits forever: say so instead of stalling.
+function lostApproval(ss) {
+  if (ss.signed || ss.error) return null;
+  const lost = localSeats().filter((i) => state.commits[i] && !state.shares[i]
+    && !((sec(state.gid, i).nonces || {})[ss.id]) && !busy.has("share:" + ss.id + ":" + i));
+  if (!lost.length) return null;
+  return el("div", { class: "callout bad" }, "This browser lost its approval for this payment: the "
+    + "browser data that held it was deleted. The payment cannot finish with this approval. "
+    + "Propose it again.");
+}
+
 function sessionDrawer(ss) {
   const ins = inspectOf(ss), refused = ins && ins.error, rc = recipientCheck(ss, ins);
   const actions = nextAction(ss, ins, rc);
@@ -1911,6 +1959,7 @@ function sessionDrawer(ss) {
         el("span", { class: "small muted" }, "Proposed by " + proposer(ss) + " · " + when(ss.createdAt))),
       refused ? el("div", { class: "callout bad" }, "Your browser refuses this payment: " + ins.error) : null,
       recipientBox(ss, rc),
+      lostApproval(ss),
       ins && !refused ? breakdown(ss, ins) : null,
       timeline(ss, refused),
       ss.final ? txDetails(ss) : null,

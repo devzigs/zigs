@@ -81,8 +81,33 @@ This links a wallet id to a transaction id, but not to its amount or recipient.
   different operators.
 - **Testnet** wallets use the Zigs light-wallet server first, with ChainSafe as the backup.
 
-To remove this risk entirely, use Tor Browser, or point the app at a light-wallet server you
-trust (`NETWORKS` in `web/index.html`, `ZcashNetwork` in `ios/Zigs/Chain.swift`).
+Tor Browser hides your IP address from both servers, but not this timing link. To remove the
+link, point the app at a light-wallet server you trust (`NETWORKS` in `web/index.html`,
+`ZcashNetwork` in `ios/Zigs/Chain.swift`).
+
+## Use Zigs over Tor
+
+The web app is built to run in Tor Browser, so that neither server sees your IP address. A full
+session in Tor Browser has not been tested yet.
+
+1. Set the security level to **Standard**. The Safer and Safest levels turn off WebAssembly, and
+   Zigs needs it for its cryptography. The app says so if it is off.
+2. Tor Browser deletes all site data when it closes, including your key share. After the wallet
+   is created, click **Back up key** in the yellow note. At the start of each session, click
+   **Restore from backup**. The backup file is not encrypted: keep it offline.
+3. Finish each approval in one session. If Tor Browser closes between your approval and the group
+   signature, the approval is lost. The payment shows this, and someone proposes it again.
+
+What makes this safe to rely on:
+
+- The page sends a Content-Security-Policy header. The browser lets it connect only to the group
+  server and the three light-wallet servers in `NETWORKS`, and to nothing else.
+- A restored seat keeps the identity it was taken with, so a new session can still approve.
+- Backup files leave out signing nonces, so a restored copy can never reuse one.
+
+Not tested yet: a full session in Tor Browser, whether the light-wallet servers accept
+connections from every Tor exit, and whether many Tor users on one exit reach the group server's
+per-IP rate limits.
 
 ## Your device
 

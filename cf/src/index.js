@@ -3,6 +3,26 @@
 import { DurableObject } from "cloudflare:workers";
 
 const GROUP_ID = /^[0-9a-f]{20}$/;
+// The light-wallet servers in NETWORKS (web/index.html). The page may connect to nothing else.
+const CHAIN_SERVERS = ["https://lwd.zigs.app", "https://zcash-testnet.chainsafe.dev",
+  "https://zcash-mainnet.chainsafe.dev"].join(" ");
+
+// ponytail: 'unsafe-inline' because the app script and styles are inline; a hash would be stricter.
+function policy(url) {
+  const ws = (url.protocol === "https:" ? "wss://" : "ws://") + url.host;
+  return [
+    "default-src 'none'",
+    "script-src 'self' 'unsafe-inline' 'wasm-unsafe-eval'",
+    "worker-src 'self'",
+    "style-src 'self' 'unsafe-inline'",
+    "font-src 'self'",
+    "img-src 'self' data: blob:",
+    `connect-src 'self' ${ws} ${CHAIN_SERVERS}`,
+    "base-uri 'none'",
+    "form-action 'none'",
+    "frame-ancestors 'none'",
+  ].join("; ");
+}
 
 async function groupSocket(req, env, url) {
   const gid = url.searchParams.get("g") || "";
@@ -22,9 +42,13 @@ export default {
     if (url.pathname === "/ws") return groupSocket(req, env, url);
     if (url.pathname === "/" || url.pathname === "/index.html") {
       const page = await env.ASSETS.fetch(new URL("/index.html", url));
-      return new HTMLRewriter()
+      const res = new HTMLRewriter()
         .on("title", { element: (e) => e.before('<script src="/shim.js"></script>', { html: true }) })
         .transform(page);
+      const out = new Response(res.body, res);
+      out.headers.set("Content-Security-Policy", policy(url));
+      out.headers.set("X-Content-Type-Options", "nosniff");
+      return out;
     }
     return env.ASSETS.fetch(req);
   },
