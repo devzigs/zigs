@@ -1,71 +1,93 @@
 import Foundation
 
-/// Client for the shared document store (cf/src/index.js). The server pushes every document over
-/// one WebSocket, so reads use a local mirror. Values stay sealed here; GroupModel opens them.
+/// Client for the shared document store (cf/src/index.js). The server keeps each group in its own
+/// store, so the app opens one WebSocket per group it holds a key for and merges them into one
+/// local mirror. Values stay sealed here; GroupModel opens them.
 @MainActor
 final class Store {
     private(set) var docs: [String: Doc] = [:]
-    private(set) var connected = false
     var onChange: (() -> Void)?
 
-    private var task: URLSessionWebSocketTask?
+    @MainActor private final class Socket {
+        var task: URLSessionWebSocketTask?
+        var loaded = false
+        var delay: Double = 1
+        var waiting: [Int: CheckedContinuation<String, Error>] = [:]
+    }
+
+    private var sockets: [String: Socket] = [:]
     private var rid = 0
-    private var waiting: [Int: CheckedContinuation<String, Error>] = [:]
     private var server: URL?
+
+    /// True once every joined group has sent its documents.
+    var connected: Bool { sockets.values.allSatisfy(\.loaded) }
 
     func connect(server: URL) {
         self.server = server
-        task?.cancel(with: .goingAway, reason: nil)
-        open()
+        let gids = Array(sockets.keys)
+        for s in sockets.values { s.task?.cancel(with: .goingAway, reason: nil) }
+        sockets = [:]
+        docs = [:]
+        for gid in gids { join(gid) }
     }
 
-    private func open() {
-        guard let server, var parts = URLComponents(url: server, resolvingAgainstBaseURL: false) else {
-            return
-        }
+    /// Opens the socket for one group; does nothing if it is already open.
+    func join(_ gid: String) {
+        guard sockets[gid] == nil, gid.range(of: "^[0-9a-f]{20}$", options: .regularExpression) != nil else { return }
+        let s = Socket()
+        sockets[gid] = s
+        open(gid, s)
+    }
+
+    private func open(_ gid: String, _ s: Socket) {
+        guard let server, var parts = URLComponents(url: server, resolvingAgainstBaseURL: false) else { return }
         parts.scheme = parts.scheme == "https" ? "wss" : "ws"
         parts.path = "/ws"
+        parts.queryItems = [URLQueryItem(name: "g", value: gid)]
         guard let url = parts.url else { return }
         let t = URLSession.shared.webSocketTask(with: URLRequest(url: url))
-        task = t
+        s.task = t
         t.resume()
-        receive(t)
+        receive(gid, s, t)
     }
 
-    private func receive(_ t: URLSessionWebSocketTask) {
+    private func receive(_ gid: String, _ s: Socket, _ t: URLSessionWebSocketTask) {
         t.receive { [weak self] result in
-            Task { @MainActor in self?.handle(result, on: t) }
+            Task { @MainActor in self?.handle(result, gid, s, t) }
         }
     }
 
-    private func handle(_ result: Result<URLSessionWebSocketTask.Message, Error>, on t: URLSessionWebSocketTask) {
-        guard t === task else { return }
+    private func handle(_ result: Result<URLSessionWebSocketTask.Message, Error>, _ gid: String, _ s: Socket,
+                        _ t: URLSessionWebSocketTask) {
+        guard sockets[gid] === s, s.task === t else { return }
         switch result {
         case .failure:
-            dropped()
+            dropped(gid, s)
         case .success(.string(let text)):
-            if let m = try? Engine.parse(text) as? Doc { apply(m) }
-            receive(t)
+            if let m = try? Engine.parse(text) as? Doc { apply(m, gid, s) }
+            receive(gid, s, t)
         case .success:
-            receive(t)
+            receive(gid, s, t)
         }
     }
 
-    private func apply(_ m: Doc) {
+    private func apply(_ m: Doc, _ gid: String, _ s: Socket) {
         switch m.str("type") {
         case "init":
-            docs = [:]
+            let prefix = "groups/" + gid
+            docs = docs.filter { $0.key != prefix && !$0.key.hasPrefix(prefix + "/") }
             for d in m["docs"] as? [Doc] ?? [] {
                 if let p = d.str("path"), let data = d.doc("data") { docs[p] = data }
             }
-            connected = true
+            s.loaded = true
+            s.delay = 1
             onChange?()
         case "put":
             guard let p = m.str("path") else { return }
             docs[p] = m.doc("data")
             onChange?()
         case "reply":
-            guard let id = m.int("rid"), let w = waiting.removeValue(forKey: id) else { return }
+            guard let id = m.int("rid"), let w = s.waiting.removeValue(forKey: id) else { return }
             if has(m["ok"]) {
                 w.resume(returning: Engine.json(m["result"] ?? NSNull()))
             } else {
@@ -76,31 +98,38 @@ final class Store {
         }
     }
 
-    private func dropped() {
-        connected = false
-        for w in waiting.values { w.resume(throwing: ZigsError("connection lost")) }
-        waiting = [:]
+    /// A refused or dropped socket retries with a growing delay, so a busy server is not hammered.
+    private func dropped(_ gid: String, _ s: Socket) {
+        s.loaded = false
+        for w in s.waiting.values { w.resume(throwing: ZigsError("connection lost")) }
+        s.waiting = [:]
         onChange?()
+        let wait = s.delay
+        s.delay = min(s.delay * 2, 30)
         Task { @MainActor in
-            try? await Task.sleep(for: .seconds(1))
-            self.open()
+            try? await Task.sleep(for: .seconds(wait))
+            if self.sockets[gid] === s { self.open(gid, s) }
         }
     }
 
-    /// Sends one operation and returns the server's result as JSON text.
+    /// Sends one operation to the group that owns `msg["path"]` and returns the result as JSON text.
     @discardableResult
     func send(_ msg: Doc) async throws -> String {
-        guard connected, let t = task else { throw ZigsError("Not connected to the group server.") }
+        let parts = (msg.str("path") ?? "").split(separator: "/")
+        guard parts.count >= 2, parts[0] == "groups", let s = sockets[String(parts[1])] else {
+            throw ZigsError("Not connected to this group.")
+        }
+        guard s.loaded, let t = s.task else { throw ZigsError("Not connected to the group server.") }
         rid += 1
         let id = rid
         var m = msg
         m["rid"] = id
         let text = Engine.json(m)
         return try await withCheckedThrowingContinuation { cont in
-            waiting[id] = cont
-            t.send(.string(text)) { [weak self] err in
+            s.waiting[id] = cont
+            t.send(.string(text)) { err in
                 guard let err else { return }
-                Task { @MainActor in self?.waiting.removeValue(forKey: id)?.resume(throwing: err) }
+                Task { @MainActor in s.waiting.removeValue(forKey: id)?.resume(throwing: err) }
             }
         }
     }

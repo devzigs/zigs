@@ -520,6 +520,8 @@ async function boot() {
   if (!me) showBanner("bad", "This browser cannot tell who you are, so you cannot take a seat.");
   if (canWrite === false) showBanner("bad", "You can view this page but not take part. Ask the owner to invite you as an Editor from the Share menu.");
   if (!storageOk) showBanner("bad", "This browser does not let the page save your key share. Keep this tab open, and use Back up.");
+  // The server keeps each group apart, so this browser opens the groups it has keys for.
+  for (const gid of Object.keys(gkeys)) db.join?.(gid);
   sdb.collection("groups").onSnapshot((snap) => {
     dbReady = true;
     state.groups = snap.docs.map((d) => ({ id: d.id, ...d.data() })).sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0));

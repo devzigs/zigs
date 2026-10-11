@@ -76,6 +76,8 @@ final class GroupModel {
     func reconnect() {
         guard let url = URL(string: server) else { banner = "The server address is not valid."; return }
         store.connect(server: url)
+        for gid in vault.keys.keys { store.join(gid) }
+        refresh()   // with no groups, no socket ever reports, so show the state now
     }
 
     private func note(_ msg: String) {
@@ -324,6 +326,7 @@ final class GroupModel {
         let parts = frag.split(separator: ".", maxSplits: 1).map(String.init)
         guard parts.count == 2, parts[1].count == 43 else { banner = "The key in this link is not valid."; return }
         vault.putKey(parts[0], parts[1])
+        store.join(parts[0])
         autoSeat = true
         path = [parts[0]]
         select(parts[0])

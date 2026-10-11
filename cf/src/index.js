@@ -1,11 +1,25 @@
-// Serves web/ and gives it a shared document store: one Durable Object
-// (SQLite) that pushes every change to all connected browsers over a WebSocket.
+// Serves web/ and gives it a shared document store: one Durable Object (SQLite) per group that
+// pushes every change of that group to its connected members over a WebSocket.
 import { DurableObject } from "cloudflare:workers";
+
+const GROUP_ID = /^[0-9a-f]{20}$/;
+
+async function groupSocket(req, env, url) {
+  const gid = url.searchParams.get("g") || "";
+  if (!GROUP_ID.test(gid)) return new Response("Add ?g= with a group id of 20 hex characters.", { status: 400 });
+  const ip = req.headers.get("CF-Connecting-IP") || "local";
+  if (env.WS_PER_IP && !(await env.WS_PER_IP.limit({ key: ip })).success) {
+    return new Response("Too many connections from this network. Wait a minute.", { status: 429 });
+  }
+  const fwd = new Request(req);
+  fwd.headers.set("X-Group", gid);
+  return env.STORE.get(env.STORE.idFromName("g:" + gid)).fetch(fwd);
+}
 
 export default {
   async fetch(req, env) {
     const url = new URL(req.url);
-    if (url.pathname === "/ws") return env.STORE.get(env.STORE.idFromName("main")).fetch(req);
+    if (url.pathname === "/ws") return groupSocket(req, env, url);
     if (url.pathname === "/" || url.pathname === "/index.html") {
       const page = await env.ASSETS.fetch(new URL("/index.html", url));
       return new HTMLRewriter()
@@ -20,14 +34,13 @@ export default {
 const MAX_MESSAGE = 300_000; // characters in one WebSocket message
 const MAX_DOC = 256_000; // characters in one stored document
 const MAX_PATH = 200;
-// ponytail: every client downloads the whole store on connect, so this cap also bounds that
-// download. Upgrade path: one Durable Object per group.
-const MAX_TOTAL = 100_000_000;
+// Per group: members download their group's whole store on connect, so this also bounds that.
+const MAX_TOTAL = 10_000_000;
 const WRITES_PER_MIN = 300; // per client IP
 const CHARS_PER_MIN = 8_000_000; // per client IP
 // Global caps bound the cost when many IPs spam together; they can delay real users instead.
 const WRITES_PER_MIN_ALL = 3_000;
-const MAX_SOCKETS = 2_000;
+const MAX_SOCKETS = 200;
 const MAX_SOCKETS_PER_IP = 20;
 
 const fail = (code, message) => Object.assign(new Error(message), { code });
@@ -43,7 +56,13 @@ export class Store extends DurableObject {
   }
 
   async fetch(req) {
+    const url = new URL(req.url);
+    // Internal only: the Worker never routes a request to the old shared object named "main".
+    if (url.pathname === "/export") return this.exportGroup(url.searchParams.get("g") || "");
     if (req.headers.get("Upgrade") !== "websocket") return new Response("expected websocket", { status: 426 });
+    const gid = req.headers.get("X-Group") || "";
+    if (!GROUP_ID.test(gid)) return new Response("missing group", { status: 400 });
+    await this.adopt(gid);
     const ip = req.headers.get("CF-Connecting-IP") || "local";
     if (this.ctx.getWebSockets().length >= MAX_SOCKETS) {
       return new Response("The group server is busy. Try again in a minute.", { status: 503 });
@@ -53,6 +72,7 @@ export class Store extends DurableObject {
     }
     const [client, server] = Object.values(new WebSocketPair());
     this.ctx.acceptWebSocket(server, [ip]);
+    server.serializeAttachment({ gid });
     const docs = this.sql.exec("SELECT path, data FROM docs").toArray()
       .map((r) => ({ path: r.path, data: JSON.parse(r.data) }));
     server.send(JSON.stringify({ type: "init", docs }));
@@ -67,7 +87,7 @@ export class Store extends DurableObject {
       const m = JSON.parse(raw);
       rid = m.rid;
       this.limitRate(this.ctx.getTags(ws)[0] || "local", size);
-      ws.send(JSON.stringify({ type: "reply", rid, ok: true, result: this.apply(m) }));
+      ws.send(JSON.stringify({ type: "reply", rid, ok: true, result: this.apply(m, ws.deserializeAttachment()?.gid) }));
     } catch (e) {
       ws.send(JSON.stringify({ type: "reply", rid, ok: false, code: e.code || "internal", message: String(e.message || e) }));
     }
@@ -97,9 +117,10 @@ export class Store extends DurableObject {
     return r;
   }
 
-  apply(m) {
-    const path = String(m.path || "");
-    const validPath = path.startsWith("groups/") && path.length <= MAX_PATH && path.split("/").length % 2 === 0;
+  apply(m, gid) {
+    const path = String(m.path || ""), base = "groups/" + gid;
+    const inGroup = path === base || path.startsWith(base + "/");
+    const validPath = inGroup && path.length <= MAX_PATH && path.split("/").length % 2 === 0;
     if (!validPath) throw fail("invalid_argument", "bad doc path: " + path.slice(0, MAX_PATH));
     if (m.op === "acquire") return this.acquire(path, m.holder, m.ttlMs);
     if (m.op === "set" || m.op === "update") return this.write(path, m.op, m.data);
@@ -117,6 +138,25 @@ export class Store extends DurableObject {
     this.sql.exec("INSERT OR REPLACE INTO docs (path, data) VALUES (?, ?)", path, json);
     this.total += delta;
     return this.broadcast({ type: "put", path, data });
+  }
+
+  // The store began as one object for every group. Copy this group's documents over once.
+  async adopt(gid) {
+    if (this.adopted) return;
+    this.sql.exec("CREATE TABLE IF NOT EXISTS meta (k TEXT PRIMARY KEY, v TEXT NOT NULL)");
+    if (!this.sql.exec("SELECT v FROM meta WHERE k = 'adopted'").toArray().length) {
+      const old = await this.env.STORE.get(this.env.STORE.idFromName("main")).fetch("https://store/export?g=" + gid);
+      for (const d of await old.json()) this.sql.exec("INSERT OR IGNORE INTO docs (path, data) VALUES (?, ?)", d.path, d.data);
+      this.sql.exec("INSERT OR REPLACE INTO meta (k, v) VALUES ('adopted', ?)", gid);
+      this.total = this.sql.exec("SELECT COALESCE(SUM(LENGTH(data)), 0) AS n FROM docs").one().n;
+    }
+    this.adopted = true;
+  }
+
+  exportGroup(gid) {
+    if (!GROUP_ID.test(gid)) return Response.json([]);
+    const base = "groups/" + gid;
+    return Response.json(this.sql.exec("SELECT path, data FROM docs WHERE path = ? OR path LIKE ?", base, base + "/%").toArray());
   }
 
   // ponytail: leases live in memory; an evicted object forgets them, which only reopens a 5 s race.
