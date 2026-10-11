@@ -205,3 +205,5 @@ in-memory `ShardTree` for Merkle paths, and broadcasts with `SendTransaction`. S
 ## License
 
 MIT, see [LICENSE](LICENSE).
+
+The web app serves Geist and Geist Mono (SIL Open Font License 1.1) from `web/fonts/`, so users never contact Google.
