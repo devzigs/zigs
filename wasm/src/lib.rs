@@ -187,11 +187,28 @@ fn random_sk() -> SpendingKey {
     }
 }
 
-fn address_of(fvk: &FullViewingKey, net: Network) -> R<String> {
-    let a = fvk.address_at(0u32, Scope::External);
+fn receiver_address(a: orchard::Address, net: Network) -> R<String> {
     Ok(UnifiedAddress::from_receivers(Some(a), None, None, None, None)
         .ok_or("cannot build unified address")?
         .encode(&net))
+}
+
+fn address_of(fvk: &FullViewingKey, net: Network) -> R<String> {
+    receiver_address(fvk.address_at(0u32, Scope::External), net)
+}
+
+fn pczt_network(p: &Pczt) -> R<Network> {
+    match *p.global().coin_type() {
+        133 => Ok(Network::MainNetwork),
+        1 => Ok(Network::TestNetwork),
+        other => Err(err!("unknown coin type {other}")),
+    }
+}
+
+/// The address a payment really goes to: the Orchard receiver of `addr`, re-encoded alone, so
+/// two unified addresses that share that receiver compare equal.
+pub fn normalize_address(addr: &str) -> R<String> {
+    receiver_address(chain::parse_recipient(addr)?, Network::TestNetwork)
 }
 
 fn parse_fvk(hex_fvk: &str) -> R<FullViewingKey> {
@@ -337,6 +354,7 @@ fn inspect_inner(p: &Pczt, fvk: &FullViewingKey) -> R<Inspected> {
     } else {
         &[Pool::Orchard]
     };
+    let net = pczt_network(p)?;
     let change = fvk.address_at(0u32, Scope::Internal);
     let ext = fvk.address_at(0u32, Scope::External);
     let mut pending = vec![];
@@ -369,7 +387,7 @@ fn inspect_inner(p: &Pczt, fvk: &FullViewingKey) -> R<Inspected> {
                 let who = match o.recipient() {
                     Some(x) if *x == change => "change (back to this wallet)".to_string(),
                     Some(x) if *x == ext => "this wallet".to_string(),
-                    Some(_) => o.user_address().clone().unwrap_or_else(|| "external recipient".into()),
+                    Some(x) => receiver_address(*x, net).map_err(|m| OrchardError::Custom(Custom(m)))?,
                     None => "unknown (redacted)".into(),
                 };
                 if v != Some(0) {
@@ -666,6 +684,10 @@ pub fn js_dkg_part3(secret2: &str, round1: &str, round2: &str) -> Result<String,
 pub fn js_wallet_create(pkp: &str, net: &str) -> Result<String, JsError> {
     js(wallet_create(pkp, net))
 }
+#[wasm_bindgen(js_name = normalizeAddress)]
+pub fn js_normalize_address(addr: &str) -> Result<String, JsError> {
+    js(normalize_address(addr))
+}
 #[wasm_bindgen(js_name = walletVerify)]
 pub fn js_wallet_verify(wallet: &str, pkp: &str) -> Result<String, JsError> {
     js(wallet_verify(wallet, pkp))
@@ -910,6 +932,13 @@ mod tests {
         let pczt = tx["pczt"].as_str().unwrap();
         let ins = v(&inspect(pczt, fvk).unwrap());
         assert_eq!(ins["spends"].as_array().unwrap().len(), 1);
+        let paid: Vec<&str> = ins["lines"].as_array().unwrap().iter()
+            .filter(|l| l["kind"] == "output")
+            .filter_map(|l| l["who"].as_str().filter(|w| w.starts_with("utest1")))
+            .collect();
+        assert_eq!(paid.len(), 1, "inspect names the recipient by address");
+        assert_eq!(normalize_address(paid[0]).unwrap(), paid[0]);
+        assert!(normalize_address("not an address").is_err());
 
         let mut comm = serde_json::Map::new();
         let mut secrets = BTreeMap::new();

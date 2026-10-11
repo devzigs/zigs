@@ -66,6 +66,21 @@ export class ChainWallet {
         return this;
     }
     /**
+     * @returns {string}
+     */
+    received() {
+        let deferred1_0;
+        let deferred1_1;
+        try {
+            const ret = wasm.chainwallet_received(this.__wbg_ptr);
+            deferred1_0 = ret[0];
+            deferred1_1 = ret[1];
+            return getStringFromWasm0(ret[0], ret[1]);
+        } finally {
+            wasm.__wbindgen_free(deferred1_0, deferred1_1, 1);
+        }
+    }
+    /**
      * @param {Function} on_progress
      * @returns {Promise<string>}
      */
@@ -417,6 +432,31 @@ export function latestHeight(endpoint) {
     const len0 = WASM_VECTOR_LEN;
     const ret = wasm.latestHeight(ptr0, len0);
     return ret;
+}
+
+/**
+ * @param {string} addr
+ * @returns {string}
+ */
+export function normalizeAddress(addr) {
+    let deferred3_0;
+    let deferred3_1;
+    try {
+        const ptr0 = passStringToWasm0(addr, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
+        const len0 = WASM_VECTOR_LEN;
+        const ret = wasm.normalizeAddress(ptr0, len0);
+        var ptr2 = ret[0];
+        var len2 = ret[1];
+        if (ret[3]) {
+            ptr2 = 0; len2 = 0;
+            throw takeFromExternrefTable0(ret[2]);
+        }
+        deferred3_0 = ptr2;
+        deferred3_1 = len2;
+        return getStringFromWasm0(ptr2, len2);
+    } finally {
+        wasm.__wbindgen_free(deferred3_0, deferred3_1, 1);
+    }
 }
 
 /**

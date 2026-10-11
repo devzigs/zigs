@@ -15,6 +15,7 @@ export class ChainWallet {
     broadcast(tx_hex: string): Promise<string>;
     createSpend(recipient: string, amount: number): Promise<string>;
     constructor(ufvk: string, birthday: number, endpoint: string);
+    received(): string;
     sync(on_progress: Function): Promise<string>;
 }
 
@@ -67,6 +68,8 @@ export function inspect(pczt: string, fvk: string): string;
 
 export function latestHeight(endpoint: string): Promise<number>;
 
+export function normalizeAddress(addr: string): string;
+
 export function secretOpen(secret: string, aad: string, ct: string): string;
 
 export function secretSeal(secret: string, aad: string, pt: string): string;
@@ -100,6 +103,7 @@ export interface InitOutput {
     readonly chainwallet_broadcast: (a: number, b: number, c: number) => any;
     readonly chainwallet_createSpend: (a: number, b: number, c: number, d: number) => any;
     readonly chainwallet_new: (a: number, b: number, c: number, d: number, e: number) => [number, number, number];
+    readonly chainwallet_received: (a: number) => [number, number];
     readonly chainwallet_sync: (a: number, b: any) => any;
     readonly dkgPart1: (a: number, b: number, c: number) => [number, number, number, number];
     readonly dkgPart2: (a: number, b: number, c: number, d: number) => [number, number, number, number];
@@ -117,6 +121,7 @@ export interface InitOutput {
     readonly intounderlyingsource_cancel: (a: number) => void;
     readonly intounderlyingsource_pull: (a: number, b: any) => any;
     readonly latestHeight: (a: number, b: number) => any;
+    readonly normalizeAddress: (a: number, b: number) => [number, number, number, number];
     readonly secretOpen: (a: number, b: number, c: number, d: number, e: number, f: number) => [number, number, number, number];
     readonly secretSeal: (a: number, b: number, c: number, d: number, e: number, f: number) => [number, number, number, number];
     readonly signAggregate: (a: number, b: number, c: number, d: number, e: number, f: number, g: number, h: number) => [number, number, number, number];

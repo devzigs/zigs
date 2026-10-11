@@ -54,6 +54,8 @@ struct Rec {
     height: u32,
     nf: Nullifier,
     spent: bool,
+    txid: String,
+    change: bool,
 }
 
 impl Rec {
@@ -90,6 +92,7 @@ impl Inner {
         )
         .map_err(|x| format!("scan failed at block {height}: {x:?}"))?;
         for tx in sb.transactions() {
+            let txid = tx.txid().to_string();
             for sp in tx.ironwood_spends() {
                 for n in self.notes.iter_mut().filter(|n| n.nf == *sp.nf()) {
                     n.spent = true;
@@ -99,7 +102,8 @@ impl Inner {
                 let nf = *out.nf().ok_or("decrypted note has no nullifier")?;
                 let note = out.note().0;
                 let position = out.note_commitment_tree_position();
-                self.notes.push(Rec { note, position, height, nf, spent: false });
+                let change = out.is_change();
+                self.notes.push(Rec { note, position, height, nf, spent: false, txid: txid.clone(), change });
             }
         }
         self.ids.update_with(&sb);
@@ -129,6 +133,28 @@ impl Inner {
         json!({"height": self.synced, "tip": self.tip, "spendable": spendable,
             "pending": pending, "notes": count})
         .to_string()
+    }
+}
+
+impl Inner {
+    /// Payments into this wallet from outside, newest first: one entry per transaction.
+    fn received(&self) -> String {
+        let mut by_tx: Vec<(String, u32, u64)> = vec![];
+        for n in self.notes.iter().filter(|n| !n.change) {
+            match by_tx.iter_mut().find(|(t, _, _)| *t == n.txid) {
+                Some(entry) => entry.2 += n.value(),
+                None => by_tx.push((n.txid.clone(), n.height, n.value())),
+            }
+        }
+        by_tx.sort_by_key(|(_, h, _)| std::cmp::Reverse(*h));
+        let list: Vec<_> = by_tx
+            .iter()
+            .map(|(txid, height, value)| {
+                json!({"txid": txid, "height": height, "value": value,
+                    "confirmed": is_confirmed(*height, self.synced)})
+            })
+            .collect();
+        json!(list).to_string()
     }
 }
 
@@ -167,7 +193,7 @@ fn select_notes(notes: &[(u64, u32)], amount: u64, synced: u32) -> R<Pick> {
     Err(format!("not enough funds: {total} zat spendable, {need} zat needed (amount + fee)"))
 }
 
-fn parse_recipient(s: &str) -> R<orchard::Address> {
+pub(crate) fn parse_recipient(s: &str) -> R<orchard::Address> {
     match Address::decode(&Network::TestNetwork, s.trim()) {
         Some(Address::Unified(ua)) => ua
             .orchard()
@@ -328,6 +354,10 @@ impl ChainWallet {
 
     pub fn balance(&self) -> String {
         self.0.borrow().balance()
+    }
+
+    pub fn received(&self) -> String {
+        self.0.borrow().received()
     }
 
     #[wasm_bindgen(js_name = createSpend)]

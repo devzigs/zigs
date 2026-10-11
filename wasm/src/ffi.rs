@@ -28,6 +28,7 @@ const METHODS: &[(&str, Method)] = &[
     ("dkgPart3", |a| dkg_part3(s(a, 0)?, s(a, 1)?, s(a, 2)?)),
     ("walletCreate", |a| wallet_create(s(a, 0)?, s(a, 1)?)),
     ("walletVerify", |a| wallet_verify(s(a, 0)?, s(a, 1)?)),
+    ("normalizeAddress", |a| normalize_address(s(a, 0)?)),
     ("inspect", |a| inspect(s(a, 0)?, s(a, 1)?)),
     ("signCommit", |a| sign_commit(s(a, 0)?, s(a, 1)?, s(a, 2)?)),
     ("signPackage", |a| sign_package(s(a, 0)?, s(a, 1)?, s(a, 2)?, n(a, 3)?)),

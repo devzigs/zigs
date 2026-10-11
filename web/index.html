@@ -118,6 +118,7 @@ button { font: inherit; color: inherit; }
 .side-item.active { background: var(--raised); color: var(--text); box-shadow: inset 0 0 0 1px var(--line); }
 .side-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 500; }
 .side-meta { font: 400 11.5px/1 var(--mono); color: var(--faint); }
+.side-count { min-width: 20px; height: 20px; padding-inline: 6px; border-radius: 999px; background: var(--accent); color: var(--on-accent); font: 600 11px/20px var(--sans); text-align: center; }
 .side-empty { padding: 6px 8px; color: var(--faint); font-size: 13px; }
 .side-foot { display: grid; gap: 10px; border-top: 1px solid var(--line); padding: 14px 8px 0; }
 .engine { display: flex; align-items: center; gap: 8px; font-size: 12px; color: var(--muted); }
@@ -169,12 +170,14 @@ button { font: inherit; color: inherit; }
 .ph-meta { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; color: var(--muted); font-size: 13px; }
 .ph-actions { display: flex; flex-wrap: wrap; gap: 8px; }
 .back { display: none; }
-.tabs { display: flex; gap: 4px; border-bottom: 1px solid var(--line); overflow-x: auto; }
+.tabs { display: flex; gap: 4px; border-bottom: 1px solid var(--line); overflow-x: auto; overflow-y: hidden; scrollbar-width: none; }
+.tabs::-webkit-scrollbar { display: none; }
 .tab { position: relative; border: 0; background: none; padding: 10px 12px 12px; color: var(--muted); font-weight: 500; cursor: pointer; white-space: nowrap; }
 .tab:hover { color: var(--text); }
 .tab[aria-selected="true"] { color: var(--text); }
 .tab[aria-selected="true"]::after { content: ""; position: absolute; left: 10px; right: 10px; bottom: -1px; height: 2px; border-radius: 2px; background: var(--accent); }
 .tab .count { margin-left: 6px; font: 500 11px/1 var(--mono); padding: 2px 6px; border-radius: 6px; background: var(--raised); color: var(--muted); }
+.tab .count.attn { background: var(--accent); color: var(--on-accent); font-weight: 600; }
 
 /* Cards */
 .card { background: var(--panel); border: 1px solid var(--line); border-radius: var(--r); min-width: 0; }
@@ -185,7 +188,7 @@ button { font: inherit; color: inherit; }
 
 /* Money */
 .money { font-variant-numeric: tabular-nums; letter-spacing: -0.02em; white-space: nowrap; }
-.money .dec { color: var(--muted); }
+.money.in { color: var(--ok); }
 .money .cur { color: var(--faint); font-weight: 500; margin-left: 0.3em; font-size: 0.55em; letter-spacing: 0; }
 .money.xl { font-size: clamp(34px, 5vw, 46px); font-weight: 600; line-height: 1; }
 .money.lg { font-size: 30px; font-weight: 600; line-height: 1; }
@@ -212,6 +215,33 @@ button { font: inherit; color: inherit; }
 .ri-title { font-weight: 500; }
 .ri-sub { font-size: 12.5px; color: var(--faint); }
 .tx-ico { width: 36px; height: 36px; border-radius: 10px; display: grid; place-items: center; background: var(--raised); color: var(--muted); font-size: 15px; }
+.tx-ico.in { background: var(--ok-soft); color: var(--ok); }
+.ri-end { display: grid; gap: 4px; justify-items: end; }
+a.row-item { text-decoration: none; }
+.nowrap { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.attention { border-color: color-mix(in srgb, var(--accent) 55%, var(--line)); box-shadow: 0 0 0 3px var(--accent-soft); }
+.hero-card { border-color: color-mix(in srgb, var(--accent) 40%, var(--line)); background: radial-gradient(120% 160% at 100% 0%, var(--accent-soft), transparent 60%), var(--panel); }
+.welcome { gap: 22px; padding: 28px; }
+.welcome h2 { font-size: 20px; }
+.how { list-style: none; margin: 0; padding: 0; display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; }
+.how li { display: grid; gap: 10px; align-content: start; padding: 16px; border-radius: 10px; background: var(--sunk); border: 1px solid var(--line); }
+.how h3 { font-size: 14.5px; letter-spacing: -0.01em; }
+.how-no { width: 26px; height: 26px; border-radius: 50%; display: grid; place-items: center; font: 600 12px/1 var(--mono); background: var(--accent-soft); color: var(--accent-text); }
+.rule { font-size: 13px; color: var(--muted); }
+.rule.bad { color: var(--bad); }
+.hint { font-size: 12px; color: var(--faint); min-height: 1em; }
+.hint.ok { color: var(--ok); }
+.hint.bad { color: var(--bad); }
+.summary .total { padding-top: 8px; border-top: 1px solid var(--line); font-weight: 600; }
+.to-box { display: grid; gap: 10px; padding: 14px; border-radius: 10px; background: var(--sunk); border: 1px solid var(--line); }
+.to-box .hex { color: var(--text); }
+.approver { display: inline-flex; align-items: center; gap: 6px; opacity: 0.45; }
+.approver.yes { opacity: 1; }
+.testing > summary { color: var(--muted); font-weight: 500; }
+.testing[open] { display: grid; gap: 10px; }
+.drawer-foot { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 8px; padding: 14px 20px; padding-bottom: calc(14px + env(safe-area-inset-bottom, 0px)); border-top: 1px solid var(--line); background: var(--panel); }
+.drawer-foot .btn { flex: 1 1 auto; }
+.action-bar { display: none; }
 .chev { color: var(--faint); }
 .table { width: 100%; border-collapse: collapse; font-size: 13.5px; }
 .table th { text-align: left; font: 500 11.5px/1.2 var(--mono); text-transform: uppercase; letter-spacing: 0.06em; color: var(--faint); padding: 12px 20px; border-bottom: 1px solid var(--line); background: var(--raised); }
@@ -290,6 +320,7 @@ details > summary { cursor: pointer; color: var(--accent-text); font-weight: 500
 
 @media (max-width: 960px) {
   .grid-ov, .setup { grid-template-columns: 1fr; }
+  .how { grid-template-columns: 1fr; }
 }
 @media (max-width: 760px) {
   .shell { grid-template-columns: 1fr; }
@@ -303,6 +334,13 @@ details > summary { cursor: pointer; color: var(--accent-text); font-weight: 500
   .row-item { grid-template-columns: 36px minmax(0, 1fr) auto; }
   .row-item .chev { display: none; }
   .table .hide-sm { display: none; }
+  .side-foot:has(.dot.ok) { display: none; }
+  .tab { padding-inline: 9px; }
+  .wallet-actions { display: none; }
+  .action-bar { display: flex; gap: 10px; position: fixed; left: 0; right: 0; bottom: 0; z-index: 30; padding: 12px 16px; padding-bottom: calc(12px + env(safe-area-inset-bottom, 0px)); background: color-mix(in srgb, var(--bg) 86%, transparent); backdrop-filter: blur(12px); border-top: 1px solid var(--line); }
+  .action-bar .btn { flex: 1; height: 46px; font-size: 15px; }
+  .main { padding-bottom: 104px; }
+  .row-item .btn { display: none; }
 }
 </style>
 
@@ -381,7 +419,13 @@ let db = null, sdb = null, user = null, downloads = null, me = null, canWrite = 
 const LIGHTWALLETDS = ["https://lwd.zigs.app", "https://zcash-testnet.chainsafe.dev"];
 const SERVER_TIMEOUT_MS = 8000;
 const EXPLORER_TX = "https://testnet.zcashexplorer.app/transactions/";
-let chain = null;   // { gid, cw, prog, bal, ms, error, syncing } for the open group
+let chain = null;   // { gid, cw, prog, bal, received, ms, error, syncing } for the open group
+// Last known balance per wallet, so the wallet list shows money before a wallet syncs.
+let balCache = {};
+try { balCache = JSON.parse(localStorage.getItem("zf-bal") || "{}"); } catch {}
+function saveBal(gid, bal) { balCache[gid] = { total: bal.spendable + bal.pending, at: Date.now() }; try { localStorage.setItem("zf-bal", JSON.stringify(balCache)); } catch {} }
+// Payment proposals of every wallet where this browser holds a seat, for the approval counts.
+const inbox = {}, inboxSubs = new Map();
 const state = { groups: [], gid: null, g: null, seats: {}, dkg1: {}, dkg2: {}, done: {}, verify: {}, wallet: null, sessions: [], sid: null, commits: {}, shares: {}, log: [] };
 let unsubGroup = [], unsubSession = [];
 const busy = new Set();
@@ -460,6 +504,7 @@ async function boot() {
   sdb.collection("groups").onSnapshot((snap) => {
     dbReady = true;
     state.groups = snap.docs.map((d) => ({ id: d.id, ...d.data() })).sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0));
+    watchInbox();
     if (state.gid && !state.g) openGroup(state.gid);
     render();
   }, (e) => showBanner("bad", "Lost connection to the shared store (" + e.code + "). Reload the page."));
@@ -468,6 +513,23 @@ async function boot() {
   else if (h) openGroup(h);
   render();
 }
+
+function watchInbox() {
+  for (const g of state.groups) {
+    if (inboxSubs.has(g.id) || !mySeatSecrets(g.id).length) continue;
+    inboxSubs.set(g.id, sdb.collection("groups/" + g.id + "/sessions").onSnapshot((snap) => {
+      inbox[g.id] = snap.docs.map((d) => ({ id: d.id, ...d.data() }));
+      render();
+    }));
+  }
+}
+
+// A seat records its nonces locally when it approves, so no server read is needed.
+function needsMyApproval(gid, ss) {
+  if (ss.status !== "collecting" || ss.package || ss.error) return false;
+  return mySeatSecrets(gid).some(([, s]) => s.keyPackage && !(s.nonces && s.nonces[ss.id]));
+}
+const toApprove = (gid) => (gid === state.gid ? state.sessions : inbox[gid] || []).filter((ss) => needsMyApproval(gid, ss));
 
 function sub(path, fn) {
   return sdb.collection(path).onSnapshot((snap) => { const m = {}; for (const d of snap.docs) m[d.id] = d.data(); fn(m); render(); react(); },
@@ -523,7 +585,8 @@ function seatStage(i) {
   if (state.dkg1[i]) return 2;
   return 1;
 }
-const STAGE_LABEL = ["Open seat", "Joined", "Round 1 sent", "Round 2 sent", "Holds key share", "Verified wallet"];
+// A seat publishes its first key message right after joining, so stage 2 still reads as joined.
+const STAGE_LABEL = ["Open", "Joined", "Joined", "Creating key", "Key ready", "Address checked"];
 
 // ───────────────────────── Reactor ─────────────────────────
 // Each browser advances the steps it can do for its own seats. Steps that
@@ -706,16 +769,24 @@ async function runSync(c) {
   if (c.syncing) return;
   c.syncing = true; c.error = null; render();
   const t0 = performance.now();
-  try { await connect(c); c.bal = J(await c.cw.sync((p) => { c.prog = J(p); render(); })); c.prog = null; c.ms = Math.round(performance.now() - t0); log("synced to " + c.bal.height + ", spendable " + fmtZec(c.bal.spendable)); }
+  try {
+    await connect(c);
+    c.bal = J(await c.cw.sync((p) => { c.prog = J(p); render(); }));
+    c.received = J(c.cw.received());
+    c.prog = null; c.ms = Math.round(performance.now() - t0);
+    saveBal(c.gid, c.bal);
+    log("synced to " + c.bal.height + ", spendable " + fmtZec(c.bal.spendable));
+  }
   catch (e) { c.error = e.message || String(e); log("sync failed: " + c.error); }
   finally { c.syncing = false; if (chain !== c && c.cw) c.cw.free(); render(); }
 }
 
-async function newSpend(recipient, amountZat) {
+// `to` and `note` are the proposer's words; approvers check `to` against the transaction itself.
+async function newSpend(recipient, amountZat, note) {
   if (!chain || chain.gid !== state.gid || !chain.bal) throw new Error("The wallet has not finished its first sync.");
   const t = J(await chain.cw.createSpend(recipient, amountZat));
   const ref = sdb.collection("groups/" + state.gid + "/sessions").doc();
-  await ref.set({ createdBy: me, createdAt: Date.now(), pool: t.pool, amount: t.amount, change: t.change, fee: t.fee, noteValue: t.note_value, pczt: t.pczt, status: "collecting" });
+  await ref.set({ createdBy: me, createdAt: Date.now(), to: recipient, note: note || null, pool: t.pool, amount: t.amount, change: t.change, fee: t.fee, noteValue: t.note_value, pczt: t.pczt, status: "collecting" });
   log("new spend: " + fmtZec(t.amount));
   openSession(ref.id);
 }
@@ -805,15 +876,19 @@ function copyBtn(text, label = "Copy", cls = "btn sm") {
 }
 
 // View state that only this browser cares about.
-const ui = { tab: "overview", send: false, create: false };
+const ui = { tab: "overview", send: false, create: false, receive: false };
 const ZEC_FMT = new Intl.NumberFormat("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 8 });
 const FEE_ESTIMATE = 10000;
+const FAUCET = "https://zcashfaucet.jinolabs.xyz/";
+const BLOCK_SECONDS = 25;
 const initials = (name) => (name || "?").trim().split(/\s+/).map((w) => w[0]).join("").slice(0, 2).toUpperCase() || "?";
 const when = (ms) => ms ? new Date(ms).toLocaleString(undefined, { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" }) : "";
 
-function money(zat, size = "md") {
+// `sign` is "out" or "in" for money leaving or entering the wallet.
+function money(zat, size = "md", sign = "") {
   const [i, d] = ZEC_FMT.format((zat || 0) / 1e8).split(".");
-  return el("span", { class: "money " + size }, i, el("span", { class: "dec" }, "." + (d || "00")), el("span", { class: "cur" }, "ZEC"));
+  const pre = sign === "out" ? "−" : sign === "in" ? "+" : "";
+  return el("span", { class: "money " + size + (sign ? " " + sign : "") }, pre + i + "." + (d || "00"), el("span", { class: "cur" }, "ZEC"));
 }
 function seatLabel(i) {
   const s = state.seats[i];
@@ -838,8 +913,27 @@ function statusChip(s) {
   return el("span", { class: "badge " + c }, t);
 }
 
+// Payment wording. `who` comes from the engine: an address for the recipient, or a fixed phrase.
+const OWN_OUTPUT = new Set(["this wallet", "change (back to this wallet)"]);
+const isPayee = (l) => l.kind === "output" && !OWN_OUTPUT.has(l.who);
+const lineRank = (l) => l.kind === "spend" ? 0 : isPayee(l) ? 1 : 2;
+const payTitle = (ss) => ss.note || (ss.to ? "Payment to " + short(ss.to, 8) : "Payment");
+const proposer = (ss) => ss.createdBy === me ? "you" : seatNameOf(ss.createdBy);
+function normalized(addr) { try { return Z.normalizeAddress(addr); } catch { return null; } }
+
+function sendBlocker() {
+  const c = curChain();
+  if (!localSeats().length) return "You hold no seat in this wallet.";
+  if (!myVerified()) return "Your seat is still checking the wallet address.";
+  if (!c || !c.bal) return "Wait for the first sync to finish.";
+  if (c.bal.spendable > FEE_ESTIMATE) return null;
+  return c.bal.pending ? "Incoming funds need 3 confirmations first." : "This wallet has no funds yet.";
+}
+
 function render() {
   renderSide();
+  const pending = state.groups.reduce((n, g) => n + toApprove(g.id).length, 0);
+  document.title = pending ? "(" + pending + ") Zigs" : "Zigs";
   const app = document.getElementById("app");
   // Keep what the viewer is typing, open <details>, and the drawer scroll across live updates.
   const kept = {}; const focusId = document.activeElement && document.activeElement.id;
@@ -847,16 +941,22 @@ function render() {
   const openDetails = new Set([...app.querySelectorAll("details[open] > summary")].map((x) => x.textContent));
   const drawerScroll = app.querySelector(".drawer-body")?.scrollTop || 0;
   const view = !dbReady ? loadingView() : state.gid ? groupView() : lobby();
-  const ss = state.gid && state.wallet ? curSession() : null;
-  const layers = [];
-  if (ss) layers.push(el("div", { class: "scrim", onclick: () => { closeSession(); render(); } }), sessionDrawer(ss));
-  else if (ui.send && state.gid && state.wallet) layers.push(el("div", { class: "scrim", onclick: () => { ui.send = false; render(); } }), sendDialog());
-  else if (ui.create && !state.gid) layers.push(el("div", { class: "scrim", onclick: () => { ui.create = false; render(); } }), createDialog());
-  app.replaceChildren(view, ...layers);
-  for (const [id, v] of Object.entries(kept)) { const i = document.getElementById(id); if (i) i.value = v; }
+  app.replaceChildren(view, ...layers());
+  for (const [id, v] of Object.entries(kept)) { const i = document.getElementById(id); if (i) { i.value = v; i.dispatchEvent(new Event("input", { bubbles: true })); } }
   app.querySelectorAll("details > summary").forEach((x) => { if (openDetails.has(x.textContent)) x.parentElement.open = true; });
   const db2 = app.querySelector(".drawer-body"); if (db2) db2.scrollTop = drawerScroll;
   if (focusId) { const f = document.getElementById(focusId); if (f) f.focus(); }
+}
+
+function layers() {
+  const scrim = (close) => el("div", { class: "scrim", onclick: () => { close(); render(); } });
+  const ss = state.gid && state.wallet ? curSession() : null;
+  if (ss) return [scrim(closeSession), sessionDrawer(ss)];
+  const inWallet = state.gid && state.wallet;
+  if (ui.send && inWallet) return [scrim(() => ui.send = false), sendDialog()];
+  if (ui.receive && inWallet) return [scrim(() => ui.receive = false), receiveDialog()];
+  if (ui.create && !state.gid) return [scrim(() => ui.create = false), createDialog()];
+  return [];
 }
 
 function renderSide() {
@@ -865,11 +965,16 @@ function renderSide() {
   nav.replaceChildren(
     el("div", { class: "side-head" }, el("span", { class: "label" }, "Wallets"),
       el("button", { class: "icon-btn", type: "button", title: "New wallet", "aria-label": "New wallet", onclick: newWallet }, "+")),
-    ...(state.groups.length ? state.groups.map((g) => el("button", {
-      class: "side-item" + (g.id === state.gid ? " active" : ""), type: "button", "aria-current": g.id === state.gid ? "page" : null,
-      onclick: () => { ui.tab = "overview"; openGroup(g.id); },
-    }, el("span", { class: "av" }, initials(g.name)), el("span", { class: "side-name" }, g.name), el("span", { class: "side-meta" }, g.t + "/" + g.n)))
-      : [el("p", { class: "side-empty" }, dbReady ? "No wallets yet." : "Connecting…")]));
+    ...(state.groups.length ? state.groups.map(sideItem) : [el("p", { class: "side-empty" }, dbReady ? "No wallets yet." : "Connecting…")]));
+}
+
+function sideItem(g) {
+  const n = toApprove(g.id).length;
+  return el("button", {
+    class: "side-item" + (g.id === state.gid ? " active" : ""), type: "button", "aria-current": g.id === state.gid ? "page" : null,
+    onclick: () => { ui.tab = "overview"; openGroup(g.id); },
+  }, el("span", { class: "av" }, initials(g.name)), el("span", { class: "side-name" }, g.name),
+    n ? el("span", { class: "side-count", title: n + " to approve", "aria-label": n + " to approve" }, String(n)) : el("span", { class: "side-meta" }, g.t + "/" + g.n));
 }
 
 function loadingView() {
@@ -879,27 +984,39 @@ function loadingView() {
 // ── Lobby ──
 function lobby() {
   const restoreInput = el("input", { id: "restore", type: "file", accept: "application/json", hidden: true, onchange: (ev) => ev.target.files[0] && restore(ev.target.files[0]) });
+  const canCreate = Z && db && canWrite !== false;
   const head = el("header", { class: "page-head" },
     el("div", { class: "ph-left" }, el("h1", {}, "Wallets"), el("p", { class: "muted" }, "Shared wallets you hold a seat in. Every payment needs your co-signers' approval.")),
     el("div", { class: "ph-actions" },
       el("button", { class: "btn", type: "button", onclick: () => restoreInput.click() }, "Restore from backup"), restoreInput,
-      el("button", { class: "btn primary", type: "button", disabled: !Z || !db || canWrite === false, onclick: () => { ui.create = true; render(); } }, "New wallet")));
-  if (!state.groups.length) {
-    return el("div", { class: "page" }, head, el("section", { class: "card card-pad" },
-      el("div", { class: "empty" },
-        el("h3", {}, "Create your first shared wallet"),
-        el("p", { class: "small", style: "max-width:46ch" }, "Pick a rule like 2 of 3, invite your co-signers with one link, and your devices create the wallet key together. Nobody ever holds the whole key."),
-        el("button", { class: "btn primary lg", type: "button", style: "margin-top:8px", disabled: !Z || !db || canWrite === false, onclick: () => { ui.create = true; render(); } }, "Create wallet"))));
-  }
-  return el("div", { class: "page" }, head,
-    el("section", { class: "card" }, el("div", { class: "list" }, state.groups.map((g) => {
-      const mine = mySeatSecrets(g.id).length;
-      return el("button", { class: "row-item", type: "button", onclick: () => { ui.tab = "overview"; openGroup(g.id); } },
-        el("span", { class: "av lg" }, initials(g.name)),
-        el("span", { class: "ri-main" }, el("span", { class: "ri-title" }, g.name), el("span", { class: "ri-sub" }, "Any " + g.t + " of " + g.n + " approve · created " + when(g.createdAt))),
-        mine ? el("span", { class: "badge warn plain" }, mine > 1 ? "You hold " + mine + " seats" : "You hold a seat") : el("span", { class: "badge plain" }, "Viewer"),
-        el("span", { class: "chev" }, "›"));
-    }))));
+      el("button", { class: "btn primary", type: "button", disabled: !canCreate, onclick: () => { ui.create = true; render(); } }, "New wallet")));
+  if (!state.groups.length) return el("div", { class: "page" }, head, welcome(canCreate));
+  return el("div", { class: "page" }, head, el("section", { class: "card" }, el("div", { class: "list" }, state.groups.map(walletRow))));
+}
+
+function walletRow(g) {
+  const seats = mySeatSecrets(g.id).length, n = toApprove(g.id).length, bal = balCache[g.id];
+  return el("button", { class: "row-item", type: "button", onclick: () => { ui.tab = "overview"; openGroup(g.id); } },
+    el("span", { class: "av lg" }, initials(g.name)),
+    el("span", { class: "ri-main" }, el("span", { class: "ri-title" }, g.name),
+      el("span", { class: "ri-sub" }, "Any " + g.t + " of " + g.n + " approve" + (seats ? "" : " · view only"))),
+    el("span", { class: "ri-end" }, bal ? money(bal.total) : el("span", { class: "small faint" }, "Not synced yet"),
+      n ? el("span", { class: "badge warn" }, n + " to approve") : null),
+    el("span", { class: "chev" }, "›"));
+}
+
+function welcome(canCreate) {
+  const steps = [
+    ["Pick a rule", "For example, any 2 of 3 members must approve each payment."],
+    ["Invite your co-signers", "Send one private link. Each device creates its own piece of the key."],
+    ["Approve together", "A payment goes out only after enough members approve. On chain it looks like any private payment."],
+  ];
+  return el("section", { class: "card card-pad welcome" },
+    el("div", { style: "display:grid;gap:6px" }, el("h2", {}, "Create your first shared wallet"),
+      el("p", { class: "muted" }, "Nobody ever holds the whole key, and nobody outside your team can see the wallet.")),
+    el("ol", { class: "how" }, steps.map(([t, d], i) => el("li", {}, el("span", { class: "how-no" }, String(i + 1)),
+      el("div", { style: "display:grid;gap:2px" }, el("h3", {}, t), el("p", { class: "small muted" }, d))))),
+    el("div", {}, el("button", { class: "btn primary lg", type: "button", disabled: !canCreate, onclick: () => { ui.create = true; render(); } }, "Create wallet")));
 }
 
 // The name co-signers see on your seat; saved in this browser and read when you take a seat.
@@ -911,7 +1028,14 @@ function nameField(id) {
 }
 
 function createDialog() {
-  const f = el("form", { class: "dialog", role: "dialog", "aria-modal": "true", "aria-labelledby": "create-title", onsubmit: act(async (ev) => {
+  const rule = el("p", { class: "rule", id: "rule-text" }, "Any 2 of 3 members must approve each payment.");
+  const update = () => {
+    const n = Number(document.getElementById("g-n")?.value), t = Number(document.getElementById("g-t")?.value);
+    const ok = n >= 2 && n <= 7 && t >= 2 && t <= n;
+    rule.textContent = ok ? "Any " + t + " of " + n + " members must approve each payment." : "Choose 2 to 7 members, and at least 2 approvals but no more than the members.";
+    rule.classList.toggle("bad", !ok);
+  };
+  const f = el("form", { class: "dialog", role: "dialog", "aria-modal": "true", "aria-labelledby": "create-title", oninput: update, onsubmit: act(async (ev) => {
     const fd = new FormData(ev.target); const n = Number(fd.get("n")), t = Number(fd.get("t"));
     if (!(n >= 2 && n <= 7)) throw new Error("A wallet needs between 2 and 7 members.");
     if (t < 2 || t > n) throw new Error("Approvals needed must be at least 2 and at most the number of members.");
@@ -924,6 +1048,7 @@ function createDialog() {
     el("div", { class: "two" },
       el("label", { class: "field" }, el("span", {}, "Members"), el("input", { class: "input", id: "g-n", name: "n", type: "number", min: "2", max: "7", value: "3" })),
       el("label", { class: "field" }, el("span", {}, "Approvals needed"), el("input", { class: "input", id: "g-t", name: "t", type: "number", min: "2", max: "7", value: "2" }))),
+    rule,
     el("div", { class: "callout" }, "You take seat 1. Then share the invite link with your co-signers. When every seat is taken, your devices create the wallet key together."),
     el("div", { class: "dialog-actions" },
       el("button", { class: "btn", type: "button", onclick: () => { ui.create = false; render(); } }, "Cancel"),
@@ -945,21 +1070,52 @@ function groupView() {
         el("span", { class: "badge warn plain" }, "Any " + g.t + " of " + g.n + " approve"),
         el("span", { class: "stack" }, seatIds().map((i) => avatar(i))),
         el("span", {}, seated.length + " of " + g.n + " members joined"))),
-    el("div", { class: "ph-actions" },
-      copyBtn(inviteLink(state.gid), "Copy invite link", "btn"),
-      ready ? el("button", { class: "btn primary", type: "button", disabled: !myVerified() || !curChain() || !curChain().bal, onclick: () => { ui.send = true; render(); } }, "Send") : null));
+    ready ? el("div", { class: "ph-actions wallet-actions" }, ...walletActions()) : null);
   if (!ready) return el("div", { class: "page" }, head, setupView());
-  const tabs = [["overview", "Overview"], ["payments", "Payments", state.sessions.length], ["members", "Members"], ["details", "Details"]];
-  const body = { overview: overviewTab, payments: paymentsTab, members: membersTab, details: detailsTab }[ui.tab] || overviewTab;
+  const n = toApprove(state.gid).length;
+  const tabs = [["overview", "Overview"], ["activity", "Activity", n], ["members", "Members"], ["details", "Details"]];
+  const body = { overview: overviewTab, activity: activityTab, members: membersTab, details: detailsTab }[ui.tab] || overviewTab;
   return el("div", { class: "page" }, head,
     el("nav", { class: "tabs", role: "tablist" }, tabs.map(([id, label, count]) => el("button", {
       class: "tab", type: "button", role: "tab", "aria-selected": ui.tab === id ? "true" : "false", onclick: () => { ui.tab = id; render(); },
-    }, label, count ? el("span", { class: "count" }, count) : null))),
-    body());
+    }, label, count ? el("span", { class: "count attn", "aria-label": count + " to approve" }, count) : null))),
+    body(),
+    el("div", { class: "action-bar" }, ...walletActions()));
+}
+
+function walletActions() {
+  const why = sendBlocker();
+  return [
+    el("button", { class: "btn", type: "button", onclick: () => { ui.receive = true; render(); } }, "Receive"),
+    el("button", { class: "btn primary", type: "button", disabled: !!why, title: why, onclick: () => { ui.send = true; render(); } }, "Send"),
+  ];
 }
 
 // ── Setup (key ceremony) ──
 function setupView() {
+  const open = seatIds().filter((i) => !state.seats[i]);
+  const top = !localSeats().length && open.length ? joinCard(open[0]) : open.length ? inviteCard(open.length) : null;
+  return el("div", { class: "page", style: "gap:16px" }, top, el("div", { class: "setup" }, progressCard(), seatsCard(open)));
+}
+
+function joinCard(seat) {
+  return el("section", { class: "card card-pad hero-card" },
+    el("div", { style: "display:grid;gap:4px" }, el("h2", {}, "Join " + state.g.name),
+      el("p", { class: "small muted" }, "Take a seat to become a co-signer. Your device creates its own piece of the wallet key; it never leaves this browser.")),
+    nameField("seat-name"),
+    el("div", {}, el("button", { class: "btn primary lg", type: "button", disabled: !Z || canWrite === false, onclick: act(() => takeSeat(seat)) }, "Take seat " + seat)));
+}
+
+function inviteCard(openCount) {
+  const link = inviteLink(state.gid);
+  const share = navigator.share ? el("button", { class: "btn sm", type: "button", onclick: () => navigator.share({ title: "Join " + state.g.name + " on Zigs", url: link }).catch(() => {}) }, "Share") : null;
+  return el("section", { class: "card card-pad hero-card" },
+    el("div", { class: "card-head" }, el("h2", {}, "Invite your co-signers"), el("span", { class: "badge warn plain" }, openCount === 1 ? "1 seat open" : openCount + " seats open")),
+    el("p", { class: "small muted" }, "Send this link to each co-signer through a private channel. It contains the wallet's secret: anyone who has it can take an open seat."),
+    el("div", { class: "addr-box" }, el("span", { class: "hex nowrap" }, link), copyBtn(link, "Copy link", "btn sm primary"), share));
+}
+
+function progressCard() {
   const g = state.g, n = g.n, w = state.wallet;
   const r1 = Object.keys(state.dkg1).length, r2 = Object.keys(state.dkg2).length, d = Object.keys(state.done).length;
   const mismatch = allDone() && !keysAgree(), rejected = rejectedSeats(), ver = verifiedCount();
@@ -977,22 +1133,26 @@ function setupView() {
     : ver + " of " + n + " members checked that the address belongs to the group key.";
   const step = (cls, no, title, text) => el("div", { class: "step " + cls }, el("span", { class: "tick" }, cls === "done" ? "✓" : cls === "bad" ? "!" : no), el("div", { style: "display:grid;gap:2px" }, el("h3", {}, title), el("p", {}, text)));
   const total = (seatedN / n + (d === n ? 1 : (r1 / n + r2 / Math.max(1, n * (n - 1))) / 2) + (w ? ver / n : 0)) / 3;
-  return el("div", { class: "setup" },
-    el("section", { class: "card card-pad" },
-      el("div", { class: "card-head" }, el("h2", {}, "Setting up your wallet"), el("span", { class: "mono faint" }, Math.round(total * 100) + "%")),
-      el("div", { class: "progress" }, el("i", { style: "width:" + Math.round(total * 100) + "%" })),
-      el("div", { class: "steps", style: "margin-top:6px" },
-        step(allSeated() ? "done" : "now", 1, "Members join", seatedN + " of " + n + " seats taken. Share the invite link with your co-signers."),
-        step(keyStage, 2, "Create the key together", keyText),
-        step(addrStage, 3, "Check the address", addrText)),
-      state.log.length ? el("details", {}, el("summary", {}, "Activity in this browser"), el("div", { class: "log" }, state.log.join("\n"))) : null),
-    el("section", { class: "card card-pad" },
-      el("div", { class: "card-head" }, el("h2", {}, "Seats"), el("span", { class: "small muted" }, "Any " + g.t + " of " + n + " approve")),
-      localSeats().length ? null : nameField("seat-name"),
-      el("div", { class: "seat-grid" }, seatIds().map(seatTile)),
-      el("div", { class: "field" }, el("span", {}, "Invite link"),
-        el("div", { class: "addr-box" }, el("span", { class: "hex", style: "white-space:nowrap;overflow:hidden;text-overflow:ellipsis" }, inviteLink(state.gid)), copyBtn(inviteLink(state.gid)))),
-      el("p", { class: "small faint" }, "The link contains the wallet's secret. Send it only to your co-signers, through a private channel.")));
+  return el("section", { class: "card card-pad" },
+    el("div", { class: "card-head" }, el("h2", {}, "Setting up your wallet"), el("span", { class: "mono faint" }, Math.round(total * 100) + "%")),
+    el("div", { class: "progress" }, el("i", { style: "width:" + Math.round(total * 100) + "%" })),
+    el("div", { class: "steps", style: "margin-top:6px" },
+      step(allSeated() ? "done" : "now", 1, "Members join", seatedN + " of " + n + " seats taken."),
+      step(keyStage, 2, "Create the key together", keyText),
+      step(addrStage, 3, "Check the address", addrText)),
+    state.log.length ? el("details", {}, el("summary", {}, "Activity in this browser"), el("div", { class: "log" }, state.log.join("\n"))) : null);
+}
+
+function seatsCard(open) {
+  const testing = localSeats().length && open.length
+    ? el("details", { class: "testing" }, el("summary", {}, "Testing: play another seat in this browser"),
+      el("p", { class: "small faint" }, "Only for trying Zigs alone. A real co-signer takes a seat on their own device."),
+      el("div", { style: "display:flex;gap:8px;flex-wrap:wrap" }, open.map((i) => el("button", { class: "btn sm", type: "button", disabled: !Z || canWrite === false, onclick: act(() => takeSeat(i)) }, "Play seat " + i))))
+    : null;
+  return el("section", { class: "card card-pad" },
+    el("div", { class: "card-head" }, el("h2", {}, "Seats"), el("span", { class: "small muted" }, "Any " + state.g.t + " of " + state.g.n + " approve")),
+    el("div", { class: "seat-grid" }, seatIds().map(seatTile)),
+    testing);
 }
 
 function seatTile(i) {
@@ -1001,86 +1161,124 @@ function seatTile(i) {
   const st = seatStage(i);
   return el("div", { class: "seat" + (mine ? " mine" : "") + (s ? "" : " open") },
     el("div", { style: "display:flex;align-items:center;gap:10px;min-width:0" }, avatar(i),
-      el("div", { style: "display:grid;min-width:0" }, el("span", { class: "ri-title", style: "overflow:hidden;text-overflow:ellipsis;white-space:nowrap" }, seatLabel(i)), el("span", { class: "ri-sub" }, "Seat " + i))),
-    s ? el("span", { class: "badge " + (st === 5 ? "ok" : "info") }, st === 5 ? "Ready" : STAGE_LABEL[st]) : null,
-    !s ? el("button", { type: "button", class: "btn sm " + (localSeats().length ? "" : "primary"), disabled: !Z || canWrite === false, onclick: act(() => takeSeat(i)) }, localSeats().length ? "Also play this seat" : "Take this seat") : null,
+      el("div", { style: "display:grid;min-width:0" }, el("span", { class: "ri-title nowrap" }, seatLabel(i)), el("span", { class: "ri-sub" }, "Seat " + i))),
+    el("span", { class: "badge " + (st === 5 ? "ok" : s ? "info" : "plain") }, STAGE_LABEL[st]),
     elsewhere ? el("span", { class: "small faint" }, "Yours, in another browser") : null);
 }
 
 // ── Overview ──
 function overviewTab() {
-  const w = state.wallet, c = curChain(), b = c && c.bal;
+  const c = curChain(), list = activity(), pend = toApprove(state.gid);
   return el("div", { class: "page", style: "gap:16px" },
-    el("div", { class: "grid-ov" },
-      el("section", { class: "card card-pad balance" },
-        el("span", { class: "label" }, "Balance"),
-        b ? money(b.spendable + b.pending, "xl") : el("span", { class: "money xl faint" }, "—"),
-        el("div", { class: "stats" },
-          el("div", {}, el("span", { class: "label" }, "Available"), b ? money(b.spendable) : el("span", { class: "faint" }, "…")),
-          el("div", {}, el("span", { class: "label" }, "Incoming"), b ? money(b.pending) : el("span", { class: "faint" }, "…"))),
-        syncLine(c)),
-      el("section", { class: "card card-pad" },
-        el("div", { class: "card-head" }, el("h2", {}, "Receive"), el("span", { class: "badge ok plain" }, "Private address")),
-        el("p", { class: "small muted" }, "Share this address to receive testnet ZEC. Payments to it are shielded."),
-        el("div", { class: "addr-box" }, el("span", { class: "hex" }, short(w.address, 18)), copyBtn(w.address)),
-        el("p", { class: "small faint" }, verifiedCount() + " of " + state.g.n + " members checked this address against their own key."))),
+    pend.length ? approvalsCard(pend) : null,
+    el("div", { class: "grid-ov" }, balanceCard(c), receiveCard()),
     el("section", { class: "card" },
-      el("div", { class: "card-head card-pad", style: "padding-bottom:12px" }, el("h2", {}, "Recent payments"),
-        state.sessions.length > 5 ? el("button", { class: "btn ghost sm", type: "button", onclick: () => { ui.tab = "payments"; render(); } }, "View all") : null),
-      paymentRows(state.sessions.slice(0, 5))));
+      el("div", { class: "card-head card-pad", style: "padding-bottom:12px" }, el("h2", {}, "Activity"),
+        list.length > 6 ? el("button", { class: "btn ghost sm", type: "button", onclick: () => { ui.tab = "activity"; render(); } }, "View all") : null),
+      activityRows(list.slice(0, 6))));
+}
+
+function approvalsCard(list) {
+  return el("section", { class: "card attention" },
+    el("div", { class: "card-head card-pad", style: "padding-bottom:12px" },
+      el("h2", {}, list.length === 1 ? "A payment needs your approval" : list.length + " payments need your approval")),
+    el("div", { class: "list" }, list.map((ss) => el("button", { class: "row-item", type: "button", onclick: () => openSession(ss.id) },
+      el("span", { class: "tx-ico out", "aria-hidden": "true" }, "↗"),
+      el("span", { class: "ri-main" }, el("span", { class: "ri-title" }, payTitle(ss)), el("span", { class: "ri-sub" }, "Proposed by " + proposer(ss) + " · " + when(ss.createdAt))),
+      el("span", { class: "ri-end" }, money(ss.amount, "md", "out")),
+      el("span", { class: "btn sm primary", "aria-hidden": "true" }, "Review")))));
+}
+
+function balanceCard(c) {
+  const b = c && c.bal, empty = b && b.spendable + b.pending === 0;
+  return el("section", { class: "card card-pad balance" },
+    el("span", { class: "label" }, "Balance"),
+    b ? money(b.spendable + b.pending, "xl") : el("span", { class: "money xl faint" }, "—"),
+    el("div", { class: "stats" },
+      el("div", {}, el("span", { class: "label" }, "Available"), b ? money(b.spendable) : el("span", { class: "faint" }, "…")),
+      el("div", {}, el("span", { class: "label" }, "Incoming"), b ? money(b.pending) : el("span", { class: "faint" }, "…"))),
+    empty ? el("div", { class: "callout" }, el("span", {}, "This wallet is empty. Share its address to receive ZEC, or get free testnet ZEC from a ",
+      el("a", { href: FAUCET, target: "_blank", rel: "noopener" }, "faucet ↗"), ".")) : null,
+    syncLine(c));
+}
+
+function receiveCard() {
+  const w = state.wallet;
+  return el("section", { class: "card card-pad" },
+    el("div", { class: "card-head" }, el("h2", {}, "Receive"), el("span", { class: "badge ok plain" }, "Private address")),
+    el("p", { class: "small muted" }, "Share this address to receive testnet ZEC. Payments to it are shielded."),
+    el("div", { class: "addr-box" }, el("span", { class: "hex" }, short(w.address, 18)), copyBtn(w.address)),
+    el("p", { class: "small faint" }, verifiedCount() + " of " + state.g.n + " members checked this address against their own key."));
 }
 
 function syncLine(c) {
   if (!c) return el("div", { class: "sync" }, el("span", {}, el("span", { class: "dot" }), "Sync starts after your seat checks the address."));
   const p = c.prog || c.bal;
   const pct = p && p.tip > state.wallet.birthday ? Math.max(0, Math.min(100, ((p.height - state.wallet.birthday) / (p.tip - state.wallet.birthday)) * 100)) : 0;
+  const text = c.error ? "Sync failed" : c.syncing ? (c.prog ? "Syncing · " + Math.floor(pct) + "%" : "Connecting to the network…") : p ? "Up to date · block " + p.height.toLocaleString() : "Not synced";
   return el("div", { style: "display:grid;gap:8px" },
     c.syncing && c.prog ? el("div", { class: "progress" }, el("i", { style: "width:" + pct.toFixed(1) + "%" })) : null,
     el("div", { class: "sync" },
-      el("span", {}, el("span", { class: "dot " + (c.error ? "bad" : c.syncing ? "busy" : "ok") }),
-        c.error ? "Sync failed" : c.syncing ? (p ? "Syncing · block " + p.height.toLocaleString() + " of " + p.tip.toLocaleString() : "Starting sync…") : p ? "Up to date · block " + p.height.toLocaleString() : "Not synced"),
+      el("span", {}, el("span", { class: "dot " + (c.error ? "bad" : c.syncing ? "busy" : "ok") }), text),
       el("button", { class: "btn ghost sm", type: "button", disabled: c.syncing, onclick: act(() => runSync(c)) }, c.syncing ? "Syncing…" : "Refresh")),
     c.error ? el("div", { class: "callout bad" }, c.error) : null);
 }
 
-function paymentRows(list) {
-  if (!list.length) return el("div", { class: "empty", style: "border-top:1px solid var(--line)" }, el("h3", {}, "No payments yet"), el("p", { class: "small" }, "Click Send to propose the first one. It goes out once enough members approve."));
-  return el("div", { class: "list", style: "border-top:1px solid var(--line)" }, list.map((s) => el("button", {
-    class: "row-item", type: "button", "aria-current": s.id === state.sid ? "true" : "false", onclick: () => openSession(s.id),
-  },
-    el("span", { class: "tx-ico", "aria-hidden": "true" }, "↗"),
-    el("span", { class: "ri-main" }, el("span", { class: "ri-title" }, "Payment"), el("span", { class: "ri-sub" }, "Proposed by " + (s.createdBy === me ? "you" : seatNameOf(s.createdBy)) + " · " + when(s.createdAt))),
-    el("span", { style: "display:grid;gap:4px;justify-items:end" }, money(s.amount), statusChip(s)),
-    el("span", { class: "chev" }, "›"))));
+// Received payments carry only a block height; estimate a time so they sort among proposals.
+function activity() {
+  const c = curChain(), tip = c && c.bal ? c.bal.height : 0;
+  const sent = state.sessions.map((ss) => ({ t: ss.createdAt || 0, ss }));
+  const got = (c && c.received || []).map((r) => ({ t: Date.now() - Math.max(0, tip - r.height) * BLOCK_SECONDS * 1000, r }));
+  return [...sent, ...got].sort((a, b) => b.t - a.t);
 }
 
-// ── Payments ──
-function paymentsTab() {
-  if (!state.sessions.length) return el("section", { class: "card" }, paymentRows([]));
-  return el("section", { class: "card scroll" }, el("table", { class: "table" },
-    el("thead", {}, el("tr", {}, el("th", {}, "Date"), el("th", { class: "hide-sm" }, "Proposed by"), el("th", {}, "Status"), el("th", { class: "num" }, "Amount"), el("th", { class: "num hide-sm" }, "Fee"))),
-    el("tbody", {}, state.sessions.map((s) => el("tr", { tabindex: "0", onclick: () => openSession(s.id), onkeydown: (e) => { if (e.key === "Enter") openSession(s.id); } },
-      el("td", {}, when(s.createdAt)),
-      el("td", { class: "hide-sm muted" }, s.createdBy === me ? "You" : seatNameOf(s.createdBy)),
-      el("td", {}, statusChip(s)),
-      el("td", { class: "num" }, money(s.amount)),
-      el("td", { class: "num hide-sm muted mono" }, ((s.fee || 0) / 1e8).toFixed(4)))))));
+function activityRows(list) {
+  if (!list.length) return el("div", { class: "empty", style: "border-top:1px solid var(--line)" }, el("h3", {}, "No activity yet"),
+    el("p", { class: "small" }, "Money you receive and payments your group proposes show up here."));
+  return el("div", { class: "list", style: "border-top:1px solid var(--line)" }, list.map((a) => a.ss ? sentRow(a.ss) : receivedRow(a.r)));
+}
+
+function sentRow(ss) {
+  return el("button", { class: "row-item", type: "button", "aria-current": ss.id === state.sid ? "true" : "false", onclick: () => openSession(ss.id) },
+    el("span", { class: "tx-ico out", "aria-hidden": "true" }, "↗"),
+    el("span", { class: "ri-main" }, el("span", { class: "ri-title" }, payTitle(ss)), el("span", { class: "ri-sub" }, "Proposed by " + proposer(ss) + " · " + when(ss.createdAt))),
+    el("span", { class: "ri-end" }, money(ss.amount, "md", "out"), needsMyApproval(state.gid, ss) ? el("span", { class: "badge warn" }, "Your approval") : statusChip(ss)),
+    el("span", { class: "chev" }, "›"));
+}
+
+function receivedRow(r) {
+  return el("a", { class: "row-item", href: EXPLORER_TX + r.txid, target: "_blank", rel: "noopener", title: "View in explorer" },
+    el("span", { class: "tx-ico in", "aria-hidden": "true" }, "↙"),
+    el("span", { class: "ri-main" }, el("span", { class: "ri-title" }, "Received"), el("span", { class: "ri-sub" }, "Block " + r.height.toLocaleString())),
+    el("span", { class: "ri-end" }, money(r.value, "md", "in"), el("span", { class: "badge " + (r.confirmed ? "ok" : "info") }, r.confirmed ? "Confirmed" : "Confirming")),
+    el("span", { class: "chev" }, "↗"));
+}
+
+// ── Activity ──
+function activityTab() {
+  return el("section", { class: "card" }, el("div", { class: "card-head card-pad", style: "padding-bottom:12px" }, el("h2", {}, "All activity")), activityRows(activity()));
 }
 
 // ── Members ──
 function membersTab() {
-  return el("section", { class: "card" },
-    el("div", { class: "card-pad", style: "padding-bottom:14px" }, el("div", { class: "card-head" }, el("h2", {}, "Members"), el("span", { class: "small muted" }, "Any " + state.g.t + " of " + state.g.n + " can approve a payment"))),
-    el("div", { style: "border-top:1px solid var(--line)" }, seatIds().map((i) => {
-      const s = state.seats[i], mine = s && s.uid === me && sec(state.gid, i), v = state.verify[i];
-      return el("div", { class: "member" }, avatar(i, "lg"),
-        el("div", { class: "ri-main" }, el("span", { class: "ri-title" }, s ? (s.uid === me ? (s.name || "You") : s.name || "Member " + i) : "Open seat", mine ? el("span", { class: "you" }, "You") : null),
-          el("span", { class: "ri-sub" }, "Seat " + i + (s ? " · joined " + when(s.at) : ""))),
-        el("div", { class: "m-actions" },
-          v ? el("span", { class: "badge " + (v.ok ? "ok" : "bad") }, v.ok ? "Address checked" : "Rejected address") : el("span", { class: "badge" }, s ? STAGE_LABEL[seatStage(i)] : "Waiting"),
-          mine && sec(state.gid, i).keyPackage ? el("button", { class: "btn sm", type: "button", onclick: act(() => backup(i)) }, "Back up key") : null,
-          !s ? el("button", { class: "btn sm primary", type: "button", disabled: !Z || canWrite === false, onclick: act(() => takeSeat(i)) }, "Take seat") : null));
-    })));
+  return el("div", { class: "page", style: "gap:16px" },
+    el("section", { class: "card" },
+      el("div", { class: "card-pad", style: "padding-bottom:14px" }, el("div", { class: "card-head" }, el("h2", {}, "Members"), el("span", { class: "small muted" }, "Any " + state.g.t + " of " + state.g.n + " can approve a payment"))),
+      el("div", { style: "border-top:1px solid var(--line)" }, seatIds().map(memberRow))),
+    el("section", { class: "card card-pad" },
+      el("h2", { style: "font-size:15px" }, "Wallet link"),
+      el("p", { class: "small muted" }, "Members open this wallet on another device with this link and their key backup. The link contains the wallet's secret, so share it only with members."),
+      el("div", { class: "addr-box" }, el("span", { class: "hex nowrap" }, inviteLink(state.gid)), copyBtn(inviteLink(state.gid), "Copy link"))));
+}
+
+function memberRow(i) {
+  const s = state.seats[i], mine = s && s.uid === me && sec(state.gid, i), v = state.verify[i];
+  return el("div", { class: "member" }, avatar(i, "lg"),
+    el("div", { class: "ri-main" }, el("span", { class: "ri-title" }, s ? (s.uid === me ? (s.name || "You") : s.name || "Member " + i) : "Open seat", mine ? el("span", { class: "you" }, "You") : null),
+      el("span", { class: "ri-sub" }, "Seat " + i + (s ? " · joined " + when(s.at) : ""))),
+    el("div", { class: "m-actions" },
+      v ? el("span", { class: "badge " + (v.ok ? "ok" : "bad") }, v.ok ? "Address checked" : "Rejected address") : el("span", { class: "badge" }, STAGE_LABEL[seatStage(i)]),
+      mine && sec(state.gid, i).keyPackage ? el("button", { class: "btn sm", type: "button", onclick: act(() => backup(i)) }, "Back up key") : null));
 }
 
 // ── Details ──
@@ -1104,28 +1302,53 @@ function detailsTab() {
       state.log.length ? el("details", {}, el("summary", {}, "Activity in this browser"), el("div", { class: "log" }, state.log.join("\n"))) : null));
 }
 
+// ── Receive ──
+function receiveDialog() {
+  const w = state.wallet;
+  return el("div", { class: "dialog", role: "dialog", "aria-modal": "true", "aria-labelledby": "recv-title" },
+    el("div", { class: "card-head" }, el("h2", { id: "recv-title" }, "Receive ZEC"), el("button", { class: "icon-btn", type: "button", "aria-label": "Close", onclick: () => { ui.receive = false; render(); } }, "×")),
+    el("p", { class: "small muted" }, "Send testnet ZEC to this shielded address. Senders and the network cannot see the balance or who controls it."),
+    el("div", { class: "addr-full" }, w.address),
+    el("div", { class: "dialog-actions", style: "justify-content:space-between" },
+      el("a", { class: "btn ghost", href: FAUCET, target: "_blank", rel: "noopener" }, "Get testnet ZEC ↗"),
+      copyBtn(w.address, "Copy address", "btn primary")));
+}
+
 // ── Send ──
 function sendDialog() {
   const c = curChain(), spendable = c && c.bal ? c.bal.spendable : 0;
+  const hint = el("span", { class: "hint", id: "s-to-hint" });
+  const total = el("span", { id: "s-total" }, money(FEE_ESTIMATE));
+  const checkTo = (ev) => {
+    const v = ev.target.value.trim();
+    const ok = v ? normalized(v) : null;
+    hint.textContent = !v ? "" : ok ? "Valid testnet address" : "Not a testnet unified address with an Orchard receiver";
+    hint.className = "hint " + (!v ? "" : ok ? "ok" : "bad");
+  };
+  const sumUp = (ev) => total.replaceChildren(money(Math.round((Number(ev.target.value) || 0) * 1e8) + FEE_ESTIMATE));
   const f = el("form", { class: "dialog", role: "dialog", "aria-modal": "true", "aria-labelledby": "send-title", onsubmit: act(async (ev) => {
     const fd = new FormData(ev.target);
-    const amt = Math.round(Number(fd.get("amount")) * 1e8);
+    const amt = Math.round(Number(fd.get("amount")) * 1e8), to = String(fd.get("recipient")).trim();
+    if (!normalized(to)) throw new Error("Enter a testnet unified address with an Orchard receiver (it starts with utest1).");
     if (!(amt > 0)) throw new Error("Enter an amount greater than zero.");
     if (amt + FEE_ESTIMATE > spendable) throw new Error("Not enough funds: " + fmtZec(spendable) + " available, " + fmtZec(amt + FEE_ESTIMATE) + " needed (amount + fee).");
-    await newSpend(String(fd.get("recipient")).trim(), amt);
+    await newSpend(to, amt, String(fd.get("note") || "").trim());
     ui.send = false;
   }) },
     el("div", { class: "card-head" }, el("h2", { id: "send-title" }, "Send ZEC"), el("button", { class: "icon-btn", type: "button", "aria-label": "Close", onclick: () => { ui.send = false; render(); } }, "×")),
-    el("label", { class: "field" }, el("span", {}, "To"), el("input", { class: "input mono", id: "s-to", name: "recipient", type: "text", placeholder: "utest1…", required: true, autocomplete: "off", spellcheck: "false" })),
+    el("label", { class: "field" }, el("span", {}, "To"), el("input", { class: "input mono", id: "s-to", name: "recipient", type: "text", placeholder: "utest1…", required: true, autocomplete: "off", spellcheck: "false", oninput: checkTo }), hint),
     el("label", { class: "field" }, el("span", {}, "Amount"),
       el("div", { class: "input-wrap" },
-        el("input", { class: "input", id: "s-amt", name: "amount", type: "number", step: "0.0001", min: "0.0001", placeholder: "0.00", required: true }),
-        el("button", { class: "btn sm", type: "button", onclick: () => { const i = document.getElementById("s-amt"); i.value = Math.max(0, (spendable - FEE_ESTIMATE) / 1e8).toFixed(8).replace(/0+$/, "").replace(/\.$/, ""); } }, "Max"))),
+        el("input", { class: "input", id: "s-amt", name: "amount", type: "number", step: "0.0001", min: "0.0001", placeholder: "0.00", required: true, oninput: sumUp }),
+        el("button", { class: "btn sm", type: "button", onclick: () => { const i = document.getElementById("s-amt"); i.value = Math.max(0, (spendable - FEE_ESTIMATE) / 1e8).toFixed(8).replace(/0+$/, "").replace(/\.$/, ""); i.dispatchEvent(new Event("input", { bubbles: true })); } }, "Max"))),
+    el("label", { class: "field" }, el("span", {}, "Note for co-signers (optional)"),
+      el("input", { class: "input", id: "s-note", name: "note", type: "text", maxlength: "80", placeholder: "Pay the audit firm", autocomplete: "off" }),
+      el("span", { class: "hint" }, "Encrypted. Only members of this wallet can read it.")),
     el("div", { class: "summary" },
       el("div", {}, el("span", { class: "muted" }, "Available"), money(spendable)),
       el("div", {}, el("span", { class: "muted" }, "Network fee (estimate)"), money(FEE_ESTIMATE)),
+      el("div", { class: "total" }, el("span", {}, "Total leaving the wallet"), total),
       el("div", {}, el("span", { class: "muted" }, "Approvals needed"), el("span", {}, state.g.t + " of " + state.g.n))),
-    el("div", { class: "callout" }, "This creates a proposal. Nothing is sent until " + state.g.t + " members approve it on their own devices."),
     el("div", { class: "dialog-actions" },
       el("button", { class: "btn", type: "button", onclick: () => { ui.send = false; render(); } }, "Cancel"),
       el("button", { class: "btn primary", type: "submit", disabled: !myVerified() || !Z || !c || !c.bal }, "Propose payment")));
@@ -1135,65 +1358,114 @@ function sendDialog() {
 // ── Payment drawer ──
 // A prover that closed its tab leaves status "proving"; let someone else take over.
 const proofStalled = (ss) => Date.now() - (ss.provingAt || 0) > 180000;
-const lineRank = (l) => l.kind === "spend" ? 0 : l.who === "external recipient" ? 1 : 2;
 
-function sessionDrawer(ss) {
-  const g = state.g;
+function inspectOf(ss) {
   let ins = inspectCache.get(ss.id);
   if (!ins && Z) { try { ins = J(Z.inspect(ss.pczt, state.wallet.orchard_fvk)); } catch (e) { ins = { error: e.message || String(e) }; } inspectCache.set(ss.id, ins); }
-  const approvals = Object.keys(state.commits).map(Number).sort((a, b) => a - b);
+  return ins;
+}
+
+// The decoded recipient is the truth; the typed address only helps people recognise it.
+function recipientCheck(ss, ins) {
+  const payee = ins && !ins.error ? ins.lines.find(isPayee) : null;
+  if (!payee) return { payee: null, match: null };
+  return { payee, match: ss.to ? normalized(ss.to) === payee.who : null };
+}
+
+function recipientBox(ss, rc) {
+  if (!rc.payee) return null;
+  const badge = rc.match === null ? el("span", { class: "small faint" }, "Decoded from the transaction")
+    : el("span", { class: "badge " + (rc.match ? "ok" : "bad") }, rc.match ? "Matches the transaction" : "Does not match the transaction");
+  return el("div", { class: "to-box" },
+    el("div", { class: "card-head" }, el("span", { class: "label" }, "To"), badge),
+    el("div", { class: "hex" }, ss.to || rc.payee.who),
+    rc.match === false ? el("div", { class: "callout bad" }, "The transaction pays " + short(rc.payee.who, 12) + ", not the address the proposer typed. Do not approve it.") : null);
+}
+
+function nextAction(ss, ins, rc) {
   const myPending = localSeats().filter((i) => sec(state.gid, i).keyPackage && !state.commits[i] && !ss.package);
-  const signers = ss.signers || [], shared = signers.filter((i) => state.shares[i]).length;
-  const refused = ins && ins.error;
-  const tl = (cls, title, body) => el("div", { class: "step " + cls }, el("span", { class: "tick" }, cls === "done" ? "✓" : cls === "bad" ? "!" : "•"), el("div", { style: "display:grid;gap:6px;min-width:0" }, el("h3", {}, title), body));
-  const canProve = ss.signed && !ss.final && (ss.status !== "proving" || proofStalled(ss));
+  const canApprove = myPending.length && !(ins && ins.error) && rc.match !== false;
+  if (canApprove) return myPending.map((i) => el("button", { class: "btn primary lg", type: "button", onclick: act(() => approve(ss, i)) }, localSeats().length > 1 ? "Approve as seat " + i : "Approve payment"));
+  if (ss.signed && !ss.final && (ss.status !== "proving" || proofStalled(ss))) return [el("button", { class: "btn primary lg", type: "button", onclick: act(() => finalizeTx(ss)) }, "Build proof")];
+  if (ss.final && !ss.broadcastTxid) return [el("button", { class: "btn primary lg", type: "button", disabled: !curChain(), onclick: act(() => broadcastTx(ss)) }, ss.broadcastError ? "Send again" : "Send to network")];
+  return [];
+}
+
+function sessionDrawer(ss) {
+  const ins = inspectOf(ss), refused = ins && ins.error, rc = recipientCheck(ss, ins);
+  const actions = nextAction(ss, ins, rc);
   return el("aside", { class: "drawer", role: "dialog", "aria-modal": "true", "aria-label": "Payment details" },
-    el("div", { class: "drawer-head" }, el("div", { style: "display:flex;align-items:center;gap:10px" }, el("h2", { style: "font-size:15px" }, "Payment"), statusChip(ss)),
+    el("div", { class: "drawer-head" }, el("div", { style: "display:flex;align-items:center;gap:10px;min-width:0" }, el("h2", { class: "nowrap", style: "font-size:15px" }, payTitle(ss)), statusChip(ss)),
       el("button", { class: "icon-btn", type: "button", "aria-label": "Close", onclick: () => { closeSession(); render(); } }, "×")),
     el("div", { class: "drawer-body" },
-      el("div", { style: "display:grid;gap:6px" }, money(ss.amount, "lg"),
-        el("span", { class: "small muted" }, "Proposed by " + (ss.createdBy === me ? "you" : seatNameOf(ss.createdBy)) + " · " + when(ss.createdAt))),
+      el("div", { style: "display:grid;gap:6px" }, money(ss.amount, "lg", "out"),
+        el("span", { class: "small muted" }, "Proposed by " + proposer(ss) + " · " + when(ss.createdAt))),
       refused ? el("div", { class: "callout bad" }, "Your browser refuses this payment: " + ins.error) : null,
-      ins && !refused ? el("div", { style: "display:grid;gap:8px" },
-        el("span", { class: "label" }, "What this payment does"),
-        el("div", { class: "lines" },
-          [...ins.lines].sort((a, b) => lineRank(a) - lineRank(b)).map((l) => el("div", {}, el("span", { class: l.kind === "spend" ? "neg" : "" }, l.kind === "spend" ? "Uses funds from this wallet" : l.who === "external recipient" ? "Pays the recipient" : "Change back to this wallet"),
-            el("span", { class: "mono" + (l.kind === "spend" ? " neg" : "") }, (l.kind === "spend" ? "−" : "") + ((l.value || 0) / 1e8).toFixed(8)))),
-          el("div", {}, el("span", { class: "muted" }, "Network fee"), el("span", { class: "mono muted" }, ((ss.fee || 0) / 1e8).toFixed(8)))),
-        el("p", { class: "small faint" }, "Your browser decoded this from the transaction itself, not from the proposer's description.")) : null,
-      el("div", { class: "steps" },
-        tl("done", "Proposed", el("p", {}, when(ss.createdAt))),
-        tl(approvals.length >= g.t ? "done" : refused ? "bad" : "now", "Approvals · " + Math.min(approvals.length, g.t) + " of " + g.t,
-          el("div", { style: "display:grid;gap:10px" },
-            el("div", { style: "display:flex;align-items:center;gap:10px;flex-wrap:wrap" }, seatIds().map((i) => el("span", { style: "display:inline-flex;align-items:center;gap:6px;opacity:" + (state.commits[i] ? 1 : 0.45) }, avatar(i), el("span", { class: "small" }, seatLabel(i) + (state.commits[i] ? " ✓" : ""))))),
-            myPending.length && !refused ? el("div", { style: "display:flex;gap:8px;flex-wrap:wrap" }, myPending.map((i) => el("button", { class: "btn primary", type: "button", onclick: act(() => approve(ss, i)) }, localSeats().length > 1 ? "Approve as seat " + i : "Approve payment"))) : null)),
-        tl(ss.error ? "bad" : ss.signed ? "done" : ss.package ? "now" : "", "Group signature",
-          el("p", {}, ss.error ? ss.error : ss.signed ? "All signatures combined and verified." : ss.package ? "Signing · " + shared + " of " + signers.length + " shares" : "Starts after " + g.t + " approvals.")),
-        tl(ss.final ? "done" : ss.status === "proving" ? "now" : "", "Proof",
-          el("div", { style: "display:grid;gap:8px" },
-            el("p", {}, ss.final ? "Proof built and the whole transaction checked." : ss.status === "proving" && !proofStalled(ss) ? "A member's browser is building the proof. This takes about a minute." : "Any member can build the zero-knowledge proof once the payment is signed."),
-            canProve ? el("div", {}, el("button", { class: "btn primary", type: "button", onclick: act(() => finalizeTx(ss)) }, "Build proof")) : null)),
-        tl(ss.broadcastTxid ? "done" : ss.broadcastError ? "bad" : ss.final ? "now" : "", "Sent to the network",
-          el("div", { style: "display:grid;gap:8px" },
-            ss.broadcastTxid ? el("p", {}, when(ss.broadcastAt) + " · ", el("a", { href: EXPLORER_TX + ss.broadcastTxid, target: "_blank", rel: "noopener" }, "View in explorer ↗"))
-              : el("p", {}, ss.final ? "Any member can send the finished transaction." : "Available after the proof."),
-            ss.broadcastError && !ss.broadcastTxid ? el("div", { class: "callout bad" }, ss.broadcastError) : null,
-            ss.final && !ss.broadcastTxid ? el("div", {}, el("button", { class: "btn primary", type: "button", disabled: !curChain(), onclick: act(() => broadcastTx(ss)) }, ss.broadcastError ? "Send again" : "Send to network")) : null))),
-      ss.final ? el("div", { style: "display:grid;gap:10px" },
-        el("span", { class: "label" }, "Transaction"),
-        el("dl", { class: "kv", style: "grid-template-columns:110px minmax(0,1fr)" },
-          el("dt", {}, "ID"), el("dd", { class: "hex" }, ss.final.txid),
-          el("dt", {}, "Size"), el("dd", {}, ss.final.size.toLocaleString() + " bytes")),
-        el("details", {}, el("summary", {}, "Raw transaction"), el("div", { class: "log" }, ss.final.tx_hex), el("div", { style: "margin-top:8px" }, copyBtn(ss.final.tx_hex, "Copy hex")))) : null,
-      ins && !refused ? el("p", { class: "small faint" }, "Signed message " + short(ins.sighash, 12) + " · " + ins.tx_version) : null));
+      recipientBox(ss, rc),
+      ins && !refused ? breakdown(ss, ins) : null,
+      timeline(ss, refused),
+      ss.final ? txDetails(ss) : null,
+      ins && !refused ? el("p", { class: "small faint" }, "Signed message " + short(ins.sighash, 12) + " · " + ins.tx_version) : null),
+    actions.length ? el("div", { class: "drawer-foot" }, ...actions) : null);
+}
+
+function breakdown(ss, ins) {
+  const label = (l) => l.kind === "spend" ? "From this wallet" : isPayee(l) ? "To " + short(l.who, 10) : "Change back to this wallet";
+  return el("div", { style: "display:grid;gap:8px" },
+    el("span", { class: "label" }, "What this payment does"),
+    el("div", { class: "lines" },
+      [...ins.lines].sort((a, b) => lineRank(a) - lineRank(b)).map((l) => el("div", {}, el("span", { class: l.kind === "spend" ? "neg" : "" }, label(l)),
+        el("span", { class: "mono" + (l.kind === "spend" ? " neg" : "") }, (l.kind === "spend" ? "−" : "") + ((l.value || 0) / 1e8).toFixed(8)))),
+      el("div", {}, el("span", { class: "muted" }, "Network fee"), el("span", { class: "mono muted" }, ((ss.fee || 0) / 1e8).toFixed(8)))),
+    el("p", { class: "small faint" }, "Your browser decoded this from the transaction itself, not from the proposer's description."));
+}
+
+function timeline(ss, refused) {
+  const g = state.g, approvals = Object.keys(state.commits).length;
+  const signers = ss.signers || [], shared = signers.filter((i) => state.shares[i]).length;
+  const tl = (cls, title, body) => el("div", { class: "step " + cls }, el("span", { class: "tick" }, cls === "done" ? "✓" : cls === "bad" ? "!" : "•"), el("div", { style: "display:grid;gap:6px;min-width:0" }, el("h3", {}, title), body));
+  return el("div", { class: "steps" },
+    tl("done", "Proposed", el("p", {}, when(ss.createdAt))),
+    tl(approvals >= g.t ? "done" : refused ? "bad" : "now", "Approvals · " + Math.min(approvals, g.t) + " of " + g.t,
+      el("div", { style: "display:flex;align-items:center;gap:10px;flex-wrap:wrap" }, seatIds().map((i) => el("span", { class: "approver" + (state.commits[i] ? " yes" : "") }, avatar(i), el("span", { class: "small" }, seatLabel(i) + (state.commits[i] ? " ✓" : "")))))),
+    tl(ss.error ? "bad" : ss.signed ? "done" : ss.package ? "now" : "", "Group signature",
+      el("p", {}, ss.error ? ss.error : ss.signed ? "All signatures combined and verified." : ss.package ? "Signing · " + shared + " of " + signers.length + " shares" : "Starts after " + g.t + " approvals.")),
+    tl(ss.final ? "done" : ss.status === "proving" ? "now" : "", "Proof",
+      el("p", {}, ss.final ? "Proof built and the whole transaction checked." : ss.status === "proving" && !proofStalled(ss) ? "A member's browser is building the proof. This takes about a minute." : "Any member can build the zero-knowledge proof once the payment is signed.")),
+    tl(ss.broadcastTxid ? "done" : ss.broadcastError ? "bad" : ss.final ? "now" : "", "Sent to the network",
+      el("div", { style: "display:grid;gap:8px" },
+        ss.broadcastTxid ? el("p", {}, when(ss.broadcastAt) + " · ", el("a", { href: EXPLORER_TX + ss.broadcastTxid, target: "_blank", rel: "noopener" }, "View in explorer ↗"))
+          : el("p", {}, ss.final ? "Any member can send the finished transaction." : "Available after the proof."),
+        ss.broadcastError && !ss.broadcastTxid ? el("div", { class: "callout bad" }, ss.broadcastError) : null)));
+}
+
+function txDetails(ss) {
+  return el("div", { style: "display:grid;gap:10px" },
+    el("span", { class: "label" }, "Transaction"),
+    el("dl", { class: "kv", style: "grid-template-columns:110px minmax(0,1fr)" },
+      el("dt", {}, "ID"), el("dd", { class: "hex" }, ss.final.txid),
+      el("dt", {}, "Size"), el("dd", {}, ss.final.size.toLocaleString() + " bytes")),
+    el("details", {}, el("summary", {}, "Raw transaction"), el("div", { class: "log" }, ss.final.tx_hex), el("div", { style: "margin-top:8px" }, copyBtn(ss.final.tx_hex, "Copy hex"))));
 }
 
 document.getElementById("banner").addEventListener("click", (ev) => { ev.currentTarget.hidden = true; });
 document.addEventListener("keydown", (ev) => {
   if (ev.key !== "Escape") return;
-  if (state.sid) closeSession(); else { ui.send = false; ui.create = false; }
+  if (state.sid) closeSession(); else { ui.send = false; ui.create = false; ui.receive = false; }
   render();
 });
+
+// Back, forward and pasted invite links change only the fragment; follow them.
+window.addEventListener("hashchange", () => {
+  adoptInviteKey();
+  const gid = location.hash.slice(1).split(".")[0] || null;
+  if (gid === state.gid) return;
+  if (gid && !gkeys[gid]) { showBanner("bad", "This link is missing its key. Ask for the full invite link."); return; }
+  ui.tab = "overview";
+  openGroup(gid);
+});
+// New blocks every 25 s: refresh the open wallet once a minute while someone looks at it.
+setInterval(() => { const c = curChain(); if (c && !c.syncing && document.visibilityState === "visible") runSync(c); }, 60000);
 
 adoptInviteKey();
 loadEngine().then(boot);
