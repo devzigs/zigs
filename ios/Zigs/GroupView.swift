@@ -38,15 +38,19 @@ struct GroupView: View {
         }
         .background(Color.night)
         .navigationTitle(st.name)
-        .inlineTitle()
         .refreshable { await model.chain?.sync() }
         .safeAreaInset(edge: .bottom) {
             if st.ready {
+                VStack(spacing: 6) {
                 HStack(spacing: 12) {
                     Button { sheet = .receive } label: { Label("Receive", systemImage: "arrow.down").frame(maxWidth: .infinity) }
                         .buttonStyle(.bordered).controlSize(.large)
                     Button { sheet = .send } label: { Label("Send", systemImage: "arrow.up").frame(maxWidth: .infinity) }
                         .primaryButton().disabled(model.sendBlocker != nil)
+                }
+                if let why = model.sendBlocker {
+                    Text(why).font(.caption).foregroundStyle(Color.mist).frame(maxWidth: .infinity, alignment: .leading)
+                }
                 }
                 .padding(.horizontal, 16).padding(.vertical, 10)
                 .background(.ultraThinMaterial)
@@ -76,10 +80,9 @@ struct Header: View {
     var body: some View {
         let st = model.state
         VStack(alignment: .leading, spacing: 8) {
-            Text(st.name).font(.largeTitle.weight(.bold))
             HStack(spacing: 8) {
                 Badge(text: st.net.label, kind: st.net.cap == nil ? .plain : .bad)
-                Badge(text: "\(st.t) of \(st.n) signers must approve", kind: .warn)
+                Badge(text: "\(st.t) of \(st.n) signers must approve")
                     .popoverTip(RuleTip())
                 HStack(spacing: -8) {
                     ForEach(st.seatIds, id: \.self) { i in SeatAvatar(i: i, size: 24) }
@@ -118,7 +121,7 @@ struct SetupView: View {
             if model.localSeats.isEmpty, let first = open.first {
                 Card(highlight: true) {
                     Text("Join \(st.name)").font(.title3.weight(.semibold))
-                    Text("Take a seat to become a signer. Your iPhone creates its own piece of the wallet key; it never leaves this device.")
+                    Text("Take a seat to become a signer. Your \(deviceName) creates its own key share, and the share never leaves this device.")
                         .font(.subheadline).foregroundStyle(Color.mist)
                     Button("Take seat \(first)") { model.takeSeat(first) }.primaryButton()
                 }
@@ -189,7 +192,7 @@ struct ProgressCard: View {
         let rejected = st.rejectedSeats
         let addrText = !rejected.isEmpty ? "Seat \(rejected.map(String.init).joined(separator: ", ")) rejected the address. Do not use this wallet."
             : st.wallet == nil ? (d == n ? "Building the shared address…" : "Comes after the key.")
-            : "\(ver) of \(n) signers checked that the address belongs to the group key."
+            : "\(ver) of \(n) signers checked that the address belongs to the wallet's key."
         Card {
             Text("Setting up your wallet").font(.headline)
             Step(state: st.allSeated ? .done : .now, no: 1, title: "Signers join", text: "\(st.seatedCount) of \(n) seats taken.")
@@ -288,7 +291,7 @@ struct BalanceCard: View {
                 }
             }
             if let b, b.spendable + b.pending + b.sending == 0, model.state.movedTo == nil {
-                Text(model.state.net.cap.map { "This wallet is empty. Share its address to receive ZEC, \(capText($0)) at most in total." }
+                Text(model.state.net.cap.map { "This wallet is empty. Share its address to receive ZEC. At \(capText($0)) the app warns and hides the address." }
                      ?? "This wallet is empty. Share its address to receive ZEC, or get free testnet ZEC from a faucet.")
                     .font(.caption).foregroundStyle(Color.mist)
             }
@@ -419,7 +422,7 @@ struct ActivityList: View {
         let shown = limit.map { Array(items.prefix($0)) } ?? items
         let list = VStack(spacing: 10) {
             if shown.isEmpty {
-                Text("Money you receive and payments your group proposes show up here.")
+                Text("Money you receive and payments that signers propose show up here.")
                     .font(.subheadline).foregroundStyle(Color.mist).frame(maxWidth: .infinity, alignment: .leading)
             }
             ForEach(shown, id: \.id) { a in
@@ -450,7 +453,7 @@ func payTitle(_ ss: Session) -> String {
     let payees = ss.doc["payees"] as? [Doc] ?? []
     if let note = ss.doc.str("note") { return note }
     if payees.count > 1 { return "Payment to \(payees.count) recipients" }
-    return payees.first?.str("to").map { "Payment to \(short($0, 8))" } ?? "Payment"
+    return payees.first?.str("to").map { "Payment to \(short($0, 6))" } ?? "Payment"
 }
 
 /// Most recipients in one payment; the engine enforces the same limit.
@@ -589,7 +592,7 @@ struct SignersTab: View {
             if let gid = model.gid {
                 Card {
                     Text("Wallet link").font(.headline)
-                    Text("Signers open this wallet on another device with this link and their key backup. The link contains the wallet's secret, so share it only with signers.")
+                    Text("Send this link to signers so they can open the wallet. The link contains the wallet secret, so share it only with signers.")
                         .font(.subheadline).foregroundStyle(Color.mist)
                     CopyButton(text: model.inviteLink(gid), label: "Copy link").buttonStyle(.bordered)
                     DisclosureGroup("Show QR code", isExpanded: $showQR) {
@@ -617,7 +620,7 @@ struct DetailsTab: View {
                         Text("Shown after your seat checks it against your key share.")
                             .font(.caption).foregroundStyle(Color.mist)
                     } else {
-                        Text(w.str("address") ?? "").font(.caption.monospaced()).textSelection(.enabled)
+                        Text(grouped(w.str("address") ?? "")).font(.caption.monospaced())
                         CopyButton(text: w.str("address") ?? "", label: "Copy address").font(.subheadline)
                     }
                 }
@@ -629,7 +632,7 @@ struct DetailsTab: View {
             }
             Card {
                 Text("Privacy and keys").font(.headline)
-                Text("Your piece of the key is created and used on this iPhone only. The group server stores encrypted data it cannot read. This app downloads blocks from \(model.chain?.server?.host ?? "a light-wallet server"), which sees your IP address but never a key.")
+                Text("Your key share is created and used on this \(deviceName) only. The group server stores encrypted data it cannot read. This app downloads blocks from \(model.chain?.server?.host ?? "a light-wallet server"), which sees your IP address but never a key.")
                     .font(.subheadline).foregroundStyle(Color.mist)
                 DisclosureGroup("Viewing key") {
                     Text(w.str("ufvk") ?? "").font(.caption.monospaced()).textSelection(.enabled)
@@ -638,7 +641,7 @@ struct DetailsTab: View {
                 .font(.subheadline)
                 Text("The viewing key shows every payment of this wallet. Share it only with people who may see your balance.")
                     .font(.caption).foregroundStyle(Color.mist)
-                DisclosureGroup("Activity on this iPhone") {
+                DisclosureGroup("Activity on this \(deviceName)") {
                     ForEach(model.log, id: \.self) { Text($0).font(.caption2.monospaced()).foregroundStyle(Color.mist) }
                 }
                 .font(.subheadline)
@@ -690,10 +693,10 @@ struct ReceiveSheet: View {
                         Text("Your seat is still checking this address against your key share.")
                             .font(.subheadline).foregroundStyle(Color.mist)
                     } else {
-                        Text("Send \(net.cap.map { "up to \(capText($0)) in total" } ?? "testnet ZEC") to this shielded address. Senders and the network cannot see the balance or who controls it.")
+                        Text("Send \(net.cap.map { "ZEC (the app warns at \(capText($0)))" } ?? "testnet ZEC") to this shielded address. Senders and the network cannot see the balance or who controls it.")
                             .font(.subheadline).foregroundStyle(Color.mist)
                         QRCode(text: address).frame(maxWidth: 260)
-                        Text(address).font(.caption.monospaced()).textSelection(.enabled)
+                        Text(grouped(address)).font(.caption.monospaced())
                         HStack {
                             CopyButton(text: address, label: "Copy address").primaryButton()
                             ShareLink(item: address) { Label("Share", systemImage: "square.and.arrow.up") }.buttonStyle(.bordered).controlSize(.large)

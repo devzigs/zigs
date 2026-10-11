@@ -22,6 +22,20 @@ func zec(_ zat: Int?) -> String {
     return v.formatted(.number.precision(.fractionLength(2...8))) + " ZEC"
 }
 
+#if os(macOS)
+let deviceName = "Mac"
+#else
+let deviceName = "iPhone"
+#endif
+
+/// An address in groups of five characters, for reading by eye. Copy the plain address, not this.
+func grouped(_ s: String) -> String {
+    stride(from: 0, to: s.count, by: 5).map { i in
+        let a = s.index(s.startIndex, offsetBy: i), b = s.index(a, offsetBy: 5, limitedBy: s.endIndex) ?? s.endIndex
+        return String(s[a..<b])
+    }.joined(separator: " ")
+}
+
 func short(_ s: String, _ n: Int = 12) -> String {
     s.count > n * 2 ? "\(s.prefix(n))…\(s.suffix(n / 2))" : s
 }
@@ -61,7 +75,7 @@ struct Badge: View {
         case .plain: .mist
         case .ok: .good
         case .warn: .signal
-        case .info: .blue
+        case .info: Color(red: 0.54, green: 0.71, blue: 1.0)
         case .bad: .bad
         }
         Text(text)
@@ -100,6 +114,7 @@ struct Money: View {
             Text("ZEC").font(.system(size: size * 0.55, weight: .semibold)).foregroundStyle(Color.mist)
         }
         .foregroundStyle(sign == "in" ? Color.good : .white)
+        .accessibilityElement(children: .combine)
     }
 }
 
@@ -174,12 +189,18 @@ struct MacPrimaryStyle: ButtonStyle {
     }
 }
 
+/// Dark text on the yellow fill; readable grey text when the button is disabled.
+private struct ProminentText: ViewModifier {
+    @Environment(\.isEnabled) private var enabled
+    func body(content: Content) -> some View { content.foregroundStyle(enabled ? Color.night : Color.mist) }
+}
+
 extension View {
     func primaryButton() -> some View {
         #if os(macOS)
         buttonStyle(MacPrimaryStyle())
         #else
-        buttonStyle(.borderedProminent).foregroundStyle(Color.night).controlSize(.large)
+        buttonStyle(.borderedProminent).modifier(ProminentText()).controlSize(.large)
         #endif
     }
 

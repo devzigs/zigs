@@ -88,7 +88,7 @@ link, point the app at a light-wallet server you trust (`NETWORKS` in `web/index
 
 ## Use Zigs over Tor
 
-The web app is built to run in Tor Browser, so that neither server sees your IP address. A full
+The web app is prepared to run in Tor Browser, so that neither server sees your IP address. A full
 session in Tor Browser has not been tested yet.
 
 1. Set the security level to **Standard**. The Safer and Safest levels turn off WebAssembly, and

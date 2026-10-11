@@ -48,6 +48,10 @@ export default {
       const out = new Response(res.body, res);
       out.headers.set("Content-Security-Policy", policy(url));
       out.headers.set("X-Content-Type-Options", "nosniff");
+      // web/_headers covers the assets served without this Worker; the page needs them here.
+      out.headers.set("Strict-Transport-Security", "max-age=31536000; includeSubDomains");
+      out.headers.set("Referrer-Policy", "no-referrer");
+      out.headers.set("Permissions-Policy", "camera=(), microphone=(), geolocation=(), interest-cohort=()");
       return out;
     }
     return env.ASSETS.fetch(req);

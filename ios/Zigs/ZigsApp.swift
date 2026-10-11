@@ -126,7 +126,7 @@ struct WalletRow: View {
         HStack(spacing: 12) {
             Avatar(text: initials(g.name), size: 40)
             VStack(alignment: .leading, spacing: 3) {
-                Text(g.name).font(.headline).foregroundStyle(.white)
+                Text(g.name).font(.headline).foregroundStyle(.white).multilineTextAlignment(.leading)
                 Text("\(ZcashNetwork.of(g.network).label) · \(g.t) of \(g.n) signers must approve" + (mine ? "" : " · view only"))
                     .font(.caption).foregroundStyle(Color.mist).multilineTextAlignment(.leading)
             }
@@ -155,7 +155,7 @@ struct Welcome: View {
     var body: some View {
         Card {
             Text("Create your first shared wallet").font(.title3.weight(.semibold))
-            Text("Nobody ever holds the whole key, and nobody outside your team can see the wallet.")
+            Text("Nobody ever holds the whole key, and nobody outside your team can read the wallet.")
                 .font(.subheadline).foregroundStyle(Color.mist)
             ForEach(Array(steps.enumerated()), id: \.offset) { i, s in
                 HStack(alignment: .top, spacing: 12) {
@@ -237,7 +237,7 @@ struct JoinSheet: View {
                 } header: {
                     Text("Invite link")
                 } footer: {
-                    Text("The key after # stays on this iPhone. The server never sees it.")
+                    Text("The wallet secret after # stays on this \(deviceName). The server never sees it.")
                 }
             }
             .navigationTitle("Join a wallet")
@@ -302,7 +302,7 @@ struct CreateSheet: View {
                     } header: {
                         Text("Network")
                     } footer: {
-                        Text(mainnet ? "Real ZEC, at most \(capText(ZcashNetwork.mainnet.cap ?? 0)) per wallet." : "Free test coins, for trying Zigs.")
+                        Text(mainnet ? "Real ZEC. Beta, not audited: the app warns at \(capText(ZcashNetwork.mainnet.cap ?? 0)) per wallet." : "Free test coins, for trying Zigs.")
                     }
                 }
                 Section {

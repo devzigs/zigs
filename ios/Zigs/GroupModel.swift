@@ -43,7 +43,15 @@ struct GroupState {
     var seatedCount: Int { seatIds.filter { seats["\($0)"] != nil }.count }
     var allR1: Bool { seatIds.allSatisfy { dkg1["\($0)"] != nil } }
     var allDone: Bool { !seatIds.isEmpty && seatIds.allSatisfy { done["\($0)"] != nil } }
-    var keysAgree: Bool { allDone && Set(seatIds.compactMap { done["\($0)"]?.str("groupKey") }).count == 1 }
+    /// Every seat computed the same group key and the same public key package. A seat whose
+    /// package differs holds a share that does not fit the others, and signing would fail later.
+    var keysAgree: Bool {
+        let docs = seatIds.compactMap { done["\($0)"] }
+        guard allDone, docs.count == seatIds.count else { return false }
+        let keys = Set(docs.map { $0.str("groupKey") ?? "" })
+        let packages = Set(docs.map { GroupModel.walletKey($0.doc("publicKeyPackage")) })
+        return keys.count == 1 && packages.count == 1 && !keys.contains("") && !packages.contains("")
+    }
     var verifiedCount: Int { seatIds.filter { has(verify["\($0)"]?["ok"]) }.count }
     var rejectedSeats: [Int] { seatIds.filter { verify["\($0)"] != nil && !has(verify["\($0)"]?["ok"]) } }
     /// The wallet is ready to use: created, dated, and no seat rejected it.
@@ -456,7 +464,7 @@ final class GroupModel {
     }
 
     /// A stable text form of the wallet document: sorted keys, so the same document gives the same key.
-    static func walletKey(_ wallet: Doc?) -> String {
+    nonisolated static func walletKey(_ wallet: Doc?) -> String {
         guard let wallet, let data = try? JSONSerialization.data(withJSONObject: wallet, options: [.sortedKeys])
         else { return "" }
         return String(decoding: data, as: UTF8.self)
@@ -571,7 +579,7 @@ final class GroupModel {
     func join(_ link: String) {
         if locked { linkWhileLocked = link; return }
         guard let frag = link.split(separator: "#", maxSplits: 1).last, frag.contains(".") else {
-            banner = "This is not a full invite link. Ask for the link that ends with #group.key."
+            banner = "This is not a full invite link. Ask for the link that ends with # and the wallet secret."
             return
         }
         let parts = frag.split(separator: ".", maxSplits: 1).map(String.init)
@@ -623,7 +631,7 @@ final class GroupModel {
         let id = randomHex(10)
         var key = [UInt8](repeating: 0, count: 32)
         guard SecRandomCopyBytes(kSecRandomDefault, key.count, &key) == errSecSuccess else {
-            throw ZigsError("This iPhone could not make a random key.")
+            throw ZigsError("This \(deviceName) could not make a random key.")
         }
         let b64 = Data(key).base64EncodedString().replacingOccurrences(of: "+", with: "-")
             .replacingOccurrences(of: "/", with: "_").replacingOccurrences(of: "=", with: "")
@@ -744,7 +752,7 @@ final class GroupModel {
             guard var out = try Engine.parse(text) as? Doc else { throw ZigsError("bad proof result") }
             out["ms"] = Int(Date().timeIntervalSince(start) * 1000)
             try await self.patch(path, ["status": "complete", "final": out])
-            self.note("proof built on this iPhone in \(out.int("ms") ?? 0) ms")
+            self.note("proof built on this \(deviceName) in \(out.int("ms") ?? 0) ms")
         }
     }
 

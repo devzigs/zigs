@@ -12,11 +12,14 @@ struct SessionView: View {
             ScrollView {
                 VStack(alignment: .leading, spacing: 16) {
                     VStack(alignment: .leading, spacing: 6) {
-                        Money(zat: ss.amount, size: 34, sign: "out")
+                        let fee = (try? ins.get()).map(networkFee)
+                        SectionLabel(text: fee == nil ? "Payment" : "Leaves the wallet")
+                        Money(zat: ss.amount + (fee ?? 0), size: 34, sign: "out")
+                        if let fee { Text("Includes the \(zec(fee)) network fee").font(.caption).foregroundStyle(Color.mist) }
                         Text("Proposed by \(proposer(ss)) · \(when(ss.doc.int("createdAt")))").font(.caption).foregroundStyle(Color.mist)
                     }
                     if case .failure(let e) = ins {
-                        Label("This iPhone refuses this payment: \(e.message)", systemImage: "xmark.octagon.fill")
+                        Label("This \(deviceName) refuses this payment: \(e.message)", systemImage: "xmark.octagon.fill")
                             .font(.subheadline).foregroundStyle(Color.bad)
                     }
                     RecipientBox(ss: ss, rc: rc)
@@ -25,9 +28,10 @@ struct SessionView: View {
                     if let final = ss.doc.doc("final") {
                         Card {
                             Text("Transaction").font(.headline)
-                            Detail(label: "ID") { Text(final.str("txid") ?? "").font(.caption.monospaced()).textSelection(.enabled) }
+                            Detail(label: "ID") { Text(final.str("txid") ?? "").font(.caption.monospaced()).lineLimit(1).truncationMode(.middle).textSelection(.enabled) }
                             if let ms = final.int("ms") { Detail(label: "Proof time") { Text(String(format: "%.1f s", Double(ms) / 1000)) } }
                         }
+                        if has(ss.doc["broadcastTxid"]) { ChainView() }
                     }
                 }
                 .padding(16)
@@ -142,7 +146,7 @@ struct PayeeLine: View {
 
     var body: some View {
         HStack(alignment: .firstTextBaseline) {
-            Text(row.to).font(.caption.monospaced()).textSelection(.enabled)
+            Text(grouped(row.to)).font(.caption.monospaced())
             Spacer()
             VStack(alignment: .trailing, spacing: 4) {
                 Money(zat: row.amount, size: 15)
@@ -165,39 +169,66 @@ struct MoveNote: View {
     }
 }
 
+/// Spent value minus every output: what the network keeps. Zero-value outputs are not listed.
+func networkFee(_ ins: Doc) -> Int {
+    (ins["lines"] as? [Doc] ?? []).reduce(0) { $0 + ($1.str("kind") == "spend" ? 1 : -1) * ($1.int("value") ?? 0) }
+}
+
 struct Breakdown: View {
     let ss: Session
     let ins: Doc
 
     var body: some View {
-        let own = ownOutputs
-        let lines = (ins["lines"] as? [Doc] ?? []).sorted { rank($0, own) < rank($1, own) }
-        // Spent value minus every output: what the network keeps. Zero-value outputs are not listed.
-        let fee = lines.reduce(0) { $0 + ($1.str("kind") == "spend" ? 1 : -1) * ($1.int("value") ?? 0) }
+        let lines = ins["lines"] as? [Doc] ?? []
+        let isNote = { (l: Doc) in l.str("kind") == "spend" || ownOutputs.contains(l.str("who") ?? "") }
         Card {
             SectionLabel(text: "What this payment does")
-            ForEach(Array(lines.enumerated()), id: \.offset) { _, l in
+            ForEach(Array(lines.filter { !isNote($0) }.enumerated()), id: \.offset) { _, l in
+                Line(label: "To \(short(l.str("who") ?? "", 10))", zat: l.int("value") ?? 0)
+            }
+            Line(label: "Network fee", zat: networkFee(ins), muted: true)
+            SectionLabel(text: "Notes used")
+            ForEach(Array(lines.filter(isNote).sorted { $0.str("kind") == "spend" && $1.str("kind") != "spend" }.enumerated()),
+                    id: \.offset) { _, l in
                 let spend = l.str("kind") == "spend"
-                HStack {
-                    Text(spend ? "From this wallet" : own.contains(l.str("who") ?? "") ? "Change back to this wallet" : "To \(short(l.str("who") ?? "", 10))")
-                        .font(.subheadline)
-                    Spacer()
-                    Text((spend ? "−" : "") + String(format: "%.8f", Double(l.int("value") ?? 0) / 1e8))
-                        .font(.subheadline.monospacedDigit()).foregroundStyle(spend ? Color.bad : .white)
-                }
+                Line(label: spend ? "Note spent" : "Change back to this wallet", zat: l.int("value") ?? 0, muted: true)
             }
-            HStack {
-                Text("Network fee").font(.subheadline).foregroundStyle(Color.mist)
-                Spacer()
-                Text(String(format: "%.8f", Double(fee) / 1e8)).font(.subheadline.monospacedDigit()).foregroundStyle(Color.mist)
-            }
-            Text("This iPhone decoded this from the transaction itself, not from the proposer's description.")
+            Text("This \(deviceName) decoded this from the transaction itself, not from the proposer's description.")
                 .font(.caption).foregroundStyle(Color.mist)
         }
     }
 
-    private func rank(_ l: Doc, _ own: Set<String>) -> Int {
-        l.str("kind") == "spend" ? 0 : own.contains(l.str("who") ?? "") ? 2 : 1
+    private struct Line: View {
+        let label: String
+        let zat: Int
+        var muted = false
+
+        var body: some View {
+            HStack {
+                Text(label).font(.subheadline)
+                Spacer()
+                Text(zec(zat)).font(.subheadline.monospacedDigit())
+            }
+            .foregroundStyle(muted ? Color.mist : .white)
+        }
+    }
+}
+
+/// What anyone who reads the blockchain learns about a sent payment.
+struct ChainView: View {
+    var body: some View {
+        Card {
+            SectionLabel(text: "What the chain sees")
+            Text("One shielded transaction.").font(.subheadline)
+            ForEach(["Recipients", "Amounts", "Signers", "Approval rule"], id: \.self) { item in
+                HStack {
+                    Text(item).font(.subheadline).foregroundStyle(Color.mist)
+                    Spacer()
+                    Text("Hidden").font(.subheadline.weight(.medium))
+                }
+            }
+            Text("The fee and the number of actions are public.").font(.caption).foregroundStyle(Color.mist)
+        }
     }
 }
 

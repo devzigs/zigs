@@ -2,15 +2,16 @@
 
 **Shared wallets for shielded Zcash.** A team creates one private address together, and any *t* of
 its *n* signers must approve each payment. Nobody ever holds the whole key, the server cannot read
-the wallet, and on chain each payment looks like one from any other Zcash wallet.
+the wallet, and on chain each payment looks like a shielded payment from a standard wallet.
 
 - Web app: https://app.zigs.app (no install, no account)
 - iPhone and Mac apps: in [`ios/`](ios), built from the same code
 - Website: https://zigs.app
 
 Zigs uses re-randomized FROST threshold signatures ([ZIP 312](https://zips.z.cash/zip-0312)) on
-the Ironwood shielded pool. It is a prototype and **not audited**. Testnet wallets use free test
-coins. Mainnet wallets hold real ZEC and are limited to **0.5 ZEC each**.
+the Ironwood shielded pool. It is a **beta** and **not audited**. Testnet wallets use free test
+coins. Mainnet wallets hold real ZEC. At **0.5 ZEC** the app warns and hides the address. It cannot
+block deposits.
 
 ## For judges: try it alone in five minutes
 
@@ -39,10 +40,10 @@ To see signer changes, open **Signers**, then **Change signers**. To see the pri
 
 | Criterion | Evidence |
 |---|---|
-| **Privacy** | On chain, the transaction shape matches the standard wallet library: same builder, padding, fee, expiry and anchor depth ([comparison](PRIVACY.md#on-chain)). The server stores only encrypted values, padded so that even their length hides amounts. On the device, key shares can be locked with a passkey (web) or Face ID (iPhone) ([how](PRIVACY.md#lock-with-a-passkey-or-face-id)). The page can connect only to its own servers (Content-Security-Policy), and it is built for Tor Browser ([how](PRIVACY.md#use-zigs-over-tor)). The server keeps no logs. Every remaining leak is listed in [PRIVACY.md](PRIVACY.md). |
-| **Usefulness** | It works for team treasuries, DAOs and families today: web, iPhone and Mac; invite links and QR codes; batch payments for payroll and grants (up to 20 recipients, one approval round, pasted from a spreadsheet); signer changes; mainnet with a safety limit. |
+| **Privacy** | On chain, the transaction shape matches the standard wallet library: same builder, padding, fee, expiry and anchor depth ([comparison](PRIVACY.md#on-chain)). The server stores only encrypted values, padded so that even their length hides amounts. On the device, key shares can be locked with a passkey (web) or Face ID (iPhone) ([how](PRIVACY.md#lock-with-a-passkey-or-face-id)). The page can connect only to the group server and three named light-wallet servers (Content-Security-Policy). It is prepared for Tor Browser, but not yet tested end to end ([how](PRIVACY.md#use-zigs-over-tor)). The server keeps no logs. Every remaining leak is listed in [PRIVACY.md](PRIVACY.md). |
+| **Usefulness** | Designed for team treasuries, DAOs and families. Usable today on testnet, and on mainnet with a warning at 0.5 ZEC: web, iPhone and Mac; invite links and QR codes; batch payments for payroll and grants (up to 20 recipients, one approval round, pasted from a spreadsheet); signer changes. |
 | **Execution** | The live app works end to end. Eleven testnet transactions made by the apps are [listed below](#proof-on-testnet). The engine has 24 tests, and a command-line suite runs adversarial cases. |
-| **Originality** | Built during the Zecathon window: the first commit is from October 10, 2026. No command line, no trusted dealer, no server that can read the wallet. |
+| **Originality** | An end-user app for re-randomized FROST: no command line, no trusted dealer, and no server that can read the wallet. Each device decodes the PCZT and checks every output before it approves, and binds its approval to the transaction's sighash. Signer changes, batch payments and native iPhone and Mac apps are included. Built during the Zecathon window: the first commit is from October 10, 2026. |
 
 ## Architecture
 
@@ -282,8 +283,8 @@ Use the `Zigs` scheme for iPhone and `ZigsMac` for Mac (Apple silicon). The apps
 
 ## Known limits
 
-- **Not audited.** Mainnet wallets are limited to 0.5 ZEC: at that balance the app hides the
-  address and warns. It cannot stop someone from sending more.
+- **Not audited.** At 0.5 ZEC in a mainnet wallet, the app hides the address and warns. It cannot
+  stop someone from sending more.
 - **Chain reorganisations** are not handled in the saved sync state.
 - **One payment at a time.** While a payment waits for its block, the app blocks a second one.
 - **Randomizer source.** Signing uses the `alpha` that the transaction builder puts in the PCZT, as
