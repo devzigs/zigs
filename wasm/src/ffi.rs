@@ -9,6 +9,8 @@ use std::ffi::{c_char, CStr, CString};
 
 use serde_json::{json, Value};
 
+use crate::chain::native;
+
 use super::*;
 
 type Method = fn(&[Value]) -> R<String>;
@@ -20,6 +22,18 @@ fn s(a: &[Value], i: usize) -> R<&str> {
 fn n(a: &[Value], i: usize) -> R<u16> {
     let v = a.get(i).and_then(Value::as_u64).ok_or(format!("argument {i} must be a number"))?;
     u16::try_from(v).map_err(|_| format!("argument {i} is out of range"))
+}
+
+fn u(a: &[Value], i: usize) -> R<u64> {
+    a.get(i).and_then(Value::as_u64).ok_or(format!("argument {i} must be a whole number"))
+}
+
+fn h(a: &[Value], i: usize) -> R<u32> {
+    u32::try_from(u(a, i)?).map_err(|_| format!("argument {i} is out of range"))
+}
+
+fn list(a: &[Value], i: usize) -> R<&[Value]> {
+    a.get(i).and_then(Value::as_array).map(Vec::as_slice).ok_or(format!("argument {i} must be a list"))
 }
 
 const METHODS: &[(&str, Method)] = &[
@@ -42,6 +56,16 @@ const METHODS: &[(&str, Method)] = &[
     ("boxOpen", |a| box_open(s(a, 0)?, s(a, 1)?, s(a, 2)?, s(a, 3)?)),
     ("secretSeal", |a| secret_seal(s(a, 0)?, s(a, 1)?, s(a, 2)?)),
     ("secretOpen", |a| secret_open(s(a, 0)?, s(a, 1)?, s(a, 2)?)),
+    ("walletOpen", |a| native::open(s(a, 0)?, s(a, 1)?, h(a, 2)?, a.get(3).and_then(Value::as_str))),
+    ("walletClose", |a| native::close(s(a, 0)?)),
+    ("walletNeeds", |a| native::needs(s(a, 0)?)),
+    ("walletStart", |a| native::start(s(a, 0)?, s(a, 1)?)),
+    ("walletBlocks", |a| native::blocks(s(a, 0)?, list(a, 1)?, h(a, 2)?)),
+    ("walletBalance", |a| native::balance(s(a, 0)?)),
+    ("walletReceived", |a| native::received(s(a, 0)?)),
+    ("walletSent", |a| native::sent(s(a, 0)?)),
+    ("walletSnapshot", |a| native::snapshot(s(a, 0)?)),
+    ("walletSpend", |a| native::spend(s(a, 0)?, s(a, 1)?, u(a, 2)?, h(a, 3)?)),
 ];
 
 fn call(method: &str, args: &str) -> R<String> {

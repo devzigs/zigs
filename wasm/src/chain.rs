@@ -14,7 +14,7 @@ use zcash_client_backend::{
         compact_formats::CompactBlock,
         service::{
             compact_tx_streamer_client::CompactTxStreamerClient, BlockId, BlockRange, ChainSpec,
-            RawTransaction,
+            RawTransaction, TreeState,
         },
     },
     scanning::{scan_block, ScanningKeys, SpendIdentifiers},
@@ -89,6 +89,37 @@ struct Inner {
 }
 
 impl Inner {
+    fn new(ufvk: &str, birthday: u32, endpoint: &str) -> R<Inner> {
+        let ufvk = UnifiedFullViewingKey::decode(&Network::TestNetwork, ufvk)
+            .map_err(|x| format!("bad viewing key: {x}"))?;
+        let keys = ScanningKeys::from_account_ufvks([(0u32, ufvk.clone())]);
+        Ok(Inner {
+            ufvk,
+            birthday,
+            endpoint: endpoint.to_string(),
+            tree: ShardTree::new(MemoryShardStore::empty(), 100),
+            keys,
+            notes: vec![],
+            sent: vec![],
+            synced: 0,
+            tip: 0,
+            prior: None,
+            busy: false,
+        })
+    }
+
+    /// Starts an empty wallet from the Ironwood tree state at `birthday - 1`.
+    fn start(&mut self, ts: &TreeState) -> R<()> {
+        ensure(self.birthday > 0, "wallet birthday must be positive")?;
+        let frontier: Frontier<MerkleHashOrchard, 32> =
+            ts.ironwood_tree().map_err(e("ironwood tree state"))?.to_frontier();
+        let id = BlockHeight::from_u32(self.birthday - 1);
+        let retention = Retention::Checkpoint { id, marking: Marking::None };
+        self.tree.insert_frontier(frontier, retention).map_err(e("tree frontier"))?;
+        self.synced = self.birthday - 1;
+        Ok(())
+    }
+
     fn apply_block(&mut self, block: CompactBlock) -> R<()> {
         let height = u32::try_from(block.height).map_err(e("block height"))?;
         // Spends are matched against our own notes rather than through the scanner, whose
@@ -305,14 +336,7 @@ async fn first_sync(state: &RefCell<Inner>) -> R<()> {
         .await
         .map_err(rpc)?
         .into_inner();
-    let frontier: Frontier<MerkleHashOrchard, 32> =
-        ts.ironwood_tree().map_err(e("ironwood tree state"))?.to_frontier();
-    let mut s = state.borrow_mut();
-    let retention =
-        Retention::Checkpoint { id: BlockHeight::from_u32(birthday - 1), marking: Marking::None };
-    s.tree.insert_frontier(frontier, retention).map_err(e("tree frontier"))?;
-    s.synced = birthday - 1;
-    Ok(())
+    state.borrow_mut().start(&ts)
 }
 
 async fn sync_to_tip(state: &RefCell<Inner>, on_progress: &js_sys::Function) -> R<()> {
@@ -420,23 +444,7 @@ pub struct ChainWallet(Rc<RefCell<Inner>>);
 impl ChainWallet {
     #[wasm_bindgen(constructor)]
     pub fn new(ufvk: &str, birthday: u32, endpoint: &str) -> Result<ChainWallet, JsError> {
-        let ufvk = UnifiedFullViewingKey::decode(&Network::TestNetwork, ufvk)
-            .map_err(|x| JsError::new(&format!("bad viewing key: {x}")))?;
-        let keys = ScanningKeys::from_account_ufvks([(0u32, ufvk.clone())]);
-        let tree = ShardTree::new(MemoryShardStore::empty(), 100);
-        Ok(ChainWallet(Rc::new(RefCell::new(Inner {
-            ufvk,
-            birthday,
-            endpoint: endpoint.to_string(),
-            tree,
-            keys,
-            notes: vec![],
-            sent: vec![],
-            synced: 0,
-            tip: 0,
-            prior: None,
-            busy: false,
-        }))))
+        Ok(ChainWallet(Rc::new(RefCell::new(super::js(Inner::new(ufvk, birthday, endpoint))?))))
     }
 
     /// A wallet that continues from `snapshot` (from `snapshot()`) instead of the birthday.
@@ -479,6 +487,105 @@ impl ChainWallet {
     }
 }
 
+/// Wallets for the native apps. The app downloads lightwalletd messages itself (grpc-web from
+/// Swift) and passes the raw protobuf bytes, base64 encoded; wallets are kept by a caller key.
+#[cfg(not(target_arch = "wasm32"))]
+pub(crate) mod native {
+    use std::{collections::HashMap, sync::Mutex};
+
+    use base64::{engine::general_purpose::STANDARD as B64, Engine as _};
+    use prost::Message;
+
+    use super::*;
+
+    static WALLETS: Mutex<Option<HashMap<String, Inner>>> = Mutex::new(None);
+
+    fn with<T>(key: &str, f: impl FnOnce(&mut Inner) -> R<T>) -> R<T> {
+        let mut all = WALLETS.lock().map_err(|_| "wallet store poisoned".to_string())?;
+        let w = all.get_or_insert_with(HashMap::new).get_mut(key).ok_or("no open wallet for this key")?;
+        f(w)
+    }
+
+    fn bytes(b64: &str, what: &str) -> R<Vec<u8>> {
+        B64.decode(b64).map_err(|_| format!("{what} is not base64"))
+    }
+
+    /// Opens (or replaces) the wallet for `key`. A snapshot that does not load is ignored, so the
+    /// wallet then syncs from its birthday; the result says which.
+    pub(crate) fn open(key: &str, ufvk: &str, birthday: u32, snapshot: Option<&str>) -> R<String> {
+        let mut w = Inner::new(ufvk, birthday, "")?;
+        let restored = snapshot.is_some_and(|s| w.restore(s).is_ok());
+        if !restored {
+            w = Inner::new(ufvk, birthday, "")?;
+        }
+        let mut all = WALLETS.lock().map_err(|_| "wallet store poisoned".to_string())?;
+        all.get_or_insert_with(HashMap::new).insert(key.to_string(), w);
+        Ok(json!({"restored": restored}).to_string())
+    }
+
+    pub(crate) fn close(key: &str) -> R<String> {
+        let mut all = WALLETS.lock().map_err(|_| "wallet store poisoned".to_string())?;
+        all.get_or_insert_with(HashMap::new).remove(key);
+        Ok("null".into())
+    }
+
+    /// What the wallet needs next: the tree state at `treeState`, or blocks from `from`.
+    pub(crate) fn needs(key: &str) -> R<String> {
+        with(key, |w| {
+            Ok(if w.synced == 0 {
+                json!({"treeState": w.birthday.saturating_sub(1)})
+            } else {
+                json!({"from": w.synced + 1})
+            }
+            .to_string())
+        })
+    }
+
+    pub(crate) fn start(key: &str, tree_state: &str) -> R<String> {
+        let ts = TreeState::decode(&bytes(tree_state, "tree state")?[..]).map_err(e("tree state"))?;
+        with(key, |w| w.start(&ts).map(|()| "null".into()))
+    }
+
+    /// Applies CompactBlock messages in order; `tip` is the chain height the app saw.
+    pub(crate) fn blocks(key: &str, blocks: &[Value], tip: u32) -> R<String> {
+        with(key, |w| {
+            w.tip = w.tip.max(tip);
+            for b in blocks {
+                let raw = bytes(b.as_str().ok_or("blocks must be base64 strings")?, "block")?;
+                let block = CompactBlock::decode(&raw[..]).map_err(e("compact block"))?;
+                let height = u32::try_from(block.height).map_err(e("block height"))?;
+                ensure(height == w.synced + 1, &format!("expected block {}, got {height}", w.synced + 1))?;
+                w.apply_block(block)?;
+            }
+            Ok(w.balance())
+        })
+    }
+
+    pub(crate) fn balance(key: &str) -> R<String> {
+        with(key, |w| Ok(w.balance()))
+    }
+
+    pub(crate) fn received(key: &str) -> R<String> {
+        with(key, |w| Ok(w.received()))
+    }
+
+    pub(crate) fn sent(key: &str) -> R<String> {
+        with(key, |w| Ok(json!(w.sent).to_string()))
+    }
+
+    pub(crate) fn snapshot(key: &str) -> R<String> {
+        with(key, |w| w.snapshot())
+    }
+
+    pub(crate) fn spend(key: &str, recipient: &str, amount: u64, tip: u32) -> R<String> {
+        let payee = parse_recipient(recipient)?;
+        with(key, |w| {
+            w.tip = w.tip.max(tip);
+            spend_pczt(w, payee, amount, tip)
+        })
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -518,6 +625,31 @@ mod tests {
         assert!(select_notes(&notes, max + 1, SYNCED).is_err());
         assert_eq!(max_send(&[(9_000, 10)], SYNCED), 0);
         assert_eq!(max_send(&[], SYNCED), 0);
+    }
+
+    #[test]
+    fn native_wallet_follows_its_needs() {
+        use base64::{engine::general_purpose::STANDARD as B64, Engine as _};
+        use orchard::keys::{FullViewingKey, SpendingKey};
+        use prost::Message;
+        let sk = Option::<SpendingKey>::from(SpendingKey::from_bytes([7; 32])).unwrap();
+        let ufvk = UnifiedFullViewingKey::from_orchard_fvk(FullViewingKey::from(&sk)).unwrap()
+            .encode(&Network::TestNetwork).unwrap();
+        let k = "test-wallet";
+        assert_eq!(native::open(k, &ufvk, 500, Some("{\"v\":1}")).unwrap(), r#"{"restored":false}"#);
+        assert_eq!(native::needs(k).unwrap(), r#"{"treeState":499}"#);
+        let ts = TreeState { height: 499, ..Default::default() };
+        native::start(k, &B64.encode(ts.encode_to_vec())).unwrap();
+        assert_eq!(native::needs(k).unwrap(), r#"{"from":500}"#);
+        let wrong = CompactBlock { height: 501, ..Default::default() };
+        let err = native::blocks(k, &[json!(B64.encode(wrong.encode_to_vec()))], 600).unwrap_err();
+        assert!(err.contains("expected block 500"), "{err}");
+        let snap = native::snapshot(k).unwrap();
+        assert_eq!(native::open(k, &ufvk, 500, Some(&snap)).unwrap(), r#"{"restored":true}"#);
+        assert_eq!(native::needs(k).unwrap(), r#"{"from":500}"#);
+        assert!(native::spend(k, "nope", 1, 600).is_err());
+        native::close(k).unwrap();
+        assert!(native::needs(k).is_err());
     }
 
     #[test]
