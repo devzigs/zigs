@@ -78,6 +78,7 @@ struct Header: View {
         VStack(alignment: .leading, spacing: 8) {
             Text(st.name).font(.largeTitle.weight(.bold))
             HStack(spacing: 8) {
+                Badge(text: st.net.label, kind: st.net.cap == nil ? .plain : .bad)
                 Badge(text: "\(st.t) of \(st.n) signers must approve", kind: .warn)
                     .popoverTip(RuleTip())
                 HStack(spacing: -8) {
@@ -287,9 +288,11 @@ struct BalanceCard: View {
                 }
             }
             if let b, b.spendable + b.pending + b.sending == 0, model.state.movedTo == nil {
-                Text("This wallet is empty. Share its address to receive ZEC, or get free testnet ZEC from a faucet.")
+                Text(model.state.net.cap.map { "This wallet is empty. Share its address to receive ZEC, \(capText($0)) at most in total." }
+                     ?? "This wallet is empty. Share its address to receive ZEC, or get free testnet ZEC from a faucet.")
                     .font(.caption).foregroundStyle(Color.mist)
             }
+            if model.atCap { CapNote() }
             SyncLine()
         }
     }
@@ -478,11 +481,13 @@ struct SentRow: View {
 }
 
 struct ReceivedRow: View {
+    @Environment(GroupModel.self) private var model
     let r: Doc
 
     var body: some View {
-        let link = URL(string: explorerTx + (r.str("txid") ?? ""))
-        Link(destination: link ?? URL(string: explorerTx)!) {
+        let explorer = model.state.net.explorer
+        let link = URL(string: explorer + (r.str("txid") ?? ""))
+        Link(destination: link ?? URL(string: explorer)!) {
             HStack(spacing: 12) {
                 Image(systemName: "arrow.down.left").frame(width: 34, height: 34)
                     .background(Color.good.opacity(0.15), in: Circle()).foregroundStyle(Color.good)
@@ -574,7 +579,7 @@ struct DetailsTab: View {
                 }
                 Detail(label: "Approval rule") { Text("Any \(st.t) of \(st.n) signers") }
                 Detail(label: "Checked by") { Text("\(st.verifiedCount) of \(st.n) signers") }
-                Detail(label: "Network") { Text("Zcash testnet") }
+                Detail(label: "Network") { Text("Zcash \(st.net.label.lowercased())" + (st.net.cap.map { " · limit \(capText($0))" } ?? "")) }
                 Detail(label: "Created at block") { Text((w.int("birthday") ?? 0).formatted()).monospacedDigit() }
                 Detail(label: "Group key") { Text(w.str("group_verifying_key") ?? "").font(.caption.monospaced()).textSelection(.enabled) }
             }
@@ -595,6 +600,15 @@ struct DetailsTab: View {
                 .font(.subheadline)
             }
         }
+    }
+}
+
+struct CapNote: View {
+    @Environment(GroupModel.self) private var model
+
+    var body: some View {
+        Text("This wallet holds the \(capText(model.state.net.cap ?? 0)) limit for unaudited mainnet wallets. Do not send more to it. Payments out still work.")
+            .font(.subheadline).foregroundStyle(Color.bad)
     }
 }
 
@@ -625,15 +639,20 @@ struct ReceiveSheet: View {
                         Text("This wallet moved to \(model.groupName(to)). Ask senders to use the new wallet's address.")
                             .font(.subheadline).foregroundStyle(Color.signal)
                     }
-                    Text("Send testnet ZEC to this shielded address. Senders and the network cannot see the balance or who controls it.")
-                        .font(.subheadline).foregroundStyle(Color.mist)
-                    QRCode(text: address).frame(maxWidth: 260)
-                    Text(address).font(.caption.monospaced()).textSelection(.enabled)
-                    HStack {
-                        CopyButton(text: address, label: "Copy address").primaryButton()
-                        ShareLink(item: address) { Label("Share", systemImage: "square.and.arrow.up") }.buttonStyle(.bordered).controlSize(.large)
+                    let net = model.state.net
+                    if model.atCap {
+                        CapNote()
+                    } else {
+                        Text("Send \(net.cap.map { "up to \(capText($0)) in total" } ?? "testnet ZEC") to this shielded address. Senders and the network cannot see the balance or who controls it.")
+                            .font(.subheadline).foregroundStyle(Color.mist)
+                        QRCode(text: address).frame(maxWidth: 260)
+                        Text(address).font(.caption.monospaced()).textSelection(.enabled)
+                        HStack {
+                            CopyButton(text: address, label: "Copy address").primaryButton()
+                            ShareLink(item: address) { Label("Share", systemImage: "square.and.arrow.up") }.buttonStyle(.bordered).controlSize(.large)
+                        }
                     }
-                    Link("Get testnet ZEC from a faucet", destination: URL(string: "https://zcashfaucet.jinolabs.xyz/")!).font(.subheadline)
+                    if let faucet = net.faucet { Link("Get testnet ZEC from a faucet", destination: faucet).font(.subheadline) }
                 }
                 .padding(16)
             }
@@ -657,7 +676,8 @@ struct SendSheet: View {
 
     var body: some View {
         let zat = Int(((Double(amount.replacingOccurrences(of: ",", with: ".")) ?? 0) * 1e8).rounded())
-        let valid = to.isEmpty ? nil : model.normalized(to.trimmingCharacters(in: .whitespacesAndNewlines)) != nil
+        let valid = to.isEmpty ? nil : model.onNetwork(to.trimmingCharacters(in: .whitespacesAndNewlines))
+        let netName = model.state.net.label.lowercased()
         let available = model.balanceNow()?.spendable ?? 0
         NavigationStack {
             Form {
@@ -669,7 +689,7 @@ struct SendSheet: View {
                     Text("To")
                 } footer: {
                     if let valid {
-                        Text(valid ? "Valid testnet address" : "Not a testnet unified address with an Orchard receiver")
+                        Text(valid ? "Valid \(netName) address" : "Not a \(netName) unified address with an Orchard receiver")
                             .foregroundStyle(valid ? Color.good : Color.bad)
                     }
                 }

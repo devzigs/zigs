@@ -170,7 +170,7 @@ struct Timeline: View {
                  no: 5, title: "Sent to the network",
                  text: has(ss.doc["broadcastTxid"]) ? "Sent \(when(ss.doc.int("broadcastAt")))."
                      : ss.doc.str("broadcastError") ?? (ss.doc.doc("final") != nil ? "Any signer can send the finished transaction." : "Available after the proof."))
-            if let txid = ss.doc.str("broadcastTxid"), let url = URL(string: explorerTx + txid) {
+            if let txid = ss.doc.str("broadcastTxid"), let url = URL(string: model.state.net.explorer + txid) {
                 Link(destination: url) { Label("View in explorer", systemImage: "arrow.up.right.square") }.font(.subheadline)
             }
         }

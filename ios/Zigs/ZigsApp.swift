@@ -92,8 +92,8 @@ struct WalletRow: View {
             Avatar(text: initials(g.name), size: 40)
             VStack(alignment: .leading, spacing: 3) {
                 Text(g.name).font(.headline).foregroundStyle(.white)
-                Text("\(g.t) of \(g.n) signers must approve" + (mine ? "" : " · view only"))
-                    .font(.caption).foregroundStyle(Color.mist)
+                Text("\(ZcashNetwork.of(g.network).label) · \(g.t) of \(g.n) signers must approve" + (mine ? "" : " · view only"))
+                    .font(.caption).foregroundStyle(Color.mist).multilineTextAlignment(.leading)
             }
             Spacer()
             VStack(alignment: .trailing, spacing: 4) {
@@ -225,6 +225,8 @@ struct CreateSheet: View {
     @State private var n = 3
     @State private var t = 2
     @State private var working = false
+    @State private var mainnet = false
+    @State private var understood = false
 
     var body: some View {
         @Bindable var model = model
@@ -251,6 +253,23 @@ struct CreateSheet: View {
                 } footer: {
                     Text(ruleText(t, n))
                 }
+                if from == nil {
+                    Section {
+                        Picker("Network", selection: $mainnet) {
+                            Text("Testnet").tag(false)
+                            Text("Mainnet").tag(true)
+                        }
+                        .pickerStyle(.segmented)
+                        if mainnet {
+                            Toggle("I understand that Zigs is not audited and that I can lose the funds in this wallet.", isOn: $understood)
+                                .font(.subheadline)
+                        }
+                    } header: {
+                        Text("Network")
+                    } footer: {
+                        Text(mainnet ? "Real ZEC, at most \(capText(ZcashNetwork.mainnet.cap ?? 0)) per wallet." : "Free test coins, for trying Zigs.")
+                    }
+                }
                 Section {
                     Text(from == nil
                          ? "You take seat 1. Then share the invite link with your signers. When every seat is taken, your devices create the wallet key together."
@@ -263,7 +282,7 @@ struct CreateSheet: View {
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) { Button("Cancel") { dismiss() } }
                 ToolbarItem(placement: .confirmationAction) {
-                    Button(from == nil ? "Create" : "Create new wallet") { create() }.disabled(working)
+                    Button(from == nil ? "Create" : "Create new wallet") { create() }.disabled(working || (from == nil && mainnet && !understood))
                 }
             }
             .onAppear { if let from { n = from.n; t = from.t } }
@@ -275,8 +294,10 @@ struct CreateSheet: View {
         let name = walletName.trimmingCharacters(in: .whitespaces)
         Task {
             do {
+                // A replacement wallet stays on its predecessor's network: funds cannot move between networks.
+                let network = from?.g?.str("network") ?? (mainnet ? "mainnet" : "testnet")
                 try await model.createGroup(name: name.isEmpty ? (from?.name ?? "Treasury") : name, n: n, t: t,
-                                            from: from == nil ? nil : model.gid)
+                                            from: from == nil ? nil : model.gid, network: network)
                 dismiss()
             } catch {
                 model.banner = error.localizedDescription

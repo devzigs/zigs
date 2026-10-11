@@ -74,6 +74,7 @@ impl Rec {
 
 // ponytail: reorgs are not handled; a snapshot taken on a dropped branch stays wrong.
 struct Inner {
+    net: Network,
     ufvk: UnifiedFullViewingKey,
     birthday: u32,
     endpoint: String,
@@ -90,10 +91,14 @@ struct Inner {
 
 impl Inner {
     fn new(ufvk: &str, birthday: u32, endpoint: &str) -> R<Inner> {
-        let ufvk = UnifiedFullViewingKey::decode(&Network::TestNetwork, ufvk)
-            .map_err(|x| format!("bad viewing key: {x}"))?;
+        // The viewing key's encoding names its network (uview1… or uviewtest1…).
+        let (net, ufvk) = [Network::MainNetwork, Network::TestNetwork]
+            .into_iter()
+            .find_map(|net| UnifiedFullViewingKey::decode(&net, ufvk).ok().map(|k| (net, k)))
+            .ok_or("bad viewing key: not a mainnet or testnet unified viewing key")?;
         let keys = ScanningKeys::from_account_ufvks([(0u32, ufvk.clone())]);
         Ok(Inner {
+            net,
             ufvk,
             birthday,
             endpoint: endpoint.to_string(),
@@ -130,7 +135,7 @@ impl Inner {
             .map(|tx| (txid_text(&tx.txid), tx.ironwood_actions.iter().map(|a| a.nullifier.clone()).collect()))
             .collect();
         let sb = scan_block::<_, _, _, Infallible>(
-            &Network::TestNetwork,
+            &self.net,
             block,
             &self.keys,
             &SpendIdentifiers::empty(),
@@ -315,13 +320,14 @@ fn max_send(notes: &[(u64, u32)], synced: u32) -> u64 {
     if confirmed.is_empty() { 0 } else { total.saturating_sub(zip317_fee(confirmed.len())) }
 }
 
-pub(crate) fn parse_recipient(s: &str) -> R<orchard::Address> {
-    match Address::decode(&Network::TestNetwork, s.trim()) {
+pub(crate) fn parse_recipient(s: &str, net: Network) -> R<orchard::Address> {
+    let name = if net == Network::MainNetwork { "mainnet" } else { "testnet" };
+    match Address::decode(&net, s.trim()) {
         Some(Address::Unified(ua)) => ua
             .orchard()
             .copied()
             .ok_or_else(|| "the recipient address has no Orchard receiver".to_string()),
-        _ => Err("the recipient must be a testnet unified address".to_string()),
+        _ => Err(format!("the recipient must be a {name} unified address")),
     }
 }
 
@@ -401,7 +407,7 @@ fn spend_pczt(s: &Inner, payee: orchard::Address, amount: u64, tip: u32) -> R<St
         inputs.push((unspent[i].note, orchard::tree::MerklePath::from(path)));
     }
     let pczt = build_ironwood_pczt(
-        Network::TestNetwork,
+        s.net,
         BlockHeight::from_u32(tip + 1),
         fvk,
         (inputs, orchard::Anchor::from(root)),
@@ -413,7 +419,7 @@ fn spend_pczt(s: &Inner, payee: orchard::Address, amount: u64, tip: u32) -> R<St
 }
 
 async fn create_spend(state: &RefCell<Inner>, recipient: &str, amount: u64) -> R<String> {
-    let payee = parse_recipient(recipient)?;
+    let payee = parse_recipient(recipient, state.borrow().net)?;
     let endpoint = state.borrow().endpoint.clone();
     let tip = tip_of(&endpoint).await?;
     let mut s = state.borrow_mut();
@@ -578,8 +584,8 @@ pub(crate) mod native {
     }
 
     pub(crate) fn spend(key: &str, recipient: &str, amount: u64, tip: u32) -> R<String> {
-        let payee = parse_recipient(recipient)?;
         with(key, |w| {
+            let payee = parse_recipient(recipient, w.net)?;
             w.tip = w.tip.max(tip);
             spend_pczt(w, payee, amount, tip)
         })
@@ -650,6 +656,23 @@ mod tests {
         assert!(native::spend(k, "nope", 1, 600).is_err());
         native::close(k).unwrap();
         assert!(native::needs(k).is_err());
+    }
+
+    #[test]
+    fn mainnet_wallet_refuses_testnet_recipients() {
+        use orchard::keys::{FullViewingKey, Scope, SpendingKey};
+        let sk = Option::<SpendingKey>::from(SpendingKey::from_bytes([8; 32])).unwrap();
+        let fvk = FullViewingKey::from(&sk);
+        let ufvk = UnifiedFullViewingKey::from_orchard_fvk(fvk.clone()).unwrap();
+        let k = "main-wallet";
+        native::open(k, &ufvk.encode(&Network::MainNetwork).unwrap(), 3_500_000, None).unwrap();
+        let ua = |net| zcash_keys::address::UnifiedAddress::from_receivers(
+            Some(fvk.address_at(0u32, Scope::External)), None, None, None, None).unwrap().encode(&net);
+        let err = native::spend(k, &ua(Network::TestNetwork), 1000, 3_500_100).unwrap_err();
+        assert!(err.contains("mainnet unified address"), "{err}");
+        assert!(super::super::normalize_address(&ua(Network::MainNetwork)).unwrap().starts_with("u1"));
+        assert!(super::super::normalize_address(&ua(Network::TestNetwork)).unwrap().starts_with("utest1"));
+        native::close(k).unwrap();
     }
 
     #[test]

@@ -16,6 +16,7 @@ struct GroupInfo: Identifiable {
     let t: Int
     let createdAt: Int
     let movedTo: String?
+    let network: String?
 }
 
 /// One group, decrypted. Same document layout as web/index.html.
@@ -36,6 +37,7 @@ struct GroupState {
     var name: String { g?.str("name") ?? "Wallet" }
     var movedTo: String? { g?.str("movedTo") }
     var movedFrom: String? { g?.str("movedFrom") }
+    var net: ZcashNetwork { .of(g?.str("network")) }
     var seatIds: [Int] { n > 0 ? Array(1...n) : [] }
     var allSeated: Bool { seatIds.allSatisfy { seats["\($0)"]?.str("boxPk") != nil } }
     var seatedCount: Int { seatIds.filter { seats["\($0)"] != nil }.count }
@@ -163,7 +165,7 @@ final class GroupModel {
         for (id, raw) in store.children("groups") {
             guard let g = open("groups/" + id, raw) else { continue }
             list.append(GroupInfo(id: id, name: g.str("name") ?? "Wallet", n: g.int("n") ?? 0, t: g.int("t") ?? 0,
-                                  createdAt: g.int("createdAt") ?? 0, movedTo: g.str("movedTo")))
+                                  createdAt: g.int("createdAt") ?? 0, movedTo: g.str("movedTo"), network: g.str("network")))
             let wpath = "groups/\(id)/meta/wallet"
             if let w = open(wpath, store.docs[wpath]) { ws[id] = w }
             if !vault.seats(in: id).isEmpty {
@@ -258,6 +260,14 @@ final class GroupModel {
 
     var maxSend: Int { chain?.balance?.int("max_send") ?? 0 }
 
+    /// A mainnet wallet at its cap: the app stops showing its address. Payments out still work.
+    var atCap: Bool {
+        guard let cap = state.net.cap, let b = balanceNow() else { return false }
+        return b.spendable + b.pending >= cap
+    }
+
+    func onNetwork(_ address: String) -> Bool { normalized(address)?.hasPrefix(state.net.prefix) ?? false }
+
     /// Why Send is unavailable, or nil when it is available.
     var sendBlocker: String? {
         if localSeats.isEmpty { return "You hold no seat in this wallet." }
@@ -272,7 +282,7 @@ final class GroupModel {
     private func ensureChain(_ gid: String) {
         guard chain == nil, let w = state.wallet, let ufvk = w.str("ufvk"), let birthday = w.int("birthday"),
               let key = vault.keys[gid] else { return }
-        let c = Chain(gid: gid, ufvk: ufvk, birthday: birthday, groupKey: key)
+        let c = Chain(gid: gid, ufvk: ufvk, birthday: birthday, groupKey: key, net: state.net)
         c.onSynced = { [weak self] b in self?.saveBalance(gid, b) }
         chain = c
         Task { await c.sync() }
@@ -407,7 +417,7 @@ final class GroupModel {
         // The wallet document can arrive after the key ones; never replace a published wallet.
         if store.docs["groups/\(gid)/meta/wallet"] != nil { return }
         var birthday: Int?
-        for url in lightwalletds where birthday == nil { birthday = try? await Lightwalletd.latestHeight(url) }
+        for url in state.net.servers where birthday == nil { birthday = try? await Lightwalletd.latestHeight(url) }
         guard let birthday else { throw ZigsError("No light-wallet server answers, so the wallet cannot be dated.") }
         guard let pkp = state.done["1"]?.str("publicKeyPackage") else { return }
         var w = try Engine.object("walletCreate", [pkp, state.g?.str("network") ?? "testnet"])
@@ -524,7 +534,7 @@ final class GroupModel {
 
     /// Creates a wallet and takes seat 1. With `from`, the new wallet replaces `from`: the old wallet
     /// gets only the new id, never its key, so signers left out cannot read the new wallet.
-    func createGroup(name: String, n: Int, t: Int, from: String? = nil) async throws {
+    func createGroup(name: String, n: Int, t: Int, from: String? = nil, network: String = "testnet") async throws {
         let id = randomHex(10)
         var key = [UInt8](repeating: 0, count: 32)
         guard SecRandomCopyBytes(kSecRandomDefault, key.count, &key) == errSecSuccess else {
@@ -534,7 +544,7 @@ final class GroupModel {
             .replacingOccurrences(of: "/", with: "_").replacingOccurrences(of: "=", with: "")
         vault.putKey(id, b64)
         store.join(id)
-        var g: Doc = ["name": name, "n": n, "t": t, "network": "testnet", "createdBy": me, "createdAt": now()]
+        var g: Doc = ["name": name, "n": n, "t": t, "network": network, "createdBy": me, "createdAt": now()]
         if let from { g["movedFrom"] = from }
         try await put("groups/\(id)", g)
         if let from { try await patch("groups/\(from)", ["movedTo": id, "movedAt": now()]) }
@@ -637,7 +647,7 @@ final class GroupModel {
         let path = "groups/\(gid)/sessions/\(ss.id)"
         once("broadcast:\(ss.id)") {
             do {
-                try await Lightwalletd.send(hex: hex, toFirstOf: lightwalletds)
+                try await Lightwalletd.send(hex: hex, toFirstOf: self.state.net.servers)
                 try await self.patch(path, ["broadcastTxid": final.str("txid") ?? "", "broadcastAt": now(),
                                             "broadcastError": NSNull(), "status": "broadcast"])
                 self.note("transaction broadcast: \(final.str("txid") ?? "")")

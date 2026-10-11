@@ -208,8 +208,13 @@ fn pczt_network(p: &Pczt) -> R<Network> {
 
 /// The address a payment really goes to: the Orchard receiver of `addr`, re-encoded alone, so
 /// two unified addresses that share that receiver compare equal.
+/// The canonical form of a mainnet or testnet unified address; the prefix (u1… or utest1…)
+/// tells the caller which network it belongs to.
 pub fn normalize_address(addr: &str) -> R<String> {
-    receiver_address(chain::parse_recipient(addr)?, Network::TestNetwork)
+    [Network::MainNetwork, Network::TestNetwork]
+        .into_iter()
+        .find_map(|net| chain::parse_recipient(addr, net).ok().map(|a| receiver_address(a, net)))
+        .ok_or_else(|| "not a unified address with an Orchard receiver".to_string())?
 }
 
 fn parse_fvk(hex_fvk: &str) -> R<FullViewingKey> {
@@ -1011,6 +1016,15 @@ mod tests {
         use zcash_protocol::consensus::BranchId;
         let branch = BranchId::for_height(&Network::TestNetwork, BlockHeight::from_u32(4_465_026));
         assert_eq!(u32::from(branch), 0x7719_0AD9);
+        assert_eq!(TxVersion::suggested_for_branch(branch), TxVersion::V6);
+    }
+
+    #[test]
+    fn mainnet_uses_ironwood_v6_since_nu6_3() {
+        use zcash_protocol::consensus::{BranchId, NetworkUpgrade, Parameters};
+        assert_eq!(Network::MainNetwork.activation_height(NetworkUpgrade::Nu6_3), Some(BlockHeight::from_u32(3_428_143)));
+        let branch = BranchId::for_height(&Network::MainNetwork, BlockHeight::from_u32(3_514_200));
+        assert_eq!(branch, BranchId::Nu6_3);
         assert_eq!(TxVersion::suggested_for_branch(branch), TxVersion::V6);
     }
 

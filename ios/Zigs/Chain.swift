@@ -1,9 +1,30 @@
 import Foundation
 import Observation
 
-/// Own node first; ChainSafe's public proxy is the backup.
-let lightwalletds = [URL(string: "https://lwd.zigs.app")!, URL(string: "https://zcash-testnet.chainsafe.dev")!]
-let explorerTx = "https://testnet.zecblock.com/tx/"
+/// Per-network servers and limits. Mainnet uses a third-party light-wallet server, so the group
+/// server and the chain server have different operators (see PRIVACY.md).
+struct ZcashNetwork: Sendable {
+    let label: String
+    let servers: [URL]
+    let explorer: String
+    let prefix: String
+    /// Unaudited code holds real money only up to this many zatoshis.
+    let cap: Int?
+    let faucet: URL?
+
+    static let testnet = ZcashNetwork(
+        label: "Testnet",
+        servers: [URL(string: "https://lwd.zigs.app")!, URL(string: "https://zcash-testnet.chainsafe.dev")!],
+        explorer: "https://testnet.zecblock.com/tx/", prefix: "utest1", cap: nil,
+        faucet: URL(string: "https://zcashfaucet.jinolabs.xyz/"))
+    static let mainnet = ZcashNetwork(
+        label: "Mainnet", servers: [URL(string: "https://zcash-mainnet.chainsafe.dev")!],
+        explorer: "https://zecblock.com/tx/", prefix: "u1", cap: 50_000_000, faucet: nil)
+
+    static func of(_ id: String?) -> ZcashNetwork { id == "mainnet" ? .mainnet : .testnet }
+}
+
+func capText(_ zat: Int) -> String { "\(Double(zat) / 1e8) ZEC" }
 
 /// Sync state of one group wallet on this iPhone. The engine keeps the notes and the commitment
 /// tree; this class downloads blocks for it and saves its state, sealed with the group key, so
@@ -21,6 +42,7 @@ final class Chain {
     private(set) var server: URL?
 
     @ObservationIgnored private let ufvk: String
+    @ObservationIgnored private let net: ZcashNetwork
     @ObservationIgnored let birthday: Int
     @ObservationIgnored private let groupKey: String
     @ObservationIgnored private var opened = false
@@ -28,8 +50,9 @@ final class Chain {
 
     private static let batch = 1000
 
-    init(gid: String, ufvk: String, birthday: Int, groupKey: String) {
+    init(gid: String, ufvk: String, birthday: Int, groupKey: String, net: ZcashNetwork) {
         self.gid = gid
+        self.net = net
         self.ufvk = ufvk
         self.birthday = birthday
         self.groupKey = groupKey
@@ -98,10 +121,10 @@ final class Chain {
         if let balance { onSynced?(balance) }
     }
 
-    /// Returns the first light-wallet server that answers, in `lightwalletds` order.
+    /// Returns the first light-wallet server of this network that answers, in order.
     private func pickServer() async throws -> URL {
         if let server { return server }
-        for url in lightwalletds {
+        for url in net.servers {
             if (try? await Lightwalletd.latestHeight(url)) != nil {
                 server = url
                 return url

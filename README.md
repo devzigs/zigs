@@ -5,7 +5,9 @@ shared shielded address with a distributed key generation (no dealer). Any t mem
 with re-randomized FROST (ZIP 312). On chain, the result is a normal Ironwood transaction: nobody can
 see that a group signed it, who the members are, or which members approved.
 
-The status is **prototype, testnet only**. Do not use it with real funds.
+The status is **prototype, not audited**. Testnet wallets use free test coins. Mainnet wallets
+hold real ZEC and are limited to **0.5 ZEC each**: at that balance the app stops showing the
+address. Creating a mainnet wallet needs an explicit "not audited" confirmation.
 
 ## What it does
 

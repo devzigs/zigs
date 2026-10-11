@@ -70,9 +70,14 @@ It does not learn which notes or outputs are yours: every wallet downloads the s
 
 If one operator runs both the group server and the light-wallet server, they can match the moment
 a wallet marks a payment as sent with the transaction that reaches the network at that moment.
-This links a wallet id to a transaction id, but not to its amount or recipient. To avoid this,
-use Tor Browser, or point the app at a light-wallet server you trust (`LIGHTWALLETDS` in
-`web/index.html`, `lightwalletds` in `ios/Zigs/Chain.swift`).
+This links a wallet id to a transaction id, but not to its amount or recipient.
+
+- **Mainnet** wallets use ChainSafe's public light-wallet server, so the two servers have
+  different operators.
+- **Testnet** wallets use the Zigs light-wallet server first, with ChainSafe as the backup.
+
+To remove this risk entirely, use Tor Browser, or point the app at a light-wallet server you
+trust (`NETWORKS` in `web/index.html`, `ZcashNetwork` in `ios/Zigs/Chain.swift`).
 
 ## Your device
 
@@ -102,7 +107,9 @@ alone cannot move funds: a payment needs a full threshold of signers.
   signer sees the true payment.
 - The group server can refuse service or drop messages. It cannot forge or read them.
 - Chain reorganisations are not handled in the sync state yet.
-- The code is not audited. Testnet only for now.
+- The code is not audited. Mainnet wallets are limited to 0.5 ZEC: at that balance the app stops
+  showing the address and warns. It cannot stop someone from sending more, and payments out
+  always stay possible.
 
 ## Checks
 
