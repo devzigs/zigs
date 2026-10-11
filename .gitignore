@@ -6,3 +6,4 @@
 /cf/.wrangler
 /cf/.dev.vars
 /.wrangler
+/infra/lwd/.env.tunnel

@@ -53,6 +53,22 @@ services:
           cpus: "1"
           memory: 512M
 
+  # Publishes Envoy as lwd.zigs.app without opening a port. Needs .env.tunnel with TUNNEL_TOKEN.
+  # Start with: docker compose --profile tunnel up -d
+  cloudflared:
+    image: cloudflare/cloudflared:2026.9.3
+    profiles: ["tunnel"]
+    restart: unless-stopped
+    command: tunnel --no-autoupdate run
+    env_file: .env.tunnel
+    depends_on:
+      - envoy
+    deploy:
+      resources:
+        limits:
+          cpus: "0.5"
+          memory: 256M
+
 volumes:
   zakura-cache:
   lwd-cache:

@@ -1,7 +1,8 @@
 import Foundation
 import Observation
 
-let lightwalletd = URL(string: "https://zcash-testnet.chainsafe.dev")!
+/// Own node first; ChainSafe's public proxy is the backup.
+let lightwalletds = [URL(string: "https://lwd.zigs.app")!, URL(string: "https://zcash-testnet.chainsafe.dev")!]
 let explorerTx = "https://testnet.zcashexplorer.app/transactions/"
 
 struct Session: Identifiable {
@@ -416,7 +417,7 @@ final class GroupModel {
         let path = "groups/\(gid)/sessions/\(ss.id)"
         once("broadcast:\(ss.id)") {
             do {
-                try await Lightwalletd.send(hex: hex, to: lightwalletd)
+                try await Lightwalletd.send(hex: hex, toFirstOf: lightwalletds)
                 try await self.patch(path, ["broadcastTxid": final.str("txid") ?? "", "broadcastAt": now(),
                                             "broadcastError": NSNull(), "status": "broadcast"])
                 self.note("transaction broadcast: \(final.str("txid") ?? "")")

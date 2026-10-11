@@ -2,6 +2,17 @@ import Foundation
 
 /// Minimal grpc-web client for lightwalletd: only SendTransaction, which is one unary call.
 enum Lightwalletd {
+    /// Tries each server in order and stops at the first one that accepts the transaction.
+    static func send(hex: String, toFirstOf servers: [URL]) async throws {
+        var errors: [String] = []
+        for server in servers {
+            do { return try await send(hex: hex, to: server) } catch {
+                errors.append("\(server.host ?? server.absoluteString): \(error.localizedDescription)")
+            }
+        }
+        throw ZigsError(errors.joined(separator: "; "))
+    }
+
     static func send(hex: String, to server: URL) async throws {
         guard let tx = Data(hex: hex) else { throw ZigsError("The transaction hex is not valid.") }
         // RawTransaction { bytes data = 1; uint64 height = 2; } with height left at 0.
@@ -14,6 +25,7 @@ enum Lightwalletd {
 
         var req = URLRequest(url: server.appendingPathComponent("cash.z.wallet.sdk.rpc.CompactTxStreamer/SendTransaction"))
         req.httpMethod = "POST"
+        req.timeoutInterval = 20
         req.setValue("application/grpc-web+proto", forHTTPHeaderField: "Content-Type")
         req.setValue("1", forHTTPHeaderField: "X-Grpc-Web")
         req.httpBody = body

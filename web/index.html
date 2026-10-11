@@ -341,7 +341,9 @@ function putSec(gid, seat, patch) { secrets[skey(gid, seat)] = Object.assign(sec
 
 // ───────────────────────── Platform ─────────────────────────
 let db = null, sdb = null, user = null, downloads = null, me = null, canWrite = null, dbReady = false;
-const LIGHTWALLETD = "https://zcash-testnet.chainsafe.dev";
+// Own node first; ChainSafe's public proxy is the backup.
+const LIGHTWALLETDS = ["https://lwd.zigs.app", "https://zcash-testnet.chainsafe.dev"];
+const SERVER_TIMEOUT_MS = 8000;
 const EXPLORER_TX = "https://testnet.zcashexplorer.app/transactions/";
 let chain = null;   // { gid, cw, prog, bal, ms, error, syncing } for the open group
 const state = { groups: [], gid: null, g: null, seats: {}, dkg1: {}, dkg2: {}, done: {}, verify: {}, wallet: null, sessions: [], sid: null, commits: {}, shares: {}, log: [] };
@@ -556,7 +558,7 @@ function react() {
     once("wallet", async () => {
       // The wallet snapshot can arrive after the DKG ones; never replace a published wallet.
       if ((await sdb.doc(base + "/meta/wallet").get()).exists) return;
-      const birthday = await Z.latestHeight(LIGHTWALLETD);
+      const birthday = await Z.latestHeight(await pickServer());
       const w = J(Z.walletCreate(state.done[1].publicKeyPackage, g.network || "testnet"));
       await sdb.doc(base + "/meta/wallet").set({ ...w, birthday, at: Date.now() });
       log("wallet created: " + w.address.slice(0, 24) + "…");
@@ -630,21 +632,47 @@ async function takeSeat(i) {
   log("you took seat " + i);
 }
 
-function dropChain() { const c = chain; chain = null; if (c && !c.syncing) c.cw.free(); }
+function dropChain() { const c = chain; chain = null; if (c && !c.syncing && c.cw) c.cw.free(); }
 
 function ensureChain() {
   if (!Z || (chain && chain.gid === state.gid)) return;
-  chain = { gid: state.gid, cw: new Z.ChainWallet(state.wallet.ufvk, state.wallet.birthday, LIGHTWALLETD), prog: null, bal: null, ms: 0, error: null, syncing: false };
+  const w = state.wallet;
+  chain = { gid: state.gid, ufvk: w.ufvk, birthday: w.birthday, cw: null, url: null, prog: null, bal: null, ms: 0, error: null, syncing: false };
   runSync(chain);
+}
+
+function withTimeout(promise, ms, what) {
+  let timer;
+  const late = new Promise((_, reject) => { timer = setTimeout(() => reject(new Error(what + " did not answer in " + ms / 1000 + " s")), ms); });
+  return Promise.race([promise, late]).finally(() => clearTimeout(timer));
+}
+
+// Returns the first light-wallet server that answers, in LIGHTWALLETDS order.
+async function pickServer() {
+  for (const url of LIGHTWALLETDS) {
+    try { await withTimeout(Z.latestHeight(url), SERVER_TIMEOUT_MS, new URL(url).host); return url; }
+    catch (e) { log(new URL(url).host + " unreachable: " + (e.message || e)); }
+  }
+  throw new Error("No light-wallet server answers. Check your connection, then click Sync.");
+}
+
+// Switching servers starts a new wallet, which syncs again from the birthday.
+async function connect(c) {
+  const url = await pickServer();
+  if (c.cw && c.url === url) return;
+  if (c.cw) c.cw.free();
+  c.cw = new Z.ChainWallet(c.ufvk, c.birthday, url);
+  c.url = url;
+  log("using " + new URL(url).host);
 }
 
 async function runSync(c) {
   if (c.syncing) return;
   c.syncing = true; c.error = null; render();
   const t0 = performance.now();
-  try { c.bal = J(await c.cw.sync((p) => { c.prog = J(p); render(); })); c.prog = null; c.ms = Math.round(performance.now() - t0); log("synced to " + c.bal.height + ", spendable " + fmtZec(c.bal.spendable)); }
+  try { await connect(c); c.bal = J(await c.cw.sync((p) => { c.prog = J(p); render(); })); c.prog = null; c.ms = Math.round(performance.now() - t0); log("synced to " + c.bal.height + ", spendable " + fmtZec(c.bal.spendable)); }
   catch (e) { c.error = e.message || String(e); log("sync failed: " + c.error); }
-  finally { c.syncing = false; if (chain !== c) c.cw.free(); render(); }
+  finally { c.syncing = false; if (chain !== c && c.cw) c.cw.free(); render(); }
 }
 
 async function newSpend(recipient, amountZat) {
@@ -659,13 +687,25 @@ async function newSpend(recipient, amountZat) {
 async function broadcastTx(ss) {
   const ref = sdb.doc("groups/" + state.gid + "/sessions/" + ss.id);
   try {
-    const r = J(await chain.cw.broadcast(ss.final.tx_hex));
+    const r = await broadcastAnywhere(ss.final.tx_hex);
     await ref.update({ broadcastTxid: r.txid || ss.final.txid, broadcastAt: Date.now(), broadcastError: null, status: "broadcast" });
     log("transaction broadcast: " + (r.txid || ss.final.txid));
     runSync(chain);
   } catch (e) {
     await ref.update({ broadcastError: e.message || String(e) });
   }
+}
+
+// Tries each server in turn; a temporary wallet is enough because broadcasting needs no sync.
+async function broadcastAnywhere(txHex) {
+  const errors = [];
+  for (const url of LIGHTWALLETDS) {
+    const cw = new Z.ChainWallet(state.wallet.ufvk, state.wallet.birthday, url);
+    try { return J(await withTimeout(cw.broadcast(txHex), SERVER_TIMEOUT_MS * 2, new URL(url).host)); }
+    catch (e) { errors.push(new URL(url).host + ": " + (e.message || e)); }
+    finally { cw.free(); }
+  }
+  throw new Error(errors.join("; "));
 }
 
 async function approve(ss, i) {
@@ -1012,7 +1052,7 @@ function detailsTab() {
         el("dt", {}, "Group key"), el("dd", { class: "hex" }, w.group_verifying_key))),
     el("section", { class: "card card-pad" },
       el("h2", { style: "font-size:15px" }, "Privacy and keys"),
-      el("p", { class: "small muted" }, "Your piece of the key is created and used in this browser only. The group server stores encrypted data it cannot read. This page downloads blocks from " + new URL(LIGHTWALLETD).host + ", which sees your IP address but never a key. The wallet syncs again on every load."),
+      el("p", { class: "small muted" }, "Your piece of the key is created and used in this browser only. The group server stores encrypted data it cannot read. This page downloads blocks from " + (chain && chain.url ? new URL(chain.url).host : "a light-wallet server") + ", which sees your IP address but never a key. The wallet syncs again on every load."),
       el("details", {}, el("summary", {}, "Viewing key"), el("div", { class: "addr-full", style: "margin-top:10px" }, w.ufvk), el("div", { style: "margin-top:8px" }, copyBtn(w.ufvk, "Copy viewing key"))),
       el("p", { class: "small faint" }, "The viewing key shows every payment of this wallet. Share it only with people who may see your balance."),
       state.log.length ? el("details", {}, el("summary", {}, "Activity in this browser"), el("div", { class: "log" }, state.log.join("\n"))) : null));

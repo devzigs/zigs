@@ -17,7 +17,7 @@ static_resources:
                       typed_per_filter_config:
                         envoy.filters.http.cors:
                           "@type": type.googleapis.com/envoy.extensions.filters.http.cors.v3.CorsPolicy
-                          allow_origin_string_match: [{ safe_regex: { regex: ".*" } }]
+                          allow_origin_string_match: [{ safe_regex: { regex: "^https://app\\.zigs\\.app$|^http://localhost(:[0-9]+)?$" } }]
                           allow_methods: "POST, OPTIONS"
                           allow_headers: "content-type,x-grpc-web,x-user-agent,grpc-timeout,keep-alive,user-agent,cache-control"
                           expose_headers: "grpc-status,grpc-message"
