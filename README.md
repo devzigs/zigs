@@ -41,7 +41,7 @@ To see signer changes, open **Signers**, then **Change signers**. To see the pri
 |---|---|
 | **Privacy** | On chain, the transaction shape matches the standard wallet library: same builder, padding, fee, expiry and anchor depth ([comparison](PRIVACY.md#on-chain)). The server stores only encrypted values, padded so that even their length hides amounts. The server keeps no logs. Every remaining leak is listed in [PRIVACY.md](PRIVACY.md). |
 | **Usefulness** | It works for team treasuries, DAOs and families today: web, iPhone and Mac; invite links and QR codes; batch payments for payroll and grants (up to 20 recipients, one approval round, pasted from a spreadsheet); signer changes; mainnet with a safety limit. |
-| **Execution** | The live app works end to end. Nine testnet transactions made by the apps are [listed below](#proof-on-testnet). The engine has 23 tests, and a command-line suite runs adversarial cases. |
+| **Execution** | The live app works end to end. Ten testnet transactions made by the apps are [listed below](#proof-on-testnet). The engine has 24 tests, and a command-line suite runs adversarial cases. |
 | **Originality** | Built during the Zecathon window: the first commit is from October 10, 2026. No command line, no trusted dealer, no server that can read the wallet. |
 
 ## Architecture
@@ -201,6 +201,7 @@ transactions, Ironwood pool):
 | [`b87248fa…3636`](https://testnet.zecblock.com/tx/b87248fa7a06b7a42f082e07c1c4f5da94d1673d7c0fc98d8be2745209f73636) | 4,489,104 | Payment with the padded store format |
 | [`9822e109…a43f`](https://testnet.zecblock.com/tx/9822e109ef8416a44b28777971ec661f8e83961a2c57f9c74b6a1f5fb535a43f) | 4,489,326 | **Batch payment** from the web app: 4 recipients, pasted as a list, one transaction |
 | [`fb7da6ae…ffde`](https://testnet.zecblock.com/tx/fb7da6ae2fe90c1e1b39637b6608c59b13b701286b6f917762d9b5b82408ffde) | 4,489,332 | **Batch payment** from the iPhone: 2 recipients |
+| [`df9b264e…5216`](https://testnet.zecblock.com/tx/df9b264e17b70b0d419af6a272e11b7fb4ac5e48fbd80dfb469496600dac5216) | 4,489,434 | iPhone spends 4 notes at once (more inputs than outputs) |
 
 A 2-of-2 mainnet wallet was also created and synced to the mainnet tip in the web app and on the
 iPhone.
@@ -264,9 +265,9 @@ Use the `Zigs` scheme for iPhone and `ZigsMac` for Mac (Apple silicon). The apps
 
 ## Tests
 
-- `cargo test --release` in `wasm/` (23 tests): full 2-of-3 signing flows for Ironwood (paying 4
+- `cargo test --release` in `wasm/` (24 tests): full 2-of-3 signing flows for Ironwood (paying 4
   recipients in one transaction) and Orchard, with a bad share that is attributed to its sender;
-  a swapped recipient on any payee output is refused; recipient lists checked row by row; fees
+  a swapped recipient on any payee output is refused; 3 notes spent for 1 recipient; recipient lists checked row by row; fees
   that count outputs; mainnet and testnet upgrade rules; note
   selection, fees and the largest sendable amount; padded sealing, old values, wrong keys and moved
   values; the saved sync state; the native wallet interface; key ceremony routing.

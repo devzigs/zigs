@@ -820,6 +820,73 @@ mod tests {
         }
     }
 
+    /// Test only: fabricate incoming notes of `values` for the wallet (no chain access), in one
+    /// note commitment tree. Returns each note with its Merkle path, and the anchor.
+    fn incoming_notes(
+        fvk: &FullViewingKey,
+        values: &[u64],
+        ironwood: bool,
+    ) -> R<(Vec<(orchard::Note, orchard::tree::MerklePath)>, orchard::Anchor)> {
+        let version = if ironwood {
+            orchard::bundle::BundleVersion::ironwood_v3()
+        } else {
+            orchard::bundle::BundleVersion::orchard_v2()
+        };
+        // 1. Someone pays the wallet; the wallet finds the notes with its IVK.
+        let mut b = orchard::builder::Builder::new(
+            orchard::builder::BundleType::DEFAULT,
+            version,
+            version.default_flags(),
+            orchard::Anchor::empty_tree(),
+        )
+        .map_err(e("builder"))?;
+        for &value in values {
+            b.add_output(
+                None,
+                fvk.address_at(0u32, Scope::External),
+                orchard::value::NoteValue::from_raw(value),
+                Memo::Empty.encode().into_bytes(),
+            )
+            .map_err(e("output"))?;
+        }
+        let (bundle, meta) = b.build::<i64>(rng()).map_err(e("build"))?.ok_or("empty")?;
+        let ivk = fvk.to_ivk(Scope::External).prepare();
+        let mut notes = vec![];
+        for k in 0..values.len() {
+            let action = bundle.actions().get(meta.output_action_index(k).unwrap()).unwrap();
+            let found = if ironwood {
+                let domain = orchard::note_encryption::IronwoodDomain::for_action(action);
+                try_note_decryption(&domain, &ivk, action)
+            } else {
+                let domain = orchard::note_encryption::OrchardDomain::for_action(action);
+                try_note_decryption(&domain, &ivk, action)
+            };
+            notes.push(found.ok_or("wallet IVK could not decrypt an incoming note")?.0);
+        }
+        // 2. A note commitment tree that holds only these notes.
+        let leaf = |n: &orchard::Note| {
+            let cmx: orchard::note::ExtractedNoteCommitment = n.commitment().into();
+            MerkleHashOrchard::from_cmx(&cmx)
+        };
+        let store = MemoryShardStore::<MerkleHashOrchard, u32>::empty();
+        let mut tree = ShardTree::<_, 32, 16>::new(store, 100);
+        for n in &notes {
+            tree.append(leaf(n), Retention::Marked).map_err(e("tree"))?;
+        }
+        tree.checkpoint(9_999_999).map_err(e("tree"))?;
+        let mut out = vec![];
+        let mut root = None;
+        for (i, n) in notes.into_iter().enumerate() {
+            let p = tree
+                .witness_at_checkpoint_depth((i as u64).into(), 0)
+                .map_err(e("witness"))?
+                .ok_or("no witness")?;
+            root = Some(p.root(leaf(&n)));
+            out.push((n, orchard::tree::MerklePath::from(p)));
+        }
+        Ok((out, orchard::Anchor::from(root.ok_or("no notes")?)))
+    }
+
     /// Test only: fabricate an incoming note (no chain access), then build a
     /// PCZT that spends it on a regtest chain.
     fn tx_demo_create(fvk_hex: &str, amount: u64, note_value: u64, pool: &str) -> R<String> {
@@ -829,60 +896,8 @@ mod tests {
             "orchard" => false,
             _ => return Err("pool must be ironwood or orchard".into()),
         };
-        let version = if ironwood {
-            orchard::bundle::BundleVersion::ironwood_v3()
-        } else {
-            orchard::bundle::BundleVersion::orchard_v2()
-        };
-        // 1. Someone pays the wallet; the wallet finds the note with its IVK.
-        let note = {
-            let mut b = orchard::builder::Builder::new(
-                orchard::builder::BundleType::DEFAULT,
-                version,
-                version.default_flags(),
-                orchard::Anchor::empty_tree(),
-            )
-            .map_err(e("builder"))?;
-            b.add_output(
-                None,
-                fvk.address_at(0u32, Scope::External),
-                orchard::value::NoteValue::from_raw(note_value),
-                Memo::Empty.encode().into_bytes(),
-            )
-            .map_err(e("output"))?;
-            let (bundle, meta) = b.build::<i64>(rng()).map_err(e("build"))?.ok_or("empty")?;
-            let action = bundle.actions().get(meta.output_action_index(0).unwrap()).unwrap();
-            let ivk = fvk.to_ivk(Scope::External).prepare();
-            let found = if ironwood {
-                try_note_decryption(
-                    &orchard::note_encryption::IronwoodDomain::for_action(action),
-                    &ivk,
-                    action,
-                )
-            } else {
-                try_note_decryption(
-                    &orchard::note_encryption::OrchardDomain::for_action(action),
-                    &ivk,
-                    action,
-                )
-            };
-            found.ok_or("wallet IVK could not decrypt the incoming note")?.0
-        };
-        // 2. One-leaf note commitment tree.
-        let (anchor, path) = {
-            let cmx: orchard::note::ExtractedNoteCommitment = note.commitment().into();
-            let leaf = MerkleHashOrchard::from_cmx(&cmx);
-            let mut tree =
-                ShardTree::<_, 32, 16>::new(MemoryShardStore::<MerkleHashOrchard, u32>::empty(), 100);
-            tree.append(leaf, Retention::Marked).map_err(e("tree"))?;
-            tree.checkpoint(9_999_999).map_err(e("tree"))?;
-            let p = tree
-                .witness_at_checkpoint_depth(0.into(), 0)
-                .map_err(e("witness"))?
-                .ok_or("no witness")?;
-            let a = p.root(leaf);
-            (orchard::Anchor::from(a), orchard::tree::MerklePath::from(p))
-        };
+        let (mut spends, anchor) = incoming_notes(&fvk, &[note_value], ironwood)?;
+        let (note, path) = spends.remove(0);
         // 3. Pay third parties (four in one Ironwood batch), change back to the wallet's internal
         // address. The builder rejects the PCZT if this fee differs from ZIP 317.
         let count = if ironwood { 4 } else { 1 };
@@ -1059,6 +1074,23 @@ mod tests {
             let r = inspect(&B64.encode(&bad), &fvk);
             assert!(r.is_err(), "a payee output with a swapped recipient was accepted");
         }
+    }
+
+    /// More notes than outputs: the fee follows the spends, and `inspect` accepts the result.
+    #[test]
+    fn ironwood_spends_three_notes_for_one_payee() {
+        let fvk = FullViewingKey::from(&random_sk());
+        let (spends, anchor) = incoming_notes(&fvk, &[40_000, 50_000, 60_000], true).unwrap();
+        let payee = FullViewingKey::from(&random_sk()).address_at(0u32, Scope::External);
+        let fee = chain::zip317_fee(3, 2);
+        assert_eq!(fee, 15_000);
+        let outs = (&[(payee, 100_000)][..], 150_000 - 100_000 - fee);
+        let pczt = build_ironwood_pczt(regtest(true), 10_000_000.into(), &fvk, (spends, anchor), outs)
+            .unwrap();
+        let ins = v(&inspect(&pczt_to_b64(pczt).unwrap(), &hex::encode(fvk.to_bytes())).unwrap());
+        assert_eq!(ins["spends"].as_array().unwrap().len(), 3);
+        let paid = ins["lines"].as_array().unwrap().iter().filter(|l| l["value"] == 100_000).count();
+        assert_eq!(paid, 1);
     }
 
     #[test]
