@@ -491,25 +491,31 @@ fn randomizer(s: &PendingSpend) -> R<Randomizer> {
 }
 
 /// Round 2. The participant re-derives everything from the PCZT and refuses
-/// if the coordinator's package disagrees with it.
+/// if the coordinator's package disagrees with it. `approval` is what this
+/// device saved when its user approved: `{nonces, commitments, sighash}`. A
+/// share is made only for the transaction that was approved.
 pub fn sign_share(
     pczt: &str,
     fvk: &str,
     package: &str,
-    nonces: &str,
-    my_commitments: &str,
+    approval: &str,
     key_package: &str,
     id: u16,
 ) -> R<String> {
     let (spends, _, h, _) = inspect_inner(&pczt_from_b64(pczt)?, &parse_fvk(fvk)?)?;
+    let approval: Value = from_json(approval, "approval")?;
+    ensure(
+        approval["sighash"].as_str() == Some(&hex::encode(h)),
+        "this transaction is not the one this device approved",
+    )?;
     let pkg: Value = from_json(package, "package")?;
     ensure(pkg["sighash"].as_str() == Some(&hex::encode(h)), "coordinator's sighash does not match the transaction")?;
     let pkg_spends: Vec<PendingSpend> = from_value(&pkg["spends"], "spends")?;
     ensure(pkg_spends == spends, "coordinator's spends or randomizers do not match the transaction")?;
     let sps: Vec<SigningPackage> = from_value(&pkg["signing_packages"], "signing packages")?;
     ensure(sps.len() == spends.len(), "package count mismatch")?;
-    let nonces: Vec<SigningNonces> = from_json(nonces, "nonces")?;
-    let mine: Vec<SigningCommitments> = from_json(my_commitments, "commitments")?;
+    let nonces: Vec<SigningNonces> = from_value(&approval["nonces"], "nonces")?;
+    let mine: Vec<SigningCommitments> = from_value(&approval["commitments"], "commitments")?;
     let kp: KeyPackage = from_json(key_package, "key package")?;
     ensure(nonces.len() == spends.len() && mine.len() == spends.len(), "nonce count mismatch")?;
     let me = ident(id)?;
@@ -760,9 +766,9 @@ pub fn js_sign_package(pczt: &str, fvk: &str, commitments: &str, min: u16) -> Re
 }
 #[wasm_bindgen(js_name = signShare)]
 pub fn js_sign_share(
-    pczt: &str, fvk: &str, package: &str, nonces: &str, mine: &str, kp: &str, id: u16,
+    pczt: &str, fvk: &str, package: &str, approval: &str, kp: &str, id: u16,
 ) -> Result<String, JsError> {
-    js(sign_share(pczt, fvk, package, nonces, mine, kp, id))
+    js(sign_share(pczt, fvk, package, approval, kp, id))
 }
 #[wasm_bindgen(js_name = signAggregate)]
 pub fn js_sign_aggregate(pczt: &str, pkp: &str, package: &str, shares: &str) -> Result<String, JsError> {
@@ -1025,11 +1031,19 @@ mod tests {
             secrets.insert(i, c);
         }
         let pkg = sign_package(pczt, fvk, &Value::Object(comm).to_string(), t).unwrap();
+        let approval = |i: u16, sighash: &str| {
+            json!({"nonces": secrets[&i]["nonces"], "commitments": secrets[&i]["commitments"],
+                   "sighash": sighash}).to_string()
+        };
+        let kp = |i: u16| fin[i as usize - 1]["key_package"].to_string();
+        let first = signers[0];
+        let other = hex::encode([7u8; 32]);
+        let refused = sign_share(pczt, fvk, &pkg, &approval(first, &other), &kp(first), first);
+        assert!(refused.unwrap_err().contains("not the one this device approved"));
         let mut shares = serde_json::Map::new();
         for &i in signers {
-            let s = sign_share(pczt, fvk, &pkg, &secrets[&i]["nonces"].to_string(),
-                &secrets[&i]["commitments"].to_string(),
-                &fin[i as usize - 1]["key_package"].to_string(), i).unwrap();
+            let s = sign_share(pczt, fvk, &pkg, &approval(i, ins["sighash"].as_str().unwrap()), &kp(i), i)
+                .unwrap();
             shares.insert(i.to_string(), v(&s));
         }
         let agg = v(&sign_aggregate(pczt, &pkp, &pkg, &Value::Object(shares.clone()).to_string()).unwrap());

@@ -95,7 +95,7 @@ export function signCommit(pczt: string, fvk: string, kp: string): string;
 
 export function signPackage(pczt: string, fvk: string, commitments: string, min: number): string;
 
-export function signShare(pczt: string, fvk: string, _package: string, nonces: string, mine: string, kp: string, id: number): string;
+export function signShare(pczt: string, fvk: string, _package: string, approval: string, kp: string, id: number): string;
 
 export function start(): void;
 
@@ -145,7 +145,7 @@ export interface InitOutput {
     readonly signAggregate: (a: number, b: number, c: number, d: number, e: number, f: number, g: number, h: number) => [number, number, number, number];
     readonly signCommit: (a: number, b: number, c: number, d: number, e: number, f: number) => [number, number, number, number];
     readonly signPackage: (a: number, b: number, c: number, d: number, e: number, f: number, g: number) => [number, number, number, number];
-    readonly signShare: (a: number, b: number, c: number, d: number, e: number, f: number, g: number, h: number, i: number, j: number, k: number, l: number, m: number) => [number, number, number, number];
+    readonly signShare: (a: number, b: number, c: number, d: number, e: number, f: number, g: number, h: number, i: number, j: number, k: number) => [number, number, number, number];
     readonly start: () => void;
     readonly walletCreate: (a: number, b: number, c: number, d: number) => [number, number, number, number];
     readonly walletVerify: (a: number, b: number, c: number, d: number) => [number, number, number, number];

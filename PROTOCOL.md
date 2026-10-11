@@ -205,6 +205,8 @@ Each chosen device signs automatically, after these checks:
 
 - It decodes the current PCZT again and compares its sighash with the one it approved. If they
   differ, it burns its nonces, marks the payment failed and does not sign.
+- The engine checks the same thing again: `sign_share` takes the saved approval (nonces,
+  commitments and sighash) and refuses a transaction with another sighash.
 - It re-runs the PCZT verifier role.
 - It checks that its own commitment is in the package unchanged.
 - It deletes its nonces before it publishes its signature share, so a nonce is never used twice.
@@ -349,8 +351,6 @@ the web, on iPhone and on Mac at the same time.
 **Limits**
 
 - Not audited.
-- The sighash binding is in the apps. The engine's `sign_share` does not take the approved
-  sighash yet.
 - Malicious light-wallet servers and chain reorganisations are not handled.
 - A full session in Tor Browser is not tested yet.
 - `alpha` comes from the PCZT, as in the Zcash Foundation's `zcash-sign`. Compare this with the

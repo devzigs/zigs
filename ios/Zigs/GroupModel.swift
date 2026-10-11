@@ -547,9 +547,8 @@ final class GroupModel {
                             ["error": "The payment changed after a signer approved it.", "status": "failed"])
             throw ZigsError("This payment changed after you approved it, so this device did not sign it.")
         }
-        let share = try Engine.call("signShare", [ss.doc.str("pczt") ?? "", fvk, package,
-                                                  Engine.json(n["nonces"] ?? NSNull()),
-                                                  Engine.json(n["commitments"] ?? NSNull()),
+        // The engine checks the approved sighash again before it signs.
+        let share = try Engine.call("signShare", [ss.doc.str("pczt") ?? "", fvk, package, Engine.json(n),
                                                   Engine.json(s["keyPackage"] ?? NSNull()), i])
         // Burn the nonces before the share goes out: a nonce that comes back could sign twice.
         guard vault.putSec(gid, i, ["nonces": nonces]) else {

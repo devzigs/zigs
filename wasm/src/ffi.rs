@@ -47,7 +47,7 @@ const METHODS: &[(&str, Method)] = &[
     ("signCommit", |a| sign_commit(s(a, 0)?, s(a, 1)?, s(a, 2)?)),
     ("signPackage", |a| sign_package(s(a, 0)?, s(a, 1)?, s(a, 2)?, n(a, 3)?)),
     ("signShare", |a| {
-        sign_share(s(a, 0)?, s(a, 1)?, s(a, 2)?, s(a, 3)?, s(a, 4)?, s(a, 5)?, n(a, 6)?)
+        sign_share(s(a, 0)?, s(a, 1)?, s(a, 2)?, s(a, 3)?, s(a, 4)?, n(a, 5)?)
     }),
     ("signAggregate", |a| sign_aggregate(s(a, 0)?, s(a, 1)?, s(a, 2)?, s(a, 3)?)),
     ("finalize", |a| finalize(s(a, 0)?)),

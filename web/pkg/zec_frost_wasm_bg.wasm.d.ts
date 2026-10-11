@@ -39,7 +39,7 @@ export const secretSeal: (a: number, b: number, c: number, d: number, e: number,
 export const signAggregate: (a: number, b: number, c: number, d: number, e: number, f: number, g: number, h: number) => [number, number, number, number];
 export const signCommit: (a: number, b: number, c: number, d: number, e: number, f: number) => [number, number, number, number];
 export const signPackage: (a: number, b: number, c: number, d: number, e: number, f: number, g: number) => [number, number, number, number];
-export const signShare: (a: number, b: number, c: number, d: number, e: number, f: number, g: number, h: number, i: number, j: number, k: number, l: number, m: number) => [number, number, number, number];
+export const signShare: (a: number, b: number, c: number, d: number, e: number, f: number, g: number, h: number, i: number, j: number, k: number) => [number, number, number, number];
 export const start: () => void;
 export const walletCreate: (a: number, b: number, c: number, d: number) => [number, number, number, number];
 export const walletVerify: (a: number, b: number, c: number, d: number) => [number, number, number, number];

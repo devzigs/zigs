@@ -98,6 +98,8 @@
 }
 * { box-sizing: border-box; }
 html, body { height: 100%; }
+/* Keep the scrollbar space when a short tab has no scrollbar, so the page never shifts. */
+html { scrollbar-gutter: stable; }
 body { margin: 0; background: var(--bg); color: var(--text); font: 400 14.5px/1.55 var(--sans); -webkit-font-smoothing: antialiased; }
 h1, h2, h3 { margin: 0; font-weight: 600; letter-spacing: -0.02em; text-wrap: balance; }
 p { margin: 0; }
@@ -945,62 +947,77 @@ function reactNow() {
 }
 
 function reactSession(ss) {
-  const g = state.g, gid = state.gid, base = "groups/" + gid + "/sessions/" + ss.id;
   const fvk = state.wallet.orchard_fvk;
   // The engine takes only strings. A document with another type would crash it.
   if (!isStr(ss.pczt) || !isStr(fvk) || (ss.package != null && !isStr(ss.package))) return;
-  const coordinator = isMe(ss.createdBy);
-  // Coordinator: once t approvals are in, build the signing package.
-  if (coordinator && !ss.package && !ss.error) {
-    const ids = Object.keys(state.commits).map(Number).sort((a, b) => a - b).slice(0, g.t);
-    if (ids.length >= g.t) once("pkg:" + ss.id, async () => {
-      const c = {}; for (const i of ids) c[i] = state.commits[i].commitments;
-      const pkg = Z.signPackage(ss.pczt, fvk, S(c), g.t);
-      // Two browsers can hold the same seat (a restored copy): only one writes the package.
-      const ref = sdb.doc("groups/" + gid + "/sessions/" + ss.id);
-      if (!(await ref.acquire({ holder: crypto.randomUUID(), ttlMs: 10000 })).acquired) return;
-      const cur = await ref.get();
-      if (cur.exists && cur.data().package) return;
-      await ref.update({ package: pkg, signers: ids, status: "signing" });
-      log("signing package sent to signers " + ids.join(", "));
-    });
-  }
-  // Signer: once the package names me, re-verify everything and sign.
-  if (ss.package && !ss.error) {
-    for (const i of localSeats()) {
-      const s = sec(gid, i), n = s.nonces && s.nonces[ss.id];
-      const mine = signersOf(ss).includes(i) && n && !state.shares[i];
-      if (mine) once("share:" + ss.id + ":" + i, async () => {
-        const nonces = { ...(s.nonces || {}) }; delete nonces[ss.id];
-        const ins = inspectOf(ss);
-        if (!n.sighash || !ins || ins.error || ins.sighash !== n.sighash) {
-          await putSec(gid, i, { nonces });
-          const error = "The payment changed after a signer approved it.";
-          await sdb.doc(base).update({ error, status: "failed" });
-          throw new Error("This payment changed after you approved it, so this browser did not sign it.");
-        }
-        const shares = Z.signShare(ss.pczt, fvk, ss.package, S(n.nonces), S(n.commitments), S(s.keyPackage), i);
-        // Save the burn before the share goes out: a nonce that comes back could sign twice.
-        if (!(await putSec(gid, i, { nonces }))) {
-          throw new Error("Could not save the used nonce, so the signature share was not sent.");
-        }
-        await sdb.doc(base + "/shares/" + i).set({ shares, at: Date.now() });
-        log("seat " + i + ": signature share sent");
-      });
+  if (ss.error) return;
+  if (!ss.package && isMe(ss.createdBy)) buildPackage(ss, fvk);
+  if (ss.package) signMyShares(ss, fvk);
+  if (ss.package && !ss.signed) aggregateShares(ss);
+}
+
+const sessionPath = (ss) => "groups/" + state.gid + "/sessions/" + ss.id;
+
+// Coordinator: once t approvals are in, build the signing package.
+function buildPackage(ss, fvk) {
+  const t = state.g.t;
+  const ids = Object.keys(state.commits).map(Number).sort((a, b) => a - b).slice(0, t);
+  if (ids.length < t) return;
+  once("pkg:" + ss.id, async () => {
+    const c = {}; for (const i of ids) c[i] = state.commits[i].commitments;
+    const pkg = Z.signPackage(ss.pczt, fvk, S(c), t);
+    // Two browsers can hold the same seat (a restored copy): only one writes the package.
+    const ref = sdb.doc(sessionPath(ss));
+    if (!(await ref.acquire({ holder: crypto.randomUUID(), ttlMs: 10000 })).acquired) return;
+    const cur = await ref.get();
+    if (cur.exists && cur.data().package) return;
+    await ref.update({ package: pkg, signers: ids, status: "signing" });
+    log("signing package sent to signers " + ids.join(", "));
+  });
+}
+
+// Signer: once the package names a seat of this browser, re-verify everything and sign.
+function signMyShares(ss, fvk) {
+  for (const i of localSeats()) {
+    const n = (sec(state.gid, i).nonces || {})[ss.id];
+    if (signersOf(ss).includes(i) && n && !state.shares[i]) {
+      once("share:" + ss.id + ":" + i, () => signShare(ss, fvk, i, n));
     }
   }
-  // Any participant: aggregate. The result is deterministic, so a race is harmless.
-  const shared = signersOf(ss).every((i) => state.shares[i]);
-  if (localSeats().length && ss.package && !ss.signed && !ss.error && shared) {
-    once("agg:" + ss.id, async () => {
-      const sh = {}; for (const i of signersOf(ss)) sh[i] = J(state.shares[i].shares);
-      let r;
-      try { r = J(Z.signAggregate(ss.pczt, state.done[1].publicKeyPackage, ss.package, S(sh))); }
-      catch (e) { await sdb.doc("groups/" + gid + "/sessions/" + ss.id).update({ error: e.message || String(e), status: "failed" }); throw e; }
-      await sdb.doc("groups/" + gid + "/sessions/" + ss.id).update({ signed: r.signed_pczt, signatures: r.signatures, status: "signed" });
-      log("signatures aggregated and verified under rk");
-    });
+}
+
+async function signShare(ss, fvk, i, n) {
+  const gid = state.gid, s = sec(gid, i);
+  const nonces = { ...(s.nonces || {}) }; delete nonces[ss.id];
+  const ins = inspectOf(ss);
+  if (!n.sighash || !ins || ins.error || ins.sighash !== n.sighash) {
+    await putSec(gid, i, { nonces });
+    const error = "The payment changed after a signer approved it.";
+    await sdb.doc(sessionPath(ss)).update({ error, status: "failed" });
+    throw new Error("This payment changed after you approved it, so this browser did not sign it.");
   }
+  // The engine checks the approved sighash again before it signs.
+  const shares = Z.signShare(ss.pczt, fvk, ss.package, S(n), S(s.keyPackage), i);
+  // Save the burn before the share goes out: a nonce that comes back could sign twice.
+  if (!(await putSec(gid, i, { nonces }))) {
+    throw new Error("Could not save the used nonce, so the signature share was not sent.");
+  }
+  await sdb.doc(sessionPath(ss) + "/shares/" + i).set({ shares, at: Date.now() });
+  log("seat " + i + ": signature share sent");
+}
+
+// Any participant: aggregate. The result is deterministic, so a race is harmless.
+function aggregateShares(ss) {
+  if (!localSeats().length || !signersOf(ss).every((i) => state.shares[i])) return;
+  once("agg:" + ss.id, async () => {
+    const sh = {}; for (const i of signersOf(ss)) sh[i] = J(state.shares[i].shares);
+    const ref = sdb.doc(sessionPath(ss));
+    let r;
+    try { r = J(Z.signAggregate(ss.pczt, state.done[1].publicKeyPackage, ss.package, S(sh))); }
+    catch (e) { await ref.update({ error: e.message || String(e), status: "failed" }); throw e; }
+    await ref.update({ signed: r.signed_pczt, signatures: r.signatures, status: "signed" });
+    log("signatures aggregated and verified under rk");
+  });
 }
 
 // ───────────────────────── Actions ─────────────────────────
@@ -1302,7 +1319,8 @@ function money(zat, size = "md", sign = "") {
 function seatLabel(i) {
   const s = state.seats[i];
   if (!s) return "Open seat";
-  return isMe(s.uid) ? "You" : s.name || "Signer " + i;
+  if (!isMe(s.uid)) return s.name || "Signer " + i;
+  return localSeats().length > 1 ? "You (seat " + i + ")" : "You";
 }
 function avatar(i, cls = "") {
   const s = state.seats[i], mine = s && isMe(s.uid);
@@ -2513,7 +2531,7 @@ function timeline(ss, refused) {
   const tl = (cls, title, body) => el("div", { class: "step " + cls }, el("span", { class: "tick" }, cls === "done" ? "✓" : cls === "bad" ? "!" : "•"), el("div", { style: "display:grid;gap:6px;min-width:0" }, el("h3", {}, title), body));
   return el("div", { class: "steps" },
     tl("done", "Proposed", el("p", {}, when(ss.createdAt))),
-    tl(approvals >= g.t ? "done" : refused ? "bad" : "now", "Approvals · " + Math.min(approvals, g.t) + " of " + g.t,
+    tl(approvals >= g.t ? "done" : refused ? "bad" : "now", "Approvals · " + Math.min(approvals, g.t) + " of " + g.t + " needed",
       el("div", { style: "display:flex;align-items:center;gap:10px;flex-wrap:wrap" }, seatIds().map((i) => el("span", { class: "approver" + (state.commits[i] ? " yes" : "") }, avatar(i), el("span", { class: "small" }, seatLabel(i) + (state.commits[i] ? " ✓" : "")))))),
     tl(ss.error ? "bad" : ss.signed ? "done" : ss.package ? "now" : "", "Combined signature",
       el("p", {}, ss.error ? ss.error : ss.signed ? "All signatures combined and verified." : ss.package ? "Signing · " + shared + " of " + signers.length + " shares" : "Starts after " + g.t + " approvals.")),

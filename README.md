@@ -43,7 +43,7 @@ To see signer changes, open **Signers**, then **Change signers**. To see the pri
 |---|---|
 | **Privacy** | On chain, the transaction shape matches the standard wallet library: same builder, padding, fee, expiry and anchor depth ([comparison](PRIVACY.md#on-chain)). The server stores only encrypted values, padded so that even their length hides amounts. On the device, key shares can be locked with a passkey (web) or Face ID (iPhone) ([how](PRIVACY.md#lock-with-a-passkey-or-face-id)). The page can connect only to the group server and three named light-wallet servers (Content-Security-Policy). It is prepared for Tor Browser, but not yet tested end to end ([how](PRIVACY.md#use-zigs-over-tor)). The server keeps no logs. Every remaining leak is listed in [PRIVACY.md](PRIVACY.md). |
 | **Usefulness** | Designed for team treasuries, DAOs and families. Usable today on testnet, and on mainnet with a warning at 0.5 ZEC: web, iPhone and Mac; invite links and QR codes; batch payments for payroll and grants (up to 20 recipients, one approval round, pasted from a spreadsheet); signer changes. |
-| **Execution** | The live app works end to end. Eleven testnet transactions made by the apps are [listed below](#proof-on-testnet). The engine has 24 tests, and a command-line suite runs adversarial cases. |
+| **Execution** | The live app works end to end. Twelve testnet transactions made by the apps are [listed below](#proof-on-testnet). The engine has 24 tests, and a command-line suite runs adversarial cases. |
 | **Originality** | An end-user app for re-randomized FROST: no command line, no trusted dealer, and no server that can read the wallet. Each device decodes the PCZT and checks every output before it approves, and binds its approval to the transaction's sighash. Signer changes, batch payments and native iPhone and Mac apps are included. Built during the Zecathon window: the first commit is from October 10, 2026. |
 
 ## Architecture
@@ -147,8 +147,9 @@ sequenceDiagram
 
 **Signing.** Each spend is signed under a re-randomized key `rk = ak + [alpha]G` with a fresh
 `alpha`, so spends cannot be linked to the wallet or to each other. Before a device signs, it
-re-runs the PCZT verifier role, recomputes the sighash (ZIP 244, v6), checks that its own nonce
-commitment was not replaced, and deletes its nonces after use. Any device can combine the shares;
+re-runs the PCZT verifier role, recomputes the sighash (ZIP 244, v6), and refuses unless it equals
+the sighash saved when its user approved. The app and the engine both check this. The device also
+checks that its own nonce commitment was not replaced, and deletes its nonces after use. Any device can combine the shares;
 a bad share names its sender.
 
 ## Changing signers
@@ -189,8 +190,8 @@ How the group server is kept blind:
 
 ## Proof on testnet
 
-These transactions were made by the Zigs apps with 2-of-2 wallets on the NU7 testnet (v6
-transactions, Ironwood pool):
+These transactions were made by the Zigs apps on the NU7 testnet (v6 transactions, Ironwood pool),
+with 2-of-2 wallets and one 2-of-3 wallet:
 
 | Transaction | Block | What |
 |---|---|---|
@@ -205,6 +206,7 @@ transactions, Ironwood pool):
 | [`fb7da6ae…ffde`](https://testnet.zecblock.com/tx/fb7da6ae2fe90c1e1b39637b6608c59b13b701286b6f917762d9b5b82408ffde) | 4,489,332 | **Batch payment** from the iPhone: 2 recipients |
 | [`df9b264e…5216`](https://testnet.zecblock.com/tx/df9b264e17b70b0d419af6a272e11b7fb4ac5e48fbd80dfb469496600dac5216) | 4,489,434 | iPhone spends 4 notes at once (more inputs than outputs) |
 | [`7c09aacb…302a`](https://testnet.zecblock.com/tx/7c09aacb67ae8d312f611f890913c1db586d3ac0c65501b9062e484f8dc7302a) | 4,489,484 | **Passkey lock:** signed from a locked browser, with a reload and unlock between the two approvals |
+| [`72004cb2…92ca`](https://testnet.zecblock.com/tx/72004cb20cfbdc7acc9592b01deac70490c3452744c92fe9c8c717f28d4a92ca) | 4,489,938 | **2-of-3 wallet:** seats 1 and 3 approve, seat 2 does not |
 
 A 2-of-2 mainnet wallet was also created and synced to the mainnet tip in the web app and on the
 iPhone.
@@ -279,6 +281,7 @@ Use the `Zigs` scheme for iPhone and `ZigsMac` for Mac (Apple silicon). The apps
 - `node cf/test/limits.mjs ws://localhost:8787`: the group server's size, rate and path limits.
 - `node web/test/payees.mjs`: the pasted payment list parser.
 - `node web/test/vault.mjs`: the passkey lock's sealed record (wrong key, changed record, new IV).
+- `node web/test/util.mjs`: address grouping, number checks and the key package comparison.
 - `node web/test/qr.mjs`: the QR encoder against libqrencode (needs the `qrencode` command).
 - `bash tests/e2e.sh`: the command-line ceremony in separate processes, with attacks: wallet
   substitution, fewer than t signers, tampered randomizer and sighash, nonce reuse, wrong share

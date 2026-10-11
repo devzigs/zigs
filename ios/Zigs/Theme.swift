@@ -105,13 +105,15 @@ struct Money: View {
     let zat: Int
     var size: CGFloat = 17
     var sign = ""
+    /// Follows the user's text size setting (Dynamic Type).
+    @ScaledMetric(relativeTo: .body) private var scale: CGFloat = 1
 
     var body: some View {
         let pre = sign == "out" ? "−" : sign == "in" ? "+" : ""
         let v = (Double(zat) / 100_000_000).formatted(.number.precision(.fractionLength(2...8)))
         HStack(alignment: .firstTextBaseline, spacing: 4) {
-            Text(pre + v).font(.system(size: size, weight: .semibold).monospacedDigit())
-            Text("ZEC").font(.system(size: size * 0.55, weight: .semibold)).foregroundStyle(Color.mist)
+            Text(pre + v).font(.system(size: size * scale, weight: .semibold).monospacedDigit())
+            Text("ZEC").font(.system(size: size * scale * 0.55, weight: .semibold)).foregroundStyle(Color.mist)
         }
         .foregroundStyle(sign == "in" ? Color.good : .white)
         .accessibilityElement(children: .combine)

@@ -687,15 +687,14 @@ export function signPackage(pczt, fvk, commitments, min) {
  * @param {string} pczt
  * @param {string} fvk
  * @param {string} _package
- * @param {string} nonces
- * @param {string} mine
+ * @param {string} approval
  * @param {string} kp
  * @param {number} id
  * @returns {string}
  */
-export function signShare(pczt, fvk, _package, nonces, mine, kp, id) {
-    let deferred8_0;
-    let deferred8_1;
+export function signShare(pczt, fvk, _package, approval, kp, id) {
+    let deferred7_0;
+    let deferred7_1;
     try {
         const ptr0 = passStringToWasm0(pczt, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
         const len0 = WASM_VECTOR_LEN;
@@ -703,24 +702,22 @@ export function signShare(pczt, fvk, _package, nonces, mine, kp, id) {
         const len1 = WASM_VECTOR_LEN;
         const ptr2 = passStringToWasm0(_package, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
         const len2 = WASM_VECTOR_LEN;
-        const ptr3 = passStringToWasm0(nonces, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
+        const ptr3 = passStringToWasm0(approval, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
         const len3 = WASM_VECTOR_LEN;
-        const ptr4 = passStringToWasm0(mine, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
+        const ptr4 = passStringToWasm0(kp, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
         const len4 = WASM_VECTOR_LEN;
-        const ptr5 = passStringToWasm0(kp, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
-        const len5 = WASM_VECTOR_LEN;
-        const ret = wasm.signShare(ptr0, len0, ptr1, len1, ptr2, len2, ptr3, len3, ptr4, len4, ptr5, len5, id);
-        var ptr7 = ret[0];
-        var len7 = ret[1];
+        const ret = wasm.signShare(ptr0, len0, ptr1, len1, ptr2, len2, ptr3, len3, ptr4, len4, id);
+        var ptr6 = ret[0];
+        var len6 = ret[1];
         if (ret[3]) {
-            ptr7 = 0; len7 = 0;
+            ptr6 = 0; len6 = 0;
             throw takeFromExternrefTable0(ret[2]);
         }
-        deferred8_0 = ptr7;
-        deferred8_1 = len7;
-        return getStringFromWasm0(ptr7, len7);
+        deferred7_0 = ptr6;
+        deferred7_1 = len6;
+        return getStringFromWasm0(ptr6, len6);
     } finally {
-        wasm.__wbindgen_free(deferred8_0, deferred8_1, 1);
+        wasm.__wbindgen_free(deferred7_0, deferred7_1, 1);
     }
 }
 
