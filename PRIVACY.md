@@ -60,7 +60,8 @@ What the server can still see:
 | Number of signers and payments | Count of documents | None |
 
 The server keeps no logs: Workers Logs are off (`observability.enabled = false`), and the code
-writes nothing about requests. IP addresses are used in memory only, to apply rate limits.
+writes nothing about requests. IP addresses are used in memory only: to apply rate limits, and as
+a tag on each open WebSocket.
 Cloudflare, as the host, can see connection metadata.
 
 ## Light-wallet server (lightwalletd)
@@ -163,8 +164,14 @@ the passkey guards the key share instead. The lock is opt-in.
   Each approving device decodes the transaction itself. It ties every output that carries value
   to the recipient it shows, checks that the outputs are exactly the listed recipients and
   amounts, and refuses a transaction that moves more than the standard fee out of the shielded
-  pool. So one honest signer sees the true payment.
-- The group server can refuse service or drop messages. It cannot forge or read them.
+  pool. Each approval is tied to the transaction's sighash: the device signs later only if the
+  transaction is still the one it approved, and otherwise marks the payment failed. So one honest
+  signer sees the true payment.
+- A signer checks the wallet address against its own key share and keeps the result on its
+  device. If the wallet document in the store changes, the device checks it again. Other signers'
+  "checked" marks are their claims.
+- The group server can refuse service, drop messages or replay old ones. It cannot read them or
+  write new ones.
 - Chain reorganisations are not handled in the sync state yet.
 - The code is not audited. Mainnet wallets are limited to 0.5 ZEC: at that balance the app stops
   showing the address and warns. It cannot stop someone from sending more, and payments out

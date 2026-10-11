@@ -613,8 +613,13 @@ struct DetailsTab: View {
             Card {
                 Text("Wallet").font(.headline)
                 Detail(label: "Address") {
-                    Text(w.str("address") ?? "").font(.caption.monospaced()).textSelection(.enabled)
-                    CopyButton(text: w.str("address") ?? "", label: "Copy address").font(.subheadline)
+                    if model.addressHidden {
+                        Text("Shown after your seat checks it against your key share.")
+                            .font(.caption).foregroundStyle(Color.mist)
+                    } else {
+                        Text(w.str("address") ?? "").font(.caption.monospaced()).textSelection(.enabled)
+                        CopyButton(text: w.str("address") ?? "", label: "Copy address").font(.subheadline)
+                    }
                 }
                 Detail(label: "Approval rule") { Text("Any \(st.t) of \(st.n) signers") }
                 Detail(label: "Checked by") { Text("\(st.verifiedCount) of \(st.n) signers") }
@@ -681,6 +686,9 @@ struct ReceiveSheet: View {
                     let net = model.state.net
                     if model.atCap {
                         CapNote()
+                    } else if model.addressHidden {
+                        Text("Your seat is still checking this address against your key share.")
+                            .font(.subheadline).foregroundStyle(Color.mist)
                     } else {
                         Text("Send \(net.cap.map { "up to \(capText($0)) in total" } ?? "testnet ZEC") to this shielded address. Senders and the network cannot see the balance or who controls it.")
                             .font(.subheadline).foregroundStyle(Color.mist)

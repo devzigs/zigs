@@ -41,11 +41,13 @@ final class Vault {
     func sec(_ gid: String, _ seat: Int) -> Doc { secrets["\(gid):\(seat)"] ?? [:] }
 
     /// Merges `patch` into the seat's secrets, like Object.assign in the web app.
-    func putSec(_ gid: String, _ seat: Int, _ patch: Doc) {
+    /// Returns false if the Keychain did not save it.
+    @discardableResult
+    func putSec(_ gid: String, _ seat: Int, _ patch: Doc) -> Bool {
         var cur = sec(gid, seat)
         for (k, v) in patch { cur[k] = v }
         secrets["\(gid):\(seat)"] = cur
-        persist()
+        return persist()
     }
 
     /// Seats this device holds secrets for in group `gid`.
@@ -121,17 +123,18 @@ final class Vault {
         persist()
     }
 
-    private func persist() {
-        if locked { return }
+    @discardableResult
+    private func persist() -> Bool {
+        if locked { return false }
         guard let vaultKey else {
-            Self.write("zf-secrets", Data(Engine.json(secrets).utf8))
-            Self.write("zf-keys", Data(Engine.json(keys).utf8))
-            return
+            let secretsSaved = Self.write("zf-secrets", Data(Engine.json(secrets).utf8))
+            return Self.write("zf-keys", Data(Engine.json(keys).utf8)) && secretsSaved
         }
         let plain = Data(Engine.json(["secrets": secrets, "keys": keys] as Doc).utf8)
-        if let box = try? AES.GCM.seal(plain, using: vaultKey, authenticating: Self.aad).combined {
-            Self.write("zf-vault", box)
+        guard let box = try? AES.GCM.seal(plain, using: vaultKey, authenticating: Self.aad).combined else {
+            return false
         }
+        return Self.write("zf-vault", box)
     }
 
     private static func open(_ box: Data, _ key: SymmetricKey) throws -> Doc {
@@ -193,15 +196,18 @@ final class Vault {
         return data
     }
 
-    private static func write(_ account: String, _ data: Data) {
+    @discardableResult
+    private static func write(_ account: String, _ data: Data) -> Bool {
         let q = query(account)
         let attrs: [String: Any] = [
             kSecValueData as String: data,
             kSecAttrAccessible as String: kSecAttrAccessibleWhenUnlockedThisDeviceOnly,
         ]
-        if SecItemUpdate(q as CFDictionary, attrs as CFDictionary) == errSecItemNotFound {
-            SecItemAdd(q.merging(attrs) { $1 } as CFDictionary, nil)
+        let status = SecItemUpdate(q as CFDictionary, attrs as CFDictionary)
+        if status == errSecItemNotFound {
+            return SecItemAdd(q.merging(attrs) { $1 } as CFDictionary, nil) == errSecSuccess
         }
+        return status == errSecSuccess
     }
 
     private static func delete(_ account: String) {

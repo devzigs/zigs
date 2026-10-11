@@ -615,7 +615,10 @@ function adoptInviteKey() {
   if (lockedVault) return;
   const [gid, key] = location.hash.slice(1).split(".");
   if (!key) return;
-  if (/^[\w-]{43}$/.test(key)) putKey(gid, key);
+  // A link must not replace a wallet key this browser already has: whoever knows the wallet id
+  // could otherwise point the wallet at documents sealed with their own key.
+  if (gkeys[gid] && gkeys[gid] !== key) showBanner("bad", "This invite link has a different key for a wallet you already have, so it was ignored.");
+  else if (/^[0-9a-f]{20}$/.test(gid) && /^[\w-]{43}$/.test(key)) putKey(gid, key);
   try { history.replaceState(null, "", "#" + gid); } catch {}
 }
 const inviteLink = (gid) => location.href.split("#")[0] + "#" + gid + "." + gkeys[gid];
@@ -776,7 +779,7 @@ const curSession = () => state.sessions.find((s) => s.id === state.sid) || null;
 
 function seatStage(i) {
   if (!state.seats[i]) return 0;
-  if (state.verify[i] && state.verify[i].ok) return 5;
+  if (seatCheck(i) === true) return 5;
   if (state.done[i]) return 4;
   if (seatIds().filter((j) => j !== i).some((j) => state.dkg2[i + "-" + j])) return 3;
   if (state.dkg1[i]) return 2;
@@ -841,16 +844,20 @@ function react() {
       continue;
     }
     // Verify the published wallet against my own DKG output.
-    if (s.keyPackage && state.wallet && !state.verify[i]) {
+    // The store's verify documents are claims anyone with the wallet key can write, so each seat
+    // keeps its own result, tied to the exact wallet document, and checks again when it changes.
+    const wk = walletKey();
+    if (s.keyPackage && state.wallet && s.checkedWallet !== wk && s.rejectedWallet !== wk) {
       once("verify:" + i, async () => {
         let ok = true, error = null;
         try { Z.walletVerify(S(state.wallet), S(s.publicKeyPackage)); } catch (e) { ok = false; error = e.message || String(e); }
+        await putSec(gid, i, ok ? { checkedWallet: wk, rejectedWallet: null } : { rejectedWallet: wk });
         await sdb.doc(base + "/verify/" + i).set({ ok, error, at: Date.now() });
         log("seat " + i + (ok ? ": wallet verified, ak equals my group key" : ": WALLET REJECTED: " + error));
       });
     }
   }
-  if (state.wallet && state.wallet.birthday && localSeats().some((i) => state.verify[i] && state.verify[i].ok)) ensureChain();
+  if (state.wallet && state.wallet.birthday && myVerified()) ensureChain();
   // Group creator builds the shared wallet once all group keys agree.
   if (isCreator() && !state.wallet && keysAgree()) {
     once("wallet", async () => {
@@ -879,7 +886,7 @@ function reactSession(ss) {
       const pkg = Z.signPackage(ss.pczt, fvk, S(c), g.t);
       // Two browsers can hold the same seat (a restored copy): only one writes the package.
       const ref = sdb.doc("groups/" + gid + "/sessions/" + ss.id);
-      if (!(await ref.acquire({ holder: me || "anon", ttlMs: 10000 })).acquired) return;
+      if (!(await ref.acquire({ holder: crypto.randomUUID(), ttlMs: 10000 })).acquired) return;
       const cur = await ref.get();
       if (cur.exists && cur.data().package) return;
       await ref.update({ package: pkg, signers: ids, status: "signing" });
@@ -891,8 +898,15 @@ function reactSession(ss) {
     for (const i of localSeats()) {
       const s = sec(gid, i), n = s.nonces && s.nonces[ss.id];
       if ((ss.signers || []).includes(i) && n && !state.shares[i]) once("share:" + ss.id + ":" + i, async () => {
-        const shares = Z.signShare(ss.pczt, fvk, ss.package, S(n.nonces), S(n.commitments), S(s.keyPackage), i);
         const nonces = { ...(s.nonces || {}) }; delete nonces[ss.id];
+        const ins = inspectOf(ss);
+        if (!n.sighash || !ins || ins.error || ins.sighash !== n.sighash) {
+          await putSec(gid, i, { nonces });
+          const error = "The payment changed after a signer approved it.";
+          await sdb.doc(base).update({ error, status: "failed" });
+          throw new Error("This payment changed after you approved it, so this browser did not sign it.");
+        }
+        const shares = Z.signShare(ss.pczt, fvk, ss.package, S(n.nonces), S(n.commitments), S(s.keyPackage), i);
         // Save the burn before the share goes out: a nonce that comes back could sign twice.
         if (!(await putSec(gid, i, { nonces }))) {
           throw new Error("Could not save the used nonce, so the signature share was not sent.");
@@ -931,7 +945,7 @@ async function createGroup(name, n, t, from = null, network = "testnet") {
 async function takeSeat(i) {
   if (!Z) return;
   const ref = sdb.doc("groups/" + state.gid + "/seats/" + i);
-  const lease = await ref.acquire({ holder: me || "anon", ttlMs: 5000 });
+  const lease = await ref.acquire({ holder: crypto.randomUUID(), ttlMs: 5000 });
   if (!lease.acquired) { showBanner("bad", "Someone else is taking seat " + i + " right now."); return; }
   const cur = await ref.get();
   if (cur.exists && cur.data().uid) { showBanner("bad", "Seat " + i + " is already taken."); return; }
@@ -1075,9 +1089,11 @@ async function broadcastAnywhere(txHex) {
 }
 
 async function approve(ss, i) {
-  const s = sec(state.gid, i);
+  const s = sec(state.gid, i), ins = inspectOf(ss);
+  if (!ins || ins.error) throw new Error("This browser could not check the payment, so it did not approve.");
   const r = J(Z.signCommit(ss.pczt, state.wallet.orchard_fvk, S(s.keyPackage)));
-  const mine = { nonces: r.nonces, commitments: r.commitments };
+  // The approval covers this exact transaction: a share is signed later only for the same sighash.
+  const mine = { nonces: r.nonces, commitments: r.commitments, sighash: ins.sighash };
   if (!(await putSec(state.gid, i, { nonces: { ...(s.nonces || {}), [ss.id]: mine } }))) {
     throw new Error("Could not save the approval in this browser, so it was not sent.");
   }
@@ -1179,9 +1195,18 @@ function avatar(i, cls = "") {
   const s = state.seats[i], mine = s && isMe(s.uid);
   return el("span", { class: "av round " + cls + (mine ? " me" : ""), title: seatLabel(i) }, s ? initials(mine ? (s.name || "You") : s.name || "M " + i) : "+");
 }
-const myVerified = () => localSeats().some((i) => state.verify[i] && state.verify[i].ok);
-const verifiedCount = () => seatIds().filter((i) => state.verify[i] && state.verify[i].ok).length;
-const rejectedSeats = () => seatIds().filter((i) => state.verify[i] && !state.verify[i].ok);
+const walletKey = () => state.wallet ? S(state.wallet) : "";
+// This browser's own result for its seats; other seats' results come from the store.
+function seatCheck(i) {
+  const s = localSeats().includes(i) ? sec(state.gid, i) : null;
+  if (s) return s.checkedWallet === walletKey() ? true : s.rejectedWallet === walletKey() ? false : null;
+  return state.verify[i] ? !!state.verify[i].ok : null;
+}
+const myVerified = () => localSeats().some((i) => seatCheck(i) === true);
+const verifiedCount = () => seatIds().filter((i) => seatCheck(i) === true).length;
+const rejectedSeats = () => seatIds().filter((i) => seatCheck(i) === false);
+// A signer shows the address only after its own seat checked it against its key share.
+const addrHidden = () => atCap() || (localSeats().length > 0 && !myVerified());
 const curChain = () => chain && chain.gid === state.gid ? chain : null;
 
 const STATUS = {
@@ -1662,7 +1687,7 @@ function receiveCard() {
     state.g.movedTo ? el("div", { class: "callout" }, "This wallet moved to " + groupName(state.g.movedTo) + ". Ask senders to use the new wallet's address.")
       : atCap() ? capNote()
       : el("p", { class: "small muted" }, "Share this address to receive " + receiveWhat() + ". Payments to it are shielded."),
-    atCap() ? null : el("div", { class: "addr-box" }, el("span", { class: "hex" }, short(w.address, 18)), copyBtn(w.address)),
+    addrHidden() ? null : el("div", { class: "addr-box" }, el("span", { class: "hex" }, short(w.address, 18)), copyBtn(w.address)),
     el("p", { class: "small faint" }, verifiedCount() + " of " + state.g.n + " signers checked this address against their own key."));
 }
 
@@ -1742,12 +1767,12 @@ function changeSignersCard() {
 }
 
 function memberRow(i) {
-  const s = state.seats[i], mine = s && isMe(s.uid) && sec(state.gid, i), v = state.verify[i];
+  const s = state.seats[i], mine = s && isMe(s.uid) && sec(state.gid, i), v = seatCheck(i);
   return el("div", { class: "member" }, avatar(i, "lg"),
     el("div", { class: "ri-main" }, el("span", { class: "ri-title" }, s ? (isMe(s.uid) ? (s.name || "You") : s.name || "Signer " + i) : "Open seat", mine ? el("span", { class: "you" }, "You") : null),
       el("span", { class: "ri-sub" }, "Seat " + i + (s ? " · joined " + when(s.at) : ""))),
     el("div", { class: "m-actions" },
-      v ? el("span", { class: "badge " + (v.ok ? "ok" : "bad") }, v.ok ? "Address checked" : "Rejected address") : el("span", { class: "badge" }, STAGE_LABEL[seatStage(i)]),
+      v !== null ? el("span", { class: "badge " + (v ? "ok" : "bad") }, v ? "Address checked" : "Rejected address") : el("span", { class: "badge" }, STAGE_LABEL[seatStage(i)]),
       mine && sec(state.gid, i).keyPackage ? el("button", { class: "btn sm", type: "button", onclick: act(() => backup(i)) }, "Back up key") : null));
 }
 
@@ -1758,7 +1783,8 @@ function detailsTab() {
     el("section", { class: "card card-pad" },
       el("h2", { style: "font-size:15px" }, "Wallet"),
       el("dl", { class: "kv" },
-        el("dt", {}, "Address"), el("dd", {}, el("div", { class: "addr-full" }, w.address), el("div", { style: "margin-top:8px" }, copyBtn(w.address, "Copy address"))),
+        el("dt", {}, "Address"), addrHidden() ? el("dd", {}, "Shown after your seat checks it against your key share.")
+          : el("dd", {}, el("div", { class: "addr-full" }, w.address), el("div", { style: "margin-top:8px" }, copyBtn(w.address, "Copy address"))),
         el("dt", {}, "Approval rule"), el("dd", {}, "Any " + state.g.t + " of " + state.g.n + " signers"),
         el("dt", {}, "Checked by"), el("dd", {}, rejected.length ? el("span", { class: "badge bad" }, "Seat " + rejected.join(", ") + " rejected this wallet") : el("span", { class: "badge " + (verifiedCount() === state.g.n ? "ok" : "") }, verifiedCount() + " of " + state.g.n + " signers")),
         el("dt", {}, "Network"), el("dd", {}, "Zcash " + curNet().label.toLowerCase() + (curNet().cap ? " · limit " + capText(curNet().cap) : "")),
@@ -1790,11 +1816,11 @@ function receiveDialog() {
   return el("div", { class: "dialog", role: "dialog", "aria-modal": "true", "aria-labelledby": "recv-title" },
     el("div", { class: "card-head" }, el("h2", { id: "recv-title" }, "Receive ZEC"), el("button", { class: "icon-btn", type: "button", "aria-label": "Close", onclick: () => { ui.receive = false; render(); } }, "×")),
     atCap() ? capNote() : el("p", { class: "small muted" }, "Send " + receiveWhat() + " to this shielded address. Senders and the network cannot see the balance or who controls it."),
-    atCap() ? null : qrBox(w.address, "Wallet address"),
-    atCap() ? null : el("div", { class: "addr-full" }, w.address),
+    addrHidden() ? null : qrBox(w.address, "Wallet address"),
+    addrHidden() ? null : el("div", { class: "addr-full" }, w.address),
     el("div", { class: "dialog-actions", style: "justify-content:space-between" },
       curNet().faucet ? el("a", { class: "btn ghost", href: curNet().faucet, target: "_blank", rel: "noopener" }, "Get testnet ZEC ↗") : el("span"),
-      atCap() ? null : copyBtn(w.address, "Copy address", "btn primary")));
+      addrHidden() ? null : copyBtn(w.address, "Copy address", "btn primary")));
 }
 
 // ── Send ──
@@ -1889,9 +1915,15 @@ const elapsed = (ms) => { const sec = Math.max(0, Math.floor((Date.now() - (ms |
 // A prover that closed its tab leaves status "proving"; let someone else take over.
 const proofStalled = (ss) => Date.now() - (ss.provingAt || 0) > 180000;
 
+// Keyed by the transaction itself: a session whose transaction is replaced is decoded again.
 function inspectOf(ss) {
-  let ins = inspectCache.get(ss.id);
-  if (!ins && Z) { try { ins = J(Z.inspect(ss.pczt, state.wallet.orchard_fvk)); } catch (e) { ins = { error: e.message || String(e) }; } inspectCache.set(ss.id, ins); }
+  const key = ss.pczt;
+  let ins = inspectCache.get(key);
+  if (!ins && Z && key) {
+    try { ins = J(Z.inspect(key, state.wallet.orchard_fvk)); }
+    catch (e) { ins = { error: e.message || String(e) }; }
+    inspectCache.set(key, ins);
+  }
   return ins;
 }
 
@@ -1922,8 +1954,14 @@ function recipientCheck(ss, ins) {
   const paid = ins.lines.filter(isPayee), { rows, extra } = pairPayees(payeesOf(ss), paid);
   const match = allPaid(rows, extra, ss.amount);
   const tw = ss.move ? ready[ss.move] : null;
-  const intoNew = tw ? paid.length === 1 && normalized(tw.address) === paid[0].who : null;
+  const intoNew = tw ? paid.length === 1 && normalized(moveAddress(ss.move, tw)) === paid[0].who : null;
   return { rows, extra, match, intoNew };
+}
+
+// A signer who also holds a seat in the new wallet trusts only the copy its own seat checked.
+function moveAddress(gid, published) {
+  const mine = mySeatSecrets(gid).find(([, s]) => s.checkedWallet);
+  return mine ? J(mine[1].checkedWallet).address : published.address;
 }
 
 function checkWarnings(rc) {

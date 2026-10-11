@@ -175,10 +175,12 @@ final class GroupModel {
         var out = Doc()
         for (field, v) in raw {
             guard let ct = v as? String else { continue }
-            if let hit = opened[ct] { out[field] = hit; continue }
-            guard let pt = try? Engine.call("secretOpen", [k, path + "\n" + field, ct]),
+            // The cache key includes the AAD, so a value moved to another path or field fails to open.
+            let aad = path + "\n" + field, cacheKey = aad + "\n" + ct
+            if let hit = opened[cacheKey] { out[field] = hit; continue }
+            guard let pt = try? Engine.call("secretOpen", [k, aad, ct]),
                   let val = try? Engine.parse(pt) else { continue }
-            opened[ct] = val
+            opened[cacheKey] = val
             out[field] = val
         }
         return out.isEmpty && !raw.isEmpty ? nil : out
@@ -235,6 +237,14 @@ final class GroupModel {
         s.done = children(base + "/done")
         s.verify = children(base + "/verify")
         s.wallet = open(base + "/meta/wallet", store.docs[base + "/meta/wallet"])
+        // The store's verify documents are claims anyone with the wallet key can write. For its own
+        // seats this device uses its own result, tied to the exact wallet document.
+        let wk = Self.walletKey(s.wallet)
+        for i in vault.seats(in: gid) where s.seats["\(i)"]?.str("uid") == me {
+            let sec = vault.sec(gid, i)
+            let mine: Bool? = sec.str("checkedWallet") == wk ? true : sec.str("rejectedWallet") == wk ? false : nil
+            s.verify["\(i)"] = mine.map { ["ok": $0] }
+        }
         s.sessions = children(base + "/sessions").map { Session(id: $0.key, doc: $0.value) }
             .sorted { ($0.doc.int("createdAt") ?? 0) > ($1.doc.int("createdAt") ?? 0) }
         for ss in s.sessions {
@@ -259,6 +269,8 @@ final class GroupModel {
     }
 
     var myVerified: Bool { localSeats.contains { has(state.verify["\($0)"]?["ok"]) } }
+    /// A signer sees the address only after its own seat checked it against its key share.
+    var addressHidden: Bool { !localSeats.isEmpty && !myVerified }
     var isCreator: Bool { state.g?.str("createdBy") == me }
 
     func seatLabel(_ i: Int) -> String {
@@ -443,8 +455,16 @@ final class GroupModel {
         note("seat \(i): key share ready, group key \(groupKey.prefix(12))…")
     }
 
+    /// A stable text form of the wallet document: sorted keys, so the same document gives the same key.
+    static func walletKey(_ wallet: Doc?) -> String {
+        guard let wallet, let data = try? JSONSerialization.data(withJSONObject: wallet, options: [.sortedKeys])
+        else { return "" }
+        return String(decoding: data, as: UTF8.self)
+    }
+
     private func verifyWallet(_ gid: String, _ i: Int) async throws {
         let s = vault.sec(gid, i)
+        let wk = Self.walletKey(state.wallet)
         var ok = true
         var reason: Any = NSNull()
         do {
@@ -453,6 +473,7 @@ final class GroupModel {
             ok = false
             reason = error.localizedDescription
         }
+        vault.putSec(gid, i, ok ? ["checkedWallet": wk, "rejectedWallet": NSNull()] : ["rejectedWallet": wk])
         try await put("groups/\(gid)/verify/\(i)", ["ok": ok, "error": reason, "at": now()])
         note(ok ? "seat \(i): wallet verified, ak equals my group key" : "seat \(i): WALLET REJECTED")
     }
@@ -505,13 +526,24 @@ final class GroupModel {
 
     private func signShare(_ gid: String, _ ss: Session, _ i: Int, _ fvk: String, _ package: String, _ n: Doc) async throws {
         let s = vault.sec(gid, i)
+        var nonces = s.doc("nonces") ?? [:]
+        nonces[ss.id] = nil
+        // The approval covers one exact transaction: sign only if the sighash is still the same.
+        let approved = n.str("sighash")
+        guard approved != nil, case .success(let ins) = inspect(ss), ins.str("sighash") == approved else {
+            vault.putSec(gid, i, ["nonces": nonces])
+            try await patch("groups/\(gid)/sessions/\(ss.id)",
+                            ["error": "The payment changed after a signer approved it.", "status": "failed"])
+            throw ZigsError("This payment changed after you approved it, so this device did not sign it.")
+        }
         let share = try Engine.call("signShare", [ss.doc.str("pczt") ?? "", fvk, package,
                                                   Engine.json(n["nonces"] ?? NSNull()),
                                                   Engine.json(n["commitments"] ?? NSNull()),
                                                   Engine.json(s["keyPackage"] ?? NSNull()), i])
-        var nonces = s.doc("nonces") ?? [:]
-        nonces[ss.id] = nil
-        vault.putSec(gid, i, ["nonces": nonces])   // burn the nonces: never sign twice with them
+        // Burn the nonces before the share goes out: a nonce that comes back could sign twice.
+        guard vault.putSec(gid, i, ["nonces": nonces]) else {
+            throw ZigsError("Could not save the used nonce, so the signature share was not sent.")
+        }
         try await put("groups/\(gid)/sessions/\(ss.id)/shares/\(i)", ["shares": share, "at": now()])
         note("seat \(i): signature share sent")
     }
@@ -543,8 +575,15 @@ final class GroupModel {
             return
         }
         let parts = frag.split(separator: ".", maxSplits: 1).map(String.init)
-        guard parts.count == 2, parts[0].count == 20, parts[1].count == 43 else {
+        let hex = CharacterSet(charactersIn: "0123456789abcdef")
+        guard parts.count == 2, parts[0].count == 20, parts[1].count == 43,
+              parts[0].unicodeScalars.allSatisfy(hex.contains) else {
             banner = "The key in this link is not valid."
+            return
+        }
+        // A link must not replace a wallet key this device already has.
+        if let known = vault.keys[parts[0]], known != parts[1] {
+            banner = "This invite link has a different key for a wallet you already have, so it was ignored."
             return
         }
         vault.putKey(parts[0], parts[1])
@@ -567,7 +606,7 @@ final class GroupModel {
         guard let gid else { return }
         once("seat:\(i)") {
             let path = "groups/\(gid)/seats/\(i)"
-            guard try await self.store.acquire(path, holder: self.me, ttlMs: 5000) else {
+            guard try await self.store.acquire(path, holder: UUID().uuidString, ttlMs: 5000) else {
                 throw ZigsError("Someone else is taking seat \(i) right now.")
             }
             if self.state.seats["\(i)"]?.str("uid") != nil { throw ZigsError("Seat \(i) is already taken.") }
@@ -651,10 +690,16 @@ final class GroupModel {
         guard let gid, let fvk = state.wallet?.str("orchard_fvk") else { return }
         once("approve:\(ss.id):\(i)") {
             let s = self.vault.sec(gid, i)
+            guard case .success(let ins) = self.inspect(ss), let sighash = ins.str("sighash") else {
+                throw ZigsError("This device could not check the payment, so it did not approve.")
+            }
             let r = try Engine.object("signCommit", [ss.doc.str("pczt") ?? "", fvk, Engine.json(s["keyPackage"] ?? NSNull())])
             var nonces = s.doc("nonces") ?? [:]
-            nonces[ss.id] = ["nonces": r["nonces"] ?? NSNull(), "commitments": r["commitments"] ?? NSNull()]
-            self.vault.putSec(gid, i, ["nonces": nonces])
+            nonces[ss.id] = ["nonces": r["nonces"] ?? NSNull(), "commitments": r["commitments"] ?? NSNull(),
+                             "sighash": sighash]
+            guard self.vault.putSec(gid, i, ["nonces": nonces]) else {
+                throw ZigsError("Could not save the approval on this device, so it was not sent.")
+            }
             try await self.put("groups/\(gid)/sessions/\(ss.id)/commits/\(i)",
                                ["commitments": r["commitments"] ?? NSNull(), "at": now()])
             self.note("seat \(i): approved the payment")
