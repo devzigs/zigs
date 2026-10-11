@@ -237,6 +237,9 @@ a.row-item { text-decoration: none; }
 .to-box .hex { color: var(--text); }
 .approver { display: inline-flex; align-items: center; gap: 6px; opacity: 0.45; }
 .approver.yes { opacity: 1; }
+.signer-list { display: flex; flex-wrap: wrap; gap: 8px 16px; }
+.signer { display: inline-flex; align-items: center; gap: 8px; min-width: 0; }
+.move-steps { margin: 0; padding-left: 20px; display: grid; gap: 4px; }
 .testing > summary { color: var(--muted); font-weight: 500; }
 .testing[open] { display: grid; gap: 10px; }
 .drawer-foot { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 8px; padding: 14px 20px; padding-bottom: calc(14px + env(safe-area-inset-bottom, 0px)); border-top: 1px solid var(--line); background: var(--panel); }
@@ -537,7 +540,7 @@ async function boot() {
 
 function watchInbox() {
   for (const g of state.groups) {
-    if (!readySubs.has(g.id)) readySubs.set(g.id, sdb.doc("groups/" + g.id + "/meta/wallet").onSnapshot((d) => { ready[g.id] = d.exists; render(); }));
+    if (!readySubs.has(g.id)) readySubs.set(g.id, sdb.doc("groups/" + g.id + "/meta/wallet").onSnapshot((d) => { ready[g.id] = d.exists ? d.data() : false; render(); }));
     if (inboxSubs.has(g.id) || !mySeatSecrets(g.id).length) continue;
     inboxSubs.set(g.id, sdb.collection("groups/" + g.id + "/sessions").onSnapshot((snap) => {
       inbox[g.id] = snap.docs.map((d) => ({ id: d.id, ...d.data() }));
@@ -730,11 +733,14 @@ function reactSession(ss) {
 }
 
 // ───────────────────────── Actions ─────────────────────────
-async function createGroup(name, n, t) {
+// `from` is the wallet this one replaces. The old wallet gets only the new id, never its key:
+// signers left out of the new wallet must not get its viewing key.
+async function createGroup(name, n, t, from = null) {
   const ref = sdb.collection("groups").doc();
   const key = new Uint8Array(32); crypto.getRandomValues(key);
   putKey(ref.id, btoa(String.fromCharCode(...key)).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, ""));
-  await ref.set({ name, n, t, network: "testnet", createdBy: me, createdAt: Date.now() });
+  await ref.set({ name, n, t, network: "testnet", createdBy: me, createdAt: Date.now(), movedFrom: from || undefined });
+  if (from) await sdb.doc("groups/" + from).update({ movedTo: ref.id, movedAt: Date.now() });
   openGroup(ref.id);
   await takeSeat(1);
 }
@@ -835,14 +841,28 @@ async function runSync(c) {
 }
 
 // `to` and `note` are the proposer's words; approvers check `to` against the transaction itself.
-async function newSpend(recipient, amountZat, note) {
+async function newSpend(recipient, amountZat, note, move = null) {
   if (!chain || chain.gid !== state.gid || !chain.bal) throw new Error("The wallet has not finished its first sync.");
   const t = J(await chain.cw.createSpend(recipient, amountZat));
   const ref = sdb.collection("groups/" + state.gid + "/sessions").doc();
-  await ref.set({ createdBy: me, createdAt: Date.now(), to: recipient, note: note || null, pool: t.pool, amount: t.amount, change: t.change, fee: t.fee, noteValue: t.note_value, pczt: t.pczt, status: "collecting" });
+  await ref.set({ createdBy: me, createdAt: Date.now(), to: recipient, note: note || null, pool: t.pool, amount: t.amount, change: t.change, fee: t.fee, noteValue: t.note_value, pczt: t.pczt, move, status: "collecting" });
   log("new spend: " + fmtZec(t.amount));
   showBanner("ok", "Payment proposed. It needs " + state.g.t + " approvals.");
   openSession(ref.id);
+}
+
+// Sends every confirmed note to the wallet that replaces this one.
+async function proposeMove() {
+  const to = state.g.movedTo, tw = ready[to], c = curChain();
+  if (!tw) throw new Error("The new wallet has no address yet.");
+  const amount = c && c.bal ? c.bal.max_send : 0;
+  if (!(amount > 0)) throw new Error("No confirmed funds to move yet.");
+  await newSpend(tw.address, amount, "Move to " + groupName(to), to);
+}
+
+async function cancelMove() {
+  await sdb.doc("groups/" + state.gid).update({ movedTo: null, movedAt: null });
+  showBanner("ok", "Move cancelled. This wallet stays as it is.");
 }
 
 async function broadcastTx(ss) {
@@ -934,7 +954,7 @@ function copyBtn(text, label = "Copy", cls = "btn sm") {
 
 let openLayer = "", tickTimer = null;
 // View state that only this browser cares about.
-const ui = { tab: "overview", send: false, create: false, receive: false };
+const ui = { tab: "overview", send: false, create: false, receive: false, move: false };
 const ZEC_FMT = new Intl.NumberFormat("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 8 });
 const FEE_ESTIMATE = 10000;
 const FAUCET = "https://zcashfaucet.jinolabs.xyz/";
@@ -951,7 +971,7 @@ function money(zat, size = "md", sign = "") {
 function seatLabel(i) {
   const s = state.seats[i];
   if (!s) return "Open seat";
-  return s.uid === me ? "You" : s.name || "Member " + i;
+  return s.uid === me ? "You" : s.name || "Signer " + i;
 }
 function avatar(i, cls = "") {
   const s = state.seats[i], mine = s && s.uid === me;
@@ -976,6 +996,8 @@ const OWN_OUTPUT = new Set(["this wallet", "change (back to this wallet)"]);
 const isPayee = (l) => l.kind === "output" && !OWN_OUTPUT.has(l.who);
 const lineRank = (l) => l.kind === "spend" ? 0 : isPayee(l) ? 1 : 2;
 const payTitle = (ss) => ss.note || (ss.to ? "Payment to " + short(ss.to, 8) : "Payment");
+const ruleText = (t, n) => "Any " + t + " of " + n + " signers must approve each payment.";
+const groupName = (gid) => (state.groups.find((x) => x.id === gid) || {}).name || "the new wallet";
 const proposer = (ss) => ss.createdBy === me ? "you" : seatNameOf(ss.createdBy);
 function normalized(addr) { try { return Z.normalizeAddress(addr); } catch { return null; } }
 
@@ -1036,6 +1058,7 @@ function layers() {
   if (ui.send && inWallet) return [scrim(() => ui.send = false), sendDialog()];
   if (ui.receive && inWallet) return [scrim(() => ui.receive = false), receiveDialog()];
   if (ui.create && !state.gid) return [scrim(() => ui.create = false), createDialog()];
+  if (ui.move && inWallet) return [scrim(() => ui.move = false), createDialog(state.g)];
   return [];
 }
 
@@ -1054,7 +1077,7 @@ function sideItem(g) {
     class: "side-item" + (g.id === state.gid ? " active" : ""), type: "button", "aria-current": g.id === state.gid ? "page" : null,
     onclick: () => { ui.tab = "overview"; openGroup(g.id); },
   }, el("span", { class: "av" }, initials(g.name)), el("span", { class: "side-name" }, g.name),
-    n ? el("span", { class: "side-count", title: n + " to approve", "aria-label": n + " to approve" }, String(n)) : el("span", { class: "side-meta" }, g.t + "/" + g.n));
+    n ? el("span", { class: "side-count", title: n + " to approve", "aria-label": n + " to approve" }, String(n)) : el("span", { class: "side-meta", title: ruleText(g.t, g.n) }, g.movedTo ? "Moved" : g.t + " of " + g.n));
 }
 
 function loadingView() {
@@ -1066,7 +1089,7 @@ function lobby() {
   const restoreInput = el("input", { id: "restore", type: "file", accept: "application/json", hidden: true, onchange: (ev) => ev.target.files[0] && restore(ev.target.files[0]) });
   const canCreate = Z && db && canWrite !== false;
   const head = el("header", { class: "page-head" },
-    el("div", { class: "ph-left" }, el("h1", {}, "Wallets"), el("p", { class: "muted" }, "Shared wallets you hold a seat in. Every payment needs your co-signers' approval.")),
+    el("div", { class: "ph-left" }, el("h1", {}, "Wallets"), el("p", { class: "muted" }, "Each wallet is a separate shared account, with its own address, signers and approval rule.")),
     el("div", { class: "ph-actions" },
       el("button", { class: "btn", type: "button", onclick: () => restoreInput.click() }, "Restore from backup"), restoreInput,
       el("button", { class: "btn primary", type: "button", disabled: !canCreate, onclick: () => { ui.create = true; render(); } }, "New wallet")));
@@ -1079,8 +1102,8 @@ function walletRow(g) {
   return el("button", { class: "row-item", type: "button", onclick: () => { ui.tab = "overview"; openGroup(g.id); } },
     el("span", { class: "av lg" }, initials(g.name)),
     el("span", { class: "ri-main" }, el("span", { class: "ri-title" }, g.name),
-      el("span", { class: "ri-sub" }, "Any " + g.t + " of " + g.n + " approve" + (seats ? "" : " · view only"))),
-    el("span", { class: "ri-end" }, ready[g.id] === false ? el("span", { class: "badge info" }, "Setting up")
+      el("span", { class: "ri-sub" }, g.t + " of " + g.n + " signers must approve" + (seats ? "" : " · view only"))),
+    el("span", { class: "ri-end" }, g.movedTo ? el("span", { class: "badge plain" }, "Moved") : ready[g.id] === false ? el("span", { class: "badge info" }, "Setting up")
       : bal ? money(bal.total) : el("span", { class: "small faint" }, "Open to sync"),
       n ? el("span", { class: "badge warn" }, n + " to approve") : null),
     el("span", { class: "chev" }, "›"));
@@ -1088,9 +1111,9 @@ function walletRow(g) {
 
 function welcome(canCreate) {
   const steps = [
-    ["Pick a rule", "For example, any 2 of 3 members must approve each payment."],
-    ["Invite your co-signers", "Send one private link. Each device creates its own piece of the key."],
-    ["Approve together", "A payment goes out only after enough members approve. On chain it looks like any private payment."],
+    ["Pick a rule", "For example, any 2 of 3 signers must approve each payment."],
+    ["Invite your signers", "Send one private link. Each device creates its own piece of the key."],
+    ["Approve together", "A payment goes out only after enough signers approve. On chain it looks like any private payment."],
   ];
   return el("section", { class: "card card-pad welcome" },
     el("div", { style: "display:grid;gap:6px" }, el("h2", {}, "Create your first shared wallet"),
@@ -1105,35 +1128,44 @@ function nameField(id) {
   let saved = ""; try { saved = localStorage.getItem("zf-name") || ""; } catch {}
   const save = (ev) => { try { localStorage.setItem("zf-name", ev.target.value.trim()); } catch {} };
   return el("label", { class: "field" }, el("span", {}, "Your name"),
-    el("input", { class: "input", id, value: saved, maxlength: "40", autocomplete: "nickname", placeholder: "Shown to your co-signers", oninput: save }));
+    el("input", { class: "input", id, value: saved, maxlength: "40", autocomplete: "nickname", placeholder: "Shown to your signers", oninput: save }));
 }
 
-function createDialog() {
-  const rule = el("p", { class: "rule", id: "rule-text" }, "Any 2 of 3 members must approve each payment.");
+// With `from`, the dialog creates the wallet that replaces `from`, with new signers or a new rule.
+function createDialog(from = null) {
+  const close = () => { ui.create = false; ui.move = false; render(); };
+  const n0 = from ? from.n : 3, t0 = from ? from.t : 2;
+  const rule = el("p", { class: "rule", id: "rule-text" }, ruleText(t0, n0));
   const update = () => {
     const n = Number(document.getElementById("g-n")?.value), t = Number(document.getElementById("g-t")?.value);
     const ok = n >= 2 && n <= 7 && t >= 2 && t <= n;
-    rule.textContent = ok ? "Any " + t + " of " + n + " members must approve each payment." : "Choose 2 to 7 members, and at least 2 approvals but no more than the members.";
+    rule.textContent = ok ? ruleText(t, n) : "Choose 2 to 7 signers, and at least 2 approvals but no more than the signers.";
     rule.classList.toggle("bad", !ok);
   };
   const f = el("form", { class: "dialog", role: "dialog", "aria-modal": "true", "aria-labelledby": "create-title", oninput: update, onsubmit: act(async (ev) => {
     const fd = new FormData(ev.target); const n = Number(fd.get("n")), t = Number(fd.get("t"));
-    if (!(n >= 2 && n <= 7)) throw new Error("A wallet needs between 2 and 7 members.");
-    if (t < 2 || t > n) throw new Error("Approvals needed must be at least 2 and at most the number of members.");
-    ui.create = false;
-    await createGroup(String(fd.get("name") || "").trim() || "Treasury", n, t);
+    if (!(n >= 2 && n <= 7)) throw new Error("A wallet needs between 2 and 7 signers.");
+    if (t < 2 || t > n) throw new Error("Approvals needed must be at least 2 and at most the number of signers.");
+    ui.create = false; ui.move = false;
+    await createGroup(String(fd.get("name") || "").trim() || (from ? from.name : "Treasury"), n, t, from && from.id);
   }) },
-    el("div", { class: "card-head" }, el("h2", { id: "create-title" }, "New shared wallet"), el("button", { class: "icon-btn", type: "button", "aria-label": "Close", onclick: () => { ui.create = false; render(); } }, "×")),
+    el("div", { class: "card-head" }, el("h2", { id: "create-title" }, from ? "Change signers" : "New shared wallet"), el("button", { class: "icon-btn", type: "button", "aria-label": "Close", onclick: close }, "×")),
+    from ? el("ol", { class: "small muted move-steps" },
+      el("li", {}, "You create a new wallet with the signers and rule you want."),
+      el("li", {}, "The new signers join it with an invite link."),
+      el("li", {}, "This wallet sends all its funds to the new one. Like any payment, this needs " + from.t + " approvals.")) : null,
     nameField("my-name"),
-    el("label", { class: "field" }, el("span", {}, "Wallet name"), el("input", { class: "input", id: "g-name", name: "name", placeholder: "Team treasury", maxlength: "40", autocomplete: "off" })),
+    el("label", { class: "field" }, el("span", {}, from ? "New wallet name" : "Wallet name"), el("input", { class: "input", id: "g-name", name: "name", placeholder: from ? from.name : "Team treasury", maxlength: "40", autocomplete: "off" })),
     el("div", { class: "two" },
-      el("label", { class: "field" }, el("span", {}, "Members"), el("input", { class: "input", id: "g-n", name: "n", type: "number", min: "2", max: "7", value: "3" })),
-      el("label", { class: "field" }, el("span", {}, "Approvals needed"), el("input", { class: "input", id: "g-t", name: "t", type: "number", min: "2", max: "7", value: "2" }))),
+      el("label", { class: "field" }, el("span", {}, "Signers"), el("input", { class: "input", id: "g-n", name: "n", type: "number", min: "2", max: "7", value: String(n0) })),
+      el("label", { class: "field" }, el("span", {}, "Approvals needed"), el("input", { class: "input", id: "g-t", name: "t", type: "number", min: "2", max: "7", value: String(t0) }))),
     rule,
-    el("div", { class: "callout" }, "You take seat 1. Then share the invite link with your co-signers. When every seat is taken, your devices create the wallet key together."),
+    el("div", { class: "callout" }, from
+      ? "The new wallet gets a new address. Signers you leave out can still see this old wallet's payments, but not the new wallet's."
+      : "You take seat 1. Then share the invite link with your signers. When every seat is taken, your devices create the wallet key together."),
     el("div", { class: "dialog-actions" },
-      el("button", { class: "btn", type: "button", onclick: () => { ui.create = false; render(); } }, "Cancel"),
-      el("button", { class: "btn primary", type: "submit", disabled: !Z || !db || canWrite === false }, "Create wallet")));
+      el("button", { class: "btn", type: "button", onclick: close }, "Cancel"),
+      el("button", { class: "btn primary", type: "submit", disabled: !Z || !db || canWrite === false }, from ? "Create new wallet" : "Create wallet")));
   return f;
 }
 
@@ -1148,13 +1180,14 @@ function groupView() {
       el("button", { class: "btn ghost sm back", type: "button", onclick: () => openGroup(null) }, "← Wallets"),
       el("h1", {}, g.name),
       el("div", { class: "ph-meta" },
-        el("span", { class: "badge warn plain" }, "Any " + g.t + " of " + g.n + " approve"),
+        el("span", { class: "badge warn plain", title: ruleText(g.t, g.n) }, g.t + " of " + g.n + " signers must approve"),
         el("span", { class: "stack" }, seatIds().map((i) => avatar(i))),
-        el("span", {}, seated.length + " of " + g.n + " members joined"))),
+        el("span", {}, seated.length + " of " + g.n + " signers joined"),
+        g.movedFrom ? el("span", {}, "Replaces " + ((state.groups.find((x) => x.id === g.movedFrom) || {}).name || "an older wallet")) : null)),
     ready ? el("div", { class: "ph-actions wallet-actions" }, ...walletActions()) : null);
   if (!ready) return el("div", { class: "page" }, head, setupView());
   const n = toApprove(state.gid).length;
-  const tabs = [["overview", "Overview"], ["activity", "Activity", n], ["members", "Members"], ["details", "Details"]];
+  const tabs = [["overview", "Overview"], ["activity", "Activity", n], ["members", "Signers"], ["details", "Details"]];
   const body = { overview: overviewTab, activity: activityTab, members: membersTab, details: detailsTab }[ui.tab] || overviewTab;
   return el("div", { class: "page" }, head,
     el("nav", { class: "tabs", role: "tablist" }, tabs.map(([id, label, count]) => el("button", {
@@ -1182,7 +1215,7 @@ function setupView() {
 function joinCard(seat) {
   return el("section", { class: "card card-pad hero-card" },
     el("div", { style: "display:grid;gap:4px" }, el("h2", {}, "Join " + state.g.name),
-      el("p", { class: "small muted" }, "Take a seat to become a co-signer. Your device creates its own piece of the wallet key; it never leaves this browser.")),
+      el("p", { class: "small muted" }, "Take a seat to become a signer. Your device creates its own piece of the wallet key; it never leaves this browser.")),
     nameField("seat-name"),
     el("div", {}, el("button", { class: "btn primary lg", type: "button", disabled: !Z || canWrite === false, onclick: act(() => takeSeat(seat)) }, "Take seat " + seat)));
 }
@@ -1191,8 +1224,8 @@ function inviteCard(openCount) {
   const link = inviteLink(state.gid);
   const share = navigator.share ? el("button", { class: "btn sm", type: "button", onclick: () => navigator.share({ title: "Join " + state.g.name + " on Zigs", url: link }).catch(() => {}) }, "Share") : null;
   return el("section", { class: "card card-pad hero-card" },
-    el("div", { class: "card-head" }, el("h2", {}, "Invite your co-signers"), el("span", { class: "badge warn plain" }, openCount === 1 ? "1 seat open" : openCount + " seats open")),
-    el("p", { class: "small muted" }, "Send this link to each co-signer through a private channel. It contains the wallet's secret: anyone who has it can take an open seat."),
+    el("div", { class: "card-head" }, el("h2", {}, "Invite your signers"), el("span", { class: "badge warn plain" }, openCount === 1 ? "1 seat open" : openCount + " seats open")),
+    el("p", { class: "small muted" }, "Send this link to each signer through a private channel. It contains the wallet's secret: anyone who has it can take an open seat."),
     el("div", { class: "addr-box" }, el("span", { class: "hex nowrap" }, link), copyBtn(link, "Copy link", "btn sm primary"), share),
     secretQr(link));
 }
@@ -1203,8 +1236,8 @@ function progressCard() {
   const mismatch = allDone() && !keysAgree(), rejected = rejectedSeats(), ver = verifiedCount();
   const seatedN = seatIds().filter((i) => state.seats[i]).length;
   const keyStage = mismatch ? "bad" : d === n ? "done" : allSeated() ? "now" : "";
-  const keyText = mismatch ? "Members computed different keys. Create a new wallet."
-    : d === n ? "Each member holds one piece. The full key never existed."
+  const keyText = mismatch ? "Signers computed different keys. Create a new wallet."
+    : d === n ? "Each signer holds one piece. The full key never existed."
     : r2 === n * (n - 1) ? "Each device is computing its piece of the key…"
     : r1 === n ? "Devices are exchanging encrypted shares (" + r2 + " of " + n * (n - 1) + ")…"
     : allSeated() ? "Devices are publishing their commitments (" + r1 + " of " + n + ")…" : "Starts when every seat is taken.";
@@ -1212,14 +1245,14 @@ function progressCard() {
   const addrText = rejected.length ? "Seat " + rejected.join(", ") + " rejected the address. Do not use this wallet."
     : !w ? (d === n ? "Building the shared address…" : "Comes after the key.")
     : !w.birthday ? "This wallet predates testnet support. Create a new one."
-    : ver + " of " + n + " members checked that the address belongs to the group key.";
+    : ver + " of " + n + " signers checked that the address belongs to the group key.";
   const step = (cls, no, title, text) => el("div", { class: "step " + cls }, el("span", { class: "tick" }, cls === "done" ? "✓" : cls === "bad" ? "!" : no), el("div", { style: "display:grid;gap:2px" }, el("h3", {}, title), el("p", {}, text)));
   const total = (seatedN / n + (d === n ? 1 : (r1 / n + r2 / Math.max(1, n * (n - 1))) / 2) + (w ? ver / n : 0)) / 3;
   return el("section", { class: "card card-pad" },
     el("div", { class: "card-head" }, el("h2", {}, "Setting up your wallet"), el("span", { class: "mono faint" }, Math.round(total * 100) + "%")),
     el("div", { class: "progress" }, el("i", { style: "width:" + Math.round(total * 100) + "%" })),
     el("div", { class: "steps", style: "margin-top:6px" },
-      step(allSeated() ? "done" : "now", 1, "Members join", seatedN + " of " + n + " seats taken."),
+      step(allSeated() ? "done" : "now", 1, "Signers join", seatedN + " of " + n + " seats taken."),
       step(keyStage, 2, "Create the key together", keyText),
       step(addrStage, 3, "Check the address", addrText)),
     state.log.length ? el("details", {}, el("summary", {}, "Activity in this browser"), el("div", { class: "log" }, state.log.join("\n"))) : null);
@@ -1228,11 +1261,11 @@ function progressCard() {
 function seatsCard(open) {
   const testing = localSeats().length && open.length
     ? el("details", { class: "testing" }, el("summary", {}, "Testing: play another seat in this browser"),
-      el("p", { class: "small faint" }, "Only for trying Zigs alone. A real co-signer takes a seat on their own device."),
+      el("p", { class: "small faint" }, "Only for trying Zigs alone. A real signer takes a seat on their own device."),
       el("div", { style: "display:flex;gap:8px;flex-wrap:wrap" }, open.map((i) => el("button", { class: "btn sm", type: "button", disabled: !Z || canWrite === false, onclick: act(() => takeSeat(i)) }, "Play seat " + i))))
     : null;
   return el("section", { class: "card card-pad" },
-    el("div", { class: "card-head" }, el("h2", {}, "Seats"), el("span", { class: "small muted" }, "Any " + state.g.t + " of " + state.g.n + " approve")),
+    el("div", { class: "card-head" }, el("h2", {}, "Seats"), el("span", { class: "small muted" }, state.g.t + " of " + state.g.n + " signers must approve")),
     el("div", { class: "seat-grid" }, seatIds().map(seatTile)),
     testing);
 }
@@ -1252,12 +1285,49 @@ function seatTile(i) {
 function overviewTab() {
   const c = curChain(), list = activity(), pend = toApprove(state.gid);
   return el("div", { class: "page", style: "gap:16px" },
+    state.g.movedTo ? moveCard(c) : null,
     pend.length ? approvalsCard(pend) : null,
     el("div", { class: "grid-ov" }, balanceCard(c), receiveCard()),
+    signersCard(),
     el("section", { class: "card" },
       el("div", { class: "card-head card-pad", style: "padding-bottom:12px" }, el("h2", {}, "Activity"),
         list.length > 6 ? el("button", { class: "btn ghost sm", type: "button", onclick: () => { ui.tab = "activity"; render(); } }, "View all") : null),
       activityRows(list.slice(0, 6))));
+}
+
+// The steps of a move, read from the old wallet: new wallet ready, payment proposed, funds gone.
+function moveState(c) {
+  const to = state.g.movedTo, ss = state.sessions.find((x) => x.move === to && x.status !== "failed");
+  const b = c && c.bal ? balanceNow(c.bal) : null;
+  if (!gkeys[to]) return { text: "A signer started moving this wallet to a new one. If you are one of its signers, ask them for its invite link." };
+  if (!ready[to]) return { text: groupName(to) + " is still setting up. When its address is ready, move the funds here.", open: to };
+  if (ss && !ss.broadcastTxid) return { text: "Moving the funds to " + groupName(to) + " is in progress. Open the payment to approve it or take the next step.", session: ss };
+  if (ss && inFlight().includes(ss)) return { text: "The funds are on their way to " + groupName(to) + ". They arrive with the next block.", open: to };
+  if (ss && b && b.spendable + b.pending === 0) return { text: "All funds moved to " + groupName(to) + ". This wallet is closed.", open: to, done: true };
+  return { text: groupName(to) + " is ready. Move all funds to it. Like any payment, this needs " + state.g.t + " approvals.", propose: true };
+}
+
+function moveCard(c) {
+  const m = moveState(c), why = m.propose ? sendBlocker() : null;
+  const started = state.sessions.some((x) => x.move === state.g.movedTo && x.status !== "failed");
+  return el("section", { class: "card card-pad " + (m.done ? "" : "attention") },
+    el("div", { class: "card-head" }, el("h2", {}, m.done ? "This wallet moved" : "Changing signers"),
+      m.done ? el("span", { class: "badge plain" }, "Closed") : null),
+    el("p", { class: "small muted" }, m.text),
+    el("div", { style: "display:flex;gap:8px;flex-wrap:wrap" },
+      m.propose ? el("button", { class: "btn primary", type: "button", disabled: !!why, title: why, onclick: act(proposeMove) }, "Move " + fmtZec(c && c.bal ? c.bal.max_send : 0)) : null,
+      m.session ? el("button", { class: "btn primary", type: "button", onclick: () => openSession(m.session.id) }, "Open the payment") : null,
+      m.open ? el("button", { class: "btn", type: "button", onclick: () => { ui.tab = "overview"; openGroup(m.open); } }, "Open " + groupName(m.open)) : null,
+      !started ? el("button", { class: "btn ghost", type: "button", onclick: act(cancelMove) }, "Cancel move") : null),
+    why ? el("p", { class: "small faint" }, why) : null);
+}
+
+function signersCard() {
+  return el("section", { class: "card card-pad" },
+    el("div", { class: "card-head" }, el("h2", {}, "Signers"),
+      el("button", { class: "btn ghost sm", type: "button", onclick: () => { ui.tab = "members"; render(); } }, "Manage")),
+    el("p", { class: "small muted" }, ruleText(state.g.t, state.g.n)),
+    el("div", { class: "signer-list" }, seatIds().map((i) => el("span", { class: "signer" }, avatar(i), el("span", { class: "small" }, seatLabel(i))))));
 }
 
 function approvalsCard(list) {
@@ -1272,7 +1342,7 @@ function approvalsCard(list) {
 }
 
 function balanceCard(c) {
-  const b = c && c.bal ? balanceNow(c.bal) : null, empty = b && b.spendable + b.pending + b.sending === 0;
+  const b = c && c.bal ? balanceNow(c.bal) : null, empty = b && b.spendable + b.pending + b.sending === 0 && !state.g.movedTo;
   return el("section", { class: "card card-pad balance" },
     el("span", { class: "label" }, "Balance"),
     b ? money(b.spendable + b.pending, "xl") : el("span", { class: "skel xl", "aria-label": "Loading balance" }),
@@ -1289,9 +1359,10 @@ function receiveCard() {
   const w = state.wallet;
   return el("section", { class: "card card-pad" },
     el("div", { class: "card-head" }, el("h2", {}, "Receive"), el("span", { class: "badge ok plain" }, "Private address")),
-    el("p", { class: "small muted" }, "Share this address to receive testnet ZEC. Payments to it are shielded."),
+    state.g.movedTo ? el("div", { class: "callout" }, "This wallet moved to " + groupName(state.g.movedTo) + ". Ask senders to use the new wallet's address.")
+      : el("p", { class: "small muted" }, "Share this address to receive testnet ZEC. Payments to it are shielded."),
     el("div", { class: "addr-box" }, el("span", { class: "hex" }, short(w.address, 18)), copyBtn(w.address)),
-    el("p", { class: "small faint" }, verifiedCount() + " of " + state.g.n + " members checked this address against their own key."));
+    el("p", { class: "small faint" }, verifiedCount() + " of " + state.g.n + " signers checked this address against their own key."));
 }
 
 function syncLine(c) {
@@ -1347,19 +1418,32 @@ function activityTab() {
 function membersTab() {
   return el("div", { class: "page", style: "gap:16px" },
     el("section", { class: "card" },
-      el("div", { class: "card-pad", style: "padding-bottom:14px" }, el("div", { class: "card-head" }, el("h2", {}, "Members"), el("span", { class: "small muted" }, "Any " + state.g.t + " of " + state.g.n + " can approve a payment"))),
+      el("div", { class: "card-pad", style: "padding-bottom:14px" }, el("div", { class: "card-head" }, el("h2", {}, "Signers"), el("span", { class: "small muted" }, ruleText(state.g.t, state.g.n)))),
       el("div", { style: "border-top:1px solid var(--line)" }, seatIds().map(memberRow))),
+    changeSignersCard(),
     el("section", { class: "card card-pad" },
       el("h2", { style: "font-size:15px" }, "Wallet link"),
-      el("p", { class: "small muted" }, "Members open this wallet on another device with this link and their key backup. The link contains the wallet's secret, so share it only with members."),
+      el("p", { class: "small muted" }, "Signers open this wallet on another device with this link and their key backup. The link contains the wallet's secret, so share it only with signers."),
       el("div", { class: "addr-box" }, el("span", { class: "hex nowrap" }, inviteLink(state.gid)), copyBtn(inviteLink(state.gid), "Copy link")),
       secretQr(inviteLink(state.gid))));
+}
+
+// FROST fixes the signers when the key is made, so a change means a new wallet and one payment.
+function changeSignersCard() {
+  const moving = !!state.g.movedTo;
+  return el("section", { class: "card card-pad" },
+    el("h2", { style: "font-size:15px" }, "Add or remove signers"),
+    el("p", { class: "small muted" }, "The signers and the approval rule are part of the wallet key, so they cannot change in place. "
+      + "To change them, create a new wallet with the signers you want, then move the funds to it."),
+    el("div", {}, moving
+      ? el("button", { class: "btn", type: "button", onclick: () => { ui.tab = "overview"; render(); } }, "See the move")
+      : el("button", { class: "btn", type: "button", disabled: !localSeats().length, onclick: () => { ui.move = true; render(); } }, "Change signers")));
 }
 
 function memberRow(i) {
   const s = state.seats[i], mine = s && s.uid === me && sec(state.gid, i), v = state.verify[i];
   return el("div", { class: "member" }, avatar(i, "lg"),
-    el("div", { class: "ri-main" }, el("span", { class: "ri-title" }, s ? (s.uid === me ? (s.name || "You") : s.name || "Member " + i) : "Open seat", mine ? el("span", { class: "you" }, "You") : null),
+    el("div", { class: "ri-main" }, el("span", { class: "ri-title" }, s ? (s.uid === me ? (s.name || "You") : s.name || "Signer " + i) : "Open seat", mine ? el("span", { class: "you" }, "You") : null),
       el("span", { class: "ri-sub" }, "Seat " + i + (s ? " · joined " + when(s.at) : ""))),
     el("div", { class: "m-actions" },
       v ? el("span", { class: "badge " + (v.ok ? "ok" : "bad") }, v.ok ? "Address checked" : "Rejected address") : el("span", { class: "badge" }, STAGE_LABEL[seatStage(i)]),
@@ -1374,8 +1458,8 @@ function detailsTab() {
       el("h2", { style: "font-size:15px" }, "Wallet"),
       el("dl", { class: "kv" },
         el("dt", {}, "Address"), el("dd", {}, el("div", { class: "addr-full" }, w.address), el("div", { style: "margin-top:8px" }, copyBtn(w.address, "Copy address"))),
-        el("dt", {}, "Approval rule"), el("dd", {}, "Any " + state.g.t + " of " + state.g.n + " members"),
-        el("dt", {}, "Checked by"), el("dd", {}, rejected.length ? el("span", { class: "badge bad" }, "Seat " + rejected.join(", ") + " rejected this wallet") : el("span", { class: "badge " + (verifiedCount() === state.g.n ? "ok" : "") }, verifiedCount() + " of " + state.g.n + " members")),
+        el("dt", {}, "Approval rule"), el("dd", {}, "Any " + state.g.t + " of " + state.g.n + " signers"),
+        el("dt", {}, "Checked by"), el("dd", {}, rejected.length ? el("span", { class: "badge bad" }, "Seat " + rejected.join(", ") + " rejected this wallet") : el("span", { class: "badge " + (verifiedCount() === state.g.n ? "ok" : "") }, verifiedCount() + " of " + state.g.n + " signers")),
         el("dt", {}, "Network"), el("dd", {}, "Zcash testnet"),
         el("dt", {}, "Created at block"), el("dd", { class: "mono" }, (w.birthday || 0).toLocaleString()),
         el("dt", {}, "Group key"), el("dd", { class: "hex" }, w.group_verifying_key))),
@@ -1438,10 +1522,10 @@ function sendDialog() {
     el("label", { class: "field" }, el("span", {}, "Amount"),
       el("div", { class: "input-wrap" },
         el("input", { class: "input", id: "s-amt", name: "amount", type: "number", step: "0.0001", min: "0.0001", placeholder: "0.00", required: true, oninput: sumUp }),
-        el("button", { class: "btn sm", type: "button", onclick: () => { const i = document.getElementById("s-amt"); i.value = Math.max(0, (spendable - FEE_ESTIMATE) / 1e8).toFixed(8).replace(/0+$/, "").replace(/\.$/, ""); i.dispatchEvent(new Event("input", { bubbles: true })); } }, "Max"))),
-    el("label", { class: "field" }, el("span", {}, "Note for co-signers (optional)"),
+        el("button", { class: "btn sm", type: "button", onclick: () => { const i = document.getElementById("s-amt"); i.value = Math.max(0, (c && c.bal ? c.bal.max_send : 0) / 1e8).toFixed(8).replace(/0+$/, "").replace(/\.$/, ""); i.dispatchEvent(new Event("input", { bubbles: true })); } }, "Max"))),
+    el("label", { class: "field" }, el("span", {}, "Note for signers (optional)"),
       el("input", { class: "input", id: "s-note", name: "note", type: "text", maxlength: "80", placeholder: "Pay the audit firm", autocomplete: "off" }),
-      el("span", { class: "hint" }, "Encrypted. Only members of this wallet can read it.")),
+      el("span", { class: "hint" }, "Encrypted. Only signers of this wallet can read it.")),
     el("div", { class: "summary" },
       el("div", {}, el("span", { class: "muted" }, "Available"), money(spendable)),
       el("div", {}, el("span", { class: "muted" }, "Network fee (estimate)"), money(FEE_ESTIMATE)),
@@ -1468,7 +1552,9 @@ function inspectOf(ss) {
 function recipientCheck(ss, ins) {
   const payee = ins && !ins.error ? ins.lines.find(isPayee) : null;
   if (!payee) return { payee: null, match: null };
-  return { payee, match: ss.to ? normalized(ss.to) === payee.who : null };
+  const tw = ss.move ? ready[ss.move] : null;
+  const intoNew = tw ? normalized(tw.address) === payee.who : null;
+  return { payee, match: ss.to ? normalized(ss.to) === payee.who : null, intoNew };
 }
 
 function recipientBox(ss, rc) {
@@ -1478,12 +1564,19 @@ function recipientBox(ss, rc) {
   return el("div", { class: "to-box" },
     el("div", { class: "card-head" }, el("span", { class: "label" }, "To"), badge),
     el("div", { class: "hex" }, ss.to || rc.payee.who),
-    rc.match === false ? el("div", { class: "callout bad" }, "The transaction pays " + short(rc.payee.who, 12) + ", not the address the proposer typed. Do not approve it.") : null);
+    rc.match === false ? el("div", { class: "callout bad" }, "The transaction pays " + short(rc.payee.who, 12) + ", not the address the proposer typed. Do not approve it.") : null,
+    ss.move ? moveNote(ss, rc) : null);
+}
+
+function moveNote(ss, rc) {
+  if (rc.intoNew === false) return el("div", { class: "callout bad" }, "This is not the address of " + groupName(ss.move) + ". Do not approve it.");
+  if (rc.intoNew) return el("div", { class: "callout" }, "This moves all funds to " + groupName(ss.move) + ", the wallet that replaces this one. Your browser checked its address.");
+  return el("div", { class: "callout" }, "This moves all funds to a new wallet that replaces this one. You are not one of its signers, so your browser cannot check its address.");
 }
 
 function nextAction(ss, ins, rc) {
   const myPending = localSeats().filter((i) => sec(state.gid, i).keyPackage && !state.commits[i] && !ss.package);
-  const canApprove = myPending.length && !(ins && ins.error) && rc.match !== false;
+  const canApprove = myPending.length && !(ins && ins.error) && rc.match !== false && rc.intoNew !== false;
   if (canApprove) return myPending.map((i) => el("button", { class: "btn primary lg", type: "button", onclick: act(() => approve(ss, i)) }, localSeats().length > 1 ? "Approve as seat " + i : "Approve payment"));
   if (ss.signed && !ss.final && (ss.status !== "proving" || proofStalled(ss))) return [el("button", { class: "btn primary lg", type: "button", onclick: act(() => finalizeTx(ss)) }, "Build proof")];
   if (ss.final && !ss.broadcastTxid) return [el("button", { class: "btn primary lg", type: "button", disabled: !curChain(), onclick: act(() => broadcastTx(ss)) }, ss.broadcastError ? "Send again" : "Send to network")];
@@ -1530,11 +1623,11 @@ function timeline(ss, refused) {
     tl(ss.error ? "bad" : ss.signed ? "done" : ss.package ? "now" : "", "Group signature",
       el("p", {}, ss.error ? ss.error : ss.signed ? "All signatures combined and verified." : ss.package ? "Signing · " + shared + " of " + signers.length + " shares" : "Starts after " + g.t + " approvals.")),
     tl(ss.final ? "done" : ss.status === "proving" ? "now" : "", "Proof",
-      el("p", {}, ss.final ? "Proof built and the whole transaction checked." : ss.status === "proving" && !proofStalled(ss) ? "A member's browser is building the proof · " + elapsed(ss.provingAt) + " of about a minute." : "Any member can build the zero-knowledge proof once the payment is signed.")),
+      el("p", {}, ss.final ? "Proof built and the whole transaction checked." : ss.status === "proving" && !proofStalled(ss) ? "A signer's browser is building the proof · " + elapsed(ss.provingAt) + " of about a minute." : "Any signer can build the zero-knowledge proof once the payment is signed.")),
     tl(ss.broadcastTxid ? "done" : ss.broadcastError ? "bad" : ss.final ? "now" : "", "Sent to the network",
       el("div", { style: "display:grid;gap:8px" },
         ss.broadcastTxid ? el("p", {}, when(ss.broadcastAt) + " · ", el("a", { href: EXPLORER_TX + ss.broadcastTxid, target: "_blank", rel: "noopener" }, "View in explorer ↗"))
-          : el("p", {}, ss.final ? "Any member can send the finished transaction." : "Available after the proof."),
+          : el("p", {}, ss.final ? "Any signer can send the finished transaction." : "Available after the proof."),
         ss.broadcastError && !ss.broadcastTxid ? el("div", { class: "callout bad" }, ss.broadcastError) : null)));
 }
 
@@ -1550,7 +1643,7 @@ function txDetails(ss) {
 document.getElementById("banner").addEventListener("click", (ev) => { ev.currentTarget.hidden = true; });
 document.addEventListener("keydown", (ev) => {
   if (ev.key !== "Escape") return;
-  if (state.sid) closeSession(); else { ui.send = false; ui.create = false; ui.receive = false; }
+  if (state.sid) closeSession(); else { ui.send = false; ui.create = false; ui.receive = false; ui.move = false; }
   render();
 });
 

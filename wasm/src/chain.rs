@@ -180,7 +180,9 @@ impl Inner {
 
     fn balance(&self) -> String {
         let (mut spendable, mut pending, mut count) = (0u64, 0u64, 0u64);
+        let mut values = vec![];
         for n in self.notes.iter().filter(|n| !n.spent) {
+            values.push((n.value(), n.height));
             count += 1;
             if is_confirmed(n.height, self.synced) {
                 spendable += n.value();
@@ -189,7 +191,7 @@ impl Inner {
             }
         }
         json!({"height": self.synced, "tip": self.tip, "spendable": spendable,
-            "pending": pending, "notes": count})
+            "pending": pending, "notes": count, "max_send": max_send(&values, self.synced)})
         .to_string()
     }
 }
@@ -272,6 +274,14 @@ fn select_notes(notes: &[(u64, u32)], amount: u64, synced: u32) -> R<Pick> {
     }
     let need = amount.saturating_add(zip317_fee(picked.len()));
     Err(format!("not enough funds: {total} zat spendable, {need} zat needed (amount + fee)"))
+}
+
+/// The largest amount one payment can send: every confirmed note, less the fee for spending them.
+fn max_send(notes: &[(u64, u32)], synced: u32) -> u64 {
+    let confirmed: Vec<u64> =
+        notes.iter().filter(|n| is_confirmed(n.1, synced)).map(|n| n.0).collect();
+    let total: u64 = confirmed.iter().sum();
+    if confirmed.is_empty() { 0 } else { total.saturating_sub(zip317_fee(confirmed.len())) }
 }
 
 pub(crate) fn parse_recipient(s: &str) -> R<orchard::Address> {
@@ -496,6 +506,18 @@ mod tests {
         let p = select_notes(&notes, 150_000, SYNCED).unwrap();
         assert_eq!(p.picked, vec![1, 2, 0]);
         assert_eq!((p.fee, p.total, p.change), (15_000, 180_000, 15_000));
+    }
+
+    #[test]
+    fn max_send_empties_the_confirmed_notes() {
+        let notes = [(40_000, 10), (90_000, 11), (50_000, 12), (7_000_000, SYNCED)];
+        let max = max_send(&notes, SYNCED);
+        assert_eq!(max, 165_000);
+        let p = select_notes(&notes, max, SYNCED).unwrap();
+        assert_eq!((p.picked.len(), p.change), (3, 0));
+        assert!(select_notes(&notes, max + 1, SYNCED).is_err());
+        assert_eq!(max_send(&[(9_000, 10)], SYNCED), 0);
+        assert_eq!(max_send(&[], SYNCED), 0);
     }
 
     #[test]

@@ -19,6 +19,10 @@ The status is **prototype, testnet only**. Do not use it with real funds.
 4. **Spend.** A member proposes a payment to a recipient address. Each approving browser decodes the
    transaction itself, checks it, and publishes a FROST nonce commitment. When t members approve,
    the browsers sign. Any member then makes the Halo2 proof and broadcasts the transaction.
+5. **Change signers.** The signers and the threshold are fixed by the key, so a change makes a new
+   wallet with a new key ceremony. The old wallet then sends its whole balance to the new address,
+   approved like any payment. The old wallet stores only the new wallet's id, never its secret, so
+   signers left out cannot read the new wallet. They keep the old viewing key and its history.
 
 ## Proof on testnet
 
@@ -29,6 +33,7 @@ These transactions were made by the web app with 2-of-2 groups (NU7 testnet, V6,
 | [`4838de4c…6612`](https://testnet.zecblock.com/tx/4838de4c250d85c82657a600bd9886b75080711c37723c7a07f311c96f046612) | First FROST spend, block 4,485,020 |
 | [`86807799…45fd`](https://testnet.zecblock.com/tx/86807799c1393829e9de9b1158caa0285d198797c4194b2520f23a713b4f45fd) | Payment to an end-to-end encrypted group, block 4,485,097 |
 | [`9859c24b…2409`](https://testnet.zecblock.com/tx/9859c24b961bb196f9a1de74cc099c32d4f2c9812c12a2db47a504cb88ff2409) | Spend from the encrypted group, block 4,485,106 |
+| [`d2fc7ad5…e72f`](https://testnet.zecblock.com/tx/d2fc7ad573342648dcdaef65256288e38189753f0087a06e7217cc7a3bb8e72f) | Whole balance moved to a replacement wallet, block 4,488,891 |
 
 ## Privacy model
 
