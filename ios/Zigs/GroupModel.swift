@@ -1,14 +1,21 @@
 import Foundation
 import Observation
 
-/// Own node first; ChainSafe's public proxy is the backup.
-let lightwalletds = [URL(string: "https://lwd.zigs.app")!, URL(string: "https://zcash-testnet.chainsafe.dev")!]
-let explorerTx = "https://testnet.zecblock.com/tx/"
-
 struct Session: Identifiable {
     let id: String
     let doc: Doc
     var status: String { doc.str("status") ?? "collecting" }
+    var amount: Int { doc.int("amount") ?? 0 }
+}
+
+/// One wallet in the list, decrypted.
+struct GroupInfo: Identifiable {
+    let id: String
+    let name: String
+    let n: Int
+    let t: Int
+    let createdAt: Int
+    let movedTo: String?
 }
 
 /// One group, decrypted. Same document layout as web/index.html.
@@ -26,9 +33,19 @@ struct GroupState {
 
     var n: Int { g?.int("n") ?? 0 }
     var t: Int { g?.int("t") ?? 0 }
+    var name: String { g?.str("name") ?? "Wallet" }
+    var movedTo: String? { g?.str("movedTo") }
+    var movedFrom: String? { g?.str("movedFrom") }
     var seatIds: [Int] { n > 0 ? Array(1...n) : [] }
     var allSeated: Bool { seatIds.allSatisfy { seats["\($0)"]?.str("boxPk") != nil } }
+    var seatedCount: Int { seatIds.filter { seats["\($0)"] != nil }.count }
     var allR1: Bool { seatIds.allSatisfy { dkg1["\($0)"] != nil } }
+    var allDone: Bool { !seatIds.isEmpty && seatIds.allSatisfy { done["\($0)"] != nil } }
+    var keysAgree: Bool { allDone && Set(seatIds.compactMap { done["\($0)"]?.str("groupKey") }).count == 1 }
+    var verifiedCount: Int { seatIds.filter { has(verify["\($0)"]?["ok"]) }.count }
+    var rejectedSeats: [Int] { seatIds.filter { verify["\($0)"] != nil && !has(verify["\($0)"]?["ok"]) } }
+    /// The wallet is ready to use: created, dated, and no seat rejected it.
+    var ready: Bool { wallet?.int("birthday") != nil && rejectedSeats.isEmpty }
     func r2For(_ to: Int) -> Bool { seatIds.filter { $0 != to }.allSatisfy { dkg2["\($0)-\(to)"] != nil } }
 
     func stage(_ i: Int) -> Int {
@@ -40,17 +57,26 @@ struct GroupState {
     }
 }
 
-let stageLabels = ["Open seat", "Joined", "Round 1 sent", "Round 2 sent", "Holds key share", "Verified wallet"]
+/// A seat publishes its first key message right after joining, so stage 2 still reads as joined.
+let stageLabels = ["Open", "Joined", "Joined", "Creating key", "Key ready", "Address checked"]
+
+func ruleText(_ t: Int, _ n: Int) -> String { "Any \(t) of \(n) signers must approve each payment." }
 
 @MainActor
 @Observable
 final class GroupModel {
-    private(set) var groups: [(id: String, name: String, n: Int, t: Int)] = []
+    private(set) var groups: [GroupInfo] = []
+    /// Each group's published wallet (address, viewing key), for the list and for moves.
+    private(set) var wallets: [String: Doc] = [:]
+    private(set) var toApprove: [String: Int] = [:]
     private(set) var gid: String?
     private(set) var state = GroupState()
+    private(set) var chain: Chain?
     private(set) var connected = false
     private(set) var log: [String] = []
+    private(set) var balances: [String: Int]
     var banner: String?
+    var notice: String?
     var path: [String] = []
 
     @ObservationIgnored let store = Store()
@@ -59,6 +85,8 @@ final class GroupModel {
     @ObservationIgnored private(set) var me: String
     @ObservationIgnored private var proving = Set<String>()
     @ObservationIgnored private var autoSeat = false
+    /// Decrypted field values by ciphertext; every store change would otherwise decrypt everything.
+    @ObservationIgnored private var opened: [String: Any] = [:]
 
     var server: String { didSet { UserDefaults.standard.set(server, forKey: "zf-server") } }
     var name: String { didSet { UserDefaults.standard.set(name, forKey: "zf-name") } }
@@ -68,7 +96,8 @@ final class GroupModel {
         if d.string(forKey: "zf-uid") == nil { d.set(UUID().uuidString.lowercased(), forKey: "zf-uid") }
         me = d.string(forKey: "zf-uid") ?? ""
         server = d.string(forKey: "zf-server") ?? "https://app.zigs.app"
-        name = d.string(forKey: "zf-name") ?? "iPhone"
+        name = d.string(forKey: "zf-name") ?? ""
+        balances = d.dictionary(forKey: "zf-bal") as? [String: Int] ?? [:]
         store.onChange = { [weak self] in self?.refresh() }
         reconnect()
     }
@@ -95,11 +124,14 @@ final class GroupModel {
 
     private func open(_ path: String, _ raw: Doc?) -> Doc? {
         guard let raw, let k = key(path) else { return nil }
+        if opened.count > 20_000 { opened = [:] }
         var out = Doc()
         for (field, v) in raw {
-            guard let ct = v as? String,
-                  let pt = try? Engine.call("secretOpen", [k, path + "\n" + field, ct]),
+            guard let ct = v as? String else { continue }
+            if let hit = opened[ct] { out[field] = hit; continue }
+            guard let pt = try? Engine.call("secretOpen", [k, path + "\n" + field, ct]),
                   let val = try? Engine.parse(pt) else { continue }
+            opened[ct] = val
             out[field] = val
         }
         return out.isEmpty && !raw.isEmpty ? nil : out
@@ -127,10 +159,21 @@ final class GroupModel {
 
     private func refresh() {
         connected = store.connected
-        groups = store.children("groups").compactMap { id, raw in
-            guard let g = open("groups/" + id, raw) else { return nil }
-            return (id, g.str("name") ?? "Group", g.int("n") ?? 0, g.int("t") ?? 0)
-        }.sorted { $0.name < $1.name }
+        var list: [GroupInfo] = [], ws: [String: Doc] = [:], counts: [String: Int] = [:]
+        for (id, raw) in store.children("groups") {
+            guard let g = open("groups/" + id, raw) else { continue }
+            list.append(GroupInfo(id: id, name: g.str("name") ?? "Wallet", n: g.int("n") ?? 0, t: g.int("t") ?? 0,
+                                  createdAt: g.int("createdAt") ?? 0, movedTo: g.str("movedTo")))
+            let wpath = "groups/\(id)/meta/wallet"
+            if let w = open(wpath, store.docs[wpath]) { ws[id] = w }
+            if !vault.seats(in: id).isEmpty {
+                let sessions = children("groups/\(id)/sessions").map { Session(id: $0.key, doc: $0.value) }
+                counts[id] = sessions.filter { needsMyApproval(id, $0) }.count
+            }
+        }
+        groups = list.sorted { $0.createdAt > $1.createdAt }
+        wallets = ws
+        toApprove = counts
         if let gid { state = load(gid) }
         react()
     }
@@ -155,7 +198,10 @@ final class GroupModel {
     }
 
     func select(_ id: String?) {
+        guard id != gid else { return }
         gid = id
+        chain?.close()
+        chain = nil
         state = id.map(load) ?? GroupState()
         react()
     }
@@ -165,10 +211,76 @@ final class GroupModel {
         return vault.seats(in: gid).filter { state.seats["\($0)"]?.str("uid") == me }
     }
 
-    func seatName(_ i: Int) -> String {
-        guard let s = state.seats["\(i)"] else { return "Seat \(i)" }
-        if s.str("uid") == me { return "You (seat \(i))" }
-        return "\(s.str("name") ?? "Seat \(i)") (seat \(i))"
+    var myVerified: Bool { localSeats.contains { has(state.verify["\($0)"]?["ok"]) } }
+    var isCreator: Bool { state.g?.str("createdBy") == me }
+
+    func seatLabel(_ i: Int) -> String {
+        guard let s = state.seats["\(i)"] else { return "Open seat" }
+        if s.str("uid") == me { return localSeats.count > 1 ? "You (seat \(i))" : "You" }
+        let n = s.str("name") ?? ""
+        return n.isEmpty ? "Signer \(i)" : n
+    }
+
+    func groupName(_ id: String) -> String { groups.first { $0.id == id }?.name ?? "the new wallet" }
+
+    func inviteLink(_ id: String) -> String {
+        "\(server.trimmingCharacters(in: CharacterSet(charactersIn: "/")))/#\(id).\(vault.keys[id] ?? "")"
+    }
+
+    /// A seat records its nonces on this device when it approves, so no server read is needed.
+    func needsMyApproval(_ gid: String, _ ss: Session) -> Bool {
+        guard ss.status == "collecting", !has(ss.doc["package"]), !has(ss.doc["error"]) else { return false }
+        return vault.seats(in: gid).contains { i in
+            let s = vault.sec(gid, i)
+            return has(s["keyPackage"]) && s.doc("nonces")?[ss.id] == nil
+        }
+    }
+
+    // MARK: Balance
+
+    /// Sent payments that no synced block contains yet. Until one does, the synced balance still
+    /// counts their inputs as unspent, so the app subtracts them itself.
+    var inFlight: [Session] {
+        guard let chain else { return [] }
+        return state.sessions.filter {
+            has($0.doc["broadcastTxid"]) && !chain.sent.contains($0.doc.doc("final")?.str("txid") ?? "")
+        }
+    }
+
+    func balanceNow() -> (spendable: Int, pending: Int, sending: Int)? {
+        guard let b = chain?.balance else { return nil }
+        let out = inFlight
+        let sum = { (f: (Session) -> Int) in out.reduce(0) { $0 + f($1) } }
+        return (max(0, (b.int("spendable") ?? 0) - sum { $0.doc.int("noteValue") ?? 0 }),
+                (b.int("pending") ?? 0) + sum { $0.doc.int("change") ?? 0 },
+                sum { $0.amount + ($0.doc.int("fee") ?? 0) })
+    }
+
+    var maxSend: Int { chain?.balance?.int("max_send") ?? 0 }
+
+    /// Why Send is unavailable, or nil when it is available.
+    var sendBlocker: String? {
+        if localSeats.isEmpty { return "You hold no seat in this wallet." }
+        if !myVerified { return "Your seat is still checking the wallet address." }
+        guard let b = balanceNow() else { return "Wait for the first sync to finish." }
+        // ponytail: the engine does not know about unmined spends and would pick the same notes again.
+        if !inFlight.isEmpty { return "A payment is waiting for its block. Send again in a minute." }
+        if maxSend > 0 { return nil }
+        return b.pending > 0 ? "Incoming funds need 3 confirmations first." : "This wallet has no funds yet."
+    }
+
+    private func ensureChain(_ gid: String) {
+        guard chain == nil, let w = state.wallet, let ufvk = w.str("ufvk"), let birthday = w.int("birthday"),
+              let key = vault.keys[gid] else { return }
+        let c = Chain(gid: gid, ufvk: ufvk, birthday: birthday, groupKey: key)
+        c.onSynced = { [weak self] b in self?.saveBalance(gid, b) }
+        chain = c
+        Task { await c.sync() }
+    }
+
+    private func saveBalance(_ gid: String, _ b: Doc) {
+        balances[gid] = (b.int("spendable") ?? 0) + (b.int("pending") ?? 0)
+        UserDefaults.standard.set(balances, forKey: "zf-bal")
     }
 
     // MARK: Reactor
@@ -191,7 +303,11 @@ final class GroupModel {
         guard let gid, state.g != nil else { return }
         takeFirstOpenSeat()
         for i in localSeats { advanceSeat(gid, i) }
+        if isCreator && state.wallet == nil && state.keysAgree {
+            once("wallet") { try await self.createWallet(gid) }
+        }
         guard state.wallet != nil else { return }
+        if state.ready && myVerified { ensureChain(gid) }
         for ss in state.sessions { reactSession(ss) }
     }
 
@@ -270,9 +386,40 @@ final class GroupModel {
         note(ok ? "seat \(i): wallet verified, ak equals my group key" : "seat \(i): WALLET REJECTED")
     }
 
+    /// The creator builds the shared wallet once every seat computed the same group key.
+    private func createWallet(_ gid: String) async throws {
+        // The wallet document can arrive after the key ones; never replace a published wallet.
+        if store.docs["groups/\(gid)/meta/wallet"] != nil { return }
+        var birthday: Int?
+        for url in lightwalletds where birthday == nil { birthday = try? await Lightwalletd.latestHeight(url) }
+        guard let birthday else { throw ZigsError("No light-wallet server answers, so the wallet cannot be dated.") }
+        guard let pkp = state.done["1"]?.str("publicKeyPackage") else { return }
+        var w = try Engine.object("walletCreate", [pkp, state.g?.str("network") ?? "testnet"])
+        w["birthday"] = birthday
+        w["at"] = now()
+        try await put("groups/\(gid)/meta/wallet", w)
+        note("wallet created: \((w.str("address") ?? "").prefix(24))…")
+    }
+
     private func reactSession(_ ss: Session) {
-        guard let gid, let fvk = state.wallet?.str("orchard_fvk"), !has(ss.doc["error"]),
-              let package = ss.doc.str("package") else { return }
+        guard let gid, let fvk = state.wallet?.str("orchard_fvk"), !has(ss.doc["error"]) else { return }
+        let path = "groups/\(gid)/sessions/\(ss.id)"
+        let commits = state.commits[ss.id] ?? [:]
+        // Proposer: once enough signers approve, build the signing package.
+        if ss.doc.str("createdBy") == me && !has(ss.doc["package"]) {
+            let ids = commits.keys.compactMap(Int.init).sorted().prefix(state.t)
+            if ids.count >= state.t {
+                once("pkg:\(ss.id)") {
+                    var c = Doc()
+                    for i in ids { c["\(i)"] = commits["\(i)"]?["commitments"] }
+                    let pkg = try Engine.call("signPackage", [ss.doc.str("pczt") ?? "", fvk, Engine.json(c), self.state.t])
+                    try await self.patch(path, ["package": pkg, "signers": Array(ids), "status": "signing"])
+                    self.note("signing package sent to signers \(ids.map(String.init).joined(separator: ", "))")
+                }
+            }
+            return
+        }
+        guard let package = ss.doc.str("package") else { return }
         let signers = (ss.doc["signers"] as? [NSNumber])?.map(\.intValue) ?? []
         let shares = state.shares[ss.id] ?? [:]
         for i in localSeats where signers.contains(i) && shares["\(i)"] == nil {
@@ -324,13 +471,16 @@ final class GroupModel {
             return
         }
         let parts = frag.split(separator: ".", maxSplits: 1).map(String.init)
-        guard parts.count == 2, parts[1].count == 43 else { banner = "The key in this link is not valid."; return }
+        guard parts.count == 2, parts[0].count == 20, parts[1].count == 43 else {
+            banner = "The key in this link is not valid."
+            return
+        }
         vault.putKey(parts[0], parts[1])
         store.join(parts[0])
         autoSeat = true
         path = [parts[0]]
         select(parts[0])
-        note("joined group \(parts[0].prefix(8))…")
+        note("joined wallet \(parts[0].prefix(8))…")
     }
 
     /// After joining from an invite link, take the lowest open seat once.
@@ -356,6 +506,57 @@ final class GroupModel {
         }
     }
 
+    /// Creates a wallet and takes seat 1. With `from`, the new wallet replaces `from`: the old wallet
+    /// gets only the new id, never its key, so signers left out cannot read the new wallet.
+    func createGroup(name: String, n: Int, t: Int, from: String? = nil) async throws {
+        let id = randomHex(10)
+        var key = [UInt8](repeating: 0, count: 32)
+        guard SecRandomCopyBytes(kSecRandomDefault, key.count, &key) == errSecSuccess else {
+            throw ZigsError("This iPhone could not make a random key.")
+        }
+        let b64 = Data(key).base64EncodedString().replacingOccurrences(of: "+", with: "-")
+            .replacingOccurrences(of: "/", with: "_").replacingOccurrences(of: "=", with: "")
+        vault.putKey(id, b64)
+        store.join(id)
+        var g: Doc = ["name": name, "n": n, "t": t, "network": "testnet", "createdBy": me, "createdAt": now()]
+        if let from { g["movedFrom"] = from }
+        try await put("groups/\(id)", g)
+        if let from { try await patch("groups/\(from)", ["movedTo": id, "movedAt": now()]) }
+        path = [id]
+        select(id)
+        takeSeat(1)
+    }
+
+    /// Proposes a payment; `to` and `note` are the proposer's words, which approvers check
+    /// against the transaction itself.
+    func propose(to: String, amount: Int, note: String?, move: String? = nil) async throws {
+        guard let gid, let chain, chain.balance != nil else { throw ZigsError("The wallet has not finished its first sync.") }
+        let t = try await chain.spend(to: to, amount: amount)
+        let sid = randomHex(10)
+        try await put("groups/\(gid)/sessions/\(sid)", [
+            "createdBy": me, "createdAt": now(), "to": to, "note": note ?? NSNull(), "pool": t["pool"] ?? "ironwood",
+            "amount": t["amount"] ?? amount, "change": t["change"] ?? 0, "fee": t["fee"] ?? 0,
+            "noteValue": t["note_value"] ?? 0, "pczt": t["pczt"] ?? "", "move": move ?? NSNull(), "status": "collecting",
+        ])
+        self.note("new payment: \(zec(amount))")
+        notice = "Payment proposed. It needs \(state.t) approvals."
+    }
+
+    /// Sends every confirmed note to the wallet that replaces this one.
+    func proposeMove() async throws {
+        guard let to = state.movedTo, let address = wallets[to]?.str("address") else {
+            throw ZigsError("The new wallet has no address yet.")
+        }
+        guard maxSend > 0 else { throw ZigsError("No confirmed funds to move yet.") }
+        try await propose(to: address, amount: maxSend, note: "Move to \(groupName(to))", move: to)
+    }
+
+    func cancelMove() async throws {
+        guard let gid else { return }
+        try await patch("groups/\(gid)", ["movedTo": NSNull(), "movedAt": NSNull()])
+        notice = "Move cancelled. This wallet stays as it is."
+    }
+
     func inspect(_ ss: Session) -> Result<Doc, ZigsError> {
         do {
             return .success(try Engine.object("inspect", [ss.doc.str("pczt") ?? "", state.wallet?.str("orchard_fvk") ?? ""]))
@@ -363,6 +564,8 @@ final class GroupModel {
             return .failure(ZigsError(error.localizedDescription))
         }
     }
+
+    func normalized(_ address: String) -> String? { try? Engine.call("normalizeAddress", [address]) }
 
     func pendingApprovals(_ ss: Session) -> [Int] {
         guard let gid, !has(ss.doc["package"]) else { return [] }
@@ -380,7 +583,7 @@ final class GroupModel {
             self.vault.putSec(gid, i, ["nonces": nonces])
             try await self.put("groups/\(gid)/sessions/\(ss.id)/commits/\(i)",
                                ["commitments": r["commitments"] ?? NSNull(), "at": now()])
-            self.note("seat \(i): approved the spend")
+            self.note("seat \(i): approved the payment")
         }
     }
 
@@ -390,7 +593,7 @@ final class GroupModel {
             && !proving.contains(ss.id)
     }
 
-    /// Builds the Halo2 proof natively and checks the whole transaction.
+    /// Builds the Halo2 proof on this iPhone and checks the whole transaction.
     func prove(_ ss: Session) {
         guard let gid, let signed = ss.doc.str("signed") else { return }
         let path = "groups/\(gid)/sessions/\(ss.id)"
@@ -422,6 +625,8 @@ final class GroupModel {
                 try await self.patch(path, ["broadcastTxid": final.str("txid") ?? "", "broadcastAt": now(),
                                             "broadcastError": NSNull(), "status": "broadcast"])
                 self.note("transaction broadcast: \(final.str("txid") ?? "")")
+                self.notice = "Sent to the network. It confirms with the next block."
+                if let chain = self.chain { Task { await chain.sync() } }
             } catch {
                 try await self.patch(path, ["broadcastError": error.localizedDescription])
                 throw error
@@ -431,3 +636,7 @@ final class GroupModel {
 }
 
 func now() -> Int { Int(Date().timeIntervalSince1970 * 1000) }
+
+func randomHex(_ bytes: Int) -> String {
+    (0..<bytes).map { _ in String(format: "%02x", UInt8.random(in: 0...255)) }.joined()
+}

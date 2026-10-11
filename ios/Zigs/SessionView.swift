@@ -1,145 +1,210 @@
 import SwiftUI
 
+/// One payment: what it does, decoded on this iPhone, and the step that comes next.
 struct SessionView: View {
     @Environment(GroupModel.self) private var model
     let sid: String
 
     var body: some View {
         if let ss = model.state.sessions.first(where: { $0.id == sid }) {
-            List {
-                OutputsSection(ss: ss)
-                ApprovalSection(ss: ss)
-                SignatureSection(ss: ss)
-                FinishSection(ss: ss)
+            let ins = model.inspect(ss)
+            let rc = RecipientCheck(model: model, ss: ss, ins: try? ins.get())
+            ScrollView {
+                VStack(alignment: .leading, spacing: 16) {
+                    VStack(alignment: .leading, spacing: 6) {
+                        Money(zat: ss.amount, size: 34, sign: "out")
+                        Text("Proposed by \(proposer(ss)) · \(when(ss.doc.int("createdAt")))").font(.caption).foregroundStyle(Color.mist)
+                    }
+                    if case .failure(let e) = ins {
+                        Label("This iPhone refuses this payment: \(e.message)", systemImage: "xmark.octagon.fill")
+                            .font(.subheadline).foregroundStyle(Color.bad)
+                    }
+                    RecipientBox(ss: ss, rc: rc)
+                    if case .success(let d) = ins { Breakdown(ss: ss, ins: d) }
+                    Timeline(ss: ss)
+                    if let final = ss.doc.doc("final") {
+                        Card {
+                            Text("Transaction").font(.headline)
+                            Detail(label: "ID") { Text(final.str("txid") ?? "").font(.caption.monospaced()).textSelection(.enabled) }
+                            if let ms = final.int("ms") { Detail(label: "Proof time") { Text(String(format: "%.1f s", Double(ms) / 1000)) } }
+                        }
+                    }
+                }
+                .padding(16)
             }
-            .scrollContentBackground(.hidden)
             .background(Color.night)
-            .navigationTitle(zec(ss.doc.int("amount")))
-            .toolbar { ToolbarItem(placement: .topBarTrailing) { StatusChip(status: ss.status) } }
+            .navigationTitle(payTitle(ss))
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .topBarTrailing) {
+                    let s = statusLabels[ss.status] ?? (ss.status, .plain)
+                    Badge(text: s.0, kind: s.1)
+                }
+            }
+            .safeAreaInset(edge: .bottom) {
+                NextAction(ss: ss, blocked: (try? ins.get()) == nil || rc.match == false || rc.intoNew == false)
+            }
+            .modifier(Banners())
         } else {
             ContentUnavailableView("Payment not found", systemImage: "questionmark.circle")
         }
     }
+
+    private func proposer(_ ss: Session) -> String {
+        guard let uid = ss.doc.str("createdBy") else { return "someone" }
+        if uid == model.me { return "you" }
+        let seat = model.state.seats.first { $0.value.str("uid") == uid }
+        return seat.flatMap { $0.value.str("name") }.flatMap { $0.isEmpty ? nil : $0 } ?? "a signer"
+    }
 }
 
-/// What the transaction does, decoded on this iPhone from the transaction itself.
-struct OutputsSection: View {
+/// The decoded recipient is the truth; the typed address only helps people recognise it.
+struct RecipientCheck {
+    let payee: String?
+    let match: Bool?
+    /// For a move: whether the payee is the new wallet's own address (nil when unknown here).
+    let intoNew: Bool?
+
+    @MainActor
+    init(model: GroupModel, ss: Session, ins: Doc?) {
+        let own: Set<String> = ["this wallet", "change (back to this wallet)"]
+        let lines = ins?["lines"] as? [Doc] ?? []
+        let payee = lines.first { $0.str("kind") == "output" && !own.contains($0.str("who") ?? "") }?.str("who")
+        self.payee = payee
+        guard let payee else { match = nil; intoNew = nil; return }
+        match = ss.doc.str("to").map { model.normalized($0) == payee }
+        let newAddress = ss.doc.str("move").flatMap { model.wallets[$0]?.str("address") }
+        intoNew = newAddress.map { model.normalized($0) == payee }
+    }
+}
+
+struct RecipientBox: View {
     @Environment(GroupModel.self) private var model
     let ss: Session
+    let rc: RecipientCheck
 
     var body: some View {
-        Section {
-            switch model.inspect(ss) {
-            case .failure(let e):
-                Label("This iPhone refuses this transaction: \(e.message)", systemImage: "xmark.octagon.fill")
-                    .foregroundStyle(.red)
-            case .success(let ins):
-                ForEach(Array((ins["lines"] as? [Doc] ?? []).enumerated()), id: \.offset) { _, l in
-                    HStack(alignment: .firstTextBaseline) {
-                        Text(l.str("kind") == "spend" ? "Spend a note of this wallet" : "Pay \(l.str("who") ?? "")")
-                            .font(.subheadline)
-                        Spacer()
-                        Text((l.str("kind") == "spend" ? "−" : "") + zec(l.int("value")))
-                            .font(.subheadline.monospacedDigit())
+        if let payee = rc.payee {
+            Card {
+                HStack {
+                    SectionLabel(text: "To")
+                    Spacer()
+                    if let m = rc.match {
+                        Badge(text: m ? "Matches the transaction" : "Does not match the transaction", kind: m ? .ok : .bad)
+                    } else {
+                        Text("Decoded from the transaction").font(.caption).foregroundStyle(Color.mist)
                     }
                 }
+                Text(ss.doc.str("to") ?? payee).font(.caption.monospaced()).textSelection(.enabled)
+                if rc.match == false {
+                    Text("The transaction pays \(short(payee)), not the address the proposer typed. Do not approve it.")
+                        .font(.subheadline).foregroundStyle(Color.bad)
+                }
+                if let move = ss.doc.str("move") {
+                    Text(rc.intoNew == false ? "This is not the address of \(model.groupName(move)). Do not approve it."
+                         : rc.intoNew == true ? "This moves all funds to \(model.groupName(move)), the wallet that replaces this one. This iPhone checked its address."
+                         : "This moves all funds to a new wallet that replaces this one. You are not one of its signers, so this iPhone cannot check its address.")
+                        .font(.subheadline).foregroundStyle(rc.intoNew == false ? Color.bad : Color.mist)
+                }
+            }
+        }
+    }
+}
+
+struct Breakdown: View {
+    let ss: Session
+    let ins: Doc
+
+    var body: some View {
+        let own: Set<String> = ["this wallet", "change (back to this wallet)"]
+        let lines = (ins["lines"] as? [Doc] ?? []).sorted { rank($0, own) < rank($1, own) }
+        Card {
+            SectionLabel(text: "What this payment does")
+            ForEach(Array(lines.enumerated()), id: \.offset) { _, l in
+                let spend = l.str("kind") == "spend"
                 HStack {
-                    Text("Fee (ZIP 317)").foregroundStyle(Color.mist)
+                    Text(spend ? "From this wallet" : own.contains(l.str("who") ?? "") ? "Change back to this wallet" : "To \(short(l.str("who") ?? "", 10))")
+                        .font(.subheadline)
                     Spacer()
-                    Text(zec(ss.doc.int("fee"))).font(.subheadline.monospacedDigit())
+                    Text((spend ? "−" : "") + String(format: "%.8f", Double(l.int("value") ?? 0) / 1e8))
+                        .font(.subheadline.monospacedDigit()).foregroundStyle(spend ? Color.bad : .white)
                 }
             }
-        } header: {
-            Text("What this payment does")
-        } footer: {
-            Text("Decoded on this iPhone from the transaction itself, not from what the proposer says.")
+            HStack {
+                Text("Network fee").font(.subheadline).foregroundStyle(Color.mist)
+                Spacer()
+                Text(String(format: "%.8f", Double(ss.doc.int("fee") ?? 0) / 1e8)).font(.subheadline.monospacedDigit()).foregroundStyle(Color.mist)
+            }
+            Text("This iPhone decoded this from the transaction itself, not from the proposer's description.")
+                .font(.caption).foregroundStyle(Color.mist)
         }
+    }
+
+    private func rank(_ l: Doc, _ own: Set<String>) -> Int {
+        l.str("kind") == "spend" ? 0 : own.contains(l.str("who") ?? "") ? 2 : 1
     }
 }
 
-struct ApprovalSection: View {
+struct Timeline: View {
     @Environment(GroupModel.self) private var model
     let ss: Session
 
     var body: some View {
-        let approvals = (model.state.commits[ss.id] ?? [:]).keys.compactMap(Int.init).sorted()
-        let refused = (try? model.inspect(ss).get()) == nil
-        Section("Approvals \(approvals.count) of \(model.state.t)") {
-            if !approvals.isEmpty {
-                Text("Approved: " + approvals.map(model.seatName).joined(separator: ", ")).font(.subheadline)
-            }
-            ForEach(model.pendingApprovals(ss), id: \.self) { i in
-                Button {
-                    model.approve(ss, i)
-                } label: {
-                    Label("Approve this payment", systemImage: "signature").frame(maxWidth: .infinity)
-                }
-                .buttonStyle(.borderedProminent)
-                .foregroundStyle(Color.night)
-                .disabled(refused)
-            }
-        }
-    }
-}
-
-struct SignatureSection: View {
-    @Environment(GroupModel.self) private var model
-    let ss: Session
-
-    var body: some View {
+        let st = model.state
+        let commits = st.commits[ss.id] ?? [:]
         let signers = (ss.doc["signers"] as? [NSNumber])?.map(\.intValue) ?? []
-        let shares = model.state.shares[ss.id] ?? [:]
-        Section("Threshold signature") {
-            if signers.isEmpty {
-                Text("Starts when \(model.state.t) members approve.").foregroundStyle(Color.mist)
-            } else {
-                Text("Signers \(signers.map(String.init).joined(separator: ", ")) · shares \(signers.filter { shares["\($0)"] != nil }.count) of \(signers.count)")
-                    .font(.subheadline)
+        let shares = st.shares[ss.id] ?? [:]
+        let proving = ss.status == "proving" && now() - (ss.doc.int("provingAt") ?? 0) < 180_000
+        Card {
+            Step(state: .done, no: 1, title: "Proposed", text: when(ss.doc.int("createdAt")))
+            Step(state: commits.count >= st.t ? .done : .now, no: 2, title: "Approvals · \(min(commits.count, st.t)) of \(st.t)",
+                 text: st.seatIds.map { model.seatLabel($0) + (commits["\($0)"] != nil ? " ✓" : "") }.joined(separator: " · "))
+            Step(state: has(ss.doc["error"]) ? .bad : has(ss.doc["signed"]) ? .done : signers.isEmpty ? .later : .now, no: 3,
+                 title: "Group signature",
+                 text: ss.doc.str("error") ?? (has(ss.doc["signed"]) ? "All signatures combined and verified."
+                     : signers.isEmpty ? "Starts after \(st.t) approvals." : "Signing · \(signers.filter { shares["\($0)"] != nil }.count) of \(signers.count) shares"))
+            Step(state: ss.doc.doc("final") != nil ? .done : proving ? .now : .later, no: 4, title: "Proof",
+                 text: ss.doc.doc("final") != nil ? "Proof built and the whole transaction checked."
+                     : proving ? "A signer's device is building the proof…" : "Any signer can build the zero-knowledge proof once the payment is signed.")
+            Step(state: has(ss.doc["broadcastTxid"]) ? .done : has(ss.doc["broadcastError"]) ? .bad : ss.doc.doc("final") != nil ? .now : .later,
+                 no: 5, title: "Sent to the network",
+                 text: has(ss.doc["broadcastTxid"]) ? "Sent \(when(ss.doc.int("broadcastAt")))."
+                     : ss.doc.str("broadcastError") ?? (ss.doc.doc("final") != nil ? "Any signer can send the finished transaction." : "Available after the proof."))
+            if let txid = ss.doc.str("broadcastTxid"), let url = URL(string: explorerTx + txid) {
+                Link(destination: url) { Label("View in explorer", systemImage: "arrow.up.right.square") }.font(.subheadline)
             }
-            if has(ss.doc["signed"]) {
-                Label("Signature verified under rk = ak + [α]·G", systemImage: "checkmark.seal.fill")
-                    .foregroundStyle(Color.signal)
-            }
-            if let err = ss.doc.str("error") { Text(err).foregroundStyle(.red) }
         }
     }
 }
 
-struct FinishSection: View {
+/// The one thing this device can do next for the payment, as a bottom button.
+struct NextAction: View {
     @Environment(GroupModel.self) private var model
     let ss: Session
+    let blocked: Bool
 
     var body: some View {
-        Section("Proof and broadcast") {
-            if let final = ss.doc.doc("final") {
-                LabeledContent("Transaction", value: short(final.str("txid") ?? ""))
-                    .font(.subheadline.monospaced())
-                if let ms = final.int("ms") {
-                    LabeledContent("Proof time", value: String(format: "%.1f s", Double(ms) / 1000))
+        let mine = model.pendingApprovals(ss)
+        let approve = !mine.isEmpty && !blocked
+        let send = ss.doc.doc("final") != nil && !has(ss.doc["broadcastTxid"])
+        if approve || model.canProve(ss) || send || ss.status == "proving" {
+            VStack(spacing: 8) {
+                if approve {
+                    ForEach(mine, id: \.self) { i in
+                        Button(mine.count > 1 || model.localSeats.count > 1 ? "Approve as seat \(i)" : "Approve payment") { model.approve(ss, i) }
+                            .primaryButton()
+                    }
+                } else if model.canProve(ss) {
+                    Button("Build proof") { model.prove(ss) }.primaryButton()
+                } else if send {
+                    Button(has(ss.doc["broadcastError"]) ? "Send again" : "Send to network") { model.broadcast(ss) }.primaryButton()
+                } else {
+                    ProgressView("Building the zero-knowledge proof…").font(.subheadline)
                 }
-            } else if ss.status == "proving" {
-                ProgressView("Building the zero-knowledge proof…")
             }
-            if model.canProve(ss) {
-                Button("Build proof on this iPhone") { model.prove(ss) }.buttonStyle(.borderedProminent)
-                    .foregroundStyle(Color.night)
-            }
-            BroadcastRow(ss: ss)
-        }
-    }
-}
-
-struct BroadcastRow: View {
-    @Environment(GroupModel.self) private var model
-    let ss: Session
-
-    var body: some View {
-        if let txid = ss.doc.str("broadcastTxid"), let url = URL(string: explorerTx + txid) {
-            Link(destination: url) { Label("Sent. Open in the explorer", systemImage: "arrow.up.right.square") }
-        } else if ss.doc.doc("final") != nil {
-            if let err = ss.doc.str("broadcastError") { Text(err).font(.caption).foregroundStyle(.red) }
-            Button("Broadcast to testnet") { model.broadcast(ss) }.buttonStyle(.borderedProminent)
-                .foregroundStyle(Color.night)
+            .frame(maxWidth: .infinity)
+            .padding(.horizontal, 16).padding(.vertical, 10)
+            .background(.ultraThinMaterial)
         }
     }
 }

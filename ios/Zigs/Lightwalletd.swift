@@ -1,7 +1,32 @@
 import Foundation
 
-/// Minimal grpc-web client for lightwalletd: only SendTransaction, which is one unary call.
+/// Minimal grpc-web client for lightwalletd. Replies come back as raw protobuf messages; the
+/// engine decodes blocks and tree states itself, so this file only frames bytes.
 enum Lightwalletd {
+    private static let service = "cash.z.wallet.sdk.rpc.CompactTxStreamer/"
+
+    /// Height of the chain tip (GetLatestBlock). A short timeout picks a live server quickly.
+    static func latestHeight(_ server: URL, timeout: TimeInterval = 8) async throws -> Int {
+        let reply = try await call(server, "GetLatestBlock", Data(), timeout: timeout)
+        // BlockID { uint64 height = 1; bytes hash = 2; }
+        guard let msg = reply.first, let h = field1Varint(msg) else { throw ZigsError("lightwalletd sent no height.") }
+        return h
+    }
+
+    /// The TreeState message at `height` (GetTreeState), as protobuf bytes for the engine.
+    static func treeState(_ server: URL, _ height: Int) async throws -> Data {
+        let reply = try await call(server, "GetTreeState", blockID(height))
+        guard let msg = reply.first else { throw ZigsError("lightwalletd sent no tree state.") }
+        return msg
+    }
+
+    /// CompactBlock messages from `start` to `end`, both included (GetBlockRange).
+    static func blocks(_ server: URL, _ start: Int, _ end: Int) async throws -> [Data] {
+        var range = field(1, blockID(start))
+        range.append(field(2, blockID(end)))
+        return try await call(server, "GetBlockRange", range, timeout: 60)
+    }
+
     /// Tries each server in order and stops at the first one that accepts the transaction.
     static func send(hex: String, toFirstOf servers: [URL]) async throws {
         var errors: [String] = []
@@ -16,35 +41,12 @@ enum Lightwalletd {
     static func send(hex: String, to server: URL) async throws {
         guard let tx = Data(hex: hex) else { throw ZigsError("The transaction hex is not valid.") }
         // RawTransaction { bytes data = 1; uint64 height = 2; } with height left at 0.
-        var msg = Data([0x0a])
-        msg.append(varint(UInt64(tx.count)))
-        msg.append(tx)
-        var body = Data([0x00])
-        body.append(contentsOf: withUnsafeBytes(of: UInt32(msg.count).bigEndian, Array.init))
-        body.append(msg)
-
-        var req = URLRequest(url: server.appendingPathComponent("cash.z.wallet.sdk.rpc.CompactTxStreamer/SendTransaction"))
-        req.httpMethod = "POST"
-        req.timeoutInterval = 20
-        req.setValue("application/grpc-web+proto", forHTTPHeaderField: "Content-Type")
-        req.setValue("1", forHTTPHeaderField: "X-Grpc-Web")
-        req.httpBody = body
-        let (data, resp) = try await URLSession.shared.data(for: req)
-        let headers = (resp as? HTTPURLResponse)?.allHeaderFields ?? [:]
-        if let status = headers["grpc-status"] as? String, status != "0" {
-            throw ZigsError("lightwalletd: \(headers["grpc-message"] as? String ?? "status \(status)")")
-        }
-        try check(sendResponse: data)
-    }
-
-    /// Reads SendResponse { int32 errorCode = 1; string errorMessage = 2; } from the first frame.
-    private static func check(sendResponse data: Data) throws {
-        let bytes = [UInt8](data)
-        guard bytes.count >= 5, bytes[0] == 0 else { return }
-        let len = Int(bytes[1]) << 24 | Int(bytes[2]) << 16 | Int(bytes[3]) << 8 | Int(bytes[4])
-        guard bytes.count >= 5 + len else { throw ZigsError("lightwalletd sent a short reply.") }
-        var p = 5, code = 0, message = ""
-        while p < 5 + len {
+        let reply = try await call(server, "SendTransaction", field(1, tx))
+        // SendResponse { int32 errorCode = 1; string errorMessage = 2; }
+        guard let msg = reply.first else { return }
+        let bytes = [UInt8](msg)
+        var p = 0, code = 0, message = ""
+        while p < bytes.count {
             let tag = bytes[p]; p += 1
             let v = readVarint(bytes, &p)
             if tag == 0x08 { code = Int(Int32(truncatingIfNeeded: v)) }
@@ -54,6 +56,76 @@ enum Lightwalletd {
             }
         }
         if code != 0 { throw ZigsError("The network rejected the transaction: \(message)") }
+    }
+
+    // MARK: grpc-web framing
+
+    /// Posts one request frame and returns the data frames of the reply.
+    private static func call(_ server: URL, _ method: String, _ message: Data,
+                             timeout: TimeInterval = 20) async throws -> [Data] {
+        var body = Data([0x00])
+        body.append(contentsOf: withUnsafeBytes(of: UInt32(message.count).bigEndian, Array.init))
+        body.append(message)
+        var req = URLRequest(url: server.appendingPathComponent(service + method))
+        req.httpMethod = "POST"
+        req.timeoutInterval = timeout
+        req.setValue("application/grpc-web+proto", forHTTPHeaderField: "Content-Type")
+        req.setValue("1", forHTTPHeaderField: "X-Grpc-Web")
+        req.httpBody = body
+        let (data, resp) = try await URLSession.shared.data(for: req)
+        let http = resp as? HTTPURLResponse
+        if let code = http?.statusCode, code != 200 { throw ZigsError("lightwalletd answered HTTP \(code).") }
+        var status = http?.value(forHTTPHeaderField: "grpc-status")
+        var message = http?.value(forHTTPHeaderField: "grpc-message")
+        var frames: [Data] = []
+        let bytes = [UInt8](data)
+        var p = 0
+        while p + 5 <= bytes.count {
+            let flag = bytes[p]
+            let len = Int(bytes[p + 1]) << 24 | Int(bytes[p + 2]) << 16 | Int(bytes[p + 3]) << 8 | Int(bytes[p + 4])
+            p += 5
+            guard p + len <= bytes.count else { throw ZigsError("lightwalletd sent a short reply.") }
+            let chunk = Data(bytes[p..<(p + len)])
+            p += len
+            if flag & 0x80 == 0 { frames.append(chunk); continue }
+            // Trailer frame: "grpc-status: 0\r\ngrpc-message: …"
+            for line in String(decoding: chunk, as: UTF8.self).split(whereSeparator: \.isNewline) {
+                let kv = line.split(separator: ":", maxSplits: 1).map { $0.trimmingCharacters(in: .whitespaces) }
+                guard kv.count == 2 else { continue }
+                if kv[0].lowercased() == "grpc-status" { status = kv[1] }
+                if kv[0].lowercased() == "grpc-message" { message = kv[1].removingPercentEncoding ?? kv[1] }
+            }
+        }
+        if let status, status != "0" { throw ZigsError("lightwalletd: \(message ?? "status \(status)")") }
+        return frames
+    }
+
+    // MARK: Protobuf helpers
+
+    private static func blockID(_ height: Int) -> Data {
+        var d = Data([0x08])
+        d.append(varint(UInt64(height)))
+        return d
+    }
+
+    /// A length-delimited field (wire type 2).
+    private static func field(_ number: UInt8, _ value: Data) -> Data {
+        var d = Data([number << 3 | 2])
+        d.append(varint(UInt64(value.count)))
+        d.append(value)
+        return d
+    }
+
+    private static func field1Varint(_ msg: Data) -> Int? {
+        let b = [UInt8](msg)
+        var p = 0
+        while p < b.count {
+            let tag = b[p]; p += 1
+            if tag == 0x08 { return Int(readVarint(b, &p)) }
+            guard tag & 7 == 2 else { return nil }
+            p += Int(readVarint(b, &p))
+        }
+        return nil
     }
 
     private static func varint(_ v: UInt64) -> Data {

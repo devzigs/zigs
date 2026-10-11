@@ -119,6 +119,8 @@ final class Store {
         guard parts.count >= 2, parts[0] == "groups", let s = sockets[String(parts[1])] else {
             throw ZigsError("Not connected to this group.")
         }
+        // A wallet joined a moment ago is still opening its socket.
+        for _ in 0..<100 where !s.loaded { try await Task.sleep(for: .milliseconds(100)) }
         guard s.loaded, let t = s.task else { throw ZigsError("Not connected to the group server.") }
         rid += 1
         let id = rid
