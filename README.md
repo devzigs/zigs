@@ -4,7 +4,7 @@
 its *n* signers must approve each payment. Nobody ever holds the whole key, the server cannot read
 the wallet, and on chain each payment looks like a shielded payment from a standard wallet.
 
-- Web app: https://app.zigs.app (no install, no account)
+- Web app: https://app.zigs.app (no install, no account; password protected until launch)
 - iPhone and Mac apps: in [`ios/`](ios), built from the same code
 - Website: https://zigs.app
 - How it works, end to end: [PROTOCOL.md](PROTOCOL.md)
@@ -243,12 +243,14 @@ wasm-bindgen --target web --out-dir ../web/pkg target/wasm32-unknown-unknown/rel
 ```bash
 cd cf
 npm install
+echo DEV_NO_AUTH=1 > .dev.vars
 npx wrangler dev --port 8787
 ```
 
 Open http://localhost:8787. To act as a second person on the same computer, also open
 http://127.0.0.1:8787: it is a separate origin, so it has separate storage. Deploy with
-`npx wrangler deploy` in `cf/`.
+`npx wrangler deploy` in `cf/`. Until launch, the live app asks for one shared password: set it with
+`npx wrangler secret put APP_PASSWORD`. Without that secret, the app refuses every request.
 
 ### iPhone and Mac apps
 
@@ -263,7 +265,7 @@ open Zigs.xcodeproj
 ```
 
 Use the `Zigs` scheme for iPhone and `ZigsMac` for Mac (Apple silicon). The apps connect to
-`https://app.zigs.app`; change the server in Settings. They join wallets from web invite links or
+`https://app.zigs.app`; change the server and enter its password in Settings. They join wallets from web invite links or
 `zigs://join#<wallet-id>.<secret>`, and they sit in the same wallets as browsers.
 
 ## Tests

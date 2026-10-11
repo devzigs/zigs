@@ -372,6 +372,7 @@ struct SettingsSheet: View {
                 Section {
                     TextField("Server", text: $model.server)
                         .codeEntry()
+                    SecureField("Password (if the server has one)", text: $model.password)
                 } header: {
                     Text("Group server")
                 } footer: {

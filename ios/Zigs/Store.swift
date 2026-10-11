@@ -18,12 +18,14 @@ final class Store {
     private var sockets: [String: Socket] = [:]
     private var rid = 0
     private var server: URL?
+    private var password = ""
 
     /// True once every joined group has sent its documents.
     var connected: Bool { sockets.values.allSatisfy(\.loaded) }
 
-    func connect(server: URL) {
+    func connect(server: URL, password: String) {
         self.server = server
+        self.password = password
         let gids = Array(sockets.keys)
         for s in sockets.values { s.task?.cancel(with: .goingAway, reason: nil) }
         sockets = [:]
@@ -45,7 +47,12 @@ final class Store {
         parts.path = "/ws"
         parts.queryItems = [URLQueryItem(name: "g", value: gid)]
         guard let url = parts.url else { return }
-        let t = URLSession.shared.webSocketTask(with: URLRequest(url: url))
+        var req = URLRequest(url: url)
+        if !password.isEmpty {
+            let basic = Data("zigs:\(password)".utf8).base64EncodedString()
+            req.setValue("Basic \(basic)", forHTTPHeaderField: "Authorization")
+        }
+        let t = URLSession.shared.webSocketTask(with: req)
         s.task = t
         t.resume()
         receive(gid, s, t)

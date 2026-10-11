@@ -24,6 +24,18 @@ function policy(url) {
   ].join("; ");
 }
 
+// One shared password (secret APP_PASSWORD) for every request, any user name, until launch.
+// Without the secret the app refuses everything, so a missing secret never opens it.
+function authorized(req, env) {
+  const [scheme, b64] = (req.headers.get("Authorization") || "").split(" ");
+  if (scheme !== "Basic" || !b64 || !env.APP_PASSWORD) return false;
+  let pass;
+  try { pass = atob(b64).split(":").slice(1).join(":"); } catch { return false; }
+  const enc = new TextEncoder();
+  const a = enc.encode(pass), b = enc.encode(env.APP_PASSWORD);
+  return a.byteLength === b.byteLength && crypto.subtle.timingSafeEqual(a, b);
+}
+
 async function groupSocket(req, env, url) {
   const gid = url.searchParams.get("g") || "";
   if (!GROUP_ID.test(gid)) return new Response("Add ?g= with a group id of 20 hex characters.", { status: 400 });
@@ -38,6 +50,11 @@ async function groupSocket(req, env, url) {
 
 export default {
   async fetch(req, env) {
+    if (env.DEV_NO_AUTH !== "1" && !authorized(req, env)) {
+      return new Response("Password required", {
+        status: 401, headers: { "WWW-Authenticate": 'Basic realm="Zigs", charset="UTF-8"' },
+      });
+    }
     const url = new URL(req.url);
     if (url.pathname === "/ws") return groupSocket(req, env, url);
     if (url.pathname === "/" || url.pathname === "/index.html") {

@@ -259,6 +259,8 @@ the web, on iPhone and on Mac at the same time.
 
 ### 10.1 Web app: https://app.zigs.app
 
+- **Access.** Until launch, the live app asks for one shared password on every request,
+  including the WebSocket. Without the password set on the server, it refuses everything.
 - **No install and no account.** One HTML page, the WebAssembly engine, and small scripts for the
   store client, the passkey lock, QR codes and recipient lists.
 - **Hosting.** A Cloudflare Worker serves the page and the `/ws` WebSocket of the group server.
@@ -298,6 +300,8 @@ the web, on iPhone and on Mac at the same time.
 - **Same screens as the web app.** Wallet list, setup steps, the four wallet tabs, send with
   pasted lists, receive with a QR code, the decoded payment with "What the chain sees" after it is
   sent, and change signers.
+- **Server password.** Settings has a password field for a server that has one, as app.zigs.app
+  does until launch.
 - **Invites.** The app opens web invite links and `zigs://join#<wallet-id>.<secret>` links. The
   invite secret stays in the Keychain.
 - **Keys.** The Keychain, on this device only. The iPhone has an optional Face ID lock. The Mac
@@ -307,14 +311,14 @@ the web, on iPhone and on Mac at the same time.
 
 ## 11. The website: https://zigs.app
 
-- **Purpose.** The public landing page. It explains the product and links to the web app with
-  "Open the app".
+- **Purpose.** The public landing page. It explains the product and collects early-access sign-ups.
+  It does not link to the app before launch.
 - **Content.** The headline "The multisig the blockchain can't see", a view of what the team sees
   next to what the chain sees, the stage label (beta, not audited), and "Open source (MIT) on
   October 28".
-- **Launch news.** An optional email form.
+- **Early access.** An email form.
   - The addresses go to a Cloudflare D1 database that only the Zigs team reads.
-  - They are used only for launch news. A reply to any message removes the address.
+  - They are used only to tell people when Zigs opens. A reply to any message removes the address.
   - The form has a hidden field that catches bots, and limits of 5 sign-ups per minute per IP
     address and 100 per minute in total. Requests from other origins get 403.
 - **Privacy.** No trackers and no analytics. Fonts are served from zigs.app, so visitors never

@@ -106,6 +106,8 @@ final class GroupModel {
     @ObservationIgnored private var opened: [String: Any] = [:]
 
     var server: String { didSet { UserDefaults.standard.set(server, forKey: "zf-server") } }
+    /// The shared password of a server that has one (app.zigs.app until launch).
+    var password: String { didSet { UserDefaults.standard.set(password, forKey: "zf-password") } }
     var name: String { didSet { UserDefaults.standard.set(name, forKey: "zf-name") } }
 
     init() {
@@ -113,6 +115,7 @@ final class GroupModel {
         if d.string(forKey: "zf-uid") == nil { d.set(UUID().uuidString.lowercased(), forKey: "zf-uid") }
         me = d.string(forKey: "zf-uid") ?? ""
         server = d.string(forKey: "zf-server") ?? "https://app.zigs.app"
+        password = d.string(forKey: "zf-password") ?? ""
         name = d.string(forKey: "zf-name") ?? ""
         locked = vault.locked
         lockOn = vault.lockOn
@@ -159,7 +162,7 @@ final class GroupModel {
 
     func reconnect() {
         guard let url = URL(string: server) else { banner = "The server address is not valid."; return }
-        store.connect(server: url)
+        store.connect(server: url, password: password)
         for gid in vault.keys.keys { store.join(gid) }
         refresh()   // with no groups, no socket ever reports, so show the state now
     }
