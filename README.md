@@ -1,87 +1,226 @@
-# zec-frost
+# Zigs
 
-A t-of-n multisignature wallet for Zcash shielded funds that runs in the browser. A group makes one
-shared shielded address with a distributed key generation (no dealer). Any t members co-sign a spend
-with re-randomized FROST (ZIP 312). On chain, the result is a normal Ironwood transaction: nobody can
-see that a group signed it, who the members are, or which members approved.
+**Shared wallets for shielded Zcash.** A team creates one private address together, and any *t* of
+its *n* signers must approve each payment. Nobody ever holds the whole key, the server cannot read
+the wallet, and on chain each payment looks like one from any other Zcash wallet.
 
-The status is **prototype, not audited**. Testnet wallets use free test coins. Mainnet wallets
-hold real ZEC and are limited to **0.5 ZEC each**: at that balance the app stops showing the
-address. Creating a mainnet wallet needs an explicit "not audited" confirmation.
+- Web app: https://app.zigs.app (no install, no account)
+- iPhone and Mac apps: in [`ios/`](ios), built from the same code
+- Website: https://zigs.app
 
-## What it does
+Zigs uses re-randomized FROST threshold signatures ([ZIP 312](https://zips.z.cash/zip-0312)) on
+the Ironwood shielded pool. It is a prototype and **not audited**. Testnet wallets use free test
+coins. Mainnet wallets hold real ZEC and are limited to **0.5 ZEC each**.
 
-1. **Key ceremony.** n people open an invite link and take a seat. Their browsers run a 3-round FROST
-   DKG over RedPallas. No person and no server ever holds the full spend key.
-2. **Shared wallet.** The group gets one unified address (`utest1…`) and one viewing key. Each browser
-   checks that the address really belongs to the group key before it trusts it.
-3. **Testnet sync.** Each browser syncs Zcash testnet from the wallet's birthday block, finds the
-   group's Ironwood notes with the viewing key, and shows the balance. No browser trusts another
-   browser or the server for the balance.
-4. **Spend.** A member proposes a payment to a recipient address. Each approving browser decodes the
-   transaction itself, checks it, and publishes a FROST nonce commitment. When t members approve,
-   the browsers sign. Any member then makes the Halo2 proof and broadcasts the transaction.
-5. **Change signers.** The signers and the threshold are fixed by the key, so a change makes a new
-   wallet with a new key ceremony. The old wallet then sends its whole balance to the new address,
-   approved like any payment. The old wallet stores only the new wallet's id, never its secret, so
-   signers left out cannot read the new wallet. They keep the old viewing key and its history.
+## For judges: try it alone in five minutes
 
-## Proof on testnet
+You can play every signer from one browser. Use a desktop browser with Zigs in one tab.
 
-These transactions were made by the web app with 2-of-2 groups (NU7 testnet, V6, Ironwood):
+1. Open https://app.zigs.app and click **New wallet**. Keep **Testnet**, set **Signers** to 2 and
+   **Approvals needed** to 2, then click **Create wallet**. You now hold seat 1.
+2. Open **Trying Zigs alone? Play the other seats in this browser** and click **Play seat 2**.
+   The two seats create the key together. Within half a minute the wallet opens, and both seats
+   show **Address checked**.
+3. Click **Receive**, then **Get testnet ZEC**, and send some test ZEC to the address. The
+   balance appears as **Incoming**, then as **Available** after 3 confirmations (a few
+   minutes).
+4. Click **Send**, paste any testnet unified address (`utest1…`), enter an amount, and click
+   **Propose payment**.
+5. In the payment panel, click **Approve as seat 1** and **Approve as seat 2**. Read **What this
+   payment does**: your browser decoded it from the transaction itself.
+6. Click **Build proof** (about one minute in the browser), then **Send to network**, then
+   **View in explorer**.
 
-| txid | What |
+To see signer changes, open **Signers**, then **Change signers**. To see the privacy model, read
+[PRIVACY.md](PRIVACY.md).
+
+## How Zigs meets the judging criteria
+
+| Criterion | Evidence |
 |---|---|
-| [`4838de4c…6612`](https://testnet.zecblock.com/tx/4838de4c250d85c82657a600bd9886b75080711c37723c7a07f311c96f046612) | First FROST spend, block 4,485,020 |
-| [`86807799…45fd`](https://testnet.zecblock.com/tx/86807799c1393829e9de9b1158caa0285d198797c4194b2520f23a713b4f45fd) | Payment to an end-to-end encrypted group, block 4,485,097 |
-| [`9859c24b…2409`](https://testnet.zecblock.com/tx/9859c24b961bb196f9a1de74cc099c32d4f2c9812c12a2db47a504cb88ff2409) | Spend from the encrypted group, block 4,485,106 |
-| [`d2fc7ad5…e72f`](https://testnet.zecblock.com/tx/d2fc7ad573342648dcdaef65256288e38189753f0087a06e7217cc7a3bb8e72f) | Whole balance moved to a replacement wallet, block 4,488,891 |
+| **Privacy** | On chain, the transaction shape matches the standard wallet library: same builder, padding, fee, expiry and anchor depth ([comparison](PRIVACY.md#on-chain)). The server stores only encrypted values, padded so that even their length hides amounts. The server keeps no logs. Every remaining leak is listed in [PRIVACY.md](PRIVACY.md). |
+| **Usefulness** | It works for team treasuries, DAOs and families today: web, iPhone and Mac; invite links and QR codes; signer changes; mainnet with a safety limit. |
+| **Execution** | The live app works end to end. Seven testnet transactions made by the apps are [listed below](#proof-on-testnet). The engine has 20 tests, and a command-line suite runs adversarial cases. |
+| **Originality** | Built during the Zecathon window: the first commit is from October 10, 2026. No command line, no trusted dealer, no server that can read the wallet. |
 
-## Privacy model
+## Architecture
 
-The full threat model, with what each party sees and what Zigs does not protect, is in
-[PRIVACY.md](PRIVACY.md). In short:
+Each signer's device runs the same Rust engine: compiled to WebAssembly in the browser, and as a
+native library on iPhone and Mac. The engine holds the key share, signs, builds proofs and syncs
+the chain. The group server only relays sealed documents.
+
+```mermaid
+flowchart LR
+  subgraph D1["Signer device: browser, iPhone or Mac"]
+    E1["Zigs engine (Rust)<br/>key share, FROST, proofs, sync"]
+  end
+  subgraph D2["Another signer's device"]
+    E2["Zigs engine (Rust)"]
+  end
+  GS[("Group server<br/>Cloudflare Worker and Durable Object<br/>stores sealed, padded values")]
+  LWD["Light-wallet server<br/>lightwalletd over grpc-web"]
+  ZN(("Zcash network"))
+  E1 <-->|sealed documents over WebSocket| GS
+  E2 <-->|sealed documents over WebSocket| GS
+  E1 -->|compact blocks in, transactions out| LWD
+  E2 -->|compact blocks in, transactions out| LWD
+  LWD <--> ZN
+  E1 -.->|invite link with the wallet secret, sent privately| E2
+```
+
+| Part | What it knows |
+|---|---|
+| Signer device | Its own key share, the wallet secret, the viewing key, all payments |
+| Group server | Wallet ids, document names, timing, IP addresses. Never keys, amounts, addresses or names |
+| Light-wallet server | IP address and the blocks requested, as for any light wallet. Never which notes are yours |
+| Zcash network | A normal shielded transaction |
+
+## Creating a wallet
+
+The signers run a FROST distributed key generation over RedPallas. No device and no server ever
+holds the whole spending key. Each signer then checks the published address against their own key
+share before the wallet opens.
+
+```mermaid
+sequenceDiagram
+  autonumber
+  actor A as Creator (seat 1)
+  participant S as Group server
+  actor B as Signer (seat 2)
+  A->>A: Make a wallet id and a 32-byte wallet secret
+  A->>S: Wallet document, sealed with the secret
+  A-->>B: Invite link with the secret, through a private channel
+  B->>S: Take seat 2: name and X25519 public key, sealed
+  par Round 1
+    A->>S: Commitment package
+    B->>S: Commitment package
+  end
+  par Round 2
+    A->>S: Share for seat 2, encrypted to seat 2's key
+    B->>S: Share for seat 1, encrypted to seat 1's key
+  end
+  A->>A: Round 3: own key share and the group key
+  B->>B: Round 3: own key share and the group key
+  A->>S: Wallet: address and viewing key, with ak = group key
+  B->>B: Check that ak equals my group key and that the address re-derives
+  B->>S: Address checked
+  Note over S: The server sees only ciphertext of fixed sizes
+```
+
+**Keys.** An Ironwood full viewing key has three parts: `ak`, `nk` and `rivk`. Zigs sets `ak` (the
+spend validating key) to the FROST group key, so only a threshold of signers can authorize a spend.
+`nk` and `rivk` only allow viewing; all signers get them. A creator who publishes a different `ak`
+is caught by every signer's check.
+
+## Making a payment
+
+Any signer proposes; the others approve on their own devices. Each approving device decodes the
+unsigned transaction (PCZT) itself, so a proposer cannot hide a different recipient behind the text
+they typed.
+
+```mermaid
+sequenceDiagram
+  autonumber
+  actor P as Proposer
+  participant S as Group server
+  actor Q as Approver
+  participant L as Light-wallet server
+  participant Z as Zcash network
+  P->>P: Pick confirmed notes and build the unsigned transaction (PCZT)
+  P->>S: Payment: PCZT, amount, recipient and note, sealed
+  Q->>Q: Decode the PCZT, then check recipient, amounts and change
+  P->>S: Approval: FROST nonce commitment
+  Q->>S: Approval: FROST nonce commitment
+  P->>S: Signing package, once t approvals are in
+  P->>S: Signature share
+  Q->>S: Signature share
+  Q->>Q: Combine shares and verify under rk = ak + alpha * G
+  Q->>Q: Build the Halo2 proof and check the whole transaction
+  Q->>L: Send the transaction
+  L->>Z: Broadcast
+```
+
+**Signing.** Each spend is signed under a re-randomized key `rk = ak + [alpha]G` with a fresh
+`alpha`, so spends cannot be linked to the wallet or to each other. Before a device signs, it
+re-runs the PCZT verifier role, recomputes the sighash (ZIP 244, v6), checks that its own nonce
+commitment was not replaced, and deletes its nonces after use. Any device can combine the shares;
+a bad share names its sender.
+
+## Changing signers
+
+The signers and the threshold are part of the wallet key, so they cannot change in place. Zigs
+creates a replacement wallet and moves the funds with one normal, approved payment.
+
+```mermaid
+flowchart TD
+  A["Old wallet<br/>signers A, B, C, any 2 of 3"] -->|Change signers| B["New wallet<br/>signers A, B, D, any 2 of 3<br/>new key ceremony, new address"]
+  A -.->|stores only the new wallet id, never its secret| B
+  B --> C["The old wallet proposes one payment of its whole balance to the new address"]
+  C --> D["2 of 3 old signers approve.<br/>Approvers who are in the new wallet check its address"]
+  D --> E["Old wallet closed.<br/>C keeps the old history but sees nothing of the new wallet"]
+```
+
+## Privacy
+
+The full threat model is in [PRIVACY.md](PRIVACY.md). In short:
 
 | Party | Sees | Does not see |
 |---|---|---|
-| Chain observers | A normal shielded Ironwood transaction | That it is a multisig, members, amounts, addresses |
-| Group server (Cloudflare Durable Object) | Group ids, document paths, field names, timing, which IP addresses connect to which group, an opaque user id per browser | Group names, member names, addresses, viewing key, amounts or their length (values are padded), recipients, PCZTs, signing data |
-| lightwalletd proxy | Your IP address, the birthday height, the block ranges you download, the transactions you broadcast | Which notes are yours (every browser downloads all compact blocks) |
-| Other group members | Everything about the group wallet | Your key share and your signing nonces |
+| Chain observers | A normal shielded Ironwood transaction | That a group signed it, the signers, amounts, addresses |
+| Group server | Wallet ids, document paths and field names, timing, which IP addresses connect to which wallet | Wallet and signer names, addresses, viewing key, amounts or their length, recipients, transactions, signing data |
+| Light-wallet server | Your IP address, the wallet's birthday height, the blocks you download, the transactions you send | Which notes are yours |
+| Other signers | Everything about the shared wallet | Your key share and your signing nonces |
 
 How the group server is kept blind:
 
-- `createGroup` makes a 32-byte group secret. The invite link is `<site>/#<group-id>.<secret>`.
-  Browsers never send the URL fragment to a server. The page saves the secret in local storage and
-  removes it from the address bar.
-- Every field of every group document is sealed separately with XChaCha20-Poly1305. The key is
-  BLAKE2b of the group secret (personal `zf-store-v1`). The AAD is the document path plus the field
-  name, so the server cannot move a value to another document or field.
-- DKG round-2 packages are also sealed point to point with X25519 keys, so only the receiver can
-  read its share.
+- The invite link is `https://app.zigs.app/#<wallet-id>.<secret>`. Browsers never send the part
+  after `#` to a server. The app keeps the secret on the device and removes it from the address
+  bar.
+- Every field of every document is encrypted with XChaCha20-Poly1305 under a key derived from the
+  wallet secret. The document path and field name are bound into each ciphertext. Values are padded
+  to at least 64 bytes and then to the next power of two before encryption.
+- Key ceremony shares are also encrypted from one seat to another with X25519.
+- Cached balances and the saved sync state on the device are sealed with the wallet key too.
 
-Known metadata leaks, accepted for the prototype: group ids, field names, document counts and
-timing are visible to the server; the proxy sees IP and timing (use Tor or your own lightwalletd to
-remove this); the invite link is a bearer secret (anyone with the full link can read the group).
+## Proof on testnet
 
-## Try it
+These transactions were made by the Zigs apps with 2-of-2 wallets on the NU7 testnet (v6
+transactions, Ironwood pool):
 
-The live demo is at https://app.zigs.app.
-The landing page at https://zigs.app lives in its own repo, https://github.com/devzigs/zigs-site.
+| Transaction | Block | What |
+|---|---|---|
+| [`4838de4c…6612`](https://testnet.zecblock.com/tx/4838de4c250d85c82657a600bd9886b75080711c37723c7a07f311c96f046612) | 4,485,020 | First FROST spend from the web app |
+| [`86807799…45fd`](https://testnet.zecblock.com/tx/86807799c1393829e9de9b1158caa0285d198797c4194b2520f23a713b4f45fd) | 4,485,097 | Payment into a wallet with an encrypted group store |
+| [`9859c24b…2409`](https://testnet.zecblock.com/tx/9859c24b961bb196f9a1de74cc099c32d4f2c9812c12a2db47a504cb88ff2409) | 4,485,106 | Spend from that wallet |
+| [`d2fc7ad5…e72f`](https://testnet.zecblock.com/tx/d2fc7ad573342648dcdaef65256288e38189753f0087a06e7217cc7a3bb8e72f) | 4,488,891 | **Change signers:** whole balance moved to the replacement wallet |
+| [`6572ce88…80a8`](https://testnet.zecblock.com/tx/6572ce88c248350c71225889819c23eefd5e5f8df2af07e9cc216f87337380a8) | 4,488,977 | Web wallet pays a wallet created on an iPhone |
+| [`4dc4fd73…7049`](https://testnet.zecblock.com/tx/4dc4fd73274936b81b8ef1897490f0ffc17ec1ec6827f1e92715f7d8115a7049) | 4,488,995 | **iPhone:** proposed, approved, proved and sent from the phone |
+| [`b87248fa…3636`](https://testnet.zecblock.com/tx/b87248fa7a06b7a42f082e07c1c4f5da94d1673d7c0fc98d8be2745209f73636) | 4,489,104 | Payment with the padded store format |
 
-1. Create a group (for example 2-of-2) and click **Copy invite link**. Send the link to the other
-   members. On your own, click **Also play this seat** to play every seat from one browser.
-2. When every seat is taken, the ceremony runs by itself. Each browser shows **Verified wallet**.
-3. Fund the address with testnet TAZ, for example from the
-   [Valar faucet](https://github.com/valargroup/valar-testnet-faucet). Wait for 3 confirmations.
-4. Propose a spend, approve it from t seats, click **Build proof and finish**, then **Broadcast**.
+A 2-of-2 mainnet wallet was also created and synced to the mainnet tip in the web app and on the
+iPhone.
 
-Key shares stay in the browser that made them. Use **Back up key share** to keep a copy.
+## Repository layout
 
-## Run locally
+| Path | Content |
+|---|---|
+| [`wasm/src/lib.rs`](wasm/src/lib.rs) | Engine: key generation, wallet creation and checks, PCZT inspection, FROST signing, proof, sealing |
+| [`wasm/src/chain.rs`](wasm/src/chain.rs) | Chain sync, balance, note selection, payment building, network rules |
+| [`wasm/src/snapshot.rs`](wasm/src/snapshot.rs) | Saved sync state: notes and the note commitment tree |
+| [`wasm/src/ffi.rs`](wasm/src/ffi.rs) | C interface for the iPhone and Mac apps |
+| [`web/index.html`](web/index.html) | The web app |
+| [`web/shim.js`](web/shim.js), [`web/qr.js`](web/qr.js) | Store client and QR encoder (no third-party code) |
+| [`cf/src/index.js`](cf/src/index.js) | Group server: Cloudflare Worker with one Durable Object per wallet, limits against abuse |
+| [`ios/Zigs/`](ios/Zigs) | SwiftUI app for iPhone and Mac |
+| [`src/`](src), [`tests/e2e.sh`](tests/e2e.sh) | Command-line version of the ceremony and adversarial tests |
+| [`PRIVACY.md`](PRIVACY.md) | Threat model |
 
-Needs Rust with the `wasm32-unknown-unknown` target, `wasm-bindgen-cli` 0.2.129, LLVM with a wasm32
-target (for `secp256k1-sys`), and Node.js.
+## Run it yourself
+
+### Web app and group server
+
+Needs Rust with the `wasm32-unknown-unknown` target, `wasm-bindgen-cli` 0.2.129, LLVM with a
+wasm32 target (for `secp256k1-sys`), and Node.js.
 
 ```bash
 cd wasm
@@ -90,8 +229,6 @@ AR_wasm32_unknown_unknown=/opt/homebrew/opt/llvm/bin/llvm-ar \
 RUSTFLAGS="--remap-path-prefix=$HOME=/build" \
 cargo build --release --target wasm32-unknown-unknown
 wasm-bindgen --target web --out-dir ../web/pkg target/wasm32-unknown-unknown/release/zec_frost_wasm.wasm
-cargo test --release
-node ../web/test/qr.mjs   # QR encoder against libqrencode (needs the qrencode CLI)
 ```
 
 ```bash
@@ -100,19 +237,14 @@ npm install
 npx wrangler dev --port 8787
 ```
 
-Open http://localhost:8787. To act as a second person on the same computer, open
-http://127.0.0.1:8787 (a separate origin, so separate local storage).
+Open http://localhost:8787. To act as a second person on the same computer, also open
+http://127.0.0.1:8787: it is a separate origin, so it has separate storage. Deploy with
+`npx wrangler deploy` in `cf/`.
 
-To deploy: `npx wrangler deploy` in `cf/`.
+### iPhone and Mac apps
 
-### iOS app (prototype)
-
-The iOS app in `ios/` uses the same Rust engine through a C interface (`wasm/src/ffi.rs`) and the
-same group protocol, so iPhones and browsers can sit in one group. It joins groups from invite
-links, runs the key ceremony, approves and signs payments, builds the proof natively and
-broadcasts. Proposing payments and syncing the balance stay in the web app for now.
-
-Needs Xcode 26, XcodeGen, and the Rust targets `aarch64-apple-ios` and `aarch64-apple-ios-sim`.
+Needs Xcode 26, XcodeGen, and the Rust targets `aarch64-apple-ios`, `aarch64-apple-ios-sim` and
+`aarch64-apple-darwin`.
 
 ```bash
 cd ios
@@ -121,97 +253,38 @@ xcodegen generate
 open Zigs.xcodeproj
 ```
 
-The app connects to `http://localhost:8787` by default (change it in Settings). Open an invite
-link as `zigs://join#<group-id>.<secret>`, or paste the web invite link in Join.
-
-## How it works
-
-### Keys
-
-An Ironwood full viewing key (FVK) has three parts: `ak`, `nk` and `rivk`.
-
-- `ak` (spend validating key) controls spending. The wallet sets `ak` to the FROST group public key.
-  Each person holds only a share of the matching secret `ask`.
-- `nk` and `rivk` control viewing only. The creator's browser samples them from a random spending
-  key and discards that key's `ask`. Everybody receives the FVK.
-
-The `reddsa` DKG normalizes the group key to even y, as Orchard and Ironwood require.
-
-Each member checks the published wallet: the `ak` in the FVK must equal the group key from their own
-DKG output, and the address must re-derive from the FVK. A malicious creator cannot insert its own
-`ak`.
-
-### Signing
-
-Each spend has a signature under a randomized key `rk = ak + [alpha]G`. The transaction builder picks
-a fresh `alpha` for each spend, so spends are unlinkable to the wallet. Re-randomized FROST adds
-`alpha` during signing, so the aggregate signature verifies under `rk`. The wallet runs one FROST
-session per spend. All sessions sign the same shielded sighash (ZIP 244, v6).
-
-Before a member publishes a share, their browser:
-
-- Parses the PCZT itself and runs the PCZT Verifier role: `cv_net`, `rk` against the wallet FVK,
-  nullifier and note commitment.
-- Recomputes the sighash and rejects the package if the sighash or a randomizer differs.
-- Checks that nobody replaced their own nonce commitment.
-- Shows each output with its value and recipient (change or external).
-- Deletes the nonces after use, so a nonce is never used twice.
-
-Any member aggregates the shares with cheater detection (a bad share names its sender). Any member
-can then make the Halo2 proof, extract the transaction (which verifies the proof, every spend
-authorization signature and the binding signature) and broadcast it.
-
-### Chain access
-
-The WASM engine talks grpc-web to lightwalletd through `https://zcash-testnet.chainsafe.dev`. It
-loads the Ironwood note commitment tree frontier at the birthday (`GetTreeState`), streams compact
-blocks (`GetBlockRange`), scans them with `zcash_client_backend::scanning::scan_block`, keeps an
-in-memory `ShardTree` for Merkle paths, and broadcasts with `SendTransaction`. Spends use anchors with
-3 confirmations and the ZIP 317 fee.
-
-## Code layout
-
-| Path | Content |
-|---|---|
-| `wasm/src/lib.rs` | WASM engine: DKG, wallet creation and verification, PCZT inspection, FROST commit / package / share / aggregate, proof and extraction, store sealing |
-| `wasm/src/chain.rs` | Testnet sync, balance, note selection, PCZT creation from real notes, broadcast |
-| `web/index.html` | The web app: ceremony, wallet, spends, encrypted store wrapper |
-| `web/shim.js` | Store and identity for the Cloudflare deploy |
-| `cf/src/index.js` | Cloudflare Worker: static files, Durable Object store over WebSocket |
-| `src/` | Native CLI version of the ceremony (regtest demo, older crate line) |
-| `tests/e2e.sh` | CLI 3-of-5 flows and adversarial tests |
-
-## Dependencies
-
-- NU7 crate line (pre-release, needed for current testnet): `zcash_protocol` 0.11.0-pre.0,
-  `zcash_primitives` 0.31.0-pre.1, `pczt` 0.10.0-pre.1, `zcash_keys` 0.17.0-pre.1, `orchard` 0.16.0,
-  `zcash_client_backend` 0.25.0-pre.1.
-- FROST: `reddsa` at git rev `ed49e9c` (feature `frost`) and `frost-rerandomized` 2.x. `reddsa` 0.6
-  removed the `frost` feature; pin the git rev until a `frost-redpallas` crate is released.
-- grpc-web: `tonic` 0.14 and `tonic-web-wasm-client` 0.9.
+Use the `Zigs` scheme for iPhone and `ZigsMac` for Mac (Apple silicon). The apps connect to
+`https://app.zigs.app`; change the server in Settings. They join wallets from web invite links or
+`zigs://join#<wallet-id>.<secret>`, and they sit in the same wallets as browsers.
 
 ## Tests
 
-- `cargo test --release` in `wasm/`: full 2-of-3 flows for Ironwood and Orchard (including a bad
-  share that is attributed to its sender), NU7 testnet branch and V6, note selection and fee, store
-  sealing (wrong key and wrong AAD fail), DKG box routing.
-- `bash tests/e2e.sh` for the CLI: separate processes, wallet substitution attack, fewer than t
-  signers, tampered randomizer and sighash, nonce reuse, wrong share attribution, foreign notes.
+- `cargo test --release` in `wasm/` (20 tests): full 2-of-3 signing flows for Ironwood and Orchard,
+  with a bad share that is attributed to its sender; mainnet and testnet upgrade rules; note
+  selection, fees and the largest sendable amount; padded sealing, old values, wrong keys and moved
+  values; the saved sync state; the native wallet interface; key ceremony routing.
+- `node cf/test/limits.mjs ws://localhost:8787`: the group server's size, rate and path limits.
+- `node web/test/qr.mjs`: the QR encoder against libqrencode (needs the `qrencode` command).
+- `bash tests/e2e.sh`: the command-line ceremony in separate processes, with attacks: wallet
+  substitution, fewer than t signers, tampered randomizer and sighash, nonce reuse, wrong share
+  attribution, foreign notes.
 
 ## Known limits
 
-- **No persistence of chain state.** Each page load syncs again from the birthday (about 36 s for
-  20,000 blocks). Reorgs are not handled.
-- **Pending spends.** Notes in a broadcast spend count as unspent until it is mined; a second spend in
-  that window is rejected by the node.
-- **Randomizer source.** The wallet uses the `alpha` that the transaction builder put in the PCZT, as
-  ZF's `zcash-sign` does. Check the final ZIP 312 text before production.
-- **No key refresh or repair**, and only diversifier index 0.
-- **Pre-release crates.** The NU7 crates are pre-releases and mainnet has no NU7 height yet.
-- **Third-party proxy.** The default lightwalletd proxy is run by ChainSafe.
+- **Not audited.** Mainnet wallets are limited to 0.5 ZEC: at that balance the app hides the
+  address and warns. It cannot stop someone from sending more.
+- **Chain reorganisations** are not handled in the saved sync state.
+- **One payment at a time.** While a payment waits for its block, the app blocks a second one.
+- **Randomizer source.** Signing uses the `alpha` that the transaction builder puts in the PCZT, as
+  the Zcash Foundation's `zcash-sign` does. Check the final ZIP 312 text before production use.
+- **No key refresh.** Signer changes use a new wallet. Each wallet has one address.
+- **Pre-release crates.** The engine uses the NU7 pre-release crate line: `zcash_protocol`
+  0.11.0-pre.0, `zcash_primitives` 0.31.0-pre.1, `pczt` 0.10.0-pre.1, `zcash_keys` 0.17.0-pre.1,
+  `orchard` 0.16.0, `zcash_client_backend` 0.25.0-pre.1, and `reddsa` at git rev `ed49e9c` for
+  FROST. Mainnet follows the NU6.3 rules, which already use v6 transactions and Ironwood.
+- **One mainnet server.** Mainnet wallets depend on ChainSafe's public light-wallet server.
 
 ## License
 
-MIT, see [LICENSE](LICENSE).
-
-The web app serves Geist and Geist Mono (SIL Open Font License 1.1) from `web/fonts/`, so users never contact Google.
+MIT, see [LICENSE](LICENSE). The apps serve the Geist fonts (SIL Open Font License 1.1) from
+`web/fonts/`, so users never contact Google.

@@ -1317,8 +1317,8 @@ function progressCard() {
 
 function seatsCard(open) {
   const testing = localSeats().length && open.length
-    ? el("details", { class: "testing" }, el("summary", {}, "Testing: play another seat in this browser"),
-      el("p", { class: "small faint" }, "Only for trying Zigs alone. A real signer takes a seat on their own device."),
+    ? el("details", { class: "testing" }, el("summary", {}, "Trying Zigs alone? Play the other seats in this browser"),
+      el("p", { class: "small faint" }, "For a demo or a review only. In real use, each signer takes a seat on their own device."),
       el("div", { style: "display:flex;gap:8px;flex-wrap:wrap" }, open.map((i) => el("button", { class: "btn sm", type: "button", disabled: !Z || canWrite === false, onclick: act(() => takeSeat(i)) }, "Play seat " + i))))
     : null;
   return el("section", { class: "card card-pad" },

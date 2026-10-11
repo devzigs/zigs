@@ -140,8 +140,8 @@ struct SetupView: View {
                     }
                 }
                 if !model.localSeats.isEmpty && !open.isEmpty {
-                    DisclosureGroup("Testing: play another seat on this iPhone") {
-                        Text("Only for trying Zigs alone. A real signer takes a seat on their own device.")
+                    DisclosureGroup("Trying Zigs alone? Play the other seats here") {
+                        Text("For a demo or a review only. In real use, each signer takes a seat on their own device.")
                             .font(.caption).foregroundStyle(Color.mist)
                         ForEach(open, id: \.self) { i in Button("Play seat \(i)") { model.takeSeat(i) } }
                     }
