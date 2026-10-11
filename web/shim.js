@@ -59,7 +59,6 @@
     get: async () => { await ready; return docSnap(path); },
     set: (data) => send({ op: "set", path, data: clone(data) }),
     update: (data) => send({ op: "update", path, data: clone(data) }),
-    delete: () => send({ op: "delete", path }),
     acquire: (o = {}) => send({ op: "acquire", path, holder: o.holder, ttlMs: o.ttlMs }),
     onSnapshot: (next) => watch(() => next(docSnap(path))),
     collection: (sub) => colRef(path + "/" + sub),
@@ -100,16 +99,7 @@
     },
   };
 
-  async function ensureName() {
-    await ready;
-    let name = localStorage.getItem("zf-name");
-    if (!name) name = (prompt("Your name (other participants will see it):") || "").trim();
-    if (!name) name = "Guest " + myId().slice(0, 4);
-    localStorage.setItem("zf-name", name);
-  }
-
   const caps = { db, user, downloads };
   window.zigs = { use: async (name) => caps[name] || null };
   connect();
-  ensureName();
 })();

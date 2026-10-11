@@ -902,6 +902,14 @@ function lobby() {
     }))));
 }
 
+// The name co-signers see on your seat; saved in this browser and read when you take a seat.
+function nameField(id) {
+  let saved = ""; try { saved = localStorage.getItem("zf-name") || ""; } catch {}
+  const save = (ev) => { try { localStorage.setItem("zf-name", ev.target.value.trim()); } catch {} };
+  return el("label", { class: "field" }, el("span", {}, "Your name"),
+    el("input", { class: "input", id, value: saved, maxlength: "40", autocomplete: "nickname", placeholder: "Shown to your co-signers", oninput: save }));
+}
+
 function createDialog() {
   const f = el("form", { class: "dialog", role: "dialog", "aria-modal": "true", "aria-labelledby": "create-title", onsubmit: act(async (ev) => {
     const fd = new FormData(ev.target); const n = Number(fd.get("n")), t = Number(fd.get("t"));
@@ -911,6 +919,7 @@ function createDialog() {
     await createGroup(String(fd.get("name") || "").trim() || "Treasury", n, t);
   }) },
     el("div", { class: "card-head" }, el("h2", { id: "create-title" }, "New shared wallet"), el("button", { class: "icon-btn", type: "button", "aria-label": "Close", onclick: () => { ui.create = false; render(); } }, "×")),
+    nameField("my-name"),
     el("label", { class: "field" }, el("span", {}, "Wallet name"), el("input", { class: "input", id: "g-name", name: "name", placeholder: "Team treasury", maxlength: "40", autocomplete: "off" })),
     el("div", { class: "two" },
       el("label", { class: "field" }, el("span", {}, "Members"), el("input", { class: "input", id: "g-n", name: "n", type: "number", min: "2", max: "7", value: "3" })),
@@ -979,6 +988,7 @@ function setupView() {
       state.log.length ? el("details", {}, el("summary", {}, "Activity in this browser"), el("div", { class: "log" }, state.log.join("\n"))) : null),
     el("section", { class: "card card-pad" },
       el("div", { class: "card-head" }, el("h2", {}, "Seats"), el("span", { class: "small muted" }, "Any " + g.t + " of " + n + " approve")),
+      localSeats().length ? null : nameField("seat-name"),
       el("div", { class: "seat-grid" }, seatIds().map(seatTile)),
       el("div", { class: "field" }, el("span", {}, "Invite link"),
         el("div", { class: "addr-box" }, el("span", { class: "hex", style: "white-space:nowrap;overflow:hidden;text-overflow:ellipsis" }, inviteLink(state.gid)), copyBtn(inviteLink(state.gid)))),
