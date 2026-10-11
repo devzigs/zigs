@@ -34,5 +34,18 @@ for (let i = 0; i < 320 && !limited; i++) {
   if (!r.ok) limited = { i, r };
 }
 assert.ok(limited && limited.r.code === "resource_exhausted", "the per-minute write limit applies");
+
+// This socket is open, so 19 more fit under the per-IP limit of 20 and the next one fails.
+const open = (u) => new Promise((resolve) => {
+  const s = new WebSocket(u);
+  s.onopen = () => resolve(s);
+  s.onerror = () => resolve(null);
+});
+const extra = [];
+for (let i = 0; i < 20; i++) extra.push(await open(url));
+assert.equal(extra.slice(0, 19).filter(Boolean).length, 19, "20 sockets per IP are allowed");
+assert.equal(extra[19], null, "the 21st socket from one IP fails");
+extra.forEach((s) => s && s.close());
+
 console.log("all limits hold; rate limit hit after", limited.i, "writes in this run");
 ws.close();

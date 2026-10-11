@@ -25,6 +25,10 @@ const MAX_PATH = 200;
 const MAX_TOTAL = 100_000_000;
 const WRITES_PER_MIN = 300; // per client IP
 const CHARS_PER_MIN = 8_000_000; // per client IP
+// Global caps bound the cost when many IPs spam together; they can delay real users instead.
+const WRITES_PER_MIN_ALL = 3_000;
+const MAX_SOCKETS = 2_000;
+const MAX_SOCKETS_PER_IP = 20;
 
 const fail = (code, message) => Object.assign(new Error(message), { code });
 
@@ -40,9 +44,15 @@ export class Store extends DurableObject {
 
   async fetch(req) {
     if (req.headers.get("Upgrade") !== "websocket") return new Response("expected websocket", { status: 426 });
+    const ip = req.headers.get("CF-Connecting-IP") || "local";
+    if (this.ctx.getWebSockets().length >= MAX_SOCKETS) {
+      return new Response("The group server is busy. Try again in a minute.", { status: 503 });
+    }
+    if (this.ctx.getWebSockets(ip).length >= MAX_SOCKETS_PER_IP) {
+      return new Response("Too many connections from this network.", { status: 429 });
+    }
     const [client, server] = Object.values(new WebSocketPair());
-    this.ctx.acceptWebSocket(server);
-    server.serializeAttachment({ ip: req.headers.get("CF-Connecting-IP") || "local" });
+    this.ctx.acceptWebSocket(server, [ip]);
     const docs = this.sql.exec("SELECT path, data FROM docs").toArray()
       .map((r) => ({ path: r.path, data: JSON.parse(r.data) }));
     server.send(JSON.stringify({ type: "init", docs }));
@@ -56,7 +66,7 @@ export class Store extends DurableObject {
       if (size > MAX_MESSAGE) throw fail("invalid_argument", "message is larger than " + MAX_MESSAGE + " characters");
       const m = JSON.parse(raw);
       rid = m.rid;
-      this.limitRate(ws.deserializeAttachment()?.ip || "local", size);
+      this.limitRate(this.ctx.getTags(ws)[0] || "local", size);
       ws.send(JSON.stringify({ type: "reply", rid, ok: true, result: this.apply(m) }));
     } catch (e) {
       ws.send(JSON.stringify({ type: "reply", rid, ok: false, code: e.code || "internal", message: String(e.message || e) }));
@@ -64,16 +74,27 @@ export class Store extends DurableObject {
   }
 
   // ponytail: counters live in memory per IP and reset when the object is evicted.
+  // A blocked IP does not count toward the global cap, so one IP cannot stop everyone.
   limitRate(ip, size) {
-    const now = Date.now();
     if (this.rates.size > 10_000) this.rates.clear();
-    let r = this.rates.get(ip);
-    if (!r || now - r.start > 60_000) this.rates.set(ip, (r = { start: now, writes: 0, chars: 0 }));
-    r.writes += 1;
-    r.chars += size;
-    if (r.writes > WRITES_PER_MIN || r.chars > CHARS_PER_MIN) {
+    const mine = this.window(ip);
+    mine.writes += 1;
+    mine.chars += size;
+    if (mine.writes > WRITES_PER_MIN || mine.chars > CHARS_PER_MIN) {
       throw fail("resource_exhausted", "Too many changes from this network. Wait a minute, then try again.");
     }
+    const all = this.window("*");
+    all.writes += 1;
+    if (all.writes > WRITES_PER_MIN_ALL) {
+      throw fail("resource_exhausted", "The group server is busy. Wait a minute, then try again.");
+    }
+  }
+
+  window(key) {
+    const now = Date.now();
+    let r = this.rates.get(key);
+    if (!r || now - r.start > 60_000) this.rates.set(key, (r = { start: now, writes: 0, chars: 0 }));
+    return r;
   }
 
   apply(m) {
