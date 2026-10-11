@@ -2,3 +2,4 @@ ZigsCore.xcframework/
 Zigs.xcodeproj/
 Zigs/Info.plist
 build/
+Mac/Info.plist

@@ -7,3 +7,4 @@
 /cf/.dev.vars
 /.wrangler
 /infra/lwd/.env.tunnel
+/dist

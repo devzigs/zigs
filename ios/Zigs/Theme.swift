@@ -1,6 +1,11 @@
 import CoreImage.CIFilterBuiltins
 import SwiftUI
 import TipKit
+#if os(iOS)
+import UIKit
+#else
+import AppKit
+#endif
 
 extension Color {
     static let night = Color(red: 0.05, green: 0.047, blue: 0.078)
@@ -111,19 +116,19 @@ struct QRCode: View {
 
     var body: some View {
         if let image = Self.image(text) {
-            Image(uiImage: image).interpolation(.none).resizable().scaledToFit()
+            Image(decorative: image, scale: 1).interpolation(.none).resizable().scaledToFit()
                 .padding(12).background(.white, in: RoundedRectangle(cornerRadius: 12))
                 .accessibilityLabel("QR code")
         }
     }
 
-    static func image(_ text: String) -> UIImage? {
+    static func image(_ text: String) -> CGImage? {
         let f = CIFilter.qrCodeGenerator()
         f.message = Data(text.utf8)
         f.correctionLevel = "M"
         guard let out = f.outputImage?.transformed(by: CGAffineTransform(scaleX: 10, y: 10)),
               let cg = CIContext().createCGImage(out, from: out.extent) else { return nil }
-        return UIImage(cgImage: cg)
+        return cg
     }
 }
 
@@ -135,16 +140,72 @@ struct CopyButton: View {
 
     var body: some View {
         Button(copied ? "Copied" : label, systemImage: copied ? "checkmark" : "doc.on.doc") {
-            UIPasteboard.general.string = text
+            copyToClipboard(text)
             copied = true
             Task { try? await Task.sleep(for: .seconds(1.5)); copied = false }
         }
     }
 }
 
+func copyToClipboard(_ text: String) {
+    #if os(iOS)
+    UIPasteboard.general.string = text
+    #else
+    NSPasteboard.general.clearContents()
+    NSPasteboard.general.setString(text, forType: .string)
+    #endif
+}
+
+/// macOS greys out prominent buttons in inactive windows; the main action keeps its colour.
+struct MacPrimaryStyle: ButtonStyle {
+    func makeBody(configuration: Configuration) -> some View { PrimaryLabel(configuration: configuration) }
+
+    private struct PrimaryLabel: View {
+        let configuration: Configuration
+        @Environment(\.isEnabled) private var enabled
+
+        var body: some View {
+            configuration.label
+                .font(.body.weight(.semibold))
+                .padding(.horizontal, 18).padding(.vertical, 9)
+                .background(Color.signal.opacity(enabled ? (configuration.isPressed ? 0.8 : 1) : 0.35), in: Capsule())
+                .foregroundStyle(Color.night.opacity(enabled ? 1 : 0.6))
+        }
+    }
+}
+
 extension View {
     func primaryButton() -> some View {
+        #if os(macOS)
+        buttonStyle(MacPrimaryStyle())
+        #else
         buttonStyle(.borderedProminent).foregroundStyle(Color.night).controlSize(.large)
+        #endif
+    }
+
+    // iPhone-only modifiers; the Mac has no title modes, keyboards or auto-capitalisation.
+    func inlineTitle() -> some View {
+        #if os(iOS)
+        navigationBarTitleDisplayMode(.inline)
+        #else
+        self
+        #endif
+    }
+
+    func codeEntry() -> some View {
+        #if os(iOS)
+        textInputAutocapitalization(.never).autocorrectionDisabled()
+        #else
+        autocorrectionDisabled()
+        #endif
+    }
+
+    func decimalEntry() -> some View {
+        #if os(iOS)
+        keyboardType(.decimalPad)
+        #else
+        self
+        #endif
     }
 }
 

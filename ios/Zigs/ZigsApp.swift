@@ -15,6 +15,9 @@ struct ZigsApp: App {
                 .preferredColorScheme(.dark)
                 .onOpenURL { model.join($0.absoluteString) }
         }
+        #if os(macOS)
+        .defaultSize(width: 560, height: 860)
+        #endif
     }
 }
 
@@ -56,10 +59,10 @@ struct RootView: View {
                 GroupView().onAppear { model.select(id) }
             }
             .toolbar {
-                ToolbarItem(placement: .topBarLeading) {
+                ToolbarItem(placement: .navigation) {
                     Button("Settings", systemImage: "gearshape") { sheet = .settings }
                 }
-                ToolbarItem(placement: .topBarTrailing) {
+                ToolbarItem(placement: .primaryAction) {
                     Menu("Add", systemImage: "plus") {
                         Button("New wallet", systemImage: "plus.circle") { sheet = .create }
                         Button("Join with an invite link", systemImage: "link") { sheet = .join }
@@ -194,8 +197,7 @@ struct JoinSheet: View {
                 Section {
                     TextField("https://…/#wallet.key", text: $link, axis: .vertical)
                         .font(.body.monospaced())
-                        .textInputAutocapitalization(.never)
-                        .autocorrectionDisabled()
+                        .codeEntry()
                     PasteButton(payloadType: String.self) { s in Task { @MainActor in link = s.first ?? "" } }
                 } header: {
                     Text("Invite link")
@@ -257,7 +259,7 @@ struct CreateSheet: View {
                 }
             }
             .navigationTitle(from == nil ? "New wallet" : "Change signers")
-            .navigationBarTitleDisplayMode(.inline)
+            .inlineTitle()
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) { Button("Cancel") { dismiss() } }
                 ToolbarItem(placement: .confirmationAction) {
@@ -297,9 +299,7 @@ struct SettingsSheet: View {
                 }
                 Section {
                     TextField("Server", text: $model.server)
-                        .textInputAutocapitalization(.never)
-                        .autocorrectionDisabled()
-                        .keyboardType(.URL)
+                        .codeEntry()
                 } header: {
                     Text("Group server")
                 } footer: {

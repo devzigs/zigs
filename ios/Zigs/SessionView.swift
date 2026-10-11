@@ -34,9 +34,9 @@ struct SessionView: View {
             }
             .background(Color.night)
             .navigationTitle(payTitle(ss))
-            .navigationBarTitleDisplayMode(.inline)
+            .inlineTitle()
             .toolbar {
-                ToolbarItem(placement: .topBarTrailing) {
+                ToolbarItem(placement: .primaryAction) {
                     let s = statusLabels[ss.status] ?? (ss.status, .plain)
                     Badge(text: s.0, kind: s.1)
                 }

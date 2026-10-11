@@ -128,7 +128,9 @@ final class Chain {
             let snap = try Engine.call("walletSnapshot", [gid])
             let sealed = try Engine.call("secretSeal", [groupKey, "chain\n" + gid, snap])
             try sealed.write(to: file, atomically: true, encoding: .utf8)
+            #if os(iOS)
             try FileManager.default.setAttributes([.protectionKey: FileProtectionType.complete], ofItemAtPath: file.path)
+            #endif
         } catch {
             self.error = "Could not save the wallet state: \(error.localizedDescription)"
         }

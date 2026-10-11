@@ -38,7 +38,7 @@ struct GroupView: View {
         }
         .background(Color.night)
         .navigationTitle(st.name)
-        .navigationBarTitleDisplayMode(.inline)
+        .inlineTitle()
         .refreshable { await model.chain?.sync() }
         .safeAreaInset(edge: .bottom) {
             if st.ready {
@@ -639,7 +639,7 @@ struct ReceiveSheet: View {
             }
             .background(Color.night)
             .navigationTitle("Receive ZEC")
-            .navigationBarTitleDisplayMode(.inline)
+            .inlineTitle()
             .toolbar { ToolbarItem(placement: .confirmationAction) { Button("Done") { dismiss() } } }
         }
     }
@@ -663,7 +663,7 @@ struct SendSheet: View {
             Form {
                 Section {
                     TextField("utest1…", text: $to, axis: .vertical)
-                        .font(.body.monospaced()).textInputAutocapitalization(.never).autocorrectionDisabled()
+                        .font(.body.monospaced()).codeEntry()
                     PasteButton(payloadType: String.self) { s in Task { @MainActor in to = s.first ?? "" } }
                 } header: {
                     Text("To")
@@ -675,7 +675,7 @@ struct SendSheet: View {
                 }
                 Section("Amount") {
                     HStack {
-                        TextField("0.00", text: $amount).keyboardType(.decimalPad).font(.title3.monospacedDigit())
+                        TextField("0.00", text: $amount).decimalEntry().font(.title3.monospacedDigit())
                         Text("ZEC").foregroundStyle(Color.mist)
                         Button("Max") { amount = (Double(model.maxSend) / 1e8).formatted(.number.precision(.fractionLength(0...8)).grouping(.never).locale(Locale(identifier: "en_US"))) }
                             .buttonStyle(.bordered)
@@ -696,7 +696,7 @@ struct SendSheet: View {
                 }
             }
             .navigationTitle("Send ZEC")
-            .navigationBarTitleDisplayMode(.inline)
+            .inlineTitle()
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) { Button("Cancel") { dismiss() } }
                 ToolbarItem(placement: .confirmationAction) {
