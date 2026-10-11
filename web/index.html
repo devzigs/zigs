@@ -55,7 +55,7 @@
   --line-2: #30303d;
   --text: #ededf2;
   --muted: #9a9aab;
-  --faint: #6c6c7d;
+  --faint: #8b8b9d;
   --accent: #f4b728;
   --accent-text: #f4b728;
   --on-accent: #17130a;
@@ -75,7 +75,7 @@
   :root:not([data-theme="dark"]) {
     color-scheme: light;
     --bg: #f6f6f8; --side: #fbfbfc; --panel: #ffffff; --raised: #f3f3f6; --sunk: #f0f0f4;
-    --line: #e4e4ea; --line-2: #d4d4dd; --text: #15151c; --muted: #5d5d6e; --faint: #8a8a99;
+    --line: #e4e4ea; --line-2: #d4d4dd; --text: #15151c; --muted: #5d5d6e; --faint: #6d6d7d;
     --accent-text: #8a6200; --accent-soft: rgba(244, 183, 40, 0.18);
     --ok: #12804f; --ok-soft: rgba(18, 128, 79, 0.1); --bad: #c0362c; --bad-soft: rgba(192, 54, 44, 0.08);
     --info: #2d5fc4; --info-soft: rgba(45, 95, 196, 0.08); --shadow: 0 24px 60px -28px rgba(20, 20, 40, 0.35);
@@ -84,7 +84,7 @@
 :root[data-theme="light"] {
   color-scheme: light;
   --bg: #f6f6f8; --side: #fbfbfc; --panel: #ffffff; --raised: #f3f3f6; --sunk: #f0f0f4;
-  --line: #e4e4ea; --line-2: #d4d4dd; --text: #15151c; --muted: #5d5d6e; --faint: #8a8a99;
+  --line: #e4e4ea; --line-2: #d4d4dd; --text: #15151c; --muted: #5d5d6e; --faint: #6d6d7d;
   --accent-text: #8a6200; --accent-soft: rgba(244, 183, 40, 0.18);
   --ok: #12804f; --ok-soft: rgba(18, 128, 79, 0.1); --bad: #c0362c; --bad-soft: rgba(192, 54, 44, 0.08);
   --info: #2d5fc4; --info-soft: rgba(45, 95, 196, 0.08); --shadow: 0 24px 60px -28px rgba(20, 20, 40, 0.35);
@@ -242,6 +242,15 @@ a.row-item { text-decoration: none; }
 .drawer-foot { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 8px; padding: 14px 20px; padding-bottom: calc(14px + env(safe-area-inset-bottom, 0px)); border-top: 1px solid var(--line); background: var(--panel); }
 .drawer-foot .btn { flex: 1 1 auto; }
 .action-bar { display: none; }
+/* QR codes stay black on white in both themes, so every camera reads them. */
+.qr { justify-self: center; width: min(240px, 100%); padding: 10px; border-radius: 12px; background: #fff; }
+.qr svg { display: block; width: 100%; height: auto; }
+.qr-toggle > summary { color: var(--muted); }
+.qr-toggle[open] { display: grid; gap: 10px; justify-items: center; }
+.skel { display: block; width: 120px; height: 1em; border-radius: 6px; background: linear-gradient(90deg, var(--raised), var(--line), var(--raised)); background-size: 200% 100%; animation: shimmer 1.4s infinite linear; }
+.skel.xl { width: 220px; height: 46px; border-radius: 10px; }
+@keyframes shimmer { to { background-position: -200% 0; } }
+.sending { display: flex; align-items: center; gap: 8px; font-size: 13px; color: var(--muted); }
 .chev { color: var(--faint); }
 .table { width: 100%; border-collapse: collapse; font-size: 13.5px; }
 .table th { text-align: left; font: 500 11.5px/1.2 var(--mono); text-transform: uppercase; letter-spacing: 0.06em; color: var(--faint); padding: 12px 20px; border-bottom: 1px solid var(--line); background: var(--raised); }
@@ -364,6 +373,7 @@ details > summary { cursor: pointer; color: var(--accent-text); font-weight: 500
 <div id="banner" hidden role="status"></div>
 
 <script type="module">
+import { qrSvg } from "/qr.js";
 // ───────────────────────── Engine (WASM) ─────────────────────────
 let Z = null;
 const engineDot = document.getElementById("engine-dot");
@@ -426,13 +436,22 @@ try { balCache = JSON.parse(localStorage.getItem("zf-bal") || "{}"); } catch {}
 function saveBal(gid, bal) { balCache[gid] = { total: bal.spendable + bal.pending, at: Date.now() }; try { localStorage.setItem("zf-bal", JSON.stringify(balCache)); } catch {} }
 // Payment proposals of every wallet where this browser holds a seat, for the approval counts.
 const inbox = {}, inboxSubs = new Map();
+const ready = {}, readySubs = new Map();
 const state = { groups: [], gid: null, g: null, seats: {}, dkg1: {}, dkg2: {}, done: {}, verify: {}, wallet: null, sessions: [], sid: null, commits: {}, shares: {}, log: [] };
 let unsubGroup = [], unsubSession = [];
 const busy = new Set();
 const inspectCache = new Map();
 let banner = null;
 
-function showBanner(kind, text) { banner = { kind, text }; const b = document.getElementById("banner"); b.hidden = false; b.className = "notice " + kind; b.textContent = text; }
+let bannerTimer = null;
+function showBanner(kind, text) {
+  banner = { kind, text };
+  const b = document.getElementById("banner");
+  b.hidden = false; b.className = "notice " + kind; b.textContent = text;
+  b.setAttribute("role", kind === "bad" ? "alert" : "status");
+  clearTimeout(bannerTimer);
+  if (kind === "ok") bannerTimer = setTimeout(() => { b.hidden = true; }, 4000);
+}
 function log(msg) { state.log.unshift(new Date().toLocaleTimeString() + "  " + msg); state.log.length = Math.min(state.log.length, 60); }
 
 // ───────────────────────── Encrypted store ─────────────────────────
@@ -516,6 +535,7 @@ async function boot() {
 
 function watchInbox() {
   for (const g of state.groups) {
+    if (!readySubs.has(g.id)) readySubs.set(g.id, sdb.doc("groups/" + g.id + "/meta/wallet").onSnapshot((d) => { ready[g.id] = d.exists; render(); }));
     if (inboxSubs.has(g.id) || !mySeatSecrets(g.id).length) continue;
     inboxSubs.set(g.id, sdb.collection("groups/" + g.id + "/sessions").onSnapshot((snap) => {
       inbox[g.id] = snap.docs.map((d) => ({ id: d.id, ...d.data() }));
@@ -773,6 +793,7 @@ async function runSync(c) {
     await connect(c);
     c.bal = J(await c.cw.sync((p) => { c.prog = J(p); render(); }));
     c.received = J(c.cw.received());
+    c.sent = new Set(J(c.cw.sent()));
     c.prog = null; c.ms = Math.round(performance.now() - t0);
     saveBal(c.gid, c.bal);
     log("synced to " + c.bal.height + ", spendable " + fmtZec(c.bal.spendable));
@@ -788,6 +809,7 @@ async function newSpend(recipient, amountZat, note) {
   const ref = sdb.collection("groups/" + state.gid + "/sessions").doc();
   await ref.set({ createdBy: me, createdAt: Date.now(), to: recipient, note: note || null, pool: t.pool, amount: t.amount, change: t.change, fee: t.fee, noteValue: t.note_value, pczt: t.pczt, status: "collecting" });
   log("new spend: " + fmtZec(t.amount));
+  showBanner("ok", "Payment proposed. It needs " + state.g.t + " approvals.");
   openSession(ref.id);
 }
 
@@ -797,6 +819,7 @@ async function broadcastTx(ss) {
     const r = await broadcastAnywhere(ss.final.tx_hex);
     await ref.update({ broadcastTxid: r.txid || ss.final.txid, broadcastAt: Date.now(), broadcastError: null, status: "broadcast" });
     log("transaction broadcast: " + (r.txid || ss.final.txid));
+    showBanner("ok", "Sent to the network. It confirms with the next block.");
     runSync(chain);
   } catch (e) {
     await ref.update({ broadcastError: e.message || String(e) });
@@ -821,6 +844,7 @@ async function approve(ss, i) {
   putSec(state.gid, i, { nonces: { ...(s.nonces || {}), [ss.id]: { nonces: r.nonces, commitments: r.commitments } } });
   await sdb.doc("groups/" + state.gid + "/sessions/" + ss.id + "/commits/" + i).set({ commitments: r.commitments, at: Date.now() });
   log("seat " + i + ": approved the spend, nonce commitment published");
+  showBanner("ok", "Approved" + (localSeats().length > 1 ? " as seat " + i : "") + ".");
 }
 
 async function finalizeTx(ss) {
@@ -831,6 +855,7 @@ async function finalizeTx(ss) {
   catch (e) { await sdb.doc("groups/" + state.gid + "/sessions/" + ss.id).update({ status: "signed" }); throw e; }
   await sdb.doc("groups/" + state.gid + "/sessions/" + ss.id).update({ status: "complete", final: out });
   log("transaction complete: " + out.txid);
+  showBanner("ok", "Proof ready. Send the payment to the network.");
 }
 
 async function backup(i) {
@@ -875,6 +900,7 @@ function copyBtn(text, label = "Copy", cls = "btn sm") {
   return el("button", { class: cls, type: "button", onclick: async (ev) => { const b = ev.currentTarget; try { await navigator.clipboard.writeText(text); b.textContent = "Copied"; } catch { b.textContent = "Select and copy"; } setTimeout(() => b.textContent = label, 1500); } }, label);
 }
 
+let openLayer = "", tickTimer = null;
 // View state that only this browser cares about.
 const ui = { tab: "overview", send: false, create: false, receive: false };
 const ZEC_FMT = new Intl.NumberFormat("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 8 });
@@ -921,13 +947,28 @@ const payTitle = (ss) => ss.note || (ss.to ? "Payment to " + short(ss.to, 8) : "
 const proposer = (ss) => ss.createdBy === me ? "you" : seatNameOf(ss.createdBy);
 function normalized(addr) { try { return Z.normalizeAddress(addr); } catch { return null; } }
 
+// Sent payments that no synced block contains yet. Until one does, the synced balance still
+// counts their inputs as unspent, so the app subtracts them itself.
+function inFlight() {
+  const c = curChain();
+  if (!c || !c.sent) return [];
+  return state.sessions.filter((ss) => ss.broadcastTxid && ss.final && !c.sent.has(ss.final.txid));
+}
+function balanceNow(b) {
+  const out = inFlight(), sum = (f) => out.reduce((n, ss) => n + (f(ss) || 0), 0);
+  return { spendable: Math.max(0, b.spendable - sum((ss) => ss.noteValue)), pending: b.pending + sum((ss) => ss.change), sending: sum((ss) => ss.amount + (ss.fee || 0)) };
+}
+
 function sendBlocker() {
   const c = curChain();
   if (!localSeats().length) return "You hold no seat in this wallet.";
   if (!myVerified()) return "Your seat is still checking the wallet address.";
   if (!c || !c.bal) return "Wait for the first sync to finish.";
-  if (c.bal.spendable > FEE_ESTIMATE) return null;
-  return c.bal.pending ? "Incoming funds need 3 confirmations first." : "This wallet has no funds yet.";
+  // ponytail: the engine does not know about unmined spends and would pick the same notes again.
+  if (inFlight().length) return "A payment is waiting for its block. Send again in a minute.";
+  const b = balanceNow(c.bal);
+  if (b.spendable > FEE_ESTIMATE) return null;
+  return b.pending ? "Incoming funds need 3 confirmations first." : "This wallet has no funds yet.";
 }
 
 function render() {
@@ -941,7 +982,14 @@ function render() {
   const openDetails = new Set([...app.querySelectorAll("details[open] > summary")].map((x) => x.textContent));
   const drawerScroll = app.querySelector(".drawer-body")?.scrollTop || 0;
   const view = !dbReady ? loadingView() : state.gid ? groupView() : lobby();
-  app.replaceChildren(view, ...layers());
+  const top = layers();
+  app.replaceChildren(view, ...top);
+  const layerKey = top.length ? top[1].getAttribute("aria-labelledby") || top[1].getAttribute("aria-label") : "";
+  if (layerKey && layerKey !== openLayer) setTimeout(() => app.querySelector(".dialog input, .dialog button.btn, .drawer .icon-btn")?.focus(), 0);
+  openLayer = layerKey;
+  clearTimeout(tickTimer);
+  const ss = curSession();
+  if (ss && ss.status === "proving") tickTimer = setTimeout(render, 1000);
   for (const [id, v] of Object.entries(kept)) { const i = document.getElementById(id); if (i) { i.value = v; i.dispatchEvent(new Event("input", { bubbles: true })); } }
   app.querySelectorAll("details > summary").forEach((x) => { if (openDetails.has(x.textContent)) x.parentElement.open = true; });
   const db2 = app.querySelector(".drawer-body"); if (db2) db2.scrollTop = drawerScroll;
@@ -1000,7 +1048,8 @@ function walletRow(g) {
     el("span", { class: "av lg" }, initials(g.name)),
     el("span", { class: "ri-main" }, el("span", { class: "ri-title" }, g.name),
       el("span", { class: "ri-sub" }, "Any " + g.t + " of " + g.n + " approve" + (seats ? "" : " · view only"))),
-    el("span", { class: "ri-end" }, bal ? money(bal.total) : el("span", { class: "small faint" }, "Not synced yet"),
+    el("span", { class: "ri-end" }, ready[g.id] === false ? el("span", { class: "badge info" }, "Setting up")
+      : bal ? money(bal.total) : el("span", { class: "small faint" }, "Open to sync"),
       n ? el("span", { class: "badge warn" }, n + " to approve") : null),
     el("span", { class: "chev" }, "›"));
 }
@@ -1112,7 +1161,8 @@ function inviteCard(openCount) {
   return el("section", { class: "card card-pad hero-card" },
     el("div", { class: "card-head" }, el("h2", {}, "Invite your co-signers"), el("span", { class: "badge warn plain" }, openCount === 1 ? "1 seat open" : openCount + " seats open")),
     el("p", { class: "small muted" }, "Send this link to each co-signer through a private channel. It contains the wallet's secret: anyone who has it can take an open seat."),
-    el("div", { class: "addr-box" }, el("span", { class: "hex nowrap" }, link), copyBtn(link, "Copy link", "btn sm primary"), share));
+    el("div", { class: "addr-box" }, el("span", { class: "hex nowrap" }, link), copyBtn(link, "Copy link", "btn sm primary"), share),
+    secretQr(link));
 }
 
 function progressCard() {
@@ -1190,13 +1240,14 @@ function approvalsCard(list) {
 }
 
 function balanceCard(c) {
-  const b = c && c.bal, empty = b && b.spendable + b.pending === 0;
+  const b = c && c.bal ? balanceNow(c.bal) : null, empty = b && b.spendable + b.pending + b.sending === 0;
   return el("section", { class: "card card-pad balance" },
     el("span", { class: "label" }, "Balance"),
-    b ? money(b.spendable + b.pending, "xl") : el("span", { class: "money xl faint" }, "—"),
+    b ? money(b.spendable + b.pending, "xl") : el("span", { class: "skel xl", "aria-label": "Loading balance" }),
     el("div", { class: "stats" },
-      el("div", {}, el("span", { class: "label" }, "Available"), b ? money(b.spendable) : el("span", { class: "faint" }, "…")),
-      el("div", {}, el("span", { class: "label" }, "Incoming"), b ? money(b.pending) : el("span", { class: "faint" }, "…"))),
+      el("div", {}, el("span", { class: "label" }, "Available"), b ? money(b.spendable) : el("span", { class: "skel" })),
+      el("div", {}, el("span", { class: "label" }, "Incoming"), b ? money(b.pending) : el("span", { class: "skel" }))),
+    b && b.sending ? el("div", { class: "sending" }, el("span", { class: "dot busy" }), "Sending ", money(b.sending, "md", "out"), el("span", { class: "faint" }, " · waiting for a block")) : null,
     empty ? el("div", { class: "callout" }, el("span", {}, "This wallet is empty. Share its address to receive ZEC, or get free testnet ZEC from a ",
       el("a", { href: FAUCET, target: "_blank", rel: "noopener" }, "faucet ↗"), ".")) : null,
     syncLine(c));
@@ -1242,7 +1293,8 @@ function sentRow(ss) {
   return el("button", { class: "row-item", type: "button", "aria-current": ss.id === state.sid ? "true" : "false", onclick: () => openSession(ss.id) },
     el("span", { class: "tx-ico out", "aria-hidden": "true" }, "↗"),
     el("span", { class: "ri-main" }, el("span", { class: "ri-title" }, payTitle(ss)), el("span", { class: "ri-sub" }, "Proposed by " + proposer(ss) + " · " + when(ss.createdAt))),
-    el("span", { class: "ri-end" }, money(ss.amount, "md", "out"), needsMyApproval(state.gid, ss) ? el("span", { class: "badge warn" }, "Your approval") : statusChip(ss)),
+    el("span", { class: "ri-end" }, money(ss.amount, "md", "out"), needsMyApproval(state.gid, ss) ? el("span", { class: "badge warn" }, "Your approval")
+      : inFlight().includes(ss) ? el("span", { class: "badge info" }, "Confirming") : statusChip(ss)),
     el("span", { class: "chev" }, "›"));
 }
 
@@ -1268,7 +1320,8 @@ function membersTab() {
     el("section", { class: "card card-pad" },
       el("h2", { style: "font-size:15px" }, "Wallet link"),
       el("p", { class: "small muted" }, "Members open this wallet on another device with this link and their key backup. The link contains the wallet's secret, so share it only with members."),
-      el("div", { class: "addr-box" }, el("span", { class: "hex nowrap" }, inviteLink(state.gid)), copyBtn(inviteLink(state.gid), "Copy link"))));
+      el("div", { class: "addr-box" }, el("span", { class: "hex nowrap" }, inviteLink(state.gid)), copyBtn(inviteLink(state.gid), "Copy link")),
+      secretQr(inviteLink(state.gid))));
 }
 
 function memberRow(i) {
@@ -1302,12 +1355,25 @@ function detailsTab() {
       state.log.length ? el("details", {}, el("summary", {}, "Activity in this browser"), el("div", { class: "log" }, state.log.join("\n"))) : null));
 }
 
+// The SVG comes from our own encoder and holds only path data, so innerHTML is safe here.
+function qrBox(text, label) {
+  const box = el("div", { class: "qr" });
+  box.innerHTML = qrSvg(text, label);
+  return box;
+}
+// A link with the wallet secret stays hidden until asked for: cameras and people can read screens.
+function secretQr(link) {
+  return el("details", { class: "qr-toggle" }, el("summary", {}, "Show QR code"),
+    qrBox(link, "Wallet link"), el("p", { class: "small faint" }, "Scan with a phone camera to open the wallet there."));
+}
+
 // ── Receive ──
 function receiveDialog() {
   const w = state.wallet;
   return el("div", { class: "dialog", role: "dialog", "aria-modal": "true", "aria-labelledby": "recv-title" },
     el("div", { class: "card-head" }, el("h2", { id: "recv-title" }, "Receive ZEC"), el("button", { class: "icon-btn", type: "button", "aria-label": "Close", onclick: () => { ui.receive = false; render(); } }, "×")),
     el("p", { class: "small muted" }, "Send testnet ZEC to this shielded address. Senders and the network cannot see the balance or who controls it."),
+    qrBox(w.address, "Wallet address"),
     el("div", { class: "addr-full" }, w.address),
     el("div", { class: "dialog-actions", style: "justify-content:space-between" },
       el("a", { class: "btn ghost", href: FAUCET, target: "_blank", rel: "noopener" }, "Get testnet ZEC ↗"),
@@ -1356,6 +1422,7 @@ function sendDialog() {
 }
 
 // ── Payment drawer ──
+const elapsed = (ms) => { const sec = Math.max(0, Math.floor((Date.now() - (ms || Date.now())) / 1000)); return Math.floor(sec / 60) + ":" + String(sec % 60).padStart(2, "0"); };
 // A prover that closed its tab leaves status "proving"; let someone else take over.
 const proofStalled = (ss) => Date.now() - (ss.provingAt || 0) > 180000;
 
@@ -1431,7 +1498,7 @@ function timeline(ss, refused) {
     tl(ss.error ? "bad" : ss.signed ? "done" : ss.package ? "now" : "", "Group signature",
       el("p", {}, ss.error ? ss.error : ss.signed ? "All signatures combined and verified." : ss.package ? "Signing · " + shared + " of " + signers.length + " shares" : "Starts after " + g.t + " approvals.")),
     tl(ss.final ? "done" : ss.status === "proving" ? "now" : "", "Proof",
-      el("p", {}, ss.final ? "Proof built and the whole transaction checked." : ss.status === "proving" && !proofStalled(ss) ? "A member's browser is building the proof. This takes about a minute." : "Any member can build the zero-knowledge proof once the payment is signed.")),
+      el("p", {}, ss.final ? "Proof built and the whole transaction checked." : ss.status === "proving" && !proofStalled(ss) ? "A member's browser is building the proof · " + elapsed(ss.provingAt) + " of about a minute." : "Any member can build the zero-knowledge proof once the payment is signed.")),
     tl(ss.broadcastTxid ? "done" : ss.broadcastError ? "bad" : ss.final ? "now" : "", "Sent to the network",
       el("div", { style: "display:grid;gap:8px" },
         ss.broadcastTxid ? el("p", {}, when(ss.broadcastAt) + " · ", el("a", { href: EXPLORER_TX + ss.broadcastTxid, target: "_blank", rel: "noopener" }, "View in explorer ↗"))

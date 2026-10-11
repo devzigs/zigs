@@ -74,6 +74,8 @@ struct Inner {
     keys: ScanningKeys<u32, (u32, Scope)>,
     ids: SpendIdentifiers<u32>,
     notes: Vec<Rec>,
+    /// Transactions that spent our notes, as seen in blocks: proof that a payment went out.
+    sent: Vec<String>,
     synced: u32,
     tip: u32,
     prior: Option<BlockMetadata>,
@@ -93,6 +95,9 @@ impl Inner {
         .map_err(|x| format!("scan failed at block {height}: {x:?}"))?;
         for tx in sb.transactions() {
             let txid = tx.txid().to_string();
+            if !tx.ironwood_spends().is_empty() && !self.sent.contains(&txid) {
+                self.sent.push(txid.clone());
+            }
             for sp in tx.ironwood_spends() {
                 for n in self.notes.iter_mut().filter(|n| n.nf == *sp.nf()) {
                     n.spent = true;
@@ -341,6 +346,7 @@ impl ChainWallet {
             keys,
             ids: SpendIdentifiers::empty(),
             notes: vec![],
+            sent: vec![],
             synced: 0,
             tip: 0,
             prior: None,
@@ -358,6 +364,11 @@ impl ChainWallet {
 
     pub fn received(&self) -> String {
         self.0.borrow().received()
+    }
+
+    /// Ids of mined transactions that spent this wallet's notes.
+    pub fn sent(&self) -> String {
+        json!(self.0.borrow().sent).to_string()
     }
 
     #[wasm_bindgen(js_name = createSpend)]

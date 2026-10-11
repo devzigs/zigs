@@ -83,6 +83,7 @@ RUSTFLAGS="--remap-path-prefix=$HOME=/build" \
 cargo build --release --target wasm32-unknown-unknown
 wasm-bindgen --target web --out-dir ../web/pkg target/wasm32-unknown-unknown/release/zec_frost_wasm.wasm
 cargo test --release
+node ../web/test/qr.mjs   # QR encoder against libqrencode (needs the qrencode CLI)
 ```
 
 ```bash

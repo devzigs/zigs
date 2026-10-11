@@ -13,6 +13,7 @@ export const chainwallet_broadcast: (a: number, b: number, c: number) => any;
 export const chainwallet_createSpend: (a: number, b: number, c: number, d: number) => any;
 export const chainwallet_new: (a: number, b: number, c: number, d: number, e: number) => [number, number, number];
 export const chainwallet_received: (a: number) => [number, number];
+export const chainwallet_sent: (a: number) => [number, number];
 export const chainwallet_sync: (a: number, b: any) => any;
 export const dkgPart1: (a: number, b: number, c: number) => [number, number, number, number];
 export const dkgPart2: (a: number, b: number, c: number, d: number) => [number, number, number, number];
