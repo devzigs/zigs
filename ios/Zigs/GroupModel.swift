@@ -3,7 +3,7 @@ import Observation
 
 /// Own node first; ChainSafe's public proxy is the backup.
 let lightwalletds = [URL(string: "https://lwd.zigs.app")!, URL(string: "https://zcash-testnet.chainsafe.dev")!]
-let explorerTx = "https://testnet.zcashexplorer.app/transactions/"
+let explorerTx = "https://testnet.zecblock.com/tx/"
 
 struct Session: Identifiable {
     let id: String

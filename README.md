@@ -26,9 +26,9 @@ These transactions were made by the web app with 2-of-2 groups (NU7 testnet, V6,
 
 | txid | What |
 |---|---|
-| [`4838de4c…6612`](https://testnet.zcashexplorer.app/transactions/4838de4c250d85c82657a600bd9886b75080711c37723c7a07f311c96f046612) | First FROST spend, block 4,485,020 |
-| [`86807799…45fd`](https://testnet.zcashexplorer.app/transactions/86807799c1393829e9de9b1158caa0285d198797c4194b2520f23a713b4f45fd) | Payment to an end-to-end encrypted group, block 4,485,097 |
-| [`9859c24b…2409`](https://testnet.zcashexplorer.app/transactions/9859c24b961bb196f9a1de74cc099c32d4f2c9812c12a2db47a504cb88ff2409) | Spend from the encrypted group, block 4,485,106 |
+| [`4838de4c…6612`](https://testnet.zecblock.com/tx/4838de4c250d85c82657a600bd9886b75080711c37723c7a07f311c96f046612) | First FROST spend, block 4,485,020 |
+| [`86807799…45fd`](https://testnet.zecblock.com/tx/86807799c1393829e9de9b1158caa0285d198797c4194b2520f23a713b4f45fd) | Payment to an end-to-end encrypted group, block 4,485,097 |
+| [`9859c24b…2409`](https://testnet.zecblock.com/tx/9859c24b961bb196f9a1de74cc099c32d4f2c9812c12a2db47a504cb88ff2409) | Spend from the encrypted group, block 4,485,106 |
 
 ## Privacy model
 
