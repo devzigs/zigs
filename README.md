@@ -58,7 +58,7 @@ remove this); the invite link is a bearer secret (anyone with the full link can 
 
 ## Try it
 
-The live demo is at https://app.zigs.app (password protected; ask the author).
+The live demo is at https://app.zigs.app.
 The landing page at https://zigs.app lives in its own repo, https://github.com/devzigs/zigs-site.
 
 1. Create a group (for example 2-of-2) and click **Copy invite link**. Send the link to the other
@@ -88,14 +88,13 @@ cargo test --release
 ```bash
 cd cf
 npm install
-echo DEV_NO_AUTH=1 > .dev.vars
 npx wrangler dev --port 8787
 ```
 
 Open http://localhost:8787. To act as a second person on the same computer, open
 http://127.0.0.1:8787 (a separate origin, so separate local storage).
 
-To deploy: `npx wrangler secret put APP_PASSWORD`, then `npx wrangler deploy` in `cf/`.
+To deploy: `npx wrangler deploy` in `cf/`.
 
 ### iOS app (prototype)
 
@@ -169,7 +168,7 @@ in-memory `ShardTree` for Merkle paths, and broadcasts with `SendTransaction`. S
 | `wasm/src/chain.rs` | Testnet sync, balance, note selection, PCZT creation from real notes, broadcast |
 | `web/index.html` | The web app: ceremony, wallet, spends, encrypted store wrapper |
 | `web/shim.js` | Store and identity for the Cloudflare deploy |
-| `cf/src/index.js` | Cloudflare Worker: static files, password, Durable Object store over WebSocket |
+| `cf/src/index.js` | Cloudflare Worker: static files, Durable Object store over WebSocket |
 | `src/` | Native CLI version of the ceremony (regtest demo, older crate line) |
 | `tests/e2e.sh` | CLI 3-of-5 flows and adversarial tests |
 

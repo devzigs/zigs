@@ -133,7 +133,6 @@ struct SettingsSheet: View {
                         .textInputAutocapitalization(.never)
                         .autocorrectionDisabled()
                         .keyboardType(.URL)
-                    SecureField("Password (if the server has one)", text: $model.password)
                 } header: {
                     Text("Group server")
                 } footer: {

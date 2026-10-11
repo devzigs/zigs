@@ -2,39 +2,19 @@
 // (SQLite) that pushes every change to all connected browsers over a WebSocket.
 import { DurableObject } from "cloudflare:workers";
 
-// One shared password (secret APP_PASSWORD) for every request, any user name.
-function authorized(req, env) {
-  const [scheme, b64] = (req.headers.get("Authorization") || "").split(" ");
-  if (scheme !== "Basic" || !b64) return false;
-  let pass;
-  try { pass = atob(b64).split(":").slice(1).join(":"); } catch { return false; }
-  const enc = new TextEncoder();
-  const a = enc.encode(pass), b = enc.encode(env.APP_PASSWORD);
-  return a.byteLength === b.byteLength && crypto.subtle.timingSafeEqual(a, b);
-}
-
 export default {
   async fetch(req, env) {
-    if (env.DEV_NO_AUTH === "1") return route(req, env);
-    if (!env.APP_PASSWORD) return new Response("APP_PASSWORD is not set. Run: npx wrangler secret put APP_PASSWORD", { status: 500 });
-    if (!authorized(req, env)) {
-      return new Response("Password required", { status: 401, headers: { "WWW-Authenticate": 'Basic realm="zec-frost", charset="UTF-8"' } });
+    const url = new URL(req.url);
+    if (url.pathname === "/ws") return env.STORE.get(env.STORE.idFromName("main")).fetch(req);
+    if (url.pathname === "/" || url.pathname === "/index.html") {
+      const page = await env.ASSETS.fetch(new URL("/index.html", url));
+      return new HTMLRewriter()
+        .on("title", { element: (e) => e.before('<script src="/shim.js"></script>', { html: true }) })
+        .transform(page);
     }
-    return route(req, env);
+    return env.ASSETS.fetch(req);
   },
 };
-
-async function route(req, env) {
-  const url = new URL(req.url);
-  if (url.pathname === "/ws") return env.STORE.get(env.STORE.idFromName("main")).fetch(req);
-  if (url.pathname === "/" || url.pathname === "/index.html") {
-    const page = await env.ASSETS.fetch(new URL("/index.html", url));
-    return new HTMLRewriter()
-      .on("title", { element: (e) => e.before('<script src="/shim.js"></script>', { html: true }) })
-      .transform(page);
-  }
-  return env.ASSETS.fetch(req);
-}
 
 export class Store extends DurableObject {
   constructor(ctx, env) {

@@ -12,11 +12,9 @@ final class Store {
     private var rid = 0
     private var waiting: [Int: CheckedContinuation<String, Error>] = [:]
     private var server: URL?
-    private var password = ""
 
-    func connect(server: URL, password: String) {
+    func connect(server: URL) {
         self.server = server
-        self.password = password
         task?.cancel(with: .goingAway, reason: nil)
         open()
     }
@@ -28,12 +26,7 @@ final class Store {
         parts.scheme = parts.scheme == "https" ? "wss" : "ws"
         parts.path = "/ws"
         guard let url = parts.url else { return }
-        var req = URLRequest(url: url)
-        if !password.isEmpty {
-            let basic = Data("zigs:\(password)".utf8).base64EncodedString()
-            req.setValue("Basic \(basic)", forHTTPHeaderField: "Authorization")
-        }
-        let t = URLSession.shared.webSocketTask(with: req)
+        let t = URLSession.shared.webSocketTask(with: URLRequest(url: url))
         task = t
         t.resume()
         receive(t)

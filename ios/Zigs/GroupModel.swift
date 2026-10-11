@@ -61,15 +61,13 @@ final class GroupModel {
     @ObservationIgnored private var autoSeat = false
 
     var server: String { didSet { UserDefaults.standard.set(server, forKey: "zf-server") } }
-    var password: String { didSet { UserDefaults.standard.set(password, forKey: "zf-password") } }
     var name: String { didSet { UserDefaults.standard.set(name, forKey: "zf-name") } }
 
     init() {
         let d = UserDefaults.standard
         if d.string(forKey: "zf-uid") == nil { d.set(UUID().uuidString.lowercased(), forKey: "zf-uid") }
         me = d.string(forKey: "zf-uid") ?? ""
-        server = d.string(forKey: "zf-server") ?? "http://localhost:8787"
-        password = d.string(forKey: "zf-password") ?? ""
+        server = d.string(forKey: "zf-server") ?? "https://app.zigs.app"
         name = d.string(forKey: "zf-name") ?? "iPhone"
         store.onChange = { [weak self] in self?.refresh() }
         reconnect()
@@ -77,7 +75,7 @@ final class GroupModel {
 
     func reconnect() {
         guard let url = URL(string: server) else { banner = "The server address is not valid."; return }
-        store.connect(server: url, password: password)
+        store.connect(server: url)
     }
 
     private func note(_ msg: String) {
