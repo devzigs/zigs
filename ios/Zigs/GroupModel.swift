@@ -683,13 +683,26 @@ final class GroupModel {
     func pendingApprovals(_ ss: Session) -> [Int] {
         guard let gid, !has(ss.doc["package"]) else { return [] }
         let commits = state.commits[ss.id] ?? [:]
-        return localSeats.filter { has(vault.sec(gid, $0)["keyPackage"]) && commits["\($0)"] == nil }
+        return localSeats.filter {
+            has(vault.sec(gid, $0)["keyPackage"]) && has(state.verify["\($0)"]?["ok"]) && commits["\($0)"] == nil
+        }
+    }
+
+    /// The address of wallet `gid` as one of this device's seats checked it, or nil. The store's
+    /// copy is a claim anyone with the wallet key can write.
+    func checkedAddress(of gid: String) -> String? {
+        let checked = vault.seats(in: gid).lazy.compactMap { self.vault.sec(gid, $0).str("checkedWallet") }.first
+        let doc = checked.flatMap { try? JSONSerialization.jsonObject(with: Data($0.utf8)) as? Doc }
+        return doc?.str("address")
     }
 
     func approve(_ ss: Session, _ i: Int) {
         guard let gid, let fvk = state.wallet?.str("orchard_fvk") else { return }
         once("approve:\(ss.id):\(i)") {
             let s = self.vault.sec(gid, i)
+            guard has(self.state.verify["\(i)"]?["ok"]) else {
+                throw ZigsError("Seat \(i) has not checked this wallet against its key share, so it did not approve.")
+            }
             guard case .success(let ins) = self.inspect(ss), let sighash = ins.str("sighash") else {
                 throw ZigsError("This device could not check the payment, so it did not approve.")
             }

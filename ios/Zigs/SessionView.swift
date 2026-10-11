@@ -86,7 +86,7 @@ struct RecipientCheck {
         }
         extra = left
         match = Self.allPaid(rows, extra: left.count, total: wholeZat(ss.doc["amount"]) ?? -1)
-        let newAddress = ss.doc.str("move").flatMap { model.wallets[$0]?.str("address") }
+        let newAddress = ss.doc.str("move").flatMap { model.checkedAddress(of: $0) }
         intoNew = newAddress.map { a in paid.count == 1 && model.normalized(a) == paid[0].who }
     }
 
@@ -159,8 +159,8 @@ struct MoveNote: View {
 
     var body: some View {
         Text(intoNew == false ? "This is not the address of \(model.groupName(move)). Do not approve it."
-             : intoNew == true ? "This moves all funds to \(model.groupName(move)), the wallet that replaces this one. This iPhone checked its address."
-             : "This moves all funds to a new wallet that replaces this one. You are not one of its signers, so this iPhone cannot check its address.")
+             : intoNew == true ? "This moves all funds to \(model.groupName(move)), the wallet that replaces this one. This device checked its address."
+             : "This moves all funds to a new wallet that replaces this one. This device has no checked copy of its address, so it cannot check it.")
             .font(.subheadline).foregroundStyle(intoNew == false ? Color.bad : Color.mist)
     }
 }

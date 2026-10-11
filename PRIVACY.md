@@ -169,7 +169,10 @@ the passkey guards the key share instead. The lock is opt-in.
   signer sees the true payment.
 - A signer checks the wallet address against its own key share and keeps the result on its
   device. If the wallet document in the store changes, the device checks it again. Other signers'
-  "checked" marks are their claims.
+  "checked" marks are their claims. A seat approves a payment only after its own check passed.
+- A move to a new wallet shows as checked only when this device holds a seat in the new wallet
+  and that seat checked its address. A person who opens a wallet link without a seat sees the
+  store's address, and nothing checked it.
 - The group server can refuse service, drop messages or replay old ones. It cannot read them or
   write new ones.
 - Chain reorganisations are not handled in the sync state yet.

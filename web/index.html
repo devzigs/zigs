@@ -1091,6 +1091,7 @@ async function broadcastAnywhere(txHex) {
 async function approve(ss, i) {
   const s = sec(state.gid, i), ins = inspectOf(ss);
   if (!ins || ins.error) throw new Error("This browser could not check the payment, so it did not approve.");
+  if (seatCheck(i) !== true) throw new Error("Seat " + i + " has not checked this wallet against its key share, so it did not approve.");
   const r = J(Z.signCommit(ss.pczt, state.wallet.orchard_fvk, S(s.keyPackage)));
   // The approval covers this exact transaction: a share is signed later only for the same sighash.
   const mine = { nonces: r.nonces, commitments: r.commitments, sighash: ins.sighash };
@@ -1953,15 +1954,16 @@ function recipientCheck(ss, ins) {
   if (!ins || ins.error) return { rows: [], extra: [], match: null };
   const paid = ins.lines.filter(isPayee), { rows, extra } = pairPayees(payeesOf(ss), paid);
   const match = allPaid(rows, extra, ss.amount);
-  const tw = ss.move ? ready[ss.move] : null;
-  const intoNew = tw ? paid.length === 1 && normalized(moveAddress(ss.move, tw)) === paid[0].who : null;
+  const addr = ss.move ? moveAddress(ss.move) : null;
+  const intoNew = addr ? paid.length === 1 && normalized(addr) === paid[0].who : null;
   return { rows, extra, match, intoNew };
 }
 
-// A signer who also holds a seat in the new wallet trusts only the copy its own seat checked.
-function moveAddress(gid, published) {
+// Only the copy that this browser's own seat in the new wallet checked counts. The store's copy
+// is a claim anyone with the wallet key can write.
+function moveAddress(gid) {
   const mine = mySeatSecrets(gid).find(([, s]) => s.checkedWallet);
-  return mine ? J(mine[1].checkedWallet).address : published.address;
+  return mine ? J(mine[1].checkedWallet).address : null;
 }
 
 function checkWarnings(rc) {
@@ -1990,11 +1992,11 @@ function recipientBox(ss, rc) {
 function moveNote(ss, rc) {
   if (rc.intoNew === false) return el("div", { class: "callout bad" }, "This is not the address of " + groupName(ss.move) + ". Do not approve it.");
   if (rc.intoNew) return el("div", { class: "callout" }, "This moves all funds to " + groupName(ss.move) + ", the wallet that replaces this one. Your browser checked its address.");
-  return el("div", { class: "callout" }, "This moves all funds to a new wallet that replaces this one. You are not one of its signers, so your browser cannot check its address.");
+  return el("div", { class: "callout" }, "This moves all funds to a new wallet that replaces this one. Your browser has no checked copy of its address, so it cannot check it.");
 }
 
 function nextAction(ss, ins, rc) {
-  const myPending = localSeats().filter((i) => sec(state.gid, i).keyPackage && !state.commits[i] && !ss.package);
+  const myPending = localSeats().filter((i) => sec(state.gid, i).keyPackage && seatCheck(i) === true && !state.commits[i] && !ss.package);
   const canApprove = myPending.length && rc.match === true && rc.intoNew !== false;
   if (canApprove) return myPending.map((i) => el("button", { class: "btn primary lg", type: "button", onclick: act(() => approve(ss, i)) }, localSeats().length > 1 ? "Approve as seat " + i : "Approve payment"));
   if (ss.signed && !ss.final && (ss.status !== "proving" || proofStalled(ss))) return [el("button", { class: "btn primary lg", type: "button", onclick: act(() => finalizeTx(ss)) }, "Build proof")];
