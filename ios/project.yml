@@ -23,7 +23,7 @@ targets:
         INFOPLIST_KEY_UILaunchScreen_Generation: YES
         INFOPLIST_KEY_CFBundleDisplayName: Zigs
         INFOPLIST_KEY_UISupportedInterfaceOrientations: UIInterfaceOrientationPortrait
-        INFOPLIST_KEY_NSFaceIDUsageDescription: Zigs asks for Face ID before you sign a payment.
+        INFOPLIST_KEY_NSFaceIDUsageDescription: Zigs asks for Face ID to unlock your key shares.
         OTHER_LDFLAGS: -lc++
         "EXCLUDED_ARCHS[sdk=iphonesimulator*]": x86_64
         CODE_SIGN_STYLE: Automatic

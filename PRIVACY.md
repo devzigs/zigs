@@ -88,13 +88,35 @@ trust (`NETWORKS` in `web/index.html`, `ZcashNetwork` in `ios/Zigs/Chain.swift`)
 
 | Data | Web app | iPhone and Mac app |
 |---|---|---|
-| Key share, signing nonces | Browser local storage | iPhone: Keychain, this device only, not in backups. Mac: login keychain |
-| Wallet secrets (from invite links) | Browser local storage | Same as the key share |
+| Key share, signing nonces | Browser local storage; sealed with a passkey when the lock is on | iPhone: Keychain, this device only, not in backups; sealed behind Face ID when the lock is on. Mac: login keychain |
+| Wallet secrets (from invite links) | Same as the key share | Same as the key share |
 | Sync state (notes, tree) | IndexedDB, sealed with the wallet key | File, sealed with the wallet key |
 | Cached balances for the wallet list | Local storage, sealed with the wallet key | Settings, sealed with the wallet key |
 
-Anyone who controls your unlocked device can read your key share and wallet secrets. One share
-alone cannot move funds: a payment needs a full threshold of signers.
+Without the lock, anyone who controls your unlocked device can read your key share and wallet
+secrets. One share alone cannot move funds: a payment needs a full threshold of signers.
+
+### Lock with a passkey or Face ID
+
+A passkey cannot sign for the wallet: it signs with P-256, and FROST for Zcash uses RedPallas. So
+the passkey guards the key share instead. The lock is opt-in.
+
+- **Web:** "Lock with a passkey" makes a passkey for the site. The WebAuthn PRF extension gives a
+  32-byte secret on each Face ID, Touch ID or security key check. That secret is the AES-256-GCM
+  key for one sealed record that holds the key shares, the signing nonces and the wallet secrets.
+  The plain copies are deleted only after the sealed record opens. The page asks for the passkey
+  each time it opens (`web/vault.js`).
+- **iPhone:** "Lock with Face ID" in Settings puts a random 256-bit key in the Keychain with a
+  user-presence rule, so iOS gives it out only after Face ID or the passcode. The secrets are
+  sealed with that key (AES-GCM). The app asks once each time it starts.
+- Signing steps that run without a click still work, because the lock opens once per session.
+- Someone who reads the browser storage or the Keychain gets only the sealed record.
+- If the passkey is lost, the locked seats in that browser are lost. Restore them from a backup
+  file, or rely on the other signers. On iPhone, turning off the device passcode deletes the key.
+- The Mac app does not offer the lock yet: its ad-hoc signature does not allow Keychain access
+  rules. A Developer ID build is necessary.
+- Not all browsers support the PRF extension. Current Chrome, Edge and Safari do. Other browsers
+  show a clear error, and the keys stay as they are.
 
 ## Signers and invite links
 

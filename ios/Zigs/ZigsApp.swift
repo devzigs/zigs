@@ -9,7 +9,9 @@ struct ZigsApp: App {
 
     var body: some Scene {
         WindowGroup {
-            RootView()
+            Group {
+                if model.locked { LockView() } else { RootView() }
+            }
                 .environment(model)
                 .tint(.signal)
                 .preferredColorScheme(.dark)
@@ -77,6 +79,37 @@ struct RootView: View {
                 }
             }
             .modifier(Banners())
+        }
+    }
+}
+
+struct LockView: View {
+    @Environment(GroupModel.self) private var model
+    @State private var forgetting = false
+
+    var body: some View {
+        VStack(spacing: 16) {
+            Image(systemName: "lock.fill").font(.system(size: 40)).foregroundStyle(Color.signal)
+            Text("Zigs is locked").font(.title2.weight(.semibold)).foregroundStyle(.white)
+            Text("The key shares on this device are encrypted. "
+                 + "Unlock with \(lockName) or your passcode.")
+                .font(.subheadline).foregroundStyle(Color.mist).multilineTextAlignment(.center)
+            Button("Unlock") { Task { await model.unlock() } }
+                .buttonStyle(.borderedProminent)
+            Button("Cannot unlock?") { forgetting = true }
+                .font(.footnote).foregroundStyle(Color.mist)
+        }
+        .padding(32)
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .background(Color.night)
+        .task { await model.unlock() }
+        .modifier(Banners())
+        .confirmationDialog("Delete the locked keys?", isPresented: $forgetting,
+                            titleVisibility: .visible) {
+            Button("Delete the locked keys", role: .destructive) { model.forgetLockedKeys() }
+        } message: {
+            Text("Do this only if this device cannot unlock them. The seats on this device "
+                 + "are lost, but each wallet still works while enough other signers remain.")
         }
     }
 }
@@ -318,6 +351,22 @@ struct SettingsSheet: View {
                 Section("Your name") {
                     TextField("Shown to your signers", text: $model.name)
                 }
+                // The ad-hoc signed Mac build cannot use Keychain access control.
+                #if os(iOS)
+                Section {
+                    if model.lockOn {
+                        Label("Locked with \(lockName)", systemImage: "lock.fill")
+                    } else {
+                        Button("Lock with \(lockName)", systemImage: "lock") { model.turnOnLock() }
+                    }
+                } header: {
+                    Text("Key shares")
+                } footer: {
+                    Text("With the lock on, the key shares are encrypted, and Zigs asks for "
+                         + "\(lockName) or your passcode each time it starts. If you turn off the "
+                         + "device passcode, the key shares on this device are lost.")
+                }
+                #endif
                 Section {
                     TextField("Server", text: $model.server)
                         .codeEntry()

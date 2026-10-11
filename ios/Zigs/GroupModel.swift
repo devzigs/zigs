@@ -62,6 +62,8 @@ struct GroupState {
 /// A seat publishes its first key message right after joining, so stage 2 still reads as joined.
 let stageLabels = ["Open", "Joined", "Joined", "Creating key", "Key ready", "Address checked"]
 
+let lockName = "Face ID"
+
 func ruleText(_ t: Int, _ n: Int) -> String { "Any \(t) of \(n) signers must approve each payment." }
 
 @MainActor
@@ -77,6 +79,9 @@ final class GroupModel {
     private(set) var connected = false
     private(set) var log: [String] = []
     private(set) var balances: [String: Int] = [:]
+    /// The key shares are sealed and this launch has not unlocked them yet.
+    private(set) var locked = false
+    private(set) var lockOn = false
     var banner: String?
     var notice: String?
     var path: [String] = []
@@ -87,6 +92,8 @@ final class GroupModel {
     @ObservationIgnored private(set) var me: String
     @ObservationIgnored private var proving = Set<String>()
     @ObservationIgnored private var autoSeat = false
+    @ObservationIgnored private var linkWhileLocked: String?
+    @ObservationIgnored private var unlocking = false
     /// Decrypted field values by ciphertext; every store change would otherwise decrypt everything.
     @ObservationIgnored private var opened: [String: Any] = [:]
 
@@ -99,9 +106,47 @@ final class GroupModel {
         me = d.string(forKey: "zf-uid") ?? ""
         server = d.string(forKey: "zf-server") ?? "https://app.zigs.app"
         name = d.string(forKey: "zf-name") ?? ""
-        loadBalances()
+        locked = vault.locked
+        lockOn = vault.lockOn
         store.onChange = { [weak self] in self?.refresh() }
+        if !locked { start() }
+    }
+
+    private func start() {
+        loadBalances()
         reconnect()
+        if let link = linkWhileLocked { linkWhileLocked = nil; join(link) }
+    }
+
+    func unlock() async {
+        guard locked, !unlocking else { return }
+        unlocking = true
+        defer { unlocking = false }
+        do {
+            try await vault.unlock()
+            locked = false
+            lockOn = vault.lockOn
+            start()
+        } catch {
+            banner = error.localizedDescription
+        }
+    }
+
+    func turnOnLock() {
+        do {
+            try vault.turnOn()
+            lockOn = true
+            notice = "Locked. Zigs asks for \(lockName) each time it starts."
+        } catch {
+            banner = error.localizedDescription
+        }
+    }
+
+    func forgetLockedKeys() {
+        vault.forget()
+        locked = vault.locked
+        lockOn = vault.lockOn
+        if !locked { start() }
     }
 
     func reconnect() {
@@ -492,6 +537,7 @@ final class GroupModel {
 
     /// Accepts a web invite link (`https://…/#gid.secret`) or `zigs://join#gid.secret`.
     func join(_ link: String) {
+        if locked { linkWhileLocked = link; return }
         guard let frag = link.split(separator: "#", maxSplits: 1).last, frag.contains(".") else {
             banner = "This is not a full invite link. Ask for the link that ends with #group.key."
             return

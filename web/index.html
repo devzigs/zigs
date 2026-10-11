@@ -398,6 +398,7 @@ details > summary { cursor: pointer; color: var(--accent-text); font-weight: 500
 <script type="module">
 import { qrSvg } from "/qr.js";
 import { parsePayeeList, toZat, zatText } from "/payees.js";
+import { createPasskey, unlockKey, seal, open as openVault, parseVault } from "/vault.js";
 // ───────────────────────── Engine (WASM) ─────────────────────────
 let Z = null;
 const engineDot = document.getElementById("engine-dot");
@@ -436,16 +437,107 @@ function finalizeOffThread(signedPczt) {
 }
 
 // ───────────────────────── Local secrets ─────────────────────────
-// Key shares, DKG secrets and signing nonces never leave this browser.
+// Key shares, DKG secrets, signing nonces and wallet keys never leave this browser. With the
+// passkey lock on, they are stored only as one sealed record (web/vault.js), and the page asks for
+// the passkey when it opens.
 const mem = {};
 let storageOk = true;
-function loadSecrets() { try { return JSON.parse(localStorage.getItem("zf-secrets") || "{}"); } catch { storageOk = false; return mem; } }
-let secrets = loadSecrets();
-function saveSecrets() { try { localStorage.setItem("zf-secrets", JSON.stringify(secrets)); } catch { storageOk = false; } }
+let lockedVault = null;   // the sealed record until unlock; { damaged } if it does not parse
+let vault = null;         // { rec, key } while unlocked
+try {
+  const raw = localStorage.getItem("zf-vault");
+  if (raw) lockedVault = parseVault(raw) || { damaged: true };
+} catch {}
+function readPlain(name) {
+  try { return JSON.parse(localStorage.getItem(name) || "{}"); }
+  catch { storageOk = false; return name === "zf-secrets" ? mem : {}; }
+}
+let secrets = lockedVault ? {} : readPlain("zf-secrets");
+let vaultWrite = Promise.resolve(true);
+const LOCKED_ELSEWHERE = "Zigs was locked in another tab, so this tab cannot save. "
+  + "Close it and continue in the locked tab.";
+
+function persistPlain() {
+  // With no storage at all, nothing can come back after a reload, so signing stays safe.
+  if (secrets === mem) return true;
+  try {
+    // Another tab turned the lock on: a plain write here would put the keys back in clear.
+    if (localStorage.getItem("zf-vault")) { showBanner("bad", LOCKED_ELSEWHERE); return false; }
+    localStorage.setItem("zf-secrets", S(secrets));
+    localStorage.setItem("zf-keys", S(gkeys));
+    return true;
+  } catch { storageOk = false; return false; }
+}
+
+async function persistSealed() {
+  try {
+    const rec = await seal(vault.key, vault.rec, { secrets, keys: gkeys });
+    localStorage.setItem("zf-vault", S(rec));
+    return true;
+  } catch (e) {
+    storageOk = false;
+    showBanner("bad", "Could not save your key share (" + (e.message || e)
+      + "). Keep this tab open, and use Back up.");
+    return false;
+  }
+}
+
+// Writes the secrets and wallet keys. Resolves true once saved. Sealed writes are queued, so the
+// last one always holds the newest state.
+function persist() {
+  if (lockedVault) return Promise.resolve(false);
+  if (!vault) return Promise.resolve(persistPlain());
+  vaultWrite = vaultWrite.then(persistSealed);
+  return vaultWrite;
+}
+
+async function lockWithPasskey() {
+  if (!storageOk) throw new Error("This browser does not let the page save data.");
+  const made = await createPasskey();
+  // Another tab may have saved newer secrets: seal what storage holds now.
+  secrets = readPlain("zf-secrets");
+  gkeys = readPlain("zf-keys");
+  vault = made;
+  const back = (await persist()) && parseVault(localStorage.getItem("zf-vault"));
+  // The sealed copy must open before the plain copy goes.
+  const opens = back ? await openVault(vault.key, back).then(() => true, () => false) : false;
+  if (!opens) {
+    vault = null;
+    try { localStorage.removeItem("zf-vault"); } catch {}
+    throw new Error("The locked copy was not saved. Your keys stay unlocked in this browser.");
+  }
+  localStorage.removeItem("zf-secrets");
+  localStorage.removeItem("zf-keys");
+  showBanner("ok", "Locked. Zigs asks for this passkey each time it opens in this browser.");
+}
+
+async function unlockVault() {
+  if (lockedVault.damaged) {
+    throw new Error("The locked keys in this browser are damaged and cannot be opened.");
+  }
+  const key = await unlockKey(lockedVault);
+  let got;
+  try { got = await openVault(key, lockedVault); }
+  catch { throw new Error("This passkey does not open the saved keys. Use the Zigs passkey."); }
+  secrets = got.secrets || {};
+  gkeys = got.keys || {};
+  vault = { rec: { cred: lockedVault.cred, salt: lockedVault.salt }, key };
+  lockedVault = null;
+  adoptInviteKey();   // an invite link opened while locked waits in the fragment
+  boot();
+}
+
+function forgetVault() {
+  try { localStorage.removeItem("zf-vault"); } catch {}
+  location.reload();
+}
 const skey = (gid, seat) => gid + ":" + seat;
 function mySeatSecrets(gid) { return Object.entries(secrets).filter(([k]) => k.startsWith(gid + ":")).map(([k, v]) => [Number(k.split(":")[1]), v]); }
 function sec(gid, seat) { return secrets[skey(gid, seat)]; }
-function putSec(gid, seat, patch) { secrets[skey(gid, seat)] = Object.assign(secrets[skey(gid, seat)] || {}, patch); saveSecrets(); }
+function putSec(gid, seat, patch) {
+  secrets[skey(gid, seat)] = Object.assign(secrets[skey(gid, seat)] || {}, patch);
+  return persist();
+}
 
 // ───────────────────────── Platform ─────────────────────────
 let db = null, sdb = null, user = null, downloads = null, me = null, canWrite = null, dbReady = false;
@@ -510,9 +602,10 @@ function log(msg) { state.log.unshift(new Date().toLocaleTimeString() + "  " + m
 // Every field under groups/{gid} is sealed with the group secret. The secret lives in the invite
 // link fragment and in this browser; the server sees paths and field names only.
 let gkeys = {};
-try { gkeys = JSON.parse(localStorage.getItem("zf-keys") || "{}"); } catch { storageOk = false; }
-function putKey(gid, key) { gkeys[gid] = key; try { localStorage.setItem("zf-keys", JSON.stringify(gkeys)); } catch { storageOk = false; } }
+if (!lockedVault) gkeys = readPlain("zf-keys");
+function putKey(gid, key) { gkeys[gid] = key; persist(); }
 function adoptInviteKey() {
+  if (lockedVault) return;
   const [gid, key] = location.hash.slice(1).split(".");
   if (!key) return;
   if (/^[\w-]{43}$/.test(key)) putKey(gid, key);
@@ -762,7 +855,11 @@ function reactSession(ss) {
       const s = sec(gid, i), n = s.nonces && s.nonces[ss.id];
       if ((ss.signers || []).includes(i) && n && !state.shares[i]) once("share:" + ss.id + ":" + i, async () => {
         const shares = Z.signShare(ss.pczt, fvk, ss.package, S(n.nonces), S(n.commitments), S(s.keyPackage), i);
-        const nonces = { ...(s.nonces || {}) }; delete nonces[ss.id]; putSec(gid, i, { nonces });   // burn nonces
+        const nonces = { ...(s.nonces || {}) }; delete nonces[ss.id];
+        // Save the burn before the share goes out: a nonce that comes back could sign twice.
+        if (!(await putSec(gid, i, { nonces }))) {
+          throw new Error("Could not save the used nonce, so the signature share was not sent.");
+        }
         await sdb.doc(base + "/shares/" + i).set({ shares, at: Date.now() });
         log("seat " + i + ": signature share sent");
       });
@@ -943,7 +1040,10 @@ async function broadcastAnywhere(txHex) {
 async function approve(ss, i) {
   const s = sec(state.gid, i);
   const r = J(Z.signCommit(ss.pczt, state.wallet.orchard_fvk, S(s.keyPackage)));
-  putSec(state.gid, i, { nonces: { ...(s.nonces || {}), [ss.id]: { nonces: r.nonces, commitments: r.commitments } } });
+  const mine = { nonces: r.nonces, commitments: r.commitments };
+  if (!(await putSec(state.gid, i, { nonces: { ...(s.nonces || {}), [ss.id]: mine } }))) {
+    throw new Error("Could not save the approval in this browser, so it was not sent.");
+  }
   await sdb.doc("groups/" + state.gid + "/sessions/" + ss.id + "/commits/" + i).set({ commitments: r.commitments, at: Date.now() });
   log("seat " + i + ": approved the spend, nonce commitment published");
   showBanner("ok", "Approved" + (localSeats().length > 1 ? " as seat " + i : "") + ".");
@@ -1005,7 +1105,10 @@ function copyBtn(text, label = "Copy", cls = "btn sm") {
 
 let openLayer = "", tickTimer = null;
 // View state that only this browser cares about.
-const ui = { tab: "overview", send: false, pay: null, payKey: 0, listError: "", create: false, receive: false, move: false, net: "testnet", ack: false };
+const ui = {
+  forget: false, tab: "overview", send: false, pay: null, payKey: 0, listError: "",
+  create: false, receive: false, move: false, net: "testnet", ack: false,
+};
 const ZEC_FMT = new Intl.NumberFormat("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 8 });
 // ZIP 317 for a payment from up to `outputs` notes: one action per output, change included.
 const feeEstimate = (payees) => 5000 * Math.max(2, payees + 1);
@@ -1091,8 +1194,9 @@ function render() {
   app.querySelectorAll("input[id], select[id], textarea[id]").forEach((i) => { if (i.type !== "file") kept[i.id] = i.value; });
   const openDetails = new Set([...app.querySelectorAll("details[open] > summary")].map((x) => x.textContent));
   const drawerScroll = app.querySelector(".drawer-body")?.scrollTop || 0;
-  const view = !dbReady ? loadingView() : state.gid ? groupView() : lobby();
-  const top = layers();
+  const page = () => !dbReady ? loadingView() : state.gid ? groupView() : lobby();
+  const view = lockedVault ? lockView() : page();
+  const top = lockedVault ? [] : layers();
   app.replaceChildren(view, ...top);
   const layerKey = top.length ? top[1].getAttribute("aria-labelledby") || top[1].getAttribute("aria-label") : "";
   if (layerKey && layerKey !== openLayer) setTimeout(() => app.querySelector(".dialog input, .dialog button.btn, .drawer .icon-btn")?.focus(), 0);
@@ -1124,8 +1228,11 @@ function renderSide() {
   nav.replaceChildren(
     el("div", { class: "side-head" }, el("span", { class: "label" }, "Wallets"),
       el("button", { class: "icon-btn", type: "button", title: "New wallet", "aria-label": "New wallet", onclick: newWallet }, "+")),
-    ...(state.groups.length ? state.groups.map(sideItem) : [el("p", { class: "side-empty" }, dbReady ? "No wallets yet." : "Connecting…")]));
+    ...(state.groups.length ? state.groups.map(sideItem)
+      : [el("p", { class: "side-empty" }, sideEmpty())]));
 }
+
+const sideEmpty = () => lockedVault ? "Locked." : dbReady ? "No wallets yet." : "Connecting…";
 
 function sideItem(g) {
   const n = toApprove(g.id).length;
@@ -1134,6 +1241,43 @@ function sideItem(g) {
     onclick: () => { ui.tab = "overview"; openGroup(g.id); },
   }, el("span", { class: "av" }, initials(g.name)), el("span", { class: "side-name" }, g.name),
     n ? el("span", { class: "side-count", title: n + " to approve", "aria-label": n + " to approve" }, String(n)) : el("span", { class: "side-meta", title: ruleText(g.t, g.n) }, g.movedTo ? "Moved" : g.t + " of " + g.n));
+}
+
+function forgetBox() {
+  const cancel = () => { ui.forget = false; render(); };
+  return el("div", { class: "callout bad" },
+    el("p", {}, "Without the passkey, the key shares in this browser cannot be opened. Delete "
+      + "them, then restore each seat from its backup file. A seat with no backup is lost, but "
+      + "the wallet still works while enough other signers remain."),
+    el("div", { class: "dialog-actions" },
+      el("button", { class: "btn", type: "button", onclick: cancel }, "Cancel"),
+      el("button", { class: "btn", type: "button", onclick: forgetVault },
+        "Delete the locked keys")));
+}
+
+function lockView() {
+  const ask = () => { ui.forget = true; render(); };
+  const text = lockedVault.damaged
+    ? "The locked keys in this browser are damaged and cannot be opened."
+    : "The key shares in this browser are encrypted with your passkey. "
+      + "Unlock with Face ID, Touch ID or your security key.";
+  return el("div", { class: "card empty" }, el("h3", {}, "Zigs is locked"),
+    el("p", { class: "small" }, text),
+    lockedVault.damaged ? null
+      : el("button", { class: "btn primary", type: "button", onclick: act(unlockVault) }, "Unlock"),
+    ui.forget ? forgetBox()
+      : el("button", { class: "btn ghost sm", type: "button", onclick: ask }, "Lost the passkey?"));
+}
+
+function lockButton() {
+  if (vault) {
+    return el("button", { class: "btn", type: "button", onclick: () => location.reload(),
+      title: "Encrypted with your passkey. Reload to lock the page." }, "Lock now");
+  }
+  const can = storageOk && !!window.PublicKeyCredential;
+  return el("button", { class: "btn", type: "button", disabled: !can, onclick: act(lockWithPasskey),
+    title: can ? "Encrypt the key shares in this browser with a passkey"
+      : "This browser has no passkey support" }, "Lock with a passkey");
 }
 
 function loadingView() {
@@ -1147,6 +1291,7 @@ function lobby() {
   const head = el("header", { class: "page-head" },
     el("div", { class: "ph-left" }, el("h1", {}, "Wallets"), el("p", { class: "muted" }, "Each wallet is a separate shared account, with its own address, signers and approval rule.")),
     el("div", { class: "ph-actions" },
+      lockButton(),
       el("button", { class: "btn", type: "button", onclick: () => restoreInput.click() }, "Restore from backup"), restoreInput,
       el("button", { class: "btn primary", type: "button", disabled: !canCreate, onclick: () => { ui.create = true; render(); } }, "New wallet")));
   if (!state.groups.length) return el("div", { class: "page" }, head, welcome(canCreate));
@@ -1826,6 +1971,7 @@ document.addEventListener("keydown", (ev) => {
 // Back, forward and pasted invite links change only the fragment; follow them.
 window.addEventListener("hashchange", () => {
   adoptInviteKey();
+  if (lockedVault) return;
   const gid = location.hash.slice(1).split(".")[0] || null;
   if (gid === state.gid) return;
   if (gid && !gkeys[gid]) { showBanner("bad", "This link is missing its key. Ask for the full invite link."); return; }
@@ -1836,5 +1982,5 @@ window.addEventListener("hashchange", () => {
 setInterval(() => { const c = curChain(); if (c && !c.syncing && document.visibilityState === "visible") runSync(c); }, 60000);
 
 adoptInviteKey();
-loadEngine().then(boot);
+loadEngine().then(() => lockedVault ? render() : boot());
 </script>
