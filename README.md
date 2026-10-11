@@ -7,6 +7,7 @@ the wallet, and on chain each payment looks like a shielded payment from a stand
 - Web app: https://app.zigs.app (no install, no account)
 - iPhone and Mac apps: in [`ios/`](ios), built from the same code
 - Website: https://zigs.app
+- How it works, end to end: [PROTOCOL.md](PROTOCOL.md)
 
 Zigs uses re-randomized FROST threshold signatures ([ZIP 312](https://zips.z.cash/zip-0312)) on
 the Ironwood shielded pool. It is a **beta** and **not audited**. Testnet wallets use free test
