@@ -59,6 +59,7 @@ remove this); the invite link is a bearer secret (anyone with the full link can 
 ## Try it
 
 The live demo is at https://app.zigs.app (password protected; ask the author).
+The landing page at https://zigs.app lives in its own repo, https://github.com/devzigs/zigs-site.
 
 1. Create a group (for example 2-of-2) and click **Copy invite link**. Send the link to the other
    members. On your own, click **Also play this seat** to play every seat from one browser.
