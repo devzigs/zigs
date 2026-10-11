@@ -393,6 +393,8 @@ details > summary { cursor: pointer; color: var(--accent-text); font-weight: 500
   <main class="main"><div id="app" class="page"></div></main>
 </div>
 <div id="banner" hidden role="status"></div>
+<noscript><p class="notice bad">Zigs needs JavaScript and WebAssembly.
+  In Tor Browser, set the security level to Standard.</p></noscript>
 
 <script type="module">
 import { qrSvg } from "/qr.js";
@@ -744,12 +746,30 @@ const allR1 = () => seatIds().every((i) => state.dkg1[i]);
 const r2For = (to) => seatIds().filter((i) => i !== to).every((i) => state.dkg2[i + "-" + to]);
 const allDone = () => seatIds().every((i) => state.done[i]);
 const keysAgree = () => allDone() && new Set(seatIds().map((i) => state.done[i].groupKey)).size === 1;
-// A seat secret keeps the identity its seat was taken with, so a seat restored into a new browser
-// (or a Tor Browser session, which forgets its identity) is still this browser's.
-const isMe = (uid) => !!uid
-  && (uid === me || Object.values(secrets).some((s) => s && s.uid === uid));
-const localSeats = () => !state.gid ? [] : mySeatSecrets(state.gid).map(([i]) => i)
-  .filter((i) => state.seats[i] && isMe(state.seats[i].uid));
+// FROST identifiers are the seat number as a 32-byte little-endian scalar.
+const frostId = (i) => i.toString(16).padStart(2, "0") + "0".repeat(62);
+// A restored key share must be the one the wallet published for that seat.
+function fitsWallet(i, s) {
+  const kp = s.keyPackage, done = state.done[i];
+  if (!kp || !done || kp.identifier !== frostId(i)) return false;
+  try {
+    const shares = J(done.publicKeyPackage).verifying_shares || {};
+    return shares[kp.identifier] === kp.verifying_share;
+  } catch { return false; }
+}
+// A seat is this browser's when it took the seat (its identity then, or now), or restored the
+// seat's key share. Tor Browser gets a new identity each session, so identity alone is not enough.
+function ownsSeat(i, s) {
+  const seat = state.seats[i];
+  if (!seat) return false;
+  return seat.uid === me || seat.uid === s.uid || (!!s.restored && fitsWallet(i, s));
+}
+const localSeats = () => !state.gid ? []
+  : mySeatSecrets(state.gid).filter(([i, s]) => ownsSeat(i, s)).map(([i]) => i);
+// This browser, or a seat it holds in the open wallet.
+const isMe = (uid) => !!uid && (uid === me || localSeats().some((i) => state.seats[i].uid === uid));
+// The identity other signers know: the first local seat's, which outlives a Tor session.
+const myUid = () => { const i = localSeats()[0]; return i ? state.seats[i].uid : me; };
 const isCreator = () => state.g && isMe(state.g.createdBy);
 const seatNameOf = (uid) => (Object.values(state.seats).find((s) => s.uid === uid) || {}).name || "someone";
 const curSession = () => state.sessions.find((s) => s.id === state.sid) || null;
@@ -857,7 +877,12 @@ function reactSession(ss) {
     if (ids.length >= g.t) once("pkg:" + ss.id, async () => {
       const c = {}; for (const i of ids) c[i] = state.commits[i].commitments;
       const pkg = Z.signPackage(ss.pczt, fvk, S(c), g.t);
-      await sdb.doc("groups/" + gid + "/sessions/" + ss.id).update({ package: pkg, signers: ids, status: "signing" });
+      // Two browsers can hold the same seat (a restored copy): only one writes the package.
+      const ref = sdb.doc("groups/" + gid + "/sessions/" + ss.id);
+      if (!(await ref.acquire({ holder: me || "anon", ttlMs: 10000 })).acquired) return;
+      const cur = await ref.get();
+      if (cur.exists && cur.data().package) return;
+      await ref.update({ package: pkg, signers: ids, status: "signing" });
       log("signing package sent to signers " + ids.join(", "));
     });
   }
@@ -1004,7 +1029,7 @@ async function newSpend(payees, note, move = null) {
   payees = payees.map(({ to, amount }) => ({ to, amount }));
   const t = J(await chain.cw.createSpend(S(payees)));
   const ref = sdb.collection("groups/" + state.gid + "/sessions").doc();
-  await ref.set({ createdBy: me, createdAt: Date.now(), payees, note: note || null, pool: t.pool, amount: t.amount, change: t.change, fee: t.fee, noteValue: t.note_value, pczt: t.pczt, move, status: "collecting" });
+  await ref.set({ createdBy: myUid(), createdAt: Date.now(), payees, note: note || null, pool: t.pool, amount: t.amount, change: t.change, fee: t.fee, noteValue: t.note_value, pczt: t.pczt, move, status: "collecting" });
   log("new spend: " + fmtZec(t.amount));
   showBanner("ok", "Payment proposed. It needs " + state.g.t + " approvals.");
   openSession(ref.id);
@@ -1094,7 +1119,10 @@ function restore(file) {
       const b = JSON.parse(r.result);
       if (b.kind !== "zec-frost-key-share") throw new Error("This is not a key share backup.");
       if (b.key) putKey(b.group, b.key);
-      putSec(b.group, b.seat, { ...b.secret, backedUp: true });
+      // Older backups hold nonces: a restored nonce could sign a second, different package.
+      const { nonces, uid, ...secret } = b.secret || {};
+      const kept = (sec(b.group, b.seat) || {}).nonces || {};
+      putSec(b.group, b.seat, { ...secret, nonces: kept, restored: true, backedUp: true });
       showBanner("ok", "Restored seat " + b.seat + " of " + (b.groupName || "group") + ".");
       openGroup(b.group);
     } catch (e) { showBanner("bad", e.message); }
@@ -1940,12 +1968,13 @@ function nextAction(ss, ins, rc) {
 // sign, and the payment waits forever: say so instead of stalling.
 function lostApproval(ss) {
   if (ss.signed || ss.error) return null;
-  const lost = localSeats().filter((i) => state.commits[i] && !state.shares[i]
+  const chosen = (i) => !ss.package || (ss.signers || []).includes(i);
+  const lost = localSeats().filter((i) => state.commits[i] && !state.shares[i] && chosen(i)
     && !((sec(state.gid, i).nonces || {})[ss.id]) && !busy.has("share:" + ss.id + ":" + i));
   if (!lost.length) return null;
-  return el("div", { class: "callout bad" }, "This browser lost its approval for this payment: the "
-    + "browser data that held it was deleted. The payment cannot finish with this approval. "
-    + "Propose it again.");
+  return el("div", { class: "callout bad" }, "This browser does not hold its approval for this "
+    + "payment any more: the browser data that held it was deleted. The payment cannot finish "
+    + "with this approval. Propose it again.");
 }
 
 function sessionDrawer(ss) {
@@ -2008,6 +2037,18 @@ function txDetails(ss) {
       el("dt", {}, "Size"), el("dd", {}, ss.final.size.toLocaleString() + " bytes")),
     el("details", {}, el("summary", {}, "Raw transaction"), el("div", { class: "log" }, ss.final.tx_hex), el("div", { style: "margin-top:8px" }, copyBtn(ss.final.tx_hex, "Copy hex"))));
 }
+
+// Another tab saved: take its secrets, so this tab neither misses nor overwrites them.
+window.addEventListener("storage", async (ev) => {
+  if (lockedVault || (ev.key !== "zf-secrets" && ev.key !== "zf-vault") || !ev.newValue) return;
+  try {
+    if (!vault && ev.key === "zf-secrets") secrets = JSON.parse(ev.newValue);
+    if (vault && ev.key === "zf-vault") {
+      ({ secrets, keys: gkeys } = await openVault(vault.key, parseVault(ev.newValue)));
+    }
+  } catch (e) { log("could not read another tab's save: " + (e.message || e)); }
+  render();
+});
 
 document.getElementById("banner").addEventListener("click", (ev) => { ev.currentTarget.hidden = true; });
 document.addEventListener("keydown", (ev) => {

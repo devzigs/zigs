@@ -102,8 +102,13 @@ What makes this safe to rely on:
 
 - The page sends a Content-Security-Policy header. The browser lets it connect only to the group
   server and the three light-wallet servers in `NETWORKS`, and to nothing else.
-- A restored seat keeps the identity it was taken with, so a new session can still approve.
-- Backup files leave out signing nonces, so a restored copy can never reuse one.
+- A restored seat works in a new session. The app checks the restored key share against the key
+  data the wallet published for that seat, and a proposal records the seat's identity, not the
+  session's.
+- Backups leave out signing nonces, and a restore drops the nonces in older backup files, so a
+  restored copy cannot reuse one.
+- The backup note goes away when the file is offered for download. The app cannot tell whether
+  you saved it.
 
 Not tested yet: a full session in Tor Browser, whether the light-wallet servers accept
 connections from every Tor exit, and whether many Tor users on one exit reach the group server's
