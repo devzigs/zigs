@@ -112,7 +112,9 @@ impl Inner {
                 let nf = *out.nf().ok_or("decrypted note has no nullifier")?;
                 let note = out.note().0;
                 let position = out.note_commitment_tree_position();
-                let change = out.is_change();
+                // Change goes to the internal address. The scanner's own change flag needs its
+                // spend watch list, which this wallet does not keep.
+                let change = out.recipient_key_scope() == Some(Scope::Internal);
                 self.notes.push(Rec { note, position, height, nf, spent: false, txid: txid.clone(), change });
             }
         }
@@ -158,14 +160,15 @@ impl Inner {
             json!({"h": u32::from(p.block_height()), "hash": hex::encode(p.block_hash().0),
                 "s": p.sapling_tree_size(), "o": p.orchard_tree_size(), "i": p.ironwood_tree_size()})
         });
-        Ok(json!({"v": 1, "birthday": self.birthday, "synced": self.synced, "sent": self.sent,
+        Ok(json!({"v": 2, "birthday": self.birthday, "synced": self.synced, "sent": self.sent,
             "prior": prior, "notes": notes, "tree": encode_store(self.tree.store())?})
         .to_string())
     }
 
     fn restore(&mut self, text: &str) -> R<()> {
         let v: Value = serde_json::from_str(text).map_err(e("saved wallet state"))?;
-        ensure(v["v"] == 1, "the saved wallet state has an unknown format")?;
+        // Version 1 snapshots marked change as received money; they are dropped and resynced.
+        ensure(v["v"] == 2, "the saved wallet state has an old or unknown format")?;
         ensure(v["birthday"] == self.birthday, "the saved wallet state belongs to another wallet")?;
         self.tree = ShardTree::new(decode_store(&v["tree"])?, 100);
         self.notes = v["notes"].as_array().ok_or("saved notes")?.iter().map(rec_of).collect::<R<_>>()?;
