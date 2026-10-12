@@ -220,6 +220,14 @@ Each chosen device signs automatically, after these checks:
   light-wallet server.
 - On chain, the payment is one normal Ironwood shielded transaction.
 
+### 7.7 Cancel
+
+- Until the shares are combined, any signer can cancel a payment, for example one whose approval
+  was lost. The payment is then closed: no device approves, signs or combines it.
+- The cancelling device deletes its own unused nonces for the payment.
+- Cancel coordinates honest signers. It is not a security control: t signers who hold all the
+  shares could still combine them.
+
 ## 8. Changing signers
 
 The signers and the threshold are part of the wallet key, so they cannot change in place. Zigs

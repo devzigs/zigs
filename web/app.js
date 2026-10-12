@@ -760,6 +760,7 @@ async function broadcastAnywhere(txHex) {
 
 async function approve(ss, i) {
   const s = sec(state.gid, i), ins = inspectOf(ss);
+  if (ss.error) throw new Error("This payment was cancelled or failed, so it was not approved.");
   if (!ins || ins.error) throw new Error("This browser could not check the payment, so it did not approve.");
   if (seatCheck(i) !== true) throw new Error("Seat " + i + " has not checked this wallet against its key share, so it did not approve.");
   const r = J(Z.signCommit(ss.pczt, state.wallet.orchard_fvk, S(s.keyPackage)));
@@ -771,6 +772,19 @@ async function approve(ss, i) {
   await sdb.doc(sessionPath(ss) + "/commits/" + i).set({ commitments: r.commitments, at: Date.now() });
   log("seat " + i + ": approved the spend, nonce commitment published");
   showBanner("ok", "Approved" + (localSeats().length > 1 ? " as seat " + i : "") + ".");
+}
+
+async function cancelPayment(ss) {
+  if (ss.signed || ss.error) throw new Error("This payment is already signed or closed, so it cannot be cancelled.");
+  const who = (state.seats[localSeats()[0]] || {}).name || "a signer";
+  await sdb.doc(sessionPath(ss)).update({ status: "cancelled", error: "Cancelled by " + who + "." });
+  for (const i of localSeats()) {
+    const nonces = { ...(sec(state.gid, i).nonces || {}) };
+    if (!nonces[ss.id]) continue;
+    delete nonces[ss.id];
+    await putSec(state.gid, i, { nonces });
+  }
+  showBanner("ok", "Payment cancelled.");
 }
 
 async function finalizeTx(ss) {
@@ -927,6 +941,7 @@ const curChain = () => chain && chain.gid === state.gid ? chain : null;
 const STATUS = {
   collecting: ["Needs approval", "warn"], signing: ["Signing", "info"], signed: ["Ready to prove", "info"],
   proving: ["Building proof", "info"], complete: ["Ready to send", "ok"], broadcast: ["Sent", "ok"], failed: ["Failed", "bad"],
+  cancelled: ["Cancelled", ""],
 };
 function statusChip(s) {
   const [t, c] = Object.hasOwn(STATUS, s.status) ? STATUS[s.status] : [String(s.status), ""];
@@ -1613,7 +1628,7 @@ function overviewTab() {
 
 // The steps of a move, read from the old wallet: new wallet ready, payment proposed, funds gone.
 function moveState(c) {
-  const to = state.g.movedTo, ss = state.sessions.find((x) => x.move === to && x.status !== "failed");
+  const to = state.g.movedTo, ss = state.sessions.find((x) => x.move === to && !x.error);
   const b = c && c.bal ? balanceNow(c.bal) : null;
   if (!gkeys[to]) return { text: "A signer started moving this wallet to a new one. If you are one of its signers, ask them for its invite link." };
   if (!ready[to]) return { text: groupName(to) + " is still setting up. When its address is ready, move the funds here.", open: to };
@@ -1625,7 +1640,7 @@ function moveState(c) {
 
 function moveCard(c) {
   const m = moveState(c), why = m.propose ? sendBlocker() : null;
-  const started = state.sessions.some((x) => x.move === state.g.movedTo && x.status !== "failed");
+  const started = state.sessions.some((x) => x.move === state.g.movedTo && !x.error);
   return el("section", { class: "card card-pad " + (m.done ? "" : "attention") },
     el("div", { class: "card-head" }, el("h2", {}, m.done ? "This wallet moved" : "Changing signers"),
       m.done ? el("span", { class: "badge plain" }, "Closed") : null),
@@ -2093,6 +2108,13 @@ function nextAction(ss, ins, rc) {
   return [];
 }
 
+const CANCEL_ASK = "Cancel this payment? No signer can approve it after this. Anyone can propose it again.";
+// Until the signatures are combined, any signer can withdraw a payment, for example one that lost
+// an approval. A signature share alone cannot move funds.
+const cancelAction = (ss) => ss.signed || !localSeats().length ? [] : [
+  el("button", { class: "btn lg", type: "button", onclick: act(() => confirm(CANCEL_ASK) && cancelPayment(ss)) }, "Cancel payment"),
+];
+
 // An approval is a published commitment plus nonces kept here. Without the nonces the seat cannot
 // sign, and the payment waits forever: say so instead of stalling.
 function lostApproval(ss) {
@@ -2103,12 +2125,13 @@ function lostApproval(ss) {
   if (!lost.length) return null;
   return el("div", { class: "callout bad" }, "This browser does not hold its approval for this "
     + "payment any more: the browser data that held it was deleted. The payment cannot finish "
-    + "with this approval. Propose it again.");
+    + "with this approval. Cancel it, then propose it again.");
 }
 
 function sessionDrawer(ss) {
   const ins = inspectOf(ss), refused = ins && ins.error, rc = recipientCheck(ss, ins);
-  const actions = nextAction(ss, ins, rc);
+  // A cancelled or failed payment takes no more steps.
+  const actions = ss.error ? [] : [...nextAction(ss, ins, rc), ...cancelAction(ss)];
   return el("aside", { class: "drawer", role: "dialog", "aria-modal": "true", "aria-label": "Payment details" },
     el("div", { class: "drawer-head" }, el("div", { style: "display:flex;align-items:center;gap:10px;min-width:0" }, el("h2", { class: "nowrap", style: "font-size:15px" }, payTitle(ss)), statusChip(ss)),
       closeBtn()),

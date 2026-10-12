@@ -364,7 +364,7 @@ struct MoveCard: View {
 
     var body: some View {
         let m = state()
-        let started = model.state.sessions.contains { $0.doc.str("move") == model.state.movedTo && $0.status != "failed" }
+        let started = model.state.sessions.contains { $0.doc.str("move") == model.state.movedTo && !has($0.doc["error"]) }
         Card(highlight: !m.done) {
             HStack { Text(m.done ? "This wallet moved" : "Changing signers").font(.headline); Spacer(); if m.done { Badge(text: "Closed") } }
             Text(m.text).font(.subheadline).foregroundStyle(Color.mist)
@@ -393,7 +393,7 @@ struct MoveCard: View {
     private func state() -> (text: String, open: String?, session: Session?, propose: Bool, done: Bool) {
         guard let to = model.state.movedTo else { return ("", nil, nil, false, false) }
         let name = model.groupName(to)
-        let ss = model.state.sessions.first { $0.doc.str("move") == to && $0.status != "failed" }
+        let ss = model.state.sessions.first { $0.doc.str("move") == to && !has($0.doc["error"]) }
         let b = model.balanceNow()
         if model.vault.keys[to] == nil {
             return ("A signer started moving this wallet to a new one. If you are one of its signers, ask them for its invite link.", nil, nil, false, false)
@@ -447,6 +447,7 @@ struct ActivityList: View {
 let statusLabels: [String: (String, BadgeKind)] = [
     "collecting": ("Needs approval", .warn), "signing": ("Signing", .info), "signed": ("Ready to prove", .info),
     "proving": ("Building proof", .info), "complete": ("Ready to send", .ok), "broadcast": ("Sent", .ok), "failed": ("Failed", .bad),
+    "cancelled": ("Cancelled", .plain),
 ]
 
 func payTitle(_ ss: Session) -> String {

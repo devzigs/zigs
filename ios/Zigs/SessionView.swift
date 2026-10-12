@@ -269,12 +269,20 @@ struct NextAction: View {
     @Environment(GroupModel.self) private var model
     let ss: Session
     let blocked: Bool
+    @State private var confirmCancel = false
 
     var body: some View {
+        // A cancelled or failed payment takes no more steps.
+        if !has(ss.doc["error"]) { actions }
+    }
+
+    @ViewBuilder private var actions: some View {
         let mine = model.pendingApprovals(ss)
         let approve = !mine.isEmpty && !blocked
         let send = ss.doc.doc("final") != nil && !has(ss.doc["broadcastTxid"])
-        if approve || model.canProve(ss) || send || ss.status == "proving" {
+        let proving = ss.status == "proving" && !model.canProve(ss)
+        let cancel = !has(ss.doc["signed"]) && !model.localSeats.isEmpty
+        if approve || model.canProve(ss) || send || proving || cancel {
             VStack(spacing: 8) {
                 if approve {
                     ForEach(mine, id: \.self) { i in
@@ -285,8 +293,16 @@ struct NextAction: View {
                     Button("Build proof") { model.prove(ss) }.primaryButton()
                 } else if send {
                     Button(has(ss.doc["broadcastError"]) ? "Send again" : "Send to network") { model.broadcast(ss) }.primaryButton()
-                } else {
+                } else if proving {
                     ProgressView("Building the zero-knowledge proof…").font(.subheadline)
+                }
+                if cancel {
+                    Button("Cancel payment", role: .destructive) { confirmCancel = true }
+                        .confirmationDialog("Cancel this payment?", isPresented: $confirmCancel, titleVisibility: .visible) {
+                            Button("Cancel payment", role: .destructive) { model.cancel(ss) }
+                        } message: {
+                            Text("No signer can approve it after this. Anyone can propose it again.")
+                        }
                 }
             }
             .frame(maxWidth: .infinity)

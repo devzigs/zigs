@@ -691,7 +691,7 @@ final class GroupModel {
     func normalized(_ address: String) -> String? { try? Engine.call("normalizeAddress", [address]) }
 
     func pendingApprovals(_ ss: Session) -> [Int] {
-        guard let gid, !has(ss.doc["package"]) else { return [] }
+        guard let gid, !has(ss.doc["package"]), !has(ss.doc["error"]) else { return [] }
         let commits = state.commits[ss.id] ?? [:]
         return localSeats.filter {
             has(vault.sec(gid, $0)["keyPackage"]) && has(state.verify["\($0)"]?["ok"]) && commits["\($0)"] == nil
@@ -710,6 +710,7 @@ final class GroupModel {
         guard let gid, let fvk = state.wallet?.str("orchard_fvk") else { return }
         once("approve:\(ss.id):\(i)") {
             let s = self.vault.sec(gid, i)
+            guard !has(ss.doc["error"]) else { throw ZigsError("This payment was cancelled or failed, so it was not approved.") }
             guard has(self.state.verify["\(i)"]?["ok"]) else {
                 throw ZigsError("Seat \(i) has not checked this wallet against its key share, so it did not approve.")
             }
@@ -726,6 +727,22 @@ final class GroupModel {
             try await self.put("groups/\(gid)/sessions/\(ss.id)/commits/\(i)",
                                ["commitments": r["commitments"] ?? NSNull(), "at": now()])
             self.note("seat \(i): approved the payment")
+        }
+    }
+
+    /// Until the signatures are combined, any signer can withdraw a payment, for example one that
+    /// lost an approval. A signature share alone cannot move funds.
+    func cancel(_ ss: Session) {
+        guard let gid, !has(ss.doc["signed"]), !has(ss.doc["error"]) else { return }
+        once("cancel:\(ss.id)") {
+            let name = self.localSeats.first.flatMap { self.state.seats["\($0)"]?.str("name") } ?? ""
+            let who = name.isEmpty ? "a signer" : name
+            try await self.patch("groups/\(gid)/sessions/\(ss.id)", ["status": "cancelled", "error": "Cancelled by \(who)."])
+            for i in self.localSeats {
+                var nonces = self.vault.sec(gid, i).doc("nonces") ?? [:]
+                if nonces.removeValue(forKey: ss.id) != nil { self.vault.putSec(gid, i, ["nonces": nonces]) }
+            }
+            self.notice = "Payment cancelled."
         }
     }
 
