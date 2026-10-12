@@ -8,6 +8,7 @@ the wallet, and on chain each payment looks like a shielded payment from a stand
 - iPhone and Mac apps: in [`ios/`](ios). They use the same Rust engine. Build them from source in Xcode.
 - Website: https://zigs.app
 - How it works, end to end: [PROTOCOL.md](PROTOCOL.md)
+- Messages (design, not built yet): [CHAT.md](CHAT.md)
 
 Zigs uses re-randomized FROST threshold signatures ([ZIP 312](https://zips.z.cash/zip-0312)) on
 the Ironwood shielded pool. It is a **beta** and **not audited**. Testnet wallets use free test
