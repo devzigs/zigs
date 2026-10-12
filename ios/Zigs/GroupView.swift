@@ -121,7 +121,7 @@ struct SetupView: View {
             if model.localSeats.isEmpty, let first = open.first {
                 Card(highlight: true) {
                     Text("Join \(st.name)").font(.title3.weight(.semibold))
-                    Text("Take a seat to become a signer. Your \(deviceName) creates its own key share, and the share never leaves this device.")
+                    Text("Zigs is a shared wallet for shielded Zcash. Any \(st.t) of the \(st.n) signers approve each payment. Take a seat to become a signer. Your \(deviceName) creates its own key share, and the share never leaves this device. Keep Zigs open until the wallet is ready.")
                         .font(.subheadline).foregroundStyle(Color.mist)
                     Button("Take seat \(first)") { model.takeSeat(first) }.primaryButton()
                 }
@@ -156,9 +156,20 @@ struct SetupView: View {
 }
 
 struct InviteCard: View {
+    @Environment(GroupModel.self) private var model
     let link: String
     let open: Int
     @State private var showQR = false
+
+    /// The message carries the link, so it is as secret as the link.
+    private var message: String {
+        let st = model.state
+        return "I made a shared wallet \"\(st.name)\" on Zigs, a private shared wallet for shielded Zcash. "
+            + "You are one of \(st.n) signers, and \(st.t) must approve each payment.\n\n"
+            + "1. Open this link on your phone or computer: \(link)\n2. Take a seat.\n"
+            + "3. Keep the page open until the wallet is ready.\n\n"
+            + "This link is a secret. Do not post it in a public place. About Zigs: https://zigs.app"
+    }
 
     var body: some View {
         Card(highlight: true) {
@@ -167,7 +178,7 @@ struct InviteCard: View {
                 .font(.subheadline).foregroundStyle(Color.mist)
             Text(link).font(.caption.monospaced()).lineLimit(2).truncationMode(.middle)
             HStack {
-                ShareLink(item: link) { Label("Share", systemImage: "square.and.arrow.up") }.primaryButton()
+                ShareLink(item: message) { Label("Share", systemImage: "square.and.arrow.up") }.primaryButton()
                 CopyButton(text: link, label: "Copy link").buttonStyle(.bordered).controlSize(.large)
             }
             DisclosureGroup("Show QR code", isExpanded: $showQR) {
@@ -187,18 +198,23 @@ struct ProgressCard: View {
         let mismatch = st.allDone && !st.keysAgree
         let keyText = mismatch ? "Signers computed different keys. Create a new wallet."
             : d == n ? "Each signer holds one piece. The full key never existed."
-            : r1 == n ? "Devices are exchanging encrypted shares (\(r2) of \(n * (n - 1)))…"
-            : st.allSeated ? "Devices are publishing their commitments (\(r1) of \(n))…" : "Starts when every seat is taken."
+            : r1 == n ? "Devices are sharing encrypted parts of the key (\(r2) of \(n * (n - 1)))…"
+            : st.allSeated ? "Each device is preparing its part of the key (\(r1) of \(n))…" : "Starts when every seat is taken."
         let rejected = st.rejectedSeats
         let addrText = !rejected.isEmpty ? "Seat \(rejected.map(String.init).joined(separator: ", ")) rejected the address. Do not use this wallet."
             : st.wallet == nil ? (d == n ? "Building the shared address…" : "Comes after the key.")
-            : "\(ver) of \(n) signers checked that the address belongs to the wallet's key."
+            : "\(ver) of \(n) signers checked the address against their own key share."
+                + (ver < n ? " Send funds only after all \(n) checked." : "")
         Card {
             Text("Setting up your wallet").font(.headline)
             Step(state: st.allSeated ? .done : .now, no: 1, title: "Signers join", text: "\(st.seatedCount) of \(n) seats taken.")
             Step(state: mismatch ? .bad : d == n ? .done : st.allSeated ? .now : .later, no: 2, title: "Create the key together", text: keyText)
             Step(state: !rejected.isEmpty ? .bad : st.wallet != nil && ver == n ? .done : d == n ? .now : .later, no: 3,
                  title: "Check the address", text: addrText)
+            if st.wallet == nil || ver < n {
+                Text("Every signer must keep Zigs open until setup finishes. It takes about a minute when all signers are online.")
+                    .font(.caption).foregroundStyle(Color.mist)
+            }
         }
     }
 }
@@ -627,9 +643,9 @@ struct DetailsTab: View {
                 }
                 Detail(label: "Approval rule") { Text("Any \(st.t) of \(st.n) signers") }
                 Detail(label: "Checked by") { Text("\(st.verifiedCount) of \(st.n) signers") }
-                Detail(label: "Network") { Text("Zcash \(st.net.label.lowercased())" + (st.net.cap.map { " · limit \(capText($0))" } ?? "")) }
+                Detail(label: "Network") { Text("Zcash \(st.net.label.lowercased())" + (st.net.cap.map { " · warning at \(capText($0))" } ?? "")) }
                 Detail(label: "Created at block") { Text((w.int("birthday") ?? 0).formatted()).monospacedDigit() }
-                Detail(label: "Group key") { Text(w.str("group_verifying_key") ?? "").font(.caption.monospaced()).textSelection(.enabled) }
+                Detail(label: "Wallet key") { Text(w.str("group_verifying_key") ?? "").font(.caption.monospaced()).textSelection(.enabled) }
             }
             Card {
                 Text("Privacy and keys").font(.headline)
@@ -655,7 +671,7 @@ struct CapNote: View {
     @Environment(GroupModel.self) private var model
 
     var body: some View {
-        Text("This wallet holds the \(capText(model.state.net.cap ?? 0)) limit for unaudited mainnet wallets. Do not send more to it. Payments out still work.")
+        Text("This wallet has reached the \(capText(model.state.net.cap ?? 0)) warning level for unaudited mainnet wallets. Do not send more to it. Payments out still work.")
             .font(.subheadline).foregroundStyle(Color.bad)
     }
 }
@@ -839,7 +855,7 @@ struct RecipientRow: View {
             }
             if !to.isEmpty {
                 let ok = model.onNetwork(to)
-                Text(ok ? "Valid \(net.label.lowercased()) address" : "Not a \(net.label.lowercased()) unified address with an Orchard receiver")
+                Text(ok ? "Valid \(net.label.lowercased()) address" : "Not a shielded Zcash \(net.label.lowercased()) address. It starts with \(net.prefix).")
                     .font(.caption).foregroundStyle(ok ? Color.good : Color.bad)
                 if ok {
                     Text(grouped(to)).font(.caption.monospaced()).foregroundStyle(Color.mist).textSelection(.enabled)

@@ -174,8 +174,8 @@ struct Welcome: View {
 
     private let steps = [
         ("Pick a rule", "For example, any 2 of 3 signers must approve each payment."),
-        ("Invite your signers", "Send one private link. Each device creates its own piece of the key."),
-        ("Approve together", "A payment goes out only after enough signers approve. On chain it looks like any private payment."),
+        ("Invite your signers", "Send one private invite link. Each device creates its own key share."),
+        ("Approve together", "A payment goes out only after enough signers approve. On chain it looks like a shielded payment from a standard wallet."),
     ]
 }
 
@@ -227,7 +227,7 @@ struct JoinSheet: View {
         NavigationStack {
             Form {
                 Section("Your name") {
-                    TextField("Shown to your signers", text: $model.name)
+                    TextField("Any nickname · shown to your signers", text: $model.name)
                 }
                 Section {
                     TextField("https://…/#wallet.key", text: $link)
@@ -276,7 +276,7 @@ struct CreateSheet: View {
                     }
                     .font(.subheadline)
                 }
-                Section("Your name") { TextField("Shown to your signers", text: $model.name) }
+                Section("Your name") { TextField("Any nickname · shown to your signers", text: $model.name) }
                 Section(from == nil ? "Wallet name" : "New wallet name") {
                     TextField(from?.name ?? "Team treasury", text: $walletName)
                 }
@@ -351,7 +351,7 @@ struct SettingsSheet: View {
         NavigationStack {
             Form {
                 Section("Your name") {
-                    TextField("Shown to your signers", text: $model.name)
+                    TextField("Any nickname · shown to your signers", text: $model.name)
                 }
                 // The ad-hoc signed Mac build cannot use Keychain access control.
                 #if os(iOS)

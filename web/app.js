@@ -282,7 +282,7 @@ async function boot() {
   if (db) sdb = wrapStore(db);
   if (user) { me = await user.id(); canWrite = await user.can("data.write"); }
   if (!db) {
-    showBanner("bad", "The Zigs server is not available. Reload the page, or try again later.");
+    showBanner("bad", "The group server is not available. Reload the page, or try again later.");
     return;
   }
   if (!me) showBanner("bad", "This browser cannot tell who you are, so you cannot take a seat.");
@@ -297,7 +297,7 @@ async function boot() {
     watchInbox();
     if (state.gid && !state.g) openGroup(state.gid);
     render();
-  }, (e) => showBanner("bad", "Lost connection to the Zigs server (" + e.code + "). Reload."));
+  }, (e) => showBanner("bad", "Lost connection to the group server (" + e.code + "). Reload."));
   const h = location.hash.replace("#", "");
   if (h && !gkeys[h]) showBanner("bad", MISSING_SECRET);
   else if (h) openGroup(h);
@@ -1227,7 +1227,7 @@ function lockButton() {
 
 function loadingView() {
   return el("div", { class: "card empty" }, el("span", { class: "dot busy" }),
-    el("h3", {}, Z ? "Connecting to the Zigs server" : "Loading the crypto engine"),
+    el("h3", {}, Z ? "Connecting to the group server" : "Loading the crypto engine"),
     el("p", { class: "small" }, "Your wallets appear in a moment."));
 }
 
@@ -1311,7 +1311,7 @@ function nameField(id) {
   let saved = ""; try { saved = localStorage.getItem("zf-name") || ""; } catch {}
   const save = (ev) => { try { localStorage.setItem("zf-name", ev.target.value.trim()); } catch {} };
   return el("label", { class: "field" }, el("span", {}, "Your name"),
-    el("input", { class: "input", id, value: saved, maxlength: "40", autocomplete: "nickname", placeholder: "Shown to your signers", oninput: save }));
+    el("input", { class: "input", id, value: saved, maxlength: "40", autocomplete: "nickname", placeholder: "Any nickname · shown to your signers", oninput: save }));
 }
 
 // With `from`, the dialog creates the wallet that replaces `from`, with new signers or a new rule.
@@ -1492,17 +1492,26 @@ function joinCard(seat) {
   }, "Take seat " + seat);
   return el("section", { class: "card card-pad hero-card" },
     el("div", { style: "display:grid;gap:4px" }, el("h2", {}, "Join " + state.g.name),
-      el("p", { class: "small muted" }, "Take a seat to become a signer. Your device creates its "
-        + "own key share. It never leaves this browser unless you save a backup.")),
+      el("p", { class: "small muted" }, "Zigs is a shared wallet for shielded Zcash. Any "
+        + state.g.t + " of the " + state.g.n + " signers approve each payment. Take a seat to "
+        + "become a signer. Your device creates its own key share. It never leaves this browser "
+        + "unless you save a backup. Keep this page open until the wallet is ready.")),
     nameField("seat-name"),
     el("div", {}, take));
 }
 
+// The message carries the link, so it is as secret as the link.
+const inviteMessage = (link) => "I made a shared wallet \"" + state.g.name + "\" on Zigs, a "
+  + "private shared wallet for shielded Zcash. You are one of " + state.g.n + " signers, and "
+  + state.g.t + " must approve each payment.\n\n1. Open this link on your phone or computer: "
+  + link + "\n2. Take a seat.\n3. Keep the page open until the wallet is ready.\n\nThis link is "
+  + "a secret. Do not post it in a public place. About Zigs: https://zigs.app";
+
 function inviteCard(openCount) {
-  const link = inviteLink(state.gid);
+  const link = inviteLink(state.gid), message = inviteMessage(link);
   const share = navigator.share ? el("button", {
     class: "btn sm", type: "button",
-    onclick: () => navigator.share({ title: "Join " + state.g.name + " on Zigs", url: link })
+    onclick: () => navigator.share({ title: "Join " + state.g.name + " on Zigs", text: message })
       .catch(() => {}),
   }, "Share") : null;
   return el("section", { class: "card card-pad hero-card" },
@@ -1512,7 +1521,8 @@ function inviteCard(openCount) {
     el("p", { class: "small muted" }, "Send this invite link to each signer through a private "
       + "channel. It contains the wallet secret: anyone who has it can take an open seat."),
     el("div", { class: "addr-box" }, el("span", { class: "hex nowrap" }, link),
-      copyBtn(link, "Copy link", "btn sm primary"), share),
+      copyBtn(link, "Copy link", "btn sm primary"), copyBtn(message, "Copy invite message", "btn sm"),
+      share),
     secretQr(link));
 }
 
@@ -1538,9 +1548,9 @@ function keyStep(c) {
   if (!allSeated()) return ["", "Starts when every seat is taken."];
   if (c.r2 === c.pairs) return ["now", "Each device is computing its piece of the key…"];
   if (c.r1 === c.n) {
-    return ["now", "Devices are exchanging encrypted shares (" + c.r2 + " of " + c.pairs + ")…"];
+    return ["now", "Devices are sharing encrypted parts of the key (" + c.r2 + " of " + c.pairs + ")…"];
   }
-  return ["now", "Devices are publishing their commitments (" + c.r1 + " of " + c.n + ")…"];
+  return ["now", "Each device is preparing its part of the key (" + c.r1 + " of " + c.n + ")…"];
 }
 
 function addrStage(c) {
@@ -1557,9 +1567,10 @@ function addrStep(c) {
     return [stage, "Seat " + seats + " rejected the address. Do not use this wallet."];
   }
   if (!c.w) return [stage, c.d === c.n ? "Building the shared address…" : "Comes after the key."];
-  if (!c.w.birthday) return [stage, "This wallet predates testnet support. Create a new one."];
+  if (!c.w.birthday) return [stage, "An older version of Zigs made this wallet. Create a new wallet."];
   const checked = c.ver + " of " + c.n;
-  return [stage, checked + " signers checked that the address belongs to the wallet key."];
+  const wait = c.ver < c.n ? " Send funds only after all " + c.n + " checked." : "";
+  return [stage, checked + " signers checked the address against their own key share." + wait];
 }
 
 // One third each for seats, key ceremony and address checks.
@@ -1586,6 +1597,8 @@ function progressCard() {
         c.seated + " of " + c.n + " seats taken."),
       setupStep(keyStage, 2, "Create the key together", keyText),
       setupStep(addrStage, 3, "Check the address", addrText)),
+    addrStage === "done" ? null : el("p", { class: "small muted" }, "Every signer must keep Zigs "
+      + "open until setup finishes. It takes about a minute when all signers are online."),
     activityLog());
 }
 
@@ -1868,7 +1881,7 @@ function privacyCard() {
   return el("section", { class: "card card-pad" },
     el("h2", { style: "font-size:15px" }, "Privacy and keys"),
     el("p", { class: "small muted" }, "Your key share is created and used in this browser. "
-      + "It leaves this browser only if you save a backup. The Zigs server stores encrypted "
+      + "It leaves this browser only if you save a backup. The group server stores encrypted "
       + "data it cannot read. This page downloads blocks from " + host
       + ", which sees your IP address but never a key. The wallet syncs again on every load."),
     el("details", {}, el("summary", {}, "Viewing key"),
@@ -1927,7 +1940,8 @@ function receiveDialog() {
 // ── Send ──
 function addressHint(hint, to) {
   const v = to.trim(), ok = v ? onNetwork(v) : null, net = curNet().label.toLowerCase();
-  hint.textContent = !v ? "" : ok ? "Valid " + net + " address" : "Not a " + net + " unified address with an Orchard receiver";
+  hint.textContent = !v ? "" : ok ? "Valid " + net + " address"
+    : "Not a shielded Zcash " + net + " address. It starts with " + curNet().prefix + ".";
   hint.className = "hint " + (!v ? "" : ok ? "ok" : "bad");
 }
 
@@ -1958,7 +1972,7 @@ function readPayees(rows) {
   const net = curNet(), own = normalized(state.wallet.address);
   return rows.map((r, i) => {
     const to = r.to.trim(), amount = toZat(r.amt), who = rows.length > 1 ? "Recipient " + (i + 1) + ": " : "";
-    if (!onNetwork(to)) throw new Error(who + "Enter a " + net.label.toLowerCase() + " unified address with an Orchard receiver (it starts with " + net.prefix + ").");
+    if (!onNetwork(to)) throw new Error(who + "Enter a shielded Zcash " + net.label.toLowerCase() + " address. It starts with " + net.prefix + ".");
     if (normalized(to) === own) throw new Error(who + "This is the address of this wallet. Enter the address of someone else.");
     if (!amount) throw new Error(who + "Enter an amount greater than zero, with at most 8 decimals.");
     return { to, amount };
@@ -2144,7 +2158,8 @@ function sessionDrawer(ss) {
       guard(timeline, ss, refused),
       ss.final ? guard(txDetails, ss) : null,
       ss.broadcastTxid ? chainSees() : null,
-      ins && !refused ? el("p", { class: "small faint" }, "Signed message " + short(ins.sighash, 12) + " · " + ins.tx_version) : null),
+      ins && !refused ? el("details", { class: "small faint" }, el("summary", {}, "Technical details"),
+        el("p", {}, "Signed message " + short(ins.sighash, 12) + " · " + ins.tx_version)) : null),
     actions.length ? el("div", { class: "drawer-foot" }, ...actions) : null);
 }
 
@@ -2196,7 +2211,7 @@ function breakdown(ins) {
       row("Network fee", t.fee, "neg"),
       el("div", { class: "total" }, el("span", {}, "Leaves the wallet"),
         el("span", { class: "mono" }, zecText(t.leaves))),
-      el("div", { class: "group" }, "Notes used"),
+      el("div", { class: "group" }, "Funds used"),
       spent.map((l) => row("Spent from this wallet", l.value, "neg")),
       ins.lines.filter(own).map((l) => row("Change back to this wallet", l.value, "neg"))),
     el("p", { class: "small faint" }, "Your browser decoded this from the transaction itself, "

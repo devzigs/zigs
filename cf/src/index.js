@@ -50,9 +50,20 @@ async function groupSocket(req, env, url) {
 
 export default {
   async fetch(req, env) {
+    // Redirect before the password prompt, so a password never travels over plain http.
+    // The scheme comes from the edge headers: local dev also sees http URLs.
+    const http = (req.headers.get("cf-visitor") || "").includes('"http"')
+      || req.headers.get("x-forwarded-proto") === "http";
+    if (http) {
+      const to = new URL(req.url);
+      to.protocol = "https:";
+      return Response.redirect(to.toString(), 301);
+    }
     if (env.DEV_NO_AUTH !== "1" && !authorized(req, env)) {
-      return new Response("Password required", {
-        status: 401, headers: { "WWW-Authenticate": 'Basic realm="Zigs", charset="UTF-8"' },
+      const text = "Zigs is not open yet. This preview needs a password.\n"
+        + "Read about Zigs and get early access at https://zigs.app\n";
+      return new Response(text, {
+        status: 401, headers: { "WWW-Authenticate": 'Basic realm="Zigs preview", charset="UTF-8"' },
       });
     }
     const url = new URL(req.url);

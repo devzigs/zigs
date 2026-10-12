@@ -5,7 +5,7 @@ its *n* signers must approve each payment. Nobody ever holds the whole key, the 
 the wallet, and on chain each payment looks like a shielded payment from a standard wallet.
 
 - Web app: https://app.zigs.app (no install, no account; password protected until launch)
-- iPhone and Mac apps: in [`ios/`](ios), built from the same code
+- iPhone and Mac apps: in [`ios/`](ios). They use the same Rust engine. Build them from source in Xcode.
 - Website: https://zigs.app
 - How it works, end to end: [PROTOCOL.md](PROTOCOL.md)
 
@@ -41,7 +41,7 @@ To see signer changes, open **Signers**, then **Change signers**. To see the pri
 
 | Criterion | Evidence |
 |---|---|
-| **Privacy** | On chain, the transaction shape matches the standard wallet library: same builder, padding, fee, expiry and anchor depth ([comparison](PRIVACY.md#on-chain)). The server stores only encrypted values, padded so that even their length hides amounts. On the device, key shares can be locked with a passkey (web) or Face ID (iPhone) ([how](PRIVACY.md#lock-with-a-passkey-or-face-id)). The page can connect only to the group server and three named light-wallet servers (Content-Security-Policy). It is prepared for Tor Browser, but not yet tested end to end ([how](PRIVACY.md#use-zigs-over-tor)). The server keeps no logs. Every remaining leak is listed in [PRIVACY.md](PRIVACY.md). |
+| **Privacy** | On chain, the transaction shape matches the standard wallet library: same builder, padding, fee, expiry and anchor depth ([comparison](PRIVACY.md#on-chain)). The server stores only encrypted values, padded so that even their length hides amounts. On the device, key shares can be locked with a passkey (web) or Face ID (iPhone) ([how](PRIVACY.md#lock-with-a-passkey-or-face-id)). The page can connect only to the group server and three named light-wallet servers (Content-Security-Policy). It is prepared for Tor Browser, but not yet tested end to end ([how](PRIVACY.md#use-zigs-over-tor)). The Zigs server code keeps no logs; its host, Cloudflare, can see connection data. Every remaining leak is listed in [PRIVACY.md](PRIVACY.md). |
 | **Usefulness** | Designed for team treasuries, DAOs and families. Usable today on testnet, and on mainnet with a warning at 0.5 ZEC: web, iPhone and Mac; invite links and QR codes; batch payments for payroll and grants (up to 20 recipients, one approval round, pasted from a spreadsheet); signer changes. |
 | **Execution** | The live app works end to end. Twelve testnet transactions made by the apps are [listed below](#proof-on-testnet). The engine has 24 tests, and a command-line suite runs adversarial cases. |
 | **Originality** | An end-user app for re-randomized FROST: no command line, no trusted dealer, and no server that can read the wallet. Each device decodes the PCZT and checks every output before it approves, and binds its approval to the transaction's sighash. Signer changes, batch payments and native iPhone and Mac apps are included. Built during the Zecathon window: the first commit is from October 10, 2026. |

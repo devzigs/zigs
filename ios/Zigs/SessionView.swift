@@ -187,11 +187,11 @@ struct Breakdown: View {
                 Line(label: "To \(short(l.str("who") ?? "", 10))", zat: l.int("value") ?? 0)
             }
             Line(label: "Network fee", zat: networkFee(ins), muted: true)
-            SectionLabel(text: "Notes used")
+            SectionLabel(text: "Funds used")
             ForEach(Array(lines.filter(isNote).sorted { $0.str("kind") == "spend" && $1.str("kind") != "spend" }.enumerated()),
                     id: \.offset) { _, l in
                 let spend = l.str("kind") == "spend"
-                Line(label: spend ? "Note spent" : "Change back to this wallet", zat: l.int("value") ?? 0, muted: true)
+                Line(label: spend ? "Spent from this wallet" : "Change back to this wallet", zat: l.int("value") ?? 0, muted: true)
             }
             Text("This \(deviceName) decoded this from the transaction itself, not from the proposer's description.")
                 .font(.caption).foregroundStyle(Color.mist)
@@ -247,7 +247,7 @@ struct Timeline: View {
             Step(state: commits.count >= st.t ? .done : .now, no: 2, title: "Approvals · \(min(commits.count, st.t)) of \(st.t) needed",
                  text: st.seatIds.map { model.seatLabel($0) + (commits["\($0)"] != nil ? " ✓" : "") }.joined(separator: " · "))
             Step(state: has(ss.doc["error"]) ? .bad : has(ss.doc["signed"]) ? .done : signers.isEmpty ? .later : .now, no: 3,
-                 title: "Group signature",
+                 title: "Combined signature",
                  text: ss.doc.str("error") ?? (has(ss.doc["signed"]) ? "All signatures combined and verified."
                      : signers.isEmpty ? "Starts after \(st.t) approvals." : "Signing · \(signers.filter { shares["\($0)"] != nil }.count) of \(signers.count) shares"))
             Step(state: ss.doc.doc("final") != nil ? .done : proving ? .now : .later, no: 4, title: "Proof",
