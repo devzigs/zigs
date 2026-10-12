@@ -9,7 +9,8 @@ the wallet, and on chain each payment looks like a shielded payment from a stand
 - Website: https://zigs.app
 - How it works, end to end: [PROTOCOL.md](PROTOCOL.md)
 - Messages: each wallet has a private room for its signers, with a discussion thread on every
-  payment. Later phases are in [CHAT.md](CHAT.md).
+  payment. Two Zigs users can also chat directly through a contact link. Later phases are in
+  [CHAT.md](CHAT.md).
 
 Zigs uses re-randomized FROST threshold signatures ([ZIP 312](https://zips.z.cash/zip-0312)) on
 the Ironwood shielded pool. It is a **beta** and **not audited**. Testnet wallets use free test
@@ -284,7 +285,8 @@ Use the `Zigs` scheme for iPhone and `ZigsMac` for Mac (Apple silicon). The apps
 - `node web/test/payees.mjs`: the pasted payment list parser.
 - `node web/test/vault.mjs`: the passkey lock's sealed record (wrong key, changed record, new IV).
 - `node web/test/util.mjs`: address grouping, number checks and the key package comparison.
-- `node web/test/chat.mjs`: message signatures, room and key pinning, text limits and unread counts.
+- `node web/test/chat.mjs`: message signatures (wallet and direct chat), room, key and member
+  pinning, saved chats, text limits and unread counts.
 - `node web/test/qr.mjs`: the QR encoder against libqrencode (needs the `qrencode` command).
 - `bash tests/e2e.sh`: the command-line ceremony in separate processes, with attacks: wallet
   substitution, fewer than t signers, tampered randomizer and sighash, nonce reuse, wrong share

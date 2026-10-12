@@ -1,8 +1,8 @@
 # Messages in Zigs: design
 
-Status: phase 1 (wallet room and payment threads) is built in the web app. Phases 2 to 6 are
-design only. The iPhone app follows. This document records the decisions taken on 12 October 2026
-and the order of the work.
+Status: phases 1 (wallet room and payment threads) and 2 (direct chats between Zigs users) are
+built in the web app. Phases 3 to 6 are design only. The iPhone app follows. This document
+records the decisions taken on 12 October 2026 and the order of the work.
 
 Zigs is a shared wallet, so its messages exist to explain, request and approve money. A
 messenger such as Signal does none of that. Messages here are tied to wallets, payments
@@ -55,9 +55,12 @@ flowchart LR
 
 ### 2.3 Direct chat
 
-- **Between Zigs users (demo path).** A chat is a new store namespace with its own random id and
-  secret. One person shares a contact link, like an invite link: `#c.<chat id>.<secret>`. The
-  other person opens it, and both write sealed messages there.
+- **Between Zigs users (demo path, built).** A chat is a new store namespace with its own random
+  id and secret. One person shares a contact link, like an invite link: `#c.<chat id>.<secret>`.
+  The other person opens it, enters a name and clicks "Join chat". Opening the link alone joins
+  nothing, so a link scanner cannot take the second place. Both then write sealed messages there.
+  A chat holds two members. The chat is saved in the browser only, and it has no wallet document,
+  so it never lists as a wallet.
 - **To any Zcash user (later).** Messages go as memos from the personal account to the
   contact's shielded address. No server is involved, and the recipient can be offline.
 - **Payment requests.** A contact sends a request (ZIP 321 URI, one or more recipients). The user
@@ -88,8 +91,8 @@ therefore proves nothing.
 - Each message carries a signature over its room id, message id, thread, time and text.
 - Each device pins the first signing key it sees for a seat. A later change shows a warning on
   that seat, and its messages show as unverified.
-- In a direct chat, each person signs with a personal key and shares its public key in the
-  contact link exchange.
+- In a direct chat, each person signs with one personal key per browser. The public key is a
+  field of the member document. Each device pins the first two member ids and their first keys.
 - Seats created before this change get a signing key the next time their device opens the
   wallet.
 
@@ -118,16 +121,18 @@ PRIVACY.md gets these rows when each phase ships.
 ## 7. Notifications (web)
 
 - No push service. Messages arrive while the page is open.
-- Unread counts on wallets and in the page title.
+- Unread counts on wallets, on chats and in the page title.
 - Optional browser notifications while a tab is open, with no message text: "New message in
-  Treasury".
+  Treasury" for a wallet. For a chat the title is "New message from <name>" only when every new
+  message comes from the pinned contact. Otherwise it is "New message in a chat". The check of the
+  signature is asynchronous, so a notification claims no more than the pin.
 
 ## 8. Phases
 
 | Phase | Status | Scope | Main work |
 |---|---|---|---|
 | 1 | Built (web) | Wallet room and payment threads | Room namespace, signing keys, Messages tab, payment events in the timeline |
-| 2 | Design | Direct chat between Zigs users | Contact links, chat namespace, personal signing key |
+| 2 | Built (web) | Direct chat between Zigs users | Contact links, chat namespace, personal signing key |
 | 3 | Design | Memos on payments, wallet inbox | Engine writes memos, full transaction fetch, reorg handling (`wasm/src/chain.rs:75`) |
 | 4 | Design | Payment requests | ZIP 321 parsing, **Propose this** |
 | 5 | Design | Personal account, on-chain direct messages | New key type, fee funding, multi-memo messages |
@@ -144,3 +149,9 @@ The iPhone app follows the web app phase by phase.
 - Tor Browser and private windows delete local data when they close, and room history then
   downloads again from the group server. Direct chats on chain need the personal account backup.
 - A device that holds a seat can sign messages as that seat. A stolen device is a stolen seat.
+- The contact link is the chat secret. Anyone who has it can read the chat and write in it, also
+  after both people joined. A third writer shows as "Unknown sender", but a silent reader is not
+  seen. Share the link through a private channel only.
+- A direct chat lives in one browser. A browser that forgets it cannot join again, because a chat
+  holds two people. "Leave chat" removes it from the browser only; the sealed messages stay on the
+  group server.

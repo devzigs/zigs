@@ -408,3 +408,47 @@ Phase 1 of [CHAT.md](CHAT.md). The web app has it. The iPhone and Mac apps do no
   carries no message text.
 - **Limits.** A device downloads the whole room when it connects, and a room holds about 5,000 to
   10,000 messages (10 MB). Times come from the sender's clock. Messages are not forward secret.
+
+### Direct chats
+
+Phase 2 of [CHAT.md](CHAT.md). The web app has it. The group server is the transport for now, so it
+learns that two member ids talk to each other.
+
+- **Chat.** A store namespace with a random id (20 hex characters) and secret (32 bytes). No
+  document `groups/<chat id>` exists, so a chat is never a wallet. The contact link is
+  `<app URL>#c.<chat id>.<secret>`. The app keeps the chat in the browser only (`zf-chats`, or the
+  sealed record when the passkey lock is on). A backup file does not hold it. The secret opens
+  every document of the namespace, so anyone who has the link can read the chat and write in it at
+  any time, also after two people joined.
+- **Member.** `groups/<chat id>/members/<member id>` with the sealed fields `name`, `signPk` and
+  `at`. The member id is random (20 hex characters). `signPk` is the public key of the personal
+  Ed25519 key of that browser, in the same format as a seat key. The app saves the chat and the
+  key in the browser first, and then writes the member document. A failed save leaves nothing on
+  the server. The person who made the chat writes the first member document. A page that only
+  loads the link joins nothing. The person enters a name and clicks "Join chat". Then the app
+  takes a lease on `groups/<chat id>/meta/join` and reads the members. The checks run in this
+  order:
+  1. Two or more members: "This chat already has two people. Ask for a new contact link." This
+     holds also when someone else has the lease.
+  2. The lease is held by someone else: "Someone else is joining this chat. Try again in a moment."
+  3. No member: "This contact link does not open a chat. Ask for a new one."
+
+  Only a chat with exactly one member and a free lease can be joined. After a failure the link
+  stays in the page, so the person can try again.
+- **Message.** `groups/<chat id>/messages/<message id>` with the sealed fields `from` (a member
+  id), `text`, `at` and `sig`. `text` has the same limits as in a room.
+- **Signature.** `sig` is the base64 Ed25519 signature over the UTF-8 bytes of
+  `JSON.stringify(["zigs-dm-v1", chat id, message id, from, at, text])`.
+  [`web/test/chat.mjs`](web/test/chat.mjs) holds a fixed text, public key and signature. A wallet
+  message signature never verifies as a direct message, and the reverse, because the tags differ.
+- **Pinning.** Each device pins the first two member ids it sees in a chat, and the first `signPk`
+  for each. A message from another member id shows "Unknown sender. Not verified." A message from
+  a member whose `signPk` differs from the pin shows "Key changed. Not verified." The chat also
+  shows a warning. The app never hides these messages.
+- **Unread and notifications.** The same as in a room, with the read mark `<chat id>:dm`. The
+  first visit leaves a mark even when the chat is empty. A message from an unknown sender counts
+  as unread, so it is not hidden. A notification carries no message text. It says "New message
+  from <name>" only when every new message comes from the pinned contact. Otherwise it says
+  "New message in a chat".
+- **Leaving.** "Leave chat" removes the chat from the browser. The documents stay on the group
+  server.

@@ -4,8 +4,9 @@ import { parsePayeeList, toZat, zatText } from "/payees.js";
 import { createPasskey, unlockKey, seal, open as openVault, parseVault } from "/vault.js";
 import { chunks, finite, fmtInt, samePackages } from "/util.js";
 import {
-  byTime, canSign, checkText, countUnread, keyState, newRoom, newSignKey, parseMsg, pickRoom, pin,
-  signMsg, signedText, validPk, validRoom, verifyMsg,
+  byTime, canSign, chatWarning, checkText, countUnread, dmText, joinBlock, keyState, newRoom,
+  newSignKey, normChats, parseDm, parseHash, parseMsg, pickRoom, pin, pinMember, pinnedMembers,
+  signMsg, signedText, validId, validPk, validRoom, verifyMsg,
 } from "/chat.js";
 // ───────────────────────── Engine (WASM) ─────────────────────────
 let Z = null, engineSettled = false;   // settled: the engine loaded or failed
@@ -68,6 +69,7 @@ function readPlain(name) {
   catch { storageOk = false; return name === "zf-secrets" ? mem : {}; }
 }
 let secrets = lockedVault ? {} : readPlain("zf-secrets");
+let chats = normChats(lockedVault ? null : readPlain("zf-chats"));
 let vaultWrite = Promise.resolve(true);
 const LOCKED_ELSEWHERE = "Zigs was locked in another tab, so this tab cannot save. "
   + "Close it and continue in the locked tab.";
@@ -80,13 +82,14 @@ function persistPlain() {
     if (localStorage.getItem("zf-vault")) { showBanner("bad", LOCKED_ELSEWHERE); return false; }
     localStorage.setItem("zf-secrets", S(secrets));
     localStorage.setItem("zf-keys", S(gkeys));
+    localStorage.setItem("zf-chats", S(chats));
     return true;
   } catch { storageOk = false; return false; }
 }
 
 async function persistSealed() {
   try {
-    const rec = await seal(vault.key, vault.rec, { secrets, keys: gkeys });
+    const rec = await seal(vault.key, vault.rec, { secrets, keys: gkeys, chats });
     localStorage.setItem("zf-vault", S(rec));
     return true;
   } catch (e) {
@@ -112,6 +115,7 @@ async function lockWithPasskey() {
   // Another tab may have saved newer secrets: seal what storage holds now.
   secrets = readPlain("zf-secrets");
   gkeys = readPlain("zf-keys");
+  chats = normChats(readPlain("zf-chats"));
   vault = made;
   const back = (await persist()) && parseVault(localStorage.getItem("zf-vault"));
   // The sealed copy must open before the plain copy goes.
@@ -123,6 +127,7 @@ async function lockWithPasskey() {
   }
   localStorage.removeItem("zf-secrets");
   localStorage.removeItem("zf-keys");
+  localStorage.removeItem("zf-chats");
   showBanner("ok", "Locked. Zigs asks for this passkey each time it opens in this browser.");
 }
 
@@ -136,6 +141,7 @@ async function unlockVault() {
   catch { throw new Error("This passkey does not open the saved keys. Use the Zigs passkey."); }
   secrets = got.secrets || {};
   gkeys = got.keys || {};
+  chats = normChats(got.chats);
   vault = { rec: { cred: lockedVault.cred, salt: lockedVault.salt }, key };
   lockedVault = null;
   adoptInviteKey();   // an invite link opened while locked waits in the fragment
@@ -198,7 +204,7 @@ function saveBal(gid, bal) {
 // Payment proposals of every wallet where this browser holds a seat, for the approval counts.
 const inbox = {}, inboxSubs = new Map();
 const ready = {}, readySubs = new Map();
-const state = { groups: [], gid: null, g: null, seats: {}, dkg1: {}, dkg2: {}, done: {}, verify: {}, wallet: null, sessions: [], sid: null, commits: {}, shares: {}, log: [] };
+const state = { groups: [], gid: null, cid: null, g: null, seats: {}, dkg1: {}, dkg2: {}, done: {}, verify: {}, wallet: null, sessions: [], sid: null, commits: {}, shares: {}, log: [] };
 let unsubGroup = [], unsubSession = [];
 const busy = new Set();
 const inspectCache = new Map();
@@ -222,9 +228,14 @@ function log(msg) { state.log.unshift(new Date().toLocaleTimeString() + "  " + m
 let gkeys = {};
 if (!lockedVault) gkeys = readPlain("zf-keys");
 function putKey(gid, key) { gkeys[gid] = key; persist(); }
+const setHash = (h) => { try { history.replaceState(null, "", h); } catch {} };
 function adoptInviteKey() {
   if (lockedVault) return;
-  const [gid, key] = location.hash.slice(1).split(".");
+  const { chat, id, key } = parseHash(location.hash);
+  if (chat) adoptChatLink(id, key); else adoptWalletLink(id, key);
+}
+
+function adoptWalletLink(gid, key) {
   if (!key) return;
   // A link must not replace a wallet key this browser already has: whoever knows the wallet id
   // could otherwise point the wallet at documents sealed with their own key.
@@ -232,13 +243,32 @@ function adoptInviteKey() {
     showBanner("bad", "This invite link has a different wallet secret for a wallet you already "
       + "have, so it was ignored.");
   }
-  else if (/^[0-9a-f]{20}$/.test(gid) && /^[\w-]{43}$/.test(key)) putKey(gid, key);
-  try { history.replaceState(null, "", "#" + gid); } catch {}
+  else if (validRoom({ id: gid, key }) && !chats.list[gid]) putKey(gid, key);
+  setHash("#" + gid);
+}
+
+const badChatLink = (cid, key) => !validRoom({ id: cid, key }) || !!gkeys[cid] || !!roomKeys[cid];
+// The secret leaves the fragment at once. A new chat waits in joinLinks until the person clicks
+// "Join chat": a page that only loads the link, such as a link scanner, must not take the place.
+function adoptChatLink(cid, key) {
+  if (!key) return;
+  const known = chats.list[cid], bad = badChatLink(cid, key);
+  if (bad) showBanner("bad", BAD_CONTACT_LINK);
+  else if (known && known.key !== key) {
+    showBanner("bad", "This contact link has a different secret for a chat you already have, so "
+      + "it was ignored.");
+  }
+  else if (!known) joinLinks.set(cid, key);
+  setHash(bad ? "#" : "#c." + cid);
 }
 const inviteLink = (gid) => location.origin + location.pathname + "#" + gid + "." + gkeys[gid];
 // A message room is a namespace of its own. Its key never enters gkeys, so it is never a wallet.
-const roomKeys = {};
-const keyOf = (path) => { const id = path.split("/")[1]; return gkeys[id] || roomKeys[id]; };
+// A chat is one too. Its secret is pending while this browser joins it, before it is saved.
+const roomKeys = {}, pendingChats = {};
+const keyOf = (path) => {
+  const id = path.split("/")[1];
+  return gkeys[id] || roomKeys[id] || (chats.list[id] || {}).key || pendingChats[id];
+};
 
 function sealDoc(path, data) {
   const out = {};
@@ -309,7 +339,7 @@ async function boot() {
   if (canWrite === false) showBanner("bad", "This page is read-only here. You cannot take part.");
   if (!storageOk) showBanner("bad", "This browser does not let the page save your key share. Keep this tab open, and use Back up.");
   // The server keeps each wallet apart, so this browser opens the wallets it has keys for.
-  for (const gid of Object.keys(gkeys)) db.join?.(gid);
+  for (const id of [...Object.keys(gkeys), ...Object.keys(chats.list)]) db.join?.(id);
   sdb.collection("groups").onSnapshot((snap) => {
     dbReady = true;
     state.groups = snap.docs.filter((d) => gkeys[d.id]).map((d) => cleanGroup(d.id, d.data()))
@@ -319,9 +349,7 @@ async function boot() {
     if (state.gid && !state.g) openGroup(state.gid);
     render();
   }, (e) => showBanner("bad", "Lost connection to the group server (" + e.code + "). Reload."));
-  const h = location.hash.replace("#", "");
-  if (h && !gkeys[h]) showBanner("bad", MISSING_SECRET);
-  else if (h) openGroup(h);
+  followHash();
   render();
 }
 
@@ -360,9 +388,9 @@ function openGroup(gid) {
   for (const u of unsubGroup) u(); unsubGroup = [];
   closeSession();
   dropChain();
-  Object.assign(state, { gid, g: null, seats: {}, dkg1: {}, dkg2: {}, done: {}, verify: {}, wallet: null, sessions: [], log: [] });
-  if (!gid) { try { history.replaceState(null, "", "#"); } catch {} render(); return; }
-  try { history.replaceState(null, "", "#" + gid); } catch {}
+  Object.assign(state, { gid, cid: null, g: null, seats: {}, dkg1: {}, dkg2: {}, done: {}, verify: {}, wallet: null, sessions: [], log: [] });
+  if (!gid) { setHash("#"); render(); return; }
+  setHash("#" + gid);
   const base = "groups/" + gid;
   unsubGroup.push(sdb.doc(base).onSnapshot((d) => {
     state.g = d.exists ? cleanGroup(d.id, d.data()) : null;
@@ -886,19 +914,22 @@ const roomWarn = new Map(), roomSubs = new Map(), chat = {}, tried = new Set(), 
 let signing = null;                          // does this browser have Ed25519? null until known
 canSign().then((ok) => { signing = ok; render(); react(); });
 
-const isWalletId = (id) => !!gkeys[id];
-const mineIn = (gid) => mySeatSecrets(gid).map(([i]) => i);
+const isWalletId = (id) => !!gkeys[id] || !!chats.list[id];   // ids of chats are taken too
+const mineIn = (id) => chats.list[id] ? [chats.list[id].member] : mySeatSecrets(id).map(([i]) => i);
+// The id that the read marks of a conversation hang on: the room of a wallet, or the chat itself.
+const markId = (id) => chats.list[id] ? id : rooms[id];
 const MAX_SKEW = 10 * 60000;   // a message dated further ahead than this is never "unread"
 // Messages that can be unread: the wallet thread, and the threads of payments that exist. Without
 // the second rule, a thread of no payment would hold a count that no drawer can clear.
 function countable(gid, list = chat[gid] || []) {
+  const horizon = Date.now() + MAX_SKEW;
+  if (chats.list[gid]) return list.filter((m) => m.at <= horizon);
   const sessions = gid === state.gid ? state.sessions : inbox[gid] || [];
   const threads = new Set(["wallet", ...sessions.map((ss) => "pay:" + ss.id)]);
-  const horizon = Date.now() + MAX_SKEW;
   return list.filter((m) => threads.has(m.thread) && m.at <= horizon);
 }
-const unreadIn = (gid, thread) => rooms[gid]
-  ? countUnread(countable(gid), mineIn(gid), readMarks, rooms[gid], thread) : 0;
+const unreadIn = (gid, thread) => markId(gid)
+  ? countUnread(countable(gid), mineIn(gid), readMarks, markId(gid), thread) : 0;
 const NO_SIGNING = "This browser cannot sign messages. "
   + "Use a current Chrome, Edge, Firefox or Safari.";
 const ROOM_CHANGED = "The message room of this wallet changed. Messages are paused. "
@@ -917,7 +948,7 @@ function throttled(key, fn) {
 
 function syncRooms() {
   if (!sdb || !Z) return;
-  recallRooms(); adoptRooms(); watchRooms(); ensureRooms();
+  recallRooms(); adoptRooms(); watchRooms(); ensureRooms(); watchChats();
 }
 
 // Seat secrets keep each room (and backups carry it), so a room field that is later lost or
@@ -1057,9 +1088,15 @@ async function sendMessage(thread, text, seat) {
 // "yes", "no", "changed" or "wait" for a message of the open wallet.
 function trust(m, roomId) {
   const gid = state.gid, seat = state.seats[m.seat], pk = signPins[skey(gid, m.seat)];
-  const gate = keyState(!!seat && seatIds().includes(m.seat), seat && seat.signPk, pk);
+  const isSeat = !!seat && seatIds().includes(m.seat);
+  return verdict(m, signedText(gid, roomId, m), isSeat, seat && seat.signPk, pk);
+}
+
+// `isMember` and `memberPk` come from the store, `pinnedPk` from this browser.
+function verdict(m, text, isMember, memberPk, pinnedPk) {
+  const gate = keyState(isMember, memberPk, pinnedPk);
   if (gate !== "check") return gate;
-  const ok = cachedCheck(m, signedText(gid, roomId, m), pk);
+  const ok = cachedCheck(m, text, pinnedPk);
   return ok === null ? "wait" : ok ? "yes" : "no";
 }
 
@@ -1074,8 +1111,14 @@ function cachedCheck(m, text, pk) {
   return null;
 }
 
-// The threads this browser shows right now: the wallet thread (tab or setup page) and a payment.
+// The threads this browser shows right now: a chat, or in a wallet the wallet thread (tab or setup
+// page) and a payment.
 function openThreads() {
+  const cid = state.cid;
+  return cid ? (chats.list[cid] ? [[cid, "dm"]] : []) : walletThreads();
+}
+
+function walletThreads() {
   const gid = state.gid;
   if (!rooms[gid] || !state.g || state.g.unreadable) return [];
   const out = [];
@@ -1099,7 +1142,7 @@ function markRead() {
     const mine = mineIn(gid);
     const theirs = countable(gid).filter((m) => m.thread === thread && !mine.includes(m.seat));
     const top = Math.max(0, ...theirs.map((m) => m.at));
-    const k = rooms[gid] + ":" + thread;
+    const k = markId(gid) + ":" + thread;
     if (top > (readMarks[k] || 0)) { readMarks[k] = top; changed = true; }
   }
   if (changed) saveMerged("zf-read", readMarks, Math.max);
@@ -1109,28 +1152,38 @@ function markRead() {
 function onMessages(gid, list) {
   const old = chat[gid];
   chat[gid] = list;
-  if (!old) { seedMarks(rooms[gid], list); return; }
+  if (!old) { seedMarks(markId(gid), list, chats.list[gid] ? "dm" : "wallet"); return; }
   const known = new Set(old.map((m) => m.id));
   const fresh = list.filter((m) => !known.has(m.id) && !viewing(gid, m.thread)
-    && countUnread(countable(gid, [m]), mineIn(gid), readMarks, rooms[gid]));
-  if (fresh.length) notifyNew(gid);
+    && countUnread(countable(gid, [m]), mineIn(gid), readMarks, markId(gid)));
+  if (fresh.length) notifyNew(gid, fresh);
 }
 
 // A new device, private window or Tor session has no read marks. It treats the history it finds
-// as read, so old messages do not all show as unread.
-function seedMarks(roomId, list) {
+// as read, so old messages do not all show as unread. An empty first visit leaves a zero mark on
+// the main thread, so messages that come before the next visit are unread.
+function seedMarks(roomId, list, main) {
   if (!roomId || Object.keys(readMarks).some((k) => k.startsWith(roomId + ":"))) return;
   const now = Date.now();
+  readMarks[roomId + ":" + main] = 0;
   for (const m of list) {
     const k = roomId + ":" + m.thread;
     readMarks[k] = Math.max(readMarks[k] || 0, Math.min(m.at, now));
   }
-  if (list.length) saveMerged("zf-read", readMarks, Math.max);
+  saveMerged("zf-read", readMarks, Math.max);
 }
 
-function notifyNew(gid) {
+// A notification cannot wait for the signature check. It names the contact only when every new
+// message comes from the member id that this browser pinned for the contact.
+function notifyTitle(gid, fresh) {
+  if (!chats.list[gid]) return "New message in " + groupName(gid);
+  return fresh.every((m) => m.from === contactOf(gid)) ? "New message from " + contactName(gid)
+    : "New message in a chat";
+}
+
+function notifyNew(gid, fresh) {
   if (!ui.notify || !("Notification" in window) || Notification.permission !== "granted") return;
-  try { new Notification("New message in " + groupName(gid), { tag: gid }); }
+  try { new Notification(notifyTitle(gid, fresh), { tag: gid }); }
   catch (e) { log("could not show a notification: " + (e.message || e)); }
 }
 
@@ -1140,6 +1193,185 @@ async function toggleNotify() {
   }
   ui.notify = !ui.notify;
   try { localStorage.setItem("zf-notify", ui.notify ? "1" : ""); } catch { /* no storage */ }
+}
+
+// ───────────────────────── Direct chats ─────────────────────────
+// A direct chat is a store namespace of its own with two members (PROTOCOL.md 14). It has no
+// wallet document, so it never lists as a wallet. One personal key, chats.profile, signs them all.
+const chatPins = readLocal("zf-chatpins");   // "chat id:member id" -> first signing key seen
+const chatSubs = new Map(), chatMembers = {}, joinLinks = new Map();
+const BAD_CONTACT_LINK = "This contact link is not valid. Ask for a new one.";
+const MISSING_CHAT_SECRET = "This link is missing the chat secret. Ask your contact for the full "
+  + "contact link.";
+
+const contactOf = (cid) => pinnedMembers(chatPins, cid).find((id) => id !== chats.list[cid].member);
+
+function contactName(cid) {
+  const members = chatMembers[cid], id = contactOf(cid);
+  if (!members) return "Loading…";
+  return id ? (members[id] || {}).name || "Your contact" : "Waiting for your contact";
+}
+
+function pinChat(cid, member, pk) {
+  const r = pinMember(chatPins, cid, member, pk);
+  if (r === "new") saveMerged("zf-chatpins", chatPins, oldest);
+}
+
+// ponytail: two tabs that make their first chat in the same instant can make two keys. Upgrade
+// path: a lease on the store, as for seat keys.
+async function ensureProfile() {
+  if (!(await canSign())) throw new Error(NO_SIGNING);
+  chats.profile ||= await newSignKey();
+  return chats.profile;
+}
+
+function readMembers(cid) {
+  return withTimeout(new Promise((res) => {
+    const off = sdb.collection("groups/" + cid + "/members")
+      .onSnapshot((snap) => { res(snap.docs); queueMicrotask(() => off()); });
+  }), 10000, "The group server");
+}
+
+// The chat and the key are saved here before the member document goes to the server, so a failed
+// save cannot leave a place taken that this browser does not know about.
+async function enterChat(cid, key) {
+  if (!storageOk) throw new Error("This browser cannot save data, so it cannot keep a chat.");
+  const profile = await ensureProfile(), member = newRoom().id;
+  chats.list[cid] = { key, member, at: Date.now() };
+  if (!(await persist())) {
+    delete chats.list[cid];
+    throw new Error("Could not save the chat in this browser, so it was not opened.");
+  }
+  try {
+    const name = user ? (await user.me()).name : "";
+    await sdb.doc("groups/" + cid + "/members/" + member)
+      .set({ name, signPk: profile.signPk, at: Date.now() });
+  } catch (e) {
+    delete chats.list[cid];
+    await persist();
+    throw e;
+  }
+  pinChat(cid, member, profile.signPk);
+  openChat(cid);
+}
+
+const createChat = () => { const { id, key } = newRoom(); return enterChat(id, key); };
+
+// The lease keeps two openers of one link apart. A chat holds two members. The link stays in
+// joinLinks after a failure, so the person can try again; its secret is no longer in the URL.
+async function joinChat(cid, key) {
+  pendingChats[cid] = key;
+  try {
+    if (badChatLink(cid, key)) throw new Error(BAD_CONTACT_LINK);
+    await ensureProfile();   // a browser without Ed25519 stops before it takes the second place
+    const lease = await sdb.doc("groups/" + cid + "/meta/join")
+      .acquire({ holder: crypto.randomUUID(), ttlMs: 10000 });
+    const docs = await readMembers(cid);
+    const blocked = joinBlock(docs.length, lease.acquired);
+    if (blocked) throw new Error(blocked);
+    onMembers(cid, docs);   // pins the first member before this browser becomes the second
+    await enterChat(cid, key);
+    joinLinks.delete(cid);
+  } finally { delete pendingChats[cid]; }
+}
+
+async function leaveChat(cid) {
+  const was = chats.list[cid];
+  delete chats.list[cid];
+  if (!(await persist())) {
+    chats.list[cid] = was;
+    throw new Error("Could not save this change in the browser, so the chat stays.");
+  }
+  for (const k of Object.keys(chatPins)) if (k.startsWith(cid + ":")) delete chatPins[k];
+  writeLocal("zf-chatpins", chatPins);
+  openChat(null);
+}
+
+function openChat(cid) {
+  if (cid) openGroup(null);
+  state.cid = cid; ui.leave = false;
+  setHash(cid ? "#c." + cid : "#");
+  render();
+}
+
+function followHash() {
+  const { chat: isChat, id } = parseHash(location.hash);
+  if (isChat) { followChat(id); return; }
+  const gid = id || null;
+  if (gid === state.gid && !state.cid) return;
+  if (gid && !gkeys[gid]) { showBanner("bad", MISSING_SECRET); return; }
+  ui.tab = "overview";
+  openGroup(gid);
+}
+
+// `cid` comes from parseHash: "" or 20 hex characters, so it cannot name a property of Object.
+function followChat(cid) {
+  if (state.cid === cid) return;
+  if (joinLinks.has(cid)) openGroup(null);   // the lobby shows the join card
+  else if (chats.list[cid]) openChat(cid);
+  else showBanner("bad", MISSING_CHAT_SECRET);
+}
+
+function watchChats() {
+  for (const [cid, off] of chatSubs) {
+    if (chats.list[cid]) continue;
+    off(); chatSubs.delete(cid); delete chat[cid]; delete chatMembers[cid];
+  }
+  if (state.cid && !chats.list[state.cid]) openChat(null);
+  for (const cid of Object.keys(chats.list)) {
+    if (!chatSubs.has(cid)) chatSubs.set(cid, subscribeChat(cid));
+  }
+}
+
+function subscribeChat(cid) {
+  const base = "groups/" + cid, fail = (e) => log("chat error: " + e.code);
+  const offs = [
+    sdb.collection(base + "/members").onSnapshot((snap) => {
+      onMembers(cid, snap.docs); healMember(cid); render();
+    }, fail),
+    sdb.collection(base + "/messages").onSnapshot((snap) => {
+      const list = snap.docs.map((d) => parseDm(d.id, d.data())).filter(Boolean);
+      onMessages(cid, list.sort(byTime)); render();
+    }, fail),
+  ];
+  return () => offs.forEach((off) => off());
+}
+
+function onMembers(cid, docs) {
+  const members = {};
+  for (const d of docs) {
+    const x = d.data();
+    const name = typeof x.name === "string" ? x.name.slice(0, 40) : "";
+    members[d.id] = { name, signPk: x.signPk };
+    if (validId(d.id) && validPk(x.signPk)) pinChat(cid, d.id, x.signPk);
+  }
+  chatMembers[cid] = members;
+}
+
+// A chat saved while the connection dropped may lack this browser's member document. It is written
+// again while the chat has room, so the contact can still join.
+function healMember(cid) {
+  const c = chats.list[cid], members = chatMembers[cid] || {};
+  if (!c || members[c.member] || Object.keys(members).length >= 2) return;
+  throttled("member:" + cid, async () => {
+    const name = user ? (await user.me()).name : "";
+    await sdb.doc("groups/" + cid + "/members/" + c.member)
+      .set({ name, signPk: chats.profile.signPk, at: Date.now() });
+  });
+}
+
+async function sendDm(cid, text) {
+  const ref = sdb.collection("groups/" + cid + "/messages").doc();
+  const m = { id: ref.id, from: chats.list[cid].member, at: Date.now(), text };
+  const sig = await signMsg(chats.profile.signSk, dmText(cid, m));
+  await withTimeout(ref.set({ from: m.from, text, at: m.at, sig }), 10000, "The group server");
+}
+
+// Like trust(), for a message of a chat. A sender that is not pinned is "unknown".
+function dmTrust(cid, m) {
+  const pk = chatPins[cid + ":" + m.from], member = (chatMembers[cid] || {})[m.from];
+  if (pk === undefined) return "unknown";
+  return verdict(m, dmText(cid, m), !!member, member && member.signPk, pk);
 }
 
 // ───────────────────────── Rendering ─────────────────────────
@@ -1197,6 +1429,7 @@ let opener = "", lastTrigger = "", wantFocus = null;   // focus bookkeeping, see
 const ui = {
   forget: false, tab: "overview", send: false, pay: null, payKey: 0, listError: "",
   create: false, receive: false, move: false, net: "testnet", ack: false, notify: false,
+  newChat: false, leave: false,
 };
 try { ui.notify = localStorage.getItem("zf-notify") === "1"; } catch { /* no storage */ }
 const ZEC_FMT = new Intl.NumberFormat("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 8 });
@@ -1378,7 +1611,8 @@ const appFoot = () => el("footer", { class: "app-foot" }, "Beta · not audited �
 function pageView() {
   try {
     if (lockedVault) return lockView();
-    return !dbReady ? loadingView() : state.gid ? groupView() : lobby();
+    if (!dbReady) return loadingView();
+    return state.gid ? groupView() : state.cid ? chatView() : lobby();
   } catch (e) {
     log("unreadable page: " + (e && e.message ? e.message : e));
     const back = el("button", {
@@ -1396,7 +1630,8 @@ function draw() {
   const snap = focusSnapshot(shell);
   markRead();
   renderSide();
-  const pending = state.groups.reduce((n, g) => n + toApprove(g.id).length + unreadIn(g.id), 0);
+  const pending = state.groups.reduce((n, g) => n + toApprove(g.id).length + unreadIn(g.id), 0)
+    + Object.keys(chats.list).reduce((n, cid) => n + unreadIn(cid), 0);
   document.title = pending ? "(" + pending + ") Zigs" : "Zigs";
   const form = saveFormState(app);
   const view = pageView(), top = lockedVault ? [] : layers();
@@ -1493,12 +1728,13 @@ document.addEventListener("click", (ev) => {
 }, true);
 
 function layers() {
-  try { return buildLayers(); }
+  try { return ui.newChat ? [scrim(() => ui.newChat = false), newChatDialog()] : buildLayers(); }
   catch (e) { log("unreadable layer: " + (e && e.message ? e.message : e)); return []; }
 }
 
+const scrim = (close) => el("div", { class: "scrim", onclick: () => { close(); render(); } });
+
 function buildLayers() {
-  const scrim = (close) => el("div", { class: "scrim", onclick: () => { close(); render(); } });
   const ss = state.gid && state.wallet ? curSession() : null;
   if (ss) return [scrim(closeSession), sessionLayer(ss)];
   const inWallet = state.gid && state.wallet;
@@ -1516,7 +1752,26 @@ function renderSide() {
     el("div", { class: "side-head" }, el("span", { class: "label" }, "Wallets"),
       el("button", { class: "icon-btn", type: "button", title: "New wallet", "aria-label": "New wallet", onclick: newWallet }, "+")),
     ...(state.groups.length ? state.groups.map((g) => guard(sideItem, g))
-      : [el("p", { class: "side-empty" }, sideEmpty())]));
+      : [el("p", { class: "side-empty" }, sideEmpty())]),
+    el("div", { class: "side-head" }, el("span", { class: "label" }, "Chats"),
+      el("button", { class: "icon-btn", type: "button", title: "New chat", "aria-label": "New chat",
+      onclick: newChat }, "+")),
+    ...Object.keys(chats.list).map((cid) => guard(chatItem, cid)));
+}
+
+const newChat = () => { ui.newChat = true; render(); };
+
+const unreadChip = (u) => u ? el("span", { class: "side-unread", role: "img", title: u + " unread",
+  "aria-label": u + " unread" }, String(u)) : null;
+
+function chatItem(cid) {
+  const here = cid === state.cid, name = contactName(cid);
+  return el("button", {
+    class: "side-item" + (here ? " active" : ""), type: "button",
+    "aria-current": here ? "page" : null, "data-key": "chat-" + cid, onclick: () => openChat(cid),
+  }, el("span", { class: "av" }, initials(contactOf(cid) ? name : "")),
+  el("span", { class: "side-name" }, name),
+  el("span", { class: "side-tail" }, unreadChip(unreadIn(cid))));
 }
 
 const sideEmpty = () => lockedVault ? "Locked." : dbReady ? "No wallets yet." : "Connecting…";
@@ -1528,8 +1783,7 @@ function sideItem(g) {
       "aria-label": n + " to approve" }, String(n))
     : el("span", { class: "side-meta", title: ruleText(g.t, g.n) },
       g.movedTo ? "Moved" : g.t + " of " + g.n);
-  const unread = u ? el("span", { class: "side-unread", role: "img", title: u + " unread",
-    "aria-label": u + " unread" }, String(u)) : null;
+  const unread = unreadChip(u);
   return el("button", {
     class: "side-item" + (here ? " active" : ""), type: "button",
     "aria-current": here ? "page" : null, "data-key": "wallet-" + g.id,
@@ -1543,7 +1797,9 @@ function forgetBox() {
   return el("div", { class: "callout bad" },
     el("p", {}, "Without the passkey, the key shares in this browser cannot be opened. Delete "
       + "them, then restore each seat from its backup file. A seat with no backup is lost, but "
-      + "the wallet still works while enough other signers remain."),
+      + "the wallet still works while enough other signers remain. Direct chats in this browser "
+      + "are deleted too. They are not in backup files, and a chat with two people cannot be "
+      + "joined again."),
     el("div", { class: "dialog-actions" },
       el("button", { class: "btn", type: "button", onclick: cancel }, "Cancel"),
       el("button", { class: "btn", type: "button", onclick: forgetVault },
@@ -1603,7 +1859,53 @@ function lobby() {
   const body = state.groups.length
     ? el("section", { class: "card" }, el("div", { class: "list" }, rows))
     : welcome(canCreate, restoreBtn("btn ghost sm"));
-  return el("div", { class: "page" }, head, body, restoreInput);
+  const joins = [...joinLinks.keys()].map((cid) => guard(chatJoinCard, cid));
+  return el("div", { class: "page" }, ...joins, head, body, chatsCard(), restoreInput);
+}
+
+// A contact link waits here until the person clicks Join. The link is kept after a failure.
+function chatJoinCard(cid) {
+  const key = "chatjoin:" + cid, joining = busy.has(key);
+  const join = (ev) => {
+    ev.preventDefault();
+    once(key, () => joinChat(cid, joinLinks.get(cid)));
+    render();
+  };
+  return el("form", { class: "card card-pad hero-card", onsubmit: join },
+    el("div", { class: "card-head" }, el("h2", {}, "Join a chat")),
+    el("p", { class: "small muted" }, "Someone sent you a contact link. A chat holds two people. "
+      + "Your contact sees the name below."),
+    nameField("chat-join-" + cid, "your contact"),
+    el("div", { class: "dialog-actions" },
+      el("button", { class: "btn", type: "button", disabled: joining,
+        onclick: () => { joinLinks.delete(cid); render(); } }, "Cancel"),
+      el("button", { class: "btn primary", type: "submit",
+        disabled: joining || !Z || !db || canWrite === false },
+      joining ? "Joining the chat…" : "Join chat")));
+}
+
+// The sidebar is hidden on a phone, so the chats are listed here too.
+function chatsCard() {
+  const ids = Object.keys(chats.list);
+  return el("section", { class: "card" },
+    el("div", { class: "card-head card-pad", style: "padding-bottom:12px" }, el("h2", {}, "Chats"),
+      el("button", { class: "btn sm", type: "button", disabled: !Z || !db || canWrite === false,
+        onclick: newChat }, "New chat")),
+    ids.length ? el("div", { class: "list", style: "border-top:1px solid var(--line)" },
+      ids.map((cid) => guard(chatRow, cid)))
+      : el("p", { class: "small muted card-pad" }, "Write to one person who uses Zigs."));
+}
+
+function chatRow(cid) {
+  const name = contactName(cid);
+  return el("button", {
+    class: "row-item", type: "button", "data-key": "chat-row-" + cid, onclick: () => openChat(cid),
+  },
+  el("span", { class: "av lg" }, initials(contactOf(cid) ? name : "")),
+  el("span", { class: "ri-main" }, el("span", { class: "ri-title" }, name),
+    el("span", { class: "ri-sub" }, "Direct chat · group server")),
+  el("span", { class: "ri-end" }, newBadge(unreadIn(cid))),
+  el("span", { class: "chev" }, "›"));
 }
 
 // With no wallet yet, the welcome card has the only actions. Locking waits until there is a wallet
@@ -1659,12 +1961,13 @@ function welcome(canCreate, restoreLink) {
       create, restoreLink));
 }
 
-// The name other signers see on your seat; saved in this browser and read when you take a seat.
-function nameField(id) {
+// The name that `to` sees (your signers, or your contact); saved in this browser and read when you
+// take a seat or join a chat.
+function nameField(id, to = "your signers") {
   let saved = ""; try { saved = localStorage.getItem("zf-name") || ""; } catch {}
   const save = (ev) => { try { localStorage.setItem("zf-name", ev.target.value.trim()); } catch {} };
   return el("label", { class: "field" }, el("span", {}, "Your name"),
-    el("input", { class: "input", id, value: saved, maxlength: "40", autocomplete: "nickname", placeholder: "Any nickname · shown to your signers", oninput: save }));
+    el("input", { class: "input", id, value: saved, maxlength: "40", autocomplete: "nickname", placeholder: "Any nickname · shown to " + to, oninput: save }));
 }
 
 // With `from`, the dialog creates the wallet that replaces `from`, with new signers or a new rule.
@@ -2173,14 +2476,14 @@ function messagesCard() {
     changed.length ? el("div", { class: "callout bad", role: "alert" }, "Signing key changed: "
       + changed.map((i) => "seat " + i).join(", ") + ". Their messages are not verified.") : null,
     chat[state.gid] ? chatLog("wallet") : null,
-    composer("wallet", chatWhy()));
+    walletComposer("wallet"));
 }
 
 // The thread of one payment, under the payment's steps.
 function discussion(ss) {
   const thread = "pay:" + ss.id;
   return el("section", { class: "chat-section" }, el("span", { class: "label" }, "Discussion"),
-    chat[state.gid] ? chatLog(thread) : null, composer(thread, chatWhy()));
+    chat[state.gid] ? chatLog(thread) : null, walletComposer(thread));
 }
 
 function notifyButton() {
@@ -2197,11 +2500,13 @@ function chatLog(thread) {
     ? el("div", { class: "empty" }, el("h3", {}, "No messages yet"),
       el("p", { class: "small" }, FINE))
     : el("p", { class: "small faint" }, "No messages about this payment yet.");
-  return el("div", {
-    class: "chat-log", id: wallet ? "log-wallet" : "log-pay", role: "log", tabindex: "0",
-    "data-key": wallet ? "log-wallet" : "log-pay", "aria-label": wallet ? "Messages" : "Discussion",
-  }, items.length ? items : none);
+  const id = (wallet ? "log-wallet-" : "log-pay-") + state.gid;
+  return logBox(id, wallet ? "Messages" : "Discussion", items, none);
 }
+
+const logBox = (id, label, items, none) => el("div", {
+  class: "chat-log", id, role: "log", tabindex: "0", "data-key": id, "aria-label": label,
+}, items.length ? items : none);
 
 // Messages of one thread, with the payment events of the wallet thread, oldest first.
 function threadItems(thread, roomId) {
@@ -2239,62 +2544,171 @@ const newBadge = (n) => n
 
 const TRUST = {
   yes: ["ok", "✓ Verified"], wait: ["", "Checking…"], no: ["bad", "Not verified"],
-  changed: ["bad", "Key changed. Not verified."],
+  changed: ["bad", "Key changed. Not verified."], unknown: ["bad", "Unknown sender. Not verified."],
 };
 
 function msgItem(m, roomId) {
-  const [cls, label] = TRUST[trust(m, roomId)];
-  return el("div", { class: "msg" }, avatar(m.seat),
+  return bubble(m, avatar(m.seat), sender(m.seat), trust(m, roomId));
+}
+
+function bubble(m, av, name, verdictKey) {
+  const [cls, label] = TRUST[verdictKey];
+  return el("div", { class: "msg" }, av,
     el("div", { class: "msg-body" },
-      el("div", { class: "msg-head" }, el("b", {}, sender(m.seat)), el("time", {}, when(m.at)),
+      el("div", { class: "msg-head" }, el("b", {}, name), el("time", {}, when(m.at)),
         el("span", { class: "vmark " + cls }, label)),
       el("p", { class: "msg-text" }, m.text)));
 }
 
 const coarse = () => matchMedia("(pointer: coarse)").matches;
-const chatBusy = (thread) => busy.has("chat:" + rooms[state.gid] + ":" + thread);
 
 // Enter sends and Shift+Enter adds a line. A touch screen has no Shift key, so there Enter adds a
-// line and the Send button sends. Each composer has its own ids, so a draft survives a redraw.
-function composer(thread, why) {
-  const kind = thread === "wallet" ? "wallet" : "pay", seats = sendSeats();
-  const sending = chatBusy(thread);
-  const onkeydown = (ev) => {
-    const newLine = ev.shiftKey || ev.isComposing || ev.keyCode === 229 || coarse();
-    if (ev.key !== "Enter" || newLine) return;
-    ev.preventDefault();
-    ev.target.form.requestSubmit();
-  };
-  const as = seats.length > 1 ? el("label", { class: "composer-as small muted" }, "Send as",
-    el("select", { class: "input", id: "chat-as-" + kind, name: "as" },
-      seats.map((i) => el("option", { value: String(i) }, "Seat " + i)))) : null;
-  const onsubmit = act((ev) => submitMessage(ev.target, thread, seats));
-  return el("form", { class: "composer", onsubmit },
-    why ? el("p", { class: "hint" + (roomWarn.has(state.gid) ? " bad" : "") }, why) : null,
-    el("textarea", {
-      class: "input", id: "chat-text-" + kind, name: "text", rows: "2", disabled: !!why, onkeydown,
-      "aria-label": "Message to the signers",
-      placeholder: "Message to the signers"
-        + (coarse() ? "" : ". Enter sends, Shift+Enter adds a line"),
-    }),
-    el("div", { class: "composer-row" }, as,
-      el("button", { class: "btn primary", type: "submit", disabled: !!why || sending },
-        sending ? "Sending…" : "Send message")),
-    el("p", { class: "small faint" }, FINE));
+// line and the Send button sends.
+function sendOnEnter(ev) {
+  const newLine = ev.shiftKey || ev.isComposing || ev.keyCode === 229 || coarse();
+  if (ev.key !== "Enter" || newLine) return;
+  ev.preventDefault();
+  ev.target.form.requestSubmit();
 }
 
-async function submitMessage(form, thread, seats) {
+// `o`: kind (names the ids, so a draft stays with its own wallet or chat; no ":" in it), why (why
+// it is off), warn, seats (the senders to choose from), to (the label), fine, key (the busy key)
+// and send(text, seat).
+function composer(o) {
+  const sending = busy.has(o.key);
+  const as = o.seats.length > 1 ? el("label", { class: "composer-as small muted" }, "Send as",
+    el("select", { class: "input", id: "chat-as-" + o.kind, name: "as" },
+      o.seats.map((i) => el("option", { value: String(i) }, "Seat " + i)))) : null;
+  return el("form", { class: "composer", onsubmit: act((ev) => submitMessage(ev.target, o)) },
+    o.why ? el("p", { class: "hint" + (o.warn ? " bad" : "") }, o.why) : null,
+    el("textarea", {
+      class: "input", id: "chat-text-" + o.kind, name: "text", rows: "2", disabled: !!o.why,
+      onkeydown: sendOnEnter, "aria-label": o.to,
+      placeholder: o.to + (coarse() ? "" : ". Enter sends, Shift+Enter adds a line"),
+    }),
+    el("div", { class: "composer-row" }, as,
+      el("button", { class: "btn primary", type: "submit", disabled: !!o.why || sending },
+        sending ? "Sending…" : "Send message")),
+    el("p", { class: "small faint" }, o.fine));
+}
+
+function walletComposer(thread) {
+  return composer({
+    kind: (thread === "wallet" ? "wallet-" : "pay-") + state.gid, why: chatWhy(),
+    warn: roomWarn.has(state.gid),
+    seats: sendSeats(), to: "Message to the signers", fine: FINE,
+    key: "chat:" + rooms[state.gid] + ":" + thread,
+    send: (text, seat) => sendMessage(thread, text, seat),
+  });
+}
+
+async function submitMessage(form, o) {
   const box = form.elements.text, draft = box.value, r = checkText(draft);
   if (r.error) throw new Error(r.error);
-  const key = "chat:" + rooms[state.gid] + ":" + thread;
-  if (busy.has(key)) return;
-  busy.add(key); render();
+  if (busy.has(o.key)) return;
+  busy.add(o.key); render();
   try {
-    await sendMessage(thread, r.text, form.elements.as ? Number(form.elements.as.value) : seats[0]);
+    await o.send(r.text, form.elements.as ? Number(form.elements.as.value) : o.seats[0]);
     // A redraw during the send replaced the form: clear the live box, but not new typing.
     const live = document.getElementById(box.id);
     if (live && live.value === draft) live.value = "";
-  } finally { busy.delete(key); }
+  } finally { busy.delete(o.key); }
+}
+
+// ── Direct chat page ──
+const DM_FINE = "Your contact, and anyone else who has the contact link, can read these messages. "
+  + "Keep the link private. The group server stores them sealed. It sees when you write, and that "
+  + "your two devices use this chat.";
+const chatLink = (cid) => location.origin + location.pathname + "#c." + cid + "."
+  + chats.list[cid].key;
+const chatMessage = (link) => "I started a private chat with you on Zigs. Open this link: " + link
+  + ". This link is a secret. Do not post it in a public place. About Zigs: https://zigs.app";
+
+function chatView() {
+  const cid = state.cid;
+  if (!chats.list[cid]) return lobby();
+  return el("div", { class: "page" },
+    el("header", { class: "page-head" }, el("div", { class: "ph-left" },
+      el("button", { class: "btn ghost sm back", type: "button", onclick: () => openChat(null) },
+        "← Wallets"),
+      el("h1", {}, contactName(cid)),
+      el("div", { class: "ph-meta" },
+        el("span", { class: "badge plain" }, "Direct chat · group server")))),
+    chatMembers[cid] && !contactOf(cid) ? chatInviteCard(cid) : null,
+    chatCard(cid));
+}
+
+// The ids hold the chat id, so a draft or a scroll place stays with its own chat.
+function chatCard(cid) {
+  const msgs = chat[cid], kind = "dm-" + cid;
+  const items = (msgs || []).map((m) => guard(dmItem, m, cid));
+  const none = el("p", { class: "small faint" }, msgs ? "No messages yet." : "Loading messages…");
+  const alert = chatWarning(chatPins, cid, chatMembers[cid], msgs || []);
+  return el("section", { class: "card card-pad chat" },
+    el("div", { class: "card-head" }, el("h2", {}, "Messages"), notifyButton()),
+    alert ? el("div", { class: "callout bad", role: "alert" }, alert) : null,
+    logBox("log-" + kind, "Messages", items, none),
+    composer({
+      kind, why: signing === false ? NO_SIGNING : null, seats: [], key: "chat:" + cid + ":dm",
+      to: "Message to your contact", fine: DM_FINE, send: (text) => sendDm(cid, text),
+    }),
+    el("p", { class: "small faint" }, "This chat lives in this browser. Private windows and Tor "
+      + "Browser forget it when they close."),
+    leaveBox(cid));
+}
+
+function chatInviteCard(cid) {
+  const link = chatLink(cid);
+  return el("section", { class: "card card-pad hero-card" },
+    el("div", { class: "card-head" }, el("h2", {}, "Invite your contact")),
+    el("p", { class: "small muted" }, "Send this link to one person through a private channel. "
+      + "Until they open it, anyone who has the link can join the chat."),
+    el("div", { class: "addr-box" }, el("span", { class: "hex nowrap" }, link),
+      copyBtn(link, "Copy link", "btn sm primary"),
+      copyBtn(chatMessage(link), "Copy message", "btn sm")),
+    secretQr(link, "chat"));
+}
+
+function dmItem(m, cid) {
+  const mine = m.from === chats.list[cid].member, contact = m.from === contactOf(cid);
+  const name = mine ? "You" : contact ? contactName(cid) : "Unknown sender";
+  const av = el("span", { class: "av round" + (mine ? " me" : ""), title: name }, initials(name));
+  return bubble(m, av, name, dmTrust(cid, m));
+}
+
+// The confirm moves focus to Cancel, so a repeated Enter cannot leave the chat.
+function leaveBox(cid) {
+  const ask = (on) => () => {
+    ui.leave = on; wantFocus = { key: on ? "leave-no" : "leave-ask", force: true }; render();
+  };
+  const btn = (key, cls, onclick, text) => el("button", {
+    class: cls, type: "button", onclick, "data-key": key,
+  }, text);
+  if (!ui.leave) return el("div", {}, btn("leave-ask", "btn sm", ask(true), "Leave chat"));
+  const again = contactOf(cid) ? " You cannot join this chat again." : "";
+  return el("div", { class: "callout bad", role: "alert" },
+    el("p", {}, "Leave this chat? It is removed from this browser only. The sealed messages stay "
+      + "on the group server." + again),
+    el("div", { class: "dialog-actions" }, btn("leave-no", "btn", ask(false), "Cancel"),
+      btn("leave-yes", "btn", act(() => leaveChat(cid)), "Leave chat")));
+}
+
+function newChatDialog() {
+  const close = () => { ui.newChat = false; render(); };
+  return el("form", {
+    class: "dialog", role: "dialog", "aria-modal": "true", "aria-labelledby": "chat-title",
+    onsubmit: act(async () => { ui.newChat = false; await createChat(); }),
+  },
+  el("div", { class: "card-head" }, el("h2", { id: "chat-title" }, "New chat"),
+    el("button", { class: "icon-btn", type: "button", "aria-label": "Close", onclick: close },
+      "×")),
+  nameField("chat-name", "your contact"),
+  el("div", { class: "callout" }, "You get a contact link. Send it to one person. Then the two of "
+    + "you can write to each other."),
+  el("div", { class: "dialog-actions" },
+    el("button", { class: "btn", type: "button", onclick: close }, "Cancel"),
+    el("button", { class: "btn primary", type: "submit",
+      disabled: !Z || !db || canWrite === false }, "Create")));
 }
 
 // ── Members ──
@@ -2408,10 +2822,10 @@ function qrBox(text, label) {
   return box;
 }
 // A link with the wallet secret stays hidden until asked for: cameras and people can read screens.
-function secretQr(link) {
+function secretQr(link, what = "wallet") {
   return el("details", { class: "qr-toggle" }, el("summary", {}, "Show QR code"),
-    qrBox(link, "Invite link"),
-    el("p", { class: "small faint" }, "Scan with a phone camera to open the wallet there."));
+    qrBox(link, what === "chat" ? "Contact link" : "Invite link"),
+    el("p", { class: "small faint" }, "Scan with a phone camera to open the " + what + " there."));
 }
 
 // ── Receive ──
@@ -2760,16 +3174,23 @@ function chainSees() {
     el("p", { class: "small faint" }, "The number of actions is public. So is the fee."));
 }
 
-// Another tab saved: take its secrets, so this tab neither misses nor overwrites them.
+// Another tab saved: take its secrets and chats, so this tab neither misses nor overwrites them.
+const TAB_KEYS = new Set(["zf-secrets", "zf-chats", "zf-vault"]);
+async function takeFromTab(key, value) {
+  if (!vault && key === "zf-secrets") secrets = JSON.parse(value);
+  if (!vault && key === "zf-chats") chats = normChats(JSON.parse(value));
+  if (vault && key === "zf-vault") {
+    const got = await openVault(vault.key, parseVault(value));
+    ({ secrets, keys: gkeys } = got);
+    chats = normChats(got.chats);
+  }
+}
+
 window.addEventListener("storage", async (ev) => {
-  if (lockedVault || (ev.key !== "zf-secrets" && ev.key !== "zf-vault") || !ev.newValue) return;
-  try {
-    if (!vault && ev.key === "zf-secrets") secrets = JSON.parse(ev.newValue);
-    if (vault && ev.key === "zf-vault") {
-      ({ secrets, keys: gkeys } = await openVault(vault.key, parseVault(ev.newValue)));
-    }
-  } catch (e) { log("could not read another tab's save: " + (e.message || e)); }
-  render();
+  if (lockedVault || !TAB_KEYS.has(ev.key) || !ev.newValue) return;
+  try { await takeFromTab(ev.key, ev.newValue); }
+  catch (e) { log("could not read another tab's save: " + (e.message || e)); }
+  render(); react();
 });
 
 document.addEventListener("visibilitychange", render);
@@ -2786,19 +3207,17 @@ document.getElementById("banner-close").addEventListener("click", () => {
 });
 document.addEventListener("keydown", (ev) => {
   if (ev.key !== "Escape") return;
-  if (state.sid) closeSession(); else { ui.send = false; ui.create = false; ui.receive = false; ui.move = false; }
+  if (state.sid) closeSession();
+  else {
+    ui.send = false; ui.create = false; ui.receive = false; ui.move = false; ui.newChat = false;
+  }
   render();
 });
 
 // Back, forward and pasted invite links change only the fragment; follow them.
 window.addEventListener("hashchange", () => {
   adoptInviteKey();
-  if (lockedVault) return;
-  const gid = location.hash.slice(1).split(".")[0] || null;
-  if (gid === state.gid) return;
-  if (gid && !gkeys[gid]) { showBanner("bad", MISSING_SECRET); return; }
-  ui.tab = "overview";
-  openGroup(gid);
+  if (!lockedVault) followHash();
 });
 // New blocks every 25 s: refresh the open wallet once a minute while someone looks at it.
 setInterval(() => { const c = curChain(); if (c && !c.syncing && document.visibilityState === "visible") runSync(c); }, 60000);

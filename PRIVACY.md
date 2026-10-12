@@ -59,6 +59,7 @@ What the server can still see:
 | Which IP addresses connect to which wallet | Each wallet has its own connection | Use Tor Browser, or a VPN, to hide your IP address |
 | Number of signers and payments | Count of documents | None |
 | The id of each wallet's message room, when each message is sent, how many messages, their padded sizes, and which IP addresses connect to the room | A room is one more namespace with its own connection, and each message is one document | Use Tor Browser, or a VPN, to hide your IP address. Message text, thread and sender stay sealed. |
+| The id of each direct chat, its two member ids, when each message is sent, how many messages, their padded sizes, and which IP addresses connect to the chat | A chat is a namespace like a room. The server learns that two member ids talk to each other. | Use Tor Browser, or a VPN, to hide your IP address. Names, message text and signing keys stay sealed. The chat lives in the browser and is not in key share backups. |
 
 The server keeps no logs: Workers Logs are off (`observability.enabled = false`), and the code
 writes nothing about requests. IP addresses are used in memory only: to apply rate limits, and as
@@ -125,7 +126,8 @@ per-IP rate limits.
 | Sync state (notes, tree) | IndexedDB, sealed with the wallet key | File, sealed with the wallet key |
 | Cached balances for the wallet list | Local storage, sealed with the wallet key | Settings, sealed with the wallet key |
 | Message signing key | With the key share (it is a field of the seat's secrets) | Not built yet |
-| Pinned room ids, pinned signing keys, read times | Local storage, in plain text. No secret in them. | Not built yet |
+| Direct chats (chat secrets, member ids) and the personal signing key | With the key share: local storage, or the sealed record when the lock is on. Not in key share backups. | Not built yet |
+| Pinned room ids, pinned signing keys, pinned chat members, read times | Local storage, in plain text. No secret in them. | Not built yet |
 
 Without the lock, anyone who controls your unlocked device can read your key share and wallet
 secrets. One share alone cannot move funds: a payment needs a full threshold of signers.
@@ -137,7 +139,8 @@ the passkey guards the key share instead. The lock is opt-in.
 
 - **Web:** "Lock with a passkey" makes a passkey for the site. The WebAuthn PRF extension gives a
   32-byte secret on each Face ID, Touch ID or security key check. That secret is the AES-256-GCM
-  key for one sealed record that holds the key shares, the signing nonces and the wallet secrets.
+  key for one sealed record that holds the key shares, the signing nonces, the wallet secrets and
+  the direct chats.
   The plain copies are deleted only after the sealed record opens. The page asks for the passkey
   each time it opens (`web/vault.js`).
 - **iPhone:** "Lock with Face ID" in Settings puts a random 256-bit key in the Keychain with a
@@ -184,6 +187,11 @@ the passkey guards the key share instead. The lock is opt-in.
   device that holds a seat can sign messages as that seat. Seats from before messages existed get
   their signing key when their device opens the wallet, and other devices trust the first key they
   see for each seat.
+- A contact link holds the chat secret. Anyone who has the link can read the chat and write in it,
+  also after both people joined. A third writer shows as "Unknown sender", but a silent reader is
+  not seen. Until the contact opens the link and joins, anyone who has the link can take the
+  second place. The chat shows the contact's name, so check it. A browser that forgets the chat (a
+  private window, Tor Browser) cannot join it again, because the chat holds two people.
 - Chain reorganisations are not handled in the sync state yet.
 - The code is not audited. Mainnet wallets are limited to 0.5 ZEC: at that balance the app stops
   showing the address and warns. It cannot stop someone from sending more, and payments out

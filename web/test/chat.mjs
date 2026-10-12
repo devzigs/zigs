@@ -1,7 +1,8 @@
 // Checks the message helpers. Run: node web/test/chat.mjs
 import assert from "node:assert/strict";
 import {
-  byTime, checkText, countUnread, keyState, newRoom, newSignKey, parseMsg, pickRoom, pin, signMsg,
+  byTime, chatWarning, checkText, countUnread, dmText, joinBlock, keyState, newRoom, newSignKey,
+  normChats, parseDm, parseHash, parseMsg, pickRoom, pin, pinMember, pinnedMembers, signMsg,
   signedText, validRoom, verifyMsg,
 } from "../chat.js";
 
@@ -110,4 +111,112 @@ assert.equal(countUnread(inbox, [1], { [ROOM + ":wallet"]: 20 }, ROOM), 2);
 assert.equal(countUnread(inbox, [1], { [ROOM + ":wallet"]: 40 }, ROOM, "wallet"), 0);
 assert.equal(countUnread(inbox, [1], {}, ROOM, "pay:x"), 1);
 assert.equal(countUnread([], [1], {}, ROOM), 0);
+
+// Direct chats. A fixed vector: other apps must build this text and accept this signature.
+const dm = { id: "c".repeat(20), from: "d".repeat(20), at: 1760000000000, text: "Hi\nthere" };
+const DM_TEXT = '["zigs-dm-v1","aaaaaaaaaaaaaaaaaaaa","cccccccccccccccccccc",'
+  + '"dddddddddddddddddddd",1760000000000,"Hi\\nthere"]';
+const DM_PK = "ea4a6c63e29c520abef5507b132ec5f9954776aebebe7b92421eea691446d22c";
+const DM_SIG = "IhrJPY9aKgcBD94Yl7F50opizISwAIZbtLzA/j3+uv0nOnXKE21dN8CVUOGBnztcDXQobrZoKTeMajHE"
+  + "G67DDw==";
+assert.equal(dmText(GID, dm), DM_TEXT);
+assert.equal(await verifyMsg(DM_PK, DM_SIG, DM_TEXT), true);
+assert.equal(await verifyMsg(DM_PK, DM_SIG, DM_TEXT.replace("Hi", "Ho")), false);
+
+const dmSig = await signMsg(key.signSk, dmText(GID, dm));
+assert.equal(await verifyMsg(key.signPk, dmSig, dmText(GID, dm)), true);
+const dmChanges = {
+  text: dmText(GID, { ...dm, text: "Hi there" }),
+  from: dmText(GID, { ...dm, from: "e".repeat(20) }),
+  at: dmText(GID, { ...dm, at: dm.at + 1 }),
+  id: dmText(GID, { ...dm, id: "e".repeat(20) }),
+  cid: dmText("f".repeat(20), dm),
+};
+for (const [name, changed] of Object.entries(dmChanges)) {
+  assert.equal(await verifyMsg(key.signPk, dmSig, changed), false, name + " breaks the signature");
+}
+assert.equal(await verifyMsg(other.signPk, dmSig, dmText(GID, dm)), false, "wrong key");
+// Same fields, same key: a wallet signature is no direct signature, and the reverse.
+const same = { ...dm, seat: 2, thread: "wallet" };
+const walletSig = await signMsg(key.signSk, signedText(GID, GID, same));
+assert.equal(await verifyMsg(key.signPk, walletSig, dmText(GID, dm)), false);
+assert.equal(await verifyMsg(key.signPk, dmSig, signedText(GID, GID, same)), false);
+
+assert.deepEqual(parseDm("m1", { ...dm, sig: "s" }),
+  { id: "m1", from: dm.from, seat: dm.from, thread: "dm", text: dm.text, at: dm.at, sig: "s" });
+assert.equal(parseDm("m1", dm).sig, "");
+for (const bad of [null, { ...dm, text: 5 }, { ...dm, text: "x".repeat(2001) },
+  { ...dm, at: "now" }, { ...dm, from: "zz" }, { ...dm, from: undefined },
+  { ...dm, from: dm.from.toUpperCase() }]) {
+  assert.equal(parseDm("m1", bad), null);
+}
+const dmInbox = [parseDm("1", dm), parseDm("2", { ...dm, from: "e".repeat(20), at: 5 })];
+assert.equal(countUnread(dmInbox, [dm.from], {}, GID), 1);
+assert.equal(countUnread(dmInbox, [dm.from], { [GID + ":dm"]: 5 }, GID), 0);
+
+const chatPins = {}, M1 = "1".repeat(20), M2 = "2".repeat(20), M3 = "3".repeat(20);
+assert.equal(pinMember(chatPins, GID, M1, "k1"), "new");
+assert.equal(pinMember(chatPins, GID, M1, "k1"), "same");
+assert.equal(pinMember(chatPins, GID, M1, "k2"), "changed");
+assert.equal(pinMember(chatPins, GID, M2, "k2"), "new");
+assert.equal(pinMember(chatPins, GID, M3, "k3"), "unknown", "a third member is not pinned");
+assert.equal(pinMember(chatPins, GID, M2, "k2"), "same");
+assert.equal(pinMember(chatPins, ROOM, M3, "k3"), "new", "chats are counted apart");
+assert.equal(chatPins[GID + ":" + M3], undefined);
+
+assert.deepEqual(pinnedMembers(chatPins, GID).sort(), [M1, M2]);
+assert.deepEqual(pinnedMembers(chatPins, "9".repeat(20)), []);
+
+// Links: an id that is not 20 hex characters never comes back, so it cannot reach a lookup.
+const K = room.key, NONE = { chat: false, id: "", key: "" };
+assert.deepEqual(parseHash(""), NONE);
+assert.deepEqual(parseHash("#"), NONE);
+assert.deepEqual(parseHash("#" + GID), { chat: false, id: GID, key: "" });
+assert.deepEqual(parseHash("#" + GID + "." + K), { chat: false, id: GID, key: K });
+const stop = parseHash("#" + GID + "." + K + ".");
+assert.deepEqual(stop, { chat: false, id: GID, key: K }, "a full stop after the link");
+assert.deepEqual(parseHash("#c." + GID), { chat: true, id: GID, key: "" });
+assert.deepEqual(parseHash("#c." + GID + "." + K + ".x"), { chat: true, id: GID, key: K });
+for (const bad of ["__proto__", "constructor", "toString", "hasOwnProperty", "A".repeat(20)]) {
+  assert.deepEqual(parseHash("#" + bad), NONE, bad);
+  assert.deepEqual(parseHash("#" + bad + "." + K), { chat: false, id: "", key: K }, bad);
+  assert.deepEqual(parseHash("#c." + bad), { chat: true, id: "", key: "" }, bad);
+  assert.equal(parseHash("#c." + bad + "." + K).id, "", bad);
+}
+assert.deepEqual(parseHash("#c"), { chat: true, id: "", key: "" });
+
+// Joining: a full chat wins over a lease that someone else holds.
+const FULL = "This chat already has two people. Ask for a new contact link.";
+assert.equal(joinBlock(1, true), null);
+assert.equal(joinBlock(2, true), FULL);
+assert.equal(joinBlock(2, false), FULL);
+assert.equal(joinBlock(3, true), FULL);
+assert.match(joinBlock(1, false), /Someone else is joining/);
+assert.match(joinBlock(0, true), /does not open a chat/);
+
+// Warnings: a changed or missing key first, then a third member or sender. Nothing before members.
+const warn = { [GID + ":" + M1]: "k1", [GID + ":" + M2]: "k2" };
+const both = { [M1]: { signPk: "k1" }, [M2]: { signPk: "k2" } };
+assert.equal(chatWarning(warn, GID, undefined, []), null);
+assert.equal(chatWarning(warn, GID, both, [{ from: M1 }, { from: M2 }]), null);
+const swapped = { ...both, [M2]: { signPk: "x" } };
+assert.match(chatWarning(warn, GID, swapped, []), /changed or is missing/);
+assert.match(chatWarning(warn, GID, { [M1]: both[M1] }, []), /changed or is missing/);
+assert.match(chatWarning(warn, GID, { ...both, [M3]: { signPk: "k3" } }, []), /third person/);
+assert.match(chatWarning(warn, GID, both, [{ from: M3 }]), /third person/);
+assert.equal(chatWarning({}, GID, {}, []), null);
+
+const saved = { key: room.key, member: M1, at: 7 };
+assert.deepEqual(normChats(undefined), { profile: null, list: {} });
+assert.deepEqual(normChats({}), { profile: null, list: {} });
+assert.deepEqual(normChats({ profile: key, list: { [GID]: { ...saved, extra: 1 } } }),
+  { profile: { signSk: key.signSk, signPk: key.signPk }, list: { [GID]: saved } });
+assert.equal(normChats({ list: { [GID]: { ...saved, at: "x" } } }).list[GID].at, 0);
+for (const bad of [null, 5, "x", { list: "abc" }, { list: { short: saved } },
+  { list: { [GID]: { ...saved, key: "k" } } }, { list: { [GID]: { ...saved, member: "m" } } },
+  { list: { [GID]: null } }, { profile: { signSk: 1, signPk: key.signPk } },
+  { profile: { signSk: "s", signPk: "zz" } }]) {
+  const got = normChats(bad);
+  assert.deepEqual(got, { profile: null, list: {} }, JSON.stringify(bad));
+}
 console.log("chat ok");

@@ -10,6 +10,7 @@ const toB64 = (u8) => btoa(String.fromCharCode(...u8));
 const fromB64 = (s) => Uint8Array.from(atob(s), (c) => c.charCodeAt(0));
 
 export const validPk = (x) => typeof x === "string" && PUBKEY.test(x);
+export const validId = (x) => typeof x === "string" && ROOM_ID.test(x);
 export const validRoom = (r) => !!r && typeof r.id === "string" && typeof r.key === "string"
   && ROOM_ID.test(r.id) && ROOM_KEY.test(r.key);
 
@@ -74,6 +75,72 @@ export function keyState(isSeat, seatPk, pinnedPk) {
 // The text that a seat signs. Other apps must build exactly this JSON text.
 export const signedText = (walletGid, roomId, m) =>
   JSON.stringify(["zigs-msg-v1", walletGid, roomId, m.id, m.seat, m.thread, m.at, m.text]);
+
+// The text that a member of a direct chat signs. Other apps must build exactly this JSON text.
+export const dmText = (cid, m) => JSON.stringify(["zigs-dm-v1", cid, m.id, m.from, m.at, m.text]);
+
+// A message document of a direct chat, or null when it cannot be shown at all. The member id also
+// goes in `seat`, so the sort and the unread count of wallet messages work on it.
+export function parseDm(id, d) {
+  const ok = !!d && typeof d.text === "string" && d.text.length <= MAX_TEXT && validId(d.from)
+    && Number.isFinite(d.at);
+  if (!ok) return null;
+  const sig = typeof d.sig === "string" ? d.sig : "";
+  return { id, from: d.from, seat: d.from, thread: "dm", text: d.text, at: d.at, sig };
+}
+
+// The parts of the page fragment: "#<wallet id>.<secret>" or "#c.<chat id>.<secret>". Parts after
+// the secret are ignored. An id that is not 20 hex characters comes back as "", so a name such as
+// "__proto__" never reaches a lookup.
+export function parseHash(hash) {
+  const [a, b, c] = hash.replace(/^#/, "").split(".");
+  const chat = a === "c", id = chat ? b : a;
+  return { chat, id: validId(id) ? id : "", key: (chat ? c : b) || "" };
+}
+
+export const pinnedMembers = (pins, cid) => Object.keys(pins)
+  .filter((k) => k.startsWith(cid + ":")).map((k) => k.slice(cid.length + 1));
+
+// The first two members seen in a chat are pinned, each with the first signing key seen for it.
+// Returns "new", "same", "changed", or "unknown" for a third member.
+export function pinMember(pins, cid, member, pk) {
+  const key = cid + ":" + member;
+  return !Object.hasOwn(pins, key) && pinnedMembers(pins, cid).length >= 2
+    ? "unknown" : pin(pins, key, pk);
+}
+
+// Why a browser cannot join a chat that has `count` members now, or null. A full chat wins over a
+// join lease that someone else holds.
+export function joinBlock(count, leased) {
+  if (count > 1) return "This chat already has two people. Ask for a new contact link.";
+  if (!leased) return "Someone else is joining this chat. Try again in a moment.";
+  return count ? null : "This contact link does not open a chat. Ask for a new one.";
+}
+
+// The warning that a chat page shows, or null. `members` maps member ids to { signPk }, `messages`
+// are the parsed messages. Nothing is hidden: the messages stay in the log.
+export function chatWarning(pins, cid, members, messages) {
+  if (!members) return null;
+  const pinned = pinnedMembers(pins, cid);
+  if (pinned.some((id) => !members[id] || members[id].signPk !== pins[cid + ":" + id])) {
+    return "A signing key in this chat changed or is missing. Its messages are not verified.";
+  }
+  const third = Object.keys(members).some((id) => !pinned.includes(id))
+    || messages.some((m) => !pinned.includes(m.from));
+  return third ? "A third person wrote in this chat. Their messages are not verified." : null;
+}
+
+// The saved direct chats. A vault record from before chats has none. Bad entries are dropped.
+export function normChats(x) {
+  const list = {}, p = x?.profile;
+  for (const [id, c] of Object.entries(x?.list ?? {})) {
+    if (validRoom({ id, key: c?.key }) && validId(c.member)) {
+      list[id] = { key: c.key, member: c.member, at: Number.isFinite(c.at) ? c.at : 0 };
+    }
+  }
+  const ok = p && typeof p.signSk === "string" && validPk(p.signPk);
+  return { profile: ok ? { signSk: p.signSk, signPk: p.signPk } : null, list };
+}
 
 let probe = null;
 export const canSign = () => (probe ||= (async () => {
