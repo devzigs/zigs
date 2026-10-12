@@ -268,7 +268,7 @@ the web, on iPhone and on Mac at the same time.
 - **Hosting.** A Cloudflare Worker serves the page and the `/ws` WebSocket of the group server.
 - **Content-Security-Policy.** The page can connect only to its own host, the group server's
   WebSocket and the named light-wallet servers. It loads no scripts, fonts or images from other
-  hosts. It cannot be framed.
+  hosts. No inline script runs: the app script is a separate file. It cannot be framed.
 - **Other headers.** HSTS, `nosniff`, `no-referrer`, and a Permissions-Policy that turns off the
   camera, microphone and location.
 - **Networks.**

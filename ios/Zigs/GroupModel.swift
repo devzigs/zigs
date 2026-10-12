@@ -19,7 +19,7 @@ struct GroupInfo: Identifiable {
     let network: String?
 }
 
-/// One group, decrypted. Same document layout as web/index.html.
+/// One group, decrypted. Same document layout as web/app.js.
 struct GroupState {
     var g: Doc?
     var seats: [String: Doc] = [:]

@@ -244,7 +244,7 @@ struct Timeline: View {
         let proving = ss.status == "proving" && now() - (ss.doc.int("provingAt") ?? 0) < 180_000
         Card {
             Step(state: .done, no: 1, title: "Proposed", text: when(ss.doc.int("createdAt")))
-            Step(state: commits.count >= st.t ? .done : .now, no: 2, title: "Approvals · \(min(commits.count, st.t)) of \(st.t)",
+            Step(state: commits.count >= st.t ? .done : .now, no: 2, title: "Approvals · \(min(commits.count, st.t)) of \(st.t) needed",
                  text: st.seatIds.map { model.seatLabel($0) + (commits["\($0)"] != nil ? " ✓" : "") }.joined(separator: " · "))
             Step(state: has(ss.doc["error"]) ? .bad : has(ss.doc["signed"]) ? .done : signers.isEmpty ? .later : .now, no: 3,
                  title: "Group signature",

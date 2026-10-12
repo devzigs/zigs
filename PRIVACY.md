@@ -83,7 +83,7 @@ This links a wallet id to a transaction id, but not to its amount or recipient.
 - **Testnet** wallets use the Zigs light-wallet server first, with ChainSafe as the backup.
 
 Tor Browser hides your IP address from both servers, but not this timing link. To remove the
-link, point the app at a light-wallet server you trust (`NETWORKS` in `web/index.html`,
+link, point the app at a light-wallet server you trust (`NETWORKS` in `web/app.js`,
 `ZcashNetwork` in `ios/Zigs/Chain.swift`).
 
 ## Use Zigs over Tor

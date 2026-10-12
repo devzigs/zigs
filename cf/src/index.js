@@ -3,16 +3,17 @@
 import { DurableObject } from "cloudflare:workers";
 
 const GROUP_ID = /^[0-9a-f]{20}$/;
-// The light-wallet servers in NETWORKS (web/index.html). The page may connect to nothing else.
+// The light-wallet servers in NETWORKS (web/app.js). The page may connect to nothing else.
 const CHAIN_SERVERS = ["https://lwd.zigs.app", "https://zcash-testnet.chainsafe.dev",
   "https://zcash-mainnet.chainsafe.dev"].join(" ");
 
-// ponytail: 'unsafe-inline' because the app script and styles are inline; a hash would be stricter.
+// No inline script runs. ponytail: styles keep 'unsafe-inline', because the app sets style
+// attributes on elements; moving them to classes would allow a strict style-src.
 function policy(url) {
   const ws = (url.protocol === "https:" ? "wss://" : "ws://") + url.host;
   return [
     "default-src 'none'",
-    "script-src 'self' 'unsafe-inline' 'wasm-unsafe-eval'",
+    "script-src 'self' 'wasm-unsafe-eval'",
     "worker-src 'self'",
     "style-src 'self' 'unsafe-inline'",
     "font-src 'self'",
