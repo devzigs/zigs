@@ -3,6 +3,10 @@ import { qrSvg } from "/qr.js";
 import { parsePayeeList, toZat, zatText } from "/payees.js";
 import { createPasskey, unlockKey, seal, open as openVault, parseVault } from "/vault.js";
 import { chunks, finite, fmtInt, samePackages } from "/util.js";
+import {
+  byTime, canSign, checkText, countUnread, keyState, newRoom, newSignKey, parseMsg, pickRoom, pin,
+  signMsg, signedText, validPk, validRoom, verifyMsg,
+} from "/chat.js";
 // ───────────────────────── Engine (WASM) ─────────────────────────
 let Z = null, engineSettled = false;   // settled: the engine loaded or failed
 const engineDot = document.getElementById("engine-dot");
@@ -232,19 +236,35 @@ function adoptInviteKey() {
   try { history.replaceState(null, "", "#" + gid); } catch {}
 }
 const inviteLink = (gid) => location.origin + location.pathname + "#" + gid + "." + gkeys[gid];
-const keyOf = (path) => gkeys[path.split("/")[1]];
+// A message room is a namespace of its own. Its key never enters gkeys, so it is never a wallet.
+const roomKeys = {};
+const keyOf = (path) => { const id = path.split("/")[1]; return gkeys[id] || roomKeys[id]; };
 
 function sealDoc(path, data) {
   const out = {};
   for (const [k, v] of Object.entries(data)) if (v !== undefined) out[k] = Z.secretSeal(keyOf(path), path + "\n" + k, S(v));
   return out;
 }
-// ponytail: every snapshot decrypts the whole group again; cache by ciphertext if stores grow.
+// Plain text of fields already opened, so a snapshot decrypts only what is new.
+// ponytail: 5000 fields cover about 1000 messages (5 fields each). A bigger room clears the cache
+// on every snapshot. Upgrade path: an LRU, or one cache per namespace.
+const opened = new Map();
+function openField(key, path, k, v) {
+  const id = key + "\n" + path + "\n" + k + "\n" + v;
+  let text = opened.get(id);
+  if (text === undefined) {
+    text = Z.secretOpen(key, path + "\n" + k, v);
+    if (opened.size >= 5000) opened.clear();
+    opened.set(id, text);
+  }
+  return J(text);
+}
 function openDoc(path, raw) {
-  if (!Z || !keyOf(path) || raw == null) return null;
+  const key = keyOf(path);
+  if (!Z || !key || raw == null) return null;
   const out = {}; let ok = 0;
   for (const [k, v] of Object.entries(raw)) {
-    try { out[k] = J(Z.secretOpen(keyOf(path), path + "\n" + k, v)); ok++; }
+    try { out[k] = openField(key, path, k, v); ok++; }
     catch (e) { log("dropped undecryptable field " + k + " of " + path); }
   }
   return ok || !Object.keys(raw).length ? out : null;
@@ -292,9 +312,10 @@ async function boot() {
   for (const gid of Object.keys(gkeys)) db.join?.(gid);
   sdb.collection("groups").onSnapshot((snap) => {
     dbReady = true;
-    state.groups = snap.docs.map((d) => cleanGroup(d.id, d.data()))
+    state.groups = snap.docs.filter((d) => gkeys[d.id]).map((d) => cleanGroup(d.id, d.data()))
       .sort((a, b) => finite(b.createdAt) - finite(a.createdAt));
     watchInbox();
+    syncRooms();
     if (state.gid && !state.g) openGroup(state.gid);
     render();
   }, (e) => showBanner("bad", "Lost connection to the group server (" + e.code + "). Reload."));
@@ -347,7 +368,7 @@ function openGroup(gid) {
     state.g = d.exists ? cleanGroup(d.id, d.data()) : null;
     render(); react();
   }));
-  unsubGroup.push(sub(base + "/seats", (m) => state.seats = m));
+  unsubGroup.push(sub(base + "/seats", (m) => { state.seats = m; pinSigners(m); }));
   unsubGroup.push(sub(base + "/dkg1", (m) => state.dkg1 = m));
   unsubGroup.push(sub(base + "/dkg2", (m) => state.dkg2 = m));
   unsubGroup.push(sub(base + "/done", (m) => state.done = m));
@@ -442,7 +463,10 @@ async function once(key, fn) {
 }
 
 function react() {
-  try { reactNow(); } catch (e) { log("✗ react: " + (e && e.message ? e.message : e)); }
+  try {
+    syncRooms();
+    reactNow();
+  } catch (e) { log("✗ react: " + (e && e.message ? e.message : e)); }
 }
 
 function reactNow() {
@@ -452,6 +476,7 @@ function reactNow() {
     const s = sec(gid, i);
     // Seats taken before secrets kept their identity: record it while this browser still knows it.
     if (!s.uid) putSec(gid, i, { uid: state.seats[i].uid });
+    ensureSignKey(gid, i);
     // Round 1
     if (!state.dkg1[i] && !s.keyPackage) {
       once("r1:" + i, async () => {
@@ -619,9 +644,11 @@ async function takeSeat(i) {
   const cur = await ref.get();
   if (cur.exists && cur.data().uid) { showBanner("bad", "Seat " + i + " is already taken."); return; }
   const kp = J(Z.boxKeypair());
-  putSec(state.gid, i, { boxSk: kp.sk, uid: me });
+  const sign = await newSignKey().catch(() => null);   // null: no Ed25519 here, so no messages
+  putSec(state.gid, i, { boxSk: kp.sk, uid: me, ...sign });
   const name = user ? (await user.me()).name : "";
-  await ref.set({ uid: me, name, boxPk: kp.pk, at: Date.now() });
+  const signPk = sign ? sign.signPk : undefined;
+  await ref.set({ uid: me, name, boxPk: kp.pk, at: Date.now(), signPk });
   log("you took seat " + i);
 }
 
@@ -777,7 +804,9 @@ async function approve(ss, i) {
 async function cancelPayment(ss) {
   if (ss.signed || ss.error) throw new Error("This payment is already signed or closed, so it cannot be cancelled.");
   const who = (state.seats[localSeats()[0]] || {}).name || "a signer";
-  await sdb.doc(sessionPath(ss)).update({ status: "cancelled", error: "Cancelled by " + who + "." });
+  await sdb.doc(sessionPath(ss)).update({
+    status: "cancelled", error: "Cancelled by " + who + ".", cancelledAt: Date.now(),
+  });
   for (const i of localSeats()) {
     const nonces = { ...(sec(state.gid, i).nonces || {}) };
     if (!nonces[ss.id]) continue;
@@ -834,6 +863,285 @@ function restore(file) {
   r.readAsText(file);
 }
 
+// ───────────────────────── Messages ─────────────────────────
+// Each wallet has a message room: a store namespace of its own (CHAT.md). The wallet document
+// names it in the sealed field "room". Each message is signed with its seat's Ed25519 key.
+const readLocal = (name) => {
+  try { return { ...JSON.parse(localStorage.getItem(name) || "{}") }; } catch { return {}; }
+};
+const writeLocal = (name, v) => { try { localStorage.setItem(name, S(v)); } catch { /* none */ } };
+// Another tab may have saved too. Merge with its copy before writing: `keep` picks the value.
+function saveMerged(name, mine, keep) {
+  for (const [k, v] of Object.entries(readLocal(name))) {
+    mine[k] = Object.hasOwn(mine, k) ? keep(v, mine[k]) : v;
+  }
+  writeLocal(name, mine);
+}
+const oldest = (stored) => stored;   // a pin keeps the value seen first
+const roomPins = readLocal("zf-rooms");      // wallet id -> first room id seen
+const signPins = readLocal("zf-signpins");   // "wallet id:seat" -> first signing key seen
+const readMarks = readLocal("zf-read");      // "room id:thread" -> time of the newest message read
+const rooms = {};                            // wallet id -> its room id, while it matches the pin
+const roomWarn = new Map(), roomSubs = new Map(), chat = {}, tried = new Set(), checked = new Map();
+let signing = null;                          // does this browser have Ed25519? null until known
+canSign().then((ok) => { signing = ok; render(); react(); });
+
+const isWalletId = (id) => !!gkeys[id];
+const mineIn = (gid) => mySeatSecrets(gid).map(([i]) => i);
+const MAX_SKEW = 10 * 60000;   // a message dated further ahead than this is never "unread"
+// Messages that can be unread: the wallet thread, and the threads of payments that exist. Without
+// the second rule, a thread of no payment would hold a count that no drawer can clear.
+function countable(gid, list = chat[gid] || []) {
+  const sessions = gid === state.gid ? state.sessions : inbox[gid] || [];
+  const threads = new Set(["wallet", ...sessions.map((ss) => "pay:" + ss.id)]);
+  const horizon = Date.now() + MAX_SKEW;
+  return list.filter((m) => threads.has(m.thread) && m.at <= horizon);
+}
+const unreadIn = (gid, thread) => rooms[gid]
+  ? countUnread(countable(gid), mineIn(gid), readMarks, rooms[gid], thread) : 0;
+const NO_SIGNING = "This browser cannot sign messages. "
+  + "Use a current Chrome, Edge, Firefox or Safari.";
+const ROOM_CHANGED = "The message room of this wallet changed. Messages are paused. "
+  + "Ask your signers.";
+const ROOM_MISSING = "The message room of this wallet is missing. Messages are paused. "
+  + "Ask your signers.";
+const ROOM_WARN = { changed: ROOM_CHANGED, missing: ROOM_MISSING };
+
+// The reactor runs often, and each failed write counts against the server's rate limit.
+function throttled(key, fn) {
+  if (tried.has(key)) return;
+  tried.add(key);
+  setTimeout(() => tried.delete(key), 30000);
+  once(key, fn);
+}
+
+function syncRooms() {
+  if (!sdb || !Z) return;
+  recallRooms(); adoptRooms(); watchRooms(); ensureRooms();
+}
+
+// Seat secrets keep each room (and backups carry it), so a room field that is later lost or
+// damaged in the store cannot take the room with it after a reload.
+function recallRooms() {
+  for (const [k, s] of Object.entries(secrets)) {
+    if (!s || !validRoom(s.room)) continue;
+    roomKeys[s.room.id] ||= s.room.key;
+    if (pin(roomPins, k.split(":")[0], s.room.id) === "new") saveMerged("zf-rooms", roomPins, oldest);
+  }
+}
+
+function adoptRooms() {
+  for (const g of state.groups) {
+    let pick = pickRoom(g.id, g.room, roomPins, isWalletId);
+    const known = pick === "use" && roomKeys[g.room.id];
+    if (known && known !== g.room.key) pick = "changed";   // the key is pinned with the id
+    if (pick === "use") learnRoom(g.id, g.room);
+    const id = roomOf(g, pick);
+    if (id) rooms[g.id] = id; else delete rooms[g.id];
+    const warn = id ? null : ROOM_WARN[pick];
+    if (warn) roomWarn.set(g.id, warn); else roomWarn.delete(g.id);
+  }
+}
+
+function learnRoom(gid, room) {
+  roomKeys[room.id] ||= room.key;   // the first key seen for a room id wins
+  if (pin(roomPins, gid, room.id) === "new") saveMerged("zf-rooms", roomPins, oldest);
+  for (const [i, s] of mySeatSecrets(gid)) if (!validRoom(s.room)) putSec(gid, i, { room });
+}
+
+// A wallet document that lost its room field keeps the pinned room, while this page holds its key.
+function roomOf(g, pick) {
+  const id = pick === "use" ? g.room.id : pick === "missing" ? roomPins[g.id] : null;
+  return roomKeys[id] ? id : null;
+}
+
+// Reads the rooms of every wallet where this browser holds a seat, open or not.
+function watchRooms() {
+  for (const [gid, w] of roomSubs) {
+    if (rooms[gid] === w.id) continue;
+    w.off(); roomSubs.delete(gid); delete chat[gid];
+  }
+  for (const [gid, id] of Object.entries(rooms)) {
+    if (roomSubs.has(gid) || !mySeatSecrets(gid).length) continue;
+    const off = sdb.collection("groups/" + id + "/messages").onSnapshot((snap) => {
+      const list = snap.docs.map((d) => parseMsg(d.id, d.data())).filter(Boolean);
+      onMessages(gid, list.sort(byTime));
+      render();
+    }, (e) => log("message room error: " + e.code));
+    roomSubs.set(gid, { id, off });
+  }
+}
+
+function ensureRooms() {
+  for (const g of state.groups) {
+    if (g.unreadable || !mySeatSecrets(g.id).length) continue;
+    const pick = pickRoom(g.id, g.room, roomPins, isWalletId);
+    if (pick === "none" || pick === "missing") throttled("room:" + g.id, () => publishRoom(g.id));
+  }
+}
+
+// Writes the room field of a wallet that names none. A wallet with a pinned room gets that room
+// again, and never a new one: a new room would split the signers.
+async function publishRoom(gid) {
+  const pinned = roomPins[gid], room = pinned ? { id: pinned, key: roomKeys[pinned] } : newRoom();
+  if (!room.key) return;   // the pinned room's key is not in this page: another signer can help
+  const ref = sdb.doc("groups/" + gid);
+  if (!(await ref.acquire({ holder: crypto.randomUUID(), ttlMs: 10000 })).acquired) return;
+  const cur = await ref.get();
+  const pick = cur.exists && pickRoom(gid, cur.data().room, roomPins, isWalletId);
+  if (pick !== "none" && pick !== "missing") return;
+  await ref.update({ room });
+  log("message room written");
+}
+
+// A seat made before messages gets its signing key once. The seat document keeps the first key.
+// The lease comes first, so two tabs of one browser cannot make two keys. The key is published
+// only after this browser saved it. An older backup file lacks the key, so a new key on a
+// backed-up seat clears `backedUp` and the page asks for a new backup.
+function ensureSignKey(gid, i) {
+  if (!signing || validPk(state.seats[i].signPk)) return;
+  throttled("sign:" + gid + ":" + i, async () => {
+    const ref = sdb.doc("groups/" + gid + "/seats/" + i);
+    if (!(await ref.acquire({ holder: crypto.randomUUID(), ttlMs: 10000 })).acquired) return;
+    const s = sec(gid, i), made = s.signPk ? null : await newSignKey();   // read after the lease
+    const unsaved = made && s.keyPackage ? { backedUp: false } : {};
+    if (!(await putSec(gid, i, { ...made, ...unsaved }))) return;
+    const cur = await ref.get();
+    if (cur.exists && !validPk(cur.data().signPk)) await ref.update({ signPk: sec(gid, i).signPk });
+  });
+}
+
+// Pins only keys that came from the store, never one this browser just made.
+function pinSigners(seats) {
+  let fresh = false;
+  for (const [i, s] of Object.entries(seats)) {
+    if (validPk(s.signPk) && pin(signPins, skey(state.gid, i), s.signPk) === "new") fresh = true;
+  }
+  if (fresh) saveMerged("zf-signpins", signPins, oldest);
+}
+
+const changedSigners = () => seatIds().filter((i) => {
+  const pk = signPins[skey(state.gid, i)];
+  return validPk(pk) && (state.seats[i] || {}).signPk !== pk;
+});
+
+// Seats of this browser that hold the signing key their seat document names.
+const sendSeats = () => localSeats().filter((i) => {
+  const s = sec(state.gid, i);
+  return s.signSk && s.signPk === state.seats[i].signPk;
+});
+
+// Why this browser cannot send in the open wallet, or null.
+function chatWhy() {
+  const gid = state.gid;
+  if (roomWarn.has(gid)) return roomWarn.get(gid);
+  if (!localSeats().length) return "Take a seat to read and send messages.";
+  if (!rooms[gid]) return "The message room is being set up.";
+  if (signing === false) return NO_SIGNING;
+  if (sendSeats().length) return null;
+  const making = localSeats().some((i) => !validPk(state.seats[i].signPk));
+  return making ? "Your seat key is being created."
+    : "This browser has no signing key for your seat, so it cannot send messages. "
+      + "A backup file from before messages does not hold this key.";
+}
+
+async function sendMessage(thread, text, seat) {
+  const gid = state.gid, room = rooms[gid];
+  const ref = sdb.collection("groups/" + room + "/messages").doc();
+  const m = { id: ref.id, seat, thread, text, at: Date.now() };
+  const sig = await signMsg(sec(gid, seat).signSk, signedText(gid, room, m));
+  // A send with no answer fails after 10 s. It can still arrive later, so a retry can repeat it.
+  await withTimeout(ref.set({ seat, thread, text, at: m.at, sig }), 10000, "The group server");
+}
+
+// "yes", "no", "changed" or "wait" for a message of the open wallet.
+function trust(m, roomId) {
+  const gid = state.gid, seat = state.seats[m.seat], pk = signPins[skey(gid, m.seat)];
+  const gate = keyState(!!seat && seatIds().includes(m.seat), seat && seat.signPk, pk);
+  if (gate !== "check") return gate;
+  const ok = cachedCheck(m, signedText(gid, roomId, m), pk);
+  return ok === null ? "wait" : ok ? "yes" : "no";
+}
+
+// The key holds everything the result depends on, so no two messages can share an entry.
+// null while the check runs. A miss clears a full cache; results that arrive later still fill it.
+function cachedCheck(m, text, pk) {
+  const id = S([pk, m.sig, text]);
+  if (checked.has(id)) return checked.get(id);
+  if (checked.size >= 5000) checked.clear();
+  checked.set(id, null);
+  verifyMsg(pk, m.sig, text).then((ok) => { checked.set(id, ok); render(); });
+  return null;
+}
+
+// The threads this browser shows right now: the wallet thread (tab or setup page) and a payment.
+function openThreads() {
+  const gid = state.gid;
+  if (!rooms[gid] || !state.g || state.g.unreadable) return [];
+  const out = [];
+  if (!walletReady() || ui.tab === "messages") out.push([gid, "wallet"]);
+  if (state.sid && state.wallet) out.push([gid, "pay:" + state.sid]);
+  return out;
+}
+
+// A window that is visible but has no focus (open beside another app) is not being read.
+const watching = () => document.visibilityState === "visible" && document.hasFocus();
+const viewing = (gid, thread) => watching()
+  && openThreads().some(([g, t]) => g === gid && t === thread);
+
+// ponytail: the read mark is the time of the newest message from another seat that this browser
+// showed. A sender clock behind another sender's clock can make its new messages count as read.
+// A message dated more than MAX_SKEW ahead is shown but never counted. Upgrade path: seen ids.
+function markRead() {
+  if (!watching()) return;
+  let changed = false;
+  for (const [gid, thread] of openThreads()) {
+    const mine = mineIn(gid);
+    const theirs = countable(gid).filter((m) => m.thread === thread && !mine.includes(m.seat));
+    const top = Math.max(0, ...theirs.map((m) => m.at));
+    const k = rooms[gid] + ":" + thread;
+    if (top > (readMarks[k] || 0)) { readMarks[k] = top; changed = true; }
+  }
+  if (changed) saveMerged("zf-read", readMarks, Math.max);
+}
+
+// The first snapshot holds old messages; only later ones can notify.
+function onMessages(gid, list) {
+  const old = chat[gid];
+  chat[gid] = list;
+  if (!old) { seedMarks(rooms[gid], list); return; }
+  const known = new Set(old.map((m) => m.id));
+  const fresh = list.filter((m) => !known.has(m.id) && !viewing(gid, m.thread)
+    && countUnread(countable(gid, [m]), mineIn(gid), readMarks, rooms[gid]));
+  if (fresh.length) notifyNew(gid);
+}
+
+// A new device, private window or Tor session has no read marks. It treats the history it finds
+// as read, so old messages do not all show as unread.
+function seedMarks(roomId, list) {
+  if (!roomId || Object.keys(readMarks).some((k) => k.startsWith(roomId + ":"))) return;
+  const now = Date.now();
+  for (const m of list) {
+    const k = roomId + ":" + m.thread;
+    readMarks[k] = Math.max(readMarks[k] || 0, Math.min(m.at, now));
+  }
+  if (list.length) saveMerged("zf-read", readMarks, Math.max);
+}
+
+function notifyNew(gid) {
+  if (!ui.notify || !("Notification" in window) || Notification.permission !== "granted") return;
+  try { new Notification("New message in " + groupName(gid), { tag: gid }); }
+  catch (e) { log("could not show a notification: " + (e.message || e)); }
+}
+
+async function toggleNotify() {
+  if (!ui.notify && (await Notification.requestPermission()) !== "granted") {
+    throw new Error("This browser did not allow notifications. Change this in the site settings.");
+  }
+  ui.notify = !ui.notify;
+  try { localStorage.setItem("zf-notify", ui.notify ? "1" : ""); } catch { /* no storage */ }
+}
+
 // ───────────────────────── Rendering ─────────────────────────
 const el = (tag, attrs = {}, ...kids) => {
   const n = document.createElement(tag);
@@ -888,8 +1196,9 @@ let opener = "", lastTrigger = "", wantFocus = null;   // focus bookkeeping, see
 // View state that only this browser cares about.
 const ui = {
   forget: false, tab: "overview", send: false, pay: null, payKey: 0, listError: "",
-  create: false, receive: false, move: false, net: "testnet", ack: false,
+  create: false, receive: false, move: false, net: "testnet", ack: false, notify: false,
 };
+try { ui.notify = localStorage.getItem("zf-notify") === "1"; } catch { /* no storage */ }
 const ZEC_FMT = new Intl.NumberFormat("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 8 });
 // ZIP 317 for a payment from up to `outputs` notes: one action per output, change included.
 const feeEstimate = (payees) => 5000 * Math.max(2, payees + 1);
@@ -996,11 +1305,12 @@ function sendBlocker() {
 
 // Draws once per frame, however many changes arrive together. A hidden tab gets no frames, so a
 // timer backs it up and the tab title still shows the approvals.
-let drawPending = false;
+let drawPending = false, composing = false;
 function render() {
   if (drawPending) return;
   drawPending = true;
-  const run = () => { if (drawPending) { drawPending = false; draw(); } };
+  // A redraw replaces the text box and ends an IME composition, so it waits until the end.
+  const run = () => { if (drawPending && !composing) { drawPending = false; draw(); } };
   requestAnimationFrame(run);
   setTimeout(run, 120);
 }
@@ -1084,11 +1394,13 @@ function pageView() {
 function draw() {
   const shell = document.querySelector(".shell"), app = document.getElementById("app");
   const snap = focusSnapshot(shell);
+  markRead();
   renderSide();
-  const pending = state.groups.reduce((n, g) => n + toApprove(g.id).length, 0);
+  const pending = state.groups.reduce((n, g) => n + toApprove(g.id).length + unreadIn(g.id), 0);
   document.title = pending ? "(" + pending + ") Zigs" : "Zigs";
   const form = saveFormState(app);
   const view = pageView(), top = lockedVault ? [] : layers();
+  if (typingMessage(app, [view, ...top])) return;
   app.replaceChildren(view, ...top, appFoot());
   keyControls(shell);
   setModal(view, top.length > 0);
@@ -1100,6 +1412,25 @@ function draw() {
   if (entered) focusLayer(top[1]); else restoreFocus(shell, snap);
 }
 
+// Rebuilding a focused text box closes a phone's keyboard. While a message box has focus, only the
+// message logs update; the whole page redraws when the box loses focus.
+function typingMessage(app, parts) {
+  const box = document.activeElement;
+  if (!box || !box.id.startsWith("chat-text-") || !app.contains(box)) return false;
+  const logs = saveLogs(app);
+  for (const old of app.querySelectorAll(".chat-log")) {
+    const fresh = parts.map((p) => p && p.querySelector("#" + old.id)).find(Boolean);
+    if (!fresh) continue;
+    old.replaceWith(fresh);
+    fresh.scrollTop = logs[fresh.id] ?? fresh.scrollHeight;
+  }
+  if (!box.dataset.redraw) {
+    box.dataset.redraw = "1";
+    box.addEventListener("focusout", () => render(), { once: true });
+  }
+  return true;
+}
+
 // Keep what the viewer is typing, open <details>, and the drawer scroll across live updates.
 function saveFormState(app) {
   const values = {};
@@ -1107,7 +1438,18 @@ function saveFormState(app) {
     if (i.type !== "file") values[i.id] = i.value;
   }
   const open = new Set([...app.querySelectorAll("details[open] > summary")].map((x) => x.textContent));
-  return { values, open, scroll: app.querySelector(".drawer-body")?.scrollTop || 0 };
+  const scroll = app.querySelector(".drawer-body")?.scrollTop || 0;
+  const tabs = app.querySelector(".tabs")?.scrollLeft || 0;
+  return { values, open, logs: saveLogs(app), scroll, tabs };
+}
+
+// A message log that was at its end stays at its end; otherwise it keeps its place.
+function saveLogs(app) {
+  const logs = {};
+  for (const l of app.querySelectorAll(".chat-log")) {
+    logs[l.id] = l.scrollHeight - l.scrollTop - l.clientHeight < 24 ? null : l.scrollTop;
+  }
+  return logs;
 }
 
 function restoreFormState(app, form) {
@@ -1120,8 +1462,16 @@ function restoreFormState(app, form) {
   for (const x of app.querySelectorAll("details > summary")) {
     if (form.open.has(x.textContent)) x.parentElement.open = true;
   }
-  const body = app.querySelector(".drawer-body");
+  restoreScroll(app, form);
+}
+
+function restoreScroll(app, form) {
+  const body = app.querySelector(".drawer-body"), tabs = app.querySelector(".tabs");
   if (body) body.scrollTop = form.scroll;
+  if (tabs) tabs.scrollLeft = form.tabs;
+  for (const l of app.querySelectorAll(".chat-log")) {
+    l.scrollTop = form.logs[l.id] ?? l.scrollHeight;
+  }
 }
 
 // Remembers which control opened a layer, and asks for it back when the layer closes. Returns true
@@ -1172,18 +1522,20 @@ function renderSide() {
 const sideEmpty = () => lockedVault ? "Locked." : dbReady ? "No wallets yet." : "Connecting…";
 
 function sideItem(g) {
-  const n = toApprove(g.id).length, here = g.id === state.gid;
+  const n = toApprove(g.id).length, u = unreadIn(g.id), here = g.id === state.gid;
   const tail = n
     ? el("span", { class: "side-count", role: "img", title: n + " to approve",
       "aria-label": n + " to approve" }, String(n))
     : el("span", { class: "side-meta", title: ruleText(g.t, g.n) },
       g.movedTo ? "Moved" : g.t + " of " + g.n);
+  const unread = u ? el("span", { class: "side-unread", role: "img", title: u + " unread",
+    "aria-label": u + " unread" }, String(u)) : null;
   return el("button", {
     class: "side-item" + (here ? " active" : ""), type: "button",
     "aria-current": here ? "page" : null, "data-key": "wallet-" + g.id,
     onclick: () => { ui.tab = "overview"; openGroup(g.id); },
   }, el("span", { class: "av" }, initials(g.name)),
-  el("span", { class: "side-name" }, g.name), tail);
+  el("span", { class: "side-name" }, g.name), el("span", { class: "side-tail" }, unread, tail));
 }
 
 function forgetBox() {
@@ -1268,6 +1620,7 @@ function lobbyActions(canCreate, restoreBtn) {
 function walletRow(g) {
   if (g.unreadable) return unreadable();
   const seats = mySeatSecrets(g.id).length, n = toApprove(g.id).length, bal = balOf(g.id);
+  const unread = newBadge(unreadIn(g.id));
   const status = g.movedTo ? el("span", { class: "badge plain" }, "Moved")
     : ready[g.id] === false ? el("span", { class: "badge info" }, "Setting up")
     : bal ? money(bal.total) : el("span", { class: "small faint" }, "Open to sync");
@@ -1280,7 +1633,7 @@ function walletRow(g) {
     el("span", { class: "ri-sub" }, netOf(g).label + " · " + g.t + " of " + g.n
       + " signers must approve" + (seats ? "" : " · view only"))),
   el("span", { class: "ri-end" }, status,
-    n ? el("span", { class: "badge warn" }, n + " to approve") : null),
+    n ? el("span", { class: "badge warn" }, n + " to approve") : null, unread),
   el("span", { class: "chev" }, "›"));
 }
 
@@ -1383,23 +1736,29 @@ function groupView() {
   if (g.unreadable) {
     return el("div", { class: "page" }, back, el("div", { class: "card" }, unreadable()));
   }
-  const ready = state.wallet && state.wallet.birthday && rejectedSeats().length === 0
-    && !keysDiffer();
+  const ready = walletReady();
   const why = ready ? sendBlocker() : null;
   const head = groupHead(g, ready, why);
   return ready ? walletView(head, why) : el("div", { class: "page" }, head, setupView());
 }
+
+const walletReady = () => !!(state.wallet && state.wallet.birthday)
+  && rejectedSeats().length === 0 && !keysDiffer();
 
 function walletView(head, why) {
   const unsaved = localSeats().filter((i) => {
     const s = sec(state.gid, i);
     return s.keyPackage && !s.backedUp;
   });
-  const n = toApprove(state.gid).length;
-  const tabs = [["overview", "Overview"], ["activity", "Activity", n], ["members", "Signers"],
-    ["details", "Details"]];
+  const tabs = [
+    ["overview", "Overview"],
+    ["activity", "Activity", countBadge(toApprove(state.gid).length, "to approve", "attn")],
+    ["messages", "Messages", countBadge(unreadIn(state.gid), "unread", "note")],
+    ["members", "Signers"], ["details", "Details"],
+  ];
   const bodies = {
-    overview: overviewTab, activity: activityTab, members: membersTab, details: detailsTab,
+    overview: overviewTab, activity: activityTab, messages: messagesCard, members: membersTab,
+    details: detailsTab,
   };
   if (!Object.hasOwn(bodies, ui.tab)) ui.tab = "overview";
   return el("div", { class: "page" }, head, tabBar(tabs),
@@ -1428,6 +1787,9 @@ function groupHead(g, ready, why) {
     ready ? el("div", { class: "ph-actions wallet-actions" }, ...walletActions(why)) : null);
 }
 
+const countBadge = (n, what, cls) => n
+  ? el("span", { class: "count " + cls, role: "img", "aria-label": n + " " + what }, n) : null;
+
 // Arrow keys, Home and End move between tabs. Only the selected tab is in the Tab order.
 function tabBar(tabs) {
   const ids = tabs.map(([id]) => id), last = ids.length - 1, at = ids.indexOf(ui.tab);
@@ -1441,14 +1803,12 @@ function tabBar(tabs) {
     wantFocus = { key: "tab-" + ui.tab, force: true };
     render();
   };
-  const tab = ([id, label, count]) => el("button", {
+  const tab = ([id, label, badge]) => el("button", {
     class: "tab", type: "button", role: "tab", id: "tab-" + id, "data-key": "tab-" + id,
     "aria-selected": ui.tab === id ? "true" : "false",
     "aria-controls": ui.tab === id ? "panel-" + id : null,
     tabindex: ui.tab === id ? "0" : "-1", onclick: () => { ui.tab = id; render(); },
-  }, label, count
-    ? el("span", { class: "count attn", role: "img", "aria-label": count + " to approve" }, count)
-    : null);
+  }, label, badge);
   return el("div", { class: "tabs", role: "tablist", "aria-label": "Wallet sections", onkeydown },
     tabs.map(tab));
 }
@@ -1482,7 +1842,8 @@ function setupView() {
     "The signers made different wallet keys, so this wallet is not safe to use. "
     + "Do not send funds to it. Create a new wallet.") : null;
   return el("div", { class: "page", style: "gap:16px" }, split, top,
-    el("div", { class: "setup" }, progressCard(), seatsCard(open)));
+    el("div", { class: "setup" }, progressCard(), seatsCard(open)),
+    localSeats().length ? messagesCard() : null);
 }
 
 function joinCard(seat) {
@@ -1797,6 +2158,143 @@ function receivedRow(r) {
 // ── Activity ──
 function activityTab() {
   return el("section", { class: "card" }, el("div", { class: "card-head card-pad", style: "padding-bottom:12px" }, el("h2", {}, "All activity")), activityRows(activity()));
+}
+
+// ── Messages ──
+const FINE = "Signers, and anyone else who has the invite link, can read these messages. The "
+  + "group server stores them sealed and sees only when they are sent.";
+const up = (s) => s.charAt(0).toUpperCase() + s.slice(1);
+const sender = (i) => state.seats[i] ? seatLabel(i) : "Unknown sender";
+
+function messagesCard() {
+  const changed = changedSigners();
+  return el("section", { class: "card card-pad chat" },
+    el("div", { class: "card-head" }, el("h2", {}, "Messages"), notifyButton()),
+    changed.length ? el("div", { class: "callout bad", role: "alert" }, "Signing key changed: "
+      + changed.map((i) => "seat " + i).join(", ") + ". Their messages are not verified.") : null,
+    chat[state.gid] ? chatLog("wallet") : null,
+    composer("wallet", chatWhy()));
+}
+
+// The thread of one payment, under the payment's steps.
+function discussion(ss) {
+  const thread = "pay:" + ss.id;
+  return el("section", { class: "chat-section" }, el("span", { class: "label" }, "Discussion"),
+    chat[state.gid] ? chatLog(thread) : null, composer(thread, chatWhy()));
+}
+
+function notifyButton() {
+  if (!("Notification" in window)) return null;
+  return el("button", {
+    class: "btn sm", type: "button", "aria-pressed": ui.notify ? "true" : "false",
+    onclick: act(toggleNotify),
+  }, ui.notify ? "Notifications on" : "Notify me while Zigs is open");
+}
+
+function chatLog(thread) {
+  const wallet = thread === "wallet", items = threadItems(thread, rooms[state.gid]);
+  const none = wallet
+    ? el("div", { class: "empty" }, el("h3", {}, "No messages yet"),
+      el("p", { class: "small" }, FINE))
+    : el("p", { class: "small faint" }, "No messages about this payment yet.");
+  return el("div", {
+    class: "chat-log", id: wallet ? "log-wallet" : "log-pay", role: "log", tabindex: "0",
+    "data-key": wallet ? "log-wallet" : "log-pay", "aria-label": wallet ? "Messages" : "Discussion",
+  }, items.length ? items : none);
+}
+
+// Messages of one thread, with the payment events of the wallet thread, oldest first.
+function threadItems(thread, roomId) {
+  const msgs = (chat[state.gid] || []).filter((m) => m.thread === thread)
+    .map((m) => ({ ...m, kind: "msg" }));
+  const events = thread === "wallet" ? state.sessions.flatMap(payEvents) : [];
+  return [...msgs, ...events].sort(byTime)
+    .map((x) => guard(x.kind === "msg" ? msgItem : eventItem, x, roomId));
+}
+
+const payEvents = (ss) => [
+  ["1", "proposed", finite(ss.createdAt)],
+  ...(Number.isFinite(ss.broadcastAt) ? [["2", "sent", ss.broadcastAt]] : []),
+  ...(ss.status === "cancelled"
+    ? [["3", "cancelled", finite(ss.cancelledAt || ss.createdAt)]] : []),
+].map(([n, what, at]) => ({ kind: "event", id: ss.id + ":" + n, at, what, ss }));
+
+const EVENT_TEXT = {
+  proposed: (ss) => up(proposer(ss)) + " proposed " + payTitle(ss),
+  sent: (ss) => "Sent: " + payTitle(ss),
+  cancelled: (ss) => "Cancelled: " + payTitle(ss),
+};
+
+function eventItem(e) {
+  const n = e.what === "proposed" ? unreadIn(state.gid, "pay:" + e.ss.id) : 0;
+  return el("button", {
+    class: "msg-event", type: "button", "data-key": "event-" + e.id,
+    onclick: () => openSession(e.ss.id),
+  }, el("span", {}, EVENT_TEXT[e.what](e.ss), newBadge(n)), el("time", {}, when(e.at)));
+}
+
+const newBadge = (n) => n
+  ? el("span", { class: "badge info plain", role: "img", "aria-label": n + " unread" }, n + " new")
+  : null;
+
+const TRUST = {
+  yes: ["ok", "✓ Verified"], wait: ["", "Checking…"], no: ["bad", "Not verified"],
+  changed: ["bad", "Key changed. Not verified."],
+};
+
+function msgItem(m, roomId) {
+  const [cls, label] = TRUST[trust(m, roomId)];
+  return el("div", { class: "msg" }, avatar(m.seat),
+    el("div", { class: "msg-body" },
+      el("div", { class: "msg-head" }, el("b", {}, sender(m.seat)), el("time", {}, when(m.at)),
+        el("span", { class: "vmark " + cls }, label)),
+      el("p", { class: "msg-text" }, m.text)));
+}
+
+const coarse = () => matchMedia("(pointer: coarse)").matches;
+const chatBusy = (thread) => busy.has("chat:" + rooms[state.gid] + ":" + thread);
+
+// Enter sends and Shift+Enter adds a line. A touch screen has no Shift key, so there Enter adds a
+// line and the Send button sends. Each composer has its own ids, so a draft survives a redraw.
+function composer(thread, why) {
+  const kind = thread === "wallet" ? "wallet" : "pay", seats = sendSeats();
+  const sending = chatBusy(thread);
+  const onkeydown = (ev) => {
+    const newLine = ev.shiftKey || ev.isComposing || ev.keyCode === 229 || coarse();
+    if (ev.key !== "Enter" || newLine) return;
+    ev.preventDefault();
+    ev.target.form.requestSubmit();
+  };
+  const as = seats.length > 1 ? el("label", { class: "composer-as small muted" }, "Send as",
+    el("select", { class: "input", id: "chat-as-" + kind, name: "as" },
+      seats.map((i) => el("option", { value: String(i) }, "Seat " + i)))) : null;
+  const onsubmit = act((ev) => submitMessage(ev.target, thread, seats));
+  return el("form", { class: "composer", onsubmit },
+    why ? el("p", { class: "hint" + (roomWarn.has(state.gid) ? " bad" : "") }, why) : null,
+    el("textarea", {
+      class: "input", id: "chat-text-" + kind, name: "text", rows: "2", disabled: !!why, onkeydown,
+      "aria-label": "Message to the signers",
+      placeholder: "Message to the signers"
+        + (coarse() ? "" : ". Enter sends, Shift+Enter adds a line"),
+    }),
+    el("div", { class: "composer-row" }, as,
+      el("button", { class: "btn primary", type: "submit", disabled: !!why || sending },
+        sending ? "Sending…" : "Send message")),
+    el("p", { class: "small faint" }, FINE));
+}
+
+async function submitMessage(form, thread, seats) {
+  const box = form.elements.text, draft = box.value, r = checkText(draft);
+  if (r.error) throw new Error(r.error);
+  const key = "chat:" + rooms[state.gid] + ":" + thread;
+  if (busy.has(key)) return;
+  busy.add(key); render();
+  try {
+    await sendMessage(thread, r.text, form.elements.as ? Number(form.elements.as.value) : seats[0]);
+    // A redraw during the send replaced the form: clear the live box, but not new typing.
+    const live = document.getElementById(box.id);
+    if (live && live.value === draft) live.value = "";
+  } finally { busy.delete(key); }
 }
 
 // ── Members ──
@@ -2156,6 +2654,7 @@ function sessionDrawer(ss) {
       lostApproval(ss),
       ins && !refused ? guard(breakdown, ins) : null,
       guard(timeline, ss, refused),
+      guard(discussion, ss),
       ss.final ? guard(txDetails, ss) : null,
       ss.broadcastTxid ? chainSees() : null,
       ins && !refused ? el("details", { class: "small faint" }, el("summary", {}, "Technical details"),
@@ -2273,6 +2772,15 @@ window.addEventListener("storage", async (ev) => {
   render();
 });
 
+document.addEventListener("visibilitychange", render);
+window.addEventListener("focus", render);
+const endCompose = () => {
+  if (!composing) return;
+  composing = false; drawPending = false; render();
+};
+document.addEventListener("compositionstart", () => { composing = true; });
+document.addEventListener("compositionend", endCompose);
+document.addEventListener("focusout", endCompose);
 document.getElementById("banner-close").addEventListener("click", () => {
   document.getElementById("banner").hidden = true;
 });

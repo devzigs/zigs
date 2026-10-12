@@ -8,7 +8,8 @@ the wallet, and on chain each payment looks like a shielded payment from a stand
 - iPhone and Mac apps: in [`ios/`](ios). They use the same Rust engine. Build them from source in Xcode.
 - Website: https://zigs.app
 - How it works, end to end: [PROTOCOL.md](PROTOCOL.md)
-- Messages (design, not built yet): [CHAT.md](CHAT.md)
+- Messages: each wallet has a private room for its signers, with a discussion thread on every
+  payment. Later phases are in [CHAT.md](CHAT.md).
 
 Zigs uses re-randomized FROST threshold signatures ([ZIP 312](https://zips.z.cash/zip-0312)) on
 the Ironwood shielded pool. It is a **beta** and **not audited**. Testnet wallets use free test
@@ -221,7 +222,7 @@ iPhone.
 | [`wasm/src/snapshot.rs`](wasm/src/snapshot.rs) | Saved sync state: notes and the note commitment tree |
 | [`wasm/src/ffi.rs`](wasm/src/ffi.rs) | C interface for the iPhone and Mac apps |
 | [`web/index.html`](web/index.html), [`web/app.css`](web/app.css), [`web/app.js`](web/app.js) | The web app: page, styles and script (no inline script or style) |
-| [`web/shim.js`](web/shim.js), [`web/qr.js`](web/qr.js), [`web/payees.js`](web/payees.js), [`web/vault.js`](web/vault.js) | Store client, QR encoder, payment list parser and passkey lock (no third-party code) |
+| [`web/shim.js`](web/shim.js), [`web/qr.js`](web/qr.js), [`web/payees.js`](web/payees.js), [`web/vault.js`](web/vault.js), [`web/chat.js`](web/chat.js) | Store client, QR encoder, payment list parser, passkey lock and message helpers (no third-party code) |
 | [`cf/src/index.js`](cf/src/index.js) | Group server: Cloudflare Worker with one Durable Object per wallet, limits against abuse |
 | [`ios/Zigs/`](ios/Zigs) | SwiftUI app for iPhone and Mac |
 | [`src/`](src), [`tests/e2e.sh`](tests/e2e.sh) | Command-line version of the ceremony and adversarial tests |
@@ -283,6 +284,7 @@ Use the `Zigs` scheme for iPhone and `ZigsMac` for Mac (Apple silicon). The apps
 - `node web/test/payees.mjs`: the pasted payment list parser.
 - `node web/test/vault.mjs`: the passkey lock's sealed record (wrong key, changed record, new IV).
 - `node web/test/util.mjs`: address grouping, number checks and the key package comparison.
+- `node web/test/chat.mjs`: message signatures, room and key pinning, text limits and unread counts.
 - `node web/test/qr.mjs`: the QR encoder against libqrencode (needs the `qrencode` command).
 - `bash tests/e2e.sh`: the command-line ceremony in separate processes, with attacks: wallet
   substitution, fewer than t signers, tampered randomizer and sighash, nonce reuse, wrong share

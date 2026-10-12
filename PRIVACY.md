@@ -58,6 +58,7 @@ What the server can still see:
 | Timing of every write | Writes happen when people act | None |
 | Which IP addresses connect to which wallet | Each wallet has its own connection | Use Tor Browser, or a VPN, to hide your IP address |
 | Number of signers and payments | Count of documents | None |
+| The id of each wallet's message room, when each message is sent, how many messages, their padded sizes, and which IP addresses connect to the room | A room is one more namespace with its own connection, and each message is one document | Use Tor Browser, or a VPN, to hide your IP address. Message text, thread and sender stay sealed. |
 
 The server keeps no logs: Workers Logs are off (`observability.enabled = false`), and the code
 writes nothing about requests. IP addresses are used in memory only: to apply rate limits, and as
@@ -123,6 +124,8 @@ per-IP rate limits.
 | Wallet secrets (from invite links) | Same as the key share | Same as the key share |
 | Sync state (notes, tree) | IndexedDB, sealed with the wallet key | File, sealed with the wallet key |
 | Cached balances for the wallet list | Local storage, sealed with the wallet key | Settings, sealed with the wallet key |
+| Message signing key | With the key share (it is a field of the seat's secrets) | Not built yet |
+| Pinned room ids, pinned signing keys, read times | Local storage, in plain text. No secret in them. | Not built yet |
 
 Without the lock, anyone who controls your unlocked device can read your key share and wallet
 secrets. One share alone cannot move funds: a payment needs a full threshold of signers.
@@ -156,6 +159,8 @@ the passkey guards the key share instead. The lock is opt-in.
 - Every signer holds the wallet's viewing key and sees every payment. A signer removed with
   "Change signers" keeps the old wallet's history but gets no access to the new wallet: the old
   wallet stores only the new wallet's id, never its secret.
+- A removed signer keeps the old wallet's message room and can read it. The new wallet has a new
+  room that the removed signer cannot read.
 
 ## Not protected
 
@@ -175,6 +180,10 @@ the passkey guards the key share instead. The lock is opt-in.
   store's address, and nothing checked it.
 - The group server can refuse service, drop messages or replay old ones. It cannot read them or
   write new ones.
+- Wallet messages are not forward secret. Whoever gets a room secret later can read the room. A
+  device that holds a seat can sign messages as that seat. Seats from before messages existed get
+  their signing key when their device opens the wallet, and other devices trust the first key they
+  see for each seat.
 - Chain reorganisations are not handled in the sync state yet.
 - The code is not audited. Mainnet wallets are limited to 0.5 ZEC: at that balance the app stops
   showing the address and warns. It cannot stop someone from sending more, and payments out

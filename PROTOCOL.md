@@ -50,6 +50,7 @@ flowchart LR
   holder each time, so the server cannot link one device across wallets.
 - **X25519 seat key:** each seat publishes a public key when it joins. Key ceremony shares are
   encrypted to it.
+- **Ed25519 seat key:** each seat also has a signing key for messages (section 14).
 
 ## 3. How the group server stays blind
 
@@ -61,8 +62,8 @@ flowchart LR
   length does not show amounts.
 - **What the server can do.** It can refuse service, drop messages or replay old values. It cannot
   read values or write new valid ones.
-- **What the server sees.** Wallet ids, document paths and field names, timing, and which IP
-  addresses connect to which wallet. It keeps no logs.
+- **What the server sees.** Wallet ids, message room ids, document paths and field names, timing,
+  and which IP addresses connect to which wallet. It keeps no logs.
 - **Abuse limits.** A message is at most 300,000 characters, a document at most 256,000, and a
   wallet at most 10 MB. Writes and new connections are rate-limited per IP address.
 
@@ -290,12 +291,13 @@ the web, on iPhone and on Mac at the same time.
   - Wallet list, and a "Create wallet" form (name, *t*, *n*, network).
   - Invite card with the link and a QR code.
   - Setup steps: signers join, create the key together, check the address.
-  - Wallet view with the tabs Overview, Activity, Signers and Details.
+  - Wallet view with the tabs Overview, Activity, Messages, Signers and Details.
   - Send: one or more recipients, "Paste a list" from a spreadsheet, and a fee estimate.
   - Receive: the checked address, a QR code and a copy button.
   - Payment drawer: the decoded transaction, the recipient check, the approval steps, and the
     buttons Approve, Build proof and Send to network.
   - Change signers.
+  - Messages: the wallet thread, a discussion in each payment drawer, and unread counts (section 14).
 - **Device features.** Optional passkey lock, backup and restore of key shares, and a message
   when the browser blocks WebAssembly (Tor Browser at the Safer level).
 - **Tor Browser.** Prepared for the Standard level. Restore the backup in each session and finish
@@ -343,7 +345,7 @@ the web, on iPhone and on Mac at the same time.
 | Party | Learns | Does not learn |
 |---|---|---|
 | Chain observer | One shielded transaction, its fee and its number of actions | That a group signed it, the signers, the approval rule, recipients, amounts |
-| Group server | Wallet ids, document paths, timing, IP addresses | Names, addresses, keys, amounts, recipients, transactions |
+| Group server | Wallet ids, message room ids, document paths, timing, message counts and sizes, IP addresses | Names, addresses, keys, amounts, recipients, transactions, message text and senders |
 | Light-wallet server | IP address, birthday height, blocks downloaded, transactions sent | Which notes belong to the wallet |
 | Other signers | Everything about the shared wallet | Your key share and your nonces |
 
@@ -364,3 +366,45 @@ the web, on iPhone and on Mac at the same time.
 - `alpha` comes from the PCZT, as in the Zcash Foundation's `zcash-sign`. Compare this with the
   final ZIP 312 text before production use.
 - The group server's storage and abuse limits are loose for a public relay.
+
+## 14. Messages
+
+Phase 1 of [CHAT.md](CHAT.md). The web app has it. The iPhone and Mac apps do not yet.
+
+- **Room.** Each wallet has a room: a store namespace with its own id (20 hex characters) and its
+  own secret (32 bytes). The wallet document holds both in the sealed field `room`, as
+  `{id, key}`. A device that holds a seat and sees no valid room makes one, under a lease on the
+  wallet document. The room secret is kept apart from the wallet secrets, so a room never shows
+  as a wallet. A device never makes a second room for a wallet it has a pinned room for. If the
+  field is missing, a device that still holds the pinned room's key writes that room again.
+- **Message.** One document at `groups/<room id>/messages/<message id>` with the sealed fields
+  `seat`, `thread`, `text`, `at` and `sig`. Sealing is the same as for wallet fields, with the
+  room secret. `thread` is `wallet` or `pay:<session id>`. `text` is plain text of 1 to 2,000
+  UTF-16 code units (the JavaScript `length`). A client must count the same way. `at` is the
+  sender's clock in milliseconds.
+- **Seat signing key.** Ed25519 from Web Crypto. The private key (PKCS8, base64) is the seat
+  secret `signSk`. The public key (raw, hex) is the field `signPk` of the seat document. A seat
+  made before messages gets its key once, when its device opens the wallet. The key is in the
+  seat's backup file. A backup made before the key existed does not hold it, so the page asks for
+  a new backup when it makes the key.
+- **Signature.** `sig` is the base64 Ed25519 signature over the UTF-8 bytes of
+  `JSON.stringify(["zigs-msg-v1", wallet id, room id, message id, seat, thread, at, text])`.
+  [`web/test/chat.mjs`](web/test/chat.mjs) holds a fixed text, public key and signature to test
+  against.
+- **Pinning.** Each device keeps the first room id it sees for a wallet, and the first `signPk`
+  it sees for each seat. A later room id pauses messages and shows a warning. So does a missing
+  room field when the device no longer holds the pinned room's key. A later `signPk`
+  shows "Key changed. Not verified." on that seat's messages.
+- **Verified.** A message is verified when `seat` is a seat of the wallet, the seat document's
+  `signPk` equals the pinned key, and the signature is valid. Any other message shows as "Not
+  verified". The app never hides it.
+- **Payment threads.** The thread `pay:<session id>` is the discussion of one payment. The
+  wallet thread also shows payment events (proposed, sent, cancelled). They come from the payment
+  documents and need no extra writes.
+- **Unread and notifications.** Each device keeps the time of the newest message from another
+  seat that it showed in each thread. Only the wallet thread and the threads of payments that
+  exist count. A message dated more than 10 minutes ahead is shown but not counted. A window
+  without focus does not mark messages read. A browser notification, if the person turns it on,
+  carries no message text.
+- **Limits.** A device downloads the whole room when it connects, and a room holds about 5,000 to
+  10,000 messages (10 MB). Times come from the sender's clock. Messages are not forward secret.

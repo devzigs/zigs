@@ -1,7 +1,8 @@
 # Messages in Zigs: design
 
-Status: design, not built. The web app comes first and the iPhone app follows. This document
-records the decisions taken on 12 October 2026 and the order of the work.
+Status: phase 1 (wallet room and payment threads) is built in the web app. Phases 2 to 6 are
+design only. The iPhone app follows. This document records the decisions taken on 12 October 2026
+and the order of the work.
 
 Zigs is a shared wallet, so its messages exist to explain, request and approve money. A
 messenger such as Signal does none of that. Messages here are tied to wallets, payments
@@ -40,7 +41,8 @@ flowchart LR
 ### 2.1 Wallet room
 
 - One room for each wallet, and one thread for each payment proposal.
-- Payment events appear in the timeline: proposed, approved, signed, sent, cancelled.
+- Payment events appear in the timeline: proposed, sent and cancelled. Approved and signed events
+  are later work, because the wallet view reads the approvals of the open payment only.
 - From a payment thread, a signer can open the payment and approve it.
 
 ### 2.2 Wallet inbox
@@ -122,14 +124,14 @@ PRIVACY.md gets these rows when each phase ships.
 
 ## 8. Phases
 
-| Phase | Scope | Main work |
-|---|---|---|
-| 1 | Wallet room and payment threads | Room namespace, signing keys, Messages tab, payment events in the timeline |
-| 2 | Direct chat between Zigs users | Contact links, chat namespace, personal signing key |
-| 3 | Memos on payments, wallet inbox | Engine writes memos, full transaction fetch, reorg handling (`wasm/src/chain.rs:75`) |
-| 4 | Payment requests | ZIP 321 parsing, **Propose this** |
-| 5 | Personal account, on-chain direct messages | New key type, fee funding, multi-memo messages |
-| 6 | Extra encryption layer | Post-quantum handshake and ratchet, released only after an outside cryptography review |
+| Phase | Status | Scope | Main work |
+|---|---|---|---|
+| 1 | Built (web) | Wallet room and payment threads | Room namespace, signing keys, Messages tab, payment events in the timeline |
+| 2 | Design | Direct chat between Zigs users | Contact links, chat namespace, personal signing key |
+| 3 | Design | Memos on payments, wallet inbox | Engine writes memos, full transaction fetch, reorg handling (`wasm/src/chain.rs:75`) |
+| 4 | Design | Payment requests | ZIP 321 parsing, **Propose this** |
+| 5 | Design | Personal account, on-chain direct messages | New key type, fee funding, multi-memo messages |
+| 6 | Design | Extra encryption layer | Post-quantum handshake and ratchet, released only after an outside cryptography review |
 
 Until phase 6 ships, on-chain messages rely on Zcash's own memo encryption, and the app says so.
 The iPhone app follows the web app phase by phase.
