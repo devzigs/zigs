@@ -826,7 +826,8 @@ struct RecipientRow: View {
         let net = model.state.net
         let to = row.to.trimmingCharacters(in: .whitespacesAndNewlines)
         VStack(alignment: .leading, spacing: 8) {
-            TextField("\(net.prefix)…", text: $row.to, axis: .vertical)
+            // One line: a wrapped field breaks the address with hyphens that look like part of it.
+            TextField("\(net.prefix)…", text: $row.to)
                 .font(.body.monospaced()).codeEntry()
             HStack {
                 TextField("0.00", text: $row.amount).decimalEntry().font(.title3.monospacedDigit())
@@ -839,6 +840,9 @@ struct RecipientRow: View {
                 let ok = model.onNetwork(to)
                 Text(ok ? "Valid \(net.label.lowercased()) address" : "Not a \(net.label.lowercased()) unified address with an Orchard receiver")
                     .font(.caption).foregroundStyle(ok ? Color.good : Color.bad)
+                if ok {
+                    Text(grouped(to)).font(.caption.monospaced()).foregroundStyle(Color.mist).textSelection(.enabled)
+                }
             }
         }
     }

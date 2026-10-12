@@ -230,7 +230,7 @@ struct JoinSheet: View {
                     TextField("Shown to your signers", text: $model.name)
                 }
                 Section {
-                    TextField("https://…/#wallet.key", text: $link, axis: .vertical)
+                    TextField("https://…/#wallet.key", text: $link)
                         .font(.body.monospaced())
                         .codeEntry()
                     PasteButton(payloadType: String.self) { s in Task { @MainActor in link = s.first ?? "" } }
