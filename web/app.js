@@ -827,6 +827,8 @@ const el = (tag, attrs = {}, ...kids) => {
     if (v == null || v === false) continue;
     if (k.startsWith("on")) n.addEventListener(k.slice(2), v);
     else if (k === "class") n.className = v;
+    // Through the CSSOM, which the style-src policy allows; a style attribute it refuses.
+    else if (k === "style") n.style.cssText = v;
     else n.setAttribute(k, v === true ? "" : v);
   }
   for (const k of kids.flat()) if (k != null && k !== false) n.append(k instanceof Node ? k : document.createTextNode(String(k)));

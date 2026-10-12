@@ -7,15 +7,14 @@ const GROUP_ID = /^[0-9a-f]{20}$/;
 const CHAIN_SERVERS = ["https://lwd.zigs.app", "https://zcash-testnet.chainsafe.dev",
   "https://zcash-mainnet.chainsafe.dev"].join(" ");
 
-// No inline script runs. ponytail: styles keep 'unsafe-inline', because the app sets style
-// attributes on elements; moving them to classes would allow a strict style-src.
+// No inline script or style runs: the app sets styles only through the CSSOM.
 function policy(url) {
   const ws = (url.protocol === "https:" ? "wss://" : "ws://") + url.host;
   return [
     "default-src 'none'",
     "script-src 'self' 'wasm-unsafe-eval'",
     "worker-src 'self'",
-    "style-src 'self' 'unsafe-inline'",
+    "style-src 'self'",
     "font-src 'self'",
     "img-src 'self' data: blob:",
     `connect-src 'self' ${ws} ${CHAIN_SERVERS}`,

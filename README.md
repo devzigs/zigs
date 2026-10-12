@@ -219,7 +219,7 @@ iPhone.
 | [`wasm/src/chain.rs`](wasm/src/chain.rs) | Chain sync, balance, note selection, payment building, network rules |
 | [`wasm/src/snapshot.rs`](wasm/src/snapshot.rs) | Saved sync state: notes and the note commitment tree |
 | [`wasm/src/ffi.rs`](wasm/src/ffi.rs) | C interface for the iPhone and Mac apps |
-| [`web/index.html`](web/index.html), [`web/app.js`](web/app.js) | The web app: page and styles, and the app script (no inline script) |
+| [`web/index.html`](web/index.html), [`web/app.css`](web/app.css), [`web/app.js`](web/app.js) | The web app: page, styles and script (no inline script or style) |
 | [`web/shim.js`](web/shim.js), [`web/qr.js`](web/qr.js), [`web/payees.js`](web/payees.js), [`web/vault.js`](web/vault.js) | Store client, QR encoder, payment list parser and passkey lock (no third-party code) |
 | [`cf/src/index.js`](cf/src/index.js) | Group server: Cloudflare Worker with one Durable Object per wallet, limits against abuse |
 | [`ios/Zigs/`](ios/Zigs) | SwiftUI app for iPhone and Mac |
