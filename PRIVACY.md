@@ -17,6 +17,10 @@ is a bug: please report it.
   a device reads. Memo reading is off by default.
 - A memo on a payment is readable by its recipient and by every signer of the sending wallet.
   Every signer of the receiving wallet reads the memos that arrive there.
+- The personal account (web app only) sends and reads messages on chain. A message is the memo of
+  a shielded transaction. The account, its contacts and its messages never reach the group
+  server. The light-wallet server sees the transactions that the account fetches and sends, and
+  your IP address.
 
 ## On chain
 
@@ -65,6 +69,7 @@ What the server can still see:
 | The id of each wallet's message room, when each message is sent, how many messages, their padded sizes, and which IP addresses connect to the room | A room is one more namespace with its own connection, and each message is one document | Use Tor Browser, or a VPN, to hide your IP address. Message text, thread and sender stay sealed. |
 | The id of each direct chat, its two member ids, when each message is sent, how many messages, their padded sizes, and which IP addresses connect to the chat | A chat is a namespace like a room. The server learns that two member ids talk to each other. | Use Tor Browser, or a VPN, to hide your IP address. Names, message text and signing keys stay sealed. The chat lives in the browser and is not in key share backups. |
 | Nothing more for a payment request | A request is the text of a message, so it is sealed like any message. The page reads it on the device and contacts no server for it. | None needed |
+| Nothing for the personal account and its messages | The account, its contacts and its on-chain messages never touch the group server. | None needed |
 
 The server keeps no logs: Workers Logs are off (`observability.enabled = false`), and the code
 writes nothing about requests. IP addresses are used in memory only: to apply rate limits, and as
@@ -81,6 +86,12 @@ The app downloads compact blocks and finds the wallet's notes on the device. The
 - the full transactions you fetch to read memos (`GetTransaction`), with your IP address. The app
   fetches them only where memo reading is on. It is off by default, for each wallet and each
   browser, until a signer turns it on.
+
+- for the personal account, the full transaction of every payment to it, always. A message to
+  the account is a memo, and a memo is only in the full transaction. The memo switch of wallets
+  does not apply. The server also sees the transaction that carries each message that the account
+  sends, and the moment it is sent. The server does not see the text of any message, because the
+  text is encrypted for the recipient.
 
 While it serves blocks, it does not learn which notes or outputs are yours: every wallet
 downloads the same blocks. The fetch for a memo is the exception. The app asks for a transaction
@@ -141,6 +152,7 @@ the per-IP rate limits of the group server.
 | Cached balances for the wallet list | Local storage, sealed with the wallet key | Settings, sealed with the wallet key |
 | Signing key of the seat (messages, and signed writes in a version 3 wallet) | With the key share (it is a field of the seat's secrets) | With the key share: Keychain, this device only. A seat gets it when the seat is taken |
 | Direct chats (chat secrets, member ids) and the personal signing key | With the key share: local storage, or the sealed record when the lock is on. Not in key share backups. | Keychain, this device only, or the sealed record when the Face ID lock is on. Not in key share backups |
+| The personal account: seed, contacts, sent messages, and the key of its saved sync state | With the lock on: a field of the sealed record. With the lock off: IndexedDB, sealed with an AES-GCM key that the browser cannot export. Local storage never holds the seed. | Not in the iPhone and Mac apps yet |
 | Pinned room ids, pinned signing keys, pinned wallet versions and shapes, pinned chat members, read times, the memo reading switch | Local storage, in plain text. No secret in them. | Signing key, version and shape pins, room pins (`zf-rooms`), chat member pins (`zf-chatpins`) and read times (`zf-read`): settings (UserDefaults), in plain text, so device backups can copy them. No secret in them. There is no memo reading switch yet |
 
 Without the lock, anyone who controls your unlocked device can read your key share and wallet
@@ -184,6 +196,23 @@ iPhone and Mac apps make and open the same file.
   but a guessable passphrase can still be found. A stolen file together with its passphrase gives
   the key share.
 
+### Personal account backups
+
+The backup of the personal account uses the same encrypted file as a key share (Argon2id and
+XChaCha20-Poly1305, with a passphrase that you choose).
+
+- **What it holds.** The network, the seed, the birthday and the contacts. It holds no message
+  and no sync state. After a restore, the account syncs again from its birthday, and it shows
+  the messages that it received. The text of the messages that you sent is lost.
+- **Restore.** The page refuses a file that is not encrypted. It refuses a browser that has an
+  account already, because a browser keeps one account. It checks every field before it saves
+  anything.
+- **Limit.** Anyone who has the file and the passphrase can spend the account and read the
+  contacts. The contacts are names and addresses. A change of contacts makes the file out of
+  date, and the page asks for a new backup.
+- **Remove from this browser** deletes the seed. Without a backup file, the money in the account
+  is lost.
+
 ### Lock with a passkey or Face ID
 
 A passkey cannot sign for the wallet: it signs with P-256, and FROST for Zcash uses RedPallas. So
@@ -191,8 +220,8 @@ the passkey guards the key share instead. The lock is opt-in.
 
 - **Web:** "Lock with a passkey" makes a passkey for the site. The WebAuthn PRF extension gives a
   32-byte secret on each Face ID, Touch ID or security key check. That secret is the AES-256-GCM
-  key for one sealed record that holds the key shares, the signing nonces, the wallet secrets and
-  the direct chats.
+  key for one sealed record. The record holds the key shares, the signing nonces, the wallet
+  secrets, the direct chats and the personal account.
   The plain copies are deleted only after the sealed record opens. The page asks for the passkey
   each time it opens (`web/vault.js`).
 - **iPhone:** "Lock with Face ID" in Settings puts a random 256-bit key in the Keychain with a
@@ -307,6 +336,19 @@ the passkey guards the key share instead. The lock is opt-in.
   memo verified or private. The memo is on chain for good. Every signer can read the memos of
   the wallet, and so can a signer who left a wallet and kept its viewing key. A payer can write
   a note whose memo cannot be decrypted. The wallet then shows "Memo is not text" for it.
+- An on-chain message is permanent, and only the memo encryption of Zcash protects its text. A
+  message to the address that you gave a contact can come from anyone who knows that address. The
+  page shows which contact's address received it, not who wrote it. A message to the public
+  address of the account, or to an address that no contact has, shows as not verified.
+- A message part is a note of value zero. A wallet that hides such notes does not show the
+  message. The text of a message that you sent stays in the browser that sent it, and it is not in
+  the backup file. Private windows and Tor Browser delete it when they close.
+- The personal account is a hot account. Whoever controls the browser can spend it. The page warns
+  when it pays fewer than 3 messages and when it holds more than 0.01 ZEC. Without the passkey
+  lock, the AES key that seals the seed is not exportable, but code that runs on the same site can
+  use it. Use the lock, and keep only a few cents in the account.
+- Anyone who knows an address of the account can send it many messages. The account fetches the
+  full transaction of each, and the page shows the 50 newest of the other messages.
 - Anyone with an invite link can write many small messages into a wallet room or a chat. The
   iPhone and Mac apps open each message document once and stop reading a conversation with more
   than 10,000 documents. The web app downloads the whole room.
@@ -336,4 +378,18 @@ the passkey guards the key share instead. The lock is opt-in.
   - A form made for one wallet is dropped when another wallet opens.
   - The request form names a wallet by its id, and a mainnet wallet with no known balance gets
     no form.
+- Tests of the personal account check these points:
+  - The seed is in no local storage entry, no log line and no view state. With the lock off it is
+    only in the sealed IndexedDB record. With the lock on it is only in the sealed record.
+  - The device key cannot be exported. A record that does not read blocks a new account and is
+    never overwritten.
+  - A message is saved before it is sent. A failed save sends nothing. A refused send frees the
+    composer, and a message that no block holds expires.
+  - The account reads memos by itself, and its sync is not dropped as a stale run.
+  - The backup file has the seed, the network, the birthday and the contacts only, and a restore
+    gives the same account. A file that is not encrypted, and a second account, are refused.
+  - The contacts get the next free index, and an address is not a contact twice. A message to
+    index 0 or to an unknown index shows as not verified under Other messages.
+  - Joined messages, an unjoined marker, a memo that is not text, and a payment request in a memo
+    show as they should. A memo goes through the display filters.
 - Testnet transactions made by the web, iPhone and Mac apps are listed in the README.

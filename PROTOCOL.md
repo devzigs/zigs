@@ -708,7 +708,8 @@ the web, on iPhone and on Mac at the same time.
 ## 14. Messages
 
 Phases 1 and 2 of [CHAT.md](CHAT.md). The web, iPhone and Mac apps have them. Section 10.2 lists
-the iPhone and Mac screens. Phases 3 and 4 (memos and payment requests) are in the web app.
+the iPhone and Mac screens. Phases 3 and 4 (memos and payment requests) are in the web app. The
+engine calls of phase 5 (the personal account) are at the end of this section.
 
 - **Room.** Each wallet has a room: a store namespace with its own id (20 hex characters) and its
   own secret (32 bytes). The wallet document holds both in the sealed field `room`, as
@@ -784,8 +785,12 @@ received payments yet. The engine has the calls for them.
     `raw` is too large, does not parse, or has another id than `txid`.
   - `isDeepReorg(message)` and `isDeepReorg` in the native table: `true` when `message` is the
     error of a reorganisation that is deeper than the wallet can undo.
+  - `isNodeRefusal(message)` and `isNodeRefusal` in the native table: `true` when `message` is
+    the error of a node that answered a broadcast and refused the transaction. Any other error,
+    such as a timeout or a lost connection, leaves open whether the node took the transaction.
+    Only the start of the text counts, because server errors start with "lightwalletd: ".
   - `received()` and `walletReceived`: each payment also has `memos` (a list of
-    `{"status": "text", "text"}` or `{"status": "not_text"}`) and `memo_pending`.
+    `{"status": "text", "text"}` or `{"status": "not_text"}`), `indexes` and `memo_pending`.
   - `walletBlocks` stops after a block that does not chain onto the tip. The wallet has then
     dropped its newest block. The app calls `walletNeeds` again, which names a lower `from`.
 
@@ -933,6 +938,116 @@ The engine has the calls, in the native table too, so a native app can add the s
 - **Limits.** A request in a room or a chat is read by everyone who reads the room or the chat. It
   tells them an address ([PRIVACY.md](PRIVACY.md#not-protected)). The memo of a request fills the
   memo field of a row. It goes on chain with the payment, and every approver sees it (section 7.2).
+
+### Personal account and on-chain messages
+
+Phase 5 of [CHAT.md](CHAT.md), section 5. The engine has the calls below, in the native table too.
+The iPhone and Mac apps do not use them yet. The calls need no group server: the personal account
+never touches it.
+
+- **Account.** A single-signer Ironwood account. It is separate from every wallet and never holds a
+  key share or the viewing key of a wallet. It has one signer, so it signs with its spend
+  authorizing key and uses no FROST.
+- **Seed.** 32 random bytes from the system random source, as 64 hexadecimal characters. There is
+  no BIP 39 phrase. The engine reads capital and small letters. It refuses any other seed with
+  the sentence "The seed must be 64 hexadecimal characters." No error text holds a character of
+  the seed.
+- **Key derivation.** The spending key is `SpendingKey::from_zip32_seed(seed, coin type, account
+  0)` of the `orchard` crate. This is the ZIP 32 Orchard path `m/32'/133'/0'` on mainnet and
+  `m/32'/1'/0'` on testnet. The seed is the 32 bytes that the hexadecimal text names.
+  A test pins the addresses of one fixed seed on both networks, so a change of the derivation
+  breaks the build.
+- **Viewing key and addresses.** The viewing key is the unified full viewing key with the Orchard
+  component only (`uview1…` or `uviewtest1…`). An address is the unified address with the Orchard
+  receiver only (`u1…` or `utest1…`), external scope. The public address is at diversifier index 0.
+  An address at another index is the same account. Nobody can link two addresses of one account
+  without its viewing key.
+- **Calls.** The web names are below. The native table has the same names and JSON, except
+  `createMessage`, which is `walletMessage(key, to, text, tip)` there, like `walletSpend`.
+  - `accountNew(network)`: `network` is `mainnet` or `testnet`. The result is
+    `{"seed": "<64 hex characters>", "ufvk": "<viewing key>", "address": "<address>"}`.
+  - `accountKeys(seed, network)`: the result is `{"ufvk", "address"}`.
+  - `addressAt(ufvk, index)`: the address at diversifier index `index` (0 to 4,294,967,295), as
+    text. The network comes from the viewing key. The web call refuses an `index` that is not a
+    whole number in that range, also `undefined`. A plain conversion would turn `undefined` into
+    another index, such as 0, the public address. The native call takes a number that fits in 32
+    bits.
+  - `splitMessage(text)`: a JSON list of memo texts, for example `["(1/2) …", "(2/2) …"]`.
+  - `joinMessage(memos)`: `memos` is a JSON list of texts. The result is `{"text": <text or
+    null>}`.
+  - `ChainWallet.createMessage(to, text)`: it is asynchronous like `createSpend`. The result is
+    `{"pczt", "pool": "ironwood", "fee", "parts", "note_value", "change"}`. It has no `amount`.
+  - `accountSign(pczt, seed, network)`: the result is `{"signed_pczt"}`. `finalize` then proves
+    and extracts, as for a wallet.
+- **Parts.** `splitMessage` follows these rules, in this order:
+  - The text is not empty and holds no null character.
+  - The text has at most 2,000 characters. A character is one Unicode scalar value, so a 4-byte
+    emoji counts once. The JavaScript `length` counts UTF-16 code units and is never lower than
+    this count. So a page that limits `length` to 2,000 never passes a text that breaks this
+    limit.
+  - A text of at most 512 UTF-8 bytes is one memo, with no marker.
+  - A longer text goes into parts of at most 506 bytes, cut only between characters. Each part
+    gets the marker `(k/N) ` in front (6 bytes, one digit each for k and N). A part is then at
+    most 512 bytes. The cut is greedy, so the parts are as few as possible.
+  - A message has at most 5 parts. A text that needs more is refused. Only `splitMessage` knows
+    the number of parts, so a page calls it to check this limit and to show the fee.
+  - Every error is a plain sentence, for example "The message has 2001 characters. The limit is
+    2000."
+- **Join.** The outputs of a transaction come in a random order, so the reader joins the parts of
+  one transaction by their markers. `joinMessage` gives the text when one of these holds, and
+  `null` in every other case:
+  - There is one memo and it has no marker. The text is the memo.
+  - There are N memos (N from 2 to 5) and their markers are exactly 1 to N of N, each once, in any
+    order. The text is the rest of the memos, joined in the order of k.
+  - A marker is the six bytes `(k/N) `. Each of k and N is one digit. N is 2 to 5, and k is 1 to
+    N. `+1`, `01`, a missing space and `(1/10) ` are no marker.
+  - One memo with a marker gives `null`, because the other parts are missing. The reader then
+    shows the memo as it is. So a whole message that starts with `(1/2) ` also shows as it is. A
+    one-part message that starts with `(1/1) ` has no marker, so it joins as it is.
+  - The caller joins the memos of one transaction that went to one address index. Anyone who can
+    write to the address can write any marker, so a joined text has no more proof than a memo.
+- **Message transaction.** `createMessage` builds one Ironwood transaction from the confirmed
+  notes of the account:
+  - Each part is one output of value zero to `to`, with the part as ZIP 302 text memo. `to` is a
+    unified address with an Orchard receiver. The other receivers are not used.
+  - A change output goes to the internal address of the account, as for a payment.
+  - The fee is ZIP 317: 5,000 zatoshis for each action, at least 2. The outputs are the parts and
+    the change. So one part costs 10,000 zatoshis, three parts cost 20,000 and five parts cost
+    30,000, when one note pays. More spends than outputs raise the fee.
+  - The engine picks confirmed notes, the largest first, until they cover the fee. It never spends
+    a note of value zero, because that only raises the fee.
+  - The builder builds these outputs on their own path. `createSpend`, `parseRequest` and the
+    payee list still refuse an amount of zero.
+- **Signing.** `accountSign` derives the spend authorizing key from the seed. It finds the
+  Ironwood spends that have no signature yet. The builder already signed its dummy spends. For each
+  real spend it calls `Signer::sign_ironwood` of the `pczt` crate, which checks the key against
+  `rk`. Then the engine checks each new signature under its `rk` against the sighash of the
+  transaction, as `signAggregate` does. It refuses these cases:
+  - a seed that does not own the notes: "This seed does not own the notes that the transaction
+    spends."
+  - a transaction for the other network (the coin type of the PCZT decides)
+  - a transaction with no unsigned spend, for example one that is signed already
+- **Receiving.** A zero-value note with a memo is found like any note. Its transaction shows in
+  `received()` with `memo_pending: true`, and in `memoNeeds`. After `attachTransaction`, the memo
+  shows. A test builds, signs and proves a message of three parts, then reads it in the wallet of
+  the recipient.
+- **Index.** Every entry of `memos` in `received()` has `"index"`: the diversifier index of the
+  address that received the note. It is a number, or `null` when the index does not fit in 32
+  bits. Every transaction also has `"indexes"`: the same for each note of the transaction, also a
+  note whose memo is empty or not read yet. The app uses it to find the addresses that got a
+  payment. The engine finds the indexes from the viewing key and the notes. The saved state of the
+  wallet does not hold them. The rest of `received()` is as before.
+- **Backup payload.** The web app puts `{"kind": "personal", "version": 1, "network", "seed",
+  "birthday", "contacts"}` in the encrypted backup file (section 9). A contact is `{"name",
+  "address", "index"}`, with an index from 1 up to 2,147,483,648. The payload holds no message
+  and no sync state. A reader refuses any other kind, version or network. It also refuses a seed
+  that is not 64 hexadecimal characters and a birthday that is not a whole number from 1. It
+  refuses a contact with a repeated index or address, a name or address that is not text, and an
+  address of the wrong network.
+- **Limits.** A wallet that hides notes of value zero does not show a message. The seed is a
+  string in the memory of the page while the page signs. The engine never writes it to a log, a
+  URL or an error. A memo has no sender. The index shows which address received the message,
+  not who wrote it.
 
 ## 15. Signed writes (version 3)
 

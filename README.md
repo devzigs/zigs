@@ -25,6 +25,14 @@ the wallet, and on chain each payment looks like a shielded payment from a stand
   the Send form with the request, and sends nothing. **Request a payment** makes the link in a
   wallet room or in a direct chat. Pasting a link in the Send form fills its rows. The web app has
   it. The iPhone and Mac apps show the link as text ([how](PROTOCOL.md#payment-requests)).
+- Personal account: the web app can hold a small single-signer account that pays the fee of
+  messages on chain. Add the shielded address of a contact, and write to them, also if they do not
+  use Zigs. Each message is a payment of no value, and its text is the memo. Each contact gets an
+  address of the account of their own, so the app shows which contact's address received a
+  message. A message to any other address shows as not verified. A message of up to 2,000
+  characters goes in up to 5 memos. A request to fund the account has 3 payees and a wallet of
+  yours pays it. The iPhone and Mac apps do not have it yet
+  ([how](CHAT.md#5-the-personal-account-on-chain-messages)).
 - The wallet follows chain reorganisations of up to 100 blocks
   ([how](PROTOCOL.md#6-receiving-and-sync)). After a deeper one, the web, iPhone and Mac apps
   scan the wallet again from its birthday.
@@ -64,7 +72,7 @@ To see signer changes, open **Signers**, then **Change signers**. To see the pri
 |---|---|
 | **Privacy** | On chain, the transaction shape matches the standard wallet library: same builder, padding, fee, expiry and anchor depth ([comparison](PRIVACY.md#on-chain)). The server stores only encrypted values, padded so that even their length hides amounts. On the device, key shares can be locked with a passkey (web) or Face ID (iPhone) ([how](PRIVACY.md#lock-with-a-passkey-or-face-id)). Key share backups are encrypted with a passphrase (Argon2id and XChaCha20-Poly1305) and open on the web, iPhone and Mac ([how](PRIVACY.md#key-share-backups)). The page can connect only to the group server and three named light-wallet servers (Content-Security-Policy). It is prepared for Tor Browser, but not yet tested end to end ([how](PRIVACY.md#use-zigs-over-tor)). The Zigs server code keeps no logs; its host, Cloudflare, can see connection data. Every remaining leak is listed in [PRIVACY.md](PRIVACY.md). |
 | **Usefulness** | Designed for team treasuries, DAOs and families. Usable today on testnet, and on mainnet with a warning at 0.5 ZEC: web, iPhone and Mac; invite links and QR codes; batch payments for payroll and grants (up to 20 recipients, one approval round, pasted from a spreadsheet); signer changes; encrypted key share backups. |
-| **Execution** | The live app works end to end. Sixteen testnet transactions made by the apps are [listed below](#proof-on-testnet). The engine has 86 tests, and a command-line suite runs adversarial cases. |
+| **Execution** | The live app works end to end. Seventeen testnet transactions made by the apps are [listed below](#proof-on-testnet). The engine has 111 tests, and a command-line suite runs adversarial cases. |
 | **Originality** | An end-user app for re-randomized FROST: no command line, no trusted dealer, and no server that can read the wallet. Each device decodes the PCZT and checks every output before it approves, and binds its approval to the transaction's sighash. Signer changes, batch payments and native iPhone and Mac apps are included. Built during the Zecathon window: the first commit is from October 10, 2026. |
 
 ## Architecture
@@ -258,6 +266,7 @@ with 2-of-2 wallets and one 2-of-3 wallet:
 | [`1a13fe55…2ebe`](https://testnet.zecblock.com/tx/1a13fe552eb09ba2fa034cc27d42ea4775f251360da27abcd5608c93a2572ebe) | 4,497,189 | **Signed writes:** spend from a version 3 wallet, two browsers, with forged documents ignored |
 | [`2d72e9b1…f707`](https://testnet.zecblock.com/tx/2d72e9b173fb7f63a4101dcfcc26ade1a916e9a5678e0bb8b43d2c319661f707) | 4,497,745 | **Memo:** a wallet with one browser seat and one iPhone seat pays with a memo, and the memo shows in the receiving wallet's inbox |
 | [`0e2fc103…da7b`](https://testnet.zecblock.com/tx/0e2fc103d8be65dd12070f683b317a26a6c3f28638b0a25ea2b3d589c824da7b) | 4,498,021 | **Payment request:** a signer posts a ZIP 321 request in the wallet room, the other signer proposes it with **Propose this**, and both approve |
+| [`646e6edd…819e`](https://testnet.zecblock.com/tx/646e6edd0bc003b796f54f2fec4f748a5b65a15290d30d31eb73b4fe79d8819e) | 4,498,648 | **On-chain message:** a personal account sends a 3-part message (3 zero-value outputs with memos), and the recipient's account joins it under the right contact |
 
 A 2-of-2 mainnet wallet was also created and synced to the mainnet tip in the web app and on the
 iPhone.
@@ -274,7 +283,7 @@ iPhone.
 | [`wasm/src/backup.rs`](wasm/src/backup.rs) | Encrypted key share backups: Argon2id, XChaCha20-Poly1305 |
 | [`wasm/src/ffi.rs`](wasm/src/ffi.rs) | C interface for the iPhone and Mac apps |
 | [`web/index.html`](web/index.html), [`web/app.css`](web/app.css), [`web/app.js`](web/app.js) | The web app: page, styles and script (no inline script or style) |
-| [`web/shim.js`](web/shim.js), [`web/qr.js`](web/qr.js), [`web/payees.js`](web/payees.js), [`web/requests.js`](web/requests.js), [`web/vault.js`](web/vault.js), [`web/chat.js`](web/chat.js), [`web/signed.js`](web/signed.js) | Store client, QR encoder, payment list parser with the memo rules and the recipient check, payment request cards and Send form rows, passkey lock, message helpers and the rules for signed writes (no third-party code) |
+| [`web/shim.js`](web/shim.js), [`web/qr.js`](web/qr.js), [`web/payees.js`](web/payees.js), [`web/requests.js`](web/requests.js), [`web/personal.js`](web/personal.js), [`web/vault.js`](web/vault.js), [`web/chat.js`](web/chat.js), [`web/signed.js`](web/signed.js) | Store client, QR encoder, payment list parser with the memo rules and the recipient check, payment request cards and Send form rows, the rules of the personal account (contacts, fee, states of a message, backup), passkey lock, message helpers and the rules for signed writes (no third-party code) |
 | [`cf/src/index.js`](cf/src/index.js) | Group server: Cloudflare Worker with one Durable Object per wallet, limits against abuse |
 | [`ios/Zigs/`](ios/Zigs) | SwiftUI app for iPhone and Mac |
 | [`src/`](src), [`tests/e2e.sh`](tests/e2e.sh) | Command-line version of the ceremony (version 1) and adversarial tests |
@@ -330,27 +339,40 @@ folder path.
 
 ## Tests
 
-- `cargo test --release` in `wasm/` (86 tests): full 2-of-3 signing flows for Ironwood (paying 4
-  recipients in one transaction) and Orchard, with a bad share that is attributed to its sender; a
-  swapped recipient on any payee output is refused; 3 notes spent for 1 recipient; recipient lists
-  checked row by row; fees that count outputs; mainnet and testnet upgrade rules; note selection,
-  fees and the largest sendable amount; padded sealing, old values, wrong keys and moved values;
-  the saved sync state; the native wallet interface; the version 2 and 3 key ceremony (hashes
-  against their written formulas, known answers, the safety number, the wallet check); the backup
-  file (round trip, wrong passphrase, each changed header field, a known answer made outside the
-  crate, limits, passphrase rules, a later file version). It also checks the signed text of a
-  document: key order and spacing do not matter, a known answer holds, and floats are refused.
-  Memo tests cover the limit, the first byte of a memo field, the memo that each payee gets in a
-  final transaction, an output that the engine cannot read, and the inbox path from a compact block
-  to a memo. They also cover an answer with another transaction id, a note with a damaged tag, and
-  the order of the memo list. Reorganisation tests drop notes, spends and memos, rewind after a
-  saved state, stop at 100 blocks and rewind through the native interface. They also check the
-  words of the error for a reorganisation that is too deep. Payment request tests cover a round
-  trip, one and several payees, a request without an amount, and memos. They also cover the wrong
-  network, 21 payees, a zero amount and a repeated parameter. They check a memo for a transparent
-  address, and a memo that is not base64 or not text. They also check a payee index that ZIP 321
-  does not allow, and text that is not a request. Each error names the payee. The native interface
-  has both calls.
+- `cargo test --release` in `wasm/` (111 tests):
+  - Signing: full 2-of-3 flows for Ironwood (paying 4 recipients in one transaction) and Orchard.
+  - A bad share is attributed to its sender. A swapped recipient on any payee output is refused.
+  - Spends of 3 notes for 1 recipient, recipient lists checked row by row, and fees that count
+    outputs.
+  - Mainnet and testnet upgrade rules, note selection, fees and the largest sendable amount.
+  - Padded sealing: old values, wrong keys and moved values. The saved sync state. The native
+    wallet interface.
+  - The version 2 and 3 key ceremony: hashes against their written formulas, known answers, the
+    safety number and the wallet check.
+  - The backup file: round trip, wrong passphrase, each changed header field and a known answer
+    made outside the crate. Limits, passphrase rules and a later file version.
+  - The signed text of a document: key order and spacing do not matter, a known answer holds, and
+    floats are refused.
+  - Memo tests: the limit, the first byte of a memo field, and the memo that each payee gets in
+    a final transaction. An output that the engine cannot read.
+  - The inbox path from a compact block to a memo. An answer with another transaction id, a note
+    with a damaged tag, and the order of the memo list.
+  - Reorganisation tests: drop notes, spends and memos, rewind after a saved state, stop at 100
+    blocks and rewind through the native interface. The words of the error for a reorganisation
+    that is too deep.
+  - Payment request tests: a round trip, one and several payees, a request without an amount, and
+    memos. The wrong network, 21 payees, a zero amount and a repeated parameter.
+  - A memo for a transparent address, and a memo that is not base64 or not text. A payee index
+    that ZIP 321 does not allow, and text that is not a request. Each error names the payee.
+  - The native interface has both calls.
+  - Personal account tests: the keys of a seed (the same result each time, a fixed answer for each
+    network, refusal of a bad seed).
+  - The split and join rules of a message: 512 and 513 bytes, a 4-byte character at a cut, 5
+    parts, 2,000 characters, and a fake or repeated marker. The fee of a message.
+  - The index of every received note, also one with an empty memo or a memo not read yet.
+  - A message of three parts that is built, signed, proved and read by its recipient. A wrong seed
+    is refused.
+  - The words of a node refusal: a transport error or a forged prefix is not a refusal.
 - `node cf/test/limits.mjs ws://localhost:8787`: the group server's size, rate and path limits.
 - `node web/test/payees.mjs`: the pasted payment list parser (the memo column, header, byte limit,
   and a comma directly between digits, which is an error), the memo rules, and the recipient
@@ -396,6 +418,32 @@ folder path.
   - No card offers a wallet that the request pays.
   - The Send form refuses a submit when **Send** is off.
   - A field of a closed request form does not keep the page from drawing.
+
+  The same file runs the personal account on the real page code. It uses a fake light-wallet
+  server, a map in place of IndexedDB and fixed answers for the proof:
+  - The seed is in no storage entry, log line or view state. The device key cannot be exported.
+  - A record that does not read blocks a new account. The sealed record of the passkey lock holds
+    the account, and the lock takes it from the device copy.
+  - The page opens at once, also when IndexedDB never answers. A store that fails as a whole blocks
+    neither the lock nor a new account.
+  - A tab that shows the Create card adopts the saved account. The store refuses a second record,
+    also when the read misses it.
+  - A message is built, signed and proved, saved, and only then broadcast. A failed save sends
+    nothing. One message is built at a time, also across tabs, and two changes at once both stay.
+  - A node refusal on every server frees the account. A timeout or a lost connection on one server
+    keeps the note held until a block holds the message or it expires.
+  - The account reads memos by itself. Backup, removal and restore give back the same account.
+  - A new contact waits for the first sync. It does not take an index that the chain shows, after a
+    restore from an old file. An index at the end of the range is refused.
+  - A record that does not read offers a backup of the seed and the contacts that read, and
+    Remove. The lock deletes the device copy of such a record too.
+  - A page from before the accounts does not drop the account from the sealed record, and a field
+    of another version stays in it.
+  - The remove question and the funding form name the real risk. The contact dialog opens over an
+    open wallet.
+  - The chat of a contact shows joined, unjoined, sent, failed, unsure and expired messages. The
+    other messages show as not verified. A payment request in a memo shows as a card.
+  - The composer shows the fee as the text changes, and Enter does not send a message on chain.
 - `node web/test/requests.mjs`: the rule that only a whole trimmed text is a request, with the
   real engine. It also checks these points:
   - the cards: total, open amounts, wrong network, a payee that Zigs cannot pay, and the warning
@@ -404,6 +452,23 @@ folder path.
   - the note, which names only a verified sender
   - the text that the sender wrote, cut to 3 lines and 120 characters
   - a request that the form makes and the card reads back
+- `node web/test/account.mjs`: the calls of the personal account through the WebAssembly build:
+  keys, addresses, the split and join of a message, and the refusals.
+- `node web/test/personal.mjs`: the rules of the personal account, with the real engine. It checks
+  these points:
+  - the fee for 1 to 5 parts, the fee line and the split errors
+  - the warnings for a low and a high balance, and the rule that turns the composer off
+  - the funding request with 3 payees
+  - the funding warning, which counts the amount and the balance together
+  - the contact rules: the next free index, a repeated address or name, and an address of the
+    account itself
+  - the wrong network, a name with a hiding character, and a name that is not text
+  - the next index above every index in use on chain, and the end of the index range
+  - the backup payload through the encrypted file, and each refusal of a damaged file
+  - the backup of a record that does not read, with the contacts that read
+  - the state of a sent message: sending, on chain, not sent, unsure and expired
+  - the file that was made once and is out of date, and the question before a removal
+  - the joining of received memos, the routing to a chat or to the other messages, and the order
 - `node web/test/qr.mjs`: the QR encoder against libqrencode (needs the `qrencode` command).
 - `bash tests/e2e.sh`: the command-line ceremony in separate processes, with attacks: wallet
   substitution, fewer than t signers, tampered randomizer and sighash, nonce reuse, wrong share
