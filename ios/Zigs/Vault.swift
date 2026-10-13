@@ -50,6 +50,13 @@ final class Vault {
         return persist()
     }
 
+    /// Puts the seat's secrets back as they were: `nil` removes them. Used to undo a restore.
+    @discardableResult
+    func setSec(_ gid: String, _ seat: Int, _ doc: Doc?) -> Bool {
+        secrets["\(gid):\(seat)"] = doc
+        return persist()
+    }
+
     /// Seats this device holds secrets for in group `gid`.
     func seats(in gid: String) -> [Int] {
         secrets.keys.compactMap { k in
@@ -60,6 +67,12 @@ final class Vault {
 
     func putKey(_ gid: String, _ key: String) {
         keys[gid] = key
+        persist()
+    }
+
+    /// Removes a wallet secret. Used to undo a restore that added it.
+    func removeKey(_ gid: String) {
+        keys[gid] = nil
         persist()
     }
 

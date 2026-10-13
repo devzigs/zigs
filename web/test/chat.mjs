@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import {
   byTime, chatWarning, checkText, countUnread, dmText, joinBlock, keyState, newRoom, newSignKey,
   normChats, parseDm, parseHash, parseMsg, pickRoom, pin, pinMember, pinnedMembers, signMsg,
-  signedText, validRoom, verifyMsg,
+  signPairMatches, signedText, validRoom, verifyMsg,
 } from "../chat.js";
 
 const GID = "a".repeat(20), ROOM = "b".repeat(20);
@@ -218,5 +218,15 @@ for (const bad of [null, 5, "x", { list: "abc" }, { list: { short: saved } },
   { profile: { signSk: "s", signPk: "zz" } }]) {
   const got = normChats(bad);
   assert.deepEqual(got, { profile: null, list: {} }, JSON.stringify(bad));
+}
+// A signing key pair: the private key must make the public key.
+assert.equal(await signPairMatches(key.signSk, key.signPk), true);
+assert.equal(await signPairMatches(other.signSk, key.signPk), false);
+assert.equal(await signPairMatches(key.signSk, other.signPk), false);
+for (const bad of [undefined, null, "", "AAAA", 5, "not base64!"]) {
+  assert.equal(await signPairMatches(bad, key.signPk), false, String(bad));
+}
+for (const bad of [undefined, null, "", "zz", "0".repeat(64), 5]) {
+  assert.equal(await signPairMatches(key.signSk, bad), false, String(bad));
 }
 console.log("chat ok");

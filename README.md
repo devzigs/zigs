@@ -44,9 +44,9 @@ To see signer changes, open **Signers**, then **Change signers**. To see the pri
 
 | Criterion | Evidence |
 |---|---|
-| **Privacy** | On chain, the transaction shape matches the standard wallet library: same builder, padding, fee, expiry and anchor depth ([comparison](PRIVACY.md#on-chain)). The server stores only encrypted values, padded so that even their length hides amounts. On the device, key shares can be locked with a passkey (web) or Face ID (iPhone) ([how](PRIVACY.md#lock-with-a-passkey-or-face-id)). The page can connect only to the group server and three named light-wallet servers (Content-Security-Policy). It is prepared for Tor Browser, but not yet tested end to end ([how](PRIVACY.md#use-zigs-over-tor)). The Zigs server code keeps no logs; its host, Cloudflare, can see connection data. Every remaining leak is listed in [PRIVACY.md](PRIVACY.md). |
-| **Usefulness** | Designed for team treasuries, DAOs and families. Usable today on testnet, and on mainnet with a warning at 0.5 ZEC: web, iPhone and Mac; invite links and QR codes; batch payments for payroll and grants (up to 20 recipients, one approval round, pasted from a spreadsheet); signer changes. |
-| **Execution** | The live app works end to end. Twelve testnet transactions made by the apps are [listed below](#proof-on-testnet). The engine has 35 tests, and a command-line suite runs adversarial cases. |
+| **Privacy** | On chain, the transaction shape matches the standard wallet library: same builder, padding, fee, expiry and anchor depth ([comparison](PRIVACY.md#on-chain)). The server stores only encrypted values, padded so that even their length hides amounts. On the device, key shares can be locked with a passkey (web) or Face ID (iPhone) ([how](PRIVACY.md#lock-with-a-passkey-or-face-id)). Key share backups are encrypted with a passphrase (Argon2id and XChaCha20-Poly1305) and open on the web, iPhone and Mac ([how](PRIVACY.md#key-share-backups)). The page can connect only to the group server and three named light-wallet servers (Content-Security-Policy). It is prepared for Tor Browser, but not yet tested end to end ([how](PRIVACY.md#use-zigs-over-tor)). The Zigs server code keeps no logs; its host, Cloudflare, can see connection data. Every remaining leak is listed in [PRIVACY.md](PRIVACY.md). |
+| **Usefulness** | Designed for team treasuries, DAOs and families. Usable today on testnet, and on mainnet with a warning at 0.5 ZEC: web, iPhone and Mac; invite links and QR codes; batch payments for payroll and grants (up to 20 recipients, one approval round, pasted from a spreadsheet); signer changes; encrypted key share backups. |
+| **Execution** | The live app works end to end. Thirteen testnet transactions made by the apps are [listed below](#proof-on-testnet). The engine has 47 tests, and a command-line suite runs adversarial cases. |
 | **Originality** | An end-user app for re-randomized FROST: no command line, no trusted dealer, and no server that can read the wallet. Each device decodes the PCZT and checks every output before it approves, and binds its approval to the transaction's sighash. Signer changes, batch payments and native iPhone and Mac apps are included. Built during the Zecathon window: the first commit is from October 10, 2026. |
 
 ## Architecture
@@ -236,6 +236,7 @@ with 2-of-2 wallets and one 2-of-3 wallet:
 | [`df9b264e…5216`](https://testnet.zecblock.com/tx/df9b264e17b70b0d419af6a272e11b7fb4ac5e48fbd80dfb469496600dac5216) | 4,489,434 | iPhone spends 4 notes at once (more inputs than outputs) |
 | [`7c09aacb…302a`](https://testnet.zecblock.com/tx/7c09aacb67ae8d312f611f890913c1db586d3ac0c65501b9062e484f8dc7302a) | 4,489,484 | **Passkey lock:** signed from a locked browser, with a reload and unlock between the two approvals |
 | [`72004cb2…92ca`](https://testnet.zecblock.com/tx/72004cb20cfbdc7acc9592b01deac70490c3452744c92fe9c8c717f28d4a92ca) | 4,489,938 | **2-of-3 wallet:** seats 1 and 3 approve, seat 2 does not |
+| [`bcad9990…c83d`](https://testnet.zecblock.com/tx/bcad99901fd954e4fefb1f85223ea4e30722d155f9a8c20cbc5066ab3e5ec83d) | 4,493,885 | **ZIP 2005 wallet:** spend from a version 2 wallet (agreed `sk`, `use_qsk = true`) |
 
 A 2-of-2 mainnet wallet was also created and synced to the mainnet tip in the web app and on the
 iPhone.
@@ -248,6 +249,7 @@ iPhone.
 | [`wasm/src/ceremony.rs`](wasm/src/ceremony.rs) | Key ceremony version 2: commitments, echo, agreed secret, safety number, ZIP 2005 key derivation and the wallet check |
 | [`wasm/src/chain.rs`](wasm/src/chain.rs) | Chain sync, balance, note selection, payment building, network rules |
 | [`wasm/src/snapshot.rs`](wasm/src/snapshot.rs) | Saved sync state: notes and the note commitment tree |
+| [`wasm/src/backup.rs`](wasm/src/backup.rs) | Encrypted key share backups: Argon2id, XChaCha20-Poly1305 |
 | [`wasm/src/ffi.rs`](wasm/src/ffi.rs) | C interface for the iPhone and Mac apps |
 | [`web/index.html`](web/index.html), [`web/app.css`](web/app.css), [`web/app.js`](web/app.js) | The web app: page, styles and script (no inline script or style) |
 | [`web/shim.js`](web/shim.js), [`web/qr.js`](web/qr.js), [`web/payees.js`](web/payees.js), [`web/vault.js`](web/vault.js), [`web/chat.js`](web/chat.js) | Store client, QR encoder, payment list parser, passkey lock and message helpers (no third-party code) |
@@ -302,20 +304,31 @@ Use the `Zigs` scheme for iPhone and `ZigsMac` for Mac (Apple silicon). The apps
 
 ## Tests
 
-- `cargo test --release` in `wasm/` (35 tests): full 2-of-3 signing flows for Ironwood (paying 4
+- `cargo test --release` in `wasm/` (47 tests): full 2-of-3 signing flows for Ironwood (paying 4
   recipients in one transaction) and Orchard, with a bad share that is attributed to its sender;
   a swapped recipient on any payee output is refused; 3 notes spent for 1 recipient; recipient lists checked row by row; fees
   that count outputs; mainnet and testnet upgrade rules; note
   selection, fees and the largest sendable amount; padded sealing, old values, wrong keys and moved
   values; the saved sync state; the native wallet interface; the version 2 key ceremony (hashes against
-  their written formulas, known answers, the safety number, the wallet check).
+  their written formulas, known answers, the safety number, the wallet check); the backup file
+  (round trip, wrong passphrase, each changed header field, a known answer made outside the crate,
+  limits, passphrase rules, a later file version).
 - `node cf/test/limits.mjs ws://localhost:8787`: the group server's size, rate and path limits.
 - `node web/test/payees.mjs`: the pasted payment list parser.
 - `node web/test/vault.mjs`: the passkey lock's sealed record (wrong key, changed record, new IV).
-- `node web/test/util.mjs`: address grouping, number checks, the key package comparison and the
-  rules that stop a seat's setup.
-- `node web/test/chat.mjs`: message signatures (wallet and direct chat), room, key and member
-  pinning, saved chats, text limits and unread counts.
+- `node web/test/util.mjs`: address grouping, number checks, the key package comparison, the
+  rules that stop a seat's setup, the backup passphrase rules (length, different characters,
+  NFC), the fields that a restore takes, the fit of a restored seat (key share, key package and
+  group key against the published ones), the key pairs of a restore (X25519 is checked with the
+  engine in `web/pkg`), the undo of a restore, the rule that ignores an invite link, and the table
+  of slow engine calls.
+- `ios/check-backup.sh`: a backup made by the web code opens in the iPhone code, and the reverse,
+  with the same bytes. The iPhone code also applies the fit rule, the key pair check (X25519 and
+  Ed25519 keys made by the web code) and the undo rule. It needs `ZigsCore.xcframework` (run
+  `ios/build-core.sh`) and `node`.
+- `node web/test/chat.mjs`: message signatures (wallet and direct chat), the check that a signing
+  key makes its public key, room, key and member pinning, saved chats, text limits and unread
+  counts.
 - `node web/test/qr.mjs`: the QR encoder against libqrencode (needs the `qrencode` command).
 - `bash tests/e2e.sh`: the command-line ceremony in separate processes, with attacks: wallet
   substitution, fewer than t signers, tampered randomizer and sighash, nonce reuse, wrong share
@@ -327,9 +340,10 @@ Use the `Zigs` scheme for iPhone and `ZigsMac` for Mac (Apple silicon). The apps
   stop someone from sending more.
 - **ZIP 2005 is Proposed, and every signer holds `qsk`.** New wallets are built to it so that funds
   can be recovered if quantum computers break today's keys. A quantum attacker who has `qsk` may
-  steal the funds, so one signer or one stolen backup could take them. The agreement on the secret
-  `sk` is not quantum-resistant either ([limits](PROTOCOL.md#13-guarantees-and-limits)). Wallets
-  made before ZIP 2005 support have no `qsk`.
+  steal the funds, so one signer or one stolen backup with its passphrase could take them. The
+  agreement on the secret `sk` is not quantum-resistant either
+  ([limits](PROTOCOL.md#13-guarantees-and-limits)). Wallets made before ZIP 2005 support have no
+  `qsk`.
 - **Chain reorganisations** are not handled in the saved sync state.
 - **One payment at a time.** While a payment waits for its block, the app blocks a second one.
 - **Randomizer source.** Signing uses the `alpha` that the transaction builder puts in the PCZT, as

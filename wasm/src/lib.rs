@@ -48,6 +48,7 @@ use serde::{de::DeserializeOwned, Deserialize, Serialize};
 use serde_json::{json, Value};
 use wasm_bindgen::prelude::*;
 
+mod backup;
 mod ceremony;
 mod chain;
 mod snapshot;
@@ -829,6 +830,14 @@ pub fn js_secret_seal(secret: &str, aad: &str, pt: &str) -> Result<String, JsErr
 pub fn js_secret_open(secret: &str, aad: &str, ct: &str) -> Result<String, JsError> {
     js(secret_open(secret, aad, ct))
 }
+#[wasm_bindgen(js_name = backupSeal)]
+pub fn js_backup_seal(passphrase: &str, plaintext: &str) -> Result<String, JsError> {
+    js(backup::seal(passphrase, plaintext))
+}
+#[wasm_bindgen(js_name = backupOpen)]
+pub fn js_backup_open(passphrase: &str, sealed: &str) -> Result<String, JsError> {
+    js(backup::open(passphrase, sealed))
+}
 
 // ─────────────────────────── Tests ───────────────────────────
 
@@ -990,6 +999,13 @@ mod tests {
         serde_json::from_str(s).unwrap()
     }
 
+    /// `{"j": f(j)}` for every seat `j` in `1..=n` except `me`.
+    fn others(n: u16, me: u16, f: &dyn Fn(u16) -> Value) -> String {
+        let map: serde_json::Map<String, Value> =
+            (1..=n).filter(|j| *j != me).map(|j| (j.to_string(), f(j))).collect();
+        Value::Object(map).to_string()
+    }
+
     /// A 2-of-3 DKG through the exact JSON API the web page uses, including encrypted round-2
     /// transport. With `v2`, the seats also run the sk agreement: commitments in round 1, the echo,
     /// and each secret part `r` inside the sealed round-2 payload. Returns every seat's DKG result
@@ -1004,18 +1020,9 @@ mod tests {
         let commits: Vec<String> = (1..=n)
             .map(|i| ceremony::sk_commit("g", i, &pk(i), &rs[i as usize - 1]).unwrap())
             .collect();
-        let others = |me: u16, f: &dyn Fn(u16) -> Value| -> String {
-            let mut m = serde_json::Map::new();
-            for j in 1..=n {
-                if j != me {
-                    m.insert(j.to_string(), f(j));
-                }
-            }
-            Value::Object(m).to_string()
-        };
         let r2: Vec<Value> = (1..=n)
             .map(|i| {
-                let all = others(i, &|j| r1[j as usize - 1]["package"].clone());
+                let all = others(n, i, &|j| r1[j as usize - 1]["package"].clone());
                 v(&dkg_part2(&r1[i as usize - 1]["secret"].to_string(), &all).unwrap())
             })
             .collect();
@@ -1039,8 +1046,8 @@ mod tests {
         };
         let fin: Vec<Value> = (1..=n)
             .map(|i| {
-                let all1 = others(i, &|j| r1[j as usize - 1]["package"].clone());
-                let all2 = others(i, &|j| {
+                let all1 = others(n, i, &|j| r1[j as usize - 1]["package"].clone());
+                let all2 = others(n, i, &|j| {
                     let opened = open(i, j);
                     if v2 { opened["package"].clone() } else { opened }
                 });

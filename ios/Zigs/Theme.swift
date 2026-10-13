@@ -1,6 +1,7 @@
 import CoreImage.CIFilterBuiltins
 import SwiftUI
 import TipKit
+import UniformTypeIdentifiers
 #if os(iOS)
 import UIKit
 #else
@@ -149,27 +150,47 @@ struct QRCode: View {
     }
 }
 
-/// Copies `text` and says so for a moment.
+/// Copies `text` and says so for a moment. A `sensitive` text, such as a passphrase, stays on this
+/// device and leaves the clipboard after 2 minutes.
 struct CopyButton: View {
     let text: String
     var label = "Copy"
+    var sensitive = false
     @State private var copied = false
 
     var body: some View {
         Button(copied ? "Copied" : label, systemImage: copied ? "checkmark" : "doc.on.doc") {
-            copyToClipboard(text)
+            copyToClipboard(text, sensitive: sensitive)
             copied = true
             Task { try? await Task.sleep(for: .seconds(1.5)); copied = false }
         }
     }
 }
 
-func copyToClipboard(_ text: String) {
+func copyToClipboard(_ text: String, sensitive: Bool = false) {
+    let lifetime: TimeInterval = 120
     #if os(iOS)
-    UIPasteboard.general.string = text
+    if sensitive {
+        // Local only: Universal Clipboard does not send it to the person's other devices.
+        UIPasteboard.general.setItems(
+            [[UTType.utf8PlainText.identifier: text]],
+            options: [.localOnly: true, .expirationDate: Date().addingTimeInterval(lifetime)])
+    } else {
+        UIPasteboard.general.string = text
+    }
     #else
-    NSPasteboard.general.clearContents()
-    NSPasteboard.general.setString(text, forType: .string)
+    let board = NSPasteboard.general
+    board.clearContents()
+    board.setString(text, forType: .string)
+    guard sensitive else { return }
+    // Clipboard managers skip an item with this type. The text goes after 2 minutes, unless the
+    // person has copied something else since.
+    board.setString("", forType: NSPasteboard.PasteboardType("org.nspasteboard.ConcealedType"))
+    let count = board.changeCount
+    DispatchQueue.main.asyncAfter(deadline: .now() + lifetime) {
+        let current = NSPasteboard.general
+        if current.changeCount == count { current.clearContents() }
+    }
     #endif
 }
 

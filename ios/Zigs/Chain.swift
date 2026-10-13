@@ -61,10 +61,11 @@ final class Chain {
     /// Frees the engine's copy of this wallet.
     func close() { _ = try? Engine.call("walletClose", [gid]) }
 
+    /// Leaving the wallet screen cancels a sync that runs in its task. A cancelled sync is not a
+    /// failure: it keeps the earlier error, and it clears nothing.
     func sync() async {
-        guard !syncing else { return }
+        guard !syncing, !Task.isCancelled else { return }
         syncing = true
-        error = nil
         defer { syncing = false }
         do {
             try openIfNeeded()
@@ -72,9 +73,11 @@ final class Chain {
             let tip = try await Lightwalletd.latestHeight(server)
             try await catchUp(server, tip)
             progress = nil
+            error = nil
             publish()
             save()
         } catch {
+            if Task.isCancelled || (error as? URLError)?.code == .cancelled { return }
             self.error = error.localizedDescription
         }
     }

@@ -37,6 +37,12 @@ targets:
         CFBundleURLTypes:
           - CFBundleURLName: app.zigs.invite
             CFBundleURLSchemes: [zigs]
+        UTExportedTypeDeclarations:
+          - UTTypeIdentifier: app.zigs.backup
+            UTTypeDescription: Zigs key share backup
+            UTTypeConformsTo: [public.data]
+            UTTypeTagSpecification:
+              public.filename-extension: [zigsbackup]
   ZigsMac:
     type: application
     platform: macOS
@@ -69,3 +75,9 @@ targets:
         CFBundleURLTypes:
           - CFBundleURLName: app.zigs.invite
             CFBundleURLSchemes: [zigs]
+        UTExportedTypeDeclarations:
+          - UTTypeIdentifier: app.zigs.backup
+            UTTypeDescription: Zigs key share backup
+            UTTypeConformsTo: [public.data]
+            UTTypeTagSpecification:
+              public.filename-extension: [zigsbackup]

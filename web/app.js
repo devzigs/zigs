@@ -3,13 +3,15 @@ import { qrSvg } from "/qr.js";
 import { parsePayeeList, toZat, zatText } from "/payees.js";
 import { createPasskey, unlockKey, seal, open as openVault, parseVault } from "/vault.js";
 import {
-  abortText, checkNetwork, chunks, confirmGate, conflictReason, finite, fmtInt, numberClash,
-  samePackages, walletVersion,
+  abortText, backupName, boxPairMatches, checkNetwork, chunks, confirmGate, conflictReason, finite,
+  fitsPublished, fmtInt, frostId, heldRefusal, keysOf, lateFields, LINK_CHAT_ID, linkRefusal,
+  makePassphrase, numberClash, passIssue, restoredSecret, samePackages, seatOwned, settledFields,
+  shareShape, skey, slowCall, staleRestore, takenKeys, undoPlan, walletVersion,
 } from "/util.js";
 import {
   byTime, canSign, chatWarning, checkText, countUnread, dmText, joinBlock, keyState, newRoom,
   newSignKey, normChats, parseDm, parseHash, parseMsg, pickRoom, pin, pinMember, pinnedMembers,
-  signMsg, signedText, validId, validPk, validRoom, verifyMsg,
+  signMsg, signPairMatches, signedText, validId, validPk, validRoom, verifyMsg,
 } from "/chat.js";
 // ───────────────────────── Engine (WASM) ─────────────────────────
 let Z = null, engineSettled = false;   // settled: the engine loaded or failed
@@ -39,20 +41,43 @@ async function loadEngine() {
 const J = (s) => JSON.parse(s);
 const S = (o) => JSON.stringify(o);
 
-// Slow step (proof) in a worker, with main-thread fallback.
+// Slow steps (the proof, the Argon2id of a backup) run in a worker. Without a worker they run on
+// the main thread, and the page freezes while the step runs, after the busy text has been drawn.
+// A backup is the way back to a lost key share, so it also retries there when the worker fails
+// to start. The proof does not: it would freeze the page for a minute.
 let worker = null, workerSeq = 0; const workerWait = new Map();
-function finalizeOffThread(signedPczt) {
-  try {
-    if (!worker) {
-      worker = new Worker(new URL("./worker.js", location.href), { type: "module" });
-      worker.onmessage = (ev) => { const w = workerWait.get(ev.data.id); if (w) { workerWait.delete(ev.data.id); ev.data.ok ? w.res(ev.data.out) : w.rej(new Error(ev.data.error)); } };
-      worker.onerror = (ev) => { for (const w of workerWait.values()) w.rej(new Error("worker failed: " + (ev.message || "unknown"))); workerWait.clear(); worker = null; };
-    }
-    const id = ++workerSeq;
-    return new Promise((res, rej) => { workerWait.set(id, { res, rej }); worker.postMessage({ id, signedPczt }); });
-  } catch {
-    return new Promise((res, rej) => setTimeout(() => { try { const t0 = performance.now(); const o = J(Z.finalize(signedPczt)); o.ms = Math.round(performance.now() - t0); res(o); } catch (e) { rej(e); } }, 50));
+const workerFailed = (why) =>
+  Object.assign(new Error("worker failed: " + why), { workerFailed: true });
+const onMainThread = (method, args) => new Promise((res, rej) => setTimeout(() => {
+  try { res(slowCall(Z, method, args)); } catch (e) { rej(e); }
+}, 50));
+function startInWorker(method, args) {
+  if (!worker) {
+    worker = new Worker(new URL("./worker.js", location.href), { type: "module" });
+    worker.onmessage = (ev) => {
+      const w = workerWait.get(ev.data.id);
+      if (!w) return;
+      workerWait.delete(ev.data.id);
+      if (ev.data.ok) w.res(ev.data.out);
+      else w.rej(ev.data.startFailed ? workerFailed(ev.data.error) : new Error(ev.data.error));
+    };
+    worker.onerror = (ev) => {
+      for (const w of workerWait.values()) w.rej(workerFailed(ev.message || "unknown"));
+      workerWait.clear();
+      worker = null;
+    };
   }
+  const id = ++workerSeq;
+  return new Promise((res, rej) => {
+    workerWait.set(id, { res, rej });
+    worker.postMessage({ id, method, args });
+  });
+}
+function engineOffThread(method, ...args) {
+  let run;
+  try { run = startInWorker(method, args); } catch { return onMainThread(method, args); }
+  if (method === "finalize") return run;
+  return run.catch((e) => { if (e && e.workerFailed) return onMainThread(method, args); throw e; });
 }
 
 // ───────────────────────── Local secrets ─────────────────────────
@@ -155,7 +180,6 @@ function forgetVault() {
   try { localStorage.removeItem("zf-vault"); } catch {}
   location.reload();
 }
-const skey = (gid, seat) => gid + ":" + seat;
 function mySeatSecrets(gid) { return Object.entries(secrets).filter(([k]) => k.startsWith(gid + ":")).map(([k, v]) => [Number(k.split(":")[1]), v]); }
 function sec(gid, seat) { return secrets[skey(gid, seat)]; }
 function putSec(gid, seat, patch) {
@@ -240,16 +264,15 @@ function adoptInviteKey() {
 
 function adoptWalletLink(gid, key) {
   if (!key) return;
-  // A link must not replace a wallet key this browser already has: whoever knows the wallet id
-  // could otherwise point the wallet at documents sealed with their own key.
-  if (gkeys[gid] && gkeys[gid] !== key) {
-    showBanner("bad", "This invite link has a different wallet secret for a wallet you already "
-      + "have, so it was ignored.");
-  }
-  else if (validRoom({ id: gid, key }) && !chats.list[gid]) putKey(gid, key);
-  setHash("#" + gid);
+  const refusal = linkRefusal(gkeys[gid], key, isChatId(gid));
+  if (refusal) showBanner("bad", refusal);
+  else if (validRoom({ id: gid, key })) putKey(gid, key);
+  // The id of a chat opens no wallet: clear it, or the missing-secret banner hides the reason.
+  setHash(refusal === LINK_CHAT_ID ? "#" : "#" + gid);
 }
 
+// A chat and a wallet never share an id: a wallet key must not be stored under a chat id.
+const isChatId = (id) => !!chats.list[id] || !!roomKeys[id];
 const badChatLink = (cid, key) => !validRoom({ id: cid, key }) || !!gkeys[cid] || !!roomKeys[cid];
 // The secret leaves the fragment at once. A new chat waits in joinLinks until the person clicks
 // "Join chat": a page that only loads the link, such as a link scanner, must not take the place.
@@ -378,7 +401,10 @@ function watchInbox() {
 // A seat records its nonces locally when it approves, so no server read is needed.
 function needsMyApproval(gid, ss) {
   if (ss.status !== "collecting" || ss.package || ss.error) return false;
-  return mySeatSecrets(gid).some(([, s]) => s.keyPackage && !(s.nonces && s.nonces[ss.id]));
+  // In the open wallet only owned seats count; a restored seat that does not fit cannot approve.
+  const owned = gid === state.gid ? localSeats() : null;
+  return mySeatSecrets(gid).some(([i, s]) => (!owned || owned.includes(i))
+    && s.keyPackage && !(s.nonces && s.nonces[ss.id]));
 }
 const toApprove = (gid) => (gid === state.gid ? state.sessions : inbox[gid] || []).filter((ss) => needsMyApproval(gid, ss));
 
@@ -390,6 +416,7 @@ function sub(path, fn) {
 function openGroup(gid) {
   for (const u of unsubGroup) u(); unsubGroup = [];
   closeSession();
+  ui.backup = null;   // the dialog names a seat of the wallet that was open
   dropChain();
   Object.assign(state, { gid, cid: null, g: null, seats: {}, dkg1: {}, dkg2: {}, confirm: {}, abort: {}, done: {}, verify: {}, wallet: null, sessions: [], log: [] });
   if (!gid) { setHash("#"); render(); return; }
@@ -445,24 +472,39 @@ function keysMatch() {
 }
 const keysAgree = () => allDone() && keysMatch();
 const keysDiffer = () => allDone() && !keysAgree();
-// FROST identifiers are the seat number as a 32-byte little-endian scalar.
-const frostId = (i) => i.toString(16).padStart(2, "0") + "0".repeat(62);
-// A restored key share must be the one the wallet published for that seat.
-function fitsWallet(i, s) {
-  const kp = s.keyPackage, done = state.done[i];
-  if (!kp || !done || kp.identifier !== frostId(i)) return false;
-  try {
-    const shares = J(done.publicKeyPackage).verifying_shares || {};
-    return shares[kp.identifier] === kp.verifying_share;
-  } catch { return false; }
+// Does the key data in the seat secret `s` equal what the wallet published for seat `i`? true or
+// false, or null while the documents that decide it have not loaded.
+function fitState(i, s) {
+  const done = state.done[i];
+  if (!done || !state.g) return null;
+  return fitsPublished(i, s, done) ? setupFit(i, s, done) : false;
+}
+
+// A seat of a version 2 wallet must hold the setup secret that, with the seat's published data,
+// gives the full viewing key of the wallet. A seat of another version holds none.
+function setupFit(i, s, done) {
+  if (!s.vaultSk) return groupVersion() !== 2;
+  if (!state.wallet || !Z) return null;
+  const inputs = [state.wallet, done.publicKeyPackage, s.vaultSk];
+  return cached(skey(state.gid, i), inputs, () => walletMatches(...inputs));
+}
+function walletMatches(wallet, publishedPackage, sk) {
+  try { Z.walletVerifyV2(S(wallet), publishedPackage, sk); return true; } catch { return false; }
+}
+// The engine call is slow and a redraw asks again and again: reuse the last answer for the same
+// inputs.
+const lastAnswer = new Map();
+function cached(key, inputs, ask) {
+  const last = lastAnswer.get(key);
+  if (last && last.inputs.every((x, n) => x === inputs[n])) return last.value;
+  const value = ask();
+  lastAnswer.set(key, { inputs, value });
+  return value;
 }
 // A seat is this browser's when it took the seat (its identity then, or now), or restored the
-// seat's key share. Tor Browser gets a new identity each session, so identity alone is not enough.
-function ownsSeat(i, s) {
-  const seat = state.seats[i];
-  if (!seat) return false;
-  return seat.uid === me || seat.uid === s.uid || (!!s.restored && fitsWallet(i, s));
-}
+// seat's key share and the share fits the wallet. Tor Browser gets a new identity each session, so
+// identity alone is not enough.
+const ownsSeat = (i, s) => seatOwned(state.seats[i], s, me, () => fitState(i, s));
 const localSeats = () => !state.gid ? []
   : mySeatSecrets(state.gid).filter(([i, s]) => ownsSeat(i, s)).map(([i]) => i);
 // This browser, or a seat it holds in the open wallet.
@@ -503,6 +545,7 @@ async function once(key, fn) {
 
 function react() {
   try {
+    settleRestore();
     syncRooms();
     reactNow();
   } catch (e) { log("✗ react: " + (e && e.message ? e.message : e)); }
@@ -1119,47 +1162,361 @@ async function finalizeTx(ss) {
   await sdb.doc(sessionPath(ss)).update({ status: "proving", provingAt: Date.now() });
   log("building Halo2 proof (about a minute)…");
   let out;
-  try { out = await finalizeOffThread(ss.signed); }
+  try { out = await engineOffThread("finalize", ss.signed); }
   catch (e) { await sdb.doc(sessionPath(ss)).update({ status: "signed" }); throw e; }
   await sdb.doc(sessionPath(ss)).update({ status: "complete", final: out });
   log("transaction complete: " + out.txid);
   showBanner("ok", "Proof ready. Send the payment to the network.");
 }
 
-async function backup(i) {
-  // Nonces stay out: a restored copy must never sign with a nonce this browser may also use.
+// ───────────────────────── Backups ─────────────────────────
+// A backup file is the key share, sealed with a passphrase (PROTOCOL.md section 9). The engine
+// does the Argon2id and the cipher. The passphrase lives only in the dialog's input and in the
+// worker call, never in `ui`.
+const BACKUP_KIND = "zec-frost-key-share";   // what the sealed text holds, also in a plain file
+const NOT_A_BACKUP = "This file is not a Zigs backup.";
+const NOT_ENCRYPTED = "This backup file is not encrypted. Make a new encrypted backup now.";
+const MAX_BACKUP_BYTES = 1000000;
+const PASS_NOTE = "This passphrase opens your key share. Zigs cannot recover it. Write it down and "
+  + "keep it apart from the file.";
+
+// Nonces stay out: a restored copy must never sign with a nonce this browser may also use.
+function backupText(i) {
   const { nonces, backedUp, ...s } = sec(state.gid, i);
   s.uid = s.uid || state.seats[i].uid;
-  const data = JSON.stringify({
-    kind: "zec-frost-key-share", group: state.gid, groupName: state.g.name, seat: i,
+  return S({
+    kind: BACKUP_KIND, group: state.gid, groupName: state.g.name, seat: i,
     threshold: state.g.t, of: state.g.n, key: gkeys[state.gid], wallet: state.wallet, secret: s,
-  }, null, 2);
-  if (!downloads) { showBanner("bad", "Downloads are not available in this view."); return; }
-  try {
-    const name = state.g.name.replace(/\W+/g, "-") || "wallet";
-    await downloads.save({ filename: "zec-frost-" + name + "-seat-" + i + ".json", data });
-    await putSec(state.gid, i, { backedUp: true });
-  } catch (e) {
-    if (e && e.code !== "declined") showBanner("bad", "Backup not saved: " + (e.message || e.code));
-  }
+  });
 }
 
-function restore(file) {
-  const r = new FileReader();
-  r.onload = () => {
-    try {
-      const b = JSON.parse(r.result);
-      if (b.kind !== "zec-frost-key-share") throw new Error("This is not a key share backup.");
-      if (b.key) putKey(b.group, b.key);
-      // Older backups hold nonces: a restored nonce could sign a second, different package.
-      const { nonces, uid, ...secret } = b.secret || {};
-      const kept = (sec(b.group, b.seat) || {}).nonces || {};
-      putSec(b.group, b.seat, { ...secret, nonces: kept, restored: true, backedUp: true });
-      showBanner("ok", "Restored seat " + b.seat + " of " + (b.groupName || "wallet") + ".");
-      openGroup(b.group);
-    } catch (e) { showBanner("bad", e.message); }
+function openBackup(i) {
+  if (!downloads) { showBanner("bad", "Downloads are not available in this view."); return; }
+  ui.backup = { seat: i, made: false, busy: false };
+  render();
+}
+
+function closeBackup() {
+  if ((ui.backup || ui.restore || {}).busy) return;
+  ui.backup = null; ui.restore = null;
+  render();
+}
+
+// Seals the seat, opens the file again in memory to prove it holds the same text, and only then
+// offers the download. Returns false when the person declined to save.
+async function saveBackup(i, pass) {
+  // The wallet that is open can change while the engine works (the Back button).
+  const gid = state.gid, wallet = state.g.name;
+  const plain = backupText(i);
+  const sealed = await engineOffThread("backupSeal", pass, plain);
+  if (await engineOffThread("backupOpen", pass, sealed) !== plain) {
+    throw new Error("The backup did not open to the same key share, so it was not saved. "
+      + "Try again.");
+  }
+  try {
+    await downloads.save({ filename: backupName(wallet, i), data: sealed });
+  } catch (e) {
+    if (e && e.code === "declined") return false;
+    throw new Error("Backup not saved: " + (e.message || e.code));
+  }
+  await putSec(gid, i, { backedUp: true });
+  return true;
+}
+
+function backupDialog() {
+  const b = ui.backup, i = b.seat;
+  const pass = el("input", {
+    class: "input mono", id: "bk-pass", type: b.made ? "text" : "password", autocomplete: "off",
+    spellcheck: "false", autocapitalize: "off", disabled: b.busy, "aria-describedby": "bk-hint",
+  });
+  const again = el("input", {
+    class: "input mono", id: "bk-again", type: "password", autocomplete: "off",
+    spellcheck: "false", autocapitalize: "off", disabled: b.busy, "aria-describedby": "bk-hint",
+  });
+  const hint = el("span", { class: "hint", id: "bk-hint" });
+  const go = el("button", { class: "btn primary", type: "submit" },
+    b.busy ? "Encrypting…" : "Encrypt and save");
+  const update = () => {
+    const issue = passIssue(pass.value, again.value);
+    hint.textContent = issue || "The passphrases match.";
+    hint.className = "hint " + (issue ? "" : "ok");
+    go.disabled = !!issue || b.busy || !Z;
   };
-  r.readAsText(file);
+  // The new values are set on the inputs, because a redraw keeps what the inputs hold.
+  const make = () => {
+    pass.value = makePassphrase(crypto.getRandomValues(new Uint8Array(30)));
+    again.value = "";
+    b.made = true;
+    render();
+  };
+  const submit = act(async () => {
+    const p = pass.value;
+    if (passIssue(p, again.value)) return;
+    b.busy = true; render();
+    try {
+      if (!(await saveBackup(i, p))) return;
+      if (ui.backup === b) ui.backup = null;
+      showBanner("ok", "Backup saved. Keep the passphrase apart from the file.");
+    } finally { b.busy = false; }
+  });
+  const form = el("form", {
+    class: "dialog", role: "dialog", "aria-modal": "true", "aria-labelledby": "backup-title",
+    oninput: update, onsubmit: submit,
+  },
+  el("div", { class: "card-head" }, el("h2", { id: "backup-title" }, "Back up seat " + i),
+    el("button", {
+      class: "icon-btn", type: "button", "aria-label": "Close", onclick: closeBackup,
+    }, "×")),
+  el("p", { class: "small" }, PASS_NOTE),
+  el("label", { class: "field" }, el("span", {}, "Passphrase"), pass),
+  el("div", { class: "row-actions" },
+    el("button", { class: "btn sm", type: "button", disabled: b.busy, onclick: make },
+      "Make a passphrase for me"),
+    b.made ? copyBtn(() => pass.value, "Copy passphrase") : null),
+  b.made ? el("p", { class: "small" }, "Copy keeps the passphrase on the clipboard until you copy "
+    + "something else. Write it down, then clear the clipboard.") : null,
+  el("label", { class: "field" }, el("span", {}, "Type it again"), again, hint),
+  el("div", { class: "callout" }, "The file holds your key share. Anyone who has the file and the "
+    + "passphrase can sign as this seat."),
+  el("div", { class: "dialog-actions" },
+    el("button", {
+      class: "btn", type: "button", disabled: b.busy, onclick: closeBackup,
+    }, "Cancel"),
+    go));
+  update();
+  return form;
+}
+
+function restoreDialog() {
+  const r = ui.restore;
+  const pass = el("input", {
+    class: "input mono", id: "rs-pass", type: "password", autocomplete: "off",
+    spellcheck: "false", autocapitalize: "off", disabled: r.busy,
+  });
+  const submit = act(async () => {
+    const p = pass.value;
+    if (!p) throw new Error("Enter the passphrase of this backup.");
+    r.busy = true; render();
+    try {
+      const plain = await engineOffThread("backupOpen", p, r.text);
+      await applyBackup(parseBackup(plain), true);
+      ui.restore = null;
+    } finally { r.busy = false; }
+  });
+  return el("form", {
+    class: "dialog", role: "dialog", "aria-modal": "true", "aria-labelledby": "restore-title",
+    onsubmit: submit,
+  },
+  el("div", { class: "card-head" }, el("h2", { id: "restore-title" }, "Open a backup"),
+    el("button", {
+      class: "icon-btn", type: "button", "aria-label": "Close", onclick: closeBackup,
+    }, "×")),
+  el("p", { class: "small" }, "Enter the passphrase you chose when you made " + r.name + "."),
+  el("label", { class: "field" }, el("span", {}, "Passphrase"), pass),
+  el("div", { class: "dialog-actions" },
+    el("button", {
+      class: "btn", type: "button", disabled: r.busy, onclick: closeBackup,
+    }, "Cancel"),
+    el("button", { class: "btn primary", type: "submit", disabled: r.busy || !Z },
+      r.busy ? "Opening…" : "Open backup")));
+}
+
+function parseBackup(text) {
+  try { return J(text); } catch { throw new Error(NOT_A_BACKUP); }
+}
+
+// An encrypted file asks for its passphrase. A plain file from before encryption restores at once
+// and leaves the backup note up, so the person makes an encrypted file.
+async function restore(file) {
+  try {
+    if (file.size > MAX_BACKUP_BYTES) throw new Error(NOT_A_BACKUP);
+    const text = await file.text();
+    const b = parseBackup(text);
+    if (b && b.kind === "zigs-backup") {
+      ui.restore = { text, name: file.name, busy: false };
+      render();
+      return;
+    }
+    await applyBackup(b, false);
+  } catch (e) { showBanner("bad", e.message); }
+}
+
+const isObj = (x) => !!x && typeof x === "object";
+const BACKUP_SEAT_MAX = 7;
+const wellFormed = (b) => isObj(b) && b.kind === BACKUP_KIND && isObj(b.secret);
+const validSeatRef = (b) => validId(b.group) && Number.isInteger(b.seat) && b.seat >= 1
+  && b.seat <= BACKUP_SEAT_MAX;
+const validKey = (b) => b.key === undefined || validRoom({ id: b.group, key: b.key });
+const NO_FIT = "This backup does not fit this wallet. It was not used.";
+const RESTORE_PENDING = "A restore of this seat is still being checked. Open the wallet and "
+  + "wait, then try again.";
+
+function checkShape(b) {
+  if (!(wellFormed(b) && validSeatRef(b) && validKey(b))) throw new Error(NOT_A_BACKUP);
+  if (!shareShape(b.secret.keyPackage)) throw new Error("This backup holds no key share.");
+}
+
+// A restore must not replace what this browser holds: not the wallet secret (the rule for invite
+// links, too), not a seat that is still in setup, not the key share of the seat, and not a chat
+// that has the id of the wallet.
+function checkClash({ group, seat, key, secret }) {
+  const held = heldRefusal(sec(group, seat), secret.keyPackage, seat);
+  const found = [
+    [key && gkeys[group] && gkeys[group] !== key, "This backup has a different wallet secret for "
+      + "a wallet you already have, so it was not restored."],
+    [isChatId(group), "A chat that you have uses the id of this wallet, so the backup was not "
+      + "restored."],
+    [held, held],
+    [restoreWatch.has(skey(group, seat)), RESTORE_PENDING],
+  ].find(([clash]) => clash);
+  if (found) throw new Error(found[1]);
+}
+
+// Throws unless the page can store `b`. A wallet that is open already shows if the backup fits.
+// While a document that decides it has not loaded, settleRestore decides later.
+function checkBackup(b) {
+  checkShape(b);
+  checkClash(b);
+  if (state.gid === b.group && fitState(b.seat, b.secret) === false) throw new Error(NO_FIT);
+}
+
+// A restore waits here until the documents of its seat have loaded (settleRestore), by wallet and
+// seat. `keys` holds the key pairs of the file, and `late` its version and room. They are not
+// stored before the published keys of the seat and the wallet document check them.
+const restoreWatch = new Map();
+
+// What a restore stores now: the allowed fields of the file without its key pairs, version and
+// room, which wait for the check of settleRestore. Older backups hold nonces: a restored nonce
+// could sign a second, different package, so the nonces of this browser stay. A seat that held a
+// key share stays what it was: the flag `restored` would put the seat of this browser under the
+// fit rule of seatOwned.
+function restoredFor(b, held) {
+  const nonces = (held || {}).nonces || {};
+  return { ...restoredSecret(b.secret, held), nonces, ...(held ? {} : { restored: true }),
+    backedUp: false };
+}
+
+// Stores the key share of a backup, from the fields that restoredFields allows. `encrypted` says
+// the file was sealed: only then does the seat count as backed up, and only when the backup fits
+// the wallet.
+async function applyBackup(b, encrypted) {
+  checkBackup(b);
+  const { group, seat, key } = b;
+  const held = secrets[skey(group, seat)];
+  const before = held && structuredClone(held);
+  const addedKey = !!key && !gkeys[group];
+  if (key) putKey(group, key);
+  if (!(await putSec(group, seat, restoredFor(b, held)))) {
+    throw new Error("This browser could not save the restored key share.");
+  }
+  const where = "seat " + seat + " of " + (b.groupName || "wallet");
+  restoreWatch.set(skey(group, seat), {
+    gid: group, seat, encrypted, before, addedKey, where, keys: keysOf(b.secret),
+    late: lateFields(b.secret, held),
+  });
+  announceRestore(where, encrypted);
+  openGroup(group);
+}
+
+function announceRestore(where, encrypted) {
+  const text = "Restored " + where + ". It counts as your seat once it matches the wallet.";
+  if (encrypted) showBanner("ok", text);
+  else showBanner("bad", text + " " + NOT_ENCRYPTED);
+}
+
+// Removes the seat secret that the restore made (undoPlan). Returns false when it leaves the seat
+// alone, else true when the wallet went away too.
+function undoRestore(w) {
+  if (undoPlan(w.before) === "keep") return false;
+  delete secrets[skey(w.gid, w.seat)];
+  const dropped = releaseKey(w);
+  persist();
+  return dropped;
+}
+
+// The restore that added the wallet secret removes it again, unless a seat of the wallet remains.
+// A restore of the same wallet that still waits takes over the duty to remove it.
+function releaseKey({ gid, addedKey }) {
+  const heir = [...restoreWatch.values()].find((o) => o.gid === gid);
+  if (heir) heir.addedKey = heir.addedKey || addedKey;
+  const drop = addedKey && !mySeatSecrets(gid).length;
+  if (drop) delete gkeys[gid];
+  return drop;
+}
+
+// A restored key share counts when the key data of the seat equals what the wallet published
+// for it, which is known when the documents of the seat have loaded. Else the restore is undone.
+// Each restore settles alone, and the first one may close the wallet.
+function settleRestore() {
+  let settled = false;
+  for (const [key, w] of [...restoreWatch]) settled = settleOne(key, w) || settled;
+  if (settled) render();
+}
+
+function settleOne(key, w) {
+  if (w.gid !== state.gid || !state.seats[w.seat]) return false;
+  const fit = fitState(w.seat, sec(w.gid, w.seat) || {});
+  if (fit === null) return false;
+  restoreWatch.delete(key);
+  if (fit) acceptRestore(w, state.seats[w.seat]);
+  else rejectRestore(w);
+  return true;
+}
+
+function rejectRestore(w) {
+  if (undoRestore(w)) openGroup(null);
+  showBanner("bad", NO_FIT);
+}
+
+// A restored seat that does not fit is no seat of this browser (seatOwned). The watch of a restore
+// is in memory, so after a reload no restore settles it: the note stays.
+// Removing it deletes only this browser's copy. The wallet's verdict can come from a document that
+// any holder of the invite link can rewrite, so removal asks first.
+const STALE_RESTORE = "This restored seat does not match the wallet, so this browser does not use "
+  + "it. Remove it from this browser, then restore the right backup.";
+function staleRestoreNote() {
+  const gid = state.gid, stale = mySeatSecrets(gid).filter(([i, s]) =>
+    staleRestore(s, () => fitState(i, s), restoreWatch.has(skey(gid, i)))).map(([i]) => i);
+  if (!stale.length) return null;
+  const sure = ui.dropStale === gid;
+  const drop = () => {
+    for (const i of stale) delete secrets[skey(gid, i)];
+    ui.dropStale = null; persist(); render();
+  };
+  const keep = () => { ui.dropStale = null; render(); };
+  return el("div", { class: "callout bad", role: "alert" }, STALE_RESTORE,
+    el("div", { class: "dialog-actions" },
+      sure ? el("button", { class: "btn", type: "button", onclick: keep }, "Keep it") : null,
+      el("button", {
+        class: "btn", type: "button", onclick: sure ? drop : () => { ui.dropStale = gid; render(); },
+      }, sure ? "Remove seat " + stale.join(", ") + " from this browser" : "Remove from this browser")));
+}
+
+// The version and room of the file join the seat only when they equal the wallet's own.
+function acceptRestore(w, published) {
+  once("restore-keys:" + skey(w.gid, w.seat), () => takeRestoredKeys(w, published));
+  const later = settledFields(w.late, groupVersion(), state.g.room);
+  if (Object.keys(later).length) putSec(w.gid, w.seat, later);
+  if (!w.encrypted) return;
+  putSec(w.gid, w.seat, { backedUp: true });
+  showBanner("ok", "Restored " + w.where + ". It matches the wallet.");
+}
+
+// A pair checks out when the secret key of the file makes the public key that the seat published.
+const PAIR_CHECKS = {
+  box: async (f, p) => boxPairMatches(Z, f.boxSk, p.boxPk),
+  sign: async (f, p) => signPairMatches(f.signSk, p.signPk),
+};
+
+// Adds the key pairs of a restored file to the seat once each is the pair that the seat published.
+// A pair that does not check out is dropped.
+async function takeRestoredKeys({ gid, seat, keys }, published) {
+  const good = [];
+  for (const [name, check] of Object.entries(PAIR_CHECKS)) {
+    if (await check(keys, published)) good.push(name);
+  }
+  const held = sec(gid, seat);
+  if (held) await putSec(gid, seat, takenKeys(keys, held, good, published));
 }
 
 // ───────────────────────── Messages ─────────────────────────
@@ -1682,7 +2039,15 @@ const act = (fn) => async (ev) => {
   }
 };
 function copyBtn(text, label = "Copy", cls = "btn sm") {
-  return el("button", { class: cls, type: "button", onclick: async (ev) => { const b = ev.currentTarget; try { await navigator.clipboard.writeText(text); b.textContent = "Copied"; } catch { b.textContent = "Select and copy"; } setTimeout(() => b.textContent = label, 1500); } }, label);
+  const copy = async (ev) => {
+    const b = ev.currentTarget;
+    try {
+      await navigator.clipboard.writeText(typeof text === "function" ? text() : text);
+      b.textContent = "Copied";
+    } catch { b.textContent = "Select and copy"; }
+    setTimeout(() => b.textContent = label, 1500);
+  };
+  return el("button", { class: cls, type: "button", onclick: copy }, label);
 }
 
 // One bad document from another signer must not break the page: the item it feeds shows as a
@@ -1700,7 +2065,7 @@ let opener = "", lastTrigger = "", wantFocus = null;   // focus bookkeeping, see
 const ui = {
   forget: false, tab: "overview", send: false, pay: null, payKey: 0, listError: "",
   create: false, receive: false, move: false, net: "testnet", ack: false, notify: false,
-  newChat: false, leave: false,
+  newChat: false, leave: false, backup: null, restore: null,
 };
 try { ui.notify = localStorage.getItem("zf-notify") === "1"; } catch { /* no storage */ }
 const ZEC_FMT = new Intl.NumberFormat("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 8 });
@@ -2005,15 +2370,23 @@ function layers() {
 
 const scrim = (close) => el("div", { class: "scrim", onclick: () => { close(); render(); } });
 
+// The dialogs, in the order that they take the screen: [is shown, close, build]. `open` is true in
+// an open wallet that has its wallet document. A restore starts in the wallet list.
+const DIALOGS = [
+  [() => ui.restore, closeBackup, () => restoreDialog()],
+  [(open) => ui.backup && open, closeBackup, () => backupDialog()],
+  [(open) => ui.send && open, () => ui.send = false, () => sendDialog()],
+  [(open) => ui.receive && open, () => ui.receive = false, () => receiveDialog()],
+  [() => ui.create && !state.gid, () => ui.create = false, () => createDialog()],
+  [(open) => ui.move && open, () => ui.move = false, () => createDialog(state.g)],
+];
+
 function buildLayers() {
   const ss = state.gid && state.wallet ? curSession() : null;
   if (ss) return [scrim(closeSession), sessionLayer(ss)];
-  const inWallet = state.gid && state.wallet;
-  if (ui.send && inWallet) return [scrim(() => ui.send = false), sendDialog()];
-  if (ui.receive && inWallet) return [scrim(() => ui.receive = false), receiveDialog()];
-  if (ui.create && !state.gid) return [scrim(() => ui.create = false), createDialog()];
-  if (ui.move && inWallet) return [scrim(() => ui.move = false), createDialog(state.g)];
-  return [];
+  const open = state.gid && state.wallet;
+  const dialog = DIALOGS.find(([shown]) => shown(open));
+  return dialog ? [scrim(dialog[1]), dialog[2]()] : [];
 }
 
 function renderSide() {
@@ -2113,8 +2486,12 @@ function loadingView() {
 // ── Lobby ──
 function lobby() {
   const restoreInput = el("input", {
-    id: "restore", type: "file", accept: "application/json", hidden: true,
-    onchange: (ev) => ev.target.files[0] && restore(ev.target.files[0]),
+    id: "restore", type: "file", accept: ".zigsbackup,.json,application/json", hidden: true,
+    onchange: (ev) => {
+      const file = ev.target.files[0];
+      ev.target.value = "";
+      if (file) restore(file);
+    },
   });
   const restoreBtn = (cls) => el("button", {
     class: cls, type: "button", onclick: () => restoreInput.click(),
@@ -2317,7 +2694,7 @@ function groupView() {
   }
   const ready = walletReady();
   const why = ready ? sendBlocker() : null;
-  const head = groupHead(g, ready, why);
+  const head = [groupHead(g, ready, why), staleRestoreNote()];
   return ready ? walletView(head, why) : el("div", { class: "page" }, head, setupView());
 }
 
@@ -2395,11 +2772,12 @@ function tabBar(tabs) {
 // Private windows, Tor Browser and cleared site data delete the key share with the browser data.
 function backupNote(seats) {
   const text = "Back up your key share. This browser can forget it: private windows and Tor "
-    + "Browser delete it when they close. Keep the file safe and offline.";
+    + "Browser delete it when they close. The file is locked with a passphrase that you choose. "
+    + "Keep the file safe, and keep the passphrase apart from it.";
   return el("div", { class: "callout warn", role: "status" },
     el("span", { style: "flex:1 1 16rem" }, text),
     seats.map((i) => el("button", {
-      class: "btn sm", type: "button", onclick: act(() => backup(i)),
+      class: "btn sm", type: "button", onclick: () => openBackup(i),
     }, seats.length > 1 ? "Back up seat " + i : "Back up key share")));
 }
 
@@ -3085,18 +3463,28 @@ function changeSignersCard() {
       : el("button", { class: "btn", type: "button", disabled: !localSeats().length, onclick: () => { ui.move = true; render(); } }, "Change signers")));
 }
 
+const seatTitle = (i, s) =>
+  s ? (isMe(s.uid) ? (s.name || "You") : s.name || "Signer " + i) : "Open seat";
+
+function seatBadge(i) {
+  const v = seatCheck(i);
+  if (v === null) return el("span", { class: "badge" }, STAGE_LABEL[seatStage(i)]);
+  const text = v ? "Address checked" : "Rejected address";
+  return el("span", { class: "badge " + (v ? "ok" : "bad") }, text);
+}
+
+const keyBackupButton = (i) => el("button", {
+  class: "btn sm", type: "button", onclick: () => openBackup(i),
+}, "Back up key share");
+
 function memberRow(i) {
-  const s = state.seats[i], mine = s && isMe(s.uid) && sec(state.gid, i), v = seatCheck(i);
-  return el("div", { class: "member" }, avatar(i, "lg"),
-    el("div", { class: "ri-main" }, el("span", { class: "ri-title" }, s ? (isMe(s.uid) ? (s.name || "You") : s.name || "Signer " + i) : "Open seat", mine ? el("span", { class: "you" }, "You") : null),
-      el("span", { class: "ri-sub" }, "Seat " + i + (s ? " · joined " + when(s.at) : ""))),
-    el("div", { class: "m-actions" },
-      v !== null ? el("span", { class: "badge " + (v ? "ok" : "bad") }, v ? "Address checked" : "Rejected address") : el("span", { class: "badge" }, STAGE_LABEL[seatStage(i)]),
-      mine && sec(state.gid, i).keyPackage
-        ? el("button", {
-          class: "btn sm", type: "button", onclick: act(() => backup(i)),
-        }, "Back up key share")
-        : null));
+  const s = state.seats[i], mine = s && isMe(s.uid) && sec(state.gid, i);
+  const title = el("span", { class: "ri-title" }, seatTitle(i, s),
+    mine ? el("span", { class: "you" }, "You") : null);
+  const sub = el("span", { class: "ri-sub" }, "Seat " + i + (s ? " · joined " + when(s.at) : ""));
+  const backup = mine && sec(state.gid, i).keyPackage ? keyBackupButton(i) : null;
+  return el("div", { class: "member" }, avatar(i, "lg"), el("div", { class: "ri-main" }, title, sub),
+    el("div", { class: "m-actions" }, seatBadge(i), backup));
 }
 
 // ── Details ──
@@ -3560,6 +3948,7 @@ document.addEventListener("keydown", (ev) => {
   if (state.sid) closeSession();
   else {
     ui.send = false; ui.create = false; ui.receive = false; ui.move = false; ui.newChat = false;
+    closeBackup();
   }
   render();
 });

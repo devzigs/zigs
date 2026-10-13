@@ -171,3 +171,10 @@ export async function verifyMsg(signPk, sig, text) {
     return await crypto.subtle.verify("Ed25519", key, fromB64(sig), new TextEncoder().encode(text));
   } catch { return false; }
 }
+
+// True when the private key `signSk` signs for the public key `signPk`. Never throws.
+export async function signPairMatches(signSk, signPk) {
+  try { return await verifyMsg(signPk, await signMsg(signSk, "key check"), "key check"); } catch {
+    return false;
+  }
+}

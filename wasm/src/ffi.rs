@@ -9,6 +9,7 @@ use std::ffi::{c_char, CStr, CString};
 
 use serde_json::{json, Value};
 
+use crate::backup;
 use crate::ceremony;
 use crate::chain::native;
 
@@ -65,6 +66,8 @@ const METHODS: &[(&str, Method)] = &[
     ("boxOpen", |a| box_open(s(a, 0)?, s(a, 1)?, s(a, 2)?, s(a, 3)?)),
     ("secretSeal", |a| secret_seal(s(a, 0)?, s(a, 1)?, s(a, 2)?)),
     ("secretOpen", |a| secret_open(s(a, 0)?, s(a, 1)?, s(a, 2)?)),
+    ("backupSeal", |a| backup::seal(s(a, 0)?, s(a, 1)?)),
+    ("backupOpen", |a| backup::open(s(a, 0)?, s(a, 1)?)),
     ("walletOpen", |a| native::open(s(a, 0)?, s(a, 1)?, h(a, 2)?, a.get(3).and_then(Value::as_str))),
     ("walletClose", |a| native::close(s(a, 0)?)),
     ("walletNeeds", |a| native::needs(s(a, 0)?)),
@@ -168,6 +171,19 @@ mod tests {
             let err = out["err"].as_str().expect("empty input is refused");
             assert!(!err.contains("unknown method"), "{method} is in the table");
         }
+    }
+
+    #[test]
+    fn backup_methods_match_the_wasm_names() {
+        let pass = "correct horse battery staple";
+        let plain = "{\"seat\":1}";
+        let sealed = ffi("backupSeal", json!([pass, plain]));
+        let file = sealed["ok"].as_str().expect("seal works");
+        assert_eq!(ffi("backupOpen", json!([pass, file]))["ok"], plain);
+        let wrong = ffi("backupOpen", json!(["another long passphrase", file]));
+        assert_eq!(wrong["err"], "Wrong passphrase, or the file is damaged.");
+        assert!(ffi("backupSeal", json!(["short", plain]))["err"].is_string());
+        assert!(ffi("backupOpen", json!([pass, 1]))["err"].is_string());
     }
 
     #[test]

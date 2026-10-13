@@ -19,6 +19,15 @@ struct GroupInfo: Identifiable {
     let network: String?
 }
 
+extension GroupInfo {
+    /// The list entry of a group document.
+    init(id: String, doc g: Doc) {
+        self.init(id: id, name: g.str("name") ?? "Wallet", n: g.int("n") ?? 0, t: g.int("t") ?? 0,
+                  createdAt: g.int("createdAt") ?? 0, movedTo: g.str("movedTo"),
+                  network: g.str("network"))
+    }
+}
+
 /// One group, decrypted. Same document layout as web/app.js.
 struct GroupState {
     var g: Doc?
@@ -33,6 +42,36 @@ struct GroupState {
     var sessions: [Session] = []
     var commits: [String: [String: Doc]] = [:]
     var shares: [String: [String: Doc]] = [:]
+
+    /// FROST identifiers are the seat number as a 32-byte little-endian scalar, in hex.
+    static func frostId(_ i: Int) -> String {
+        String(format: "%02x", i) + String(repeating: "0", count: 62)
+    }
+
+    /// The key package of a done document: JSON text, as both apps publish it, or the object.
+    static func packageDoc(_ v: Any?) -> Doc? {
+        if let d = v as? Doc { return d }
+        guard let text = v as? String else { return nil }
+        return (try? Engine.parse(text)) as? Doc
+    }
+
+    /// A restored seat must hold the key data that the wallet published for it: the share, the
+    /// public key package and the group key. The setup secret of a version 2 wallet is checked
+    /// apart (GroupModel.fit). Same rule as fitsPublished in web/util.js.
+    func published(_ i: Int, fits secret: Doc) -> Bool {
+        guard let kp = secret.doc("keyPackage"), kp.str("identifier") == Self.frostId(i),
+              let share = kp.str("verifying_share"),
+              let doc = done["\(i)"], let package = Self.packageDoc(doc["publicKeyPackage"]),
+              Self.sameKeyData(secret, doc, package) else { return false }
+        return package.doc("verifying_shares")?.str(Self.frostId(i)) == share
+    }
+
+    private static func sameKeyData(_ secret: Doc, _ done: Doc, _ package: Doc) -> Bool {
+        guard let mine = packageDoc(secret["publicKeyPackage"]),
+              let key = secret.str("groupKey") else { return false }
+        return key == done.str("groupKey")
+            && GroupModel.walletKey(mine) == GroupModel.walletKey(package)
+    }
 
     var n: Int { g?.int("n") ?? 0 }
     var t: Int { g?.int("t") ?? 0 }
@@ -62,7 +101,9 @@ struct GroupState {
         let docs = seatIds.compactMap { done["\($0)"] }
         guard allDone, docs.count == seatIds.count else { return false }
         let keys = Set(docs.map { $0.str("groupKey") ?? "" })
-        let packages = Set(docs.map { GroupModel.walletKey($0.doc("publicKeyPackage")) })
+        let packages = Set(docs.map {
+            GroupModel.walletKey(Self.packageDoc($0["publicKeyPackage"]))
+        })
         return keys.count == 1 && packages.count == 1 && !keys.contains("") && !packages.contains("")
     }
     /// A published abort document is one that exists and holds a reason.
@@ -139,11 +180,18 @@ final class GroupModel {
     private(set) var locked = false
     private(set) var lockOn = false
     var banner: String?
+    /// A message that is not an error, but that the person must read.
+    var warning: String?
     var notice: String?
     var path: [String] = []
 
     @ObservationIgnored let store = Store()
     @ObservationIgnored let vault = Vault()
+    /// Restored key shares that wait for the documents of their seats (settleRestore), by wallet
+    /// and seat.
+    @ObservationIgnored var restoreWatches: [String: RestoreWatch] = [:]
+    /// The last answers of the wallet check for a restored setup secret. See setupFit.
+    @ObservationIgnored private var setupChecks: [String: Bool] = [:]
     @ObservationIgnored private var busy = Set<String>()
     @ObservationIgnored private(set) var me: String
     @ObservationIgnored private var proving = Set<String>()
@@ -265,25 +313,38 @@ final class GroupModel {
 
     // MARK: State
 
-    private func refresh() {
+    /// Reads the stores again. The vault is not observable, so a change of the seat secrets calls
+    /// this.
+    func refresh() {
         connected = store.connected
+        readGroups()
+        if let gid { reload(gid) }
+        react()
+    }
+
+    private func readGroups() {
         var list: [GroupInfo] = [], ws: [String: Doc] = [:], counts: [String: Int] = [:]
         for (id, raw) in store.children("groups") {
             guard let g = open("groups/" + id, raw) else { continue }
-            list.append(GroupInfo(id: id, name: g.str("name") ?? "Wallet", n: g.int("n") ?? 0, t: g.int("t") ?? 0,
-                                  createdAt: g.int("createdAt") ?? 0, movedTo: g.str("movedTo"), network: g.str("network")))
+            list.append(GroupInfo(id: id, doc: g))
             let wpath = "groups/\(id)/meta/wallet"
             if let w = open(wpath, store.docs[wpath]) { ws[id] = w }
             if !vault.seats(in: id).isEmpty {
-                let sessions = children("groups/\(id)/sessions").map { Session(id: $0.key, doc: $0.value) }
+                let base = "groups/\(id)/sessions"
+                let sessions = children(base).map { Session(id: $0.key, doc: $0.value) }
                 counts[id] = sessions.filter { needsMyApproval(id, $0) }.count
             }
         }
         groups = list.sorted { $0.createdAt > $1.createdAt }
         wallets = ws
         toApprove = counts
-        if let gid { state = load(gid) }
-        react()
+    }
+
+    /// Reads the open wallet again. A restore that settles can change the seats of this device,
+    /// so the state is read a second time then.
+    private func reload(_ gid: String) {
+        state = load(gid)
+        if settleRestore() { state = self.gid.map(load) ?? GroupState() }
     }
 
     private func load(_ gid: String) -> GroupState {
@@ -301,7 +362,7 @@ final class GroupModel {
         // The store's verify documents are claims anyone with the wallet key can write. For its own
         // seats this device uses its own result, tied to the exact wallet document.
         let wk = Self.walletKey(s.wallet)
-        for i in vault.seats(in: gid) where s.seats["\(i)"]?.str("uid") == me {
+        for i in vault.seats(in: gid) where owns(i, s, gid) {
             let sec = vault.sec(gid, i)
             let mine: Bool? = sec.str("checkedWallet") == wk ? true : sec.str("rejectedWallet") == wk ? false : nil
             s.verify["\(i)"] = mine.map { ["ok": $0] }
@@ -324,19 +385,59 @@ final class GroupModel {
         react()
     }
 
+    /// A seat is this device's when it took the seat, or when it restored the key data that the
+    /// wallet published for the seat (SeatOwner). Same rule as ownsSeat in web/app.js.
+    private func owns(_ i: Int, _ st: GroupState, _ gid: String) -> Bool {
+        guard let seat = st.seats["\(i)"] else { return false }
+        let s = vault.sec(gid, i)
+        return SeatOwner.owns(uid: seat.str("uid"), me: me, secret: s, fit: fit(i, s, in: st))
+    }
+
+    /// Does the key data in the seat secret `s` equal what the wallet published for seat `i`?
+    /// nil while the documents that decide it have not loaded. Same as fitState in web/app.js.
+    func fit(_ i: Int, _ s: Doc, in st: GroupState) -> Bool? {
+        guard let done = st.done["\(i)"], st.g != nil else { return nil }
+        return st.published(i, fits: s) ? setupFit(i, s, done, in: st) : false
+    }
+
+    /// A seat of a version 2 wallet must hold the setup secret that, with the seat's published
+    /// data, gives the full viewing key of the wallet. A seat of another version holds none. The
+    /// engine call is slow and views ask again and again, so the answers are kept.
+    private func setupFit(_ i: Int, _ s: Doc, _ done: Doc, in st: GroupState) -> Bool? {
+        guard let sk = s.str("vaultSk") else { return st.version != 2 }
+        guard let wallet = st.wallet else { return nil }
+        let published = done["publicKeyPackage"] ?? NSNull()
+        let package = published as? String ?? Engine.json(published)
+        let key = [sk, package, Self.walletKey(wallet)].joined(separator: "|")
+        if let hit = setupChecks[key] { return hit }
+        let ok = (try? Engine.call("walletVerifyV2", [Engine.json(wallet), package, sk])) != nil
+        if setupChecks.count > 32 { setupChecks = [:] }
+        setupChecks[key] = ok
+        return ok
+    }
+
     var localSeats: [Int] {
         guard let gid else { return [] }
-        return vault.seats(in: gid).filter { state.seats["\($0)"]?.str("uid") == me }
+        return vault.seats(in: gid).filter { owns($0, state, gid) }
     }
 
     var myVerified: Bool { localSeats.contains { has(state.verify["\($0)"]?["ok"]) } }
     /// A signer sees the address only after its own seat checked it against its key share.
     var addressHidden: Bool { !localSeats.isEmpty && !myVerified }
-    var isCreator: Bool { state.g?.str("createdBy") == me }
+    var isCreator: Bool { isMe(state.g?.str("createdBy")) }
+
+    /// This device, or a seat that it holds in the open wallet. Same rule as isMe in web/app.js.
+    func isMe(_ uid: String?) -> Bool {
+        guard let uid, !uid.isEmpty else { return false }
+        return uid == me || localSeats.contains { state.seats["\($0)"]?.str("uid") == uid }
+    }
+
+    /// The identity that other signers know: the first local seat's, which outlives a reinstall.
+    var myUid: String { localSeats.first.flatMap { state.seats["\($0)"]?.str("uid") } ?? me }
 
     func seatLabel(_ i: Int) -> String {
         guard let s = state.seats["\(i)"] else { return "Open seat" }
-        if s.str("uid") == me { return localSeats.count > 1 ? "You (seat \(i))" : "You" }
+        if localSeats.contains(i) { return localSeats.count > 1 ? "You (seat \(i))" : "You" }
         let n = s.str("name") ?? ""
         return n.isEmpty ? "Signer \(i)" : n
     }
@@ -350,7 +451,9 @@ final class GroupModel {
     /// A seat records its nonces on this device when it approves, so no server read is needed.
     func needsMyApproval(_ gid: String, _ ss: Session) -> Bool {
         guard ss.status == "collecting", !has(ss.doc["package"]), !has(ss.doc["error"]) else { return false }
-        return vault.seats(in: gid).contains { i in
+        // In the open wallet only owned seats count; a restored seat that does not fit cannot approve.
+        let seats = gid == self.gid ? localSeats : vault.seats(in: gid)
+        return seats.contains { i in
             let s = vault.sec(gid, i)
             return has(s["keyPackage"]) && s.doc("nonces")?[ss.id] == nil
         }
@@ -983,29 +1086,43 @@ final class GroupModel {
 
     private func reactSession(_ ss: Session) {
         guard let gid, let fvk = state.wallet?.str("orchard_fvk"), !has(ss.doc["error"]) else { return }
-        let path = "groups/\(gid)/sessions/\(ss.id)"
-        let commits = state.commits[ss.id] ?? [:]
         // Proposer: once enough signers approve, build the signing package.
-        if ss.doc.str("createdBy") == me && !has(ss.doc["package"]) {
-            let ids = commits.keys.compactMap(Int.init).sorted().prefix(state.t)
-            if ids.count >= state.t {
-                once("pkg:\(ss.id)") {
-                    var c = Doc()
-                    for i in ids { c["\(i)"] = commits["\(i)"]?["commitments"] }
-                    let pkg = try Engine.call("signPackage", [ss.doc.str("pczt") ?? "", fvk, Engine.json(c), self.state.t])
-                    try await self.patch(path, ["package": pkg, "signers": Array(ids), "status": "signing"])
-                    self.note("signing package sent to signers \(ids.map(String.init).joined(separator: ", "))")
-                }
-            }
+        if isMe(ss.doc.str("createdBy")) && !has(ss.doc["package"]) {
+            proposePackage(gid, ss, fvk)
             return
         }
         guard let package = ss.doc.str("package") else { return }
+        signAndAggregate(gid, ss, fvk, package)
+    }
+
+    private func proposePackage(_ gid: String, _ ss: Session, _ fvk: String) {
+        let path = "groups/\(gid)/sessions/\(ss.id)"
+        let commits = state.commits[ss.id] ?? [:]
+        let ids = commits.keys.compactMap(Int.init).sorted().prefix(state.t)
+        guard ids.count >= state.t else { return }
+        once("pkg:\(ss.id)") {
+            var c = Doc()
+            for i in ids { c["\(i)"] = commits["\(i)"]?["commitments"] }
+            let pkg = try Engine.call("signPackage", [ss.doc.str("pczt") ?? "", fvk, Engine.json(c), self.state.t])
+            try await self.patch(path, ["package": pkg, "signers": Array(ids), "status": "signing"])
+            self.note("signing package sent to signers \(ids.map(String.init).joined(separator: ", "))")
+        }
+    }
+
+    /// Signers: each seat of this device that was chosen sends its share. When every chosen signer
+    /// has sent one, this device aggregates them.
+    private func signAndAggregate(_ gid: String, _ ss: Session, _ fvk: String, _ package: String) {
         let signers = (ss.doc["signers"] as? [NSNumber])?.map(\.intValue) ?? []
         let shares = state.shares[ss.id] ?? [:]
         for i in localSeats where signers.contains(i) && shares["\(i)"] == nil {
             guard let n = vault.sec(gid, i).doc("nonces")?.doc(ss.id) else { continue }
             once("share:\(ss.id):\(i)") { try await self.signShare(gid, ss, i, fvk, package, n) }
         }
+        aggregateWhenComplete(gid, ss, package, signers, shares)
+    }
+
+    private func aggregateWhenComplete(_ gid: String, _ ss: Session, _ package: String,
+                                       _ signers: [Int], _ shares: [String: Doc]) {
         let complete = !signers.isEmpty && signers.allSatisfy { shares["\($0)"] != nil }
         if !localSeats.isEmpty && complete && !has(ss.doc["signed"]) {
             once("agg:\(ss.id)") { try await self.aggregate(gid, ss, package, signers) }
@@ -1141,7 +1258,8 @@ final class GroupModel {
         let t = try await chain.spend(payees: list)
         let sid = randomHex(10)
         try await put("groups/\(gid)/sessions/\(sid)", [
-            "createdBy": me, "createdAt": now(), "payees": list, "note": note ?? NSNull(), "pool": t["pool"] ?? "ironwood",
+            "createdBy": myUid, "createdAt": now(), "payees": list, "note": note ?? NSNull(),
+            "pool": t["pool"] ?? "ironwood",
             "amount": t["amount"] ?? amount, "change": t["change"] ?? 0, "fee": t["fee"] ?? 0,
             "noteValue": t["note_value"] ?? 0, "pczt": t["pczt"] ?? "", "move": move ?? NSNull(), "status": "collecting",
         ])

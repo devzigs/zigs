@@ -56,7 +56,7 @@ struct SessionView: View {
 
     private func proposer(_ ss: Session) -> String {
         guard let uid = ss.doc.str("createdBy") else { return "someone" }
-        if uid == model.me { return "you" }
+        if model.isMe(uid) { return "you" }
         let seat = model.state.seats.first { $0.value.str("uid") == uid }
         return seat.flatMap { $0.value.str("name") }.flatMap { $0.isEmpty ? nil : $0 } ?? "a signer"
     }

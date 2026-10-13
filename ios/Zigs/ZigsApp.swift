@@ -26,10 +26,21 @@ struct ZigsApp: App {
 struct RootView: View {
     @Environment(GroupModel.self) private var model
     @State private var sheet: RootSheet?
+    @State private var importing = false
 
-    enum RootSheet: String, Identifiable {
+    enum RootSheet: Identifiable {
         case join, settings, create
-        var id: String { rawValue }
+        /// A sealed backup file that waits for its passphrase.
+        case restore(name: String, text: String)
+
+        var id: String {
+            switch self {
+            case .join: "join"
+            case .settings: "settings"
+            case .create: "create"
+            case .restore: "restore"
+            }
+        }
     }
 
     var body: some View {
@@ -40,7 +51,8 @@ struct RootView: View {
                     Text("Each wallet is a separate shared account, with its own address, signers and approval rule.")
                         .font(.subheadline).foregroundStyle(Color.mist)
                     if model.groups.isEmpty {
-                        Welcome(create: { sheet = .create }, join: { sheet = .join })
+                        Welcome(create: { sheet = .create }, join: { sheet = .join },
+                                restore: { importing = true })
                     } else {
                         VStack(spacing: 0) {
                             ForEach(model.groups) { g in
@@ -68,6 +80,9 @@ struct RootView: View {
                     Menu("Add", systemImage: "plus") {
                         Button("New wallet", systemImage: "plus.circle") { sheet = .create }
                         Button("Join with an invite link", systemImage: "link") { sheet = .join }
+                        Button("Restore from backup", systemImage: "arrow.down.doc") {
+                            importing = true
+                        }
                     }
                 }
             }
@@ -76,9 +91,25 @@ struct RootView: View {
                 case .join: JoinSheet()
                 case .settings: SettingsSheet()
                 case .create: CreateSheet(from: nil)
+                case .restore(let name, let text): RestoreSheet(name: name, text: text)
                 }
             }
+            .fileImporter(isPresented: $importing, allowedContentTypes: [.data]) {
+                importBackup($0)
+            }
             .modifier(Banners())
+        }
+    }
+
+    private func importBackup(_ result: Result<URL, Error>) {
+        do {
+            let url = try result.get()
+            let text = try readBackupFile(url)
+            if try model.receiveBackup(text) {
+                sheet = .restore(name: url.lastPathComponent, text: text)
+            }
+        } catch {
+            model.banner = error.localizedDescription
         }
     }
 }
@@ -151,6 +182,7 @@ struct WalletRow: View {
 struct Welcome: View {
     let create: () -> Void
     let join: () -> Void
+    let restore: () -> Void
 
     var body: some View {
         Card {
@@ -169,6 +201,7 @@ struct Welcome: View {
             }
             Button("Create wallet", action: create).primaryButton().frame(maxWidth: .infinity)
             Button("Join with an invite link", action: join).frame(maxWidth: .infinity)
+            Button("Restore from backup", action: restore).frame(maxWidth: .infinity)
         }
     }
 
@@ -200,6 +233,12 @@ struct Banners: ViewModifier {
                 Button("OK", role: .cancel) {}
             } message: {
                 Text(model.banner ?? "")
+            }
+            .alert("Check this", isPresented: Binding(get: { model.warning != nil },
+                                                      set: { if !$0 { model.warning = nil } })) {
+                Button("OK", role: .cancel) {}
+            } message: {
+                Text(model.warning ?? "")
             }
             .overlay(alignment: .bottom) {
                 if let n = model.notice {

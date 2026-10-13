@@ -383,11 +383,100 @@ flowchart TD
 - **Mac.** No lock yet.
 - **Passkeys do not sign.** A passkey cannot make a RedPallas signature. It protects the key share
   on the device; the FROST share signs.
-- **Backup (web).** An unencrypted file with the key share, and never the nonces.
-  - For a version 2 wallet the file also holds `vaultSk`. From it anyone can compute `qsk`, so keep
-    the file as secret as the key share.
-  - On restore, the app checks the key share against the key data the wallet published for that
-    seat.
+- **Backup.** A `.zigsbackup` file with the key share, locked with a passphrase. The web, iPhone
+  and Mac apps make and open the same file.
+  - File. One compact JSON object. Its fields, in this order, are `kind` (`zigs-backup`), `v` (1),
+    `kdf` (`argon2id`), `m` (65536), `t` (3), `p` (1), `salt`, `nonce` and `ct`. `salt` is 16
+    random bytes and `nonce` is 24 random bytes. `salt`, `nonce` and `ct` are standard base64 with
+    padding.
+  - Key. Argon2id (RFC 9106, version 0x13) of the passphrase as UTF-8, with the salt, `m` KiB of
+    memory, `t` passes and `p` lanes. The output is 32 bytes. The engine does not normalize the
+    passphrase. The apps do not trim it. The apps normalize it to Unicode NFC (`normalize("NFC")`
+    in JavaScript, `precomposedStringWithCanonicalMapping` in Swift). They do this before they
+    count it, compare it with its confirmation and call the engine. So one passphrase gives one
+    key, whatever keyboard typed it.
+  - Cipher. XChaCha20-Poly1305 with the nonce. `ct` is the ciphertext followed by the 16-byte tag.
+    The apps add no padding.
+  - Authenticated header. The associated data is the file without `ct`: the same object, in the
+    same field order, as compact JSON with no spaces. A changed `m`, `t`, salt or nonce makes the
+    file fail to open. The engine builds the data from the parsed values, so the layout of a file
+    on disk does not matter.
+  - Limits. The engine refuses `m` above 262144, `t` above 10, `p` other than 1, `v` other than 1
+    and `kdf` other than `argon2id`. These checks run before Argon2, so a hostile file cannot force
+    heavy work.
+  - Passphrase. At least 16 characters, counted as Unicode scalar values after the NFC step, and
+    at least 8 different characters. The engine enforces both rules. The apps show the same rules
+    before they call it. The second rule stops text such as 16 equal characters. "Make a
+    passphrase for me" draws 30 random symbols of 5 bits (150 bits). The symbols come from
+    `0123456789abcdefghjkmnpqrstvwxyz`. The app shows them as 6 groups of 5, with `-` between the
+    groups. The app asks the person to type or paste the passphrase again before it makes the
+    file. Zigs cannot recover a lost passphrase.
+  - Sealed text. The JSON of the older plain backup: `kind` (`zec-frost-key-share`), `group`,
+    `groupName`, `seat`, `threshold`, `of`, `key` (the wallet secret), `wallet` and `secret` (the
+    seat secret). It never holds nonces. For a version 2 wallet the seat secret holds `vaultSk`,
+    the ZIP 2005 `sk` that the signers agreed on. From it anyone can compute `qsk`, so keep the
+    file and the passphrase as secret as the key share. On the web, the seat secret also holds the
+    seat's signing keys.
+  - Check before save. The app seals the text, opens the result in memory, and compares it with
+    the text. Only then does it offer the file. The seat counts as backed up when the file is
+    saved.
+  - Clipboard. On iPhone, "Copy passphrase" keeps the text on the device for 2 minutes: it is not
+    sent to other devices. On Mac the item is marked as concealed and leaves the clipboard after 2
+    minutes. A browser has no such control.
+  - Restore. The app takes only these fields of the seat secret from the file: `keyPackage`,
+    `publicKeyPackage`, `groupKey`, `vaultSk`, `boxSk`, `boxPk`, `signSk`, `signPk`, `version` and
+    `room`. It drops the others, such as `checkedWallet`, `rejectedWallet`, `uid` and setup
+    state. These are claims of whoever made the file. The restored seat checks the wallet again.
+    The app refuses a restore in these cases:
+    - The file has another wallet secret than the one the device holds for that wallet.
+    - The file has another key share than the one the device holds for that seat.
+    - The device holds a secret for that seat without a key share. The seat is still in setup on
+      the device: the person finishes setup or removes the seat first.
+    - The file has no key package.
+    - The file gives a wallet the id of a chat that the web app holds.
+    - The wallet is open, and the file does not fit it (see Fit).
+    - The seat has an earlier restore that is not settled yet (see Settle).
+
+    The device keeps the nonces that it already has. A device that holds a key share for the seat
+    takes no field of the file at once: it keeps what it holds, and the seat does not get the mark
+    `restored`. The app does not store the key pairs of the file (`boxSk` with `boxPk`, `signSk`
+    with `signPk`) at once. It does not store the `version` and the `room` of the file at once
+    either. They wait for Settle.
+  - Fit. A restored seat counts as a seat of this device only while it fits the wallet, also
+    after a restart. The identity of the seat does not count for it. The app ignores a restored
+    seat that does not fit, and shows "This restored seat does not match the wallet. Restore it
+    again." A seat fits when three values of the file equal what the wallet published in the done
+    document of the seat:
+    - the key share (the identifier and the verifying share);
+    - the public key package, compared with its keys in sorted order;
+    - the group key.
+
+    For a version 2 wallet, `vaultSk` of the file must also give the full viewing key of the
+    wallet. The check is `walletVerifyV2` with the published key package, `vaultSk` and the wallet
+    document. A seat of a version 2 wallet without `vaultSk` does not fit.
+  - Settle. The app decides when the done document and the seat document have loaded. For a version
+    2 wallet it also waits for the wallet document. Until then the restored seat is not a seat of
+    this device. If the seat does not fit, the app undoes the restore:
+    - A seat that held no secret returns to that state.
+    - A seat that held a key share keeps what it holds. The old copy would bring back old nonces.
+
+    If the seat fits, the app takes a key pair of the file only when two things are true. The seat
+    published the public key of the pair (`boxPk` or `signPk` in the seat document), and the secret
+    key makes that public key. The check is X25519 for `boxSk` and Ed25519 for `signSk`. The app
+    drops a pair that fails. A pair that the seat holds already stays. The seat counts as backed
+    up only after an encrypted file and a fit.
+
+    If the seat fits, the app also takes the `version` and the `room` of the file. It takes each
+    only when it equals the value in the wallet document, and it stores the value of the wallet.
+    A seat that held a key share takes neither. Until then the file cannot stop the setup of the
+    seat with a false version, and it cannot pin a false message room.
+
+    The app settles each restore apart, by wallet and seat. It refuses a second restore of a seat
+    until the first one settles. A restore that added the wallet secret removes it again only when
+    no seat of that wallet remains.
+  - Older files. A plain file from before encryption (`kind` `zec-frost-key-share`) still
+    restores. The app warns about it, and the backup note stays until the person makes an
+    encrypted backup.
   - Tor Browser forgets everything when it closes, so a Tor user restores the backup in each
     session.
 
@@ -427,8 +516,11 @@ the web, on iPhone and on Mac at the same time.
     buttons Approve, Build proof and Send to network.
   - Change signers.
   - Messages: the wallet thread, a discussion in each payment drawer, and unread counts (section 14).
-- **Device features.** Optional passkey lock, backup and restore of key shares, and a message
-  when the browser blocks WebAssembly (Tor Browser at the Safer level).
+- **Device features.** Optional passkey lock, and encrypted backup and restore of key shares. The
+  page also shows a message when the browser blocks WebAssembly (Tor Browser at the Safer level).
+  Argon2id runs in the same worker as the proof. So the page stays responsive while the app shows
+  "Encrypting…" or "Opening…". If the worker does not start, a backup runs on the main thread and
+  the page freezes for a moment.
 - **Tor Browser.** Prepared for the Standard level. Restore the backup in each session and finish
   each approval in one session. A full session is not tested yet.
 
@@ -447,7 +539,13 @@ the web, on iPhone and on Mac at the same time.
 - **Invites.** The app opens web invite links and `zigs://join#<wallet-id>.<secret>` links. The
   invite secret stays in the Keychain.
 - **Keys.** The Keychain, on this device only. The iPhone has an optional Face ID lock. The Mac
-  has no lock yet, and no backup.
+  has no lock yet.
+- **Backup.** "Back up seat N" in the Signers tab (and in Overview until the seat has a backup)
+  makes the encrypted file of section 9. The app offers it with the system file exporter.
+  "Restore from backup" on the wallet list opens a file and asks for the passphrase. A restore
+  stores the wallet secret and the seat secret in the Keychain, as joining by invite link does. It
+  follows the rules of section 9. A restored seat counts as a seat of this device when it fits the
+  wallet. The device then also counts it as the proposer of a payment that the seat made.
 - **Proofs.** The device builds Halo2 proofs natively. The time on a real iPhone is not measured
   yet.
 
@@ -498,8 +596,8 @@ the web, on iPhone and on Mac at the same time.
   yet. If the ZIP changes before it is final, a wallet that follows the current text may need to
   move its funds.
 - Every signer holds `qsk`. As ZIP 2005 says, a quantum attacker who has `qsk` may steal the
-  funds. So under a quantum attacker, one signer or one stolen backup could take the funds.
-  Move the funds to a post-quantum protocol when one exists.
+  funds. So under a quantum attacker, one signer or one stolen backup with its passphrase could
+  take the funds. Move the funds to a post-quantum protocol when one exists.
 - The safety number protects only if the signers compare it over a channel that the attacker does
   not control. It has about 100 bits, so a split view needs about 2^50 work.
 - The `version` field is not authenticated. A holder of the wallet secret can change it. A seat

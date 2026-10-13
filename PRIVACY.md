@@ -96,8 +96,9 @@ session in Tor Browser has not been tested yet.
 1. Set the security level to **Standard**. The Safer and Safest levels turn off WebAssembly, and
    Zigs needs it for its cryptography. The app says so if it is off.
 2. Tor Browser deletes all site data when it closes, including your key share. After the wallet
-   is created, click **Back up key** in the yellow note. At the start of each session, click
-   **Restore from backup**. The backup file is not encrypted: keep it offline.
+   is created, click **Back up key share** in the yellow note and choose a passphrase. At the start
+   of each session, click **Restore from backup** and enter the passphrase. Keep the file and the
+   passphrase apart ([how backups work](#key-share-backups)).
 3. Finish each approval in one session. If Tor Browser closes between your approval and the group
    signature, the approval is lost. The payment shows this, and someone proposes it again.
 
@@ -105,23 +106,22 @@ What makes this safe to rely on:
 
 - The page sends a Content-Security-Policy header. The browser lets it connect only to the group
   server and the three light-wallet servers in `NETWORKS`, and to nothing else.
-- A restored seat works in a new session. The app checks the restored key share against the key
-  data the wallet published for that seat, and a proposal records the seat's identity, not the
-  session's.
+- A restored seat works in a new session. The app checks the restored key data against what the
+  wallet published for that seat. A proposal records the identity of the seat, not of the session.
 - Backups leave out signing nonces, and a restore drops the nonces in older backup files, so a
   restored copy cannot reuse one.
-- The backup note goes away when the file is offered for download. The app cannot tell whether
-  you saved it.
+- The backup note goes away when the app has opened the new file in memory, and offers it for
+  download. The app cannot tell whether you saved it.
 
-Not tested yet: a full session in Tor Browser, whether the light-wallet servers accept
-connections from every Tor exit, and whether many Tor users on one exit reach the group server's
-per-IP rate limits.
+Not tested yet: a full session in Tor Browser. Also not tested: whether the light-wallet servers
+accept connections from every Tor exit. Also not tested: whether many Tor users on one exit reach
+the per-IP rate limits of the group server.
 
 ## Your device
 
 | Data | Web app | iPhone and Mac app |
 |---|---|---|
-| Key share, signing nonces, and for a version 2 wallet `vaultSk` | Browser local storage; sealed with a passkey when the lock is on | iPhone: Keychain, this device only, not in backups; sealed behind Face ID when the lock is on. Mac: login keychain |
+| Key share, signing nonces, and for a version 2 wallet `vaultSk` | Browser local storage; sealed with a passkey when the lock is on | iPhone: Keychain, this device only, not in iCloud or iTunes device backups; sealed behind Face ID when the lock is on. Mac: login keychain |
 | Wallet secrets (from invite links) | Same as the key share | Same as the key share |
 | Sync state (notes, tree) | IndexedDB, sealed with the wallet key | File, sealed with the wallet key |
 | Cached balances for the wallet list | Local storage, sealed with the wallet key | Settings, sealed with the wallet key |
@@ -131,6 +131,41 @@ per-IP rate limits.
 
 Without the lock, anyone who controls your unlocked device can read your key share and wallet
 secrets. One share alone cannot move funds: a payment needs a full threshold of signers.
+
+### Key share backups
+
+A backup file holds your key share, so the app locks it with a passphrase that you choose. The web,
+iPhone and Mac apps make and open the same file.
+
+- **What it holds.** The wallet secret and the seat secret. The seat secret has the key share, the
+  public key package and the group key. For a version 2 wallet it also has `vaultSk`, the ZIP 2005
+  `sk`. The web app also puts in the signing key of the seat. A backup never holds signing nonces.
+- **How it is locked.** Argon2id (RFC 9106) with 64 MiB of memory, 3 passes and 1 lane makes a
+  32-byte key from the passphrase. XChaCha20-Poly1305 seals the text and authenticates the
+  header, so a changed parameter fails to open. The format is in
+  [PROTOCOL.md](PROTOCOL.md#9-keys-on-the-device).
+- **The passphrase.** It has at least 16 characters, and at least 8 different ones. The apps
+  normalize it to Unicode NFC, so any keyboard gives the same key. "Make a passphrase for me"
+  gives 150 random bits. Zigs cannot recover a lost passphrase. Write it down and keep it apart
+  from the file. The app never sends it anywhere. "Copy passphrase" puts it on the clipboard. On
+  iPhone the copy stays on the device and leaves after 2 minutes. A browser cannot limit the copy.
+- **Checked before you save.** The app opens the new file in memory and compares it with the
+  original before it offers the download.
+- **Restore.** The app takes only the key share and the keys that belong to it from the file. It
+  drops the wallet checks that the file claims, so the restored seat checks the wallet again. It
+  refuses a file for a seat that already has another key share, or that is still in setup.
+- **Fit.** A restored seat counts as yours only when it fits the wallet. Three values must equal
+  what the wallet published for the seat: the key share, the public key package and the group key.
+  For a version 2 wallet, the `vaultSk` of the file must also give the viewing key of the wallet.
+  Else the app undoes the restore. After a restart, a restored seat that does not fit is not
+  used: the app shows a note and lets you remove it from the device. It keeps the message keys of the file only when the seat
+  published their public keys. It keeps the version and the message room of the file only when
+  they equal the wallet document.
+- **Older files.** A plain backup from before encryption still restores. The app warns you and
+  asks for a new encrypted backup.
+- **Limit.** Anyone who has the file can try passphrases offline. Argon2id makes each try slow,
+  but a guessable passphrase can still be found. A stolen file together with its passphrase gives
+  the key share.
 
 ### Lock with a passkey or Face ID
 
@@ -169,13 +204,14 @@ the passkey guards the key share instead. The lock is opt-in.
 
 - A threshold of signers who agree can move the funds. That is the rule they chose.
 - **Quantum recoverability gives every signer `qsk`.** A version 2 wallet is built to ZIP 2005
-  (Proposed), so that funds can be recovered if quantum computers break today's keys. For this,
-  every signer holds the same secret `qsk`, computed from the secret `sk` that the signers agreed
-  on. As ZIP 2005 says, a quantum attacker who has `qsk` may steal the funds. Under a quantum
-  attacker, one signer, or one stolen key share backup, could take the funds. Today the spend
-  still needs a threshold of signers. The backup file of a version 2 wallet holds `vaultSk`, from
-  which `qsk` follows, so keep it as secret as the key share. ZIP 2005 recommends that you move
-  the funds to a post-quantum protocol as soon as one exists.
+  (Proposed). So the funds can be recovered if quantum computers break today's keys. For this,
+  every signer holds the same secret `qsk`. It is computed from the secret `sk` that the signers
+  agreed on. As ZIP 2005 says, a quantum attacker who has `qsk` may steal the funds. Under a quantum
+  attacker, one signer, or one stolen key share backup with its passphrase, could take the funds.
+  Today the spend still needs a threshold of signers. The backup of a version 2 wallet holds
+  `vaultSk`, and `qsk` follows from it. Keep the file and its passphrase as secret as the key
+  share. ZIP 2005 recommends that you move the funds to a post-quantum protocol as soon as one
+  exists.
 - A version 1 wallet (made before ZIP 2005 support) has no `qsk`. It cannot be recovered under
   ZIP 2005. Move its funds to a new wallet with Change signers.
 - The signers must compare the safety number of a version 2 wallet over a channel that an

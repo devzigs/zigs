@@ -1,18 +1,23 @@
-// Runs the slow step (Halo2 proof + full transaction verification) off the
-// main thread so the page stays responsive for about a minute.
-import init, { finalize } from "./pkg/zec_frost_wasm.js";
+// Runs the slow engine steps off the main thread so the page stays responsive: the Halo2 proof
+// and full transaction verification (about a minute), and the Argon2id of a backup.
+import init, * as Z from "./pkg/zec_frost_wasm.js";
+import { slowCall } from "./util.js";
 
 const ready = init();
 
 self.onmessage = async (ev) => {
-  const { id, signedPczt } = ev.data;
+  const { id, method, args } = ev.data;
+  const text = (e) => String(e && e.message ? e.message : e);
   try {
     await ready;
-    const t0 = performance.now();
-    const out = JSON.parse(finalize(signedPczt));
-    out.ms = Math.round(performance.now() - t0);
-    self.postMessage({ id, ok: true, out });
   } catch (e) {
-    self.postMessage({ id, ok: false, error: String(e && e.message ? e.message : e) });
+    // The engine did not load here. The page can still run the step on its own thread.
+    self.postMessage({ id, ok: false, startFailed: true, error: text(e) });
+    return;
+  }
+  try {
+    self.postMessage({ id, ok: true, out: slowCall(Z, method, args) });
+  } catch (e) {
+    self.postMessage({ id, ok: false, error: text(e) });
   }
 };

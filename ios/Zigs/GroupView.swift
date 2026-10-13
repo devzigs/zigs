@@ -17,6 +17,7 @@ struct GroupView: View {
         ScrollView {
             VStack(alignment: .leading, spacing: 16) {
                 Header()
+                if model.hasStaleRestore { StaleRestoreNote() }
                 content(st)
             }
             .padding(16)
@@ -29,8 +30,8 @@ struct GroupView: View {
         // New testnet blocks come about every 25 s: refresh the open wallet once a minute.
         .task(id: model.chain?.gid) {
             while !Task.isCancelled {
-                try? await Task.sleep(for: .seconds(60))
                 await model.chain?.sync()
+                do { try await Task.sleep(for: .seconds(60)) } catch { return }
             }
         }
         .modifier(Banners())
@@ -104,7 +105,6 @@ struct Header: View {
             HStack(spacing: 8) {
                 Badge(text: st.net.label, kind: st.net.cap == nil ? .plain : .bad)
                 Badge(text: "\(st.t) of \(st.n) signers must approve")
-                    .popoverTip(RuleTip())
                 HStack(spacing: -8) {
                     ForEach(st.seatIds, id: \.self) { i in SeatAvatar(i: i, size: 24) }
                 }
@@ -112,6 +112,8 @@ struct Header: View {
             Text("\(st.seatedCount) of \(st.n) signers joined"
                  + (st.movedFrom.map { " · Replaces \(model.groupName($0))" } ?? ""))
                 .font(.caption).foregroundStyle(Color.mist)
+            // Inline: a popover tip is modal, so it swallows the first tap on any other control.
+            TipView(RuleTip())
         }
     }
 }
@@ -123,7 +125,7 @@ struct SeatAvatar: View {
 
     var body: some View {
         let s = model.state.seats["\(i)"]
-        let mine = s?.str("uid") == model.me
+        let mine = model.localSeats.contains(i)
         Avatar(text: s == nil ? "+" : initials(mine ? (s?.str("name").flatMap { $0.isEmpty ? nil : $0 } ?? "You") : model.seatLabel(i)),
                mine: mine, size: size)
             .overlay(Circle().stroke(Color.night, lineWidth: 2))
@@ -368,6 +370,7 @@ struct OverviewTab: View {
             if model.state.movedTo != nil { MoveCard() }
             if !pending.isEmpty { ApprovalsCard(list: pending) }
             BalanceCard()
+            if !model.unsavedSeats.isEmpty { BackupCard() }
             SignersCard(manage: showSigners)
             Card {
                 HStack {
@@ -433,23 +436,37 @@ struct SyncLine: View {
 
     var body: some View {
         if let c = model.chain {
-            let birthday = c.birthday
-            let p = c.progress
-            let pct = p.map { $0.tip > birthday ? Double($0.height - birthday) / Double($0.tip - birthday) : 0 } ?? 0
+            let pct = Self.fraction(c)
+            let status = Self.status(c, pct)
             VStack(alignment: .leading, spacing: 6) {
-                if c.syncing, p != nil { ProgressView(value: pct) }
+                if c.syncing, c.progress != nil { ProgressView(value: pct) }
                 HStack(spacing: 6) {
-                    Circle().fill(c.error != nil ? Color.bad : c.syncing ? Color.signal : Color.good).frame(width: 7, height: 7)
-                    Text(c.error != nil ? "Sync failed"
-                         : c.syncing ? (p != nil ? "Syncing · \(Int(pct * 100))%" : "Connecting to the network…")
-                         : "Up to date · block \((c.balance?.int("height") ?? 0).formatted())")
-                        .font(.caption).foregroundStyle(Color.mist)
+                    Circle().fill(status.color).frame(width: 7, height: 7)
+                    Text(status.text).font(.caption).foregroundStyle(Color.mist)
                 }
-                if let e = c.error { Text(e).font(.caption).foregroundStyle(Color.bad) }
+                if status.failed, let e = c.error { Text(e).font(.caption).foregroundStyle(Color.bad) }
             }
         } else {
             Text("Sync starts after your seat checks the address.").font(.caption).foregroundStyle(Color.mist)
         }
+    }
+
+    /// The share of the blocks since the birthday of the wallet that the sync has read.
+    private static func fraction(_ c: Chain) -> Double {
+        guard let p = c.progress, p.tip > c.birthday else { return 0 }
+        return Double(p.height - c.birthday) / Double(p.tip - c.birthday)
+    }
+
+    /// What the line says, and the colour of its dot. Progress that is left while no sync runs
+    /// means that a sync stopped before the last block.
+    private static func status(_ c: Chain, _ pct: Double) -> (text: String, color: Color, failed: Bool) {
+        if !c.syncing, c.error != nil { return ("Sync failed", .bad, true) }
+        if c.syncing {
+            let text = c.progress != nil ? "Syncing · \(Int(pct * 100))%" : "Connecting to the network…"
+            return (text, .signal, false)
+        }
+        if let p = c.progress { return ("Sync paused at block \(p.height.formatted())", .signal, false) }
+        return ("Up to date · block \((c.balance?.int("height") ?? 0).formatted())", .good, false)
     }
 }
 
@@ -706,6 +723,7 @@ struct SignersTab: View {
                     }
                 }
             }
+            BackupCard()
             Card {
                 Text("Add or remove signers").font(.headline)
                 TipView(ChangeSignersTip())
@@ -980,6 +998,24 @@ struct RecipientRow: View {
                     Text(grouped(to)).font(.caption.monospaced()).foregroundStyle(Color.mist).textSelection(.enabled)
                 }
             }
+        }
+    }
+}
+
+/// A restored seat that does not fit the wallet, with a way to remove this device's copy.
+struct StaleRestoreNote: View {
+    @Environment(GroupModel.self) private var model
+    @State private var asking = false
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Text(BackupText.staleRestore).font(.subheadline).foregroundStyle(Color.bad)
+            Button("Remove from this device", role: .destructive) { asking = true }
+                .confirmationDialog("Remove this seat from this device?", isPresented: $asking, titleVisibility: .visible) {
+                    Button("Remove", role: .destructive) { model.dropStaleRestores() }
+                } message: {
+                    Text("Do this only if you will restore the right backup.")
+                }
         }
     }
 }

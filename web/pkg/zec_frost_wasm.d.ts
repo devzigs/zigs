@@ -65,6 +65,10 @@ declare class IntoUnderlyingSource {
 }
 export type { IntoUnderlyingSource };
 
+export function backupOpen(passphrase: string, sealed: string): string;
+
+export function backupSeal(passphrase: string, plaintext: string): string;
+
 export function boxKeypair(): string;
 
 export function boxOpen(sk: string, pk: string, ctx: string, ct: string): string;
@@ -123,6 +127,8 @@ export interface InitOutput {
     readonly __wbg_intounderlyingbytesource_free: (a: number, b: number) => void;
     readonly __wbg_intounderlyingsink_free: (a: number, b: number) => void;
     readonly __wbg_intounderlyingsource_free: (a: number, b: number) => void;
+    readonly backupOpen: (a: number, b: number, c: number, d: number) => [number, number, number, number];
+    readonly backupSeal: (a: number, b: number, c: number, d: number) => [number, number, number, number];
     readonly boxKeypair: () => [number, number];
     readonly boxOpen: (a: number, b: number, c: number, d: number, e: number, f: number, g: number, h: number) => [number, number, number, number];
     readonly boxSeal: (a: number, b: number, c: number, d: number, e: number, f: number, g: number, h: number) => [number, number, number, number];
