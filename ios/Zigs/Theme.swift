@@ -42,7 +42,10 @@ func short(_ s: String, _ n: Int = 12) -> String {
 }
 
 func initials(_ name: String) -> String {
-    let i = name.split(separator: " ").compactMap(\.first).prefix(2)
+    // A label such as "Ana (seat 2)" shows the initials of the name only.
+    let base = name.split(separator: "(", maxSplits: 1, omittingEmptySubsequences: false)
+        .first ?? ""
+    let i = base.split(separator: " ").compactMap(\.first).prefix(2)
     return i.isEmpty ? "?" : String(i).uppercased()
 }
 

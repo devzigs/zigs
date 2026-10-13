@@ -1141,4 +1141,7 @@ let text = Engine.json(d)
 let file = try Engine.call("backupSeal", [pass, text])
 check(try Engine.call("backupOpen", [pass, file]).utf8.elementsEqual(text.utf8), "round trip")
 try file.write(toFile: dir + "/swift-made.zigsbackup", atomically: true, encoding: .utf8)
+check(initials("Mix (seat 1)") == "M" && initials("Ana Bo") == "AB" && initials("") == "?",
+      "a seat label shows the initials of the name only")
+
 print("swift backup checks ok")

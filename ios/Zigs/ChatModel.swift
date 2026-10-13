@@ -142,6 +142,9 @@ extension GroupModel {
             self.chat.opening.remove(ns)
             self.chat.opened[ns, default: [:]].merge(done) { $1 }
             self.readMessages(ns, kind)   // documents may have come or changed meanwhile
+            // Messages that arrive while their screen is open count as read.
+            self.seedMarks()
+            self.markRead()
         }
     }
 
