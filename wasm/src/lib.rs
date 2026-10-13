@@ -51,7 +51,10 @@ use wasm_bindgen::prelude::*;
 mod backup;
 mod ceremony;
 mod chain;
+mod memo;
 mod snapshot;
+#[cfg(test)]
+mod testchain;
 #[cfg(not(target_arch = "wasm32"))]
 mod ffi;
 use zcash_keys::{address::UnifiedAddress, keys::UnifiedFullViewingKey};
@@ -282,15 +285,18 @@ fn pczt_to_b64(p: Pczt) -> R<String> {
     Ok(B64.encode(p.serialize().map_err(e("pczt serialize"))?))
 }
 
+/// A recipient of a payment: address, amount in zatoshis and memo.
+pub(crate) type Payee = (orchard::Address, u64, MemoBytes);
+
 /// Build an unsigned, *unproven* PCZT that spends Ironwood notes and pays
-/// each `(payee, amount)` plus `change`. Proving happens after signing, in `finalize`,
+/// each `(payee, amount, memo)` plus `change`. Proving happens after signing, in `finalize`,
 /// because the spend authorization signatures do not commit to the proof.
 fn build_ironwood_pczt<P: Parameters>(
     params: P,
     target: BlockHeight,
     fvk: &FullViewingKey,
     spends: (Vec<(orchard::Note, orchard::tree::MerklePath)>, orchard::Anchor),
-    outs: (&[(orchard::Address, u64)], u64),
+    outs: (&[Payee], u64),
 ) -> R<Pczt> {
     let (notes, anchor) = spends;
     let (payees, change) = outs;
@@ -309,10 +315,10 @@ fn build_ironwood_pczt<P: Parameters>(
         builder.add_ironwood_spend::<zip317::FeeRule>(fvk.clone(), note, path).map_err(e("builder"))?;
     }
     let eo = Some(fvk.to_ovk(Scope::External));
-    for &(payee, amount) in payees {
-        let az = Zatoshis::from_u64(amount).map_err(e("amount"))?;
+    for (payee, amount, memo) in payees {
+        let az = Zatoshis::from_u64(*amount).map_err(e("amount"))?;
         builder
-            .add_ironwood_output::<zip317::FeeRule>(eo.clone(), payee, az, MemoBytes::empty())
+            .add_ironwood_output::<zip317::FeeRule>(eo.clone(), *payee, az, memo.clone())
             .map_err(e("builder"))?;
     }
     let cz = Zatoshis::from_u64(change).map_err(e("change"))?;
@@ -442,8 +448,13 @@ fn inspect_inner(p: &Pczt, fvk: &FullViewingKey) -> R<Inspected> {
     Ok((pending, lines, h, version))
 }
 
+/// What the transaction does, decoded from the PCZT itself. Each `output` line also carries
+/// `memo_status` and, for a text memo, `memo`, read from the transaction with the wallet's
+/// outgoing viewing keys (see `memo::annotate`).
 pub fn inspect(pczt: &str, fvk: &str) -> R<String> {
-    let (spends, lines, h, v) = inspect_inner(&pczt_from_b64(pczt)?, &parse_fvk(fvk)?)?;
+    let (p, fvk) = (pczt_from_b64(pczt)?, parse_fvk(fvk)?);
+    let (spends, mut lines, h, v) = inspect_inner(&p, &fvk)?;
+    memo::annotate(&mut lines, &memo::recover(&p, &fvk)?);
     Ok(json!({
         "sighash": hex::encode(h),
         "tx_version": format!("{v:?}"),
@@ -887,6 +898,7 @@ mod tests {
     use orchard::tree::MerkleHashOrchard;
     use shardtree::{store::memory::MemoryShardStore, ShardTree};
     use zcash_note_encryption::try_note_decryption;
+    use zcash_primitives::transaction::Transaction;
     use zcash_protocol::{local_consensus::LocalNetwork, memo::Memo};
 
     fn regtest(nu6_3: bool) -> LocalNetwork {
@@ -990,8 +1002,14 @@ mod tests {
         let change = note_value
             .checked_sub(amount * count as u64 + fee)
             .ok_or("note value too small for the amounts and the fee")?;
-        let payees: Vec<_> = (0..count)
-            .map(|_| (FullViewingKey::from(&random_sk()).address_at(0u32, Scope::External), amount))
+        let sks: Vec<SpendingKey> = (0..count).map(|_| random_sk()).collect();
+        let payees: Vec<Payee> = sks
+            .iter()
+            .enumerate()
+            .map(|(i, sk)| {
+                let memo = if ironwood { demo_memo(i) } else { MemoBytes::empty() };
+                (FullViewingKey::from(sk).address_at(0u32, Scope::External), amount, memo)
+            })
             .collect();
         let payee = payees[0].0;
         let pczt = if ironwood {
@@ -1025,12 +1043,25 @@ mod tests {
             let pczt = Creator::build_from_parts(pczt_parts).ok_or("creator failed")?;
             IoFinalizer::new(pczt).finalize_io(rng()).map_err(e("io finalizer"))?
         };
+        let who: Vec<Value> = sks.iter().map(|sk| json!(hex::encode(sk.to_bytes()))).collect();
         Ok(json!({
             "pczt": pczt_to_b64(pczt)?,
             "pool": pool,
             "amount": amount, "change": change, "fee": fee, "note_value": note_value,
+            "payee_sks": who,
         })
         .to_string())
+    }
+
+    /// The memo texts of the demo payees: with spaces and accents, none, and the longest.
+    const DEMO_MEMOS: [&str; 4] = ["Rent for October", "héllo ✓", "", ""];
+
+    fn demo_text(i: usize) -> String {
+        if i == 3 { "é".repeat(256) } else { DEMO_MEMOS[i].to_string() }
+    }
+
+    fn demo_memo(i: usize) -> MemoBytes {
+        memo::parse_memo(&json!(demo_text(i))).unwrap()
     }
 
 
@@ -1148,6 +1179,144 @@ mod tests {
         w
     }
 
+    fn payee_key(sk: &Value) -> FullViewingKey {
+        let raw: [u8; 32] = hex::decode(sk.as_str().unwrap()).unwrap().try_into().unwrap();
+        FullViewingKey::from(&Option::<SpendingKey>::from(SpendingKey::from_bytes(raw)).unwrap())
+    }
+
+    fn output_lines(ins: &Value) -> Vec<Value> {
+        ins["lines"].as_array().unwrap().iter().filter(|l| l["kind"] == "output").cloned().collect()
+    }
+
+    /// `inspect` shows the memo of every output, read from the transaction itself.
+    fn check_demo_memos(ins: &Value, tx: &Value) {
+        let lines = output_lines(ins);
+        for (i, sk) in tx["payee_sks"].as_array().unwrap().iter().enumerate() {
+            let who = address_of(&payee_key(sk), Network::TestNetwork).unwrap();
+            let line = lines.iter().find(|l| l["who"] == who.as_str()).expect("a line per payee");
+            match demo_text(i) {
+                t if t.is_empty() => assert_eq!(line["memo_status"], "empty"),
+                t => assert_eq!((&line["memo_status"], &line["memo"]), (&json!("text"), &json!(t))),
+            }
+        }
+        let change = lines.iter().find(|l| l["who"] == "change (back to this wallet)").unwrap();
+        assert_eq!(change["memo_status"], "empty", "the internal viewing key reads the change");
+    }
+
+    /// The compact block that holds `tx`, and the tree state before it, as a wallet gets them.
+    fn block_with(tx: &Transaction) -> (Value, String) {
+        use prost::Message;
+        use zcash_client_backend::proto::service::TreeState;
+        let mut chain = testchain::Chain::new(500);
+        chain.push(vec![testchain::compact_of(tx)], 0);
+        let ts = TreeState { height: 499, hash: "00".repeat(32), ..Default::default() };
+        let tree = B64.encode(ts.encode_to_vec());
+        (json!(B64.encode(chain.blocks[0].encode_to_vec())), tree)
+    }
+
+    /// Opens the wallet of the payee `sk` under the key `k`, and scans the block of `tx` with it.
+    fn scan_as_payee(k: &str, sk: &Value, tx: &Transaction) {
+        let (block, tree) = block_with(tx);
+        let ufvk = UnifiedFullViewingKey::from_orchard_fvk(payee_key(sk)).unwrap();
+        chain::native::open(k, &ufvk.encode(&Network::TestNetwork).unwrap(), 500, None).unwrap();
+        chain::native::start(k, &tree).unwrap();
+        chain::native::blocks(k, std::slice::from_ref(&block), 500).unwrap();
+    }
+
+    /// The final transaction reaches each payee's wallet as the inbox gets it: the wallet scans
+    /// its compact form and finds a note, then reads the memo from the full transaction.
+    fn payees_read_their_memos(tx_hex: &str, tx: &Value) {
+        let raw = hex::decode(tx_hex).unwrap();
+        let branch = zcash_protocol::consensus::BranchId::Nu6_3;
+        let parsed = Transaction::read(&raw[..], branch).unwrap();
+        // Tests run side by side and share the wallets of the native interface: keys are unique.
+        let tag = parsed.txid().to_string();
+        for (i, sk) in tx["payee_sks"].as_array().unwrap().iter().enumerate() {
+            let k = format!("{tag}-payee-{i}");
+            scan_as_payee(&k, sk, &parsed);
+            let needs = v(&chain::native::memo_needs(&k).unwrap());
+            assert_eq!(needs.as_array().unwrap().len(), 1, "payee {i} found one note");
+            assert_eq!(needs[0]["hash"], hex::encode(<[u8; 32]>::from(parsed.txid())).as_str());
+            let id = needs[0]["txid"].as_str().unwrap();
+            let other = chain::native::transaction(&k, &"00".repeat(32), &B64.encode(&raw));
+            let wrong_id = "the id of the answer must be the one asked for";
+            assert!(other.unwrap_err().contains("not"), "{wrong_id}");
+            assert_eq!(v(&chain::native::memo_needs(&k).unwrap()).as_array().unwrap().len(), 1);
+            let got = chain::native::transaction(&k, id, &B64.encode(&raw)).unwrap();
+            assert_eq!(got, r#"{"attached":1}"#);
+            let list = v(&chain::native::received(&k).unwrap());
+            let (memos, pending) = (&list[0]["memos"], &list[0]["memo_pending"]);
+            match demo_text(i) {
+                t if t.is_empty() => assert_eq!(memos, &json!([])),
+                t => assert_eq!(memos, &json!([{"status": "text", "text": t}])),
+            }
+            assert_eq!(pending, &json!(false));
+            assert_eq!(chain::native::memo_needs(&k).unwrap(), "[]");
+            let again = chain::native::transaction(&k, id, &B64.encode(&raw)).unwrap();
+            assert_eq!(again, r#"{"attached":0}"#, "a settled note is left alone");
+            chain::native::close(&k).unwrap();
+        }
+        damaged_notes_are_settled(&format!("{tag}-damaged"), &raw, &parsed, &tx["payee_sks"][0]);
+    }
+
+    /// A payer can write a note whose first 52 bytes open (so the wallet counts it) but whose tag
+    /// is wrong. The id of the transaction covers the tag. So the wallet trusts the id, saves the
+    /// note as unreadable, and never asks for it again.
+    fn damaged_notes_are_settled(k: &str, raw: &[u8], parsed: &Transaction, payee: &Value) {
+        let branch = zcash_protocol::consensus::BranchId::Nu6_3;
+        let mut unreadable = 0;
+        for action in parsed.ironwood_bundle().unwrap().actions() {
+            let ct = &action.encrypted_note().enc_ciphertext.0;
+            let at = raw.windows(ct.len()).position(|w| w == ct).expect("ciphertext in the tx");
+            let mut bad = raw.to_vec();
+            bad[at + ct.len() - 1] ^= 1;
+            let damaged = Transaction::read(&bad[..], branch).unwrap();
+            assert_ne!(damaged.txid(), parsed.txid(), "the id covers the tag");
+            scan_as_payee(k, payee, &damaged);
+            let needs = v(&chain::native::memo_needs(k).unwrap());
+            assert_eq!(needs.as_array().unwrap().len(), 1, "the compact part still opens");
+            let id = needs[0]["txid"].as_str().unwrap();
+            let got = chain::native::transaction(k, id, &B64.encode(&bad)).unwrap();
+            assert_eq!(got, r#"{"attached":1}"#);
+            assert_eq!(chain::native::memo_needs(k).unwrap(), "[]");
+            let list = v(&chain::native::received(k).unwrap());
+            unreadable += usize::from(list[0]["memos"] == json!([{"status": "not_text"}]));
+            assert_eq!(list[0]["memo_pending"], false);
+            chain::native::close(k).unwrap();
+        }
+        assert_eq!(unreadable, 1, "exactly one action holds the note of the payee");
+    }
+
+    /// An output whose ciphertext was changed shows `unknown`, never an empty or other memo, and
+    /// the other outputs keep theirs.
+    #[test]
+    fn inspect_never_reports_a_memo_that_it_cannot_read() {
+        let fvk = hex::encode(FullViewingKey::from(&random_sk()).to_bytes());
+        let tx = v(&tx_demo_create(&fvk, 100_000, 1_000_000, "ironwood").unwrap());
+        let raw = B64.decode(tx["pczt"].as_str().unwrap()).unwrap();
+        let base = output_lines(&v(&inspect(&B64.encode(&raw), &fvk).unwrap()));
+        assert_eq!(base.len(), 5);
+        let effects = Pczt::parse(&raw).unwrap().into_effects().unwrap();
+        for (j, a) in effects.ironwood_bundle().unwrap().actions().iter().enumerate() {
+            let note = a.encrypted_note();
+            for field in [&note.out_ciphertext[..], &note.enc_ciphertext.0[..]] {
+                let at = raw.windows(field.len()).position(|w| w == field);
+                let at = at.expect("ciphertext in the PCZT");
+                let mut bad = raw.clone();
+                bad[at + 10] ^= 1;
+                let lines = output_lines(&v(&inspect(&B64.encode(&bad), &fvk).unwrap()));
+                for (line, was) in lines.iter().zip(&base) {
+                    if line["action"] == j {
+                        assert_eq!(line["memo_status"], "unknown");
+                        assert!(line.get("memo").is_none());
+                    } else {
+                        assert_eq!(line, was);
+                    }
+                }
+            }
+        }
+    }
+
     /// Full 2-of-3 flow: DKG, wallet, then a payment that is inspected, signed, aggregated and
     /// finalized with a Halo2 proof. Version 2 wallets must pass every step that version 1 passes.
     fn full_flow(pool: &str, signers: &[u16], v2: bool) {
@@ -1169,6 +1338,9 @@ mod tests {
         assert_eq!(paid.iter().collect::<std::collections::BTreeSet<_>>().len(), count);
         assert_eq!(normalize_address(paid[0]).unwrap(), paid[0]);
         assert!(normalize_address("not an address").is_err());
+        if pool == "ironwood" {
+            check_demo_memos(&ins, &tx);
+        }
 
         let mut comm = serde_json::Map::new();
         let mut secrets = BTreeMap::new();
@@ -1196,6 +1368,9 @@ mod tests {
         let agg = v(&sign_aggregate(pczt, &pkp, &pkg, &Value::Object(shares.clone()).to_string()).unwrap());
         let out = v(&finalize(agg["signed_pczt"].as_str().unwrap()).unwrap());
         assert!(out["size"].as_u64().unwrap() > 9000);
+        if pool == "ironwood" {
+            payees_read_their_memos(out["tx_hex"].as_str().unwrap(), &tx);
+        }
 
         // wrong share is attributed
         let mut bad = shares.clone();
@@ -1245,7 +1420,7 @@ mod tests {
         let payee = FullViewingKey::from(&random_sk()).address_at(0u32, Scope::External);
         let fee = chain::zip317_fee(3, 2);
         assert_eq!(fee, 15_000);
-        let outs = (&[(payee, 100_000)][..], 150_000 - 100_000 - fee);
+        let outs = (&[(payee, 100_000, MemoBytes::empty())][..], 150_000 - 100_000 - fee);
         let pczt = build_ironwood_pczt(regtest(true), 10_000_000.into(), &fvk, (spends, anchor), outs)
             .unwrap();
         let ins = v(&inspect(&pczt_to_b64(pczt).unwrap(), &hex::encode(fvk.to_bytes())).unwrap());

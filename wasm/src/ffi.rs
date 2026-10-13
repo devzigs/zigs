@@ -79,6 +79,9 @@ const METHODS: &[(&str, Method)] = &[
     ("walletSent", |a| native::sent(s(a, 0)?)),
     ("walletSnapshot", |a| native::snapshot(s(a, 0)?)),
     ("walletSpend", |a| native::spend(s(a, 0)?, list(a, 1)?, h(a, 2)?)),
+    ("walletMemoNeeds", |a| native::memo_needs(s(a, 0)?)),
+    ("walletTransaction", |a| native::transaction(s(a, 0)?, s(a, 1)?, s(a, 2)?)),
+    ("isDeepReorg", |a| Ok(crate::chain::is_deep_reorg(s(a, 0)?).to_string())),
 ];
 
 fn call(method: &str, args: &str) -> R<String> {
@@ -197,6 +200,28 @@ mod tests {
         assert!(ffi("docPayload", json!(["w", "confirm/1", 70000, fields]))["err"].is_string());
         let float = r#"{"a": 1.5}"#;
         assert!(ffi("docPayload", json!(["w", "confirm/1", 1, float]))["err"].is_string());
+    }
+
+    #[test]
+    fn inbox_methods_are_in_the_table() {
+        for (method, args) in [
+            ("walletMemoNeeds", json!(["none"])),
+            ("walletTransaction", json!(["none", "id", "AAAA"])),
+        ] {
+            let err = ffi(method, args)["err"].as_str().unwrap().to_string();
+            assert!(err.contains("no open wallet"), "{method}: {err}");
+        }
+        let err = ffi("walletTransaction", json!(["none", "id", 5]));
+        assert!(err["err"].as_str().unwrap().contains("argument 2"), "{err}");
+    }
+
+    #[test]
+    fn the_apps_ask_the_engine_for_a_deep_reorganisation() {
+        assert_eq!(ffi("isDeepReorg", json!(["sync failed"]))["ok"], "false");
+        let said = format!("{} 100 blocks", crate::chain::DEEP_REORG);
+        assert_eq!(ffi("isDeepReorg", json!([said.clone()]))["ok"], "true");
+        let forged = format!("lightwalletd: {said}");
+        assert_eq!(ffi("isDeepReorg", json!([forged]))["ok"], "false");
     }
 
     #[test]

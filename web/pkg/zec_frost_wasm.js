@@ -18,6 +18,36 @@ export class ChainWallet {
         wasm.__wbg_chainwallet_free(ptr, 0);
     }
     /**
+     * Reads the memos of this wallet's notes from a full transaction (base64). `txid` is the
+     * `txid` of `memoNeeds` for it. Returns `{"attached": <notes that left the pending state>}`.
+     * A transaction with another id is an error.
+     * @param {string} txid
+     * @param {string} raw
+     * @returns {string}
+     */
+    attachTransaction(txid, raw) {
+        let deferred4_0;
+        let deferred4_1;
+        try {
+            const ptr0 = passStringToWasm0(txid, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
+            const len0 = WASM_VECTOR_LEN;
+            const ptr1 = passStringToWasm0(raw, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
+            const len1 = WASM_VECTOR_LEN;
+            const ret = wasm.chainwallet_attachTransaction(this.__wbg_ptr, ptr0, len0, ptr1, len1);
+            var ptr3 = ret[0];
+            var len3 = ret[1];
+            if (ret[3]) {
+                ptr3 = 0; len3 = 0;
+                throw takeFromExternrefTable0(ret[2]);
+            }
+            deferred4_0 = ptr3;
+            deferred4_1 = len3;
+            return getStringFromWasm0(ptr3, len3);
+        } finally {
+            wasm.__wbindgen_free(deferred4_0, deferred4_1, 1);
+        }
+    }
+    /**
      * @returns {string}
      */
     balance() {
@@ -43,7 +73,8 @@ export class ChainWallet {
         return ret;
     }
     /**
-     * `payees` is a JSON list: `[{"to": "<unified address>", "amount": <zat>}, …]`.
+     * `payees` is a JSON list: `[{"to": "<unified address>", "amount": <zat>, "memo": "<text>"},
+     * …]`. The memo is optional: at most 512 UTF-8 bytes.
      * @param {string} payees
      * @returns {Promise<string>}
      */
@@ -52,6 +83,29 @@ export class ChainWallet {
         const len0 = WASM_VECTOR_LEN;
         const ret = wasm.chainwallet_createSpend(this.__wbg_ptr, ptr0, len0);
         return ret;
+    }
+    /**
+     * Transactions whose memos are not read yet: `[{"txid", "hash", "height"}, …]`. Pass `hash`
+     * to `fetchTransaction`, then the result to `attachTransaction`.
+     * @returns {string}
+     */
+    memoNeeds() {
+        let deferred2_0;
+        let deferred2_1;
+        try {
+            const ret = wasm.chainwallet_memoNeeds(this.__wbg_ptr);
+            var ptr1 = ret[0];
+            var len1 = ret[1];
+            if (ret[3]) {
+                ptr1 = 0; len1 = 0;
+                throw takeFromExternrefTable0(ret[2]);
+            }
+            deferred2_0 = ptr1;
+            deferred2_1 = len1;
+            return getStringFromWasm0(ptr1, len1);
+        } finally {
+            wasm.__wbindgen_free(deferred2_0, deferred2_1, 1);
+        }
     }
     /**
      * @param {string} ufvk
@@ -552,6 +606,22 @@ export function docPayload(wallet_id, path, seat, fields) {
 }
 
 /**
+ * Downloads one full transaction from the light-wallet server. The server learns that this
+ * device is interested in it. Needs no wallet, so no wallet is borrowed during the download.
+ * @param {string} endpoint
+ * @param {string} hash
+ * @returns {Promise<string>}
+ */
+export function fetchTransaction(endpoint, hash) {
+    const ptr0 = passStringToWasm0(endpoint, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
+    const len0 = WASM_VECTOR_LEN;
+    const ptr1 = passStringToWasm0(hash, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
+    const len1 = WASM_VECTOR_LEN;
+    const ret = wasm.fetchTransaction(ptr0, len0, ptr1, len1);
+    return ret;
+}
+
+/**
  * @param {string} signed
  * @returns {string}
  */
@@ -602,6 +672,18 @@ export function inspect(pczt, fvk) {
     } finally {
         wasm.__wbindgen_free(deferred4_0, deferred4_1, 1);
     }
+}
+
+/**
+ * True when an error message says that a reorganisation was deeper than the wallet can undo.
+ * @param {string} message
+ * @returns {boolean}
+ */
+export function isDeepReorg(message) {
+    const ptr0 = passStringToWasm0(message, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
+    const len0 = WASM_VECTOR_LEN;
+    const ret = wasm.isDeepReorg(ptr0, len0);
+    return ret !== 0;
 }
 
 /**
@@ -1431,17 +1513,17 @@ function __wbg_get_imports() {
             return isLikeNone(ret) ? 0 : addToExternrefTable0(ret);
         },
         __wbindgen_generic_0000000000000001: function(arg0, arg1) {
-            // Cast intrinsic for `Closure(Closure { owned: true, function: Function { arguments: [Externref], shim_idx: 1733, ret: Result(Unit), inner_ret: Some(Result(Unit)) }, mutable: true }) -> Externref`.
+            // Cast intrinsic for `Closure(Closure { owned: true, function: Function { arguments: [Externref], shim_idx: 1759, ret: Result(Unit), inner_ret: Some(Result(Unit)) }, mutable: true }) -> Externref`.
             const ret = makeMutClosure(arg0, arg1, wasm_bindgen_731503a097e03799___convert__closures_____invoke___wasm_bindgen_731503a097e03799___JsValue__core_f0fd674eaa06beef___result__Result_____wasm_bindgen_731503a097e03799___JsError___true_);
             return ret;
         },
         __wbindgen_generic_0000000000000002: function(arg0, arg1) {
-            // Cast intrinsic for `Closure(Closure { owned: true, function: Function { arguments: [Externref], shim_idx: 769, ret: Unit, inner_ret: Some(Unit) }, mutable: true }) -> Externref`.
+            // Cast intrinsic for `Closure(Closure { owned: true, function: Function { arguments: [Externref], shim_idx: 789, ret: Unit, inner_ret: Some(Unit) }, mutable: true }) -> Externref`.
             const ret = makeMutClosure(arg0, arg1, wasm_bindgen_731503a097e03799___convert__closures_____invoke___wasm_bindgen_731503a097e03799___JsValue______true_);
             return ret;
         },
         __wbindgen_generic_0000000000000003: function(arg0, arg1) {
-            // Cast intrinsic for `Closure(Closure { owned: true, function: Function { arguments: [], shim_idx: 737, ret: Unit, inner_ret: Some(Unit) }, mutable: true }) -> Externref`.
+            // Cast intrinsic for `Closure(Closure { owned: true, function: Function { arguments: [], shim_idx: 757, ret: Unit, inner_ret: Some(Unit) }, mutable: true }) -> Externref`.
             const ret = makeMutClosure(arg0, arg1, wasm_bindgen_731503a097e03799___convert__closures_____invoke_______true_);
             return ret;
         },

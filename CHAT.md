@@ -1,8 +1,11 @@
 # Messages in Zigs: design
 
-Status: phases 1 (wallet room and payment threads) and 2 (direct chats between Zigs users) are
-built in the web app. Phases 3 to 6 are design only. The iPhone app follows. This document
-records the decisions taken on 12 October 2026 and the order of the work.
+Status: the web app has phases 1, 2 and 3. Phase 1 is the wallet room and the payment threads.
+Phase 2 is direct chats between Zigs users. Phase 3 is memos on payments, the wallet inbox and
+reorganisations. The iPhone and Mac apps have phases 1 and 2. They also show and check the memo of
+a payment that they approve. The other screens of phase 3 are not built there. Phases 4 to 6 are
+design only. This document records the decisions taken on 12 October 2026 and the order of the
+work.
 
 Zigs is a shared wallet, so its messages exist to explain, request and approve money. A
 messenger such as Signal does none of that. Messages here are tied to wallets, payments
@@ -47,11 +50,38 @@ flowchart LR
 
 ### 2.2 Wallet inbox
 
-- A memo that arrives with a payment to the wallet address shows as a message on that payment.
+- A memo that arrives with a payment to the wallet address shows on the Activity row of that
+  payment and in the Messages tab.
 - The Send form takes an optional memo for each recipient. Approvers see the memo, because it is
   part of the transaction they approve.
 - Every signer holds the wallet's viewing key, so every signer can read every memo. The app calls
   this a shared inbox and never a private message.
+
+Built in phase 3 (web):
+
+- **Sending.** A memo is ZIP 302 text of at most 512 UTF-8 bytes. The form shows the byte count
+  near the limit and refuses more. "Paste a list" takes the memo as a third column. A memo for a
+  transparent address is refused. The memo is part of the signed `payees` field of the proposal.
+  Proposals without memos stay valid.
+- **Approving.** The engine reads the memo of each output from the transaction itself, with the
+  wallet's outgoing viewing key. The recipient check compares address, amount and memo of every
+  payee. Any difference, and any memo that the engine cannot read, disables Approve. The web,
+  iPhone and Mac apps apply the same rules.
+- **Receiving.** The wallet finds a note in a compact block, which holds only part of the note
+  ciphertext. It then asks the light-wallet server for the full transaction (`GetTransaction`).
+  It decrypts the memo with the incoming viewing key and saves it with the note. The wallet
+  tries again after a failure, and never makes the sync wait.
+- **Opt in.** Each fetch tells the light-wallet server which transactions pay the wallet. So
+  reading memos is off until a signer turns it on, for one wallet in one browser. The setting
+  names the leak. It is not a field of the wallet, because every signer would read it.
+- **Unreadable notes.** The transaction id covers every ciphertext. A note can fail to decrypt in
+  full in a transaction with the right id. It shows "Memo is not text", and the wallet does not
+  ask for it again. An answer with another id, a bad size or a bad format changes nothing. A
+  transaction that fails is listed after the others, so it cannot hold them up.
+- **Showing.** A memo shows with the label "On chain · shared with all signers". It has no sender
+  and no signature, because anyone who pays the address can write any text. The app never marks it
+  as verified, and a notification never carries its text. Change and empty memos show nothing. A
+  memo that is not text shows "Memo is not text".
 
 ### 2.3 Direct chat
 
@@ -92,7 +122,11 @@ therefore proves nothing.
 - Each device pins the first signing key it sees for a seat. A later change shows a warning on
   that seat, and its messages show as unverified.
 - In a direct chat, each person signs with one personal key per browser. The public key is a
-  field of the member document. Each device pins the first two member ids and their first keys.
+  field of the member document. Each device pins its own member and the first key of that
+  member. It pins the other member only when that member is the only new one in the documents
+  that it reads. Two new members that arrive together cannot be told apart, so the device pins
+  neither and shows the "third person" warning. The time in a member document proves nothing,
+  because the writer sets it.
 - Seats created before this change get a signing key the next time their device opens the
   wallet.
 
@@ -111,7 +145,7 @@ therefore proves nothing.
 | Party | Wallet room | Direct chat, group server | On-chain message |
 |---|---|---|---|
 | Group server | Room id, timing, message count, sizes after padding, IP addresses | The same, and that two ids talk to each other | Nothing |
-| Light-wallet server | Nothing | Nothing | Which full transactions a device fetches, and your IP address |
+| Light-wallet server | Nothing | Nothing | Which full transactions a device fetches (only where reading memos is on), and your IP address |
 | Zcash chain | Nothing | Nothing | One shielded transaction with ordinary fee and action count |
 | Other signers | All room messages | Nothing | All memos to the wallet address |
 | A signer removed by "Change signers" | The old room only | Nothing | The old wallet's memos, through its viewing key |
@@ -131,15 +165,20 @@ PRIVACY.md gets these rows when each phase ships.
 
 | Phase | Status | Scope | Main work |
 |---|---|---|---|
-| 1 | Built (web) | Wallet room and payment threads | Room namespace, signing keys, Messages tab, payment events in the timeline |
-| 2 | Built (web) | Direct chat between Zigs users | Contact links, chat namespace, personal signing key |
-| 3 | Design | Memos on payments, wallet inbox | Engine writes memos, full transaction fetch, reorg handling (`wasm/src/chain.rs:75`) |
+| 1 | Built (web, iPhone, Mac) | Wallet room and payment threads | Room namespace, signing keys, Messages tab, payment events in the timeline |
+| 2 | Built (web, iPhone, Mac) | Direct chat between Zigs users | Contact links, chat namespace, personal signing key |
+| 3 | Built (web). iPhone and Mac: memo check on approval | Memos on payments, wallet inbox | Engine writes and reads memos, full transaction fetch, reorganisation handling (`wasm/src/chain.rs`). The other iPhone screens follow. |
 | 4 | Design | Payment requests | ZIP 321 parsing, **Propose this** |
 | 5 | Design | Personal account, on-chain direct messages | New key type, fee funding, multi-memo messages |
 | 6 | Design | Extra encryption layer | Post-quantum handshake and ratchet, released only after an outside cryptography review |
 
 Until phase 6 ships, on-chain messages rely on Zcash's own memo encryption, and the app says so.
-The iPhone app follows the web app phase by phase.
+The iPhone and Mac apps follow the web app phase by phase. They have phases 1 and 2. The document
+formats, keys and signatures are the same as in the web app. So a browser and an iPhone talk in one
+room and in one direct chat. The apps keep the room secrets with the seat secrets. They keep the
+chats in the Keychain, or in the sealed record when the Face ID lock is on. They show unread counts
+and send no notifications. `ios/check-backup.sh` checks that each side verifies the messages of the
+other.
 
 ## 9. Limits
 
@@ -149,6 +188,8 @@ The iPhone app follows the web app phase by phase.
 - Tor Browser and private windows delete local data when they close, and room history then
   downloads again from the group server. Direct chats on chain need the personal account backup.
 - A device that holds a seat can sign messages as that seat. A stolen device is a stolen seat.
+- A memo on chain comes from the payer. The app cannot check who wrote it. Every signer, and a
+  signer removed by "Change signers" who kept the viewing key, can read it for good.
 - The contact link is the chat secret. Anyone who has it can read the chat and write in it, also
   after both people joined. A third writer shows as "Unknown sender", but a silent reader is not
   seen. Share the link through a private channel only.

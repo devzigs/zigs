@@ -40,7 +40,8 @@ export const T = {
   setChain(v) { chain = v; },
   cleanGroup, refilter, sigPart, signedDoc, canWriteAs, writer, named, proposer, signedMode,
   localSeats, seatIds, openGroup, createGroup, takeSeat, newSpend, cancelPayment, failSession,
-  finalizeTx, broadcastTx, sec, proposalFields, openDoc,
+  finalizeTx, broadcastTx, sec, proposalFields, openDoc, recipientCheck,
+  runMemos, runSync, setMemoReading, readsMemos,
 };
 `;
 const dir = fs.mkdtempSync(path.join(os.tmpdir(), "zigs-app-"));
@@ -331,6 +332,40 @@ const sealed = (gid, rel, seat, fields, key, names = ["by", "sig"]) =>
   await waitFor("wallet A again", () => t.state.sessions.length === 3 && !t.state.pending);
   const late = t.state.sessions.find((x) => x.id === second.id);
   assert.deepEqual([late.status, late.error], ["failed", "Late failure."]);
+
+  // A memo goes into the signed payee list. A payee without a memo stays {to, amount}.
+  let asked;
+  const stubWallet = {
+    createSpend: async (list) => { asked = JSON.parse(list); return JSON.stringify(spend); },
+    free() {},
+  };
+  t.setChain({ gid, bal: { spendable: 1e8, pending: 0 }, received: [], sent: new Set(),
+    cw: stubWallet });
+  const payees = [{ to: "utest1x", amount: 5, memo: "rent, part 1" }, { to: "utest1y", amount: 6 },
+    { to: "utest1z", amount: 7 }];
+  await t.newSpend([payees[0], { ...payees[1], memo: "" }, payees[2]], "memos");
+  assert.deepEqual(asked, payees, "the engine gets a memo only where there is text");
+  await waitFor("memo proposal", () => t.state.sessions.some((x) => x.note === "memos"));
+  const memoed = t.state.sessions.find((x) => x.note === "memos");
+  assert.deepEqual(memoed.payees, payees, "the reader accepts the signed proposal with its memo");
+
+  // The approver compares address, amount and memo of every payee with the decoded outputs.
+  const addr = t.state.wallet.address, who = Z.normalizeAddress(addr);
+  const opt = (memo) => (memo === undefined ? {} : { memo });
+  const out = (status, memo) => (
+    { kind: "output", who, value: 5, memo_status: status, ...opt(memo) });
+  const check = (memo, line) => t.recipientCheck(
+    { payees: [{ to: addr, amount: 5, ...opt(memo) }], amount: 5 }, { lines: [line] });
+  assert.equal(check("rent", out("text", "rent")).match, true);
+  assert.equal(check(undefined, out("empty")).match, true);
+  assert.equal(check("", out("empty")).match, true);
+  for (const [memo, line] of [["rent", out("empty")], [undefined, out("text", "rent")],
+    ["rent", out("unknown")], [undefined, out("unknown")], ["rent", out("not_text")],
+    ["rent", out("text", "Rent")], [5, out("text", "5")]]) {
+    const what = JSON.stringify([memo, line.memo_status, line.memo]);
+    assert.equal(check(memo, line).match, false, what);
+  }
+  assert.equal(check("rent", out("text", "Rent")).rows[0].got, "Rent");
 }
 
 // ── A stored field must be plain JSON: no infinite number, no deep nesting ──
@@ -346,6 +381,90 @@ const sealed = (gid, rel, seat, fields, key, names = ["by", "sig"]) =>
     deep: seal("deep", deep), at: seal("at", "1760000000000"),
   });
   assert.deepEqual(doc, { note: "fine", at: 1760000000000 }, "bad fields are dropped");
+}
+
+// ── Memos of received payments: opt in, and a run that no failed read can stall ──
+{
+  const G = "dddddddddddddddddddd";
+  const tx = (k) => ({ txid: "t" + k, hash: "h" + k, height: 500 + k });
+  let fetched, attached, settled;
+  // `plan` says what happens to the transaction "t<k>": "net" fails to fetch, "bad" is refused by
+  // the engine, anything else gives its memo.
+  const wallet = (ids, plan) => ({
+    memoNeeds: () => JSON.stringify(ids.map(tx)),
+    attachTransaction(id) {
+      attached.push(id);
+      if (plan[id] === "bad") throw new Error("the server sent another transaction");
+      settled++;
+      return JSON.stringify({ attached: 1 });
+    },
+    received: () => JSON.stringify([{ txid: "t1", memo_pending: false }]),
+    snapshot: () => "{}", free() {},
+  });
+  const run = async (ids, plan, { on = true, mid } = {}) => {
+    [fetched, attached, settled] = [[], [], 0];
+    t.setZ({ ...Z, fetchTransaction: async (url, hash) => {
+      fetched.push(hash);
+      if (plan["t" + hash.slice(1)] === "net") throw new Error("no answer");
+      if (mid) mid();
+      return "AAAA";
+    } });
+    const c = { gid: G, url: "https://lwd.test", cw: wallet(ids, plan), received: [] };
+    t.setChain(null);   // turning reading on starts a run of the open wallet; there is none yet
+    t.setMemoReading(G, on);
+    t.setChain(c);
+    await t.runMemos(c);
+    return c;
+  };
+  // Off by default: the server is never asked.
+  await run([1, 2], {}, { on: false });
+  assert.deepEqual([t.readsMemos(G), fetched], [false, []], "reading is opt in");
+  // One transaction fails to fetch, one is refused by the engine, one works.
+  let c = await run([1, 2, 3], { t1: "net", t2: "bad" });
+  assert.deepEqual([fetched, attached, settled], [["h1", "h2", "h3"], ["t2", "t3"], 1]);
+  assert.deepEqual(c.received, [{ txid: "t1", memo_pending: false }], "a read updates the list");
+  // The engine refuses every answer: all are tried, because the server did answer.
+  await run([1, 2, 3, 4, 5], { t1: "bad", t2: "bad", t3: "bad", t4: "bad", t5: "bad" });
+  assert.equal(fetched.length, 5, "refused answers do not end the run");
+  // The server does not answer three times in a row: the run ends there.
+  await run([1, 2, 3, 4, 5], { t1: "net", t2: "net", t3: "net" });
+  assert.deepEqual(fetched, ["h1", "h2", "h3"], "three failures to fetch end the run");
+  // A success in between resets the count.
+  await run([1, 2, 3, 4, 5, 6, 7], { t1: "net", t2: "net", t4: "net", t5: "net", t6: "net" });
+  assert.equal(fetched.length, 6, "the success reset the count, so the run ends after t6");
+  // Another wallet replaces this one while the first read waits: the run stops at once.
+  const c2 = await run([1, 2, 3], {}, { mid: () => { t.setChain({ gid: G }); } });
+  assert.deepEqual([fetched, attached, c2.received], [["h1"], [], []], "a stale run is dropped");
+  // The signer turns reading off while the first read waits: no further request goes out.
+  await run([1, 2, 3], {}, { mid: () => { t.setMemoReading(G, false); } });
+  assert.deepEqual([fetched, attached], [["h1"], []], "turning reading off stops the run");
+}
+
+// ── A reorganisation deeper than the wallet can undo: the saved state goes ──
+{
+  const G = "eeeeeeeeeeeeeeeeeeee";
+  // The engine's own words (wasm/src/chain.rs). The engine tells the page whether it matches.
+  const deep = "the chain reorganised by more than 100 blocks. "
+    + "Scan the wallet again from its birthday.";
+  assert.equal(Z.isDeepReorg(deep), true, "the page asks the engine, which knows its words");
+  assert.equal(Z.isDeepReorg("lightwalletd: unavailable"), false);
+  const sync = (message) => {
+    let freed = 0;
+    class Failing {
+      async sync() { throw new Error(message); }
+      free() { freed++; }
+    }
+    t.setZ({ ...Z, latestHeight: async () => 1000, ChainWallet: Failing });
+    const c = { gid: G, net: { servers: ["https://lwd.test"] }, ufvk: "u", birthday: 5,
+      cw: null, bal: { height: 9 }, received: [{}], sent: new Set(["x"]), prog: null };
+    return t.runSync(c).then(() => [c, () => freed]);
+  };
+  const [lost] = await sync(deep);
+  assert.match(lost.error, /deleted the saved state/);
+  assert.deepEqual([lost.cw, lost.bal, lost.received, lost.sent.size], [null, null, [], 0]);
+  const [kept] = await sync("lightwalletd: unavailable");
+  assert.equal(kept.error, "lightwalletd: unavailable");
+  assert.deepEqual([kept.cw !== null, kept.bal.height], [true, 9], "another error keeps the state");
 }
 
 console.log("app ok");

@@ -12,7 +12,11 @@ is a bug: please report it.
   addresses, amounts, notes, recipients or transactions. It does see who connects, to which
   wallet, and when.
 - The light-wallet server sees your IP address and the blocks you download, as it does for every
-  light wallet. It never receives a key.
+  light wallet. It never receives a key. If a signer turns on memo reading, the app also fetches
+  the full transaction of each payment to the wallet. The server then learns which transactions
+  a device reads. Memo reading is off by default.
+- A memo on a payment is readable by its recipient and by every signer of the sending wallet.
+  Every signer of the receiving wallet reads the memos that arrive there.
 
 ## On chain
 
@@ -31,7 +35,7 @@ uses. We checked each visible property:
 | Fee | ZIP 317 standard rule | Same |
 | Anchor | Target height − 3 (3 confirmations) | Same (`ConfirmationsPolicy` trusted = 3) |
 | Change | One note to the wallet's internal address | Same |
-| Memos | Empty | Empty unless the user writes one |
+| Memos | Empty | Empty unless a signer writes one for a recipient |
 | Transparent parts | None | None for a shielded payment |
 | Several recipients | One output per recipient, plus change | Same for a multi-recipient payment (ZIP 321) |
 
@@ -72,9 +76,18 @@ The app downloads compact blocks and finds the wallet's notes on the device. The
 
 - your IP address and the time of each request;
 - the wallet's birthday height (the first sync asks for the tree state there);
-- the transactions you send, and from which IP address.
+- the transactions you send, and from which IP address;
+- the full transactions you fetch to read memos (`GetTransaction`), with your IP address. The app
+  fetches them only where memo reading is on. It is off by default, for each wallet and each
+  browser, until a signer turns it on.
 
-It does not learn which notes or outputs are yours: every wallet downloads the same blocks.
+While it serves blocks, it does not learn which notes or outputs are yours: every wallet
+downloads the same blocks. The fetch for a memo is the exception. The app asks for a transaction
+only after it found a note of the wallet in it. So the server can tell that this IP address is
+interested in that transaction, and that the transaction pays the wallet. The server cannot read
+the transaction, because it is encrypted. It sees the same public parts as every observer of the
+chain. The app keeps the memo in the saved wallet state. It asks again after a failure. To avoid
+this leak, leave memo reading off. The page cannot use a light-wallet server of your own.
 
 If one operator runs both the group server and the light-wallet server, they can match the moment
 a wallet marks a payment as sent with the transaction that reaches the network at that moment.
@@ -126,8 +139,8 @@ the per-IP rate limits of the group server.
 | Sync state (notes, tree) | IndexedDB, sealed with the wallet key | File, sealed with the wallet key |
 | Cached balances for the wallet list | Local storage, sealed with the wallet key | Settings, sealed with the wallet key |
 | Signing key of the seat (messages, and signed writes in a version 3 wallet) | With the key share (it is a field of the seat's secrets) | With the key share: Keychain, this device only. A seat gets it when the seat is taken |
-| Direct chats (chat secrets, member ids) and the personal signing key | With the key share: local storage, or the sealed record when the lock is on. Not in key share backups. | Not built yet |
-| Pinned room ids, pinned signing keys, pinned wallet versions and shapes, pinned chat members, read times | Local storage, in plain text. No secret in them. | Signing key, version and shape pins: settings, in plain text, so device backups can copy them. No secret in them. The other pins are not built yet |
+| Direct chats (chat secrets, member ids) and the personal signing key | With the key share: local storage, or the sealed record when the lock is on. Not in key share backups. | Keychain, this device only, or the sealed record when the Face ID lock is on. Not in key share backups |
+| Pinned room ids, pinned signing keys, pinned wallet versions and shapes, pinned chat members, read times, the memo reading switch | Local storage, in plain text. No secret in them. | Signing key, version and shape pins, room pins (`zf-rooms`), chat member pins (`zf-chatpins`) and read times (`zf-read`): settings (UserDefaults), in plain text, so device backups can copy them. No secret in them. There is no memo reading switch yet |
 
 Without the lock, anyone who controls your unlocked device can read your key share and wallet
 secrets. One share alone cannot move funds: a payment needs a full threshold of signers.
@@ -240,9 +253,10 @@ the passkey guards the key share instead. The lock is opt-in.
   Each approving device decodes the transaction itself. It ties every output that carries value
   to the recipient it shows, checks that the outputs are exactly the listed recipients and
   amounts, and refuses a transaction that moves more than the standard fee out of the shielded
-  pool. Each approval is tied to the transaction's sighash: the device signs later only if the
-  transaction is still the one it approved, and otherwise marks the payment failed. So one honest
-  signer sees the true payment.
+  pool. The web, iPhone and Mac apps also check the memo of each recipient. Each approval is tied
+  to the transaction's sighash. The device signs later only if the transaction is still the one
+  it approved. Otherwise it marks the payment failed. So one honest signer sees the true
+  payment.
 - A signer checks the wallet address against its own key share and keeps the result on its
   device. If the wallet document in the store changes, the device checks it again. Other signers'
   "checked" marks are their claims. A seat approves a payment only after its own check passed.
@@ -268,7 +282,17 @@ the passkey guards the key share instead. The lock is opt-in.
   not seen. Until the contact opens the link and joins, anyone who has the link can take the
   second place. The chat shows the contact's name, so check it. A browser that forgets the chat (a
   private window, Tor Browser) cannot join it again, because the chat holds two people.
-- Chain reorganisations are not handled in the sync state yet.
+- The wallet follows chain reorganisations of up to 100 blocks. A deeper one, or a fork below
+  the wallet's birthday, stops the sync with an error. The web, iPhone and Mac apps then delete the saved state and scan the wallet again
+  from its birthday. A false light-wallet server can still show a chain that does not exist, or
+  hide payments.
+- A memo is text that the payer chose. The app cannot check who wrote it, and it never calls a
+  memo verified or private. The memo is on chain for good. Every signer can read the memos of
+  the wallet, and so can a signer who left a wallet and kept its viewing key. A payer can write
+  a note whose memo cannot be decrypted. The wallet then shows "Memo is not text" for it.
+- Anyone with an invite link can write many small messages into a wallet room or a chat. The
+  iPhone and Mac apps open each message document once and stop reading a conversation with more
+  than 10,000 documents. The web app downloads the whole room.
 - The code is not audited. Mainnet wallets are limited to 0.5 ZEC: at that balance the app stops
   showing the address and warns. It cannot stop someone from sending more, and payments out
   always stay possible.
@@ -277,4 +301,9 @@ the passkey guards the key share instead. The lock is opt-in.
 
 - Engine tests: sealed values of different lengths have the same size, old unpadded values still
   open, and tampered or misplaced values are rejected (`cargo test` in `wasm/`).
+- Engine tests for memos: each payee reads its memo from the final transaction, and an output
+  that the engine cannot read shows as unknown. A transaction with another id is refused. A
+  note with a damaged tag is saved as unreadable. A transaction that never gives its memo goes
+  behind the others. Engine tests for reorganisations: the wallet drops the notes, spends and
+  memos of the dropped blocks, and stops at 100 blocks.
 - Testnet transactions made by the web, iPhone and Mac apps are listed in the README.

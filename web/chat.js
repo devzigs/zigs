@@ -109,6 +109,16 @@ export function pinMember(pins, cid, member, pk) {
     ? "unknown" : pin(pins, key, pk);
 }
 
+// The members to pin now, from `members` ({id: {signPk}}). This browser's own member is pinned at
+// once. Another member is pinned only when it is the one new valid member: anyone who holds the
+// contact link can write a member document, so two that arrive together cannot be told apart.
+export function membersToPin(members, pinned, mine) {
+  const fresh = Object.keys(members)
+    .filter((id) => !pinned.includes(id) && validId(id) && validPk(members[id].signPk));
+  const others = fresh.filter((id) => id !== mine);
+  return [...(fresh.includes(mine) ? [mine] : []), ...(others.length === 1 ? others : [])];
+}
+
 // Why a browser cannot join a chat that has `count` members now, or null. A full chat wins over a
 // join lease that someone else holds.
 export function joinBlock(count, leased) {

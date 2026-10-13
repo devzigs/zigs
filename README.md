@@ -14,6 +14,15 @@ the wallet, and on chain each payment looks like a shielded payment from a stand
 - Messages: each wallet has a private room for its signers, with a discussion thread on every
   payment. Two Zigs users can also chat directly through a contact link. Later phases are in
   [CHAT.md](CHAT.md).
+- Memos: a payment can carry a memo for each recipient (up to 512 bytes). Approvers see it, and
+  the app checks it against the transaction. The web, iPhone and Mac apps do this. A memo that
+  arrives with a payment to the wallet shows in the Activity list and the Messages tab. Its label
+  is "On chain · shared with all signers". Reading it asks the light-wallet server for the
+  transaction, so a signer must turn it on first. It is off by default. The web app has it. The
+  iPhone and Mac screens for received memos follow.
+- The wallet follows chain reorganisations of up to 100 blocks
+  ([how](PROTOCOL.md#6-receiving-and-sync)). After a deeper one, the web, iPhone and Mac apps
+  scan the wallet again from its birthday.
 
 Zigs uses re-randomized FROST threshold signatures ([ZIP 312](https://zips.z.cash/zip-0312)) on
 the Ironwood shielded pool. It is a **beta** and **not audited**. Testnet wallets use free test
@@ -49,7 +58,7 @@ To see signer changes, open **Signers**, then **Change signers**. To see the pri
 |---|---|
 | **Privacy** | On chain, the transaction shape matches the standard wallet library: same builder, padding, fee, expiry and anchor depth ([comparison](PRIVACY.md#on-chain)). The server stores only encrypted values, padded so that even their length hides amounts. On the device, key shares can be locked with a passkey (web) or Face ID (iPhone) ([how](PRIVACY.md#lock-with-a-passkey-or-face-id)). Key share backups are encrypted with a passphrase (Argon2id and XChaCha20-Poly1305) and open on the web, iPhone and Mac ([how](PRIVACY.md#key-share-backups)). The page can connect only to the group server and three named light-wallet servers (Content-Security-Policy). It is prepared for Tor Browser, but not yet tested end to end ([how](PRIVACY.md#use-zigs-over-tor)). The Zigs server code keeps no logs; its host, Cloudflare, can see connection data. Every remaining leak is listed in [PRIVACY.md](PRIVACY.md). |
 | **Usefulness** | Designed for team treasuries, DAOs and families. Usable today on testnet, and on mainnet with a warning at 0.5 ZEC: web, iPhone and Mac; invite links and QR codes; batch payments for payroll and grants (up to 20 recipients, one approval round, pasted from a spreadsheet); signer changes; encrypted key share backups. |
-| **Execution** | The live app works end to end. Fourteen testnet transactions made by the apps are [listed below](#proof-on-testnet). The engine has 52 tests, and a command-line suite runs adversarial cases. |
+| **Execution** | The live app works end to end. Fourteen testnet transactions made by the apps are [listed below](#proof-on-testnet). The engine has 69 tests, and a command-line suite runs adversarial cases. |
 | **Originality** | An end-user app for re-randomized FROST: no command line, no trusted dealer, and no server that can read the wallet. Each device decodes the PCZT and checks every output before it approves, and binds its approval to the transaction's sighash. Signer changes, batch payments and native iPhone and Mac apps are included. Built during the Zecathon window: the first commit is from October 10, 2026. |
 
 ## Architecture
@@ -81,7 +90,7 @@ flowchart LR
 |---|---|
 | Signer device | Its own key share, the wallet secret, the viewing key, all payments |
 | Group server | Wallet ids, document names, timing, IP addresses. Never keys, amounts, addresses or names |
-| Light-wallet server | IP address and the blocks requested, as for any light wallet. Never which notes are yours |
+| Light-wallet server | IP address and the blocks requested, as for any light wallet. Where memo reading is on, it also sees which full transactions a device fetches to read memos. Never a key |
 | Zcash network | A normal shielded transaction |
 
 ## Creating a wallet
@@ -206,7 +215,7 @@ The full threat model is in [PRIVACY.md](PRIVACY.md). In short:
 |---|---|---|
 | Chain observers | A normal shielded Ironwood transaction | That a group signed it, the signers, amounts, addresses |
 | Group server | Wallet ids, document paths and field names, timing, which IP addresses connect to which wallet | Wallet and signer names, addresses, viewing key, amounts or their length, recipients, transactions, signing data |
-| Light-wallet server | Your IP address, the wallet's birthday height, the blocks you download, the transactions you send | Which notes are yours |
+| Light-wallet server | Your IP address, the wallet's birthday height, the blocks you download, the transactions you send, the full transactions you fetch to read memos (only where memo reading is on) | Which notes are yours while you download blocks (the memo fetches are the exception), any key |
 | Other signers | Everything about the shared wallet | Your key share and your signing nonces |
 
 How the group server is kept blind:
@@ -256,7 +265,7 @@ iPhone.
 | [`wasm/src/backup.rs`](wasm/src/backup.rs) | Encrypted key share backups: Argon2id, XChaCha20-Poly1305 |
 | [`wasm/src/ffi.rs`](wasm/src/ffi.rs) | C interface for the iPhone and Mac apps |
 | [`web/index.html`](web/index.html), [`web/app.css`](web/app.css), [`web/app.js`](web/app.js) | The web app: page, styles and script (no inline script or style) |
-| [`web/shim.js`](web/shim.js), [`web/qr.js`](web/qr.js), [`web/payees.js`](web/payees.js), [`web/vault.js`](web/vault.js), [`web/chat.js`](web/chat.js), [`web/signed.js`](web/signed.js) | Store client, QR encoder, payment list parser, passkey lock, message helpers and the rules for signed writes (no third-party code) |
+| [`web/shim.js`](web/shim.js), [`web/qr.js`](web/qr.js), [`web/payees.js`](web/payees.js), [`web/vault.js`](web/vault.js), [`web/chat.js`](web/chat.js), [`web/signed.js`](web/signed.js) | Store client, QR encoder, payment list parser with the memo rules and the recipient check, passkey lock, message helpers and the rules for signed writes (no third-party code) |
 | [`cf/src/index.js`](cf/src/index.js) | Group server: Cloudflare Worker with one Durable Object per wallet, limits against abuse |
 | [`ios/Zigs/`](ios/Zigs) | SwiftUI app for iPhone and Mac |
 | [`src/`](src), [`tests/e2e.sh`](tests/e2e.sh) | Command-line version of the ceremony (version 1) and adversarial tests |
@@ -312,7 +321,7 @@ folder path.
 
 ## Tests
 
-- `cargo test --release` in `wasm/` (52 tests): full 2-of-3 signing flows for Ironwood (paying 4
+- `cargo test --release` in `wasm/` (69 tests): full 2-of-3 signing flows for Ironwood (paying 4
   recipients in one transaction) and Orchard, with a bad share that is attributed to its sender; a
   swapped recipient on any payee output is refused; 3 notes spent for 1 recipient; recipient lists
   checked row by row; fees that count outputs; mainnet and testnet upgrade rules; note selection,
@@ -322,8 +331,16 @@ folder path.
   file (round trip, wrong passphrase, each changed header field, a known answer made outside the
   crate, limits, passphrase rules, a later file version). It also checks the signed text of a
   document: key order and spacing do not matter, a known answer holds, and floats are refused.
+  Memo tests cover the limit, the first byte of a memo field, the memo that each payee gets in a
+  final transaction, an output that the engine cannot read, and the inbox path from a compact block
+  to a memo. They also cover an answer with another transaction id, a note with a damaged tag, and
+  the order of the memo list. Reorganisation tests drop notes, spends and memos, rewind after a
+  saved state, stop at 100 blocks and rewind through the native interface. They also check the
+  words of the error for a reorganisation that is too deep.
 - `node cf/test/limits.mjs ws://localhost:8787`: the group server's size, rate and path limits.
-- `node web/test/payees.mjs`: the pasted payment list parser.
+- `node web/test/payees.mjs`: the pasted payment list parser (the memo column, header, byte limit,
+  and a comma directly between digits, which is an error), the memo rules, and the recipient
+  check: address, amount and memo of every payee against the decoded outputs.
 - `node web/test/vault.mjs`: the passkey lock's sealed record (wrong key, changed record, new IV).
 - `node web/test/util.mjs`: address grouping, number checks, the key package comparison, the
   rules that stop a seat's setup, the backup passphrase rules (length, different characters,
@@ -336,7 +353,10 @@ folder path.
   Ed25519 keys made by the web code) and the undo rule. It also checks signed writes in both
   directions. The iPhone code accepts the signatures and the text of a wallet that the web code
   made, and it ignores the false documents. The web code accepts the documents that the iPhone
-  code made. The two tables of signed parts must be equal. It needs `ZigsCore.xcframework` (run
+  code made. The two tables of signed parts must be equal. The iPhone code also reaches the
+  verdicts of `web/payees.js` on the same recipient cases, with memos. It checks the rule that
+  pins chat members and the message cache that opens each document once. It also checks the
+  reset after a reorganisation that is too deep. It needs `ZigsCore.xcframework` (run
   `ios/build-core.sh`) and `node`.
 - `node web/test/chat.mjs`: message signatures (wallet and direct chat), the check that a signing
   key makes its public key, room, key and member pinning, saved chats, text limits and unread
@@ -351,7 +371,9 @@ folder path.
   that holds every seat runs the whole version 3 ceremony and the payment writers, and the reader
   accepts all of it. A made-up seat 4, a raised `n`, a renamed seat and made-up payment results are
   ignored. A write for a wallet that is not open is signed for its own wallet. The memo of checks
-  and the log stay bounded.
+  and the log stay bounded. A run that reads memos is off by default, skips a failed read, and
+  ends after three failures to reach the server. A reorganisation that is too deep deletes the
+  saved state.
 - `node web/test/qr.mjs`: the QR encoder against libqrencode (needs the `qrencode` command).
 - `bash tests/e2e.sh`: the command-line ceremony in separate processes, with attacks: wallet
   substitution, fewer than t signers, tampered randomizer and sighash, nonce reuse, wrong share
@@ -367,7 +389,8 @@ folder path.
   agreement on the secret `sk` is not quantum-resistant either
   ([limits](PROTOCOL.md#13-guarantees-and-limits)). Wallets made before ZIP 2005 support have no
   `qsk`.
-- **Chain reorganisations** are not handled in the saved sync state.
+- **Chain reorganisations** deeper than 100 blocks stop the sync. The web, iPhone and Mac apps
+  then scan the wallet again from its birthday.
 - **One payment at a time.** While a payment waits for its block, the app blocks a second one.
 - **Randomizer source.** Signing uses the `alpha` that the transaction builder puts in the PCZT, as
   the Zcash Foundation's `zcash-sign` does. Check the final ZIP 312 text before production use.

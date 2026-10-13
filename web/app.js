@@ -1,6 +1,9 @@
 // The Zigs web app. Loaded by index.html as a module, so the page needs no inline script.
 import { qrSvg } from "/qr.js";
-import { parsePayeeList, toZat, zatText } from "/payees.js";
+import {
+  allPaid, MEMO_BYTES, memoBytes, memoError, memoShown, outputMemo, pairPayees, parsePayeeList,
+  toZat, zatText,
+} from "/payees.js";
 import { createPasskey, unlockKey, seal, open as openVault, parseVault } from "/vault.js";
 import {
   abortText, backupName, boxPairMatches, checkNetwork, chunks, confirmGate, conflictReason, finite,
@@ -14,7 +17,8 @@ import {
 } from "/signed.js";
 import {
   byTime, canSign, chatWarning, checkText, countUnread, dmText, joinBlock, keyState, newRoom,
-  newSignKey, normChats, parseDm, parseHash, parseMsg, pickRoom, pin, pinMember, pinnedMembers,
+  membersToPin, newSignKey, normChats, parseDm, parseHash, parseMsg, pickRoom, pin, pinMember,
+  pinnedMembers,
   signMsg, signPairMatches, signedText, validId, validPk, validRoom, verifyMsg,
 } from "/chat.js";
 // ───────────────────────── Engine (WASM) ─────────────────────────
@@ -1199,19 +1203,84 @@ async function runSync(c) {
     saveBal(c.gid, c.bal);
     saveSnapshot(c);
     log("synced to " + c.bal.height + ", spendable " + fmtZec(c.bal.spendable));
+    runMemos(c);
   }
-  catch (e) { c.error = e.message || String(e); log("sync failed: " + c.error); }
+  catch (e) {
+    c.error = e.message || String(e); log("sync failed: " + c.error);
+    if (Z.isDeepReorg(c.error)) await rescanFromBirthday(c);
+  }
   finally { c.syncing = false; if (chain !== c && c.cw) c.cw.free(); render(); }
 }
 
-// `payees` and `note` are the proposer's words; approvers check `payees` against the transaction.
+// Drops the saved state, so that the next sync scans the wallet again from its birthday.
+async function rescanFromBirthday(c) {
+  c.error = "The chain reorganised by more than the wallet can undo. Zigs deleted the saved "
+    + "state of this wallet. Refresh to scan it again from the start.";
+  try { await idb("readwrite", (st) => st.delete(c.gid)); }
+  catch (e) { log("could not delete wallet state: " + (e.message || e)); }
+  if (c.cw) { c.cw.free(); c.cw = null; }
+  c.bal = null; c.received = []; c.sent = new Set(); c.prog = null;
+}
+
+// Reads the memos of received payments, in the wallets where this browser turned it on. A memo is
+// in the full transaction only, so this asks the light-wallet server for each transaction that the
+// sync found. The server learns which ones (see memoSwitch). It runs after a sync and never blocks
+// it. A failed read skips that transaction. The engine moves it back in its list, so the next run
+// starts with other transactions. The next sync tries again.
+async function runMemos(c) {
+  if (c.memoBusy || !c.cw || !readsMemos(c.gid)) return;
+  c.memoBusy = true;
+  const cw = c.cw;
+  try {
+    const got = await memoPass(c, cw);
+    if (got && !memoStale(c, cw)) { c.received = J(cw.received()); saveSnapshot(c); render(); }
+  }
+  catch (e) { log("could not read memos: " + (e.message || e)); }
+  finally { c.memoBusy = false; }
+}
+
+// Another server, wallet or rescan replaced the wallet that started a run, or the signer turned
+// memo reading off: each read tells the light-wallet server which transaction pays the wallet.
+const memoStale = (c, cw) => c.cw !== cw || chain !== c || !readsMemos(c.gid);
+
+// Reads the transactions that the engine lists. Three failures to reach the server in a row end
+// the pass: the server is the problem. An answer that the engine refuses does not count, because
+// the server answered. Returns how many notes got a memo.
+async function memoPass(c, cw) {
+  let got = 0, down = 0;
+  for (const n of J(cw.memoNeeds())) {
+    if (memoStale(c, cw) || down >= 3) break;
+    try { got += await readMemo(c, cw, n); down = 0; }
+    catch (e) {
+      down = e.network ? down + 1 : 0;
+      log("could not read the memo of " + short(n.txid, 8) + ": " + (e.message || e));
+    }
+  }
+  return got;
+}
+
+// Fetches the transaction of `n` and gives it to the engine, which checks that it is that
+// transaction. Returns how many notes left the pending state. Only a failure to fetch has
+// `network`.
+async function readMemo(c, cw, n) {
+  const host = new URL(c.url).host;
+  let raw;
+  try { raw = await withTimeout(Z.fetchTransaction(c.url, n.hash), SERVER_TIMEOUT_MS, host); }
+  catch (e) { throw Object.assign(new Error(e.message || String(e)), { network: true }); }
+  if (memoStale(c, cw)) return 0;
+  return J(cw.attachTransaction(n.txid, raw)).attached;
+}
+
+// `payees` (address, amount and optional memo) and `note` are the proposer's words; approvers
+// check `payees` against the transaction.
 async function newSpend(payees, note, move = null) {
   const gid = state.gid, approvals = state.g.t;
   if (!chain || chain.gid !== gid || !chain.bal) {
     throw new Error("The wallet has not finished its first sync.");
   }
   if (!mayAct()) throw new Error(NO_SEAT_KEY);
-  payees = payees.map(({ to, amount }) => ({ to, amount }));
+  // A payee has a memo only when it has text. A proposal without memos stays {to, amount}.
+  payees = payees.map(({ to, amount, memo }) => memo ? { to, amount, memo } : { to, amount });
   const t = J(await chain.cw.createSpend(S(payees)));
   const ref = sdb.collection("groups/" + gid + "/sessions").doc();
   const fields = proposalFields(payees, note, t, move, Date.now());
@@ -1693,6 +1762,17 @@ function saveMerged(name, mine, keep) {
   writeLocal(name, mine);
 }
 const oldest = (stored) => stored;   // a pin keeps the value seen first
+// Reading the memo of a received payment asks the light-wallet server for that transaction, so the
+// server learns which transactions pay the wallet. It is off until a person turns it on, for one
+// wallet in one browser. It is not a field of the wallet, which every signer would read.
+let memoPref = readLocal("zf-memos");        // wallet id -> true while this browser reads memos
+const readsMemos = (gid) => memoPref[gid] === true;
+function setMemoReading(gid, on) {
+  memoPref = readLocal("zf-memos");          // another tab may have changed it
+  if (on) memoPref[gid] = true; else delete memoPref[gid];
+  writeLocal("zf-memos", memoPref);
+  if (on && chain && chain.gid === gid) runMemos(chain);
+}
 const roomPins = readLocal("zf-rooms");      // wallet id -> first room id seen
 const signPins = readLocal("zf-signpins");   // "wallet id:seat" -> first signing key seen
 const readMarks = readLocal("zf-read");      // "room id:thread" -> time of the newest message read
@@ -2380,7 +2460,10 @@ function onMembers(cid, docs) {
     const x = d.data();
     const name = typeof x.name === "string" ? x.name.slice(0, 40) : "";
     members[d.id] = { name, signPk: x.signPk };
-    if (validId(d.id) && validPk(x.signPk)) pinChat(cid, d.id, x.signPk);
+  }
+  const mine = (chats.list[cid] || {}).member;
+  for (const id of membersToPin(members, pinnedMembers(chatPins, cid), mine)) {
+    pinChat(cid, id, members[id].signPk);
   }
   chatMembers[cid] = members;
 }
@@ -3622,10 +3705,23 @@ function sentRow(ss) {
   el("span", { class: "chev" }, "›"));
 }
 
+// The memos of a received payment, for display. A memo that is not text says so.
+const ON_CHAIN = "On chain · shared with all signers";
+const memoTexts = (r) => (Array.isArray(r.memos) ? r.memos : [])
+  .map((m) => m && m.status === "text" && typeof m.text === "string" ? memoShown(m.text) : null);
+
 function receivedRow(r) {
+  const memos = memoTexts(r);
   return el("a", { class: "row-item", href: curNet().explorer + r.txid, target: "_blank", rel: "noopener", title: "View in explorer" },
     el("span", { class: "tx-ico in", "aria-hidden": "true" }, "↙"),
-    el("span", { class: "ri-main" }, el("span", { class: "ri-title" }, "Received"), el("span", { class: "ri-sub" }, "Block " + r.height.toLocaleString())),
+    el("span", { class: "ri-main" },
+      el("span", { class: "ri-title" }, "Received"),
+      el("span", { class: "ri-sub" }, "Block " + r.height.toLocaleString()),
+      memos.map((m) => el("span", { class: "ri-memo" + (m === null ? " faint" : "") },
+        m === null ? "Memo is not text" : m)),
+      memos.length ? el("span", { class: "ri-sub" }, ON_CHAIN) : null,
+      r.memo_pending && readsMemos(state.gid)
+        ? el("span", { class: "ri-sub" }, "Memo not read yet") : null),
     el("span", { class: "ri-end" }, money(r.value, "md", "in"), el("span", { class: "badge " + (r.confirmed ? "ok" : "info") }, r.confirmed ? "Confirmed" : "Confirming")),
     el("span", { class: "chev" }, "↗"));
 }
@@ -3647,7 +3743,9 @@ function messagesCard() {
     el("div", { class: "card-head" }, el("h2", {}, "Messages"), notifyButton()),
     changed.length ? el("div", { class: "callout bad", role: "alert" }, "Signing key changed: "
       + changed.map((i) => "seat " + i).join(", ") + ". Their messages are not verified.") : null,
-    chat[state.gid] ? chatLog("wallet") : null,
+    chat[state.gid] || memoMessages().length ? chatLog("wallet") : null,
+    readsMemos(state.gid) ? null : el("p", { class: "small faint" }, "Memos of payments to this "
+      + "wallet are off. You can turn them on under Details."),
     walletComposer("wallet"));
 }
 
@@ -3684,9 +3782,35 @@ const logBox = (id, label, items, none) => el("div", {
 function threadItems(thread, roomId) {
   const msgs = (chat[state.gid] || []).filter((m) => m.thread === thread)
     .map((m) => ({ ...m, kind: "msg" }));
-  const events = thread === "wallet" ? state.sessions.flatMap(payEvents) : [];
+  const events = thread === "wallet"
+    ? [...state.sessions.flatMap(payEvents), ...memoMessages()] : [];
+  const item = { msg: msgItem, memo: memoItem };
   return [...msgs, ...events].sort(byTime)
-    .map((x) => guard(x.kind === "msg" ? msgItem : eventItem, x, roomId));
+    .map((x) => guard(item[x.kind] || eventItem, x, roomId));
+}
+
+// Memos of payments that came in to the wallet. They are on chain, so they have no sender and no
+// signature: the app shows them as received data, never as a verified message. A block height
+// gives only an estimated time.
+function memoMessages() {
+  const c = curChain(), tip = c && c.bal ? c.bal.height : 0;
+  return (c && c.received || []).flatMap((r) => memoTexts(r).map((text, i) => ({
+    kind: "memo", id: r.txid + ":" + i, text, value: r.value, txid: r.txid,
+    at: Date.now() - Math.max(0, tip - r.height) * BLOCK_SECONDS * 1000,
+  })));
+}
+
+function memoItem(m) {
+  return el("div", { class: "msg memo-msg", "data-key": "memo-" + m.id },
+    el("span", { class: "tx-ico in", "aria-hidden": "true" }, "↙"),
+    el("div", { class: "msg-body" },
+      el("div", { class: "msg-head" }, el("b", {}, "Memo with a payment of " + fmtZec(m.value)),
+        el("time", {}, when(m.at)), el("span", { class: "vmark" }, ON_CHAIN)),
+      el("p", { class: "msg-text" + (m.text === null ? " faint" : "") },
+        m.text === null ? "Memo is not text" : m.text),
+      el("a", {
+        class: "small", href: curNet().explorer + m.txid, target: "_blank", rel: "noopener",
+      }, "View payment ↗")));
 }
 
 const payEvents = (ss) => [
@@ -3986,12 +4110,29 @@ function privacyCard() {
       + "It leaves this browser only if you save a backup. The group server stores encrypted "
       + "data it cannot read. This page downloads blocks from " + host
       + ", which sees your IP address but never a key. The wallet syncs again on every load."),
+    memoSwitch(host),
     el("details", {}, el("summary", {}, "Viewing key"),
       el("div", { class: "addr-full", style: "margin-top:10px" }, w.ufvk),
       el("div", { style: "margin-top:8px" }, copyBtn(w.ufvk, "Copy viewing key"))),
     el("p", { class: "small faint" }, "The viewing key shows every payment of this wallet. "
       + "Share it only with people who may see your balance."),
     activityLog());
+}
+
+// The setting that lets this browser read memos. It names the leak: the light-wallet server learns
+// which transactions pay this wallet.
+function memoSwitch(host) {
+  const gid = state.gid, on = readsMemos(gid);
+  return el("div", { class: "memo-switch" },
+    el("p", { class: "small muted" }, "A memo is only in the full transaction. To read it, this "
+      + "browser asks " + host + " for each transaction that pays this wallet. That server then "
+      + "learns which transactions pay this wallet, and it sees your IP address. This setting "
+      + "is for this browser and this wallet. It is off until you turn it on. Memos that were "
+      + "read stay after you turn it off."),
+    el("button", {
+      class: "btn sm", type: "button", "aria-pressed": on ? "true" : "false",
+      onclick: act(() => setMemoReading(gid, !on)),
+    }, on ? "Reading memos: on" : "Read memos of incoming payments"));
 }
 
 function activityLog() {
@@ -4056,6 +4197,27 @@ function payRow(r, i, rows, sumUp) {
     el("input", { class: "input mono", id: "s-to-" + r.k, type: "text", placeholder: curNet().prefix + "…", required: true, autocomplete: "off", spellcheck: "false", "aria-label": "Recipient address" + n, value: r.to, oninput: (ev) => { r.to = ev.target.value; addressHint(hint, r.to); } }),
     el("div", { class: "input-wrap" }, amt, rows.length === 1 ? el("button", { class: "btn sm", type: "button", onclick: max }, "Max") : null),
     rows.length > 1 ? el("button", { class: "icon-btn", type: "button", "aria-label": "Remove recipient" + n, onclick: () => { rows.splice(i, 1); render(); } }, "×") : null,
+    hint, memoBox(r, n));
+}
+
+// Shows the bytes of a memo once it comes near the limit, and says why a memo cannot be sent.
+const MEMO_NEAR = 400;
+function memoHint(hint, memo) {
+  const bad = memoError(memo), bytes = memoBytes(memo);
+  hint.textContent = bad || (bytes >= MEMO_NEAR ? bytes + " of " + MEMO_BYTES + " bytes" : "");
+  hint.className = "hint" + (bad ? " bad" : "");
+}
+
+// The optional memo of one recipient.
+function memoBox(r, n) {
+  const hint = el("span", { class: "hint" });
+  memoHint(hint, r.memo);
+  return el("div", { class: "memo-row" },
+    el("input", {
+      class: "input", id: "s-memo-" + r.k, type: "text", placeholder: "Memo (optional)",
+      autocomplete: "off", "aria-label": "Memo" + n + " (optional)", value: r.memo,
+      oninput: (ev) => { r.memo = ev.target.value; memoHint(hint, r.memo); },
+    }),
     hint);
 }
 
@@ -4063,7 +4225,9 @@ function useList() {
   const box = document.getElementById("s-list"), { rows, errors } = parsePayeeList(box.value);
   ui.listError = errors[0] || (!rows.length ? "Paste at least one line." : rows.length > MAX_PAYEES ? "A payment can have at most " + MAX_PAYEES + " recipients." : "");
   if (!ui.listError) {
-    ui.pay = rows.map((p) => ({ k: ++ui.payKey, to: p.to, amt: zatText(p.amount) }));
+    ui.pay = rows.map((p) => ({
+      k: ++ui.payKey, to: p.to, amt: zatText(p.amount), memo: p.memo || "",
+    }));
     box.value = ""; box.closest("details").open = false;
   }
   render();
@@ -4074,24 +4238,31 @@ function readPayees(rows) {
   const net = curNet(), own = normalized(state.wallet.address);
   return rows.map((r, i) => {
     const to = r.to.trim(), amount = toZat(r.amt), who = rows.length > 1 ? "Recipient " + (i + 1) + ": " : "";
+    const memo = String(r.memo || "").trim();
     if (!onNetwork(to)) throw new Error(who + "Enter a shielded Zcash " + net.label.toLowerCase() + " address. It starts with " + net.prefix + ".");
     if (normalized(to) === own) throw new Error(who + "This is the address of this wallet. Enter the address of someone else.");
     if (!amount) throw new Error(who + "Enter an amount greater than zero, with at most 8 decimals.");
-    return { to, amount };
+    if (memoError(memo)) throw new Error(who + memoError(memo));
+    return memo ? { to, amount, memo } : { to, amount };
   });
 }
 
 function pasteList(net) {
   return el("details", { class: "paste" }, el("summary", { class: "btn sm" }, "Paste a list"),
-    el("textarea", { class: "input mono", id: "s-list", rows: "5", spellcheck: "false", "aria-label": "Payment list", placeholder: net.prefix + "…, 0.5\n" + net.prefix + "…, 1.25" }),
-    el("span", { class: "hint" }, "One address and amount per line. A spreadsheet copy works."),
+    el("textarea", {
+      class: "input mono", id: "s-list", rows: "5", spellcheck: "false",
+      "aria-label": "Payment list",
+      placeholder: net.prefix + "…, 0.5, October rent\n" + net.prefix + "…, 1.25",
+    }),
+    el("span", { class: "hint" },
+      "One address and amount per line, then an optional memo. A spreadsheet copy works."),
     ui.listError ? el("span", { class: "hint bad" }, ui.listError) : null,
     el("button", { class: "btn sm", type: "button", onclick: useList }, "Use this list"));
 }
 
 function sendDialog() {
   const c = curChain(), bal = c && c.bal, spendable = bal ? bal.spendable : 0, net = curNet();
-  if (!ui.pay) { ui.pay = [{ k: ++ui.payKey, to: "", amt: "" }]; ui.listError = ""; }
+  if (!ui.pay) { ui.pay = [{ k: ++ui.payKey, to: "", amt: "", memo: "" }]; ui.listError = ""; }
   const rows = ui.pay;
   const fee = el("span", {}), total = el("span", { id: "s-total" });
   const sumUp = () => {
@@ -4110,11 +4281,16 @@ function sendDialog() {
     el("div", { class: "field" }, el("span", {}, rows.length > 1 ? rows.length + " recipients, one transaction" : "To and amount"),
       rows.map((r, i) => payRow(r, i, rows, sumUp)),
       el("div", { class: "row-actions" },
-        el("button", { class: "btn sm", type: "button", disabled: rows.length >= MAX_PAYEES, onclick: () => { rows.push({ k: ++ui.payKey, to: "", amt: "" }); render(); } }, "Add recipient"),
+        el("button", {
+          class: "btn sm", type: "button", disabled: rows.length >= MAX_PAYEES,
+          onclick: () => { rows.push({ k: ++ui.payKey, to: "", amt: "", memo: "" }); render(); },
+        }, "Add recipient"),
         pasteList(net))),
     el("label", { class: "field" }, el("span", {}, "Note for signers (optional)"),
       el("input", { class: "input", id: "s-note", name: "note", type: "text", maxlength: "80", placeholder: rows.length > 1 ? "October payroll" : "Pay the audit firm", autocomplete: "off" }),
       el("span", { class: "hint" }, "Encrypted. Only signers of this wallet can read it.")),
+    el("p", { class: "small faint" }, "A memo goes on chain with the payment. Its recipient and "
+      + "every signer of this wallet can read it."),
     el("div", { class: "summary" },
       el("div", {}, el("span", { class: "muted" }, "Available"), money(spendable)),
       el("div", {}, el("span", { class: "muted" }, "Network fee (estimate)"), fee),
@@ -4151,28 +4327,10 @@ function inspectOf(ss) {
 // The proposer's list, without entries that have no address text.
 const payeesOf = (ss) => Array.isArray(ss.payees) ? ss.payees.filter((p) => p && typeof p.to === "string") : [];
 
-// Pairs each proposed payee with one decoded output of the same address and amount. Returns the
-// rows with `ok`, and the decoded outputs that no payee claimed.
-function pairPayees(payees, outputs) {
-  const left = [...outputs];
-  const rows = payees.map((p) => {
-    const i = left.findIndex((l) => l.who === normalized(p.to) && l.value === p.amount);
-    if (i >= 0) left.splice(i, 1);
-    return { ...p, ok: i >= 0 };
-  });
-  return { rows, extra: left };
-}
-
-// The decoded outputs are the truth. Each one must be a proposed payee with the same amount, and
-// the proposal must list nothing else. The typed addresses only help people recognise them.
-function allPaid(rows, extra, total) {
-  if (!rows.length || extra.length || !rows.every((r) => r.ok)) return false;
-  return rows.reduce((n, r) => n + r.amount, 0) === total;
-}
-
 function recipientCheck(ss, ins) {
   if (!ins || ins.error) return { rows: [], extra: [], match: null };
-  const paid = ins.lines.filter(isPayee), { rows, extra } = pairPayees(payeesOf(ss), paid);
+  const paid = ins.lines.filter(isPayee);
+  const { rows, extra } = pairPayees(payeesOf(ss), paid, normalized);
   const match = allPaid(rows, extra, ss.amount);
   const addr = ss.move ? moveAddress(ss.move) : null;
   const intoNew = addr ? paid.length === 1 && normalized(addr) === paid[0].who : null;
@@ -4188,9 +4346,31 @@ function moveAddress(gid) {
 
 function checkWarnings(rc) {
   const out = rc.extra.map((l) => "The transaction also pays " + fmtZec(l.value) + " to " + short(l.who, 12) + ", which the proposer did not list. Do not approve it.");
+  // Paid with another memo (`got` is set): the address and the amount are right.
+  const memoOnly = rc.rows.filter((r) => !r.ok && r.got !== undefined);
+  out.push(...memoOnly.map((r) => "The memo in the transaction for " + short(r.to, 12)
+    + " is not the memo the proposer listed. Do not approve it."));
   if (!rc.rows.length) out.push("The proposal lists no recipients. Do not approve it.");
-  else if (!rc.match && !rc.extra.length) out.push("The transaction does not pay what the proposer listed. Do not approve it.");
+  else if (!rc.match && !rc.extra.length && !memoOnly.length) {
+    out.push("The transaction does not pay what the proposer listed. Do not approve it.");
+  }
   return out.map((t) => el("div", { class: "callout bad" }, t));
+}
+
+// A memo for display: "" is no memo and null is one that the engine could not read as text.
+const memoWords = (m) => m === null ? "Memo is not text" : m ? memoShown(m) : "No memo";
+const memoRow = (label, m, bad = false) => el("div", { class: "memo-line" + (bad ? " bad" : "") },
+  el("span", { class: "label" }, label),
+  el("span", { class: "memo-text" + (m ? "" : " faint") }, memoWords(m)));
+
+// The memo lines of one payee row. For a payee paid with another memo, the memo that the
+// transaction carries is the decoded one, so it shows as well.
+function memoLines(r) {
+  const own = r.memo == null ? "" : typeof r.memo === "string" ? r.memo : null;
+  if (!r.ok && r.got !== undefined) {
+    return [memoRow("Proposed memo", own), memoRow("Memo in the transaction", r.got, true)];
+  }
+  return own === "" ? [] : [memoRow("Memo", own)];
 }
 
 function checkHead(rc) {
@@ -4203,8 +4383,14 @@ function recipientBox(ss, rc) {
   // the check.
   if (rc.match === null || (!rc.rows.length && ss.package)) return null;
   return el("div", { class: "to-box" }, checkHead(rc),
-    rc.rows.map((r) => el("div", { class: "payee" }, el("span", { class: "hex" }, addrGroups(r.to)),
-      el("span", { class: "payee-end" }, money(r.amount), r.ok ? null : el("span", { class: "badge bad" }, "Not in the transaction")))),
+    rc.rows.map((r) => el("div", { class: "payee-item" },
+      el("div", { class: "payee" }, el("span", { class: "hex" }, addrGroups(r.to)),
+        el("span", { class: "payee-end" }, money(r.amount), r.ok ? null
+          : el("span", { class: "badge bad" },
+            r.got === undefined ? "Not in the transaction" : "Memo differs"))),
+      memoLines(r))),
+    rc.rows.some((r) => r.memo) ? el("p", { class: "small faint" },
+      "A memo goes on chain with the payment. Its recipient and every signer can read it.") : null,
     checkWarnings(rc),
     ss.move ? moveNote(ss, rc) : null);
 }

@@ -11,12 +11,24 @@ export type ReadableStreamType = "bytes";
 export class ChainWallet {
     free(): void;
     [Symbol.dispose](): void;
+    /**
+     * Reads the memos of this wallet's notes from a full transaction (base64). `txid` is the
+     * `txid` of `memoNeeds` for it. Returns `{"attached": <notes that left the pending state>}`.
+     * A transaction with another id is an error.
+     */
+    attachTransaction(txid: string, raw: string): string;
     balance(): string;
     broadcast(tx_hex: string): Promise<string>;
     /**
-     * `payees` is a JSON list: `[{"to": "<unified address>", "amount": <zat>}, …]`.
+     * `payees` is a JSON list: `[{"to": "<unified address>", "amount": <zat>, "memo": "<text>"},
+     * …]`. The memo is optional: at most 512 UTF-8 bytes.
      */
     createSpend(payees: string): Promise<string>;
+    /**
+     * Transactions whose memos are not read yet: `[{"txid", "hash", "height"}, …]`. Pass `hash`
+     * to `fetchTransaction`, then the result to `attachTransaction`.
+     */
+    memoNeeds(): string;
     constructor(ufvk: string, birthday: number, endpoint: string);
     received(): string;
     /**
@@ -85,9 +97,20 @@ export function dkgPart3(secret2: string, round1: string, round2: string): strin
 
 export function docPayload(wallet_id: string, path: string, seat: number, fields: string): string;
 
+/**
+ * Downloads one full transaction from the light-wallet server. The server learns that this
+ * device is interested in it. Needs no wallet, so no wallet is borrowed during the download.
+ */
+export function fetchTransaction(endpoint: string, hash: string): Promise<string>;
+
 export function finalize(signed: string): string;
 
 export function inspect(pczt: string, fvk: string): string;
+
+/**
+ * True when an error message says that a reorganisation was deeper than the wallet can undo.
+ */
+export function isDeepReorg(message: string): boolean;
 
 export function latestHeight(endpoint: string): Promise<number>;
 
@@ -134,9 +157,11 @@ export interface InitOutput {
     readonly boxKeypair: () => [number, number];
     readonly boxOpen: (a: number, b: number, c: number, d: number, e: number, f: number, g: number, h: number) => [number, number, number, number];
     readonly boxSeal: (a: number, b: number, c: number, d: number, e: number, f: number, g: number, h: number) => [number, number, number, number];
+    readonly chainwallet_attachTransaction: (a: number, b: number, c: number, d: number, e: number) => [number, number, number, number];
     readonly chainwallet_balance: (a: number) => [number, number];
     readonly chainwallet_broadcast: (a: number, b: number, c: number) => any;
     readonly chainwallet_createSpend: (a: number, b: number, c: number) => any;
+    readonly chainwallet_memoNeeds: (a: number) => [number, number, number, number];
     readonly chainwallet_new: (a: number, b: number, c: number, d: number, e: number) => [number, number, number];
     readonly chainwallet_received: (a: number) => [number, number];
     readonly chainwallet_restore: (a: number, b: number, c: number, d: number, e: number, f: number, g: number) => [number, number, number];
@@ -148,6 +173,7 @@ export interface InitOutput {
     readonly dkgPart2: (a: number, b: number, c: number, d: number) => [number, number, number, number];
     readonly dkgPart3: (a: number, b: number, c: number, d: number, e: number, f: number) => [number, number, number, number];
     readonly docPayload: (a: number, b: number, c: number, d: number, e: number, f: number, g: number) => [number, number, number, number];
+    readonly fetchTransaction: (a: number, b: number, c: number, d: number) => any;
     readonly finalize: (a: number, b: number) => [number, number, number, number];
     readonly inspect: (a: number, b: number, c: number, d: number) => [number, number, number, number];
     readonly intounderlyingbytesource_autoAllocateChunkSize: (a: number) => number;
@@ -160,6 +186,7 @@ export interface InitOutput {
     readonly intounderlyingsink_write: (a: number, b: any) => any;
     readonly intounderlyingsource_cancel: (a: number) => void;
     readonly intounderlyingsource_pull: (a: number, b: any) => any;
+    readonly isDeepReorg: (a: number, b: number) => number;
     readonly latestHeight: (a: number, b: number) => any;
     readonly normalizeAddress: (a: number, b: number) => [number, number, number, number];
     readonly safetyNumber: (a: number, b: number, c: number, d: number, e: number, f: number, g: number, h: number) => [number, number, number, number];

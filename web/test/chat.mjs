@@ -2,7 +2,8 @@
 import assert from "node:assert/strict";
 import {
   byTime, chatWarning, checkText, countUnread, dmText, joinBlock, keyState, newRoom, newSignKey,
-  normChats, parseDm, parseHash, parseMsg, pickRoom, pin, pinMember, pinnedMembers, signMsg,
+  membersToPin, normChats, parseDm, parseHash, parseMsg, pickRoom, pin, pinMember, pinnedMembers,
+  signMsg,
   signPairMatches, signedText, validRoom, verifyMsg,
 } from "../chat.js";
 
@@ -165,6 +166,24 @@ assert.equal(pinMember(chatPins, ROOM, M3, "k3"), "new", "chats are counted apar
 assert.equal(chatPins[GID + ":" + M3], undefined);
 
 assert.deepEqual(pinnedMembers(chatPins, GID).sort(), [M1, M2]);
+
+// Which members to pin: the own one at once, another only when it is the one new valid member.
+// The same cases as ios/CheckBackup/main.swift, so both apps pin the same members.
+const [k1, k2, k3] = (await Promise.all([1, 2, 3].map(() => newSignKey()))).map((k) => k.signPk);
+const mem = (pk) => ({ signPk: pk });
+const toPin = (members, pinned = [], mine) => membersToPin(members, pinned, mine).sort();
+assert.deepEqual(toPin({ [M1]: mem(k1) }), [M1], "a joiner pins the first member");
+assert.deepEqual(toPin({ [M1]: mem(k1), [M2]: mem(k2) }, [], M1), [M1, M2], "own and one other");
+assert.deepEqual(toPin({ [M1]: mem(k1), [M2]: mem(k2) }, [], M3), [], "two new, none mine");
+assert.deepEqual(toPin({ [M1]: mem(k1), [M2]: mem(k2), [M3]: mem(k3) }, [], M1), [M1],
+  "two other new members arrive together: only the own member is pinned");
+assert.deepEqual(toPin({ [M2]: mem(k2), [M3]: mem(k3) }, [M1], M1), [], "two new next to a pin");
+assert.deepEqual(toPin({ [M1]: mem(k1), [M2]: mem(k2) }, [M1], M1), [M2], "one new next to own");
+assert.deepEqual(toPin({ [M1]: mem(k1), [M2]: mem(k2) }, [M1, M2], M1), [], "nothing new");
+assert.deepEqual(toPin({ [M1]: mem(k1), [M2]: mem("zz"), [M3]: mem(undefined) }, [], M1), [M1],
+  "a member without a valid key does not count");
+assert.deepEqual(toPin({ [M1]: mem(k1), zz: mem(k2) }, [], M1), [M1], "a bad id does not count");
+assert.deepEqual(toPin({ [M2]: mem(k2) }, [], M1), [M2], "the own member may still be missing");
 assert.deepEqual(pinnedMembers(chatPins, "9".repeat(20)), []);
 
 // Links: an id that is not 20 hex characters never comes back, so it cannot reach a lookup.

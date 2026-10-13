@@ -14,7 +14,7 @@ Status: beta, not audited. It runs on testnet, and on mainnet with a warning at 
 | **Engine** (Rust) | Runs FROST, builds and checks transactions, makes Halo2 proofs, syncs the chain. Runs as WebAssembly in the browser and as a native library on iPhone and Mac. | Nothing permanent; the app gives it data |
 | **Signer device** | Runs the web, iPhone or Mac app around the engine | Its key share, the wallet secret, the viewing key, nonces, payment history |
 | **Group server** | A Cloudflare Worker with one Durable Object (SQLite) per wallet. Relays and stores sealed documents over a WebSocket. | Only ciphertext, plus wallet ids, document paths, timing and IP addresses |
-| **Light-wallet server** | lightwalletd over grpc-web. Serves compact blocks and accepts finished transactions. | Your IP address and the blocks you download |
+| **Light-wallet server** | lightwalletd over grpc-web. Serves compact blocks and full transactions, and accepts finished transactions. | Your IP address, the blocks you download and the transactions you fetch |
 | **Zcash network** | NU7, Ironwood shielded pool | One normal shielded transaction per payment |
 
 ```mermaid
@@ -266,9 +266,43 @@ wallet, the creator also cannot choose `nk` or `rivk`.
 
 - Each device downloads compact blocks from its light-wallet server, from the wallet's birthday
   height. It trial-decrypts each output with the viewing key, so it finds its notes locally.
-- The light-wallet server never learns which notes belong to the wallet.
-- The notes, the note commitment tree and the sync position are saved on the device, sealed with
-  the wallet key.
+- While a device downloads blocks, the light-wallet server does not learn which notes belong to
+  the wallet. Every wallet downloads the same blocks.
+- The device saves the notes, the note commitment tree, the block hashes and the sync position.
+  It seals them with the wallet key (snapshot format 3). A device that finds an older format
+  scans again from the birthday.
+- **Memos.** A compact block holds only part of each note ciphertext, so it does not hold the
+  memo. The full transaction holds it.
+  - Reading memos is off until a signer turns it on, for one wallet in one browser (section 14).
+  - With it on, the device asks the light-wallet server (`GetTransaction`, by transaction id) for
+    the full transaction of each note that is not change. It decrypts the memo with the incoming
+    viewing key and keeps the memo with the note.
+  - This request tells the server which transactions pay the wallet. The server can link them to
+    one IP address.
+  - The device tries again after a failure, and it does not make the sync wait for it. At most 25
+    transactions go in one round. A transaction that was in a round goes behind the ones that
+    were not. So a transaction that never gives its memo cannot hold up the others.
+  - The transaction id covers every note ciphertext (ZIP 244). The engine takes an answer only
+    when its id is the one that was asked for. These answers come from a faulty server: another
+    id, a format that does not parse, and a size above 2,000,000 bytes. That size is the largest
+    block. Such an answer changes nothing, and the notes stay pending.
+  - A note in a transaction with the right id can fail to decrypt in full. Its ciphertext on the
+    chain is damaged, so the memo can never be read. The engine saves the note as "not text"
+    and does not ask for it again.
+  - The device treats a memo as text only when it is ZIP 302 text (UTF-8). Change and empty memos
+    (first byte 0xF6) show nothing. Any other memo is "not text".
+- **Reorganisations.** Each block that the device applies must chain onto the stored tip. The
+  field `prev_hash` of the new block must equal the hash of the tip. If it does not, the device
+  drops its newest block and asks again from the block before it. It repeats this until a block
+  chains. The tree goes back to the checkpoint of the block before. The device removes the
+  notes, the spends, the sent marks and the memos of the dropped blocks. The device keeps the
+  hashes and the tree checkpoints of the last 101 blocks, so it can undo up to 100 blocks. It
+  also keeps the hash of the block before the birthday, from the tree state. A deeper
+  reorganisation, or a fork below the birthday, stops the sync with an error. The engine words
+  that error, and every app asks the engine (`isDeepReorg`) whether an error starts with those
+  words. Server errors start with "lightwalletd: ", so a server cannot send that error. The web, iPhone and Mac apps
+  then delete their saved state, and the next sync scans the wallet again from the birthday. A
+  false light-wallet server can still show a chain that does not exist.
 - On mainnet, at 0.5 ZEC the app warns and hides the address. It cannot block deposits.
 
 ## 7. Making a payment
@@ -303,17 +337,31 @@ sequenceDiagram
 - A payment has 1 to 20 recipients and one change output. One payroll is one approval round and
   one transaction.
 - The fee follows ZIP 317: 5,000 zatoshis × max(2, spends, outputs).
-- The session document holds the PCZT, the recipient list, the total, a note and the proposer.
+- The session document holds the PCZT, the recipient list (address, amount and optional memo),
+  the total, a note and the proposer.
+- A recipient can have a memo: ZIP 302 text of at most 512 UTF-8 bytes, with no null character.
+  The engine puts it in the output of that recipient. A recipient with no memo gets the empty
+  memo (0xF6). A memo for an address without a shielded receiver is refused. The memo is part of
+  the signed field `payees`, so a proposal without memos stays valid as it was.
 - Only one payment can be open at a time, because a second one could pick the same notes.
 
 ### 7.2 Check (on each approving device)
 
 - The engine decodes the PCZT itself.
   - It ties every output that carries value to a recipient.
+  - It reads the memo of every output from the transaction, with the wallet's outgoing viewing
+    keys. It reports `memo_status` (`empty`, `text`, `not_text` or `unknown`) and the text.
+  - It never takes the memo from the proposer's fields. `unknown` means that the engine could
+    not read it.
   - It computes the change and the fee.
   - It refuses a transaction that moves more than the standard fee out of the shielded pool.
-- The app compares the decoded outputs with the proposed list: the same addresses and amounts,
-  nothing missing and nothing extra. Any difference disables Approve.
+- The app compares the decoded outputs with the proposed list: the same addresses, amounts and
+  memos, nothing missing and nothing extra. A proposal without a memo matches only an empty memo.
+  Any difference disables Approve, also when only the memo differs or the engine cannot read it.
+  The payment panel shows each memo, and the memo of the transaction when it differs. The web,
+  iPhone and Mac apps apply these rules. The compared text is the raw memo. The panel shows
+  control characters and bidirectional marks as U+FFFD. `ios/check-backup.sh` checks that the
+  iPhone code reaches the verdicts of `web/payees.js` on the same cases.
 - The seat's own wallet check must have passed.
 - For a move to a new wallet, the destination must equal the address that this device's own seat
   in the new wallet checked.
@@ -539,7 +587,7 @@ the web, on iPhone and on Mac at the same time.
 - **Engine.** The same Rust engine, compiled to a native library (`ZigsCore.xcframework`) with a
   C interface.
 - **Same screens as the web app, same ceremony.** Wallet list, setup steps with the safety number,
-  the four wallet tabs, send with
+  the five wallet tabs, send with
   pasted lists, receive with a QR code, the decoded payment with "What the chain sees" after it is
   sent, and change signers.
 - **Server password.** Settings has a password field for a server that has one, as app.zigs.app
@@ -557,6 +605,24 @@ the web, on iPhone and on Mac at the same time.
 - **Signed writes.** New wallets have version 3. The apps sign and check documents as in section
   15, in the same way as the web app. A wallet can have seats on the web, on iPhone and on Mac.
   `ios/check-backup.sh` checks that each app accepts the signatures of the other.
+- **Messages.** Phases 1 and 2 of [CHAT.md](CHAT.md), with the formats of section 14. The
+  Messages tab (also on the setup page) and the Discussion section of a payment use the wallet
+  room. The room secret stays in the seat secrets in the Keychain, and the app pins the first room
+  of each wallet. The home screen has a Chats list and "New chat". "Join with an invite link"
+  also takes a contact link (`zigs://join#c.<chat id>.<secret>` or the web link). A contact link
+  only offers the chat. The person taps "Join chat" to join. The chats and the personal signing key stay
+  in the Keychain, or in the sealed record when the Face ID lock is on. The apps show unread counts
+  and send no notifications.
+- **Memos.** The payment screen shows the memo of each recipient and the memo that the
+  transaction carries. It compares them as the web app does (section 7.2). Approve stays off
+  while they differ. The apps do not send memos and do not read the memos of received payments
+  yet.
+- **Reorganisations.** After a reorganisation that is too deep to undo, the app closes the wallet
+  and deletes its saved file. It then shows how to scan again. The next sync starts at the
+  birthday.
+- **Message reading.** The app opens each message document once and keeps the result. It opens
+  new documents off the main thread. A room or a chat with more than 10,000 documents is not
+  read, and the screen says so.
 - **Proofs.** The device builds Halo2 proofs natively. The time on a real iPhone is not measured
   yet.
 
@@ -585,8 +651,8 @@ the web, on iPhone and on Mac at the same time.
 |---|---|---|
 | Chain observer | One shielded transaction, its fee and its number of actions | That a group signed it, the signers, the approval rule, recipients, amounts |
 | Group server | Wallet ids, message room ids, document paths, timing, message counts and sizes, IP addresses | Names, addresses, keys, amounts, recipients, transactions, message text and senders |
-| Light-wallet server | IP address, birthday height, blocks downloaded, transactions sent | Which notes belong to the wallet |
-| Other signers | Everything about the shared wallet | Your key share and your nonces |
+| Light-wallet server | IP address, birthday height, blocks downloaded, transactions sent, and which full transactions a device fetches to read memos (only where memo reading is on) | Which notes belong to the wallet (the fetches are the exception: they point to payments to the wallet), the memo text (the transaction is encrypted), keys |
+| Other signers | Everything about the shared wallet, memos included | Your key share and your nonces |
 
 ## 13. Guarantees and limits
 
@@ -594,6 +660,7 @@ the web, on iPhone and on Mac at the same time.
 
 - Fewer than *t* signers cannot spend.
 - One honest approving device sees the true payment, and signs only the transaction it approved.
+  The web, iPhone and Mac apps compare the memo of each recipient as well.
 - A dishonest creator cannot publish an address that the signers do not control.
 - In a version 2 or 3 wallet, the creator cannot choose `nk` or `rivk`. Every signer recomputes them
   from `sk` and checks the published wallet.
@@ -626,7 +693,11 @@ the web, on iPhone and on Mac at the same time.
   Keep the invite link as private as the key share.
 - A version 1 wallet has no `qsk` and is not recoverable under ZIP 2005. Move its funds to a new
   wallet with Change signers.
-- Malicious light-wallet servers and chain reorganisations are not handled.
+- Malicious light-wallet servers are not handled. A false server can show a chain that does not
+  exist, or hide transactions. The wallet follows real reorganisations of up to 100 blocks
+  (section 6).
+- A memo on chain comes from the payer and is not authenticated. Every signer can read it, and a
+  signer who kept the viewing key can read it after "Change signers".
 - A full session in Tor Browser is not tested yet.
 - `alpha` comes from the PCZT, as in the Zcash Foundation's `zcash-sign`. Compare this with the
   final ZIP 312 text before production use.
@@ -634,7 +705,8 @@ the web, on iPhone and on Mac at the same time.
 
 ## 14. Messages
 
-Phase 1 of [CHAT.md](CHAT.md). The web app has it. The iPhone and Mac apps do not yet.
+Phases 1 and 2 of [CHAT.md](CHAT.md). The web, iPhone and Mac apps have them. Section 10.2 lists
+the iPhone and Mac screens.
 
 - **Room.** Each wallet has a room: a store namespace with its own id (20 hex characters) and its
   own secret (32 bytes). The wallet document holds both in the sealed field `room`, as
@@ -674,10 +746,51 @@ Phase 1 of [CHAT.md](CHAT.md). The web app has it. The iPhone and Mac apps do no
 - **Limits.** A device downloads the whole room when it connects, and a room holds about 5,000 to
   10,000 messages (10 MB). Times come from the sender's clock. Messages are not forward secret.
 
+### Memos on payments
+
+Phase 3 of [CHAT.md](CHAT.md). The web app has it. The iPhone and Mac apps show and compare the
+memos of a payment that they approve. They do not send memos, and they do not read the memos of
+received payments yet. The engine has the calls for them.
+
+- **Sending.** Each recipient of a proposal is `{to, amount, memo?}`. `memo` is present only when
+  it has text. Sections 7.1 and 7.2 give the rules. The web form counts bytes with UTF-8 and
+  accepts a third column in "Paste a list". In that list, a comma directly between digits makes
+  the line an error. It could be a decimal comma or a field separator. The person writes the
+  amount with a point, or puts a space after the comma.
+- **Receiving.** Section 6 gives the rules. Reading memos is a switch under Details, in "Privacy
+  and keys". It is off for every wallet until a signer turns it on. The switch keeps its state in
+  the browser only (`zf-memos`, wallet id to true). Its text names the leak: the light-wallet
+  server learns which transactions pay the wallet. A payment whose memo is not read yet shows
+  "Memo not read yet" while the switch is on. A received memo shows on the Activity row of its
+  payment. It also shows as a message in the Messages tab of the wallet, with the label "On chain
+  · shared with all signers". It has no sender and no signature. The app never calls it verified
+  or private. The app shows control characters and bidirectional marks of the text as U+FFFD, and
+  it puts no memo text in a notification. Memos do not count as unread messages.
+- **Engine interface** (web names; the native names have the prefix `wallet`):
+  - `createSpend(payees)` and `walletSpend`: `payees` is `[{"to", "amount", "memo"?}]`. A row
+    error names the row: `recipient 2: the memo is 513 bytes long; the limit is 512`.
+  - `inspect(pczt, fvk)`: each `output` line has `memo_status` and, for text, `memo`.
+  - `memoNeeds()` and `walletMemoNeeds`: `[{"txid", "hash", "height"}]` for the notes whose memo
+    is not read yet. `hash` is the transaction id in hex, in the byte order of
+    `TxFilter.hash`. `txid` is the id as an explorer shows it. The transactions that were listed
+    least often come first, the oldest first among equals.
+  - `fetchTransaction(endpoint, hash)` (web only): the full transaction as base64. The native
+    apps call `GetTransaction` themselves.
+  - `attachTransaction(txid, raw)` and `walletTransaction(key, txid, raw)`: `txid` is the `txid`
+    of `memoNeeds` and `raw` is the transaction as base64. The result is `{"attached": n}`: the
+    number of notes that left the pending state, also those saved as `not_text`. It fails when
+    `raw` is too large, does not parse, or has another id than `txid`.
+  - `isDeepReorg(message)` and `isDeepReorg` in the native table: `true` when `message` is the
+    error of a reorganisation that is deeper than the wallet can undo.
+  - `received()` and `walletReceived`: each payment also has `memos` (a list of
+    `{"status": "text", "text"}` or `{"status": "not_text"}`) and `memo_pending`.
+  - `walletBlocks` stops after a block that does not chain onto the tip. The wallet has then
+    dropped its newest block. The app calls `walletNeeds` again, which names a lower `from`.
+
 ### Direct chats
 
-Phase 2 of [CHAT.md](CHAT.md). The web app has it. The group server is the transport for now, so it
-learns that two member ids talk to each other.
+Phase 2 of [CHAT.md](CHAT.md). The web, iPhone and Mac apps have it. The group server is the
+transport for now, so it learns that two member ids talk to each other.
 
 - **Chat.** A store namespace with a random id (20 hex characters) and secret (32 bytes). No
   document `groups/<chat id>` exists, so a chat is never a wallet. The contact link is
@@ -706,8 +819,11 @@ learns that two member ids talk to each other.
   `JSON.stringify(["zigs-dm-v1", chat id, message id, from, at, text])`.
   [`web/test/chat.mjs`](web/test/chat.mjs) holds a fixed text, public key and signature. A wallet
   message signature never verifies as a direct message, and the reverse, because the tags differ.
-- **Pinning.** Each device pins the first two member ids it sees in a chat, and the first `signPk`
-  for each. A message from another member id shows "Unknown sender. Not verified." A message from
+- **Pinning.** Each device pins its own member id and the first `signPk` of it. It pins one other
+  member id, with the first `signPk`, only when that member is the only new one in the documents
+  that it reads. Two new members that arrive together are both unpinned, because the time in a
+  member document is the writer's own claim. A device never pins a third member id. A message
+  from another member id shows "Unknown sender. Not verified." A message from
   a member whose `signPk` differs from the pin shows "Key changed. Not verified." The chat also
   shows a warning. The app never hides these messages.
 - **Unread and notifications.** The same as in a room, with the read mark `<chat id>:dm`. The
@@ -820,7 +936,7 @@ signature over only its own fields. The path in the signed text is `sessions/<se
 
 | Part | Signed fields | Writer fields | Writer |
 |---|---|---|---|
-| proposal | `payees`, `note`, `pool`, `amount`, `change`, `fee`, `noteValue`, `pczt`, `move`, `createdAt` | `by`, `sig` | a seat |
+| proposal | `payees` (each `{to, amount}` and `memo` when set), `note`, `pool`, `amount`, `change`, `fee`, `noteValue`, `pczt`, `move`, `createdAt` | `by`, `sig` | a seat |
 | package | `package`, `signers` | `packageBy`, `packageSig` | a seat |
 | signed | `signed`, `signatures` | `signedBy`, `signedSig` | a seat, after the package |
 | final | `final` | `finalBy`, `finalSig` | a seat, after `signed` |
