@@ -58,7 +58,7 @@ To see signer changes, open **Signers**, then **Change signers**. To see the pri
 |---|---|
 | **Privacy** | On chain, the transaction shape matches the standard wallet library: same builder, padding, fee, expiry and anchor depth ([comparison](PRIVACY.md#on-chain)). The server stores only encrypted values, padded so that even their length hides amounts. On the device, key shares can be locked with a passkey (web) or Face ID (iPhone) ([how](PRIVACY.md#lock-with-a-passkey-or-face-id)). Key share backups are encrypted with a passphrase (Argon2id and XChaCha20-Poly1305) and open on the web, iPhone and Mac ([how](PRIVACY.md#key-share-backups)). The page can connect only to the group server and three named light-wallet servers (Content-Security-Policy). It is prepared for Tor Browser, but not yet tested end to end ([how](PRIVACY.md#use-zigs-over-tor)). The Zigs server code keeps no logs; its host, Cloudflare, can see connection data. Every remaining leak is listed in [PRIVACY.md](PRIVACY.md). |
 | **Usefulness** | Designed for team treasuries, DAOs and families. Usable today on testnet, and on mainnet with a warning at 0.5 ZEC: web, iPhone and Mac; invite links and QR codes; batch payments for payroll and grants (up to 20 recipients, one approval round, pasted from a spreadsheet); signer changes; encrypted key share backups. |
-| **Execution** | The live app works end to end. Fourteen testnet transactions made by the apps are [listed below](#proof-on-testnet). The engine has 69 tests, and a command-line suite runs adversarial cases. |
+| **Execution** | The live app works end to end. Fifteen testnet transactions made by the apps are [listed below](#proof-on-testnet). The engine has 71 tests, and a command-line suite runs adversarial cases. |
 | **Originality** | An end-user app for re-randomized FROST: no command line, no trusted dealer, and no server that can read the wallet. Each device decodes the PCZT and checks every output before it approves, and binds its approval to the transaction's sighash. Signer changes, batch payments and native iPhone and Mac apps are included. Built during the Zecathon window: the first commit is from October 10, 2026. |
 
 ## Architecture
@@ -250,6 +250,7 @@ with 2-of-2 wallets and one 2-of-3 wallet:
 | [`72004cb2…92ca`](https://testnet.zecblock.com/tx/72004cb20cfbdc7acc9592b01deac70490c3452744c92fe9c8c717f28d4a92ca) | 4,489,938 | **2-of-3 wallet:** seats 1 and 3 approve, seat 2 does not |
 | [`bcad9990…c83d`](https://testnet.zecblock.com/tx/bcad99901fd954e4fefb1f85223ea4e30722d155f9a8c20cbc5066ab3e5ec83d) | 4,493,885 | **ZIP 2005 wallet:** spend from a version 2 wallet (agreed `sk`, `use_qsk = true`) |
 | [`1a13fe55…2ebe`](https://testnet.zecblock.com/tx/1a13fe552eb09ba2fa034cc27d42ea4775f251360da27abcd5608c93a2572ebe) | 4,497,189 | **Signed writes:** spend from a version 3 wallet, two browsers, with forged documents ignored |
+| [`2d72e9b1…f707`](https://testnet.zecblock.com/tx/2d72e9b173fb7f63a4101dcfcc26ade1a916e9a5678e0bb8b43d2c319661f707) | 4,497,745 | **Memo:** a wallet with one browser seat and one iPhone seat pays with a memo, and the memo shows in the receiving wallet's inbox |
 
 A 2-of-2 mainnet wallet was also created and synced to the mainnet tip in the web app and on the
 iPhone.
@@ -321,7 +322,7 @@ folder path.
 
 ## Tests
 
-- `cargo test --release` in `wasm/` (69 tests): full 2-of-3 signing flows for Ironwood (paying 4
+- `cargo test --release` in `wasm/` (71 tests): full 2-of-3 signing flows for Ironwood (paying 4
   recipients in one transaction) and Orchard, with a bad share that is attributed to its sender; a
   swapped recipient on any payee output is refused; 3 notes spent for 1 recipient; recipient lists
   checked row by row; fees that count outputs; mainnet and testnet upgrade rules; note selection,
