@@ -531,7 +531,7 @@ fn max_send(notes: &[(u64, u32)], synced: u32) -> u64 {
 
 /// Most recipients in one payment. ponytail: proof time grows with each action; raise this after
 /// a timing test on a phone.
-const MAX_PAYEES: usize = 20;
+pub(crate) const MAX_PAYEES: usize = 20;
 
 /// Parses `[{"to": "<unified address>", "amount": <zat>, "memo": "<text, optional>"}, …]`.
 /// Errors name the row, from 1.

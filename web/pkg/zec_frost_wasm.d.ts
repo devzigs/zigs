@@ -114,7 +114,11 @@ export function isDeepReorg(message: string): boolean;
 
 export function latestHeight(endpoint: string): Promise<number>;
 
+export function makeRequest(payees: string, net: string): string;
+
 export function normalizeAddress(addr: string): string;
+
+export function parseRequest(uri: string, net: string): string;
 
 export function safetyNumber(wallet_id: string, t: number, n: number, network: string, seats: string): string;
 
@@ -188,7 +192,9 @@ export interface InitOutput {
     readonly intounderlyingsource_pull: (a: number, b: any) => any;
     readonly isDeepReorg: (a: number, b: number) => number;
     readonly latestHeight: (a: number, b: number) => any;
+    readonly makeRequest: (a: number, b: number, c: number, d: number) => [number, number, number, number];
     readonly normalizeAddress: (a: number, b: number) => [number, number, number, number];
+    readonly parseRequest: (a: number, b: number, c: number, d: number) => [number, number, number, number];
     readonly safetyNumber: (a: number, b: number, c: number, d: number, e: number, f: number, g: number, h: number) => [number, number, number, number];
     readonly secretOpen: (a: number, b: number, c: number, d: number, e: number, f: number) => [number, number, number, number];
     readonly secretSeal: (a: number, b: number, c: number, d: number, e: number, f: number) => [number, number, number, number];

@@ -12,6 +12,7 @@ use serde_json::{json, Value};
 use crate::backup;
 use crate::ceremony;
 use crate::chain::native;
+use crate::request;
 
 use super::*;
 
@@ -82,6 +83,8 @@ const METHODS: &[(&str, Method)] = &[
     ("walletMemoNeeds", |a| native::memo_needs(s(a, 0)?)),
     ("walletTransaction", |a| native::transaction(s(a, 0)?, s(a, 1)?, s(a, 2)?)),
     ("isDeepReorg", |a| Ok(crate::chain::is_deep_reorg(s(a, 0)?).to_string())),
+    ("parseRequest", |a| request::parse_request(s(a, 0)?, s(a, 1)?)),
+    ("makeRequest", |a| request::make_request(s(a, 0)?, s(a, 1)?)),
 ];
 
 fn call(method: &str, args: &str) -> R<String> {
@@ -213,6 +216,24 @@ mod tests {
         }
         let err = ffi("walletTransaction", json!(["none", "id", 5]));
         assert!(err["err"].as_str().unwrap().contains("argument 2"), "{err}");
+    }
+
+    #[test]
+    fn request_methods_match_the_wasm_names() {
+        let uri = "zcash:?amount=1";
+        let err = ffi("parseRequest", json!([uri, "test"]));
+        assert_eq!(err["err"], "payee 1: the address is missing");
+        let rows = json!([{"to": "u1nope"}]).to_string();
+        let made = ffi("makeRequest", json!([rows, "main"]));
+        assert!(made["err"].as_str().unwrap().contains("payee 1"), "{made}");
+        for method in ["parseRequest", "makeRequest"] {
+            let out = ffi(method, json!([5, "test"]));
+            assert!(out["err"].as_str().unwrap().contains("argument 0"), "{method}: {out}");
+            let out = ffi(method, json!(["x", 5]));
+            assert!(out["err"].as_str().unwrap().contains("argument 1"), "{method}: {out}");
+        }
+        let wasm = request::parse_request("zcash:?", "test");
+        assert_eq!(ffi("parseRequest", json!(["zcash:?", "test"]))["err"], wasm.unwrap_err());
     }
 
     #[test]

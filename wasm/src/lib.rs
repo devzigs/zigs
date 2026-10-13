@@ -52,6 +52,7 @@ mod backup;
 mod ceremony;
 mod chain;
 mod memo;
+mod request;
 mod snapshot;
 #[cfg(test)]
 mod testchain;
@@ -887,6 +888,14 @@ pub fn js_backup_seal(passphrase: &str, plaintext: &str) -> Result<String, JsErr
 #[wasm_bindgen(js_name = backupOpen)]
 pub fn js_backup_open(passphrase: &str, sealed: &str) -> Result<String, JsError> {
     js(backup::open(passphrase, sealed))
+}
+#[wasm_bindgen(js_name = parseRequest)]
+pub fn js_parse_request(uri: &str, net: &str) -> Result<String, JsError> {
+    js(request::parse_request(uri, net))
+}
+#[wasm_bindgen(js_name = makeRequest)]
+pub fn js_make_request(payees: &str, net: &str) -> Result<String, JsError> {
+    js(request::make_request(payees, net))
 }
 
 // ─────────────────────────── Tests ───────────────────────────
