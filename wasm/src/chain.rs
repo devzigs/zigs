@@ -10,6 +10,7 @@ use std::{
 
 use incrementalmerkletree::{frontier::Frontier, Marking, Position, Retention};
 use orchard::{keys::Scope, note::Nullifier, tree::MerkleHashOrchard};
+use pczt::Pczt;
 use base64::{engine::general_purpose::STANDARD as B64, Engine as _};
 use serde_json::{json, Value};
 use shardtree::{store::memory::MemoryShardStore, ShardTree};
@@ -34,7 +35,7 @@ use zcash_protocol::{
 };
 
 use super::{
-    build_ironwood_pczt, e, ensure,
+    account, build_ironwood_pczt, e, ensure,
     memo::{commitment_bytes, parse_memo, received as memos_in, MemoView},
     pczt_to_b64,
     snapshot::{decode_note, decode_store, encode_note, encode_store, hex32},
@@ -65,6 +66,16 @@ pub(crate) fn is_deep_reorg(message: &str) -> bool {
     message.starts_with(DEEP_REORG)
 }
 
+/// The opening words of the error for a transaction that the node refused. Any other broadcast
+/// error (a timeout, a lost connection) leaves open whether the node took the transaction.
+pub(crate) const NODE_REFUSED: &str = "node rejected the transaction";
+
+/// True when `message` is the error of a node that answered and refused the transaction. Only the
+/// start counts: server errors start with "lightwalletd: ", and a server chooses their text.
+pub(crate) fn is_node_refusal(message: &str) -> bool {
+    message.starts_with(NODE_REFUSED)
+}
+
 type Client = CompactTxStreamerClient<tonic_web_wasm_client::Client>;
 type Tree = ShardTree<MemoryShardStore<MerkleHashOrchard, BlockHeight>, 32, 16>;
 
@@ -83,6 +94,14 @@ async fn tip_of(endpoint: &str) -> R<u32> {
 
 fn block_id(height: u32) -> BlockId {
     BlockId { height: height.into(), hash: vec![] }
+}
+
+/// Reads a unified viewing key. Its encoding names its network (uview1… or uviewtest1…).
+pub(crate) fn decode_ufvk(text: &str) -> R<(Network, UnifiedFullViewingKey)> {
+    [Network::MainNetwork, Network::TestNetwork]
+        .into_iter()
+        .find_map(|net| UnifiedFullViewingKey::decode(&net, text).ok().map(|k| (net, k)))
+        .ok_or_else(|| "bad viewing key: not a mainnet or testnet unified viewing key".to_string())
 }
 
 struct Rec {
@@ -135,11 +154,7 @@ struct Inner {
 
 impl Inner {
     fn new(ufvk: &str, birthday: u32, endpoint: &str) -> R<Inner> {
-        // The viewing key's encoding names its network (uview1… or uviewtest1…).
-        let (net, ufvk) = [Network::MainNetwork, Network::TestNetwork]
-            .into_iter()
-            .find_map(|net| UnifiedFullViewingKey::decode(&net, ufvk).ok().map(|k| (net, k)))
-            .ok_or("bad viewing key: not a mainnet or testnet unified viewing key")?;
+        let (net, ufvk) = decode_ufvk(ufvk)?;
         let keys = ScanningKeys::from_account_ufvks([(0u32, ufvk.clone())]);
         Ok(Inner {
             net,
@@ -361,9 +376,20 @@ impl Inner {
 
 impl Inner {
     /// Payments into this wallet from outside, newest first: one entry per transaction. `memos`
-    /// lists the text and non-text memos of its notes (an empty memo shows nothing).
-    /// `memo_pending` is true while the full transaction of a note is not read yet.
+    /// lists the text and non-text memos of its notes (an empty memo shows nothing). Each memo
+    /// has the `index` of the address that received its note: a number, or null when it does not
+    /// fit in a u32. `indexes` lists the same for every note of the transaction, also a note whose
+    /// memo is empty or not read yet: it names each address that got a payment. `memo_pending` is
+    /// true while the full transaction of a note is not read yet.
+    ///
+    /// `ponytail:` the index is found again at each call, about 0.1 ms for each memo. Upgrade path:
+    /// save it with the note when the block is scanned.
     fn received(&self) -> String {
+        let ivk = self.ufvk.orchard().map(|fvk| fvk.to_ivk(Scope::External));
+        let index = |n: &Rec| {
+            let j = ivk.as_ref()?.diversifier_index(&n.note.recipient())?;
+            u32::try_from(j).ok()
+        };
         let mut by_tx: Vec<(String, u32, u64, Vec<&Rec>)> = vec![];
         for n in self.notes.iter().filter(|n| !n.change) {
             match by_tx.iter_mut().find(|(t, ..)| *t == n.txid) {
@@ -380,12 +406,17 @@ impl Inner {
             .map(|(txid, height, value, notes)| {
                 let memos: Vec<Value> = notes
                     .iter()
-                    .filter_map(|n| n.memo.as_ref())
-                    .filter(|m| **m != MemoView::Empty)
-                    .map(MemoView::to_json)
+                    .filter_map(|n| n.memo.as_ref().map(|m| (*n, m)))
+                    .filter(|(_, m)| **m != MemoView::Empty)
+                    .map(|(n, m)| {
+                        let mut entry = m.to_json();
+                        entry["index"] = json!(index(n));
+                        entry
+                    })
                     .collect();
                 json!({"txid": txid, "height": height, "value": value,
                     "confirmed": is_confirmed(*height, self.synced), "memos": memos,
+                    "indexes": notes.iter().map(|n| index(n)).collect::<Vec<_>>(),
                     "memo_pending": notes.iter().any(|n| n.memo.is_none())})
             })
             .collect();
@@ -505,8 +536,15 @@ pub(crate) fn zip317_fee(spends: usize, outputs: usize) -> u64 {
 /// `outputs` counts every output, change included.
 fn select_notes(notes: &[(u64, u32)], amount: u64, outputs: usize, synced: u32) -> R<Pick> {
     ensure(amount > 0, "amount must be greater than zero")?;
-    let mut eligible: Vec<usize> =
-        (0..notes.len()).filter(|&i| is_confirmed(notes[i].1, synced)).collect();
+    pick_notes(notes, amount, outputs, synced)
+}
+
+/// `select_notes` for an `amount` that may be zero, as in a message, which pays only the fee. A
+/// note of zero value is a message part that someone sent: spending it only adds to the fee.
+fn pick_notes(notes: &[(u64, u32)], amount: u64, outputs: usize, synced: u32) -> R<Pick> {
+    let mut eligible: Vec<usize> = (0..notes.len())
+        .filter(|&i| is_confirmed(notes[i].1, synced) && notes[i].0 > 0)
+        .collect();
     eligible.sort_by_key(|&i| std::cmp::Reverse(notes[i].0));
     let (mut picked, mut total) = (vec![], 0u64);
     for i in eligible {
@@ -524,7 +562,7 @@ fn select_notes(notes: &[(u64, u32)], amount: u64, outputs: usize, synced: u32) 
 /// The largest amount one payment can send: every confirmed note, less the fee for spending them.
 fn max_send(notes: &[(u64, u32)], synced: u32) -> u64 {
     let confirmed: Vec<u64> =
-        notes.iter().filter(|n| is_confirmed(n.1, synced)).map(|n| n.0).collect();
+        notes.iter().filter(|n| is_confirmed(n.1, synced) && n.0 > 0).map(|n| n.0).collect();
     let total: u64 = confirmed.iter().sum();
     if confirmed.is_empty() { 0 } else { total.saturating_sub(zip317_fee(confirmed.len(), 2)) }
 }
@@ -649,15 +687,18 @@ async fn sync(state: &RefCell<Inner>, on_progress: &js_sys::Function) -> R<Strin
     Ok(state.borrow().balance())
 }
 
-fn spend_pczt(s: &Inner, payees: &[Payee], tip: u32) -> R<String> {
+/// Builds the PCZT that pays `payees` and returns it with the notes that it spends. `choose`
+/// picks those notes from the `(value, height)` of each unspent note.
+fn build_spend(
+    s: &Inner,
+    payees: &[Payee],
+    tip: u32,
+    choose: impl FnOnce(&[(u64, u32)]) -> R<Pick>,
+) -> R<(Pczt, Pick)> {
     let fvk = s.ufvk.orchard().ok_or("the viewing key has no Orchard component")?;
-    let amount = payees
-        .iter()
-        .try_fold(0u64, |sum, p| sum.checked_add(p.1))
-        .ok_or("the amounts add up to more than any wallet can hold")?;
     let unspent: Vec<&Rec> = s.notes.iter().filter(|n| n.spent.is_none()).collect();
     let values: Vec<(u64, u32)> = unspent.iter().map(|n| (n.value(), n.height)).collect();
-    let pick = select_notes(&values, amount, payees.len() + 1, s.synced)?;
+    let pick = choose(&values)?;
     let depth = (CONFIRMATIONS - 1) as usize;
     let root = s
         .tree
@@ -673,15 +714,42 @@ fn spend_pczt(s: &Inner, payees: &[Payee], tip: u32) -> R<String> {
             .ok_or("no Merkle path for a note; sync again")?;
         inputs.push((unspent[i].note, orchard::tree::MerklePath::from(path)));
     }
+    let outs = (payees, pick.change);
     let pczt = build_ironwood_pczt(
         s.net,
         BlockHeight::from_u32(tip + 1),
         fvk,
         (inputs, orchard::Anchor::from(root)),
-        (payees, pick.change),
+        outs,
     )?;
+    Ok((pczt, pick))
+}
+
+fn spend_pczt(s: &Inner, payees: &[Payee], tip: u32) -> R<String> {
+    let amount = payees
+        .iter()
+        .try_fold(0u64, |sum, p| sum.checked_add(p.1))
+        .ok_or("the amounts add up to more than any wallet can hold")?;
+    let choose = |values: &[(u64, u32)]| select_notes(values, amount, payees.len() + 1, s.synced);
+    let (pczt, pick) = build_spend(s, payees, tip, choose)?;
     Ok(json!({"pczt": pczt_to_b64(pczt)?, "pool": "ironwood", "amount": amount,
         "change": pick.change, "fee": pick.fee, "note_value": pick.total})
+    .to_string())
+}
+
+/// One output of zero value for each part of the message, all to `to`, each with its text memo.
+fn message_payees(to: &str, text: &str, net: Network) -> R<Vec<Payee>> {
+    let to = parse_recipient(to, net)?;
+    let parts = account::split(text)?;
+    parts.iter().map(|part| Ok((to, 0, parse_memo(&json!(part))?))).collect()
+}
+
+/// Like `spend_pczt` for the outputs of `message_payees`: the account pays the fee only.
+fn message_pczt(s: &Inner, payees: &[Payee], tip: u32) -> R<String> {
+    let choose = |values: &[(u64, u32)]| pick_notes(values, 0, payees.len() + 1, s.synced);
+    let (pczt, pick) = build_spend(s, payees, tip, choose)?;
+    Ok(json!({"pczt": pczt_to_b64(pczt)?, "pool": "ironwood", "fee": pick.fee,
+        "parts": payees.len(), "note_value": pick.total, "change": pick.change})
     .to_string())
 }
 
@@ -695,6 +763,15 @@ async fn create_spend(state: &RefCell<Inner>, payees: &str) -> R<String> {
     spend_pczt(&s, &payees, tip)
 }
 
+async fn create_message(state: &RefCell<Inner>, to: &str, text: &str) -> R<String> {
+    let payees = message_payees(to, text, state.borrow().net)?;
+    let endpoint = state.borrow().endpoint.clone();
+    let tip = tip_of(&endpoint).await?;
+    let mut s = state.borrow_mut();
+    s.tip = tip;
+    message_pczt(&s, &payees, tip)
+}
+
 async fn broadcast(endpoint: &str, tx_hex: &str) -> R<String> {
     let data = hex::decode(tx_hex.trim()).map_err(e("transaction hex"))?;
     let r = client(endpoint)
@@ -702,7 +779,7 @@ async fn broadcast(endpoint: &str, tx_hex: &str) -> R<String> {
         .await
         .map_err(rpc)?
         .into_inner();
-    ensure(r.error_code == 0, &format!("node rejected the transaction: {}", r.error_message))?;
+    ensure(r.error_code == 0, &format!("{NODE_REFUSED}: {}", r.error_message))?;
     Ok(json!({"txid": r.error_message.trim().trim_matches('"')}).to_string())
 }
 
@@ -725,6 +802,12 @@ pub async fn js_latest_height(endpoint: String) -> Result<u32, JsError> {
 #[wasm_bindgen(js_name = isDeepReorg)]
 pub fn js_is_deep_reorg(message: &str) -> bool {
     is_deep_reorg(message)
+}
+
+/// True when an error message says that the node answered and refused the transaction.
+#[wasm_bindgen(js_name = isNodeRefusal)]
+pub fn js_is_node_refusal(message: &str) -> bool {
+    is_node_refusal(message)
 }
 
 /// Downloads one full transaction from the light-wallet server. The server learns that this
@@ -793,6 +876,15 @@ impl ChainWallet {
     #[wasm_bindgen(js_name = createSpend)]
     pub async fn create_spend(&self, payees: String) -> Result<String, JsError> {
         super::js(create_spend(&self.0, &payees).await)
+    }
+
+    /// A message on chain. `to` is a unified address with an Orchard receiver and `text` is the
+    /// message (`splitMessage` gives the rules). Each part is an output of zero value with its
+    /// memo, so the account pays the fee only. Returns `{"pczt", "pool", "fee", "parts",
+    /// "note_value", "change"}`. Sign it with `accountSign`, then `finalize`.
+    #[wasm_bindgen(js_name = createMessage)]
+    pub async fn create_message(&self, to: String, text: String) -> Result<String, JsError> {
+        super::js(create_message(&self.0, &to, &text).await)
     }
 
     pub async fn broadcast(&self, tx_hex: String) -> Result<String, JsError> {
@@ -904,6 +996,16 @@ pub(crate) mod native {
 
     pub(crate) fn snapshot(key: &str) -> R<String> {
         with(key, |w| w.snapshot())
+    }
+
+    /// A message on chain, as `ChainWallet.createMessage` makes it. `tip` is the chain height the
+    /// app saw.
+    pub(crate) fn message(key: &str, to: &str, text: &str, tip: u32) -> R<String> {
+        with(key, |w| {
+            let payees = message_payees(to, text, w.net)?;
+            w.tip = w.tip.max(tip);
+            message_pczt(w, &payees, tip)
+        })
     }
 
     pub(crate) fn spend(key: &str, payees: &[Value], tip: u32) -> R<String> {
@@ -1060,7 +1162,10 @@ mod tests {
         assert!(select_notes(&notes, 50_000, 2, SYNCED).is_ok());
     }
 
-    use crate::testchain::{external, fvk, memo_of, no_memo, pays, Chain};
+    use crate::testchain::{compact_of, external, fvk, memo_of, no_memo, pays, Chain};
+    use orchard::keys::DiversifierIndex;
+    use zcash_primitives::transaction::Transaction;
+    use zcash_protocol::consensus::BranchId;
     use orchard::keys::FullViewingKey;
     use prost::Message as _;
 
@@ -1191,6 +1296,16 @@ mod tests {
     }
 
     #[test]
+    fn only_a_node_answer_is_a_refusal() {
+        let refused = format!("{NODE_REFUSED}: bad-txns-inputs-spent");
+        assert!(is_node_refusal(&refused), "the apps find this error by the engine's words");
+        assert!(!is_node_refusal("lightwalletd: unavailable"), "a lost link is not a refusal");
+        assert!(!is_node_refusal("did not answer in 16 s"));
+        let forged = format!("lightwalletd: {refused}");
+        assert!(!is_node_refusal(&forged), "a transport error cannot free the notes of a send");
+    }
+
+    #[test]
     fn a_reorg_back_to_the_start_replays_the_new_chain() {
         let (mut w, key) = started(7, 500);
         let mut a = Chain::new(500);
@@ -1318,11 +1433,30 @@ mod tests {
         w.notes[1].memo = Some(MemoView::NotText);
         w.notes[3].memo = Some(MemoView::Empty);
         let list = v(&w.received());
-        let shown = json!([{"status": "text", "text": "rent"}, {"status": "not_text"}]);
+        let shown = json!([{"status": "text", "text": "rent", "index": 0},
+            {"status": "not_text", "index": 0}]);
         assert_eq!(list[1]["memos"], shown);
         assert_eq!(list[1]["memo_pending"], false);
         assert_eq!((&list[0]["memos"], &list[0]["memo_pending"]), (&json!([]), &json!(false)));
         assert_eq!(w.memo_needs().unwrap(), "[]", "change never needs its memo");
+    }
+
+    /// A message part is a zero-value note with a text memo. The wallet finds it like any other
+    /// note, lists it with its memo pending, and asks for its transaction.
+    #[test]
+    fn a_zero_value_note_with_a_memo_is_found_and_waits_for_its_memo() {
+        let (mut w, key) = started(7, 500);
+        let (tx, _) = pays(external(&key), 0, memo_of("hi"), None);
+        let id = txid_text(&tx.txid);
+        let mut a = Chain::new(500);
+        a.push(vec![tx], 0);
+        follow(&mut w, &a).unwrap();
+        let list = v(&w.received());
+        assert_eq!(list.as_array().unwrap().len(), 1);
+        assert_eq!((&list[0]["value"], &list[0]["memo_pending"]), (&json!(0), &json!(true)));
+        let needs = v(&w.memo_needs().unwrap());
+        assert_eq!(needs.as_array().unwrap().len(), 1);
+        assert_eq!(needs[0]["txid"], id.as_str());
     }
 
     #[test]
@@ -1371,5 +1505,210 @@ mod tests {
         assert!(attach(&mut w, &id, "not base64!").unwrap_err().contains("not base64"));
         assert_eq!(w.notes[0].memo, None, "a faulty answer never settles a note");
         assert_eq!(v(&w.memo_needs().unwrap()).as_array().unwrap().len(), 1);
+    }
+
+    #[test]
+    fn received_names_the_address_that_got_the_note() {
+        let (mut w, key) = started(7, 500);
+        let at = |j: u32| key.address_at(j, Scope::External);
+        let far = DiversifierIndex::try_from(1u128 << 40).unwrap();
+        let (zero, _) = pays(at(0), 1_000, no_memo(), None);
+        let (seven, _) = pays(at(7), 2_000, no_memo(), None);
+        let (huge, _) = pays(key.address_at(far, Scope::External), 3_000, no_memo(), None);
+        let (mut two, _) = pays(at(3), 4_000, no_memo(), None);
+        two.ironwood_actions.extend(pays(at(5), 5_000, no_memo(), None).0.ironwood_actions);
+        let mut a = Chain::new(500);
+        for tx in [zero, seven, huge, two] {
+            a.push(vec![tx], 0);
+        }
+        follow(&mut w, &a).unwrap();
+        let before = v(&w.received());
+        let used: Vec<Value> =
+            before.as_array().unwrap().iter().map(|tx| tx["indexes"].clone()).collect();
+        assert_eq!(json!(used), json!([[3, 5], [null], [7], [0]]), "known before any memo is read");
+        assert_eq!(before[3]["memos"], json!([]));
+        for (i, n) in w.notes.iter_mut().enumerate() {
+            n.memo = Some(if i == 1 { MemoView::NotText } else { MemoView::Text(format!("m{i}")) });
+        }
+        let list = v(&w.received());
+        let indexes: Vec<Value> = list
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|tx| tx["memos"].as_array().unwrap().iter().map(|m| m["index"].clone()).collect())
+            .collect();
+        let want = json!([[3, 5], [null], [7], [0]]);
+        assert_eq!(json!(indexes), want, "newest first; null when it does not fit in a u32");
+        assert_eq!(list[2]["memos"][0], json!({"status": "not_text", "index": 7}));
+        assert_eq!(list[3]["memos"][0], json!({"status": "text", "text": "m0", "index": 0}));
+        let snap: Value = serde_json::from_str(&w.snapshot().unwrap()).unwrap();
+        assert!(snap["notes"][0]["memo"].get("index").is_none(), "the saved state has no index");
+    }
+
+    #[test]
+    fn a_note_of_zero_value_is_never_spent_and_a_message_may_pay_the_fee_only() {
+        let fee = |n: usize| zip317_fee(n, 2);
+        let notes = [(0, 10), (0, 11), (60_000, 12)];
+        let p = pick_notes(&notes, 0, 2, SYNCED).unwrap();
+        assert_eq!((p.picked, p.fee, p.change), (vec![2], fee(1), 50_000));
+        assert!(select_notes(&notes, 0, 2, SYNCED).is_err(), "a payment still needs an amount");
+        let spam = pick_notes(&[(0, 10), (0, 11)], 0, 2, SYNCED).unwrap_err();
+        assert!(spam.contains("not enough funds: 0 zat spendable"), "{spam}");
+        let small = pick_notes(&[(9_999, 10)], 0, 2, SYNCED).unwrap_err();
+        assert!(small.contains("9999 zat spendable, 10000 zat needed"), "{small}");
+        assert_eq!(pick_notes(&[(10_000, 10)], 0, 2, SYNCED).unwrap().change, 0);
+        assert_eq!(max_send(&[(0, 10), (0, 11), (60_000, 12)], SYNCED), 50_000);
+    }
+
+    /// The first block of the test chains that build transactions. The builder needs the height of
+    /// the NU7 upgrade (v6 transactions) on testnet.
+    const NU7: u32 = 4_500_000;
+
+    /// The wallet of the personal account for `seed`, and its key.
+    fn account_wallet(seed: &str, birthday: u32) -> (Inner, FullViewingKey) {
+        let keys = v(&account::keys(seed, "testnet").unwrap());
+        let mut w = Inner::new(keys["ufvk"].as_str().unwrap(), birthday, "").unwrap();
+        w.start(&base_state(birthday)).unwrap();
+        let key = w.ufvk.orchard().unwrap().clone();
+        (w, key)
+    }
+
+    /// An account that holds one note of each value in `notes`, confirmed.
+    fn funded_account(seed: &str, notes: &[u64]) -> (Inner, Chain) {
+        let (mut w, key) = account_wallet(seed, NU7);
+        let mut chain = Chain::new(NU7);
+        chain.push(notes.iter().map(|n| pays(external(&key), *n, no_memo(), None).0).collect(), 0);
+        chain.grow(2, 0);
+        follow(&mut w, &chain).unwrap();
+        (w, chain)
+    }
+
+    fn address_for(seed: &str, index: u32) -> String {
+        let keys = v(&account::keys(seed, "testnet").unwrap());
+        account::address_at(keys["ufvk"].as_str().unwrap(), index).unwrap()
+    }
+
+    fn message_of(w: &Inner, to: &str, text: &str, tip: u32) -> R<Value> {
+        let payees = message_payees(to, text, Network::TestNetwork)?;
+        message_pczt(w, &payees, tip).map(|made| v(&made))
+    }
+
+    #[test]
+    fn a_message_pays_the_fee_of_its_outputs_and_spends_no_zero_note() {
+        let seed = "0a".repeat(32);
+        let (w, chain) = funded_account(&seed, &[1_000_000, 0, 0]);
+        let to = address_for(&"0b".repeat(32), 1);
+        let tip = chain.last_height();
+        let sized = |bytes: usize| message_of(&w, &to, &"a".repeat(bytes), tip).unwrap();
+        for (bytes, parts, fee) in [(1, 1, 10_000), (512, 1, 10_000), (513, 2, 15_000),
+                                    (1300, 3, 20_000), (2000, 4, 25_000)] {
+            let made = sized(bytes);
+            assert_eq!((&made["parts"], &made["fee"]), (&json!(parts), &json!(fee)), "{bytes}");
+            assert_eq!(made["note_value"], 1_000_000, "the zero notes stay unspent");
+            assert_eq!(made["change"], 1_000_000 - fee);
+            assert_eq!(made["pool"], "ironwood");
+            assert!(made.get("amount").is_none());
+        }
+        let five = message_of(&w, &to, &"é".repeat(1265), tip).unwrap();
+        assert_eq!((&five["parts"], &five["fee"]), (&json!(5), &json!(30_000)));
+    }
+
+    #[test]
+    fn a_message_is_refused_for_its_text_its_address_or_its_funds() {
+        let seed = "0a".repeat(32);
+        let (w, chain) = funded_account(&seed, &[9_000]);
+        let to = address_for(&"0b".repeat(32), 1);
+        let tip = chain.last_height();
+        let err = |to: &str, text: &str| message_of(&w, to, text, tip).unwrap_err();
+        assert!(err(&to, "hi").contains("not enough funds: 9000 zat spendable"));
+        assert_eq!(err(&to, ""), "The message is empty.");
+        assert!(err(&to, "a\0b").contains("null character"));
+        assert!(err(&to, &"a".repeat(2001)).contains("2001 characters"));
+        assert!(err("nope", "hi").contains("must be a testnet unified address"));
+        let main = account::address_at(
+            v(&account::keys(&seed, "mainnet").unwrap())["ufvk"].as_str().unwrap(), 0).unwrap();
+        assert!(err(&main, "hi").contains("must be a testnet unified address"));
+        let tex = Address::Tex([3; 20]).encode(&Network::TestNetwork);
+        assert!(err(&tex, "hi").contains("must be a testnet unified address"));
+    }
+
+    /// A message of 3 parts, built, signed with the seed, proved and read by the recipient.
+    #[test]
+    fn a_three_part_message_is_built_signed_proved_and_read_by_its_recipient() {
+        let (sender, reader) = ("0a".repeat(32), "0b".repeat(32));
+        let (mut w, mut chain) = funded_account(&sender, &[1_000_000]);
+        let to = address_for(&reader, 7);
+        let text = "Zigs ✓ 😀 héllo. ".repeat(55);
+        let made = message_of(&w, &to, &text, chain.last_height()).unwrap();
+        let shape = (&made["parts"], &made["fee"], &made["change"]);
+        assert_eq!(shape, (&json!(3), &json!(20_000), &json!(980_000)));
+        let pczt = made["pczt"].as_str().unwrap();
+
+        let wrong = account::sign(pczt, &reader, "testnet").unwrap_err();
+        assert!(wrong.contains("does not own the notes"), "{wrong}");
+        assert!(account::sign(pczt, &sender, "mainnet").unwrap_err().contains("another network"));
+        let signed = v(&account::sign(pczt, &sender, "testnet").unwrap());
+        let signed = signed["signed_pczt"].as_str().unwrap();
+        let again = account::sign(signed, &sender, "testnet").unwrap_err();
+        assert!(again.contains("no spend to sign"), "{again}");
+        let out = v(&crate::finalize(signed).unwrap());
+        let txid = out["txid"].as_str().unwrap();
+        let raw = hex::decode(out["tx_hex"].as_str().unwrap()).unwrap();
+
+        let tx = Transaction::read(&raw[..], BranchId::Nu6_3).unwrap();
+        chain.push(vec![compact_of(&tx)], 0);
+        follow(&mut w, &chain).unwrap();
+        assert_eq!((w.sent.len(), w.sent[0].0.as_str()), (1, txid), "the spend is on the chain");
+        assert_eq!(v(&w.balance())["pending"], 980_000, "the change comes back");
+
+        let (mut r, _) = account_wallet(&reader, NU7);
+        follow(&mut r, &chain).unwrap();
+        let list = v(&r.received());
+        assert_eq!(list.as_array().unwrap().len(), 1);
+        let first = (&list[0]["value"], &list[0]["memo_pending"], &list[0]["memos"]);
+        assert_eq!(first, (&json!(0), &json!(true), &json!([])), "found, memo not read yet");
+        let needs = v(&r.memo_needs().unwrap());
+        assert_eq!(needs.as_array().unwrap().len(), 1);
+        assert_eq!(needs[0]["txid"], txid);
+        assert_eq!(r.attach_transaction(txid, &raw).unwrap(), 3);
+        assert_eq!(r.memo_needs().unwrap(), "[]");
+        let list = v(&r.received());
+        assert_eq!(list[0]["memo_pending"], false);
+        let memos = list[0]["memos"].as_array().unwrap();
+        assert_eq!(memos.len(), 3);
+        assert!(memos.iter().all(|m| m["status"] == "text" && m["index"] == 7), "{memos:?}");
+        let texts: Vec<&Value> = memos.iter().map(|m| &m["text"]).collect();
+        let joined = v(&account::join_message(&json!(texts).to_string()).unwrap());
+        assert_eq!(joined["text"], text.as_str(), "the order of the outputs does not matter");
+    }
+
+    #[test]
+    fn the_native_interface_builds_a_message() {
+        use base64::Engine as _;
+        let seed = "0c".repeat(32);
+        let keys = v(&account::keys(&seed, "testnet").unwrap());
+        let (k, to) = ("message-wallet", address_for(&"0b".repeat(32), 2));
+        native::open(k, keys["ufvk"].as_str().unwrap(), NU7, None).unwrap();
+        native::start(k, &B64.encode(base_state(NU7).encode_to_vec())).unwrap();
+        let err = native::message(k, &to, "hi", NU7 + 10).unwrap_err();
+        assert!(err.contains("not enough funds"), "{err}");
+        let key = ufvk_key(keys["ufvk"].as_str().unwrap());
+        let mut chain = Chain::new(NU7);
+        chain.push(vec![pays(external(&key), 100_000, no_memo(), None).0], 0);
+        chain.grow(2, 0);
+        let batch: Vec<Value> =
+            chain.blocks.iter().map(|b| json!(B64.encode(b.encode_to_vec()))).collect();
+        native::blocks(k, &batch, chain.last_height()).unwrap();
+        let made = v(&native::message(k, &to, "hello", chain.last_height()).unwrap());
+        let shape = (&made["parts"], &made["fee"], &made["change"]);
+        assert_eq!(shape, (&json!(1), &json!(10_000), &json!(90_000)));
+        let err = native::message(k, "nope", "hello", chain.last_height()).unwrap_err();
+        assert!(err.contains("must be a testnet unified address"), "{err}");
+        native::close(k).unwrap();
+        assert!(native::message(k, &to, "hello", 1).unwrap_err().contains("no open wallet"));
+    }
+
+    fn ufvk_key(ufvk: &str) -> FullViewingKey {
+        decode_ufvk(ufvk).unwrap().1.orchard().unwrap().clone()
     }
 }

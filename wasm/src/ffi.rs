@@ -9,6 +9,7 @@ use std::ffi::{c_char, CStr, CString};
 
 use serde_json::{json, Value};
 
+use crate::account;
 use crate::backup;
 use crate::ceremony;
 use crate::chain::native;
@@ -83,6 +84,14 @@ const METHODS: &[(&str, Method)] = &[
     ("walletMemoNeeds", |a| native::memo_needs(s(a, 0)?)),
     ("walletTransaction", |a| native::transaction(s(a, 0)?, s(a, 1)?, s(a, 2)?)),
     ("isDeepReorg", |a| Ok(crate::chain::is_deep_reorg(s(a, 0)?).to_string())),
+    ("isNodeRefusal", |a| Ok(crate::chain::is_node_refusal(s(a, 0)?).to_string())),
+    ("accountNew", |a| account::new_account(s(a, 0)?)),
+    ("accountKeys", |a| account::keys(s(a, 0)?, s(a, 1)?)),
+    ("addressAt", |a| account::address_at(s(a, 0)?, h(a, 1)?)),
+    ("splitMessage", |a| account::split_message(s(a, 0)?)),
+    ("joinMessage", |a| account::join_message(s(a, 0)?)),
+    ("accountSign", |a| account::sign(s(a, 0)?, s(a, 1)?, s(a, 2)?)),
+    ("walletMessage", |a| native::message(s(a, 0)?, s(a, 1)?, s(a, 2)?, h(a, 3)?)),
     ("parseRequest", |a| request::parse_request(s(a, 0)?, s(a, 1)?)),
     ("makeRequest", |a| request::make_request(s(a, 0)?, s(a, 1)?)),
 ];
@@ -147,6 +156,11 @@ mod tests {
         let out = unsafe { CStr::from_ptr(p) }.to_str().unwrap().to_owned();
         zf_free(p);
         serde_json::from_str(&out).unwrap()
+    }
+
+    /// The message of the error that `method` gives.
+    fn error_of(method: &str, args: Value) -> String {
+        ffi(method, args)["err"].as_str().expect("an error").to_string()
     }
 
     #[test]
@@ -237,12 +251,71 @@ mod tests {
     }
 
     #[test]
+    fn account_methods_match_the_wasm_names() {
+        let made = ffi("accountNew", json!(["testnet"]));
+        let account: Value = serde_json::from_str(made["ok"].as_str().unwrap()).unwrap();
+        let (seed, ufvk) = (account["seed"].as_str().unwrap(), account["ufvk"].as_str().unwrap());
+        let keys = ffi("accountKeys", json!([seed, "testnet"]));
+        let keys: Value = serde_json::from_str(keys["ok"].as_str().unwrap()).unwrap();
+        assert_eq!((&keys["ufvk"], &keys["address"]), (&account["ufvk"], &account["address"]));
+        assert_eq!(ffi("addressAt", json!([ufvk, 0]))["ok"], account["address"]);
+        let seven = ffi("addressAt", json!([ufvk, 7]));
+        assert_eq!(seven["ok"], account::address_at(ufvk, 7).unwrap());
+        assert!(error_of("addressAt", json!([ufvk, "7"])).contains("argument 1"));
+        assert!(error_of("addressAt", json!([ufvk, 4_294_967_296u64])).contains("out of range"));
+        assert!(error_of("accountKeys", json!(["0a", "testnet"])).contains("64"));
+        assert!(error_of("accountNew", json!(["regtest"])).contains("network"));
+        assert!(error_of("accountNew", json!([5])).contains("argument 0"));
+    }
+
+    #[test]
+    fn message_methods_match_the_wasm_names() {
+        let long = "ab".repeat(400);
+        let parts = ffi("splitMessage", json!([long]));
+        assert_eq!(parts["ok"], account::split_message(&long).unwrap());
+        let list: Vec<String> = serde_json::from_str(parts["ok"].as_str().unwrap()).unwrap();
+        assert_eq!(list.len(), 2);
+        let joined = ffi("joinMessage", json!([parts["ok"]]));
+        assert_eq!(joined["ok"], json!({"text": long}).to_string());
+        let lone = ffi("joinMessage", json!([r#"["(1/2) a"]"#]));
+        assert_eq!(lone["ok"], r#"{"text":null}"#);
+        assert_eq!(ffi("splitMessage", json!([""]))["err"], "The message is empty.");
+        assert!(error_of("splitMessage", json!([5])).contains("argument 0"));
+        assert!(error_of("joinMessage", json!([5])).contains("argument 0"));
+        assert!(error_of("joinMessage", json!(["{}"])).contains("memo list"));
+        let err = error_of("walletMessage", json!(["none", "u1x", "hi", 5]));
+        assert!(err.contains("no open wallet"), "{err}");
+        let err = error_of("walletMessage", json!(["none", "u1x", "hi", "5"]));
+        assert!(err.contains("argument 3"), "{err}");
+    }
+
+    #[test]
+    fn account_sign_matches_the_wasm_name() {
+        let seed = "0a".repeat(32);
+        let err = error_of("accountSign", json!(["AAAA", seed, "testnet"]));
+        assert!(err.contains("pczt"), "{err}");
+        assert_eq!(err, account::sign("AAAA", &seed, "testnet").unwrap_err());
+        let short = error_of("accountSign", json!(["AAAA", "0a", "testnet"]));
+        assert!(short.contains("64 hexadecimal"), "{short}");
+        assert!(error_of("accountSign", json!(["AAAA", seed])).contains("argument 2"));
+    }
+
+    #[test]
     fn the_apps_ask_the_engine_for_a_deep_reorganisation() {
         assert_eq!(ffi("isDeepReorg", json!(["sync failed"]))["ok"], "false");
         let said = format!("{} 100 blocks", crate::chain::DEEP_REORG);
         assert_eq!(ffi("isDeepReorg", json!([said.clone()]))["ok"], "true");
         let forged = format!("lightwalletd: {said}");
         assert_eq!(ffi("isDeepReorg", json!([forged]))["ok"], "false");
+    }
+
+    #[test]
+    fn the_apps_ask_the_engine_for_a_node_refusal() {
+        let said = format!("{}: bad-txns", crate::chain::NODE_REFUSED);
+        assert_eq!(ffi("isNodeRefusal", json!([said.clone()]))["ok"], "true");
+        assert_eq!(ffi("isNodeRefusal", json!(["lightwalletd: unavailable"]))["ok"], "false");
+        assert_eq!(ffi("isNodeRefusal", json!([format!("lightwalletd: {said}")]))["ok"], "false");
+        assert!(error_of("isNodeRefusal", json!([5])).contains("argument 0"));
     }
 
     #[test]

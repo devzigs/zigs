@@ -48,6 +48,7 @@ use serde::{de::DeserializeOwned, Deserialize, Serialize};
 use serde_json::{json, Value};
 use wasm_bindgen::prelude::*;
 
+mod account;
 mod backup;
 mod ceremony;
 mod chain;
@@ -231,13 +232,17 @@ fn parse_fvk(hex_fvk: &str) -> R<FullViewingKey> {
     FullViewingKey::from_bytes(&raw).ok_or_else(|| "invalid fvk".into())
 }
 
+fn ufvk_text(fvk: &FullViewingKey, net: Network) -> R<String> {
+    let ufvk = UnifiedFullViewingKey::from_orchard_fvk(fvk.clone()).map_err(e("ufvk"))?;
+    ufvk.encode(&net).map_err(e("ufvk encode"))
+}
+
 /// The wallet document that every signer stores: public keys and the address, no secret.
 fn wallet_doc(fvk: &FullViewingKey, net: Network) -> R<Value> {
-    let ufvk = UnifiedFullViewingKey::from_orchard_fvk(fvk.clone()).map_err(e("ufvk"))?;
     Ok(json!({
         "network": if net == Network::MainNetwork { "mainnet" } else { "testnet" },
         "orchard_fvk": hex::encode(fvk.to_bytes()),
-        "ufvk": ufvk.encode(&net).map_err(e("ufvk encode"))?,
+        "ufvk": ufvk_text(fvk, net)?,
         "address": address_of(fvk, net)?,
         "group_verifying_key": hex::encode(&fvk.to_bytes()[..32]),
     }))
@@ -889,6 +894,31 @@ pub fn js_backup_seal(passphrase: &str, plaintext: &str) -> Result<String, JsErr
 pub fn js_backup_open(passphrase: &str, sealed: &str) -> Result<String, JsError> {
     js(backup::open(passphrase, sealed))
 }
+#[wasm_bindgen(js_name = accountNew)]
+pub fn js_account_new(net: &str) -> Result<String, JsError> {
+    js(account::new_account(net))
+}
+#[wasm_bindgen(js_name = accountKeys)]
+pub fn js_account_keys(seed: &str, net: &str) -> Result<String, JsError> {
+    js(account::keys(seed, net))
+}
+/// `index` is a whole number from 0 to 4294967295. Anything else, also `undefined`, is an error.
+#[wasm_bindgen(js_name = addressAt)]
+pub fn js_address_at(ufvk: &str, index: JsValue) -> Result<String, JsError> {
+    js(account::index_of(index.as_f64()).and_then(|i| account::address_at(ufvk, i)))
+}
+#[wasm_bindgen(js_name = splitMessage)]
+pub fn js_split_message(text: &str) -> Result<String, JsError> {
+    js(account::split_message(text))
+}
+#[wasm_bindgen(js_name = joinMessage)]
+pub fn js_join_message(memos: &str) -> Result<String, JsError> {
+    js(account::join_message(memos))
+}
+#[wasm_bindgen(js_name = accountSign)]
+pub fn js_account_sign(pczt: &str, seed: &str, net: &str) -> Result<String, JsError> {
+    js(account::sign(pczt, seed, net))
+}
 #[wasm_bindgen(js_name = parseRequest)]
 pub fn js_parse_request(uri: &str, net: &str) -> Result<String, JsError> {
     js(request::parse_request(uri, net))
@@ -1257,7 +1287,7 @@ mod tests {
             let (memos, pending) = (&list[0]["memos"], &list[0]["memo_pending"]);
             match demo_text(i) {
                 t if t.is_empty() => assert_eq!(memos, &json!([])),
-                t => assert_eq!(memos, &json!([{"status": "text", "text": t}])),
+                t => assert_eq!(memos, &json!([{"status": "text", "text": t, "index": 0}])),
             }
             assert_eq!(pending, &json!(false));
             assert_eq!(chain::native::memo_needs(&k).unwrap(), "[]");
@@ -1289,7 +1319,8 @@ mod tests {
             assert_eq!(got, r#"{"attached":1}"#);
             assert_eq!(chain::native::memo_needs(k).unwrap(), "[]");
             let list = v(&chain::native::received(k).unwrap());
-            unreadable += usize::from(list[0]["memos"] == json!([{"status": "not_text"}]));
+            let unread = json!([{"status": "not_text", "index": 0}]);
+            unreadable += usize::from(list[0]["memos"] == unread);
             assert_eq!(list[0]["memo_pending"], false);
             chain::native::close(k).unwrap();
         }

@@ -20,6 +20,13 @@ export class ChainWallet {
     balance(): string;
     broadcast(tx_hex: string): Promise<string>;
     /**
+     * A message on chain. `to` is a unified address with an Orchard receiver and `text` is the
+     * message (`splitMessage` gives the rules). Each part is an output of zero value with its
+     * memo, so the account pays the fee only. Returns `{"pczt", "pool", "fee", "parts",
+     * "note_value", "change"}`. Sign it with `accountSign`, then `finalize`.
+     */
+    createMessage(to: string, text: string): Promise<string>;
+    /**
      * `payees` is a JSON list: `[{"to": "<unified address>", "amount": <zat>, "memo": "<text>"},
      * …]`. The memo is optional: at most 512 UTF-8 bytes.
      */
@@ -77,6 +84,17 @@ declare class IntoUnderlyingSource {
 }
 export type { IntoUnderlyingSource };
 
+export function accountKeys(seed: string, net: string): string;
+
+export function accountNew(net: string): string;
+
+export function accountSign(pczt: string, seed: string, net: string): string;
+
+/**
+ * `index` is a whole number from 0 to 4294967295. Anything else, also `undefined`, is an error.
+ */
+export function addressAt(ufvk: string, index: any): string;
+
 export function backupOpen(passphrase: string, sealed: string): string;
 
 export function backupSeal(passphrase: string, plaintext: string): string;
@@ -112,6 +130,13 @@ export function inspect(pczt: string, fvk: string): string;
  */
 export function isDeepReorg(message: string): boolean;
 
+/**
+ * True when an error message says that the node answered and refused the transaction.
+ */
+export function isNodeRefusal(message: string): boolean;
+
+export function joinMessage(memos: string): string;
+
 export function latestHeight(endpoint: string): Promise<number>;
 
 export function makeRequest(payees: string, net: string): string;
@@ -136,6 +161,8 @@ export function signShare(pczt: string, fvk: string, _package: string, approval:
 
 export function skCommit(wallet_id: string, seat: number, box_pk: string, r: string): string;
 
+export function splitMessage(text: string): string;
+
 export function start(): void;
 
 export function vaultSk(wallet_id: string, echo: string, parts: string): string;
@@ -156,6 +183,10 @@ export interface InitOutput {
     readonly __wbg_intounderlyingbytesource_free: (a: number, b: number) => void;
     readonly __wbg_intounderlyingsink_free: (a: number, b: number) => void;
     readonly __wbg_intounderlyingsource_free: (a: number, b: number) => void;
+    readonly accountKeys: (a: number, b: number, c: number, d: number) => [number, number, number, number];
+    readonly accountNew: (a: number, b: number) => [number, number, number, number];
+    readonly accountSign: (a: number, b: number, c: number, d: number, e: number, f: number) => [number, number, number, number];
+    readonly addressAt: (a: number, b: number, c: any) => [number, number, number, number];
     readonly backupOpen: (a: number, b: number, c: number, d: number) => [number, number, number, number];
     readonly backupSeal: (a: number, b: number, c: number, d: number) => [number, number, number, number];
     readonly boxKeypair: () => [number, number];
@@ -164,6 +195,7 @@ export interface InitOutput {
     readonly chainwallet_attachTransaction: (a: number, b: number, c: number, d: number, e: number) => [number, number, number, number];
     readonly chainwallet_balance: (a: number) => [number, number];
     readonly chainwallet_broadcast: (a: number, b: number, c: number) => any;
+    readonly chainwallet_createMessage: (a: number, b: number, c: number, d: number, e: number) => any;
     readonly chainwallet_createSpend: (a: number, b: number, c: number) => any;
     readonly chainwallet_memoNeeds: (a: number) => [number, number, number, number];
     readonly chainwallet_new: (a: number, b: number, c: number, d: number, e: number) => [number, number, number];
@@ -191,6 +223,8 @@ export interface InitOutput {
     readonly intounderlyingsource_cancel: (a: number) => void;
     readonly intounderlyingsource_pull: (a: number, b: any) => any;
     readonly isDeepReorg: (a: number, b: number) => number;
+    readonly isNodeRefusal: (a: number, b: number) => number;
+    readonly joinMessage: (a: number, b: number) => [number, number, number, number];
     readonly latestHeight: (a: number, b: number) => any;
     readonly makeRequest: (a: number, b: number, c: number, d: number) => [number, number, number, number];
     readonly normalizeAddress: (a: number, b: number) => [number, number, number, number];
@@ -203,6 +237,7 @@ export interface InitOutput {
     readonly signPackage: (a: number, b: number, c: number, d: number, e: number, f: number, g: number) => [number, number, number, number];
     readonly signShare: (a: number, b: number, c: number, d: number, e: number, f: number, g: number, h: number, i: number, j: number, k: number) => [number, number, number, number];
     readonly skCommit: (a: number, b: number, c: number, d: number, e: number, f: number, g: number) => [number, number, number, number];
+    readonly splitMessage: (a: number, b: number) => [number, number, number, number];
     readonly start: () => void;
     readonly vaultSk: (a: number, b: number, c: number, d: number, e: number, f: number) => [number, number, number, number];
     readonly walletCreate: (a: number, b: number, c: number, d: number) => [number, number, number, number];
