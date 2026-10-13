@@ -42,6 +42,11 @@ struct GroupState {
     var sessions: [Session] = []
     var commits: [String: [String: Doc]] = [:]
     var shares: [String: [String: Doc]] = [:]
+    /// The paths of the documents that a version 3 wallet ignored: no valid signature of the right
+    /// seat.
+    var ignoredPaths: [String] = []
+    /// True when the store shows another number of signers or rule than the first this device saw.
+    var shapeMoved: Bool { g?["shapeMoved"] as? Bool ?? false }
 
     /// FROST identifiers are the seat number as a 32-byte little-endian scalar, in hex.
     static func frostId(_ i: Int) -> String {
@@ -56,7 +61,7 @@ struct GroupState {
     }
 
     /// A restored seat must hold the key data that the wallet published for it: the share, the
-    /// public key package and the group key. The setup secret of a version 2 wallet is checked
+    /// public key package and the group key. The setup secret of a version 2 or 3 wallet is checked
     /// apart (GroupModel.fit). Same rule as fitsPublished in web/util.js.
     func published(_ i: Int, fits secret: Doc) -> Bool {
         guard let kp = secret.doc("keyPackage"), kp.str("identifier") == Self.frostId(i),
@@ -81,16 +86,20 @@ struct GroupState {
     var net: ZcashNetwork { .of(g?.str("network")) }
     /// The network name that the wallet document must carry. A group that names none is testnet.
     var netName: String { g?.str("network") == "mainnet" ? "mainnet" : "testnet" }
-    /// 1 when the group document has no version, 2 for the ZIP 2005 ceremony, 0 for a version this
-    /// app does not know.
-    var version: Int {
+    /// 1 when the group document has no version, 2 for the ZIP 2005 ceremony, 3 for that ceremony
+    /// with signed writes, 0 for a version this app does not know.
+    var version: Int { Self.version(of: g) }
+
+    static func version(of g: Doc?) -> Int {
         guard let v = g?["version"] else { return 1 }
         // A JSON true is not the number 1.
         guard let n = v as? NSNumber, CFGetTypeID(n) != CFBooleanGetTypeID(),
-              n.doubleValue == 1 || n.doubleValue == 2 else { return 0 }
+              [1.0, 2, 3].contains(n.doubleValue) else { return 0 }
         return n.intValue
     }
-    var seatIds: [Int] { n > 0 ? Array(1...n) : [] }
+    /// The seats of the wallet: 1 to `n`. A group document with no valid `n` has none, so a made-up
+    /// `n` never sizes an array.
+    var seatIds: [Int] { Signed.seatRange(n) }
     var allSeated: Bool { seatIds.allSatisfy { seats["\($0)"]?.str("boxPk") != nil } }
     var seatedCount: Int { seatIds.filter { seats["\($0)"] != nil }.count }
     var allR1: Bool { seatIds.allSatisfy { dkg1["\($0)"] != nil } }
@@ -125,13 +134,17 @@ struct GroupState {
 
 enum Gate { case ok, wait, mismatch }
 
+/// Versions 2 and 3 run the same key ceremony. Version 3 adds signed writes.
+func usesV2(_ version: Int) -> Bool { version == 2 || version == 3 }
+
 /// Seats whose confirm document holds another safety number than `number`.
 func numberClash(_ number: String, _ docs: [String: Doc], _ ids: [Int]) -> [Int] {
     ids.filter { i in docs["\(i)"]?.str("number").map { $0 != number } ?? false }
 }
 
-/// May the key ceremony of a version 2 wallet run? `mine` is the number the person confirmed on
-/// this device: a confirm document alone is only a claim. Same rules as confirmGate in web/util.js.
+/// May the key ceremony of a version 2 or 3 wallet run? `mine` is the number the person confirmed
+/// on this device: a confirm document alone is only a claim. Same rules as confirmGate in
+/// web/util.js.
 func confirmGate(_ number: String?, mine: String?, _ docs: [String: Doc], _ ids: [Int]) -> Gate {
     guard let number else { return .wait }
     if !numberClash(number, docs, ids).isEmpty { return .mismatch }
@@ -192,6 +205,12 @@ final class GroupModel {
     @ObservationIgnored var restoreWatches: [String: RestoreWatch] = [:]
     /// The last answers of the wallet check for a restored setup secret. See setupFit.
     @ObservationIgnored private var setupChecks: [String: Bool] = [:]
+    @ObservationIgnored let signPins = SignPins()
+    @ObservationIgnored let signMemo = SignedMemo()
+    @ObservationIgnored var signLogged = Set<String>()
+    /// The payment screen that is open. The wallet page counts the ignored approvals and shares
+    /// of this payment only, as the web app does.
+    var openPayment: String?
     @ObservationIgnored private var busy = Set<String>()
     @ObservationIgnored private(set) var me: String
     @ObservationIgnored private var proving = Set<String>()
@@ -263,7 +282,7 @@ final class GroupModel {
         refresh()   // with no groups, no socket ever reports, so show the state now
     }
 
-    private func note(_ msg: String) {
+    func note(_ msg: String) {
         let time = Date().formatted(date: .omitted, time: .standard)
         log.insert("\(time)  \(msg)", at: 0)
         if log.count > 60 { log.removeLast() }
@@ -286,11 +305,18 @@ final class GroupModel {
             let aad = path + "\n" + field, cacheKey = aad + "\n" + ct
             if let hit = opened[cacheKey] { out[field] = hit; continue }
             guard let pt = try? Engine.call("secretOpen", [k, aad, ct]),
-                  let val = try? Engine.parse(pt) else { continue }
+                  let val = try? Engine.parse(pt), shallow(val) else { continue }
             opened[cacheKey] = val
             out[field] = val
         }
         return out.isEmpty && !raw.isEmpty ? nil : out
+    }
+
+    /// The same depth limit as the web app, which drops a stored value nested deeper than 32.
+    private func shallow(_ v: Any, _ depth: Int = 0) -> Bool {
+        if let d = v as? Doc { return depth < 32 && d.values.allSatisfy { shallow($0, depth + 1) } }
+        if let a = v as? [Any] { return depth < 32 && a.allSatisfy { shallow($0, depth + 1) } }
+        return true
     }
 
     private func seal(_ path: String, _ data: Doc) throws -> Doc {
@@ -302,6 +328,12 @@ final class GroupModel {
 
     private func put(_ path: String, _ data: Doc) async throws { try await store.set(path, seal(path, data)) }
     private func patch(_ path: String, _ data: Doc) async throws { try await store.update(path, seal(path, data)) }
+
+    /// Writes the document at `rel`, a path below the wallet, with the signature of seat `seat`
+    /// in a version 3 wallet.
+    private func putSigned(_ gid: String, _ rel: String, as seat: Int, _ fields: Doc) async throws {
+        try await put("groups/\(gid)/\(rel)", signed(gid, rel, as: seat, fields))
+    }
 
     private func children(_ path: String) -> [String: Doc] {
         var out: [String: Doc] = [:]
@@ -325,19 +357,37 @@ final class GroupModel {
     private func readGroups() {
         var list: [GroupInfo] = [], ws: [String: Doc] = [:], counts: [String: Int] = [:]
         for (id, raw) in store.children("groups") {
-            guard let g = open("groups/" + id, raw) else { continue }
+            guard let stored = open("groups/" + id, raw) else { continue }
+            pinVersion(id, stored)
+            let g = trusted(id, stored)
             list.append(GroupInfo(id: id, doc: g))
+            let reader = signedReader(id, g)
             let wpath = "groups/\(id)/meta/wallet"
-            if let w = open(wpath, store.docs[wpath]) { ws[id] = w }
+            if let w = open(wpath, store.docs[wpath]) { ws[id] = reader.map { $0.wallet(w) } ?? w }
             if !vault.seats(in: id).isEmpty {
-                let base = "groups/\(id)/sessions"
-                let sessions = children(base).map { Session(id: $0.key, doc: $0.value) }
-                counts[id] = sessions.filter { needsMyApproval(id, $0) }.count
+                counts[id] = sessionsOf(id, reader).filter { needsMyApproval(id, $0) }.count
             }
         }
         groups = list.sorted { $0.createdAt > $1.createdAt }
         wallets = ws
         toApprove = counts
+    }
+
+    /// The reader of a signed wallet, with the keys pinned from its seat documents, or nil for a
+    /// wallet before version 3.
+    private func signedReader(_ gid: String, _ g: Doc) -> SignedReader? {
+        guard signedMode(gid) else { return nil }
+        let n = g.int("n") ?? 0
+        pinSeats(gid, n: n, children("groups/\(gid)/seats"))
+        return reader(gid, n: n)
+    }
+
+    /// The payments of a wallet. A signed wallet shows only those with a valid proposal.
+    private func sessionsOf(_ gid: String, _ reader: SignedReader?) -> [Session] {
+        children("groups/\(gid)/sessions").compactMap { id, d in
+            guard let reader else { return Session(id: id, doc: d) }
+            return Signed.readSession(id, d, reader).doc.map { Session(id: id, doc: $0) }
+        }
     }
 
     /// Reads the open wallet again. A restore that settles can change the seats of this device,
@@ -348,6 +398,32 @@ final class GroupModel {
     }
 
     private func load(_ gid: String) -> GroupState {
+        var s = readStore(gid)
+        pinVersion(gid, s.g)
+        if let g = s.g { s.g = trusted(gid, g) }
+        if s.g != nil && signedMode(gid) { keepSigned(gid, &s) }
+        // The store's verify documents are claims anyone with the wallet key can write. For its own
+        // seats this device uses its own result, tied to the exact wallet document.
+        let wk = Self.walletKey(s.wallet)
+        for i in vault.seats(in: gid) where owns(i, s, gid) {
+            let sec = vault.sec(gid, i)
+            let checked = sec.str("checkedWallet") == wk, rejected = sec.str("rejectedWallet") == wk
+            let mine: Bool? = checked ? true : rejected ? false : nil
+            s.verify["\(i)"] = mine.map { ["ok": $0] }
+        }
+        return s
+    }
+
+    /// Keeps the documents of a version 3 wallet that carry a valid signature of the right seat.
+    private func keepSigned(_ gid: String, _ s: inout GroupState) {
+        pinSeats(gid, n: s.n, s.seats)
+        let bad = s.keepSigned(reader(gid, n: s.n))
+        s.ignoredPaths = bad
+        logIgnored(gid, bad)
+    }
+
+    /// The documents of one wallet as the store holds them, decrypted.
+    private func readStore(_ gid: String) -> GroupState {
         let base = "groups/" + gid
         var s = GroupState()
         s.g = open(base, store.docs[base])
@@ -359,14 +435,6 @@ final class GroupModel {
         s.done = children(base + "/done")
         s.verify = children(base + "/verify")
         s.wallet = open(base + "/meta/wallet", store.docs[base + "/meta/wallet"])
-        // The store's verify documents are claims anyone with the wallet key can write. For its own
-        // seats this device uses its own result, tied to the exact wallet document.
-        let wk = Self.walletKey(s.wallet)
-        for i in vault.seats(in: gid) where owns(i, s, gid) {
-            let sec = vault.sec(gid, i)
-            let mine: Bool? = sec.str("checkedWallet") == wk ? true : sec.str("rejectedWallet") == wk ? false : nil
-            s.verify["\(i)"] = mine.map { ["ok": $0] }
-        }
         s.sessions = children(base + "/sessions").map { Session(id: $0.key, doc: $0.value) }
             .sorted { ($0.doc.int("createdAt") ?? 0) > ($1.doc.int("createdAt") ?? 0) }
         for ss in s.sessions {
@@ -379,6 +447,7 @@ final class GroupModel {
     func select(_ id: String?) {
         guard id != gid else { return }
         gid = id
+        if let id { signLogged = signLogged.filter { !$0.hasPrefix(id + "|") } }
         chain?.close()
         chain = nil
         state = id.map(load) ?? GroupState()
@@ -400,11 +469,11 @@ final class GroupModel {
         return st.published(i, fits: s) ? setupFit(i, s, done, in: st) : false
     }
 
-    /// A seat of a version 2 wallet must hold the setup secret that, with the seat's published
+    /// A seat of a version 2 or 3 wallet must hold the setup secret that, with the seat's published
     /// data, gives the full viewing key of the wallet. A seat of another version holds none. The
     /// engine call is slow and views ask again and again, so the answers are kept.
     private func setupFit(_ i: Int, _ s: Doc, _ done: Doc, in st: GroupState) -> Bool? {
-        guard let sk = s.str("vaultSk") else { return st.version != 2 }
+        guard let sk = s.str("vaultSk") else { return !usesV2(st.version) }
         guard let wallet = st.wallet else { return nil }
         let published = done["publicKeyPackage"] ?? NSNull()
         let package = published as? String ?? Engine.json(published)
@@ -466,7 +535,8 @@ final class GroupModel {
     var inFlight: [Session] {
         guard let chain else { return [] }
         return state.sessions.filter {
-            has($0.doc["broadcastTxid"]) && !chain.sent.contains($0.doc.doc("final")?.str("txid") ?? "")
+            has($0.doc["broadcastTxid"]) && $0.doc.doc("final") != nil
+                && !chain.sent.contains($0.doc.doc("final")?.str("txid") ?? "")
         }
     }
 
@@ -602,13 +672,13 @@ final class GroupModel {
     }
 
     private func keyReplaced(_ i: Int, _ s: Doc) -> String? {
-        guard seatMode(s) == 2, let mine = s.str("boxPk"),
+        guard usesV2(seatMode(s)), let mine = s.str("boxPk"),
               let shown = state.seats["\(i)"]?.str("boxPk"), mine != shown else { return nil }
         return "Your seat key was replaced"
     }
 
     private func numberChanged(_ s: Doc) -> String? {
-        guard seatMode(s) == 2, !has(s["keyPackage"]), let confirmed = s.str("confirmed"),
+        guard usesV2(seatMode(s)), !has(s["keyPackage"]), let confirmed = s.str("confirmed"),
               let number = safetyNumber, confirmed != number else { return nil }
         return "The safety number changed after you confirmed it. Someone may have replaced a seat"
     }
@@ -626,10 +696,11 @@ final class GroupModel {
             if !has(s["aborted"]), let reason = conflictOf(i, s) {
                 vault.putSec(gid, i, ["aborted": abortText(reason)])
             }
-            guard let text = vault.sec(gid, i).str("aborted"), !state.abortSent(i) else {
-                continue
+            guard let text = vault.sec(gid, i).str("aborted"), !state.abortSent(i),
+                  canWriteAs(i, in: gid) else { continue }
+            once("abort:\(i)") {
+                try await self.putSigned(gid, "abort/\(i)", as: i, ["reason": text])
             }
-            once("abort:\(i)") { try await self.put("groups/\(gid)/abort/\(i)", ["reason": text]) }
         }
     }
 
@@ -649,8 +720,9 @@ final class GroupModel {
 
     private func advanceSeat(_ gid: String, _ i: Int) {
         let s = vault.sec(gid, i)
-        if isStopped(s) { return }
-        let started = seatMode(s) == 2 ? stepV2(gid, i, s) : stepV1(gid, i, s)
+        // A seat that cannot sign writes nothing in a version 3 wallet (SignedNotes says so).
+        if isStopped(s) || !canWriteAs(i, in: gid) { return }
+        let started = usesV2(seatMode(s)) ? stepV2(gid, i, s) : stepV1(gid, i, s)
         if !started && needVerify(i, s) {
             once("verify:\(i)") { try await self.verifyWallet(gid, i) }
         }
@@ -682,7 +754,8 @@ final class GroupModel {
         let s = vault.sec(gid, i)
         let groupKey = s.str("groupKey") ?? ""
         let package = Engine.json(s["publicKeyPackage"] ?? NSNull())
-        try await put("groups/\(gid)/done/\(i)", ["groupKey": groupKey, "publicKeyPackage": package, "at": now()])
+        try await putSigned(gid, "done/\(i)", as: i,
+                            ["groupKey": groupKey, "publicKeyPackage": package, "at": now()])
         vault.putSec(gid, i, ["doneSent": true])
         note("seat \(i): key share ready, group key \(groupKey.prefix(12))…")
     }
@@ -694,7 +767,8 @@ final class GroupModel {
             vault.putSec(gid, i, ["r1secret": r["secret"] ?? NSNull(), "r1package": r["package"] ?? NSNull()])
             s = vault.sec(gid, i)
         }
-        try await put("groups/\(gid)/dkg1/\(i)", ["package": s["r1package"] ?? NSNull(), "at": now()])
+        try await putSigned(gid, "dkg1/\(i)", as: i,
+                            ["package": s["r1package"] ?? NSNull(), "at": now()])
         note("seat \(i): round 1 commitment published")
     }
 
@@ -707,7 +781,7 @@ final class GroupModel {
         for (to, pkg) in outgoing {
             guard let pk = state.seats[to]?.str("boxPk"), let sk = s.str("boxSk") else { continue }
             let sealed = try Engine.call("boxSeal", [sk, pk, "\(gid):\(i)->\(to)", Engine.json(pkg)])
-            try await put("groups/\(gid)/dkg2/\(i)-\(to)", ["sealed": sealed, "at": now()])
+            try await putSigned(gid, "dkg2/\(i)-\(to)", as: i, ["sealed": sealed, "at": now()])
         }
         vault.putSec(gid, i, ["r2secret": r["secret"] ?? NSNull(), "r1secret": NSNull()])
         note("seat \(i): \(outgoing.count) encrypted shares sent")
@@ -729,7 +803,7 @@ final class GroupModel {
                               "groupKey": groupKey, "r2secret": NSNull(), "r1package": NSNull()])
     }
 
-    // MARK: Key ceremony, version 2
+    // MARK: Key ceremony, versions 2 and 3
     // The safety number covers the wallet id, t, n, the network and every seat's encryption key. The
     // signers compare it out of band. A confirm document is only a claim, so a seat also keeps the
     // number its person confirmed ("confirmed"), and the ceremony runs only when both agree with the
@@ -745,18 +819,22 @@ final class GroupModel {
         return try? Engine.call("safetyNumber", args)
     }
 
-    private func canConfirm(_ s: Doc) -> Bool { !has(s["keyPackage"]) && !has(s["aborted"]) && seatMode(s) == 2 }
+    private func canConfirm(_ s: Doc) -> Bool {
+        !has(s["keyPackage"]) && !has(s["aborted"]) && usesV2(seatMode(s))
+    }
 
     private var confirmable: [Int] {
         guard let gid else { return [] }
-        return localSeats.filter { canConfirm(vault.sec(gid, $0)) }
+        return localSeats.filter { canWriteAs($0, in: gid) && canConfirm(vault.sec(gid, $0)) }
     }
 
     /// A device that holds every seat has nobody else to compare with.
     var holdsAllSeats: Bool { localSeats.count == state.n }
 
     /// The safety number card shows until every seat holds its key share.
-    var safetyOpen: Bool { state.version == 2 && state.allSeated && !state.allDone && !holdsAllSeats }
+    var safetyOpen: Bool {
+        usesV2(state.version) && state.allSeated && !state.allDone && !holdsAllSeats
+    }
 
     /// Seats of this device whose person has not yet confirmed the safety number.
     var unconfirmedSeats: [Int] {
@@ -792,7 +870,7 @@ final class GroupModel {
 
     /// Seats whose round-1 document has no commitment: an old app made it.
     private var oldAppText: String? {
-        guard state.version == 2 else { return nil }
+        guard usesV2(state.version) else { return nil }
         let old = state.seatIds.filter { i in
             state.dkg1["\(i)"].map { !Self.isHex64($0.str("commit")) } ?? false
         }
@@ -802,13 +880,13 @@ final class GroupModel {
     }
 
     private var unreadableKeyText: String? {
-        guard state.version == 2, state.allSeated, safetyNumber == nil else { return nil }
+        guard usesV2(state.version), state.allSeated, safetyNumber == nil else { return nil }
         return "A seat holds a key that this app cannot read. Do not use this wallet. "
             + "Create a new wallet."
     }
 
     private var clashText: String? {
-        guard state.version == 2, !state.allDone, let no = safetyNumber else { return nil }
+        guard usesV2(state.version), !state.allDone, let no = safetyNumber else { return nil }
         let clash = numberClash(no, state.confirm, state.seatIds)
         guard !clash.isEmpty else { return nil }
         let seats = clash.map(String.init).joined(separator: ", ")
@@ -816,7 +894,7 @@ final class GroupModel {
     }
 
     private var waitText: String? {
-        guard state.version == 2, !state.allDone, let no = safetyNumber else { return nil }
+        guard usesV2(state.version), !state.allDone, let no = safetyNumber else { return nil }
         let yes = confirmedBy(no).count
         guard state.dkg1.count < state.n, yes < state.n else { return nil }
         return "Starts when every signer confirmed the safety number (\(yes) of \(state.n))."
@@ -833,7 +911,7 @@ final class GroupModel {
     /// Writes the confirm document of a seat whose person confirmed but whose document is missing,
     /// and confirms for itself when this device holds every seat.
     private func reactConfirm(_ gid: String) {
-        guard state.version == 2, let no = safetyNumber else { return }
+        guard usesV2(state.version), let no = safetyNumber else { return }
         let auto = holdsAllSeats
         let todo = confirmable.filter { i in
             vault.sec(gid, i).str("confirmed") == no ? state.confirm["\(i)"] == nil : auto
@@ -852,8 +930,10 @@ final class GroupModel {
 
     private func confirmSeats(_ gid: String, _ ids: [Int], _ no: String) async throws {
         for i in ids {
+            // Sign first: a seat that cannot sign must not keep a number that nobody saw.
+            let doc = try signed(gid, "confirm/\(i)", as: i, ["number": no])
             vault.putSec(gid, i, ["confirmed": no])
-            try await put("groups/\(gid)/confirm/\(i)", ["number": no])
+            try await put("groups/\(gid)/confirm/\(i)", doc)
         }
         note("safety number confirmed for seat \(ids.map(String.init).joined(separator: ", "))")
     }
@@ -912,7 +992,8 @@ final class GroupModel {
             throw ZigsError("Seat \(i) has no key or setup secret.")
         }
         let commit = try Engine.call("skCommit", [gid, i, boxPk, part])
-        try await put("groups/\(gid)/dkg1/\(i)", ["package": s["r1package"] ?? NSNull(), "commit": commit, "at": now()])
+        try await putSigned(gid, "dkg1/\(i)", as: i,
+                            ["package": s["r1package"] ?? NSNull(), "commit": commit, "at": now()])
         note("seat \(i): round 1 commitment published")
     }
 
@@ -948,7 +1029,8 @@ final class GroupModel {
         }
         vault.putSec(gid, i, ["echo": out.echo])
         for (to, sealed) in out.boxes {
-            try await put("groups/\(gid)/dkg2/\(i)-\(to)", ["sealed": sealed, "echo": out.echo, "at": now()])
+            try await putSigned(gid, "dkg2/\(i)-\(to)", as: i,
+                                ["sealed": sealed, "echo": out.echo, "at": now()])
         }
         vault.putSec(gid, i, ["r2secret": out.secret, "r1secret": NSNull()])
         note("seat \(i): \(out.boxes.count) encrypted shares sent")
@@ -1028,14 +1110,16 @@ final class GroupModel {
             ok = false
             reason = error.localizedDescription
         }
+        // Sign first: the result is kept only for a seat that can tell the others.
+        let doc = try signed(gid, "verify/\(i)", as: i, ["ok": ok, "error": reason, "at": now()])
         vault.putSec(gid, i, ok ? ["checkedWallet": wk, "rejectedWallet": NSNull()] : ["rejectedWallet": wk])
-        try await put("groups/\(gid)/verify/\(i)", ["ok": ok, "error": reason, "at": now()])
+        try await put("groups/\(gid)/verify/\(i)", doc)
         note(ok ? "seat \(i): wallet verified, ak equals my group key" : "seat \(i): WALLET REJECTED")
     }
 
     /// The wallet must name its group's network. A seat that holds sk checks every part of the
     /// wallet, so only version 2 verification applies to it, whatever the stored documents say. A
-    /// seat without sk never accepts a version 2 wallet.
+    /// seat without sk never accepts a version 2 or 3 wallet.
     private func verifyCall(_ s: Doc) throws {
         guard state.wallet?.str("network") == state.netName else {
             throw ZigsError("The wallet names another network than its group. Do not use this wallet.")
@@ -1045,8 +1129,9 @@ final class GroupModel {
             _ = try Engine.call("walletVerifyV2", [wallet, pkp, sk])
             return
         }
-        if state.version == 2 {
-            throw ZigsError("This seat holds no setup secret for a version 2 wallet. Do not use this wallet.")
+        if usesV2(state.version) {
+            throw ZigsError("This seat holds no setup secret for a version 2 or 3 wallet. "
+                + "Do not use this wallet.")
         }
         _ = try Engine.call("walletVerify", [wallet, pkp])
     }
@@ -1057,12 +1142,14 @@ final class GroupModel {
     }
 
     private var canCreateWallet: Bool {
-        isCreator && state.wallet == nil && state.keysAgree && (state.version != 2 || v2Secret != nil)
+        guard let gid else { return false }
+        return isCreator && state.wallet == nil && state.keysAgree
+            && (!usesV2(state.version) || v2Secret != nil) && canWriteAs(1, in: gid)
     }
 
     /// The wallet document for the group's version, or nil when its key data is not there yet.
     private func walletDoc(_ net: String) throws -> Doc? {
-        if state.version == 2 {
+        if usesV2(state.version) {
             guard let mine = v2Secret, let sk = mine.str("vaultSk") else { return nil }
             return try Engine.object("walletCreateV2", [Engine.json(mine["publicKeyPackage"] ?? NSNull()), net, sk])
         }
@@ -1073,21 +1160,41 @@ final class GroupModel {
     /// The creator builds the shared wallet once every seat computed the same group key.
     private func createWallet(_ gid: String) async throws {
         // The wallet document can arrive after the key ones; never replace a published wallet.
-        if store.docs["groups/\(gid)/meta/wallet"] != nil { return }
+        if walletStands(gid) { return }
         var birthday: Int?
         for url in state.net.servers where birthday == nil { birthday = try? await Lightwalletd.latestHeight(url) }
         guard let birthday else { throw ZigsError("No light-wallet server answers, so the wallet cannot be dated.") }
+        // The person may have opened another wallet while the server answered.
+        guard self.gid == gid else { return }
         guard var w = try walletDoc(state.g?.str("network") ?? "testnet") else { return }
         w["birthday"] = birthday
         w["at"] = now()
-        try await put("groups/\(gid)/meta/wallet", w)
+        try await putSigned(gid, "meta/wallet", as: 1, w)
         note("wallet created: \((w.str("address") ?? "").prefix(24))…")
     }
 
+    /// Does the stored wallet document stand? In a version 3 wallet, a document that seat 1 did not
+    /// sign is no wallet, so it does not block the real one.
+    private func walletStands(_ gid: String) -> Bool {
+        let path = "groups/\(gid)/meta/wallet"
+        guard let stored = store.docs[path] else { return false }
+        guard signedMode(gid) else { return true }
+        return open(path, stored).map { reader(gid, n: state.n).wallet($0) != nil } ?? false
+    }
+
+    /// In a version 3 wallet the proposer is the seat in `by`, if this device can sign for it.
+    /// Before, it is the identity in `createdBy`.
+    private func isProposer(_ gid: String, _ ss: Session) -> Bool {
+        guard signedMode(gid) else { return isMe(ss.doc.str("createdBy")) }
+        guard let by = ss.doc.int("by") else { return false }
+        return localSeats.contains(by) && canWriteAs(by, in: gid)
+    }
+
     private func reactSession(_ ss: Session) {
-        guard let gid, let fvk = state.wallet?.str("orchard_fvk"), !has(ss.doc["error"]) else { return }
+        guard let gid, let fvk = state.wallet?.str("orchard_fvk"), !has(ss.doc["error"]),
+              canAct else { return }
         // Proposer: once enough signers approve, build the signing package.
-        if isMe(ss.doc.str("createdBy")) && !has(ss.doc["package"]) {
+        if isProposer(gid, ss) && !has(ss.doc["package"]) {
             proposePackage(gid, ss, fvk)
             return
         }
@@ -1104,7 +1211,9 @@ final class GroupModel {
             var c = Doc()
             for i in ids { c["\(i)"] = commits["\(i)"]?["commitments"] }
             let pkg = try Engine.call("signPackage", [ss.doc.str("pczt") ?? "", fvk, Engine.json(c), self.state.t])
-            try await self.patch(path, ["package": pkg, "signers": Array(ids), "status": "signing"])
+            let fields: Doc = ["package": pkg, "signers": Array(ids)]
+            let data = try self.partSigned(gid, ss.id, .package, fields, prefer: ss.doc.int("by"))
+            try await self.patch(path, data.merging(["status": "signing"]) { $1 })
             self.note("signing package sent to signers \(ids.map(String.init).joined(separator: ", "))")
         }
     }
@@ -1114,7 +1223,8 @@ final class GroupModel {
     private func signAndAggregate(_ gid: String, _ ss: Session, _ fvk: String, _ package: String) {
         let signers = (ss.doc["signers"] as? [NSNumber])?.map(\.intValue) ?? []
         let shares = state.shares[ss.id] ?? [:]
-        for i in localSeats where signers.contains(i) && shares["\(i)"] == nil {
+        let todo = localSeats.filter { signers.contains($0) && canWriteAs($0, in: gid) }
+        for i in todo where shares["\(i)"] == nil {
             guard let n = vault.sec(gid, i).doc("nonces")?.doc(ss.id) else { continue }
             once("share:\(ss.id):\(i)") { try await self.signShare(gid, ss, i, fvk, package, n) }
         }
@@ -1137,18 +1247,21 @@ final class GroupModel {
         let approved = n.str("sighash")
         guard approved != nil, case .success(let ins) = inspect(ss), ins.str("sighash") == approved else {
             vault.putSec(gid, i, ["nonces": nonces])
-            try await patch("groups/\(gid)/sessions/\(ss.id)",
-                            ["error": "The payment changed after a signer approved it.", "status": "failed"])
+            let why = "The payment changed after a signer approved it."
+            try await failSession(gid, ss, why, prefer: i)
             throw ZigsError("This payment changed after you approved it, so this device did not sign it.")
         }
         // The engine checks the approved sighash again before it signs.
         let share = try Engine.call("signShare", [ss.doc.str("pczt") ?? "", fvk, package, Engine.json(n),
                                                   Engine.json(s["keyPackage"] ?? NSNull()), i])
+        // A seat that cannot sign fails here, before the nonce is burned.
+        let rel = "sessions/\(ss.id)/shares/\(i)"
+        let doc = try signed(gid, rel, as: i, ["shares": share, "at": now()])
         // Burn the nonces before the share goes out: a nonce that comes back could sign twice.
         guard vault.putSec(gid, i, ["nonces": nonces]) else {
             throw ZigsError("Could not save the used nonce, so the signature share was not sent.")
         }
-        try await put("groups/\(gid)/sessions/\(ss.id)/shares/\(i)", ["shares": share, "at": now()])
+        try await put("groups/\(gid)/\(rel)", doc)
         note("seat \(i): signature share sent")
     }
 
@@ -1158,15 +1271,28 @@ final class GroupModel {
         for i in signers { sh["\(i)"] = try Engine.parse(shares["\(i)"]?.str("shares") ?? "") }
         let path = "groups/\(gid)/sessions/\(ss.id)"
         let pkp = state.done["1"]?.str("publicKeyPackage") ?? ""
+        let r: Doc
         do {
-            let r = try Engine.object("signAggregate", [ss.doc.str("pczt") ?? "", pkp, package, Engine.json(sh)])
-            try await patch(path, ["signed": r["signed_pczt"] ?? NSNull(), "signatures": r["signatures"] ?? NSNull(),
-                                   "status": "signed"])
-            note("signatures aggregated and verified under rk")
+            r = try Engine.object("signAggregate",
+                                  [ss.doc.str("pczt") ?? "", pkp, package, Engine.json(sh)])
         } catch {
-            try await patch(path, ["error": error.localizedDescription, "status": "failed"])
+            try await failSession(gid, ss, error.localizedDescription)
             throw error
         }
+        // A seat signs the result. A seat that cannot sign is no failure of the payment.
+        let result: Doc = ["signed": r["signed_pczt"] ?? NSNull(),
+                           "signatures": r["signatures"] ?? NSNull()]
+        let data = try partSigned(gid, ss.id, .signed, result)
+        try await patch(path, data.merging(["status": "signed"]) { $1 })
+        note("signatures aggregated and verified under rk")
+    }
+
+    /// Marks a payment as failed. In a version 3 wallet the failure carries a seat's signature.
+    private func failSession(_ gid: String, _ ss: Session, _ error: String,
+                             prefer: Int? = nil) async throws {
+        var data = try partSigned(gid, ss.id, .failure, ["error": error], prefer: prefer)
+        data["status"] = "failed"
+        try await patch("groups/\(gid)/sessions/\(ss.id)", data)
     }
 
     // MARK: Actions
@@ -1202,13 +1328,15 @@ final class GroupModel {
     private func takeFirstOpenSeat() {
         guard autoSeat, store.connected else { return }
         autoSeat = false
-        // A wallet that is not version 2 asks the person first (the join card shows the warning).
-        guard state.version == 2, localSeats.isEmpty, let open = state.seatIds.first(where: { state.seats["\($0)"] == nil }) else { return }
-        takeSeat(open)
+        // A wallet that is not version 2 or 3 asks the person first (the join card warns).
+        let free = state.seatIds.first { state.seats["\($0)"] == nil }
+        guard usesV2(state.version), localSeats.isEmpty, let free else { return }
+        takeSeat(free)
     }
 
-    /// The seat keeps the version of its wallet and its own box key. The store can show another
-    /// version or key later (reactStops). `version` is only set for a wallet that is new here.
+    /// The seat keeps the version of its wallet, its own box key and its own signing key. The store
+    /// can show another version or box key later (reactStops). `version` is only set for a wallet
+    /// that is new here. Every seat gets a signing key; a version 3 wallet needs it.
     func takeSeat(_ i: Int, version: Int? = nil) {
         guard let gid else { return }
         once("seat:\(i)") {
@@ -1220,8 +1348,22 @@ final class GroupModel {
             }
             if self.state.seats["\(i)"]?.str("uid") != nil { throw ZigsError("Seat \(i) is already taken.") }
             let kp = try Engine.object("boxKeypair", [])
-            self.vault.putSec(gid, i, ["boxSk": kp["sk"] ?? NSNull(), "version": version])
-            try await self.put(path, ["uid": self.me, "name": self.name, "boxPk": kp["pk"] ?? NSNull(), "at": now()])
+            let sign = Signed.newKey()
+            let secret: Doc = ["boxSk": kp["sk"] ?? NSNull(), "version": version,
+                               "signSk": sign.signSk, "signPk": sign.signPk]
+            guard self.vault.putSec(gid, i, secret) else {
+                throw ZigsError("This \(deviceName) could not save the keys of your seat, "
+                    + "so the seat was not taken.")
+            }
+            var seatDoc: Doc = ["uid": self.me, "name": self.name, "boxPk": kp["pk"] ?? NSNull(),
+                                "signPk": sign.signPk, "at": now()]
+            // In a version 3 wallet the seat signs its own document with the new key. Readers
+            // pin this key only when the signature checks out.
+            if version == 3 {
+                let signer = Signed.Signer(seat: i, signSk: sign.signSk)
+                seatDoc = try Signed.signDoc(gid, "seats/\(i)", as: signer, seatDoc)
+            }
+            try await self.put(path, seatDoc)
             // Saved only after the store holds the seat: a failed take must not look like a replaced key.
             self.vault.putSec(gid, i, ["boxPk": kp["pk"] ?? NSNull()])
             self.note("you took seat \(i)")
@@ -1240,29 +1382,35 @@ final class GroupModel {
             .replacingOccurrences(of: "/", with: "_").replacingOccurrences(of: "=", with: "")
         vault.putKey(id, b64)
         store.join(id)
-        var g: Doc = ["name": name, "n": n, "t": t, "network": network, "version": 2, "createdBy": me, "createdAt": now()]
+        var g: Doc = ["name": name, "n": n, "t": t, "network": network, "version": 3,
+                      "createdBy": me, "createdAt": now()]
         if let from { g["movedFrom"] = from }
         try await put("groups/\(id)", g)
         if let from { try await patch("groups/\(from)", ["movedTo": id, "movedAt": now()]) }
         path = [id]
         select(id)
-        takeSeat(1, version: 2)
+        takeSeat(1, version: 3)
     }
 
     /// Proposes a payment to one or more recipients, in one transaction. `payees` and `note` are
     /// the proposer's words, which approvers check against the transaction itself.
     func propose(payees: [(to: String, amount: Int)], note: String?, move: String? = nil) async throws {
         guard let gid, let chain, chain.balance != nil else { throw ZigsError("The wallet has not finished its first sync.") }
+        if signedMode(gid) && writer(in: gid) == nil { throw ZigsError(Signed.noSeatKey) }
         let list: [Doc] = payees.map { ["to": $0.to, "amount": $0.amount] }
         let amount = payees.reduce(0) { $0 + $1.amount }
         let t = try await chain.spend(payees: list)
         let sid = randomHex(10)
-        try await put("groups/\(gid)/sessions/\(sid)", [
-            "createdBy": myUid, "createdAt": now(), "payees": list, "note": note ?? NSNull(),
-            "pool": t["pool"] ?? "ironwood",
-            "amount": t["amount"] ?? amount, "change": t["change"] ?? 0, "fee": t["fee"] ?? 0,
-            "noteValue": t["note_value"] ?? 0, "pczt": t["pczt"] ?? "", "move": move ?? NSNull(), "status": "collecting",
-        ])
+        let fields: Doc = [
+            "createdAt": now(), "payees": list, "note": note ?? NSNull(),
+            "pool": t["pool"] ?? "ironwood", "amount": t["amount"] ?? amount,
+            "change": t["change"] ?? 0, "fee": t["fee"] ?? 0,
+            "noteValue": t["note_value"] ?? 0, "pczt": t["pczt"] ?? "", "move": move ?? NSNull(),
+        ]
+        var doc = try partSigned(gid, sid, .proposal, fields)
+        doc["createdBy"] = myUid
+        doc["status"] = "collecting"
+        try await put("groups/\(gid)/sessions/\(sid)", doc)
         self.note("new payment: \(zec(amount))")
         notice = "Payment proposed. It needs \(state.t) approvals."
     }
@@ -1297,6 +1445,7 @@ final class GroupModel {
         let commits = state.commits[ss.id] ?? [:]
         return localSeats.filter {
             has(vault.sec(gid, $0)["keyPackage"]) && has(state.verify["\($0)"]?["ok"]) && commits["\($0)"] == nil
+                && canWriteAs($0, in: gid)
         }
     }
 
@@ -1323,11 +1472,14 @@ final class GroupModel {
             var nonces = s.doc("nonces") ?? [:]
             nonces[ss.id] = ["nonces": r["nonces"] ?? NSNull(), "commitments": r["commitments"] ?? NSNull(),
                              "sighash": sighash]
+            // A seat that cannot sign fails here, before the approval is saved.
+            let rel = "sessions/\(ss.id)/commits/\(i)"
+            let doc = try self.signed(gid, rel, as: i,
+                                      ["commitments": r["commitments"] ?? NSNull(), "at": now()])
             guard self.vault.putSec(gid, i, ["nonces": nonces]) else {
                 throw ZigsError("Could not save the approval on this device, so it was not sent.")
             }
-            try await self.put("groups/\(gid)/sessions/\(ss.id)/commits/\(i)",
-                               ["commitments": r["commitments"] ?? NSNull(), "at": now()])
+            try await self.put("groups/\(gid)/\(rel)", doc)
             self.note("seat \(i): approved the payment")
         }
     }
@@ -1337,9 +1489,12 @@ final class GroupModel {
     func cancel(_ ss: Session) {
         guard let gid, !has(ss.doc["signed"]), !has(ss.doc["error"]) else { return }
         once("cancel:\(ss.id)") {
-            let name = self.localSeats.first.flatMap { self.state.seats["\($0)"]?.str("name") } ?? ""
-            let who = name.isEmpty ? "a signer" : name
-            try await self.patch("groups/\(gid)/sessions/\(ss.id)", ["status": "cancelled", "error": "Cancelled by \(who)."])
+            let seat = self.writer(in: gid) ?? self.localSeats.first
+            let name = seat.flatMap { self.state.seats["\($0)"]?.str("name") } ?? ""
+            let who = (name.isEmpty ? "a signer" : name) + (seat.map { " (seat \($0))" } ?? "")
+            let fields: Doc = ["status": "cancelled", "error": "Cancelled by \(who)."]
+            let data = try self.partSigned(gid, ss.id, .cancel, fields, prefer: seat)
+            try await self.patch("groups/\(gid)/sessions/\(ss.id)", data)
             for i in self.localSeats {
                 var nonces = self.vault.sec(gid, i).doc("nonces") ?? [:]
                 if nonces.removeValue(forKey: ss.id) != nil { self.vault.putSec(gid, i, ["nonces": nonces]) }
@@ -1349,14 +1504,14 @@ final class GroupModel {
     }
 
     func canProve(_ ss: Session) -> Bool {
-        let stalled = now() - (ss.doc.int("provingAt") ?? 0) > 180_000
+        let stalled = (ss.doc.int("provingAt") ?? 0) < now() - 180_000
         return has(ss.doc["signed"]) && !has(ss.doc["final"]) && (ss.status != "proving" || stalled)
-            && !proving.contains(ss.id)
+            && !proving.contains(ss.id) && canAct
     }
 
     /// Builds the Halo2 proof on this iPhone and checks the whole transaction.
     func prove(_ ss: Session) {
-        guard let gid, let signed = ss.doc.str("signed") else { return }
+        guard let gid, canAct, let signed = ss.doc.str("signed") else { return }
         let path = "groups/\(gid)/sessions/\(ss.id)"
         proving.insert(ss.id)
         once("prove:\(ss.id)") {
@@ -1372,19 +1527,25 @@ final class GroupModel {
             }
             guard var out = try Engine.parse(text) as? Doc else { throw ZigsError("bad proof result") }
             out["ms"] = Int(Date().timeIntervalSince(start) * 1000)
-            try await self.patch(path, ["status": "complete", "final": out])
+            let data = try self.partSigned(gid, ss.id, .final, ["final": out])
+            try await self.patch(path, data.merging(["status": "complete"]) { $1 })
             self.note("proof built on this \(deviceName) in \(out.int("ms") ?? 0) ms")
         }
     }
 
     func broadcast(_ ss: Session) {
-        guard let gid, let final = ss.doc.doc("final"), let hex = final.str("tx_hex") else { return }
+        guard let gid, canAct, let final = ss.doc.doc("final"), let hex = final.str("tx_hex"),
+              let txid = final.str("txid") else { return }
         let path = "groups/\(gid)/sessions/\(ss.id)"
         once("broadcast:\(ss.id)") {
             do {
+                // The sent mark names the txid of the final transaction, and a seat signs it. A
+                // seat that cannot sign fails here, before the transaction goes out.
+                let sent = try self.partSigned(gid, ss.id, .sent,
+                                               ["broadcastTxid": txid, "broadcastAt": now()])
                 try await Lightwalletd.send(hex: hex, toFirstOf: self.state.net.servers)
-                try await self.patch(path, ["broadcastTxid": final.str("txid") ?? "", "broadcastAt": now(),
-                                            "broadcastError": NSNull(), "status": "broadcast"])
+                try await self.patch(path, sent.merging(["broadcastError": NSNull(),
+                                                          "status": "broadcast"]) { $1 })
                 self.note("transaction broadcast: \(final.str("txid") ?? "")")
                 self.notice = "Sent to the network. It confirms with the next block."
                 if let chain = self.chain { Task { await chain.sync() } }

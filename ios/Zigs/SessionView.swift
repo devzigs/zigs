@@ -6,6 +6,12 @@ struct SessionView: View {
     let sid: String
 
     var body: some View {
+        content
+            .onAppear { model.openPayment = sid }
+            .onDisappear { if model.openPayment == sid { model.openPayment = nil } }
+    }
+
+    @ViewBuilder private var content: some View {
         if let ss = model.state.sessions.first(where: { $0.id == sid }) {
             let ins = model.inspect(ss)
             let rc = RecipientCheck(model: model, ss: ss, ins: try? ins.get())
@@ -54,7 +60,12 @@ struct SessionView: View {
         }
     }
 
+    /// In a version 3 wallet the proposer is the seat in `by`, shown with its number. Before, it
+    /// is the identity in `createdBy`.
     private func proposer(_ ss: Session) -> String {
+        if let by = ss.doc.int("by") {
+            return model.localSeats.contains(by) ? "you" : "\(model.seatLabel(by)) (seat \(by))"
+        }
         guard let uid = ss.doc.str("createdBy") else { return "someone" }
         if model.isMe(uid) { return "you" }
         let seat = model.state.seats.first { $0.value.str("uid") == uid }
@@ -241,11 +252,14 @@ struct Timeline: View {
         let commits = st.commits[ss.id] ?? [:]
         let signers = (ss.doc["signers"] as? [NSNumber])?.map(\.intValue) ?? []
         let shares = st.shares[ss.id] ?? [:]
-        let proving = ss.status == "proving" && now() - (ss.doc.int("provingAt") ?? 0) < 180_000
+        let proving = ss.status == "proving" && (ss.doc.int("provingAt") ?? 0) > now() - 180_000
         Card {
             Step(state: .done, no: 1, title: "Proposed", text: when(ss.doc.int("createdAt")))
             Step(state: commits.count >= st.t ? .done : .now, no: 2, title: "Approvals · \(min(commits.count, st.t)) of \(st.t) needed",
-                 text: st.seatIds.map { model.seatLabel($0) + (commits["\($0)"] != nil ? " ✓" : "") }.joined(separator: " · "))
+                 text: st.seatIds.map { i in
+                     let seat = model.isSigned ? " (seat \(i))" : ""
+                     return model.seatLabel(i) + seat + (commits["\(i)"] != nil ? " ✓" : "")
+                 }.joined(separator: " · "))
             Step(state: has(ss.doc["error"]) ? .bad : has(ss.doc["signed"]) ? .done : signers.isEmpty ? .later : .now, no: 3,
                  title: "Combined signature",
                  text: ss.doc.str("error") ?? (has(ss.doc["signed"]) ? "All signatures combined and verified."
@@ -279,9 +293,9 @@ struct NextAction: View {
     @ViewBuilder private var actions: some View {
         let mine = model.pendingApprovals(ss)
         let approve = !mine.isEmpty && !blocked
-        let send = ss.doc.doc("final") != nil && !has(ss.doc["broadcastTxid"])
+        let send = ss.doc.doc("final") != nil && !has(ss.doc["broadcastTxid"]) && model.canAct
         let proving = ss.status == "proving" && !model.canProve(ss)
-        let cancel = !has(ss.doc["signed"]) && !model.localSeats.isEmpty
+        let cancel = !has(ss.doc["signed"]) && !model.localSeats.isEmpty && model.canAct
         if approve || model.canProve(ss) || send || proving || cancel {
             VStack(spacing: 8) {
                 if approve {

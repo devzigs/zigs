@@ -23,6 +23,7 @@ export const dkgEcho: (a: number, b: number, c: number, d: number) => [number, n
 export const dkgPart1: (a: number, b: number, c: number) => [number, number, number, number];
 export const dkgPart2: (a: number, b: number, c: number, d: number) => [number, number, number, number];
 export const dkgPart3: (a: number, b: number, c: number, d: number, e: number, f: number) => [number, number, number, number];
+export const docPayload: (a: number, b: number, c: number, d: number, e: number, f: number, g: number) => [number, number, number, number];
 export const finalize: (a: number, b: number) => [number, number, number, number];
 export const inspect: (a: number, b: number, c: number, d: number) => [number, number, number, number];
 export const intounderlyingbytesource_autoAllocateChunkSize: (a: number) => number;

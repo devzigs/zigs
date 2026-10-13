@@ -7,8 +7,8 @@ import {
   conflictReason, finite, fitsPublished, fmtInt, frostId, heldRefusal, keysOf, lateFields,
   LINK_CHAT_ID, LINK_NEW_SECRET, linkRefusal, makePassphrase, numberClash, passIssue, passLength,
   passNormal, restoredFields, restoredSecret, sameShare, samePackages, seatOwned, settledFields,
-  SETUP_HELD, shareShape, skey, slowCall, staleRestore, takenKeys, undoPlan, walletVersion,
-  withoutKeys,
+  SETUP_HELD, shareShape, skey, slowCall, staleRestore, takenKeys, undoPlan, usesV2,
+  walletVersion, withoutKeys,
 } from "../util.js";
 
 Z.initSync({ module: readFileSync(new URL("../pkg/zec_frost_wasm_bg.wasm", import.meta.url)) });
@@ -37,7 +37,9 @@ assert.equal(samePackages([]), false);
 assert.equal(walletVersion({}), 1);
 assert.equal(walletVersion({ version: 1 }), 1);
 assert.equal(walletVersion({ version: 2 }), 2);
-for (const bad of [0, 3, "2", null, NaN, {}]) assert.equal(walletVersion({ version: bad }), 0);
+assert.equal(walletVersion({ version: 3 }), 3);
+for (const bad of [0, 4, "2", "3", null, NaN, {}]) assert.equal(walletVersion({ version: bad }), 0);
+assert.deepEqual([0, 1, 2, 3, 4].map(usesV2), [false, false, true, true, false]);
 
 const ids = [1, 2, 3], no = "1234 5678 9012", other = "1234 5678 9013";
 const docs = (...nums) => Object.fromEntries(nums.map((n, k) => [k + 1, n === null ? undefined : { number: n }]));
@@ -73,6 +75,12 @@ assert.equal(conflict({ version: 1 }, { boxPk: "bb" }, 1, 1, none), null);  // v
 assert.match(conflict({ version: 1 }, {}, 1, 1, v2), /new setup/);
 assert.equal(conflict({ version: 1, keyPackage: {} }, {}, 1, 1, v2), null);
 assert.equal(conflict({}, { boxPk: "bb" }, 2, 2, none), null);              // seat from before keys
+// Version 3 runs the version 2 ceremony, so the same checks apply to its seats.
+const mine3 = { version: 3, boxPk: "aa", confirmed: no };
+assert.equal(conflict(mine3, { boxPk: "aa" }, 3, 3, none), null);
+assert.match(conflict(mine3, { boxPk: "bb" }, 3, 3, none), /seat key was replaced/);
+assert.match(conflict(mine3, { boxPk: "aa" }, 2, 3, none), /version of this wallet changed/);
+assert.match(conflict(mine3, { boxPk: "aa" }, 3, 3, { number: other }), /safety number changed/);
 
 // The safety number changed after this seat confirmed it: the seat stops, with no new tap.
 const confirmed = { ...mine, confirmed: no }, same = { boxPk: "aa" };
@@ -198,6 +206,12 @@ const late = { version: 2, room: { id: room.id, key: room.key } };
 const walletRoom = { id: room.id, key: room.key };
 assert.deepEqual(settledFields(late, 2, room), { version: 2, room: walletRoom });
 assert.deepEqual(settledFields(late, 1, room), { room: walletRoom });
+assert.deepEqual(settledFields({ ...late, version: 3 }, 3, room), { version: 3, room: walletRoom });
+// A file at version 3 keeps it against a lower wallet version, so signed mode stays on.
+assert.deepEqual(settledFields({ ...late, version: 3 }, 2, room), { version: 3, room: walletRoom });
+assert.deepEqual(settledFields({ ...late, version: 3 }, 1, room), { version: 3, room: walletRoom });
+assert.deepEqual(settledFields({ ...late, version: 3 }, 0, room), { room: walletRoom });
+assert.deepEqual(settledFields({ ...late, version: 2 }, 3, room), { room: walletRoom });
 assert.deepEqual(settledFields(late, 2, { ...room, key: "other" }), { version: 2 });
 assert.deepEqual(settledFields(late, 2, { ...room, id: "other" }), { version: 2 });
 assert.deepEqual(settledFields(late, 2, undefined), { version: 2 });

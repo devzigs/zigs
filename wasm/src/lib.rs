@@ -723,6 +723,39 @@ pub fn secret_open(secret: &str, aad: &str, sealed: &str) -> R<String> {
     String::from_utf8(pt).map_err(e("utf8"))
 }
 
+/// The same value with every object's keys in sorted order, so that its JSON text does not depend
+/// on the order of the input. A number must be an integer: a float has no single text form.
+fn sorted_json(v: &Value) -> R<Value> {
+    match v {
+        Value::Object(m) => {
+            let mut keys: Vec<&String> = m.keys().collect();
+            keys.sort();
+            let mut out = serde_json::Map::new();
+            for k in keys {
+                out.insert(k.clone(), sorted_json(&m[k])?);
+            }
+            Ok(Value::Object(out))
+        }
+        Value::Array(a) => a.iter().map(sorted_json).collect::<R<Vec<_>>>().map(Value::Array),
+        Value::Number(n) => {
+            ensure(n.is_i64() || n.is_u64(), "a signed document can hold whole numbers only")?;
+            Ok(v.clone())
+        }
+        _ => Ok(v.clone()),
+    }
+}
+
+/// The text that a seat signs for a document of a version 3 wallet: the compact JSON array
+/// `["zigs-doc-v1", walletId, path, seat, fields]`. `path` is the document path below the wallet
+/// (for example `confirm/1`), and `fields` is a JSON object whose keys are sorted at every level.
+/// The signature is Ed25519 over the UTF-8 bytes of this text.
+pub fn doc_payload(wallet_id: &str, path: &str, seat: u16, fields: &str) -> R<String> {
+    let fields: Value = from_json(fields, "fields")?;
+    ensure(fields.is_object(), "fields must be a JSON object")?;
+    let payload = json!(["zigs-doc-v1", wallet_id, path, seat, sorted_json(&fields)?]);
+    Ok(payload.to_string())
+}
+
 // ───────────────────────── JS bindings ─────────────────────────
 
 fn js<T>(r: R<T>) -> Result<T, JsError> {
@@ -829,6 +862,12 @@ pub fn js_secret_seal(secret: &str, aad: &str, pt: &str) -> Result<String, JsErr
 #[wasm_bindgen(js_name = secretOpen)]
 pub fn js_secret_open(secret: &str, aad: &str, ct: &str) -> Result<String, JsError> {
     js(secret_open(secret, aad, ct))
+}
+#[wasm_bindgen(js_name = docPayload)]
+pub fn js_doc_payload(
+    wallet_id: &str, path: &str, seat: u16, fields: &str,
+) -> Result<String, JsError> {
+    js(doc_payload(wallet_id, path, seat, fields))
 }
 #[wasm_bindgen(js_name = backupSeal)]
 pub fn js_backup_seal(passphrase: &str, plaintext: &str) -> Result<String, JsError> {
@@ -1290,5 +1329,42 @@ mod tests {
         let c = box_seal(a["sk"].as_str().unwrap(), b["pk"].as_str().unwrap(), "g:1->2", "hi").unwrap();
         assert_eq!(box_open(b["sk"].as_str().unwrap(), a["pk"].as_str().unwrap(), "g:1->2", &c).unwrap(), "hi");
         assert!(box_open(b["sk"].as_str().unwrap(), a["pk"].as_str().unwrap(), "g:1->3", &c).is_err());
+    }
+
+    #[test]
+    fn doc_payload_ignores_key_order_and_spacing() {
+        let a = r#"{"b": 1, "a": {"d": [3, {"z": 1, "y": 2}], "c": null}}"#;
+        let b = r#"{"a":{"c":null,"d":[3,{"y":2,"z":1}]},"b":1}"#;
+        let (x, y) = (doc_payload("w", "p", 1, a).unwrap(), doc_payload("w", "p", 1, b).unwrap());
+        assert_eq!(x, y);
+        assert_eq!(x, r#"["zigs-doc-v1","w","p",1,{"a":{"c":null,"d":[3,{"y":2,"z":1}]},"b":1}]"#);
+    }
+
+    #[test]
+    fn doc_payload_known_answer() {
+        let fields = r#"{"z": "a\"b\\c\né", "a": [1, -2, null, true], "m": {"y": 2, "x": 1}}"#;
+        let got = doc_payload("0123456789abcdef0123", "sessions/s1/commits/2", 2, fields).unwrap();
+        let want = concat!(
+            r#"["zigs-doc-v1","0123456789abcdef0123","sessions/s1/commits/2",2,"#,
+            r#"{"a":[1,-2,null,true],"m":{"x":1,"y":2},"z":"a\"b\\c\né"}]"#,
+        );
+        assert_eq!(got, want);
+    }
+
+    #[test]
+    fn doc_payload_refuses_what_has_no_single_text() {
+        let floats = [r#"{"a": 1.5}"#, r#"{"a": 1e3}"#, r#"{"a": [2.0]}"#];
+        for bad in ["[1]", "\"x\"", "null", "{"].into_iter().chain(floats) {
+            assert!(doc_payload("w", "p", 1, bad).is_err(), "{bad} is refused");
+        }
+        assert!(doc_payload("w", "p", 1, "{}").is_ok());
+    }
+
+    #[test]
+    fn doc_payload_binds_wallet_path_and_seat() {
+        let base = doc_payload("w", "confirm/1", 1, r#"{"n":"1"}"#).unwrap();
+        for other in [("x", "confirm/1", 1), ("w", "confirm/2", 1), ("w", "confirm/1", 2)] {
+            assert_ne!(base, doc_payload(other.0, other.1, other.2, r#"{"n":"1"}"#).unwrap());
+        }
     }
 }

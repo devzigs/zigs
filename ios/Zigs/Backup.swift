@@ -72,7 +72,7 @@ enum KeyPairs {
 
     static func hex(_ data: Data) -> String { data.map { String(format: "%02x", $0) }.joined() }
 
-    private static func unhex(_ s: String) -> Data? {
+    static func unhex(_ s: String) -> Data? {
         guard s.count % 2 == 0, s.allSatisfy(\.isHexDigit) else { return nil }
         let bytes = stride(from: 0, to: s.count, by: 2).compactMap { n -> UInt8? in
             let a = s.index(s.startIndex, offsetBy: n)
@@ -92,16 +92,19 @@ enum KeyPairs {
 
     /// The first bytes of an Ed25519 key in PKCS #8, as the web app saves it (base64). The last
     /// 32 of its 48 bytes are the seed.
-    private static let pkcs8Prefix = unhex("302e020100300506032b657004220420")
+    static let pkcs8Prefix = Data([0x30, 0x2e, 0x02, 0x01, 0x00, 0x30, 0x05, 0x06, 0x03, 0x2b, 0x65,
+                                   0x70, 0x04, 0x22, 0x04, 0x20])
+
+    /// The Ed25519 key of a secret key in base64 PKCS #8, or nil when it is not one.
+    static func signingKey(_ sk: String?) -> Curve25519.Signing.PrivateKey? {
+        guard let sk, let der = Data(base64Encoded: sk), der.count == 48,
+              der.prefix(16) == pkcs8Prefix else { return nil }
+        return try? Curve25519.Signing.PrivateKey(rawRepresentation: der.suffix(32))
+    }
 
     /// True when the Ed25519 secret key (base64 PKCS #8) makes the public key (hex).
     static func signMatches(_ sk: String?, _ pk: String) -> Bool {
-        guard let sk, let der = Data(base64Encoded: sk), der.count == 48,
-              der.prefix(16) == pkcs8Prefix,
-              let key = try? Curve25519.Signing.PrivateKey(rawRepresentation: der.suffix(32)) else {
-            return false
-        }
-        return hex(key.publicKey.rawRepresentation) == pk
+        signingKey(sk).map { hex($0.publicKey.rawRepresentation) == pk } ?? false
     }
 }
 
@@ -205,7 +208,7 @@ struct BackupData {
     let keys: Doc
 
     /// A whole number that is not a JSON boolean.
-    private static func integer(_ v: Any?) -> Int? {
+    static func integer(_ v: Any?) -> Int? {
         guard let n = v as? NSNumber, CFGetTypeID(n) != CFBooleanGetTypeID(),
               n.doubleValue == n.doubleValue.rounded() else { return nil }
         return n.intValue
@@ -319,11 +322,14 @@ struct BackupData {
 
     /// What to store of the late fields once the seat fits. A field of the file counts only when
     /// it equals the wallet's own value (the version of the wallet document, its room). The stored
-    /// value is the wallet's. Same rule as settledFields in util.js.
+    /// value is the wallet's. One exception: a file that says version 3 keeps it when the wallet
+    /// shows a lower version. The seat then stays in signed mode, and the seat shows that the
+    /// version moved. Same rule as settledFields in util.js.
     static func settled(_ late: Doc, version: Int, room: Doc?) -> Doc {
         var out = Doc()
-        if [1, 2].contains(version), integer(late["version"]) == version {
-            out["version"] = version
+        if [1, 2, 3].contains(version), let file = integer(late["version"]),
+           file == version || file == 3 {
+            out["version"] = file
         }
         if let same = sameRoom(late.doc("room"), room) { out["room"] = same }
         return out

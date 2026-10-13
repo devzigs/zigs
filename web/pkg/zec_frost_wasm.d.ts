@@ -83,6 +83,8 @@ export function dkgPart2(secret: string, round1: string): string;
 
 export function dkgPart3(secret2: string, round1: string, round2: string): string;
 
+export function docPayload(wallet_id: string, path: string, seat: number, fields: string): string;
+
 export function finalize(signed: string): string;
 
 export function inspect(pczt: string, fvk: string): string;
@@ -145,6 +147,7 @@ export interface InitOutput {
     readonly dkgPart1: (a: number, b: number, c: number) => [number, number, number, number];
     readonly dkgPart2: (a: number, b: number, c: number, d: number) => [number, number, number, number];
     readonly dkgPart3: (a: number, b: number, c: number, d: number, e: number, f: number) => [number, number, number, number];
+    readonly docPayload: (a: number, b: number, c: number, d: number, e: number, f: number, g: number) => [number, number, number, number];
     readonly finalize: (a: number, b: number) => [number, number, number, number];
     readonly inspect: (a: number, b: number, c: number, d: number) => [number, number, number, number];
     readonly intounderlyingbytesource_autoAllocateChunkSize: (a: number) => number;

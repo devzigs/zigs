@@ -30,10 +30,13 @@ export function samePackages(list) {
   } catch { return false; }
 }
 
-// Wallet document version: 1 when the document has none, 2 for the ZIP 2005 ceremony, 0 for a
-// version this app does not know.
+// Wallet document version: 1 when the document has none, 2 for the ZIP 2005 ceremony, 3 for that
+// ceremony with signed writes, 0 for a version this app does not know.
 export const walletVersion = (g) =>
-  g.version === undefined || g.version === 1 ? 1 : g.version === 2 ? 2 : 0;
+  g.version === undefined || g.version === 1 ? 1 : [2, 3].includes(g.version) ? g.version : 0;
+
+// Versions 2 and 3 run the same key ceremony. Version 3 adds signed writes.
+export const usesV2 = (v) => v === 2 || v === 3;
 
 // Seats whose confirm document holds another safety number than `number`.
 export function numberClash(number, docs, ids) {
@@ -43,7 +46,7 @@ export function numberClash(number, docs, ids) {
   });
 }
 
-// May the key ceremony of a version 2 wallet run? "ok" when this seat and every seat confirmed
+// May the key ceremony of a version 2 or 3 wallet run? "ok" when this seat and every seat confirmed
 // `number`; "mismatch" when a seat confirmed another number; else "wait". `mine` is the number the
 // person confirmed on this device: a confirm document alone is only a claim.
 export function confirmGate(number, mine, docs, ids) {
@@ -76,9 +79,9 @@ const versionMoved = (s, g) => s.version && s.version !== g
   && "The setup version of this wallet changed after you took your seat";
 const newSetupSeen = (s, mode, seen) => mode === 1 && !s.keyPackage && seen.sawV2
   && "Other signers use the new setup, but this seat does not";
-const keyReplaced = (s, mode, seat) => mode === 2 && s.boxPk && seat && seat.boxPk !== s.boxPk
+const keyReplaced = (s, mode, seat) => usesV2(mode) && s.boxPk && seat && seat.boxPk !== s.boxPk
   && "Your seat key was replaced";
-const numberMoved = (s, mode, seen) => mode === 2 && !s.keyPackage
+const numberMoved = (s, mode, seen) => usesV2(mode) && !s.keyPackage
   && typeof s.confirmed === "string" && typeof seen.number === "string"
   && s.confirmed !== seen.number
   && "The safety number changed after you confirmed it. Someone may have replaced a seat";
@@ -136,11 +139,14 @@ const roomShape = (r) => !!r && typeof r.id === "string" && typeof r.key === "st
 const sameRoom = (a, b) => roomShape(a) && roomShape(b) && a.id === b.id && a.key === b.key;
 
 // What to store of the late fields once the seat fits. A field of the file counts only when it
-// equals the wallet's own value (`version` of the wallet document, its `room`). The stored value
-// is the wallet's.
+// equals the wallet's own value (`version` of the wallet document, its `room`), and the stored
+// value is the wallet's. One exception: a file that says version 3 keeps it when the wallet shows
+// a lower version. The seat then stays in signed mode, and the seat shows that the version moved.
 export function settledFields(late, version, room) {
   const out = {};
-  if ([1, 2].includes(version) && late.version === version) out.version = version;
+  if ([1, 2, 3].includes(version) && (late.version === version || late.version === 3)) {
+    out.version = late.version;
+  }
   if (sameRoom(late.room, room)) out.room = { id: room.id, key: room.key };
   return out;
 }

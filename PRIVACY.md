@@ -121,13 +121,13 @@ the per-IP rate limits of the group server.
 
 | Data | Web app | iPhone and Mac app |
 |---|---|---|
-| Key share, signing nonces, and for a version 2 wallet `vaultSk` | Browser local storage; sealed with a passkey when the lock is on | iPhone: Keychain, this device only, not in iCloud or iTunes device backups; sealed behind Face ID when the lock is on. Mac: login keychain |
+| Key share, signing nonces, and for a version 2 or 3 wallet `vaultSk` | Browser local storage; sealed with a passkey when the lock is on | iPhone: Keychain, this device only, not in iCloud or iTunes device backups; sealed behind Face ID when the lock is on. Mac: login keychain |
 | Wallet secrets (from invite links) | Same as the key share | Same as the key share |
 | Sync state (notes, tree) | IndexedDB, sealed with the wallet key | File, sealed with the wallet key |
 | Cached balances for the wallet list | Local storage, sealed with the wallet key | Settings, sealed with the wallet key |
-| Message signing key | With the key share (it is a field of the seat's secrets) | Not built yet |
+| Signing key of the seat (messages, and signed writes in a version 3 wallet) | With the key share (it is a field of the seat's secrets) | With the key share: Keychain, this device only. A seat gets it when the seat is taken |
 | Direct chats (chat secrets, member ids) and the personal signing key | With the key share: local storage, or the sealed record when the lock is on. Not in key share backups. | Not built yet |
-| Pinned room ids, pinned signing keys, pinned chat members, read times | Local storage, in plain text. No secret in them. | Not built yet |
+| Pinned room ids, pinned signing keys, pinned wallet versions and shapes, pinned chat members, read times | Local storage, in plain text. No secret in them. | Signing key, version and shape pins: settings, in plain text, so device backups can copy them. No secret in them. The other pins are not built yet |
 
 Without the lock, anyone who controls your unlocked device can read your key share and wallet
 secrets. One share alone cannot move funds: a payment needs a full threshold of signers.
@@ -138,8 +138,9 @@ A backup file holds your key share, so the app locks it with a passphrase that y
 iPhone and Mac apps make and open the same file.
 
 - **What it holds.** The wallet secret and the seat secret. The seat secret has the key share, the
-  public key package and the group key. For a version 2 wallet it also has `vaultSk`, the ZIP 2005
-  `sk`. The web app also puts in the signing key of the seat. A backup never holds signing nonces.
+  public key package and the group key. For a version 2 or 3 wallet it also has `vaultSk`, the
+  ZIP 2005 `sk`. The signing key of the seat is in it too, from the web, iPhone and Mac apps. A
+  backup never holds signing nonces.
 - **How it is locked.** Argon2id (RFC 9106) with 64 MiB of memory, 3 passes and 1 lane makes a
   32-byte key from the passphrase. XChaCha20-Poly1305 seals the text and authenticates the
   header, so a changed parameter fails to open. The format is in
@@ -156,11 +157,13 @@ iPhone and Mac apps make and open the same file.
   refuses a file for a seat that already has another key share, or that is still in setup.
 - **Fit.** A restored seat counts as yours only when it fits the wallet. Three values must equal
   what the wallet published for the seat: the key share, the public key package and the group key.
-  For a version 2 wallet, the `vaultSk` of the file must also give the viewing key of the wallet.
-  Else the app undoes the restore. After a restart, a restored seat that does not fit is not
-  used: the app shows a note and lets you remove it from the device. It keeps the message keys of the file only when the seat
-  published their public keys. It keeps the version and the message room of the file only when
-  they equal the wallet document.
+  For a version 2 or 3 wallet, the `vaultSk` of the file must also give the viewing key of the
+  wallet. Else the app undoes the restore. After a restart, a restored seat that does not fit is
+  not used. The app shows a note and lets you remove it from the device. It keeps the message keys
+  of the file only when the seat published their public keys. It keeps the message room of the file
+  only when it equals the wallet document. It keeps the version of the file when it equals the
+  wallet document, or when the file says version 3. Then signed writes stay on, and the app shows
+  that the version moved.
 - **Older files.** A plain backup from before encryption still restores. The app warns you and
   asks for a new encrypted backup.
 - **Limit.** Anyone who has the file can try passphrases offline. Argon2id makes each try slow,
@@ -194,6 +197,17 @@ the passkey guards the key share instead. The lock is opt-in.
 
 - An invite link contains the wallet secret. Anyone who has the full link can read the wallet's
   data and take an open seat. Send links only through an end-to-end encrypted chat, such as Signal.
+- **What a holder of the invite link can do.** The holder can read everything in the wallet. The
+  holder can write any document too. In a version 3 wallet, each document that matters carries
+  the signature of the seat that wrote it. The apps ignore a document without a valid signature
+  of the right seat. So the holder cannot make an app show a false approval, cancel, "checked"
+  mark, proposer or result such as "Sent". The holder cannot rename a seat, because each seat
+  signs its own seat document. The apps show one line when they ignored data.
+- The holder can still replace a real document with a false one. The apps then ignore it, and
+  the wallet stops. This is a denial of service. The holder can also write an older signed
+  document again, and can write the progress marks that have no signature. The funds stay safe,
+  because FROST and the device checks do not depend on the store. A wallet of version 1 or 2 has
+  no signed writes.
 - Every signer holds the wallet's viewing key and sees every payment. A signer removed with
   "Change signers" keeps the old wallet's history but gets no access to the new wallet: the old
   wallet stores only the new wallet's id, never its secret.
@@ -203,18 +217,18 @@ the passkey guards the key share instead. The lock is opt-in.
 ## Not protected
 
 - A threshold of signers who agree can move the funds. That is the rule they chose.
-- **Quantum recoverability gives every signer `qsk`.** A version 2 wallet is built to ZIP 2005
-  (Proposed). So the funds can be recovered if quantum computers break today's keys. For this,
-  every signer holds the same secret `qsk`. It is computed from the secret `sk` that the signers
-  agreed on. As ZIP 2005 says, a quantum attacker who has `qsk` may steal the funds. Under a quantum
-  attacker, one signer, or one stolen key share backup with its passphrase, could take the funds.
-  Today the spend still needs a threshold of signers. The backup of a version 2 wallet holds
-  `vaultSk`, and `qsk` follows from it. Keep the file and its passphrase as secret as the key
-  share. ZIP 2005 recommends that you move the funds to a post-quantum protocol as soon as one
-  exists.
+- **Quantum recoverability gives every signer `qsk`.** A wallet of version 2 or 3 is built to ZIP
+  2005 (Proposed). So the funds can be recovered if quantum computers break today's keys. For
+  this, every signer holds the same secret `qsk`. It is computed from the secret `sk` that the
+  signers agreed on. As ZIP 2005 says, a quantum attacker who has `qsk` may steal the funds. Under
+  a quantum attacker, one signer, or one stolen key share backup with its passphrase, could take
+  the funds. Today the spend still needs a threshold of signers. The backup of a version 2 or 3
+  wallet holds `vaultSk`, and `qsk` follows from it. Keep the file and its passphrase as secret as
+  the key share. ZIP 2005 recommends that you move the funds to a post-quantum protocol as soon as
+  one exists.
 - A version 1 wallet (made before ZIP 2005 support) has no `qsk`. It cannot be recovered under
   ZIP 2005. Move its funds to a new wallet with Change signers.
-- The signers must compare the safety number of a version 2 wallet over a channel that an
+- The signers must compare the safety number of a version 2 or 3 wallet over a channel that an
   attacker does not control. A call or a meeting is such a channel. The number covers the wallet
   id, the threshold, the number of seats, the network and every seat key.
 - **The agreement on `sk` is not quantum-resistant.** The signers send their secret parts in
@@ -237,6 +251,14 @@ the passkey guards the key share instead. The lock is opt-in.
   store's address, and nothing checked it.
 - The group server can refuse service, drop messages or replay old ones. It cannot read them or
   write new ones.
+- A device trusts the first signing key that it sees for each seat, in a version 3 wallet as for
+  messages. A seat document counts only when its own key signed it. The safety number covers the
+  box keys, not the signing keys. A holder of the invite link who takes an open seat first can set
+  the key that devices trust for that seat. Compare the seat names with the other signers.
+- A device also trusts the first number of signers and the first approval rule that it sees for
+  a version 3 wallet. A holder who changes them before a device first sees the wallet can set
+  the values for that device. The safety number covers both. Signers who compare it find the
+  change.
 - Wallet messages are not forward secret. Whoever gets a room secret later can read the room. A
   device that holds a seat can sign messages as that seat. Seats from before messages existed get
   their signing key when their device opens the wallet, and other devices trust the first key they

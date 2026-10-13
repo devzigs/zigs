@@ -18,6 +18,7 @@ struct GroupView: View {
             VStack(alignment: .leading, spacing: 16) {
                 Header()
                 if model.hasStaleRestore { StaleRestoreNote() }
+                SignedNotes()
                 content(st)
             }
             .padding(16)
@@ -173,7 +174,7 @@ struct JoinCard: View {
                 Text("This wallet is not built to ZIP 2005. Funds cannot be recovered if quantum computers break today's keys.")
                     .font(.subheadline).foregroundStyle(Color.bad)
             }
-            Button(st.version == 2 ? "Take seat \(first)" : "Take seat \(first) anyway") {
+            Button(usesV2(st.version) ? "Take seat \(first)" : "Take seat \(first) anyway") {
                 model.takeSeat(first)
             }.primaryButton()
         }
@@ -775,9 +776,15 @@ struct DetailsTab: View {
                 Detail(label: "Network") { Text("Zcash \(st.net.label.lowercased())" + (st.net.cap.map { " · warning at \(capText($0))" } ?? "")) }
                 Detail(label: "Created at block") { Text((w.int("birthday") ?? 0).formatted()).monospacedDigit() }
                 Detail(label: "Wallet key") { Text(w.str("group_verifying_key") ?? "").font(.caption.monospaced()).textSelection(.enabled) }
-                if st.version == 2 {
+                if usesV2(st.version) {
                     Detail(label: "Key setup") {
                         Text("Built to ZIP 2005 (Proposed) so that funds can be recovered if quantum computers break today's keys.")
+                    }
+                    if model.isSigned {
+                        Detail(label: "Signed writes") {
+                            Text("Each signer signs the data it writes to this wallet. "
+                                 + "Zigs ignores data without a valid signature.")
+                        }
                     }
                 } else {
                     Text("This wallet was made before quantum recoverability (ZIP 2005). To get it, move the funds to a new wallet with Change signers.")
@@ -998,6 +1005,29 @@ struct RecipientRow: View {
                     Text(grouped(to)).font(.caption.monospaced()).foregroundStyle(Color.mist).textSelection(.enabled)
                 }
             }
+        }
+    }
+}
+
+/// Notes for a version 3 wallet: a seat of this device that cannot sign, and ignored data.
+struct SignedNotes: View {
+    @Environment(GroupModel.self) private var model
+
+    var body: some View {
+        let muted = model.mutedSeats
+        if !muted.isEmpty {
+            let seats = muted.map(String.init).joined(separator: ", ")
+            Text("This \(deviceName) has no signing key for seat \(seats), "
+                 + "so it cannot write to this wallet. Restore a backup of the seat.")
+                .font(.subheadline).foregroundStyle(Color.bad)
+        }
+        if model.state.shapeMoved {
+            Text("The store shows another number of signers or approval rule than the first this "
+                 + "\(deviceName) saw. Zigs keeps the first. Ask your signers.")
+                .font(.subheadline).foregroundStyle(Color.bad)
+        }
+        if model.ignoredCount > 0 {
+            Text(Signed.ignoredNote).font(.caption).foregroundStyle(Color.mist)
         }
     }
 }

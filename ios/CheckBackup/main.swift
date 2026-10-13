@@ -125,6 +125,11 @@ check(Set(settled(late, 2, ["id": "a", "key": "x"]).keys) == ["version"], "anoth
 check(Set(settled(late, 2, ["id": "b", "key": "k"]).keys) == ["version"], "another room id")
 check(Set(settled(late, 2, nil).keys) == ["version"], "no wallet room")
 check(settled(late, 0, nil).isEmpty, "a version this app lacks")
+check(settled(["version": 3], 3, nil).int("version") == 3, "settled, version 3")
+check(settled(["version": 3], 2, nil).int("version") == 3, "settled, version 3 stays")
+check(settled(["version": 3], 1, nil).int("version") == 3, "settled, version 3 over version 1")
+check(settled(["version": 3], 0, nil)["version"] == nil, "settled, a version this app lacks")
+check(settled(["version": 2], 3, nil)["version"] == nil, "settled, a lower file")
 check(settled(["version": "2", "room": "x"]).isEmpty, "not the same type")
 check(settled(["version": true]).isEmpty && settled(["version": true], 1).isEmpty, "a JSON true")
 check(settled(["room": ["id": 5, "key": 6] as Doc], 2, ["id": 5, "key": 6]).isEmpty, "numbers")
@@ -283,6 +288,317 @@ let named = backupFileName(wallet: "Team treasury", seat: 2)
 check(named == "zigs-Team-treasury-seat-2.zigsbackup", "file name")
 let noName = backupFileName(wallet: "\u{65e5}\u{672c}", seat: 3)
 check(noName == "zigs-wallet-seat-3.zigsbackup", "file name, no letters")
+
+// Signed writes of version 3 wallets. The engine builds the text, and Ed25519 signs it. A signature
+// from the web app must verify here, and one made here must verify in the web app (web.mjs).
+let wid = "0123456789abcdef0123"
+let knownFields = #"{"number":"12345 67890 12345 67890 12345 67890","at":1760000000000}"#
+let knownText = #"["zigs-doc-v1","0123456789abcdef0123","confirm/2",2,{"at":1760000000000,"#
+    + #""number":"12345 67890 12345 67890 12345 67890"}]"#
+let knownPk = "03a107bff3ce10be1d70dd18e74bc09967e4d6309ba50d5f1ddc8664125531b8"
+let knownSig = "HfeBGagkHgfSW/dlhgyAuMGNEUigk6iD3xyUyS0FrO035rvYkbv+qEvQtn/KczG4cpUvbg2v"
+    + "hBrKw2hQgWrfDw=="
+check(try Engine.call("docPayload", [wid, "confirm/2", 2, knownFields]) == knownText, "known text")
+check(Signed.verify(knownPk, knownSig, knownText), "the known web signature verifies here")
+let movedText = knownText.replacingOccurrences(of: "confirm/2", with: "confirm/1")
+check(!Signed.verify(knownPk, knownSig, movedText), "a signature does not move to another path")
+check(!Signed.verify(knownPk, "AAAA", knownText), "a short signature")
+check(!Signed.verify("zz", knownSig, knownText), "a bad public key")
+check(!Signed.verify(knownPk, String(knownSig.reversed()), knownText), "another signature")
+let seedKey = try Curve25519.Signing.PrivateKey(rawRepresentation: Data(0..<32))
+check(KeyPairs.hex(seedKey.publicKey.rawRepresentation) == knownPk, "the public key of the seed")
+let seedSk = (KeyPairs.pkcs8Prefix + seedKey.rawRepresentation).base64EncodedString()
+let seedSig = try Signed.sign(seedSk, knownText)
+check(Signed.verify(knownPk, seedSig, knownText), "a signature made here")
+let noKey = failure { try Signed.sign("not a key", knownText) }
+check(noKey == Signed.noSeatKey, "no key, no signature")
+let madeKey = Signed.newKey()
+check(KeyPairs.signMatches(madeKey.signSk, madeKey.signPk), "a new key makes its public key")
+check(Signed.validPk(madeKey.signPk), "a new public key is lowercase hex")
+check(Data(base64Encoded: madeKey.signSk)?.count == 48, "a new key is PKCS 8")
+
+// Which seat must have written a document (the same table as web/test/signed.mjs).
+let writers: [String: Int] = [
+    "confirm/3": 3, "abort/1": 1, "dkg1/2": 2, "dkg2/2-3": 2, "dkg2/10-1": 10, "done/4": 4,
+    "verify/5": 5, "meta/wallet": 1, "sessions/ab12-cd/commits/2": 2, "sessions/ab12/shares/7": 7,
+    "seats/2": 2,
+]
+for (rel, seat) in writers { check(Signed.writerOf(rel) == seat, "writer of \(rel)") }
+let noWriter = [
+    "confirm/0", "confirm/01", "confirm/x", "confirm/1/2", "dkg2/1", "dkg2/1-", "commits/1",
+    "sessions/s1", "sessions/s1/commits/", "sessions//commits/1", "meta/other", "seats/0",
+    "seats/x", "seats", "messages/1", "", "__proto__", "confirm/1\n", "sessions/a/b/commits/1",
+    "confirm/\u{663}",
+]
+for rel in noWriter { check(Signed.writerOf(rel) == nil, "no writer of \(rel.debugDescription)") }
+check(Signed.sessionOfPart("sessions/ab12/commits/2") == "ab12", "session of a commit")
+check(Signed.sessionOfPart("sessions/ab12/shares/2") == "ab12", "session of a share")
+check(Signed.sessionOfPart("sessions/ab12 proposal") == nil, "a session part is no commit")
+check(Signed.sessionOfPart("confirm/1") == nil, "no session")
+
+// The shape of a wallet: 2 to 7 signers, a rule of 2 up to all of them.
+check(Signed.shape(["n": 3, "t": 2]) == "3/2", "a good shape")
+check(Signed.parseShape("3/2")?.n == 3 && Signed.parseShape("7/7")?.t == 7, "a pinned shape")
+let badShapes: [Doc] = [
+    ["n": 1, "t": 1], ["n": 8, "t": 2], ["n": 3, "t": 4], ["n": 3, "t": 1], ["n": 3.5, "t": 2],
+    ["n": "3", "t": 2], ["n": true, "t": 2], ["n": 65540, "t": 2],
+]
+for bad in badShapes {
+    check(Signed.shape(bad) == nil, "a bad shape \(bad)")
+}
+for bad in ["", "3", "3/", "/2", "3/2/1", "1/1", "8/2", "3/4", "a/b"] {
+    check(Signed.parseShape(bad) == nil, "a bad pin \(bad.debugDescription)")
+}
+check(Signed.seatRange(3) == [1, 2, 3] && Signed.seatRange(1).isEmpty
+      && Signed.seatRange(65540).isEmpty && Signed.seatRange(0).isEmpty, "the seats of a wallet")
+
+// The table of parts is the one of the web app (web.mjs writes PARTS into the file).
+let webParts = try Engine.parse(String(contentsOfFile: dir + "/signed-parts.json", encoding: .utf8))
+    as! Doc
+check(Set(webParts.keys) == Set(Signed.Part.allCases.map { "\($0)" }), "the same parts")
+for part in Signed.Part.allCases {
+    let web = webParts["\(part)"] as! Doc
+    check(web.str("by") == part.by && web.str("sig") == part.sig, "writer fields of \(part)")
+    check(web["fields"] as? [String] == part.fields, "signed fields of \(part)")
+    let fixed = web.doc("fixed") ?? [:]
+    check(fixed.keys.sorted() == part.signedFields([:]).keys.sorted(), "fixed fields of \(part)")
+    check(web.str("needs") == part.needs.map { "\($0)" }, "the base of \(part)")
+}
+
+// A wallet of documents in the JSON shape of web.mjs: the open payment `sid` has its commits and
+// shares in `raw`. The reader pins the keys of the three seats.
+func readWallet(_ file: String) throws -> (GroupState, SignedReader, String) {
+    let f = try Engine.parse(String(contentsOfFile: file, encoding: .utf8)) as! Doc
+    let raw = f.doc("raw")!, sid = f.str("sid")!
+    func docs(_ k: String) -> [String: Doc] { raw[k] as? [String: Doc] ?? [:] }
+    var st = GroupState()
+    st.g = ["n": 3]
+    st.seats = docs("seats")
+    (st.dkg1, st.dkg2, st.confirm) = (docs("dkg1"), docs("dkg2"), docs("confirm"))
+    (st.abort, st.done, st.verify) = (docs("abort"), docs("done"), docs("verify"))
+    st.wallet = raw.doc("wallet")
+    st.sessions = docs("sessions").map { Session(id: $0.key, doc: $0.value) }
+    for ss in st.sessions {
+        st.commits[ss.id] = ss.id == sid ? docs("commits") : [:]
+        st.shares[ss.id] = ss.id == sid ? docs("shares") : [:]
+    }
+    var pins = [Int: String]()
+    for (seat, pk) in f.doc("pins") ?? [:] { pins[Int(seat)!] = pk as? String }
+    return (st, SignedReader(gid: f.str("gid")!, n: 3, pins: pins), sid)
+}
+func ids(_ docs: [String: Doc]) -> Set<String> { Set(docs.keys) }
+
+// The web app made this wallet (web.mjs make): honest documents of seats 1 and 2, and false ones.
+let webRead = try readWallet(dir + "/signed-web.json")
+var webState = webRead.0
+let (webReader, webSid) = (webRead.1, webRead.2)
+let webBad = webState.keepSigned(webReader)
+func webId(_ last: String) -> String { String(webSid.dropLast()) + last }
+let webWanted: Set<String> = [
+    "seats/3", "confirm/3", "done/3", "sessions/\(webId("5")) cancel",
+    "sessions/\(webId("6")) proposal", "sessions/\(webId("8")) signed",
+    "sessions/\(webId("8")) final", "sessions/\(webId("8")) sent",
+    "sessions/\(webSid)/commits/1", "sessions/\(webSid)/shares/1",
+]
+check(Set(webBad) == webWanted, "ignored web documents \(webBad)")
+check(webBad.count == webWanted.count, "each ignored once")
+check(ids(webState.seats) == ["1", "2"], "web seat documents")
+check(webState.seats["2"]?.str("name") == "Bob" && webState.seats["2"]?["sig"] == nil, "seat 2")
+check(ids(webState.confirm) == ["1", "2"], "web confirm documents")
+check(ids(webState.dkg2) == ["1-2"] && webState.done.isEmpty, "web round 2 and done documents")
+check(ids(webState.verify) == ["1"], "web verify document")
+check(webState.verify["1"]?["ok"] as? Bool == true, "a parsed boolean signs the same text")
+check(webState.verify["1"]?["error"] is NSNull, "a parsed null signs the same text")
+check(webState.confirm["1"]?["by"] == nil, "no writer field is kept")
+check(webState.confirm["1"]?.str("number") == "1", "the fields are kept")
+check(webState.wallet?.str("address") == "utest1x", "web wallet document")
+check(webState.wallet?["sig"] == nil, "no signature in the wallet document")
+check(ids(webState.commits[webSid] ?? [:]) == ["2"], "web commits")
+check(ids(webState.shares[webSid] ?? [:]) == ["2"], "web shares")
+let webSessions = Dictionary(uniqueKeysWithValues: webState.sessions.map { ($0.id, $0.doc) })
+check(Set(webSessions.keys) == [webSid, webId("5"), webId("8")], "web sessions \(webSessions.keys)")
+check(webSessions[webSid]?.str("status") == "broadcast", "the signed chain makes the status")
+check(webSessions[webSid]?.str("package") == "PKG", "web package")
+check(webSessions[webSid]?.doc("final")?.str("txid") == "T1", "web final")
+check(webSessions[webSid]?.str("broadcastTxid") == "T1", "web sent mark")
+check(webSessions[webSid]?.str("createdBy") == "u1", "the proposer comes from the signing seat")
+check(webSessions[webId("5")]?.str("status") == "collecting", "a false cancel is no status")
+check(webSessions[webId("5")]?["error"] == nil, "a false cancel has no error")
+check(webSessions[webId("5")]?["cancelBy"] == nil, "a false cancel has no writer")
+check(webSessions[webId("5")]?["cancelSig"] == nil, "a false cancel has no signature")
+let madeUp = webSessions[webId("8")] ?? [:]
+check(madeUp.str("status") == "collecting", "made-up results are no status")
+check(madeUp["signed"] == nil && madeUp["final"] == nil && madeUp["broadcastTxid"] == nil,
+      "made-up results are dropped")
+// A key that the device did not pin turns every web document of that seat into an ignored one.
+var otherState = try readWallet(dir + "/signed-web.json").0
+var otherPins = webReader.pins
+otherPins[1] = madeKey.signPk
+let otherBad = otherState.keepSigned(SignedReader(gid: webReader.gid, n: 3, pins: otherPins))
+check(otherState.confirm["1"] == nil && otherBad.contains("confirm/1"), "another pinned key")
+check(otherState.seats["1"] == nil && otherBad.contains("seats/1"), "a seat needs its pinned key")
+check(otherState.wallet == nil && otherBad.contains("meta/wallet"), "the wallet needs seat 1")
+// A raised n does not make seat 4: the reader of 3 seats ignores it, with or without a pin.
+let raisedKey = Signed.newKey()
+var raisedState = try readWallet(dir + "/signed-web.json").0
+let fake4 = Signed.Signer(seat: 4, signSk: raisedKey.signSk)
+let fakeSeat: Doc = ["uid": "u4", "name": "Ana", "boxPk": "b4", "signPk": raisedKey.signPk, "at": 4]
+raisedState.seats["4"] = try Signed.signDoc(webReader.gid, "seats/4", as: fake4, fakeSeat)
+let firstProposal = raisedState.sessions.first!.doc
+let raisedProposal = try Signed.signDoc(
+    webReader.gid, "sessions/zz", as: fake4,
+    firstProposal.filter { Signed.Part.proposal.fields.contains($0.key) })
+raisedState.sessions.append(Session(id: "zz", doc: raisedProposal))
+// Seat 4 also cancels the payment that the web app made. The cancel part is one more false one.
+let cancelled4 = try Signed.signPart(webReader.gid, webSid, .cancel, as: fake4,
+                                     ["status": "cancelled", "error": "Stop."])
+raisedState.sessions = raisedState.sessions.map {
+    $0.id == webSid ? Session(id: webSid, doc: $0.doc.merging(cancelled4) { $1 }) : $0
+}
+raisedState.commits[webSid]?["4"] = try Signed.signDoc(
+    webReader.gid, "sessions/\(webSid)/commits/4", as: fake4,
+    ["commitments": ["a": 1] as Doc, "at": 1])
+var raisedPins = webReader.pins
+raisedPins[4] = raisedKey.signPk
+let raisedBad = raisedState.keepSigned(SignedReader(gid: webReader.gid, n: 3, pins: raisedPins))
+check(raisedState.seats["4"] == nil && raisedBad.contains("seats/4"), "no seat 4")
+check(!raisedState.sessions.contains { $0.id == "zz" }, "no proposal of seat 4")
+check(raisedState.commits[webSid]?["4"] == nil, "no approval of seat 4")
+check(raisedBad.contains("sessions/\(webSid) cancel"), "the cancel of seat 4 is ignored")
+let stillSent = raisedState.sessions.first { $0.id == webSid }?.doc
+check(stillSent?.str("status") == "broadcast" && stillSent?["cancelBy"] == nil, "and not a status")
+
+// This code makes a wallet in the same shape. The web app must accept every document (web.mjs
+// verify). All seats sign here, with keys in the format of the web app.
+typealias Key = (signSk: String, signPk: String)
+let seatKeys: [Int: Key] = [1: Signed.newKey(), 2: Signed.newKey(), 3: Signed.newKey()]
+let stranger = Signed.newKey()
+func signer(_ seat: Int, _ key: Key? = nil) -> Signed.Signer {
+    Signed.Signer(seat: seat, signSk: (key ?? seatKeys[seat]!).signSk)
+}
+func put(_ rel: String, _ seat: Int, _ fields: Doc, key: Key? = nil) throws -> Doc {
+    try Signed.signDoc(wid, rel, as: signer(seat, key), fields)
+}
+func part(_ sid: String, _ p: Signed.Part, _ seat: Int, _ fields: Doc) throws -> Doc {
+    try Signed.signPart(wid, sid, p, as: signer(seat), fields)
+}
+let (sid1, sid2, sid3, sid4) = ("bb12cd34ef56bb12cd34", "bb12cd34ef56bb12cd35",
+                                "bb12cd34ef56bb12cd36", "bb12cd34ef56bb12cd37")
+func proposal(_ note: String) -> Doc {
+    let payee: Doc = ["to": "utest1x", "amount": 5]
+    return ["payees": [payee], "note": note, "pool": "ironwood", "amount": 5, "change": 1,
+            "fee": 10000, "noteValue": 20, "pczt": "AAA", "move": NSNull(),
+            "createdAt": 1760000000000]
+}
+var swiftSessions: Doc = [:]
+for (n, sid) in [sid1, sid2, sid3].enumerated() {
+    var doc = try part(sid, .proposal, n + 1, proposal("note \(n)"))
+    doc["createdBy"] = "x"
+    doc["status"] = "collecting"
+    swiftSessions[sid] = doc
+}
+swiftSessions[sid4] = try Signed.signPart(wid, sid4, .proposal, as: signer(1, stranger),
+                                          proposal("four"))
+func extend(_ sid: String, _ p: Signed.Part, _ seat: Int, _ fields: Doc) throws {
+    swiftSessions[sid] = (swiftSessions[sid] as! Doc).merging(try part(sid, p, seat, fields)) { $1 }
+}
+let withExtra = proposal("x").merging(["extra": 1]) { $1 }
+let unsignedField = failure { try part(sid1, .proposal, 1, withExtra) }
+check(unsignedField.contains("extra"), "a field that the part does not name is refused")
+try extend(sid1, .package, 2, ["package": "PKG", "signers": [1, 2]])
+try extend(sid1, .signed, 3, ["signed": "S", "signatures": [["action": 0, "rk": "r"] as Doc]])
+try extend(sid1, .final, 1, ["final": ["txid": "T1", "tx_hex": "00", "size": 1, "ms": 5] as Doc])
+try extend(sid1, .sent, 2, ["broadcastTxid": "T1", "broadcastAt": 7])
+try extend(sid2, .cancel, 3, ["status": "cancelled", "error": "Cancelled by Cy (seat 3)."])
+try extend(sid3, .failure, 1, ["error": "Bad share."])
+let walletFields: Doc = ["network": "testnet", "address": "utest1x", "birthday": 9, "at": 1]
+let odd = "Seat 1 stopped. \u{e9} \"quoted\" \\ done."
+func seatDoc(_ i: Int, _ key: Key) -> Doc {
+    ["uid": "u\(i)", "name": "S\(i)", "boxPk": "b\(i)", "signPk": key.signPk, "at": i]
+}
+let swiftRaw: Doc = [
+    "seats": [
+        "1": try put("seats/1", 1, seatDoc(1, seatKeys[1]!)),
+        "2": try put("seats/2", 2, seatDoc(2, seatKeys[2]!)),
+        "3": try put("seats/3", 3, seatDoc(3, stranger), key: stranger),
+    ] as Doc,
+    "confirm": [
+        "1": try put("confirm/1", 1, ["number": "1"]),
+        "2": try put("confirm/2", 2, ["number": "1"]),
+        "3": try put("confirm/3", 3, ["number": "2"], key: stranger),
+    ] as Doc,
+    "abort": ["1": try put("abort/1", 1, ["reason": odd])] as Doc,
+    "dkg1": ["2": try put("dkg1/2", 2, ["package": "{\"a\":1}", "commit": "ab", "at": 3])] as Doc,
+    "dkg2": ["3-1": try put("dkg2/3-1", 3, ["sealed": "s", "echo": "e", "at": 4])] as Doc,
+    "done": ["1": try put("done/1", 1, ["groupKey": "g", "publicKeyPackage": "{}"])] as Doc,
+    "verify": ["2": try put("verify/2", 2, ["ok": true, "error": NSNull(), "at": 2])] as Doc,
+    "wallet": try put("meta/wallet", 1, walletFields),
+    "sessions": swiftSessions,
+    "commits": ["3": try put("sessions/\(sid1)/commits/3", 3,
+                             ["commitments": ["a": [1, 2]] as Doc, "at": 4])] as Doc,
+    "shares": ["2": try put("sessions/\(sid1)/shares/2", 2, ["shares": "SH", "at": 5])] as Doc,
+]
+var pinned = [String: String]()
+for (seat, key) in seatKeys { pinned["\(seat)"] = key.signPk }
+let firstKey: Doc = ["signSk": seatKeys[1]!.signSk, "signPk": seatKeys[1]!.signPk]
+let swiftWallet: Doc = ["gid": wid, "n": 3, "sid": sid1, "pins": pinned, "raw": swiftRaw,
+                        "key": firstKey]
+let swiftFile = dir + "/signed-swift.json"
+try Engine.json(swiftWallet).write(toFile: swiftFile, atomically: true, encoding: .utf8)
+// The same reader that checked the web documents accepts these.
+let ownRead = try readWallet(swiftFile)
+var ownState = ownRead.0
+let ownBad = ownState.keepSigned(ownRead.1)
+check(Set(ownBad) == ["seats/3", "confirm/3", "sessions/\(sid4) proposal"],
+      "ignored own documents \(ownBad)")
+check(ids(ownState.seats) == ["1", "2"], "own seat documents")
+check(ids(ownState.confirm) == ["1", "2"], "own confirm documents")
+check(ids(ownState.verify) == ["2"] && ownState.wallet != nil, "own documents")
+check(ownState.verify["2"]?["ok"] as? Bool == true, "a boolean")
+check(ownState.verify["2"]?["error"] is NSNull, "a null")
+let ownStatus = Dictionary(uniqueKeysWithValues: ownState.sessions.map {
+    ($0.id, $0.doc.str("status"))
+})
+let wantStatus = [sid1: "broadcast", sid2: "cancelled", sid3: "failed"]
+check(ownStatus == wantStatus, "own statuses \(ownStatus)")
+check(ids(ownState.commits[sid1] ?? [:]) == ["3"], "own commits")
+check(ids(ownState.shares[sid1] ?? [:]) == ["2"], "own shares")
+// The memo answers for the same text only, so a changed field with the old signature fails.
+let pinMap = pinned.reduce(into: [Int: String]()) { $0[Int($1.key)!] = $1.value }
+let memoReader = SignedReader(gid: wid, n: 3, pins: pinMap)
+let signedConfirm = try put("confirm/1", 1, ["number": "1"])
+func confirmOk(_ number: String, sig: Any? = nil) -> Bool {
+    memoReader.accepts("confirm/1", by: 1, sig: sig ?? signedConfirm["sig"],
+                       fields: ["number": number], need: 1)
+}
+check(confirmOk("1"), "a signature is accepted")
+check(confirmOk("1"), "and again, from the memo")
+check(!confirmOk("2"), "the same length, another text")
+check(!confirmOk("1", sig: String(repeating: "A", count: 400)), "a very long signature")
+// The memo drops its oldest entries first, and a replaced entry keeps its place.
+let memo = SignedMemo(maxEntries: 3, maxChars: 100)
+var runs = 0
+func memoAsk(_ key: String, _ text: String, _ pk: String = "k", ok: Bool = true) -> Bool {
+    memo.verdict(key, text, pk) { runs += 1; return ok }
+}
+func filler(_ n: Int, _ c: Character = "x") -> String { String(repeating: c, count: n) }
+check(memoAsk("a", filler(10)), "a first check")
+check(memoAsk("a", filler(10), ok: false), "the same input is not checked again")
+check(!memoAsk("a", filler(10, "y"), ok: false), "the same length, other text")
+check(!memoAsk("a", filler(10, "y"), "other", ok: false), "another key")
+check(runs == 3, "three checks so far")
+for key in ["b", "c", "d"] { _ = memoAsk(key, filler(40, "z")) }
+check(memo.count == 2, "the oldest entries are dropped: \(memo.count)")
+let before = runs
+_ = memoAsk("d", filler(40, "z"))
+check(runs == before, "the newest entry stays")
+_ = memoAsk("a", filler(10, "y"))
+check(runs == before + 1, "the oldest entry is checked again")
+
+// An infinite number would abort the app when written back, so parse refuses it.
+check((try? Engine.parse("-1e999")) == nil, "a bare infinite number is refused")
+check((try? Engine.parse("{\"a\":[1,-1e999]}")) == nil, "a nested infinite number is refused")
+check((try? Engine.parse("{\"a\":[1,2.5]}")) != nil, "finite numbers parse")
 
 // A file made here opens in the web app (web.mjs verify), with the same bytes.
 var d = try BackupData.parse(plain)

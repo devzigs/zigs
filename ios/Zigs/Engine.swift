@@ -37,8 +37,15 @@ enum Engine {
         return String(decoding: data, as: UTF8.self)
     }
 
+    /// Refuses infinite numbers: -1e999 parses to -inf, and writing it back raises an Objective-C
+    /// exception that `try` does not catch, so the app would abort.
     static func parse(_ text: String) throws -> Any {
-        try JSONSerialization.jsonObject(with: Data(text.utf8), options: [.fragmentsAllowed])
+        let value = try JSONSerialization.jsonObject(with: Data(text.utf8),
+                                                     options: [.fragmentsAllowed])
+        guard JSONSerialization.isValidJSONObject([value]) else {
+            throw ZigsError("Invalid JSON number.")
+        }
+        return value
     }
 }
 

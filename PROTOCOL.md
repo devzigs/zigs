@@ -50,7 +50,8 @@ flowchart LR
   holder each time, so the server cannot link one device across wallets.
 - **X25519 seat key:** each seat publishes a public key when it joins. Key ceremony shares are
   encrypted to it.
-- **Ed25519 seat key:** each seat also has a signing key for messages (section 14).
+- **Ed25519 seat key:** each seat also has a signing key for messages (section 14). In a version 3
+  wallet it also signs documents (section 15).
 
 ## 3. How the group server stays blind
 
@@ -61,7 +62,8 @@ flowchart LR
 - **Padding.** Values are padded to at least 64 bytes, then to the next power of two, so their
   length does not show amounts.
 - **What the server can do.** It can refuse service, drop messages or replay old values. It cannot
-  read values or write new valid ones.
+  read values or write new valid ones. A holder of the wallet secret can write values. A version 3
+  wallet makes devices ignore the values that carry no valid signature (section 15).
 - **What the server sees.** Wallet ids, message room ids, document paths and field names, timing,
   and which IP addresses connect to which wallet. It keeps no logs.
 - **Abuse limits.** A message is at most 300,000 characters, a document at most 256,000, and a
@@ -74,7 +76,8 @@ holds the whole spending key.
 
 A wallet document has a `version` field.
 
-- **Version 2** is the ceremony below. All new wallets use it. The signers agree on a secret `sk`,
+- **Version 3** is the ceremony below with signed writes (section 15). All new wallets use it.
+- **Version 2** is the ceremony below, without signed writes. The signers agree on a secret `sk`,
   and the wallet keys follow from it as ZIP 2005 (Proposed) specifies.
 - **Version 1** has no `version` field. An older app made it. The creator's device chose `nk` and
   `rivk`, and there is no `qsk`. Version 1 wallets keep working with the old flow (section 4.3).
@@ -83,11 +86,11 @@ A wallet document has a `version` field.
 The `version` field is one sealed field of the wallet document. The group server cannot read it
 and does not check who writes it. So each seat keeps the version that its wallet had when it took
 the seat (`version` in the seat secret). If the wallet document later shows another version, the
-seat ends its setup. A joiner who sees a wallet that is not version 2 gets a warning first. The
+seat ends its setup. A joiner who sees a wallet that is not version 2 or 3 gets a warning first. The
 joiner must say yes. The warning reads: "This wallet is not built to ZIP 2005. Funds cannot be
 recovered if quantum computers break today's keys."
 
-### 4.1 The ceremony, version 2
+### 4.1 The ceremony, versions 2 and 3
 
 ```mermaid
 sequenceDiagram
@@ -96,7 +99,7 @@ sequenceDiagram
   participant S as Group server
   actor B as Signer (seat 2)
   A->>A: Make a wallet id and a 32-byte wallet secret
-  A->>S: Wallet document with version 2, sealed with the secret
+  A->>S: Wallet document with version 3, sealed with the secret
   A-->>B: Invite link with the secret, through a private channel
   B->>S: Take seat 2: name and X25519 public key, sealed
   A-->>B: Compare the safety number (wallet id, t, n, network, seat keys), on a call or in person
@@ -123,7 +126,7 @@ sequenceDiagram
 ```
 
 1. **Setup.** The creator makes the wallet id and secret, writes the sealed wallet document (name,
-   t, n, network, `version: 2`) and takes seat 1.
+   t, n, network, `version: 3`) and takes seat 1.
 2. **Invite.** The creator sends the link through a private channel, such as Signal. Each signer
    opens it and takes a free seat. The device keeps its box key pair (`boxSk`, `boxPk`) and the
    wallet version (`version`) in the seat secret.
@@ -189,7 +192,9 @@ writes it again until the store holds such a document. A seat that sees a publis
 document and holds no key share yet stops too. A device retries the `done` write until the write
 succeeds.
 
-Document layout of a version 2 wallet, all fields sealed with the wallet secret:
+Document layout of a version 2 wallet, all fields sealed with the wallet secret. A version 3
+wallet adds the fields `by` and `sig` to the documents in section 15.4. It adds the part fields
+of section 15.5 to the payment documents. Its `version` is 3:
 
 | Path | Fields |
 |---|---|
@@ -254,7 +259,7 @@ The creator publishes the address and the viewing key. Then each seat checks the
 - The app shows the address only after this device's own seat checked it. Other seats' "checked"
   marks in the store are only claims.
 
-A dishonest creator cannot publish an address that the signers do not control. In a version 2
+A dishonest creator cannot publish an address that the signers do not control. In a version 2 or 3
 wallet, the creator also cannot choose `nk` or `rivk`.
 
 ## 6. Receiving and sync
@@ -413,7 +418,7 @@ flowchart TD
     file. Zigs cannot recover a lost passphrase.
   - Sealed text. The JSON of the older plain backup: `kind` (`zec-frost-key-share`), `group`,
     `groupName`, `seat`, `threshold`, `of`, `key` (the wallet secret), `wallet` and `secret` (the
-    seat secret). It never holds nonces. For a version 2 wallet the seat secret holds `vaultSk`,
+    seat secret). It never holds nonces. For a version 2 or 3 wallet the seat secret holds `vaultSk`,
     the ZIP 2005 `sk` that the signers agreed on. From it anyone can compute `qsk`, so keep the
     file and the passphrase as secret as the key share. On the web, the seat secret also holds the
     seat's signing keys.
@@ -451,11 +456,11 @@ flowchart TD
     - the public key package, compared with its keys in sorted order;
     - the group key.
 
-    For a version 2 wallet, `vaultSk` of the file must also give the full viewing key of the
+    For a version 2 or 3 wallet, `vaultSk` of the file must also give the full viewing key of the
     wallet. The check is `walletVerifyV2` with the published key package, `vaultSk` and the wallet
-    document. A seat of a version 2 wallet without `vaultSk` does not fit.
+    document. A seat of a version 2 or 3 wallet without `vaultSk` does not fit.
   - Settle. The app decides when the done document and the seat document have loaded. For a version
-    2 wallet it also waits for the wallet document. Until then the restored seat is not a seat of
+    2 or 3 wallet it also waits for the wallet document. Until then the restored seat is not a seat of
     this device. If the seat does not fit, the app undoes the restore:
     - A seat that held no secret returns to that state.
     - A seat that held a key share keeps what it holds. The old copy would bring back old nonces.
@@ -468,8 +473,11 @@ flowchart TD
 
     If the seat fits, the app also takes the `version` and the `room` of the file. It takes each
     only when it equals the value in the wallet document, and it stores the value of the wallet.
-    A seat that held a key share takes neither. Until then the file cannot stop the setup of the
-    seat with a false version, and it cannot pin a false message room.
+    One case differs: a file that says version 3 keeps version 3 when the wallet document shows
+    a lower version. The seat then stays in signed mode, and it shows that the version moved. A
+    holder of the link cannot turn signed writes off for a restored seat. A seat that held a key
+    share takes neither value. Until then the file cannot stop the setup of the seat with a false
+    version, and it cannot pin a false message room.
 
     The app settles each restore apart, by wallet and seat. It refuses a second restore of a seat
     until the first one settles. A restore that added the wallet secret removes it again only when
@@ -507,8 +515,8 @@ the web, on iPhone and on Mac at the same time.
 - **Main screens.**
   - Wallet list, and a "Create wallet" form (name, *t*, *n*, network).
   - Invite card with the link and a QR code.
-  - Setup steps: signers join, create the key together, check the address. A version 2 wallet
-    shows a safety number card before the three steps.
+  - Setup steps: signers join, create the key together, check the address. A version 2 or 3
+    wallet shows a safety number card before the three steps.
   - Wallet view with the tabs Overview, Activity, Messages, Signers and Details.
   - Send: one or more recipients, "Paste a list" from a spreadsheet, and a fee estimate.
   - Receive: the checked address, a QR code and a copy button.
@@ -546,6 +554,9 @@ the web, on iPhone and on Mac at the same time.
   stores the wallet secret and the seat secret in the Keychain, as joining by invite link does. It
   follows the rules of section 9. A restored seat counts as a seat of this device when it fits the
   wallet. The device then also counts it as the proposer of a payment that the seat made.
+- **Signed writes.** New wallets have version 3. The apps sign and check documents as in section
+  15, in the same way as the web app. A wallet can have seats on the web, on iPhone and on Mac.
+  `ios/check-backup.sh` checks that each app accepts the signatures of the other.
 - **Proofs.** The device builds Halo2 proofs natively. The time on a real iPhone is not measured
   yet.
 
@@ -584,17 +595,21 @@ the web, on iPhone and on Mac at the same time.
 - Fewer than *t* signers cannot spend.
 - One honest approving device sees the true payment, and signs only the transaction it approved.
 - A dishonest creator cannot publish an address that the signers do not control.
-- In a version 2 wallet, the creator cannot choose `nk` or `rivk`. Every signer recomputes them
+- In a version 2 or 3 wallet, the creator cannot choose `nk` or `rivk`. Every signer recomputes them
   from `sk` and checks the published wallet.
 - The group server cannot read the wallet or forge documents.
+- In a version 3 wallet, a holder of the invite link without a seat cannot make a device show
+  a false fact. A false fact is an approval, cancel, check mark, proposer, seat name or result
+  such as "Sent". Devices ignore a document without a valid signature of the right seat
+  (section 15).
 
 **Limits**
 
 - Not audited.
-- A version 2 wallet is built to ZIP 2005 (Proposed) so that funds can be recovered if quantum
-  computers break today's keys. The ZIP is not final, and the Recovery Protocol does not exist
-  yet. If the ZIP changes before it is final, a wallet that follows the current text may need to
-  move its funds.
+- A wallet of version 2 or 3 is built to ZIP 2005 (Proposed) so that funds can be recovered if
+  quantum computers break today's keys. The ZIP is not final, and the Recovery Protocol does not
+  exist yet. If the ZIP changes before it is final, a wallet that follows the current text may
+  need to move its funds.
 - Every signer holds `qsk`. As ZIP 2005 says, a quantum attacker who has `qsk` may steal the
   funds. So under a quantum attacker, one signer or one stolen backup with its passphrase could
   take the funds. Move the funds to a post-quantum protocol when one exists.
@@ -602,7 +617,9 @@ the web, on iPhone and on Mac at the same time.
   not control. It has about 100 bits, so a split view needs about 2^50 work.
 - The `version` field is not authenticated. A holder of the wallet secret can change it. A seat
   made by this app ends its setup when it sees another version. A joiner who accepts the warning
-  for a wallet that is not version 2, and a seat of an older app, run the old flow.
+  for such a wallet runs the old flow. A seat of an older app runs it too. A device keeps the first
+  version that it saw. So a version 3 wallet cannot be turned into an unsigned one on a device
+  that knew it before.
 - The agreement on `sk` is not quantum-resistant. The secret parts `r` travel in X25519 boxes, and
   the `dkg2` documents stay in the store. An attacker who recorded them and later learns the
   wallet secret can break X25519 with a quantum computer. That attacker then gets `sk` and `qsk`.
@@ -700,3 +717,190 @@ learns that two member ids talk to each other.
   "New message in a chat".
 - **Leaving.** "Leave chat" removes the chat from the browser. The documents stay on the group
   server.
+
+## 15. Signed writes (version 3)
+
+The wallet secret in the invite link lets its holder write any document in the wallet. Funds stay
+safe, because FROST and the device checks do not depend on the store. But the screen could show
+false facts. A holder could write `commits/2` so that the app shows "Ana approved". He could
+cancel or fail a payment, write "checked" marks for other seats, or make a proposal that shows
+as "Proposed by Ana". A version 3 wallet closes this. Every document that matters carries the
+signature of the seat that wrote it, and a device ignores a document that has no valid signature.
+Messages (section 14) were already signed.
+
+### 15.1 Version 3
+
+- `version: 3` in the wallet document at `groups/<id>`. Version 3 is the version 2 ceremony
+  (section 4.1) with signed writes. Versions 1 and 2 behave as before.
+- The `version` field inside `meta/wallet` stays 2. It names the key ceremony that the wallet
+  check uses (`walletVerifyV2`).
+- The wallet document `groups/<id>` has no signature. So a device keeps the first version that it
+  sees for a wallet (`zf-signpins`, key `version:<wallet id>`), and the version of its own seats.
+  Once a device knows a wallet as version 3, a later lower value in the store does not turn signed
+  writes off.
+- A device also keeps the first `n` and the first `t` that it sees for a version 3 wallet. They
+  are in `zf-signpins`, under the key `shape:<wallet id>`, as `n/t`. A device reads `n` and `t`
+  from the pin, never from a later value in the store. So a holder of the link cannot add a seat
+  above `n`. If the store shows other values, the wallet page says so.
+- A seat in a version 3 wallet needs Ed25519. A browser without it cannot create a wallet or
+  take a seat ("This browser cannot sign, so it cannot take part in this wallet."). It shows
+  "This wallet needs signatures, and this browser cannot check them." instead of the wallet.
+  The iPhone and Mac apps always have Ed25519 (CryptoKit).
+- The iPhone and Mac apps keep the same pins in `UserDefaults`, under the same name
+  (`zf-signpins`) and with the same keys.
+
+### 15.2 Keys
+
+- Every seat has an Ed25519 signing key, made when the seat is taken. The format is the one of
+  section 14. The seat secret holds `signSk`: base64 of the PKCS8 DER, which is the prefix
+  `302e020100300506032b657004220420` and the 32-byte seed. The seat document holds `signPk`: the
+  lowercase hex of the 32-byte public key. A backup holds both in the seat secret.
+- A device pins the first `signPk` that it sees for each seat from 1 to `n`
+  (`zf-signpins`, key `<wallet id>:<seat>`). It checks every signature with the pinned key. A later
+  different key in the seat document is a changed key and is never trusted.
+- A device pins a key only when the seat document is signed with that same key (section 15.4).
+  A made-up seat document pins nothing.
+- The iPhone and Mac apps make the key when they take a seat, in a wallet of any version. They use
+  CryptoKit (`Curve25519.Signing`). They store the key in the Keychain with the seat secret, in
+  the format above, so a backup moves between the apps.
+
+### 15.3 What a seat signs
+
+The engine builds the text that is signed, so that every app signs the same bytes:
+`docPayload(walletId, path, seat, fieldsJson)` returns the compact JSON array
+
+    ["zigs-doc-v1", walletId, path, seat, fields]
+
+- `path` is the path of the document below the wallet, without `groups/<wallet id>/`. For example
+  `confirm/1` or `sessions/<session id>/commits/2`.
+- `seat` is the number of the signing seat, a JSON integer.
+- `fields` is the JSON object of signed fields, with the keys sorted at every level. There are no
+  spaces. Strings are written as `serde_json` writes them. A number must be an integer. The
+  engine refuses a float, and a value that is no object.
+- The signature is Ed25519 over the UTF-8 bytes of this text, in base64.
+- A seat writes the signature in the same document, in the fields `by` (the seat number) and
+  `sig`. These two fields are not part of `fields`.
+- A field with the value `undefined` is not written, so it is not signed. A field with the value
+  `null` is written and signed.
+
+Known answer, for the wallet id `0123456789abcdef0123`, the path `confirm/2`, the seat 2 and the
+fields `{"number":"12345 67890 12345 67890 12345 67890","at":1760000000000}`:
+
+    ["zigs-doc-v1","0123456789abcdef0123","confirm/2",2,{"at":1760000000000,"number":"12345 67890 12345 67890 12345 67890"}]
+
+The signing seed is the bytes 0 to 31. The public key is
+`03a107bff3ce10be1d70dd18e74bc09967e4d6309ba50d5f1ddc8664125531b8`. The signature is
+`HfeBGagkHgfSW/dlhgyAuMGNEUigk6iD3xyUyS0FrO035rvYkbv+qEvQtn/KczG4cpUvbg2vhBrKw2hQgWrfDw==`.
+[`web/test/signed.mjs`](web/test/signed.mjs) checks this vector.
+
+### 15.4 Documents that a seat signs as a whole
+
+`fields` is every field of the document except `by` and `sig`. The writer must be the seat in the
+column "Writer". A document with another `by` is ignored.
+
+| Path below the wallet | Writer |
+|---|---|
+| `seats/<i>`, `confirm/<i>`, `abort/<i>`, `dkg1/<i>`, `done/<i>`, `verify/<i>` | seat `i` |
+| `dkg2/<i>-<j>` | seat `i`, the sender |
+| `meta/wallet` | seat 1, the seat of the creator |
+| `sessions/<session id>/commits/<i>`, `sessions/<session id>/shares/<i>` | seat `i` |
+
+- The seat document `seats/<i>` holds `uid`, `name`, `boxPk`, `signPk` and `at`. The seat signs it
+  with the new key when it takes the seat. Until a key is pinned for the seat, a reader checks the
+  document with the key that it names. Then it pins that key.
+- A reader takes names and identities only from a seat document that verifies. So a holder of the
+  link cannot rename a seat or copy the identity of another.
+- A seat chooses its own name, and two seats can use one name. So the apps show the seat number
+  beside a name, for example "Proposed by Ana (seat 1)".
+
+### 15.5 Session documents
+
+A session document has several writers. Each part has its own `by` and `sig` fields, and a
+signature over only its own fields. The path in the signed text is `sessions/<session id>`.
+
+| Part | Signed fields | Writer fields | Writer |
+|---|---|---|---|
+| proposal | `payees`, `note`, `pool`, `amount`, `change`, `fee`, `noteValue`, `pczt`, `move`, `createdAt` | `by`, `sig` | a seat |
+| package | `package`, `signers` | `packageBy`, `packageSig` | a seat |
+| signed | `signed`, `signatures` | `signedBy`, `signedSig` | a seat, after the package |
+| final | `final` | `finalBy`, `finalSig` | a seat, after `signed` |
+| sent | `broadcastTxid`, `broadcastAt` | `sentBy`, `sentSig` | a seat, after `final` |
+| cancel | `status` (always `"cancelled"`), `error` | `cancelBy`, `cancelSig` | a seat |
+| failure | `error` | `errorBy`, `errorSig` | a seat |
+
+- A proposal comes from a seat. A browser with no seat cannot propose in a version 3 wallet.
+- The proposer's device builds the signing package, as before.
+- A part that builds on another part counts only when the other part counts. `signed` needs the
+  package, `final` needs `signed`, and `sent` needs `final`. The `broadcastTxid` of `sent` must be
+  the `txid` inside `final`.
+- A device with no seat that can sign cannot combine the signatures, build the proof or send the
+  transaction in a version 3 wallet. Each of these steps is a signed write.
+- `status`, `provingAt`, `cancelledAt`, `broadcastError` and `createdBy` have no signature. A
+  reader ignores `status` and `createdBy` in a version 3 wallet. The three other fields only show
+  a time or a text.
+- The engine still checks the signed PCZT, the proof and the txid when it uses them. The
+  signature of a part says which seat wrote it. It does not replace these checks.
+- The reader derives the state of a payment from the verified parts, and never from the stored
+  `status`. The first rule that holds decides:
+  1. cancelled, when the cancel part is valid;
+  2. failed, when the failure part is valid;
+  3. sent, when `sent` is valid;
+  4. ready to send, when `final` is valid;
+  5. signed, when `signed` is valid;
+  6. signing, when the package is valid;
+  7. collecting, in all other cases.
+
+  The stored `status` counts only for the progress mark `proving`, and only for a signed payment.
+- The proposer is the seat in `by`. The reader takes the proposer's name from that seat and
+  ignores `createdBy`.
+- A cancel and a failure share the field `error`. If two devices write them at the same time,
+  the later write wins, and the part of the earlier write fails its check.
+
+### 15.6 What a reader does
+
+- A document, or a part of a session document, is **ignored as if absent** when
+  - its `by` is no seat of the wallet (1 to the pinned `n`), or is not the writer that the path
+    names (for example `commits/2` signed by seat 3), or
+  - the signature does not verify against the pinned `signPk` of the seat in `by`, or
+  - `by` or `sig` is missing, or no key is pinned for that seat after the seats have loaded.
+- A session whose proposal is ignored is ignored as a whole. Any other part that is ignored is
+  taken out of the session, and the rest stays.
+- A field must be plain JSON. The device drops a field that holds a number that is not finite,
+  or a value nested more than 32 levels deep. JSON writes an infinite number as `null`, so a
+  signature over `null` would also cover `-1e999`.
+- The device logs each ignored document once. The log key is the path, never the signature. The
+  log starts again each time the wallet opens, and it keeps at most 200 paths for a wallet.
+- The wallet page shows one quiet line when any document was ignored: "Some data in this wallet
+  was not signed by a signer. Zigs ignored it." The line counts the documents of the wallet and
+  of its payments. It counts the approvals and shares of the open payment only, because the web
+  app loads only those.
+- Verification is asynchronous in a browser. A device keeps the result for the signed text, the
+  key and the signature together. A text of the same length is a new check. The memo has a limit,
+  and it drops old entries first.
+- A document with no result yet counts as absent. The device does nothing for the wallet until
+  all results are known. It must not act on a document before it knows the result.
+- A device checks a document again when it reads it from the store for a decision. One example is
+  the check before it writes a wallet document or a signing package. An unsigned document in a
+  place does not block a real write there.
+
+### 15.7 Limits
+
+- A holder of the invite link can still read everything, and can write documents. Devices ignore
+  the documents that carry no valid signature. A write can still replace a real document, so the
+  holder can stop a wallet. This is a denial of service. Funds stay safe.
+- A holder can replay an older signed document of the same path, for example an old `commits/2`.
+  The payment checks (sighash, nonces, aggregate verification) catch the harm. The result is
+  at most a payment that cannot finish.
+- A signer who holds a seat can sign a wrong PCZT or a wrong proof. The engine rejects it when it
+  checks, and the payment cannot finish. The signature shows which seat wrote it.
+- The first `signPk` that a device sees for a seat is trusted, if the seat document is signed with
+  it. The safety number covers the box keys, not the signing keys. A holder who takes an open seat
+  first can set the key that the device pins for it. Compare the safety number and the seat names
+  with the other signers.
+- The first `n` and `t` that a device sees are trusted. A holder who changes them before a device
+  first sees the wallet sets them for that device. The safety number covers `t` and `n`, so
+  signers who compare it in the setup find the change.
+- These documents stay unsigned: the wallet document `groups/<id>` (`name`, `room`, `movedTo`,
+  `version`, `n`, `t`, `createdBy`), and the progress marks listed in section 15.5. A holder can
+  write a progress mark such as `status: "proving"`. A signer then cannot start the proof until
+  the mark is three minutes old, and the holder can write it again. This is a denial of service.

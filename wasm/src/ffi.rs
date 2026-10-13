@@ -66,6 +66,7 @@ const METHODS: &[(&str, Method)] = &[
     ("boxOpen", |a| box_open(s(a, 0)?, s(a, 1)?, s(a, 2)?, s(a, 3)?)),
     ("secretSeal", |a| secret_seal(s(a, 0)?, s(a, 1)?, s(a, 2)?)),
     ("secretOpen", |a| secret_open(s(a, 0)?, s(a, 1)?, s(a, 2)?)),
+    ("docPayload", |a| doc_payload(s(a, 0)?, s(a, 1)?, n(a, 2)?, s(a, 3)?)),
     ("backupSeal", |a| backup::seal(s(a, 0)?, s(a, 1)?)),
     ("backupOpen", |a| backup::open(s(a, 0)?, s(a, 1)?)),
     ("walletOpen", |a| native::open(s(a, 0)?, s(a, 1)?, h(a, 2)?, a.get(3).and_then(Value::as_str))),
@@ -184,6 +185,18 @@ mod tests {
         assert_eq!(wrong["err"], "Wrong passphrase, or the file is damaged.");
         assert!(ffi("backupSeal", json!(["short", plain]))["err"].is_string());
         assert!(ffi("backupOpen", json!([pass, 1]))["err"].is_string());
+    }
+
+    #[test]
+    fn doc_payload_matches_the_wasm_name() {
+        let fields = r#"{"b": 1, "a": null}"#;
+        let out = ffi("docPayload", json!(["w", "confirm/1", 1, fields]));
+        assert_eq!(out["ok"], r#"["zigs-doc-v1","w","confirm/1",1,{"a":null,"b":1}]"#);
+        assert_eq!(out["ok"], doc_payload("w", "confirm/1", 1, fields).unwrap());
+        assert!(ffi("docPayload", json!(["w", "confirm/1", "1", fields]))["err"].is_string());
+        assert!(ffi("docPayload", json!(["w", "confirm/1", 70000, fields]))["err"].is_string());
+        let float = r#"{"a": 1.5}"#;
+        assert!(ffi("docPayload", json!(["w", "confirm/1", 1, float]))["err"].is_string());
     }
 
     #[test]

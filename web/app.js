@@ -6,8 +6,12 @@ import {
   abortText, backupName, boxPairMatches, checkNetwork, chunks, confirmGate, conflictReason, finite,
   fitsPublished, fmtInt, frostId, heldRefusal, keysOf, lateFields, LINK_CHAT_ID, linkRefusal,
   makePassphrase, numberClash, passIssue, restoredSecret, samePackages, seatOwned, settledFields,
-  shareShape, skey, slowCall, staleRestore, takenKeys, undoPlan, walletVersion,
+  shareShape, skey, slowCall, staleRestore, takenKeys, undoPlan, usesV2, walletVersion,
 } from "/util.js";
+import {
+  docFields, filterWallet, IGNORED_NOTE, makeMemo, partFields, proposalFields, readSessions,
+  signPart, trustShape, validShape, writerCheck,
+} from "/signed.js";
 import {
   byTime, canSign, chatWarning, checkText, countUnread, dmText, joinBlock, keyState, newRoom,
   newSignKey, normChats, parseDm, parseHash, parseMsg, pickRoom, pin, pinMember, pinnedMembers,
@@ -231,7 +235,18 @@ function saveBal(gid, bal) {
 // Payment proposals of every wallet where this browser holds a seat, for the approval counts.
 const inbox = {}, inboxSubs = new Map();
 const ready = {}, readySubs = new Map();
-const state = { groups: [], gid: null, cid: null, g: null, seats: {}, dkg1: {}, dkg2: {}, confirm: {}, abort: {}, done: {}, verify: {}, wallet: null, sessions: [], sid: null, commits: {}, shares: {}, log: [] };
+const state = {
+  groups: [], gid: null, cid: null, g: null, seats: {}, seatsLoaded: false, seatsSettled: false,
+  dkg1: {}, dkg2: {}, confirm: {}, abort: {}, done: {}, verify: {}, wallet: null, sessions: [],
+  sid: null, commits: {}, shares: {}, ignored: 0, pending: false, log: [],
+};
+// What the store holds, before signed writes are checked (see Signed writes below). `state` holds
+// what the page may use.
+const emptyRaw = () => ({
+  seats: {}, dkg1: {}, dkg2: {}, confirm: {}, abort: {}, done: {}, verify: {}, wallet: null,
+  sessions: {}, commits: {}, shares: {},
+});
+const raw = emptyRaw(), rawInbox = {}, rawReady = {};
 let unsubGroup = [], unsubSession = [];
 const busy = new Set();
 const inspectCache = new Map();
@@ -313,7 +328,16 @@ function openField(key, path, k, v) {
     if (opened.size >= 5000) opened.clear();
     opened.set(id, text);
   }
-  return J(text);
+  const value = J(text);
+  if (!plainJson(value)) throw new Error("not plain JSON");
+  return value;
+}
+// A stored value must survive JSON.stringify unchanged: -1e999 parses to -Infinity, which a
+// signature over null would cover, and very deep nesting makes JSON.stringify throw.
+function plainJson(v, depth = 0) {
+  if (typeof v === "number") return Number.isFinite(v);
+  if (v === null || typeof v !== "object") return true;
+  return depth < 32 && Object.values(v).every((x) => plainJson(x, depth + 1));
 }
 function openDoc(path, raw) {
   const key = keyOf(path);
@@ -373,7 +397,7 @@ async function boot() {
     watchInbox();
     syncRooms();
     if (state.gid && !state.g) openGroup(state.gid);
-    render();
+    refilter();
   }, (e) => showBanner("bad", "Lost connection to the group server (" + e.code + "). Reload."));
   followHash();
   render();
@@ -381,19 +405,32 @@ async function boot() {
 
 // A wallet document comes from another signer. Check the fields the page counts on, so one bad
 // document shows as an unreadable item and never breaks the page.
-const validWallet = (g) => Number.isInteger(g.n) && g.n >= 2 && g.n <= 7
-  && Number.isInteger(g.t) && g.t >= 2 && g.t <= g.n;
-const cleanGroup = (id, d) => ({
-  ...d, id, name: typeof d.name === "string" ? d.name : "Wallet", unreadable: !validWallet(d),
-});
+const validWallet = (g) => validShape(g.n, g.t);
+// A version 3 wallet keeps the first n and t that this device saw: the group document has no
+// signature, so a holder of the invite link could write other values (PROTOCOL.md section 15).
+function cleanGroup(id, d) {
+  pinVersion(id, d);
+  const g = {
+    ...d, id, name: typeof d.name === "string" ? d.name : "Wallet", unreadable: !validWallet(d),
+  };
+  if (!signedMode(id)) return g;
+  const shape = trustShape(signPins, id, g);
+  if (shape.fresh) saveMerged("zf-signpins", signPins, oldest);
+  return shape.g;
+}
 
 function watchInbox() {
   for (const g of state.groups) {
-    if (!readySubs.has(g.id)) readySubs.set(g.id, sdb.doc("groups/" + g.id + "/meta/wallet").onSnapshot((d) => { ready[g.id] = d.exists ? d.data() : false; render(); }));
+    if (!readySubs.has(g.id)) {
+      readySubs.set(g.id, sdb.doc("groups/" + g.id + "/meta/wallet").onSnapshot((d) => {
+        rawReady[g.id] = d.exists ? d.data() : false;
+        refilter();
+      }));
+    }
     if (inboxSubs.has(g.id) || !mySeatSecrets(g.id).length) continue;
     inboxSubs.set(g.id, sdb.collection("groups/" + g.id + "/sessions").onSnapshot((snap) => {
-      inbox[g.id] = snap.docs.map((d) => ({ id: d.id, ...d.data() }));
-      render();
+      rawInbox[g.id] = snap.docs.map((d) => ({ id: d.id, ...d.data() }));
+      refilter();
     }));
   }
 }
@@ -409,8 +446,10 @@ function needsMyApproval(gid, ss) {
 const toApprove = (gid) => (gid === state.gid ? state.sessions : inbox[gid] || []).filter((ss) => needsMyApproval(gid, ss));
 
 function sub(path, fn) {
-  return sdb.collection(path).onSnapshot((snap) => { const m = {}; for (const d of snap.docs) m[d.id] = d.data(); fn(m); render(); react(); },
-    (e) => log("subscription error on " + path + ": " + e.code));
+  return sdb.collection(path).onSnapshot((snap) => {
+    const m = {}; for (const d of snap.docs) m[d.id] = d.data();
+    fn(m); refilter();
+  }, (e) => log("subscription error on " + path + ": " + e.code));
 }
 
 function openGroup(gid) {
@@ -418,25 +457,27 @@ function openGroup(gid) {
   closeSession();
   ui.backup = null;   // the dialog names a seat of the wallet that was open
   dropChain();
-  Object.assign(state, { gid, cid: null, g: null, seats: {}, dkg1: {}, dkg2: {}, confirm: {}, abort: {}, done: {}, verify: {}, wallet: null, sessions: [], log: [] });
+  Object.assign(state, {
+    gid, cid: null, g: null, seats: {}, seatsLoaded: false, seatsSettled: false, dkg1: {}, dkg2: {},
+    confirm: {}, abort: {}, done: {}, verify: {}, wallet: null, sessions: [], ignored: 0,
+    pending: false, log: [],
+  });
+  Object.assign(raw, emptyRaw());
+  loggedIgnored.delete(gid);
   if (!gid) { setHash("#"); render(); return; }
   setHash("#" + gid);
   const base = "groups/" + gid;
   unsubGroup.push(sdb.doc(base).onSnapshot((d) => {
     state.g = d.exists ? cleanGroup(d.id, d.data()) : null;
-    render(); react();
+    refilter();
   }));
-  unsubGroup.push(sub(base + "/seats", (m) => { state.seats = m; pinSigners(m); }));
-  unsubGroup.push(sub(base + "/dkg1", (m) => state.dkg1 = m));
-  unsubGroup.push(sub(base + "/dkg2", (m) => state.dkg2 = m));
-  unsubGroup.push(sub(base + "/confirm", (m) => state.confirm = m));
-  unsubGroup.push(sub(base + "/abort", (m) => state.abort = m));
-  unsubGroup.push(sub(base + "/done", (m) => state.done = m));
-  unsubGroup.push(sub(base + "/verify", (m) => state.verify = m));
-  unsubGroup.push(sdb.doc(base + "/meta/wallet").onSnapshot((d) => { state.wallet = d.exists ? d.data() : null; render(); react(); }));
-  unsubGroup.push(sub(base + "/sessions", (m) => {
-    state.sessions = Object.entries(m).map(([id, v]) => ({ id, ...v }))
-      .sort((a, b) => finite(b.createdAt) - finite(a.createdAt));
+  unsubGroup.push(sub(base + "/seats", (m) => { raw.seats = m; state.seatsLoaded = true; }));
+  for (const name of ["dkg1", "dkg2", "confirm", "abort", "done", "verify", "sessions"]) {
+    unsubGroup.push(sub(base + "/" + name, (m) => { raw[name] = m; }));
+  }
+  unsubGroup.push(sdb.doc(base + "/meta/wallet").onSnapshot((d) => {
+    raw.wallet = d.exists ? d.data() : null;
+    refilter();
   }));
   render();
 }
@@ -445,14 +486,21 @@ function openSession(sid) {
   closeSession();
   state.sid = sid;
   const base = "groups/" + state.gid + "/sessions/" + sid;
-  unsubSession.push(sub(base + "/commits", (m) => state.commits = m));
-  unsubSession.push(sub(base + "/shares", (m) => state.shares = m));
+  unsubSession.push(sub(base + "/commits", (m) => { raw.commits = m; }));
+  unsubSession.push(sub(base + "/shares", (m) => { raw.shares = m; }));
   render();
 }
-function closeSession() { for (const u of unsubSession) u(); unsubSession = []; state.sid = null; state.commits = {}; state.shares = {}; }
+function closeSession() {
+  for (const u of unsubSession) u();
+  unsubSession = []; state.sid = null;
+  state.commits = {}; state.shares = {}; raw.commits = {}; raw.shares = {};
+}
 
 // ───────────────────────── Derived state ─────────────────────────
-const seatIds = () => state.g ? Array.from({ length: state.g.n }, (_, i) => i + 1) : [];
+// The seats of the open wallet. A group document with no valid n and t has none, so a made-up n
+// never sizes an array.
+const seatIds = () => state.g && !state.g.unreadable
+  ? Array.from({ length: state.g.n }, (_, i) => i + 1) : [];
 const allSeated = () => seatIds().every((i) => {
   const s = state.seats[i];
   return s && s.uid && isStr(s.boxPk);
@@ -480,10 +528,10 @@ function fitState(i, s) {
   return fitsPublished(i, s, done) ? setupFit(i, s, done) : false;
 }
 
-// A seat of a version 2 wallet must hold the setup secret that, with the seat's published data,
-// gives the full viewing key of the wallet. A seat of another version holds none.
+// A seat of a version 2 or 3 wallet must hold the setup secret that, with the seat's published
+// data, gives the full viewing key of the wallet. A seat of another version holds none.
 function setupFit(i, s, done) {
-  if (!s.vaultSk) return groupVersion() !== 2;
+  if (!s.vaultSk) return !usesV2(groupVersion());
   if (!state.wallet || !Z) return null;
   const inputs = [state.wallet, done.publicKeyPackage, s.vaultSk];
   return cached(skey(state.gid, i), inputs, () => walletMatches(...inputs));
@@ -507,6 +555,11 @@ function cached(key, inputs, ask) {
 const ownsSeat = (i, s) => seatOwned(state.seats[i], s, me, () => fitState(i, s));
 const localSeats = () => !state.gid ? []
   : mySeatSecrets(state.gid).filter(([i, s]) => ownsSeat(i, s)).map(([i]) => i);
+// Is seat i this browser's? In a version 3 wallet it is a seat whose key this browser holds,
+// because a made-up seat document can copy any identity. Before, it is the identity in the seat
+// document.
+const seatMine = (i) => signedMode(state.gid) ? localSeats().includes(i)
+  : isMe((state.seats[i] || {}).uid);
 // This browser, or a seat it holds in the open wallet.
 const isMe = (uid) => !!uid && (uid === me || localSeats().some((i) => state.seats[i].uid === uid));
 // The identity other signers know: the first local seat's, which outlives a Tor session.
@@ -555,7 +608,7 @@ const canReact = () => !!(Z && db && state.g && !state.g.unreadable && groupVers
 const chainReady = () => state.wallet && state.wallet.birthday && myVerified() && !keysDiffer();
 
 function reactNow() {
-  if (!canReact()) return;
+  if (!canReact() || signedHold()) return;
   reactStops();
   reactConfirm();
   for (const i of localSeats()) reactSeat(i);
@@ -586,8 +639,10 @@ function reactSeat(i) {
   // Seats taken before secrets kept their identity: record it while this browser still knows it.
   if (!s.uid) putSec(gid, i, { uid: state.seats[i].uid });
   ensureSignKey(gid, i);
+  // A seat that cannot sign writes nothing in a version 3 wallet (signedNotes tells the person).
+  if (!canWriteAs(i)) return;
   if (s.aborted || (!s.keyPackage && remoteAborts().length)) return;
-  const started = seatMode(s) === 2 ? stepV2(i, s) : stepV1(i, s);
+  const started = usesV2(seatMode(s)) ? stepV2(i, s) : stepV1(i, s);
   if (!started) verifyStep(i, s);
 }
 
@@ -607,15 +662,21 @@ function reactStops() {
     const reason = s.aborted ? null : conflictOf(i, s, number);
     if (reason) putSec(state.gid, i, { aborted: abortText(reason) });
     const text = sec(state.gid, i).aborted;
-    if (text && !abortSent(i)) launch("abort:" + i, () => publishAbort(i, text));
+    if (mustAbort(i, text)) launch("abort:" + i, () => publishAbort(i, text));
   }
 }
+// A stopped seat tells the others, if it may write as that seat. In version 3 that needs the
+// signing key that readers pinned, so a replaced seat document cannot stop the abort.
+const mustAbort = (i, text) => text && canWriteAs(i) && !abortSent(i);
 // A published abort document is one that exists and holds a reason.
 const abortSent = (i) => !!state.abort[i] && isStr(state.abort[i].reason);
 // A seat that stopped its setup also stops the seats that hold no key share yet.
 const remoteAborts = () => seatIds().filter(abortSent);
-const publishAbort = (i, text) => sdb.doc("groups/" + state.gid + "/abort/" + i)
-  .set({ reason: text });
+async function publishAbort(i, text) {
+  const gid = state.gid;
+  await sdb.doc("groups/" + gid + "/abort/" + i)
+    .set(await signedDoc(gid, "abort/" + i, i, { reason: text }));
+}
 
 const needR1 = (i, s) => !state.dkg1[i] && !s.keyPackage;
 // Round 2 needs every seat taken (for their encryption keys) and every round-1 package.
@@ -636,9 +697,8 @@ function stepV1(i, s) {
 
 async function publishDone(i) {
   const gid = state.gid, s = sec(gid, i);
-  await sdb.doc("groups/" + gid + "/done/" + i).set({
-    groupKey: s.groupKey, publicKeyPackage: S(s.publicKeyPackage), at: Date.now(),
-  });
+  const fields = { groupKey: s.groupKey, publicKeyPackage: S(s.publicKeyPackage), at: Date.now() };
+  await sdb.doc("groups/" + gid + "/done/" + i).set(await signedDoc(gid, "done/" + i, i, fields));
   await putSec(gid, i, { doneSent: true });
   log("seat " + i + ": key share ready, wallet key " + s.groupKey.slice(0, 12) + "…");
 }
@@ -684,8 +744,10 @@ function verifyStep(i, s) {
   if (!s.keyPackage || !state.wallet || s.checkedWallet === wk || s.rejectedWallet === wk) return;
   once("verify:" + i, async () => {
     const gid = state.gid, { ok, error } = verifyOutcome(s);
+    // Sign first: this browser keeps its result only for a seat that can tell the others.
+    const doc = await signedDoc(gid, "verify/" + i, i, { ok, error, at: Date.now() });
     await putSec(gid, i, ok ? { checkedWallet: wk, rejectedWallet: null } : { rejectedWallet: wk });
-    await sdb.doc("groups/" + gid + "/verify/" + i).set({ ok, error, at: Date.now() });
+    await sdb.doc("groups/" + gid + "/verify/" + i).set(doc);
     log("seat " + i + (ok ? ": wallet verified, ak equals my wallet key" : ": WALLET REJECTED: " + error));
   });
 }
@@ -697,32 +759,48 @@ function verifyOutcome(s) {
 
 // The wallet must name its group's network. A seat that holds sk checks every part of the wallet,
 // so only version 2 verification applies to it, whatever the stored documents say. A seat without
-// sk never accepts a version 2 wallet.
+// sk never accepts a version 2 or 3 wallet.
 function verifyWallet(s) {
   checkNetwork(state.wallet, netName(state.g));
   if (s.vaultSk) return Z.walletVerifyV2(S(state.wallet), S(s.publicKeyPackage), s.vaultSk);
-  if (groupVersion() === 2) throw new Error("This seat holds no setup secret for a version 2 wallet. Do not use this wallet.");
+  if (usesV2(groupVersion())) {
+    throw new Error("This seat holds no setup secret for a version 2 or 3 wallet. "
+      + "Do not use this wallet.");
+  }
   return Z.walletVerify(S(state.wallet), S(s.publicKeyPackage));
 }
 
 const v2Secret = () => localSeats().map((i) => sec(state.gid, i))
   .find((s) => s.vaultSk && s.publicKeyPackage);
 const canCreateWallet = () => isCreator() && !state.wallet && keysAgree()
-  && (groupVersion() !== 2 || !!v2Secret());
+  && (!usesV2(groupVersion()) || !!v2Secret())
+  && canWriteAs(1);
+
+async function walletStands(gid) {
+  const cur = await sdb.doc("groups/" + gid + "/meta/wallet").get();
+  if (!cur.exists) return false;
+  if (!signedMode(gid)) return true;
+  const d = cur.data();
+  const part = { rel: "meta/wallet", by: d.by, sig: d.sig, fields: docFields(d), need: 1 };
+  return (await partNow(gid, part)) !== "no";
+}
 
 async function createWallet() {
   const g = state.g, gid = state.gid, base = "groups/" + gid;
-  // The wallet snapshot can arrive after the DKG ones; never replace a published wallet.
-  if ((await sdb.doc(base + "/meta/wallet").get()).exists) return;
+  // The wallet snapshot can arrive after the DKG ones; never replace a published wallet. In a
+  // version 3 wallet, a stored document that is not signed by seat 1 is no wallet.
+  if (await walletStands(gid)) return;
   const birthday = await Z.latestHeight(await pickServer(netOf(g)));
-  const net = g.network || "testnet", mine = groupVersion() === 2 ? v2Secret() : null;
+  if (state.gid !== gid) return;   // the person opened another wallet while the server answered
+  const net = g.network || "testnet", mine = usesV2(groupVersion()) ? v2Secret() : null;
   const w = J(mine ? Z.walletCreateV2(S(mine.publicKeyPackage), net, mine.vaultSk)
     : Z.walletCreate(state.done[1].publicKeyPackage, net));
-  await sdb.doc(base + "/meta/wallet").set({ ...w, birthday, at: Date.now() });
+  const doc = await signedDoc(gid, "meta/wallet", 1, { ...w, birthday, at: Date.now() });
+  await sdb.doc(base + "/meta/wallet").set(doc);
   log("wallet created: " + w.address.slice(0, 24) + "…");
 }
 
-// ── Key ceremony, version 2 ──
+// ── Key ceremony, versions 2 and 3 ──
 // The safety number covers the wallet id, t, n, the network and every seat's encryption key. The
 // signers compare it out of band. A confirm document is only a claim, so a seat also keeps the
 // number its person confirmed ("confirmed"), and the ceremony runs only when both agree with the
@@ -734,8 +812,9 @@ function safetyNo() {
   catch { return null; }
 }
 const gateOf = (s) => confirmGate(safetyNo(), s.confirmed, state.confirm, seatIds());
-const canConfirm = (s) => !s.keyPackage && !s.aborted && seatMode(s) === 2;
-const confirmSeatsOf = () => localSeats().filter((i) => canConfirm(sec(state.gid, i)));
+const canConfirm = (s) => !s.keyPackage && !s.aborted && usesV2(seatMode(s));
+const confirmSeatsOf = () => localSeats()
+  .filter((i) => canWriteAs(i) && canConfirm(sec(state.gid, i)));
 // A browser that holds every seat has nobody else to compare with.
 const holdsAllSeats = () => localSeats().length === state.g.n;
 const confirmedBy = (no) => seatIds().filter((i) => state.confirm[i] && state.confirm[i].number === no);
@@ -747,7 +826,7 @@ const abortedText = () => mySeatSecrets(state.gid).map(([, s]) => s.aborted).fin
 // Writes the confirm document of a seat whose person confirmed but whose document is missing, and
 // confirms for itself when this browser holds every seat.
 function reactConfirm() {
-  const no = groupVersion() === 2 ? safetyNo() : null;
+  const no = usesV2(groupVersion()) ? safetyNo() : null;
   if (!no) return;
   const auto = holdsAllSeats();
   const todo = confirmSeatsOf().filter((i) => {
@@ -760,8 +839,10 @@ function reactConfirm() {
 async function confirmSeats(ids, no) {
   const gid = state.gid;
   for (const i of ids) {
+    // Sign first: a seat that cannot sign must not keep a number that nobody saw.
+    const doc = await signedDoc(gid, "confirm/" + i, i, { number: no });
     await putSec(gid, i, { confirmed: no });
-    await sdb.doc("groups/" + gid + "/confirm/" + i).set({ number: no });
+    await sdb.doc("groups/" + gid + "/confirm/" + i).set(doc);
   }
   log("safety number confirmed for seat " + ids.join(", "));
 }
@@ -812,7 +893,8 @@ async function round1V2(i) {
   }
   const s = sec(gid, i);
   const commit = Z.skCommit(gid, i, state.seats[i].boxPk, s.skPart);
-  await sdb.doc("groups/" + gid + "/dkg1/" + i).set({ package: s.r1package, commit, at: Date.now() });
+  const fields = { package: s.r1package, commit, at: Date.now() };
+  await sdb.doc("groups/" + gid + "/dkg1/" + i).set(await signedDoc(gid, "dkg1/" + i, i, fields));
   log("seat " + i + ": round 1 commitment published");
 }
 
@@ -841,9 +923,13 @@ async function round2V2(i) {
     return { echo, boxes, secret: r.secret };
   });
   await putSec(gid, i, { echo });
+  // Sign every document first, then write them, and only then drop the round-1 secret.
+  const docs = [];
   for (const [to, sealed] of Object.entries(boxes)) {
-    await sdb.doc("groups/" + gid + "/dkg2/" + i + "-" + to).set({ sealed, echo, at: Date.now() });
+    const rel = "dkg2/" + i + "-" + to;
+    docs.push([rel, await signedDoc(gid, rel, i, { sealed, echo, at: Date.now() })]);
   }
+  for (const [rel, doc] of docs) await sdb.doc("groups/" + gid + "/" + rel).set(doc);
   await putSec(gid, i, { r2secret: secret, r1secret: null });
   log("seat " + i + ": " + Object.keys(boxes).length + " encrypted shares sent");
 }
@@ -893,27 +979,45 @@ function reactSession(ss) {
   // The engine takes only strings. A document with another type would crash it.
   if (!isStr(ss.pczt) || !isStr(fvk) || (ss.package != null && !isStr(ss.package))) return;
   if (ss.error) return;
-  if (!ss.package && isMe(ss.createdBy)) buildPackage(ss, fvk);
+  if (!ss.package && isProposer(ss)) buildPackage(ss, fvk);
   if (ss.package) signMyShares(ss, fvk);
   if (ss.package && !ss.signed) aggregateShares(ss);
 }
 
-const sessionPath = (ss) => "groups/" + state.gid + "/sessions/" + ss.id;
+const sessionPath = (ss, gid = state.gid) => "groups/" + gid + "/sessions/" + ss.id;
+// In a version 3 wallet the proposer is the seat in `by`. Before, it is the identity in
+// `createdBy`.
+const isProposer = (ss) => Number.isInteger(ss.by)
+  ? localSeats().includes(ss.by) && canWriteAs(ss.by) : isMe(ss.createdBy);
+
+// Does the stored session document hold a package that may be used? In a version 3 wallet an
+// unsigned package must not block the real one.
+async function packageStands(gid, sid, d) {
+  if (!d.package) return false;
+  if (!signedMode(gid)) return true;
+  const part = {
+    rel: "sessions/" + sid, by: d.packageBy, sig: d.packageSig, fields: partFields("package", d),
+    need: null,
+  };
+  return (await partNow(gid, part)) !== "no";
+}
 
 // Coordinator: once t approvals are in, build the signing package.
 function buildPackage(ss, fvk) {
-  const t = state.g.t;
+  const gid = state.gid, t = state.g.t;
   const ids = Object.keys(state.commits).map(Number).sort((a, b) => a - b).slice(0, t);
   if (ids.length < t) return;
   once("pkg:" + ss.id, async () => {
     const c = {}; for (const i of ids) c[i] = state.commits[i].commitments;
     const pkg = Z.signPackage(ss.pczt, fvk, S(c), t);
     // Two browsers can hold the same seat (a restored copy): only one writes the package.
-    const ref = sdb.doc(sessionPath(ss));
+    const ref = sdb.doc(sessionPath(ss, gid));
     if (!(await ref.acquire({ holder: crypto.randomUUID(), ttlMs: 10000 })).acquired) return;
     const cur = await ref.get();
-    if (cur.exists && cur.data().package) return;
-    await ref.update({ package: pkg, signers: ids, status: "signing" });
+    if (cur.exists && (await packageStands(gid, ss.id, cur.data()))) return;
+    const fields = { package: pkg, signers: ids };
+    const sig = await sigPart(gid, ss.id, "package", fields, ss.by);
+    await ref.update({ ...fields, status: "signing", ...sig });
     log("signing package sent to signers " + ids.join(", "));
   });
 }
@@ -922,7 +1026,7 @@ function buildPackage(ss, fvk) {
 function signMyShares(ss, fvk) {
   for (const i of localSeats()) {
     const n = (sec(state.gid, i).nonces || {})[ss.id];
-    if (signersOf(ss).includes(i) && n && !state.shares[i]) {
+    if (canWriteAs(i) && signersOf(ss).includes(i) && n && !state.shares[i]) {
       once("share:" + ss.id + ":" + i, () => signShare(ss, fvk, i, n));
     }
   }
@@ -934,30 +1038,35 @@ async function signShare(ss, fvk, i, n) {
   const ins = inspectOf(ss);
   if (!n.sighash || !ins || ins.error || ins.sighash !== n.sighash) {
     await putSec(gid, i, { nonces });
-    const error = "The payment changed after a signer approved it.";
-    await sdb.doc(sessionPath(ss)).update({ error, status: "failed" });
+    await failSession(gid, ss, "The payment changed after a signer approved it.");
     throw new Error("This payment changed after you approved it, so this browser did not sign it.");
   }
   // The engine checks the approved sighash again before it signs.
   const shares = Z.signShare(ss.pczt, fvk, ss.package, S(n), S(s.keyPackage), i);
+  const rel = "sessions/" + ss.id + "/shares/" + i;
+  const doc = await signedDoc(gid, rel, i, { shares, at: Date.now() });
   // Save the burn before the share goes out: a nonce that comes back could sign twice.
   if (!(await putSec(gid, i, { nonces }))) {
     throw new Error("Could not save the used nonce, so the signature share was not sent.");
   }
-  await sdb.doc(sessionPath(ss) + "/shares/" + i).set({ shares, at: Date.now() });
+  await sdb.doc("groups/" + gid + "/" + rel).set(doc);
   log("seat " + i + ": signature share sent");
 }
 
 // Any participant: aggregate. The result is deterministic, so a race is harmless.
 function aggregateShares(ss) {
-  if (!localSeats().length || !signersOf(ss).every((i) => state.shares[i])) return;
+  const gid = state.gid;
+  if (!localSeats().length || !mayAct() || !signersOf(ss).every((i) => state.shares[i])) return;
   once("agg:" + ss.id, async () => {
     const sh = {}; for (const i of signersOf(ss)) sh[i] = J(state.shares[i].shares);
-    const ref = sdb.doc(sessionPath(ss));
+    const ref = sdb.doc(sessionPath(ss, gid));
     let r;
     try { r = J(Z.signAggregate(ss.pczt, state.done[1].publicKeyPackage, ss.package, S(sh))); }
-    catch (e) { await ref.update({ error: e.message || String(e), status: "failed" }); throw e; }
-    await ref.update({ signed: r.signed_pczt, signatures: r.signatures, status: "signed" });
+    catch (e) { await failSession(gid, ss, e.message || String(e)); throw e; }
+    // A seat signs the result. A seat that cannot sign is no failure of the payment.
+    const result = { signed: r.signed_pczt, signatures: r.signatures };
+    const sig = await sigPart(gid, ss.id, "signed", result);
+    await ref.update({ ...result, status: "signed", ...sig });
     log("signatures aggregated and verified under rk");
   });
 }
@@ -966,31 +1075,51 @@ function aggregateShares(ss) {
 // `from` is the wallet this one replaces. The old wallet gets only the new id, never its key:
 // signers left out of the new wallet must not get its viewing key.
 async function createGroup(name, n, t, from = null, network = "testnet") {
+  // Signed writes need a signing key for every seat, so check before anything is made.
+  if (!(await canSign())) throw new Error(NO_SIGNING_SEAT);
   const ref = sdb.collection("groups").doc();
   const key = new Uint8Array(32); crypto.getRandomValues(key);
   putKey(ref.id, btoa(String.fromCharCode(...key)).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, ""));
-  await ref.set({ name, n, t, network, version: 2, createdBy: me, createdAt: Date.now(), movedFrom: from || undefined });
+  await ref.set({
+    name, n, t, network, version: 3, createdBy: me, createdAt: Date.now(),
+    movedFrom: from || undefined,
+  });
   if (from) await sdb.doc("groups/" + from).update({ movedTo: ref.id, movedAt: Date.now() });
   openGroup(ref.id);
-  await takeSeat(1, 2);
+  await takeSeat(1, 3);
+}
+
+// The signing key of a new seat, or null where Ed25519 is missing (a seat then has no messages).
+// A version 3 seat needs one.
+async function newSeatKey(version) {
+  const sign = await newSignKey().catch(() => null);
+  if (!sign && version === 3) throw new Error(NO_SIGNING_SEAT);
+  return sign;
 }
 
 // The seat keeps the version of its wallet and its own box key. The store can show another
 // version or key later (reactStops).
 async function takeSeat(i, version = groupVersion()) {
   if (!Z || !version) return;
-  const ref = sdb.doc("groups/" + state.gid + "/seats/" + i);
+  const gid = state.gid, sign = await newSeatKey(version);
+  const ref = sdb.doc("groups/" + gid + "/seats/" + i);
   const lease = await ref.acquire({ holder: crypto.randomUUID(), ttlMs: 5000 });
   if (!lease.acquired) { showBanner("bad", "Someone else is taking seat " + i + " right now."); return; }
   const cur = await ref.get();
   if (cur.exists && cur.data().uid) { showBanner("bad", "Seat " + i + " is already taken."); return; }
   const kp = J(Z.boxKeypair());
-  const sign = await newSignKey().catch(() => null);   // null: no Ed25519 here, so no messages
-  putSec(state.gid, i, { boxSk: kp.sk, version, uid: me, ...sign });
+  putSec(gid, i, { boxSk: kp.sk, version, uid: me, ...sign });
   const name = user ? (await user.me()).name : "";
-  await ref.set({ uid: me, name, boxPk: kp.pk, at: Date.now(), signPk: sign?.signPk });
+  const doc = { uid: me, name, boxPk: kp.pk, at: Date.now(), signPk: sign?.signPk };
+  // In a version 3 wallet the seat signs its own document with the new key. Readers pin the key
+  // only when this signature checks out.
+  if (version === 3) {
+    const text = Z.docPayload(gid, "seats/" + i, i, S(doc));
+    Object.assign(doc, { by: i, sig: await signMsg(sign.signSk, text) });
+  }
+  await ref.set(doc);
   // Saved only after the store holds the seat: a failed take must not look like a replaced key.
-  await putSec(state.gid, i, { boxPk: kp.pk });
+  await putSec(gid, i, { boxPk: kp.pk });
   log("you took seat " + i);
 }
 
@@ -1077,14 +1206,20 @@ async function runSync(c) {
 
 // `payees` and `note` are the proposer's words; approvers check `payees` against the transaction.
 async function newSpend(payees, note, move = null) {
-  if (!chain || chain.gid !== state.gid || !chain.bal) throw new Error("The wallet has not finished its first sync.");
+  const gid = state.gid, approvals = state.g.t;
+  if (!chain || chain.gid !== gid || !chain.bal) {
+    throw new Error("The wallet has not finished its first sync.");
+  }
+  if (!mayAct()) throw new Error(NO_SEAT_KEY);
   payees = payees.map(({ to, amount }) => ({ to, amount }));
   const t = J(await chain.cw.createSpend(S(payees)));
-  const ref = sdb.collection("groups/" + state.gid + "/sessions").doc();
-  await ref.set({ createdBy: myUid(), createdAt: Date.now(), payees, note: note || null, pool: t.pool, amount: t.amount, change: t.change, fee: t.fee, noteValue: t.note_value, pczt: t.pczt, move, status: "collecting" });
+  const ref = sdb.collection("groups/" + gid + "/sessions").doc();
+  const fields = proposalFields(payees, note, t, move, Date.now());
+  const sig = await sigPart(gid, ref.id, "proposal", fields);
+  await ref.set({ createdBy: myUid(), status: "collecting", ...fields, ...sig });
   log("new spend: " + fmtZec(t.amount));
-  showBanner("ok", "Payment proposed. It needs " + state.g.t + " approvals.");
-  openSession(ref.id);
+  showBanner("ok", "Payment proposed. It needs " + approvals + " approvals.");
+  if (state.gid === gid) openSession(ref.id);
 }
 
 // Sends every confirmed note to the wallet that replaces this one.
@@ -1102,12 +1237,18 @@ async function cancelMove() {
 }
 
 async function broadcastTx(ss) {
-  const ref = sdb.doc(sessionPath(ss));
+  const gid = state.gid, ref = sdb.doc(sessionPath(ss, gid));
   try {
-    if (!isStr(ss.final.tx_hex)) throw new Error("The finished transaction cannot be read.");
-    const r = await broadcastAnywhere(ss.final.tx_hex);
-    await ref.update({ broadcastTxid: r.txid || ss.final.txid, broadcastAt: Date.now(), broadcastError: null, status: "broadcast" });
-    log("transaction broadcast: " + (r.txid || ss.final.txid));
+    if (!isStr(ss.final.tx_hex) || !isStr(ss.final.txid)) {
+      throw new Error("The finished transaction cannot be read.");
+    }
+    // The sent mark names the txid of the final transaction, and a seat signs it. A seat that
+    // cannot sign fails here, before the transaction goes out.
+    const sent = { broadcastTxid: ss.final.txid, broadcastAt: Date.now() };
+    const sig = await sigPart(gid, ss.id, "sent", sent);
+    await broadcastAnywhere(ss.final.tx_hex);
+    await ref.update({ ...sent, ...sig, broadcastError: null, status: "broadcast" });
+    log("transaction broadcast: " + ss.final.txid);
     showBanner("ok", "Sent to the network. It confirms with the next block.");
     runSync(chain);
   } catch (e) {
@@ -1127,44 +1268,62 @@ async function broadcastAnywhere(txHex) {
   throw new Error(errors.join("; "));
 }
 
+// Why seat i cannot approve the payment now, or null.
+function approveRefusal(ss, i, ins) {
+  if (ss.error) return "This payment was cancelled or failed, so it was not approved.";
+  if (state.pending) return "Zigs is still checking this wallet's data. Try again in a moment.";
+  if (!ins || ins.error) return "This browser could not check the payment, so it did not approve.";
+  if (seatCheck(i) === true) return null;
+  return "Seat " + i + " has not checked this wallet against its key share, so it did not approve.";
+}
+
 async function approve(ss, i) {
-  const s = sec(state.gid, i), ins = inspectOf(ss);
-  if (ss.error) throw new Error("This payment was cancelled or failed, so it was not approved.");
-  if (!ins || ins.error) throw new Error("This browser could not check the payment, so it did not approve.");
-  if (seatCheck(i) !== true) throw new Error("Seat " + i + " has not checked this wallet against its key share, so it did not approve.");
+  const gid = state.gid, s = sec(gid, i), ins = inspectOf(ss);
+  const why = approveRefusal(ss, i, ins);
+  if (why) throw new Error(why);
   const r = J(Z.signCommit(ss.pczt, state.wallet.orchard_fvk, S(s.keyPackage)));
   // The approval covers this exact transaction: a share is signed later only for the same sighash.
   const mine = { nonces: r.nonces, commitments: r.commitments, sighash: ins.sighash };
-  if (!(await putSec(state.gid, i, { nonces: { ...(s.nonces || {}), [ss.id]: mine } }))) {
+  const rel = "sessions/" + ss.id + "/commits/" + i;
+  // A seat that cannot sign fails here, before the approval is saved.
+  const doc = await signedDoc(gid, rel, i, { commitments: r.commitments, at: Date.now() });
+  if (!(await putSec(gid, i, { nonces: { ...(s.nonces || {}), [ss.id]: mine } }))) {
     throw new Error("Could not save the approval in this browser, so it was not sent.");
   }
-  await sdb.doc(sessionPath(ss) + "/commits/" + i).set({ commitments: r.commitments, at: Date.now() });
+  await sdb.doc("groups/" + gid + "/" + rel).set(doc);
   log("seat " + i + ": approved the spend, nonce commitment published");
   showBanner("ok", "Approved" + (localSeats().length > 1 ? " as seat " + i : "") + ".");
 }
 
 async function cancelPayment(ss) {
   if (ss.signed || ss.error) throw new Error("This payment is already signed or closed, so it cannot be cancelled.");
-  const who = (state.seats[localSeats()[0]] || {}).name || "a signer";
-  await sdb.doc(sessionPath(ss)).update({
-    status: "cancelled", error: "Cancelled by " + who + ".", cancelledAt: Date.now(),
+  const gid = state.gid, seat = writer(undefined, gid) ?? localSeats()[0];
+  const who = ((state.seats[seat] || {}).name || "a signer") + " (seat " + seat + ")";
+  const fields = { error: "Cancelled by " + who + "." };
+  const sig = await sigPart(gid, ss.id, "cancel", fields);
+  await sdb.doc(sessionPath(ss, gid)).update({
+    ...fields, status: "cancelled", cancelledAt: Date.now(), ...sig,
   });
-  for (const i of localSeats()) {
-    const nonces = { ...(sec(state.gid, i).nonces || {}) };
+  for (const [i, s] of mySeatSecrets(gid)) {
+    const nonces = { ...(s.nonces || {}) };
     if (!nonces[ss.id]) continue;
     delete nonces[ss.id];
-    await putSec(state.gid, i, { nonces });
+    await putSec(gid, i, { nonces });
   }
   showBanner("ok", "Payment cancelled.");
 }
 
 async function finalizeTx(ss) {
-  await sdb.doc(sessionPath(ss)).update({ status: "proving", provingAt: Date.now() });
+  const gid = state.gid, ref = sdb.doc(sessionPath(ss, gid));
+  if (!mayAct()) throw new Error(NO_SEAT_KEY);   // checked before a minute of work
+  await ref.update({ status: "proving", provingAt: Date.now() });
   log("building Halo2 proof (about a minute)…");
   let out;
   try { out = await engineOffThread("finalize", ss.signed); }
-  catch (e) { await sdb.doc(sessionPath(ss)).update({ status: "signed" }); throw e; }
-  await sdb.doc(sessionPath(ss)).update({ status: "complete", final: out });
+  catch (e) { await ref.update({ status: "signed" }); throw e; }
+  // A seat signs the proof and the finished transaction.
+  const sig = await sigPart(gid, ss.id, "final", { final: out });
+  await ref.update({ status: "complete", final: out, ...sig });
   log("transaction complete: " + out.txid);
   showBanner("ok", "Proof ready. Send the payment to the network.");
 }
@@ -1540,7 +1699,7 @@ const readMarks = readLocal("zf-read");      // "room id:thread" -> time of the 
 const rooms = {};                            // wallet id -> its room id, while it matches the pin
 const roomWarn = new Map(), roomSubs = new Map(), chat = {}, tried = new Set(), checked = new Map();
 let signing = null;                          // does this browser have Ed25519? null until known
-canSign().then((ok) => { signing = ok; render(); react(); });
+canSign().then((ok) => { signing = ok; refilter(); });
 
 const isWalletId = (id) => !!gkeys[id] || !!chats.list[id];   // ids of chats are taken too
 const mineIn = (id) => chats.list[id] ? [chats.list[id].member] : mySeatSecrets(id).map(([i]) => i);
@@ -1670,11 +1829,14 @@ function ensureSignKey(gid, i) {
   });
 }
 
-// Pins only keys that came from the store, never one this browser just made.
-function pinSigners(seats) {
+// Pins only keys that came from the store, never one this browser just made. This is for a wallet
+// before version 3, whose seat documents have no signature (a version 3 wallet uses pinSeats).
+// Only seats of 1 to n count.
+function pinSigners() {
   let fresh = false;
-  for (const [i, s] of Object.entries(seats)) {
-    if (validPk(s.signPk) && pin(signPins, skey(state.gid, i), s.signPk) === "new") fresh = true;
+  for (const i of seatIds()) {
+    const pk = (raw.seats[i] || {}).signPk;
+    if (validPk(pk) && pin(signPins, skey(state.gid, i), pk) === "new") fresh = true;
   }
   if (fresh) saveMerged("zf-signpins", signPins, oldest);
 }
@@ -1724,19 +1886,266 @@ function trust(m, roomId) {
 function verdict(m, text, isMember, memberPk, pinnedPk) {
   const gate = keyState(isMember, memberPk, pinnedPk);
   if (gate !== "check") return gate;
-  const ok = cachedCheck(m, text, pinnedPk);
+  const ok = cachedCheck(pinnedPk, m.sig, text);
   return ok === null ? "wait" : ok ? "yes" : "no";
 }
 
 // The key holds everything the result depends on, so no two messages can share an entry.
 // null while the check runs. A miss clears a full cache; results that arrive later still fill it.
-function cachedCheck(m, text, pk) {
-  const id = S([pk, m.sig, text]);
-  if (checked.has(id)) return checked.get(id);
-  if (checked.size >= 5000) checked.clear();
-  checked.set(id, null);
-  verifyMsg(pk, m.sig, text).then((ok) => { checked.set(id, ok); render(); });
+function cachedCheck(pk, sig, text, done = render, cache = checked) {
+  const id = S([pk, sig, text]);
+  if (cache.has(id)) return cache.get(id);
+  if (cache.size >= 5000) cache.clear();
+  cache.set(id, null);
+  verifyMsg(pk, sig, text).then((ok) => { cache.set(id, ok); done(); });
   return null;
+}
+
+// ───────────────────────── Signed writes (version 3) ─────────────────────────
+// The store shows what any holder of the invite link wrote. In a version 3 wallet, each document
+// that matters carries the signature of the seat that wrote it (PROTOCOL.md section 15). The page
+// keeps the stored documents in `raw` and puts into `state` only those whose signature verifies.
+// A document without a result yet counts as absent, and the reactor waits until all results are in.
+const NO_SIGNING_SEAT = "This browser cannot sign, so it cannot take part in this wallet. "
+  + "Use a current Chrome, Edge, Firefox or Safari.";
+const NO_SEAT_KEY = "This browser has no signing key for a seat of this wallet, "
+  + "so it cannot write to this wallet.";
+
+// A device keeps the first version that it saw for a wallet, and the version of its own seats. A
+// lower version written into the store later does not turn the checks off.
+const hasV3Seat = (gid) => mySeatSecrets(gid).some(([, s]) => s.version === 3);
+const versionKey = (gid) => "version:" + gid;   // apart from the "wallet id:seat" keys
+const signedMode = (gid) => !!gid && (hasV3Seat(gid) || signPins[versionKey(gid)] === "3");
+function pinVersion(gid, g) {
+  const v = walletVersion(g);
+  if (v && pin(signPins, versionKey(gid), String(v)) === "new") {
+    saveMerged("zf-signpins", signPins, oldest);
+  }
+}
+
+// The number of signers of a wallet. In a version 3 wallet it is the one this device saw first
+// (cleanGroup), so a made-up seat above it never counts.
+const seatCount = (gid) => {
+  const g = gid === state.gid ? state.g : state.groups.find((x) => x.id === gid);
+  return g && validShape(g.n, g.t) ? g.n : 0;
+};
+
+// Checks of documents have a memo of their own, apart from the messages. It keeps the signed text
+// of each entry and answers only for the same text, and it stays bounded (makeMemo).
+const docMemo = makeMemo();
+const SIG_MAX = 128, REL_MAX = 200;   // an Ed25519 signature has 88 characters in base64
+
+// The text that a document signs, from the engine, or null where the engine refuses it.
+function payloadOf(gid, rel, by, fieldsText) {
+  try { return Z.docPayload(gid, rel, by, fieldsText); } catch { return null; }
+}
+
+// A signed part: the document path `rel` below the wallet, the writer `by`, its signature `sig`,
+// the signed `fields`, and `need`, the seat that must have written them (null: any seat). `pk`
+// names the key to check with, when it is not the pinned one. What a check needs, or its answer
+// already: "no", or "wait" while the engine, the signing support or the seat keys are not known.
+function partGate(gid, part, known) {
+  const { rel, by, sig, need } = part;
+  if (!signing || !Z) return "wait";
+  if (typeof sig !== "string" || sig.length > SIG_MAX || rel.length > REL_MAX) return "no";
+  const pk = part.pk ?? signPins[skey(gid, by)];
+  const gate = writerCheck(by, need, seatCount(gid), pk, known);
+  return gate === "check" ? { pk } : gate;
+}
+
+// At most a few checks run at once, so a flood of large documents cannot fill the memory with
+// pending work. The others wait in a queue and start when one ends.
+const CHECKS_MAX = 8;
+let checking = 0, resultTimer = 0;
+const checkQueue = [];
+// Results of many documents come one by one. The page filters once for each short wait, not once
+// for each result.
+function refilterSoon() {
+  if (resultTimer) return;
+  resultTimer = setTimeout(() => { resultTimer = 0; refilter(); }, 40);
+}
+function startCheck(entry, gid, part, pk) {
+  const run = () => {
+    const text = payloadOf(gid, part.rel, part.by, entry.fields);
+    const end = (ok) => { entry.ok = ok; checking--; checkQueue.shift()?.(); refilterSoon(); };
+    checking++;
+    if (text === null) end(false); else verifyMsg(pk, part.sig, text).then(end);
+  };
+  if (checking < CHECKS_MAX) run(); else checkQueue.push(run);
+}
+
+function partVerdict(gid, part, known) {
+  const gate = partGate(gid, part, known);
+  if (typeof gate === "string") return gate;
+  const key = [gid, part.rel, part.by, part.sig].join("|");
+  const ok = docMemo.ask(key, S(part.fields), gate.pk,
+    (entry) => startCheck(entry, gid, part, gate.pk));
+  return ok === null ? "wait" : ok ? "yes" : "no";
+}
+
+// The same for a decision that cannot wait for a redraw (it reads the store again).
+async function partNow(gid, part) {
+  const gate = partGate(gid, part, gid === state.gid && state.seatsSettled);
+  if (typeof gate === "string") return gate;
+  const text = payloadOf(gid, part.rel, part.by, S(part.fields));
+  return text !== null && (await verifyMsg(gate.pk, part.sig, text)) ? "yes" : "no";
+}
+
+// The answer for the seat document of seat `i` when no key is pinned for it yet: the document is
+// checked with the key that it names. "" when there is nothing to pin.
+function seatPin(gid, i) {
+  const d = raw.seats[i];
+  if (!d || Object.hasOwn(signPins, skey(gid, i))) return "";
+  const part = {
+    rel: "seats/" + i, by: d.by, sig: d.sig, fields: docFields(d), need: i, pk: d.signPk,
+  };
+  return partVerdict(gid, part, true);
+}
+
+// Pins the first key of each seat of 1 to n, but only a key that signed its own seat document, so
+// a made-up document pins nothing. Returns how many seat documents wait for their result.
+function pinSeats(gid) {
+  let wait = state.seatsLoaded ? 0 : 1, fresh = false;
+  for (const i of seatIds()) {
+    const verdict = seatPin(gid, i);
+    if (verdict === "wait") wait++;
+    if (verdict === "yes") { signPins[skey(gid, i)] = raw.seats[i].signPk; fresh = true; }
+  }
+  if (fresh) saveMerged("zf-signpins", signPins, oldest);
+  return wait;
+}
+
+// The device logs a document that it ignores once for each time a wallet opens, however often the
+// page checks again. A signature is no part of the key, and the set has a limit.
+const LOG_MAX = 200;
+const loggedIgnored = new Map();   // wallet id -> the documents already logged
+function logIgnored(gid, what) {
+  const path = what.slice(0, 120);
+  if (!loggedIgnored.has(gid)) loggedIgnored.set(gid, new Set());
+  const seen = loggedIgnored.get(gid);
+  if (seen.has(path) || seen.size >= LOG_MAX) return;
+  seen.add(path);
+  log("ignored data without a valid signature (wallet " + gid.slice(0, 6) + "): " + path);
+}
+
+const newest = (a, b) => finite(b.createdAt) - finite(a.createdAt);
+const asSessions = (map) => Object.entries(map).map(([id, v]) => ({ id, ...v })).sort(newest);
+const seatUid = (gid, seat) => gid === state.gid ? (state.seats[seat] || {}).uid : undefined;
+const checkIn = (gid) => (rel, by, sig, fields, need) =>
+  partVerdict(gid, { rel, by, sig, fields, need }, gid === state.gid && state.seatsSettled);
+
+// A proposal comes from a seat. Its identity is the one in that seat's document, not a field.
+const withProposer = (gid) => (ss) => ({ ...ss, createdBy: seatUid(gid, ss.by) });
+
+function filterOpen(gid) {
+  const wait = pinSeats(gid);
+  state.seatsSettled = wait === 0;
+  const f = filterWallet(raw, state.sid, checkIn(gid), (what) => logIgnored(gid, what));
+  Object.assign(state, f.docs, {
+    sessions: f.sessions.map(withProposer(gid)).sort(newest), ignored: f.bad,
+    pending: f.wait > 0 || wait > 0,
+  });
+}
+
+function readyOf(gid, d) {
+  if (!d || !signedMode(gid)) return d;
+  const verdict = checkIn(gid)("meta/wallet", d.by, d.sig, docFields(d), 1);
+  if (verdict === "no") logIgnored(gid, "meta/wallet");
+  return verdict === "yes" ? docFields(d) : verdict === "wait" ? undefined : false;
+}
+
+function inboxOf(gid, list) {
+  if (!signedMode(gid)) return list;
+  const t = { bad: 0, wait: 0, onBad: (what) => logIgnored(gid, what) };
+  return readSessions(list.map((d) => [d.id, d]), checkIn(gid), t);
+}
+
+// Shows the stored documents as they are in a wallet before version 3.
+function copyRaw() {
+  if (signedMode(state.gid)) return;   // its group document has not come yet: show nothing
+  Object.assign(state, {
+    seats: raw.seats, dkg1: raw.dkg1, dkg2: raw.dkg2, confirm: raw.confirm, abort: raw.abort,
+    done: raw.done, verify: raw.verify, wallet: raw.wallet, sessions: asSessions(raw.sessions),
+    commits: raw.commits, shares: raw.shares, ignored: 0, pending: false,
+  });
+  pinSigners();
+}
+
+function applyFilter() {
+  if (state.gid && state.g && signedMode(state.gid)) filterOpen(state.gid); else copyRaw();
+  for (const [gid, d] of Object.entries(rawReady)) ready[gid] = readyOf(gid, d);
+  for (const [gid, list] of Object.entries(rawInbox)) inbox[gid] = inboxOf(gid, list);
+}
+
+// Every change of a stored document, a pin or a check result ends here: the page filters again,
+// draws, and lets the reactor act. Several changes in one turn make one pass.
+let refilterQueued = false;
+function refilter() {
+  if (refilterQueued) return;
+  refilterQueued = true;
+  queueMicrotask(() => {
+    refilterQueued = false;
+    try { applyFilter(); } catch (e) { log("✗ filter: " + (e && e.message ? e.message : e)); }
+    render();
+    react();
+  });
+}
+
+// The reactor writes nothing while a check is open, or when this browser cannot check at all.
+const signedHold = () => state.pending || (signedMode(state.gid) && !signing);
+
+// The text of a document that seat `seat` signs, signed with its key.
+const signText = (gid, rel, seat, fields) =>
+  signMsg(sec(gid, seat).signSk, Z.docPayload(gid, rel, seat, S(fields)));
+
+// The writer and signature to add to `fields` of the document at `rel` that a seat signs as a
+// whole. A wallet before version 3 adds none. Every caller names its wallet (`gid`), because the
+// person can open another wallet while an earlier step waits.
+async function sigFor(gid, rel, seat, fields) {
+  if (!signedMode(gid)) return {};
+  if (!canWriteAs(seat, gid)) throw new Error(NO_SEAT_KEY);
+  return { by: seat, sig: await signText(gid, rel, seat, fields) };
+}
+const signedDoc = async (gid, rel, seat, fields) => ({
+  ...fields, ...(await sigFor(gid, rel, seat, fields)),
+});
+
+// The same for part `name` of the payment `sid`: the writer is `prefer` if this browser can sign
+// for it, else another seat. Only the fields of the part are signed (signPart).
+async function sigPart(gid, sid, name, fields, prefer) {
+  if (!signedMode(gid)) return {};
+  const seat = writer(prefer, gid);
+  if (seat == null) throw new Error(NO_SEAT_KEY);
+  return signPart(name, fields, seat, (f) => signText(gid, "sessions/" + sid, seat, f));
+}
+
+// May this browser write as seat i? Always before version 3. In version 3 the seat needs the
+// signing key that readers pinned (the key in the seat document only while nothing is pinned).
+function canWriteAs(i, gid = state.gid) {
+  if (!signedMode(gid)) return true;
+  const s = sec(gid, i);
+  if (!s || !s.signSk) return false;
+  const pinned = signPins[skey(gid, i)];
+  const shown = gid === state.gid ? (state.seats[i] || {}).signPk : undefined;
+  return s.signPk === (validPk(pinned) ? pinned : shown);
+}
+
+// The seat that signs a write that has no seat of its own: `prefer` if this browser can sign for
+// it, else another seat of this browser.
+function writer(prefer, gid = state.gid) {
+  if (!signedMode(gid)) return null;
+  const held = gid === state.gid ? localSeats() : mySeatSecrets(gid).map(([i]) => i);
+  const own = held.filter((i) => canWriteAs(i, gid));
+  return own.includes(prefer) ? prefer : own[0];
+}
+
+// May this browser change the open wallet? Always before version 3. In version 3 it needs a seat
+// that can sign: the signed PCZT, the proof and the sent mark are signed parts.
+const mayAct = () => !signedMode(state.gid) || writer() != null;
+
+async function failSession(gid, ss, error) {
+  const sig = await sigPart(gid, ss.id, "failure", { error });
+  await sdb.doc(sessionPath(ss, gid)).update({ error, status: "failed", ...sig });
 }
 
 // The threads this browser shows right now: a chat, or in a wallet the wallet thread (tab or setup
@@ -2095,11 +2504,16 @@ function money(zat, size = "md", sign = "") {
 function seatLabel(i) {
   const s = state.seats[i];
   if (!s) return "Open seat";
-  if (!isMe(s.uid)) return s.name || "Signer " + i;
+  if (!seatMine(i)) return s.name || "Signer " + i;
   return localSeats().length > 1 ? "You (seat " + i + ")" : "You";
 }
+// In a version 3 wallet a name comes with its seat number, because two seats can use one name.
+function named(i) {
+  const label = seatLabel(i);
+  return signedMode(state.gid) && !label.includes("(seat") ? label + " (seat " + i + ")" : label;
+}
 function avatar(i, cls = "") {
-  const s = state.seats[i], mine = s && isMe(s.uid);
+  const s = state.seats[i], mine = s && seatMine(i);
   return el("span", { class: "av round " + cls + (mine ? " me" : ""), title: seatLabel(i) }, s ? initials(mine ? (s.name || "You") : s.name || "M " + i) : "+");
 }
 const walletKey = () => state.wallet ? S(state.wallet) : "";
@@ -2139,7 +2553,11 @@ function payTitle(ss) {
 const leavesOf = (ss) => Number.isFinite(ss.amount) ? ss.amount + finite(ss.fee) : NaN;
 const ruleText = (t, n) => "Any " + t + " of " + n + " signers must approve each payment.";
 const groupName = (gid) => (state.groups.find((x) => x.id === gid) || {}).name || "the new wallet";
-const proposer = (ss) => isMe(ss.createdBy) ? "you" : seatNameOf(ss.createdBy);
+// In a version 3 wallet the proposer is the seat in `by`. Before, it is the identity in
+// `createdBy`.
+const proposer = (ss) => Number.isInteger(ss.by)
+  ? (localSeats().includes(ss.by) ? "you" : named(ss.by))
+  : isMe(ss.createdBy) ? "you" : seatNameOf(ss.createdBy);
 function normalized(addr) { try { return Z.normalizeAddress(addr); } catch { return null; } }
 const onNetwork = (addr) => (normalized(addr) || "").startsWith(curNet().prefix);
 
@@ -2692,10 +3110,32 @@ function groupView() {
       "A newer version of Zigs made this wallet. This version cannot set it up. Reload the page "
       + "to get the newest version."));
   }
+  if (signedMode(state.gid) && signing === false) {
+    return el("div", { class: "page" }, back, el("div", { class: "callout bad", role: "alert" },
+      NO_SIGNING_WALLET));
+  }
   const ready = walletReady();
   const why = ready ? sendBlocker() : null;
-  const head = [groupHead(g, ready, why), staleRestoreNote()];
+  const head = [groupHead(g, ready, why), staleRestoreNote(), signedNotes()];
   return ready ? walletView(head, why) : el("div", { class: "page" }, head, setupView());
+}
+
+const NO_SIGNING_WALLET = "This wallet needs signatures, and this browser cannot check them. "
+  + "Use a current Chrome, Edge, Firefox or Safari.";
+
+// Notes for a version 3 wallet: a seat of this browser that cannot sign, and ignored data.
+function signedNotes() {
+  if (!signedMode(state.gid)) return null;
+  const mute = localSeats().filter((i) => !canWriteAs(i));
+  const lost = mute.length ? el("div", { class: "callout bad", role: "alert" },
+    "This browser has no signing key for seat " + mute.join(", ") + ", so it cannot write to "
+    + "this wallet. Restore a backup of the seat.") : null;
+  const moved = state.g.shapeMoved ? el("div", { class: "callout bad", role: "alert" },
+    "The store shows another number of signers or approval rule than the first this browser saw. "
+    + "Zigs keeps the first. Ask your signers.") : null;
+  const ignored = state.ignored ? el("p", { class: "small faint" }, IGNORED_NOTE) : null;
+  return lost || moved || ignored
+    ? el("div", { style: "display:grid;gap:8px" }, lost, moved, ignored) : null;
 }
 
 const walletReady = () => !!(state.wallet && state.wallet.birthday)
@@ -2808,7 +3248,7 @@ function setupView() {
 
 // Version 2 wallets: the signers compare one number before the key ceremony starts. It stays
 // visible until every seat holds its key share.
-const safetyOpen = () => groupVersion() === 2 && allSeated() && !allDone() && !holdsAllSeats();
+const safetyOpen = () => usesV2(groupVersion()) && allSeated() && !allDone() && !holdsAllSeats();
 
 // The person fixes the cause, then tries again. The reactor does not retry a failed save.
 function saveFailedCard() {
@@ -2851,8 +3291,8 @@ const NOT_ZIP2005 = "This wallet is not built to ZIP 2005. Funds cannot be recov
 
 function joinCard(seat) {
   const take = el("button", {
-    class: "btn primary lg", type: "button", disabled: !Z || canWrite === false,
-    onclick: act(() => (groupVersion() === 2 || confirm(NOT_ZIP2005)) && takeSeat(seat)),
+    class: "btn primary lg", type: "button", disabled: !Z || canWrite === false || state.pending,
+    onclick: act(() => (usesV2(groupVersion()) || confirm(NOT_ZIP2005)) && takeSeat(seat)),
   }, "Take seat " + seat);
   return el("section", { class: "card card-pad hero-card" },
     el("div", { style: "display:grid;gap:4px" }, el("h2", {}, "Join " + state.g.name),
@@ -2892,14 +3332,14 @@ function inviteCard(openCount) {
 
 // Counts for the three setup steps.
 function setupCounts() {
-  const n = state.g.n, no = groupVersion() === 2 ? safetyNo() : null;
+  const n = state.g.n, no = usesV2(groupVersion()) ? safetyNo() : null;
   return {
     n, w: state.wallet, pairs: n * (n - 1),
     r1: Object.keys(state.dkg1).length, r2: Object.keys(state.dkg2).length,
     d: Object.keys(state.done).length, ver: verifiedCount(),
     seated: seatIds().filter((i) => state.seats[i]).length,
     mismatch: keysDiffer(), rejected: rejectedSeats(),
-    v2: groupVersion() === 2, no, clash: no ? numberClash(no, state.confirm, seatIds()) : [],
+    v2: usesV2(groupVersion()), no, clash: no ? numberClash(no, state.confirm, seatIds()) : [],
     conf: no ? confirmedBy(no).length : 0, stopped: abortedText(),
     aborts: remoteAborts(),
     old: oldSeats(),
@@ -2993,7 +3433,10 @@ function seatsCard(open) {
   const testing = localSeats().length && open.length
     ? el("details", { class: "testing" }, el("summary", {}, "Trying Zigs alone? Play the other seats in this browser"),
       el("p", { class: "small faint" }, "For a demo or a review only. In real use, each signer takes a seat on their own device."),
-      el("div", { style: "display:flex;gap:8px;flex-wrap:wrap" }, open.map((i) => el("button", { class: "btn sm", type: "button", disabled: !Z || canWrite === false, onclick: act(() => takeSeat(i)) }, "Play seat " + i))))
+      el("div", { style: "display:flex;gap:8px;flex-wrap:wrap" }, open.map((i) => el("button", {
+        class: "btn sm", type: "button", disabled: !Z || canWrite === false || state.pending,
+        onclick: act(() => takeSeat(i)),
+      }, "Play seat " + i))))
     : null;
   return el("section", { class: "card card-pad" },
     el("div", { class: "card-head" }, el("h2", {}, "Seats"), el("span", { class: "small muted" }, state.g.t + " of " + state.g.n + " signers must approve")),
@@ -3001,9 +3444,14 @@ function seatsCard(open) {
     testing);
 }
 
+// Is seat i held by this browser, or by the same person in another browser?
+function seatOwner(i) {
+  const taken = !!state.seats[i] && seatMine(i), here = !!sec(state.gid, i);
+  return { mine: taken && here, elsewhere: taken && !here && !signedMode(state.gid) };
+}
+
 function seatTile(i) {
-  const s = state.seats[i], mine = s && isMe(s.uid) && sec(state.gid, i);
-  const elsewhere = s && isMe(s.uid) && !sec(state.gid, i);
+  const s = state.seats[i], { mine, elsewhere } = seatOwner(i);
   const st = seatStage(i);
   return el("div", { class: "seat" + (mine ? " mine" : "") + (s ? "" : " open") },
     el("div", { style: "display:flex;align-items:center;gap:10px;min-width:0" }, avatar(i),
@@ -3058,7 +3506,8 @@ function signersCard() {
     el("div", { class: "card-head" }, el("h2", {}, "Signers"),
       el("button", { class: "btn ghost sm", type: "button", onclick: () => { ui.tab = "members"; render(); } }, "Manage")),
     el("p", { class: "small muted" }, ruleText(state.g.t, state.g.n)),
-    el("div", { class: "signer-list" }, seatIds().map((i) => el("span", { class: "signer" }, avatar(i), el("span", { class: "small" }, seatLabel(i))))));
+    el("div", { class: "signer-list" }, seatIds().map((i) => el("span", { class: "signer" },
+      avatar(i), el("span", { class: "small" }, named(i))))));
 }
 
 function approvalsCard(list) {
@@ -3190,7 +3639,7 @@ function activityTab() {
 const FINE = "Signers, and anyone else who has the invite link, can read these messages. The "
   + "group server stores them sealed and sees only when they are sent.";
 const up = (s) => s.charAt(0).toUpperCase() + s.slice(1);
-const sender = (i) => state.seats[i] ? seatLabel(i) : "Unknown sender";
+const sender = (i) => state.seats[i] ? named(i) : "Unknown sender";
 
 function messagesCard() {
   const changed = changedSigners();
@@ -3464,7 +3913,7 @@ function changeSignersCard() {
 }
 
 const seatTitle = (i, s) =>
-  s ? (isMe(s.uid) ? (s.name || "You") : s.name || "Signer " + i) : "Open seat";
+  s ? (seatMine(i) ? (s.name || "You") : s.name || "Signer " + i) : "Open seat";
 
 function seatBadge(i) {
   const v = seatCheck(i);
@@ -3478,7 +3927,7 @@ const keyBackupButton = (i) => el("button", {
 }, "Back up key share");
 
 function memberRow(i) {
-  const s = state.seats[i], mine = s && isMe(s.uid) && sec(state.gid, i);
+  const s = state.seats[i], mine = s && seatMine(i) && sec(state.gid, i);
   const title = el("span", { class: "ri-title" }, seatTitle(i, s),
     mine ? el("span", { class: "you" }, "You") : null);
   const sub = el("span", { class: "ri-sub" }, "Seat " + i + (s ? " · joined " + when(s.at) : ""));
@@ -3518,8 +3967,11 @@ function walletFacts() {
         + (net.cap ? " · warning at " + capText(net.cap) : "")),
       el("dt", {}, "Created at block"), el("dd", { class: "mono" }, fmtInt(w.birthday)),
       el("dt", {}, "Wallet key"), el("dd", { class: "hex" }, w.group_verifying_key),
-      groupVersion() === 2 ? [el("dt", {}, "Key setup"), el("dd", {}, "Built to ZIP 2005 (Proposed) "
-        + "so that funds can be recovered if quantum computers break today's keys.")] : null),
+      usesV2(groupVersion()) ? [el("dt", {}, "Key setup"),
+        el("dd", {}, "Built to ZIP 2005 (Proposed) so that funds can be recovered if quantum "
+          + "computers break today's keys.")] : null,
+      signedMode(state.gid) ? [el("dt", {}, "Signed writes"), el("dd", {}, "Each signer signs the "
+        + "data it writes to this wallet. Zigs ignores data without a valid signature.")] : null),
     groupVersion() === 1 ? el("p", { class: "small muted", style: "margin-top:12px" },
       "This wallet was made before quantum recoverability (ZIP 2005). To get it, move the funds "
       + "to a new wallet with Change signers.") : null);
@@ -3763,19 +4215,43 @@ function moveNote(ss, rc) {
   return el("div", { class: "callout" }, "This moves all funds to a new wallet that replaces this one. Your browser has no checked copy of its address, so it cannot check it.");
 }
 
+// The seats of this browser that can approve the payment now. None while the wallet's data is
+// being checked: an approval written twice would replace its own nonces.
+const approvers = (ss) => state.pending ? [] : localSeats().filter((i) => canWriteAs(i)
+  && sec(state.gid, i).keyPackage && seatCheck(i) === true && !state.commits[i] && !ss.package);
+
+const bigButton = (label, onclick, extra = {}) =>
+  el("button", { class: "btn primary lg", type: "button", onclick, ...extra }, label);
+
+function approveButtons(ss, myPending) {
+  const several = localSeats().length > 1;
+  return myPending.map((i) => bigButton(several ? "Approve as seat " + i : "Approve payment",
+    act(() => approve(ss, i))));
+}
+
+const needsProof = (ss) => ss.signed && !ss.final
+  && (ss.status !== "proving" || proofStalled(ss));
+
+// The step after the approvals. The proof and the sent mark are signed writes, so they need a seat
+// that can sign.
+function finishButtons(ss) {
+  if (!mayAct()) return [];
+  if (needsProof(ss)) return [bigButton("Build proof", act(() => finalizeTx(ss)))];
+  if (!ss.final || ss.broadcastTxid) return [];
+  return [bigButton(ss.broadcastError ? "Send again" : "Send to network",
+    act(() => broadcastTx(ss)), { disabled: !curChain() })];
+}
+
 function nextAction(ss, ins, rc) {
-  const myPending = localSeats().filter((i) => sec(state.gid, i).keyPackage && seatCheck(i) === true && !state.commits[i] && !ss.package);
+  const myPending = approvers(ss);
   const canApprove = myPending.length && rc.match === true && rc.intoNew !== false;
-  if (canApprove) return myPending.map((i) => el("button", { class: "btn primary lg", type: "button", onclick: act(() => approve(ss, i)) }, localSeats().length > 1 ? "Approve as seat " + i : "Approve payment"));
-  if (ss.signed && !ss.final && (ss.status !== "proving" || proofStalled(ss))) return [el("button", { class: "btn primary lg", type: "button", onclick: act(() => finalizeTx(ss)) }, "Build proof")];
-  if (ss.final && !ss.broadcastTxid) return [el("button", { class: "btn primary lg", type: "button", disabled: !curChain(), onclick: act(() => broadcastTx(ss)) }, ss.broadcastError ? "Send again" : "Send to network")];
-  return [];
+  return canApprove ? approveButtons(ss, myPending) : finishButtons(ss);
 }
 
 const CANCEL_ASK = "Cancel this payment? No signer can approve it after this. Anyone can propose it again.";
 // Until the signatures are combined, any signer can withdraw a payment, for example one that lost
 // an approval. A signature share alone cannot move funds.
-const cancelAction = (ss) => ss.signed || !localSeats().length ? [] : [
+const cancelAction = (ss) => ss.signed || !localSeats().length || !mayAct() ? [] : [
   el("button", { class: "btn lg", type: "button", onclick: act(() => confirm(CANCEL_ASK) && cancelPayment(ss)) }, "Cancel payment"),
 ];
 
@@ -3869,6 +4345,12 @@ function breakdown(ins) {
       + "not from the proposer's description."));
 }
 
+// Each seat with its name and seat number, and a check mark when it approved.
+const approverChips = () => el("div", {
+  style: "display:flex;align-items:center;gap:10px;flex-wrap:wrap",
+}, seatIds().map((i) => el("span", { class: "approver" + (state.commits[i] ? " yes" : "") },
+  avatar(i), el("span", { class: "small" }, named(i) + (state.commits[i] ? " ✓" : "")))));
+
 function timeline(ss, refused) {
   const g = state.g, approvals = Object.keys(state.commits).length;
   const signers = signersOf(ss), shared = signers.filter((i) => state.shares[i]).length;
@@ -3876,7 +4358,7 @@ function timeline(ss, refused) {
   return el("div", { class: "steps" },
     tl("done", "Proposed", el("p", {}, when(ss.createdAt))),
     tl(approvals >= g.t ? "done" : refused ? "bad" : "now", "Approvals · " + Math.min(approvals, g.t) + " of " + g.t + " needed",
-      el("div", { style: "display:flex;align-items:center;gap:10px;flex-wrap:wrap" }, seatIds().map((i) => el("span", { class: "approver" + (state.commits[i] ? " yes" : "") }, avatar(i), el("span", { class: "small" }, seatLabel(i) + (state.commits[i] ? " ✓" : "")))))),
+      approverChips()),
     tl(ss.error ? "bad" : ss.signed ? "done" : ss.package ? "now" : "", "Combined signature",
       el("p", {}, ss.error ? ss.error : ss.signed ? "All signatures combined and verified." : ss.package ? "Signing · " + shared + " of " + signers.length + " shares" : "Starts after " + g.t + " approvals.")),
     tl(ss.final ? "done" : ss.status === "proving" ? "now" : "", "Proof",
