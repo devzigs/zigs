@@ -6,7 +6,10 @@ import assert from "node:assert/strict";
 import {
   backupOpen, backupSeal, boxKeypair, docPayload, initSync,
 } from "../../web/pkg/zec_frost_wasm.js";
-import { newSignKey, signMsg, signPairMatches, verifyMsg } from "../../web/chat.js";
+import {
+  dmText, keyState, newSignKey, parseDm, parseMsg, signMsg, signPairMatches, signedText, verifyMsg,
+} from "../../web/chat.js";
+import { allPaid, memoShown, pairPayees } from "../../web/payees.js";
 import { filterWallet, PARTS, writerCheck } from "../../web/signed.js";
 import { slowCall } from "../../web/util.js";
 
@@ -95,6 +98,158 @@ async function webWallet() {
   return { gid: GID, n: 3, sid: SID, pins, raw };
 }
 
+// Messages (PROTOCOL.md section 14). Each side signs messages of a room and of a direct chat with
+// its own code. The other side reads them with its own code: the same text, the same verdict.
+// HARD holds every kind of character that JSON.stringify escapes or leaves alone.
+const HARD = "quote \" backslash \\ slash / tab \t cr \r nl \n bell \u0007 bs \b ff \f "
+  + "del \u007f ls \u2028 ps \u2029 emoji \u{1F600} cjk \u65e5\u672c\u8a9e e \u00e9 "
+  + "low \u0001\u001f";
+const CHAT = {
+  gid: "0123456789abcdef0123", rid: "fedcba9876543210fedc", cid: "aabbccddeeff00112233",
+  sid: "ab12cd34ef56ab12cd34", memA: "1111aaaa1111aaaa1111", memB: "2222bbbb2222bbbb2222",
+  at: 1760000000000,
+};
+
+// What the page decides about a message: trust() and dmTrust() in web/app.js, without the cache.
+async function chatVerdict(c) {
+  const m = c.kind === "room" ? parseMsg(c.id, c.doc) : parseDm(c.id, c.doc);
+  if (!m) return "drop";
+  const pinned = c.pinnedPk ?? undefined;
+  if (c.kind === "dm" && pinned === undefined) return "unknown";
+  const text = c.kind === "room" ? signedText(c.ns, c.room, m) : dmText(c.ns, m);
+  const gate = keyState(c.isMember, c.memberPk ?? undefined, pinned);
+  if (gate !== "check") return gate;
+  return (await verifyMsg(pinned, m.sig, text)) ? "yes" : "no";
+}
+
+// Cases signed by this side. `msg` is the message as the document shows it, `signed` the text that
+// the signature covers, and `who` what the store and the pins say about the sender.
+async function chatCases() {
+  const k1 = await newSignKey(), k2 = await newSignKey(), other = await newSignKey();
+  const { gid, rid, cid, sid, memA, memB, at } = CHAT;
+  const roomMsg = { id: "c".repeat(20), seat: 2, thread: "wallet", at, text: HARD };
+  const dmMsg = { id: "d".repeat(20), from: memA, at, text: HARD };
+  const roomText = (m) => signedText(gid, rid, m);
+  const same = (k) => ({ memberPk: k.signPk, pinnedPk: k.signPk });
+  const moved = (k) => ({ memberPk: other.signPk, pinnedPk: k.signPk });
+  const dmOfRoom = dmText(gid, { ...dmMsg, id: roomMsg.id });
+  const roomOfDm = signedText(cid, cid, { ...roomMsg, id: dmMsg.id });
+  const make = async (kind, name, expect, o) => {
+    const m = o.msg ?? (kind === "room" ? roomMsg : dmMsg);
+    const text = o.text ?? (kind === "room" ? roomText(m) : dmText(cid, m));
+    const sig = await signMsg(o.signer.signSk, text);
+    const doc = kind === "room" ? { seat: m.seat, thread: m.thread, text: m.text, at: m.at, sig }
+      : { from: m.from, text: m.text, at: m.at, sig };
+    return { name, kind, ns: kind === "room" ? gid : cid, room: rid, id: m.id, expect,
+      doc: { ...doc, ...o.doc }, isMember: o.isMember ?? true, ...(o.who ?? same(o.signer)) };
+  };
+  const room = (name, expect, o) => make("room", name, expect, o);
+  const dm = (name, expect, o) => make("dm", name, expect, o);
+  const pay = { ...roomMsg, thread: "pay:" + sid };
+  return [
+    await room("room: honest", "yes", { signer: k2 }),
+    await room("room: payment thread", "yes", { signer: k2, msg: pay }),
+    await room("room: wrong key", "no", { signer: other, who: same(k2) }),
+    await room("room: wrong seat", "no", { signer: k2, doc: { seat: 1 }, who: same(k1) }),
+    await room("room: changed text", "no", { signer: k2, doc: { text: HARD + "!" } }),
+    await room("room: changed thread", "no", { signer: k2, doc: { thread: "pay:" + sid } }),
+    await room("room: changed time", "no", { signer: k2, doc: { at: at + 1 } }),
+    await room("room: key changed", "changed", { signer: k2, who: moved(k2) }),
+    await room("room: not a seat", "no", { signer: k2, isMember: false }),
+    await room("room: no pinned key", "no", { signer: k2, who: { memberPk: k2.signPk } }),
+    await room("room: direct signature", "no", { signer: k2, text: dmOfRoom }),
+    await room("room: text too long", "drop", { signer: k2, doc: { text: "x".repeat(2001) } }),
+    await room("room: bad thread", "drop", { signer: k2, doc: { thread: "other" } }),
+    await room("room: time as text", "drop", { signer: k2, doc: { at: "now" } }),
+    await dm("dm: honest", "yes", { signer: k1 }),
+    await dm("dm: wrong key", "no", { signer: other, who: same(k1) }),
+    await dm("dm: other member", "no", { signer: k1, doc: { from: memB }, who: same(k2) }),
+    await dm("dm: changed text", "no", { signer: k1, doc: { text: HARD + "!" } }),
+    await dm("dm: key changed", "changed", { signer: k1, who: moved(k1) }),
+    await dm("dm: unknown sender", "unknown", { signer: k1, who: { memberPk: k1.signPk } }),
+    await dm("dm: room signature", "no", { signer: k1, text: roomOfDm }),
+    await dm("dm: bad member id", "drop", { signer: k1, doc: { from: memA.toUpperCase() } }),
+    await dm("dm: text as number", "drop", { signer: k1, doc: { text: 5 } }),
+  ];
+}
+
+// Checks every case against its expected verdict. Returns the names that differ.
+async function chatMisses(cases) {
+  const miss = [];
+  for (const c of cases) if ((await chatVerdict(c)) !== c.expect) miss.push(c.name);
+  return miss;
+}
+
+// The recipient check of web/payees.js on a list of cases. The Swift port must give the same
+// verdicts: which payees are paid, and with which other memo, which outputs are left, and whether
+// the whole payment matches. `memoShown` is checked on texts that hide or reorder other text.
+function payeeCases() {
+  const A = "utest1a", B = "utest1b";
+  const line = (who, value, status = "empty", memo) => ({
+    kind: "output", who, value, memo_status: status, ...(memo === undefined ? {} : { memo }),
+  });
+  const text = (who, value, memo) => line(who, value, "text", memo);
+  const none = [undefined, null, ""].map(
+    (memo) => [`no memo (${memo})`, [{ to: A, amount: 5, memo }]]);
+  const cases = [
+    ["a memo that matches", [{ to: "UTEST1A", amount: 5, memo: "rent" }, { to: B, amount: 7 }],
+      [line(B, 7), text(A, 5, "rent")], 12],
+    ...none.flatMap(([name, payees]) => [
+      [name + ", empty memo", payees, [line(A, 5)], 5],
+      [name + ", memo on chain", payees, [text(A, 5, "sneaky")], 5],
+      [name + ", unreadable", payees, [line(A, 5, "unknown")], 5],
+      [name + ", not text", payees, [line(A, 5, "not_text")], 5]]),
+    ["a memo, empty on chain", [{ to: A, amount: 5, memo: "rent" }], [line(A, 5)], 5],
+    ["a memo, unknown on chain", [{ to: A, amount: 5, memo: "rent" }], [line(A, 5, "unknown")], 5],
+    ["a memo, not text on chain", [{ to: A, amount: 5, memo: "rent" }],
+      [line(A, 5, "not_text")], 5],
+    ["a text status without text", [{ to: A, amount: 5, memo: "rent" }], [line(A, 5, "text")], 5],
+    ["a text status with a number", [{ to: A, amount: 5 }], [line(A, 5, "text", 7)], 5],
+    ["no status", [{ to: A, amount: 5 }], [{ kind: "output", who: A, value: 5 }], 5],
+    ["an empty text", [{ to: A, amount: 5 }], [text(A, 5, "")], 5],
+    ["another case", [{ to: A, amount: 5, memo: "rent" }], [text(A, 5, "Rent")], 5],
+    ["a trailing space", [{ to: A, amount: 5, memo: "rent" }], [text(A, 5, "rent ")], 5],
+    ["a number as memo", [{ to: A, amount: 5, memo: 7 }], [text(A, 5, "7")], 5],
+    ["an object as memo", [{ to: A, amount: 5, memo: {} }], [line(A, 5)], 5],
+    ["a list as memo", [{ to: A, amount: 5, memo: ["x"] }], [text(A, 5, "x")], 5],
+    ["true as memo", [{ to: A, amount: 5, memo: true }], [text(A, 5, "true")], 5],
+    ["lines and emoji", [{ to: A, amount: 5, memo: "a\nb \u{1F600}" }],
+      [text(A, 5, "a\nb \u{1F600}")], 5],
+    ["a hiding character, equal", [{ to: A, amount: 5, memo: "x\u202ey" }],
+      [text(A, 5, "x\u202ey")], 5],
+    ["a hiding character, other", [{ to: A, amount: 5, memo: "x\u202ey" }],
+      [text(A, 5, "x\ufffdy")], 5],
+    ["same payee twice, other memos",
+      [{ to: A, amount: 5, memo: "x" }, { to: A, amount: 5, memo: "y" }],
+      [text(A, 5, "y"), text(A, 5, "x")], 10],
+    ["same payee twice, one memo off",
+      [{ to: A, amount: 5, memo: "x" }, { to: A, amount: 5, memo: "x" }],
+      [text(A, 5, "x"), text(A, 5, "y")], 10],
+    ["an output nobody proposed", [{ to: A, amount: 5 }], [line(A, 5), line(B, 1)], 5],
+    ["a payee nothing pays", [{ to: A, amount: 5 }, { to: B, amount: 1 }], [line(A, 5)], 6],
+    ["a total that differs", [{ to: A, amount: 5 }], [line(A, 5)], 6],
+    ["another amount", [{ to: A, amount: 5 }], [line(A, 6)], 5],
+    ["a fraction as amount", [{ to: A, amount: 5.5 }], [line(A, 5)], 5],
+    ["text as amount", [{ to: A, amount: "5" }], [line(A, 5)], 5],
+    ["a whole float as amount", [{ to: A, amount: 5.0 }], [line(A, 5)], 5],
+    ["no payees", [], [], 0],
+  ];
+  const shown = ["plain", "a\nb", "a\tb", "x\u202ey", "\u0007bell", "\u2066iso\u2069",
+    "caf\u00e9 \u{1F600}", "\u061c\u200e\u200f", "del\u007f\u0085\u009f", "\u000b\u001f end",
+    "\ufffd stays"];
+  return {
+    cases: cases.map(([name, payees, outputs, total]) => {
+      const { rows, extra } = pairPayees(payees, outputs, (a) => a.toLowerCase());
+      const expect = {
+        rows: rows.map((r) => ({ ok: r.ok, other: r.got !== undefined, got: r.got ?? null })),
+        extra: extra.length, paid: allPaid(rows, extra, total),
+      };
+      return { name, payees, outputs, total, expect };
+    }),
+    shown: shown.map((t) => ({ text: t, shown: memoShown(t) })),
+  };
+}
+
 // Reads the wallet that the Swift code made, as the web page does: a result comes after the check
 // of the page asked for it, so the filter runs again until nothing waits.
 async function readSwiftWallet(file) {
@@ -142,6 +297,11 @@ if (mode === "make") {
   fs.writeFileSync(`${dir}/pass.txt`, pass);
   fs.writeFileSync(`${dir}/signed-web.json`, JSON.stringify(await webWallet()));
   fs.writeFileSync(`${dir}/signed-parts.json`, JSON.stringify(PARTS));
+  const cases = await chatCases();
+  assert.deepEqual(await chatMisses(cases), [], "the web code agrees with its own cases");
+  fs.writeFileSync(`${dir}/chat-web.json`,
+    JSON.stringify({ hard: HARD, hardJson: JSON.stringify(HARD), cases }));
+  fs.writeFileSync(`${dir}/payees-web.json`, JSON.stringify(payeeCases()));
   fs.writeFileSync(`${dir}/web-made.zigsbackup`, slowCall(Z, "backupSeal", [pass, plain]));
 } else {
   const made = fs.readFileSync(`${dir}/swift-made.zigsbackup`, "utf8");
@@ -173,10 +333,19 @@ if (mode === "make") {
   const status = Object.fromEntries(out.sessions.map((ss) => [ss.id, ss.status]));
   assert.deepEqual(status, { [f.sid]: "broadcast", [sidf(5)]: "cancelled", [sidf(6)]: "failed" });
   assert.equal(out.sessions.find((ss) => ss.id === sidf(5)).error, "Cancelled by Cy (seat 3).");
+  // The time of the cancel is not signed. The page keeps it for the event in the message log.
+  assert.equal(out.sessions.find((ss) => ss.id === sidf(5)).cancelledAt, 1760000000500);
   const chained = out.sessions.find((ss) => ss.id === f.sid);
   assert.deepEqual([chained.package, chained.signed, chained.final.txid, chained.broadcastTxid],
     ["PKG", "S", "T1", "T1"]);
   // The secret key that the Swift code made is a key for WebCrypto, and makes its public key.
   assert.equal(await signPairMatches(f.key.signSk, f.key.signPk), true);
   console.log("web accepts the documents that Swift signed");
+
+  // The messages that the Swift code signed.
+  const chat = JSON.parse(fs.readFileSync(`${dir}/chat-swift.json`, "utf8"));
+  assert.equal(chat.hardJson, JSON.stringify(HARD), "the Swift escapes equal JSON.stringify");
+  assert.deepEqual(await chatMisses(chat.cases), [], "the web code agrees with the Swift cases");
+  assert.equal(chat.cases.length, 23);
+  console.log("web reads the messages that Swift signed");
 }

@@ -472,6 +472,10 @@ extension GroupModel {
             throw ZigsError("This backup has a different wallet secret for a wallet you already "
                 + "have, so it was not restored.")
         }
+        if isChatId(b.group) {
+            throw ZigsError("A chat that you have uses the id of this wallet, so the backup was "
+                + "not restored.")
+        }
         let held = vault.secrets["\(b.group):\(b.seat)"]
         if let why = BackupData.heldRefusal(held, file: b.keyPackage, seat: b.seat) {
             throw ZigsError(why)

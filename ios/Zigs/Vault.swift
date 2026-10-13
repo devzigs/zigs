@@ -8,13 +8,16 @@ struct VaultError: LocalizedError {
     init(_ text: String) { errorDescription = text }
 }
 
-/// Device-only secrets: key shares, DKG secrets, signing nonces, and group keys.
-/// They live in the Keychain and never leave this device. With the lock on, they are stored
-/// sealed with a vault key, and the Keychain gives that key out only after Face ID or the passcode.
+/// Device-only secrets: key shares, DKG secrets, signing nonces, group keys, and the direct chats
+/// (their secrets and the personal signing key). They live in the Keychain and never leave this
+/// device. With the lock on, they are stored sealed with a vault key, and the Keychain gives that
+/// key out only after Face ID or the passcode.
 @MainActor
 final class Vault {
     private(set) var secrets: [String: Doc] = [:]
     private(set) var keys: [String: String] = [:]
+    /// The direct chats, in the shape of ChatBook.doc.
+    private(set) var chats: Doc = [:]
     /// The secrets are not loaded: the lock is on, or the Keychain could not answer yet.
     /// Nothing is written while locked, so a failed read cannot overwrite saved secrets.
     private(set) var locked = true
@@ -30,8 +33,10 @@ final class Vault {
     private func loadPlain() -> Bool {
         do {
             let s = try Self.read("zf-secrets"), k = try Self.read("zf-keys")
+            let c = try Self.read("zf-chats")
             secrets = Self.parse(s) as? [String: Doc] ?? [:]
             keys = Self.parse(k) as? [String: String] ?? [:]
+            chats = Self.parse(c) as? Doc ?? [:]
             return true
         } catch {
             return false
@@ -55,6 +60,16 @@ final class Vault {
     func setSec(_ gid: String, _ seat: Int, _ doc: Doc?) -> Bool {
         secrets["\(gid):\(seat)"] = doc
         return persist()
+    }
+
+    /// Saves the direct chats. Returns false, and keeps the old ones, if the Keychain did not
+    /// save them.
+    func putChats(_ doc: Doc) -> Bool {
+        let old = chats
+        chats = doc
+        if persist() { return true }
+        chats = old
+        return false
     }
 
     /// Seats this device holds secrets for in group `gid`.
@@ -104,6 +119,7 @@ final class Vault {
         }
         Self.delete("zf-secrets")
         Self.delete("zf-keys")
+        Self.delete("zf-chats")
     }
 
     /// Asks for Face ID or the passcode, then opens the sealed secrets.
@@ -121,6 +137,7 @@ final class Vault {
         }
         secrets = doc["secrets"] as? [String: Doc] ?? [:]
         keys = doc["keys"] as? [String: String] ?? [:]
+        chats = doc["chats"] as? Doc ?? [:]
         vaultKey = key
         locked = false
     }
@@ -141,9 +158,12 @@ final class Vault {
         if locked { return false }
         guard let vaultKey else {
             let secretsSaved = Self.write("zf-secrets", Data(Engine.json(secrets).utf8))
-            return Self.write("zf-keys", Data(Engine.json(keys).utf8)) && secretsSaved
+            let chatsSaved = Self.write("zf-chats", Data(Engine.json(chats).utf8))
+            let keysSaved = Self.write("zf-keys", Data(Engine.json(keys).utf8))
+            return keysSaved && secretsSaved && chatsSaved
         }
-        let plain = Data(Engine.json(["secrets": secrets, "keys": keys] as Doc).utf8)
+        let all: Doc = ["secrets": secrets, "keys": keys, "chats": chats]
+        let plain = Data(Engine.json(all).utf8)
         guard let box = try? AES.GCM.seal(plain, using: vaultKey, authenticating: Self.aad).combined else {
             return false
         }

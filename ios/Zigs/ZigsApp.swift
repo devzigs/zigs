@@ -4,6 +4,7 @@ import TipKit
 @main
 struct ZigsApp: App {
     @State private var model = GroupModel()
+    @Environment(\.scenePhase) private var phase
 
     init() { try? Tips.configure() }
 
@@ -16,6 +17,7 @@ struct ZigsApp: App {
                 .tint(.signal)
                 .preferredColorScheme(.dark)
                 .onOpenURL { model.join($0.absoluteString) }
+                .onChange(of: phase) { model.setActive(phase == .active) }
         }
         #if os(macOS)
         .defaultSize(width: 560, height: 860)
@@ -29,7 +31,7 @@ struct RootView: View {
     @State private var importing = false
 
     enum RootSheet: Identifiable {
-        case join, settings, create
+        case join, settings, create, chat
         /// A sealed backup file that waits for its passphrase.
         case restore(name: String, text: String)
 
@@ -38,6 +40,7 @@ struct RootView: View {
             case .join: "join"
             case .settings: "settings"
             case .create: "create"
+            case .chat: "chat"
             case .restore: "restore"
             }
         }
@@ -50,6 +53,7 @@ struct RootView: View {
                 VStack(alignment: .leading, spacing: 16) {
                     Text("Each wallet is a separate shared account, with its own address, signers and approval rule.")
                         .font(.subheadline).foregroundStyle(Color.mist)
+                    ForEach(model.chat.offers.keys.sorted(), id: \.self) { JoinChatCard(cid: $0) }
                     if model.groups.isEmpty {
                         Welcome(create: { sheet = .create }, join: { sheet = .join },
                                 restore: { importing = true })
@@ -63,6 +67,7 @@ struct RootView: View {
                         .background(Color.room, in: RoundedRectangle(cornerRadius: 16))
                         .overlay(RoundedRectangle(cornerRadius: 16).stroke(Color.line))
                     }
+                    ChatsCard(newChat: { sheet = .chat })
                     ConnectionLine(connected: model.connected)
                 }
                 .padding(16)
@@ -70,7 +75,11 @@ struct RootView: View {
             .background(Color.night)
             .navigationTitle("Wallets")
             .navigationDestination(for: String.self) { id in
-                GroupView().onAppear { model.select(id) }
+                if let cid = Chat.chatId(ofRoute: id) {
+                    ChatScreen(cid: cid)
+                } else {
+                    GroupView().onAppear { model.select(id) }
+                }
             }
             .toolbar {
                 ToolbarItem(placement: .navigation) {
@@ -80,6 +89,7 @@ struct RootView: View {
                     Menu("Add", systemImage: "plus") {
                         Button("New wallet", systemImage: "plus.circle") { sheet = .create }
                         Button("Join with an invite link", systemImage: "link") { sheet = .join }
+                        Button("New chat", systemImage: "bubble.left") { sheet = .chat }
                         Button("Restore from backup", systemImage: "arrow.down.doc") {
                             importing = true
                         }
@@ -91,6 +101,7 @@ struct RootView: View {
                 case .join: JoinSheet()
                 case .settings: SettingsSheet()
                 case .create: CreateSheet(from: nil)
+                case .chat: NewChatSheet()
                 case .restore(let name, let text): RestoreSheet(name: name, text: text)
                 }
             }
@@ -154,6 +165,7 @@ struct WalletRow: View {
     var body: some View {
         let mine = !model.vault.seats(in: g.id).isEmpty
         let pending = model.toApprove[g.id] ?? 0
+        let unread = model.unread(g.id)
         HStack(spacing: 12) {
             Avatar(text: initials(g.name), size: 40)
             VStack(alignment: .leading, spacing: 3) {
@@ -171,6 +183,7 @@ struct WalletRow: View {
                     Money(zat: b, size: 15)
                 }
                 if pending > 0 { Badge(text: "\(pending) to approve", kind: .warn) }
+                if unread > 0 { Badge(text: "\(unread) new", kind: .info) }
             }
             Image(systemName: "chevron.right").font(.caption).foregroundStyle(Color.mist)
         }
@@ -276,7 +289,8 @@ struct JoinSheet: View {
                 } header: {
                     Text("Invite link")
                 } footer: {
-                    Text("The wallet secret after # stays on this \(deviceName). The server never sees it.")
+                    Text("A wallet invite link or a chat contact link. The secret after # stays on "
+                         + "this \(deviceName). The server never sees it.")
                 }
             }
             .navigationTitle("Join a wallet")

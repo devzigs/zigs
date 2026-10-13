@@ -17,6 +17,8 @@ struct GroupInfo: Identifiable {
     let createdAt: Int
     let movedTo: String?
     let network: String?
+    /// The message room that the wallet document names, as it stands in the store.
+    let room: Doc?
 }
 
 extension GroupInfo {
@@ -24,7 +26,7 @@ extension GroupInfo {
     init(id: String, doc g: Doc) {
         self.init(id: id, name: g.str("name") ?? "Wallet", n: g.int("n") ?? 0, t: g.int("t") ?? 0,
                   createdAt: g.int("createdAt") ?? 0, movedTo: g.str("movedTo"),
-                  network: g.str("network"))
+                  network: g.str("network"), room: g.doc("room"))
     }
 }
 
@@ -205,7 +207,9 @@ final class GroupModel {
     @ObservationIgnored var restoreWatches: [String: RestoreWatch] = [:]
     /// The last answers of the wallet check for a restored setup secret. See setupFit.
     @ObservationIgnored private var setupChecks: [String: Bool] = [:]
-    @ObservationIgnored let signPins = SignPins()
+    @ObservationIgnored let signPins = Pins("zf-signpins")
+    /// Wallet rooms and direct chats (ChatModel.swift).
+    @ObservationIgnored let chat = ChatState()
     @ObservationIgnored let signMemo = SignedMemo()
     @ObservationIgnored var signLogged = Set<String>()
     /// The payment screen that is open. The wallet page counts the ignored approvals and shares
@@ -290,12 +294,15 @@ final class GroupModel {
 
     // MARK: Encrypted store
 
+    /// The secret of the namespace that holds `path`: a wallet, then a message room or a chat.
     private func key(_ path: String) -> String? {
         let parts = path.split(separator: "/")
-        return parts.count > 1 ? vault.keys[String(parts[1])] : nil
+        guard parts.count > 1 else { return nil }
+        let id = String(parts[1])
+        return vault.keys[id] ?? namespaceKey(id)
     }
 
-    private func open(_ path: String, _ raw: Doc?) -> Doc? {
+    func open(_ path: String, _ raw: Doc?) -> Doc? {
         guard let raw, let k = key(path) else { return nil }
         if opened.count > 20_000 { opened = [:] }
         var out = Doc()
@@ -305,29 +312,27 @@ final class GroupModel {
             let aad = path + "\n" + field, cacheKey = aad + "\n" + ct
             if let hit = opened[cacheKey] { out[field] = hit; continue }
             guard let pt = try? Engine.call("secretOpen", [k, aad, ct]),
-                  let val = try? Engine.parse(pt), shallow(val) else { continue }
+                  let val = try? Engine.parse(pt), Chat.shallow(val) else { continue }
             opened[cacheKey] = val
             out[field] = val
         }
         return out.isEmpty && !raw.isEmpty ? nil : out
     }
 
-    /// The same depth limit as the web app, which drops a stored value nested deeper than 32.
-    private func shallow(_ v: Any, _ depth: Int = 0) -> Bool {
-        if let d = v as? Doc { return depth < 32 && d.values.allSatisfy { shallow($0, depth + 1) } }
-        if let a = v as? [Any] { return depth < 32 && a.allSatisfy { shallow($0, depth + 1) } }
-        return true
-    }
-
-    private func seal(_ path: String, _ data: Doc) throws -> Doc {
+    func seal(_ path: String, _ data: Doc) throws -> Doc {
         guard let k = key(path) else { throw ZigsError("No key for \(path).") }
         var out = Doc()
         for (field, v) in data { out[field] = try Engine.call("secretSeal", [k, path + "\n" + field, Engine.json(v)]) }
         return out
     }
 
-    private func put(_ path: String, _ data: Doc) async throws { try await store.set(path, seal(path, data)) }
-    private func patch(_ path: String, _ data: Doc) async throws { try await store.update(path, seal(path, data)) }
+    func put(_ path: String, _ data: Doc) async throws {
+        try await store.set(path, seal(path, data))
+    }
+
+    func patch(_ path: String, _ data: Doc) async throws {
+        try await store.update(path, seal(path, data))
+    }
 
     /// Writes the document at `rel`, a path below the wallet, with the signature of seat `seat`
     /// in a version 3 wallet.
@@ -335,7 +340,7 @@ final class GroupModel {
         try await put("groups/\(gid)/\(rel)", signed(gid, rel, as: seat, fields))
     }
 
-    private func children(_ path: String) -> [String: Doc] {
+    func children(_ path: String) -> [String: Doc] {
         var out: [String: Doc] = [:]
         for (id, raw) in store.children(path) {
             if let d = open(path + "/" + id, raw) { out[id] = d }
@@ -350,14 +355,17 @@ final class GroupModel {
     func refresh() {
         connected = store.connected
         readGroups()
+        syncChats()
         if let gid { reload(gid) }
         react()
     }
 
     private func readGroups() {
         var list: [GroupInfo] = [], ws: [String: Doc] = [:], counts: [String: Int] = [:]
+        var payments: [String: Set<String>] = [:]
         for (id, raw) in store.children("groups") {
-            guard let stored = open("groups/" + id, raw) else { continue }
+            // A message room or a chat is never a wallet, whatever a document at its id says.
+            guard vault.keys[id] != nil, let stored = open("groups/" + id, raw) else { continue }
             pinVersion(id, stored)
             let g = trusted(id, stored)
             list.append(GroupInfo(id: id, doc: g))
@@ -365,12 +373,15 @@ final class GroupModel {
             let wpath = "groups/\(id)/meta/wallet"
             if let w = open(wpath, store.docs[wpath]) { ws[id] = reader.map { $0.wallet(w) } ?? w }
             if !vault.seats(in: id).isEmpty {
-                counts[id] = sessionsOf(id, reader).filter { needsMyApproval(id, $0) }.count
+                let sessions = sessionsOf(id, reader)
+                counts[id] = sessions.filter { needsMyApproval(id, $0) }.count
+                payments[id] = Set(sessions.map(\.id))
             }
         }
         groups = list.sorted { $0.createdAt > $1.createdAt }
         wallets = ws
         toApprove = counts
+        if chat.payments != payments { chat.payments = payments }
     }
 
     /// The reader of a signed wallet, with the keys pinned from its seat documents, or nil for a
@@ -401,7 +412,7 @@ final class GroupModel {
         var s = readStore(gid)
         pinVersion(gid, s.g)
         if let g = s.g { s.g = trusted(gid, g) }
-        if s.g != nil && signedMode(gid) { keepSigned(gid, &s) }
+        if s.g != nil && signedMode(gid) { keepSigned(gid, &s) } else { pinLegacySeats(gid, s) }
         // The store's verify documents are claims anyone with the wallet key can write. For its own
         // seats this device uses its own result, tied to the exact wallet document.
         let wk = Self.walletKey(s.wallet)
@@ -1300,6 +1311,9 @@ final class GroupModel {
     /// Accepts a web invite link (`https://…/#gid.secret`) or `zigs://join#gid.secret`.
     func join(_ link: String) {
         if locked { linkWhileLocked = link; return }
+        let hash = Chat.parseHash(String(link.split(separator: "#", maxSplits: 1).last ?? "")
+            .trimmingCharacters(in: .whitespacesAndNewlines))
+        if hash.chat { offerChat(hash.id, hash.key); return }
         guard let frag = link.split(separator: "#", maxSplits: 1).last, frag.contains(".") else {
             banner = "This is not a full invite link. Ask for the link that ends with # and the wallet secret."
             return
@@ -1311,6 +1325,7 @@ final class GroupModel {
             banner = "The key in this link is not valid."
             return
         }
+        if isChatId(parts[0]) { banner = Chat.linkChatId; return }
         // A link must not replace a wallet key this device already has.
         if let known = vault.keys[parts[0]], known != parts[1] {
             banner = "This invite link has a different key for a wallet you already have, so it was ignored."
@@ -1373,13 +1388,7 @@ final class GroupModel {
     /// Creates a wallet and takes seat 1. With `from`, the new wallet replaces `from`: the old wallet
     /// gets only the new id, never its key, so signers left out cannot read the new wallet.
     func createGroup(name: String, n: Int, t: Int, from: String? = nil, network: String = "testnet") async throws {
-        let id = randomHex(10)
-        var key = [UInt8](repeating: 0, count: 32)
-        guard SecRandomCopyBytes(kSecRandomDefault, key.count, &key) == errSecSuccess else {
-            throw ZigsError("This \(deviceName) could not make a random key.")
-        }
-        let b64 = Data(key).base64EncodedString().replacingOccurrences(of: "+", with: "-")
-            .replacingOccurrences(of: "/", with: "_").replacingOccurrences(of: "=", with: "")
+        let (id, b64) = try Chat.newRoom()
         vault.putKey(id, b64)
         store.join(id)
         var g: Doc = ["name": name, "n": n, "t": t, "network": network, "version": 3,
@@ -1493,7 +1502,9 @@ final class GroupModel {
             let name = seat.flatMap { self.state.seats["\($0)"]?.str("name") } ?? ""
             let who = (name.isEmpty ? "a signer" : name) + (seat.map { " (seat \($0))" } ?? "")
             let fields: Doc = ["status": "cancelled", "error": "Cancelled by \(who)."]
-            let data = try self.partSigned(gid, ss.id, .cancel, fields, prefer: seat)
+            // The time of the cancel is not signed. It only places the event among the messages.
+            var data = try self.partSigned(gid, ss.id, .cancel, fields, prefer: seat)
+            data["cancelledAt"] = now()
             try await self.patch("groups/\(gid)/sessions/\(ss.id)", data)
             for i in self.localSeats {
                 var nonces = self.vault.sec(gid, i).doc("nonces") ?? [:]

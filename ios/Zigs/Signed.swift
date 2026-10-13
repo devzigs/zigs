@@ -91,10 +91,10 @@ enum Signed {
     }
 
     /// The bytes of a session id: letters, digits, underscore and hyphen.
-    private static let idBytes = Set(
+    static let idBytes = Set(
         "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789_-".utf8)
 
-    private static func isSessionId(_ s: Substring) -> Bool {
+    static func isSessionId(_ s: Substring) -> Bool {
         (1...64).contains(s.utf8.count) && s.utf8.allSatisfy(idBytes.contains)
     }
 
@@ -421,21 +421,39 @@ extension GroupState {
     }
 }
 
-/// The first value that this device saw, for each seat signing key ("wallet id:seat"), each wallet
-/// version ("version:wallet id") and each wallet shape ("shape:wallet id", as "n/t"). A later value
-/// is never trusted.
+/// The first value that this device saw for a name. A later value is never trusted. The signing
+/// pins hold each seat signing key ("wallet id:seat"), each wallet version ("version:wallet id")
+/// and each wallet shape ("shape:wallet id", as "n/t"). Messages have pins of their own: the room
+/// of each wallet, and the signing key of each member of a chat ("chat id:member id").
 @MainActor
-final class SignPins {
-    private static let key = "zf-signpins"
-    private var pins: [String: String]
+final class Pins {
+    private let name: String
+    private(set) var all: [String: String]
 
-    init() { pins = UserDefaults.standard.dictionary(forKey: Self.key) as? [String: String] ?? [:] }
+    init(_ name: String) {
+        self.name = name
+        all = UserDefaults.standard.dictionary(forKey: name) as? [String: String] ?? [:]
+    }
 
-    subscript(key: String) -> String? { pins[key] }
+    subscript(key: String) -> String? { all[key] }
 
-    func pin(_ key: String, _ value: String) {
-        guard pins[key] == nil else { return }
-        pins[key] = value
-        UserDefaults.standard.set(pins, forKey: Self.key)
+    /// Keeps `value` when the key has none yet.
+    @discardableResult
+    func pin(_ key: String, _ value: String) -> Chat.PinResult {
+        change { Chat.pin(&$0, key, value) }
+    }
+
+    /// Runs a rule on the pins and saves them when it added one.
+    @discardableResult
+    func change(_ rule: (inout [String: String]) -> Chat.PinResult) -> Chat.PinResult {
+        let result = rule(&all)
+        if result == .new { UserDefaults.standard.set(all, forKey: name) }
+        return result
+    }
+
+    /// Removes every pin whose key starts with `prefix`.
+    func forget(prefix: String) {
+        all = all.filter { !$0.key.hasPrefix(prefix) }
+        UserDefaults.standard.set(all, forKey: name)
     }
 }

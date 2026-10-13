@@ -6,7 +6,10 @@ struct GroupView: View {
     @State private var tab = Tab.overview
     @State private var sheet: WalletSheet?
 
-    enum Tab: String, CaseIterable { case overview = "Overview", activity = "Activity", signers = "Signers", details = "Details" }
+    enum Tab: String, CaseIterable {
+        case overview = "Overview", activity = "Activity", messages = "Messages"
+        case signers = "Signers", details = "Details"
+    }
     enum WalletSheet: String, Identifiable {
         case send, receive, change
         var id: String { rawValue }
@@ -61,8 +64,11 @@ struct GroupView: View {
         }
         .pickerStyle(.segmented)
         switch tab {
-        case .overview: OverviewTab(showSigners: { tab = .signers }, showActivity: { tab = .activity })
+        case .overview:
+            OverviewTab(showSigners: { tab = .signers }, showActivity: { tab = .activity },
+                        showMessages: { tab = .messages })
         case .activity: ActivityList(limit: nil)
+        case .messages: MessagesTab()
         case .signers: SignersTab(change: { sheet = .change })
         case .details: DetailsTab()
         }
@@ -70,7 +76,8 @@ struct GroupView: View {
 
     @ViewBuilder
     private func actionBar(_ st: GroupState) -> some View {
-        if st.ready {
+        // The messages tab gives the room to the keyboard.
+        if st.ready && tab != .messages {
             VStack(spacing: 6) {
                 HStack(spacing: 12) {
                     Button { sheet = .receive } label: { Label("Receive", systemImage: "arrow.down").frame(maxWidth: .infinity) }
@@ -156,6 +163,7 @@ struct SetupView: View {
             SafetyCard()
             ProgressCard()
             SeatsCard(open: open)
+            if !model.localSeats.isEmpty { MessagesTab() }
         }
     }
 }
@@ -363,13 +371,25 @@ struct OverviewTab: View {
     @Environment(GroupModel.self) private var model
     let showSigners: () -> Void
     let showActivity: () -> Void
+    let showMessages: () -> Void
 
     var body: some View {
         let gid = model.gid ?? ""
         let pending = model.state.sessions.filter { model.needsMyApproval(gid, $0) }
+        let unread = model.unread(gid)
         VStack(spacing: 16) {
             if model.state.movedTo != nil { MoveCard() }
             if !pending.isEmpty { ApprovalsCard(list: pending) }
+            if unread > 0 {
+                Card(highlight: true) {
+                    HStack {
+                        Text(unread == 1 ? "1 new message" : "\(unread) new messages")
+                            .font(.headline)
+                        Spacer()
+                        Button("Open", action: showMessages).font(.subheadline)
+                    }
+                }
+            }
             BalanceCard()
             if !model.unsavedSeats.isEmpty { BackupCard() }
             SignersCard(manage: showSigners)
@@ -623,7 +643,9 @@ func zatOf(_ s: String) -> Int? {
 
 /// Reads a pasted payment list: one "address, amount in ZEC" per line. A spreadsheet copy works:
 /// tab, comma, semicolon or spaces may separate the two. If the first line that is not empty names
-/// "address", it is a header. Same rules as `parsePayeeList` in web/payees.js.
+/// "address", it is a header. `parsePayeeList` in web/payees.js also takes a memo column. This
+/// function takes two fields only, so it refuses a line with a memo. A decimal comma is a third
+/// field here, so it is refused too.
 func parsePayeeList(_ text: String) -> (rows: [(to: String, amount: Int)], errors: [String]) {
     var rows: [(to: String, amount: Int)] = [], errors: [String] = [], first = true
     for (i, raw) in text.split(omittingEmptySubsequences: false, whereSeparator: \.isNewline).enumerated() {

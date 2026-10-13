@@ -47,8 +47,13 @@ final class Chain {
     @ObservationIgnored private let groupKey: String
     @ObservationIgnored private var opened = false
     @ObservationIgnored var onSynced: ((Doc) -> Void)?
+    /// The folder of the saved states. A check points it elsewhere.
+    @ObservationIgnored var directory = URL.applicationSupportDirectory
+        .appendingPathComponent("chain", isDirectory: true)
 
     private static let batch = 1000
+    static let reorgText = "The chain reorganised by more than the wallet can undo. Zigs deleted "
+        + "the saved state of this wallet. Pull to refresh to scan it again from the start."
 
     init(gid: String, ufvk: String, birthday: Int, groupKey: String, net: ZcashNetwork) {
         self.gid = gid
@@ -77,9 +82,32 @@ final class Chain {
             publish()
             save()
         } catch {
-            if Task.isCancelled || (error as? URLError)?.code == .cancelled { return }
-            self.error = error.localizedDescription
+            fail(error)
         }
+    }
+
+    /// The engine words the error of a reorganisation that is deeper than the wallet can undo. The
+    /// saved state is of no use then: every sync would fail at the same fork, also after a
+    /// restart. The engine owns the words, so the app asks it.
+    nonisolated static func isDeepReorg(_ message: String) -> Bool {
+        (try? Engine.call("isDeepReorg", [message])) == "true"
+    }
+
+    private func fail(_ error: Error) {
+        if Task.isCancelled || (error as? URLError)?.code == .cancelled { return }
+        let text = error.localizedDescription
+        guard Self.isDeepReorg(text) else { self.error = text; return }
+        dropSavedState()
+        self.error = Self.reorgText
+    }
+
+    /// Forgets the wallet in the engine and its saved file, so that the next sync starts from the
+    /// birthday.
+    func dropSavedState() {
+        close()
+        try? FileManager.default.removeItem(at: file)
+        opened = false
+        (balance, received, sent, progress) = (nil, [], [], nil)
     }
 
     /// Builds an unsigned payment (a PCZT) from this wallet's confirmed notes.
@@ -139,10 +167,9 @@ final class Chain {
 
     // MARK: Saved state
 
-    private var file: URL {
-        let dir = URL.applicationSupportDirectory.appendingPathComponent("chain", isDirectory: true)
-        try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
-        return dir.appendingPathComponent(gid)
+    var file: URL {
+        try? FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        return directory.appendingPathComponent(gid)
     }
 
     private func loadSnapshot() -> String? {

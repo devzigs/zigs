@@ -22,7 +22,8 @@ struct SessionView: View {
                         SectionLabel(text: fee == nil ? "Payment" : "Leaves the wallet")
                         Money(zat: ss.amount + (fee ?? 0), size: 34, sign: "out")
                         if let fee { Text("Includes the \(zec(fee)) network fee").font(.caption).foregroundStyle(Color.mist) }
-                        Text("Proposed by \(proposer(ss)) · \(when(ss.doc.int("createdAt")))").font(.caption).foregroundStyle(Color.mist)
+                        Text("Proposed by \(model.proposerName(ss)) · \(when(ss.doc.int("createdAt")))")
+                            .font(.caption).foregroundStyle(Color.mist)
                     }
                     if case .failure(let e) = ins {
                         Label("This \(deviceName) refuses this payment: \(e.message)", systemImage: "xmark.octagon.fill")
@@ -31,6 +32,7 @@ struct SessionView: View {
                     RecipientBox(ss: ss, rc: rc)
                     if case .success(let d) = ins { Breakdown(ss: ss, ins: d) }
                     Timeline(ss: ss)
+                    Discussion(sid: ss.id)
                     if let final = ss.doc.doc("final") {
                         Card {
                             Text("Transaction").font(.headline)
@@ -59,53 +61,117 @@ struct SessionView: View {
             ContentUnavailableView("Payment not found", systemImage: "questionmark.circle")
         }
     }
+}
 
-    /// In a version 3 wallet the proposer is the seat in `by`, shown with its number. Before, it
-    /// is the identity in `createdBy`.
-    private func proposer(_ ss: Session) -> String {
-        if let by = ss.doc.int("by") {
-            return model.localSeats.contains(by) ? "you" : "\(model.seatLabel(by)) (seat \(by))"
-        }
-        guard let uid = ss.doc.str("createdBy") else { return "someone" }
-        if model.isMe(uid) { return "you" }
-        let seat = model.state.seats.first { $0.value.str("uid") == uid }
-        return seat.flatMap { $0.value.str("name") }.flatMap { $0.isEmpty ? nil : $0 } ?? "a signer"
+/// A decoded output that pays someone else. `memo` is "" for none, and nil when the engine could
+/// not read the memo or it is not text. A nil never equals what the proposer wrote.
+struct PaidOutput: Equatable {
+    let who: String
+    let value: Int
+    let memo: String?
+}
+
+/// The memo of a decoded output line of `inspect`, read from the transaction itself.
+func outputMemo(_ line: Doc) -> String? {
+    switch line.str("memo_status") {
+    case "empty": ""
+    case "text": line.str("memo")
+    default: nil
     }
 }
 
-/// The decoded outputs are the truth. Each one must be a proposed payee with the same amount, and
-/// the proposal must list nothing else. The typed addresses only help people recognise them.
+/// The memo that the proposer listed for a payee: "" for none, nil when the field is not text.
+func proposedMemo(_ payee: Doc) -> String? {
+    switch payee["memo"] {
+    case nil, is NSNull: ""
+    case let text as String: text
+    default: nil
+    }
+}
+
+/// The decoded outputs are the truth. Each one must be a proposed payee with the same amount and
+/// memo, and the proposal must list nothing else. The typed addresses only help people recognise
+/// them. The rules are those of `pairPayees` and `allPaid` in web/payees.js.
 struct RecipientCheck {
-    struct Row { let to: String; let amount: Int; let ok: Bool }
+    struct Row: Equatable {
+        let to: String
+        let amount: Int
+        /// The memo that the proposer listed: "" for none, nil when the field is not text.
+        let memo: String?
+        let ok: Bool
+        /// True when the transaction pays this address and amount with another memo. `got` is that
+        /// memo ("" for none, nil when it is unreadable).
+        let other: Bool
+        let got: String?
+    }
     let rows: [Row]
     /// Decoded payments that the proposal does not list.
-    let extra: [(who: String, value: Int)]
+    let extra: [PaidOutput]
     let match: Bool?
     /// For a move: whether the only payee is the new wallet's own address (nil when unknown here).
     let intoNew: Bool?
 
-    @MainActor
-    init(model: GroupModel, ss: Session, ins: Doc?) {
-        guard let ins else { rows = []; extra = []; match = nil; intoNew = nil; return }
-        let paid = (ins["lines"] as? [Doc] ?? [])
-            .filter { $0.str("kind") == "output" && !ownOutputs.contains($0.str("who") ?? "") }
-            .map { (who: $0.str("who") ?? "", value: $0.int("value") ?? 0) }
-        var left = paid
-        rows = (ss.doc["payees"] as? [Doc] ?? []).map { p in
-            let to = p.str("to") ?? "", amount = wholeZat(p["amount"]), address = model.normalized(to)
-            guard let amount, let i = left.firstIndex(where: { $0.who == address && $0.value == amount }) else {
-                return Row(to: to, amount: amount ?? 0, ok: false)
-            }
-            left.remove(at: i)
-            return Row(to: to, amount: amount, ok: true)
-        }
-        extra = left
-        match = Self.allPaid(rows, extra: left.count, total: wholeZat(ss.doc["amount"]) ?? -1)
-        let newAddress = ss.doc.str("move").flatMap { model.checkedAddress(of: $0) }
-        intoNew = newAddress.map { a in paid.count == 1 && model.normalized(a) == paid[0].who }
+    /// The check of `payees` against the decoded outputs `paid`. `total` is the amount that the
+    /// proposal states. With no outputs (`paid` is nil) there is nothing to compare yet.
+    init(payees: [Doc], paid: [PaidOutput]?, total: Int?, norm: (String) -> String?,
+         intoNew: Bool? = nil) {
+        guard let paid else { rows = []; extra = []; match = nil; self.intoNew = nil; return }
+        (rows, extra) = Self.pair(payees, paid, norm: norm)
+        match = Self.allPaid(rows, extra: extra.count, total: total ?? -1)
+        self.intoNew = intoNew
     }
 
-    private static func allPaid(_ rows: [Row], extra: Int, total: Int) -> Bool {
+    @MainActor
+    init(model: GroupModel, ss: Session, ins: Doc?) {
+        let paid = ins.map(Self.outputs(of:))
+        let newAddress = ss.doc.str("move").flatMap { model.checkedAddress(of: $0) }
+        let into = newAddress.flatMap { a in
+            paid.map { $0.count == 1 && model.normalized(a) == $0[0].who }
+        }
+        self.init(payees: ss.doc["payees"] as? [Doc] ?? [], paid: paid,
+                  total: wholeZat(ss.doc["amount"]), norm: model.normalized, intoNew: into)
+    }
+
+    /// The outputs of `inspect` that pay someone other than this wallet.
+    static func outputs(of ins: Doc) -> [PaidOutput] {
+        (ins["lines"] as? [Doc] ?? [])
+            .filter { $0.str("kind") == "output" && !ownOutputs.contains($0.str("who") ?? "") }
+            .map {
+                PaidOutput(who: $0.str("who") ?? "", value: $0.int("value") ?? 0, memo: outputMemo($0))
+            }
+    }
+
+    /// Pairs each payee with one output of the same address, amount and memo. A payee with no such
+    /// output takes one of the same address and amount, and shows that output's memo. `norm` gives
+    /// the canonical form of an address, or nil.
+    static func pair(_ payees: [Doc], _ paid: [PaidOutput], norm: (String) -> String?)
+        -> (rows: [Row], extra: [PaidOutput]) {
+        var left = paid
+        let wanted = payees.map { p in
+            (to: p.str("to") ?? "", amount: wholeZat(p["amount"]), memo: proposedMemo(p))
+        }
+        func claim(_ w: (to: String, amount: Int?, memo: String?), withMemo: Bool) -> PaidOutput? {
+            guard let amount = w.amount, let address = norm(w.to) else { return nil }
+            let i = left.firstIndex { pays($0, address, amount, memo: w.memo, check: withMemo) }
+            return i.map { left.remove(at: $0) }
+        }
+        let ok = wanted.map { claim($0, withMemo: true) != nil }
+        let seen = wanted.enumerated().map { i, w in ok[i] ? nil : claim(w, withMemo: false) }
+        let rows = wanted.enumerated().map { i, w in
+            Row(to: w.to, amount: w.amount ?? 0, memo: w.memo, ok: ok[i], other: seen[i] != nil,
+                got: seen[i]?.memo)
+        }
+        return (rows, left)
+    }
+
+    /// Whether `o` pays `amount` to `address`. With `check`, it must also carry `memo`. A memo that
+    /// is nil (the proposer's field is not text, or the output's memo is unreadable) never matches.
+    private static func pays(_ o: PaidOutput, _ address: String, _ amount: Int, memo: String?,
+                             check: Bool) -> Bool {
+        o.who == address && o.value == amount && (!check || (memo != nil && memo == o.memo))
+    }
+
+    static func allPaid(_ rows: [Row], extra: Int, total: Int) -> Bool {
         // At most `maxPayees` amounts of at most `maxMoney` each, so the sum cannot overflow.
         guard !rows.isEmpty, rows.count <= maxPayees, extra == 0, rows.allSatisfy(\.ok) else { return false }
         return rows.reduce(0) { $0 + $1.amount } == total
@@ -114,8 +180,15 @@ struct RecipientCheck {
     /// Warnings to show next to the recipients, most serious first.
     var warnings: [String] {
         var out = extra.map { "The transaction also pays \(zec($0.value)) to \(short($0.who)), which the proposer did not list. Do not approve it." }
+        let memoOnly = rows.filter { !$0.ok && $0.other }
+        out += memoOnly.map {
+            "The memo in the transaction for \(short($0.to)) is not the memo the proposer listed. "
+                + "Do not approve it."
+        }
         if rows.isEmpty { out.append("The proposal lists no recipients. Do not approve it.") }
-        else if match == false && extra.isEmpty { out.append("The transaction does not pay what the proposer listed. Do not approve it.") }
+        else if match == false && extra.isEmpty && memoOnly.isEmpty {
+            out.append("The transaction does not pay what the proposer listed. Do not approve it.")
+        }
         return out
     }
 }
@@ -145,6 +218,11 @@ struct RecipientBox: View {
                     Badge(text: match ? "Matches the transaction" : "Does not match the transaction", kind: match ? .ok : .bad)
                 }
                 ForEach(Array(rc.rows.enumerated()), id: \.offset) { _, r in PayeeLine(row: r) }
+                if rc.rows.contains(where: { $0.memo?.isEmpty == false }) {
+                    Text("A memo goes on chain with the payment. Its recipient and every signer can "
+                         + "read it.")
+                        .font(.caption).foregroundStyle(Color.mist)
+                }
                 ForEach(rc.warnings, id: \.self) { Text($0).font(.subheadline).foregroundStyle(Color.bad) }
                 if let move = ss.doc.str("move") { MoveNote(move: move, intoNew: rc.intoNew) }
             }
@@ -152,16 +230,55 @@ struct RecipientBox: View {
     }
 }
 
+/// Text from the chain comes from anyone. This replaces the characters that could hide or reorder
+/// other text (control characters and bidirectional marks) with U+FFFD. A new line stays. The same
+/// rule as `memoShown` in web/payees.js.
+func memoShown(_ text: String) -> String {
+    let hiding: [ClosedRange<UInt32>] = [
+        0x00...0x09, 0x0B...0x1F, 0x7F...0x9F, 0x61C...0x61C, 0x200E...0x200F, 0x202A...0x202E,
+        0x2066...0x2069,
+    ]
+    var out = String.UnicodeScalarView()
+    for u in text.unicodeScalars {
+        out.append(hiding.contains { $0.contains(u.value) } ? "\u{FFFD}" : u)
+    }
+    return String(out)
+}
+
+/// A memo for display: "" is no memo, and nil is one that the engine could not read as text.
+func memoWords(_ memo: String?) -> String {
+    guard let memo else { return "Memo is not text" }
+    return memo.isEmpty ? "No memo" : memoShown(memo)
+}
+
 struct PayeeLine: View {
     let row: RecipientCheck.Row
 
+    /// The memo lines of the payee. For a payee paid with another memo, the memo that the
+    /// transaction carries is the decoded one, so it shows as well.
+    private var memoLines: [(label: String, memo: String?, bad: Bool)] {
+        if !row.ok && row.other {
+            return [("Proposed memo", row.memo, false), ("Memo in the transaction", row.got, true)]
+        }
+        return row.memo == "" ? [] : [("Memo", row.memo, false)]
+    }
+
     var body: some View {
-        HStack(alignment: .firstTextBaseline) {
-            Text(grouped(row.to)).font(.caption.monospaced())
-            Spacer()
-            VStack(alignment: .trailing, spacing: 4) {
-                Money(zat: row.amount, size: 15)
-                if !row.ok { Badge(text: "Not in the transaction", kind: .bad) }
+        VStack(alignment: .leading, spacing: 4) {
+            HStack(alignment: .firstTextBaseline) {
+                Text(grouped(row.to)).font(.caption.monospaced())
+                Spacer()
+                VStack(alignment: .trailing, spacing: 4) {
+                    Money(zat: row.amount, size: 15)
+                    if !row.ok { Badge(text: row.other ? "Memo differs" : "Not in the transaction", kind: .bad) }
+                }
+            }
+            ForEach(Array(memoLines.enumerated()), id: \.offset) { _, line in
+                HStack(alignment: .firstTextBaseline, spacing: 8) {
+                    Text(line.label).font(.caption).foregroundStyle(Color.mist)
+                    Text(memoWords(line.memo)).font(.caption)
+                        .foregroundStyle(line.bad ? Color.bad : line.memo?.isEmpty == false ? .white : Color.mist)
+                }
             }
         }
     }

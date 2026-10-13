@@ -23,6 +23,9 @@ final class Store {
     /// True once every joined group has sent its documents.
     var connected: Bool { sockets.values.allSatisfy(\.loaded) }
 
+    /// True once group `gid` has sent its documents, so its mirror is complete.
+    func loaded(_ gid: String) -> Bool { sockets[gid]?.loaded ?? false }
+
     func connect(server: URL, password: String) {
         self.server = server
         self.password = password
@@ -39,6 +42,16 @@ final class Store {
         let s = Socket()
         sockets[gid] = s
         open(gid, s)
+    }
+
+    /// Closes the socket of a group that this device left, and forgets its documents.
+    func leave(_ gid: String) {
+        if let s = sockets.removeValue(forKey: gid) {
+            s.task?.cancel(with: .goingAway, reason: nil)
+            for w in s.waiting.values { w.resume(throwing: ZigsError("connection closed")) }
+        }
+        let prefix = "groups/" + gid
+        docs = docs.filter { $0.key != prefix && !$0.key.hasPrefix(prefix + "/") }
     }
 
     private func open(_ gid: String, _ s: Socket) {
@@ -120,8 +133,10 @@ final class Store {
     }
 
     /// Sends one operation to the group that owns `msg["path"]` and returns the result as JSON text.
+    /// With `timeout`, a send that gets no answer in that many seconds fails. It can still arrive
+    /// later, so a retry can repeat it.
     @discardableResult
-    func send(_ msg: Doc) async throws -> String {
+    func send(_ msg: Doc, timeout: Double? = nil) async throws -> String {
         let parts = (msg.str("path") ?? "").split(separator: "/")
         guard parts.count >= 2, parts[0] == "groups", let s = sockets[String(parts[1])] else {
             throw ZigsError("Not connected to this group.")
@@ -140,11 +155,17 @@ final class Store {
                 guard let err else { return }
                 Task { @MainActor in s.waiting.removeValue(forKey: id)?.resume(throwing: err) }
             }
+            guard let timeout else { return }
+            Task { @MainActor in
+                try? await Task.sleep(for: .seconds(timeout))
+                s.waiting.removeValue(forKey: id)?.resume(
+                    throwing: ZigsError("The group server did not answer."))
+            }
         }
     }
 
-    func set(_ path: String, _ data: Doc) async throws {
-        try await send(["op": "set", "path": path, "data": data])
+    func set(_ path: String, _ data: Doc, timeout: Double? = nil) async throws {
+        try await send(["op": "set", "path": path, "data": data], timeout: timeout)
     }
 
     func update(_ path: String, _ data: Doc) async throws {
