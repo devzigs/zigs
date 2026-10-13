@@ -72,6 +72,23 @@ flowchart LR
 The engine runs FROST distributed key generation (DKG) over RedPallas. No device and no server ever
 holds the whole spending key.
 
+A wallet document has a `version` field.
+
+- **Version 2** is the ceremony below. All new wallets use it. The signers agree on a secret `sk`,
+  and the wallet keys follow from it as ZIP 2005 (Proposed) specifies.
+- **Version 1** has no `version` field. An older app made it. The creator's device chose `nk` and
+  `rivk`, and there is no `qsk`. Version 1 wallets keep working with the old flow (section 4.3).
+- **Any other value.** The app does not know it. It refuses to run the setup and shows a message.
+
+The `version` field is one sealed field of the wallet document. The group server cannot read it
+and does not check who writes it. So each seat keeps the version that its wallet had when it took
+the seat (`version` in the seat secret). If the wallet document later shows another version, the
+seat ends its setup. A joiner who sees a wallet that is not version 2 gets a warning first. The
+joiner must say yes. The warning reads: "This wallet is not built to ZIP 2005. Funds cannot be
+recovered if quantum computers break today's keys."
+
+### 4.1 The ceremony, version 2
+
 ```mermaid
 sequenceDiagram
   autonumber
@@ -79,37 +96,132 @@ sequenceDiagram
   participant S as Group server
   actor B as Signer (seat 2)
   A->>A: Make a wallet id and a 32-byte wallet secret
-  A->>S: Wallet document, sealed with the secret
+  A->>S: Wallet document with version 2, sealed with the secret
   A-->>B: Invite link with the secret, through a private channel
   B->>S: Take seat 2: name and X25519 public key, sealed
-  par Round 1
-    A->>S: Commitment package
-    B->>S: Commitment package
+  A-->>B: Compare the safety number (wallet id, t, n, network, seat keys), on a call or in person
+  par Confirm
+    A->>S: confirm/1 = safety number
+    B->>S: confirm/2 = safety number
   end
-  par Round 2
-    A->>S: Share for seat 2, encrypted to seat 2's key
-    B->>S: Share for seat 1, encrypted to seat 1's key
+  par Round 1 commit
+    A->>S: Commitment package and commitment c1 to the secret part r1
+    B->>S: Commitment package and commitment c2 to the secret part r2
   end
-  A->>A: Round 3: own key share and the group key
-  B->>B: Round 3: own key share and the group key
-  A->>S: Wallet: address and viewing key, with ak = group key
-  B->>B: Check that ak equals my group key and that the address re-derives
+  A->>A: Echo: one digest of all round-1 documents
+  B->>B: Echo: one digest of all round-1 documents
+  par Round 2 reveal
+    A->>S: Box for seat 2 with share and r1, and the echo
+    B->>S: Box for seat 1 with share and r2, and the echo
+  end
+  A->>A: Round 3: check echo and commitments, make the agreed sk, own key share and group key
+  B->>B: Round 3: check echo and commitments, make the agreed sk, own key share and group key
+  A->>S: Wallet: ak is the group key, nk and rivk follow from sk (ZIP 2005), plus the address
+  B->>B: Recompute the full viewing key (ak, nk, rivk) and the address, and compare all of it
   B->>S: Address checked
   Note over S: The server sees only ciphertext of fixed sizes
 ```
 
 1. **Setup.** The creator makes the wallet id and secret, writes the sealed wallet document (name,
-   t, n, network) and takes seat 1.
+   t, n, network, `version: 2`) and takes seat 1.
 2. **Invite.** The creator sends the link through a private channel, such as Signal. Each signer
-   opens it and takes a free seat.
-3. **Round 1.** When all seats are taken, each device publishes its FROST commitment package.
-4. **Round 2.** Each device makes one share for every other seat and encrypts it with X25519 to
-   that seat's key. Each box is bound to its sender and receiver.
-5. **Round 3.** Each device computes its own key package and the public key package. It publishes
-   a `done` document with the group key and the public key package, and keeps its key share on
-   the device.
-6. **Agreement.** Every seat compares all `done` documents. If they differ, the app tells the
+   opens it and takes a free seat. The device keeps its box key pair (`boxSk`, `boxPk`) and the
+   wallet version (`version`) in the seat secret.
+3. **Safety number.** When all seats are taken, each device shows a number of 30 digits, in six
+   groups of five.
+   - The number is `BLAKE2b-256` with the personalization `Zigs_SafetyNo_v1` over this input:
+     `walletId || u8(t) || u8(n) || u32le(len) || network`, then, for each seat in order,
+     `u16le(seat) || boxPk`. `walletId` and `network` are their UTF-8 bytes, and `len` is the
+     byte length of `network`. `network` is `testnet` or `mainnet`, as the app reads it from the
+     wallet document. The first 16 bytes, read as a little-endian integer modulo 10^30, give the
+     30 digits.
+   - The wallet document holds `t`, `n` and `network`, and no key authenticates it. So the number
+     covers them. A signer who sees another threshold, seat count or network sees another number.
+   - 30 digits are about 100 bits. A shorter number would let an attacker find two seat lists
+     with the same number, and show one list to each signer.
+   - The signers compare the number on a call or in person. A different number means that
+     someone else took a seat, or that a device saw other seat data.
+   - The number alone cannot show that a seat key was replaced, because every device then shows
+     the same number. So each device also compares the key in the store with the key that it
+     made. It does this for every seat that it holds a secret for. If the keys differ, the device
+     ends its setup: "Your seat key was replaced. Do not use this wallet. Create a new wallet."
+   - Each person taps "It matches". The device keeps the confirmed number in the seat secret
+     (`confirmed`) and writes `confirm/<seat> = { number }`.
+   - After the tap, the device compares the number it computes now with the confirmed number each
+     time the store changes. If they differ and the seat holds no key share, the device ends its
+     setup: "The safety number changed after you confirmed it. Someone may have replaced a seat.
+     Do not use this wallet. Create a new wallet." It does not ask for a new tap.
+   - Round 1 and round 2 start only when three values are equal. The values are the number this
+     device computes now, the number its person confirmed, and the number in every `confirm`
+     document. A `confirm` document alone is a claim and does not start anything.
+   - A device that holds every seat (a demo) confirms for all its seats without a tap.
+4. **Round 1.** Each device makes its FROST commitment package and a random secret part `r` of 32
+   bytes. It keeps `r` in the seat secret (`skPart`) and saves it before it publishes anything.
+   It writes `dkg1/<seat> = { package, commit }`, where
+   `commit = BLAKE2b-256("Zigs_SkCommit_v1", walletId || u16le(seat) || boxPk || r)`.
+5. **Echo.** When all `dkg1` documents are present, each device computes
+   `echo = BLAKE2b-256("Zigs_DkgEcho__v1", ...)`. The hash covers the wallet id. Then, for every
+   seat in order, it covers the seat number, the round-1 package in its FROST binary encoding, and
+   `commit`. Each variable part has a 4-byte length in front. A device stores its echo in the seat
+   secret.
+6. **Round 2.** Each device makes one share for every other seat. It encrypts
+   `{ package, r }` with X25519 to that seat's key. Each box is bound to its sender and receiver.
+   It writes `dkg2/<from>-<to> = { sealed, echo }`.
+7. **Round 3.** A device does these checks before it makes any key.
+   - Its stored echo equals the echo it computes now from the `dkg1` documents.
+   - Every `dkg2/<j>-<me>` document has the same echo. If not, the device ends its setup with
+     "Signers saw different setup data. Do not use this wallet. Create a new wallet."
+   - Every `r` that a box reveals matches the commitment of its seat in `dkg1`. If not, the device
+     ends its setup and names the seat.
+
+   Then the device computes
+   `sk = BLAKE2b-256("Zigs_VaultSk__v1", walletId || echo || r_1 || ... || r_n)` in seat order.
+   It computes its key package and the public key package. It saves `sk` as `vaultSk` in the seat
+   secret and deletes `skPart`. It publishes a `done` document with the group key and the public
+   key package, and keeps its key share on the device.
+8. **Agreement.** Every seat compares all `done` documents. If they differ, the app tells the
    signers to create a new wallet.
+
+An aborted setup stays aborted: the seat keeps the reason (`aborted`) and does not retry. It
+also writes `abort/<seat> = { reason }`, so the other seats see which seat stopped and why. An
+`abort` document counts as published only if it exists and its `reason` is a string. A device
+writes it again until the store holds such a document. A seat that sees a published `abort`
+document and holds no key share yet stops too. A device retries the `done` write until the write
+succeeds.
+
+Document layout of a version 2 wallet, all fields sealed with the wallet secret:
+
+| Path | Fields |
+|---|---|
+| `groups/<id>` | `name`, `n`, `t`, `network`, `version`, `createdBy`, `createdAt` |
+| `groups/<id>/confirm/<seat>` | `number` |
+| `groups/<id>/dkg1/<seat>` | `package`, `commit`, `at` |
+| `groups/<id>/dkg2/<from>-<to>` | `sealed`, `echo`, `at` |
+| `groups/<id>/abort/<seat>` | `reason` |
+| `groups/<id>/done/<seat>` | `groupKey`, `publicKeyPackage`, `at` |
+
+### 4.2 Why this commit-reveal and echo
+
+- A seat reveals `r` only in round 2, after every commitment is public. No seat can choose its
+  `r` after it saw the others.
+- The commitment binds `r` to the seat number and the encryption key, so a box from another seat
+  cannot replace it.
+- The echo makes all seats confirm that they saw the same round-1 data. A seat that got other
+  data produces another echo, and the other seats find it before they use its box.
+- ZIP 2005 says that the protocol MUST ensure that all participants obtain the same `ak`, `nk` and
+  `rivk_ext`. The echo, the commitments and the final check in section 5 give this.
+- The store does not stop a holder of the wallet secret from overwriting `groups/<id>` or a seat
+  document, because the server cannot read them. The seat secret holds the version and the box
+  key, so the device finds such a change itself.
+- A seat on an old app writes a round-1 document without `commit`. The apps show "Seat N uses an
+  old version of Zigs and cannot join this wallet. Update it, or create a new wallet."
+
+### 4.3 Version 1 wallets
+
+The flow is the one before ZIP 2005 support: round 1, round 2 and round 3 without `confirm`,
+`commit` or `echo`. The creator makes the viewing key parts `nk` and `rivk`. A version 1 wallet
+shows a note in Details: "This wallet was made before quantum recoverability (ZIP 2005). To get it,
+move the funds to a new wallet with Change signers." Section 8 describes that move.
 
 ## 5. The wallet key and the address
 
@@ -117,19 +229,33 @@ An Ironwood full viewing key has three parts: `ak`, `nk` and `rivk`.
 
 - `ak`, the spend validating key, is set to the FROST group key. Only a threshold of signers can
   authorize a spend.
-- `nk` and `rivk` only allow viewing. The creator makes them, and all signers receive them in the
-  sealed wallet document.
+- **Version 2.** Every signer computes `nk` and `rivk` from `sk`. ZIP 2005 (Proposed) defines them
+  for FROST with `use_qsk = true`:
+  - `nk = ToBase(PRF^expand_sk([0x07]))`
+  - `qsk` = the first 32 bytes of `PRF^expand_sk([0x0C])`
+  - `qk` = BLAKE3 `derive_key` with the context `Zcash ZIP 2005 qk-derivation v1` over `qsk`
+  - `rivk = ToScalar(PRF^expand_qk([0x0D] || ak || nk))`
+  - `PRF^expand_k(t)` is BLAKE2b-512 with the personalization `Zcash_ExpandSeed` over `k || t`.
+    `ak` and `nk` are their 32-byte little-endian encodings.
+  - The internal keys follow the ZIP 32 derivation, keyed by this `rivk`.
+- **Version 1.** `nk` and `rivk` only allow viewing. The creator makes them, and all signers
+  receive them in the sealed wallet document.
 
 The creator publishes the address and the viewing key. Then each seat checks them:
 
-- `ak` must equal the group key that this seat computed.
-- The address must re-derive from the viewing key.
+- **Version 2.** The seat recomputes the whole viewing key and the address from its own public key
+  package and its own `sk`. It compares all of it with the published wallet: the version, the
+  network, `ak`, `nk`, `rivk`, the wallet key, the viewing key and the address. The error names the
+  first part that differs. A seat that holds `sk` never uses the version 1 check.
+- **Version 1.** `ak` must equal the group key that this seat computed. The address must
+  re-derive from the viewing key.
 - The seat keeps the result on its own device, tied to the exact wallet document. If the document
   in the store changes, the seat checks it again.
 - The app shows the address only after this device's own seat checked it. Other seats' "checked"
   marks in the store are only claims.
 
-A dishonest creator cannot publish an address that the signers do not control.
+A dishonest creator cannot publish an address that the signers do not control. In a version 2
+wallet, the creator also cannot choose `nk` or `rivk`.
 
 ## 6. Receiving and sync
 
@@ -258,6 +384,8 @@ flowchart TD
 - **Passkeys do not sign.** A passkey cannot make a RedPallas signature. It protects the key share
   on the device; the FROST share signs.
 - **Backup (web).** An unencrypted file with the key share, and never the nonces.
+  - For a version 2 wallet the file also holds `vaultSk`. From it anyone can compute `qsk`, so keep
+    the file as secret as the key share.
   - On restore, the app checks the key share against the key data the wallet published for that
     seat.
   - Tor Browser forgets everything when it closes, so a Tor user restores the backup in each
@@ -290,7 +418,8 @@ the web, on iPhone and on Mac at the same time.
 - **Main screens.**
   - Wallet list, and a "Create wallet" form (name, *t*, *n*, network).
   - Invite card with the link and a QR code.
-  - Setup steps: signers join, create the key together, check the address.
+  - Setup steps: signers join, create the key together, check the address. A version 2 wallet
+    shows a safety number card before the three steps.
   - Wallet view with the tabs Overview, Activity, Messages, Signers and Details.
   - Send: one or more recipients, "Paste a list" from a spreadsheet, and a fee estimate.
   - Receive: the checked address, a QR code and a copy button.
@@ -309,7 +438,8 @@ the web, on iPhone and on Mac at the same time.
   `ios/` with Xcode. There is no App Store or TestFlight build yet.
 - **Engine.** The same Rust engine, compiled to a native library (`ZigsCore.xcframework`) with a
   C interface.
-- **Same screens as the web app.** Wallet list, setup steps, the four wallet tabs, send with
+- **Same screens as the web app, same ceremony.** Wallet list, setup steps with the safety number,
+  the four wallet tabs, send with
   pasted lists, receive with a QR code, the decoded payment with "What the chain sees" after it is
   sent, and change signers.
 - **Server password.** Settings has a password field for a server that has one, as app.zigs.app
@@ -356,11 +486,31 @@ the web, on iPhone and on Mac at the same time.
 - Fewer than *t* signers cannot spend.
 - One honest approving device sees the true payment, and signs only the transaction it approved.
 - A dishonest creator cannot publish an address that the signers do not control.
+- In a version 2 wallet, the creator cannot choose `nk` or `rivk`. Every signer recomputes them
+  from `sk` and checks the published wallet.
 - The group server cannot read the wallet or forge documents.
 
 **Limits**
 
 - Not audited.
+- A version 2 wallet is built to ZIP 2005 (Proposed) so that funds can be recovered if quantum
+  computers break today's keys. The ZIP is not final, and the Recovery Protocol does not exist
+  yet. If the ZIP changes before it is final, a wallet that follows the current text may need to
+  move its funds.
+- Every signer holds `qsk`. As ZIP 2005 says, a quantum attacker who has `qsk` may steal the
+  funds. So under a quantum attacker, one signer or one stolen backup could take the funds.
+  Move the funds to a post-quantum protocol when one exists.
+- The safety number protects only if the signers compare it over a channel that the attacker does
+  not control. It has about 100 bits, so a split view needs about 2^50 work.
+- The `version` field is not authenticated. A holder of the wallet secret can change it. A seat
+  made by this app ends its setup when it sees another version. A joiner who accepts the warning
+  for a wallet that is not version 2, and a seat of an older app, run the old flow.
+- The agreement on `sk` is not quantum-resistant. The secret parts `r` travel in X25519 boxes, and
+  the `dkg2` documents stay in the store. An attacker who recorded them and later learns the
+  wallet secret can break X25519 with a quantum computer. That attacker then gets `sk` and `qsk`.
+  Keep the invite link as private as the key share.
+- A version 1 wallet has no `qsk` and is not recoverable under ZIP 2005. Move its funds to a new
+  wallet with Change signers.
 - Malicious light-wallet servers and chain reorganisations are not handled.
 - A full session in Tor Browser is not tested yet.
 - `alpha` comes from the PCZT, as in the Zcash Foundation's `zcash-sign`. Compare this with the

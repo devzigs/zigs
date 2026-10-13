@@ -48,6 +48,7 @@ use serde::{de::DeserializeOwned, Deserialize, Serialize};
 use serde_json::{json, Value};
 use wasm_bindgen::prelude::*;
 
+mod ceremony;
 mod chain;
 mod snapshot;
 #[cfg(not(target_arch = "wasm32"))]
@@ -225,8 +226,20 @@ fn parse_fvk(hex_fvk: &str) -> R<FullViewingKey> {
     FullViewingKey::from_bytes(&raw).ok_or_else(|| "invalid fvk".into())
 }
 
-/// ZIP 312: ak = FROST group key; nk and rivk from a random donor key whose
-/// ask is discarded.
+/// The wallet document that every signer stores: public keys and the address, no secret.
+fn wallet_doc(fvk: &FullViewingKey, net: Network) -> R<Value> {
+    let ufvk = UnifiedFullViewingKey::from_orchard_fvk(fvk.clone()).map_err(e("ufvk"))?;
+    Ok(json!({
+        "network": if net == Network::MainNetwork { "mainnet" } else { "testnet" },
+        "orchard_fvk": hex::encode(fvk.to_bytes()),
+        "ufvk": ufvk.encode(&net).map_err(e("ufvk encode"))?,
+        "address": address_of(fvk, net)?,
+        "group_verifying_key": hex::encode(&fvk.to_bytes()[..32]),
+    }))
+}
+
+/// Version 1 wallets, ZIP 312: ak = FROST group key; nk and rivk from a random donor key whose
+/// ask is discarded. Version 2 wallets use `ceremony::wallet_create_v2`.
 pub fn wallet_create(public_key_package: &str, net: &str) -> R<String> {
     let pkp: PublicKeyPackage = from_json(public_key_package, "public key package")?;
     let net = network(net)?;
@@ -236,15 +249,7 @@ pub fn wallet_create(public_key_package: &str, net: &str) -> R<String> {
     let mut raw = FullViewingKey::from(&random_sk()).to_bytes();
     raw[..32].copy_from_slice(&ak.to_bytes());
     let fvk = FullViewingKey::from_bytes(&raw).ok_or("assembled FVK invalid")?;
-    let ufvk = UnifiedFullViewingKey::from_orchard_fvk(fvk.clone()).map_err(e("ufvk"))?;
-    Ok(json!({
-        "network": if net == Network::MainNetwork { "mainnet" } else { "testnet" },
-        "orchard_fvk": hex::encode(fvk.to_bytes()),
-        "ufvk": ufvk.encode(&net).map_err(e("ufvk encode"))?,
-        "address": address_of(&fvk, net)?,
-        "group_verifying_key": hex::encode(ak_bytes),
-    })
-    .to_string())
+    Ok(wallet_doc(&fvk, net)?.to_string())
 }
 
 /// A participant checks the published wallet against *their own* DKG result.
@@ -744,6 +749,32 @@ pub fn js_dkg_part3(secret2: &str, round1: &str, round2: &str) -> Result<String,
 pub fn js_wallet_create(pkp: &str, net: &str) -> Result<String, JsError> {
     js(wallet_create(pkp, net))
 }
+#[wasm_bindgen(js_name = skCommit)]
+pub fn js_sk_commit(wallet_id: &str, seat: u16, box_pk: &str, r: &str) -> Result<String, JsError> {
+    js(ceremony::sk_commit(wallet_id, seat, box_pk, r))
+}
+#[wasm_bindgen(js_name = dkgEcho)]
+pub fn js_dkg_echo(wallet_id: &str, round1: &str) -> Result<String, JsError> {
+    js(ceremony::dkg_echo(wallet_id, round1))
+}
+#[wasm_bindgen(js_name = vaultSk)]
+pub fn js_vault_sk(wallet_id: &str, echo: &str, parts: &str) -> Result<String, JsError> {
+    js(ceremony::vault_sk(wallet_id, echo, parts))
+}
+#[wasm_bindgen(js_name = safetyNumber)]
+pub fn js_safety_number(
+    wallet_id: &str, t: u16, n: u16, network: &str, seats: &str,
+) -> Result<String, JsError> {
+    js(ceremony::safety_number(wallet_id, t, n, network, seats))
+}
+#[wasm_bindgen(js_name = walletCreateV2)]
+pub fn js_wallet_create_v2(pkp: &str, net: &str, sk: &str) -> Result<String, JsError> {
+    js(ceremony::wallet_create_v2(pkp, net, sk))
+}
+#[wasm_bindgen(js_name = walletVerifyV2)]
+pub fn js_wallet_verify_v2(wallet: &str, pkp: &str, sk: &str) -> Result<String, JsError> {
+    js(ceremony::wallet_verify_v2(wallet, pkp, sk))
+}
 #[wasm_bindgen(js_name = normalizeAddress)]
 pub fn js_normalize_address(addr: &str) -> Result<String, JsError> {
     js(normalize_address(addr))
@@ -959,12 +990,20 @@ mod tests {
         serde_json::from_str(s).unwrap()
     }
 
-    /// Full 2-of-3 flow through the exact JSON API the web page uses,
-    /// including encrypted round-2 transport.
-    fn full_flow(pool: &str, signers: &[u16]) {
+    /// A 2-of-3 DKG through the exact JSON API the web page uses, including encrypted round-2
+    /// transport. With `v2`, the seats also run the sk agreement: commitments in round 1, the echo,
+    /// and each secret part `r` inside the sealed round-2 payload. Returns every seat's DKG result
+    /// and, with `v2`, the sk that each seat computed from its own view.
+    fn run_dkg(v2: bool) -> (Vec<Value>, Vec<String>) {
         let (n, t) = (3u16, 2u16);
         let boxes: Vec<Value> = (0..n).map(|_| v(&box_keypair())).collect();
+        let pk = |i: u16| boxes[i as usize - 1]["pk"].as_str().unwrap().to_string();
+        let sk = |i: u16| boxes[i as usize - 1]["sk"].as_str().unwrap().to_string();
         let r1: Vec<Value> = (1..=n).map(|i| v(&dkg_part1(i, n, t).unwrap())).collect();
+        let rs: Vec<String> = (0..n).map(|_| hex::encode(random_sk().to_bytes())).collect();
+        let commits: Vec<String> = (1..=n)
+            .map(|i| ceremony::sk_commit("g", i, &pk(i), &rs[i as usize - 1]).unwrap())
+            .collect();
         let others = |me: u16, f: &dyn Fn(u16) -> Value| -> String {
             let mut m = serde_json::Map::new();
             for j in 1..=n {
@@ -985,29 +1024,91 @@ mod tests {
         for i in 1..=n {
             for (to, pkg) in r2[i as usize - 1]["outgoing"].as_object().unwrap() {
                 let to: u16 = to.parse().unwrap();
-                let ctx = format!("g:{i}->{to}");
-                let c = box_seal(boxes[i as usize - 1]["sk"].as_str().unwrap(),
-                    boxes[to as usize - 1]["pk"].as_str().unwrap(), &ctx, &pkg.to_string()).unwrap();
+                let payload = if v2 {
+                    json!({"package": pkg, "r": rs[i as usize - 1]}).to_string()
+                } else {
+                    pkg.to_string()
+                };
+                let c = box_seal(&sk(i), &pk(to), &format!("g:{i}->{to}"), &payload).unwrap();
                 sealed.insert((i, to), c);
             }
         }
+        let open = |me: u16, from: u16| {
+            let ctx = format!("g:{from}->{me}");
+            v(&box_open(&sk(me), &pk(from), &ctx, &sealed[&(from, me)]).unwrap())
+        };
         let fin: Vec<Value> = (1..=n)
             .map(|i| {
                 let all1 = others(i, &|j| r1[j as usize - 1]["package"].clone());
                 let all2 = others(i, &|j| {
-                    let ctx = format!("g:{j}->{i}");
-                    v(&box_open(boxes[i as usize - 1]["sk"].as_str().unwrap(),
-                        boxes[j as usize - 1]["pk"].as_str().unwrap(), &ctx, &sealed[&(j, i)]).unwrap())
+                    let opened = open(i, j);
+                    if v2 { opened["package"].clone() } else { opened }
                 });
                 v(&dkg_part3(&r2[i as usize - 1]["secret"].to_string(), &all1, &all2).unwrap())
             })
             .collect();
         assert!(fin.iter().all(|f| f["group_key"] == fin[0]["group_key"]));
-        let pkp = fin[0]["public_key_package"].to_string();
-        let w = v(&wallet_create(&pkp, "testnet").unwrap());
-        for f in &fin {
-            wallet_verify(&w.to_string(), &f["public_key_package"].to_string()).unwrap();
+        if !v2 {
+            return (fin, vec![]);
         }
+        let round1: serde_json::Map<String, Value> = (1..=n)
+            .map(|i| {
+                let doc = json!({"package": r1[i as usize - 1]["package"],
+                                 "commit": commits[i as usize - 1]});
+                (i.to_string(), doc)
+            })
+            .collect();
+        let echo = ceremony::dkg_echo("g", &Value::Object(round1).to_string()).unwrap();
+        let sks = (1..=n)
+            .map(|i| {
+                let parts: serde_json::Map<String, Value> = (1..=n)
+                    .map(|j| {
+                        let r = if j == i {
+                            rs[j as usize - 1].clone()
+                        } else {
+                            open(i, j)["r"].as_str().unwrap().to_string()
+                        };
+                        let commit = &commits[j as usize - 1];
+                        (j.to_string(), json!({"r": r, "commit": commit, "boxPk": pk(j)}))
+                    })
+                    .collect();
+                ceremony::vault_sk("g", &echo, &Value::Object(parts).to_string()).unwrap()
+            })
+            .collect();
+        (fin, sks)
+    }
+
+    /// The wallet that seat 1 creates. Every seat checks it against its own data first. Version 2
+    /// applies when the seats computed an sk.
+    fn make_wallet(fin: &[Value], sks: &[String]) -> Value {
+        let pkp = fin[0]["public_key_package"].to_string();
+        if sks.is_empty() {
+            let w = v(&wallet_create(&pkp, "testnet").unwrap());
+            for f in fin {
+                wallet_verify(&w.to_string(), &f["public_key_package"].to_string()).unwrap();
+            }
+            assert_eq!(w["version"], Value::Null);
+            return w;
+        }
+        assert!(sks.iter().all(|k| *k == sks[0]), "every seat computes the same sk");
+        let w = v(&ceremony::wallet_create_v2(&pkp, "testnet", &sks[0]).unwrap());
+        for (f, sk) in fin.iter().zip(sks) {
+            let mine = f["public_key_package"].to_string();
+            ceremony::wallet_verify_v2(&w.to_string(), &mine, sk).unwrap();
+            let own = v(&ceremony::wallet_create_v2(&mine, "testnet", sk).unwrap());
+            assert_eq!(own, w, "every seat derives the same wallet from its own data");
+        }
+        assert_eq!(w["version"], 2);
+        w
+    }
+
+    /// Full 2-of-3 flow: DKG, wallet, then a payment that is inspected, signed, aggregated and
+    /// finalized with a Halo2 proof. Version 2 wallets must pass every step that version 1 passes.
+    fn full_flow(pool: &str, signers: &[u16], v2: bool) {
+        let t = 2u16;
+        let (fin, sks) = run_dkg(v2);
+        let pkp = fin[0]["public_key_package"].to_string();
+        let w = make_wallet(&fin, &sks);
         let fvk = w["orchard_fvk"].as_str().unwrap();
         let tx = v(&tx_demo_create(fvk, 100_000, 1_000_000, pool).unwrap());
         let pczt = tx["pczt"].as_str().unwrap();
@@ -1109,12 +1210,17 @@ mod tests {
 
     #[test]
     fn ironwood_2_of_3() {
-        full_flow("ironwood", &[1, 3]);
+        full_flow("ironwood", &[1, 3], false);
     }
 
     #[test]
     fn orchard_2_of_3() {
-        full_flow("orchard", &[2, 3]);
+        full_flow("orchard", &[2, 3], false);
+    }
+
+    #[test]
+    fn ironwood_2_of_3_with_version_2_wallet() {
+        full_flow("ironwood", &[2, 3], true);
     }
 
     #[test]

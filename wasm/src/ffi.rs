@@ -9,6 +9,7 @@ use std::ffi::{c_char, CStr, CString};
 
 use serde_json::{json, Value};
 
+use crate::ceremony;
 use crate::chain::native;
 
 use super::*;
@@ -43,6 +44,14 @@ const METHODS: &[(&str, Method)] = &[
     ("walletCreate", |a| wallet_create(s(a, 0)?, s(a, 1)?)),
     ("walletVerify", |a| wallet_verify(s(a, 0)?, s(a, 1)?)),
     ("normalizeAddress", |a| normalize_address(s(a, 0)?)),
+    ("skCommit", |a| ceremony::sk_commit(s(a, 0)?, n(a, 1)?, s(a, 2)?, s(a, 3)?)),
+    ("dkgEcho", |a| ceremony::dkg_echo(s(a, 0)?, s(a, 1)?)),
+    ("vaultSk", |a| ceremony::vault_sk(s(a, 0)?, s(a, 1)?, s(a, 2)?)),
+    ("safetyNumber", |a| {
+        ceremony::safety_number(s(a, 0)?, n(a, 1)?, n(a, 2)?, s(a, 3)?, s(a, 4)?)
+    }),
+    ("walletCreateV2", |a| ceremony::wallet_create_v2(s(a, 0)?, s(a, 1)?, s(a, 2)?)),
+    ("walletVerifyV2", |a| ceremony::wallet_verify_v2(s(a, 0)?, s(a, 1)?, s(a, 2)?)),
     ("inspect", |a| inspect(s(a, 0)?, s(a, 1)?)),
     ("signCommit", |a| sign_commit(s(a, 0)?, s(a, 1)?, s(a, 2)?)),
     ("signPackage", |a| sign_package(s(a, 0)?, s(a, 1)?, s(a, 2)?, n(a, 3)?)),
@@ -141,6 +150,24 @@ mod tests {
         assert!(ffi("noSuchMethod", json!([]))["err"].as_str().unwrap().contains("unknown"));
         assert!(ffi("dkgPart1", json!(["1", 2, 2]))["err"].is_string());
         assert!(ffi("dkgPart1", json!([1, 2, 2]))["ok"].is_string());
+    }
+
+    #[test]
+    fn ceremony_methods_match_the_wasm_names() {
+        let (pk, r) = (hex::encode([2u8; 32]), hex::encode([3u8; 32]));
+        let commit = ffi("skCommit", json!(["w", 1, pk, r]));
+        assert_eq!(commit["ok"], ceremony::sk_commit("w", 1, &pk, &r).unwrap());
+        assert!(ffi("skCommit", json!(["w", "1", pk, r]))["err"].is_string());
+        let seats = json!({"1": pk, "2": pk}).to_string();
+        let number = ffi("safetyNumber", json!(["w", 2, 2, "testnet", seats]));
+        assert_eq!(number["ok"].as_str().unwrap().len(), 35);
+        assert!(ffi("safetyNumber", json!(["w", "2", 2, "testnet", seats]))["err"].is_string());
+        assert!(ffi("safetyNumber", json!(["w", 2, 300, "testnet", seats]))["err"].is_string());
+        for method in ["dkgEcho", "vaultSk", "walletCreateV2", "walletVerifyV2"] {
+            let out = ffi(method, json!(["w", "{}", "{}"]));
+            let err = out["err"].as_str().expect("empty input is refused");
+            assert!(!err.contains("unknown method"), "{method} is in the table");
+        }
     }
 
     #[test]

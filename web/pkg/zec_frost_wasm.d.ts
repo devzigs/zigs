@@ -71,6 +71,8 @@ export function boxOpen(sk: string, pk: string, ctx: string, ct: string): string
 
 export function boxSeal(sk: string, pk: string, ctx: string, pt: string): string;
 
+export function dkgEcho(wallet_id: string, round1: string): string;
+
 export function dkgPart1(id: number, n: number, t: number): string;
 
 export function dkgPart2(secret: string, round1: string): string;
@@ -85,6 +87,8 @@ export function latestHeight(endpoint: string): Promise<number>;
 
 export function normalizeAddress(addr: string): string;
 
+export function safetyNumber(wallet_id: string, t: number, n: number, network: string, seats: string): string;
+
 export function secretOpen(secret: string, aad: string, ct: string): string;
 
 export function secretSeal(secret: string, aad: string, pt: string): string;
@@ -97,11 +101,19 @@ export function signPackage(pczt: string, fvk: string, commitments: string, min:
 
 export function signShare(pczt: string, fvk: string, _package: string, approval: string, kp: string, id: number): string;
 
+export function skCommit(wallet_id: string, seat: number, box_pk: string, r: string): string;
+
 export function start(): void;
+
+export function vaultSk(wallet_id: string, echo: string, parts: string): string;
 
 export function walletCreate(pkp: string, net: string): string;
 
+export function walletCreateV2(pkp: string, net: string, sk: string): string;
+
 export function walletVerify(wallet: string, pkp: string): string;
+
+export function walletVerifyV2(wallet: string, pkp: string, sk: string): string;
 
 export type InitInput = RequestInfo | URL | Response | BufferSource | WebAssembly.Module;
 
@@ -123,6 +135,7 @@ export interface InitOutput {
     readonly chainwallet_sent: (a: number) => [number, number];
     readonly chainwallet_snapshot: (a: number) => [number, number, number, number];
     readonly chainwallet_sync: (a: number, b: any) => any;
+    readonly dkgEcho: (a: number, b: number, c: number, d: number) => [number, number, number, number];
     readonly dkgPart1: (a: number, b: number, c: number) => [number, number, number, number];
     readonly dkgPart2: (a: number, b: number, c: number, d: number) => [number, number, number, number];
     readonly dkgPart3: (a: number, b: number, c: number, d: number, e: number, f: number) => [number, number, number, number];
@@ -140,15 +153,20 @@ export interface InitOutput {
     readonly intounderlyingsource_pull: (a: number, b: any) => any;
     readonly latestHeight: (a: number, b: number) => any;
     readonly normalizeAddress: (a: number, b: number) => [number, number, number, number];
+    readonly safetyNumber: (a: number, b: number, c: number, d: number, e: number, f: number, g: number, h: number) => [number, number, number, number];
     readonly secretOpen: (a: number, b: number, c: number, d: number, e: number, f: number) => [number, number, number, number];
     readonly secretSeal: (a: number, b: number, c: number, d: number, e: number, f: number) => [number, number, number, number];
     readonly signAggregate: (a: number, b: number, c: number, d: number, e: number, f: number, g: number, h: number) => [number, number, number, number];
     readonly signCommit: (a: number, b: number, c: number, d: number, e: number, f: number) => [number, number, number, number];
     readonly signPackage: (a: number, b: number, c: number, d: number, e: number, f: number, g: number) => [number, number, number, number];
     readonly signShare: (a: number, b: number, c: number, d: number, e: number, f: number, g: number, h: number, i: number, j: number, k: number) => [number, number, number, number];
+    readonly skCommit: (a: number, b: number, c: number, d: number, e: number, f: number, g: number) => [number, number, number, number];
     readonly start: () => void;
+    readonly vaultSk: (a: number, b: number, c: number, d: number, e: number, f: number) => [number, number, number, number];
     readonly walletCreate: (a: number, b: number, c: number, d: number) => [number, number, number, number];
+    readonly walletCreateV2: (a: number, b: number, c: number, d: number, e: number, f: number) => [number, number, number, number];
     readonly walletVerify: (a: number, b: number, c: number, d: number) => [number, number, number, number];
+    readonly walletVerifyV2: (a: number, b: number, c: number, d: number, e: number, f: number) => [number, number, number, number];
     readonly rustsecp256k1_v0_14_default_error_callback_fn: (a: number, b: number) => void;
     readonly rustsecp256k1_v0_14_default_illegal_callback_fn: (a: number, b: number) => void;
     readonly rustsecp256k1_v0_14_context_destroy: (a: number) => void;

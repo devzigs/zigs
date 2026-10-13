@@ -25,6 +25,8 @@ struct GroupState {
     var seats: [String: Doc] = [:]
     var dkg1: [String: Doc] = [:]
     var dkg2: [String: Doc] = [:]
+    var confirm: [String: Doc] = [:]
+    var abort: [String: Doc] = [:]
     var done: [String: Doc] = [:]
     var verify: [String: Doc] = [:]
     var wallet: Doc?
@@ -38,6 +40,17 @@ struct GroupState {
     var movedTo: String? { g?.str("movedTo") }
     var movedFrom: String? { g?.str("movedFrom") }
     var net: ZcashNetwork { .of(g?.str("network")) }
+    /// The network name that the wallet document must carry. A group that names none is testnet.
+    var netName: String { g?.str("network") == "mainnet" ? "mainnet" : "testnet" }
+    /// 1 when the group document has no version, 2 for the ZIP 2005 ceremony, 0 for a version this
+    /// app does not know.
+    var version: Int {
+        guard let v = g?["version"] else { return 1 }
+        // A JSON true is not the number 1.
+        guard let n = v as? NSNumber, CFGetTypeID(n) != CFBooleanGetTypeID(),
+              n.doubleValue == 1 || n.doubleValue == 2 else { return 0 }
+        return n.intValue
+    }
     var seatIds: [Int] { n > 0 ? Array(1...n) : [] }
     var allSeated: Bool { seatIds.allSatisfy { seats["\($0)"]?.str("boxPk") != nil } }
     var seatedCount: Int { seatIds.filter { seats["\($0)"] != nil }.count }
@@ -52,6 +65,8 @@ struct GroupState {
         let packages = Set(docs.map { GroupModel.walletKey($0.doc("publicKeyPackage")) })
         return keys.count == 1 && packages.count == 1 && !keys.contains("") && !packages.contains("")
     }
+    /// A published abort document is one that exists and holds a reason.
+    func abortSent(_ i: Int) -> Bool { abort["\(i)"]?.str("reason") != nil }
     var verifiedCount: Int { seatIds.filter { has(verify["\($0)"]?["ok"]) }.count }
     var rejectedSeats: [Int] { seatIds.filter { verify["\($0)"] != nil && !has(verify["\($0)"]?["ok"]) } }
     /// The wallet is ready to use: created, dated, and no seat rejected it.
@@ -65,6 +80,39 @@ struct GroupState {
         if seatIds.contains(where: { $0 != i && dkg2["\(i)-\($0)"] != nil }) { return 3 }
         return dkg1["\(i)"] != nil ? 2 : 1
     }
+}
+
+enum Gate { case ok, wait, mismatch }
+
+/// Seats whose confirm document holds another safety number than `number`.
+func numberClash(_ number: String, _ docs: [String: Doc], _ ids: [Int]) -> [Int] {
+    ids.filter { i in docs["\(i)"]?.str("number").map { $0 != number } ?? false }
+}
+
+/// May the key ceremony of a version 2 wallet run? `mine` is the number the person confirmed on
+/// this device: a confirm document alone is only a claim. Same rules as confirmGate in web/util.js.
+func confirmGate(_ number: String?, mine: String?, _ docs: [String: Doc], _ ids: [Int]) -> Gate {
+    guard let number else { return .wait }
+    if !numberClash(number, docs, ids).isEmpty { return .mismatch }
+    let all = ids.allSatisfy { docs["\($0)"]?.str("number") == number }
+    return all && mine == number ? .ok : .wait
+}
+
+/// What a seat keeps when its setup ends: the reason as one sentence, then what to do. Same rule
+/// as abortText in web/util.js.
+func abortText(_ reason: String) -> String {
+    var msg = reason
+    while msg.hasSuffix(".") { msg.removeLast() }
+    if msg.isEmpty { msg = "Setup failed" }
+    return msg.prefix(1).uppercased() + msg.dropFirst() + ". Do not use this wallet. Create a new wallet."
+}
+
+func secureHex(_ bytes: Int) throws -> String {
+    var buf = [UInt8](repeating: 0, count: bytes)
+    guard SecRandomCopyBytes(kSecRandomDefault, buf.count, &buf) == errSecSuccess else {
+        throw ZigsError("This \(deviceName) could not make a random value.")
+    }
+    return buf.map { String(format: "%02x", $0) }.joined()
 }
 
 /// A seat publishes its first key message right after joining, so stage 2 still reads as joined.
@@ -245,6 +293,8 @@ final class GroupModel {
         s.seats = children(base + "/seats")
         s.dkg1 = children(base + "/dkg1")
         s.dkg2 = children(base + "/dkg2")
+        s.confirm = children(base + "/confirm")
+        s.abort = children(base + "/abort")
         s.done = children(base + "/done")
         s.verify = children(base + "/verify")
         s.wallet = open(base + "/meta/wallet", store.docs[base + "/meta/wallet"])
@@ -384,40 +434,154 @@ final class GroupModel {
         guard !busy.contains(key) else { return }
         busy.insert(key)
         Task { @MainActor in
+            var failed = false
             do { try await op() } catch {
+                failed = true
                 note("✗ \(key): \(error.localizedDescription)")
                 banner = error.localizedDescription
             }
             busy.remove(key)
+            // A step that failed waits before the next try, so a closed socket is not hammered.
+            if failed { try? await Task.sleep(for: .seconds(Self.retrySeconds)) }
             react()
         }
     }
 
+    private static let retrySeconds = 3
+
     private func react() {
-        guard let gid, state.g != nil else { return }
+        guard let gid, state.g != nil, state.version != 0 else { return }
         takeFirstOpenSeat()
+        reactStops(gid)
+        reactConfirm(gid)
         for i in localSeats { advanceSeat(gid, i) }
-        if isCreator && state.wallet == nil && state.keysAgree {
+        if canCreateWallet {
             once("wallet") { try await self.createWallet(gid) }
         }
+        reactWallet(gid)
+    }
+
+    private func reactWallet(_ gid: String) {
         guard state.wallet != nil else { return }
         if state.ready && myVerified { ensureChain(gid) }
         for ss in state.sessions { reactSession(ss) }
     }
 
+    // MARK: Key ceremony
+    // Version 1 wallets: the creator picks nk and rivk. Version 2 wallets (ZIP 2005): the signers
+    // agree on a secret sk together, and nk, qsk and rivk follow from it (PROTOCOL.md section 4).
+
+    private static let differentSetup = "Signers saw different setup data"
+
+    /// A seat keeps the version that its wallet had when it took the seat ("version"), so a change
+    /// of the wallet document later cannot move the seat to another ceremony. A seat from before
+    /// that follows its own progress; before it began, the wallet's version decides.
+    private func seatMode(_ s: Doc) -> Int {
+        if let v = s.int("version"), v > 0 { return v }
+        if has(s["skPart"]) || has(s["vaultSk"]) { return 2 }
+        return has(s["r1secret"]) || has(s["r2secret"]) || has(s["keyPackage"]) ? 1 : state.version
+    }
+
+    // Reasons to end the setup of a seat for good. Each returns the reason, or nil.
+
+    private var sawV2Data: Bool {
+        !state.confirm.isEmpty || state.dkg1.values.contains { $0["commit"] != nil }
+    }
+
+    private func versionChanged(_ s: Doc) -> String? {
+        guard let v = s.int("version"), v != state.version else { return nil }
+        return "The setup version of this wallet changed after you took your seat"
+    }
+
+    private func v2DataSeen(_ s: Doc) -> String? {
+        guard seatMode(s) == 1, !has(s["keyPackage"]), sawV2Data else { return nil }
+        return "Other signers use the new setup, but this seat does not"
+    }
+
+    private func keyReplaced(_ i: Int, _ s: Doc) -> String? {
+        guard seatMode(s) == 2, let mine = s.str("boxPk"),
+              let shown = state.seats["\(i)"]?.str("boxPk"), mine != shown else { return nil }
+        return "Your seat key was replaced"
+    }
+
+    private func numberChanged(_ s: Doc) -> String? {
+        guard seatMode(s) == 2, !has(s["keyPackage"]), let confirmed = s.str("confirmed"),
+              let number = safetyNumber, confirmed != number else { return nil }
+        return "The safety number changed after you confirmed it. Someone may have replaced a seat"
+    }
+
+    private func conflictOf(_ i: Int, _ s: Doc) -> String? {
+        versionChanged(s) ?? v2DataSeen(s) ?? keyReplaced(i, s) ?? numberChanged(s)
+    }
+
+    /// Runs over every seat that this device holds a secret for, also a seat that the store now
+    /// shows under another identity. A stopped seat tells the other seats until the store holds its
+    /// abort document with a reason.
+    private func reactStops(_ gid: String) {
+        for i in vault.seats(in: gid) {
+            let s = vault.sec(gid, i)
+            if !has(s["aborted"]), let reason = conflictOf(i, s) {
+                vault.putSec(gid, i, ["aborted": abortText(reason)])
+            }
+            guard let text = vault.sec(gid, i).str("aborted"), !state.abortSent(i) else {
+                continue
+            }
+            once("abort:\(i)") { try await self.put("groups/\(gid)/abort/\(i)", ["reason": text]) }
+        }
+    }
+
+    private func launch(_ key: String, _ op: @escaping @MainActor () async throws -> Void) -> Bool {
+        once(key, op)
+        return true
+    }
+
+    /// A seat that stopped, or that holds no key share while another seat stopped, does no more.
+    private func isStopped(_ s: Doc) -> Bool {
+        has(s["aborted"]) || (!has(s["keyPackage"]) && !remoteAborts.isEmpty)
+    }
+
+    private func needVerify(_ i: Int, _ s: Doc) -> Bool {
+        has(s["keyPackage"]) && state.wallet != nil && state.verify["\(i)"] == nil
+    }
+
     private func advanceSeat(_ gid: String, _ i: Int) {
         let s = vault.sec(gid, i)
-        let ready = !has(s["keyPackage"])
-        if state.dkg1["\(i)"] == nil && ready { return once("r1:\(i)") { try await self.round1(gid, i) } }
-        if has(s["r1secret"]) && !has(s["r2secret"]) && ready && state.allSeated && state.allR1 {
-            return once("r2:\(i)") { try await self.round2(gid, i) }
-        }
-        if has(s["r2secret"]) && ready && state.allR1 && state.r2For(i) {
-            return once("r3:\(i)") { try await self.round3(gid, i) }
-        }
-        if !ready && state.wallet != nil && state.verify["\(i)"] == nil {
+        if isStopped(s) { return }
+        let started = seatMode(s) == 2 ? stepV2(gid, i, s) : stepV1(gid, i, s)
+        if !started && needVerify(i, s) {
             once("verify:\(i)") { try await self.verifyWallet(gid, i) }
         }
+    }
+
+    private func needR1(_ i: Int, _ s: Doc) -> Bool { state.dkg1["\(i)"] == nil && !has(s["keyPackage"]) }
+    /// Round 2 needs every seat taken (for their encryption keys) and every round-1 package.
+    private func needR2(_ s: Doc) -> Bool {
+        has(s["r1secret"]) && !has(s["r2secret"]) && !has(s["keyPackage"]) && state.allSeated && state.allR1
+    }
+    private func needR3(_ i: Int, _ s: Doc) -> Bool {
+        has(s["r2secret"]) && !has(s["keyPackage"]) && state.allR1 && state.r2For(i)
+    }
+    /// The done document is the only proof to the other seats that this seat holds its key share.
+    /// A failed write is retried until it succeeds.
+    private func needDone(_ i: Int, _ s: Doc) -> Bool {
+        has(s["keyPackage"]) && !has(s["doneSent"]) && state.done["\(i)"] == nil
+    }
+
+    private func stepV1(_ gid: String, _ i: Int, _ s: Doc) -> Bool {
+        if needR1(i, s) { return launch("r1:\(i)") { try await self.round1(gid, i) } }
+        if needR2(s) { return launch("r2:\(i)") { try await self.round2(gid, i) } }
+        if needR3(i, s) { return launch("r3:\(i)") { try await self.round3(gid, i) } }
+        if needDone(i, s) { return launch("done:\(i)") { try await self.publishDone(gid, i) } }
+        return false
+    }
+
+    private func publishDone(_ gid: String, _ i: Int) async throws {
+        let s = vault.sec(gid, i)
+        let groupKey = s.str("groupKey") ?? ""
+        let package = Engine.json(s["publicKeyPackage"] ?? NSNull())
+        try await put("groups/\(gid)/done/\(i)", ["groupKey": groupKey, "publicKeyPackage": package, "at": now()])
+        vault.putSec(gid, i, ["doneSent": true])
+        note("seat \(i): key share ready, group key \(groupKey.prefix(12))…")
     }
 
     private func round1(_ gid: String, _ i: Int) async throws {
@@ -460,10 +624,287 @@ final class GroupModel {
         vault.putSec(gid, i, ["keyPackage": r["key_package"] ?? NSNull(),
                               "publicKeyPackage": r["public_key_package"] ?? NSNull(),
                               "groupKey": groupKey, "r2secret": NSNull(), "r1package": NSNull()])
-        try await put("groups/\(gid)/done/\(i)", ["groupKey": groupKey,
-                                                 "publicKeyPackage": Engine.json(r["public_key_package"] ?? NSNull()),
-                                                 "at": now()])
-        note("seat \(i): key share ready, group key \(groupKey.prefix(12))…")
+    }
+
+    // MARK: Key ceremony, version 2
+    // The safety number covers the wallet id, t, n, the network and every seat's encryption key. The
+    // signers compare it out of band. A confirm document is only a claim, so a seat also keeps the
+    // number its person confirmed ("confirmed"), and the ceremony runs only when both agree with the
+    // local number.
+
+    /// The safety number of the wallet id, t, n, the network and the seats' encryption keys, or nil
+    /// until every seat is taken.
+    var safetyNumber: String? {
+        guard let gid, state.allSeated else { return nil }
+        var keys = Doc()
+        for i in state.seatIds { if let pk = state.seats["\(i)"]?.str("boxPk") { keys["\(i)"] = pk } }
+        let args: [Any] = [gid, state.t, state.n, state.netName, Engine.json(keys)]
+        return try? Engine.call("safetyNumber", args)
+    }
+
+    private func canConfirm(_ s: Doc) -> Bool { !has(s["keyPackage"]) && !has(s["aborted"]) && seatMode(s) == 2 }
+
+    private var confirmable: [Int] {
+        guard let gid else { return [] }
+        return localSeats.filter { canConfirm(vault.sec(gid, $0)) }
+    }
+
+    /// A device that holds every seat has nobody else to compare with.
+    var holdsAllSeats: Bool { localSeats.count == state.n }
+
+    /// The safety number card shows until every seat holds its key share.
+    var safetyOpen: Bool { state.version == 2 && state.allSeated && !state.allDone && !holdsAllSeats }
+
+    /// Seats of this device whose person has not yet confirmed the safety number.
+    var unconfirmedSeats: [Int] {
+        guard let gid, let no = safetyNumber else { return [] }
+        return confirmable.filter { vault.sec(gid, $0).str("confirmed") != no }
+    }
+
+    func confirmedBy(_ no: String) -> [Int] { state.seatIds.filter { state.confirm["\($0)"]?.str("number") == no } }
+
+    /// The reason a seat of this device ended its setup, or nil. This counts every seat that the
+    /// device holds a secret for, also a seat that the store shows under another identity.
+    var abortedText: String? {
+        guard let gid else { return nil }
+        return vault.seats(in: gid).compactMap { vault.sec(gid, $0).str("aborted") }.first
+    }
+
+    /// Seats that stopped their setup, as their devices reported it. They also stop the seats that
+    /// hold no key share yet.
+    private var remoteAborts: [Int] {
+        state.seatIds.filter { state.abortSent($0) }
+    }
+
+    private var remoteAbortText: String? {
+        guard let i = remoteAborts.first,
+              let reason = state.abort["\(i)"]?.str("reason") else { return nil }
+        return "Seat \(i) stopped setup. \(reason.prefix(200))"
+    }
+
+    private static func isHex64(_ text: String?) -> Bool {
+        guard let text, text.count == 64 else { return false }
+        return text.allSatisfy { "0123456789abcdef".contains($0) }
+    }
+
+    /// Seats whose round-1 document has no commitment: an old app made it.
+    private var oldAppText: String? {
+        guard state.version == 2 else { return nil }
+        let old = state.seatIds.filter { i in
+            state.dkg1["\(i)"].map { !Self.isHex64($0.str("commit")) } ?? false
+        }
+        guard !old.isEmpty else { return nil }
+        return "Seat \(old.map(String.init).joined(separator: ", ")) uses an old version of Zigs "
+            + "and cannot join this wallet. Update it, or create a new wallet."
+    }
+
+    private var unreadableKeyText: String? {
+        guard state.version == 2, state.allSeated, safetyNumber == nil else { return nil }
+        return "A seat holds a key that this app cannot read. Do not use this wallet. "
+            + "Create a new wallet."
+    }
+
+    private var clashText: String? {
+        guard state.version == 2, !state.allDone, let no = safetyNumber else { return nil }
+        let clash = numberClash(no, state.confirm, state.seatIds)
+        guard !clash.isEmpty else { return nil }
+        let seats = clash.map(String.init).joined(separator: ", ")
+        return "Seat \(seats) confirmed another safety number. Do not continue. Create a new wallet."
+    }
+
+    private var waitText: String? {
+        guard state.version == 2, !state.allDone, let no = safetyNumber else { return nil }
+        let yes = confirmedBy(no).count
+        guard state.dkg1.count < state.n, yes < state.n else { return nil }
+        return "Starts when every signer confirmed the safety number (\(yes) of \(state.n))."
+    }
+
+    /// What stops the key step, or nil. `bad` is true when it cannot recover. The first check that
+    /// holds decides.
+    var keyBlock: (bad: Bool, text: String)? {
+        let bad = abortedText ?? remoteAbortText ?? oldAppText ?? unreadableKeyText ?? clashText
+        if let bad { return (true, bad) }
+        return waitText.map { (false, $0) }
+    }
+
+    /// Writes the confirm document of a seat whose person confirmed but whose document is missing,
+    /// and confirms for itself when this device holds every seat.
+    private func reactConfirm(_ gid: String) {
+        guard state.version == 2, let no = safetyNumber else { return }
+        let auto = holdsAllSeats
+        let todo = confirmable.filter { i in
+            vault.sec(gid, i).str("confirmed") == no ? state.confirm["\(i)"] == nil : auto
+        }
+        if !todo.isEmpty { once("confirm") { try await self.confirmSeats(gid, todo, no) } }
+    }
+
+    /// The person compared the safety number and tapped "It matches".
+    /// Confirms the number the person compared. If the seats changed since it was drawn, nothing is
+    /// confirmed and the card shows the new number.
+    func confirmSafetyNumber(shown: String) {
+        guard let gid, let no = safetyNumber, no == shown else { return }
+        let ids = unconfirmedSeats
+        once("confirm:tap") { try await self.confirmSeats(gid, ids, no) }
+    }
+
+    private func confirmSeats(_ gid: String, _ ids: [Int], _ no: String) async throws {
+        for i in ids {
+            vault.putSec(gid, i, ["confirmed": no])
+            try await put("groups/\(gid)/confirm/\(i)", ["number": no])
+        }
+        note("safety number confirmed for seat \(ids.map(String.init).joined(separator: ", "))")
+    }
+
+    /// A failed check ends this seat's setup for good. The reason stays in the seat, so the reactor
+    /// does not retry it.
+    private func ceremonyStep<T>(_ gid: String, _ i: Int, _ compute: () throws -> T) throws -> T {
+        do { return try compute() } catch {
+            let text = abortText(error.localizedDescription)
+            vault.putSec(gid, i, ["aborted": text])
+            throw ZigsError(text)
+        }
+    }
+
+    private func stepV2(_ gid: String, _ i: Int, _ s: Doc) -> Bool {
+        let open = confirmGate(safetyNumber, mine: s.str("confirmed"), state.confirm, state.seatIds) == .ok
+        let r1 = needR1(i, s) && !saveFailed.contains("\(gid):\(i)")
+        if open && r1 { return launch("r1:\(i)") { try await self.round1V2(gid, i) } }
+        if open && needR2(s) { return launch("r2:\(i)") { try await self.round2V2(gid, i) } }
+        if needR3(i, s) { return launch("r3:\(i)") { try await self.round3V2(gid, i) } }
+        if needDone(i, s) { return launch("done:\(i)") { try await self.publishDone(gid, i) } }
+        return false
+    }
+
+    /// Seats whose setup secret this device could not save. Another try waits for the person.
+    private(set) var saveFailed = Set<String>()
+
+    var setupSaveFailed: Bool {
+        guard let gid else { return false }
+        return saveFailed.contains { $0.hasPrefix(gid + ":") }
+    }
+
+    func retrySetup() {
+        saveFailed = []
+        react()
+    }
+
+    var saveFailedText: String {
+        "This \(deviceName) could not save your setup secret, so setup did not start."
+    }
+
+    /// The secret part of sk is saved before its commitment goes out: a seat that loses it cannot finish.
+    private func round1V2(_ gid: String, _ i: Int) async throws {
+        if !has(vault.sec(gid, i)["r1secret"]) {
+            let r = try Engine.object("dkgPart1", [i, state.n, state.t])
+            let made: Doc = ["r1secret": r["secret"] ?? NSNull(), "r1package": r["package"] ?? NSNull(),
+                             "skPart": try secureHex(32)]
+            guard vault.putSec(gid, i, made) else {
+                vault.putSec(gid, i, ["r1secret": NSNull(), "r1package": NSNull(), "skPart": NSNull()])
+                saveFailed.insert("\(gid):\(i)")
+                throw ZigsError(saveFailedText)
+            }
+        }
+        let s = vault.sec(gid, i)
+        guard let boxPk = state.seats["\(i)"]?.str("boxPk"), let part = s.str("skPart") else {
+            throw ZigsError("Seat \(i) has no key or setup secret.")
+        }
+        let commit = try Engine.call("skCommit", [gid, i, boxPk, part])
+        try await put("groups/\(gid)/dkg1/\(i)", ["package": s["r1package"] ?? NSNull(), "commit": commit, "at": now()])
+        note("seat \(i): round 1 commitment published")
+    }
+
+    /// One digest of every seat's round-1 document. Each seat puts it in its round-2 documents, so a
+    /// seat that saw other data than the rest is found before anyone uses its data.
+    private func echoNow(_ gid: String) throws -> String {
+        var r1 = Doc()
+        for j in state.seatIds {
+            guard let d = state.dkg1["\(j)"], let commit = d.str("commit") else {
+                throw ZigsError("Seat \(j) sent no commitment, so its app is too old for this wallet")
+            }
+            r1["\(j)"] = ["package": d["package"] ?? NSNull(), "commit": commit] as Doc
+        }
+        return try Engine.call("dkgEcho", [gid, Engine.json(r1)])
+    }
+
+    private func round2V2(_ gid: String, _ i: Int) async throws {
+        let s = vault.sec(gid, i)
+        let out = try ceremonyStep(gid, i) { () throws -> (echo: String, boxes: [String: String], secret: Any) in
+            let echo = try s.str("echo") ?? echoNow(gid)
+            var r1 = Doc()
+            for j in state.seatIds where j != i { r1["\(j)"] = state.dkg1["\(j)"]?["package"] }
+            let r = try Engine.object("dkgPart2", [Engine.json(s["r1secret"] ?? NSNull()), Engine.json(r1)])
+            var boxes: [String: String] = [:]
+            for (to, pkg) in r.doc("outgoing") ?? [:] {
+                guard let pk = state.seats[to]?.str("boxPk"), let sk = s.str("boxSk") else {
+                    throw ZigsError("Seat \(to) has no key")
+                }
+                let payload: Doc = ["package": pkg, "r": s["skPart"] ?? NSNull()]
+                boxes[to] = try Engine.call("boxSeal", [sk, pk, "\(gid):\(i)->\(to)", Engine.json(payload)])
+            }
+            return (echo, boxes, r["secret"] ?? NSNull())
+        }
+        vault.putSec(gid, i, ["echo": out.echo])
+        for (to, sealed) in out.boxes {
+            try await put("groups/\(gid)/dkg2/\(i)-\(to)", ["sealed": sealed, "echo": out.echo, "at": now()])
+        }
+        vault.putSec(gid, i, ["r2secret": out.secret, "r1secret": NSNull()])
+        note("seat \(i): \(out.boxes.count) encrypted shares sent")
+    }
+
+    private static func unreadable(_ j: Int) -> ZigsError {
+        ZigsError("Seat \(j) sent an unreadable message")
+    }
+
+    /// Opens the sealed box that seat `j` sent to seat `i`, and returns what is inside.
+    private func openBox(_ gid: String, from j: Int, to i: Int, _ s: Doc) throws -> Doc {
+        guard let sealed = state.dkg2["\(j)-\(i)"]?.str("sealed"), let sk = s.str("boxSk"),
+              let pk = state.seats["\(j)"]?.str("boxPk") else { throw Self.unreadable(j) }
+        let opened: String
+        do { opened = try Engine.call("boxOpen", [sk, pk, "\(gid):\(j)->\(i)", sealed]) } catch {
+            throw ZigsError("Seat \(j) sent a message that cannot be opened")
+        }
+        guard let box = try Engine.parse(opened) as? Doc else { throw Self.unreadable(j) }
+        return box
+    }
+
+    /// Opens the box seat `j` sent to seat `i`: its round-2 package and its secret part of sk.
+    private func unbox(_ gid: String, from j: Int, to i: Int, _ s: Doc, _ echo: String) throws -> (package: Doc, r: String) {
+        guard let d = state.dkg2["\(j)-\(i)"], d.str("echo") == echo else { throw ZigsError(Self.differentSetup) }
+        let box = try openBox(gid, from: j, to: i, s)
+        guard let r = box.str("r"), let package = box.doc("package") else { throw Self.unreadable(j) }
+        return (package, r)
+    }
+
+    private func sealedPart(_ j: Int, _ r: Any) -> Doc {
+        ["r": r, "commit": state.dkg1["\(j)"]?["commit"] ?? NSNull(), "boxPk": state.seats["\(j)"]?["boxPk"] ?? NSNull()]
+    }
+
+    /// Every check of round 3 runs before the key share is made: the echo twice (my stored echo, and
+    /// each seat's), every commitment, and then the key share itself.
+    private func openRound3(_ gid: String, _ i: Int, _ s: Doc) throws -> (key: Doc, sk: String) {
+        guard let echo = s.str("echo"), try echoNow(gid) == echo else { throw ZigsError(Self.differentSetup) }
+        var r1 = Doc(), r2 = Doc()
+        var parts: Doc = ["\(i)": sealedPart(i, s["skPart"] ?? NSNull())]
+        for j in state.seatIds where j != i {
+            let box = try unbox(gid, from: j, to: i, s, echo)
+            r1["\(j)"] = state.dkg1["\(j)"]?["package"]
+            r2["\(j)"] = box.package
+            parts["\(j)"] = sealedPart(j, box.r)
+        }
+        let sk = try Engine.call("vaultSk", [gid, echo, Engine.json(parts)])
+        let key = try Engine.object("dkgPart3", [Engine.json(s["r2secret"] ?? NSNull()), Engine.json(r1), Engine.json(r2)])
+        return (key, sk)
+    }
+
+    private func round3V2(_ gid: String, _ i: Int) async throws {
+        let s = vault.sec(gid, i)
+        let (r, sk) = try ceremonyStep(gid, i) { try openRound3(gid, i, s) }
+        let groupKey = r.str("group_key") ?? ""
+        let saved = vault.putSec(gid, i, ["keyPackage": r["key_package"] ?? NSNull(),
+                                          "publicKeyPackage": r["public_key_package"] ?? NSNull(),
+                                          "groupKey": groupKey, "vaultSk": sk, "skPart": NSNull(),
+                                          "echo": NSNull(), "r2secret": NSNull(), "r1package": NSNull()])
+        if !saved { banner = "This \(deviceName) could not save your key share. Keep Zigs open." }
     }
 
     /// A stable text form of the wallet document: sorted keys, so the same document gives the same key.
@@ -479,7 +920,7 @@ final class GroupModel {
         var ok = true
         var reason: Any = NSNull()
         do {
-            _ = try Engine.call("walletVerify", [Engine.json(state.wallet ?? [:]), Engine.json(s["publicKeyPackage"] ?? NSNull())])
+            try verifyCall(s)
         } catch {
             ok = false
             reason = error.localizedDescription
@@ -489,6 +930,43 @@ final class GroupModel {
         note(ok ? "seat \(i): wallet verified, ak equals my group key" : "seat \(i): WALLET REJECTED")
     }
 
+    /// The wallet must name its group's network. A seat that holds sk checks every part of the
+    /// wallet, so only version 2 verification applies to it, whatever the stored documents say. A
+    /// seat without sk never accepts a version 2 wallet.
+    private func verifyCall(_ s: Doc) throws {
+        guard state.wallet?.str("network") == state.netName else {
+            throw ZigsError("The wallet names another network than its group. Do not use this wallet.")
+        }
+        let wallet = Engine.json(state.wallet ?? [:]), pkp = Engine.json(s["publicKeyPackage"] ?? NSNull())
+        if let sk = s.str("vaultSk") {
+            _ = try Engine.call("walletVerifyV2", [wallet, pkp, sk])
+            return
+        }
+        if state.version == 2 {
+            throw ZigsError("This seat holds no setup secret for a version 2 wallet. Do not use this wallet.")
+        }
+        _ = try Engine.call("walletVerify", [wallet, pkp])
+    }
+
+    private var v2Secret: Doc? {
+        guard let gid else { return nil }
+        return localSeats.map { vault.sec(gid, $0) }.first { has($0["vaultSk"]) && has($0["publicKeyPackage"]) }
+    }
+
+    private var canCreateWallet: Bool {
+        isCreator && state.wallet == nil && state.keysAgree && (state.version != 2 || v2Secret != nil)
+    }
+
+    /// The wallet document for the group's version, or nil when its key data is not there yet.
+    private func walletDoc(_ net: String) throws -> Doc? {
+        if state.version == 2 {
+            guard let mine = v2Secret, let sk = mine.str("vaultSk") else { return nil }
+            return try Engine.object("walletCreateV2", [Engine.json(mine["publicKeyPackage"] ?? NSNull()), net, sk])
+        }
+        guard let pkp = state.done["1"]?.str("publicKeyPackage") else { return nil }
+        return try Engine.object("walletCreate", [pkp, net])
+    }
+
     /// The creator builds the shared wallet once every seat computed the same group key.
     private func createWallet(_ gid: String) async throws {
         // The wallet document can arrive after the key ones; never replace a published wallet.
@@ -496,8 +974,7 @@ final class GroupModel {
         var birthday: Int?
         for url in state.net.servers where birthday == nil { birthday = try? await Lightwalletd.latestHeight(url) }
         guard let birthday else { throw ZigsError("No light-wallet server answers, so the wallet cannot be dated.") }
-        guard let pkp = state.done["1"]?.str("publicKeyPackage") else { return }
-        var w = try Engine.object("walletCreate", [pkp, state.g?.str("network") ?? "testnet"])
+        guard var w = try walletDoc(state.g?.str("network") ?? "testnet") else { return }
         w["birthday"] = birthday
         w["at"] = now()
         try await put("groups/\(gid)/meta/wallet", w)
@@ -608,21 +1085,28 @@ final class GroupModel {
     private func takeFirstOpenSeat() {
         guard autoSeat, store.connected else { return }
         autoSeat = false
-        guard localSeats.isEmpty, let open = state.seatIds.first(where: { state.seats["\($0)"] == nil }) else { return }
+        // A wallet that is not version 2 asks the person first (the join card shows the warning).
+        guard state.version == 2, localSeats.isEmpty, let open = state.seatIds.first(where: { state.seats["\($0)"] == nil }) else { return }
         takeSeat(open)
     }
 
-    func takeSeat(_ i: Int) {
+    /// The seat keeps the version of its wallet and its own box key. The store can show another
+    /// version or key later (reactStops). `version` is only set for a wallet that is new here.
+    func takeSeat(_ i: Int, version: Int? = nil) {
         guard let gid else { return }
         once("seat:\(i)") {
+            let version = version ?? self.state.version
+            guard version != 0 else { throw ZigsError("This version of Zigs cannot set up this wallet.") }
             let path = "groups/\(gid)/seats/\(i)"
             guard try await self.store.acquire(path, holder: UUID().uuidString, ttlMs: 5000) else {
                 throw ZigsError("Someone else is taking seat \(i) right now.")
             }
             if self.state.seats["\(i)"]?.str("uid") != nil { throw ZigsError("Seat \(i) is already taken.") }
             let kp = try Engine.object("boxKeypair", [])
-            self.vault.putSec(gid, i, ["boxSk": kp["sk"] ?? NSNull()])
+            self.vault.putSec(gid, i, ["boxSk": kp["sk"] ?? NSNull(), "version": version])
             try await self.put(path, ["uid": self.me, "name": self.name, "boxPk": kp["pk"] ?? NSNull(), "at": now()])
+            // Saved only after the store holds the seat: a failed take must not look like a replaced key.
+            self.vault.putSec(gid, i, ["boxPk": kp["pk"] ?? NSNull()])
             self.note("you took seat \(i)")
         }
     }
@@ -639,13 +1123,13 @@ final class GroupModel {
             .replacingOccurrences(of: "/", with: "_").replacingOccurrences(of: "=", with: "")
         vault.putKey(id, b64)
         store.join(id)
-        var g: Doc = ["name": name, "n": n, "t": t, "network": network, "createdBy": me, "createdAt": now()]
+        var g: Doc = ["name": name, "n": n, "t": t, "network": network, "version": 2, "createdBy": me, "createdAt": now()]
         if let from { g["movedFrom"] = from }
         try await put("groups/\(id)", g)
         if let from { try await patch("groups/\(from)", ["movedTo": id, "movedAt": now()]) }
         path = [id]
         select(id)
-        takeSeat(1)
+        takeSeat(1, version: 2)
     }
 
     /// Proposes a payment to one or more recipients, in one transaction. `payees` and `note` are

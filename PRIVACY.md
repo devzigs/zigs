@@ -121,7 +121,7 @@ per-IP rate limits.
 
 | Data | Web app | iPhone and Mac app |
 |---|---|---|
-| Key share, signing nonces | Browser local storage; sealed with a passkey when the lock is on | iPhone: Keychain, this device only, not in backups; sealed behind Face ID when the lock is on. Mac: login keychain |
+| Key share, signing nonces, and for a version 2 wallet `vaultSk` | Browser local storage; sealed with a passkey when the lock is on | iPhone: Keychain, this device only, not in backups; sealed behind Face ID when the lock is on. Mac: login keychain |
 | Wallet secrets (from invite links) | Same as the key share | Same as the key share |
 | Sync state (notes, tree) | IndexedDB, sealed with the wallet key | File, sealed with the wallet key |
 | Cached balances for the wallet list | Local storage, sealed with the wallet key | Settings, sealed with the wallet key |
@@ -168,6 +168,24 @@ the passkey guards the key share instead. The lock is opt-in.
 ## Not protected
 
 - A threshold of signers who agree can move the funds. That is the rule they chose.
+- **Quantum recoverability gives every signer `qsk`.** A version 2 wallet is built to ZIP 2005
+  (Proposed), so that funds can be recovered if quantum computers break today's keys. For this,
+  every signer holds the same secret `qsk`, computed from the secret `sk` that the signers agreed
+  on. As ZIP 2005 says, a quantum attacker who has `qsk` may steal the funds. Under a quantum
+  attacker, one signer, or one stolen key share backup, could take the funds. Today the spend
+  still needs a threshold of signers. The backup file of a version 2 wallet holds `vaultSk`, from
+  which `qsk` follows, so keep it as secret as the key share. ZIP 2005 recommends that you move
+  the funds to a post-quantum protocol as soon as one exists.
+- A version 1 wallet (made before ZIP 2005 support) has no `qsk`. It cannot be recovered under
+  ZIP 2005. Move its funds to a new wallet with Change signers.
+- The signers must compare the safety number of a version 2 wallet over a channel that an
+  attacker does not control. A call or a meeting is such a channel. The number covers the wallet
+  id, the threshold, the number of seats, the network and every seat key.
+- **The agreement on `sk` is not quantum-resistant.** The signers send their secret parts in
+  X25519 boxes, and the encrypted documents stay in the group server. An attacker who recorded
+  them, and later learns the wallet secret from an invite link, can break X25519 with a quantum
+  computer. That attacker then gets `sk`, and so `qsk`. Send the invite link only through a private
+  channel.
 - A compromised device can sign with its own share, and can show its user false information.
   Each approving device decodes the transaction itself. It ties every output that carries value
   to the recipient it shows, checks that the outputs are exactly the listed recipients and

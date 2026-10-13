@@ -415,3 +415,7 @@ body:has(.drawer-foot) #banner { bottom: calc(92px + env(safe-area-inset-bottom,
   .tab[aria-selected="true"]::after { left: 7px; right: 7px; }
   .tab .count { margin-left: 4px; padding-inline: 5px; }
 }
+
+/* Safety number: the signers read it aloud and compare. */
+.safety { padding: 14px 16px; border-radius: 10px; border: 1px solid var(--line); background: var(--sunk); font: 500 22px/1.4 var(--mono); letter-spacing: 0.04em; text-align: center; text-wrap: balance; user-select: all; overflow-wrap: anywhere; }
+@media (max-width: 480px) { .safety { font-size: 17px; letter-spacing: 0.02em; } }

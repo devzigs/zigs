@@ -17,31 +17,59 @@ struct GroupView: View {
         ScrollView {
             VStack(alignment: .leading, spacing: 16) {
                 Header()
-                if st.g == nil {
-                    ProgressView("Loading the wallet…").frame(maxWidth: .infinity).padding(.top, 40)
-                } else if !st.ready {
-                    SetupView()
-                } else {
-                    Picker("Section", selection: $tab) {
-                        ForEach(Tab.allCases, id: \.self) { Text($0.rawValue).tag($0) }
-                    }
-                    .pickerStyle(.segmented)
-                    switch tab {
-                    case .overview: OverviewTab(showSigners: { tab = .signers }, showActivity: { tab = .activity })
-                    case .activity: ActivityList(limit: nil)
-                    case .signers: SignersTab(change: { sheet = .change })
-                    case .details: DetailsTab()
-                    }
-                }
+                content(st)
             }
             .padding(16)
         }
         .background(Color.night)
         .navigationTitle(st.name)
         .refreshable { await model.chain?.sync() }
-        .safeAreaInset(edge: .bottom) {
-            if st.ready {
-                VStack(spacing: 6) {
+        .safeAreaInset(edge: .bottom) { actionBar(st) }
+        .sheet(item: $sheet) { sheetView($0) }
+        // New testnet blocks come about every 25 s: refresh the open wallet once a minute.
+        .task(id: model.chain?.gid) {
+            while !Task.isCancelled {
+                try? await Task.sleep(for: .seconds(60))
+                await model.chain?.sync()
+            }
+        }
+        .modifier(Banners())
+    }
+
+    @ViewBuilder
+    private func content(_ st: GroupState) -> some View {
+        if st.g == nil {
+            ProgressView("Loading the wallet…").frame(maxWidth: .infinity).padding(.top, 40)
+        } else if st.version == 0 {
+            Card {
+                Text("A newer version of Zigs made this wallet. This version cannot set it up. Update Zigs.")
+                    .font(.subheadline).foregroundStyle(Color.bad)
+            }
+        } else if !st.ready {
+            SetupView()
+        } else {
+            tabs
+        }
+    }
+
+    @ViewBuilder
+    private var tabs: some View {
+        Picker("Section", selection: $tab) {
+            ForEach(Tab.allCases, id: \.self) { Text($0.rawValue).tag($0) }
+        }
+        .pickerStyle(.segmented)
+        switch tab {
+        case .overview: OverviewTab(showSigners: { tab = .signers }, showActivity: { tab = .activity })
+        case .activity: ActivityList(limit: nil)
+        case .signers: SignersTab(change: { sheet = .change })
+        case .details: DetailsTab()
+        }
+    }
+
+    @ViewBuilder
+    private func actionBar(_ st: GroupState) -> some View {
+        if st.ready {
+            VStack(spacing: 6) {
                 HStack(spacing: 12) {
                     Button { sheet = .receive } label: { Label("Receive", systemImage: "arrow.down").frame(maxWidth: .infinity) }
                         .buttonStyle(.bordered).controlSize(.large)
@@ -51,26 +79,19 @@ struct GroupView: View {
                 if let why = model.sendBlocker {
                     Text(why).font(.caption).foregroundStyle(Color.mist).frame(maxWidth: .infinity, alignment: .leading)
                 }
-                }
-                .padding(.horizontal, 16).padding(.vertical, 10)
-                .background(.ultraThinMaterial)
             }
+            .padding(.horizontal, 16).padding(.vertical, 10)
+            .background(.ultraThinMaterial)
         }
-        .sheet(item: $sheet) { s in
-            switch s {
-            case .send: SendSheet()
-            case .receive: ReceiveSheet()
-            case .change: CreateSheet(from: model.state)
-            }
+    }
+
+    @ViewBuilder
+    private func sheetView(_ s: WalletSheet) -> some View {
+        switch s {
+        case .send: SendSheet()
+        case .receive: ReceiveSheet()
+        case .change: CreateSheet(from: model.state)
         }
-        // New testnet blocks come about every 25 s: refresh the open wallet once a minute.
-        .task(id: model.chain?.gid) {
-            while !Task.isCancelled {
-                try? await Task.sleep(for: .seconds(60))
-                await model.chain?.sync()
-            }
-        }
-        .modifier(Banners())
     }
 }
 
@@ -119,36 +140,108 @@ struct SetupView: View {
         let open = st.seatIds.filter { st.seats["\($0)"] == nil }
         VStack(spacing: 16) {
             if model.localSeats.isEmpty, let first = open.first {
-                Card(highlight: true) {
-                    Text("Join \(st.name)").font(.title3.weight(.semibold))
-                    Text("Zigs is a shared wallet for shielded Zcash. Any \(st.t) of the \(st.n) signers approve each payment. Take a seat to become a signer. Your \(deviceName) creates its own key share, and the share never leaves this device. Keep Zigs open until the wallet is ready.")
-                        .font(.subheadline).foregroundStyle(Color.mist)
-                    Button("Take seat \(first)") { model.takeSeat(first) }.primaryButton()
-                }
+                JoinCard(first: first)
             } else if !open.isEmpty, let gid = model.gid {
                 InviteCard(link: model.inviteLink(gid), open: open.count)
             }
-            ProgressCard()
-            Card {
-                HStack { Text("Seats").font(.headline); Spacer(); Text("\(st.t) of \(st.n) must approve").font(.caption).foregroundStyle(Color.mist) }
-                ForEach(st.seatIds, id: \.self) { i in
-                    HStack(spacing: 12) {
-                        SeatAvatar(i: i)
-                        VStack(alignment: .leading, spacing: 2) {
-                            Text(model.seatLabel(i)).font(.subheadline.weight(.medium))
-                            Text("Seat \(i)").font(.caption).foregroundStyle(Color.mist)
-                        }
-                        Spacer()
-                        Badge(text: stageLabels[st.stage(i)], kind: st.stage(i) == 5 ? .ok : st.seats["\(i)"] == nil ? .plain : .info)
-                    }
+            if model.setupSaveFailed {
+                Card {
+                    Text(model.saveFailedText).font(.subheadline).foregroundStyle(Color.bad)
+                    Button("Try again") { model.retrySetup() }.primaryButton()
                 }
-                if !model.localSeats.isEmpty && !open.isEmpty {
-                    DisclosureGroup("Trying Zigs alone? Play the other seats here") {
-                        Text("For a demo or a review only. In real use, each signer takes a seat on their own device.")
-                            .font(.caption).foregroundStyle(Color.mist)
-                        ForEach(open, id: \.self) { i in Button("Play seat \(i)") { model.takeSeat(i) } }
+            }
+            SafetyCard()
+            ProgressCard()
+            SeatsCard(open: open)
+        }
+    }
+}
+
+struct JoinCard: View {
+    @Environment(GroupModel.self) private var model
+    let first: Int
+
+    var body: some View {
+        let st = model.state
+        Card(highlight: true) {
+            Text("Join \(st.name)").font(.title3.weight(.semibold))
+            Text("Zigs is a shared wallet for shielded Zcash. Any \(st.t) of the \(st.n) signers approve each payment. Take a seat to become a signer. Your \(deviceName) creates its own key share, and the share never leaves this device. Keep Zigs open until the wallet is ready.")
+                .font(.subheadline).foregroundStyle(Color.mist)
+            if st.version == 1 {
+                Text("This wallet is not built to ZIP 2005. Funds cannot be recovered if quantum computers break today's keys.")
+                    .font(.subheadline).foregroundStyle(Color.bad)
+            }
+            Button(st.version == 2 ? "Take seat \(first)" : "Take seat \(first) anyway") {
+                model.takeSeat(first)
+            }.primaryButton()
+        }
+    }
+}
+
+struct SeatsCard: View {
+    @Environment(GroupModel.self) private var model
+    let open: [Int]
+
+    var body: some View {
+        let st = model.state
+        Card {
+            HStack { Text("Seats").font(.headline); Spacer(); Text("\(st.t) of \(st.n) must approve").font(.caption).foregroundStyle(Color.mist) }
+            ForEach(st.seatIds, id: \.self) { i in
+                HStack(spacing: 12) {
+                    SeatAvatar(i: i)
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text(model.seatLabel(i)).font(.subheadline.weight(.medium))
+                        Text("Seat \(i)").font(.caption).foregroundStyle(Color.mist)
                     }
-                    .font(.subheadline)
+                    Spacer()
+                    Badge(text: stageLabels[st.stage(i)], kind: st.stage(i) == 5 ? .ok : st.seats["\(i)"] == nil ? .plain : .info)
+                }
+            }
+            if !model.localSeats.isEmpty && !open.isEmpty {
+                DisclosureGroup("Trying Zigs alone? Play the other seats here") {
+                    Text("For a demo or a review only. In real use, each signer takes a seat on their own device.")
+                        .font(.caption).foregroundStyle(Color.mist)
+                    ForEach(open, id: \.self) { i in Button("Play seat \(i)") { model.takeSeat(i) } }
+                }
+                .font(.subheadline)
+            }
+        }
+    }
+}
+
+/// Version 2 wallets: the signers compare one number before the key ceremony starts.
+struct SafetyCard: View {
+    @Environment(GroupModel.self) private var model
+
+    var body: some View {
+        if model.safetyOpen && model.abortedText == nil {
+            let st = model.state
+            Card(highlight: true) {
+                if let no = model.safetyNumber {
+                    let yes = model.confirmedBy(no).count
+                    let clash = numberClash(no, st.confirm, st.seatIds)
+                    HStack {
+                        Text("Check the safety number").font(.title3.weight(.semibold))
+                        Spacer()
+                        Badge(text: "\(yes) of \(st.n) confirmed", kind: yes == st.n ? .ok : .warn)
+                    }
+                    Text(no).font(.system(.title3, design: .monospaced).weight(.medium))
+                        .multilineTextAlignment(.center)
+                        .frame(maxWidth: .infinity).padding(.vertical, 14)
+                        .background(Color.night, in: RoundedRectangle(cornerRadius: 10))
+                        .textSelection(.enabled)
+                    Text("Compare this number with every signer, on a call or in person. If it is different, someone else took a seat. In that case, do not tap \"It matches\". Create a new wallet.")
+                        .font(.subheadline).foregroundStyle(Color.mist)
+                    if !clash.isEmpty {
+                        Text("Seat \(clash.map(String.init).joined(separator: ", ")) confirmed another number. Someone else may have taken a seat. Do not continue. Create a new wallet.")
+                            .font(.subheadline).foregroundStyle(Color.bad)
+                    }
+                    if !model.unconfirmedSeats.isEmpty {
+                        Button("It matches") { model.confirmSafetyNumber(shown: no) }.primaryButton()
+                    }
+                } else {
+                    Text("A seat holds a key that this app cannot read. Do not use this wallet. Create a new wallet.")
+                        .font(.subheadline).foregroundStyle(Color.bad)
                 }
             }
         }
@@ -193,30 +286,48 @@ struct ProgressCard: View {
     @Environment(GroupModel.self) private var model
 
     var body: some View {
-        let st = model.state, n = st.n
-        let r1 = st.dkg1.count, r2 = st.dkg2.count, d = st.done.count, ver = st.verifiedCount
-        let mismatch = st.allDone && !st.keysAgree
-        let keyText = mismatch ? "Signers computed different keys. Create a new wallet."
-            : d == n ? "Each signer holds one piece. The full key never existed."
-            : r1 == n ? "Devices are sharing encrypted parts of the key (\(r2) of \(n * (n - 1)))…"
-            : st.allSeated ? "Each device is preparing its part of the key (\(r1) of \(n))…" : "Starts when every seat is taken."
-        let rejected = st.rejectedSeats
-        let addrText = !rejected.isEmpty ? "Seat \(rejected.map(String.init).joined(separator: ", ")) rejected the address. Do not use this wallet."
-            : st.wallet == nil ? (d == n ? "Building the shared address…" : "Comes after the key.")
-            : "\(ver) of \(n) signers checked the address against their own key share."
-                + (ver < n ? " Send funds only after all \(n) checked." : "")
+        let st = model.state
+        let key = keyStep(st, model.keyBlock), addr = addrStep(st)
         Card {
             Text("Setting up your wallet").font(.headline)
-            Step(state: st.allSeated ? .done : .now, no: 1, title: "Signers join", text: "\(st.seatedCount) of \(n) seats taken.")
-            Step(state: mismatch ? .bad : d == n ? .done : st.allSeated ? .now : .later, no: 2, title: "Create the key together", text: keyText)
-            Step(state: !rejected.isEmpty ? .bad : st.wallet != nil && ver == n ? .done : d == n ? .now : .later, no: 3,
-                 title: "Check the address", text: addrText)
-            if st.wallet == nil || ver < n {
-                Text("Every signer must keep Zigs open until setup finishes. It takes about a minute when all signers are online.")
+            Step(state: st.allSeated ? .done : .now, no: 1, title: "Signers join", text: "\(st.seatedCount) of \(st.n) seats taken.")
+            Step(state: key.state, no: 2, title: "Create the key together", text: key.text)
+            Step(state: addr.state, no: 3, title: "Check the address", text: addr.text)
+            if st.wallet == nil || st.verifiedCount < st.n {
+                Text("Every signer must keep Zigs open until setup finishes.")
                     .font(.caption).foregroundStyle(Color.mist)
             }
         }
     }
+}
+
+private typealias StepInfo = (state: Step.State, text: String)
+
+private func keyStep(_ st: GroupState, _ block: (bad: Bool, text: String)?) -> StepInfo {
+    if st.allDone && !st.keysAgree { return (.bad, "Signers computed different keys. Create a new wallet.") }
+    if let block { return (block.bad ? .bad : .later, block.text) }
+    return (st.done.count == st.n ? .done : st.allSeated ? .now : .later, keyProgress(st))
+}
+
+private func addrStep(_ st: GroupState) -> StepInfo {
+    let n = st.n, ver = st.verifiedCount, rejected = st.rejectedSeats
+    if !rejected.isEmpty {
+        return (.bad, "Seat \(rejected.map(String.init).joined(separator: ", ")) rejected the address. Do not use this wallet.")
+    }
+    if st.wallet == nil {
+        let keyReady = st.done.count == n
+        return (keyReady ? .now : .later, keyReady ? "Building the shared address…" : "Comes after the key.")
+    }
+    let text = "\(ver) of \(n) signers checked the address against their own key share."
+        + (ver < n ? " Send funds only after all \(n) checked." : "")
+    return (ver == n ? .done : st.done.count == n ? .now : .later, text)
+}
+
+private func keyProgress(_ st: GroupState) -> String {
+    let n = st.n
+    if st.done.count == n { return "Each signer holds one piece. The full key never existed." }
+    if st.dkg1.count == n { return "Devices are sharing encrypted parts of the key (\(st.dkg2.count) of \(n * (n - 1)))…" }
+    return st.allSeated ? "Each device is preparing its part of the key (\(st.dkg1.count) of \(n))…" : "Starts when every seat is taken."
 }
 
 struct Step: View {
@@ -646,6 +757,14 @@ struct DetailsTab: View {
                 Detail(label: "Network") { Text("Zcash \(st.net.label.lowercased())" + (st.net.cap.map { " · warning at \(capText($0))" } ?? "")) }
                 Detail(label: "Created at block") { Text((w.int("birthday") ?? 0).formatted()).monospacedDigit() }
                 Detail(label: "Wallet key") { Text(w.str("group_verifying_key") ?? "").font(.caption.monospaced()).textSelection(.enabled) }
+                if st.version == 2 {
+                    Detail(label: "Key setup") {
+                        Text("Built to ZIP 2005 (Proposed) so that funds can be recovered if quantum computers break today's keys.")
+                    }
+                } else {
+                    Text("This wallet was made before quantum recoverability (ZIP 2005). To get it, move the funds to a new wallet with Change signers.")
+                        .font(.caption).foregroundStyle(Color.mist)
+                }
             }
             Card {
                 Text("Privacy and keys").font(.headline)

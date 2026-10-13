@@ -46,7 +46,7 @@ To see signer changes, open **Signers**, then **Change signers**. To see the pri
 |---|---|
 | **Privacy** | On chain, the transaction shape matches the standard wallet library: same builder, padding, fee, expiry and anchor depth ([comparison](PRIVACY.md#on-chain)). The server stores only encrypted values, padded so that even their length hides amounts. On the device, key shares can be locked with a passkey (web) or Face ID (iPhone) ([how](PRIVACY.md#lock-with-a-passkey-or-face-id)). The page can connect only to the group server and three named light-wallet servers (Content-Security-Policy). It is prepared for Tor Browser, but not yet tested end to end ([how](PRIVACY.md#use-zigs-over-tor)). The Zigs server code keeps no logs; its host, Cloudflare, can see connection data. Every remaining leak is listed in [PRIVACY.md](PRIVACY.md). |
 | **Usefulness** | Designed for team treasuries, DAOs and families. Usable today on testnet, and on mainnet with a warning at 0.5 ZEC: web, iPhone and Mac; invite links and QR codes; batch payments for payroll and grants (up to 20 recipients, one approval round, pasted from a spreadsheet); signer changes. |
-| **Execution** | The live app works end to end. Twelve testnet transactions made by the apps are [listed below](#proof-on-testnet). The engine has 24 tests, and a command-line suite runs adversarial cases. |
+| **Execution** | The live app works end to end. Twelve testnet transactions made by the apps are [listed below](#proof-on-testnet). The engine has 35 tests, and a command-line suite runs adversarial cases. |
 | **Originality** | An end-user app for re-randomized FROST: no command line, no trusted dealer, and no server that can read the wallet. Each device decodes the PCZT and checks every output before it approves, and binds its approval to the transaction's sighash. Signer changes, batch payments and native iPhone and Mac apps are included. Built during the Zecathon window: the first commit is from October 10, 2026. |
 
 ## Architecture
@@ -84,8 +84,22 @@ flowchart LR
 ## Creating a wallet
 
 The signers run a FROST distributed key generation over RedPallas. No device and no server ever
-holds the whole spending key. Each signer then checks the published address against their own key
-share before the wallet opens.
+holds the whole spending key. In a new wallet (version 2), no single signer chooses any part of the
+viewing key. The steps:
+
+1. The signers compare a safety number. It covers the wallet id, *t*, *n*, the network and every
+   seat key. Each person confirms it.
+2. Each device commits to a secret part of a shared secret `sk`, together with its FROST round-1
+   package.
+3. Each device computes an echo: one digest of all round-1 documents. A signer who saw other data
+   than the rest is found before anyone uses its data.
+4. Each device sends its secret part to the other seats in an encrypted box, with the echo. This
+   reveals the part.
+5. Each device checks the echo and every commitment. Then it computes the agreed `sk`, its own key
+   share and the group key.
+6. The creator derives the viewing key from `sk` as ZIP 2005 specifies, and publishes the wallet.
+7. Each signer recomputes the full viewing key (`ak`, `nk` and `rivk`) and the address from its own
+   data. It compares all of it with the published wallet before the wallet opens.
 
 ```mermaid
 sequenceDiagram
@@ -94,29 +108,41 @@ sequenceDiagram
   participant S as Group server
   actor B as Signer (seat 2)
   A->>A: Make a wallet id and a 32-byte wallet secret
-  A->>S: Wallet document, sealed with the secret
+  A->>S: Wallet document with version 2, sealed with the secret
   A-->>B: Invite link with the secret, through a private channel
   B->>S: Take seat 2: name and X25519 public key, sealed
-  par Round 1
-    A->>S: Commitment package
-    B->>S: Commitment package
+  A-->>B: Compare the safety number (wallet id, t, n, network, seat keys), on a call or in person
+  par Confirm
+    A->>S: confirm/1 = safety number
+    B->>S: confirm/2 = safety number
   end
-  par Round 2
-    A->>S: Share for seat 2, encrypted to seat 2's key
-    B->>S: Share for seat 1, encrypted to seat 1's key
+  par Round 1 commit
+    A->>S: Commitment package and commitment c1 to the secret part r1
+    B->>S: Commitment package and commitment c2 to the secret part r2
   end
-  A->>A: Round 3: own key share and the group key
-  B->>B: Round 3: own key share and the group key
-  A->>S: Wallet: address and viewing key, with ak = group key
-  B->>B: Check that ak equals my group key and that the address re-derives
+  A->>A: Echo: one digest of all round-1 documents
+  B->>B: Echo: one digest of all round-1 documents
+  par Round 2 reveal
+    A->>S: Box for seat 2 with share and r1, and the echo
+    B->>S: Box for seat 1 with share and r2, and the echo
+  end
+  A->>A: Round 3: check echo and commitments, make the agreed sk, own key share and group key
+  B->>B: Round 3: check echo and commitments, make the agreed sk, own key share and group key
+  A->>S: Wallet: ak is the group key, nk and rivk follow from sk (ZIP 2005), plus the address
+  B->>B: Recompute the full viewing key (ak, nk, rivk) and the address, and compare all of it
   B->>S: Address checked
   Note over S: The server sees only ciphertext of fixed sizes
 ```
 
 **Keys.** An Ironwood full viewing key has three parts: `ak`, `nk` and `rivk`. Zigs sets `ak` (the
 spend validating key) to the FROST group key, so only a threshold of signers can authorize a spend.
-`nk` and `rivk` only allow viewing; all signers get them. A creator who publishes a different `ak`
-is caught by every signer's check.
+`nk` and `rivk` only allow viewing; all signers get them. New wallets are built to ZIP 2005
+(Proposed) so that funds can be recovered if quantum computers break today's keys: the signers agree
+on a secret, and each computes `nk` and `rivk` from it ([how](PROTOCOL.md#4-creating-a-wallet-distributed-key-generation)).
+A creator who publishes a different `ak`, `nk` or `rivk` is caught by every signer's check.
+
+**Older wallets.** A version 1 wallet, made before ZIP 2005 support, keeps the old flow. The
+creator's device picks `nk` and `rivk`, and the wallet has no `qsk`.
 
 ## Making a payment
 
@@ -219,6 +245,7 @@ iPhone.
 | Path | Content |
 |---|---|
 | [`wasm/src/lib.rs`](wasm/src/lib.rs) | Engine: key generation, wallet creation and checks, PCZT inspection, FROST signing, proof, sealing |
+| [`wasm/src/ceremony.rs`](wasm/src/ceremony.rs) | Key ceremony version 2: commitments, echo, agreed secret, safety number, ZIP 2005 key derivation and the wallet check |
 | [`wasm/src/chain.rs`](wasm/src/chain.rs) | Chain sync, balance, note selection, payment building, network rules |
 | [`wasm/src/snapshot.rs`](wasm/src/snapshot.rs) | Saved sync state: notes and the note commitment tree |
 | [`wasm/src/ffi.rs`](wasm/src/ffi.rs) | C interface for the iPhone and Mac apps |
@@ -226,7 +253,7 @@ iPhone.
 | [`web/shim.js`](web/shim.js), [`web/qr.js`](web/qr.js), [`web/payees.js`](web/payees.js), [`web/vault.js`](web/vault.js), [`web/chat.js`](web/chat.js) | Store client, QR encoder, payment list parser, passkey lock and message helpers (no third-party code) |
 | [`cf/src/index.js`](cf/src/index.js) | Group server: Cloudflare Worker with one Durable Object per wallet, limits against abuse |
 | [`ios/Zigs/`](ios/Zigs) | SwiftUI app for iPhone and Mac |
-| [`src/`](src), [`tests/e2e.sh`](tests/e2e.sh) | Command-line version of the ceremony and adversarial tests |
+| [`src/`](src), [`tests/e2e.sh`](tests/e2e.sh) | Command-line version of the ceremony (version 1) and adversarial tests |
 | [`PRIVACY.md`](PRIVACY.md) | Threat model |
 
 ## Run it yourself
@@ -275,16 +302,18 @@ Use the `Zigs` scheme for iPhone and `ZigsMac` for Mac (Apple silicon). The apps
 
 ## Tests
 
-- `cargo test --release` in `wasm/` (24 tests): full 2-of-3 signing flows for Ironwood (paying 4
+- `cargo test --release` in `wasm/` (35 tests): full 2-of-3 signing flows for Ironwood (paying 4
   recipients in one transaction) and Orchard, with a bad share that is attributed to its sender;
   a swapped recipient on any payee output is refused; 3 notes spent for 1 recipient; recipient lists checked row by row; fees
   that count outputs; mainnet and testnet upgrade rules; note
   selection, fees and the largest sendable amount; padded sealing, old values, wrong keys and moved
-  values; the saved sync state; the native wallet interface; key ceremony routing.
+  values; the saved sync state; the native wallet interface; the version 2 key ceremony (hashes against
+  their written formulas, known answers, the safety number, the wallet check).
 - `node cf/test/limits.mjs ws://localhost:8787`: the group server's size, rate and path limits.
 - `node web/test/payees.mjs`: the pasted payment list parser.
 - `node web/test/vault.mjs`: the passkey lock's sealed record (wrong key, changed record, new IV).
-- `node web/test/util.mjs`: address grouping, number checks and the key package comparison.
+- `node web/test/util.mjs`: address grouping, number checks, the key package comparison and the
+  rules that stop a seat's setup.
 - `node web/test/chat.mjs`: message signatures (wallet and direct chat), room, key and member
   pinning, saved chats, text limits and unread counts.
 - `node web/test/qr.mjs`: the QR encoder against libqrencode (needs the `qrencode` command).
@@ -296,6 +325,11 @@ Use the `Zigs` scheme for iPhone and `ZigsMac` for Mac (Apple silicon). The apps
 
 - **Not audited.** At 0.5 ZEC in a mainnet wallet, the app hides the address and warns. It cannot
   stop someone from sending more.
+- **ZIP 2005 is Proposed, and every signer holds `qsk`.** New wallets are built to it so that funds
+  can be recovered if quantum computers break today's keys. A quantum attacker who has `qsk` may
+  steal the funds, so one signer or one stolen backup could take them. The agreement on the secret
+  `sk` is not quantum-resistant either ([limits](PROTOCOL.md#13-guarantees-and-limits)). Wallets
+  made before ZIP 2005 support have no `qsk`.
 - **Chain reorganisations** are not handled in the saved sync state.
 - **One payment at a time.** While a payment waits for its block, the app blocks a second one.
 - **Randomizer source.** Signing uses the `alpha` that the transaction builder puts in the PCZT, as
