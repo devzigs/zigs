@@ -1,4 +1,4 @@
-// The group store client of the page, reached through zigs.use(name), when it runs on Cloudflare.
+// The group store client of the page, reached through zigs.use(name).
 // The server keeps each group in its own store; the page opens one WebSocket per group it uses
 // and reads from a local mirror of those groups.
 (() => {
