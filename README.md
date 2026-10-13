@@ -307,6 +307,9 @@ Use the `Zigs` scheme for iPhone and `ZigsMac` for Mac (Apple silicon). The apps
 from web invite links or `zigs://join#<wallet-id>.<secret>`, and they sit in the same wallets as
 browsers.
 
+`./build-dmg.sh` builds the Mac app and packs it into `dist/`. It stops if the app contains a home
+folder path.
+
 ## Tests
 
 - `cargo test --release` in `wasm/` (52 tests): full 2-of-3 signing flows for Ironwood (paying 4

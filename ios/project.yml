@@ -8,6 +8,8 @@ settings:
   base:
     SWIFT_VERSION: "5.10"
     SWIFT_STRICT_CONCURRENCY: complete
+    # Source paths in the binary (crash messages) must not name the home folder.
+    OTHER_SWIFT_FLAGS: "$(inherited) -file-prefix-map $(HOME)=/build"
 targets:
   Zigs:
     type: application
