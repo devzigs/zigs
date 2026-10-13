@@ -21,6 +21,10 @@ import {
   pinnedMembers,
   signMsg, signPairMatches, signedText, validId, validPk, validRoom, verifyMsg,
 } from "/chat.js";
+import {
+  cardState, payeeBlocker, payeeRows, quoted, readRequest, REQUEST_NET, requestNote, requestPayees,
+  requestProblem, requestUri, WALLET_NET,
+} from "/requests.js";
 // ───────────────────────── Engine (WASM) ─────────────────────────
 let Z = null, engineSettled = false;   // settled: the engine loaded or failed
 const engineDot = document.getElementById("engine-dot");
@@ -459,6 +463,8 @@ function sub(path, fn) {
 function openGroup(gid) {
   for (const u of unsubGroup) u(); unsubGroup = [];
   closeSession();
+  // A form filled from a request belongs to the wallet it was made for.
+  if (ui.sendFor && ui.sendFor !== gid) { ui.send = false; ui.pay = null; ui.note = ""; }
   ui.backup = null;   // the dialog names a seat of the wallet that was open
   dropChain();
   Object.assign(state, {
@@ -2558,12 +2564,14 @@ const ui = {
   forget: false, tab: "overview", send: false, pay: null, payKey: 0, listError: "",
   create: false, receive: false, move: false, net: "testnet", ack: false, notify: false,
   newChat: false, leave: false, backup: null, restore: null,
+  request: null, note: "", sendFor: null,
 };
 try { ui.notify = localStorage.getItem("zf-notify") === "1"; } catch { /* no storage */ }
 const ZEC_FMT = new Intl.NumberFormat("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 8 });
 // ZIP 317 for a payment from up to `outputs` notes: one action per output, change included.
 const feeEstimate = (payees) => 5000 * Math.max(2, payees + 1);
 const MAX_PAYEES = 20;
+const TOO_MANY = "A payment can have at most " + MAX_PAYEES + " recipients.";
 const BLOCK_SECONDS = 25;
 const initials = (name) => String(name || "?").trim().split(/\s+/).map((w) => w[0]).join("")
   .slice(0, 2).toUpperCase() || "?";
@@ -2591,9 +2599,11 @@ function seatLabel(i) {
   return localSeats().length > 1 ? "You (seat " + i + ")" : "You";
 }
 // In a version 3 wallet a name comes with its seat number, because two seats can use one name.
+// A member picks the name, so a name can carry a false seat number: the real one goes after it.
 function named(i) {
   const label = seatLabel(i);
-  return signedMode(state.gid) && !label.includes("(seat") ? label + " (seat " + i + ")" : label;
+  const tag = " (seat " + i + ")";
+  return signedMode(state.gid) && !label.endsWith(tag) ? label + tag : label;
 }
 function avatar(i, cls = "") {
   const s = state.seats[i], mine = s && seatMine(i);
@@ -2670,7 +2680,8 @@ function sendBlocker() {
   if (inFlight().length) return "A payment is waiting for its block. Send again in a minute.";
   const b = balanceNow(c.bal);
   if (b.spendable > feeEstimate(1)) return null;
-  return b.pending ? "Incoming funds need 3 confirmations first." : "This wallet has no funds yet.";
+  if (b.pending) return "Incoming funds need 3 confirmations first.";
+  return b.spendable ? "The balance does not cover the network fee." : "This wallet has no funds yet.";
 }
 
 // Draws once per frame, however many changes arrive together. A hidden tab gets no frames, so a
@@ -2784,11 +2795,14 @@ function draw() {
   if (entered) focusLayer(top[1]); else restoreFocus(shell, snap);
 }
 
-// Rebuilding a focused text box closes a phone's keyboard. While a message box has focus, only the
-// message logs update; the whole page redraws when the box loses focus.
+// Rebuilding a focused text box closes a phone's keyboard. While a message box or a field of the
+// request form has focus, only the message logs update; the whole page redraws when it loses focus.
+// A field of the request form counts only while its form is open: after a send, the form must go.
+const typingIn = (box) => !!box && (box.id.startsWith("chat-text-")
+  || (!!ui.request && /^req-(amt|memo)-/.test(box.id)));
 function typingMessage(app, parts) {
   const box = document.activeElement;
-  if (!box || !box.id.startsWith("chat-text-") || !app.contains(box)) return false;
+  if (!typingIn(box) || !app.contains(box)) return false;
   const logs = saveLogs(app);
   for (const old of app.querySelectorAll(".chat-log")) {
     const fresh = parts.map((p) => p && p.querySelector("#" + old.id)).find(Boolean);
@@ -3308,7 +3322,10 @@ function backupNote(seats) {
 function walletActions(why) {
   return [
     el("button", { class: "btn", type: "button", onclick: () => { ui.receive = true; render(); } }, "Receive"),
-    el("button", { class: "btn primary", type: "button", disabled: !!why, title: why, onclick: () => { ui.send = true; ui.pay = null; render(); } }, "Send"),
+    el("button", {
+      class: "btn primary", type: "button", disabled: !!why, title: why,
+      onclick: () => { ui.send = true; ui.pay = null; ui.note = ""; ui.sendFor = null; render(); },
+    }, "Send"),
     why ? el("p", { class: "send-why" }, why) : null,
   ];
 }
@@ -3634,11 +3651,21 @@ function balanceCard(c) {
 
 // Unaudited code holds real money only up to the network's cap; past it the address is hidden.
 function atCap() {
-  const cap = curNet().cap, c = curChain();
-  if (!cap || !c || !c.bal) return false;
-  const b = balanceNow(c.bal);
-  return b.spendable + b.pending >= cap;
+  const cap = curNet().cap, total = openTotal();
+  return !!cap && total !== undefined && total >= cap;
 }
+
+// The balance of the open wallet, or undefined before its first sync.
+function openTotal() {
+  const c = curChain();
+  if (!c || !c.bal) return undefined;
+  const b = balanceNow(c.bal);
+  return b.spendable + b.pending;
+}
+
+// A request names the address of a wallet, so the app offers it only when it knows that the balance
+// is under the cap of the network. `total` is undefined when the balance is not known.
+const underCap = (g, total) => !netOf(g).cap || total < netOf(g).cap;
 const capNote = () => el("div", { class: "callout bad" },
   "This wallet holds " + capText(curNet().cap) + ", the warning level for unaudited mainnet "
   + "wallets. Do not send more to it. The app cannot block deposits. Payments out still work.");
@@ -3806,11 +3833,18 @@ function memoItem(m) {
     el("div", { class: "msg-body" },
       el("div", { class: "msg-head" }, el("b", {}, "Memo with a payment of " + fmtZec(m.value)),
         el("time", {}, when(m.at)), el("span", { class: "vmark" }, ON_CHAIN)),
-      el("p", { class: "msg-text" + (m.text === null ? " faint" : "") },
-        m.text === null ? "Memo is not text" : m.text),
+      memoBody(m),
       el("a", {
         class: "small", href: curNet().explorer + m.txid, target: "_blank", rel: "noopener",
       }, "View payment ↗")));
+}
+
+// A memo that is a payment request shows as a card. It has no sender and no signature.
+function memoBody(m) {
+  const req = m.text === null ? null : requestOf(m.text, false);
+  if (req) return requestCard(req, { id: m.id, name: "a memo", verdict: "memo", dm: false });
+  return el("p", { class: "msg-text" + (m.text === null ? " faint" : "") },
+    m.text === null ? "Memo is not text" : m.text);
 }
 
 const payEvents = (ss) => [
@@ -3841,19 +3875,22 @@ const newBadge = (n) => n
 const TRUST = {
   yes: ["ok", "✓ Verified"], wait: ["", "Checking…"], no: ["bad", "Not verified"],
   changed: ["bad", "Key changed. Not verified."], unknown: ["bad", "Unknown sender. Not verified."],
+  memo: ["bad", "Not verified"],
 };
 
 function msgItem(m, roomId) {
-  return bubble(m, avatar(m.seat), sender(m.seat), trust(m, roomId));
+  return bubble(m, avatar(m.seat), sender(m.seat), trust(m, roomId), seatMine(m.seat));
 }
 
-function bubble(m, av, name, verdictKey) {
+function bubble(m, av, name, verdictKey, mine) {
   const [cls, label] = TRUST[verdictKey];
+  const req = requestOf(m.text, m.thread === "dm");
   return el("div", { class: "msg" }, av,
     el("div", { class: "msg-body" },
       el("div", { class: "msg-head" }, el("b", {}, name), el("time", {}, when(m.at)),
         el("span", { class: "vmark " + cls }, label)),
-      el("p", { class: "msg-text" }, m.text)));
+      req ? requestCard(req, { id: m.id, name, verdict: verdictKey, dm: m.thread === "dm", mine })
+        : el("p", { class: "msg-text" }, m.text)));
 }
 
 const coarse = () => matchMedia("(pointer: coarse)").matches;
@@ -3868,24 +3905,41 @@ function sendOnEnter(ev) {
 }
 
 // `o`: kind (names the ids, so a draft stays with its own wallet or chat; no ":" in it), why (why
-// it is off), warn, seats (the senders to choose from), to (the label), fine, key (the busy key)
-// and send(text, seat).
+// it is off), warn, seats (the senders to choose from), to (the label), fine, key (the busy key),
+// send(text, seat) and request (roomRequest or chatRequest, or none: it adds the form that sends a
+// payment request).
 function composer(o) {
   const sending = busy.has(o.key);
-  const as = o.seats.length > 1 ? el("label", { class: "composer-as small muted" }, "Send as",
-    el("select", { class: "input", id: "chat-as-" + o.kind, name: "as" },
-      o.seats.map((i) => el("option", { value: String(i) }, "Seat " + i)))) : null;
-  return el("form", { class: "composer", onsubmit: act((ev) => submitMessage(ev.target, o)) },
+  const form = el("form", { class: "composer", onsubmit: act((ev) => submitMessage(ev.target, o)) },
     o.why ? el("p", { class: "hint" + (o.warn ? " bad" : "") }, o.why) : null,
     el("textarea", {
       class: "input", id: "chat-text-" + o.kind, name: "text", rows: "2", disabled: !!o.why,
       onkeydown: sendOnEnter, "aria-label": o.to,
       placeholder: o.to + (coarse() ? "" : ". Enter sends, Shift+Enter adds a line"),
     }),
-    el("div", { class: "composer-row" }, as,
+    el("div", { class: "composer-row" }, seatPicker(o, "chat-as-" + o.kind), requestToggle(o),
       el("button", { class: "btn primary", type: "submit", disabled: !!o.why || sending },
         sending ? "Sending…" : "Send message")),
     el("p", { class: "small faint" }, o.fine));
+  return asking(o) ? el("div", { class: "composer-wrap" }, form, requestForm(o)) : form;
+}
+
+// Whether the request form of a composer is open.
+const asking = (o) => !!o.request && !o.why && ui.request === o.kind;
+
+function requestToggle(o) {
+  if (!o.request) return null;
+  const open = asking(o);
+  return el("button", {
+    class: "btn", type: "button", disabled: !!o.why, "aria-expanded": String(open),
+    onclick: () => { ui.request = open ? null : o.kind; render(); },
+  }, "Request a payment");
+}
+
+function seatPicker(o, id) {
+  return o.seats.length > 1 ? el("label", { class: "composer-as small muted" }, "Send as",
+    el("select", { class: "input", id, name: "as" },
+      o.seats.map((i) => el("option", { value: String(i) }, "Seat " + i)))) : null;
 }
 
 function walletComposer(thread) {
@@ -3895,6 +3949,7 @@ function walletComposer(thread) {
     seats: sendSeats(), to: "Message to the signers", fine: FINE,
     key: "chat:" + rooms[state.gid] + ":" + thread,
     send: (text, seat) => sendMessage(thread, text, seat),
+    request: thread === "wallet" ? roomRequest() : null,
   });
 }
 
@@ -3908,6 +3963,254 @@ async function submitMessage(form, o) {
     // A redraw during the send replaced the form: clear the live box, but not new typing.
     const live = document.getElementById(box.id);
     if (live && live.value === draft) live.value = "";
+  } finally { busy.delete(o.key); }
+}
+
+// ── Payment requests ──
+// A message or a memo whose whole text is a ZIP 321 URI shows as a card (web/requests.js). The
+// engine reads the URI. "Propose this" fills the Send form and sends nothing.
+const parsedRequests = new Map();   // "net\nuri" -> { out } or { err }; bounded
+
+function parseCached(uri, net) {
+  const key = net + "\n" + uri;
+  let hit = parsedRequests.get(key);
+  if (!hit) {
+    if (parsedRequests.size >= 500) parsedRequests.clear();
+    try { hit = { out: Z.parseRequest(uri, net) }; } catch (e) {
+      hit = { err: e.message || String(e) };
+    }
+    parsedRequests.set(key, hit);
+  }
+  if (hit.err !== undefined) throw new Error(hit.err);
+  return hit.out;
+}
+
+// A wallet reads a request for its own network. A chat has no wallet, so it tries both.
+const requestEnv = (dm) => ({
+  nets: dm ? ["test", "main"] : [REQUEST_NET[netName(state.g)]], parse: parseCached,
+  blocker: (to) => payeeBlocker(to, normalized),
+});
+
+// The request in `text`, or null for plain text. Until the engine loads, a request shows as text.
+// The page asks for every message on every draw, so plain text must cost no engine call.
+const requestOf = (text, dm) => Z && requestUri(text) ? readRequest(text, requestEnv(dm)) : null;
+
+// Wallets where this browser holds a key share. A wallet that moved or has no address is left out.
+const seatWallets = () => state.groups.filter((g) => !g.unreadable && !g.movedTo && ready[g.id]
+  && mySeatSecrets(g.id).some(([, s]) => s.keyPackage));
+const proposeWallets = (net) => seatWallets().filter((g) => netName(g) === WALLET_NET[net]);
+
+function requestTotal(req) {
+  if (req.total != null) return money(req.total);
+  const all = req.open === req.payees.length;
+  const words = all ? "The payer chooses the amount" : "The payer chooses some amounts";
+  return el("span", { class: "small muted" }, words);
+}
+
+// The name and the message of a payee are text from the sender. The card cuts them and says that
+// the app did not check them.
+function requestClaims(p) {
+  const rows = [["Name", quoted(p.label)], ["Message", quoted(p.message)]].filter((r) => r[1]);
+  if (!rows.length) return null;
+  return el("div", { class: "req-claims" },
+    el("span", { class: "small faint" }, "From the request, not checked"),
+    rows.map(([label, text]) => memoRow(label, text)));
+}
+
+function requestPayee(p) {
+  return el("div", { class: "payee-item" },
+    el("div", { class: "payee" }, el("span", { class: "hex" }, short(p.to, 12)),
+      el("span", { class: "payee-end" }, p.amount == null
+        ? el("span", { class: "small muted" }, "The payer chooses the amount") : money(p.amount))),
+    requestClaims(p),
+    p.memo ? memoRow("Memo", p.memo) : null);
+}
+
+function requestError(req) {
+  return el("div", { class: "to-box req-card" },
+    el("span", { class: "label" }, "Payment request"),
+    el("div", { class: "callout bad" }, requestProblem(req.error)),
+    el("p", { class: "msg-text small faint" }, memoShown(req.uri)));
+}
+
+const PAYS_OWN = "This request pays each wallet that you could propose it from. "
+  + "A wallet cannot pay itself.";
+
+// The checked addresses that the payees of a request name. A wallet cannot pay itself.
+const paidBy = (req) => new Set(req.payees.map((p) => normalized(p.to)));
+
+// The person picks the wallet to propose from: a wallet of the request's network where this
+// browser holds a key share, and that the request does not pay. Returns { select, why }; `select`
+// is null when there is none.
+function walletPicker(req, id, paid) {
+  const held = proposeWallets(req.net);
+  if (!held.length) {
+    return { select: null, why: "You hold no seat in a " + WALLET_NET[req.net] + " wallet." };
+  }
+  const wallets = held.filter((g) => !paid.has(normalized(moveAddress(g.id))));
+  if (!wallets.length) return { select: null, why: PAYS_OWN };
+  const options = wallets.map((g) => el("option", { value: g.id },
+    g.name + " (" + netOf(g).label + ")"));
+  const select = el("select", {
+    class: "input", id: "req-wallet-" + id, "aria-label": "Propose from wallet",
+  }, options);
+  return { select, why: "" };
+}
+
+// Where "Propose this" proposes from. In a room it is the open wallet, unless the request pays that
+// wallet. In a chat, and for a request that pays the open wallet, the person picks a wallet.
+function proposeSource(req, o) {
+  const paid = paidBy(req);
+  const paysOpen = !o.dm && !!state.wallet && paid.has(normalized(state.wallet.address));
+  if (o.dm || paysOpen) return walletPicker(req, o.id, paid);
+  return { select: null, why: sendBlocker() || "" };
+}
+
+// `o`: id (of the message), name (of the sender), verdict (the sender check, or "memo"), dm, and
+// mine (the message is from this browser).
+function requestCard(req, o) {
+  if (req.error) return requestError(req);
+  const { select, why: where } = proposeSource(req, o);
+  const st = cardState(req, o.verdict, where), [cls, mark] = TRUST[o.verdict];
+  return el("div", { class: "to-box req-card" },
+    el("div", { class: "card-head" },
+      el("span", { class: "req-title" }, el("span", { class: "label" }, "Payment request"),
+        o.dm ? netBadge({ network: WALLET_NET[req.net] }) : null),
+      requestTotal(req)),
+    req.payees.map((p) => guard(requestPayee, p)),
+    el("div", { class: "memo-line" }, el("span", { class: "label" }, "From"),
+      el("span", { class: "memo-text" }, o.name, " · ",
+        el("span", { class: "vmark " + cls }, mark))),
+    st.warning ? el("div", { class: "callout bad" }, st.warning) : null,
+    el("div", { class: "req-actions" }, select,
+      el("button", {
+        class: "btn primary sm", type: "button", disabled: !!st.why,
+        onclick: () => proposeRequest(req, o, select ? select.value : state.gid),
+      }, "Propose this"),
+      copyBtn(req.uri, "Copy request")),
+    st.why ? el("p", { class: "small faint" }, st.why) : null);
+}
+
+// Opens the Send form with the payees of a request. The normal checks and approvals apply. The
+// note names the sender only when the sender is verified (see requestNote).
+function proposeRequest(req, o, gid) {
+  ui.pay = payeeRows(req.payees, () => ++ui.payKey);
+  const room = o.dm || gid === state.gid ? "" : groupName(state.gid);
+  ui.note = requestNote(o.name, o.verdict, { mine: o.mine, room });
+  ui.listError = "";
+  ui.send = true;
+  ui.sendFor = gid;
+  if (gid === state.gid) { closeSession(); render(); return; }
+  ui.tab = "overview";
+  openGroup(gid);
+}
+
+const NO_BALANCE = "Wait for the first sync to finish. The app offers the address of a mainnet "
+  + "wallet only when it knows the balance.";
+
+// What the "Request a payment" form of a composer needs: the wallets that can receive, and why not.
+function roomRequestWhy() {
+  if (!state.wallet) return "The wallet address is not ready yet.";
+  if (state.g.movedTo) {
+    return "This wallet moved to " + groupName(state.g.movedTo)
+      + ". Ask for payments to the new wallet.";
+  }
+  const total = openTotal();
+  if (!underCap(state.g, total)) {
+    return total === undefined ? NO_BALANCE : "This wallet holds " + capText(curNet().cap)
+      + ", the warning level for unaudited mainnet wallets. Do not ask for more.";
+  }
+  return myVerified() ? "" : "Your seat is still checking the wallet address.";
+}
+
+// In a wallet room, the request pays the open wallet. Only the wallet thread offers it.
+const roomRequest = () => ({
+  why: roomRequestWhy,
+  choices: () => roomRequestWhy() ? []
+    : [{ id: state.gid, name: state.g.name, address: state.wallet.address,
+      net: netName(state.g) }],
+  fine: "Signers, and anyone else who has the invite link, can read the request.",
+});
+
+// In a direct chat, the person picks one of their wallets. The address is the one that this
+// browser's own seat checked, never the store's copy.
+const chatRequest = () => ({
+  why: () => dmChoices().length ? "" : "You hold no seat in a wallet that can receive a request. "
+    + "A wallet needs a checked address and, on mainnet, a known balance under the cap.",
+  choices: dmChoices,
+  fine: "Your contact, and anyone else who has the contact link, can read the address, the "
+    + "amount and the memo of this request.",
+});
+
+function dmChoices() {
+  return seatWallets().flatMap((g) => {
+    const address = moveAddress(g.id);
+    const ok = address && underCap(g, balOf(g.id)?.total);
+    return ok ? [{ id: g.id, name: g.name, address, net: netName(g) }] : [];
+  });
+}
+
+// The wallet that the request pays: a choice in a chat, the open wallet in a room. The form holds
+// the id of the wallet, never a position in the list, because the list can change while the person
+// types. A single wallet has a hidden field, so submitRequest checks it in the same way.
+function requestTarget(choices, kind, field) {
+  const label = (c) => c.name + " (" + NETWORKS[c.net].label + ")";
+  if (choices.length > 1) {
+    const options = choices.map((c) => el("option", { value: c.id }, label(c)));
+    const select = el("select", { class: "input", id: "req-to-" + kind, name: "to" }, options);
+    return field("Pay to", select, "");
+  }
+  if (!choices.length) return el("p", { class: "small muted" });
+  return [el("p", { class: "small muted" }, "Pays to " + label(choices[0])),
+    el("input", { type: "hidden", name: "to", value: choices[0].id })];
+}
+
+function requestForm(o) {
+  const choices = o.request.choices(), why = o.request.why(), sending = busy.has(o.key);
+  const field = (label, input, hint) => el("label", { class: "field" }, el("span", {}, label),
+    input, el("span", { class: "hint" }, hint));
+  const text = (id, extra) => el("input", {
+    class: "input", id: id + o.kind, type: "text", autocomplete: "off", ...extra,
+  });
+  const to = requestTarget(choices, o.kind, field);
+  return el("form", {
+    class: "composer req-form", onsubmit: act((ev) => submitRequest(ev.target, o)),
+  },
+  el("h3", {}, "Request a payment"), why ? el("p", { class: "hint bad" }, why) : null, to,
+  field("Amount in ZEC (optional)", text("req-amt-", {
+    name: "amt", inputmode: "decimal", placeholder: "The payer chooses the amount",
+    "aria-label": "Amount",
+  }), "Leave it empty to let the payer choose the amount."),
+  field("Memo (optional)", text("req-memo-", { name: "memo", "aria-label": "Memo" }),
+    "The payer can send this memo with the payment."),
+  el("div", { class: "composer-row" }, seatPicker(o, "req-as-" + o.kind),
+    el("button", { class: "btn", type: "button", onclick: () => { ui.request = null; render(); } },
+      "Cancel"),
+    el("button", {
+      class: "btn primary", type: "submit", disabled: !Z || !!why || !choices.length || sending,
+    }, sending ? "Sending…" : "Send request")),
+  el("p", { class: "small faint" }, o.request.fine));
+}
+
+// The wallet that the person chose, found by its id in the list as it is now.
+function chosenWallet(form, o) {
+  const id = form.elements.to ? form.elements.to.value : "";
+  const choice = o.request.choices().find((c) => c.id === id);
+  if (!choice) throw new Error(o.request.why() || "Choose a wallet again.");
+  return choice;
+}
+
+async function submitRequest(form, o) {
+  if (busy.has(o.key)) return;
+  const choice = chosenWallet(form, o);
+  const made = requestPayees(choice.address, form.elements.amt.value, form.elements.memo.value);
+  if (made.error) throw new Error(made.error);
+  const r = checkText(Z.makeRequest(S(made.payees), REQUEST_NET[choice.net]));
+  if (r.error) throw new Error(r.error);
+  busy.add(o.key); render();
+  try {
+    await o.send(r.text, form.elements.as ? Number(form.elements.as.value) : o.seats[0]);
+    ui.request = null;
   } finally { busy.delete(o.key); }
 }
 
@@ -3947,6 +4250,7 @@ function chatCard(cid) {
     composer({
       kind, why: signing === false ? NO_SIGNING : null, seats: [], key: "chat:" + cid + ":dm",
       to: "Message to your contact", fine: DM_FINE, send: (text) => sendDm(cid, text),
+      request: chatRequest(),
     }),
     el("p", { class: "small faint" }, "This chat lives in this browser. Private windows and Tor "
       + "Browser forget it when they close."),
@@ -3969,7 +4273,7 @@ function dmItem(m, cid) {
   const mine = m.from === chats.list[cid].member, contact = m.from === contactOf(cid);
   const name = mine ? "You" : contact ? contactName(cid) : "Unknown sender";
   const av = el("span", { class: "av round" + (mine ? " me" : ""), title: name }, initials(name));
-  return bubble(m, av, name, dmTrust(cid, m));
+  return bubble(m, av, name, dmTrust(cid, m), mine);
 }
 
 // The confirm moves focus to Cancel, so a repeated Enter cannot leave the chat.
@@ -4194,7 +4498,15 @@ function payRow(r, i, rows, sumUp) {
   const max = () => { r.amt = zatText(Math.max(0, c && c.bal ? c.bal.max_send : 0)); amt.value = r.amt; sumUp(); };
   addressHint(hint, r.to);
   return el("div", { class: "pay-row" },
-    el("input", { class: "input mono", id: "s-to-" + r.k, type: "text", placeholder: curNet().prefix + "…", required: true, autocomplete: "off", spellcheck: "false", "aria-label": "Recipient address" + n, value: r.to, oninput: (ev) => { r.to = ev.target.value; addressHint(hint, r.to); } }),
+    el("input", {
+      class: "input mono", id: "s-to-" + r.k, type: "text", placeholder: curNet().prefix + "…",
+      required: true, autocomplete: "off", spellcheck: "false",
+      "aria-label": "Recipient address" + n, value: r.to,
+      oninput: (ev) => {
+        r.to = ev.target.value;
+        fillFromRequest(r, rows, hint) || addressHint(hint, r.to);
+      },
+    }),
     el("div", { class: "input-wrap" }, amt, rows.length === 1 ? el("button", { class: "btn sm", type: "button", onclick: max }, "Max") : null),
     rows.length > 1 ? el("button", { class: "icon-btn", type: "button", "aria-label": "Remove recipient" + n, onclick: () => { rows.splice(i, 1); render(); } }, "×") : null,
     hint, memoBox(r, n));
@@ -4221,13 +4533,41 @@ function memoBox(r, n) {
     hint);
 }
 
+// A whole request pasted in a recipient field replaces that row with the rows of its payees. It
+// returns true when the field holds a request. The rows get new keys, so the redraw does not read
+// the pasted text again.
+function fillFromRequest(r, rows, hint) {
+  const req = requestOf(r.to, false);
+  if (!req) return false;
+  const fresh = req.payees ? payeeRows(req.payees, () => ++ui.payKey) : [];
+  const tooMany = rows.length - 1 + fresh.length > MAX_PAYEES;
+  const error = req.error ? requestProblem(req.error) : tooMany ? TOO_MANY : "";
+  if (error) { hint.textContent = error; hint.className = "hint bad"; return true; }
+  rows.splice(rows.indexOf(r), 1, ...fresh);
+  render();
+  return true;
+}
+
+// The rows and the errors of the "Paste a list" box: a whole request, or lines of address, amount
+// and memo.
+function pastedList(text) {
+  const req = requestOf(text, false);
+  if (!req) return parsePayeeList(text);
+  if (req.error) return { rows: [], errors: [requestProblem(req.error)] };
+  return { rows: req.payees, errors: [] };
+}
+
+function listProblem(rows, errors) {
+  if (errors[0]) return errors[0];
+  if (!rows.length) return "Paste at least one line.";
+  return rows.length > MAX_PAYEES ? TOO_MANY : "";
+}
+
 function useList() {
-  const box = document.getElementById("s-list"), { rows, errors } = parsePayeeList(box.value);
-  ui.listError = errors[0] || (!rows.length ? "Paste at least one line." : rows.length > MAX_PAYEES ? "A payment can have at most " + MAX_PAYEES + " recipients." : "");
+  const box = document.getElementById("s-list"), { rows, errors } = pastedList(box.value);
+  ui.listError = listProblem(rows, errors);
   if (!ui.listError) {
-    ui.pay = rows.map((p) => ({
-      k: ++ui.payKey, to: p.to, amt: zatText(p.amount), memo: p.memo || "",
-    }));
+    ui.pay = payeeRows(rows, () => ++ui.payKey);
     box.value = ""; box.closest("details").open = false;
   }
   render();
@@ -4255,7 +4595,8 @@ function pasteList(net) {
       placeholder: net.prefix + "…, 0.5, October rent\n" + net.prefix + "…, 1.25",
     }),
     el("span", { class: "hint" },
-      "One address and amount per line, then an optional memo. A spreadsheet copy works."),
+      "One address and amount per line, then an optional memo. A spreadsheet copy works. "
+      + "A payment request (zcash:) works too."),
     ui.listError ? el("span", { class: "hint bad" }, ui.listError) : null,
     el("button", { class: "btn sm", type: "button", onclick: useList }, "Use this list"));
 }
@@ -4270,7 +4611,9 @@ function sendDialog() {
     fee.replaceChildren(money(f));
     total.replaceChildren(money(rows.reduce((n, r) => n + (toZat(r.amt) || 0), 0) + f));
   };
+  const why = sendBlocker();
   const f = el("form", { class: "dialog", role: "dialog", "aria-modal": "true", "aria-labelledby": "send-title", onsubmit: act(async (ev) => {
+    if (why) throw new Error(why);
     const payees = readPayees(rows);
     const need = payees.reduce((n, p) => n + p.amount, 0) + feeEstimate(payees.length);
     if (need > spendable) throw new Error("Not enough funds: " + fmtZec(spendable) + " available, " + fmtZec(need) + " needed (amounts + fee).");
@@ -4287,7 +4630,11 @@ function sendDialog() {
         }, "Add recipient"),
         pasteList(net))),
     el("label", { class: "field" }, el("span", {}, "Note for signers (optional)"),
-      el("input", { class: "input", id: "s-note", name: "note", type: "text", maxlength: "80", placeholder: rows.length > 1 ? "October payroll" : "Pay the audit firm", autocomplete: "off" }),
+      el("input", {
+        class: "input", id: "s-note", name: "note", type: "text", maxlength: "80",
+        placeholder: rows.length > 1 ? "October payroll" : "Pay the audit firm",
+        autocomplete: "off", value: ui.note, oninput: (ev) => { ui.note = ev.target.value; },
+      }),
       el("span", { class: "hint" }, "Encrypted. Only signers of this wallet can read it.")),
     el("p", { class: "small faint" }, "A memo goes on chain with the payment. Its recipient and "
       + "every signer of this wallet can read it."),
@@ -4298,7 +4645,10 @@ function sendDialog() {
       el("div", {}, el("span", { class: "muted" }, "Approvals needed"), el("span", {}, state.g.t + " of " + state.g.n))),
     el("div", { class: "dialog-actions" },
       el("button", { class: "btn", type: "button", onclick: () => { ui.send = false; render(); } }, "Cancel"),
-      el("button", { class: "btn primary", type: "submit", disabled: !(myVerified() && Z && bal) }, "Propose payment")));
+      el("button", {
+        class: "btn primary", type: "submit", disabled: !Z || !!why,
+      }, "Propose payment")),
+    why ? el("p", { class: "small faint" }, why) : null);
   sumUp();
   return f;
 }

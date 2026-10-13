@@ -21,6 +21,7 @@ const stub = () => new Proxy(function () {}, {
 const storage = new Map();
 Object.assign(globalThis, {
   Node: class {}, document: stub(), history: { replaceState() {} }, requestAnimationFrame: () => 0,
+  matchMedia: () => ({ matches: false }),
   location: { hash: "", href: "http://localhost/", origin: "http://localhost" },
   localStorage: {
     getItem: (k) => (storage.has(k) ? storage.get(k) : null),
@@ -42,6 +43,10 @@ export const T = {
   localSeats, seatIds, openGroup, createGroup, takeSeat, newSpend, cancelPayment, failSession,
   finalizeTx, broadcastTx, sec, proposalFields, openDoc, recipientCheck,
   runMemos, runSync, setMemoReading, readsMemos,
+  ui, ready, requestOf, proposeRequest, proposeWallets, dmChoices, fillFromRequest, requestCard,
+  composer, roomRequest, chatRequest, memoBody, sendDialog, submitRequest, typingMessage,
+  balCache, busy, groupName, sendBlocker,
+  get banner() { return banner; },
 };
 `;
 const dir = fs.mkdtempSync(path.join(os.tmpdir(), "zigs-app-"));
@@ -139,6 +144,10 @@ const sealed = (gid, rel, seat, fields, key, names = ["by", "sig"]) =>
   assert.deepEqual([ss.final, ss.broadcastTxid], [undefined, undefined]);
   assert.deepEqual(t.state.commits, {}, "no approval of seat 1");
   assert.equal(t.proposer(ss), "S1 (seat 1)", "a name comes with its seat number");
+  const name1 = t.state.seats[1].name;
+  t.state.seats[1].name = "Ana (seat 2)";
+  assert.equal(t.named(1), "Ana (seat 2) (seat 1)", "a false seat number gets the real one");
+  t.state.seats[1].name = name1;
 
   // Memo: the same length with the old signature is a new check.
   const real = await sealed(A, "confirm/2", 2, { number: "1111" }, keys[2]);
@@ -366,6 +375,425 @@ const sealed = (gid, rel, seat, fields, key, names = ["by", "sig"]) =>
     assert.equal(check(memo, line).match, false, what);
   }
   assert.equal(check("rent", out("text", "Rent")).rows[0].got, "Rent");
+
+  // "Propose this" fills the Send form and writes nothing. A form made for one wallet is dropped
+  // when another wallet opens.
+  const other = "utest1m6h0x5p0ryej3e4raszk99rz3k3gxzj35j7ypw3mm98uxmxt3x7mnmu22cprpl7rls4cc5k"
+    + "xzvhqxju6pp4rxsw6ajnkm0d4egf4yrjx";
+  const memo = Buffer.from("October rent").toString("base64url");
+  const mainAddr = "u1ljgj2vz0uzz5ku88wq07pqwepyyaw6azem5rnl56xu0wfjkxpkd84e40y36wy6da7f"
+    + "vcd845jwl09pg9uwc5zlx0cead3xsz7vuqm5z2";
+  const mixed = t.requestOf(`zcash:${other}?amount=1.5&memo=${memo}&address.1=${addr}`, false);
+  assert.deepEqual([mixed.payees.length, mixed.total, mixed.open], [2, null, 1]);
+  assert.equal(mixed.blocker, "", "a request that pays the open wallet is checked by the card");
+  assert.equal(t.requestOf("pay zcash:x later", false), null);
+  // Plain text costs no engine call: the page asks for every message on every draw.
+  let normalizeCalls = 0;
+  const counting = (a) => { normalizeCalls++; return Z.normalizeAddress(a); };
+  t.setZ({ ...fakeZ, normalizeAddress: counting });
+  for (const text of ["hello", "pay zcash:x later", "", "x".repeat(2000)]) t.requestOf(text, false);
+  assert.equal(normalizeCalls, 0, "plain text makes no engine call");
+  t.requestOf(`zcash:${other}?amount=1`, false);
+  assert.ok(normalizeCalls > 0, "a request does");
+  t.setZ(fakeZ);
+  const one = t.requestOf(`zcash:${other}?amount=1.5&memo=${memo}`, false);
+  assert.equal(one.blocker, "");
+  const saved = JSON.stringify([...data]);
+  t.ui.send = false; t.ui.pay = null; t.ui.note = "";
+  t.proposeRequest(one, { name: "Alice (seat 2)", verdict: "yes" }, gid);
+  assert.deepEqual([t.ui.send, t.ui.sendFor, t.ui.note],
+    [true, gid, "Request from Alice (seat 2)"]);
+  // The note goes to every approver. A message of a sender that is not verified can carry any
+  // name, so the name stays out of the note.
+  for (const verdict of ["no", "changed", "unknown", "wait"]) {
+    t.proposeRequest(one, { name: "Alice (seat 2)", verdict }, gid);
+    assert.equal(t.ui.note, "Request from an unverified sender", verdict);
+  }
+  t.proposeRequest(one, { name: "a memo", verdict: "memo" }, gid);
+  assert.equal(t.ui.note, "Request from a memo");
+  t.proposeRequest(one, { name: "Alice (seat 2)", verdict: "yes" }, gid);
+  assert.deepEqual(t.ui.pay.map(({ to, amt, memo: m }) => ({ to, amt, m })),
+    [{ to: other, amt: "1.5", m: "October rent" }]);
+  assert.equal(JSON.stringify([...data]), saved, "Propose this writes nothing to the store");
+  t.proposeRequest(one, { name: "You (seat 1)", verdict: "yes", mine: true }, gid);
+  assert.equal(t.ui.note, "Request from the proposer", "an approver is not \"You\"");
+  const roomName = t.groupName(gid);
+  t.proposeRequest(one, { name: "Bob (seat 2)", verdict: "yes" }, B);
+  await waitFor("wallet B", () => t.state.gid === B);
+  assert.deepEqual([t.ui.send, t.ui.note, t.ui.pay.length],
+    [true, "Request from Bob (seat 2) in " + roomName, 1],
+    "the form stays for the wallet that it was made for, and the note names the room");
+  t.openGroup(gid);
+  assert.deepEqual([t.ui.send, t.ui.note, t.ui.pay], [false, "", null], "another wallet drops it");
+  await waitFor("wallet A again", () => t.state.sessions.length > 0 && !t.state.pending);
+
+  // A chat offers the wallets where this browser holds a key share, and the address that its own
+  // seat checked, whatever the store says now.
+  t.state.groups = [t.state.g];
+  t.ready[gid] = { address: "utest1fromthestore" };
+  assert.deepEqual(t.proposeWallets("test").map((w) => w.id), [gid]);
+  assert.deepEqual(t.proposeWallets("main"), [], "the network of the wallet must match");
+  assert.deepEqual(t.dmChoices(), [{ id: gid, name: "Team", address: addr, net: "testnet" }]);
+  t.state.groups = [{ ...t.state.g, movedTo: B }];
+  assert.deepEqual([t.proposeWallets("test"), t.dmChoices()], [[], []],
+    "a moved wallet is left out");
+  t.ready[gid] = false;
+  t.state.groups = [t.state.g];
+  assert.deepEqual(t.proposeWallets("test"), [], "a wallet that is still setting up is left out");
+
+  // A request pasted in a recipient field replaces that row. The new rows have new keys.
+  const hint = { textContent: "", className: "" };
+  const two = `zcash:${other}?amount=2&address.1=${other}`;
+  let rows = [{ k: 1, to: two, amt: "", memo: "" }, { k: 2, to: "", amt: "", memo: "" }];
+  t.ui.payKey = 10;
+  assert.equal(t.fillFromRequest(rows[0], rows, hint), true);
+  assert.deepEqual(rows.map((r) => [r.k, r.to === other, r.amt]),
+    [[11, true, "2"], [12, true, ""], [2, false, ""]]);
+  assert.equal(hint.textContent, "", "no error");
+  rows = [{ k: 1, to: other, amt: "", memo: "" }];
+  assert.equal(t.fillFromRequest(rows[0], rows, hint), false, "an address is not a request");
+  rows = [{ k: 1, to: "zcash:garbage", amt: "", memo: "" }];
+  assert.equal(t.fillFromRequest(rows[0], rows, hint), true);
+  assert.equal(hint.textContent,
+    "This request cannot be used. This is not a valid ZIP 321 request.");
+  assert.deepEqual([hint.className, rows.length, rows[0].to], ["hint bad", 1, "zcash:garbage"]);
+  rows = Array.from({ length: 20 }, (_, k) => ({ k: k + 1, to: k ? "" : two, amt: "", memo: "" }));
+  assert.equal(t.fillFromRequest(rows[0], rows, hint), true);
+  assert.equal(hint.textContent, "A payment can have at most 20 recipients.");
+  assert.equal(rows.length, 20, "the rows stay as they were");
+
+  // The cards and the forms draw in every state. The page is a stub, so this finds only errors.
+  const okReq = t.requestOf(`zcash:${other}?amount=1`, false);
+  const badReq = t.requestOf("zcash:garbage", false);
+  for (const verdict of ["yes", "wait", "no", "changed", "unknown", "memo"]) {
+    for (const dm of [false, true]) {
+      for (const req of [okReq, mixed, badReq]) {
+        t.requestCard(req, { id: "m1", name: "Alice", verdict, dm });
+      }
+    }
+  }
+  t.state.groups = [t.state.g];
+  t.ready[gid] = { address: addr };
+  t.requestCard(t.requestOf(`zcash:${other}`, true),
+    { id: "m2", name: "Bob", verdict: "yes", dm: true });
+  t.memoBody({ id: "x:0", text: `zcash:${other}?amount=1` });
+  t.memoBody({ id: "x:1", text: null });
+  t.memoBody({ id: "x:2", text: "thanks" });
+  const room = { kind: "wallet-x", why: "", seats: [1, 2], to: "Message", fine: "", key: "k",
+    send() {} };
+  for (const request of [null, t.roomRequest(), t.chatRequest()]) {
+    for (const open of [null, "wallet-x"]) {
+      t.ui.request = open;
+      t.composer({ ...room, request });
+      t.composer({ ...room, request, why: "Not now." });
+    }
+  }
+  t.ui.request = null;
+  t.ui.pay = null;
+  t.sendDialog();
+
+  // What the cards and the forms say, with a recorder in place of the page.
+  const realDocument = globalThis.document;
+  class Rec extends Node {
+    constructor(tag) {
+      super();
+      Object.assign(this, { tag, attrs: {}, kids: [], on: {}, style: {} });
+    }
+    setAttribute(k, v) { this.attrs[k] = String(v); }
+    addEventListener(type, fn) { this.on[type] = fn; }
+    replaceChildren(...x) { this.kids = x; }
+    append(...x) {
+      this.kids.push(...x);
+      if (this.tag === "select" && this.value === undefined) this.value = x[0]?.attrs?.value;
+    }
+  }
+  const textOf = (n) => n.text ?? n.kids.map(textOf).join("");
+  const all = (n, pred, out = []) => {
+    if (n.kids) { if (pred(n)) out.push(n); n.kids.forEach((k) => all(k, pred, out)); }
+    return out;
+  };
+  const named = (n, tag, label) => all(n, (x) => x.tag === tag && textOf(x) === label)[0];
+  const callouts = (n) => all(n, (x) => x.className === "callout bad").map(textOf);
+  globalThis.document = {
+    createElement: (tag) => new Rec(tag), createTextNode: (text) => ({ text }),
+  };
+  try {
+    const setBal = (spendable) => t.setChain({ gid, bal: { spendable, pending: 0 }, received: [],
+      sent: new Set(["T1"]), cw: null });
+    setBal(0);
+    assert.equal(t.sendBlocker(), "This wallet has no funds yet.");
+    setBal(10000);
+    assert.equal(t.sendBlocker(), "The balance does not cover the network fee.");
+    setBal(1e8);
+    const card = (req, verdict, dm = false, name = "Alice") =>
+      t.requestCard(req, { id: "m1", name, verdict, dm });
+    let c = card(okReq, "yes", false, "Alice (seat 2)");
+    assert.match(textOf(c), /^Payment request1\.00ZEC/);
+    assert.match(textOf(c), /FromAlice \(seat 2\) · ✓ Verified/);
+    assert.deepEqual(callouts(c), [], "a verified sender gets no warning");
+    assert.equal(named(c, "button", "Propose this").attrs.disabled, undefined);
+    named(c, "button", "Propose this").on.click();
+    assert.deepEqual([t.ui.send, t.ui.note, t.ui.pay[0].amt],
+      [true, "Request from Alice (seat 2)", "1"]);
+    for (const verdict of ["no", "changed", "unknown"]) {
+      c = card(okReq, verdict);
+      assert.match(callouts(c)[0], /Check this request with the sender before you pay\./, verdict);
+      assert.equal(named(c, "button", "Propose this").attrs.disabled, undefined,
+        "the person decides");
+      named(c, "button", "Propose this").on.click();
+      assert.equal(t.ui.note, "Request from an unverified sender",
+        "the name of a sender that is not verified stays out of the note: " + verdict);
+    }
+    c = card(okReq, "memo", false, "a memo");
+    named(c, "button", "Propose this").on.click();
+    assert.equal(t.ui.note, "Request from a memo");
+    c = card(okReq, "wait");
+    assert.deepEqual(callouts(c), []);
+    assert.equal(named(c, "button", "Propose this").attrs.disabled, "");
+    assert.match(textOf(c), /Wait until the app has checked the sender\./);
+    c = card(okReq, "memo", false, "a memo");
+    assert.match(textOf(c), /Froma memo · Not verified/);
+    assert.match(callouts(c)[0], /A memo has no sender/);
+    c = card(mixed, "yes");
+    assert.match(textOf(c), /The payer chooses some amounts/);
+    assert.match(textOf(c), /MemoOctober rent/);
+    c = card(t.requestOf(`zcash:${other}`, false), "yes");
+    assert.match(textOf(c), /The payer chooses the amount.*The payer chooses the amount/);
+    // The name and the message are text from the sender. The card cuts them and says so.
+    const claim = (label, message) => t.requestOf(`zcash:${other}?amount=1&label=`
+      + `${encodeURIComponent(label)}&message=${encodeURIComponent(message)}`, false);
+    c = card(claim("Verified by your signers " + "x".repeat(300), "a\nb\nc\nd\ne"), "yes");
+    assert.match(textOf(c), /From the request, not checked/);
+    assert.match(textOf(c), /NameVerified by your signers x+…/);
+    assert.equal(textOf(c).includes("x".repeat(150)), false, "the name is cut");
+    assert.match(textOf(c), /Messagea\nb\nc…/, "the message has at most 3 lines");
+    assert.equal(textOf(card(t.requestOf(`zcash:${other}?amount=1`, false), "yes"))
+      .includes("not checked"), false, "no claim, no note");
+    c = card(badReq, "yes");
+    assert.match(textOf(c), /This request cannot be used\. This is not a valid ZIP 321 request\./);
+    assert.equal(named(c, "button", "Propose this"), undefined,
+      "an unusable request has no button");
+    // The warning of a refused request in a wallet that reads the other network.
+    c = card(t.requestOf(`zcash:${mainAddr}`, false), "yes");
+    assert.match(textOf(c), /Payee 1: the address is not a testnet address\./);
+
+    // In a chat the person picks the wallet.
+    const chatReq = t.requestOf(`zcash:${other}?amount=1`, true);
+    c = card(chatReq, "yes", true);
+    assert.equal(all(c, (x) => x.tag === "option").map(textOf).join(), "Team (Testnet)");
+    assert.match(textOf(c), /Payment requestTestnet/, "a chat card names the network");
+    t.ui.send = false;
+    named(c, "button", "Propose this").on.click();
+    assert.deepEqual([t.ui.send, t.ui.sendFor], [true, gid]);
+    t.state.groups = [];
+    c = card(chatReq, "yes", true);
+    assert.match(textOf(c), /You hold no seat in a testnet wallet\./);
+    assert.equal(named(c, "button", "Propose this").attrs.disabled, "");
+    c = card(t.requestOf(`zcash:${mainAddr}`, true), "yes", true);
+    assert.match(textOf(c), /You hold no seat in a mainnet wallet\./);
+    assert.match(textOf(c), /Payment requestMainnet/, "a chat card names the network");
+
+    // The Send form starts with the note of the request.
+    t.ui.note = "Request from Alice";
+    t.ui.pay = null;
+    const dialog = t.sendDialog();
+    assert.equal(all(dialog, (x) => x.attrs.id === "s-note")[0].attrs.value, "Request from Alice");
+
+    // The request form: the open wallet in a room, a choice in a chat.
+    t.state.groups = [t.state.g];
+    const composer = (request, why = "") => {
+      t.ui.request = "wallet-x";
+      return t.composer({ ...room, request, why });
+    };
+    let form = composer(t.roomRequest());
+    assert.ok(named(form, "button", "Request a payment"), "the toggle");
+    assert.match(textOf(form), /Pays to Team/);
+    assert.equal(named(form, "button", "Send request").attrs.disabled, undefined);
+    assert.match(textOf(form), /Leave it empty to let the payer choose the amount\./);
+    form = composer(t.roomRequest(), "Not now.");
+    assert.equal(named(form, "button", "Request a payment").attrs.disabled, "");
+    assert.equal(named(form, "button", "Send request"), undefined, "off while the composer is off");
+    form = composer(t.chatRequest());
+    assert.match(textOf(form), /Pays to Team/);
+    assert.match(textOf(form), /anyone else who has the contact link, can read the address/);
+    t.state.groups = [];
+    form = composer(t.chatRequest());
+    assert.match(textOf(form), /You hold no seat in a wallet that can receive a request/);
+    assert.equal(named(form, "button", "Send request").attrs.disabled, "");
+
+    // Wallets for the next checks: Team (open), Savings and Treasury (mainnet).
+    const recorder = globalThis.document;
+    const third = "utest1fm3azgphez3dtyp4yf22ake0pdv8v64sredvc68gqt6n952fd9annl7c80hpl3sl0j0dxad"
+      + "q7ppte0wxdvxz7phuaw4n68yxqqd4q00q";
+    const W2 = "cccccccccccccccccccc", M = "dddddddddddddddddddd";
+    const extra = (id, name, network, address) => {
+      t.secrets[`${id}:1`] = { keyPackage: "kp", checkedWallet: JSON.stringify({ address }) };
+      t.ready[id] = { address };
+      return { ...t.state.g, id, name, network };
+    };
+    const team = t.state.g, savings = extra(W2, "Savings", "testnet", third);
+    const treasury = extra(M, "Treasury", "mainnet", mainAddr);
+    const ids = () => t.dmChoices().map((x) => x.id);
+    const optionsOf = (n) => all(n, (x) => x.tag === "option").map(textOf);
+    t.state.groups = [team, savings, treasury];
+
+    // A mainnet wallet is offered only when its balance is known and under the cap.
+    delete t.balCache[M];
+    assert.deepEqual(ids(), [gid, W2], "an unknown balance on mainnet: no address");
+    t.balCache[M] = null;
+    assert.deepEqual(ids(), [gid, W2], "an unreadable balance counts as unknown");
+    t.balCache[M] = { total: 50000000, at: 0 };
+    assert.deepEqual(ids(), [gid, W2], "at the cap");
+    t.balCache[M] = { total: 49999999, at: 0 };
+    assert.deepEqual(ids(), [gid, W2, M], "under the cap");
+
+    // The open wallet, in a room, follows the same rule, also before its first sync.
+    const live = t.state.g, chainOf = (bal) => ({ gid, bal, received: [], sent: new Set(["T1"]),
+      cw: null });
+    assert.deepEqual(t.roomRequest().choices(),
+      [{ id: gid, name: "Team", address: addr, net: "testnet" }],
+      "the address that the wallet has");
+    t.setChain(chainOf(null));
+    assert.equal(t.roomRequest().why(), "", "a testnet wallet has no cap");
+    t.state.g = { ...live, network: "mainnet" };
+    assert.match(t.roomRequest().why(), /Wait for the first sync to finish\./);
+    assert.deepEqual(t.roomRequest().choices(), []);
+    t.setChain(chainOf({ spendable: 5e7, pending: 0 }));
+    assert.match(t.roomRequest().why(), /This wallet holds 0\.5 ZEC/);
+    t.setChain(chainOf({ spendable: 1e7, pending: 0 }));
+    assert.equal(t.roomRequest().why(), "");
+    t.state.g = live;
+    t.setChain(chainOf({ spendable: 1e8, pending: 0 }));
+
+    // A request that pays a wallet is not offered from that wallet, in a chat or in a room.
+    const picks = (uri, dm) => card(t.requestOf(uri, dm), "yes", dm);
+    let c2 = picks(`zcash:${addr}?amount=1`, true);
+    assert.deepEqual(optionsOf(c2), ["Savings (Testnet)"], "Team is paid by this request");
+    c2 = picks(`zcash:${other}?amount=1`, true);
+    assert.deepEqual(optionsOf(c2), ["Team (Testnet)", "Savings (Testnet)"]);
+    assert.equal(named(c2, "button", "Propose this").attrs.disabled, undefined);
+    const both = `zcash:?address=${addr}&amount=1&address.1=${third}&amount.1=1`;
+    for (const groups of [[team, savings, treasury], [team]]) {
+      t.state.groups = groups;
+      for (const uri of [both, `zcash:${addr}?amount=1`]) {
+        if (groups.length === 3 && uri !== both) continue;
+        c2 = picks(uri, true);
+        assert.deepEqual(optionsOf(c2), [], "no wallet is left");
+        assert.equal(named(c2, "button", "Propose this").attrs.disabled, "");
+        assert.match(textOf(c2), /A wallet cannot pay itself\./);
+      }
+    }
+    t.state.groups = [team, savings, treasury];
+    // In a room, the open wallet proposes, unless the request pays it.
+    c2 = picks(`zcash:${other}?amount=1`, false);
+    assert.deepEqual(optionsOf(c2), [], "no picker");
+    assert.equal(named(c2, "button", "Propose this").attrs.disabled, undefined);
+    c2 = picks(`zcash:${addr}?amount=1`, false);
+    assert.deepEqual(optionsOf(c2), ["Savings (Testnet)"], "another wallet proposes it");
+    assert.equal(named(c2, "button", "Propose this").attrs.disabled, undefined);
+    t.state.groups = [team];
+    c2 = picks(`zcash:${addr}?amount=1`, false);
+    assert.equal(named(c2, "button", "Propose this").attrs.disabled, "");
+    assert.match(textOf(c2), /A wallet cannot pay itself\./);
+    t.state.groups = [team, savings, treasury];
+
+    // The form names each wallet with its network, and holds the id of the wallet.
+    form = composer(t.chatRequest());
+    const toSelect = all(form, (x) => x.tag === "select" && x.attrs.name === "to")[0];
+    assert.deepEqual(optionsOf(toSelect),
+      ["Team (Testnet)", "Savings (Testnet)", "Treasury (Mainnet)"]);
+    assert.deepEqual(all(toSelect, (x) => x.tag === "option").map((x) => x.attrs.value),
+      [gid, W2, M]);
+    form = composer(t.roomRequest());
+    const hidden = all(form, (x) => x.attrs.type === "hidden" && x.attrs.name === "to")[0];
+    assert.equal(hidden.attrs.value, gid, "a single wallet has its id in a hidden field");
+    assert.match(textOf(form), /Pays to Team \(Testnet\)/);
+
+    // submitRequest: the text of the message, the network, and the wallet found by its id.
+    const sent = [];
+    const fields = (to, amt, memo, as) => ({ elements: {
+      ...(to === undefined ? {} : { to: { value: to } }), amt: { value: amt },
+      memo: { value: memo },
+      ...(as === undefined ? {} : { as: { value: as } }),
+    } });
+    const opts = (request) => ({ key: "k-req", seats: [3], request, send: async (text, seat) => {
+      assert.equal(t.busy.has("k-req"), true, "busy while the message goes out");
+      sent.push([text, seat]);
+    } });
+    const uriOf = (net, ...rows) => Z.makeRequest(JSON.stringify(rows), net);
+    t.ui.request = "wallet-x";
+    await t.submitRequest(fields(gid, "1.5", " rent "), opts(t.roomRequest()));
+    assert.deepEqual(sent, [[uriOf("test", { to: addr, amount: 150000000, memo: "rent" }), 3]]);
+    assert.deepEqual([t.ui.request, t.busy.has("k-req")], [null, false]);
+    t.ui.request = "wallet-x";
+    await t.submitRequest(fields(W2, "", "", "2"), opts(t.chatRequest()));
+    assert.deepEqual(sent.at(-1), [uriOf("test", { to: third }), 2], "Savings, by its id");
+    await t.submitRequest(fields(M, "2", ""), opts(t.chatRequest()));
+    assert.equal(sent.at(-1)[0], uriOf("main", { to: mainAddr, amount: 200000000 }));
+    assert.match(sent.at(-1)[0], /^zcash:u1/, "a mainnet wallet gives a mainnet request");
+    // The list changes while the person types: the choice is the same wallet or an error.
+    t.state.groups = [savings, team, treasury];
+    await t.submitRequest(fields(gid, "", ""), opts(t.chatRequest()));
+    assert.equal(sent.at(-1)[0], uriOf("test", { to: addr }), "Team, though its place moved");
+    t.state.groups = [team, treasury];
+    const count = sent.length;
+    await assert.rejects(t.submitRequest(fields(W2, "", ""), opts(t.chatRequest())),
+      /Choose a wallet again\./);
+    await assert.rejects(t.submitRequest(fields(W2, "", ""), opts(t.roomRequest())),
+      /Choose a wallet again\./, "also for a single wallet");
+    await assert.rejects(t.submitRequest(fields(undefined, "", ""), opts(t.chatRequest())),
+      /Choose a wallet again\./);
+    await assert.rejects(t.submitRequest(fields(gid, "abc", ""), opts(t.roomRequest())),
+      /Enter an amount above zero/);
+    await assert.rejects(t.submitRequest(fields(gid, "", "a".repeat(513)), opts(t.roomRequest())),
+      /513 bytes/);
+    assert.equal(sent.length, count, "an error sends nothing");
+    assert.equal(t.busy.has("k-req"), false);
+    t.state.groups = [team, savings, treasury];
+
+    // Enter in a field of the request form sends and closes the form. The focused field must not
+    // keep the form on the page.
+    const page = { contains: () => true, querySelectorAll: () => [] };
+    const typing = (id, open) => {
+      t.ui.request = open;
+      globalThis.document = { activeElement: { id, dataset: {}, addEventListener() {} } };
+      const result = t.typingMessage(page, []);
+      globalThis.document = recorder;
+      return result;
+    };
+    assert.equal(typing("chat-text-wallet-x", null), true, "a message box always protects");
+    for (const id of ["req-amt-wallet-x", "req-memo-wallet-x"]) {
+      assert.equal(typing(id, "wallet-x"), true, "an open form protects " + id);
+      assert.equal(typing(id, null), false, "after the send, " + id + " must not keep the form");
+    }
+    assert.equal(typing("req-as-wallet-x", "wallet-x"), false);
+    assert.equal(typing("s-note", "wallet-x"), false);
+
+    // The Send form follows sendBlocker: the button is off and a submit says why.
+    t.setChain(chainOf(null));
+    t.ui.pay = null;
+    const blocked = t.sendDialog();
+    assert.equal(named(blocked, "button", "Propose payment").attrs.disabled, "");
+    assert.match(textOf(blocked), /Wait for the first sync to finish\./);
+    const sessions = () => [...data.keys()].filter((k) => k.includes("/sessions/")).join();
+    const stored = sessions();
+    globalThis.document = { ...recorder, activeElement: { dataset: {} },
+      getElementById: () => new Rec("div") };
+    await blocked.on.submit({ preventDefault() {}, currentTarget: null });
+    globalThis.document = realDocument;
+    await sleep(300);   // the submit asks the page to draw and react: let that end here
+    globalThis.document = recorder;
+    assert.deepEqual(t.banner, { kind: "bad", text: "Wait for the first sync to finish." });
+    assert.equal(sessions(), stored, "a refused submit proposes nothing");
+    t.setChain(chainOf({ spendable: 1e8, pending: 0 }));
+    assert.equal(named(t.sendDialog(), "button", "Propose payment").attrs.disabled, undefined);
+
+    for (const id of [W2, M]) {
+      delete t.secrets[`${id}:1`]; delete t.ready[id]; delete t.balCache[id];
+    }
+    t.state.groups = [];
+    t.ui.request = null;
+  } finally { globalThis.document = realDocument; }
 }
 
 // ── A stored field must be plain JSON: no infinite number, no deep nesting ──

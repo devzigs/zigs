@@ -288,6 +288,14 @@ a.row-item { text-decoration: none; }
 .composer-row { display: flex; justify-content: flex-end; align-items: center; gap: 8px; }
 .composer-row .input { width: auto; height: 36px; }
 .composer-as { display: inline-flex; align-items: center; gap: 8px; }
+.composer-wrap { display: grid; gap: 12px; }
+.req-form { padding: 12px; border: 1px solid var(--line); border-radius: 10px; background: var(--sunk); }
+.req-form h3 { font-size: 14.5px; letter-spacing: -0.01em; }
+.req-card { margin-top: 4px; }
+.req-title { display: inline-flex; align-items: center; gap: 8px; }
+.req-claims { display: grid; gap: 2px; padding-left: 10px; border-left: 2px solid var(--line-2); }
+.req-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+.req-actions .input { width: auto; max-width: 100%; height: 36px; }
 
 /* Members */
 .member { display: grid; grid-template-columns: 36px minmax(0, 1fr) auto; gap: 14px; align-items: center; padding: 14px 20px; border-top: 1px solid var(--line); }
