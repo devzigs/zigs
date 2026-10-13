@@ -22,6 +22,13 @@ import {
   signMsg, signPairMatches, signedText, validId, validPk, validRoom, verifyMsg,
 } from "/chat.js";
 import {
+  accountBackupName, accountBalance, addContact, backupPayload, balanceWarnings, feeFor,
+  fundingPayees, fundingWarning, highestIndex, holdsNotes, KIND as PERSONAL_KIND, messagePlan,
+  NAME_MAX, newPersonal, normPersonal, otherWhere, readBackup, receivedItems, removeWarning,
+  restoredPersonal, routeItems, salvageBackup, SENT_WORDS, sendGate, sentNote, sentState,
+  chatTimeline,
+} from "/personal.js";
+import {
   cardState, payeeBlocker, payeeRows, quoted, readRequest, REQUEST_NET, requestNote, requestPayees,
   requestProblem, requestUri, WALLET_NET,
 } from "/requests.js";
@@ -110,6 +117,10 @@ function readPlain(name) {
 }
 let secrets = lockedVault ? {} : readPlain("zf-secrets");
 let chats = normChats(lockedVault ? null : readPlain("zf-chats"));
+let personal = null;          // the personal account (web/personal.js), with its seed
+let personalError = "";       // why a saved account cannot be read
+let personalDamaged = null;   // the saved value that failed to read, kept so that no save erases it
+let personalPending = false;  // the start-up read of the saved account has not ended
 let vaultWrite = Promise.resolve(true);
 const LOCKED_ELSEWHERE = "Zigs was locked in another tab, so this tab cannot save. "
   + "Close it and continue in the locked tab.";
@@ -127,9 +138,24 @@ function persistPlain() {
   } catch { storageOk = false; return false; }
 }
 
+// Fields of the stored record that this page does not know stay in it. A page of another version
+// saved them, and this save must not erase them.
+const VAULT_FIELDS = ["secrets", "keys", "chats", "personal"];
+async function foreignFields() {
+  try {
+    const stored = parseVault(localStorage.getItem("zf-vault"));
+    const got = stored ? await openVault(vault.key, stored) : {};
+    return Object.fromEntries(Object.entries(got).filter(([k]) => !VAULT_FIELDS.includes(k)));
+  } catch (e) {
+    log("could not read the saved record again: " + said(e));
+    return {};
+  }
+}
+
 async function persistSealed() {
   try {
-    const rec = await seal(vault.key, vault.rec, { secrets, keys: gkeys, chats });
+    const rec = await seal(vault.key, vault.rec, { ...(await foreignFields()), secrets,
+      keys: gkeys, chats, personal: personal || personalDamaged });
     localStorage.setItem("zf-vault", S(rec));
     return true;
   } catch (e) {
@@ -156,6 +182,7 @@ async function lockWithPasskey() {
   secrets = readPlain("zf-secrets");
   gkeys = readPlain("zf-keys");
   chats = normChats(readPlain("zf-chats"));
+  await takeDeviceAccount();
   vault = made;
   const back = (await persist()) && parseVault(localStorage.getItem("zf-vault"));
   // The sealed copy must open before the plain copy goes.
@@ -168,6 +195,7 @@ async function lockWithPasskey() {
   localStorage.removeItem("zf-secrets");
   localStorage.removeItem("zf-keys");
   localStorage.removeItem("zf-chats");
+  dropDeviceCopy();
   showBanner("ok", "Locked. Zigs asks for this passkey each time it opens in this browser.");
 }
 
@@ -182,6 +210,8 @@ async function unlockVault() {
   secrets = got.secrets || {};
   gkeys = got.keys || {};
   chats = normChats(got.chats);
+  adoptPersonal(got.personal);
+  dropDeviceCopy();   // a copy that an earlier lock could not delete
   vault = { rec: { cred: lockedVault.cred, salt: lockedVault.salt }, key };
   lockedVault = null;
   adoptInviteKey();   // an invite link opened while locked waits in the fragment
@@ -192,6 +222,172 @@ function forgetVault() {
   try { localStorage.removeItem("zf-vault"); } catch {}
   location.reload();
 }
+// ── The personal account on disk ──
+// With the passkey lock on, the account is a field of the sealed record. With the lock off, local
+// storage never holds the seed: it is sealed with an AES key that this browser cannot export, and
+// both sit in IndexedDB. Code on this site can still use that key, so the lock stays the safer way.
+const DEVICE_REC = { cred: "device", salt: "device" };   // seal() wants a record; no passkey
+
+async function deviceKey() {
+  const have = await idb("readonly", (st) => st.get("personal:key"));
+  if (have) return have;
+  const fresh = await crypto.subtle.generateKey({ name: "AES-GCM", length: 256 }, false,
+    ["encrypt", "decrypt"]);
+  // add() fails when another tab saved a key first. That key is then the one to use.
+  try { await idb("readwrite", (st) => st.add(fresh, "personal:key")); return fresh; } catch {
+    return idb("readonly", (st) => st.get("personal:key"));
+  }
+}
+
+const said = (e) => (e && e.message) || String(e);
+
+// The saved account, or null for none. Throws when IndexedDB fails. A throw with `stored` means
+// that a record is there but does not open: it is damaged, and no new account may replace it.
+async function deviceRead() {
+  const [key, rec] = await Promise.all(["personal:key", "personal:rec"]
+    .map((name) => idb("readonly", (st) => st.get(name))));
+  if (!rec) return null;
+  const damaged = (e) => Object.assign(new Error(said(e)), { stored: true });
+  if (!key) throw damaged(new Error("its key is missing"));
+  try { return await openVault(key, rec); } catch (e) { throw damaged(e); }
+}
+
+// `fresh` is the first write of a new account: add() refuses it when another tab saved an
+// account first, so two tabs cannot both make one.
+async function deviceWrite(fresh = false) {
+  const rec = await seal(await deviceKey(), DEVICE_REC, personal || personalDamaged);
+  const write = (st) => (fresh ? st.add(rec, "personal:rec") : st.put(rec, "personal:rec"));
+  await idb("readwrite", write);
+}
+
+function deviceClear() {
+  return idb("readwrite", (st) => { st.delete("personal:rec"); return st.delete("personal:key"); });
+}
+
+// The account is in the sealed record now (a damaged one as it is), so the device copy goes.
+function dropDeviceCopy() {
+  if (!personal && !personalDamaged) return;
+  deviceClear().catch((e) => log("could not delete the account copy: " + (e.message || e)));
+}
+
+// Reads a saved account. A record that does not read stays as it is, and no new account is made
+// over it.
+function adoptPersonal(x) {
+  personal = null; personalError = ""; personalDamaged = null;
+  if (x == null) return;
+  try { personal = normPersonal(x, personalEnv()); } catch (e) {
+    personalDamaged = x;
+    personalError = "The personal account in this browser cannot be read: " + (e.message || e);
+  }
+}
+
+// The engine calls and the words of each network, for the rules in web/personal.js.
+const personalEnv = () => ({
+  keys: (seed, net) => Z.accountKeys(seed, net), normalize: normalized,
+  nets: Object.fromEntries(Object.entries(NETWORKS)
+    .map(([name, n]) => [name, { prefix: n.prefix, label: n.label.toLowerCase() }])),
+});
+
+// The saved account is the truth: another tab may have made it, changed it or removed it. This
+// reads it again, at start and before each change: the sealed record with the lock on, else the
+// device copy. A failed read of IndexedDB as a whole shows nothing. A record that is there but does
+// not open blocks a new account. A store that lost the account never erases the memory copy. The
+// sync follows the account that it reads.
+async function rereadPersonal() {
+  if (vault) return rereadVault();
+  if (typeof indexedDB === "undefined") return;
+  try {
+    const stored = await deviceRead();
+    if (stored) {
+      adoptPersonal(stored);
+      followAccount();
+    }
+  } catch (e) {
+    log("saved account not read: " + said(e));
+    if (e.stored && !personal) {
+      personalError = "Zigs could not read the saved personal account (" + said(e)
+        + "). Reload the page. Do not make a new account yet.";
+    }
+  }
+}
+
+// With the lock on, a storage event of another tab can come late or not at all. So the account in
+// the sealed record is read again.
+// Only the account is taken: the secrets, keys and chats of this tab can hold a change that is not
+// saved yet, and the storage event brings those.
+async function rereadVault() {
+  let value = null;
+  try { value = localStorage.getItem("zf-vault"); } catch { return; }
+  if (!value) return;
+  try {
+    const got = await openVault(vault.key, parseVault(value));
+    if (!("personal" in got)) return;   // a page from before the accounts; see takeVault
+    adoptPersonal(got.personal);
+    followAccount();
+  } catch (e) { log("sealed record not read: " + said(e)); }
+}
+
+// Before the lock turns on: the account moves into the sealed record. A record that is there but
+// does not open stops the lock, because the account would be left out. A store that fails as a
+// whole holds no account that this page ever saw.
+async function takeDeviceAccount() {
+  if (typeof indexedDB === "undefined") return;
+  let stored;
+  try { stored = await deviceRead(); } catch (e) {
+    if (!e.stored && !personal && !personalDamaged) {
+      log("saved account not read: " + said(e));
+      return;
+    }
+    throw new Error("This browser could not read the personal account, so it did not lock ("
+      + said(e) + "). Try again.");
+  }
+  if (stored) adoptPersonal(stored);
+}
+
+let personalWrite = Promise.resolve(true);
+function persistPersonal(fresh = false) {
+  if (lockedVault) return Promise.resolve(false);
+  if (vault) return persist();
+  try {
+    // Another tab turned the lock on: a write here would put the seed beside the sealed record.
+    if (localStorage.getItem("zf-vault")) {
+      showBanner("bad", LOCKED_ELSEWHERE);
+      return Promise.resolve(false);
+    }
+  } catch { /* no local storage: IndexedDB may still work */ }
+  const save = () => (personal || personalDamaged ? deviceWrite(fresh) : deviceClear());
+  personalWrite = personalWrite.then(save).then(() => true, (e) => {
+    showBanner("bad", "Could not save the personal account (" + said(e) + ").");
+    return false;
+  });
+  return personalWrite;
+}
+
+// Runs `fn` when no other step with this name runs, in this tab and, where the browser has Web
+// Locks, in every other tab. Web Locks are not reentrant: a step must not wait for its own name.
+// ponytail: without Web Locks, only the steps of this tab queue.
+const turns = new Map();
+function exclusive(name, fn) {
+  if (globalThis.navigator?.locks) return navigator.locks.request("zigs-" + name, fn);
+  const next = (turns.get(name) || Promise.resolve()).then(fn);
+  turns.set(name, next.catch(() => {}));
+  return next;
+}
+
+// Changes the account and saves it. The change is undone when the save fails. The step reads the
+// saved account first and runs alone, so two changes never overwrite each other.
+function changePersonal(change) {
+  return exclusive("account", async () => {
+    await rereadPersonal();
+    if (!personal) throw new Error("There is no personal account.");
+    const before = structuredClone(personal);
+    try { change(personal); } catch (e) { personal = before; throw e; }
+    if (await persistPersonal()) return;
+    personal = before;
+    throw new Error("Could not save this change in the browser, so it was not made.");
+  });
+}
+
 function mySeatSecrets(gid) { return Object.entries(secrets).filter(([k]) => k.startsWith(gid + ":")).map(([k, v]) => [Number(k.split(":")[1]), v]); }
 function sec(gid, seat) { return secrets[skey(gid, seat)]; }
 function putSec(gid, seat, patch) {
@@ -220,6 +416,7 @@ const netBadge = (g) => netOf(g).cap
 const SERVER_TIMEOUT_MS = 8000;
 const MISSING_SECRET = "This link is missing the wallet secret. Ask for the full invite link.";
 let chain = null;   // { gid, cw, prog, bal, received, ms, error, syncing } for the open group
+let acct = null;    // the same for the personal account, with account: true (see startAccount)
 // Last known balance per wallet, so the wallet list shows money before a wallet syncs.
 // Balances are sealed with each wallet's key, so the browser's storage does not show amounts.
 let balSealed = {};
@@ -244,7 +441,8 @@ function saveBal(gid, bal) {
 const inbox = {}, inboxSubs = new Map();
 const ready = {}, readySubs = new Map();
 const state = {
-  groups: [], gid: null, cid: null, g: null, seats: {}, seatsLoaded: false, seatsSettled: false,
+  groups: [], gid: null, cid: null, contact: null, g: null, seats: {}, seatsLoaded: false,
+  seatsSettled: false,
   dkg1: {}, dkg2: {}, confirm: {}, abort: {}, done: {}, verify: {}, wallet: null, sessions: [],
   sid: null, commits: {}, shares: {}, ignored: 0, pending: false, log: [],
 };
@@ -385,6 +583,7 @@ function wrapStore(raw) {
 }
 
 async function boot() {
+  startAccount();   // the account needs no group server
   const [dbNs, userNs, dlNs] = await Promise.all([zigs.use("db"), zigs.use("user"), zigs.use("downloads")]);
   db = dbNs; user = userNs; downloads = dlNs;
   if (db) sdb = wrapStore(db);
@@ -468,7 +667,8 @@ function openGroup(gid) {
   ui.backup = null;   // the dialog names a seat of the wallet that was open
   dropChain();
   Object.assign(state, {
-    gid, cid: null, g: null, seats: {}, seatsLoaded: false, seatsSettled: false, dkg1: {}, dkg2: {},
+    gid, cid: null, contact: null, g: null, seats: {}, seatsLoaded: false, seatsSettled: false,
+    dkg1: {}, dkg2: {},
     confirm: {}, abort: {}, done: {}, verify: {}, wallet: null, sessions: [], ignored: 0,
     pending: false, log: [],
   });
@@ -1138,7 +1338,10 @@ function dropChain() { const c = chain; chain = null; if (c && !c.syncing && c.c
 function ensureChain() {
   if (!Z || (chain && chain.gid === state.gid)) return;
   const w = state.wallet;
-  chain = { gid: state.gid, net: curNet(), ufvk: w.ufvk, birthday: w.birthday, cw: null, url: null, prog: null, bal: null, ms: 0, error: null, syncing: false };
+  chain = {
+    gid: state.gid, secret: gkeys[state.gid], net: curNet(), ufvk: w.ufvk, birthday: w.birthday,
+    cw: null, url: null, prog: null, bal: null, ms: 0, error: null, syncing: false,
+  };
   runSync(chain);
 }
 
@@ -1157,25 +1360,43 @@ async function pickServer(net) {
   throw new Error("No light-wallet server answers. Check your connection, then click Sync.");
 }
 
-// Wallet sync state, sealed with the group key, so a reload continues from the last block.
-let idbOpen = null;
-function idb(mode, fn) {
-  idbOpen ||= new Promise((res, rej) => {
+// Sync state, sealed with the group key (the account: with its own sync key), so a reload
+// continues from the last block. `c.id` and `c.secret` name the entry and its key; a wallet has
+// its id and its group key.
+const snapId = (c) => c.id ?? c.gid;
+const snapSecret = (c) => c.secret ?? gkeys[c.gid];
+let idbOpen = null, idbOpenMs = 5000;
+// Opens the database once. An open that fails or never answers is forgotten, so that the next call
+// tries again and a stuck browser cannot hold a caller for ever.
+function idbHandle() {
+  idbOpen ||= withTimeout(new Promise((res, rej) => {
     const r = indexedDB.open("zigs", 1);
     r.onupgradeneeded = () => r.result.createObjectStore("chain");
     r.onsuccess = () => res(r.result); r.onerror = () => rej(r.error);
-  });
-  return idbOpen.then((db) => new Promise((res, rej) => {
+  }), idbOpenMs, "IndexedDB").catch((e) => { idbOpen = null; throw e; });
+  return idbOpen;
+}
+function idb(mode, fn) {
+  return idbHandle().then((db) => new Promise((res, rej) => {
     const tx = db.transaction("chain", mode), req = fn(tx.objectStore("chain"));
-    tx.oncomplete = () => res(req.result); tx.onerror = () => rej(tx.error);
+    // The error event of a request reaches the transaction before tx.error is set.
+    tx.oncomplete = () => res(req.result);
+    tx.onerror = (ev) => rej(ev.target.error || tx.error || new Error("IndexedDB request failed"));
+    tx.onabort = () => rej(tx.error || new Error("IndexedDB transaction aborted"));
   }));
 }
-async function loadSnapshot(gid) {
-  try { const sealed = await idb("readonly", (st) => st.get(gid)); return sealed ? Z.secretOpen(gkeys[gid], "chain\n" + gid, sealed) : null; }
+async function loadSnapshot(c) {
+  try {
+    const sealed = await idb("readonly", (st) => st.get(snapId(c)));
+    return sealed ? Z.secretOpen(snapSecret(c), "chain\n" + snapId(c), sealed) : null;
+  }
   catch (e) { log("saved wallet state unreadable: " + (e.message || e)); return null; }
 }
 async function saveSnapshot(c) {
-  try { const sealed = Z.secretSeal(gkeys[c.gid], "chain\n" + c.gid, c.cw.snapshot()); await idb("readwrite", (st) => st.put(sealed, c.gid)); }
+  try {
+    const sealed = Z.secretSeal(snapSecret(c), "chain\n" + snapId(c), c.cw.snapshot());
+    await idb("readwrite", (st) => st.put(sealed, snapId(c)));
+  }
   catch (e) { log("could not save wallet state: " + (e.message || e)); }
 }
 
@@ -1184,7 +1405,9 @@ async function connect(c) {
   const url = await pickServer(c.net);
   if (c.cw && c.url === url) return;
   let snap = null;
-  try { snap = c.cw ? c.cw.snapshot() : await loadSnapshot(c.gid); } catch (e) { log("no usable wallet state: " + (e.message || e)); }
+  try { snap = c.cw ? c.cw.snapshot() : await loadSnapshot(c); } catch (e) {
+    log("no usable wallet state: " + (e.message || e));
+  }
   let next = null;
   if (snap) {
     try { next = Z.ChainWallet.restore(c.ufvk, c.birthday, url, snap); } catch (e) { log("saved wallet state rejected: " + (e.message || e)); }
@@ -1203,10 +1426,11 @@ async function runSync(c) {
   try {
     await connect(c);
     c.bal = J(await c.cw.sync((p) => { c.prog = J(p); render(); }));
+    c.balAt = Date.now();
     c.received = J(c.cw.received());
     c.sent = new Set(J(c.cw.sent()));
     c.prog = null; c.ms = Math.round(performance.now() - t0);
-    saveBal(c.gid, c.bal);
+    if (!c.account) saveBal(c.gid, c.bal);
     saveSnapshot(c);
     log("synced to " + c.bal.height + ", spendable " + fmtZec(c.bal.spendable));
     runMemos(c);
@@ -1215,14 +1439,14 @@ async function runSync(c) {
     c.error = e.message || String(e); log("sync failed: " + c.error);
     if (Z.isDeepReorg(c.error)) await rescanFromBirthday(c);
   }
-  finally { c.syncing = false; if (chain !== c && c.cw) c.cw.free(); render(); }
+  finally { c.syncing = false; if (!current(c) && c.cw) c.cw.free(); render(); }
 }
 
 // Drops the saved state, so that the next sync scans the wallet again from its birthday.
 async function rescanFromBirthday(c) {
   c.error = "The chain reorganised by more than the wallet can undo. Zigs deleted the saved "
     + "state of this wallet. Refresh to scan it again from the start.";
-  try { await idb("readwrite", (st) => st.delete(c.gid)); }
+  try { await idb("readwrite", (st) => st.delete(snapId(c))); }
   catch (e) { log("could not delete wallet state: " + (e.message || e)); }
   if (c.cw) { c.cw.free(); c.cw = null; }
   c.bal = null; c.received = []; c.sent = new Set(); c.prog = null;
@@ -1234,7 +1458,7 @@ async function rescanFromBirthday(c) {
 // it. A failed read skips that transaction. The engine moves it back in its list, so the next run
 // starts with other transactions. The next sync tries again.
 async function runMemos(c) {
-  if (c.memoBusy || !c.cw || !readsMemos(c.gid)) return;
+  if (c.memoBusy || !c.cw || !memosOn(c)) return;
   c.memoBusy = true;
   const cw = c.cw;
   try {
@@ -1245,9 +1469,13 @@ async function runMemos(c) {
   finally { c.memoBusy = false; }
 }
 
+// The wallet of the open page, or the personal account, is the one that a run may go on for.
+const current = (c) => c === chain || c === acct;
+// The personal account always reads memos, because its messages are memos.
+const memosOn = (c) => c.account === true || readsMemos(c.gid);
 // Another server, wallet or rescan replaced the wallet that started a run, or the signer turned
 // memo reading off: each read tells the light-wallet server which transaction pays the wallet.
-const memoStale = (c, cw) => c.cw !== cw || chain !== c || !readsMemos(c.gid);
+const memoStale = (c, cw) => c.cw !== cw || !current(c) || !memosOn(c);
 
 // Reads the transactions that the engine lists. Three failures to reach the server in a row end
 // the pass: the server is the problem. An answer that the engine refuses does not count, because
@@ -1332,15 +1560,24 @@ async function broadcastTx(ss) {
 }
 
 // Tries each server in turn; a temporary wallet is enough because broadcasting needs no sync.
-async function broadcastAnywhere(txHex) {
+// `where` names the network, viewing key and birthday of the sender: the open wallet or account.
+// The error has `refused` when every server answered with a refusal. Any other failure (a timeout,
+// a lost connection) leaves open whether a server took the transaction.
+async function broadcastAnywhere(txHex, where = {
+  net: curNet(), ufvk: state.wallet.ufvk, birthday: state.wallet.birthday,
+}) {
   const errors = [];
-  for (const url of curNet().servers) {
-    const cw = new Z.ChainWallet(state.wallet.ufvk, state.wallet.birthday, url);
+  let refused = true;
+  for (const url of where.net.servers) {
+    const cw = new Z.ChainWallet(where.ufvk, where.birthday, url);
     try { return J(await withTimeout(cw.broadcast(txHex), SERVER_TIMEOUT_MS * 2, new URL(url).host)); }
-    catch (e) { errors.push(new URL(url).host + ": " + (e.message || e)); }
+    catch (e) {
+      refused = refused && Z.isNodeRefusal(said(e));
+      errors.push(new URL(url).host + ": " + said(e));
+    }
     finally { cw.free(); }
   }
-  throw new Error(errors.join("; "));
+  throw Object.assign(new Error(errors.join("; ")), { refused });
 }
 
 // Why seat i cannot approve the payment now, or null.
@@ -1411,6 +1648,11 @@ const BACKUP_KIND = "zec-frost-key-share";   // what the sealed text holds, also
 const NOT_A_BACKUP = "This file is not a Zigs backup.";
 const NOT_ENCRYPTED = "This backup file is not encrypted. Make a new encrypted backup now.";
 const MAX_BACKUP_BYTES = 1000000;
+const ACCOUNT_PASS_NOTE = "This passphrase opens the backup of your personal account. Zigs cannot "
+  + "recover it. Write it down and keep it apart from the file.";
+const ACCOUNT_FILE_NOTE = "The file holds the seed of the account and your contacts. Anyone who "
+  + "has the file and the passphrase can spend the account and read the contacts. It holds no "
+  + "messages.";
 const PASS_NOTE = "This passphrase opens your key share. Zigs cannot recover it. Write it down and "
   + "keep it apart from the file.";
 
@@ -1436,29 +1678,63 @@ function closeBackup() {
   render();
 }
 
-// Seals the seat, opens the file again in memory to prove it holds the same text, and only then
+// Seals `plain`, opens the file again in memory to prove it holds the same text, and only then
 // offers the download. Returns false when the person declined to save.
-async function saveBackup(i, pass) {
-  // The wallet that is open can change while the engine works (the Back button).
-  const gid = state.gid, wallet = state.g.name;
-  const plain = backupText(i);
+async function sealAndSave(pass, plain, filename) {
   const sealed = await engineOffThread("backupSeal", pass, plain);
   if (await engineOffThread("backupOpen", pass, sealed) !== plain) {
-    throw new Error("The backup did not open to the same key share, so it was not saved. "
-      + "Try again.");
+    throw new Error("The backup did not open to the same data, so it was not saved. Try again.");
   }
   try {
-    await downloads.save({ filename: backupName(wallet, i), data: sealed });
+    await downloads.save({ filename, data: sealed });
   } catch (e) {
     if (e && e.code === "declined") return false;
     throw new Error("Backup not saved: " + (e.message || e.code));
   }
+  return true;
+}
+
+async function saveBackup(i, pass) {
+  // The wallet that is open can change while the engine works (the Back button).
+  const gid = state.gid, wallet = state.g.name;
+  if (!(await sealAndSave(pass, backupText(i), backupName(wallet, i)))) return false;
   await putSec(gid, i, { backedUp: true });
   return true;
 }
 
+// The backup of the personal account: the seed, the network, the birthday and the contacts. An
+// account that does not read gives what can be read of it.
+async function saveAccountBackup(pass) {
+  const payload = personal ? backupPayload(personal)
+    : salvageBackup(personalDamaged, personalEnv());
+  if (!payload) {
+    throw new Error("This page cannot read the seed of the saved account, so it cannot make a "
+      + "backup.");
+  }
+  if (!(await sealAndSave(pass, S(payload), accountBackupName(payload.network)))) return false;
+  if (personal) await changePersonal((p) => { p.backedUp = true; p.everBackedUp = true; });
+  return true;
+}
+
+function openAccountBackup() {
+  if (!downloads) { showBanner("bad", "Downloads are not available in this view."); return; }
+  ui.backup = { personal: true, made: false, busy: false };
+  render();
+}
+
+// The words of the backup dialog and the call that saves, for a seat and for the account.
+const seatBackup = (i) => ({
+  title: "Back up seat " + i, pass: PASS_NOTE, save: (pass) => saveBackup(i, pass),
+  file: "The file holds your key share. Anyone who has the file and the passphrase can sign as "
+    + "this seat.",
+});
+const ACCOUNT_BACKUP = {
+  title: "Back up the personal account", pass: ACCOUNT_PASS_NOTE, file: ACCOUNT_FILE_NOTE,
+  save: (pass) => saveAccountBackup(pass),
+};
+
 function backupDialog() {
-  const b = ui.backup, i = b.seat;
+  const b = ui.backup, words = b.personal ? ACCOUNT_BACKUP : seatBackup(b.seat);
   const pass = el("input", {
     class: "input mono", id: "bk-pass", type: b.made ? "text" : "password", autocomplete: "off",
     spellcheck: "false", autocapitalize: "off", disabled: b.busy, "aria-describedby": "bk-hint",
@@ -1488,7 +1764,7 @@ function backupDialog() {
     if (passIssue(p, again.value)) return;
     b.busy = true; render();
     try {
-      if (!(await saveBackup(i, p))) return;
+      if (!(await words.save(p))) return;
       if (ui.backup === b) ui.backup = null;
       showBanner("ok", "Backup saved. Keep the passphrase apart from the file.");
     } finally { b.busy = false; }
@@ -1497,11 +1773,11 @@ function backupDialog() {
     class: "dialog", role: "dialog", "aria-modal": "true", "aria-labelledby": "backup-title",
     oninput: update, onsubmit: submit,
   },
-  el("div", { class: "card-head" }, el("h2", { id: "backup-title" }, "Back up seat " + i),
+  el("div", { class: "card-head" }, el("h2", { id: "backup-title" }, words.title),
     el("button", {
       class: "icon-btn", type: "button", "aria-label": "Close", onclick: closeBackup,
     }, "×")),
-  el("p", { class: "small" }, PASS_NOTE),
+  el("p", { class: "small" }, words.pass),
   el("label", { class: "field" }, el("span", {}, "Passphrase"), pass),
   el("div", { class: "row-actions" },
     el("button", { class: "btn sm", type: "button", disabled: b.busy, onclick: make },
@@ -1510,8 +1786,7 @@ function backupDialog() {
   b.made ? el("p", { class: "small" }, "Copy keeps the passphrase on the clipboard until you copy "
     + "something else. Write it down, then clear the clipboard.") : null,
   el("label", { class: "field" }, el("span", {}, "Type it again"), again, hint),
-  el("div", { class: "callout" }, "The file holds your key share. Anyone who has the file and the "
-    + "passphrase can sign as this seat."),
+  el("div", { class: "callout" }, words.file),
   el("div", { class: "dialog-actions" },
     el("button", {
       class: "btn", type: "button", disabled: b.busy, onclick: closeBackup,
@@ -1634,6 +1909,7 @@ function restoredFor(b, held) {
 // the file was sealed: only then does the seat count as backed up, and only when the backup fits
 // the wallet.
 async function applyBackup(b, encrypted) {
+  if (isObj(b) && b.kind === PERSONAL_KIND) return restoreAccount(b, encrypted);
   checkBackup(b);
   const { group, seat, key } = b;
   const held = secrets[skey(group, seat)];
@@ -2412,7 +2688,7 @@ async function leaveChat(cid) {
 
 function openChat(cid) {
   if (cid) openGroup(null);
-  state.cid = cid; ui.leave = false;
+  state.cid = cid; state.contact = null; ui.leave = false;
   setHash(cid ? "#c." + cid : "#");
   render();
 }
@@ -2564,7 +2840,8 @@ const ui = {
   forget: false, tab: "overview", send: false, pay: null, payKey: 0, listError: "",
   create: false, receive: false, move: false, net: "testnet", ack: false, notify: false,
   newChat: false, leave: false, backup: null, restore: null,
-  request: null, note: "", sendFor: null,
+  request: null, note: "", sendFor: null, contactAdd: false,
+  personal: { net: "testnet", ack: false, fund: "0.003", drop: false },
 };
 try { ui.notify = localStorage.getItem("zf-notify") === "1"; } catch { /* no storage */ }
 const ZEC_FMT = new Intl.NumberFormat("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 8 });
@@ -2756,11 +3033,14 @@ function setModal(view, on) {
 const appFoot = () => el("footer", { class: "app-foot" }, "Beta · not audited · ",
   el("a", { href: "https://zigs.app", target: "_blank", rel: "noopener" }, "About Zigs"));
 
+// The page when no wallet is open: a direct chat, a contact on chain, or the wallet list.
+const mainView = () => (state.cid ? chatView() : state.contact != null ? contactView() : lobby());
+
 function pageView() {
   try {
     if (lockedVault) return lockView();
     if (!dbReady) return loadingView();
-    return state.gid ? groupView() : state.cid ? chatView() : lobby();
+    return state.gid ? groupView() : mainView();
   } catch (e) {
     log("unreadable page: " + (e && e.message ? e.message : e));
     const back = el("button", {
@@ -2798,7 +3078,7 @@ function draw() {
 // Rebuilding a focused text box closes a phone's keyboard. While a message box or a field of the
 // request form has focus, only the message logs update; the whole page redraws when it loses focus.
 // A field of the request form counts only while its form is open: after a send, the form must go.
-const typingIn = (box) => !!box && (box.id.startsWith("chat-text-")
+const typingIn = (box) => !!box && (box.id.startsWith("chat-text-") || box.id === "fund-amt"
   || (!!ui.request && /^req-(amt|memo)-/.test(box.id)));
 function typingMessage(app, parts) {
   const box = document.activeElement;
@@ -2889,10 +3169,11 @@ const scrim = (close) => el("div", { class: "scrim", onclick: () => { close(); r
 // an open wallet that has its wallet document. A restore starts in the wallet list.
 const DIALOGS = [
   [() => ui.restore, closeBackup, () => restoreDialog()],
-  [(open) => ui.backup && open, closeBackup, () => backupDialog()],
+  [(open) => ui.backup && (open || ui.backup.personal), closeBackup, () => backupDialog()],
   [(open) => ui.send && open, () => ui.send = false, () => sendDialog()],
   [(open) => ui.receive && open, () => ui.receive = false, () => receiveDialog()],
   [() => ui.create && !state.gid, () => ui.create = false, () => createDialog()],
+  [() => ui.contactAdd && !!personal, () => ui.contactAdd = false, () => contactDialog()],
   [(open) => ui.move && open, () => ui.move = false, () => createDialog(state.g)],
 ];
 
@@ -2915,7 +3196,11 @@ function renderSide() {
     el("div", { class: "side-head" }, el("span", { class: "label" }, "Chats"),
       el("button", { class: "icon-btn", type: "button", title: "New chat", "aria-label": "New chat",
       onclick: newChat }, "+")),
-    ...Object.keys(chats.list).map((cid) => guard(chatItem, cid)));
+    ...Object.keys(chats.list).map((cid) => guard(chatItem, cid)),
+    ...(personal ? [el("div", { class: "side-head" }, el("span", { class: "label" }, "On chain"),
+      el("button", { class: "icon-btn", type: "button", title: "Add contact",
+        "aria-label": "Add contact", onclick: openContactDialog }, "+")),
+    ...personal.contacts.map((c) => guard(contactItem, c))] : []));
 }
 
 const newChat = () => { ui.newChat = true; render(); };
@@ -2958,7 +3243,8 @@ function forgetBox() {
       + "them, then restore each seat from its backup file. A seat with no backup is lost, but "
       + "the wallet still works while enough other signers remain. Direct chats in this browser "
       + "are deleted too. They are not in backup files, and a chat with two people cannot be "
-      + "joined again."),
+      + "joined again. The personal account is deleted as well. Only its backup file brings it "
+      + "back, and without one its money is lost."),
     el("div", { class: "dialog-actions" },
       el("button", { class: "btn", type: "button", onclick: cancel }, "Cancel"),
       el("button", { class: "btn", type: "button", onclick: forgetVault },
@@ -2988,7 +3274,7 @@ function lockButton() {
   }
   const can = storageOk && !!window.PublicKeyCredential;
   return el("button", { class: "btn", type: "button", disabled: !can, onclick: act(lockWithPasskey),
-    title: can ? "Encrypt the key shares in this browser with a passkey"
+    title: can ? "Encrypt the key shares and the personal account in this browser with a passkey"
       : "This browser has no passkey support" }, "Lock with a passkey");
 }
 
@@ -3023,7 +3309,8 @@ function lobby() {
     ? el("section", { class: "card" }, el("div", { class: "list" }, rows))
     : welcome(canCreate, restoreBtn("btn ghost sm"));
   const joins = [...joinLinks.keys()].map((cid) => guard(chatJoinCard, cid));
-  return el("div", { class: "page" }, ...joins, head, body, chatsCard(), restoreInput);
+  return el("div", { class: "page" }, ...joins, head, body, chatsCard(),
+    guard(personalCard, () => restoreInput.click()), guard(contactsCard), restoreInput);
 }
 
 // A contact link waits here until the person clicks Join. The link is kept after a failure.
@@ -3175,11 +3462,13 @@ function createDialog(from = null) {
   return f;
 }
 
-// The choice lives in `ui`, so a live update that redraws the dialog keeps it.
-function networkPick() {
-  const opt = (value, title, text) => el("label", { class: "net-opt" + (ui.net === value ? " on" : "") },
-    el("input", { type: "radio", name: "network", value, id: "g-net-" + value, checked: ui.net === value,
-      onchange: () => { ui.net = value; render(); } }),
+// The choice lives in `sel` (`ui`, or `ui.personal`), so a redraw keeps it. `what` names the thing
+// that holds the funds, and `idp` prefixes the ids.
+function networkPick(sel = ui, what = "wallet", idp = "g") {
+  const on = (value) => (sel.net === value ? " on" : "");
+  const opt = (value, title, text) => el("label", { class: "net-opt" + on(value) },
+    el("input", { type: "radio", name: idp + "-network", value, id: idp + "-net-" + value,
+      checked: sel.net === value, onchange: () => { sel.net = value; render(); } }),
     el("span", { class: "net-text" }, el("b", {}, title), el("span", { class: "small muted" }, text)));
   return el("fieldset", { class: "net-pick" },
     el("legend", { class: "label" }, "Network"),
@@ -3187,9 +3476,11 @@ function networkPick() {
       opt("testnet", "Testnet", "Free test coins, for trying Zigs."),
       opt("mainnet", "Mainnet", "Real ZEC. At " + capText(NETWORKS.mainnet.cap)
         + " the app warns and hides the address. It cannot block deposits.")),
-    ui.net === "mainnet" ? el("label", { class: "ack" },
-      el("input", { type: "checkbox", id: "g-ack", checked: ui.ack, onchange: (ev) => { ui.ack = ev.target.checked; } }),
-      el("span", { class: "small" }, "I understand that Zigs is not audited and that I can lose the funds in this wallet.")) : null);
+    sel.net === "mainnet" ? el("label", { class: "ack" },
+      el("input", { type: "checkbox", id: idp + "-ack", checked: sel.ack,
+        onchange: (ev) => { sel.ack = ev.target.checked; } }),
+      el("span", { class: "small" }, "I understand that Zigs is not audited and that I can lose "
+        + "the funds in this " + what + ".")) : null);
 }
 
 // ── Wallet ──
@@ -3689,7 +3980,8 @@ function receiveCard() {
 function syncLine(c) {
   if (!c) return el("div", { class: "sync" }, el("span", {}, el("span", { class: "dot" }), "Sync starts after your seat checks the address."));
   const p = c.prog || c.bal;
-  const pct = p && p.tip > state.wallet.birthday ? Math.max(0, Math.min(100, ((p.height - state.wallet.birthday) / (p.tip - state.wallet.birthday)) * 100)) : 0;
+  const span = p ? p.tip - c.birthday : 0;
+  const pct = span > 0 ? Math.max(0, Math.min(100, ((p.height - c.birthday) / span) * 100)) : 0;
   const text = c.error ? "Sync failed" : c.syncing ? (c.prog ? "Syncing · " + Math.floor(pct) + "%" : "Connecting to the network…") : p ? "Up to date · block " + p.height.toLocaleString() : "Not synced";
   return el("div", { style: "display:grid;gap:8px" },
     c.syncing && c.prog ? el("div", { class: "progress" }, el("i", { style: "width:" + pct.toFixed(1) + "%" })) : null,
@@ -3904,22 +4196,48 @@ function sendOnEnter(ev) {
   ev.target.form.requestSubmit();
 }
 
+// The line under a message box that follows the text as it changes: `plan(text)` gives { fine,
+// error }. A redraw gives the text back to the new box and fires an input event, which shows it.
+function planLine(plan, box) {
+  const line = el("p", { class: "hint", "aria-live": "polite" });
+  const show = () => {
+    const got = plan(box.value);
+    line.textContent = got.error || got.fine;
+    line.className = "hint" + (got.error ? " bad" : "");
+  };
+  box.addEventListener("input", show);
+  show();
+  return line;
+}
+
+const sendButton = (o, sending) => el("button", {
+  class: "btn primary", type: "submit", disabled: !!o.why || sending,
+}, sending ? "Sending…" : o.label || "Send message");
+
+// The message box. A message on chain is permanent and costs a fee, so only the button sends it.
+function messageBox(o) {
+  const quick = !o.plan && !coarse();
+  return el("textarea", {
+    class: "input", id: "chat-text-" + o.kind, name: "text", rows: "2", disabled: !!o.why,
+    onkeydown: o.plan ? null : sendOnEnter, "aria-label": o.to,
+    placeholder: o.to + (quick ? ". Enter sends, Shift+Enter adds a line" : ""),
+  });
+}
+
 // `o`: kind (names the ids, so a draft stays with its own wallet or chat; no ":" in it), why (why
 // it is off), warn, seats (the senders to choose from), to (the label), fine, key (the busy key),
 // send(text, seat) and request (roomRequest or chatRequest, or none: it adds the form that sends a
-// payment request).
+// payment request). A message on chain also has label (the button), plan(text) (the fee line) and
+// progress (the words of the step that is running).
 function composer(o) {
   const sending = busy.has(o.key);
+  const box = messageBox(o);
   const form = el("form", { class: "composer", onsubmit: act((ev) => submitMessage(ev.target, o)) },
     o.why ? el("p", { class: "hint" + (o.warn ? " bad" : "") }, o.why) : null,
-    el("textarea", {
-      class: "input", id: "chat-text-" + o.kind, name: "text", rows: "2", disabled: !!o.why,
-      onkeydown: sendOnEnter, "aria-label": o.to,
-      placeholder: o.to + (coarse() ? "" : ". Enter sends, Shift+Enter adds a line"),
-    }),
+    o.progress ? el("p", { class: "hint", role: "status" }, o.progress) : null,
+    box, o.plan ? planLine(o.plan, box) : null,
     el("div", { class: "composer-row" }, seatPicker(o, "chat-as-" + o.kind), requestToggle(o),
-      el("button", { class: "btn primary", type: "submit", disabled: !!o.why || sending },
-        sending ? "Sending…" : "Send message")),
+      sendButton(o, sending)),
     el("p", { class: "small faint" }, o.fine));
   return asking(o) ? el("div", { class: "composer-wrap" }, form, requestForm(o)) : form;
 }
@@ -3957,6 +4275,8 @@ async function submitMessage(form, o) {
   const box = form.elements.text, draft = box.value, r = checkText(draft);
   if (r.error) throw new Error(r.error);
   if (busy.has(o.key)) return;
+  // A box with focus keeps the page from drawing (typingMessage): let go, so that the steps show.
+  if (o.plan && box.blur) box.blur();
   busy.add(o.key); render();
   try {
     await o.send(r.text, form.elements.as ? Number(form.elements.as.value) : o.seats[0]);
@@ -3985,15 +4305,17 @@ function parseCached(uri, net) {
   return hit.out;
 }
 
-// A wallet reads a request for its own network. A chat has no wallet, so it tries both.
-const requestEnv = (dm) => ({
-  nets: dm ? ["test", "main"] : [REQUEST_NET[netName(state.g)]], parse: parseCached,
-  blocker: (to) => payeeBlocker(to, normalized),
+// A wallet reads a request for its own network, and so does the personal account (`network`). A
+// chat has no wallet, so it tries both.
+const requestEnv = (dm, network) => ({
+  nets: network ? [REQUEST_NET[network]] : dm ? ["test", "main"] : [REQUEST_NET[netName(state.g)]],
+  parse: parseCached, blocker: (to) => payeeBlocker(to, normalized),
 });
 
 // The request in `text`, or null for plain text. Until the engine loads, a request shows as text.
 // The page asks for every message on every draw, so plain text must cost no engine call.
-const requestOf = (text, dm) => Z && requestUri(text) ? readRequest(text, requestEnv(dm)) : null;
+const requestOf = (text, dm, network) =>
+  Z && requestUri(text) ? readRequest(text, requestEnv(dm, network)) : null;
 
 // Wallets where this browser holds a key share. A wallet that moved or has no address is left out.
 const seatWallets = () => state.groups.filter((g) => !g.unreadable && !g.movedTo && ready[g.id]
@@ -4309,6 +4631,629 @@ function newChatDialog() {
     el("button", { class: "btn", type: "button", onclick: close }, "Cancel"),
     el("button", { class: "btn primary", type: "submit",
       disabled: !Z || !db || canWrite === false }, "Create")));
+}
+
+// ───────────────────────── Personal account ─────────────────────────
+// A single-signer account that pays the fee of messages on chain (CHAT.md section 5). It syncs by
+// its viewing key like a wallet, always reads memos, and never touches the group server. The seed
+// stays in `personal`. It never goes into `ui`, a log line or an error message.
+const BLOCK_MS = BLOCK_SECONDS * 1000;
+const FUND_NOTE = "Fund the proposer's personal account";
+const NOT_READY = "Wait for the account to load.";
+const splitParts = (text) => {
+  if (!Z) throw new Error("The crypto engine is not ready.");
+  return J(Z.splitMessage(text));
+};
+const joinTexts = (texts) => J(Z.joinMessage(S(texts))).text;
+
+function startAccount() {
+  if (!Z || !personal || acct) return;
+  let keys;
+  try { keys = J(Z.accountKeys(personal.seed, personal.network)); } catch (e) {
+    log("account keys: " + (e.message || e));
+    return;
+  }
+  acct = {
+    account: true, gid: "personal", id: "personal", secret: personal.snapKey,
+    net: NETWORKS[personal.network], ufvk: keys.ufvk, address: keys.address,
+    birthday: personal.birthday, addrs: new Map(), cw: null, url: null, prog: null, bal: null,
+    received: [], sent: new Set(), ms: 0, error: null, syncing: false, progress: "", live: "",
+  };
+  runSync(acct);
+}
+
+function dropAccount() {
+  const c = acct;
+  acct = null;
+  if (c && !c.syncing && c.cw) c.cw.free();
+}
+
+// Another tab removed or replaced the account: this tab's sync follows (the sync key is new then).
+function followAccount() {
+  if (acct && (!personal || acct.secret !== personal.snapKey)) dropAccount();
+  startAccount();
+}
+
+const heightNow = () => (acct && acct.bal ? acct.bal.height : undefined);
+function sentStateOf(rec) {
+  const sent = acct ? acct.sent : new Set();
+  return sentState(rec, { sent, height: heightNow(), live: !!acct && acct.live === rec.txid });
+}
+// The sent messages that hold notes (see holdsNotes): the engine does not know about them yet.
+const flightNow = () => (personal ? personal.sent.filter((r) => holdsNotes(sentStateOf(r))) : []);
+const acctBalance = () => (acct && acct.bal ? accountBalance(acct.bal, flightNow()) : null);
+
+// The address of the account is shown on testnet. On mainnet it is shown while the balance is
+// known and under the cap, as for a wallet. Returns why it is not, or "".
+function acctAddressWhy() {
+  const cap = NETWORKS[personal.network].cap, b = acctBalance();
+  if (!cap) return "";
+  if (!b) {
+    return "Wait for the first sync to finish. The app shows the address of a mainnet account "
+      + "only when it knows the balance.";
+  }
+  return b.total < cap ? "" : "This account holds " + capText(cap) + ", the warning level for "
+    + "unaudited mainnet accounts. Do not send more to it. The app cannot block deposits.";
+}
+
+// Why the composer is off, or "".
+function messageWhy(fee = feeFor(1)) {
+  if (!acct || !acct.cw) return "Wait for the first sync to finish.";
+  if (acct.progress) return "A message is being sent. Wait until it is done.";
+  return sendGate(acctBalance(), flightNow(), fee);
+}
+
+// The address of the account at `index`: 0 is the public address, a contact has its own.
+function addressFor(index) {
+  if (index === 0) return acct.address;
+  if (!acct.addrs.has(index)) acct.addrs.set(index, Z.addressAt(acct.ufvk, index));
+  return acct.addrs.get(index);
+}
+
+const HAS_ACCOUNT = "This browser has a personal account already. A browser keeps one account.";
+
+// Makes the account that `build` gives the account of this browser. It never replaces a saved
+// one: the page reads the saved account again first, and the device store refuses a write over it.
+async function claimAccount(build, failure) {
+  await rereadPersonal();
+  if (personal || personalError) throw new Error(personalError || HAS_ACCOUNT);
+  const made = await build();
+  // The last read, the check and the save run alone, as a change does. With the lock on, the
+  // sealed record has no add() that refuses a second account.
+  return exclusive("account", async () => {
+    await rereadPersonal();   // another tab may have saved an account while `build` waited
+    if (personal || personalError) throw new Error(personalError || HAS_ACCOUNT);
+    personal = made;
+    if (await persistPersonal(true)) return;
+    if (personal === made) personal = null;
+    await rereadPersonal();   // another tab may have saved an account in the meantime
+    throw new Error(personal ? HAS_ACCOUNT : failure);
+  });
+}
+
+async function createPersonal(network) {
+  if (!Z) throw new Error("The crypto engine is not ready.");
+  if (network === "mainnet" && !ui.personal.ack) {
+    throw new Error("Confirm that you understand Zigs is not audited before you make a mainnet "
+      + "account.");
+  }
+  await claimAccount(async () => {
+    const birthday = await Z.latestHeight(await pickServer(NETWORKS[network]));
+    const made = J(Z.accountNew(network));
+    return newPersonal({ seed: made.seed, network, birthday }, newRoom().key);
+  }, "This browser could not save the account, so it was not made. Lock Zigs with a passkey, or "
+    + "use a browser that keeps site data.");
+  ui.personal.ack = false;
+  startAccount();
+  showBanner("ok", "Account made. Back it up now: the file is the only copy outside this browser.");
+}
+
+// The backup file brings the seed, the network, the birthday and the contacts back. The sync
+// starts at the birthday. The text of sent messages is not in the file.
+async function restoreAccount(b, encrypted) {
+  if (!encrypted) {
+    throw new Error("This backup file is not encrypted. Make a new encrypted backup of the "
+      + "account.");
+  }
+  await claimAccount(() => restoredPersonal(readBackup(b, personalEnv()), newRoom().key),
+    "This browser could not save the restored account, so it was not used.");
+  startAccount();
+  showBanner("ok", "Restored the personal account. It syncs from block " + fmtInt(personal.birthday)
+    + ". A contact that you added after you made the file is not in it. Messages to the address "
+    + "of that contact show under Other messages.");
+}
+
+// Removes the account, also one that does not read (`personalDamaged`).
+async function removeAccount() {
+  const was = [personal, personalDamaged, personalError];
+  personal = personalDamaged = null;
+  personalError = "";
+  if (!(await persistPersonal())) {
+    [personal, personalDamaged, personalError] = was;
+    throw new Error("Could not save this change in the browser, so the account stays.");
+  }
+  dropAccount();
+  try { await idb("readwrite", (st) => st.delete("personal")); } catch { /* the state is sealed */ }
+  ui.personal.drop = false;
+  state.contact = null;
+  showBanner("ok", "The personal account is removed from this browser.");
+}
+
+function contactCtx(own) {
+  const net = NETWORKS[personal.network];
+  return { normalize: normalized, prefix: net.prefix, label: net.label.toLowerCase(), own };
+}
+
+// A new contact needs an index that no address of the account used. The chain tells which ones got
+// a payment, so the first sync must be done.
+const NOT_SYNCED = "Wait for the first sync to finish. Zigs then knows which addresses of the "
+  + "account already got a payment.";
+
+async function addPersonalContact(name, address) {
+  const c = acct;
+  if (!c) throw new Error(NOT_READY);
+  if (!c.bal) throw new Error(NOT_SYNCED);
+  const own = [c.address, ...personal.contacts.map((x) => addressFor(x.index))];
+  let made;
+  await changePersonal((p) => {
+    const ctx = { ...contactCtx(own), seen: highestIndex(c.received) };
+    const got = addContact(p.contacts, name, address, ctx);
+    if (got.error) throw new Error(got.error);
+    p.contacts.push(got.contact);
+    p.backedUp = false;   // the file does not hold this contact yet
+    made = got.contact;
+  });
+  return made;
+}
+
+function openContact(index) {
+  openGroup(null);
+  state.contact = index;
+  render();
+}
+
+// The funding request: 3 payees to the public address of the account (web/personal.js).
+function fundingUri() {
+  if (!acct) throw new Error(NOT_READY);
+  const made = fundingPayees(acct.address, toZat(ui.personal.fund));
+  if (made.error) throw new Error(made.error);
+  return Z.makeRequest(S(made.payees), REQUEST_NET[personal.network]);
+}
+
+// Opens the Send form of a wallet with the request. It sends nothing: the wallet's approvals apply.
+function fundFromWallet(gid) {
+  const req = requestOf(fundingUri(), true, personal.network);
+  if (!req || req.error) throw new Error(req ? requestProblem(req.error) : NOT_READY);
+  proposeRequest(req, { name: "", verdict: "yes", mine: true, dm: true }, gid);
+  ui.note = FUND_NOTE;
+}
+
+async function copyFundingRequest() {
+  const uri = fundingUri();
+  try { await navigator.clipboard.writeText(uri); } catch {
+    throw new Error("This browser did not let the page copy. Allow clipboard access for this "
+      + "site.");
+  }
+  showBanner("ok", "Request copied. Pay it from any wallet.");
+}
+
+// Builds the message, signs it with the seed, builds the proof, saves the record, and only then
+// sends it. A record that is saved but not confirmed as sent holds its notes until a block holds
+// it or it expires (sentState). The seed stays on this thread: the worker gets the signed
+// transaction only. One message at a time, also across tabs: the next one starts after the
+// saved record of this one is there to read.
+const sendOnChain = (contact, text) => exclusive("send", () => sendLocked(contact, text));
+
+async function sendLocked(contact, text) {
+  await rereadPersonal();
+  const c = acct, plan = messagePlan(text, splitParts);
+  const why = plan.error || messageWhy(plan.fee);
+  if (why) throw new Error(why);
+  const step = (words) => { c.progress = words; render(); };
+  try {
+    step("Building the message…");
+    const m = J(await c.cw.createMessage(contact.address, text));
+    const tip = J(c.cw.balance()).tip;
+    step("Signing…");
+    const signed = J(Z.accountSign(m.pczt, personal.seed, personal.network)).signed_pczt;
+    step("Building the proof. This takes about a minute.");
+    const out = await engineOffThread("finalize", signed);
+    const rec = {
+      txid: out.txid, to: contact.index, text, at: Date.now(), tip, fee: m.fee, parts: m.parts,
+      note_value: m.note_value, change: m.change, broadcast: false, failed: "",
+    };
+    await changePersonal((p) => { p.sent.push(rec); });
+    c.live = rec.txid;
+    step("Sending to the network…");
+    await deliver(c, rec, out.tx_hex);
+  } finally { c.progress = ""; c.live = ""; render(); }
+}
+
+async function deliver(c, rec, txHex) {
+  const mark = (patch) => changePersonal((p) => {
+    Object.assign(p.sent.find((r) => r.txid === rec.txid) || {}, patch);
+  });
+  try {
+    await broadcastAnywhere(txHex, { net: c.net, ufvk: c.ufvk, birthday: c.birthday });
+  } catch (e) {
+    const reason = e.message || String(e);
+    if (!e.refused) {
+      throw new Error("The message may not have been sent: " + reason + ". Zigs holds its notes "
+        + "until a block holds it or it expires.");
+    }
+    await mark({ failed: reason }).catch((err) => log("could not save: " + err.message));
+    throw new Error("The message was not sent: " + reason);
+  }
+  await mark({ broadcast: true }).catch((err) => log("could not save the send: " + err.message));
+  log("message sent: " + rec.txid);
+  showBanner("ok", "Sent to the network. It arrives with the next block.");
+  runSync(c);
+}
+
+// The received memos of the account, joined and sorted into the chats of the contacts and the other
+// messages. The result is kept until the list of memos or the contacts change.
+function accountInbox() {
+  const c = acct;
+  if (!c || !personal) return { chats: new Map(), other: [] };
+  const key = personal.contacts.map((x) => x.index).join(",");
+  if (!c.routed || c.routed.received !== c.received || c.routed.key !== key) {
+    const items = receivedItems(c.received, joinTexts);
+    c.routed = { received: c.received, key, ...routeItems(items, personal.contacts) };
+  }
+  return c.routed;
+}
+
+// A block height as a time. A received message has only its block height.
+// The time of a block, counted back from the end of the last sync. The clock goes on between
+// syncs and the height does not, so a count from now would move every message later.
+function blockTime(height) {
+  const tip = heightNow() ?? height;
+  return (acct?.balAt ?? Date.now()) - Math.max(0, tip - height) * BLOCK_MS;
+}
+
+const contactRows = (contact) => chatTimeline(accountInbox().chats.get(contact.index) || [],
+  personal.sent.filter((r) => r.to === contact.index), blockTime);
+
+// ── Personal account: the home page ──
+function personalCard(pickRestore) {
+  if (personalPending) {
+    return el("section", { class: "card card-pad" }, el("h2", {}, "Personal account"),
+      el("p", { class: "small faint" }, "Loading the saved account…"));
+  }
+  if (personalError) return damagedCard();
+  return personal ? accountCard() : createCard(pickRestore);
+}
+
+// A saved account that does not read. The record stays as it is. If it still holds a seed, the
+// person can save a backup of what reads, or remove it and start again.
+function damagedCard() {
+  const canSave = !!personalDamaged && !!salvageBackup(personalDamaged, personalEnv());
+  return el("section", { class: "card card-pad" }, el("h2", {}, "Personal account"),
+    el("div", { class: "callout bad", role: "alert" }, personalError),
+    canSave ? el("p", { class: "small muted" }, "Back up account saves the seed and the "
+      + "contacts that Zigs can read.") : null,
+    personalDamaged ? accountActions(DAMAGED_WARNING, canSave) : null);
+}
+
+function createCard(pickRestore) {
+  const p = ui.personal;
+  return el("section", { class: "card card-pad" },
+    el("div", { class: "card-head" }, el("h2", {}, "Personal account"),
+      el("span", { class: "badge plain" }, "Optional")),
+    el("p", { class: "small muted" }, "Write to anyone who has a shielded Zcash address, also if "
+      + "they do not use Zigs. A message is a small payment on chain, and this account pays its "
+      + "fee. The account is apart from your wallets, and the group server never sees it."),
+    networkPick(p, "account", "p"),
+    el("div", { class: "callout" }, "Keep only a few cents here. Whoever controls this browser can "
+      + "spend the account. Make a backup file right after you create it."),
+    el("div", { class: "dialog-actions" },
+      el("button", { class: "btn", type: "button", onclick: pickRestore }, "Restore from backup"),
+      el("button", {
+        class: "btn primary", type: "button", disabled: !Z,
+        onclick: act(() => createPersonal(p.net)),
+      }, "Create account")));
+}
+
+const skeleton = (cls = "") => el("span", { class: "skel " + cls, role: "img",
+  "aria-label": "Loading balance" });
+
+function accountBalanceBlock(b) {
+  const money2 = (zat) => (b ? money(zat) : skeleton());
+  return el("div", { style: "display:grid;gap:10px" },
+    el("span", { class: "label" }, "Balance"), b ? money(b.total, "xl") : skeleton("xl"),
+    el("div", { class: "stats" },
+      el("div", {}, el("span", { class: "label" }, "Available"), money2(b && b.spendable)),
+      el("div", {}, el("span", { class: "label" }, "Incoming"), money2(b && b.pending))),
+    flightNow().length ? el("div", { class: "sending" }, el("span", { class: "dot busy" }),
+      "A message is waiting for its block") : null);
+}
+
+function accountCard() {
+  const c = acct, b = acctBalance();
+  return el("section", { class: "card card-pad" },
+    el("div", { class: "card-head" }, el("h2", {}, "Personal account"),
+      netBadge({ network: personal.network })),
+    el("p", { class: "small muted" }, "This account pays the fee of your messages on chain. It is "
+      + "not a wallet and it has no signers. Whoever controls this browser can spend it."),
+    personal.backedUp ? null : accountBackupNote(),
+    accountBalanceBlock(b),
+    b ? balanceWarnings(b.total).map((t) => el("div", { class: "callout warn", role: "status" }, t))
+      : null,
+    c ? syncLine(c) : el("p", { class: "small faint" }, NOT_READY),
+    c ? addressBlock(c) : null,
+    c ? fundBlock() : null,
+    accountActions(removeWarning(personal)),
+    otherMessages());
+}
+
+function accountBackupNote() {
+  return el("div", { class: "callout warn", role: "status" },
+    el("span", { style: "flex:1 1 16rem" }, "Back up the account. This browser can forget it: "
+      + "private windows and Tor Browser delete it when they close. The file holds the seed and "
+      + "your contacts. A passphrase that you choose locks it."),
+    el("button", { class: "btn sm", type: "button", onclick: openAccountBackup },
+      "Back up account"));
+}
+
+function addressBlock(c) {
+  const why = acctAddressWhy();
+  if (why) return el("div", { class: "callout" + (acctBalance() ? " bad" : "") }, why);
+  return el("div", { style: "display:grid;gap:8px" },
+    el("span", { class: "label" }, "Public address"),
+    el("div", { class: "addr-box" }, el("span", { class: "hex" }, short(c.address, 18)),
+      copyBtn(c.address)),
+    el("details", { class: "qr-toggle" }, el("summary", {}, "Show QR code"),
+      qrBox(c.address, "Account address")),
+    el("p", { class: "small faint" }, "Anyone who has this address can pay it and write to it. "
+      + "A message that reaches it shows under Other messages, marked not verified. Give each "
+      + "contact their own address instead."));
+}
+
+// The request pays 3 notes, so the account can send a message after each block.
+function fundBlock() {
+  if (acctAddressWhy()) return null;
+  const b = acctBalance();
+  const wallets = proposeWallets(REQUEST_NET[personal.network]);
+  const pick = wallets.length > 1 ? el("select", {
+    class: "input", id: "fund-wallet", "aria-label": "Fund from wallet",
+  }, wallets.map((g) => el("option", { value: g.id },
+    g.name + " (" + netOf(g).label + ")"))) : null;
+  // The warning follows the typing, as the fee line of the composer does.
+  const warn = el("span", { class: "hint bad", id: "fund-warn", role: "status" });
+  const showWarn = () => {
+    warn.textContent = fundingWarning(toZat(ui.personal.fund), b ? b.total : 0);
+  };
+  const amount = el("input", {
+    class: "input", id: "fund-amt", type: "text", inputmode: "decimal", autocomplete: "off",
+    value: ui.personal.fund, "aria-describedby": "fund-hint fund-warn",
+    oninput: (ev) => { ui.personal.fund = ev.target.value; showWarn(); },
+  });
+  showWarn();
+  return el("div", { class: "to-box", style: "display:grid;gap:10px" },
+    el("span", { class: "label" }, "Fund the account"),
+    el("label", { class: "field" }, el("span", {}, "Amount in ZEC"), amount,
+      el("span", { class: "hint", id: "fund-hint" }, "The request asks for 3 equal notes, so the "
+        + "account can send a message after each block. A wallet pays it, and its signers "
+        + "approve it as they approve any payment."), warn),
+    el("div", { class: "req-actions" }, pick,
+      el("button", {
+        class: "btn primary sm", type: "button", disabled: !wallets.length,
+        onclick: act(() => fundFromWallet(pick ? pick.value : wallets[0].id)),
+      }, "Fund from a wallet"),
+      el("button", { class: "btn sm", type: "button", onclick: act(copyFundingRequest) },
+        "Copy request")),
+    wallets.length ? null : el("p", { class: "small faint" }, "You hold no seat in a "
+      + personal.network + " wallet. Copy the request and pay it from any wallet."));
+}
+
+const DAMAGED_WARNING = "This account does not read. Make a backup first if you want to keep it.";
+
+// The backup and remove buttons. `warning` adds a sentence to the question before a removal.
+function accountActions(warning, canSave = true) {
+  const ask = (on) => () => { ui.personal.drop = on; render(); };
+  const sure = ui.personal.drop;
+  return el("div", { style: "display:grid;gap:10px" },
+    el("div", { class: "row-actions" },
+      canSave ? el("button", { class: "btn sm", type: "button", onclick: openAccountBackup },
+        "Back up account") : null,
+      sure ? null : el("button", { class: "btn ghost sm", type: "button", onclick: ask(true) },
+        "Remove from this browser")),
+    sure ? el("div", { class: "callout bad", role: "alert" },
+      el("p", {}, "Remove the account from this browser? The seed is deleted. Only a backup file "
+        + "brings the account back." + (warning ? " " + warning : "")),
+      el("div", { class: "dialog-actions" },
+        el("button", { class: "btn", type: "button", onclick: ask(false) }, "Cancel"),
+        el("button", { class: "btn", type: "button", onclick: act(removeAccount) },
+          "Remove the account"))) : null);
+}
+
+// Messages to the public address, or to an address that no contact has. Nobody can say who wrote
+// them, so the page marks them not verified.
+function otherMessages() {
+  const items = accountInbox().other;
+  if (!items.length) return null;
+  const rows = chatTimeline(items, [], blockTime).slice(-50);
+  return el("details", {}, el("summary", {}, "Other messages (not verified)"),
+    el("p", { class: "small muted" }, items.length + " in all. Anyone who knows an address of "
+      + "this account can write to it."),
+    el("div", { class: "chat-log" }, rows.map((r) =>
+      guard(receivedBubble, r, "Unknown sender", "Not verified", otherWhere(r.index)))));
+}
+
+// ── Personal account: contacts ──
+function contactsCard() {
+  if (!personal) return null;
+  const list = personal.contacts;
+  return el("section", { class: "card" },
+    el("div", { class: "card-head card-pad", style: "padding-bottom:12px" },
+      el("h2", {}, "Contacts on chain"),
+      el("button", { class: "btn sm", type: "button", onclick: openContactDialog }, "Add contact")),
+    list.length ? el("div", { class: "list", style: "border-top:1px solid var(--line)" },
+      list.map((c) => guard(contactRow, c)))
+      : el("p", { class: "small muted card-pad" }, "Add the address of a person. You can then "
+        + "write to them on chain, also if they do not use Zigs."));
+}
+
+function openContactDialog() {
+  ui.contactAdd = true;
+  render();
+}
+
+function contactRow(c) {
+  const name = memoShown(c.name), n = (accountInbox().chats.get(c.index) || []).length;
+  return el("button", {
+    class: "row-item", type: "button", "data-key": "contact-row-" + c.index,
+    onclick: () => openContact(c.index),
+  },
+  el("span", { class: "av lg" }, initials(name)),
+  el("span", { class: "ri-main" }, el("span", { class: "ri-title" }, name),
+    el("span", { class: "ri-sub" }, "On chain · " + (n === 1 ? "1 message" : n + " messages"))),
+  el("span", { class: "ri-end" }), el("span", { class: "chev" }, "›"));
+}
+
+function contactItem(c) {
+  const here = state.contact === c.index, name = memoShown(c.name);
+  return el("button", {
+    class: "side-item" + (here ? " active" : ""), type: "button",
+    "aria-current": here ? "page" : null, "data-key": "contact-" + c.index,
+    onclick: () => openContact(c.index),
+  }, el("span", { class: "av" }, initials(name)), el("span", { class: "side-name" }, name));
+}
+
+function contactDialog() {
+  const close = () => { ui.contactAdd = false; render(); };
+  const net = NETWORKS[personal.network];
+  return el("form", {
+    class: "dialog", role: "dialog", "aria-modal": "true", "aria-labelledby": "contact-title",
+    onsubmit: act(async (ev) => {
+      const fd = new FormData(ev.target);
+      const made = await addPersonalContact(String(fd.get("name") || ""),
+        String(fd.get("address") || ""));
+      ui.contactAdd = false;
+      openContact(made.index);
+    }),
+  },
+  el("div", { class: "card-head" }, el("h2", { id: "contact-title" }, "Add a contact"),
+    el("button", { class: "icon-btn", type: "button", "aria-label": "Close", onclick: close },
+      "×")),
+  el("label", { class: "field" }, el("span", {}, "Name"), el("input", {
+    class: "input", id: "oc-name", name: "name", maxlength: String(NAME_MAX), autocomplete: "off",
+    required: true,
+  }), el("span", { class: "hint" }, "Only you see this name.")),
+  el("label", { class: "field" }, el("span", {}, "Shielded address"), el("input", {
+    class: "input mono", id: "oc-addr", name: "address", placeholder: net.prefix + "…",
+    autocomplete: "off", spellcheck: "false", required: true,
+  })),
+  el("div", { class: "callout" }, "Next, Zigs shows an address for this contact. Give it to them. "
+    + "A message to that address shows in this chat."),
+  el("div", { class: "dialog-actions" },
+    el("button", { class: "btn", type: "button", onclick: close }, "Cancel"),
+    el("button", { class: "btn primary", type: "submit", disabled: !Z || !acct }, "Add contact")));
+}
+
+// ── Personal account: a chat with a contact ──
+const ON_CHAIN_FINE = "The message is a payment of no value, and your text is its memo. It is "
+  + "permanent, and only the memo encryption of Zcash protects its text. Sending takes about a "
+  + "minute, because this browser builds a proof. A wallet that hides payments of no value does "
+  + "not show it.";
+const ON_CHAIN_LIMITS = "This browser keeps the text of the messages that you sent. It is not in "
+  + "the backup file. Private windows and Tor Browser forget it when they close.";
+
+function contactView() {
+  const contact = personal && personal.contacts.find((c) => c.index === state.contact);
+  if (!contact) return lobby();
+  const name = memoShown(contact.name);
+  return el("div", { class: "page" },
+    el("header", { class: "page-head" }, el("div", { class: "ph-left" },
+      el("button", {
+        class: "btn ghost sm back", type: "button",
+        onclick: () => { state.contact = null; render(); },
+      }, "← Wallets"),
+      el("h1", {}, name),
+      el("div", { class: "ph-meta" },
+        el("span", { class: "badge plain" }, "On chain · Zcash memos")))),
+    contactAddress(contact, name),
+    contactMessages(contact, name));
+}
+
+function contactAddress(contact, name) {
+  const why = acct ? acctAddressWhy() : NOT_READY;
+  if (why) return el("div", { class: "callout" }, why);
+  const address = addressFor(contact.index);
+  return el("section", { class: "card card-pad hero-card" },
+    el("div", { class: "card-head" }, el("h2", {}, "Your address for " + name)),
+    el("p", { class: "small muted" }, "Give this address to " + name + ". A message that reaches "
+      + "it shows in this chat, marked as sent to the address you gave " + name + ". Anyone who "
+      + "knows the address can write here."),
+    el("div", { class: "addr-box" }, el("span", { class: "hex nowrap" }, address),
+      copyBtn(address, "Copy address", "btn sm primary")),
+    el("details", { class: "qr-toggle" }, el("summary", {}, "Show QR code"),
+      qrBox(address, "Address for " + name)));
+}
+
+function contactMessages(contact, name) {
+  const items = contactRows(contact).map((r) => guard(onChainRow, r, name));
+  const none = el("p", { class: "small faint" }, "No messages yet. A message to the address above "
+    + "shows here after the next block.");
+  return el("section", { class: "card card-pad chat" },
+    el("div", { class: "card-head" }, el("h2", {}, "Messages")),
+    logBox("log-oc-" + contact.index, "Messages with " + name, items, none),
+    composer({
+      kind: "oc-" + contact.index, why: messageWhy(), seats: [], to: "Message to " + name,
+      fine: ON_CHAIN_FINE, label: "Send on chain", key: "chat:personal:" + contact.index,
+      send: (text) => sendOnChain(contact, text), plan: (text) => messagePlan(text, splitParts),
+      progress: acct ? acct.progress : "",
+    }),
+    el("p", { class: "small faint" }, ON_CHAIN_LIMITS));
+}
+
+function onChainRow(row, name) {
+  if (row.dir === "out") return sentBubble(row);
+  return receivedBubble(row, name, "On chain · sent to the address you gave " + name, "");
+}
+
+// The text of a message from the chain, already through memoShown. A whole text that is a payment
+// request shows as a card with the verdict "memo".
+function memoBodyOf(key, text) {
+  const req = requestOf(text, true, personal.network);
+  if (!req) return el("p", { class: "msg-text" }, text);
+  return requestCard(req, { id: key, name: "a memo", verdict: "memo", dm: true });
+}
+
+// A message from the chain, as the contact's chat and the other messages show it.
+function receivedBubble(row, name, label, where) {
+  const body = row.text === null ? el("p", { class: "msg-text faint" }, "Memo is not text")
+    : memoBodyOf(row.key, memoShown(row.text));
+  return el("div", { class: "msg" },
+    el("span", { class: "av round", title: name }, initials(name)),
+    el("div", { class: "msg-body" },
+      el("div", { class: "msg-head" }, el("b", {}, name), el("time", {}, when(row.at)),
+        el("span", { class: "vmark" + (label === "Not verified" ? " bad" : "") }, label)),
+      body, where ? el("span", { class: "small faint" }, where) : null,
+      row.parts > 1 ? el("span", { class: "small faint" }, "Joined from " + row.parts + " parts")
+        : null,
+      el("a", {
+        class: "small", href: NETWORKS[personal.network].explorer + row.txid, target: "_blank",
+        rel: "noopener",
+      }, "View transaction ↗")));
+}
+
+function sentBubble(rec) {
+  const st = sentStateOf(rec), note = sentNote(rec, st);
+  const cls = st === "chain" ? " ok" : holdsNotes(st) ? "" : " bad";
+  return el("div", { class: "msg" },
+    el("span", { class: "av round me", title: "You" }, "Y"),
+    el("div", { class: "msg-body" },
+      el("div", { class: "msg-head" }, el("b", {}, "You"), el("time", {}, when(rec.at)),
+        el("span", { class: "vmark" + cls }, SENT_WORDS[st])),
+      el("p", { class: "msg-text" }, memoShown(rec.text)),
+      el("span", { class: "small faint" }, "Fee " + zatText(rec.fee) + " ZEC"
+        + (rec.parts > 1 ? " · " + rec.parts + " parts" : "")),
+      note ? el("span", { class: "small faint" }, note) : null,
+      st === "chain" ? el("a", {
+        class: "small", href: NETWORKS[personal.network].explorer + rec.txid, target: "_blank",
+        rel: "noopener",
+      }, "View transaction ↗") : null));
 }
 
 // ── Members ──
@@ -4935,11 +5880,21 @@ const TAB_KEYS = new Set(["zf-secrets", "zf-chats", "zf-vault"]);
 async function takeFromTab(key, value) {
   if (!vault && key === "zf-secrets") secrets = JSON.parse(value);
   if (!vault && key === "zf-chats") chats = normChats(JSON.parse(value));
-  if (vault && key === "zf-vault") {
-    const got = await openVault(vault.key, parseVault(value));
-    ({ secrets, keys: gkeys } = got);
-    chats = normChats(got.chats);
+  if (vault && key === "zf-vault") await takeVault(value);
+}
+
+async function takeVault(value) {
+  const got = await openVault(vault.key, parseVault(value));
+  ({ secrets, keys: gkeys } = got);
+  chats = normChats(got.chats);
+  // A page from before the accounts writes no `personal` field, not even null. It erased the
+  // account from the record: seal ours again. A null means that another tab removed it.
+  if (!("personal" in got)) {
+    if (personal || personalDamaged) persist();
+    return;
   }
+  adoptPersonal(got.personal);
+  followAccount();
 }
 
 window.addEventListener("storage", async (ev) => {
@@ -4966,6 +5921,7 @@ document.addEventListener("keydown", (ev) => {
   if (state.sid) closeSession();
   else {
     ui.send = false; ui.create = false; ui.receive = false; ui.move = false; ui.newChat = false;
+    ui.contactAdd = false;
     closeBackup();
   }
   render();
@@ -4977,8 +5933,17 @@ window.addEventListener("hashchange", () => {
   if (!lockedVault) followHash();
 });
 // New blocks every 25 s: refresh the open wallet once a minute while someone looks at it.
-setInterval(() => { const c = curChain(); if (c && !c.syncing && document.visibilityState === "visible") runSync(c); }, 60000);
+setInterval(() => {
+  if (document.visibilityState !== "visible") return;
+  for (const c of [curChain(), acct]) if (c && !c.syncing) runSync(c);
+}, 60000);
 
 adoptInviteKey();
 draw();   // the first paint does not wait for the engine
-loadEngine().then(() => lockedVault ? render() : boot());
+// The page does not wait for the saved account: it opens at once, and the account follows.
+function startUp() {
+  personalPending = true;
+  boot();
+  rereadPersonal().finally(() => { personalPending = false; startAccount(); render(); });
+}
+loadEngine().then(() => lockedVault ? render() : startUp());

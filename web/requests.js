@@ -105,7 +105,7 @@ const WARNING = {
   changed: "The signing key of the sender changed. Check this request with the sender "
     + "before you pay.",
   unknown: "The sender is unknown. Check this request with the sender before you pay.",
-  memo: "A memo has no sender. Anyone who pays this wallet can write it. Check this request "
+  memo: "A memo has no sender. Anyone who can pay the address can write it. Check this request "
     + "with the sender before you pay.",
 };
 

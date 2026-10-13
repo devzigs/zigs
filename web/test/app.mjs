@@ -8,6 +8,8 @@ import os from "node:os";
 import path from "node:path";
 import * as Z from "../pkg/zec_frost_wasm.js";
 import { newSignKey, signMsg, verifyMsg } from "../chat.js";
+import { HIGH_TEXT as HIGH } from "../personal.js";
+import { aesKey, open as openVault, seal } from "../vault.js";
 
 const web = new URL("../", import.meta.url);
 Z.initSync({ module: fs.readFileSync(new URL("pkg/zec_frost_wasm_bg.wasm", web)) });
@@ -45,8 +47,21 @@ export const T = {
   runMemos, runSync, setMemoReading, readsMemos,
   ui, ready, requestOf, proposeRequest, proposeWallets, dmChoices, fillFromRequest, requestCard,
   composer, roomRequest, chatRequest, memoBody, sendDialog, submitRequest, typingMessage,
-  balCache, busy, groupName, sendBlocker,
+  balCache, busy, groupName, sendBlocker, blockTime,
   get banner() { return banner; },
+  get personal() { return personal; }, set personal(v) { personal = v; },
+  get personalError() { return personalError; }, get acct() { return acct; },
+  setVault(v) { vault = v; }, setLocked(v) { lockedVault = v; }, setIdb(f) { idb = f; },
+  setDownloads(v) { downloads = v; }, setAcct(v) { acct = v; },
+  createPersonal, restoreAccount, removeAccount, addPersonalContact, openContact, changePersonal,
+  persistPersonal, adoptPersonal, rereadPersonal, takeDeviceAccount, deviceRead, startAccount,
+  fundingUri, fundFromWallet, copyFundingRequest, sendOnChain, accountInbox, messageWhy,
+  acctBalance, contactView, otherMessages, personalCard, contactsCard, contactDialog, fundBlock,
+  saveAccountBackup, applyBackup, accountCard, persistSealed, unlockVault, forgetBox, flightNow,
+  sentStateOf, addressFor, addressBlock, layers, backupDialog, submitMessage,
+  startUp, lockWithPasskey, takeFromTab, openContactDialog, mainView, damagedCard,
+  getIdb() { return idb; }, setIdbMs(v) { idbOpenMs = v; },
+  get personalPending() { return personalPending; },
 };
 `;
 const dir = fs.mkdtempSync(path.join(os.tmpdir(), "zigs-app-"));
@@ -893,6 +908,994 @@ const sealed = (gid, rel, seat, fields, key, names = ["by", "sig"]) =>
   const [kept] = await sync("lightwalletd: unavailable");
   assert.equal(kept.error, "lightwalletd: unavailable");
   assert.deepEqual([kept.cw !== null, kept.bal.height], [true, 9], "another error keeps the state");
+}
+
+
+// ── The personal account: storage, sync, sending, funding, backup and restore ──
+{
+  const storageText = () => JSON.stringify([...storage]);
+  // There is no IndexedDB here: the page's `idb` helper gets a map and the same request shape.
+  const idbMap = new Map(), idbFail = { put: false }, idbHide = new Set();
+  const store = {
+    get: (k) => ({ result: idbHide.has(k) ? undefined : idbMap.get(k) }),
+    put: (v, k) => {
+      if (idbFail.put && k === "personal:rec") throw new Error("disk full");
+      idbMap.set(k, v);
+      return { result: k };
+    },
+    add: (v, k) => {
+      if (idbMap.has(k)) throw new Error("ConstraintError");
+      if (idbFail.put && k === "personal:rec") throw new Error("disk full");
+      idbMap.set(k, v);
+      return { result: k };
+    },
+    delete: (k) => { idbMap.delete(k); return { result: undefined }; },
+  };
+  globalThis.indexedDB = {};   // only its presence counts: the helper below is the stand-in
+  const realIdb = t.getIdb(), fakeIdb = async (mode, fn) => fn(store).result;
+  t.setIdb(fakeIdb);
+  const feeOf = (parts) => 5000 * Math.max(2, parts + 1);
+  // The light-wallet server and the proof are fixed answers. The calls are recorded.
+  const net = {
+    bal: { height: 4500100, tip: 4500100, spendable: 300000, pending: 0, notes: 3, max_send: 1 },
+    received: [], sentIds: [], created: [], broadcast: [], opened: [], signed: [], n: 0,
+    broadcastError: "", broadcastBy: {}, needs: [], fetched: [], attached: [], freed: 0,
+  };
+  class Wallet {
+    constructor(ufvk, birthday, url) { net.opened.push([ufvk, birthday, url]); this.url = url; }
+    async sync() { return JSON.stringify(net.bal); }
+    balance() { return JSON.stringify(net.bal); }
+    received() { return JSON.stringify(net.received); }
+    sent() { return JSON.stringify(net.sentIds); }
+    snapshot() { return "{}"; }
+    memoNeeds() { return JSON.stringify(net.needs); }
+    attachTransaction(txid) {
+      net.attached.push(txid);
+      net.needs = net.needs.filter((n) => n.txid !== txid);
+      return JSON.stringify({ attached: 1 });
+    }
+    async createMessage(to, text) {
+      net.created.push([to, text]);
+      const parts = JSON.parse(Z.splitMessage(text)).length, fee = feeOf(parts);
+      return JSON.stringify({ pczt: "P" + net.created.length, pool: "ironwood", fee, parts,
+        note_value: 100000, change: 100000 - fee });
+    }
+    async broadcast(hex) {
+      const said = net.broadcastBy[this.url] ?? net.broadcastError;
+      if (said) throw new Error(said);
+      net.broadcast.push(hex);
+      return JSON.stringify({ txid: "ok" });
+    }
+    free() { net.freed++; }
+  }
+  const Zp = { ...Z, latestHeight: async () => 4500000, ChainWallet: Wallet,
+    fetchTransaction: async (url, hash) => { net.fetched.push(hash); return "RAW"; },
+    accountSign: (pczt, seed, network) => {
+      net.signed.push([pczt, seed, network]);
+      return JSON.stringify({ signed_pczt: "S:" + pczt });
+    },
+    finalize: (pczt) => JSON.stringify({ tx_hex: "hex:" + pczt, txid: "TX" + (++net.n), size: 3,
+      version: "V6" }) };
+  t.setZ(Zp);
+
+  // The page opens at once. The saved account loads beside it, also when IndexedDB never answers,
+  // and an open that did not answer is tried again at the next call.
+  const asked = [], opens = [];
+  globalThis.zigs = { use: async (name) => { asked.push(name); return null; } };
+  globalThis.indexedDB = { open: () => { opens.push(1); return {}; } };
+  t.setIdb(realIdb);
+  t.setIdbMs(40);
+  t.startUp();
+  assert.deepEqual([asked.length, t.personalPending], [3, true], "boot does not wait for the read");
+  await waitFor("the saved account read ends", () => !t.personalPending);
+  assert.deepEqual([t.personal, t.personalError], [null, ""], "a hung store blocks nothing");
+  await t.rereadPersonal();
+  assert.equal(opens.length, 2, "a failed open is forgotten");
+  // The error event of a request reaches the transaction before tx.error is set, and a commit can
+  // abort. The helper rejects with an Error in both cases, so the callers can name it.
+  const txs = [], fakeDb = { transaction: () => {
+    const tx = { error: null, objectStore: () => ({ add: () => ({}) }) };
+    txs.push(tx);
+    return tx;
+  } };
+  globalThis.indexedDB = { open: () => {
+    const r = {};
+    setTimeout(() => { r.result = fakeDb; r.onsuccess(); });
+    return r;
+  } };
+  const conflict = realIdb("readwrite", (st) => st.add(1, "personal:rec"));
+  await waitFor("a transaction", () => txs.length === 1);
+  txs[0].onerror({ target: { error: new Error("ConstraintError") } });
+  await assert.rejects(conflict, /ConstraintError/);
+  const quota = realIdb("readwrite", (st) => st.add(1, "x"));
+  await waitFor("a second transaction", () => txs.length === 2);
+  txs[1].error = new Error("QuotaExceededError");
+  txs[1].onabort();
+  await assert.rejects(quota, /QuotaExceededError/);
+  globalThis.indexedDB = {};
+  t.setIdb(fakeIdb);
+  delete globalThis.zigs;
+
+  // A store that fails as a whole knows no account. It does not block the lock or a new account,
+  // but an account that this page saw stays safe from a lock that would leave it out.
+  t.setIdb(async () => { throw new Error("blocked by the browser"); });
+  await t.rereadPersonal();
+  assert.deepEqual([t.personal, t.personalError], [null, ""]);
+  await t.takeDeviceAccount();
+  await assert.rejects(t.createPersonal("testnet"), /could not save the account/);
+  t.personal = { seed: "kept" };
+  await assert.rejects(t.takeDeviceAccount(), /did not lock/);
+  t.personal = null;
+  t.setIdb(fakeIdb);
+
+  const synced = () => waitFor("account sync", () => t.acct && t.acct.bal && !t.acct.syncing);
+  const copied = [];
+  // The passkey is a fixed 32-byte secret here; Web Locks are added by the tests that need them.
+  const nav = {
+    clipboard: { writeText: async (x) => { copied.push(x); } },
+    credentials: {
+      create: async () => ({ rawId: new Uint8Array(16).fill(1),
+        getClientExtensionResults: () => ({ prf: { enabled: true } }) }),
+      get: async () => ({ getClientExtensionResults: () =>
+        ({ prf: { results: { first: new Uint8Array(32).fill(7) } } }) }),
+    },
+  };
+  Object.defineProperty(globalThis, "navigator", { configurable: true, value: nav });
+  const downloaded = [];
+  t.setDownloads({ save: async (file) => { downloaded.push(file); } });
+
+  // Create. A mainnet account needs the confirmation, and a failed save leaves nothing.
+  await assert.rejects(t.createPersonal("mainnet"), /Confirm that you understand/);
+  idbFail.put = true;
+  await assert.rejects(t.createPersonal("testnet"), /could not save the account/);
+  assert.deepEqual([t.personal, t.acct, [...idbMap.keys()].includes("personal:rec")],
+    [null, null, false], "a failed save makes no account");
+  idbFail.put = false;
+  await t.createPersonal("testnet");
+  const seed = t.personal.seed, keys = JSON.parse(Z.accountKeys(seed, "testnet"));
+  assert.match(seed, /^[0-9a-f]{64}$/);
+  assert.deepEqual([t.personal.network, t.personal.birthday, t.personal.contacts,
+    t.personal.backedUp], ["testnet", 4500000, [], false]);
+  await synced();
+  assert.deepEqual([t.acct.address, t.acct.ufvk], [keys.address, keys.ufvk]);
+  assert.deepEqual([net.opened[0][0], net.opened[0][1]], [keys.ufvk, 4500000],
+    "it syncs by the viewing key, from the birthday");
+  assert.equal(t.acct.account, true);
+  await assert.rejects(t.createPersonal("testnet"), /personal account already/);
+
+  // The seed is not in local storage, the sealed record, a log line or the view state.
+  const hygiene = (what) => {
+    const sealedRec = JSON.stringify([...idbMap.entries()]
+      .map(([k, v]) => [k, v instanceof CryptoKey ? "key" : v]));
+    for (const hay of [storageText(), sealedRec, t.state.log.join("\n"), JSON.stringify(t.ui),
+      t.banner ? t.banner.text : ""]) assert.equal(hay.includes(seed), false, what);
+  };
+  hygiene("after create");
+  assert.deepEqual([...idbMap.keys()].sort().filter((k) => k.startsWith("personal")),
+    ["personal", "personal:key", "personal:rec"], "the key, the record and the sync state");
+  assert.equal(idbMap.get("personal:key").extractable, false, "the device key cannot be exported");
+
+  // A reload reads the account again. A changed record is not read, and blocks a new account.
+  const saved = t.personal;
+  t.personal = null;
+  await t.rereadPersonal();
+  assert.deepEqual(t.personal, saved, "the sealed record gives the same account");
+  const rec = idbMap.get("personal:rec");
+  idbMap.set("personal:rec", { ...rec, box: rec.box.slice(0, -4) + "AAAA" });
+  t.personal = null;
+  await t.rereadPersonal();
+  assert.equal(t.personal, null);
+  assert.match(t.personalError, /could not read the saved personal account/);
+  await assert.rejects(t.createPersonal("testnet"), /Do not make a new account yet/);
+  assert.equal(idbMap.get("personal:rec").box, rec.box.slice(0, -4) + "AAAA",
+    "nothing overwrote it");
+  idbMap.set("personal:rec", rec);
+  await t.rereadPersonal();
+  assert.deepEqual([t.personalError, t.personal.seed], ["", seed]);
+
+  // Another tab made the account while this tab still shows the Create card: this tab adopts it.
+  const alt = JSON.parse(Z.accountNew("testnet"));
+  const strangers = { kind: "personal", version: 1, network: "testnet", seed: alt.seed,
+    birthday: 1, contacts: [] };
+  const first = idbMap.get("personal:rec");
+  t.personal = null;
+  await assert.rejects(t.createPersonal("testnet"), /personal account already/);
+  assert.equal(t.personal.seed, seed, "the saved account is the account of this tab now");
+  t.personal = null;
+  await assert.rejects(t.restoreAccount(strangers, true), /personal account already/);
+  assert.equal(t.personal.seed, seed);
+  assert.equal(idbMap.get("personal:rec"), first, "nothing wrote over the saved account");
+  // A read that misses it does not help: the store refuses a second account.
+  idbHide.add("personal:rec");
+  t.personal = null;
+  await assert.rejects(t.createPersonal("testnet"), /could not save the account/);
+  t.personal = null;
+  await assert.rejects(t.restoreAccount(strangers, true), /could not save the restored account/);
+  idbHide.delete("personal:rec");
+  assert.equal(idbMap.get("personal:rec"), first, "the store refused the write over it");
+  await t.rereadPersonal();
+  assert.equal(t.personal.seed, seed);
+  // The reads miss the saved account and the store refuses the write: the page reads once more
+  // and takes the saved account.
+  const realAdd = store.add;
+  idbHide.add("personal:rec");
+  store.add = (v, k) => { idbHide.delete("personal:rec"); return realAdd(v, k); };
+  t.personal = null;
+  await assert.rejects(t.createPersonal("testnet"), /personal account already/);
+  store.add = realAdd;
+  assert.equal(t.personal.seed, seed, "the page took the saved account after the refused write");
+  assert.equal(idbMap.get("personal:rec"), first);
+  assert.equal(t.acct.address, keys.address, "the account of this tab did not change");
+
+  // The account reads memos by itself, and the sync is not dropped as a stale run.
+  assert.equal(t.readsMemos("personal"), false, "no memo switch for the account");
+  net.needs = [{ txid: "M1", hash: "h1", height: 4500050 }];
+  await runAcctSync();
+  await waitFor("the memo read", () => net.attached.length === 1);
+  assert.deepEqual([net.fetched, net.attached], [["h1"], ["M1"]]);
+  assert.equal(net.freed, 0, "the wallet of the account stays while the account is current");
+
+  // Contacts: the next index, the rules, and a save that comes before the answer.
+  const other = JSON.parse(Z.accountNew("testnet")), at = (k) => Z.addressAt(other.ufvk, k);
+  await assert.rejects(t.addPersonalContact("Ana", keys.address), /address of your own account/);
+  await assert.rejects(t.addPersonalContact("Ana", "nope"), /Enter a shielded Zcash testnet/);
+  const ana = await t.addPersonalContact("Ana", at(0));
+  const ben = await t.addPersonalContact("Ben", at(1));
+  assert.deepEqual([ana.index, ben.index], [1, 2]);
+  await assert.rejects(t.addPersonalContact("Cy", at(0)), /already a contact: Ana/);
+  await assert.rejects(t.addPersonalContact("ana", at(2)), /name already/);
+  await assert.rejects(t.addPersonalContact("Cy", t.addressFor(1)),
+    /address of your own account/, "the address that was made for a contact is not a contact");
+  const stored = await t.deviceRead();
+  assert.deepEqual(stored.contacts.map((c) => [c.name, c.index]), [["Ana", 1], ["Ben", 2]],
+    "the contacts are in the saved record");
+  idbFail.put = true;
+  await assert.rejects(t.addPersonalContact("Cy", at(2)), /Could not save this change/);
+  idbFail.put = false;
+  assert.equal(t.personal.contacts.length, 2, "a change that was not saved is undone");
+  assert.notEqual(t.addressFor(1), t.addressFor(2));
+  assert.equal(t.addressFor(0), keys.address);
+  assert.equal(t.addressFor(1), Z.addressAt(keys.ufvk, 1), "the address for a contact");
+
+  // The balance and the gate.
+  assert.equal(t.acctBalance().total, 300000);
+  assert.equal(t.messageWhy(), "");
+  assert.equal(t.messageWhy(2e6).length > 0, true);
+
+  // Send: build, sign, prove, save, and only then broadcast. The seed signs on this thread.
+  const sentAfter = async (text, contact = ana) => {
+    await t.sendOnChain(contact, text);
+    return t.personal.sent.at(-1);
+  };
+  let one = await sentAfter("hello Ana");
+  assert.deepEqual(net.created.at(-1), [ana.address, "hello Ana"]);
+  assert.deepEqual(net.signed.at(-1), ["P1", seed, "testnet"]);
+  assert.deepEqual(net.broadcast, ["hex:S:P1"], "the signed, proved transaction goes out");
+  assert.deepEqual([one.txid, one.to, one.text, one.fee, one.parts, one.broadcast, one.failed],
+    ["TX1", 1, "hello Ana", 10000, 1, true, ""]);
+  assert.equal(one.tip, 4500100);
+  assert.equal(t.sentStateOf(one), "sending", "no block holds it yet");
+  assert.match(t.messageWhy(), /waiting for its block/, "one message at a time");
+  assert.deepEqual(t.acctBalance(), { spendable: 200000, pending: 90000, total: 290000 },
+    "the spent note leaves the balance, the change is incoming");
+  assert.equal((await t.deviceRead()).sent.length, 1, "the text is saved sealed with its txid");
+  await assert.rejects(t.sendOnChain(ana, "again"), /waiting for its block/);
+  assert.equal(net.created.length, 1, "a refused message builds nothing");
+  net.sentIds = ["TX1"];
+  await runAcctSync();
+  assert.equal(t.sentStateOf(one), "chain");
+  assert.equal(t.messageWhy(), "", "after its block, the next message can go");
+  // A block keeps its time between syncs: the count starts at the end of the last sync.
+  const h = t.acct.bal.height - 4, realNow = Date.now;
+  const firstTime = t.blockTime(h);
+  Date.now = () => realNow() + 600000;
+  try { assert.equal(t.blockTime(h), firstTime, "ten minutes later, the same time"); }
+  finally { Date.now = realNow; }
+
+  // A broadcast that a node refuses: marked, the composer is free, nothing is left waiting. Only
+  // the engine's words for a refusal count (isNodeRefusal).
+  net.broadcastError = "node rejected the transaction: bad-txns";
+  await assert.rejects(t.sendOnChain(ana, "second"),
+    /The message was not sent: .*node rejected the transaction: bad-txns/);
+  const refused = t.personal.sent.at(-1);
+  assert.deepEqual([refused.failed.includes("bad-txns"), refused.broadcast,
+    t.sentStateOf(refused)], [true, false, "failed"]);
+  assert.equal(t.messageWhy(), "");
+  assert.equal(t.flightNow().length, 0, "a refused message holds no note");
+  net.broadcastError = "";
+
+  // A save that fails stops the send before the broadcast.
+  const out = net.broadcast.length;
+  idbFail.put = true;
+  await assert.rejects(t.sendOnChain(ana, "third"), /Could not save this change/);
+  idbFail.put = false;
+  assert.deepEqual([net.broadcast.length, t.personal.sent.length], [out, 2],
+    "no broadcast without a saved record");
+  assert.equal(t.acct.progress, "");
+
+  // A record that was saved but never confirmed as sent (the page closed, or the save of the
+  // answer failed) may be on the network. It holds its note like a sent one, until it expires.
+  t.personal.sent.push({ txid: "TXQ", to: 1, text: "q", at: 1, tip: 4500100, fee: 1, parts: 1,
+    note_value: 1, change: 1, broadcast: false, failed: "" });
+  assert.equal(t.sentStateOf(t.personal.sent.at(-1)), "unsure");
+  assert.equal(t.flightNow().length, 1, "an unconfirmed message holds its note");
+  assert.match(t.messageWhy(), /waiting for its block/);
+  t.personal.sent.push({ txid: "TXE", to: 1, text: "e", at: 1, tip: 4500100, fee: 1, parts: 1,
+    note_value: 1, change: 1, broadcast: true, failed: "" });
+  assert.equal(t.sentStateOf(t.personal.sent.at(-1)), "sending");
+  assert.equal(t.flightNow().length, 2);
+  t.acct.bal = { ...t.acct.bal, height: 4500100 + 44 };
+  assert.deepEqual(t.personal.sent.slice(-2).map(t.sentStateOf), ["expired", "expired"]);
+  assert.equal(t.flightNow().length, 0, "an expired message frees the account");
+  t.acct.bal = net.bal;
+  t.personal.sent.length = 2;
+
+  // A broadcast that gets no answer may have reached the node. The message holds its note until a
+  // block holds it or it expires, so the next message cannot spend the same note. Only a node that
+  // answered with a refusal frees the note, on every server.
+  const lost = async (said, by = {}) => {
+    net.broadcastError = said;
+    net.broadcastBy = by;
+    await assert.rejects(t.sendOnChain(ana, "maybe"), /may not have been sent/);
+    net.broadcastError = "";
+    net.broadcastBy = {};
+    const rec = t.personal.sent.at(-1);
+    assert.deepEqual([rec.failed, rec.broadcast, t.sentStateOf(rec)], ["", false, "unsure"]);
+    assert.equal(t.flightNow().length, 1, "its note stays held");
+    assert.deepEqual(t.acctBalance(), { spendable: 200000, pending: 90000, total: 290000 });
+    assert.match(t.messageWhy(), /waiting for its block/);
+    const built = net.created.length;
+    await assert.rejects(t.sendOnChain(ana, "again"), /waiting for its block/);
+    assert.equal(net.created.length, built, "no second message from the same note");
+    t.acct.bal = { ...net.bal, height: 4500100 + 44 };
+    assert.equal(t.flightNow().length, 0, "it frees the note when it expires");
+    assert.equal(t.sentStateOf(rec), "expired");
+    t.acct.bal = net.bal;
+    net.sentIds.push(rec.txid);
+    await runAcctSync();
+    assert.deepEqual([t.sentStateOf(rec), t.flightNow().length], ["chain", 0],
+      "a block settles it");
+  };
+  await lost("lwd.zigs.app did not answer in 16 s");
+  await lost("lightwalletd: unavailable");
+  const servers = ["https://lwd.zigs.app", "https://zcash-testnet.chainsafe.dev"];
+  const refuse = "node rejected the transaction: bad-txns";
+  await lost("", { [servers[0]]: refuse, [servers[1]]: "chainsafe did not answer in 16 s" });
+  await lost("", { [servers[0]]: "lightwalletd: node rejected the transaction: forged",
+    [servers[1]]: refuse });
+  net.broadcastBy = { [servers[0]]: refuse, [servers[1]]: refuse };
+  await assert.rejects(t.sendOnChain(ana, "refused twice"), /The message was not sent/);
+  net.broadcastBy = {};
+  assert.equal(t.sentStateOf(t.personal.sent.at(-1)), "failed", "every server refused it");
+  assert.equal(t.flightNow().length, 0);
+
+  // A longer message costs more, and the split error comes before any work.
+  one = await sentAfter("x".repeat(1200), ben);
+  assert.deepEqual([one.parts, one.fee, one.to], [3, 20000, 2]);
+  net.sentIds.push(one.txid);
+  await runAcctSync();
+  const made = net.created.length;
+  await assert.rejects(t.sendOnChain(ana, "a".repeat(2001)), /2001 characters/);
+  await assert.rejects(t.sendOnChain(ana, "é".repeat(1266)), /more than 5 parts/);
+  assert.equal(net.created.length, made);
+  net.bal = { ...net.bal, spendable: 9000, pending: 0 };
+  await runAcctSync();
+  assert.match(t.messageWhy(), /does not cover the network fee/);
+  await assert.rejects(t.sendOnChain(ana, "poor"), /does not cover the network fee/);
+  net.bal = { ...net.bal, spendable: 300000 };
+  await runAcctSync();
+  hygiene("after sending");
+
+  // Two changes at once never overwrite each other: the second reads what the first saved, so
+  // the two contacts get two indexes.
+  const known = t.personal.contacts.length;
+  const pair = await Promise.all([t.addPersonalContact("Pia", at(5)),
+    t.addPersonalContact("Quin", at(6))]);
+  assert.notEqual(pair[0].index, pair[1].index);
+  assert.deepEqual((await t.deviceRead()).contacts.slice(known).map((c) => c.name).sort(),
+    ["Pia", "Quin"], "both contacts are saved");
+  await t.changePersonal((p) => { p.contacts.length = known; });
+
+  // Two tabs without the lock: tab B has not read the record that tab A saved. It reads the saved
+  // account before it builds, and one message goes at a time, also across tabs (Web Locks).
+  const tails = new Map(), asked2 = [];
+  nav.locks = { request: (name, fn) => {
+    asked2.push(name);
+    const run = (tails.get(name) || Promise.resolve()).then(fn);
+    tails.set(name, run.catch(() => {}));
+    return run;
+  } };
+  const tabB = structuredClone(t.personal);
+  const fromA = await sentAfter("from tab A", ana);
+  assert.deepEqual([...new Set(asked2)].sort(), ["zigs-account", "zigs-send"],
+    "a send and a change each take their own lock, so the send cannot wait for itself");
+  t.personal = tabB;
+  const madeByA = net.created.length;
+  await assert.rejects(t.sendOnChain(ben, "from tab B"), /waiting for its block/);
+  assert.equal(net.created.length, madeByA, "tab B builds nothing from the note of tab A");
+  assert.equal(t.personal.sent.some((r) => r.txid === fromA.txid), true, "tab B reads the record");
+  // Both at once: the second waits for the first, then sees its record.
+  net.sentIds.push(fromA.txid);
+  await runAcctSync();
+  const both = await Promise.allSettled([t.sendOnChain(ana, "one"), t.sendOnChain(ben, "two")]);
+  assert.deepEqual(both.map((r) => r.status), ["fulfilled", "rejected"]);
+  assert.match(both[1].reason.message, /waiting for its block/);
+  net.sentIds.push(t.personal.sent.at(-1).txid);
+  await runAcctSync();
+  delete nav.locks;
+  assert.equal(t.messageWhy(), "");
+
+  // The sync follows the saved account. Another tab can leave a record that does not read, or an
+  // account with another sync key. Then a send stops with a sentence, and the contact addresses
+  // come from the account that the record holds.
+  const deviceSeal = async (record) => seal(idbMap.get("personal:key"),
+    { cred: "device", salt: "device" }, record);
+  const goodRec = idbMap.get("personal:rec"), stored1 = await t.deviceRead();
+  idbMap.set("personal:rec", await deviceSeal({ ...stored1, seed: "00" }));
+  const madeBefore = net.created.length;
+  await assert.rejects(t.sendOnChain(ana, "after a damage"), /Wait for the first sync/);
+  assert.deepEqual([t.personal, t.acct, net.created.length], [null, null, madeBefore],
+    "no message is built from an account that does not read");
+  idbMap.set("personal:rec", goodRec);
+  await t.rereadPersonal();
+  await synced();
+  idbMap.set("personal:rec", await deviceSeal({ ...stored1, snapKey: "n".repeat(43) }));
+  await t.rereadPersonal();
+  assert.equal(t.acct.secret, "n".repeat(43), "the sync of the new key replaces the old one");
+  idbMap.set("personal:rec", goodRec);
+  await t.rereadPersonal();
+  await synced();
+  assert.equal(t.acct.secret, stored1.snapKey);
+
+  // Funding: a request with 3 payees. A wallet of this browser proposes it, and nothing is sent.
+  t.ui.personal.fund = "0.003";
+  const req = JSON.parse(Z.parseRequest(t.fundingUri(), "test")).payees;
+  assert.deepEqual(req.map((p) => [p.to, p.amount]), Array(3).fill([keys.address, 100000]));
+  t.ui.personal.fund = "0.0003";
+  assert.equal(JSON.parse(Z.parseRequest(t.fundingUri(), "test")).payees.length, 3);
+  for (const bad of ["0", "0.00001", "x", "", "1e3"]) {
+    t.ui.personal.fund = bad;
+    assert.throws(() => t.fundingUri(), /Enter an amount|Fund at least/, bad);
+  }
+  t.ui.personal.fund = "0.003";
+  const W = "ffffffffffffffffffff";
+  t.state.groups = [{ id: W, name: "Team", network: "testnet" }];
+  t.secrets[W + ":1"] = { keyPackage: {} };
+  t.ready[W] = { address: "x" };
+  const writes = [];
+  const quiet = (path) => ({ id: path.split("/").pop(), path, onSnapshot: () => () => {},
+    set: async () => writes.push(path), update: async () => writes.push(path),
+    acquire: async () => ({ acquired: true }), get: async () => ({ exists: false }) });
+  t.setDb({ doc: quiet, collection: (p) => ({ doc: (id) => quiet(p + "/" + id),
+    onSnapshot: () => () => {} }) });
+  t.fundFromWallet(W);
+  assert.deepEqual([t.ui.send, t.ui.sendFor, t.ui.note],
+    [true, W, "Fund the proposer's personal account"]);
+  assert.deepEqual(t.ui.pay.map((r) => [r.to, r.amt, r.memo]),
+    Array(3).fill([keys.address, "0.001", ""]));
+  assert.deepEqual(writes, [], "Fund from a wallet writes nothing to the store");
+  t.openGroup(null);
+  t.ui.send = false; t.ui.pay = null; t.ui.note = "";
+  await t.copyFundingRequest();
+  assert.equal(copied.at(-1), t.fundingUri());
+  assert.equal(t.banner.text, "Request copied. Pay it from any wallet.");
+
+  // Backup: the payload round trips through the encrypted file, and restore gives it back.
+  assert.equal(t.personal.backedUp, false, "the contacts are not in a file yet");
+  assert.equal(await t.saveAccountBackup("this is a long test passphrase"), true);
+  const file = downloaded.at(-1);
+  assert.equal(file.filename, "zigs-personal-testnet.zigsbackup");
+  assert.equal(file.data.includes(seed), false, "the file does not show the seed");
+  const payload = JSON.parse(Z.backupOpen("this is a long test passphrase", file.data));
+  assert.deepEqual(Object.keys(payload).sort(),
+    ["birthday", "contacts", "kind", "network", "seed", "version"]);
+  assert.deepEqual([payload.seed, payload.network, payload.birthday, payload.contacts.length],
+    [seed, "testnet", 4500000, 2]);
+  assert.deepEqual([t.personal.backedUp, t.personal.everBackedUp], [true, true]);
+  const sealedKey = t.personal.snapKey, sentBefore = t.personal.sent.length;
+  assert.equal(sentBefore > 0, true);
+  await t.addPersonalContact("Dee", at(3));
+  assert.deepEqual([t.personal.backedUp, t.personal.everBackedUp], [false, true],
+    "a new contact makes the file out of date, but the file exists");
+  await assert.rejects(t.restoreAccount(payload, true), /keeps one account|already/);
+  await assert.rejects(t.applyBackup(payload, true), /already/,
+    "a backup goes to the account path");
+  await t.removeAccount();
+  assert.deepEqual([t.personal, t.acct, [...idbMap.keys()].filter((k) => k.startsWith("personal"))],
+    [null, null, []], "the seed, the key and the sync state are gone");
+  await assert.rejects(t.applyBackup(payload, false), /not encrypted/);
+  await assert.rejects(t.restoreAccount({ ...payload, seed: "zz" }, true), /valid seed/);
+  await assert.rejects(t.restoreAccount({ ...payload, kind: "zec-frost-key-share" }, true),
+    /not a backup/);
+  // A name that is not text is an error in words. An index above the cap is refused.
+  const ana0 = payload.contacts[0];
+  await assert.rejects(t.restoreAccount({ ...payload, contacts: [{ ...ana0, name: 5 }] }, true),
+    /^Error: Contact 1: Enter a name for this contact\.$/);
+  await assert.rejects(t.restoreAccount({ ...payload,
+    contacts: [{ ...ana0, index: 4294967295 }] }, true), /Contact 1: has a bad index/);
+  assert.equal(t.personal, null);
+  await t.applyBackup(payload, true);
+  // Before the first sync, Zigs does not know which addresses got a payment.
+  assert.equal(t.acct.bal, null, "the first sync is not done");
+  await assert.rejects(t.addPersonalContact("Kim", at(5)), /Wait for the first sync/);
+  await synced();
+  assert.deepEqual([t.personal.seed, t.personal.birthday, t.personal.sent, t.personal.backedUp],
+    [seed, 4500000, [], true]);
+  assert.deepEqual(t.personal.contacts.map((c) => [c.name, c.index]),
+    [["Ana", 1], ["Ben", 2]], "the file had the contacts of its time");
+  assert.notEqual(t.personal.snapKey, sealedKey, "a new sync key");
+  assert.equal(t.acct.address, keys.address, "the same account");
+  assert.deepEqual([net.opened.at(-1)[0], net.opened.at(-1)[1]], [keys.ufvk, 4500000]);
+  hygiene("after restore");
+
+  // The old file lacks Dee, who had index 3 and wrote to her address. The chain shows that this
+  // address got a payment, so the next contact does not take it.
+  net.received = [{ txid: "ZD", height: 4500060, confirmed: true, value: 0, memo_pending: false,
+    memos: [{ status: "text", text: "hello again", index: 3 }], indexes: [3] }];
+  await runAcctSync();
+  const kim = await t.addPersonalContact("Kim", at(5));
+  assert.equal(kim.index, 4, "index 3 got a payment, so Kim does not take it");
+  await t.changePersonal((p) => { p.contacts.pop(); });
+  net.received = [];
+  await runAcctSync();
+
+  // The sealed record of the passkey lock holds the account too, and not the device copy.
+  const vkey = await crypto.subtle.importKey("raw", crypto.getRandomValues(new Uint8Array(32)),
+    "AES-GCM", false, ["encrypt", "decrypt"]);
+  const puts = () => JSON.stringify([...idbMap.entries()].map(([k, v]) => [k, v && v.iv]));
+  const before = puts();
+  t.setVault({ rec: { cred: "c", salt: "s" }, key: vkey });
+  await t.addPersonalContact("Eve", at(4));
+  assert.equal(puts(), before, "with the lock on, the device copy is not written");
+  const vrec = JSON.parse(storage.get("zf-vault"));
+  assert.equal(storage.get("zf-vault").includes(seed), false);
+  const opened = await openVault(vkey, vrec);
+  assert.deepEqual([opened.personal.seed, opened.personal.contacts.map((c) => c.name)],
+    [seed, ["Ana", "Ben", "Eve"]]);
+  // A field that this page does not know stays in the record when the page saves.
+  storage.set("zf-vault", JSON.stringify(await seal(vkey, vrec, { ...opened, future: { x: 1 } })));
+  await t.persistSealed();
+  const resaved = await openVault(vkey, JSON.parse(storage.get("zf-vault")));
+  assert.deepEqual([resaved.future, resaved.personal.seed], [{ x: 1 }, seed]);
+  // With the lock on, the save of another tab can reach this tab late. A change reads the sealed
+  // record first, so it keeps the contact of the other tab and does not take its index.
+  const top = Math.max(...resaved.personal.contacts.map((c) => c.index));
+  const pia = { name: "Pia", address: at(7), index: top + 1 };
+  storage.set("zf-vault", JSON.stringify(await seal(vkey, vrec, { ...resaved,
+    personal: { ...resaved.personal, contacts: [...resaved.personal.contacts, pia] } })));
+  await t.addPersonalContact("Bo", at(8));
+  const merged = await openVault(vkey, JSON.parse(storage.get("zf-vault")));
+  assert.deepEqual(merged.personal.contacts.slice(-2).map((c) => [c.name, c.index]),
+    [["Pia", top + 1], ["Bo", top + 2]], "the late save of another tab is kept");
+  // A key share that this tab could not save yet stays in memory when a change reads the record.
+  const UNSAVED = "a".repeat(20) + ":1";
+  t.secrets = { ...t.secrets, [UNSAVED]: { keyPackage: "kp" } };
+  storage.set("zf-vault", JSON.stringify(await seal(vkey, vrec, merged)));
+  await t.changePersonal((p) => { p.backedUp = true; });
+  assert.equal(t.secrets[UNSAVED]?.keyPackage, "kp", "the re-read takes only the account");
+  delete t.secrets[UNSAVED];
+  // Another tab saves an account while this tab makes one: this tab writes nothing over it.
+  const otherTab = storage.get("zf-vault");
+  storage.set("zf-vault", JSON.stringify(await seal(vkey, vrec, { ...merged, personal: null })));
+  await t.rereadPersonal();
+  assert.equal(t.personal, null);
+  t.setZ({ ...Zp, latestHeight: async () => { storage.set("zf-vault", otherTab); return 4500000; } });
+  await assert.rejects(t.createPersonal("testnet"), /personal account already/);
+  t.setZ(Zp);
+  assert.equal(storage.get("zf-vault"), otherTab, "nothing wrote over the account of the other tab");
+  assert.equal(t.personal.seed, seed, "this tab took the account of the other tab");
+  await synced();
+  // A page from before the accounts saves the record with no `personal` field and drops the
+  // account. This page keeps it in memory and seals it again. A null means that a page removed it.
+  const keepSecrets = t.secrets, keepKeys = t.gkeys;
+  const oldPage = JSON.stringify(await seal(vkey, vrec, { secrets: {}, keys: {}, chats: {} }));
+  storage.set("zf-vault", oldPage);
+  await t.takeFromTab("zf-vault", oldPage);
+  await waitFor("the account is sealed again", () => storage.get("zf-vault") !== oldPage);
+  t.secrets = keepSecrets;
+  t.gkeys = keepKeys;
+  assert.equal(t.personal.seed, seed, "the account stays in memory");
+  const healed = await openVault(vkey, JSON.parse(storage.get("zf-vault")));
+  assert.equal(healed.personal.seed, seed, "and in the record");
+  t.personal = null;
+  t.adoptPersonal(opened.personal);
+  assert.equal(t.personal.seed, seed, "the account comes back from the sealed record");
+  t.adoptPersonal({ ...opened.personal, seed: "00" });
+  assert.deepEqual([t.personal, /cannot be read/.test(t.personalError)], [null, true]);
+  await t.persistSealed();
+  const kept = await openVault(vkey, JSON.parse(storage.get("zf-vault")));
+  assert.equal(kept.personal.seed, "00", "a record that does not read is kept, not erased");
+  t.adoptPersonal(opened.personal);
+  // The lock moves a device copy into the sealed record. A copy that cannot be read stops it.
+  t.setVault(null);
+  storage.delete("zf-vault");
+  await t.persistPersonal();
+  assert.equal((await t.deviceRead()).contacts.length, 3);
+  t.personal = null;
+  await t.takeDeviceAccount();
+  assert.equal(t.personal.seed, seed);
+  idbMap.set("personal:rec", { ...idbMap.get("personal:rec"), box: "AAAA" });
+  await assert.rejects(t.takeDeviceAccount(), /did not lock/);
+  // Another tab turned the lock on: this tab writes nothing beside it.
+  storage.set("zf-vault", "{}");
+  idbMap.set("personal:rec", rec);
+  const frozen = puts();
+  await assert.rejects(t.changePersonal((p) => { p.backedUp = true; }), /Could not save/);
+  assert.equal(puts(), frozen);
+  t.setLocked({ damaged: true });
+  assert.equal(await t.persistPersonal(), false, "locked: nothing is written");
+  t.setLocked(null);
+  storage.delete("zf-vault");
+
+  // ── What the pages show ──
+  const realDocument = globalThis.document;
+  class Rec extends Node {
+    constructor(tag) {
+      super();
+      Object.assign(this, { tag, attrs: {}, kids: [], on: {}, style: {} });
+    }
+    setAttribute(k, v) { this.attrs[k] = String(v); }
+    addEventListener(type, fn) { this.on[type] = fn; }
+    replaceChildren(...x) { this.kids = x; }
+    append(...x) {
+      this.kids.push(...x);
+      if (this.tag === "select" && this.value === undefined) this.value = x[0]?.attrs?.value;
+    }
+  }
+  const textOf = (n) => n.text ?? n.kids.map(textOf).join("");
+  const all = (n, pred, found = []) => {
+    if (n.kids) { if (pred(n)) found.push(n); n.kids.forEach((k) => all(k, pred, found)); }
+    return found;
+  };
+  const named = (n, tag, label) => all(n, (x) => x.tag === tag && textOf(x) === label)[0];
+  const marks = (n) => all(n, (x) => /^vmark/.test(x.className || "")).map(textOf);
+  globalThis.document = {
+    createElement: (tag) => new Rec(tag), createTextNode: (text) => ({ text }),
+  };
+  // The recorder has no layout. A step that redraws the page runs with the stub page, and the
+  // redraw timer (120 ms) fires before the recorder comes back.
+  const recorder = globalThis.document;
+  const live = async (fn) => {
+    globalThis.document = realDocument;
+    try { return await fn(); } finally { await sleep(200); globalThis.document = recorder; }
+  };
+  try {
+    const parts3 = JSON.parse(Z.splitMessage("long text ".repeat(120)));
+    assert.equal(parts3.length, 3);
+    const txt = (text, index) => ({ status: "text", text, index });
+    const reqUri = `zcash:${other.address}?amount=1.5`;
+    t.acct.received = [
+      { txid: "A", height: 4500090, confirmed: true, value: 0,
+        memos: [txt(parts3[2], 1), txt(parts3[0], 1), txt(parts3[1], 1)] },
+      { txid: "B", height: 4500091, confirmed: true, value: 0, memos: [txt("(1/2) lone", 2)] },
+      { txid: "C", height: 4500092, confirmed: true, value: 0, memos: [txt("hello public", 0)] },
+      { txid: "D", height: 4500093, confirmed: true, value: 0, memos: [txt("who is this", 99)] },
+      { txid: "E", height: 4500094, confirmed: true, value: 0, memos: [txt(reqUri, 1)] },
+      { txid: "F", height: 4500095, confirmed: true, value: 0, memos: [txt("a‮b", 1)] },
+      { txid: "G", height: 4500096, confirmed: true, value: 0,
+        memos: [{ status: "not_text", index: 1 }] },
+      { txid: "H", height: 4500097, confirmed: true, value: 0, memos: [txt("no index", null)] },
+    ];
+    t.personal.sent = [
+      { txid: "S1", to: 1, text: "S-sending", at: 5, tip: 4500100, fee: 10000, parts: 1,
+        note_value: 100000, change: 90000, broadcast: true, failed: "" },
+      { txid: "S2", to: 1, text: "S-chain", at: 4, tip: 4500000, fee: 20000, parts: 3,
+        note_value: 1, change: 1, broadcast: true, failed: "" },
+      { txid: "S3", to: 1, text: "S-failed", at: 3, tip: 4500000, fee: 10000, parts: 1,
+        note_value: 1, change: 1, broadcast: false, failed: "refused" },
+      { txid: "S4", to: 1, text: "S-expired", at: 2, tip: 4400000, fee: 10000, parts: 1,
+        note_value: 1, change: 1, broadcast: true, failed: "" },
+      { txid: "S5", to: 2, text: "S-for-Ben", at: 6, tip: 4500000, fee: 10000, parts: 1,
+        note_value: 1, change: 1, broadcast: true, failed: "" },
+    ];
+    t.acct.sent = new Set(["S2"]);
+    t.acct.progress = "";
+    t.state.contact = 1;
+    let view = t.contactView();
+    let text = textOf(view);
+    assert.match(text, /Your address for Ana/);
+    assert.equal(text.includes(t.addressFor(1)), true);
+    assert.equal(text.includes("long text ".repeat(119) + "long text"), true,
+      "the 3 parts are joined");
+    assert.match(text, /Joined from 3 parts/);
+    assert.equal(text.includes("(1/3)"), false, "no marker is left in a joined message");
+    assert.match(text, /On chain · sent to the address you gave Ana/);
+    assert.equal(text.includes("✓"), false, "an on-chain message is never marked verified");
+    assert.equal(marks(view).filter((m) => m.startsWith("On chain · sent")).length, 4);
+    assert.match(text, /Payment request/);
+    assert.match(text, /A memo has no sender\./, "a request in a memo has the memo warning");
+    assert.match(text, /Froma memo · Not verified/);
+    assert.equal(text.includes("a�b") && !text.includes("‮"), true, "memo text is filtered");
+    assert.match(text, /Memo is not text/);
+    for (const gone of ["hello public", "who is this", "(1/2) lone", "no index", "S-for-Ben"]) {
+      assert.equal(text.includes(gone), false, gone + " is not in this chat");
+    }
+    assert.deepEqual(marks(view).filter((m) => !/^On chain · sent|^Not verified/.test(m)),
+      ["Not on chain", "Not sent", "On chain", "Sending"], "the sent messages, oldest first");
+    assert.match(text, /The network refused it: refused/);
+    assert.match(text, /No block held it in time/);
+    assert.match(text, /Fee 0\.0002 ZEC · 3 parts/);
+    // The composer is off while a message waits for its block.
+    let form = all(view, (x) => x.tag === "form").at(-1);
+    let box = all(form, (x) => x.tag === "textarea")[0];
+    assert.equal(box.attrs.disabled, "");
+    assert.match(textOf(form), /A message is waiting for its block/);
+    assert.equal(named(form, "button", "Send on chain").attrs.disabled, "");
+    assert.equal(all(view, (x) => x.tag === "textarea").length, 1);
+
+    // The other messages: not verified, and not in the chat of a contact.
+    const others = textOf(t.otherMessages());
+    assert.match(others, /Other messages \(not verified\)/);
+    for (const shown of ["hello public", "who is this", "no index", "Unknown sender",
+      "Sent to your public address", "Sent to an address of this account that no contact has",
+      "Sent to an address that this app cannot place"]) {
+      assert.equal(others.includes(shown), true, shown);
+    }
+    assert.equal(others.includes("S-sending") || others.includes("Joined from"), false);
+    assert.equal(marks(t.otherMessages()).every((m) => m === "Not verified"), true);
+
+    // After the block the composer is on and the fee follows the text.
+    t.personal.sent = t.personal.sent.filter((r) => r.txid !== "S1");
+    net.bal = { ...net.bal, spendable: 300000 };
+    t.acct.progress = "Signing…";
+    form = all(t.contactView(), (x) => x.tag === "form").at(-1);
+    assert.match(textOf(form), /Signing…/, "the step that runs");
+    assert.match(textOf(form), /A message is being sent\./, "one message is built at a time");
+    assert.equal(named(form, "button", "Send on chain").attrs.disabled, "");
+    t.acct.progress = "";
+    view = t.contactView();
+    form = all(view, (x) => x.tag === "form").at(-1);
+    box = all(form, (x) => x.tag === "textarea")[0];
+    assert.equal(box.attrs.disabled, undefined);
+    assert.equal(box.on.keydown, undefined, "Enter does not send a message on chain");
+    assert.doesNotMatch(box.attrs.placeholder, /Enter sends/);
+    assert.equal(named(form, "button", "Send on chain").attrs.disabled, undefined);
+    const line = all(form, (x) => x.attrs && x.attrs["aria-live"] === "polite")[0];
+    assert.deepEqual([line.textContent, line.className], ["On chain · fee 0.0001 ZEC", "hint"]);
+    for (const [value, fee, bad] of [["x".repeat(1200), "On chain · fee 0.0002 ZEC", false],
+      ["x".repeat(2000), "On chain · fee 0.00025 ZEC", false],
+      ["x".repeat(513), "On chain · fee 0.00015 ZEC", false],
+      ["hi", "On chain · fee 0.0001 ZEC", false], ["a".repeat(2001), "2001 characters", true],
+      ["é".repeat(1266), "more than 5 parts", true], ["", "On chain · fee 0.0001 ZEC", false]]) {
+      box.value = value;
+      box.on.input();
+      assert.equal(line.textContent.includes(fee), true, value.length + ": " + line.textContent);
+      assert.equal(line.className, bad ? "hint bad" : "hint");
+    }
+    t.acct.progress = "";
+    t.acct.bal = { ...net.bal, spendable: 5000 };
+    form = all(t.contactView(), (x) => x.tag === "form").at(-1);
+    assert.match(textOf(form), /does not cover the network fee/,
+      "a balance that cannot pay the fee");
+    assert.equal(named(form, "button", "Send on chain").attrs.disabled, "");
+    t.acct.bal = net.bal;
+
+    // The home page: create, balance, address, warnings, funding, contacts.
+    const card = () => t.accountCard();
+    t.state.groups = [];
+    let c = card();
+    assert.match(textOf(c), /Back up the account\./);
+    assert.match(textOf(c), /Public address/);
+    assert.match(textOf(c), /Fund the account/);
+    assert.match(textOf(c), /You hold no seat in a testnet wallet\./);
+    assert.equal(named(c, "button", "Fund from a wallet").attrs.disabled, "");
+    assert.equal(named(c, "button", "Copy request").attrs.disabled, undefined);
+    // The question before a removal names the loss that is real. A new contact makes the file out
+    // of date, but the seed is in it.
+    const flagsNow = [t.personal.backedUp, t.personal.everBackedUp];
+    t.ui.personal.drop = true;
+    const question = (backedUp, everBackedUp) => {
+      Object.assign(t.personal, { backedUp, everBackedUp });
+      return textOf(card());
+    };
+    assert.match(question(false, false), /no backup file, so the money in the account is lost/);
+    const outdated = question(false, true);
+    assert.match(outdated, /seed but not your newest contacts/);
+    assert.doesNotMatch(outdated, /money in the account is lost/);
+    assert.doesNotMatch(question(true, true), /no backup file|newest contacts/);
+    t.ui.personal.drop = false;
+    [t.personal.backedUp, t.personal.everBackedUp] = flagsNow;
+    // The funding form warns while the person types, before the money is sent.
+    const warnOf = (n) => all(n, (x) => x.attrs && x.attrs.id === "fund-warn")[0];
+    t.acct.bal = { ...net.bal, spendable: 400000, pending: 0 };
+    const form0 = t.fundBlock();
+    const amount0 = all(form0, (x) => x.attrs && x.attrs.id === "fund-amt")[0];
+    for (const [typed, warned] of [["0.003", false], ["0.006", false], ["0.0060001", true],
+      ["0.02", true], ["x", false], ["", false]]) {
+      amount0.on.input({ target: { value: typed } });
+      assert.equal(warnOf(form0).textContent, warned ? HIGH : "", typed);
+    }
+    t.ui.personal.fund = "0.02";
+    assert.equal(warnOf(t.fundBlock()).textContent, HIGH, "the form shows it when it is drawn");
+    t.ui.personal.fund = "0.003";
+    t.acct.bal = net.bal;
+    const lowCallouts = (n) => all(n, (x) => x.className === "callout warn"
+      && /pays fewer than 3/.test(textOf(x))).length;
+    assert.equal(lowCallouts(c), 0);
+    t.state.groups = [{ id: W, name: "Team", network: "testnet" }];
+    t.ready[W] = { address: "x" };
+    c = card();
+    assert.equal(named(c, "button", "Fund from a wallet").attrs.disabled, undefined);
+    assert.equal(all(c, (x) => x.tag === "select").length, 0, "one wallet needs no picker");
+    t.state.groups = [{ id: W, name: "Team", network: "testnet" },
+      { id: "e".repeat(20), name: "Savings", network: "testnet" }];
+    t.secrets["e".repeat(20) + ":1"] = { keyPackage: {} };
+    t.ready["e".repeat(20)] = { address: "y" };
+    c = card();
+    assert.equal(all(c, (x) => x.tag === "select")[0].kids.length, 2, "two wallets: a picker");
+    t.state.groups = [];
+    const warnAt = (spendable, pending = 0) => {
+      t.acct.bal = { ...net.bal, spendable, pending };
+      return all(card(), (x) => x.className === "callout warn" && x.attrs.role === "status")
+        .map(textOf).filter((x) => /fewer than 3|more than 0\.01/.test(x));
+    };
+    assert.match(warnAt(29999)[0], /pays fewer than 3 messages/);
+    assert.deepEqual(warnAt(30000), []);
+    assert.deepEqual(warnAt(1000000), []);
+    assert.match(warnAt(1000001)[0], /more than 0\.01 ZEC/);
+    assert.match(warnAt(0, 5)[0], /fewer than 3/);
+    t.acct.bal = net.bal;
+    // On mainnet the address stays hidden until the balance is known and under the cap.
+    const testnetAccount = t.personal;
+    t.personal = { ...testnetAccount, network: "mainnet" };
+    t.acct.bal = null;
+    assert.match(t.addressBlock(t.acct).kids.map(textOf).join(), /only when it knows the balance/);
+    t.acct.bal = { ...net.bal, spendable: 50000000, pending: 0 };
+    assert.match(textOf(t.addressBlock(t.acct)), /holds 0\.5 ZEC/);
+    assert.equal(t.fundBlock(), null, "no funding request at the cap");
+    assert.match(textOf(t.contactView()), /holds 0\.5 ZEC/);
+    assert.equal(textOf(t.contactView()).includes(t.addressFor(1)), false, "no address at the cap");
+    t.acct.bal = { ...net.bal, spendable: 49999999, pending: 0 };
+    assert.match(textOf(t.addressBlock(t.acct)), /Public address/);
+    t.personal = testnetAccount;
+    t.acct.bal = net.bal;
+    const list = textOf(t.contactsCard());
+    assert.match(list, /Contacts on chain/);
+    assert.match(list, /AnaOn chain · 4 messages/);
+    assert.match(list, /BenOn chain · 1 message(?!s)/);
+    assert.match(list, /EveOn chain · 0 messages/);
+    // Without an account the card creates one. A saved account that does not read shows why.
+    const mine = t.personal, acctNow = t.acct;
+    t.personal = null;
+    const create = t.personalCard(() => {});
+    assert.match(textOf(create), /Create account/);
+    assert.match(textOf(create), /Restore from backup/);
+    assert.equal(named(create, "button", "Create account").attrs.disabled, undefined);
+    assert.equal(t.contactsCard(), null);
+    t.personal = mine;
+    t.adoptPersonal({ kind: "personal" });
+    const card0 = t.personalCard(() => {});
+    assert.match(textOf(card0), /cannot be read/);
+    assert.equal(named(card0, "button", "Create account"), undefined);
+    assert.equal(named(card0, "button", "Back up account"), undefined, "no seed to save");
+    assert.notEqual(named(card0, "button", "Remove from this browser"), undefined);
+    t.adoptPersonal(null);
+    t.personal = mine;
+    assert.match(textOf(t.forgetBox()), /personal account is deleted as well/);
+    // The backup dialog serves a seat and the account, and the file note says what it holds.
+    t.ui.backup = { seat: 2, made: false, busy: false };
+    assert.match(textOf(t.backupDialog()),
+      /Back up seat 2.*opens your key share.*sign as this seat/);
+    t.ui.backup = { personal: true, made: false, busy: false };
+    const backup = textOf(t.backupDialog());
+    assert.match(backup, /Back up the personal account.*opens the backup of your personal account/);
+    assert.match(backup, /holds the seed of the account and your contacts.*It holds no messages/);
+    t.state.gid = null;
+    assert.equal(t.layers().length, 2, "the backup of the account opens in the wallet list");
+    t.ui.backup = null;
+    // Sending on chain lets go of the box, so that the steps show (typingMessage). A normal
+    // message does not.
+    const blurred = [];
+    const formOf = (value) => ({ elements: { text: { value, id: "chat-text-x",
+      blur: () => blurred.push(value) } } });
+    globalThis.document = { ...globalThis.document, getElementById: () => null };
+    await t.submitMessage(formOf("on chain"),
+      { key: "k1", seats: [], plan: () => ({}), send: async () => {} });
+    await t.submitMessage(formOf("instant"), { key: "k2", seats: [1], send: async () => {} });
+    assert.deepEqual(blurred, ["on chain"]);
+    t.busy.clear();
+    assert.match(textOf(t.contactDialog()), /Add a contact/);
+    t.ui.contactAdd = true;
+    t.state.gid = null;
+    assert.equal(t.layers().length, 2, "the dialog opens in the wallet list");
+    t.ui.contactAdd = false;
+    // The plus button of the sidebar shows in an open wallet too. The dialog opens there, and it
+    // does not wait for the person to leave the wallet.
+    t.state.gid = A;
+    await live(async () => t.openContactDialog());
+    assert.equal(t.ui.contactAdd, true);
+    assert.equal(t.layers().length, 2, "the dialog opens over an open wallet");
+    t.ui.contactAdd = false;
+    assert.equal(t.layers().length, 0);
+    t.state.gid = null;
+
+    // A contact at the end of the index range is refused, so that the saved record keeps reading.
+    const far = Z.normalizeAddress(at(8));
+    await live(async () => {
+      await t.changePersonal((p) => {
+        p.contacts.push({ name: "Hi", address: far, index: 2 ** 31 });
+      });
+      await assert.rejects(t.addPersonalContact("Zed", at(9)), /no free address left/);
+      await t.rereadPersonal();
+      assert.deepEqual([t.personalError, t.personal.contacts.at(-1).index], ["", 2 ** 31],
+        "the record still reads after the refusal");
+      await t.changePersonal((p) => { p.contacts.pop(); });
+    });
+
+    // A record that does not read keeps its seed. The person can save what reads, remove the
+    // record, and restore the file. Remove does not write the record back.
+    const hurt = JSON.parse(JSON.stringify(t.personal));
+    hurt.contacts = [{ name: "Hi", address: far, index: 4294967295 }];
+    t.adoptPersonal(hurt);
+    assert.deepEqual([t.personal, /bad index/.test(t.personalError)], [null, true]);
+    await live(() => t.persistPersonal());
+    const sick = t.personalCard(() => {});
+    assert.match(textOf(sick), /bad index/);
+    assert.equal(named(sick, "button", "Create account"), undefined);
+    assert.notEqual(named(sick, "button", "Back up account"), undefined);
+    assert.match(textOf(sick), /saves the seed and the contacts that Zigs can read/);
+    assert.notEqual(named(sick, "button", "Remove from this browser"), undefined);
+    t.ui.backup = { personal: true, made: false, busy: false };
+    assert.equal(await live(() => t.saveAccountBackup("this is a long test passphrase")), true);
+    t.ui.backup = null;
+    const rescue = JSON.parse(Z.backupOpen("this is a long test passphrase",
+      downloaded.at(-1).data));
+    assert.deepEqual([rescue.seed, rescue.contacts], [hurt.seed, []], "the seed, and what reads");
+    t.ui.personal.drop = true;
+    assert.match(textOf(t.personalCard(() => {})), /does not read\. Make a backup first/);
+    await live(() => t.removeAccount());
+    assert.deepEqual([t.personal, t.personalError, [...idbMap.keys()]
+      .filter((k) => k.startsWith("personal"))], [null, "", []], "the damaged record is gone");
+    await live(() => t.rereadPersonal());
+    assert.deepEqual([t.personal, t.personalError], [null, ""], "and it does not come back");
+    assert.notEqual(named(t.personalCard(() => {}), "button", "Create account"), undefined);
+    await live(() => t.restoreAccount(rescue, true));
+    assert.equal(t.personal.seed, hurt.seed, "the file brings the account back");
+    t.setAcct(acctNow);
+  } finally { globalThis.document = realDocument; }
+
+  // The passkey lock moves the account into the sealed record and deletes the device copy, also
+  // for a record that does not read: that one is sealed as it is. An unlock deletes a copy that an
+  // earlier lock could not delete.
+  {
+    const damaged = JSON.parse(JSON.stringify(t.personal));
+    damaged.contacts = [{ name: "Hi", address: Z.normalizeAddress(Z.addressAt(other.ufvk, 0)),
+      index: 4294967295 }];
+    t.adoptPersonal(damaged);
+    assert.equal(t.personal, null);
+    await t.persistPersonal();
+    const copy = () => [...idbMap.keys()].filter((k) => k.startsWith("personal:")).sort();
+    assert.deepEqual(copy(), ["personal:key", "personal:rec"]);
+    await t.lockWithPasskey();
+    await sleep(30);
+    assert.deepEqual(copy(), [], "the device copy is deleted");
+    const prfKey = await aesKey(new Uint8Array(32).fill(7));
+    const inVault = await openVault(prfKey, JSON.parse(storage.get("zf-vault")));
+    assert.equal(inVault.personal.seed, damaged.seed, "sealed as it is");
+    t.setVault(null);
+    t.adoptPersonal(null);
+    t.setLocked(JSON.parse(storage.get("zf-vault")));
+    idbMap.set("personal:key", "x");
+    idbMap.set("personal:rec", "y");
+    globalThis.zigs = { use: async () => null };
+    await t.unlockVault();
+    await sleep(30);
+    assert.deepEqual([t.personal, /bad index/.test(t.personalError), copy()], [null, true, []]);
+    t.setVault(null);
+    storage.delete("zf-vault");
+    delete globalThis.zigs;
+    t.adoptPersonal(null);
+  }
+
+  hygiene("at the end");
+  assert.equal(JSON.stringify(net.created).includes(seed), false);
+  delete globalThis.navigator;
+}
+
+async function runAcctSync() {
+  // The sync of the account that the 60 second timer starts.
+  t.acct.syncing = false;
+  await t.runSync(t.acct);
 }
 
 console.log("app ok");
