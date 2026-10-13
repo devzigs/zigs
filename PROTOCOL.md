@@ -343,6 +343,8 @@ sequenceDiagram
   The engine puts it in the output of that recipient. A recipient with no memo gets the empty
   memo (0xF6). A memo for an address without a shielded receiver is refused. The memo is part of
   the signed field `payees`, so a proposal without memos stays valid as it was.
+- A proposal can start from a payment request (section 14). The request only fills the form. The
+  recipient list, the checks and the approvals are the same.
 - Only one payment can be open at a time, because a second one could pick the same notes.
 
 ### 7.2 Check (on each approving device)
@@ -706,7 +708,7 @@ the web, on iPhone and on Mac at the same time.
 ## 14. Messages
 
 Phases 1 and 2 of [CHAT.md](CHAT.md). The web, iPhone and Mac apps have them. Section 10.2 lists
-the iPhone and Mac screens.
+the iPhone and Mac screens. Phases 3 and 4 (memos and payment requests) are in the web app.
 
 - **Room.** Each wallet has a room: a store namespace with its own id (20 hex characters) and its
   own secret (32 bytes). The wallet document holds both in the sealed field `room`, as
@@ -834,6 +836,104 @@ transport for now, so it learns that two member ids talk to each other.
 - **Leaving.** "Leave chat" removes the chat from the browser. The documents stay on the group
   server.
 
+### Payment requests
+
+Phase 4 of [CHAT.md](CHAT.md). The web app has it. The iPhone and Mac apps show the URI as text.
+The engine has the calls, in the native table too, so a native app can add the screens later.
+
+- **What is a request.** A message or a memo is a payment request when its whole text, trimmed,
+  is one `zcash:` URI. The text after `zcash:` has one or more characters, and none is white
+  space. A URI has no white space, so a URI in other text is plain text. The request is the text
+  of an ordinary signed message (wallet thread, payment thread or direct chat). It adds no field
+  and no document. The signature, the pinning and the verification of the sender follow the rules
+  of section 14.
+- **Engine interface** (web names; the native table has the same names and JSON):
+  - `parseRequest(uri, network)`: `network` is `main` or `test`. The result is
+    `{"payees": [{"to", "amount", "memo", "label", "message"}, …]}` in the order of the URI. `to`
+    is the address. `amount` is a whole number of zatoshis, or `null` when the payer chooses. `memo`
+    is the text, or `null`. `label` and `message` are text or `null`. Other parameters are dropped.
+  - The engine refuses these requests:
+    - a malformed URI, and a URI with a parameter `req-…`
+    - a request with no payee, and a request with more than 20 payees
+    - an address that is not on `network`
+    - an amount of zero
+    - a memo for a transparent address
+    - a memo that is not ZIP 302 text, and a memo with a null character
+  - The engine reads an empty memo (0xF6) as no memo. So a request that passes can fill the Send
+    form.
+  - An error that belongs to a payee starts with `payee N:`. `N` is the index in the URI plus one:
+    the payee without a suffix is 1, and the payee with the suffix `.1` is 2.
+  - The `zip321` crate reports a bad `memo` as a general parse error, so the engine finds the memo
+    again. It reads only a suffix that ZIP 321 allows: a digit from 1 to 9, then up to 3 digits.
+    Any other suffix gives the fixed sentence.
+  - Any other parse error gets one fixed sentence, so no internal text reaches the screen. The
+    error for a repeated parameter names the parameter only if it is `address`, `amount`, `memo`,
+    `label` or `message`. Any other name is text from the sender.
+  - `makeRequest(payees, network)`: `payees` is `[{"to", "amount"?, "memo"?, "message"?}]`. The
+    result is the URI. The address stays as the caller wrote it. The engine refuses a row for
+    these reasons:
+    - an address that is not on `network`
+    - an amount that is not a whole number above zero, or is above 21 million ZEC
+    - a memo that `createSpend` would refuse
+    - a memo for a transparent address
+- **Sending.** The form takes an optional amount in ZEC and an optional memo. In a room, the one
+  payee is the address of the open wallet. In a direct chat, the person picks a wallet where this
+  browser holds a key share. The address is the copy that this browser's own seat checked, as for
+  a move to a new wallet (section 7.2). The app offers a wallet only when:
+  - the seat has checked the address of the wallet
+  - the wallet has not moved
+  - the balance is known and under the cap of the network
+
+  A mainnet wallet with no known balance gets no form. A room uses the live balance of the open
+  wallet. A chat uses the last balance that this browser saved. The form holds the id of the
+  chosen wallet, never its place in a list, because the list can change while the person types. If
+  that wallet is no longer in the list, the form sends nothing and asks the person to choose
+  again. The URI is the text of the message and obeys the limit of 2,000 characters.
+- **Card.** The card shows the total (the sum when every payee has an amount) and each payee. It
+  shows the sender and the check of the sender (the verdicts of the rule "Verified" above). The
+  text of a memo, label and message shows with control characters and bidirectional marks as
+  U+FFFD. The label and the message are text from the sender. The card shows them in a block marked
+  "From the request, not checked", cut to 3 lines and 120 characters. A card in a direct chat names
+  the network of the request. A sender whose verdict is not `yes` gets a warning. A memo has no
+  sender and no signature, so it always gets one. While the check runs (`wait`), the card has no
+  warning and **Propose this** is off. A card for a URI that the engine refuses shows the error
+  and no button.
+- **Networks.** A wallet reads a request for its own network. A direct chat has no wallet, so the
+  card asks for `test` and then `main`. An address belongs to one network, so one answer at most is
+  good. If both fail, the card shows the first error that is not about the network, else the error
+  of the first try.
+- **Propose this.** It opens the Send form and sends nothing. The rows hold the payees. A payee
+  without an amount has an empty amount field. A memo fills the field as one line, because the
+  field cannot show a line break. Every approver reads the note, and a message of a sender that is
+  not verified can carry any name. So the note names the sender only for the verdict `yes`:
+  - `yes`: `Request from <sender>`, or `Request from <sender> in <wallet>` when the proposal goes
+    to a wallet other than the room's wallet, because the seat numbers differ between wallets
+  - `yes`, from a seat or chat member of this browser: `Request from the proposer`
+  - a memo: `Request from a memo`
+  - any other verdict: `Request from an unverified sender`
+
+  The note is cut to 80 characters. The proposer reads the note in the Send form and can change
+  it. In a direct chat, a verified name is the name that the contact chose.
+- **Which wallet proposes.** In a room, the form belongs to the open wallet. In a direct chat, the
+  person picks a wallet. The wallet must be on the network of the request, have an address, and be
+  one where this browser holds a key share. A wallet cannot pay itself, so the picker never lists
+  a wallet that a payee names. A room request that pays the open wallet shows the same picker over
+  the other wallets. If no wallet is left, the card says so and **Propose this** is off. The form
+  opens in the chosen wallet, and a form made for one wallet is dropped when another wallet
+  opens.
+- **Checks.** In a room, **Propose this** follows the rules of **Send**: it is off when **Send** is
+  off. A chat has no open wallet, so the card cannot know these rules. The Send form of the chosen
+  wallet checks the seat, the sync and the funds after the click. Every form checks them again
+  when it submits. The card turns **Propose this** off for an address that is not a shielded
+  unified address with an Orchard receiver. The form also refuses a payee that is the address of
+  the wallet.
+- **Send form.** A request pasted in a recipient field replaces that row with the rows of its
+  payees. A request pasted in **Paste a list** replaces the list. The new rows have new keys. A
+  request that the engine refuses leaves the text and shows the error.
+- **Limits.** A request in a room or a chat is read by everyone who reads the room or the chat. It
+  tells them an address ([PRIVACY.md](PRIVACY.md#not-protected)). The memo of a request fills the
+  memo field of a row. It goes on chain with the payment, and every approver sees it (section 7.2).
+
 ## 15. Signed writes (version 3)
 
 The wallet secret in the invite link lets its holder write any document in the wallet. Funds stay
@@ -927,7 +1027,9 @@ column "Writer". A document with another `by` is ignored.
 - A reader takes names and identities only from a seat document that verifies. So a holder of the
   link cannot rename a seat or copy the identity of another.
 - A seat chooses its own name, and two seats can use one name. So the apps show the seat number
-  beside a name, for example "Proposed by Ana (seat 1)".
+  beside a name, for example "Proposed by Ana (seat 1)". A name can hold a false seat number. The
+  apps add the real seat number unless the name ends with it, so "Ana (seat 1)" at seat 3 shows as
+  "Ana (seat 1) (seat 3)".
 
 ### 15.5 Session documents
 

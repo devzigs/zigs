@@ -1,11 +1,12 @@
 # Messages in Zigs: design
 
-Status: the web app has phases 1, 2 and 3. Phase 1 is the wallet room and the payment threads.
+Status: the web app has phases 1 to 4. Phase 1 is the wallet room and the payment threads.
 Phase 2 is direct chats between Zigs users. Phase 3 is memos on payments, the wallet inbox and
-reorganisations. The iPhone and Mac apps have phases 1 and 2. They also show and check the memo of
-a payment that they approve. The other screens of phase 3 are not built there. Phases 4 to 6 are
-design only. This document records the decisions taken on 12 October 2026 and the order of the
-work.
+reorganisations. Phase 4 is payment requests. The iPhone and Mac apps have phases 1 and 2. They
+also show and check the memo of a payment that they approve. The other screens of phase 3, and
+phase 4, are not built there. New features go to the web app first, because it is the fastest to
+change. The iPhone and Mac apps follow when demand justifies it. Phases 5 and 6 are design only.
+This document records the decisions taken on 12 October 2026 and the order of the work.
 
 Zigs is a shared wallet, so its messages exist to explain, request and approve money. A
 messenger such as Signal does none of that. Messages here are tied to wallets, payments
@@ -94,8 +95,55 @@ Built in phase 3 (web):
 - **To any Zcash user (later).** Messages go as memos from the personal account to the
   contact's shielded address. No server is involved, and the recipient can be offline.
 - **Payment requests.** A contact sends a request (ZIP 321 URI, one or more recipients). The user
-  clicks **Propose this**, and the request becomes a wallet proposal for the signers to approve.
-  The existing batch recipient list (`web/payees.js`) takes a request with several lines.
+  clicks **Propose this**, and the Send form opens with the request. Section 2.4 gives the rules.
+
+### 2.4 Payment requests
+
+A payment request is a normal signed message. It can be in a wallet room, in a payment thread or in
+a direct chat. Its whole text, trimmed, is one ZIP 321 URI that starts with `zcash:`. Any other text
+is a plain message, also a text that holds a URI between other words. A memo that arrives with a
+payment follows the same rule. A message shows as a request card, whether or not the URI is valid.
+
+Built in phase 4 (web):
+
+- **Reading.** The engine reads the URI (`parseRequest`, built on the `zip321` crate). It refuses a
+  malformed URI and a request that Zigs cannot use. An error names the payee. A card for a refused
+  request shows the reason. A wallet reads a request for its own network. A direct chat has no
+  wallet, so it tries both networks. PROTOCOL.md lists the refusals.
+- **Sending.** **Request a payment** sits next to the message box in the wallet room and in a
+  direct chat. The form asks for an amount and a memo, and both are optional. Without an amount,
+  the payer chooses. In a room, the request pays the open wallet. In a direct chat, the person
+  picks one of the wallets where this browser holds a key share. The address comes from the check
+  that the person's own seat made, never from the group server. The form holds the id of the
+  chosen wallet, not its place in a list. The engine makes the URI (`makeRequest`), and the app
+  sends it as the text of a message.
+- **Card.** The card shows the total and each payee. A payee has a short address, the amount or
+  "The payer chooses the amount", and the memo. The name and the message of a payee are text from
+  the sender. The card cuts them to 3 lines and 120 characters, and marks them "From the request,
+  not checked". The card also shows the sender and the check of the sender. A sender that is not
+  verified gets a warning. A memo has no sender, so it always gets one. A card in a direct chat
+  names the network. The card also has **Copy request**.
+- **Propose this.** It sends nothing. It opens the Send form with the payees of the request and a
+  note. The note is "Request from <sender>" for a verified sender and "Request from a memo" for a
+  memo. For any other sender, it is "Request from an unverified sender". A sender that is not
+  verified can write any name, and every approver reads the note. In a direct chat, a verified
+  name is the name that the contact chose. A request from this browser gives "Request from the
+  proposer", because each approver reads "You" as themselves. A proposal from another wallet adds
+  the name of the room's wallet, because the seat numbers differ between wallets. The proposer
+  reads the note in the Send form and can change it. The checks and the approvals of a normal
+  payment apply.
+- **Which wallet proposes.** In a room, the open wallet proposes. In a direct chat, the person
+  picks a wallet of the right network where this browser holds a key share. A wallet cannot pay
+  itself, so the card never offers a wallet that the request pays. If a room request pays the
+  open wallet, the card offers the other wallets where this browser holds a key share. If no
+  wallet is left, the card says so and **Propose this** is off. **Copy request** still serves a
+  payer outside Zigs.
+- **Send form.** A request pasted in a recipient field, or in **Paste a list**, fills the rows
+  with its payees. A payee without an amount gets an empty field. A memo fills a row as one line of
+  text, because the field cannot show a line break.
+
+Not built: the iPhone and Mac screens, and requests in the Activity list. The Activity row of a
+payment still shows the text of its memo.
 
 ## 3. Storage on the group server
 
@@ -152,6 +200,10 @@ therefore proves nothing.
 
 PRIVACY.md gets these rows when each phase ships.
 
+A payment request adds one fact to a message. Its readers learn the wallet address that it names,
+and the amount and the memo if it has them. In a direct chat, the readers are the contact and
+anyone who has the contact link.
+
 ## 7. Notifications (web)
 
 - No push service. Messages arrive while the page is open.
@@ -168,17 +220,17 @@ PRIVACY.md gets these rows when each phase ships.
 | 1 | Built (web, iPhone, Mac) | Wallet room and payment threads | Room namespace, signing keys, Messages tab, payment events in the timeline |
 | 2 | Built (web, iPhone, Mac) | Direct chat between Zigs users | Contact links, chat namespace, personal signing key |
 | 3 | Built (web). iPhone and Mac: memo check on approval | Memos on payments, wallet inbox | Engine writes and reads memos, full transaction fetch, reorganisation handling (`wasm/src/chain.rs`). The other iPhone screens follow. |
-| 4 | Design | Payment requests | ZIP 321 parsing, **Propose this** |
+| 4 | Built (web) | Payment requests | ZIP 321 parsing and writing in the engine, request cards, **Propose this** |
 | 5 | Design | Personal account, on-chain direct messages | New key type, fee funding, multi-memo messages |
 | 6 | Design | Extra encryption layer | Post-quantum handshake and ratchet, released only after an outside cryptography review |
 
 Until phase 6 ships, on-chain messages rely on Zcash's own memo encryption, and the app says so.
-The iPhone and Mac apps follow the web app phase by phase. They have phases 1 and 2. The document
-formats, keys and signatures are the same as in the web app. So a browser and an iPhone talk in one
-room and in one direct chat. The apps keep the room secrets with the seat secrets. They keep the
-chats in the Keychain, or in the sealed record when the Face ID lock is on. They show unread counts
-and send no notifications. `ios/check-backup.sh` checks that each side verifies the messages of the
-other.
+The iPhone and Mac apps follow the web app when demand justifies it. They have phases 1 and 2. The
+document formats, keys and signatures are the same as in the web app. So a browser and an iPhone
+talk in one room and in one direct chat. The apps keep the room secrets with the seat secrets. They
+keep the chats in the Keychain, or in the sealed record when the Face ID lock is on. They show
+unread counts and send no notifications. `ios/check-backup.sh` checks that each side verifies the
+messages of the other. The apps show a payment request as plain text.
 
 ## 9. Limits
 
@@ -188,6 +240,9 @@ other.
 - Tor Browser and private windows delete local data when they close, and room history then
   downloads again from the group server. Direct chats on chain need the personal account backup.
 - A device that holds a seat can sign messages as that seat. A stolen device is a stolen seat.
+- A payment request tells its readers a wallet address. A request in a direct chat tells the
+  contact, and anyone who has the contact link, the address, the amount and the memo. Send a
+  request only to a person who may know that the wallet exists.
 - A memo on chain comes from the payer. The app cannot check who wrote it. Every signer, and a
   signer removed by "Change signers" who kept the viewing key, can read it for good.
 - The contact link is the chat secret. Anyone who has it can read the chat and write in it, also

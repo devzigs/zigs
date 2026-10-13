@@ -20,6 +20,11 @@ the wallet, and on chain each payment looks like a shielded payment from a stand
   is "On chain · shared with all signers". Reading it asks the light-wallet server for the
   transaction, so a signer must turn it on first. It is off by default. The web app has it. The
   iPhone and Mac screens for received memos follow.
+- Payment requests: a message whose whole text is a ZIP 321 link (`zcash:…`) shows as a request
+  card. The card shows the total, each payee and the check of the sender. **Propose this** opens
+  the Send form with the request, and sends nothing. **Request a payment** makes the link in a
+  wallet room or in a direct chat. Pasting a link in the Send form fills its rows. The web app has
+  it. The iPhone and Mac apps show the link as text ([how](PROTOCOL.md#payment-requests)).
 - The wallet follows chain reorganisations of up to 100 blocks
   ([how](PROTOCOL.md#6-receiving-and-sync)). After a deeper one, the web, iPhone and Mac apps
   scan the wallet again from its birthday.
@@ -43,7 +48,8 @@ You can play every signer from one browser. Use a desktop browser with Zigs in o
    minutes).
 4. Click **Send**, paste any testnet unified address (`utest1…`), enter an amount, and click
    **Propose payment**. For a payroll, click **Add recipient** or **Paste a list**: up to 20
-   recipients go into one transaction with one approval round.
+   recipients go into one transaction with one approval round. A payment request (`zcash:…`) pasted
+   in the recipient field fills the rows.
 5. In the payment panel, click **Approve as seat 1** and **Approve as seat 2**. Read **What this
    payment does**: your browser decoded it from the transaction itself.
 6. Click **Build proof** (about one minute in the browser), then **Send to network**, then
@@ -58,7 +64,7 @@ To see signer changes, open **Signers**, then **Change signers**. To see the pri
 |---|---|
 | **Privacy** | On chain, the transaction shape matches the standard wallet library: same builder, padding, fee, expiry and anchor depth ([comparison](PRIVACY.md#on-chain)). The server stores only encrypted values, padded so that even their length hides amounts. On the device, key shares can be locked with a passkey (web) or Face ID (iPhone) ([how](PRIVACY.md#lock-with-a-passkey-or-face-id)). Key share backups are encrypted with a passphrase (Argon2id and XChaCha20-Poly1305) and open on the web, iPhone and Mac ([how](PRIVACY.md#key-share-backups)). The page can connect only to the group server and three named light-wallet servers (Content-Security-Policy). It is prepared for Tor Browser, but not yet tested end to end ([how](PRIVACY.md#use-zigs-over-tor)). The Zigs server code keeps no logs; its host, Cloudflare, can see connection data. Every remaining leak is listed in [PRIVACY.md](PRIVACY.md). |
 | **Usefulness** | Designed for team treasuries, DAOs and families. Usable today on testnet, and on mainnet with a warning at 0.5 ZEC: web, iPhone and Mac; invite links and QR codes; batch payments for payroll and grants (up to 20 recipients, one approval round, pasted from a spreadsheet); signer changes; encrypted key share backups. |
-| **Execution** | The live app works end to end. Fifteen testnet transactions made by the apps are [listed below](#proof-on-testnet). The engine has 71 tests, and a command-line suite runs adversarial cases. |
+| **Execution** | The live app works end to end. Sixteen testnet transactions made by the apps are [listed below](#proof-on-testnet). The engine has 86 tests, and a command-line suite runs adversarial cases. |
 | **Originality** | An end-user app for re-randomized FROST: no command line, no trusted dealer, and no server that can read the wallet. Each device decodes the PCZT and checks every output before it approves, and binds its approval to the transaction's sighash. Signer changes, batch payments and native iPhone and Mac apps are included. Built during the Zecathon window: the first commit is from October 10, 2026. |
 
 ## Architecture
@@ -251,6 +257,7 @@ with 2-of-2 wallets and one 2-of-3 wallet:
 | [`bcad9990…c83d`](https://testnet.zecblock.com/tx/bcad99901fd954e4fefb1f85223ea4e30722d155f9a8c20cbc5066ab3e5ec83d) | 4,493,885 | **ZIP 2005 wallet:** spend from a version 2 wallet (agreed `sk`, `use_qsk = true`) |
 | [`1a13fe55…2ebe`](https://testnet.zecblock.com/tx/1a13fe552eb09ba2fa034cc27d42ea4775f251360da27abcd5608c93a2572ebe) | 4,497,189 | **Signed writes:** spend from a version 3 wallet, two browsers, with forged documents ignored |
 | [`2d72e9b1…f707`](https://testnet.zecblock.com/tx/2d72e9b173fb7f63a4101dcfcc26ade1a916e9a5678e0bb8b43d2c319661f707) | 4,497,745 | **Memo:** a wallet with one browser seat and one iPhone seat pays with a memo, and the memo shows in the receiving wallet's inbox |
+| [`0e2fc103…da7b`](https://testnet.zecblock.com/tx/0e2fc103d8be65dd12070f683b317a26a6c3f28638b0a25ea2b3d589c824da7b) | 4,498,021 | **Payment request:** a signer posts a ZIP 321 request in the wallet room, the other signer proposes it with **Propose this**, and both approve |
 
 A 2-of-2 mainnet wallet was also created and synced to the mainnet tip in the web app and on the
 iPhone.
@@ -261,12 +268,13 @@ iPhone.
 |---|---|
 | [`wasm/src/lib.rs`](wasm/src/lib.rs) | Engine: key generation, wallet creation and checks, PCZT inspection, FROST signing, proof, sealing |
 | [`wasm/src/ceremony.rs`](wasm/src/ceremony.rs) | Key ceremony, versions 2 and 3: commitments, echo, agreed secret, safety number, ZIP 2005 key derivation and the wallet check |
+| [`wasm/src/request.rs`](wasm/src/request.rs) | Payment requests (ZIP 321): reads and writes the `zcash:` link, with the network, payee, memo and size rules of Zigs |
 | [`wasm/src/chain.rs`](wasm/src/chain.rs) | Chain sync, balance, note selection, payment building, network rules |
 | [`wasm/src/snapshot.rs`](wasm/src/snapshot.rs) | Saved sync state: notes and the note commitment tree |
 | [`wasm/src/backup.rs`](wasm/src/backup.rs) | Encrypted key share backups: Argon2id, XChaCha20-Poly1305 |
 | [`wasm/src/ffi.rs`](wasm/src/ffi.rs) | C interface for the iPhone and Mac apps |
 | [`web/index.html`](web/index.html), [`web/app.css`](web/app.css), [`web/app.js`](web/app.js) | The web app: page, styles and script (no inline script or style) |
-| [`web/shim.js`](web/shim.js), [`web/qr.js`](web/qr.js), [`web/payees.js`](web/payees.js), [`web/vault.js`](web/vault.js), [`web/chat.js`](web/chat.js), [`web/signed.js`](web/signed.js) | Store client, QR encoder, payment list parser with the memo rules and the recipient check, passkey lock, message helpers and the rules for signed writes (no third-party code) |
+| [`web/shim.js`](web/shim.js), [`web/qr.js`](web/qr.js), [`web/payees.js`](web/payees.js), [`web/requests.js`](web/requests.js), [`web/vault.js`](web/vault.js), [`web/chat.js`](web/chat.js), [`web/signed.js`](web/signed.js) | Store client, QR encoder, payment list parser with the memo rules and the recipient check, payment request cards and Send form rows, passkey lock, message helpers and the rules for signed writes (no third-party code) |
 | [`cf/src/index.js`](cf/src/index.js) | Group server: Cloudflare Worker with one Durable Object per wallet, limits against abuse |
 | [`ios/Zigs/`](ios/Zigs) | SwiftUI app for iPhone and Mac |
 | [`src/`](src), [`tests/e2e.sh`](tests/e2e.sh) | Command-line version of the ceremony (version 1) and adversarial tests |
@@ -322,7 +330,7 @@ folder path.
 
 ## Tests
 
-- `cargo test --release` in `wasm/` (71 tests): full 2-of-3 signing flows for Ironwood (paying 4
+- `cargo test --release` in `wasm/` (86 tests): full 2-of-3 signing flows for Ironwood (paying 4
   recipients in one transaction) and Orchard, with a bad share that is attributed to its sender; a
   swapped recipient on any payee output is refused; 3 notes spent for 1 recipient; recipient lists
   checked row by row; fees that count outputs; mainnet and testnet upgrade rules; note selection,
@@ -337,7 +345,12 @@ folder path.
   to a memo. They also cover an answer with another transaction id, a note with a damaged tag, and
   the order of the memo list. Reorganisation tests drop notes, spends and memos, rewind after a
   saved state, stop at 100 blocks and rewind through the native interface. They also check the
-  words of the error for a reorganisation that is too deep.
+  words of the error for a reorganisation that is too deep. Payment request tests cover a round
+  trip, one and several payees, a request without an amount, and memos. They also cover the wrong
+  network, 21 payees, a zero amount and a repeated parameter. They check a memo for a transparent
+  address, and a memo that is not base64 or not text. They also check a payee index that ZIP 321
+  does not allow, and text that is not a request. Each error names the payee. The native interface
+  has both calls.
 - `node cf/test/limits.mjs ws://localhost:8787`: the group server's size, rate and path limits.
 - `node web/test/payees.mjs`: the pasted payment list parser (the memo column, header, byte limit,
   and a comma directly between digits, which is an error), the memo rules, and the recipient
@@ -374,7 +387,23 @@ folder path.
   ignored. A write for a wallet that is not open is signed for its own wallet. The memo of checks
   and the log stay bounded. A run that reads memos is off by default, skips a failed read, and
   ends after three failures to reach the server. A reorganisation that is too deep deletes the
-  saved state.
+  saved state. **Propose this** fills the Send form and writes nothing to the store, and a form
+  made for one wallet is dropped when another wallet opens. The text of the cards and the request
+  form is checked with a small recorder in place of the page. The same recorder checks these
+  points:
+  - The request form names a wallet by its id.
+  - A mainnet wallet with no known balance gets no request form.
+  - No card offers a wallet that the request pays.
+  - The Send form refuses a submit when **Send** is off.
+  - A field of a closed request form does not keep the page from drawing.
+- `node web/test/requests.mjs`: the rule that only a whole trimmed text is a request, with the
+  real engine. It also checks these points:
+  - the cards: total, open amounts, wrong network, a payee that Zigs cannot pay, and the warning
+    for each check of the sender
+  - the rows that fill the Send form, with a memo as one line
+  - the note, which names only a verified sender
+  - the text that the sender wrote, cut to 3 lines and 120 characters
+  - a request that the form makes and the card reads back
 - `node web/test/qr.mjs`: the QR encoder against libqrencode (needs the `qrencode` command).
 - `bash tests/e2e.sh`: the command-line ceremony in separate processes, with attacks: wallet
   substitution, fewer than t signers, tampered randomizer and sighash, nonce reuse, wrong share
@@ -398,8 +427,9 @@ folder path.
 - **No key refresh.** Signer changes use a new wallet. Each wallet has one address.
 - **Pre-release crates.** The engine uses the NU7 pre-release crate line: `zcash_protocol`
   0.11.0-pre.0, `zcash_primitives` 0.31.0-pre.1, `pczt` 0.10.0-pre.1, `zcash_keys` 0.17.0-pre.1,
-  `orchard` 0.16.0, `zcash_client_backend` 0.25.0-pre.1, and `reddsa` at git rev `ed49e9c` for
-  FROST. Mainnet follows the NU6.3 rules, which already use v6 transactions and Ironwood.
+  `orchard` 0.16.0, `zcash_client_backend` 0.25.0-pre.1, `zip321` 0.10.0-pre.1, and `reddsa` at git
+  rev `ed49e9c` for FROST. Mainnet follows the NU6.3 rules, which already use v6 transactions and
+  Ironwood.
 - **One mainnet server.** Mainnet wallets depend on ChainSafe's public light-wallet server.
 
 ## License

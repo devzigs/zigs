@@ -64,6 +64,7 @@ What the server can still see:
 | Number of signers and payments | Count of documents | None |
 | The id of each wallet's message room, when each message is sent, how many messages, their padded sizes, and which IP addresses connect to the room | A room is one more namespace with its own connection, and each message is one document | Use Tor Browser, or a VPN, to hide your IP address. Message text, thread and sender stay sealed. |
 | The id of each direct chat, its two member ids, when each message is sent, how many messages, their padded sizes, and which IP addresses connect to the chat | A chat is a namespace like a room. The server learns that two member ids talk to each other. | Use Tor Browser, or a VPN, to hide your IP address. Names, message text and signing keys stay sealed. The chat lives in the browser and is not in key share backups. |
+| Nothing more for a payment request | A request is the text of a message, so it is sealed like any message. The page reads it on the device and contacts no server for it. | None needed |
 
 The server keeps no logs: Workers Logs are off (`observability.enabled = false`), and the code
 writes nothing about requests. IP addresses are used in memory only: to apply rate limits, and as
@@ -286,6 +287,22 @@ the passkey guards the key share instead. The lock is opt-in.
   the wallet's birthday, stops the sync with an error. The web, iPhone and Mac apps then delete the saved state and scan the wallet again
   from its birthday. A false light-wallet server can still show a chain that does not exist, or
   hide payments.
+- A payment request names a wallet address, and may name an amount and a memo. Everyone who reads
+  the message reads them. In a wallet room, these are the signers and anyone who has the invite
+  link. In a direct chat, they are the contact and anyone who has the contact link. A request to
+  a contact therefore links that contact to the wallet address. Send a request only to a person who
+  may know that the wallet exists.
+- The app offers the address of a wallet in a request only after the seat checked it. It does not
+  offer the address of a mainnet wallet whose balance this browser does not know, or that is at the
+  cap. A chat uses the last balance that this browser saved, so a mainnet wallet that this browser
+  never synced gets no request.
+- A request pays the address that its sender wrote, so check the address with the sender before
+  you pay. A request from an unverified sender, and every request in a memo, shows a warning. The
+  name and the message in a request are text from the sender. The card cuts them and marks them as
+  not checked.
+- **Propose this** sends nothing: the normal checks and approvals of a payment apply. Every
+  approver reads its note. The note names the sender only when the sender is verified. Any holder
+  of the invite link can write a message with a seat number and a bad signature.
 - A memo is text that the payer chose. The app cannot check who wrote it, and it never calls a
   memo verified or private. The memo is on chain for good. Every signer can read the memos of
   the wallet, and so can a signer who left a wallet and kept its viewing key. A payer can write
@@ -306,4 +323,17 @@ the passkey guards the key share instead. The lock is opt-in.
   note with a damaged tag is saved as unreadable. A transaction that never gives its memo goes
   behind the others. Engine tests for reorganisations: the wallet drops the notes, spends and
   memos of the dropped blocks, and stops at 100 blocks.
+- Engine tests for payment requests check these points:
+  - A request round trips through `makeRequest` and `parseRequest`.
+  - The engine refuses a wrong network, more than 20 payees, a zero amount and a malformed URI.
+  - The engine refuses a memo for a transparent address and a memo that is not text.
+  - Each error names the payee. A payee index that ZIP 321 does not allow, and text from the
+    sender, stay out of the error.
+- Tests of the web app check these points:
+  - Only a whole text is a request.
+  - The cards show the warnings and the reasons.
+  - **Propose this** writes nothing, and its note names only a verified sender.
+  - A form made for one wallet is dropped when another wallet opens.
+  - The request form names a wallet by its id, and a mainnet wallet with no known balance gets
+    no form.
 - Testnet transactions made by the web, iPhone and Mac apps are listed in the README.
