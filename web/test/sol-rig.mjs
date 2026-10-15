@@ -16,14 +16,17 @@ W.initSync({ module: fs.readFileSync(new URL("sol/wasm/sol_wasm_bg.wasm", web)) 
 export const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
 // The server of the page: /sol/config.json answers with `rpcUrl`, or with 503 when `down` is set.
+// `calls` counts the requests for it.
 // The URL has the shape of a Helius URL and no real key.
 export const config = {
   rpcUrl: `https://devnet.helius-rpc.com/?${KEY_NAME}=not-a-real-key`,
   down: false,
+  calls: 0,
 };
 const otherFetch = globalThis.fetch;
 globalThis.fetch = async (url, init) => {
   if (String(url) !== "/sol/config.json") return otherFetch(url, init);
+  config.calls++;
   if (config.down) {
     return Response.json({ error: "Solana is not set up on this server." }, { status: 503 });
   }
@@ -71,7 +74,7 @@ export const T = {
   refilter, signedDoc, canWriteAs, localSeats, seatIds, openGroup, createGroup, takeSeat, sec,
   putSec, safetyNo, seatCheck, backupText, applyBackup, undoRestore, settleRestore, solLoad,
   get solError() { return solError; },
-  solOn, solTab, walletView, backupDialog, sealAndSave, restoreAccount, mySeatSecrets,
+  solOn, signedMode, solTab, walletView, backupDialog, sealAndSave, restoreAccount, mySeatSecrets,
   persistSealed,
   setVault(v) { vault = v; },
 };

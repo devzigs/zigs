@@ -1083,12 +1083,18 @@ Messages (section 14) were already signed.
   are in `zf-signpins`, under the key `shape:<wallet id>`, as `n/t`. A device reads `n` and `t`
   from the pin, never from a later value in the store. So a holder of the link cannot add a seat
   above `n`. If the store shows other values, the wallet page says so.
+- The web app also keeps the first `network` that it sees for a wallet of any version. It is in
+  `zf-signpins`, under the key `network:<wallet id>`. A name that is not `testnet` or `mainnet` is
+  not kept. The page reads the network from the pin, never from a later value in the store, so a
+  holder of the link cannot make a mainnet wallet use the testnet servers or show the Solana tab
+  (ZOLANA.md section 3). If the store shows another network, the wallet page says so. The iPhone
+  and Mac apps do not keep this pin yet (`TICKETS.md`, SOL-33).
 - A seat in a version 3 wallet needs Ed25519. A browser without it cannot create a wallet or
   take a seat ("This browser cannot sign, so it cannot take part in this wallet."). It shows
   "This wallet needs signatures, and this browser cannot check them." instead of the wallet.
   The iPhone and Mac apps always have Ed25519 (CryptoKit).
 - The iPhone and Mac apps keep the same pins in `UserDefaults`, under the same name
-  (`zf-signpins`) and with the same keys.
+  (`zf-signpins`) and with the same keys, except the network pin above.
 
 ### 15.2 Keys
 

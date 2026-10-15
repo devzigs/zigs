@@ -4,9 +4,10 @@
 // publish, that the Zcash key and the group server hold no Solana secret, and that a stopped
 // wallet stays stopped in the tab and in every action. The agreement is also checked as one seat
 // sees it when each seat has a browser of its own (a document of another seat is compared, not
-// fitted). The network comes first: a mainnet wallet, or a wallet of unknown network, is offered no
-// tab and a start document loads nothing. The page loads the module once and never unloads it, so
-// that block runs before the first load.
+// fitted). The network comes first: a mainnet wallet, a wallet of unknown network, a wallet before
+// version 3, and a wallet whose stored network changed after this device saw it, are offered no
+// tab. A start document that no seat signed loads nothing. The page loads the module once and
+// never unloads it, so these blocks run before the first load.
 // Run: node web/test/sol-ceremony.mjs   (Node 24)
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
@@ -15,7 +16,7 @@ import { agreement, seatProgress, startBlock } from "../sol/ceremony.js";
 import { backupText as solBackupText, backupWords } from "../sol/backup.js";
 import { syncSolana } from "../sol/session.js";
 import { solView } from "../sol/view.js";
-import { loadRig, sleep, storage } from "./sol-rig.mjs";
+import { config, loadRig, sleep, storage } from "./sol-rig.mjs";
 
 const rig = await loadRig();
 const { t, Z, W, data, waitFor } = rig;
@@ -144,6 +145,10 @@ function tabIds() {
   t.tabBar = (tabs) => ((ids = tabs.map(([id]) => id)), real(tabs));
   try {
     t.walletView([], null);
+  } catch (e) {
+    // The tab bar is built before the tab body, which needs a wallet document that a wallet
+    // made by hand does not have.
+    if (!ids) throw e;
   } finally {
     t.tabBar = real;
   }
@@ -174,17 +179,110 @@ function tabIds() {
   t.state.g = null;
   assert.equal(t.solOn(), false, "a wallet that is not loaded is off");
   t.state.g = loaded;
+  // The stored network is no signed fact: a holder of the wallet link writes "testnet" into the
+  // group document of the mainnet wallet. The device keeps the first network that it saw.
+  const groupPath = `groups/${gidMain}`;
+  data.set(groupPath, { ...data.get(groupPath), network: "testnet" });
+  rig.notify();
+  await sleep(100);
+  assert.equal(t.state.g.network, "mainnet", "the page keeps the first network");
+  assert.equal(t.state.g.networkMoved, true, "and says that the store shows another");
+  assert.equal(t.signPins["network:" + gidMain], "mainnet");
+  assert.equal(JSON.parse(storage.get("zf-signpins"))["network:" + gidMain], "mainnet");
+  assert.equal(t.solOn(), false, "a flipped mainnet wallet is off");
+  assert.ok(!tabIds().includes("solana"), "a flipped mainnet wallet gets no tab");
+  assert.equal(t.solLoading, null, "a start document does not load Solana for it");
+  assert.equal(rig.live(`groups/${gidMain}/sol`), 0, "it opens no Solana watch");
+  assert.equal(config.calls, 0, "and the page never asks the server for the Helius URL");
+}
+
+// A wallet before version 3 never gets the tab: the Solana ceremony needs signed documents. The
+// store can show another version or network, and neither turns it on.
+{
+  const v2 = "v2walletaaaaaaaaaaaa";
+  const made = (network) => ({ name: "Old", n: 3, t: 2, version: 2, network, createdBy: "x" });
+  const open = async (id, doc) => {
+    data.set(`groups/${id}`, doc);
+    rig.notify();
+    t.openGroup(id);
+    await waitFor("the wallet", () => t.state.gid === id && t.state.g);
+    await sleep(50);
+  };
+  await open(v2, made("mainnet"));
+  assert.equal(t.signedMode(v2), false, "a version 2 wallet");
+  data.set(`groups/${v2}`, made("testnet"));
+  rig.notify();
+  await sleep(100);
+  assert.deepEqual([t.state.g.network, t.state.g.networkMoved], ["mainnet", true]);
+  assert.equal(t.solOn(), false, "a flipped version 2 wallet is off");
+  assert.ok(!tabIds().includes("solana"), "a flipped version 2 wallet gets no tab");
+  // A version 2 wallet on testnet that nobody changed: the version alone keeps it off.
+  const v2test = "v2testbbbbbbbbbbbbbb";
+  await open(v2test, made("testnet"));
+  assert.equal(t.state.g.networkMoved, false, "nothing moved");
+  assert.equal(t.solOn(), false, "a version 2 testnet wallet is off");
+  assert.ok(!tabIds().includes("solana"), "a version 2 testnet wallet gets no tab");
+  // The version is no signed fact either: raised to 3, the wallet still has no signed writes.
+  data.set(`groups/${v2test}`, { ...made("testnet"), version: 3 });
+  rig.notify();
+  await sleep(100);
+  assert.equal(t.state.g.version, 3, "the store shows version 3");
+  assert.equal(t.solOn(), false, "a version 2 wallet that shows version 3 is off");
+  assert.ok(!tabIds().includes("solana"), "and gets no tab");
+  // A network that this device could not read at first sight is no network to keep.
+  const odd = "oddnetcccccccccccccc";
+  await open(odd, made("devnet"));
+  assert.equal(t.signPins["network:" + odd], undefined, "an unknown network is not pinned");
+  assert.equal(t.solOn(), false);
+  assert.equal(t.solLoading, null, "a version 2 wallet loads nothing");
+  assert.equal(config.calls, 0, "and asks the server for nothing");
 }
 
 // ── A wallet that never asks for Solana loads none of it ──
 const gid = await rig.wallet({ name: "Team" });
 assert.ok(tabIds().includes("solana"), "control: a testnet wallet is offered the Solana tab");
+{
+  // The stored version of a version 3 wallet can be lowered: the tab goes with it.
+  const shown = t.state.g;
+  for (const version of [2, 1, undefined, 4]) {
+    t.state.g = { ...shown, version };
+    assert.equal(t.solOn(), false, "version " + version + " is off");
+  }
+  t.state.g = shown;
+  assert.equal(t.solOn(), true, "control: version 3 is on");
+}
 // The watch of the start document gets its snapshot, and the snapshot has no document.
 rig.notify();
 await sleep(50);
 assert.equal(t.solLoading, null, "a testnet wallet with no start document: no load");
 assert.equal(t.sol, null, "the tab is closed and there is no start document");
 const zcash = [1, 2, 3].map((i) => zcashOf(gid, i));
+
+// ── A start document that no seat signed loads nothing ──
+// Any holder of the wallet link can write one. The page loads the module only when seat 1 signed
+// it, so a document without a signature, with a false one, or signed by another seat does not.
+{
+  const fields = { cluster: "devnet", at: Date.now() };
+  const forged = {
+    "no signature": fields,
+    "a made-up signature": { ...fields, by: 1, sig: "A".repeat(88) },
+    "a signature of another seat": await t.signedDoc(gid, "solstart/1", 2, fields),
+    "a signature over other fields": {
+      ...(await t.signedDoc(gid, "solstart/1", 1, fields)),
+      at: fields.at + 1,
+    },
+  };
+  for (const [what, doc] of Object.entries(forged)) {
+    data.set(path(gid, "solstart/1"), doc);
+    rig.notify();
+    await sleep(400);
+    assert.equal(t.solLoading, null, what + ": the page does not load Solana");
+    assert.equal(config.calls, 0, what + ": the page does not ask for the Helius URL");
+    assert.ok(tabIds().includes("solana"), "the tab still shows for the testnet wallet");
+  }
+  data.delete(path(gid, "solstart/1"));
+  rig.notify();
+}
 
 // ── Seats 2 and 3 load the module by themselves when the start document appears ──
 {

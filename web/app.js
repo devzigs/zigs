@@ -408,7 +408,8 @@ const NETWORKS = {
   mainnet: { label: "Mainnet", servers: ["https://zcash-mainnet.chainsafe.dev"],
     explorer: "https://zecblock.com/tx/", prefix: "u1", cap: 50000000 },
 };
-const netName = (g) => g && Object.hasOwn(NETWORKS, g.network) ? g.network : "testnet";
+const validNet = (x) => typeof x === "string" && Object.hasOwn(NETWORKS, x);
+const netName = (g) => g && validNet(g.network) ? g.network : "testnet";
 const netOf = (g) => NETWORKS[netName(g)];
 const curNet = () => netOf(state.g);
 const capText = (zat) => zat / 1e8 + " ZEC";
@@ -616,12 +617,14 @@ async function boot() {
 // A wallet document comes from another signer. Check the fields the page counts on, so one bad
 // document shows as an unreadable item and never breaks the page.
 const validWallet = (g) => validShape(g.n, g.t);
-// A version 3 wallet keeps the first n and t that this device saw: the group document has no
-// signature, so a holder of the invite link could write other values (PROTOCOL.md section 15).
+// Every wallet keeps the first network that this device saw. A version 3 wallet also keeps the
+// first n and t. The group document has no signature, so a holder of the invite link could write
+// other values (PROTOCOL.md section 15).
 function cleanGroup(id, d) {
   pinVersion(id, d);
   const g = {
     ...d, id, name: typeof d.name === "string" ? d.name : "Wallet", unreadable: !validWallet(d),
+    ...pinNetwork(id, d),
   };
   if (!signedMode(id)) return g;
   const shape = trustShape(signPins, id, g);
@@ -677,6 +680,7 @@ function openGroup(gid) {
     pending: false, log: [],
   });
   Object.assign(raw, emptyRaw());
+  solStartDoc = null;
   loggedIgnored.delete(gid);
   if (!gid) { setHash("#"); render(); return; }
   setHash("#" + gid);
@@ -840,18 +844,24 @@ function reactNow() {
   // Signing.
   const ss = curSession();
   if (ss && state.wallet) reactSession(ss);
-  if (solOn()) sol?.react();
+  solReact();
 }
 
 // ── Solana beta (web/sol, ZOLANA.md) ──
-// Devnet, for testnet wallets only. web/sol loads when the Solana tab opens or the wallet has a
-// solstart document. A mainnet wallet, and a wallet that is not loaded yet, never fetch any of it.
+// Devnet, for version 3 wallets on testnet only. The network is the first one that this device
+// saw (pinNetwork). web/sol loads when the Solana tab opens, or when a seat signed the wallet's
+// solstart document. Any other wallet, and a wallet that is not loaded yet, never fetches any of
+// it.
 const solGroup = (gid) =>
   (gid === state.gid && state.g) || state.groups.find((x) => x.id === gid);
-const solOn = (gid = state.gid) => solGroup(gid)?.network === "testnet";
+const solOn = (gid = state.gid) => {
+  const g = solGroup(gid);
+  return g?.network === "testnet" && walletVersion(g) === 3 && signedMode(gid);
+};
 const SOL_BACKUP_KIND = "zigs-sol-backup";
 const SOL_OFF = "Solana is not available on this server";
 let sol = null, solLoading = null, solError = "";
+let solStartDoc = null;   // the stored solstart/1 of the open wallet, whoever wrote it
 const solHost = () => ({
   Z, sdb, state, el, act, log, once, render, refilter, showBanner, sec, putSec, signedDoc,
   canWriteAs, localSeats, seatIds, checkIn, safetyNo, seatCheck, openGroup, restore,
@@ -873,18 +883,29 @@ function solLoad() {
   });
   return solLoading;
 }
-// Before the module loads, one watch on the start document decides when it must.
+// Before the module loads, one watch keeps the start document. Any holder of the invite link can
+// write one, so solReact loads the module only when a seat signed it.
 function solAttach(gid, base) {
   if (sol) { sol.open(gid, base); return; }
-  const started = (snap) => { if (snap.docs.length) solLoad(); };
-  unsubGroup.push(sdb.collection(base + "/solstart").onSnapshot(started));
+  unsubGroup.push(sdb.collection(base + "/solstart").onSnapshot((snap) => {
+    solStartDoc = snap.docs.find((d) => d.id === "1")?.data() ?? null;
+    refilter();
+  }));
+}
+const solStartSigned = () => !!solStartDoc && checkIn(state.gid)("solstart/1", solStartDoc.by,
+  solStartDoc.sig, docFields(solStartDoc), 1) === "yes";
+function solReact() {
+  if (!solOn()) return;
+  if (sol) sol.react();
+  else if (!solLoading && solStartSigned()) solLoad();
 }
 const solTab = () => sol ? guard(sol.view)
   : solError ? el("p", { class: "small" }, solError)
   : (solLoad(), el("p", { class: "small" }, "Loading Solana…"));
 async function solRestore(b, encrypted) {
-  const g = solGroup(b.group);
-  if (g && g.network !== "testnet") throw new Error("Solana runs on testnet wallets only.");
+  if (solGroup(b.group) && !solOn(b.group)) {
+    throw new Error("Solana runs on version 3 testnet wallets only.");
+  }
   await solLoad();
   if (!sol) throw new Error(solError || "Solana did not load.");
   return sol.restore(b, encrypted);
@@ -2348,6 +2369,18 @@ function pinVersion(gid, g) {
   }
 }
 
+// The first network name that this device saw for a wallet, in `zf-signpins` under
+// "network:<wallet id>". A missing or unknown name is not pinned. Returns the fields that replace
+// the stored ones: the pinned `network`, and `networkMoved` when the store shows another.
+function pinNetwork(gid, d) {
+  const key = "network:" + gid;
+  if (validNet(d.network) && pin(signPins, key, d.network) === "new") {
+    saveMerged("zf-signpins", signPins, oldest);
+  }
+  const pinned = signPins[key];
+  return pinned ? { network: pinned, networkMoved: d.network !== pinned } : {};
+}
+
 // The number of signers of a wallet. In a version 3 wallet it is the one this device saw first
 // (cleanGroup), so a made-up seat above it never counts.
 const seatCount = (gid) => {
@@ -3567,9 +3600,14 @@ function groupView() {
   }
   const ready = walletReady();
   const why = ready ? sendBlocker() : null;
-  const head = [groupHead(g, ready, why), staleRestoreNote(), signedNotes()];
+  const head = [groupHead(g, ready, why), staleRestoreNote(), signedNotes(), networkNote()];
   return ready ? walletView(head, why) : el("div", { class: "page" }, head, setupView());
 }
+
+// A note for any wallet version: the store shows another network than the first this device saw.
+const networkNote = () => state.g.networkMoved ? el("div", { class: "callout bad", role: "alert" },
+  "The store shows another network than the first this browser saw. Zigs keeps the first. "
+  + "Ask your signers.") : null;
 
 const NO_SIGNING_WALLET = "This wallet needs signatures, and this browser cannot check them. "
   + "Use a current Chrome, Edge, Firefox or Safari.";

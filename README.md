@@ -409,8 +409,9 @@ folder path.
   `sol-wasm`, `sol-sessions`, `sol-limits`, `sol-pay` and `sol-transfer` (the files `sol-rig`,
   `sol-setup`, `sol-chain` and `sol-vector` are helpers: do not run them). They test the Solana part
   of the page on the real `web/app.js`: the ceremony, signing sessions, payments, backup and
-  restore, the stop that holds everywhere, the network gate (a mainnet wallet gets no Solana tab and
-  loads nothing) and the config from the server.
+  restore, the stop that holds everywhere, the gate (a mainnet wallet, a wallet before version 3, a
+  stored network that changed, and a start document that no seat signed get no Solana tab and load
+  nothing) and the config from the server.
 - `bash solspike/baseline.sh check`: the Zcash baseline gate. All `web/test/*.mjs`, the group
   server limits, the hashes of the Zcash engine and `web/signed.js`, the page policy and the
   served headers must equal `solspike/baseline.json`. `node solspike/test/policy.test.mjs` checks
