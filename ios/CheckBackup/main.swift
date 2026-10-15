@@ -653,7 +653,7 @@ let roomA = try Chat.newRoom()
 check(Chat.validRoom(roomA.id, roomA.key) && roomA.key.count == 43, "a new room is valid")
 check(try Chat.newRoom().id != roomA.id, "new rooms differ")
 let badRooms: [(String, String)] = [
-    (roomA.id.uppercased(), roomA.key), (String(roomA.id.dropFirst()), roomA.key),
+    ("A" + String(roomA.id.dropFirst()), roomA.key), (String(roomA.id.dropFirst()), roomA.key),
     (roomA.id, roomA.key + "a"), (roomA.id, String(repeating: "+", count: 43)),
     (roomA.id, String(roomA.key.dropLast()) + "\u{e9}"),
 ]
@@ -1114,8 +1114,7 @@ let deepReorg = "the chain reorganised by more than 100 blocks. "
     + "Scan the wallet again from its birthday."
 check(Chain.isDeepReorg(deepReorg), "the engine knows its words")
 check(!Chain.isDeepReorg("lightwalletd: unavailable") && !Chain.isDeepReorg(""), "other errors")
-let stateDir = FileManager.default.temporaryDirectory
-    .appendingPathComponent("zigs-check-" + chatGid)
+let stateDir = URL(fileURLWithPath: dir).appendingPathComponent("state")
 try MainActor.assumeIsolated {
     let chain = Chain(gid: chatGid, ufvk: "u", birthday: 5, groupKey: floodKey, net: .testnet)
     chain.directory = stateDir

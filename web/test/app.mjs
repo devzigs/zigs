@@ -1081,14 +1081,14 @@ const sealed = (gid, rel, seat, fields, key, names = ["by", "sig"]) =>
   await t.rereadPersonal();
   assert.deepEqual(t.personal, saved, "the sealed record gives the same account");
   const rec = idbMap.get("personal:rec");
-  idbMap.set("personal:rec", { ...rec, box: rec.box.slice(0, -4) + "AAAA" });
+  const tampered = rec.box.startsWith("A") ? "B" + rec.box.slice(1) : "A" + rec.box.slice(1);
+  idbMap.set("personal:rec", { ...rec, box: tampered });
   t.personal = null;
   await t.rereadPersonal();
   assert.equal(t.personal, null);
   assert.match(t.personalError, /could not read the saved personal account/);
   await assert.rejects(t.createPersonal("testnet"), /Do not make a new account yet/);
-  assert.equal(idbMap.get("personal:rec").box, rec.box.slice(0, -4) + "AAAA",
-    "nothing overwrote it");
+  assert.equal(idbMap.get("personal:rec").box, tampered, "nothing overwrote it");
   idbMap.set("personal:rec", rec);
   await t.rereadPersonal();
   assert.deepEqual([t.personalError, t.personal.seed], ["", seed]);

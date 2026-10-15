@@ -41,9 +41,11 @@ assert.equal(await verifyMsg(other.signPk, sig, text), false, "wrong key");
 for (const badSig of ["", "!!!", "AAAA", sig.slice(2), null, 5]) {
   assert.equal(await verifyMsg(key.signPk, badSig, text), false);
 }
-for (const badKey of ["", "zz", "ab".repeat(31), key.signPk.toUpperCase(), null, 7, {}]) {
+for (const badKey of ["", "zz", "ab".repeat(31), null, 7, {}]) {
   assert.equal(await verifyMsg(badKey, sig, text), false);
 }
+assert.equal(await verifyMsg(FIXED_PK.toUpperCase(), FIXED_SIG, FIXED_TEXT), false,
+  "a key in capital letters");
 
 assert.equal(checkText("").error, "Write a message first.");
 assert.equal(checkText(" \n\t ").error, "Write a message first.");
@@ -57,7 +59,7 @@ const room = newRoom();
 assert.equal(validRoom(room), true);
 assert.notEqual(newRoom().id, room.id);
 const badRooms = [
-  null, {}, { ...room, id: room.id.toUpperCase() }, { ...room, id: room.id.slice(1) },
+  null, {}, { ...room, id: "A".repeat(20) }, { ...room, id: room.id.slice(1) },
   { ...room, key: room.key + "a" }, { ...room, key: "+".repeat(43) },
   { id: [room.id], key: room.key },
 ];
