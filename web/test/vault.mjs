@@ -4,8 +4,8 @@ import { aesKey, seal, open, parseVault } from "../vault.js";
 
 const rec = { cred: "Y3JlZA", salt: "c2FsdA" };
 const key = await aesKey(crypto.getRandomValues(new Uint8Array(32)));
-// The sealed record is base64url and field names only: a marker with spaces cannot occur in it by
-// chance, as a short one like "kp" does in about 1 of 20 runs.
+// The sealed record holds only base64url text, field names and JSON punctuation, so a marker
+// with spaces cannot occur in it by chance.
 const KEY_PACKAGE = "plain key package of seat 2";
 const data = {
   secrets: { "g1:2": { keyPackage: KEY_PACKAGE, nonces: { s1: "n" } } },
