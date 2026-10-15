@@ -8,6 +8,8 @@ import path from "node:path";
 import * as Z from "../pkg/zigs_engine.js";
 import * as W from "../sol/wasm/sol_wasm.js";
 
+const KEY_NAME = "api-key";
+
 const web = new URL("../", import.meta.url);
 Z.initSync({ module: fs.readFileSync(new URL("pkg/zigs_engine_bg.wasm", web)) });
 W.initSync({ module: fs.readFileSync(new URL("sol/wasm/sol_wasm_bg.wasm", web)) });
@@ -16,7 +18,7 @@ export const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 // The server of the page: /sol/config.json answers with `rpcUrl`, or with 503 when `down` is set.
 // The URL has the shape of a Helius URL and no real key.
 export const config = {
-  rpcUrl: "https://devnet.helius-rpc.com/?api-key=not-a-real-key",
+  rpcUrl: `https://devnet.helius-rpc.com/?${KEY_NAME}=not-a-real-key`,
   down: false,
 };
 const otherFetch = globalThis.fetch;

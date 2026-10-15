@@ -7,18 +7,20 @@ import { relative } from "node:path";
 import { fileURLToPath } from "node:url";
 import { allowLoopbackForTests, checkCommand, makeRedactor, SCHEMA } from "../../web/sol/guard.js";
 
+const KEY_NAME = "api-key";
+
 const step = (name) => console.log(`ok  ${name}`);
 const SECRET = "ab".repeat(32);
 const KEY = "k".repeat(24);
 const init = () => ({
-  rpcUrl: `https://devnet.helius-rpc.com/?api-key=${KEY}`,
+  rpcUrl: `https://devnet.helius-rpc.com/?${KEY_NAME}=${KEY}`,
   nullifierSecret: "cd".repeat(31),
   viewingSecret: SECRET,
   groupKey: "ef".repeat(32),
 });
 const LOOPBACK_URLS = [
   "http://127.0.0.1:9/",
-  "http://localhost:8795/?api-key=x",
+  `http://localhost:8795/?${KEY_NAME}=x`,
   "http://[::1]:1/",
   "https://127.0.0.1:9/",
   "https://localhost/",
@@ -56,17 +58,17 @@ function initValues() {
     viewingSecret: ["ab".repeat(31), `${SECRET}00`, null],
     groupKey: ["ef".repeat(31), "0x" + "ef".repeat(31)],
     rpcUrl: [
-      "http://devnet.helius-rpc.com/?api-key=x",
-      "https://evil.example/?api-key=x",
+      `http://devnet.helius-rpc.com/?${KEY_NAME}=x`,
+      `https://evil.example/?${KEY_NAME}=x`,
       "https://devnet.helius-rpc.com.evil.example/",
       "https://user:pass@devnet.helius-rpc.com/",
-      "https://mainnet.helius-rpc.com/?api-key=x",
-      "https://beta.helius-rpc.com/?api-key=x",
-      "https://a.devnet.helius-rpc.com/?api-key=x",
-      "https://xdevnet.helius-rpc.com/?api-key=x",
-      "https://devnet.helius-rpc.com./?api-key=x",
-      "https://devnet.helius-rpc.com:8443/?api-key=x",
-      "https://helius-rpc.com/?api-key=x",
+      `https://mainnet.helius-rpc.com/?${KEY_NAME}=x`,
+      `https://beta.helius-rpc.com/?${KEY_NAME}=x`,
+      `https://a.devnet.helius-rpc.com/?${KEY_NAME}=x`,
+      `https://xdevnet.helius-rpc.com/?${KEY_NAME}=x`,
+      `https://devnet.helius-rpc.com./?${KEY_NAME}=x`,
+      `https://devnet.helius-rpc.com:8443/?${KEY_NAME}=x`,
+      `https://helius-rpc.com/?${KEY_NAME}=x`,
       "https://devnet.helius-rpc.com.evil.example:443/",
       "https://devnet.helius-rpc.com/#frag",
       "ftp://127.0.0.1/",
@@ -85,9 +87,9 @@ function initValues() {
     }
   }
   for (const rpcUrl of [
-    "https://devnet.helius-rpc.com/?api-key=x",
-    "https://devnet.helius-rpc.com:443/?api-key=x",
-    "https://DEVNET.helius-rpc.com/?api-key=x",
+    `https://devnet.helius-rpc.com/?${KEY_NAME}=x`,
+    `https://devnet.helius-rpc.com:443/?${KEY_NAME}=x`,
+    `https://DEVNET.helius-rpc.com/?${KEY_NAME}=x`,
   ]) {
     checkCommand("init", { ...init(), rpcUrl });
   }
@@ -195,7 +197,7 @@ function redaction() {
   const messages = [
     `fetch failed for ${init().rpcUrl}`,
     `bad key ${KEY} and ${SECRET} twice ${SECRET}`,
-    `GET /v1/zolana/x?api-key=${"z".repeat(30)}&b=1 failed`,
+    `GET /v1/zolana/x?${KEY_NAME}=${"z".repeat(30)}&b=1 failed`,
     "short: abc",
   ];
   const out = messages.map(redact);
@@ -206,10 +208,10 @@ function redaction() {
       "a secret survived",
     );
   }
-  assert.match(out[2], /api-key=\[redacted\]&b=1/);
+  assert.match(out[2], new RegExp(`${KEY_NAME}=\\[redacted\\]&b=1`));
   assert.equal(out[3], "short: abc");
   const wide = makeRedactor();
-  const search = `?api-key=${KEY}&other=${"q".repeat(12)}`;
+  const search = `?${KEY_NAME}=${KEY}&other=${"q".repeat(12)}`;
   const url = `https://devnet.helius-rpc.com/${search}`;
   wide.add(url, search, KEY);
   assert.equal(wide(`failed ${url}`), "failed [redacted]", "the rest of the query stayed");
@@ -228,8 +230,8 @@ function loopbackTestMode() {
     "http://127.0.0.1:9/#frag",
     "ftp://127.0.0.1/",
     "ws://localhost/",
-    "http://devnet.helius-rpc.com/?api-key=x",
-    "https://mainnet.helius-rpc.com/?api-key=x",
+    `http://devnet.helius-rpc.com/?${KEY_NAME}=x`,
+    `https://mainnet.helius-rpc.com/?${KEY_NAME}=x`,
   ];
   for (const rpcUrl of bad) {
     assert.match(

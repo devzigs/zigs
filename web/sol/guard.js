@@ -82,7 +82,8 @@ export function checkCommand(cmd, args) {
   if (bad !== undefined) throw new Error(`${cmd}: field ${bad} is missing or malformed`);
 }
 
-const KEY_PARAM = /(api-key=)[^&\s"'#\\)]+/gi;
+const KEY_NAME = "api-key";
+const KEY_PARAM = new RegExp(`(${KEY_NAME}=)[^&\\s"'#\\\\)]+`, "gi");
 const MARK = "[redacted]";
 
 /**

@@ -7,7 +7,9 @@ import assert from "node:assert/strict";
 import { UNAVAILABLE, fetchRpcUrl } from "../sol/session.js";
 import { config, loadRig, sleep, storage } from "./sol-rig.mjs";
 
-const URL_OK = "https://devnet.helius-rpc.com/?api-key=not-a-real-key";
+const KEY_NAME = "api-key";
+
+const URL_OK = `https://devnet.helius-rpc.com/?${KEY_NAME}=not-a-real-key`;
 const asked = [];
 const answering = (make) => async (url, init) => {
   asked.push([String(url), init]);

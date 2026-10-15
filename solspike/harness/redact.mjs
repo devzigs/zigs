@@ -9,7 +9,8 @@ import { fileURLToPath } from "node:url";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 export const MARK = "[REDACTED]";
-const KEY_PARAM = /(api-key=)[^&\s"'#\\]+/gi;
+const KEY_NAME = "api-key";
+const KEY_PARAM = new RegExp(`(${KEY_NAME}=)[^&\\s"'#\\\\]+`, "gi");
 
 function hexForms(text) {
   const raw = Buffer.from(text.trim(), "hex");
@@ -23,7 +24,7 @@ function hexForms(text) {
 
 function urlForms(text) {
   const url = text.trim();
-  const key = new URL(url).searchParams.get("api-key");
+  const key = new URL(url).searchParams.get(KEY_NAME);
   if (!key) throw new Error("needle source: the URL has no api-key value");
   return [url, key];
 }

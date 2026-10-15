@@ -13,6 +13,8 @@ import { loadSnap, saveSnap } from "../sol/store.js";
 import { shareSeat, showSaved, solText, syncSolana } from "../sol/session.js";
 import { loadRig, sleep, storage } from "./sol-rig.mjs";
 
+const KEY_NAME = "api-key";
+
 const rig = await loadRig();
 const { t, Z, W, data, waitFor } = rig;
 const sha = (text) => createHash("sha256").update(text).digest("hex");
@@ -352,7 +354,7 @@ const zcashFile = saved.at(-1);
 const POLICY =
   "default-src 'none'; script-src 'self' 'wasm-unsafe-eval'; " +
   "connect-src 'self' https://devnet.helius-rpc.com; base-uri 'none'";
-const RPC = "https://devnet.helius-rpc.com/?api-key=not-a-real-key";
+const RPC = `https://devnet.helius-rpc.com/?${KEY_NAME}=not-a-real-key`;
 const realFetch = globalThis.fetch;
 const serve = (policy) => async (url) => {
   assert.equal(String(url), "/sol/worker.js");

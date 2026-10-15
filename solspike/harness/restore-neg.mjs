@@ -22,8 +22,10 @@ import { ORIGIN, setDevVar } from "./server.mjs";
 import { consoleProblems } from "./sol-facts.mjs";
 import { withStack } from "./stack.mjs";
 
+const KEY_NAME = "api-key";
+
 const READY = "Crypto engine ready (WebAssembly)";
-const DUMMY_URL = "https://devnet.helius-rpc.com/?api-key=restore-check";
+const DUMMY_URL = `https://devnet.helius-rpc.com/?${KEY_NAME}=restore-check`;
 const seen = {};
 
 /** The keys of the Solana part that this page holds for the seat (an empty list when none). */

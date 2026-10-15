@@ -11,7 +11,9 @@
 import { request } from "node:http";
 import { ORIGIN, setDevVar, startServer, stopServer } from "./server.mjs";
 
-const DUMMY = "https://devnet.helius-rpc.com/?api-key=route-check";
+const KEY_NAME = "api-key";
+
+const DUMMY = `https://devnet.helius-rpc.com/?${KEY_NAME}=route-check`;
 const CONFIG_SPELLINGS = ["/SOL/config.json", "/sol//config.json", "/sol/config.json/",
   "/sol/%63onfig.json", "//sol/config.json"];
 const POLICY =

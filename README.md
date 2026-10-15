@@ -328,7 +328,7 @@ The Solana beta needs the secret `HELIUS_DEVNET_URL`: your Helius Devnet URL, wh
 key. For local development, add it to `cf/.dev.vars`, which Git ignores:
 
 ```bash
-echo 'HELIUS_DEVNET_URL=https://devnet.helius-rpc.com/?api-key=<your key>' >> .dev.vars
+echo 'HELIUS_DEVNET_URL=<your Helius Devnet URL>' >> .dev.vars
 ```
 
 The Worker gives this URL to the page at `/sol/config.json`, behind the password gate. Without it,

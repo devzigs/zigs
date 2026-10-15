@@ -26,6 +26,7 @@ from urllib.parse import parse_qs, urlparse
 HERE = Path(__file__).resolve().parent
 CLONE = HERE.parents[1]
 CHUNK = 1 << 22
+KEY_NAME = "api-key"
 
 
 def count_in_file(path, needles, size=CHUNK):
@@ -91,7 +92,7 @@ def hex_forms(text):
 
 
 def url_forms(text):
-    key = parse_qs(urlparse(text.strip()).query).get("api-key", [""])[0]
+    key = parse_qs(urlparse(text.strip()).query).get(KEY_NAME, [""])[0]
     if not key:
         sys.exit("needle source: the URL has no api-key value, abort")
     return {"url": text.strip().encode(), "api-key": key.encode()}
@@ -233,7 +234,7 @@ def self_test():
         check_key_json(tmp)
         sol = Path(tmp, "sol")
         sol.mkdir()
-        sol.joinpath("a.url").write_text("https://x.invalid/?api-key=dummykey0123456789\n")
+        sol.joinpath("a.url").write_text(f"https://x.invalid/?{KEY_NAME}=dummykey0123456789\n")
         sol.joinpath("b.hex").write_text("00ff" * 16 + "\n")
         found = load_needles(sol, [{"file": "a.url", "kind": "helius-url", "required": True},
                                    {"file": "b.hex", "kind": "hex"},

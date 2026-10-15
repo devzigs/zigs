@@ -18,6 +18,8 @@ import { loadNeedles, makeRedactor, MARK, redact } from "./redact.mjs";
 import { ORIGIN } from "./server.mjs";
 import { withStack } from "./stack.mjs";
 
+const KEY_NAME = "api-key";
+
 const STATE = join(dirname(fileURLToPath(import.meta.url)), "../.state/selftest");
 const FAVICON = `${ORIGIN}/favicon.png`;
 
@@ -72,7 +74,7 @@ async function wipe(rig, { ctxs, pages }) {
 
 function redactionUnit() {
   mkdirSync(STATE, { recursive: true });
-  const url = "http://localhost:8795/zs-dummy-rpc?api-key=ZSDUMMYKEYabcdef0123456789";
+  const url = `http://localhost:8795/zs-dummy-rpc?${KEY_NAME}=ZSDUMMYKEYabcdef0123456789`;
   writeFileSync(join(STATE, "dummy.url"), `${url}\n`);
   writeFileSync(join(STATE, "dummy.hex"), `${"c0ffee".repeat(10)}beef\n`);
   const sources = [
@@ -85,7 +87,7 @@ function redactionUnit() {
   const unit = makeRedactor(needles);
   const bare = "ZSDUMMYKEYabcdef0123456789";
   assert.equal(unit(`a ${bare} b`), `a ${MARK} b`, "bare key");
-  assert.equal(unit("u?api-key=other&x=1"), `u?api-key=${MARK}&x=1`, "api-key parameter");
+  assert.equal(unit(`u?${KEY_NAME}=other&x=1`), `u?${KEY_NAME}=${MARK}&x=1`, "api-key parameter");
   const missing = [{ file: "absent.url", kind: "helius-url", required: true }];
   assert.throws(() => loadNeedles(STATE, missing), /required/);
   return { url, bare, hex: needles[2], needles };
@@ -95,10 +97,10 @@ async function redaction(rig, dummy) {
   const ctx = await rig.newContext("R");
   const page = await ctx.open(FAVICON);
   redact.add(...dummy.needles);
-  await run(page, async (url, bare, hex) => {
+  await run(page, async (url, bare, hex, name) => {
     console.log("typed", url, bare, hex);
-    await fetch(`/zs-dummy-rpc?api-key=${bare}&k=${hex}`).catch(() => null);
-  }, dummy.url, dummy.bare, dummy.hex);
+    await fetch(`/zs-dummy-rpc?${name}=${bare}&k=${hex}`).catch(() => null);
+  }, dummy.url, dummy.bare, dummy.hex, KEY_NAME);
   const text = readFileSync(rig.logPath, "utf8") + JSON.stringify(page.records);
   for (const secret of [dummy.url, dummy.bare, dummy.hex]) assert.ok(!text.includes(secret));
   assert.ok(text.split(MARK).length > 3, "the log holds redaction marks");

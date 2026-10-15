@@ -17,6 +17,8 @@ import { SCENARIOS, cspFor } from "./scenarios.mjs";
 import { startServers } from "./servers.mjs";
 import { NONCE_ACCOUNT, TREE_ACCOUNT } from "./synthetic.mjs";
 
+const KEY_NAME = "api-key";
+
 const HERE = dirname(fileURLToPath(import.meta.url));
 const SPIKE = resolve(HERE, "..");
 const WEB_SOL = resolve(SPIKE, "../web/sol");
@@ -34,7 +36,7 @@ const echoEntry = (key) => ({
   synthetic: true,
   body: JSON.stringify({
     jsonrpc: "2.0",
-    error: { code: -32000, message: `rejected http://{{HOST}}/?api-key=${key}` },
+    error: { code: -32000, message: `rejected http://{{HOST}}/?${KEY_NAME}=${key}` },
   }),
 });
 
@@ -45,8 +47,8 @@ function config(servers, roles, keys) {
     decoy,
     nonceAccount: NONCE_ACCOUNT,
     treeAccount: TREE_ACCOUNT,
-    init: { rpcUrl: `${mock}/?api-key=${keys.good}`, ...roles.secrets },
-    deadUrl: `${mock}/?api-key=${keys.dead}`,
+    init: { rpcUrl: `${mock}/?${KEY_NAME}=${keys.good}`, ...roles.secrets },
+    deadUrl: `${mock}/?${KEY_NAME}=${keys.dead}`,
     deadKey: keys.dead,
   };
 }

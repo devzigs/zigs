@@ -15,6 +15,8 @@ import { registerHooks } from "node:module";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
+const KEY_NAME = "api-key";
+
 const HERE = dirname(fileURLToPath(import.meta.url));
 const WEB_SOL = new URL("../../web/sol/", import.meta.url);
 const STUB = new URL("./worker-sdk-stub.mjs", import.meta.url).href;
@@ -42,8 +44,8 @@ const KEY = "k3y9".repeat(5);
 const EXTRA = "extra-param-value-123";
 const NULLIFIER = "c1".repeat(31);
 const VIEWING = "a7".repeat(32);
-const RPC = `https://devnet.helius-rpc.com/?api-key=${KEY}&x=${EXTRA}`;
-const ZOLANA = `https://devnet.helius-rpc.com/v1/zolana?api-key=${KEY}&x=${EXTRA}`;
+const RPC = `https://devnet.helius-rpc.com/?${KEY_NAME}=${KEY}&x=${EXTRA}`;
+const ZOLANA = `https://devnet.helius-rpc.com/v1/zolana?${KEY_NAME}=${KEY}&x=${EXTRA}`;
 const GROUP_KEY = "e5".repeat(32);
 const INIT = {
   rpcUrl: RPC,
@@ -163,7 +165,8 @@ const PREPARE = { kind: "transfer", recipient: "01ab", amount: "40000000", expir
 const builder = (body, bytes = message("chain-p6a.msg")) => async () => {
   if (body !== null) {
     const init = { method: "POST", body: JSON.stringify(body) };
-    await control.options.fetch("https://devnet.helius-rpc.com/v1/zolana/prove?api-key=k", init);
+    const url = `https://devnet.helius-rpc.com/v1/zolana/prove?${KEY_NAME}=k`;
+    await control.options.fetch(url, init);
   }
   return { messageBytes: bytes };
 };
@@ -226,7 +229,7 @@ async function fetchGuard() {
     await assert.rejects(async () => guarded(new Request(url)), /blocked a request to/, url);
   }
   assert.deepEqual(fetched, [], "a blocked request reached the network");
-  await guarded("https://devnet.helius-rpc.com/v1/zolana/getEncryptedUtxosByTags?api-key=k");
+  await guarded(`https://devnet.helius-rpc.com/v1/zolana/getEncryptedUtxosByTags?${KEY_NAME}=k`);
   await guarded(new Request("https://devnet.helius-rpc.com/"));
   assert.equal(fetched.length, 2, "a request to the RPC origin was blocked");
   step("U15 the Worker's fetch passes the RPC origin only, also as a Request, and nothing else");
@@ -236,7 +239,7 @@ async function fetchGuard() {
 async function everyUrlIsChecked() {
   await initialised();
   const { fetch: guarded } = control.options;
-  const good = "https://devnet.helius-rpc.com/v1/zolana/getEncryptedUtxosByTags?api-key=k";
+  const good = `https://devnet.helius-rpc.com/v1/zolana/getEncryptedUtxosByTags?${KEY_NAME}=k`;
   const evil = "https://evil.example/v1/zolana/x";
   await guarded(good);
   await assert.rejects(guarded(evil), /blocked a request to evil.example/);
@@ -297,7 +300,7 @@ async function redirectIsRefused() {
   try {
     await freshWorker({ testMode: true });
     const origin = `http://127.0.0.1:${await rpc.port}`;
-    const started = await ask("init", { ...INIT, rpcUrl: `${origin}/?api-key=${KEY}` });
+    const started = await ask("init", { ...INIT, rpcUrl: `${origin}/?${KEY_NAME}=${KEY}` });
     assert.equal(started.ok, true, started.error);
     const { fetch: guarded } = control.options;
     assert.equal((await guarded(`${origin}/ok`)).status, 200, "the guard blocked its own origin");
@@ -316,7 +319,7 @@ async function redirectIsRefused() {
 
 /** The product Worker refuses a loopback RPC URL. Only the entry of the mock run accepts one. */
 async function loopbackNeedsTestMode() {
-  const loopback = { ...INIT, rpcUrl: `http://127.0.0.1:9/?api-key=${KEY}` };
+  const loopback = { ...INIT, rpcUrl: `http://127.0.0.1:9/?${KEY_NAME}=${KEY}` };
   const bad = /init: field rpcUrl is missing or malformed/;
   await freshWorker();
   await refused("init", loopback, bad, "a loopback URL in the product Worker");
@@ -330,13 +333,13 @@ async function loopbackNeedsTestMode() {
   step("a loopback RPC URL needs the test mode that only the mock entry script turns on");
 }
 
-const LEAKS = [RPC, `?api-key=${KEY}&x=${EXTRA}`, KEY, EXTRA, VIEWING, NULLIFIER];
+const LEAKS = [RPC, `?${KEY_NAME}=${KEY}&x=${EXTRA}`, KEY, EXTRA, VIEWING, NULLIFIER];
 
 async function errorsAreRedacted() {
   await initialised();
   const texts = [
     `fetch failed ${RPC}`,
-    `bad search ?api-key=${KEY}&x=${EXTRA}`,
+    `bad search ?${KEY_NAME}=${KEY}&x=${EXTRA}`,
     `the key ${KEY} was refused`,
     `viewing ${VIEWING} nullifier ${NULLIFIER}`,
   ];

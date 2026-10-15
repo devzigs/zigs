@@ -18,6 +18,8 @@ import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { runInNewContext } from "node:vm";
 
+const KEY_NAME = "api-key";
+
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "../..");
 const BASE = JSON.parse(readFileSync(join(ROOT, "solspike/baseline.json"), "utf8")).baseCommit;
 const URLS = ["http://localhost:8795/", "https://app.zigs.app/", "http://127.0.0.1:8795/"];
@@ -158,7 +160,7 @@ async function gate(worker) {
   step("the password gate answers before the /sol route");
 }
 
-const SECRET = "https://devnet.helius-rpc.com/?api-key=policy-test-value";
+const SECRET = `https://devnet.helius-rpc.com/?${KEY_NAME}=policy-test-value`;
 const CONFIG_URL = "https://app.zigs.app/sol/config.json";
 const CONFIG_SPELLINGS = [
   "/SOL/config.json",
