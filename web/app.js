@@ -1014,6 +1014,16 @@ async function round2V1(i) {
   log("seat " + i + ": " + Object.keys(r.outgoing).length + " encrypted shares sent");
 }
 
+// Opens the box that seat j sent to seat i. A box that does not open comes from another version
+// of Zigs: a version before 15 October 2026 made its box key with another label.
+function openBox(j, i, s, sealed) {
+  const context = state.gid + ":" + j + "->" + i;
+  let text;
+  try { text = Z.boxOpen(s.boxSk, state.seats[j].boxPk, context, sealed); }
+  catch { throw new Error("The message of seat " + j + " was made by another version of Zigs"); }
+  try { return J(text); } catch { throw new Error("Seat " + j + " sent an unreadable message"); }
+}
+
 async function round3V1(i) {
   const gid = state.gid, s = sec(gid, i);
   const r1 = {}, r2 = {};
@@ -1021,7 +1031,8 @@ async function round3V1(i) {
     r1[j] = state.dkg1[j].package;
     const sealed = state.dkg2[j + "-" + i].sealed;
     if (!isStr(sealed)) throw new Error("Seat " + j + " sent an unreadable message.");
-    r2[j] = J(Z.boxOpen(s.boxSk, state.seats[j].boxPk, gid + ":" + j + "->" + i, sealed));
+    // A box that does not open ends this seat's setup, as in version 2: a retry cannot fix it.
+    r2[j] = await ceremonyStep(i, () => openBox(j, i, s, sealed));
   }
   const r = J(Z.dkgPart3(S(s.r2secret), S(r1), S(r2)));
   putSec(gid, i, { keyPackage: r.key_package, publicKeyPackage: r.public_key_package, groupKey: r.group_key, r2secret: null, r1package: null });
@@ -1231,9 +1242,7 @@ function unboxFrom(j, i, s) {
   if (d.echo !== s.echo) throw new Error(DIFFERENT);
   const bad = new Error("Seat " + j + " sent an unreadable message");
   if (!isStr(d.sealed)) throw bad;
-  let box;
-  try { box = J(Z.boxOpen(s.boxSk, state.seats[j].boxPk, state.gid + ":" + j + "->" + i, d.sealed)); }
-  catch { throw new Error("Seat " + j + " sent a message that cannot be opened"); }
+  const box = openBox(j, i, s, d.sealed);
   if (!box || !isStr(box.r) || !box.package || typeof box.package !== "object") throw bad;
   return box;
 }

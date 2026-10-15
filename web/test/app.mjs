@@ -61,7 +61,7 @@ export const T = {
   saveAccountBackup, applyBackup, accountCard, persistSealed, unlockVault, forgetBox, flightNow,
   sentStateOf, addressFor, addressBlock, layers, backupDialog, backupNote, restore, submitMessage,
   startUp, lockWithPasskey, takeFromTab, openContactDialog, mainView, damagedCard,
-  putSec, saveBackup, checkShape, restoredFor,
+  putSec, saveBackup, checkShape, restoredFor, unboxFrom, round3V1,
   getIdb() { return idb; }, setIdbMs(v) { idbOpenMs = v; },
   get personalPending() { return personalPending; },
 };
@@ -1970,6 +1970,41 @@ const sealed = (gid, rel, seat, fields, key, names = ["by", "sig"]) =>
   assert.equal(t.gkeys[A], "K".repeat(43));
   assert.match(t.banner.text, /^Restored seat 2 of Team\./);
   assert.equal(unsaved(A, 2), true);
+}
+
+// ── A key ceremony that was open when this version came: the boxes of the older version ──
+// The vectors are the ones of util.mjs. Seat 2 opens the box of seat 1. The box of an older
+// version does not open, and the page says so without blaming the seat. In version 1, too, the
+// seat ends its setup, so that the reactor does not try again every few seconds.
+{
+  const G = "g", vecA = "0102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f20";
+  const pkB = "493e82fc74464a59268817623d2053c5eb8e2cc4a988b4fee179ec6b010d531d";
+  const text = "hello from seat 1";   // opens, but is no JSON
+  const box = "a0a1a2a3a4a5a6a7a8a9aaab.sPL7xNK7CcWZd334CFmY2DWnZz3/TEm8bfO62yTstApM";
+  const older = "a0a1a2a3a4a5a6a7a8a9aaab.scXfOHjAXmCNrnI3jX7QwXmjb3388IvIn/0vp8pN6phe";
+  const setUp = (sealed) => {
+    t.secrets = { [G + ":2"]: { boxSk: vecA, echo: "e", r2secret: "x", version: 3 } };
+    t.state.gid = G;
+    t.state.g = { id: G, n: 2, t: 2, version: 3, network: "testnet" };
+    t.state.seats = { 1: { boxPk: pkB }, 2: { boxPk: "bb" } };
+    t.state.dkg1 = { 1: { package: "p1" }, 2: { package: "p2" } };
+    t.state.dkg2 = { "1-2": { sealed, echo: "e" } };
+    return t.sec(G, 2);
+  };
+  const OTHER = /: The message of seat 1 was made by another version of Zigs$/;
+  assert.equal(Z.boxOpen(vecA, pkB, "g:1->2", box), text, "control: the vector opens");
+  assert.throws(() => t.unboxFrom(1, 2, setUp(older)), OTHER, "version 2");
+  assert.throws(() => t.unboxFrom(1, 2, setUp(box)), /: Seat 1 sent an unreadable message$/,
+    "a box that opens with no JSON in it is another fault");
+  assert.throws(() => t.unboxFrom(1, 2, setUp(5)), /: Seat 1 sent an unreadable message$/);
+
+  // Version 1: the seat stops for good, and the text is the one of version 2.
+  const s = setUp(older);
+  await assert.rejects(t.round3V1(2), /another version of Zigs\. Do not use this wallet/);
+  assert.match(t.sec(G, 2).aborted, /^The message of seat 1 was made by another version of Zigs\./);
+  assert.equal(t.sec(G, 2).keyPackage, undefined, "no key share was made");
+  assert.equal(s.aborted, t.sec(G, 2).aborted);
+  t.secrets = {};
 }
 
 async function runAcctSync() {

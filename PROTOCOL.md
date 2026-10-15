@@ -174,6 +174,9 @@ sequenceDiagram
    and `ctx` is `<wallet id>:<from>-><to>`. The cipher is ChaCha20-Poly1305 with a random 12-byte
    nonce, and the box is `hex(nonce)`, a dot and the base64 of the ciphertext.
    It writes `dkg2/<from>-<to> = { sealed, echo }`.
+   A box that an older version made has another box key, so it does not open. The device ends its
+   setup with "The message of seat <j> was made by another version of Zigs. Do not use this
+   wallet. Create a new wallet." A version 1 ceremony does the same, so it does not retry.
 7. **Round 3.** A device does these checks before it makes any key.
    - Its stored echo equals the echo it computes now from the `dkg1` documents.
    - Every `dkg2/<j>-<me>` document has the same echo. If not, the device ends its setup with
