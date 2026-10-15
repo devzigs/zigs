@@ -345,6 +345,11 @@ http://127.0.0.1:8787: it is a separate origin, so it has separate storage. Depl
 `npx wrangler deploy` in `cf/`. Until launch, the live app asks for one shared password: set it with
 `npx wrangler secret put APP_PASSWORD`. Without that secret, the app refuses every request.
 
+Do not roll back to an older build after the deploy of 15 October 2026. That deploy changed the
+backup format (PROTOCOL.md section 9). An older build refuses the new backup files, and it shows
+every seat as not backed up. Older iPhone and Mac builds cannot open the new files or the new key
+ceremony messages either. If a build is bad, deploy a fixed build of the new format.
+
 ### iPhone and Mac apps
 
 Needs Xcode 26, XcodeGen, and the Rust targets `aarch64-apple-ios`, `aarch64-apple-ios-sim` and

@@ -248,14 +248,26 @@ func refused(_ message: String, _ edit: (inout Doc) -> Void) -> Bool {
     return failure { try BackupData(d) } == message
 }
 func notBackup(_ edit: (inout Doc) -> Void) -> Bool { refused(BackupText.notABackup, edit) }
+func oldFile(kind: String) -> Doc {
+    var d = try! BackupData.parse(plain)
+    d["kind"] = kind
+    return d
+}
 check(notBackup { $0["kind"] = "x" }, "kind")
 // A file of any other kind gets the message that names the older versions and the next step.
 check(notBackup { $0["kind"] = "zigs-backup" } && notBackup { $0["kind"] = "personal" }
       && notBackup { $0["kind"] = "" } && notBackup { $0["kind"] = 5 }
       && notBackup { $0["kind"] = NSNull() } && notBackup { $0["kind"] = nil }, "other kinds")
-check(BackupText.notABackup.contains("older version of Zigs made it")
-      && BackupText.notABackup.contains("new backup on a device that still holds the seat"),
+// The kind of the files that older versions made. It is built here, so that the old name is not
+// in the source as one string. Such a file gets the message that says why it does not open.
+let oldKind = "zec" + "-frost-key-share"
+check(notBackup { $0["kind"] = oldKind }, "the kind of an older version")
+check(failure { try BackupData(oldFile(kind: oldKind)) } == "This file is not a Zigs backup, "
+      + "or an older version of Zigs made it. The backup format changed on 15 October 2026, and "
+      + "older files no longer open. Make a new backup on a device that still holds the seat.",
       "the message of an older file")
+check(BackupText.formatChanged == "The backup format changed on 15 October 2026. "
+      + "Older backup files no longer open. Save a new backup now.", "the notice")
 // A seat that only the old flag marks as backed up asks for a new backup.
 let oldFlag: Doc = ["keyPackage": ["identifier": id] as Doc, "backedUp": true]
 check(!BackupData.backedUp(oldFlag), "the old flag counts for nothing")

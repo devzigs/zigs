@@ -59,7 +59,7 @@ export const T = {
   fundingUri, fundFromWallet, copyFundingRequest, sendOnChain, accountInbox, messageWhy,
   acctBalance, contactView, otherMessages, personalCard, contactsCard, contactDialog, fundBlock,
   saveAccountBackup, applyBackup, accountCard, persistSealed, unlockVault, forgetBox, flightNow,
-  sentStateOf, addressFor, addressBlock, layers, backupDialog, submitMessage,
+  sentStateOf, addressFor, addressBlock, layers, backupDialog, backupNote, restore, submitMessage,
   startUp, lockWithPasskey, takeFromTab, openContactDialog, mainView, damagedCard,
   putSec, saveBackup, checkShape, restoredFor,
   getIdb() { return idb; }, setIdbMs(v) { idbOpenMs = v; },
@@ -1778,10 +1778,17 @@ const sealed = (gid, rel, seat, fields, key, names = ["by", "sig"]) =>
     t.ui.backup = { seat: 2, made: false, busy: false };
     assert.match(textOf(t.backupDialog()),
       /Back up seat 2.*opens your key share.*sign as this seat/);
+    // The seat dialog and the note say why old files stop opening. The account file did not change.
+    const CHANGED = /backup format changed on 15 October 2026\. Older backup files no longer open/;
+    assert.match(textOf(t.backupDialog()), CHANGED);
+    assert.match(textOf(t.backupDialog()), /Save a new backup now/);
+    assert.match(textOf(t.backupNote([2])), CHANGED);
+    assert.match(textOf(t.backupNote([2])), /Save a new backup now/);
     t.ui.backup = { personal: true, made: false, busy: false };
     const backup = textOf(t.backupDialog());
     assert.match(backup, /Back up the personal account.*opens the backup of your personal account/);
     assert.match(backup, /holds the seed of the account and your contacts.*It holds no messages/);
+    assert.doesNotMatch(backup, /15 October 2026|no longer open/, "account files did not change");
     t.state.gid = null;
     assert.equal(t.layers().length, 2, "the backup of the account opens in the wallet list");
     t.ui.backup = null;
@@ -1933,11 +1940,22 @@ const sealed = (gid, rel, seat, fields, key, names = ["by", "sig"]) =>
   assert.equal(t.restoredFor(made, undefined).backupSaved, false);
   assert.equal("backedUp" in t.restoredFor(made, t.sec(A, 2)), false);
   const NEW = new RegExp("not a Zigs backup, or an older version of Zigs made it.*"
+    + "changed on 15 October 2026.*older files no longer open.*"
     + "new backup on a device that still holds the seat");
-  for (const kind of ["zigs-backup", "x", "", 5, undefined]) {
+  // The kind of the files that older versions made. It is built here, so that the old name is
+  // not in the source as one string. A kind from a file must not reach a method of Object either.
+  const OLD_KIND = "zec" + "-frost-key-share";
+  const kinds = [OLD_KIND, "zigs-backup", "x", "", 5, undefined, "constructor", "__proto__",
+    "toString"];
+  for (const kind of kinds) {
     await assert.rejects(t.applyBackup({ ...made, kind }, true), NEW, String(kind));
     await assert.rejects(t.applyBackup({ ...made, kind }, false), NEW, String(kind));
   }
+  // A plain file of the old kind, picked in the page: the banner says it, and nothing is stored.
+  const oldFile = JSON.stringify({ ...made, kind: OLD_KIND });
+  await t.restore({ size: oldFile.length, text: async () => oldFile });
+  assert.match(t.banner.text, NEW);
+  assert.equal(t.banner.kind, "bad");
   assert.deepEqual(Object.keys(t.secrets).sort(), [A + ":2", A + ":3"],
     "a refused file stores nothing");
 

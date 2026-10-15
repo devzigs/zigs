@@ -1726,7 +1726,12 @@ async function finalizeTx(ss) {
 // does the Argon2id and the cipher. The passphrase lives only in the dialog's input and in the
 // worker call, never in `ui`.
 const BACKUP_KIND = "zigs-key-share";   // what the sealed text holds, also in a plain file
+// The key share files changed on this date (PROTOCOL.md section 9). Account and Solana files did
+// not, so only the seat backup screens and these two texts say it.
+const BACKUP_CHANGED = "The backup format changed on 15 October 2026. Older backup files no longer "
+  + "open. Save a new backup now.";
 const NOT_A_BACKUP = "This file is not a Zigs backup, or an older version of Zigs made it. "
+  + "The backup format changed on 15 October 2026, and older files no longer open. "
   + "Make a new backup on a device that still holds the seat.";
 const NOT_ENCRYPTED = "This backup file is not encrypted. Make a new encrypted backup now.";
 const MAX_BACKUP_BYTES = 1000000;
@@ -1740,7 +1745,9 @@ const PASS_NOTE = "This passphrase opens your key share. Zigs cannot recover it.
 
 // Nonces stay out: a restored copy must never sign with a nonce this browser may also use.
 function backupText(i) {
-  const { nonces, backupSaved, backedUp, sol: solPart, ...s } = sec(state.gid, i);
+  const {
+    nonces: _nonces, backupSaved: _saved, backedUp: _oldFlag, sol: _sol, ...s
+  } = sec(state.gid, i);
   s.uid = s.uid || state.seats[i].uid;
   return S({
     kind: BACKUP_KIND, group: state.gid, groupName: state.g.name, seat: i,
@@ -1807,6 +1814,7 @@ function openAccountBackup() {
 // The words of the backup dialog and the call that saves, for a seat and for the account.
 const seatBackup = (i) => ({
   title: "Back up seat " + i, pass: PASS_NOTE, save: (pass) => saveBackup(i, pass),
+  changed: BACKUP_CHANGED,
   file: "The file holds your key share. Anyone who has the file and the passphrase can sign as "
     + "this seat.",
 });
@@ -1860,6 +1868,7 @@ function backupDialog() {
       class: "icon-btn", type: "button", "aria-label": "Close", onclick: closeBackup,
     }, "×")),
   el("p", { class: "small" }, words.pass),
+  words.changed ? el("p", { class: "small" }, words.changed) : null,
   el("label", { class: "field" }, el("span", {}, "Passphrase"), pass),
   el("div", { class: "row-actions" },
     el("button", { class: "btn sm", type: "button", disabled: b.busy, onclick: make },
@@ -1988,12 +1997,16 @@ function restoredFor(b, held) {
     backupSaved: false };
 }
 
+// The files that are no key share of a seat. A Map, because the kind comes from a file: a plain
+// object would answer for "constructor".
+const OTHER_BACKUPS = new Map([[PERSONAL_KIND, restoreAccount], [SOL_BACKUP_KIND, solRestore]]);
+
 // Stores the key share of a backup, from the fields that restoredFields allows. `encrypted` says
 // the file was sealed: only then does the seat count as backed up, and only when the backup fits
 // the wallet.
 async function applyBackup(b, encrypted) {
-  if (isObj(b) && b.kind === PERSONAL_KIND) return restoreAccount(b, encrypted);
-  if (isObj(b) && b.kind === SOL_BACKUP_KIND) return solRestore(b, encrypted);
+  const other = isObj(b) ? OTHER_BACKUPS.get(b.kind) : undefined;
+  if (other) return other(b, encrypted);
   checkBackup(b);
   const { group, seat, key } = b;
   const held = secrets[skey(group, seat)];
@@ -3703,8 +3716,7 @@ function tabBar(tabs) {
 function backupNote(seats) {
   const text = "Back up your key share. This browser can forget it: private windows and Tor "
     + "Browser delete it when they close. The file is locked with a passphrase that you choose. "
-    + "Keep the file safe, and keep the passphrase apart from it. Files made by an older "
-    + "version of Zigs do not open in this version. Save a new file.";
+    + "Keep the file safe, and keep the passphrase apart from it. " + BACKUP_CHANGED;
   return el("div", { class: "callout warn", role: "status" },
     el("span", { style: "flex:1 1 16rem" }, text),
     seats.map((i) => el("button", {

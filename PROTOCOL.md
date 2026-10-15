@@ -543,6 +543,17 @@ flowchart TD
     ignore the older flag, so every seat shows "Not backed up" until it saves a new file. A plain
     file of the right kind still restores. The app warns about it, and the backup note stays
     until the person makes an encrypted backup.
+  - The date. The format of the key share file changed on 15 October 2026. The seat backup
+    screen and the "Not backed up" note of the web, iPhone and Mac apps say so: older files no
+    longer open, and the person must save a new backup now. The restore error for an older file
+    says the same, and tells the person to make a new backup on a device that still holds the
+    seat. Account files and Solana files did not change, and their screens do not say it.
+  - Rollback. After the deploy of the new web build, a rollback to a build from before
+    15 October 2026 is not safe. The older build refuses the new files, because it reads the
+    older `kind`. It also shows every seat as not backed up, because it reads the older flag
+    `backedUp`, which the new build drops at the next write of a seat. Older iPhone and Mac builds
+    cannot open the new files or the new key ceremony boxes either. A bad build needs a fixed
+    build of the new format, not a rollback.
   - Tor Browser forgets everything when it closes, so a Tor user restores the backup in each
     session.
 

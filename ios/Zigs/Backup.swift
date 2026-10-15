@@ -10,7 +10,11 @@ enum BackupText {
     static let sealedKind = "zigs-backup"
     static let note = "This passphrase opens your key share. Zigs cannot recover it. "
         + "Write it down and keep it apart from the file."
+    /// The key share files changed on this date (PROTOCOL.md, section 9). Account files did not.
+    static let formatChanged = "The backup format changed on 15 October 2026. "
+        + "Older backup files no longer open. Save a new backup now."
     static let notABackup = "This file is not a Zigs backup, or an older version of Zigs made it. "
+        + "The backup format changed on 15 October 2026, and older files no longer open. "
         + "Make a new backup on a device that still holds the seat."
     static let noKeyShare = "This backup holds no key share."
     static let notEncrypted = "This backup file is not encrypted. Make a new encrypted backup now."
@@ -614,8 +618,7 @@ struct BackupCard: View {
                 Text("If you lose this \(deviceName), or delete Zigs, the key share is lost. "
                      + "The backup file is locked with a passphrase that you choose. "
                      + "Keep the file safe, and keep the passphrase apart from it. "
-                     + "Files made by an older version of Zigs do not open in this version. "
-                     + "Save a new file.")
+                     + BackupText.formatChanged)
                     .font(.subheadline).foregroundStyle(Color.mist)
                 ForEach(seats, id: \.self) { i in
                     HStack {
@@ -655,6 +658,7 @@ struct BackupSheet: View {
             Form {
                 Section {
                     Text(BackupText.note).font(.subheadline)
+                    Text(BackupText.formatChanged).font(.subheadline)
                 }
                 Section {
                     if shown {
