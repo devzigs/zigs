@@ -1,8 +1,8 @@
 # Tickets
 
-Open work for Zigs. Each ticket has an id, a priority (P1 high, P2 medium, P3 low), an owner
-(dev: an agent or a developer can do it; owner: it needs the project owner's accounts or a decision),
-and a "Done when" line. Close a ticket by moving it to "Closed" with the commit or PR that closed it.
+Open work for Zigs. Each ticket has an id, a priority (P1 high, P2 medium, P3 low), an owner (dev:
+an agent or a developer can do it; owner: it needs the project owner's accounts or a decision), and
+a "Done when" line. Close a ticket by moving it to "Closed" with the commit or PR that closed it.
 
 ## Zolana (Solana) beta in the web app
 
@@ -37,8 +37,24 @@ design. These tickets list what the beta does not do yet, and what must hold bef
 | SOL-26 | P3 | dev | Let the page retry a failed Solana load | After a failed fetch of `/sol/config.json` the tab offers a retry, and a retry does not loop on its own |
 | SOL-27 | P3 | dev | Test the checker with a landed payment and its blinding seed | A Devnet payment is landed with its root blinding seed recorded, and the checker accepts the landed message and every one of its rules |
 | SOL-29 | P3 | dev | Check that `web/sol/wasm` equals the build of `wasm-sol` | A check runs `wasm-sol/build.sh` in a clean tree and compares the hash of the wasm with the committed file and with CHECKER_PIN |
-| SOL-30 | P1 | dev | Run the live Devnet scenarios from this tree | `solspike/harness/scenario-f.mjs` (payment, restore, second payment) and `sol-live.mjs` pass on Devnet from this repo, with the Helius URL from `cf/.dev.vars`. They ran in the spike tree only, with a browser setting that no longer exists |
+| SOL-30 | P1 | dev | Run the live Devnet scenarios from this tree | `solspike/harness/scenario-f.mjs` (payment, restore, second payment) and `sol-live.mjs` pass on Devnet from this repo, with the Helius URL from `cf/.dev.vars`. The Helius key accepts only the app Origin, so the harness takes ORIGIN, an https server option and the Chrome host mapping from the environment, `tools/key-b.mjs` sends the app Origin, and `live-check.mjs` accepts `wss://` under https. A live run of the beta passed on 2026-10-15 with adapters outside the repo |
 | SOL-31 | P3 | dev | Make a test kill the mutant S-part-chain | `solspike/tools/mutate.mjs S-part-chain` is killed: a test shows that a signed part with no package, and a sent mark with no signed part, do not count. Today the lonely sessions of `web/test/sol-sessions.mjs` share the nonce of a landed one, so the rule that ends them hides the part chain rule (the mutant also survives in the spike tree) |
+| SOL-32 | P2 | dev | Add withdrawal to a public address to the web beta | The page proposes a withdrawal (intent tag 4 of wasm-sol) with a public recipient and amount, every seat sees them, the page checks the new intent, tests cover it, a Devnet run lands one withdrawal, and ZOLANA.md section 2 and the screen text match. The engine and a script withdrew on Devnet; the page cannot yet |
+
+## Zcash NU7
+
+NU7 disallows v4 transactions, moves to 25-second blocks and ships the Network Sustainability
+Mechanism. Zigs builds only v6 (and reads v5) transactions, so the v4 change does not touch it, and
+the nodes handle the NSM.
+
+| Id | P | Owner | Title | Done when |
+|---|---|---|---|---|
+| ZEC-1 | P1 | dev | Update the Zcash crates as soon as a release sets the NU7 mainnet height | The pinned zcash_protocol gives NU7 a mainnet height (it is None today; testnet is 4,465,026); BranchId::for_height on mainnet after activation gives Nu7 in a test; the engine wasm and the iPhone and Mac library are rebuilt |
+| ZEC-2 | P1 | dev | Fit the transaction expiry to group approvals | Today a proposal expires at target height + 40 (the builder default): about 17 minutes at 25-second blocks, on testnet now and on mainnet after NU7. The expiry window is a product value that covers a normal approval, the approval screen shows it, and an expired proposal ends with a clear "propose again" step |
+| ZEC-3 | P2 | dev | Take the marginal fee from the server instead of a constant | The fee comes from the node's getstandardfee answer (through the light-wallet servers or a small endpoint) and no longer from the constant 5,000 zatoshis in wasm/src/chain.rs and the ZIP 317 fee rule; the approval check accepts it only inside fixed bounds |
+| ZEC-4 | P2 | dev | Let the proposer pay more for inclusion | The propose form offers a priority fee of 10 times the standard fee; every approving device shows it and refuses a fee above a fixed cap |
+| ZEC-5 | P3 | dev | Use the right block time for each network and height | Time estimates use 75 seconds before NU7 and 25 seconds after it (web/app.js has a constant of 25 for every network) |
+| ZEC-6 | P1 | owner | Upgrade the light-wallet servers for NU7 before mainnet activation | The Zakura node and lightwalletd that the app uses run NU7 versions on testnet and mainnet |
 
 ## Privacy
 
