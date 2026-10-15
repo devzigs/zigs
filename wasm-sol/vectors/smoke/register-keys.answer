@@ -1,0 +1,3 @@
+refused
+register-nullifier-pk	instruction 1: nullifier_pk 2ebb3163 is not the pinned key
+register-nullifier-pk	nullifier_pk 2ebb3163 is not the key of the device secrets

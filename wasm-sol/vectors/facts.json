@@ -1,0 +1,22 @@
+{
+ "group": "B1o5q9sWLRVY2uk43bd1GLLPcNmhqJQ53CfKKxKzeShD",
+ "group_owner_hash": "2f0f5e54931bf869cfef1028aa0905538d7e967b136d481fe6f794eddaddbe9e",
+ "nullifier_pk": "2cc43ae0db7ed45af704c286240bbe7e0be3df6bfdd3f00a51001c8adf7a318a",
+ "viewing_pk": "0353af2d75c092b248cc1b06b97deae2d8fac86074e8cf0e50e4a38ddb42141a50",
+ "payee_b": "7pT1foE6hKiDtLZR8WJLJ61KMeDCaB6QFJR6qsdh269B",
+ "payee_b_address": "01654dd4b7179598219b7b3072f82c25f0d1f37f86d0fac860568db11e9ad67c36001bed6d1e9403a63394282bf21a590a2fe289d4050e27d3b1bc31e9680198f6660222062061a81a78185459f62648257360b3767a16ec1e6f8e3bc33d0a2d9c681d",
+ "withdraw_recipient": "4A83BtCkqafaSmyqvqnnE9bVWm7SqBGqxw2Kbk81Zpt7",
+ "stretch_nonce": "31oPkZGZZ7KF14YNe4xvay7ELCZvYVEDExgLuh3cCBHF",
+ "amounts": {
+  "shield": 50000000,
+  "withdraw": 10000000,
+  "transfer": 20000000
+ },
+ "signatures": {
+  "register": "5hTcKMgFEgNNatq8YQ7ZiF3XqxLifq3zoaaXZiP7c5wywDDcbjbFX9dNCk98BHsx9fCvCDeV3tgEGSnar1hxnVYX",
+  "shield": "oAXKdPhdVYoQyGsFp7CNyrixseivi7B2L1gzivD1WjdHdWQ7dnL1Jq2bMcZB2ubjUBC499vHYS8UPHgdkJ8CQw8",
+  "transfer": "5uoJQr3gEkSMPcBggsU9xg2NfaEqzkCSvTFWBZ13ze18dfpEiLbLRSLLKG6uzxVz3TLdFbVsXdXdJrsUMhsyBCPk",
+  "withdraw": "3pGbyfDbjs1jAfBCpd6sTVrVnRVejXAXd6mV2fwo63HtqFF61a9LXj5bTau7wnCVS9TWBVLiffJVpHFVFNkezNr",
+  "stretch": "YhW3shvFmQX4iDX742hq6symuc185F94WLMerRCwyRsEXYkkZvJpzNcn5s4CTwnRbSJoH8xBr45JokcBX1s8um5"
+ }
+}

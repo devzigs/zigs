@@ -1,0 +1,100 @@
+{
+  "baseCommit": "ef536727c440824ba594ec36f771e08d38326ed1",
+  "node": "v24.11.0",
+  "tests": {
+    "web/test/chat.mjs": {
+      "exit": 0
+    },
+    "web/test/signed.mjs": {
+      "exit": 0
+    },
+    "web/test/app.mjs": {
+      "exit": 0
+    },
+    "web/test/requests.mjs": {
+      "exit": 0
+    },
+    "web/test/account.mjs": {
+      "exit": 0
+    },
+    "web/test/personal.mjs": {
+      "exit": 0
+    },
+    "web/test/payees.mjs": {
+      "exit": 0
+    },
+    "web/test/vault.mjs": {
+      "exit": 0
+    },
+    "web/test/util.mjs": {
+      "exit": 0
+    },
+    "web/test/qr.mjs": {
+      "exit": 0
+    },
+    "web/test/sol-config.mjs": {
+      "exit": 0
+    },
+    "web/test/sol-docs.mjs": {
+      "exit": 0
+    },
+    "web/test/sol-ceremony.mjs": {
+      "exit": 0
+    },
+    "web/test/sol-app.mjs": {
+      "exit": 0
+    },
+    "web/test/sol-wasm.mjs": {
+      "exit": 0
+    },
+    "web/test/sol-sessions.mjs": {
+      "exit": 0
+    },
+    "web/test/sol-limits.mjs": {
+      "exit": 0
+    },
+    "web/test/sol-pay.mjs": {
+      "exit": 0
+    },
+    "web/test/sol-transfer.mjs": {
+      "exit": 0
+    },
+    "cf/test/limits.mjs": {
+      "exit": 0
+    }
+  },
+  "hashes": {
+    "wasm/Cargo.lock": "f3977c0c11f884da7fb2edd4179fb509d3e65dad92b5d70329728adb6167600d",
+    "wasm/Cargo.toml": "d02d8a051d48893662b6b3a2e3194b4f96a2163c3b65a3f021b8871df52c5d70",
+    "wasm/src/account.rs": "fe2d7194d60423bd7873d8ac7109626ba823cac4a68cfa5be43d09f5bd040bc7",
+    "wasm/src/backup.rs": "0dec224d189ee9f6624296260d95e56e5e46a9e49f5efc56a2b3655b06e2fcd0",
+    "wasm/src/ceremony.rs": "e853b8f576da64434abf784cffeac0c340dc7df7397013bb26d9490905add052",
+    "wasm/src/chain.rs": "1c7a5cdf040a73f30fdc9274c6205bab06203c45407be8ab7766f772d01ce239",
+    "wasm/src/ffi.rs": "dabd67b1022066959ff04cf8d93d9b18f27e29cdae3254256d4dc9f4a62b85d7",
+    "wasm/src/lib.rs": "d4e010633ba27349defcf8fe951a240f4536070a4dd7930e37196932878d8781",
+    "wasm/src/memo.rs": "d91971ad626a4148cb4420a6ae127110556fe1437a5f3a4a9b0bb54ea64683bd",
+    "wasm/src/request.rs": "61b0d03697336a37e9351bfcd809e95cd3fc0fdcb7049f64f0f86a75bf7efd1f",
+    "wasm/src/snapshot.rs": "619654365bbce58bf95105e4e8b14554d522aa0f86fc4ac43c13933b27e41f7e",
+    "wasm/src/testchain.rs": "9b5e71c5e00c980ee33b93f79aaff9c03af4a38c559a60a2365c58c716c26863",
+    "web/pkg/zec_frost_wasm.d.ts": "17bbc8a3166ba5e16be23b096b7868e97446b6c37184542abced14e2d543ada4",
+    "web/pkg/zec_frost_wasm.js": "b5b30d0e62dc5650052bc7bcf9037648726a8d8016c2962d066845180146322d",
+    "web/pkg/zec_frost_wasm_bg.wasm": "b543b11b8f85680ddf342fafd19ba18691631af4253d8e09506f9eb199608fb1",
+    "web/pkg/zec_frost_wasm_bg.wasm.d.ts": "301d62e431104c33a2e44970c8404bdd907c093cf93df5626ded752f7234eec0",
+    "web/signed.js": "0e0dc9608db614571bcf0a587ace968a5735e0b3f516ef136cf4ccbf153a2502"
+  },
+  "policy": {
+    "sourceSha256": "e919dfed55e85b338b76b2defc834694dd5d0d0c6362cfa24968812be67f8406",
+    "byUrl": {
+      "http://localhost:8795/": "default-src 'none'; script-src 'self' 'wasm-unsafe-eval'; worker-src 'self'; style-src 'self'; font-src 'self'; img-src 'self' data: blob:; connect-src 'self' ws://localhost:8795 https://lwd.zigs.app https://zcash-testnet.chainsafe.dev https://zcash-mainnet.chainsafe.dev; base-uri 'none'; form-action 'none'; frame-ancestors 'none'",
+      "https://app.zigs.app/": "default-src 'none'; script-src 'self' 'wasm-unsafe-eval'; worker-src 'self'; style-src 'self'; font-src 'self'; img-src 'self' data: blob:; connect-src 'self' wss://app.zigs.app https://lwd.zigs.app https://zcash-testnet.chainsafe.dev https://zcash-mainnet.chainsafe.dev; base-uri 'none'; form-action 'none'; frame-ancestors 'none'",
+      "http://127.0.0.1:8795/": "default-src 'none'; script-src 'self' 'wasm-unsafe-eval'; worker-src 'self'; style-src 'self'; font-src 'self'; img-src 'self' data: blob:; connect-src 'self' ws://127.0.0.1:8795 https://lwd.zigs.app https://zcash-testnet.chainsafe.dev https://zcash-mainnet.chainsafe.dev; base-uri 'none'; form-action 'none'; frame-ancestors 'none'"
+    }
+  },
+  "served": {
+    "strict-transport-security": "max-age=31536000; includeSubDomains",
+    "content-security-policy": "default-src 'none'; script-src 'self' 'wasm-unsafe-eval'; worker-src 'self'; style-src 'self'; font-src 'self'; img-src 'self' data: blob:; connect-src 'self' ws://app.zigs.app https://lwd.zigs.app https://zcash-testnet.chainsafe.dev https://zcash-mainnet.chainsafe.dev; base-uri 'none'; form-action 'none'; frame-ancestors 'none'",
+    "permissions-policy": "camera=(), microphone=(), geolocation=(), interest-cohort=()",
+    "referrer-policy": "no-referrer",
+    "x-content-type-options": "nosniff"
+  }
+}

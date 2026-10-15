@@ -1,0 +1,33 @@
+# A copy of program-libs/hasher of github.com/helius-labs/zolana at commit 89640630 (Apache-2.0,
+# see LICENSE). Changes: `workspace = true` became the version that the Zolana workspace sets, the
+# dev-dependencies and the tests were left out. The source in src/ is unchanged.
+[package]
+name = "zolana-hasher"
+version = "5.0.0"
+description = "Trait for generic usage of hash functions on Solana"
+license = "Apache-2.0"
+edition = "2021"
+
+[features]
+default = ["std"]
+alloc = []
+std = ["alloc"]
+
+[dependencies]
+thiserror = "2.0"
+num-bigint = "0.4.6"
+solana-program-error = "3.0"
+
+[target.'cfg(not(target_os = "solana"))'.dependencies]
+light-poseidon = "0.4.0"
+ark-bn254 = "0.5"
+sha2 = { version = "0.10" }
+sha3 = { version = "0.10" }
+ark-ff = "=0.5.0"
+
+[lints.rust.unexpected_cfgs]
+level = "allow"
+check-cfg = [
+    'cfg(target_os, values("solana"))',
+    'cfg(feature, values("frozen-abi", "no-entrypoint"))',
+]

@@ -1,0 +1,345 @@
+{
+ "pool": "sppU489D7A4U1exNo1oeMGZtLEofq3a6o2fR7UeoWB6",
+ "slot": 510959509,
+ "nextAssetId": [
+  "86"
+ ],
+ "registry": [
+  {
+   "mint": "ETzu3EpvF7Jqz5ZWng4QANZDvogjgcveRmztm2mb8Xss",
+   "assetId": "2"
+  },
+  {
+   "mint": "Hep5RTKecWZWhjbpQnGYbiCpbWeadBTfURVbeQbPrXTF",
+   "assetId": "3"
+  },
+  {
+   "mint": "J8DTRh7fJbkeNJTusyvY6ct7gtPjGo7gMvzwub2XP1Xn",
+   "assetId": "4"
+  },
+  {
+   "mint": "JBuQgEiftdxGstww5Y6qJv4onKuM2jxXXWVWNs4cTf9o",
+   "assetId": "5"
+  },
+  {
+   "mint": "443YPTZYNG86Nhm9UvbYBVsQ99dRWofKPsgEkfdwxwGk",
+   "assetId": "6"
+  },
+  {
+   "mint": "5d2KjyaU2mfRuUqiJWV8MzCzzfkSt2fg81zS9QTdXjQj",
+   "assetId": "7"
+  },
+  {
+   "mint": "9vJV9EvCwouyG6iHWcD8YRi3S7aX9um2DWtjCUhhBkTp",
+   "assetId": "8"
+  },
+  {
+   "mint": "62mhy3MeBtGeXasYELVgkrkZz3dZEbMRzLmhyakKgEq6",
+   "assetId": "9"
+  },
+  {
+   "mint": "ETXaKzD47A4vY8ogHD9Ps7oCrH3zXebeZeSJeqzWSPUf",
+   "assetId": "10"
+  },
+  {
+   "mint": "7Tec4QmPJE9ezFanfVYFDQGyk1Q5wfTeg1rbsYT6HB12",
+   "assetId": "11"
+  },
+  {
+   "mint": "G95UeEtSMWfJV4c1yHNEr1wZQNEVEYgRZgjLEs9JfZNc",
+   "assetId": "12"
+  },
+  {
+   "mint": "AsnexKKbUkXsn1LhQTZv46sefjDZmNy5QkYqSwZ6obTE",
+   "assetId": "13"
+  },
+  {
+   "mint": "5yPn5UTvHXw2U3Dvvdb3oa1T4F6YoAHxPtagVybc9KJ",
+   "assetId": "14"
+  },
+  {
+   "mint": "ATrfXNVMZhsbiER1gN8fYLH6CtAb7NoYYTW7YFWSskkm",
+   "assetId": "15"
+  },
+  {
+   "mint": "im3DreRA4DKZXD1h2UZu6Nfnndj8kNP2jPrNSLFKiZH",
+   "assetId": "16"
+  },
+  {
+   "mint": "N4zWYZSkBdjVqz7Rpgwkhx2x63qt1SfN6jE786ipp9G",
+   "assetId": "17"
+  },
+  {
+   "mint": "gkGEurSxDKiZzP8FET6onhfrq96RefSQbW8u3H9iqZr",
+   "assetId": "18"
+  },
+  {
+   "mint": "7korRUbU5eGCqhRV96h1SPJQXVCrvWJDrMJ3t5xmxUdr",
+   "assetId": "19"
+  },
+  {
+   "mint": "EuRUxr51fAsRBS5z3bY1jnY6pkb7Bb4HLo7q6gc3rHSA",
+   "assetId": "20"
+  },
+  {
+   "mint": "27ExN9n2vrd93DbhFmiFnBuFpvq23Fc6DgJkob4TC2MB",
+   "assetId": "21"
+  },
+  {
+   "mint": "79BNfW9Bav3djvvJbYhW1bF81RUdVxyLEGgccbgMokJj",
+   "assetId": "22"
+  },
+  {
+   "mint": "HKsPb7N3ryJ1AbmyJhC1B7DaeS6zCaMKRPMHJkTt4z5e",
+   "assetId": "23"
+  },
+  {
+   "mint": "CMrQ3jTpqYFAMW7zFxrNuEvLs2VcCQkW83NeQ81yefVC",
+   "assetId": "24"
+  },
+  {
+   "mint": "2rgA9D7L6UPrvGambACSZdSSqFv1UAGgDjxfRTo77CWP",
+   "assetId": "25"
+  },
+  {
+   "mint": "D5vfy5PPyu4rvoTbJdea6tnyZhfirqaszPQxdqyB5qXX",
+   "assetId": "26"
+  },
+  {
+   "mint": "8mKrhd69KLn9FUaPZjGUx3AoGUS5e5DYYhcXoRAJm8Xu",
+   "assetId": "27"
+  },
+  {
+   "mint": "CgXD66tmpQbRneDu7bk4AmXpTNBj4pGW7jLMfbaeTENU",
+   "assetId": "28"
+  },
+  {
+   "mint": "C83NV9rjCud6WwvYkbcUU3Jm6fenYUQYNaK6aGhQCC1z",
+   "assetId": "29"
+  },
+  {
+   "mint": "Bhtya1d1kr1ZcMRUW88Ryyc3bFbWwwhQUD4yWosLCZKq",
+   "assetId": "30"
+  },
+  {
+   "mint": "HVzEntm9gqcdQNKrfPpSSrJhjJBNnxQz4G2mhb4fxhk",
+   "assetId": "31"
+  },
+  {
+   "mint": "389sCR6V4c8nMEuxDm1yEGxGDbHsiFwTyBawRRWHGcMQ",
+   "assetId": "32"
+  },
+  {
+   "mint": "FDsn8wf4XTYf26vfLp1TNVnaJn2NGFV8tfzten1YajVi",
+   "assetId": "33"
+  },
+  {
+   "mint": "4oG4sjmopf5MzvTHLE8rpVJ2uyczxfsw2K84SUTpNDx7",
+   "assetId": "34"
+  },
+  {
+   "mint": "6ZWgPsc8DWb8F9Ysy6J83QwpjrZ9qC6pHmQfESPDEXwt",
+   "assetId": "35"
+  },
+  {
+   "mint": "HFeV645LATMfvrTZcCMcMck83wmienHWKiNFh7ZJ1hDf",
+   "assetId": "36"
+  },
+  {
+   "mint": "Gvyisgx95nJ8Eg3dAyjdiXhLT3MFjZSx2jKYw8SgsWki",
+   "assetId": "37"
+  },
+  {
+   "mint": "DxqtHEUfBPNtoaBa9teVRf4XTT5b1WPCD2ckYdvBwRx",
+   "assetId": "38"
+  },
+  {
+   "mint": "EtM4i9pj5CAPgPniSGLSbQipZKx8ifGtqQHLS9Ccfq2m",
+   "assetId": "39"
+  },
+  {
+   "mint": "4zMMC9srt5Ri5X14GAgXhaHii3GnPAEERYPJgZJDncDU",
+   "assetId": "40"
+  },
+  {
+   "mint": "FZLVQ7UpQj4aRu3H237YPmDQBm42qXXqMqkVJj4jVcWi",
+   "assetId": "41"
+  },
+  {
+   "mint": "3uHPBCuLCr6jxzrxNvpnVjAqK9om7Nk7EsQEzuetvnxj",
+   "assetId": "42"
+  },
+  {
+   "mint": "38i75er3n58dBjm7GQpwg9bm9FX6MRrpnFH7h4ndY8qg",
+   "assetId": "43"
+  },
+  {
+   "mint": "D6NtyzjnMpY3jHrgHnBk7mns1Wwc7xaWrtwyqdUXUmu7",
+   "assetId": "44"
+  },
+  {
+   "mint": "HmbgZsvzYCZmACxP967bRMg6sF7aWzCCyvVWo16QP6xA",
+   "assetId": "45"
+  },
+  {
+   "mint": "AanK7pcx7oJV1UobbizK2kkQGg5WinmwsrVgKYEujnnR",
+   "assetId": "46"
+  },
+  {
+   "mint": "GbJYJkvRSffuTBGRaiN58gBL4bU2HYp1zGbqR6ecfcyA",
+   "assetId": "47"
+  },
+  {
+   "mint": "3xkYJSdNcFg7G3jJpmu1fLjmL4Q5amQaNCRPH5P5w2Qi",
+   "assetId": "48"
+  },
+  {
+   "mint": "9JNZYcqYGWM5E37iRfGdYfKHWZjfbHgCHeb6CzbV9Myq",
+   "assetId": "49"
+  },
+  {
+   "mint": "Gq78Ds1Qg9MvvRPo1CgM9BpZQifywbFqsp2RSeUueYis",
+   "assetId": "50"
+  },
+  {
+   "mint": "3MBbbFPhoVNpJU8DFx1YnzTV3LFA315mU2R8X8haSbpZ",
+   "assetId": "51"
+  },
+  {
+   "mint": "E6a9VBv6WGMfdP3fJooDZG6CBqVZ4cSCUJvKi5FMrQq4",
+   "assetId": "52"
+  },
+  {
+   "mint": "F1FJsmjear7YFuVgckFCinx4CtYUUGULQLsREGUydtpj",
+   "assetId": "53"
+  },
+  {
+   "mint": "83PNPC4DBJJd9KsKcMxAyEkAeQwyiYJ7aJFjSaqzDewZ",
+   "assetId": "54"
+  },
+  {
+   "mint": "HjBVjnmdm96UfyMbfEkJZtGG7UWAwN6kTdr59ZGuCgha",
+   "assetId": "55"
+  },
+  {
+   "mint": "3bQ6NCtKBJDTLxY4XVJzrn1vQHscwN876zqDn1FpqKcP",
+   "assetId": "56"
+  },
+  {
+   "mint": "2dLNWsSLoapKwbcuyngNNzZKu1G3CfzKDVAuQ4gmYp8V",
+   "assetId": "57"
+  },
+  {
+   "mint": "CgpuorL41KJrNi1yxpFKpQajhg8sDnVBxjfK65KoZEPY",
+   "assetId": "58"
+  },
+  {
+   "mint": "BcgxCpQXmXBKeb3kH6GkEK6ufMAuAhTmbpZSYnE3pagc",
+   "assetId": "59"
+  },
+  {
+   "mint": "8bbqP8pXacnu8fHf35gjYRMxojG7wzybgGvfL6tst5Fm",
+   "assetId": "60"
+  },
+  {
+   "mint": "BXPm9UjHHAamXdeZUPZRWLKHMtCamiqTM1RiHFxLTY8Q",
+   "assetId": "61"
+  },
+  {
+   "mint": "9RwxjcRk9T4cEs1mWz37gvRvQv5AXEVnvMw86H95Y8g7",
+   "assetId": "62"
+  },
+  {
+   "mint": "A1qjQx2zNCfxp23PLq58z8kLLGoW8XjCiyDdnWdXy8Ut",
+   "assetId": "63"
+  },
+  {
+   "mint": "BDp3xPSWwSZpoA6tEnaoZqE3bqNAioXrURAJeYr1ELFo",
+   "assetId": "64"
+  },
+  {
+   "mint": "D9GqbixnR54XrkVhhiSHR9ujD8NWazfF9353EovULQzM",
+   "assetId": "65"
+  },
+  {
+   "mint": "7GtHWzeofWgwgqHw6F7BkX8eMsy4dRGkaJVngm8r2Rem",
+   "assetId": "66"
+  },
+  {
+   "mint": "2Ck1Z2GcgNXUKf2EFd7GGCEmUafpmACoqknEXi1kE2dC",
+   "assetId": "67"
+  },
+  {
+   "mint": "8BhknChat2tDqS27qKM5hoqWSyeaQGAf6HkzcD5GMyPD",
+   "assetId": "68"
+  },
+  {
+   "mint": "CCJwC4jeWAbPZBoZkNHG7dfxMX7tffNfEUv2ZgJ3f2Bp",
+   "assetId": "69"
+  },
+  {
+   "mint": "8thrutkn8CTQxJCRWmB2TsgZ6vkHVzz9Sw8hQjQMYBos",
+   "assetId": "70"
+  },
+  {
+   "mint": "HctNMQLbcq8cVqrywMSGj731eVwL8yKg1vFFVCrgQKPS",
+   "assetId": "71"
+  },
+  {
+   "mint": "2dh5siwnCrM25j5hfn222hnAUcZmcL7HMqqnSWM4wfrr",
+   "assetId": "72"
+  },
+  {
+   "mint": "3qwqftBDWR4gQHhykD3uscpSQSXepyh4gh6erknXBW1f",
+   "assetId": "73"
+  },
+  {
+   "mint": "CU5Tyg4Fvhj1rDYhmb3GMLnCwNAcxmozeKWbHDorqABc",
+   "assetId": "74"
+  },
+  {
+   "mint": "BLTfMDGs5fnU3aDR1Vj9aEWQ1Sbdto4eDBKNZKzWRzYJ",
+   "assetId": "75"
+  },
+  {
+   "mint": "2yvSQbr61jfXdKofvbCUyQMhQS2mHHbp4B2hGxH6LNpY",
+   "assetId": "76"
+  },
+  {
+   "mint": "2A7SjjJeFXbohejeqtu3SXN7RffBxqQhVg8dCBZaGZeq",
+   "assetId": "77"
+  },
+  {
+   "mint": "Y8FDajuDMQWu7d5ES3jbZ67NzZta266WuFgQ92N4yd6",
+   "assetId": "78"
+  },
+  {
+   "mint": "BcdFF7UgEX5EoSVu8B6rZC5F387rXpdPQwrKqyrbGdek",
+   "assetId": "79"
+  },
+  {
+   "mint": "GbwGgHWL74d64CnncptynViKzH5pn42nysBZUB1iz1VN",
+   "assetId": "80"
+  },
+  {
+   "mint": "Hx6PVr1QjytjSDfAPDF8sniP1ERDVBDybR9oxoYugT6m",
+   "assetId": "81"
+  },
+  {
+   "mint": "HMjznREs7cWjjPPzEo4y8PLx71sEWAeCjWfmKRNuDUtG",
+   "assetId": "82"
+  },
+  {
+   "mint": "3UqQVF5Q4zNdRP3fRqcWRg3Pv1JHBhBCX4Ji9SmVNyZk",
+   "assetId": "83"
+  },
+  {
+   "mint": "Bz86K5LdJMXya9HMd9ZDPWBsNdf7jPmfwHEdPBWUvGQM",
+   "assetId": "84"
+  },
+  {
+   "mint": "FkSsiPqAawwaBHUgmAHHWBefCsXAQVUc2WvAKEEbFqEi",
+   "assetId": "85"
+  }
+ ]
+}

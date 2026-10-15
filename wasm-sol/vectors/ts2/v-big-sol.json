@@ -1,0 +1,61 @@
+{
+ "name": "v-big-sol",
+ "group": {
+  "key": "fffa1c9e0978086afdf56e0ee59b3138c75037cf7569b2be3c7852efdd736174",
+  "nullifierSecret": "d9fcced6fd163640bc141fc21fa0d3088eb1b1851805ca687ba4de6c733759",
+  "viewingSk": "823e7889a5bc254e64330633d698a1f4026c446867f60741c1556ef890eecac2",
+  "nullifierPk": "06c3565d9a77f98cc4383c88fe4e1f0242635c0ca97228366812eca697a4b266",
+  "viewingPk": "02fde3b267c0c7243bc42db30800a7d07d722826c0bb18b6f25d00a51ee8220ee4",
+  "ownerHash": "07e364be3892ded5b5c1882402135ba0d3f34fc4b1a7d73f9273e37c0d575d1e"
+ },
+ "payee": {
+  "address": "01b1f1e1a7b33d4fbf2f227c4d4da28909b224766e4d7a33a416700ec513abaf1a0018fb3d2e252fca39ab87a4615be1d85b4444aa25e646a589646dc49a76bfa0d502df015c4d30757127f3dda2c7425dcc75a48fcdd7c8c8d49eefc0d9f3dc42cbcc",
+  "key": "b1f1e1a7b33d4fbf2f227c4d4da28909b224766e4d7a33a416700ec513abaf1a",
+  "ownerHash": "10c272ba527226ddbbef35ad4bebec2b7759fe247f078d881bd267115bc5f10c"
+ },
+ "mint": {
+  "address": "44a92723b4f047518d24ba1f567871ec105423bc47c47161e1eef3dc33c2f538",
+  "assetId": "7"
+ },
+ "salt": "9aa7981ae1d32e22090e1a3c6cb76413",
+ "blindingSeed": "00d79095f10199910b78df817b815fae7ed3672423e9ce7523ed73e6d62d0ff7",
+ "txViewingPk": "026084cd81a667a03fad4153f9445c4f7c801d8fcbe7c32376addde37cce73fa74",
+ "inputs": [
+  {
+   "mint": "11111111111111111111111111111111",
+   "amount": "9223372036854775810",
+   "blinding": "00430c031f1eb807ab48b7643957fb074fb013f14da657fa33130a215917fab9",
+   "utxoHash": "1cfb48006272a548adf8a5b68623c6eb5cbe63465a04e2c7456b7d8c7a615d88",
+   "nullifier": "0f22ef1b6224ee1dc28c0a63bf545d76bbaaefbdc6a7c5343effd4c39e2086c8"
+  }
+ ],
+ "withdraw": null,
+ "outputs": [
+  {
+   "role": "change",
+   "mint": "11111111111111111111111111111111",
+   "assetId": "1",
+   "amount": "4611686018427387906",
+   "blinding": "2fb14e61a7513b3697e40022e2bb3c00756b995619e3c04acc43b8d712f3f88f",
+   "utxoHash": "15330c4f307b60f5681dcfcd61f091c3c39fedfa6f8ddd9e56380d1053132a8c",
+   "ownerTag": {
+    "kind": "account",
+    "index": 0
+   },
+   "data": "01540000000302fde3b267c0c7243bc42db30800a7d07d722826c0bb18b6f25d00a51ee8220ee40550b04aea0f3d33e4ff0aed03b3518ff227e6e9ffb44e0c8cbb7ee66d9ad23e9538a7b3e07e25c937bacd0051f7594cd2cb"
+  },
+  {
+   "role": "payee",
+   "mint": "11111111111111111111111111111111",
+   "assetId": "1",
+   "amount": "4611686018427387904",
+   "blinding": "0588833efeaa69f6a5a63cee98e3614ecb957557fc296a115644c89852e07ada",
+   "utxoHash": "1f3acd09737d2dcac76ca92dd981cebaf19158b0649ac3b4fb20a498fa2eea32",
+   "ownerTag": {
+    "kind": "inline",
+    "value": "b1f1e1a7b33d4fbf2f227c4d4da28909b224766e4d7a33a416700ec513abaf1a"
+   },
+   "data": "01540000000302df015c4d30757127f3dda2c7425dcc75a48fcdd7c8c8d49eefc0d9f3dc42cbcc0c42869f186abd6b52a248bed5a3c649e5503f7849d060bac5f7be2e71a55964d041bb24feb89bfe5ed949a9dcf9aba98a62"
+  }
+ ]
+}

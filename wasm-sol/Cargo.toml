@@ -1,0 +1,92 @@
+[package]
+name = "wasm-sol"
+version = "0.1.0"
+edition = "2021"
+publish = false
+
+# The library keeps the name of the P3 checker, so the copied source and tests stay byte for byte
+# the files that CHECKER_PIN lists. The wasm file gets its name from `wasm-bindgen --out-name`.
+[lib]
+name = "p3_check"
+crate-type = ["cdylib", "rlib"]
+
+# Reason for each dependency:
+# The P3 checker (ZOLANA.md section 5), as in the P3 crate:
+#   sha2: program address and create-with-seed derivation (nonce account, registry record,
+#         nullifier PDAs, tree 0, SOL interface).
+#   curve25519-dalek: the on-curve test of a program address (decompress a point).
+#   wasm-bindgen: the browser entry points. The version equals the installed CLI.
+#   zolana-hasher: Poseidon over BN254, as the program and the circuit compute it. A copy of
+#         program-libs/hasher of the Zolana repo at commit 89640630, in vendor/ (Apache-2.0).
+#   p256: the P-256 viewing keys of a shielded address (ECDH, point encoding, scalar reduction).
+#   hkdf: HKDF-SHA256 of the viewing secrets, of the per-slot key and nonce, and of the roles.
+#   aes, ctr: AES-256-CTR. The spec names no AEAD: the slot cipher has no tag, and integrity
+#         comes from the proof-bound utxo_hash.
+# New in wasm-sol:
+#   frost-ed25519: the FROST(Ed25519, SHA-512) ciphersuite, DKG and split signing. Pinned by
+#         ZOLANA.md 3.1.
+#   ed25519-dalek: `verify_strict` of the aggregate. The verify of frost is cofactored.
+#   blake2b_simd: the personalized hashes (commitment, echo, solSeed, digest, snapshot key). The
+#         same crate as the Zcash engine.
+#   rand_core (getrandom feature): `OsRng` for the DKG secrets and the signing nonces.
+#   getrandom 0.2 (js feature, wasm32 only): the wasm32 source of `OsRng`, as in P1.
+#   serde_json: the JSON strings of the entry points, as in the Zcash engine. The frost types
+#         serialize with their own serde impls.
+#   serde: the `Serialize` and `DeserializeOwned` bounds of the helpers in codec.rs (no code of
+#         its own: the crate is in the tree through frost and serde_json).
+[dependencies]
+aes = { version = "0.8", default-features = false }
+blake2b_simd = "=1.0.5"
+ctr = { version = "0.9", default-features = false }
+curve25519-dalek = { version = "4.1", default-features = false }
+ed25519-dalek = { version = "=2.2.0", default-features = false }
+frost-ed25519 = "=2.2.0"
+hkdf = { version = "0.12", default-features = false }
+p256 = { version = "0.13", default-features = false, features = ["arithmetic", "ecdh", "hash2curve"] }
+rand_core = { version = "0.6", features = ["getrandom"] }
+serde = "1"
+serde_json = "1"
+sha2 = { version = "0.10", default-features = false }
+wasm-bindgen = "=0.2.129"
+zolana-hasher = { path = "vendor/zolana-hasher" }
+
+[target.'cfg(target_arch = "wasm32")'.dependencies]
+getrandom = { version = "0.2", features = ["js"] }
+
+# Dev-dependencies, each for one independent cross-check (tests/*.rs). Never built for wasm32.
+#   solana-address: reference for program addresses, seeds and base58.
+#   solana-hash, solana-instruction: the types that solana-message compiles.
+#   solana-message =5.1.0: the encoder that P2 used and landed; reference for v1 bytes.
+#   solana-system-interface =3.3.0: reference builders and tags of the nonce instructions.
+#   solana-signature =3.6.0: `Signature::verify`, the call of the validator, on every signature.
+#   frost-core (test-impl): the RFC 9591 test harness, to run the E.1 inputs through the crate.
+#   hex: reads the hex of the vector files.
+[dev-dependencies]
+frost-core = { version = "=2.2.0", features = ["test-impl"] }
+hex = "0.4"
+solana-address = { version = "2.9", features = ["std", "sha2", "curve25519", "decode"] }
+solana-hash = { version = "4.7", features = ["decode", "copy"] }
+solana-instruction = "4"
+solana-message = { version = "=5.1.0", features = ["wincode"] }
+solana-signature = { version = "=3.6.0", features = ["verify"] }
+solana-system-interface = { version = "=3.3.0", features = ["bincode"] }
+
+# The tests hash with Poseidon on BN254 thousands of times. Debug code for the dependencies makes
+# the wasm differential test 80 s and every mutation case that much longer. Our own crate stays
+# unoptimized, so the tests keep their overflow checks and debug assertions.
+[profile.dev.package."*"]
+opt-level = 2
+
+[profile.release]
+opt-level = "s"
+lto = true
+codegen-units = 1
+strip = true
+panic = "abort"
+
+# light-poseidon keeps the round constants of 12 widths as code, and `zolana-hasher` reaches them
+# with a width known only at run time, so the wasm kept all of them (1.59 MB). The copy keeps the
+# widths 2, 3, 4 and 8, which the checker hashes with, and nothing else changes
+# (tools/trim_poseidon.py in the P3 crate).
+[patch.crates-io]
+light-poseidon = { path = "vendor/light-poseidon" }

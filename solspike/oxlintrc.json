@@ -1,0 +1,11 @@
+{
+  "categories": { "correctness": "error" },
+  "env": { "es2024": true, "node": true, "browser": true },
+  "rules": {
+    "complexity": ["error", { "max": 8 }],
+    "max-lines-per-function": ["error", { "max": 100 }],
+    "max-params": ["error", { "max": 5 }],
+    "max-depth": ["error", { "max": 3 }],
+    "no-unused-vars": "error"
+  }
+}

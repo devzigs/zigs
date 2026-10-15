@@ -1,0 +1,7 @@
+{
+  "name": "solspike",
+  "private": true,
+  "type": "module",
+  "description": "Zolana spike tools. esbuild bundles the Zolana SDK: the Zolana repo ships rolldown and vite only.",
+  "devDependencies": { "esbuild": "0.28.2" }
+}

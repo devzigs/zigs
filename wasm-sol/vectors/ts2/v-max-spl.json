@@ -1,0 +1,61 @@
+{
+ "name": "v-max-spl",
+ "group": {
+  "key": "fffa1c9e0978086afdf56e0ee59b3138c75037cf7569b2be3c7852efdd736174",
+  "nullifierSecret": "d9fcced6fd163640bc141fc21fa0d3088eb1b1851805ca687ba4de6c733759",
+  "viewingSk": "823e7889a5bc254e64330633d698a1f4026c446867f60741c1556ef890eecac2",
+  "nullifierPk": "06c3565d9a77f98cc4383c88fe4e1f0242635c0ca97228366812eca697a4b266",
+  "viewingPk": "02fde3b267c0c7243bc42db30800a7d07d722826c0bb18b6f25d00a51ee8220ee4",
+  "ownerHash": "07e364be3892ded5b5c1882402135ba0d3f34fc4b1a7d73f9273e37c0d575d1e"
+ },
+ "payee": {
+  "address": "01b1f1e1a7b33d4fbf2f227c4d4da28909b224766e4d7a33a416700ec513abaf1a0018fb3d2e252fca39ab87a4615be1d85b4444aa25e646a589646dc49a76bfa0d502df015c4d30757127f3dda2c7425dcc75a48fcdd7c8c8d49eefc0d9f3dc42cbcc",
+  "key": "b1f1e1a7b33d4fbf2f227c4d4da28909b224766e4d7a33a416700ec513abaf1a",
+  "ownerHash": "10c272ba527226ddbbef35ad4bebec2b7759fe247f078d881bd267115bc5f10c"
+ },
+ "mint": {
+  "address": "44a92723b4f047518d24ba1f567871ec105423bc47c47161e1eef3dc33c2f538",
+  "assetId": "7"
+ },
+ "salt": "7fc81237f5d4cbd427074c3b54c49da7",
+ "blindingSeed": "0019361b5105de38ea8909b49454ad9471db55f02f3613f416db79137f2fa06e",
+ "txViewingPk": "032e60491852335b7babac856445e8cb96334490301ac3ddf1b422d2de5afbf638",
+ "inputs": [
+  {
+   "mint": "5d2KjyaU2mfRuUqiJWV8MzCzzfkSt2fg81zS9QTdXjQj",
+   "amount": "18446744073709551615",
+   "blinding": "006be54edcb17c8df6d052f5c366047f83158e6605785571b4f8bf3414e56514",
+   "utxoHash": "23ba4051ebed1e5605ef25cb25386d8edbcbb0c6af320391a5f0163ee02703d3",
+   "nullifier": "2b5d12b02fa0f51fde372d6d23b6e7e0ece658169ff8677c160ba3d12734bc01"
+  }
+ ],
+ "withdraw": null,
+ "outputs": [
+  {
+   "role": "change",
+   "mint": "5d2KjyaU2mfRuUqiJWV8MzCzzfkSt2fg81zS9QTdXjQj",
+   "assetId": "7",
+   "amount": "1",
+   "blinding": "031dc8073c84d363b026e32dfbf50af6a8cddb64482cc0921956b8c938e5b8f0",
+   "utxoHash": "0a72d296f4964e6c3b5495197648c84b18316a0b00083b33735bcd7b67c3dbb5",
+   "ownerTag": {
+    "kind": "account",
+    "index": 0
+   },
+   "data": "01540000000302fde3b267c0c7243bc42db30800a7d07d722826c0bb18b6f25d00a51ee8220ee498ed2da6d0d9c54f5a2bda3d63be2726a04057da93639c1b05dcbf27b8c39f42c1fd7558b6908df91e0a5b3d6bf4c4a86aa9"
+  },
+  {
+   "role": "payee",
+   "mint": "5d2KjyaU2mfRuUqiJWV8MzCzzfkSt2fg81zS9QTdXjQj",
+   "assetId": "7",
+   "amount": "18446744073709551614",
+   "blinding": "06b2ededd485cfd73165caf39c3a2d16bfdc49cdaf531d3826037ded15c21d8a",
+   "utxoHash": "096ba978a1e8c4321e81243635a033a9313bdb65f26b0ab1fff0a310517a0518",
+   "ownerTag": {
+    "kind": "inline",
+    "value": "b1f1e1a7b33d4fbf2f227c4d4da28909b224766e4d7a33a416700ec513abaf1a"
+   },
+   "data": "01540000000302df015c4d30757127f3dda2c7425dcc75a48fcdd7c8c8d49eefc0d9f3dc42cbcc01f419cc601a1413faf15018b7b8450821181f105fef23be538fe3f190da914a8e72af46e5a4746fb52ab3bdce4480b0b8ec"
+  }
+ ]
+}

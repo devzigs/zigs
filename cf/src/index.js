@@ -36,6 +36,57 @@ function authorized(req, env) {
   return a.byteLength === b.byteLength && crypto.subtle.timingSafeEqual(a, b);
 }
 
+// The Solana Worker (web/sol/worker.js) owns all Helius traffic. A Worker takes the policy of its
+// own script response, so only the /sol responses name the Helius host and policy() stays as is.
+const SOL_HOST = "https://devnet.helius-rpc.com";
+const SOL_CONFIG = "/sol/config.json";
+
+function solWorkerPolicy() {
+  return [
+    "default-src 'none'",
+    "script-src 'self' 'wasm-unsafe-eval'",
+    `connect-src 'self' ${SOL_HOST}`,
+    "base-uri 'none'",
+  ].join("; ");
+}
+
+// web/sol/ is the Solana beta (ZOLANA.md). Its files exist only when SOL is "1", and then every
+// response under /sol carries the Worker policy, so no spelling of the path reaches the Worker
+// script without it. The path is decoded and matched without case: the asset server maps spellings.
+function isSolPath(url) {
+  let path;
+  try { path = decodeURIComponent(url.pathname); } catch { return true; }
+  return /^[/\\]+sol([/\\]|$)/i.test(path);
+}
+
+function solResponse(res) {
+  const out = new Response(res.body, res);
+  out.headers.set("Content-Security-Policy", solWorkerPolicy());
+  out.headers.set("Referrer-Policy", "no-referrer");
+  out.headers.set("X-Content-Type-Options", "nosniff");
+  return out;
+}
+
+// The Helius Devnet URL holds an API key, so it is the secret HELIUS_DEVNET_URL and never a file
+// of web/. The page asks for it here, behind the password gate. The key also needs Allowed
+// Domains at Helius: the page sends its origin with every call.
+function solConfig(req, env) {
+  if (req.method !== "GET") return solResponse(new Response("Use GET.\n", { status: 405 }));
+  const url = env.HELIUS_DEVNET_URL;
+  const body = url ? { rpcUrl: url } : { error: "Solana is not set up on this server." };
+  return solResponse(Response.json(body, {
+    status: url ? 200 : 503, headers: { "Cache-Control": "no-store" },
+  }));
+}
+
+// Every file but the page.
+async function assets(req, env, url) {
+  if (!isSolPath(url)) return env.ASSETS.fetch(req);
+  if (env.SOL !== "1") return new Response("Not found\n", { status: 404 });
+  if (url.pathname === SOL_CONFIG) return solConfig(req, env);
+  return solResponse(await env.ASSETS.fetch(req));
+}
+
 async function groupSocket(req, env, url) {
   const gid = url.searchParams.get("g") || "";
   if (!GROUP_ID.test(gid)) return new Response("Add ?g= with a group id of 20 hex characters.", { status: 400 });
@@ -82,7 +133,7 @@ export default {
       out.headers.set("Permissions-Policy", "camera=(), microphone=(), geolocation=(), interest-cohort=()");
       return out;
     }
-    return env.ASSETS.fetch(req);
+    return assets(req, env, url);
   },
 };
 

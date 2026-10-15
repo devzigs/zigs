@@ -1,0 +1,3 @@
+refused
+register-nullifier-pk	instruction 1: nullifier_pk 07abdabb is not the intent
+register-nullifier-pk	nullifier_pk 07abdabb is not the key of the device secrets

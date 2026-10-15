@@ -1,0 +1,101 @@
+{
+ "name": "v-three-inputs",
+ "group": {
+  "key": "fffa1c9e0978086afdf56e0ee59b3138c75037cf7569b2be3c7852efdd736174",
+  "nullifierSecret": "d9fcced6fd163640bc141fc21fa0d3088eb1b1851805ca687ba4de6c733759",
+  "viewingSk": "823e7889a5bc254e64330633d698a1f4026c446867f60741c1556ef890eecac2",
+  "nullifierPk": "06c3565d9a77f98cc4383c88fe4e1f0242635c0ca97228366812eca697a4b266",
+  "viewingPk": "02fde3b267c0c7243bc42db30800a7d07d722826c0bb18b6f25d00a51ee8220ee4",
+  "ownerHash": "07e364be3892ded5b5c1882402135ba0d3f34fc4b1a7d73f9273e37c0d575d1e"
+ },
+ "payee": {
+  "address": "01b1f1e1a7b33d4fbf2f227c4d4da28909b224766e4d7a33a416700ec513abaf1a0018fb3d2e252fca39ab87a4615be1d85b4444aa25e646a589646dc49a76bfa0d502df015c4d30757127f3dda2c7425dcc75a48fcdd7c8c8d49eefc0d9f3dc42cbcc",
+  "key": "b1f1e1a7b33d4fbf2f227c4d4da28909b224766e4d7a33a416700ec513abaf1a",
+  "ownerHash": "10c272ba527226ddbbef35ad4bebec2b7759fe247f078d881bd267115bc5f10c"
+ },
+ "mint": {
+  "address": "44a92723b4f047518d24ba1f567871ec105423bc47c47161e1eef3dc33c2f538",
+  "assetId": "7"
+ },
+ "salt": "91e5295ffc86e04b3d3af08f9f731061",
+ "blindingSeed": "00220333ee9c4ccc965b0f6cc21c5c8348327fc22be6718379da0bb2c23ac793",
+ "txViewingPk": "036d43505b15e9a6c34d325dc5c8404fc5aaef107764de464704f61a0ddf2a5d1b",
+ "inputs": [
+  {
+   "mint": "11111111111111111111111111111111",
+   "amount": "1000000007",
+   "blinding": "00b88f5c4584a235a17f38b4489c3b7cda92ed1efc23a31ddc4ade994778a222",
+   "utxoHash": "2071772c68c888fade55cff5c7e2be32135d0cf2bf459efdd818d5e3e7e3b222",
+   "nullifier": "2ec62ebc1988c584c6fbf12af818bbb7feee80bb7f8ff3d569a4363e07fe3b9b"
+  },
+  {
+   "mint": "5d2KjyaU2mfRuUqiJWV8MzCzzfkSt2fg81zS9QTdXjQj",
+   "amount": "77777",
+   "blinding": "009fdad74a5cf92e5a01b7f04294d48a24bb144c97d795d304655cee632c0bd6",
+   "utxoHash": "12b1f2ed9a66c991fba2ebca2f391860ee3c645956b5bcc4dd04679b5929a89e",
+   "nullifier": "11e0fc9d21609711403f941e81edd0cd5912aa9ce350dd12d44144d3b6ed5261"
+  },
+  {
+   "mint": "11111111111111111111111111111111",
+   "amount": "5",
+   "blinding": "0055c2f662a41a3fd9fb8ddbb0beeea822312d96142ce81e5ec66e956eec7834",
+   "utxoHash": "189530a7c277c227db9f63747f84d8b03b2f2f7cbe45823200a115fb88d66a65",
+   "nullifier": "2d49abaed6d76c203bb6097863956d22ce3ab627cb0e8c2d7f215b438f823232"
+  }
+ ],
+ "withdraw": null,
+ "outputs": [
+  {
+   "role": "change",
+   "mint": "5d2KjyaU2mfRuUqiJWV8MzCzzfkSt2fg81zS9QTdXjQj",
+   "assetId": "7",
+   "amount": "77777",
+   "blinding": "3005e1a5361d293602ba39231de5081d7512b6140553f54ca97c85c967c8e850",
+   "utxoHash": "067234aa0149f899eebf44c5b85bc22b385967b765949be450d95e16cf848f73",
+   "ownerTag": {
+    "kind": "account",
+    "index": 0
+   },
+   "data": "01540000000302fde3b267c0c7243bc42db30800a7d07d722826c0bb18b6f25d00a51ee8220ee488834fa65170f571afa911917fdd9301c84fa5d2b30c0bc74b7087d929aa9b434e408c6b5b803d3cc536e503f7a396a4b621"
+  },
+  {
+   "role": "change",
+   "mint": "11111111111111111111111111111111",
+   "assetId": "1",
+   "amount": "13",
+   "blinding": "2d896a7c808cb050e0d34062e1c6d102861fdce8ad302a1669b35ed6a236a8b6",
+   "utxoHash": "1a156771221876dd0d3d4e62d64b8be0903c8ea377da00b5621c04a5771dc308",
+   "ownerTag": {
+    "kind": "account",
+    "index": 0
+   },
+   "data": "01540000000302fde3b267c0c7243bc42db30800a7d07d722826c0bb18b6f25d00a51ee8220ee4326202ffe8efec0684bda80f3ffed7aa32d7e13a56509efea71973be530b17ab7b7f696767b38ea0dd91e78fb8ac51ef1abc"
+  },
+  {
+   "role": "payee",
+   "mint": "11111111111111111111111111111111",
+   "assetId": "1",
+   "amount": "999999999",
+   "blinding": "18d29bbb04b13cb72d3d8ccdb86d3cde3195cfb113d279ca98fc8aecc7e43fbe",
+   "utxoHash": "0687bd51d5dafd6c01126239f65bb9820c225e26fc83cb9422c63c4f628aec0d",
+   "ownerTag": {
+    "kind": "inline",
+    "value": "b1f1e1a7b33d4fbf2f227c4d4da28909b224766e4d7a33a416700ec513abaf1a"
+   },
+   "data": "01540000000302df015c4d30757127f3dda2c7425dcc75a48fcdd7c8c8d49eefc0d9f3dc42cbcce0f8d02b9c4c9dad22a3d14ea7a0b90719d5eecec52ecf0b533e6c0ba4aa888866d3ea253f93ef1b0e38362edc7838e8c2a8"
+  },
+  {
+   "role": "dummy",
+   "mint": "11111111111111111111111111111111",
+   "assetId": "1",
+   "amount": "0",
+   "blinding": "211996f01b55fdc56c5c8b14a64a7524aaab00509c4e7687adaa4719744d668f",
+   "utxoHash": "290ec338821ecd080019c372009f9fde20f23b77b5c4bd01ba42b2cc5a64e001",
+   "ownerTag": {
+    "kind": "inline",
+    "value": "fffa1c9e0978086afdf56e0ee59b3138c75037cf7569b2be3c7852efdd736174"
+   },
+   "data": "41952ef142b6b5f65c0beaae55f6bc4bfa07035cdc7e2c66c5dc619baeec873f2a5454d9f4f9cbd4e2981eab0cc3e7bef65cebc481622f1262a63909fa2d08e1bfa849fbe27d2b637211a395611d5fbd1c55cb0d2230499f85"
+  }
+ ]
+}

@@ -1,0 +1,10 @@
+refused
+group-nullifier-pk	the nullifier secret of the device does not derive the pinned key
+group-viewing-pk	the viewing scalar of the device does not derive the pinned key
+output-hash	output 0: the hash is not the hash of its plaintext
+nullifier-mismatch	input 0
+output-blinding	output 0: the blinding is not the derived one
+output-blinding	output 1: the blinding is not the derived one
+tx-viewing-pk	tx_viewing_pk is not the derived key
+ciphertext	output 0: data is not the recompute
+ciphertext	output 1: data is not the recompute

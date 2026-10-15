@@ -7,6 +7,9 @@
   // No request logs: the server must not keep IP addresses or timing.
   "observability": { "enabled": false },
   "preview_urls": false,
+  // The Solana beta: "1" serves web/sol (ZOLANA.md). The Helius Devnet URL is the secret
+  // HELIUS_DEVNET_URL: set it with `wrangler secret put`, never here.
+  "vars": { "SOL": "1" },
   "routes": [{ "pattern": "app.zigs.app", "custom_domain": true }],
   "assets": {
     "directory": "../web",

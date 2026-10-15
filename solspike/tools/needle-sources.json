@@ -1,0 +1,19 @@
+{
+  "sources": [
+    {
+      "env": "HELIUS_URL_FILE",
+      "file": "~/.config/zigs/helius-app.url",
+      "kind": "helius-url",
+      "required": true
+    },
+    {
+      "env": "SOLSPIKE_FUNDER",
+      "kind": "key-json",
+      "required": true
+    },
+    {
+      "script": "b_role_needles.mjs",
+      "kind": "node-hex"
+    }
+  ]
+}

@@ -1,0 +1,620 @@
+// The second DKG on three seats, through the real web/app.js (see sol-rig.mjs): one browser holds
+// every seat. It checks the agreement, the gates (the confirmed safety number, a version 3
+// testnet wallet), a seat whose secret part does not match its commitment, the save before each
+// publish, that the Zcash key and the group server hold no Solana secret, and that a stopped
+// wallet stays stopped in the tab and in every action. The agreement is also checked as one seat
+// sees it when each seat has a browser of its own (a document of another seat is compared, not
+// fitted). The network comes first: a mainnet wallet, or a wallet of unknown network, is offered no
+// tab and a start document loads nothing. The page loads the module once and never unloads it, so
+// that block runs before the first load.
+// Run: node web/test/sol-ceremony.mjs   (Node 24)
+import assert from "node:assert/strict";
+import { createHash } from "node:crypto";
+import { docFields } from "../signed.js";
+import { agreement, seatProgress, startBlock } from "../sol/ceremony.js";
+import { backupText as solBackupText, backupWords } from "../sol/backup.js";
+import { syncSolana } from "../sol/session.js";
+import { solView } from "../sol/view.js";
+import { loadRig, sleep, storage } from "./sol-rig.mjs";
+
+const rig = await loadRig();
+const { t, Z, W, data, waitFor } = rig;
+const sha = (text) => createHash("sha256").update(text).digest("hex");
+const path = (gid, rel) => `groups/${gid}/${rel}`;
+const dones = (gid) => [1, 2, 3].map((i) => data.get(path(gid, "soldone/" + i)));
+const haveDones = (gid) => dones(gid).every(Boolean);
+const solOf = (gid, i) => t.sec(gid, i).sol ?? {};
+const zcashOf = (gid, i) => {
+  const { sol: _sol, ...rest } = t.sec(gid, i);
+  return structuredClone(rest);
+};
+
+// Seat 1 adds Solana: the module loads, then the signed start document goes in.
+async function addSolana() {
+  await t.solLoad();
+  await t.sol.add();
+}
+
+// The tab, as a tree of plain nodes, with the data-sol marks that it shows.
+const el = (tag, attrs = {}, ...kids) => ({
+  tag,
+  attrs,
+  kids: kids.flat(Infinity).filter(Boolean),
+});
+const marksOf = (node) => {
+  if (typeof node !== "object") return [];
+  const own = node.attrs["data-sol"] ? [node.attrs["data-sol"]] : [];
+  return own.concat(node.kids.flatMap(marksOf));
+};
+const stored = (gid, name) =>
+  Object.fromEntries(
+    [1, 2, 3]
+      .map((i) => [i, data.get(path(gid, name + "/" + i))])
+      .filter(([, d]) => d)
+      .map(([i, d]) => [i, docFields(d)]),
+  );
+const tabState = (gid, hostSec) => ({
+  host: {
+    el,
+    W,
+    Z,
+    state: t.state,
+    seatIds: () => [1, 2, 3],
+    localSeats: () => [1, 2, 3],
+    sec: hostSec ?? t.sec,
+    sealAndSave: t.sealAndSave,
+    groupVersion: () => 3,
+    network: () => "testnet",
+    render() {},
+  },
+  W,
+  gid,
+  docs: {
+    solstart: stored(gid, "solstart"),
+    soldkg1: stored(gid, "soldkg1"),
+    soldkg2: {},
+    soldone: stored(gid, "soldone"),
+  },
+  sync: {},
+  wait: 0,
+});
+const noActions = { add() {}, sync() {}, backup() {}, restoreFile() {} };
+const KEY_MARKS = ["owner", "group-key", "shielded", "sync", "restore", "backup-1"];
+const STOP_TEXT = "Solana setup stopped: a test. Do not use the Solana part of this wallet.";
+const STOP = /Solana setup stopped: .*Do not use the Solana part of this wallet/;
+
+// A stopped wallet stays stopped when the documents agree again: the tab shows no key, no sync
+// and no backup, and the sync, the backup, the restore and a new start all refuse. `lost` is the
+// seat that loses its Solana part for the restore: it must not be the one that holds the stop.
+async function stoppedEverywhere(gid, lost = 1) {
+  const c = tabState(gid);
+  assert.equal(agreement(c).state, "agree", "the documents agree again");
+  const shown = marksOf(solView(c, (f) => f, noActions));
+  assert.ok(shown.includes("status") && shown.includes("stopped"), "the stop is shown");
+  for (const mark of [...KEY_MARKS, "add", "backup-2", "backup-3", "balance-private"]) {
+    assert.ok(!shown.includes(mark), "a stopped wallet shows no " + mark);
+  }
+  // Control: the same documents and secrets without the stop show them all.
+  const free = (g, i) => {
+    const { aborted: _aborted, ...rest } = t.sec(g, i).sol ?? {};
+    return { ...t.sec(g, i), sol: rest };
+  };
+  const control = solView(tabState(gid, free), (f) => f, noActions);
+  const open = marksOf(control);
+  for (const mark of KEY_MARKS) assert.ok(open.includes(mark), "the control shows " + mark);
+  // The sync refuses before it starts the Worker or makes a request.
+  const realFetch = globalThis.fetch;
+  globalThis.fetch = () => assert.fail("no request while the wallet is stopped");
+  try {
+    await assert.rejects(() => syncSolana(c), STOP);
+  } finally {
+    globalThis.fetch = realFetch;
+  }
+  assert.deepEqual(c.sync, {}, "the sync did not even start");
+  assert.throws(() => backupWords(c, 1), STOP);
+  // A dialog that was opened before the stop must refuse to save after it.
+  let stoppedNow = false;
+  const racing = (g, i) => (stoppedNow ? t.sec(g, i) : free(g, i));
+  const dialog = backupWords(tabState(gid, racing), 1);
+  stoppedNow = true;
+  await assert.rejects(() => dialog.save("a passphrase of enough length 1"), STOP);
+  await assert.rejects(() => t.sol.add(), STOP);
+  // A backup of a seat that lost its Solana part must not restore into a stopped wallet.
+  const file = JSON.parse(solBackupText({ state: t.state, sec: t.sec }, gid, lost));
+  const kept = structuredClone(solOf(gid, lost));
+  delete t.sec(gid, lost).sol;
+  await t.putSec(gid, lost, {});
+  await assert.rejects(() => t.applyBackup(file, true), STOP);
+  assert.deepEqual(solOf(gid, lost), {}, "the refused restore stored nothing");
+  t.sec(gid, lost).sol = kept;
+  await t.putSec(gid, lost, {});
+}
+
+// The Solana part of seat `i` with the stop text, or without it.
+function withStop(gid, i, stopped) {
+  const { aborted: _aborted, ...rest } = solOf(gid, i);
+  return stopped ? { ...rest, aborted: STOP_TEXT } : rest;
+}
+
+// ── Only a testnet wallet gets the tab, and a start document of another loads nothing ──
+// The ids of the tabs that the open wallet offers (the page builds them in walletView).
+function tabIds() {
+  let ids;
+  const real = t.tabBar;
+  t.tabBar = (tabs) => ((ids = tabs.map(([id]) => id)), real(tabs));
+  try {
+    t.walletView([], null);
+  } finally {
+    t.tabBar = real;
+  }
+  return ids;
+}
+{
+  const gidMain = await rig.wallet({ name: "Main", network: "mainnet" });
+  const fields = { cluster: "devnet", at: Date.now() };
+  data.set(path(gidMain, "solstart/1"), await t.signedDoc(gidMain, "solstart/1", 1, fields));
+  rig.notify();
+  t.openGroup(gidMain);
+  await waitFor("the wallet", () => t.state.gid === gidMain && t.state.g);
+  await sleep(50);
+  const watched = rig.live(`groups/${gidMain}/sol`);
+  assert.equal(t.solOn(), false, "a mainnet wallet is off");
+  assert.equal(watched, 0, "a mainnet wallet watches no Solana document");
+  assert.equal(t.solLoading, null, "a start document does not load Solana");
+  assert.ok(!tabIds().includes("solana"), "the Solana tab is hidden");
+  // A network that is not exactly "testnet" is not testnet: the value is not trusted by default.
+  const loaded = t.state.g;
+  for (const network of [undefined, "", "Testnet", "devnet", " testnet", null]) {
+    t.state.g = { ...loaded, network };
+    assert.equal(t.solOn(), false, "network " + JSON.stringify(network) + " is off");
+    assert.ok(!tabIds().includes("solana"), "no tab for network " + JSON.stringify(network));
+  }
+  t.state.g = loaded;
+  // A wallet that is not loaded yet is off too.
+  t.state.g = null;
+  assert.equal(t.solOn(), false, "a wallet that is not loaded is off");
+  t.state.g = loaded;
+}
+
+// ── A wallet that never asks for Solana loads none of it ──
+const gid = await rig.wallet({ name: "Team" });
+assert.ok(tabIds().includes("solana"), "control: a testnet wallet is offered the Solana tab");
+// The watch of the start document gets its snapshot, and the snapshot has no document.
+rig.notify();
+await sleep(50);
+assert.equal(t.solLoading, null, "a testnet wallet with no start document: no load");
+assert.equal(t.sol, null, "the tab is closed and there is no start document");
+const zcash = [1, 2, 3].map((i) => zcashOf(gid, i));
+
+// ── Seats 2 and 3 load the module by themselves when the start document appears ──
+{
+  // Another seat wrote it: this browser did not click anything.
+  const fields = { cluster: "devnet", at: Date.now() };
+  data.set(path(gid, "solstart/1"), await t.signedDoc(gid, "solstart/1", 1, fields));
+  rig.notify();
+  await waitFor("the module", () => t.sol, 20000);
+  await waitFor("every soldone", () => haveDones(gid), 30000);
+}
+{
+  const gid2 = await rig.wallet({ name: "Second" });
+  await addSolana();
+  await waitFor("every soldone", () => haveDones(gid2), 30000);
+  await sleep(300);
+  const docs = dones(gid2);
+  const keep = (k) => new Set(docs.map((d) => JSON.stringify(d[k])));
+  for (const k of [
+    "groupKey",
+    "publicKeyPackage",
+    "nullifierPk",
+    "viewingPk",
+    "address",
+    "cluster",
+    "program",
+  ])
+    assert.equal(keep(k).size, 1, k + " is equal on every seat");
+  assert.deepEqual(
+    docs.map((d) => d.by),
+    [1, 2, 3],
+    "each soldone names its writer",
+  );
+  // One group key, one solSeed (compared by hash, never printed), and a key share for each seat.
+  const s = [1, 2, 3].map((i) => solOf(gid2, i));
+  assert.equal(new Set(s.map((x) => sha(x.solSeed))).size, 1, "equal solSeed");
+  assert.equal(new Set(s.map((x) => x.groupKey)).size, 1, "equal group key");
+  assert.equal(new Set(s.map((x) => JSON.stringify(x.keyPackage))).size, 3, "key shares differ");
+  assert.equal(s[0].groupKey, docs[0].groupKey);
+  const roles = JSON.parse(W.sol_roles(s[0].solSeed, s[0].groupKey));
+  assert.deepEqual(
+    [roles.address, roles.nullifier_pk, roles.viewing_pk],
+    [docs[0].address, docs[0].nullifierPk, docs[0].viewingPk],
+    "the document has the wasm roles",
+  );
+  // The round secrets are gone, and nothing but key data is left.
+  for (const x of s) {
+    assert.deepEqual(Object.keys(x).sort(), [
+      "cluster",
+      "doneSent",
+      "groupKey",
+      "keyPackage",
+      "publicKeyPackage",
+      "solSeed",
+    ]);
+  }
+  // The documents on the server hold no secret, and the Zcash part is as it was.
+  const published = JSON.stringify([...data].filter(([k]) => k.startsWith(path(gid2, "sol"))));
+  for (const x of s) {
+    assert.ok(!published.includes(x.solSeed), "no solSeed in a document");
+    assert.ok(!published.includes(x.keyPackage.signing_share), "no key share in a document");
+  }
+  const roleSecrets = [roles.nullifier_secret, roles.viewing_sk, roles.seal_key];
+  for (const secret of roleSecrets) assert.ok(!published.includes(secret), "no role secret");
+  assert.equal(t.state.ignored, 0, "an honest wallet ignores nothing");
+  // The boxes of round 2 carry the curve label: they open in the Solana context, not the Zcash one.
+  const box = data.get(path(gid2, "soldkg2/1-2")).sealed;
+  const sk = t.sec(gid2, 2).boxSk,
+    pk = t.sec(gid2, 1).boxPk;
+  const inside = JSON.parse(Z.boxOpen(sk, pk, gid2 + ":sol:1->2", box));
+  assert.deepEqual(Object.keys(inside).sort(), ["package", "r"]);
+  assert.throws(() => Z.boxOpen(sk, pk, gid2 + ":1->2", box), "a Zcash context does not open it");
+  assert.notEqual(inside.r, undefined);
+  // The seat secret holds Solana in one sub-object, and the plain store carries it with the rest.
+  const stored = JSON.parse(storage.get("zf-secrets"));
+  assert.deepEqual(stored[gid2 + ":1"].sol.solSeed, s[0].solSeed);
+  // The agreement of every soldone, and what it refuses.
+  const host = { seatIds: () => [1, 2, 3], localSeats: () => [1, 2, 3], sec: t.sec };
+  const view = (list) => ({
+    host,
+    W,
+    gid: gid2,
+    docs: { soldone: Object.fromEntries(list.map((d, i) => [i + 1, d])) },
+  });
+  const plain = docs.map(docFields);
+  assert.equal(agreement(view(plain)).state, "agree");
+  // The label is the one of the wasm, which a seat compares with: a seat whose wasm names other
+  // program ids does not agree with documents that carry this label.
+  assert.equal(docs[0].program, W.sol_program_label(), "the document has the wasm label");
+  const otherWasm = { ...W, sol_program_label: () => "zolana-devnet:other" };
+  assert.equal(agreement({ ...view(plain), W: otherWasm }).state, "differ", "another label");
+  const relabelled = plain.map((d) => ({ ...d, program: "zolana-devnet:other" }));
+  assert.equal(
+    agreement({ ...view(relabelled), W: otherWasm }).state,
+    "agree",
+    "same label, other wasm",
+  );
+  assert.equal(agreement(view(plain.slice(0, 2))).state, "wait");
+  const change = {
+    groupKey: "1".repeat(64),
+    nullifierPk: "2".repeat(64),
+    viewingPk: "3".repeat(66),
+    address: "4".repeat(198),
+    cluster: "mainnet",
+    program: "other",
+    publicKeyPackage: docs[1].publicKeyPackage.replace("verifying_key", "verifying_kez"),
+  };
+  for (const [k, v] of Object.entries(change)) {
+    const one = plain.map((d, i) => (i === 2 ? { ...d, [k]: v } : d));
+    assert.equal(agreement(view(one)).state, "differ", "one soldone with another " + k);
+  }
+  const alike = plain.map((d) => ({ ...d, address: "4".repeat(198) }));
+  assert.equal(agreement(view(alike)).state, "differ", "equal documents that this seat cannot fit");
+  // Each seat in a browser of its own: the browser holds seat `mine` only, so the document of
+  // another seat is not fitted against a secret. Only the comparison of the documents can find
+  // that seat `other` published something else, in any of the compared fields.
+  for (const mine of [1, 2, 3]) {
+    const alone = { ...host, localSeats: () => [mine] };
+    const solo = (list) => ({ ...view(list), host: alone });
+    assert.equal(agreement(solo(plain)).state, "agree", "seat " + mine + " alone, honest");
+    for (const other of [1, 2, 3].filter((j) => j !== mine)) {
+      for (const [k, v] of Object.entries(change)) {
+        const one = plain.map((d, i) => (i === other - 1 ? { ...d, [k]: v } : d));
+        const state = agreement(solo(one)).state;
+        assert.equal(state, "differ", `seat ${mine} alone: seat ${other} has another ${k}`);
+      }
+    }
+  }
+  // A seat that lost its setup secret after it published round 1 tells its person.
+  const lost = (sol) => ({
+    host: { seatIds: () => [1, 2, 3], localSeats: () => [1], sec: () => ({ sol }) },
+    gid: "g",
+    docs: { soldone: {}, soldkg1: { 1: {} }, soldkg2: {} },
+  });
+  assert.match(seatProgress(lost({}), 1), /this browser lost its setup secret/);
+  assert.equal(seatProgress(lost({ r1secret: "x" }), 1), "Seat 1: round 1 sent");
+  assert.equal(seatProgress(lost({}), 2), "Seat 2 has not started");
+  // A seat that signs its soldone again with another label stops every seat, and it stays so.
+  const old = docFields(data.get(path(gid2, "soldone/3")));
+  const other = await t.signedDoc(gid2, "soldone/3", 3, {
+    ...old,
+    program: "other",
+    at: old.at + 1,
+  });
+  data.set(path(gid2, "soldone/3"), other);
+  rig.notify();
+  await waitFor("every seat stopped", () => [1, 2, 3].every((i) => solOf(gid2, i).aborted), 20000);
+  const again = await t.signedDoc(gid2, "soldone/3", 3, { ...old, at: old.at + 2 });
+  data.set(path(gid2, "soldone/3"), again);
+  rig.notify();
+  await sleep(600);
+  for (const i of [1, 2, 3]) {
+    assert.match(solOf(gid2, i).aborted, /different Solana keys/, "seat " + i + " stays stopped");
+  }
+  await stoppedEverywhere(gid2);
+  // Each seat alone: stopOf reads every seat of this browser, the first one too.
+  for (const stopped of [1, 2, 3]) {
+    for (const i of [1, 2, 3]) {
+      await t.putSec(gid2, i, { sol: withStop(gid2, i, i === stopped) });
+    }
+    await stoppedEverywhere(gid2, stopped === 1 ? 2 : 1);
+  }
+}
+// ── One stopped seat stops the Solana part of this wallet, whichever seat it is ──
+for (const stopped of [1, 2, 3]) {
+  const gidW = await rig.wallet({ name: "Wide " + stopped });
+  await t.putSec(gidW, stopped, { sol: { aborted: STOP_TEXT } });
+  await t.solLoad();
+  // Seat 1 signed the start document. The seats do not go on while one seat is stopped.
+  const fields = { cluster: "devnet", at: Date.now() };
+  data.set(path(gidW, "solstart/1"), await t.signedDoc(gidW, "solstart/1", 1, fields));
+  rig.notify();
+  await sleep(1500);
+  const started = [1, 2, 3].filter((i) => data.has(path(gidW, "soldkg1/" + i)));
+  assert.deepEqual(started, [], "stopped seat " + stopped + ": no seat starts");
+  for (const i of [1, 2, 3].filter((j) => j !== stopped)) {
+    assert.deepEqual(solOf(gidW, i), {}, `stopped seat ${stopped}: seat ${i} made no secret`);
+  }
+  await assert.rejects(() => t.sol.add(), STOP);
+}
+// The Zcash part of the first wallet is as it was before the Solana ceremony ran there.
+assert.deepEqual(
+  [1, 2, 3].map((i) => zcashOf(gid, i)),
+  zcash,
+  "the Zcash key is not touched",
+);
+assert.deepEqual(
+  zcash.map((z) => Object.keys(z).includes("sol")),
+  [false, false, false],
+);
+
+// ── A seat refuses to start without the safety number that its person confirmed ──
+{
+  const gid3 = await rig.wallet({ name: "Third" });
+  const confirmed = t.sec(gid3, 2).confirmed;
+  assert.match(confirmed, /\d/, "the seat confirmed a number");
+  await t.putSec(gid3, 2, { confirmed: "00000 00000 00000" });
+  await addSolana();
+  await waitFor(
+    "seat 1 and 3 start",
+    () => data.has(path(gid3, "soldkg1/1")) && data.has(path(gid3, "soldkg1/3")),
+    20000,
+  );
+  await sleep(1200);
+  assert.equal(data.has(path(gid3, "soldkg1/2")), false, "seat 2 writes nothing");
+  assert.deepEqual(solOf(gid3, 2), {}, "seat 2 made no Solana secret");
+  assert.equal(haveDones(gid3), false);
+  await t.putSec(gid3, 2, { confirmed });
+  t.refilter();
+  await waitFor("every soldone", () => haveDones(gid3), 30000);
+}
+
+// ── A seat whose Zcash part has not settled does not start ──
+{
+  const gid3b = await rig.wallet({ name: "Settle" });
+  const wk = JSON.stringify(t.state.wallet);
+  // This browser holds the verdict of every seat: seat 2 has none that counts yet.
+  await t.putSec(gid3b, 2, { checkedWallet: null, rejectedWallet: wk });
+  await addSolana();
+  await waitFor(
+    "seat 1 and 3 start",
+    () => data.has(path(gid3b, "soldkg1/1")) && data.has(path(gid3b, "soldkg1/3")),
+    20000,
+  );
+  await sleep(1200);
+  assert.equal(data.has(path(gid3b, "soldkg1/2")), false, "seat 2 writes nothing");
+  assert.deepEqual(solOf(gid3b, 2), {}, "seat 2 made no Solana secret");
+  await t.putSec(gid3b, 2, { checkedWallet: wk, rejectedWallet: null });
+  t.refilter();
+  await waitFor("every soldone", () => haveDones(gid3b), 30000);
+}
+
+// ── A seat whose secret part does not match its commitment ends the others ──
+{
+  const gid4 = await rig.wallet({ name: "Fourth" });
+  // Seat 2 signs a commitment for another part: a signed document, so the readers keep it.
+  rig.hook.before = async (p, v) => {
+    if (!p.endsWith("/soldkg1/2")) return v;
+    return t.signedDoc(gid4, "soldkg1/2", 2, { ...docFields(v), commit: "f".repeat(64) });
+  };
+  await addSolana();
+  const stopped = () => [1, 2, 3].every((i) => solOf(gid4, i).aborted);
+  await waitFor("every seat stopped", stopped, 30000);
+  rig.hook.before = (_p, v) => v;
+  for (const i of [1, 2, 3]) {
+    const s = solOf(gid4, i);
+    assert.match(s.aborted, /seat 2: the secret part does not match its commitment/);
+    assert.match(s.aborted, /Do not use the Solana part/);
+    assert.equal(s.keyPackage, undefined, "no key share without the check");
+  }
+  assert.equal(dones(gid4).some(Boolean), false, "nobody published soldone");
+  // The Zcash part of this wallet works on.
+  assert.ok(t.sec(gid4, 1).keyPackage);
+}
+
+// ── A document that changes after round 2 ends the seats (the echo) ──
+{
+  const gid4b = await rig.wallet({ name: "Echo" });
+  let changed = false;
+  rig.hook.before = async (p, v) => {
+    if (changed || !p.includes("/soldkg2/")) return v;
+    changed = true;
+    // Seat 2 signs another round-1 document after the others saw the first one.
+    const old = docFields(data.get(path(gid4b, "soldkg1/2")));
+    const fields = { ...old, commit: "ab".repeat(32), at: old.at + 1 };
+    data.set(path(gid4b, "soldkg1/2"), await t.signedDoc(gid4b, "soldkg1/2", 2, fields));
+    rig.notify();
+    return v;
+  };
+  await addSolana();
+  await waitFor("every seat stopped", () => [1, 2, 3].every((i) => solOf(gid4b, i).aborted), 30000);
+  rig.hook.before = (_p, v) => v;
+  for (const i of [1, 2, 3]) {
+    assert.match(solOf(gid4b, i).aborted, /different setup data/);
+    assert.equal(solOf(gid4b, i).keyPackage, undefined);
+  }
+}
+
+// ── Another seat signs another echo: the seats that saw the real one stop ──
+{
+  const gidE = await rig.wallet({ name: "EchoPeer" });
+  // Seats 1 and 3 hold a consistent view of their own, so only the echo of seat 2 can stop them.
+  rig.hook.before = async (p, v) => {
+    const rel = p.split(`groups/${gidE}/`)[1];
+    if (!rel?.startsWith("soldkg2/2-")) return v;
+    return t.signedDoc(gidE, rel, 2, { ...docFields(v), echo: "00".repeat(32) });
+  };
+  await addSolana();
+  // A seat ends in one of two ways: it stops, or it makes its key share. A seat that did not check
+  // the echo of seat 2 makes one, and the assertions below fail at once, not after a long wait.
+  const decided = (i) => !!(solOf(gidE, i).aborted || solOf(gidE, i).keyPackage);
+  await waitFor("seats 1 and 3 decide", () => [1, 3].every(decided), 40000);
+  rig.hook.before = (_p, v) => v;
+  for (const i of [1, 3]) {
+    assert.equal(solOf(gidE, i).keyPackage, undefined, `seat ${i} made a key share`);
+    assert.match(solOf(gidE, i).aborted, /different setup data.*seat 2/, "seat " + i);
+  }
+}
+
+// ── A browser with seat 1 only: seat 1 stops when the soldone of seat 3 differs ──
+{
+  const gidA = await rig.wallet({ name: "Alone" });
+  await addSolana();
+  await waitFor("every soldone", () => haveDones(gidA), 30000);
+  await sleep(300);
+  const old = docFields(data.get(path(gidA, "soldone/3")));
+  const honest = data.get(path(gidA, "soldone/3"));
+  const changes = {
+    address: "4".repeat(198),
+    nullifierPk: "2".repeat(64),
+    viewingPk: "3".repeat(66),
+    publicKeyPackage: old.publicKeyPackage.replace("verifying_key", "verifying_kez"),
+  };
+  // Sign every forged document of seat 3 first, then drop the secrets of seats 2 and 3: those
+  // seats live in other browsers. Only the documents can tell seat 1 that seat 3 differs.
+  const forged = {};
+  for (const [k, v] of Object.entries(changes)) {
+    forged[k] = await t.signedDoc(gidA, "soldone/3", 3, { ...old, [k]: v, at: old.at + 1 });
+  }
+  const mine = t.secrets[gidA + ":1"].sol;
+  for (const i of [2, 3]) delete t.secrets[gidA + ":" + i];
+  t.refilter();
+  await sleep(300);
+  assert.deepEqual(t.localSeats(), [1], "this browser holds seat 1 only");
+  for (const [k, doc] of Object.entries(forged)) {
+    data.set(path(gidA, "soldone/3"), doc);
+    rig.notify();
+    await waitFor("seat 1 stops on " + k, () => solOf(gidA, 1).aborted, 20000);
+    assert.match(solOf(gidA, 1).aborted, /different Solana keys/, k);
+    // The honest document comes back and the stop is lifted by hand, to try the next field.
+    data.set(path(gidA, "soldone/3"), honest);
+    await t.putSec(gidA, 1, { sol: structuredClone(mine) });
+    rig.notify();
+    await sleep(500);
+    assert.equal(solOf(gidA, 1).aborted, undefined, "the honest documents do not stop seat 1");
+  }
+}
+
+// ── A document that another key signed counts as missing: the seats wait, then go on ──
+{
+  const gid5 = await rig.wallet({ name: "Fifth" });
+  let forged = true;
+  rig.hook.before = async (p, v) => {
+    if (!forged || !p.endsWith("/soldkg1/2")) return v;
+    await sleep(200);
+    return { ...v, sig: v.sig.slice(0, -4) + "AAAA" };
+  };
+  await addSolana();
+  await waitFor(
+    "seats 1 and 3 round 1",
+    () => data.has(path(gid5, "soldkg1/1")) && data.has(path(gid5, "soldkg1/3")),
+    20000,
+  );
+  await sleep(800);
+  assert.equal(
+    [1, 2, 3].some((i) => solOf(gid5, i).aborted),
+    false,
+    "no seat stops",
+  );
+  assert.equal(
+    [1, 2, 3].some((i) => data.has(path(gid5, "soldkg2/" + i + "-" + ((i % 3) + 1)))),
+    false,
+    "no seat goes on to round 2 while the document of seat 2 is not signed",
+  );
+  forged = false;
+  await waitFor("every soldone", () => haveDones(gid5), 30000);
+}
+
+// ── A Zcash box cannot open in the Solana context ──
+{
+  const gid6 = await rig.wallet({ name: "Sixth" });
+  const [from, to] = [1, 2],
+    zbox = t.state.dkg2[from + "-" + to].sealed;
+  const sk = t.sec(gid6, to).boxSk,
+    pk = t.state.seats[from].boxPk;
+  assert.doesNotThrow(
+    () => Z.boxOpen(sk, pk, gid6 + ":" + from + "->" + to, zbox),
+    "the Zcash box",
+  );
+  assert.throws(() => Z.boxOpen(sk, pk, gid6 + ":sol:" + from + "->" + to, zbox));
+  const sealed = Z.boxSeal(
+    t.sec(gid6, from).boxSk,
+    t.state.seats[to].boxPk,
+    gid6 + ":sol:" + from + "->" + to,
+    "{}",
+  );
+  assert.throws(() => Z.boxOpen(sk, pk, gid6 + ":" + from + "->" + to, sealed));
+}
+
+// ── A version 2 wallet and a mainnet wallet get no Solana ──
+{
+  const host = (version, network) => ({ groupVersion: () => version, network: () => network });
+  assert.match(startBlock(host(2, "testnet")), /version 3/);
+  assert.match(startBlock(host(1, "testnet")), /version 3/);
+  assert.match(startBlock(host(3, "mainnet")), /Devnet only/);
+  assert.equal(startBlock(host(3, "testnet")), null);
+  const gid7 = await rig.wallet({ name: "Main", network: "mainnet" });
+  await t.solLoad();
+  await assert.rejects(() => t.sol.add(), /Devnet only/);
+  // A start document that seat 1 signed anyway starts nobody.
+  const fields = { cluster: "devnet", at: Date.now() };
+  data.set(path(gid7, "solstart/1"), await t.signedDoc(gid7, "solstart/1", 1, fields));
+  rig.notify();
+  await sleep(1500);
+  assert.equal(
+    [1, 2, 3].some((i) => data.has(path(gid7, "soldkg1/" + i))),
+    false,
+  );
+  assert.equal(
+    [1, 2, 3].some((i) => t.sec(gid7, i).sol !== undefined),
+    false,
+  );
+}
+
+// ── Round 1 saves the secret before it publishes ──
+{
+  const gid8 = await rig.wallet({ name: "Eighth" });
+  await t.solLoad();
+  const real = localStorage.setItem;
+  localStorage.setItem = (k, v) => {
+    if (k === "zf-secrets") throw new Error("disk full");
+    return real(k, v);
+  };
+  await t.sol.add();
+  await sleep(1500);
+  const none = [1, 2, 3].every((i) => !data.has(path(gid8, "soldkg1/" + i)));
+  assert.ok(none, "no round 1 document while the secret cannot be saved");
+  for (const i of [1, 2, 3]) assert.equal(solOf(gid8, i).r1secret, undefined);
+  localStorage.setItem = real;
+  await waitFor("the retry finishes the ceremony", () => haveDones(gid8), 40000);
+}
+
+console.log("sol-ceremony: ok");
+process.exit(0);

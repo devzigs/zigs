@@ -1,0 +1,356 @@
+// The second DKG of a wallet (ZOLANA.md 4.1): FROST(Ed25519) on the same seats, after the wallet
+// exists. Each step writes a signed document (docs.js). The reactor runs the steps of the seats
+// that this browser holds. It never touches the Zcash key: the secret parts (`rSol`) are fresh,
+// and the boxes carry a curve label, so a Zcash box cannot open here.
+import { fitsPublished, samePackages } from "../util.js";
+import { CLUSTER } from "./docs.js";
+import { holdsShare, putSol, refuseStopped, solOf, stopOf } from "./secrets.js";
+
+const J = JSON.parse,
+  S = JSON.stringify;
+const SAVE_FAILED = "This browser could not save your Solana setup secret, so setup did not start.";
+const HEX = (bytes) => (v) =>
+  typeof v === "string" && new RegExp(`^[0-9a-f]{${bytes * 2}}$`).test(v);
+
+const randomHex32 = () =>
+  Array.from(crypto.getRandomValues(new Uint8Array(32)), (b) =>
+    b.toString(16).padStart(2, "0"),
+  ).join("");
+const boxContext = (gid, from, to) => gid + ":sol:" + from + "->" + to;
+const stopText = (e) =>
+  "Solana setup stopped: " +
+  String(e?.message ?? e).replace(/\.+$/, "") +
+  ". Do not use the Solana part of this wallet.";
+
+/** Why this wallet cannot get a Solana part, or null. Version 3 and testnet only. */
+export function startBlock(host) {
+  if (host.groupVersion() !== 3) return "Solana needs a version 3 wallet.";
+  if (host.network() !== "testnet")
+    return "Solana runs on Devnet only. A mainnet wallet gets none.";
+  return null;
+}
+
+/** The start document of seat 1 names the cluster of this build. */
+export const started = (docs) => docs.solstart[1]?.cluster === CLUSTER;
+
+/** The Zcash part of seat i is settled and its person confirmed the safety number it has now. */
+function seatReady(host, gid, i) {
+  const z = host.sec(gid, i),
+    no = host.safetyNo();
+  return !!z.keyPackage && host.seatCheck(i) === true && !!no && z.confirmed === no;
+}
+
+const allR1 = (c) =>
+  c.host.seatIds().every((i) => {
+    const d = c.docs.soldkg1[i];
+    return !!d && !!d.package && typeof d.package === "object" && HEX(32)(d.commit);
+  });
+const r2For = (c, to) =>
+  c.host
+    .seatIds()
+    .filter((i) => i !== to)
+    .every((i) => !!c.docs.soldkg2[i + "-" + to]);
+
+const needR1 = (c, i, s) => !c.docs.soldkg1[i] && !s.keyPackage;
+const needR2 = (c, s) => !!s.r1secret && !s.r2secret && !s.keyPackage && allR1(c);
+const needR3 = (c, i, s) => !!s.r2secret && !s.keyPackage && allR1(c) && r2For(c, i);
+const needDone = (c, i, s) => !!s.keyPackage && !s.doneSent && !c.docs.soldone[i];
+
+/** Seals the failure into the seat: the reactor does not retry a seat that stopped. */
+async function abortSeat(c, i, e) {
+  const text = stopText(e);
+  await putSol(c.host, c.gid, i, { aborted: text });
+  throw new Error(text);
+}
+async function guarded(c, i, compute) {
+  try {
+    return compute();
+  } catch (e) {
+    return abortSeat(c, i, e);
+  }
+}
+
+/** The round-1 documents of every seat, as the wasm reads them for the echo and for round 3. */
+function round1Docs(c) {
+  const r1 = {};
+  for (const j of c.host.seatIds()) {
+    const d = c.docs.soldkg1[j];
+    r1[j] = { package: d.package, commit: d.commit };
+  }
+  return r1;
+}
+
+/** The echo: one digest of every round-1 document, so a seat that saw other data is found. */
+const echoNow = (c) => c.W.sol_echo(c.gid, c.host.safetyNo(), CLUSTER, S(round1Docs(c)));
+
+async function round1(c, i) {
+  const { host, W, gid, base } = c,
+    g = host.state.g,
+    boxPk = host.state.seats[i].boxPk; // read before the first await: another wallet may open
+  let s = solOf(host, gid, i);
+  if (!s.r1secret) {
+    const r = J(W.sol_dkg1(i, g.n, g.t));
+    const made = {
+      r1secret: r.secret,
+      r1package: r.package,
+      rSol: randomHex32(),
+      cluster: CLUSTER,
+    };
+    if (!(await putSol(host, gid, i, made))) {
+      await putSol(host, gid, i, { r1secret: null, r1package: null, rSol: null, cluster: null });
+      throw new Error(SAVE_FAILED);
+    }
+    s = solOf(host, gid, i);
+  }
+  const commit = W.sol_commit(gid, i, boxPk, CLUSTER, s.rSol);
+  const fields = { package: s.r1package, commit, at: Date.now() };
+  const doc = await host.signedDoc(gid, "soldkg1/" + i, i, fields);
+  await host.sdb.doc(base + "/soldkg1/" + i).set(doc);
+  host.log("seat " + i + ": Solana round 1 commitment published");
+}
+
+function makeBoxes(c, i, s) {
+  const { host, W, gid } = c,
+    seats = host.state.seats;
+  const others = {};
+  for (const j of host.seatIds()) if (j !== i) others[j] = c.docs.soldkg1[j].package;
+  const r = J(W.sol_dkg2(S(s.r1secret), S(others)));
+  const boxes = {};
+  for (const [to, pkg] of Object.entries(r.outgoing)) {
+    const body = S({ package: pkg, r: s.rSol });
+    boxes[to] = host.Z.boxSeal(
+      host.sec(gid, i).boxSk,
+      seats[to].boxPk,
+      boxContext(gid, i, to),
+      body,
+    );
+  }
+  return { boxes, secret: r.secret };
+}
+
+async function round2(c, i) {
+  const { host, gid, base } = c,
+    s = solOf(host, gid, i);
+  const { echo, made } = await guarded(c, i, () => ({
+    echo: s.echo ?? echoNow(c),
+    made: makeBoxes(c, i, s),
+  }));
+  await putSol(host, gid, i, { echo });
+  // Sign every document first, write them, and only then drop the round-1 secret.
+  const docs = [];
+  for (const [to, sealed] of Object.entries(made.boxes)) {
+    const rel = "soldkg2/" + i + "-" + to;
+    docs.push([rel, await host.signedDoc(gid, rel, i, { sealed, echo, at: Date.now() })]);
+  }
+  for (const [rel, doc] of docs) await host.sdb.doc(base + "/" + rel).set(doc);
+  await putSol(host, gid, i, { r2secret: made.secret, r1secret: null });
+  host.log("seat " + i + ": " + docs.length + " Solana key shares sent, sealed");
+}
+
+/** Opens the box that seat j sent to seat i: its round-2 package and its secret part. */
+function unboxFrom(c, j, i) {
+  const { host, gid } = c,
+    d = c.docs.soldkg2[j + "-" + i];
+  if (typeof d.sealed !== "string") throw new Error("Seat " + j + " sent an unreadable message");
+  let box;
+  const ctx = boxContext(gid, j, i);
+  try {
+    box = J(host.Z.boxOpen(host.sec(gid, i).boxSk, host.state.seats[j].boxPk, ctx, d.sealed));
+  } catch {
+    throw new Error("Seat " + j + " sent a message that cannot be opened");
+  }
+  if (!box || !HEX(32)(box.r) || !box.package || typeof box.package !== "object") {
+    throw new Error("Seat " + j + " sent an unreadable message");
+  }
+  return box;
+}
+
+// The wasm runs every check of round 3 before it makes the key share. It computes the echo from
+// the round-1 documents and requires that it equals the echo that this seat saved and the echo
+// that each other seat signed in its round-2 documents. Then it checks every commitment (and
+// names the first seat that does not match), and only then it runs the key share.
+function openRound3(c, i, s) {
+  const { host, W, gid } = c,
+    seats = host.state.seats,
+    r2 = {},
+    peerEchoes = {};
+  const parts = { [i]: { r: s.rSol, boxPk: seats[i].boxPk } };
+  for (const j of host.seatIds().filter((x) => x !== i)) {
+    const box = unboxFrom(c, j, i);
+    r2[j] = box.package;
+    peerEchoes[j] = c.docs.soldkg2[j + "-" + i].echo;
+    parts[j] = { r: box.r, boxPk: seats[j].boxPk };
+  }
+  const safety = host.safetyNo();
+  const echo = s.echo;
+  const ctx = S({ walletId: gid, safety, cluster: CLUSTER, seat: i, echo, peerEchoes, parts });
+  const r = J(W.sol_dkg3(S(s.r2secret), S(round1Docs(c)), S(r2), ctx));
+  W.sol_roles(r.sol_seed, r.group_key);
+  return r;
+}
+
+async function round3(c, i) {
+  const { host, gid } = c,
+    s = solOf(host, gid, i);
+  const r = await guarded(c, i, () => openRound3(c, i, s));
+  const saved = await putSol(host, gid, i, {
+    keyPackage: r.key_package,
+    publicKeyPackage: r.public_key_package,
+    groupKey: r.group_key,
+    solSeed: r.sol_seed,
+    r2secret: null,
+    r1package: null,
+    rSol: null,
+    echo: null,
+  });
+  if (!saved)
+    host.showBanner(
+      "bad",
+      "This browser could not save your Solana key share. " +
+        "Keep this tab open, and use Back up.",
+    );
+}
+
+/** The soldone fields of a seat: the group key, the public keys, the address, cluster, label. */
+function doneFields(W, s) {
+  const roles = J(W.sol_roles(s.solSeed, s.groupKey));
+  return {
+    groupKey: s.groupKey,
+    publicKeyPackage: S(s.publicKeyPackage),
+    nullifierPk: roles.nullifier_pk,
+    viewingPk: roles.viewing_pk,
+    address: roles.address,
+    cluster: CLUSTER,
+    program: W.sol_program_label(),
+    at: Date.now(),
+  };
+}
+
+async function publishDone(c, i) {
+  const { host, W, gid, base } = c,
+    s = solOf(host, gid, i);
+  const doc = await host.signedDoc(gid, "soldone/" + i, i, doneFields(W, s));
+  await host.sdb.doc(base + "/soldone/" + i).set(doc);
+  await putSol(host, gid, i, { doneSent: true });
+  host.log("seat " + i + ": Solana key share ready, group key " + s.groupKey.slice(0, 12) + "…");
+}
+
+const launch = (c, key, run) => {
+  c.host.once("sol:" + key, run);
+  return true;
+};
+
+function stepSeat(c, i) {
+  const s = solOf(c.host, c.gid, i);
+  if (s.aborted) return false;
+  const open = seatReady(c.host, c.gid, i);
+  if (open && needR1(c, i, s)) return launch(c, "r1:" + i, () => round1(c, i));
+  if (open && needR2(c, s)) return launch(c, "r2:" + i, () => round2(c, i));
+  if (needR3(c, i, s)) return launch(c, "r3:" + i, () => round3(c, i));
+  if (needDone(c, i, s)) return launch(c, "done:" + i, () => publishDone(c, i));
+  return false;
+}
+
+/**
+ * When what the seats published does not agree (or a key share of this browser does not fit its
+ * own document), every seat of this browser that holds a share stops for good. The stop is
+ * written into the seat secret, so a seat that signs its document again does not undo it.
+ */
+function stopOnDiffer(c) {
+  const ag = agreement(c);
+  if (ag.state !== "differ") return false;
+  for (const i of c.host.localSeats()) {
+    const s = solOf(c.host, c.gid, i);
+    if (holdsShare(s) && !s.aborted) {
+      launch(c, "differ:" + i, () => abortSeat(c, i, new Error(ag.why)));
+    }
+  }
+  return true;
+}
+
+/** Advances the ceremony of every seat that this browser holds. It acts only on verified data. */
+export function reactCeremony(c) {
+  const { host } = c;
+  if (startBlock(host) || !started(c.docs) || c.wait > 0 || stopOnDiffer(c)) return;
+  if (stopOf(c)) return;
+  for (const i of host.localSeats()) if (host.canWriteAs(i)) stepSeat(c, i);
+}
+
+/** Seat 1 starts the ceremony with the signed start document. */
+export async function addSolana(c) {
+  const { host, gid, base } = c;
+  refuseStopped(c);
+  const why = startBlock(host) ?? (c.docs.solstart[1] ? "Solana was added already." : null);
+  if (why) throw new Error(why);
+  if (!host.localSeats().includes(1) || !host.canWriteAs(1)) {
+    throw new Error("Only the signer of seat 1 can add Solana to this wallet.");
+  }
+  if (!seatReady(host, gid, 1)) {
+    throw new Error("Seat 1 must show Address checked, with the safety number confirmed.");
+  }
+  const doc = await host.signedDoc(gid, "solstart/1", 1, { cluster: CLUSTER, at: Date.now() });
+  await host.sdb.doc(base + "/solstart/1").set(doc);
+}
+
+/** This browser holds seat i but no Solana secret, though the seat published its round 1. */
+function lostSecret(c, i) {
+  const s = solOf(c.host, c.gid, i);
+  return (
+    c.host.localSeats().includes(i) && !s.r1secret && !s.r2secret && !s.keyPackage && !s.aborted
+  );
+}
+
+/** The text of the progress of seat i, from the documents in the store. */
+export function seatProgress(c, i) {
+  const { docs } = c,
+    others = c.host.seatIds().filter((j) => j !== i);
+  if (docs.soldone[i]) return "Seat " + i + ": key ready";
+  if (docs.soldkg1[i] && lostSecret(c, i))
+    return "Seat " + i + ": this browser lost its setup secret";
+  if (others.some((j) => docs.soldkg2[i + "-" + j])) return "Seat " + i + ": sharing keys";
+  if (docs.soldkg1[i]) return "Seat " + i + ": round 1 sent";
+  return "Seat " + i + " has not started";
+}
+
+/** True when a Solana key share and solSeed give the keys and the address that `done` publishes. */
+export function fitsSolana(W, seat, s, done) {
+  if (!done || !fitsPublished(seat, s, done)) return false;
+  try {
+    const r = J(W.sol_roles(s.solSeed, s.groupKey));
+    return (
+      r.nullifier_pk === done.nullifierPk &&
+      r.viewing_pk === done.viewingPk &&
+      r.address === done.address
+    );
+  } catch {
+    return false;
+  }
+}
+
+const SAME = ["groupKey", "nullifierPk", "viewingPk", "address", "cluster", "program"];
+const SHAPES = { groupKey: HEX(32), nullifierPk: HEX(32), viewingPk: HEX(33), address: HEX(99) };
+const shaped = (W, d) =>
+  Object.entries(SHAPES).every(([k, ok]) => ok(d[k])) &&
+  d.cluster === CLUSTER &&
+  d.program === W.sol_program_label();
+
+/**
+ * What the seats published. "wait": a seat has not finished. "agree": every soldone is equal and
+ * well formed and each key share of this browser fits its own. Else "differ", with a reason.
+ * `done` is the common document when they agree.
+ */
+export function agreement(c) {
+  const { host, docs, W } = c,
+    dones = host.seatIds().map((i) => docs.soldone[i]);
+  if (!dones.length || !dones.every(Boolean)) return { state: "wait" };
+  const same =
+    SAME.every((k) => dones.every((d) => d[k] === dones[0][k])) &&
+    samePackages(dones.map((d) => d.publicKeyPackage));
+  if (!same || !shaped(W, dones[0]))
+    return { state: "differ", why: "The signers published different Solana keys." };
+  const mine = host.localSeats().filter((i) => solOf(host, c.gid, i).keyPackage);
+  const bad = mine.find((i) => !fitsSolana(W, i, solOf(host, c.gid, i), docs.soldone[i]));
+  if (bad)
+    return { state: "differ", why: "The Solana key share of seat " + bad + " does not fit." };
+  return { state: "agree", done: dones[0] };
+}

@@ -1,0 +1,53 @@
+{
+ "recordedAt": "2026-10-14T07:26:15.394Z",
+ "balanceLamports": "35000000",
+ "storedUtxos": 4,
+ "undecryptable": 0,
+ "entries": [
+  {
+   "seq": 0,
+   "method": "POST",
+   "path": "/v1/zolana/getShieldedTransactionsByTags",
+   "rpcMethod": "getShieldedTransactionsByTags",
+   "status": 200,
+   "contentType": "application/json; charset=utf-8",
+   "body": "{\"jsonrpc\":\"2.0\",\"id\":\"test-account\",\"result\":{\"context\":{\"blockTime\":1791962773,\"slot\":510911026},\"outputTreeId\":0,\"transactions\":[{\"slot\":510737504,\"txSignature\":\"2CtnN3AqD9jK4m9RZ8TWsDE1MvdMbtQovrU28XAawMYn8KE2QeaGvSVNxfz7VbvvFgF3wq5Qou98aGDPBH21MS4J\",\"eventIndex\":0,\"txViewingPk\":\"AxNeEbccCWyOd9rEwEGuYjPrpnlRnd1iLF7mBqNqlD3d\",\"salt\":\"wtOFBnXx4UwyrJ9LuX6ULQ==\",\"outputSlots\":[{\"viewTag\":\"78y1uaMe4MXdy9TCnRinFDYTmfWAYDmBQuxDPbxvrosR\",\"outputContext\":{\"hash\":\"3ihiAaRsCHCA45ewrKW2ezcdCHDRZXChq4zaRvW6U6we\",\"tree\":\"33KVhbT4QtdQDrrrGwwThqD47Dh4Q6tA443t9jMNcWFN\",\"treeId\":0,\"leafIndex\":100565},\"payload\":\"AVQAAAADAqz+rXqJVVIqIw7PsQjMGPR5YnGfAgDEb9gGffIBujZ8xXp8iJTjuJupCF448XG3hXM3/SSqa7FVBkOhfftACZwSj5MGbtcydDz5ve/PIwmGlaI=\"},{\"viewTag\":\"7pT1foE6hKiDtLZR8WJLJ61KMeDCaB6QFJR6qsdh269B\",\"outputContext\":{\"hash\":\"3g6HJf2YPTPejC19jvFyfN5F1BzK8WAhtwjc6bH4VyuJ\",\"tree\":\"33KVhbT4QtdQDrrrGwwThqD47Dh4Q6tA443t9jMNcWFN\",\"treeId\":0,\"leafIndex\":100566},\"payload\":\"AVQAAAADAiIGIGGoGngYVFn2Jkglc2CzdnoW7B5vjjvDPQotnGgdSWB0jYjm4w9QyklG5JAD9yi/n/dmHNMaVUtjLH85Ds5LtfPD0m8eioR+1PasvD7Py8k=\"}],\"messages\":[],\"nullifiers\":[\"47DLBdpgjVDoX4Do5GK93JgpcQmLjp48u1kMZw7rhY18\"],\"proofless\":false},{\"slot\":510737561,\"txSignature\":\"E7KUFiKGLQsyJ4uo1cN3XpGtxo17nvsPsGdbuccwqvM9h8YiDWwzT1cJ8tchkYvbcD8NfvcuPJDmiSt3ZiGmRYn\",\"eventIndex\":0,\"txViewingPk\":\"Al3HejXY26CBwtXLUowP1bkcwUoTiZA+r3Ums0JcM2NP\",\"salt\":\"LxOqpZqbfeJXIA3cYy+Svg==\",\"outputSlots\":[{\"viewTag\":\"7pT1foE6hKiDtLZR8WJLJ61KMeDCaB6QFJR6qsdh269B\",\"outputContext\":{\"hash\":\"WUMggBnptCkg6VzJmq9xtUYNPajdCwQX4Hd53hjWVpk\",\"tree\":\"33KVhbT4QtdQDrrrGwwThqD47Dh4Q6tA443t9jMNcWFN\",\"treeId\":0,\"leafIndex\":100567},\"payload\":\"AVQAAAADAiIGIGGoGngYVFn2Jkglc2CzdnoW7B5vjjvDPQotnGgdVMsZJzW5S3geGvudMzlAHf5xS/LyJAhCT+dotINVsPY1d05E9ScG6J+aO0EwQKxxdwQ=\"},{\"viewTag\":\"7pT1foE6hKiDtLZR8WJLJ61KMeDCaB6QFJR6qsdh269B\",\"outputContext\":{\"hash\":\"2uT1xbaVAUw499EJ43B1MwWpeJwYBaPu73DSiUYR5u2a\",\"tree\":\"33KVhbT4QtdQDrrrGwwThqD47Dh4Q6tA443t9jMNcWFN\",\"treeId\":0,\"leafIndex\":100568},\"payload\":\"CPPPRnOFFgYkLHYpGIHxVN7s9YS+PJgH23ysNtzVE2M1d54b+b8RaCSyRtNGOrMvrExiR791VyqvixONXUBg01KQ7NIPzGbo2Y8dPRPuIka8cYeU2hUJRXg=\"}],\"messages\":[],\"nullifiers\":[\"4CyR7gtruCW9Th2aegiXd48hxCVFVb8D22uBmGekwWYd\"],\"proofless\":false},{\"slot\":510745724,\"txSignature\":\"5uoJQr3gEkSMPcBggsU9xg2NfaEqzkCSvTFWBZ13ze18dfpEiLbLRSLLKG6uzxVz3TLdFbVsXdXdJrsUMhsyBCPk\",\"eventIndex\":0,\"txViewingPk\":\"AhoLxMBmEJ8wfZ6H0LyHNb45Q0FW7rOYbNtP2tw98NZS\",\"salt\":\"EY1mWkend2G2sdLZmiq3aQ==\",\"outputSlots\":[{\"viewTag\":\"B1o5q9sWLRVY2uk43bd1GLLPcNmhqJQ53CfKKxKzeShD\",\"outputContext\":{\"hash\":\"1Go6xwb2mzZmP1JuHHaxnDgEL4ShoWG5GCXcP3SftZu\",\"tree\":\"33KVhbT4QtdQDrrrGwwThqD47Dh4Q6tA443t9jMNcWFN\",\"treeId\":0,\"leafIndex\":100607},\"payload\":\"AVQAAAADA1OvLXXAkrJIzBsGuX3q4tj6yGB06M8OUOSjjdtCFBpQHtNbY+kUVBpHhvsdSGvXNFkmCXdHQNF1f005BaRYUMM7xwQ3T1xds0nOtUWoae2ijiA=\"},{\"viewTag\":\"7pT1foE6hKiDtLZR8WJLJ61KMeDCaB6QFJR6qsdh269B\",\"outputContext\":{\"hash\":\"tjjEh25kq97aZAV2a22tRVS3LDPDqy3bWuhEmra1SYW\",\"tree\":\"33KVhbT4QtdQDrrrGwwThqD47Dh4Q6tA443t9jMNcWFN\",\"treeId\":0,\"leafIndex\":100608},\"payload\":\"AVQAAAADAiIGIGGoGngYVFn2Jkglc2CzdnoW7B5vjjvDPQotnGgd+CtF9tHVjCmY31qnu40ESU7Me9TLFnGIkZURXUMD4r73ZoZ4EnktS3ORZRuld9ak1+I=\"}],\"messages\":[],\"nullifiers\":[\"333HmhZsT2EsKE2hC8KeNVYwhHxohKBGGCJDQJFvh4a7\"],\"proofless\":false},{\"slot\":510747588,\"txSignature\":\"YhW3shvFmQX4iDX742hq6symuc185F94WLMerRCwyRsEXYkkZvJpzNcn5s4CTwnRbSJoH8xBr45JokcBX1s8um5\",\"eventIndex\":0,\"txViewingPk\":\"AmN0GGvmKwO/mq+w68emlZacIXaYK+bP5n7WGsDJVpps\",\"salt\":\"VCEc8X0tyVmhMl3N3sAXKA==\",\"outputSlots\":[{\"viewTag\":\"B1o5q9sWLRVY2uk43bd1GLLPcNmhqJQ53CfKKxKzeShD\",\"outputContext\":{\"hash\":\"24ca4jkzvLyjXVaswz6d1eoAA4GbFD329mS3BdCAHfyb\",\"tree\":\"33KVhbT4QtdQDrrrGwwThqD47Dh4Q6tA443t9jMNcWFN\",\"treeId\":0,\"leafIndex\":100611},\"payload\":\"AVQAAAADA1OvLXXAkrJIzBsGuX3q4tj6yGB06M8OUOSjjdtCFBpQBCw79zIhpCfRAoBtmDy0jQhFuBrlTQTF9sRt8GVGKzisCPNRY8HvpOoyJJyVpLxCC60=\"},{\"viewTag\":\"7pT1foE6hKiDtLZR8WJLJ61KMeDCaB6QFJR6qsdh269B\",\"outputContext\":{\"hash\":\"3kXVK1E4vNJCRzfYNsdVBNy1gdj2S1NWpm9CohtVXCu6\",\"tree\":\"33KVhbT4QtdQDrrrGwwThqD47Dh4Q6tA443t9jMNcWFN\",\"treeId\":0,\"leafIndex\":100612},\"payload\":\"AVQAAAADAiIGIGGoGngYVFn2Jkglc2CzdnoW7B5vjjvDPQotnGgdZ8HB69uRh0zYDe5e1iMvQ2Nx1ZgFqhBNv34rZlCnA6FQUoCcWEAmnDZSqV4kV93zk5c=\"}],\"messages\":[],\"nullifiers\":[\"3XvLuSqjQ5jhg1ZCP8iqk4WCnoD7Lyrv7LekF7x7ydsL\"],\"proofless\":false}],\"nextCursor\":\"AgAAAAAecWPEG1Xc8XQFlJF36YevfYZhupBDsAKaq6FrgqydEuA6cHYhSXQTXPwK6gC0dRgzlkjD9OkUp45dCc/FDv8ed+t/BAAA\",\"scannedThrough\":\"AgAAAAAec6qNBpKJh4Q+9kE3JZf1rds3+AVJLDVJqupdNLFpnrGQ3otefCu/CPP7iX4OtTyH+IG9F87F+7hAjZ6VJYG/SjUXDwAA\"}}"
+  },
+  {
+   "seq": 1,
+   "method": "POST",
+   "path": "/v1/zolana/getShieldedTransactionsByTags",
+   "rpcMethod": "getShieldedTransactionsByTags",
+   "status": 200,
+   "contentType": "application/json; charset=utf-8",
+   "body": "{\"jsonrpc\":\"2.0\",\"id\":\"test-account\",\"result\":{\"context\":{\"blockTime\":1791962773,\"slot\":510911027},\"outputTreeId\":0,\"transactions\":[],\"nextCursor\":null,\"scannedThrough\":\"AgAAAAAec6qNBpKJh4Q+9kE3JZf1rds3+AVJLDVJqupdNLFpnrGQ3otefCu/CPP7iX4OtTyH+IG9F87F+7hAjZ6VJYG/SjUXDwAA\"}}"
+  },
+  {
+   "seq": 2,
+   "method": "POST",
+   "path": "/v1/zolana/getEncryptedUtxosByTags",
+   "rpcMethod": "getEncryptedUtxosByTags",
+   "status": 200,
+   "contentType": "application/json; charset=utf-8",
+   "body": "{\"jsonrpc\":\"2.0\",\"id\":\"test-account\",\"result\":{\"context\":{\"blockTime\":1791962773,\"slot\":510911028},\"outputTreeId\":0,\"matches\":[{\"slot\":510737504,\"txSignature\":\"2CtnN3AqD9jK4m9RZ8TWsDE1MvdMbtQovrU28XAawMYn8KE2QeaGvSVNxfz7VbvvFgF3wq5Qou98aGDPBH21MS4J\",\"outputSlot\":{\"viewTag\":\"7pT1foE6hKiDtLZR8WJLJ61KMeDCaB6QFJR6qsdh269B\",\"outputContext\":{\"hash\":\"3g6HJf2YPTPejC19jvFyfN5F1BzK8WAhtwjc6bH4VyuJ\",\"tree\":\"33KVhbT4QtdQDrrrGwwThqD47Dh4Q6tA443t9jMNcWFN\",\"treeId\":0,\"leafIndex\":100566},\"payload\":\"AVQAAAADAiIGIGGoGngYVFn2Jkglc2CzdnoW7B5vjjvDPQotnGgdSWB0jYjm4w9QyklG5JAD9yi/n/dmHNMaVUtjLH85Ds5LtfPD0m8eioR+1PasvD7Py8k=\"},\"txViewingPk\":\"AxNeEbccCWyOd9rEwEGuYjPrpnlRnd1iLF7mBqNqlD3d\",\"salt\":\"wtOFBnXx4UwyrJ9LuX6ULQ==\"},{\"slot\":510737561,\"txSignature\":\"E7KUFiKGLQsyJ4uo1cN3XpGtxo17nvsPsGdbuccwqvM9h8YiDWwzT1cJ8tchkYvbcD8NfvcuPJDmiSt3ZiGmRYn\",\"outputSlot\":{\"viewTag\":\"7pT1foE6hKiDtLZR8WJLJ61KMeDCaB6QFJR6qsdh269B\",\"outputContext\":{\"hash\":\"WUMggBnptCkg6VzJmq9xtUYNPajdCwQX4Hd53hjWVpk\",\"tree\":\"33KVhbT4QtdQDrrrGwwThqD47Dh4Q6tA443t9jMNcWFN\",\"treeId\":0,\"leafIndex\":100567},\"payload\":\"AVQAAAADAiIGIGGoGngYVFn2Jkglc2CzdnoW7B5vjjvDPQotnGgdVMsZJzW5S3geGvudMzlAHf5xS/LyJAhCT+dotINVsPY1d05E9ScG6J+aO0EwQKxxdwQ=\"},\"txViewingPk\":\"Al3HejXY26CBwtXLUowP1bkcwUoTiZA+r3Ums0JcM2NP\",\"salt\":\"LxOqpZqbfeJXIA3cYy+Svg==\"},{\"slot\":510737561,\"txSignature\":\"E7KUFiKGLQsyJ4uo1cN3XpGtxo17nvsPsGdbuccwqvM9h8YiDWwzT1cJ8tchkYvbcD8NfvcuPJDmiSt3ZiGmRYn\",\"outputSlot\":{\"viewTag\":\"7pT1foE6hKiDtLZR8WJLJ61KMeDCaB6QFJR6qsdh269B\",\"outputContext\":{\"hash\":\"2uT1xbaVAUw499EJ43B1MwWpeJwYBaPu73DSiUYR5u2a\",\"tree\":\"33KVhbT4QtdQDrrrGwwThqD47Dh4Q6tA443t9jMNcWFN\",\"treeId\":0,\"leafIndex\":100568},\"payload\":\"CPPPRnOFFgYkLHYpGIHxVN7s9YS+PJgH23ysNtzVE2M1d54b+b8RaCSyRtNGOrMvrExiR791VyqvixONXUBg01KQ7NIPzGbo2Y8dPRPuIka8cYeU2hUJRXg=\"},\"txViewingPk\":\"Al3HejXY26CBwtXLUowP1bkcwUoTiZA+r3Ums0JcM2NP\",\"salt\":\"LxOqpZqbfeJXIA3cYy+Svg==\"},{\"slot\":510745724,\"txSignature\":\"5uoJQr3gEkSMPcBggsU9xg2NfaEqzkCSvTFWBZ13ze18dfpEiLbLRSLLKG6uzxVz3TLdFbVsXdXdJrsUMhsyBCPk\",\"outputSlot\":{\"viewTag\":\"7pT1foE6hKiDtLZR8WJLJ61KMeDCaB6QFJR6qsdh269B\",\"outputContext\":{\"hash\":\"tjjEh25kq97aZAV2a22tRVS3LDPDqy3bWuhEmra1SYW\",\"tree\":\"33KVhbT4QtdQDrrrGwwThqD47Dh4Q6tA443t9jMNcWFN\",\"treeId\":0,\"leafIndex\":100608},\"payload\":\"AVQAAAADAiIGIGGoGngYVFn2Jkglc2CzdnoW7B5vjjvDPQotnGgd+CtF9tHVjCmY31qnu40ESU7Me9TLFnGIkZURXUMD4r73ZoZ4EnktS3ORZRuld9ak1+I=\"},\"txViewingPk\":\"AhoLxMBmEJ8wfZ6H0LyHNb45Q0FW7rOYbNtP2tw98NZS\",\"salt\":\"EY1mWkend2G2sdLZmiq3aQ==\"},{\"slot\":510747588,\"txSignature\":\"YhW3shvFmQX4iDX742hq6symuc185F94WLMerRCwyRsEXYkkZvJpzNcn5s4CTwnRbSJoH8xBr45JokcBX1s8um5\",\"outputSlot\":{\"viewTag\":\"7pT1foE6hKiDtLZR8WJLJ61KMeDCaB6QFJR6qsdh269B\",\"outputContext\":{\"hash\":\"3kXVK1E4vNJCRzfYNsdVBNy1gdj2S1NWpm9CohtVXCu6\",\"tree\":\"33KVhbT4QtdQDrrrGwwThqD47Dh4Q6tA443t9jMNcWFN\",\"treeId\":0,\"leafIndex\":100612},\"payload\":\"AVQAAAADAiIGIGGoGngYVFn2Jkglc2CzdnoW7B5vjjvDPQotnGgdZ8HB69uRh0zYDe5e1iMvQ2Nx1ZgFqhBNv34rZlCnA6FQUoCcWEAmnDZSqV4kV93zk5c=\"},\"txViewingPk\":\"AmN0GGvmKwO/mq+w68emlZacIXaYK+bP5n7WGsDJVpps\",\"salt\":\"VCEc8X0tyVmhMl3N3sAXKA==\"}],\"nextCursor\":\"AQAAAAAecWPEG1Xc8XQFlJF36YevfYZhupBDsAKaq6FrgqydEuA6cHYhSXQTXPwK6gC0dRgzlkjD9OkUp45dCc/FDv8ed+t/BAAAAAE=\",\"scannedThrough\":\"AQAAAAAec6qNBpKJh4Q+9kE3JZf1rds3+AVJLDVJqupdNLFpnrGQ3otefCu/CPP7iX4OtTyH+IG9F87F+7hAjZ6VJYG/SjUXDwAAAAE=\"}}"
+  },
+  {
+   "seq": 3,
+   "method": "POST",
+   "path": "/v1/zolana/getEncryptedUtxosByTags",
+   "rpcMethod": "getEncryptedUtxosByTags",
+   "status": 200,
+   "contentType": "application/json; charset=utf-8",
+   "body": "{\"jsonrpc\":\"2.0\",\"id\":\"test-account\",\"result\":{\"context\":{\"blockTime\":1791962773,\"slot\":510911029},\"outputTreeId\":0,\"matches\":[],\"nextCursor\":null,\"scannedThrough\":\"AQAAAAAec6qNBpKJh4Q+9kE3JZf1rds3+AVJLDVJqupdNLFpnrGQ3otefCu/CPP7iX4OtTyH+IG9F87F+7hAjZ6VJYG/SjUXDwAAAAE=\"}}"
+  },
+  {
+   "seq": 4,
+   "method": "POST",
+   "path": "/v1/zolana/getShieldedTransactionsByNullifiers",
+   "rpcMethod": "getShieldedTransactionsByNullifiers",
+   "status": 200,
+   "contentType": "application/json; charset=utf-8",
+   "body": "{\"jsonrpc\":\"2.0\",\"id\":\"test-account\",\"result\":{\"context\":{\"blockTime\":1791962774,\"slot\":510911031},\"outputTreeId\":0,\"transactions\":[],\"nextCursor\":null,\"scannedThrough\":\"AwAAAAAec6qNBpKJh4Q+9kE3JZf1rds3+AVJLDVJqupdNLFpnrGQ3otefCu/CPP7iX4OtTyH+IG9F87F+7hAjZ6VJYG/SjUXDwAA\"}}"
+  }
+ ]
+}

@@ -1,0 +1,94 @@
+{
+ "name": "transfer-sol-and-spl-with-dummy",
+ "group": {
+  "key": "2152f8d19b791d24453242e15f2eab6cb7cffa7b6a5ed30097960e069881db12",
+  "nullifierSecret": "42424242424242424242424242424242424242424242424242424242424242",
+  "viewingSk": "0000000000000000000000000000000000000000000000000000000010000042",
+  "nullifierPk": "06abdabb044dffae536f6847504691db8d17484d2793aa395d65f3e59c8fbdbe",
+  "viewingPk": "03bfbc846478b976e142840009940b0b75509b6ab6b4323cadc25a15be5e9d9bd6",
+  "ownerHash": "2e7ff41c5554ccf18a6342c12828f5845c61f28312f2cd6fb4fab32766e97e00"
+ },
+ "payee": {
+  "address": "0122fc297792f0b6ffc0bfcfdb7edb0c0aa14e025a365ec0e342e86e3829cb74b60005a5845ca25ea03719f270b724195efdbea8a9a400dd0ce3bde11b7cb64da31603d6ed063a83aa5520230107a0383b556a9ad6d99d5a60adfd870a72498d1af28d",
+  "key": "22fc297792f0b6ffc0bfcfdb7edb0c0aa14e025a365ec0e342e86e3829cb74b6",
+  "ownerHash": "12471f194f361dfb2f5ed9372aba29ab0f8fbe27578232b99ce54e82313c5c1e"
+ },
+ "mint": {
+  "address": "c8127ee4453d5a6b38050f91ba86eccf47dd0a0f2a19829afccda9abefb2f1b6",
+  "assetId": "2"
+ },
+ "salt": "a0a1a2a3a4a5a6a7a8a9aaabacadaeaf",
+ "blindingSeed": "00d7df73602d5538632fa2dcd99a643cdfda5dd21cf15c8a1861eb828c77b1dd",
+ "txViewingPk": "03f8e719d55b147f2406827829ec08360f9c5295ef87ee6bb6c8a8c18fd3ce68b2",
+ "inputs": [
+  {
+   "mint": "11111111111111111111111111111111",
+   "amount": "100",
+   "blinding": "0000000000000000000000000000000000000000000000000000000000007000",
+   "utxoHash": "03ce7fe8afac8e4cf5e2551b93848c12c2121e2a890ac5a6c9ecbfdb79b262fa",
+   "nullifier": "1cc04f06256d0473d1527da1852e3de5852087360417ea046b61d8ae0d9eb502"
+  },
+  {
+   "mint": "ETzu3EpvF7Jqz5ZWng4QANZDvogjgcveRmztm2mb8Xss",
+   "amount": "50",
+   "blinding": "0000000000000000000000000000000000000000000000000000000000007001",
+   "utxoHash": "092514e5b1dde4802a8c0eac3fd32b5582a9eea16bf0a7ec41375a55af492773",
+   "nullifier": "09ceff7b8c4340e465cef3f0a186faa3064ed25f7447aa694add081f6f9285b3"
+  }
+ ],
+ "withdraw": null,
+ "outputs": [
+  {
+   "role": "change",
+   "mint": "ETzu3EpvF7Jqz5ZWng4QANZDvogjgcveRmztm2mb8Xss",
+   "assetId": "2",
+   "amount": "30",
+   "blinding": "150a74297eb0a32712ebfe5c3f305ea6b99a4e69cb1a50430f6c6071cc87d666",
+   "utxoHash": "05acd24240f870094112551de44b49d95ba1a74766099336a7f7cd94e2e6d16e",
+   "ownerTag": {
+    "kind": "account",
+    "index": 0
+   },
+   "data": "01540000000303bfbc846478b976e142840009940b0b75509b6ab6b4323cadc25a15be5e9d9bd61c9de6267140e1b40da6e43ebd708db4d2fc57e1f7bb5e620b956a7748e9bbd5e506b8b2c954a4b32df77647c1e72100b92c"
+  },
+  {
+   "role": "change",
+   "mint": "11111111111111111111111111111111",
+   "assetId": "1",
+   "amount": "100",
+   "blinding": "0fe70fa32732f98551d92169bc2cf9d5855e556551703cd54876ef39ed326300",
+   "utxoHash": "0101b8188f321a03fb46a8a2ebe04cae42888de4249a1ef51b260e947e683802",
+   "ownerTag": {
+    "kind": "account",
+    "index": 0
+   },
+   "data": "01540000000303bfbc846478b976e142840009940b0b75509b6ab6b4323cadc25a15be5e9d9bd69d61d315fc14ef13d6faeabf636afbf2a8e03e44b8deaa294c0c4fe69f4b4160fc4aa0933e1e0a88880edfd6a032f181d389"
+  },
+  {
+   "role": "payee",
+   "mint": "ETzu3EpvF7Jqz5ZWng4QANZDvogjgcveRmztm2mb8Xss",
+   "assetId": "2",
+   "amount": "20",
+   "blinding": "203069aaa0b383eac10cd30b1fc5ea02323f75eede299a7ee01a8f6aede4baab",
+   "utxoHash": "0e926e851c83b69a8c6e8d8be647a5d12009cdc74de1005c914b5bca2ad2d051",
+   "ownerTag": {
+    "kind": "inline",
+    "value": "22fc297792f0b6ffc0bfcfdb7edb0c0aa14e025a365ec0e342e86e3829cb74b6"
+   },
+   "data": "01540000000303d6ed063a83aa5520230107a0383b556a9ad6d99d5a60adfd870a72498d1af28d39c5cf5d3c2cfe5dc04468ba000f2cebae74175b23b6f516522c3687c26860c4c182b46f7362697c4450a5a5f2330c09fcbc"
+  },
+  {
+   "role": "dummy",
+   "mint": "11111111111111111111111111111111",
+   "assetId": "1",
+   "amount": "0",
+   "blinding": "22361fc2ad5ba8cd8dcedd60f70f82b8eb1f21cbe8e3336a639de0a83d3f01ca",
+   "utxoHash": "02611580dcfe7f04a18972eedd95a6f050d9b4922a91401addddbad035e18423",
+   "ownerTag": {
+    "kind": "inline",
+    "value": "2152f8d19b791d24453242e15f2eab6cb7cffa7b6a5ed30097960e069881db12"
+   },
+   "data": "f06fe41e7934b6d32088a0d23eb443d20fffd972b8050d04f9aa940d47d3a16fd91301e838db1bb07e49eef36924f5bae72db4d375a994425e7de4da4351612223206693212c633d4a9dfe6528fe3a1b969f0bc0829b2c5f67"
+  }
+ ]
+}

@@ -661,6 +661,7 @@ function sub(path, fn) {
 
 function openGroup(gid) {
   for (const u of unsubGroup) u(); unsubGroup = [];
+  sol?.close();
   closeSession();
   // A form filled from a request belongs to the wallet it was made for.
   if (ui.sendFor && ui.sendFor !== gid) { ui.send = false; ui.pay = null; ui.note = ""; }
@@ -677,8 +678,15 @@ function openGroup(gid) {
   if (!gid) { setHash("#"); render(); return; }
   setHash("#" + gid);
   const base = "groups/" + gid;
+  let solWatched = false;
+  const watchSol = () => {
+    if (solWatched || !solOn(gid)) return;
+    solWatched = true;
+    solAttach(gid, base);
+  };
   unsubGroup.push(sdb.doc(base).onSnapshot((d) => {
     state.g = d.exists ? cleanGroup(d.id, d.data()) : null;
+    watchSol();
     refilter();
   }));
   unsubGroup.push(sub(base + "/seats", (m) => { raw.seats = m; state.seatsLoaded = true; }));
@@ -689,6 +697,7 @@ function openGroup(gid) {
     raw.wallet = d.exists ? d.data() : null;
     refilter();
   }));
+  watchSol();
   render();
 }
 
@@ -828,6 +837,54 @@ function reactNow() {
   // Signing.
   const ss = curSession();
   if (ss && state.wallet) reactSession(ss);
+  if (solOn()) sol?.react();
+}
+
+// ── Solana beta (web/sol, ZOLANA.md) ──
+// Devnet, for testnet wallets only. web/sol loads when the Solana tab opens or the wallet has a
+// solstart document. A mainnet wallet, and a wallet that is not loaded yet, never fetch any of it.
+const solGroup = (gid) =>
+  (gid === state.gid && state.g) || state.groups.find((x) => x.id === gid);
+const solOn = (gid = state.gid) => solGroup(gid)?.network === "testnet";
+const SOL_BACKUP_KIND = "zigs-sol-backup";
+const SOL_OFF = "Solana is not available on this server";
+let sol = null, solLoading = null, solError = "";
+const solHost = () => ({
+  Z, sdb, state, el, act, log, once, render, refilter, showBanner, sec, putSec, signedDoc,
+  canWriteAs, localSeats, seatIds, checkIn, safetyNo, seatCheck, openGroup, restore,
+  groupVersion, sealAndSave, network: () => netName(state.g),
+  askBackup: (words) => { ui.backup = { words, made: false, busy: false }; render(); },
+});
+// A server with SOL off does not serve the module, and the text says so.
+const solModule = () => import("/sol/main.js").catch(() => { throw new Error(SOL_OFF); });
+// A failed load is final until the page reloads: a retry on every redraw would loop.
+function solLoad() {
+  solLoading ||= solModule().then((m) => m.attach(solHost())).then((m) => {
+    sol = m;
+    if (solOn()) sol.open(state.gid, "groups/" + state.gid);
+    render(); react();
+  }, (e) => {
+    solError = said(e);
+    showBanner("bad", "Solana did not load: " + solError);
+    render();
+  });
+  return solLoading;
+}
+// Before the module loads, one watch on the start document decides when it must.
+function solAttach(gid, base) {
+  if (sol) { sol.open(gid, base); return; }
+  const started = (snap) => { if (snap.docs.length) solLoad(); };
+  unsubGroup.push(sdb.collection(base + "/solstart").onSnapshot(started));
+}
+const solTab = () => sol ? guard(sol.view)
+  : solError ? el("p", { class: "small" }, solError)
+  : (solLoad(), el("p", { class: "small" }, "Loading Solana…"));
+async function solRestore(b, encrypted) {
+  const g = solGroup(b.group);
+  if (g && g.network !== "testnet") throw new Error("Solana runs on testnet wallets only.");
+  await solLoad();
+  if (!sol) throw new Error(solError || "Solana did not load.");
+  return sol.restore(b, encrypted);
 }
 
 // ── Key ceremony ──
@@ -1658,7 +1715,7 @@ const PASS_NOTE = "This passphrase opens your key share. Zigs cannot recover it.
 
 // Nonces stay out: a restored copy must never sign with a nonce this browser may also use.
 function backupText(i) {
-  const { nonces, backedUp, ...s } = sec(state.gid, i);
+  const { nonces, backedUp, sol: solPart, ...s } = sec(state.gid, i);
   s.uid = s.uid || state.seats[i].uid;
   return S({
     kind: BACKUP_KIND, group: state.gid, groupName: state.g.name, seat: i,
@@ -1734,7 +1791,7 @@ const ACCOUNT_BACKUP = {
 };
 
 function backupDialog() {
-  const b = ui.backup, words = b.personal ? ACCOUNT_BACKUP : seatBackup(b.seat);
+  const b = ui.backup, words = b.words ?? (b.personal ? ACCOUNT_BACKUP : seatBackup(b.seat));
   const pass = el("input", {
     class: "input mono", id: "bk-pass", type: b.made ? "text" : "password", autocomplete: "off",
     spellcheck: "false", autocapitalize: "off", disabled: b.busy, "aria-describedby": "bk-hint",
@@ -1910,6 +1967,7 @@ function restoredFor(b, held) {
 // the wallet.
 async function applyBackup(b, encrypted) {
   if (isObj(b) && b.kind === PERSONAL_KIND) return restoreAccount(b, encrypted);
+  if (isObj(b) && b.kind === SOL_BACKUP_KIND) return solRestore(b, encrypted);
   checkBackup(b);
   const { group, seat, key } = b;
   const held = secrets[skey(group, seat)];
@@ -3544,6 +3602,7 @@ function walletView(head, why) {
     overview: overviewTab, activity: activityTab, messages: messagesCard, members: membersTab,
     details: detailsTab,
   };
+  if (solOn()) { tabs.push(["solana", "Solana"]); bodies.solana = solTab; }
   if (!Object.hasOwn(bodies, ui.tab)) ui.tab = "overview";
   return el("div", { class: "page" }, head, tabBar(tabs),
     unsaved.length ? backupNote(unsaved) : null,

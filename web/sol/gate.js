@@ -1,0 +1,42 @@
+// The checks that every signing step shares. Nothing is proposed, approved or signed while the
+// wallet is stopped (here or by a signed abort of any seat), while a document waits for its
+// signature check, before the collections are loaded, or before the seats agree on one key.
+import { agreement, startBlock } from "./ceremony.js";
+import { COLLECTIONS } from "./docs.js";
+import { holdsShare, solOf, stopOf } from "./secrets.js";
+import { SESSIONS } from "./sessions.js";
+
+const LOADING = "Zigs has not loaded the Solana data of this wallet yet. Try again in a moment.";
+const CHECKING = "Zigs is still checking the Solana data of this wallet. Try again in a moment.";
+
+/** Why no signing step may run now, or null. */
+export function signingBlock(c) {
+  const stop = stopOf(c);
+  if (stop) return stop;
+  const start = startBlock(c.host);
+  if (start) return start;
+  if (![...COLLECTIONS, SESSIONS].every((name) => c.loaded[name])) return LOADING;
+  if (c.wait > 0 || c.sessWait > 0) return CHECKING;
+  if (agreement(c).state !== "agree") return "The seats have not agreed on one Solana key yet.";
+  return null;
+}
+
+const TRANSIENT = [LOADING, CHECKING];
+const sleep = (ms) => new Promise((done) => setTimeout(done, ms));
+
+/**
+ * `signingBlock`, after a short wait while the only reason is that a document of the wallet is
+ * still being loaded or checked (a signature check takes a moment). A real reason comes at once.
+ */
+export async function settledBlock(c, ms = 3000) {
+  const end = Date.now() + ms;
+  for (;;) {
+    const why = signingBlock(c);
+    if (!TRANSIENT.includes(why) || Date.now() > end) return why;
+    await sleep(50);
+  }
+}
+
+/** The seats of this browser that hold a Solana key share and may sign a document. */
+export const writerSeats = (c) =>
+  c.host.localSeats().filter((i) => c.host.canWriteAs(i) && holdsShare(solOf(c.host, c.gid, i)));

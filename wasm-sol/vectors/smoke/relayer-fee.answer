@@ -1,0 +1,3 @@
+refused
+leg-mismatch	legs [SolWithdrawal(1)]
+conservation	asset 00000000 is off by -1 (inputs plus legs minus outputs)
