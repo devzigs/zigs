@@ -1,5 +1,5 @@
 [package]
-name = "zec-frost"
+name = "zigs"
 version = "0.1.0"
 edition = "2021"
 description = "Prototype: t-of-n FROST multisig wallet for Zcash Orchard"

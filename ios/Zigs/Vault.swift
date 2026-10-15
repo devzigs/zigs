@@ -51,6 +51,7 @@ final class Vault {
     func putSec(_ gid: String, _ seat: Int, _ patch: Doc) -> Bool {
         var cur = sec(gid, seat)
         for (k, v) in patch { cur[k] = v }
+        cur["backedUp"] = nil   // the flag of an older version, see BackupData.backedUp
         secrets["\(gid):\(seat)"] = cur
         return persist()
     }

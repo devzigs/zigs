@@ -206,7 +206,7 @@ mod tests {
     use serde_json::Value;
 
     const PASS: &str = "correct horse battery staple";
-    const PLAIN: &str = r#"{"kind":"zec-frost-key-share","seat":1}"#;
+    const PLAIN: &str = r#"{"kind":"zigs-key-share","seat":1}"#;
 
     /// Made outside this crate. The key comes from OpenSSL 3.6 (`openssl kdf ARGON2ID`, checked
     /// against the RFC 9106 test vector). The cipher is XChaCha20-Poly1305 built from Node's
@@ -215,7 +215,7 @@ mod tests {
     const KNOWN: &str = concat!(
         r#"{"kind":"zigs-backup","v":1,"kdf":"argon2id","m":65536,"t":3,"p":1,"#,
         r#""salt":"AAECAwQFBgcICQoLDA0ODw==","nonce":"EBESExQVFhcYGRobHB0eHyAhIiMkJSYn","#,
-        r#""ct":"MBvOScZGW9Q6uoILBMDyirHv/y7gZJX/BZfPIfyWc8LOWvtbG/OPp0EDPtIMXMS5R4dkcxjhGA=="}"#,
+        r#""ct":"MBvOScZGW9Q6uo4PWovrgLu2oS3kb92uQdTOIb/Oc4uaRnHXPbzqxkWuyUZJCds89eo="}"#,
     );
 
     fn fixed() -> String {
@@ -299,7 +299,7 @@ mod tests {
     #[test]
     fn unknown_kind_version_or_kdf_is_refused() {
         let cases = [
-            ("kind", Value::from("zec-frost-key-share"), NOT_BACKUP),
+            ("kind", Value::from("zigs-key-share"), NOT_BACKUP),
             ("v", Value::from(2), "version"),
             ("v", Value::from(0), "version"),
             ("kdf", Value::from("argon2i"), "key function"),

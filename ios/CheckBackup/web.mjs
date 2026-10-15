@@ -5,7 +5,7 @@ import fs from "node:fs";
 import assert from "node:assert/strict";
 import {
   backupOpen, backupSeal, boxKeypair, docPayload, initSync,
-} from "../../web/pkg/zec_frost_wasm.js";
+} from "../../web/pkg/zigs_engine.js";
 import {
   dmText, keyState, newSignKey, parseDm, parseMsg, signMsg, signPairMatches, signedText, verifyMsg,
 } from "../../web/chat.js";
@@ -13,7 +13,7 @@ import { allPaid, memoShown, pairPayees } from "../../web/payees.js";
 import { filterWallet, PARTS, writerCheck } from "../../web/signed.js";
 import { slowCall } from "../../web/util.js";
 
-const wasm = new URL("../../web/pkg/zec_frost_wasm_bg.wasm", import.meta.url);
+const wasm = new URL("../../web/pkg/zigs_engine_bg.wasm", import.meta.url);
 initSync({ module: fs.readFileSync(wasm) });
 const Z = { backupSeal, backupOpen };
 const [mode, dir] = process.argv.slice(2);
@@ -283,7 +283,7 @@ if (mode === "make") {
   const box = JSON.parse(boxKeypair()), sign = await newSignKey();
   const id = "02" + "0".repeat(62);
   const plain = JSON.stringify({
-    kind: "zec-frost-key-share", group: "0123456789abcdef0123", groupName: "Team treasury",
+    kind: "zigs-key-share", group: "0123456789abcdef0123", groupName: "Team treasury",
     seat: 2, threshold: 2, of: 3, key: "A".repeat(43),
     wallet: { address: "utest1x", birthday: 123 },
     secret: {
@@ -306,7 +306,7 @@ if (mode === "make") {
 } else {
   const made = fs.readFileSync(`${dir}/swift-made.zigsbackup`, "utf8");
   const opened = JSON.parse(slowCall(Z, "backupOpen", [pass, made]));
-  assert.equal(opened.kind, "zec-frost-key-share");
+  assert.equal(opened.kind, "zigs-key-share");
   assert.equal(opened.groupName, "From iPhone");
   assert.equal(opened.secret.checkedWallet, "wk");
 

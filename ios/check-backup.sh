@@ -12,7 +12,7 @@ work=$(mktemp -d)
 trap 'rm -rf "$work"' EXIT
 sed 's/^@main$//' Zigs/ZigsApp.swift > "$work/ZigsApp.swift"
 swiftc -swift-version 5 -enable-bare-slash-regex -module-name Zigs -I "$fw/Headers" -L "$fw" \
-  -lzec_frost_wasm -lc++ $(ls Zigs/*.swift | grep -v ZigsApp.swift) "$work/ZigsApp.swift" \
+  -lzigs_engine -lc++ $(ls Zigs/*.swift | grep -v ZigsApp.swift) "$work/ZigsApp.swift" \
   CheckBackup/main.swift -o "$work/check"
 node CheckBackup/web.mjs make "$work"
 "$work/check" "$work"

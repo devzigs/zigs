@@ -1,7 +1,7 @@
 // Checks the rules of the personal account with the real engine. Run: node web/test/personal.mjs
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
-import * as Z from "../pkg/zec_frost_wasm.js";
+import * as Z from "../pkg/zigs_engine.js";
 import {
   accountBackupName, accountBalance, addContact, backupPayload, balanceWarnings,
   CONTACT_INDEX_MAX, EXPIRY_BLOCKS, feeFor, feeText, fundingPayees, fundingWarning, highestIndex,
@@ -11,7 +11,7 @@ import {
   sentState, chatTimeline,
 } from "../personal.js";
 
-Z.initSync({ module: readFileSync(new URL("../pkg/zec_frost_wasm_bg.wasm", import.meta.url)) });
+Z.initSync({ module: readFileSync(new URL("../pkg/zigs_engine_bg.wasm", import.meta.url)) });
 
 const json = (text) => JSON.parse(text);
 const refused = (fn, part) => assert.throws(fn, (e) => e.message.includes(part), part);
@@ -191,7 +191,7 @@ assert.equal(readBackup({ ...payload, seed: acct.seed.toUpperCase() }, env).seed
   "capital letters are the same seed");
 assert.equal(readBackup({ ...payload, extra: 1 }, env).extra, undefined, "unknown fields drop");
 const bad = (patch, part) => refused(() => readBackup({ ...payload, ...patch }, env), part);
-for (const kind of ["zec-frost-key-share", "zigs-backup", undefined]) bad({ kind }, NOT_PERSONAL);
+for (const kind of ["zigs-key-share", "zigs-backup", undefined]) bad({ kind }, NOT_PERSONAL);
 bad({ network: "regtest" }, NOT_PERSONAL);
 bad({ version: 2 }, "version");
 bad({ seed: "ab" }, "valid seed");

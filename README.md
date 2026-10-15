@@ -314,7 +314,7 @@ CC_wasm32_unknown_unknown=/opt/homebrew/opt/llvm/bin/clang \
 AR_wasm32_unknown_unknown=/opt/homebrew/opt/llvm/bin/llvm-ar \
 RUSTFLAGS="--remap-path-prefix=$HOME=/build" \
 cargo build --release --target wasm32-unknown-unknown
-wasm-bindgen --target web --out-dir ../web/pkg target/wasm32-unknown-unknown/release/zec_frost_wasm.wasm
+wasm-bindgen --target web --out-dir ../web/pkg target/wasm32-unknown-unknown/release/zigs_engine.wasm
 ```
 
 ```bash

@@ -8,8 +8,9 @@ import { createPasskey, unlockKey, seal, open as openVault, parseVault } from "/
 import {
   abortText, backupName, boxPairMatches, checkNetwork, chunks, confirmGate, conflictReason, finite,
   fitsPublished, fmtInt, frostId, heldRefusal, keysOf, lateFields, LINK_CHAT_ID, linkRefusal,
-  makePassphrase, numberClash, passIssue, restoredSecret, samePackages, seatOwned, settledFields,
-  shareShape, skey, slowCall, staleRestore, takenKeys, undoPlan, usesV2, walletVersion,
+  makePassphrase, numberClash, passIssue, restoredSecret, samePackages, seatBackedUp, seatOwned,
+  settledFields, shareShape, skey, slowCall, staleRestore, takenKeys, undoPlan, usesV2,
+  walletVersion,
 } from "/util.js";
 import {
   docFields, filterWallet, IGNORED_NOTE, makeMemo, partFields, proposalFields, readSessions,
@@ -40,7 +41,7 @@ function setEngine(state, text) { engineDot.className = "dot " + state; engineTe
 
 async function loadEngine() {
   try {
-    const mod = await import("./pkg/zec_frost_wasm.js");
+    const mod = await import("./pkg/zigs_engine.js");
     await mod.default();
     Z = mod;
     setEngine("ok", "Crypto engine ready (WebAssembly)");
@@ -391,7 +392,9 @@ function changePersonal(change) {
 function mySeatSecrets(gid) { return Object.entries(secrets).filter(([k]) => k.startsWith(gid + ":")).map(([k, v]) => [Number(k.split(":")[1]), v]); }
 function sec(gid, seat) { return secrets[skey(gid, seat)]; }
 function putSec(gid, seat, patch) {
-  secrets[skey(gid, seat)] = Object.assign(secrets[skey(gid, seat)] || {}, patch);
+  const held = Object.assign(secrets[skey(gid, seat)] || {}, patch);
+  delete held.backedUp;   // the flag of an older version, see seatBackedUp in util.js
+  secrets[skey(gid, seat)] = held;
   return persist();
 }
 
@@ -1701,8 +1704,9 @@ async function finalizeTx(ss) {
 // A backup file is the key share, sealed with a passphrase (PROTOCOL.md section 9). The engine
 // does the Argon2id and the cipher. The passphrase lives only in the dialog's input and in the
 // worker call, never in `ui`.
-const BACKUP_KIND = "zec-frost-key-share";   // what the sealed text holds, also in a plain file
-const NOT_A_BACKUP = "This file is not a Zigs backup.";
+const BACKUP_KIND = "zigs-key-share";   // what the sealed text holds, also in a plain file
+const NOT_A_BACKUP = "This file is not a Zigs backup, or an older version of Zigs made it. "
+  + "Make a new backup on a device that still holds the seat.";
 const NOT_ENCRYPTED = "This backup file is not encrypted. Make a new encrypted backup now.";
 const MAX_BACKUP_BYTES = 1000000;
 const ACCOUNT_PASS_NOTE = "This passphrase opens the backup of your personal account. Zigs cannot "
@@ -1715,7 +1719,7 @@ const PASS_NOTE = "This passphrase opens your key share. Zigs cannot recover it.
 
 // Nonces stay out: a restored copy must never sign with a nonce this browser may also use.
 function backupText(i) {
-  const { nonces, backedUp, sol: solPart, ...s } = sec(state.gid, i);
+  const { nonces, backupSaved, backedUp, sol: solPart, ...s } = sec(state.gid, i);
   s.uid = s.uid || state.seats[i].uid;
   return S({
     kind: BACKUP_KIND, group: state.gid, groupName: state.g.name, seat: i,
@@ -1755,7 +1759,7 @@ async function saveBackup(i, pass) {
   // The wallet that is open can change while the engine works (the Back button).
   const gid = state.gid, wallet = state.g.name;
   if (!(await sealAndSave(pass, backupText(i), backupName(wallet, i)))) return false;
-  await putSec(gid, i, { backedUp: true });
+  await putSec(gid, i, { backupSaved: true });
   return true;
 }
 
@@ -1891,8 +1895,9 @@ function parseBackup(text) {
   try { return J(text); } catch { throw new Error(NOT_A_BACKUP); }
 }
 
-// An encrypted file asks for its passphrase. A plain file from before encryption restores at once
-// and leaves the backup note up, so the person makes an encrypted file.
+// An encrypted file asks for its passphrase. A plain file of the current kind restores at once and
+// leaves the backup note up, so the person makes an encrypted file. A plain file of an older
+// version has another kind: checkShape refuses it.
 async function restore(file) {
   try {
     if (file.size > MAX_BACKUP_BYTES) throw new Error(NOT_A_BACKUP);
@@ -1959,7 +1964,7 @@ const restoreWatch = new Map();
 function restoredFor(b, held) {
   const nonces = (held || {}).nonces || {};
   return { ...restoredSecret(b.secret, held), nonces, ...(held ? {} : { restored: true }),
-    backedUp: false };
+    backupSaved: false };
 }
 
 // Stores the key share of a backup, from the fields that restoredFields allows. `encrypted` says
@@ -2066,7 +2071,7 @@ function acceptRestore(w, published) {
   const later = settledFields(w.late, groupVersion(), state.g.room);
   if (Object.keys(later).length) putSec(w.gid, w.seat, later);
   if (!w.encrypted) return;
-  putSec(w.gid, w.seat, { backedUp: true });
+  putSec(w.gid, w.seat, { backupSaved: true });
   showBanner("ok", "Restored " + w.where + ". It matches the wallet.");
 }
 
@@ -2235,14 +2240,14 @@ async function publishRoom(gid) {
 // A seat made before messages gets its signing key once. The seat document keeps the first key.
 // The lease comes first, so two tabs of one browser cannot make two keys. The key is published
 // only after this browser saved it. An older backup file lacks the key, so a new key on a
-// backed-up seat clears `backedUp` and the page asks for a new backup.
+// backed-up seat clears `backupSaved` and the page asks for a new backup.
 function ensureSignKey(gid, i) {
   if (!signing || validPk(state.seats[i].signPk)) return;
   throttled("sign:" + gid + ":" + i, async () => {
     const ref = sdb.doc("groups/" + gid + "/seats/" + i);
     if (!(await ref.acquire({ holder: crypto.randomUUID(), ttlMs: 10000 })).acquired) return;
     const s = sec(gid, i), made = s.signPk ? null : await newSignKey();   // read after the lease
-    const unsaved = made && s.keyPackage ? { backedUp: false } : {};
+    const unsaved = made && s.keyPackage ? { backupSaved: false } : {};
     if (!(await putSec(gid, i, { ...made, ...unsaved }))) return;
     const cur = await ref.get();
     if (cur.exists && !validPk(cur.data().signPk)) await ref.update({ signPk: sec(gid, i).signPk });
@@ -3590,7 +3595,7 @@ const walletReady = () => !!(state.wallet && state.wallet.birthday)
 function walletView(head, why) {
   const unsaved = localSeats().filter((i) => {
     const s = sec(state.gid, i);
-    return s.keyPackage && !s.backedUp;
+    return s.keyPackage && !seatBackedUp(s);
   });
   const tabs = [
     ["overview", "Overview"],
@@ -3660,7 +3665,8 @@ function tabBar(tabs) {
 function backupNote(seats) {
   const text = "Back up your key share. This browser can forget it: private windows and Tor "
     + "Browser delete it when they close. The file is locked with a passphrase that you choose. "
-    + "Keep the file safe, and keep the passphrase apart from it.";
+    + "Keep the file safe, and keep the passphrase apart from it. Files made by an older "
+    + "version of Zigs do not open in this version. Save a new file.";
   return el("div", { class: "callout warn", role: "status" },
     el("span", { style: "flex:1 1 16rem" }, text),
     seats.map((i) => el("button", {

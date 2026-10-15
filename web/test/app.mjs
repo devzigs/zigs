@@ -6,13 +6,14 @@ import assert from "node:assert/strict";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import * as Z from "../pkg/zec_frost_wasm.js";
+import * as Z from "../pkg/zigs_engine.js";
 import { newSignKey, signMsg, verifyMsg } from "../chat.js";
 import { HIGH_TEXT as HIGH } from "../personal.js";
+import { seatBackedUp } from "../util.js";
 import { aesKey, open as openVault, seal } from "../vault.js";
 
 const web = new URL("../", import.meta.url);
-Z.initSync({ module: fs.readFileSync(new URL("pkg/zec_frost_wasm_bg.wasm", web)) });
+Z.initSync({ module: fs.readFileSync(new URL("pkg/zigs_engine_bg.wasm", web)) });
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
 // A page that does nothing: any property is a function that returns the page again.
@@ -60,6 +61,7 @@ export const T = {
   saveAccountBackup, applyBackup, accountCard, persistSealed, unlockVault, forgetBox, flightNow,
   sentStateOf, addressFor, addressBlock, layers, backupDialog, submitMessage,
   startUp, lockWithPasskey, takeFromTab, openContactDialog, mainView, damagedCard,
+  putSec, saveBackup, checkShape, restoredFor,
   getIdb() { return idb; }, setIdbMs(v) { idbOpenMs = v; },
   get personalPending() { return personalPending; },
 };
@@ -1405,7 +1407,7 @@ const sealed = (gid, rel, seat, fields, key, names = ["by", "sig"]) =>
     [null, null, []], "the seed, the key and the sync state are gone");
   await assert.rejects(t.applyBackup(payload, false), /not encrypted/);
   await assert.rejects(t.restoreAccount({ ...payload, seed: "zz" }, true), /valid seed/);
-  await assert.rejects(t.restoreAccount({ ...payload, kind: "zec-frost-key-share" }, true),
+  await assert.rejects(t.restoreAccount({ ...payload, kind: "zigs-key-share" }, true),
     /not a backup/);
   // A name that is not text is an error in words. An index above the cap is refused.
   const ana0 = payload.contacts[0];
@@ -1890,6 +1892,66 @@ const sealed = (gid, rel, seat, fields, key, names = ["by", "sig"]) =>
   hygiene("at the end");
   assert.equal(JSON.stringify(net.created).includes(seed), false);
   delete globalThis.navigator;
+}
+
+// ── Seat backups: the kind of the file, the flag of the seat and the files of older versions
+{
+  t.setZ(Z);
+  const files = [];
+  t.setDownloads({ save: async (file) => { files.push(file); } });
+  const pass = "this is a long test passphrase";
+  const share = { identifier: "02" + "0".repeat(62), verifying_share: "ab", signing_share: "cd" };
+  const seatOf = (extra) => ({ keyPackage: share, uid: "u2", ...extra });
+  const unsaved = (gid, seat) => !seatBackedUp(t.sec(gid, seat));
+  t.state.gid = A;
+  t.state.g = { id: A, name: "Team", n: 3, t: 2, version: 3, network: "testnet" };
+  t.state.seats = { 2: { uid: "u2" } };
+  t.state.wallet = { address: "utest1x", birthday: 123 };
+  t.gkeys = { [A]: "K".repeat(43) };
+
+  // A seat that only the old flag marks as backed up asks again. The old flag leaves at the next
+  // write, and a restore never brings it back.
+  t.secrets = { [A + ":2"]: seatOf({ nonces: { s1: "n" }, backedUp: true }),
+    [A + ":3"]: seatOf({ backedUp: true }) };
+  assert.deepEqual([unsaved(A, 2), unsaved(A, 3)], [true, true], "the old flag counts for nothing");
+  t.putSec(A, 3, { room: null });
+  assert.equal("backedUp" in t.sec(A, 3), false, "a write drops the old flag");
+  const stored = JSON.parse(storage.get("zf-secrets"));
+  assert.equal("backedUp" in stored[A + ":3"], false, "the stored copy lost it too");
+
+  // The file holds the new kind, no nonce and no flag, even when the seat still holds the old one.
+  assert.equal(await t.saveBackup(2, pass), true);
+  const made = JSON.parse(Z.backupOpen(pass, files.at(-1).data));
+  assert.equal(made.kind, "zigs-key-share");
+  assert.deepEqual(Object.keys(made.secret).sort(), ["keyPackage", "uid"]);
+  assert.deepEqual([t.sec(A, 2).backupSaved, "backedUp" in t.sec(A, 2), unsaved(A, 2)],
+    [true, false, false], "the saved file marks the seat");
+
+  // The file passes the checks, and a restore on a browser without the seat stores it as not
+  // backed up until the file fits the wallet.
+  t.checkShape(made);
+  assert.equal(t.restoredFor(made, undefined).backupSaved, false);
+  assert.equal("backedUp" in t.restoredFor(made, t.sec(A, 2)), false);
+  const NEW = new RegExp("not a Zigs backup, or an older version of Zigs made it.*"
+    + "new backup on a device that still holds the seat");
+  for (const kind of ["zigs-backup", "x", "", 5, undefined]) {
+    await assert.rejects(t.applyBackup({ ...made, kind }, true), NEW, String(kind));
+    await assert.rejects(t.applyBackup({ ...made, kind }, false), NEW, String(kind));
+  }
+  assert.deepEqual(Object.keys(t.secrets).sort(), [A + ":2", A + ":3"],
+    "a refused file stores nothing");
+
+  // A browser that holds nothing takes the file. The seat counts as backed up only after it fits.
+  const quiet = { onSnapshot: () => () => {} };
+  t.setDb({ doc: () => quiet, collection: () => quiet });
+  t.secrets = {}; t.gkeys = {};
+  await t.applyBackup(made, true);
+  const got = t.sec(A, 2);
+  assert.deepEqual([got.keyPackage, got.backupSaved, got.restored, got.nonces],
+    [share, false, true, {}]);
+  assert.equal(t.gkeys[A], "K".repeat(43));
+  assert.match(t.banner.text, /^Restored seat 2 of Team\./);
+  assert.equal(unsaved(A, 2), true);
 }
 
 async function runAcctSync() {

@@ -1,4 +1,4 @@
-/* @ts-self-types="./zec_frost_wasm.d.ts" */
+/* @ts-self-types="./zigs_engine.d.ts" */
 
 export class ChainWallet {
     static __wrap(ptr) {
@@ -1806,7 +1806,7 @@ function __wbg_get_imports() {
     };
     return {
         __proto__: null,
-        "./zec_frost_wasm_bg.js": import0,
+        "./zigs_engine_bg.js": import0,
     };
 }
 
@@ -2090,7 +2090,7 @@ async function __wbg_init(module_or_path) {
     }
 
     if (module_or_path === undefined) {
-        module_or_path = new URL('zec_frost_wasm_bg.wasm', import.meta.url);
+        module_or_path = new URL('zigs_engine_bg.wasm', import.meta.url);
     }
     const imports = __wbg_get_imports();
 

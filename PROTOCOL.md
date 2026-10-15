@@ -170,6 +170,9 @@ sequenceDiagram
    secret.
 6. **Round 2.** Each device makes one share for every other seat. It encrypts
    `{ package, r }` with X25519 to that seat's key. Each box is bound to its sender and receiver.
+   The box key is `BLAKE2b-256("Zigs_DkgBox___v1", shared || ctx)`. `shared` is the X25519 secret,
+   and `ctx` is `<wallet id>:<from>-><to>`. The cipher is ChaCha20-Poly1305 with a random 12-byte
+   nonce, and the box is `hex(nonce)`, a dot and the base64 of the ciphertext.
    It writes `dkg2/<from>-<to> = { sealed, echo }`.
 7. **Round 3.** A device does these checks before it makes any key.
    - Its stored echo equals the echo it computes now from the `dkg1` documents.
@@ -467,7 +470,7 @@ flowchart TD
     `0123456789abcdefghjkmnpqrstvwxyz`. The app shows them as 6 groups of 5, with `-` between the
     groups. The app asks the person to type or paste the passphrase again before it makes the
     file. Zigs cannot recover a lost passphrase.
-  - Sealed text. The JSON of the older plain backup: `kind` (`zec-frost-key-share`), `group`,
+  - Sealed text. The JSON of the plain backup: `kind` (`zigs-key-share`), `group`,
     `groupName`, `seat`, `threshold`, `of`, `key` (the wallet secret), `wallet` and `secret` (the
     seat secret). It never holds nonces. For a version 2 or 3 wallet the seat secret holds `vaultSk`,
     the ZIP 2005 `sk` that the signers agreed on. From it anyone can compute `qsk`, so keep the
@@ -533,9 +536,13 @@ flowchart TD
     The app settles each restore apart, by wallet and seat. It refuses a second restore of a seat
     until the first one settles. A restore that added the wallet secret removes it again only when
     no seat of that wallet remains.
-  - Older files. A plain file from before encryption (`kind` `zec-frost-key-share`) still
-    restores. The app warns about it, and the backup note stays until the person makes an
-    encrypted backup.
+  - Older files. Both apps refuse a file with a `kind` other than `zigs-key-share`, which includes
+    every file that an older version made. The message says that the file is not a Zigs backup or
+    that an older version made it, and that the person must make a new backup on a device that
+    still holds the seat. The seat flag `backupSaved` replaces the older flag `backedUp`. The apps
+    ignore the older flag, so every seat shows "Not backed up" until it saves a new file. A plain
+    file of the right kind still restores. The app warns about it, and the backup note stays
+    until the person makes an encrypted backup.
   - Tor Browser forgets everything when it closes, so a Tor user restores the backup in each
     session.
 

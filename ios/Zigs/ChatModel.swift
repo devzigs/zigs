@@ -262,7 +262,7 @@ extension GroupModel {
 
     /// The lease comes first, so two devices cannot make two keys. The key is published only after
     /// this device saved it. An older backup lacks the key, so a new key on a backed-up seat
-    /// clears `backedUp` and the app asks for a new backup.
+    /// clears `backupSaved` and the app asks for a new backup.
     private func addSignKey(_ gid: String, _ i: Int) async throws {
         let path = "groups/\(gid)/seats/\(i)"
         let leased = try await store.acquire(path, holder: UUID().uuidString, ttlMs: 10_000)
@@ -271,7 +271,7 @@ extension GroupModel {
         if held.str("signPk") == nil {
             let key = Signed.newKey()
             var made: Doc = ["signSk": key.signSk, "signPk": key.signPk]
-            if has(held["keyPackage"]) { made["backedUp"] = false }
+            if has(held["keyPackage"]) { made["backupSaved"] = false }
             guard vault.putSec(gid, i, made) else {
                 throw ZigsError("The signing key was not saved.")
             }

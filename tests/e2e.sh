@@ -5,7 +5,7 @@
 set -uo pipefail
 
 export QUIET=1
-BIN="${BIN:-./target/release/zec-frost}"
+BIN="${BIN:-./target/release/zigs}"
 WORK="$(mktemp -d)"
 PASS=0
 FAIL=0

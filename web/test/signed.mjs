@@ -1,14 +1,14 @@
 // Checks the helpers for signed writes. Run: node web/test/signed.mjs
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
-import * as Z from "../pkg/zec_frost_wasm.js";
+import * as Z from "../pkg/zigs_engine.js";
 import { newSignKey, signMsg, verifyMsg } from "../chat.js";
 import {
   docFields, filterWallet, makeMemo, PARTS, partFields, proposalFields, readSession, signPart,
   trustShape, validShape, writerCheck, writerOf,
 } from "../signed.js";
 
-Z.initSync({ module: readFileSync(new URL("../pkg/zec_frost_wasm_bg.wasm", import.meta.url)) });
+Z.initSync({ module: readFileSync(new URL("../pkg/zigs_engine_bg.wasm", import.meta.url)) });
 
 // The text that is signed comes from the engine. A fixed vector: other apps must build this text
 // and accept this signature (PROTOCOL.md, section 15).

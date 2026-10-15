@@ -249,6 +249,19 @@ func refused(_ message: String, _ edit: (inout Doc) -> Void) -> Bool {
 }
 func notBackup(_ edit: (inout Doc) -> Void) -> Bool { refused(BackupText.notABackup, edit) }
 check(notBackup { $0["kind"] = "x" }, "kind")
+// A file of any other kind gets the message that names the older versions and the next step.
+check(notBackup { $0["kind"] = "zigs-backup" } && notBackup { $0["kind"] = "personal" }
+      && notBackup { $0["kind"] = "" } && notBackup { $0["kind"] = 5 }
+      && notBackup { $0["kind"] = NSNull() } && notBackup { $0["kind"] = nil }, "other kinds")
+check(BackupText.notABackup.contains("older version of Zigs made it")
+      && BackupText.notABackup.contains("new backup on a device that still holds the seat"),
+      "the message of an older file")
+// A seat that only the old flag marks as backed up asks for a new backup.
+let oldFlag: Doc = ["keyPackage": ["identifier": id] as Doc, "backedUp": true]
+check(!BackupData.backedUp(oldFlag), "the old flag counts for nothing")
+check(!BackupData.backedUp(["backupSaved": false, "backedUp": true] as Doc), "saved is false")
+check(BackupData.backedUp(["backupSaved": true] as Doc), "saved is true")
+check(!BackupData.backedUp([:]), "no flag")
 check(notBackup { $0["group"] = "XYZ" }, "group")
 check(notBackup { $0["seat"] = 0 } && notBackup { $0["seat"] = 8 }, "seat range")
 check(notBackup { $0["seat"] = true } && notBackup { $0["seat"] = 1.5 }, "seat type")

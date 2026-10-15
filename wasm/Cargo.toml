@@ -1,8 +1,8 @@
 [package]
-name = "zec-frost-wasm"
+name = "zigs-engine"
 version = "0.1.0"
 edition = "2021"
-description = "Browser build of the zec-frost prototype (WebAssembly)"
+description = "The Zigs engine: browser build (WebAssembly) and iPhone and Mac library"
 
 [lib]
 crate-type = ["cdylib", "rlib", "staticlib"]

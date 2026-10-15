@@ -11,7 +11,7 @@ for target in aarch64-apple-ios aarch64-apple-ios-sim aarch64-apple-darwin; do
   cargo build --release --lib --target "$target"
 done
 
-lib=libzec_frost_wasm.a
+lib=libzigs_engine.a
 out=../ios/ZigsCore.xcframework
 rm -rf "$out"
 xcodebuild -create-xcframework \

@@ -1,17 +1,17 @@
 // Checks the pure helpers. Run: node web/test/util.mjs
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
-import * as Z from "../pkg/zec_frost_wasm.js";
+import * as Z from "../pkg/zigs_engine.js";
 import {
   abortText, backupName, boxPairMatches, canonical, checkNetwork, chunks, confirmGate,
   conflictReason, finite, fitsPublished, fmtInt, frostId, heldRefusal, keysOf, lateFields,
   LINK_CHAT_ID, LINK_NEW_SECRET, linkRefusal, makePassphrase, numberClash, passIssue, passLength,
-  passNormal, restoredFields, restoredSecret, sameShare, samePackages, seatOwned, settledFields,
-  SETUP_HELD, shareShape, skey, slowCall, staleRestore, takenKeys, undoPlan, usesV2,
+  passNormal, restoredFields, restoredSecret, sameShare, samePackages, seatBackedUp, seatOwned,
+  settledFields, SETUP_HELD, shareShape, skey, slowCall, staleRestore, takenKeys, undoPlan, usesV2,
   walletVersion, withoutKeys,
 } from "../util.js";
 
-Z.initSync({ module: readFileSync(new URL("../pkg/zec_frost_wasm_bg.wasm", import.meta.url)) });
+Z.initSync({ module: readFileSync(new URL("../pkg/zigs_engine_bg.wasm", import.meta.url)) });
 
 assert.deepEqual(chunks("abcdefghij"), ["abcde", "fghij"]);
 assert.deepEqual(chunks("abcdefg"), ["abcde", "fg"]);
@@ -147,7 +147,7 @@ assert.equal(backupName("", 1), "zigs-wallet-seat-1.zigsbackup");
 const fromFile = JSON.parse(`{"keyPackage":{"identifier":"01","verifying_share":"aa"},
   "vaultSk":"v","boxSk":"b","version":2,"checkedWallet":"w","rejectedWallet":null,"aborted":"x",
   "confirmed":"9","doneSent":true,"r1secret":"r","skPart":"s","echo":"e","uid":"u","nonces":{"a":1},
-  "backedUp":true,"restored":true,"__proto__":{"polluted":true},"extra":1}`);
+  "backedUp":true,"backupSaved":true,"restored":true,"__proto__":{"polluted":true},"extra":1}`);
 assert.deepEqual(Object.keys(restoredFields(fromFile)).sort(), ["boxSk", "keyPackage", "vaultSk",
   "version"]);
 assert.equal(restoredFields(fromFile).version, 2);
@@ -290,6 +290,28 @@ for (const bad of [undefined, null, "", "zz", "00", 5, "0".repeat(64)]) {
   assert.equal(boxPairMatches(Z, pair.sk, bad), false, String(bad));
 }
 assert.equal(boxPairMatches({}, pair.sk, pair.pk), false);   // no engine
+
+// A DKG box made outside the engine opens. Its key uses the personalization "Zigs_DkgBox___v1"
+// (X25519 in Node, BLAKE2b in Python, ChaCha20-Poly1305 in Node), so another one cannot open it.
+const dkgA = { sk: "0102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f20",
+  pk: "07a37cbc142093c8b755dc1b10e86cb426374ad16aa853ed0bdfc0b2b86d1c7c" };
+const dkgB = { sk: "808182838485868788898a8b8c8d8e8f909192939495969798999a9b9c9d9e9f",
+  pk: "493e82fc74464a59268817623d2053c5eb8e2cc4a988b4fee179ec6b010d531d" };
+const dkgBox = "a0a1a2a3a4a5a6a7a8a9aaab.sPL7xNK7CcWZd334CFmY2DWnZz3/TEm8bfO62yTstApM";
+assert.equal(Z.boxOpen(dkgA.sk, dkgB.pk, "g:1->2", dkgBox), "hello from seat 1");
+assert.equal(Z.boxOpen(dkgB.sk, dkgA.pk, "g:1->2", dkgBox), "hello from seat 1");
+assert.throws(() => Z.boxOpen(dkgA.sk, dkgB.pk, "g:1->3", dkgBox), /cannot decrypt/);
+// The same text made with the personalization of the older versions does not open.
+const olderBox = "a0a1a2a3a4a5a6a7a8a9aaab.scXfOHjAXmCNrnI3jX7QwXmjb3388IvIn/0vp8pN6phe";
+assert.throws(() => Z.boxOpen(dkgA.sk, dkgB.pk, "g:1->2", olderBox), /cannot decrypt/);
+
+// A seat counts as backed up only by the flag of this version. The flag of an older version is
+// ignored, so a seat that held it asks for a new backup.
+const keyed = { keyPackage: mineKey.keyPackage };
+assert.equal(seatBackedUp({ ...keyed, backedUp: true }), false);
+assert.equal(seatBackedUp({ ...keyed, backedUp: true, backupSaved: false }), false);
+assert.equal(seatBackedUp({ ...keyed, backupSaved: true }), true);
+assert.equal(seatBackedUp(keyed), false);
 
 // The undo of a restore removes a seat that held nothing and keeps a seat that held a key share.
 // It never writes back an old copy with old nonces.

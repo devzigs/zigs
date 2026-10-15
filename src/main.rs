@@ -10,7 +10,7 @@ use eyre::Result;
 use store::Store;
 
 #[derive(Parser)]
-#[command(name = "zec-frost", about = "t-of-n FROST multisig for Zcash Orchard (prototype)")]
+#[command(name = "zigs", about = "t-of-n FROST multisig for Zcash Orchard (prototype)")]
 struct Cli {
     /// Shared working directory that stands in for the network relay.
     #[arg(long, default_value = "wallet-data")]

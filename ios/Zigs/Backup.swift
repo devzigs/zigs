@@ -6,11 +6,12 @@ import UniformTypeIdentifiers
 /// text inside is the JSON that the web app writes, so a backup from either app opens in both.
 /// The format is in PROTOCOL.md, section 9.
 enum BackupText {
-    static let kind = "zec-frost-key-share"
+    static let kind = "zigs-key-share"
     static let sealedKind = "zigs-backup"
     static let note = "This passphrase opens your key share. Zigs cannot recover it. "
         + "Write it down and keep it apart from the file."
-    static let notABackup = "This file is not a Zigs backup."
+    static let notABackup = "This file is not a Zigs backup, or an older version of Zigs made it. "
+        + "Make a new backup on a device that still holds the seat."
     static let noKeyShare = "This backup holds no key share."
     static let notEncrypted = "This backup file is not encrypted. Make a new encrypted backup now."
     static let noFit = "This backup does not fit this wallet. It was not used."
@@ -257,6 +258,11 @@ struct BackupData {
             + "the backup was not restored."
     }
 
+    /// True when the key share of the seat went into a file of the current kind. Older versions
+    /// wrote `backedUp` for files of an older kind. The apps ignore that flag, so every seat asks
+    /// for a new backup. Same rule as seatBackedUp in util.js.
+    static func backedUp(_ secret: Doc) -> Bool { has(secret["backupSaved"]) }
+
     /// A restored seat secret that the wallet does not confirm (`fit` is false), and that no
     /// restore that waits will settle. It is no seat of this device (SeatOwner). Same rule as
     /// staleRestore in util.js.
@@ -419,7 +425,7 @@ extension GroupModel {
     /// Seats whose key share has no backup yet.
     var unsavedSeats: [Int] {
         guard let gid else { return [] }
-        return keyShareSeats.filter { !has(vault.sec(gid, $0)["backedUp"]) }
+        return keyShareSeats.filter { !BackupData.backedUp(vault.sec(gid, $0)) }
     }
 
     /// The text that a backup seals. Same fields as backupText in web/app.js. Nonces stay out: a
@@ -430,6 +436,7 @@ extension GroupModel {
         }
         var secret = vault.sec(gid, i)
         secret["nonces"] = nil
+        secret["backupSaved"] = nil
         secret["backedUp"] = nil
         if !has(secret["uid"]), let uid = state.seats["\(i)"]?.str("uid") { secret["uid"] = uid }
         let b: Doc = [
@@ -442,12 +449,13 @@ extension GroupModel {
 
     func markBackedUp(_ i: Int, in gid: String?) {
         guard let gid else { return }
-        vault.putSec(gid, i, ["backedUp": true])
+        vault.putSec(gid, i, ["backupSaved": true])
         refresh()
     }
 
     /// What a picked file is. A sealed file needs its passphrase, so this returns true. A plain
-    /// file from before encryption restores at once, with a warning.
+    /// file of the current kind restores at once, with a warning. A plain file of an older
+    /// version has another kind, and the check of BackupData refuses it.
     func receiveBackup(_ text: String) throws -> Bool {
         let b = try BackupData.parse(text)
         if b.str("kind") == BackupText.sealedKind { return true }
@@ -503,7 +511,7 @@ extension GroupModel {
         // A seat that held a key share stays what it was: the flag would put the seat of this
         // device under the fit rule of SeatOwner.
         if before == nil { secret["restored"] = true }
-        secret["backedUp"] = false
+        secret["backupSaved"] = false
         if let key = b.key { vault.putKey(b.group, key) }
         guard vault.putSec(b.group, b.seat, secret) else {
             throw ZigsError("This \(deviceName) could not save the restored key share.")
@@ -556,7 +564,7 @@ extension GroupModel {
         add.merge(wallet) { _, new in new }
         vault.putSec(w.gid, w.seat, add)
         guard w.encrypted else { return }
-        vault.putSec(w.gid, w.seat, ["backedUp": true])
+        vault.putSec(w.gid, w.seat, ["backupSaved": true])
         notice = "Restored \(w.what). It matches the wallet."
     }
 
@@ -605,7 +613,9 @@ struct BackupCard: View {
                 Text("Back up your key share").font(.headline)
                 Text("If you lose this \(deviceName), or delete Zigs, the key share is lost. "
                      + "The backup file is locked with a passphrase that you choose. "
-                     + "Keep the file safe, and keep the passphrase apart from it.")
+                     + "Keep the file safe, and keep the passphrase apart from it. "
+                     + "Files made by an older version of Zigs do not open in this version. "
+                     + "Save a new file.")
                     .font(.subheadline).foregroundStyle(Color.mist)
                 ForEach(seats, id: \.self) { i in
                     HStack {

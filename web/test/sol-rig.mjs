@@ -5,11 +5,11 @@
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import * as Z from "../pkg/zec_frost_wasm.js";
+import * as Z from "../pkg/zigs_engine.js";
 import * as W from "../sol/wasm/sol_wasm.js";
 
 const web = new URL("../", import.meta.url);
-Z.initSync({ module: fs.readFileSync(new URL("pkg/zec_frost_wasm_bg.wasm", web)) });
+Z.initSync({ module: fs.readFileSync(new URL("pkg/zigs_engine_bg.wasm", web)) });
 W.initSync({ module: fs.readFileSync(new URL("sol/wasm/sol_wasm_bg.wasm", web)) });
 export const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 

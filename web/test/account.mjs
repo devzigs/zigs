@@ -2,9 +2,9 @@
 // node web/test/account.mjs
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
-import * as Z from "../pkg/zec_frost_wasm.js";
+import * as Z from "../pkg/zigs_engine.js";
 
-Z.initSync({ module: readFileSync(new URL("../pkg/zec_frost_wasm_bg.wasm", import.meta.url)) });
+Z.initSync({ module: readFileSync(new URL("../pkg/zigs_engine_bg.wasm", import.meta.url)) });
 
 const json = (text) => JSON.parse(text);
 const refused = (fn, part) => assert.throws(fn, (err) => err.message.includes(part), part);

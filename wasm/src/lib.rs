@@ -1,4 +1,4 @@
-//! Browser build of the zec-frost prototype.
+//! The Zigs engine, built for the browser (WebAssembly) and for the iPhone and Mac apps.
 //!
 //! Every function takes and returns JSON strings, so the JavaScript side
 //! only moves opaque blobs between participants. All cryptography runs here:
@@ -656,7 +656,7 @@ fn box_key(my_sk: &str, their_pk: &str, ctx: &str) -> R<ChaCha20Poly1305> {
     let shared = x25519_dalek::StaticSecret::from(sk).diffie_hellman(&x25519_dalek::PublicKey::from(pk));
     let k = blake2b_simd::Params::new()
         .hash_length(32)
-        .personal(b"zecfrost-dkg-box")
+        .personal(b"Zigs_DkgBox___v1")
         .to_state()
         .update(shared.as_bytes())
         .update(ctx.as_bytes())
@@ -1535,6 +1535,28 @@ mod tests {
             .encrypt(XNonce::from_slice(&n), Payload { msg: b"\"old\"", aad: b"p\nf" }).unwrap();
         let old = B64URL.encode([n.as_slice(), &ct].concat());
         assert_eq!(secret_open(&key, "p\nf", &old).unwrap(), "\"old\"");
+    }
+
+    /// A box made outside this crate: X25519 in Node, BLAKE2b-256 with the personalization
+    /// "Zigs_DkgBox___v1" in Python, ChaCha20-Poly1305 in Node. Another personalization cannot
+    /// open it.
+    #[test]
+    fn box_opens_a_box_that_another_implementation_made() {
+        let (sk_a, pk_a) = (
+            "0102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f20",
+            "07a37cbc142093c8b755dc1b10e86cb426374ad16aa853ed0bdfc0b2b86d1c7c",
+        );
+        let (sk_b, pk_b) = (
+            "808182838485868788898a8b8c8d8e8f909192939495969798999a9b9c9d9e9f",
+            "493e82fc74464a59268817623d2053c5eb8e2cc4a988b4fee179ec6b010d531d",
+        );
+        let sealed = "a0a1a2a3a4a5a6a7a8a9aaab.sPL7xNK7CcWZd334CFmY2DWnZz3/TEm8bfO62yTstApM";
+        assert_eq!(box_open(sk_a, pk_b, "g:1->2", sealed).unwrap(), "hello from seat 1");
+        assert_eq!(box_open(sk_b, pk_a, "g:1->2", sealed).unwrap(), "hello from seat 1");
+        assert!(box_open(sk_a, pk_b, "g:1->3", sealed).is_err());
+        // The same text, made with the personalization of the older versions, does not open.
+        let older = "a0a1a2a3a4a5a6a7a8a9aaab.scXfOHjAXmCNrnI3jX7QwXmjb3388IvIn/0vp8pN6phe";
+        assert!(box_open(sk_a, pk_b, "g:1->2", older).is_err());
     }
 
     #[test]

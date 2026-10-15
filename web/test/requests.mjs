@@ -1,14 +1,14 @@
 // Checks the payment request helpers against the real engine. Run: node web/test/requests.mjs
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
-import * as Z from "../pkg/zec_frost_wasm.js";
+import * as Z from "../pkg/zigs_engine.js";
 import {
   cardState, oneLine, payeeBlocker, payeeRows, quoted, readRequest, REQUEST_NET, requestNote,
   requestPayees, requestProblem, requestUri,
 } from "../requests.js";
 import { parsePayeeList } from "../payees.js";
 
-Z.initSync({ module: readFileSync(new URL("../pkg/zec_frost_wasm_bg.wasm", import.meta.url)) });
+Z.initSync({ module: readFileSync(new URL("../pkg/zigs_engine_bg.wasm", import.meta.url)) });
 
 const A = "utest1m6h0x5p0ryej3e4raszk99rz3k3gxzj35j7ypw3mm98uxmxt3x7mnmu22cprpl7rls4cc5k"
   + "xzvhqxju6pp4rxsw6ajnkm0d4egf4yrjx";

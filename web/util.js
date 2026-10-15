@@ -111,6 +111,11 @@ export function passIssue(pass, again) {
   return a === passNormal(again) ? "" : "The two passphrases are not the same.";
 }
 
+// A seat counts as backed up when its key share went into a file of the current kind
+// (`backupSaved`). Older versions wrote `backedUp` for files of an older kind, which this version
+// cannot open. The flag is ignored, so every seat asks for a new backup.
+export const seatBackedUp = (secret) => !!secret.backupSaved;
+
 // The fields of a seat secret that a restore takes from a file. The others (wallet checks, aborts,
 // setup state) are claims of whoever made the file, so this device makes its own. A restore never
 // takes `uid` or `nonces` either.

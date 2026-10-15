@@ -14,7 +14,7 @@ import { withStack } from "./stack.mjs";
 
 const SPIKE = join(dirname(fileURLToPath(import.meta.url)), "..");
 const OUT = join(SPIKE, "logs/live-check.json");
-const WASM = `${ORIGIN}/pkg/zec_frost_wasm_bg.wasm`;
+const WASM = `${ORIGIN}/pkg/zigs_engine_bg.wasm`;
 const CSP_TEXT = /content security policy|refused to/i;
 const CSP_HEADER = "content-security-policy";
 const recordedPolicy = () =>

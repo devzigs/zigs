@@ -1,6 +1,6 @@
 // Runs the slow engine steps off the main thread so the page stays responsive: the Halo2 proof
 // and full transaction verification (about a minute), and the Argon2id of a backup.
-import init, * as Z from "./pkg/zec_frost_wasm.js";
+import init, * as Z from "./pkg/zigs_engine.js";
 import { slowCall } from "./util.js";
 
 const ready = init();

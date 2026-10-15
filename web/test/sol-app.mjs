@@ -65,7 +65,7 @@ const hashes = [1, 2, 3].map((i) => sha(solOf(gid, i).solSeed));
   await t.putSec(gid, 1, { nonces: { abc: { sighash: "x" } } });
   const text = t.backupText(1),
     file = JSON.parse(text);
-  assert.equal(file.kind, "zec-frost-key-share");
+  assert.equal(file.kind, "zigs-key-share");
   assert.ok(file.secret.keyPackage, "the Zcash share is in it");
   assert.deepEqual(
     Object.keys(file.secret).filter((k) => /sol|nonce/i.test(k)),

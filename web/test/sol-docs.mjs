@@ -4,13 +4,13 @@
 // Run: node web/test/sol-docs.mjs   (Node 24)
 import assert from "node:assert/strict";
 import fs from "node:fs";
-import * as Z from "../pkg/zec_frost_wasm.js";
+import * as Z from "../pkg/zigs_engine.js";
 import { newSignKey, signMsg, verifyMsg } from "../chat.js";
 import { docFields, writerCheck, writerOf as zcashWriterOf } from "../signed.js";
 import { COLLECTIONS, filterSol, writerOf } from "../sol/docs.js";
 
 const web = new URL("../", import.meta.url);
-Z.initSync({ module: fs.readFileSync(new URL("pkg/zec_frost_wasm_bg.wasm", web)) });
+Z.initSync({ module: fs.readFileSync(new URL("pkg/zigs_engine_bg.wasm", web)) });
 
 const GID = "aaaaaaaaaaaaaaaaaaaa",
   SID = "ab12cd34ef56ab12cd34",

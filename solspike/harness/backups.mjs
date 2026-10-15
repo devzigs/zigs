@@ -14,9 +14,9 @@ import {
 } from "./page.mjs";
 import { redact } from "./redact.mjs";
 import { reload } from "./seats.mjs";
-import * as Z from "../../web/pkg/zec_frost_wasm.js";
+import * as Z from "../../web/pkg/zigs_engine.js";
 
-const WASM = new URL("../../web/pkg/zec_frost_wasm_bg.wasm", import.meta.url);
+const WASM = new URL("../../web/pkg/zigs_engine_bg.wasm", import.meta.url);
 
 const SUBMIT = () => document.querySelector("form[role=dialog] button[type=submit]").click();
 
@@ -146,7 +146,7 @@ export function checkFiles(zcash, solana) {
   Z.initSync({ module: readFileSync(WASM) });
   const z = JSON.parse(Z.backupOpen(zcash.pass, zcash.text));
   const sol = JSON.parse(Z.backupOpen(solana.pass, solana.text));
-  assert.equal(z.kind, "zec-frost-key-share");
+  assert.equal(z.kind, "zigs-key-share");
   assert.ok(!("sol" in z.secret), "the Zcash file has no sol field");
   assert.ok(!/solSeed|solana/i.test(JSON.stringify(z)), "the Zcash file holds nothing of Solana");
   assert.equal(sol.kind, "zigs-sol-backup");
