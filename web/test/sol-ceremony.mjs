@@ -137,6 +137,31 @@ function withStop(gid, i, stopped) {
   return stopped ? { ...rest, aborted: STOP_TEXT } : rest;
 }
 
+// The text of the open wallet page, with a recorder in place of the document. The page builds the
+// network note into it when the store shows another network: the text is in the page or it is not.
+class Rec extends Node {
+  constructor() {
+    super();
+    Object.assign(this, { kids: [], style: {} });
+  }
+  setAttribute() {}
+  addEventListener() {}
+  append(...nodes) {
+    this.kids.push(...nodes);
+  }
+}
+const textOf = (node) => node.text ?? node.kids.map(textOf).join("");
+function pageText() {
+  const real = globalThis.document;
+  globalThis.document = { createElement: () => new Rec(), createTextNode: (text) => ({ text }) };
+  try {
+    return textOf(t.groupView());
+  } finally {
+    globalThis.document = real;
+  }
+}
+const NETWORK_NOTE = /The store shows another network than the first this browser saw/;
+
 // ── Only a testnet wallet gets the tab, and a start document of another loads nothing ──
 // The ids of the tabs that the open wallet offers (the page builds them in walletView).
 function tabIds() {
@@ -147,8 +172,8 @@ function tabIds() {
     t.walletView([], null);
   } catch (e) {
     // The tab bar is built before the tab body, which needs a wallet document that a wallet
-    // made by hand does not have.
-    if (!ids) throw e;
+    // made by hand does not have. A wallet with a wallet document must build all of it.
+    if (!ids || t.state.wallet) throw e;
   } finally {
     t.tabBar = real;
   }
@@ -187,6 +212,7 @@ function tabIds() {
   await sleep(100);
   assert.equal(t.state.g.network, "mainnet", "the page keeps the first network");
   assert.equal(t.state.g.networkMoved, true, "and says that the store shows another");
+  assert.match(pageText(), NETWORK_NOTE, "the page of a flipped mainnet wallet says so");
   assert.equal(t.signPins["network:" + gidMain], "mainnet");
   assert.equal(JSON.parse(storage.get("zf-signpins"))["network:" + gidMain], "mainnet");
   assert.equal(t.solOn(), false, "a flipped mainnet wallet is off");
@@ -214,12 +240,14 @@ function tabIds() {
   rig.notify();
   await sleep(100);
   assert.deepEqual([t.state.g.network, t.state.g.networkMoved], ["mainnet", true]);
+  assert.match(pageText(), NETWORK_NOTE, "the page of a flipped version 2 wallet says so");
   assert.equal(t.solOn(), false, "a flipped version 2 wallet is off");
   assert.ok(!tabIds().includes("solana"), "a flipped version 2 wallet gets no tab");
   // A version 2 wallet on testnet that nobody changed: the version alone keeps it off.
   const v2test = "v2testbbbbbbbbbbbbbb";
   await open(v2test, made("testnet"));
   assert.equal(t.state.g.networkMoved, false, "nothing moved");
+  assert.doesNotMatch(pageText(), NETWORK_NOTE, "and the page of a wallet that did not move");
   assert.equal(t.solOn(), false, "a version 2 testnet wallet is off");
   assert.ok(!tabIds().includes("solana"), "a version 2 testnet wallet gets no tab");
   // The version is no signed fact either: raised to 3, the wallet still has no signed writes.
@@ -241,6 +269,7 @@ function tabIds() {
 // ── A wallet that never asks for Solana loads none of it ──
 const gid = await rig.wallet({ name: "Team" });
 assert.ok(tabIds().includes("solana"), "control: a testnet wallet is offered the Solana tab");
+assert.doesNotMatch(pageText(), NETWORK_NOTE, "control: no note for a wallet that did not move");
 {
   // The stored version of a version 3 wallet can be lowered: the tab goes with it.
   const shown = t.state.g;

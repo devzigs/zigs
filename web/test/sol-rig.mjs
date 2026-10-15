@@ -74,8 +74,8 @@ export const T = {
   refilter, signedDoc, canWriteAs, localSeats, seatIds, openGroup, createGroup, takeSeat, sec,
   putSec, safetyNo, seatCheck, backupText, applyBackup, undoRestore, settleRestore, solLoad,
   get solError() { return solError; },
-  solOn, signedMode, solTab, walletView, backupDialog, sealAndSave, restoreAccount, mySeatSecrets,
-  persistSealed,
+  solOn, signedMode, groupView, solTab, walletView, backupDialog, sealAndSave, restoreAccount,
+  mySeatSecrets, persistSealed,
   setVault(v) { vault = v; },
 };
 `;

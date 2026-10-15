@@ -73,6 +73,12 @@ the nodes handle the NSM.
 |---|---|---|---|---|
 | AIR-1 | P2 | dev | Run the spike plan for air-gapped signing | The design lands in a separate change. The spike steps in it pass their acceptance criteria |
 
+## iPhone and Mac
+
+| Id | P | Owner | Title | Done when |
+|---|---|---|---|---|
+| APP-1 | P3 | dev | Match the key ceremony box error of the web app | `GroupModel.openBox` says that another version of Zigs made the message, and a version 1 `round3` ends the seat's setup on a box error instead of retrying; a Swift check covers both |
+
 ## Closed
 
 | Id | Title | Closed by |
