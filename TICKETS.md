@@ -40,6 +40,7 @@ design. These tickets list what the beta does not do yet, and what must hold bef
 | SOL-31 | P3 | dev | Make a test kill the mutant S-part-chain | `solspike/tools/mutate.mjs S-part-chain` is killed: a test shows that a signed part with no package, and a sent mark with no signed part, do not count. Today the lonely sessions of `web/test/sol-sessions.mjs` share the nonce of a landed one, so the rule that ends them hides the part chain rule (the mutant also survives in the spike tree) |
 | SOL-32 | P2 | dev | Add withdrawal to a public address to the web beta | The page proposes a withdrawal (intent tag 4 of wasm-sol) with a public recipient and amount, every seat sees them, the page checks the new intent, tests cover it, a Devnet run lands one withdrawal, and ZOLANA.md section 2 and the screen text match. The engine and a script withdrew on Devnet; the page cannot yet |
 | SOL-33 | P3 | dev | Pin the network of a wallet in the iPhone and Mac apps | The apps keep the first `network` that they see for a wallet in `zf-signpins` (key `network:<wallet id>`, as the web app does) and warn when the store shows another; a Swift check changes the field |
+| SOL-34 | P2 | dev | Pin the network from data the people confirmed | The network pin keeps the first value a device sees, and no device had a pin before the beta. A link holder who writes "testnet" into a mainnet group document before a device first loads it makes that device show the Solana tab. Take the network from the values that the safety number covers (the Solana ceremony already refuses on that check), and test a flip that comes before the first load |
 
 ## Zcash NU7
 
@@ -78,6 +79,7 @@ the nodes handle the NSM.
 | Id | P | Owner | Title | Done when |
 |---|---|---|---|---|
 | APP-1 | P3 | dev | Match the key ceremony box error of the web app | `GroupModel.openBox` says that another version of Zigs made the message, and a version 1 `round3` ends the seat's setup on a box error instead of retrying; a Swift check covers both |
+| APP-2 | P3 | dev | Name the right cause when a ceremony box cannot be checked | `openBox` in web/app.js reads the sender's box key inside its try, so a missing seat document gives "made by another version of Zigs" and, in version 1, ends the setup. Read the key before the try and say that the seat document is missing |
 
 ## Closed
 
