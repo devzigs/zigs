@@ -17,6 +17,10 @@ is a bug: please report it.
   a device reads. Memo reading is off by default.
 - A memo on a payment is readable by its recipient and by every signer of the sending wallet.
   Every signer of the receiving wallet reads the memos that arrive there.
+- A testnet wallet that uses the Solana beta (web app only) also talks to the Helius Devnet host.
+  Helius runs the RPC, the indexer and the prover. It sees more than the light-wallet server does:
+  it sees the amounts and recipients of each spend, because it builds the proof. Read
+  [Solana beta](#solana-beta-helius-devnet) before you use it.
 - The personal account (web app only) sends and reads messages on chain. A message is the memo of
   a shielded transaction. The account, its contacts and its messages never reach the group
   server. The light-wallet server sees the transactions that the account fetches and sends, and
@@ -113,10 +117,48 @@ Tor Browser hides your IP address from both servers, but not this timing link. T
 link, point the app at a light-wallet server you trust (`NETWORKS` in `web/app.js`,
 `ZcashNetwork` in `ios/Zigs/Chain.swift`).
 
+## Solana beta (Helius Devnet)
+
+A testnet wallet in the web app can also hold private SOL on Devnet, in Zolana, the Helius
+shielded pool on Solana ([ZOLANA.md](ZOLANA.md)). It is a beta. The Zcash part of the wallet stays
+as it is above. A mainnet wallet never loads the Solana code and never connects to Helius.
+
+The Solana code runs in a Worker of its own, `/sol/worker.js`. Only that script carries a policy
+that names the Helius Devnet host. The policy of the page does not name it. The Helius URL holds an
+API key. The server gives it to the page at `/sol/config.json`, behind the same password as every
+other request. So every user of the page can read it. Allowed Domains at Helius limits its use by
+other sites, but it does not protect the key.
+
+Zolana is not Zcash. This table says what differs:
+
+| Property | Zcash (the wallet above) | Solana beta (Zolana Default Ring) |
+|---|---|---|
+| Amount and asset | Hidden | Hidden on chain in a transfer. Public in a deposit and in a withdrawal |
+| Sender and recipient | Hidden | Public: the payer and the owner signer are in the transaction, and the owner key tags each output |
+| Link between spends and the group | None: each spend has a new key | The group key is a stable tag. A FROST signature does not show a multisig |
+| Who sees the witness | Nobody: the proof runs on the device | The hosted prover of Helius: owners, assets, amounts, blindings and the nullifier secret. Local proving is not available yet |
+| What the index learns | IP address and blocks | The owner key (tag queries), IP address, timing, Merkle proofs of the inputs, and the app origin |
+| What the group server can link | Nothing that it can match to the chain | The time of its Solana writes matches chain time. That links a wallet id to the owner key and the full history |
+| Custody | Fewer than `t` seats cannot spend | The same for the seats. The pool upgrade key can replace the pool, and the protocol authority can pause trees |
+
+What Helius sees: your IP address, the origin of the app, the owner key of the wallet, and the
+witness of each spend. It can read the whole Solana history of the wallet. It cannot spend,
+because a spend needs the group signature. It sees no key share. Every signer of the wallet reads
+the whole Solana history too.
+
+The screen before **Add Solana** says that the Solana address of the wallet is public, that the
+Zigs server operator can link the wallet to it by timing, that Helius sees that you use Zigs, and
+that the address needs a public SOL funding trail. The other Solana screens do not yet state the
+limits above (ticket SOL-12 in [TICKETS.md](TICKETS.md)).
+
+Tor Browser hides your IP address from Helius. It does not hide the timing link of the group
+server. A person who reads "private" may expect Zcash privacy. The Solana part gives less.
+
 ## Use Zigs over Tor
 
-The web app is prepared to run in Tor Browser, so that neither server sees your IP address. A full
-session in Tor Browser has not been tested yet.
+The web app is prepared to run in Tor Browser, so that neither server sees your IP address. A
+testnet wallet with Solana adds a third host, Helius. A full session in Tor Browser has not been
+tested yet.
 
 1. Set the security level to **Standard**. The Safer and Safest levels turn off WebAssembly, and
    Zigs needs it for its cryptography. The app says so if it is off.
@@ -130,7 +172,9 @@ session in Tor Browser has not been tested yet.
 What makes this safe to rely on:
 
 - The page sends a Content-Security-Policy header. The browser lets it connect only to the group
-  server and the three light-wallet servers in `NETWORKS`, and to nothing else.
+  server and the three light-wallet servers in `NETWORKS`, and to nothing else. The Solana Worker
+  (`/sol/worker.js`, testnet wallets only) has a policy of its own, which also names the Helius
+  Devnet host. The policy of the page names no Helius host.
 - A restored seat works in a new session. The app checks the restored key data against what the
   wallet published for that seat. A proposal records the identity of the seat, not of the session.
 - Backups leave out signing nonces, and a restore drops the nonces in older backup files, so a

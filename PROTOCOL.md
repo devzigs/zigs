@@ -5,7 +5,8 @@ the chain sees one ordinary shielded transaction. Zigs uses re-randomized FROST 
 signatures ([ZIP 312](https://zips.z.cash/zip-0312)) on the Ironwood shielded pool (NU7, v6
 transactions).
 
-Status: beta, not audited. It runs on testnet, and on mainnet with a warning at 0.5 ZEC.
+Status: beta, not audited. It runs on testnet, and on mainnet with a warning at 0.5 ZEC. The web
+app also has a Solana beta for testnet wallets (section 16).
 
 ## 1. The parts
 
@@ -552,7 +553,9 @@ the web, on iPhone and on Mac at the same time.
 - **Hosting.** A Cloudflare Worker serves the page and the `/ws` WebSocket of the group server.
 - **Content-Security-Policy.** The page can connect only to its own host, the group server's
   WebSocket and the named light-wallet servers. It loads no scripts, fonts or images from other
-  hosts. No inline script runs: the app script is a separate file. It cannot be framed.
+  hosts. No inline script runs: the app script is a separate file. It cannot be framed. The Solana
+  beta (section 16) adds no host to this policy: only the Worker script `/sol/worker.js` has a
+  policy of its own that names the Helius Devnet host.
 - **Other headers.** HSTS, `nosniff`, `no-referrer`, and a Permissions-Policy that turns off the
   camera, microphone and location.
 - **Networks.**
@@ -1237,3 +1240,35 @@ signature over only its own fields. The path in the signed text is `sessions/<se
   `version`, `n`, `t`, `createdBy`), and the progress marks listed in section 15.5. A holder can
   write a progress mark such as `status: "proving"`. A signer then cannot start the proof until
   the mark is three minutes old, and the holder can write it again. This is a denial of service.
+
+## 16. Solana beta (Zolana)
+
+The web app can give a testnet wallet a private balance of SOL on Devnet, in Zolana, the Helius
+shielded pool on Solana. [ZOLANA.md](ZOLANA.md) is the design, the spike results and the risks.
+This section lists only what each party learns. The beta is for testnet wallets, in the web app
+only. A mainnet wallet never loads the Solana code.
+
+The Solana part uses a second key ceremony on the same seats (section 4 does not change), with a
+FROST-Ed25519 group key as the Zolana owner. The Solana documents use their own flat names
+(`solstart`, `soldkg1`, `soldkg2`, `soldone`, `solabort`, `solsessions`) in the same store, with the
+signed writes of section 15. The Zcash key, its engine and its wasm file stay as they are.
+
+| Party | Learns | Does not learn |
+|---|---|---|
+| Chain observer | The owner key (the group key), which stays the same for every spend. The payer and the owner signer of each transaction. The registry record. The amount and the asset of a deposit and of a withdrawal. The recipient of a withdrawal | The amount and the asset of a private transfer. That a group signed: a FROST signature looks like one Ed25519 signature |
+| Helius (RPC, indexer and prover) | The IP address of each device. The origin of the app. The owner key, through the tag queries. For each spend, the witness that the hosted prover needs: owners, assets, amounts, blindings and the nullifier secret. So it can read the whole Solana history of the wallet | Any key share. The Ed25519 seed. The viewing key. It cannot spend: a spend needs the group signature |
+| Group server | The paths of the Solana documents, their timing and their sizes. The time of its Solana writes matches chain time, so a server operator can link a wallet id to the owner key and to its history | Keys, amounts, recipients and the content of any document |
+| Other signers | The whole Solana history of the wallet. The nullifier secret and the viewing key. They cannot spend alone | The key share and the signing nonces of another seat |
+
+Limits that the beta states, and that section 13 does not cover:
+
+- The guarantee that fewer than `t` seats cannot spend covers the seats only. The upgrade key of the
+  pool can replace the pool program, and the protocol authority can pause trees. Both sit outside
+  the group (ZOLANA.md section 7).
+- The hosted prover sees the witness, and Zigs cannot stop that today. Local proving is not
+  available in Zolana.
+- Sender and recipient of a private transfer are public. Only the amount and the asset are hidden.
+- The Helius URL holds an API key. The page receives it from `/sol/config.json`, so every user of
+  the page can read it. Only Allowed Domains at Helius limits its use by other sites.
+- The page policy of section 10.1 stays as it is. The Worker script `/sol/worker.js` carries its
+  own policy, which names the Helius Devnet host. A mainnet wallet never starts that Worker.

@@ -33,6 +33,12 @@ the wallet, and on chain each payment looks like a shielded payment from a stand
   characters goes in up to 5 memos. A request to fund the account has 3 payees and a wallet of
   yours pays it. The iPhone and Mac apps do not have it yet
   ([how](CHAT.md#5-the-personal-account-on-chain-messages)).
+- Solana beta: the web app can give a testnet wallet a private balance of SOL on Devnet, in Zolana,
+  the Helius shielded pool on Solana. It is a beta, off for mainnet wallets, and the iPhone and Mac
+  apps do not have it. For such a wallet the page also connects to the Helius Devnet host. Helius
+  sees more than the light-wallet server does: it builds the proofs, so it sees amounts and
+  recipients of each spend. Read [ZOLANA.md](ZOLANA.md) first, then
+  [PRIVACY.md](PRIVACY.md#solana-beta-helius-devnet). The open work is in [TICKETS.md](TICKETS.md).
 - The wallet follows chain reorganisations of up to 100 blocks
   ([how](PROTOCOL.md#6-receiving-and-sync)). After a deeper one, the web, iPhone and Mac apps
   scan the wallet again from its birthday.
@@ -106,6 +112,7 @@ flowchart LR
 | Group server | Wallet ids, document names, timing, IP addresses. Never keys, amounts, addresses or names |
 | Light-wallet server | IP address and the blocks requested, as for any light wallet. Where memo reading is on, it also sees which full transactions a device fetches to read memos. Never a key |
 | Zcash network | A normal shielded transaction |
+| Helius (Solana beta, testnet wallets only) | IP address, the app origin, the owner key, and for each spend the amounts, recipients and the nullifier secret that its prover needs. Never a key share |
 
 ## Creating a wallet
 
@@ -230,6 +237,7 @@ The full threat model is in [PRIVACY.md](PRIVACY.md). In short:
 | Chain observers | A normal shielded Ironwood transaction | That a group signed it, the signers, amounts, addresses |
 | Group server | Wallet ids, document paths and field names, timing, which IP addresses connect to which wallet | Wallet and signer names, addresses, viewing key, amounts or their length, recipients, transactions, signing data |
 | Light-wallet server | Your IP address, the wallet's birthday height, the blocks you download, the transactions you send, the full transactions you fetch to read memos (only where memo reading is on) | Which notes are yours while you download blocks (the memo fetches are the exception), any key |
+| Helius (Solana beta, testnet wallets only) | Your IP address, the app origin, the owner key of the wallet, and the witness of each spend: owners, assets, amounts and the nullifier secret. The sender and the recipient of a transfer are public on chain | Any key share, the Ed25519 seed, the viewing key. It cannot sign |
 | Other signers | Everything about the shared wallet | Your key share and your signing nonces |
 
 How the group server is kept blind:
@@ -284,7 +292,11 @@ iPhone.
 | [`wasm/src/ffi.rs`](wasm/src/ffi.rs) | C interface for the iPhone and Mac apps |
 | [`web/index.html`](web/index.html), [`web/app.css`](web/app.css), [`web/app.js`](web/app.js) | The web app: page, styles and script (no inline script or style) |
 | [`web/shim.js`](web/shim.js), [`web/qr.js`](web/qr.js), [`web/payees.js`](web/payees.js), [`web/requests.js`](web/requests.js), [`web/personal.js`](web/personal.js), [`web/vault.js`](web/vault.js), [`web/chat.js`](web/chat.js), [`web/signed.js`](web/signed.js) | Store client, QR encoder, payment list parser with the memo rules and the recipient check, payment request cards and Send form rows, the rules of the personal account (contacts, fee, states of a message, backup), passkey lock, message helpers and the rules for signed writes (no third-party code) |
-| [`cf/src/index.js`](cf/src/index.js) | Group server: Cloudflare Worker with one Durable Object per wallet, limits against abuse |
+| [`cf/src/index.js`](cf/src/index.js) | Group server: Cloudflare Worker with one Durable Object per wallet, limits against abuse. It also serves `/sol` and `/sol/config.json` for the Solana beta |
+| [`web/sol/`](web/sol) | Solana beta in the page: ceremony, signing sessions, backup, the Worker that talks to Helius, the Solana wasm, and the vendored Zolana SDK bundle (third-party code, hash pinned in `SHA256SUMS`) |
+| [`wasm-sol/`](wasm-sol) | Solana engine in Rust: message checker, FROST-Ed25519 ceremony and signing, key roles. It has its own lockfile and builds to `web/sol/wasm/` |
+| [`solspike/`](solspike) | Checks of the Solana beta: the Zcash baseline gate, the headless Chrome harness, the mock run and the bundle build. See [`solspike/README.md`](solspike/README.md) |
+| [`ZOLANA.md`](ZOLANA.md), [`TICKETS.md`](TICKETS.md) | The Solana design, spike results and risks. The open work |
 | [`ios/Zigs/`](ios/Zigs) | SwiftUI app for iPhone and Mac |
 | [`src/`](src), [`tests/e2e.sh`](tests/e2e.sh) | Command-line version of the ceremony (version 1) and adversarial tests |
 | [`PRIVACY.md`](PRIVACY.md) | Threat model |
@@ -311,6 +323,22 @@ npm install
 echo DEV_NO_AUTH=1 > .dev.vars
 npx wrangler dev --port 8787
 ```
+
+The Solana beta needs the secret `HELIUS_DEVNET_URL`: your Helius Devnet URL, which holds the API
+key. For local development, add it to `cf/.dev.vars`, which Git ignores:
+
+```bash
+echo 'HELIUS_DEVNET_URL=https://devnet.helius-rpc.com/?api-key=<your key>' >> .dev.vars
+```
+
+The Worker gives this URL to the page at `/sol/config.json`, behind the password gate. Without it,
+the Solana tab says "Solana is not available on this server". The key must accept the origin of the
+page (`http://localhost:8787` here, `https://app.zigs.app` on the server): set Allowed Domains at
+Helius for the deployed key. On the server, set the secret with
+`npx wrangler secret put HELIUS_DEVNET_URL`. The variable `SOL` in `cf/wrangler.jsonc` is `"1"`.
+Set it to another value to turn the Solana beta off: the tab then says the same text. The Solana
+tab shows for testnet wallets only. Build the Solana wasm with `sh wasm-sol/build.sh`, and see [`solspike/README.md`](solspike/README.md)
+for the checks.
 
 Open http://localhost:8787. To act as a second person on the same computer, also open
 http://127.0.0.1:8787: it is a separate origin, so it has separate storage. Deploy with
@@ -373,6 +401,20 @@ folder path.
   - A message of three parts that is built, signed, proved and read by its recipient. A wrong seed
     is refused.
   - The words of a node refusal: a transport error or a forged prefix is not a refusal.
+- `cargo test --release --locked` in `wasm-sol/`: 326 tests: the Solana message checker (84 rules, with
+  the vectors of the Zolana SDK and real Devnet messages), the FROST-Ed25519 ceremony and signing, and
+  the key roles. Nine tests read the Zolana repo and are ignored: run them with
+  `ZOLANA_REPO=<checkout at commit 89640630> cargo test --release --test repo_pins -- --ignored`.
+- `node web/test/sol-config.mjs` and its eight siblings `sol-docs`, `sol-ceremony`, `sol-app`,
+  `sol-wasm`, `sol-sessions`, `sol-limits`, `sol-pay` and `sol-transfer` (the files `sol-rig`,
+  `sol-setup`, `sol-chain` and `sol-vector` are helpers: do not run them). They test the Solana part
+  of the page on the real `web/app.js`: the ceremony, signing sessions, payments, backup and
+  restore, the stop that holds everywhere, the network gate (a mainnet wallet gets no Solana tab and
+  loads nothing) and the config from the server.
+- `bash solspike/baseline.sh check`: the Zcash baseline gate. All `web/test/*.mjs`, the group
+  server limits, the hashes of the Zcash engine and `web/signed.js`, the page policy and the
+  served headers must equal `solspike/baseline.json`. `node solspike/test/policy.test.mjs` checks
+  the `/sol` routes of the Worker, `/sol/config.json` included.
 - `node cf/test/limits.mjs ws://localhost:8787`: the group server's size, rate and path limits.
 - `node web/test/payees.mjs`: the pasted payment list parser (the memo column, header, byte limit,
   and a comma directly between digits, which is an error), the memo rules, and the recipient
@@ -496,6 +538,9 @@ folder path.
   rev `ed49e9c` for FROST. Mainnet follows the NU6.3 rules, which already use v6 transactions and
   Ironwood.
 - **One mainnet server.** Mainnet wallets depend on ChainSafe's public light-wallet server.
+- **Solana is a beta on Devnet.** Testnet wallets only, web app only, not audited. The hosted prover
+  of Helius sees the witness of each spend, the pool has an upgrade key outside the group, and
+  sender and recipient of a transfer are public. [TICKETS.md](TICKETS.md) lists the open work.
 
 ## License
 
