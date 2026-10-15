@@ -1,5 +1,6 @@
 // Checks the store's abuse limits against a running server:
 //   npx wrangler dev   (in cf/), then: node test/limits.mjs ws://localhost:8787
+// A run counts 21 sockets against WS_PER_IP (60 per clock minute): run it at most twice a minute.
 import assert from "node:assert/strict";
 import { randomBytes } from "node:crypto";
 
@@ -50,7 +51,8 @@ const open = (u) => new Promise((resolve) => {
 });
 const extra = [];
 for (let i = 0; i < 20; i++) extra.push(await open(url));
-assert.equal(extra.slice(0, 19).filter(Boolean).length, 19, "20 sockets per IP are allowed");
+assert.equal(extra.slice(0, 19).filter(Boolean).length, 19,
+  "20 sockets per IP are allowed (a third run in one minute hits WS_PER_IP)");
 assert.equal(extra[19], null, "the 21st socket from one IP fails");
 extra.forEach((s) => s && s.close());
 
