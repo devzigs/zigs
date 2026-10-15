@@ -77,6 +77,9 @@ the checker are those that the verdict signed):
   so the wasm holds no path outside the repo, and the build gives the same bytes in any folder.
   The wasm differs from the one of the spike only in these path texts. The wasm hash above is
   of the new build.
+- tests/wasm_native_diff.rs: the read of logs/diffcases/cases.json has an expect that names the
+  step (`node tools/diff_cases.cjs target/pkg-node`), and its comment names the folder. The test
+  itself is unchanged.
 - tests/repo_pins.rs: its tests are ignored. They read a checkout of the Zolana repo that the
   variable ZOLANA_REPO names. tests/common/mod.rs lost the two helpers that read that checkout
   (nothing used them).
@@ -148,7 +151,7 @@ c2ca6d4a63a850c05397e2f0877c4530d2cef325857f68db75fd29812ac0981d  tests/ts_edge.
 add7edb71d6aae18363735bf78ecf2e9257a68dc78c4209afde4b17ea9e9c6b8  tests/units.rs  verbatim
 a7d5b2deb2949ec52dba9731c87a4523016d5b1d2abefbb1a8f828ba1fdd9690  tests/verifier_fixes.rs  verbatim
 2c777cefe45c72d309b590a81d087a111f1e3a837747068b95d8ab386f7a0fed  tests/wasm_api.rs  verbatim
-fa246ccb51dda3f8bf42bf43dcb6732a160781668a2ca80512e6f73f49f2f5d3  tests/wasm_native_diff.rs  verbatim
+72c0e4121ece8b0da4524d13a855f8a11dad45515c94930912713e1f1b6d58dd  tests/wasm_native_diff.rs  modified
 b04c7fe3102595c9456fb4b6d30e54567e717cdeb2ec7c31e57b8b3e450ba54f  vectors/devnet-assets.json  verbatim
 0fda5ee5441e1e8af29e0c22e7056ed526670dbe40d8faeb67e082097267a00a  vectors/facts.json  modified
 1cf909a2204147f1f8f6351ddd8e1df7b38667b768a6ba03cda99bca8f7ff45b  vectors/p2/wire-fund.msg  modified

@@ -71,7 +71,7 @@ the nodes handle the NSM.
 
 | Id | P | Owner | Title | Done when |
 |---|---|---|---|---|
-| AIR-1 | P2 | dev | Run the spike plan in AIRGAP.md | The spike steps pass their acceptance criteria |
+| AIR-1 | P2 | dev | Run the spike plan for air-gapped signing | The design lands in a separate change. The spike steps in it pass their acceptance criteria |
 
 ## Closed
 

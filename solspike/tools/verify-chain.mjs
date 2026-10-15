@@ -32,6 +32,13 @@ export const keyOfAddress = (addressText) => keyOf(addressText).toString("hex");
 export const addressOfKey = (hexKey) => getAddressDecoder().decode(Buffer.from(hexKey, "hex"));
 
 /**
+ * The lifetime of a decoded message as hex: the nonce value of a durable nonce, else the recent
+ * blockhash. The decoder finds it in every version. Its place in the bytes is not the same: it
+ * sits at bytes 8 to 40 of a version 1 message only.
+ */
+export const lifetimeHex = (message) => keyOf(message.lifetimeToken).toString("hex");
+
+/**
  * The nonce account of a group key, derived here and not by the app: the SHA-256 of the key, the
  * seed "zigs-nonce-1" and the System program (an account made with a seed).
  */
@@ -88,8 +95,8 @@ const templateOf = (message) => ({
 
 /**
  * One landed transaction: its first signature under `signer` (the group key, or the funder for
- * the funding transaction), the error, slot, fee and compute units, the lifetime (bytes 8 to 40 of
- * the message: the nonce value for a durable nonce) and the programs that it ran.
+ * the funding transaction), the error, slot, fee and compute units, the lifetime (lifetimeHex:
+ * the nonce value for a durable nonce) and the programs that it ran.
  */
 export async function verifyTransaction(signature, signer) {
   const reply = await fetchTransaction(signature);
@@ -107,7 +114,7 @@ export async function verifyTransaction(signature, signer) {
     computeUnits: meta.computeUnitsConsumed,
     version: message.version,
     template: templateOf(message),
-    lifetime: hex(tx.messageBytes.subarray(8, 40)),
+    lifetime: lifetimeHex(message),
     payerIsSigner: payer === signer,
     firstSignatureVerifies: verifiesUnder(signer, tx.messageBytes, first),
     firstSignatureIsTxId: getSignatureFromTransaction(tx) === signature,

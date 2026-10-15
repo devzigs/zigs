@@ -9,7 +9,7 @@ that made them. Run every command from the root of the repo with Node 24.
 |---|---|
 | `baseline.sh`, `baseline.json`, `tools/baseline.mjs` | The Zcash baseline gate. It runs every `web/test/*.mjs` and `cf/test/limits.mjs`, hashes `wasm/`, `web/pkg/` and `web/signed.js`, and compares the page policy and the served headers with `baseline.json`. The Solana work must leave all of them equal |
 | `serve.sh` | The local `wrangler dev` server on port 8795, started and stopped by PID. It reads `cf/.dev.vars` |
-| `test/` | Tests of the Worker routes (`policy.test.mjs`), the Solana Worker (`worker*.test.mjs`, `prepare.test.mjs`, `client.test.mjs`), the gate (`gate.test.mjs`), the funding tool (`fund.test.mjs`), the SDK bundle build (`build.test.mjs`) and the harness (`harness.test.mjs`) |
+| `test/` | Tests of the Worker routes (`policy.test.mjs`), the Solana Worker (`worker*.test.mjs`, `prepare.test.mjs`, `client.test.mjs`), the gate (`gate.test.mjs`), the funding tool (`fund.test.mjs`), the chain reader (`verify-chain.test.mjs`), the SDK bundle build (`build.test.mjs`) and the harness (`harness.test.mjs`) |
 | `mock/` | The mock run: the Solana Worker in headless Chrome against a replay of one real Devnet sync. No network and no key |
 | `harness/` | Headless Chrome with in-memory browser contexts, and the live scenarios |
 | `build.mjs`, `src/`, `stubs/` | Builds `web/sol/zolana.bundle.js` and copies the hasher wasm files |
@@ -48,7 +48,9 @@ Offline, with no key:
 ```bash
 bash solspike/baseline.sh check                  # the Zcash baseline gate (about 2 minutes)
 node solspike/test/policy.test.mjs               # the /sol routes and /sol/config.json
-for t in client worker-schema worker prepare fund gate; do node solspike/test/$t.test.mjs; done
+for t in client worker-schema worker prepare fund verify-chain gate; do
+  node solspike/test/$t.test.mjs
+done
 node --test-timeout=60000 solspike/test/harness.test.mjs
 ZOLANA_REPO=... node solspike/test/build.test.mjs
 ZOLANA_REPO=... SOLSPIKE_KEY_B=... node solspike/mock/run.mjs

@@ -7,8 +7,8 @@ no Solana part. The work that is still open is in `TICKETS.md`.
 The beta switches:
 
 - `SOL` in `vars` of `cf/wrangler.jsonc`. The value `"1"` makes the Worker serve `web/sol/` and
-  `/sol/config.json`. Any other value makes every `/sol` path answer 404, and the page says "Solana is
-  not available on this server".
+  `/sol/config.json`. Any other value makes every `/sol` path answer 404, and the page says "Solana
+  is not available on this server".
 - `HELIUS_DEVNET_URL`, a Worker secret. It is the Helius Devnet URL with its API key. The Worker
   gives it to the page at `/sol/config.json`, behind the password gate, with the header
   `Cache-Control: no-store`. Without the secret that path answers 503, and the page says "Solana is
@@ -54,8 +54,8 @@ A user opens a wallet with a Solana part. Devnet only. The Zcash part stays as i
 - **Not offered.** SPL tokens, anonymous Rings, swaps, bridges, memos, a merge service, mainnet, and
   a transfer to an unregistered payee ([E] 9.3, not checked).
 
-Helius runs the RPC, the indexer and the prover. The screen texts name the public parties. They do not
-copy the Helius claim that the RPC cannot decrypt state, because the prover shares its URL:
+Helius runs the RPC, the indexer and the prover. The screen texts name the public parties. They do
+not copy the Helius claim that the RPC cannot decrypt state, because the prover shares its URL:
 
 | Screen | Text |
 |---|---|
@@ -74,8 +74,9 @@ copy the Helius claim that the RPC cannot decrypt state, because the prover shar
 | What the group server can link | Nothing it can match to the chain | The time of its `sol*` writes matches chain time. That links the wallet id to the owner key and the full history |
 | Custody | Fewer than `t` seats cannot spend | The same for the seats. But the pool upgrade key can replace the pool, and the protocol authority can pause trees (section 7) |
 
-The prover cannot spend. Spending needs the owner signature [Z]docs/spec.md:310-314. The group server
-sees paths, timing and sizes, never keys or amounts. Every seat can read the whole Solana history.
+The prover cannot spend. Spending needs the owner signature [Z]docs/spec.md:310-314. The group
+server sees paths, timing and sizes, never keys or amounts. Every seat can read the whole Solana
+history.
 
 ## 3. Architecture in the web app
 
@@ -88,11 +89,12 @@ flowchart LR
   P <-->|sealed documents| GS[("Group server, no code change")]
 ```
 
-**3.1 Separate module, separate keys.** Web files go under `web/sol/`. The engine is a new crate with
-its own `Cargo.lock` and wasm file. The Zcash engine, its lockfile and its 7.6 MB wasm stay unchanged.
-Two files keep the Zcash audit scope apart. A Zcash-only user never loads the Solana code. The pin is
-`frost-ed25519 =2.2.0`: the newest 2.x, and the version whose `lib.rs` I read [F]. It needs
-`frost-core ^2.2.0` and `frost-rerandomized ^2.2.0` [CIO]. Version 3.0.0 exists (crates.io, 23 April
+**3.1 Separate module, separate keys.** Web files go under `web/sol/`. The engine is a new crate
+with its own `Cargo.lock` and wasm file. The Zcash engine, its lockfile and its 7.6 MB wasm stay
+unchanged. Two files keep the Zcash audit scope apart. A Zcash-only user never loads the Solana
+code. The pin is `frost-ed25519 =2.2.0`: the newest 2.x, and the version whose `lib.rs` I read [F].
+It needs `frost-core ^2.2.0` and `frost-rerandomized ^2.2.0` [CIO]. Version 3.0.0 exists (crates.io,
+23 April
 2026) and I did not read it. I did not run `cargo check` on this pairing.
 
 **3.2 What Solana shares with the wallet.** The roster, the approval screens, the group server and
@@ -112,10 +114,10 @@ expressions and the reader list in `web/signed.js`. It adds them to the collecti
 
 - **Solana wasm:** DKG, nonces, shares, aggregation and strict verification. Role secrets. The v1
   message parser. The Poseidon and ciphertext recompute. The program ids and trees of each cluster.
-- **TS bundle, in its own Worker:** sync, UTXO decryption, witness, prover call, `transact` instruction.
-  The page passes it the two role secrets for one session. It never gets the FROST share, `solSeed`
-  or the nonces (3.6). A bad bundle can leak history or propose a bad message. It can get a signature
-  only if the message check of section 5 has a hole.
+- **TS bundle, in its own Worker:** sync, UTXO decryption, witness, prover call, `transact`
+  instruction. The page passes it the two role secrets for one session. It never gets the FROST
+  share, `solSeed` or the nonces (3.6). A bad bundle can leak history or propose a bad message. It
+  can get a signature only if the message check of section 5 has a hole.
 
 **3.4 The bundle.**
 
@@ -147,8 +149,8 @@ expressions and the reader list in `web/signed.js`. It adds them to the collecti
 
 ## 4. The second DKG, key roles and backups
 
-**4.1 The ceremony.** It runs on the same seats, after the wallet exists. It does not touch the Zcash
-key. Each step writes a signed document (3.2).
+**4.1 The ceremony.** It runs on the same seats, after the wallet exists. It does not touch the
+Zcash key. Each step writes a signed document (3.2).
 
 | Step | Document | Content |
 |---|---|---|
@@ -173,8 +175,8 @@ because FROST signatures differ each time [Z]sdk-libs/ts/src/client/keys.ts:161-
 | Nullifier secret (31 bytes) | Every seat and the Worker | Build proofs, compute spent status. Cannot spend [Z]docs/spec.md:352-358 | Never in place [Z]programs/user-registry/src/instructions/update_keys.rs:32-38 |
 | Viewing key (P-256) | Every seat and the Worker | Read incoming and outgoing UTXOs | With an owner signature |
 
-The engine derives both secrets from `solSeed` with Zigs labels, not the `TSPP/*` labels. The viewing
-scalar is HKDF output of 48 bytes reduced modulo the P-256 order
+The engine derives both secrets from `solSeed` with Zigs labels, not the `TSPP/*` labels. The
+viewing scalar is HKDF output of 48 bytes reduced modulo the P-256 order
 [Z]sdk-libs/ts/src/keypair/derivation.ts:222-227,309. A separate check requires 1 <= k < n
 [Z]sdk-libs/ts/src/keypair/viewing-key.ts:52-59.
 
@@ -187,7 +189,8 @@ scalar is HKDF output of 48 bytes reduced modulo the P-256 order
 | Members | A removed member keeps the secrets and reads the history permanently. A member change needs a new wallet and group key (PROTOCOL.md section 8) and one approved payment. That payment links the old key to the new key in public |
 
 **4.3 Backups.** The Zcash `.zigsbackup` and its restore stay unchanged. The engine seals an opaque
-plaintext string, and restore reads a fixed list of fields and drops the rest (`wasm/src/backup.rs`).
+plaintext string, and restore reads a fixed list of fields and drops the rest
+(`wasm/src/backup.rs`).
 
 | Design | Result |
 |---|---|
@@ -197,8 +200,8 @@ plaintext string, and restore reads a fixed list of fields and drops the rest (`
 
 The second file holds the key package, public key package, group key and `solSeed`. Restore and Fit
 check that the key share equals the `soldone` entry and that `solSeed` gives the published keys and
-address. The snapshot is not in the file. A restored seat that has `soldone/<i>` on the server and no
-Solana key package shows "Solana part missing".
+address. The snapshot is not in the file. A restored seat that has `soldone/<i>` on the server and
+no Solana key package shows "Solana part missing".
 
 **4.4 Version marker.** An old app ignores the Solana documents, so the wallet document needs no
 marker. Recommended: `solstart/1`, signed by seat 1, and no change to the wallet version.
@@ -210,11 +213,11 @@ recipient, and its life depends on a nonce, an expiry and roots.
 
 1. **Propose.** A seat enters kind, payee and amount. The payee is a full shielded address
    (`owner_hash` and `viewing_pk`). A registry lookup may fill the form, but registry reads are not
-   authenticated [Z]docs/spec.md:2811. The Worker syncs, picks UTXOs, builds the plaintext outputs and
-   ciphertexts, and asks for the proof. The wasm compiles the v1 message from a fixed template. The
-   smallest listed `transact` (2 in, 4 out) takes 1,278 of 4,096 bytes [Z]docs/spec.md:1811.
-2. **Publish.** `solsessions/<id>` holds the intent, plaintext outputs, input UTXO ids, the ciphertext
-   salt and the message bytes. The proposer signs this proposal part (PROTOCOL.md 15.5).
+   authenticated [Z]docs/spec.md:2811. The Worker syncs, picks UTXOs, builds the plaintext outputs
+   and ciphertexts, and asks for the proof. The wasm compiles the v1 message from a fixed template.
+   The smallest listed `transact` (2 in, 4 out) takes 1,278 of 4,096 bytes [Z]docs/spec.md:1811.
+2. **Publish.** `solsessions/<id>` holds the intent, plaintext outputs, input UTXO ids, the
+   ciphertext salt and the message bytes. The proposer signs this proposal part (PROTOCOL.md 15.5).
 3. **Check, on each approving device, in the Solana wasm.** Every rule that applies to the intent
    must hold. The approval screen shows the payee fingerprint, the amount, the computed change, the
    fee and the expiry.
@@ -237,10 +240,11 @@ recipient, and its life depends on a nonce, an expiry and roots.
 | Withdrawal | `AdvanceNonceAccount`, `transact` | One withdrawal leg: intent recipient, amount, SOL | Change to the group, dummies |
 | Cancel | `AdvanceNonceAccount` only | None | None |
 
-The wasm refuses these in every intent: a pool `deposit` (tag 15) outside the Shield intent, `merge_transact` (tag 17), `update_keys`,
-`set_merging_enabled`, `WithdrawNonceAccount`, `AuthorizeNonceAccount`, a System `Transfer` and
-`ComputeBudget`. The pool treats a relayer fee as a withdrawal leg to any recipient
-[Z]docs/spec.md:2647-2660. Without the leg rule, a transfer could pay an attacker.
+The wasm refuses these in every intent: a pool `deposit` (tag 15) outside the Shield intent,
+`merge_transact` (tag 17), `update_keys`, `set_merging_enabled`, `WithdrawNonceAccount`,
+`AuthorizeNonceAccount`, a System `Transfer` and `ComputeBudget`. The pool treats a relayer fee as a
+withdrawal leg to any recipient [Z]docs/spec.md:2647-2660. Without the leg rule, a transfer could
+pay an attacker.
 
 4. **Approve.** The engine makes nonces and commitments and stores them with
    `BLAKE2b-256("Zigs_SolMsg___v1", cluster || message bytes)`, as Zigs stores the sighash today.
@@ -250,8 +254,8 @@ The wasm refuses these in every intent: a pool `deposit` (tag 15) outside the Sh
    [F]frost-ed25519/src/lib.rs:182-187, so it would sign any text. The engine refuses any bytes that
    fail step 3, the off-chain prefix (0xFF "solana offchain") and `TSPP/derive/` payloads.
 6. **Combine, send.** Any seat aggregates, checks the result with `verify_strict` (never Web Crypto)
-   and sends at once. The transaction id is the first signature. The device tracks the transaction by
-   signature and writes a signed `sent` part after confirmation.
+   and sends at once. The transaction id is the first signature. The device tracks the transaction
+   by signature and writes a signed `sent` part after confirmation.
 
 A recent blockhash lives about 60 to 90 seconds [SOL]. Zcash approvals take hours. The target is a
 durable nonce, so the message is fixed at proposal time, as the sighash is in Zcash.
@@ -280,36 +284,41 @@ P1 to P3b need no Helius account. Scratch code stays outside the repo until a st
 | P6 | Root window in wall time. Approvals spread over one hour with a nonce | The stale-root path works: new proof, new digest, old nonces gone. The root window is at least the minimum approval time | Helius key |
 | P8 | Web spike behind a flag: Worker bundle, CSP hosts, second DKG on three seats, registration, payment, backup, wipe, restore. Check if Allowed Domains uses `Origin` or `Referer`, covers WebSocket and needs a paid plan | No CSP violation. Restored balance equals the old one. Zcash tests unchanged. Load time is within the budget | Helius key (Allowed Domains) |
 
-**6.1 Devnet facts, checked on 13 October 2026** (read-only RPC calls through the owner's Helius Devnet key):
+**6.1 Devnet facts, checked on 13 October 2026** (read-only RPC calls through the owner's Helius
+Devnet key):
 
-- The RPC answers `getHealth` with `ok` and runs Agave `4.4.0-beta.0`. That meets the 4.2.2 minimum for v1.
+- The RPC answers `getHealth` with `ok` and runs Agave `4.4.0-beta.0`. That meets the 4.2.2 minimum
+  for v1.
 - Pool `sppU489…`: deployed at slot 508538476, the release slot. The SHA-256 of its ELF (cut at the
-  size in its ELF header) equals the release hash `3641ffe2…`. Registry `regyS5rk…`: deployed at slot
-  503573056, and its ELF hash equals the release hash `2010baa2…`.
+  size in its ELF header) equals the release hash `3641ffe2…`. Registry `regyS5rk…`: deployed at
+  slot 503573056, and its ELF hash equals the release hash `2010baa2…`.
 - Pool `sppXZU59…` also exists. It was deployed at slot 481005012, so it is the older deployment.
-- All three programs have the upgrade authority `2kgbLowv…`. That address is a point on Ed25519, so it
-  is an ordinary key pair, not a program address of a multisig. On Devnet one key can replace the pool.
+- All three programs have the upgrade authority `2kgbLowv…`. That address is a point on Ed25519, so
+  it is an ordinary key pair, not a program address of a multisig. On Devnet one key can replace the
+  pool.
 
 **6.2 P1 result, 13 October 2026** (scratch crate outside the repo, `frost-ed25519 =2.2.0`):
 
-- A 2-of-3 dealerless DKG gives every seat the same group key. 100 sessions (and 2,000 more in repeat
-  runs), with messages of 1 to 4,096 bytes, pass frost's verify, `ed25519-dalek` `verify_strict`,
-  Solana's `Signature::verify` and `verify_non_strict`. Changed messages, signatures, keys and a
-  non-canonical S fail. An independent verifier re-ran the tests and the mutation checks.
+- A 2-of-3 dealerless DKG gives every seat the same group key. 100 sessions (and 2,000 more in
+  repeat runs), with messages of 1 to 4,096 bytes, pass frost's verify, `ed25519-dalek`
+  `verify_strict`, Solana's `Signature::verify` and `verify_non_strict`. Changed messages,
+  signatures, keys and a non-canonical S fail. An independent verifier re-ran the tests and the
+  mutation checks.
 - The RFC 9591 E.1 inputs give the RFC's group commitment, shares and signature byte for byte.
 - The wasm32 build links the whole flow: 203,052 bytes after wasm-bindgen, 64,127 bytes gzip.
 - Open: the SIMD-0376 item could not run, because no published crate has that function. The tests
   do not yet tell `verify` from `verify_non_strict` apart, and no test parses a real v1 transaction.
 
-**6.3 P2 result, 13 October 2026** (public Devnet, solana-core 4.4.0-beta.0, `solana-message 5.1.0`):
+**6.3 P2 result, 13 October 2026** (public Devnet, solana-core 4.4.0-beta.0,
+`solana-message 5.1.0`):
 
-- The 2-of-3 group key funded, then created a nonce account with `CreateAccountWithSeed` (base = group
-  key) and `InitializeNonceAccount` (authority = group key), signed by seats 1 and 2.
+- The 2-of-3 group key funded, then created a nonce account with `CreateAccountWithSeed` (base =
+  group key) and `InitializeNonceAccount` (authority = group key), signed by seats 1 and 2.
 - Seats 2 and 3 signed a v1 transaction (version byte 0x81): `AdvanceNonceAccount`, then a transfer
-  of 0.001 SOL. It landed 615 s after the signature, 2,640 slots after the nonce account, so far past
-  any blockhash. The first signature on chain is the FROST aggregate. Fee 7,000 lamports (5,000 base
-  and the 2,000 priority fee set in the header), 300 compute units. The same bytes sent again did not
-  land. Transaction `4tRzAK6V…dX7Z` on explorer.solana.com, cluster devnet.
+  of 0.001 SOL. It landed 615 s after the signature, 2,640 slots after the nonce account, so far
+  past any blockhash. The first signature on chain is the FROST aggregate. Fee 7,000 lamports (5,000
+  base and the 2,000 priority fee set in the header), 300 compute units. The same bytes sent again
+  did not land. Transaction `4tRzAK6V…dX7Z` on explorer.solana.com, cluster devnet.
 - The v1 field "loaded accounts data size" must be set. At its default of 0, a transaction fails at
   load with `MaxLoadedAccountsDataSizeExceeded`, is still charged, and still advances the nonce. So
   one template mistake costs a fee and destroys every approval. This transaction loads 6,422 bytes.
@@ -322,14 +331,15 @@ Devnet gateway):
 - Two ordinary keys registered, A deposited 0.05 SOL, A sent 0.02 SOL privately to B (B synced and
   read exactly 0.02), and B withdrew 0.01 SOL to a public address. All six transactions landed the
   first time. An independent verifier re-checked them on Devnet and re-synced B.
-- Compute units: registration 8,532 and 16,032, deposit 37,918, transfer 138,500, withdrawal 142,587.
-  The SDK asks for 450,000 for `transact` and sets the loaded-accounts limit to 64 MiB, with no
-  priority fee. Fees were the 5,000-lamport base. Registration rent is 1,330,960 lamports per record.
-- Proofs: one `POST /v1/zolana/prove` per spend, 297 to 436 ms, about 0.7 to 0.9 s with the proof data
-  fetch. The proof on chain is 192 bytes. The request body is about 8.3 KB.
+- Compute units: registration 8,532 and 16,032, deposit 37,918, transfer 138,500, withdrawal
+  142,587. The SDK asks for 450,000 for `transact` and sets the loaded-accounts limit to 64 MiB,
+  with no priority fee. Fees were the 5,000-lamport base. Registration rent is 1,330,960 lamports
+  per record.
+- Proofs: one `POST /v1/zolana/prove` per spend, 297 to 436 ms, about 0.7 to 0.9 s with the proof
+  data fetch. The proof on chain is 192 bytes. The request body is about 8.3 KB.
 - What the hosted prover receives, by field name: input and output UTXOs (owner, asset, amount,
-  blinding), Merkle and non-inclusion paths, and `nullifierSecret` in clear. Not the Ed25519 seed and
-  not the viewing key. This confirms the privacy rows of section 2.
+  blinding), Merkle and non-inclusion paths, and `nullifierSecret` in clear. Not the Ed25519 seed
+  and not the viewing key. This confirms the privacy rows of section 2.
 - All 120 calls went to one host, `devnet.helius-rpc.com`, with the API key in the query of every
   call, the prove call included. On the gateway the client fetches the proof data itself.
 - No fee inside the circuit: inputs plus public amounts equal outputs, exactly. Tree 0 charges no
@@ -345,9 +355,9 @@ Devnet gateway):
   (tag 15), sent 0.02 SOL privately to an ordinary key (which read it), and withdrew 0.01 SOL. Each
   signature is a FROST session of a different seat pair over the exact message bytes, and verifies
   under the group key on chain. An independent verifier re-checked all of it and re-synced both.
-- The SDK takes the group as an outside key set (`LocalKeys.fromKeys` with the group key as owner, and
-  a kit signer whose address is the group key). The shielded keys came from a random `solSeed` with
-  the SDK's own labels, through `roleExpansion`, which the package does not export.
+- The SDK takes the group as an outside key set (`LocalKeys.fromKeys` with the group key as owner,
+  and a kit signer whose address is the group key). The shielded keys came from a random `solSeed`
+  with the SDK's own labels, through `roleExpansion`, which the package does not export.
 - Refused as expected: one share alone (frost `IncorrectNumberOfCommitments`), a replaced owner or
   payer (simulation: `TransactProofVerificationFailed`), and a message changed after signing.
 - Stretch: a private transfer with the durable nonce as lifetime and `AdvanceNonceAccount` first
@@ -357,124 +367,134 @@ Devnet gateway):
 - Not tested: a seat refusing a bad ciphertext (needs P3), distributed seats (one process ran both
   seats), a separate fee payer, and the root window (P6, now in 6.6).
 
-**6.6 P6 result, 14 October 2026** (the P5 group, FROST rounds split in time, a patched SDK compile step):
+**6.6 P6 result, 14 October 2026** (the P5 group, FROST rounds split in time, a patched SDK compile
+step):
 
 - How a root expires. Both histories sit in the tree 0 account `33KVhbT4…`. The UTXO history has 500
-  entries, one per slot with at least one append (deposit, `transact`, `merge_transact`); idle slots add
-  none. The nullifier history has 100 entries, one per forester batch of 250 nullifiers, so 25,000
-  nullifiers in all. The `transact` data carries one history index per tree, and the program reads the
-  root at that index; it never searches. A stale root gives the ordinary proof error, custom 7008
-  (`TransactProofVerificationFailed`). So a device detects a stale root by the value at the index.
+  entries, one per slot with at least one append (deposit, `transact`, `merge_transact`); idle slots
+  add none. The nullifier history has 100 entries, one per forester batch of 250 nullifiers, so
+  25,000 nullifiers in all. The `transact` data carries one history index per tree, and the program
+  reads the root at that index; it never searches. A stale root gives the ordinary proof error,
+  custom 7008 (`TransactProofVerificationFailed`). So a device detects a stale root by the value at
+  the index.
 - Devnet activity is low. Over 24 hours the UTXO history moved 3 to 33 entries per hour, and the
   nullifier history moved about 0.2 batches per hour. The roots of all five P4 and P5 proofs from 13
   October were still valid the next morning.
 - Run 1: an approval over one hour. Seat 1 made its FROST commitment at 07:13 UTC, seat 2 at 07:43,
   and both signed at 08:13. The transaction landed at once: `4CyFR9Ld…` on explorer.solana.com,
   cluster devnet. It had the template of section 5: `AdvanceNonceAccount` first, a durable nonce, a
-  finite expiry of 24 hours, v1 config mask 12 (compute limit 217,000 and the loaded-accounts limit, no
-  priority fee). It used 142,007 compute units and a fee of 5,000 lamports. B received exactly 0.001 SOL.
-  The tree did not move during the hour, so run 1 proves the nonce flow, not the root window.
-- Run 2: a forced stale root. Both seats committed to a new proposal. Then 510 pool deposits from one
-  key, about one per slot, moved the UTXO history out past the proof's root in about 4.5 minutes
-  (107 to 119 entries per minute), for 0.0078 Devnet SOL. At the next sample the device saw the stale
-  root (simulation error 7008). Both seats deleted their nonces for the old digest, and a sign request
-  on the old bytes failed on both seats. The device proved again in 0.98 s. New bytes, a new digest and
-  a new FROST round followed, and the transaction landed 8 s after the detection: `3dbRcEbV…`,
-  cluster devnet. Both transactions are finalized, and each first signature verifies under the group key
-  (checked again with Node's Ed25519, outside the spike code).
-- What this means. The window counts pool activity, not time. On Devnet today it lasts many hours. One
-  sender alone shortened it to about 4.5 minutes. With an append in every slot it is 500 slots, about
-  200 s; the repo doc says about 100 s. A 30-minute approval cannot keep its proof on a busy pool. Then
-  the proof must be rebuilt, and the new bytes need a new signing round with `t` devices online at the
-  same time (run 2 needed about 1 s for that round). Whether people must approve again, or their devices
-  sign again for an approved intent, is an open design point. Helius question 6 asks for the mainnet
-  root window.
+  finite expiry of 24 hours, v1 config mask 12 (compute limit 217,000 and the loaded-accounts limit,
+  no priority fee). It used 142,007 compute units and a fee of 5,000 lamports. B received exactly
+  0.001 SOL. The tree did not move during the hour, so run 1 proves the nonce flow, not the root
+  window.
+- Run 2: a forced stale root. Both seats committed to a new proposal. Then 510 pool deposits from
+  one key, about one per slot, moved the UTXO history out past the proof's root in about 4.5 minutes
+  (107 to 119 entries per minute), for 0.0078 Devnet SOL. At the next sample the device saw the
+  stale root (simulation error 7008). Both seats deleted their nonces for the old digest, and a sign
+  request on the old bytes failed on both seats. The device proved again in 0.98 s. New bytes, a new
+  digest and a new FROST round followed, and the transaction landed 8 s after the detection:
+  `3dbRcEbV…`, cluster devnet. Both transactions are finalized, and each first signature verifies
+  under the group key (checked again with Node's Ed25519, outside the spike code).
+- What this means. The window counts pool activity, not time. On Devnet today it lasts many hours.
+  One sender alone shortened it to about 4.5 minutes. With an append in every slot it is 500 slots,
+  about 200 s; the repo doc says about 100 s. A 30-minute approval cannot keep its proof on a busy
+  pool. Then the proof must be rebuilt, and the new bytes need a new signing round with `t` devices
+  online at the same time (run 2 needed about 1 s for that round). Whether people must approve
+  again, or their devices sign again for an approved intent, is an open design point. Helius
+  question 6 asks for the mainnet root window.
 
-**6.7 P3 result, 14 October 2026** (a Rust crate outside the repo, an independent verifier per half):
+**6.7 P3 result, 14 October 2026** (a Rust crate outside the repo, an independent verifier per
+half):
 
-- The checker runs the structure rules of section 5 (P3a) and the Outputs, Legs and Ciphertexts rules
-  (P3c): 76 rules, each with a named test, 83 after the fix round below. It is one wasm file of 506,694
-  bytes (176,753 gzip), 597,533 bytes after the fix round, under half of the 1.5 MB budget. A trimmed copy of `light-poseidon` keeps only the widths 2, 3, 4 and 8; the
-  whole crate makes the wasm 1.78 MB. `zolana-hasher` builds for wasm32 as is; `zolana-transaction`
-  needs three `getrandom` changes, so the checker does not use it.
-- Vectors: the repo vectors, five TS SDK vectors (non-zero amount, SPL mint, change, dummy), the real
-  P5 data and both landed P6 messages match. Every P5 message, built with the SDK defaults, is refused
-  (no nonce, 450,000 compute units, no expiry). Both P6 messages are accepted.
+- The checker runs the structure rules of section 5 (P3a) and the Outputs, Legs and Ciphertexts
+  rules (P3c): 76 rules, each with a named test, 83 after the fix round below. It is one wasm file
+  of 506,694 bytes (176,753 gzip), 597,533 bytes after the fix round, under half of the 1.5 MB
+  budget. A trimmed copy of `light-poseidon` keeps only the widths 2, 3, 4 and 8; the whole crate
+  makes the wasm 1.78 MB. `zolana-hasher` builds for wasm32 as is; `zolana-transaction` needs three
+  `getrandom` changes, so the checker does not use it.
+- Vectors: the repo vectors, five TS SDK vectors (non-zero amount, SPL mint, change, dummy), the
+  real P5 data and both landed P6 messages match. Every P5 message, built with the SDK defaults, is
+  refused (no nonce, 450,000 compute units, no expiry). Both P6 messages are accepted.
 - The template accepts the v1 config mask 12 (no priority fee) or 15 (a priority fee up to 3,000).
-  Compute units must be at least the largest recorded use (a lower limit fails on chain and burns the
-  nonce) and at most that plus 50 percent.
+  Compute units must be at least the largest recorded use (a lower limit fails on chain and burns
+  the nonce) and at most that plus 50 percent.
 - Facts from the code: every output is encrypted alone with AES-256-CTR and no tag; integrity comes
-  from the `utxo_hash`, which the proof binds. The tree insertion fee comes from the payer's public SOL,
-  so it is not part of shielded conservation; the check caps and shows it.
-- The first verifier found four false accepts in P3a (output fields not read, no compute floor, circuit
-  counts not compared, a repeated nullifier). P3c fixed all four. It also found a funds-relevant hole
-  during its own work: the payee keys came from the untrusted plan. The transfer intent now carries the
-  full payee address.
+  from the `utxo_hash`, which the proof binds. The tree insertion fee comes from the payer's public
+  SOL, so it is not part of shielded conservation; the check caps and shows it.
+- The first verifier found four false accepts in P3a (output fields not read, no compute floor,
+  circuit counts not compared, a repeated nullifier). P3c fixed all four. It also found a
+  funds-relevant hole during its own work: the payee keys came from the untrusted plan. The transfer
+  intent now carries the full payee address.
 - The second verifier found one fail-open rule (a spend with no inputs skips the ciphertext rule; it
-  cannot land and moves nothing) and gaps that can hide a payment or waste a fee: the asset-id table and
-  the group's public keys come from the snapshot and are not pinned; output blindings are not
-  recomputed; no supported-shape rule; a reused salt is not refused; the Register keys are not compared
-  with the snapshot.
-- Fix round (a third verifier checked it): every rule fails closed when its data is missing; the wasm
-  takes the group key, `nullifier_pk` and `viewing_pk` as pins, and the snapshot secrets must derive
-  them; asset ids are pinned per mint (84 Devnet mints); every output blinding is recomputed from the
-  root blinding seed of the plan; the 38 supported circuit shapes are pinned; the dummy-tag rule equals
-  the circuit; an all-zero or reused salt is refused; the Register keys are compared on every link; the
-  approval screen echoes the withdrawal recipient and the expiry. Now 83 rules, 267 tests, 113 mutation
-  cases killed, and a wasm of 597,533 bytes (209,285 gzip), 40 percent of the budget.
-- Still open: a dummy placed before a real output is accepted, though the circuit refuses it (it costs
-  the fee and the nonce, no funds); the minimum remaining life of an expiry and the tree fee cap are
-  product values; the 89 bytes of a dummy blob are free. The landed P5 and P6 messages no longer pass,
-  because their root blinding seed was never recorded; they pass every other rule. The salt history
-  must cover every proposal on the group server, not only those of one device.
+  cannot land and moves nothing) and gaps that can hide a payment or waste a fee: the asset-id table
+  and the group's public keys come from the snapshot and are not pinned; output blindings are not
+  recomputed; no supported-shape rule; a reused salt is not refused; the Register keys are not
+  compared with the snapshot.
+- Fix round (a third verifier checked it): every rule fails closed when its data is missing; the
+  wasm takes the group key, `nullifier_pk` and `viewing_pk` as pins, and the snapshot secrets must
+  derive them; asset ids are pinned per mint (84 Devnet mints); every output blinding is recomputed
+  from the root blinding seed of the plan; the 38 supported circuit shapes are pinned; the dummy-tag
+  rule equals the circuit; an all-zero or reused salt is refused; the Register keys are compared on
+  every link; the approval screen echoes the withdrawal recipient and the expiry. Now 83 rules, 267
+  tests, 113 mutation cases killed, and a wasm of 597,533 bytes (209,285 gzip), 40 percent of the
+  budget.
+- Still open: a dummy placed before a real output is accepted, though the circuit refuses it (it
+  costs the fee and the nonce, no funds); the minimum remaining life of an expiry and the tree fee
+  cap are product values; the 89 bytes of a dummy blob are free. The landed P5 and P6 messages no
+  longer pass, because their root blinding seed was never recorded; they pass every other rule. The
+  salt history must cover every proposal on the group server, not only those of one device.
 
 **6.8 P3b result, 14 October 2026** (esbuild, headless Chrome 155, a local mock of the Helius API):
 
-- One minified ES-module bundle of the SDK at the pinned commit is 851,099 bytes (249,826 gzip, 204,682
-  brotli), under the 1 MB budget; the unminified build (1.73 MB) is over it. The slim hasher has two
-  wasm files: SIMD 1.28 MB (Chrome loads this one) and a SISD fallback of 1.99 MB. The bundle has no
-  `node:` import and no import at all, after two aliases: `@phala/dcap-qvl` and a bare `crypto` import in
-  `@hpke/common` go to stubs that throw. Only the minified hash is the same in every checkout location.
-- In a module Worker under a strict CSP, the stub throws, the hasher starts, and a sync of key B from a
-  replay of one real Devnet sync gives 0.035 SOL, the same as Node. No CSP violation. Against the Zigs
-  policy exactly as `policy()` builds it, only `connect-src` must change.
+- One minified ES-module bundle of the SDK at the pinned commit is 851,099 bytes (249,826 gzip,
+  204,682 brotli), under the 1 MB budget; the unminified build (1.73 MB) is over it. The slim hasher
+  has two wasm files: SIMD 1.28 MB (Chrome loads this one) and a SISD fallback of 1.99 MB. The
+  bundle has no `node:` import and no import at all, after two aliases: `@phala/dcap-qvl` and a bare
+  `crypto` import in `@hpke/common` go to stubs that throw. Only the minified hash is the same in
+  every checkout location.
+- In a module Worker under a strict CSP, the stub throws, the hasher starts, and a sync of key B
+  from a replay of one real Devnet sync gives 0.035 SOL, the same as Node. No CSP violation. Against
+  the Zigs policy exactly as `policy()` builds it, only `connect-src` must change.
 - The SDK opens no WebSocket: confirmation polls over HTTP, so `wss` is probably not needed (P8
-  confirms). Each sync sends three CORS preflights; P8 must check the answers of the real Helius host.
+  confirms). Each sync sends three CORS preflights; P8 must check the answers of the real Helius
+  host.
 - Zigs sends its CSP on the page only. A Worker loaded from a URL takes the policy of its own script
-  response, so the Zcash `web/worker.js` runs with no CSP today. A header on the Worker script response
-  alone binds the Worker and every module it imports.
+  response, so the Zcash `web/worker.js` runs with no CSP today. A header on the Worker script
+  response alone binds the Worker and every module it imports.
 
 **6.9 P8 progress, 15 October 2026** (the web app in an isolated local clone, behind
 the flag `zf-sol`; local server only, never deployed; one independent verifier per step):
 
-- P8a: the clone, a Zcash baseline gate (11 tests, 17 file hashes, the served security headers) and a
-  headless harness with three seats in three in-memory browser contexts. The Zcash tests and hashes
-  stayed equal through every later step.
+- P8a: the clone, a Zcash baseline gate (11 tests, 17 file hashes, the served security headers) and
+  a headless harness with three seats in three in-memory browser contexts. The Zcash tests and
+  hashes stayed equal through every later step.
 - P8b: one Solana wasm (`wasm-sol`, 982 KB) with the message checker, FROST-Ed25519 DKG and split
   signing, the role derivation and the template compiler. The checker gained the circuit's
   dummies-last rule and byte-exact pin tests; a separate verifier signed that delta (125 mutation
-  cases killed). The hardening round moved the echo check into round 3 and added a constant-time share
-  check and the program-id label.
+  cases killed). The hardening round moved the echo check into round 3 and added a constant-time
+  share check and the program-id label.
 - P8c: the SDK bundle (856 KB) runs in its own Worker, which alone talks to Helius. Only the Worker
-  script response carries the Helius host; the page policy is byte-identical to today's. With the flag
-  off, no `/sol/` file is served. Read-only live check on Devnet: 30 of 30.
-- P8d: the second DKG on three seats, the Solana documents with their own reader, the Solana secrets in
-  one sub-object of the seat secret (left out of the Zcash backup), a sealed snapshot in its own
+  script response carries the Helius host; the page policy is byte-identical to today's. With the
+  flag off, no `/sol/` file is served. Read-only live check on Devnet: 30 of 30.
+- P8d: the second DKG on three seats, the Solana documents with their own reader, the Solana secrets
+  in one sub-object of the seat secret (left out of the Zcash backup), a sealed snapshot in its own
   IndexedDB database, a separate Solana backup file with a share check on restore, and a stop that
   holds everywhere. Flag-off load cost: +1.2 percent (budget 5 percent).
 - P8e: signing sessions in the page (propose, approve, package, share, aggregate, send, track), a
-  signed abort document, single-use FROST nonces, and an approval screen built from the checker result.
-  The app landed its first Devnet transactions, each signed by a different pair of seats: create the
-  nonce account (`5cipks9L…`), register (`efuf187T…`) and shield 0.02 SOL (`3c6UNDnG…`), after a funding
-  transfer (`Ctt2Q4M6…`). Every first signature verifies under the group key, the registry record equals
-  the agreed keys, and the Worker reads 0.02 SOL. The verifier found two session bugs, fixed in P8f: a
-  wallet stopped watching after 50 session documents, and sessions on a used nonce never ended.
+  signed abort document, single-use FROST nonces, and an approval screen built from the checker
+  result. The app landed its first Devnet transactions, each signed by a different pair of seats:
+  create the nonce account (`5cipks9L…`), register (`efuf187T…`) and shield 0.02 SOL (`3c6UNDnG…`),
+  after a funding transfer (`Ctt2Q4M6…`). Every first signature verifies under the group key, the
+  registry record equals the agreed keys, and the Worker reads 0.02 SOL. The verifier found two
+  session bugs, fixed in P8f: a wallet stopped watching after 50 session documents, and sessions on
+  a used nonce never ended.
 - P8f fixes: D1, the page now watches only the valid sessions that did not end, at most 50, and an
-  ended session gives its watches back. D2, when a transaction lands, every other session on the same
-  nonce ends, from the signed documents alone (no RPC read).
-- P8f could not use the P8e group. Its seats were in memory only and no backup was saved, so its funds
-  stay on Devnet with no key: 0.02 SOL shielded and about 0.0276 SOL public (owner `4wP3MjZB…`). A new
-  group with the same setup landed the funding, nonce, register and shield transactions again.
+  ended session gives its watches back. D2, when a transaction lands, every other session on the
+  same nonce ends, from the signed documents alone (no RPC read).
+- P8f could not use the P8e group. Its seats were in memory only and no backup was saved, so its
+  funds stay on Devnet with no key: 0.02 SOL shielded and about 0.0276 SOL public (owner
+  `4wP3MjZB…`). A new group with the same setup landed the funding, nonce, register and shield
+  transactions again.
 - P8f payments, 2 of 3, to the Devnet key B. 0.005 SOL signed by seats 1 and 2 (`4eT1KehY…`, slot
   511294980, 138,650 compute units). After the restore, 0.002 SOL signed by seats 2 and 3
   (`xJejBEJL…`, slot 511295710, 140,391 compute units). Each fee is 5,000 lamports, each lifetime is
@@ -482,30 +502,30 @@ the flag `zf-sol`; local server only, never deployed; one independent verifier p
   0.002 SOL. The private balance of the group fell to 0.003 SOL, then to 0.001 SOL. The full
   signatures are in the run record of the spike, which this repo does not keep.
 - The first try of the payment stopped before it landed. The page compared the asset field of the
-  prover body with the asset id 1, but the prover writes the hash of the zero mint. The fix (`80a0ddb`)
-  compares with that hash, and a test and a mutant pin it.
-- Restore rehearsal: each seat saved a Zcash file and a Solana file, each with its own passphrase. The
-  three contexts were wiped, three blank contexts restored from the files, and all three showed
+  prover body with the asset id 1, but the prover writes the hash of the zero mint. The fix
+  (`80a0ddb`) compares with that hash, and a test and a mutant pin it.
+- Restore rehearsal: each seat saved a Zcash file and a Solana file, each with its own passphrase.
+  The three contexts were wiped, three blank contexts restored from the files, and all three showed
   0.003 SOL at slots 511295612 to 511295645, after the backup slot 511295531. The second payment
   then landed from the restored seats. The verifier repeated the rehearsal without a landing: the
   same keys and 0.001 SOL on all three seats.
 - The P8f verifier passed with gaps: no defect, but four mutants survived, because only the live
   landings tested the signing path of a payment. A follow-up closed the gaps offline. A test group
   from the real ceremony and a payment that the TS SDK built for it run through propose, approve,
-  share, aggregate and send against a fake chain. The four mutants now fail their tests. The baseline
-  gate runs the eight Solana page tests (19 tests in all) and stops on an unlisted test file. The
-  harness drives five restore refusals in Chrome: a wrong passphrase, a changed file, the Solana file
-  of another seat, the Solana file before the Zcash seat is restored, and the Solana file of a seat
-  whose address check did not settle. Flag-off load cost after the `/sol` route change of the cf
-  Worker: +2.4 percent (budget 5 percent).
+  share, aggregate and send against a fake chain. The four mutants now fail their tests. The
+  baseline gate runs the eight Solana page tests (19 tests in all) and stops on an unlisted test
+  file. The harness drives five restore refusals in Chrome: a wrong passphrase, a changed file, the
+  Solana file of another seat, the Solana file before the Zcash seat is restored, and the Solana
+  file of a seat whose address check did not settle. Flag-off load cost after the `/sol` route
+  change of the cf Worker: +2.4 percent (budget 5 percent).
 - P8 acceptance: every item is met except one. The Allowed Domains check of the Helius key was not
   tested in the spike. The owner set Allowed Domains afterwards (see the end of this section): the
   key accepts only calls that carry the origin of the app, and the SDK opens no WebSocket.
 
 Stop rules: the plan stops if P1 fails strict verification, P4 fails on the hosted deployment, or P5
 fails. It also stops if P6 measures a root window shorter than the minimum approval time (proposal:
-30 minutes). One approval round cannot finish then, so the plan changes to a one-sitting flow with `t`
-devices online. A no to question 6 selects the blockhash fallback (section 5).
+30 minutes). One approval round cannot finish then, so the plan changes to a one-sitting flow with
+`t` devices online. A no to question 6 selects the blockhash fallback (section 5).
 
 The owner provides a Helius account, a Devnet API key (I created none) and Devnet SOL. The key is
 never committed. In the spike, the developer entered it in a local browser setting. The beta serves
@@ -528,9 +548,11 @@ the CORS preflights pass.
 **Questions for Helius.**
 
 1. Has a passing Devnet spend a payer with no input and a separate Ed25519 owner?
-2. Answered on Devnet (section 6.1): `sppU489…` is the release. Who holds key `2kgbLowv…` on mainnet?
-3. Do the services run on mainnet? Is there a free tier, a rate limit and a CORS header for browsers?
-   Does Allowed Domains cover `/v1/zolana/` and WebSocket, read `Origin` or `Referer`, and need a plan?
+2. Answered on Devnet (section 6.1): `sppU489…` is the release. Who holds key `2kgbLowv…` on
+   mainnet?
+3. Do the services run on mainnet? Is there a free tier, a rate limit and a CORS header for
+   browsers? Does Allowed Domains cover `/v1/zolana/` and WebSocket, read `Origin` or `Referer`, and
+   need a plan?
 4. Does the gateway serve `/tee/v1/attestation`? When does local proving ship?
 5. What is the audit scope? Who holds the pool upgrade key, and is there a timelock?
 6. How many roots stay valid? Is a durable nonce with a v1 transaction supported?
@@ -538,18 +560,19 @@ the CORS preflights pass.
 
 **Owner decisions.** A committed, hash-pinned bundle in a repo with no bundler. Allowed Domains or a
 proxy host for the key. A second wasm file, or Ed25519 inside the Zcash engine. Durable nonces, with
-approvals that repeat after a stale root. The backup design (4.3), the flat paths (3.2), the pins and
-the size budget (3.1, 3.4). One CSP for all users or a build flag, and the doc work (3.5). The
+approvals that repeat after a stale root. The backup design (4.3), the flat paths (3.2), the pins
+and the size budget (3.1, 3.4). One CSP for all users or a build flag, and the doc work (3.5). The
 expiry window, the minimum approval time and the fee caps (5, 6). SOL and Devnet only at first.
 
 **Recommendation.**
 
 - **Go** for the bounded Devnet spike, P1 to P3b first. It costs no funds and answers the signing
   questions.
-- **No-go** for user-facing work, mainnet, any anonymity claim and any default-on use. The pool is beta
-  with no audit report. The hosted prover sees the plaintext witness, and no browser proving exists.
-  The pool upgrade key and the protocol authority sit outside the group. The bundle conflicts with the
-  no-bundler rule. A payer with no input and v1 with a durable nonce are untested.
+- **No-go** for user-facing work, mainnet, any anonymity claim and any default-on use. The pool is
+  beta with no audit report. The hosted prover sees the plaintext witness, and no browser proving
+  exists. The pool upgrade key and the protocol authority sit outside the group. The bundle
+  conflicts with the no-bundler rule. A payer with no input and v1 with a durable nonce are
+  untested.
 - Move from spike to product only when all of these hold:
   - P1 to P6, P3b and P8 pass. P8 includes the restore rehearsal.
   - Helius answers questions 2, 3, 5 and 6. Question 1 gates only the later sponsor work.

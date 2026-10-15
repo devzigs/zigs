@@ -2,11 +2,11 @@
 // through the WASM build and records each answer in logs/diffcases/cases.json.
 // tests/wasm_native_diff.rs replays every case natively and compares the answers (a wasm32
 // versus native difference, a trap, or an accept of a changed input shows up there).
-// Usage: node tools/diff_cases.cjs pkg-node
+// Usage: node tools/diff_cases.cjs target/pkg-node
 const fs = require("node:fs");
 const path = require("node:path");
 
-const lib = require(path.resolve(process.argv[2] ?? "pkg-node", "sol_wasm.js"));
+const lib = require(path.resolve(process.argv[2] ?? "target/pkg-node", "sol_wasm.js"));
 const smoke = path.resolve(__dirname, "..", "vectors", "smoke");
 const NOW = 1_800_000_000n - 3_600n;
 const names = [

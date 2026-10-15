@@ -4,7 +4,7 @@
 const fs = require("node:fs");
 const path = require("node:path");
 
-const wasmDir = path.resolve(process.argv[2] ?? "pkg-node");
+const wasmDir = path.resolve(process.argv[2] ?? "target/pkg-node");
 const lib = require(path.join(wasmDir, "sol_wasm.js"));
 const smoke = path.resolve(__dirname, "..", "vectors", "smoke");
 const NOW = 1_800_000_000n - 3_600n;

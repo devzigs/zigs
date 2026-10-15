@@ -78,7 +78,7 @@ To see signer changes, open **Signers**, then **Change signers**. To see the pri
 |---|---|
 | **Privacy** | On chain, the transaction shape matches the standard wallet library: same builder, padding, fee, expiry and anchor depth ([comparison](PRIVACY.md#on-chain)). The server stores only encrypted values, padded so that even their length hides amounts. On the device, key shares can be locked with a passkey (web) or Face ID (iPhone) ([how](PRIVACY.md#lock-with-a-passkey-or-face-id)). Key share backups are encrypted with a passphrase (Argon2id and XChaCha20-Poly1305) and open on the web, iPhone and Mac ([how](PRIVACY.md#key-share-backups)). The page can connect only to the group server and three named light-wallet servers (Content-Security-Policy). For testnet wallets, the Solana Worker of the page also connects to the Helius Devnet host ([how](PRIVACY.md#solana-beta-helius-devnet)). It is prepared for Tor Browser, but not yet tested end to end ([how](PRIVACY.md#use-zigs-over-tor)). The Zigs server code keeps no logs; its host, Cloudflare, can see connection data. Every remaining leak is listed in [PRIVACY.md](PRIVACY.md). |
 | **Usefulness** | Designed for team treasuries, DAOs and families. Usable today on testnet, and on mainnet with a warning at 0.5 ZEC: web, iPhone and Mac; invite links and QR codes; batch payments for payroll and grants (up to 20 recipients, one approval round, pasted from a spreadsheet); signer changes; encrypted key share backups. |
-| **Execution** | The live app works end to end. Seventeen testnet transactions made by the apps are [listed below](#proof-on-testnet). The engine has 111 tests, and a command-line suite runs adversarial cases. |
+| **Execution** | The live app works end to end. Seventeen testnet transactions made by the apps are [listed below](#proof-on-testnet). The engine has 112 tests, and a command-line suite runs adversarial cases. |
 | **Originality** | An end-user app for re-randomized FROST: no command line, no trusted dealer, and no server that can read the wallet. Each device decodes the PCZT and checks every output before it approves, and binds its approval to the transaction's sighash. Signer changes, batch payments and native iPhone and Mac apps are included. Built during the Zecathon window: the first commit is from October 10, 2026. |
 
 ## Architecture
@@ -314,7 +314,8 @@ CC_wasm32_unknown_unknown=/opt/homebrew/opt/llvm/bin/clang \
 AR_wasm32_unknown_unknown=/opt/homebrew/opt/llvm/bin/llvm-ar \
 RUSTFLAGS="--remap-path-prefix=$HOME=/build" \
 cargo build --release --target wasm32-unknown-unknown
-wasm-bindgen --target web --out-dir ../web/pkg target/wasm32-unknown-unknown/release/zigs_engine.wasm
+wasm-bindgen --target web --out-dir ../web/pkg \
+  target/wasm32-unknown-unknown/release/zigs_engine.wasm
 ```
 
 ```bash
@@ -337,8 +338,8 @@ page (`http://localhost:8787` here, `https://app.zigs.app` on the server): set A
 Helius for the deployed key. On the server, set the secret with
 `npx wrangler secret put HELIUS_DEVNET_URL`. The variable `SOL` in `cf/wrangler.jsonc` is `"1"`.
 Set it to another value to turn the Solana beta off: the tab then says the same text. The Solana
-tab shows for testnet wallets only. Build the Solana wasm with `sh wasm-sol/build.sh`, and see [`solspike/README.md`](solspike/README.md)
-for the checks.
+tab shows for version 3 wallets on testnet only. Build the Solana wasm with
+`sh wasm-sol/build.sh`, and see [`solspike/README.md`](solspike/README.md) for the checks.
 
 Open http://localhost:8787. To act as a second person on the same computer, also open
 http://127.0.0.1:8787: it is a separate origin, so it has separate storage. Deploy with
@@ -372,7 +373,7 @@ folder path.
 
 ## Tests
 
-- `cargo test --release` in `wasm/` (111 tests):
+- `cargo test --release` in `wasm/` (112 tests):
   - Signing: full 2-of-3 flows for Ironwood (paying 4 recipients in one transaction) and Orchard.
   - A bad share is attributed to its sender. A swapped recipient on any payee output is refused.
   - Spends of 3 notes for 1 recipient, recipient lists checked row by row, and fees that count
@@ -406,9 +407,12 @@ folder path.
   - A message of three parts that is built, signed, proved and read by its recipient. A wrong seed
     is refused.
   - The words of a node refusal: a transport error or a forged prefix is not a refusal.
-- `cargo test --release --locked` in `wasm-sol/`: 326 tests: the Solana message checker (84 rules, with
-  the vectors of the Zolana SDK and real Devnet messages), the FROST-Ed25519 ceremony and signing, and
-  the key roles. Nine tests read the Zolana repo and are ignored: run them with
+- `cargo test --release --locked` in `wasm-sol/`: 326 tests: the Solana message checker (84 rules,
+  with the vectors of the Zolana SDK and real Devnet messages), the FROST-Ed25519 ceremony and
+  signing, and the key roles. First run `sh build.sh` and then
+  `node tools/diff_cases.cjs target/pkg-node` in `wasm-sol/`: the second command writes the cases
+  that the test `wasm_native_diff` replays, and that test fails without them. Nine tests read the
+  Zolana repo and are ignored: run them with
   `ZOLANA_REPO=<checkout at commit 89640630> cargo test --release --test repo_pins -- --ignored`.
 - `node web/test/sol-config.mjs` and its eight siblings `sol-docs`, `sol-ceremony`, `sol-app`,
   `sol-wasm`, `sol-sessions`, `sol-limits`, `sol-pay` and `sol-transfer` (the files `sol-rig`,
