@@ -4,15 +4,20 @@ import { aesKey, seal, open, parseVault } from "../vault.js";
 
 const rec = { cred: "Y3JlZA", salt: "c2FsdA" };
 const key = await aesKey(crypto.getRandomValues(new Uint8Array(32)));
+// The sealed record is base64url and field names only: a marker with spaces cannot occur in it by
+// chance, as a short one like "kp" does in about 1 of 20 runs.
+const KEY_PACKAGE = "plain key package of seat 2";
 const data = {
-  secrets: { "g1:2": { keyPackage: "kp", nonces: { s1: "n" } } },
+  secrets: { "g1:2": { keyPackage: KEY_PACKAGE, nonces: { s1: "n" } } },
   keys: { g1: "k".repeat(43) },
 };
 
 const sealed = await seal(key, rec, data);
 assert.equal(sealed.cred, rec.cred);
 assert.equal(sealed.salt, rec.salt);
-assert.ok(!JSON.stringify(sealed).includes("kp"), "the key package is not readable");
+assert.ok(!JSON.stringify(sealed).includes(KEY_PACKAGE), "the key package is not readable");
+const boxBytes = Buffer.from(sealed.box, "base64url").toString("latin1");
+assert.ok(!boxBytes.includes(KEY_PACKAGE), "the box is encrypted, not only encoded");
 assert.deepEqual(await open(key, sealed), data);
 assert.deepEqual(parseVault(JSON.stringify(sealed)), sealed);
 
