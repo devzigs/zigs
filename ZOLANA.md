@@ -864,6 +864,10 @@ group, PDA `9gk8NEZU…`:
 - Cost: 23,020,000 lamports from the funder. A first run stopped after the funding on a wrong
   text pattern of its own driver; its 33,000,000 lamports stay on fee addresses whose key shares
   were in memory only. No proposal account of the program is open after the run.
+- The code after QA round 1 (`eae7b5e`): three new browser contexts restored the seats from their
+  Zcash and Solana backups and read 0.01 SOL. Payment C, 0.001 SOL to key B: seat 1 proposed
+  (`2CBdLzVD…`), seats 2 and 3 approved 30 s apart, and seat 3 executed (`2qTtkN5X…`, slot
+  511,799,024, 148,334 compute units). The rent went back to seat 1. No funding was needed.
 
 ## 7. Risks, questions and recommendation
 
