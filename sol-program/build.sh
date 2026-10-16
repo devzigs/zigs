@@ -134,4 +134,5 @@ printf 'lto = "fat"\ncodegen-units = 1\nopt-level = 2\n' >> "$WORK/Cargo.toml"
 echo "$(sha "$WORK/$SO")  version 2 rebuilt"
 [ "$(sha "$WORK/$SO")" = "$V2" ] || fail "the version 2 rebuild differs from Devnet"
 UNSTRIPPED=target/sbpf-solana-solana/release/zigs_min_multisig.so
-python3 -I fncmp.py "$OBJDUMP" "$WORK/$UNSTRIPPED" "$UNSTRIPPED"
+python3 -I fncmp.py "$OBJDUMP" "$WORK/$UNSTRIPPED" "$UNSTRIPPED" \
+  || echo "build.sh: the functions above differ from version 2"

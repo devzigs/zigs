@@ -151,3 +151,21 @@ fn the_approval_does_not_bind_the_executor() {
         .expect("another executor settles");
     assert!(!rig.exists(&body.proposal()));
 }
+
+/// The CPI copies at most 24 accounts: with one tree, 18 inputs fit and 19 are refused.
+#[test]
+fn the_pool_layout_fits_the_cpi_bound() {
+    for (inputs, fits) in [(18, true), (19, false)] {
+        let mut rig = Rig::new();
+        let mut transact = sample_transact();
+        transact.inputs = vec![transact.inputs[0]; inputs];
+        let body = rig.body(&serialize(&transact));
+        rig.create(&body).expect("create");
+        let result = rig.execute(&body, &transact);
+        if fits {
+            result.expect("18 inputs");
+        } else {
+            assert_eq!(refused_with(result), code::BAD_SPP_ACCOUNTS);
+        }
+    }
+}

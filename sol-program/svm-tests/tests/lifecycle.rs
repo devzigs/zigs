@@ -114,10 +114,8 @@ fn create_refuses_another_address_or_system_program() {
 fn create_refuses_the_same_body_at_a_live_address() {
     let (mut rig, body) = rig_and_body();
     rig.create(&body).expect("create");
-    assert!(
-        rig.create(&body).is_err(),
-        "the address holds a live proposal"
-    );
+    // System error 0: the account is in use. The tooling then compares the account data (N4).
+    assert_eq!(refused_with(rig.create(&body)), 0);
 }
 
 /// Review R1: before version 3 the address bound only the group key and the commitment. A
@@ -254,6 +252,52 @@ fn each_body_has_its_own_cancellation_record() {
     assert_eq!(
         refused_with(rig.execute(&longer, &sample_transact())),
         code::CANCELLED
+    );
+}
+
+/// Cold read: the cancellation slot must be the record of this proposal. With the record of
+/// another body there, the program would keep that record, close this proposal and write no
+/// record of its own, so the same body could be created again and executed.
+#[test]
+fn cancel_refuses_the_record_of_another_body() {
+    let (mut rig, body) = rig_and_body();
+    let mut other = body.clone();
+    other.expiry += DAY;
+    rig.create(&body).expect("create");
+    rig.create(&other).expect("create another body");
+    cancel(&mut rig, &other).expect("cancel the other body");
+    let mut ix = cancel_ix(&rig.payer.pubkey(), &body, authority(&rig));
+    ix.accounts[2].pubkey = other.cancellation();
+    let signer = rig.authority.insecure_clone();
+    assert_eq!(
+        refused_with(rig.send(&[ix], &[&signer])),
+        code::BAD_CANCELLATION_ADDRESS
+    );
+}
+
+#[test]
+fn cancel_needs_the_authority_in_the_expiry_second() {
+    let (mut rig, body) = rig_and_body();
+    rig.create(&body).expect("create");
+    rig.set_time(body.expiry);
+    let ix = cancel_ix(&rig.payer.pubkey(), &body, None);
+    assert_eq!(
+        refused_with(rig.send(&[ix], &[])),
+        code::NOT_ABORT_AUTHORITY
+    );
+}
+
+#[test]
+fn close_cancelled_refuses_the_address_of_another_proposal() {
+    let (mut rig, body) = rig_and_body();
+    rig.create(&body).expect("create");
+    cancel(&mut rig, &body).expect("cancel");
+    rig.set_time(body.expiry + 1);
+    let mut close = close_cancelled_ix(&rig.payer.pubkey(), &body);
+    close.accounts[1].pubkey = Pubkey::new_unique();
+    assert_eq!(
+        refused_with(rig.send(&[close], &[])),
+        code::NOT_A_CANCELLATION
     );
 }
 

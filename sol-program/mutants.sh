@@ -14,30 +14,49 @@ WORK=$(mktemp -d)
 trap 'rm -rf "$WORK"' EXIT
 rsync -a --exclude target --exclude svm-tests ./ "$WORK/"
 SURVIVED=""
+MATCHED=""
 ONLY=" $* "
 
-# mutant ID FILE RULE OLD NEW: replaces OLD, which must occur once in src/FILE, by NEW.
-mutant() {
-  case "$ONLY" in "  " | *" $1 "*) ;; *) return 0 ;; esac
-  rsync -a --delete src/ "$WORK/src/"
-  OLD=$4 NEW=$5 perl -0pi -e \
-    '$n = s/\Q$ENV{OLD}\E/$ENV{NEW}/g; die "no single match\n" unless $n == 1' "$WORK/src/$2"
+fail() {
+  echo "mutants.sh: $*" >&2
+  exit 1
+}
+
+# Builds the copy in $WORK and runs svm-tests on it; returns the exit code of the tests.
+build_and_test() {
   if ! "$SBF" --tools-version v1.54 --jobs 4 --manifest-path "$WORK/Cargo.toml" -- --locked \
     > "$WORK/build.log" 2>&1; then
     cat "$WORK/build.log" >&2
-    echo "mutants.sh: $1 does not build" >&2
-    exit 1
+    fail "$1 does not build"
   fi
-  if ZIGS_PROGRAM_DIR="$WORK" cargo test --manifest-path svm-tests/Cargo.toml --locked -j 4 \
-    --no-fail-fast \
-    -- --test-threads 2 > "$WORK/test.log" 2>&1; then
+  ZIGS_PROGRAM_DIR="$WORK" cargo test --manifest-path svm-tests/Cargo.toml --locked -j 4 \
+    --no-fail-fast -- --test-threads 2 > "$WORK/test.log" 2>&1
+}
+
+# mutant ID FILE RULE OLD NEW: replaces OLD, which must occur once in src/FILE, by NEW. A kill
+# counts only when named tests fail, so a test run that cannot start is an error.
+mutant() {
+  case "$ONLY" in "  " | *" $1 "*) ;; *) return 0 ;; esac
+  MATCHED="$MATCHED $1"
+  rsync -a --delete src/ "$WORK/src/"
+  OLD=$4 NEW=$5 perl -0pi -e \
+    '$n = s/\Q$ENV{OLD}\E/$ENV{NEW}/g; die "no single match\n" unless $n == 1' "$WORK/src/$2"
+  if build_and_test "$1"; then
     echo "$1 SURVIVED  $3"
     SURVIVED="$SURVIVED $1"
-  else
-    KILLERS=$(grep -E '^test .* FAILED$' "$WORK/test.log" | cut -d' ' -f2 | tr '\n' ' ')
-    echo "$1 killed    $3 by: $KILLERS"
+    return 0
   fi
+  KILLERS=$(grep -E '^test .* FAILED$' "$WORK/test.log" | cut -d' ' -f2 | tr '\n' ' ')
+  if [ -z "$KILLERS" ]; then
+    tail -20 "$WORK/test.log" >&2
+    fail "$1: no test failed by name, so the test run itself failed"
+  fi
+  echo "$1 killed    $3 by: $KILLERS"
 }
+
+# The unchanged source must pass, or every mutant would count as killed.
+rsync -a --delete src/ "$WORK/src/"
+build_and_test baseline || fail "the tests fail on the unchanged source"
 
 mutant A1 approval.rs "the approval is an Ed25519 precompile instruction" \
   'approval.get_program_id() != &ED25519_PROGRAM_ID || approval.num_account_metas() != 0' \
@@ -89,6 +108,13 @@ mutant X5 instructions.rs "a second cancel of one body keeps its record" \
         return Ok(());' \
   'if false {
         return Ok(());'
+mutant X7 instructions.rs "cancel writes the record of this proposal only" \
+  'if cancellation.address() != &address {' 'if false {'
+mutant X8 instructions.rs "close_cancelled checks the record address" \
+  'if record[0] != KIND_CANCELLED || cancellation.address() != &expected {' \
+  'if record[0] != KIND_CANCELLED {'
+mutant E4 instructions.rs "cancel needs an abort authority in the expiry second" \
+  'if now()? <= proposal.expiry_unix_ts {' 'if now()? < proposal.expiry_unix_ts {'
 mutant X6 instructions.rs "close_cancelled waits for the expiry" \
   'if now()? <= expiry {' 'if false {'
 mutant N1 instructions.rs "execute and cancel pay the named rent recipient" \
@@ -123,6 +149,9 @@ mutant O1 instructions.rs "execute checks the owner PDA account" \
 mutant L1 instructions.rs "the pool layout has the exact length" \
   'let fits = spp.len() == expected && expected <= MAX_SPP_ACCOUNTS;' \
   'let fits = spp.len() <= MAX_SPP_ACCOUNTS;'
+mutant L4 instructions.rs "the pool layout fits the CPI bound of 24 accounts" \
+  'let fits = spp.len() == expected && expected <= MAX_SPP_ACCOUNTS;' \
+  'let fits = spp.len() == expected;'
 mutant L2 instructions.rs "the owner PDA is the only owner signer" \
   ' && rest.iter().all(|a| a.address() != owner)' ''
 mutant L3 instructions.rs "the pool payer is the execute payer" ' || rest[0].address() != payer' ''
@@ -159,6 +188,9 @@ mutant D2 lib.rs "option D: the program never reads the nullifier key" \
   'pub mod state;' 'pub mod state;
 pub const NULLIFIER_KEY_OFFSET: usize = 0;'
 
+for id in "$@"; do
+  case " $MATCHED " in *" $id "*) ;; *) fail "no mutant has the id $id" ;; esac
+done
 if [ -n "$SURVIVED" ]; then
   echo "mutants.sh: survived:$SURVIVED" >&2
   exit 1
