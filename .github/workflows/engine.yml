@@ -1,5 +1,5 @@
-# The Zcash engine: the tests of the root crate and of wasm/ (VEL-5). Runs only when their files
-# change. No secret is used.
+# The Zcash engine: the CLI end-to-end test of the root crate and the tests of wasm/ (VEL-5).
+# Runs only when their files change. No secret is used.
 name: engine
 
 on:
@@ -25,7 +25,8 @@ permissions:
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.head_ref || github.ref_name }}
-  cancel-in-progress: true
+  # A newer push to a branch cancels the stale run; every commit of main keeps its run.
+  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
 
 env:
   CARGO_TERM_COLOR: never
@@ -34,7 +35,7 @@ env:
 jobs:
   test:
     runs-on: ubuntu-24.04
-    timeout-minutes: 60
+    timeout-minutes: 25
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -50,8 +51,11 @@ jobs:
             target
             wasm/target
           key: engine-${{ steps.rust.outputs.version }}-${{ hashFiles('Cargo.lock', 'wasm/Cargo.lock') }}
-      - name: Root crate
-        run: cargo test --release --locked
+          restore-keys: engine-${{ steps.rust.outputs.version }}-
+      - name: Root crate (the CLI and its end-to-end ceremony with attacks)
+        run: |
+          cargo build --release --locked
+          bash tests/e2e.sh
       - name: wasm/
         working-directory: wasm
         run: cargo test --release --locked

@@ -9,7 +9,8 @@
 # Toolchain: cargo-build-sbf of Agave v4.3.0 (solana-release-aarch64-apple-darwin.tar.bz2 of the
 # GitHub release, SHA-256 0bfbd769a55e32f0a1fe1b92f76f360f01ee19475facf8c31cb90f99dcca7fe0)
 # with platform-tools v1.54. Put it on PATH or set CARGO_BUILD_SBF. cargo-build-sbf removes the
-# working folder from the source paths, so the ELF holds no home path; this script checks that.
+# working folder from the source paths, so the ELF holds no path of this machine; this script
+# checks that.
 #
 # EXPECTED is version 5: version 2 with the fixes of the review, SOL withdrawals, its own
 # transact CPI and the cluster as a build choice (ZOLANA.md 7.2). It is not deployed. Version 2 on
@@ -28,7 +29,8 @@ cd "$(dirname "$0")"
 unset RUSTFLAGS CARGO_ENCODED_RUSTFLAGS
 
 # The ELF holds the paths of the standard library inside platform-tools, which differ between its
-# macOS and its Linux build. So each host has its own hash; CI builds on Linux.
+# macOS and its Linux build. So each host has its own hash; CI builds on Linux. The two ELFs have
+# the same code (fncmp.py on the unstripped CI artifact).
 EXPECTED_DARWIN=b4bad24c6ae7cf2455b52780f78e35573f014ab3bc618fcbb49772b06c0d6eac
 EXPECTED_LINUX=4dd727b04d585403ce7c23ba70497c3922a166690409dfcd63f38c95bfeb2355
 V2=555f45801f32896c78eb55f962026507dec35ea6d673477326db7913e4475d92
@@ -45,11 +47,14 @@ sha() {
   shasum -a 256 "$1" | cut -d' ' -f1
 }
 
-case "$(uname -s)" in
-  Darwin) EXPECTED=$EXPECTED_DARWIN ;;
-  Linux) EXPECTED=$EXPECTED_LINUX ;;
-  *) fail "no pinned hash for the host $(uname -s)" ;;
+case "$(uname -s)-$(uname -m)" in
+  Darwin-arm64) EXPECTED=$EXPECTED_DARWIN ;;
+  Linux-x86_64) EXPECTED=$EXPECTED_LINUX ;;
+  *) fail "no pinned hash for the host $(uname -s) $(uname -m)" ;;
 esac
+if [ "${1:-}" = v2 ] && [ "$(uname -s)" != Darwin ]; then
+  fail "v2 mode needs macOS, where Devnet version 2 was built"
+fi
 
 case "$("$SBF" --version 2>/dev/null | head -1)" in
   "cargo-build-sbf 4.3.0") ;;
@@ -59,7 +64,7 @@ esac
 "$SBF" --tools-version v1.54 --jobs 4 -- --locked --features devnet
 # The ELF holds no path of this machine. Its only absolute paths are the build paths of
 # platform-tools itself (.../work/platform-tools/...), which on a CI runner start with its home.
-if LC_ALL=C perl -0777 -ne 'BEGIN { $h = shift } exit(m{\Q$h\E/(?!work/platform-tools/)} ? 0 : 1)' \
+if LC_ALL=C perl -0777 -ne 'BEGIN { $h = shift } exit(m{\Q$h\E(?!/work/platform-tools/)} ? 0 : 1)' \
   "$HOME" "$SO"; then
   fail "$SO holds a path of this machine"
 fi
@@ -134,7 +139,7 @@ case "${1:-}" in
     cargo test --manifest-path svm-tests/Cargo.toml --locked -j 4 -- --test-threads 2
     exit 0
     ;;
-  v2) [ "$(uname -s)" = Darwin ] || fail "v2 mode needs macOS, where Devnet version 2 was built" ;;
+  v2) ;;
   *) fail "unknown mode $1" ;;
 esac
 

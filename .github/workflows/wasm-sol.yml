@@ -17,7 +17,8 @@ permissions:
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.head_ref || github.ref_name }}
-  cancel-in-progress: true
+  # A newer push to a branch cancels the stale run; every commit of main keeps its run.
+  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
 
 env:
   CARGO_TERM_COLOR: never
@@ -26,7 +27,7 @@ env:
 jobs:
   test:
     runs-on: ubuntu-24.04
-    timeout-minutes: 60
+    timeout-minutes: 25
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -55,6 +56,7 @@ jobs:
             ~/.cargo/git/db
             wasm-sol/target
           key: wasm-sol-${{ steps.rust.outputs.version }}-${{ hashFiles('wasm-sol/Cargo.lock') }}
+          restore-keys: wasm-sol-${{ steps.rust.outputs.version }}-
       - name: Build the wasm
         run: sh wasm-sol/build.sh
       - name: Smoke and diff checks

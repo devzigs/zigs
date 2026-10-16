@@ -1,5 +1,6 @@
 # The web tests under Node 24: every web/test/*.mjs except the helpers that solspike/baseline.sh
-# names (VEL-5). They use the committed engine and Solana wasm files, and need no server.
+# names (VEL-5). They use the committed engine and Solana wasm files, the TS vectors of wasm-sol
+# and cf/src/index.js, and need no server.
 name: web
 
 on:
@@ -7,11 +8,13 @@ on:
     paths:
       - web/**
       - cf/src/**
+      - wasm-sol/vectors/ts/**
       - .github/workflows/web.yml
   pull_request:
     paths:
       - web/**
       - cf/src/**
+      - wasm-sol/vectors/ts/**
       - .github/workflows/web.yml
 
 permissions:
@@ -19,12 +22,13 @@ permissions:
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.head_ref || github.ref_name }}
-  cancel-in-progress: true
+  # A newer push to a branch cancels the stale run; every commit of main keeps its run.
+  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
 
 jobs:
   test:
     runs-on: ubuntu-24.04
-    timeout-minutes: 30
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
