@@ -21,5 +21,23 @@
   "durable_objects": {
     "bindings": [{ "name": "STORE", "class_name": "Store" }]
   },
-  "migrations": [{ "tag": "v1", "new_sqlite_classes": ["Store"] }]
+  "migrations": [{ "tag": "v1", "new_sqlite_classes": ["Store"] }],
+  // The staging copy (VEL-2): its own Worker, Durable Object data, password and rate counter, at
+  // staging.zigs.app. scripts/deploy-staging.sh deploys main to it. vars, ratelimits and
+  // durable_objects are not inherited, so they are set here. name and routes are inherited, so
+  // they are set here too: staging must never take the production name or domain. migrations
+  // are inherited, so a new migration applies to both.
+  "env": {
+    "staging": {
+      "name": "zec-frost-staging",
+      "vars": { "SOL": "1" },
+      "routes": [{ "pattern": "staging.zigs.app", "custom_domain": true }],
+      "ratelimits": [
+        { "name": "WS_PER_IP", "namespace_id": "1004", "simple": { "limit": 60, "period": 60 } }
+      ],
+      "durable_objects": {
+        "bindings": [{ "name": "STORE", "class_name": "Store" }]
+      }
+    }
+  }
 }

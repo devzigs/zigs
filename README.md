@@ -353,9 +353,16 @@ shielded balance of the group: only that seat signs it, and the amount and the s
 A private payment needs the approval of `t` seats, and the proposing seat pays its fees.
 
 Open http://localhost:8787. To act as a second person on the same computer, also open
-http://127.0.0.1:8787: it is a separate origin, so it has separate storage. Deploy with
-`npx wrangler deploy` in `cf/`. Until launch, the live app asks for one shared password: set it with
-`npx wrangler secret put APP_PASSWORD`. Without that secret, the app refuses every request.
+http://127.0.0.1:8787: it is a separate origin, so it has separate storage. Deploy production
+with `npx wrangler deploy --env=""` in `cf/` (the top level of `cf/wrangler.jsonc`). Until launch,
+the live app asks for one shared password: set it with `npx wrangler secret put APP_PASSWORD
+--env=""`. Without that secret, the app refuses every request.
+
+A staging copy runs at https://staging.zigs.app, with its own Worker, Durable Object data and
+password (`env.staging` in `cf/wrangler.jsonc`). After each merge, `sh scripts/deploy-staging.sh`
+deploys `origin/main` there and checks it from outside. Deploy production only from a commit
+that ran on staging. The staging password is in `~/.config/zigs/staging-password`, which the
+script makes on its first run.
 
 Group payments now expire after one day, and the web app can pay a priority fee (TICKETS.md,
 ZEC-2 and ZEC-4). The iPhone and Mac apps get these screens later (ZEC-8). Their payments also
