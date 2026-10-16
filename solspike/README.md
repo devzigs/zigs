@@ -38,8 +38,10 @@ wrangler: run `npm ci` in `cf/`.
 
 `serve.sh` and the harness start `wrangler dev` with `cf/.dev.vars`. That file is not tracked.
 Put `DEV_NO_AUTH=1` in it. A live scenario also needs `HELIUS_DEVNET_URL=<the Helius URL>`: the
-page gets it from `/sol/config.json`. `harness/sol-route.mjs` and `harness/restore-neg.mjs` change
-single lines of the file and put them back.
+page gets it from `/sol/config.json`. The Zcash tab of a testnet wallet needs `LWD_KEY=<the key of
+infra/lwd/.env.lwd-key>`: without it `/lwd` answers 503 and the page uses the ChainSafe server.
+`harness/sol-route.mjs` and `harness/restore-neg.mjs` change single lines of the file and put them
+back.
 
 ## Run the checks
 
