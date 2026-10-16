@@ -297,6 +297,7 @@ iPhone.
 | [`cf/src/index.js`](cf/src/index.js) | Group server: Cloudflare Worker with one Durable Object per wallet, limits against abuse. It also serves `/sol` and `/sol/config.json` for the Solana beta |
 | [`web/sol/`](web/sol) | Solana beta in the page: ceremony, signing sessions, backup, the Worker that talks to Helius, the Solana wasm, and the vendored Zolana SDK bundle (third-party code, hash pinned in `SHA256SUMS`) |
 | [`wasm-sol/`](wasm-sol) | Solana engine in Rust: message checker, FROST-Ed25519 ceremony and signing, key roles. It has its own lockfile and builds to `web/sol/wasm/` |
+| [`sol-program/`](sol-program) | The Solana program that owns a group's funds at an address of the group key and settles an approved payment through the pool (ZOLANA.md 7.2). `build.sh` rebuilds it and checks the hash, `build.sh test` runs its tests. Not used by the beta yet |
 | [`solspike/`](solspike) | Checks of the Solana beta: the Zcash baseline gate, the headless Chrome harness, the mock run and the bundle build. See [`solspike/README.md`](solspike/README.md) |
 | [`ZOLANA.md`](ZOLANA.md), [`TICKETS.md`](TICKETS.md) | The Solana design, spike results and risks. The open work |
 | [`ios/Zigs/`](ios/Zigs) | SwiftUI app for iPhone and Mac |
