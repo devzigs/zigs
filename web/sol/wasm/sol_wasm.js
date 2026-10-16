@@ -1,14 +1,16 @@
 /* @ts-self-types="./sol_wasm.d.ts" */
 
 /**
- * Checks a message with every rule of ZOLANA.md section 5.
+ * Checks a message with every rule of ZOLANA.md section 5 and the beta policy of a message that
+ * a fee key signs (`beta.rs`). `sol_sign_share` adds the policy of the group key.
  *
  * - `intent`: the proposal, `Proposal::encode`: the intent and, for a spend, the approved
  *   plaintext outputs.
- * - `pins`: 129 bytes, the group key, `nullifier_pk` and `viewing_pk` of the `soldone` document
- *   and the payer of the proposal (`Pins::wire`). The page takes the payer from the `solfee`
- *   document of the proposing seat. The `owner_hash` is computed from the first three, and the
- *   snapshot secrets must derive exactly the two public keys.
+ * - `pins`: 161 bytes, the group key, `nullifier_pk` and `viewing_pk` of the `soldone` document,
+ *   the payer of the proposal and the `nullifier_pk` of the PDA identity (`Pins::wire`). The
+ *   page takes the payer from the `solfee` document of the proposing seat. The `owner_hash` is
+ *   computed from the pins, and the snapshot secrets must derive exactly the pinned keys of the
+ *   identity that the intent uses (the PDA for Shield and the program messages).
  * - `snapshot`: the device snapshot, `Snapshot::encode`.
  * - `now`: the Unix time of the device, in seconds.
  *
@@ -38,6 +40,50 @@ export function check_message(message, intent, pins, snapshot, now) {
         const ptr3 = passArray8ToWasm0(snapshot, wasm.__wbindgen_export2);
         const len3 = WASM_VECTOR_LEN;
         wasm.check_message(retptr, ptr0, len0, ptr1, len1, ptr2, len2, ptr3, len3, now);
+        var r0 = getDataViewMemory0().getInt32(retptr + 4 * 0, true);
+        var r1 = getDataViewMemory0().getInt32(retptr + 4 * 1, true);
+        deferred5_0 = r0;
+        deferred5_1 = r1;
+        return getStringFromWasm0(r0, r1);
+    } finally {
+        wasm.__wbindgen_add_to_stack_pointer(16);
+        wasm.__wbindgen_export3(deferred5_0, deferred5_1, 1);
+    }
+}
+
+/**
+ * Checks a payment of the program design (ZOLANA.md 7.2), with the rules of section 5 on the
+ * `transact` data of its first proof.
+ *
+ * - `proposal`: `Proposal::encode` of an `Approve` (or `Propose`) intent: the payment, the plan
+ *   and the `transact` data.
+ * - `pins`, `snapshot`, `now`: as `check_message` takes them.
+ * - `seen`: `Seen::encode`, the proposal account that the device read and the bodies that its
+ *   seats approved. Empty before the account exists: the chain rules do not run then.
+ *
+ * `accepted` gives the commitment, the proposal address, the digest that the group signs, the
+ * body, then the lines of `check_message`. `refused` and `error` as there.
+ * @param {Uint8Array} proposal
+ * @param {Uint8Array} pins
+ * @param {Uint8Array} snapshot
+ * @param {Uint8Array} seen
+ * @param {bigint} now
+ * @returns {string}
+ */
+export function check_payment(proposal, pins, snapshot, seen, now) {
+    let deferred5_0;
+    let deferred5_1;
+    try {
+        const retptr = wasm.__wbindgen_add_to_stack_pointer(-16);
+        const ptr0 = passArray8ToWasm0(proposal, wasm.__wbindgen_export2);
+        const len0 = WASM_VECTOR_LEN;
+        const ptr1 = passArray8ToWasm0(pins, wasm.__wbindgen_export2);
+        const len1 = WASM_VECTOR_LEN;
+        const ptr2 = passArray8ToWasm0(snapshot, wasm.__wbindgen_export2);
+        const len2 = WASM_VECTOR_LEN;
+        const ptr3 = passArray8ToWasm0(seen, wasm.__wbindgen_export2);
+        const len3 = WASM_VECTOR_LEN;
+        wasm.check_payment(retptr, ptr0, len0, ptr1, len1, ptr2, len2, ptr3, len3, now);
         var r0 = getDataViewMemory0().getInt32(retptr + 4 * 0, true);
         var r1 = getDataViewMemory0().getInt32(retptr + 4 * 1, true);
         deferred5_0 = r0;
@@ -140,6 +186,89 @@ export function sol_aggregate(message, public_key_package, commitments, shares) 
     } finally {
         wasm.__wbindgen_add_to_stack_pointer(16);
         wasm.__wbindgen_export3(deferred6_0, deferred6_1, 1);
+    }
+}
+
+/**
+ * The approval digest (hex) of a proposal account and its body (`program::approval_digest`).
+ * It checks no rule: a seat runs `check_payment` before it signs this digest. The page counts
+ * the commits and shares of a payment by it.
+ * @param {string} proposal
+ * @param {string} body
+ * @returns {string}
+ */
+export function sol_approval_digest(proposal, body) {
+    let deferred4_0;
+    let deferred4_1;
+    try {
+        const retptr = wasm.__wbindgen_add_to_stack_pointer(-16);
+        const ptr0 = passStringToWasm0(proposal, wasm.__wbindgen_export2, wasm.__wbindgen_export4);
+        const len0 = WASM_VECTOR_LEN;
+        const ptr1 = passStringToWasm0(body, wasm.__wbindgen_export2, wasm.__wbindgen_export4);
+        const len1 = WASM_VECTOR_LEN;
+        wasm.sol_approval_digest(retptr, ptr0, len0, ptr1, len1);
+        var r0 = getDataViewMemory0().getInt32(retptr + 4 * 0, true);
+        var r1 = getDataViewMemory0().getInt32(retptr + 4 * 1, true);
+        var r2 = getDataViewMemory0().getInt32(retptr + 4 * 2, true);
+        var r3 = getDataViewMemory0().getInt32(retptr + 4 * 3, true);
+        var ptr3 = r0;
+        var len3 = r1;
+        if (r3) {
+            ptr3 = 0; len3 = 0;
+            throw takeObject(r2);
+        }
+        deferred4_0 = ptr3;
+        deferred4_1 = len3;
+        return getStringFromWasm0(ptr3, len3);
+    } finally {
+        wasm.__wbindgen_add_to_stack_pointer(16);
+        wasm.__wbindgen_export3(deferred4_0, deferred4_1, 1);
+    }
+}
+
+/**
+ * The share of a seat over the approval digest of a payment. It runs `check_payment` with the
+ * proposal account first and throws the refusal. `round` is `{"now", "cluster", "keyPackage",
+ * "nonces", "commitments"}`, as for `sol_sign_share`; the nonces are those of the digest.
+ * @param {Uint8Array} proposal
+ * @param {Uint8Array} pins
+ * @param {Uint8Array} snapshot
+ * @param {Uint8Array} seen
+ * @param {string} round
+ * @returns {string}
+ */
+export function sol_approval_share(proposal, pins, snapshot, seen, round) {
+    let deferred7_0;
+    let deferred7_1;
+    try {
+        const retptr = wasm.__wbindgen_add_to_stack_pointer(-16);
+        const ptr0 = passArray8ToWasm0(proposal, wasm.__wbindgen_export2);
+        const len0 = WASM_VECTOR_LEN;
+        const ptr1 = passArray8ToWasm0(pins, wasm.__wbindgen_export2);
+        const len1 = WASM_VECTOR_LEN;
+        const ptr2 = passArray8ToWasm0(snapshot, wasm.__wbindgen_export2);
+        const len2 = WASM_VECTOR_LEN;
+        const ptr3 = passArray8ToWasm0(seen, wasm.__wbindgen_export2);
+        const len3 = WASM_VECTOR_LEN;
+        const ptr4 = passStringToWasm0(round, wasm.__wbindgen_export2, wasm.__wbindgen_export4);
+        const len4 = WASM_VECTOR_LEN;
+        wasm.sol_approval_share(retptr, ptr0, len0, ptr1, len1, ptr2, len2, ptr3, len3, ptr4, len4);
+        var r0 = getDataViewMemory0().getInt32(retptr + 4 * 0, true);
+        var r1 = getDataViewMemory0().getInt32(retptr + 4 * 1, true);
+        var r2 = getDataViewMemory0().getInt32(retptr + 4 * 2, true);
+        var r3 = getDataViewMemory0().getInt32(retptr + 4 * 3, true);
+        var ptr6 = r0;
+        var len6 = r1;
+        if (r3) {
+            ptr6 = 0; len6 = 0;
+            throw takeObject(r2);
+        }
+        deferred7_0 = ptr6;
+        deferred7_1 = len6;
+        return getStringFromWasm0(ptr6, len6);
+    } finally {
+        wasm.__wbindgen_add_to_stack_pointer(16);
+        wasm.__wbindgen_export3(deferred7_0, deferred7_1, 1);
     }
 }
 
@@ -486,6 +615,42 @@ export function sol_nonces(key_package, digest) {
         const ptr1 = passStringToWasm0(digest, wasm.__wbindgen_export2, wasm.__wbindgen_export4);
         const len1 = WASM_VECTOR_LEN;
         wasm.sol_nonces(retptr, ptr0, len0, ptr1, len1);
+        var r0 = getDataViewMemory0().getInt32(retptr + 4 * 0, true);
+        var r1 = getDataViewMemory0().getInt32(retptr + 4 * 1, true);
+        var r2 = getDataViewMemory0().getInt32(retptr + 4 * 2, true);
+        var r3 = getDataViewMemory0().getInt32(retptr + 4 * 3, true);
+        var ptr3 = r0;
+        var len3 = r1;
+        if (r3) {
+            ptr3 = 0; len3 = 0;
+            throw takeObject(r2);
+        }
+        deferred4_0 = ptr3;
+        deferred4_1 = len3;
+        return getStringFromWasm0(ptr3, len3);
+    } finally {
+        wasm.__wbindgen_add_to_stack_pointer(16);
+        wasm.__wbindgen_export3(deferred4_0, deferred4_1, 1);
+    }
+}
+
+/**
+ * The PDA identity of `solSeed` under the group key, as JSON: `pda`, `nullifier_secret`,
+ * `nullifier_pk`, `owner_hash` and `address`.
+ * @param {string} sol_seed
+ * @param {string} group_key
+ * @returns {string}
+ */
+export function sol_pda_roles(sol_seed, group_key) {
+    let deferred4_0;
+    let deferred4_1;
+    try {
+        const retptr = wasm.__wbindgen_add_to_stack_pointer(-16);
+        const ptr0 = passStringToWasm0(sol_seed, wasm.__wbindgen_export2, wasm.__wbindgen_export4);
+        const len0 = WASM_VECTOR_LEN;
+        const ptr1 = passStringToWasm0(group_key, wasm.__wbindgen_export2, wasm.__wbindgen_export4);
+        const len1 = WASM_VECTOR_LEN;
+        wasm.sol_pda_roles(retptr, ptr0, len0, ptr1, len1);
         var r0 = getDataViewMemory0().getInt32(retptr + 4 * 0, true);
         var r1 = getDataViewMemory0().getInt32(retptr + 4 * 1, true);
         var r2 = getDataViewMemory0().getInt32(retptr + 4 * 2, true);

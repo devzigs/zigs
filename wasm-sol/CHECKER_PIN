@@ -70,7 +70,7 @@ use; the code that read the solSeed file is removed. Vectors: only the public on
 Copied from the P1 crate: tests/data (the RFC 9591 E.1 inputs and the vectors of frost-ed25519).
 
 The wasm of wasm-sol (build.sh): SHA-256
-0e4a563bda445444d0227e72fea3a5522ab7e65849cbff9211956c290331e6b5, 1,076,988 bytes raw, 395,356 gzip
+9b4e9ec61781c4b1d1c0dc5255083f1388fe9eaf39bdf62b5a939874d131b3b0, 1,077,255 bytes raw, 395,480 gzip
 
 Changes of the move into the product repo (not signed; no file of src/ changed, so the rules and
 the checker are those that the verdict signed):
@@ -198,7 +198,8 @@ signs a nonce message only for the move of its funds to the PDA:
   "zigs-sol/pda-nullifier-secret/v1" || PDA, 31 bytes; address tag 2). `roles` is unchanged.
 - src/sign.rs: `approval_share` signs the digest of a payment and nothing else; `sign_share` runs
   the group policy. src/fee.rs: the fee policy. src/wasm.rs: check_payment, sol_approval_share,
-  sol_approval_digest, sol_pda_roles; check_message runs the fee policy.
+  sol_approval_digest, sol_pda_roles; check_message runs the fee policy; compile_message compiles
+  Shield, Propose and Execute for the PDA identity (`beta::identity`).
 - tests: program.rs (the landed approvals of tracks dmain and emain), payment.rs, pay_vectors.rs
   (new); tests/common/fixture.rs builds the move to the PDA and payments of the PDA identity; every
   test that the policy refuses names the policy rule and keeps its own rule; tests/roles.rs checks
@@ -207,7 +208,7 @@ signs a nonce message only for the move of its funds to the PDA:
 - vectors: program/landed.json (public chain data of the spike), pay/*.json
   (solspike/tools/payment_vectors.mjs, the TS SDK at c232da1b), roles.json (the PDA identity of
   each seed), smoke (examples/gen_vectors.rs again, with the case migration).
-- tools/mutate_sol.py: 39 cases for the program design, all killed by their named test, and the
+- tools/mutate_sol.py: 41 cases for the program design, all killed by their named test, and the
   three new test files in its list.
 
 Check: python3 -I tools/pin_check.py (the manifest below against the tree).
@@ -217,7 +218,7 @@ bce3e196c3a4064026d8b57f8fe3ebcca600ac9de008df44e7b61cc8c6b1bb46  src/address.rs
 5a9cd223134111a083252d60a92a5f79134519df15ad3d658daf3090199d427d  src/approve.rs  modified
 84bc02b107fb6077a55d51f4fbb0e936e4417d3c7a42505402ce32cebcc82865  src/assets.rs  verbatim
 7709e0fd39c88ad201925f212f7321c0298db4dbfd3c2122b5ce8ddbdb2ece40  src/assets_devnet.bin  verbatim
-833175c2ec4172984a882c1d11dd244ffc8a335608d6414eddf5bd9f573c625b  src/beta.rs  new
+f7c80d2cd84b441f2bda022bf1e65746d67f93d44df0d0fbf0740b449ffca7c7  src/beta.rs  new
 0c2c8885a396432c3d84c077cfea3f4f364c57dc6af0e26d169d3b2fc8e34684  src/bytes.rs  verbatim
 34713776c2e344e7319a8b9b55ff17684ac383c055c07d6133fd95878985f2c7  src/check.rs  modified
 ca3b51e9ea30baeb0b082ca9cb19fe248bc86880d60ae90a3ee3e5a7dcb6b371  src/codec.rs  new
@@ -247,7 +248,7 @@ fb32fff67235197779cc2b25cc5fe351d57fdb6140d976546b96ddc4484e28d3  src/snapshot.r
 3d7e69437af85c56d9bcf80172af2c7c866140ceb6e3f889d8cbc11dde9cdf05  src/transact.rs  verbatim
 c9d4c2718f755ac5ebeb8a705e036b3ab9183cb7ef95fe1f14da5ffa931c1c9f  src/v1.rs  verbatim
 ddda30596120fcb6731fa8515b0a06c55e2df70070a9082ed64749b022ddb374  src/viewing.rs  verbatim
-ee35c01c3afe32161876f858342f47d1aab0690e5fb4319347f8b147ec3e63be  src/wasm.rs  modified
+304edffc28e493eecd5c2d7a17eaf020cc29fbab29d34ca6a33ff88efbd3fa6a  src/wasm.rs  modified
 ab14b07d8870f6c201553f0f5bc066fe65b3a0d79144e293a6a3a9ded2e65ad4  tests/asset_pins.rs  verbatim
 3437d4c0d11bb120bc221c3212d11d4512d10e7986433397d634a35a7916d1c2  tests/common/fixture.rs  modified
 be4feeabff9b735b6d73f7f742151bf76ef64a0488027cf71e04400db9abc7eb  tests/common/mod.rs  modified
@@ -264,7 +265,7 @@ cfc68ad047d9dff9f4cb368c901238019de4d6284cbd23853b5224f97a2bf3ca  tests/frost_dk
 30d06cfe796b1238ac2957de71d1d2b285d5ad4e545fc0bab1ce02144c46fd35  tests/negative.rs  modified
 025fcdc92eb9ea2519a623a14d1ea06073c047b20a188bac5ae3a918ccef50ca  tests/p3c.rs  modified
 f4d8360137a186fdc4a18bd6c0425c8e6a2b60236f13242a25bcf1313b9d1382  tests/pay_vectors.rs  new
-a2e83e04405787d6a81fcc8adc199a78ac8a2313f9ff41eb1e27cda29ee66ea2  tests/payment.rs  new
+58d226886f01be5089d32e48f60e3d09589972eff4e2acfdfd4516d76836395d  tests/payment.rs  new
 95290d8683b751fb47f647d29eb2486fcd3dad545aa35a368d1a5fb0733151b1  tests/pin_bytes.rs  verbatim
 0f4f6986a1acc2d37616f0ac6d5f03064a175c7b963cdb0b780682a61c2e5194  tests/program.rs  new
 3037d149887a37309b07c8765f862acf9994f0802138861188bd9ffc1869e829  tests/real.rs  modified

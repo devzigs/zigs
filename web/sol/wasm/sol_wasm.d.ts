@@ -2,14 +2,16 @@
 /* eslint-disable */
 
 /**
- * Checks a message with every rule of ZOLANA.md section 5.
+ * Checks a message with every rule of ZOLANA.md section 5 and the beta policy of a message that
+ * a fee key signs (`beta.rs`). `sol_sign_share` adds the policy of the group key.
  *
  * - `intent`: the proposal, `Proposal::encode`: the intent and, for a spend, the approved
  *   plaintext outputs.
- * - `pins`: 129 bytes, the group key, `nullifier_pk` and `viewing_pk` of the `soldone` document
- *   and the payer of the proposal (`Pins::wire`). The page takes the payer from the `solfee`
- *   document of the proposing seat. The `owner_hash` is computed from the first three, and the
- *   snapshot secrets must derive exactly the two public keys.
+ * - `pins`: 161 bytes, the group key, `nullifier_pk` and `viewing_pk` of the `soldone` document,
+ *   the payer of the proposal and the `nullifier_pk` of the PDA identity (`Pins::wire`). The
+ *   page takes the payer from the `solfee` document of the proposing seat. The `owner_hash` is
+ *   computed from the pins, and the snapshot secrets must derive exactly the pinned keys of the
+ *   identity that the intent uses (the PDA for Shield and the program messages).
  * - `snapshot`: the device snapshot, `Snapshot::encode`.
  * - `now`: the Unix time of the device, in seconds.
  *
@@ -20,6 +22,21 @@
  * did not parse.
  */
 export function check_message(message: Uint8Array, intent: Uint8Array, pins: Uint8Array, snapshot: Uint8Array, now: bigint): string;
+
+/**
+ * Checks a payment of the program design (ZOLANA.md 7.2), with the rules of section 5 on the
+ * `transact` data of its first proof.
+ *
+ * - `proposal`: `Proposal::encode` of an `Approve` (or `Propose`) intent: the payment, the plan
+ *   and the `transact` data.
+ * - `pins`, `snapshot`, `now`: as `check_message` takes them.
+ * - `seen`: `Seen::encode`, the proposal account that the device read and the bodies that its
+ *   seats approved. Empty before the account exists: the chain rules do not run then.
+ *
+ * `accepted` gives the commitment, the proposal address, the digest that the group signs, the
+ * body, then the lines of `check_message`. `refused` and `error` as there.
+ */
+export function check_payment(proposal: Uint8Array, pins: Uint8Array, snapshot: Uint8Array, seen: Uint8Array, now: bigint): string;
 
 /**
  * The message bytes of a proposal. A message of another shape than the template is an error.
@@ -35,6 +52,20 @@ export function rule_list(): string;
  * The signature (hex) of the shares, checked with `verify_strict`.
  */
 export function sol_aggregate(message: Uint8Array, public_key_package: string, commitments: string, shares: string): string;
+
+/**
+ * The approval digest (hex) of a proposal account and its body (`program::approval_digest`).
+ * It checks no rule: a seat runs `check_payment` before it signs this digest. The page counts
+ * the commits and shares of a payment by it.
+ */
+export function sol_approval_digest(proposal: string, body: string): string;
+
+/**
+ * The share of a seat over the approval digest of a payment. It runs `check_payment` with the
+ * proposal account first and throws the refusal. `round` is `{"now", "cluster", "keyPackage",
+ * "nonces", "commitments"}`, as for `sol_sign_share`; the nonces are those of the digest.
+ */
+export function sol_approval_share(proposal: Uint8Array, pins: Uint8Array, snapshot: Uint8Array, seen: Uint8Array, round: string): string;
 
 /**
  * The commitment of a seat to its secret part, as hex.
@@ -94,6 +125,12 @@ export function sol_fee_verify(_public: string, message: Uint8Array, signature: 
 export function sol_nonces(key_package: string, digest: string): string;
 
 /**
+ * The PDA identity of `solSeed` under the group key, as JSON: `pda`, `nullifier_secret`,
+ * `nullifier_pk`, `owner_hash` and `address`.
+ */
+export function sol_pda_roles(sol_seed: string, group_key: string): string;
+
+/**
  * The version label of the program ids: what a `soldone` document must carry.
  */
 export function sol_program_label(): string;
@@ -120,9 +157,12 @@ export type InitInput = RequestInfo | URL | Response | BufferSource | WebAssembl
 export interface InitOutput {
     readonly memory: WebAssembly.Memory;
     readonly check_message: (a: number, b: number, c: number, d: number, e: number, f: number, g: number, h: number, i: number, j: bigint) => void;
+    readonly check_payment: (a: number, b: number, c: number, d: number, e: number, f: number, g: number, h: number, i: number, j: bigint) => void;
     readonly compile_message: (a: number, b: number, c: number, d: number, e: number, f: number, g: number) => void;
     readonly rule_list: (a: number) => void;
     readonly sol_aggregate: (a: number, b: number, c: number, d: number, e: number, f: number, g: number, h: number, i: number) => void;
+    readonly sol_approval_digest: (a: number, b: number, c: number, d: number, e: number) => void;
+    readonly sol_approval_share: (a: number, b: number, c: number, d: number, e: number, f: number, g: number, h: number, i: number, j: number, k: number) => void;
     readonly sol_commit: (a: number, b: number, c: number, d: number, e: number, f: number, g: number, h: number, i: number, j: number) => void;
     readonly sol_digest: (a: number, b: number, c: number, d: number, e: number) => void;
     readonly sol_dkg1: (a: number, b: number, c: number, d: number) => void;
@@ -133,6 +173,7 @@ export interface InitOutput {
     readonly sol_fee_sign: (a: number, b: number, c: number, d: number, e: number, f: number, g: number, h: number, i: number, j: number, k: number) => void;
     readonly sol_fee_verify: (a: number, b: number, c: number, d: number, e: number, f: number) => number;
     readonly sol_nonces: (a: number, b: number, c: number, d: number, e: number) => void;
+    readonly sol_pda_roles: (a: number, b: number, c: number, d: number, e: number) => void;
     readonly sol_program_label: (a: number) => void;
     readonly sol_roles: (a: number, b: number, c: number, d: number, e: number) => void;
     readonly sol_share_fits: (a: number, b: number) => number;

@@ -7,7 +7,7 @@
 use wasm_bindgen::prelude::{wasm_bindgen, JsError};
 
 use crate::approve::{Approved, Device};
-use crate::beta::{approve_message, approve_payment, Signer};
+use crate::beta::{approve_message, approve_payment, identity, Signer};
 use crate::bytes::hex;
 use crate::check::Refusal;
 use crate::codec::{unhex, unhex_array};
@@ -271,7 +271,8 @@ fn js<T>(result: Result<T, String>) -> Result<T, JsError> {
 ///   out of the SDK message. Empty for every intent but a Transfer and a Withdrawal.
 pub fn compile_proposal(proposal: &[u8], pins: &[u8], transact: &[u8]) -> Result<Vec<u8>, String> {
     let proposal = Proposal::decode(proposal)?;
-    let pins = Pins::decode(pins)?;
+    // Add SOL and the program messages pay to or from the PDA identity, as the checker reads them.
+    let pins = identity(&proposal.intent, &Pins::decode(pins)?).map_err(|r| refused(&r))?;
     let tx = match transact {
         [] => None,
         data => Some(transact::parse(data).map_err(|why| format!("transact data: {why:?}"))?),

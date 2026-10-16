@@ -735,3 +735,26 @@ fn an_ed25519_instruction_outside_an_execute_is_refused() {
         "{why:?}"
     );
 }
+
+#[test]
+fn the_compile_entry_builds_add_sol_and_the_create_message_for_the_pda_identity() {
+    let f = payment();
+    let (shield, _) = shield_message(&f.pins);
+    let bytes = p3_check::wasm::compile_proposal(&shield.encode().unwrap(), &f.pins.wire(), &[])
+        .expect("compile");
+    let msg = v1::parse(&bytes).unwrap();
+    let entry = &parse_deposit(&msg.ixs[0].data).unwrap().entries[0];
+    assert_eq!(
+        entry.owner,
+        pda_wallet().owner_hash(),
+        "the deposit is owned by the PDA"
+    );
+    let (body, _, _) = want_body(&f);
+    let (proposal, message) = propose_of(&f, body.commitment);
+    let wire = proposal.encode().unwrap();
+    let compiled = p3_check::wasm::compile_proposal(&wire, &f.pins.wire(), &[]).unwrap();
+    assert_eq!(
+        compiled, message,
+        "the create message of the entry is the template's"
+    );
+}

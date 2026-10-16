@@ -144,7 +144,7 @@ fn propose_violations(proposal: &Proposal, device: &Device) -> Vec<Violation> {
 
 /// The pins of the identity that an intent spends or pays to: the PDA for the program design,
 /// the group key for the move of the beta funds.
-fn identity(intent: &Intent, pins: &Pins) -> Result<Pins, Refusal> {
+pub(crate) fn identity(intent: &Intent, pins: &Pins) -> Result<Pins, Refusal> {
     if intent.uses_pda() {
         return pins
             .for_pda()

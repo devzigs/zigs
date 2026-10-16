@@ -97,6 +97,8 @@ SHARE_GROUP = "a_key_package_of_another_group_gets_no_share_of_the_payment"
 KEYS = "the_group_key_signs_no_add_sol_and_a_fee_key_signs_the_create_message_of_its_seat"
 ED25519 = "an_ed25519_instruction_outside_an_execute_is_refused"
 PDA_WIRE = "the_wire_of_the_pins_holds_the_payer_then_the_pda_key"
+COMPILE_PDA = "the_compile_entry_builds_add_sol_and_the_create_message_for_the_pda_identity"
+DIGEST_ENTRY = "the_digest_entry_of_the_page_gives_the_landed_digest_and_refuses_a_bad_body"
 
 # The program design (ZOLANA.md 7.2): the client of the approvals program, the approval of a
 # payment, the beta policy and the two templates.
@@ -187,6 +189,10 @@ PROGRAM_CASES = [
     ("fee-group-policy", "src/fee.rs",
      "    let pins = approved(message, check, now, beta::Signer::Fee)?;",
      "    let pins = approved(message, check, now, beta::Signer::Group)?;", KEYS),
+    ("compile-group-pins", "src/wasm.rs",
+     "    let pins = identity(&proposal.intent, &Pins::decode(pins)?).map_err(|r| refused(&r))?;",
+     "    let pins = Pins::decode(pins)?;\n    let _ = identity;", COMPILE_PDA),
+    ("digest-any-body", "src/wasm.rs", "    Body::parse(&body)?;\n", "", DIGEST_ENTRY),
 ]
 
 # (name, file, exact old text, new text, test that must fail)
