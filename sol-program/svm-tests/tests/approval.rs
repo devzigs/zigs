@@ -8,7 +8,8 @@ use solana_signer::Signer;
 use solana_transaction_error::TransactionError;
 use zigs_min_multisig_svm_tests::{
     approval_ix, code, digest_with, execute_ix, refused_with, sample_transact, serialize, Body,
-    Rig, DOMAIN, ED25519_ID, INSTRUCTIONS_SYSVAR, PROGRAM_ID, SYSTEM_ID,
+    Rig, DEVNET_GENESIS, DOMAIN, ED25519_ID, INSTRUCTIONS_SYSVAR, MAINNET_GENESIS, PROGRAM_ID,
+    SYSTEM_ID,
 };
 
 /// A rig with a created proposal of the sample transfer.
@@ -125,8 +126,7 @@ fn refuses_another_signer() {
 fn refuses_a_digest_with_one_part_changed() {
     let (mut rig, body, transact) = proposed();
     let proposal = body.proposal();
-    let genesis = Pubkey::from_str_const("EtWTRABZaYq6iMfeYKouRu166VU2xqa1wcaWoxPkrZBG");
-    let mainnet = Pubkey::from_str_const("5eykt4UsFv8P8NJdTREpY1vzqKqZKvdpKuc147dw2N9d");
+    let (genesis, mainnet) = (DEVNET_GENESIS, MAINNET_GENESIS);
     let mut later = body.clone();
     later.expiry += 1;
     let digests = [

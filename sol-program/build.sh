@@ -1,8 +1,9 @@
 #!/bin/sh
 # Builds the Zigs approvals program (ZOLANA.md 7.2) for SBF and checks the SHA-256 of the ELF.
 #   sh sol-program/build.sh       builds target/deploy/zigs_min_multisig.so and checks its hash
-#   sh sol-program/build.sh test  then runs the unit tests and the LiteSVM tests (svm-tests/), with
-#                                 a stub pool and with the pool of the pinned Zolana commit
+#   sh sol-program/build.sh test  then checks the cluster builds and runs the unit tests and the
+#                                 LiteSVM tests (svm-tests/), with a stub pool and with the pool of
+#                                 the pinned Zolana commit
 #   sh sol-program/build.sh v2    then rebuilds Devnet version 2 and compares the code of the two
 #
 # Toolchain: cargo-build-sbf of Agave v4.3.0 (solana-release-aarch64-apple-darwin.tar.bz2 of the
@@ -21,7 +22,7 @@
 # - the functions sit in another order.
 # The v2 mode rebuilds version 2 from the import commit of src/ in that workspace layout, checks
 # its hash, and lists the functions whose code differs from this build (on the import commit:
-# none; since version 3: the functions that the fixes changed).
+# none; later: the functions that changed since version 2).
 set -eu
 cd "$(dirname "$0")"
 unset RUSTFLAGS CARGO_ENCODED_RUSTFLAGS
@@ -82,14 +83,14 @@ build_real_pool() {
 
 # SOL-42: a build names one cluster, and a mainnet build cannot carry the Devnet genesis hash or
 # the development pool id. Each refused build must fail with its own message. A mainnet build
-# with a test pool id (32 bytes of 0x6d, as svm-tests/tests/cluster.rs knows it) must pass its
+# with a test pool id (32 bytes of 0x6d, MAINNET_TEST_POOL in svm-tests/src/lib.rs) must pass its
 # unit tests, and its ELF goes to svm-tests.
 TEST_POOL=8NADbpm7TWNhCsGKYZZ9iR89cJvwQvqNuUeXMRtJSKA4
 check_clusters() {
   DEV_POOL=sppU489D7A4U1exNo1oeMGZtLEofq3a6o2fR7UeoWB6
   must_fail "choose the cluster" cargo check --locked -j 4
   must_fail "choose one cluster" cargo check --locked -j 4 --features devnet,mainnet
-  must_fail "ZIGS_MAINNET_POOL_ID" env -u ZIGS_MAINNET_POOL_ID \
+  must_fail "not defined at compile time" env -u ZIGS_MAINNET_POOL_ID \
     cargo check --locked -j 4 --features mainnet
   must_fail "development pool id" env ZIGS_MAINNET_POOL_ID=$DEV_POOL \
     cargo check --locked -j 4 --features mainnet
