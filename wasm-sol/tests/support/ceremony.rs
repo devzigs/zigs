@@ -7,6 +7,7 @@
 use std::collections::BTreeMap;
 
 use p3_check::intent::Intent;
+use p3_check::pins::Pins;
 use p3_check::plan::{Plan, Proposal};
 use p3_check::sign::Check;
 use p3_check::snapshot::Snapshot;
@@ -16,6 +17,8 @@ use serde_json::{json, Value};
 
 pub const CLUSTER: &str = "devnet";
 pub const WALLET: &str = "wallet-0001";
+/// The fee key of the proposing seat in these tests: it is not the group key.
+pub const PAYER: [u8; 32] = [0x42; 32];
 pub const SAFETY: &str = "12345 67890 12345 67890 12345 67890";
 /// The clock of the approving device: one hour before the usual expiry of the vectors.
 pub const NOW: u64 = 1_800_000_000 - 3_600;
@@ -210,8 +213,10 @@ pub fn run(wallet: &str, t: u16, n: u16) -> Group {
         inputs: Vec::new(),
         used_salts: Vec::new(),
     };
+    let group_key = unhex32(&done[0].group_key);
+    let pins = Pins::devnet(group_key, derived.nullifier_pk, derived.viewing_pk, PAYER);
     Group {
-        pins: derived.pins,
+        pins: pins.expect("pins").wire(),
         snapshot: snapshot.encode().expect("snapshot"),
         seats,
         done,

@@ -147,7 +147,7 @@ fn the_real_transact_data_round_trips_and_exposes_its_fields() {
         assert_eq!(
             tx.outputs[0].owner_tag,
             OwnerTag::Account(0),
-            "change to the payer"
+            "change to the payer: in the P5 run the group paid"
         );
     }
     let withdraw = real_tx("real/work-withdraw-0.msg");
@@ -175,8 +175,8 @@ fn transact_parse_refuses_trailing_bytes_flags_and_other_circuits() {
 fn deposit_and_register_data_round_trip() {
     let facts = Facts::load();
     let shield = parse(&accept("shield").bytes);
-    let deposit = parse_deposit(&shield.ixs[1].data).expect("deposit");
-    assert_eq!(deposit.write().expect("write"), shield.ixs[1].data);
+    let deposit = parse_deposit(&shield.ixs[0].data).expect("deposit");
+    assert_eq!(deposit.write().expect("write"), shield.ixs[0].data);
     assert_eq!(deposit.entries[0].amount, facts.amount("shield"));
     let register = parse(&accept("register").bytes);
     let data = parse_register(&register.ixs[1].data).expect("register");

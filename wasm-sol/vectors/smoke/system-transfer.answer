@@ -1,4 +1,5 @@
 refused
 system-transfer	instruction 1: refused System instruction
+group-debit	instruction 1: the funder is the group key
 instruction-count	2 instructions, template has 1
 account-set	unexpected account aaaaaaaa

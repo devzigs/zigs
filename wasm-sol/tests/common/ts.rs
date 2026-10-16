@@ -71,7 +71,8 @@ pub fn u64_of(v: &Value, key: &str) -> u64 {
     text(v, key).parse().unwrap_or_else(|_| panic!("{key}"))
 }
 
-/// The snapshot of the group and its pins. The pin keys are the ones that the TS SDK derived.
+/// The snapshot of the group and its pins. The pin keys are the ones that the TS SDK derived, and
+/// the payer is the sponsor that built the vector: the owner tag of the change is inline.
 pub fn secrets(v: &Vector) -> (Snapshot, Pins) {
     let g = &v.json["group"];
     let snapshot = Snapshot {
@@ -94,6 +95,7 @@ pub fn secrets(v: &Vector) -> (Snapshot, Pins) {
         unhex_n(&text(g, "key")),
         unhex_n(&text(g, "nullifierPk")),
         unhex_n(&text(g, "viewingPk")),
+        unhex_n(&text(g, "payer")),
     );
     (snapshot, pins.expect("pins"))
 }

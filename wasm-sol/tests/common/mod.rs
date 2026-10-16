@@ -14,7 +14,7 @@ use p3_check::intent::{Intent, Spend};
 use p3_check::pins::Pins;
 use p3_check::rule::Rule;
 use p3_check::template::{arrange, compile, KeyFlags};
-use p3_check::transact::{self, Transact};
+use p3_check::transact::{self, OwnerTag, Transact};
 use p3_check::v1::{self, Ix, Message};
 
 pub const VECTORS: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/vectors");
@@ -107,9 +107,18 @@ impl Facts {
     }
 }
 
+/// The fee payer of the test messages: the fee key of the proposing seat. It is not the group.
+pub const PAYER: Key = [0x42; 32];
+
 pub fn pins() -> Pins {
     let facts = Facts::load();
-    Pins::devnet(facts.group(), facts.nullifier_pk(), facts.viewing_pk()).expect("pins")
+    Pins::devnet(
+        facts.group(),
+        facts.nullifier_pk(),
+        facts.viewing_pk(),
+        PAYER,
+    )
+    .expect("pins")
 }
 
 pub const NONCE: Key = [9; 32];
@@ -149,8 +158,15 @@ pub struct Vector {
     pub intent: Intent,
 }
 
-fn finite(mut tx: Transact) -> Transact {
+/// The `transact` data of a P5 run with a finite expiry. The group paid the P5 transactions, so
+/// its change tag is account 0. With a sponsor the SDK writes the group key inline, as here.
+fn finite(mut tx: Transact, group: Key) -> Transact {
     tx.expiry = EXPIRY;
+    for output in &mut tx.outputs {
+        if output.owner_tag == OwnerTag::Account(0) {
+            output.owner_tag = OwnerTag::Inline(group);
+        }
+    }
     tx
 }
 
@@ -167,8 +183,8 @@ pub fn accept_vectors() -> Vec<Vector> {
         recipient: facts.recipient(),
         amount: facts.amount("withdraw"),
     };
-    let tx_transfer = finite(real_tx("real/work-transfer-0.msg"));
-    let tx_withdraw = finite(real_tx("real/work-withdraw-0.msg"));
+    let tx_transfer = finite(real_tx("real/work-transfer-0.msg"), pins.group);
+    let tx_withdraw = finite(real_tx("real/work-withdraw-0.msg"), pins.group);
     let create = Intent::CreateNonce { blockhash: NONCE };
     let register = Intent::Register {
         nonce: NONCE,
@@ -176,7 +192,7 @@ pub fn accept_vectors() -> Vec<Vector> {
         viewing_pk: facts.viewing_pk(),
     };
     let shield = Intent::Shield {
-        nonce: NONCE,
+        blockhash: NONCE,
         amount: facts.amount("shield"),
     };
     let cancel = Intent::Cancel { nonce: NONCE };

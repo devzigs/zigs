@@ -2,6 +2,7 @@
  "name": "v-max-spl",
  "group": {
   "key": "fffa1c9e0978086afdf56e0ee59b3138c75037cf7569b2be3c7852efdd736174",
+  "payer": "6b945743309df88bfa316cdbcab80ec8ce740935a9b7f53cbf010f167346036c",
   "nullifierSecret": "d9fcced6fd163640bc141fc21fa0d3088eb1b1851805ca687ba4de6c733759",
   "viewingSk": "823e7889a5bc254e64330633d698a1f4026c446867f60741c1556ef890eecac2",
   "nullifierPk": "06c3565d9a77f98cc4383c88fe4e1f0242635c0ca97228366812eca697a4b266",
@@ -17,8 +18,8 @@
   "address": "44a92723b4f047518d24ba1f567871ec105423bc47c47161e1eef3dc33c2f538",
   "assetId": "7"
  },
- "salt": "7fc81237f5d4cbd427074c3b54c49da7",
- "blindingSeed": "0019361b5105de38ea8909b49454ad9471db55f02f3613f416db79137f2fa06e",
+ "salt": "61e29abe97f34edfc22da501e46f4b6a",
+ "blindingSeed": "0041b922197ef5da28462cc82b39b27d99d04ae4001594ff6ac43db3a337c78a",
  "txViewingPk": "032e60491852335b7babac856445e8cb96334490301ac3ddf1b422d2de5afbf638",
  "inputs": [
   {
@@ -36,26 +37,26 @@
    "mint": "5d2KjyaU2mfRuUqiJWV8MzCzzfkSt2fg81zS9QTdXjQj",
    "assetId": "7",
    "amount": "1",
-   "blinding": "031dc8073c84d363b026e32dfbf50af6a8cddb64482cc0921956b8c938e5b8f0",
-   "utxoHash": "0a72d296f4964e6c3b5495197648c84b18316a0b00083b33735bcd7b67c3dbb5",
+   "blinding": "1715f2dd6e17a4053371da941a2a07cbe54a0cb98cd47a353c18ae6515c0da28",
+   "utxoHash": "1315e30eebd3cccc85a28af5166dc7cfb52ea7b562d504846c10b2dd87dfce78",
    "ownerTag": {
-    "kind": "account",
-    "index": 0
+    "kind": "inline",
+    "value": "fffa1c9e0978086afdf56e0ee59b3138c75037cf7569b2be3c7852efdd736174"
    },
-   "data": "01540000000302fde3b267c0c7243bc42db30800a7d07d722826c0bb18b6f25d00a51ee8220ee498ed2da6d0d9c54f5a2bda3d63be2726a04057da93639c1b05dcbf27b8c39f42c1fd7558b6908df91e0a5b3d6bf4c4a86aa9"
+   "data": "01540000000302fde3b267c0c7243bc42db30800a7d07d722826c0bb18b6f25d00a51ee8220ee4682cd0fbc21a10a3a6852469f72ad66e3b8ea9704c9152c202687f3be3c521fcbee1782f01d39bebaa3f733a9277385f3be6"
   },
   {
    "role": "payee",
    "mint": "5d2KjyaU2mfRuUqiJWV8MzCzzfkSt2fg81zS9QTdXjQj",
    "assetId": "7",
    "amount": "18446744073709551614",
-   "blinding": "06b2ededd485cfd73165caf39c3a2d16bfdc49cdaf531d3826037ded15c21d8a",
-   "utxoHash": "096ba978a1e8c4321e81243635a033a9313bdb65f26b0ab1fff0a310517a0518",
+   "blinding": "27da4548ce1f471825c1b95a41108fb7e392db50d408272c3617474ea7dea500",
+   "utxoHash": "10afb1fce8e3327c39b5d339ad120a6924ff1c4978c3ba7d6ae0c037d2bb377c",
    "ownerTag": {
     "kind": "inline",
     "value": "b1f1e1a7b33d4fbf2f227c4d4da28909b224766e4d7a33a416700ec513abaf1a"
    },
-   "data": "01540000000302df015c4d30757127f3dda2c7425dcc75a48fcdd7c8c8d49eefc0d9f3dc42cbcc01f419cc601a1413faf15018b7b8450821181f105fef23be538fe3f190da914a8e72af46e5a4746fb52ab3bdce4480b0b8ec"
+   "data": "01540000000302df015c4d30757127f3dda2c7425dcc75a48fcdd7c8c8d49eefc0d9f3dc42cbccd3f62b97c5370d15ab5e854f36b18c4769683b95988c7106c6a2e636a1d50e39770b751ec5b18fe62c54e553b093fea8e91e"
   }
  ]
 }

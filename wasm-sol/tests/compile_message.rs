@@ -73,31 +73,53 @@ fn key_flags(msg: &v1::Message) -> BTreeSet<(Key, bool, bool)> {
         .collect()
 }
 
+/// A landed P6 message, which the group paid and signed alone, as a sponsor would pay it: the
+/// payer is the first account of the `transact` instruction, and the group key follows the
+/// nullifier accounts as the owner signer (programs/shielded-pool transact/account.rs).
+fn sponsored(landed: &v1::Message, payer: Key) -> Vec<Resolved> {
+    let group = landed.keys[0];
+    let mut out = resolved(landed);
+    let last = out.last_mut().expect("the transact instruction");
+    last.1[0] = payer;
+    last.1.push(group);
+    out
+}
+
 #[test]
-fn the_landed_p6_messages_compile_back_to_the_same_message_up_to_the_order_of_read_only_keys() {
-    // The template lists the read-only keys as System program, RecentBlockhashes sysvar, pool
-    // program. The SDK that built the landed messages lists System program, pool program,
-    // RecentBlockhashes sysvar. A key table in another order is the same message: the header,
-    // the lifetime, the config, the flags of every key and every resolved instruction are equal.
+fn the_landed_p6_transfers_compile_to_the_sponsor_layout_of_the_same_instructions() {
+    // The group paid the landed messages. The template now has the fee key pay, so each landed
+    // instruction list must come back with the payer in place of the group in the `transact`
+    // accounts and the group as the last account (the owner signer). The nonce instruction, the
+    // data, the lifetime and the config stay as they landed.
+    let pins = pins();
     for name in ["real/chain-p6a.msg", "real/chain-p6b.msg"] {
-        let landed = read(name);
-        let (proposal, data) = p6_inputs(&landed);
-        let compiled = compile_proposal(&proposal, &pins().wire(), &data).expect("compile");
-        assert_eq!(compiled.len(), landed.len(), "{name}");
-        let (a, b) = (v1::parse(&landed).unwrap(), v1::parse(&compiled).unwrap());
+        let landed = v1::parse(&read(name)).unwrap();
+        let (proposal, data) = p6_inputs(&read(name));
+        let compiled = compile_proposal(&proposal, &pins.wire(), &data).expect("compile");
+        let b = v1::parse(&compiled).unwrap();
         assert!(
-            a.header == b.header && a.config == b.config && a.lifetime == b.lifetime,
+            landed.config == b.config && landed.lifetime == b.lifetime,
             "{name}"
         );
         assert!(
-            key_flags(&a) == key_flags(&b),
-            "{name}: the keys and their flags"
+            resolved(&b) == sponsored(&landed, pins.payer),
+            "{name}: the instructions"
         );
-        assert!(resolved(&a) == resolved(&b), "{name}: the instructions");
-        let moved: Vec<usize> = (0..a.keys.len())
-            .filter(|i| a.keys[*i] != b.keys[*i])
-            .collect();
-        assert_eq!(moved, [5, 6], "{name}: only two read-only keys swap places");
+        assert_eq!(b.header[0], 2, "{name}: the payer and the group key sign");
+        assert_eq!(b.keys[0], pins.payer, "{name}: the payer is the fee payer");
+        let flags = key_flags(&b);
+        assert!(
+            flags.contains(&(pins.payer, true, true)),
+            "{name}: the payer"
+        );
+        assert!(
+            flags.contains(&(pins.group, true, false)),
+            "{name}: a readonly signer"
+        );
+        assert!(
+            !landed.keys.contains(&pins.payer),
+            "{name}: the landed message has no payer key"
+        );
     }
 }
 
@@ -169,7 +191,7 @@ fn a_cancel_a_register_and_a_shield_compile_without_transact_data() {
     for intent in [
         Intent::Cancel { nonce },
         Intent::Shield {
-            nonce,
+            blockhash: nonce,
             amount: 1_000,
         },
         Intent::Register {
@@ -206,7 +228,7 @@ fn bad_input_is_an_error_and_not_a_panic() {
         "cut proposal"
     );
     assert!(
-        compile_proposal(&proposal, &wire[..96], &data).is_err(),
+        compile_proposal(&proposal, &wire[..128], &data).is_err(),
         "cut pins"
     );
     assert!(compile_proposal(&[], &wire, &[]).is_err());

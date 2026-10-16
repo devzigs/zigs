@@ -2,6 +2,8 @@
 //! the registry record, the asset table and the three public values of the group: its key,
 //! `nullifier_pk` and `viewing_pk` (the `soldone` document, ZOLANA.md 4.1). Derived addresses
 //! and the group `owner_hash` are computed here from those pins, never taken from the device.
+//! The fourth pin is the payer of the proposal: the fee key that the proposing seat published
+//! (ZOLANA.md 5). The page matches it to that document before it calls the checker.
 
 use crate::assets::AssetTable;
 use crate::bytes::{short_hex, Reader};
@@ -16,14 +18,17 @@ use crate::pda::{create_with_seed, find_program_address};
 /// Rent of the nonce account on Devnet (P2 result, ZOLANA.md 6.3).
 pub const NONCE_RENT_DEVNET: u64 = 1_056_640;
 
-/// The wire form of the pins at the wasm entry: group key, `nullifier_pk`, `viewing_pk`.
-pub const WIRE_LEN: usize = 32 + 32 + 33;
+/// The wire form of the pins at the wasm entry: group key, `nullifier_pk`, `viewing_pk`, payer.
+pub const WIRE_LEN: usize = 32 + 32 + 33 + 32;
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Pins {
     pub group: Key,
     pub nullifier_pk: Key,
     pub viewing_pk: [u8; 33],
+    /// The fee payer of the message: the fee key of the proposing seat. It is never the group
+    /// key (`Rule::PayerIsGroup`).
+    pub payer: Key,
     /// The `owner_hash` of the group: Poseidon over the group key and the pinned `nullifier_pk`.
     /// `devnet` computes it. `approve` computes it again from the two pins and refuses a pin that
     /// differs, so the value never comes from the device snapshot.
@@ -47,8 +52,13 @@ fn derive(seeds: &[&[u8]], program: &Key, what: &str) -> Result<Key, String> {
 }
 
 impl Pins {
-    /// The Devnet pins of a wallet. Tree 0 is the only tree that the spike uses.
-    pub fn devnet(group: Key, nullifier_pk: Key, viewing_pk: [u8; 33]) -> Result<Self, String> {
+    /// The Devnet pins of a wallet and a payer. Tree 0 is the only tree that the spike uses.
+    pub fn devnet(
+        group: Key,
+        nullifier_pk: Key,
+        viewing_pk: [u8; 33],
+        payer: Key,
+    ) -> Result<Self, String> {
         let tree = derive(&[SEED_TREE, &0u16.to_le_bytes()], &POOL_DEVNET, "tree 0")?;
         let sol_interface = derive(
             &[SEED_SOL_INTERFACE, SEED_SOL_INTERFACE_INDEX],
@@ -59,6 +69,7 @@ impl Pins {
             group,
             nullifier_pk,
             viewing_pk,
+            payer,
             group_owner_hash: owner_hash(&group, &nullifier_pk)?,
             pool: POOL_DEVNET,
             registry: REGISTRY_DEVNET,
@@ -74,9 +85,11 @@ impl Pins {
 
     /// Reads the wire form of the wasm entry. The whole input must be used.
     pub fn decode(bytes: &[u8]) -> Result<Self, String> {
-        let short = |_| format!("pins: need {WIRE_LEN} bytes: group key, nullifier_pk, viewing_pk");
+        let short =
+            |_| format!("pins: need {WIRE_LEN} bytes: group key, nullifier_pk, viewing_pk, payer");
         let mut r = Reader::new(bytes);
-        let (group, nullifier_pk, viewing_pk) = (
+        let (group, nullifier_pk, viewing_pk, payer) = (
+            r.array().map_err(short)?,
             r.array().map_err(short)?,
             r.array().map_err(short)?,
             r.array().map_err(short)?,
@@ -84,7 +97,7 @@ impl Pins {
         if !r.is_empty() {
             return Err(format!("pins: {} bytes, need {WIRE_LEN}", bytes.len()));
         }
-        Self::devnet(group, nullifier_pk, viewing_pk)
+        Self::devnet(group, nullifier_pk, viewing_pk, payer)
     }
 
     /// The wire form of the wasm entry.
@@ -93,6 +106,7 @@ impl Pins {
             &self.group[..],
             &self.nullifier_pk[..],
             &self.viewing_pk[..],
+            &self.payer[..],
         ]
         .concat()
     }
@@ -110,6 +124,7 @@ impl Pins {
     pub fn label(&self, key: &Key) -> String {
         let named = [
             (&self.group, "group"),
+            (&self.payer, "fee payer"),
             (&self.nonce_account, "nonce account"),
             (&self.pool, "pool program"),
             (&self.registry, "registry program"),

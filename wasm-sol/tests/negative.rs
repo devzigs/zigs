@@ -266,17 +266,18 @@ fn loaded_limit_above_64_mib() {
 // ---- signers ------------------------------------------------------------------------------
 
 #[test]
-fn fee_payer_other_than_the_group_key() {
-    refuse("transfer", Rule::FeePayerNotGroup, |b| {
-        replace_key(b, &pins().group, ATTACKER)
+fn fee_payer_other_than_the_payer_of_the_proposal() {
+    refuse("transfer", Rule::FeePayerNotPayer, |b| {
+        replace_key(b, &pins().payer, ATTACKER)
     });
 }
 
 #[test]
 fn second_signer() {
     let vector = accept("transfer");
-    let nonce_like = key_of(&vector.bytes, 1);
-    let bytes = with_flags(&vector.bytes, &nonce_like, true, true);
+    // Key 1 is the group key, a signer already. Key 2 is the first account that is no signer.
+    let third = key_of(&vector.bytes, 2);
+    let bytes = with_flags(&vector.bytes, &third, true, true);
     assert_refused(&bytes, &vector.intent, Rule::SignerSet);
 }
 
@@ -355,7 +356,7 @@ fn system_transfer() {
 #[test]
 fn program_that_is_not_allowed() {
     refuse("transfer", Rule::ProgramNotAllowed, |b| {
-        with_ix(b, [0x42; 32], &[], vec![1])
+        with_ix(b, [0x77; 32], &[], vec![1])
     });
 }
 
@@ -587,9 +588,9 @@ fn register_data_of_the_wrong_length() {
 
 fn with_deposit(bytes: &[u8], f: impl FnOnce(&mut p3_check::fixed::Deposit)) -> Vec<u8> {
     mutate(bytes, |m| {
-        let mut data = parse_deposit(&m.ixs[1].data).unwrap();
+        let mut data = parse_deposit(&m.ixs[0].data).unwrap();
         f(&mut data);
-        m.ixs[1].data = data.write().unwrap();
+        m.ixs[0].data = data.write().unwrap();
     })
 }
 
@@ -856,7 +857,7 @@ fn transfer_dummy_may_name_the_payee_or_the_group() {
     let group = pins().group;
     for tag in [
         OwnerTag::Inline(group),
-        OwnerTag::Account(0),
+        OwnerTag::Account(6),
         OwnerTag::Inline(Facts::load().payee()),
     ] {
         let bytes = mutate_tx(&vector.bytes, |tx| tx.outputs[1].owner_tag = tag);

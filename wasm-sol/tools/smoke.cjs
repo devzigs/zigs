@@ -26,7 +26,7 @@ for (const name of names.sort()) {
 }
 // A malformed input is an error answer, never a throw.
 const three = () => new Uint8Array(3);
-const bad = lib.check_message(three(), three(), new Uint8Array(97), three(), NOW);
+const bad = lib.check_message(three(), three(), new Uint8Array(129), three(), NOW);
 if (!bad.startsWith("error")) {
   failed += 1;
   console.log("FAIL malformed input is not an error answer:", bad);

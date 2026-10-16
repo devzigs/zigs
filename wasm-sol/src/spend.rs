@@ -138,11 +138,13 @@ impl<'a> Spend<'a> {
     }
 
     /// The tags that a dummy slot may name. `AssertDummyTags` (owner_tags.go:101-152) takes the
-    /// owner signers without the payer, and the owner of every real output. The group is the
-    /// payer and the only owner, so it is a participant only if a real slot pays it.
+    /// owner signers without the payer, and the owner of every real output. The fee key is the
+    /// payer and the group key is the owner signer, so the group is always a participant, and
+    /// so is the payee if a real slot pays it.
     pub fn participants(&self) -> Vec<Key> {
         let roles = self.plan.outputs.iter().map(|slot| slot.role);
-        roles.filter_map(|role| self.role_tag(role)).collect()
+        let owners = roles.filter_map(|role| self.role_tag(role));
+        std::iter::once(self.group.key).chain(owners).collect()
     }
 
     /// The first nullifier of the snapshot, the root of every blinding and of the transaction

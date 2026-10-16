@@ -30,8 +30,11 @@ pub enum Intent {
         nullifier_pk: Key,
         viewing_pk: [u8; 33],
     },
+    /// Add SOL: a pool deposit from the payer into the shielded balance of the group. The payer
+    /// signs alone, with a recent blockhash: it is the SOL of one member, so the group does not
+    /// approve it and does not touch its nonce account.
     Shield {
-        nonce: Key,
+        blockhash: Key,
         amount: u64,
     },
     /// A private payment: the full shielded address of the payee, the asset and the amount.
@@ -58,17 +61,16 @@ impl Intent {
     /// The lifetime that the message must carry.
     pub fn lifetime(&self) -> Key {
         match self {
-            Intent::CreateNonce { blockhash } => *blockhash,
-            Intent::Register { nonce, .. }
-            | Intent::Shield { nonce, .. }
-            | Intent::Cancel { nonce } => *nonce,
+            Intent::CreateNonce { blockhash } | Intent::Shield { blockhash, .. } => *blockhash,
+            Intent::Register { nonce, .. } | Intent::Cancel { nonce } => *nonce,
             Intent::Transfer { spend, .. } | Intent::Withdrawal { spend, .. } => spend.nonce,
         }
     }
 
-    /// True if the message starts with `AdvanceNonceAccount`.
+    /// True if the message starts with `AdvanceNonceAccount`: every intent that the group signs
+    /// but the one that creates the nonce account. Shield has no group signature.
     pub fn uses_nonce(&self) -> bool {
-        !matches!(self, Intent::CreateNonce { .. })
+        !matches!(self, Intent::CreateNonce { .. } | Intent::Shield { .. })
     }
 
     /// The owner tag of the payee of a Transfer, if its address has an Ed25519 or PDA key.
@@ -113,9 +115,9 @@ impl Intent {
                 out.extend_from_slice(nullifier_pk);
                 out.extend_from_slice(viewing_pk);
             }
-            Intent::Shield { nonce, amount } => {
+            Intent::Shield { blockhash, amount } => {
                 out.push(2);
-                out.extend_from_slice(nonce);
+                out.extend_from_slice(blockhash);
                 out.extend_from_slice(&amount.to_le_bytes());
             }
             Intent::Transfer {
@@ -176,7 +178,7 @@ fn read_intent(r: &mut Reader) -> Result<Intent, String> {
             viewing_pk: r.array().map_err(short)?,
         },
         2 => Intent::Shield {
-            nonce: r.array().map_err(short)?,
+            blockhash: r.array().map_err(short)?,
             amount: r.u64().map_err(short)?,
         },
         3 => Intent::Transfer {

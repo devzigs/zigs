@@ -9,6 +9,7 @@ use wasm_bindgen::prelude::{wasm_bindgen, JsError};
 use crate::approve::{approve, Approved, Device};
 use crate::bytes::hex;
 use crate::check::Refusal;
+use crate::fee;
 use crate::frost;
 use crate::pins::Pins;
 use crate::plan::Proposal;
@@ -99,9 +100,10 @@ fn run(
 ///
 /// - `intent`: the proposal, `Proposal::encode`: the intent and, for a spend, the approved
 ///   plaintext outputs.
-/// - `pins`: 97 bytes, the group key, `nullifier_pk` and `viewing_pk` of the `soldone` document
-///   (`Pins::wire`). The `owner_hash` is computed from them, and the snapshot secrets must derive
-///   exactly these two keys.
+/// - `pins`: 129 bytes, the group key, `nullifier_pk` and `viewing_pk` of the `soldone` document
+///   and the payer of the proposal (`Pins::wire`). The page takes the payer from the `solfee`
+///   document of the proposing seat. The `owner_hash` is computed from the first three, and the
+///   snapshot secrets must derive exactly the two public keys.
 /// - `snapshot`: the device snapshot, `Snapshot::encode`.
 /// - `now`: the Unix time of the device, in seconds.
 ///
@@ -138,7 +140,7 @@ fn js<T>(result: Result<T, String>) -> Result<T, JsError> {
 ///
 /// - `proposal`: the bytes that `check_message` takes as `intent` (the intent and, for a spend,
 ///   the plan). Only the intent is read here.
-/// - `pins`: the 97 bytes of `check_message`.
+/// - `pins`: the 129 bytes of `check_message`.
 /// - `transact`: the data of the `transact` instruction, tag byte included, as the Worker cuts it
 ///   out of the SDK message. Empty for every intent but a Transfer and a Withdrawal.
 pub fn compile_proposal(proposal: &[u8], pins: &[u8], transact: &[u8]) -> Result<Vec<u8>, String> {
@@ -213,6 +215,43 @@ pub fn sol_share_fits(key_package: &str) -> bool {
 #[wasm_bindgen]
 pub fn sol_program_label() -> String {
     frost::PROGRAM_LABEL.to_string()
+}
+
+/// A fresh fee key of a seat: `{"secret", "public"}` as hex.
+#[wasm_bindgen]
+pub fn sol_fee_key() -> Result<String, JsError> {
+    js(fee::generate())
+}
+
+/// The public key (hex) of a fee secret.
+#[wasm_bindgen]
+pub fn sol_fee_public(secret: &str) -> Result<String, JsError> {
+    js(fee::public_of(secret))
+}
+
+/// The signature (hex) of the fee key of a proposal. It runs `approve` on the exact bytes first,
+/// as `sol_sign_share` does, and throws the refusal. `round` is `{"now", "secret"}`.
+#[wasm_bindgen]
+pub fn sol_fee_sign(
+    message: &[u8],
+    intent: &[u8],
+    pins: &[u8],
+    snapshot: &[u8],
+    round: &str,
+) -> Result<String, JsError> {
+    let check = Check {
+        intent,
+        pins,
+        snapshot,
+    };
+    js(fee::sign(message, &check, round))
+}
+
+/// True when `signature` (hex) is the `verify_strict` signature of `message` under the fee key
+/// `public` (hex). False for anything else, never an error.
+#[wasm_bindgen]
+pub fn sol_fee_verify(public: &str, message: &[u8], signature: &str) -> bool {
+    fee::verify(public, message, signature).is_ok()
 }
 
 /// The role keys of `solSeed` under the group key, as JSON.
