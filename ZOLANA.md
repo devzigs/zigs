@@ -36,7 +36,7 @@ claim of [E] as unverified until a primary source confirms it. Section 8 defines
 | The Default Ring hides amount, not sender. Custom Rings can be anonymous | Ring: confirmed. Anonymous: partly. The TS SDK supports confidential Rings only, and the anonymous rail needs P-256 ECDSA, so FROST-Ed25519 can never use it | [Z]docs/spec.md:186, 3036, 3041; sdk-libs/ts/README.md:358 |
 | Transaction v1 and its 4,096-byte limit | v1 confirmed. The limit covers the whole transaction, not only the message | [Z]sdk-libs/ts/src/interface/transaction-size.ts:8-12 |
 | Beta, Devnet, no audit established. The hosted program may differ from source | Beta and Devnet: confirmed. Audit: Helius says the rings undergo independent audits [H]. I found no report. Mismatch: refuted on 13 October (section 6.1). The deployed pool `sppU489…` and registry match the release hashes. `sppXZU59…` on the Helius address page is an older deployment | [Z]prover/tee/README.md:3; releases/tag/v0.4.0-alpha |
-| Custody by a program-owned address (PDA) works | Not found. No test spends a user UTXO owned by a PDA | [Z]sdk-libs/keypair/src/pda.rs:1-70 |
+| Custody by a program-owned address (PDA) works | Confirmed on Devnet, 16 October 2026 (6.10). The SDK has `ShieldedPda` and `ShieldedAddress.forPda`, and `zolana-program` has a `transact` CPI that signs for a PDA. A deposit to a PDA owner and a spend through our program landed | [Z]sdk-libs/keypair/src/pda.rs:1-70; sdk-libs/program/src/cpi.rs |
 | 10.4: a new blockhash may force a new proof | Wrong. The blockhash is not a proof input. Root history limits proof life. [E] misses the durable nonce | [Z]sdk-libs/client/src/client/transaction.rs:171-179 |
 | 10.2 signs SHA-256 of the message. 10.3 checks amount and asset from the message | Wrong. FROST signs the raw bytes. The message holds only hashes and ciphertexts | [RFC]7.6; [Z]sdk-libs/ts/src/transaction/wallet/intent.ts:63-69 |
 | 6.1: an audited dealerless DKG exists | Partly. The audit covers frost v0.6.0 and excludes re-randomized FROST | [F]README.md, "NCC Audit" |
@@ -522,6 +522,153 @@ the flag `zf-sol`; local server only, never deployed; one independent verifier p
   tested in the spike. The owner set Allowed Domains afterwards (see the end of this section): the
   key accepts only calls that carry the origin of the app, and the SDK opens no WebSocket.
 
+**6.10 SOL-35 result, 16 October 2026** (approvals owned by a program, design in 7.2; Devnet; the
+program built with Agave v4.3.0 and platform-tools v1.54; the TS SDK of 6.4 with the P6 patch, so
+no enclave prover; the P6 FROST signer; scripts, keys and logs outside the repo; one independent
+verifier who did not write the code). Times are UTC.
+
+- Accounts. A new 2-of-3 group `BizreUUhg8ZvHPizeud9PNvz6Mmdi1vpFZc5yXYjYj3T` (one process ran the
+  DKG and all seats, as in P6). Owner PDA `UgrqxxdDh3m4pf1DLYGw6fnzk9NGuWJaUnerUp4Mxqd`. Executor
+  `KhqYMWsaqeyiauSYLg3tNKWc7hek3RwHQHeaHLCKgNM`. Payee: the P4 key B.
+- Program `5PHZEHBMaYbFL9SFmMyP8kUayh3TFEyq2dvEYY3UGjkL`, upgrade authority
+  `GJhYtqujKfJAx1rwTLYBU3P2DaGKzX6zoYvGuX3J8SX9`, ProgramData
+  `Hvx5yPwtdauXsvqt3tg2Fh3RJniFRiDg3KnspuqzL4M6`. Version 1 (47,512 bytes, SHA-256 `3406e00c…`):
+  `4iaLoojZKTnmcSfc6AgzHWVnVsK6CD3aqUMjMoNVP8WHCwicRgqhGhqsXADrrMNiNtRJ6kgmoYsjSBHgbGv54Nsd`, slot
+  511635048. Version 2 (48,312 bytes, `555f4580…`, the fix of 7.2):
+  `2hFbQWxixGA9Wx8cA3Y9XE81Cte5B7EgmQH2YLSfrmnZqVyT4oDpSTvuyQbC7pg5RMhGA2pxnAg4KCCo8wFCaLHk`, slot
+  511646368. ProgramData holds 57,752 bytes: the version 2 ELF, then 9,440 zero bytes. The verifier
+  rebuilt both versions from a clean Zolana clone and the build patch and got the same bytes as the
+  chain (with the author's cargo registry and the extracted toolchain).
+- A PDA owner needs no registry record. The funder deposited 0.003 SOL to the PDA's shielded
+  address
+  (`3xYk6a7g9AGUeU7SwXcyevYanKsvkiC5Z8VdieDNZhDcP63ycFzvo7GXVYSxp6yz2nnSgn8nuGfRv1H7sJEAAYFb`),
+  and a sync of the PDA identity returned it within 25 seconds. The executor got 0.02 SOL
+  (`29UHe4nPCWzH28FEvXTCR2jSyKPcthPupdZx2SVZ3eggo32TeA9L6Qj5W31WrqXvqaY8emXSTbHxD4vRBrgJLAmX`).
+- Track "main", the stale-root test. The proposal of a private payment of 0.001 SOL to B, with a
+  24-hour expiry:
+  `35FG2hXHBCXXfqEh19nZ5LbDTCTfdr8zXWGVf6oBY8AE6hsyzrH88ko4iabmNdWWJxuhE9DizTHcqguRxaZcC4E8`
+  (07:33:44, proposal `cNe4cyrPUvAKtK3ooosCHN62jBT16ry9UoXL7zYyFuB`). Seats 1 and 2 signed the
+  approval digest at 07:33:52 (run log). Proof 1, made then, used UTXO root index 273. The execute
+  with proof 1 simulated with no error at 07:42 and again at 09:18: Devnet was so quiet that the
+  root stayed live for almost two hours. Then 460 pool deposits from the funder to key A (09:18:23
+  to 09:21:47, slots 511663169 to 511664017) wrapped the 500-entry history, and entry 273 held
+  another root. The execute with proof 1 then simulated with custom 7008 in the pool. The pool has
+  no stale-root error: it reads the history entry by its index, so an overwritten entry gives a
+  proof failure. A new process rebuilt the plan, got the same commitment, and proved again (root
+  index 280). The payment landed with the approval of 07:33:52, and no seat signed again:
+  `2bJ4T8yWYGkZZxhRvboDw9qJm6ctmvu8zXAyBnwZ8VvpXZEvuVMe1RGiFvst9T38b2PwQ6nwMBgTd6Ht4Smxd2CV`,
+  slot 511667384, 09:35:08, 2 hours 1 minute 24 seconds after the proposal was created (the run log
+  has the approval 8 seconds after the creation). 151,437 compute units (140,236 of
+  them in the pool). Fee 10,000 lamports: 5,000 for the executor's signature and 5,000 for the
+  Ed25519 verification. B's private balance rose by exactly 0.001 SOL (the verifier synced B). The
+  run's wallet sees 0.002 SOL of change for the PDA; the verifier, without `solSeed`, saw two
+  outputs, one tagged with the PDA. The proposal closed and paid its 1,356,360 lamports of rent
+  back.
+- What the chain proves about time. The proposal was created at 07:33:44 and the payment landed at
+  09:35:08, 2 hours 1 minute 24 seconds later. The chain cannot show when the group signed: the
+  signature appears first in the execute, and its digest needs only data that existed before the
+  create. The run log, the signature file and a simulation at 07:34:06 put the signing at 07:33:52,
+  but the same machine wrote all three. The design does not depend on that time: the digest binds
+  no root, blockhash or nonce, so until the proposal's expiry the age of a signature cannot make it
+  fail. A product that must prove the signing time can publish a hash of the signature on chain
+  when it signs; track "emain" below does that.
+- Track "D", the option D identity on the same PDA (7.2). A deposit of 0.003 SOL
+  (`3jgCEKu1HdVvjzhsP7SX51F6eLxRM6S3DX1MyiUYBrUnSxqdx2oTqBNDXciQZdaBGZXxNSH2NfWELDfZ5gMvZ7Cd`), the
+  proposal of 0.001 SOL to B
+  (`2W6BV6Srq6QcabWKGhgkuAyH2r7ZK4LNYGyKjRGSsr3geRa3BL39629oHkJ9523d5V2ygERfJcH5XVCm8Ef26uiQ`,
+  08:18:27, proposal `3Sx7fRxAs6UggGCyS8YUMhX6XFvBx1R25ysAiqa9pvFU`), and the approval of seats 2
+  and 3 at 08:18:29 (run log). The same forcing made its proof 1 (root index 275) stale, and the
+  execute with it simulated with 7008. The payment landed with a fresh proof (root index 288):
+  `5Gw2h3D95sZuMTxUYiDYXBS6K8ZUmUNzGNAGNH2j2Ej5v2vSsYNDB2zbwzx6uFB8De8P31tpN98u1QWJ333dQtrk`, slot
+  511678600, 10:19:39, 2 hours 1 minute 12 seconds after the proposal was created; 151,077 compute
+  units, fee 10,000. B
+  rose by exactly 0.001 SOL. So the hosted prover, the pool and the indexer accept a PDA owner that
+  signs by CPI with a non-zero HKDF nullifier secret. The verifier recomputed both option D keys
+  from the seed with its own code: they equal the keys in the group address, and the owner hash
+  equals the owner of both option D deposits.
+- Track "emain", the signing time on chain. The option D identity got a second deposit
+  (`2cxLDiD2sHbiCpzGGWukT4gBFxY5aw8cgj38qCYDhfzErUZVtCRSnftnupvg5vZetQAPZfSC72N36g6uXYigh2kP`), so
+  this proposal spends another input than track D's: two proposals of one group were open at once
+  over disjoint inputs, and both landed. Proposal
+  (`34cnjAcL7SEVcGj5ibpYj5Mvz2MEUQoFsYBHEAimWGQpWkuCLbNGgH1JWG1reSUZFEuBso51Mk4MaCn2L54xhXWr`,
+  09:41:26, proposal `Hx3FNn24BPrvwScKpy6FFXBdobJb1cnSbVMxQWuRJREV`), approval by seats 1 and 3,
+  then a Memo with the SHA-256 of the approval signature
+  (`4LXWVWaTcs8dYUjuGJxejSvLy4TJa6Y2y2scuNvVGKn2HcmnJmVfXF9QSkwGRUVeZ22ZfE69ds8nm62m93NTzzNR`,
+  slot 511668987, 09:41:29). 500 deposits (11:28:19 to 11:32:01, slots 511695872 to 511696801)
+  made its proof 1 (root index 282) stale; the execute with it simulated with 7008. The payment
+  landed with a fresh proof (root index 283):
+  `23uKtB13ZDoGb7wDhW2yMYw1hSpTafg86FW1QdBAK9rxB9n1ZxRf5JFVSS5ykBF7pkhGoSC1KrwSmfhRFswCYeqe`,
+  slot 511699612, 11:43:11; 148,450 compute units, fee 10,000. The SHA-256 of the signature in its
+  Ed25519 instruction equals the memo hash. So the chain proves that the approval signature
+  existed 7,302 seconds (2 hours 1 minute 42 seconds) before the execution. B rose by exactly
+  0.001 SOL, and the proposal closed and paid its rent back.
+- Every Devnet signature of the spike accounts (funder, executor, program, ProgramData, upgrade
+  authority, owner PDA, proposals): 1,102 transactions from slot 511634145 to 511699612, all
+  without error; the verifier listed and checked them. The 20 named ones are in the bullets above.
+  The rest are bulk:
+  - deploy of version 1, 68 transactions (buffer creation and writes; the deploy transaction is
+    named above), slots 511634145 to 511635043, first
+    `2k6NpaTBnk6AQMXqatDqTKMJUfLFXtxZNsQVFVj7GQJcmyrnbm1g9Giiv2SDz1YShFHeaZRTJ3oumCAESCvbqLwZ`, last
+    `g7QzXrUi5bhJMpt4RMMAqPBqPma7Xk7enXjYwWgReNEihJgTapLWQSD1tzjDZiS66MUuamtqNMzGR1rTWvJ6QRi`;
+  - upgrade to version 2, 54 transactions, slots 511645780 to 511646360, first
+    `3TmsbMoQ9DFoDbjDh9kczkg9qpRU4rnpHupfXhty6cRXwUUaSEYFZgdwcJrJ4kXycAbNg9k3wpigh4u9Qfb3hsg`, last
+    `517sA4GDosVtF1HXsGAuvPCCihecXkP2wY2QqMsjo7ijRnTdH3JW3ubzaquQpqsnA4hpaRXbRtGYZPdWeo3ohoKY`;
+  - forcing for tracks "main" and "D", 460 deposits, first
+    `3xD1X6Fb4ojAH5QE1tyzkRutyDzZA5btsqzMciMgiGAqFUvr4jYUJ41yAdjBYS2FSdFj7SfA1MjZ1Lvi8WEDjQf1`, last
+    `yxjVEgnzJyj4XzJ8ZRS6NQYFfTJH8ZynnwgTuFfRjVdoF1Rh7Mvj5uxCH8HmUev9F1LS93fSLNvPps6LTuBak8W`;
+  - forcing for track "emain", 500 deposits, first
+    `4VC5G24yG9PMEDm2BtFjoiNrRHQGGTMHNTirapW9SJnU6ecjSpyR6fLL7yucBE7R7kZY5DCavjjwv56BcHa8cTFh`, last
+    `5AGyMio52Y5fy7Qie2nEywKCvSukEL8t4QpdJ2bfi7kaB7ApsfRKb97YtaYbLuuBAqLAsj3euvWw3HJzak7h2Z4y`.
+- Cost. Fees: 6,150,000 lamports (0.00615 SOL), all spent value. Held as rent: 295,092,120
+  lamports (0.295 SOL) in the program and ProgramData accounts. `solana program close` with the
+  upgrade key returns the ProgramData rent (294,259,000; the 833,120 of the program account is
+  not shown to return), but then no one can sign as the PDA again, so the 0.006 SOL of change
+  that the PDA identities still hold could never move. Moved between spike keys, not lost: 0.02 SOL
+  to the executor, 0.009 SOL deposited to the PDA (0.003 SOL of it paid to B), and 0.00119 SOL of
+  forcing deposits to key A. Each proposal holds 1,356,360 lamports until execution or cancel.
+- Before each send, the verifier simulated the saved proof-1 and fresh-proof transactions (7008 and
+  no error), read the root history (no entry still held the proof-1 root), and recomputed the
+  commitment from both: the two `transact` payloads differ only in the 192 proof bytes and the root
+  index.
+- Refusals, simulated against the live proposal of track "main" (they cost nothing and change
+  nothing). On version 1, at 07:35, the program refused with its own code: a changed amount, a
+  changed payee and a changed pool expiry under the same approval (6014); an approval signed by the
+  executor key, and the approval of another proposal (6012); no approval instruction (6011); an
+  extra read-only pool account (6016). The verifier added an extra signer, a doubled owner, a
+  dropped owner and a moved owner (6016). On version 2, at 08:12 to 08:13: a precompile-valid
+  approval in a layout other than the pinned one (6012); an approval that is not directly before
+  `execute` (6011); a wrong cancellation address (6007), rent recipient (6010) or owner PDA (6015);
+  a cancel by a key that is not an abort authority (6017). Version 2 changes only `create_pda`,
+  and the main execute simulated again on it. The precompile refused a changed signature byte. A
+  fresh proof with another payer (the funder) passed, so the approval does not bind the executor.
+  This spike did not repeat the one-share test of P5.
+- Expiry and cancel, on chain. A proposal with a 150-second expiry
+  (`4uRTg6e9yfqcxtfUJ7hLU7CNV6xHPkwLPARtGX7nqFDXHPt8rUvChxB2PDKMFkXfJTTXpDe2wy4rLEUcET8ZLNy9`) was
+  refused after its expiry (6009), then closed by anyone with no record
+  (`vE3cKKgCywwjFuwy8HGiQWKX9UvEqDPhPh3PSuVDwYT8ujimxG3vfCM8CNAeB9qze2778vgvcYXUYw9g2godqMe`). A
+  second proposal
+  (`664JXZE388yxhXeg7gdcT7EJvq8VQDUvZ171YaAtihn9Q5uMaXaKJh95Va1rSUKtVsCHtMsKuQhyA2SPjfpscSv3`)
+  was cancelled by its abort authority
+  (`3Y5gqjf9WuP6bhZV1SAy18NH9wWoy1HchzcZGEtRvvDGMdf62tL42iyc8J2eB6YwWMXbkJeBF9cxstz4NLsJZenP`),
+  created again at the same address with the same body
+  (`2tpDEzyCMoDYZdFWMtRzFNykLK9sCnXGuJbbx2zdpZ1qDEkuLFVvV8AxkHBnHrGauykEDFgHYDGebp15uJEVXYgD`),
+  and its old approval was then refused (6008). After the expiry, the new copy
+  (`4eum1PmXJn1TQpdZMzs8WUK4URf4n5RYufEpNBYxUndxHxmbBACxvNAFJkH6x57C8pFFDyt8RJWuNh9gfdCPBBbM`) and
+  the record
+  (`3JG1MgeTQYvyNTZkT3239TrJaKqeQAr8fjZ2LiysDjsmXH39XhXxxNWyUAxZDukN5aaAP41eGdyWZZ7cdM199w48`)
+  closed and paid their rent back.
+- The verifier read the source against the pool and the spec, and found no path to move PDA funds
+  without an approval of that exact payment, and no replay. This assumes that the pool and its
+  circuit bind `private_tx_hash` as [Z]docs/spec.md says: the circuit source is not in the pinned
+  checkout, and the deployed pool binary was not compared with the source. It found one Medium
+  defect in version 1: a SOL transfer of at least 650,240 lamports to the cancellation address of
+  a proposal blocked its cancel until the expiry, and the payment stayed executable; the same flaw
+  hit `create` (Low). Version 2 fixed both, and the verifier passed the fix (rebuild, review, and
+  pre-funded cancels and creates in simulation). Low and informational points are in 7.2: one body
+  per commitment, a rent recipient that is never a program account, and the deviations of
+  `cancel`. Not covered by a control: 6000 to 6006 (the `create` refusals), 6013 (a withdrawal
+  leg), 6018 to 6020.
+
 Stop rules: the plan stops if P1 fails strict verification, P4 fails on the hosted deployment, or P5
 fails. It also stops if P6 measures a root window shorter than the minimum approval time (proposal:
 30 minutes). One approval round cannot finish then, so the plan changes to a one-sitting flow with
@@ -574,6 +721,11 @@ roots, transaction lifetime, key management, output checks and browser proving.
 The owner decided on 16 October 2026 not to ask questions 2, 3 and 5 (key holders, mainnet
 service, audit). They stay open as risks: the custody and maturity rows of the risk table.
 
+Question 1 has a partial Devnet answer (6.10): a `transact` with a payer that owns no input and a
+separate owner landed, with the owner as a PDA that our program signs for by CPI. An Ed25519 owner
+that signs as an extra signer of the outer transaction (the "Later work" row of section 5) stays
+untested.
+
 **7.1 Next design: approvals owned by a program** [HM]. The shielded UTXOs belong to a program
 address that the program derives from the group key (`[b"multisig", group key]`). A proposer creates
 an immutable proposal account that holds a hash of the transaction contents. The FROST group signs
@@ -591,8 +743,141 @@ through the pool by CPI. An expiry time and abort authorities end a proposal.
 
 What it costs: a program of our own on Solana, with its own upgrade key, review and audit. The
 group address becomes a program address, so registration and every intent change. The proposal
-account and the Ed25519 instruction are public, as the group key is today. Ticket SOL-35 plans a
-spike on Devnet before any change to the beta.
+account and the Ed25519 instruction are public, as the group key is today. The SOL-35 spike ran on
+16 October 2026: 7.2 has the design and the decision, 6.10 the Devnet results.
+
+**7.2 Design note: approvals owned by a program (SOL-35).** At [HM] the branch holds only
+`min-multisig/spec.md`: no code and no license file. So the spike copies nothing from it. The
+program is our own code (about 770 lines of Rust with its tests). It reuses Apache-2.0 crates at
+the [Z] commit: the `transact` parser and `ExternalDataPreimage` of `zolana-interface`, the `cpi`
+feature of `zolana-program`, and the precompile check pattern of the user registry. The spike code
+stays outside the repo, as in section 6. The client is the TS SDK 0.4.1-alpha built from the [Z]
+commit with the P6 patch (a settable pool expiry). That commit is older than the enclave prover of
+Zolana main (c232da1b), so every proof went to the hosted prover with the witness in clear, as in
+P4.
+
+**The owner identity.** The PDA is the owner key (`ShieldedAddress.forPda`, signature type `pda`,
+curve tag 2). The nullifier secret is `HKDF-SHA256(solSeed, empty salt,
+"zigs-sol/pda-nullifier-secret/v1" || PDA)`, 31 bytes, and `nullifier_pk` is its Poseidon hash
+(option D of the nullifier-key note of 16 October 2026). The viewing key is the beta's
+(`zigs-sol/viewing-scalar/v1`, 4.2). The secret does not authorize a spend: the PDA signature does.
+So custody does not depend on it. The examples of [HM]'s repository use a zero secret instead. Then
+anyone computes the nullifier of every deposit note: anyone links a spend to its deposits, and
+after a program flaw anyone can prove a spend. With a derived secret, only the seats and the hosted
+prover can do either. The program never reads or stores the key, and never calls `register`,
+`update_keys`, `set_merging_enabled`, `merge_transact` or `deposit`. The spike ran two identities on
+the same PDA: track "main" with the SDK's own labels (as in P5), and tracks "D" and "emain" with
+option D exactly. Both secrets are derived and not zero.
+
+| Account | Address (PDA of our program) | Content |
+|---|---|---|
+| Owner | `["multisig", group key]` | No data. It owns the group's shielded UTXOs and signs `transact` through `invoke_signed` |
+| Proposal | `["proposed_transaction", group key, commitment]` | `[1, bump]`, then the body: commitment, group key, expiry, rent recipient, count, up to 4 abort authorities. Nobody can change it |
+| Cancellation | `["cancelled_transaction", proposal]` | `[2, bump]`, the expiry and the rent recipient of the cancelled proposal |
+
+The four instructions follow [HM]: `create` (0), `execute` (1), `cancel` (2) and
+`close_cancelled` (3). The spike differs from [HM] in seven points. The Ed25519 instruction must be
+the instruction just before `execute`, so the data has no index. A proposal has at most 4 abort
+authorities. `execute` accepts only a default-ring transfer with inline owner tags, and refuses
+any interface transfer (deposit or withdrawal leg) and any cache. The forwarded pool accounts must
+be the exact `transact` layout with the owner PDA as the last and only owner signer, so the program
+and the pool read the same accounts. `cancel` takes the abort authority as its last account, and a
+cancel after the expiry does not check the cancellation address. `create` and `cancel` also accept
+a PDA that someone funded first: they top it up, then allocate and assign it. Version 1 used
+`CreateAccount`, so a SOL transfer of at least 650,240 lamports to the public cancellation address
+of a proposal blocked its cancel until the expiry, and the approved payment stayed executable; the
+same transfer to a proposal address blocked its `create` (found by the verifier).
+
+**The commitment** is `SHA-256(private_tx_hash || external_data_hash)`, the value that the SDK
+calls `messageHash()`. `private_tx_hash` is a Poseidon hash over the input UTXO hashes, the output
+UTXO hashes and a blinding from the first nullifier. For a transfer, `external_data_hash` is
+SHA256BE over tag 16 and the serialized external-data prefix: the pool expiry, `tx_viewing_pk`, the
+salt, the outputs with their owner tags and ciphertexts, and the messages. So the commitment binds
+the inputs, the payee, the amount, the change, the dummy outputs, the ciphertexts and the pool
+expiry. It leaves out the roots and their history indices, the Merkle paths, the proof, the payer
+and the nullifier PDAs. The program recomputes it from the forwarded `transact` data with the
+pool's own parser, and refuses any difference.
+
+**The approval** is one Ed25519 signature of the group key over
+`SHA-256("Zigs_SolApproval_v1" || Devnet genesis hash || program id || proposal address || body)`.
+The genesis hash is the `deployment_id` that [HM] leaves open; it is a constant of the build. In
+this design the group key signs only these 32-byte digests and never a transaction, and 32 bytes
+can never parse as a Solana message. FROST signs the raw digest; the precompile verifies it.
+
+**What a seat checks before it signs.** The rules of section 5 split three ways:
+
+| Rules | In this design |
+|---|---|
+| Outputs, Legs, Ciphertexts, expiry | Stay. They apply to the plan (inputs, payee, amount, change, ciphertexts), not to message bytes. The device rebuilds the proof inputs from the plan and recomputes the commitment |
+| Instructions template, nonce, fee payer, compute and priority-fee caps, loaded-accounts limit | Go. The executor builds the transaction. A bad transaction costs only the executor's fee |
+| New | The proposal account: owner is the pinned program id, the address derives from the group key and the commitment, the commitment equals the device's own, the expiry is inside the window, the rent recipient (an ordinary account, never a PDA of the program) and the abort authorities come from the roster. The digest rule: domain, cluster, program id, proposal address. One body per commitment: the address does not bind the expiry, the rent recipient or the authorities, so a seat refuses a second body for a commitment that the group already approved |
+
+`wasm-sol` does not have the new rules yet. The spike checked them in JavaScript.
+
+**What becomes public.** The proposal account (commitment, group key, expiry, rent recipient, abort
+authorities) from creation to execution, so the public sees an approval in progress. The Ed25519
+instruction (group key, digest, signature). The owner PDA as the owner signer of `transact`: it
+replaces the group key as the stable tag of section 2, and the group key and the PDA are linked in
+public. The executor address as the payer. Amounts and payees stay as private as in the beta.
+
+**Custody.** The upgrade key of our program can replace the program and then sign as the owner PDA
+of every group. So it can spend every UTXO that the program owns. This adds to the pool upgrade
+key and the protocol authority of section 7. The spike key (`GJhYtqu…`) is a new key pair outside
+the repo. For mainnet, the program must be immutable after an audit: a new version gets a new
+program id, and each group moves its funds with one approved payment. A multisig upgrade key with
+a timelock is the other choice. The custom-ring answer of [HA] (EdDSA in the circuit) could later
+remove the program. The spike showed the risk: we upgraded the program (version 2, the fix above)
+after the group signed the approval and before the execution, and the approval still held, because
+it binds the program id and not the code.
+
+**How it fits the web beta.**
+
+- The group key no longer pays fees, holds a nonce account or signs a transaction. Seats sign the
+  digest with the same FROST rounds; only the message changes. SOL-5, SOL-6 and SOL-7 close when
+  the beta runs this design (SOL-36).
+- Any holder of `solSeed` can execute after the approval exists: it proves again and pays the fee.
+  No `t` seats must be online at execution. The spike used a separate executor key, and one process
+  ran all seats; execution by a seat on its own device is not tested.
+- Someone pays in public SOL: the execute fee and the proposal rent (1,356,360 lamports, back at
+  execution or cancel). In the beta, the group key pays from its own funded address. Here the payer
+  is a seat key or a fee key, and that address becomes a new public link: a seat key that pays
+  links that seat to the group, and a fresh fee key needs a funding transfer that links the same
+  way. A sponsor that pays for many groups hides the link best (Zolana main added sponsored fees
+  in 838aef27, not tested here). This is a condition of the move.
+- One proposal account per payment, so several payments can be open at once. Each needs its own
+  inputs: the first one that lands spends the input and ends every other proposal over it.
+- `solsessions/<id>` carries the plan (input UTXO ids, payee, amount, expiry, the random seed of
+  the build) and the proposal address instead of message bytes. The approval share replaces the
+  transaction share.
+- The group's shielded address changes (owner = PDA). The beta's funds move with one approved
+  payment from the old owner to the new address. The group gives payers its full address and is
+  never registered: the pool and the indexer accept a PDA owner with no record (6.10), and a
+  registry record would need the program to sign `register`, which the rules above forbid.
+- Abort authorities can be the seats' own Ed25519 keys, so one seat can cancel (in the spike the
+  abort authority was the funder key). Cancel before the expiry pays 863,600 lamports of rent for
+  the record, which comes back after the expiry.
+- Not built: withdrawals and deposits through the program (the settlement accounts must enter the
+  commitment check, read as the pool reads them), and the `wasm-sol` rules above.
+
+**Decision: go** for moving the Devnet beta to approvals owned by a program, as the way off durable
+nonces (SOL-36). The spike showed the claim on Devnet (6.10): a FROST approval whose signature
+was on chain 2 hours before the execution (track "emain") settled after the roots moved, with a
+fresh proof, no nonce account, no new signing round, and a payer that owns no input. Two more
+payments landed the same way, one with each nullifier-key derivation, with the signing time in
+the run log only. The program is small, its build is reproducible, and the independent review
+found one defect, which version 2 fixed. The move needs these first:
+
+1. Withdrawals (and deposits from public SOL, if the beta keeps the Shield action) through the
+   program, with the settlement accounts in the commitment check. SOL-32 depends on it.
+2. The new rules of this section in `wasm-sol`: the plan, the proposal account, the digest, and
+   one body per commitment. The option D keys in the ceremony, `soldone` and the Solana backup.
+3. One approved payment that moves the beta funds from the group key to the PDA address.
+4. A fee payer for the execute and the proposal rent, with its link cost on the screens.
+5. A review of version 2 by someone outside the spike, and the owner's decision on the upgrade key
+   (immutable after an audit, or a multisig with a timelock).
+
+Mainnet stays no-go under the recommendation below. Our program adds its own audit and upgrade-key
+policy to that list.
 
 **Owner decisions.** A committed, hash-pinned bundle in a repo with no bundler. Allowed Domains or a
 proxy host for the key. A second wasm file, or Ed25519 inside the Zcash engine. Durable nonces, with
