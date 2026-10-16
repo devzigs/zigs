@@ -974,8 +974,8 @@ nonces (SOL-36). The spike showed the claim on Devnet (6.10): a FROST approval w
 was on chain 2 hours before the execution (track "emain") settled after the roots moved, with a
 fresh proof, no nonce account, no new signing round, and a payer that owns no input. Two more
 payments landed the same way, one with each nullifier-key derivation, with the signing time in
-the run log only. The program is small, its build is reproducible, and the independent review
-found one defect, which version 2 fixed. The move needs these first:
+the run log only. The program is small, its build is reproducible, and the spike's verifier found
+one defect, which version 2 fixed. The move needs these first:
 
 1. Withdrawals (and deposits from public SOL, if the beta keeps the Shield action) through the
    program, with the settlement accounts in the commitment check. SOL-32 depends on it.
@@ -996,35 +996,42 @@ found one defect, which version 2 fixed. The move needs these first:
 - Version 2. The import commit holds the five version 2 files unchanged. `build.sh v2` rebuilds
   them in the Zolana workspace layout of the spike and gets `555f4580…`, the Devnet bytes. The
   standalone build of the same source (`34bd2e10…`, 85,248 bytes) has the same code in all 67
-  functions (`fncmp.py`, with addresses masked). It differs in three ways. `zolana-program` turns
+  functions (`fncmp.py`: calls and function pointers compare by name, data addresses are masked,
+  and every other constant compares as it is). It differs in three ways. `zolana-program` turns
   the default features of `zolana-interface` on again, which add 122 unused Groth16 verifying keys
   as exported data (about 37 KB, SOL-44). Two panic paths are shorter. The functions sit in
   another order.
 - Version 3 (`a027712e…`, 88,424 bytes, not deployed) is version 2 with the fixes R1, R2, R3 and
   R8 of the review below.
-- `sh sol-program/build.sh test` runs 5 unit tests and the 52 tests of `svm-tests/`
-  (LiteSVM 0.16 with the precompiles, as the Zolana program tests). The rig computes the digest, the
-  commitment and the addresses on its own. A stub pool at the pool id accepts only `transact`.
-  Every successful transaction of every test passes a check: the program calls only System
-  Program account creation and `transact`. The tests cover the approval (the precompile; offsets
-  into another instruction; two signatures; accounts; the position; a forged sysvar; another
-  program with the same bytes; each part of the digest), the commitment (each bound field, a fresh
-  proof, the refused shapes), the expiry boundaries, cancel and the abort authorities,
-  `close_cancelled`, the version 2 prefund fix, the account checks, and the option D rules (the
-  CPI check, no registry crate, no forbidden name in the code).
+- `sh sol-program/build.sh test` runs 5 unit tests and the 56 tests of `svm-tests/` (LiteSVM 0.16
+  with the precompiles, as the Zolana program tests). The rig computes the digest, the commitment
+  and the addresses on its own. A stub pool at the pool id accepts only `transact`. Every
+  successful transaction of every test passes a check: the program calls only System Program
+  account creation and `transact`. The tests cover these parts:
+  - the approval: the precompile, offsets into another instruction, two signatures, accounts, the
+    position, a forged sysvar, another program with the same bytes, each part of the digest;
+  - the commitment: each bound field, a fresh proof, the refused shapes;
+  - the expiry boundaries, cancel and the abort authorities, `close_cancelled`, and the version 2
+    prefund fix;
+  - the account checks, with the CPI bound of 18 inputs;
+  - the option D rules: the CPI check, no registry crate, no forbidden name in the code.
 - Track "main" as a vector: the landed approval passes the precompile, its signed values match the
   rig, and its `transact` bytes pass the commitment check of version 3. The landed approval signs
   the version 2 address, so the full replay of the landed `create` and `execute` passed on version
   2 only (commit cc92a9c).
 - `sh sol-program/mutants.sh` removes one rule per mutant in a copy of `src/`: the tests kill all
-  40 mutants.
+  44 mutants. The unchanged source must pass first, and a kill counts only when named tests fail.
 
 **Review of version 2.** An agent that did not take part in the spike reviewed commit bc5bf04 with
 the pinned Zolana source, by reading and with its own LiteSVM tests. Verdict: pass with findings.
 It found no path that moves funds without a valid group signature over the right digest. The same
-agent then checked the delta to version 3: pass with findings. R1, R2, R3 and R8 are fixed, with
-no new defect in the code, and its notes N1 to N5 are below. The full reports stay outside the
-repo, with the spike notes.
+agent then checked the delta to version 3: pass with findings. R1, R2, R3 and R8 are fixed, and
+the code has no new defect; N1 is a note on deployment. The notes N1 to N5 are below. A cold read
+of the whole branch then found no defect in the code, and gaps in tests, tools and this text,
+which are fixed: a test and a mutant for the record address in `cancel`, for the expiry second of
+`cancel`, for the address check of `close_cancelled` and for the CPI bound; a baseline run in
+`mutants.sh`; and `fncmp.py` no longer masks constants. The full reports stay outside the repo,
+with the spike notes.
 
 | Id | Severity | Finding | Outcome |
 |---|---|---|---|
@@ -1035,7 +1042,7 @@ repo, with the spike notes.
 | R5 | Info | The Devnet genesis hash and the pool id are build constants | SOL-42 |
 | R6 | Info | The commitment uses the parser of the pinned commit. A pool upgrade can change what it must bind, or stop every `execute` | SOL-43 |
 | R7 | Info | At most 18 inputs per `execute`; no merge or withdrawal path | In the beta list above; withdrawals are condition 1 |
-| R8 | Info | `create_pda` repeated a helper of `pinocchio-system` | Fixed: the program calls the helper (the ELF grows by 2,872 bytes) |
+| R8 | Info | `create_pda` repeated a helper of `pinocchio-system` | Fixed: the program calls the helper (the ELF grows by 1,976 bytes) |
 | R9 | Info | This note named the wrong account for the abort authority and the wrong receiver of the record rent, and called a cancel final | Fixed in this section |
 
 Notes of the delta review:
@@ -1059,7 +1066,8 @@ Notes of the delta review:
   before the beta uses it.
 
 **The upgrade key: options for the owner (not decided, SOL-40).** Rent below is for the version 3
-ELF at the default rate of 6,960 lamports per byte; Devnet charges 5,080 (6.10).
+ELF at the default rate of 6,960 lamports per byte. Devnet charges 5,080: the proposal rent of 6.10
+is 1,356,360 lamports for 267 bytes.
 
 | | Immutable after an audit (`--final`) | Multisig upgrade key with a timelock |
 |---|---|---|
