@@ -486,7 +486,7 @@ async function payPreparesThePda() {
   const groupOwner = sdk.getAddressDecoder().decode(Buffer.from(GROUP_KEY, "hex"));
   assert.equal(control.request.identity.groupOwner, groupOwner, "the group key never pays");
   assert.deepEqual(control.instruction.ownerSigners, [], "no owner signer for the PDA");
-  assert.equal(control.calls.includes("ownerSigners"), false);
+  assert.equal(control.calls.includes("ownerSigners"), false, "no owner signer is asked for");
   assert.equal(control.synced.solanaAddress(), PDA, "the sync of a payment is of the PDA");
   step("prepare of a payment spends the PDA identity and lists no owner signer");
 }

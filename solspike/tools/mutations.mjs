@@ -483,8 +483,7 @@ export const MUTATIONS = [
   // The program design (ZOLANA.md 7.2, SOL-36 conditions 2 to 4): each mutant undoes one rule of
   // the page, the Worker or the ceremony, and the test that pins the rule must fail.
   program("P-identity", "the page uses a Worker whose PDA identity differs from the wasm",
-    ["web/sol/session.js", "  if (!old || !owner) {", "  if (!old) {"], SOL_APP,
-    /another PDA|another shielded address|operator/),
+    ["web/sol/session.js", "  if (!old || !owner) {", "  if (!old) {"], SOL_APP, REJECTION),
   program("P-proof1", "the Worker proves again from a first proof that has another commitment",
     ["web/sol/worker.js", "  if ((await commitmentOf(firstData)) !== commitment) {",
       "  if (false) {"], WORKER_TEST, /first proof does not give/),
@@ -493,7 +492,7 @@ export const MUTATIONS = [
       "  if (false) {"], WORKER_TEST, /message hash|commitment/),
   program("P-pay-signers", "a payment of the PDA lists the owner signers of the group key",
     ["web/sol/worker.js", 'const signers = kind === "pay" ? [] : ownerSigners(sdk, proofInputs);',
-      "const signers = ownerSigners(sdk, proofInputs);"], WORKER_TEST, /AssertionError/),
+      "const signers = ownerSigners(sdk, proofInputs);"], WORKER_TEST, /no owner signer/),
   program("P-account", "an approver takes a proposal that names another account or body",
     ["web/sol/approve.js", "if (said.proposal !== ss.account || said.body !== ss.body) {",
       "if (false) {"], SOL_PAY, /another account or body|another account/),
