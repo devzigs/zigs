@@ -3,8 +3,9 @@
 import { DurableObject } from "cloudflare:workers";
 
 const GROUP_ID = /^[0-9a-f]{20}$/;
-// The light-wallet servers in NETWORKS (web/app.js). The page may connect to nothing else.
-const CHAIN_SERVERS = ["https://lwd.zigs.app", "https://zcash-testnet.chainsafe.dev",
+// The light-wallet servers in NETWORKS (web/app.js) that the page calls itself. The page may
+// connect to nothing else. Our testnet node is /lwd of this Worker, which 'self' covers.
+const CHAIN_SERVERS = ["https://zcash-testnet.chainsafe.dev",
   "https://zcash-mainnet.chainsafe.dev"].join(" ");
 
 // No inline script or style runs: the app sets styles only through the CSSOM.
