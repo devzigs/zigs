@@ -3,12 +3,13 @@
 // PDA identity (ZOLANA.md 7.2), and `migrate`, the move of the beta funds of the group key to the
 // PDA address. The TS SDK built both offline, so the real wasm accepts them. Shared by sol-pay.mjs
 // and sol-sessions.mjs.
+import assert from "node:assert/strict";
 import fs from "node:fs";
 import { agreement } from "../sol/ceremony.js";
 import { CLUSTER } from "../sol/docs.js";
 import { ZERO_KEY } from "../sol/intent.js";
 import { feeOf } from "../sol/fee.js";
-import { putSol } from "../sol/secrets.js";
+import { putSol, solOf } from "../sol/secrets.js";
 import { chainGroup } from "./sol-chain.mjs";
 import { transactHex } from "./sol-vector.mjs";
 
@@ -51,18 +52,26 @@ export function preparedOf(payment, args) {
 export async function useTestGroup(c, rig) {
   const { gid, data, notify, waitFor, path, W, chain } = rig;
   const { key, nullifierPk, viewingPk, address } = G.group;
+  // A key share that does not fit its own soldone stops the seats for good (agreement in
+  // ceremony.js). So the old documents go first, then the shares, then the new documents at once.
+  for (const i of [1, 2, 3]) data.delete(path(gid, "soldone/" + i));
+  notify();
+  await waitFor("no soldone", () => agreement(c).state === "wait");
   for (const i of [1, 2, 3]) {
     const { keyPackage, publicKeyPackage } = G.seats[i];
     const share = { solSeed: G.solSeed, groupKey: key, keyPackage, publicKeyPackage };
     await putSol(c.host, gid, i, share);
-    const fields = { groupKey: key, publicKeyPackage: JSON.stringify(publicKeyPackage) };
-    Object.assign(fields, { nullifierPk, viewingPk, address, cluster: CLUSTER });
-    Object.assign(fields, { program: W.sol_program_label(), at: Date.now() });
-    for (const k of PDA_FIELDS) fields[k] = G.group[k];
-    const doc = await c.host.signedDoc(gid, "soldone/" + i, i, fields);
-    await c.host.sdb.doc(c.base + "/soldone/" + i).set(doc);
   }
+  const fields = { groupKey: key, publicKeyPackage: JSON.stringify(G.seats[1].publicKeyPackage) };
+  Object.assign(fields, { nullifierPk, viewingPk, address, cluster: CLUSTER });
+  Object.assign(fields, { program: W.sol_program_label(), at: Date.now() });
+  for (const k of PDA_FIELDS) fields[k] = G.group[k];
+  for (const i of [1, 2, 3]) {
+    data.set(path(gid, "soldone/" + i), await c.host.signedDoc(gid, "soldone/" + i, i, fields));
+  }
+  notify();
   await waitFor("the test group", () => agreement(c).done?.groupKey === key);
+  assert.ok([1, 2, 3].every((i) => !solOf(c.host, gid, i).aborted), "no seat stopped");
   for (const i of [1, 2, 3]) data.delete(path(gid, "solfee/" + i));
   notify();
   const published = () => [1, 2, 3].every((i) => c.docs.solfee[i]?.key === feeOf(c, i).key);
