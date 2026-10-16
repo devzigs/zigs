@@ -1,0 +1,16 @@
+[package]
+name = "stub-pool"
+version = "0.1.0"
+edition = "2021"
+license = "MIT"
+publish = false
+
+[lib]
+crate-type = ["cdylib"]
+
+[dependencies]
+pinocchio = "0.11"
+
+[lints.rust.unexpected_cfgs]
+level = "allow"
+check-cfg = ['cfg(target_os, values("solana"))']

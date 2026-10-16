@@ -1,0 +1,28 @@
+[package]
+name = "zigs-min-multisig-svm-tests"
+version = "0.1.0"
+edition = "2021"
+license = "MIT"
+publish = false
+
+# The tests run the SBF builds of the program and of the stub pool in LiteSVM, as the Zolana
+# program tests do. This crate has its own lock file, so the test dependencies never change the
+# versions that the program builds with. The versions match the Zolana lock at the pinned commit.
+[dependencies]
+litesvm = { version = "0.16", features = ["precompiles"] }
+sha2 = "0.10"
+solana-clock = "3.0"
+solana-ed25519-program = "3.0"
+solana-instruction = "3.4"
+solana-keypair = "3.1"
+solana-pubkey = "4.2"
+solana-signer = "3.0"
+solana-transaction = "4.1"
+solana-transaction-error = "3.3"
+zolana-interface = { git = "https://github.com/helius-labs/zolana", rev = "89640630b3ed2402b83bd20c313406cb3fe906d4", default-features = false }
+
+[workspace]
+members = ["stub-pool"]
+
+[profile.release]
+overflow-checks = true

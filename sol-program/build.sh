@@ -1,6 +1,7 @@
 #!/bin/sh
 # Builds the Zigs approvals program (ZOLANA.md 7.2) for SBF and checks the SHA-256 of the ELF.
 #   sh sol-program/build.sh       builds target/deploy/zigs_min_multisig.so and checks its hash
+#   sh sol-program/build.sh test  then runs the unit tests and the LiteSVM tests (svm-tests/)
 #   sh sol-program/build.sh v2    then rebuilds Devnet version 2 and compares the code of the two
 #
 # Toolchain: cargo-build-sbf of Agave v4.3.0 (solana-release-aarch64-apple-darwin.tar.bz2 of the
@@ -46,9 +47,19 @@ if LC_ALL=C grep -q -F "$HOME" "$SO"; then
   fail "$SO holds a home path"
 fi
 echo "$(sha "$SO")  $SO ($(wc -c < "$SO" | tr -d ' ') bytes)"
-[ "$(sha "$SO")" = "$EXPECTED" ] || fail "hash differs from EXPECTED; update it only with a source change"
+[ "$(sha "$SO")" = "$EXPECTED" ] || fail "hash differs from EXPECTED (change it only with src/)"
 
-[ "${1:-}" = v2 ] || exit 0
+case "${1:-}" in
+  "") exit 0 ;;
+  test)
+    cargo test --locked -j 4 -- --test-threads 2
+    "$SBF" --tools-version v1.54 --jobs 4 --manifest-path svm-tests/stub-pool/Cargo.toml -- --locked
+    cargo test --manifest-path svm-tests/Cargo.toml --locked -j 4 -- --test-threads 2
+    exit 0
+    ;;
+  v2) ;;
+  *) fail "unknown mode $1" ;;
+esac
 
 # The pinned Zolana tree from cargo's git checkout, unchanged.
 ZOLANA=$(cargo metadata --format-version 1 --locked | python3 -I -c '
@@ -58,7 +69,8 @@ for p in json.load(sys.stdin)["packages"]:
         print(os.path.dirname(os.path.dirname(os.path.dirname(p["manifest_path"]))))')
 [ "$(git -C "$ZOLANA" rev-parse HEAD)" = 89640630b3ed2402b83bd20c313406cb3fe906d4 ] \
   || fail "$ZOLANA is not at the pinned commit"
-[ -z "$(git -C "$ZOLANA" status --porcelain --untracked-files=no)" ] || fail "$ZOLANA has local changes"
+[ -z "$(git -C "$ZOLANA" status --porcelain --untracked-files=no)" ] \
+  || fail "$ZOLANA has local changes"
 
 # The source of version 2 is the commit that added src/lib.rs.
 IMPORT=$(git log --diff-filter=A --format=%H -- src/lib.rs | tail -1)
@@ -109,9 +121,9 @@ check-cfg = ['cfg(target_os, values("solana"))']
 EOF
 # The three workspace changes of the version 2 build: the member, no default features of
 # zolana-interface, and the release profile.
-perl -pi \
+IFACE='zolana-interface = { path = "program-libs/interface", version = "0.1.0"' perl -pi \
   -e 's/^    "xtask",\n/    "xtask",\n    "sol35-multisig",\n/;' \
-  -e 's/^(zolana-interface = \{ path = "program-libs\/interface", version = "0.1.0") \}$/$1, default-features = false }/;' \
+  -e 's/^\Q$ENV{IFACE}\E \}$/$ENV{IFACE}, default-features = false }/;' \
   "$WORK/Cargo.toml"
 printf 'lto = "fat"\ncodegen-units = 1\nopt-level = 2\n' >> "$WORK/Cargo.toml"
 
