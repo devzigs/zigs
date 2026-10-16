@@ -1,5 +1,15 @@
-# Testnet light-wallet backend: Zakura full node -> lightwalletd -> Envoy (grpc-web + CORS).
-# Only Envoy is published. Set LWD_BIND to the address browsers should reach (default: localhost).
+# Testnet light-wallet backend: Zakura full node -> lightwalletd -> Envoy (grpc-web).
+# Only the app Worker and the devices of the tailnet may use it. Envoy has two listeners
+# (envoy.yaml):
+# - tunnel (8080, not published): the Cloudflare tunnel sends lwd.zigs.app to http://envoy:8080.
+#   A request needs the header x-zigs-lwd-key, which only the app Worker sends (its secret
+#   LWD_KEY). Other requests get 404. No CORS: no browser calls it.
+# - tailnet (8081): no key, with CORS for the app. Published as ${LWD_BIND}:9080. Set LWD_BIND to
+#   the tailnet address of this host (default: localhost), and tailnet devices call
+#   http://<tailnet address>:9080.
+# Make the key once, in the untracked file .env.lwd-key, and give the same value to the secret
+# LWD_KEY of each Worker (README). Envoy refuses to start without 64 lowercase hex characters:
+#   echo "LWD_KEY=$(openssl rand -hex 32)" > .env.lwd-key && chmod 600 .env.lwd-key
 services:
   zakura:
     image: zakuracore/zakura:1.6.0
@@ -43,17 +53,22 @@ services:
     restart: unless-stopped
     depends_on:
       - lightwalletd
+    env_file: .env.lwd-key
+    # envoy-start.sh renders the template with the key, then runs the image entrypoint.
+    entrypoint: ["/bin/sh", "/envoy-start.sh"]
     volumes:
-      - ./envoy.yaml:/etc/envoy/envoy.yaml:ro
+      - ./envoy.yaml:/etc/envoy/envoy.yaml.tmpl:ro
+      - ./envoy-start.sh:/envoy-start.sh:ro
     ports:
-      - "${LWD_BIND:-127.0.0.1}:9080:8080"
+      - "${LWD_BIND:-127.0.0.1}:9080:8081"
     deploy:
       resources:
         limits:
           cpus: "1"
           memory: 512M
 
-  # Publishes Envoy as lwd.zigs.app without opening a port. Needs .env.tunnel with TUNNEL_TOKEN.
+  # Publishes the tunnel listener of Envoy as lwd.zigs.app without opening a port. Needs
+  # .env.tunnel with TUNNEL_TOKEN.
   # Start with: docker compose --profile tunnel up -d
   cloudflared:
     image: cloudflare/cloudflared:2026.9.3
