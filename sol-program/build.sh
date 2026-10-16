@@ -57,8 +57,11 @@ case "$("$SBF" --version 2>/dev/null | head -1)" in
 esac
 
 "$SBF" --tools-version v1.54 --jobs 4 -- --locked --features devnet
-if LC_ALL=C grep -q -F "$HOME" "$SO"; then
-  fail "$SO holds a home path"
+# The ELF holds no path of this machine. Its only absolute paths are the build paths of
+# platform-tools itself (.../work/platform-tools/...), which on a CI runner start with its home.
+if LC_ALL=C perl -0777 -ne 'BEGIN { $h = shift } exit(m{\Q$h\E/(?!work/platform-tools/)} ? 0 : 1)' \
+  "$HOME" "$SO"; then
+  fail "$SO holds a path of this machine"
 fi
 echo "$(sha "$SO")  $SO ($(wc -c < "$SO" | tr -d ' ') bytes)"
 [ "$(sha "$SO")" = "$EXPECTED" ] || fail "hash differs from EXPECTED (change it only with src/)"
