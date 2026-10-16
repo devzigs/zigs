@@ -30,7 +30,7 @@ import { clearPending, pendingShare, savedNonces, spendNonces, usedDigest } from
 import { propose } from "../sol/propose.js";
 import { putSol, remoteStop, stopOf } from "../sol/secrets.js";
 import { refreshChain } from "../sol/session.js";
-import { writePart } from "../sol/sessions.js";
+import { readSolSession, writePart } from "../sol/sessions.js";
 import { solView } from "../sol/view.js";
 import { createPrivateKey, sign as nodeSign } from "node:crypto";
 import { RPC, chainGroup, makeChain, verifies } from "./sol-chain.mjs";
@@ -541,6 +541,11 @@ step("a copied share is ignored, a failed save sends nothing");
   assert.notEqual(ssOf("lonely-signed").status, "sent", "a signed part with no package");
   assert.notEqual(ssOf("wrong-sent").status, "sent", "a sent mark with another id");
   assert.equal(ssOf("right-sent").status, "sent");
+  // The reader alone, with every signature valid: a signed part counts only after a package.
+  const read = (d) => readSolSession("x", d, () => "yes").ss?.status;
+  const signed = { ...parts.proposal, ...parts.signed };
+  assert.equal(read(signed), "collecting", "a signed part with no package does not count");
+  assert.equal(read({ ...signed, ...parts.package }), "signed", "the control: with the package");
   c.rpcUrl = RPC;
 }
 
