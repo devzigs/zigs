@@ -32,6 +32,11 @@ const ask = (path, init = {}, e = env) =>
   worker.fetch(new Request("https://app.zigs.app" + path, { method: "POST", ...init }), e);
 const text = (stream) => new Response(stream).text();
 const step = (name) => console.log(`ok  ${name}`);
+// The key goes upstream only, never into an answer of the Worker itself.
+const keyless = async (res, name) => {
+  assert.ok(![...res.headers.values()].some((v) => v.includes(KEY)), name + ": header");
+  assert.ok(!(await res.text()).includes(KEY), name + ": body");
+};
 
 // ── Only the gRPC methods of the service pass: 404 for a path, then 405 for a method ──
 {
@@ -47,9 +52,15 @@ const step = (name) => console.log(`ok  ${name}`);
     "/lwd/https://example.test/",
     "/lwd/cash.z.wallet.sdk.rpc.Other/GetBlock",
   ];
-  for (const path of paths) assert.equal((await ask(path)).status, 404, path);
+  for (const path of paths) {
+    const res = await ask(path);
+    assert.equal(res.status, 404, path);
+    await keyless(res, path);
+  }
   for (const method of ["GET", "PUT", "DELETE", "OPTIONS", "HEAD"]) {
-    assert.equal((await ask("/lwd" + SERVICE + "GetBlock", { method })).status, 405, method);
+    const res = await ask("/lwd" + SERVICE + "GetBlock", { method });
+    assert.equal(res.status, 405, method);
+    await keyless(res, method);
     assert.equal((await ask("/lwd/other", { method })).status, 404, method + " on a bad path");
   }
   assert.deepEqual(calls, [], "no call went upstream");
@@ -145,7 +156,7 @@ step("a missing or empty LWD_KEY gives 503 and nothing goes upstream");
   };
   const lost = await ask("/lwd" + SERVICE + "GetTransaction");
   assert.equal(lost.status, 502);
-  assert.equal(lost.headers.get("x-zigs-lwd-key"), null);
+  await keyless(lost, "502");
   step("the server status and body pass through, and a failed call gives 502");
 }
 
