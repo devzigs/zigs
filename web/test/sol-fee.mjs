@@ -16,7 +16,7 @@ import { dropNonces, savedNonces, saveNonces } from "../sol/nonces.js";
 import { propose } from "../sol/propose.js";
 import { putSol } from "../sol/secrets.js";
 import { refreshChain } from "../sol/session.js";
-import { writePart } from "../sol/sessions.js";
+import { readSolSession, writePart } from "../sol/sessions.js";
 import { solView } from "../sol/view.js";
 import { verifies } from "./sol-chain.mjs";
 import { sleep } from "./sol-rig.mjs";
@@ -32,7 +32,9 @@ import {
   path,
   solOf,
   ssOf,
+  t,
   waitFor,
+  waitStatus,
   withNonceAccount,
 } from "./sol-setup.mjs";
 
@@ -304,5 +306,75 @@ step("the fee key signs no deposit to another owner and no message that another 
   assert.equal(mark("add-sol").length, 1, "the rest of the tab is there");
 }
 step("an Add SOL message written as a session gets a refusal and the tab stays readable");
+// ── Proposals from before the fee keys: no feeSig, the group signature is the id ──
+{
+  const BEFORE = /from before the fee keys.*Propose it again/;
+  const nonceOf = (n) => String(n).repeat(64).slice(0, 64);
+  const signatures = {};
+  const intentOf = (n) => intentHex("register", { nonce: nonceOf(n), ...done });
+  const pins = bytesOf(pinsHex(done, feeOf(c, 1).key));
+  const messageOf = (n) => hexOf(W.compile_message(bytesOf(intentOf(n)), pins, new Uint8Array(0)));
+  const part = (id, name, fields) =>
+    writePart(c, id, name, fields, { seat: 1, create: name === "proposal" });
+  const proposal = (id, n) =>
+    part(id, "proposal", { intent: intentOf(n), message: messageOf(n), createdAt: Date.now() });
+  const signedBy = async (id, n) => {
+    signatures[id] = String(n + 1).repeat(128).slice(0, 128);
+    await part(id, "package", { package: "{}", signers: [1, 2], digest: "d".repeat(64) });
+    await part(id, "signed", { signature: signatures[id] });
+  };
+  const watch = chain.commands.length;
+  const wire = () => chain.commands.slice(watch).map((m) => m.cmd);
+  const landedBefore = chain.landed.length;
+
+  await proposal("old-collecting", 1);
+  await proposal("old-signing", 2);
+  await part("old-signing", "package", { package: "{}", signers: [1, 2], digest: "d".repeat(64) });
+  await proposal("old-landed", 3);
+  await signedBy("old-landed", 3);
+  chain.landed.push({ signature: base58(signatures["old-landed"]), message: "00", sigs: [] });
+  await proposal("old-missed", 4);
+  await signedBy("old-missed", 4);
+  await proposal("old-sent", 5);
+  await signedBy("old-sent", 5);
+  const mark = { txId: base58(signatures["old-sent"]), slot: "7", outcome: "confirmed" };
+  await part("old-sent", "sent", mark);
+  await proposal("old-failed", 6);
+  await part("old-failed", "failure", { error: "An older text." });
+
+  for (const id of ["old-collecting", "old-signing", "old-missed", "old-failed"]) {
+    await waitStatus(id, "failed", 8000);
+  }
+  await waitStatus("old-landed", "sent", 8000);
+  assert.equal(ssOf("old-sent").status, "sent", "a landed proposal of before reads as sent");
+  const stored = (id) => data.get(path(gid, "solsessions/" + id));
+  for (const id of ["old-collecting", "old-signing", "old-missed"]) {
+    assert.match(stored(id).error, BEFORE, id + " ends with a clear text");
+    assert.equal(stored(id).txId, undefined, id + " was not sent");
+  }
+  assert.equal(stored("old-failed").error, "An older text.", "its own failure text stays");
+  assert.equal(stored("old-landed").txId, base58(signatures["old-landed"]), "marked as landed");
+  assert.deepEqual(
+    [stored("old-sent").txId, stored("old-sent").slot, stored("old-sent").error],
+    [mark.txId, "7", undefined],
+    "a sent mark of before is left as it is",
+  );
+  assert.equal(wire().includes("simulate") || wire().includes("send"), false, "nothing was sent");
+  assert.equal(chain.landed.length, landedBefore + 1, "nothing landed beyond the one seeded");
+  assert.equal(t.banner?.text ?? "", "", "no red banner");
+  const draft = { id: "x", status: "collecting", by: 1, intent: intentOf(7) };
+  const refusal = reviewOf(c, { ...draft, message: messageOf(7) }, 2);
+  assert.match(refusal.why, /fee signature/, "no approval without the signature of the payer");
+  // The reader alone: the sent mark of before needs its own rule, the new rule needs feeSig.
+  const read = (d) => readSolSession("x", d, () => "yes").ss?.status;
+  const old = { intent: intentOf(8), message: messageOf(8), signature: "55".repeat(64) };
+  const sent = { slot: "1", outcome: "confirmed", package: "{}", signers: [1, 2], digest: "d" };
+  assert.equal(read({ ...old, ...sent, txId: base58(old.signature) }), "sent");
+  assert.equal(read({ ...old, ...sent, txId: base58("66".repeat(64)) }), "signed");
+  const paid = { ...old, feeSig: "77".repeat(64), ...sent };
+  assert.equal(read({ ...paid, txId: base58(paid.signature) }), "signed", "a payer signs first");
+  assert.equal(read({ ...paid, txId: base58(paid.feeSig) }), "sent");
+}
+step("a proposal from before the fee keys is read as it was and is never sent again");
 console.log("sol-fee: ok");
 process.exit(0);

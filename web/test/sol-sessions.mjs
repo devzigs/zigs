@@ -321,11 +321,16 @@ const tamper = async (label, { intent, message, by = 1, feeSig }, why) => {
     { intent: register, message: good, feeSig: "00".repeat(64) },
     /fee signature/,
   );
-  await tamper(
-    "no fee signature",
-    { intent: register, message: good, feeSig: null },
-    /fee signature/,
-  );
+  // A proposal with no fee signature reads as one from before the fee keys: it ends, unapproved.
+  {
+    const fields = { intent: register, message: hexOf(good), createdAt: Date.now() };
+    await writePart(c, "no-fee-signature", "proposal", fields, { seat: 1, create: true });
+    await waitSession("no-fee-signature", "failed");
+    assert.match(ssOf("no-fee-signature").error, /from before the fee keys.*Propose it again/);
+    for (const seat of [1, 2, 3]) {
+      await assert.rejects(() => approve(c, ssOf("no-fee-signature"), seat), /not collecting/);
+    }
+  }
   await tamper(
     "the fee signature of another key",
     { intent: register, message: good, feeSig: feeSign(2, good) },

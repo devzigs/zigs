@@ -63,7 +63,7 @@ const pins = bytesOf(pinsHex(done, feeOf(c, 1).key));
 const message = hexOf(W.compile_message(bytesOf(register), pins, new Uint8Array(0)));
 const OPEN = 55;
 for (let k = 0; k < OPEN; k++) {
-  const fields = { intent: register, message };
+  const fields = { intent: register, message, feeSig: "33".repeat(64) };
   await writePart(
     c,
     `open-${k}`,

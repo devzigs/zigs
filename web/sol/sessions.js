@@ -73,11 +73,17 @@ function statusOf(ok) {
   return ok.package ? "signing" : "collecting";
 }
 
-// The sent mark must name the transaction that its signatures give: the first signature is its id,
-// and the payer signs first.
+/** A proposal from before the fee keys has no `feeSig`: the group key paid and signed alone. */
+export const beforeFee = (ss) => ss.feeSig === undefined;
+export const BEFORE_FEE = "This proposal is from before the fee keys. Propose it again.";
+
+// The sent mark must name the transaction that its signatures give: the first signature is its id.
+// The payer signs first. A proposal from before the fee keys has the group signature only.
 const SIGNATURE = /^[0-9a-f]{128}$/;
-const sentMatches = (d) =>
-  SIGNATURE.test(d.signature) && SIGNATURE.test(d.feeSig) && d.txId === base58(d.feeSig);
+const sentMatches = (d) => {
+  const first = beforeFee(d) ? d.signature : d.feeSig;
+  return SIGNATURE.test(d.signature) && SIGNATURE.test(first) && d.txId === base58(first);
+};
 
 function askPart(name, d, check, verdict) {
   const need = PARTS[name].needs;
