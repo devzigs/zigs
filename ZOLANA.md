@@ -165,7 +165,7 @@ Zcash key. Each step writes a signed document (3.2).
 | 3 Echo | none | BLAKE2b-256 with `Zigs_SolEcho__v1` over the wallet id, safety number, cluster, and every package and commitment, in seat order |
 | 4 Round 2 | `soldkg2/<i>-<j>` | A box with the share and `rSol`. The box context carries a curve label (`<id>:sol:<i>-><j>`). Today's context `<id>:<i>-><j>` would let a Zcash box open here |
 | 5 Round 3 | none | Each device checks the echo and every commitment, then builds its key package, the group key and `solSeed = BLAKE2b-256("Zigs_SolSeed__v1", walletId, echo, rSol_1 … rSol_n)` |
-| 6 Done | `soldone/<i>` | The group key, public key package, `nullifier_pk`, `viewing_pk`, shielded address, cluster and a version label of the program ids. The ids are in the wasm. A label that differs from the label of the wasm aborts the seat. Seats compare all `soldone` documents |
+| 6 Done | `soldone/<i>` | The group key, public key package, `nullifier_pk`, `viewing_pk`, shielded address, cluster and a version label of the program ids. The PDA identity of 7.2: the PDA, its `nullifier_pk`, its `owner_hash` and its shielded address. The ids are in the wasm. A label that differs from the label of the wasm aborts the seat. Seats compare all `soldone` documents. A seat whose `soldone` is from before the program design publishes it again with the PDA identity |
 
 The safety number needs no change: the roster is the same, and step 1 checks it again. The echo and
 the `soldone` agreement bind the Solana values to that roster. `rSol` never reuses the Zcash `r`
@@ -179,6 +179,7 @@ because FROST signatures differ each time [Z]sdk-libs/ts/src/client/keys.ts:161-
 |---|---|---|---|
 | Ed25519 key share | One seat each | Give one share of a signature | New group key and a migration spend |
 | Nullifier secret (31 bytes) | Every seat and the Worker | Build proofs, compute spent status. Cannot spend [Z]docs/spec.md:352-358 | Never in place [Z]programs/user-registry/src/instructions/update_keys.rs:32-38 |
+| PDA nullifier secret (31 bytes) | Every seat and the Worker | The same, for the funds of the PDA identity (7.2, option D). The PDA signature authorizes a spend | Never in place |
 | Viewing key (P-256) | Every seat and the Worker | Read incoming and outgoing UTXOs | With an owner signature |
 
 The engine derives both secrets from `solSeed` with Zigs labels, not the `TSPP/*` labels. The
@@ -188,8 +189,7 @@ viewing scalar is HKDF output of 48 bytes reduced modulo the P-256 order
 
 | Topic | Rule |
 |---|---|
-| Registration is permanent | One FROST-signed `register` transaction, with the group key as owner and the fee key of the proposing seat as payer. The record `(owner, nullifier_pk, viewing_pk)` is public. `register` fails if a record exists, `update_keys` refuses a new nullifier key, and no operation deletes a record [Z]programs/user-registry/src/instructions/register.rs:36-42,57-60; docs/spec.md:2805 |
-| Registration check | Before any seat signs, the wasm recomputes `nullifier_pk` and `viewing_pk` from `solSeed` and compares them byte for byte with the instruction data. It requires `owner_p256` to be `None`. The group sends one `register` only. After it lands, each seat compares the on-chain record with its own values. Receiving needs no signature |
+| No registration | The beta never registers the group. The PDA identity of 7.2 needs no record: the pool and the indexer accept a PDA owner with no record (6.10). Nothing signs the old `register` intent (`intent-retired`). A record would be permanent and public: `register` fails if a record exists, `update_keys` refuses a new nullifier key, and no operation deletes a record [Z]programs/user-registry/src/instructions/register.rs:36-42,57-60; docs/spec.md:2805. Payers use the full shielded address of the PDA identity |
 | Refused by default | `set_merging_enabled(true)` and `update_keys` are separate intents with their own screens. The first version does not offer them. `merging_enabled` stays false, the registration default [Z]programs/user-registry/src/instructions/register.rs:60 |
 | Merge | When `merging_enabled` is true, anyone can submit `merge_transact` with no owner signature [Z]docs/spec.md:2270-2274. A merge consolidates inputs into the same owner, so no funds move. It does spend the inputs of an open proposal, and the proposal then fails. That is a denial of service. The group merges with a normal approved self-transfer |
 | Members | A removed member keeps the secrets and reads the history permanently. A member change needs a new wallet and group key (PROTOCOL.md section 8) and one approved payment. That payment links the old key to the new key in public |
@@ -207,7 +207,8 @@ plaintext string, and restore reads a fixed list of fields and drops the rest
 The second file holds the key package, public key package, group key and `solSeed`. It holds no
 fee key: the key share gives it (section 5), so the restore of any file, also one from before the
 fee keys, brings back the key that the seat published. Restore and Fit check that the key share
-equals the `soldone` entry and that `solSeed` gives the published keys and address. When a valid
+equals the `soldone` entry and that `solSeed` gives the published keys and address, and the PDA
+identity too when the `soldone` names one. When a valid
 `solfee/<i>` shows another key than the key share gives, that document is forged or broken: the
 restore says that this seat cannot pay, that it can still approve and sign, and that the other
 seats can propose and add SOL. The snapshot is not in the file. A restored seat that has
@@ -217,6 +218,11 @@ seats can propose and add SOL. The snapshot is not in the file. A restored seat 
 marker. Recommended: `solstart/1`, signed by seat 1, and no change to the wallet version.
 
 ## 5. The signing flow
+
+Since SOL-36 a private payment follows the program design of 7.2: the group signs the digest of a
+proposal account once, and a seat executes it later with a fresh proof. 5.1 gives that flow. The
+flow below with a nonce stays for two intents only: the nonce account and the one-time move of the
+beta funds to the PDA address. Add SOL keeps its own row.
 
 The flow follows PROTOCOL.md section 7. The message is a v1 transaction. Its bytes show no amount or
 recipient, and its life depends on a nonce, an expiry and roots.
@@ -249,11 +255,13 @@ recipient, and its life depends on a nonce, an expiry and roots.
 | Intent | Ordered instructions | Legs | Outputs |
 |---|---|---|---|
 | Create nonce account (once) | `CreateAccountWithSeed` (funder = payer, base = group key, which signs as a readonly account), `InitializeNonceAccount` (authority = group key). Uses a recent blockhash | None | None |
-| Register (once) | `AdvanceNonceAccount`, `register` (record, owner = group key, payer; data per 4.2) | None | None |
-| Add SOL (intent Shield) | Pool `deposit` (tag 15, no proof) from the payer. A recent blockhash, no nonce: the payer signs alone and the group does not approve | The deposit from the payer's public SOL | One output to the group |
-| Transfer | `AdvanceNonceAccount`, `transact` (payer first, the group key as owner signer after the nullifier accounts) | None | Payee, change to the group, dummies |
-| Withdrawal | `AdvanceNonceAccount`, `transact` (as Transfer, the owner signer before the settlement accounts) | One withdrawal leg: intent recipient, amount, SOL | Change to the group, dummies |
-| Cancel | `AdvanceNonceAccount` only | None | None |
+| Add SOL (intent Shield) | Pool `deposit` (tag 15, no proof) from the payer. A recent blockhash, no nonce: the payer signs alone and the group does not approve | The deposit from the payer's public SOL | One output to the PDA identity (7.2) |
+| Move of the beta funds (intent Transfer) | `AdvanceNonceAccount`, `transact` (payer first, the group key as owner signer after the nullifier accounts) | None | The whole balance of the group key to the PDA address, no change (`migration-payee`) |
+| Propose (5.1) | The approvals program `create` (the payer funds the proposal account). A recent blockhash: the fee key of the proposing seat signs alone | None | None |
+| Execute (5.1) | The Ed25519 instruction with the approval, then the program `execute` with the `transact` accounts and the owner PDA last. A recent blockhash: the fee key of the executing seat signs alone | None | Payee, change to the PDA identity, dummies |
+
+Nothing signs the intents of the beta that the program design retired: register, a withdrawal and
+a nonce cancel (`intent-retired`). Withdrawals wait for SOL-36 condition 1.
 
 The wasm refuses these in every intent: a pool `deposit` (tag 15) outside the Shield intent,
 `merge_transact` (tag 17), `update_keys`, `set_merging_enabled`, `WithdrawNonceAccount`,
@@ -288,6 +296,45 @@ durable nonce, so the message is fixed at proposal time, as the sighash is in Zc
 | SDK sponsor mode | The SDK supports a payer that is not the owner since `838aef27` (#424, in the pin): the built transaction lists the owner as a signer and `transactInstruction` takes `ownerSigners`. This replaces the patch in four places that this row named before, so the patch part of Helius question 7 needs no answer. `web/sol/transfer.js` builds the proof inputs with the fee key as payer, and `ownerSigners` there lists the Ed25519 input owners that are not the payer, as `ownerSignerAddresses` of the SDK does (the package does not export it; a test compares both). The checks against the deployed pool are in 6.11 |
 | Proposals from before the fee keys | A proposal with no `feeSig` was paid by the group key. A sent mark of such a proposal counts when its id is the group signature, so a payment that landed still reads as sent. Such a proposal that no signature completed ends once, with the text "This proposal is from before the fee keys. Propose it again." A signed one gets one status read first: if it landed, the page writes the sent mark, and if it did not, nothing sends it (the group key would pay) and it ends with the same text |
 | Old public SOL | SOL that the group key held before the fee keys stays on its address. The beta has no feature to move it (TICKETS.md SOL-38). Nothing pays from it any more, and the screen still shows its balance |
+
+**5.1 Payments of the program design (SOL-36).** The fee key of the proposing seat pays the create
+and the rent. The rent comes back to that seat at the execute. The group key signs no message.
+
+1. **Propose.** The Worker proves the payment once for the PDA identity (`prepare` with kind
+   `pay`, no owner signers: the program signs as the owner). The checker of the proposing device
+   accepts it as an approver would (`check_payment`, with no chain state) and gives the
+   commitment, the body and the proposal account. The fee key signs the create message, and the
+   device lands it. Then the seat publishes the proposal part: the intent (tag 8), the plan, the
+   input ids, the salt, the transact data of the first proof, the account, the body and the id of
+   the create transaction.
+2. **Check, on each approving device** (`check_payment`). The Outputs, Legs and Ciphertexts rules
+   of the table above, on the first proof. The device recomputes `private_tx_hash` from the inputs
+   of its own snapshot, the plan outputs and the blinding of the first nullifier, then the
+   commitment. It reads the proposal account: the owner is the program, the address derives from
+   the group key and the commitment, and the data is `[1, bump]` and the body. The body names the
+   commitment, the group key, an expiry inside the window, and the fee key of the proposing seat as
+   rent recipient and as the only abort authority. A seat refuses a second body for a commitment
+   that it approved (one body per commitment). The screen shows the payee, the amount, the change,
+   the rent, the fees, the proposal account and the public link of the fee address.
+3. **Approve.** One FROST round over the 32-byte digest of 7.2. There is no nonce account and no
+   message. The nonces are saved under the digest, and `sol_approval_share` signs only a digest
+   that the checker gave for this payment.
+4. **Execute.** A seat of a browser with a ready fee key executes: the proposing seat when this
+   browser holds it, else the first ready seat. The Worker proves again with the same plan
+   (`reprove`), and checks that the first proof and the new proof give the commitment of the body.
+   The wasm compiles the execute message, checks that the approval verifies under the group key
+   over the digest of the new data, and only then does the fee key sign. The executing seat pays
+   10,000 lamports (two signatures) and the tree fee. After error 7008 (a stale root) the seat
+   proves again. After 3 failed tries the card shows the error and a button. A proposal account
+   that is gone before the expiry was executed by another device: the page reads the history of
+   the account and writes the sent mark with that transaction.
+5. **The move of the beta funds** (SOL-36 condition 3). While the group key holds private SOL, the
+   tab shows a one-time card: first the nonce account if it is missing, then the move. The move is
+   the last payment with a nonce. After it, only the PDA identity holds the funds.
+
+Not built: withdrawals and deposits of public SOL through the program (SOL-36 condition 1), and a
+cancel or close of a proposal. A proposal account that expires keeps its rent until its abort
+authority (the fee key of the proposing seat) cancels it.
 
 ## 6. Devnet proof of concept
 
@@ -912,7 +959,9 @@ can never parse as a Solana message. FROST signs the raw digest; the precompile 
 | Instructions template, nonce, fee payer, compute and priority-fee caps, loaded-accounts limit | Go. The executor builds the transaction. A bad transaction costs only the executor's fee |
 | New | The proposal account: owner is the pinned program id, the address derives from the group key and the commitment, the commitment equals the device's own, the expiry is inside the window, the rent recipient (an ordinary account, never a PDA of the program) and the abort authorities come from the roster. The digest rule: domain, cluster, program id, proposal address. One body per commitment: the address does not bind the expiry, the rent recipient or the authorities, so a seat refuses a second body for a commitment that the group already approved |
 
-`wasm-sol` does not have the new rules yet. The spike checked them in JavaScript.
+The spike checked these rules in JavaScript. Since SOL-36 `wasm-sol` has them (`check_payment`,
+`src/pay.rs`, `src/program.rs` and `src/beta.rs`; CHECKER_PIN lists the changes). 5.1 gives the
+flow of the page.
 
 **What becomes public.** The proposal account (commitment, group key, expiry, rent recipient, abort
 authorities) from creation to execution, so the public sees an approval in progress. The Ed25519
@@ -934,21 +983,23 @@ it binds the program id and not the code.
 
 - The group key no longer pays fees, holds a nonce account or signs a transaction. Seats sign the
   digest with the same FROST rounds; only the message changes. SOL-5, SOL-6 and SOL-7 close when
-  the beta runs this design (SOL-36).
+  the beta runs this design (SOL-36). The group key still signs the nonce account and the one
+  move of the beta funds.
 - Any holder of `solSeed` can execute after the approval exists: it proves again and pays the fee.
-  No `t` seats must be online at execution. The spike used a separate executor key, and one process
-  ran all seats; execution by a seat on its own device is not tested.
+  No `t` seats must be online at execution. In the beta a seat of a browser with a ready fee key
+  executes (5.1).
 - Someone pays in public SOL: the execute fee and the proposal rent (1,356,360 lamports, back at
-  execution or cancel). In the beta, the group key pays from its own funded address. Here the payer
-  is a seat key or a fee key, and that address becomes a new public link: a seat key that pays
-  links that seat to the group, and a fresh fee key needs a funding transfer that links the same
-  way. A sponsor that pays for many groups hides the link best (Zolana main added sponsored fees
-  in 838aef27, not tested here). This is a condition of the move.
+  execution or cancel). In the beta the fee key of the proposing seat pays the create and the rent,
+  and the fee key of the executing seat pays the execute (section 5). That address is a public
+  link: the chain shows it next to the program address of the group, and its funding transfer
+  links its sender. The Send privately card, the approval screen and the fund card say so. A
+  sponsor that pays for many groups would hide the link best (Zolana main added sponsored fees in
+  838aef27, not tested here).
 - One proposal account per payment, so several payments can be open at once. Each needs its own
   inputs: the first one that lands spends the input and ends every other proposal over it.
 - `solsessions/<id>` carries the plan (input UTXO ids, payee, amount, expiry, the random seed of
-  the build) and the proposal address instead of message bytes. The approval share replaces the
-  transaction share.
+  the build), the transact data of the first proof, the proposal address and the body instead of
+  message bytes. The approval share replaces the transaction share.
 - The group's shielded address changes (owner = PDA). The beta's funds move with one approved
   payment from the old owner to the new address. The group gives payers its full address and is
   never registered: the pool and the indexer accept a PDA owner with no record (6.10), and a
@@ -957,7 +1008,7 @@ it binds the program id and not the code.
   abort authority was the funder key). Cancel before the expiry pays 863,600 lamports of rent for
   the record, which comes back after the expiry.
 - Not built: withdrawals and deposits through the program (the settlement accounts must enter the
-  commitment check, read as the pool reads them), and the `wasm-sol` rules above.
+  commitment check, read as the pool reads them), and a cancel of a proposal.
 
 **Decision: go** for moving the Devnet beta to approvals owned by a program, as the way off durable
 nonces (SOL-36). The spike showed the claim on Devnet (6.10): a FROST approval whose signature
@@ -971,8 +1022,11 @@ found one defect, which version 2 fixed. The move needs these first:
    program, with the settlement accounts in the commitment check. SOL-32 depends on it.
 2. The new rules of this section in `wasm-sol`: the plan, the proposal account, the digest, and
    one body per commitment. The option D keys in the ceremony, `soldone` and the Solana backup.
-3. One approved payment that moves the beta funds from the group key to the PDA address.
-4. A fee payer for the execute and the proposal rent, with its link cost on the screens.
+   Done (5.1, 6.12).
+3. One approved payment that moves the beta funds from the group key to the PDA address. Done
+   (5.1).
+4. A fee payer for the execute and the proposal rent, with its link cost on the screens. Done:
+   the fee keys of section 5.
 5. A review of version 2 by someone outside the spike, and the owner's decision on the upgrade key
    (immutable after an audit, or a multisig with a timelock).
 

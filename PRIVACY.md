@@ -130,9 +130,10 @@ other request. So every user of the page can read it. Allowed Domains at Helius 
 other sites, but it does not protect the key.
 
 Each seat has a **fee address**: an Ed25519 key that the device derives from the Solana key share of
-that seat. It pays the fees and the rents of the proposals that the seat makes, so the group key
-never pays. The chain shows it as the first account of each such transaction, next to the group
-key. It has a public SOL funding trail, and it links that member to the group. The seat publishes
+that seat. It pays the fees and the rents of the proposals that the seat makes, and the fee of each
+payment that the seat executes, so the group key never pays. The chain shows it as the first
+account of each such transaction, next to the program address of the group. It has a public SOL
+funding trail, and it links that member to the group. The seat publishes
 it in a signed document on the group server, and every signer of the wallet can read it. The page
 stores no fee key: it derives the key again from the key share, so the Solana backup file restores
 it. The key never goes to Helius. Any `t` signers together can rebuild the key share of a seat, so
@@ -145,20 +146,33 @@ not Zigs. It sees your IP address and the fee address that you paste, so it can 
 It is a pool deposit that only your seat signs, with no approval from the other seats. The amount
 and the sender (your fee address) are public on chain.
 
+**Payments through the approvals program.** The funds of the group belong to an address of the
+Zigs approvals program, a program-derived address (PDA) of the group key. A payment has three
+public steps. The proposing seat creates a **proposal account**. Until the execute it shows the
+commitment of the payment, the group key, the expiry and the fee address of that seat. Then the
+seats sign an approval, off chain. Then a seat executes: the transaction shows the approval (the
+group key, a digest and the group signature), the PDA as the owner, and the fee address of the
+executing seat as payer. So the chain links the group key, the PDA and the fee addresses in
+public, and shows when a payment waits. The payee and the amount stay hidden. The program has an
+upgrade key, which could replace the program and spend every UTXO that it owns (ZOLANA.md 7.2).
+
+The beta funds of a group that existed before the program move once to the PDA, with a last
+payment of the group key. That payment links the old address and the PDA in public.
+
 Zolana is not Zcash. This table says what differs:
 
 | Property | Zcash (the wallet above) | Solana beta (Zolana Default Ring) |
 |---|---|---|
 | Amount and asset | Hidden | Hidden on chain in a transfer. Public in a deposit and in a withdrawal |
-| Sender and recipient | Hidden | Public: the payer (a member fee address) and the owner signer (the group key) are in the transaction, and the owner key tags each output |
-| Link between spends and the group | None: each spend has a new key | The group key is a stable tag. A FROST signature does not show a multisig |
+| Sender and recipient | Hidden | Public: the payer (a member fee address) and the owner signer (the PDA of the group) are in the transaction, and the owner key tags each output. The proposal account and the approval show the group key |
+| Link between spends and the group | None: each spend has a new key | The PDA and the group key are stable tags. A FROST signature does not show a multisig |
 | Who sees the witness | Nobody: the proof runs on the device | The hosted prover of Helius: owners, assets, amounts, blindings and the nullifier secret. Local proving is not available yet |
 | What the index learns | IP address and blocks | The owner key (tag queries), IP address, timing, Merkle proofs of the inputs, and the app origin |
 | What the group server can link | Nothing that it can match to the chain | The time of its Solana writes matches chain time. That links a wallet id to the owner key and the full history |
 | Custody | Fewer than `t` seats cannot spend | The same for the seats. The pool upgrade key can replace the pool, and the protocol authority can pause trees |
 
-What Helius sees: your IP address, the origin of the app, the owner key of the wallet, and the
-witness of each spend. It can read the whole Solana history of the wallet. It cannot spend,
+What Helius sees: your IP address, the origin of the app, the owner keys of the wallet (the PDA
+and the group key), and the witness of each spend. It can read the whole Solana history of the wallet. It cannot spend,
 because a spend needs the group signature. It sees no key share. Every signer of the wallet reads
 the whole Solana history too.
 
@@ -167,8 +181,9 @@ seat also gets a fee address that appears on chain next to the group, that the Z
 can link the wallet to these addresses by timing, that Helius sees that you use Zigs, and that a
 fee address needs a public SOL funding trail. The fund card says that the fee address appears on
 chain next to the group, and the Add SOL card says that the amount and the sender are public. The
-other Solana screens do not yet state the limits above (ticket SOL-12 in
-[TICKETS.md](TICKETS.md)).
+Send privately card and the approval screen of a payment show the rent, the fees, the proposal
+account and the public link of the fee address. The other Solana screens do not yet state the
+limits above (ticket SOL-12 in [TICKETS.md](TICKETS.md)).
 
 Tor Browser hides your IP address from Helius. It does not hide the timing link of the group
 server. A person who reads "private" may expect Zcash privacy. The Solana part gives less.
