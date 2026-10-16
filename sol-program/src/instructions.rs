@@ -242,7 +242,8 @@ fn check_spp_accounts<'a>(
 }
 
 /// The code of `TransactAccountsError::InvalidSppProgram` in `zolana-program`, whose CPI helper
-/// the program used up to version 4. Clients see the same error.
+/// the program used up to version 4. Clients see the same error. Its other codes, 14100 (too few
+/// accounts) and 14102 (no owner PDA), cannot occur: `check_spp_accounts` runs first.
 const INVALID_SPP_PROGRAM: u32 = 14101;
 
 /// The pool's `transact` as a CPI: the forwarded accounts keep their writable and signer flags,

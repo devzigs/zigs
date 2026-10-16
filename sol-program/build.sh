@@ -26,7 +26,7 @@ set -eu
 cd "$(dirname "$0")"
 unset RUSTFLAGS CARGO_ENCODED_RUSTFLAGS
 
-EXPECTED=28509c6799e6a229c3378a09530088f80afbceb8f73c1c8ab776615f6a71fd16
+EXPECTED=b4bad24c6ae7cf2455b52780f78e35573f014ab3bc618fcbb49772b06c0d6eac
 V2=555f45801f32896c78eb55f962026507dec35ea6d673477326db7913e4475d92
 SBF=${CARGO_BUILD_SBF:-cargo-build-sbf}
 OBJDUMP=$HOME/.cache/solana/v1.54/platform-tools/llvm/bin/llvm-objdump
@@ -81,7 +81,10 @@ build_real_pool() {
 }
 
 # SOL-42: a build names one cluster, and a mainnet build cannot carry the Devnet genesis hash or
-# the development pool id. Each refused build must fail with its own message.
+# the development pool id. Each refused build must fail with its own message. A mainnet build
+# with a test pool id (32 bytes of 0x6d, as svm-tests/tests/cluster.rs knows it) must pass its
+# unit tests, and its ELF goes to svm-tests.
+TEST_POOL=8NADbpm7TWNhCsGKYZZ9iR89cJvwQvqNuUeXMRtJSKA4
 check_clusters() {
   DEV_POOL=sppU489D7A4U1exNo1oeMGZtLEofq3a6o2fR7UeoWB6
   must_fail "choose the cluster" cargo check --locked -j 4
@@ -90,9 +93,12 @@ check_clusters() {
     cargo check --locked -j 4 --features mainnet
   must_fail "development pool id" env ZIGS_MAINNET_POOL_ID=$DEV_POOL \
     cargo check --locked -j 4 --features mainnet
-  env ZIGS_MAINNET_POOL_ID=11111111111111111111111111111112 \
-    cargo check --locked -j 4 --features mainnet > /dev/null 2>&1 \
-    || fail "a mainnet build with another pool id must pass"
+  ZIGS_MAINNET_POOL_ID=$TEST_POOL cargo test --locked -j 4 --features mainnet -- --test-threads 2
+  # The mainnet ELF with the test pool id, for svm-tests/tests/cluster.rs. Its own target folder
+  # keeps the Devnet build in target/.
+  ZIGS_MAINNET_POOL_ID=$TEST_POOL CARGO_TARGET_DIR=target/mainnet-test \
+    "$SBF" --tools-version v1.54 --jobs 4 --sbf-out-dir svm-tests/target/deploy/mainnet \
+    -- --locked --features mainnet
 }
 
 # must_fail TEXT COMMAND...: the command fails, and its output names TEXT.

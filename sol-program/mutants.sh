@@ -172,6 +172,9 @@ mutant T1 instructions.rs "the transact CPI goes to the pool account only" \
 mutant T2 instructions.rs "the owner PDA signs the transact CPI" \
   'let signs = account.is_signer() || account.address() == owner;' \
   'let signs = account.is_signer();'
+mutant T4 instructions.rs "the transact CPI keeps the writable flags (only the real pool sees it)" \
+  'InstructionAccount::new(account.address(), account.is_writable(), signs)' \
+  'InstructionAccount::new(account.address(), false, signs)'
 mutant T3 instructions.rs "the transact CPI carries the transact tag" \
   'instruction_data.push(TRANSACT);' 'instruction_data.push(TRANSACT + 1);'
 mutant K1 instructions.rs "a proposal is owned by the program" \
