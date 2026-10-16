@@ -95,8 +95,10 @@ The app downloads compact blocks and finds the wallet's notes on the device. The
 - your IP address and the time of each request (on testnet, our server sees the app Worker, see
   below);
 - the wallet's birthday height (the first sync asks for the tree state there);
-- the transactions you send, and from which IP address;
-- the full transactions you fetch to read memos (`GetTransaction`), with your IP address. The app
+- the transactions you send, and from which IP address (on testnet, our server sees the app
+  Worker);
+- the full transactions you fetch to read memos (`GetTransaction`), with your IP address (on
+  testnet, our server sees the app Worker). The app
   fetches them only where memo reading is on. It is off by default, for each wallet and each
   browser, until a signer turns it on.
 
@@ -125,9 +127,11 @@ This links a wallet id to a transaction id, but not to its amount or recipient.
   public side answers the Worker only. So our node sees each request from the Worker, not from your
   device, and it does not see your IP address. The Worker sees your IP address and the requests,
   as it does for the page and the group server. It keeps no log and sends no header of yours to the
-  node. Cloudflare sees the same traffic as before, because the node was behind Cloudflare too.
-  Devices on the owner's tailnet can also call the node directly: it then sees their tailnet
-  address. The ChainSafe backup still sees your IP address.
+  node. Envoy also removes the visitor headers of Cloudflare before lightwalletd. Cloudflare sees
+  the same traffic as before, because the node was behind Cloudflare too. Devices on the owner's
+  tailnet can also call the node directly: it then sees their tailnet address. The ChainSafe
+  backup still sees your IP address. The iPhone and Mac apps still call `lwd.zigs.app` directly,
+  which refuses them, so they use ChainSafe for testnet until APP-3 is done.
 
 Tor Browser hides your IP address from both servers, but not this timing link. To remove the
 link, point the app at a light-wallet server you trust (`NETWORKS` in `web/app.js`,

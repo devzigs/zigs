@@ -15,7 +15,7 @@ app also has a Solana beta for testnet wallets (section 16).
 | **Engine** (Rust) | Runs FROST, builds and checks transactions, makes Halo2 proofs, syncs the chain. Runs as WebAssembly in the browser and as a native library on iPhone and Mac. | Nothing permanent; the app gives it data |
 | **Signer device** | Runs the web, iPhone or Mac app around the engine | Its key share, the wallet secret, the viewing key, nonces, payment history |
 | **Group server** | A Cloudflare Worker with one Durable Object (SQLite) per wallet. Relays and stores sealed documents over a WebSocket. | Only ciphertext, plus wallet ids, document paths, timing and IP addresses |
-| **Light-wallet server** | lightwalletd over grpc-web. Serves compact blocks and full transactions, and accepts finished transactions. The public side of the Zigs testnet server answers the app Worker only (section 10.1). | Your IP address, the blocks you download and the transactions you fetch |
+| **Light-wallet server** | lightwalletd over grpc-web. Serves compact blocks and full transactions, and accepts finished transactions. The public side of the Zigs testnet server answers the app Worker only (section 10.1). | Your IP address (on testnet, our server sees the app Worker), the blocks you download and the transactions you fetch |
 | **Zcash network** | NU7, Ironwood shielded pool | One normal shielded transaction per payment |
 
 ```mermaid

@@ -132,6 +132,7 @@ step("a missing or empty LWD_KEY gives 503 and nothing goes upstream");
     "grpc-timeout": "8S",
     "x-zigs-lwd-key": KEY,
   });
+  assert.ok(init.body instanceof ReadableStream, "the request body streams");
   assert.equal(await text(init.body), "request body");
   assert.equal(res.status, 200);
   assert.equal(await res.text(), "answer");

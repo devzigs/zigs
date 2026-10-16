@@ -76,6 +76,7 @@ the nodes handle the NSM.
 | PRIV-5 | P3 | owner | Rename or remove the old workers.dev account subdomain | The account subdomain has a neutral name or is off |
 | PRIV-6 | P3 | owner | Check that the project's design pages in the owner's AI account are private | Each one is private or deleted |
 | PRIV-7 | P2 | owner | Limit the node host to the owner's devices in the Tailscale ACL | The `tailnet` listener of Envoy (`infra/lwd`, port 9080 on the node host) has no key, so every device of the tailnet can use the node, also a device of another tailnet user. Done when the ACL lets only the owner's devices reach the node host, and a device that is not the owner's cannot connect to it (checked from such a device) |
+| PRIV-8 | P2 | dev | Give the light-wallet relay its own limit before the password gate ends | `/lwd` of the app Worker is closed to strangers only by the preview password. When the gate ends at launch, any script can use our node through it again. Done when `/lwd` has its own limit (a rate limit for each IP address, or a token for each user) that a test covers, and PRIVACY.md names it |
 
 ## Air-gapped signing
 

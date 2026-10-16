@@ -238,7 +238,7 @@ The full threat model is in [PRIVACY.md](PRIVACY.md). In short:
 |---|---|---|
 | Chain observers | A normal shielded Ironwood transaction | That a group signed it, the signers, amounts, addresses |
 | Group server | Wallet ids, document paths and field names, timing, which IP addresses connect to which wallet | Wallet and signer names, addresses, viewing key, amounts or their length, recipients, transactions, signing data |
-| Light-wallet server | Your IP address, the wallet's birthday height, the blocks you download, the transactions you send, the full transactions you fetch to read memos (only where memo reading is on) | Which notes are yours while you download blocks (the memo fetches are the exception), any key |
+| Light-wallet server | Your IP address (on testnet, our server sees the app Worker), the wallet's birthday height, the blocks you download, the transactions you send, the full transactions you fetch to read memos (only where memo reading is on) | Which notes are yours while you download blocks (the memo fetches are the exception), any key |
 | Helius (Solana beta, testnet wallets only) | Your IP address, the app origin, the owner key of the wallet, and the witness of each spend: owners, assets, amounts and the nullifier secret. The sender and the recipient of a transfer are public on chain | Any key share, the Ed25519 seed, the viewing key. It cannot sign |
 | Other signers | Everything about the shared wallet | Your key share and your signing nonces |
 
@@ -397,6 +397,11 @@ Envoy. Only the app Worker and the devices of the tailnet may use it. Envoy has 
 |---|---|---|---|
 | `tunnel` | 8080, not published | The Cloudflare tunnel, which sends `lwd.zigs.app` here. Only the app Worker calls it | The header `x-zigs-lwd-key` must hold the key. Any other request gets 404. No CORS |
 | `tailnet` | 8081, published as `${LWD_BIND}:9080` | Devices on the tailnet, at `http://<tailnet address>:9080` | None. CORS allows `https://app.zigs.app` and localhost |
+
+The node host needs these files in one folder, as a copy or a checkout of `infra/lwd`:
+`docker-compose.yml`, `envoy.yaml`, `envoy-start.sh`, `zcash.conf`, `.env.lwd-key` and
+`.env.tunnel`. If `envoy-start.sh` is missing, Docker makes a folder with its name and Envoy does
+not start, so both listeners are down.
 
 Make the key once on the node host, and keep the file private. Git ignores it:
 
