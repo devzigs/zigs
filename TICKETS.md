@@ -11,7 +11,6 @@ design. These tickets list what the beta does not do yet, and what must hold bef
 
 | Id | P | Owner | Title | Done when |
 |---|---|---|---|---|
-| SOL-2 | P1 | owner | Get answers from Helius to ZOLANA.md questions 2, 3 and 5 | Written answers on the upgrade key holder, mainnet service and limits, and audit scope and timelock. Question 6 (roots, durable nonces) was answered on 15 October 2026: see ZOLANA.md section 7 and SOL-35, SOL-36 |
 | SOL-3 | P1 | owner | Get an audit report, or an equal review, of the pool and the SDK version we pin | A report exists that covers the deployed pool and the pinned SDK commit |
 | SOL-4 | P1 | dev | Stop the hosted prover from seeing the witness | Proofs run in the browser or in an attested TEE that the app checks; the nullifier secret never leaves the device. Helius said on 15 October 2026 that browser proving exists but is slow, and that speed is on its roadmap |
 | SOL-5 | P2 | dev | Handle a stale proof root during a long approval | Solved by SOL-35 if the program design passes: the group signs a hash without roots, and the proof is made at execution. Until then, the beta asks for a new proposal |
@@ -25,7 +24,7 @@ design. These tickets list what the beta does not do yet, and what must hold bef
 | SOL-14 | P2 | dev | Add Solana to the iPhone and Mac apps | The apps read the Solana documents and can approve and sign |
 | SOL-15 | P2 | dev | Keep the vendored SDK bundle up to date and checked | `solspike/build.mjs` rebuilds the bundle from a Zolana checkout at the pinned commit, and the build needs no local checkout (the source is pinned by hash); the hash of the bundle is in `web/sol/SHA256SUMS`; an update note lists the changes; the dcap-qvl stub still throws |
 | SOL-16 | P3 | dev | Support SPL tokens | Shield, transfer and withdraw an SPL token on Devnet with checker rules and tests |
-| SOL-17 | P1 | owner | Decide the mainnet go or no-go | SOL-1 to SOL-4 are closed and the owner signs off ZOLANA.md section 7 |
+| SOL-17 | P1 | owner | Decide the mainnet go or no-go | SOL-3 and SOL-4 are closed, the owner accepts the open custody and service risks (ZOLANA.md section 7), and signs off ZOLANA.md section 7 |
 | SOL-18 | P3 | dev | Help a new group get Devnet SOL for fees | The Solana tab shows the fee address and how to fund it on Devnet |
 | SOL-19 | P2 | dev | Bring the checks under the repo's CI rules | CI runs the baseline gate, the `solspike/test` tests, the mock run and `cargo test` of `wasm-sol` with the nine ignored `repo_pins` tests (a pinned Zolana checkout), with no secret in the tree. The live harness sends the app Origin (the key refuses calls with no Origin) |
 | SOL-20 | P2 | dev | Get the code of `wasm-sol` that no verifier signed checked by a verifier | A verifier who did not write it signs `src/frost.rs`, `codec.rs`, `sign.rs`, `roles.rs` and `wasm.rs` (CHECKER_PIN lists them as new or modified), with mutation cases for each rule |
@@ -91,3 +90,5 @@ the nodes handle the NSM.
 | SOL-28 | Build the hasher wasm without the build paths of its author | `withoutHomePaths` in `solspike/build.mjs` replaces the home path of the upstream author in the panic text with a neutral text of the same length. `SHA256SUMS` holds the hashes of the cleaned files, and `solspike/test/build.test.mjs` checks it |
 | SOL-25 | Pin the network of a wallet in the page | `pinNetwork` in `web/app.js` keeps the first `network` that the device saw, for every wallet version, in `zf-signpins` (key `network:<wallet id>`), and the wallet page warns when the store shows another. `solOn` also needs version 3, and the page loads `web/sol` for a start document only when seat 1 signed it (`solReact`). `web/test/sol-ceremony.mjs` flips the stored network of a mainnet version 3 wallet and of a version 2 wallet, and writes start documents that no seat signed |
 | SOL-9 | Refuse a dummy output placed before a real output in the checker | The rule `dummies-last` of `wasm-sol` (the spike step P8b), with `tests/slot_order.rs` and mutation cases |
+
+| SOL-2 | Not asked: the owner decided on 16 October 2026 not to ask Helius about key holders, mainnet service and the audit. Question 6 was answered on 15 October 2026 | owner decision |

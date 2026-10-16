@@ -571,7 +571,8 @@ roots, transaction lifetime, key management, output checks and browser proving.
 | Output checks | Clients must check outputs and ciphertexts. No change planned | Keep the checker rules of section 5 |
 | Browser proving | It exists, but it is slow. Speed is on the roadmap | SOL-4 stays open |
 
-Questions 2, 3 and 5 above (key holders, mainnet service, audit) are still open.
+The owner decided on 16 October 2026 not to ask questions 2, 3 and 5 (key holders, mainnet
+service, audit). They stay open as risks: the custody and maturity rows of the risk table.
 
 **7.1 Next design: approvals owned by a program** [HM]. The shielded UTXOs belong to a program
 address that the program derives from the group key (`[b"multisig", group key]`). A proposer creates
@@ -610,7 +611,8 @@ expiry window, the minimum approval time and the fee caps (5, 6). SOL and Devnet
   untested.
 - Move from spike to product only when all of these hold:
   - P1 to P6, P3b and P8 pass. P8 includes the restore rehearsal.
-  - Helius answers questions 2, 3, 5 and 6. Question 1 gates only the later sponsor work.
+  - Question 6 is answered (section 7). Questions 2, 3 and 5 are not asked, so the owner accepts
+    those risks or finds the facts another way before mainnet.
   - An audit report or an equal review exists.
 
 ## 8. Sources
