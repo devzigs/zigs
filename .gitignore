@@ -11,5 +11,3 @@
 /build/
 .DS_Store
 /solspike/.state
-/sol-program/target
-/sol-program/svm-tests/target
