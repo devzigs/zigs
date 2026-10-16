@@ -40,7 +40,8 @@ mutant() {
   MATCHED="$MATCHED $1"
   rsync -a --delete src/ "$WORK/src/"
   OLD=$4 NEW=$5 perl -0pi -e \
-    '$n = s/\Q$ENV{OLD}\E/$ENV{NEW}/g; die "no single match\n" unless $n == 1' "$WORK/src/$2"
+    '$n = s/\Q$ENV{OLD}\E/$ENV{NEW}/g; die "no single match\n" unless $n == 1' "$WORK/src/$2" \
+    || fail "$1: the old text does not occur exactly once in src/$2"
   if build_and_test "$1"; then
     echo "$1 SURVIVED  $3"
     SURVIVED="$SURVIVED $1"
@@ -90,8 +91,8 @@ mutant C3 instructions.rs "SOL withdrawals are the only interface transfers" \
 mutant W1 instructions.rs "the commitment binds the settlement accounts of each withdrawal" \
   'in settlements.as_chunks::<2>().0 {' 'in settlements[..0].as_chunks::<2>().0 {'
 mutant W2 instructions.rs "the commitment binds the SOL interface account" \
-  '.push_settlement(sol_interface.address().as_array(), recipient.address().as_array())' \
-  '.push_settlement(recipient.address().as_array(), recipient.address().as_array())'
+  '                sol_interface.address().as_array(),' \
+  '                recipient.address().as_array(),'
 mutant W3 instructions.rs "the owner PDA sits right after the nullifier PDAs" \
   'let owner_at = 4 + ix.tree_contexts.len() + ix.inputs.len();' \
   'let owner_at = spp.len().saturating_sub(1);'
