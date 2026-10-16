@@ -304,9 +304,11 @@ and the rent. The rent comes back to that seat at the execute. The group key sig
    `pay`, no owner signers: the program signs as the owner). The checker of the proposing device
    accepts it as an approver would (`check_payment`, with no chain state) and gives the
    commitment, the body and the proposal account. The fee key signs the create message, and the
-   device lands it. Then the seat publishes the proposal part: the intent (tag 8), the plan, the
-   input ids, the salt, the transact data of the first proof, the account, the body and the id of
-   the create transaction.
+   device lands it: a create that is not confirmed at once is read again until its blockhash
+   ends. Then the seat publishes the proposal part: the intent (tag 8), the plan, the input ids,
+   the salt, the transact data of the first proof, the account, the body and the id of the create
+   transaction. The Worker takes a count of inputs that has a circuit with no dummy input, at most
+   16: one `execute` carries at most 18 inputs, and the checker refuses more (`execute-inputs`).
 2. **Check, on each approving device** (`check_payment`). The Outputs, Legs and Ciphertexts rules
    of the table above, on the first proof. The device recomputes `private_tx_hash` from the inputs
    of its own snapshot, the plan outputs and the blinding of the first nullifier, then the
@@ -324,17 +326,23 @@ and the rent. The rent comes back to that seat at the execute. The group key sig
    (`reprove`), and checks that the first proof and the new proof give the commitment of the body.
    The wasm compiles the execute message, checks that the approval verifies under the group key
    over the digest of the new data, and only then does the fee key sign. The executing seat pays
-   10,000 lamports (two signatures) and the tree fee. After error 7008 (a stale root) the seat
-   proves again. After 3 failed tries the card shows the error and a button. A proposal account
-   that is gone before the expiry was executed by another device: the page reads the history of
-   the account and writes the sent mark with that transaction.
+   10,000 lamports (two signatures) and the tree fee. Only a confirmed execute is a sent mark. A
+   tab sends no second execute while its first one can still land (150 s, the life of a
+   blockhash). An execute that fails on chain is a counted try, and the approval stays valid.
+   After error 7008 (a stale root) the seat proves again. After 3 failed tries the card shows the
+   error and a button. A proposal account that is gone (or holds no body) was executed by another
+   device: the page reads the history of the account and writes the sent mark with the
+   transaction that carries the approval signature of this payment.
 5. **The move of the beta funds** (SOL-36 condition 3). While the group key holds private SOL, the
-   tab shows a one-time card: first the nonce account if it is missing, then the move. The move is
-   the last payment with a nonce. After it, only the PDA identity holds the funds.
+   tab shows a card: first the nonce account if it is missing, then the move. A move takes whole
+   UTXOs, as many as one proof can (at most 16), and pays them to the PDA address with no change.
+   A group key with more notes moves them in several steps, and a payment to the old address
+   shows the card again.
 
 Not built: withdrawals and deposits of public SOL through the program (SOL-36 condition 1), and a
-cancel or close of a proposal. A proposal account that expires keeps its rent until its abort
-authority (the fee key of the proposing seat) cancels it.
+cancel or close of a proposal (SOL-47). A proposal account that expires keeps its rent until its
+abort authority (the fee key of the proposing seat) cancels it. So does a create that landed when
+its tab crashed before it published the proposal part.
 
 ## 6. Devnet proof of concept
 

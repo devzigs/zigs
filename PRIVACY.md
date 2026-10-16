@@ -154,7 +154,8 @@ seats sign an approval, off chain. Then a seat executes: the transaction shows t
 group key, a digest and the group signature), the PDA as the owner, and the fee address of the
 executing seat as payer. So the chain links the group key, the PDA and the fee addresses in
 public, and shows when a payment waits. The payee and the amount stay hidden. The program has an
-upgrade key, which could replace the program and spend every UTXO that it owns (ZOLANA.md 7.2).
+upgrade key. With it, someone could replace the program and sign for the PDA of every group. A
+spend also needs a proof, so a seat or the hosted prover would have to help (ZOLANA.md 7.2).
 
 The beta funds of a group that existed before the program move once to the PDA, with a last
 payment of the group key. That payment links the old address and the PDA in public.
