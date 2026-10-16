@@ -6,7 +6,7 @@
 // Do not nest lockf: the subjects run under the lock of this process. They run one at a time.
 import { execFileSync } from "node:child_process";
 import {
-  copyFileSync, existsSync, mkdirSync, readFileSync, symlinkSync, writeFileSync,
+  copyFileSync, existsSync, mkdirSync, readFileSync, rmSync, symlinkSync, writeFileSync,
 } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -18,8 +18,10 @@ const ROOT = resolve(SPIKE, "..");
 const TREE = join(SPIKE, ".state/mut/tree");
 const IGNORED_FILES = ["cf/.dev.vars"];
 
-/** Copies every file of the clone (tracked, and new but not ignored) into the mutation tree. */
+/** Copies every file of the clone (tracked, and new but not ignored) into an empty mutation tree.
+ * A file that the clone deleted or renamed must not stay in the tree. */
 function copyTree() {
+  rmSync(TREE, { recursive: true, force: true });
   const args = ["ls-files", "-z", "--cached", "--others", "--exclude-standard"];
   const list = execFileSync("git", args, { cwd: ROOT, maxBuffer: 1 << 26 });
   for (const rel of [...list.toString().split("\0").filter(Boolean), ...IGNORED_FILES]) {

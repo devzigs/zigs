@@ -550,6 +550,8 @@ folder path.
   - the file that was made once and is out of date, and the question before a removal
   - the joining of received memos, the routing to a chat or to the other messages, and the order
 - `node web/test/qr.mjs`: the QR encoder against libqrencode (needs the `qrencode` command).
+- `node web/test/shim.mjs`: the notice of `web/shim.js` when a module of the page does not load
+  or link before the first paint, and no notice for an image or style, or after the first paint.
 - `bash tests/e2e.sh`: the command-line ceremony in separate processes, with attacks: wallet
   substitution, fewer than t signers, tampered randomizer and sighash, nonce reuse, wrong share
   attribution, foreign notes.
