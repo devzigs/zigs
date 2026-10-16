@@ -61,7 +61,18 @@ status() {
   fi
 }
 
-[ "$(status /)" = 401 ] || fail "$URL/ without the password must answer 401"
-[ "$(status / with)" = 200 ] || fail "$URL/ with the password must answer 200"
-[ "$(status /sol/config.json with)" = 200 ] || fail "$URL/sol/config.json must answer 200"
+# expect CODE PATH [with]: waits up to 30 seconds for the answer CODE, because a new secret takes a
+# few seconds to reach every Cloudflare location.
+expect() {
+  tries=10
+  until [ "$(status "$2" "${3:-}")" = "$1" ]; do
+    tries=$((tries - 1))
+    [ "$tries" -gt 0 ] || fail "$URL$2 ${3:+with the password }must answer $1"
+    sleep 3
+  done
+}
+
+expect 401 /
+expect 200 / with
+expect 200 /sol/config.json with
 echo "deploy-staging: $COMMIT ($REF) is live at $URL"
