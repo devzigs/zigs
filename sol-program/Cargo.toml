@@ -1,0 +1,37 @@
+[package]
+name = "zigs-min-multisig"
+version = "0.1.0"
+edition = "2021"
+license = "MIT"
+publish = false
+
+[lib]
+name = "zigs_min_multisig"
+crate-type = ["cdylib", "lib"]
+
+[features]
+default = ["bpf-entrypoint"]
+bpf-entrypoint = []
+no-entrypoint = []
+
+# The Zolana crates come from one pinned commit (ZOLANA.md [Z]). The other versions match the
+# Cargo.lock of that commit; build.sh builds with --locked.
+[dependencies]
+pinocchio = { version = "0.11", features = ["cpi"] }
+pinocchio-system = "0.6.0"
+zolana-hasher = { git = "https://github.com/helius-labs/zolana", rev = "89640630b3ed2402b83bd20c313406cb3fe906d4", default-features = false }
+zolana-interface = { git = "https://github.com/helius-labs/zolana", rev = "89640630b3ed2402b83bd20c313406cb3fe906d4", default-features = false }
+zolana-program = { git = "https://github.com/helius-labs/zolana", rev = "89640630b3ed2402b83bd20c313406cb3fe906d4", features = ["cpi"] }
+
+[lints.rust.unexpected_cfgs]
+level = "allow"
+check-cfg = ['cfg(target_os, values("solana"))']
+
+# Its own workspace: the program and its lock file stay apart from the tests and the repo root.
+[workspace]
+
+[profile.release]
+overflow-checks = true
+lto = "fat"
+codegen-units = 1
+opt-level = 2

@@ -1,0 +1,123 @@
+#!/bin/sh
+# Builds the Zigs approvals program (ZOLANA.md 7.2) for SBF and checks the SHA-256 of the ELF.
+#   sh sol-program/build.sh       builds target/deploy/zigs_min_multisig.so and checks its hash
+#   sh sol-program/build.sh v2    then rebuilds Devnet version 2 and compares the code of the two
+#
+# Toolchain: cargo-build-sbf of Agave v4.3.0 (solana-release-aarch64-apple-darwin.tar.bz2 of the
+# GitHub release, SHA-256 0bfbd769a55e32f0a1fe1b92f76f360f01ee19475facf8c31cb90f99dcca7fe0)
+# with platform-tools v1.54. Put it on PATH or set CARGO_BUILD_SBF. cargo-build-sbf removes the
+# working folder from the source paths, so the ELF holds no home path; this script checks that.
+#
+# Version 2 on Devnet (program 5PHZEHBMaYbFL9SFmMyP8kUayh3TFEyq2dvEYY3UGjkL) was built as a
+# member of the Zolana workspace, with the default features of zolana-interface turned off in
+# that workspace. This crate builds on its own, so its ELF differs from version 2:
+# - zolana-program turns on the default features of zolana-interface again, which add the unused
+#   Groth16 verifying keys as exported data (no code);
+# - two panic paths are shorter (src/cpi.rs, src/instructions.rs);
+# - the functions sit in another order.
+# The v2 mode rebuilds version 2 from the import commit of src/ in that workspace layout, checks
+# its hash, and lists the functions whose code differs from this build.
+set -eu
+cd "$(dirname "$0")"
+unset RUSTFLAGS CARGO_ENCODED_RUSTFLAGS
+
+EXPECTED=34bd2e1089b9b3aa02c6eb777b0c541ff58a14cfb25c384f2b3e29435398df3c
+V2=555f45801f32896c78eb55f962026507dec35ea6d673477326db7913e4475d92
+SBF=${CARGO_BUILD_SBF:-cargo-build-sbf}
+OBJDUMP=$HOME/.cache/solana/v1.54/platform-tools/llvm/bin/llvm-objdump
+SO=target/deploy/zigs_min_multisig.so
+
+fail() {
+  echo "build.sh: $*" >&2
+  exit 1
+}
+
+sha() {
+  shasum -a 256 "$1" | cut -d' ' -f1
+}
+
+case "$("$SBF" --version 2>/dev/null | head -1)" in
+  "cargo-build-sbf 4.3.0") ;;
+  *) fail "needs cargo-build-sbf 4.3.0 (Agave v4.3.0); put it on PATH or set CARGO_BUILD_SBF" ;;
+esac
+
+"$SBF" --tools-version v1.54 --jobs 4 -- --locked
+if LC_ALL=C grep -q -F "$HOME" "$SO"; then
+  fail "$SO holds a home path"
+fi
+echo "$(sha "$SO")  $SO ($(wc -c < "$SO" | tr -d ' ') bytes)"
+[ "$(sha "$SO")" = "$EXPECTED" ] || fail "hash differs from EXPECTED; update it only with a source change"
+
+[ "${1:-}" = v2 ] || exit 0
+
+# The pinned Zolana tree from cargo's git checkout, unchanged.
+ZOLANA=$(cargo metadata --format-version 1 --locked | python3 -I -c '
+import json, os, sys
+for p in json.load(sys.stdin)["packages"]:
+    if p["name"] == "zolana-program":
+        print(os.path.dirname(os.path.dirname(os.path.dirname(p["manifest_path"]))))')
+[ "$(git -C "$ZOLANA" rev-parse HEAD)" = 89640630b3ed2402b83bd20c313406cb3fe906d4 ] \
+  || fail "$ZOLANA is not at the pinned commit"
+[ -z "$(git -C "$ZOLANA" status --porcelain --untracked-files=no)" ] || fail "$ZOLANA has local changes"
+
+# The source of version 2 is the commit that added src/lib.rs.
+IMPORT=$(git log --diff-filter=A --format=%H -- src/lib.rs | tail -1)
+WORK=$(mktemp -d)
+trap 'rm -rf "$WORK"' EXIT
+rsync -a --exclude .git --exclude .cargo-ok --exclude target "$ZOLANA"/ "$WORK"/
+mkdir -p "$WORK/sol35-multisig/src"
+for f in approval error instructions lib state; do
+  git show "$IMPORT:./src/$f.rs" > "$WORK/sol35-multisig/src/$f.rs"
+done
+(cd "$WORK/sol35-multisig" && shasum -a 256 -c) <<'EOF'
+77addac38903d40b653183df14d10895cd1e593235b1182c8636d76083b737a8  src/approval.rs
+e264bda923d99b081e6ed88e8ecda93ff06727cef1d88af662847d39f43d0174  src/error.rs
+98c3b4ed5b797f717420b3ec01d76a10cd7c0b8af0a9ffd60fd281c831926d20  src/instructions.rs
+2600e58bea25a790250214c4f4ba1f80372e7419a6fea06227a67ff37e4fa156  src/lib.rs
+ce9bd496fbf25408c96160a13fd97da093888aeb0597de85c457f221c553f16f  src/state.rs
+EOF
+cat > "$WORK/sol35-multisig/Cargo.toml" <<'EOF'
+[package]
+name = "zigs-min-multisig"
+version = "0.1.0"
+edition.workspace = true
+license = "Apache-2.0"
+publish = false
+
+[lib]
+name = "zigs_min_multisig"
+crate-type = ["cdylib", "lib"]
+
+[features]
+default = ["bpf-entrypoint"]
+bpf-entrypoint = []
+no-entrypoint = []
+
+[dependencies]
+pinocchio = { workspace = true, features = ["cpi"] }
+pinocchio-system = { workspace = true }
+zolana-hasher = { workspace = true }
+zolana-interface = { workspace = true }
+zolana-program = { workspace = true, features = ["cpi"] }
+
+[dev-dependencies]
+sha2 = { workspace = true }
+
+[lints.rust.unexpected_cfgs]
+level = "allow"
+check-cfg = ['cfg(target_os, values("solana"))']
+EOF
+# The three workspace changes of the version 2 build: the member, no default features of
+# zolana-interface, and the release profile.
+perl -pi \
+  -e 's/^    "xtask",\n/    "xtask",\n    "sol35-multisig",\n/;' \
+  -e 's/^(zolana-interface = \{ path = "program-libs\/interface", version = "0.1.0") \}$/$1, default-features = false }/;' \
+  "$WORK/Cargo.toml"
+printf 'lto = "fat"\ncodegen-units = 1\nopt-level = 2\n' >> "$WORK/Cargo.toml"
+
+"$SBF" --tools-version v1.54 --jobs 4 --manifest-path "$WORK/sol35-multisig/Cargo.toml" \
+  -- --features bpf-entrypoint
+echo "$(sha "$WORK/$SO")  version 2 rebuilt"
+[ "$(sha "$WORK/$SO")" = "$V2" ] || fail "the version 2 rebuild differs from Devnet"
+UNSTRIPPED=target/sbpf-solana-solana/release/zigs_min_multisig.so
+python3 -I fncmp.py "$OBJDUMP" "$WORK/$UNSTRIPPED" "$UNSTRIPPED"
