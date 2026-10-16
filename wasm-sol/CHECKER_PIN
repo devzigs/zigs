@@ -138,7 +138,10 @@ marks each changed file `modified`:
   a registered key signs as owner signer. The deployed pool accepts it in a simulation with the
   signatures checked (140,236 compute units), and refuses the same proof with no owner signer, with
   the owner as payer and with the two keys swapped (error 7008). The accounts of the template
-  `transact` equal those that the SDK lists, in the same order and with the same flags.
+  `transact` equal those that the SDK lists, in the same order and with the same flags. The
+  messages of the wasm for the nonce account (300 compute units) and for Add SOL (37,910) also run
+  in a simulation, and the template `register` has the accounts and the data of the SDK builder
+  (a payer that is not the owner, 5,537 compute units). Nothing landed.
 
 Check: python3 -I tools/pin_check.py (the manifest below against the tree).
 

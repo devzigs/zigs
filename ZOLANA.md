@@ -602,6 +602,14 @@ the pool that runs on Devnet; no state change):
 - The signed transaction ran on the live pool in a simulation with the signatures checked: no
   error, 140,236 compute units, a proof in 0.85 s. Helius question 1 is answered: a payer with no
   input and a separate Ed25519 owner passes. The test did not land a transaction.
+- The other changed layouts ran on the live runtime in simulations too, with the signatures
+  checked and a throwaway key as the group: the nonce account that the payer funds and the group
+  key signs as the base of the seed (message of the wasm, 2 signatures, 300 compute units), Add SOL
+  (message of the wasm, the payer alone, 37,910 compute units), and `register` with a payer that is
+  not the owner (the SDK builder, 5,537 compute units). The accounts and the data of the template
+  `register` equal those of the SDK builder. A signature of the wrong key fails each message.
+  The `register` message of the template (AdvanceNonceAccount first) needs a nonce account, so
+  only its instruction ran, as the SDK builds it.
 - The proof binds the signer chain: the payer in slot 0, then each other input owner. The same
   proof with no owner signer, with the owner as payer and with the two keys swapped fails with
   7008 (`TransactProofVerificationFailed`).
@@ -611,12 +619,13 @@ the pool that runs on Devnet; no state change):
   the group key in each dummy output (`dummyOwnerTag` takes the first input owner that is not the
   payer). The checker follows: the group key is always a participant for a dummy.
 - The newest SDK again: main is still `8178be7c`, npm latest is still 0.4.0-alpha with no newer
-  tag, and the Devnet pool is still the release of 13 October (deploy slot 508538476, tree 0 of
+  SDK release tag, and the Devnet pool is still the release of 13 October (deploy slot 508538476, tree 0 of
   40,080 bytes). The sponsor code (`interface/instructions`, `client/prover/assembly.ts`,
   `transaction/instructions/transact.ts`, the `transact` and registry programs) is the same at
   `c232da1b` and `8178be7c`, so this design carries to the pin of SOL-37. One new branch is not
-  merged: `alex/x25519-everywhere` (tag `custom-ring-keys-v19`, 16 October) moves viewing
-  encryption to X25519. It changes `ViewingKey` and shielded addresses, and its changelog tells
+  merged: `alex/x25519-everywhere` (16 October) moves viewing encryption to X25519. Its tag
+  `custom-ring-keys-v19` is a GitHub prerelease of rotated custom-ring proving keys, not an SDK
+  release. It changes `ViewingKey` and shielded addresses, and its changelog tells
   users to migrate P-256 viewing keys. If it reaches main, the viewing key of 4.2, the 99-byte
   address and the ciphertext rule of the checker (P-256 ECDH) change. SOL-37 watches it.
 
