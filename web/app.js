@@ -401,9 +401,10 @@ function putSec(gid, seat, patch) {
 // ───────────────────────── Platform ─────────────────────────
 let db = null, sdb = null, user = null, downloads = null, me = null, canWrite = null, dbReady = false;
 // Light-wallet servers in order of preference. Mainnet uses a third-party server, so the group
-// server and the chain server have different operators (see PRIVACY.md).
+// server and the chain server have different operators (see PRIVACY.md). The first testnet server
+// is /lwd of this origin: the Worker relays it to our node (cf/src/index.js).
 const NETWORKS = {
-  testnet: { label: "Testnet", servers: ["https://lwd.zigs.app", "https://zcash-testnet.chainsafe.dev"],
+  testnet: { label: "Testnet", servers: [location.origin + "/lwd", "https://zcash-testnet.chainsafe.dev"],
     explorer: "https://testnet.zecblock.com/tx/", prefix: "utest1", faucet: "https://zcashfaucet.jinolabs.xyz/" },
   mainnet: { label: "Mainnet", servers: ["https://zcash-mainnet.chainsafe.dev"],
     explorer: "https://zecblock.com/tx/", prefix: "u1", cap: 50000000 },

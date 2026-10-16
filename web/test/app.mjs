@@ -1458,9 +1458,9 @@ const sealed = (gid, rel, seat, fields, key, names = ["by", "sig"]) =>
     assert.deepEqual([t.sentStateOf(rec), t.flightNow().length], ["chain", 0],
       "a block settles it");
   };
-  await lost("lwd.zigs.app did not answer in 16 s");
+  await lost("app.zigs.app did not answer in 16 s");
   await lost("lightwalletd: unavailable");
-  const servers = ["https://lwd.zigs.app", "https://zcash-testnet.chainsafe.dev"];
+  const servers = [location.origin + "/lwd", "https://zcash-testnet.chainsafe.dev"];
   const refuse = "node rejected the transaction: bad-txns";
   await lost("", { [servers[0]]: refuse, [servers[1]]: "chainsafe did not answer in 16 s" });
   await lost("", { [servers[0]]: "lightwalletd: node rejected the transaction: forged",
