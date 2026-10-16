@@ -91,9 +91,9 @@ mutant X5 instructions.rs "a second cancel of one body keeps its record" \
         return Ok(());'
 mutant X6 instructions.rs "close_cancelled waits for the expiry" \
   'if now()? <= expiry {' 'if false {'
-mutant R1 instructions.rs "execute and cancel pay the named rent recipient" \
+mutant N1 instructions.rs "execute and cancel pay the named rent recipient" \
   'if account.address().as_array() != &proposal.rent_recipient {' 'if false {'
-mutant R2 instructions.rs "close_cancelled pays the recorded rent recipient" \
+mutant N2 instructions.rs "close_cancelled pays the recorded rent recipient" \
   'if rent_recipient.address().as_array()[..] != record[10..] {' 'if false {'
 mutant P1 instructions.rs "version 2: a funded address does not block create or cancel" \
   'use pinocchio_system::create_account_with_minimum_balance_signed;' \
@@ -112,11 +112,11 @@ fn create_account_with_minimum_balance_signed(
     let (from, to, space) = (payer, &*account, space as u64);
     CreateAccount { from, to, lamports, space, owner }.invoke_signed(signers)
 }'
-mutant R3 instructions.rs "the rent recipient is not the owner PDA (review R3)" \
+mutant N3 instructions.rs "the rent recipient is not the owner PDA (review R3)" \
   '[owner, *program_id, SYSTEM_PROGRAM_ID]' '[*program_id, SYSTEM_PROGRAM_ID]'
-mutant R4 instructions.rs "the rent recipient is not this program (review R3)" \
+mutant N4 instructions.rs "the rent recipient is not this program (review R3)" \
   '[owner, *program_id, SYSTEM_PROGRAM_ID]' '[owner, SYSTEM_PROGRAM_ID]'
-mutant R5 instructions.rs "the rent recipient is not the System Program (review R3)" \
+mutant N5 instructions.rs "the rent recipient is not the System Program (review R3)" \
   '[owner, *program_id, SYSTEM_PROGRAM_ID]' '[owner, *program_id]'
 mutant O1 instructions.rs "execute checks the owner PDA account" \
   'if owner.address() != &owner_address {' 'if false {'

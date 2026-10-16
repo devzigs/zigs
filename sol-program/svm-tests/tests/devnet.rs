@@ -105,7 +105,7 @@ fn the_precompile_accepts_the_landed_approval() {
     let v = vector();
     let mut rig = Rig::new();
     let approval = Instruction::new_with_bytes(ED25519_ID, &v.ed25519_data, vec![]);
-    rig.send(&[approval.clone()], &[])
+    rig.send(std::slice::from_ref(&approval), &[])
         .expect("the landed FROST signature");
     let mut changed = approval;
     changed.data[48] ^= 1;

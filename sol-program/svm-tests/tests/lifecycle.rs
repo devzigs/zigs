@@ -136,6 +136,11 @@ fn a_front_runner_cannot_take_or_block_the_signed_body() {
     squat.authorities = vec![attacker.pubkey()];
     assert_ne!(squat.proposal(), body.proposal());
     rig.create(&squat).expect("the front-runner's create");
+    // Its own body has no group approval: its own signature does not count.
+    let metas = rig.metas(&squat, &sample_transact());
+    let own = approval_ix(&attacker, &squat.digest());
+    let ix = execute_ix(metas, &serialize(&sample_transact()));
+    assert_eq!(refused_with(rig.send(&[own, ix], &[])), code::BAD_APPROVAL);
     let authority = AccountMeta::new_readonly(attacker.pubkey(), true);
     let ix = cancel_ix(&rig.payer.pubkey(), &squat, Some(authority));
     rig.send(&[ix], &[&attacker])
