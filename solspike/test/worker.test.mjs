@@ -497,7 +497,10 @@ async function identitiesAndReads() {
   control.rpc.getSlot = async () => 5n;
   assert.equal((await ask("sync", {})).ok, true);
   assert.equal(control.synced.solanaAddress(), PDA);
-  assert.equal((await ask("syncOld", {})).ok, true);
+  control.movable = 77n;
+  const old = await ask("syncOld", {});
+  assert.equal(old.ok, true, old.error);
+  assert.equal(old.result.movable, "77", "the SOL that a move can take, from transfer.js");
   assert.equal(control.synced.solanaAddress(), OWNER);
   const data = Buffer.from([1, 2, 3]);
   control.rpc.getAccountInfo = async () => ({

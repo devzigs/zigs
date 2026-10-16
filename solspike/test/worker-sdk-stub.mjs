@@ -139,6 +139,9 @@ export function buildProofInputs(_sdk, _client, identity, _wallet, request) {
   return control.inputs(request);
 }
 
+/** The movable SOL of a synced wallet, as transfer.js computes it: here the control value. */
+export const spendableSum = () => control.movable ?? 0n;
+
 /** The rebuild of transfer.js: records the identity and the request. */
 export function rebuildProofInputs(_sdk, _client, identity, _wallet, request) {
   note("rebuildProofInputs");

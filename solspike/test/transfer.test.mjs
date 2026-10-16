@@ -164,7 +164,8 @@ const countOf = (entries, amount) => selectInputs(sdk, walletOf(entries), TREE, 
 function inputCap() {
   assert.equal(MAX_INPUTS, 16, "one execute of the program carries at most 18 inputs");
   assert.equal(countOf(ones(8), 7n), 8, "7 UTXOs have no circuit: one more makes 8, with change");
-  assert.throws(() => countOf(ones(7), 7n), /needs 7 UTXOs, and no proof takes that many/);
+  assert.throws(() => countOf(ones(7), 7n), /needs 7 UTXOs, .* what the 6 largest UTXOs hold/);
+  assert.throws(() => countOf(ones(20), 17n), /what the 16 largest UTXOs hold/);
   assert.equal(countOf(ones(16), 16n), 16, "16 UTXOs are allowed");
   assert.throws(() => countOf(ones(20), 17n), /needs 17 UTXOs/);
   assert.throws(() => countOf(ones(20), 21n), /does not cover/);

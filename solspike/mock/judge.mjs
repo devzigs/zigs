@@ -97,7 +97,9 @@ const REFUSALS = [
   ["initWithKeyPackage", "not allowed"],
   ["syncWithArgument", "not allowed"],
   ["unknownCommand", "unknown command"],
-  ["prepareWithoutProof", "the synced balance does not cover the amount"],
+  // The move of the old wallet takes whole UTXOs of the tree of the client, and the replayed
+  // notes of B are in none that it can spend, so the Worker stops before any proof.
+  ["prepareWithoutProof", "the group key holds no private SOL to move"],
 ];
 
 function refusals(v) {

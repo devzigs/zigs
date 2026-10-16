@@ -209,6 +209,12 @@ function answersOf(chain) {
     syncOld: () => ({
       slot: "9",
       balance: String(chain.oldUtxos.reduce((sum, u) => sum + BigInt(u.amount), 0n)),
+      // A note that a move cannot take (not plain, another tree) has `movable: false`.
+      movable: String(
+        chain.oldUtxos
+          .filter((u) => u.movable !== false)
+          .reduce((sum, u) => sum + BigInt(u.amount), 0n),
+      ),
       utxos: chain.oldUtxos,
       storedUtxos: 0,
       undecryptable: 0,

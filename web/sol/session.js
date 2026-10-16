@@ -115,11 +115,11 @@ export async function syncSolana(c) {
     const r = await c.worker.call("sync");
     const old = await c.worker.call("syncOld");
     const snap = { slot: r.slot, balance: r.balance, utxos: r.utxos, at: Date.now() };
-    snap.old = { balance: old.balance, utxos: old.utxos };
+    snap.old = { balance: old.balance, movable: old.movable, utxos: old.utxos };
     await saveSnap(host.Z, roles.seal_key, gid, snap);
     c.sync = {
       balance: solText(r.balance),
-      oldBalance: old.balance,
+      oldBalance: old.movable,
       text: "synced at slot " + r.slot + ", " + c.workerAddress,
     };
   } catch (e) {
@@ -169,7 +169,7 @@ export async function showSaved(c) {
     roles = J(W.sol_roles(s.solSeed, s.groupKey));
   const snap = await loadSnap(host.Z, roles.seal_key, gid);
   if (!snap || c.gid !== gid || c.sync.balance !== undefined) return;
-  const oldBalance = snap.old?.balance;
+  const oldBalance = snap.old?.movable;
   c.sync = { balance: solText(snap.balance), oldBalance, text: "saved sync of slot " + snap.slot };
   host.render();
 }

@@ -21,6 +21,7 @@ import { ZERO_KEY, bytesOf, decodeIntent, readVerdict } from "../sol/intent.js";
 import { savedNonces, saveNonces } from "../sol/nonces.js";
 import { feeOf } from "../sol/fee.js";
 import { putSol } from "../sol/secrets.js";
+import { syncSolana } from "../sol/session.js";
 import { deviceSpend } from "../sol/spend.js";
 import { LINK_TEXT } from "../sol/payview.js";
 import { readSolSession, writePart } from "../sol/sessions.js";
@@ -383,7 +384,9 @@ step("a create that fails on chain writes no session, and a late create is waite
   chain.txs.set(elsewhere, tx("aa" + ssOf(id).signature + "bb"));
   // A failed execute of this payment by another device carries the approval too.
   chain.txs.set("5".repeat(88), { ...tx("dd" + ssOf(id).signature), failed: true });
-  for (const other of [early, late]) chain.txs.set(other, tx("cc".repeat(80)));
+  chain.txs.set(early, tx("cc".repeat(80)));
+  // A later transaction that copies the approval (a memo, say) is not the execute.
+  chain.txs.set(late, tx("ee" + ssOf(id).signature));
   chain.refuse = before;
   await waitStatus(id, "sent");
   assert.equal(ssOf(id).txId, elsewhere, "the transaction that holds the approval");
@@ -406,6 +409,43 @@ step("an execute that another device landed is read back from the history of the
 }
 step("an account that is gone with no execute in its history ends the session");
 
+// ── A history that the node does not give in full: the page reads it again, no failure ──
+{
+  await forgetPairs();
+  const id = await proposedPay();
+  current = id;
+  chain.refuse = "Custom 9999";
+  await approve(c, ssOf(id), 1);
+  await approve(c, ssOf(id), 2);
+  await waitFor("a refused try", () => (c.tries[id] ?? 0) >= 1);
+  const address = base58(ssOf(id).account);
+  const [create] = chain.history.get(address);
+  chain.accounts.delete(address);
+  chain.refuse = null;
+  const executed = "8".repeat(88);
+  const unread = () => /history of the proposal account is not complete/.test(c.execErrors[id]);
+  const readAgain = async (history, what) => {
+    chain.history.set(address, history);
+    delete c.execErrors[id];
+    tryAgain(c, ssOf(id));
+    await waitFor(what, unread);
+    assert.equal(ssOf(id).status, "signed", what + ": no failure");
+  };
+  // A history that does not reach back to the create, then one whose execute the node lacks.
+  const other = "9".repeat(88);
+  chain.txs.set(other, { found: true, failed: false, tx: Buffer.from([0xcc]).toString("base64") });
+  await readAgain([{ signature: other, failed: false, slot: "13" }], "no create");
+  chain.txs.set(executed, { found: false, failed: false, tx: "" });
+  const entry = { signature: executed, failed: false, slot: "12" };
+  await readAgain([entry, create], "an unread execute");
+  const signed = Buffer.from("aa" + ssOf(id).signature, "hex").toString("base64");
+  chain.txs.set(executed, { found: true, failed: false, tx: signed });
+  tryAgain(c, ssOf(id));
+  await waitStatus(id, "sent");
+  assert.equal(ssOf(id).txId, executed, "the execute, once the node gives it");
+}
+step("a history with no create or with an unread transaction is read again, not failed");
+
 // ── The sent mark of a payment needs the approval signature and a transaction id ──
 {
   const ss = ssOf(current);
@@ -424,6 +464,12 @@ step("the sent mark of a payment needs a transaction id");
 
 // ── The one-time move of the beta funds: the card shows while the group key holds SOL ──
 {
+  // The card counts only the notes that a move can take.
+  const stuck = { ...utxoOf(G.migrate), hash: "ef".repeat(32), movable: false };
+  chain.oldUtxos = [utxoOf(G.migrate), stuck];
+  await syncSolana(c);
+  assert.equal(c.sync.oldBalance, G.migrate.inputs[0].amount, "the movable SOL of the old address");
+  chain.oldUtxos = [];
   const kept = { sync: c.sync, chain: c.chain };
   c.sync = { ...c.sync, oldBalance: "5000000" };
   c.chain = { ...c.chain, nonce: "missing" };

@@ -36,10 +36,7 @@ const HOLDER = crypto.randomUUID();
 const SEND_WINDOW_MS = 150_000;
 const CONFIRMED = new Set(["confirmed", "finalized"]);
 const FAILED = "The execute failed on chain. Zigs proves it again.";
-// A sent execute that may still land: no new send, and no counted try.
-const PENDING = "The execute is not confirmed yet.";
-// The history entries that the page reads to find the execute of a gone account.
-const LOOK = 6;
+const UNREAD = "The history of the proposal account is not complete yet. Zigs reads it again.";
 const sleep = (ms) => new Promise((done) => setTimeout(done, ms));
 const errorText = (e) => String(e?.message ?? e).slice(0, 300);
 
@@ -104,52 +101,57 @@ const holdsBody = (account, ss) =>
 const bytesOfBase64 = (text) => Uint8Array.from(atob(text), (ch) => ch.charCodeAt(0));
 
 /**
- * The oldest successful transaction on the account that carries the approval signature of this
- * payment: the execute. No other transaction that names the address carries it.
+ * The execute of a gone account: the oldest successful transaction in its history that carries
+ * the approval signature of this payment (no other transaction carries it), or null. `complete`
+ * is true only when the history reaches back to the create and every transaction was read.
  */
 async function closingExecute(worker, ss, found) {
-  const tried = found.filter((x) => !x.failed).slice(0, LOOK);
-  for (const x of tried.reverse()) {
+  let complete = found.some((x) => x.signature === ss.createTx);
+  for (const x of found.filter((y) => !y.failed).reverse()) {
     const got = await worker.call("transaction", { signature: x.signature });
-    const holds = got.found && hexOf(bytesOfBase64(got.tx)).includes(ss.signature);
-    if (holds) return x;
+    if (!got.found) complete = false;
+    else if (hexOf(bytesOfBase64(got.tx)).includes(ss.signature)) return { closed: x };
   }
-  return null;
+  return { closed: null, complete };
 }
 
-/** The account is gone: the transaction that executed it, read from its history, is the mark. */
+/**
+ * The account is gone: the transaction that executed it, read from its history, is the mark. The
+ * session fails only on a complete history with no execute; else the page reads it again.
+ */
 async function landedElsewhere(c, worker, ss, seat, failSession) {
   const found = await worker.call("history", { account: base58(ss.account) });
-  const closed = await closingExecute(worker, ss, found);
-  if (!closed) {
-    await failSession(c, ss, "The proposal account is gone, and no execute of it landed.");
-    return;
+  const { closed, complete } = await closingExecute(worker, ss, found);
+  if (closed) {
+    const mark = { txId: closed.signature, slot: closed.slot, outcome: "confirmed" };
+    return writePart(c, ss.id, "sent", mark, { seat });
   }
-  const mark = { txId: closed.signature, slot: closed.slot, outcome: "confirmed" };
-  await writePart(c, ss.id, "sent", mark, { seat });
+  if (!complete) throw new Error(UNREAD);
+  return failSession(c, ss, "The proposal account is gone, and no execute of it landed.");
 }
 
 const markSent = (c, ss, seat, txId, seen) =>
   writePart(c, ss.id, "sent", { txId, slot: seen.slot, outcome: seen.status }, { seat });
 
-/** True when the execute that this tab sent before landed and is marked now. */
-async function landedBefore(c, worker, ss, seat) {
+/** The execute that this tab sent before: "done" (it landed and is marked), "wait" or "go". */
+async function sentState(c, worker, ss, seat) {
   const sent = c.sending[ss.id];
-  if (!sent) return false;
+  if (!sent) return "go";
   const seen = await worker.call("status", { signature: sent.txId });
   if (CONFIRMED.has(seen.status)) {
     delete c.sending[ss.id];
     await markSent(c, ss, seat, sent.txId, seen);
-    return true;
+    return "done";
   }
-  if (seen.status !== "failed" && Date.now() - sent.at < SEND_WINDOW_MS) throw new Error(PENDING);
+  if (seen.status !== "failed" && Date.now() - sent.at < SEND_WINDOW_MS) return "wait";
   delete c.sending[ss.id];
-  return false;
+  return "go";
 }
 
 /** What the confirm of a sent execute decides: the mark, a counted failure or a later check. */
 function afterConfirm(c, ss, seat, txId, seen) {
-  if (!CONFIRMED.has(seen.status) && seen.status !== "failed") throw new Error(PENDING);
+  // Not settled yet: the next pass of the reactor asks for its status (sentState).
+  if (!CONFIRMED.has(seen.status) && seen.status !== "failed") return undefined;
   delete c.sending[ss.id];
   if (seen.status === "failed") throw new Error(FAILED);
   return markSent(c, ss, seat, txId, seen);
@@ -159,7 +161,9 @@ async function attempt(c, ss, seat, failSession) {
   const worker = await ensureWorker(c);
   const ref = c.host.sdb.doc(c.base + "/" + SESSIONS + "/" + ss.id);
   if (!(await ref.acquire({ holder: HOLDER, ttlMs: 120_000 })).acquired) return sleep(3000);
-  if (await landedBefore(c, worker, ss, seat)) return undefined;
+  const state = await sentState(c, worker, ss, seat);
+  if (state === "wait") return sleep(3000);
+  if (state === "done") return undefined;
   const account = await worker.call("account", { account: base58(ss.account) });
   if (!holdsBody(account, ss)) return landedElsewhere(c, worker, ss, seat, failSession);
   const { tx, txId } = await signedExecute(c, worker, ss, seat);
@@ -181,9 +185,9 @@ export function tryAgain(c, ss) {
 }
 
 /**
- * The reactor step of a signed payment. A failed try is counted (an execute that may still land is
- * not); after EXECUTE_TRIES the card shows the last error and a button that tries again. The
- * approval stays valid until the expiry.
+ * The reactor step of a signed payment. A failed try is counted (a wait for an execute that may
+ * still land is no try); after EXECUTE_TRIES the card shows the last error and a button that
+ * tries again. The approval stays valid until the expiry.
  */
 export function maybeExecute(c, ss, { launch, failSession }) {
   const seat = executorOf(c, ss);
@@ -193,7 +197,7 @@ export function maybeExecute(c, ss, { launch, failSession }) {
       await attempt(c, ss, seat, failSession);
       delete c.execErrors[ss.id];
     } catch (e) {
-      if (errorText(e) !== PENDING) c.tries[ss.id] = (c.tries[ss.id] ?? 0) + 1;
+      c.tries[ss.id] = (c.tries[ss.id] ?? 0) + 1;
       c.execErrors[ss.id] = errorText(e);
       throw e;
     }

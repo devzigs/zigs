@@ -54,13 +54,17 @@ export function selectInputs(sdk, wallet, tree, amount) {
   if (held < amount) throw new Error("the synced balance does not cover the amount");
   const count = COUNTS.find((k) => k >= needed && k <= sorted.length);
   if (count === undefined) {
+    const most = COUNTS.findLast((k) => k <= sorted.length);
     throw new Error(
       `the payment needs ${needed} UTXOs, and no proof takes that many: send at most what ` +
-        `${MAX_INPUTS} UTXOs hold, or less`,
+        `the ${most} largest UTXOs hold`,
     );
   }
   return sorted.slice(0, count);
 }
+
+/** The SOL that the spends of `tree` can take: the plain SOL UTXOs that a move would take. */
+export const spendableSum = (sdk, wallet, tree) => sumOf(spendable(sdk, wallet, tree));
 
 /** The UTXOs of one move of the beta funds: as many whole UTXOs as one proof takes. */
 export function moveInputs(sdk, wallet, tree) {
