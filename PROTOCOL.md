@@ -1280,7 +1280,8 @@ FROST-Ed25519 group key as the Zolana owner. The Solana documents use their own 
 (`solstart`, `soldkg1`, `soldkg2`, `soldone`, `solfee`, `solabort`, `solsessions`) in the same
 store, with the signed writes of section 15. Each seat publishes the public key of its fee key in
 `solfee/<i>`: that key pays the fees and the rents of the proposals of the seat, and the group key
-never pays. The Zcash key, its engine and its wasm file stay as they are.
+never pays. A seat writes it only when no valid document shows a key for the seat, so two browsers
+with two keys of one seat do not overwrite each other. The Zcash key, its engine and its wasm file stay as they are.
 
 | Party | Learns | Does not learn |
 |---|---|---|

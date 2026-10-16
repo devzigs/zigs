@@ -9,6 +9,7 @@ import { backupName } from "../util.js";
 import { aesKey, open as openVault, parseVault } from "../vault.js";
 import { backupText as solBackupText, backupWords, KIND } from "../sol/backup.js";
 import { base58 } from "../sol/docs.js";
+import { feeConflict } from "../sol/fee.js";
 import { loadSnap, saveSnap } from "../sol/store.js";
 import { shareSeat, showSaved, solText, syncSolana } from "../sol/session.js";
 import { loadRig, sleep, storage } from "./sol-rig.mjs";
@@ -242,37 +243,67 @@ const zcashFile = saved.at(-1);
   await waitFor("wallet", () => t.state.gid === gid && t.state.g && t.state.wallet);
   await t.applyBackup(good, true);
   assert.deepEqual(solOf(gid, 1), original, "and for the testnet wallet it restores");
-  // A file from before the fee key has none: the restore makes a new key, says so, and the seat
-  // publishes the new address. The old address stays the address of the old backup.
+  // A file from before the fee key has none: the restore makes a new key and says so. The seat
+  // has published its key already, so that document stands: this browser writes nothing and says
+  // that it cannot pay for the seat. A file with the fee key brings the key back.
   const ctl = t.sol.ctl;
-  await clean(1);
+  const writes = [];
+  rig.hook.before = (p, value) => {
+    if (p.endsWith("/solfee/1")) writes.push(value.key);
+    return value;
+  };
   const older = { ...good };
   delete older.feeSecret;
+  const noDocument = async () => {
+    data.delete(`groups/${gid}/solfee/1`);
+    rig.notify();
+    await waitFor("no document of seat 1", () => ctl.docs.solfee[1] === undefined);
+  };
+  await clean(1);
   await t.applyBackup(older, true);
   const fresh = solOf(gid, 1);
   assert.notEqual(fresh.feeSecret, original.feeSecret, "a new fee key");
   assert.equal(W.sol_fee_public(fresh.feeSecret), fresh.feePublic);
   assert.match(t.banner.text, /Restored the Solana part of seat 1/);
-  assert.match(t.banner.text, /before the fee key.*made a new fee key.*Fund its new fee address/);
+  assert.match(t.banner.text, /before the fee key.*made a new fee key.*published another fee key/);
+  assert.doesNotMatch(t.banner.text, /Fund its new fee address/, "no address to fund");
   assert.deepEqual(
     { ...fresh, feeSecret: 0, feePublic: 0 },
     { ...original, feeSecret: 0, feePublic: 0 },
   );
   t.refilter(); // the page runs its reactor after a restore, as after any change
-  await waitFor(
-    "the new fee address is published",
-    () => ctl.docs.solfee[1]?.key === fresh.feePublic,
-  );
-  // A file with the fee key brings the same key back, and the document follows it.
+  await sleep(500);
+  assert.equal(ctl.docs.solfee[1].key, original.feePublic, "the document of the seat stands");
+  assert.equal(writes.length, 0, "this browser wrote nothing");
+  assert.equal(feeConflict(ctl, 1), true, "and it cannot pay for the seat");
   await clean(1);
   await t.applyBackup(good, true);
   assert.deepEqual(solOf(gid, 1), original, "the fee key of the file is back");
-  assert.doesNotMatch(t.banner.text, /new fee key/);
+  assert.doesNotMatch(t.banner.text, /new fee key|another fee key/);
+  t.refilter();
+  await sleep(300);
+  assert.equal(feeConflict(ctl, 1), false, "the key of the file is the key of the document");
+  assert.equal(writes.length, 0, "still no write");
+  // With no valid document, the seat that restores an older file publishes its new key.
+  await clean(1);
+  await noDocument();
+  await t.applyBackup(older, true);
+  assert.match(t.banner.text, /made a new fee key.*Fund its new fee address/);
+  assert.doesNotMatch(t.banner.text, /published another/);
+  const made = solOf(gid, 1).feePublic;
+  t.refilter();
+  await waitFor("the new fee address is published", () => ctl.docs.solfee[1]?.key === made);
+  // The file with the old key, on a seat whose document shows no key: the document follows it.
+  await clean(1);
+  await noDocument();
+  await t.applyBackup(good, true);
+  assert.deepEqual(solOf(gid, 1), original, "the fee key of the file is back");
   t.refilter();
   await waitFor(
     "the old fee address is published again",
     () => ctl.docs.solfee[1]?.key === original.feePublic,
   );
+  rig.hook.before = (_p, value) => value;
 }
 
 // ── A restore from the wallet list opens the wallet and waits for its documents ──

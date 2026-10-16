@@ -28,6 +28,7 @@ import {
   done,
   feeAddress,
   gid,
+  hook,
   notify,
   path,
   solOf,
@@ -145,16 +146,88 @@ step("the fund card shows the fee address of each seat with Copy, the faucet and
 
 await withNonceAccount();
 
-// ── A fee key that its document does not show yet: no proposal, no Add SOL ──
+// ── Another fee key in the document: no proposal, no Add SOL, and no rewrite ──
+const ANOTHER = /Seat 1 has another fee key in another browser/;
 {
   const held = { feeSecret: solOf(1).feeSecret, feePublic: solOf(1).feePublic };
   await putSol(c.host, gid, 1, newFeePatch(W));
-  await assert.rejects(() => propose(c, "register"), /fee address of seat 1 is not published yet/);
-  await assert.rejects(() => addSol(c, { amount: "0.01" }), /not published yet/);
+  await assert.rejects(() => propose(c, "register"), ANOTHER);
+  await assert.rejects(() => addSol(c, { amount: "0.01" }), ANOTHER);
   await putSol(c.host, gid, 1, held);
   assert.equal(feeOf(c, 1).key, held.feePublic, "the key of the seat is back");
 }
+step("a proposal and Add SOL stop when the document shows another fee key of the seat");
+
+// ── One seat in two browsers with two fee keys: the page does not answer with its own ──
+const rewrites = [];
+const saved = hook.before;
+hook.before = (p, value) => {
+  if (p.endsWith("/solfee/1")) rewrites.push(value);
+  return value;
+};
+const doc1 = (key, cluster = "devnet") =>
+  c.host.signedDoc(gid, "solfee/1", 1, { key, cluster, at: Date.now() });
+{
+  const mine = feeOf(c, 1).key,
+    other = J(W.sol_fee_key()).public;
+  // The other browser (an older page that republishes when the document is not its key) answers.
+  data.set(path(gid, "solfee/1"), await doc1(other));
+  notify();
+  await sleep(2000);
+  assert.equal(rewrites.length, 0, "this page never writes while another valid key stands");
+  assert.equal(data.get(path(gid, "solfee/1")).key, other, "the document is the other key");
+  assert.equal(c.docs.solfee[1].key, other);
+  assert.equal(mark("fee-address-1").length, 0, "no address to fund: this browser cannot pay");
+  assert.match(textOf(mark("fee-conflict-1")[0]), ANOTHER);
+  assert.equal(mark("fee-address-2").length, 1, "the other seats show their address");
+  data.set(path(gid, "solfee/1"), await doc1(mine));
+  notify();
+  await sleep(200);
+  assert.equal(mark("fee-address-1").length, 1, "the key of this browser stands again");
+  assert.equal(mark("fee-conflict-1").length, 0);
+  assert.equal(rewrites.length, 0, "and still no write");
+}
+step("a seat whose document shows another key writes nothing and says so");
+
+// ── No valid document: the seat publishes once. Another cluster is no document ──
+{
+  const mine = feeOf(c, 1).key;
+  for (const [label, doc] of [
+    ["none", null],
+    ["another cluster", await doc1(mine, "mainnet")],
+    ["another cluster and key", await doc1(J(W.sol_fee_key()).public, "mainnet")],
+  ]) {
+    rewrites.length = 0;
+    if (doc === null) data.delete(path(gid, "solfee/1"));
+    else data.set(path(gid, "solfee/1"), doc);
+    notify();
+    await waitFor("the document of " + label, () => c.docs.solfee[1]?.cluster === "devnet");
+    await sleep(500);
+    assert.equal(rewrites.length, 1, label + ": one write, then it stops");
+    assert.deepEqual([rewrites[0].key, rewrites[0].cluster], [mine, "devnet"]);
+  }
+}
+step("a seat with no valid document publishes once");
+
+// ── A key that is held but not published yet: a proposal and Add SOL wait ──
+{
+  let release;
+  const gate = new Promise((go) => (release = go));
+  hook.before = async (p, value) => {
+    if (p.endsWith("/solfee/1")) await gate;
+    return value;
+  };
+  data.delete(path(gid, "solfee/1"));
+  notify();
+  await waitFor("no document", () => c.docs.solfee[1] === undefined);
+  await assert.rejects(() => propose(c, "register"), /fee address of seat 1 is not published yet/);
+  await assert.rejects(() => addSol(c, { amount: "0.01" }), /not published yet/);
+  release();
+  hook.before = saved;
+  await waitFor("its document", () => c.docs.solfee[1]?.key === feeOf(c, 1).key);
+}
 step("a proposal and Add SOL wait until the document shows the fee key of the seat");
+hook.before = saved;
 
 // ── A proposal by seat 2 is paid by seat 2, as its document says ──
 {

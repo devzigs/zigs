@@ -3,8 +3,11 @@
 // when the Solana setup of the seat finishes, or at the first run for a seat that finished before
 // the fee key existed. The secret sits in the Solana secret of the seat, so the passkey lock, the
 // tab sync and the Solana backup cover it, and it goes to no Worker: the wasm signs with it.
-// The seat publishes the public key in the signed document `solfee/<i>`. An approver takes the
-// payer of a proposal from the document of the proposing seat and never from the proposal.
+// The seat publishes the public key in the signed document `solfee/<i>`, and only when no valid
+// document shows a key for the seat. When two browsers hold the same seat with two keys, the first
+// document stands: the other browser writes nothing, and it says so. Both would write without end
+// if each one answered a document with its own key. An approver takes the payer of a proposal from
+// the document of the proposing seat and never from the proposal.
 import { CLUSTER } from "./docs.js";
 import { putSol, solOf } from "./secrets.js";
 
@@ -42,11 +45,24 @@ export async function makeFeeKey(c, seat) {
   c.host.log("seat " + seat + ": fee key made");
 }
 
-/** True when this browser holds a fee key of the seat that its signed document does not show. */
-export const feeUnpublished = (c, seat) => {
-  const held = feeOf(c, seat);
-  return held !== null && publishedFee(c, seat) !== held.key;
+/** True when this browser holds a fee key of the seat and no valid document shows a key for it. */
+export const feeUnpublished = (c, seat) =>
+  feeOf(c, seat) !== null && publishedFee(c, seat) === undefined;
+
+/** True when a valid document shows another key for the seat than this browser holds. */
+export const feeConflict = (c, seat) => {
+  const held = feeOf(c, seat),
+    shown = publishedFee(c, seat);
+  return held !== null && shown !== undefined && shown !== held.key;
 };
+
+/** The text for a seat whose fee key sits in another browser. */
+export const conflictText = (seat) =>
+  "Seat " +
+  seat +
+  " has another fee key in another browser. This browser cannot pay for seat " +
+  seat +
+  ". Use that browser to propose and to add SOL.";
 
 /** The reactor step: publish the signed document of the fee key of a seat. */
 export async function publishFee(c, seat) {
@@ -87,7 +103,8 @@ const NOT_READY = (seat) =>
 
 /** The fee key of `seat`, when its published document shows it. Throws a text when it does not. */
 export function readyFee(c, seat) {
+  if (feeConflict(c, seat)) throw new Error(conflictText(seat));
   const held = feeOf(c, seat);
-  if (held === null || publishedFee(c, seat) !== held.key) throw new Error(NOT_READY(seat));
+  if (held === null || publishedFee(c, seat) === undefined) throw new Error(NOT_READY(seat));
   return held;
 }

@@ -4,11 +4,12 @@
 // cluster, the key package, the public key package, the group key, solSeed and the secret of the
 // fee key (fee.js). It has no snapshot and no nonce. A restore runs only on a seat that settled
 // and fits. A file from before the fee key has no fee secret: the restore then makes a new fee
-// key and says so.
+// key and says so. When the seat has published another fee key already, the restore says that
+// this browser cannot pay for the seat.
 import { backupName, shareShape } from "../util.js";
 import { agreement, fitsSolana } from "./ceremony.js";
 import { CLUSTER, COLLECTIONS } from "./docs.js";
-import { makeFeeKey, newFeePatch } from "./fee.js";
+import { makeFeeKey, newFeePatch, publishedFee } from "./fee.js";
 import { holdsShare, putSol, refuseStopped, solOf, stopOf } from "./secrets.js";
 
 /** The inner kind of the sealed text. app.js sends a file of this kind to restoreSolana. */
@@ -134,8 +135,19 @@ async function settle(c, f) {
 }
 
 const NEW_FEE =
-  " This backup is from a version before the fee key, so Zigs made a new fee key for the seat. " +
-  "Fund its new fee address.";
+  " This backup is from a version before the fee key, so Zigs made a new fee key for the seat.";
+const FUND = " Fund its new fee address.";
+const TAKEN =
+  " The seat has published another fee key already, so this browser cannot pay for the seat. " +
+  "Use the browser that holds that key, or restore a newer backup of the seat.";
+
+/** What the banner adds about the fee key of a restored seat (`fee` is from feeOfFile). */
+function feeNote(c, seat, fee) {
+  const shown = publishedFee(c, seat);
+  const taken = shown !== undefined && shown !== fee.patch.feePublic;
+  if (taken) return (fee.made ? NEW_FEE : "") + TAKEN;
+  return fee.made ? NEW_FEE + FUND : "";
+}
 
 /** The fee key of a restored seat: the one in the file, or a new one for an older file. */
 function feeOfFile(W, f) {
@@ -171,5 +183,5 @@ export async function restoreSolana(c, b, encrypted) {
     throw new Error("This browser could not save the restored Solana part.");
   }
   const text = "Restored the Solana part of seat " + f.seat + ". It matches the wallet.";
-  host.showBanner("ok", text + (fee.made ? NEW_FEE : ""));
+  host.showBanner("ok", text + feeNote(c, f.seat, fee));
 }
