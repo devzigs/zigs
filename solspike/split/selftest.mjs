@@ -1,6 +1,6 @@
 // Tool test of the split tools (APPJS-SPLIT.md, step A5) on a small page in a temporary git
-// clone: step C2 by hand, two moves, the ledger after each, and five changes that the ledger or
-// the table must refuse. Usage: node solspike/split/selftest.mjs
+// clone: step C2 by hand, two moves, the ledger after each, and six changes that the ledger, the
+// table or the move tool must refuse. Usage: node solspike/split/selftest.mjs
 import assert from "node:assert/strict";
 import { execFileSync, spawnSync } from "node:child_process";
 import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
@@ -116,6 +116,9 @@ try {
   assert.match(tool("table").out, /app-kit\.js:\d+: the table puts this in state/);
   put("solspike/split/table.tsv", TABLE.replace("fmt\tkit\n", ""));
   assert.match(tool("table").out, /no row for fmt/);
+  // A relink without the list of test names would drop their exports: it stops.
+  rmSync(join(web, "test/page.mjs"));
+  assert.match(tool("move", "--relink").out, /no web\/test\/page\.mjs/);
   console.log("split selftest ok");
 } finally {
   rmSync(dir, { recursive: true, force: true });

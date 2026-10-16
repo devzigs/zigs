@@ -306,7 +306,8 @@ export function placement(page, table) {
 /** The names that the tests read from the page: NAMES of web/test/page.mjs. */
 export function testNames(root = ROOT) {
   const file = join(root, "web/test/page.mjs");
-  if (!existsSync(file)) return new Set();
+  // Without the list, a relink would drop the exports that the tests need (step C1).
+  if (!existsSync(file)) fail("no web/test/page.mjs: step C2 adds it before move.mjs --relink");
   const decls = parse(readFileSync(file, "utf8")).body
     .map((node) => node.declaration ?? node)
     .filter((node) => node.type === "VariableDeclaration")
