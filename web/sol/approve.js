@@ -85,13 +85,17 @@ const readable = (ss) =>
   HEXTEXT.test(String(ss?.message)) &&
   HEXTEXT.test(String(ss?.intent)) &&
   (!isTransfer(ss) || HEXTEXT.test(String(ss.plan)));
+// Add SOL (the intent `shield`) is no session: one member signs it alone and sends it at once.
+const SESSION_KINDS = new Set(["createNonce", "register", "transfer"]);
+const NOT_SHOWN = "This proposal is not one that this app can show.";
+const showable = (ss) => readable(ss) && SESSION_KINDS.has(decodeIntent(ss.intent)?.kind);
 
 /** The intent of `ss` and no reason, or the reason why seat `seat` cannot review it yet. */
 function reviewBlock(c, ss, seat, spend) {
   const block = signingBlock(c);
   if (block) return { why: block };
-  const intent = readable(ss) && decodeIntent(ss.intent);
-  if (!intent) return { why: "This proposal is not one that this app can show." };
+  if (!showable(ss)) return { why: NOT_SHOWN };
+  const intent = decodeIntent(ss.intent);
   if (!holdsShare(solOf(c.host, c.gid, seat))) {
     return { why: "Seat " + seat + " holds no Solana key share." };
   }

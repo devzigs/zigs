@@ -16,6 +16,7 @@ import { dropNonces, savedNonces, saveNonces } from "../sol/nonces.js";
 import { propose } from "../sol/propose.js";
 import { putSol } from "../sol/secrets.js";
 import { refreshChain } from "../sol/session.js";
+import { writePart } from "../sol/sessions.js";
 import { solView } from "../sol/view.js";
 import { verifies } from "./sol-chain.mjs";
 import { sleep } from "./sol-rig.mjs";
@@ -30,6 +31,7 @@ import {
   notify,
   path,
   solOf,
+  ssOf,
   waitFor,
   withNonceAccount,
 } from "./sol-setup.mjs";
@@ -282,5 +284,25 @@ step("Add SOL refuses a bad amount, an unfunded address and a refusal of the net
   assert.throws(() => feeSignature(c, ss(other), 1), /fee-payer-not-payer/, "another payer");
 }
 step("the fee key signs no deposit to another owner and no message that another key pays");
+
+// ── An Add SOL message written as a session: a refusal, and the tab stays up ──
+{
+  const { blockhashHex } = await c.worker.call("blockhash");
+  const intent = intentHex("shield", { blockhash: blockhashHex, amount: 10_000_000n });
+  const pins = bytesOf(pinsHex(done, feeOf(c, 2).key));
+  const message = hexOf(W.compile_message(bytesOf(intent), pins, new Uint8Array(0)));
+  const draft = { id: "shield-session", status: "collecting", by: 2, intent, message };
+  const feeSig = feeSignature(c, draft, 2);
+  const fields = { intent, message, feeSig, createdAt: Date.now() };
+  await writePart(c, draft.id, "proposal", fields, { seat: 2, create: true });
+  await waitFor("the Add SOL session", () => ssOf(draft.id));
+  const review = reviewOf(c, ssOf(draft.id), 1);
+  assert.equal(review.ok, false, "Add SOL is no session: no approval");
+  assert.match(review.why, /not one that this app can show/);
+  const [card] = findAll(tabOf(), (n) => n.attrs["data-session"] === draft.id);
+  assert.match(textOf(card), /not one that this app can show/, "the card says so");
+  assert.equal(mark("add-sol").length, 1, "the rest of the tab is there");
+}
+step("an Add SOL message written as a session gets a refusal and the tab stays readable");
 console.log("sol-fee: ok");
 process.exit(0);
