@@ -123,13 +123,13 @@ expressions and the reader list in `web/signed.js`. It adds them to the collecti
 
 | Topic | Plan or fact |
 |---|---|
-| SDK version | This design assumes the main commit pinned in [Z] (SDK 0.4.1-alpha, unreleased in its changelog). The npm release 0.4.0-alpha differs. Its `endpoint.js` has no `/v1/zolana/` path [UNPKG]. Its release notes say that the prover fetches Merkle data, needs `PROVER_INDEXER_URL` and serves `/prove/<key>` [Z]releases/tag/v0.4.0-alpha. P4 records the host and path of each call. The CSP host does not change with the path, but Allowed Domains behavior may |
+| SDK version | The bundle is built from commit `c232da1b` of the Zolana repo [Z2] (SDK 0.5.0-alpha, unreleased in its changelog). It is the newest main commit that the live Devnet pool can serve (6.10). The design cites the older commit in [Z]. The npm release 0.4.0-alpha (7 October 2026) is older than both. It differs. Its `endpoint.js` has no `/v1/zolana/` path [UNPKG]. Its release notes say that the prover fetches Merkle data, needs `PROVER_INDEXER_URL` and serves `/prove/<key>` [Z]releases/tag/v0.4.0-alpha. P4 records the host and path of each call. The CSP host does not change with the path, but Allowed Domains behavior may |
 | Why a TS bundle | `zolana-client` needs `hpke`, `dcap-qvl`, `tokio` and `solana-transaction`, and the repo has no wasm build [Z]sdk-libs/client/Cargo.toml. The smaller crates `zolana-hasher` and `zolana-transaction` hold the Poseidon and UTXO hash code. I did not build them for wasm32. P3 tries them first |
 | Import chain | `src/index.ts:1` leads to `src/client/prover/tee/dstack.ts:1`, which loads `@phala/dcap-qvl`, a CommonJS package. An import map needs an inline script, which the CSP forbids |
-| Build | One esbuild bundle in `web/sol/`, its SHA-256 in the repo, and a script that rebuilds it. The build aliases `dcap-qvl` to a stub that throws on every call. The TEE policy stays unset, as in this commit. A stub that returned would let an enabled policy claim an unchecked attestation |
-| Hasher wasm | The slim build is 20 KB of script and 1.28 MB of wasm, not the 4.39 MB fat build [UNPKG]. It loads the wasm with `fetch(new URL(..., import.meta.url))`, and the SDK calls `loadHasher()` with no argument [Z]sdk-libs/ts/src/hasher/index.ts. esbuild does not emit that file. The build copies it to `web/sol/` and patches the URL. It also cuts the home path of the upstream author out of the panic text of each wasm file (same length, so every offset stays valid), and `SHA256SUMS` pins the cleaned files |
+| Build | One esbuild bundle in `web/sol/`, its SHA-256 in the repo, and a script that rebuilds it. The build changes no SDK source. It has no plugin and only maps module names, and a test checks that every SDK file in the bundle is its blob at the pin. Two aliases stand in for modules that cannot load in a Worker: `@phala/dcap-qvl` goes to a stub that throws on every call, and a bare `crypto` import in `@hpke/common` goes to a stub with no value. A third alias takes the slim build of the hasher package. The newest SDK proves through an attested enclave by default. The Worker passes the Helius gateway as `proverUrl` and `proverTee: false`, so no other host is called and the policy of the Worker script stays as it is (TICKETS.md SOL-4). A stub that returned would let an enabled policy claim an unchecked attestation |
+| Hasher wasm | The slim build is 20 KB of script and 1.28 MB of wasm, not the 4.39 MB fat build [UNPKG]. It loads the wasm with `fetch(new URL(..., import.meta.url))`, and the SDK calls `loadHasher()` with no argument [Z]sdk-libs/ts/src/hasher/index.ts. esbuild does not emit that file. The build copies the two wasm files next to the bundle under the names that the package gives them, so the default URL finds them and no source is patched. It also cuts the home path of the upstream author out of the panic text of each wasm file (same length, so every offset stays valid), and `SHA256SUMS` pins the cleaned files |
 | Packages | 12 direct runtime packages and the `@solana/kit` peer. The root `package-lock.json` at the pinned commit lists 84 packages that the SDK reaches, with peer and optional edges. I read the file and ran no install. The SDK declares `node >=24` and I found no `node:` import. P3b tests it in a browser |
-| Size | Budget: the Solana wasm at most 1.5 MB, and the bundle at most 1 MB without the hasher wasm. Measured: the checker wasm is 597,533 bytes (6.7); the minified bundle is 851,099 bytes and the hasher SIMD wasm 1.28 MB (6.8). P8 measures load time |
+| Size | Budget: the Solana wasm at most 1.5 MB, and the bundle at most 1 MB without the hasher wasm. Measured: the checker wasm is 597,533 bytes (6.7); the minified bundle is 851,099 bytes and the hasher SIMD wasm 1.28 MB (6.8). At the pin of [Z2] the bundle is 856,921 bytes. P8 measures load time |
 
 **3.5 CSP and the Helius key.**
 
@@ -262,12 +262,12 @@ durable nonce, so the message is fixed at proposal time, as the sighash is in Zc
 
 | Topic | Rule |
 |---|---|
-| Expiry | `transact` carries `expiry_unix_ts`. The program checks it and the proof binds it. The SDK default is `NO_EXPIRY`, which is `u64::MAX` [Z]sdk-libs/ts/src/transaction/instructions/transact.ts:250,346. The expiry window is 24 hours (proposal) |
+| Expiry | `transact` carries `expiry_unix_ts`. The program checks it and the proof binds it. The SDK default is `NO_EXPIRY`, which is `u64::MAX` [Z]sdk-libs/ts/src/transaction/instructions/transact.ts:250,346. `finalize()` of a transfer fixes `u64::MAX`, also at [Z2] (transact.ts:1530), and no setting changes it (only `Merge.withExpiry`). The Worker needs no patch for this: `web/sol/transfer.js` builds the transfer with public classes, rebuilds the external data with `createExternalData` and the expiry, proves the new proof inputs with `client.proveTransact`, and `prepare` reads the expiry back from the instruction data. The expiry window is 24 hours (proposal) |
 | Cancel | A signed, unsent transaction is valid until the nonce advances, the expiry passes or the root goes stale. The group server holds the signature shares under the wallet secret. Any seat, former seat or link holder with `t` shares can aggregate and send until then. So cancel is advisory once `t` shares exist (PROTOCOL.md 7.7). The screen says "cancelled" only after the nonce advanced or the expiry passed. To cancel early, the group runs a FROST session over `AdvanceNonceAccount`, because the group key is the nonce authority. To cancel late, it waits |
 | Nonce account | One account allows one open Solana payment. Rent is 1,056,640 lamports on Devnet (6.3). The first transaction creates the account, so it uses a blockhash, and `t` devices sign inside the blockhash lifetime. A nonce with a v1 transaction works on Devnet (6.3) |
-| Stale roots | A proof lives while its roots stay in history. The UTXO tree keeps the final root of the latest 500 slots with updates. The nullifier tree keeps its last 100 roots [Z]docs/spec.md:1454; program-libs/interface/src/state/tree.rs:9-14. Chain activity counts, not hours. A proposal ends at the earlier of the expiry and the stale root. After a stale root the proposer proves again. The new bytes give a new digest, so all signing rounds repeat and the old nonces go. P6 measured it (6.6): many hours on Devnet today, about 200 s with an append in every slot |
+| Stale roots | A proof lives while its roots stay in history. The UTXO tree keeps the final root of the latest 500 slots with updates. The nullifier tree keeps its last 100 roots [Z]docs/spec.md:1454; program-libs/interface/src/state/tree.rs:9-14. Chain activity counts, not hours. A proposal ends at the earlier of the expiry and the stale root. After a stale root the proposer proves again. The new bytes give a new digest, so all signing rounds repeat and the old nonces go. P6 measured it (6.6): many hours on Devnet today, about 200 s with an append in every slot. After a pool update with #428 the nullifier tree keeps 5 roots of 4,999 nullifiers (6.10) |
 | Fee payer | The group key pays, owns and holds the nonce authority, so one FROST signature suffices. Its address needs public SOL. The priority fee is a total in lamports with no maximum, and SIMD-0385 is in Review with no feature gate [SIMD]. One proposal could spend the whole public balance. So the template fixes maxima for the priority fee and the compute units. The values come from P2 and P5, which record the compute units and priority fee of each landed transaction. The cap is the largest recorded value plus 50 percent |
-| Later work | Not planned: a separate payer with the group as an extra owner signer. The TS SDK needs a patch in four places for it: wallet/private-transaction.ts:114-120, transaction/instructions/builders.ts:404-410, interface/instructions/index.ts:527 and client/client.ts:1189-1195, all under [Z]sdk-libs/ts/src/. Questions 1 and 7 concern only this work |
+| Later work | A separate fee payer. The owner decided on 16 October 2026 that a per-seat key pays the fees and rents. The SDK supports it since `838aef27` (pinned): `feePayer` may differ from the owner, the built transaction lists the owner as a signer, and `transactInstruction` takes `ownerSigners`. This replaces the patch in four places that this row named before, so the patch part of Helius question 7 needs no answer. The design is a later change. Until then the group key pays |
 
 ## 6. Devnet proof of concept
 
@@ -402,6 +402,8 @@ step):
   online at the same time (run 2 needed about 1 s for that round). Whether people must approve
   again, or their devices sign again for an approved intent, is an open design point. Helius
   question 6 asks for the mainnet root window.
+- The numbers above are those of the pool that runs on Devnet today. The nullifier history has 5
+  roots of 4,999 nullifiers after #428, and 6.10 gives the facts.
 
 **6.7 P3 result, 14 October 2026** (a Rust crate outside the repo, an independent verifier per
 half):
@@ -534,6 +536,43 @@ of the page, guarded only by Allowed Domains. The owner checked that guard on 15
 call with the origin of the app gets 200, a call with another origin or with none gets 403, and
 the CORS preflights pass.
 
+**6.10 SDK move, 16 October 2026** (the bundle at `c232da1b`, no SDK patch):
+
+- The newest commit of main is `8178be7c` (14 October). Four commits follow the first pin
+  `89640630`: `838aef27` (#424, a sponsor can pay the fee), `c232da1b` (#419, proofs go to an
+  attested enclave by default, breaking), `9704a6cd` (#428, nullifier batches of 4,999) and
+  `8178be7c` (#426, several recipients in one transfer). The npm release 0.4.0-alpha is older than
+  the first pin, and there is no newer release or tag.
+- The bundle cannot take `9704a6cd` or `8178be7c` yet. #428 changes the tree account from 40,080 to
+  18,608 bytes and the batch verifying key, and its changelog says to point the client at a
+  deployment made with it. The pool on Devnet is still the release of 13 October (deploy slot
+  508538476, read on 16 October). Its tree 0 has 40,080 bytes, and the newest SDK refuses it
+  (`decodeTreeFees`: `INTERFACE_INVALID_ACCOUNT_DATA`), so the Worker could not read the tree fee.
+  `programs` and `program-libs` are equal at `89640630` and `c232da1b`, so `c232da1b` is the
+  newest commit that the live pool serves. TICKETS.md SOL-37 moves the pin after a Devnet update.
+- The enclave prover is off. #419 sends the proofs of a Helius Devnet URL to the enclave host
+  `d55y5ksdsm1vw.cloudfront.net`, unless the caller names a prover. The Worker names the gateway
+  and sets `proverTee: false`. Proving works as before, and the Worker policy has no new host. A
+  test checks both settings, and that the fetch guard blocks the enclave host.
+- The two patches of the earlier bundle are gone. The hasher URL rewrite is not needed: the two
+  wasm files keep their package names. The expiry setter is not needed: the Worker binds the
+  expiry with public API (3.4, section 5). `build.test.mjs` fails when a patch comes back: every
+  SDK file in the bundle must be its blob at the pin, and the bundle must equal a plain esbuild
+  build of the pinned commit.
+- Live check on Devnet, with no state change. Key B built the proof inputs with a finite expiry
+  in the code of the bundle. The Helius gateway proved them in 0.77 s. The signed v1 transaction
+  ran on the live pool in a simulation with no error (138,355 compute units).
+- #428 and the nullifier roots. The program keeps `B / Z` roots in the nullifier history, with a
+  forester batch of `Z` nullifiers per root and a queue of `B` (`NULLIFIER_TREE_*` in
+  program-libs/interface/src/state/tree.rs, [Z2] and `8178be7c`). Before: 100 roots, `Z` = 250,
+  `B` = 25,000. After: 5 roots, `Z` = 4,999, `B` = 24,995. A proof stays valid while its root is
+  among the last 5, so the window is 24,995 nullifiers (5 x 4,999), against 25,000 (100 x 250).
+  The window is the same in nullifiers, in 5 steps instead of 100. One root now covers 4,999
+  nullifiers. The UTXO history is unchanged: 500 slots with an append. The time that a proof
+  lives depends on the nullifier rate. This is not measured, because no pool with #428 is live.
+  The at-cost fee falls from 108 to 90 lamports per nullifier, and creation of a tree needs 2
+  steps in place of 4.
+
 ## 7. Risks, questions and recommendation
 
 | Risk | Fact |
@@ -621,6 +660,7 @@ expiry window, the minimum approval time and the fee caps (5, 6). SOL and Devnet
 |---|---|
 | [E] | The outside evaluation "Zigs Helius Zolana CTO Integration Evaluation", 12 October 2026 |
 | [Z] | github.com/helius-labs/zolana/blob/89640630b3ed2402b83bd20c313406cb3fe906d4/ (main, 13 October 2026). Cited files equal commit 82dc62d, the pin of [E]. Release: .../releases/tag/v0.4.0-alpha |
+| [Z2] | github.com/helius-labs/zolana/blob/c232da1bd6748628b56bb8c277bcffbaaf2b0774/ (main, 13 October 2026): the commit of the bundle, 6.10. Newer main: `8178be7cb2f0d3fee4c76040093653a1bcb2a420` (14 October 2026) |
 | [H] | helius.dev/docs/privacy (overview, `integration/wallet`) and helius.dev/docs/rpc/protect-your-keys |
 | [HA] | Answers of the Helius team to the project's seven questions, by private message, 15 October 2026 |
 | [HM] | github.com/helius-labs/zolana-examples/blob/827f3d4c83125c5890a5ea9e704351822b406d0f/min-multisig/spec.md (the minimal multisig program spec; read as a summary, not line by line) |

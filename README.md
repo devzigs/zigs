@@ -413,7 +413,7 @@ folder path.
   `node tools/diff_cases.cjs target/pkg-node` in `wasm-sol/`: the second command writes the cases
   that the test `wasm_native_diff` replays, and that test fails without them. Nine tests read the
   Zolana repo and are ignored: run them with
-  `ZOLANA_REPO=<checkout at commit 89640630> cargo test --release --test repo_pins -- --ignored`.
+  `ZOLANA_REPO=<checkout at commit c232da1b> cargo test --release --test repo_pins -- --ignored`.
 - `node web/test/sol-config.mjs` and its eight siblings `sol-docs`, `sol-ceremony`, `sol-app`,
   `sol-wasm`, `sol-sessions`, `sol-limits`, `sol-pay` and `sol-transfer` (the files `sol-rig`,
   `sol-setup`, `sol-chain` and `sol-vector` are helpers: do not run them). They test the Solana part

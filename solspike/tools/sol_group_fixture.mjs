@@ -6,7 +6,7 @@
 //
 //   ZOLANA_SDK=<zolana repo>/sdk-libs/ts/dist node solspike/tools/sol_group_fixture.mjs
 //
-// The SDK is the pinned Zolana commit of ZOLANA.md (89640630), as in the P3 vector tool. No
+// The SDK is the pinned Zolana commit of ZOLANA.md (PIN in solspike/build.mjs). No
 // network, no RPC, no Devnet key.
 import { writeFileSync } from "node:fs";
 import { c, solOf } from "../../web/test/sol-setup.mjs";

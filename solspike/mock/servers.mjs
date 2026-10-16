@@ -102,7 +102,8 @@ function routes({ solDir, bundleDir }) {
   for (const name of readdirSync(solDir)) {
     if (/\.(js|wasm)$/.test(name)) table[`/sol/${name}`] = join(solDir, name);
   }
-  for (const name of ["zolana.bundle.js", "hasher-simd.wasm", "hasher-sisd.wasm"]) {
+  const built = ["zolana.bundle.js", "hasher_wasm_simd_bg.wasm", "light_wasm_hasher_bg.wasm"];
+  for (const name of built) {
     if (bundleDir) table[`/sol/${name}`] = join(bundleDir, name);
   }
   return table;

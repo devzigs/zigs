@@ -1,10 +1,11 @@
 // Wiring tests of web/sol/worker.js (P8c fix). Usage: node solspike/test/worker.test.mjs
-// The real worker.js, guard.js and prepare.js run in Node. Only /sol/zolana.bundle.js is replaced,
-// by worker-sdk-stub.mjs (the real decoders, a fake client, wallet and transfer builder), so the
-// test needs no network, no wasm and no key. The steps name the mutants that they kill:
+// The real worker.js, guard.js and prepare.js run in Node. /sol/zolana.bundle.js and
+// /sol/transfer.js are replaced by worker-sdk-stub.mjs (the real decoders, a fake client, wallet
+// and proof input builder), so the test needs no network, no wasm and no key. transfer.js has
+// its own test with the real SDK. The steps name the mutants that they kill:
 //   U13 the finite-expiry refusal      U14 the expiry read-back from the instruction data
 //   U15 the single-origin fetch guard  U16 redact() in answer()   U18 redact.add() in init()
-// and the nonce version tag, the order of commands and the reset of the proof expiry. The fetch
+// and the nonce version tag, the order of commands and the prover that the client uses. The fetch
 // guard has three more: it refuses a redirect (a fake fetch records the mode, and real loopback
 // servers show that no redirect is followed), it checks and fetches every URL, and loopback RPC
 // URLs pass only in the test mode of guard.js, which the real mock entry script turns on.
@@ -28,6 +29,7 @@ const ENTRY = new URL("../mock/page/test-worker.js", import.meta.url).href;
 registerHooks({
   resolve(specifier, context, next) {
     if (specifier === "/sol/zolana.bundle.js") return { url: STUB, shortCircuit: true };
+    if (specifier === "/sol/transfer.js") return { url: STUB, shortCircuit: true };
     if (!specifier.startsWith("/sol/")) return next(specifier, context);
     const { search } = new URL(context.parentURL);
     return { url: new URL(specifier.slice(5), WEB_SOL).href + search, shortCircuit: true };
@@ -81,8 +83,8 @@ globalThis.fetch = fakeFetch;
  */
 async function freshWorker({ testMode = false } = {}) {
   Object.assign(control, { options: null, rpc: {}, utxos: [], fail: {} });
+  Object.assign(control, { request: null, proved: null, instruction: null });
   control.calls.length = 0;
-  control.expiries.length = 0;
   fetched.length = 0;
   modes.length = 0;
   posted.length = 0;
@@ -161,15 +163,30 @@ const account = (data, owner = SYSTEM) => ({
 
 const PREPARE = { kind: "transfer", recipient: "01ab", amount: "40000000", expiry: "1792048408" };
 
-/** A transfer builder that posts the prover body through the Worker's own fetch. */
-const builder = (body, bytes = message("chain-p6a.msg")) => async () => {
+/** Proof inputs of the fake builder: they carry the expiry that was asked for. */
+const inputsFor = (request) => ({ proofInputs: { expiry: request.expiry }, tree: "TREE" });
+
+/** A client.proveTransact that posts the prover body through the Worker's own fetch. */
+const prover = (body, data = { proved: true }) => async () => {
   if (body !== null) {
     const init = { method: "POST", body: JSON.stringify(body) };
     const url = `https://devnet.helius-rpc.com/v1/zolana/prove?${KEY_NAME}=k`;
     await control.options.fetch(url, init);
   }
-  return { messageBytes: bytes };
+  return data;
 };
+
+/** The transact data of a landed message: its expiry is PREPARE.expiry. */
+const landedData = () => {
+  const decoded = sdk.getCompiledTransactionMessageDecoder().decode(message("chain-p6a.msg"));
+  return cutTransact(decoded, sdk.SHIELDED_POOL_PROGRAM_ID);
+};
+
+function giveProof(body, data = landedData()) {
+  control.inputs = inputsFor;
+  control.prove = prover(body);
+  control.instructionData = data;
+}
 
 async function initialised() {
   await freshWorker();
@@ -211,7 +228,8 @@ async function initWiring() {
   assert.equal(options.indexerUrl, ZOLANA);
   assert.equal(options.proverUrl, ZOLANA);
   assert.equal(options.computeUnitLimit, 217_000);
-  step("init gives the SDK the RPC URL, the /v1/zolana indexer and prover URLs and the CU limit");
+  assert.equal(options.proverTee, false, "the attested enclave prover is not turned off");
+  step("init gives the SDK the RPC URL, the /v1/zolana URLs, the CU limit and no enclave prover");
 }
 
 async function fetchGuard() {
@@ -223,6 +241,8 @@ async function fetchGuard() {
     "http://devnet.helius-rpc.com/",
     "https://mainnet.helius-rpc.com/",
     "https://lwd.zigs.app/",
+    // The attested enclave prover that the newest SDK uses by default (TICKETS.md SOL-4).
+    "https://d55y5ksdsm1vw.cloudfront.net/v1/zolana/prove",
   ];
   for (const url of blocked) {
     await assert.rejects(async () => guarded(url), /blocked a request to/, url);
@@ -388,7 +408,7 @@ async function finiteExpiry() {
     await refused("prepare", { ...PREPARE, expiry }, /the expiry must be finite/, expiry);
   }
   assert.deepEqual(control.calls, [], "a refused expiry reached the SDK");
-  assert.deepEqual(control.expiries, [], "a refused expiry was set");
+  assert.equal(control.request, null, "a refused expiry reached the builder");
   step("U13 prepare refuses expiry 0, u64::MAX and more before any sync or proof");
 }
 
@@ -396,11 +416,10 @@ async function expiryReadBack() {
   await initialised();
   const body = proveBody();
   control.utxos = [syncedInput()];
-  control.build = builder(body);
+  giveProof(body);
   const done = await ask("prepare", PREPARE);
   assert.equal(done.ok, true, done.error);
-  const decoded = sdk.getCompiledTransactionMessageDecoder().decode(message("chain-p6a.msg"));
-  const data = cutTransact(decoded, sdk.SHIELDED_POOL_PROGRAM_ID);
+  const data = landedData();
   const plan = planFromProve(body);
   assert.equal(done.result.expiry, "1792048408");
   assert.equal(done.result.data, hex(data));
@@ -408,34 +427,45 @@ async function expiryReadBack() {
   assert.deepEqual(done.result.outputs, plan.outputs);
   const spent = [{ id: hex(bytes32(0xaa)), tree: "TREE", ...plan.inputs[0] }];
   assert.deepEqual(done.result.inputs, spent);
-  assert.deepEqual(control.expiries, [1792048408n, U64_MAX], "the expiry is set, then reset");
-  const order = ["rpc:getSlot", "syncWallet", "buildTransferTransaction"];
-  assert.deepEqual(control.calls.slice(0, 3), order, "prepare syncs a fresh wallet, then builds");
+  const order = ["rpc:getSlot", "syncWallet", "buildProofInputs", "proveTransact"];
+  assert.deepEqual(control.calls.slice(0, 4), order, "prepare syncs a fresh wallet, then proves");
+  assert.equal(control.calls[4], "transactInstruction");
+  assert.equal(control.request.expiry, 1792048408n, "the builder got another expiry");
+  assert.equal(control.request.amount, 40_000_000n);
+  assert.equal(control.proved.proofInputs.expiry, 1792048408n, "the proof got other inputs");
+  assert.equal(control.instruction.data.proved, true, "the data of the proof was not used");
+  assert.deepEqual(
+    [control.instruction.payer, control.instruction.inputTree, control.instruction.outputTree],
+    [OWNER, "TREE", "TREE"],
+  );
   const mismatch = { ...PREPARE, expiry: "1792048409" };
   const differs = /the expiry in the data differs from the request/;
   await refused("prepare", mismatch, differs, "the expiry read-back");
-  assert.equal(control.expiries.at(-1), U64_MAX, "the expiry was not reset after a refusal");
   step("U14 prepare reads the expiry back from the instruction data and refuses a different one");
 }
 
 async function prepareRefusals() {
   await initialised();
   control.utxos = [syncedInput()];
-  control.build = builder(proveBody());
+  giveProof(proveBody());
   assert.equal((await ask("prepare", PREPARE)).ok, true);
-  control.build = builder(null);
+  control.prove = prover(null);
   await refused("prepare", PREPARE, /the prover call was not seen/, "a stale prover body");
-  control.build = builder(proveBody(1));
+  control.prove = prover(proveBody(1));
   const counts = /has 1 real inputs and 3 outputs but the instruction has 1 inputs and 2 outputs/;
   await refused("prepare", PREPARE, counts, "the output count");
-  control.build = builder(proveBody());
+  control.prove = prover(proveBody());
   control.utxos = [];
   await refused("prepare", PREPARE, /not in the synced wallet/, "an unknown input");
-  control.build = async () => {
-    throw new Error("the builder failed");
+  control.utxos = [syncedInput()];
+  control.prove = async () => {
+    throw new Error("the prover failed");
   };
-  await refused("prepare", PREPARE, /the builder failed/, "a builder error");
-  assert.equal(control.expiries.at(-1), U64_MAX, "the expiry was not reset after an error");
+  await refused("prepare", PREPARE, /the prover failed/, "a prover error");
+  control.inputs = () => {
+    throw new Error("the synced balance does not cover the amount");
+  };
+  await refused("prepare", PREPARE, /does not cover the amount/, "a builder error");
   step("prepare refuses a stale or missing prover body, a count mismatch and an unknown input");
 }
 

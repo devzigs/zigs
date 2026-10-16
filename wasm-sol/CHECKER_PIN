@@ -80,7 +80,11 @@ the checker are those that the verdict signed):
 - tests/wasm_native_diff.rs: the read of logs/diffcases/cases.json has an expect that names the
   step (`node tools/diff_cases.cjs target/pkg-node`), and its comment names the folder. The test
   itself is unchanged.
-- tests/repo_pins.rs: its tests are ignored. They read a checkout of the Zolana repo that the
+- tests/repo_pins.rs: its pin moved from 89640630 to c232da1b (the Zolana commit that the beta
+  bundle uses, ZOLANA.md 3.4). program-libs and programs are byte for byte equal at the two
+  commits, so the constants of consts.rs and hashes.rs and the vendored zolana-hasher (a copy
+  of 89640630) hold at both, and the 9 pin tests pass at c232da1b. No rule and no wasm changed.
+  Its tests are ignored. They read a checkout of the Zolana repo that the
   variable ZOLANA_REPO names. tests/common/mod.rs lost the two helpers that read that checkout
   (nothing used them).
 - vectors: the funding address of the Devnet funder key is replaced by a test address in
@@ -141,7 +145,7 @@ cfc68ad047d9dff9f4cb368c901238019de4d6284cbd23853b5224f97a2bf3ca  tests/frost_dk
 fd0ac636b91a86f467d1cd65a17cfab93733d07021c4009016b02c67bece51bb  tests/p3c.rs  verbatim
 95290d8683b751fb47f647d29eb2486fcd3dad545aa35a368d1a5fb0733151b1  tests/pin_bytes.rs  verbatim
 cb30477a7196372b30b2fcb42fdbf129a2ca3eb8a2b692585c9ed1cfdcf39368  tests/real.rs  verbatim
-738e320f3e72f5c0a12eecdac342c45f74027f230589e3d01063274cfa22cee3  tests/repo_pins.rs  modified
+b24fe5de82f45b91932cb06fc36aee015638e45e62b149a45217e7e7bbb20c0c  tests/repo_pins.rs  modified
 82e949a152db1b4d2c7f842e1a7b85c30667e7515d6eca9e9fe466cd81240eb0  tests/roles.rs  new
 b6d038dcd0c607632c3f3bb02715b914b35aaadfc69465c6adc9fac80acb42b5  tests/sign_split.rs  new
 27e19faa99e52390926dfcff7188153268f4183558ca555cc85e616dfbd80af2  tests/slot_order.rs  verbatim

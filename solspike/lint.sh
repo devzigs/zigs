@@ -6,7 +6,7 @@
 cd "$(dirname "$0")/.." || exit 1
 OX=${OXLINT:?set OXLINT to an oxlint binary}
 JS=(solspike/harness/*.mjs solspike/tools/*.mjs solspike/build.mjs solspike/src/*.js
-  solspike/stubs/*.js solspike/test/*.mjs solspike/test/*.js solspike/mock/*.mjs
+  solspike/stubs/*.js solspike/test/*.mjs solspike/mock/*.mjs
   solspike/mock/page/*.js web/sol/guard.js web/sol/prepare.js web/sol/worker.js web/sol/client.js
   web/sol/main.js web/sol/docs.js web/sol/secrets.js web/sol/ceremony.js web/sol/view.js
   web/sol/store.js web/sol/backup.js web/sol/session.js web/sol/abort.js
@@ -14,8 +14,8 @@ JS=(solspike/harness/*.mjs solspike/tools/*.mjs solspike/build.mjs solspike/src/
   web/sol/propose.js web/sol/sessions.js web/sol/signing.js web/test/sol-rig.mjs
   web/test/sol-config.mjs web/test/sol-docs.mjs web/test/sol-ceremony.mjs web/test/sol-app.mjs
   web/test/sol-wasm.mjs web/test/sol-chain.mjs web/test/sol-sessions.mjs
-  web/sol/spend.js web/test/sol-limits.mjs web/test/sol-setup.mjs web/test/sol-transfer.mjs
-  web/test/sol-vector.mjs web/test/sol-pay.mjs)
+  web/sol/spend.js web/sol/transfer.js web/test/sol-limits.mjs web/test/sol-setup.mjs
+  web/test/sol-transfer.mjs web/test/sol-vector.mjs web/test/sol-pay.mjs)
 PY=(solspike/tools/*.py)
 "$OX" -c solspike/oxlintrc.json --deny-warnings "${JS[@]}" || exit 1
 python3 -I solspike/tools/check_py.py "${PY[@]}" || exit 1

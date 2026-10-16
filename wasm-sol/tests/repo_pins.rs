@@ -1,4 +1,4 @@
-//! Every pinned constant against the Zolana repo at commit 89640630 (read from the source text,
+//! Every pinned constant against the Zolana repo at commit c232da1b (read from the source text,
 //! not from memory). The tests are ignored: they need a checkout of the repo, which the
 //! variable ZOLANA_REPO names. Run: ZOLANA_REPO=<checkout> cargo test --test repo_pins -- --ignored
 
@@ -8,7 +8,7 @@ use p3_check::consts::*;
 use p3_check::template::LOADED_MAX;
 use solana_address::Address;
 
-const COMMIT: &str = "89640630b3ed2402b83bd20c313406cb3fe906d4";
+const COMMIT: &str = "c232da1bd6748628b56bb8c277bcffbaaf2b0774";
 
 fn repo() -> String {
     std::env::var("ZOLANA_REPO").expect("ZOLANA_REPO names a checkout of the Zolana repo")
@@ -48,7 +48,7 @@ fn address(text: &str, name: &str) -> Key {
 }
 
 #[test]
-#[ignore = "needs ZOLANA_REPO: a checkout of the Zolana repo at commit 89640630"]
+#[ignore = "needs ZOLANA_REPO: a checkout of the Zolana repo at commit c232da1b"]
 fn the_repo_is_at_the_pinned_commit() {
     let head = std::process::Command::new("git")
         .args(["-C", &repo(), "rev-parse", "HEAD"])
@@ -58,7 +58,7 @@ fn the_repo_is_at_the_pinned_commit() {
 }
 
 #[test]
-#[ignore = "needs ZOLANA_REPO: a checkout of the Zolana repo at commit 89640630"]
+#[ignore = "needs ZOLANA_REPO: a checkout of the Zolana repo at commit c232da1b"]
 fn pool_tags() {
     let tags = source("program-libs/event/src/tag.rs");
     assert_eq!(number(&tags, "DEPOSIT"), u64::from(TAG_DEPOSIT));
@@ -70,7 +70,7 @@ fn pool_tags() {
 }
 
 #[test]
-#[ignore = "needs ZOLANA_REPO: a checkout of the Zolana repo at commit 89640630"]
+#[ignore = "needs ZOLANA_REPO: a checkout of the Zolana repo at commit c232da1b"]
 fn registry_discriminators() {
     let text = source("program-libs/user-registry-interface/src/instruction.rs");
     assert_eq!(number(&text, "REGISTER"), u64::from(REG_REGISTER));
@@ -82,7 +82,7 @@ fn registry_discriminators() {
 }
 
 #[test]
-#[ignore = "needs ZOLANA_REPO: a checkout of the Zolana repo at commit 89640630"]
+#[ignore = "needs ZOLANA_REPO: a checkout of the Zolana repo at commit c232da1b"]
 fn program_ids() {
     let pool = source("program-libs/interface/src/lib.rs");
     let registry = source("program-libs/user-registry-interface/src/lib.rs");
@@ -108,7 +108,7 @@ fn program_ids() {
 }
 
 #[test]
-#[ignore = "needs ZOLANA_REPO: a checkout of the Zolana repo at commit 89640630"]
+#[ignore = "needs ZOLANA_REPO: a checkout of the Zolana repo at commit c232da1b"]
 fn seeds_and_slots() {
     let lib = source("program-libs/interface/src/lib.rs");
     let nullifier = source("program-libs/interface/src/state/nullifier_pda.rs");
@@ -127,7 +127,7 @@ fn seeds_and_slots() {
 }
 
 #[test]
-#[ignore = "needs ZOLANA_REPO: a checkout of the Zolana repo at commit 89640630"]
+#[ignore = "needs ZOLANA_REPO: a checkout of the Zolana repo at commit c232da1b"]
 fn the_repo_sol_interface_constant_is_the_derived_address() {
     let lib = source("program-libs/interface/src/lib.rs");
     let body = const_text(&lib, "SOL_INTERFACE");
@@ -149,7 +149,7 @@ fn the_repo_sol_interface_constant_is_the_derived_address() {
 }
 
 #[test]
-#[ignore = "needs ZOLANA_REPO: a checkout of the Zolana repo at commit 89640630"]
+#[ignore = "needs ZOLANA_REPO: a checkout of the Zolana repo at commit c232da1b"]
 fn off_chain_and_derivation_prefixes() {
     let derivation = source("sdk-libs/ts/src/keypair/derivation.ts");
     assert!(derivation.contains("DERIVATION_PAYLOAD_PREFIX = \"TSPP/derive/\""));
@@ -160,7 +160,7 @@ fn off_chain_and_derivation_prefixes() {
 }
 
 #[test]
-#[ignore = "needs ZOLANA_REPO: a checkout of the Zolana repo at commit 89640630"]
+#[ignore = "needs ZOLANA_REPO: a checkout of the Zolana repo at commit c232da1b"]
 fn the_loaded_limit_maximum_is_the_sdk_default() {
     let compile = source("sdk-libs/ts/src/flows/compile.ts");
     assert!(compile.contains("LOADED_ACCOUNTS_DATA_SIZE_LIMIT = 64 * 1024 * 1024;"));
@@ -170,7 +170,7 @@ fn the_loaded_limit_maximum_is_the_sdk_default() {
 /// `SPP_SUPPORTED_SHAPES` of `program-libs/interface/src/shape.rs`: the names `Shape::INa_OUTb`
 /// in the array, each name resolved through the constant that defines it, in the repo order.
 #[test]
-#[ignore = "needs ZOLANA_REPO: a checkout of the Zolana repo at commit 89640630"]
+#[ignore = "needs ZOLANA_REPO: a checkout of the Zolana repo at commit c232da1b"]
 fn the_supported_shapes_are_the_list_of_the_repo() {
     let text = source("program-libs/interface/src/shape.rs");
     let marker = "pub const SPP_SUPPORTED_SHAPES: [Shape; ";
