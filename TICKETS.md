@@ -82,6 +82,12 @@ the nodes handle the NSM.
 | APP-1 | P3 | dev | Match the key ceremony box error of the web app | `GroupModel.openBox` says that another version of Zigs made the message, and a version 1 `round3` ends the seat's setup on a box error instead of retrying; a Swift check covers both |
 | APP-2 | P3 | dev | Name the right cause when a ceremony box cannot be checked | `openBox` in web/app.js reads the sender's box key inside its try, so a missing seat document gives "made by another version of Zigs" and, in version 1, ends the setup. Read the key before the try and say that the seat document is missing |
 
+## EVM (frozen)
+
+| Id | P | Owner | Title | Done when |
+|---|---|---|---|---|
+| EVM-1 | P3 | owner | Decide when to thaw the EVM design | The owner restarts EVM.md after the Zcash and Zolana work is done. The first step is then the Railgun spike on Sepolia (EVM.md section 7, R1 to R10), with no funds |
+
 ## Closed
 
 | Id | Title | Closed by |
