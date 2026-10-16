@@ -930,8 +930,8 @@ nullifier secret). So the key alone probably cannot spend. With one seat, with t
 also freeze every group (close the program or deploy broken code), take all proposal and record
 rent, and drop the digest rule. This adds to the pool upgrade key and the protocol authority of
 section 7. The spike key (`GJhYtqu…`) is a single key pair outside the repo, acceptable on Devnet
-only. The options for mainnet and their costs are below (condition 5); the owner has not decided
-(SOL-40). The custom-ring answer of [HA] (EdDSA in the circuit) could later
+only. The options and their costs are below (condition 5), with the owner's decision of 16 October
+2026 (SOL-40). The custom-ring answer of [HA] (EdDSA in the circuit) could later
 remove the program. The spike showed the risk: we upgraded the program (version 2, the fix above)
 after the group signed the approval and before the execution, and the approval still held, because
 it binds the program id and not the code.
@@ -1065,9 +1065,9 @@ Notes of the delta review:
   change, and the rig computes the digest on its own. Run one real Devnet round on version 3
   before the beta uses it.
 
-**The upgrade key: options for the owner (not decided, SOL-40).** Rent below is for the version 3
-ELF at the default rate of 6,960 lamports per byte. Devnet charges 5,080: the proposal rent of 6.10
-is 1,356,360 lamports for 267 bytes.
+**The upgrade key: options for the owner (decided 16 October 2026, SOL-40).** Rent below is for the
+version 3 ELF at the default rate of 6,960 lamports per byte. Devnet charges 5,080: the proposal
+rent of 6.10 is 1,356,360 lamports for 267 bytes.
 
 | | Immutable after an audit (`--final`) | Multisig upgrade key with a timelock |
 |---|---|---|
@@ -1082,6 +1082,10 @@ Both options need the reproducible build and an audit. The owner can also take t
 multisig with a timelock during the beta, then `--final` after the audit. Then the costs of both
 apply, one after the other. With either option, the hosted prover stays a theft path together with
 the upgrade key or a seat until SOL-4 closes.
+
+**Decision (SOL-40).** The owner takes them in turn. During the Devnet beta the program keeps the
+single development upgrade key. Before mainnet, the upgrade key moves to a multisig with a timelock
+(SOL-45). After the audit, the program becomes immutable with `--final` (SOL-46).
 
 Mainnet stays no-go under the recommendation below. Our program adds its own audit and upgrade-key
 policy to that list.
