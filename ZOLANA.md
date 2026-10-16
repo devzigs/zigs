@@ -1058,8 +1058,8 @@ Notes of the delta review:
   change, and the rig computes the digest on its own. Run one real Devnet round on version 3
   before the beta uses it.
 
-**The upgrade key: options for the owner (decided 16 October 2026, SOL-40).** Rent below is for the version 3
-ELF at the default rate of 6,960 lamports per byte; Devnet charges 5,080 (6.10).
+**The upgrade key: options for the owner (decided 16 October 2026, SOL-40).** Rent below is for the
+version 3 ELF at the default rate of 6,960 lamports per byte; Devnet charges 5,080 (6.10).
 
 | | Immutable after an audit (`--final`) | Multisig upgrade key with a timelock |
 |---|---|---|
