@@ -195,14 +195,14 @@ mutant S1 state.rs "no duplicate abort authority" \
 mutant S2 state.rs "at most four abort authorities" \
   'if count > MAX_ABORT_AUTHORITIES {' 'if count > MAX_ABORT_AUTHORITIES + 1 {'
 mutant D1 instructions.rs "option D: no pool call but transact (here: deposit)" \
-  '    transact.invoke::<MAX_SPP_ACCOUNTS>(data, &[Signer::from(&seeds)])?;' \
+  '    invoke_transact(spp, &owner_address, data, Signer::from(&seeds))?;' \
   '    let deposit = pinocchio::instruction::InstructionView {
         program_id: &zolana_interface::PROGRAM_ID_PUBKEY,
         accounts: &[],
         data: &[zolana_interface::instruction::tag::DEPOSIT],
     };
     pinocchio::cpi::invoke_signed_with_bounds::<1, _>(&deposit, &spp[2..3], &[])?;
-    transact.invoke::<MAX_SPP_ACCOUNTS>(data, &[Signer::from(&seeds)])?;'
+    invoke_transact(spp, &owner_address, data, Signer::from(&seeds))?;'
 mutant D2 lib.rs "option D: the program never reads the nullifier key" \
   'pub mod state;' 'pub mod state;
 pub const NULLIFIER_KEY_OFFSET: usize = 0;'
