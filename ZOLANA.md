@@ -1058,7 +1058,7 @@ Notes of the delta review:
   change, and the rig computes the digest on its own. Run one real Devnet round on version 3
   before the beta uses it.
 
-**The upgrade key: options for the owner (not decided, SOL-40).** Rent below is for the version 3
+**The upgrade key: options for the owner (decided 16 October 2026, SOL-40).** Rent below is for the version 3
 ELF at the default rate of 6,960 lamports per byte; Devnet charges 5,080 (6.10).
 
 | | Immutable after an audit (`--final`) | Multisig upgrade key with a timelock |
@@ -1074,6 +1074,10 @@ Both options need the reproducible build and an audit. The owner can also take t
 multisig with a timelock during the beta, then `--final` after the audit. Then the costs of both
 apply, one after the other. With either option, the hosted prover stays a theft path together with
 the upgrade key or a seat until SOL-4 closes.
+
+**Decision (SOL-40).** The owner takes them in turn. During the Devnet beta the program keeps the
+single development upgrade key. Before mainnet, the upgrade key moves to a multisig with a timelock
+(SOL-45). After the audit, the program becomes immutable with `--final` (SOL-46).
 
 Mainnet stays no-go under the recommendation below. Our program adds its own audit and upgrade-key
 policy to that list.
