@@ -189,8 +189,9 @@ fn check_transact_shape(ix: &TransactIxDataRef) -> ProgramResult {
 /// `SHA-256(private_tx_hash || external_data_hash)`, the external-data hash computed as the pool
 /// computes it for this shape: the transact tag, the serialized external-data prefix, then the SOL
 /// interface and the recipient of each withdrawal, from the settlement accounts that the pool
-/// reads (see `check_spp_accounts`). Inline owner tags add nothing.
-pub fn authorization_commitment(
+/// reads (see `check_spp_accounts`). Inline owner tags add nothing. Call it only after
+/// `check_transact_shape` and `check_spp_accounts`: they make every group a pair.
+fn authorization_commitment(
     ix: &TransactIxDataRef,
     prefix: &[u8],
     settlements: &[AccountView],

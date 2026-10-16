@@ -1,7 +1,8 @@
 #!/bin/sh
 # Builds the Zigs approvals program (ZOLANA.md 7.2) for SBF and checks the SHA-256 of the ELF.
 #   sh sol-program/build.sh       builds target/deploy/zigs_min_multisig.so and checks its hash
-#   sh sol-program/build.sh test  then runs the unit tests and the LiteSVM tests (svm-tests/)
+#   sh sol-program/build.sh test  then runs the unit tests and the LiteSVM tests (svm-tests/), with
+#                                 a stub pool and with the pool of the pinned Zolana commit
 #   sh sol-program/build.sh v2    then rebuilds Devnet version 2 and compares the code of the two
 #
 # Toolchain: cargo-build-sbf of Agave v4.3.0 (solana-release-aarch64-apple-darwin.tar.bz2 of the
@@ -25,7 +26,7 @@ set -eu
 cd "$(dirname "$0")"
 unset RUSTFLAGS CARGO_ENCODED_RUSTFLAGS
 
-EXPECTED=8dc9d9b76bc5406ab986f7d3cd2d5a5f530f3b90b6407785dbf45e46014d8e22
+EXPECTED=0c846f8b4dddc19a316297eca235ed592faeef3056ec2eff59247c4335c5970c
 V2=555f45801f32896c78eb55f962026507dec35ea6d673477326db7913e4475d92
 SBF=${CARGO_BUILD_SBF:-cargo-build-sbf}
 OBJDUMP=$HOME/.cache/solana/v1.54/platform-tools/llvm/bin/llvm-objdump
@@ -52,11 +53,39 @@ fi
 echo "$(sha "$SO")  $SO ($(wc -c < "$SO" | tr -d ' ') bytes)"
 [ "$(sha "$SO")" = "$EXPECTED" ] || fail "hash differs from EXPECTED (change it only with src/)"
 
+# Sets ZOLANA to the pinned Zolana tree of cargo's git checkout, unchanged.
+find_zolana() {
+  ZOLANA=$(cargo metadata --format-version 1 --locked | python3 -I -c '
+import json, os, sys
+for p in json.load(sys.stdin)["packages"]:
+    if p["name"] == "zolana-program":
+        print(os.path.dirname(os.path.dirname(os.path.dirname(p["manifest_path"]))))')
+  [ "$(git -C "$ZOLANA" rev-parse HEAD)" = 89640630b3ed2402b83bd20c313406cb3fe906d4 ] \
+    || fail "$ZOLANA is not at the pinned commit"
+  [ -z "$(git -C "$ZOLANA" status --porcelain --untracked-files=no)" ] \
+    || fail "$ZOLANA has local changes"
+}
+
+# Builds the shielded pool of the pinned commit for svm-tests/tests/real_pool.rs, in a copy
+# without rust-toolchain.toml (it pins a host toolchain), kept under svm-tests/target so that the
+# next build is incremental.
+build_real_pool() {
+  find_zolana
+  POOL=svm-tests/target/zolana-pool
+  mkdir -p "$POOL"
+  rsync -a --delete --exclude .git --exclude .cargo-ok --exclude target \
+    --exclude rust-toolchain.toml "$ZOLANA"/ "$POOL"/
+  "$SBF" --tools-version v1.54 --jobs 4 --manifest-path "$POOL/programs/shielded-pool/Cargo.toml" \
+    -- --features bpf-entrypoint --locked
+  cp "$POOL/target/deploy/shielded_pool_program.so" svm-tests/target/deploy/
+}
+
 case "${1:-}" in
   "") exit 0 ;;
   test)
     cargo test --locked -j 4 -- --test-threads 2
     "$SBF" --tools-version v1.54 --jobs 4 --manifest-path svm-tests/stub-pool/Cargo.toml -- --locked
+    build_real_pool
     cargo test --manifest-path svm-tests/Cargo.toml --locked -j 4 -- --test-threads 2
     exit 0
     ;;
@@ -64,16 +93,7 @@ case "${1:-}" in
   *) fail "unknown mode $1" ;;
 esac
 
-# The pinned Zolana tree from cargo's git checkout, unchanged.
-ZOLANA=$(cargo metadata --format-version 1 --locked | python3 -I -c '
-import json, os, sys
-for p in json.load(sys.stdin)["packages"]:
-    if p["name"] == "zolana-program":
-        print(os.path.dirname(os.path.dirname(os.path.dirname(p["manifest_path"]))))')
-[ "$(git -C "$ZOLANA" rev-parse HEAD)" = 89640630b3ed2402b83bd20c313406cb3fe906d4 ] \
-  || fail "$ZOLANA is not at the pinned commit"
-[ -z "$(git -C "$ZOLANA" status --porcelain --untracked-files=no)" ] \
-  || fail "$ZOLANA has local changes"
+find_zolana
 
 # The source of version 2 is the commit that added src/lib.rs.
 IMPORT=$(git log --diff-filter=A --format=%H -- src/lib.rs | tail -1)

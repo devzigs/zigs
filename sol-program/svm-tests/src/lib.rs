@@ -44,6 +44,7 @@ pub const DAY: u64 = 86_400;
 /// The `private_tx_hash` of [`sample_transact`]. No other field holds these bytes.
 pub const PRIVATE_TX_HASH: [u8; 32] = [0x5a; 32];
 const STUB: &str = "target/deploy/stub_pool.so";
+const REAL_POOL: &str = "target/deploy/shielded_pool_program.so";
 pub const OUTPUT_TREE: Pubkey = Pubkey::new_from_array([0x70; 32]);
 
 /// The pool's SOL interface PDA, `["sol_interface", 0]`: the first account of each SOL withdrawal's
@@ -87,6 +88,11 @@ pub mod code {
     pub const NOT_A_CANCELLATION: u32 = 6020;
     pub const RENT_RECIPIENT_NOT_ALLOWED: u32 = 6021;
     pub const INVALID_SPP_PROGRAM: u32 = 14101;
+    /// Errors of the real pool (`ShieldedPoolError`). With no trees and no proof in the test,
+    /// the pool stops at its tree stage after it accepted the account list.
+    pub const POOL_TREE_STAGE: u32 = 7001;
+    pub const POOL_TRANSACT_SHAPE: u32 = 7006;
+    pub const POOL_SETTLEMENT_ACCOUNTS: u32 = 7009;
 }
 
 pub type TxResult = Result<TransactionMetadata, Box<FailedTransactionMetadata>>;
@@ -474,6 +480,17 @@ impl Rig {
             rent_recipient: Pubkey::new_unique(),
         };
         rig.set_time(NOW);
+        rig
+    }
+
+    /// A rig with the shielded pool of the pinned Zolana commit in place of the stub
+    /// (`build.sh test` builds it).
+    pub fn with_real_pool() -> Self {
+        let mut rig = Self::new();
+        let pool = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join(REAL_POOL);
+        rig.svm
+            .add_program_from_file(POOL_ID, build_output(pool))
+            .expect("load the real pool");
         rig
     }
 
