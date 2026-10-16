@@ -15,7 +15,7 @@ app also has a Solana beta for testnet wallets (section 16).
 | **Engine** (Rust) | Runs FROST, builds and checks transactions, makes Halo2 proofs, syncs the chain. Runs as WebAssembly in the browser and as a native library on iPhone and Mac. | Nothing permanent; the app gives it data |
 | **Signer device** | Runs the web, iPhone or Mac app around the engine | Its key share, the wallet secret, the viewing key, nonces, payment history |
 | **Group server** | A Cloudflare Worker with one Durable Object (SQLite) per wallet. Relays and stores sealed documents over a WebSocket. | Only ciphertext, plus wallet ids, document paths, timing and IP addresses |
-| **Light-wallet server** | lightwalletd over grpc-web. Serves compact blocks and full transactions, and accepts finished transactions. | Your IP address, the blocks you download and the transactions you fetch |
+| **Light-wallet server** | lightwalletd over grpc-web. Serves compact blocks and full transactions, and accepts finished transactions. The public side of the Zigs testnet server answers the app Worker only (section 10.1). | Your IP address, the blocks you download and the transactions you fetch |
 | **Zcash network** | NU7, Ironwood shielded pool | One normal shielded transaction per payment |
 
 ```mermaid
@@ -598,20 +598,28 @@ the web, on iPhone and on Mac at the same time.
   including the WebSocket. Without the password set on the server, it refuses everything.
 - **No install and no account.** One HTML page, the WebAssembly engine, and small scripts for the
   store client, the passkey lock, QR codes and recipient lists.
-- **Hosting.** A Cloudflare Worker serves the page and the `/ws` WebSocket of the group server.
-- **Content-Security-Policy.** The page can connect only to its own host, the group server's
-  WebSocket and the named light-wallet servers. It loads no scripts, fonts or images from other
-  hosts. No inline script runs: the app script is a separate file. It cannot be framed. The Solana
-  beta (section 16) adds no host to this policy: only the Worker script `/sol/worker.js` has a
-  policy of its own that names the Helius Devnet host.
+- **Hosting.** A Cloudflare Worker serves the page, the `/ws` WebSocket of the group server, and
+  `/lwd`, which relays the testnet light-wallet calls to the Zigs node.
+- **Content-Security-Policy.** The page can connect only to its own host (the group server's
+  WebSocket and the `/lwd` relay) and the ChainSafe light-wallet servers. It loads no scripts,
+  fonts or images from other hosts. No inline script runs: the app script is a separate file. It
+  cannot be framed. The Solana beta (section 16) adds no host to this policy: only the Worker
+  script `/sol/worker.js` has a policy of its own that names the Helius Devnet host.
 - **Other headers.** HSTS, `nosniff`, `no-referrer`, and a Permissions-Policy that turns off the
   camera, microphone and location.
 - **Networks.**
 
   | Network | Light-wallet servers | Address prefix | Notes |
   |---|---|---|---|
-  | Testnet | `lwd.zigs.app`, `zcash-testnet.chainsafe.dev` | `utest1` | Free coins from a faucet |
+  | Testnet | `/lwd` of the app host (relays to `lwd.zigs.app`), `zcash-testnet.chainsafe.dev` | `utest1` | Free coins from a faucet |
   | Mainnet | `zcash-mainnet.chainsafe.dev` | `u1` | Real ZEC. Warning and hidden address at 0.5 ZEC |
+
+- **Light-wallet relay.** `/lwd` is behind the password gate. It accepts POST only, and only the
+  methods of `cash.z.wallet.sdk.rpc.CompactTxStreamer`, so it is no open proxy. The Worker adds the
+  secret header `x-zigs-lwd-key` (secret `LWD_KEY`) and sends no header of the user, so neither the
+  password nor a cookie reaches the node. Envoy on the node host (`infra/lwd`) serves the tunnel
+  listener only with that key. A second listener, for the devices of the owner's tailnet, has no
+  key.
 
 - **Main screens.**
   - Wallet list, and a "Create wallet" form (name, *t*, *n*, network).
@@ -704,7 +712,7 @@ the web, on iPhone and on Mac at the same time.
 |---|---|---|
 | Chain observer | One shielded transaction, its fee and its number of actions | That a group signed it, the signers, the approval rule, recipients, amounts |
 | Group server | Wallet ids, message room ids, document paths, timing, message counts and sizes, IP addresses | Names, addresses, keys, amounts, recipients, transactions, message text and senders |
-| Light-wallet server | IP address, birthday height, blocks downloaded, transactions sent, and which full transactions a device fetches to read memos (only where memo reading is on) | Which notes belong to the wallet (the fetches are the exception: they point to payments to the wallet), the memo text (the transaction is encrypted), keys |
+| Light-wallet server | IP address (on testnet, our node sees the app Worker instead), birthday height, blocks downloaded, transactions sent, and which full transactions a device fetches to read memos (only where memo reading is on) | Which notes belong to the wallet (the fetches are the exception: they point to payments to the wallet), the memo text (the transaction is encrypted), keys |
 | Other signers | Everything about the shared wallet, memos included | Your key share and your nonces |
 
 ## 13. Guarantees and limits

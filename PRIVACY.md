@@ -12,9 +12,10 @@ is a bug: please report it.
   addresses, amounts, notes, recipients or transactions. It does see who connects, to which
   wallet, and when.
 - The light-wallet server sees your IP address and the blocks you download, as it does for every
-  light wallet. It never receives a key. If a signer turns on memo reading, the app also fetches
-  the full transaction of each payment to the wallet. The server then learns which transactions
-  a device reads. Memo reading is off by default.
+  light wallet. On testnet, the app Worker relays the calls to the Zigs server, so that server
+  sees the Worker and not your device. It never receives a key. If a signer turns on memo
+  reading, the app also fetches the full transaction of each payment to the wallet. The server
+  then learns which transactions a device reads. Memo reading is off by default.
 - A memo on a payment is readable by its recipient and by every signer of the sending wallet.
   Every signer of the receiving wallet reads the memos that arrive there.
 - A testnet wallet that uses the Solana beta (web app only) also talks to the Helius Devnet host.
@@ -91,7 +92,8 @@ Cloudflare, as the host, can see connection metadata.
 
 The app downloads compact blocks and finds the wallet's notes on the device. The server sees:
 
-- your IP address and the time of each request;
+- your IP address and the time of each request (on testnet, our server sees the app Worker, see
+  below);
 - the wallet's birthday height (the first sync asks for the tree state there);
 - the transactions you send, and from which IP address;
 - the full transactions you fetch to read memos (`GetTransaction`), with your IP address. The app
@@ -118,7 +120,14 @@ This links a wallet id to a transaction id, but not to its amount or recipient.
 
 - **Mainnet** wallets use ChainSafe's public light-wallet server, so the two servers have
   different operators.
-- **Testnet** wallets use the Zigs light-wallet server first, with ChainSafe as the backup.
+- **Testnet** wallets use the Zigs light-wallet server first, with ChainSafe as the backup. The
+  page calls the Zigs server through the app Worker (`/lwd`, behind the password gate), and its
+  public side answers the Worker only. So our node sees each request from the Worker, not from your
+  device, and it does not see your IP address. The Worker sees your IP address and the requests,
+  as it does for the page and the group server. It keeps no log and sends no header of yours to the
+  node. Cloudflare sees the same traffic as before, because the node was behind Cloudflare too.
+  Devices on the owner's tailnet can also call the node directly: it then sees their tailnet
+  address. The ChainSafe backup still sees your IP address.
 
 Tor Browser hides your IP address from both servers, but not this timing link. To remove the
 link, point the app at a light-wallet server you trust (`NETWORKS` in `web/app.js`,
@@ -198,7 +207,8 @@ tested yet.
 What makes this safe to rely on:
 
 - The page sends a Content-Security-Policy header. The browser lets it connect only to the group
-  server and the three light-wallet servers in `NETWORKS`, and to nothing else. The Solana Worker
+  server and the light-wallet servers in `NETWORKS` (our testnet server through `/lwd` of its own
+  host, and two ChainSafe servers), and to nothing else. The Solana Worker
   (`/sol/worker.js`, testnet wallets only) has a policy of its own, which also names the Helius
   Devnet host. The policy of the page names no Helius host.
 - A restored seat works in a new session. The app checks the restored key data against what the
