@@ -24,7 +24,7 @@ use crate::pins::Pins;
 use crate::plan::{Plan, Role};
 use crate::program::{
     approval_digest, cancellation_address, commitment, private_tx_hash, proposal_address, Body,
-    KIND_PROPOSAL,
+    KIND_PROPOSAL, MAX_EXECUTE_INPUTS,
 };
 use crate::rule::{Rule, Violation};
 use crate::spend::{spend_violations, Group, SpendInput, Summary};
@@ -270,11 +270,12 @@ fn account_violations(account: Option<&Account>, want: (&Body, u8), pins: &Pins)
     }
 }
 
-/// One body per commitment: the address does not bind the expiry, the rent recipient or the
-/// abort authorities, so a second body for an approved commitment is refused.
+/// One body per commitment: the address does not bind the rent recipient or the abort
+/// authorities (the commitment binds the pool expiry, and body-expiry ties the body to it), so a
+/// second body for an approved commitment is refused.
 // ponytail: the list lives in the seat secret of this browser, so a restored seat or another
-// browser of the seat starts with none (as the salts, SOL-8). Upgrade path: the body hash in the
-// address (program version 3).
+// browser of the seat starts with none (as the salts, SOL-8, SOL-48). Upgrade path: the body hash
+// in the address (program version 4).
 fn once_violation(seen: &Seen, commitment: &Key, body: &[u8]) -> Option<Violation> {
     let hash: Key = Sha256::digest(body).into();
     let other = seen
@@ -306,6 +307,13 @@ pub fn approve_pay(
     let tx = parse_transact_data(data).map_err(|v| refuse(vec![v]))?;
     let run = spend_rules((pay, plan), &tx, data, device);
     out.extend(run.out);
+    if tx.inputs.len() > MAX_EXECUTE_INPUTS {
+        let why = format!(
+            "{} inputs, and one execute carries {MAX_EXECUTE_INPUTS}",
+            tx.inputs.len()
+        );
+        out.push(Violation::new(Rule::ExecuteInputs, why));
+    }
     let private = recompute(pins, plan, &tx, device)
         .map_err(|why| refuse(vec![Violation::new(Rule::PlanInvalid, why)]))?;
     if private != tx.private_tx_hash {

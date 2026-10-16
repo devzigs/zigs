@@ -21,6 +21,9 @@ use crate::transact::Transact;
 pub const KIND_PROPOSAL: u8 = 1;
 /// The program accepts at most this many abort authorities.
 pub const MAX_AUTHORITIES: usize = 4;
+/// The most inputs of one `execute` with one input tree: the program forwards at most 24 accounts
+/// to the pool (ZOLANA.md 7.2, review R7).
+pub const MAX_EXECUTE_INPUTS: usize = 18;
 const BODY_FIXED: usize = 32 + 32 + 8 + 32 + 1;
 
 /// The length of the canonical Ed25519 instruction data: head, key, signature, digest.

@@ -99,6 +99,8 @@ ED25519 = "an_ed25519_instruction_outside_an_execute_is_refused"
 PDA_WIRE = "the_wire_of_the_pins_holds_the_payer_then_the_pda_key"
 COMPILE_PDA = "the_compile_entry_builds_add_sol_and_the_create_message_for_the_pda_identity"
 DIGEST_ENTRY = "the_digest_entry_of_the_page_gives_the_landed_digest_and_refuses_a_bad_body"
+WIDE = "a_payment_of_more_inputs_than_one_execute_carries_is_refused"
+REVIEW_CHAIN = "the_wasm_entry_runs_the_chain_rules_once_the_device_read_the_account"
 
 # The program design (ZOLANA.md 7.2): the client of the approvals program, the approval of a
 # payment, the beta policy and the two templates.
@@ -193,6 +195,18 @@ PROGRAM_CASES = [
      "    let pins = identity(&proposal.intent, &Pins::decode(pins)?).map_err(|r| refused(&r))?;",
      "    let pins = Pins::decode(pins)?;\n    let _ = identity;", COMPILE_PDA),
     ("digest-any-body", "src/wasm.rs", "    Body::parse(&body)?;\n", "", DIGEST_ENTRY),
+    ("execute-any-inputs", "src/pay.rs", "    if tx.inputs.len() > MAX_EXECUTE_INPUTS {",
+     "    if false {", WIDE),
+    ("create-readonly", "src/template.rs", "        acct(proposal, false, true),\n"
+     "        acct(SYSTEM_PROGRAM, false, false),", "        acct(proposal, false, false),\n"
+     "        acct(SYSTEM_PROGRAM, false, false),", CREATE),
+    ("execute-record", "src/template.rs",
+     "        acct(cancellation_address(&proposal)?, false, false),",
+     "        acct(proposal, false, false),", EXECUTE_OK),
+    ("execute-sysvar", "src/template.rs", "        acct(INSTRUCTIONS_SYSVAR, false, false),",
+     "        acct(SYSTEM_PROGRAM, false, false),", EXECUTE_OK),
+    ("review-no-chain", "src/wasm.rs", "    let verdict = if input.seen.is_empty() {",
+     "    let verdict = if true {", REVIEW_CHAIN),
 ]
 
 # (name, file, exact old text, new text, test that must fail)

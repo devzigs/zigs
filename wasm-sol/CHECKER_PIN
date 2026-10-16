@@ -70,7 +70,7 @@ use; the code that read the solSeed file is removed. Vectors: only the public on
 Copied from the P1 crate: tests/data (the RFC 9591 E.1 inputs and the vectors of frost-ed25519).
 
 The wasm of wasm-sol (build.sh): SHA-256
-9b4e9ec61781c4b1d1c0dc5255083f1388fe9eaf39bdf62b5a939874d131b3b0, 1,077,255 bytes raw, 395,480 gzip
+b9125eb62593870aa8712c458ddf275d3b11c0708de322dab72324465158de16, 1,077,575 bytes raw, 395,634 gzip
 
 Changes of the move into the product repo (not signed; no file of src/ changed, so the rules and
 the checker are those that the verdict signed):
@@ -191,7 +191,8 @@ signs a nonce message only for the move of its funds to the PDA:
 - src/template.rs: the create message (the payer funds the proposal account) and the execute
   message (the Ed25519 instruction just before `execute`, the transact accounts, the owner PDA as a
   readonly account, last). Caps: 7,832 and 151,437 compute units (SOL-35) plus 50 percent.
-- src/rule.rs: 12 rules (98 rules), the groups Program and Policy. src/rules_ix.rs: the approvals
+- src/rule.rs: 13 rules (99 rules), the groups Program and Policy. `execute-inputs`: a payment
+  spends at most 18 inputs, the most that one execute of the program carries (review R7). src/rules_ix.rs: the approvals
   program and the Ed25519 program in their intents only, and the execute data.
 - src/approve.rs: `pin_violations` is visible to pay.rs. No rule of approve.rs changed.
 - src/roles.rs: the PDA identity (option D: HKDF-SHA256 over solSeed with the info
@@ -208,7 +209,7 @@ signs a nonce message only for the move of its funds to the PDA:
 - vectors: program/landed.json (public chain data of the spike), pay/*.json
   (solspike/tools/payment_vectors.mjs, the TS SDK at c232da1b), roles.json (the PDA identity of
   each seed), smoke (examples/gen_vectors.rs again, with the case migration).
-- tools/mutate_sol.py: 41 cases for the program design, all killed by their named test, and the
+- tools/mutate_sol.py: 46 cases for the program design, all killed by their named test, and the
   three new test files in its list.
 
 Check: python3 -I tools/pin_check.py (the manifest below against the tree).
@@ -229,13 +230,13 @@ ca3b51e9ea30baeb0b082ca9cb19fe248bc86880d60ae90a3ee3e5a7dcb6b371  src/codec.rs  
 e69e4ccacb28931921f072919a6ecf9ff3fe6784e3b129a45ff94fa0ccc17d4c  src/hashes.rs  verbatim
 697fd4909c550feceb70bbfeca6812a9ce0814274cb93e50b87430de8875857b  src/intent.rs  modified
 4ee766f3816d4af38f22fd2377a305515af6df48f01e64af2b8713a575dec1f5  src/lib.rs  modified
-a900e180145bf116902dff0cf81ad54c2d67cf94b5b6accecc3a92ad9feac75b  src/pay.rs  new
+736e477fa5d37f291de4cb1378326086b67b2b5769866a4d67f3a83865e4bb03  src/pay.rs  new
 4f344e745afed204088395c0101761a0332688de88ab6e57dec9e85de34907a1  src/pda.rs  verbatim
 3220535ef8fb346b3d0f30de9a1a76f3cc20cf1819f0c2e25274648ee5abfbed  src/pins.rs  modified
 df46e9e90b740789623db0bed212c78a8d87fbf608a04be84cab433327fbb738  src/plan.rs  modified
-3af32de9d761e5287ad91f7c6d285367cc56885eca1b1f00b45640341794ef7c  src/program.rs  new
+a242ba7de765fdde771e315ad0a88d773637a4367c670133697ab3ecd7e5c578  src/program.rs  new
 a44ea553e8f9d4b4cbac46b67a267c8f529de2ce84a34ce96f0f281d6eee156a  src/roles.rs  new
-3de5ad9f40d1d83a115e4f13edd8b4b426cd16731fae346ec22187dc5cf1655d  src/rule.rs  modified
+d6dfcd82fcacc23277ba8b073380d8d8c355a32c9a7dca455bae1440dcb07bf1  src/rule.rs  modified
 c8c4a33103f0c0e811e5d98e43acc3f0f28316d0976beb65788b47fd3f6d5c1c  src/rules_ct.rs  verbatim
 2fc01d89043505c49e3d3173f2f35ba2b3a407aedb6d811c34ddef7955364ab8  src/rules_ix.rs  modified
 3e6b8cd5a979ea45ec96d4bc42eef02677418b7a0f9d4d7f2aada02c7fcaa625  src/rules_legs.rs  verbatim
@@ -265,7 +266,7 @@ cfc68ad047d9dff9f4cb368c901238019de4d6284cbd23853b5224f97a2bf3ca  tests/frost_dk
 30d06cfe796b1238ac2957de71d1d2b285d5ad4e545fc0bab1ce02144c46fd35  tests/negative.rs  modified
 025fcdc92eb9ea2519a623a14d1ea06073c047b20a188bac5ae3a918ccef50ca  tests/p3c.rs  modified
 f4d8360137a186fdc4a18bd6c0425c8e6a2b60236f13242a25bcf1313b9d1382  tests/pay_vectors.rs  new
-58d226886f01be5089d32e48f60e3d09589972eff4e2acfdfd4516d76836395d  tests/payment.rs  new
+d92c28c99af9c4f77302bd0ced2a99afbe19635a786af007d139eec3f1be2e86  tests/payment.rs  new
 95290d8683b751fb47f647d29eb2486fcd3dad545aa35a368d1a5fb0733151b1  tests/pin_bytes.rs  verbatim
 0f4f6986a1acc2d37616f0ac6d5f03064a175c7b963cdb0b780682a61c2e5194  tests/program.rs  new
 3037d149887a37309b07c8765f862acf9994f0802138861188bd9ffc1869e829  tests/real.rs  modified

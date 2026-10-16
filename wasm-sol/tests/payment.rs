@@ -14,7 +14,7 @@ use common::fixture::*;
 use common::{EXPIRY, NOW};
 use p3_check::approve::Device;
 use p3_check::beta::{approve_message, approve_payment, Signer};
-use p3_check::consts::{Key, MULTISIG_DEVNET, SYSTEM_PROGRAM};
+use p3_check::consts::{Key, INSTRUCTIONS_SYSVAR, MULTISIG_DEVNET, SYSTEM_PROGRAM};
 use p3_check::fixed::parse_deposit;
 use p3_check::intent::{Intent, Program};
 use p3_check::pay::{Account, Payment, Seen};
@@ -112,6 +112,51 @@ fn a_payment_of_the_pda_is_approved_with_its_commitment_proposal_and_digest() {
 
 fn sum(list: &[p3_check::spend::Amount]) -> u64 {
     list.iter().map(|a| a.amount).sum()
+}
+
+#[test]
+fn a_payment_of_more_inputs_than_one_execute_carries_is_refused() {
+    let wide = |n: usize| {
+        let spec = Spec {
+            inputs: vec![(SOL, 10); n],
+            ..Spec::transfer()
+        };
+        let f = Fixture::payment(&spec);
+        rules(&f, &seen(&f))
+    };
+    assert_eq!(
+        wide(16),
+        Vec::<Rule>::new(),
+        "16 inputs: one execute carries them"
+    );
+    assert_eq!(
+        wide(24),
+        vec![Rule::ExecuteInputs],
+        "24 inputs: no execute carries them"
+    );
+}
+
+#[test]
+fn the_wasm_entry_runs_the_chain_rules_once_the_device_read_the_account() {
+    let f = payment();
+    let entry = |seen: &[u8]| {
+        let w = wires(&f, &self::seen(&f));
+        p3_check::wasm::check_payment(&w[0], &w[1], &w[2], seen, NOW)
+    };
+    let none = Seen {
+        account: None,
+        approved: Vec::new(),
+    };
+    assert!(
+        entry(&[]).starts_with("accepted"),
+        "the draft of the proposer: no chain state"
+    );
+    assert!(entry(&seen(&f).encode().unwrap()).starts_with("accepted"));
+    let missing = entry(&none.encode().unwrap());
+    assert!(
+        missing.starts_with("refused") && missing.contains("account-owner"),
+        "{missing}"
+    );
 }
 
 #[test]
@@ -315,6 +360,12 @@ fn the_create_message_carries_the_body_of_the_payment_and_the_fee_key_signs_it_a
     assert_eq!(ix.data, [&[0u8][..], &body.write().unwrap()].concat());
     let keys: Vec<Key> = (0..3).map(|at| *msg.account_key(ix, at).unwrap()).collect();
     assert_eq!(keys, vec![PAYER, address, SYSTEM_PROGRAM]);
+    let writable = |k: Key| msg.is_writable(msg.keys.iter().position(|x| *x == k).unwrap());
+    assert_eq!(
+        keys.iter().map(|k| writable(*k)).collect::<Vec<_>>(),
+        vec![true, true, false],
+        "the payer funds the proposal account, which the program writes"
+    );
     let why = approve_message(&message, &proposal, &device(&f), Signer::Group).unwrap_err();
     assert_eq!(why.violations[0].rule, Rule::IntentRetired);
 }
@@ -623,6 +674,22 @@ fn any_seat_executes_a_fresh_proof_with_the_approval_and_pays_with_its_own_fee_k
         )
     );
     assert_eq!(at(4), PAYER, "the rent goes back to the proposing seat");
+    assert_eq!(
+        at(3),
+        cancellation_address(&got.proposal).unwrap(),
+        "the record"
+    );
+    assert_eq!(
+        at(5),
+        INSTRUCTIONS_SYSVAR,
+        "the program reads the approval there"
+    );
+    let writable = |n: usize| msg.is_writable(msg.keys.iter().position(|k| *k == at(n)).unwrap());
+    assert_eq!(
+        (0..6).map(writable).collect::<Vec<_>>(),
+        vec![true, true, false, false, true, false],
+        "payer, proposal and rent recipient are writable; owner, record and sysvar are not"
+    );
     assert_eq!(
         at(execute.accounts.len() - 1),
         at(2),

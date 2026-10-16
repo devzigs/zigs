@@ -200,6 +200,8 @@ rules! {
         "the proposal account holds kind 1, the canonical bump and the body of the payment";
     BodyOnce, "body-once", Program,
         "no earlier approval of the device has this commitment with another body";
+    ExecuteInputs, "execute-inputs", Program,
+        "a payment spends at most 18 inputs: one execute of the program carries no more";
     ExecuteApproval, "execute-approval", Program,
         "the approval verifies under the group key over the digest of the body of the transact \
          data";

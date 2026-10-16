@@ -166,7 +166,7 @@ const snapshot = Buffer.concat([
 assert.equal(snapshot.length, 74);
 const verdict = S.check_message(message, proposal, pins, snapshot, BigInt(NOW));
 assert.ok(verdict.startsWith("accepted"), verdict);
-assert.equal(S.rule_list().split("\n").length, 98);
+assert.equal(S.rule_list().split("\n").length, 99);
 
 // Seats 1 and 2 sign in separate calls. The page keeps the nonces under the digest.
 const digest = S.sol_digest(CLUSTER, message);
