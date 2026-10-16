@@ -133,7 +133,7 @@ const mark = (name) => findAll(tabOf(), (n) => n.attrs["data-sol"] === name);
   const [fund] = findAll(tabOf(), (n) => n.tag === "div" && /Fund the fee address/.test(textOf(n)));
   assert.match(textOf(fund), /Your fee address \(seat 1\)/);
   assert.match(textOf(fund), /pays the fees and the rents of the proposals that this seat makes/);
-  assert.match(textOf(fund), /appears on chain next to the group/);
+  assert.match(textOf(fund), /the chain shows it next to the program address of the group/);
   // Add SOL says that the amount and the sender are public and that it needs no approval.
   assert.match(textOf(mark("add-sol-text")[0]), /amount and the sender are public.*no approval/);
   assert.equal(
@@ -142,8 +142,8 @@ const mark = (name) => findAll(tabOf(), (n) => n.attrs["data-sol"] === name);
     "the Shield button is gone",
   );
   assert.equal(mark("add-sol").length, 1);
-  const owner = base58(done.groupKey);
-  assert.equal(textOf(mark("owner")[0]), owner, "the owner address is still shown");
+  const owner = base58(done.pda);
+  assert.equal(textOf(mark("owner")[0]), owner, "the program address of the group is shown");
   assert.match(textOf(mark("balance-public")[0]), /^0\.05 SOL$/, "and its old public SOL");
 }
 step("the fund card shows the fee address of each seat with Copy, the faucet and the balance");
@@ -217,7 +217,7 @@ step("a seat with no valid document publishes once");
   notify();
   await waitFor("no document", () => [1, 2, 3].every((i) => c.docs.solfee[i] === undefined));
   assert.equal(readySeat(c), undefined, "no seat is ready");
-  await assert.rejects(() => propose(c, "register"), /fee address of seat 1 is not published yet/);
+  await assert.rejects(() => propose(c, "createNonce"), /fee address of seat 1 is not published/);
   await assert.rejects(() => addSol(c, { amount: "0.01" }), /not published yet/);
   release();
   hook.before = saved;
@@ -228,11 +228,12 @@ step("a proposal and Add SOL wait until the document shows the fee key of the se
 hook.before = saved;
 
 // ── A proposal by seat 2 is paid by seat 2, as its document says ──
+const { blockhashHex } = await c.worker.call("blockhash");
+const create = intentHex("createNonce", { blockhash: blockhashHex });
 {
-  const register = intentHex("register", { nonce: chain.nonce, ...done });
   const fee2 = bytesOf(pinsHex(done, feeOf(c, 2).key));
-  const message = W.compile_message(bytesOf(register), fee2, new Uint8Array(0));
-  const ss = { id: "by-2", status: "collecting", by: 2, intent: register, message: hexOf(message) };
+  const message = W.compile_message(bytesOf(create), fee2, new Uint8Array(0));
+  const ss = { id: "by-2", status: "collecting", by: 2, intent: create, message: hexOf(message) };
   ss.feeSig = feeSignature(c, ss, 2);
   const review = reviewOf(c, ss, 1);
   assert.equal(review.ok, true, review.why);
@@ -247,11 +248,10 @@ step("a proposal of seat 2 is paid by the fee key of seat 2");
   const stranger = createPrivateKey({ key: der, format: "der", type: "pkcs8" });
   const spki = createPublicKey(stranger).export({ format: "der", type: "spki" });
   const strange = spki.subarray(-32).toString("hex");
-  const register = intentHex("register", { nonce: chain.nonce, ...done });
   const compile = (payer) =>
-    hexOf(W.compile_message(bytesOf(register), bytesOf(pinsHex(done, payer)), new Uint8Array(0)));
+    hexOf(W.compile_message(bytesOf(create), bytesOf(pinsHex(done, payer)), new Uint8Array(0)));
   // The proposer names the stranger as payer, compiles the message for it and signs as it.
-  const forged = { id: "forged", status: "collecting", by: 2, intent: register };
+  const forged = { id: "forged", status: "collecting", by: 2, intent: create };
   forged.message = compile(strange);
   forged.feeSig = sign(null, bytesOf(forged.message), stranger).toString("hex");
   forged.payer = strange;
@@ -267,7 +267,8 @@ step("a proposal of seat 2 is paid by the fee key of seat 2");
   // The same through a stored document: seat 2 signs a proposal part whose message names the
   // stranger as payer, with the signature of the stranger, and the document carries the field
   // `payer` that no part signs (the writer refuses it, a document can hold it).
-  const fields = { intent: register, message: forged.message, feeSig: forged.feeSig, createdAt: 1 };
+  const fields = { intent: create, message: forged.message, feeSig: forged.feeSig };
+  fields.createdAt = Date.now();
   await writePart(c, "forged-payer", "proposal", fields, { seat: 2, create: true });
   const where = path(gid, "solsessions/forged-payer");
   data.set(where, { ...data.get(where), payer: strange });
@@ -291,6 +292,8 @@ step("a landed proposal costs the fee address of the proposing seat");
 
 // ── A payer without SOL: a clear text, and nothing is written ──
 {
+  const kept = chain.nonce;
+  chain.nonce = null; // the nonce account is the one proposal with no proof
   const before = [...data.keys()].filter((k) => k.includes("solsessions/")).length;
   for (const [held, label] of [
     [0n, "no account"],
@@ -298,13 +301,14 @@ step("a landed proposal costs the fee address of the proposing seat");
   ]) {
     chain.balances.set(feeAddress(1), held);
     await assert.rejects(
-      () => propose(c, "register"),
+      () => propose(c, "createNonce"),
       /fee address of seat 1 has too little Devnet SOL.*Fund it/,
       label,
     );
   }
   assert.equal([...data.keys()].filter((k) => k.includes("solsessions/")).length, before);
   chain.balances.set(feeAddress(1), 50_000_000n);
+  chain.nonce = kept;
 }
 step("a proposal whose payer has no SOL fails with a clear text and writes nothing");
 
@@ -324,8 +328,9 @@ const roles = J(W.sol_roles(solOf(1).solSeed, done.groupKey));
   assert.equal(got.txId, base58(landed.sigs[0]), "the id is the signature of the payer");
   assert.equal(describeMessage(message).signatures, 1);
   assert.equal(describeMessage(message).computeUnits, 56877n, "the template limit of a deposit");
-  // The accounts of the message: the group key is in the data of the deposit (its view tag), and
-  // in no account: it does not sign, and its nonce account is not used.
+  // The accounts of the message: the deposit goes to the PDA identity (ZOLANA.md 7.2), so the
+  // group key is in no account and not in the data: it does not sign, and its nonce account is
+  // not used.
   const accounts = Array.from({ length: message[41] }, (_, n) =>
     hexOf(message.subarray(42 + 32 * n, 74 + 32 * n)),
   );
@@ -337,9 +342,11 @@ const roles = J(W.sol_roles(solOf(1).solSeed, done.groupKey));
     "nor its nonce account",
   );
   const key = (hex) => Buffer.from(message).includes(Buffer.from(hex, "hex"));
-  assert.equal(key(done.groupKey), true, "it is the view tag of the deposit, in the data");
+  assert.equal(key(done.groupKey), false, "the group key is not in the data");
+  assert.equal(key(done.pda), true, "the PDA is the view tag of the deposit, in the data");
   assert.equal(key("8096980000000000"), true, "the amount is in the deposit");
-  assert.equal(key(roles.owner_hash), true, "the deposit goes to the owner hash of the group");
+  assert.equal(key(done.pdaOwnerHash), true, "the deposit goes to the owner hash of the PDA");
+  assert.equal(key(roles.owner_hash), false, "and not to the owner hash of the group key");
   assert.equal(chain.nonce, nonce, "the nonce account did not move");
   assert.equal(sessions(), before.sessions, "no approval round, no session");
   assert.equal(chain.balances.get(feeAddress(1)), 50_000_000n - FEE, "the fee came from seat 1");
@@ -384,7 +391,7 @@ step("Add SOL refuses a bad amount, an unfunded address and a refusal of the net
   const ss = (message) => ({ id: "x", by: 1, intent, message: hexOf(message) });
   const good = compile(feeOf(c, 1).key);
   assert.equal(feeSignature(c, ss(good), 1).length, 128, "the control: an honest deposit");
-  const at = Buffer.from(good).indexOf(Buffer.from(roles.owner_hash, "hex"));
+  const at = Buffer.from(good).indexOf(Buffer.from(done.pdaOwnerHash, "hex"));
   assert.ok(at > 0);
   const elsewhere = Uint8Array.from(good);
   elsewhere[at] ^= 1;
@@ -418,7 +425,7 @@ step("an Add SOL message written as a session gets a refusal and the tab stays r
   const BEFORE = /from before the fee keys.*Propose it again/;
   const nonceOf = (n) => String(n).repeat(64).slice(0, 64);
   const signatures = {};
-  const intentOf = (n) => intentHex("register", { nonce: nonceOf(n), ...done });
+  const intentOf = (n) => intentHex("createNonce", { blockhash: nonceOf(n) });
   const pins = bytesOf(pinsHex(done, feeOf(c, 1).key));
   const messageOf = (n) => hexOf(W.compile_message(bytesOf(intentOf(n)), pins, new Uint8Array(0)));
   const part = (id, name, fields) =>
@@ -500,7 +507,8 @@ step("a proposal from before the fee keys is read as it was and is never sent ag
   assert.equal(readySeat(c), 2, "the first ready seat is seat 2");
   assert.match(textOf(mark("propose-seat")[0]), /^Seat 2 of this browser proposes and pays/);
   assert.match(textOf(mark("add-sol-seat")[0]), /^Seat 2 of this browser adds this SOL/);
-  const id = await propose(c, "register");
+  chain.nonce = null;
+  const id = await propose(c, "createNonce");
   await waitFor("the proposal", () => ssOf(id));
   assert.equal(ssOf(id).by, 2, "seat 2 proposed");
   assert.equal(reviewOf(c, ssOf(id), 1).payer, feeOf(c, 2).key, "and its fee key pays");
@@ -512,13 +520,13 @@ step("a proposal from before the fee keys is read as it was and is never sent ag
   // Seats 1 and 2 are in mismatch: seat 3 is the first ready seat.
   await forge([2]);
   assert.equal(readySeat(c), 3);
-  assert.equal(ssOf(await proposed("register")).by, 3, "seat 3 proposed");
+  assert.equal(ssOf(await proposed("createNonce")).by, 3, "seat 3 proposed");
   // No seat is ready: the error is the one of the first seat, and nothing is written.
   await forge([3]);
   assert.equal(readySeat(c), undefined);
   assert.equal(mark("propose-seat").length + mark("add-sol-seat").length, 0, "no seat to show");
   const before = sessions();
-  await assert.rejects(() => propose(c, "register"), ANOTHER);
+  await assert.rejects(() => propose(c, "createNonce"), ANOTHER);
   await assert.rejects(() => addSol(c, { amount: "0.01" }), ANOTHER);
   assert.equal(sessions(), before, "nothing was proposed");
 }

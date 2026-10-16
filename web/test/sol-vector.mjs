@@ -15,8 +15,12 @@ const u16 = (n) => hexOf(new Uint8Array(new Uint16Array([n]).buffer));
 const u64 = (n) => hexOf(new Uint8Array(new BigUint64Array([BigInt(n)]).buffer));
 const byte = (n) => n.toString(16).padStart(2, "0");
 
-/** The `transact` data as the program reads it (wasm-sol/src/transact.rs, `Transact::write`). */
-export function transactHex(v, expiry = EXPIRY) {
+/**
+ * The `transact` data as the program reads it (wasm-sol/src/transact.rs, `Transact::write`). The
+ * private transaction hash is the one of the SDK when the vector has it (`privateTxHash`), else a
+ * placeholder. `proof` (one byte, hex) and `root` (the root index) vary as a new proof does.
+ */
+export function transactHex(v, expiry = EXPIRY, { proof = "00", root = 0 } = {}) {
   const owner = (o) =>
     o.ownerTag.kind === "account" ? "01" + byte(o.ownerTag.index) : "00" + o.ownerTag.value;
   const output = (o) => o.utxoHash + owner(o) + "01" + u16(o.data.length / 2) + o.data;
@@ -31,17 +35,17 @@ export function transactHex(v, expiry = EXPIRY) {
     byte(v.outputs.length) +
     v.outputs.map(output).join("") +
     "00" +
-    "00".repeat(31) +
-    "4d" + // the private transaction hash: 77, unread by the checker
+    (v.privateTxHash ?? "00".repeat(31) + "4d") + // a placeholder: 77
     "0000" +
     byte(v.inputs.length) +
     byte(v.outputs.length) +
     "03" +
-    "00".repeat(192) +
+    proof.repeat(192) +
     byte(v.inputs.length) +
     v.inputs.map((i) => i.nullifier + "00").join("") +
     "01" +
-    "00000000"
+    u16(root) +
+    "0000"
   );
 }
 
@@ -75,7 +79,9 @@ export function pageSide(v, change = {}) {
   };
   const roles = { nullifier_secret: v.group.nullifierSecret, viewing_sk: v.group.viewingSk };
   const { key: groupKey, nullifierPk, viewingPk } = v.group;
-  const done = { groupKey, nullifierPk, viewingPk };
+  // A vector of the group key has no PDA identity; a transfer never reads the PDA pin.
+  const pdaNullifierPk = v.group.pdaNullifierPk ?? "11".repeat(32);
+  const done = { groupKey, nullifierPk, viewingPk, pdaNullifierPk };
   return {
     ss: { intent, plan },
     spend,

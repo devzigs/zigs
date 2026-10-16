@@ -9,9 +9,11 @@ import { payCards } from "./payview.js";
 import { holdsShare, remoteStop, solOf, stopOf } from "./secrets.js";
 
 const ADD_TEXT =
-  "Your Solana address is public. Each seat also gets a fee address, which appears on chain " +
-  "next to the group. The Zigs server operator can link this wallet to these addresses by " +
-  "timing. Helius sees that you use Zigs. A fee address needs a public SOL funding trail.";
+  "A Solana program owns the funds of the group at a program address, which is public and links " +
+  "to the group key. Each seat also gets a fee address, which appears on chain next to the " +
+  "group. The Zigs server operator can link this wallet to these addresses by timing. Helius " +
+  "sees that you use Zigs. A fee address needs a public SOL funding trail. The program and its " +
+  "upgrade key are outside the group, and the beta has no audit.";
 function statusOf(c, ag) {
   if (startBlock(c.host)) return "unavailable";
   if (!started(c.docs)) return "not started";
@@ -60,6 +62,10 @@ function seatList(c) {
   );
 }
 
+const PAY_TO =
+  "Pay this group only to its full shielded address. The program address alone is not enough, " +
+  "and a payment to another key is not counted.";
+
 function keyBlock(c, done) {
   const { el } = c.host,
     row = (name, label, value) => [
@@ -69,13 +75,14 @@ function keyBlock(c, done) {
   return el(
     "dl",
     { class: "kv" },
-    row("owner", "Owner address (Devnet)", base58(done.groupKey)),
+    row("owner", "Program address of the group (Devnet)", done.pda ? base58(done.pda) : "?"),
     row("group-key", "Group key", done.groupKey),
-    row("shielded", "Shielded address", done.address),
+    row("shielded", "Shielded address", done.pdaAddress ?? "?"),
+    el("dd", { class: "small", "data-sol": "pay-to" }, PAY_TO),
     row("balance-private", "Private balance", c.sync.balance ?? "not synced"),
     row(
       "balance-public",
-      "Public balance of the owner address",
+      "Public balance of the group key",
       c.chain?.balance ?? "not read yet",
     ),
   );

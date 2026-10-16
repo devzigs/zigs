@@ -37,7 +37,7 @@ registerHooks({
 });
 
 const { control } = await import(STUB);
-const { cutTransact, hex, planFromProve } = await import("../../web/sol/prepare.js");
+const { commitmentOf, cutTransact, hex, planFromProve } = await import("../../web/sol/prepare.js");
 const sdk = await import(new URL("zolana.bundle.js", WEB_SOL).href);
 
 const step = (name) => console.log(`ok  ${name}`);
@@ -49,12 +49,17 @@ const VIEWING = "a7".repeat(32);
 const RPC = `https://devnet.helius-rpc.com/?${KEY_NAME}=${KEY}&x=${EXTRA}`;
 const ZOLANA = `https://devnet.helius-rpc.com/v1/zolana?${KEY_NAME}=${KEY}&x=${EXTRA}`;
 const GROUP_KEY = "e5".repeat(32);
+const PDA_NULLIFIER = "c3".repeat(31);
+const PDA_HEX = "d4".repeat(32);
 const INIT = {
   rpcUrl: RPC,
   nullifierSecret: NULLIFIER,
+  pdaNullifierSecret: PDA_NULLIFIER,
   viewingSecret: VIEWING,
   groupKey: GROUP_KEY,
+  pda: PDA_HEX,
 };
+const PDA = "UgrqxxdDh3m4pf1DLYGw6fnzk9NGuWJaUnerUp4Mxqd";
 const SYSTEM = "11111111111111111111111111111111";
 const NONCE_ACCOUNT = "4kf6Z6LTZC7E7PRvUAoADayFXQfDGppBx8m1AuUvUndE";
 const OWNER = "B1o5q9sWLRVY2uk43bd1GLLPcNmhqJQ53CfKKxKzeShD";
@@ -84,6 +89,7 @@ globalThis.fetch = fakeFetch;
 async function freshWorker({ testMode = false } = {}) {
   Object.assign(control, { options: null, rpc: {}, utxos: [], fail: {} });
   Object.assign(control, { request: null, proved: null, instruction: null, signed: null });
+  Object.assign(control, { rebuilt: null, synced: null });
   control.calls.length = 0;
   fetched.length = 0;
   modes.length = 0;
@@ -165,7 +171,7 @@ const account = (data, owner = SYSTEM) => ({
 // group as an owner signer.
 const PAYER = "5TeWSsjg2gbxCyWVniXeCmwM7UtHTCK7svzJr5xYJzHf";
 const PREPARE = {
-  kind: "transfer",
+  kind: "migrate",
   recipient: "01ab",
   amount: "40000000",
   expiry: "1792048408",
@@ -232,7 +238,12 @@ async function initWiring() {
   assert.equal(ok, true);
   assert.deepEqual(
     [result.owner, result.shielded, result.ownerHash, typeof result.hasherMs],
-    [OWNER, "01020304", "f0f1f2f3", "number"],
+    [OWNER, "01020304", "f1f2f3f4", "number"],
+  );
+  assert.deepEqual(
+    [result.pda, result.pdaShielded, result.pdaOwnerHash],
+    [PDA, "090a0b0c", "f9fafbfc"],
+    "init names the PDA identity",
   );
   const options = control.options;
   assert.equal(options.solanaRpcUrl, RPC);
@@ -457,10 +468,100 @@ async function expiryReadBack() {
     control.proved.proofInputs,
     "the signers come from the proof inputs",
   );
+  assert.equal(control.request.identity.owner, OWNER, "the move spends the group key");
   const mismatch = { ...PREPARE, expiry: "1792048409" };
   const differs = /the expiry in the data differs from the request/;
   await refused("prepare", mismatch, differs, "the expiry read-back");
   step("U14 prepare reads the expiry back from the instruction data and refuses a different one");
+}
+
+/** A payment spends the PDA identity and lists no owner signer: the program signs for the PDA. */
+async function payPreparesThePda() {
+  await initialised();
+  control.utxos = [syncedInput()];
+  giveProof(proveBody());
+  const done = await ask("prepare", { ...PREPARE, kind: "pay" });
+  assert.equal(done.ok, true, done.error);
+  assert.equal(control.request.identity.owner, PDA, "a payment spends the PDA identity");
+  const groupOwner = sdk.getAddressDecoder().decode(Buffer.from(GROUP_KEY, "hex"));
+  assert.equal(control.request.identity.groupOwner, groupOwner, "the group key never pays");
+  assert.deepEqual(control.instruction.ownerSigners, [], "no owner signer for the PDA");
+  assert.equal(control.calls.includes("ownerSigners"), false);
+  assert.equal(control.synced.solanaAddress(), PDA, "the sync of a payment is of the PDA");
+  step("prepare of a payment spends the PDA identity and lists no owner signer");
+}
+
+/** sync reads the PDA identity, syncOld the group key; account, rent and history read the RPC. */
+async function identitiesAndReads() {
+  await initialised();
+  control.rpc.getSlot = async () => 5n;
+  assert.equal((await ask("sync", {})).ok, true);
+  assert.equal(control.synced.solanaAddress(), PDA);
+  assert.equal((await ask("syncOld", {})).ok, true);
+  assert.equal(control.synced.solanaAddress(), OWNER);
+  const data = Buffer.from([1, 2, 3]);
+  control.rpc.getAccountInfo = async () => ({
+    value: { owner: PDA, lamports: 9n, data: [data.toString("base64"), "base64"] },
+  });
+  const found = await ask("account", { account: PDA });
+  assert.equal(found.ok, true, found.error);
+  assert.deepEqual(found.result, {
+    exists: true,
+    owner: hex(sdk.getAddressEncoder().encode(PDA)),
+    lamports: "9",
+    data: "010203",
+  });
+  control.rpc.getAccountInfo = async () => ({ value: null });
+  assert.deepEqual((await ask("account", { account: PDA })).result, { exists: false });
+  control.rpc.getMinimumBalanceForRentExemption = async (space) => 5080n * (128n + space);
+  assert.deepEqual((await ask("rent", { space: "139" })).result, { lamports: "1356360" });
+  control.rpc.getSignaturesForAddress = async () => [
+    { signature: "5".repeat(88), err: null, slot: 7n },
+    { signature: "4".repeat(88), err: { x: 1 }, slot: 6n },
+  ];
+  assert.deepEqual((await ask("history", { account: PDA })).result, [
+    { signature: "5".repeat(88), failed: false, slot: "7" },
+    { signature: "4".repeat(88), failed: true, slot: "6" },
+  ]);
+  step("sync reads the PDA, syncOld the group key; account, rent and history read the chain");
+}
+
+/** reprove proves only a payment whose first proof, rebuild and new data give the commitment. */
+async function reproveChecksTheCommitment() {
+  await initialised();
+  control.utxos = [syncedInput()];
+  const first = landedData();
+  const commitment = await commitmentOf(first);
+  const args = {
+    recipient: "01ab",
+    payer: PAYER,
+    plan: "ab".repeat(32) + "00",
+    inputIds: [hex(bytes32(0xaa))],
+    transact: hex(first),
+    commitment,
+  };
+  const rebuiltWith = (value) => () => ({ messageHash: () => Buffer.from(value, "hex") });
+  control.rebuild = rebuiltWith(commitment);
+  control.prove = prover(null);
+  control.instructionData = first;
+  const done = await ask("reprove", args);
+  assert.equal(done.ok, true, done.error);
+  assert.equal(done.result.data, hex(first));
+  assert.equal(control.rebuilt.identity.owner, PDA, "the rebuild is of the PDA identity");
+  assert.equal(control.rebuilt.payer, PAYER);
+  assert.deepEqual(control.rebuilt.inputIds, args.inputIds);
+  assert.deepEqual(control.instruction.ownerSigners, []);
+  const other = "00".repeat(32);
+  const wrong = { ...args, commitment: other };
+  await refused("reprove", wrong, /first proof does not give/, "commitment");
+  control.rebuild = rebuiltWith(other);
+  await refused("reprove", args, /rebuilt payment does not give/, "a rebuild of other inputs");
+  control.rebuild = rebuiltWith(commitment);
+  const moved = Uint8Array.from(first);
+  moved[20] ^= 1; // a byte of tx_viewing_pk: the data parses, the commitment changes
+  control.instructionData = moved;
+  await refused("reprove", args, /new proof does not give/, "new data of another payment");
+  step("reprove proves and returns only data whose commitment is the approved one");
 }
 
 async function prepareRefusals() {
@@ -593,6 +694,9 @@ await errorsAreRedacted();
 await nonceVersion();
 await finiteExpiry();
 await expiryReadBack();
+await payPreparesThePda();
+await identitiesAndReads();
+await reproveChecksTheCommitment();
 await prepareRefusals();
 await commandOrder();
 await readCommands();

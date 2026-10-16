@@ -1,13 +1,15 @@
 // The Worker session of the tab: it checks that the Worker script carries its own policy, starts
-// the Worker with the two role secrets of the group (never the key share, solSeed or a nonce),
-// checks its address against the wasm address, runs a sync and keeps the sealed snapshot. The
-// Helius URL comes from the server (/sol/config.json). It is held in memory, passed to the Worker
-// and never logged or stored.
+// the Worker with the role secrets of the group (never the key share, solSeed or a nonce), checks
+// both of its addresses against the wasm addresses, runs a sync and keeps the sealed snapshot. The
+// funds of the group belong to the PDA of the approvals program (ZOLANA.md 7.2); the sync also
+// reads the beta funds that the group key holds until they move to the PDA. The Helius URL comes
+// from the server (/sol/config.json). It is held in memory, passed to the Worker and never logged
+// or stored.
 import { startSolWorker } from "./client.js";
 import { agreement } from "./ceremony.js";
 import { base58 } from "./docs.js";
 import { feeOf } from "./fee.js";
-import { nonceAccountHex } from "./intent.js";
+import { PROPOSAL_SPACE, nonceAccountHex } from "./intent.js";
 import { holdsShare, refuseStopped, solOf, stopOf } from "./secrets.js";
 import { loadSnap, saveSnap } from "./store.js";
 
@@ -59,19 +61,24 @@ async function start(c, rpcUrl, roles, groupKey) {
   if (c.worker && c.inited === rpcUrl) return;
   await requireWorkerPolicy();
   c.worker ??= startSolWorker();
+  const { pda } = roles;
   const init = await c.worker.call("init", {
     rpcUrl,
     nullifierSecret: roles.nullifier_secret,
+    pdaNullifierSecret: pda.nullifier_secret,
     viewingSecret: roles.viewing_sk,
     groupKey,
+    pda: pda.pda,
   });
-  if (init.shielded !== roles.address || init.owner !== base58(groupKey)) {
+  const old = init.shielded === roles.address && init.owner === base58(groupKey);
+  const owner = init.pdaShielded === pda.address && init.pda === base58(pda.pda);
+  if (!old || !owner) {
     throw new Error(
       "The Solana worker made another address than the wasm. Do not use this wallet.",
     );
   }
   c.inited = rpcUrl;
-  c.workerAddress = "the SDK address equals the wasm address";
+  c.workerAddress = "the SDK addresses equal the wasm addresses";
 }
 
 /** The seat, the URL and the roles that the Worker needs, or an error that says what is missing. */
@@ -83,17 +90,21 @@ function workerInputs(c) {
   if (seat === undefined) throw new Error("This browser holds no Solana key share of this wallet.");
   if (!rpcUrl) throw new Error(UNAVAILABLE);
   const s = solOf(host, gid, seat);
-  return { rpcUrl, s, roles: J(W.sol_roles(s.solSeed, s.groupKey)) };
+  const roles = J(W.sol_roles(s.solSeed, s.groupKey));
+  return { rpcUrl, s, roles: { ...roles, pda: J(W.sol_pda_roles(s.solSeed, s.groupKey)) } };
 }
 
-/** The Worker of this tab, started if needed (it checks its own policy and its address). */
+/** The Worker of this tab, started if needed (it checks its own policy and its addresses). */
 export async function ensureWorker(c) {
   const { rpcUrl, s, roles } = workerInputs(c);
   await start(c, rpcUrl, roles, s.groupKey);
   return c.worker;
 }
 
-/** Starts the Worker if needed, syncs the wallet and seals the result into the snapshot store. */
+/**
+ * Starts the Worker if needed, syncs the funds of the group (the PDA identity) and the beta funds
+ * of the group key, and seals the result into the snapshot store.
+ */
 export async function syncSolana(c) {
   const { host, gid } = c;
   const { rpcUrl, s, roles } = workerInputs(c);
@@ -102,10 +113,13 @@ export async function syncSolana(c) {
   try {
     await start(c, rpcUrl, roles, s.groupKey);
     const r = await c.worker.call("sync");
+    const old = await c.worker.call("syncOld");
     const snap = { slot: r.slot, balance: r.balance, utxos: r.utxos, at: Date.now() };
+    snap.old = { balance: old.balance, utxos: old.utxos };
     await saveSnap(host.Z, roles.seal_key, gid, snap);
     c.sync = {
       balance: solText(r.balance),
+      oldBalance: old.balance,
       text: "synced at slot " + r.slot + ", " + c.workerAddress,
     };
   } catch (e) {
@@ -118,8 +132,9 @@ export async function syncSolana(c) {
 
 /**
  * Reads the public balance of the fee address of each seat of this browser that has one, the
- * public balance of the owner address (SOL that the group held before the fee keys) and whether
- * the nonce account exists.
+ * public balance of the group key (SOL that the group held before the fee keys), whether the
+ * nonce account of the beta exists (the move of the beta funds needs it), and the rent that a
+ * proposal account holds until it closes.
  */
 export async function refreshChain(c) {
   const { groupKey } = agreement(c).done;
@@ -128,14 +143,16 @@ export async function refreshChain(c) {
     nonce = base58(await nonceAccountHex(groupKey));
   const seats = c.host.localSeats().filter((i) => feeOf(c, i) !== null);
   const read = (account) => worker.call("balance", { account });
-  const [funds, held, ...fees] = await Promise.all([
+  const [funds, held, rent, ...fees] = await Promise.all([
     read(owner),
     read(nonce),
+    worker.call("rent", { space: String(PROPOSAL_SPACE) }),
     ...seats.map((i) => read(base58(feeOf(c, i).key))),
   ]);
   c.chain = {
     balance: solText(funds.lamports),
     nonce: held.lamports === "0" ? "missing" : "created",
+    proposalRent: rent.lamports,
     fees: Object.fromEntries(seats.map((seat, n) => [seat, solText(fees[n].lamports)])),
     at: Date.now(),
   };
@@ -152,6 +169,7 @@ export async function showSaved(c) {
     roles = J(W.sol_roles(s.solSeed, s.groupKey));
   const snap = await loadSnap(host.Z, roles.seal_key, gid);
   if (!snap || c.gid !== gid || c.sync.balance !== undefined) return;
-  c.sync = { balance: solText(snap.balance), text: "saved sync of slot " + snap.slot };
+  const oldBalance = snap.old?.balance;
+  c.sync = { balance: solText(snap.balance), oldBalance, text: "saved sync of slot " + snap.slot };
   host.render();
 }

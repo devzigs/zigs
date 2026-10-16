@@ -43,7 +43,7 @@ trap stop_server EXIT
 TESTS=(chat signed app requests account personal payees vault util qr
   sol-config sol-docs sol-ceremony sol-app sol-wasm sol-sessions sol-limits sol-pay sol-transfer
   sol-fee)
-HELPERS=(sol-rig sol-setup sol-chain sol-vector)
+HELPERS=(sol-rig sol-setup sol-chain sol-vector sol-fixture)
 for f in web/test/*.mjs; do
   name=$(basename "$f" .mjs)
   if [[ " ${TESTS[*]} ${HELPERS[*]} " != *" $name "* ]]; then

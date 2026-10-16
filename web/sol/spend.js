@@ -8,8 +8,10 @@
 // that never approved the earlier proposal cannot see a reused salt. Upgrade path: none without
 // a signed list of pairs in the group store.
 import { ZERO_KEY, bytesOf, wireBase64 } from "./intent.js";
+import { hex, parseTransact } from "./prepare.js";
 import { solOf } from "./secrets.js";
 import { ensureWorker } from "./session.js";
+import { isPayment } from "./sessions.js";
 
 /** The mint of SOL as the SDK writes it: the 32 byte all-zero key in base58. */
 const SOL_MINT = "1".repeat(32);
@@ -43,17 +45,29 @@ function inputsFound(sync, ids) {
   return found;
 }
 
+/** The salt and the first nullifier of a spend: of the first proof of a payment, else of its
+ * message. */
+async function pairOf(worker, ss) {
+  if (!isPayment(ss)) {
+    const tx = wireBase64(bytesOf(ss.message), new Uint8Array(0));
+    return worker.call("inspect", { tx });
+  }
+  const parsed = parseTransact(bytesOf(String(ss.transact)));
+  return { salt: hex(parsed.salt), firstNullifier: parsed.firstNullifier };
+}
+
 /**
- * Reads the snapshot of this device for the transfer `ss`: a fresh sync, the fee of the tree of
- * the inputs, and the salt and first nullifier of the message. The proposal supplies only the ids.
+ * Reads the snapshot of this device for the spend `ss`: a fresh sync of the identity that it spends
+ * (the PDA for a payment, the group key for the move of the beta funds), the fee of the tree of
+ * the inputs, and the salt and first nullifier of the proof. The proposal supplies only the ids.
  */
 export async function deviceSpend(c, ss) {
   const worker = await ensureWorker(c);
   const ids = Array.isArray(ss.inputIds) ? ss.inputIds : [];
-  const found = inputsFound(await worker.call("sync"), ids);
+  const synced = await worker.call(isPayment(ss) ? "sync" : "syncOld");
+  const found = inputsFound(synced, ids);
   const fees = await worker.call("treeFees", { tree: found[0].tree });
-  const tx = wireBase64(bytesOf(ss.message), new Uint8Array(0));
-  const seen = await worker.call("inspect", { tx });
+  const seen = await pairOf(worker, ss);
   return {
     fee: fees.feePerNullifier,
     inputs: found.map((u) => ({ mint: mintKey(u.mint), amount: u.amount, blinding: u.blinding })),

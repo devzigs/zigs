@@ -38,7 +38,9 @@ async function save(c, seat, make, failure) {
 
 /**
  * Saves the nonces of an approval, and with them the (first nullifier, salt) pair of a private
- * payment (spend.js). It throws when the save fails, so no commit goes out.
+ * payment (spend.js) and, for a payment of the program design, its commitment with the SHA-256 of
+ * its body (one body per commitment, ZOLANA.md 7.2). It throws when the save fails, so no commit
+ * goes out.
  */
 export const saveNonces = (c, seat, sid, entry) =>
   save(
@@ -47,9 +49,25 @@ export const saveNonces = (c, seat, sid, entry) =>
     () => ({
       nonces: { ...part(c, seat, "nonces"), [sid]: entry },
       ...(entry.spend ? { salts: { ...part(c, seat, "salts"), [sid]: entry.spend.pair } } : {}),
+      ...(entry.body ? { bodies: { ...part(c, seat, "bodies"), ...entry.body } } : {}),
     }),
     "Could not save the approval in this browser, so it was not sent.",
   );
+
+/**
+ * The (commitment, SHA-256 of the body) of every payment that a seat of this browser approved.
+ * ponytail: the list lives in this browser only, as the salts (SOL-8): a restored seat or another
+ * browser of the seat starts with none. Upgrade path: the body hash in the proposal address.
+ */
+export function approvedBodies(c) {
+  const seen = new Map();
+  for (const seat of c.host.localSeats()) {
+    for (const [commitment, body] of Object.entries(part(c, seat, "bodies"))) {
+      seen.set(commitment + body, { commitment, body });
+    }
+  }
+  return [...seen.values()];
+}
 
 /** The share is made: delete the nonces, mark the digest used, keep the share. One save. */
 export const spendNonces = (c, seat, sid, entry, share) =>

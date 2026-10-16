@@ -40,7 +40,9 @@ const blank = () => ({
   sessWait: 0,
   watching: new Map(),
   snaps: {},
+  seen: {},
   tries: {},
+  execErrors: {},
   added: null,
   savedShown: false,
 });
@@ -151,6 +153,11 @@ export async function attach(host) {
     refresh: () => refreshChain(c),
     propose: (kind, args) => propose(c, kind, args),
     approve: (ss, seat) => approve(c, ss, seat),
+    /** Tries the execute of a signed payment again, after the tries of this tab ran out. */
+    execute(ss) {
+      delete c.tries[ss.id];
+      host.render();
+    },
     async addSol(args) {
       c.added = await addSol(c, args);
       await refreshChain(c).catch(() => {});

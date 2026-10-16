@@ -7,8 +7,15 @@
 // key), a payer with no SOL for the fee is refused, and a transaction that the group signed
 // advances the nonce when it lands. A transaction that the group does not sign (Add SOL) uses a
 // recent blockhash and leaves the nonce alone.
-import { createPublicKey, randomBytes, verify } from "node:crypto";
+//
+// The approvals program (ZOLANA.md 7.2) is modelled too: `create` stores the proposal account at
+// the address that its body gives, and `execute` lands only after an Ed25519 instruction whose
+// signature Node verifies under the group key over the approval digest of the stored body; it
+// closes the account. `reprove` answers from `chain.reproved`, as the prover would.
+import { createHash, createPublicKey, randomBytes, verify } from "node:crypto";
 import { base58 } from "../sol/docs.js";
+import { nonceAccountHex } from "../sol/intent.js";
+import * as kit from "../sol/zolana.bundle.js";
 import { config } from "./sol-rig.mjs";
 
 const POLICY =
@@ -26,6 +33,107 @@ export function verifies(groupKeyHex, message, signature) {
 }
 
 const FEE = 5000n;
+const PROGRAM = "5PHZEHBMaYbFL9SFmMyP8kUayh3TFEyq2dvEYY3UGjkL";
+const ED25519 = "Ed25519SigVerify111111111111111111111111111";
+const GENESIS = "EtWTRABZaYq6iMfeYKouRu166VU2xqa1wcaWoxPkrZBG";
+const keyHex = (address) => hex(kit.getAddressEncoder().encode(address));
+const PDA_MARKER = Buffer.from("ProgramDerivedAddress");
+const sha256 = (...parts) => {
+  const h = createHash("sha256");
+  parts.forEach((p) => h.update(p));
+  return h.digest();
+};
+
+/** The chain view of a group: its keys, its two addresses and its nonce account. */
+export async function chainGroup(W, done, solSeed) {
+  const roles = JSON.parse(W.sol_roles(solSeed, done.groupKey));
+  const pda = JSON.parse(W.sol_pda_roles(solSeed, done.groupKey));
+  return {
+    key: done.groupKey,
+    owner: base58(done.groupKey),
+    shielded: roles.address,
+    nonceAccount: base58(await nonceAccountHex(done.groupKey)),
+    pda: base58(pda.pda),
+    pdaShielded: pda.address,
+  };
+}
+
+/** The instructions of a v1 message: program, account addresses and data (hex). */
+function instructionsOf(message) {
+  const m = kit.getCompiledTransactionMessageDecoder().decode(message);
+  const keys = m.staticAccounts;
+  return m.instructionHeaders.map((head, i) => ({
+    program: keys[head.programAccountIndex],
+    accounts: [...m.instructionPayloads[i].instructionAccountIndices].map((at) => keys[at]),
+    data: hex(m.instructionPayloads[i].instructionData),
+  }));
+}
+
+/** The canonical bump of a proposal address: the bump whose hash is the address. */
+function bumpOf(address, body) {
+  const seeds = [Buffer.from("proposed_transaction"), Buffer.from(body.slice(64, 128), "hex")];
+  seeds.push(Buffer.from(body.slice(0, 64), "hex"));
+  const program = Buffer.from(keyHex(PROGRAM), "hex");
+  for (let bump = 255; bump >= 0; bump--) {
+    const made = sha256(...seeds, Buffer.from([bump]), program, PDA_MARKER);
+    if (made.toString("hex") === keyHex(address)) return bump;
+  }
+  return null;
+}
+
+/** Why the program refuses one instruction (`ixs[i]`), or null. */
+function refusalOf(chain, ixs, i) {
+  const ix = ixs[i],
+    proposal = ix.accounts[1];
+  if (ix.data.startsWith("00")) {
+    if (chain.accounts.has(proposal)) return "AccountAlreadyInUse";
+    return bumpOf(proposal, ix.data.slice(2)) === null ? "Custom 6005" : null;
+  }
+  if (!ix.data.startsWith("01")) return "InvalidInstructionData";
+  const stored = chain.accounts.get(proposal);
+  if (!stored) return "Custom 6001";
+  return approves(chain, ixs[i - 1], proposal, stored.data.slice(4)) ? null : "Custom 6012";
+}
+
+/** Why the approvals program would refuse the message, or null (the effects come in `land`). */
+function programRefusal(chain, ixs) {
+  for (const [i, ix] of ixs.entries()) {
+    const refusal = ix.program === PROGRAM ? refusalOf(chain, ixs, i) : null;
+    if (refusal) return refusal;
+  }
+  return null;
+}
+
+/** The instruction before `execute` verifies the group signature over the approval digest. */
+function approves(chain, approval, proposal, body) {
+  if (!approval || approval.program !== ED25519 || approval.data.length !== 288) return false;
+  const d = approval.data;
+  const [key, sig, digest] = [d.slice(32, 96), d.slice(96, 224), d.slice(224)];
+  const want = sha256(
+    Buffer.from("Zigs_SolApproval_v1"),
+    Buffer.from(keyHex(GENESIS), "hex"),
+    Buffer.from(keyHex(PROGRAM), "hex"),
+    Buffer.from(keyHex(proposal), "hex"),
+    Buffer.from(body, "hex"),
+  ).toString("hex");
+  const group = body.slice(64, 128);
+  const signed = verifies(group, Buffer.from(want, "hex"), Buffer.from(sig, "hex"));
+  return key === group && digest === want && signed;
+}
+
+/** The effects of a landed message on the approvals program, and the history of its accounts. */
+function programLanded(chain, ixs, signature) {
+  for (const ix of ixs.filter((x) => x.program === PROGRAM)) {
+    const proposal = ix.accounts[1];
+    const seen = chain.history.get(proposal) ?? [];
+    chain.history.set(proposal, [{ signature, failed: false, slot: "11" }, ...seen]);
+    if (ix.data.startsWith("00")) {
+      const body = ix.data.slice(2);
+      const bump = bumpOf(proposal, body).toString(16).padStart(2, "0");
+      chain.accounts.set(proposal, { owner: keyHex(PROGRAM), data: "01" + bump + body });
+    } else chain.accounts.delete(proposal);
+  }
+}
 // A v1 transaction: the message, then one signature per required signer (byte 1 of the message).
 // The keys of the message start at byte 42.
 const wire = (tx) => {
@@ -70,7 +178,8 @@ function signatureRefusal({ message, sigs, keys }) {
 function refusal(chain, parts, strict) {
   if (chain.refuse) return chain.refuse;
   const found = lifetimeRefusal(chain, parts) ?? feeRefusal(chain, parts);
-  return found ?? (strict ? signatureRefusal(parts) : null);
+  const signed = found ?? (strict ? signatureRefusal(parts) : null);
+  return signed ?? programRefusal(chain, instructionsOf(parts.message));
 }
 
 function land(chain, parts) {
@@ -83,21 +192,42 @@ function land(chain, parts) {
   chain.landed.push({ signature, message: hex(parts.message), sigs, sig: sigs.at(-1) });
   // The nonce account is created or advanced by a transaction that the group signs.
   if (groupSigns(chain, parts)) chain.nonce = hex(randomBytes(32));
+  programLanded(chain, instructionsOf(parts.message), signature);
   return { signature };
 }
 
 /** The answer of each command of web/sol/guard.js that the page uses, from the model. */
 function answersOf(chain) {
   const answers = {
-    init: () => ({ hasherMs: 1, ownerHash: "00", ...pick(chain.group, ["owner", "shielded"]) }),
+    init: () => ({
+      hasherMs: 1,
+      ownerHash: "00",
+      pdaOwnerHash: "00",
+      ...pick(chain.group, ["owner", "shielded", "pda", "pdaShielded"]),
+    }),
     sync: () => ({ slot: "9", balance: "0", utxos: chain.utxos, storedUtxos: 0, undecryptable: 0 }),
+    syncOld: () => ({
+      slot: "9",
+      balance: String(chain.oldUtxos.reduce((sum, u) => sum + BigInt(u.amount), 0n)),
+      utxos: chain.oldUtxos,
+      storedUtxos: 0,
+      undecryptable: 0,
+    }),
+    account: ({ account }) => {
+      const found = chain.accounts.get(account);
+      return found ? { exists: true, lamports: "1356360", ...found } : { exists: false };
+    },
+    rent: ({ space }) => ({ lamports: String(5080n * (128n + BigInt(space))) }),
+    history: ({ account }) => chain.history.get(account) ?? [],
+    reprove: (args) => chain.reproved(args),
     treeFees: () => ({
       feePerNullifier: chain.fee,
       appendReimbursement: "0",
       closeReimbursement: "0",
       feeBalance: "0",
     }),
-    inspect: () => chain.inspected,
+    inspect: (args) =>
+      typeof chain.inspected === "function" ? chain.inspected(args) : chain.inspected,
     prepare: (args) => chain.prepared(args),
     blockhash: () => {
       const value = hex(randomBytes(32));
@@ -169,6 +299,13 @@ export function makeChain() {
       // answer of prepare: (args) => the prepared payment
       throw new Error("no payment is prepared");
     },
+    reproved: () => {
+      // answer of reprove: (args) => { data }, the transact data of a new proof
+      throw new Error("no payment is proved again");
+    },
+    oldUtxos: [], // what the sync of the group key returns: the beta funds before the move
+    accounts: new Map(), // the proposal accounts of the approvals program, by address
+    history: new Map(), // per proposal address: the transactions that touched it, newest first
     nonce: null, // the current nonce value (hex) once the account exists
     blockhashes: new Set(),
     landed: [], // { signature, message, sig }

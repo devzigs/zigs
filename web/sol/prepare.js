@@ -1,6 +1,7 @@
-// Pure helpers of the Worker command prepare. No import, so Node tests load this file as it is.
-// They cut the pool instruction out of a message, read it, and turn the body of the prover call
-// into the plaintext plan of ZOLANA.md section 5 (the Plan of the checker, not trusted by it).
+// Pure helpers of the Worker commands prepare and reprove. No import, so Node tests load this file
+// as it is. They cut the pool instruction out of a message, read it, compute its commitment, and
+// turn the body of the prover call into the plaintext plan of ZOLANA.md section 5 (the Plan of the
+// checker, not trusted by it).
 
 const ZERO_KEY = "0".repeat(64);
 // The asset field of SOL in the prover body: the hash of the 32 zero bytes of its mint (the SDK
@@ -37,17 +38,19 @@ function cursor(data) {
   return {
     take,
     done: () => at === data.length,
+    rest: () => data.length - at,
     u8: () => take(1)[0],
     u16: () => read(2, (s) => view.getUint16(s, true)),
     u64: () => read(8, (s) => view.getBigUint64(s, true)),
   };
 }
 
-function skipOutput(c) {
-  c.take(32);
-  if (c.u8() === 0) c.take(32);
-  else c.u8();
-  if (c.u8() === 1) c.take(c.u16());
+/** One output: its hash, its owner tag (inline: the 32 byte tag; account: null) and its data. */
+function readOutput(c) {
+  const utxoHash = hex(c.take(32));
+  const tag = c.u8() === 0 ? hex(c.take(32)) : (c.u8(), null);
+  const data = c.u8() === 1 ? hex(c.take(c.u16())) : null;
+  return { utxoHash, tag, data };
 }
 
 function skipTransfers(c) {
@@ -65,19 +68,24 @@ function skipMessages(c) {
   }
 }
 
-/** Reads the head of the data and counts the rest. The parse must end on the last byte. */
+/**
+ * Reads the data: the head, the outputs (`published`), `private_tx_hash` and the length of the
+ * external-data prefix (`prefixLength`: the bytes before `private_tx_hash`, which the commitment
+ * hashes), and counts the rest. The parse must end on the last byte.
+ */
 export function parseTransact(data) {
   const c = cursor(data);
   if (c.u8() !== TAG_TRANSACT) throw new Error("not a transact instruction");
   const expiry = c.u64();
-  c.take(33);
+  const txViewingPk = hex(c.take(33));
   const salt = Uint8Array.from(c.take(16));
   skipTransfers(c);
   for (let i = 0; i < 2; i++) if (c.u8() === 1) c.take(32);
   const outputs = c.u8();
-  for (let n = outputs; n > 0; n--) skipOutput(c);
+  const published = Array.from({ length: outputs }, () => readOutput(c));
   skipMessages(c);
-  c.take(32);
+  const prefixLength = data.length - c.rest();
+  const privateTxHash = hex(c.take(32));
   if (c.u16() !== 0) throw new Error("the circuit is not the default ring");
   c.take(3 + 192);
   const inputs = c.u8();
@@ -86,7 +94,53 @@ export function parseTransact(data) {
   c.take(4 * c.u8());
   if (!c.done()) throw new Error("bytes follow the transact data");
   const firstNullifier = inputs > 0 ? hex(nullifiers.subarray(0, 32)) : "";
-  return { expiry, salt, outputs, inputs, firstNullifier };
+  return {
+    expiry,
+    salt,
+    outputs,
+    inputs,
+    firstNullifier,
+    txViewingPk,
+    published,
+    privateTxHash,
+    prefixLength,
+  };
+}
+
+const sha256 = async (bytes) => new Uint8Array(await crypto.subtle.digest("SHA-256", bytes));
+
+/**
+ * The commitment of `transact` data (hex): SHA-256(private_tx_hash || external-data hash), the
+ * external-data hash being SHA-256 of the prefix with its first byte cleared (a BN254 field), as
+ * the approvals program computes it (ZOLANA.md 7.2). The approval of the group binds this value.
+ */
+export async function commitmentOf(data) {
+  const { prefixLength } = parseTransact(data);
+  const external = await sha256(data.subarray(0, prefixLength));
+  external[0] = 0;
+  const preimage = new Uint8Array(64);
+  preimage.set(data.subarray(prefixLength, prefixLength + 32));
+  preimage.set(external, 32);
+  return hex(await sha256(preimage));
+}
+
+const ROLES = ["payee", "change", "dummy"];
+
+/**
+ * The plan of a proposal (the wire form of web/sol/intent.js planHex, hex): the root seed and each
+ * output slot with its role, mint, amount and blinding. The whole text must be read.
+ */
+export function parsePlan(text) {
+  if (typeof text !== "string" || !/^([0-9a-f]{2})+$/.test(text)) throw new Error("bad plan");
+  const c = cursor(Uint8Array.from(text.match(/../g), (h) => parseInt(h, 16)));
+  const blindingSeed = hex(c.take(32));
+  const outputs = Array.from({ length: c.u8() }, () => {
+    const role = ROLES[c.u8()];
+    if (role === undefined) throw new Error("the plan has an unknown output role");
+    return { role, mint: hex(c.take(32)), amount: c.u64().toString(), blinding: hex(c.take(32)) };
+  });
+  if (!c.done()) throw new Error("bytes follow the plan");
+  return { blindingSeed, outputs };
 }
 
 /** A prover field "0x1f..." as 32 big-endian bytes in hex. */

@@ -5,6 +5,7 @@
 import * as real from "../../web/sol/zolana.bundle.js";
 
 const OWNER = "B1o5q9sWLRVY2uk43bd1GLLPcNmhqJQ53CfKKxKzeShD";
+const PDA = "UgrqxxdDh3m4pf1DLYGw6fnzk9NGuWJaUnerUp4Mxqd";
 
 export const control = {
   /** The names of the SDK calls that the Worker made, in order. */
@@ -19,6 +20,14 @@ export const control = {
   inputs: () => {
     throw new Error("no proof inputs");
   },
+  /** (request) => proofInputs with messageHash(): the rebuild of an approved payment. */
+  rebuild: () => {
+    throw new Error("no rebuild");
+  },
+  /** The request of the last rebuild, and the identities that the builders got. */
+  rebuilt: null,
+  /** The identity of the wallet of the last sync. */
+  synced: null,
   /** async (proofInputs) => data: client.proveTransact. It may post a prover body first. */
   prove: async () => {
     throw new Error("no prover");
@@ -55,11 +64,14 @@ const solanaRpc = new Proxy(
   },
 );
 
-const address = {
-  solanaAddress: () => OWNER,
-  toBytes: () => Uint8Array.from({ length: 4 }, (_v, i) => i + 1),
-  ownerHash: () => Uint8Array.from({ length: 4 }, (_v, i) => 0xf0 + i),
-};
+const addressOf = (owner, first) => ({
+  solanaAddress: () => owner,
+  toBytes: () => Uint8Array.from({ length: 4 }, (_v, i) => first + i),
+  ownerHash: () => Uint8Array.from({ length: 4 }, (_v, i) => 0xf0 + first + i),
+});
+/** The address of the group key (1, 2, 3, 4) and of the PDA identity (9, 10, 11, 12). */
+const address = addressOf(OWNER, 1);
+const pdaAddress = addressOf(PDA, 9);
 
 export const SOL_MINT = "SOL";
 export const SHIELDED_POOL_PROGRAM_ID = real.SHIELDED_POOL_PROGRAM_ID;
@@ -71,10 +83,17 @@ export const getCompiledTransactionMessageDecoder = real.getCompiledTransactionM
 export const ViewingKey = { fromBytes: () => ({ publicKey: () => ({}) }) };
 export const NullifierKey = { fromSecret: () => ({ publicKey: () => ({}) }) };
 export const ShieldedPublicKey = { fromEd25519: () => ({}) };
-export const ShieldedAddress = { fromPublicKeys: () => address, fromBytes: () => ({}) };
+export const ShieldedAddress = {
+  fromPublicKeys: () => address,
+  forPda: () => pdaAddress,
+  fromBytes: () => ({}),
+};
 export const LocalKeys = { fromKeys: () => ({}) };
 
 export class Wallet {
+  constructor({ identity } = {}) {
+    this.identity = identity;
+  }
   balance() {
     return { amount: 0n };
   }
@@ -94,8 +113,9 @@ export async function createZolanaClient(options) {
   return { proofService: {}, solanaRpc, tree: "TREE", proveTransact };
 }
 
-export async function syncWallet() {
+export async function syncWallet({ wallet } = {}) {
   note("syncWallet");
+  control.synced = wallet?.identity;
   return { storedUtxos: control.utxos.length, undecryptableCandidates: 0 };
 }
 
@@ -113,8 +133,15 @@ export function ownerSigners(_sdk, proofInputs) {
 }
 
 /** web/sol/transfer.js, resolved to this file by the hook of worker.test.mjs. */
-export function buildProofInputs(_sdk, session, _wallet, request) {
+export function buildProofInputs(_sdk, _client, identity, _wallet, request) {
   note("buildProofInputs");
-  control.request = { session, ...request };
+  control.request = { identity, ...request };
   return control.inputs(request);
+}
+
+/** The rebuild of transfer.js: records the identity and the request. */
+export function rebuildProofInputs(_sdk, _client, identity, _wallet, request) {
+  note("rebuildProofInputs");
+  control.rebuilt = { identity, ...request };
+  return control.rebuild(request);
 }

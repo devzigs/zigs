@@ -56,6 +56,12 @@ const needR1 = (c, i, s) => !c.docs.soldkg1[i] && !s.keyPackage;
 const needR2 = (c, s) => !!s.r1secret && !s.r2secret && !s.keyPackage && allR1(c);
 const needR3 = (c, i, s) => !!s.r2secret && !s.keyPackage && allR1(c) && r2For(c, i);
 const needDone = (c, i, s) => !!s.keyPackage && !s.doneSent && !c.docs.soldone[i];
+// A seat that published its soldone before the program design publishes it again with the PDA
+// identity, once the seats agree on the rest.
+const needPdaDoc = (c, i, s) => {
+  const doc = c.docs.soldone[i];
+  return holdsShare(s) && !!doc && !hasPda(doc) && agreement(c).state === "agree";
+};
 
 /** Seals the failure into the seat: the reactor does not retry a seat that stopped. */
 async function abortSeat(c, i, e) {
@@ -212,7 +218,21 @@ async function round3(c, i) {
     );
 }
 
-/** The soldone fields of a seat: the group key, the public keys, the address, cluster, label. */
+/** The PDA identity that a key share and solSeed give (ZOLANA.md 7.2), as soldone names it. */
+export function pdaFields(W, s) {
+  const pda = J(W.sol_pda_roles(s.solSeed, s.groupKey));
+  return {
+    pda: pda.pda,
+    pdaNullifierPk: pda.nullifier_pk,
+    pdaOwnerHash: pda.owner_hash,
+    pdaAddress: pda.address,
+  };
+}
+
+/**
+ * The soldone fields of a seat: the group key, the public keys, the address of the group key,
+ * cluster, label, and the PDA identity that owns the funds of the program design.
+ */
 function doneFields(W, s) {
   const roles = J(W.sol_roles(s.solSeed, s.groupKey));
   return {
@@ -223,6 +243,7 @@ function doneFields(W, s) {
     address: roles.address,
     cluster: CLUSTER,
     program: W.sol_program_label(),
+    ...pdaFields(W, s),
     at: Date.now(),
   };
 }
@@ -249,6 +270,7 @@ const STEPS = [
   ["r2", (c, i, s, open) => open && needR2(c, s), round2],
   ["r3", (c, i, s) => needR3(c, i, s), round3],
   ["done", (c, i, s) => needDone(c, i, s), publishDone],
+  ["pdadoc", (c, i, s) => needPdaDoc(c, i, s), publishDone],
   ["feedoc", (c, i) => c.loaded.solfee && feeUnpublished(c, i), publishFee],
 ];
 
@@ -321,16 +343,31 @@ export function seatProgress(c, i) {
   return "Seat " + i + " has not started";
 }
 
-/** True when a Solana key share and solSeed give the keys and the address that `done` publishes. */
+const PDA_SHAPES = {
+  pda: HEX(32),
+  pdaNullifierPk: HEX(32),
+  pdaOwnerHash: HEX(32),
+  pdaAddress: HEX(99),
+};
+const PDA_FIELDS = Object.keys(PDA_SHAPES);
+/** A soldone from before the program design has no PDA field. */
+const hasPda = (d) => PDA_FIELDS.some((k) => d[k] !== undefined);
+const pdaShaped = (d) => Object.entries(PDA_SHAPES).every(([k, ok]) => ok(d[k]));
+
+/**
+ * True when a Solana key share and solSeed give the keys and the address that `done` publishes,
+ * and the PDA identity too when `done` names one.
+ */
 export function fitsSolana(W, seat, s, done) {
   if (!done || !fitsPublished(seat, s, done)) return false;
   try {
     const r = J(W.sol_roles(s.solSeed, s.groupKey));
-    return (
+    const same =
       r.nullifier_pk === done.nullifierPk &&
       r.viewing_pk === done.viewingPk &&
-      r.address === done.address
-    );
+      r.address === done.address;
+    const pda = pdaFields(W, s);
+    return same && (!hasPda(done) || PDA_FIELDS.every((k) => pda[k] === done[k]));
   } catch {
     return false;
   }
@@ -342,6 +379,26 @@ const shaped = (W, d) =>
   Object.entries(SHAPES).every(([k, ok]) => ok(d[k])) &&
   d.cluster === CLUSTER &&
   d.program === W.sol_program_label();
+
+/** The documents that name a PDA identity name the same one, with every field well formed. */
+function samePda(dones) {
+  const named = dones.filter(hasPda);
+  return (
+    named.every(pdaShaped) && named.every((d) => PDA_FIELDS.every((k) => d[k] === named[0][k]))
+  );
+}
+
+/**
+ * The PDA identity of the agreed group: from the documents that name it, or from a key share of
+ * this browser (it fits the published keys, so its seed is the seed of the group). Empty when
+ * neither has it.
+ */
+function pdaOf(c, dones) {
+  const named = dones.find(hasPda);
+  if (named) return Object.fromEntries(PDA_FIELDS.map((k) => [k, named[k]]));
+  const seat = c.host.localSeats().find((i) => holdsShare(solOf(c.host, c.gid, i)));
+  return seat === undefined ? {} : pdaFields(c.W, solOf(c.host, c.gid, seat));
+}
 
 /**
  * What the seats published. "wait": a seat has not finished. "agree": every soldone is equal and
@@ -355,11 +412,11 @@ export function agreement(c) {
   const same =
     SAME.every((k) => dones.every((d) => d[k] === dones[0][k])) &&
     samePackages(dones.map((d) => d.publicKeyPackage));
-  if (!same || !shaped(W, dones[0]))
+  if (!same || !shaped(W, dones[0]) || !samePda(dones))
     return { state: "differ", why: "The signers published different Solana keys." };
   const mine = host.localSeats().filter((i) => solOf(host, c.gid, i).keyPackage);
   const bad = mine.find((i) => !fitsSolana(W, i, solOf(host, c.gid, i), docs.soldone[i]));
   if (bad)
     return { state: "differ", why: "The Solana key share of seat " + bad + " does not fit." };
-  return { state: "agree", done: dones[0] };
+  return { state: "agree", done: { ...dones[0], ...pdaOf(c, dones) } };
 }

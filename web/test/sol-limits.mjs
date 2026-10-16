@@ -5,16 +5,17 @@
 //      session that ended gives its watches back.
 //  D2  After a transaction landed, every other session on the same nonce can never land, but it
 //      stayed "collecting" with an Approve button that fails. Now every device ends it, from the
-//      signed documents alone (no RPC read, so a node that lags cannot kill a live session).
+//      signed documents alone (no RPC read, so a node that lags cannot kill a live session). The
+//      nonce payments left are the moves of the beta funds (sol-fixture.mjs), and the register
+//      sessions of the beta that a wallet may still hold.
 // Run: node web/test/sol-limits.mjs   (Node 24)
 import assert from "node:assert/strict";
 import { approve } from "../sol/approve.js";
 import { base58 } from "../sol/docs.js";
-import { bytesOf, hexOf, intentHex, pinsHex } from "../sol/intent.js";
-import { feeOf } from "../sol/fee.js";
 import { savedNonces } from "../sol/nonces.js";
 import { filterSessions, writePart } from "../sol/sessions.js";
 import { solView } from "../sol/view.js";
+import { G, preparedOf, useTestGroup, utxoOf } from "./sol-fixture.mjs";
 import { sleep } from "./sol-rig.mjs";
 import {
   W,
@@ -22,8 +23,9 @@ import {
   chain,
   data,
   done,
+  feeAddress,
   gid,
-  landedRegister,
+  landedSession,
   notify,
   path,
   proposed,
@@ -42,7 +44,7 @@ const noWatches = (rel, what) => waitFor(what, () => watches(rel) === 0, 10000);
 // ── D1: more than 50 sessions that all landed ──
 await withNonceAccount();
 const SESSIONS = 52;
-for (let k = 0; k < SESSIONS; k++) await landedRegister();
+for (let k = 0; k < SESSIONS; k++) await landedSession();
 assert.equal(chain.landed.length, SESSIONS + 1, "every proposal landed, the last ones too");
 await noWatches("solsessions/", "a session that ended gives its watches back");
 step("52 sessions land one after the other and release their watches");
@@ -51,16 +53,17 @@ step("52 sessions land one after the other and release their watches");
 for (let k = 0; k < 60; k++) data.set(path(gid, `solsessions/junk-${k}`), { x: k });
 notify();
 await sleep(300);
-await landedRegister();
+await landedSession();
 assert.equal(watches("solsessions/junk"), 0, "a document with no valid proposal is not watched");
 await noWatches("solsessions/", "no watch is left");
 step("60 junk documents take no watch");
 
 // ── D1 and D2: many open sessions on one nonce, then one lands ──
 const nonce = chain.nonce;
-const register = intentHex("register", { nonce, ...done });
-const pins = bytesOf(pinsHex(done, feeOf(c, 1).key));
-const message = hexOf(W.compile_message(bytesOf(register), pins, new Uint8Array(0)));
+// The register intent of the beta (01): the page no longer builds it, so the bytes are written
+// here. The lifetime of the message (bytes 8 to 40) is the nonce.
+const register = "01" + nonce + done.nullifierPk + done.viewingPk;
+const message = "00".repeat(8) + nonce + "00".repeat(120);
 const OPEN = 55;
 for (let k = 0; k < OPEN; k++) {
   const fields = { intent: register, message, feeSig: "33".repeat(64) };
@@ -81,9 +84,21 @@ assert.ok(watches("solsessions/") <= 100, "at most 50 sessions, two watches each
 assert.ok(watches("solsessions/") >= 2, "the open sessions are watched");
 step("55 open sessions are watched within the cap");
 
-// Two proposals on one nonce have the same bytes: the landing of one ends the other.
-const first = await proposed("register");
-const second = await proposed("register");
+// Two moves on one nonce: the landing of one ends the other, and the open register sessions of
+// the beta on that nonce too.
+await useTestGroup(c, { gid, data, notify, waitFor, path, W, chain });
+for (const i of [1, 2, 3]) chain.balances.set(feeAddress(i), 50_000_000n);
+chain.oldUtxos = [utxoOf(G.migrate)];
+const moves = [G.migrate, G.migrate2];
+chain.prepared = (args) => preparedOf(moves.shift(), args);
+chain.inspected = ({ tx }) => {
+  const payment = Buffer.from(tx, "base64").toString("hex").includes(G.migrate2.salt)
+    ? G.migrate2
+    : G.migrate;
+  return { salt: payment.salt, firstNullifier: payment.inputs[0].nullifier };
+};
+const first = await proposed("migrate");
+const second = await proposed("migrate");
 await approve(c, ssOf(second), 3);
 assert.ok(savedNonces(c, 3, second), "seat 3 holds nonces for the second proposal");
 await approve(c, ssOf(first), 1);
@@ -197,7 +212,8 @@ step("the rule needs no chain read");
 
 // ── D1: closing the wallet stops the watches of its open sessions too ──
 {
-  const open = await proposed("register");
+  chain.nonce = null;
+  const open = await proposed("createNonce");
   await waitFor("the open session is watched", () => c.watching.has(open));
   assert.ok(watches("solsessions/") >= 2, "the commits and shares of the open session");
   t.sol.close();

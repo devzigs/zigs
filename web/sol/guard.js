@@ -1,6 +1,7 @@
 // Command schema and redaction of the Solana Worker. This file has no import, so Node tests load
-// it as it is. The Worker gets the two role secrets and nothing else (ZOLANA.md 3.3): a field
-// outside its schema is refused by name, so a FROST share, solSeed or a nonce cannot reach it.
+// it as it is. The Worker gets the role secrets (the viewing key and the nullifier secrets of the
+// group key and of the PDA identity) and nothing else (ZOLANA.md 3.3): a field outside its schema
+// is refused by name, so a FROST share, solSeed or a nonce cannot reach it.
 
 const LOOPBACK = new Set(["127.0.0.1", "localhost", "[::1]"]);
 const HELIUS_HOST = "devnet.helius-rpc.com";
@@ -24,7 +25,10 @@ const base64 = (v) =>
   typeof v === "string" && v.length > 0 && v.length <= 8192 && /^[A-Za-z0-9+/]+={0,2}$/.test(v);
 const decimal = (v) => typeof v === "string" && /^(0|[1-9][0-9]{0,19})$/.test(v);
 const addressHex = (v) => typeof v === "string" && /^([0-9a-f]{2}){1,256}$/.test(v);
-const transfer = (v) => v === "transfer";
+const payKind = (v) => v === "pay" || v === "migrate";
+const hexText = (v) => typeof v === "string" && v.length <= 16384 && /^([0-9a-f]{2})+$/.test(v);
+const idList = (v) =>
+  Array.isArray(v) && v.length >= 1 && v.length <= 40 && v.every(hexOf(32));
 
 function hostAllowed(url) {
   if (LOOPBACK.has(url.hostname)) {
@@ -50,19 +54,33 @@ export const SCHEMA = {
   init: {
     rpcUrl,
     nullifierSecret: hexOf(31),
+    pdaNullifierSecret: hexOf(31),
     viewingSecret: hexOf(32),
     groupKey: hexOf(32),
+    pda: hexOf(32),
   },
   sync: {},
+  syncOld: {},
+  account: { account: base58 },
+  rent: { space: decimal },
+  history: { account: base58 },
   blockhash: {},
   readNonce: { account: base58 },
   treeFees: { tree: base58 },
   prepare: {
-    kind: transfer,
+    kind: payKind,
     recipient: addressHex,
     amount: decimal,
     expiry: decimal,
     payer: base58,
+  },
+  reprove: {
+    recipient: addressHex,
+    payer: base58,
+    plan: hexText,
+    inputIds: idList,
+    transact: hexText,
+    commitment: hexOf(32),
   },
   inspect: { tx: base64 },
   balance: { account: base58 },

@@ -6,9 +6,8 @@ import { approve } from "../sol/approve.js";
 import { agreement } from "../sol/ceremony.js";
 import { base58 } from "../sol/docs.js";
 import { feeOf } from "../sol/fee.js";
-import { nonceAccountHex } from "../sol/intent.js";
 import { propose } from "../sol/propose.js";
-import { makeChain } from "./sol-chain.mjs";
+import { chainGroup, makeChain } from "./sol-chain.mjs";
 import { loadRig } from "./sol-rig.mjs";
 
 export const rig = await loadRig();
@@ -24,14 +23,8 @@ await waitFor("every soldone", ready, 30000);
 export const c = t.sol.ctl;
 await waitFor("agreement", () => agreement(c).state === "agree");
 export const done = agreement(c).done;
-const roles = J(W.sol_roles(solOf(1).solSeed, done.groupKey));
 export const chain = makeChain();
-chain.group = {
-  key: done.groupKey,
-  owner: base58(done.groupKey),
-  shielded: roles.address,
-  nonceAccount: base58(await nonceAccountHex(done.groupKey)),
-};
+chain.group = await chainGroup(W, done, solOf(1).solSeed);
 chain.balances.set(chain.group.owner, 50_000_000n);
 await waitFor("every fee key published", () =>
   [1, 2, 3].every((i) => feeOf(c, i) && c.docs.solfee[i]?.key === feeOf(c, i).key),
@@ -60,13 +53,11 @@ export async function withNonceAccount() {
 }
 
 /**
- * One registration that seats 1 and 2 approve, and that lands. The fake chain keeps no registry,
- * so a wallet may register again here: the test needs an intent that signs and lands.
+ * One session that seats 1 and 2 approve and that lands: the nonce account again. The fake chain
+ * forgets the account first, so a wallet may create it again here: the test needs an intent that
+ * the group signs and that lands, and the beta signs no other plain intent.
  */
-export async function landedRegister() {
-  const id = await proposed("register");
-  await approve(c, ssOf(id), 1);
-  await approve(c, ssOf(id), 2);
-  await waitStatus(id, "sent", 30000);
-  return id;
+export async function landedSession() {
+  chain.nonce = null;
+  return withNonceAccount();
 }

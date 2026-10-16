@@ -1,11 +1,20 @@
 // The Solana Worker (ZOLANA.md 3.3). It owns all Helius traffic: sync, witness, proof request and
-// the RPC calls of a proposal. The page gives it the two role secrets of the group, never the
-// FROST share, solSeed or a nonce. The response of this script carries its own CSP (cf/src), so
+// the RPC calls of a proposal. The page gives it the role secrets of the group, never the FROST
+// share, solSeed or a nonce. The group has two shielded identities: the PDA of the approvals
+// program, which owns the funds (ZOLANA.md 7.2), and the group key, which owned the funds of the
+// beta until they move to the PDA. The response of this script carries its own CSP (cf/src), so
 // the policy binds this file and every module that it imports.
 import * as sdk from "/sol/zolana.bundle.js";
 import { checkCommand, makeRedactor } from "/sol/guard.js";
-import { cutTransact, hex, parseTransact, planFromProve } from "/sol/prepare.js";
-import { buildProofInputs, ownerSigners } from "/sol/transfer.js";
+import {
+  commitmentOf,
+  cutTransact,
+  hex,
+  parsePlan,
+  parseTransact,
+  planFromProve,
+} from "/sol/prepare.js";
+import { buildProofInputs, ownerSigners, rebuildProofInputs } from "/sol/transfer.js";
 
 // Caps of the P3 template (ZOLANA.md 5): the compute limit of a transact.
 const COMPUTE_UNITS = 217_000;
@@ -41,23 +50,47 @@ function guardedFetch(origin, trace) {
   };
 }
 
+/** One identity: its address, its keys, its synced wallet and the owner that never pays. */
+function identityOf(client, address, nullifierSecret, viewingSecret, groupOwner) {
+  const viewing = sdk.ViewingKey.fromBytes(viewingSecret);
+  const nullifierKey = sdk.NullifierKey.fromSecret(nullifierSecret);
+  const full = address(nullifierKey.publicKey(), viewing.publicKey());
+  const parts = { address: full, viewingKeys: [viewing], nullifierKey };
+  return {
+    address: full,
+    viewing,
+    keys: sdk.LocalKeys.fromKeys(parts, client.proofService),
+    wallet: new sdk.Wallet({ identity: full }),
+    owner: full.solanaAddress(),
+    groupOwner,
+  };
+}
+
+/** The two identities of the group: `old` (the group key) and `pda` (the approvals program). */
 function shieldedKeys(args, client) {
-  const nullifierSecret = bytes(args.nullifierSecret);
-  const viewingSecret = bytes(args.viewingSecret);
+  const secrets = [args.nullifierSecret, args.pdaNullifierSecret, args.viewingSecret].map(bytes);
+  const [oldSecret, pdaSecret, viewingSecret] = secrets;
   try {
-    const viewing = sdk.ViewingKey.fromBytes(viewingSecret);
-    const nullifier = sdk.NullifierKey.fromSecret(nullifierSecret);
-    const owner = sdk.ShieldedPublicKey.fromEd25519(bytes(args.groupKey));
-    const address = sdk.ShieldedAddress.fromPublicKeys(
-      owner,
-      nullifier.publicKey(),
-      viewing.publicKey(),
+    const group = sdk.ShieldedPublicKey.fromEd25519(bytes(args.groupKey));
+    const groupOwner = sdk.getAddressDecoder().decode(bytes(args.groupKey));
+    const old = identityOf(
+      client,
+      (nullifierPk, viewingPk) => sdk.ShieldedAddress.fromPublicKeys(group, nullifierPk, viewingPk),
+      oldSecret,
+      Uint8Array.from(viewingSecret),
+      groupOwner,
     );
-    const parts = { address, viewingKeys: [viewing], nullifierKey: nullifier };
-    return { address, viewing, keys: sdk.LocalKeys.fromKeys(parts, client.proofService) };
+    const pda = identityOf(
+      client,
+      (nullifierPublicKey, viewingPublicKey) =>
+        sdk.ShieldedAddress.forPda({ pda: bytes(args.pda), nullifierPublicKey, viewingPublicKey }),
+      pdaSecret,
+      Uint8Array.from(viewingSecret),
+      groupOwner,
+    );
+    return { old, pda };
   } finally {
-    nullifierSecret.fill(0);
-    viewingSecret.fill(0);
+    secrets.forEach((secret) => secret.fill(0));
   }
 }
 
@@ -65,7 +98,7 @@ async function init(args) {
   const started = performance.now();
   const url = new URL(args.rpcUrl);
   redact.add(args.rpcUrl, url.search, url.searchParams.get("api-key"), args.nullifierSecret);
-  redact.add(args.viewingSecret);
+  redact.add(args.viewingSecret, args.pdaNullifierSecret);
   const zolana = new URL(url);
   zolana.pathname = "/v1/zolana";
   const trace = { prove: null };
@@ -80,15 +113,16 @@ async function init(args) {
     computeUnitLimit: COMPUTE_UNITS,
   });
   const hasherMs = Math.round(performance.now() - started);
-  const { address, viewing, keys } = shieldedKeys(args, client);
-  const wallet = new sdk.Wallet({ identity: address });
-  const owner = address.solanaAddress();
-  session = { client, keys, viewing, address, wallet, trace, owner };
+  const { old, pda } = shieldedKeys(args, client);
+  session = { client, trace, old, pda };
   return {
     hasherMs,
-    owner,
-    shielded: hex(address.toBytes()),
-    ownerHash: hex(address.ownerHash()),
+    owner: old.owner,
+    shielded: hex(old.address.toBytes()),
+    ownerHash: hex(old.address.ownerHash()),
+    pda: pda.owner,
+    pdaShielded: hex(pda.address.toBytes()),
+    pdaOwnerHash: hex(pda.address.ownerHash()),
   };
 }
 
@@ -103,8 +137,9 @@ function utxoView(entry) {
   };
 }
 
-async function syncOnce(s, wallet) {
-  const { client, keys } = s;
+async function syncOnce(s, identity, wallet = identity.wallet) {
+  const { client } = s;
+  const { keys } = identity;
   const slot = await client.solanaRpc.getSlot({ commitment: "confirmed" }).send();
   const report = await sdk.syncWallet({ client, wallet, keys });
   return {
@@ -119,14 +154,44 @@ async function syncOnce(s, wallet) {
   };
 }
 
-const sync = () => syncOnce(need(), need().wallet);
+/** The sync of the funds of the group: the PDA identity. */
+const sync = () => syncOnce(need(), need().pda);
+/** The sync of the beta funds that the group key still holds, before their move to the PDA. */
+const syncOld = () => syncOnce(need(), need().old);
 
 async function accountData(address) {
   const { solanaRpc } = need().client;
-  const reply = await solanaRpc.getAccountInfo(address, { encoding: "base64" }).send();
+  const options = { encoding: "base64", commitment: "confirmed" };
+  const reply = await solanaRpc.getAccountInfo(address, options).send();
   if (reply.value === null) throw new Error("the account does not exist");
   const { owner, lamports, data } = reply.value;
   return { owner, lamports, data: fromBase64(data[0]) };
+}
+
+/** An account as the page checks it (a proposal account): owner, lamports and data, or none. */
+async function account({ account: address }) {
+  const { solanaRpc } = need().client;
+  const options = { encoding: "base64", commitment: "confirmed" };
+  const { value } = await solanaRpc.getAccountInfo(address, options).send();
+  if (value === null) return { exists: false };
+  const owner = hex(sdk.getAddressEncoder().encode(value.owner));
+  const data = hex(fromBase64(value.data[0]));
+  return { exists: true, owner, lamports: value.lamports.toString(), data };
+}
+
+/** The rent of an account of `space` bytes: what a proposal account holds until it closes. */
+async function rent({ space }) {
+  const { solanaRpc } = need().client;
+  const lamports = await solanaRpc.getMinimumBalanceForRentExemption(BigInt(space)).send();
+  return { lamports: lamports.toString() };
+}
+
+/** The latest transactions that name `account`: how a page finds the execute of a proposal. */
+async function history({ account: address }) {
+  const { solanaRpc } = need().client;
+  const options = { limit: 10, commitment: "confirmed" };
+  const found = await solanaRpc.getSignaturesForAddress(address, options).send();
+  return found.map((x) => ({ signature: x.signature, failed: x.err !== null, slot: `${x.slot}` }));
 }
 
 async function blockhash() {
@@ -211,26 +276,64 @@ function inspect({ tx }) {
 }
 
 /**
- * Syncs a fresh wallet, builds the proof inputs with the expiry bound and `payer` as the fee payer
- * (transfer.js), proves them and keeps the transact instruction data. The group key is an owner
- * signer, so the instruction lists it after the nullifier accounts. One command runs at a time:
- * the prover body of the call is kept in the session for the plan.
+ * Syncs a fresh wallet of an identity, builds the proof inputs with the expiry bound and `payer`
+ * as the fee payer (transfer.js), proves them and keeps the transact instruction data. `kind` is
+ * "pay" (a payment of the PDA identity: the approvals program signs for the PDA, so the
+ * instruction lists no owner signer) or "migrate" (the move of the beta funds: the group key is
+ * the owner signer, after the nullifier accounts). One command runs at a time: the prover body of
+ * the call is kept in the session for the plan.
  */
-async function prepare({ recipient, amount, expiry, payer }) {
+async function prepare({ kind, recipient, amount, expiry, payer }) {
   const s = need();
   const until = BigInt(expiry);
   if (until === 0n || until >= U64_MAX) throw new Error("the expiry must be finite");
-  const wallet = new sdk.Wallet({ identity: s.address });
-  await syncOnce(s, wallet);
+  const identity = kind === "pay" ? s.pda : s.old;
+  const wallet = new sdk.Wallet({ identity: identity.address });
+  await syncOnce(s, identity, wallet);
   s.trace.prove = null;
   const to = sdk.ShieldedAddress.fromBytes(bytes(recipient));
   const request = { recipient: to, amount: BigInt(amount), expiry: until, payer };
-  const { proofInputs, tree } = buildProofInputs(sdk, s, wallet, request);
-  const data = await s.client.proveTransact(proofInputs, s.keys);
-  const signers = ownerSigners(sdk, proofInputs);
+  const { proofInputs, tree } = buildProofInputs(sdk, s.client, identity, wallet, request);
+  const data = await s.client.proveTransact(proofInputs, identity.keys);
+  const signers = kind === "pay" ? [] : ownerSigners(sdk, proofInputs);
   const call = { payer, ownerSigners: signers, inputTree: tree, outputTree: s.client.tree, data };
   const instruction = await sdk.transactInstruction(call);
   return describePrepared(instruction.data, wallet, s.trace.prove, until);
+}
+
+/**
+ * A new proof of an approved payment (ZOLANA.md 7.2), paid by `payer`: the plan, the input ids and
+ * the data of the first proof give the same proof inputs (transfer.js). The commitment of the
+ * first proof, of the rebuilt inputs and of the new data must each be `commitment`, the value that
+ * the group approved, or nothing is proved or returned.
+ */
+async function reprove({ recipient, payer, plan, inputIds, transact, commitment }) {
+  const s = need();
+  const firstData = bytes(transact);
+  if ((await commitmentOf(firstData)) !== commitment) {
+    throw new Error("the first proof does not give the approved commitment");
+  }
+  const wallet = new sdk.Wallet({ identity: s.pda.address });
+  await syncOnce(s, s.pda, wallet);
+  const request = {
+    recipient: sdk.ShieldedAddress.fromBytes(bytes(recipient)),
+    payer,
+    plan: parsePlan(plan),
+    inputIds,
+    first: parseTransact(firstData),
+  };
+  const proofInputs = rebuildProofInputs(sdk, s.client, s.pda, wallet, request);
+  if (hex(proofInputs.messageHash()) !== commitment) {
+    throw new Error("the rebuilt payment does not give the approved commitment");
+  }
+  const data = await s.client.proveTransact(proofInputs, s.pda.keys);
+  const tree = s.client.tree;
+  const call = { payer, ownerSigners: [], inputTree: tree, outputTree: tree, data };
+  const instruction = await sdk.transactInstruction(call);
+  if ((await commitmentOf(instruction.data)) !== commitment) {
+    throw new Error("the new proof does not give the approved commitment");
+  }
+  return { data: hex(instruction.data) };
 }
 
 // A simulation error such as {"InstructionError":[1,{"Custom":7008}]}: u64 numbers may arrive
@@ -295,6 +398,11 @@ async function confirm({ signature }) {
 const HANDLERS = {
   init,
   sync,
+  syncOld,
+  account,
+  rent,
+  history,
+  reprove,
   blockhash,
   readNonce,
   treeFees,

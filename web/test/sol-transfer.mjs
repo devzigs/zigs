@@ -1,11 +1,12 @@
-// The wire forms of a private payment that the page writes (web/sol/intent.js), against the real
-// checker. The fixtures are the vectors that the TS SDK built with fixed test keys
-// (wasm-sol/vectors/ts, the same files as tests/ts_vectors.rs): the group, the payee, the inputs,
-// the outputs with their hashes and ciphertexts. This test lays the instruction data out as the
-// program does, and lets the page code write the intent, the plan, the snapshot and the screen. The
-// real wasm must compile the message, and accept it on the snapshot of the device, and refuse
-// each change: a wrong payee, a wrong amount, an input that the device does not hold, and a
-// (first nullifier, salt) pair that the device used before.
+// The wire forms of a nonce payment that the page writes (web/sol/intent.js), against the real
+// checker. The one nonce payment left is the move of the beta funds of the group key to the PDA
+// address (ZOLANA.md 7.2), from the test group of sol-group.json that the TS SDK built. The
+// vectors of wasm-sol/vectors/ts (the same files as tests/ts_vectors.rs) pay another payee, so the
+// checker refuses them with the rule of the beta alone. This test lays the instruction data out
+// as the program does, and lets the page code write the intent, the plan, the snapshot and the
+// screen. The real wasm must compile the message, and accept it on the snapshot of the device,
+// and refuse each change: a wrong payee, a wrong amount, an input that the device does not hold,
+// and a (first nullifier, salt) pair that the device used before.
 // Run: node web/test/sol-transfer.mjs   (Node 24)
 import assert from "node:assert/strict";
 import { base58 } from "../sol/docs.js";
@@ -22,8 +23,17 @@ import {
 } from "../sol/intent.js";
 import { transferRows } from "../sol/payview.js";
 import * as W from "../sol/wasm/sol_wasm.js";
+import { G } from "./sol-fixture.mjs";
 import "./sol-rig.mjs"; // starts the wasm engines and stubs the page
 import { EXPIRY, NONCE, NOW, pageSide, step, vector } from "./sol-vector.mjs";
+
+// The move of the fixture as a vector: the group key pays its input whole to its PDA address.
+// The fee key is a test key: only the first account of the message must be it.
+const MOVE = {
+  ...G.migrate,
+  group: { ...G.group, payer: "6b".repeat(32) },
+  payee: { address: G.group.pdaAddress, key: G.group.pda, ownerHash: G.group.pdaOwnerHash },
+};
 
 function verdictOf(side, { spend = side.spend, ss = side.ss, message, payer = side.payer } = {}) {
   const pins = bytesOf(pinsHex(side.done, payer));
@@ -66,12 +76,25 @@ function verdictOf(side, { spend = side.spend, ss = side.ss, message, payer = si
 }
 step("the intent and the plan have the wire form of the checker");
 
-// ── The real wasm accepts a payment that the page encoded ──
+// ── A payment of the group key to another payee: the rule of the beta refuses it, alone ──
 for (const name of ["transfer-sol", "transfer-everything-with-dummy"]) {
-  const v = vector(name),
+  const { text } = verdictOf(pageSide(vector(name)));
+  const lines = text.split("\n");
+  assert.equal(lines[0], "refused", `${name}: ${text}`);
+  assert.deepEqual(
+    lines.slice(1).map((line) => line.split("\t")[0]),
+    ["migration-payee"],
+    `${name}: every other rule passed`,
+  );
+}
+step("a payment of the group key to another payee is refused by the rule of the beta alone");
+
+// ── The real wasm accepts the move that the page encoded ──
+{
+  const v = MOVE,
     side = pageSide(v);
   const { text, message } = verdictOf(side);
-  assert.match(text, /^accepted\n/, `${name}: ${text}`);
+  assert.match(text, /^accepted\n/, text);
   const said = readVerdict(text);
   assert.equal(said.payee.tag, v.payee.key, "the payee key of the output");
   assert.equal(said.payee.ownerHash, v.payee.ownerHash);
@@ -88,25 +111,20 @@ for (const name of ["transfer-sol", "transfer-everything-with-dummy"]) {
     kept,
   );
   const rows = Object.fromEntries(transferRows(v.group.key, { verdict: text }, 5000n));
-  assert.equal(rows.Payee, base58(v.payee.key));
-  const literal = {
-    "transfer-sol": "0.00000004 SOL",
-    "transfer-everything-with-dummy": "0.0000001 SOL",
-  };
-  assert.equal(rows.Amount, literal[name], "the amount is the lamports of the payee output");
-  const change = { "transfer-sol": "0.00000006 SOL", "transfer-everything-with-dummy": "0 SOL" };
-  assert.equal(rows.Change, change[name] + " stays with the group.", "the change row");
+  assert.equal(rows.Payee, base58(G.group.pda), "the payee key is the PDA");
+  assert.equal(rows.Amount, "0.005 SOL", "the amount is the lamports of the payee output");
+  assert.equal(rows.Change, "0 SOL stays with the group.", "a move keeps no change");
   const until = new Date(Number(EXPIRY) * 1000).toISOString().slice(0, 16).replace("T", " ");
   assert.match(rows.Lasts, new RegExp(`^Until ${until} UTC`));
   assert.match(rows["Network fee"], /^0\.000005 SOL$/);
   const data = Buffer.from(side.transact, "hex");
   assert.ok(Buffer.from(message).includes(data), "the message holds the transact data");
 }
-step("the real checker accepts the payment that the page encoded");
+step("the real checker accepts the move that the page encoded");
 
 // ── The tree fee of the snapshot reaches the checker ──
 {
-  const v = vector("transfer-sol"),
+  const v = MOVE,
     side = pageSide(v);
   const fee = (value) => verdictOf(side, { spend: { ...side.spend, fee: value } }).text;
   const said = readVerdict(fee("162"));
@@ -117,16 +135,16 @@ step("the snapshot gives the checker the tree fee");
 
 // ── Every change is refused ──
 {
-  const v = vector("transfer-sol"),
+  const v = MOVE,
     side = pageSide(v);
   const refused = (what, got, pattern) => {
     assert.match(got.text, /^refused\n/, `${what}: ${got.text}`);
     assert.match(got.text, pattern, what);
   };
   // The payee: the screen shows what the intent says, so a payee that the outputs do not pay.
-  const other = pageSide(v, { payee: v.payee.address.replace(/^0122/, "0123") });
-  refused("another payee", verdictOf(other), /./);
-  const greedy = pageSide(v, { amount: 41n });
+  const other = pageSide(v, { payee: vector("transfer-sol").payee.address });
+  refused("another payee", verdictOf(other), /migration-payee/);
+  const greedy = pageSide(v, { amount: 5_000_001n });
   refused("another amount", verdictOf(greedy), /./);
   const lacking = { ...side.spend, inputs: [{ ...side.spend.inputs[0], amount: "99" }] };
   refused("an input that the device does not hold", verdictOf(side, { spend: lacking }), /./);

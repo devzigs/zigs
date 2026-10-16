@@ -1,20 +1,24 @@
-// The signing steps after the approvals (ZOLANA.md 5, steps 5 and 6). The reactor runs them
-// for the seats of this browser without a click:
+// The signing steps after the approvals (ZOLANA.md 5, steps 5 and 6, and 7.2). The reactor runs
+// them for the seats of this browser without a click:
 //  - package: at `t` commitments with one digest, one device publishes the package;
 //  - share: a signer checks the package against the commits that it can verify, makes its share
-//    (the wasm checks the message again), deletes its nonces in one save and publishes the share;
+//    (the wasm checks the payment or the message again), deletes its nonces in one save and
+//    publishes the share;
 //  - aggregate: any device combines the shares (the wasm checks with verify_strict);
-//  - send: one device simulates the signed transaction, sends it through the Worker, tracks it by
-//    its first signature and writes the sent mark. The nonce rules are in nonces.js.
+//  - execute (a payment, execute.js) or send (the move of the beta funds): one device lands the
+//    transaction and writes the sent mark. The nonce rules are in nonces.js.
+// The digest of a payment is the approval digest of its proposal account; of a message, the
+// digest of its bytes.
 import { agreement } from "./ceremony.js";
 import { CLUSTER, base58 } from "./docs.js";
 import { signingBlock, writerSeats } from "./gate.js";
-import { bytesOf, decodeIntent, wireBase64 } from "./intent.js";
+import { bytesOf, decodeIntent, seenHex, wireBase64 } from "./intent.js";
 import { clearPending, dropNonces, pendingShare, savedNonces, spendNonces } from "./nonces.js";
-import { BLOCKHASH_MS, inputsOf } from "./approve.js";
+import { BLOCKHASH_MS, deviceSeen, inputsOf, showable } from "./approve.js";
+import { maybeExecute } from "./execute.js";
 import { solOf, stopOf } from "./secrets.js";
 import { ensureWorker } from "./session.js";
-import { BEFORE_FEE, SESSIONS, beforeFee, writePart } from "./sessions.js";
+import { BEFORE_FEE, SESSIONS, beforeFee, isPayment, writePart } from "./sessions.js";
 import { deviceSpend } from "./spend.js";
 
 const J = JSON.parse,
@@ -22,6 +26,7 @@ const J = JSON.parse,
 const HEXTEXT = /^([0-9a-f]{2})+$/;
 const TERMINAL = new Set(["sent", "failed"]);
 const EXPIRED = "This proposal expired before it was signed. Propose it again.";
+const PAYMENT_EXPIRED = "This payment expired before it was executed. Propose it again.";
 // The pool refuses a proof once its roots left the history (error 7008): the payment must be
 // proved and approved again (ZOLANA.md 5, stale roots).
 const STALE_ROOT = /\b7008\b/;
@@ -47,7 +52,10 @@ async function failSession(c, ss, text) {
   await writePart(c, ss.id, "failure", { error: text }, { seat });
 }
 
-const digestOf = (c, ss) => c.W.sol_digest(CLUSTER, bytesOf(ss.message));
+const digestOf = (c, ss) =>
+  isPayment(ss)
+    ? c.W.sol_approval_digest(String(ss.account), String(ss.body))
+    : c.W.sol_digest(CLUSTER, bytesOf(ss.message));
 
 // Package
 
@@ -147,21 +155,29 @@ async function publishShare(c, ss, i, made) {
   c.host.log("seat " + i + ": Solana signature share sent");
 }
 
+/**
+ * The share of seat `i`: over the approval digest of a payment, after the wasm checked the payment
+ * with the proposal account that this device read again (`seen`), or over the message bytes.
+ */
+function shareAnswer(c, ss, i, { entry, round, seen }) {
+  const wasm = inputsOf(c, ss, i, entry.spend);
+  const text = S({ ...round, nonces: entry.nonces });
+  if (!isPayment(ss)) {
+    return c.W.sol_sign_share(wasm.message, wasm.intent, wasm.pins, wasm.snapshot, text);
+  }
+  const seenBytes = bytesOf(seenHex(seen.account, seen.approved));
+  return c.W.sol_approval_share(wasm.intent, wasm.pins, wasm.snapshot, seenBytes, text);
+}
+
 async function makeShare(c, ss, i) {
   const entry = savedNonces(c, i, ss.id);
+  // A read that fails is tried again by the reactor; only a refusal ends the session.
+  const seen = isPayment(ss) ? await deviceSeen(c, ss) : null;
   let made;
   try {
     const round = roundOf(c, ss, i, entry);
     if (round === null) return;
-    const wasm = inputsOf(c, ss, i, entry.spend);
-    const answer = c.W.sol_sign_share(
-      wasm.message,
-      wasm.intent,
-      wasm.pins,
-      wasm.snapshot,
-      S({ ...round, nonces: entry.nonces }),
-    );
-    made = J(answer);
+    made = J(shareAnswer(c, ss, i, { entry, round, seen }));
   } catch (e) {
     await dropNonces(c, i, ss.id);
     await failSession(c, ss, "A signer did not sign: " + errorText(e));
@@ -223,7 +239,8 @@ async function aggregate(c, ss, seat) {
   let signature;
   try {
     const key = agreement(c).done.publicKeyPackage;
-    signature = c.W.sol_aggregate(bytesOf(ss.message), key, ss.package, S(shares));
+    const signed = isPayment(ss) ? bytesOf(digestOf(c, ss)) : bytesOf(ss.message);
+    signature = c.W.sol_aggregate(signed, key, ss.package, S(shares));
   } catch (e) {
     await failSession(c, ss, "The signature shares did not combine: " + errorText(e));
     throw e;
@@ -302,26 +319,39 @@ const expired = (ss) =>
   decodeIntent(ss.intent)?.kind === "createNonce" &&
   !ss.package &&
   !(Date.now() - Number(ss.createdAt) <= EXPIRE_MS);
+// A payment ends at the expiry of its body: the program refuses an execute after it.
+const paymentExpired = (ss) =>
+  isPayment(ss) && !(Math.floor(Date.now() / 1000) < Number(ss.expiry));
 
-// A private payment needs the snapshot of this device before its approval screen can show.
+// A private spend needs the snapshot of this device, and a payment its proposal account, before
+// its approval screen can show.
 function maybeReadWallet(c, ss) {
   const waiting = ss.status === "collecting" && c.snaps[ss.id] === undefined;
-  if (!waiting || decodeIntent(ss.intent)?.kind !== "transfer") return;
+  const kind = decodeIntent(ss.intent)?.kind;
+  if (!waiting || !["transfer", "approve"].includes(kind)) return;
   if (!c.rpcUrl || writerSeats(c)[0] === undefined) return;
   launch(c, "snap:" + ss.id, async () => {
+    if (isPayment(ss)) c.seen[ss.id] = await deviceSeen(c, ss);
     c.snaps[ss.id] = await deviceSpend(c, ss);
   });
 }
 
+/** Why a session ends before it is sent, or null. */
+function endOf(ss) {
+  if (beforeFee(ss) && !ss.signature) return BEFORE_FEE;
+  if (expired(ss)) return EXPIRED;
+  return paymentExpired(ss) ? PAYMENT_EXPIRED : null;
+}
+
 function stepSession(c, ss) {
-  if (beforeFee(ss) && !ss.signature) {
-    return launch(c, "old:" + ss.id, () => failSession(c, ss, BEFORE_FEE));
-  }
-  if (expired(ss)) return launch(c, "expire:" + ss.id, () => failSession(c, ss, EXPIRED));
+  if (!showable(ss)) return null;
+  const end = endOf(ss);
+  if (end) return launch(c, "end:" + ss.id, () => failSession(c, ss, end));
   maybeReadWallet(c, ss);
   if (!ss.package) return maybePackage(c, ss);
   signMine(c, ss);
-  return ss.signature ? maybeSend(c, ss) : maybeAggregate(c, ss);
+  if (!ss.signature) return maybeAggregate(c, ss);
+  return isPayment(ss) ? maybeExecute(c, ss, { launch, failSession }) : maybeSend(c, ss);
 }
 
 /** Nonces that no signature can use any more: the session ended, or the wallet stopped. */

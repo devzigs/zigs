@@ -1,9 +1,15 @@
-// The Solana signing sessions (ZOLANA.md 5; PROTOCOL.md 7 and 15.5). A session is one document,
-// `solsessions/<id>`, with several writers. Each part has its own writer and signature over only
-// its own fields, as in web/signed.js, which stays as it is: its part table is Zcash specific.
-// The commits and shares sit below the session (`solsessions/<id>/commits/<i>` and `shares/<i>`),
-// each signed as a whole by its seat (docs.js). A part counts only when the part before it counts.
+// The Solana signing sessions (ZOLANA.md 5 and 7.2; PROTOCOL.md 7 and 15.5). A session is one
+// document, `solsessions/<id>`, with several writers. Each part has its own writer and signature
+// over only its own fields, as in web/signed.js, which stays as it is: its part table is Zcash
+// specific. The commits and shares sit below the session (`solsessions/<id>/commits/<i>` and
+// `shares/<i>`), each signed as a whole by its seat (docs.js). A part counts only when the part
+// before it counts.
+//
+// A payment (the intent `approve`) is approved once: the group signs the digest of its proposal
+// account, and any seat executes it later with a fresh proof. The other sessions are the move of
+// the beta funds to the PDA (`createNonce` and `transfer`), which sign a v1 message with a nonce.
 import { base58, readDocs } from "./docs.js";
+import { decodeIntent } from "./intent.js";
 
 export const SESSIONS = "solsessions";
 
@@ -11,13 +17,28 @@ export const SESSIONS = "solsessions";
  * `needs` names the part that must count first. The status and the progress marks are not signed.
  * `plan`, `inputIds`, `salt` and `expiry` belong to the private spends: a part holds a field
  * only when the proposal has a value for it. `feeSig` is the signature of the payer (the fee key
- * of the proposing seat) on `message`: the first signature of the transaction.
+ * of the proposing seat) on `message`: the first signature of the transaction. A payment has no
+ * message: it holds the `transact` data of its first proof, its proposal `account` and `body`
+ * (hex) and `createTx`, the transaction that created the account.
  */
 export const PARTS = {
   proposal: {
     by: "by",
     sig: "sig",
-    fields: ["intent", "plan", "inputIds", "salt", "expiry", "message", "feeSig", "createdAt"],
+    fields: [
+      "intent",
+      "plan",
+      "inputIds",
+      "salt",
+      "expiry",
+      "message",
+      "feeSig",
+      "transact",
+      "account",
+      "body",
+      "createTx",
+      "createdAt",
+    ],
   },
   package: { by: "packageBy", sig: "packageSig", fields: ["package", "signers", "digest"] },
   signed: { by: "signedBy", sig: "signedSig", fields: ["signature"], needs: "package" },
@@ -73,14 +94,21 @@ function statusOf(ok) {
   return ok.package ? "signing" : "collecting";
 }
 
+/** A payment of the program design: approved once, executed with a fresh proof. */
+export const isPayment = (ss) => decodeIntent(ss?.intent)?.kind === "approve";
+
 /** A proposal from before the fee keys has no `feeSig`: the group key paid and signed alone. */
-export const beforeFee = (ss) => ss.feeSig === undefined;
+export const beforeFee = (ss) => !isPayment(ss) && ss.feeSig === undefined;
 export const BEFORE_FEE = "This proposal is from before the fee keys. Propose it again.";
 
 // The sent mark must name the transaction that its signatures give: the first signature is its id.
-// The payer signs first. A proposal from before the fee keys has the group signature only.
+// The payer signs first. A proposal from before the fee keys has the group signature only. The id
+// of an execute is the signature of its executor, which no part holds: the mark names it, and the
+// approval signature must be there.
 const SIGNATURE = /^[0-9a-f]{128}$/;
+const TX_ID = /^[1-9A-HJ-NP-Za-km-z]{64,90}$/;
 const sentMatches = (d) => {
+  if (isPayment(d)) return SIGNATURE.test(d.signature) && TX_ID.test(String(d.txId));
   const first = beforeFee(d) ? d.signature : d.feeSig;
   return SIGNATURE.test(d.signature) && SIGNATURE.test(first) && d.txId === base58(first);
 };
@@ -128,12 +156,12 @@ export function readSolSession(id, d, check) {
 
 const num = (n) => (Number.isFinite(n) ? n : 0);
 
-// The lifetime of a v1 message sits at bytes 8 to 40. For the intents that the group signs but the
-// first (the nonce account, a recent blockhash) it is the value of the nonce account. Add SOL
-// (the intent 02) has a recent blockhash too, and it is no session.
+// The lifetime of a v1 message sits at bytes 8 to 40. For the intents with a nonce (01 to 05 but
+// Add SOL, 02; the beta wrote 01, 04 and 05 too) it is the value of the nonce account. The nonce
+// account (00) has a recent blockhash, and a payment (08) has no message.
 const lifetimeOf = (ss) =>
   /^[0-9a-f]{80,}$/.test(String(ss.message)) ? ss.message.slice(16, 80) : "";
-const usesNonce = (ss) => typeof ss.intent === "string" && !/^0[02]/.test(ss.intent);
+const usesNonce = (ss) => typeof ss.intent === "string" && /^0[1345]/.test(ss.intent);
 const SUPERSEDED =
   "Another proposal on the same nonce landed first, so this one can never be sent. " +
   "Propose it again.";

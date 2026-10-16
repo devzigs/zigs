@@ -441,11 +441,17 @@ const syncState = (rpcUrl = RPC) => ({
   assert.equal(JSON.stringify(c.sync).includes("not-a-real-key"), false, "no key in the state");
 }
 
-// ── The Worker gets the role secrets only, and its address must equal the wasm address ──
+// ── The Worker gets the role secrets only, and its addresses equal the wasm addresses ──
 {
   const s1 = solOf(gid, 1),
-    roles = JSON.parse(W.sol_roles(s1.solSeed, s1.groupKey));
-  const right = { owner: base58(s1.groupKey), shielded: roles.address };
+    roles = JSON.parse(W.sol_roles(s1.solSeed, s1.groupKey)),
+    pda = JSON.parse(W.sol_pda_roles(s1.solSeed, s1.groupKey));
+  const right = {
+    owner: base58(s1.groupKey),
+    shielded: roles.address,
+    pda: base58(pda.pda),
+    pdaShielded: pda.address,
+  };
   const flip = (hex) => hex.replace(/^./, (ch) => (ch === "a" ? "b" : "a"));
   const sent = [];
   let init = right;
@@ -465,35 +471,40 @@ const syncState = (rpcUrl = RPC) => ({
   await syncSolana(c);
   assert.deepEqual(
     sent.map((m) => m.cmd),
-    ["init", "sync"],
+    ["init", "sync", "syncOld"],
+    "the funds of the PDA, then the beta funds of the group key",
   );
   assert.deepEqual(
     Object.keys(sent[0].args).sort(),
-    ["groupKey", "nullifierSecret", "rpcUrl", "viewingSecret"],
-    "the Worker gets four fields",
+    ["groupKey", "nullifierSecret", "pda", "pdaNullifierSecret", "rpcUrl", "viewingSecret"],
+    "the Worker gets six fields",
   );
   assert.deepEqual(sent[0].args, {
     rpcUrl: RPC,
     nullifierSecret: roles.nullifier_secret,
+    pdaNullifierSecret: pda.nullifier_secret,
     viewingSecret: roles.viewing_sk,
     groupKey: s1.groupKey,
+    pda: pda.pda,
   });
   const wire = JSON.stringify(sent);
   for (const secret of [s1.solSeed, s1.keyPackage.signing_share, "nonces"]) {
     assert.equal(wire.includes(secret), false, "no share, solSeed or nonce reaches the Worker");
   }
   assert.equal(c.sync.balance, "0 SOL");
-  assert.match(c.sync.text, /synced at slot 9, the SDK address equals the wasm address/);
+  assert.match(c.sync.text, /synced at slot 9, the SDK addresses equal the wasm addresses/);
   await syncSolana(c);
   assert.deepEqual(
     sent.map((m) => m.cmd),
-    ["init", "sync", "sync"],
+    ["init", "sync", "syncOld", "sync", "syncOld"],
     "one init for one Worker",
   );
-  // A Worker that makes another shielded address, or another owner, is not used.
+  // A Worker that makes another shielded address, owner or PDA is not used.
   for (const wrong of [
     { ...right, shielded: flip(right.shielded) },
     { ...right, owner: base58("11".repeat(32)) },
+    { ...right, pdaShielded: flip(right.pdaShielded) },
+    { ...right, pda: base58("11".repeat(32)) },
   ]) {
     init = wrong;
     sent.length = 0;

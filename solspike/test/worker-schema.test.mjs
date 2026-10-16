@@ -1,5 +1,6 @@
 // Schema tests of the Solana Worker (P8c). Usage: node solspike/test/worker-schema.test.mjs
-// init takes the two role secrets, the group key and the RPC URL, and nothing else. A FROST key
+// init takes the role secrets (the viewing key and the nullifier secrets of the group key and of
+// the PDA identity), the group key, the PDA and the RPC URL, and nothing else. A FROST key
 // package, solSeed, a nonce or any other field is refused by name. Errors never carry a value.
 import assert from "node:assert/strict";
 import { readdirSync, readFileSync } from "node:fs";
@@ -15,8 +16,10 @@ const KEY = "k".repeat(24);
 const init = () => ({
   rpcUrl: `https://devnet.helius-rpc.com/?${KEY_NAME}=${KEY}`,
   nullifierSecret: "cd".repeat(31),
+  pdaNullifierSecret: "ce".repeat(31),
   viewingSecret: SECRET,
   groupKey: "ef".repeat(32),
+  pda: "e0".repeat(32),
 });
 const LOOPBACK_URLS = [
   "http://127.0.0.1:9/",
@@ -49,14 +52,16 @@ function initFields() {
       /missing or malformed/,
     );
   }
-  step("init takes exactly the four fields; keyPackage, solSeed and nonces are refused by name");
+  step("init takes exactly the six fields; keyPackage, solSeed and nonces are refused by name");
 }
 
 function initValues() {
   const bad = {
     nullifierSecret: ["", "cd".repeat(32), "CD".repeat(31), `${"cd".repeat(30)}zz`, 5],
+    pdaNullifierSecret: ["", "ce".repeat(32), "CE".repeat(31)],
     viewingSecret: ["ab".repeat(31), `${SECRET}00`, null],
     groupKey: ["ef".repeat(31), "0x" + "ef".repeat(31)],
+    pda: ["e0".repeat(31), "E0".repeat(32), 1],
     rpcUrl: [
       `http://devnet.helius-rpc.com/?${KEY_NAME}=x`,
       `https://evil.example/?${KEY_NAME}=x`,
@@ -132,28 +137,8 @@ function otherCommands() {
       /malformed/,
     );
   }
-  const payer = "5TeWSsjg2gbxCyWVniXeCmwM7UtHTCK7svzJr5xYJzHf";
-  const prepare = { kind: "transfer", recipient: "01ab", amount: "1000000", expiry: "1900000000" };
-  checkCommand("prepare", { ...prepare, payer });
-  // The payer (the fee key of a seat, as a base58 address) is a field that must be there.
-  const lacking = text(() => checkCommand("prepare", prepare));
-  assert.match(lacking, /prepare: field payer is missing or malformed/);
-  for (const [field, value] of [
-    ["kind", "withdrawal"],
-    ["amount", "-1"],
-    ["amount", "01"],
-    ["amount", "1".repeat(21)],
-    ["expiry", "1e9"],
-    ["recipient", "xyz"],
-    ["payer", "0OIl"],
-    ["payer", payer.slice(20)],
-    ["payer", "ab".repeat(32)],
-  ]) {
-    assert.match(
-      text(() => checkCommand("prepare", { ...prepare, payer, [field]: value })),
-      /malformed/,
-    );
-  }
+  prepareFields();
+  programReads(account);
   checkCommand("send", { tx: "AQID" });
   assert.match(
     text(() => checkCommand("send", { tx: "not base64!" })),
@@ -181,21 +166,111 @@ function otherCommands() {
     );
   }
   assert.deepEqual(Object.keys(SCHEMA).sort(), [
+    "account",
     "balance",
     "blockhash",
     "confirm",
+    "history",
     "init",
     "inspect",
     "preflight",
     "prepare",
     "readNonce",
+    "rent",
+    "reprove",
     "send",
     "simulate",
     "status",
     "sync",
+    "syncOld",
     "treeFees",
   ]);
   step("every command refuses unknown fields, wrong types and malformed values");
+}
+
+/** prepare: the kind, the amounts and the payer (the fee key of a seat) are checked. */
+function prepareFields() {
+  const payer = "5TeWSsjg2gbxCyWVniXeCmwM7UtHTCK7svzJr5xYJzHf";
+  const prepare = { kind: "pay", recipient: "01ab", amount: "1000000", expiry: "1900000000" };
+  checkCommand("prepare", { ...prepare, payer });
+  checkCommand("prepare", { ...prepare, payer, kind: "migrate" });
+  // The payer (the fee key of a seat, as a base58 address) is a field that must be there.
+  const lacking = text(() => checkCommand("prepare", prepare));
+  assert.match(lacking, /prepare: field payer is missing or malformed/);
+  for (const [field, value] of [
+    ["kind", "withdrawal"],
+    ["kind", "transfer"],
+    ["amount", "-1"],
+    ["amount", "01"],
+    ["amount", "1".repeat(21)],
+    ["expiry", "1e9"],
+    ["recipient", "xyz"],
+    ["payer", "0OIl"],
+    ["payer", payer.slice(20)],
+    ["payer", "ab".repeat(32)],
+  ]) {
+    assert.match(
+      text(() => checkCommand("prepare", { ...prepare, payer, [field]: value })),
+      /malformed/,
+    );
+  }
+  reproveFields(payer);
+}
+
+/** The reads of the program design: the old wallet, an account, its history and the rent. */
+function programReads(account) {
+  checkCommand("syncOld", {});
+  checkCommand("account", { account });
+  checkCommand("history", { account });
+  checkCommand("rent", { space: "139" });
+  for (const [cmd, args] of [
+    ["account", { account: "0OIl" }],
+    ["history", { account: "" }],
+    ["rent", { space: "-1" }],
+    ["rent", { space: 139 }],
+  ]) {
+    assert.match(
+      text(() => checkCommand(cmd, args)),
+      /malformed/,
+      cmd,
+    );
+  }
+}
+
+/** reprove takes the payment as the session holds it: no secret, every field checked. */
+function reproveFields(payer) {
+  const reprove = {
+    recipient: "01ab",
+    payer,
+    plan: "aa".repeat(33),
+    inputIds: ["12".repeat(32)],
+    transact: "10" + "00".repeat(40),
+    commitment: "34".repeat(32),
+  };
+  checkCommand("reprove", reprove);
+  for (const [field, value] of [
+    ["inputIds", []],
+    ["inputIds", ["12".repeat(31)]],
+    ["inputIds", Array(41).fill("12".repeat(32))],
+    ["inputIds", "12".repeat(32)],
+    ["plan", "a"],
+    ["transact", "zz"],
+    ["transact", "00".repeat(8193)],
+    ["commitment", "34".repeat(31)],
+    ["payer", "ab".repeat(32)],
+  ]) {
+    assert.match(
+      text(() => checkCommand("reprove", { ...reprove, [field]: value })),
+      /malformed/,
+      field,
+    );
+  }
+  for (const field of ["keyPackage", "solSeed", "signature"]) {
+    assert.match(
+      text(() => checkCommand("reprove", { ...reprove, [field]: "00" })),
+      /not allowed/,
+    );
+  }
 }
 
 function redaction() {

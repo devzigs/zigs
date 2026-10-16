@@ -1,7 +1,8 @@
 // Drives the Solana wasm (web/sol/wasm, built by wasm-sol/build.sh) the way the page will: a
 // dealerless 2-of-3 DKG on three seats, the role keys, a message from the template, two seats
 // that sign it in separate calls, the aggregate, and a check of the signature with Node's own
-// Ed25519 (independent of the wasm). Then the refusals: a bad commitment names its seat, a
+// Ed25519 (independent of the wasm). The PDA identity has the nullifier key that Node's own HKDF
+// gives (ZOLANA.md 7.2, option D). Then the refusals: a bad commitment names its seat, a
 // different echo ends the seat, a changed message gets no share, one share alone does not
 // aggregate, and a key written twice is refused. Then the share check and the program label.
 // Run: node web/test/sol-wasm.mjs   (Node 24)
@@ -124,14 +125,33 @@ assert.throws(() => feeOfSeat(0, { signing_share: done[1].key_package.signing_sh
 for (const junk of ["", "{}", "zz"]) {
   assert.throws(() => S.sol_fee_key(junk), /key package/, junk);
 }
+// The PDA identity: its nullifier secret is HKDF-SHA256 over solSeed with the label and the PDA
+// as info, 31 bytes, so it is a field element and only the seats can make it.
+const pdaRoles = json(S.sol_pda_roles(done[0].sol_seed, done[0].group_key));
+{
+  const info = Buffer.concat([
+    Buffer.from("zigs-sol/pda-nullifier-secret/v1"),
+    fromHex(pdaRoles.pda),
+  ]);
+  const secret = hkdfSync("sha256", fromHex(done[0].sol_seed), Buffer.alloc(0), info, 31);
+  assert.equal(pdaRoles.nullifier_secret, hex(Buffer.from(secret)), "Node's HKDF gives the key");
+  assert.notEqual(pdaRoles.nullifier_pk, roles.nullifier_pk, "another key than the group key's");
+  assert.notEqual(pdaRoles.address, roles.address, "and another address");
+  assert.equal(pdaRoles.address.length, 99 * 2);
+  const seat2 = json(S.sol_pda_roles(done[1].sol_seed, done[1].group_key));
+  assert.deepEqual(seat2, pdaRoles, "every seat derives the same PDA identity");
+}
 const pinsOf = (payer) =>
-  fromHex(done[0].group_key + roles.nullifier_pk + roles.viewing_pk + payer);
+  fromHex(
+    done[0].group_key + roles.nullifier_pk + roles.viewing_pk + payer + pdaRoles.nullifier_pk,
+  );
 assert.equal(Buffer.from(roles.seal_key, "base64url").length, 32, "a 32 byte base64url secret");
 assert.throws(() => S.sol_roles("zz", done[0].group_key), /solSeed/);
 
-// A Cancel intent: tag 5 and the nonce. The message is compiled from the fixed template.
-const nonce = randomBytes(32);
-const proposal = Uint8Array.from([5, ...nonce]);
+// The nonce account: tag 0 and a recent blockhash, the one intent that the group key signs alone
+// in the beta. The message is compiled from the fixed template.
+const blockhash = randomBytes(32);
+const proposal = Uint8Array.from([0, ...blockhash]);
 const pins = pinsOf(fee.public);
 const message = S.compile_message(proposal, pins, new Uint8Array(0));
 assert.equal(message[0], 0x81, "a v1 message");
@@ -146,7 +166,7 @@ const snapshot = Buffer.concat([
 assert.equal(snapshot.length, 74);
 const verdict = S.check_message(message, proposal, pins, snapshot, BigInt(NOW));
 assert.ok(verdict.startsWith("accepted"), verdict);
-assert.equal(S.rule_list().split("\n").length, 86);
+assert.equal(S.rule_list().split("\n").length, 98);
 
 // Seats 1 and 2 sign in separate calls. The page keeps the nonces under the digest.
 const digest = S.sol_digest(CLUSTER, message);

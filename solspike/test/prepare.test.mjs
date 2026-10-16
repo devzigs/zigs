@@ -4,11 +4,23 @@
 //    the parse ends on the last byte. Their expiry is finite.
 // 2. The cut and the parse refuse other messages and damaged data.
 // 3. The plan of a transfer is read from a body that has the field names of the prover client.
+// 4. The commitment of the transact data of the two payments that landed through the approvals
+//    program (wasm-sol/vectors/program/landed.json) is the commitment of their body, and the plan
+//    of a proposal reads back.
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
-import { cutTransact, field32, hex, parseTransact, planFromProve } from "../../web/sol/prepare.js";
+import {
+  commitmentOf,
+  cutTransact,
+  field32,
+  hex,
+  parsePlan,
+  parseTransact,
+  planFromProve,
+} from "../../web/sol/prepare.js";
+import { planHex } from "../../web/sol/intent.js";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const SDK = pathToFileURL(resolve(HERE, "../../web/sol/zolana.bundle.js")).href;
@@ -180,8 +192,50 @@ function planRefusals() {
   step("a non-SOL asset, a dummy with value and a missing or damaged field are refused");
 }
 
+const APPROVALS = JSON.parse(
+  readFileSync(resolve(HERE, "../../wasm-sol/vectors/program/landed.json"), "utf8"),
+);
+const bytesOf = (h) => Uint8Array.from(Buffer.from(h, "hex"));
+
+async function landedCommitments() {
+  for (const name of ["dmain", "emain"]) {
+    const track = APPROVALS[name];
+    const execute = bytesOf(track.execute_data);
+    const data = Uint8Array.from([16, ...execute.subarray(1)]);
+    assert.equal(await commitmentOf(data), track.body.slice(0, 64), name);
+    const parsed = parseTransact(data);
+    assert.equal(parsed.published.length, parsed.outputs);
+    assert.ok(parsed.published.every((o) => /^[0-9a-f]{64}$/.test(o.tag)), "inline tags");
+    assert.match(parsed.txViewingPk, /^[0-9a-f]{66}$/);
+    const moved = Uint8Array.from(data);
+    moved[20] ^= 1;
+    assert.notEqual(await commitmentOf(moved), track.body.slice(0, 64), "a changed key");
+  }
+  step("the commitment of a landed execute is the commitment of its body (approvals program)");
+}
+
+function plansReadBack() {
+  const plan = {
+    blindingSeed: "11".repeat(32),
+    outputs: [
+      { role: "change", mint: "00".repeat(32), amount: "60", blinding: "22".repeat(32) },
+      { role: "payee", mint: "00".repeat(32), amount: "40", blinding: "33".repeat(32) },
+      { role: "dummy", mint: "00".repeat(32), amount: "0", blinding: "44".repeat(32) },
+    ],
+  };
+  assert.deepEqual(parsePlan(planHex(plan)), plan);
+  for (const bad of ["", "zz", planHex(plan) + "00", planHex(plan).slice(0, -2)]) {
+    assert.throws(() => parsePlan(bad), /plan|ends inside/, bad.slice(0, 8));
+  }
+  const unknown = planHex(plan).slice(0, 66) + "07" + planHex(plan).slice(68);
+  assert.throws(() => parsePlan(unknown), /unknown output role/);
+  step("the plan of a proposal reads back, and a damaged plan is refused");
+}
+
 landedMessages();
 refusals();
 plans();
 planRefusals();
+await landedCommitments();
+plansReadBack();
 console.log("prepare tests passed");

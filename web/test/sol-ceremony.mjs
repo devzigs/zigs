@@ -12,7 +12,7 @@
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
 import { docFields } from "../signed.js";
-import { agreement, seatProgress, startBlock } from "../sol/ceremony.js";
+import { agreement, fitsSolana, seatProgress, startBlock } from "../sol/ceremony.js";
 import { backupText as solBackupText, backupWords } from "../sol/backup.js";
 import { syncSolana } from "../sol/session.js";
 import { solView } from "../sol/view.js";
@@ -24,6 +24,8 @@ const sha = (text) => createHash("sha256").update(text).digest("hex");
 const path = (gid, rel) => `groups/${gid}/${rel}`;
 const dones = (gid) => [1, 2, 3].map((i) => data.get(path(gid, "soldone/" + i)));
 const haveDones = (gid) => dones(gid).every(Boolean);
+// The PDA identity of a soldone (ZOLANA.md 7.2): the program address and its shielded keys.
+const PDA_KEYS = ["pda", "pdaNullifierPk", "pdaOwnerHash", "pdaAddress"];
 const solOf = (gid, i) => t.sec(gid, i).sol ?? {};
 const zcashOf = (gid, i) => {
   const { sol: _sol, ...rest } = t.sec(gid, i);
@@ -357,6 +359,7 @@ const zcash = [1, 2, 3].map((i) => zcashOf(gid, i));
     "address",
     "cluster",
     "program",
+    ...PDA_KEYS,
   ])
     assert.equal(keep(k).size, 1, k + " is equal on every seat");
   assert.deepEqual(
@@ -376,6 +379,22 @@ const zcash = [1, 2, 3].map((i) => zcashOf(gid, i));
     [docs[0].address, docs[0].nullifierPk, docs[0].viewingPk],
     "the document has the wasm roles",
   );
+  const pda = JSON.parse(W.sol_pda_roles(s[0].solSeed, s[0].groupKey));
+  assert.deepEqual(
+    PDA_KEYS.map((k) => docs[0][k]),
+    [pda.pda, pda.nullifier_pk, pda.owner_hash, pda.address],
+    "the document has the PDA identity of the wasm",
+  );
+  assert.ok(!JSON.stringify(docs).includes(pda.nullifier_secret), "and not its nullifier secret");
+  // A restore fits the key share against the soldone, the PDA identity too when it names one.
+  const fit = (done) => fitsSolana(W, 1, s[0], docFields(done));
+  assert.equal(fit(docs[0]), true, "the control: the share fits its soldone");
+  for (const k of PDA_KEYS) {
+    const wrong = { ...docs[0], [k]: docs[0][k].replace(/^./, (x) => (x === "a" ? "b" : "a")) };
+    assert.equal(fit(wrong), false, "a soldone with another " + k + " does not fit");
+  }
+  const bare = Object.fromEntries(Object.entries(docs[0]).filter(([k]) => !PDA_KEYS.includes(k)));
+  assert.equal(fit(bare), true, "a soldone from before the program design fits");
   // The round secrets are gone, and nothing but key data is left.
   for (const x of s) {
     assert.deepEqual(Object.keys(x).sort(), [
@@ -443,6 +462,10 @@ const zcash = [1, 2, 3].map((i) => zcashOf(gid, i));
     cluster: "mainnet",
     program: "other",
     publicKeyPackage: docs[1].publicKeyPackage.replace("verifying_key", "verifying_kez"),
+    pda: "5".repeat(64),
+    pdaNullifierPk: "6".repeat(64),
+    pdaOwnerHash: "7".repeat(64),
+    pdaAddress: "8".repeat(198),
   };
   for (const [k, v] of Object.entries(change)) {
     const one = plain.map((d, i) => (i === 2 ? { ...d, [k]: v } : d));
@@ -450,6 +473,23 @@ const zcash = [1, 2, 3].map((i) => zcashOf(gid, i));
   }
   const alike = plain.map((d) => ({ ...d, address: "4".repeat(198) }));
   assert.equal(agreement(view(alike)).state, "differ", "equal documents that this seat cannot fit");
+  const alikePda = plain.map((d) => ({ ...d, pdaOwnerHash: "7".repeat(64) }));
+  assert.equal(agreement(view(alikePda)).state, "differ", "an equal PDA that this seat cannot fit");
+  // A soldone from before the program design names no PDA identity: the seats agree, and the
+  // agreed keys carry the PDA identity of the other documents, or of the share of this browser.
+  const oldThird = plain.map((d, i) => (i === 2 ? bare : d));
+  assert.equal(agreement(view(oldThird)).state, "agree", "one soldone of before");
+  assert.equal(agreement(view(oldThird)).done.pdaAddress, pda.address);
+  const allOld = plain.map(() => bare);
+  assert.equal(agreement(view(allOld)).done.pdaOwnerHash, pda.owner_hash, "from the share");
+  const half = plain.map((d, i) => (i === 2 ? { ...bare, pda: d.pda } : d));
+  assert.equal(agreement(view(half)).state, "differ", "a soldone with a part of the PDA identity");
+  // A browser with no seat fits no document: equal documents with a malformed PDA still differ.
+  const none = { ...view(plain), host: { ...host, localSeats: () => [] } };
+  assert.equal(agreement(none).state, "agree", "the control: no seat, honest documents");
+  const malformed = plain.map((d) => ({ ...d, pdaAddress: "zz" }));
+  const state = agreement({ ...view(malformed), host: none.host }).state;
+  assert.equal(state, "differ", "equal documents with a malformed PDA");
   // Each seat in a browser of its own: the browser holds seat `mine` only, so the document of
   // another seat is not fitted against a secret. Only the comparison of the documents can find
   // that seat `other` published something else, in any of the compared fields.
@@ -474,6 +514,26 @@ const zcash = [1, 2, 3].map((i) => zcashOf(gid, i));
   assert.match(seatProgress(lost({}), 1), /this browser lost its setup secret/);
   assert.equal(seatProgress(lost({ r1secret: "x" }), 1), "Seat 1: round 1 sent");
   assert.equal(seatProgress(lost({}), 2), "Seat 2 has not started");
+  // The seat of a soldone from before the program design publishes it again with the PDA
+  // identity, and nothing stops.
+  {
+    const before = docFields(data.get(path(gid2, "soldone/3")));
+    const fields = Object.fromEntries(
+      Object.entries(before).filter(([k]) => !PDA_KEYS.includes(k)),
+    );
+    const signed = await t.signedDoc(gid2, "soldone/3", 3, { ...fields, at: before.at + 1 });
+    data.set(path(gid2, "soldone/3"), signed);
+    rig.notify();
+    const again = () => data.get(path(gid2, "soldone/3"));
+    await waitFor("the soldone with the PDA identity", () => again().pda === pda.pda, 20000);
+    assert.deepEqual(
+      PDA_KEYS.map((k) => again()[k]),
+      PDA_KEYS.map((k) => before[k]),
+      "the same PDA identity",
+    );
+    assert.equal(again().groupKey, before.groupKey, "the rest of the document stays");
+    assert.ok([1, 2, 3].every((i) => !solOf(gid2, i).aborted), "no seat stopped");
+  }
   // A seat that signs its soldone again with another label stops every seat, and it stays so.
   const old = docFields(data.get(path(gid2, "soldone/3")));
   const other = await t.signedDoc(gid2, "soldone/3", 3, {

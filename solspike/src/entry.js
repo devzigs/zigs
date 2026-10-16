@@ -10,6 +10,7 @@ export {
   ProofInputUtxo,
   SppProofInputs,
   createExternalData,
+  createProofOutput,
   encryptConfidentialTransfer,
 } from "zolana-transaction";
 export {

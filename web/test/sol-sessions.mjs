@@ -1,7 +1,7 @@
 // The Solana signing sessions against the real web/app.js (see sol-rig.mjs): one browser holds
 // the three seats of a 2-of-3 wallet, the real wasm checks and signs, and a fake Worker answers
-// from a model of Devnet (sol-chain.mjs). It runs the intents that move no private funds (create
-// the nonce account, register, and a second register: the fake chain keeps no registry) to a
+// from a model of Devnet (sol-chain.mjs). It runs the one intent that moves no private funds
+// (create the nonce account; the fake chain forgets the account so that it lands again) to a
 // landed transaction that two keys sign, the fee key of the proposing seat first and the group
 // key second, and that Node's own Ed25519 verifies under both keys. It pins the rules around
 // them: every approver refuses a bad message and writes nothing, a nonce signs once (save before
@@ -33,7 +33,7 @@ import { refreshChain } from "../sol/session.js";
 import { writePart } from "../sol/sessions.js";
 import { solView } from "../sol/view.js";
 import { createPrivateKey, sign as nodeSign } from "node:crypto";
-import { RPC, makeChain, verifies } from "./sol-chain.mjs";
+import { RPC, chainGroup, makeChain, verifies } from "./sol-chain.mjs";
 import { loadRig, sleep } from "./sol-rig.mjs";
 
 const rig = await loadRig();
@@ -53,14 +53,8 @@ await waitFor("every soldone", ready, 30000);
 const c = t.sol.ctl;
 await waitFor("agreement", () => agreement(c).state === "agree");
 const done = agreement(c).done;
-const roles = J(W.sol_roles(solOf(gid, 1).solSeed, done.groupKey));
 const chain = makeChain();
-chain.group = {
-  key: done.groupKey,
-  owner: base58(done.groupKey),
-  shielded: roles.address,
-  nonceAccount: base58(await nonceAccountHex(done.groupKey)),
-};
+chain.group = await chainGroup(W, done, solOf(gid, 1).solSeed);
 chain.balances.set(chain.group.owner, 50_000_000n);
 await waitFor("every fee key published", () =>
   [1, 2, 3].every((i) => feeOf(c, i) && c.docs.solfee[i]?.key === feeOf(c, i).key),
@@ -136,7 +130,10 @@ const rowsOf = (id) => {
   }
   assert.throws(() => pinsHex({ groupKey: "00" }, "11".repeat(32)), /not well formed/);
   assert.throws(() => pinsHex(done, "00"), /fee key of the payer/);
-  assert.equal(pinsHex(done, "11".repeat(32)).length, 129 * 2, "the payer is the last pin");
+  const pins = pinsHex(done, "11".repeat(32));
+  assert.equal(pins.length, 161 * 2, "the group keys, the payer and the PDA nullifier key");
+  assert.equal(pins.slice(194, 258), "11".repeat(32), "the payer is the fourth pin");
+  assert.equal(pins.slice(258), done.pdaNullifierPk, "the PDA nullifier key is the last pin");
 }
 
 step("a wallet with a Solana part");
@@ -265,19 +262,17 @@ const tamper = async (label, { intent, message, by = 1, feeSig }, why) => {
   assert.deepEqual([storeText(), secretsOfSeats()], before, label + ": nothing was written");
 };
 {
-  const nonce = chain.nonce;
-  const keys = { nonce, nullifierPk: done.nullifierPk, viewingPk: done.viewingPk };
-  const register = intentHex("register", keys);
-  const other = { ...keys, nullifierPk: flip(done.nullifierPk) };
-  await tamper("wrong keys", { intent: intentHex("register", other) }, /register|nullifier|key/i);
-  const dearer = compiled(intentHex("register", other));
-  await tamper("other data", { intent: register, message: dearer }, /register|nullifier|data/i);
-  const cancel = compiled("05" + nonce);
-  await tamper("other instruction", { intent: register, message: cancel }, /instruction|list|ix/i);
-  const good = compiled(register);
+  const { blockhashHex } = await c.worker.call("blockhash");
+  const create = intentHex("createNonce", { blockhash: blockhashHex });
+  const pins = bytesOf(pinsHex({ ...done, groupKey: flip(done.groupKey) }, feeOf(c, 1).key));
+  const elsewhere = W.compile_message(bytesOf(create), pins, new Uint8Array(0));
+  await tamper("another group", { intent: create, message: elsewhere }, /nonce|authority|group/i);
+  const cancel = compiled(intentHex("shield", { blockhash: blockhashHex, amount: 1000n }));
+  await tamper("other instruction", { intent: create, message: cancel }, /instruction|list|ix/i);
+  const good = compiled(create);
   const mask = Uint8Array.from(good);
   mask[4] |= 0x10;
-  await tamper("heap bit", { intent: register, message: mask }, /config|mask|heap|end|short/i);
+  await tamper("heap bit", { intent: create, message: mask }, /config|mask|heap|end|short/i);
   const at = 42 + 32 * good[41];
   for (const [label, units] of [
     ["no compute", 1],
@@ -285,45 +280,45 @@ const tamper = async (label, { intent, message, by = 1, feeSig }, why) => {
   ]) {
     const wrong = Uint8Array.from(good);
     new DataView(wrong.buffer).setUint32(at, units, true);
-    await tamper(label, { intent: register, message: wrong }, /compute|unit|limit/i);
+    await tamper(label, { intent: create, message: wrong }, /compute|unit|limit/i);
   }
-  const later = compiled(intentHex("register", { ...keys, nonce: flip(nonce) }));
-  await tamper("other lifetime", { intent: register, message: later }, /lifetime|nonce/i);
+  const later = compiled(intentHex("createNonce", { blockhash: flip(blockhashHex) }));
+  await tamper("other lifetime", { intent: create, message: later }, /lifetime|blockhash/i);
   await tamper("not hex", { intent: "zz", message: good }, /not one that this app can show/);
   // The payer. Seat 1 proposes, so the payer is the fee key that seat 1 published. A message that
   // another fee key pays is refused by the checker when seat 1 signs it, and by the signature
   // check when only that other seat signs it.
-  const paid2 = compiled(register, 2);
+  const paid2 = compiled(create, 2);
   await tamper(
     "a message that another seat pays, signed by the proposer",
-    { intent: register, message: paid2, feeSig: feeSign(1, paid2) },
+    { intent: create, message: paid2, feeSig: feeSign(1, paid2) },
     /the first account \(the fee payer\)/,
   );
   await tamper(
     "a message that another seat pays and signs",
-    { intent: register, message: paid2, feeSig: feeSign(2, paid2) },
+    { intent: create, message: paid2, feeSig: feeSign(2, paid2) },
     /fee signature/,
   );
   // The payer comes from the document of the proposing seat (the signer of the proposal part),
   // so seat 2 proposing a message that seat 1 pays and signs is refused.
   await tamper(
     "a message that seat 1 pays, proposed by seat 2",
-    { intent: register, message: good, by: 2, feeSig: feeSign(1, good) },
+    { intent: create, message: good, by: 2, feeSig: feeSign(1, good) },
     /fee signature/,
   );
   await tamper(
     "a message that seat 1 pays, proposed and signed by seat 2",
-    { intent: register, message: good, by: 2, feeSig: feeSign(2, good) },
+    { intent: create, message: good, by: 2, feeSig: feeSign(2, good) },
     /the first account \(the fee payer\)/,
   );
   await tamper(
     "a bad fee signature",
-    { intent: register, message: good, feeSig: "00".repeat(64) },
+    { intent: create, message: good, feeSig: "00".repeat(64) },
     /fee signature/,
   );
   // A proposal with no fee signature reads as one from before the fee keys: it ends, unapproved.
   {
-    const fields = { intent: register, message: hexOf(good), createdAt: Date.now() };
+    const fields = { intent: create, message: hexOf(good), createdAt: Date.now() };
     await writePart(c, "no-fee-signature", "proposal", fields, { seat: 1, create: true });
     await waitSession("no-fee-signature", "failed");
     assert.match(ssOf("no-fee-signature").error, /from before the fee keys.*Propose it again/);
@@ -333,16 +328,16 @@ const tamper = async (label, { intent, message, by = 1, feeSig }, why) => {
   }
   await tamper(
     "the fee signature of another key",
-    { intent: register, message: good, feeSig: feeSign(2, good) },
+    { intent: create, message: good, feeSig: feeSign(2, good) },
     /fee signature/,
   );
   await tamper(
     "a fee signature for other bytes",
-    { intent: register, message: good, feeSig: feeSign(1, cancel) },
+    { intent: create, message: good, feeSig: feeSign(1, cancel) },
     /fee signature/,
   );
   // A proposing seat that published no fee address has no payer.
-  const sheet = { id: "x", status: "collecting", by: 3, intent: register, message: hexOf(good) };
+  const sheet = { id: "x", status: "collecting", by: 3, intent: create, message: hexOf(good) };
   const published = c.docs.solfee[3];
   delete c.docs.solfee[3];
   const why = reviewOf(c, { ...sheet, feeSig: feeSign(3, good) }, 1).why;
@@ -351,54 +346,52 @@ const tamper = async (label, { intent, message, by = 1, feeSig }, why) => {
 }
 
 step("every bad message is refused");
-// ── Register: the screen, and a crash between the nonce save and the commit ──
-const registered = await proposed("register");
+// ── The nonce account again: a crash between the nonce save and the commit ──
+chain.nonce = null;
+const renewed = await proposed("createNonce");
 {
-  const rows = rowsOf(registered);
-  assert.equal(rows["Rent kept by the record"], "0.00133096 SOL");
-  assert.match(rows["Keys that become public"], /…/);
-  assert.match(rows["What it does"], /permanent/);
+  const rows = rowsOf(renewed);
+  assert.equal(rows["Rent kept by the nonce account"], "0.00105664 SOL");
+  assert.equal(rows["Group address"], chain.group.owner);
 }
-await approve(c, ssOf(registered), 1);
+await approve(c, ssOf(renewed), 1);
 {
   let armed = true;
   hook.before = (p, value) => {
-    if (armed && p.endsWith(`${registered}/commits/2`)) {
+    if (armed && p.endsWith(`${renewed}/commits/2`)) {
       armed = false;
       throw new Error("crash before the commit");
     }
     return value;
   };
-  await assert.rejects(() => approve(c, ssOf(registered), 2), /crash before the commit/);
+  await assert.rejects(() => approve(c, ssOf(renewed), 2), /crash before the commit/);
   hook.before = (_p, value) => value;
-  const kept = savedNonces(c, 2, registered);
+  const kept = savedNonces(c, 2, renewed);
   assert.ok(kept, "the nonces are kept");
-  assert.equal(data.has(path(gid, `solsessions/${registered}/commits/2`)), false);
-  await approve(c, ssOf(registered), 2);
-  const commit = data.get(path(gid, `solsessions/${registered}/commits/2`));
+  assert.equal(data.has(path(gid, `solsessions/${renewed}/commits/2`)), false);
+  await approve(c, ssOf(renewed), 2);
+  const commit = data.get(path(gid, `solsessions/${renewed}/commits/2`));
   assert.equal(commit.commitments, kept.commitments, "the retry publishes the saved commitment");
 }
-await waitSession(registered, "sent");
+await waitSession(renewed, "sent");
 {
-  const ss = ssOf(registered),
-    intent = decodeIntent(ss.intent);
+  const ss = ssOf(renewed);
   assert.deepEqual(ss.signers, [1, 2]);
-  assert.equal(intent.nullifierPk, done.nullifierPk);
-  assert.equal(intent.viewingPk, done.viewingPk);
-  assert.ok(verifies(done.groupKey, bytesOf(landedOf(registered).message), bytesOf(ss.signature)));
-  assert.equal(describeMessage(bytesOf(ss.message)).computeUnits, 24048n);
+  assert.ok(verifies(done.groupKey, bytesOf(landedOf(renewed).message), bytesOf(ss.signature)));
+  assert.equal(describeMessage(bytesOf(ss.message)).computeUnits, 450n);
 }
 
-step("register landed after a crash and a retry");
-// ── A second register (the fake chain keeps no registry): a crash between the share and its
-// publish. The proposer is seat 1 again, so seat 1 pays again. ──
-const again = await proposed("register");
+step("the nonce account landed again after a crash and a retry");
+// ── A third nonce account: a crash between the share and its publish. The proposer is seat 1
+// again, so seat 1 pays again. ──
+chain.nonce = null;
+const again = await proposed("createNonce");
 {
   const rows = rowsOf(again);
   assert.equal(rows["Fees paid by seat 1"], feeAddress(1));
   assert.equal(rows["Network fee"], "0.00001 SOL");
-  assert.match(rows.Lasts, /nonce account advances/);
-  assert.equal(decodeIntent(ssOf(again).intent).kind, "register");
+  assert.match(rows.Lasts, /1 to 2 minutes/);
+  assert.equal(decodeIntent(ssOf(again).intent).kind, "createNonce");
 }
 await approve(c, ssOf(again), 1);
 // The first share write is held, so the state between "the share is made" and "it is published"
@@ -437,7 +430,7 @@ const every = chain.landed.every((l) =>
 );
 assert.ok(every, "every landed transaction verifies under the group key");
 
-step("a second register landed after a lost share publish");
+step("a third nonce account landed after a lost share publish");
 // ── A digest that made a share is used: no second approval of the same bytes ──
 {
   const old = ssOf(again),
@@ -452,13 +445,7 @@ step("a second register landed after a lost share publish");
     { seat: old.by, create: true },
   );
   await waitFor("the proposal", () => ssOf("same-bytes"));
-  const kept = chain.nonce;
-  chain.nonce = decodeIntent(old.intent).nonce; // as if the nonce had not moved
-  // A landed session ends every other session on its nonce (sol-limits.mjs), so this one reads as
-  // failed. Each check below shows it as collecting, as on a device that has not read the sent
-  // part yet: the rule about used bytes holds on its own.
-  const collecting = () =>
-    Object.assign(ssOf("same-bytes"), { status: "collecting", error: undefined });
+  const collecting = () => ssOf("same-bytes");
   assert.equal(reviewOf(c, ssOf("same-bytes"), seat).ok, true, "the checker accepts the bytes");
   await assert.rejects(() => approve(c, collecting(), seat), /signed these bytes before/);
   assert.equal(savedNonces(c, seat, "same-bytes"), undefined, "no nonces were made");
@@ -478,12 +465,12 @@ step("a second register landed after a lost share publish");
     `seat ${open} signed nothing: it may approve`,
   );
   assert.equal(findAll(card, (n) => n.tag === "dl").length, 1, "its screen is shown once");
-  chain.nonce = kept;
 }
 
 // ── A share under another seat is ignored; a failed save publishes nothing ──
 {
-  const second = await proposed("register");
+  chain.nonce = null;
+  const second = await proposed("createNonce");
   await approve(c, ssOf(second), 1);
   await assert.rejects(() => approve(c, ssOf(second), 1), /approved this already/);
   const signer = ssOf(again).signers[0];
@@ -500,7 +487,7 @@ step("a second register landed after a lost share publish");
   data.delete(where(other));
   data.delete(where(3));
   notify();
-  const third = await proposed("register");
+  const third = await proposed("createNonce");
   const setItem = localStorage.setItem;
   localStorage.setItem = () => {
     throw new Error("disk full");
@@ -549,7 +536,6 @@ step("a copied share is ignored, a failed save sends nothing");
   await waitSession("right-sent", "sent");
   await waitFor("every check", () => c.sessWait === 0 && ssOf("wrong-sent"));
   await sleep(200);
-  // These sessions share the nonce of the landed one, so each ends as failed (sol-limits.mjs).
   // None of them counts as sent.
   assert.notEqual(ssOf("lonely-sent").status, "sent", "a sent mark with no signed part");
   assert.notEqual(ssOf("lonely-signed").status, "sent", "a signed part with no package");
@@ -560,7 +546,7 @@ step("a copied share is ignored, a failed save sends nothing");
 
 // ── A package that differs from the commits gets no share, and the nonces go ──
 {
-  const evil = await proposed("register");
+  const evil = await proposed("createNonce");
   const commit = (seat) => data.get(path(gid, `solsessions/${evil}/commits/${seat}`))?.commitments;
   // The honest packager is held back, as if a bad packager had been faster.
   hook.before = (p, value) => {
@@ -601,22 +587,12 @@ step("a copied share is ignored, a failed save sends nothing");
     assert.equal(all.includes(secret), false, "no secret reaches the group server");
   }
   const init = chain.commands.find((m) => m.cmd === "init");
-  const fields = ["groupKey", "nullifierSecret", "rpcUrl", "viewingSecret"];
+  const fields = ["groupKey", "nullifierSecret", "pda", "pdaNullifierSecret", "rpcUrl"];
+  fields.push("viewingSecret");
   assert.deepEqual(Object.keys(init.args).sort(), fields);
 }
 
 step("no secret reaches the Worker or the store");
-// ── A stale nonce at approval time ──
-{
-  const fresh = await proposed("register");
-  const kept = chain.nonce;
-  chain.nonce = "cd".repeat(32);
-  await assert.rejects(() => approve(c, ssOf(fresh), 1), /nonce changed/);
-  assert.equal(savedNonces(c, 1, fresh), undefined, "no nonces for a stale proposal");
-  chain.nonce = kept;
-}
-
-step("a stale nonce is refused");
 // ── The stop: documents that are forged, one seat alone, every seat, and a restore ──
 const stopOfParts = (sol, docs = {}) =>
   stopOf({
@@ -676,7 +652,7 @@ const file = J(Z.backupOpen(PASS, backed.at(-1).data));
   assert.match(stopOf(c), /^Seat 2 stopped the Solana part of this wallet\./);
   assert.equal(solOf(gid, 1).aborted, undefined, "seat 1 itself did not stop");
   await waitFor("the nonces of a stopped wallet go", () => !savedNonces(c, 1, after));
-  await assert.rejects(() => propose(c, "register"), /Seat 2 stopped/);
+  await assert.rejects(() => propose(c, "createNonce"), /Seat 2 stopped/);
   await assert.rejects(() => approve(c, ssOf(after), 1), /Seat 2 stopped/);
   assert.equal(reviewOf(c, ssOf(after), 1).ok, false);
   assert.match(textOf(tabOf()), /Seat 2 stopped/);
@@ -692,7 +668,8 @@ const file = J(Z.backupOpen(PASS, backed.at(-1).data));
 
 // A proposal that exists before the stop: written straight, because propose refuses once stopped.
 async function proposedBeforeStop() {
-  const intent = intentHex("register", { nonce: chain.nonce, ...done });
+  const { blockhashHex } = await c.worker.call("blockhash");
+  const intent = intentHex("createNonce", { blockhash: blockhashHex });
   const message = hexOf(compiled(intent));
   const feeSig = feeSignature(c, { id: "after-the-stop", by: 1, intent, message }, 1);
   const fields = { intent, message, feeSig, createdAt: Date.now() };

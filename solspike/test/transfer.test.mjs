@@ -8,6 +8,8 @@
 //   4. The payment and the change reach the right owners.
 //   5. The fee payer is not the owner: the proof binds both, the group is the owner signer, and
 //      the change tag is inline (the sponsor mode of the SDK, which the fee key of a seat uses).
+//   6. A payment of the PDA identity (ZOLANA.md 7.2), rebuilt from its plan and its first proof
+//      for another payer, has the commitment of the first proof; another plan has another one.
 import "../tools/quiet.mjs";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
@@ -29,7 +31,7 @@ globalThis.fetch = async (input, init) => {
   return new Response(body, { headers: { "content-type": "application/wasm" } });
 };
 const sdk = await import(new URL("zolana.bundle.js", WEB_SOL).href);
-const { buildProofInputs, ownerSigners, selectInputs } = await import(
+const { buildProofInputs, ownerSigners, rebuildProofInputs, selectInputs } = await import(
   new URL("transfer.js", WEB_SOL).href
 );
 await sdk.initializePoseidon();
@@ -65,15 +67,16 @@ function entry(amount, seed, options = {}) {
   return { utxo, nullifier, spent: false, outputContext, ...rest };
 }
 
+const client = { tree: TREE };
 const session = {
-  client: { tree: TREE },
   address: group.address,
   viewing: group.viewing,
   owner: group.address.solanaAddress(),
+  groupOwner: group.address.solanaAddress(),
 };
 const walletOf = (entries) => ({ utxos: () => entries, registry: new sdk.AssetRegistry([]) });
 const build = (entries, amount = 40n, expiry = EXPIRY) =>
-  buildProofInputs(sdk, session, walletOf(entries), {
+  buildProofInputs(sdk, client, session, walletOf(entries), {
     recipient: payee.address,
     amount,
     expiry,
@@ -212,7 +215,7 @@ function theFeeKeyPaysAndTheGroupIsTheOwnerSigner() {
   assert.equal(own.externalData.outputs[0].ownerTag.kind, "account", "the control: owner pays");
   assert.throws(
     () =>
-      buildProofInputs(sdk, session, walletOf([entry(100n, 1)]), {
+      buildProofInputs(sdk, client, session, walletOf([entry(100n, 1)]), {
         recipient: payee.address,
         amount: 40n,
         expiry: EXPIRY,
@@ -259,6 +262,112 @@ async function ownerSignersEqualTheSdk() {
 const entryInput = (seed) =>
   sdk.ProofInputUtxo.fromNullifierKey(entry(100n, seed).utxo, group.nullifier);
 
+// ── The PDA identity: a payment that any seat proves again ──
+const hexOf = (bytes) => Buffer.from(bytes).toString("hex");
+const PDA = new Uint8Array(32).fill(0x6a);
+const pdaNullifier = sdk.NullifierKey.fromSecret(new Uint8Array(31).fill(0x4d));
+const pdaAddress = sdk.ShieldedAddress.forPda({
+  pda: PDA,
+  nullifierPublicKey: pdaNullifier.publicKey(),
+  viewingPublicKey: group.viewing.publicKey(),
+});
+const pda = {
+  address: pdaAddress,
+  viewing: group.viewing,
+  owner: pdaAddress.solanaAddress(),
+  groupOwner: group.address.solanaAddress(),
+};
+
+/** A synced UTXO of the PDA identity. */
+function pdaEntry(amount, seed) {
+  const utxo = new sdk.Utxo({
+    owner: sdk.ShieldedPublicKey.fromPda(PDA),
+    asset: sdk.SOL_MINT,
+    amount,
+    blinding: scalar(seed),
+  });
+  const nullifier = sdk.ProofInputUtxo.fromNullifierKey(utxo, pdaNullifier).nullifier();
+  const outputContext = { hash: scalar(0x700 + seed), tree: TREE, leafIndex: BigInt(seed) };
+  return { utxo, nullifier, spent: false, outputContext };
+}
+
+/** What the page keeps of a first proof: the plan and the fields of its data (parseTransact). */
+function firstOf(proofInputs) {
+  const data = proofInputs.externalData;
+  const roles = proofInputs.outputs.map((o) => {
+    if (o.isDummy()) return "dummy";
+    return hexOf(o.ownerHash()) === hexOf(pdaAddress.ownerHash()) ? "change" : "payee";
+  });
+  const plan = {
+    blindingSeed: hexOf(proofInputs.blindingSeed),
+    outputs: proofInputs.outputs.map((o, i) => ({
+      role: roles[i],
+      mint: "00".repeat(32),
+      amount: o.amount.toString(),
+      blinding: hexOf(o.blinding),
+    })),
+  };
+  const first = {
+    expiry: data.expiryUnixTs,
+    salt: data.salt,
+    txViewingPk: hexOf(data.txViewingPublicKey.toBytes()),
+    inputs: proofInputs.inputUtxos.length,
+    outputs: proofInputs.outputs.length,
+    published: data.outputs.map((o) => ({
+      utxoHash: hexOf(o.utxoHash),
+      tag: hexOf(o.ownerTag.value),
+      data: hexOf(o.data),
+    })),
+  };
+  return { plan, first };
+}
+
+function aPaymentIsRebuiltWithItsCommitmentForAnyPayer() {
+  for (const [amount, sent] of [
+    [100n, 40n],
+    [40n, 40n],
+  ]) {
+    const entries = [pdaEntry(amount, 1)];
+    const request = { recipient: payee.address, amount: sent, expiry: EXPIRY, payer: PAYER };
+    const { proofInputs } = buildProofInputs(sdk, client, pda, walletOf(entries), request);
+    const { plan, first } = firstOf(proofInputs);
+    const inputIds = entries.map((e) => hexOf(e.outputContext.hash));
+    const again = { recipient: payee.address, plan, inputIds, first };
+    const other = "11111111111111111111111111111119";
+    const elsewhere = { ...again, payer: other };
+    const rebuilt = rebuildProofInputs(sdk, client, pda, walletOf(entries), elsewhere);
+    assert.equal(rebuilt.payer, other);
+    assert.equal(hexOf(rebuilt.messageHash()), hexOf(proofInputs.messageHash()), `${sent}`);
+    assert.equal(hexOf(rebuilt.privateTxHash()), hexOf(proofInputs.privateTxHash()));
+    const moved = structuredClone(plan);
+    moved.outputs[0].blinding = "11".repeat(32);
+    const changed = rebuildProofInputs(sdk, client, pda, walletOf(entries), {
+      ...again,
+      plan: moved,
+      payer: other,
+    });
+    assert.notEqual(hexOf(changed.messageHash()), hexOf(proofInputs.messageHash()), "a blinding");
+  }
+  step("a payment of the PDA rebuilt for another payer has the commitment of its first proof");
+}
+
+function aRebuildRefusesTheGroupKeyAMissingInputAndAnAccountTag() {
+  const entries = [pdaEntry(100n, 1)];
+  const request = { recipient: payee.address, amount: 40n, expiry: EXPIRY, payer: PAYER };
+  const { proofInputs } = buildProofInputs(sdk, client, pda, walletOf(entries), request);
+  const { plan, first } = firstOf(proofInputs);
+  const again = { recipient: payee.address, plan, first, inputIds: [hexOf(scalar(0x701))] };
+  const rebuild = (change) =>
+    rebuildProofInputs(sdk, client, pda, walletOf(entries), { ...again, payer: PAYER, ...change });
+  assert.throws(() => rebuild({ payer: pda.groupOwner }), /the group key cannot pay/);
+  assert.throws(() => rebuild({ payer: pda.owner }), /the group key cannot pay/);
+  assert.throws(() => rebuild({ inputIds: [hexOf(scalar(5))] }), /not in the synced wallet/);
+  assert.throws(() => rebuild({ inputIds: [] }), /inputs and outputs of the plan/);
+  const tagless = { ...first, published: first.published.map((o) => ({ ...o, tag: null })) };
+  assert.throws(() => rebuild({ first: tagless }), /no inline owner tag/);
+  step("a rebuild refuses the group key as payer, an input that is not synced and an account tag");
+}
+
 expiryIsBound();
 theFeeKeyPaysAndTheGroupIsTheOwnerSigner();
 hashFollowsExpiry();
@@ -268,4 +377,6 @@ inputCap();
 ownersOfOutputs();
 exactAmountHasNoChange();
 await ownerSignersEqualTheSdk();
+aPaymentIsRebuiltWithItsCommitmentForAnyPayer();
+aRebuildRefusesTheGroupKeyAMissingInputAndAnAccountTag();
 console.log("transfer tests passed");
