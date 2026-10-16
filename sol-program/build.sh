@@ -26,7 +26,7 @@ set -eu
 cd "$(dirname "$0")"
 unset RUSTFLAGS CARGO_ENCODED_RUSTFLAGS
 
-EXPECTED=483e2b4a522544e551520d051747567f905b5fd978d13f4b3d94cd3bda3d84ea
+EXPECTED=28509c6799e6a229c3378a09530088f80afbceb8f73c1c8ab776615f6a71fd16
 V2=555f45801f32896c78eb55f962026507dec35ea6d673477326db7913e4475d92
 SBF=${CARGO_BUILD_SBF:-cargo-build-sbf}
 OBJDUMP=$HOME/.cache/solana/v1.54/platform-tools/llvm/bin/llvm-objdump
@@ -46,7 +46,7 @@ case "$("$SBF" --version 2>/dev/null | head -1)" in
   *) fail "needs cargo-build-sbf 4.3.0 (Agave v4.3.0); put it on PATH or set CARGO_BUILD_SBF" ;;
 esac
 
-"$SBF" --tools-version v1.54 --jobs 4 -- --locked
+"$SBF" --tools-version v1.54 --jobs 4 -- --locked --features devnet
 if LC_ALL=C grep -q -F "$HOME" "$SO"; then
   fail "$SO holds a home path"
 fi
@@ -58,7 +58,7 @@ find_zolana() {
   ZOLANA=$(cargo metadata --format-version 1 --locked | python3 -I -c '
 import json, os, sys
 for p in json.load(sys.stdin)["packages"]:
-    if p["name"] == "zolana-program":
+    if p["name"] == "zolana-interface":
         print(os.path.dirname(os.path.dirname(os.path.dirname(p["manifest_path"]))))')
   [ "$(git -C "$ZOLANA" rev-parse HEAD)" = 89640630b3ed2402b83bd20c313406cb3fe906d4 ] \
     || fail "$ZOLANA is not at the pinned commit"
@@ -80,10 +80,36 @@ build_real_pool() {
   cp "$POOL/target/deploy/shielded_pool_program.so" svm-tests/target/deploy/
 }
 
+# SOL-42: a build names one cluster, and a mainnet build cannot carry the Devnet genesis hash or
+# the development pool id. Each refused build must fail with its own message.
+check_clusters() {
+  DEV_POOL=sppU489D7A4U1exNo1oeMGZtLEofq3a6o2fR7UeoWB6
+  must_fail "choose the cluster" cargo check --locked -j 4
+  must_fail "choose one cluster" cargo check --locked -j 4 --features devnet,mainnet
+  must_fail "ZIGS_MAINNET_POOL_ID" env -u ZIGS_MAINNET_POOL_ID \
+    cargo check --locked -j 4 --features mainnet
+  must_fail "development pool id" env ZIGS_MAINNET_POOL_ID=$DEV_POOL \
+    cargo check --locked -j 4 --features mainnet
+  env ZIGS_MAINNET_POOL_ID=11111111111111111111111111111112 \
+    cargo check --locked -j 4 --features mainnet > /dev/null 2>&1 \
+    || fail "a mainnet build with another pool id must pass"
+}
+
+# must_fail TEXT COMMAND...: the command fails, and its output names TEXT.
+must_fail() {
+  TEXT=$1
+  shift
+  if OUT=$("$@" 2>&1); then
+    fail "this build must fail: $*"
+  fi
+  echo "$OUT" | grep -q -F "$TEXT" || fail "this build failed without \"$TEXT\": $*"
+}
+
 case "${1:-}" in
   "") exit 0 ;;
   test)
-    cargo test --locked -j 4 -- --test-threads 2
+    cargo test --locked -j 4 --features devnet -- --test-threads 2
+    check_clusters
     "$SBF" --tools-version v1.54 --jobs 4 --manifest-path svm-tests/stub-pool/Cargo.toml -- --locked
     build_real_pool
     cargo test --manifest-path svm-tests/Cargo.toml --locked -j 4 -- --test-threads 2

@@ -17,10 +17,10 @@ use zolana_interface::instruction::{
     tag::TRANSACT,
 };
 use zolana_interface::verifying_keys::CircuitId;
-use zolana_interface::PROGRAM_ID_PUBKEY;
 
 use crate::{
     approval::{approval_digest, check_approval},
+    cluster::POOL_ID,
     error::MultisigError,
     state::{
         cancellation_expiry, cancellation_record, Proposal, CANCELLED_LEN, HEADER, KIND_CANCELLED,
@@ -255,7 +255,7 @@ fn invoke_transact(
     data: &[u8],
     signer: Signer,
 ) -> ProgramResult {
-    if spp.get(2).map(AccountView::address) != Some(&PROGRAM_ID_PUBKEY) {
+    if spp.get(2).map(AccountView::address) != Some(&POOL_ID) {
         return Err(ProgramError::Custom(INVALID_SPP_PROGRAM));
     }
     let metas: Vec<InstructionAccount> = spp
@@ -269,7 +269,7 @@ fn invoke_transact(
     instruction_data.push(TRANSACT);
     instruction_data.extend_from_slice(data);
     let instruction = InstructionView {
-        program_id: &PROGRAM_ID_PUBKEY,
+        program_id: &POOL_ID,
         accounts: &metas,
         data: &instruction_data,
     };

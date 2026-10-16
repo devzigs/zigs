@@ -24,7 +24,8 @@ fail() {
 
 # Builds the copy in $WORK and runs svm-tests on it; returns the exit code of the tests.
 build_and_test() {
-  if ! "$SBF" --tools-version v1.54 --jobs 4 --manifest-path "$WORK/Cargo.toml" -- --locked \
+  if ! "$SBF" --tools-version v1.54 --jobs 4 --manifest-path "$WORK/Cargo.toml" \
+    -- --locked --features devnet \
     > "$WORK/build.log" 2>&1; then
     cat "$WORK/build.log" >&2
     fail "$1 does not build"
@@ -167,7 +168,7 @@ mutant L2 instructions.rs "the owner PDA is the only owner signer" \
   '.all(|(at, account)| at != owner_at || account.address() == owner);'
 mutant L3 instructions.rs "the pool payer is the execute payer" ' || spp[0].address() != payer' ''
 mutant T1 instructions.rs "the transact CPI goes to the pool account only" \
-  'if spp.get(2).map(AccountView::address) != Some(&PROGRAM_ID_PUBKEY) {' 'if false {'
+  'if spp.get(2).map(AccountView::address) != Some(&POOL_ID) {' 'if false {'
 mutant T2 instructions.rs "the owner PDA signs the transact CPI" \
   'let signs = account.is_signer() || account.address() == owner;' \
   'let signs = account.is_signer();'

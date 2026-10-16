@@ -92,7 +92,9 @@ mod tests {
             expected
         );
         let genesis = hex32("ce59db5080fc2c6d3bcf7ca90712d3c2e5e6c28f27f0dfbb9953bdb0894c03ab");
-        assert_eq!(DEPLOYMENT_ID, genesis);
+        if cfg!(feature = "devnet") {
+            assert_eq!(DEPLOYMENT_ID, genesis);
+        }
     }
 
     fn canonical(key: &[u8; 32], digest: &[u8; 32]) -> Vec<u8> {

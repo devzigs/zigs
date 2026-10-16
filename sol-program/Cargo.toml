@@ -13,6 +13,9 @@ crate-type = ["cdylib", "lib"]
 default = ["bpf-entrypoint"]
 bpf-entrypoint = []
 no-entrypoint = []
+# The cluster (SOL-42, src/cluster.rs): exactly one. mainnet also needs ZIGS_MAINNET_POOL_ID.
+devnet = []
+mainnet = []
 
 # The Zolana crates come from one pinned commit (ZOLANA.md [Z]). The other versions match the
 # Cargo.lock of that commit; build.sh builds with --locked.
