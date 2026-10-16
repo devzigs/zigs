@@ -184,6 +184,25 @@ function endSuperseded(sessions) {
   }
 }
 
+const SPENT =
+  "Another payment spent the inputs of this one, so it can never execute. Propose it again.";
+
+/** The input ids of the payments that are still open: a new payment must not take them. */
+export const openInputs = (sessions) =>
+  sessions
+    .filter((ss) => isPayment(ss) && !ENDED.has(ss.status))
+    .flatMap((ss) => ss.inputIds ?? []);
+
+/** A payment that executed spent its inputs: every open payment over one of them ends. */
+function endSpent(sessions) {
+  const sent = sessions.filter((ss) => ss.status === "sent" && isPayment(ss));
+  const spent = new Set(sent.flatMap((ss) => ss.inputIds ?? []));
+  for (const ss of sessions) {
+    const over = isPayment(ss) && (ss.inputIds ?? []).some((id) => spent.has(id));
+    if (!ENDED.has(ss.status) && over) Object.assign(ss, { status: "failed", error: SPENT });
+  }
+}
+
 /**
  * The sessions of `raw` and, for each valid one, its commits and shares. `raw` has `solsessions`
  * ({ id: document }), `solcommits` and `solshares` ({ id: { seat: document } }). `check(rel, by,
@@ -215,6 +234,7 @@ export function filterSessions(raw, check, onBad) {
     }
   }
   endSuperseded(out.sessions);
+  endSpent(out.sessions);
   out.sessions.sort((a, b) => num(b.createdAt) - num(a.createdAt));
   return out;
 }

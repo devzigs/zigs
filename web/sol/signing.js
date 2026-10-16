@@ -15,7 +15,7 @@ import { signingBlock, writerSeats } from "./gate.js";
 import { bytesOf, decodeIntent, seenHex, wireBase64 } from "./intent.js";
 import { clearPending, dropNonces, pendingShare, savedNonces, spendNonces } from "./nonces.js";
 import { BLOCKHASH_MS, deviceSeen, inputsOf, showable } from "./approve.js";
-import { maybeExecute } from "./execute.js";
+import { PAYMENT_EXPIRED, maybeExecute, pastExpiry } from "./execute.js";
 import { solOf, stopOf } from "./secrets.js";
 import { ensureWorker } from "./session.js";
 import { BEFORE_FEE, SESSIONS, beforeFee, isPayment, writePart } from "./sessions.js";
@@ -26,7 +26,6 @@ const J = JSON.parse,
 const HEXTEXT = /^([0-9a-f]{2})+$/;
 const TERMINAL = new Set(["sent", "failed"]);
 const EXPIRED = "This proposal expired before it was signed. Propose it again.";
-const PAYMENT_EXPIRED = "This payment expired before it was executed. Propose it again.";
 // The pool refuses a proof once its roots left the history (error 7008): the payment must be
 // proved and approved again (ZOLANA.md 5, stale roots).
 const STALE_ROOT = /\b7008\b/;
@@ -319,20 +318,29 @@ const expired = (ss) =>
   decodeIntent(ss.intent)?.kind === "createNonce" &&
   !ss.package &&
   !(Date.now() - Number(ss.createdAt) <= EXPIRE_MS);
-// A payment ends at the expiry of its body: the program refuses an execute after it.
-const paymentExpired = (ss) =>
-  isPayment(ss) && !(Math.floor(Date.now() / 1000) < Number(ss.expiry));
+// A payment with no approval ends at the expiry of its body: nobody can execute it. A signed one
+// may have landed, so its execute step reads the chain first (execute.js).
+const paymentExpired = (ss) => isPayment(ss) && !ss.signature && pastExpiry(ss);
+
+// A node may show a new proposal account a moment after the create: a device that read none
+// reads it again after this, so its screen does not keep a refusal.
+const REREAD_MS = 5000;
+const accountMissing = (c, ss) =>
+  isPayment(ss) && c.seen[ss.id]?.account === null && Date.now() - c.seen[ss.id].at > REREAD_MS;
 
 // A private spend needs the snapshot of this device, and a payment its proposal account, before
 // its approval screen can show.
 function maybeReadWallet(c, ss) {
-  const waiting = ss.status === "collecting" && c.snaps[ss.id] === undefined;
+  const unread = c.snaps[ss.id] === undefined || accountMissing(c, ss);
+  const waiting = ss.status === "collecting" && unread;
   const kind = decodeIntent(ss.intent)?.kind;
   if (!waiting || !["transfer", "approve"].includes(kind)) return;
   if (!c.rpcUrl || writerSeats(c)[0] === undefined) return;
   launch(c, "snap:" + ss.id, async () => {
-    if (isPayment(ss)) c.seen[ss.id] = await deviceSeen(c, ss);
+    if (isPayment(ss)) c.seen[ss.id] = { ...(await deviceSeen(c, ss)), at: Date.now() };
     c.snaps[ss.id] = await deviceSpend(c, ss);
+    // The pass of the reactor after this step reads a missing account again.
+    if (isPayment(ss) && c.seen[ss.id].account === null) await sleep(REREAD_MS + 100);
   });
 }
 

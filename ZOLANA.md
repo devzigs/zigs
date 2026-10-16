@@ -327,18 +327,24 @@ and the rent. The rent comes back to that seat at the execute. The group key sig
    The wasm compiles the execute message, checks that the approval verifies under the group key
    over the digest of the new data, and only then does the fee key sign. The executing seat pays
    10,000 lamports (two signatures) and the tree fee. Only a confirmed execute is a sent mark. A
-   tab sends no second execute while its first one can still land (150 s, the life of a
-   blockhash). An execute that fails on chain is a counted try, and the approval stays valid.
+   tab sends no second execute while its first one can still land (150 s; a blockhash lives 150
+   blocks, about 60 to 90 s). An execute that fails on chain is a counted try, and the approval stays valid.
    After error 7008 (a stale root) the seat proves again. After 3 failed tries the card shows the
    error and a button. A proposal account that is gone (or holds no body) was executed by another
    device: the page reads the history of the account, oldest first, and writes the sent mark with
-   the first transaction that carries the approval signature of this payment. It ends the session
-   only when that history reaches back to the create and every transaction of it was read; else
-   it reads the history again. One read holds 1,000 transactions: a gone account with more later
-   transactions on it reads as not complete, and at the expiry the payment reads as expired.
+   the first transaction that carries the Ed25519 instruction of this approval. Before the expiry
+   it reads the history again until it finds one. After the expiry it ends the session only when
+   that history reaches back to the create and every transaction of it was read. One read holds
+   1,000 transactions: a gone account with more later transactions on it reads as not complete.
+   A signed payment ends at its expiry only after the page read its account (still open: the
+   program refuses the execute), with a margin of 600 s for the clock of the device. A payment
+   that nobody signed ends at the expiry and the same margin.
+6. **One input, one payment.** A new payment avoids the inputs of the open payments (the Worker
+   skips them). When a payment executes, every open payment over one of its inputs ends.
 5. **The move of the beta funds** (SOL-36 condition 3). While the group key holds private SOL, the
    tab shows a card: first the nonce account if it is missing, then the move. The card counts only
-   the UTXOs that a move can take (plain SOL of the live tree). A move takes whole UTXOs, as many
+   the UTXOs that a move can take (plain SOL of the live tree). The group key signs no other spend,
+   so a UTXO of another kind (another tree, a token, data or a ring) stays at the old address. A move takes whole UTXOs, as many
    as one proof can (at most 16), and pays them to the PDA address with no change.
    A group key with more notes moves them in several steps, and a payment to the old address
    shows the card again.

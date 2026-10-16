@@ -36,19 +36,20 @@ const isSpendable = (sdk, tree, e) =>
 const COUNTS = [1, 2, 3, 4, 5, 6, 8, 12, 16];
 export const MAX_INPUTS = COUNTS.at(-1);
 
-const spendable = (sdk, wallet, tree) =>
+const spendable = (sdk, wallet, tree, avoid = new Set()) =>
   wallet
     .utxos()
-    .filter((e) => isSpendable(sdk, tree, e))
+    .filter((e) => isSpendable(sdk, tree, e) && !avoid.has(hexOf(e.outputContext.hash)))
     .sort(largestFirst);
 
 /**
  * The synced SOL UTXOs of `tree` that cover `amount`: largest first (the SDK default), then more
- * until their count has a circuit. Option D has no merge, so a wider spend is refused.
+ * until their count has a circuit. Option D has no merge, so a wider spend is refused. `avoid`
+ * holds the ids of the inputs of open payments: a payment over them could never execute.
  */
-export function selectInputs(sdk, wallet, tree, amount) {
+export function selectInputs(sdk, wallet, tree, amount, avoid = new Set()) {
   if (amount <= 0n) throw new Error("the amount must be more than zero");
-  const sorted = spendable(sdk, wallet, tree);
+  const sorted = spendable(sdk, wallet, tree, avoid);
   let [held, needed] = [0n, 0];
   while (needed < sorted.length && held < amount) held += sorted[needed++].utxo.amount;
   if (held < amount) throw new Error("the synced balance does not cover the amount");
@@ -146,7 +147,7 @@ export function buildProofInputs(sdk, client, identity, wallet, request) {
   const { tree } = client;
   const picked = request.whole
     ? moveInputs(sdk, wallet, tree)
-    : selectInputs(sdk, wallet, tree, request.amount);
+    : selectInputs(sdk, wallet, tree, request.amount, new Set(request.avoid ?? []));
   const amount = request.whole ? sumOf(picked) : request.amount;
   if (amount > request.amount) throw new Error("the move takes more than the page asked for");
   const inputs = picked.map((entry) => proofInput(sdk, entry, identity.address));

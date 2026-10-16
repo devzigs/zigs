@@ -195,6 +195,7 @@ function otherCommands() {
 function prepareFields() {
   const payer = "5TeWSsjg2gbxCyWVniXeCmwM7UtHTCK7svzJr5xYJzHf";
   const prepare = { kind: "pay", recipient: "01ab", amount: "1000000", expiry: "1900000000" };
+  prepare.avoid = ["ab".repeat(32)];
   checkCommand("prepare", { ...prepare, payer });
   checkCommand("prepare", { ...prepare, payer, kind: "migrate" });
   // The payer (the fee key of a seat, as a base58 address) is a field that must be there.
@@ -211,6 +212,8 @@ function prepareFields() {
     ["payer", "0OIl"],
     ["payer", payer.slice(20)],
     ["payer", "ab".repeat(32)],
+    ["avoid", ["zz"]],
+    ["avoid", "ab".repeat(32)],
   ]) {
     assert.match(
       text(() => checkCommand("prepare", { ...prepare, payer, [field]: value })),

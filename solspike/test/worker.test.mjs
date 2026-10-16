@@ -171,6 +171,7 @@ const account = (data, owner = SYSTEM) => ({
 // group as an owner signer.
 const PAYER = "5TeWSsjg2gbxCyWVniXeCmwM7UtHTCK7svzJr5xYJzHf";
 const PREPARE = {
+  avoid: [],
   kind: "migrate",
   recipient: "01ab",
   amount: "40000000",
@@ -480,9 +481,10 @@ async function payPreparesThePda() {
   await initialised();
   control.utxos = [syncedInput()];
   giveProof(proveBody());
-  const done = await ask("prepare", { ...PREPARE, kind: "pay" });
+  const done = await ask("prepare", { ...PREPARE, kind: "pay", avoid: ["ab".repeat(32)] });
   assert.equal(done.ok, true, done.error);
   assert.equal(control.request.identity.owner, PDA, "a payment spends the PDA identity");
+  assert.deepEqual(control.request.avoid, ["ab".repeat(32)], "the inputs of open payments");
   const groupOwner = sdk.getAddressDecoder().decode(Buffer.from(GROUP_KEY, "hex"));
   assert.equal(control.request.identity.groupOwner, groupOwner, "the group key never pays");
   assert.deepEqual(control.instruction.ownerSigners, [], "no owner signer for the PDA");

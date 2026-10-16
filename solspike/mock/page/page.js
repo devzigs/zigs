@@ -51,6 +51,7 @@ async function refusals(sol, cfg, init) {
   const extra = { ...cfg.init, solSeed: "00".repeat(32) };
   const prepare = {
     kind: "migrate",
+    avoid: [],
     recipient: init.shielded,
     amount: "1000",
     expiry: "1900000000",

@@ -31,7 +31,7 @@ import {
 } from "./intent.js";
 import { feeSignature, refusalText, reviewOf, rolesOf, signAsFee } from "./approve.js";
 import { ensureWorker } from "./session.js";
-import { writePart } from "./sessions.js";
+import { openInputs, writePart } from "./sessions.js";
 import { pairsBefore } from "./spend.js";
 
 /** A proof binds an expiry: 23 hours, inside the 24 hour window of the checker and its skew. */
@@ -95,10 +95,11 @@ function typedPayment(args) {
 }
 
 /** The Worker proves the spend; the fields of the proposal part that every kind of spend has. */
-async function proved(worker, kind, { payee, amount }, fee) {
+async function proved(c, worker, kind, { payee, amount }, fee) {
   const expiry = BigInt(Math.floor(Date.now() / 1000) + EXPIRY_SECS);
   const request = { kind, recipient: payee, amount: String(amount), expiry: String(expiry) };
   request.payer = base58(fee.key);
+  request.avoid = openInputs(c.sessions); // a payment over them could never execute
   const prepared = await worker.call("prepare", request);
   const counts = { inputs: prepared.inputs.length, outputs: prepared.outputs.length };
   const fields = {
@@ -140,7 +141,7 @@ async function land(worker, message, signature, seat) {
  * create message of the proposal account. Resolves with the fields of the proposal part.
  */
 async function payDraft(c, worker, seat, fee, args) {
-  const { prepared, fields, terms } = await proved(worker, "pay", typedPayment(args), fee);
+  const { prepared, fields, terms } = await proved(c, worker, "pay", typedPayment(args), fee);
   Object.assign(fields, { intent: intentHex("approve", terms), transact: prepared.data });
   const spend = await draftSpend(c, worker, prepared);
   const roles = rolesOf(c, seat, "approve");
@@ -180,7 +181,7 @@ async function migrationDraft(c, worker, seat, fee) {
   const amount = BigInt(old.balance);
   if (amount <= 0n) throw new Error("The group key holds no private SOL to move.");
   const typed = { payee: done.pdaAddress, amount };
-  const { prepared, fields, terms } = await proved(worker, "migrate", typed, fee);
+  const { prepared, fields, terms } = await proved(c, worker, "migrate", typed, fee);
   // One move takes as many whole UTXOs as one proof can: the intent names what this one moves.
   terms.amount = BigInt(prepared.outputs.find((o) => o.role === "payee").amount);
   const { nonce } = await lifetimeOf(worker, "transfer", done.groupKey);

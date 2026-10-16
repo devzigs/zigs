@@ -34,9 +34,19 @@ const STALE_ROOT = /\b7008\b/;
 const HOLDER = crypto.randomUUID();
 // A blockhash lives 150 slots; a sent execute is past it well before this.
 const SEND_WINDOW_MS = 150_000;
+// Longer than one try: a re-proof, a test run, a send and a confirm of up to 60 s.
+const LEASE_MS = 240_000;
 const CONFIRMED = new Set(["confirmed", "finalized"]);
 const FAILED = "The execute failed on chain. The approval is still valid.";
 const UNREAD = "The history of the proposal account is not complete yet.";
+export const PAYMENT_EXPIRED = "This payment expired before it was executed. Propose it again.";
+const GONE = "The proposal account is gone, and no execute of it landed.";
+// A margin for the clock of this device: the program judges the expiry by the chain clock.
+const CLOCK_MARGIN_S = 600;
+
+/** True when the expiry of the body of `ss` passed, with the clock margin. */
+export const pastExpiry = (ss) =>
+  !(Math.floor(Date.now() / 1000) < Number(ss.expiry) + CLOCK_MARGIN_S);
 const sleep = (ms) => new Promise((done) => setTimeout(done, ms));
 const errorText = (e) => String(e?.message ?? e).slice(0, 300);
 
@@ -100,34 +110,42 @@ const holdsBody = (account, ss) =>
 
 const bytesOfBase64 = (text) => Uint8Array.from(atob(text), (ch) => ch.charCodeAt(0));
 
+// The head of the canonical Ed25519 instruction (wasm-sol program.rs): one signature, offsets
+// 48, 16 and 112 in this instruction, a 32-byte message.
+const APPROVAL_HEAD = "01003000ffff1000ffff70002000ffff";
+
 /**
  * The execute of a gone account: the oldest successful transaction in its history that carries
- * the approval signature of this payment (no other transaction carries it), or null. `complete`
- * is true only when the history reaches back to the create and every transaction was read.
+ * the Ed25519 instruction of this approval (head, group key, signature, digest), or null.
+ * `complete` is true only when the history reaches back to the create and every transaction was
+ * read.
  */
-async function closingExecute(worker, ss, found) {
+async function closingExecute(c, worker, ss, found) {
+  const approval = APPROVAL_HEAD + agreement(c).done.groupKey + ss.signature + ss.digest;
   let complete = found.some((x) => x.signature === ss.createTx);
   for (const x of found.filter((y) => !y.failed).reverse()) {
     const got = await worker.call("transaction", { signature: x.signature });
     if (!got.found) complete = false;
-    else if (hexOf(bytesOfBase64(got.tx)).includes(ss.signature)) return { closed: x };
+    else if (hexOf(bytesOfBase64(got.tx)).includes(approval)) return { closed: x };
   }
   return { closed: null, complete };
 }
 
 /**
- * The account is gone: the transaction that executed it, read from its history, is the mark. The
- * session fails only on a complete history with no execute; else the page reads it again.
+ * The account is gone: the transaction that executed it, read from its history, is the mark.
+ * Before the expiry a node may lag, so the page reads the history again later. After the expiry
+ * the session fails on a complete history with no execute.
  */
 async function landedElsewhere(c, worker, ss, seat, failSession) {
   const found = await worker.call("history", { account: base58(ss.account) });
-  const { closed, complete } = await closingExecute(worker, ss, found);
+  const { closed, complete } = await closingExecute(c, worker, ss, found);
   if (closed) {
     const mark = { txId: closed.signature, slot: closed.slot, outcome: "confirmed" };
     return writePart(c, ss.id, "sent", mark, { seat });
   }
+  if (!pastExpiry(ss)) return sleep(30_000);
   if (!complete) throw new Error(UNREAD);
-  return failSession(c, ss, "The proposal account is gone, and no execute of it landed.");
+  return failSession(c, ss, GONE);
 }
 
 const markSent = (c, ss, seat, txId, seen) =>
@@ -160,12 +178,13 @@ function afterConfirm(c, ss, seat, txId, seen) {
 async function attempt(c, ss, seat, failSession) {
   const worker = await ensureWorker(c);
   const ref = c.host.sdb.doc(c.base + "/" + SESSIONS + "/" + ss.id);
-  if (!(await ref.acquire({ holder: HOLDER, ttlMs: 120_000 })).acquired) return sleep(3000);
+  if (!(await ref.acquire({ holder: HOLDER, ttlMs: LEASE_MS })).acquired) return sleep(3000);
   const state = await sentState(c, worker, ss, seat);
   if (state === "wait") return sleep(3000);
   if (state === "done") return undefined;
   const account = await worker.call("account", { account: base58(ss.account) });
   if (!holdsBody(account, ss)) return landedElsewhere(c, worker, ss, seat, failSession);
+  if (pastExpiry(ss)) return failSession(c, ss, PAYMENT_EXPIRED);
   const { tx, txId } = await signedExecute(c, worker, ss, seat);
   const sim = await worker.call("simulate", { tx });
   if (sim.err !== null) throw new Error(refusalOf(sim, seat));

@@ -139,6 +139,13 @@ function selection() {
     all.map((e) => e.utxo.amount),
     [70n, 50n, 30n, 10n],
   );
+  const id = (e) => Buffer.from(e.outputContext.hash).toString("hex");
+  const avoided = selectInputs(sdk, walletOf(entries), tree, 70n, new Set([id(entries[1])]));
+  assert.deepEqual(
+    avoided.map((e) => e.utxo.amount),
+    [50n, 30n],
+    "the input of an open payment is not taken",
+  );
   const one = selectInputs(sdk, walletOf(entries), tree, 70n);
   assert.deepEqual(
     one.map((e) => e.utxo.amount),

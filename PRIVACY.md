@@ -156,7 +156,8 @@ and the sender (your fee address) are public on chain.
 **Payments through the approvals program.** The funds of the group belong to an address of the
 Zigs approvals program, a program-derived address (PDA) of the group key. A payment has three
 public steps. The proposing seat creates a **proposal account**. Until the execute it shows the
-commitment of the payment, the group key, the expiry and the fee address of that seat. Then the
+commitment of the payment, the group key, the expiry and the fee address of that seat, and the
+create transaction keeps these values in the chain history after the execute. Then the
 seats sign an approval, off chain. Then a seat executes: the transaction shows the approval (the
 group key, a digest and the group signature), the PDA as the owner, and the fee address of the
 executing seat as payer. So the chain links the group key, the PDA and the fee addresses in
@@ -180,9 +181,9 @@ Zolana is not Zcash. This table says what differs:
 | Custody | Fewer than `t` seats cannot spend | The same for the seats. The pool upgrade key can replace the pool, and the protocol authority can pause trees |
 
 What Helius sees: your IP address, the origin of the app, the owner keys of the wallet (the PDA
-and the group key), and the witness of each spend. It can read the whole Solana history of the wallet. It cannot spend,
-because a spend needs the group signature. It sees no key share. Every signer of the wallet reads
-the whole Solana history too.
+and the group key), and the witness of each spend. It can read the whole Solana history of the
+wallet. It cannot spend, because a spend needs the group signature. It sees no key share. Every
+signer of the wallet reads the whole Solana history too.
 
 The screen before **Add Solana** says that the Solana address of the wallet is public, that each
 seat also gets a fee address that appears on chain next to the group, that the Zigs server operator

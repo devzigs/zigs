@@ -29,6 +29,7 @@ const payKind = (v) => v === "pay" || v === "migrate";
 const hexText = (v) => typeof v === "string" && v.length <= 16384 && /^([0-9a-f]{2})+$/.test(v);
 const idList = (v) =>
   Array.isArray(v) && v.length >= 1 && v.length <= 40 && v.every(hexOf(32));
+const avoidList = (v) => Array.isArray(v) && v.length <= 256 && v.every(hexOf(32));
 
 function hostAllowed(url) {
   if (LOOPBACK.has(url.hostname)) {
@@ -74,6 +75,7 @@ export const SCHEMA = {
     amount: decimal,
     expiry: decimal,
     payer: base58,
+    avoid: avoidList,
   },
   reprove: {
     recipient: addressHex,

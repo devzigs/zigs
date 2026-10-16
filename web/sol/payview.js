@@ -29,8 +29,8 @@ const WHAT = {
     "Creates the account that the move of the beta funds needs. The proposing seat pays its " +
     "rent, and the group key owns the account.",
   transfer:
-    "Moves all private SOL that the group key holds from the beta to the program address of the " +
-    "group. This is the last payment with a nonce. After it, the group pays with approvals.",
+    "Moves private SOL of the group key to the program address of the group, with a nonce. One " +
+    "move takes up to 16 notes; the card shows again while the old address holds more.",
   approve:
     "Pays SOL from the shielded balance of the group to the payee. The chain shows neither " +
     "the payee nor the amount. The change stays with the group.",
@@ -335,7 +335,8 @@ function paymentRows(c, review) {
     ["Proposal account", base58(said.proposal)],
     ["Lasts", "Until " + utc(said.expiry) + " UTC. A new proof is made at the execute."],
     ["Public", "The proposal account (the group key, the expiry, the fee address of seat " +
-      review.by + ") is public until the execute. " + LINK_TEXT],
+      review.by + ") is public, and the create transaction keeps it in the chain history. " +
+      LINK_TEXT],
   ];
 }
 
@@ -368,7 +369,9 @@ function rowsOf(c, review) {
         ? transferRows(groupKey, review, fee)
         : plainRows(intent, groupKey, fee);
   }
-  rows.splice(1, 0, ["Fees paid by seat " + review.by, base58(review.payer)]);
+  // A payment: the proposing seat paid the create; the seat that executes pays the execute.
+  const label = intent.kind === "approve" ? "Create paid by seat " : "Fees paid by seat ";
+  rows.splice(1, 0, [label + review.by, base58(review.payer)]);
   return rows;
 }
 

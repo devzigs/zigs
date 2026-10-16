@@ -301,7 +301,7 @@ function inspect({ tx }) {
  * most `amount`; the group key is the owner signer, after the nullifier accounts). One command
  * runs at a time: the prover body of the call is kept in the session for the plan.
  */
-async function prepare({ kind, recipient, amount, expiry, payer }) {
+async function prepare({ kind, recipient, amount, expiry, payer, avoid }) {
   const s = need();
   const until = BigInt(expiry);
   if (until === 0n || until >= U64_MAX) throw new Error("the expiry must be finite");
@@ -311,7 +311,7 @@ async function prepare({ kind, recipient, amount, expiry, payer }) {
   s.trace.prove = null;
   const to = sdk.ShieldedAddress.fromBytes(bytes(recipient));
   const whole = kind === "migrate";
-  const request = { recipient: to, amount: BigInt(amount), expiry: until, payer, whole };
+  const request = { recipient: to, amount: BigInt(amount), expiry: until, payer, whole, avoid };
   const { proofInputs, tree } = buildProofInputs(sdk, s.client, identity, wallet, request);
   const data = await s.client.proveTransact(proofInputs, identity.keys);
   const signers = kind === "pay" ? [] : ownerSigners(sdk, proofInputs);

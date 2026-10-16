@@ -149,9 +149,24 @@ chain.reproved = (args) => {
 let current = null;
 // The fixture has one salt and one input, and this device refuses a pair that it approved before
 // (rule salt-reused). Each later payment here starts as a browser with no such history would.
+// The fixture has one input for every payment, so an ended payment over it would end the next one
+// too (another payment spent its inputs): each payment starts as if the earlier ones were gone.
 const forgetPairs = async () => {
   for (const i of [1, 2, 3]) await putSol(c.host, gid, i, { salts: null });
+  const ended = c.sessions.filter((ss) => ["sent", "failed"].includes(ss.status)).map((x) => x.id);
+  for (const key of data.keys()) {
+    if (ended.some((id) => key.includes("solsessions/" + id))) data.delete(key);
+  }
+  notify();
+  await waitFor("the ended sessions go", () => !c.sessions.some((x) => ended.includes(x.id)));
 };
+// The page and the program judge an expiry by the clock: `later` moves the clock of this test.
+const realNow = Date.now;
+const later = (ms) => (Date.now = () => realNow() + ms);
+const DAY = 24 * 3600 * 1000;
+// The Ed25519 instruction of the approval of `ss`, as an execute carries it.
+const APPROVAL_HEAD = "01003000ffff1000ffff70002000ffff";
+const approvalOf = (ss) => APPROVAL_HEAD + G.group.key + ss.signature + ss.digest;
 // Two payments of the fixture in one second have one expiry, so one body and one digest, and a
 // seat signs a digest once. Each payment here starts in a second of its own.
 let lastSecond = 0;
@@ -193,6 +208,22 @@ const proposedPay = async () => {
 }
 step("propose creates the proposal account first; no screen before the reads of the device");
 
+// ── A node that shows the new account late: the device reads it again ──
+{
+  const id = current;
+  const address = base58(ssOf(id).account);
+  const stored = chain.accounts.get(address);
+  chain.accounts.delete(address);
+  delete c.seen[id];
+  delete c.snaps[id];
+  notify();
+  await waitFor("a read with no account", () => c.seen[id]?.account === null);
+  assert.equal(reviewOf(c, ssOf(id), 2).ok, false, "no account: no approval yet");
+  chain.accounts.set(address, stored);
+  await waitFor("the account read again", () => reviewOf(c, ssOf(id), 2).ok, 30000);
+}
+step("a device that read no proposal account reads it again, with no click");
+
 // ── One payment: two approvals, the digest signed, the execute with a fresh proof ──
 {
   const id = current;
@@ -228,6 +259,7 @@ step("propose creates the proposal account first; no screen before the reads of 
   assert.equal(rows["Proposal rent"], rent);
   assert.equal(rows["Proposal account"], base58(ssOf(id).account));
   assert.ok(rows.Public.includes(LINK_TEXT), "the screen says that the fee address links");
+  assert.equal(rows["Create paid by seat 1"], feeAddress(1), "the proposer paid the create only");
   assert.match(textOf(marked("pay-cost")[0]), /pays 0\.000005 SOL .* holds 0\.00135636 SOL/);
   assert.ok(textOf(marked("fee-text")[0]).includes(LINK_TEXT), "the fund card says it too");
   assert.equal(executorOf(c, ssOf(id)), 1, "the proposing seat executes");
@@ -336,6 +368,22 @@ step("an execute that lands late is not sent twice, and the mark names it");
 }
 step("an execute waits for the lease of another device, and stops after its tries");
 
+// ── Two payments over one input: the second avoids it, an executed one ends the other ──
+{
+  await forgetPairs();
+  const open = await proposedPay();
+  const id = await proposedPay();
+  const asked = chain.commands.filter((m) => m.cmd === "prepare").at(-1).args;
+  assert.deepEqual(asked.avoid, ssOf(open).inputIds, "the Worker avoids the open inputs");
+  current = id;
+  await approve(c, ssOf(id), 1);
+  await approve(c, ssOf(id), 2);
+  await waitStatus(id, "sent");
+  await waitStatus(open, "failed");
+  assert.match(ssOf(open).error, /Another payment spent the inputs of this one/);
+}
+step("a payment avoids the inputs of an open one, and an executed one ends the other");
+
 // ── A create that fails writes no session; a create that lands late is waited for ──
 {
   await forgetPairs();
@@ -381,12 +429,12 @@ step("a create that fails on chain writes no session, and a late create is waite
   ]);
   const base64 = (text) => Buffer.from(text, "hex").toString("base64");
   const tx = (text) => ({ found: true, failed: false, tx: base64(text) });
-  chain.txs.set(elsewhere, tx("aa" + ssOf(id).signature + "bb"));
+  chain.txs.set(elsewhere, tx("aa" + approvalOf(ssOf(id)) + "bb"));
   // A failed execute of this payment by another device carries the approval too.
-  chain.txs.set("5".repeat(88), { ...tx("dd" + ssOf(id).signature), failed: true });
-  chain.txs.set(early, tx("cc".repeat(80)));
-  // A later transaction that copies the approval (a memo, say) is not the execute.
-  chain.txs.set(late, tx("ee" + ssOf(id).signature));
+  chain.txs.set("5".repeat(88), { ...tx("dd" + approvalOf(ssOf(id))), failed: true });
+  // An earlier memo with the approval signature alone, and a later copy of the whole approval.
+  chain.txs.set(early, tx("cc" + ssOf(id).signature));
+  chain.txs.set(late, tx("ee" + approvalOf(ssOf(id))));
   chain.refuse = before;
   await waitStatus(id, "sent");
   assert.equal(ssOf(id).txId, elsewhere, "the transaction that holds the approval");
@@ -404,10 +452,34 @@ step("an execute that another device landed is read back from the history of the
   await waitFor("a refused try", () => (c.tries[id] ?? 0) >= 1);
   chain.accounts.delete(base58(ssOf(id).account));
   chain.refuse = null;
-  await waitStatus(id, "failed");
+  // Before the expiry a node may lag: the page reads the history again later, and fails nothing.
+  await pause(6000);
+  assert.equal(ssOf(id).status, "signed", "no failure before the expiry");
+  later(DAY);
+  await waitStatus(id, "failed", 60000);
+  Date.now = realNow;
   assert.match(ssOf(id).error, /no execute of it landed/);
 }
-step("an account that is gone with no execute in its history ends the session");
+step("an account that is gone with no execute in its history ends the session at the expiry");
+
+// ── A signed payment past its expiry with its account still open ends ──
+{
+  await forgetPairs();
+  const id = await proposedPay();
+  current = id;
+  chain.refuse = "Custom 9999";
+  await approve(c, ssOf(id), 1);
+  await approve(c, ssOf(id), 2);
+  await waitFor("a refused try", () => (c.tries[id] ?? 0) >= 1);
+  chain.refuse = null;
+  later(DAY);
+  tryAgain(c, ssOf(id));
+  await waitStatus(id, "failed");
+  Date.now = realNow;
+  assert.match(ssOf(id).error, /expired before it was executed/);
+  assert.ok(chain.accounts.has(base58(ssOf(id).account)), "it read the open account first");
+}
+step("a signed payment past its expiry ends only after the page read its open account");
 
 // ── A history that the node does not give in full: the page reads it again, no failure ──
 {
@@ -424,6 +496,8 @@ step("an account that is gone with no execute in its history ends the session");
   chain.refuse = null;
   const executed = "8".repeat(88);
   const unread = () => /history of the proposal account is not complete/.test(c.execErrors[id]);
+  // Past the expiry the page reports an incomplete history (before it, it waits in silence).
+  later(DAY);
   const readAgain = async (history, what) => {
     chain.history.set(address, history);
     delete c.execErrors[id];
@@ -438,11 +512,12 @@ step("an account that is gone with no execute in its history ends the session");
   chain.txs.set(executed, { found: false, failed: false, tx: "" });
   const entry = { signature: executed, failed: false, slot: "12" };
   await readAgain([entry, create], "an unread execute");
-  const signed = Buffer.from("aa" + ssOf(id).signature, "hex").toString("base64");
+  const signed = Buffer.from("aa" + approvalOf(ssOf(id)), "hex").toString("base64");
   chain.txs.set(executed, { found: true, failed: false, tx: signed });
   tryAgain(c, ssOf(id));
   await waitStatus(id, "sent");
-  assert.equal(ssOf(id).txId, executed, "the execute, once the node gives it");
+  Date.now = realNow;
+  assert.equal(ssOf(id).txId, executed, "the execute, once the node gives it, past the expiry");
 }
 step("a history with no create or with an unread transaction is read again, not failed");
 
@@ -492,7 +567,15 @@ step("the move of the beta funds shows as a one-time step");
   const ss = ssOf(current);
   const PARTS = ["intent", "plan", "inputIds", "salt", "transact", "account", "body", "createTx"];
   const late = Object.fromEntries(PARTS.map((k) => [k, ss[k]]));
-  late.expiry = String(Math.floor(Date.now() / 1000) - 10);
+  await forgetPairs();
+  // Inside the margin for the clock of the device (600 s): no end yet.
+  const fields = (secs) => ({ ...late, expiry: String(secs), createdAt: Date.now() });
+  const just = fields(Math.floor(Date.now() / 1000) - 100);
+  await writePart(c, "just-expired", "proposal", just, { seat: 1, create: true });
+  await waitFor("the session", () => ssOf("just-expired"));
+  await pause(1500);
+  assert.equal(ssOf("just-expired").status, "collecting", "the clock margin of the device");
+  late.expiry = String(Math.floor(Date.now() / 1000) - 700); // past the clock margin
   await writePart(c, id, "proposal", { ...late, createdAt: Date.now() }, { seat: 1, create: true });
   await waitStatus(id, "failed");
   assert.match(ssOf(id).error, /expired before it was executed/);
