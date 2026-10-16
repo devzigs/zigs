@@ -849,13 +849,13 @@ account and the Ed25519 instruction are public, as the group key is today. The S
 **7.2 Design note: approvals owned by a program (SOL-35).** At [HM] the branch holds only
 `min-multisig/spec.md`: no code and no license file. So the spike copies nothing from it. The
 program is our own code. It reuses Apache-2.0 crates at the [Z] commit: the `transact` parser and
-`ExternalDataPreimage` of `zolana-interface`, the `cpi` feature of `zolana-program`, and the
-precompile check pattern of the user registry. Since 16 October 2026 the program is in
-`sol-program/` (condition 5 below). The spike scripts, keys and logs stay outside the repo, as in
-section 6. The client is the TS SDK 0.4.1-alpha built from the [Z]
-commit with the P6 patch (a settable pool expiry). That commit is older than the enclave prover of
-Zolana main (c232da1b), so every proof went to the hosted prover with the witness in clear, as in
-P4.
+`ExternalDataPreimage` of `zolana-interface`, the `cpi` feature of `zolana-program` (up to version
+4; version 5 makes the same CPI itself), and the precompile check pattern of the user registry.
+Since 16 October 2026 the program is in `sol-program/` (condition 5 below). The spike scripts,
+keys and logs stay outside the repo, as in section 6. The client is the TS SDK 0.4.1-alpha built
+from the [Z] commit with the P6 patch (a settable pool expiry). That commit is older than the
+enclave prover of Zolana main (c232da1b), so every proof went to the hosted prover with the
+witness in clear, as in P4.
 
 **The owner identity.** The PDA is the owner key (`ShieldedAddress.forPda`, signature type `pda`,
 curve tag 2). The nullifier secret is `HKDF-SHA256(solSeed, empty salt,
@@ -907,8 +907,9 @@ pool's `hash_external_data` does the same. The amount of each leg is in the pref
 commitment also binds the public amount, the recipient and the leg order.
 
 **The approval** is one Ed25519 signature of the group key over
-`SHA-256("Zigs_SolApproval_v1" || Devnet genesis hash || program id || proposal address || body)`.
-The genesis hash is the `deployment_id` that [HM] leaves open; it is a constant of the build. In
+`SHA-256("Zigs_SolApproval_v1" || genesis hash || program id || proposal address || body)`.
+The genesis hash is the `deployment_id` that [HM] leaves open. It is a constant of the build: the
+Devnet one for the beta, and since version 5 the one of the cluster that the build names. In
 this design the group key signs only these 32-byte digests and never a transaction, and 32 bytes
 can never parse as a Solana message. FROST signs the raw digest; the precompile verifies it.
 
@@ -1006,11 +1007,11 @@ one defect, which version 2 fixed. The move needs these first:
   functions (`fncmp.py`: calls and function pointers compare by name, data addresses are masked,
   and every other constant compares as it is). It differs in three ways. `zolana-program` turns
   the default features of `zolana-interface` on again, which add 122 unused Groth16 verifying keys
-  as exported data (about 37 KB, SOL-44). Two panic paths are shorter. The functions sit in
-  another order.
+  as exported data (about 37 KB; version 5 drops them, SOL-44). Two panic paths are shorter. The
+  functions sit in another order.
 - Version 3 (`a027712e…`, 88,424 bytes, not deployed) is version 2 with the fixes R1, R2, R3 and
   R8 of the review below.
-- `sh sol-program/build.sh test` runs 5 unit tests and the 69 tests of `svm-tests/` (LiteSVM 0.16
+- `sh sol-program/build.sh test` runs the unit tests and the 71 tests of `svm-tests/` (LiteSVM 0.16
   with the precompiles, as the Zolana program tests). The rig computes the digest, the commitment
   and the addresses on its own. A stub pool at the pool id accepts only `transact`. Every
   successful transaction of every test passes a check: the program calls only System Program
@@ -1022,13 +1023,15 @@ one defect, which version 2 fixed. The move needs these first:
     prefund fix;
   - the account checks, with the CPI bound of 18 inputs;
   - SOL withdrawals, also against the pool of the [Z] commit (condition 1);
-  - the option D rules: the CPI check, no registry crate, no forbidden name in the code.
+  - the option D rules: the CPI check, no registry crate, no forbidden name in the code;
+  - the cluster: the refused builds and both ELFs (`tests/cluster.rs`, version 5).
 - Track "main" as a vector: the landed approval passes the precompile, its signed values match the
-  rig, and its `transact` bytes pass the commitment check of version 4. The landed approval signs
+  rig, and its `transact` bytes pass the commitment check of versions 4 and 5. The landed approval
+  signs
   the version 2 address, so the full replay of the landed `create` and `execute` passed on version
   2 only (commit cc92a9c).
 - `sh sol-program/mutants.sh` removes one rule per mutant in a copy of `src/`: the tests kill all
-  47 mutants. The unchanged source must pass first, and a kill counts only when named tests fail.
+  51 mutants. The unchanged source must pass first, and a kill counts only when named tests fail.
 
 **Condition 1: SOL withdrawals, version 4, 16 October 2026.** The pool reads one settlement group
 per withdrawal leg right after the owner signers: the SOL interface (`["sol_interface", 0]` of the
@@ -1063,6 +1066,39 @@ pool) and the recipient. It hashes both addresses after the prefix. Version 4 fo
   the seat rule above. A cold read of the branch then found no defect in the code. It found a gap
   in the rollback of the upgrade plan and stale text, which are fixed.
 
+**Version 5: no Groth16 keys, and the cluster as a build choice (SOL-44, SOL-42).** The client
+interface stays the one of version 4: accounts, seeds, commitment, CPI data and error codes.
+
+- SOL-44. `zolana-program` took `zolana-interface` with its default features, which put 122 unused
+  Groth16 verifying keys into the ELF. The program now makes the `transact` CPI itself, as
+  `SppTransactAccounts` did: the forwarded accounts keep their flags, the owner PDA signs, the data
+  is the tag 16 then the `transact` data, and a wrong pool account still gives 14101. The ELF
+  shrinks from 90,448 to 53,144 bytes, so it fits in the ProgramData that Devnet holds now.
+- SOL-42. `src/cluster.rs` holds the genesis hash that every approval binds and the pool id that
+  the CPI targets. A build names exactly one cluster: `--features devnet` or `--features mainnet`.
+  A mainnet build takes its pool id from `ZIGS_MAINNET_POOL_ID`. It fails when the genesis hash or
+  the pool id is the Devnet one.
+- `build.sh test` checks that four builds fail, each with its own message: no cluster, both
+  clusters, mainnet without a pool id, and mainnet with the development pool id. Then it builds
+  mainnet with a test pool id and runs its unit tests. `tests/cluster.rs` checks both ELFs. Each
+  holds the genesis hash and the pool id of its own cluster only. The mainnet program settles only
+  an approval over the mainnet genesis, and it calls only its own pool.
+- The mainnet pool id is a build input, and the build refuses only the development id. So a
+  mainnet release records the pool id and the ELF hash of that build, and a dump of the deployed
+  program must match that hash (QA F3). `build.sh` builds Devnet only. A mainnet release mode with
+  a pinned pool id and hash is SOL-47.
+- Version 5 for Devnet: ELF `b4bad24c…` (53,144 bytes), not deployed. The unit tests (6 for
+  Devnet, 5 for the mainnet test build) and 71 LiteSVM tests pass. New mutants T1 to T4 (the CPI
+  target, the owner signature, the tag, the writable flags): all 51 mutants are killed.
+- Review: the QA round of the same reviewer passed with findings. It found no custody defect and
+  no change visible to the client. It ran 33 inputs through the version 4 and version 5 ELFs, with
+  a stub that records the flags and the data of the CPI. The two transcripts were equal. That run
+  stays outside the repo; the tests in the repo check the flags and the data of the CPI.
+- F1, F2 and F4 are fixed: the mainnet build was only compile-checked, the digest test failed under
+  mainnet, and a comment now says why 14100 and 14102 cannot occur. F3 is the release rule above.
+  A cold read then found no defect in the code. Its notes on text, comments and one check message
+  are fixed.
+
 **Review of version 2.** An agent that did not take part in the spike reviewed commit bc5bf04 with
 the pinned Zolana source, by reading and with its own LiteSVM tests. Verdict: pass with findings.
 It found no path that moves funds without a valid group signature over the right digest. The same
@@ -1080,7 +1116,7 @@ with the spike notes.
 | R2 | Low | A record kept the expiry of the cancelled body, so a second body for the same commitment could not be cancelled in time | Fixed by R1: each body has its own record (`each_body_has_its_own_cancellation_record`). Error 6018 is gone |
 | R3 | Low | A rent recipient equal to the proposal, the record, the owner PDA or an executable account blocked the proposal or lost the rent | Fixed: `create` refuses the owner PDA, the program and the System Program (6021). After R1 a body cannot name its proposal or record address. "An ordinary account" stays a seat rule |
 | R4 | Info | After `execute` the same body can be created again with the same approval. The pool nullifier stops a second settlement, not the program | SOL-41: a test against the real pool |
-| R5 | Info | The Devnet genesis hash and the pool id are build constants | SOL-42 |
+| R5 | Info | The Devnet genesis hash and the pool id are build constants | Fixed in version 5: the cluster is a build choice (SOL-42) |
 | R6 | Info | The commitment uses the parser of the pinned commit. A pool upgrade can change what it must bind, or stop every `execute` | SOL-43 |
 | R7 | Info | At most 18 inputs per `execute`; no merge or withdrawal path | In the beta list above; withdrawals are condition 1 |
 | R8 | Info | `create_pda` repeated a helper of `pinocchio-system` | Fixed: the program calls the helper (the ELF grows by 1,976 bytes) |
@@ -1103,11 +1139,11 @@ Notes of the delta review:
   goes to the body's rent recipient. The tooling reads the account and compares the data instead
   of reporting an error.
 - N5 (Info). No real FROST approval over a version 3 or 4 address exists yet. The digest code did
-  not change, and the rig computes the digest on its own. Run one real Devnet round on version 4
-  before the beta uses it (step 6 of the upgrade plan).
+  not change, and the rig computes the digest on its own. Run one real Devnet round on version 5
+  before the beta uses it (step 7 of the upgrade plan).
 
 **The upgrade key: options for the owner (decided 16 October 2026, SOL-40).** Rent below is for the
-version 3 ELF at the default rate of 6,960 lamports per byte. Devnet charges 5,080: the proposal
+version 5 ELF at the default rate of 6,960 lamports per byte. Devnet charges 5,080: the proposal
 rent of 6.10 is 1,356,360 lamports for 267 bytes.
 
 | | Immutable after an audit (`--final`) | Multisig upgrade key with a timelock |
@@ -1115,8 +1151,8 @@ rent of 6.10 is 1,356,360 lamports for 267 bytes.
 | What it stops | No one can replace the code: no spend with a seat or the prover, no freeze by a new version, no rent taken, no rule dropped | One key alone cannot replace the code. The key holders together still can, after the delay |
 | A bug in the program | Stays for ever. A fix is a new program id, so a new owner PDA per group. Each group moves its funds with one approved payment, and that payment needs the old program to work | An upgrade fixes it after the delay. The delay also gives that time to an attacker who knows the bug |
 | A pool upgrade that changes `transact` (R6) | Can freeze every group for ever: the program cannot follow it | An upgrade can follow it, after the delay |
-| Rent | About 0.62 SOL in the program accounts stays locked for ever (an immutable program cannot close), and each new version locks its own | Comes back when the program closes. Each upgrade needs a buffer account of the ELF size for a short time, and the multisig's fees |
-| What else it needs | The audit before the freeze, and the published build of `build.sh` | A multisig program (for example Squads) and its own upgrade policy; key holders on separate hardware keys; a delay longer than the time a group needs to leave (a plan, a FROST round, a proof and an `execute`, plus the longest open approval); public monitoring of the ProgramData account with a warning in the app; a safe place to leave to, such as another, immutable deployment |
+| Rent | About 0.37 SOL in the program accounts stays locked for ever (an immutable program cannot close), and each new version locks its own | Comes back when the program closes. Each upgrade needs a buffer account of the ELF size for a short time, and the multisig's fees |
+| What else it needs | The audit before the freeze, and the published mainnet build (SOL-47) | A multisig program (for example Squads) and its own upgrade policy; key holders on separate hardware keys; a delay longer than the time a group needs to leave (a plan, a FROST round, a proof and an `execute`, plus the longest open approval); public monitoring of the ProgramData account with a warning in the app; a safe place to leave to, such as another, immutable deployment |
 | Open approvals at an upgrade | No upgrade | They stay valid: the digest binds the program id, not the code. Optional: bind the ProgramData slot into the digest, so that every upgrade ends them |
 
 Both options need the reproducible build and an audit. The owner can also take them in turn: a
@@ -1128,9 +1164,10 @@ the upgrade key or a seat until SOL-4 closes.
 single development upgrade key. Before mainnet, the upgrade key moves to a multisig with a timelock
 (SOL-45). After the audit, the program becomes immutable with `--final` (SOL-46).
 
-**Devnet upgrade plan, version 2 to version 4.** Version 3 is not deployed. The Devnet program goes
-from version 2 to version 4 in one upgrade, with the development key (SOL-40). The owner and the
-web session do the upgrade. This plan only orders the steps.
+**Devnet upgrade plan, version 2 to version 5.** Versions 3 and 4 are not deployed. The Devnet
+program goes from version 2 to version 5 in one upgrade, with the development key (SOL-40).
+Version 5 has the client interface of version 4. The owner and the web session do the upgrade.
+This plan only orders the steps.
 
 What the client of the web session changes:
 
@@ -1148,24 +1185,23 @@ What the client of the web session changes:
 
 The order:
 
-1. Build version 4 with `sh sol-program/build.sh` and check `0c846f8b…`. Have the version 4 client
-   ready, off.
+1. Build version 5 with `sh sol-program/build.sh` (the Devnet build) and check `b4bad24c…`. Have
+   the new client ready, off.
 2. Stop new proposals in the page. Let the open version 2 proposals execute, or cancel them. After
    their expiry, anyone closes the rest with `cancel`. Check that the program owns no account with
-   kind byte 1. Cancellation records (kind 2) may stay: version 4 still closes them.
+   kind byte 1. Cancellation records (kind 2) may stay: version 5 still closes them.
 3. Dump the Devnet program and check that its first 48,312 bytes hash to `555f4580…`. Keep that
    file: it is the version 2 ELF for a rollback.
-4. Extend the ProgramData by at least 32,696 bytes, about 0.17 SOL of rent at the Devnet rate. The
-   ELF grows from 48,312 to 90,448 bytes, and the ProgramData holds 57,752. Then upgrade with the
-   development key.
-5. Dump the program and compare its first 90,448 bytes with the local ELF, as in 6.10.
-6. Turn on the version 4 client in the same window.
-7. Land one private payment and one withdrawal, each with a FROST approval over a version 4
+4. Upgrade with the development key. No extension of the ProgramData is needed: the version 5 ELF
+   (53,144 bytes) fits in the 57,752 bytes that it holds now.
+5. Dump the program and compare its first 53,144 bytes with the local ELF, as in 6.10.
+6. Turn on the new client in the same window.
+7. Land one private payment and one withdrawal, each with a FROST approval over a version 5
    address (N5). Record the signatures in section 6.
-8. To roll back, first stop new proposals. Cancel every version 4 proposal under version 4, or let
+8. To roll back, first stop new proposals. Cancel every version 5 proposal under version 5, or let
    it expire and close it, and check that the program owns no account with kind byte 1. Then
    upgrade to the version 2 ELF of step 3 and turn the old client on. Version 2 cannot read a
-   version 4 proposal (6005), so a proposal left open is lost with its rent.
+   version 5 proposal (6005), so a proposal left open is lost with its rent.
 
 Mainnet stays no-go under the recommendation below. Our program adds its own audit and upgrade-key
 policy to that list.
