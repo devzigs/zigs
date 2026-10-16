@@ -117,13 +117,13 @@ fn signing_recipients_of_two_legs_stay_out_of_the_owner_run() {
 
 #[test]
 fn the_pool_refuses_a_bad_settlement_group() {
-    let changes: [fn(&mut [AccountMeta], &mut Vec<Keypair>); 3] = [
-        |m, _| m[SOL_INTERFACE_AT].pubkey = Pubkey::new_unique(),
-        |m, _| m[SOL_INTERFACE_AT].is_writable = false,
-        |m, _| m[RECIPIENT_AT].is_writable = false,
+    let changes: [fn(&mut [AccountMeta]); 3] = [
+        |m| m[SOL_INTERFACE_AT].pubkey = Pubkey::new_unique(),
+        |m| m[SOL_INTERFACE_AT].is_writable = false,
+        |m| m[RECIPIENT_AT].is_writable = false,
     ];
     for change in changes {
-        assert_eq!(execute(1, change), code::POOL_SETTLEMENT_ACCOUNTS);
+        assert_eq!(execute(1, |m, _| change(m)), code::POOL_SETTLEMENT_ACCOUNTS);
     }
 }
 
