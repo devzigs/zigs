@@ -386,7 +386,14 @@ step("the beta funds move to the PDA address with the last nonce payment");
   await assert.rejects(() => approve(c, ssOf(fresh), 1), /nonce changed/);
   assert.equal(savedNonces(c, 1, fresh), undefined, "no nonces for a stale proposal");
   chain.nonce = kept;
+  // The nonce holds again, but the proof of the move went stale before the send (error 7008).
+  chain.refuse = JSON.stringify({ InstructionError: [1, { Custom: 7008 }] });
+  await approve(c, ssOf(fresh), 1);
+  await approve(c, ssOf(fresh), 2);
+  await waitStatus(fresh, "failed");
+  chain.refuse = null;
+  assert.match(ssOf(fresh).error, /proof expired because the pool moved on/);
 }
-step("a move on a stale nonce is refused");
+step("a move on a stale nonce is refused, and a stale proof at the send ends the move");
 console.log("sol-pay: ok");
 process.exit(0);
