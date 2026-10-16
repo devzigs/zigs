@@ -37,6 +37,9 @@ private() {
 
 private "$HELIUS" || fail "$HELIUS must hold the Helius Devnet URL, with mode 600"
 private "$LWD" || fail "$LWD must hold the LWD_KEY of infra/lwd/.env.lwd-key, with mode 600"
+# The bytes that go to wrangler: the bare value, not the line LWD_KEY=<value> of .env.lwd-key.
+tr -d '\n' < "$LWD" | grep -Eq '^[0-9a-f]{64}$' \
+  || fail "$LWD must hold the bare 64 hex characters of LWD_KEY, not the line LWD_KEY=<value>"
 if [ ! -s "$PASSWORD" ]; then
   mkdir -p "$CONF"
   rm -f "$PASSWORD"
