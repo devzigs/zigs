@@ -144,7 +144,8 @@ fn the_repo_sol_interface_constant_is_the_derived_address() {
         .filter(|n| !n.is_empty())
         .map(|n| n.parse().expect("byte"))
         .collect();
-    let pins = p3_check::pins::Pins::devnet([1; 32], [2; 32], [3; 33], [4; 32]).expect("pins");
+    let pins =
+        p3_check::pins::Pins::devnet([1; 32], [2; 32], [3; 33], [4; 32], [5; 32]).expect("pins");
     assert_eq!(bytes, pins.sol_interface);
 }
 

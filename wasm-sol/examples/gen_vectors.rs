@@ -3,6 +3,11 @@
 //! `check_message`. `tools/smoke.cjs` must get the same answers from the wasm build.
 //! `cargo run --example gen_vectors`. The wallets are synthetic or come from the TS vectors, so
 //! the files hold no key of the P5 group. Run it again after a change of the rules or of the pins.
+//!
+//! The answer of a case lists the rules of the beta policy first (`intent-retired` for an
+//! intent that nothing signs, `migration-payee` for a nonce payment to another payee than the
+//! PDA address of the group), then the rules of the checker. `policy_of` names the policy rules
+//! that a case must get, and the first other rule must be the rule of the case.
 
 #[path = "../tests/common/mod.rs"]
 mod common;
@@ -10,6 +15,7 @@ mod common;
 use common::fixture::*;
 use common::ts;
 use common::{mutate, replace_key, with_flags, with_ix, NOW};
+use p3_check::address::Address;
 use p3_check::consts::{OFFCHAIN_MAGIC, RECENT_BLOCKHASHES, SYSTEM_PROGRAM};
 use p3_check::intent::Intent;
 use p3_check::pins::Pins;
@@ -33,6 +39,7 @@ fn proposal(intent: &Intent, plan: &Plan) -> Vec<u8> {
     Proposal {
         intent: intent.clone(),
         plan: plan.clone(),
+        transact: Vec::new(),
     }
     .encode()
     .expect("proposal")
@@ -88,13 +95,21 @@ fn plain_cases() -> Vec<Case> {
     intents
         .into_iter()
         .map(|(name, intent)| {
-            let msg = compile(&intent, &f.pins, None).expect("compile");
+            // Add SOL pays to the PDA identity: its pins and the PDA secret of the device.
+            let (pins, mut snap) = (f.pins.clone(), snapshot.clone());
+            let compiled_with = if intent.uses_pda() {
+                snap.nullifier_secret = pda_wallet().nullifier_secret;
+                pins.for_pda().expect("PDA pins")
+            } else {
+                pins.clone()
+            };
+            let msg = compile(&intent, &compiled_with, None).expect("compile");
             Case {
                 name: name.to_string(),
                 bytes: v1::write(&msg).unwrap(),
                 proposal: proposal(&intent, &Plan::default()),
-                snapshot: snapshot.encode().unwrap(),
-                pins: f.pins.wire(),
+                snapshot: snap.encode().unwrap(),
+                pins: pins.wire(),
                 refused: None,
             }
         })
@@ -103,6 +118,13 @@ fn plain_cases() -> Vec<Case> {
 
 fn cases() -> Vec<Case> {
     let mut out = plain_cases();
+    let migration = Fixture::migration();
+    out.push(from_fixture(
+        "migration",
+        &migration,
+        migration.bytes(),
+        None,
+    ));
     let transfer = Fixture::build(&Spec::transfer());
     out.push(from_fixture("transfer", &transfer, transfer.bytes(), None));
     let withdrawal = Fixture::build(&Spec::withdrawal());
@@ -268,7 +290,7 @@ const ATTACKER_KEY: [u8; 32] = [0xAA; 32];
 fn pin_refusals() -> Vec<Case> {
     let f = Fixture::build(&Spec::transfer());
     let (att_nk, att_vk) = attacker().keys();
-    let other = Pins::devnet(GROUP, att_nk, att_vk, PAYER).expect("pins");
+    let other = Pins::devnet(GROUP, att_nk, att_vk, PAYER, common::PDA_NULLIFIER_PK).expect("pins");
     let mut wrong_pins = from_fixture("pins-nullifier-pk", &f, f.bytes(), None);
     wrong_pins.pins = other.wire();
     wrong_pins.refused = Some("group-nullifier-pk");
@@ -321,22 +343,68 @@ fn clone_case(c: &Case) -> Case {
     }
 }
 
+const POLICY: [&str; 2] = ["intent-retired", "migration-payee"];
+
+/// The policy rules that the beta adds for the intent of a case.
+fn policy_of(case: &Case) -> Vec<&'static str> {
+    let proposal = Proposal::decode(&case.proposal).expect("proposal");
+    let pins = Pins::decode(&case.pins).expect("pins");
+    let mut signing = [0u8; 34];
+    signing[0] = 2;
+    signing[1..33].copy_from_slice(&pins.pda);
+    let own = Address {
+        signing,
+        nullifier_pk: pins.pda_nullifier_pk,
+        viewing_pk: pins.viewing_pk,
+    };
+    let change = proposal
+        .plan
+        .outputs
+        .iter()
+        .any(|slot| slot.role == p3_check::plan::Role::Change);
+    match &proposal.intent {
+        Intent::Register { .. } | Intent::Withdrawal { .. } | Intent::Cancel { .. } => {
+            vec!["intent-retired"]
+        }
+        Intent::Transfer { payee, .. } if *payee != own || change => vec!["migration-payee"],
+        _ => Vec::new(),
+    }
+}
+
+/// The answer has the policy rules of the case, and the first other rule is the rule of the case
+/// (none for an accept).
+fn check_case(case: &Case, answer: &str) {
+    let policy = policy_of(case);
+    if answer.starts_with("accepted") {
+        assert!(
+            policy.is_empty() && case.refused.is_none(),
+            "{}: {answer}",
+            case.name
+        );
+        return;
+    }
+    assert!(answer.starts_with("refused"), "{}: {answer}", case.name);
+    let rules: Vec<&str> = answer
+        .lines()
+        .skip(1)
+        .filter_map(|l| l.split('\t').next())
+        .collect();
+    let (found, core): (Vec<&str>, Vec<&str>) = rules.iter().partition(|r| POLICY.contains(r));
+    assert_eq!(found, policy, "{}: {answer}", case.name);
+    assert_eq!(
+        core.first().copied(),
+        case.refused,
+        "{}: {answer}",
+        case.name
+    );
+}
+
 fn main() {
     let dir = format!("{}/smoke", common::VECTORS);
     std::fs::create_dir_all(&dir).expect("create dir");
     for case in cases() {
         let answer = check_message(&case.bytes, &case.proposal, &case.pins, &case.snapshot, NOW);
-        match case.refused {
-            None => assert!(answer.starts_with("accepted"), "{}: {answer}", case.name),
-            Some(rule) => {
-                let first = answer.lines().nth(1).and_then(|l| l.split('\t').next());
-                assert!(
-                    answer.starts_with("refused") && first == Some(rule),
-                    "{}: {answer}",
-                    case.name
-                );
-            }
-        }
+        check_case(&case, &answer);
         for (ext, bytes) in [
             ("msg", &case.bytes[..]),
             ("intent", &case.proposal),

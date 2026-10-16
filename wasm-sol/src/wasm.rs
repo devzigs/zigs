@@ -6,16 +6,20 @@
 
 use wasm_bindgen::prelude::{wasm_bindgen, JsError};
 
-use crate::approve::{approve, Approved, Device};
+use crate::approve::{Approved, Device};
+use crate::beta::{approve_message, approve_payment, Signer};
 use crate::bytes::hex;
 use crate::check::Refusal;
+use crate::codec::{unhex, unhex_array};
 use crate::fee;
 use crate::frost;
+use crate::pay::{approve_pay, Payment, Seen};
 use crate::pins::Pins;
 use crate::plan::Proposal;
+use crate::program::{approval_digest, Body};
 use crate::roles;
 use crate::rule::INFO;
-use crate::sign::{self, Check};
+use crate::sign::{self, ApprovalCheck, Check};
 use crate::snapshot::Snapshot;
 use crate::spend::{Amount, Summary};
 use crate::template;
@@ -52,7 +56,10 @@ fn commitment_lines(summary: &Summary) -> String {
 }
 
 fn accepted(approved: &Approved) -> String {
-    let summary = &approved.summary;
+    summary_lines(&approved.summary)
+}
+
+fn summary_lines(summary: &Summary) -> String {
     format!(
         "accepted{}{}{}\nwithdrawn {}{}\ntree_fee {}",
         payee_line(summary),
@@ -89,21 +96,66 @@ fn run(
         now,
     };
     Ok(
-        match approve(message, &proposal.intent, &proposal.plan, &device) {
+        match approve_message(message, &proposal, &device, Signer::Fee) {
             Ok(approved) => accepted(&approved),
             Err(refusal) => refused(&refusal),
         },
     )
 }
 
-/// Checks a message with every rule of ZOLANA.md section 5.
+/// The `accepted` lines of a payment: its commitment, proposal address, digest and body, then
+/// the lines of the approval screen.
+fn payment_lines(payment: &Payment) -> String {
+    let head = format!(
+        "\ncommitment {}\nproposal {}\ndigest {}\nbody {}",
+        hex(&payment.commitment),
+        hex(&payment.proposal),
+        hex(&payment.digest),
+        hex(&payment.body)
+    );
+    let screen = summary_lines(&payment.summary);
+    let rest = screen.strip_prefix("accepted").unwrap_or(&screen);
+    format!("accepted{head}{rest}")
+}
+
+fn run_payment(input: &ApprovalCheck, now: u64) -> Result<String, String> {
+    let proposal = Proposal::decode(input.check.intent)?;
+    let snapshot = Snapshot::decode(input.check.snapshot)?;
+    let pins = Pins::decode(input.check.pins)?;
+    let device = Device {
+        pins: &pins,
+        snapshot: &snapshot,
+        now,
+    };
+    let verdict = if input.seen.is_empty() {
+        let Some(pay) = proposal.intent.pay() else {
+            return Err("the intent is not a payment".to_string());
+        };
+        let pda = pins.for_pda()?;
+        let device = Device {
+            pins: &pda,
+            ..device
+        };
+        approve_pay((pay, &proposal.plan, &proposal.transact), &device, None)
+    } else {
+        approve_payment(&proposal, &device, &Seen::decode(input.seen)?)
+    };
+    Ok(match verdict {
+        Ok(payment) => payment_lines(&payment),
+        Err(refusal) => refused(&refusal),
+    })
+}
+
+/// Checks a message with every rule of ZOLANA.md section 5 and the beta policy of a message that
+/// a fee key signs (`beta.rs`). `sol_sign_share` adds the policy of the group key.
 ///
 /// - `intent`: the proposal, `Proposal::encode`: the intent and, for a spend, the approved
 ///   plaintext outputs.
-/// - `pins`: 129 bytes, the group key, `nullifier_pk` and `viewing_pk` of the `soldone` document
-///   and the payer of the proposal (`Pins::wire`). The page takes the payer from the `solfee`
-///   document of the proposing seat. The `owner_hash` is computed from the first three, and the
-///   snapshot secrets must derive exactly the two public keys.
+/// - `pins`: 161 bytes, the group key, `nullifier_pk` and `viewing_pk` of the `soldone` document,
+///   the payer of the proposal and the `nullifier_pk` of the PDA identity (`Pins::wire`). The
+///   page takes the payer from the `solfee` document of the proposing seat. The `owner_hash` is
+///   computed from the pins, and the snapshot secrets must derive exactly the pinned keys of the
+///   identity that the intent uses (the PDA for Shield and the program messages).
 /// - `snapshot`: the device snapshot, `Snapshot::encode`.
 /// - `now`: the Unix time of the device, in seconds.
 ///
@@ -123,6 +175,80 @@ pub fn check_message(
     run(message, intent, pins, snapshot, now).unwrap_or_else(|why| format!("error\t{why}"))
 }
 
+/// Checks a payment of the program design (ZOLANA.md 7.2), with the rules of section 5 on the
+/// `transact` data of its first proof.
+///
+/// - `proposal`: `Proposal::encode` of an `Approve` (or `Propose`) intent: the payment, the plan
+///   and the `transact` data.
+/// - `pins`, `snapshot`, `now`: as `check_message` takes them.
+/// - `seen`: `Seen::encode`, the proposal account that the device read and the bodies that its
+///   seats approved. Empty before the account exists: the chain rules do not run then.
+///
+/// `accepted` gives the commitment, the proposal address, the digest that the group signs, the
+/// body, then the lines of `check_message`. `refused` and `error` as there.
+#[wasm_bindgen]
+pub fn check_payment(
+    proposal: &[u8],
+    pins: &[u8],
+    snapshot: &[u8],
+    seen: &[u8],
+    now: u64,
+) -> String {
+    let input = ApprovalCheck {
+        check: Check {
+            intent: proposal,
+            pins,
+            snapshot,
+        },
+        seen,
+    };
+    run_payment(&input, now).unwrap_or_else(|why| format!("error\t{why}"))
+}
+
+/// The share of a seat over the approval digest of a payment. It runs `check_payment` with the
+/// proposal account first and throws the refusal. `round` is `{"now", "cluster", "keyPackage",
+/// "nonces", "commitments"}`, as for `sol_sign_share`; the nonces are those of the digest.
+#[wasm_bindgen]
+pub fn sol_approval_share(
+    proposal: &[u8],
+    pins: &[u8],
+    snapshot: &[u8],
+    seen: &[u8],
+    round: &str,
+) -> Result<String, JsError> {
+    let input = ApprovalCheck {
+        check: Check {
+            intent: proposal,
+            pins,
+            snapshot,
+        },
+        seen,
+    };
+    js(sign::approval_share(&input, round))
+}
+
+/// The approval digest (hex) of a proposal account and its body (`program::approval_digest`).
+/// It checks no rule: a seat runs `check_payment` before it signs this digest. The page counts
+/// the commits and shares of a payment by it.
+#[wasm_bindgen]
+pub fn sol_approval_digest(proposal: &str, body: &str) -> Result<String, JsError> {
+    js(digest_of_proposal(proposal, body))
+}
+
+fn digest_of_proposal(proposal: &str, body: &str) -> Result<String, String> {
+    let proposal: [u8; 32] = unhex_array(proposal, "proposal")?;
+    let body = unhex(body, "body")?;
+    Body::parse(&body)?;
+    Ok(hex(&approval_digest(&proposal, &body)))
+}
+
+/// The PDA identity of `solSeed` under the group key, as JSON: `pda`, `nullifier_secret`,
+/// `nullifier_pk`, `owner_hash` and `address`.
+#[wasm_bindgen]
+pub fn sol_pda_roles(sol_seed: &str, group_key: &str) -> Result<String, JsError> {
+    js(roles::pda_roles(sol_seed, group_key))
+}
+
 /// Every rule as `id<TAB>statement`, one per line.
 #[wasm_bindgen]
 pub fn rule_list() -> String {
@@ -140,7 +266,7 @@ fn js<T>(result: Result<T, String>) -> Result<T, JsError> {
 ///
 /// - `proposal`: the bytes that `check_message` takes as `intent` (the intent and, for a spend,
 ///   the plan). Only the intent is read here.
-/// - `pins`: the 129 bytes of `check_message`.
+/// - `pins`: the 161 bytes of `check_message`.
 /// - `transact`: the data of the `transact` instruction, tag byte included, as the Worker cuts it
 ///   out of the SDK message. Empty for every intent but a Transfer and a Withdrawal.
 pub fn compile_proposal(proposal: &[u8], pins: &[u8], transact: &[u8]) -> Result<Vec<u8>, String> {

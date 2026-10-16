@@ -63,6 +63,7 @@ fn answer_of(f: &Fixture) -> String {
     let proposal = Proposal {
         intent: f.intent.clone(),
         plan: f.plan.clone(),
+        transact: Vec::new(),
     };
     let snapshot = f.snapshot.encode().unwrap();
     let intent = proposal.encode().unwrap();
@@ -100,7 +101,10 @@ fn a_real_output_in_the_last_slot_after_dummies_is_refused() {
         assert_eq!(f.rules(), vec![DummiesLast], "{order:?}");
         assert_eq!(
             answer_of(&f),
-            "refused\ndummies-last\toutput 3 is a real output after a dummy",
+            format!(
+                "refused\n{}\ndummies-last\toutput 3 is a real output after a dummy",
+                common::MIGRATION_LINE
+            ),
             "{order:?}"
         );
     }
@@ -142,6 +146,9 @@ fn the_refusal_names_the_first_real_output_after_a_dummy_at_the_wasm_entry() {
     let answer = answer_of(&f);
     assert_eq!(
         answer,
-        "refused\ndummies-last\toutput 2 is a real output after a dummy"
+        format!(
+            "refused\n{}\ndummies-last\toutput 2 is a real output after a dummy",
+            common::MIGRATION_LINE
+        )
     );
 }

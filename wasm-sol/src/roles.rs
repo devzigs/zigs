@@ -9,6 +9,11 @@
 //!   reduced modulo the P-256 order (`FromOkm`, as the SDK reduces its viewing key). A zero scalar
 //!   is an error. `viewing_pk` is its compressed public key.
 //!
+//! The group funds belong to the PDA of the approvals program (ZOLANA.md 7.2). Its identity has
+//! its own nullifier secret (option D of the nullifier-key note): HKDF-SHA256 over the seed with
+//! an empty salt and the info `zigs-sol/pda-nullifier-secret/v1 || PDA`, 31 bytes. The viewing
+//! scalar is the one above. Its address has the signing tag 2 (a PDA).
+//!
 //! The snapshot seal key is `BLAKE2b-256("Zigs_SolSnap__v1", solSeed)` as base64url without
 //! padding: the 32-byte secret that `secretSeal` of the Zcash engine takes.
 
@@ -24,11 +29,15 @@ use crate::bytes::hex;
 use crate::codec::{base64url, blake2b_256, unhex_array};
 use crate::consts::Key;
 use crate::hashes::{nullifier_pk, owner_hash};
+use crate::program::owner_pda;
 use crate::viewing::ViewingKey;
 
 const INFO_NULLIFIER: &[u8] = b"zigs-sol/nullifier-secret/v1";
 const INFO_VIEWING: &[u8] = b"zigs-sol/viewing-scalar/v1";
+const INFO_PDA_NULLIFIER: &[u8] = b"zigs-sol/pda-nullifier-secret/v1";
 const SNAPSHOT_PERSONAL: &[u8; 16] = b"Zigs_SolSnap__v1";
+const TAG_ED25519: u8 = 1;
+const TAG_PDA: u8 = 2;
 
 /// Everything that follows from `solSeed` and the group key. The two secrets are for the seats
 /// and the Worker of this wallet only.
@@ -64,15 +73,15 @@ pub fn secrets(seed: &[u8; 32]) -> Result<([u8; 31], [u8; 32]), String> {
     Ok((nullifier_secret, viewing_sk))
 }
 
-/// The full shielded address of an Ed25519 owner: the signing key (tag 1, the key, a zero byte),
-/// `nullifier_pk` and `viewing_pk`, 99 bytes.
-pub fn shielded_address(signer: &Key, nullifier_pk: &Key, viewing_pk: &[u8; 33]) -> Vec<u8> {
+/// The full shielded address of an owner: the signing key (the scheme tag, the key, a zero
+/// byte), `nullifier_pk` and `viewing_pk`, 99 bytes.
+fn tagged_address(tag: u8, signer: &Key, nullifier_pk: &Key, viewing_pk: &[u8; 33]) -> Vec<u8> {
     let mut signing = [0u8; 34];
     for (slot, byte) in signing.iter_mut().skip(1).zip(signer) {
         *slot = *byte;
     }
-    if let Some(tag) = signing.first_mut() {
-        *tag = 1;
+    if let Some(first) = signing.first_mut() {
+        *first = tag;
     }
     let address = Address {
         signing,
@@ -82,6 +91,11 @@ pub fn shielded_address(signer: &Key, nullifier_pk: &Key, viewing_pk: &[u8; 33])
     let mut out = Vec::new();
     address.write(&mut out);
     out
+}
+
+/// The full shielded address of an Ed25519 owner (signing tag 1).
+pub fn shielded_address(signer: &Key, nullifier_pk: &Key, viewing_pk: &[u8; 33]) -> Vec<u8> {
+    tagged_address(TAG_ED25519, signer, nullifier_pk, viewing_pk)
 }
 
 /// The roles of a seed under a group key.
@@ -115,6 +129,65 @@ pub fn roles(sol_seed: &str, group_key: &str) -> Result<String, String> {
         "owner_hash": hex(&roles.owner_hash),
         "address": hex(&roles.address),
         "seal_key": roles.seal_key,
+    })
+    .to_string())
+}
+
+/// The full shielded address of a PDA owner (signing tag 2).
+pub fn pda_address(pda: &Key, nullifier_pk: &Key, viewing_pk: &[u8; 33]) -> Vec<u8> {
+    tagged_address(TAG_PDA, pda, nullifier_pk, viewing_pk)
+}
+
+/// The identity of the PDA that owns the group funds. The secret is for the seats and the
+/// Worker of this wallet only.
+pub struct PdaRoles {
+    pub pda: Key,
+    pub nullifier_secret: [u8; 31],
+    pub nullifier_pk: Key,
+    pub owner_hash: Key,
+    /// The full shielded address of the group (99 bytes, signing tag 2).
+    pub address: Vec<u8>,
+}
+
+/// The nullifier secret of a PDA identity: HKDF-SHA256 over the seed, info label || PDA.
+pub fn pda_nullifier_secret(seed: &[u8; 32], pda: &Key) -> Result<[u8; 31], String> {
+    let mut info = INFO_PDA_NULLIFIER.to_vec();
+    info.extend_from_slice(pda);
+    let mut secret = [0u8; 31];
+    Hkdf::<Sha256>::new(None, seed)
+        .expand(&info, &mut secret)
+        .map_err(|_| "hkdf: output length".to_string())?;
+    Ok(secret)
+}
+
+/// The PDA identity of a seed under a group key.
+pub fn derive_pda(seed: &[u8; 32], group: &Key) -> Result<PdaRoles, String> {
+    let pda = owner_pda(group)?;
+    let nullifier_secret = pda_nullifier_secret(seed, &pda)?;
+    let nullifier_pk = nullifier_pk(&nullifier_secret)?;
+    let viewing_pk = ViewingKey::from_bytes(&secrets(seed)?.1)?.public()?;
+    Ok(PdaRoles {
+        pda,
+        nullifier_secret,
+        nullifier_pk,
+        owner_hash: owner_hash(&pda, &nullifier_pk)?,
+        address: pda_address(&pda, &nullifier_pk, &viewing_pk),
+    })
+}
+
+/// `derive_pda` for the entry point: the seed and the group key as hex, the answer as JSON with
+/// every value as hex.
+pub fn pda_roles(sol_seed: &str, group_key: &str) -> Result<String, String> {
+    let roles = derive_pda(
+        &unhex_array(sol_seed, "solSeed")?,
+        &unhex_array(group_key, "group key")?,
+    )?;
+    Ok(json!({
+        "pda": hex(&roles.pda),
+        "nullifier_secret": hex(&roles.nullifier_secret),
+        "nullifier_pk": hex(&roles.nullifier_pk),
+        "owner_hash": hex(&roles.owner_hash),
+        "address": hex(&roles.address),
     })
     .to_string())
 }

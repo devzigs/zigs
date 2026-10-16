@@ -18,7 +18,20 @@ pub struct Spend {
     pub outputs: u8,
 }
 
-/// One of the six intents of ZOLANA.md section 5, second table.
+/// A private payment of the program design (ZOLANA.md 7.2): what the group approves once with
+/// its digest. The approval binds no nonce: the executor proves again at execution.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct Pay {
+    /// The finite expiry of the pool data and of the proposal body.
+    pub expiry: u64,
+    pub inputs: u8,
+    pub outputs: u8,
+    pub payee: Address,
+    pub mint: Key,
+    pub amount: u64,
+}
+
+/// One of the intents of ZOLANA.md section 5, second table, and of the program design (7.2).
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum Intent {
     /// Create the nonce account. The lifetime is a recent blockhash.
@@ -55,6 +68,103 @@ pub enum Intent {
     Cancel {
         nonce: Key,
     },
+    /// An intent of the program design (ZOLANA.md 7.2).
+    Program(Program),
+}
+
+/// The intents of the program design (ZOLANA.md 7.2). None of them uses a nonce, all pay to or
+/// from the PDA identity, and the group key signs none of their messages: it signs the digest of
+/// an approval.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum Program {
+    /// The `create` message of a proposal account: the fee key of the proposing seat signs it
+    /// alone, with a recent blockhash. `commitment` is the value that the device computed.
+    Propose {
+        pay: Pay,
+        commitment: Key,
+        blockhash: Key,
+    },
+    /// The `execute` message: the approval of the group in an Ed25519 instruction, then the
+    /// program with a fresh proof. The fee key of the executing seat signs it alone.
+    Execute {
+        expiry: u64,
+        rent_recipient: Key,
+        signature: [u8; 64],
+        blockhash: Key,
+    },
+    /// The approval of a payment. It is no message: the group key signs its 32-byte digest.
+    Approve { pay: Pay },
+}
+
+impl Program {
+    /// The lifetime of the message: a recent blockhash. An approval has no message.
+    fn lifetime(&self) -> Key {
+        match self {
+            Program::Propose { blockhash, .. } | Program::Execute { blockhash, .. } => *blockhash,
+            Program::Approve { .. } => [0; 32],
+        }
+    }
+
+    fn name(&self) -> &'static str {
+        match self {
+            Program::Propose { .. } => "propose",
+            Program::Execute { .. } => "execute",
+            Program::Approve { .. } => "approve",
+        }
+    }
+
+    fn encode(&self, out: &mut Vec<u8>) {
+        match self {
+            Program::Propose {
+                pay,
+                commitment,
+                blockhash,
+            } => {
+                out.push(6);
+                encode_pay(out, pay);
+                out.extend_from_slice(commitment);
+                out.extend_from_slice(blockhash);
+            }
+            Program::Execute {
+                expiry,
+                rent_recipient,
+                signature,
+                blockhash,
+            } => {
+                out.push(7);
+                out.extend_from_slice(&expiry.to_le_bytes());
+                out.extend_from_slice(rent_recipient);
+                out.extend_from_slice(signature);
+                out.extend_from_slice(blockhash);
+            }
+            Program::Approve { pay } => {
+                out.push(8);
+                encode_pay(out, pay);
+            }
+        }
+    }
+
+    /// Reads the fields after the tag byte `tag`, which must be 6, 7 or 8.
+    fn read(tag: u8, r: &mut Reader) -> Result<Self, String> {
+        let short = |_| "the intent ends inside a field".to_string();
+        Ok(match tag {
+            6 => Program::Propose {
+                pay: decode_pay(r).map_err(short)?,
+                commitment: r.array().map_err(short)?,
+                blockhash: r.array().map_err(short)?,
+            },
+            7 => Program::Execute {
+                expiry: r.u64().map_err(short)?,
+                rent_recipient: r.array().map_err(short)?,
+                signature: r.array().map_err(short)?,
+                blockhash: r.array().map_err(short)?,
+            },
+            8 => Program::Approve {
+                pay: decode_pay(r).map_err(short)?,
+            },
+            tag => return Err(format!("unknown intent tag {tag}")),
+        })
+    }
 }
 
 impl Intent {
@@ -64,13 +174,35 @@ impl Intent {
             Intent::CreateNonce { blockhash } | Intent::Shield { blockhash, .. } => *blockhash,
             Intent::Register { nonce, .. } | Intent::Cancel { nonce } => *nonce,
             Intent::Transfer { spend, .. } | Intent::Withdrawal { spend, .. } => spend.nonce,
+            Intent::Program(program) => program.lifetime(),
         }
     }
 
     /// True if the message starts with `AdvanceNonceAccount`: every intent that the group signs
     /// but the one that creates the nonce account. Shield has no group signature.
     pub fn uses_nonce(&self) -> bool {
-        !matches!(self, Intent::CreateNonce { .. } | Intent::Shield { .. })
+        !matches!(
+            self,
+            Intent::CreateNonce { .. } | Intent::Shield { .. } | Intent::Program(_)
+        )
+    }
+
+    /// The payment of an approval or of the `create` message that opens it.
+    pub fn pay(&self) -> Option<&Pay> {
+        match self {
+            Intent::Program(Program::Propose { pay, .. } | Program::Approve { pay }) => Some(pay),
+            _ => None,
+        }
+    }
+
+    /// True for the intents of the PDA identity: the funds of the program design.
+    pub fn uses_pda(&self) -> bool {
+        matches!(self, Intent::Shield { .. } | Intent::Program(_))
+    }
+
+    /// True for the intents whose proposal carries a plan: the spends and the payments.
+    pub fn has_plan(&self) -> bool {
+        self.is_spend() || self.pay().is_some()
     }
 
     /// The owner tag of the payee of a Transfer, if its address has an Ed25519 or PDA key.
@@ -94,6 +226,7 @@ impl Intent {
             Intent::Transfer { .. } => "transfer",
             Intent::Withdrawal { .. } => "withdrawal",
             Intent::Cancel { .. } => "cancel",
+            Intent::Program(program) => program.name(),
         }
     }
 
@@ -146,6 +279,7 @@ impl Intent {
                 out.push(5);
                 out.extend_from_slice(nonce);
             }
+            Intent::Program(program) => program.encode(&mut out),
         }
         out
     }
@@ -195,7 +329,7 @@ fn read_intent(r: &mut Reader) -> Result<Intent, String> {
         5 => Intent::Cancel {
             nonce: r.array().map_err(short)?,
         },
-        tag => return Err(format!("unknown intent tag {tag}")),
+        tag => Intent::Program(Program::read(tag, r)?),
     })
 }
 
@@ -211,5 +345,24 @@ fn decode_spend(r: &mut Reader) -> Result<Spend, crate::bytes::Short> {
         expiry: r.u64()?,
         inputs: r.u8()?,
         outputs: r.u8()?,
+    })
+}
+
+fn encode_pay(out: &mut Vec<u8>, pay: &Pay) {
+    out.extend_from_slice(&pay.expiry.to_le_bytes());
+    out.extend_from_slice(&[pay.inputs, pay.outputs]);
+    pay.payee.write(out);
+    out.extend_from_slice(&pay.mint);
+    out.extend_from_slice(&pay.amount.to_le_bytes());
+}
+
+fn decode_pay(r: &mut Reader) -> Result<Pay, crate::bytes::Short> {
+    Ok(Pay {
+        expiry: r.u64()?,
+        inputs: r.u8()?,
+        outputs: r.u8()?,
+        payee: Address::read(r)?,
+        mint: r.array()?,
+        amount: r.u64()?,
     })
 }

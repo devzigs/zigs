@@ -16,6 +16,7 @@ fn call(f: &Fixture, bytes: &[u8]) -> String {
     let proposal = Proposal {
         intent: f.intent.clone(),
         plan: f.plan.clone(),
+        transact: Vec::new(),
     };
     check_message(
         bytes,
@@ -28,14 +29,15 @@ fn call(f: &Fixture, bytes: &[u8]) -> String {
 
 #[test]
 fn an_accepted_spend_lists_the_payee_fingerprint_and_the_amounts_of_the_approval_screen() {
-    let f = Fixture::build(&Spec::transfer());
+    // The move to the PDA is the one nonce payment that the beta signs.
+    let f = Fixture::migration();
     let answer = call(&f, &f.bytes());
     let zero = hex(&[0; 32]);
-    let payee = payee();
+    let payee = pda_wallet();
     let want = format!(
-        "accepted\npayee {} {} {}\npaid {zero} 40\nchange {zero} 60\nwithdrawn 0\n\
+        "accepted\npayee {} {} {}\npaid {zero} 100\nwithdrawn 0\n\
          expiry {EXPIRY}\ntree_fee 0",
-        hex(&PAYEE),
+        hex(&payee.signer),
         hex(&payee.owner_hash()),
         hex(&payee.viewing_pk())
     );
@@ -44,7 +46,7 @@ fn an_accepted_spend_lists_the_payee_fingerprint_and_the_amounts_of_the_approval
 
 #[test]
 fn a_refused_spend_lists_every_violated_rule_with_its_detail() {
-    let mut f = Fixture::build(&Spec::transfer());
+    let mut f = Fixture::migration();
     f.tx.outputs[1].utxo_hash[0] ^= 1;
     f.tx.inputs[0].nullifier[0] ^= 1;
     let answer = call(&f, &f.bytes());
@@ -73,6 +75,7 @@ fn a_spend_is_never_accepted_without_its_plaintext() {
     let empty = Proposal {
         intent: f.intent.clone(),
         plan: p3_check::plan::Plan::default(),
+        transact: Vec::new(),
     };
     let snapshot = f.snapshot.encode().unwrap();
     let pins = f.pins.wire();
@@ -83,23 +86,26 @@ fn a_spend_is_never_accepted_without_its_plaintext() {
 
 #[test]
 fn the_pins_are_the_group_key_with_its_nullifier_pk_and_viewing_pk() {
-    let f = Fixture::build(&Spec::transfer());
+    let f = Fixture::migration();
     let bytes = f.bytes();
     let proposal = Proposal {
         intent: f.intent.clone(),
         plan: f.plan.clone(),
+        transact: Vec::new(),
     }
     .encode()
     .unwrap();
     let snapshot = f.snapshot.encode().unwrap();
     let wire = f.pins.wire();
-    assert_eq!(wire.len(), 129, "32 + 32 + 33 + 32 bytes");
+    assert_eq!(wire.len(), 161, "32 + 32 + 33 + 32 + 32 bytes");
     assert!(check_message(&bytes, &proposal, &wire, &snapshot, NOW).starts_with("accepted"));
-    // The old forms (the group key alone, the three keys without the payer) are not pins.
+    // The old forms (the group key alone, the three keys without the payer, the four keys
+    // without the PDA key) are not pins.
     for old in [
         &GROUP[..],
         &wire[..64],
         &wire[..97],
+        &wire[..129],
         &[wire.as_slice(), &[0]].concat(),
     ] {
         let answer = check_message(&bytes, &proposal, old, &snapshot, NOW);
@@ -111,7 +117,14 @@ fn the_pins_are_the_group_key_with_its_nullifier_pk_and_viewing_pk() {
     }
     // Another payer in the pins: the message names the fee payer of the proposal.
     let (nullifier_pk, viewing_pk) = group().keys();
-    let other = p3_check::pins::Pins::devnet(GROUP, nullifier_pk, viewing_pk, [0x77; 32]).unwrap();
+    let other = p3_check::pins::Pins::devnet(
+        GROUP,
+        nullifier_pk,
+        viewing_pk,
+        [0x77; 32],
+        pda_wallet().keys().0,
+    )
+    .unwrap();
     let answer = check_message(&bytes, &proposal, &other.wire(), &snapshot, NOW);
     assert!(
         answer.starts_with("refused") && answer.contains("fee-payer-not-payer"),
@@ -127,6 +140,7 @@ fn malformed_inputs_are_error_answers_and_never_a_panic() {
     let proposal = Proposal {
         intent: f.intent.clone(),
         plan: f.plan.clone(),
+        transact: Vec::new(),
     }
     .encode()
     .unwrap();
@@ -172,6 +186,7 @@ fn the_wire_forms_round_trip() {
         let proposal = Proposal {
             intent: f.intent.clone(),
             plan: f.plan.clone(),
+            transact: Vec::new(),
         };
         let bytes = proposal.encode().unwrap();
         let again = Proposal::decode(&bytes).unwrap();

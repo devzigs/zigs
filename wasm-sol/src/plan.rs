@@ -5,7 +5,9 @@
 //! takes the payee, the asset and the amount of a payment from the intent.
 //!
 //! A `Proposal` is the intent followed by the plan. The browser entry point takes it as one
-//! byte string, in the `intent` argument.
+//! byte string, in the `intent` argument. A payment of the program design (`Intent::pay`) also
+//! carries the `transact` data of its first proof, which holds the outputs and the ciphertexts
+//! that the commitment binds.
 
 use crate::bytes::{Reader, Short};
 use crate::consts::Key;
@@ -46,6 +48,8 @@ pub struct Plan {
 pub struct Proposal {
     pub intent: Intent,
     pub plan: Plan,
+    /// The `transact` data (tag byte included) of a payment, empty for every other intent.
+    pub transact: Vec<u8>,
 }
 
 impl Role {
@@ -101,28 +105,45 @@ impl Plan {
 }
 
 impl Proposal {
-    /// The intent wire form, then the plan wire form. Only a spend carries a plan.
+    /// The intent wire form, then the plan wire form, then for a payment the length (u16) and
+    /// the bytes of its `transact` data. Only a spend or a payment carries a plan.
     pub fn encode(&self) -> Result<Vec<u8>, String> {
         let mut out = self.intent.encode();
-        if self.intent.is_spend() {
+        if self.intent.has_plan() {
             out.extend(self.plan.encode()?);
+        }
+        if self.intent.pay().is_some() {
+            let len =
+                u16::try_from(self.transact.len()).map_err(|_| "the transact data is long")?;
+            out.extend_from_slice(&len.to_le_bytes());
+            out.extend_from_slice(&self.transact);
         }
         Ok(out)
     }
 
-    /// Reads the wire form. The whole input must be used. A message that is not a spend gets an
+    /// Reads the wire form. The whole input must be used. An intent without a plan gets an
     /// empty plan.
     pub fn decode(bytes: &[u8]) -> Result<Self, String> {
         let mut r = Reader::new(bytes);
         let intent = Intent::read(&mut r)?;
-        let plan = if intent.is_spend() {
+        let plan = if intent.has_plan() {
             Plan::read(&mut r)?
         } else {
             Plan::default()
         };
+        let mut transact = Vec::new();
+        if intent.pay().is_some() {
+            let short = |_: Short| "the transact data of the payment is short".to_string();
+            let len = usize::from(r.u16().map_err(short)?);
+            transact = r.take(len).map_err(short)?.to_vec();
+        }
         if !r.is_empty() {
             return Err("bytes follow the proposal".to_string());
         }
-        Ok(Self { intent, plan })
+        Ok(Self {
+            intent,
+            plan,
+            transact,
+        })
     }
 }

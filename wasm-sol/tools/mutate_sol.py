@@ -1,5 +1,6 @@
-"""Mutation check of the new code of wasm-sol (frost, sign, roles, codec, wasm compile, fee key)
-and of the fee payer rules and template lines of the checker (CHECKER_PIN lists them as modified).
+"""Mutation check of the new code of wasm-sol (frost, sign, roles, codec, wasm compile, fee key),
+of the fee payer rules and template lines of the checker, and of the program design (program,
+pay, beta, the PDA roles and the create and execute templates; CHECKER_PIN lists them).
 
 Run from the crate directory: python3 -I tools/mutate_sol.py [--check] [name ...]
 Each case is an exact string replacement that breaks one line of the new code. The script saves
@@ -20,7 +21,8 @@ ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 LOCK = os.path.join(os.path.dirname(os.path.dirname(ROOT)), "heavy.lock")
 TARGET = os.path.join(ROOT, "target-mut")
 ENV = dict(os.environ, RUSTUP_TOOLCHAIN="stable", CARGO_TARGET_DIR=TARGET)
-TESTS = ["frost_dkg", "sign_split", "roles", "compile_message", "fee_payer", "fee_key"]
+TESTS = ["frost_dkg", "sign_split", "roles", "compile_message", "fee_payer", "fee_key", "program",
+         "payment", "pay_vectors"]
 TEST = ["lockf", "-k", LOCK, "cargo", "test", "-j", "4", "--no-fail-fast"]
 TEST += [arg for name in TESTS for arg in ("--test", name)] + ["--", "--test-threads", "2"]
 
@@ -63,10 +65,129 @@ DUMMY_TEST = (
 )
 FEE_NOT_PAYER_TEST = "a_fee_key_that_is_not_the_payer_of_the_proposal_signs_nothing"
 FEE_REFUSED_TEST = "the_fee_key_signs_nothing_that_approve_refuses"
-WIRE_TEST = "the_wire_of_the_pins_holds_the_payer_last"
+WIRE_TEST = "the_wire_of_the_pins_holds_the_payer_then_the_pda_key"
 FEE_RAW_TEST = "the_seed_equals_the_independent_node_derivation_for_every_raw_vector"
 FEE_PACKAGE_TEST = "the_fee_key_of_a_key_package_equals_the_independent_node_derivation"
 FEE_DAMAGED_TEST = "a_damaged_share_a_share_of_another_seat_or_junk_gives_no_key"
+
+LANDED_DIGEST = "the_digest_and_the_ed25519_data_are_those_that_landed_and_the_signature_verifies"
+LANDED_COMMITMENT = "the_commitment_of_the_landed_transact_data_is_the_commitment_of_the_body"
+LANDED_PDA = "the_owner_pda_of_the_spike_group_is_the_landed_owner"
+LANDED_ADDRESSES = "the_proposal_and_cancellation_addresses_are_the_landed_accounts"
+PDA_ROLES = "the_pda_identity_of_a_seed_equals_the_independent_node_and_sdk_derivation"
+PAY_SDK = "the_approval_recomputes_the_private_tx_hash_of_the_sdk_and_accepts_the_payment"
+PRIVATE = "a_private_tx_hash_that_is_not_the_recompute_is_refused"
+ACCOUNT = "a_missing_or_foreign_proposal_account_is_refused"
+ACCOUNT_DATA = "an_account_of_another_kind_bump_or_length_is_refused"
+BODY = "each_field_of_the_stored_body_must_be_the_body_of_the_payment"
+RENT = "a_rent_recipient_that_is_an_address_of_the_program_is_refused"
+ONCE = "a_second_body_for_an_approved_commitment_is_refused"
+MIGRATION = "a_nonce_payment_to_another_payee_or_with_change_is_refused"
+RETIRED = (
+    "nothing_signs_a_withdrawal_a_register_or_a_cancel_and_the_group_key_signs_no_program_message"
+)
+CREATE = "the_create_message_carries_the_body_of_the_payment_and_the_fee_key_signs_it_alone"
+CREATE_COMMIT = "a_create_message_for_another_commitment_is_refused"
+EXECUTE_OK = "any_seat_executes_a_fresh_proof_with_the_approval_and_pays_with_its_own_fee_key"
+EXECUTE_BAD = "an_execute_of_another_payment_body_or_signature_is_refused"
+EXECUTE_LATE = "an_execute_after_the_expiry_is_refused"
+SHIELD_PDA = "add_sol_deposits_to_the_pda_identity_and_not_to_the_group_key"
+SHARE_DIGEST = "a_share_needs_the_proposal_account_and_nonces_of_the_same_digest"
+SHARE_GROUP = "a_key_package_of_another_group_gets_no_share_of_the_payment"
+KEYS = "the_group_key_signs_no_add_sol_and_a_fee_key_signs_the_create_message_of_its_seat"
+ED25519 = "an_ed25519_instruction_outside_an_execute_is_refused"
+PDA_WIRE = "the_wire_of_the_pins_holds_the_payer_then_the_pda_key"
+
+# The program design (ZOLANA.md 7.2): the client of the approvals program, the approval of a
+# payment, the beta policy and the two templates.
+PROGRAM_CASES = [
+    ("digest-no-genesis", "src/program.rs", "        .chain_update(DEVNET_GENESIS)\n", "",
+     LANDED_DIGEST),
+    ("digest-no-program", "src/program.rs", "        .chain_update(MULTISIG_DEVNET)\n", "",
+     LANDED_DIGEST),
+    ("digest-no-proposal", "src/program.rs", "        .chain_update(proposal)\n", "",
+     LANDED_DIGEST),
+    ("digest-no-domain", "src/program.rs", "        .chain_update(APPROVAL_DOMAIN)\n", "",
+     LANDED_DIGEST),
+    ("approval-offset", "src/program.rs", "[48, u16::MAX, 16,", "[47, u16::MAX, 16,",
+     LANDED_DIGEST),
+    ("external-not-be", "src/program.rs", "        *first = 0;", "        *first ^= 0;",
+     LANDED_COMMITMENT),
+    ("owner-seed", "src/program.rs", "derive(&[SEED_OWNER, group], ", "derive(&[SEED_OWNER], ",
+     LANDED_PDA),
+    ("proposal-seed", "src/program.rs", "derive(&[SEED_PROPOSAL, group, commitment], ",
+     "derive(&[SEED_PROPOSAL, commitment], ", LANDED_ADDRESSES),
+    ("pda-label", "src/roles.rs", 'b"zigs-sol/pda-nullifier-secret/v1"',
+     'b"zigs-sol/pda-nullifier-secret/v2"', PDA_ROLES),
+    ("pda-tag", "src/roles.rs", "const TAG_PDA: u8 = 2;", "const TAG_PDA: u8 = 1;", PDA_ROLES),
+    ("pda-wire", "src/pins.rs", "            &self.pda_nullifier_pk[..],\n", "", PDA_WIRE),
+    ("private-unchecked", "src/pay.rs", "    if private != tx.private_tx_hash {",
+     "    if false {", PRIVATE),
+    ("private-dummy-hash", "src/pay.rs", "            if slot.role == Role::Dummy {",
+     "            if false {", PAY_SDK),
+    ("account-any-owner", "src/pay.rs", "account.filter(|a| a.owner == pins.program)",
+     "account.filter(|_| true)", ACCOUNT),
+    ("account-any-bump", "src/pay.rs", "    if head != [KIND_PROPOSAL, bump] {",
+     "    if head.first() != Some(&KIND_PROPOSAL) {", ACCOUNT_DATA),
+    ("body-commitment", "src/pay.rs", "            have.commitment != want.commitment,",
+     "            false,", BODY),
+    ("body-group", "src/pay.rs", "            have.group != want.group,", "            false,",
+     BODY),
+    ("body-expiry", "src/pay.rs", "            have.expiry != want.expiry,", "            false,",
+     BODY),
+    ("body-rent", "src/pay.rs", "            have.rent_recipient != want.rent_recipient,",
+     "            false,", BODY),
+    ("body-authorities", "src/pay.rs", "            have.authorities != want.authorities,",
+     "            false,", BODY),
+    ("rent-banned", "src/pay.rs", "    if banned.contains(&pins.payer) {", "    if false {", RENT),
+    ("body-once", "src/pay.rs", "approved == commitment && *body_hash != hash",
+     "approved == commitment && false", ONCE),
+    ("migration-any", "src/beta.rs", "    if payee_bytes == own && !change {", "    if true {",
+     MIGRATION),
+    ("migration-change", "src/beta.rs", "    if payee_bytes == own && !change {",
+     "    if payee_bytes == own {", MIGRATION),
+    ("retired-none", "src/beta.rs",
+     '        _ => Some(format!("nothing signs the intent {name}")),',
+     "        _ => None,", RETIRED),
+    ("group-signs-program", "src/beta.rs", "(signer == Signer::Group).then(", "(false).then(",
+     CREATE),
+    ("execute-unverified", "src/beta.rs",
+     "digest.map(|digest| verify_strict(&pins.multisig, &digest, signature))",
+     "digest.map(|_| Ok::<(), String>(()))", EXECUTE_BAD),
+    ("execute-late", "src/beta.rs", "    if tx.expiry != *expiry || device.now >= *expiry {",
+     "    if tx.expiry != *expiry {", EXECUTE_LATE),
+    ("propose-any-commitment", "src/beta.rs",
+     "        Ok(payment) if payment.commitment == *commitment => Vec::new(),",
+     "        Ok(_) => Vec::new(),", CREATE_COMMIT),
+    ("identity-group", "src/beta.rs", "    if intent.uses_pda() {", "    if false {", SHIELD_PDA),
+    ("create-tag", "src/template.rs", "    let data = [&[MS_CREATE][..], &body].concat();",
+     "    let data = [&[1u8][..], &body].concat();", CREATE),
+    ("execute-pda-signs", "src/template.rs", "    accounts.push(acct(pins.group, false, false));",
+     "    accounts.push(acct(pins.group, true, false));", EXECUTE_OK),
+    ("execute-rent-payer", "src/template.rs", "        acct(*rent_recipient, false, true),",
+     "        acct(pins.payer, false, true),", EXECUTE_OK),
+    ("execute-approval-last", "src/template.rs",
+     "        ix(ED25519_PROGRAM, Vec::new(), Data::Exact(approval)),\n"
+     "        ix(pins.program, accounts, Data::Execute),",
+     "        ix(pins.program, accounts, Data::Execute),\n"
+     "        ix(ED25519_PROGRAM, Vec::new(), Data::Exact(approval)),", EXECUTE_OK),
+    ("ed25519-anywhere", "src/rules_ix.rs",
+     "        if *program == ED25519_PROGRAM\n"
+     "            && matches!(self.intent, Intent::Program(Program::Execute { .. }))\n"
+     "        {",
+     "        if *program == ED25519_PROGRAM {", ED25519),
+    ("share-any-digest", "src/sign.rs", "    if round.digest != payment.digest {", "    if false {",
+     SHARE_DIGEST),
+    ("share-any-group", "src/sign.rs",
+     "    if key_bytes(round.key_package.verifying_key())? != pins.multisig {", "    if false {",
+     SHARE_GROUP),
+    ("group-share-fee-policy", "src/sign.rs",
+     "    let pins = approved(message, check, round.now, Signer::Group)?;",
+     "    let pins = approved(message, check, round.now, Signer::Fee)?;", KEYS),
+    ("fee-group-policy", "src/fee.rs",
+     "    let pins = approved(message, check, now, beta::Signer::Fee)?;",
+     "    let pins = approved(message, check, now, beta::Signer::Group)?;", KEYS),
+]
 
 # (name, file, exact old text, new text, test that must fail)
 CASES = [
@@ -106,18 +227,18 @@ CASES = [
      "the_digest_is_blake2b_with_the_personalization_over_the_cluster_and_the_bytes"),
     ("nonce-digest-unchecked", "src/sign.rs", "    if round.digest != digest {", "    if false {",
      "the_nonces_of_one_digest_do_not_sign_another_message_that_passes_approve"),
-    ("group-unchecked", "src/sign.rs", "    if group != pins.group {", "    if false {",
+    ("group-unchecked", "src/sign.rs", "    if group != pins.multisig {", "    if false {",
      "a_key_package_that_is_not_the_pinned_group_gets_no_share"),
     ("approve-ignored", "src/sign.rs",
-     "approve(message, &proposal.intent, &proposal.plan, &device).map_err(|r| refused(&r))?;",
-     "let _ = approve(message, &proposal.intent, &proposal.plan, &device);", P3_VECTORS),
+     "approve_message(message, &proposal, &device, signer).map_err(|r| refused(&r))?;",
+     "let _ = approve_message(message, &proposal, &device, signer);", P3_VECTORS),
     ("nonces-no-digest", "src/sign.rs", "    let mut saved = digest.to_vec();",
      "    let mut saved = Vec::new();", CHANGED_BYTE),
     ("label-nullifier", "src/roles.rs", 'b"zigs-sol/nullifier-secret/v1"',
      'b"zigs-sol/nullifier-secret/v2"', ROLES_TEST),
     ("label-viewing", "src/roles.rs", 'b"zigs-sol/viewing-scalar/v1"',
      'b"zigs-sol/viewing-scalar/v2"', ROLES_TEST),
-    ("address-tag", "src/roles.rs", "        *tag = 1;", "        *tag = 2;",
+    ("address-tag", "src/roles.rs", "        *first = tag;", "        *first = 2;",
      "the_owner_hash_and_the_address_layout_equal_the_values_of_the_p5_and_p6_runs"),
     ("seal-label", "src/roles.rs", 'b"Zigs_SolSnap__v1"', 'b"Zigs_SolSnap__v2"',
      "the_snapshot_seal_key_is_blake2b_of_the_seed_as_a_32_byte_base64url_secret"),
@@ -164,12 +285,14 @@ CASES = [
     # The fee payer: the payer of the proposal pays, the group key signs as a readonly owner.
     ("payer-not-first", "src/check.rs", "if self.msg.keys.first() != Some(&self.pins.payer) {",
      "if false {", PAYER_TEST),
-    ("payer-may-be-group", "src/check.rs", "        if self.pins.payer == self.pins.group {",
+    ("payer-may-be-group", "src/check.rs",
+     "        if self.pins.payer == self.pins.group || self.pins.payer == self.pins.multisig {",
      "        if false {", GROUP_PAYS_TEST),
     ("signer-count-unchecked", "src/check.rs", "        if signers != want {", "        if false {",
      THIRD_SIGNER_TEST),
-    ("shield-two-signers", "src/template.rs", "        Intent::Shield { .. } => 1,",
-     "        Intent::Shield { .. } => 2,", SIGNERS_TEST),
+    ("shield-two-signers", "src/template.rs",
+     "        Intent::Shield { .. } | Intent::Program(_) => 1,",
+     "        Intent::Program(_) => 1,", SIGNERS_TEST),
     ("group-debit-unchecked", "src/rules_ix.rs",
      "            && self.msg.account_key(ix, 0) == Some(&self.pins.group)", "            && false",
      SEED_FUNDER_TEST),
@@ -190,14 +313,15 @@ CASES = [
      "        acct(pins.group, true, false),\n        acct(pins.payer, true, true),",
      "        acct(pins.group, true, false),\n        acct(pins.group, true, true),",
      REGISTER_LAYOUT_TEST),
-    ("compile-with-group-payer", "src/template.rs", "    if pins.payer == pins.group {",
+    ("compile-with-group-payer", "src/template.rs",
+     "    if pins.payer == pins.group || pins.payer == pins.multisig {",
      "    if false {", COMPILE_GROUP_TEST),
     ("dummy-group-not-participant", "src/spend.rs",
      "std::iter::once(self.group.key).chain(owners).collect()", "owners.collect()", DUMMY_TEST),
     ("fee-key-any-payer", "src/fee.rs", "    if pins.payer != public_bytes(&key) {",
      "    if false {", FEE_NOT_PAYER_TEST),
     ("fee-key-no-approve", "src/fee.rs",
-     "    let pins = approved(message, check, now.ok_or(\"the fee round has no clock\")?)?;",
+     "    let pins = approved(message, check, now, beta::Signer::Fee)?;",
      "    let pins = crate::pins::Pins::decode(check.pins)?;", FEE_REFUSED_TEST),
     # The fee key is derived from the signing share, the group key and the seat (src/fee.rs).
     ("fee-label", "src/fee.rs", 'b"zigs-sol/fee-key/v1"', 'b"zigs-sol/fee-key/v2"', FEE_RAW_TEST),
@@ -218,7 +342,7 @@ CASES = [
     ("empty-transact", "src/wasm.rs", "        [] => None,",
      '        [] => Some(transact::parse(&[]).map_err(|why| format!("{why:?}"))?),',
      "a_cancel_a_register_and_a_shield_compile_without_transact_data"),
-]
+] + PROGRAM_CASES
 
 
 def sha(path):

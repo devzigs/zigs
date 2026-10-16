@@ -21,6 +21,7 @@ use hkdf::Hkdf;
 use serde_json::{json, Value};
 use sha2::Sha256;
 
+use crate::beta;
 use crate::bytes::hex;
 use crate::codec::{from_json, text_of, unhex_array};
 use crate::consts::Key;
@@ -76,7 +77,8 @@ pub fn sign(message: &[u8], check: &Check, round: &str) -> Result<String, String
     let round: Value = from_json(round, "fee round")?;
     let now = round.get("now").and_then(Value::as_u64);
     let key = signing_key(text_of(&round, "secret", "the fee round")?)?;
-    let pins = approved(message, check, now.ok_or("the fee round has no clock")?)?;
+    let now = now.ok_or("the fee round has no clock")?;
+    let pins = approved(message, check, now, beta::Signer::Fee)?;
     if pins.payer != public_bytes(&key) {
         return Err("this fee key is not the payer of the proposal".to_string());
     }

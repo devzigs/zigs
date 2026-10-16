@@ -1,2 +1,3 @@
 refused
+migration-payee	a nonce payment must pay its inputs whole to the program address of this group
 plan-output-count	1 plan entries, 2 outputs

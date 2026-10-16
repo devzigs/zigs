@@ -32,7 +32,11 @@ fn the_edge_vectors_are_approved_by_the_rust_api_and_the_wasm_entry() {
         let rust = approve(&bytes, &intent, &plan, &device);
         let rules = rust.as_ref().err().map(|r| r.violations.clone());
         assert!(rust.is_ok(), "{}: {rules:?}", v.name);
-        let proposal = Proposal { intent, plan };
+        let proposal = Proposal {
+            intent,
+            plan,
+            transact: Vec::new(),
+        };
         let answer = check_message(
             &bytes,
             &proposal.encode().unwrap(),
@@ -40,7 +44,7 @@ fn the_edge_vectors_are_approved_by_the_rust_api_and_the_wasm_entry() {
             &snapshot.encode().unwrap(),
             NOW,
         );
-        assert!(answer.starts_with("accepted"), "{}: {answer}", v.name);
+        assert!(common::only_policy(&answer), "{}: {answer}", v.name);
     }
 }
 

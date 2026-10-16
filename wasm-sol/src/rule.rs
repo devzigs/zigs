@@ -20,6 +20,8 @@ pub enum Group {
     Outputs,
     Legs,
     Ciphertexts,
+    Program,
+    Policy,
 }
 
 /// The identifier, the guarded group and a one-line statement of a rule.
@@ -85,7 +87,8 @@ rules! {
         "no System instruction takes lamports from the group key: it never funds a Transfer, \
          CreateAccount, CreateAccountWithSeed or TransferWithSeed";
     ProgramNotAllowed, "program-not-allowed", Instructions,
-        "every program is the System program, the pool or the registry";
+        "every program is the System program, the pool, the registry, the approvals program \
+         (create in Propose, execute in Execute) or the Ed25519 program (in Execute)";
     InstructionNotAllowed, "instruction-not-allowed", Instructions,
         "every instruction tag is on the allow list of its program";
     TransactParse, "transact-parse", Transact, "the transact data parses";
@@ -180,6 +183,30 @@ rules! {
     SaltZero, "salt-zero", Ciphertexts, "the ciphertext salt is not all zero";
     SaltReused, "salt-reused", Ciphertexts,
         "no earlier proposal of the device has the same first nullifier and salt";
+    PrivateTxHash, "private-tx-hash", Program,
+        "private_tx_hash equals the recompute from the snapshot inputs, the plan outputs and the \
+         blinding seed";
+    BodyCommitment, "body-commitment", Program,
+        "the commitment of the proposal is the commitment that the device computes";
+    BodyGroup, "body-group", Program, "the proposal body names the group key";
+    BodyExpiry, "body-expiry", Program, "the body expiry equals the pool expiry of the payment";
+    RentRecipient, "rent-recipient", Program,
+        "the rent recipient is the fee key of the proposing seat, never an address of the program";
+    AbortAuthorities, "abort-authorities", Program,
+        "the only abort authority is the fee key of the proposing seat";
+    AccountOwner, "account-owner", Program,
+        "the proposal account exists and the approvals program owns it";
+    AccountData, "account-data", Program,
+        "the proposal account holds kind 1, the canonical bump and the body of the payment";
+    BodyOnce, "body-once", Program,
+        "no earlier approval of the device has this commitment with another body";
+    ExecuteApproval, "execute-approval", Program,
+        "the approval verifies under the group key over the digest of the body of the transact \
+         data";
+    MigrationPayee, "migration-payee", Policy,
+        "a nonce payment pays its inputs whole to the program address of the group, no change";
+    IntentRetired, "intent-retired", Policy,
+        "no register, withdrawal or nonce cancel, and the group key signs no program message";
 }
 
 impl Rule {

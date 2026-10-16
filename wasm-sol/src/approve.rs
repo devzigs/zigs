@@ -45,7 +45,7 @@ fn refusal(rule: Rule, detail: impl Into<String>) -> Refusal {
 /// The pins against each other, and the secrets of the device against the pins. A device whose
 /// secrets derive other keys than the `soldone` document would build and check a wallet that is
 /// not the group.
-fn pin_violations(pins: &Pins, owner: Key, keys: &DeviceKeys) -> Vec<Violation> {
+pub(crate) fn pin_violations(pins: &Pins, owner: Key, keys: &DeviceKeys) -> Vec<Violation> {
     let mut found = Vec::new();
     if owner != pins.group_owner_hash {
         let why =

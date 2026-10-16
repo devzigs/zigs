@@ -1,4 +1,5 @@
 refused
+migration-payee	a nonce payment must pay its inputs whole to the program address of this group
 group-nullifier-pk	the nullifier secret of the device does not derive the pinned key
 group-viewing-pk	the viewing scalar of the device does not derive the pinned key
 output-hash	output 0: the hash is not the hash of its plaintext

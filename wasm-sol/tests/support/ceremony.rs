@@ -214,7 +214,14 @@ pub fn run(wallet: &str, t: u16, n: u16) -> Group {
         used_salts: Vec::new(),
     };
     let group_key = unhex32(&done[0].group_key);
-    let pins = Pins::devnet(group_key, derived.nullifier_pk, derived.viewing_pk, PAYER);
+    let pda = roles::derive_pda(&unhex32(&done[0].sol_seed), &group_key).expect("PDA roles");
+    let pins = Pins::devnet(
+        group_key,
+        derived.nullifier_pk,
+        derived.viewing_pk,
+        PAYER,
+        pda.nullifier_pk,
+    );
     Group {
         pins: pins.expect("pins").wire(),
         snapshot: snapshot.encode().expect("snapshot"),
@@ -232,12 +239,14 @@ pub fn unhex32(text: &str) -> [u8; 32] {
     p3_check::codec::unhex_array(text, "test value").expect("32 bytes of hex")
 }
 
-/// The proposal bytes and the message of a Cancel intent with this nonce, compiled from the
-/// template under the pins of the group.
-pub fn cancel(group: &Group, nonce: [u8; 32]) -> (Vec<u8>, Vec<u8>) {
+/// The proposal bytes and the message of a CreateNonce intent with this blockhash, compiled from
+/// the template under the pins of the group. It is a message that the group key still signs
+/// (the move of the beta funds needs it), so the signing tests read it.
+pub fn nonce_message(group: &Group, blockhash: [u8; 32]) -> (Vec<u8>, Vec<u8>) {
     let proposal = Proposal {
-        intent: Intent::Cancel { nonce },
+        intent: Intent::CreateNonce { blockhash },
         plan: Plan::default(),
+        transact: Vec::new(),
     };
     let bytes = proposal.encode().expect("proposal");
     let message = wasm::compile_proposal(&bytes, &group.pins, &[]).expect("compile");

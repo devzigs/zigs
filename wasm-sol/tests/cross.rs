@@ -128,7 +128,7 @@ fn solana_instructions(intent: &Intent, bytes: &[u8]) -> Vec<Instruction> {
                 .collect(),
             data: match &ix.data {
                 Data::Exact(data) | Data::Fields(data) => data.clone(),
-                Data::Variable => msg.ixs[at].data.clone(),
+                Data::Variable | Data::Execute => msg.ixs[at].data.clone(),
             },
         })
         .collect()

@@ -1,3 +1,4 @@
 refused
+migration-payee	a nonce payment must pay its inputs whole to the program address of this group
 output-tag-role	output 0 names another owner
 output-tag-role	output 1 names another owner

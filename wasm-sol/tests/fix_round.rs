@@ -7,7 +7,7 @@
 mod common;
 
 use common::fixture::*;
-use common::{field, with_spend, EXPIRY, NONCE, NOW};
+use common::{field, with_spend, EXPIRY, NONCE, NOW, PDA_NULLIFIER_PK};
 use p3_check::approve::{approve, Device};
 use p3_check::check::Facts;
 use p3_check::consts::{is_supported_shape, Key, SUPPORTED_SHAPES};
@@ -31,6 +31,15 @@ fn shield(f: &Fixture, pins: &Pins) -> (Intent, Vec<u8>) {
     let bytes = v1::write(&compile(&intent, pins, None).unwrap()).unwrap();
     let _ = f;
     (intent, bytes)
+}
+
+/// The snapshot of a device for Add SOL: no input, and the nullifier secret of the PDA identity,
+/// which owns the deposit.
+fn pda_snapshot(f: &Fixture) -> Snapshot {
+    let mut snapshot = f.snapshot.clone();
+    snapshot.inputs.clear();
+    snapshot.nullifier_secret = pda_wallet().nullifier_secret;
+    snapshot
 }
 
 /// The rules and details that refuse a message of an intent without a plan.
@@ -186,6 +195,7 @@ fn proposal_bytes(intent: &Intent) -> Vec<u8> {
     Proposal {
         intent: intent.clone(),
         plan: Plan::default(),
+        transact: Vec::new(),
     }
     .encode()
     .unwrap()
@@ -207,9 +217,8 @@ fn a_snapshot_whose_nullifier_secret_derives_another_key_is_refused_at_the_wasm_
     // snapshot with another nullifier secret was self-consistent. The pins now come from the
     // `soldone` document, so the secret must derive the pinned key.
     let f = Fixture::build(&Spec::transfer());
-    let (intent, bytes) = shield(&f, &f.pins);
-    let mut snapshot = f.snapshot.clone();
-    snapshot.inputs.clear();
+    let (intent, bytes) = shield(&f, &f.pins.for_pda().unwrap());
+    let mut snapshot = pda_snapshot(&f);
     snapshot.nullifier_secret = [0x99; 31];
     let answer = check_message(
         &bytes,
@@ -224,8 +233,8 @@ fn a_snapshot_whose_nullifier_secret_derives_another_key_is_refused_at_the_wasm_
 #[test]
 fn a_snapshot_whose_viewing_scalar_derives_another_key_is_refused_at_the_wasm_entry() {
     let f = Fixture::build(&Spec::transfer());
-    let (intent, bytes) = shield(&f, &f.pins);
-    let mut snapshot = f.snapshot.clone();
+    let (intent, bytes) = shield(&f, &f.pins.for_pda().unwrap());
+    let mut snapshot = pda_snapshot(&f);
     snapshot.viewing_sk = field(0x2222);
     let answer = check_message(
         &bytes,
@@ -575,7 +584,7 @@ fn a_register_with_the_keys_of_another_wallet_is_refused_by_the_pins_and_by_the_
 fn a_register_that_matches_the_pins_but_not_the_secrets_of_the_device_is_refused() {
     let f = Fixture::build(&Spec::transfer());
     let (att_nk, att_vk) = attacker().keys();
-    let pins = Pins::devnet(GROUP, att_nk, att_vk, PAYER).unwrap();
+    let pins = Pins::devnet(GROUP, att_nk, att_vk, PAYER, PDA_NULLIFIER_PK).unwrap();
     let intent = register(att_nk, att_vk);
     let bytes = register_bytes(&intent, &pins);
     let details = refusal_details(&intent, &bytes, &pins, &f.snapshot);
@@ -593,7 +602,7 @@ fn a_register_that_matches_the_pins_but_not_the_secrets_of_the_device_is_refused
 fn a_register_that_matches_the_secrets_of_the_device_but_not_the_pins_is_refused() {
     let f = Fixture::build(&Spec::transfer());
     let (att_nk, att_vk) = attacker().keys();
-    let pins = Pins::devnet(GROUP, att_nk, att_vk, PAYER).unwrap();
+    let pins = Pins::devnet(GROUP, att_nk, att_vk, PAYER, PDA_NULLIFIER_PK).unwrap();
     let (nk, vk) = group().keys();
     let intent = register(nk, vk);
     let bytes = register_bytes(&intent, &pins);
@@ -650,6 +659,7 @@ fn answer_of(f: &Fixture) -> String {
     let proposal = Proposal {
         intent: f.intent.clone(),
         plan: f.plan.clone(),
+        transact: Vec::new(),
     };
     let snapshot = f.snapshot.encode().unwrap();
     check_message(
@@ -662,17 +672,19 @@ fn answer_of(f: &Fixture) -> String {
 }
 
 #[test]
-fn the_accepted_answer_of_a_withdrawal_echoes_the_recipient_and_the_expiry() {
+fn a_withdrawal_is_refused_at_the_wasm_entry_by_the_beta_policy_alone() {
+    // The program has no withdrawal path yet, so the beta signs none (src/beta.rs).
     let answer = answer_of(&Fixture::build(&Spec::withdrawal()));
-    assert!(answer.starts_with("accepted"), "{answer}");
-    let recipient = format!("\nrecipient {}", p3_check::bytes::hex(&[0x33; 32]));
-    assert!(answer.contains(&recipient), "{answer}");
-    assert!(answer.contains(&format!("\nexpiry {EXPIRY}\n")), "{answer}");
+    assert_eq!(
+        answer,
+        "refused\nintent-retired\tnothing signs the intent withdrawal"
+    );
 }
 
 #[test]
 fn the_accepted_answer_of_a_transfer_echoes_the_expiry_and_no_recipient() {
-    let answer = answer_of(&Fixture::build(&Spec::transfer()));
+    let answer = answer_of(&Fixture::migration());
+    assert!(answer.starts_with("accepted"), "{answer}");
     assert!(answer.contains(&format!("\nexpiry {EXPIRY}\n")), "{answer}");
     assert!(!answer.contains("recipient"), "{answer}");
 }

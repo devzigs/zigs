@@ -1,2 +1,3 @@
 refused
+migration-payee	a nonce payment must pay its inputs whole to the program address of this group
 expiry-max	expiry_unix_ts is u64::MAX (no expiry)

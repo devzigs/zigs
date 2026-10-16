@@ -110,6 +110,31 @@ impl Facts {
 /// The fee payer of the test messages: the fee key of the proposing seat. It is not the group.
 pub const PAYER: Key = [0x42; 32];
 
+/// The rules of the beta policy (src/beta.rs). An answer that only they refuse passed every rule
+/// of the checker.
+pub const POLICY: [&str; 2] = ["intent-retired", "migration-payee"];
+
+/// The refusal line of a nonce payment to another payee than the PDA address of the group.
+pub const MIGRATION_LINE: &str = concat!(
+    "migration-payee\ta nonce payment must pay its inputs whole to the program address of this ",
+    "group"
+);
+
+/// True when the answer is a refusal by the beta policy alone.
+pub fn only_policy(answer: &str) -> bool {
+    let mut lines = answer.lines();
+    lines.next() == Some("refused")
+        && lines.all(|line| {
+            POLICY
+                .iter()
+                .any(|rule| line.starts_with(&format!("{rule}\t")))
+        })
+}
+
+/// The `nullifier_pk` of the PDA identity in the pins of the tests of the group-key identity.
+/// Those tests never pay to the PDA, so any field element serves.
+pub const PDA_NULLIFIER_PK: Key = [0x0d; 32];
+
 pub fn pins() -> Pins {
     let facts = Facts::load();
     Pins::devnet(
@@ -117,6 +142,7 @@ pub fn pins() -> Pins {
         facts.nullifier_pk(),
         facts.viewing_pk(),
         PAYER,
+        PDA_NULLIFIER_PK,
     )
     .expect("pins")
 }

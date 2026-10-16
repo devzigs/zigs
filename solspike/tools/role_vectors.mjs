@@ -8,6 +8,8 @@
 // salt, the info strings of the Zigs labels, and a reduction modulo the P-256 order with BigInt).
 // The public keys, the owner hash and the address come from the SDK of the Zolana repo
 // (`NullifierKey.fromSecret`, `ViewingKey.fromBytes`, `ShieldedAddress`), not from Rust.
+// The PDA identity of each seed (ZOLANA.md 7.2) too: the PDA from `getProgramDerivedAddress` of
+// @solana/kit, its nullifier secret from node:crypto, its address from `ShieldedAddress.forPda`.
 import { createHash, createPrivateKey, createPublicKey, hkdfSync } from "node:crypto";
 import { writeFileSync } from "node:fs";
 import path from "node:path";
@@ -18,12 +20,15 @@ const here = path.dirname(fileURLToPath(import.meta.url));
 const repo = path.resolve(process.argv[2] ?? zolanaRepo());
 const out = process.argv[3] ?? path.join(here, "../../wasm-sol/vectors/roles.json");
 const sdk = await import(`${repo}/sdk-libs/ts/dist/index.js`);
+const kit = await import(`${repo}/node_modules/@solana/kit/dist/index.node.mjs`);
 const { NullifierKey, ShieldedAddress, ShieldedPublicKey, ViewingKey } = sdk;
 await sdk.initializePoseidon();
 
 const P256_ORDER = 0xffffffff00000000ffffffffffffffffbce6faada7179e84f3b9cac2fc632551n;
 const INFO_NULLIFIER = "zigs-sol/nullifier-secret/v1";
 const INFO_VIEWING = "zigs-sol/viewing-scalar/v1";
+const INFO_PDA_NULLIFIER = "zigs-sol/pda-nullifier-secret/v1";
+const PROGRAM = "5PHZEHBMaYbFL9SFmMyP8kUayh3TFEyq2dvEYY3UGjkL";
 const hex = (bytes) => Buffer.from(bytes).toString("hex");
 
 const expand = (seed, info, length) =>
@@ -44,7 +49,30 @@ function ed25519Public(seedByte) {
   return Uint8Array.from(key.export({ format: "der", type: "spki" }).subarray(-32));
 }
 
-function vector(name, seed, groupByte) {
+async function pdaOf(seed, group, viewing) {
+  const [pda] = await kit.getProgramDerivedAddress({
+    programAddress: kit.address(PROGRAM),
+    seeds: [Buffer.from("multisig"), group],
+  });
+  const pdaBytes = Uint8Array.from(kit.getAddressEncoder().encode(pda));
+  const info = Buffer.concat([Buffer.from(INFO_PDA_NULLIFIER), pdaBytes]);
+  const secret = expand(seed, info, 31);
+  const nullifier = NullifierKey.fromSecret(Uint8Array.from(secret));
+  const address = ShieldedAddress.forPda({
+    pda: pdaBytes,
+    nullifierPublicKey: nullifier.publicKey(),
+    viewingPublicKey: viewing.publicKey(),
+  });
+  return {
+    pda: hex(pdaBytes),
+    pdaNullifierSecret: hex(secret),
+    pdaNullifierPk: hex(address.nullifierPublicKey),
+    pdaOwnerHash: hex(address.ownerHash()),
+    pdaAddress: hex(address.toBytes()),
+  };
+}
+
+async function vector(name, seed, groupByte) {
   const group = ed25519Public(groupByte);
   const nullifierSecret = expand(seed, INFO_NULLIFIER, 31);
   const viewingSk = viewingScalar(seed);
@@ -65,15 +93,16 @@ function vector(name, seed, groupByte) {
     viewingPk: hex(address.viewingPublicKey.toBytes()),
     ownerHash: hex(address.ownerHash()),
     address: hex(address.toBytes()),
+    ...(await pdaOf(seed, group, viewing)),
   };
 }
 
 const seedOf = (label) => createHash("sha256").update(`zigs-sol role vectors: ${label}`).digest();
 const vectors = [
-  vector("seed-a", seedOf("a"), 0x42),
-  vector("seed-b", seedOf("b"), 0x43),
-  vector("seed-zero", Buffer.alloc(32), 0x44),
-  vector("seed-ff", Buffer.alloc(32, 0xff), 0x45),
+  await vector("seed-a", seedOf("a"), 0x42),
+  await vector("seed-b", seedOf("b"), 0x43),
+  await vector("seed-zero", Buffer.alloc(32), 0x44),
+  await vector("seed-ff", Buffer.alloc(32, 0xff), 0x45),
 ];
 writeFileSync(out, `${JSON.stringify({ vectors }, null, 1)}\n`);
 console.log(`${vectors.length} role vectors written`);

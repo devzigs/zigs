@@ -96,6 +96,7 @@ pub fn secrets(v: &Vector) -> (Snapshot, Pins) {
         unhex_n(&text(g, "nullifierPk")),
         unhex_n(&text(g, "viewingPk")),
         unhex_n(&text(g, "payer")),
+        super::PDA_NULLIFIER_PK,
     );
     (snapshot, pins.expect("pins"))
 }

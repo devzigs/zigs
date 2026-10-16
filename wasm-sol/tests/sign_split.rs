@@ -1,6 +1,6 @@
 //! Split FROST signing (ZOLANA.md 5, steps 4 to 6): the nonces, the share and the aggregate are
 //! separate calls. Ideas from the P6 tests (`p6-window/signer/tests/split.rs`). Every message is
-//! a Cancel intent compiled from the template, because `sign_share` runs `approve` first.
+//! a CreateNonce intent compiled from the template, because `sign_share` runs `approve` first.
 //! Nothing here prints a secret.
 
 #[path = "support/ceremony.rs"]
@@ -42,7 +42,7 @@ fn a_hundred_sessions_pass_verify_strict_and_the_solana_verify() {
         let mut n = [0u8; 32];
         OsRng.fill_bytes(&mut n);
         n[0] = session_no;
-        let (proposal, message) = cancel(&group, n);
+        let (proposal, message) = nonce_message(&group, n);
         let signers = SUBSETS[usize::from(session_no) % 3];
         let signature = session(&group, &signers, &message, &proposal).expect("session");
         assert!(
@@ -59,7 +59,7 @@ fn a_hundred_sessions_pass_verify_strict_and_the_solana_verify() {
 #[test]
 fn the_signature_does_not_verify_for_another_message_or_another_key() {
     let group = run(WALLET, 2, 3);
-    let (proposal, message) = cancel(&group, nonce(1));
+    let (proposal, message) = nonce_message(&group, nonce(1));
     let signature = session(&group, &[1, 2], &message, &proposal).unwrap();
     let key = &group.done[0].group_key;
     let mut other = message.clone();
@@ -77,7 +77,7 @@ fn the_signature_does_not_verify_for_another_message_or_another_key() {
 #[test]
 fn a_3_of_5_group_signs_with_three_seats_and_not_with_two() {
     let group = run(WALLET, 3, 5);
-    let (proposal, message) = cancel(&group, nonce(2));
+    let (proposal, message) = nonce_message(&group, nonce(2));
     for signers in [[1u16, 2, 3], [2, 4, 5], [1, 3, 5]] {
         let signature = session(&group, &signers, &message, &proposal).unwrap();
         assert!(dalek_strict(&group.done[0].group_key, &signature, &message));
@@ -91,7 +91,7 @@ fn a_3_of_5_group_signs_with_three_seats_and_not_with_two() {
 #[test]
 fn nonces_are_fresh_each_call_and_two_sessions_over_one_message_both_verify() {
     let group = run(WALLET, 2, 3);
-    let (proposal, message) = cancel(&group, nonce(3));
+    let (proposal, message) = nonce_message(&group, nonce(3));
     let (first, _) = commit_all(&group, &[1], &message);
     let (second, _) = commit_all(&group, &[1], &message);
     assert!(first[&1] != second[&1]);
@@ -124,7 +124,7 @@ fn the_digest_is_blake2b_with_the_personalization_over_the_cluster_and_the_bytes
 #[test]
 fn sign_share_refuses_a_message_with_one_changed_byte_at_every_position() {
     let group = run(WALLET, 2, 3);
-    let (proposal, message) = cancel(&group, nonce(4));
+    let (proposal, message) = nonce_message(&group, nonce(4));
     let (nonces, commitments) = commit_all(&group, &[1, 2], &message);
     let round = round_of(&group, 1, &nonces[&1], &commitments);
     let ok = sign::sign_share(&message, &check(&group, &proposal), &round);
@@ -140,8 +140,8 @@ fn sign_share_refuses_a_message_with_one_changed_byte_at_every_position() {
 #[test]
 fn the_nonces_of_one_digest_do_not_sign_another_message_that_passes_approve() {
     let group = run(WALLET, 2, 3);
-    let (_, message_a) = cancel(&group, nonce(5));
-    let (proposal_b, message_b) = cancel(&group, nonce(6));
+    let (_, message_a) = nonce_message(&group, nonce(5));
+    let (proposal_b, message_b) = nonce_message(&group, nonce(6));
     let (nonces_a, commitments_a) = commit_all(&group, &[1, 2], &message_a);
     let round = round_of(&group, 1, &nonces_a[&1], &commitments_a);
     // Message B passes approve with its own proposal, and the nonces are those of message A.
@@ -158,7 +158,7 @@ fn the_nonces_of_one_digest_do_not_sign_another_message_that_passes_approve() {
 #[test]
 fn the_off_chain_prefix_and_the_derive_payloads_get_no_share() {
     let group = run(WALLET, 2, 3);
-    let (proposal, message) = cancel(&group, nonce(7));
+    let (proposal, message) = nonce_message(&group, nonce(7));
     let (nonces, commitments) = commit_all(&group, &[1, 2], &message);
     let round = round_of(&group, 1, &nonces[&1], &commitments);
     let off_chain = [OFFCHAIN_MAGIC.as_slice(), &[0, 1, 2]].concat();
@@ -172,7 +172,7 @@ fn the_off_chain_prefix_and_the_derive_payloads_get_no_share() {
 #[test]
 fn a_message_that_is_not_v1_gets_no_share() {
     let group = run(WALLET, 2, 3);
-    let (proposal, _) = cancel(&group, nonce(8));
+    let (proposal, _) = nonce_message(&group, nonce(8));
     let text = b"transfer all funds to me".to_vec();
     let (nonces, commitments) = commit_all(&group, &[1, 2], &text);
     let round = round_of(&group, 1, &nonces[&1], &commitments);
@@ -187,7 +187,7 @@ fn a_message_that_is_not_v1_gets_no_share() {
 fn a_key_package_that_is_not_the_pinned_group_gets_no_share() {
     let group = run(WALLET, 2, 3);
     let stranger = run(WALLET, 2, 3);
-    let (proposal, message) = cancel(&group, nonce(9));
+    let (proposal, message) = nonce_message(&group, nonce(9));
     let (nonces, commitments) = commit_all(&stranger, &[1, 2], &message);
     let round = round_of(&stranger, 1, &nonces[&1], &commitments);
     let why = sign::sign_share(&message, &check(&group, &proposal), &round).unwrap_err();
@@ -198,7 +198,7 @@ fn a_key_package_that_is_not_the_pinned_group_gets_no_share() {
 fn a_seat_whose_snapshot_secrets_do_not_derive_the_pins_gets_no_share() {
     let group = run(WALLET, 2, 3);
     let stranger = run(WALLET, 2, 3);
-    let (proposal, message) = cancel(&group, nonce(10));
+    let (proposal, message) = nonce_message(&group, nonce(10));
     let (nonces, commitments) = commit_all(&group, &[1, 2], &message);
     let round = round_of(&group, 1, &nonces[&1], &commitments);
     let swapped = Check {
@@ -214,6 +214,8 @@ fn a_seat_whose_snapshot_secrets_do_not_derive_the_pins_gets_no_share() {
 
 #[test]
 fn every_message_that_the_p3_vectors_refuse_gets_no_share_and_the_rest_reach_the_group_check() {
+    // The smoke vectors accept only the messages that the beta signs: the nonce account, the move
+    // to the PDA and Add SOL. Every other one is refused, by the beta policy or by a rule.
     let group = run(WALLET, 2, 3);
     let dir = format!("{}/vectors/smoke", env!("CARGO_MANIFEST_DIR"));
     let mut names: Vec<String> = std::fs::read_dir(&dir)
@@ -242,8 +244,13 @@ fn every_message_that_the_p3_vectors_refuse_gets_no_share_and_the_rest_reach_the
         };
         let why = sign::sign_share(&message, &check, &round).unwrap_err();
         if answer.starts_with("accepted") {
-            assert!(why.contains("not the pinned group key"), "{name}: {why}");
-            reached += 1;
+            // A fee key signs Add SOL; the group key never does.
+            let fee_only = why.contains("intent-retired\tonly a fee key signs");
+            assert!(
+                why.contains("not the pinned group key") || fee_only,
+                "{name}: {why}"
+            );
+            reached += usize::from(!fee_only);
         } else if answer.starts_with("refused") {
             assert!(
                 why == answer,
@@ -253,7 +260,7 @@ fn every_message_that_the_p3_vectors_refuse_gets_no_share_and_the_rest_reach_the
         }
     }
     assert!(
-        refused >= 20 && reached >= 8,
+        refused >= 20 && reached >= 2,
         "{refused} refused, {reached} accepted"
     );
 }
@@ -263,7 +270,7 @@ fn every_message_that_the_p3_vectors_refuse_gets_no_share_and_the_rest_reach_the
 #[test]
 fn one_share_alone_does_not_aggregate() {
     let group = run(WALLET, 2, 3);
-    let (proposal, message) = cancel(&group, nonce(11));
+    let (proposal, message) = nonce_message(&group, nonce(11));
     let (nonces, commitments) = commit_all(&group, &[1, 2], &message);
     let share = share_of(&group, 1, (&message, &proposal), (&nonces, &commitments)).unwrap();
     let one = BTreeMap::from([(1u16, share)]);
@@ -287,7 +294,7 @@ fn one_share_alone_does_not_aggregate() {
 #[test]
 fn a_changed_share_a_changed_message_or_other_commitments_do_not_aggregate() {
     let group = run(WALLET, 2, 3);
-    let (proposal, message) = cancel(&group, nonce(12));
+    let (proposal, message) = nonce_message(&group, nonce(12));
     let (nonces, commitments) = commit_all(&group, &[1, 2], &message);
     let mut shares = BTreeMap::new();
     for seat in [1u16, 2] {
@@ -338,7 +345,7 @@ fn a_changed_share_a_changed_message_or_other_commitments_do_not_aggregate() {
 fn the_public_key_package_of_another_group_does_not_aggregate() {
     let group = run(WALLET, 2, 3);
     let stranger = run(WALLET, 2, 3);
-    let (proposal, message) = cancel(&group, nonce(13));
+    let (proposal, message) = nonce_message(&group, nonce(13));
     let (nonces, commitments) = commit_all(&group, &[1, 2], &message);
     let mut shares = BTreeMap::new();
     for seat in [1u16, 2] {
@@ -359,7 +366,7 @@ fn the_public_key_package_of_another_group_does_not_aggregate() {
 #[test]
 fn a_share_needs_the_commitment_of_its_own_seat_and_enough_signers() {
     let group = run(WALLET, 2, 3);
-    let (proposal, message) = cancel(&group, nonce(14));
+    let (proposal, message) = nonce_message(&group, nonce(14));
     let (nonces, commitments) = commit_all(&group, &[1, 2], &message);
     let mut without_me = commitments.clone();
     without_me.remove(&1);
@@ -376,7 +383,7 @@ fn a_share_needs_the_commitment_of_its_own_seat_and_enough_signers() {
 #[test]
 fn bad_round_input_is_an_error_and_not_a_panic() {
     let group = run(WALLET, 2, 3);
-    let (proposal, message) = cancel(&group, nonce(15));
+    let (proposal, message) = nonce_message(&group, nonce(15));
     let (nonces, commitments) = commit_all(&group, &[1, 2], &message);
     let good: Value = json_of(&round_of(&group, 1, &nonces[&1], &commitments));
     for key in ["now", "cluster", "keyPackage", "nonces", "commitments"] {
@@ -425,7 +432,7 @@ fn verify_strict_refuses_a_weak_key_that_plain_verify_accepts() {
 #[test]
 fn verify_strict_accepts_the_signature_of_a_group_and_no_other_message() {
     let group = run(WALLET, 2, 3);
-    let (proposal, message) = cancel(&group, nonce(7));
+    let (proposal, message) = nonce_message(&group, nonce(7));
     let signature = session(&group, &[1, 2], &message, &proposal).unwrap();
     let key = unhex32(&group.done[0].group_key);
     let bytes: [u8; 64] = hex::decode(signature).unwrap().try_into().unwrap();
@@ -442,7 +449,7 @@ fn verify_strict_accepts_the_signature_of_a_group_and_no_other_message() {
 #[test]
 fn a_key_written_twice_in_a_signing_input_is_refused() {
     let group = run(WALLET, 2, 3);
-    let (proposal, message) = cancel(&group, nonce(9));
+    let (proposal, message) = nonce_message(&group, nonce(9));
     let (nonces, commitments) = commit_all(&group, &[1, 2], &message);
     let mut shares = BTreeMap::new();
     for seat in [1u16, 2] {

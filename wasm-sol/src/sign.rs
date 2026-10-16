@@ -24,10 +24,12 @@ use frost_ed25519::{round1, round2, Identifier, SigningPackage};
 use rand_core::OsRng;
 use serde_json::{json, Value};
 
-use crate::approve::{approve, Device};
+use crate::approve::Device;
+use crate::beta::{approve_message, approve_payment, Signer};
 use crate::bytes::hex;
 use crate::codec::{blake2b_256, from_json, text_of, unhex, unhex_array};
 use crate::frost::{check_cluster, id_map, key_bytes, seat_of};
+use crate::pay::Seen;
 use crate::pins::Pins;
 use crate::plan::Proposal;
 use crate::snapshot::Snapshot;
@@ -114,8 +116,14 @@ fn commitments_of(json: &str) -> Result<BTreeMap<Identifier, SigningCommitments>
     Ok(map)
 }
 
-/// Runs `approve` on the bytes. Returns the pins, or the text of the refusal.
-pub(crate) fn approved(message: &[u8], check: &Check, now: u64) -> Result<Pins, String> {
+/// Runs every rule for a message that `signer` would sign. Returns the pins, or the text of the
+/// refusal.
+pub(crate) fn approved(
+    message: &[u8],
+    check: &Check,
+    now: u64,
+    signer: Signer,
+) -> Result<Pins, String> {
     let proposal = Proposal::decode(check.intent)?;
     let snapshot = Snapshot::decode(check.snapshot)?;
     let pins = Pins::decode(check.pins)?;
@@ -124,7 +132,7 @@ pub(crate) fn approved(message: &[u8], check: &Check, now: u64) -> Result<Pins, 
         snapshot: &snapshot,
         now,
     };
-    approve(message, &proposal.intent, &proposal.plan, &device).map_err(|r| refused(&r))?;
+    approve_message(message, &proposal, &device, signer).map_err(|r| refused(&r))?;
     Ok(pins)
 }
 
@@ -132,13 +140,13 @@ pub(crate) fn approved(message: &[u8], check: &Check, now: u64) -> Result<Pins, 
 /// text for what it refuses.
 pub fn sign_share(message: &[u8], check: &Check, round: &str) -> Result<String, String> {
     let round = Round::parse(round)?;
-    let pins = approved(message, check, round.now)?;
+    let pins = approved(message, check, round.now, Signer::Group)?;
     let digest = digest_of(&round.cluster, message)?;
     if round.digest != digest {
         return Err("the nonces were made for another message".to_string());
     }
     let group = key_bytes(round.key_package.verifying_key())?;
-    if group != pins.group {
+    if group != pins.multisig {
         return Err("the key package is not the pinned group key".to_string());
     }
     let package = SigningPackage::new(round.commitments, message);
@@ -147,6 +155,45 @@ pub fn sign_share(message: &[u8], check: &Check, round: &str) -> Result<String, 
     Ok(json!({
         "seat": seat_of(round.key_package.identifier())?,
         "digest": hex(&digest),
+        "share": hex(&share.serialize()),
+    })
+    .to_string())
+}
+
+/// The approval of a payment (ZOLANA.md 7.2), what the device saw on chain, and the round.
+pub struct ApprovalCheck<'a> {
+    pub check: Check<'a>,
+    pub seen: &'a [u8],
+}
+
+/// The signature share of one seat over the approval digest of a payment: `{"seat", "digest",
+/// "share"}`. It runs every rule of the payment with the proposal account first, and signs the
+/// 32-byte digest that they give and nothing else. The nonces must be those of that digest.
+pub fn approval_share(input: &ApprovalCheck, round: &str) -> Result<String, String> {
+    let round = Round::parse(round)?;
+    check_cluster(&round.cluster)?;
+    let proposal = Proposal::decode(input.check.intent)?;
+    let snapshot = Snapshot::decode(input.check.snapshot)?;
+    let pins = Pins::decode(input.check.pins)?;
+    let seen = Seen::decode(input.seen)?;
+    let device = Device {
+        pins: &pins,
+        snapshot: &snapshot,
+        now: round.now,
+    };
+    let payment = approve_payment(&proposal, &device, &seen).map_err(|r| refused(&r))?;
+    if round.digest != payment.digest {
+        return Err("the nonces were made for another approval".to_string());
+    }
+    if key_bytes(round.key_package.verifying_key())? != pins.multisig {
+        return Err("the key package is not the pinned group key".to_string());
+    }
+    let package = SigningPackage::new(round.commitments, &payment.digest);
+    let share = round2::sign(&package, &round.nonces, &round.key_package)
+        .map_err(|e| format!("round 2: {e}"))?;
+    Ok(json!({
+        "seat": seat_of(round.key_package.identifier())?,
+        "digest": hex(&payment.digest),
         "share": hex(&share.serialize()),
     })
     .to_string())

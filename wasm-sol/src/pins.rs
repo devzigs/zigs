@@ -3,27 +3,41 @@
 //! `nullifier_pk` and `viewing_pk` (the `soldone` document, ZOLANA.md 4.1). Derived addresses
 //! and the group `owner_hash` are computed here from those pins, never taken from the device.
 //! The fourth pin is the payer of the proposal: the fee key that the proposing seat published
-//! (ZOLANA.md 5). The page matches it to that document before it calls the checker.
+//! (ZOLANA.md 5). The page matches it to that document before it calls the checker. The fifth is
+//! the `nullifier_pk` of the PDA identity that owns the funds of the program design (7.2): the
+//! PDA is derived here from the group key, never taken from the device.
 
 use crate::assets::AssetTable;
 use crate::bytes::{short_hex, Reader};
 use crate::consts::{
-    Key, COMPUTE_BUDGET_PROGRAM, NONCE_SEED, POOL_DEVNET, RECENT_BLOCKHASHES, REGISTRY_DEVNET,
-    RENT_SYSVAR, SEED_NULLIFIER, SEED_SOL_INTERFACE, SEED_SOL_INTERFACE_INDEX, SEED_TREE,
-    SEED_USER_RECORD, SYSTEM_PROGRAM,
+    Key, COMPUTE_BUDGET_PROGRAM, ED25519_PROGRAM, INSTRUCTIONS_SYSVAR, MULTISIG_DEVNET, NONCE_SEED,
+    POOL_DEVNET, RECENT_BLOCKHASHES, REGISTRY_DEVNET, RENT_SYSVAR, SEED_NULLIFIER,
+    SEED_SOL_INTERFACE, SEED_SOL_INTERFACE_INDEX, SEED_TREE, SEED_USER_RECORD, SYSTEM_PROGRAM,
 };
 use crate::hashes::owner_hash;
 use crate::pda::{create_with_seed, find_program_address};
+use crate::program::owner_pda;
 
 /// Rent of the nonce account on Devnet (P2 result, ZOLANA.md 6.3).
 pub const NONCE_RENT_DEVNET: u64 = 1_056_640;
 
-/// The wire form of the pins at the wasm entry: group key, `nullifier_pk`, `viewing_pk`, payer.
-pub const WIRE_LEN: usize = 32 + 32 + 33 + 32;
+/// The wire form of the pins at the wasm entry: group key, `nullifier_pk`, `viewing_pk`, payer,
+/// and the `nullifier_pk` of the PDA identity.
+pub const WIRE_LEN: usize = 32 + 32 + 33 + 32 + 32;
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Pins {
+    /// The owner key of the identity that the rules check: the group key, or the PDA after
+    /// `for_pda`. Its `owner_hash` is `group_owner_hash`.
     pub group: Key,
+    /// The FROST group key: the key of the approval digest, which never owns a UTXO of the
+    /// program design. `for_pda` keeps it.
+    pub multisig: Key,
+    /// The PDA of the approvals program that owns the funds of the program design.
+    pub pda: Key,
+    pub pda_nullifier_pk: Key,
+    /// The approvals program.
+    pub program: Key,
     pub nullifier_pk: Key,
     pub viewing_pk: [u8; 33],
     /// The fee payer of the message: the fee key of the proposing seat. It is never the group
@@ -58,6 +72,7 @@ impl Pins {
         nullifier_pk: Key,
         viewing_pk: [u8; 33],
         payer: Key,
+        pda_nullifier_pk: Key,
     ) -> Result<Self, String> {
         let tree = derive(&[SEED_TREE, &0u16.to_le_bytes()], &POOL_DEVNET, "tree 0")?;
         let sol_interface = derive(
@@ -67,6 +82,10 @@ impl Pins {
         )?;
         Ok(Self {
             group,
+            multisig: group,
+            pda: owner_pda(&group)?,
+            pda_nullifier_pk,
+            program: MULTISIG_DEVNET,
             nullifier_pk,
             viewing_pk,
             payer,
@@ -85,10 +104,15 @@ impl Pins {
 
     /// Reads the wire form of the wasm entry. The whole input must be used.
     pub fn decode(bytes: &[u8]) -> Result<Self, String> {
-        let short =
-            |_| format!("pins: need {WIRE_LEN} bytes: group key, nullifier_pk, viewing_pk, payer");
+        let short = |_| {
+            format!(
+                "pins: need {WIRE_LEN} bytes: group key, nullifier_pk, viewing_pk, payer, \
+                 PDA nullifier_pk"
+            )
+        };
         let mut r = Reader::new(bytes);
-        let (group, nullifier_pk, viewing_pk, payer) = (
+        let (group, nullifier_pk, viewing_pk, payer, pda_nullifier_pk) = (
+            r.array().map_err(short)?,
             r.array().map_err(short)?,
             r.array().map_err(short)?,
             r.array().map_err(short)?,
@@ -97,16 +121,28 @@ impl Pins {
         if !r.is_empty() {
             return Err(format!("pins: {} bytes, need {WIRE_LEN}", bytes.len()));
         }
-        Self::devnet(group, nullifier_pk, viewing_pk, payer)
+        Self::devnet(group, nullifier_pk, viewing_pk, payer, pda_nullifier_pk)
     }
 
-    /// The wire form of the wasm entry.
+    /// The pins of the PDA identity: the PDA is the owner, with its own `nullifier_pk` and
+    /// `owner_hash`. The group key stays in `multisig`, and the payer stays.
+    pub fn for_pda(&self) -> Result<Self, String> {
+        Ok(Self {
+            group: self.pda,
+            nullifier_pk: self.pda_nullifier_pk,
+            group_owner_hash: owner_hash(&self.pda, &self.pda_nullifier_pk)?,
+            ..self.clone()
+        })
+    }
+
+    /// The wire form of the wasm entry, of the pins that `devnet` made (not of `for_pda`).
     pub fn wire(&self) -> Vec<u8> {
         [
-            &self.group[..],
+            &self.multisig[..],
             &self.nullifier_pk[..],
             &self.viewing_pk[..],
             &self.payer[..],
+            &self.pda_nullifier_pk[..],
         ]
         .concat()
     }
@@ -123,7 +159,12 @@ impl Pins {
     /// A short name of a key for messages: its role if it is pinned, else its first bytes.
     pub fn label(&self, key: &Key) -> String {
         let named = [
+            (&self.multisig, "group key"),
             (&self.group, "group"),
+            (&self.pda, "group PDA"),
+            (&self.program, "approvals program"),
+            (&ED25519_PROGRAM, "Ed25519 program"),
+            (&INSTRUCTIONS_SYSVAR, "Instructions sysvar"),
             (&self.payer, "fee payer"),
             (&self.nonce_account, "nonce account"),
             (&self.pool, "pool program"),

@@ -8,7 +8,10 @@ use p3_check::codec::{base64url, unhex, unhex_array};
 use p3_check::consts::{POOL_DEVNET, REGISTRY_DEVNET};
 use p3_check::frost::{CLUSTER, PROGRAM_LABEL};
 use p3_check::hashes::owner_hash;
-use p3_check::roles::{derive, roles, secrets, shielded_address};
+use p3_check::roles::{
+    derive, derive_pda, pda_address, pda_nullifier_secret, pda_roles, roles, secrets,
+    shielded_address,
+};
 use serde_json::Value;
 use solana_address::Address;
 use std::str::FromStr;
@@ -66,6 +69,84 @@ fn the_wasm_public_keys_equal_the_sdk_public_keys_for_the_same_secrets() {
             "{name}: address"
         );
     }
+}
+
+#[test]
+fn the_pda_identity_of_a_seed_equals_the_independent_node_and_sdk_derivation() {
+    for v in vectors() {
+        let name = v["name"].as_str().unwrap();
+        let (seed, group) = (field(&v, "solSeed"), field(&v, "groupKey"));
+        let pda = derive_pda(&seed, &group).unwrap();
+        assert_eq!(pda.pda, field::<32>(&v, "pda"), "{name}: PDA");
+        assert!(
+            pda.nullifier_secret == field::<31>(&v, "pdaNullifierSecret"),
+            "{name}: secret"
+        );
+        assert_eq!(
+            pda.nullifier_pk,
+            field::<32>(&v, "pdaNullifierPk"),
+            "{name}"
+        );
+        assert_eq!(pda.owner_hash, field::<32>(&v, "pdaOwnerHash"), "{name}");
+        assert_eq!(
+            pda.address,
+            field::<99>(&v, "pdaAddress").to_vec(),
+            "{name}"
+        );
+        let text: Value = serde_json::from_str(
+            &pda_roles(
+                v["solSeed"].as_str().unwrap(),
+                v["groupKey"].as_str().unwrap(),
+            )
+            .unwrap(),
+        )
+        .unwrap();
+        assert_eq!(text["address"], v["pdaAddress"], "{name}: JSON");
+        assert_eq!(text["owner_hash"], v["pdaOwnerHash"], "{name}: JSON");
+    }
+}
+
+#[test]
+fn the_pda_secret_depends_on_the_pda_and_is_not_the_secret_of_the_group_key() {
+    let seed = [7u8; 32];
+    let (a, b) = (
+        derive_pda(&seed, &[3; 32]).unwrap(),
+        derive_pda(&seed, &[4; 32]).unwrap(),
+    );
+    assert!(a.pda != b.pda && a.nullifier_secret != b.nullifier_secret);
+    assert!(a.nullifier_secret != secrets(&seed).unwrap().0);
+    assert!(pda_nullifier_secret(&seed, &a.pda).unwrap() == a.nullifier_secret);
+    // The address carries the PDA tag 2, the group key address the Ed25519 tag 1.
+    assert_eq!(a.address[0], 2);
+    assert_eq!(derive(&seed, &[3; 32]).unwrap().address[0], 1);
+    let viewing = derive(&seed, &[3; 32]).unwrap().viewing_pk;
+    assert_eq!(pda_address(&a.pda, &a.nullifier_pk, &viewing), a.address);
+}
+
+/// The landed option D deposit of the SOL-35 spike names the owner hash of the PDA identity of
+/// the spike seed (ZOLANA.md 6.10, track "D"). The seed stays outside the repo: set
+/// `SOL35_SEED_FILE` to the file with its hex. The test prints no secret.
+#[test]
+#[ignore = "needs SOL35_SEED_FILE: the solSeed of the SOL-35 spike group, as hex"]
+fn the_pda_identity_of_the_spike_seed_owns_the_landed_option_d_deposit() {
+    let path = std::env::var("SOL35_SEED_FILE").expect("SOL35_SEED_FILE");
+    let text = std::fs::read_to_string(path).unwrap();
+    let seed: [u8; 32] = unhex_array(text.trim(), "seed").unwrap();
+    let file = format!("{}/vectors/program/landed.json", env!("CARGO_MANIFEST_DIR"));
+    let landed: Value = serde_json::from_slice(&std::fs::read(file).unwrap()).unwrap();
+    let group: [u8; 32] = unhex_array(landed["group"].as_str().unwrap(), "group").unwrap();
+    let pda = derive_pda(&seed, &group).unwrap();
+    assert_eq!(hex::encode(pda.pda), landed["pda"].as_str().unwrap());
+    let data = unhex(landed["deposit_d"]["data"].as_str().unwrap(), "deposit").unwrap();
+    let deposit = p3_check::fixed::parse_deposit(&data).unwrap();
+    assert!(
+        deposit.entries[0].owner == pda.owner_hash,
+        "the owner of the landed deposit"
+    );
+    assert!(
+        deposit.entries[0].view_tag == pda.pda,
+        "the view tag of the landed deposit"
+    );
 }
 
 #[test]

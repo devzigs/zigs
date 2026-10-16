@@ -1,2 +1,3 @@
 refused
+migration-payee	a nonce payment must pay its inputs whole to the program address of this group
 salt-zero	the salt is all zero

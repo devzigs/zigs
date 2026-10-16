@@ -6,7 +6,7 @@
 
 mod common;
 
-use common::fixture::{Fixture, Spec};
+use common::fixture::Fixture;
 use common::{mutate_tx, unhex, unhex_n, ATTACKER};
 use ed25519_dalek::{Signature, SigningKey, VerifyingKey};
 use p3_check::bytes::hex;
@@ -51,14 +51,17 @@ struct Paid {
 }
 
 impl Paid {
+    /// The move of the beta funds to the PDA: a message that the fee key pays, as for every
+    /// nonce payment.
     fn by(public: &str) -> Self {
-        let mut fixture = Fixture::build(&Spec::transfer());
+        let mut fixture = Fixture::migration();
         fixture.pins.payer = unhex_n(public);
         let message = fixture.bytes();
         let plan = fixture.plan.clone();
         let proposal = Proposal {
             intent: fixture.intent.clone(),
             plan,
+            transact: Vec::new(),
         };
         Self {
             fixture,

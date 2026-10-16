@@ -5,13 +5,13 @@
 use crate::bytes::short_hex;
 use crate::check::{parse_transact_data, Run};
 use crate::consts::{
-    COMPUTE_BUDGET_PROGRAM, REG_REGISTER, REG_SET_MERGING_ENABLED, REG_UPDATE_KEYS, SYSTEM_PROGRAM,
-    SYS_ADVANCE_NONCE, SYS_AUTHORIZE_NONCE, SYS_CREATE_ACCOUNT, SYS_CREATE_WITH_SEED,
-    SYS_INIT_NONCE, SYS_TRANSFER, SYS_TRANSFER_WITH_SEED, SYS_WITHDRAW_NONCE, TAG_DEPOSIT,
-    TAG_MERGE_TRANSACT, TAG_TRANSACT,
+    COMPUTE_BUDGET_PROGRAM, ED25519_PROGRAM, MS_CREATE, MS_EXECUTE, REG_REGISTER,
+    REG_SET_MERGING_ENABLED, REG_UPDATE_KEYS, SYSTEM_PROGRAM, SYS_ADVANCE_NONCE,
+    SYS_AUTHORIZE_NONCE, SYS_CREATE_ACCOUNT, SYS_CREATE_WITH_SEED, SYS_INIT_NONCE, SYS_TRANSFER,
+    SYS_TRANSFER_WITH_SEED, SYS_WITHDRAW_NONCE, TAG_DEPOSIT, TAG_MERGE_TRANSACT, TAG_TRANSACT,
 };
 use crate::fixed::{parse_deposit, parse_register, AssetKind, Deposit, Register};
-use crate::intent::Intent;
+use crate::intent::{Intent, Program};
 use crate::pins::Pins;
 use crate::rule::Rule;
 use crate::template::{Data, Expected, ExpectedIx};
@@ -73,6 +73,21 @@ fn registry_verdict(data: &[u8]) -> Verdict {
         }
         _ => Some((Rule::InstructionNotAllowed, NOT_ALLOWED)),
     }
+}
+
+/// The approvals program: `create` only in Propose and `execute` only in Execute.
+fn program_verdict(data: &[u8], intent: &Intent) -> Verdict {
+    let allowed = match intent {
+        Intent::Program(Program::Propose { .. }) => MS_CREATE,
+        Intent::Program(Program::Execute { .. }) => MS_EXECUTE,
+        _ => {
+            return Some((
+                Rule::ProgramNotAllowed,
+                "the approvals program outside its intents",
+            ))
+        }
+    };
+    (data.first() != Some(&allowed)).then_some((Rule::InstructionNotAllowed, NOT_ALLOWED))
 }
 
 /// The first check that fails, in the order given.
@@ -160,9 +175,17 @@ impl Run<'_> {
         if *program == self.pins.registry {
             return registry_verdict(&ix.data);
         }
+        if *program == self.pins.program {
+            return program_verdict(&ix.data, self.intent);
+        }
+        if *program == ED25519_PROGRAM
+            && matches!(self.intent, Intent::Program(Program::Execute { .. }))
+        {
+            return None;
+        }
         Some((
             Rule::ProgramNotAllowed,
-            "the program is not the System program, pool or registry",
+            "the program is not the System program, pool, registry or approvals program",
         ))
     }
 
@@ -189,8 +212,34 @@ impl Run<'_> {
         }
     }
 
+    /// The `transact` data of an Execute: inside the first `execute` of the approvals program.
+    fn find_execute(&mut self) -> Option<(usize, Transact)> {
+        let msg = self.msg;
+        let is_execute = |ix: &Ix| {
+            msg.program_key(ix) == Some(&self.pins.program) && ix.data.first() == Some(&MS_EXECUTE)
+        };
+        let Some((pos, ix)) = msg.ixs.iter().enumerate().find(|(_, ix)| is_execute(ix)) else {
+            self.fail(
+                Rule::InstructionMismatch,
+                "the message has no execute instruction",
+            );
+            return None;
+        };
+        let data = [&[TAG_TRANSACT][..], ix.data.get(1..).unwrap_or_default()].concat();
+        match parse_transact_data(&data) {
+            Ok(tx) => Some((pos, tx)),
+            Err(violation) => {
+                self.out.push(violation);
+                None
+            }
+        }
+    }
+
     /// The `transact` instruction of a spend: the first pool instruction with tag 16.
     pub fn find_transact(&mut self) -> Option<(usize, Transact)> {
+        if matches!(self.intent, Intent::Program(Program::Execute { .. })) {
+            return self.find_execute();
+        }
         if !self.intent.is_spend() {
             return None;
         }
@@ -228,7 +277,7 @@ impl Run<'_> {
         for (pos, (ix, template)) in msg.ixs.iter().zip(&exp.ixs).enumerate() {
             self.compare_ix(pos, ix, template);
         }
-        if let Some((pos, tx)) = found {
+        if let Some((pos, tx)) = found.filter(|_| self.intent.is_spend()) {
             self.transact_rules(*pos, tx);
         }
     }
@@ -246,6 +295,7 @@ impl Run<'_> {
             Data::Exact(bytes) => *bytes != ix.data,
             Data::Fields(bytes) => bytes.first() != ix.data.first(),
             Data::Variable => ix.data.first() != Some(&TAG_TRANSACT),
+            Data::Execute => ix.data.first() != Some(&MS_EXECUTE),
         };
         if differs {
             self.fail(

@@ -45,6 +45,7 @@ fn p6_inputs(bytes: &[u8]) -> (Vec<u8>, Vec<u8>) {
     let proposal = Proposal {
         intent,
         plan: Plan::default(),
+        transact: Vec::new(),
     };
     (proposal.encode().expect("proposal"), data)
 }
@@ -145,6 +146,7 @@ fn compiled_and_checked(v: &ts::Vector) -> (Vec<u8>, String) {
     let proposal = Proposal {
         intent: ts::intent_of(v, &tx),
         plan: ts::plan_of(v),
+        transact: Vec::new(),
     };
     let bytes = proposal.encode().expect("proposal");
     let message =
@@ -160,7 +162,7 @@ fn compiled_and_checked(v: &ts::Vector) -> (Vec<u8>, String) {
 }
 
 #[test]
-fn a_message_compiled_from_each_ts_vector_passes_check_message_with_accepted() {
+fn a_message_compiled_from_each_ts_vector_passes_every_rule_of_check_message_but_the_beta_policy() {
     let all: Vec<ts::Vector> = ts::vectors()
         .into_iter()
         .chain(ts::vectors_in("ts2"))
@@ -168,7 +170,8 @@ fn a_message_compiled_from_each_ts_vector_passes_check_message_with_accepted() {
     assert!(all.len() >= 11, "{} vectors", all.len());
     for v in &all {
         let (_, answer) = compiled_and_checked(v);
-        assert!(answer.starts_with("accepted"), "{}: {answer}", v.name);
+        // A TS vector pays another payee than the PDA, or withdraws: the beta signs neither.
+        assert!(common::only_policy(&answer), "{}: {answer}", v.name);
     }
 }
 
@@ -203,6 +206,7 @@ fn a_cancel_a_register_and_a_shield_compile_without_transact_data() {
         let proposal = Proposal {
             intent,
             plan: Plan::default(),
+            transact: Vec::new(),
         };
         let bytes = proposal.encode().unwrap();
         let message = compile_proposal(&bytes, &pins().wire(), &[]).expect("compile");

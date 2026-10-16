@@ -4,7 +4,7 @@
 
 use crate::consts::{DERIVE_PREFIX, OFFCHAIN_MAGIC};
 use crate::fixed::{parse_deposit, parse_register, Deposit, Register};
-use crate::intent::Intent;
+use crate::intent::{Intent, Program};
 use crate::pins::Pins;
 use crate::rule::{Rule, Violation};
 use crate::template::{
@@ -178,7 +178,7 @@ impl Run<'_> {
             let detail = "the first account is not the payer of the proposal";
             self.fail(Rule::FeePayerNotPayer, detail);
         }
-        if self.pins.payer == self.pins.group {
+        if self.pins.payer == self.pins.group || self.pins.payer == self.pins.multisig {
             self.fail(
                 Rule::PayerIsGroup,
                 "the payer of the proposal is the group key",
@@ -199,7 +199,9 @@ impl Run<'_> {
     }
 
     fn template_rules(&mut self, found: Option<&(usize, Transact)>) {
-        if self.intent.is_spend() && found.is_none() {
+        let needs_tx = self.intent.is_spend()
+            || matches!(self.intent, Intent::Program(Program::Execute { .. }));
+        if needs_tx && found.is_none() {
             return;
         }
         match expected(self.intent, self.pins, found.map(|(_, tx)| tx)) {
@@ -209,7 +211,7 @@ impl Run<'_> {
             }
             Err(why) => {
                 self.fail(Rule::InstructionMismatch, why);
-                if let Some((pos, tx)) = found {
+                if let Some((pos, tx)) = found.filter(|_| self.intent.is_spend()) {
                     self.transact_rules(*pos, tx);
                 }
             }

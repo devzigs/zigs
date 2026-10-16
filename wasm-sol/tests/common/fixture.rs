@@ -4,6 +4,10 @@
 //! derived from the first nullifier and a root seed; a dummy naming the owner of the first real
 //! output; one confidential slot per output; the group as fee payer). The proof is zeros: the
 //! checker never reads it. Each test breaks one thing and names the rule that must catch it.
+//!
+//! `build` spends from the group key to the payee. `migration` moves the whole input to the PDA
+//! address of the group (the one nonce payment of the beta), and `payment` spends from the PDA
+//! identity (the program design, ZOLANA.md 7.2) with the true `private_tx_hash`.
 #![allow(dead_code)]
 
 use p3_check::address::Address;
@@ -12,9 +16,10 @@ use p3_check::consts::{Key, SUPPORTED_SHAPES};
 use p3_check::hashes::{
     dummy_hash, nullifier_pk, output_blinding, output_seed, owner_hash, Utxo, TREE_ID,
 };
-use p3_check::intent::{Intent, Spend};
+use p3_check::intent::{Intent, Pay, Program, Spend};
 use p3_check::pins::Pins;
-use p3_check::plan::{OutPlan, Plan, Role};
+use p3_check::plan::{OutPlan, Plan, Proposal, Role};
+use p3_check::program::{owner_pda, private_tx_hash};
 use p3_check::rule::Rule;
 use p3_check::snapshot::{InputUtxo, Snapshot};
 use p3_check::template::compile;
@@ -38,10 +43,13 @@ pub const GROUP: Key = [0x11; 32];
 pub const PAYEE: Key = [0x22; 32];
 pub const ATTACKER: Key = [0xAA; 32];
 
+#[derive(Clone)]
 pub struct Wallet {
     pub signer: Key,
     pub nullifier_secret: [u8; 31],
     pub viewing_sk: [u8; 32],
+    /// The scheme tag of the signing key in the address: 1 (Ed25519) or 2 (PDA).
+    pub tag: u8,
 }
 
 impl Wallet {
@@ -50,6 +58,7 @@ impl Wallet {
             signer,
             nullifier_secret: [seed; 31],
             viewing_sk: field(0x1000_0000 + u64::from(seed)),
+            tag: 1,
         }
     }
 
@@ -73,7 +82,7 @@ impl Wallet {
 
     pub fn address(&self) -> Address {
         let mut signing = [0; 34];
-        signing[0] = 1;
+        signing[0] = self.tag;
         signing[1..33].copy_from_slice(&self.signer);
         Address {
             signing,
@@ -93,6 +102,22 @@ pub fn payee() -> Wallet {
 
 pub fn attacker() -> Wallet {
     Wallet::new(ATTACKER, 0x44)
+}
+
+/// The PDA identity of the group: the PDA of `GROUP` under the approvals program, its own
+/// nullifier secret and the viewing key of the group.
+pub fn pda_wallet() -> Wallet {
+    pda_wallet_of(&GROUP)
+}
+
+/// The PDA identity of a group key, with the secrets of `pda_wallet`.
+pub fn pda_wallet_of(group_key: &Key) -> Wallet {
+    Wallet {
+        signer: owner_pda(group_key).unwrap(),
+        nullifier_secret: [0x4d; 31],
+        viewing_sk: group().viewing_sk,
+        tag: 2,
+    }
 }
 
 /// What the spend does.
@@ -127,6 +152,14 @@ impl Spec {
         }
     }
 
+    /// 1 input of 100 lamports, all of it paid: the move to the PDA keeps no change.
+    pub fn migration() -> Self {
+        Self {
+            pay: Some((SOL, 100)),
+            ..Self::transfer()
+        }
+    }
+
     /// 1 input of 100 lamports, withdraw 30, change 70 and one dummy.
     pub fn withdrawal() -> Self {
         Self {
@@ -147,6 +180,9 @@ pub struct Fixture {
     pub plan: Plan,
     pub snapshot: Snapshot,
     pub tx: Transact,
+    /// The owner of the inputs and the change.
+    pub owner: Wallet,
+    pub payee: Wallet,
 }
 
 pub fn input_blinding(index: usize) -> Key {
@@ -174,8 +210,7 @@ fn shape_outputs(inputs: usize, outputs: usize) -> usize {
         .map_or(outputs, |&(_, o)| usize::from(o))
 }
 
-fn snapshot_of(spec: &Spec) -> Snapshot {
-    let wallet = group();
+fn snapshot_of(spec: &Spec, wallet: &Wallet) -> Snapshot {
     Snapshot {
         nullifier_secret: wallet.nullifier_secret,
         viewing_sk: wallet.viewing_sk,
@@ -267,10 +302,102 @@ pub fn plan_slots(spec: &Spec, first_nullifier: &Key) -> Vec<OutPlan> {
 
 impl Fixture {
     pub fn build(spec: &Spec) -> Self {
-        let wallet = group();
-        let (nullifier_pk, viewing_pk) = wallet.keys();
-        let pins = Pins::devnet(GROUP, nullifier_pk, viewing_pk, PAYER).expect("pins");
-        let snapshot = snapshot_of(spec);
+        Self::build_for(spec, GROUP, group(), payee())
+    }
+
+    /// The whole input moves to the PDA address of the group, with no change.
+    pub fn migration() -> Self {
+        Self::build_for(&Spec::migration(), GROUP, group(), pda_wallet())
+    }
+
+    /// A payment of the PDA identity: an `Approve` intent with the true `private_tx_hash`.
+    pub fn payment(spec: &Spec) -> Self {
+        Self::payment_for(spec, GROUP)
+    }
+
+    /// `payment` for the PDA of another group key (a group of a real ceremony).
+    pub fn payment_for(spec: &Spec, group_key: Key) -> Self {
+        let mut fixture = Self::build_for(spec, group_key, pda_wallet_of(&group_key), payee());
+        let Intent::Transfer {
+            spend,
+            payee,
+            mint,
+            amount,
+        } = fixture.intent.clone()
+        else {
+            panic!("a payment pays a payee");
+        };
+        fixture.intent = Intent::Program(Program::Approve {
+            pay: Pay {
+                expiry: spend.expiry,
+                inputs: spend.inputs,
+                outputs: spend.outputs,
+                payee,
+                mint,
+                amount,
+            },
+        });
+        fixture.reprove();
+        fixture
+    }
+
+    /// Sets `private_tx_hash` to the value of the inputs, the outputs and the root seed.
+    pub fn reprove(&mut self) {
+        let inputs: Vec<Key> = self
+            .snapshot
+            .inputs
+            .iter()
+            .map(|i| self.input_utxo(i).hash(TREE_ID).unwrap())
+            .collect();
+        let outputs: Vec<Key> = self
+            .plan
+            .outputs
+            .iter()
+            .zip(&self.tx.outputs)
+            .map(|(slot, out)| {
+                if slot.role == Role::Dummy {
+                    [0; 32]
+                } else {
+                    out.utxo_hash
+                }
+            })
+            .collect();
+        let first = self.tx.inputs[0].nullifier;
+        self.tx.private_tx_hash =
+            private_tx_hash(&inputs, &outputs, &first, &self.plan.blinding_seed).unwrap();
+    }
+
+    fn input_utxo(&self, input: &InputUtxo) -> Utxo {
+        Utxo {
+            owner_hash: self.owner.owner_hash(),
+            mint: input.mint,
+            amount: input.amount,
+            blinding: input.blinding,
+        }
+    }
+
+    /// The proposal of a payment: the intent, the plan and the `transact` data.
+    pub fn proposal(&self) -> Proposal {
+        Proposal {
+            intent: self.intent.clone(),
+            plan: self.plan.clone(),
+            transact: self.tx.write().unwrap(),
+        }
+    }
+
+    /// The spend of `spec` from `wallet` to `payee`, under the pins of `group_key` (the keys of
+    /// `group` and the PDA key of `pda_wallet_of(group_key)`).
+    pub fn build_for(spec: &Spec, group_key: Key, wallet: Wallet, payee: Wallet) -> Self {
+        let (nullifier_pk, viewing_pk) = group().keys();
+        let pins = Pins::devnet(
+            group_key,
+            nullifier_pk,
+            viewing_pk,
+            PAYER,
+            pda_wallet_of(&group_key).keys().0,
+        )
+        .expect("pins");
+        let snapshot = snapshot_of(spec, &wallet);
         let nullifiers: Vec<Key> = snapshot
             .inputs
             .iter()
@@ -299,6 +426,8 @@ impl Fixture {
             intent: Intent::Cancel { nonce: NONCE },
             plan,
             snapshot,
+            owner: wallet.clone(),
+            payee,
             tx: Transact {
                 expiry: EXPIRY,
                 tx_viewing_pk: tx_key.public().unwrap(),
@@ -354,7 +483,7 @@ impl Fixture {
         match spec.pay {
             Some((mint, amount)) => Intent::Transfer {
                 spend,
-                payee: payee().address(),
+                payee: self.payee.address(),
                 mint,
                 amount,
             },
@@ -369,8 +498,8 @@ impl Fixture {
     /// The owner hash of a role.
     pub fn owner_of(&self, role: Role) -> Option<Key> {
         match role {
-            Role::Change => Some(group().owner_hash()),
-            Role::Payee => Some(payee().owner_hash()),
+            Role::Change => Some(self.owner.owner_hash()),
+            Role::Payee => Some(self.payee.owner_hash()),
             Role::Dummy => None,
         }
     }
@@ -394,8 +523,8 @@ impl Fixture {
     /// fixed pattern of the same length) for a dummy.
     pub fn data_of(&self, out: &OutPlan, slot: usize, tx_key: &ViewingKey) -> Vec<u8> {
         let recipient = match out.role {
-            Role::Change => group().viewing_pk(),
-            Role::Payee => payee().viewing_pk(),
+            Role::Change => self.owner.viewing_pk(),
+            Role::Payee => self.payee.viewing_pk(),
             Role::Dummy => return (0..BLOB_LEN).map(|i| (i * 7 + slot) as u8).collect(),
         };
         let id = if out.mint == SOL { 1 } else { MINT_ID };
@@ -408,13 +537,13 @@ impl Fixture {
     /// The tag that a dummy names. The SDK (`dummyOwnerTag`) names the first input owner that is
     /// not the payer: the fee key pays and the group key is the owner signer, so it is the group.
     pub fn dummy_tag(&self) -> Key {
-        GROUP
+        self.owner.signer
     }
 
     fn output_of(&self, out: &OutPlan, slot: usize, tx_key: &ViewingKey) -> Output {
         let owner_tag = match out.role {
-            Role::Change => OwnerTag::Inline(GROUP),
-            Role::Payee => OwnerTag::Inline(PAYEE),
+            Role::Change => OwnerTag::Inline(self.owner.signer),
+            Role::Payee => OwnerTag::Inline(self.payee.signer),
             Role::Dummy => OwnerTag::Inline(self.dummy_tag()),
         };
         Output {
@@ -458,7 +587,7 @@ impl Fixture {
 
     /// The transaction viewing key of the group for this spend.
     pub fn tx_key(&self) -> ViewingKey {
-        ViewingKey::from_bytes(&group().viewing_sk)
+        ViewingKey::from_bytes(&self.owner.viewing_sk)
             .unwrap()
             .tx_key(&self.tx.inputs[0].nullifier)
             .unwrap()

@@ -8,16 +8,25 @@
 //! signer in every instruction: the nonce authority, the base of the nonce account, the owner of
 //! the registry record and the owner signer of `transact`. Add SOL (`Shield`) has the payer as
 //! its only signer.
+//!
+//! The program design (ZOLANA.md 7.2) adds two messages that the payer signs alone: `Propose`
+//! (the `create` instruction of the approvals program with the proposal body) and `Execute`
+//! (the Ed25519 instruction with the approval of the group, then `execute` with the `transact`
+//! accounts and the owner PDA as a readonly account that the program signs for).
 
 use std::collections::{BTreeMap, BTreeSet};
 
 use crate::consts::{
-    Key, NONCE_SEED, NONCE_SPACE, RECENT_BLOCKHASHES, RENT_SYSVAR, SYSTEM_PROGRAM,
-    SYS_ADVANCE_NONCE, SYS_CREATE_WITH_SEED, SYS_INIT_NONCE,
+    Key, ED25519_PROGRAM, INSTRUCTIONS_SYSVAR, MS_CREATE, NONCE_SEED, NONCE_SPACE,
+    RECENT_BLOCKHASHES, RENT_SYSVAR, SYSTEM_PROGRAM, SYS_ADVANCE_NONCE, SYS_CREATE_WITH_SEED,
+    SYS_INIT_NONCE,
 };
 use crate::fixed::{AssetKind, Deposit, Entry, Register};
-use crate::intent::Intent;
+use crate::intent::{Intent, Program};
 use crate::pins::Pins;
+use crate::program::{
+    approval_digest, approval_ix_data, cancellation_address, commitment, proposal_address, Body,
+};
 use crate::transact::{Leg, Transact};
 use crate::v1::{Config, Ix, Message};
 
@@ -57,6 +66,10 @@ pub const CU_CAP_SHIELD: u32 = 56_877;
 pub const CU_CAP_REGISTER: u32 = 24_048;
 /// Nonce instructions: 300 (P2, two System instructions) times 1.5.
 pub const CU_CAP_SYSTEM: u32 = 450;
+/// `create` of a proposal with one abort authority: 7,832 (SOL-35, ZOLANA.md 6.10) times 1.5.
+pub const CU_CAP_PROPOSE: u32 = 11_748;
+/// `execute` with its `transact`: 151,437 (SOL-35 track main) times 1.5.
+pub const CU_CAP_EXECUTE: u32 = 227_156;
 
 /// Compute unit floors: the largest recorded consumption of the intent, the value that the cap
 /// adds 50 percent to. A limit under it can fail at run time (the fee is charged and the nonce
@@ -68,6 +81,8 @@ pub const CU_FLOOR_REGISTER: u32 = 16_032;
 /// 150, so `Cancel` (`AdvanceNonceAccount` only) has the floor 150.
 pub const CU_FLOOR_CREATE_NONCE: u32 = 300;
 pub const CU_FLOOR_CANCEL: u32 = 150;
+pub const CU_FLOOR_PROPOSE: u32 = 7_832;
+pub const CU_FLOOR_EXECUTE: u32 = 151_437;
 
 /// The smallest loaded accounts limit that does not fail at load (a failure still charges the
 /// fee and advances the nonce, ZOLANA.md 6.3). The estimate is the sum of the account data
@@ -78,6 +93,10 @@ pub const LOADED_MIN_POOL: u32 = 1_000_000;
 pub const LOADED_MIN_REGISTER: u32 = 100_000;
 /// Nonce instructions: about 6,400 bytes (RecentBlockhashes 6,008) times 1.5.
 pub const LOADED_MIN_SYSTEM: u32 = 10_000;
+/// `create`: about 58,000 bytes (the program data of the approvals program, 57,752) times 1.5.
+pub const LOADED_MIN_PROPOSE: u32 = 90_000;
+/// `execute`: about 700,000 bytes (pool and approvals program data, tree 0) times 1.5.
+pub const LOADED_MIN_EXECUTE: u32 = 1_050_000;
 
 /// An account of an instruction, with the flags that it needs.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -105,6 +124,8 @@ pub enum Data {
     Fields(Vec<u8>),
     /// The `transact` data from the Worker: the `transact` rules check it.
     Variable,
+    /// The `execute` data: tag 1, then the `transact` data after its tag.
+    Execute,
 }
 
 /// One instruction of the template.
@@ -160,6 +181,12 @@ pub fn limits(intent: &Intent) -> Limits {
         Intent::Transfer { .. } | Intent::Withdrawal { .. } => {
             (CU_CAP_TRANSACT, CU_FLOOR_TRANSACT, LOADED_MIN_POOL)
         }
+        Intent::Program(Program::Propose { .. }) | Intent::Program(Program::Approve { .. }) => {
+            (CU_CAP_PROPOSE, CU_FLOOR_PROPOSE, LOADED_MIN_PROPOSE)
+        }
+        Intent::Program(Program::Execute { .. }) => {
+            (CU_CAP_EXECUTE, CU_FLOOR_EXECUTE, LOADED_MIN_EXECUTE)
+        }
     };
     Limits {
         cu_cap,
@@ -194,10 +221,10 @@ fn advance(pins: &Pins) -> ExpectedIx {
 }
 
 /// The number of signatures of an intent: the payer and the group key, or the payer alone for
-/// Shield (Add SOL), which the group does not sign.
+/// Shield (Add SOL) and the messages of the program design, which the group does not sign.
 pub fn signer_count(intent: &Intent) -> u8 {
     match intent {
-        Intent::Shield { .. } => 1,
+        Intent::Shield { .. } | Intent::Program(_) => 1,
         _ => 2,
     }
 }
@@ -278,7 +305,8 @@ fn shield(pins: &Pins, amount: u64) -> Result<ExpectedIx, String> {
     Ok(ix(pins.pool, accounts, Data::Fields(data)))
 }
 
-fn transact(intent: &Intent, pins: &Pins, tx: &Transact) -> Result<ExpectedIx, String> {
+/// The accounts of `transact` up to the owner signer: payer, trees, pool, System, nullifiers.
+fn transact_head(pins: &Pins, tx: &Transact) -> Result<Vec<Acct>, String> {
     let mut accounts = vec![
         acct(pins.payer, true, true),
         acct(pins.output_tree, false, true),
@@ -297,6 +325,11 @@ fn transact(intent: &Intent, pins: &Pins, tx: &Transact) -> Result<ExpectedIx, S
             true,
         ));
     }
+    Ok(accounts)
+}
+
+fn transact(intent: &Intent, pins: &Pins, tx: &Transact) -> Result<ExpectedIx, String> {
+    let mut accounts = transact_head(pins, tx)?;
     // The owner signer sits after the nullifier accounts and before the settlement accounts
     // (programs/shielded-pool/src/instructions/transact/account.rs). The proof binds it.
     accounts.push(acct(pins.group, true, false));
@@ -305,6 +338,93 @@ fn transact(intent: &Intent, pins: &Pins, tx: &Transact) -> Result<ExpectedIx, S
         accounts.push(acct(*recipient, false, true));
     }
     Ok(ix(pins.pool, accounts, Data::Variable))
+}
+
+/// The body of a proposal of the payer of `pins`: its fee key is the rent recipient and the only
+/// abort authority, and the group key of the approval is `pins.multisig`.
+pub fn body_of(pins: &Pins, commitment: Key, expiry: u64, recipient: Key) -> Body {
+    Body {
+        commitment,
+        group: pins.multisig,
+        expiry,
+        rent_recipient: recipient,
+        authorities: vec![recipient],
+    }
+}
+
+/// `create`: the payer funds the proposal account at the address of the commitment.
+fn propose(pins: &Pins, commitment: Key, expiry: u64) -> Result<ExpectedIx, String> {
+    let body = body_of(pins, commitment, expiry, pins.payer).write()?;
+    let (proposal, _) = proposal_address(&pins.multisig, &commitment)?;
+    let accounts = vec![
+        acct(pins.payer, true, true),
+        acct(proposal, false, true),
+        acct(SYSTEM_PROGRAM, false, false),
+    ];
+    let data = [&[MS_CREATE][..], &body].concat();
+    Ok(ix(pins.program, accounts, Data::Exact(data)))
+}
+
+/// The Ed25519 approval and `execute`. The body and its digest follow from the commitment of the
+/// `transact` data, so a signature of the group fits only the payment that it approved.
+fn execute(program: &Program, pins: &Pins, tx: &Transact) -> Result<Vec<ExpectedIx>, String> {
+    let Program::Execute {
+        expiry,
+        rent_recipient,
+        signature,
+        ..
+    } = program
+    else {
+        return Err("not an execute".to_string());
+    };
+    let commitment = commitment(&tx.private_tx_hash, tx)?;
+    let body = body_of(pins, commitment, *expiry, *rent_recipient).write()?;
+    let (proposal, _) = proposal_address(&pins.multisig, &commitment)?;
+    let digest = approval_digest(&proposal, &body);
+    let approval = approval_ix_data(&pins.multisig, signature, &digest);
+    let mut accounts = vec![
+        acct(pins.payer, true, true),
+        acct(proposal, false, true),
+        acct(pins.group, false, false),
+        acct(cancellation_address(&proposal)?, false, false),
+        acct(*rent_recipient, false, true),
+        acct(INSTRUCTIONS_SYSVAR, false, false),
+    ];
+    accounts.extend(transact_head(pins, tx)?);
+    // The owner PDA is the last account and signs only inside the program (`invoke_signed`).
+    accounts.push(acct(pins.group, false, false));
+    Ok(vec![
+        ix(ED25519_PROGRAM, Vec::new(), Data::Exact(approval)),
+        ix(pins.program, accounts, Data::Execute),
+    ])
+}
+
+/// The instructions of a message of the program design. An approval has no message.
+fn program_ixs(
+    program: &Program,
+    pins: &Pins,
+    tx: Option<&Transact>,
+) -> Result<Vec<ExpectedIx>, String> {
+    match program {
+        Program::Propose {
+            pay, commitment, ..
+        } => Ok(vec![propose(pins, *commitment, pay.expiry)?]),
+        Program::Execute { .. } => execute(
+            program,
+            pins,
+            tx.ok_or("an execute needs its transact data")?,
+        ),
+        Program::Approve { .. } => Ok(Vec::new()),
+    }
+}
+
+/// The data of `execute` for `transact` data: tag 1, then the bytes after the tag 16.
+pub fn execute_data(tx: &Transact) -> Result<Vec<u8>, String> {
+    let mut data = tx.write()?;
+    if let Some(tag) = data.first_mut() {
+        *tag = crate::consts::MS_EXECUTE;
+    }
+    Ok(data)
 }
 
 /// The legs that the intent requires.
@@ -336,6 +456,7 @@ pub fn expected(intent: &Intent, pins: &Pins, tx: Option<&Transact>) -> Result<E
             let tx = tx.ok_or("a spend needs its transact data")?;
             ixs.push(transact(intent, pins, tx)?);
         }
+        Intent::Program(program) => ixs.extend(program_ixs(program, pins, tx)?),
         Intent::Cancel { .. } => {}
     }
     Ok(Expected {
@@ -397,10 +518,11 @@ pub fn build(
             .map(|a| index(&a.key))
             .collect::<Result<_, _>>()?;
         let data = match (&e.data, &tx_data) {
-            (Data::Exact(data) | Data::Fields(data), _) | (Data::Variable, Some(data)) => {
-                data.clone()
+            (Data::Exact(data) | Data::Fields(data), _)
+            | (Data::Variable | Data::Execute, Some(data)) => data.clone(),
+            (Data::Variable | Data::Execute, None) => {
+                return Err("compile: transact data missing".to_string())
             }
-            (Data::Variable, None) => return Err("compile: transact data missing".to_string()),
         };
         ixs.push(Ix {
             program: index(&e.program)?,
@@ -430,11 +552,14 @@ pub fn template_config(limits: &Limits) -> Config {
 
 /// Compiles the message of an intent with the template limits. The group key never pays.
 pub fn compile(intent: &Intent, pins: &Pins, tx: Option<&Transact>) -> Result<Message, String> {
-    if pins.payer == pins.group {
+    if pins.payer == pins.group || pins.payer == pins.multisig {
         return Err("the fee payer is the group key".to_string());
     }
     let exp = expected(intent, pins, tx)?;
     let config = template_config(&exp.limits);
-    let tx_data = tx.map(Transact::write).transpose()?;
+    let tx_data = match intent {
+        Intent::Program(Program::Execute { .. }) => tx.map(execute_data).transpose()?,
+        _ => tx.map(Transact::write).transpose()?,
+    };
     build(&exp, &pins.payer, intent.lifetime(), config, tx_data)
 }
