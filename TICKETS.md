@@ -94,6 +94,20 @@ the nodes handle the NSM.
 |---|---|---|---|---|
 | EVM-1 | P3 | owner | Decide when to thaw the EVM design | The owner restarts EVM.md after the Zcash and Zolana work is done. The first step is then the Railgun spike on Sepolia (EVM.md section 7, R1 to R10), with no funds |
 
+## Velocity
+
+The owner asked on 16 October 2026 for faster development and iteration. Each row is one lever.
+
+| Id | P | Owner | Title | Done when |
+|---|---|---|---|---|
+| VEL-1 | P1 | dev | Move payment rules from the page into the engine | The engine checks the combined signatures and keeps the approved transaction hash (ZEC-9 first), so a document that one seat writes cannot change what the page shows as done or expired; web and apps call the same engine rule |
+| VEL-2 | P1 | dev | Add a staging copy of the app | staging.zigs.app runs the app with its own Durable Object data and its own password; one local command deploys main to staging after each merge; production gets only what staging ran |
+| VEL-3 | P1 | dev | Keep permanent test wallets and one-command live runs | A funded Zcash testnet group and a funded Solana Devnet group live in local files outside the repo (keys mode 600); one command per chain runs pay, approve, send and restore against the local server and reports the transaction ids (SOL-30 covers the Solana part) |
+| VEL-4 | P1 | dev | Make tests fast, stable and deep | No flaky test; a fast suite (engine and unit, seconds) runs on every change and the browser and live suites run before merge; property tests generate random sequences, faked documents included, for the payment session state |
+| VEL-5 | P1 | dev | Run the checks in CI on every push | A GitHub Actions workflow of devzigs/zigs runs the engine, wasm-sol, sol-program and web test suites on every push and pull request, with build caches, no secret and no personal data in logs |
+| VEL-6 | P2 | owner | Decide routine choices by default | Agents take the recommended default for routine choices, log it in TICKETS.md or the design doc, and the owner can veto within a day; money, keys, privacy and anything hard to undo still wait for the owner |
+| VEL-7 | P2 | dev | Merge unfinished features behind a switch | A feature that is not ready ships turned off, so branches stay small; the first such feature adds the smallest switch that works |
+
 ## Closed
 
 | Id | Title | Closed by |
