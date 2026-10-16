@@ -9,20 +9,22 @@
 # with platform-tools v1.54. Put it on PATH or set CARGO_BUILD_SBF. cargo-build-sbf removes the
 # working folder from the source paths, so the ELF holds no home path; this script checks that.
 #
-# Version 2 on Devnet (program 5PHZEHBMaYbFL9SFmMyP8kUayh3TFEyq2dvEYY3UGjkL) was built as a
-# member of the Zolana workspace, with the default features of zolana-interface turned off in
-# that workspace. This crate builds on its own, so its ELF differs from version 2:
+# EXPECTED is version 3: version 2 with the fixes of the review in ZOLANA.md 7.2. It is not
+# deployed. Version 2 on Devnet (program 5PHZEHBMaYbFL9SFmMyP8kUayh3TFEyq2dvEYY3UGjkL) was built
+# as a member of the Zolana workspace, with the default features of zolana-interface turned off
+# in that workspace. Built on its own, the same source gives another ELF:
 # - zolana-program turns on the default features of zolana-interface again, which add the unused
 #   Groth16 verifying keys as exported data (no code);
 # - two panic paths are shorter (src/cpi.rs, src/instructions.rs);
 # - the functions sit in another order.
 # The v2 mode rebuilds version 2 from the import commit of src/ in that workspace layout, checks
-# its hash, and lists the functions whose code differs from this build.
+# its hash, and lists the functions whose code differs from this build (on the import commit:
+# none; since version 3: the functions that the fixes changed).
 set -eu
 cd "$(dirname "$0")"
 unset RUSTFLAGS CARGO_ENCODED_RUSTFLAGS
 
-EXPECTED=34bd2e1089b9b3aa02c6eb777b0c541ff58a14cfb25c384f2b3e29435398df3c
+EXPECTED=d0bfbdf338a19e7733c0bc74e3d5870a22f42002ea9cb1bd43062ad1c34879ac
 V2=555f45801f32896c78eb55f962026507dec35ea6d673477326db7913e4475d92
 SBF=${CARGO_BUILD_SBF:-cargo-build-sbf}
 OBJDUMP=$HOME/.cache/solana/v1.54/platform-tools/llvm/bin/llvm-objdump

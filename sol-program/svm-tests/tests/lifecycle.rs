@@ -6,8 +6,8 @@ use solana_keypair::Keypair;
 use solana_pubkey::Pubkey;
 use solana_signer::Signer;
 use zigs_min_multisig_svm_tests::{
-    approval_ix, cancel_ix, close_cancelled_ix, code, create_ix, execute_ix, proposal_address,
-    refused_with, sample_transact, serialize, Body, Rig, TxResult, DAY, NOW, PROGRAM_ID,
+    approval_ix, cancel_ix, close_cancelled_ix, code, create_ix, execute_ix, refused_with,
+    sample_transact, serialize, Body, Rig, TxResult, DAY, NOW, PROGRAM_ID,
 };
 
 fn rig_and_body() -> (Rig, Body) {
@@ -31,7 +31,7 @@ fn create_stores_the_header_and_the_body_only() {
     let (mut rig, body) = rig_and_body();
     rig.create(&body).expect("create");
     let account = rig.svm.get_account(&body.proposal()).expect("proposal");
-    let (_, bump) = proposal_address(&body.group, &body.commitment);
+    let (_, bump) = body.proposal_and_bump();
     let mut expected = vec![1, bump];
     expected.extend(body.bytes());
     assert_eq!(account.owner, PROGRAM_ID);
@@ -96,15 +96,38 @@ fn create_refuses_another_address_or_system_program() {
 }
 
 #[test]
-fn create_refuses_a_second_body_at_a_live_address() {
+fn create_refuses_the_same_body_at_a_live_address() {
     let (mut rig, body) = rig_and_body();
     rig.create(&body).expect("create");
-    let mut other = body.clone();
-    other.expiry += 1;
     assert!(
-        rig.create(&other).is_err(),
+        rig.create(&body).is_err(),
         "the address holds a live proposal"
     );
+}
+
+/// Review R1: before version 3 the address bound only the group key and the commitment. A
+/// front-runner who saw them could create its own body there first (any expiry, itself as abort
+/// authority), cancel it, and block the signed body for good. Now each body has its own address.
+#[test]
+fn a_front_runner_cannot_take_or_block_the_signed_body() {
+    let (mut rig, body) = rig_and_body();
+    let attacker = Keypair::new();
+    rig.svm
+        .airdrop(&attacker.pubkey(), 1_000_000_000)
+        .expect("fund");
+    let mut squat = body.clone();
+    squat.expiry = u64::MAX;
+    squat.rent_recipient = attacker.pubkey();
+    squat.authorities = vec![attacker.pubkey()];
+    assert_ne!(squat.proposal(), body.proposal());
+    rig.create(&squat).expect("the front-runner's create");
+    let authority = AccountMeta::new_readonly(attacker.pubkey(), true);
+    let ix = cancel_ix(&rig.payer.pubkey(), &squat, Some(authority));
+    rig.send(&[ix], &[&attacker])
+        .expect("the front-runner cancels its own body");
+    rig.create(&body).expect("the signed body");
+    rig.execute(&body, &sample_transact())
+        .expect("the approval settles");
 }
 
 #[test]
@@ -182,25 +205,35 @@ fn cancel_records_the_cancellation_and_ends_the_approval() {
     assert_eq!(record.data[0], 2);
     assert_eq!(record.data[2..10], body.expiry.to_le_bytes());
     assert_eq!(record.data[10..], body.rent_recipient.to_bytes());
-    // The same body again at the same address: the old approval stays refused.
+    // The same body again at the same address: the old approval stays refused, and a second
+    // cancel keeps the record.
     rig.create(&body).expect("create again");
+    cancel(&mut rig, &body).expect("cancel again");
+    rig.create(&body).expect("create a third time");
     assert_eq!(
         refused_with(rig.execute(&body, &sample_transact())),
         code::CANCELLED
     );
 }
 
+/// Review R2: each body has its own record, so a second body for the same commitment can be
+/// cancelled while the record of the first one exists, and its record keeps its own expiry.
 #[test]
-fn cancel_refuses_a_record_that_ends_before_the_new_expiry() {
+fn each_body_has_its_own_cancellation_record() {
     let (mut rig, body) = rig_and_body();
     rig.create(&body).expect("create");
     cancel(&mut rig, &body).expect("cancel");
     let mut longer = body.clone();
     longer.expiry += DAY;
     rig.create(&longer).expect("create with a later expiry");
+    cancel(&mut rig, &longer).expect("cancel the second body");
+    let record = rig.svm.get_account(&longer.cancellation()).expect("record");
+    assert_eq!(record.data[2..10], longer.expiry.to_le_bytes());
+    rig.set_time(body.expiry + 1);
+    rig.create(&longer).expect("create the second body again");
     assert_eq!(
-        refused_with(cancel(&mut rig, &longer)),
-        code::CANCELLATION_TOO_SHORT
+        refused_with(rig.execute(&longer, &sample_transact())),
+        code::CANCELLED
     );
 }
 

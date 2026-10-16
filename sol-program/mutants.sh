@@ -84,8 +84,11 @@ mutant X3 instructions.rs "a cancellation record blocks execute" \
         return Err(MultisigError::Cancelled.into());'
 mutant X4 instructions.rs "execute checks the cancellation address" \
   'if cancellation.address() != &cancel_address {' 'if false {'
-mutant X5 instructions.rs "a kept record lasts at least as long as the proposal" \
-  ' || cancellation_expiry(&existing) < proposal.expiry_unix_ts' ''
+mutant X5 instructions.rs "a second cancel of one body keeps its record" \
+  'if cancellation.owned_by(program_id) {
+        return Ok(());' \
+  'if false {
+        return Ok(());'
 mutant X6 instructions.rs "close_cancelled waits for the expiry" \
   'if now()? <= expiry {' 'if false {'
 mutant R1 instructions.rs "execute and cancel pay the named rent recipient" \
@@ -111,6 +114,11 @@ mutant K2 instructions.rs "a proposal has the proposal kind" \
   'if data.len() < HEADER || data[0] != KIND_PROPOSAL {' 'if data.len() < HEADER {'
 mutant K3 instructions.rs "a proposal sits at the address of its body and bump" \
   'if account.address() != &expected {' 'if false {'
+mutant K5 instructions.rs "the proposal address binds the body (review R1)" \
+  '        body_hash,
+    ]' \
+  '        &[],
+    ]'
 mutant K4 instructions.rs "create writes only to the canonical proposal address" \
   'if proposal_account.address() != &address {' 'if false {'
 mutant S1 state.rs "no duplicate abort authority" \

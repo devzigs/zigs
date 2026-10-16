@@ -55,6 +55,22 @@ fn close_to(account: &mut AccountView, to: &mut AccountView) -> ProgramResult {
     account.close()
 }
 
+fn body_hash(body: &[u8]) -> Result<[u8; 32], ProgramError> {
+    Sha256::hash(body).map_err(|_| MultisigError::BadProposalData.into())
+}
+
+/// The seeds of a proposal address, without the bump. The body hash gives each body its own
+/// address and its own cancellation record, so a body that someone creates first for the same
+/// commitment cannot block or cancel the body that the group signed.
+fn proposal_seeds<'a>(proposal: &'a Proposal, body_hash: &'a [u8; 32]) -> [&'a [u8]; 4] {
+    [
+        PROPOSAL_SEED,
+        &proposal.multisig_pubkey,
+        &proposal.commitment,
+        body_hash,
+    ]
+}
+
 /// A live proposal of this program at its canonical address. Returns the stored data.
 fn load_proposal(program_id: &Address, account: &AccountView) -> Result<Vec<u8>, ProgramError> {
     if !account.owned_by(program_id) {
@@ -65,15 +81,9 @@ fn load_proposal(program_id: &Address, account: &AccountView) -> Result<Vec<u8>,
         return Err(MultisigError::NotAProposal.into());
     }
     let proposal = Proposal::parse(&data[HEADER..])?;
-    let expected = Address::derive_address(
-        &[
-            PROPOSAL_SEED,
-            &proposal.multisig_pubkey,
-            &proposal.commitment,
-        ],
-        Some(data[1]),
-        program_id,
-    );
+    let hash = body_hash(proposal.body)?;
+    let expected =
+        Address::derive_address(&proposal_seeds(&proposal, &hash), Some(data[1]), program_id);
     if account.address() != &expected {
         return Err(MultisigError::BadProposalAddress.into());
     }
@@ -143,22 +153,19 @@ pub fn create(program_id: &Address, accounts: &mut [AccountView], data: &[u8]) -
     if proposal.expiry_unix_ts <= now()? {
         return Err(MultisigError::ExpiryNotInFuture.into());
     }
-    let (address, bump) = Address::find_program_address(
-        &[
-            PROPOSAL_SEED,
-            &proposal.multisig_pubkey,
-            &proposal.commitment,
-        ],
-        program_id,
-    );
+    let hash = body_hash(data)?;
+    let [prefix, group, commitment, hash] = proposal_seeds(&proposal, &hash);
+    let (address, bump) =
+        Address::find_program_address(&[prefix, group, commitment, hash], program_id);
     if proposal_account.address() != &address {
         return Err(MultisigError::BadProposalAddress.into());
     }
     let bump_seed = [bump];
     let seeds = [
-        Seed::from(PROPOSAL_SEED),
-        Seed::from(&proposal.multisig_pubkey),
-        Seed::from(&proposal.commitment),
+        Seed::from(prefix),
+        Seed::from(group),
+        Seed::from(commitment),
+        Seed::from(hash),
         Seed::from(&bump_seed),
     ];
     let space = HEADER + data.len();
@@ -279,7 +286,8 @@ pub fn execute(program_id: &Address, accounts: &mut [AccountView], data: &[u8]) 
     close_to(proposal_account, rent_recipient)
 }
 
-/// Creates the cancellation record, or keeps one that lasts at least as long.
+/// Creates the cancellation record. A record that exists is the record of this body: its address
+/// derives from the proposal address, which binds the body. So it stays as it is.
 fn record_cancellation(
     program_id: &Address,
     payer: &AccountView,
@@ -292,15 +300,6 @@ fn record_cancellation(
         return Err(MultisigError::BadCancellationAddress.into());
     }
     if cancellation.owned_by(program_id) {
-        let existing: [u8; CANCELLED_LEN] = cancellation
-            .try_borrow()?
-            .as_ref()
-            .try_into()
-            .map_err(|_| MultisigError::NotACancellation)?;
-        if existing[0] != KIND_CANCELLED || cancellation_expiry(&existing) < proposal.expiry_unix_ts
-        {
-            return Err(MultisigError::CancellationTooShort.into());
-        }
         return Ok(());
     }
     let bump_seed = [bump];

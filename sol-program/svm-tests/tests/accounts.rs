@@ -6,8 +6,8 @@ use solana_keypair::Keypair;
 use solana_pubkey::Pubkey;
 use solana_signer::Signer;
 use zigs_min_multisig_svm_tests::{
-    approval_ix, code, execute_ix, proposal_address, refused_with, sample_transact, serialize,
-    Body, Rig, TxResult, SYSTEM_ID,
+    approval_ix, code, execute_ix, refused_with, sample_transact, serialize, Body, Rig, TxResult,
+    SYSTEM_ID,
 };
 
 fn proposed() -> (Rig, Body) {
@@ -112,7 +112,7 @@ fn refuses_a_proposal_at_another_address() {
 #[test]
 fn refuses_a_proposal_with_another_bump() {
     let (mut rig, body) = proposed();
-    let (_, bump) = proposal_address(&body.group, &body.commitment);
+    let (_, bump) = body.proposal_and_bump();
     let mut account = rig.svm.get_account(&body.proposal()).expect("proposal");
     account.data[1] = bump.wrapping_sub(1);
     rig.svm.set_account(body.proposal(), account).expect("set");

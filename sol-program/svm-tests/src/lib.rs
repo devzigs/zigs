@@ -65,7 +65,6 @@ pub mod code {
     pub const BAD_OWNER_ADDRESS: u32 = 6015;
     pub const BAD_SPP_ACCOUNTS: u32 = 6016;
     pub const NOT_ABORT_AUTHORITY: u32 = 6017;
-    pub const CANCELLATION_TOO_SHORT: u32 = 6018;
     pub const NOT_EXPIRED: u32 = 6019;
     pub const NOT_A_CANCELLATION: u32 = 6020;
     pub const INVALID_SPP_PROGRAM: u32 = 14101;
@@ -98,7 +97,21 @@ impl Body {
     }
 
     pub fn proposal(&self) -> Pubkey {
-        proposal_address(&self.group, &self.commitment).0
+        self.proposal_and_bump().0
+    }
+
+    /// `["proposed_transaction", group key, commitment, SHA-256(body)]`.
+    pub fn proposal_and_bump(&self) -> (Pubkey, u8) {
+        let body_hash: [u8; 32] = Sha256::digest(self.bytes()).into();
+        Pubkey::find_program_address(
+            &[
+                b"proposed_transaction",
+                self.group.as_ref(),
+                &self.commitment,
+                &body_hash,
+            ],
+            &PROGRAM_ID,
+        )
     }
 
     pub fn owner(&self) -> Pubkey {
@@ -112,13 +125,6 @@ impl Body {
     pub fn digest(&self) -> [u8; 32] {
         approval_digest(&self.proposal(), &self.bytes())
     }
-}
-
-pub fn proposal_address(group: &Pubkey, commitment: &[u8; 32]) -> (Pubkey, u8) {
-    Pubkey::find_program_address(
-        &[b"proposed_transaction", group.as_ref(), commitment],
-        &PROGRAM_ID,
-    )
 }
 
 pub fn owner_address(group: &Pubkey) -> Pubkey {

@@ -21,7 +21,6 @@ pub enum MultisigError {
     BadOwnerAddress = 6015,
     BadSppAccounts = 6016,
     NotAbortAuthority = 6017,
-    CancellationTooShort = 6018,
     NotExpired = 6019,
     NotACancellation = 6020,
 }
