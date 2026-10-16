@@ -75,6 +75,6 @@ and `sol-cors.mjs` read or spend on Devnet. They ran at the spike. The spike had
 browser setting for the Helius URL, which the beta removed, so they have not run in this tree yet
 (TICKETS.md, SOL-30). `scenario-e.mjs` and `scenario-f.mjs` also predate the fee keys: they fund
 the group address and tap the Shield button. Fund the fee address of the proposing seat and use
-Add SOL before they run again. The key of the app accepts only the origin `https://app.zigs.app`, so a run
-from `http://localhost:8795` needs a key without Allowed Domains or a rewrite of the Origin header
-(SOL-19).
+Add SOL before they run again. The key of the app accepts only the origin `https://app.zigs.app`, so
+a run from `http://localhost:8795` needs a key without Allowed Domains or a rewrite of the Origin
+header (SOL-19).

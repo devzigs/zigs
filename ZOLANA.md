@@ -269,11 +269,11 @@ pay an attacker.
    proposal time. The group key has no domain separation
    [F]frost-ed25519/src/lib.rs:182-187, so it would sign any text. The engine refuses any bytes that
    fail step 3, the off-chain prefix (0xFF "solana offchain") and `TSPP/derive/` payloads.
-6. **Combine, send.** Any seat aggregates, checks the result with `verify_strict` (never Web Crypto),
-   adds the signature of the payer from the proposal, and sends at once. The transaction has two
-   signatures in the order of its signers: the payer first, then the group key. The transaction id
-   is the first signature, so it is the signature of the payer. The device tracks the transaction
-   by that signature and writes a signed `sent` part after confirmation.
+6. **Combine, send.** Any seat aggregates, checks the result with `verify_strict` (never Web
+   Crypto), adds the signature of the payer from the proposal, and sends at once. The transaction
+   has two signatures in the order of its signers: the payer first, then the group key. The
+   transaction id is the first signature, so it is the signature of the payer. The device tracks the
+   transaction by that signature and writes a signed `sent` part after confirmation.
 
 A recent blockhash lives about 60 to 90 seconds [SOL]. Zcash approvals take hours. The target is a
 durable nonce, so the message is fixed at proposal time, as the sighash is in Zcash.
@@ -621,16 +621,16 @@ the pool that runs on Devnet; no state change):
 - With a sponsor the SDK writes every owner tag inline (account 0 would name the payer) and names
   the group key in each dummy output (`dummyOwnerTag` takes the first input owner that is not the
   payer). The checker follows: the group key is always a participant for a dummy.
-- The newest SDK again: main is still `8178be7c`, npm latest is still 0.4.0-alpha with no newer
-  SDK release tag, and the Devnet pool is still the release of 13 October (deploy slot 508538476, tree 0 of
-  40,080 bytes). The sponsor code (`interface/instructions`, `client/prover/assembly.ts`,
+- The newest SDK again: main is still `8178be7c`, npm latest is still 0.4.0-alpha with no newer SDK
+  release tag, and the Devnet pool is still the release of 13 October (deploy slot 508538476, tree 0
+  of 40,080 bytes). The sponsor code (`interface/instructions`, `client/prover/assembly.ts`,
   `transaction/instructions/transact.ts`, the `transact` and registry programs) is the same at
   `c232da1b` and `8178be7c`, so this design carries to the pin of SOL-37. One new branch is not
   merged: `alex/x25519-everywhere` (16 October) moves viewing encryption to X25519. Its tag
   `custom-ring-keys-v19` is a GitHub prerelease of rotated custom-ring proving keys, not an SDK
-  release. It changes `ViewingKey` and shielded addresses, and its changelog tells
-  users to migrate P-256 viewing keys. If it reaches main, the viewing key of 4.2, the 99-byte
-  address and the ciphertext rule of the checker (P-256 ECDH) change. SOL-37 watches it.
+  release. It changes `ViewingKey` and shielded addresses, and its changelog tells users to migrate
+  P-256 viewing keys. If it reaches main, the viewing key of 4.2, the 99-byte address and the
+  ciphertext rule of the checker (P-256 ECDH) change. SOL-37 watches it.
 
 ## 7. Risks, questions and recommendation
 
