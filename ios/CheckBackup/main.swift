@@ -263,10 +263,10 @@ check(notBackup { $0["kind"] = "zigs-backup" } && notBackup { $0["kind"] = "pers
 let oldKind = "zec" + "-frost-key-share"
 check(notBackup { $0["kind"] = oldKind }, "the kind of an older version")
 check(failure { try BackupData(oldFile(kind: oldKind)) } == "This file is not a Zigs backup, "
-      + "or an older version of Zigs made it. The backup format changed on 15 October 2026, and "
+      + "or an older version of Zigs made it. The backup format changed on 16 October 2026, and "
       + "older files no longer open. Make a new backup on a device that still holds the seat.",
       "the message of an older file")
-check(BackupText.formatChanged == "The backup format changed on 15 October 2026. "
+check(BackupText.formatChanged == "The backup format changed on 16 October 2026. "
       + "Older backup files no longer open. Save a new backup now.", "the notice")
 // A seat that only the old flag marks as backed up asks for a new backup.
 let oldFlag: Doc = ["keyPackage": ["identifier": id] as Doc, "backedUp": true]

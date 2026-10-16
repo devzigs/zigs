@@ -1779,7 +1779,7 @@ const sealed = (gid, rel, seat, fields, key, names = ["by", "sig"]) =>
     assert.match(textOf(t.backupDialog()),
       /Back up seat 2.*opens your key share.*sign as this seat/);
     // The seat dialog and the note say why old files stop opening. The account file did not change.
-    const CHANGED = /backup format changed on 15 October 2026\. Older backup files no longer open/;
+    const CHANGED = /backup format changed on 16 October 2026\. Older backup files no longer open/;
     assert.match(textOf(t.backupDialog()), CHANGED);
     assert.match(textOf(t.backupDialog()), /Save a new backup now/);
     assert.match(textOf(t.backupNote([2])), CHANGED);
@@ -1788,7 +1788,7 @@ const sealed = (gid, rel, seat, fields, key, names = ["by", "sig"]) =>
     const backup = textOf(t.backupDialog());
     assert.match(backup, /Back up the personal account.*opens the backup of your personal account/);
     assert.match(backup, /holds the seed of the account and your contacts.*It holds no messages/);
-    assert.doesNotMatch(backup, /15 October 2026|no longer open/, "account files did not change");
+    assert.doesNotMatch(backup, /16 October 2026|no longer open/, "account files did not change");
     t.state.gid = null;
     assert.equal(t.layers().length, 2, "the backup of the account opens in the wallet list");
     t.ui.backup = null;
@@ -1940,7 +1940,7 @@ const sealed = (gid, rel, seat, fields, key, names = ["by", "sig"]) =>
   assert.equal(t.restoredFor(made, undefined).backupSaved, false);
   assert.equal("backedUp" in t.restoredFor(made, t.sec(A, 2)), false);
   const NEW = new RegExp("not a Zigs backup, or an older version of Zigs made it.*"
-    + "changed on 15 October 2026.*older files no longer open.*"
+    + "changed on 16 October 2026.*older files no longer open.*"
     + "new backup on a device that still holds the seat");
   // The kind of the files that older versions made. It is built here, so that the old name is
   // not in the source as one string. A kind from a file must not reach a method of Object either.

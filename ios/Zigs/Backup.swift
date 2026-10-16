@@ -11,10 +11,10 @@ enum BackupText {
     static let note = "This passphrase opens your key share. Zigs cannot recover it. "
         + "Write it down and keep it apart from the file."
     /// The key share files changed on this date (PROTOCOL.md, section 9). Account files did not.
-    static let formatChanged = "The backup format changed on 15 October 2026. "
+    static let formatChanged = "The backup format changed on 16 October 2026. "
         + "Older backup files no longer open. Save a new backup now."
     static let notABackup = "This file is not a Zigs backup, or an older version of Zigs made it. "
-        + "The backup format changed on 15 October 2026, and older files no longer open. "
+        + "The backup format changed on 16 October 2026, and older files no longer open. "
         + "Make a new backup on a device that still holds the seat."
     static let noKeyShare = "This backup holds no key share."
     static let notEncrypted = "This backup file is not encrypted. Make a new encrypted backup now."

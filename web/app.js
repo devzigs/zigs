@@ -1015,7 +1015,7 @@ async function round2V1(i) {
 }
 
 // Opens the box that seat j sent to seat i. A box that does not open comes from another version
-// of Zigs: a version before 15 October 2026 made its box key with another label.
+// of Zigs: a version before 16 October 2026 made its box key with another label.
 function openBox(j, i, s, sealed) {
   const context = state.gid + ":" + j + "->" + i;
   let text;
@@ -1737,10 +1737,10 @@ async function finalizeTx(ss) {
 const BACKUP_KIND = "zigs-key-share";   // what the sealed text holds, also in a plain file
 // The key share files changed on this date (PROTOCOL.md section 9). Account and Solana files did
 // not, so only the seat backup screens and these two texts say it.
-const BACKUP_CHANGED = "The backup format changed on 15 October 2026. Older backup files no longer "
+const BACKUP_CHANGED = "The backup format changed on 16 October 2026. Older backup files no longer "
   + "open. Save a new backup now. iPhone and Mac apps need their next version to open new files.";
 const NOT_A_BACKUP = "This file is not a Zigs backup, or an older version of Zigs made it. "
-  + "The backup format changed on 15 October 2026, and older files no longer open. "
+  + "The backup format changed on 16 October 2026, and older files no longer open. "
   + "Make a new backup on a device that still holds the seat.";
 const NOT_ENCRYPTED = "This backup file is not encrypted. Make a new encrypted backup now.";
 const MAX_BACKUP_BYTES = 1000000;

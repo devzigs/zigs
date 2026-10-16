@@ -234,7 +234,7 @@ iPhone and Mac apps make and open the same file.
   only when it equals the wallet document. It keeps the version of the file when it equals the
   wallet document, or when the file says version 3. Then signed writes stay on, and the app shows
   that the version moved.
-- **Older files.** The backup format changed on 15 October 2026. The apps refuse a backup file
+- **Older files.** The backup format changed on 16 October 2026. The apps refuse a backup file
   that an older version made, and they tell you to make a new backup on a device that still holds
   the seat. Every seat asks for a new backup. A plain file of the current kind still restores. The
   app warns you and asks for a new encrypted backup.
