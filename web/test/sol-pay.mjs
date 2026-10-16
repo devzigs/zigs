@@ -469,6 +469,7 @@ step("the sent mark of a payment needs a transaction id");
   chain.oldUtxos = [utxoOf(G.migrate), stuck];
   await syncSolana(c);
   assert.equal(c.sync.oldBalance, G.migrate.inputs[0].amount, "the movable SOL of the old address");
+
   chain.oldUtxos = [];
   const kept = { sync: c.sync, chain: c.chain };
   c.sync = { ...c.sync, oldBalance: "5000000" };

@@ -195,6 +195,8 @@ async function rent({ space }) {
 /** The latest transactions that name `account`: how a page finds the execute of a proposal. */
 async function history({ account: address }) {
   const { solanaRpc } = need().client;
+  // ponytail: one page of 1,000. More later transactions on a gone address read as "not
+  // complete" until the expiry (ZOLANA.md 5.1). Upgrade path: page back with `before`.
   const options = { limit: 1000, commitment: "confirmed" };
   const found = await solanaRpc.getSignaturesForAddress(address, options).send();
   return found.map((x) => ({ signature: x.signature, failed: x.err !== null, slot: `${x.slot}` }));

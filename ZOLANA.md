@@ -334,7 +334,8 @@ and the rent. The rent comes back to that seat at the execute. The group key sig
    device: the page reads the history of the account, oldest first, and writes the sent mark with
    the first transaction that carries the approval signature of this payment. It ends the session
    only when that history reaches back to the create and every transaction of it was read; else
-   it reads the history again.
+   it reads the history again. One read holds 1,000 transactions: a gone account with more later
+   transactions on it reads as not complete, and at the expiry the payment reads as expired.
 5. **The move of the beta funds** (SOL-36 condition 3). While the group key holds private SOL, the
    tab shows a card: first the nonce account if it is missing, then the move. The card counts only
    the UTXOs that a move can take (plain SOL of the live tree). A move takes whole UTXOs, as many

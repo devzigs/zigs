@@ -518,14 +518,19 @@ async function identitiesAndReads() {
   assert.deepEqual((await ask("account", { account: PDA })).result, { exists: false });
   control.rpc.getMinimumBalanceForRentExemption = async (space) => 5080n * (128n + space);
   assert.deepEqual((await ask("rent", { space: "139" })).result, { lamports: "1356360" });
-  control.rpc.getSignaturesForAddress = async () => [
-    { signature: "5".repeat(88), err: null, slot: 7n },
-    { signature: "4".repeat(88), err: { x: 1 }, slot: 6n },
-  ];
+  let limit = 0;
+  control.rpc.getSignaturesForAddress = async (_address, options) => {
+    limit = options.limit;
+    return [
+      { signature: "5".repeat(88), err: null, slot: 7n },
+      { signature: "4".repeat(88), err: { x: 1 }, slot: 6n },
+    ];
+  };
   assert.deepEqual((await ask("history", { account: PDA })).result, [
     { signature: "5".repeat(88), failed: false, slot: "7" },
     { signature: "4".repeat(88), failed: true, slot: "6" },
   ]);
+  assert.equal(limit, 1000, "one page of history reaches far back to the create");
   const asked = [];
   control.rpc.getTransaction = async (signature, options) => {
     asked.push(options);

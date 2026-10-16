@@ -35,8 +35,8 @@ const HOLDER = crypto.randomUUID();
 // A blockhash lives 150 slots; a sent execute is past it well before this.
 const SEND_WINDOW_MS = 150_000;
 const CONFIRMED = new Set(["confirmed", "finalized"]);
-const FAILED = "The execute failed on chain. Zigs proves it again.";
-const UNREAD = "The history of the proposal account is not complete yet. Zigs reads it again.";
+const FAILED = "The execute failed on chain. The approval is still valid.";
+const UNREAD = "The history of the proposal account is not complete yet.";
 const sleep = (ms) => new Promise((done) => setTimeout(done, ms));
 const errorText = (e) => String(e?.message ?? e).slice(0, 300);
 
@@ -87,7 +87,7 @@ async function signedExecute(c, worker, ss, seat) {
 /** Why a test run of the execute failed, as a text for the page. */
 function refusalOf(sim, seat) {
   if (STALE_ROOT.test(sim.err)) {
-    return "The new proof went stale before it was sent. Zigs proves it again.";
+    return "The new proof went stale before it was sent. The approval is still valid.";
   }
   return poorFeeText(sim, seat) ?? "The network refused the execute: " + sim.err;
 }

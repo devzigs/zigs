@@ -31,8 +31,15 @@ globalThis.fetch = async (input, init) => {
   return new Response(body, { headers: { "content-type": "application/wasm" } });
 };
 const sdk = await import(new URL("zolana.bundle.js", WEB_SOL).href);
-const { MAX_INPUTS, buildProofInputs, moveInputs, ownerSigners, rebuildProofInputs, selectInputs } =
-  await import(new URL("transfer.js", WEB_SOL).href);
+const {
+  MAX_INPUTS,
+  buildProofInputs,
+  moveInputs,
+  ownerSigners,
+  rebuildProofInputs,
+  selectInputs,
+  spendableSum,
+} = await import(new URL("transfer.js", WEB_SOL).href);
 await sdk.initializePoseidon();
 
 const scalar = (n) => {
@@ -155,6 +162,7 @@ function selectionSkips() {
   const wallet = walletOf([...skipped, empty]);
   assert.deepEqual(selectInputs(sdk, wallet, TREE, 1n), [empty], "a UTXO that must be skipped");
   assert.throws(() => selectInputs(sdk, wallet, TREE, 2n), /does not cover/);
+  assert.equal(spendableSum(sdk, wallet, TREE), 1n, "only the plain SOL of the tree can move");
   step("selection skips spent, other-tree, non-SOL, data and ring UTXOs");
 }
 
