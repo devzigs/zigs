@@ -880,10 +880,12 @@ The four instructions follow [HM]: `create` (0), `execute` (1), `cancel` (2) and
 `close_cancelled` (3). The spike differs from [HM] in seven points. The Ed25519 instruction must be
 the instruction just before `execute`, so the data has no index. A proposal has at most 4 abort
 authorities. `execute` accepts only a default-ring transfer with inline owner tags, and refuses
-any interface transfer (deposit or withdrawal leg) and any cache. The forwarded pool accounts must
-be the exact `transact` layout with the owner PDA as the last and only owner signer, so the program
-and the pool read the same accounts. `cancel` takes the abort authority as its sixth account, and a
-cancel after the expiry does not check the cancellation address. `create` and `cancel` also accept
+any interface transfer (deposit or withdrawal leg) and any cache; version 4 accepts SOL
+withdrawal legs (condition 1 below). The forwarded pool accounts must be the exact `transact`
+layout, so the program and the pool read the same accounts. The owner PDA is the only owner signer,
+right after the nullifier PDAs. Only the settlement groups of version 4 follow it. `cancel` takes
+the abort authority as its sixth account, and a cancel after the expiry does not check the
+cancellation address. `create` and `cancel` also accept
 a PDA that someone funded first: they top it up, then allocate and assign it. Version 1 used
 `CreateAccount`, so a SOL transfer of at least 650,240 lamports to the public cancellation address
 of a proposal blocked its cancel until the expiry, and the approved payment stayed executable; the
@@ -899,7 +901,10 @@ salt, the outputs with their owner tags and ciphertexts, and the messages. So th
 the inputs, the payee, the amount, the change, the dummy outputs, the ciphertexts and the pool
 expiry. It leaves out the roots and their history indices, the Merkle paths, the proof, the payer
 and the nullifier PDAs. The program recomputes it from the forwarded `transact` data with the
-pool's own parser, and refuses any difference.
+pool's own parser, and refuses any difference. For a SOL withdrawal (version 4), the preimage
+holds two more addresses per leg after the prefix: the SOL interface and the recipient. The
+pool's `hash_external_data` does the same. The amount of each leg is in the prefix. So the
+commitment also binds the public amount, the recipient and the leg order.
 
 **The approval** is one Ed25519 signature of the group key over
 `SHA-256("Zigs_SolApproval_v1" || Devnet genesis hash || program id || proposal address || body)`.
@@ -913,7 +918,7 @@ can never parse as a Solana message. FROST signs the raw digest; the precompile 
 |---|---|
 | Outputs, Legs, Ciphertexts, expiry | Stay. They apply to the plan (inputs, payee, amount, change, ciphertexts), not to message bytes. The device rebuilds the proof inputs from the plan and recomputes the commitment |
 | Instructions template, nonce, fee payer, compute and priority-fee caps, loaded-accounts limit | Go. The executor builds the transaction. A bad transaction costs only the executor's fee |
-| New | The proposal account: owner is the pinned program id, the address derives from the group key, the commitment and the body hash, the commitment equals the device's own, the expiry is inside the window, the rent recipient (an ordinary account: never a PDA of the program, a sysvar or an executable account; version 3 refuses only the group's owner PDA, the program and the System Program) and the abort authorities come from the roster. The digest rule: domain, cluster, program id, proposal address. One body per commitment: each body has its own address and its own cancellation record, so a cancel ends one body only; a seat refuses a second body for a commitment that the group already approved |
+| New | The proposal account: owner is the pinned program id, the address derives from the group key, the commitment and the body hash, the commitment equals the device's own, the expiry is inside the window, the rent recipient (an ordinary account: never a PDA of the program, a sysvar or an executable account; version 3 refuses only the group's owner PDA, the program and the System Program) and the abort authorities come from the roster. A withdrawal payee (version 4) is an ordinary System-owned account: not the SOL interface, not a pool account and not a PDA of this program. After the payment it holds at least the rent-exempt minimum. The digest rule: domain, cluster, program id, proposal address. One body per commitment: each body has its own address and its own cancellation record, so a cancel ends one body only; a seat refuses a second body for a commitment that the group already approved |
 
 `wasm-sol` does not have the new rules yet. The spike checked them in JavaScript.
 
@@ -963,8 +968,9 @@ it binds the program id and not the code.
   abort authority was the funder key). Cancel before the expiry pays 863,600 lamports of rent for
   the record. That rent goes to the body's rent recipient when anyone closes the record after the
   expiry.
-- Not built: withdrawals and deposits through the program (the settlement accounts must enter the
-  commitment check, read as the pool reads them), and the `wasm-sol` rules above.
+- Not built: the `wasm-sol` rules above. SOL withdrawals through the program are in version 4
+  (condition 1 below). Deposits from public SOL need no leg in the program: the beta's Add SOL
+  deposits straight into the pool, to the group's shielded address.
 - One `execute` with one input tree spends at most 18 inputs (the CPI copies at most 24
   accounts), and option D forbids `merge_transact`. A group with many small notes needs several
   payments to spend them.
@@ -978,7 +984,8 @@ the run log only. The program is small, its build is reproducible, and the spike
 one defect, which version 2 fixed. The move needs these first:
 
 1. Withdrawals (and deposits from public SOL, if the beta keeps the Shield action) through the
-   program, with the settlement accounts in the commitment check. SOL-32 depends on it.
+   program, with the settlement accounts in the commitment check. SOL-32 depends on it. Version 4
+   has SOL withdrawals (below); deposits need no program leg.
 2. The new rules of this section in `wasm-sol`: the plan, the proposal account, the digest, and
    one body per commitment. The option D keys in the ceremony, `soldone` and the Solana backup.
 3. One approved payment that moves the beta funds from the group key to the PDA address.
@@ -1003,7 +1010,7 @@ one defect, which version 2 fixed. The move needs these first:
   another order.
 - Version 3 (`a027712e…`, 88,424 bytes, not deployed) is version 2 with the fixes R1, R2, R3 and
   R8 of the review below.
-- `sh sol-program/build.sh test` runs 5 unit tests and the 56 tests of `svm-tests/` (LiteSVM 0.16
+- `sh sol-program/build.sh test` runs 5 unit tests and the 69 tests of `svm-tests/` (LiteSVM 0.16
   with the precompiles, as the Zolana program tests). The rig computes the digest, the commitment
   and the addresses on its own. A stub pool at the pool id accepts only `transact`. Every
   successful transaction of every test passes a check: the program calls only System Program
@@ -1014,13 +1021,47 @@ one defect, which version 2 fixed. The move needs these first:
   - the expiry boundaries, cancel and the abort authorities, `close_cancelled`, and the version 2
     prefund fix;
   - the account checks, with the CPI bound of 18 inputs;
+  - SOL withdrawals, also against the pool of the [Z] commit (condition 1);
   - the option D rules: the CPI check, no registry crate, no forbidden name in the code.
 - Track "main" as a vector: the landed approval passes the precompile, its signed values match the
-  rig, and its `transact` bytes pass the commitment check of version 3. The landed approval signs
+  rig, and its `transact` bytes pass the commitment check of version 4. The landed approval signs
   the version 2 address, so the full replay of the landed `create` and `execute` passed on version
   2 only (commit cc92a9c).
 - `sh sol-program/mutants.sh` removes one rule per mutant in a copy of `src/`: the tests kill all
-  44 mutants. The unchanged source must pass first, and a kill counts only when named tests fail.
+  47 mutants. The unchanged source must pass first, and a kill counts only when named tests fail.
+
+**Condition 1: SOL withdrawals, version 4, 16 October 2026.** The pool reads one settlement group
+per withdrawal leg right after the owner signers: the SOL interface (`["sol_interface", 0]` of the
+pool) and the recipient. It hashes both addresses after the prefix. Version 4 follows that reading:
+
+- `execute` accepts SOL withdrawal legs. Deposits, SPL legs, rings, caches and account owner tags
+  stay refused (6013).
+- The owner PDA must sit right after the nullifier PDAs and nowhere else. Then come the settlement
+  groups, found with `settlement_accounts` of `zolana-interface` as the pool's readers find them.
+  The length is exact and at most 24 accounts, so one leg leaves room for 16 inputs (6016).
+- The commitment adds (SOL interface, recipient) per leg, so the approval binds the amount, the
+  recipient, the SOL interface, the number of legs and their order (6014).
+- The program adds only the owner PDA as a signer of the CPI. The payer and any account that signed
+  the outer transaction keep their flag. The SOL interface never signs, so a recipient that signs
+  cannot join the pool's run of owner signers.
+- The payee of a withdrawal stays a seat rule (QA F3, in the table of seat checks above). A payee
+  below the rent-exempt minimum makes every `execute` fail until the approval expires.
+- Version 4: ELF `0c846f8b…` (90,448 bytes), not deployed. `tests/withdrawal.rs` has 7 tests.
+  All 47 mutants are killed.
+- `tests/real_pool.rs` runs the program in front of the pool of the [Z] commit, which `build.sh
+  test` builds. With no trees and no proof, the pool stops at its tree stage after it has read the
+  accounts. These results hold:
+  - the program's layouts with 0, 1 and 2 legs pass;
+  - of all 32 signer-flag subsets, only a signer in the place of the SOL interface lengthens the
+    owner run;
+  - the pool refuses a bad settlement group.
+  The pool stops before it hashes the external data. So the equality of the two commitments rests
+  on the shared `ExternalDataPreimage` and the rig. The live round of the upgrade plan checks it.
+- Review: the QA round of the reviewer of versions 2 and 3 passed with findings. It found no path
+  that moves the value of a withdrawal without the approval, and no regression. F1 (no test ran
+  the real pool) and F2 (the commitment function was public without its checks) are fixed; F3 is
+  the seat rule above. A cold read of the branch then found no defect in the code. It found a gap
+  in the rollback of the upgrade plan and stale text, which are fixed.
 
 **Review of version 2.** An agent that did not take part in the spike reviewed commit bc5bf04 with
 the pinned Zolana source, by reading and with its own LiteSVM tests. Verdict: pass with findings.
@@ -1061,9 +1102,9 @@ Notes of the delta review:
   System error 0 (account in use). The proposal then exists with the right data, and its rent
   goes to the body's rent recipient. The tooling reads the account and compares the data instead
   of reporting an error.
-- N5 (Info). No real FROST approval over a version 3 address exists yet. The digest code did not
-  change, and the rig computes the digest on its own. Run one real Devnet round on version 3
-  before the beta uses it.
+- N5 (Info). No real FROST approval over a version 3 or 4 address exists yet. The digest code did
+  not change, and the rig computes the digest on its own. Run one real Devnet round on version 4
+  before the beta uses it (step 6 of the upgrade plan).
 
 **The upgrade key: options for the owner (decided 16 October 2026, SOL-40).** Rent below is for the
 version 3 ELF at the default rate of 6,960 lamports per byte. Devnet charges 5,080: the proposal
@@ -1086,6 +1127,45 @@ the upgrade key or a seat until SOL-4 closes.
 **Decision (SOL-40).** The owner takes them in turn. During the Devnet beta the program keeps the
 single development upgrade key. Before mainnet, the upgrade key moves to a multisig with a timelock
 (SOL-45). After the audit, the program becomes immutable with `--final` (SOL-46).
+
+**Devnet upgrade plan, version 2 to version 4.** Version 3 is not deployed. The Devnet program goes
+from version 2 to version 4 in one upgrade, with the development key (SOL-40). The owner and the
+web session do the upgrade. This plan only orders the steps.
+
+What the client of the web session changes:
+
+1. The proposal address: `["proposed_transaction", group key, commitment, SHA-256(body)]`, where
+   the body is the `create` data without its tag. The digest formula stays, but it binds the new
+   address, so an approval signed for a version 2 address does not carry over.
+2. The rent recipient of a body: never the group's owner PDA, the program id or the System Program
+   (6021).
+3. A withdrawal: the `transact` carries the SOL withdrawal legs. The `execute` accounts end with
+   the owner PDA, then per leg the SOL interface and the recipient, both writable. The commitment
+   that the seats sign includes the two addresses of each leg after the prefix. The pool verifies
+   the same value.
+4. The error codes: 6018 is gone, 6021 is new, 6013 no longer refuses a SOL withdrawal.
+5. A `create` that fails with System error 0: read the account and compare the data (N4).
+
+The order:
+
+1. Build version 4 with `sh sol-program/build.sh` and check `0c846f8b…`. Have the version 4 client
+   ready, off.
+2. Stop new proposals in the page. Let the open version 2 proposals execute, or cancel them. After
+   their expiry, anyone closes the rest with `cancel`. Check that the program owns no account with
+   kind byte 1. Cancellation records (kind 2) may stay: version 4 still closes them.
+3. Dump the Devnet program and check that its first 48,312 bytes hash to `555f4580…`. Keep that
+   file: it is the version 2 ELF for a rollback.
+4. Extend the ProgramData by at least 32,696 bytes, about 0.17 SOL of rent at the Devnet rate. The
+   ELF grows from 48,312 to 90,448 bytes, and the ProgramData holds 57,752. Then upgrade with the
+   development key.
+5. Dump the program and compare its first 90,448 bytes with the local ELF, as in 6.10.
+6. Turn on the version 4 client in the same window.
+7. Land one private payment and one withdrawal, each with a FROST approval over a version 4
+   address (N5). Record the signatures in section 6.
+8. To roll back, first stop new proposals. Cancel every version 4 proposal under version 4, or let
+   it expire and close it, and check that the program owns no account with kind byte 1. Then
+   upgrade to the version 2 ELF of step 3 and turn the old client on. Version 2 cannot read a
+   version 4 proposal (6005), so a proposal left open is lost with its rent.
 
 Mainnet stays no-go under the recommendation below. Our program adds its own audit and upgrade-key
 policy to that list.
