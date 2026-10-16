@@ -177,19 +177,19 @@ const ones = (n) => Array.from({ length: n }, (_v, i) => entry(1n, i + 1));
 const countOf = (entries, amount) => selectInputs(sdk, walletOf(entries), TREE, amount).length;
 
 function inputCap() {
-  assert.equal(MAX_INPUTS, 16, "one execute of the program carries at most 18 inputs");
+  assert.equal(MAX_INPUTS, 8, "8 inputs stay well under the compute caps of the template");
   assert.equal(countOf(ones(8), 7n), 8, "7 UTXOs have no circuit: one more makes 8, with change");
   assert.throws(() => countOf(ones(7), 7n), /needs 7 UTXOs, .* what the 6 largest UTXOs hold/);
-  assert.throws(() => countOf(ones(20), 17n), /what the 16 largest UTXOs hold/);
-  assert.equal(countOf(ones(16), 16n), 16, "16 UTXOs are allowed");
-  assert.throws(() => countOf(ones(20), 17n), /needs 17 UTXOs/);
+  assert.throws(() => countOf(ones(20), 9n), /what the 8 largest UTXOs hold/);
+  assert.equal(countOf(ones(8), 8n), 8, "8 UTXOs are allowed");
+  assert.throws(() => countOf(ones(20), 9n), /needs 9 UTXOs/);
   assert.throws(() => countOf(ones(20), 21n), /does not cover/);
-  for (const [n, want] of [[3, 3], [7, 6], [9, 8], [41, 16]]) {
+  for (const [n, want] of [[3, 3], [7, 6], [9, 8], [41, 8]]) {
     const moved = moveInputs(sdk, walletOf(ones(n)), TREE);
     assert.equal(moved.length, want, `a move of ${n} UTXOs takes ${want}`);
   }
   assert.throws(() => moveInputs(sdk, walletOf([]), TREE), /holds no private SOL/);
-  step("a spend takes a count of UTXOs that has a circuit, at most 16; a move takes whole UTXOs");
+  step("a spend takes a count of UTXOs that has a circuit, at most 8; a move takes whole UTXOs");
 }
 
 function ownersOfOutputs() {

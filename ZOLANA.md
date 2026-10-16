@@ -308,7 +308,9 @@ and the rent. The rent comes back to that seat at the execute. The group key sig
    ends. Then the seat publishes the proposal part: the intent (tag 8), the plan, the input ids,
    the salt, the transact data of the first proof, the account, the body and the id of the create
    transaction. The Worker takes a count of inputs that has a circuit with no dummy input, at most
-   16: one `execute` carries at most 18 inputs, and the checker refuses more (`execute-inputs`).
+   8. One more input costs about 5,000 compute units (6.12), so 8 inputs stay well under the caps
+   of the template, and 16 would reach them. One `execute` carries at most 18 inputs, and the
+   checker refuses more (`execute-inputs`).
 2. **Check, on each approving device** (`check_payment`). The Outputs, Legs and Ciphertexts rules
    of the table above, on the first proof. The device recomputes `private_tx_hash` from the inputs
    of its own snapshot, the plan outputs and the blinding of the first nullifier, then the
@@ -345,7 +347,7 @@ and the rent. The rent comes back to that seat at the execute. The group key sig
    tab shows a card: first the nonce account if it is missing, then the move. The card counts only
    the UTXOs that a move can take (plain SOL of the live tree). The group key signs no other spend,
    so a UTXO of another kind (another tree, a token, data or a ring) stays at the old address. A move takes whole UTXOs, as many
-   as one proof can (at most 16), and pays them to the PDA address with no change.
+   as one proof can (at most 8), and pays them to the PDA address with no change.
    A group key with more notes moves them in several steps, and a payment to the old address
    shows the card again.
 
@@ -878,6 +880,12 @@ group, PDA `9gk8NEZU…`:
   Zcash and Solana backups and read 0.01 SOL. Payment C, 0.001 SOL to key B: seat 1 proposed
   (`2CBdLzVD…`), seats 2 and 3 approved 30 s apart, and seat 3 executed (`2qTtkN5X…`, slot
   511,799,024, 148,334 compute units). The rent went back to seat 1. No funding was needed.
+- The code after the cold read (`3e8f77d`), the same restored seats: payment D, 0.008 SOL to key B
+  with two inputs (0.006 and 0.003 SOL). Seats 1 and 3 approved, seat 2 executed (`1bZutCk7…`,
+  slot 511,828,479): 153,147 compute units. The executes with one input used 148,334 to 152,320,
+  so one more input costs about 1,000 to 5,000 compute units. With the upper value, 16 inputs
+  would need about 224,500 of the 227,156 that the template allows (217,000 for the move): the
+  page takes at most 8 inputs.
 
 ## 7. Risks, questions and recommendation
 

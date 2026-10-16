@@ -30,7 +30,7 @@ const WHAT = {
     "rent, and the group key owns the account.",
   transfer:
     "Moves private SOL of the group key to the program address of the group, with a nonce. One " +
-    "move takes up to 16 notes; the card shows again while the old address holds more.",
+    "move takes up to 8 notes; the card shows again while the old address holds more.",
   approve:
     "Pays SOL from the shielded balance of the group to the payee. The chain shows neither " +
     "the payee nor the amount. The change stays with the group.",
@@ -253,7 +253,7 @@ function sendForm(c, act, actions) {
 const MOVE_TEXT =
   "This wallet holds private SOL at the old address of the group key. Move it to the program " +
   "address of the group. A move uses the nonce account: the seats approve and sign it as before. " +
-  "One move takes up to 16 notes, so many small notes need more than one move. The card shows " +
+  "One move takes up to 8 notes, so many small notes need more than one move. The card shows " +
   "again if a payer sends SOL to the old address.";
 
 /** The one-time move of the beta funds (SOL-36 condition 3). Null when the group key holds none. */

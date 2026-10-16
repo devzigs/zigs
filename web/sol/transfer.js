@@ -31,9 +31,10 @@ const isSpendable = (sdk, tree, e) =>
   isPlain(e);
 
 // The input counts that have a circuit with two outputs (wasm-sol consts.rs SUPPORTED_SHAPES), up
-// to 16: one execute of the approvals program carries at most 18 inputs (ZOLANA.md 7.2, R7). The
-// SDK pads any other count with a dummy input, and the checker refuses a padded proof.
-const COUNTS = [1, 2, 3, 4, 5, 6, 8, 12, 16];
+// to 8. The SDK pads any other count with a dummy input, and the checker refuses a padded proof.
+// One more input costs about 5,000 compute units (ZOLANA.md 6.12): 8 inputs stay well under the
+// caps of the template, and 16 would reach them.
+const COUNTS = [1, 2, 3, 4, 5, 6, 8];
 export const MAX_INPUTS = COUNTS.at(-1);
 
 const spendable = (sdk, wallet, tree, avoid = new Set()) =>

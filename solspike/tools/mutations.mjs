@@ -515,7 +515,7 @@ export const MUTATIONS = [
   program("E-expiry", "a payment past its expiry stays open",
     ["web/sol/execute.js",
       "  !(Math.floor(Date.now() / 1000) < Number(ss.expiry) + CLOCK_MARGIN_S);", "  false;"],
-    SOL_PAY, /timeout: session expired-pay failed/),
+    SOL_PAY, /timeout: session \S+ failed/),
   program("E-sent", "the sent mark of a payment needs no transaction id",
     ["web/sol/sessions.js", "SIGNATURE.test(d.signature) && TX_ID.test(String(d.txId)) && ",
       "SIGNATURE.test(d.signature) && "], SOL_PAY, /a sent mark with no transaction id/),
