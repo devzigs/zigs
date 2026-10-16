@@ -43,7 +43,7 @@ export const mismatchText = (seat) =>
   seat +
   " does not show the key of this seat. It is forged or broken, and seat " +
   seat +
-  " cannot pay until it is fixed. Seat " +
+  " cannot pay while that document stands. Seat " +
   seat +
   " can still approve and sign, and the other seats can propose and add SOL.";
 
