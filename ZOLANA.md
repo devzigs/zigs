@@ -1090,6 +1090,8 @@ interface stays the one of version 4: accounts, seeds, commitment, CPI data and 
 - Version 5 for Devnet: ELF `b4bad24c…` (53,144 bytes), not deployed. The unit tests (6 for
   Devnet, 5 for the mainnet test build) and 71 LiteSVM tests pass. New mutants T1 to T4 (the CPI
   target, the owner signature, the tag, the writable flags): all 51 mutants are killed.
+- The Linux build of CI gives `4dd727b0…` (53,144 bytes). Only the platform-tools paths differ:
+  `fncmp.py` finds 0 of 70 functions with different code. Deploy the macOS build `b4bad24c…`.
 - Review: the QA round of the same reviewer passed with findings. It found no custody defect and
   no change visible to the client. It ran 33 inputs through the version 4 and version 5 ELFs, with
   a stub that records the flags and the data of the CPI. The two transcripts were equal. That run
