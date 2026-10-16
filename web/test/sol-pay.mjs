@@ -218,7 +218,8 @@ step("propose creates the proposal account first; no screen before the reads of 
   assert.match(rows["What it does"], /^Pays SOL from the shielded balance of the group/);
   assert.equal(rows["Program address of the group"], base58(G.group.pda));
   assert.equal(rows.Amount, "0.002 SOL");
-  assert.equal(rows["Network fees"], "0.000005 SOL at the proposal, 0.000010162 SOL at the execute.");
+  const fees = "0.000005 SOL at the proposal, 0.000010162 SOL at the execute.";
+  assert.equal(rows["Network fees"], fees, "two signatures and the tree fee at the execute");
   assert.equal(rows["Proposal rent"], "0.00135636 SOL, back to seat 1 at the execute.");
   assert.equal(rows["Proposal account"], base58(ssOf(id).account));
   assert.ok(rows.Public.includes(LINK_TEXT), "the screen says that the fee address links");

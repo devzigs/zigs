@@ -25,7 +25,8 @@ async function drive(sol, cfg) {
   const init = await sol.call("init", cfg.init);
   add({ type: "init", ...init, pageMs: Math.round(performance.now() - started) });
   const t1 = performance.now();
-  const sync = await sol.call("sync");
+  // The replay is the sync of key B, which the Worker reads as the group key of the beta.
+  const sync = await sol.call("syncOld");
   const sum = sync.utxos.reduce((total, u) => total + BigInt(u.amount), 0n).toString();
   const ms = Math.round(performance.now() - t1);
   add({ type: "sync", ...sync, utxos: sync.utxos.length, sum, ms });
@@ -49,7 +50,7 @@ async function proposalCalls(sol) {
 async function refusals(sol, cfg, init) {
   const extra = { ...cfg.init, solSeed: "00".repeat(32) };
   const prepare = {
-    kind: "transfer",
+    kind: "migrate",
     recipient: init.shielded,
     amount: "1000",
     expiry: "1900000000",
@@ -66,7 +67,7 @@ async function refusals(sol, cfg, init) {
     const result = await attempt(() => sol.call(cmd, args));
     add({ type: "refusal", name, ok: result.ok, error: result.error ?? null });
   }
-  add({ type: "after-refusals", sync: (await sol.call("sync")).balance });
+  add({ type: "after-refusals", sync: (await sol.call("syncOld")).balance });
 }
 
 /** An RPC error that echoes the URL and key must reach the page redacted (made-up key). */
