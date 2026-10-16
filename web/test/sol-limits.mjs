@@ -172,6 +172,9 @@ step("an ended session has no Approve button and says why");
     },
     elsewhere: { ...base, intent: "01" + "cd".repeat(32) + "0100000000000000", message: other },
     blockhash: { ...base, intent: "00" + lifetime, message },
+    // Add SOL (the intent 02) also has a blockhash for its lifetime. A member can write it as a
+    // session, and the landed session on that value does not end it.
+    addsol: { ...base, intent: "02" + lifetime + "00".repeat(8), message },
   };
   const check = () => "yes";
   const read = (raw) =>
@@ -186,6 +189,7 @@ step("an ended session has no Approve button and says why");
   }
   assert.equal(seen.elsewhere.status, "collecting", "another nonce is not touched");
   assert.equal(seen.blockhash.status, "collecting", "a blockhash lifetime is not a nonce");
+  assert.equal(seen.addsol.status, "collecting", "an Add SOL message is no nonce session");
   const { sent: _gone, ...without } = all;
   assert.equal(read(without).collecting.status, "collecting", "nothing landed, nothing ends");
 }

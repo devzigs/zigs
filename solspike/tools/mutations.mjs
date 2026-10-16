@@ -334,6 +334,9 @@ export const MUTATIONS = [
       'if (ss.status !== "collecting" || !usesNonce(ss)'], /signed ends/),
   limits("L-d2-blockhash", "the nonce account proposal ends like a nonce session",
     ["sessions", "|| !usesNonce(ss) ||", "|| false ||"], /a blockhash lifetime is not a nonce/),
+  limits("L-d2-addsol", "an Add SOL message ends like a session on a used nonce",
+    ["sessions", "!/^0[02]/.test(ss.intent);", '!ss.intent.startsWith("00");'],
+    /an Add SOL message is no nonce session/),
   // The private payment path of P8f: sol-transfer.mjs (wire forms and checker), sol-pay.mjs (the
   // snapshot of a device, the gate and error 7008) and prepare.test.mjs (the prover body).
   payment("P-asset", "the SOL asset field of the prover body is another value",
@@ -386,6 +389,10 @@ export const MUTATIONS = [
   payment("F-payer-by", "the payer is the key of seat 1, not of the proposing seat",
     ["web/sol/fee.js", "publishedFee(c, ss.by)", "publishedFee(c, 1)"],
     ["node", "web/test/sol-sessions.mjs"], /proposed by seat 2: seat 1 accepted/),
+  payment("F-payer-field", "the payer comes from a field that the proposer wrote",
+    ["web/sol/fee.js", "export const payerOf = (c, ss) => publishedFee(c, ss.by);",
+      "export const payerOf = (c, ss) => ss.payer ?? publishedFee(c, ss.by);"],
+    ["node", "web/test/sol-fee.mjs"], /the payer field of the proposer is ignored/),
   payment("F-txid", "the transaction id is the group signature, not the first signature",
     ["web/sol/signing.js", "txId = base58(ss.feeSig ?? ss.signature);",
       "txId = base58(ss.signature);"],

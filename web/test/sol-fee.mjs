@@ -6,6 +6,7 @@
 // the SOL of one member into the shielded balance of the group with that member's signature alone.
 // Run: node web/test/sol-fee.mjs   (Node 24)
 import assert from "node:assert/strict";
+import { createPrivateKey, createPublicKey, sign } from "node:crypto";
 import { addSol } from "../sol/addsol.js";
 import { feeSignature, reviewOf } from "../sol/approve.js";
 import { base58 } from "../sol/docs.js";
@@ -41,6 +42,7 @@ import {
 const step = (name) => console.log("ok  " + name);
 const FEE = 5000n;
 const J = JSON.parse;
+const PKCS8 = Buffer.from("302e020100300506032b657004220420", "hex");
 
 // ── Each seat made a fee key, and its document says so ──
 {
@@ -238,6 +240,42 @@ hook.before = saved;
   assert.equal(review.by, 2);
 }
 step("a proposal of seat 2 is paid by the fee key of seat 2");
+
+// ── A payer field that the proposer wrote is ignored: the published key of `by` pays ──
+{
+  const der = Buffer.concat([PKCS8, Buffer.from(hex32(), "hex")]);
+  const stranger = createPrivateKey({ key: der, format: "der", type: "pkcs8" });
+  const spki = createPublicKey(stranger).export({ format: "der", type: "spki" });
+  const strange = spki.subarray(-32).toString("hex");
+  const register = intentHex("register", { nonce: chain.nonce, ...done });
+  const compile = (payer) =>
+    hexOf(W.compile_message(bytesOf(register), bytesOf(pinsHex(done, payer)), new Uint8Array(0)));
+  // The proposer names the stranger as payer, compiles the message for it and signs as it.
+  const forged = { id: "forged", status: "collecting", by: 2, intent: register };
+  forged.message = compile(strange);
+  forged.feeSig = sign(null, bytesOf(forged.message), stranger).toString("hex");
+  forged.payer = strange;
+  assert.ok(W.sol_fee_verify(strange, bytesOf(forged.message), forged.feeSig), "a valid signature");
+  const review = reviewOf(c, forged, 1);
+  assert.equal(review.ok, false, "the payer field of the proposer is ignored");
+  // The same proposal with the honest payer of seat 2 passes, with that field present or not.
+  const honest = { ...forged, message: compile(feeOf(c, 2).key), payer: strange };
+  honest.feeSig = feeSignature(c, honest, 2);
+  const seen = reviewOf(c, honest, 1);
+  assert.equal(seen.ok, true, seen.why);
+  assert.equal(seen.payer, feeOf(c, 2).key, "the payer is the published key of seat 2");
+  // The same through a stored document: seat 2 signs a proposal part whose message names the
+  // stranger as payer, with the signature of the stranger, and the document carries the field
+  // `payer` that no part signs (the writer refuses it, a document can hold it).
+  const fields = { intent: register, message: forged.message, feeSig: forged.feeSig, createdAt: 1 };
+  await writePart(c, "forged-payer", "proposal", fields, { seat: 2, create: true });
+  const where = path(gid, "solsessions/forged-payer");
+  data.set(where, { ...data.get(where), payer: strange });
+  notify();
+  await waitFor("the session with a payer field", () => ssOf("forged-payer"));
+  assert.equal(reviewOf(c, ssOf("forged-payer"), 1).ok, false, "a stored payer field is ignored");
+}
+step("a payer field in a session is ignored: the payer is the published key of its seat");
 
 // ── The payer pays: fees come out of the fee address, never out of the group address ──
 {
