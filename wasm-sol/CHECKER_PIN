@@ -1,16 +1,16 @@
 CHECKER_PIN: the P3 message checker inside wasm-sol
 
 Status: PIN SIGNED for the checker tree, with changes after the signature (listed below, not
-signed). The fee payer change (below, 16 October 2026) edits src/check.rs, template.rs,
-rules_ix.rs, rule.rs, spend.rs, intent.rs and pins.rs: the verdict no longer covers those seven
-files as they are now. A P3 verifier signed the checker tree and its copy in this crate: p3delta-verdict.json
-(verdict "pass-with-gaps"), the delta verifier of the P3 fix round. What it signed:
-the verified-tree manifest 14b1ba4190989259e7d5ca49ba5250c7e10b6c9878c51892afda76ea61aaa5cc,
-the pinned-tree manifest 59c3ac4af5e9c5f504f370e6f43eee087d398d61622871a9f659d07275a00fbf, the
-seven files of the delta below, the copy of that tree in wasm-sol at the spike commit 18e7da7 with
-the wasm df092b0eb130269db4c1e2c04c2e99093d3f456e0a97d93d566be7d87fe9b74d (982,473 bytes), and
-the checker wasm of the P3 crate f7615f0fea44cff6000b1922eccfe196528b54540ff11c7368cd33dfb2225f61
-(597,931 bytes). The verdict signs nothing else.
+signed). The fee payer change (below, 16 October 2026) edits src/check.rs, template.rs, rules_ix.rs,
+rule.rs, spend.rs, intent.rs and pins.rs: the verdict no longer covers those seven files as they are
+now. A P3 verifier signed the checker tree and its copy in this crate: p3delta-verdict.json (verdict
+"pass-with-gaps"), the delta verifier of the P3 fix round. What it signed: the verified-tree
+manifest 14b1ba4190989259e7d5ca49ba5250c7e10b6c9878c51892afda76ea61aaa5cc, the pinned-tree manifest
+59c3ac4af5e9c5f504f370e6f43eee087d398d61622871a9f659d07275a00fbf, the seven files of the delta
+below, the copy of that tree in wasm-sol at the spike commit 18e7da7 with the wasm
+df092b0eb130269db4c1e2c04c2e99093d3f456e0a97d93d566be7d87fe9b74d (982,473 bytes), and the checker
+wasm of the P3 crate f7615f0fea44cff6000b1922eccfe196528b54540ff11c7368cd33dfb2225f61 (597,931
+bytes). The verdict signs nothing else.
 
 What this is. wasm-sol/src holds the source of the P3 checker crate (the scratch crate of step P3,
 outside this repository). Every file is a byte for byte copy, except lib.rs and wasm.rs, which are
@@ -67,7 +67,8 @@ the P5 run, a secret). tests/common/real.rs is cut to address_of, the one helper
 use; the code that read the solSeed file is removed. Vectors: only the public ones.
 Copied from the P1 crate: tests/data (the RFC 9591 E.1 inputs and the vectors of frost-ed25519).
 
-The wasm of wasm-sol (build.sh): SHA-256 bb92d04e04c8857353fd038613c0220e215fe3bb24458e9fa3bd4e1335fb069e, 1,026,997 bytes raw, 377,198 gzip
+The wasm of wasm-sol (build.sh): SHA-256
+bb92d04e04c8857353fd038613c0220e215fe3bb24458e9fa3bd4e1335fb069e, 1,026,997 bytes raw, 377,198 gzip
 
 Changes of the move into the product repo (not signed; no file of src/ changed, so the rules and
 the checker are those that the verdict signed):
