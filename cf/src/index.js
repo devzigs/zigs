@@ -138,24 +138,29 @@ async function groupSocket(req, env, url) {
   return env.STORE.get(env.STORE.idFromName("g:" + gid)).fetch(fwd);
 }
 
+// The https redirect and the password prompt: the Response to send, or null to let the request on.
+function gate(req, env) {
+  // Redirect before the password prompt, so a password never travels over plain http.
+  // The scheme comes from the edge headers: local dev also sees http URLs.
+  const http = (req.headers.get("cf-visitor") || "").includes('"http"')
+    || req.headers.get("x-forwarded-proto") === "http";
+  if (http) {
+    const to = new URL(req.url);
+    to.protocol = "https:";
+    return Response.redirect(to.toString(), 301);
+  }
+  if (env.DEV_NO_AUTH === "1" || authorized(req, env)) return null;
+  const text = "Zigs is not open yet. This preview needs a password.\n"
+    + "Read about Zigs and get early access at https://zigs.app\n";
+  return new Response(text, {
+    status: 401, headers: { "WWW-Authenticate": 'Basic realm="Zigs preview", charset="UTF-8"' },
+  });
+}
+
 export default {
   async fetch(req, env) {
-    // Redirect before the password prompt, so a password never travels over plain http.
-    // The scheme comes from the edge headers: local dev also sees http URLs.
-    const http = (req.headers.get("cf-visitor") || "").includes('"http"')
-      || req.headers.get("x-forwarded-proto") === "http";
-    if (http) {
-      const to = new URL(req.url);
-      to.protocol = "https:";
-      return Response.redirect(to.toString(), 301);
-    }
-    if (env.DEV_NO_AUTH !== "1" && !authorized(req, env)) {
-      const text = "Zigs is not open yet. This preview needs a password.\n"
-        + "Read about Zigs and get early access at https://zigs.app\n";
-      return new Response(text, {
-        status: 401, headers: { "WWW-Authenticate": 'Basic realm="Zigs preview", charset="UTF-8"' },
-      });
-    }
+    const refused = gate(req, env);
+    if (refused) return refused;
     const url = new URL(req.url);
     if (url.pathname === "/ws") return groupSocket(req, env, url);
     if (url.pathname.startsWith("/lwd/")) return lwd(req, env, url);
