@@ -30,7 +30,7 @@ unset RUSTFLAGS CARGO_ENCODED_RUSTFLAGS
 # The ELF holds the paths of the standard library inside platform-tools, which differ between its
 # macOS and its Linux build. So each host has its own hash; CI builds on Linux.
 EXPECTED_DARWIN=b4bad24c6ae7cf2455b52780f78e35573f014ab3bc618fcbb49772b06c0d6eac
-EXPECTED_LINUX=pending
+EXPECTED_LINUX=4dd727b04d585403ce7c23ba70497c3922a166690409dfcd63f38c95bfeb2355
 V2=555f45801f32896c78eb55f962026507dec35ea6d673477326db7913e4475d92
 SBF=${CARGO_BUILD_SBF:-cargo-build-sbf}
 OBJDUMP=$HOME/.cache/solana/v1.54/platform-tools/llvm/bin/llvm-objdump
