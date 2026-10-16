@@ -1,11 +1,12 @@
-// The payment part of the Solana tab: the fund card, the buttons that propose an intent, and the
-// signing sessions with their approval screens. An approval screen shows what the checker of this
-// device accepted (approve.js reviewOf): the values come from the intent bytes and the message,
-// never from the display fields of the proposer. `data-session` marks a session and `data-sol`
-// marks a control, for the headless checks.
+// The payment part of the Solana tab: the fund card (the fee address of each seat of this browser),
+// Add SOL, the buttons that propose an intent, and the signing sessions with their approval
+// screens. An approval screen shows what the checker of this device accepted (approve.js reviewOf):
+// the values come from the intent bytes and the message, never from the display fields of the
+// proposer. `data-session` marks a session and `data-sol` marks a control, for the headless checks.
 import { reviewOf } from "./approve.js";
 import { agreement } from "./ceremony.js";
 import { CLUSTER, base58 } from "./docs.js";
+import { feeOf } from "./fee.js";
 import { BASE_FEE, NONCE_RENT, RECORD_RENT, bytesOf, decodeIntent, readVerdict } from "./intent.js";
 import { usedDigest } from "./nonces.js";
 import { holdsShare, solOf } from "./secrets.js";
@@ -16,19 +17,15 @@ const FAUCET = "https://faucet.solana.com/";
 const TITLES = {
   createNonce: "Create the nonce account",
   register: "Register the group keys",
-  shield: "Shield SOL",
   transfer: "Send privately",
 };
 const WHAT = {
   createNonce:
     "Creates the account that lets the signers approve a transaction now and send it later. " +
-    "The group pays its rent.",
+    "The proposing seat pays its rent, and the group owns the account.",
   register:
     "Writes the shielded keys of the group on the public registry. This is permanent: " +
-    "it cannot be undone or deleted.",
-  shield:
-    "Moves SOL from the public balance of the group into its own shielded balance. " +
-    "Amount and sender are public.",
+    "it cannot be undone or deleted. The proposing seat pays the rent.",
   transfer:
     "Pays SOL from the shielded balance of the group to the payee. The chain shows neither " +
     "the payee nor the amount. The change stays with the group.",
@@ -46,7 +43,7 @@ const STATES = {
 };
 const short = (hex) => hex.slice(0, 8) + "…" + hex.slice(-6);
 
-function copyButton(c, text) {
+function copyButton(c, text, mark) {
   const copy = async (ev) => {
     const button = ev.currentTarget;
     try {
@@ -56,25 +53,57 @@ function copyButton(c, text) {
       button.textContent = "Select and copy";
     }
   };
-  const attrs = { class: "btn sm", type: "button", "data-sol": "copy-owner", onclick: copy };
-  return c.host.el("button", attrs, "Copy");
+  return c.host.el(
+    "button",
+    { class: "btn sm", type: "button", "data-sol": mark, onclick: copy },
+    "Copy",
+  );
+}
+
+const FEE_TEXT =
+  "It pays the fees and the rents of the proposals that this seat makes. It appears on chain " +
+  "next to the group. Send Devnet SOL to it.";
+
+/** The fee address of one seat of this browser: the address, Copy and the balance. */
+function feeRow(c, seat) {
+  const { el } = c.host,
+    held = feeOf(c, seat);
+  if (held === null) {
+    return el(
+      "p",
+      { class: "small", "data-sol": "fee-wait-" + seat },
+      "The fee key of seat " + seat + " is being made.",
+    );
+  }
+  const address = base58(held.key);
+  return el(
+    "div",
+    { style: "display:grid;gap:4px", "data-sol": "fee-" + seat },
+    el("strong", {}, "Your fee address (seat " + seat + ")"),
+    el(
+      "div",
+      { class: "row-actions" },
+      el("span", { class: "hex", "data-sol": "fee-address-" + seat }, address),
+      copyButton(c, address, "copy-fee-" + seat),
+    ),
+    el(
+      "span",
+      { class: "small", "data-sol": "fee-balance-" + seat },
+      "Balance: " + (c.chain?.fees?.[seat] ?? "not read yet"),
+    ),
+  );
 }
 
 function fundCard(c, act, actions) {
-  const { el } = c.host,
-    owner = base58(agreement(c).done.groupKey);
+  const { el } = c.host;
   const nonce = { created: "created", missing: "not created yet" }[c.chain?.nonce];
+  const seats = c.host.localSeats().filter((i) => holdsShare(solOf(c.host, c.gid, i)));
   return el(
     "div",
     { style: "display:grid;gap:8px" },
-    el("h3", {}, "Fund this address"),
-    el(
-      "p",
-      { class: "small" },
-      "Send Devnet SOL to the public owner address. It pays the fees and the rents, and it " +
-        "is the SOL that the group can shield.",
-    ),
-    el("div", { class: "row-actions" }, el("span", { class: "hex" }, owner), copyButton(c, owner)),
+    el("h3", {}, "Fund the fee address"),
+    el("p", { class: "small" }, FEE_TEXT),
+    ...seats.map((seat) => feeRow(c, seat)),
     el(
       "div",
       { class: "row-actions" },
@@ -99,18 +128,53 @@ function fundCard(c, act, actions) {
   );
 }
 
-function intentCard(c, act, actions) {
+const ADD_TEXT =
+  "Moves SOL from the fee address of your seat into the shielded balance of the group. " +
+  "The amount and the sender are public. It needs no approval: it is your own SOL.";
+
+/** What the last Add SOL did, as a line of text. */
+function addedLine(c) {
+  const a = c.added;
+  if (!a) return null;
+  const words = { unknown: "Sent, not confirmed yet", failed: "Failed on chain" };
+  const word = words[a.status] ?? "Added " + solText(a.amount);
+  return c.host.el("p", { class: "small", "data-sol": "added" }, `${word}: ${a.txId}`);
+}
+
+function addSolCard(c, act, actions) {
   const { el } = c.host;
-  const button = (mark, text, run) =>
-    el("button", { class: "btn", type: "button", "data-sol": mark, onclick: act(run) }, text);
   const amount = el("input", {
     class: "input mono",
-    id: "sol-amount",
-    "data-sol": "shield-amount",
+    id: "sol-add-amount",
+    "data-sol": "add-sol-amount",
     value: "0.02",
     inputmode: "decimal",
     autocomplete: "off",
   });
+  const run = () => actions.addSol({ amount: amount.value });
+  return el(
+    "div",
+    { style: "display:grid;gap:8px" },
+    el("h3", {}, "Add SOL"),
+    el("p", { class: "small", "data-sol": "add-sol-text" }, ADD_TEXT),
+    el(
+      "div",
+      { class: "row-actions" },
+      el("label", { class: "field" }, el("span", {}, "Amount (SOL)"), amount),
+      el(
+        "button",
+        { class: "btn", type: "button", "data-sol": "add-sol", onclick: act(run) },
+        "Add SOL",
+      ),
+    ),
+    addedLine(c),
+  );
+}
+
+function intentCard(c, act, actions) {
+  const { el } = c.host;
+  const button = (mark, text, run) =>
+    el("button", { class: "btn", type: "button", "data-sol": mark, onclick: act(run) }, text);
   return el(
     "div",
     { style: "display:grid;gap:8px" },
@@ -120,12 +184,6 @@ function intentCard(c, act, actions) {
       { class: "row-actions" },
       button("create-nonce", "Create nonce account", () => actions.propose("createNonce")),
       button("register", "Register", () => actions.propose("register")),
-    ),
-    el(
-      "div",
-      { class: "row-actions" },
-      el("label", { class: "field" }, el("span", {}, "Amount (SOL)"), amount),
-      button("shield", "Shield", () => actions.propose("shield", { amount: amount.value })),
     ),
     sendForm(c, button, actions),
   );
@@ -180,19 +238,14 @@ export function transferRows(groupKey, review, fee) {
   ];
 }
 
-/** The labelled values of an approval screen, from what the checker accepted. */
-function rowsOf(c, review) {
-  const { intent, info } = review,
-    { groupKey } = agreement(c).done;
-  const fee = BASE_FEE * BigInt(info.signatures) + info.priorityFee;
-  if (intent.kind === "transfer") return transferRows(groupKey, review, fee);
+/** The rows of the intents that move no private funds: the nonce account and the registration. */
+function plainRows(intent, groupKey, fee) {
   const own = {
     createNonce: () => [["Rent kept by the nonce account", solText(NONCE_RENT)]],
     register: () => [
       ["Rent kept by the record", solText(RECORD_RENT)],
       ["Keys that become public", short(intent.nullifierPk) + " " + short(intent.viewingPk)],
     ],
-    shield: () => [["Amount", solText(intent.amount)]],
   }[intent.kind]();
   return [
     ["What it does", WHAT[intent.kind]],
@@ -203,6 +256,22 @@ function rowsOf(c, review) {
     ["Network fee", solText(fee)],
     ["Lasts", LIFETIME[intent.kind] ?? LIFETIME.other],
   ];
+}
+
+/**
+ * The labelled values of an approval screen, from what the checker accepted. The second row says
+ * which seat pays and its address: the payer of the message, as that seat published it.
+ */
+function rowsOf(c, review) {
+  const { intent, info } = review,
+    { groupKey } = agreement(c).done;
+  const fee = BASE_FEE * BigInt(info.signatures) + info.priorityFee;
+  const rows =
+    intent.kind === "transfer"
+      ? transferRows(groupKey, review, fee)
+      : plainRows(intent, groupKey, fee);
+  rows.splice(1, 0, ["Fees paid by seat " + review.by, base58(review.payer)]);
+  return rows;
 }
 
 function reviewBlock(c, ss, seat) {
@@ -311,7 +380,12 @@ function sessionList(c, act, actions) {
   );
 }
 
-/** The cards of a ready wallet: fund, propose, and the sessions. */
+/** The cards of a ready wallet: fund, Add SOL, propose, and the sessions. */
 export function payCards(c, act, actions) {
-  return [fundCard(c, act, actions), intentCard(c, act, actions), sessionList(c, act, actions)];
+  return [
+    fundCard(c, act, actions),
+    addSolCard(c, act, actions),
+    intentCard(c, act, actions),
+    sessionList(c, act, actions),
+  ];
 }

@@ -3,7 +3,10 @@
 // commands of web/sol/guard.js from a small model of Devnet: balances, one nonce account, the
 // blockhashes that it issued, and the transactions that landed. The model is strict where the
 // real chain is: a lifetime that is not current is refused, a signature that Node's own Ed25519
-// does not verify under the group key is refused, and a landed transaction advances the nonce.
+// does not verify under the key of its signer is refused (the payer signs first, then the group
+// key), a payer with no SOL for the fee is refused, and a transaction that the group signed
+// advances the nonce when it lands. A transaction that the group does not sign (Add SOL) uses a
+// recent blockhash and leaves the nonce alone.
 import { createPublicKey, randomBytes, verify } from "node:crypto";
 import { base58 } from "../sol/docs.js";
 import { config } from "./sol-rig.mjs";
@@ -22,28 +25,64 @@ export function verifies(groupKeyHex, message, signature) {
   return verify(null, message, key, signature);
 }
 
+const FEE = 5000n;
+// A v1 transaction: the message, then one signature per required signer (byte 1 of the message).
+// The keys of the message start at byte 42.
 const wire = (tx) => {
   const bytes = Buffer.from(tx, "base64");
-  return { message: bytes.subarray(0, bytes.length - 64), sig: bytes.subarray(bytes.length - 64) };
+  const signers = bytes[1];
+  const cut = bytes.length - 64 * signers;
+  const sigs = Array.from({ length: signers }, (_, i) =>
+    bytes.subarray(cut + 64 * i, cut + 64 * (i + 1)),
+  );
+  const message = bytes.subarray(0, cut);
+  const keys = Array.from({ length: message[41] }, (_, i) =>
+    hex(message.subarray(42 + 32 * i, 74 + 32 * i)),
+  );
+  return { message, sigs, keys };
 };
 const ran = (err) => ({ err, unitsConsumed: "1", logs: [] });
+const groupSigns = (chain, { keys }) => keys.includes(chain.group.key);
 
 // Why the network would refuse this transaction now, or null. A message is current when its
-// lifetime is a blockhash that was issued (before the nonce account) or the nonce (after).
-function refusal(chain, { message, sig }, strict) {
+// lifetime is a blockhash that was issued (before the nonce account, and for a transaction that
+// the group does not sign) or the nonce (after).
+function lifetimeRefusal(chain, parts) {
+  const life = hex(parts.message.subarray(8, 40));
+  const onNonce = groupSigns(chain, parts) && chain.nonce !== null;
+  const known = onNonce ? life === chain.nonce : chain.blockhashes.has(life);
+  return known ? null : "BlockhashNotFound";
+}
+
+// The payer, the first key, must hold the fee of every signature.
+function feeRefusal(chain, { sigs, keys }) {
+  const held = chain.balances.get(base58(keys[0])) ?? 0n;
+  if (held >= FEE * BigInt(sigs.length)) return null;
+  return held === 0n ? "AccountNotFound" : "InsufficientFundsForFee";
+}
+
+// Every signature must verify under the key of its signer.
+function signatureRefusal({ message, sigs, keys }) {
+  const bad = sigs.findIndex((sig, i) => !verifies(keys[i], message, sig));
+  return bad >= 0 ? "SignatureFailure" : null;
+}
+
+function refusal(chain, parts, strict) {
   if (chain.refuse) return chain.refuse;
-  const life = hex(message.subarray(8, 40));
-  const known = chain.nonce === null ? chain.blockhashes.has(life) : life === chain.nonce;
-  if (!known) return "BlockhashNotFound";
-  if (strict && !verifies(chain.group.key, message, sig)) return "SignatureFailure";
-  return null;
+  const found = lifetimeRefusal(chain, parts) ?? feeRefusal(chain, parts);
+  return found ?? (strict ? signatureRefusal(parts) : null);
 }
 
 function land(chain, parts) {
-  const signature = base58(hex(parts.sig));
+  const signature = base58(hex(parts.sigs[0]));
   if (chain.landed.some((x) => x.signature === signature)) throw new Error("already processed");
-  chain.landed.push({ signature, message: hex(parts.message), sig: hex(parts.sig) });
-  chain.nonce = hex(randomBytes(32));
+  const [payer] = parts.keys;
+  const paid = chain.balances.get(base58(payer)) ?? 0n;
+  chain.balances.set(base58(payer), paid - FEE * BigInt(parts.sigs.length));
+  const sigs = parts.sigs.map(hex);
+  chain.landed.push({ signature, message: hex(parts.message), sigs, sig: sigs.at(-1) });
+  // The nonce account is created or advanced by a transaction that the group signs.
+  if (groupSigns(chain, parts)) chain.nonce = hex(randomBytes(32));
   return { signature };
 }
 

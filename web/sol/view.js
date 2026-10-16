@@ -9,9 +9,9 @@ import { payCards } from "./payview.js";
 import { holdsShare, remoteStop, solOf, stopOf } from "./secrets.js";
 
 const ADD_TEXT =
-  "Your Solana address is public. The Zigs server operator can link this wallet " +
-  "to that address by timing. Helius sees that you use Zigs. The address needs a public SOL " +
-  "funding trail.";
+  "Your Solana address is public. Each seat also gets a fee address, which appears on chain " +
+  "next to the group. The Zigs server operator can link this wallet to these addresses by " +
+  "timing. Helius sees that you use Zigs. A fee address needs a public SOL funding trail.";
 function statusOf(c, ag) {
   if (startBlock(c.host)) return "unavailable";
   if (!started(c.docs)) return "not started";
@@ -73,7 +73,11 @@ function keyBlock(c, done) {
     row("group-key", "Group key", done.groupKey),
     row("shielded", "Shielded address", done.address),
     row("balance-private", "Private balance", c.sync.balance ?? "not synced"),
-    row("balance-public", "Public balance", c.chain?.balance ?? "not read yet"),
+    row(
+      "balance-public",
+      "Public balance of the owner address",
+      c.chain?.balance ?? "not read yet",
+    ),
   );
 }
 
@@ -164,8 +168,8 @@ function readyCards(c, act, actions, ag) {
 }
 
 /**
- * The tab. `actions` has add, sync, backup(seat), restoreFile(file), refresh, propose(kind, args)
- * and approve(session, seat).
+ * The tab. `actions` has add, sync, backup(seat), restoreFile(file), refresh, propose(kind, args),
+ * approve(session, seat) and addSol(args).
  */
 export function solView(c, act, actions) {
   const { el } = c.host,

@@ -4,6 +4,7 @@
 // controller that app.js calls: open and close follow the open wallet, react advances the
 // ceremony, the stops and the signing sessions, view builds the tab, restore takes a backup.
 import { reactAborts } from "./abort.js";
+import { addSol } from "./addsol.js";
 import { approve } from "./approve.js";
 import { backupWords, restoreSolana } from "./backup.js";
 import { addSolana, reactCeremony } from "./ceremony.js";
@@ -40,6 +41,7 @@ const blank = () => ({
   watching: new Map(),
   snaps: {},
   tries: {},
+  added: null,
   savedShown: false,
 });
 
@@ -149,6 +151,11 @@ export async function attach(host) {
     refresh: () => refreshChain(c),
     propose: (kind, args) => propose(c, kind, args),
     approve: (ss, seat) => approve(c, ss, seat),
+    async addSol(args) {
+      c.added = await addSol(c, args);
+      await refreshChain(c).catch(() => {});
+      host.render();
+    },
   };
   return {
     ctl: c, // the state of the controller, for the tests

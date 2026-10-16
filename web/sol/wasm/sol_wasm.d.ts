@@ -6,9 +6,10 @@
  *
  * - `intent`: the proposal, `Proposal::encode`: the intent and, for a spend, the approved
  *   plaintext outputs.
- * - `pins`: 97 bytes, the group key, `nullifier_pk` and `viewing_pk` of the `soldone` document
- *   (`Pins::wire`). The `owner_hash` is computed from them, and the snapshot secrets must derive
- *   exactly these two keys.
+ * - `pins`: 129 bytes, the group key, `nullifier_pk` and `viewing_pk` of the `soldone` document
+ *   and the payer of the proposal (`Pins::wire`). The page takes the payer from the `solfee`
+ *   document of the proposing seat. The `owner_hash` is computed from the first three, and the
+ *   snapshot secrets must derive exactly the two public keys.
  * - `snapshot`: the device snapshot, `Snapshot::encode`.
  * - `now`: the Unix time of the device, in seconds.
  *
@@ -70,6 +71,28 @@ export function sol_dkg3(secret2: string, round1: string, round2: string, ctx: s
 export function sol_echo(wallet_id: string, safety: string, cluster: string, round1: string): string;
 
 /**
+ * A fresh fee key of a seat: `{"secret", "public"}` as hex.
+ */
+export function sol_fee_key(): string;
+
+/**
+ * The public key (hex) of a fee secret.
+ */
+export function sol_fee_public(secret: string): string;
+
+/**
+ * The signature (hex) of the fee key of a proposal. It runs `approve` on the exact bytes first,
+ * as `sol_sign_share` does, and throws the refusal. `round` is `{"now", "secret"}`.
+ */
+export function sol_fee_sign(message: Uint8Array, intent: Uint8Array, pins: Uint8Array, snapshot: Uint8Array, round: string): string;
+
+/**
+ * True when `signature` (hex) is the `verify_strict` signature of `message` under the fee key
+ * `public` (hex). False for anything else, never an error.
+ */
+export function sol_fee_verify(_public: string, message: Uint8Array, signature: string): boolean;
+
+/**
  * Fresh nonces and the commitment of a seat for a digest: `{"nonces", "commitments"}`.
  */
 export function sol_nonces(key_package: string, digest: string): string;
@@ -110,6 +133,10 @@ export interface InitOutput {
     readonly sol_dkg2: (a: number, b: number, c: number, d: number, e: number) => void;
     readonly sol_dkg3: (a: number, b: number, c: number, d: number, e: number, f: number, g: number, h: number, i: number) => void;
     readonly sol_echo: (a: number, b: number, c: number, d: number, e: number, f: number, g: number, h: number, i: number) => void;
+    readonly sol_fee_key: (a: number) => void;
+    readonly sol_fee_public: (a: number, b: number, c: number) => void;
+    readonly sol_fee_sign: (a: number, b: number, c: number, d: number, e: number, f: number, g: number, h: number, i: number, j: number, k: number) => void;
+    readonly sol_fee_verify: (a: number, b: number, c: number, d: number, e: number, f: number) => number;
     readonly sol_nonces: (a: number, b: number, c: number, d: number, e: number) => void;
     readonly sol_program_label: (a: number) => void;
     readonly sol_roles: (a: number, b: number, c: number, d: number, e: number) => void;

@@ -1,18 +1,20 @@
 // The Solana signing sessions against the real web/app.js (see sol-rig.mjs): one browser holds
 // the three seats of a 2-of-3 wallet, the real wasm checks and signs, and a fake Worker answers
-// from a model of Devnet (sol-chain.mjs). It runs the three intents that move no private funds
-// (create the nonce account, register, shield) to a landed transaction whose first signature
-// Node's own Ed25519 verifies under the group key, and pins the rules around them: every
-// approver refuses a bad message and writes nothing, a nonce signs once (save before the commit,
-// delete before the share, a crash keeps or republishes, never reuses), a share under another
-// seat is ignored, and a signed abort document of any seat stops every seat and survives a
+// from a model of Devnet (sol-chain.mjs). It runs the intents that move no private funds (create
+// the nonce account, register, and a second register: the fake chain keeps no registry) to a
+// landed transaction that two keys sign, the fee key of the proposing seat first and the group
+// key second, and that Node's own Ed25519 verifies under both keys. It pins the rules around
+// them: every approver refuses a bad message and writes nothing, a nonce signs once (save before
+// the commit, delete before the share, a crash keeps or republishes, never reuses), a share under
+// another seat is ignored, and a signed abort document of any seat stops every seat and survives a
 // restore.
 // Run: node web/test/sol-sessions.mjs   (Node 24)
 import assert from "node:assert/strict";
-import { approve, reviewOf } from "../sol/approve.js";
+import { approve, feeSignature, reviewOf } from "../sol/approve.js";
 import { backupWords } from "../sol/backup.js";
 import { agreement } from "../sol/ceremony.js";
 import { base58 } from "../sol/docs.js";
+import { feeOf } from "../sol/fee.js";
 import {
   bytesOf,
   decodeIntent,
@@ -30,6 +32,7 @@ import { putSol, remoteStop, stopOf } from "../sol/secrets.js";
 import { refreshChain } from "../sol/session.js";
 import { writePart } from "../sol/sessions.js";
 import { solView } from "../sol/view.js";
+import { createPrivateKey, sign as nodeSign } from "node:crypto";
 import { RPC, makeChain, verifies } from "./sol-chain.mjs";
 import { loadRig, sleep } from "./sol-rig.mjs";
 
@@ -59,7 +62,21 @@ chain.group = {
   nonceAccount: base58(await nonceAccountHex(done.groupKey)),
 };
 chain.balances.set(chain.group.owner, 50_000_000n);
+await waitFor("every fee key published", () =>
+  [1, 2, 3].every((i) => feeOf(c, i) && c.docs.solfee[i]?.key === feeOf(c, i).key),
+);
+const feeAddress = (i) => base58(feeOf(c, i).key);
+for (const i of [1, 2, 3]) chain.balances.set(feeAddress(i), 50_000_000n);
 chain.install();
+
+// An attacker who holds the fee key of seat `seat` signs bytes that the wasm would not sign: the
+// approvers must still refuse them (the wasm never signs them, so Node's Ed25519 does).
+const PKCS8 = Buffer.from("302e020100300506032b657004220420", "hex");
+const feeSign = (seat, message) => {
+  const der = Buffer.concat([PKCS8, Buffer.from(feeOf(c, seat).secret, "hex")]);
+  const key = createPrivateKey({ key: der, format: "der", type: "pkcs8" });
+  return nodeSign(null, Buffer.from(message), key).toString("hex");
+};
 
 // Every nonce that is ever saved is noted here, to look for it in the Worker and the store.
 const seenNonces = new Set();
@@ -107,8 +124,8 @@ const rowsOf = (id) => {
 {
   const nonce = "ab".repeat(32);
   const wire = "02" + nonce + "002d310100000000";
-  assert.equal(intentHex("shield", { nonce, amount: 20_000_000n }), wire);
-  assert.deepEqual(decodeIntent(wire), { kind: "shield", nonce, amount: 20_000_000n });
+  assert.equal(intentHex("shield", { blockhash: nonce, amount: 20_000_000n }), wire);
+  assert.deepEqual(decodeIntent(wire), { kind: "shield", blockhash: nonce, amount: 20_000_000n });
   for (const bad of ["05" + nonce, "02" + nonce, "zz", "", 7]) {
     assert.equal(decodeIntent(bad), null, "no screen for " + bad);
   }
@@ -117,7 +134,9 @@ const rowsOf = (id) => {
   for (const bad of ["0", "0.0", "-1", "1e3", "0.0000000001", "", "x"]) {
     assert.equal(lamportsOf(bad), null, bad);
   }
-  assert.throws(() => pinsHex({ groupKey: "00" }), /not well formed/);
+  assert.throws(() => pinsHex({ groupKey: "00" }, "11".repeat(32)), /not well formed/);
+  assert.throws(() => pinsHex(done, "00"), /fee key of the payer/);
+  assert.equal(pinsHex(done, "11".repeat(32)).length, 129 * 2, "the payer is the last pin");
 }
 
 step("a wallet with a Solana part");
@@ -137,7 +156,12 @@ step("a wallet with a Solana part");
 // ── The fund card reads the chain through the Worker ──
 await refreshChain(c);
 assert.deepEqual([c.chain.balance, c.chain.nonce], ["0.05 SOL", "missing"]);
-step("the fund card reads the balance");
+assert.deepEqual(
+  c.chain.fees,
+  { 1: "0.05 SOL", 2: "0.05 SOL", 3: "0.05 SOL" },
+  "the fee addresses",
+);
+step("the fund card reads the balances of the fee addresses");
 
 // ── Create the nonce account: the screen, two approvals, a landed transaction ──
 const created = await proposed("createNonce");
@@ -151,6 +175,7 @@ const created = await proposed("createNonce");
   const rows = rowsOf(created);
   assert.deepEqual(Object.keys(rows), [
     "What it does",
+    "Fees paid by seat 1",
     "Group address",
     "Rent kept by the nonce account",
     "Payee",
@@ -159,11 +184,15 @@ const created = await proposed("createNonce");
     "Lasts",
   ]);
   assert.equal(rows["Rent kept by the nonce account"], "0.00105664 SOL");
-  assert.equal(rows["Network fee"], "0.000005 SOL");
+  assert.equal(rows["Network fee"], "0.00001 SOL", "two signatures");
+  assert.equal(rows["Fees paid by seat 1"], feeAddress(1), "the fee address of the proposing seat");
+  assert.notEqual(rows["Fees paid by seat 1"], rows["Group address"], "the group never pays");
   assert.equal(rows["Group address"], chain.group.owner);
   assert.match(rows.Lasts, /1 to 2 minutes/);
   assert.match(rows.Payee, /None/);
   assert.equal(describeMessage(message).computeUnits, 450n, "the compute limit of the template");
+  assert.equal(describeMessage(message).signatures, 2, "the payer and the group key sign");
+  assert.equal(hexOf(message.subarray(42, 74)), feeOf(c, 1).key, "the payer comes first");
   assert.equal(chain.commands.filter((m) => m.cmd === "preflight").length, 1, "one test run");
 }
 await approve(c, ssOf(created), 1);
@@ -177,14 +206,16 @@ await waitSession(created, "sent");
     land = landedOf(created);
   assert.equal(chain.landed.length, 1);
   assert.equal(land.message, ss.message, "the Worker sent the message that was approved");
-  assert.equal(land.sig, ss.signature);
-  assert.ok(verifies(done.groupKey, bytesOf(land.message), bytesOf(land.sig)), "Node verifies it");
-  assert.equal(ss.txId, base58(ss.signature));
+  assert.deepEqual(land.sigs, [ss.feeSig, ss.signature], "the payer signs first");
+  const bytes = bytesOf(land.message);
+  assert.ok(verifies(done.groupKey, bytes, bytesOf(land.sig)), "Node verifies the group signature");
+  assert.ok(verifies(feeOf(c, 1).key, bytes, bytesOf(land.sigs[0])), "and the payer signature");
+  assert.equal(ss.txId, base58(ss.feeSig), "the id is the first signature, the payer's");
   assert.equal(ss.outcome, "confirmed");
   assert.deepEqual(ss.signers, [1, 2]);
   const sent = chain.commands.findLast((m) => m.cmd === "send");
-  assert.equal(sent.args.tx, wireBase64(bytesOf(ss.message), bytesOf(ss.signature)));
-  assert.equal(Buffer.from(sent.args.tx, "base64").length, bytesOf(ss.message).length + 64);
+  assert.equal(sent.args.tx, wireBase64(bytes, bytesOf(ss.feeSig + ss.signature)));
+  assert.equal(Buffer.from(sent.args.tx, "base64").length, bytes.length + 128, "two signatures");
   assert.equal(findAll(cardOf(created), (n) => n.tag === "dl").length, 0, "no screen once sent");
   await refreshChain(c);
   assert.equal(c.chain.nonce, "created");
@@ -209,14 +240,20 @@ step("create nonce account landed");
 
 step("nonces are gone after the share");
 // ── Every approver refuses a bad message and writes nothing ──
-const pins = () => bytesOf(pinsHex(done));
-const compiled = (intent) => W.compile_message(bytesOf(intent), pins(), new Uint8Array(0));
+const pinsFor = (seat) => bytesOf(pinsHex(done, feeOf(c, seat).key));
+const compiled = (intent, seat = 1) =>
+  W.compile_message(bytesOf(intent), pinsFor(seat), new Uint8Array(0));
 const flip = (hex) => (hex[0] === "a" ? "b" : "a") + hex.slice(1);
 let bad = 0;
-const tamper = async (label, { intent, message }, why) => {
+// `by` proposes the bytes and signs the proposal. `feeSig`: its text, null for none, or by default
+// the signature of the fee key of seat `by` on the bytes.
+const tamper = async (label, { intent, message, by = 1, feeSig }, why) => {
   const id = "bad-" + bad++;
-  const fields = { intent, message: hexOf(message ?? compiled(intent)), createdAt: Date.now() };
-  await writePart(c, id, "proposal", fields, { seat: 1, create: true });
+  const bytes = message ?? compiled(intent);
+  const sig = feeSig === undefined ? feeSign(by, bytes) : feeSig;
+  const fields = { intent, message: hexOf(bytes), createdAt: Date.now() };
+  if (sig !== null) fields.feeSig = sig;
+  await writePart(c, id, "proposal", fields, { seat: by, create: true });
   await waitFor(label, () => ssOf(id));
   const before = [storeText(), secretsOfSeats()];
   for (const seat of [1, 2, 3]) {
@@ -228,18 +265,19 @@ const tamper = async (label, { intent, message }, why) => {
   assert.deepEqual([storeText(), secretsOfSeats()], before, label + ": nothing was written");
 };
 {
-  const nonce = chain.nonce,
-    shield = intentHex("shield", { nonce, amount: 20_000_000n });
-  const keys = { nonce, nullifierPk: flip(done.nullifierPk), viewingPk: done.viewingPk };
-  await tamper("wrong keys", { intent: intentHex("register", keys) }, /register|nullifier|key/i);
-  const dearer = compiled(intentHex("shield", { nonce, amount: 30_000_000n }));
-  await tamper("other amount", { intent: shield, message: dearer }, /deposit|amount|data/i);
+  const nonce = chain.nonce;
+  const keys = { nonce, nullifierPk: done.nullifierPk, viewingPk: done.viewingPk };
+  const register = intentHex("register", keys);
+  const other = { ...keys, nullifierPk: flip(done.nullifierPk) };
+  await tamper("wrong keys", { intent: intentHex("register", other) }, /register|nullifier|key/i);
+  const dearer = compiled(intentHex("register", other));
+  await tamper("other data", { intent: register, message: dearer }, /register|nullifier|data/i);
   const cancel = compiled("05" + nonce);
-  await tamper("other instruction", { intent: shield, message: cancel }, /instruction|list|ix/i);
-  const good = compiled(shield);
+  await tamper("other instruction", { intent: register, message: cancel }, /instruction|list|ix/i);
+  const good = compiled(register);
   const mask = Uint8Array.from(good);
   mask[4] |= 0x10;
-  await tamper("heap bit", { intent: shield, message: mask }, /config|mask|heap|end|short/i);
+  await tamper("heap bit", { intent: register, message: mask }, /config|mask|heap|end|short/i);
   const at = 42 + 32 * good[41];
   for (const [label, units] of [
     ["no compute", 1],
@@ -247,11 +285,64 @@ const tamper = async (label, { intent, message }, why) => {
   ]) {
     const wrong = Uint8Array.from(good);
     new DataView(wrong.buffer).setUint32(at, units, true);
-    await tamper(label, { intent: shield, message: wrong }, /compute|unit|limit/i);
+    await tamper(label, { intent: register, message: wrong }, /compute|unit|limit/i);
   }
-  const later = compiled(intentHex("shield", { nonce: flip(nonce), amount: 20_000_000n }));
-  await tamper("other lifetime", { intent: shield, message: later }, /lifetime|nonce/i);
+  const later = compiled(intentHex("register", { ...keys, nonce: flip(nonce) }));
+  await tamper("other lifetime", { intent: register, message: later }, /lifetime|nonce/i);
   await tamper("not hex", { intent: "zz", message: good }, /not one that this app can show/);
+  // The payer. Seat 1 proposes, so the payer is the fee key that seat 1 published. A message that
+  // another fee key pays is refused by the checker when seat 1 signs it, and by the signature
+  // check when only that other seat signs it.
+  const paid2 = compiled(register, 2);
+  await tamper(
+    "a message that another seat pays, signed by the proposer",
+    { intent: register, message: paid2, feeSig: feeSign(1, paid2) },
+    /the first account \(the fee payer\)/,
+  );
+  await tamper(
+    "a message that another seat pays and signs",
+    { intent: register, message: paid2, feeSig: feeSign(2, paid2) },
+    /fee signature/,
+  );
+  // The payer comes from the document of the proposing seat (the signer of the proposal part),
+  // so seat 2 proposing a message that seat 1 pays and signs is refused.
+  await tamper(
+    "a message that seat 1 pays, proposed by seat 2",
+    { intent: register, message: good, by: 2, feeSig: feeSign(1, good) },
+    /fee signature/,
+  );
+  await tamper(
+    "a message that seat 1 pays, proposed and signed by seat 2",
+    { intent: register, message: good, by: 2, feeSig: feeSign(2, good) },
+    /the first account \(the fee payer\)/,
+  );
+  await tamper(
+    "a bad fee signature",
+    { intent: register, message: good, feeSig: "00".repeat(64) },
+    /fee signature/,
+  );
+  await tamper(
+    "no fee signature",
+    { intent: register, message: good, feeSig: null },
+    /fee signature/,
+  );
+  await tamper(
+    "the fee signature of another key",
+    { intent: register, message: good, feeSig: feeSign(2, good) },
+    /fee signature/,
+  );
+  await tamper(
+    "a fee signature for other bytes",
+    { intent: register, message: good, feeSig: feeSign(1, cancel) },
+    /fee signature/,
+  );
+  // A proposing seat that published no fee address has no payer.
+  const sheet = { id: "x", status: "collecting", by: 3, intent: register, message: hexOf(good) };
+  const published = c.docs.solfee[3];
+  delete c.docs.solfee[3];
+  const why = reviewOf(c, { ...sheet, feeSig: feeSign(3, good) }, 1).why;
+  c.docs.solfee[3] = published;
+  assert.match(why, /Seat 3 has not published its fee address/);
 }
 
 step("every bad message is refused");
@@ -294,18 +385,17 @@ await waitSession(registered, "sent");
 }
 
 step("register landed after a crash and a retry");
-// ── Shield 0.02 SOL: the screen, and a crash between the share and its publish ──
-const shielded = await proposed("shield", { amount: "0.02" });
+// ── A second register (the fake chain keeps no registry): a crash between the share and its
+// publish. The proposer is seat 1 again, so seat 1 pays again. ──
+const again = await proposed("register");
 {
-  const rows = rowsOf(shielded);
-  assert.equal(rows.Amount, "0.02 SOL");
-  assert.match(rows["What it does"], /shielded balance/);
-  assert.equal(rows["Network fee"], "0.000005 SOL");
+  const rows = rowsOf(again);
+  assert.equal(rows["Fees paid by seat 1"], feeAddress(1));
+  assert.equal(rows["Network fee"], "0.00001 SOL");
   assert.match(rows.Lasts, /nonce account advances/);
-  assert.equal(decodeIntent(ssOf(shielded).intent).amount, 20_000_000n);
-  assert.equal(describeMessage(bytesOf(ssOf(shielded).message)).computeUnits, 56877n);
+  assert.equal(decodeIntent(ssOf(again).intent).kind, "register");
 }
-await approve(c, ssOf(shielded), 1);
+await approve(c, ssOf(again), 1);
 // The first share write is held, so the state between "the share is made" and "it is published"
 // can be looked at. Then the write fails, as in a crash, and the reactor publishes the share again.
 let held = null;
@@ -315,25 +405,25 @@ const stuck = new Promise((_ok, bad) => {
 });
 stuck.catch(() => {});
 hook.before = async (p, value) => {
-  const share = new RegExp(`${shielded}/shares/(\\d+)$`).exec(p);
+  const share = new RegExp(`${again}/shares/(\\d+)$`).exec(p);
   if (share && held === null) {
     held = Number(share[1]);
     await stuck;
   }
   return value;
 };
-await approve(c, ssOf(shielded), 3);
-await waitFor("a made share that waits", () => held !== null && pendingShare(c, held, shielded));
+await approve(c, ssOf(again), 3);
+await waitFor("a made share that waits", () => held !== null && pendingShare(c, held, again));
 {
   const seat = held,
-    share = pendingShare(c, seat, shielded).share;
-  assert.equal(savedNonces(c, seat, shielded), undefined, "the nonces went before the publish");
-  assert.equal(usedDigest(c, seat, digestOf(shielded)), true);
-  assert.equal(data.has(path(gid, `solsessions/${shielded}/shares/${seat}`)), false);
+    share = pendingShare(c, seat, again).share;
+  assert.equal(savedNonces(c, seat, again), undefined, "the nonces went before the publish");
+  assert.equal(usedDigest(c, seat, digestOf(again)), true);
+  assert.equal(data.has(path(gid, `solsessions/${again}/shares/${seat}`)), false);
   crash(new Error("crash before the share"));
-  await waitSession(shielded, "sent", 40000);
-  assert.equal(data.get(path(gid, `solsessions/${shielded}/shares/${seat}`)).share, share);
-  assert.equal(pendingShare(c, seat, shielded), undefined, "the pending share is cleared");
+  await waitSession(again, "sent", 40000);
+  assert.equal(data.get(path(gid, `solsessions/${again}/shares/${seat}`)).share, share);
+  assert.equal(pendingShare(c, seat, again), undefined, "the pending share is cleared");
 }
 hook.before = (_p, value) => value;
 assert.equal(chain.landed.length, 3);
@@ -342,13 +432,20 @@ const every = chain.landed.every((l) =>
 );
 assert.ok(every, "every landed transaction verifies under the group key");
 
-step("shield landed after a lost share publish");
+step("a second register landed after a lost share publish");
 // ── A digest that made a share is used: no second approval of the same bytes ──
 {
-  const old = ssOf(shielded),
+  const old = ssOf(again),
     seat = old.signers[0];
-  const fields = { intent: old.intent, message: old.message, createdAt: Date.now() };
-  await writePart(c, "same-bytes", "proposal", fields, { seat, create: true });
+  // The proposer of the old bytes writes them again: its fee key is the payer of the message.
+  const fields = { intent: old.intent, message: old.message, feeSig: old.feeSig };
+  await writePart(
+    c,
+    "same-bytes",
+    "proposal",
+    { ...fields, createdAt: Date.now() },
+    { seat: old.by, create: true },
+  );
   await waitFor("the proposal", () => ssOf("same-bytes"));
   const kept = chain.nonce;
   chain.nonce = decodeIntent(old.intent).nonce; // as if the nonce had not moved
@@ -381,11 +478,11 @@ step("shield landed after a lost share publish");
 
 // ── A share under another seat is ignored; a failed save publishes nothing ──
 {
-  const second = await proposed("shield", { amount: "0.001" });
+  const second = await proposed("register");
   await approve(c, ssOf(second), 1);
   await assert.rejects(() => approve(c, ssOf(second), 1), /approved this already/);
-  const signer = ssOf(shielded).signers[0];
-  const real = data.get(path(gid, `solsessions/${shielded}/shares/${signer}`));
+  const signer = ssOf(again).signers[0];
+  const real = data.get(path(gid, `solsessions/${again}/shares/${signer}`));
   const where = (seat) => path(gid, `solsessions/${second}/shares/${seat}`);
   const other = signer === 1 ? 2 : 1;
   data.set(where(other), structuredClone(real));
@@ -398,7 +495,7 @@ step("shield landed after a lost share publish");
   data.delete(where(other));
   data.delete(where(3));
   notify();
-  const third = await proposed("shield", { amount: "0.002" });
+  const third = await proposed("register");
   const setItem = localStorage.setItem;
   localStorage.setItem = () => {
     throw new Error("disk full");
@@ -414,9 +511,14 @@ step("shield landed after a lost share publish");
 step("a copied share is ignored, a failed save sends nothing");
 // ── A part needs the part before it; a sent mark must name the signature ──
 {
-  const old = ssOf(shielded);
+  const old = ssOf(again);
   const parts = {
-    proposal: { intent: old.intent, message: old.message, createdAt: old.createdAt },
+    proposal: {
+      intent: old.intent,
+      message: old.message,
+      feeSig: old.feeSig,
+      createdAt: old.createdAt,
+    },
     package: { package: old.package, signers: old.signers, digest: old.digest },
     signed: { signature: old.signature },
   };
@@ -453,7 +555,7 @@ step("a copied share is ignored, a failed save sends nothing");
 
 // ── A package that differs from the commits gets no share, and the nonces go ──
 {
-  const evil = await proposed("shield", { amount: "0.004" });
+  const evil = await proposed("register");
   const commit = (seat) => data.get(path(gid, `solsessions/${evil}/commits/${seat}`))?.commitments;
   // The honest packager is held back, as if a bad packager had been faster.
   hook.before = (p, value) => {
@@ -485,6 +587,7 @@ step("a copied share is ignored, a failed save sends nothing");
   const own = [1, 2, 3].flatMap((i) => [
     solOf(gid, i).solSeed,
     solOf(gid, i).keyPackage.signing_share,
+    solOf(gid, i).feeSecret,
   ]);
   assert.ok(seenNonces.size >= 6, "the nonces were noted");
   for (const secret of [...own, ...seenNonces]) {
@@ -500,7 +603,7 @@ step("a copied share is ignored, a failed save sends nothing");
 step("no secret reaches the Worker or the store");
 // ── A stale nonce at approval time ──
 {
-  const fresh = await proposed("shield", { amount: "0.003" });
+  const fresh = await proposed("register");
   const kept = chain.nonce;
   chain.nonce = "cd".repeat(32);
   await assert.rejects(() => approve(c, ssOf(fresh), 1), /nonce changed/);
@@ -568,7 +671,7 @@ const file = J(Z.backupOpen(PASS, backed.at(-1).data));
   assert.match(stopOf(c), /^Seat 2 stopped the Solana part of this wallet\./);
   assert.equal(solOf(gid, 1).aborted, undefined, "seat 1 itself did not stop");
   await waitFor("the nonces of a stopped wallet go", () => !savedNonces(c, 1, after));
-  await assert.rejects(() => propose(c, "shield", { amount: "0.01" }), /Seat 2 stopped/);
+  await assert.rejects(() => propose(c, "register"), /Seat 2 stopped/);
   await assert.rejects(() => approve(c, ssOf(after), 1), /Seat 2 stopped/);
   assert.equal(reviewOf(c, ssOf(after), 1).ok, false);
   assert.match(textOf(tabOf()), /Seat 2 stopped/);
@@ -584,8 +687,10 @@ const file = J(Z.backupOpen(PASS, backed.at(-1).data));
 
 // A proposal that exists before the stop: written straight, because propose refuses once stopped.
 async function proposedBeforeStop() {
-  const intent = intentHex("shield", { nonce: chain.nonce, amount: 10_000_000n });
-  const fields = { intent, message: hexOf(compiled(intent)), createdAt: Date.now() };
+  const intent = intentHex("register", { nonce: chain.nonce, ...done });
+  const message = hexOf(compiled(intent));
+  const feeSig = feeSignature(c, { id: "after-the-stop", by: 1, intent, message }, 1);
+  const fields = { intent, message, feeSig, createdAt: Date.now() };
   await writePart(c, "after-the-stop", "proposal", fields, { seat: 1, create: true });
   await waitFor("the proposal", () => ssOf("after-the-stop"));
   return "after-the-stop";

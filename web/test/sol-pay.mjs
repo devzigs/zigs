@@ -12,6 +12,7 @@ import { agreement } from "../sol/ceremony.js";
 import { CLUSTER, base58 } from "../sol/docs.js";
 import { ZERO_KEY, nonceAccountHex } from "../sol/intent.js";
 import { savedNonces, saveNonces } from "../sol/nonces.js";
+import { feeOf } from "../sol/fee.js";
 import { putSol } from "../sol/secrets.js";
 import { deviceSpend } from "../sol/spend.js";
 import { verifies } from "./sol-chain.mjs";
@@ -19,6 +20,7 @@ import {
   W,
   c,
   chain,
+  feeAddress,
   gid,
   proposed,
   solOf,
@@ -82,7 +84,7 @@ step("the earlier pairs come from the other sessions only");
 // ── No screen and no approval before the device has read its wallet ──
 {
   const side = pageSide(vector("transfer-sol")).ss;
-  const waiting = { id: "w", status: "collecting", ...side, message: "00".repeat(40) };
+  const waiting = { id: "w", status: "collecting", by: 1, ...side, message: "00".repeat(40) };
   const review = reviewOf(c, waiting, 1);
   assert.equal(review.ok, false);
   assert.match(review.why, /reading your wallet/);
@@ -92,7 +94,7 @@ step("a payment waits for the snapshot of the device before any screen");
 // ── A stale proof ends the session and says so ──
 {
   await withNonceAccount();
-  const id = await proposed("shield", { amount: "0.001" });
+  const id = await proposed("register");
   await approve(c, ssOf(id), 1);
   chain.refuse = JSON.stringify({ InstructionError: [1, { Custom: 7008 }] });
   await approve(c, ssOf(id), 2);
@@ -130,6 +132,7 @@ async function useTestGroup() {
 function prepared(args) {
   assert.equal(args.recipient, G.payee.address, "the Worker proves for the typed payee");
   assert.equal(args.amount, PAID.amount, "the Worker proves the typed amount");
+  assert.equal(args.payer, feeAddress(1), "the fee key of the proposing seat is the payer");
   const slot = ({ amount, blinding }) => ({ mint: ZERO_KEY, amount, blinding });
   return {
     data: transactHex(G, BigInt(args.expiry)),
@@ -159,9 +162,15 @@ function prepared(args) {
   await waitStatus(id, "sent");
   const landed = chain.landed.at(-1);
   assert.equal(landed.message, ssOf(id).message, "the proposed message landed");
-  const sig = Buffer.from(landed.sig, "hex");
-  assert.ok(verifies(G.group.key, Buffer.from(landed.message, "hex"), sig), "the group signed");
-  const data = prepared({ ...ssOf(id), recipient: G.payee.address, amount: PAID.amount }).data;
+  const message = Buffer.from(landed.message, "hex");
+  assert.equal(landed.sigs.length, 2, "two signatures: the payer first, then the group");
+  const [payerSig, groupSig] = landed.sigs.map((s) => Buffer.from(s, "hex"));
+  assert.ok(verifies(feeOf(c, 1).key, message, payerSig), "the fee key of seat 1 paid and signed");
+  assert.ok(verifies(G.group.key, message, groupSig), "the group signed");
+  assert.equal(ssOf(id).txId, base58(landed.sigs[0]), "the id is the first signature");
+  assert.equal(ssOf(id).feeSig, landed.sigs[0], "the proposal holds the signature of the payer");
+  const same = { ...ssOf(id), recipient: G.payee.address, amount: PAID.amount };
+  const data = prepared({ ...same, payer: feeAddress(1) }).data;
   assert.ok(landed.message.includes(data), "the message holds the transact data");
 }
 step("a private payment is proposed, approved by two seats, signed and sent");

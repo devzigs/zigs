@@ -3,7 +3,7 @@
 # It runs every web/test/*.mjs in TESTS and cf/test/limits.mjs (against a dev server that it
 # starts on port 8795 and stops by PID), then tools/baseline.mjs hashes wasm/, web/pkg/ and
 # web/signed.js, extracts policy(), reads the headers that the server sent, and writes
-# baseline.json (record) or compares with it (check). SOLSPIKE_PORT moves the port. The nine
+# baseline.json (record) or compares with it (check). SOLSPIKE_PORT moves the port. The ten
 # sol-* tests need no server. HELPERS are imported by the tests and are no test: sol-setup.mjs
 # runs a ceremony and never exits on its own. A web/test/*.mjs in neither list stops the gate.
 # The server runs with cf/.dev.vars: it must hold DEV_NO_AUTH=1 (see README.md). Run it as:
@@ -41,7 +41,8 @@ stop_server() { [ "$stopped" = 1 ] || "$HERE/serve.sh" stop; stopped=1; }
 trap stop_server EXIT
 
 TESTS=(chat signed app requests account personal payees vault util qr
-  sol-config sol-docs sol-ceremony sol-app sol-wasm sol-sessions sol-limits sol-pay sol-transfer)
+  sol-config sol-docs sol-ceremony sol-app sol-wasm sol-sessions sol-limits sol-pay sol-transfer
+  sol-fee)
 HELPERS=(sol-rig sol-setup sol-chain sol-vector)
 for f in web/test/*.mjs; do
   name=$(basename "$f" .mjs)

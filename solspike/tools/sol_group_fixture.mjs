@@ -1,6 +1,7 @@
 // Writes web/test/sol-group.json: a 2-of-3 Solana group made by the real ceremony of the page
 // (web/test/sol-setup.mjs) and one private payment that the TS SDK builds OFFLINE for that group,
-// in the layout of wasm-sol/vectors/ts. The keys are test keys made for this file only. sol-pay.mjs
+// in the layout of wasm-sol/vectors/ts: a sponsor key pays the fee (the fee key of a seat), so the
+// SDK writes the change tag inline. The keys are test keys made for this file only. sol-pay.mjs
 // puts the group into its wallet and runs the payment through propose, approve, share, aggregate
 // and send against the fake chain.
 //
@@ -54,7 +55,8 @@ const utxo = new Utxo({
   blinding,
 });
 const input = ProofInputUtxo.fromNullifierKey(utxo, group.nullifier);
-const transfer = new ConfidentialTransfer(group.address, [input], base58(groupKey));
+const sponsor = base58("44".repeat(32));
+const transfer = new ConfidentialTransfer(group.address, [input], sponsor);
 transfer.send(payee.address, SOL, SEND);
 const prepared = transfer.prepare();
 const txKey = group.viewing.transactionViewingKey(prepared.firstNullifier);

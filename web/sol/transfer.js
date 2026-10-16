@@ -2,6 +2,9 @@
 // package. `sdk` is the bundle, so a test can pass the real one. buildTransferTransaction cannot
 // set the expiry that the proof binds: finalize() fixes it at u64::MAX. So the Worker selects the
 // inputs, seals the outputs, sets the expiry in the external data and proves the result itself.
+// The fee key of a seat pays (ZOLANA.md 5), so the payer is not the owner: the proof binds the
+// payer and every other input owner as a signer (the SDK sponsor mode, #424), and the instruction
+// lists those owners as owner signers (`ownerSigners`).
 
 const largestFirst = (a, b) => {
   if (a.utxo.amount === b.utxo.amount) return 0;
@@ -85,15 +88,30 @@ function withExpiry(sdk, open, expiry) {
 }
 
 /**
- * The proof inputs that pay `amount` to `recipient` (a ShieldedAddress) from the synced wallet,
- * with the change to the owner and `expiry` bound. Returns { proofInputs, tree }: the tree is the
- * one that every input sits in.
+ * The owner signers of a spend, in the order of the SDK (`ownerSignerAddresses` of
+ * client/prover/assembly.ts, which the package does not export): the Ed25519 owners of the real
+ * inputs that are not the payer, each once. The proof and the instruction must agree on this list.
  */
-export function buildProofInputs(sdk, session, wallet, { recipient, amount, expiry }) {
+export function ownerSigners(sdk, proofInputs) {
+  const decoder = sdk.getAddressDecoder();
+  const owners = proofInputs.inputUtxos
+    .filter((input) => !input.isDummy() && input.utxo.owner.signatureType() !== "p256")
+    .map((input) => decoder.decode(input.utxo.owner.confidentialViewTag()))
+    .filter((address) => address !== proofInputs.payer);
+  return [...new Set(owners)];
+}
+
+/**
+ * The proof inputs that pay `amount` to `recipient` (a ShieldedAddress) from the synced wallet,
+ * with the change to the owner and `expiry` bound. `payer` (a base58 address) pays the fee: it is
+ * not the owner. Returns { proofInputs, tree }: the tree is the one that every input sits in.
+ */
+export function buildProofInputs(sdk, session, wallet, { recipient, amount, expiry, payer }) {
+  if (payer === session.owner) throw new Error("the group key cannot pay the fee");
   const { tree } = session.client;
   const picked = selectInputs(sdk, wallet, tree, amount);
   const inputs = picked.map((entry) => proofInput(sdk, entry, session.address));
-  const transfer = new sdk.ConfidentialTransfer(session.address, inputs, session.owner);
+  const transfer = new sdk.ConfidentialTransfer(session.address, inputs, payer);
   transfer.send(recipient, sdk.SOL_MINT, amount);
   const open = seal(sdk, session, wallet, transfer.prepare());
   return { proofInputs: withExpiry(sdk, open, expiry), tree };

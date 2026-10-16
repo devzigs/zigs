@@ -83,7 +83,7 @@ globalThis.fetch = fakeFetch;
  */
 async function freshWorker({ testMode = false } = {}) {
   Object.assign(control, { options: null, rpc: {}, utxos: [], fail: {} });
-  Object.assign(control, { request: null, proved: null, instruction: null });
+  Object.assign(control, { request: null, proved: null, instruction: null, signed: null });
   control.calls.length = 0;
   fetched.length = 0;
   modes.length = 0;
@@ -161,20 +161,31 @@ const account = (data, owner = SYSTEM) => ({
   value: { owner, lamports: 1_056_640n, data: [data.toString("base64"), "base64"] },
 });
 
-const PREPARE = { kind: "transfer", recipient: "01ab", amount: "40000000", expiry: "1792048408" };
+// The payer is the fee key of a seat, not the group: the instruction names it first and lists the
+// group as an owner signer.
+const PAYER = "5TeWSsjg2gbxCyWVniXeCmwM7UtHTCK7svzJr5xYJzHf";
+const PREPARE = {
+  kind: "transfer",
+  recipient: "01ab",
+  amount: "40000000",
+  expiry: "1792048408",
+  payer: PAYER,
+};
 
 /** Proof inputs of the fake builder: they carry the expiry that was asked for. */
 const inputsFor = (request) => ({ proofInputs: { expiry: request.expiry }, tree: "TREE" });
 
 /** A client.proveTransact that posts the prover body through the Worker's own fetch. */
-const prover = (body, data = { proved: true }) => async () => {
-  if (body !== null) {
-    const init = { method: "POST", body: JSON.stringify(body) };
-    const url = `https://devnet.helius-rpc.com/v1/zolana/prove?${KEY_NAME}=k`;
-    await control.options.fetch(url, init);
-  }
-  return data;
-};
+const prover =
+  (body, data = { proved: true }) =>
+  async () => {
+    if (body !== null) {
+      const init = { method: "POST", body: JSON.stringify(body) };
+      const url = `https://devnet.helius-rpc.com/v1/zolana/prove?${KEY_NAME}=k`;
+      await control.options.fetch(url, init);
+    }
+    return data;
+  };
 
 /** The transact data of a landed message: its expiry is PREPARE.expiry. */
 const landedData = () => {
@@ -429,14 +440,22 @@ async function expiryReadBack() {
   assert.deepEqual(done.result.inputs, spent);
   const order = ["rpc:getSlot", "syncWallet", "buildProofInputs", "proveTransact"];
   assert.deepEqual(control.calls.slice(0, 4), order, "prepare syncs a fresh wallet, then proves");
-  assert.equal(control.calls[4], "transactInstruction");
+  assert.deepEqual(control.calls.slice(4, 6), ["ownerSigners", "transactInstruction"]);
   assert.equal(control.request.expiry, 1792048408n, "the builder got another expiry");
   assert.equal(control.request.amount, 40_000_000n);
   assert.equal(control.proved.proofInputs.expiry, 1792048408n, "the proof got other inputs");
   assert.equal(control.instruction.data.proved, true, "the data of the proof was not used");
   assert.deepEqual(
     [control.instruction.payer, control.instruction.inputTree, control.instruction.outputTree],
-    [OWNER, "TREE", "TREE"],
+    [PAYER, "TREE", "TREE"],
+  );
+  assert.equal(control.request.payer, PAYER, "the builder got the payer of the request");
+  assert.notEqual(control.instruction.payer, OWNER, "the group does not pay");
+  assert.deepEqual(control.instruction.ownerSigners, [OWNER], "the group is the owner signer");
+  assert.equal(
+    control.signed,
+    control.proved.proofInputs,
+    "the signers come from the proof inputs",
   );
   const mismatch = { ...PREPARE, expiry: "1792048409" };
   const differs = /the expiry in the data differs from the request/;

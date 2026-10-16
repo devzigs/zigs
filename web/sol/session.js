@@ -6,6 +6,7 @@
 import { startSolWorker } from "./client.js";
 import { agreement } from "./ceremony.js";
 import { base58 } from "./docs.js";
+import { feeOf } from "./fee.js";
 import { nonceAccountHex } from "./intent.js";
 import { holdsShare, refuseStopped, solOf, stopOf } from "./secrets.js";
 import { loadSnap, saveSnap } from "./store.js";
@@ -115,19 +116,27 @@ export async function syncSolana(c) {
   }
 }
 
-/** Reads the public balance of the owner address and whether the nonce account exists. */
+/**
+ * Reads the public balance of the fee address of each seat of this browser that has one, the
+ * public balance of the owner address (SOL that the group held before the fee keys) and whether
+ * the nonce account exists.
+ */
 export async function refreshChain(c) {
   const { groupKey } = agreement(c).done;
   const worker = await ensureWorker(c);
   const owner = base58(groupKey),
     nonce = base58(await nonceAccountHex(groupKey));
-  const [funds, held] = await Promise.all([
-    worker.call("balance", { account: owner }),
-    worker.call("balance", { account: nonce }),
+  const seats = c.host.localSeats().filter((i) => feeOf(c, i) !== null);
+  const read = (account) => worker.call("balance", { account });
+  const [funds, held, ...fees] = await Promise.all([
+    read(owner),
+    read(nonce),
+    ...seats.map((i) => read(base58(feeOf(c, i).key))),
   ]);
   c.chain = {
     balance: solText(funds.lamports),
     nonce: held.lamports === "0" ? "missing" : "created",
+    fees: Object.fromEntries(seats.map((seat, n) => [seat, solText(fees[n].lamports)])),
     at: Date.now(),
   };
   c.host.render();

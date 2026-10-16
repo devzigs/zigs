@@ -380,17 +380,24 @@ const zcash = [1, 2, 3].map((i) => zcashOf(gid, i));
     assert.deepEqual(Object.keys(x).sort(), [
       "cluster",
       "doneSent",
+      "feePublic",
+      "feeSecret",
       "groupKey",
       "keyPackage",
       "publicKeyPackage",
       "solSeed",
     ]);
   }
+  // Each seat made its own fee key when its setup finished: three different keys, and the public
+  // key is the one of the secret.
+  assert.equal(new Set(s.map((x) => x.feePublic)).size, 3, "a fee key for each seat");
+  for (const x of s) assert.equal(W.sol_fee_public(x.feeSecret), x.feePublic);
   // The documents on the server hold no secret, and the Zcash part is as it was.
   const published = JSON.stringify([...data].filter(([k]) => k.startsWith(path(gid2, "sol"))));
   for (const x of s) {
     assert.ok(!published.includes(x.solSeed), "no solSeed in a document");
     assert.ok(!published.includes(x.keyPackage.signing_share), "no key share in a document");
+    assert.ok(!published.includes(x.feeSecret), "no fee secret in a document");
   }
   const roleSecrets = [roles.nullifier_secret, roles.viewing_sk, roles.seal_key];
   for (const secret of roleSecrets) assert.ok(!published.includes(secret), "no role secret");

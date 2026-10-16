@@ -253,7 +253,7 @@ async function sendSigned(c, ss, seat) {
 
 async function attemptSend(c, ss, seat) {
   const worker = await ensureWorker(c),
-    txId = base58(ss.signature);
+    txId = base58(ss.feeSig);
   const ref = sessionRef(c, ss);
   if (!(await leased(ref, 60000))) return sleep(RETRY_MS);
   let result = await worker.call("status", { signature: txId });
@@ -265,7 +265,7 @@ async function attemptSend(c, ss, seat) {
 
 /** Simulates the signed transaction, sends it and waits for it. null when it did not go. */
 async function land(c, ss, worker, txId) {
-  const tx = wireBase64(bytesOf(ss.message), bytesOf(ss.signature));
+  const tx = wireBase64(bytesOf(ss.message), bytesOf(ss.feeSig + ss.signature));
   const sim = await worker.call("simulate", { tx });
   if (sim.err !== null) {
     const refused = "The network refused the signed transaction: " + sim.err;

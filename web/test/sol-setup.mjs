@@ -1,9 +1,11 @@
 // The setup that sol-limits.mjs shares: a 2-of-3 wallet with a Solana part and the fake chain
-// behind the Worker (sol-chain.mjs), as sol-sessions.mjs makes them. Importing this file runs
-// the ceremony, so a test file imports it once and uses what it exports.
+// behind the Worker (sol-chain.mjs), as sol-sessions.mjs makes them. The fee address of each seat
+// holds Devnet SOL (it pays), and the group address holds some old public SOL. Importing this file
+// runs the ceremony, so a test file imports it once and uses what it exports.
 import { approve } from "../sol/approve.js";
 import { agreement } from "../sol/ceremony.js";
 import { base58 } from "../sol/docs.js";
+import { feeOf } from "../sol/fee.js";
 import { nonceAccountHex } from "../sol/intent.js";
 import { propose } from "../sol/propose.js";
 import { makeChain } from "./sol-chain.mjs";
@@ -31,6 +33,12 @@ chain.group = {
   nonceAccount: base58(await nonceAccountHex(done.groupKey)),
 };
 chain.balances.set(chain.group.owner, 50_000_000n);
+await waitFor("every fee key published", () =>
+  [1, 2, 3].every((i) => feeOf(c, i) && c.docs.solfee[i]?.key === feeOf(c, i).key),
+);
+/** The fee address of seat `i` (base58). */
+export const feeAddress = (i) => base58(feeOf(c, i).key);
+for (const i of [1, 2, 3]) chain.balances.set(feeAddress(i), 50_000_000n);
 chain.install();
 
 export const ssOf = (id) => c.sessions.find((ss) => ss.id === id);
@@ -51,9 +59,12 @@ export async function withNonceAccount() {
   return id;
 }
 
-/** One shield that seats 1 and 2 approve, and that lands. */
-export async function landedShield(amount = "0.001") {
-  const id = await proposed("shield", { amount });
+/**
+ * One registration that seats 1 and 2 approve, and that lands. The fake chain keeps no registry,
+ * so a wallet may register again here: the test needs an intent that signs and lands.
+ */
+export async function landedRegister() {
+  const id = await proposed("register");
   await approve(c, ssOf(id), 1);
   await approve(c, ssOf(id), 2);
   await waitStatus(id, "sent", 30000);

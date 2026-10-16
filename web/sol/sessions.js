@@ -10,13 +10,14 @@ export const SESSIONS = "solsessions";
 /**
  * `needs` names the part that must count first. The status and the progress marks are not signed.
  * `plan`, `inputIds`, `salt` and `expiry` belong to the private spends: a part holds a field
- * only when the proposal has a value for it.
+ * only when the proposal has a value for it. `feeSig` is the signature of the payer (the fee key
+ * of the proposing seat) on `message`: the first signature of the transaction.
  */
 export const PARTS = {
   proposal: {
     by: "by",
     sig: "sig",
-    fields: ["intent", "plan", "inputIds", "salt", "expiry", "message", "createdAt"],
+    fields: ["intent", "plan", "inputIds", "salt", "expiry", "message", "feeSig", "createdAt"],
   },
   package: { by: "packageBy", sig: "packageSig", fields: ["package", "signers", "digest"] },
   signed: { by: "signedBy", sig: "signedSig", fields: ["signature"], needs: "package" },
@@ -72,9 +73,11 @@ function statusOf(ok) {
   return ok.package ? "signing" : "collecting";
 }
 
-// The sent mark must name the transaction that the signature gives: the first signature is its id.
+// The sent mark must name the transaction that its signatures give: the first signature is its id,
+// and the payer signs first.
 const SIGNATURE = /^[0-9a-f]{128}$/;
-const sentMatches = (d) => SIGNATURE.test(d.signature) && d.txId === base58(d.signature);
+const sentMatches = (d) =>
+  SIGNATURE.test(d.signature) && SIGNATURE.test(d.feeSig) && d.txId === base58(d.feeSig);
 
 function askPart(name, d, check, verdict) {
   const need = PARTS[name].needs;
@@ -119,11 +122,12 @@ export function readSolSession(id, d, check) {
 
 const num = (n) => (Number.isFinite(n) ? n : 0);
 
-// The lifetime of a v1 message sits at bytes 8 to 40. For every intent but the first (the nonce
-// account, a recent blockhash) it is the value of the nonce account.
+// The lifetime of a v1 message sits at bytes 8 to 40. For the intents that the group signs but the
+// first (the nonce account, a recent blockhash) it is the value of the nonce account. Add SOL
+// (the intent 02) has a recent blockhash too, and it is no session.
 const lifetimeOf = (ss) =>
   /^[0-9a-f]{80,}$/.test(String(ss.message)) ? ss.message.slice(16, 80) : "";
-const usesNonce = (ss) => typeof ss.intent === "string" && !ss.intent.startsWith("00");
+const usesNonce = (ss) => typeof ss.intent === "string" && !/^0[02]/.test(ss.intent);
 const SUPERSEDED =
   "Another proposal on the same nonce landed first, so this one can never be sent. " +
   "Propose it again.";

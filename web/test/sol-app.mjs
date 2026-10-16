@@ -74,7 +74,7 @@ const hashes = [1, 2, 3].map((i) => sha(solOf(gid, i).solSeed));
     [],
   );
   const sol = solOf(gid, 1);
-  for (const secret of [sol.solSeed, sol.groupKey, sol.keyPackage.signing_share]) {
+  for (const secret of [sol.solSeed, sol.groupKey, sol.keyPackage.signing_share, sol.feeSecret]) {
     assert.ok(!text.includes(secret), "no Solana secret in the Zcash backup text");
   }
   assert.equal(text.includes("solSeed"), false);
@@ -110,6 +110,7 @@ assert.match(solFile.filename, /^zigs-Backup-solana-seat-1\.zigsbackup$/);
   const plain = JSON.parse(Z.backupOpen(PASS_S, solFile.data));
   assert.deepEqual(Object.keys(plain).sort(), [
     "cluster",
+    "feeSecret",
     "group",
     "groupKey",
     "groupName",
@@ -124,6 +125,8 @@ assert.match(solFile.filename, /^zigs-Backup-solana-seat-1\.zigsbackup$/);
     [KIND, gid, 1, "devnet", "Backup"],
   );
   assert.equal(plain.solSeed, original.solSeed);
+  assert.equal(plain.feeSecret, original.feeSecret, "the file holds the fee key");
+  assert.ok(!solFile.data.includes(original.feeSecret), "and shows no fee secret");
   // Refusals of the engine: a wrong passphrase, a changed file.
   assert.throws(() => Z.backupOpen("wrong passphrase of 20 chars", solFile.data));
   const flipped = { ...shell, ct: (shell.ct[0] === "A" ? "B" : "A") + shell.ct.slice(1) };
@@ -150,6 +153,8 @@ const zcashFile = saved.at(-1);
     40000,
   );
   assert.equal(solOf(gid, 1).keyPackage, undefined, "the Zcash restore brings no Solana part");
+  await sleep(300);
+  assert.equal(solOf(gid, 1).feeSecret, undefined, "a seat with no key share gets no fee key");
   await t.applyBackup(plainSol, true);
   assert.deepEqual(solOf(gid, 1), original, "the Solana part is back, as it was");
   assert.equal(sha(solOf(gid, 1).solSeed), hashes[0]);
@@ -174,6 +179,8 @@ const zcashFile = saved.at(-1);
   await refuses({ ...good, kind: "zigs-sol-backups" }, /not a Zigs/);
   await refuses({ ...good, cluster: "mainnet" }, /not a Zigs Solana backup/);
   await refuses({ ...good, solSeed: "zz" }, /not a Zigs Solana backup/);
+  await refuses({ ...good, feeSecret: "zz" }, /not a Zigs Solana backup/);
+  await refuses({ ...good, feeSecret: 7 }, /not a Zigs Solana backup/);
   await refuses({ ...good, seat: 9 }, /not a Zigs Solana backup/);
   // A file of a wallet this browser does not hold.
   await refuses({ ...good, group: "b".repeat(20) }, /holds no seat 1/);
@@ -235,6 +242,37 @@ const zcashFile = saved.at(-1);
   await waitFor("wallet", () => t.state.gid === gid && t.state.g && t.state.wallet);
   await t.applyBackup(good, true);
   assert.deepEqual(solOf(gid, 1), original, "and for the testnet wallet it restores");
+  // A file from before the fee key has none: the restore makes a new key, says so, and the seat
+  // publishes the new address. The old address stays the address of the old backup.
+  const ctl = t.sol.ctl;
+  await clean(1);
+  const older = { ...good };
+  delete older.feeSecret;
+  await t.applyBackup(older, true);
+  const fresh = solOf(gid, 1);
+  assert.notEqual(fresh.feeSecret, original.feeSecret, "a new fee key");
+  assert.equal(W.sol_fee_public(fresh.feeSecret), fresh.feePublic);
+  assert.match(t.banner.text, /Restored the Solana part of seat 1/);
+  assert.match(t.banner.text, /before the fee key.*made a new fee key.*Fund its new fee address/);
+  assert.deepEqual(
+    { ...fresh, feeSecret: 0, feePublic: 0 },
+    { ...original, feeSecret: 0, feePublic: 0 },
+  );
+  t.refilter(); // the page runs its reactor after a restore, as after any change
+  await waitFor(
+    "the new fee address is published",
+    () => ctl.docs.solfee[1]?.key === fresh.feePublic,
+  );
+  // A file with the fee key brings the same key back, and the document follows it.
+  await clean(1);
+  await t.applyBackup(good, true);
+  assert.deepEqual(solOf(gid, 1), original, "the fee key of the file is back");
+  assert.doesNotMatch(t.banner.text, /new fee key/);
+  t.refilter();
+  await waitFor(
+    "the old fee address is published again",
+    () => ctl.docs.solfee[1]?.key === original.feePublic,
+  );
 }
 
 // ── A restore from the wallet list opens the wallet and waits for its documents ──

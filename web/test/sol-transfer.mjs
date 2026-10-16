@@ -25,8 +25,8 @@ import * as W from "../sol/wasm/sol_wasm.js";
 import "./sol-rig.mjs"; // starts the wasm engines and stubs the page
 import { EXPIRY, NONCE, NOW, pageSide, step, vector } from "./sol-vector.mjs";
 
-function verdictOf(side, { spend = side.spend, ss = side.ss, message } = {}) {
-  const pins = bytesOf(pinsHex(side.done));
+function verdictOf(side, { spend = side.spend, ss = side.ss, message, payer = side.payer } = {}) {
+  const pins = bytesOf(pinsHex(side.done, payer));
   const made = message ?? W.compile_message(bytesOf(proposalHex(ss)), pins, bytesOf(side.transact));
   const snapshot = bytesOf(snapshotHex(side.roles, spend));
   const text = W.check_message(made, bytesOf(proposalHex(ss)), pins, snapshot, NOW);
@@ -152,7 +152,18 @@ step("the snapshot gives the checker the tree fee");
     ],
   };
   assert.match(verdictOf(side, { spend: fresh }).text, /^accepted\n/, "another pair is no reuse");
+  // The payer: the message is paid by the sponsor of the vector, and the proposal names that key.
+  // A message that another key pays, or a proposal that names the group as payer, is refused.
+  const stranger = "5a".repeat(32);
+  refused(
+    "another payer",
+    verdictOf(side, { payer: stranger, message: verdictOf(side).message }),
+    /fee-payer-not-payer/,
+  );
+  const group = verdictOf(side, { payer: v.group.key, message: verdictOf(side).message });
+  refused("the group as payer", group, /payer-is-group/);
+  assert.throws(() => pinsHex(side.done, "ab"), /fee key of the payer/);
 }
-step("a wrong payee, amount, input, nonce, plan or a reused salt is refused");
+step("a wrong payee, amount, input, nonce, plan, payer or a reused salt is refused");
 console.log("sol-transfer: ok");
 process.exit(0);

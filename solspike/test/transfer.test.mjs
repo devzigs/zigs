@@ -6,6 +6,8 @@
 //   2. The hash of the external data follows the expiry.
 //   3. Selection: largest first, SOL, plain, unspent, in the tree of the client, enough to cover.
 //   4. The payment and the change reach the right owners.
+//   5. The fee payer is not the owner: the proof binds both, the group is the owner signer, and
+//      the change tag is inline (the sponsor mode of the SDK, which the fee key of a seat uses).
 import "../tools/quiet.mjs";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
@@ -27,7 +29,9 @@ globalThis.fetch = async (input, init) => {
   return new Response(body, { headers: { "content-type": "application/wasm" } });
 };
 const sdk = await import(new URL("zolana.bundle.js", WEB_SOL).href);
-const { buildProofInputs, selectInputs } = await import(new URL("transfer.js", WEB_SOL).href);
+const { buildProofInputs, ownerSigners, selectInputs } = await import(
+  new URL("transfer.js", WEB_SOL).href
+);
 await sdk.initializePoseidon();
 
 const scalar = (n) => {
@@ -65,11 +69,16 @@ const session = {
   client: { tree: TREE },
   address: group.address,
   viewing: group.viewing,
-  owner: PAYER,
+  owner: group.address.solanaAddress(),
 };
 const walletOf = (entries) => ({ utxos: () => entries, registry: new sdk.AssetRegistry([]) });
 const build = (entries, amount = 40n, expiry = EXPIRY) =>
-  buildProofInputs(sdk, session, walletOf(entries), { recipient: payee.address, amount, expiry });
+  buildProofInputs(sdk, session, walletOf(entries), {
+    recipient: payee.address,
+    amount,
+    expiry,
+    payer: PAYER,
+  });
 
 /** The unpatched path of the SDK: finalize() has no way to set the expiry. */
 function sdkDefault(entries) {
@@ -111,11 +120,22 @@ function selection() {
   const tree = TREE;
   const entries = [entry(10n, 1), entry(70n, 2), entry(30n, 3), entry(50n, 4)];
   const picked = selectInputs(sdk, walletOf(entries), tree, 90n);
-  assert.deepEqual(picked.map((e) => e.utxo.amount), [70n, 50n], "not largest first");
+  assert.deepEqual(
+    picked.map((e) => e.utxo.amount),
+    [70n, 50n],
+    "not largest first",
+  );
   const all = selectInputs(sdk, walletOf(entries), tree, 160n);
-  assert.deepEqual(all.map((e) => e.utxo.amount), [70n, 50n, 30n, 10n]);
+  assert.deepEqual(
+    all.map((e) => e.utxo.amount),
+    [70n, 50n, 30n, 10n],
+  );
   const one = selectInputs(sdk, walletOf(entries), tree, 70n);
-  assert.deepEqual(one.map((e) => e.utxo.amount), [70n], "took more than it needed");
+  assert.deepEqual(
+    one.map((e) => e.utxo.amount),
+    [70n],
+    "took more than it needed",
+  );
   assert.throws(() => selectInputs(sdk, walletOf(entries), tree, 161n), /does not cover/);
   assert.throws(() => selectInputs(sdk, walletOf(entries), tree, 0n), /more than zero/);
   assert.throws(() => selectInputs(sdk, walletOf([]), tree, 1n), /does not cover/);
@@ -153,22 +173,99 @@ function ownersOfOutputs() {
   assert.equal(hashes.get(40n), hex(payee.address), "the payment is not for the payee");
   assert.equal(hashes.get(60n), hex(group.address), "the change is not for the owner");
   const spent = proofInputs.inputUtxos.filter((i) => !i.isDummy());
-  assert.deepEqual(spent.map((i) => i.utxo.amount), [100n]);
+  assert.deepEqual(
+    spent.map((i) => i.utxo.amount),
+    [100n],
+  );
   step("the payment goes to the payee, the change to the owner, and the input is the UTXO");
 }
 
 function exactAmountHasNoChange() {
   const { proofInputs } = build([entry(40n, 1)]);
   const real = proofInputs.outputs.filter((o) => !o.isDummy());
-  assert.deepEqual(real.map((o) => o.amount), [40n], "an exact payment has a change output");
+  assert.deepEqual(
+    real.map((o) => o.amount),
+    [40n],
+    "an exact payment has a change output",
+  );
   step("an exact payment has no change output");
 }
 
+function theFeeKeyPaysAndTheGroupIsTheOwnerSigner() {
+  const { proofInputs } = build([entry(100n, 1), entry(50n, 2)], 120n);
+  assert.equal(proofInputs.payer, PAYER, "the payer is the fee key");
+  assert.notEqual(proofInputs.payer, session.owner);
+  assert.deepEqual(ownerSigners(sdk, proofInputs), [session.owner], "the group signs as owner");
+  // Two inputs of one owner give one owner signer. A spend that the owner pays has none.
+  const alone = new sdk.ConfidentialTransfer(group.address, [entryInput(1)], session.owner);
+  alone.send(payee.address, sdk.SOL_MINT, 10n);
+  const prepared = alone.prepare();
+  const key = group.viewing.transactionViewingKey(prepared.firstNullifier);
+  const sealed = sdk.encryptConfidentialTransfer(key, {
+    outputs: prepared.outputs,
+    assets: new sdk.AssetRegistry([]),
+  });
+  const own = prepared.finalize(sealed);
+  assert.deepEqual(ownerSigners(sdk, own), [], "the owner that pays signs once, as payer");
+  // With a sponsor every tag is inline: the account index 0 would name the payer.
+  for (const out of proofInputs.externalData.outputs) assert.equal(out.ownerTag.kind, "inline");
+  assert.equal(own.externalData.outputs[0].ownerTag.kind, "account", "the control: owner pays");
+  assert.throws(
+    () =>
+      buildProofInputs(sdk, session, walletOf([entry(100n, 1)]), {
+        recipient: payee.address,
+        amount: 40n,
+        expiry: EXPIRY,
+        payer: session.owner,
+      }),
+    /the group key cannot pay the fee/,
+  );
+  step("the fee key pays, the group is the owner signer, and no tag names the payer");
+}
+
+/** ownerSigners equals the function of the SDK that the package does not export, when the
+ * checkout of the pinned commit is at hand (ZOLANA_REPO): the proof and the instruction must
+ * agree on the list. A dummy input and a repeated owner give no signer, nor does the payer. */
+async function ownerSignersEqualTheSdk() {
+  if (!process.env.ZOLANA_REPO)
+    return console.log("skip  ownerSigners against the SDK (no ZOLANA_REPO)");
+  const file = `${process.env.ZOLANA_REPO}/sdk-libs/ts/dist/client/prover/assembly.js`;
+  const { ownerSignerAddresses } = await import(file);
+  const other = testWallet(0x44);
+  const make = (wallet, seed) =>
+    sdk.ProofInputUtxo.fromNullifierKey(
+      new sdk.Utxo({
+        owner: wallet.owner,
+        asset: sdk.SOL_MINT,
+        amount: 1n,
+        blinding: scalar(seed),
+      }),
+      wallet.nullifier,
+    );
+  const inputs = [make(group, 1), make(other, 2), make(group, 3), make(other, 4)];
+  const names = [group.address.solanaAddress(), other.address.solanaAddress(), PAYER];
+  for (const payer of names) {
+    const want = [...ownerSignerAddresses(inputs, payer)];
+    assert.deepEqual(ownerSigners(sdk, { inputUtxos: inputs, payer }), want, payer);
+  }
+  assert.deepEqual(
+    ownerSigners(sdk, { inputUtxos: inputs, payer: PAYER }),
+    [group.address.solanaAddress(), other.address.solanaAddress()],
+    "first-input order, each owner once",
+  );
+  step("ownerSigners equals ownerSignerAddresses of the SDK, in the same order");
+}
+
+const entryInput = (seed) =>
+  sdk.ProofInputUtxo.fromNullifierKey(entry(100n, seed).utxo, group.nullifier);
+
 expiryIsBound();
+theFeeKeyPaysAndTheGroupIsTheOwnerSigner();
 hashFollowsExpiry();
 selection();
 selectionSkips();
 inputCap();
 ownersOfOutputs();
 exactAmountHasNoChange();
+await ownerSignersEqualTheSdk();
 console.log("transfer tests passed");

@@ -1,5 +1,6 @@
 // The wire forms that the Solana wasm takes (wasm-sol/src/intent.rs, plan.rs, snapshot.rs,
-// pins.rs) for four intents: create the nonce account, register, shield and transfer. The page
+// pins.rs) for four intents: create the nonce account, register, add SOL (the intent `shield`)
+// and transfer. The page
 // writes the intent bytes, the wasm compiles the message from them and checks it again on every
 // approving device, so a wrong byte here makes a refusal and never a bad signature.
 export const hexOf = (bytes) => Array.from(bytes, (b) => b.toString(16).padStart(2, "0")).join("");
@@ -24,13 +25,16 @@ export const NONCE_RENT = 1_056_640n;
 export const RECORD_RENT = 1_330_960n;
 const NONCE_SEED = "zigs-nonce-1";
 
-/** The intent bytes (hex) of a kind: createNonce, register, shield or transfer. */
+/**
+ * The intent bytes (hex) of a kind: createNonce, register, shield (Add SOL: a recent blockhash
+ * and no nonce, the payer signs alone) or transfer.
+ */
 export function intentHex(kind, f) {
   const spend = () => f.nonce + le64(f.expiry) + u8(f.inputs) + u8(f.outputs);
   const fields = {
     createNonce: () => "00" + f.blockhash,
     register: () => "01" + f.nonce + f.nullifierPk + f.viewingPk,
-    shield: () => "02" + f.nonce + le64(f.amount),
+    shield: () => "02" + f.blockhash + le64(f.amount),
     transfer: () => "03" + spend() + checkedAddress(f.payee) + ZERO_KEY + le64(f.amount),
   };
   if (!Object.hasOwn(fields, kind)) throw new Error("Unknown Solana intent: " + kind);
@@ -50,7 +54,7 @@ const READERS = {
     nullifierPk: h.slice(66, 130),
     viewingPk: h.slice(130, 196),
   }),
-  2: (h) => ({ kind: "shield", nonce: h.slice(2, 66), amount: le64Of(h.slice(66, 82)) }),
+  2: (h) => ({ kind: "shield", blockhash: h.slice(2, 66), amount: le64Of(h.slice(66, 82)) }),
   3: (h) => ({
     kind: "transfer",
     nonce: h.slice(2, 66),
@@ -72,12 +76,16 @@ export function decodeIntent(hex) {
   return READERS[tag](hex);
 }
 
-/** The 97 pin bytes (hex): the group key, nullifier_pk and viewing_pk of the agreed soldone. */
-export function pinsHex(done) {
+/**
+ * The 129 pin bytes (hex): the group key, nullifier_pk and viewing_pk of the agreed soldone, and
+ * the payer of the proposal (a fee key, see fee.js).
+ */
+export function pinsHex(done, payer) {
   const checks = [KEY(done?.groupKey), KEY(done?.nullifierPk), isHex(33)(done?.viewingPk)];
   if (!checks.every(Boolean))
     throw new Error("The Solana keys of this wallet are not well formed.");
-  return done.groupKey + done.nullifierPk + done.viewingPk;
+  if (!KEY(payer)) throw new Error("The fee key of the payer is not well formed.");
+  return done.groupKey + done.nullifierPk + done.viewingPk + payer;
 }
 
 const ROLE = { payee: 0, change: 1, dummy: 2 };
@@ -170,7 +178,10 @@ export function lamportsOf(text) {
   return lamports > 0n ? lamports : null;
 }
 
-/** The base64 text of a signed v1 transaction: the message, then its signatures (one signer). */
+/**
+ * The base64 text of a signed v1 transaction: the message, then its signatures in the order of its
+ * signers: the payer first, then the group key (the payer alone for Add SOL).
+ */
 export function wireBase64(message, signature) {
   return btoa(String.fromCharCode(...message, ...signature));
 }

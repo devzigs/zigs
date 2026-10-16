@@ -5,7 +5,7 @@
 import * as sdk from "/sol/zolana.bundle.js";
 import { checkCommand, makeRedactor } from "/sol/guard.js";
 import { cutTransact, hex, parseTransact, planFromProve } from "/sol/prepare.js";
-import { buildProofInputs } from "/sol/transfer.js";
+import { buildProofInputs, ownerSigners } from "/sol/transfer.js";
 
 // Caps of the P3 template (ZOLANA.md 5): the compute limit of a transact.
 const COMPUTE_UNITS = 217_000;
@@ -211,11 +211,12 @@ function inspect({ tx }) {
 }
 
 /**
- * Syncs a fresh wallet, builds the proof inputs with the expiry bound (transfer.js), proves them
- * and keeps the transact instruction data. One command runs at a time: the prover body of the
- * call is kept in the session for the plan.
+ * Syncs a fresh wallet, builds the proof inputs with the expiry bound and `payer` as the fee payer
+ * (transfer.js), proves them and keeps the transact instruction data. The group key is an owner
+ * signer, so the instruction lists it after the nullifier accounts. One command runs at a time:
+ * the prover body of the call is kept in the session for the plan.
  */
-async function prepare({ recipient, amount, expiry }) {
+async function prepare({ recipient, amount, expiry, payer }) {
   const s = need();
   const until = BigInt(expiry);
   if (until === 0n || until >= U64_MAX) throw new Error("the expiry must be finite");
@@ -223,10 +224,11 @@ async function prepare({ recipient, amount, expiry }) {
   await syncOnce(s, wallet);
   s.trace.prove = null;
   const to = sdk.ShieldedAddress.fromBytes(bytes(recipient));
-  const request = { recipient: to, amount: BigInt(amount), expiry: until };
+  const request = { recipient: to, amount: BigInt(amount), expiry: until, payer };
   const { proofInputs, tree } = buildProofInputs(sdk, s, wallet, request);
   const data = await s.client.proveTransact(proofInputs, s.keys);
-  const call = { payer: s.owner, inputTree: tree, outputTree: s.client.tree, data };
+  const signers = ownerSigners(sdk, proofInputs);
+  const call = { payer, ownerSigners: signers, inputTree: tree, outputTree: s.client.tree, data };
   const instruction = await sdk.transactInstruction(call);
   return describePrepared(instruction.data, wallet, s.trace.prove, until);
 }

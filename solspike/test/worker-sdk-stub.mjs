@@ -29,6 +29,8 @@ export const control = {
   request: null,
   proved: null,
   instruction: null,
+  /** The proof inputs that the Worker passed to ownerSigners. */
+  signed: null,
   /** Per call name: an Error that the fake throws. */
   fail: {},
 };
@@ -41,13 +43,15 @@ const note = (name) => {
 const solanaRpc = new Proxy(
   {},
   {
-    get: (_target, method) => (...args) => ({
-      send: async () => {
-        control.calls.push(`rpc:${String(method)}`);
-        if (!control.rpc[method]) throw new Error(`no reply for ${String(method)}`);
-        return control.rpc[method](...args);
-      },
-    }),
+    get:
+      (_target, method) =>
+      (...args) => ({
+        send: async () => {
+          control.calls.push(`rpc:${String(method)}`);
+          if (!control.rpc[method]) throw new Error(`no reply for ${String(method)}`);
+          return control.rpc[method](...args);
+        },
+      }),
   },
 );
 
@@ -99,6 +103,13 @@ export async function transactInstruction(call) {
   note("transactInstruction");
   control.instruction = call;
   return { data: control.instructionData };
+}
+
+/** The owner signers of transfer.js: the group, as the fake wallet has one owner. */
+export function ownerSigners(_sdk, proofInputs) {
+  note("ownerSigners");
+  control.signed = proofInputs;
+  return [OWNER];
 }
 
 /** web/sol/transfer.js, resolved to this file by the hook of worker.test.mjs. */

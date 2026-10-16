@@ -5,9 +5,10 @@
  *
  * - `intent`: the proposal, `Proposal::encode`: the intent and, for a spend, the approved
  *   plaintext outputs.
- * - `pins`: 97 bytes, the group key, `nullifier_pk` and `viewing_pk` of the `soldone` document
- *   (`Pins::wire`). The `owner_hash` is computed from them, and the snapshot secrets must derive
- *   exactly these two keys.
+ * - `pins`: 129 bytes, the group key, `nullifier_pk` and `viewing_pk` of the `soldone` document
+ *   and the payer of the proposal (`Pins::wire`). The page takes the payer from the `solfee`
+ *   document of the proposing seat. The `owner_hash` is computed from the first three, and the
+ *   snapshot secrets must derive exactly the two public keys.
  * - `snapshot`: the device snapshot, `Snapshot::encode`.
  * - `now`: the Unix time of the device, in seconds.
  *
@@ -370,6 +371,131 @@ export function sol_echo(wallet_id, safety, cluster, round1) {
         wasm.__wbindgen_add_to_stack_pointer(16);
         wasm.__wbindgen_export3(deferred6_0, deferred6_1, 1);
     }
+}
+
+/**
+ * A fresh fee key of a seat: `{"secret", "public"}` as hex.
+ * @returns {string}
+ */
+export function sol_fee_key() {
+    let deferred2_0;
+    let deferred2_1;
+    try {
+        const retptr = wasm.__wbindgen_add_to_stack_pointer(-16);
+        wasm.sol_fee_key(retptr);
+        var r0 = getDataViewMemory0().getInt32(retptr + 4 * 0, true);
+        var r1 = getDataViewMemory0().getInt32(retptr + 4 * 1, true);
+        var r2 = getDataViewMemory0().getInt32(retptr + 4 * 2, true);
+        var r3 = getDataViewMemory0().getInt32(retptr + 4 * 3, true);
+        var ptr1 = r0;
+        var len1 = r1;
+        if (r3) {
+            ptr1 = 0; len1 = 0;
+            throw takeObject(r2);
+        }
+        deferred2_0 = ptr1;
+        deferred2_1 = len1;
+        return getStringFromWasm0(ptr1, len1);
+    } finally {
+        wasm.__wbindgen_add_to_stack_pointer(16);
+        wasm.__wbindgen_export3(deferred2_0, deferred2_1, 1);
+    }
+}
+
+/**
+ * The public key (hex) of a fee secret.
+ * @param {string} secret
+ * @returns {string}
+ */
+export function sol_fee_public(secret) {
+    let deferred3_0;
+    let deferred3_1;
+    try {
+        const retptr = wasm.__wbindgen_add_to_stack_pointer(-16);
+        const ptr0 = passStringToWasm0(secret, wasm.__wbindgen_export2, wasm.__wbindgen_export4);
+        const len0 = WASM_VECTOR_LEN;
+        wasm.sol_fee_public(retptr, ptr0, len0);
+        var r0 = getDataViewMemory0().getInt32(retptr + 4 * 0, true);
+        var r1 = getDataViewMemory0().getInt32(retptr + 4 * 1, true);
+        var r2 = getDataViewMemory0().getInt32(retptr + 4 * 2, true);
+        var r3 = getDataViewMemory0().getInt32(retptr + 4 * 3, true);
+        var ptr2 = r0;
+        var len2 = r1;
+        if (r3) {
+            ptr2 = 0; len2 = 0;
+            throw takeObject(r2);
+        }
+        deferred3_0 = ptr2;
+        deferred3_1 = len2;
+        return getStringFromWasm0(ptr2, len2);
+    } finally {
+        wasm.__wbindgen_add_to_stack_pointer(16);
+        wasm.__wbindgen_export3(deferred3_0, deferred3_1, 1);
+    }
+}
+
+/**
+ * The signature (hex) of the fee key of a proposal. It runs `approve` on the exact bytes first,
+ * as `sol_sign_share` does, and throws the refusal. `round` is `{"now", "secret"}`.
+ * @param {Uint8Array} message
+ * @param {Uint8Array} intent
+ * @param {Uint8Array} pins
+ * @param {Uint8Array} snapshot
+ * @param {string} round
+ * @returns {string}
+ */
+export function sol_fee_sign(message, intent, pins, snapshot, round) {
+    let deferred7_0;
+    let deferred7_1;
+    try {
+        const retptr = wasm.__wbindgen_add_to_stack_pointer(-16);
+        const ptr0 = passArray8ToWasm0(message, wasm.__wbindgen_export2);
+        const len0 = WASM_VECTOR_LEN;
+        const ptr1 = passArray8ToWasm0(intent, wasm.__wbindgen_export2);
+        const len1 = WASM_VECTOR_LEN;
+        const ptr2 = passArray8ToWasm0(pins, wasm.__wbindgen_export2);
+        const len2 = WASM_VECTOR_LEN;
+        const ptr3 = passArray8ToWasm0(snapshot, wasm.__wbindgen_export2);
+        const len3 = WASM_VECTOR_LEN;
+        const ptr4 = passStringToWasm0(round, wasm.__wbindgen_export2, wasm.__wbindgen_export4);
+        const len4 = WASM_VECTOR_LEN;
+        wasm.sol_fee_sign(retptr, ptr0, len0, ptr1, len1, ptr2, len2, ptr3, len3, ptr4, len4);
+        var r0 = getDataViewMemory0().getInt32(retptr + 4 * 0, true);
+        var r1 = getDataViewMemory0().getInt32(retptr + 4 * 1, true);
+        var r2 = getDataViewMemory0().getInt32(retptr + 4 * 2, true);
+        var r3 = getDataViewMemory0().getInt32(retptr + 4 * 3, true);
+        var ptr6 = r0;
+        var len6 = r1;
+        if (r3) {
+            ptr6 = 0; len6 = 0;
+            throw takeObject(r2);
+        }
+        deferred7_0 = ptr6;
+        deferred7_1 = len6;
+        return getStringFromWasm0(ptr6, len6);
+    } finally {
+        wasm.__wbindgen_add_to_stack_pointer(16);
+        wasm.__wbindgen_export3(deferred7_0, deferred7_1, 1);
+    }
+}
+
+/**
+ * True when `signature` (hex) is the `verify_strict` signature of `message` under the fee key
+ * `public` (hex). False for anything else, never an error.
+ * @param {string} _public
+ * @param {Uint8Array} message
+ * @param {string} signature
+ * @returns {boolean}
+ */
+export function sol_fee_verify(_public, message, signature) {
+    const ptr0 = passStringToWasm0(_public, wasm.__wbindgen_export2, wasm.__wbindgen_export4);
+    const len0 = WASM_VECTOR_LEN;
+    const ptr1 = passArray8ToWasm0(message, wasm.__wbindgen_export2);
+    const len1 = WASM_VECTOR_LEN;
+    const ptr2 = passStringToWasm0(signature, wasm.__wbindgen_export2, wasm.__wbindgen_export4);
+    const len2 = WASM_VECTOR_LEN;
+    const ret = wasm.sol_fee_verify(ptr0, len0, ptr1, len1, ptr2, len2);
+    return ret !== 0;
 }
 
 /**

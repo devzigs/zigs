@@ -67,7 +67,7 @@ the P5 run, a secret). tests/common/real.rs is cut to address_of, the one helper
 use; the code that read the solSeed file is removed. Vectors: only the public ones.
 Copied from the P1 crate: tests/data (the RFC 9591 E.1 inputs and the vectors of frost-ed25519).
 
-The wasm of wasm-sol (build.sh): SHA-256 ba41381e26fbb8c262956899c8f652eb66086e56e967cd018e1bd74ecca50ab0, 987,054 bytes raw, 344,470 gzip
+The wasm of wasm-sol (build.sh): SHA-256 13ce3322253c896813f6b46d41881c76c2dd590b117c15e1dd56b8baf2150647, 1,026,527 bytes raw, 377,028 gzip
 
 Changes of the move into the product repo (not signed; no file of src/ changed, so the rules and
 the checker are those that the verdict signed):
