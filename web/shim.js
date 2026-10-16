@@ -134,3 +134,16 @@
   const caps = { db, user, downloads };
   window.zigs = { use: async (name) => caps[name] || null };
 })();
+
+// A module that does not load or link leaves an empty page. Until the first paint, show a notice.
+// A failed <script> fires "error" on itself and the event does not bubble: listen in the capture
+// phase. A link or run error of a module reaches window. Images and styles are not watched.
+window.addEventListener("error", (e) => {
+  const app = document.getElementById("app");
+  const fromScript = e.target === window || e.target?.tagName === "SCRIPT";
+  if (!app || app.firstChild || !fromScript) return;
+  const note = document.createElement("p");
+  note.className = "notice bad";
+  note.textContent = "Zigs did not load completely. Reload the page.";
+  app.append(note);
+}, true);

@@ -32,6 +32,9 @@
     "web/test/qr.mjs": {
       "exit": 0
     },
+    "web/test/shim.mjs": {
+      "exit": 0
+    },
     "web/test/sol-config.mjs": {
       "exit": 0
     },
