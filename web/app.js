@@ -27,7 +27,7 @@ import {
   fundingPayees, fundingWarning, highestIndex, holdsNotes, KIND as PERSONAL_KIND, messagePlan,
   NAME_MAX, newPersonal, normPersonal, otherWhere, readBackup, receivedItems, removeWarning,
   restoredPersonal, routeItems, salvageBackup, SENT_WORDS, sendGate, sentNote, sentState,
-  chatTimeline,
+  chatTimeline, EXPIRY_MARGIN,
 } from "/personal.js";
 import {
   cardState, payeeBlocker, payeeRows, quoted, readRequest, REQUEST_NET, requestNote, requestPayees,
@@ -651,6 +651,7 @@ function watchInbox() {
 // A seat records its nonces locally when it approves, so no server read is needed.
 function needsMyApproval(gid, ss) {
   if (ss.status !== "collecting" || ss.package || ss.error) return false;
+  if (gid === state.gid && expired(ss)) return false;
   // In the open wallet only owned seats count; a restored seat that does not fit cannot approve.
   const owned = gid === state.gid ? localSeats() : null;
   return mySeatSecrets(gid).some(([i, s]) => (!owned || owned.includes(i))
@@ -1278,7 +1279,7 @@ function reactSession(ss) {
   const fvk = state.wallet.orchard_fvk;
   // The engine takes only strings. A document with another type would crash it.
   if (!isStr(ss.pczt) || !isStr(fvk) || (ss.package != null && !isStr(ss.package))) return;
-  if (ss.error) return;
+  if (ss.error || expired(ss)) return;
   if (!ss.package && isProposer(ss)) buildPackage(ss, fvk);
   if (ss.package) signMyShares(ss, fvk);
   if (ss.package && !ss.signed) aggregateShares(ss);
@@ -1597,7 +1598,7 @@ async function readMemo(c, cw, n) {
 
 // `payees` (address, amount and optional memo) and `note` are the proposer's words; approvers
 // check `payees` against the transaction.
-async function newSpend(payees, note, move = null) {
+async function newSpend(payees, note, move = null, priority = false) {
   const gid = state.gid, approvals = state.g.t;
   if (!chain || chain.gid !== gid || !chain.bal) {
     throw new Error("The wallet has not finished its first sync.");
@@ -1605,7 +1606,7 @@ async function newSpend(payees, note, move = null) {
   if (!mayAct()) throw new Error(NO_SEAT_KEY);
   // A payee has a memo only when it has text. A proposal without memos stays {to, amount}.
   payees = payees.map(({ to, amount, memo }) => memo ? { to, amount, memo } : { to, amount });
-  const t = J(await chain.cw.createSpend(S(payees)));
+  const t = J(await chain.cw.createSpend(S(payees), priority));
   const ref = sdb.collection("groups/" + gid + "/sessions").doc();
   const fields = proposalFields(payees, note, t, move, Date.now());
   const sig = await sigPart(gid, ref.id, "proposal", fields);
@@ -1673,28 +1674,67 @@ async function broadcastAnywhere(txHex, where = {
 // Why seat i cannot approve the payment now, or null.
 function approveRefusal(ss, i, ins) {
   if (ss.error) return "This payment was cancelled or failed, so it was not approved.";
+  if (expired(ss)) return "This payment expired, so it was not approved. Propose it again.";
   if (state.pending) return "Zigs is still checking this wallet's data. Try again in a moment.";
   if (!ins || ins.error) return "This browser could not check the payment, so it did not approve.";
   if (seatCheck(i) === true) return null;
   return "Seat " + i + " has not checked this wallet against its key share, so it did not approve.";
 }
 
+// One approval at a time for each payment and seat: a second click during the waits below would
+// make other nonces.
 async function approve(ss, i) {
-  const gid = state.gid, s = sec(gid, i), ins = inspectOf(ss);
+  const key = "approve:" + ss.id + ":" + i;
+  if (busy.has(key)) return;
+  busy.add(key);
+  try { await approveNow(ss, i); } finally { busy.delete(key); }
+}
+
+async function approveNow(ss, i) {
+  const gid = state.gid, ins = inspectOf(ss);
   const why = approveRefusal(ss, i, ins);
   if (why) throw new Error(why);
-  const r = J(Z.signCommit(ss.pczt, state.wallet.orchard_fvk, S(s.keyPackage)));
+  // The engine refuses an expired payment. It checks against the chain height now, because the
+  // last sync can be minutes old.
+  const tip = await freshTip();
+  // Another tab can save the secrets of this seat during the waits. Read them after each wait, so
+  // that a write here neither brings back a burned nonce nor drops a new one.
+  if ((sec(gid, i).nonces || {})[ss.id]) throw new Error("This seat already approved this payment.");
+  const r = J(Z.signCommit(ss.pczt, state.wallet.orchard_fvk, S(sec(gid, i).keyPackage), tip));
   // The approval covers this exact transaction: a share is signed later only for the same sighash.
   const mine = { nonces: r.nonces, commitments: r.commitments, sighash: ins.sighash };
   const rel = "sessions/" + ss.id + "/commits/" + i;
   // A seat that cannot sign fails here, before the approval is saved.
   const doc = await signedDoc(gid, rel, i, { commitments: r.commitments, at: Date.now() });
-  if (!(await putSec(gid, i, { nonces: { ...(s.nonces || {}), [ss.id]: mine } }))) {
+  const nonces = { ...(sec(gid, i).nonces || {}), [ss.id]: mine };
+  if (!(await putSec(gid, i, { nonces }))) {
     throw new Error("Could not save the approval in this browser, so it was not sent.");
   }
   await sdb.doc("groups/" + gid + "/" + rel).set(doc);
   log("seat " + i + ": approved the spend, nonce commitment published");
   showBanner("ok", "Approved" + (localSeats().length > 1 ? " as seat " + i : "") + ".");
+}
+
+// The chain height now, from the open wallet's light-wallet server, else from the other servers
+// of its network.
+async function freshTip() {
+  const c = curChain();
+  if (!c || !c.url) throw new Error("Wait for the first sync to finish, then approve.");
+  const errors = [];
+  for (const url of [c.url, ...curNet().servers.filter((u) => u !== c.url)]) {
+    const host = new URL(url).host;
+    try { return await withTimeout(Z.latestHeight(url), SERVER_TIMEOUT_MS, host); }
+    catch (e) { errors.push(host + ": " + said(e)); }
+  }
+  throw new Error("No light-wallet server gave the chain height, so this browser did not "
+    + "approve. " + errors.join("; "));
+}
+
+// A sent payment that no block holds yet keeps the wallet's notes until it expires. A node can
+// drop it, so any signer can send the same transaction again. The sent mark stays as it is.
+async function resendTx(ss) {
+  await broadcastAnywhere(ss.final.tx_hex);
+  showBanner("ok", "Sent again. It confirms with the next block.");
 }
 
 async function cancelPayment(ss) {
@@ -2958,16 +2998,21 @@ const ui = {
   forget: false, tab: "overview", send: false, pay: null, payKey: 0, listError: "",
   create: false, receive: false, move: false, net: "testnet", ack: false, notify: false,
   newChat: false, leave: false, backup: null, restore: null,
-  request: null, note: "", sendFor: null, contactAdd: false,
+  request: null, note: "", priority: false, sendFor: null, contactAdd: false,
   personal: { net: "testnet", ack: false, fund: "0.003", drop: false },
 };
 try { ui.notify = localStorage.getItem("zf-notify") === "1"; } catch { /* no storage */ }
 const ZEC_FMT = new Intl.NumberFormat("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 8 });
-// ZIP 317 for a payment from up to `outputs` notes: one action per output, change included.
-const feeEstimate = (payees) => 5000 * Math.max(2, payees + 1);
+// ZIP 317 for a payment from up to `outputs` notes: one action per output, change included. A
+// priority payment pays PRIORITY_FACTOR times as much (the engine's cap).
+const PRIORITY_FACTOR = 10;
+const feeEstimate = (payees, priority = false) =>
+  5000 * Math.max(2, payees + 1) * (priority ? PRIORITY_FACTOR : 1);
 const MAX_PAYEES = 20;
 const TOO_MANY = "A payment can have at most " + MAX_PAYEES + " recipients.";
-const BLOCK_SECONDS = 25;
+// The expected milliseconds from block `from` to block `to`, at the block time of each block (75
+// seconds before NU7, 25 from it). The engine knows the upgrade heights of each network.
+const spanMs = (net, from, to) => Z.blockSpanSeconds(net, from, to) * 1000;
 const initials = (name) => String(name || "?").trim().split(/\s+/).map((w) => w[0]).join("")
   .slice(0, 2).toUpperCase() || "?";
 const when = (ms) => {
@@ -3024,6 +3069,8 @@ const STATUS = {
   cancelled: ["Cancelled", ""],
 };
 function statusChip(s) {
+  if (onChain(s)) return el("span", { class: "badge ok" }, "Sent");
+  if (expired(s)) return el("span", { class: "badge" }, "Expired");
   const [t, c] = Object.hasOwn(STATUS, s.status) ? STATUS[s.status] : [String(s.status), ""];
   return el("span", { class: "badge " + c }, t);
 }
@@ -3054,7 +3101,8 @@ const onNetwork = (addr) => (normalized(addr) || "").startsWith(curNet().prefix)
 function inFlight() {
   const c = curChain();
   if (!c || !c.sent) return [];
-  return state.sessions.filter((ss) => ss.broadcastTxid && ss.final && !c.sent.has(ss.final.txid));
+  return state.sessions.filter((ss) => ss.broadcastTxid && ss.final
+    && !c.sent.has(txidOf(ss) ?? ss.final.txid) && !expired(ss));
 }
 function balanceNow(b) {
   const out = inFlight(), sum = (f) => out.reduce((n, ss) => n + finite(f(ss)), 0);
@@ -3739,7 +3787,10 @@ function walletActions(why) {
     el("button", { class: "btn", type: "button", onclick: () => { ui.receive = true; render(); } }, "Receive"),
     el("button", {
       class: "btn primary", type: "button", disabled: !!why, title: why,
-      onclick: () => { ui.send = true; ui.pay = null; ui.note = ""; ui.sendFor = null; render(); },
+      onclick: () => {
+        Object.assign(ui, { send: true, pay: null, note: "", priority: false, sendFor: null });
+        render();
+      },
     }, "Send"),
     why ? el("p", { class: "send-why" }, why) : null,
   ];
@@ -3991,7 +4042,8 @@ function overviewTab() {
 
 // The steps of a move, read from the old wallet: new wallet ready, payment proposed, funds gone.
 function moveState(c) {
-  const to = state.g.movedTo, ss = state.sessions.find((x) => x.move === to && !x.error);
+  const to = state.g.movedTo;
+  const ss = state.sessions.find((x) => x.move === to && !x.error && !expired(x));
   const b = c && c.bal ? balanceNow(c.bal) : null;
   if (!gkeys[to]) return { text: "A signer started moving this wallet to a new one. If you are one of its signers, ask them for its invite link." };
   if (!ready[to]) return { text: groupName(to) + " is still setting up. When its address is ready, move the funds here.", open: to };
@@ -4003,7 +4055,7 @@ function moveState(c) {
 
 function moveCard(c) {
   const m = moveState(c), why = m.propose ? sendBlocker() : null;
-  const started = state.sessions.some((x) => x.move === state.g.movedTo && !x.error);
+  const started = state.sessions.some((x) => x.move === state.g.movedTo && !x.error && !expired(x));
   return el("section", { class: "card card-pad " + (m.done ? "" : "attention") },
     el("div", { class: "card-head" }, el("h2", {}, m.done ? "This wallet moved" : "Changing signers"),
       m.done ? el("span", { class: "badge plain" }, "Closed") : null),
@@ -4119,7 +4171,9 @@ function syncLine(c) {
 function activity() {
   const c = curChain(), tip = c && c.bal ? c.bal.height : 0;
   const sent = state.sessions.map((ss) => ({ t: ss.createdAt || 0, ss }));
-  const got = (c && c.received || []).map((r) => ({ t: Date.now() - Math.max(0, tip - r.height) * BLOCK_SECONDS * 1000, r }));
+  const net = netName(state.g);
+  const got = (c && c.received || [])
+    .map((r) => ({ t: Date.now() - spanMs(net, r.height, tip), r }));
   return [...sent, ...got].sort((a, b) => b.t - a.t);
 }
 
@@ -4239,7 +4293,7 @@ function memoMessages() {
   const c = curChain(), tip = c && c.bal ? c.bal.height : 0;
   return (c && c.received || []).flatMap((r) => memoTexts(r).map((text, i) => ({
     kind: "memo", id: r.txid + ":" + i, text, value: r.value, txid: r.txid,
-    at: Date.now() - Math.max(0, tip - r.height) * BLOCK_SECONDS * 1000,
+    at: Date.now() - spanMs(netName(state.g), r.height, tip),
   })));
 }
 
@@ -4543,7 +4597,7 @@ function proposeRequest(req, o, gid) {
   ui.pay = payeeRows(req.payees, () => ++ui.payKey);
   const room = o.dm || gid === state.gid ? "" : groupName(state.gid);
   ui.note = requestNote(o.name, o.verdict, { mine: o.mine, room });
-  ui.listError = "";
+  ui.listError = ""; ui.priority = false;
   ui.send = true;
   ui.sendFor = gid;
   if (gid === state.gid) { closeSession(); render(); return; }
@@ -4761,7 +4815,6 @@ function newChatDialog() {
 // A single-signer account that pays the fee of messages on chain (CHAT.md section 5). It syncs by
 // its viewing key like a wallet, always reads memos, and never touches the group server. The seed
 // stays in `personal`. It never goes into `ui`, a log line or an error message.
-const BLOCK_MS = BLOCK_SECONDS * 1000;
 const FUND_NOTE = "Fund the proposer's personal account";
 const NOT_READY = "Wait for the account to load.";
 const splitParts = (text) => {
@@ -5032,7 +5085,7 @@ function accountInbox() {
 // syncs and the height does not, so a count from now would move every message later.
 function blockTime(height) {
   const tip = heightNow() ?? height;
-  return (acct?.balAt ?? Date.now()) - Math.max(0, tip - height) * BLOCK_MS;
+  return (acct?.balAt ?? Date.now()) - spanMs(personal.network, height, tip);
 }
 
 const contactRows = (contact) => chatTimeline(accountInbox().chats.get(contact.index) || [],
@@ -5676,7 +5729,7 @@ function sendDialog() {
   const rows = ui.pay;
   const fee = el("span", {}), total = el("span", { id: "s-total" });
   const sumUp = () => {
-    const f = feeEstimate(rows.length);
+    const f = feeEstimate(rows.length, ui.priority);
     fee.replaceChildren(money(f));
     total.replaceChildren(money(rows.reduce((n, r) => n + (toZat(r.amt) || 0), 0) + f));
   };
@@ -5684,9 +5737,10 @@ function sendDialog() {
   const f = el("form", { class: "dialog", role: "dialog", "aria-modal": "true", "aria-labelledby": "send-title", onsubmit: act(async (ev) => {
     if (why) throw new Error(why);
     const payees = readPayees(rows);
-    const need = payees.reduce((n, p) => n + p.amount, 0) + feeEstimate(payees.length);
+    const need = payees.reduce((n, p) => n + p.amount, 0) + feeEstimate(payees.length, ui.priority);
     if (need > spendable) throw new Error("Not enough funds: " + fmtZec(spendable) + " available, " + fmtZec(need) + " needed (amounts + fee).");
-    await newSpend(payees, String(new FormData(ev.target).get("note") || "").trim());
+    const note = String(new FormData(ev.target).get("note") || "").trim();
+    await newSpend(payees, note, null, ui.priority);
     ui.send = false;
   }) },
     el("div", { class: "card-head" }, el("h2", { id: "send-title" }, "Send ZEC"), el("button", { class: "icon-btn", type: "button", "aria-label": "Close", onclick: () => { ui.send = false; render(); } }, "×")),
@@ -5707,11 +5761,13 @@ function sendDialog() {
       el("span", { class: "hint" }, "Encrypted. Only signers of this wallet can read it.")),
     el("p", { class: "small faint" }, "A memo goes on chain with the payment. Its recipient and "
       + "every signer of this wallet can read it."),
+    priorityBox(sumUp),
     el("div", { class: "summary" },
       el("div", {}, el("span", { class: "muted" }, "Available"), money(spendable)),
       el("div", {}, el("span", { class: "muted" }, "Network fee (estimate)"), fee),
       el("div", { class: "total" }, el("span", {}, "Total leaving the wallet"), total),
       el("div", {}, el("span", { class: "muted" }, "Approvals needed"), el("span", {}, state.g.t + " of " + state.g.n))),
+    el("p", { class: "small faint" }, EXPIRY_NOTE),
     el("div", { class: "dialog-actions" },
       el("button", { class: "btn", type: "button", onclick: () => { ui.send = false; render(); } }, "Cancel"),
       el("button", {
@@ -5720,6 +5776,23 @@ function sendDialog() {
     why ? el("p", { class: "small faint" }, why) : null);
   sumUp();
   return f;
+}
+
+// The expiry window of the engine (wasm/src/expiry.rs), in words.
+const EXPIRY_NOTE = "The approvals must finish within about 24 hours. After that the payment "
+  + "expires, and a signer proposes it again.";
+
+// The priority fee: 10 times the standard fee, for a faster block when the network is busy. It
+// is public on chain, so it marks the payment. Older builds of the apps refuse it.
+function priorityBox(sumUp) {
+  return el("label", { class: "ack" },
+    el("input", {
+      type: "checkbox", id: "s-priority", checked: ui.priority,
+      onchange: (ev) => { ui.priority = ev.target.checked; sumUp(); },
+    }),
+    el("span", { class: "small" }, "Pay a priority fee: " + PRIORITY_FACTOR + " times the "
+      + "standard fee, for a faster block when the network is busy. The fee is public on chain. "
+      + "An iPhone or Mac app built before this version cannot approve it."));
 }
 
 // ── Payment drawer ──
@@ -5742,6 +5815,97 @@ function inspectOf(ss) {
   }
   return ins;
 }
+
+// When the payment expires, counted by the engine from the height of the last sync:
+// {expired, blocks_left, seconds_left}. Null while this browser cannot tell.
+function expiryOf(ss) {
+  const c = curChain(), ins = state.wallet && ss.pczt ? inspectOf(ss) : null;
+  if (!c || !c.bal || !ins || ins.error || !Number.isInteger(ins.expiry_height)) return null;
+  try { return J(Z.expiryState(netName(state.g), ins.expiry_height, c.bal.height)); }
+  catch { return null; }
+}
+
+// The id that the payment's transaction gets on chain, from the approved PCZT. One seat writes
+// `final.txid` alone, so the page never uses it to decide whether a block holds the payment.
+function txidOf(ss) {
+  const ins = state.wallet && ss.pczt ? inspectOf(ss) : null;
+  return ins && !ins.error && isStr(ins.txid) ? ins.txid : null;
+}
+// A synced block holds the payment, whatever the session document says.
+function onChain(ss) {
+  const c = curChain(), id = txidOf(ss);
+  return !!(c && c.sent && id && c.sent.has(id));
+}
+
+// A payment that no signer can approve, sign or send any more, and that no block holds: its notes
+// are free again. A payment with a finished transaction can be on the network without a sent mark
+// (a send that timed out after a server took it, or a mark that was not saved). So it counts as
+// gone only EXPIRY_MARGIN blocks after its expiry height, as a message does, because a
+// reorganisation of the last blocks can still bring it on chain.
+function expired(ss) {
+  const e = !ss.error && expiryOf(ss), c = curChain();
+  if (!e || onChain(ss)) return false;
+  if (!ss.final) return e.expired;
+  return c.bal.height >= inspectOf(ss).expiry_height + EXPIRY_MARGIN;
+}
+
+function about(sec) {
+  if (sec >= 5400) return Math.round(sec / 3600) + " hours";
+  const min = Math.max(1, Math.round(sec / 60));
+  return min === 1 ? "1 minute" : min + " minutes";
+}
+
+// The expiry of an open payment, or why an expired one ends here. The engine counts from the
+// last sync, so the time since that sync comes off. A height from saved state gives no time.
+function expiryLine(ss) {
+  const e = expiryOf(ss), ins = inspectOf(ss), c = curChain();
+  if (!e || ss.error || onChain(ss)) return null;
+  const at = "block " + fmtInt(ins.expiry_height);
+  if (expired(ss) && signingStarted(ss)) {
+    return el("div", { class: "callout bad" }, "This payment expired at " + at + ", and no synced "
+      + "block holds the transaction that this page shows. This page cannot prove that the "
+      + "signers signed that transaction. Check the wallet's activity and an explorer before "
+      + "anyone proposes it again.");
+  }
+  if (expired(ss)) {
+    return el("div", { class: "callout bad" }, "This payment expired at " + at + ". No signer "
+      + "can approve, sign or send it now. Propose it again.");
+  }
+  if (e.expired) {
+    return el("div", { class: "callout" }, "This payment can no longer go to the network: it "
+      + "expires at " + at + ". If a signer sent it, a block can still hold it.");
+  }
+  if (ss.broadcastTxid) return null;
+  const must = "The approvals, the proof and the send must be done by then.";
+  if (!c.balAt) return el("p", { class: "small muted" }, "Expires at " + at + ". " + must);
+  const left = e.seconds_left - Math.max(0, (Date.now() - c.balAt) / 1000);
+  return el("p", { class: "small muted" }, "Expires at " + at + ", in about "
+    + about(Math.max(0, left)) + ". " + must);
+}
+
+// A payment that has a signing package may have a signed transaction that a block holds. One seat
+// can rewrite the proposal and drop the later parts, so the page cannot tell which transaction
+// the signers signed (TICKETS.md, ZEC-9). It offers "Propose again" only before signing starts.
+const signingStarted = (ss) => !!(ss.package || ss.signed || ss.final || ss.broadcastTxid);
+
+// An expired payment ends with a new proposal of the same recipients, amounts, memos, note and
+// fee choice, which needs new approvals. A move proposes the move again.
+async function proposeAgain(ss) {
+  if (ss.move) { closeSession(); await proposeMove(); return; }
+  const payees = payeesOf(ss);
+  Object.assign(ui, {
+    pay: payees.length ? payeeRows(payees, () => ++ui.payKey) : null, listError: "",
+    note: typeof ss.note === "string" ? ss.note : "", priority: priorityTimes(inspectOf(ss)) > 0,
+    send: true, sendFor: null,
+  });
+  closeSession();
+  render();
+}
+
+// A fee above the ZIP 317 fee is a priority fee: this many times the standard fee, or 0. The
+// engine refuses more than 10 times.
+const priorityTimes = (ins) => ins && !ins.error && ins.fee > ins.standard_fee
+  ? Math.round((ins.fee / ins.standard_fee) * 10) / 10 : 0;
 
 // The proposer's list, without entries that have no address text.
 const payeesOf = (ss) => Array.isArray(ss.payees) ? ss.payees.filter((p) => p && typeof p.to === "string") : [];
@@ -5842,12 +6006,24 @@ const needsProof = (ss) => ss.signed && !ss.final
 function finishButtons(ss) {
   if (!mayAct()) return [];
   if (needsProof(ss)) return [bigButton("Build proof", act(() => finalizeTx(ss)))];
-  if (!ss.final || ss.broadcastTxid) return [];
+  // A node refuses a payment that expires within EXPIRY_MARGIN blocks (see expiryLine).
+  if (!ss.final || expiryOf(ss)?.expired || onChain(ss)) return [];
+  if (ss.broadcastTxid) {
+    const late = Date.now() - finite(ss.broadcastAt) > RESEND_MS && inFlight().includes(ss);
+    return late ? [bigButton("Send again", act(() => resendTx(ss)))] : [];
+  }
   return [bigButton(ss.broadcastError ? "Send again" : "Send to network",
     act(() => broadcastTx(ss)), { disabled: !curChain() })];
 }
 
+// A sent payment that no block holds after this long may be lost: offer to send it again.
+const RESEND_MS = 10 * 60 * 1000;
+
 function nextAction(ss, ins, rc) {
+  if (expired(ss)) {
+    return !signingStarted(ss) && mayAct() && localSeats().length
+      ? [bigButton("Propose again", act(() => proposeAgain(ss)))] : [];
+  }
   const myPending = approvers(ss);
   const canApprove = myPending.length && rc.match === true && rc.intoNew !== false;
   return canApprove ? approveButtons(ss, myPending) : finishButtons(ss);
@@ -5856,7 +6032,7 @@ function nextAction(ss, ins, rc) {
 const CANCEL_ASK = "Cancel this payment? No signer can approve it after this. Anyone can propose it again.";
 // Until the signatures are combined, any signer can withdraw a payment, for example one that lost
 // an approval. A signature share alone cannot move funds.
-const cancelAction = (ss) => ss.signed || !localSeats().length || !mayAct() ? [] : [
+const cancelAction = (ss) => ss.signed || expired(ss) || !localSeats().length || !mayAct() ? [] : [
   el("button", { class: "btn lg", type: "button", onclick: act(() => confirm(CANCEL_ASK) && cancelPayment(ss)) }, "Cancel payment"),
 ];
 
@@ -5883,6 +6059,7 @@ function sessionDrawer(ss) {
     el("div", { class: "drawer-body" },
       leavesHead(ss, ins && !refused ? ins : null),
       refused ? el("div", { class: "callout bad" }, "Your browser refuses this payment: " + ins.error) : null,
+      guard(expiryLine, ss),
       guard(recipientBox, ss, rc),
       lostApproval(ss),
       ins && !refused ? guard(breakdown, ins) : null,
@@ -5925,9 +6102,15 @@ function leavesHead(ss, ins) {
   return el("div", { class: "leaves" },
     el("span", { class: "label" }, ins ? "Leaves the wallet" : "Proposed to leave the wallet"),
     money(t.leaves, "lg"),
-    el("span", { class: "small muted" }, "includes " + zecText(t.fee) + " fee"),
+    el("span", { class: "small muted" }, "includes " + zecText(t.fee)
+      + (priorityTimes(ins) ? " priority fee" : " fee")),
     el("span", { class: "small muted" },
       "Proposed by " + proposer(ss) + " · " + when(ss.createdAt)));
+}
+
+function feeLabel(ins) {
+  const times = priorityTimes(ins);
+  return times ? "Priority fee (" + times + " times the standard fee)" : "Network fee";
 }
 
 function breakdown(ins) {
@@ -5940,7 +6123,7 @@ function breakdown(ins) {
     el("span", { class: "label" }, "What this payment does"),
     el("div", { class: "lines" },
       ins.lines.filter(isPayee).map((l) => row("To " + short(l.who, 10), l.value)),
-      row("Network fee", t.fee, "neg"),
+      row(feeLabel(ins), t.fee, "neg"),
       el("div", { class: "total" }, el("span", {}, "Leaves the wallet"),
         el("span", { class: "mono" }, zecText(t.leaves))),
       el("div", { class: "group" }, "Funds used"),
@@ -5977,10 +6160,16 @@ function timeline(ss, refused) {
 
 function txDetails(ss) {
   const size = Number.isFinite(ss.final.size) ? fmtInt(ss.final.size) + " bytes" : "unknown";
+  const id = txidOf(ss);
+  const falseId = id && id !== ss.final.txid ? el("div", { class: "callout bad" }, "The finished "
+    + "transaction names the id " + short(String(ss.final.txid), 12) + ", but the proposal gives "
+    + "the id " + short(id, 12) + ". One signer's device wrote one of them alone. Check the "
+    + "payment in an explorer.") : null;
   return el("div", { style: "display:grid;gap:10px" },
     el("span", { class: "label" }, "Transaction"),
+    falseId,
     el("dl", { class: "kv", style: "grid-template-columns:110px minmax(0,1fr)" },
-      el("dt", {}, "ID"), el("dd", { class: "hex" }, ss.final.txid),
+      el("dt", {}, "ID"), el("dd", { class: "hex" }, id || ss.final.txid),
       el("dt", {}, "Size"), el("dd", {}, size)),
     el("details", {}, el("summary", {}, "Raw transaction"),
       el("div", { class: "log" }, ss.final.tx_hex),

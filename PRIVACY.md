@@ -33,14 +33,15 @@ key is re-randomized for each spend, so the signature verifies like a single-sig
 signature under a fresh key.
 
 The transaction shape matches the standard wallet library (`zcash_client_backend`), which Zodl
-uses. We checked each visible property:
+uses, except for the expiry and, when the proposer chooses it, the fee. We checked each visible
+property:
 
 | Property | Zigs | Standard wallet library |
 |---|---|---|
 | Transaction builder | `zcash_primitives` `Builder` | Same builder |
-| Expiry | Target height + 40 | Same (`DEFAULT_TX_EXPIRY_DELTA`) |
+| Expiry | One day after the target height (3,456 blocks at 25 seconds, 1,152 at 75 seconds), at most up to the next network upgrade | Target height + 40 (`DEFAULT_TX_EXPIRY_DELTA`) |
 | Action padding | `BundlePadding::DEFAULT` | Same default |
-| Fee | ZIP 317 standard rule | Same |
+| Fee | ZIP 317 standard rule, or 10 times it when the proposer chooses a priority fee | ZIP 317 standard rule |
 | Anchor | Target height − 3 (3 confirmations) | Same (`ConfirmationsPolicy` trusted = 3) |
 | Change | One note to the wallet's internal address | Same |
 | Memos | Empty | Empty unless a signer writes one for a recipient |
@@ -48,6 +49,12 @@ uses. We checked each visible property:
 | Several recipients | One output per recipient, plus change | Same for a multi-recipient payment (ZIP 321) |
 
 The code is `build_ironwood_pczt` and `spend_pczt` in `wasm/src`.
+
+The long expiry marks a Zigs payment on chain. The expiry height is public, so an observer who
+compares it with the height of the block that holds the payment sees a window of about a day,
+where other wallets leave 40 blocks. A group needs hours for its approvals, and the signatures
+cover the expiry, so the window cannot be shorter. A priority fee is public too, and few wallets
+pay one. Messages of the personal account keep the expiry and the fee of the standard library.
 
 The number of actions is visible on chain, as for every Zcash transaction: it is the larger of
 the inputs and the outputs, at least 2. A payment to 4 recipients has at least 5 actions, so it
@@ -347,8 +354,9 @@ the passkey guards the key share instead. The lock is opt-in.
 - A compromised device can sign with its own share, and can show its user false information.
   Each approving device decodes the transaction itself. It ties every output that carries value
   to the recipient it shows, checks that the outputs are exactly the listed recipients and
-  amounts, and refuses a transaction that moves more than the standard fee out of the shielded
-  pool. The web, iPhone and Mac apps also check the memo of each recipient. Each approval is tied
+  amounts, and refuses a transaction with a transparent or Sapling part, or a fee below the
+  standard fee or above 10 times it. The web, iPhone and Mac apps also check the memo of each
+  recipient. Each approval is tied
   to the transaction's sighash. The device signs later only if the transaction is still the one
   it approved. Otherwise it marks the payment failed. So one honest signer sees the true
   payment.

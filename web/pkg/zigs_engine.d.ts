@@ -28,9 +28,10 @@ export class ChainWallet {
     createMessage(to: string, text: string): Promise<string>;
     /**
      * `payees` is a JSON list: `[{"to": "<unified address>", "amount": <zat>, "memo": "<text>"},
-     * …]`. The memo is optional: at most 512 UTF-8 bytes.
+     * …]`. The memo is optional: at most 512 UTF-8 bytes. `priority` pays 10 times the ZIP 317
+     * fee. The payment expires one day after it is built (see `expiry`).
      */
-    createSpend(payees: string): Promise<string>;
+    createSpend(payees: string, priority: boolean): Promise<string>;
     /**
      * Transactions whose memos are not read yet: `[{"txid", "hash", "height"}, …]`. Pass `hash`
      * to `fetchTransaction`, then the result to `attachTransaction`.
@@ -99,6 +100,12 @@ export function backupOpen(passphrase: string, sealed: string): string;
 
 export function backupSeal(passphrase: string, plaintext: string): string;
 
+/**
+ * The expected seconds from block `from` to block `to` on `network`, at the block time of each
+ * block (75 seconds before NU7, 25 from it).
+ */
+export function blockSpanSeconds(network_name: string, from: number, to: number): number;
+
 export function boxKeypair(): string;
 
 export function boxOpen(sk: string, pk: string, ctx: string, ct: string): string;
@@ -114,6 +121,12 @@ export function dkgPart2(secret: string, round1: string): string;
 export function dkgPart3(secret2: string, round1: string, round2: string): string;
 
 export function docPayload(wallet_id: string, path: string, seat: number, fields: string): string;
+
+/**
+ * For a payment that expires at block `expiry`, seen at chain height `tip`:
+ * `{"expired", "blocks_left", "seconds_left"}`. An expired payment can no longer be sent.
+ */
+export function expiryState(network_name: string, expiry: number, tip: number): string;
 
 /**
  * Downloads one full transaction from the light-wallet server. The server learns that this
@@ -153,7 +166,7 @@ export function secretSeal(secret: string, aad: string, pt: string): string;
 
 export function signAggregate(pczt: string, pkp: string, _package: string, shares: string): string;
 
-export function signCommit(pczt: string, fvk: string, kp: string): string;
+export function signCommit(pczt: string, fvk: string, kp: string, tip: number): string;
 
 export function signPackage(pczt: string, fvk: string, commitments: string, min: number): string;
 
@@ -189,6 +202,7 @@ export interface InitOutput {
     readonly addressAt: (a: number, b: number, c: any) => [number, number, number, number];
     readonly backupOpen: (a: number, b: number, c: number, d: number) => [number, number, number, number];
     readonly backupSeal: (a: number, b: number, c: number, d: number) => [number, number, number, number];
+    readonly blockSpanSeconds: (a: number, b: number, c: number, d: number) => [number, number, number];
     readonly boxKeypair: () => [number, number];
     readonly boxOpen: (a: number, b: number, c: number, d: number, e: number, f: number, g: number, h: number) => [number, number, number, number];
     readonly boxSeal: (a: number, b: number, c: number, d: number, e: number, f: number, g: number, h: number) => [number, number, number, number];
@@ -196,7 +210,7 @@ export interface InitOutput {
     readonly chainwallet_balance: (a: number) => [number, number];
     readonly chainwallet_broadcast: (a: number, b: number, c: number) => any;
     readonly chainwallet_createMessage: (a: number, b: number, c: number, d: number, e: number) => any;
-    readonly chainwallet_createSpend: (a: number, b: number, c: number) => any;
+    readonly chainwallet_createSpend: (a: number, b: number, c: number, d: number) => any;
     readonly chainwallet_memoNeeds: (a: number) => [number, number, number, number];
     readonly chainwallet_new: (a: number, b: number, c: number, d: number, e: number) => [number, number, number];
     readonly chainwallet_received: (a: number) => [number, number];
@@ -209,6 +223,7 @@ export interface InitOutput {
     readonly dkgPart2: (a: number, b: number, c: number, d: number) => [number, number, number, number];
     readonly dkgPart3: (a: number, b: number, c: number, d: number, e: number, f: number) => [number, number, number, number];
     readonly docPayload: (a: number, b: number, c: number, d: number, e: number, f: number, g: number) => [number, number, number, number];
+    readonly expiryState: (a: number, b: number, c: number, d: number) => [number, number, number, number];
     readonly fetchTransaction: (a: number, b: number, c: number, d: number) => any;
     readonly finalize: (a: number, b: number) => [number, number, number, number];
     readonly inspect: (a: number, b: number, c: number, d: number) => [number, number, number, number];
@@ -233,7 +248,7 @@ export interface InitOutput {
     readonly secretOpen: (a: number, b: number, c: number, d: number, e: number, f: number) => [number, number, number, number];
     readonly secretSeal: (a: number, b: number, c: number, d: number, e: number, f: number) => [number, number, number, number];
     readonly signAggregate: (a: number, b: number, c: number, d: number, e: number, f: number, g: number, h: number) => [number, number, number, number];
-    readonly signCommit: (a: number, b: number, c: number, d: number, e: number, f: number) => [number, number, number, number];
+    readonly signCommit: (a: number, b: number, c: number, d: number, e: number, f: number, g: number) => [number, number, number, number];
     readonly signPackage: (a: number, b: number, c: number, d: number, e: number, f: number, g: number) => [number, number, number, number];
     readonly signShare: (a: number, b: number, c: number, d: number, e: number, f: number, g: number, h: number, i: number, j: number, k: number) => [number, number, number, number];
     readonly skCommit: (a: number, b: number, c: number, d: number, e: number, f: number, g: number) => [number, number, number, number];

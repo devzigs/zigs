@@ -49,6 +49,9 @@ export const T = {
   ui, ready, requestOf, proposeRequest, proposeWallets, dmChoices, fillFromRequest, requestCard,
   composer, roomRequest, chatRequest, memoBody, sendDialog, submitRequest, typingMessage,
   balCache, busy, groupName, sendBlocker, blockTime,
+  expired, expiryOf, proposeAgain, inFlight, needsMyApproval, priorityTimes, approve,
+  statusChip, nextAction, finishButtons, cancelAction, expiryLine, moveState, reactSession,
+  txDetails,
   get banner() { return banner; },
   get personal() { return personal; }, set personal(v) { personal = v; },
   get personalError() { return personalError; }, get acct() { return acct; },
@@ -392,6 +395,121 @@ const sealed = (gid, rel, seat, fields, key, names = ["by", "sig"]) =>
     assert.equal(check(memo, line).match, false, what);
   }
   assert.equal(check("rent", out("text", "Rent")).rows[0].got, "Rent");
+
+  // The engine gets the fee choice of the proposer.
+  let priority;
+  const feeWallet = {
+    createSpend: async (list, fast) => { priority = fast; return JSON.stringify(spend); },
+    free() {},
+  };
+  t.setChain({ gid, bal: { spendable: 1e8, pending: 0 }, received: [], sent: new Set(),
+    cw: feeWallet });
+  await t.newSpend([{ to: "utest1x", amount: 5 }], "fast", null, true);
+  assert.equal(priority, true);
+  await t.newSpend([{ to: "utest1x", amount: 5 }], "slow");
+  assert.equal(priority, false);
+
+  // A proposal expires at the height that the engine decodes. The page counts the blocks from
+  // its last sync. An expired proposal asks for no approval, gets none, and "Propose again"
+  // fills the Send form with its payees, memos, note and fee choice.
+  const decoded = { sighash: "00", tx_version: "V6", spends: [], lines: [], fee: 100000,
+    standard_fee: 10000, expiry_height: 4503456, txid: "realtx" };
+  const realZ = { ...Z };
+  t.setZ({ ...Z, inspect: (pczt) => {
+    if (pczt !== "EXP1") throw new Error("unreadable");
+    return JSON.stringify(decoded);
+  } });
+  const lateSpend = { ...spend, pczt: "EXP1", fee: 100000 };
+  const lateChain = (height, sent = new Set()) => t.setChain({ gid, url: "https://lwd.test",
+    bal: { spendable: 1e8, pending: 0, height }, received: [], sent,
+    cw: { createSpend: async () => JSON.stringify(lateSpend), free() {} } });
+  lateChain(4500000);
+  await t.newSpend([{ to: "utest1x", amount: 5, memo: "rent" }], "late rent", null, true);
+  await waitFor("late proposal", () => t.state.sessions.some((x) => x.note === "late rent"));
+  const lateOne = () => t.state.sessions.find((x) => x.note === "late rent");
+  assert.deepEqual(t.expiryOf(lateOne()),
+    { expired: false, blocks_left: 3456, seconds_left: 86400 }, "one day at 25 seconds");
+  assert.equal(t.expired(lateOne()), false);
+  assert.equal(t.priorityTimes(decoded), 10);
+  assert.equal(t.needsMyApproval(gid, lateOne()), true);
+  lateChain(4503453);
+  assert.equal(t.expired(lateOne()), true, "a node refuses it 3 blocks before its height");
+  assert.equal(t.needsMyApproval(gid, lateOne()), false);
+  const seat = t.localSeats()[0];
+  await assert.rejects(t.approve(lateOne(), seat), /expired, so it was not approved/);
+  Object.assign(t.ui, { send: false, pay: null, note: "", priority: false });
+  await t.proposeAgain(lateOne());
+  assert.equal(t.ui.send, true);
+  assert.deepEqual(t.ui.pay.map((r) => [r.to, r.amt, r.memo]), [["utest1x", "0.00000005", "rent"]]);
+  assert.deepEqual([t.ui.note, t.ui.priority], ["late rent", true]);
+  t.ui.send = false;
+  // The engine checks the expiry again, with the height that the server gives at the moment of
+  // approval, not with the height of the last sync. A server that is down passes the question
+  // to the next server of the network.
+  lateChain(4500000);
+  let tipSeen;
+  const height = async (url) => {
+    if (url === "https://lwd.test") throw new Error("down");
+    return 4503460;
+  };
+  t.setZ({ ...Z, latestHeight: height, signCommit: (...args) => {
+    tipSeen = args[3];
+    throw new Error("the engine refuses it");
+  } });
+  await assert.rejects(t.approve(lateOne(), seat), /the engine refuses it/);
+  assert.equal(tipSeen, 4503460);
+  // During the wait for the chain height another tab saves the secrets of the seat, and the
+  // signer clicks Approve twice. One approval runs, and the nonces of the other tab survive.
+  let release, commits = 0;
+  const gate = new Promise((done) => { release = done; });
+  t.setZ({ ...Z, latestHeight: () => gate.then(() => 4500001), signCommit: () => {
+    commits += 1;
+    return JSON.stringify({ nonces: ["n"], commitments: ["c"] });
+  } });
+  const slot = t.state.gid + ":" + seat;
+  const click1 = t.approve(lateOne(), seat), click2 = t.approve(lateOne(), seat);
+  await click2;
+  t.secrets = { ...t.secrets, [slot]: { ...t.secrets[slot], nonces: { other: { sighash: "11" } } } };
+  release();
+  await click1;
+  const kept = t.sec(t.state.gid, seat).nonces;
+  assert.deepEqual([commits, Object.keys(kept).sort()], [1, [lateOne().id, "other"].sort()]);
+  await assert.rejects(t.approve(lateOne(), seat), /already approved this payment/);
+
+  // A sent payment that no block held up to 3 blocks after its expiry height frees its notes.
+  // One that a block holds stays sent.
+  const sentOne = { id: "zz", pczt: "EXP1", broadcastTxid: "tx9", final: { txid: "tx9" } };
+  t.state.sessions.push(sentOne);
+  lateChain(4503458);
+  assert.deepEqual([t.expired(sentOne), t.inFlight().includes(sentOne)], [false, true]);
+  lateChain(4503459);
+  assert.deepEqual([t.expired(sentOne), t.inFlight().includes(sentOne)], [true, false]);
+  lateChain(4503459, new Set(["realtx"]));
+  assert.equal(t.expired(sentOne), false, "a block holds it");
+  // A seat writes `final.txid` alone. The page takes the id from the approved PCZT, so a false
+  // id can neither free the notes of a payment that a block holds nor keep them held.
+  lateChain(4503600, new Set(["tx9"]));
+  assert.equal(t.expired(sentOne), true, "the id that a seat wrote does not count");
+  const forged = { id: "zf", pczt: "EXP1", broadcastTxid: "fake", final: { txid: "fake" } };
+  t.state.sessions.push(forged);
+  lateChain(4503600, new Set(["realtx"]));
+  assert.deepEqual([t.expired(forged), t.inFlight().includes(forged)], [false, false]);
+  t.state.sessions.splice(t.state.sessions.indexOf(forged), 1);
+  t.state.sessions.splice(t.state.sessions.indexOf(sentOne), 1);
+  // A finished payment without its sent mark (the send timed out after a server took it, or the
+  // mark was not saved) can still be on the network. It counts as gone only 3 blocks after its
+  // expiry height, and never once a block holds it: "Propose again" would pay twice.
+  const unmarked = { id: "zy", pczt: "EXP1", signed: "s", final: { txid: "tx8" },
+    broadcastError: "timeout" };
+  lateChain(4503453);
+  assert.equal(t.expired(unmarked), false, "it may be on the network");
+  lateChain(4503459);
+  assert.equal(t.expired(unmarked), true);
+  lateChain(4503600, new Set(["realtx"]));
+  assert.equal(t.expired(unmarked), false, "a block holds it");
+  t.setZ(realZ);
+  assert.equal(Z.blockSpanSeconds("mainnet", 3500000, 3500010), 750, "75 seconds before NU7");
+  assert.equal(Z.blockSpanSeconds("testnet", 4500000, 4500010), 250, "25 seconds after NU7");
 
   // "Propose this" fills the Send form and writes nothing. A form made for one wallet is dropped
   // when another wallet opens.
@@ -804,6 +922,88 @@ const sealed = (gid, rel, seat, fields, key, names = ["by", "sig"]) =>
     assert.equal(sessions(), stored, "a refused submit proposes nothing");
     t.setChain(chainOf({ spendable: 1e8, pending: 0 }));
     assert.equal(named(t.sendDialog(), "button", "Propose payment").attrs.disabled, undefined);
+
+    // An expired payment: the chip and the drawer say so, the drawer offers "Propose again" and
+    // no Cancel, and the page signs nothing for it. "Send again" comes 10 minutes after a send
+    // that no block holds, and not when a node would refuse it. A move proposes the move again.
+    const tipAt = (height, sent = new Set(), balAt = Date.now()) => {
+      const c = { gid: t.state.gid, url: "https://lwd.test", bal: { spendable: 1e8, pending: 0,
+        height }, balAt, received: [], sent, cw: null };
+      t.setChain(c);
+      return c;
+    };
+    const proposal = { id: "x1", pczt: "EXP1", status: "collecting", amount: 5, createdAt: 1,
+      payees: [{ to: "utest1x", amount: 5 }] };
+    const labels = (list) => list.map(textOf);
+    tipAt(4500000);
+    assert.equal(textOf(t.statusChip(proposal)), "Needs approval");
+    assert.match(textOf(t.expiryLine(proposal)), /^Expires at block 4,503,456, in about 24 hours/);
+    tipAt(4500000, new Set(), Date.now() - 2 * 3600 * 1000);
+    assert.match(textOf(t.expiryLine(proposal)), /in about 22 hours/, "the time since the sync");
+    tipAt(4500000, new Set(), null);
+    assert.match(textOf(t.expiryLine(proposal)), /^Expires at block 4,503,456\. The approvals/,
+      "a height from saved state gives no time");
+    assert.deepEqual(labels(t.cancelAction(proposal)), ["Cancel payment"]);
+    tipAt(4503453);
+    assert.equal(textOf(t.statusChip(proposal)), "Expired");
+    assert.match(textOf(t.expiryLine(proposal)), /expired at block 4,503,456/);
+    assert.deepEqual(labels(t.nextAction(proposal, null, { rows: [], extra: [] })),
+      ["Propose again"]);
+    assert.deepEqual(t.cancelAction(proposal), []);
+    const signer = t.localSeats()[0], nonces = t.sec(t.state.gid, signer).nonces || {};
+    const packaged = { ...proposal, id: "x4", package: "P", signers: [signer] };
+    await t.putSec(t.state.gid, signer, { nonces: { ...nonces, x4: { sighash: "00" } } });
+    t.reactSession(packaged);
+    assert.equal(t.busy.has("share:x4:" + signer), false, "no share for an expired payment");
+    assert.deepEqual(t.nextAction(packaged, null, { rows: [], extra: [] }), [],
+      "with a signing package, shares can make a transaction: no Propose again");
+    await t.putSec(t.state.gid, signer, { nonces });
+
+    const sentOne = { id: "x2", pczt: "EXP1", status: "broadcast", signed: "s", broadcastTxid: "t5",
+      final: { txid: "t5", tx_hex: "00" }, broadcastAt: Date.now() };
+    t.state.sessions.push(sentOne);
+    tipAt(4500000);
+    assert.deepEqual(t.finishButtons(sentOne), [], "no Send again before 10 minutes");
+    sentOne.broadcastAt = Date.now() - 11 * 60 * 1000;
+    assert.deepEqual(labels(t.finishButtons(sentOne)), ["Send again"]);
+    tipAt(4503453);
+    assert.deepEqual(t.finishButtons(sentOne), [], "a node refuses it now");
+    assert.match(textOf(t.expiryLine(sentOne)), /can no longer go to the network/);
+    tipAt(4503459);
+    assert.equal(textOf(t.statusChip(sentOne)), "Expired");
+    const unmarkedOne = { ...proposal, id: "x5", signed: "s", final: { txid: "f", tx_hex: "00" },
+      broadcastError: "timeout" };
+    assert.equal(textOf(t.statusChip(unmarkedOne)), "Expired");
+    // One seat can rewrite the proposal of a signed payment, so after signing the page never says
+    // that no block holds it and never offers "Propose again": it asks the signers to check.
+    for (const signedOne of [sentOne, unmarkedOne]) {
+      assert.equal(t.expired(signedOne), true);
+      assert.deepEqual(t.nextAction(signedOne, null, { rows: [], extra: [] }), []);
+      assert.match(textOf(t.expiryLine(signedOne)), /cannot prove that the signers signed/);
+    }
+    const falseId = callouts(t.txDetails(unmarkedOne)).join(" ");
+    assert.match(falseId, /names the id f…f, but the proposal gives the id realtx…realtx/);
+    tipAt(4503459, new Set(["realtx"]));
+    assert.equal(t.expired(sentOne), false);
+    assert.equal(textOf(t.statusChip(unmarkedOne)), "Sent", "a block holds the approved one");
+    assert.equal(t.expiryLine(unmarkedOne), null);
+    tipAt(4500000);
+    assert.deepEqual(labels(t.finishButtons(unmarkedOne)), ["Send again"]);
+    tipAt(4500000, new Set(["realtx"]));
+    assert.deepEqual(t.finishButtons(unmarkedOne), [], "no Send again for a payment on chain");
+    t.state.sessions.splice(t.state.sessions.indexOf(sentOne), 1);
+
+    const group = t.state.g;
+    t.state.g = { ...group, movedTo: "MV1" };
+    t.gkeys = { ...t.gkeys, MV1: "k".repeat(43) };
+    t.ready.MV1 = { address: "utest1m" };
+    const move = { ...proposal, id: "x3", move: "MV1" };
+    t.state.sessions.push(move);
+    assert.equal(t.moveState(tipAt(4500000)).session, move);
+    assert.equal(t.moveState(tipAt(4503453)).propose, true, "the expired move goes again");
+    t.state.sessions.splice(t.state.sessions.indexOf(move), 1);
+    t.state.g = group;
+    delete t.ready.MV1;
 
     for (const id of [W2, M]) {
       delete t.secrets[`${id}:1`]; delete t.ready[id]; delete t.balCache[id];

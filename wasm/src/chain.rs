@@ -35,16 +35,20 @@ use zcash_protocol::{
 };
 
 use super::{
-    account, build_ironwood_pczt, e, ensure,
+    account, build_ironwood_pczt, e, ensure, expiry,
     memo::{commitment_bytes, parse_memo, received as memos_in, MemoView},
     pczt_to_b64,
     snapshot::{decode_note, decode_store, encode_note, encode_store, hex32},
-    Payee, R,
+    Payee, Terms, R,
 };
 
 const BATCH: u32 = 1000;
 const CONFIRMATIONS: u32 = 3;
 const MARGINAL_FEE: u64 = 5000;
+/// A priority payment pays this many times the ZIP 317 fee, and no payment pays more. Zebra 7.0
+/// (NU7) raises the weight ratio cap of its block template from 4 to 10, so a higher fee buys a
+/// faster block up to this ratio.
+pub(crate) const PRIORITY_FACTOR: u64 = 10;
 /// The most blocks that a reorganisation can undo.
 const REORG_DEPTH: usize = 100;
 /// Block hashes and tree checkpoints that the wallet keeps: one more than it can undo, because
@@ -533,15 +537,19 @@ pub(crate) fn zip317_fee(spends: usize, outputs: usize) -> u64 {
 }
 
 /// `notes` is `(value, height)` of each unspent note. Picks confirmed notes, largest first.
-/// `outputs` counts every output, change included.
-fn select_notes(notes: &[(u64, u32)], amount: u64, outputs: usize, synced: u32) -> R<Pick> {
+/// `outputs` counts every output, change included. The fee is `factor` times the ZIP 317 fee.
+fn select_notes(
+    notes: &[(u64, u32)], amount: u64, outputs: usize, synced: u32, factor: u64,
+) -> R<Pick> {
     ensure(amount > 0, "amount must be greater than zero")?;
-    pick_notes(notes, amount, outputs, synced)
+    pick_notes(notes, amount, outputs, synced, factor)
 }
 
 /// `select_notes` for an `amount` that may be zero, as in a message, which pays only the fee. A
 /// note of zero value is a message part that someone sent: spending it only adds to the fee.
-fn pick_notes(notes: &[(u64, u32)], amount: u64, outputs: usize, synced: u32) -> R<Pick> {
+fn pick_notes(
+    notes: &[(u64, u32)], amount: u64, outputs: usize, synced: u32, factor: u64,
+) -> R<Pick> {
     let mut eligible: Vec<usize> = (0..notes.len())
         .filter(|&i| is_confirmed(notes[i].1, synced) && notes[i].0 > 0)
         .collect();
@@ -550,12 +558,12 @@ fn pick_notes(notes: &[(u64, u32)], amount: u64, outputs: usize, synced: u32) ->
     for i in eligible {
         picked.push(i);
         total += notes[i].0;
-        let fee = zip317_fee(picked.len(), outputs);
+        let fee = zip317_fee(picked.len(), outputs) * factor;
         if total >= amount.saturating_add(fee) {
             return Ok(Pick { picked, fee, change: total - amount - fee, total });
         }
     }
-    let need = amount.saturating_add(zip317_fee(picked.len(), outputs));
+    let need = amount.saturating_add(zip317_fee(picked.len(), outputs) * factor);
     Err(format!("not enough funds: {total} zat spendable, {need} zat needed (amount + fee)"))
 }
 
@@ -692,7 +700,7 @@ async fn sync(state: &RefCell<Inner>, on_progress: &js_sys::Function) -> R<Strin
 fn build_spend(
     s: &Inner,
     payees: &[Payee],
-    tip: u32,
+    terms: &Terms,
     choose: impl FnOnce(&[(u64, u32)]) -> R<Pick>,
 ) -> R<(Pczt, Pick)> {
     let fvk = s.ufvk.orchard().ok_or("the viewing key has no Orchard component")?;
@@ -715,23 +723,24 @@ fn build_spend(
         inputs.push((unspent[i].note, orchard::tree::MerklePath::from(path)));
     }
     let outs = (payees, pick.change);
-    let pczt = build_ironwood_pczt(
-        s.net,
-        BlockHeight::from_u32(tip + 1),
-        fvk,
-        (inputs, orchard::Anchor::from(root)),
-        outs,
-    )?;
+    let pczt = build_ironwood_pczt(s.net, terms, fvk, (inputs, orchard::Anchor::from(root)), outs)?;
     Ok((pczt, pick))
 }
 
-fn spend_pczt(s: &Inner, payees: &[Payee], tip: u32) -> R<String> {
+/// A group payment: its approvals take hours, so it expires after the window of `expiry`.
+/// `priority` pays `PRIORITY_FACTOR` times the ZIP 317 fee.
+fn spend_pczt(s: &Inner, payees: &[Payee], tip: u32, priority: bool) -> R<String> {
     let amount = payees
         .iter()
         .try_fold(0u64, |sum, p| sum.checked_add(p.1))
         .ok_or("the amounts add up to more than any wallet can hold")?;
-    let choose = |values: &[(u64, u32)]| select_notes(values, amount, payees.len() + 1, s.synced);
-    let (pczt, pick) = build_spend(s, payees, tip, choose)?;
+    let factor = if priority { PRIORITY_FACTOR } else { 1 };
+    let target = BlockHeight::from_u32(tip + 1);
+    let expiry = Some(expiry::expiry_for(&s.net, target));
+    let terms = Terms { target, expiry, fee_factor: factor };
+    let outputs = payees.len() + 1;
+    let choose = |values: &[(u64, u32)]| select_notes(values, amount, outputs, s.synced, factor);
+    let (pczt, pick) = build_spend(s, payees, &terms, choose)?;
     Ok(json!({"pczt": pczt_to_b64(pczt)?, "pool": "ironwood", "amount": amount,
         "change": pick.change, "fee": pick.fee, "note_value": pick.total})
     .to_string())
@@ -744,23 +753,25 @@ fn message_payees(to: &str, text: &str, net: Network) -> R<Vec<Payee>> {
     parts.iter().map(|part| Ok((to, 0, parse_memo(&json!(part))?))).collect()
 }
 
-/// Like `spend_pczt` for the outputs of `message_payees`: the account pays the fee only.
+/// Like `spend_pczt` for the outputs of `message_payees`: the account pays the fee only. One
+/// device signs and sends it at once, so it keeps the builder's expiry and the standard fee.
 fn message_pczt(s: &Inner, payees: &[Payee], tip: u32) -> R<String> {
-    let choose = |values: &[(u64, u32)]| pick_notes(values, 0, payees.len() + 1, s.synced);
-    let (pczt, pick) = build_spend(s, payees, tip, choose)?;
+    let terms = Terms { target: BlockHeight::from_u32(tip + 1), expiry: None, fee_factor: 1 };
+    let choose = |values: &[(u64, u32)]| pick_notes(values, 0, payees.len() + 1, s.synced, 1);
+    let (pczt, pick) = build_spend(s, payees, &terms, choose)?;
     Ok(json!({"pczt": pczt_to_b64(pczt)?, "pool": "ironwood", "fee": pick.fee,
         "parts": payees.len(), "note_value": pick.total, "change": pick.change})
     .to_string())
 }
 
-async fn create_spend(state: &RefCell<Inner>, payees: &str) -> R<String> {
+async fn create_spend(state: &RefCell<Inner>, payees: &str, priority: bool) -> R<String> {
     let rows: Vec<Value> = serde_json::from_str(payees).map_err(e("recipient list"))?;
     let payees = parse_payees(&rows, state.borrow().net)?;
     let endpoint = state.borrow().endpoint.clone();
     let tip = tip_of(&endpoint).await?;
     let mut s = state.borrow_mut();
     s.tip = tip;
-    spend_pczt(&s, &payees, tip)
+    spend_pczt(&s, &payees, tip, priority)
 }
 
 async fn create_message(state: &RefCell<Inner>, to: &str, text: &str) -> R<String> {
@@ -872,10 +883,11 @@ impl ChainWallet {
     }
 
     /// `payees` is a JSON list: `[{"to": "<unified address>", "amount": <zat>, "memo": "<text>"},
-    /// …]`. The memo is optional: at most 512 UTF-8 bytes.
+    /// …]`. The memo is optional: at most 512 UTF-8 bytes. `priority` pays 10 times the ZIP 317
+    /// fee. The payment expires one day after it is built (see `expiry`).
     #[wasm_bindgen(js_name = createSpend)]
-    pub async fn create_spend(&self, payees: String) -> Result<String, JsError> {
-        super::js(create_spend(&self.0, &payees).await)
+    pub async fn create_spend(&self, payees: String, priority: bool) -> Result<String, JsError> {
+        super::js(create_spend(&self.0, &payees, priority).await)
     }
 
     /// A message on chain. `to` is a unified address with an Orchard receiver and `text` is the
@@ -1008,11 +1020,12 @@ pub(crate) mod native {
         })
     }
 
+    /// The native apps offer no priority fee yet (TICKETS.md, ZEC-8).
     pub(crate) fn spend(key: &str, payees: &[Value], tip: u32) -> R<String> {
         with(key, |w| {
             let payees = parse_payees(payees, w.net)?;
             w.tip = w.tip.max(tip);
-            spend_pczt(w, &payees, tip)
+            spend_pczt(w, &payees, tip, false)
         })
     }
 }
@@ -1025,23 +1038,23 @@ mod tests {
 
     #[test]
     fn exact_amount_uses_one_note_and_no_change() {
-        let p = select_notes(&[(110_000, 50)], 100_000, 2, SYNCED).unwrap();
+        let p = select_notes(&[(110_000, 50)], 100_000, 2, SYNCED, 1).unwrap();
         assert_eq!((p.picked, p.fee, p.change, p.total), (vec![0], 10_000, 0, 110_000));
     }
 
     #[test]
     fn not_enough_funds_reports_need() {
-        let err = select_notes(&[(109_999, 50)], 100_000, 2, SYNCED).unwrap_err();
+        let err = select_notes(&[(109_999, 50)], 100_000, 2, SYNCED, 1).unwrap_err();
         assert!(err.contains("not enough funds"), "{err}");
         assert!(err.contains("109999") && err.contains("110000"), "{err}");
-        assert!(select_notes(&[], 1, 2, SYNCED).unwrap_err().contains("not enough funds"));
-        assert!(select_notes(&[(1, 50)], 0, 2, SYNCED).is_err());
+        assert!(select_notes(&[], 1, 2, SYNCED, 1).unwrap_err().contains("not enough funds"));
+        assert!(select_notes(&[(1, 50)], 0, 2, SYNCED, 1).is_err());
     }
 
     #[test]
     fn fee_grows_with_three_spends_largest_first() {
         let notes = [(40_000, 10), (90_000, 11), (50_000, 12), (5, 13)];
-        let p = select_notes(&notes, 150_000, 2, SYNCED).unwrap();
+        let p = select_notes(&notes, 150_000, 2, SYNCED, 1).unwrap();
         assert_eq!(p.picked, vec![1, 2, 0]);
         assert_eq!((p.fee, p.total, p.change), (15_000, 180_000, 15_000));
     }
@@ -1051,9 +1064,9 @@ mod tests {
         let notes = [(40_000, 10), (90_000, 11), (50_000, 12), (7_000_000, SYNCED)];
         let max = max_send(&notes, SYNCED);
         assert_eq!(max, 165_000);
-        let p = select_notes(&notes, max, 2, SYNCED).unwrap();
+        let p = select_notes(&notes, max, 2, SYNCED, 1).unwrap();
         assert_eq!((p.picked.len(), p.change), (3, 0));
-        assert!(select_notes(&notes, max + 1, 2, SYNCED).is_err());
+        assert!(select_notes(&notes, max + 1, 2, SYNCED, 1).is_err());
         assert_eq!(max_send(&[(9_000, 10)], SYNCED), 0);
         assert_eq!(max_send(&[], SYNCED), 0);
     }
@@ -1104,10 +1117,10 @@ mod tests {
 
     #[test]
     fn fee_counts_outputs_when_they_outnumber_spends() {
-        let p = select_notes(&[(1_000_000, 50)], 500_000, 6, SYNCED).unwrap();
+        let p = select_notes(&[(1_000_000, 50)], 500_000, 6, SYNCED, 1).unwrap();
         assert_eq!((p.picked.len(), p.fee, p.change), (1, 30_000, 470_000));
         let notes = [(40_000, 10), (90_000, 11), (50_000, 12)];
-        assert_eq!(select_notes(&notes, 150_000, 3, SYNCED).unwrap().fee, 15_000);
+        assert_eq!(select_notes(&notes, 150_000, 3, SYNCED, 1).unwrap().fee, 15_000);
     }
 
     #[test]
@@ -1157,9 +1170,9 @@ mod tests {
     #[test]
     fn unconfirmed_notes_are_excluded() {
         let notes = [(1_000_000, SYNCED - 1), (60_000, SYNCED - 2)];
-        let err = select_notes(&notes, 100_000, 2, SYNCED).unwrap_err();
+        let err = select_notes(&notes, 100_000, 2, SYNCED, 1).unwrap_err();
         assert!(err.contains("60000 zat spendable"), "{err}");
-        assert!(select_notes(&notes, 50_000, 2, SYNCED).is_ok());
+        assert!(select_notes(&notes, 50_000, 2, SYNCED, 1).is_ok());
     }
 
     use crate::testchain::{compact_of, external, fvk, memo_of, no_memo, pays, Chain};
@@ -1549,14 +1562,14 @@ mod tests {
     fn a_note_of_zero_value_is_never_spent_and_a_message_may_pay_the_fee_only() {
         let fee = |n: usize| zip317_fee(n, 2);
         let notes = [(0, 10), (0, 11), (60_000, 12)];
-        let p = pick_notes(&notes, 0, 2, SYNCED).unwrap();
+        let p = pick_notes(&notes, 0, 2, SYNCED, 1).unwrap();
         assert_eq!((p.picked, p.fee, p.change), (vec![2], fee(1), 50_000));
-        assert!(select_notes(&notes, 0, 2, SYNCED).is_err(), "a payment still needs an amount");
-        let spam = pick_notes(&[(0, 10), (0, 11)], 0, 2, SYNCED).unwrap_err();
+        assert!(select_notes(&notes, 0, 2, SYNCED, 1).is_err(), "a payment still needs an amount");
+        let spam = pick_notes(&[(0, 10), (0, 11)], 0, 2, SYNCED, 1).unwrap_err();
         assert!(spam.contains("not enough funds: 0 zat spendable"), "{spam}");
-        let small = pick_notes(&[(9_999, 10)], 0, 2, SYNCED).unwrap_err();
+        let small = pick_notes(&[(9_999, 10)], 0, 2, SYNCED, 1).unwrap_err();
         assert!(small.contains("9999 zat spendable, 10000 zat needed"), "{small}");
-        assert_eq!(pick_notes(&[(10_000, 10)], 0, 2, SYNCED).unwrap().change, 0);
+        assert_eq!(pick_notes(&[(10_000, 10)], 0, 2, SYNCED, 1).unwrap().change, 0);
         assert_eq!(max_send(&[(0, 10), (0, 11), (60_000, 12)], SYNCED), 50_000);
     }
 
@@ -1611,6 +1624,29 @@ mod tests {
         }
         let five = message_of(&w, &to, &"é".repeat(1265), tip).unwrap();
         assert_eq!((&five["parts"], &five["fee"]), (&json!(5), &json!(30_000)));
+    }
+
+    /// A group payment expires one day of blocks after its target and may pay 10 times the fee.
+    /// A message keeps the builder's 40 blocks and the standard fee.
+    #[test]
+    fn a_group_payment_expires_after_a_day_and_may_pay_the_priority_fee() {
+        let (w, chain) = funded_account(&"0a".repeat(32), &[1_000_000]);
+        let to = address_for(&"0b".repeat(32), 1);
+        let payees = parse_payees(&[json!({"to": to, "amount": 100_000})], Network::TestNetwork);
+        let (payees, tip) = (payees.unwrap(), chain.last_height());
+        let fvk = hex::encode(w.ufvk.orchard().unwrap().to_bytes());
+        let inspect = |made: &Value| {
+            v(&crate::inspect(made["pczt"].as_str().unwrap(), &fvk).unwrap())
+        };
+        for (priority, fee) in [(false, 10_000), (true, 100_000)] {
+            let made = v(&spend_pczt(&w, &payees, tip, priority).unwrap());
+            assert_eq!((&made["fee"], &made["change"]), (&json!(fee), &json!(900_000 - fee)));
+            let ins = inspect(&made);
+            assert_eq!((&ins["fee"], &ins["standard_fee"]), (&json!(fee), &json!(10_000)));
+            assert_eq!(ins["expiry_height"], tip + 1 + 3_456, "one day at 25 seconds");
+        }
+        let ins = inspect(&message_of(&w, &to, "hi", tip).unwrap());
+        assert_eq!((&ins["fee"], &ins["expiry_height"]), (&json!(10_000), &json!(tip + 1 + 40)));
     }
 
     #[test]

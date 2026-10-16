@@ -56,7 +56,8 @@ const METHODS: &[(&str, Method)] = &[
     ("walletCreateV2", |a| ceremony::wallet_create_v2(s(a, 0)?, s(a, 1)?, s(a, 2)?)),
     ("walletVerifyV2", |a| ceremony::wallet_verify_v2(s(a, 0)?, s(a, 1)?, s(a, 2)?)),
     ("inspect", |a| inspect(s(a, 0)?, s(a, 1)?)),
-    ("signCommit", |a| sign_commit(s(a, 0)?, s(a, 1)?, s(a, 2)?)),
+    // The iPhone and Mac apps pass no chain height yet (TICKETS.md, ZEC-8).
+    ("signCommit", |a| sign_commit(s(a, 0)?, s(a, 1)?, s(a, 2)?, None)),
     ("signPackage", |a| sign_package(s(a, 0)?, s(a, 1)?, s(a, 2)?, n(a, 3)?)),
     ("signShare", |a| {
         sign_share(s(a, 0)?, s(a, 1)?, s(a, 2)?, s(a, 3)?, s(a, 4)?, n(a, 5)?)
