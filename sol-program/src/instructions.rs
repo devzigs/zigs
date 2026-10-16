@@ -3,10 +3,10 @@
 use pinocchio::{
     cpi::{Seed, Signer},
     error::ProgramError,
-    sysvars::{clock::Clock, rent::Rent, Sysvar},
+    sysvars::{clock::Clock, Sysvar},
     AccountView, Address, ProgramResult,
 };
-use pinocchio_system::instructions::{Allocate, Assign, CreateAccount, Transfer};
+use pinocchio_system::create_account_with_minimum_balance_signed;
 use zolana_hasher::{Hasher, Sha256};
 use zolana_interface::instruction::{
     instruction_data::transact::{ExternalDataPreimage, OwnerTag, TransactIxDataRef},
@@ -90,44 +90,6 @@ fn load_proposal(program_id: &Address, account: &AccountView) -> Result<Vec<u8>,
     Ok(data)
 }
 
-/// Creates a program account at a PDA. An address that someone funded first gets the shortfall,
-/// then `Allocate` and `Assign` signed by the PDA, so a deposit cannot block the creation.
-fn create_pda(
-    payer: &AccountView,
-    account: &AccountView,
-    space: usize,
-    owner: &Address,
-    signer: &[Signer],
-) -> ProgramResult {
-    let rent = Rent::get()?.try_minimum_balance(space)?;
-    if account.lamports() == 0 {
-        let space = space as u64;
-        return CreateAccount {
-            from: payer,
-            to: account,
-            lamports: rent,
-            space,
-            owner,
-        }
-        .invoke_signed(signer);
-    }
-    let shortfall = rent.saturating_sub(account.lamports());
-    if shortfall > 0 {
-        Transfer {
-            from: payer,
-            to: account,
-            lamports: shortfall,
-        }
-        .invoke()?;
-    }
-    Allocate {
-        account,
-        space: space as u64,
-    }
-    .invoke_signed(signer)?;
-    Assign { account, owner }.invoke_signed(signer)
-}
-
 fn cancellation_address(program_id: &Address, proposal: &Address) -> (Address, u8) {
     Address::find_program_address(&[CANCEL_SEED, proposal.as_array()], program_id)
 }
@@ -186,11 +148,14 @@ pub fn create(program_id: &Address, accounts: &mut [AccountView], data: &[u8]) -
         Seed::from(&bump_seed),
     ];
     let space = HEADER + data.len();
-    create_pda(
-        payer,
+    // An address that someone funded first gets the shortfall, then Allocate and Assign signed
+    // by the PDA, so a SOL transfer to the public address cannot block the creation.
+    create_account_with_minimum_balance_signed(
         proposal_account,
         space,
         program_id,
+        payer,
+        None,
         &[Signer::from(&seeds)],
     )?;
     let mut stored = proposal_account.try_borrow_mut()?;
@@ -324,11 +289,12 @@ fn record_cancellation(
         Seed::from(proposal_address.as_array()),
         Seed::from(&bump_seed),
     ];
-    create_pda(
-        payer,
+    create_account_with_minimum_balance_signed(
         cancellation,
         CANCELLED_LEN,
         program_id,
+        payer,
+        None,
         &[Signer::from(&seeds)],
     )?;
     let record = cancellation_record(bump, proposal.expiry_unix_ts, &proposal.rent_recipient);

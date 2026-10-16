@@ -96,7 +96,22 @@ mutant R1 instructions.rs "execute and cancel pay the named rent recipient" \
 mutant R2 instructions.rs "close_cancelled pays the recorded rent recipient" \
   'if rent_recipient.address().as_array()[..] != record[10..] {' 'if false {'
 mutant P1 instructions.rs "version 2: a funded address does not block create or cancel" \
-  'if account.lamports() == 0 {' 'if true {'
+  'use pinocchio_system::create_account_with_minimum_balance_signed;' \
+  'use pinocchio_system::instructions::CreateAccount;
+
+/// Version 1: a plain CreateAccount, which fails on an address that holds lamports.
+fn create_account_with_minimum_balance_signed(
+    account: &mut AccountView,
+    space: usize,
+    owner: &Address,
+    payer: &AccountView,
+    _rent: Option<&AccountView>,
+    signers: &[Signer],
+) -> ProgramResult {
+    let lamports = pinocchio::sysvars::rent::Rent::get()?.try_minimum_balance(space)?;
+    let (from, to, space) = (payer, &*account, space as u64);
+    CreateAccount { from, to, lamports, space, owner }.invoke_signed(signers)
+}'
 mutant R3 instructions.rs "the rent recipient is not the owner PDA (review R3)" \
   '[owner, *program_id, SYSTEM_PROGRAM_ID]' '[*program_id, SYSTEM_PROGRAM_ID]'
 mutant R4 instructions.rs "the rent recipient is not this program (review R3)" \
