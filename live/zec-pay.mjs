@@ -1,0 +1,442 @@
+// A live run (VEL-3): one 2-of-2 testnet payment from the permanent test wallet, made through
+// the page on a local server and checked on chain. Run: node live/zec-pay.mjs [--priority]
+// The test wallet is a folder outside the repo (WALLET below). README.md, Tests, has the cost.
+import { spawn } from "node:child_process";
+import {
+  closeSync,
+  mkdirSync,
+  mkdtempSync,
+  openSync,
+  readFileSync,
+  realpathSync,
+  rmSync,
+  writeFileSync,
+} from "node:fs";
+import net from "node:net";
+import { homedir, tmpdir } from "node:os";
+import { join } from "node:path";
+import { fileURLToPath } from "node:url";
+import { sleep, waitFor } from "../solspike/harness/chrome.mjs";
+import { clickText, run, setInput } from "../solspike/harness/page.mjs";
+import { redact } from "../solspike/harness/redact.mjs";
+import { startRig } from "../solspike/harness/rig.mjs";
+import { ownProcesses, trackPeak } from "../solspike/tools/procs.mjs";
+import * as Z from "../web/pkg/zigs_engine.js";
+
+const ROOT = fileURLToPath(new URL("..", import.meta.url));
+const WALLET = join(homedir(), ".config", "zigs", "testwallets", "zec-testnet");
+const WALLET_SHOWN = "~/.config/zigs/testwallets/zec-testnet";
+const LWD = "https://lwd.zigs.app";
+const PRIORITY = process.argv.includes("--priority");
+const FACTOR = PRIORITY ? 10 : 1;
+const PAY_ZAT = 100_000;
+const BASE_FEE = 5000;
+const EXPIRY_BLOCKS = 3456;
+const BRANCH_ID = 0x77190ad9;
+const SEND_MS = 300_000;
+const APPROVE_MS = 180_000;
+const PROOF_MS = 600_000;
+const MINED_MS = 600_000;
+const POLL_MS = 15_000;
+
+const log = (text) => console.error(redact(`zec-pay: ${text}`));
+
+// ── Pure rules (checked by zec-pay.check.mjs) ──
+
+/** The version, the consensus branch id and the expiry height of a v6 transaction header. */
+export function parseHeader(raw) {
+  if (raw.length < 20) throw new Error(`a transaction of ${raw.length} bytes has no header`);
+  return {
+    version: raw.readUInt32LE(0) & 0x7fffffff,
+    branchId: raw.readUInt32LE(8),
+    expiry: raw.readUInt32LE(16),
+  };
+}
+
+/** The zatoshi of an amount as the page shows it, for example "0.0001" or "1,234.5". */
+export function zatOfText(text) {
+  const m = /^(\d{1,3}(?:,\d{3})+|\d+)(?:\.(\d{1,8}))?$/.exec(text.trim());
+  if (!m) throw new Error(`cannot read the amount "${text}"`);
+  return Number(m[1].replaceAll(",", "")) * 1e8 + Number((m[2] ?? "").padEnd(8, "0"));
+}
+
+/** The fee and the list of failed checks. `tipBefore` is the chain height read before Propose. */
+export function verify({ header, tipBefore, totalBefore, totalAfter, pageFee, priority }) {
+  const fee = totalBefore - totalAfter - PAY_ZAT;
+  const unit = BASE_FEE * (priority ? 10 : 1);
+  const late = header.expiry - EXPIRY_BLOCKS - 1 - tipBefore;
+  const checks = [
+    [
+      late === 0 || late === 1,
+      `expiry ${header.expiry} is not ${tipBefore} + 1 + ${EXPIRY_BLOCKS}`,
+    ],
+    [fee % unit === 0 && fee / unit >= 2, `fee ${fee} is not ${unit} x k with k >= 2`],
+    [fee === pageFee, `fee ${fee} differs from the fee of the page, ${pageFee}`],
+    [header.version === 6, `transaction version ${header.version}, not 6`],
+    [header.branchId === BRANCH_ID, `branch id ${header.branchId.toString(16)}`],
+  ];
+  return { fee, problems: checks.filter(([ok]) => !ok).map(([, why]) => why) };
+}
+
+// ── Resources: each is released once, also on a failure or a signal ──
+
+const held = new Map();
+const hold = (name, release) => held.set(name, release);
+
+async function release(name) {
+  const fn = held.get(name);
+  held.delete(name);
+  if (fn) await fn().catch((err) => log(`release of ${name} failed: ${err.message}`));
+}
+
+async function releaseAll() {
+  for (const name of [...held.keys()].reverse()) await release(name);
+}
+
+const pidAlive = (pid) => {
+  if (!(pid > 0)) return false;
+  try {
+    process.kill(pid, 0);
+    return true;
+  } catch (err) {
+    return err.code === "EPERM";
+  }
+};
+
+function lockOwner(file) {
+  try {
+    return Number(readFileSync(file, "utf8"));
+  } catch {
+    return 0;
+  }
+}
+
+/** One run at a time: a lock file in the wallet folder. A dead run's file is taken over. */
+function takeLock() {
+  const file = join(WALLET, "live.lock");
+  for (let i = 0; i < 2; i += 1) {
+    try {
+      writeFileSync(file, String(process.pid), { flag: "wx", mode: 0o600 });
+      return hold("lock", async () => rmSync(file, { force: true }));
+    } catch (err) {
+      if (err.code !== "EEXIST") throw err;
+      const owner = lockOwner(file);
+      if (pidAlive(owner)) throw new Error(`${WALLET_SHOWN}/live.lock is held by pid ${owner}`);
+      rmSync(file, { force: true });
+    }
+  }
+  throw new Error(`cannot take ${WALLET_SHOWN}/live.lock`);
+}
+
+const freePort = () =>
+  new Promise((ok, bad) => {
+    const probe = net.createServer();
+    probe.once("error", bad);
+    probe.listen(0, "127.0.0.1", () => {
+      const { port } = probe.address();
+      probe.close(() => ok(port));
+    });
+  });
+
+const answers = (port) =>
+  fetch(`http://localhost:${port}/`, { signal: AbortSignal.timeout(2000) }).then(
+    (res) => res.status === 200,
+    () => false,
+  );
+
+function serverEnv(tmp) {
+  return {
+    ...process.env,
+    WRANGLER_SEND_METRICS: "false",
+    CI: "1",
+    XDG_CONFIG_HOME: join(tmp, "xdg"),
+    WRANGLER_LOG_PATH: join(tmp, "logs"),
+    WRANGLER_REGISTRY_PATH: join(tmp, "registry"),
+  };
+}
+
+/** SIGTERM to the server and to every process below it, then SIGKILL to the survivors. */
+async function stopServer(proc, tmp) {
+  const family = [...ownProcesses([proc.pid]).keys()];
+  proc.kill("SIGTERM");
+  const gone = () => family.every((pid) => !pidAlive(pid));
+  await waitFor(gone, 20_000, () => "the server to stop").catch(() => {
+    for (const pid of family.filter(pidAlive)) process.kill(pid, "SIGKILL");
+  });
+  rmSync(tmp, { recursive: true, force: true });
+}
+
+/** Starts the local server on the persisted state of the test wallet (the group documents). */
+async function startServer(port) {
+  const tmp = mkdtempSync(join(tmpdir(), "zec-pay-"));
+  for (const name of ["xdg", "logs"]) mkdirSync(join(tmp, name));
+  const out = openSync(join(tmp, "server.log"), "a");
+  const cli = join(ROOT, "cf", "node_modules", "wrangler", "wrangler-dist", "cli.js");
+  const args = ["--no-warnings", cli, "dev", "--local", "--port", String(port)];
+  args.push("--inspector-port", "0", "--show-interactive-dev-session=false");
+  args.push("--persist-to", join(WALLET, "server-state"), "--var", "DEV_NO_AUTH:1");
+  const opts = { cwd: join(ROOT, "cf"), env: serverEnv(tmp), stdio: ["ignore", out, out] };
+  const proc = spawn(process.execPath, args, opts);
+  closeSync(out);
+  hold("server", () => stopServer(proc, tmp));
+  const ready = async () => {
+    if (proc.exitCode !== null) {
+      const tail = readFileSync(join(tmp, "server.log"), "utf8").trim().split("\n").slice(-5);
+      throw new Error(`the server exited: ${tail.join(" / ")}`);
+    }
+    return answers(port);
+  };
+  await waitFor(ready, 90_000, () => "the local server");
+}
+
+// ── The test wallet ──
+
+/** Both seats, in seat order: { seat, name, pass, text }. Every secret goes to the redactor. */
+function loadWallet() {
+  const read = (name) => JSON.parse(readFileSync(join(WALLET, name), "utf8"));
+  const payee = read("payee.json");
+  redact.add(payee.seed, payee.ufvk);
+  const files = read("secrets.json").seats.map(({ seat, file, pass }) => ({
+    seat,
+    name: file,
+    pass,
+    text: readFileSync(join(WALLET, file), "utf8"),
+  }));
+  for (const { pass, text } of files) redact.add(pass, text);
+  return { files: files.sort((a, b) => a.seat - b.seat), address: payee.address };
+}
+
+function leaves(value) {
+  if (typeof value === "string") return value.length >= 16 ? [value] : [];
+  if (value && typeof value === "object") return Object.values(value).flatMap(leaves);
+  return [];
+}
+
+function openBackup(file) {
+  const open = JSON.parse(Z.backupOpen(file.pass, file.text));
+  redact.add(open.wallet.ufvk, open.wallet.orchard_fvk, ...leaves(open.secret));
+  return open;
+}
+
+function checkSeats(opened) {
+  const [one, two] = opened;
+  const ok = opened.length === 2 && one.group === two.group && one.seat === 1 && two.seat === 2;
+  if (!ok || one.threshold !== 2 || one.of !== 2) {
+    throw new Error(`${WALLET_SHOWN} must hold seats 1 and 2 of one 2-of-2 wallet`);
+  }
+}
+
+const syncOf = async (cw) => JSON.parse(await cw.sync(() => {}));
+
+async function readChain(open) {
+  const cw = new Z.ChainWallet(open.wallet.ufvk, open.wallet.birthday, LWD);
+  hold("chain wallet", async () => cw.free());
+  const bal = await syncOf(cw);
+  return { cw, bal, sent: new Set(JSON.parse(cw.sent())) };
+}
+
+// ── The page ──
+
+const pageWhy = (page) =>
+  run(page, () => {
+    const texts = (sel) => [...document.querySelectorAll(sel)].map((e) => e.textContent.trim());
+    return [...texts("#banner-text"), ...texts(".send-why"), ...texts(".callout.bad")]
+      .filter(Boolean)
+      .join(" | ");
+  })
+    .catch(() => "")
+    .then(redact);
+
+async function until(page, what, fn, ms) {
+  try {
+    return await waitFor(fn, ms, () => what);
+  } catch (err) {
+    throw new Error(`${err.message}. The page says: ${(await pageWhy(page)) || "nothing"}`);
+  }
+}
+
+async function press(page, text, ms = 20_000) {
+  try {
+    await clickText(page, text, { exact: true, ms });
+  } catch (err) {
+    throw new Error(`${err.message}. The page says: ${(await pageWhy(page)) || "nothing"}`);
+  }
+}
+
+const hasForm = (page) => run(page, () => !!document.querySelector('[id^="s-to-"]'));
+
+const sessionId = (page) =>
+  run(page, () => {
+    const row = document.querySelector('[data-key^="pay-"][aria-current="true"]');
+    return row ? row.dataset.key.slice("pay-".length) : null;
+  });
+
+const shownFee = (page) =>
+  run(page, () => {
+    const rows = [...document.querySelectorAll(".lines > div")];
+    const row = rows.find((r) => /^(Network|Priority) fee/.test(r.children[0]?.textContent ?? ""));
+    return row ? row.children[1].textContent.trim() : null;
+  });
+
+const explorerTxid = (page) =>
+  run(page, () => {
+    const link = [...document.querySelectorAll("a[href]")].find((a) =>
+      a.textContent.startsWith("View in explorer"),
+    );
+    return link ? (/[0-9a-f]{64}/.exec(link.href)?.[0] ?? null) : null;
+  });
+
+const openRequest = (page, id) =>
+  run(
+    page,
+    (sid) => {
+      const row = document.querySelector(`[data-key="pay-approve-${sid}"]`);
+      if (row) row.click();
+      return !!row;
+    },
+    id,
+  );
+
+/** Fills the Send form and proposes. Returns the chain height read just before the click. */
+async function propose(page, address) {
+  await press(page, "Send", SEND_MS);
+  await until(page, "the Send form", () => hasForm(page), 20_000);
+  await setInput(page, '[id^="s-to-"]', address);
+  await setInput(page, '[id^="s-amt-"]', "0.001");
+  if (PRIORITY) await setInput(page, "#s-priority", true);
+  const tipBefore = await Z.latestHeight(LWD);
+  await press(page, "Propose payment");
+  return tipBefore;
+}
+
+/** Proposal, both approvals, proof and broadcast. Returns { txid, tipBefore, pageFee }. */
+async function payInPages([first, second], address) {
+  const tipBefore = await propose(first, address);
+  const id = await until(first, "the payment", () => sessionId(first), 60_000);
+  const shown = await until(first, "the fee of the payment", () => shownFee(first), 120_000);
+  log(`proposed; the page shows a fee of ${shown}`);
+  await press(first, "Approve payment", APPROVE_MS);
+  await until(second, "the approval request", () => openRequest(second, id), APPROVE_MS);
+  await press(second, "Approve payment", APPROVE_MS);
+  log("both seats approved; building the proof");
+  await press(first, "Build proof", APPROVE_MS);
+  await press(first, "Send to network", PROOF_MS);
+  const txid = await until(first, "the explorer link", () => explorerTxid(first), 120_000);
+  return { txid, tipBefore, pageFee: zatOfText(shown) };
+}
+
+async function openSeats(harness, rig, files, group) {
+  return Promise.all(
+    files.map(async (file) => {
+      const page = await harness.openApp(rig, `seat${file.seat}`, `${harness.origin}/`);
+      await harness.restoreZcash(page, file, group);
+      return page;
+    }),
+  );
+}
+
+// The harness reads the port of the server when it loads, so it loads after the port is set.
+async function loadHarness(port) {
+  process.env.SOLSPIKE_PORT = String(port);
+  const { openApp } = await import("../solspike/harness/seats.mjs");
+  const { restoreZcash } = await import("../solspike/harness/backups.mjs");
+  const { ORIGIN } = await import("../solspike/harness/server.mjs");
+  return { openApp, restoreZcash, origin: ORIGIN };
+}
+
+async function paymentInBrowser(wallet, group) {
+  const port = await freePort();
+  const harness = await loadHarness(port);
+  await startServer(port);
+  log(`server on port ${port}; starting Chrome and restoring both seats`);
+  const rig = await startRig("zec-pay");
+  hold("browser", () => rig.close());
+  const pages = await openSeats(harness, rig, wallet.files, group);
+  const made = await payInPages(pages, wallet.address);
+  // The sent mark is stored on the server when the link shows; a short wait lets it settle.
+  await sleep(3000);
+  await release("browser");
+  await release("server");
+  return made;
+}
+
+// ── The chain ──
+
+async function waitMined(cw, txid) {
+  const end = Date.now() + MINED_MS;
+  for (;;) {
+    const bal = await syncOf(cw);
+    if (JSON.parse(cw.sent()).includes(txid)) {
+      const entry = JSON.parse(cw.snapshot()).sent.find((s) => s.txid === txid);
+      return { block: entry.h, total: bal.spendable + bal.pending };
+    }
+    if (Date.now() > end) throw new Error(`transaction ${txid} is not mined after 10 minutes`);
+    await sleep(POLL_MS);
+  }
+}
+
+async function headerOf(txid) {
+  const hash = Buffer.from(txid, "hex").reverse().toString("hex");
+  return parseHeader(Buffer.from(await Z.fetchTransaction(LWD, hash), "base64"));
+}
+
+function enoughFunds(bal) {
+  const need = PAY_ZAT + BASE_FEE * 4 * FACTOR;
+  if (bal.spendable >= need) return;
+  const have = `${bal.spendable} zat spendable and ${bal.pending} zat pending`;
+  throw new Error(`the test wallet needs ${need} zat spendable; it has ${have}. Wait or refill`);
+}
+
+async function live() {
+  const wallet = loadWallet();
+  const opened = wallet.files.map(openBackup);
+  checkSeats(opened);
+  const { cw, bal, sent } = await readChain(opened[0]);
+  enoughFunds(bal);
+  const made = await paymentInBrowser(wallet, opened[0].group);
+  if (sent.has(made.txid)) throw new Error(`transaction ${made.txid} was in the wallet before`);
+  log(`sent ${made.txid}; waiting for a block`);
+  const mined = await waitMined(cw, made.txid);
+  const header = await headerOf(made.txid);
+  const facts = { header, tipBefore: made.tipBefore, pageFee: made.pageFee, priority: PRIORITY };
+  const totalBefore = bal.spendable + bal.pending;
+  const { fee, problems } = verify({ ...facts, totalBefore, totalAfter: mined.total });
+  if (problems.length) throw new Error(`${made.txid} fails: ${problems.join("; ")}`);
+  const line = `txid=${made.txid} block=${mined.block} expiry=${header.expiry} fee=${fee}`;
+  return `zec-pay ok ${line}${PRIORITY ? " priority" : ""}`;
+}
+
+// ── Start and end ──
+
+// An open handle can keep Node alive after the cleanup. It ends the run with the code so far.
+function armBackstop(ms = 12_000) {
+  setTimeout(() => {
+    console.error("zec-pay: still running after the cleanup; ending it");
+    process.exit(process.exitCode ?? 0);
+  }, ms).unref();
+}
+
+async function main() {
+  const peak = trackPeak(() => [process.pid]);
+  for (const signal of ["SIGINT", "SIGTERM"]) {
+    process.once(signal, () => void releaseAll().finally(() => process.exit(1)));
+  }
+  Z.initSync({ module: readFileSync(new URL("../web/pkg/zigs_engine_bg.wasm", import.meta.url)) });
+  try {
+    takeLock();
+    console.log(redact(await live()));
+  } finally {
+    await releaseAll();
+    log(`peak of ${peak.stop().peak} processes`);
+  }
+}
+
+const isMain = realpathSync(process.argv[1]) === realpathSync(fileURLToPath(import.meta.url));
+if (isMain) {
+  main()
+    .catch((err) => {
+      console.error(redact(`zec-pay failed: ${err.message}`));
+      process.exitCode = 1;
+    })
+    .finally(() => armBackstop());
+}

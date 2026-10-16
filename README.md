@@ -602,6 +602,11 @@ folder path.
 - `bash tests/e2e.sh`: the command-line ceremony in separate processes, with attacks: wallet
   substitution, fewer than t signers, tampered randomizer and sighash, nonce reuse, wrong share
   attribution, foreign notes.
+- Live runs (they spend test coins, so they are not tests): `node live/zec-pay.mjs [--priority]`
+  restores the two seats of the permanent 2-of-2 testnet wallet, pays 0.001 TAZ through the page on
+  a local server, and checks the expiry, the fee and the header of the mined transaction. It spends
+  0.0011 TAZ of the test wallet (0.002 with `--priority`) and needs the wallet folder
+  `~/.config/zigs/testwallets/zec-testnet/`. `node live/zec-pay.check.mjs` checks its rules offline.
 
 ## Known limits
 
