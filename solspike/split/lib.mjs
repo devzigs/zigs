@@ -17,7 +17,7 @@ export const WEB = join(ROOT, "web");
 // The move order (D1 to D25) and the heading line of each module.
 export const MODULES = [
   ["state", "Shared state objects (state, ui, raw, inbox, ready, busy), the log and the banner."],
-  ["kit", "Pure helpers and the localStorage merge helpers. Imports nothing."],
+  ["kit", "Pure helpers and the localStorage merge helpers. Imports no page module."],
   ["engine", "The WebAssembly engine, and the worker for slow engine calls."],
   ["keystore", "Local secrets, the passkey lock, other-tab sync and IndexedDB."],
   ["seats", "Facts derived from state: the seats of this browser and their keys."],

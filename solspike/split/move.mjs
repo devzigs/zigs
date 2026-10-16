@@ -13,21 +13,19 @@ import {
   BANNER, chunkText, ENTRY, fail, fileOf, HEADING, importLine, loadPage, moduleOfFile, ORDER,
   pageFiles, parse, placement, PURE, readTable, REST, ROOT, testNames, usesOf, WEB, withInternals,
 } from "./lib.mjs";
-import { declaredNames, refsOf } from "./refs.mjs";
+import { declaredNames } from "./refs.mjs";
 
 withInternals();
 
-// The page names that the HOOKS text of the old test loaders uses (before step C2).
-function hookNames(page) {
+// The names that the tests read from the page before step C2: the keys of the object T in the
+// HOOKS text of app.mjs and sol-rig.mjs.
+function hookNames() {
   const out = new Set();
   for (const test of ["web/test/app.mjs", "web/test/sol-rig.mjs"]) {
-    const src = readFileSync(join(ROOT, test), "utf8");
-    const m = /const HOOKS = `([\s\S]*?)`;/.exec(src);
-    if (!m) continue;
-    for (const node of parse(m[1]).body) {
-      const r = refsOf(node.declaration ?? node, page.top);
-      [...r.calls, ...r.reads, ...r.writes, ...r.muts].forEach((n) => out.add(n));
-    }
+    const m = /const HOOKS = `([\s\S]*?)`;/.exec(readFileSync(join(ROOT, test), "utf8"));
+    const decl = m && parse(m[1]).body[0]?.declaration?.declarations?.[0];
+    if (decl?.id.name !== "T") fail(`${test}: no HOOKS with export const T = { ... }`);
+    decl.init.properties.forEach((p) => out.add(p.key.name));
   }
   return out;
 }
@@ -101,7 +99,7 @@ function cut(page, target, m) {
 }
 
 function write(page, mode) {
-  const names = mode === "--exports" ? hookNames(page) : testNames();
+  const names = mode === "--exports" ? hookNames() : testNames();
   const { needs, crossUsed } = links(page);
   const used = (n) => crossUsed.has(n) || names.has(n);
   const exportOf = (c, k) => declaredNames(c.nodes[k]).some(used);

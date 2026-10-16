@@ -73,7 +73,7 @@ try {
   r = tool("move", "kit");
   assert.equal(r.code, 0, r.out);
   assert.match(r.out, /moved 1 statements to web\/app-kit\.js/);
-  const KIT = "// Pure helpers and the localStorage merge helpers. Imports nothing.";
+  const KIT = "// Pure helpers and the localStorage merge helpers. Imports no page module.";
   const kitHead = `${KIT}\n${UTIL}\n\n// A pure helper.\nexport const fmt`;
   assert.ok(get("web/app-kit.js").startsWith(kitHead), get("web/app-kit.js"));
   assert.match(get("web/app-rest.js"), /import \{ fmt \} from "\.\/app-kit\.js";/);
