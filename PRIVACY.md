@@ -129,6 +129,9 @@ API key. The server gives it to the page at `/sol/config.json`, behind the same 
 other request. So every user of the page can read it. Allowed Domains at Helius limits its use by
 other sites, but it does not protect the key.
 
+The link **Get Devnet SOL** opens the Solana faucet (faucet.solana.com) in a new tab. That site is
+not Zigs. It sees your IP address and the owner address that you paste, so it can link the two.
+
 Zolana is not Zcash. This table says what differs:
 
 | Property | Zcash (the wallet above) | Solana beta (Zolana Default Ring) |

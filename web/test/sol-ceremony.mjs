@@ -47,6 +47,20 @@ const marksOf = (node) => {
   const own = node.attrs["data-sol"] ? [node.attrs["data-sol"]] : [];
   return own.concat(node.kids.flatMap(marksOf));
 };
+const nodeOf = (node, mark) => {
+  if (typeof node !== "object") return null;
+  if (node.attrs["data-sol"] === mark) return node;
+  for (const kid of node.kids) {
+    const found = nodeOf(kid, mark);
+    if (found) return found;
+  }
+  return null;
+};
+const faucetLink = (view) => {
+  const link = nodeOf(view, "faucet");
+  assert.ok(link, "the fund card has a faucet link");
+  return [link.tag, link.attrs.href, link.attrs.target, link.attrs.rel];
+};
 const stored = (gid, name) =>
   Object.fromEntries(
     [1, 2, 3]
@@ -103,6 +117,11 @@ async function stoppedEverywhere(gid, lost = 1) {
   const control = solView(tabState(gid, free), (f) => f, noActions);
   const open = marksOf(control);
   for (const mark of KEY_MARKS) assert.ok(open.includes(mark), "the control shows " + mark);
+  assert.deepEqual(
+    faucetLink(control),
+    ["a", "https://faucet.solana.com/", "_blank", "noopener"],
+    "the fund card links to the Devnet faucet in a new tab",
+  );
   // The sync refuses before it starts the Worker or makes a request.
   const realFetch = globalThis.fetch;
   globalThis.fetch = () => assert.fail("no request while the wallet is stopped");

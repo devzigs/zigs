@@ -12,6 +12,7 @@ import { holdsShare, solOf } from "./secrets.js";
 import { solText } from "./session.js";
 
 const SHOWN = 12;
+const FAUCET = "https://faucet.solana.com/";
 const TITLES = {
   createNonce: "Create the nonce account",
   register: "Register the group keys",
@@ -77,6 +78,17 @@ function fundCard(c, act, actions) {
     el(
       "div",
       { class: "row-actions" },
+      el(
+        "a",
+        {
+          class: "btn sm ghost",
+          href: FAUCET,
+          target: "_blank",
+          rel: "noopener",
+          "data-sol": "faucet",
+        },
+        "Get Devnet SOL ↗",
+      ),
       el(
         "button",
         { class: "btn sm", type: "button", "data-sol": "refresh", onclick: act(actions.refresh) },
