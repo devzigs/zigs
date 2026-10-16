@@ -826,6 +826,37 @@ the pool that runs on Devnet; no state change):
   P-256 viewing keys. If it reaches main, the viewing key of 4.2, the 99-byte address and the
   ciphertext rule of the checker (P-256 ECDH) change. SOL-37 watches it.
 
+**6.12 SOL-36 live run, 16 October 2026** (the page of the SOL-36 branch at commit `52a12b0`,
+under the origin `https://app.zigs.app` on a local server; three seats in three browser contexts;
+the program version 2, whose ELF hash `555f4580…` was checked before the run). One new 2-of-3
+group, PDA `9gk8NEZU…`:
+
+- The new group showed no move card and had no nonce account. The fee addresses of the three
+  seats got 0.015, 0.003 and 0.002 SOL from the funder.
+- Add SOL: seat 1 deposited 0.01 SOL to the PDA identity (`2N3aUnJ7…`), signed by its fee key
+  alone. The private balance read 0.01 SOL.
+- The one-time move: the funder deposited 0.003 SOL to the old address of the group key
+  (`5n5BZHcG…`), as the beta funds of an older group. The move card showed. Seats 1 and 2 created
+  the nonce account (`5FhQ8WRy…`), then seats 2 and 3 approved the move (`ZCQuN9xx…`, slot
+  511,779,352: the fee key of seat 2 and the group key signed). The private balance read 0.013
+  SOL, and the card was gone.
+- Payment A, 0.002 SOL to key B: seat 1 proposed and created the proposal account `HAFDtgjH…`
+  (`5SsHttLT…`). Seat 1 approved. 31 s later the account was still open and nothing had
+  executed. Seat 2 approved, and seat 1 executed with a new proof (`3a9vJRko…`, slot 511,779,630,
+  one signature, 10,000 lamports, 152,320 compute units).
+- Payment B, 0.001 SOL to key B: seat 2 proposed (`3y1P31GH…`), and its browser context was
+  closed at once. Seats 1 and 3 approved, and seat 1 executed (`xL39Ura1…`, slot 511,779,902,
+  148,577 compute units). The rent went back to seat 2: its fee address paid 15,000 lamports of
+  fees in all.
+- The chain, read with the kit decoder and Node's own Ed25519 (not the code of the page): each
+  execute has the Ed25519 instruction just before `execute`, with the group key and the digest
+  of 7.2 over the body of its create; the signature verifies; the proposal account is gone; key
+  B rose by the amount; the body of 137 bytes names the fee key of the proposing seat as rent
+  recipient. No console problem on any page.
+- Cost: 23,020,000 lamports from the funder. A first run stopped after the funding on a wrong
+  text pattern of its own driver; its 33,000,000 lamports stay on fee addresses whose key shares
+  were in memory only. No proposal account of the program is open after the run.
+
 ## 7. Risks, questions and recommendation
 
 | Risk | Fact |
