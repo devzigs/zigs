@@ -74,7 +74,7 @@ fn execute_landed(transact: &[u8]) -> TxResult {
     rig.create(&body).expect("create the landed body");
     rig.set_time(v.execute_time);
     let approval = approval_ix(&rig.group, &body.digest());
-    let metas = execute_metas(&rig.payer.pubkey(), &body, 1, 1);
+    let metas = execute_metas(&rig.payer.pubkey(), &body, (1, 1), &[]);
     rig.send(&[approval, execute_ix(metas, transact)], &[])
 }
 
@@ -89,7 +89,7 @@ fn the_signed_values_match_this_crate() {
         &PROGRAM_ID,
     );
     assert_eq!(version_2_address.0, v.proposal);
-    assert_eq!(commitment(&v.execute_data[1..]), body[..32]);
+    assert_eq!(commitment(&v.execute_data[1..], &[]), body[..32]);
     assert_eq!(v.ed25519_data[16..48], group.to_bytes());
     assert_eq!(v.ed25519_data[112..], approval_digest(&v.proposal, body));
     let builder = approval_ix(&solana_keypair::Keypair::new(), &[0; 32]);

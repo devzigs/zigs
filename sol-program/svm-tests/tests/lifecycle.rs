@@ -12,7 +12,7 @@ use zigs_min_multisig_svm_tests::{
 
 fn rig_and_body() -> (Rig, Body) {
     let rig = Rig::new();
-    let body = rig.body(&serialize(&sample_transact()));
+    let body = rig.body(&sample_transact());
     (rig, body)
 }
 

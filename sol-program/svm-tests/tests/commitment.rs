@@ -4,7 +4,8 @@
 //! tags pass.
 
 use zigs_min_multisig_svm_tests::{
-    approval_ix, code, commitment, execute_ix, refused_with, sample_transact, serialize, Body, Rig,
+    approval_ix, code, commitment, execute_ix, pool_signers, refused_with, sample_transact,
+    serialize, Body, Rig,
 };
 use zolana_interface::instruction::{
     CacheAccess, CircuitId, InterfaceTransfer, MessageData, OwnerTag, TransactIxData,
@@ -12,7 +13,7 @@ use zolana_interface::instruction::{
 
 fn proposed() -> (Rig, Body) {
     let mut rig = Rig::new();
-    let body = rig.body(&serialize(&sample_transact()));
+    let body = rig.body(&sample_transact());
     rig.create(&body).expect("create");
     (rig, body)
 }
@@ -41,6 +42,12 @@ fn the_pool_receives_the_approved_transact_unchanged() {
     assert_eq!(pool_calls.len(), 1);
     assert_eq!(pool_calls[0].instruction.data[1..], transact[..]);
     assert_eq!(pool_calls[0].instruction.accounts.len(), forwarded.len());
+    // The payer and, as the last account, the owner PDA sign; nothing else does.
+    let last = forwarded.len() - 1;
+    let expected: Vec<bool> = (0..forwarded.len())
+        .map(|at| at == 0 || at == last)
+        .collect();
+    assert_eq!(pool_signers(&meta), expected);
 }
 
 #[test]
@@ -51,7 +58,7 @@ fn a_fresh_proof_with_new_roots_keeps_the_approval() {
     fresh.proof.c = [8; 32];
     fresh.tree_contexts[0].utxo_tree_root_index = 300;
     fresh.tree_contexts[0].nullifier_tree_root_index = 301;
-    assert_eq!(commitment(&serialize(&fresh)), body.commitment);
+    assert_eq!(commitment(&serialize(&fresh), &[]), body.commitment);
     rig.execute(&body, &fresh).expect("a fresh proof settles");
 }
 
@@ -79,7 +86,7 @@ fn refuses_any_change_to_the_approved_payment() {
         let (mut rig, body) = proposed();
         let mut changed = sample_transact();
         change(&mut changed);
-        assert_ne!(commitment(&serialize(&changed)), body.commitment);
+        assert_ne!(commitment(&serialize(&changed), &[]), body.commitment);
         assert_eq!(
             execute_other(&mut rig, &body, &changed),
             code::COMMITMENT_MISMATCH
@@ -88,12 +95,23 @@ fn refuses_any_change_to_the_approved_payment() {
 }
 
 /// A proposal approved for another shape still cannot settle it: the shape check comes first.
+/// SOL withdrawals pass the shape (tests/withdrawal.rs); deposits and SPL legs do not.
 #[test]
-fn refuses_interface_transfers_rings_caches_and_account_tags() {
-    let shapes: [fn(&mut TransactIxData); 5] = [
+fn refuses_deposits_spl_legs_rings_caches_and_account_tags() {
+    let shapes: [fn(&mut TransactIxData); 6] = [
         |t| {
-            t.interface_transfers
-                .push(InterfaceTransfer::SolWithdrawal { amount: 1 })
+            let leg = InterfaceTransfer::SplWithdrawal {
+                amount: 1,
+                spl_interface_bump: 255,
+            };
+            t.interface_transfers.push(leg)
+        },
+        |t| {
+            let leg = InterfaceTransfer::SplDeposit {
+                amount: 1,
+                spl_interface_bump: 255,
+            };
+            t.interface_transfers.push(leg)
         },
         |t| {
             t.interface_transfers

@@ -82,10 +82,19 @@ mutant A8 approval.rs "the digest binds the proposal address" \
   '&[APPROVAL_DOMAIN, &DEPLOYMENT_ID, program_id, proposal, body]' \
   '&[APPROVAL_DOMAIN, &DEPLOYMENT_ID, program_id, body]'
 mutant C1 instructions.rs "execute recomputes the commitment" \
-  'if authorization_commitment(&ix, prefix)? != proposal.commitment {' \
-  'if authorization_commitment(&ix, prefix)? == [0; 32] {'
+  'if authorization_commitment(&ix, prefix, settlements)? != proposal.commitment {' \
+  'if authorization_commitment(&ix, prefix, settlements)? == [0; 32] {'
 mutant C2 instructions.rs "default ring only" '!default_ring || ' ''
-mutant C3 instructions.rs "no interface transfer" '!ix.interface_transfers.is_empty() || ' ''
+mutant C3 instructions.rs "SOL withdrawals are the only interface transfers" \
+  '.all(|leg| matches!(leg, InterfaceTransfer::SolWithdrawal { .. }));' '.all(|_| true);'
+mutant W1 instructions.rs "the commitment binds the settlement accounts of each withdrawal" \
+  'in settlements.as_chunks::<2>().0 {' 'in settlements[..0].as_chunks::<2>().0 {'
+mutant W2 instructions.rs "the commitment binds the SOL interface account" \
+  '.push_settlement(sol_interface.address().as_array(), recipient.address().as_array())' \
+  '.push_settlement(recipient.address().as_array(), recipient.address().as_array())'
+mutant W3 instructions.rs "the owner PDA sits right after the nullifier PDAs" \
+  'let owner_at = 4 + ix.tree_contexts.len() + ix.inputs.len();' \
+  'let owner_at = spp.len().saturating_sub(1);'
 mutant C4 instructions.rs "inline owner tags only" ' || !inline_tags' ''
 mutant E1 instructions.rs "execute refuses after the expiry" \
   'if now()? > proposal.expiry_unix_ts {' 'if now()? > u64::MAX - 1 {'
@@ -153,8 +162,9 @@ mutant L4 instructions.rs "the pool layout fits the CPI bound of 24 accounts" \
   'let fits = spp.len() == expected && expected <= MAX_SPP_ACCOUNTS;' \
   'let fits = spp.len() == expected;'
 mutant L2 instructions.rs "the owner PDA is the only owner signer" \
-  ' && rest.iter().all(|a| a.address() != owner)' ''
-mutant L3 instructions.rs "the pool payer is the execute payer" ' || rest[0].address() != payer' ''
+  '.all(|(at, account)| (at == owner_at) == (account.address() == owner));' \
+  '.all(|(at, account)| at != owner_at || account.address() == owner);'
+mutant L3 instructions.rs "the pool payer is the execute payer" ' || spp[0].address() != payer' ''
 mutant K1 instructions.rs "a proposal is owned by the program" \
   'if !account.owned_by(program_id) {
         return Err(MultisigError::NotAProposal.into());' \

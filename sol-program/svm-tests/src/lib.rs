@@ -46,6 +46,24 @@ pub const PRIVATE_TX_HASH: [u8; 32] = [0x5a; 32];
 const STUB: &str = "target/deploy/stub_pool.so";
 pub const OUTPUT_TREE: Pubkey = Pubkey::new_from_array([0x70; 32]);
 
+/// The pool's SOL interface PDA, `["sol_interface", 0]`: the first account of each SOL withdrawal's
+/// settlement group.
+pub fn sol_interface() -> Pubkey {
+    Pubkey::find_program_address(&[b"sol_interface", &[0]], &POOL_ID).0
+}
+
+/// The public recipient of withdrawal leg `leg` in the tests.
+pub fn recipient(leg: usize) -> Pubkey {
+    Pubkey::new_from_array([0xa0 + u8::try_from(leg).expect("leg"); 32])
+}
+
+/// The settlement accounts that the pool hashes for each leg: (SOL interface, recipient).
+pub fn settlements(transact: &TransactIxData) -> Vec<(Pubkey, Pubkey)> {
+    (0..transact.interface_transfers.len())
+        .map(|leg| (sol_interface(), recipient(leg)))
+        .collect()
+}
+
 /// The custom error codes of the program (`src/error.rs`) and of the pool CPI helper.
 pub mod code {
     pub const BAD_PROPOSAL_DATA: u32 = 6000;
@@ -216,12 +234,25 @@ fn output_len(data: &[u8], start: usize) -> usize {
     at - start
 }
 
+/// Length of one serialized interface transfer: a u8 tag, the u64 amount, and for an SPL leg
+/// (tags 2 and 3) the u8 bump of the interface PDA.
+fn leg_len(data: &[u8], start: usize) -> usize {
+    if data[start] >= 2 {
+        10
+    } else {
+        9
+    }
+}
+
 /// The length of the external-data prefix: the bytes before `private_tx_hash`, read with the
-/// field layout of the pool's `TransactIxData`. Only shapes without interface transfers.
+/// field layout of the pool's `TransactIxData`.
 pub fn external_data_prefix_len(data: &[u8]) -> usize {
     let mut at = 8 + 33 + 16;
-    assert_eq!(data[at], 0, "the reader covers no interface transfer");
+    let legs = data[at];
     at += 1;
+    for _ in 0..legs {
+        at += leg_len(data, at);
+    }
     for _option in 0..2 {
         at += if data[at] == 1 { 33 } else { 1 };
     }
@@ -239,14 +270,18 @@ pub fn external_data_prefix_len(data: &[u8]) -> usize {
 }
 
 /// `SHA-256(private_tx_hash || external_data_hash)`, with the external-data hash of the pool:
-/// SHA-256 of the `transact` tag and the prefix, with the first byte cleared (Sha256BE).
-pub fn commitment(data: &[u8]) -> [u8; 32] {
+/// SHA-256 of the `transact` tag, the prefix and the two settlement addresses of each leg, with
+/// the first byte cleared (Sha256BE). Only inline owner tags.
+pub fn commitment(data: &[u8], settlements: &[(Pubkey, Pubkey)]) -> [u8; 32] {
     let at = external_data_prefix_len(data);
-    let mut external: [u8; 32] = Sha256::new()
+    let mut hasher = Sha256::new()
         .chain_update([TRANSACT])
-        .chain_update(&data[..at])
-        .finalize()
-        .into();
+        .chain_update(&data[..at]);
+    for (asset, user) in settlements {
+        hasher.update(asset);
+        hasher.update(user);
+    }
+    let mut external: [u8; 32] = hasher.finalize().into();
     external[0] = 0;
     Sha256::new()
         .chain_update(&data[at..at + 32])
@@ -270,8 +305,14 @@ pub fn create_ix(payer: &Pubkey, body: &Body) -> Instruction {
 }
 
 /// The accounts of `execute`: its six own accounts, then the pool's `transact` layout (payer,
-/// output tree, pool, system, one tree per context, one nullifier PDA per input, the owner).
-pub fn execute_metas(payer: &Pubkey, body: &Body, trees: u8, inputs: u8) -> Vec<AccountMeta> {
+/// output tree, pool, system, one tree per context, one nullifier PDA per input, the owner, then
+/// the SOL interface and the recipient of each withdrawal, both writable).
+pub fn execute_metas(
+    payer: &Pubkey,
+    body: &Body,
+    (trees, inputs): (u8, u8),
+    settlements: &[(Pubkey, Pubkey)],
+) -> Vec<AccountMeta> {
     let mut metas = vec![
         AccountMeta::new(*payer, true),
         AccountMeta::new(body.proposal(), false),
@@ -291,7 +332,25 @@ pub fn execute_metas(payer: &Pubkey, body: &Body, trees: u8, inputs: u8) -> Vec<
         (0..inputs).map(|i| AccountMeta::new(Pubkey::new_from_array([0x90 + i; 32]), false)),
     );
     metas.push(AccountMeta::new_readonly(body.owner(), false));
+    for (sol_interface, recipient) in settlements {
+        metas.push(AccountMeta::new(*sol_interface, false));
+        metas.push(AccountMeta::new(*recipient, false));
+    }
     metas
+}
+
+/// The signer flags of the accounts that the stub pool received, one per account: the stub
+/// returns them as its return data.
+pub fn pool_signers(meta: &TransactionMetadata) -> Vec<bool> {
+    assert_eq!(
+        meta.return_data.program_id, POOL_ID,
+        "the stub pool's return data"
+    );
+    meta.return_data
+        .data
+        .iter()
+        .map(|flag| *flag == 1)
+        .collect()
 }
 
 pub fn execute_ix(metas: Vec<AccountMeta>, transact: &[u8]) -> Instruction {
@@ -436,9 +495,10 @@ impl Rig {
         self.svm.set_sysvar(&clock);
     }
 
-    /// A body for `transact`, expiring in one day, with one abort authority.
-    pub fn body(&self, transact: &[u8]) -> Body {
-        self.body_with(commitment(transact))
+    /// A body for `transact` (with the recipients of [`settlements`]), expiring in one day, with
+    /// one abort authority.
+    pub fn body(&self, transact: &TransactIxData) -> Body {
+        self.body_with(commitment(&serialize(transact), &settlements(transact)))
     }
 
     pub fn body_with(&self, commitment: [u8; 32]) -> Body {
@@ -482,7 +542,8 @@ impl Rig {
     pub fn metas(&self, body: &Body, transact: &TransactIxData) -> Vec<AccountMeta> {
         let trees = u8::try_from(transact.tree_contexts.len()).expect("trees");
         let inputs = u8::try_from(transact.inputs.len()).expect("inputs");
-        execute_metas(&self.payer.pubkey(), body, trees, inputs)
+        let legs = settlements(transact);
+        execute_metas(&self.payer.pubkey(), body, (trees, inputs), &legs)
     }
 
     pub fn lamports(&self, address: &Pubkey) -> u64 {
@@ -505,6 +566,12 @@ impl Default for Rig {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn the_sol_interface_is_the_pool_constant() {
+        let constant = Pubkey::new_from_array(zolana_interface::SOL_INTERFACE);
+        assert_eq!(sol_interface(), constant);
+    }
 
     #[test]
     fn allowed_calls_are_transact_and_account_creation_only() {

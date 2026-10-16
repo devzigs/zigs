@@ -1,4 +1,4 @@
-//! The four instructions of the spec, with the spike limits of `lib.rs`.
+//! The four instructions of the spec, with the limits of `lib.rs`.
 
 use pinocchio::{
     cpi::{Seed, Signer},
@@ -9,7 +9,10 @@ use pinocchio::{
 use pinocchio_system::create_account_with_minimum_balance_signed;
 use zolana_hasher::{Hasher, Sha256};
 use zolana_interface::instruction::{
-    instruction_data::transact::{ExternalDataPreimage, OwnerTag, TransactIxDataRef},
+    instruction_data::transact::{
+        ExternalDataPreimage, InterfaceTransfer, OwnerTag, TransactIxDataRef,
+    },
+    settlement_accounts,
     tag::TRANSACT,
 };
 use zolana_interface::verifying_keys::CircuitId;
@@ -165,29 +168,44 @@ pub fn create(program_id: &Address, accounts: &mut [AccountView], data: &[u8]) -
     Ok(())
 }
 
-/// The transact must be a default-ring private transfer with inline owner tags.
+/// The transact must be a default-ring transfer with inline owner tags. Its only interface
+/// transfers are SOL withdrawals: no deposit and no SPL leg.
 fn check_transact_shape(ix: &TransactIxDataRef) -> ProgramResult {
     let default_ring = matches!(ix.circuit, CircuitId::ConfidentialEddsa(..));
     let inline_tags = ix
         .outputs
         .iter()
         .all(|output| matches!(output.owner_tag, OwnerTag::Inline(_)));
-    if !default_ring || !ix.interface_transfers.is_empty() || !inline_tags {
+    let sol_withdrawals = ix
+        .interface_transfers
+        .iter()
+        .all(|leg| matches!(leg, InterfaceTransfer::SolWithdrawal { .. }));
+    if !default_ring || !sol_withdrawals || !inline_tags {
         return Err(MultisigError::UnsupportedTransact.into());
     }
     Ok(())
 }
 
 /// `SHA-256(private_tx_hash || external_data_hash)`, the external-data hash computed as the pool
-/// computes it. With no interface transfer and only inline tags, its preimage is the transact tag
-/// and the serialized external-data prefix.
+/// computes it for this shape: the transact tag, the serialized external-data prefix, then the SOL
+/// interface and the recipient of each withdrawal, from the settlement accounts that the pool
+/// reads (see `check_spp_accounts`). Inline owner tags add nothing.
 pub fn authorization_commitment(
     ix: &TransactIxDataRef,
     prefix: &[u8],
+    settlements: &[AccountView],
 ) -> Result<[u8; 32], ProgramError> {
-    check_transact_shape(ix)?;
     let tag = [TRANSACT];
-    let external = ExternalDataPreimage::new(&tag, prefix)
+    let mut preimage = ExternalDataPreimage::new(&tag, prefix);
+    for [sol_interface, recipient] in settlements.as_chunks::<2>().0 {
+        preimage
+            .push_settlement(
+                sol_interface.address().as_array(),
+                recipient.address().as_array(),
+            )
+            .map_err(|_| MultisigError::UnsupportedTransact)?;
+    }
+    let external = preimage
         .finish()
         .map_err(|_| MultisigError::UnsupportedTransact)?;
     let commitment = Sha256::hashv(&[ix.private_tx_hash, &external])
@@ -196,22 +214,29 @@ pub fn authorization_commitment(
 }
 
 /// The forwarded accounts must be exactly the pool's layout for this transact: payer, output
-/// tree, pool, system, one tree per context, one nullifier PDA per input, then the owner PDA as
-/// the only owner signer and nothing after it. So the pool and this program read one layout.
-fn check_spp_accounts(
-    spp: &[AccountView],
+/// tree, pool, system, one tree per context, one nullifier PDA per input, the owner PDA as the
+/// only owner signer, then the SOL interface and the recipient of each withdrawal. So the pool
+/// and this program read one layout. Returns the settlement accounts, located as the pool's
+/// readers locate them.
+fn check_spp_accounts<'a>(
+    spp: &'a [AccountView],
     ix: &TransactIxDataRef,
     payer: &Address,
     owner: &Address,
-) -> ProgramResult {
-    let expected = 4 + ix.tree_contexts.len() + ix.inputs.len() + 1;
+) -> Result<&'a [AccountView], ProgramError> {
+    let owner_at = 4 + ix.tree_contexts.len() + ix.inputs.len();
+    let settlements = settlement_accounts(&ix.interface_transfers, ix.circuit, spp)
+        .ok_or(MultisigError::BadSppAccounts)?;
+    let expected = owner_at + 1 + settlements.len();
     let fits = spp.len() == expected && expected <= MAX_SPP_ACCOUNTS;
-    let (last, rest) = spp.split_last().ok_or(MultisigError::BadSppAccounts)?;
-    let owner_only_last = last.address() == owner && rest.iter().all(|a| a.address() != owner);
-    if !fits || !owner_only_last || rest[0].address() != payer {
+    let owner_only_there = spp
+        .iter()
+        .enumerate()
+        .all(|(at, account)| (at == owner_at) == (account.address() == owner));
+    if !fits || !owner_only_there || spp[0].address() != payer {
         return Err(MultisigError::BadSppAccounts.into());
     }
-    Ok(())
+    Ok(settlements)
 }
 
 /// Accounts: payer (signer, writable), proposal (writable), owner PDA, cancellation PDA, rent
@@ -247,14 +272,15 @@ pub fn execute(program_id: &Address, accounts: &mut [AccountView], data: &[u8]) 
     check_approval(sysvar, &proposal.multisig_pubkey, &digest)?;
     let (ix, prefix) = TransactIxDataRef::parse_with_external_data_prefix(data)
         .map_err(|_| MultisigError::UnsupportedTransact)?;
-    if authorization_commitment(&ix, prefix)? != proposal.commitment {
-        return Err(MultisigError::CommitmentMismatch.into());
-    }
+    check_transact_shape(&ix)?;
     let (owner_address, bump) = owner_address(program_id, &proposal.multisig_pubkey);
     if owner.address() != &owner_address {
         return Err(MultisigError::BadOwnerAddress.into());
     }
-    check_spp_accounts(spp, &ix, payer.address(), &owner_address)?;
+    let settlements = check_spp_accounts(spp, &ix, payer.address(), &owner_address)?;
+    if authorization_commitment(&ix, prefix, settlements)? != proposal.commitment {
+        return Err(MultisigError::CommitmentMismatch.into());
+    }
     let signer_pdas = [&owner_address];
     let transact = SppTransactAccounts::new(spp, &signer_pdas)?;
     let bump_seed = [bump];

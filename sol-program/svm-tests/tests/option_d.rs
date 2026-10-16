@@ -9,7 +9,7 @@ use std::fs;
 use solana_instruction::AccountMeta;
 use solana_signer::Signer;
 use zigs_min_multisig_svm_tests::{
-    cancel_ix, close_cancelled_ix, program_dir, sample_transact, serialize, Rig, DAY,
+    cancel_ix, close_cancelled_ix, program_dir, sample_transact, Rig, DAY,
 };
 
 /// The program's Rust code without comments, in lower case.
@@ -30,7 +30,7 @@ fn program_code() -> String {
 fn every_instruction_calls_only_the_system_program_and_transact() {
     let mut rig = Rig::new();
     let transact = sample_transact();
-    let body = rig.body(&serialize(&transact));
+    let body = rig.body(&transact);
     rig.create(&body).expect("create");
     let authority = AccountMeta::new_readonly(rig.authority.pubkey(), true);
     let signer = rig.authority.insecure_clone();

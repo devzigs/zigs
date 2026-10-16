@@ -12,7 +12,7 @@ use zigs_min_multisig_svm_tests::{
 
 fn proposed() -> (Rig, Body) {
     let mut rig = Rig::new();
-    let body = rig.body(&serialize(&sample_transact()));
+    let body = rig.body(&sample_transact());
     rig.create(&body).expect("create");
     (rig, body)
 }
@@ -159,7 +159,7 @@ fn the_pool_layout_fits_the_cpi_bound() {
         let mut rig = Rig::new();
         let mut transact = sample_transact();
         transact.inputs = vec![transact.inputs[0]; inputs];
-        let body = rig.body(&serialize(&transact));
+        let body = rig.body(&transact);
         rig.create(&body).expect("create");
         let result = rig.execute(&body, &transact);
         if fits {

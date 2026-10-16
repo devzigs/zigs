@@ -15,7 +15,7 @@ use zigs_min_multisig_svm_tests::{
 fn proposed() -> (Rig, Body, Vec<u8>) {
     let mut rig = Rig::new();
     let transact = serialize(&sample_transact());
-    let body = rig.body(&transact);
+    let body = rig.body(&sample_transact());
     rig.create(&body).expect("create");
     (rig, body, transact)
 }

@@ -2,7 +2,8 @@
 //! as a detached signature over a proposal account. Any executor later proves the payment with
 //! fresh roots and settles it through the shielded pool, signing as the group's owner PDA.
 //!
-//! Spike limits: private transfers only (no interface transfers, no cache, inline owner tags).
+//! Limits: private transfers and SOL withdrawals only (no deposit, no SPL leg, no cache, inline
+//! owner tags).
 
 pub mod approval;
 pub mod error;
