@@ -9,6 +9,7 @@ import { backupName } from "../util.js";
 import { aesKey, open as openVault, parseVault } from "../vault.js";
 import { backupText as solBackupText, backupWords, KIND } from "../sol/backup.js";
 import { base58 } from "../sol/docs.js";
+import { feeMismatch, feeOf } from "../sol/fee.js";
 import { loadSnap, saveSnap } from "../sol/store.js";
 import { shareSeat, showSaved, solText, syncSolana } from "../sol/session.js";
 import { loadRig, sleep, storage } from "./sol-rig.mjs";
@@ -20,6 +21,8 @@ const { t, Z, W, data, waitFor } = rig;
 const sha = (text) => createHash("sha256").update(text).digest("hex");
 const path = (gid, rel) => `groups/${gid}/${rel}`;
 const solOf = (gid, i) => t.sec(gid, i).sol ?? {};
+const J = JSON.parse;
+const feeSecretOf = (s) => J(W.sol_fee_key(JSON.stringify(s.keyPackage))).secret;
 const PASS_Z = "correct horse battery staple 1",
   PASS_S = "another long phrase for solana 2";
 
@@ -74,7 +77,8 @@ const hashes = [1, 2, 3].map((i) => sha(solOf(gid, i).solSeed));
     [],
   );
   const sol = solOf(gid, 1);
-  for (const secret of [sol.solSeed, sol.groupKey, sol.keyPackage.signing_share]) {
+  const secrets = [sol.solSeed, sol.groupKey, sol.keyPackage.signing_share, feeSecretOf(sol)];
+  for (const secret of secrets) {
     assert.ok(!text.includes(secret), "no Solana secret in the Zcash backup text");
   }
   assert.equal(text.includes("solSeed"), false);
@@ -124,6 +128,7 @@ assert.match(solFile.filename, /^zigs-Backup-solana-seat-1\.zigsbackup$/);
     [KIND, gid, 1, "devnet", "Backup"],
   );
   assert.equal(plain.solSeed, original.solSeed);
+  assert.ok(!solFile.data.includes(feeSecretOf(original)), "the file shows no fee secret");
   // Refusals of the engine: a wrong passphrase, a changed file.
   assert.throws(() => Z.backupOpen("wrong passphrase of 20 chars", solFile.data));
   const flipped = { ...shell, ct: (shell.ct[0] === "A" ? "B" : "A") + shell.ct.slice(1) };
@@ -150,6 +155,9 @@ const zcashFile = saved.at(-1);
     40000,
   );
   assert.equal(solOf(gid, 1).keyPackage, undefined, "the Zcash restore brings no Solana part");
+  await sleep(300);
+  assert.doesNotThrow(() => feeOf(t.sol.ctl, 1), "a seat with no key share has no fee key");
+  assert.equal(feeOf(t.sol.ctl, 1), null, "a seat with no key share has no fee key");
   await t.applyBackup(plainSol, true);
   assert.deepEqual(solOf(gid, 1), original, "the Solana part is back, as it was");
   assert.equal(sha(solOf(gid, 1).solSeed), hashes[0]);
@@ -235,6 +243,58 @@ const zcashFile = saved.at(-1);
   await waitFor("wallet", () => t.state.gid === gid && t.state.g && t.state.wallet);
   await t.applyBackup(good, true);
   assert.deepEqual(solOf(gid, 1), original, "and for the testnet wallet it restores");
+  // A restore of any file gives the seat the key that its key share gives. The document of the
+  // seat shows that key already: nothing to fund, nothing to publish, no other key to explain.
+  const ctl = t.sol.ctl;
+  const key = feeOf(ctl, 1).key;
+  const writes = [];
+  rig.hook.before = (p, value) => {
+    if (p.endsWith("/solfee/1")) writes.push(value.key);
+    return value;
+  };
+  const noDocument = async () => {
+    data.delete(`groups/${gid}/solfee/1`);
+    rig.notify();
+    await waitFor("no document of seat 1", () => ctl.docs.solfee[1] === undefined);
+  };
+  await clean(1);
+  assert.equal(feeOf(ctl, 1), null, "a seat with no key share has no fee key");
+  await t.applyBackup(good, true);
+  assert.deepEqual(solOf(gid, 1), original, "the Solana part is back, with no fee field");
+  assert.equal(feeOf(ctl, 1).key, key, "the same fee key after the restore");
+  assert.match(t.banner.text, /Restored the Solana part of seat 1/);
+  assert.doesNotMatch(t.banner.text, /fee/i, "the restore has nothing to say about the fee key");
+  t.refilter(); // the page runs its reactor after a restore, as after any change
+  await sleep(500);
+  assert.equal(feeMismatch(ctl, 1), false, "the key of the document is the key of the seat");
+  assert.equal(writes.length, 0, "and nothing is written");
+  // With no valid document, the restored seat publishes the same key again.
+  await clean(1);
+  await noDocument();
+  await t.applyBackup(good, true);
+  t.refilter();
+  await waitFor("the fee address is published again", () => ctl.docs.solfee[1]?.key === key);
+  assert.deepEqual(writes, [key], "one write, and it is the same key");
+  // A document with another key (forged or broken): the restore says so, and what can be done.
+  await clean(1);
+  const another = "ab".repeat(32);
+  const forged = await t.signedDoc(gid, "solfee/1", 1, { key: another, cluster: "devnet", at: 1 });
+  data.set(`groups/${gid}/solfee/1`, forged);
+  rig.notify();
+  await waitFor("the other key", () => ctl.docs.solfee[1]?.key === another);
+  await t.applyBackup(good, true);
+  assert.match(t.banner.text, /Restored the Solana part of seat 1/);
+  assert.match(t.banner.text, /does not show the key of this seat.*can still approve and sign/);
+  assert.doesNotMatch(t.banner.text, /restore a newer backup|Fund its new/);
+  t.refilter();
+  await sleep(300);
+  assert.equal(feeMismatch(ctl, 1), true, "this seat cannot pay for itself");
+  assert.deepEqual(writes, [key], "and this browser wrote nothing");
+  // The group server drops the forged document: the seat publishes its own key again.
+  data.delete(`groups/${gid}/solfee/1`);
+  rig.notify();
+  await waitFor("the right document", () => ctl.docs.solfee[1]?.key === key);
+  rig.hook.before = (_p, value) => value;
 }
 
 // ── A restore from the wallet list opens the wallet and waits for its documents ──

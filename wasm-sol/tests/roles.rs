@@ -65,18 +65,6 @@ fn the_wasm_public_keys_equal_the_sdk_public_keys_for_the_same_secrets() {
             roles.address == field::<99>(&v, "address"),
             "{name}: address"
         );
-        let want = [
-            field::<32>(&v, "groupKey").to_vec(),
-            roles.nullifier_pk.to_vec(),
-        ]
-        .concat()
-        .into_iter()
-        .chain(roles.viewing_pk)
-        .collect::<Vec<u8>>();
-        assert!(
-            roles.pins == want,
-            "{name}: pins are group key, nullifier_pk, viewing_pk"
-        );
     }
 }
 
@@ -167,7 +155,6 @@ fn the_entry_point_gives_every_value_as_text_and_refuses_bad_input() {
     for (key, sdk_key) in names {
         assert!(answer[key] == v[sdk_key], "{key}");
     }
-    assert_eq!(answer["pins"].as_str().unwrap().len(), 97 * 2);
     let seed = v["solSeed"].as_str().unwrap();
     let group = v["groupKey"].as_str().unwrap();
     assert!(roles("zz", group).is_err());

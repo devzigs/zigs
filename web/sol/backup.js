@@ -1,11 +1,15 @@
 // The second backup file (ZOLANA.md 4.3). The Zcash `.zigsbackup` and its restore stay as they
 // are. This file has the same Argon2id and XChaCha20-Poly1305 shell (outer kind zigs-backup, made
 // by the unchanged engine) and the inner kind `zigs-sol-backup`: the wallet id, the seat, the
-// cluster, the key package, the public key package, the group key and solSeed. It has no
-// snapshot and no nonce. A restore runs only on a seat that settled and fits.
+// cluster, the key package, the public key package, the group key and solSeed. It has no snapshot
+// and no nonce, and no fee key: the key share gives the fee key (fee.js), so a restore of any
+// file brings back the key that the seat published. A restore runs only on a seat that settled
+// and fits. When the document of the seat shows another key than the key share gives, the restore
+// says that this seat cannot pay and what can still be done.
 import { backupName, shareShape } from "../util.js";
 import { agreement, fitsSolana } from "./ceremony.js";
 import { CLUSTER, COLLECTIONS } from "./docs.js";
+import { feeMismatch, mismatchText } from "./fee.js";
 import { holdsShare, putSol, refuseStopped, solOf, stopOf } from "./secrets.js";
 
 /** The inner kind of the sealed text. app.js sends a file of this kind to restoreSolana. */
@@ -44,7 +48,8 @@ export function backupWords(c, i) {
       "and keep it apart from the file. It is a second file with its own passphrase.",
     file:
       "The file holds your Solana key share and the secret that gives the Solana viewing and " +
-      "proving keys. Anyone who has the file and the passphrase can sign as this seat on Solana.",
+      "proving keys. Your fee key comes from the key share. Anyone who has the file and the " +
+      "passphrase can sign as this seat on Solana and spend the SOL of its fee address.",
     async save(pass) {
       refuseStopped(c);
       if (!holdsShare(solOf(host, gid, i)))
@@ -151,5 +156,6 @@ export async function restoreSolana(c, b, encrypted) {
   if (!(await putSol(host, f.group, f.seat, part))) {
     throw new Error("This browser could not save the restored Solana part.");
   }
-  host.showBanner("ok", "Restored the Solana part of seat " + f.seat + ". It matches the wallet.");
+  const text = "Restored the Solana part of seat " + f.seat + ". It matches the wallet.";
+  host.showBanner("ok", text + (feeMismatch(c, f.seat) ? " " + mismatchText(f.seat) : ""));
 }

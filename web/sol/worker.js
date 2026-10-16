@@ -5,6 +5,7 @@
 import * as sdk from "/sol/zolana.bundle.js";
 import { checkCommand, makeRedactor } from "/sol/guard.js";
 import { cutTransact, hex, parseTransact, planFromProve } from "/sol/prepare.js";
+import { buildProofInputs, ownerSigners } from "/sol/transfer.js";
 
 // Caps of the P3 template (ZOLANA.md 5): the compute limit of a transact.
 const COMPUTE_UNITS = 217_000;
@@ -53,7 +54,7 @@ function shieldedKeys(args, client) {
       viewing.publicKey(),
     );
     const parts = { address, viewingKeys: [viewing], nullifierKey: nullifier };
-    return { address, keys: sdk.LocalKeys.fromKeys(parts, client.proofService) };
+    return { address, viewing, keys: sdk.LocalKeys.fromKeys(parts, client.proofService) };
   } finally {
     nullifierSecret.fill(0);
     viewingSecret.fill(0);
@@ -72,16 +73,20 @@ async function init(args) {
     solanaRpcUrl: args.rpcUrl,
     indexerUrl: zolana.href,
     proverUrl: zolana.href,
+    // The Helius gateway proves, as before. The SDK default is an attested enclave behind
+    // another host, which this Worker neither reaches nor trusts yet (TICKETS.md SOL-4).
+    proverTee: false,
     fetch: guardedFetch(url.origin, trace),
     computeUnitLimit: COMPUTE_UNITS,
   });
   const hasherMs = Math.round(performance.now() - started);
-  const { address, keys } = shieldedKeys(args, client);
+  const { address, viewing, keys } = shieldedKeys(args, client);
   const wallet = new sdk.Wallet({ identity: address });
-  session = { client, keys, address, wallet, trace, owner: address.solanaAddress() };
+  const owner = address.solanaAddress();
+  session = { client, keys, viewing, address, wallet, trace, owner };
   return {
     hasherMs,
-    owner: session.owner,
+    owner,
     shielded: hex(address.toBytes()),
     ownerHash: hex(address.ownerHash()),
   };
@@ -176,10 +181,9 @@ function inputsWithIds(plan, wallet) {
   });
 }
 
-function describePrepared(tx, wallet, prove, expiry) {
+/** What the page keeps of a proved transfer: the transact data, the plan and the spent inputs. */
+function describePrepared(data, wallet, prove, expiry) {
   if (prove === null) throw new Error("the prover call was not seen");
-  const message = sdk.getCompiledTransactionMessageDecoder().decode(tx.messageBytes);
-  const data = cutTransact(message, sdk.SHIELDED_POOL_PROGRAM_ID);
   const parsed = parseTransact(data);
   if (parsed.expiry !== expiry) throw new Error("the expiry in the data differs from the request");
   const plan = planFromProve(prove);
@@ -206,28 +210,27 @@ function inspect({ tx }) {
   return { salt: hex(parsed.salt), firstNullifier: parsed.firstNullifier };
 }
 
-/** One proof at a time: the expiry is a module variable of the SDK. Syncs a fresh wallet first. */
-async function prepare({ recipient, amount, expiry }) {
+/**
+ * Syncs a fresh wallet, builds the proof inputs with the expiry bound and `payer` as the fee payer
+ * (transfer.js), proves them and keeps the transact instruction data. The group key is an owner
+ * signer, so the instruction lists it after the nullifier accounts. One command runs at a time:
+ * the prover body of the call is kept in the session for the plan.
+ */
+async function prepare({ recipient, amount, expiry, payer }) {
   const s = need();
   const until = BigInt(expiry);
   if (until === 0n || until >= U64_MAX) throw new Error("the expiry must be finite");
   const wallet = new sdk.Wallet({ identity: s.address });
   await syncOnce(s, wallet);
   s.trace.prove = null;
-  sdk.setProofExpiry(until);
-  try {
-    const tx = await sdk.buildTransferTransaction({
-      client: s.client,
-      wallet,
-      keys: s.keys,
-      feePayer: s.owner,
-      recipient: sdk.ShieldedAddress.fromBytes(bytes(recipient)),
-      amount: BigInt(amount),
-    });
-    return describePrepared(tx, wallet, s.trace.prove, until);
-  } finally {
-    sdk.setProofExpiry(U64_MAX);
-  }
+  const to = sdk.ShieldedAddress.fromBytes(bytes(recipient));
+  const request = { recipient: to, amount: BigInt(amount), expiry: until, payer };
+  const { proofInputs, tree } = buildProofInputs(sdk, s, wallet, request);
+  const data = await s.client.proveTransact(proofInputs, s.keys);
+  const signers = ownerSigners(sdk, proofInputs);
+  const call = { payer, ownerSigners: signers, inputTree: tree, outputTree: s.client.tree, data };
+  const instruction = await sdk.transactInstruction(call);
+  return describePrepared(instruction.data, wallet, s.trace.prove, until);
 }
 
 // A simulation error such as {"InstructionError":[1,{"Custom":7008}]}: u64 numbers may arrive
@@ -316,7 +319,7 @@ async function answer({ id, cmd, args }) {
   }
 }
 
-// One command at a time, in order: prepare changes a module variable of the SDK.
+// One command at a time, in order: prepare keeps the prover body of its call in the session.
 let queue = Promise.resolve();
 self.onmessage = (event) => {
   if (typeof event.data?.id !== "number") return;

@@ -6,8 +6,9 @@ use crate::bytes::short_hex;
 use crate::check::{parse_transact_data, Run};
 use crate::consts::{
     COMPUTE_BUDGET_PROGRAM, REG_REGISTER, REG_SET_MERGING_ENABLED, REG_UPDATE_KEYS, SYSTEM_PROGRAM,
-    SYS_ADVANCE_NONCE, SYS_AUTHORIZE_NONCE, SYS_CREATE_WITH_SEED, SYS_INIT_NONCE, SYS_TRANSFER,
-    SYS_WITHDRAW_NONCE, TAG_DEPOSIT, TAG_MERGE_TRANSACT, TAG_TRANSACT,
+    SYS_ADVANCE_NONCE, SYS_AUTHORIZE_NONCE, SYS_CREATE_ACCOUNT, SYS_CREATE_WITH_SEED,
+    SYS_INIT_NONCE, SYS_TRANSFER, SYS_TRANSFER_WITH_SEED, SYS_WITHDRAW_NONCE, TAG_DEPOSIT,
+    TAG_MERGE_TRANSACT, TAG_TRANSACT,
 };
 use crate::fixed::{parse_deposit, parse_register, AssetKind, Deposit, Register};
 use crate::intent::Intent;
@@ -30,10 +31,22 @@ const SYSTEM_TAGS: &[(u32, Option<Rule>)] = &[
     (SYS_AUTHORIZE_NONCE, Some(Rule::AuthorizeNonceAccount)),
 ];
 
+/// The System instructions that take lamports from their first account.
+const FUNDING_TAGS: [u32; 4] = [
+    SYS_CREATE_ACCOUNT,
+    SYS_TRANSFER,
+    SYS_CREATE_WITH_SEED,
+    SYS_TRANSFER_WITH_SEED,
+];
+
 const NOT_ALLOWED: &str = "the instruction tag is not on the allow list";
 
+fn system_tag(data: &[u8]) -> Option<u32> {
+    Some(u32::from_le_bytes(data.get(..4)?.try_into().ok()?))
+}
+
 fn system_verdict(data: &[u8]) -> Verdict {
-    let tag = u32::from_le_bytes(data.get(..4)?.try_into().ok()?);
+    let tag = system_tag(data)?;
     match SYSTEM_TAGS.iter().find(|(known, _)| *known == tag) {
         Some((_, None)) => None,
         Some((_, Some(rule))) => Some((*rule, "refused System instruction")),
@@ -153,12 +166,25 @@ impl Run<'_> {
         ))
     }
 
+    /// True if a System instruction takes its lamports from the group key: the funder (account
+    /// 0) of a transfer or of an account creation. The group key only signs.
+    fn debits_group(&self, ix: &Ix) -> bool {
+        let funds = system_tag(&ix.data).is_some_and(|tag| FUNDING_TAGS.contains(&tag));
+        self.msg.program_key(ix) == Some(&SYSTEM_PROGRAM)
+            && funds
+            && self.msg.account_key(ix, 0) == Some(&self.pins.group)
+    }
+
     /// The refusal list and the allow lists, applied to every instruction.
     pub fn scan(&mut self) {
         let msg = self.msg;
         for (pos, ix) in msg.ixs.iter().enumerate() {
             if let Some((rule, why)) = self.verdict(ix) {
                 self.fail(rule, format!("instruction {pos}: {why}"));
+            }
+            if self.debits_group(ix) {
+                let why = "the funder is the group key";
+                self.fail(Rule::GroupDebit, format!("instruction {pos}: {why}"));
             }
         }
     }
@@ -253,7 +279,7 @@ impl Run<'_> {
     /// The account table holds exactly the template accounts with the template flags.
     pub fn account_rules(&mut self, exp: &Expected) {
         let (msg, pins) = (self.msg, self.pins);
-        let want = exp.key_flags(&pins.group);
+        let want = exp.key_flags(&pins.payer);
         for (index, key) in msg.keys.iter().enumerate() {
             let have = (msg.is_signer(index), msg.is_writable(index));
             match want.get(key) {

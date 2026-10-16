@@ -115,7 +115,7 @@ fn commitments_of(json: &str) -> Result<BTreeMap<Identifier, SigningCommitments>
 }
 
 /// Runs `approve` on the bytes. Returns the pins, or the text of the refusal.
-fn approved(message: &[u8], check: &Check, now: u64) -> Result<Pins, String> {
+pub(crate) fn approved(message: &[u8], check: &Check, now: u64) -> Result<Pins, String> {
     let proposal = Proposal::decode(check.intent)?;
     let snapshot = Snapshot::decode(check.snapshot)?;
     let pins = Pins::decode(check.pins)?;

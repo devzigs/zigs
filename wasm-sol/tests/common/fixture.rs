@@ -22,6 +22,7 @@ use p3_check::transact::{Circuit, Input, Leg, Output, OwnerTag, Transact, TreeCo
 use p3_check::v1;
 use p3_check::viewing::{plaintext, ViewingKey, BLOB_LEN};
 
+pub use super::PAYER;
 use super::{field, EXPIRY, NONCE, NOW};
 
 pub const SOL: Key = [0; 32];
@@ -268,7 +269,7 @@ impl Fixture {
     pub fn build(spec: &Spec) -> Self {
         let wallet = group();
         let (nullifier_pk, viewing_pk) = wallet.keys();
-        let pins = Pins::devnet(GROUP, nullifier_pk, viewing_pk).expect("pins");
+        let pins = Pins::devnet(GROUP, nullifier_pk, viewing_pk, PAYER).expect("pins");
         let snapshot = snapshot_of(spec);
         let nullifiers: Vec<Key> = snapshot
             .inputs
@@ -404,19 +405,15 @@ impl Fixture {
             .unwrap()
     }
 
-    /// The tag that a dummy names: the owner of the first real output, as the SDK does
-    /// (`dummyOwnerTag`). The group is the payer, so it is named only through a real output.
+    /// The tag that a dummy names. The SDK (`dummyOwnerTag`) names the first input owner that is
+    /// not the payer: the fee key pays and the group key is the owner signer, so it is the group.
     pub fn dummy_tag(&self) -> Key {
-        let first = self.plan.outputs.iter().find(|o| o.role != Role::Dummy);
-        first.map_or(
-            GROUP,
-            |o| if o.role == Role::Change { GROUP } else { PAYEE },
-        )
+        GROUP
     }
 
     fn output_of(&self, out: &OutPlan, slot: usize, tx_key: &ViewingKey) -> Output {
         let owner_tag = match out.role {
-            Role::Change => OwnerTag::Account(0),
+            Role::Change => OwnerTag::Inline(GROUP),
             Role::Payee => OwnerTag::Inline(PAYEE),
             Role::Dummy => OwnerTag::Inline(self.dummy_tag()),
         };

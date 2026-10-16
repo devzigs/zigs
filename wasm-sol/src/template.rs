@@ -2,6 +2,12 @@
 //! limits, and (with the `transact` data from the Worker) the v1 message itself.
 //!
 //! The checker reuses `expected`, so the proposer and every approver read one template.
+//!
+//! Two keys sign: the payer (the fee key of the proposing seat, the first account and the fee
+//! payer) and the group key. The payer funds every rent and fee, and the group key is a readonly
+//! signer in every instruction: the nonce authority, the base of the nonce account, the owner of
+//! the registry record and the owner signer of `transact`. Add SOL (`Shield`) has the payer as
+//! its only signer.
 
 use std::collections::{BTreeMap, BTreeSet};
 
@@ -30,8 +36,8 @@ pub const EXPIRY_SKEW_SECS: u64 = 60 * 60;
 /// (P4 and P5) and 2,000 (the P2 test value). The cap is the largest value plus 50 percent.
 pub const PRIORITY_MAX: u64 = 3_000;
 
-/// The largest insertion fee per nullifier in lamports that a tree may charge. The payer, which
-/// is the group key, pays it in public SOL (`collect_forester_fee`, programs/shielded-pool/src/
+/// The largest insertion fee per nullifier in lamports that a tree may charge. The payer pays it
+/// in public SOL (`collect_forester_fee`, programs/shielded-pool/src/
 /// instructions/nullifier_pda/create.rs:106-116). Tree 0 charges 0 today. The fee that an
 /// operator can set at cost is 108 lamports per nullifier (`default_tree_fees` and
 /// `AT_COST_CLOSE_REIMBURSEMENT_LAMPORTS`, program-libs/interface/src/state/tree.rs), and the cap
@@ -187,6 +193,15 @@ fn advance(pins: &Pins) -> ExpectedIx {
     ix(SYSTEM_PROGRAM, accounts, data)
 }
 
+/// The number of signatures of an intent: the payer and the group key, or the payer alone for
+/// Shield (Add SOL), which the group does not sign.
+pub fn signer_count(intent: &Intent) -> u8 {
+    match intent {
+        Intent::Shield { .. } => 1,
+        _ => 2,
+    }
+}
+
 fn create_nonce(pins: &Pins) -> Vec<ExpectedIx> {
     let seed_len = (NONCE_SEED.len() as u64).to_le_bytes();
     let create = system_data(
@@ -204,9 +219,11 @@ fn create_nonce(pins: &Pins) -> Vec<ExpectedIx> {
     vec![
         ix(
             SYSTEM_PROGRAM,
+            // The payer funds the account, and the group key signs as the base of its seed.
             vec![
-                acct(pins.group, true, true),
+                acct(pins.payer, true, true),
                 acct(pins.nonce_account, false, true),
+                acct(pins.group, true, false),
             ],
             Data::Exact(create),
         ),
@@ -226,7 +243,7 @@ fn register(pins: &Pins, nullifier_pk: Key, viewing_pk: [u8; 33]) -> ExpectedIx 
     let accounts = vec![
         acct(pins.user_record, false, true),
         acct(pins.group, true, false),
-        acct(pins.group, true, true),
+        acct(pins.payer, true, true),
         acct(SYSTEM_PROGRAM, false, false),
     ];
     let data = Register {
@@ -241,7 +258,7 @@ fn register(pins: &Pins, nullifier_pk: Key, viewing_pk: [u8; 33]) -> ExpectedIx 
 fn shield(pins: &Pins, amount: u64) -> Result<ExpectedIx, String> {
     let accounts = vec![
         acct(pins.output_tree, false, true),
-        acct(pins.group, true, true),
+        acct(pins.payer, true, true),
         acct(pins.pool, false, false),
         acct(SYSTEM_PROGRAM, false, false),
         acct(pins.sol_interface, false, true),
@@ -263,7 +280,7 @@ fn shield(pins: &Pins, amount: u64) -> Result<ExpectedIx, String> {
 
 fn transact(intent: &Intent, pins: &Pins, tx: &Transact) -> Result<ExpectedIx, String> {
     let mut accounts = vec![
-        acct(pins.group, true, true),
+        acct(pins.payer, true, true),
         acct(pins.output_tree, false, true),
         acct(pins.pool, false, false),
         acct(SYSTEM_PROGRAM, false, false),
@@ -280,6 +297,9 @@ fn transact(intent: &Intent, pins: &Pins, tx: &Transact) -> Result<ExpectedIx, S
             true,
         ));
     }
+    // The owner signer sits after the nullifier accounts and before the settlement accounts
+    // (programs/shielded-pool/src/instructions/transact/account.rs). The proof binds it.
+    accounts.push(acct(pins.group, true, false));
     if let Intent::Withdrawal { recipient, .. } = intent {
         accounts.push(acct(pins.sol_interface, false, true));
         accounts.push(acct(*recipient, false, true));
@@ -408,10 +428,13 @@ pub fn template_config(limits: &Limits) -> Config {
     }
 }
 
-/// Compiles the message of an intent with the template limits.
+/// Compiles the message of an intent with the template limits. The group key never pays.
 pub fn compile(intent: &Intent, pins: &Pins, tx: Option<&Transact>) -> Result<Message, String> {
+    if pins.payer == pins.group {
+        return Err("the fee payer is the group key".to_string());
+    }
     let exp = expected(intent, pins, tx)?;
     let config = template_config(&exp.limits);
     let tx_data = tx.map(Transact::write).transpose()?;
-    build(&exp, &pins.group, intent.lifetime(), config, tx_data)
+    build(&exp, &pins.payer, intent.lifetime(), config, tx_data)
 }

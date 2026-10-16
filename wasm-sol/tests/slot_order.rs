@@ -45,7 +45,7 @@ fn reorder(f: &mut Fixture, order: &[usize]) {
         .map(|(slot, out)| Output {
             utxo_hash: f.hash_of(out),
             owner_tag: match out.role {
-                Role::Change => OwnerTag::Account(0),
+                Role::Change => OwnerTag::Inline(GROUP),
                 Role::Payee => OwnerTag::Inline(PAYEE),
                 Role::Dummy => OwnerTag::Inline(f.dummy_tag()),
             },

@@ -45,7 +45,10 @@ export function transactHex(v, expiry = EXPIRY) {
   );
 }
 
-/** What the page writes for the vector: the fields of the proposal part and the snapshot. */
+/**
+ * What the page writes for the vector: the fields of the proposal part and the snapshot. `payer`
+ * is the fee key (hex) that the TS SDK used as the sponsor of the vector.
+ */
 export function pageSide(v, change = {}) {
   const intent = intentHex("transfer", {
     nonce: NONCE,
@@ -73,5 +76,12 @@ export function pageSide(v, change = {}) {
   const roles = { nullifier_secret: v.group.nullifierSecret, viewing_sk: v.group.viewingSk };
   const { key: groupKey, nullifierPk, viewingPk } = v.group;
   const done = { groupKey, nullifierPk, viewingPk };
-  return { ss: { intent, plan }, spend, roles, done, transact: transactHex(v) };
+  return {
+    ss: { intent, plan },
+    spend,
+    roles,
+    done,
+    payer: v.group.payer,
+    transact: transactHex(v),
+  };
 }

@@ -97,7 +97,7 @@ const REFUSALS = [
   ["initWithKeyPackage", "not allowed"],
   ["syncWithArgument", "not allowed"],
   ["unknownCommand", "unknown command"],
-  ["prepareWithoutProof", "WALLET_BUILD_TRANSFER"],
+  ["prepareWithoutProof", "the synced balance does not cover the amount"],
 ];
 
 function refusals(v) {

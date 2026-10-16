@@ -59,6 +59,9 @@
     "web/test/sol-transfer.mjs": {
       "exit": 0
     },
+    "web/test/sol-fee.mjs": {
+      "exit": 0
+    },
     "cf/test/limits.mjs": {
       "exit": 0
     }

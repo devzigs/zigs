@@ -53,6 +53,7 @@ async function refusals(sol, cfg, init) {
     recipient: init.shielded,
     amount: "1000",
     expiry: "1900000000",
+    payer: "5TeWSsjg2gbxCyWVniXeCmwM7UtHTCK7svzJr5xYJzHf",
   };
   const cases = {
     initWithSolSeed: ["init", extra],

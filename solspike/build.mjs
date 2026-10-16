@@ -1,8 +1,10 @@
 // Builds the Solana browser bundle web/sol/zolana.bundle.js (one ES module, minified) and copies
 // the two slim hasher wasm files next to it (with the home folder of their author cut out of the
-// panic text). Reads the Zolana repo and changes nothing in it.
+// panic text). Reads the Zolana repo and changes nothing in it. The build rewrites no SDK source:
+// it only maps module names (aliases), and build.test.mjs checks that every SDK file in the
+// bundle equals its blob at the pin.
 // Usage: node solspike/build.mjs [--out DIR] [--unminified]
-// ZOLANA_REPO names the repo. It must be at 89640630.
+// ZOLANA_REPO names the repo. It must be at PIN.
 import { execFileSync } from "node:child_process";
 import { createHash } from "node:crypto";
 import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
@@ -11,10 +13,13 @@ import { fileURLToPath, pathToFileURL } from "node:url";
 import { build } from "esbuild";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
-const PIN = "89640630";
-const FILES = ["zolana.bundle.js", "hasher-sisd.wasm", "hasher-simd.wasm"];
-// A literal with its key: the bare literal also sits in `const NO_EXPIRY`.
-export const EXPIRY_SITE = /expiryUnixTs: 0xffff_ffff_ffff_ffffn,/g;
+// The newest main commit of helius-labs/zolana that the Devnet pool runs (ZOLANA.md 3.4).
+export const PIN = "c232da1bd6748628b56bb8c277bcffbaaf2b0774";
+// The slim hasher loads its wasm with new URL(name, import.meta.url): the two files sit next to
+// the bundle under the names that the hasher package gives them.
+const SISD = "light_wasm_hasher_bg.wasm";
+const SIMD = "hasher_wasm_simd_bg.wasm";
+const FILES = ["zolana.bundle.js", SISD, SIMD];
 
 // No import of tools/paths.mjs: build.test.mjs copies this file to another folder.
 function repoDir() {
@@ -26,61 +31,26 @@ const git = (repo, ...args) => execFileSync("git", ["-C", repo, ...args], { enco
 /** The build needs the pinned commit and an unchanged SDK source tree. */
 function checkPin(repo) {
   const head = git(repo, "rev-parse", "HEAD").trim();
-  if (!head.startsWith(PIN)) throw new Error(`Zolana repo is at ${head}, expected ${PIN}`);
+  if (head !== PIN) throw new Error(`Zolana repo is at ${head}, expected ${PIN}`);
   if (git(repo, "status", "--porcelain", "--", "sdk-libs/ts/src").trim() !== "") {
     throw new Error("sdk-libs/ts/src has local changes; the build needs the pinned source");
   }
   return head;
 }
 
-/** The slim hasher loads its wasm with new URL(name, import.meta.url). Point it at our copies. */
-function hasherUrlPlugin(wasm, count) {
-  const names = "light_wasm_hasher_bg|hasher_wasm_simd_bg";
-  const pattern = new RegExp(`new URL\\('(${names})\\.wasm', import\\.meta\\.url\\)`, "g");
-  return {
-    name: "hasher-url",
-    setup(b) {
-      b.onLoad({ filter: /index_browser_slim\.js$/ }, (args) => {
-        const contents = readFileSync(args.path, "utf8").replace(pattern, (_m, name) => {
-          count.hasher += 1;
-          return `new URL('${wasm[name].to}', import.meta.url)`;
-        });
-        return { contents, loader: "js" };
-      });
-    },
-  };
-}
-
 /**
- * finalizeTransfer binds `expiryUnixTs: 0xffff_ffff_ffff_ffffn` into the external data hash, the
- * proof and the instruction data. The plugin makes it read `proofConfig.expiryUnixTs`, a module
- * variable that setProofExpiry() in entry.js writes.
+ * The module names of entry.js and the two stubs. "zolana-sdk", "zolana-interface" and
+ * "zolana-transaction" are the public subpaths of the SDK package (its `exports` map). The hasher
+ * alias takes the slim build of the same package, which its `exports` map lists as "./slim": the
+ * SDK imports the fat build, which holds the wasm as text and is 4.39 MB.
  */
-export function expiryPlugin(count) {
-  return {
-    name: "expiry",
-    setup(b) {
-      b.onLoad({ filter: /transaction[\\/]instructions[\\/]transact\.ts$/ }, (args) => {
-        const source = readFileSync(args.path, "utf8");
-        const found = source.match(EXPIRY_SITE)?.length ?? 0;
-        if (found !== 1) throw new Error(`expiry site matched ${found} places, expected 1`);
-        count.expiry += 1;
-        const patched = source.replace(EXPIRY_SITE, "expiryUnixTs: proofConfig.expiryUnixTs,");
-        const contents = `${patched}\nexport const proofConfig = { expiryUnixTs: NO_EXPIRY };\n`;
-        return { contents, loader: "ts" };
-      });
-    },
-  };
-}
-
-/** The module names of entry.js and the two stubs. Every name resolves to the SDK's own copy. */
 export function aliases(repo) {
   const src = join(repo, "sdk-libs/ts/src");
   const hasher = "node_modules/@lightprotocol/hasher.rs/dist/browser-slim/es/index_browser_slim.js";
   return {
     "zolana-sdk": join(src, "index.ts"),
     "zolana-interface": join(src, "interface/index.ts"),
-    "zolana-transact": join(src, "transaction/instructions/transact.ts"),
+    "zolana-transaction": join(src, "transaction/index.ts"),
     "@phala/dcap-qvl": join(HERE, "stubs/dcap-qvl-stub.js"),
     crypto: join(HERE, "stubs/node-crypto-stub.js"),
     "@lightprotocol/hasher.rs": join(repo, hasher),
@@ -105,21 +75,12 @@ const sha256 = (file) => createHash("sha256").update(readFileSync(file)).digest(
 
 function wasmFiles(repo) {
   const dir = join(repo, "node_modules/@lightprotocol/hasher.rs/dist");
-  return {
-    light_wasm_hasher_bg: { from: join(dir, "light_wasm_hasher_bg.wasm"), to: "hasher-sisd.wasm" },
-    hasher_wasm_simd_bg: { from: join(dir, "hasher_wasm_simd_bg.wasm"), to: "hasher-simd.wasm" },
-  };
+  return [SISD, SIMD].map((name) => ({ from: join(dir, name), to: name }));
 }
 
-/**
- * Builds into `out`. Returns the file hashes, the esbuild metafile and the patch counts.
- * The minified bundle is the same in every checkout location.
- */
-export async function buildBundle({ out, minify = true, repo = repoDir() }) {
-  const commit = checkPin(repo);
-  const wasm = wasmFiles(repo);
-  const count = { hasher: 0, expiry: 0 };
-  const result = await build({
+/** The esbuild options. No plugin: nothing here changes the text of a source file. */
+export function buildOptions({ out, minify, repo }) {
+  return {
     absWorkingDir: HERE,
     entryPoints: [join(HERE, "src/entry.js")],
     outfile: join(out, "zolana.bundle.js"),
@@ -134,18 +95,25 @@ export async function buildBundle({ out, minify = true, repo = repoDir() }) {
     nodePaths: [join(repo, "node_modules")],
     define: { "process.env.NODE_ENV": '"production"' },
     alias: aliases(repo),
-    plugins: [hasherUrlPlugin(wasm, count), expiryPlugin(count)],
-  });
-  if (count.hasher !== 2) throw new Error(`hasher URL patch matched ${count.hasher}, expected 2`);
-  if (count.expiry !== 1) throw new Error(`expiry patch ran ${count.expiry} times, expected 1`);
+  };
+}
+
+/**
+ * Builds into `out`. Returns the file hashes and the esbuild metafile.
+ * The minified bundle is the same in every checkout location.
+ */
+export async function buildBundle({ out, minify = true, repo = repoDir() }) {
+  const commit = checkPin(repo);
+  const wasm = wasmFiles(repo);
+  const result = await build(buildOptions({ out, minify, repo }));
   mkdirSync(out, { recursive: true });
-  for (const w of Object.values(wasm)) {
+  for (const w of wasm) {
     writeFileSync(join(out, w.to), withoutHomePaths(readFileSync(w.from)));
   }
   const hashes = Object.fromEntries(FILES.map((f) => [f, sha256(join(out, f))]));
   const sums = FILES.map((f) => `${hashes[f]}  ${f}`).join("\n");
   writeFileSync(join(out, "SHA256SUMS"), `${sums}\n`);
-  return { commit, hashes, metafile: result.metafile, count };
+  return { commit, hashes, metafile: result.metafile };
 }
 
 function cli() {
@@ -153,8 +121,7 @@ function cli() {
   const at = args.indexOf("--out");
   const out = resolve(at < 0 ? join(HERE, "../web/sol") : args[at + 1]);
   return buildBundle({ out, minify: !args.includes("--unminified") }).then((r) => {
-    const patches = JSON.stringify(r.count);
-    console.log(`built ${out} at Zolana ${r.commit.slice(0, 8)}, patches: ${patches}`);
+    console.log(`built ${out} at Zolana ${r.commit.slice(0, 8)}, no SDK patch`);
     for (const [name, hash] of Object.entries(r.hashes)) console.log(`${hash}  ${name}`);
   });
 }

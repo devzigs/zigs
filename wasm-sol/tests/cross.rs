@@ -147,7 +147,7 @@ fn compiled_messages_equal_the_solana_message_compiler() {
             .with_loaded_accounts_data_size_limit(LOADED_MAX);
         let lifetime = Hash::new_from_array(vector.intent.lifetime());
         let theirs =
-            solana_v1::Message::try_compile_with_config(&addr(&pins.group), &ixs, lifetime, config)
+            solana_v1::Message::try_compile_with_config(&addr(&pins.payer), &ixs, lifetime, config)
                 .unwrap_or_else(|e| panic!("{}: {e:?}", vector.name));
         assert_eq!(theirs.serialize(), vector.bytes, "{}", vector.name);
     }
@@ -167,7 +167,7 @@ fn the_with_fee_form_equals_the_solana_message_compiler_too() {
                 .with_loaded_accounts_data_size_limit(LOADED_MAX);
             let lifetime = Hash::new_from_array(vector.intent.lifetime());
             let theirs = solana_v1::Message::try_compile_with_config(
-                &addr(&pins.group),
+                &addr(&pins.payer),
                 &ixs,
                 lifetime,
                 config,
@@ -284,6 +284,22 @@ fn system_data_tags_follow_solana_system_interface() {
         tag(&system::authorize_nonce_account(&a, &b, &b)),
         SYS_AUTHORIZE_NONCE
     );
+    assert_eq!(
+        tag(&system::create_account(&a, &b, 1, 2, &a)),
+        p3_check::consts::SYS_CREATE_ACCOUNT
+    );
+    let (base, seed) = (addr(&[3; 32]), "x");
+    assert_eq!(
+        tag(&system::transfer_with_seed(
+            &a,
+            &base,
+            seed.into(),
+            &a,
+            &b,
+            1
+        )),
+        p3_check::consts::SYS_TRANSFER_WITH_SEED
+    );
     let created = system::create_nonce_account_with_seed(&a, &b, &a, "x", &a, 5);
     assert_eq!(tag(&created[0]), p3_check::consts::SYS_CREATE_WITH_SEED);
     assert_eq!(tag(&created[1]), p3_check::consts::SYS_INIT_NONCE);
@@ -293,9 +309,12 @@ fn system_data_tags_follow_solana_system_interface() {
 fn nonce_instructions_equal_the_system_interface_builders() {
     let pins = pins();
     let (group, nonce) = (addr(&pins.group), addr(&pins.nonce_account));
+    let payer = addr(&pins.payer);
     let advance = system::advance_nonce_account(&nonce, &group);
+    // The payer funds the account, the group key signs as the base of the seed and is the
+    // authority: the builder then lists the base as a third account.
     let create = system::create_nonce_account_with_seed(
-        &group,
+        &payer,
         &nonce,
         &group,
         std::str::from_utf8(NONCE_SEED).unwrap(),

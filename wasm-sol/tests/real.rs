@@ -102,15 +102,14 @@ fn transfer(nonce: [u8; 32]) -> Intent {
 
 use Rule::*;
 
-/// The SDK defaults that every P5 message but the stretch one breaks: 450,000 or 200,000
-/// compute units, no AdvanceNonceAccount, a blockhash. Mask 0b01100 (no priority bits) is the
-/// form of the template since P3c, so it is no longer on this list.
-fn sdk_defaults(cap_break: bool) -> Vec<Rule> {
-    let mut rules = Vec::new();
-    rules.extend(cap_break.then_some(ComputeUnitsOverCap));
-    rules.extend([InstructionCount, InstructionMismatch]);
-    rules
-}
+// Every P5 message but the stretch one breaks the SDK defaults: 450,000 or 200,000 compute units
+// (ComputeUnitsOverCap), no AdvanceNonceAccount and a blockhash (InstructionCount and
+// InstructionMismatch).
+
+/// The group paid and signed every P5 message alone. The template has the fee key pay, so the
+/// first account is not the payer of the proposal. The count of signers breaks too, unless the
+/// intent has one signer (Shield).
+const GROUP_PAID: [Rule; 2] = [FeePayerNotPayer, SignerSet];
 
 #[test]
 fn real_register_breaks_the_template_and_its_keys_fit() {
@@ -120,18 +119,20 @@ fn real_register_breaks_the_template_and_its_keys_fit() {
         nullifier_pk: facts.nullifier_pk(),
         viewing_pk: facts.viewing_pk(),
     };
-    let mut want = sdk_defaults(true);
-    want.extend([AccountSet, AccountSet]);
+    let mut want = vec![ComputeUnitsOverCap];
+    want.extend(GROUP_PAID);
+    want.extend([InstructionCount, InstructionMismatch, AccountFlags]);
+    want.extend([AccountSet, AccountSet, AccountSet]);
     assert_eq!(violations("real/work-register-0.msg", &intent), want);
 }
 
 #[test]
 fn real_shield_breaks_the_template_and_its_fields_fit() {
     let intent = Intent::Shield {
-        nonce: own_lifetime("real/work-shield-0.msg"),
+        blockhash: own_lifetime("real/work-shield-0.msg"),
         amount: Facts::load().amount("shield"),
     };
-    let mut want = sdk_defaults(true);
+    let mut want = vec![ComputeUnitsOverCap, FeePayerNotPayer, AccountAddress];
     want.extend([AccountSet, AccountSet]);
     assert_eq!(violations("real/work-shield-0.msg", &intent), want);
 }
@@ -149,8 +150,15 @@ fn real_transfer_withdraw_and_unlanded_transfers_break_the_template() {
         recipient: facts.recipient(),
         amount: facts.amount("withdraw"),
     };
-    let mut want = sdk_defaults(true);
-    want.extend([ExpiryMax, AccountSet, AccountSet]);
+    let mut want = vec![ComputeUnitsOverCap];
+    want.extend(GROUP_PAID);
+    want.extend([
+        InstructionCount,
+        InstructionMismatch,
+        ExpiryMax,
+        AccountFlags,
+    ]);
+    want.extend([AccountSet, AccountSet, AccountSet]);
     for path in [
         "real/work-transfer-0.msg",
         "real/work-c-orig.v.msg",
@@ -171,10 +179,16 @@ fn real_transfer_withdraw_and_unlanded_transfers_break_the_template() {
 }
 
 #[test]
-fn the_stretch_transfer_fits_except_compute_units_and_expiry() {
+fn the_stretch_transfer_paid_by_the_group_breaks_the_payer_rules_and_the_old_limits() {
+    // It fitted the template of the group as payer, except its compute limit and its expiry.
+    // The fee key pays now: the payer, the signers, the owner signer account and the flags break
+    // as well.
     let path = "real/work-stretch-0.msg";
     let got = violations(path, &transfer(Facts::load().stretch_nonce()));
-    assert_eq!(got, vec![ComputeUnitsOverCap, ExpiryMax]);
+    let mut want = vec![ComputeUnitsOverCap];
+    want.extend(GROUP_PAID);
+    want.extend([AccountCount, ExpiryMax, AccountFlags, AccountSet]);
+    assert_eq!(got, want);
 }
 
 #[test]

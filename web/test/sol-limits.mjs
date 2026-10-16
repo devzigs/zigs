@@ -11,6 +11,7 @@ import assert from "node:assert/strict";
 import { approve } from "../sol/approve.js";
 import { base58 } from "../sol/docs.js";
 import { bytesOf, hexOf, intentHex, pinsHex } from "../sol/intent.js";
+import { feeOf } from "../sol/fee.js";
 import { savedNonces } from "../sol/nonces.js";
 import { filterSessions, writePart } from "../sol/sessions.js";
 import { solView } from "../sol/view.js";
@@ -22,7 +23,7 @@ import {
   data,
   done,
   gid,
-  landedShield,
+  landedRegister,
   notify,
   path,
   proposed,
@@ -41,7 +42,7 @@ const noWatches = (rel, what) => waitFor(what, () => watches(rel) === 0, 10000);
 // ── D1: more than 50 sessions that all landed ──
 await withNonceAccount();
 const SESSIONS = 52;
-for (let k = 0; k < SESSIONS; k++) await landedShield("0.00" + (1 + (k % 9)));
+for (let k = 0; k < SESSIONS; k++) await landedRegister();
 assert.equal(chain.landed.length, SESSIONS + 1, "every proposal landed, the last ones too");
 await noWatches("solsessions/", "a session that ended gives its watches back");
 step("52 sessions land one after the other and release their watches");
@@ -50,20 +51,19 @@ step("52 sessions land one after the other and release their watches");
 for (let k = 0; k < 60; k++) data.set(path(gid, `solsessions/junk-${k}`), { x: k });
 notify();
 await sleep(300);
-await landedShield("0.001");
+await landedRegister();
 assert.equal(watches("solsessions/junk"), 0, "a document with no valid proposal is not watched");
 await noWatches("solsessions/", "no watch is left");
 step("60 junk documents take no watch");
 
 // ── D1 and D2: many open sessions on one nonce, then one lands ──
 const nonce = chain.nonce;
-const shield = (amount) => intentHex("shield", { nonce, amount });
-const pins = bytesOf(pinsHex(done));
-const compile = (amount) =>
-  hexOf(W.compile_message(bytesOf(shield(amount)), pins, new Uint8Array(0)));
+const register = intentHex("register", { nonce, ...done });
+const pins = bytesOf(pinsHex(done, feeOf(c, 1).key));
+const message = hexOf(W.compile_message(bytesOf(register), pins, new Uint8Array(0)));
 const OPEN = 55;
 for (let k = 0; k < OPEN; k++) {
-  const fields = { intent: shield(1000n + BigInt(k)), message: compile(1000n + BigInt(k)) };
+  const fields = { intent: register, message, feeSig: "33".repeat(64) };
   await writePart(
     c,
     `open-${k}`,
@@ -81,8 +81,9 @@ assert.ok(watches("solsessions/") <= 100, "at most 50 sessions, two watches each
 assert.ok(watches("solsessions/") >= 2, "the open sessions are watched");
 step("55 open sessions are watched within the cap");
 
-const first = await proposed("shield", { amount: "0.003" });
-const second = await proposed("shield", { amount: "0.004" });
+// Two proposals on one nonce have the same bytes: the landing of one ends the other.
+const first = await proposed("register");
+const second = await proposed("register");
 await approve(c, ssOf(second), 3);
 assert.ok(savedNonces(c, 3, second), "seat 3 holds nonces for the second proposal");
 await approve(c, ssOf(first), 1);
@@ -133,8 +134,9 @@ step("an ended session has no Approve button and says why");
   const message = "00".repeat(8) + lifetime + "ff".repeat(12);
   const other = "00".repeat(8) + "cd".repeat(32) + "ff".repeat(12);
   const signature = "11".repeat(64);
-  const base = { by: 1, sig: "s", createdAt: 1 };
-  const spend = "02" + lifetime + "0100000000000000";
+  const feeSig = "33".repeat(64); // the payer signs first: its signature is the id
+  const base = { by: 1, sig: "s", feeSig, createdAt: 1 };
+  const spend = "01" + lifetime + "0100000000000000";
   const all = {
     sent: {
       ...base,
@@ -148,7 +150,7 @@ step("an ended session has no Approve button and says why");
       digest: "d",
       packageBy: 1,
       packageSig: "s",
-      txId: base58(signature),
+      txId: base58(feeSig),
       slot: "5",
       outcome: "failed",
       sentBy: 1,
@@ -168,8 +170,11 @@ step("an ended session has no Approve button and says why");
       packageBy: 1,
       packageSig: "s",
     },
-    elsewhere: { ...base, intent: "02" + "cd".repeat(32) + "0100000000000000", message: other },
+    elsewhere: { ...base, intent: "01" + "cd".repeat(32) + "0100000000000000", message: other },
     blockhash: { ...base, intent: "00" + lifetime, message },
+    // Add SOL (the intent 02) also has a blockhash for its lifetime. A member can write it as a
+    // session, and the landed session on that value does not end it.
+    addsol: { ...base, intent: "02" + lifetime + "00".repeat(8), message },
   };
   const check = () => "yes";
   const read = (raw) =>
@@ -184,6 +189,7 @@ step("an ended session has no Approve button and says why");
   }
   assert.equal(seen.elsewhere.status, "collecting", "another nonce is not touched");
   assert.equal(seen.blockhash.status, "collecting", "a blockhash lifetime is not a nonce");
+  assert.equal(seen.addsol.status, "collecting", "an Add SOL message is no nonce session");
   const { sent: _gone, ...without } = all;
   assert.equal(read(without).collecting.status, "collecting", "nothing landed, nothing ends");
 }
@@ -191,7 +197,7 @@ step("the rule needs no chain read");
 
 // ── D1: closing the wallet stops the watches of its open sessions too ──
 {
-  const open = await proposed("shield", { amount: "0.005" });
+  const open = await proposed("register");
   await waitFor("the open session is watched", () => c.watching.has(open));
   assert.ok(watches("solsessions/") >= 2, "the commits and shares of the open session");
   t.sol.close();

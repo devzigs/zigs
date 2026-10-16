@@ -6,7 +6,7 @@
 // aggregate, and a key written twice is refused. Then the share check and the program label.
 // Run: node web/test/sol-wasm.mjs   (Node 24)
 import assert from "node:assert/strict";
-import { createPublicKey, randomBytes, verify } from "node:crypto";
+import { createPrivateKey, createPublicKey, hkdfSync, randomBytes, verify } from "node:crypto";
 import fs from "node:fs";
 import * as S from "../sol/wasm/sol_wasm.js";
 
@@ -81,18 +81,58 @@ assert.ok(
 assert.notEqual(JSON.stringify(done[0].key_package), JSON.stringify(done[1].key_package));
 assert.equal(done[0].group_key.length, 64);
 
-// The role keys and the pins.
+// The role keys, and the pins: the keys of the group and the fee key of the proposing seat.
 const roles = json(S.sol_roles(done[0].sol_seed, done[0].group_key));
-assert.equal(roles.pins.length, 97 * 2);
-assert.equal(roles.pins.slice(0, 64), done[0].group_key);
+assert.equal(roles.pins, undefined, "the roles hold no pins: the payer is a pin of the proposal");
 assert.equal(roles.address.length, 99 * 2);
+// The fee key of a seat comes from its own key share, and Node's HKDF and Ed25519 give the same
+// key (info: the label, the group key and the seat as 2 bytes, little endian).
+const PKCS8 = fromHex("302e020100300506032b657004220420");
+function nodeFee(kp) {
+  const seat = Buffer.alloc(2);
+  seat.writeUInt16LE(Buffer.from(kp.identifier, "hex").readUInt16LE(0));
+  const label = Buffer.from("zigs-sol/fee-key/v1");
+  const info = Buffer.concat([label, fromHex(kp.verifying_key), seat]);
+  const share = fromHex(kp.signing_share);
+  const secret = Buffer.from(hkdfSync("sha256", share, Buffer.alloc(0), info, 32));
+  const der = Buffer.concat([PKCS8, secret]);
+  const seed = createPrivateKey({ key: der, format: "der", type: "pkcs8" });
+  const spki = createPublicKey(seed).export({ format: "der", type: "spki" });
+  return { secret: hex(secret), public: hex(spki.subarray(-32)) };
+}
+const feeOfSeat = (n, change = {}) =>
+  json(S.sol_fee_key(JSON.stringify({ ...done[n].key_package, ...change })));
+const fees = [0, 1, 2].map((n) => feeOfSeat(n));
+fees.forEach((made, n) => assert.deepEqual(made, nodeFee(done[n].key_package), "seat " + (n + 1)));
+const fee = fees[0];
+assert.equal(new Set(fees.map((f) => f.public)).size, 3, "a key for each seat");
+assert.notEqual(fee.public, done[0].group_key, "the group key is no fee key");
+assert.deepEqual(feeOfSeat(0), fee, "any later call gives the same key");
+const shuffled = JSON.stringify(Object.fromEntries(Object.entries(done[0].key_package).reverse()));
+assert.deepEqual(json(S.sol_fee_key(shuffled)), fee, "a copy with its fields in another order");
+// The seat and the group key are in the info: a share that still fits its public share gives
+// another key when only the identifier or the group key changes.
+const seatTwo = { identifier: done[1].key_package.identifier };
+assert.notEqual(feeOfSeat(0, seatTwo).public, fee.public, "the seat is in the info");
+const groupOther = { verifying_key: done[0].key_package.verifying_share };
+assert.notEqual(feeOfSeat(0, groupOther).public, fee.public, "the group key is in the info");
+// A damaged share, a share of another seat and a text that is no key package give no key.
+const flip = (text) => text.slice(0, 5) + (text[5] === "a" ? "b" : "a") + text.slice(6);
+const damaged = { signing_share: flip(done[0].key_package.signing_share) };
+assert.throws(() => feeOfSeat(0, damaged), /does not fit/);
+assert.throws(() => feeOfSeat(0, { signing_share: done[1].key_package.signing_share }), /fit/);
+for (const junk of ["", "{}", "zz"]) {
+  assert.throws(() => S.sol_fee_key(junk), /key package/, junk);
+}
+const pinsOf = (payer) =>
+  fromHex(done[0].group_key + roles.nullifier_pk + roles.viewing_pk + payer);
 assert.equal(Buffer.from(roles.seal_key, "base64url").length, 32, "a 32 byte base64url secret");
 assert.throws(() => S.sol_roles("zz", done[0].group_key), /solSeed/);
 
 // A Cancel intent: tag 5 and the nonce. The message is compiled from the fixed template.
 const nonce = randomBytes(32);
 const proposal = Uint8Array.from([5, ...nonce]);
-const pins = fromHex(roles.pins);
+const pins = pinsOf(fee.public);
 const message = S.compile_message(proposal, pins, new Uint8Array(0));
 assert.equal(message[0], 0x81, "a v1 message");
 // The snapshot of a device with no input: the two secrets, the fee, no input, no used salt.
@@ -106,7 +146,7 @@ const snapshot = Buffer.concat([
 assert.equal(snapshot.length, 74);
 const verdict = S.check_message(message, proposal, pins, snapshot, BigInt(NOW));
 assert.ok(verdict.startsWith("accepted"), verdict);
-assert.equal(S.rule_list().split("\n").length, 84);
+assert.equal(S.rule_list().split("\n").length, 86);
 
 // Seats 1 and 2 sign in separate calls. The page keeps the nonces under the digest.
 const digest = S.sol_digest(CLUSTER, message);
@@ -156,6 +196,35 @@ assert.throws(
 );
 assert.throws(() => S.sol_digest("mainnet", message), /devnet/);
 assert.throws(() => S.compile_message(proposal, pins, Uint8Array.from([16, 1, 2])), /transact/);
+assert.throws(
+  () => S.compile_message(proposal, pinsOf(done[0].group_key), new Uint8Array(0)),
+  /fee payer is the group key/,
+);
+
+// The fee key of the proposing seat signs the message once the checker accepted it, and Node's
+// own Ed25519 verifies the signature. The wasm refuses a key that is not the payer, a message with
+// another payer and a payer that is the group key.
+{
+  const roundOf = (secret) => JSON.stringify({ now: NOW, secret });
+  const sign = (bytes, key = pins, secret = fee.secret) =>
+    S.sol_fee_sign(bytes, proposal, key, snapshot, roundOf(secret));
+  const feeSig = sign(message);
+  const feeKey = createPublicKey({
+    key: Buffer.concat([spkiHead, fromHex(fee.public)]),
+    format: "der",
+    type: "spki",
+  });
+  assert.ok(verify(null, message, feeKey, fromHex(feeSig)), "Node verifies the fee signature");
+  assert.ok(S.sol_fee_verify(fee.public, message, feeSig));
+  assert.ok(!S.sol_fee_verify(fee.public, other, feeSig), "another message");
+  assert.ok(!S.sol_fee_verify(fees[1].public, message, feeSig), "another key");
+  assert.ok(!S.sol_fee_verify("zz", message, feeSig), "bad text is false and no throw");
+  const stranger = fees[1];
+  assert.throws(() => sign(message, pins, stranger.secret), /not the payer/);
+  assert.throws(() => sign(message, pinsOf(stranger.public)), /fee-payer-not-payer/);
+  assert.throws(() => sign(other), /refused/);
+  assert.throws(() => sign(message, pinsOf(done[0].group_key)), /payer-is-group/);
+}
 
 // A part that does not match its commitment names its seat.
 const parts = partsOf(seats);

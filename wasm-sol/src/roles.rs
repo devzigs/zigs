@@ -23,8 +23,7 @@ use crate::address::Address;
 use crate::bytes::hex;
 use crate::codec::{base64url, blake2b_256, unhex_array};
 use crate::consts::Key;
-use crate::hashes::nullifier_pk;
-use crate::pins::Pins;
+use crate::hashes::{nullifier_pk, owner_hash};
 use crate::viewing::ViewingKey;
 
 const INFO_NULLIFIER: &[u8] = b"zigs-sol/nullifier-secret/v1";
@@ -41,8 +40,6 @@ pub struct Roles {
     pub owner_hash: Key,
     /// The full shielded address of the group (99 bytes).
     pub address: Vec<u8>,
-    /// The 97 bytes that `check_message` takes as its pins.
-    pub pins: Vec<u8>,
     pub seal_key: String,
 }
 
@@ -92,15 +89,13 @@ pub fn derive(seed: &[u8; 32], group: &Key) -> Result<Roles, String> {
     let (nullifier_secret, viewing_sk) = secrets(seed)?;
     let nullifier_pk = nullifier_pk(&nullifier_secret)?;
     let viewing_pk = ViewingKey::from_bytes(&viewing_sk)?.public()?;
-    let pins = Pins::devnet(*group, nullifier_pk, viewing_pk)?;
     Ok(Roles {
         nullifier_secret,
         viewing_sk,
         nullifier_pk,
         viewing_pk,
-        owner_hash: pins.group_owner_hash,
+        owner_hash: owner_hash(group, &nullifier_pk)?,
         address: shielded_address(group, &nullifier_pk, &viewing_pk),
-        pins: pins.wire(),
         seal_key: base64url(&blake2b_256(SNAPSHOT_PERSONAL, &[seed])),
     })
 }
@@ -119,7 +114,6 @@ pub fn roles(sol_seed: &str, group_key: &str) -> Result<String, String> {
         "viewing_pk": hex(&roles.viewing_pk),
         "owner_hash": hex(&roles.owner_hash),
         "address": hex(&roles.address),
-        "pins": hex(&roles.pins),
         "seal_key": roles.seal_key,
     })
     .to_string())

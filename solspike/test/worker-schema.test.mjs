@@ -132,8 +132,12 @@ function otherCommands() {
       /malformed/,
     );
   }
+  const payer = "5TeWSsjg2gbxCyWVniXeCmwM7UtHTCK7svzJr5xYJzHf";
   const prepare = { kind: "transfer", recipient: "01ab", amount: "1000000", expiry: "1900000000" };
-  checkCommand("prepare", prepare);
+  checkCommand("prepare", { ...prepare, payer });
+  // The payer (the fee key of a seat, as a base58 address) is a field that must be there.
+  const lacking = text(() => checkCommand("prepare", prepare));
+  assert.match(lacking, /prepare: field payer is missing or malformed/);
   for (const [field, value] of [
     ["kind", "withdrawal"],
     ["amount", "-1"],
@@ -141,9 +145,12 @@ function otherCommands() {
     ["amount", "1".repeat(21)],
     ["expiry", "1e9"],
     ["recipient", "xyz"],
+    ["payer", "0OIl"],
+    ["payer", payer.slice(20)],
+    ["payer", "ab".repeat(32)],
   ]) {
     assert.match(
-      text(() => checkCommand("prepare", { ...prepare, [field]: value })),
+      text(() => checkCommand("prepare", { ...prepare, payer, [field]: value })),
       /malformed/,
     );
   }

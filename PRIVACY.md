@@ -129,15 +129,28 @@ API key. The server gives it to the page at `/sol/config.json`, behind the same 
 other request. So every user of the page can read it. Allowed Domains at Helius limits its use by
 other sites, but it does not protect the key.
 
+Each seat has a **fee address**: an Ed25519 key that the device derives from the Solana key share of
+that seat. It pays the fees and the rents of the proposals that the seat makes, so the group key
+never pays. The chain shows it as the first account of each such transaction, next to the group
+key. It has a public SOL funding trail, and it links that member to the group. The seat publishes
+it in a signed document on the group server, and every signer of the wallet can read it. The page
+stores no fee key: it derives the key again from the key share, so the Solana backup file restores
+it. The key never goes to Helius. Any `t` signers together can rebuild the key share of a seat, so
+they could also spend the SOL on that seat's fee address. Keep only the SOL for fees there.
+
 The link **Get Devnet SOL** opens the Solana faucet (faucet.solana.com) in a new tab. That site is
-not Zigs. It sees your IP address and the owner address that you paste, so it can link the two.
+not Zigs. It sees your IP address and the fee address that you paste, so it can link the two.
+
+**Add SOL** moves SOL from the fee address of your seat into the shielded balance of the group.
+It is a pool deposit that only your seat signs, with no approval from the other seats. The amount
+and the sender (your fee address) are public on chain.
 
 Zolana is not Zcash. This table says what differs:
 
 | Property | Zcash (the wallet above) | Solana beta (Zolana Default Ring) |
 |---|---|---|
 | Amount and asset | Hidden | Hidden on chain in a transfer. Public in a deposit and in a withdrawal |
-| Sender and recipient | Hidden | Public: the payer and the owner signer are in the transaction, and the owner key tags each output |
+| Sender and recipient | Hidden | Public: the payer (a member fee address) and the owner signer (the group key) are in the transaction, and the owner key tags each output |
 | Link between spends and the group | None: each spend has a new key | The group key is a stable tag. A FROST signature does not show a multisig |
 | Who sees the witness | Nobody: the proof runs on the device | The hosted prover of Helius: owners, assets, amounts, blindings and the nullifier secret. Local proving is not available yet |
 | What the index learns | IP address and blocks | The owner key (tag queries), IP address, timing, Merkle proofs of the inputs, and the app origin |
@@ -149,10 +162,13 @@ witness of each spend. It can read the whole Solana history of the wallet. It ca
 because a spend needs the group signature. It sees no key share. Every signer of the wallet reads
 the whole Solana history too.
 
-The screen before **Add Solana** says that the Solana address of the wallet is public, that the
-Zigs server operator can link the wallet to it by timing, that Helius sees that you use Zigs, and
-that the address needs a public SOL funding trail. The other Solana screens do not yet state the
-limits above (ticket SOL-12 in [TICKETS.md](TICKETS.md)).
+The screen before **Add Solana** says that the Solana address of the wallet is public, that each
+seat also gets a fee address that appears on chain next to the group, that the Zigs server operator
+can link the wallet to these addresses by timing, that Helius sees that you use Zigs, and that a
+fee address needs a public SOL funding trail. The fund card says that the fee address appears on
+chain next to the group, and the Add SOL card says that the amount and the sender are public. The
+other Solana screens do not yet state the limits above (ticket SOL-12 in
+[TICKETS.md](TICKETS.md)).
 
 Tor Browser hides your IP address from Helius. It does not hide the timing link of the group
 server. A person who reads "private" may expect Zcash privacy. The Solana part gives less.

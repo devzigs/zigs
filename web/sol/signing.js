@@ -14,7 +14,7 @@ import { clearPending, dropNonces, pendingShare, savedNonces, spendNonces } from
 import { BLOCKHASH_MS, inputsOf } from "./approve.js";
 import { solOf, stopOf } from "./secrets.js";
 import { ensureWorker } from "./session.js";
-import { SESSIONS, writePart } from "./sessions.js";
+import { BEFORE_FEE, SESSIONS, beforeFee, writePart } from "./sessions.js";
 import { deviceSpend } from "./spend.js";
 
 const J = JSON.parse,
@@ -251,9 +251,12 @@ async function sendSigned(c, ss, seat) {
   }
 }
 
+// A proposal from before the fee keys has the group signature only, and that is its id. It may
+// have landed with no sent mark: the status is read first, and the mark is written. A proposal
+// that did not land is never sent (its payer is the group key): `land` ends it.
 async function attemptSend(c, ss, seat) {
   const worker = await ensureWorker(c),
-    txId = base58(ss.signature);
+    txId = base58(ss.feeSig ?? ss.signature);
   const ref = sessionRef(c, ss);
   if (!(await leased(ref, 60000))) return sleep(RETRY_MS);
   let result = await worker.call("status", { signature: txId });
@@ -265,7 +268,11 @@ async function attemptSend(c, ss, seat) {
 
 /** Simulates the signed transaction, sends it and waits for it. null when it did not go. */
 async function land(c, ss, worker, txId) {
-  const tx = wireBase64(bytesOf(ss.message), bytesOf(ss.signature));
+  if (beforeFee(ss)) {
+    await failSession(c, ss, BEFORE_FEE);
+    return null;
+  }
+  const tx = wireBase64(bytesOf(ss.message), bytesOf(ss.feeSig + ss.signature));
   const sim = await worker.call("simulate", { tx });
   if (sim.err !== null) {
     const refused = "The network refused the signed transaction: " + sim.err;
@@ -307,6 +314,9 @@ function maybeReadWallet(c, ss) {
 }
 
 function stepSession(c, ss) {
+  if (beforeFee(ss) && !ss.signature) {
+    return launch(c, "old:" + ss.id, () => failSession(c, ss, BEFORE_FEE));
+  }
   if (expired(ss)) return launch(c, "expire:" + ss.id, () => failSession(c, ss, EXPIRED));
   maybeReadWallet(c, ss);
   if (!ss.package) return maybePackage(c, ss);

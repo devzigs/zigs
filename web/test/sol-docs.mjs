@@ -26,6 +26,7 @@ const GID = "aaaaaaaaaaaaaaaaaaaa",
     "soldkg1/2",
     "soldkg2/2-3",
     "soldone/3",
+    "solfee/2",
     "solabort/2",
     "solsessions/" + SID,
     "solsessions/" + SID + "/commits/2",
@@ -45,7 +46,14 @@ const GID = "aaaaaaaaaaaaaaaaaaaa",
   for (const rel of collections) {
     assert.equal((base + rel).split("/").length % 2, 1, rel + " is a collection of odd depth");
   }
-  assert.deepEqual(COLLECTIONS, ["solstart", "soldkg1", "soldkg2", "soldone", "solabort"]);
+  assert.deepEqual(COLLECTIONS, [
+    "solstart",
+    "soldkg1",
+    "soldkg2",
+    "soldone",
+    "solfee",
+    "solabort",
+  ]);
 }
 
 // ── The writer of each document ──
@@ -56,6 +64,8 @@ const GID = "aaaaaaaaaaaaaaaaaaaa",
     "soldkg2/2-3": 2,
     "soldkg2/3-1": 3,
     "soldone/3": 3,
+    "solfee/1": 1,
+    "solfee/3": 3,
     "solabort/1": 1,
     "solabort/3": 3,
     ["solsessions/" + SID + "/commits/2"]: 2,
@@ -69,6 +79,10 @@ const GID = "aaaaaaaaaaaaaaaaaaaa",
     "soldkg1/100",
     "soldkg1/1/x",
     "soldone",
+    "solfee",
+    "solfee/0",
+    "solfee/1-2",
+    "solfee/100",
     "solabort",
     "solabort/0",
     "solabort/1-2",
@@ -125,6 +139,7 @@ const honest = {
   soldkg1: { 1: await r1(1), 2: await r1(2), 3: await r1(3) },
   soldkg2: { "1-2": await signed("soldkg2/1-2", 1, { sealed: "s", echo: "e", at: 1 }) },
   soldone: { 1: await signed("soldone/1", 1, { groupKey: "k", at: 1 }) },
+  solfee: { 2: await signed("solfee/2", 2, { key: "f".repeat(64), cluster: "devnet", at: 1 }) },
 };
 
 {
@@ -134,6 +149,7 @@ const honest = {
   assert.deepEqual(Object.keys(out.docs.soldkg1), ["1", "2", "3"]);
   assert.equal(out.docs.solstart[1].by, undefined, "the signature fields are not in the document");
   assert.deepEqual(out.docs.soldone[1], { groupKey: "k", at: 1 });
+  assert.deepEqual(Object.keys(out.docs.solfee), ["2"], "the fee key document of seat 2 counts");
   assert.deepEqual(Object.keys(out.docs), COLLECTIONS);
 }
 
@@ -144,6 +160,10 @@ const honest = {
   // A copied approval: seat 1's soldone, placed where seat 2 must write, and relabelled as seat 2.
   forged.soldone[2] = one;
   forged.soldone[3] = { ...one, by: 3 };
+  // A fee key that another seat signed: seat 3 publishes a fee key under seat 2. Whoever writes
+  // the document of a seat must hold its key, or the payer of its proposals could be swapped.
+  forged.solfee[3] = await signed("solfee/3", 2, { key: "a".repeat(64), cluster: "devnet" });
+  forged.solfee[2] = { ...honest.solfee[2], key: "b".repeat(64) };
   // A wrong key: seat 2's name, the attacker's key.
   forged.soldkg1[2] = await signed(
     "soldkg1/2",
@@ -175,10 +195,13 @@ const honest = {
       "soldkg2/1-2",
       "soldone/2",
       "soldone/3",
+      "solfee/2",
+      "solfee/3",
       "solstart/1",
     ].sort(),
   );
-  assert.equal(out.bad, 7);
+  assert.equal(out.bad, 9);
+  assert.deepEqual(out.docs.solfee, {}, "a fee key that its seat did not sign never counts");
   assert.deepEqual(Object.keys(out.docs.soldkg1).sort(), ["1", "3"]);
   assert.deepEqual([out.docs.solstart, out.docs.soldkg2], [{}, {}]);
   assert.deepEqual(Object.keys(out.docs.soldone), ["1"], "only the real soldone stays");

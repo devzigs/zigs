@@ -9,7 +9,7 @@ const need = (name) => {
   return value;
 };
 
-/** The checkout of the Zolana repo at commit 89640630 (ZOLANA.md section 8). */
+/** The checkout of the Zolana repo at the commit PIN of build.mjs (ZOLANA.md section 8). */
 export const zolanaRepo = () => need("ZOLANA_REPO");
 /** The file with the Helius Devnet URL. The URL holds the API key: never print it. */
 export const heliusFile = () =>

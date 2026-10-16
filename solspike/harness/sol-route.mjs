@@ -21,7 +21,7 @@ const POLICY =
   "connect-src 'self' https://devnet.helius-rpc.com; base-uri 'none'";
 const SOL_PATHS = [
   "/sol/worker.js", "/sol/worker.js?x=1", "/sol/guard.js", "/sol/zolana.bundle.js",
-  "/sol/hasher-simd.wasm", "/sol/wasm/sol_wasm_bg.wasm", "/sol", "/sol/", "/SOL/worker.js",
+  "/sol/hasher_wasm_simd_bg.wasm", "/sol/wasm/sol_wasm_bg.wasm", "/sol", "/sol/", "/SOL/worker.js",
   "/%73ol/worker.js", "/sol/%77orker.js", "/sol/worker%2ejs", "/sol%2Fworker.js",
   "/sol%5Cworker.js", "/sol//worker.js", "//sol/worker.js", "/sol/./worker.js",
   "/sol/../sol/worker.js", "/sol\\worker.js", "/sol/worker.js/", "/sol/%zz", "/%zz",

@@ -93,10 +93,15 @@ fn the_pins_are_the_group_key_with_its_nullifier_pk_and_viewing_pk() {
     .unwrap();
     let snapshot = f.snapshot.encode().unwrap();
     let wire = f.pins.wire();
-    assert_eq!(wire.len(), 97, "32 + 32 + 33 bytes");
+    assert_eq!(wire.len(), 129, "32 + 32 + 33 + 32 bytes");
     assert!(check_message(&bytes, &proposal, &wire, &snapshot, NOW).starts_with("accepted"));
-    // The old forms (the group key alone, and the key with an owner hash) are not pins.
-    for old in [&GROUP[..], &wire[..64], &[wire.as_slice(), &[0]].concat()] {
+    // The old forms (the group key alone, the three keys without the payer) are not pins.
+    for old in [
+        &GROUP[..],
+        &wire[..64],
+        &wire[..97],
+        &[wire.as_slice(), &[0]].concat(),
+    ] {
         let answer = check_message(&bytes, &proposal, old, &snapshot, NOW);
         assert!(
             answer.starts_with("error"),
@@ -104,12 +109,12 @@ fn the_pins_are_the_group_key_with_its_nullifier_pk_and_viewing_pk() {
             old.len()
         );
     }
-    // Another group key in the pins: the message names the other fee payer.
+    // Another payer in the pins: the message names the fee payer of the proposal.
     let (nullifier_pk, viewing_pk) = group().keys();
-    let other = p3_check::pins::Pins::devnet([0x77; 32], nullifier_pk, viewing_pk).unwrap();
+    let other = p3_check::pins::Pins::devnet(GROUP, nullifier_pk, viewing_pk, [0x77; 32]).unwrap();
     let answer = check_message(&bytes, &proposal, &other.wire(), &snapshot, NOW);
     assert!(
-        answer.starts_with("refused") && answer.contains("fee-payer-not-group"),
+        answer.starts_with("refused") && answer.contains("fee-payer-not-payer"),
         "{answer}"
     );
 }

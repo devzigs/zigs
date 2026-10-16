@@ -4,6 +4,7 @@
 // and the boxes carry a curve label, so a Zcash box cannot open here.
 import { fitsPublished, samePackages } from "../util.js";
 import { CLUSTER } from "./docs.js";
+import { feeUnpublished, publishFee } from "./fee.js";
 import { holdsShare, putSol, refuseStopped, solOf, stopOf } from "./secrets.js";
 
 const J = JSON.parse,
@@ -240,15 +241,23 @@ const launch = (c, key, run) => {
   return true;
 };
 
+// The steps of a seat in order: the first one that is due runs. `open` is true when the Zcash part
+// of the seat is settled. The fee step needs the Solana key share only: a seat that finished its
+// setup before the fee key existed publishes its fee document here.
+const STEPS = [
+  ["r1", (c, i, s, open) => open && needR1(c, i, s), round1],
+  ["r2", (c, i, s, open) => open && needR2(c, s), round2],
+  ["r3", (c, i, s) => needR3(c, i, s), round3],
+  ["done", (c, i, s) => needDone(c, i, s), publishDone],
+  ["feedoc", (c, i) => c.loaded.solfee && feeUnpublished(c, i), publishFee],
+];
+
 function stepSeat(c, i) {
   const s = solOf(c.host, c.gid, i);
   if (s.aborted) return false;
   const open = seatReady(c.host, c.gid, i);
-  if (open && needR1(c, i, s)) return launch(c, "r1:" + i, () => round1(c, i));
-  if (open && needR2(c, s)) return launch(c, "r2:" + i, () => round2(c, i));
-  if (needR3(c, i, s)) return launch(c, "r3:" + i, () => round3(c, i));
-  if (needDone(c, i, s)) return launch(c, "done:" + i, () => publishDone(c, i));
-  return false;
+  const step = STEPS.find(([, due]) => due(c, i, s, open));
+  return step ? launch(c, step[0] + ":" + i, () => step[2](c, i)) : false;
 }
 
 /**

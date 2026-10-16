@@ -8,6 +8,9 @@
 //! Outputs, Legs and Ciphertexts rules (P3c): the blinding, the hash and the ciphertext of every
 //! output, conservation, and the nullifiers of the snapshot.
 //!
+//! The fee key of a seat (`fee`) pays the fees and rents of its proposals: the payer is the first
+//! account of every message and the group key is a readonly signer, so the group never pays.
+//!
 //! `check_all` and `check` run the structure rules only. A spend that passes them is not
 //! approved.
 //!
@@ -30,6 +33,7 @@ pub mod bytes;
 pub mod check;
 pub mod codec;
 pub mod consts;
+pub mod fee;
 pub mod fixed;
 pub mod frost;
 pub mod hashes;

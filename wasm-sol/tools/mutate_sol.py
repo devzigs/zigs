@@ -1,4 +1,5 @@
-"""Mutation check of the new code of wasm-sol (frost, sign, roles, codec, wasm compile).
+"""Mutation check of the new code of wasm-sol (frost, sign, roles, codec, wasm compile, fee key)
+and of the fee payer rules and template lines of the checker (CHECKER_PIN lists them as modified).
 
 Run from the crate directory: python3 -I tools/mutate_sol.py [--check] [name ...]
 Each case is an exact string replacement that breaks one line of the new code. The script saves
@@ -19,7 +20,7 @@ ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 LOCK = os.path.join(os.path.dirname(os.path.dirname(ROOT)), "heavy.lock")
 TARGET = os.path.join(ROOT, "target-mut")
 ENV = dict(os.environ, RUSTUP_TOOLCHAIN="stable", CARGO_TARGET_DIR=TARGET)
-TESTS = ["frost_dkg", "sign_split", "roles", "compile_message"]
+TESTS = ["frost_dkg", "sign_split", "roles", "compile_message", "fee_payer", "fee_key"]
 TEST = ["lockf", "-k", LOCK, "cargo", "test", "-j", "4", "--no-fail-fast"]
 TEST += [arg for name in TESTS for arg in ("--test", name)] + ["--", "--test-threads", "2"]
 
@@ -41,6 +42,31 @@ HONEST_TEST = "a_2_of_3_dkg_gives_every_seat_one_group_key_and_one_sol_seed"
 P3_VECTORS = (
     "every_message_that_the_p3_vectors_refuse_gets_no_share_and_the_rest_reach_the_group_check"
 )
+
+PAYER_TEST = "a_message_paid_by_another_key_than_the_payer_of_the_proposal_is_refused"
+GROUP_PAYS_TEST = "a_proposal_that_names_the_group_key_as_its_payer_is_refused"
+THIRD_SIGNER_TEST = "a_third_signer_is_refused_with_the_signer_set_rule"
+SIGNERS_TEST = "two_keys_sign_every_intent_but_shield_and_the_payer_signs_first"
+SEED_FUNDER_TEST = "a_create_account_with_seed_funded_by_the_group_key_is_refused"
+CREATE_ACCOUNT_TEST = "a_create_account_from_the_group_key_is_refused"
+TRANSACT_LAYOUT_TEST = (
+    "transact_lists_the_payer_first_and_the_owner_signer_after_the_nullifier_accounts"
+)
+WITHDRAWAL_LAYOUT_TEST = "a_withdrawal_lists_the_owner_signer_before_the_settlement_accounts"
+NONCE_LAYOUT_TEST = (
+    "the_nonce_account_is_funded_by_the_payer_and_the_group_signs_as_its_base"
+)
+REGISTER_LAYOUT_TEST = "register_lists_the_owner_then_the_payer"
+COMPILE_GROUP_TEST = "the_compiler_refuses_the_group_key_as_payer"
+DUMMY_TEST = (
+    "a_dummy_may_name_the_group_key_that_signs_as_owner_when_no_real_output_pays_it"
+)
+FEE_NOT_PAYER_TEST = "a_fee_key_that_is_not_the_payer_of_the_proposal_signs_nothing"
+FEE_REFUSED_TEST = "the_fee_key_signs_nothing_that_approve_refuses"
+WIRE_TEST = "the_wire_of_the_pins_holds_the_payer_last"
+FEE_RAW_TEST = "the_seed_equals_the_independent_node_derivation_for_every_raw_vector"
+FEE_PACKAGE_TEST = "the_fee_key_of_a_key_package_equals_the_independent_node_derivation"
+FEE_DAMAGED_TEST = "a_damaged_share_a_share_of_another_seat_or_junk_gives_no_key"
 
 # (name, file, exact old text, new text, test that must fail)
 CASES = [
@@ -135,6 +161,60 @@ CASES = [
     ("seat-map-plain", "src/codec.rs",
      "    let Value::Object(object) = parse_strict(json, what)? else {",
      "    let Ok(Value::Object(object)) = serde_json::from_str::<Value>(json) else {", TWICE_TEST),
+    # The fee payer: the payer of the proposal pays, the group key signs as a readonly owner.
+    ("payer-not-first", "src/check.rs", "if self.msg.keys.first() != Some(&self.pins.payer) {",
+     "if false {", PAYER_TEST),
+    ("payer-may-be-group", "src/check.rs", "        if self.pins.payer == self.pins.group {",
+     "        if false {", GROUP_PAYS_TEST),
+    ("signer-count-unchecked", "src/check.rs", "        if signers != want {", "        if false {",
+     THIRD_SIGNER_TEST),
+    ("shield-two-signers", "src/template.rs", "        Intent::Shield { .. } => 1,",
+     "        Intent::Shield { .. } => 2,", SIGNERS_TEST),
+    ("group-debit-unchecked", "src/rules_ix.rs",
+     "            && self.msg.account_key(ix, 0) == Some(&self.pins.group)", "            && false",
+     SEED_FUNDER_TEST),
+    ("create-account-not-funding", "src/rules_ix.rs",
+     "    SYS_CREATE_ACCOUNT,\n    SYS_TRANSFER,\n", "    SYS_TRANSFER,\n    SYS_TRANSFER,\n",
+     CREATE_ACCOUNT_TEST),
+    ("owner-signer-writable", "src/template.rs",
+     "    accounts.push(acct(pins.group, true, false));",
+     "    accounts.push(acct(pins.group, true, true));", TRANSACT_LAYOUT_TEST),
+    ("owner-signer-missing", "src/template.rs",
+     "    accounts.push(acct(pins.group, true, false));", "    let _ = &mut accounts;",
+     WITHDRAWAL_LAYOUT_TEST),
+    ("nonce-funded-by-group", "src/template.rs",
+     "(pins.payer, true, true),\n                acct(pins.nonce_account, false",
+     "(pins.group, true, true),\n                acct(pins.nonce_account, false",
+     NONCE_LAYOUT_TEST),
+    ("register-payer-is-group", "src/template.rs",
+     "        acct(pins.group, true, false),\n        acct(pins.payer, true, true),",
+     "        acct(pins.group, true, false),\n        acct(pins.group, true, true),",
+     REGISTER_LAYOUT_TEST),
+    ("compile-with-group-payer", "src/template.rs", "    if pins.payer == pins.group {",
+     "    if false {", COMPILE_GROUP_TEST),
+    ("dummy-group-not-participant", "src/spend.rs",
+     "std::iter::once(self.group.key).chain(owners).collect()", "owners.collect()", DUMMY_TEST),
+    ("fee-key-any-payer", "src/fee.rs", "    if pins.payer != public_bytes(&key) {",
+     "    if false {", FEE_NOT_PAYER_TEST),
+    ("fee-key-no-approve", "src/fee.rs",
+     "    let pins = approved(message, check, now.ok_or(\"the fee round has no clock\")?)?;",
+     "    let pins = crate::pins::Pins::decode(check.pins)?;", FEE_REFUSED_TEST),
+    # The fee key is derived from the signing share, the group key and the seat (src/fee.rs).
+    ("fee-label", "src/fee.rs", 'b"zigs-sol/fee-key/v1"', 'b"zigs-sol/fee-key/v2"', FEE_RAW_TEST),
+    ("fee-no-group", "src/fee.rs", "    info.extend_from_slice(group);\n", "", FEE_RAW_TEST),
+    ("fee-no-seat", "src/fee.rs", "    info.extend_from_slice(&seat.to_le_bytes());\n", "",
+     FEE_RAW_TEST),
+    ("fee-salt", "src/fee.rs", "Hkdf::<Sha256>::new(None, share)",
+     'Hkdf::<Sha256>::new(Some(b"salt"), share)', FEE_RAW_TEST),
+    ("fee-seat-fixed", "src/fee.rs", "        seat_of(package.identifier())?,", "        1,",
+     FEE_PACKAGE_TEST),
+    ("fee-public-share", "src/fee.rs",
+     "        .signing_share()\n        .serialize()\n        .try_into()",
+     "        .verifying_share()\n        .serialize()\n        .unwrap_or_default()\n"
+     "        .try_into()", FEE_PACKAGE_TEST),
+    ("fee-share-unchecked", "src/fee.rs", "    if !share_fits(key_package) {", "    if false {",
+     FEE_DAMAGED_TEST),
+    ("pins-wire-no-payer", "src/pins.rs", "            &self.payer[..],\n", "", WIRE_TEST),
     ("empty-transact", "src/wasm.rs", "        [] => None,",
      '        [] => Some(transact::parse(&[]).map_err(|why| format!("{why:?}"))?),',
      "a_cancel_a_register_and_a_shield_compile_without_transact_data"),

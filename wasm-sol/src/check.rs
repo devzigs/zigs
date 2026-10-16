@@ -7,7 +7,9 @@ use crate::fixed::{parse_deposit, parse_register, Deposit, Register};
 use crate::intent::Intent;
 use crate::pins::Pins;
 use crate::rule::{Rule, Violation};
-use crate::template::{expected, limits, LOADED_MAX, TEMPLATE_MASK_NO_FEE, TEMPLATE_MASK_WITH_FEE};
+use crate::template::{
+    expected, limits, signer_count, LOADED_MAX, TEMPLATE_MASK_NO_FEE, TEMPLATE_MASK_WITH_FEE,
+};
 use crate::transact::{self, Transact};
 use crate::v1::{self, Message, BIT_LOADED};
 
@@ -169,17 +171,22 @@ impl Run<'_> {
         }
     }
 
+    /// The payer is the first account, it is not the group key, and the signers are the two keys
+    /// of the template (the payer alone for Shield). The account rules compare each flag.
     fn signer_rules(&mut self) {
-        if self.msg.keys.first() != Some(&self.pins.group) {
+        if self.msg.keys.first() != Some(&self.pins.payer) {
+            let detail = "the first account is not the payer of the proposal";
+            self.fail(Rule::FeePayerNotPayer, detail);
+        }
+        if self.pins.payer == self.pins.group {
             self.fail(
-                Rule::FeePayerNotGroup,
-                "the first account is not the group key",
+                Rule::PayerIsGroup,
+                "the payer of the proposal is the group key",
             );
         }
-        let signers = self.msg.header[0];
-        if signers != 1 {
-            let detail =
-                format!("{signers} required signatures, the group key must be the only one");
+        let (signers, want) = (self.msg.header[0], signer_count(self.intent));
+        if signers != want {
+            let detail = format!("{signers} required signatures, the template has {want}");
             self.fail(Rule::SignerSet, detail);
         }
     }

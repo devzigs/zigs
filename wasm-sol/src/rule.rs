@@ -67,9 +67,11 @@ rules! {
         "the compute unit limit is at least the largest recorded consumption of the intent";
     LoadedLimitRange, "loaded-limit-range", Config,
         "the loaded accounts limit is between the safe minimum and 64 MiB";
-    FeePayerNotGroup, "fee-payer-not-group", Signers,
-        "the first account (the fee payer) is the group key";
-    SignerSet, "signer-set", Signers, "the group key is the only signer";
+    FeePayerNotPayer, "fee-payer-not-payer", Signers,
+        "the first account (the fee payer) is the payer of the proposal";
+    PayerIsGroup, "payer-is-group", Signers, "the group key is never the fee payer";
+    SignerSet, "signer-set", Signers,
+        "the signers are the payer and the group key, and the payer alone for Shield";
     ComputeBudget, "compute-budget", Instructions, "no ComputeBudget instruction";
     DepositOutsideShield, "deposit-outside-shield", Instructions,
         "a pool deposit (tag 15) appears only in the Shield intent";
@@ -79,6 +81,9 @@ rules! {
     WithdrawNonceAccount, "withdraw-nonce-account", Instructions, "no WithdrawNonceAccount";
     AuthorizeNonceAccount, "authorize-nonce-account", Instructions, "no AuthorizeNonceAccount";
     SystemTransfer, "system-transfer", Instructions, "no System Transfer";
+    GroupDebit, "group-debit", Instructions,
+        "no System instruction takes lamports from the group key: it never funds a Transfer, \
+         CreateAccount, CreateAccountWithSeed or TransferWithSeed";
     ProgramNotAllowed, "program-not-allowed", Instructions,
         "every program is the System program, the pool or the registry";
     InstructionNotAllowed, "instruction-not-allowed", Instructions,
@@ -168,8 +173,8 @@ rules! {
         "tx_viewing_pk equals the key derived from tx_viewing_secret and the first nullifier";
     AssetUnknown, "asset-unknown", Ciphertexts, "the pinned table has the asset id of every mint";
     OutputTagRole, "output-tag-role", Ciphertexts,
-        "each owner tag is the group key or the payee tag of its slot; a dummy names the owner \
-         of a real output";
+        "each owner tag is the group key or the payee tag of its slot; a dummy names the group \
+         key (the owner signer) or the owner of a real output";
     Ciphertext, "ciphertext", Ciphertexts,
         "each output data equals the recompute; a dummy has the length of a real slot";
     SaltZero, "salt-zero", Ciphertexts, "the ciphertext salt is not all zero";

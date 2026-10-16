@@ -37,8 +37,10 @@ the wallet, and on chain each payment looks like a shielded payment from a stand
   the Helius shielded pool on Solana. It is a beta, off for mainnet wallets, and the iPhone and Mac
   apps do not have it. For such a wallet the page also connects to the Helius Devnet host. Helius
   sees more than the light-wallet server does: it builds the proofs, so it sees amounts and
-  recipients of each spend. Read [ZOLANA.md](ZOLANA.md) first, then
-  [PRIVACY.md](PRIVACY.md#solana-beta-helius-devnet). The open work is in [TICKETS.md](TICKETS.md).
+  recipients of each spend. Each seat pays fees and rents from its own fee address on Devnet, and
+  a member adds SOL to the group with Add SOL: the fee address shows on chain next to the group.
+  Read [ZOLANA.md](ZOLANA.md) first, then [PRIVACY.md](PRIVACY.md#solana-beta-helius-devnet). The
+  open work is in [TICKETS.md](TICKETS.md).
 - The wallet follows chain reorganisations of up to 100 blocks
   ([how](PROTOCOL.md#6-receiving-and-sync)). After a deeper one, the web, iPhone and Mac apps
   scan the wallet again from its birthday.
@@ -341,6 +343,14 @@ Set it to another value to turn the Solana beta off: the tab then says the same 
 tab shows for version 3 wallets on testnet only. Build the Solana wasm with
 `sh wasm-sol/build.sh`, and see [`solspike/README.md`](solspike/README.md) for the checks.
 
+To try the beta by hand, make a testnet wallet, add the Solana part, and open the Solana tab. Each
+seat that this browser holds shows **Your fee address**. Send Devnet SOL to it (the **Get Devnet
+SOL** link opens the faucet), then press **Check balance**. The fee address pays the fees and the
+rents of the proposals of its seat, so fund the seat that proposes. Then create the nonce account,
+register the group, and use **Add SOL** to put SOL from the fee address of the seat into the
+shielded balance of the group: only that seat signs it, and the amount and the sender are public.
+A private payment needs the approval of `t` seats, and the proposing seat pays its fees.
+
 Open http://localhost:8787. To act as a second person on the same computer, also open
 http://127.0.0.1:8787: it is a separate origin, so it has separate storage. Deploy with
 `npx wrangler deploy` in `cf/`. Until launch, the live app asks for one shared password: set it with
@@ -407,20 +417,20 @@ folder path.
   - A message of three parts that is built, signed, proved and read by its recipient. A wrong seed
     is refused.
   - The words of a node refusal: a transport error or a forged prefix is not a refusal.
-- `cargo test --release --locked` in `wasm-sol/`: 326 tests: the Solana message checker (84 rules,
-  with the vectors of the Zolana SDK and real Devnet messages), the FROST-Ed25519 ceremony and
-  signing, and the key roles. First run `sh build.sh` and then
-  `node tools/diff_cases.cjs target/pkg-node` in `wasm-sol/`: the second command writes the cases
-  that the test `wasm_native_diff` replays, and that test fails without them. Nine tests read the
-  Zolana repo and are ignored: run them with
-  `ZOLANA_REPO=<checkout at commit 89640630> cargo test --release --test repo_pins -- --ignored`.
-- `node web/test/sol-config.mjs` and its eight siblings `sol-docs`, `sol-ceremony`, `sol-app`,
-  `sol-wasm`, `sol-sessions`, `sol-limits`, `sol-pay` and `sol-transfer` (the files `sol-rig`,
-  `sol-setup`, `sol-chain` and `sol-vector` are helpers: do not run them). They test the Solana part
-  of the page on the real `web/app.js`: the ceremony, signing sessions, payments, backup and
-  restore, the stop that holds everywhere, the gate (a mainnet wallet, a wallet before version 3, a
-  stored network that changed, and a start document that no seat signed get no Solana tab and load
-  nothing) and the config from the server.
+- `cargo test --release --locked` in `wasm-sol/`: 364 tests: the Solana message checker (86 rules,
+  with the vectors of the Zolana SDK built with a sponsor as fee payer, and real Devnet messages),
+  the fee payer rules and the fee key, the FROST-Ed25519 ceremony and signing, and the key roles.
+  First run `sh build.sh` and then `node tools/diff_cases.cjs target/pkg-node` in `wasm-sol/`: the
+  second command writes the cases that the test `wasm_native_diff` replays, and that test fails
+  without them. Nine tests read the Zolana repo and are ignored: run them with
+  `ZOLANA_REPO=<checkout at commit c232da1b> cargo test --release --test repo_pins -- --ignored`.
+- `node web/test/sol-config.mjs` and its nine siblings `sol-docs`, `sol-ceremony`, `sol-app`,
+  `sol-wasm`, `sol-sessions`, `sol-limits`, `sol-pay`, `sol-transfer` and `sol-fee` (the files
+  `sol-rig`, `sol-setup`, `sol-chain` and `sol-vector` are helpers: do not run them). They test the
+  Solana part of the page on the real `web/app.js`: the ceremony, the fee key of each seat, signing
+  sessions, payments, Add SOL, backup and restore, the stop that holds everywhere, the gate (a
+  mainnet wallet, a wallet before version 3, a stored network that changed, and a start document
+  that no seat signed get no Solana tab and load nothing) and the config from the server.
 - `bash solspike/baseline.sh check`: the Zcash baseline gate. All `web/test/*.mjs`, the group
   server limits, the hashes of the Zcash engine and `web/signed.js`, the page policy and the
   served headers must equal `solspike/baseline.json`. `node solspike/test/policy.test.mjs` checks

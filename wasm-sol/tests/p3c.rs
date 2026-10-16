@@ -598,7 +598,7 @@ fn an_owner_tag_swapped() {
     let mut fixture = Fixture::build(&Spec::transfer());
     // Change names the payee, the payee slot names the group: both tags pass the P3a set rule.
     fixture.tx.outputs[0].owner_tag = OwnerTag::Inline(PAYEE);
-    fixture.tx.outputs[1].owner_tag = OwnerTag::Account(0);
+    fixture.tx.outputs[1].owner_tag = OwnerTag::Inline(GROUP);
     assert_eq!(fixture.rules(), vec![OutputTagRole, OutputTagRole]);
 }
 
@@ -610,17 +610,32 @@ fn every_output_tagged_to_the_payee_or_every_output_tagged_to_the_group() {
     fixture.tx.outputs[0].owner_tag = OwnerTag::Inline(PAYEE);
     assert_eq!(fixture.rules(), vec![OutputTagRole]);
     let mut fixture = Fixture::build(&Spec::transfer());
-    fixture.tx.outputs[1].owner_tag = OwnerTag::Account(0);
+    fixture.tx.outputs[1].owner_tag = OwnerTag::Inline(GROUP);
     assert_eq!(fixture.rules(), vec![OutputTagRole]);
 }
 
+/// The position of the owner signer in the accounts of the transfer of the spec.
+fn group_slot() -> u8 {
+    5 + u8::try_from(Spec::transfer().inputs.len()).unwrap()
+}
+
 #[test]
-fn the_change_tag_may_be_an_account_index_or_the_inline_group_key() {
-    for tag in [OwnerTag::Account(0), OwnerTag::Inline(GROUP)] {
+fn the_change_tag_may_be_the_account_of_the_group_or_the_inline_group_key() {
+    // An account tag counts the accounts of the instruction: payer, output tree, pool, System
+    // program, input tree, one account per nullifier, then the owner signer (the group key).
+    for tag in [OwnerTag::Account(group_slot()), OwnerTag::Inline(GROUP)] {
         let mut fixture = Fixture::build(&Spec::transfer());
         fixture.tx.outputs[0].owner_tag = tag;
         assert!(fixture.approve().is_ok(), "{tag:?}");
     }
+}
+
+#[test]
+fn a_change_tag_that_names_the_account_of_the_payer_is_refused() {
+    // Account 0 is the fee key, not the group: a change that it owns would leave the group.
+    let mut fixture = Fixture::build(&Spec::transfer());
+    fixture.tx.outputs[0].owner_tag = OwnerTag::Account(0);
+    assert_eq!(fixture.rules(), vec![OutputOwnerTag, OutputTagRole]);
 }
 
 #[test]
@@ -629,7 +644,7 @@ fn a_dummy_names_the_group_or_the_payee_and_nobody_else() {
     spec.dummies = 1;
     for tag in [
         OwnerTag::Inline(GROUP),
-        OwnerTag::Account(0),
+        OwnerTag::Account(group_slot()),
         OwnerTag::Inline(PAYEE),
     ] {
         let mut fixture = Fixture::build(&spec);
@@ -641,6 +656,7 @@ fn a_dummy_names_the_group_or_the_payee_and_nobody_else() {
     for tag in [
         OwnerTag::Inline([0; 32]),
         OwnerTag::Inline(ATTACKER),
+        OwnerTag::Account(0),
         OwnerTag::Account(200),
     ] {
         let mut fixture = Fixture::build(&spec);

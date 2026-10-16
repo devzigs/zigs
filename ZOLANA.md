@@ -31,8 +31,8 @@ claim of [E] as unverified until a primary source confirms it. Section 8 defines
 | Claim of [E] | Verdict | Evidence |
 |---|---|---|
 | The pool separates a signed fee payer from separately signed owners, and the proof binds both. The Rust builder takes `owner_signers` | Confirmed | [Z]programs/shielded-pool/src/instructions/transact/account.rs:21-63; transact/verify.rs:238-262; sdk-libs/program/src/instruction/transact.rs:45-53 |
-| A test signs with extra native signers | Partly. No caller passes extra signers: two wrappers pass an empty list, and `rfq.rs:96` sets `owner_signers` directly. The cosigned test has a payer that also owns an input. No passing case has a payer with no input | [Z]program-tests/test-utils/src/wallet/actions/transaction.rs:569,627; sdk-tests/rfq/tests/rfq.rs:22-125 |
-| The TS SDK blocks owner != payer and omits owner signers. `LocalKeys.fromKeys` takes outside viewing and nullifier keys. Registration needs owner and payer signatures | Confirmed for the Default Ring. The ring builder appends the owner signers. `fromKeys` never asks for a signing secret | [Z]sdk-libs/ts/src/wallet/private-transaction.ts:114-120; interface/instructions/index.ts:431-531; transaction/wallet/keys.ts:129-153; programs/user-registry/src/instructions/register.rs:25 |
+| A test signs with extra native signers | Partly. No caller passes extra signers: two wrappers pass an empty list, and `rfq.rs:96` sets `owner_signers` directly. The cosigned test has a payer that also owns an input. No passing case had a payer with no input. A Devnet simulation of 16 October passes with one (6.11) | [Z]program-tests/test-utils/src/wallet/actions/transaction.rs:569,627; sdk-tests/rfq/tests/rfq.rs:22-125 |
+| The TS SDK blocks owner != payer and omits owner signers. `LocalKeys.fromKeys` takes outside viewing and nullifier keys. Registration needs owner and payer signatures | Confirmed for the Default Ring at the first pin. The ring builder appends the owner signers. `fromKeys` never asks for a signing secret. Since #424 (`838aef27`) the helpers take a payer other than the owner and list the owner as an owner signer (section 5) | [Z]sdk-libs/ts/src/wallet/private-transaction.ts:114-120; interface/instructions/index.ts:431-531; transaction/wallet/keys.ts:129-153; programs/user-registry/src/instructions/register.rs:25 |
 | The Default Ring hides amount, not sender. Custom Rings can be anonymous | Ring: confirmed. Anonymous: partly. The TS SDK supports confidential Rings only, and the anonymous rail needs P-256 ECDSA, so FROST-Ed25519 can never use it | [Z]docs/spec.md:186, 3036, 3041; sdk-libs/ts/README.md:358 |
 | Transaction v1 and its 4,096-byte limit | v1 confirmed. The limit covers the whole transaction, not only the message | [Z]sdk-libs/ts/src/interface/transaction-size.ts:8-12 |
 | Beta, Devnet, no audit established. The hosted program may differ from source | Beta and Devnet: confirmed. Audit: Helius says the rings undergo independent audits [H]. I found no report. Mismatch: refuted on 13 October (section 6.1). The deployed pool `sppU489…` and registry match the release hashes. `sppXZU59…` on the Helius address page is an older deployment | [Z]prover/tee/README.md:3; releases/tag/v0.4.0-alpha |
@@ -47,10 +47,12 @@ claim of [E] as unverified until a primary source confirms it. Section 8 defines
 A user opens a wallet with a Solana part. Devnet only. The Zcash part stays as it is.
 
 - **Add Solana.** One key ceremony (section 4) and one registration. The wallet must be version 3.
-- **See.** The owner address (the group key), the shielded address, and the private and public SOL
-  balances. The public balance pays fees.
-- **Use.** Anyone deposits SOL to the group's shielded address. The group can shield its own public
-  SOL, send a private transfer to a shielded address, or withdraw to a public address.
+- **See.** The owner address (the group key), the shielded address, the private balance, and the
+  fee address of each seat of this browser with its public balance. The fee address pays the fees
+  and the rents of the proposals that its seat makes (section 5).
+- **Use.** Anyone deposits SOL to the group's shielded address. A member can add SOL from the fee
+  address of its seat (Add SOL: no approval round, it is the member's own SOL). The group can send
+  a private transfer to a shielded address, or withdraw to a public address.
 - **Not offered.** SPL tokens, anonymous Rings, swaps, bridges, memos, a merge service, mainnet, and
   a transfer to an unregistered payee ([E] 9.3, not checked).
 
@@ -61,14 +63,17 @@ not copy the Helius claim that the RPC cannot decrypt state, because the prover 
 |---|---|
 | Transfer | "Hidden on the public chain. Helius sees amount, asset and recipient while it builds the proof. Sender and recipient are public." |
 | Deposit | "Sender, recipient, asset and amount are public." |
+| Add SOL | "Moves SOL from the fee address of your seat into the shielded balance of the group. The amount and the sender are public. It needs no approval: it is your own SOL." |
 | Withdrawal | "Recipient, asset and amount are public." |
-| Add Solana | "Your Solana address is public. The Zigs server operator can link this wallet to that address by timing. Helius sees that you use Zigs. The address needs a public SOL funding trail." |
+| Add Solana | "Your Solana address is public. Each seat also gets a fee address, which appears on chain next to the group. The Zigs server operator can link this wallet to these addresses by timing. Helius sees that you use Zigs. A fee address needs a public SOL funding trail." |
+| Fund card | "It pays the fees and the rents of the proposals that this seat makes. It appears on chain next to the group. Send Devnet SOL to it." |
 
 | Property | Zcash (Ironwood, today) | Solana (Zolana Default Ring) |
 |---|---|---|
 | Amount, asset | Hidden | Hidden on chain in a transfer. Public in a deposit and a withdrawal [Z]docs/spec.md:3036-3041 |
 | Sender, recipient, and the link | Hidden | Public: payer and owner signer are in the account list, the owner key tags the output [Z]programs/shielded-pool/src/instructions/transact/verify.rs:238-262; docs/spec.md:402 |
 | Spends linked to the group | No. `alpha` is new for each spend | Yes. The group key is a stable tag. A FROST signature does not show a multisig |
+| Member addresses next to the group | Not applicable | Each seat that proposes shows its fee address as the first account of the transaction, next to the group key. The address has a public SOL funding trail (a faucet or a transfer), so it links that member to the group. Add SOL shows the amount and the fee address of the member as the sender of a deposit |
 | Who sees the witness | Nobody. The proof runs on the device | The hosted prover: owners, assets, amounts, blindings, nullifier secret [Z]sdk-libs/ts/src/client/prover/client.ts:1215-1262; [H]integration/wallet. Local proving is listed as coming soon |
 | What the index learns | IP address and blocks. Trial decryption runs on the device | Tag queries (the owner key), IP address, timing, Merkle proofs of inputs, and the app `Origin` header, which Allowed Domains needs |
 | What the group server can link | Nothing it can match to the chain | The time of its `sol*` writes matches chain time. That links the wallet id to the owner key and the full history |
@@ -104,10 +109,11 @@ key never signs a document.
 The server accepts a document only at a path with an even number of segments (`apply()` in
 `cf/src/index.js`). The client `sub()` reads collections at odd depth. So `groups/<id>/sol/dkg1/<i>`
 fails. The Solana documents use flat names: `solstart/1`, `soldkg1/<i>`, `soldkg2/<i>-<j>`,
-`soldone/<i>`, `solsessions/<id>`, and `commits/<i>` and `shares/<i>` below `solsessions/<id>`. The
-server needs no code change. The web app adds the names to the `FLAT`, `DKG2` and `IN_SESSION`
-expressions and the reader list in `web/signed.js`. It adds them to the collection list in
-`openGroup()` of `web/app.js`. Old apps and the iPhone and Mac readers ignore them.
+`soldone/<i>`, `solfee/<i>` (the fee key of a seat, section 5), `solsessions/<id>`, and
+`commits/<i>` and `shares/<i>` below `solsessions/<id>`. The server needs no code change. The web
+app reads the names with its own reader in `web/sol/docs.js` (the `FLAT`, `DKG2` and `IN_SESSION`
+expressions and the collection list), so `web/signed.js` and the Zcash baseline hashes stay as
+they are. Old apps and the iPhone and Mac readers ignore them.
 `web/test/signed.mjs` asserts that each `sol*` path has an even number of segments.
 
 **3.3 Who does what.**
@@ -123,13 +129,13 @@ expressions and the reader list in `web/signed.js`. It adds them to the collecti
 
 | Topic | Plan or fact |
 |---|---|
-| SDK version | This design assumes the main commit pinned in [Z] (SDK 0.4.1-alpha, unreleased in its changelog). The npm release 0.4.0-alpha differs. Its `endpoint.js` has no `/v1/zolana/` path [UNPKG]. Its release notes say that the prover fetches Merkle data, needs `PROVER_INDEXER_URL` and serves `/prove/<key>` [Z]releases/tag/v0.4.0-alpha. P4 records the host and path of each call. The CSP host does not change with the path, but Allowed Domains behavior may |
+| SDK version | The bundle is built from commit `c232da1b` of the Zolana repo [Z2] (SDK 0.5.0-alpha, unreleased in its changelog). It is the newest main commit that the live Devnet pool can serve (6.10). The design cites the older commit in [Z]. The npm release 0.4.0-alpha (7 October 2026) is older than both. It differs. Its `endpoint.js` has no `/v1/zolana/` path [UNPKG]. Its release notes say that the prover fetches Merkle data, needs `PROVER_INDEXER_URL` and serves `/prove/<key>` [Z]releases/tag/v0.4.0-alpha. P4 records the host and path of each call. The CSP host does not change with the path, but Allowed Domains behavior may |
 | Why a TS bundle | `zolana-client` needs `hpke`, `dcap-qvl`, `tokio` and `solana-transaction`, and the repo has no wasm build [Z]sdk-libs/client/Cargo.toml. The smaller crates `zolana-hasher` and `zolana-transaction` hold the Poseidon and UTXO hash code. I did not build them for wasm32. P3 tries them first |
 | Import chain | `src/index.ts:1` leads to `src/client/prover/tee/dstack.ts:1`, which loads `@phala/dcap-qvl`, a CommonJS package. An import map needs an inline script, which the CSP forbids |
-| Build | One esbuild bundle in `web/sol/`, its SHA-256 in the repo, and a script that rebuilds it. The build aliases `dcap-qvl` to a stub that throws on every call. The TEE policy stays unset, as in this commit. A stub that returned would let an enabled policy claim an unchecked attestation |
-| Hasher wasm | The slim build is 20 KB of script and 1.28 MB of wasm, not the 4.39 MB fat build [UNPKG]. It loads the wasm with `fetch(new URL(..., import.meta.url))`, and the SDK calls `loadHasher()` with no argument [Z]sdk-libs/ts/src/hasher/index.ts. esbuild does not emit that file. The build copies it to `web/sol/` and patches the URL. It also cuts the home path of the upstream author out of the panic text of each wasm file (same length, so every offset stays valid), and `SHA256SUMS` pins the cleaned files |
+| Build | One esbuild bundle in `web/sol/`, its SHA-256 in the repo, and a script that rebuilds it. The build changes no SDK source. It has no plugin and only maps module names, and a test checks that every SDK file in the bundle is its blob at the pin. Two aliases stand in for modules that cannot load in a Worker: `@phala/dcap-qvl` goes to a stub that throws on every call, and a bare `crypto` import in `@hpke/common` goes to a stub with no value. A third alias takes the slim build of the hasher package. The newest SDK proves through an attested enclave by default. The Worker passes the Helius gateway as `proverUrl` and `proverTee: false`, so no other host is called and the policy of the Worker script stays as it is (TICKETS.md SOL-4). A stub that returned would let an enabled policy claim an unchecked attestation |
+| Hasher wasm | The slim build is 20 KB of script and 1.28 MB of wasm, not the 4.39 MB fat build [UNPKG]. It loads the wasm with `fetch(new URL(..., import.meta.url))`, and the SDK calls `loadHasher()` with no argument [Z]sdk-libs/ts/src/hasher/index.ts. esbuild does not emit that file. The build copies the two wasm files next to the bundle under the names that the package gives them, so the default URL finds them and no source is patched. It also cuts the home path of the upstream author out of the panic text of each wasm file (same length, so every offset stays valid), and `SHA256SUMS` pins the cleaned files |
 | Packages | 12 direct runtime packages and the `@solana/kit` peer. The root `package-lock.json` at the pinned commit lists 84 packages that the SDK reaches, with peer and optional edges. I read the file and ran no install. The SDK declares `node >=24` and I found no `node:` import. P3b tests it in a browser |
-| Size | Budget: the Solana wasm at most 1.5 MB, and the bundle at most 1 MB without the hasher wasm. Measured: the checker wasm is 597,533 bytes (6.7); the minified bundle is 851,099 bytes and the hasher SIMD wasm 1.28 MB (6.8). P8 measures load time |
+| Size | Budget: the Solana wasm at most 1.5 MB, and the bundle at most 1 MB without the hasher wasm. Measured: the checker wasm is 597,533 bytes (6.7); the minified bundle is 851,099 bytes and the hasher SIMD wasm 1.28 MB (6.8). At the pin of [Z2] the bundle is 856,921 bytes. P8 measures load time |
 
 **3.5 CSP and the Helius key.**
 
@@ -182,7 +188,7 @@ viewing scalar is HKDF output of 48 bytes reduced modulo the P-256 order
 
 | Topic | Rule |
 |---|---|
-| Registration is permanent | One FROST-signed `register` transaction, with the group key as owner and payer. The record `(owner, nullifier_pk, viewing_pk)` is public. `register` fails if a record exists, `update_keys` refuses a new nullifier key, and no operation deletes a record [Z]programs/user-registry/src/instructions/register.rs:36-42,57-60; docs/spec.md:2805 |
+| Registration is permanent | One FROST-signed `register` transaction, with the group key as owner and the fee key of the proposing seat as payer. The record `(owner, nullifier_pk, viewing_pk)` is public. `register` fails if a record exists, `update_keys` refuses a new nullifier key, and no operation deletes a record [Z]programs/user-registry/src/instructions/register.rs:36-42,57-60; docs/spec.md:2805 |
 | Registration check | Before any seat signs, the wasm recomputes `nullifier_pk` and `viewing_pk` from `solSeed` and compares them byte for byte with the instruction data. It requires `owner_p256` to be `None`. The group sends one `register` only. After it lands, each seat compares the on-chain record with its own values. Receiving needs no signature |
 | Refused by default | `set_merging_enabled(true)` and `update_keys` are separate intents with their own screens. The first version does not offer them. `merging_enabled` stays false, the registration default [Z]programs/user-registry/src/instructions/register.rs:60 |
 | Merge | When `merging_enabled` is true, anyone can submit `merge_transact` with no owner signature [Z]docs/spec.md:2270-2274. A merge consolidates inputs into the same owner, so no funds move. It does spend the inputs of an open proposal, and the proposal then fails. That is a denial of service. The group merges with a normal approved self-transfer |
@@ -198,10 +204,14 @@ plaintext string, and restore reads a fixed list of fields and drops the rest
 | Solana fields inside the plaintext of the existing file | `v` stays 1, so iPhone and Mac restore still opens it. A re-backup there drops the Solana part without a warning |
 | `v: 2` in the Zcash file | The engine refuses `v` other than 1, so restore breaks on iPhone and Mac |
 
-The second file holds the key package, public key package, group key and `solSeed`. Restore and Fit
-check that the key share equals the `soldone` entry and that `solSeed` gives the published keys and
-address. The snapshot is not in the file. A restored seat that has `soldone/<i>` on the server and
-no Solana key package shows "Solana part missing".
+The second file holds the key package, public key package, group key and `solSeed`. It holds no
+fee key: the key share gives it (section 5), so the restore of any file, also one from before the
+fee keys, brings back the key that the seat published. Restore and Fit check that the key share
+equals the `soldone` entry and that `solSeed` gives the published keys and address. When a valid
+`solfee/<i>` shows another key than the key share gives, that document is forged or broken: the
+restore says that this seat cannot pay, that it can still approve and sign, and that the other
+seats can propose and add SOL. The snapshot is not in the file. A restored seat that has
+`soldone/<i>` on the server and no Solana key package shows "Solana part missing".
 
 **4.4 Version marker.** An old app ignores the Solana documents, so the wallet document needs no
 marker. Recommended: `solstart/1`, signed by seat 1, and no change to the wallet version.
@@ -214,17 +224,22 @@ recipient, and its life depends on a nonce, an expiry and roots.
 1. **Propose.** A seat enters kind, payee and amount. The payee is a full shielded address
    (`owner_hash` and `viewing_pk`). A registry lookup may fill the form, but registry reads are not
    authenticated [Z]docs/spec.md:2811. The Worker syncs, picks UTXOs, builds the plaintext outputs
-   and ciphertexts, and asks for the proof. The wasm compiles the v1 message from a fixed template.
-   The smallest listed `transact` (2 in, 4 out) takes 1,278 of 4,096 bytes [Z]docs/spec.md:1811.
+   and ciphertexts, and asks for the proof. The fee key of the proposing seat is the payer (see the
+   fee payer row below), so the proof binds the payer and the group key as owner signer. The wasm
+   compiles the v1 message from a fixed template. The smallest listed `transact` (2 in, 4 out)
+   takes 1,278 of 4,096 bytes [Z]docs/spec.md:1811.
 2. **Publish.** `solsessions/<id>` holds the intent, plaintext outputs, input UTXO ids, the
-   ciphertext salt and the message bytes. The proposer signs this proposal part (PROTOCOL.md 15.5).
+   ciphertext salt, the message bytes and the signature of the payer on them (`feeSig`: the wasm
+   signs it with the fee key after the checker accepted the bytes). The proposer signs this
+   proposal part (PROTOCOL.md 15.5).
 3. **Check, on each approving device, in the Solana wasm.** Every rule that applies to the intent
    must hold. The approval screen shows the payee fingerprint, the amount, the computed change, the
-   fee and the expiry.
+   fee, the expiry and who pays ("Fees paid by seat N" with its address).
 
 | Rule | Check |
 |---|---|
-| Instructions | Parse the message as v1, write it again, and compare the bytes with the received message. The ordered list equals the list of the intent (second table). Every account has its pinned address, signer flag and writable flag. Any other program, discriminator or account is refused. The wasm holds the program ids and trees. The group key is the fee payer and the only signer |
+| Instructions | Parse the message as v1, write it again, and compare the bytes with the received message. The ordered list equals the list of the intent (second table). Every account has its pinned address, signer flag and writable flag. Any other program, discriminator or account is refused. The wasm holds the program ids and trees |
+| Signers and payer | Exactly two signers: the payer first, which is the fee payer, then the group key (the payer alone for Add SOL). The payer is the fee key that the proposing seat published in its signed `solfee/<i>` document: the page takes it from that document, never from the proposal, and the checker requires it as the first account (`fee-payer-not-payer`). The group key is never the payer (`payer-is-group`). It is a readonly signer in every instruction, so no instruction can take its lamports, and no System `Transfer`, `CreateAccount`, `CreateAccountWithSeed` or `TransferWithSeed` may name it as funder (`group-debit`). The payer signature on the message bytes must verify (`verify_strict`) under the published fee key. Add SOL has no group account |
 | Limits | The v1 config mask sets the loaded-accounts limit (bit 3), or the wasm refuses the message (6.3). Priority fee and compute units stay under the fixed maxima of the template. Unknown mask bits and `ComputeBudget` instructions are refused. `transact` uses the Default Ring with no `ring_config` and no cache. Any other v1 config value is refused. `expiry_unix_ts` is finite: proposal time plus the expiry window. 0 and `u64::MAX` are refused |
 | Outputs | Each output is the payee, the change to the group `owner_hash`, or a true dummy (`DummyDomain`, owner 0, amount 0). Its `utxo_hash` equals Poseidon over the approved plaintext. For a move to a new wallet (PROTOCOL.md section 8), the payee equals the address that the approver's own seat in the new wallet checked |
 | Legs, conservation | The legs equal the intent. The inputs from the device's own snapshot plus the deposit legs equal the outputs plus the withdrawal legs. The nullifiers equal those of the snapshot |
@@ -233,11 +248,11 @@ recipient, and its life depends on a nonce, an expiry and roots.
 
 | Intent | Ordered instructions | Legs | Outputs |
 |---|---|---|---|
-| Create nonce account (once) | `CreateAccountWithSeed` (base = group key, so no second signer), `InitializeNonceAccount` (authority = group key). Uses a recent blockhash | None | None |
-| Register (once) | `AdvanceNonceAccount`, `register` (pinned accounts, data per 4.2) | None | None |
-| Shield | `AdvanceNonceAccount`, pool `deposit` (tag 15, no proof) | The deposit from the group's public SOL | One output to the group |
-| Transfer | `AdvanceNonceAccount`, `transact` | None | Payee, change to the group, dummies |
-| Withdrawal | `AdvanceNonceAccount`, `transact` | One withdrawal leg: intent recipient, amount, SOL | Change to the group, dummies |
+| Create nonce account (once) | `CreateAccountWithSeed` (funder = payer, base = group key, which signs as a readonly account), `InitializeNonceAccount` (authority = group key). Uses a recent blockhash | None | None |
+| Register (once) | `AdvanceNonceAccount`, `register` (record, owner = group key, payer; data per 4.2) | None | None |
+| Add SOL (intent Shield) | Pool `deposit` (tag 15, no proof) from the payer. A recent blockhash, no nonce: the payer signs alone and the group does not approve | The deposit from the payer's public SOL | One output to the group |
+| Transfer | `AdvanceNonceAccount`, `transact` (payer first, the group key as owner signer after the nullifier accounts) | None | Payee, change to the group, dummies |
+| Withdrawal | `AdvanceNonceAccount`, `transact` (as Transfer, the owner signer before the settlement accounts) | One withdrawal leg: intent recipient, amount, SOL | Change to the group, dummies |
 | Cancel | `AdvanceNonceAccount` only | None | None |
 
 The wasm refuses these in every intent: a pool `deposit` (tag 15) outside the Shield intent,
@@ -250,24 +265,29 @@ pay an attacker.
    `BLAKE2b-256("Zigs_SolMsg___v1", cluster || message bytes)`, as Zigs stores the sighash today.
 5. **Package, sign.** At `t` commitments with one digest, one device publishes the package. Each
    device re-parses the message, compares the digest, signs the raw message bytes and deletes its
-   nonces before it publishes the share. The group key has no domain separation
+   nonces before it publishes the share. The shares are for the group key only: the payer signed at
+   proposal time. The group key has no domain separation
    [F]frost-ed25519/src/lib.rs:182-187, so it would sign any text. The engine refuses any bytes that
    fail step 3, the off-chain prefix (0xFF "solana offchain") and `TSPP/derive/` payloads.
-6. **Combine, send.** Any seat aggregates, checks the result with `verify_strict` (never Web Crypto)
-   and sends at once. The transaction id is the first signature. The device tracks the transaction
-   by signature and writes a signed `sent` part after confirmation.
+6. **Combine, send.** Any seat aggregates, checks the result with `verify_strict` (never Web
+   Crypto), adds the signature of the payer from the proposal, and sends at once. The transaction
+   has two signatures in the order of its signers: the payer first, then the group key. The
+   transaction id is the first signature, so it is the signature of the payer. The device tracks the
+   transaction by that signature and writes a signed `sent` part after confirmation.
 
 A recent blockhash lives about 60 to 90 seconds [SOL]. Zcash approvals take hours. The target is a
 durable nonce, so the message is fixed at proposal time, as the sighash is in Zcash.
 
 | Topic | Rule |
 |---|---|
-| Expiry | `transact` carries `expiry_unix_ts`. The program checks it and the proof binds it. The SDK default is `NO_EXPIRY`, which is `u64::MAX` [Z]sdk-libs/ts/src/transaction/instructions/transact.ts:250,346. The expiry window is 24 hours (proposal) |
+| Expiry | `transact` carries `expiry_unix_ts`. The program checks it and the proof binds it. The SDK default is `NO_EXPIRY`, which is `u64::MAX` [Z]sdk-libs/ts/src/transaction/instructions/transact.ts:250,346. `finalize()` of a transfer fixes `u64::MAX`, also at [Z2] (transact.ts:1530), and no setting changes it (only `Merge.withExpiry`). The Worker needs no patch for this: `web/sol/transfer.js` builds the transfer with public classes, rebuilds the external data with `createExternalData` and the expiry, proves the new proof inputs with `client.proveTransact`, and `prepare` reads the expiry back from the instruction data. The expiry window is 24 hours (proposal) |
 | Cancel | A signed, unsent transaction is valid until the nonce advances, the expiry passes or the root goes stale. The group server holds the signature shares under the wallet secret. Any seat, former seat or link holder with `t` shares can aggregate and send until then. So cancel is advisory once `t` shares exist (PROTOCOL.md 7.7). The screen says "cancelled" only after the nonce advanced or the expiry passed. To cancel early, the group runs a FROST session over `AdvanceNonceAccount`, because the group key is the nonce authority. To cancel late, it waits |
 | Nonce account | One account allows one open Solana payment. Rent is 1,056,640 lamports on Devnet (6.3). The first transaction creates the account, so it uses a blockhash, and `t` devices sign inside the blockhash lifetime. A nonce with a v1 transaction works on Devnet (6.3) |
-| Stale roots | A proof lives while its roots stay in history. The UTXO tree keeps the final root of the latest 500 slots with updates. The nullifier tree keeps its last 100 roots [Z]docs/spec.md:1454; program-libs/interface/src/state/tree.rs:9-14. Chain activity counts, not hours. A proposal ends at the earlier of the expiry and the stale root. After a stale root the proposer proves again. The new bytes give a new digest, so all signing rounds repeat and the old nonces go. P6 measured it (6.6): many hours on Devnet today, about 200 s with an append in every slot |
-| Fee payer | The group key pays, owns and holds the nonce authority, so one FROST signature suffices. Its address needs public SOL. The priority fee is a total in lamports with no maximum, and SIMD-0385 is in Review with no feature gate [SIMD]. One proposal could spend the whole public balance. So the template fixes maxima for the priority fee and the compute units. The values come from P2 and P5, which record the compute units and priority fee of each landed transaction. The cap is the largest recorded value plus 50 percent |
-| Later work | Not planned: a separate payer with the group as an extra owner signer. The TS SDK needs a patch in four places for it: wallet/private-transaction.ts:114-120, transaction/instructions/builders.ts:404-410, interface/instructions/index.ts:527 and client/client.ts:1189-1195, all under [Z]sdk-libs/ts/src/. Questions 1 and 7 concern only this work |
+| Stale roots | A proof lives while its roots stay in history. The UTXO tree keeps the final root of the latest 500 slots with updates. The nullifier tree keeps its last 100 roots [Z]docs/spec.md:1454; program-libs/interface/src/state/tree.rs:9-14. Chain activity counts, not hours. A proposal ends at the earlier of the expiry and the stale root. After a stale root the proposer proves again. The new bytes give a new digest, so all signing rounds repeat and the old nonces go. P6 measured it (6.6): many hours on Devnet today, about 200 s with an append in every slot. After a pool update with #428 the nullifier tree keeps 5 roots of 4,999 nullifiers (6.10) |
+| Fee payer | The owner decided on 16 October 2026 that a per-seat key pays the fees and the rents, and the group key never pays. Each seat has a fee key. The wasm derives it from the signing share of that seat: HKDF-SHA256 with an empty salt, the share as input key material, and the info `zigs-sol/fee-key/v1`, the group key and the seat (2 bytes, little endian). The output is the Ed25519 seed (`sol_fee_key`). So a second tab, a second browser and the restore of any Solana backup hold the same key, a group set up before the fee keys gets its key at the first run, and the page stores no fee key. No other seat can derive it: it needs the share. Any `t` seats can compute the share of another seat, but they can already sign for the group without it. The key never reaches the Worker: the wasm signs with it, and only after the checker accepted the exact bytes (`sol_fee_sign`). The seat publishes its public key in the signed document `solfee/<i>`, and only when no valid document shows a key for the seat. A valid document with another key than the share gives is forged or broken: nobody rewrites it, the seat shows "The fee document of seat N does not show the key of this seat" in place of its address, and that seat cannot propose or add SOL while that document stands. It can still approve and sign. A browser that holds several seats proposes and adds SOL with the first seat that holds a key share and whose document shows its fee key, and the Propose and Add SOL cards name that seat. An approver accepts a payer only if it equals that key of the proposing seat (`ss.by`, the signer of the proposal part). The payer funds every fee and rent of its seat's proposals: the nonce account (a rent that the nonce account keeps) and the registry record included. The priority fee is a total in lamports with no maximum, and SIMD-0385 is in Review with no feature gate [SIMD]. One proposal could spend the whole fee balance of its payer. So the template fixes maxima for the priority fee and the compute units. The values come from P2 and P5, which record the compute units and priority fee of each landed transaction. The cap is the largest recorded value plus 50 percent |
+| SDK sponsor mode | The SDK supports a payer that is not the owner since `838aef27` (#424, in the pin): the built transaction lists the owner as a signer and `transactInstruction` takes `ownerSigners`. This replaces the patch in four places that this row named before, so the patch part of Helius question 7 needs no answer. `web/sol/transfer.js` builds the proof inputs with the fee key as payer, and `ownerSigners` there lists the Ed25519 input owners that are not the payer, as `ownerSignerAddresses` of the SDK does (the package does not export it; a test compares both). The checks against the deployed pool are in 6.11 |
+| Proposals from before the fee keys | A proposal with no `feeSig` was paid by the group key. A sent mark of such a proposal counts when its id is the group signature, so a payment that landed still reads as sent. Such a proposal that no signature completed ends once, with the text "This proposal is from before the fee keys. Propose it again." A signed one gets one status read first: if it landed, the page writes the sent mark, and if it did not, nothing sends it (the group key would pay) and it ends with the same text |
+| Old public SOL | SOL that the group key held before the fee keys stays on its address. The beta has no feature to move it (TICKETS.md SOL-38). Nothing pays from it any more, and the screen still shows its balance |
 
 ## 6. Devnet proof of concept
 
@@ -402,6 +422,8 @@ step):
   online at the same time (run 2 needed about 1 s for that round). Whether people must approve
   again, or their devices sign again for an approved intent, is an open design point. Helius
   question 6 asks for the mainnet root window.
+- The numbers above are those of the pool that runs on Devnet today. The nullifier history has 5
+  roots of 4,999 nullifiers after #428, and 6.10 gives the facts.
 
 **6.7 P3 result, 14 October 2026** (a Rust crate outside the repo, an independent verifier per
 half):
@@ -681,6 +703,82 @@ of the page, guarded only by Allowed Domains. The owner checked that guard on 15
 call with the origin of the app gets 200, a call with another origin or with none gets 403, and
 the CORS preflights pass.
 
+**6.10 SDK move, 16 October 2026** (the bundle at `c232da1b`, no SDK patch):
+
+- The newest commit of main is `8178be7c` (14 October). Four commits follow the first pin
+  `89640630`: `838aef27` (#424, a sponsor can pay the fee), `c232da1b` (#419, proofs go to an
+  attested enclave by default, breaking), `9704a6cd` (#428, nullifier batches of 4,999) and
+  `8178be7c` (#426, several recipients in one transfer). The npm release 0.4.0-alpha is older than
+  the first pin, and there is no newer release or tag.
+- The bundle cannot take `9704a6cd` or `8178be7c` yet. #428 changes the tree account from 40,080 to
+  18,608 bytes and the batch verifying key, and its changelog says to point the client at a
+  deployment made with it. The pool on Devnet is still the release of 13 October (deploy slot
+  508538476, read on 16 October). Its tree 0 has 40,080 bytes, and the newest SDK refuses it
+  (`decodeTreeFees`: `INTERFACE_INVALID_ACCOUNT_DATA`), so the Worker could not read the tree fee.
+  `programs` and `program-libs` are equal at `89640630` and `c232da1b`, so `c232da1b` is the
+  newest commit that the live pool serves. TICKETS.md SOL-37 moves the pin after a Devnet update.
+- The enclave prover is off. #419 sends the proofs of a Helius Devnet URL to the enclave host
+  `d55y5ksdsm1vw.cloudfront.net`, unless the caller names a prover. The Worker names the gateway
+  and sets `proverTee: false`. Proving works as before, and the Worker policy has no new host. A
+  test checks both settings, and that the fetch guard blocks the enclave host.
+- The two patches of the earlier bundle are gone. The hasher URL rewrite is not needed: the two
+  wasm files keep their package names. The expiry setter is not needed: the Worker binds the
+  expiry with public API (3.4, section 5). `build.test.mjs` fails when a patch comes back: every
+  SDK file in the bundle must be its blob at the pin, and the bundle must equal a plain esbuild
+  build of the pinned commit.
+- Live check on Devnet, with no state change. Key B built the proof inputs with a finite expiry
+  in the code of the bundle. The Helius gateway proved them in 0.77 s. The signed v1 transaction
+  ran on the live pool in a simulation with no error (138,355 compute units).
+- #428 and the nullifier roots. The program keeps `B / Z` roots in the nullifier history, with a
+  forester batch of `Z` nullifiers per root and a queue of `B` (`NULLIFIER_TREE_*` in
+  program-libs/interface/src/state/tree.rs, [Z2] and `8178be7c`). Before: 100 roots, `Z` = 250,
+  `B` = 25,000. After: 5 roots, `Z` = 4,999, `B` = 24,995. A proof stays valid while its root is
+  among the last 5, so the window is 24,995 nullifiers (5 x 4,999), against 25,000 (100 x 250).
+  The window is the same in nullifiers, in 5 steps instead of 100. One root now covers 4,999
+  nullifiers. The UTXO history is unchanged: 500 slots with an append. The time that a proof
+  lives depends on the nullifier rate. This is not measured, because no pool with #428 is live.
+  The at-cost fee falls from 108 to 90 lamports per nullifier, and creation of a tree needs 2
+  steps in place of 4.
+
+**6.11 Fee payer and the SDK, 16 October 2026** (the code of the page, the bundle at `c232da1b`,
+the pool that runs on Devnet; no state change):
+
+- A sponsor key that holds no input paid, and key B (a registered key) signed as owner signer.
+  `transactInstruction` with `ownerSigners` lists the payer (signer, writable), the output tree, the
+  pool, the System program, the input tree, one nullifier account and then the owner (signer,
+  readonly). The program reads the same order (`transact/account.rs`: payer, trees, nullifier
+  accounts, then the signers up to the first account that does not sign, then the settlement
+  accounts). The accounts of the `transact` of the template equal the SDK list in order and flags.
+- The signed transaction ran on the live pool in a simulation with the signatures checked: no
+  error, 140,236 compute units, a proof in 0.85 s. Helius question 1 is answered: a payer with no
+  input and a separate Ed25519 owner passes. The test did not land a transaction.
+- The other changed layouts ran on the live runtime in simulations too, with the signatures
+  checked and a throwaway key as the group: the nonce account that the payer funds and the group
+  key signs as the base of the seed (message of the wasm, 2 signatures, 300 compute units), Add SOL
+  (message of the wasm, the payer alone, 37,910 compute units), and `register` with a payer that is
+  not the owner (the SDK builder, 5,537 compute units). The accounts and the data of the template
+  `register` equal those of the SDK builder. A signature of the wrong key fails each message.
+  The `register` message of the template (AdvanceNonceAccount first) needs a nonce account, so
+  only its instruction ran, as the SDK builds it.
+- The proof binds the signer chain: the payer in slot 0, then each other input owner. The same
+  proof with no owner signer, with the owner as payer and with the two keys swapped fails with
+  7008 (`TransactProofVerificationFailed`).
+- A v1 transaction with two signatures is the message, the signature of the payer and the
+  signature of the owner, as kit writes it. The id is the first signature.
+- With a sponsor the SDK writes every owner tag inline (account 0 would name the payer) and names
+  the group key in each dummy output (`dummyOwnerTag` takes the first input owner that is not the
+  payer). The checker follows: the group key is always a participant for a dummy.
+- The newest SDK again: main is still `8178be7c`, npm latest is still 0.4.0-alpha with no newer SDK
+  release tag, and the Devnet pool is still the release of 13 October (deploy slot 508538476, tree 0
+  of 40,080 bytes). The sponsor code (`interface/instructions`, `client/prover/assembly.ts`,
+  `transaction/instructions/transact.ts`, the `transact` and registry programs) is the same at
+  `c232da1b` and `8178be7c`, so this design carries to the pin of SOL-37. One new branch is not
+  merged: `alex/x25519-everywhere` (16 October) moves viewing encryption to X25519. Its tag
+  `custom-ring-keys-v19` is a GitHub prerelease of rotated custom-ring proving keys, not an SDK
+  release. It changes `ViewingKey` and shielded addresses, and its changelog tells users to migrate
+  P-256 viewing keys. If it reaches main, the viewing key of 4.2, the 99-byte address and the
+  ciphertext rule of the checker (P-256 ECDH) change. SOL-37 watches it.
+
 ## 7. Risks, questions and recommendation
 
 | Risk | Fact |
@@ -694,7 +792,8 @@ the CORS preflights pass.
 
 **Questions for Helius.**
 
-1. Has a passing Devnet spend a payer with no input and a separate Ed25519 owner?
+1. Answered on Devnet (6.11): a payer with no input and a separate Ed25519 owner passes in a
+   simulation. Does one land?
 2. Answered on Devnet (section 6.1): `sppU489…` is the release. Who holds key `2kgbLowv…` on
    mainnet?
 3. Do the services run on mainnet? Is there a free tier, a rate limit and a CORS header for
@@ -703,7 +802,8 @@ the CORS preflights pass.
 4. Does the gateway serve `/tee/v1/attestation`? When does local proving ship?
 5. What is the audit scope? Who holds the pool upgrade key, and is there a timelock?
 6. How many roots stay valid? Is a durable nonce with a v1 transaction supported?
-7. Will you take a patch for owner signers in `transact`? Can you sign a release manifest?
+7. Answered by the SDK since #424 (section 5, SDK sponsor mode): no patch is needed. Can you sign
+   a release manifest?
 
 **Helius answers, 15 October 2026** [HA]. The project asked about long approvals, caching, nullifier
 roots, transaction lifetime, key management, output checks and browser proving.
@@ -737,7 +837,7 @@ through the pool by CPI. An expiry time and abort authorities end a proposal.
 | Problem today | With the program |
 |---|---|
 | A stale root forces a new proof and a new FROST round (6.6) | The proof is made at execution, so the group signs once |
-| The group key pays fees and holds a nonce account (5) | The executor pays the fees. No nonce account. This also closes the separate-payer work (SOL-7) |
+| The group holds a nonce account, which costs a rent (5). The fee key of a seat pays fees and rents | The executor pays the fees. No nonce account |
 | Durable nonces end next year | Not needed |
 | One open payment per nonce account (SOL-6) | One proposal account per payment |
 
@@ -831,7 +931,7 @@ also freeze every group (close the program or deploy broken code), take all prop
 rent, and drop the digest rule. This adds to the pool upgrade key and the protocol authority of
 section 7. The spike key (`GJhYtqu…`) is a single key pair outside the repo, acceptable on Devnet
 only. The options for mainnet and their costs are below (condition 5); the owner has not decided
-(SOL-37). The custom-ring answer of [HA] (EdDSA in the circuit) could later
+(SOL-40). The custom-ring answer of [HA] (EdDSA in the circuit) could later
 remove the program. The spike showed the risk: we upgraded the program (version 2, the fix above)
 after the group signed the approval and before the execution, and the approval still held, because
 it binds the program id and not the code.
@@ -885,7 +985,7 @@ found one defect, which version 2 fixed. The move needs these first:
 4. A fee payer for the execute and the proposal rent, with its link cost on the screens.
 5. A review of version 2 by someone outside the spike, and the owner's decision on the upgrade key
    (immutable after an audit, or a multisig with a timelock). The review is done (below), and
-   version 3 fixes its findings in code. The upgrade key decision is SOL-37.
+   version 3 fixes its findings in code. The upgrade key decision is SOL-40.
 
 **Condition 5: the program in the repo, 16 October 2026.**
 
@@ -898,7 +998,7 @@ found one defect, which version 2 fixed. The move needs these first:
   standalone build of the same source (`34bd2e10…`, 85,248 bytes) has the same code in all 67
   functions (`fncmp.py`, with addresses masked). It differs in three ways. `zolana-program` turns
   the default features of `zolana-interface` on again, which add 122 unused Groth16 verifying keys
-  as exported data (about 37 KB, SOL-41). Two panic paths are shorter. The functions sit in
+  as exported data (about 37 KB, SOL-44). Two panic paths are shorter. The functions sit in
   another order.
 - Version 3 (`a027712e…`, 88,424 bytes, not deployed) is version 2 with the fixes R1, R2, R3 and
   R8 of the review below.
@@ -931,9 +1031,9 @@ repo, with the spike notes.
 | R1 | Medium | The proposal address bound only the group key and the commitment. A front-runner who saw them could create another body there, cancel it as its own abort authority, and block the signed body for good (a record with expiry `u64::MAX`) | Fixed in version 3: the seeds also hold SHA-256(body). Test `a_front_runner_cannot_take_or_block_the_signed_body` |
 | R2 | Low | A record kept the expiry of the cancelled body, so a second body for the same commitment could not be cancelled in time | Fixed by R1: each body has its own record (`each_body_has_its_own_cancellation_record`). Error 6018 is gone |
 | R3 | Low | A rent recipient equal to the proposal, the record, the owner PDA or an executable account blocked the proposal or lost the rent | Fixed: `create` refuses the owner PDA, the program and the System Program (6021). After R1 a body cannot name its proposal or record address. "An ordinary account" stays a seat rule |
-| R4 | Info | After `execute` the same body can be created again with the same approval. The pool nullifier stops a second settlement, not the program | SOL-38: a test against the real pool |
-| R5 | Info | The Devnet genesis hash and the pool id are build constants | SOL-39 |
-| R6 | Info | The commitment uses the parser of the pinned commit. A pool upgrade can change what it must bind, or stop every `execute` | SOL-40 |
+| R4 | Info | After `execute` the same body can be created again with the same approval. The pool nullifier stops a second settlement, not the program | SOL-41: a test against the real pool |
+| R5 | Info | The Devnet genesis hash and the pool id are build constants | SOL-42 |
+| R6 | Info | The commitment uses the parser of the pinned commit. A pool upgrade can change what it must bind, or stop every `execute` | SOL-43 |
 | R7 | Info | At most 18 inputs per `execute`; no merge or withdrawal path | In the beta list above; withdrawals are condition 1 |
 | R8 | Info | `create_pda` repeated a helper of `pinocchio-system` | Fixed: the program calls the helper (the ELF grows by 2,872 bytes) |
 | R9 | Info | This note named the wrong account for the abort authority and the wrong receiver of the record rent, and called a cancel final | Fixed in this section |
@@ -958,7 +1058,7 @@ Notes of the delta review:
   change, and the rig computes the digest on its own. Run one real Devnet round on version 3
   before the beta uses it.
 
-**The upgrade key: options for the owner (not decided, SOL-37).** Rent below is for the version 3
+**The upgrade key: options for the owner (not decided, SOL-40).** Rent below is for the version 3
 ELF at the default rate of 6,960 lamports per byte; Devnet charges 5,080 (6.10).
 
 | | Immutable after an audit (`--final`) | Multisig upgrade key with a timelock |
@@ -1005,6 +1105,7 @@ expiry window, the minimum approval time and the fee caps (5, 6). SOL and Devnet
 |---|---|
 | [E] | The outside evaluation "Zigs Helius Zolana CTO Integration Evaluation", 12 October 2026 |
 | [Z] | github.com/helius-labs/zolana/blob/89640630b3ed2402b83bd20c313406cb3fe906d4/ (main, 13 October 2026). Cited files equal commit 82dc62d, the pin of [E]. Release: .../releases/tag/v0.4.0-alpha |
+| [Z2] | github.com/helius-labs/zolana/blob/c232da1bd6748628b56bb8c277bcffbaaf2b0774/ (main, 13 October 2026): the commit of the bundle, 6.10. Newer main: `8178be7cb2f0d3fee4c76040093653a1bcb2a420` (14 October 2026, still the newest on 16 October) |
 | [H] | helius.dev/docs/privacy (overview, `integration/wallet`) and helius.dev/docs/rpc/protect-your-keys |
 | [HA] | Answers of the Helius team to the project's seven questions, by private message, 15 October 2026 |
 | [HM] | github.com/helius-labs/zolana-examples/blob/827f3d4c83125c5890a5ea9e704351822b406d0f/min-multisig/spec.md (the minimal multisig program spec; read as a summary, not line by line) |

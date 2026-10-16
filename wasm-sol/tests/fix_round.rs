@@ -25,7 +25,7 @@ use p3_check::wasm::check_message;
 
 fn shield(f: &Fixture, pins: &Pins) -> (Intent, Vec<u8>) {
     let intent = Intent::Shield {
-        nonce: NONCE,
+        blockhash: NONCE,
         amount: 1_000,
     };
     let bytes = v1::write(&compile(&intent, pins, None).unwrap()).unwrap();
@@ -337,7 +337,7 @@ fn two_outputs_with_one_hash_are_refused() {
     f.tx.circuit.outputs = 3;
     f.intent = with_spend(&f.intent, |spend| spend.outputs = 3);
     f.resync();
-    f.tx.outputs[2].owner_tag = OwnerTag::Account(0);
+    f.tx.outputs[2].owner_tag = OwnerTag::Inline(GROUP);
     assert_eq!(f.tx.outputs[0].utxo_hash, f.tx.outputs[2].utxo_hash);
     let got = f.rules();
     assert!(got.contains(&OutputBlinding), "{got:?}");
@@ -401,29 +401,28 @@ fn the_blinding_of_every_slot_is_the_one_that_the_circuit_derives() {
 // ---- 5. the owner tag of a dummy -------------------------------------------------------------
 
 #[test]
-fn an_all_in_transfer_whose_dummy_names_the_group_is_refused() {
-    // The gap of the verifier: the payee gets everything, there is no change, and the dummy
-    // names the group. The group is the payer, and no real output pays it.
+fn an_all_in_transfer_whose_dummy_names_the_group_is_accepted_as_the_sdk_writes_it() {
+    // The payee gets everything and there is no change. The fee key pays, so the group key is
+    // an owner signer other than the payer: the circuit lets a dummy name it, and the SDK does
+    // (`dummyOwnerTag` names the first input owner that is not the payer). The group was the
+    // payer before the fee key, and the rule refused this tag then.
+    let mut spec = Spec::transfer();
+    spec.pay = Some((SOL, 100));
+    spec.dummies = 1;
+    let f = Fixture::build(&spec);
+    assert!(f.plan.outputs.iter().all(|o| o.role != Role::Change));
+    assert_eq!(f.tx.outputs[1].owner_tag, OwnerTag::Inline(GROUP));
+    assert!(f.approve().is_ok());
+}
+
+#[test]
+fn the_dummy_of_an_all_in_transfer_may_name_the_payee_too() {
     let mut spec = Spec::transfer();
     spec.pay = Some((SOL, 100));
     spec.dummies = 1;
     let mut f = Fixture::build(&spec);
-    assert!(f.plan.outputs.iter().all(|o| o.role != Role::Change));
-    assert_eq!(
-        f.tx.outputs[1].owner_tag,
-        OwnerTag::Inline(PAYEE),
-        "the SDK names the payee"
-    );
-    f.tx.outputs[1].owner_tag = OwnerTag::Inline(GROUP);
-    assert_eq!(f.rules(), vec![OutputTagRole]);
-}
-
-#[test]
-fn the_dummy_of_an_all_in_transfer_names_the_payee_as_the_sdk_does() {
-    let mut spec = Spec::transfer();
-    spec.pay = Some((SOL, 100));
-    spec.dummies = 1;
-    assert!(Fixture::build(&spec).approve().is_ok());
+    f.tx.outputs[1].owner_tag = OwnerTag::Inline(PAYEE);
+    assert!(f.approve().is_ok());
 }
 
 #[test]
@@ -456,13 +455,15 @@ fn a_withdrawal_that_keeps_nothing_keeps_a_real_change_of_zero_for_the_dummy_to_
 }
 
 #[test]
-fn a_dummy_that_has_no_real_output_to_name_is_refused() {
+fn a_dummy_names_the_group_key_when_no_real_output_pays_it_and_nobody_else() {
     let mut spec = Spec::withdrawal();
     spec.withdraw = 100;
     let mut f = Fixture::build(&spec);
     f.plan.outputs[0].role = Role::Dummy;
     f.resync();
-    assert_eq!(f.rules(), vec![OutputTagRole, OutputTagRole]);
+    assert!(f.rules().is_empty(), "the group key is the owner signer");
+    f.tx.outputs[1].owner_tag = OwnerTag::Inline(ATTACKER);
+    assert_eq!(f.rules(), vec![OutputOwnerTag, OutputTagRole]);
 }
 
 // ---- 6. the salt -----------------------------------------------------------------------------
@@ -574,7 +575,7 @@ fn a_register_with_the_keys_of_another_wallet_is_refused_by_the_pins_and_by_the_
 fn a_register_that_matches_the_pins_but_not_the_secrets_of_the_device_is_refused() {
     let f = Fixture::build(&Spec::transfer());
     let (att_nk, att_vk) = attacker().keys();
-    let pins = Pins::devnet(GROUP, att_nk, att_vk).unwrap();
+    let pins = Pins::devnet(GROUP, att_nk, att_vk, PAYER).unwrap();
     let intent = register(att_nk, att_vk);
     let bytes = register_bytes(&intent, &pins);
     let details = refusal_details(&intent, &bytes, &pins, &f.snapshot);
@@ -592,7 +593,7 @@ fn a_register_that_matches_the_pins_but_not_the_secrets_of_the_device_is_refused
 fn a_register_that_matches_the_secrets_of_the_device_but_not_the_pins_is_refused() {
     let f = Fixture::build(&Spec::transfer());
     let (att_nk, att_vk) = attacker().keys();
-    let pins = Pins::devnet(GROUP, att_nk, att_vk).unwrap();
+    let pins = Pins::devnet(GROUP, att_nk, att_vk, PAYER).unwrap();
     let (nk, vk) = group().keys();
     let intent = register(nk, vk);
     let bytes = register_bytes(&intent, &pins);

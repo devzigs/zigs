@@ -1,14 +1,16 @@
 CHECKER_PIN: the P3 message checker inside wasm-sol
 
 Status: PIN SIGNED for the checker tree, with changes after the signature (listed below, not
-signed). A P3 verifier signed the checker tree and its copy in this crate: p3delta-verdict.json
-(verdict "pass-with-gaps"), the delta verifier of the P3 fix round. What it signed:
-the verified-tree manifest 14b1ba4190989259e7d5ca49ba5250c7e10b6c9878c51892afda76ea61aaa5cc,
-the pinned-tree manifest 59c3ac4af5e9c5f504f370e6f43eee087d398d61622871a9f659d07275a00fbf, the
-seven files of the delta below, the copy of that tree in wasm-sol at the spike commit 18e7da7 with
-the wasm df092b0eb130269db4c1e2c04c2e99093d3f456e0a97d93d566be7d87fe9b74d (982,473 bytes), and
-the checker wasm of the P3 crate f7615f0fea44cff6000b1922eccfe196528b54540ff11c7368cd33dfb2225f61
-(597,931 bytes). The verdict signs nothing else.
+signed). The fee payer change (below, 16 October 2026) edits src/check.rs, template.rs, rules_ix.rs,
+rule.rs, spend.rs, intent.rs and pins.rs: the verdict no longer covers those seven files as they are
+now. A P3 verifier signed the checker tree and its copy in this crate: p3delta-verdict.json (verdict
+"pass-with-gaps"), the delta verifier of the P3 fix round. What it signed: the verified-tree
+manifest 14b1ba4190989259e7d5ca49ba5250c7e10b6c9878c51892afda76ea61aaa5cc, the pinned-tree manifest
+59c3ac4af5e9c5f504f370e6f43eee087d398d61622871a9f659d07275a00fbf, the seven files of the delta
+below, the copy of that tree in wasm-sol at the spike commit 18e7da7 with the wasm
+df092b0eb130269db4c1e2c04c2e99093d3f456e0a97d93d566be7d87fe9b74d (982,473 bytes), and the checker
+wasm of the P3 crate f7615f0fea44cff6000b1922eccfe196528b54540ff11c7368cd33dfb2225f61 (597,931
+bytes). The verdict signs nothing else.
 
 What this is. wasm-sol/src holds the source of the P3 checker crate (the scratch crate of step P3,
 outside this repository). Every file is a byte for byte copy, except lib.rs and wasm.rs, which are
@@ -65,7 +67,8 @@ the P5 run, a secret). tests/common/real.rs is cut to address_of, the one helper
 use; the code that read the solSeed file is removed. Vectors: only the public ones.
 Copied from the P1 crate: tests/data (the RFC 9591 E.1 inputs and the vectors of frost-ed25519).
 
-The wasm of wasm-sol (build.sh): SHA-256 ba41381e26fbb8c262956899c8f652eb66086e56e967cd018e1bd74ecca50ab0, 987,054 bytes raw, 344,470 gzip
+The wasm of wasm-sol (build.sh): SHA-256
+bb92d04e04c8857353fd038613c0220e215fe3bb24458e9fa3bd4e1335fb069e, 1,026,997 bytes raw, 377,198 gzip
 
 Changes of the move into the product repo (not signed; no file of src/ changed, so the rules and
 the checker are those that the verdict signed):
@@ -80,7 +83,11 @@ the checker are those that the verdict signed):
 - tests/wasm_native_diff.rs: the read of logs/diffcases/cases.json has an expect that names the
   step (`node tools/diff_cases.cjs target/pkg-node`), and its comment names the folder. The test
   itself is unchanged.
-- tests/repo_pins.rs: its tests are ignored. They read a checkout of the Zolana repo that the
+- tests/repo_pins.rs: its pin moved from 89640630 to c232da1b (the Zolana commit that the beta
+  bundle uses, ZOLANA.md 3.4). program-libs and programs are byte for byte equal at the two
+  commits, so the constants of consts.rs and hashes.rs and the vendored zolana-hasher (a copy
+  of 89640630) hold at both, and the 9 pin tests pass at c232da1b. No rule and no wasm changed.
+  Its tests are ignored. They read a checkout of the Zolana repo that the
   variable ZOLANA_REPO names. tests/common/mod.rs lost the two helpers that read that checkout
   (nothing used them).
 - vectors: the funding address of the Devnet funder key is replaced by a test address in
@@ -92,6 +99,69 @@ the checker are those that the verdict signed):
   vectors/roles.json holds four throwaway test seeds that tests/roles.rs compares with the
   values of the TS SDK. They belong to no Devnet account, and no spike key file holds them.
 
+The fee payer change (16 October 2026, not signed by a verifier; ZOLANA.md section 5). A fee key
+of the proposing seat pays every fee and rent, and the group key is a readonly signer, so the
+group key never pays. The rules and the template of the checker change, and the manifest below
+marks each changed file `modified`:
+- src/pins.rs: a fourth pin, the payer (129 bytes on the wire). Pins::devnet takes it.
+- src/intent.rs: Shield (shown to people as Add SOL) has a blockhash in place of a nonce, and uses
+  no nonce: the payer signs it alone.
+- src/template.rs: the payer is the first account and the fee payer of every message. The group
+  key is a readonly signer: nonce authority, base of the nonce account (the payer funds it), owner
+  of the registry record, and owner signer of `transact` (after the nullifier accounts, before the
+  settlement accounts, as programs/shielded-pool transact/account.rs and the SDK sponsor mode
+  list it). Shield lists the payer as the depositor and has no group account. `signer_count` is 2
+  (1 for Shield). `compile` refuses a payer that is the group key.
+- src/rule.rs, src/check.rs, src/rules_ix.rs: `fee-payer-not-group` is `fee-payer-not-payer`
+  (the first account is the payer of the proposal). New: `payer-is-group` (the group key is never
+  the payer) and `group-debit` (no System Transfer, CreateAccount, CreateAccountWithSeed or
+  TransferWithSeed has the group key as funder). `signer-set` counts the template signers (2, or
+  1 for Shield). The account rules read the payer as the forced writable signer. 86 rules.
+- src/spend.rs: the group key is an owner signer other than the payer, so a dummy output may
+  always name it (AssertDummyTags takes the owner signers without the payer). It was a
+  participant only when a real output paid it.
+- src/fee.rs (new): the fee key. It signs only after `approve` accepted the exact bytes and only
+  when it is the payer that the pins name. src/sign.rs makes `approved` visible to it. src/wasm.rs
+  exports sol_fee_key, sol_fee_sign, sol_fee_verify (the key part: see the next note).
+  src/roles.rs no longer returns the pins (a pin now holds the payer of a proposal).
+- tests: tests/fee_payer.rs and tests/fee_key.rs (new); every other changed test file moves to
+  the new template (the P5 messages that the group paid are now refused by the payer rules, and
+  the P6 compile test compares with the sponsor layout of the same instructions). The change tag
+  of a spend is inline: with a sponsor the SDK writes the group key inline (account 0 is the payer).
+- vectors: vectors/ts and vectors/ts2 are made again by the generators of the P3 crate with one
+  change (a sponsor key is the fee payer, the TS SDK at c232da1b); vectors/smoke is made again by
+  examples/gen_vectors.rs (the generator of the P3 crate, with the new rules, and two new cases,
+  payer-is-group and group-debit). Run `cargo run --example gen_vectors`, `sh build.sh`, then the
+  checks in the header of build.sh.
+- tools/mutate_sol.py: 15 mutation cases for the new rules and template lines (all killed by
+  their named test), and the two new test files in its list.
+- Live check on Devnet, 16 October 2026 (no state change): a sponsor that holds no input pays and
+  a registered key signs as owner signer. The deployed pool accepts it in a simulation with the
+  signatures checked (140,236 compute units), and refuses the same proof with no owner signer, with
+  the owner as payer and with the two keys swapped (error 7008). The accounts of the template
+  `transact` equal those that the SDK lists, in the same order and with the same flags. The
+  messages of the wasm for the nonce account (300 compute units) and for Add SOL (37,910) also run
+  in a simulation, and the template `register` has the accounts and the data of the SDK builder
+  (a payer that is not the owner, 5,537 compute units). Nothing landed.
+
+The fee key from the key share (16 October 2026, not signed; ZOLANA.md section 5). A seat derives
+its fee key from its own signing share, so every copy of a seat holds the same key:
+- src/fee.rs: `generate` and `public_of` are gone (no random key, no export from a bare secret).
+  `derive(key_package)` is HKDF-SHA256 with an empty salt, the 32-byte signing share as input key
+  material and the info `zigs-sol/fee-key/v1 || group key || seat` (the seat as 2 bytes, little
+  endian; the group key and the seat come from the key package). The output is the Ed25519 seed.
+  A key package whose share does not fit its public share (`frost::share_fits`) gives no key.
+  `seed_of` is the same without the key package, for the vectors.
+- src/wasm.rs: `sol_fee_key(key_package)` replaces `sol_fee_key()`. `sol_fee_public` is gone.
+- tests/fee_key.rs and vectors/fee_keys.json (new): Node's HKDF and Ed25519 give the vectors
+  (`solspike/tools/fee_vectors.mjs`), seven raw cases and the three key packages of the test
+  group. Tests: both kinds of vector, one key for every copy of a package and one for each seat,
+  the share, the group key and the seat each change the key, and a damaged or foreign share gives
+  no key.
+- tools/mutate_sol.py: 7 more cases (label, no group key, no seat, a salt, a fixed seat, the public
+  share as input, no share check), all killed by their named test.
+- The wasm of wasm-sol: the hash above is of the new build.
+
 Check: python3 -I tools/pin_check.py (the manifest below against the tree).
 
 files:
@@ -100,59 +170,63 @@ bce3e196c3a4064026d8b57f8fe3ebcca600ac9de008df44e7b61cc8c6b1bb46  src/address.rs
 84bc02b107fb6077a55d51f4fbb0e936e4417d3c7a42505402ce32cebcc82865  src/assets.rs  verbatim
 7709e0fd39c88ad201925f212f7321c0298db4dbfd3c2122b5ce8ddbdb2ece40  src/assets_devnet.bin  verbatim
 0c2c8885a396432c3d84c077cfea3f4f364c57dc6af0e26d169d3b2fc8e34684  src/bytes.rs  verbatim
-eb7a5b5c8628fda97790ab75f49199b4ba1eff61d99e0f04d8f57e45967a3151  src/check.rs  verbatim
+96b9433ec95417f5e8053e700d9012401640563c2bafad87d76591fc178745cd  src/check.rs  modified
 ca3b51e9ea30baeb0b082ca9cb19fe248bc86880d60ae90a3ee3e5a7dcb6b371  src/codec.rs  new
-495fb01c9b46ceea58ece8352844cff3e18dfc100166d11062fc54d72a02d66b  src/consts.rs  verbatim
+8957e314083262c03953e54f3cf9f2a88f72bf79fe1b2ce15f5caf523ccf2cad  src/consts.rs  modified
+5e5a4ad927c37aff6890f725b1f48e33410cf4a7cb2d72519b80d99d50d39db8  src/fee.rs  new
 7580593e6b6b3b9e7deff6ea3ef327abda12ba3d7f369abaf041a01461c9bf28  src/fixed.rs  verbatim
 4e23c21ba7958d4915aa41b691c3d4b24615026f07c793a63ebeda3fd8916c7a  src/frost.rs  new
 e69e4ccacb28931921f072919a6ecf9ff3fe6784e3b129a45ff94fa0ccc17d4c  src/hashes.rs  verbatim
-302d0962db24eb5b5637ec0531b169b7f23bbb892b6c4769b05e91e283aa847e  src/intent.rs  verbatim
-b762741bd1131d3677ea5a4e3d251fcd72c6a2be9a4a35342c930d02975e1e43  src/lib.rs  modified
+831c7ce8fcb4b15fbfb82c46bae9d5231b0302a234736e30eddb5931daf4f858  src/intent.rs  modified
+9171726704244c275589e924aff89a884cf696b58393d38aa2d2365671b5178c  src/lib.rs  modified
 4f344e745afed204088395c0101761a0332688de88ab6e57dec9e85de34907a1  src/pda.rs  verbatim
-f04527c9f97605ef4e71087efd9f02cfa6c961051a53da294bdf2e1ec3246f6a  src/pins.rs  verbatim
+982307f30bb88dca156641b79a5a3d8ded200aa2c4c7469761669ad56320f128  src/pins.rs  modified
 a503532a9139c564274704be7fe18ba4ae1eaee00de2a9861824db0292bb2b80  src/plan.rs  verbatim
-53950cb65f2a92df2cfdd464854ae747b6d2de146ee4ebfbc0128010f52d9b08  src/roles.rs  new
-25ddebecd27e100be53a3fec1b72d1f0e81458a904d469be65487e8a84b885ef  src/rule.rs  verbatim
+cf751e759eb33a6011ce82c046dbeff6618572df25a95c64f4dd73495326ef3b  src/roles.rs  new
+c995e13e7ed1d5c2d9dbfe13262909d890a84a7ac740734c5022d3d177923a6d  src/rule.rs  modified
 c8c4a33103f0c0e811e5d98e43acc3f0f28316d0976beb65788b47fd3f6d5c1c  src/rules_ct.rs  verbatim
-e4938d8112d84abcb74579749821ab76666e384da6c161ef27c9db4cde1fa039  src/rules_ix.rs  verbatim
+5335b200223f5a8cb1aa6c1060a4e52f840b9f8f3e8b23233d4bab5e1a3091c9  src/rules_ix.rs  modified
 3e6b8cd5a979ea45ec96d4bc42eef02677418b7a0f9d4d7f2aada02c7fcaa625  src/rules_legs.rs  verbatim
 a88175ff29fcbbe4075bf2707c0a825d6026da9e7ae93fa390f7bedda6cc76f4  src/rules_out.rs  verbatim
 423e3c005c541c66efd63c27fbba844819e2ade4071d9fb9e9ffd9a50a3c94d6  src/rules_tx.rs  verbatim
-1f527523b40e756364d2846a82a595958dd124d6bd1ee42e70a7c313b1ea8397  src/sign.rs  new
+b5e54e974efbe75008e7561f2e6a82d9bd42bb937da6523b6e71f49a96bffdc3  src/sign.rs  new
 fb32fff67235197779cc2b25cc5fe351d57fdb6140d976546b96ddc4484e28d3  src/snapshot.rs  verbatim
-d4077f570cb75d266e5c6fcbe73bd0ce8c04e932d00ba17f741a18ed59fffa77  src/spend.rs  verbatim
-a1815f6147e5c313e6bfc7a058254d6a470d1aab7a25789b4c4f403d1d289f5a  src/template.rs  verbatim
+1dd8eb3bea1120da40326466ec83e58fc6f49b40548a553bbcc50bc715131ab8  src/spend.rs  modified
+6bae9113788086eaf04c43466079c5746495dbb2fa2c3251cbf0646b0f576b10  src/template.rs  modified
 3d7e69437af85c56d9bcf80172af2c7c866140ceb6e3f889d8cbc11dde9cdf05  src/transact.rs  verbatim
 c9d4c2718f755ac5ebeb8a705e036b3ab9183cb7ef95fe1f14da5ffa931c1c9f  src/v1.rs  verbatim
 ddda30596120fcb6731fa8515b0a06c55e2df70070a9082ed64749b022ddb374  src/viewing.rs  verbatim
-a9f7b2d4d5bd127473c02e20eb73944f2000e94e1321b2320fa85bf9f066786d  src/wasm.rs  modified
+890d115e705d6aeb6dc37169845bbafc295c2d90211efcf1578cf84051db89cb  src/wasm.rs  modified
 ab14b07d8870f6c201553f0f5bc066fe65b3a0d79144e293a6a3a9ded2e65ad4  tests/asset_pins.rs  verbatim
-b4ee739a09bd0f63c7fff19b727786675115420d6ced93482c8c22d1fad7241c  tests/common/fixture.rs  verbatim
-fa3c995b4ff9d9556746e2282d571e6ae02c5ee0bb078a129b4463cce49bfc6e  tests/common/mod.rs  modified
+e0a1e751f858e0f7f069ef4a7f8e998f56a775f62723c0ead98f0027db50e986  tests/common/fixture.rs  modified
+67097671c2e6f4ec28087492e43c41a982c316977280420ee2472bc53e498a54  tests/common/mod.rs  modified
 27860e0b1f596abac60c720567a8d943e5f89897847a968069f69ec41cc85a02  tests/common/real.rs  modified
-e7d503a5b9599c368948563718772d0fc6937bf8162ae8d180a43d8836dc349c  tests/common/ts.rs  verbatim
-eb292547ec039e72038248568b631cfb99658f2814b2135c8204a93fc0715355  tests/compile_message.rs  new
-37fbbc4274f455047f49b668fcaa7a774183c6b2026ed7a46cd03d466ef8f223  tests/cross.rs  verbatim
+66ea574b1d1d8bae367adf9d93a4890d4aa89d15370104172d8e4629dfd0457f  tests/common/ts.rs  modified
+9cd448b8c1e52d43ef47e1e9d65d5af5eb0a608348d50117b30ca2724b6524ec  tests/compile_message.rs  new
+bf5e08d134bedee5dcc2f60126932d89f4f736a3f92596c4ca277262d006570d  tests/cross.rs  modified
 758b15f8ca7f6e18dae2ce907ab727717e19a6476ae62fc3406b82a58470a128  tests/data/frost_ed25519_2_2_0_vectors.json  new
 13674d07bd2498070e38483590668f6dfb6e99f2d6a4f031c215488c78998048  tests/data/rfc9591_e1.json  new
-b5cf4150a6081f24860276abaa2e3cef5a63f6ee58d68f6bc8c3dfa40912e352  tests/fix_round.rs  verbatim
+10248cd8d2fb360b9a36c0b7ca7e95c175ac0207d5ffc0ad50c4ca654d4ccbd8  tests/fee_key.rs  new
+d9ba107de3e293e4277709f754c47d33e6e9eb1931b213704f85a185063985cd  tests/fee_payer.rs  new
+7eafc71b67f9cd794462625a3c686aa9d913d0dac2e3758ab65c8d72ed730f47  tests/fix_round.rs  modified
 cfc68ad047d9dff9f4cb368c901238019de4d6284cbd23853b5224f97a2bf3ca  tests/frost_dkg.rs  new
-6216ca6918cab876a2e5040cb1cfa5fbd753b0a78d9aee6b572eece7a3db69cd  tests/negative.rs  verbatim
-fd0ac636b91a86f467d1cd65a17cfab93733d07021c4009016b02c67bece51bb  tests/p3c.rs  verbatim
+30d06cfe796b1238ac2957de71d1d2b285d5ad4e545fc0bab1ce02144c46fd35  tests/negative.rs  modified
+025fcdc92eb9ea2519a623a14d1ea06073c047b20a188bac5ae3a918ccef50ca  tests/p3c.rs  modified
 95290d8683b751fb47f647d29eb2486fcd3dad545aa35a368d1a5fb0733151b1  tests/pin_bytes.rs  verbatim
-cb30477a7196372b30b2fcb42fdbf129a2ca3eb8a2b692585c9ed1cfdcf39368  tests/real.rs  verbatim
-738e320f3e72f5c0a12eecdac342c45f74027f230589e3d01063274cfa22cee3  tests/repo_pins.rs  modified
-82e949a152db1b4d2c7f842e1a7b85c30667e7515d6eca9e9fe466cd81240eb0  tests/roles.rs  new
+3037d149887a37309b07c8765f862acf9994f0802138861188bd9ffc1869e829  tests/real.rs  modified
+4cf756dd0a735301dafd3fd15fa872155effd3b4d67b7cb34b4b14976eb2880d  tests/repo_pins.rs  modified
+796c670f5e6ccc4832965be37bba097cb871edd0e866401e01f9d286059ba282  tests/roles.rs  new
 b6d038dcd0c607632c3f3bb02715b914b35aaadfc69465c6adc9fac80acb42b5  tests/sign_split.rs  new
-27e19faa99e52390926dfcff7188153268f4183558ca555cc85e616dfbd80af2  tests/slot_order.rs  verbatim
-4b5bd2afa97da48089a93c734b67d4a349b0b862543530f78b01daf173bf0d04  tests/support/ceremony.rs  new
+0d7cffead7f9fad86b5f9d50a7a6222e1eff8f98f37c68a2cd9f63479e811f44  tests/slot_order.rs  modified
+4024f9ca2e4257bcacb37e20bca15d6740f9d3c55c954c3c817159261233ddd0  tests/support/ceremony.rs  new
 c2ca6d4a63a850c05397e2f0877c4530d2cef325857f68db75fd29812ac0981d  tests/ts_edge.rs  verbatim
 8f9b9f11af5f1b2d78b5ce6a7b46d8fa83a5fcbb27ffbac9244257cf2dc8fcee  tests/ts_vectors.rs  verbatim
-add7edb71d6aae18363735bf78ecf2e9257a68dc78c4209afde4b17ea9e9c6b8  tests/units.rs  verbatim
+e71e4685806338fcd1153f0765e52b26f3ece303b413b4b975ca8c7adc7281b4  tests/units.rs  modified
 a7d5b2deb2949ec52dba9731c87a4523016d5b1d2abefbb1a8f828ba1fdd9690  tests/verifier_fixes.rs  verbatim
-2c777cefe45c72d309b590a81d087a111f1e3a837747068b95d8ab386f7a0fed  tests/wasm_api.rs  verbatim
+dd6bb8321cdd53a27128fb8e38421088c624bcbe136b6cc4c22534c957fd0b05  tests/wasm_api.rs  modified
 72c0e4121ece8b0da4524d13a855f8a11dad45515c94930912713e1f1b6d58dd  tests/wasm_native_diff.rs  modified
 b04c7fe3102595c9456fb4b6d30e54567e717cdeb2ec7c31e57b8b3e450ba54f  vectors/devnet-assets.json  verbatim
+8bbb46d666d4c4d21234d4957db2f5d70ff25c3c81506fe53d8447f6a4199ba7  vectors/fee_keys.json  new
 0fda5ee5441e1e8af29e0c22e7056ed526670dbe40d8faeb67e082097267a00a  vectors/facts.json  modified
 1cf909a2204147f1f8f6351ddd8e1df7b38667b768a6ba03cda99bca8f7ff45b  vectors/p2/wire-fund.msg  modified
 03c943095d9d4743da6193265bd4a8d2f14ed677b3650f14e0b008432763fa64  vectors/p2/wire-nonce_create.msg  verbatim
@@ -181,185 +255,195 @@ dd517be5809a7c54563ac4bfaae99a09ea485671db6afbc21617639c3c459ede  vectors/real/w
 60bea131edd75a82bed84fffec877ebe88eec6d6993b9ca486434acb58891ce4  vectors/roles.json  new
 d9d330a305a391f5f5cb729bef748f4d8eb46096acc3e8d3bf3c664523be0ccf  vectors/smoke/cancel.answer  verbatim
 bc2dc5ecc2300c58b0ccfce69f7ca8abb95f186367e46b1f9c9812a761e22046  vectors/smoke/cancel.intent  verbatim
-c7ac7ef538070074c90f66fab7e99c02c7e51f05834ed2132c02e6b2911211fc  vectors/smoke/cancel.msg  verbatim
-3450090b42528af22b8a2a0ae1ac059c5497ec319d0f460922ce5efd051bfd89  vectors/smoke/cancel.pins  verbatim
+ec0badc5e0a86e253cd312d8be8f20bdb9ec07cd79f09db752f30b1de2a28e32  vectors/smoke/cancel.msg  modified
+dba8d87b6c70befb11cf5463052b40b26bd90fcc8c1f012f21ee5b72d5dc1a00  vectors/smoke/cancel.pins  modified
 42f5579aa7c95a60101aa884ac4e4acf52d1a5027c626c6bd40ccca1278adacc  vectors/smoke/cancel.snapshot  verbatim
 7d2630126016644cb43449845e501859f62d01af3a70d6afdecc9c80789f73f1  vectors/smoke/ciphertext.answer  verbatim
 0ac038449d88681e68b4248d4a08f89b7870b7ea60ff19ff91c2e82aa46498d7  vectors/smoke/ciphertext.intent  verbatim
-07d721843b7004dbe373d43aebdea3c765ad5de325de4b5ef6778b89fb50ec72  vectors/smoke/ciphertext.msg  verbatim
-3450090b42528af22b8a2a0ae1ac059c5497ec319d0f460922ce5efd051bfd89  vectors/smoke/ciphertext.pins  verbatim
+e6e4169acf6c850fb6f74d604bd673ff525e57eecc531da029b308f060a44c67  vectors/smoke/ciphertext.msg  modified
+dba8d87b6c70befb11cf5463052b40b26bd90fcc8c1f012f21ee5b72d5dc1a00  vectors/smoke/ciphertext.pins  modified
 648d3ea3fa11c4f3552585ee309ad7bd8e129ca3920225758b5cb7ee353a3053  vectors/smoke/ciphertext.snapshot  verbatim
 d9d330a305a391f5f5cb729bef748f4d8eb46096acc3e8d3bf3c664523be0ccf  vectors/smoke/create-nonce.answer  verbatim
 49880d6431c9a27f2be4f15a2f46bdecca4ffba7931c63fae61f4964f231e27a  vectors/smoke/create-nonce.intent  verbatim
-017d7bbb1a07a60abb5a203e67ecfbf15050b983dadc0014ab8d852b7bb7314b  vectors/smoke/create-nonce.msg  verbatim
-3450090b42528af22b8a2a0ae1ac059c5497ec319d0f460922ce5efd051bfd89  vectors/smoke/create-nonce.pins  verbatim
+d157fa30278dfe5bf43286597e9944d8a583f56a17b87cbd2b2d6081df7cdf6b  vectors/smoke/create-nonce.msg  modified
+dba8d87b6c70befb11cf5463052b40b26bd90fcc8c1f012f21ee5b72d5dc1a00  vectors/smoke/create-nonce.pins  modified
 42f5579aa7c95a60101aa884ac4e4acf52d1a5027c626c6bd40ccca1278adacc  vectors/smoke/create-nonce.snapshot  verbatim
-e51e1153cc41a26aadf2578ac613473b4f60669015ee1955da6f86fb885791bb  vectors/smoke/dummy-tag.answer  verbatim
+31c5c21c6c08bca957ee4550112389fec362b0fef1dc92253f469f150eebbbf4  vectors/smoke/dummy-tag.answer  modified
 28e0f2e2252463e55382216efc01a83da8f6bf4b9507c6ec5f8cd64111911bc4  vectors/smoke/dummy-tag.intent  verbatim
-35e78b54bf44ff9b1d740c21630ae95d5121505e6c0f2c8af16a7aa42cf4c0aa  vectors/smoke/dummy-tag.msg  verbatim
-3450090b42528af22b8a2a0ae1ac059c5497ec319d0f460922ce5efd051bfd89  vectors/smoke/dummy-tag.pins  verbatim
+5be2107e20ae56e5f4666a8179ff4c0089a96287a78d232b099866a20ab8f5f7  vectors/smoke/dummy-tag.msg  modified
+dba8d87b6c70befb11cf5463052b40b26bd90fcc8c1f012f21ee5b72d5dc1a00  vectors/smoke/dummy-tag.pins  modified
 648d3ea3fa11c4f3552585ee309ad7bd8e129ca3920225758b5cb7ee353a3053  vectors/smoke/dummy-tag.snapshot  verbatim
 c12a279348e8916e1b32c1a59bbdf00e99ad60c29a1875b01b73b431615e15be  vectors/smoke/expiry-max.answer  verbatim
 0ac038449d88681e68b4248d4a08f89b7870b7ea60ff19ff91c2e82aa46498d7  vectors/smoke/expiry-max.intent  verbatim
-b8c1643e6c51ebecded0b215ae2bfc782dc8691b7c0b0d483b064a352ebf840a  vectors/smoke/expiry-max.msg  verbatim
-3450090b42528af22b8a2a0ae1ac059c5497ec319d0f460922ce5efd051bfd89  vectors/smoke/expiry-max.pins  verbatim
+549daadd9197cde8c1e3164063d5721aac7201a6410d76c9f4802d2fbe88413d  vectors/smoke/expiry-max.msg  modified
+dba8d87b6c70befb11cf5463052b40b26bd90fcc8c1f012f21ee5b72d5dc1a00  vectors/smoke/expiry-max.pins  modified
 648d3ea3fa11c4f3552585ee309ad7bd8e129ca3920225758b5cb7ee353a3053  vectors/smoke/expiry-max.snapshot  verbatim
+bd07486d610b5627056a14b9a0595e04debacff9030664a55bde4a0aa227903b  vectors/smoke/group-debit.answer  new
+bc2dc5ecc2300c58b0ccfce69f7ca8abb95f186367e46b1f9c9812a761e22046  vectors/smoke/group-debit.intent  new
+a567b9723c6cf432997206f2364f86e7d0696f09e1c325a5fe2a4d72cc25c0a3  vectors/smoke/group-debit.msg  new
+dba8d87b6c70befb11cf5463052b40b26bd90fcc8c1f012f21ee5b72d5dc1a00  vectors/smoke/group-debit.pins  new
+42f5579aa7c95a60101aa884ac4e4acf52d1a5027c626c6bd40ccca1278adacc  vectors/smoke/group-debit.snapshot  new
 b42868eb3cb24605ee44f3ae9f26186480e1e6f7c906805d214a1959e40eff96  vectors/smoke/nullifier-pk.answer  verbatim
 21cec2627820a90bcb19faceaf4f9ab406f7935e0e93265fdd6b0785c872b4ea  vectors/smoke/nullifier-pk.intent  verbatim
-631e6ef2c0e182cb629ea24f23817c60bc60f5fed3b67ef08551bbfded2502ae  vectors/smoke/nullifier-pk.msg  verbatim
-3450090b42528af22b8a2a0ae1ac059c5497ec319d0f460922ce5efd051bfd89  vectors/smoke/nullifier-pk.pins  verbatim
+88fe2f9a25d5ed8bb7378604f860a89217e4134dc6b7429e515208b9ecba3a3e  vectors/smoke/nullifier-pk.msg  modified
+dba8d87b6c70befb11cf5463052b40b26bd90fcc8c1f012f21ee5b72d5dc1a00  vectors/smoke/nullifier-pk.pins  modified
 42f5579aa7c95a60101aa884ac4e4acf52d1a5027c626c6bd40ccca1278adacc  vectors/smoke/nullifier-pk.snapshot  verbatim
 650c50f2929850e9d00bb6ec37b32f30bf9068e1004fa52406def9531969dd24  vectors/smoke/nullifier.answer  verbatim
 0ac038449d88681e68b4248d4a08f89b7870b7ea60ff19ff91c2e82aa46498d7  vectors/smoke/nullifier.intent  verbatim
-559f636df74dd6a63077bf1c0dba8b7c678256a645aeb8f6f4acdbb9e2fcf454  vectors/smoke/nullifier.msg  verbatim
-3450090b42528af22b8a2a0ae1ac059c5497ec319d0f460922ce5efd051bfd89  vectors/smoke/nullifier.pins  verbatim
+9740ac191da9f1215c0def82a588d36c9cc556014399eaa47a9298b57e487e0f  vectors/smoke/nullifier.msg  modified
+dba8d87b6c70befb11cf5463052b40b26bd90fcc8c1f012f21ee5b72d5dc1a00  vectors/smoke/nullifier.pins  modified
 648d3ea3fa11c4f3552585ee309ad7bd8e129ca3920225758b5cb7ee353a3053  vectors/smoke/nullifier.snapshot  verbatim
 8b070fcc58722442e9bf97fbe66633c23280fed89cf901f39a95fa0a2f915900  vectors/smoke/offchain.answer  verbatim
 bc2dc5ecc2300c58b0ccfce69f7ca8abb95f186367e46b1f9c9812a761e22046  vectors/smoke/offchain.intent  verbatim
 017f9cc5346f24c849e998b3ab0f00ca885753f6fc3985b0b98e4705be0e3438  vectors/smoke/offchain.msg  verbatim
-3450090b42528af22b8a2a0ae1ac059c5497ec319d0f460922ce5efd051bfd89  vectors/smoke/offchain.pins  verbatim
+dba8d87b6c70befb11cf5463052b40b26bd90fcc8c1f012f21ee5b72d5dc1a00  vectors/smoke/offchain.pins  modified
 42f5579aa7c95a60101aa884ac4e4acf52d1a5027c626c6bd40ccca1278adacc  vectors/smoke/offchain.snapshot  verbatim
 9323823108b97f185de9c167c417ce0a3e21dd422f75e9199cc39825b00cc0cc  vectors/smoke/output-blinding.answer  verbatim
 0de296814367b53f08de79aa62fdb2f44e107edd5826932d762b6f36a2c6f942  vectors/smoke/output-blinding.intent  verbatim
-468381de8ad007fdd86e7575d1243400545a60617e000dbf82e137be4aa16466  vectors/smoke/output-blinding.msg  verbatim
-3450090b42528af22b8a2a0ae1ac059c5497ec319d0f460922ce5efd051bfd89  vectors/smoke/output-blinding.pins  verbatim
+91fa8f1d527bbf9821f9124ec3315a2b80d9afc69fd3fbad3a5a7de5ac2f12ea  vectors/smoke/output-blinding.msg  modified
+dba8d87b6c70befb11cf5463052b40b26bd90fcc8c1f012f21ee5b72d5dc1a00  vectors/smoke/output-blinding.pins  modified
 648d3ea3fa11c4f3552585ee309ad7bd8e129ca3920225758b5cb7ee353a3053  vectors/smoke/output-blinding.snapshot  verbatim
 5812e4931ac0af24b8fed93ab9149e9c59da91e3684f83c68cccb6570c7a5eb4  vectors/smoke/output-hash.answer  verbatim
 0ac038449d88681e68b4248d4a08f89b7870b7ea60ff19ff91c2e82aa46498d7  vectors/smoke/output-hash.intent  verbatim
-76e7713f878992dcd350f8d96a9b03a8e99a3e5c02af1409530d659bdc2f48e4  vectors/smoke/output-hash.msg  verbatim
-3450090b42528af22b8a2a0ae1ac059c5497ec319d0f460922ce5efd051bfd89  vectors/smoke/output-hash.pins  verbatim
+b8a7d6f272584472fc868a3056e3f4aa2f0aafb29ad445d91add21dfc9903a63  vectors/smoke/output-hash.msg  modified
+dba8d87b6c70befb11cf5463052b40b26bd90fcc8c1f012f21ee5b72d5dc1a00  vectors/smoke/output-hash.pins  modified
 648d3ea3fa11c4f3552585ee309ad7bd8e129ca3920225758b5cb7ee353a3053  vectors/smoke/output-hash.snapshot  verbatim
 31c5c21c6c08bca957ee4550112389fec362b0fef1dc92253f469f150eebbbf4  vectors/smoke/payee-tag.answer  verbatim
 0ac038449d88681e68b4248d4a08f89b7870b7ea60ff19ff91c2e82aa46498d7  vectors/smoke/payee-tag.intent  verbatim
-3de37caabdfca8ea847b17b7d825af7c02db972b836b018fcb5cbb4eb610a4e4  vectors/smoke/payee-tag.msg  verbatim
-3450090b42528af22b8a2a0ae1ac059c5497ec319d0f460922ce5efd051bfd89  vectors/smoke/payee-tag.pins  verbatim
+4e15d834662394fc3068598277adbbb36863979234a63fbebe8ed6a5473e2b27  vectors/smoke/payee-tag.msg  modified
+dba8d87b6c70befb11cf5463052b40b26bd90fcc8c1f012f21ee5b72d5dc1a00  vectors/smoke/payee-tag.pins  modified
 648d3ea3fa11c4f3552585ee309ad7bd8e129ca3920225758b5cb7ee353a3053  vectors/smoke/payee-tag.snapshot  verbatim
+7ba7c3f9346387ebc1da10282ee8faef8049ab86e980b6e0a9f4ac8d436a5747  vectors/smoke/payer-is-group.answer  new
+bc2dc5ecc2300c58b0ccfce69f7ca8abb95f186367e46b1f9c9812a761e22046  vectors/smoke/payer-is-group.intent  new
+c7ac7ef538070074c90f66fab7e99c02c7e51f05834ed2132c02e6b2911211fc  vectors/smoke/payer-is-group.msg  new
+e17d9f96a6672213968e6520d0c02b3d6d8c4a95fc7529476876aa839a70d51d  vectors/smoke/payer-is-group.pins  new
+42f5579aa7c95a60101aa884ac4e4acf52d1a5027c626c6bd40ccca1278adacc  vectors/smoke/payer-is-group.snapshot  new
 4124a3298ce892448ef5e312c51a3b1d98ff96b759832ae90515596fd5ad26e3  vectors/smoke/pins-nullifier-pk.answer  verbatim
 0ac038449d88681e68b4248d4a08f89b7870b7ea60ff19ff91c2e82aa46498d7  vectors/smoke/pins-nullifier-pk.intent  verbatim
-7c5397c620dddee90560134af3b4b8088d3f59a79f52e2c3637b5dff72a81248  vectors/smoke/pins-nullifier-pk.msg  verbatim
-8ec61743497b41e07701cb8966b5bee0764edc9862c7192890d385f25d792bdf  vectors/smoke/pins-nullifier-pk.pins  verbatim
+05e0cfac516235c0dfd002ae4e24efc45ecaa1ad73c8e86f128b4db12a2d0ac4  vectors/smoke/pins-nullifier-pk.msg  modified
+52f3a944970ab4aa9358eaf557a857395864a700ca8eeb90fa3e175a6f437c57  vectors/smoke/pins-nullifier-pk.pins  modified
 648d3ea3fa11c4f3552585ee309ad7bd8e129ca3920225758b5cb7ee353a3053  vectors/smoke/pins-nullifier-pk.snapshot  verbatim
 321633d00b1fbeaac066901f6f45fe4630659637689b7b7adf01c7bc5a57583c  vectors/smoke/plan-count.answer  verbatim
 0c59cf7aed2c1a9c1f331e5bcbacbf2bccf687ad009ccd09b13e76aa6de55679  vectors/smoke/plan-count.intent  verbatim
-7c5397c620dddee90560134af3b4b8088d3f59a79f52e2c3637b5dff72a81248  vectors/smoke/plan-count.msg  verbatim
-3450090b42528af22b8a2a0ae1ac059c5497ec319d0f460922ce5efd051bfd89  vectors/smoke/plan-count.pins  verbatim
+05e0cfac516235c0dfd002ae4e24efc45ecaa1ad73c8e86f128b4db12a2d0ac4  vectors/smoke/plan-count.msg  modified
+dba8d87b6c70befb11cf5463052b40b26bd90fcc8c1f012f21ee5b72d5dc1a00  vectors/smoke/plan-count.pins  modified
 648d3ea3fa11c4f3552585ee309ad7bd8e129ca3920225758b5cb7ee353a3053  vectors/smoke/plan-count.snapshot  verbatim
-5dea49c5ca36dcb2e1e3a55fc60f5466eed63881120b72aae7068e51a8eee479  vectors/smoke/recipient.answer  verbatim
+6495f946958d06cba7e3aaf85b9d4741600117c761b66aa602852dc8197172bf  vectors/smoke/recipient.answer  modified
 8f150c5e41a8b069b568f5c57b5485c7068d0ceb6f5f44ecdf6cbb3e62bf95bc  vectors/smoke/recipient.intent  verbatim
-69933a102ac6175ed2e0562634e40d0376bec4b7d06a478df04f8ad90f0d6d88  vectors/smoke/recipient.msg  verbatim
-3450090b42528af22b8a2a0ae1ac059c5497ec319d0f460922ce5efd051bfd89  vectors/smoke/recipient.pins  verbatim
+58c60913161c8723362588f0b62d48f32bd0fec5bb8613873623a43bd85e2d43  vectors/smoke/recipient.msg  modified
+dba8d87b6c70befb11cf5463052b40b26bd90fcc8c1f012f21ee5b72d5dc1a00  vectors/smoke/recipient.pins  modified
 648d3ea3fa11c4f3552585ee309ad7bd8e129ca3920225758b5cb7ee353a3053  vectors/smoke/recipient.snapshot  verbatim
 e10a7ccd73e8b1d8ea071dee42666263dc78e1d2c45546182eb304389aab7c94  vectors/smoke/register-keys.answer  verbatim
 0bb4e4eb4d0334218ebe1ce5bc5807ffbbc0eca17fe036792712cb571c7c4e26  vectors/smoke/register-keys.intent  verbatim
-bfead31202cb0011adc51f7608896612d7b2c82ef1b5aadd13a61d939d98e76a  vectors/smoke/register-keys.msg  verbatim
-3450090b42528af22b8a2a0ae1ac059c5497ec319d0f460922ce5efd051bfd89  vectors/smoke/register-keys.pins  verbatim
+9286445b6cfbf9ee2186900d46ef2aaafdd5aa78d55c450b9c8be1e45eddc3ce  vectors/smoke/register-keys.msg  modified
+dba8d87b6c70befb11cf5463052b40b26bd90fcc8c1f012f21ee5b72d5dc1a00  vectors/smoke/register-keys.pins  modified
 42f5579aa7c95a60101aa884ac4e4acf52d1a5027c626c6bd40ccca1278adacc  vectors/smoke/register-keys.snapshot  verbatim
 d9d330a305a391f5f5cb729bef748f4d8eb46096acc3e8d3bf3c664523be0ccf  vectors/smoke/register.answer  verbatim
 21cec2627820a90bcb19faceaf4f9ab406f7935e0e93265fdd6b0785c872b4ea  vectors/smoke/register.intent  verbatim
-7986133ed37da2b4a73b80d2e20b8d941e85ce69479c18935fddc6d560f7af11  vectors/smoke/register.msg  verbatim
-3450090b42528af22b8a2a0ae1ac059c5497ec319d0f460922ce5efd051bfd89  vectors/smoke/register.pins  verbatim
+b42942da1d5a47d56388404b2e55e40c20004306a9adb7ad6fd0ef4a772c6e6e  vectors/smoke/register.msg  modified
+dba8d87b6c70befb11cf5463052b40b26bd90fcc8c1f012f21ee5b72d5dc1a00  vectors/smoke/register.pins  modified
 42f5579aa7c95a60101aa884ac4e4acf52d1a5027c626c6bd40ccca1278adacc  vectors/smoke/register.snapshot  verbatim
 851fdd1f6da58cecd55f19415461bd5ccb7df4bdd2d6a75286e0a9e2c1949acf  vectors/smoke/relayer-fee.answer  verbatim
 0ac038449d88681e68b4248d4a08f89b7870b7ea60ff19ff91c2e82aa46498d7  vectors/smoke/relayer-fee.intent  verbatim
-6a74fd7b8f0f07ce2c2c85cbdd895801295eb47d8c16b5c3662222616eea5a90  vectors/smoke/relayer-fee.msg  verbatim
-3450090b42528af22b8a2a0ae1ac059c5497ec319d0f460922ce5efd051bfd89  vectors/smoke/relayer-fee.pins  verbatim
+506ee97fa01ec2d5e7c8b142d621faed633fe891444e1bc33377999d1d54693b  vectors/smoke/relayer-fee.msg  modified
+dba8d87b6c70befb11cf5463052b40b26bd90fcc8c1f012f21ee5b72d5dc1a00  vectors/smoke/relayer-fee.pins  modified
 648d3ea3fa11c4f3552585ee309ad7bd8e129ca3920225758b5cb7ee353a3053  vectors/smoke/relayer-fee.snapshot  verbatim
 7ddcf1688349fbb41140d4a4c592996f57a9fa70ee004f361fbe5e0cf7c37af8  vectors/smoke/salt-reused.answer  verbatim
 0ac038449d88681e68b4248d4a08f89b7870b7ea60ff19ff91c2e82aa46498d7  vectors/smoke/salt-reused.intent  verbatim
-7c5397c620dddee90560134af3b4b8088d3f59a79f52e2c3637b5dff72a81248  vectors/smoke/salt-reused.msg  verbatim
-3450090b42528af22b8a2a0ae1ac059c5497ec319d0f460922ce5efd051bfd89  vectors/smoke/salt-reused.pins  verbatim
+05e0cfac516235c0dfd002ae4e24efc45ecaa1ad73c8e86f128b4db12a2d0ac4  vectors/smoke/salt-reused.msg  modified
+dba8d87b6c70befb11cf5463052b40b26bd90fcc8c1f012f21ee5b72d5dc1a00  vectors/smoke/salt-reused.pins  modified
 4c88c0f5e178307e83cd2c1b01cd51f9833ee22ca063295c4e9b85db1e469166  vectors/smoke/salt-reused.snapshot  verbatim
 3b3c438d4e35ca58b9c7153b08315670f4e5b63a96525e427477153ff49b723b  vectors/smoke/salt-zero.answer  verbatim
 0ac038449d88681e68b4248d4a08f89b7870b7ea60ff19ff91c2e82aa46498d7  vectors/smoke/salt-zero.intent  verbatim
-e62bde8746533ca875f82683a3480d978fe876e9b204e97ba8ab156ffa6f8857  vectors/smoke/salt-zero.msg  verbatim
-3450090b42528af22b8a2a0ae1ac059c5497ec319d0f460922ce5efd051bfd89  vectors/smoke/salt-zero.pins  verbatim
+c589036bef17ead95ccf722b6d4b83bf8081208ee111f41ba540c0337b04efea  vectors/smoke/salt-zero.msg  modified
+dba8d87b6c70befb11cf5463052b40b26bd90fcc8c1f012f21ee5b72d5dc1a00  vectors/smoke/salt-zero.pins  modified
 648d3ea3fa11c4f3552585ee309ad7bd8e129ca3920225758b5cb7ee353a3053  vectors/smoke/salt-zero.snapshot  verbatim
 a8049f3fc7ddab0301dd57d8af9391ce6f775a577a78e17849838d6e05563c92  vectors/smoke/shape.answer  verbatim
 e867c9d2a82bf0856ab88139f52d810aaf3282284ef9364453f1477f30517df0  vectors/smoke/shape.intent  verbatim
-8b86038f8719982121353d1972619efb8af701883358b28e2d21629d45f56722  vectors/smoke/shape.msg  verbatim
-3450090b42528af22b8a2a0ae1ac059c5497ec319d0f460922ce5efd051bfd89  vectors/smoke/shape.pins  verbatim
+bea45cb6bf0a4730426fe45ade657a25db73f04227106a763f552659db3cf358  vectors/smoke/shape.msg  modified
+dba8d87b6c70befb11cf5463052b40b26bd90fcc8c1f012f21ee5b72d5dc1a00  vectors/smoke/shape.pins  modified
 648d3ea3fa11c4f3552585ee309ad7bd8e129ca3920225758b5cb7ee353a3053  vectors/smoke/shape.snapshot  verbatim
 d9d330a305a391f5f5cb729bef748f4d8eb46096acc3e8d3bf3c664523be0ccf  vectors/smoke/shield.answer  verbatim
 60fd841635c551b08ce80ba532ad941ebefabe09900a90abcb642535a3045b29  vectors/smoke/shield.intent  verbatim
-17f5a8be0a51a2654f8707282bcd7a66888bcd4cf537eb0986d514918b327d87  vectors/smoke/shield.msg  verbatim
-3450090b42528af22b8a2a0ae1ac059c5497ec319d0f460922ce5efd051bfd89  vectors/smoke/shield.pins  verbatim
+150dcb11b35d5517e1eddf08a31618a3af0a9ef485e178b4d4f5e198d2daf656  vectors/smoke/shield.msg  modified
+dba8d87b6c70befb11cf5463052b40b26bd90fcc8c1f012f21ee5b72d5dc1a00  vectors/smoke/shield.pins  modified
 42f5579aa7c95a60101aa884ac4e4acf52d1a5027c626c6bd40ccca1278adacc  vectors/smoke/shield.snapshot  verbatim
-c82232e34cb794916c3a799bdaa3e921994339f1df4ae2b26d57a064b2b99c46  vectors/smoke/system-transfer.answer  verbatim
+ab4910994ce8449ce6ecba4b474b3659796d922d176f7236f3176116f86023dd  vectors/smoke/system-transfer.answer  modified
 bc2dc5ecc2300c58b0ccfce69f7ca8abb95f186367e46b1f9c9812a761e22046  vectors/smoke/system-transfer.intent  verbatim
-d83c3662a209e09287572bc79abe5a52fa7742ab6565680b1f2a50c79b741119  vectors/smoke/system-transfer.msg  verbatim
-3450090b42528af22b8a2a0ae1ac059c5497ec319d0f460922ce5efd051bfd89  vectors/smoke/system-transfer.pins  verbatim
+ed7f7e72c7ef74458a427a034764326fe33ba7b373c0e185dcdda993a88644a7  vectors/smoke/system-transfer.msg  modified
+dba8d87b6c70befb11cf5463052b40b26bd90fcc8c1f012f21ee5b72d5dc1a00  vectors/smoke/system-transfer.pins  modified
 42f5579aa7c95a60101aa884ac4e4acf52d1a5027c626c6bd40ccca1278adacc  vectors/smoke/system-transfer.snapshot  verbatim
 bfe69dbf6e8998ede22c7584c28a17e5cdee5127e50e479c468dc6e0e24d7717  vectors/smoke/sysvar-writable.answer  verbatim
 bc2dc5ecc2300c58b0ccfce69f7ca8abb95f186367e46b1f9c9812a761e22046  vectors/smoke/sysvar-writable.intent  verbatim
-3cc1239cfac811ce052b56a668eca264fa0589c191acc7ab071a4e70ee6a7a29  vectors/smoke/sysvar-writable.msg  verbatim
-3450090b42528af22b8a2a0ae1ac059c5497ec319d0f460922ce5efd051bfd89  vectors/smoke/sysvar-writable.pins  verbatim
+f30976dfb2307c631740f799602a0eaaf5c3674174644f85c100ca60968eeb8d  vectors/smoke/sysvar-writable.msg  modified
+dba8d87b6c70befb11cf5463052b40b26bd90fcc8c1f012f21ee5b72d5dc1a00  vectors/smoke/sysvar-writable.pins  modified
 42f5579aa7c95a60101aa884ac4e4acf52d1a5027c626c6bd40ccca1278adacc  vectors/smoke/sysvar-writable.snapshot  verbatim
 d35715a37bdf133ce2f6e67c9cd240c91bf2b43bf948fccc062e15ac555a2dae  vectors/smoke/tag-swap.answer  verbatim
 0ac038449d88681e68b4248d4a08f89b7870b7ea60ff19ff91c2e82aa46498d7  vectors/smoke/tag-swap.intent  verbatim
-0e7d1012753f25b1de4195fb2ecf767c6047a97ce7bc31bb3fc6e94e814a2d8d  vectors/smoke/tag-swap.msg  verbatim
-3450090b42528af22b8a2a0ae1ac059c5497ec319d0f460922ce5efd051bfd89  vectors/smoke/tag-swap.pins  verbatim
+c96cf97ca0b5b6bd48ed4f5acc54aa42e9847968394508ccbd4a707a3e0a216a  vectors/smoke/tag-swap.msg  modified
+dba8d87b6c70befb11cf5463052b40b26bd90fcc8c1f012f21ee5b72d5dc1a00  vectors/smoke/tag-swap.pins  modified
 648d3ea3fa11c4f3552585ee309ad7bd8e129ca3920225758b5cb7ee353a3053  vectors/smoke/tag-swap.snapshot  verbatim
 95f6af39ad2be420a38d8d929b11f67f243554b4c312d7c72f2f4de721e980c6  vectors/smoke/transfer-spl.answer  verbatim
 d343169523a5543f871cec16067d6b9906e25a37f7368a9db6b675818fc1f1b4  vectors/smoke/transfer-spl.intent  verbatim
-3a4ceb44db23101a0eb501ec7a57a4800d6a6dd95a94f33ae8559235c90c3698  vectors/smoke/transfer-spl.msg  verbatim
-3450090b42528af22b8a2a0ae1ac059c5497ec319d0f460922ce5efd051bfd89  vectors/smoke/transfer-spl.pins  verbatim
+c8a9e426b52aa7ec80d45285d7593206c28e6dfde7cabd405f2299c182d742f3  vectors/smoke/transfer-spl.msg  modified
+dba8d87b6c70befb11cf5463052b40b26bd90fcc8c1f012f21ee5b72d5dc1a00  vectors/smoke/transfer-spl.pins  modified
 c06057b306ee7aea1911e5838ec389afc4700c9325c4092eccd4812faae42bbd  vectors/smoke/transfer-spl.snapshot  verbatim
 c8c303210168d6322514e49b37741e3e3951251daefd396fd75f9611f0c823e2  vectors/smoke/transfer.answer  verbatim
 0ac038449d88681e68b4248d4a08f89b7870b7ea60ff19ff91c2e82aa46498d7  vectors/smoke/transfer.intent  verbatim
-7c5397c620dddee90560134af3b4b8088d3f59a79f52e2c3637b5dff72a81248  vectors/smoke/transfer.msg  verbatim
-3450090b42528af22b8a2a0ae1ac059c5497ec319d0f460922ce5efd051bfd89  vectors/smoke/transfer.pins  verbatim
+05e0cfac516235c0dfd002ae4e24efc45ecaa1ad73c8e86f128b4db12a2d0ac4  vectors/smoke/transfer.msg  modified
+dba8d87b6c70befb11cf5463052b40b26bd90fcc8c1f012f21ee5b72d5dc1a00  vectors/smoke/transfer.pins  modified
 648d3ea3fa11c4f3552585ee309ad7bd8e129ca3920225758b5cb7ee353a3053  vectors/smoke/transfer.snapshot  verbatim
 e3e6436c6dcea68935395be4b661cdb279341e0874ff42d03c53ad451214f837  vectors/smoke/ts-transfer-everything-with-dummy.answer  verbatim
-5e318772ef10756efbc3287a6eb5a1ee6bbd47076172fd5719ba7c3c6e4954d6  vectors/smoke/ts-transfer-everything-with-dummy.intent  verbatim
-7b60f0e5a50a726814f208eaac697ef087b049ef4504d45955b06ae84e2ee937  vectors/smoke/ts-transfer-everything-with-dummy.msg  verbatim
-e803b90300cbe35082af065a7556726bb723015a823296e4e385ed2f52926401  vectors/smoke/ts-transfer-everything-with-dummy.pins  verbatim
+63365b90a13bd8558bd4cb8a4548fe5017e4ca84b1b580adef98db7a4f9fc99b  vectors/smoke/ts-transfer-everything-with-dummy.intent  modified
+068101b5bf6681cd26e10894e5a51f64014049d05de86dfcde15e770e214b059  vectors/smoke/ts-transfer-everything-with-dummy.msg  modified
+c158b06d8f0a1eccc3ca3a27d7f4bc3a036e6d5d1f97ac3d3783acbb85ee72f1  vectors/smoke/ts-transfer-everything-with-dummy.pins  modified
 40efa74539a9436770ff7f50109ae7691b0c79bb43802023fea46decbd34de61  vectors/smoke/ts-transfer-everything-with-dummy.snapshot  verbatim
 dd9e4fc9034ce178ebe183782474da06c88b45aa580f34c0474c1c6c3a9e0cd2  vectors/smoke/ts-transfer-sol-and-spl-with-dummy.answer  verbatim
-1f3d04c52c1d5be96bea092af67337c8dd1f4331ace13ccb77b38b720d40ab20  vectors/smoke/ts-transfer-sol-and-spl-with-dummy.intent  verbatim
-33826e79dc4a6a377e8460c2476388752dd8b1316c1fe340db5648f1ff5ae6f4  vectors/smoke/ts-transfer-sol-and-spl-with-dummy.msg  verbatim
-e803b90300cbe35082af065a7556726bb723015a823296e4e385ed2f52926401  vectors/smoke/ts-transfer-sol-and-spl-with-dummy.pins  verbatim
+ceefd2feb8b6cd5d78034eee639571bc4073f6d5a039419f0913d6aa19b4496a  vectors/smoke/ts-transfer-sol-and-spl-with-dummy.intent  modified
+4c7695f2fadb9b1bbc3f2600e16c9a35696f7711bf18dc56001a19fad5b20534  vectors/smoke/ts-transfer-sol-and-spl-with-dummy.msg  modified
+c158b06d8f0a1eccc3ca3a27d7f4bc3a036e6d5d1f97ac3d3783acbb85ee72f1  vectors/smoke/ts-transfer-sol-and-spl-with-dummy.pins  modified
 b4b569dbdf19c1cdf519878f9e265c8bd02be3170d6f44f0e1fdd45b93d33012  vectors/smoke/ts-transfer-sol-and-spl-with-dummy.snapshot  verbatim
 9f82470dbaba22b409105659a409e6ba6c58d250763037de4f1f82fee6860a82  vectors/smoke/ts-transfer-sol.answer  verbatim
-55ef4a4b626bd15cf907545e06b17de03fc094b13107e3f476c2fe2361b08d1f  vectors/smoke/ts-transfer-sol.intent  verbatim
-c1cbf604ff2617ccaaea8f3f538ca2aae64b819783bda324ad442eeb03189556  vectors/smoke/ts-transfer-sol.msg  verbatim
-e803b90300cbe35082af065a7556726bb723015a823296e4e385ed2f52926401  vectors/smoke/ts-transfer-sol.pins  verbatim
+aa8f673165e3a67fa8996687b6b80e60854e05b6e0f3a8966ecae82a5728fe06  vectors/smoke/ts-transfer-sol.intent  modified
+fdd30d5456faff21c8dd82e29570cb755abf157a1de5c280332c69cdb294fcd1  vectors/smoke/ts-transfer-sol.msg  modified
+c158b06d8f0a1eccc3ca3a27d7f4bc3a036e6d5d1f97ac3d3783acbb85ee72f1  vectors/smoke/ts-transfer-sol.pins  modified
 40efa74539a9436770ff7f50109ae7691b0c79bb43802023fea46decbd34de61  vectors/smoke/ts-transfer-sol.snapshot  verbatim
 96524930ca77f2a8fbe3989403915a48c5a85bdeecfed38698db14dc380dd273  vectors/smoke/ts-transfer-spl.answer  verbatim
-76f84b2ee8f9ad9ce26a88e130039387c610be07fc099b3e76e607c3cafaa417  vectors/smoke/ts-transfer-spl.intent  verbatim
-64328ff9850894f777a7cdaec9360123966381ed74187791473a1bfbc9b6959c  vectors/smoke/ts-transfer-spl.msg  verbatim
-e803b90300cbe35082af065a7556726bb723015a823296e4e385ed2f52926401  vectors/smoke/ts-transfer-spl.pins  verbatim
+60371aec27873648c94789ddf65edf686a9f9ea2b4788395c8c181b0e02bd108  vectors/smoke/ts-transfer-spl.intent  modified
+645b23393252ff3331bdceed1628de42d70a466e354370fa7f4f60491c5cf0b9  vectors/smoke/ts-transfer-spl.msg  modified
+c158b06d8f0a1eccc3ca3a27d7f4bc3a036e6d5d1f97ac3d3783acbb85ee72f1  vectors/smoke/ts-transfer-spl.pins  modified
 142bac8bb6d86339aeaf31abebd0a859fd79d348c87dcc073e98bfd873b2b693  vectors/smoke/ts-transfer-spl.snapshot  verbatim
-dd3f36c754b7234cc52f30089e694a82607a737bc7f1c5c07d34d8580efb942e  vectors/smoke/ts-withdraw-everything-zero-change.answer  verbatim
-62a40634357b91cc02f95bc88595e48b2be320aef3bfb8f42f5ae628b8369a89  vectors/smoke/ts-withdraw-everything-zero-change.intent  verbatim
-19d56c3735373c0714cce995ba0633d230613ca9b70ccc095f797e557879d030  vectors/smoke/ts-withdraw-everything-zero-change.msg  verbatim
-e803b90300cbe35082af065a7556726bb723015a823296e4e385ed2f52926401  vectors/smoke/ts-withdraw-everything-zero-change.pins  verbatim
+a534c842b1b44dec7ca4122af41b23e3937a636550d0f071bbb10154ee539152  vectors/smoke/ts-withdraw-everything-zero-change.answer  modified
+3b14bdf74e523dc5105506fc0d0afcf03d4ad2c1627fd93f493deb10b1dd883c  vectors/smoke/ts-withdraw-everything-zero-change.intent  modified
+4cd4299766985a91c8af020ba7efe4ed1fea01870ac8d99df69acd7a4bf29d7d  vectors/smoke/ts-withdraw-everything-zero-change.msg  modified
+c158b06d8f0a1eccc3ca3a27d7f4bc3a036e6d5d1f97ac3d3783acbb85ee72f1  vectors/smoke/ts-withdraw-everything-zero-change.pins  modified
 40efa74539a9436770ff7f50109ae7691b0c79bb43802023fea46decbd34de61  vectors/smoke/ts-withdraw-everything-zero-change.snapshot  verbatim
 c79c12c2108b62d4dd7b43632305e318a279a7b94be4ca53f6e70d4c72f75758  vectors/smoke/ts-withdraw-with-dummy.answer  verbatim
-43b3391bbc952a8454e238c0cc7f7998baa5b0d4010bfa3b8c3efda07f271124  vectors/smoke/ts-withdraw-with-dummy.intent  verbatim
-4bd38eddd38bbdefb5c08078c29f79452501534e445bec6883d80bb22791187f  vectors/smoke/ts-withdraw-with-dummy.msg  verbatim
-e803b90300cbe35082af065a7556726bb723015a823296e4e385ed2f52926401  vectors/smoke/ts-withdraw-with-dummy.pins  verbatim
+0123beb3c1fdf3908e7d5943d248bc9ca255679cb60d03a898dce5cc260438c1  vectors/smoke/ts-withdraw-with-dummy.intent  modified
+ff941981c62104cfd71c7d1992d186723303975d472b46a8382200bb230e4fc3  vectors/smoke/ts-withdraw-with-dummy.msg  modified
+c158b06d8f0a1eccc3ca3a27d7f4bc3a036e6d5d1f97ac3d3783acbb85ee72f1  vectors/smoke/ts-withdraw-with-dummy.pins  modified
 40efa74539a9436770ff7f50109ae7691b0c79bb43802023fea46decbd34de61  vectors/smoke/ts-withdraw-with-dummy.snapshot  verbatim
 991665a95d9467e0f1583edf09069661740f80089d315959eee4739a8057e4b8  vectors/smoke/tx-viewing-pk.answer  verbatim
 0ac038449d88681e68b4248d4a08f89b7870b7ea60ff19ff91c2e82aa46498d7  vectors/smoke/tx-viewing-pk.intent  verbatim
-e29856f9ad823dafccf8e5aafb4876612674d78afd922fb417a727995c01cb22  vectors/smoke/tx-viewing-pk.msg  verbatim
-3450090b42528af22b8a2a0ae1ac059c5497ec319d0f460922ce5efd051bfd89  vectors/smoke/tx-viewing-pk.pins  verbatim
+bab8490d0b5c8776aebfe38ae1143f22dc0984e545bdc3af0f87d72d04c442e9  vectors/smoke/tx-viewing-pk.msg  modified
+dba8d87b6c70befb11cf5463052b40b26bd90fcc8c1f012f21ee5b72d5dc1a00  vectors/smoke/tx-viewing-pk.pins  modified
 648d3ea3fa11c4f3552585ee309ad7bd8e129ca3920225758b5cb7ee353a3053  vectors/smoke/tx-viewing-pk.snapshot  verbatim
 c79c12c2108b62d4dd7b43632305e318a279a7b94be4ca53f6e70d4c72f75758  vectors/smoke/withdrawal.answer  verbatim
 8f150c5e41a8b069b568f5c57b5485c7068d0ceb6f5f44ecdf6cbb3e62bf95bc  vectors/smoke/withdrawal.intent  verbatim
-4068f57d96a3c16599e20886d4880a1b34c57dc10e1c71dac4f2d2b67ee7a53a  vectors/smoke/withdrawal.msg  verbatim
-3450090b42528af22b8a2a0ae1ac059c5497ec319d0f460922ce5efd051bfd89  vectors/smoke/withdrawal.pins  verbatim
+7e7d950a7985643b34b7c573b9e62d9bbca517031379c8db778f047b9506af64  vectors/smoke/withdrawal.msg  modified
+dba8d87b6c70befb11cf5463052b40b26bd90fcc8c1f012f21ee5b72d5dc1a00  vectors/smoke/withdrawal.pins  modified
 648d3ea3fa11c4f3552585ee309ad7bd8e129ca3920225758b5cb7ee353a3053  vectors/smoke/withdrawal.snapshot  verbatim
-dfad4e85532df8ced4a4c1f4a4ca74ddbb261917779627b2d8958f51754a8fe3  vectors/ts/transfer-everything-with-dummy.json  verbatim
-55f0894cc36050619970b65b66289eb7e47781e0bfd2b5962893eb2585192f8e  vectors/ts/transfer-sol-and-spl-with-dummy.json  verbatim
-228d3436247d35f0150b1992650a43c1faf1ce2075f785e7c8f99e3a7e961648  vectors/ts/transfer-sol.json  verbatim
-eed669bdd9b4a5da50fe1fc2e2c421cc78fa96be27a92d16b3dace6f580dcbc4  vectors/ts/transfer-spl.json  verbatim
-a7bfb16c1ebd13ded54275b6dea382acd76f6c6558c17fcb7c0e153ee4872013  vectors/ts/withdraw-everything-zero-change.json  verbatim
-027285df0940b3855ac03da857e691b165844652d29ddcf77cd83147d82aafc6  vectors/ts/withdraw-with-dummy.json  verbatim
-3b1ff8e1f8ecc09db09d8df810d05ead1884f2cec9e6b7194a87358335cce7b3  vectors/ts2/v-big-sol.json  verbatim
-cdba7ad818ac44de2cab8a84bdfc96cbeed4b71c4e27a3d12c9f1f790cb0e58b  vectors/ts2/v-max-spl.json  verbatim
-e85a56f7def868401795edce736236538f69d6306eb8f4519afd81a01e2201b3  vectors/ts2/v-sol-all-in.json  verbatim
-01e86c5ee88e2125c90b24e45c0306b7212f676641294b2085524112431454b4  vectors/ts2/v-three-inputs.json  verbatim
-ba76d58e2e8cc0f798a80e3c3e11423e5b0f06eac78c1b94de953aa01ad609a7  vectors/ts2/v-withdraw.json  verbatim
+e349ff1e04209aabfce81989689a41aa582a2cca66841e89e2dd976cbea7d549  vectors/ts/transfer-everything-with-dummy.json  modified
+04a6fb3777a9658e9807cee7727796aaa94f76db9afac6deec596cac79042ec7  vectors/ts/transfer-sol-and-spl-with-dummy.json  modified
+9748d013225f8ebc50bd645a2a993aa9cf24902ca2a93546df07eed1cea995c9  vectors/ts/transfer-sol.json  modified
+65331d26a686fc8ca3b5208711568af72e941ebb927aa83360e5c79ef2579a13  vectors/ts/transfer-spl.json  modified
+653b984211141f8dad552bddd9c6f537be36d2cb647b9f9af510a2b845091617  vectors/ts/withdraw-everything-zero-change.json  modified
+606bdb3988ec7ddf3afdd340908397a5a0413954e8104463fad9b9850a68384d  vectors/ts/withdraw-with-dummy.json  modified
+5ca93d7e15eb8c76ae4ae326696a4077f2f60ac1d685506d56e95207512051ee  vectors/ts2/v-big-sol.json  modified
+8d065db007003365c6b275b82793108ee9fb7cb955278e0db10be32576e8c822  vectors/ts2/v-max-spl.json  modified
+d519f888bc20182f0dac3d21fff8ce43bd49ad56fb0a50505d0b633f2dd376ab  vectors/ts2/v-sol-all-in.json  modified
+e764245b4220468234996bfd35cad1a53e7094a1a1c1b3c1087004a7ef85688f  vectors/ts2/v-three-inputs.json  modified
+b0604eccadf4ad762b7c58bc2abcbc16588fd46a0871edec61e9f740b6826b1c  vectors/ts2/v-withdraw.json  modified
 afbf9d0f3560b0fd7795e81c42a0a79ee6b6fc67e064f77826aee642cad28d91  vendor/light-poseidon/.cargo-ok  verbatim
 8c595e08ef710544f04d44f36e2bd6f8f7d2edc4bc9652a5df7bc5eafdd64fa1  vendor/light-poseidon/.cargo_vcs_info.json  verbatim
 501970df9cc80d46d830d0df731dd92e6154af03641c85a72ea8ed47c4ebfb29  vendor/light-poseidon/Cargo.lock  verbatim

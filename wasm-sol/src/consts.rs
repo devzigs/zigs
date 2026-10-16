@@ -49,12 +49,14 @@ pub const REG_UPDATE_KEYS: u8 = 2;
 
 /// System instruction tags: the variant order of `SystemInstruction` in
 /// `solana-system-interface` 3.3.0, written as a `u32`.
+pub const SYS_CREATE_ACCOUNT: u32 = 0;
 pub const SYS_TRANSFER: u32 = 2;
 pub const SYS_CREATE_WITH_SEED: u32 = 3;
 pub const SYS_ADVANCE_NONCE: u32 = 4;
 pub const SYS_WITHDRAW_NONCE: u32 = 5;
 pub const SYS_INIT_NONCE: u32 = 6;
 pub const SYS_AUTHORIZE_NONCE: u32 = 7;
+pub const SYS_TRANSFER_WITH_SEED: u32 = 11;
 
 /// Seed of the group's nonce account (the P2 spike value) and its size in bytes.
 pub const NONCE_SEED: &[u8] = b"zigs-nonce-1";
