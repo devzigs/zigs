@@ -129,13 +129,14 @@ API key. The server gives it to the page at `/sol/config.json`, behind the same 
 other request. So every user of the page can read it. Allowed Domains at Helius limits its use by
 other sites, but it does not protect the key.
 
-Each seat has a **fee address**: an Ed25519 key that its device makes. It pays the fees and the
-rents of the proposals that the seat makes, so the group key never pays. The chain shows it as the
-first account of each such transaction, next to the group key. It has a public SOL funding trail,
-and it links that member to the group. The seat publishes it in a signed document on the group
-server, and every signer of the wallet can read it. The secret of the fee key stays in your
-browser, in the Solana part of the seat secret. The Solana backup file holds it. It never goes to
-Helius.
+Each seat has a **fee address**: an Ed25519 key that the device derives from the Solana key share of
+that seat. It pays the fees and the rents of the proposals that the seat makes, so the group key
+never pays. The chain shows it as the first account of each such transaction, next to the group
+key. It has a public SOL funding trail, and it links that member to the group. The seat publishes
+it in a signed document on the group server, and every signer of the wallet can read it. The page
+stores no fee key: it derives the key again from the key share, so the Solana backup file restores
+it. The key never goes to Helius. Any `t` signers together can rebuild the key share of a seat, so
+they could also spend the SOL on that seat's fee address. Keep only the SOL for fees there.
 
 The link **Get Devnet SOL** opens the Solana faucet (faucet.solana.com) in a new tab. That site is
 not Zigs. It sees your IP address and the fee address that you paste, so it can link the two.
