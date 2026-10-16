@@ -6,3 +6,8 @@
 
 /fonts/*
   Cache-Control: public, max-age=31536000, immutable
+
+# The browser asks again for each script, so one page load never mixes old and new modules.
+# The asset server sends no Cache-Control when the request has an Authorization header.
+/*.js
+  Cache-Control: no-cache
