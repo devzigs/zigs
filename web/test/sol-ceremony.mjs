@@ -484,6 +484,14 @@ const zcash = [1, 2, 3].map((i) => zcashOf(gid, i));
   assert.equal(agreement(view(allOld)).done.pdaOwnerHash, pda.owner_hash, "from the share");
   const half = plain.map((d, i) => (i === 2 ? { ...bare, pda: d.pda } : d));
   assert.equal(agreement(view(half)).state, "differ", "a soldone with a part of the PDA identity");
+  // A browser whose own soldone names no PDA identity checks the one that another seat names.
+  const soloOne = { ...view(plain), host: { ...host, localSeats: () => [1] } };
+  const named = plain.map((d, i) => (i === 1 ? { ...d, pdaNullifierPk: "6".repeat(64) } : bare));
+  const misfit = agreement({ ...soloOne, ...view(named), host: soloOne.host });
+  assert.equal(misfit.state, "differ", "a PDA identity that the share here does not give");
+  assert.match(misfit.why, /PDA identity of the documents does not fit/);
+  const fitting = plain.map((d, i) => (i === 1 ? d : bare));
+  assert.equal(agreement({ ...view(fitting), host: soloOne.host }).state, "agree", "the control");
   // A browser with no seat fits no document: equal documents with a malformed PDA still differ.
   const none = { ...view(plain), host: { ...host, localSeats: () => [] } };
   assert.equal(agreement(none).state, "agree", "the control: no seat, honest documents");

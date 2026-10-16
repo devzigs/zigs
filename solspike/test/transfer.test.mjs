@@ -31,9 +31,8 @@ globalThis.fetch = async (input, init) => {
   return new Response(body, { headers: { "content-type": "application/wasm" } });
 };
 const sdk = await import(new URL("zolana.bundle.js", WEB_SOL).href);
-const { buildProofInputs, ownerSigners, rebuildProofInputs, selectInputs } = await import(
-  new URL("transfer.js", WEB_SOL).href
-);
+const { MAX_INPUTS, buildProofInputs, moveInputs, ownerSigners, rebuildProofInputs, selectInputs } =
+  await import(new URL("transfer.js", WEB_SOL).href);
 await sdk.initializePoseidon();
 
 const scalar = (n) => {
@@ -159,12 +158,22 @@ function selectionSkips() {
   step("selection skips spent, other-tree, non-SOL, data and ring UTXOs");
 }
 
+const ones = (n) => Array.from({ length: n }, (_v, i) => entry(1n, i + 1));
+const countOf = (entries, amount) => selectInputs(sdk, walletOf(entries), TREE, amount).length;
+
 function inputCap() {
-  const many = Array.from({ length: 41 }, (_v, i) => entry(1n, i + 1));
-  assert.equal(selectInputs(sdk, walletOf(many), TREE, 40n).length, 40, "40 UTXOs are allowed");
-  assert.throws(() => selectInputs(sdk, walletOf(many), TREE, 41n), /more than 40 UTXOs/);
-  assert.throws(() => selectInputs(sdk, walletOf(many), TREE, 42n), /does not cover/);
-  step("a payment of more than 40 UTXOs is refused as the SDK refuses it, with a merge hint");
+  assert.equal(MAX_INPUTS, 16, "one execute of the program carries at most 18 inputs");
+  assert.equal(countOf(ones(8), 7n), 8, "7 UTXOs have no circuit: one more makes 8, with change");
+  assert.throws(() => countOf(ones(7), 7n), /needs 7 UTXOs, and no proof takes that many/);
+  assert.equal(countOf(ones(16), 16n), 16, "16 UTXOs are allowed");
+  assert.throws(() => countOf(ones(20), 17n), /needs 17 UTXOs/);
+  assert.throws(() => countOf(ones(20), 21n), /does not cover/);
+  for (const [n, want] of [[3, 3], [7, 6], [9, 8], [41, 16]]) {
+    const moved = moveInputs(sdk, walletOf(ones(n)), TREE);
+    assert.equal(moved.length, want, `a move of ${n} UTXOs takes ${want}`);
+  }
+  assert.throws(() => moveInputs(sdk, walletOf([]), TREE), /holds no private SOL/);
+  step("a spend takes a count of UTXOs that has a circuit, at most 16; a move takes whole UTXOs");
 }
 
 function ownersOfOutputs() {
@@ -192,6 +201,28 @@ function exactAmountHasNoChange() {
     "an exact payment has a change output",
   );
   step("an exact payment has no change output");
+}
+
+function aMoveTakesWholeUtxos() {
+  const notes = Array.from({ length: 7 }, (_v, i) => entry(BigInt(i + 1), i + 1));
+  const whole = (amount) =>
+    buildProofInputs(sdk, client, session, walletOf(notes), {
+      recipient: payee.address,
+      amount,
+      expiry: EXPIRY,
+      payer: PAYER,
+      whole: true,
+    }).proofInputs;
+  const moved = whole(28n);
+  assert.equal(moved.inputUtxos.filter((u) => !u.isDummy()).length, 6, "the 6 largest of 7");
+  const real = moved.outputs.filter((o) => !o.isDummy());
+  assert.deepEqual(
+    real.map((o) => o.amount),
+    [27n],
+    "the move pays its inputs whole to the payee, with no change",
+  );
+  assert.throws(() => whole(26n), /takes more than the page asked for/);
+  step("a move takes whole UTXOs, pays them whole, and stays under the bound of the page");
 }
 
 function theFeeKeyPaysAndTheGroupIsTheOwnerSigner() {
@@ -376,6 +407,7 @@ selectionSkips();
 inputCap();
 ownersOfOutputs();
 exactAmountHasNoChange();
+aMoveTakesWholeUtxos();
 await ownerSignersEqualTheSdk();
 aPaymentIsRebuiltWithItsCommitmentForAnyPayer();
 aRebuildRefusesTheGroupKeyAMissingInputAndAnAccountTag();

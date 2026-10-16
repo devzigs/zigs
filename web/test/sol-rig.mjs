@@ -123,7 +123,8 @@ class Offline {
 function makeStore() {
   const data = new Map(),
     subs = [];
-  const hook = { before: (_path, value) => value };
+  // `before` may change a write; `lease(path)` says whether a lease of the path is free.
+  const hook = { before: (_path, value) => value, lease: () => true };
   const under = (p) =>
     [...data.keys()].filter((k) => k.startsWith(p + "/") && !k.slice(p.length + 1).includes("/"));
   const notify = () => {
@@ -155,7 +156,7 @@ function makeStore() {
       return { exists: data.has(p), data: () => data.get(p) };
     },
     async acquire() {
-      return { acquired: true };
+      return { acquired: hook.lease(p) };
     },
     onSnapshot: (cb) =>
       listen(p, () =>

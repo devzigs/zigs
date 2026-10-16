@@ -252,15 +252,47 @@ function answersOf(chain) {
       const parts = wire(tx),
         err = refusal(chain, parts, true);
       if (err) throw new Error("Transaction simulation failed: " + err);
-      return land(chain, parts);
+      return SENDS[chain.sendMode ?? "land"](chain, parts);
     },
-    status: ({ signature }) => {
+    status: ({ signature }) => statusOf(chain, signature, "pending"),
+    confirm: ({ signature }) => statusOf(chain, signature, "unknown"),
+    transaction: ({ signature }) => {
       const found = chain.landed.find((x) => x.signature === signature);
-      return found ? { status: "confirmed", slot: "10" } : { status: "none", slot: "" };
+      if (found) return { found: true, failed: false, tx: wireOf(found) };
+      return chain.txs.get(signature) ?? { found: false, failed: false, tx: "" };
     },
   };
-  return { ...answers, confirm: answers.status };
+  return answers;
 }
+
+const signatureOf = (parts) => base58(hex(parts.sigs[0]));
+// How a sent transaction ends: it lands now, it fails on chain (the simulation passed), or it
+// lands later, when the test calls `chain.release()`.
+const SENDS = {
+  land,
+  fail: (chain, parts) => {
+    chain.failed.add(signatureOf(parts));
+    return { signature: signatureOf(parts) };
+  },
+  late: (chain, parts) => {
+    chain.late.push(parts);
+    return { signature: signatureOf(parts) };
+  },
+};
+
+function statusOf(chain, signature, notYet) {
+  if (chain.failed.has(signature)) return { status: "failed", slot: "10" };
+  const pending = chain.late.some((parts) => signatureOf(parts) === signature);
+  if (pending) return { status: notYet, slot: "" };
+  const found = chain.landed.find((x) => x.signature === signature);
+  return found ? { status: "confirmed", slot: "10" } : { status: "none", slot: "" };
+}
+
+// The wire bytes of a landed transaction (base64): the message, then its signatures.
+const wireOf = (landed) => {
+  const parts = [landed.message, ...landed.sigs].map((text) => Buffer.from(text, "hex"));
+  return Buffer.concat(parts).toString("base64");
+};
 
 const pick = (object, names) => Object.fromEntries(names.map((name) => [name, object[name]]));
 
@@ -311,7 +343,15 @@ export function makeChain() {
     landed: [], // { signature, message, sig }
     commands: [], // every message that the page posted to the Worker
     refuse: null, // a text: the next preflight, simulation or send fails with it
+    sendMode: null, // "fail" or "late": how a send ends (see SENDS); null lands it
+    failed: new Set(), // the signatures of sends that failed on chain
+    late: [], // the sends that land when the test calls chain.release()
+    txs: new Map(), // answers of `transaction` for signatures that did not land here
     drop: null, // a command name: the Worker never answers it (a crash)
+  };
+  // The late sends land now, in order.
+  chain.release = () => {
+    for (const parts of chain.late.splice(0)) land(chain, parts);
   };
   let installed = null;
   chain.install = () => {

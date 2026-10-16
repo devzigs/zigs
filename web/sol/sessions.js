@@ -107,8 +107,13 @@ export const BEFORE_FEE = "This proposal is from before the fee keys. Propose it
 // approval signature must be there.
 const SIGNATURE = /^[0-9a-f]{128}$/;
 const TX_ID = /^[1-9A-HJ-NP-Za-km-z]{64,90}$/;
+// A payment counts as sent only when its execute landed: a failed execute leaves the approval
+// valid, so the session stays signed and a seat tries again.
+const LANDED = new Set(["confirmed", "finalized"]);
 const sentMatches = (d) => {
-  if (isPayment(d)) return SIGNATURE.test(d.signature) && TX_ID.test(String(d.txId));
+  if (isPayment(d)) {
+    return SIGNATURE.test(d.signature) && TX_ID.test(String(d.txId)) && LANDED.has(d.outcome);
+  }
   const first = beforeFee(d) ? d.signature : d.feeSig;
   return SIGNATURE.test(d.signature) && SIGNATURE.test(first) && d.txId === base58(first);
 };

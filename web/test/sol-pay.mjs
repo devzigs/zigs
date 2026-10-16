@@ -16,7 +16,7 @@ import { createHash } from "node:crypto";
 import { approve, deviceSeen, reviewOf } from "../sol/approve.js";
 import { agreement } from "../sol/ceremony.js";
 import { base58 } from "../sol/docs.js";
-import { executorOf } from "../sol/execute.js";
+import { EXECUTE_TRIES, executorOf, tryAgain } from "../sol/execute.js";
 import { ZERO_KEY, bytesOf, decodeIntent, readVerdict } from "../sol/intent.js";
 import { savedNonces, saveNonces } from "../sol/nonces.js";
 import { feeOf } from "../sol/fee.js";
@@ -34,6 +34,7 @@ import {
   data,
   feeAddress,
   gid,
+  hook,
   notify,
   path,
   proposed,
@@ -141,7 +142,8 @@ chain.reproved = (args) => {
   reproofs += 1;
   assert.equal(args.recipient, G.payee.address);
   const expiry = decodeIntent(ssOf(current).intent).expiry;
-  return { data: transactOf(G.pay, expiry, { proof: "0" + reproofs, root: 200 + reproofs }) };
+  const proof = (reproofs % 256).toString(16).padStart(2, "0");
+  return { data: transactOf(G.pay, expiry, { proof, root: 200 + reproofs }) };
 };
 let current = null;
 // The fixture has one salt and one input, and this device refuses a pair that it approved before
@@ -155,8 +157,9 @@ let lastSecond = 0;
 const tick = () => new Promise((go) => setTimeout(go, 50));
 const proposedPay = async () => {
   while (Math.floor(Date.now() / 1000) <= lastSecond) await tick();
-  lastSecond = Math.floor(Date.now() / 1000);
-  return proposed("pay", { recipient: G.payee.address, amount: "0.002" });
+  const id = await proposed("pay", { recipient: G.payee.address, amount: "0.002" });
+  lastSecond = Math.floor(Date.now() / 1000); // the page took the expiry before this
+  return id;
 };
 
 // ── No screen and no approval before the device has read its wallet and the account ──
@@ -220,7 +223,8 @@ step("propose creates the proposal account first; no screen before the reads of 
   assert.equal(rows.Amount, "0.002 SOL");
   const fees = "0.000005 SOL at the proposal, 0.000010162 SOL at the execute.";
   assert.equal(rows["Network fees"], fees, "two signatures and the tree fee at the execute");
-  assert.equal(rows["Proposal rent"], "0.00135636 SOL, back to seat 1 at the execute.");
+  const rent = "0.00135636 SOL, back to seat 1 at the execute (kept if the proposal expires).";
+  assert.equal(rows["Proposal rent"], rent);
   assert.equal(rows["Proposal account"], base58(ssOf(id).account));
   assert.ok(rows.Public.includes(LINK_TEXT), "the screen says that the fee address links");
   assert.match(textOf(marked("pay-cost")[0]), /pays 0\.000005 SOL .* holds 0\.00135636 SOL/);
@@ -262,6 +266,93 @@ step("two seats approve the digest once, and the proposing seat executes a fresh
 }
 step("a stale root at the execute is proved again, and the one approval still holds");
 
+const pause = (ms) => new Promise((go) => setTimeout(go, ms));
+const count = (cmd) => chain.commands.filter((m) => m.cmd === cmd).length;
+
+// ── An execute that fails on chain is a counted try, not a sent mark ──
+{
+  await forgetPairs();
+  const id = await proposedPay();
+  current = id;
+  chain.sendMode = "fail";
+  await approve(c, ssOf(id), 1);
+  await approve(c, ssOf(id), 2);
+  await waitFor("a failed execute", () => /failed on chain/.test(c.execErrors[id] ?? ""));
+  assert.equal(ssOf(id).status, "signed", "a failed execute is no sent mark");
+  assert.ok(chain.accounts.has(base58(ssOf(id).account)), "the account and the approval stay");
+  chain.sendMode = null;
+  await waitStatus(id, "sent");
+  const landed = chain.landed.some((x) => x.signature === ssOf(id).txId);
+  assert.ok(landed, "the mark names the execute that landed");
+}
+step("an execute that fails on chain is tried again, and only a landed execute is marked");
+
+// ── An execute that lands late: no second send while it may land, and the mark names it ──
+{
+  await forgetPairs();
+  const id = await proposedPay();
+  current = id;
+  chain.sendMode = "late";
+  const sent = count("send");
+  await approve(c, ssOf(id), 1);
+  await approve(c, ssOf(id), 2);
+  await waitFor("the late execute", () => chain.late.length === 1);
+  await pause(7000);
+  assert.equal(count("send"), sent + 1, "no second execute while the first one may land");
+  assert.equal(c.tries[id] ?? 0, 0, "an execute that may land is no counted try");
+  chain.sendMode = null;
+  chain.release();
+  await waitStatus(id, "sent");
+  assert.equal(ssOf(id).txId, chain.landed.at(-1).signature, "the execute that landed late");
+  assert.equal(count("send"), sent + 1, "one execute in all");
+}
+step("an execute that lands late is not sent twice, and the mark names it");
+
+// ── The lease of another device holds the execute back; the last try waits for a click ──
+{
+  await forgetPairs();
+  const id = await proposedPay();
+  current = id;
+  // Another device holds the lease of the execute (the signing round has its own leases).
+  hook.lease = (p) => !(p.endsWith("/" + id) && ssOf(id)?.status === "signed");
+  const sims = count("simulate");
+  await approve(c, ssOf(id), 1);
+  await approve(c, ssOf(id), 2);
+  await waitStatus(id, "signed");
+  await pause(5000);
+  assert.equal(count("simulate"), sims, "no execute while another device holds the lease");
+  hook.lease = () => true;
+  chain.refuse = "Custom 9999";
+  await waitFor("the tries", () => (c.tries[id] ?? 0) >= EXECUTE_TRIES, 60000);
+  const tried = count("simulate");
+  await pause(5000);
+  assert.equal(count("simulate"), tried, "no try after the last one without a click");
+  assert.equal(marked("execute-" + id).length, 1, "the card offers to try again");
+  chain.refuse = null;
+  tryAgain(c, ssOf(id)); // the button of the card
+
+  await waitStatus(id, "sent");
+}
+step("an execute waits for the lease of another device, and stops after its tries");
+
+// ── A create that fails writes no session; a create that lands late is waited for ──
+{
+  await forgetPairs();
+  const stored = () => [...data.keys()].filter((k) => k.includes("solsessions/")).length;
+  const before = stored();
+  chain.sendMode = "fail";
+  await assert.rejects(() => proposedPay(), /not confirmed yet \(failed\)/);
+  assert.equal(stored(), before, "no session for a create that failed");
+  chain.sendMode = "late";
+  setTimeout(() => {
+    chain.sendMode = null;
+    chain.release();
+  }, 5000);
+  const id = await proposedPay();
+  assert.ok(chain.accounts.has(base58(ssOf(id).account)), "the late create landed first");
+}
+step("a create that fails on chain writes no session, and a late create is waited for");
+
 // ── An account that another device executed is read back as sent ──
 {
   await forgetPairs();
@@ -274,15 +365,28 @@ step("a stale root at the execute is proved again, and the one approval still ho
   await approve(c, ssOf(id), 1);
   await approve(c, ssOf(id), 2);
   await waitFor("a refused try", () => (c.tries[id] ?? 0) >= 1);
-  chain.accounts.delete(base58(ss.account));
-  chain.history.set(base58(ss.account), [
-    { signature: "5".repeat(88), failed: true, slot: "13" },
+  // Someone sent lamports to the open account, then the execute of another device closed it.
+  // Later, someone sent lamports to the address again (a System account now) and landed a
+  // transaction that names it. Only the execute carries the approval of this payment.
+  const address = base58(ss.account);
+  chain.accounts.set(address, { owner: "00".repeat(32), data: "" });
+  const [early, late] = ["6".repeat(88), "7".repeat(88)];
+  chain.history.set(address, [
+    { signature: late, failed: false, slot: "14" },
     { signature: elsewhere, failed: false, slot: "12" },
-    ...(chain.history.get(base58(ss.account)) ?? []),
+    { signature: "5".repeat(88), failed: true, slot: "11" },
+    { signature: early, failed: false, slot: "10" },
+    ...(chain.history.get(address) ?? []),
   ]);
+  const base64 = (text) => Buffer.from(text, "hex").toString("base64");
+  const tx = (text) => ({ found: true, failed: false, tx: base64(text) });
+  chain.txs.set(elsewhere, tx("aa" + ssOf(id).signature + "bb"));
+  // A failed execute of this payment by another device carries the approval too.
+  chain.txs.set("5".repeat(88), { ...tx("dd" + ssOf(id).signature), failed: true });
+  for (const other of [early, late]) chain.txs.set(other, tx("cc".repeat(80)));
   chain.refuse = before;
   await waitStatus(id, "sent");
-  assert.equal(ssOf(id).txId, elsewhere, "the transaction that closed the account");
+  assert.equal(ssOf(id).txId, elsewhere, "the transaction that holds the approval");
 }
 step("an execute that another device landed is read back from the history of the account");
 
@@ -312,6 +416,9 @@ step("an account that is gone with no execute in its history ends the session");
   const read = (txId) => readSolSession("x", { ...d, txId }, () => "yes").ss?.status;
   assert.equal(read("4".repeat(88)), "sent", "the control");
   assert.equal(read("short"), "signed", "a sent mark with no transaction id does not count");
+  const failedMark = { ...d, txId: "4".repeat(88), outcome: "failed" };
+  const status = readSolSession("x", failedMark, () => "yes").ss?.status;
+  assert.equal(status, "signed", "a failed execute does not count as sent");
 }
 step("the sent mark of a payment needs a transaction id");
 
@@ -324,7 +431,8 @@ step("the sent mark of a payment needs a transaction id");
   assert.equal(marked("create-nonce").length, 1, "first the nonce account");
   assert.equal(marked("move-funds").length, 0);
   c.chain = { ...c.chain, nonce: "created" };
-  assert.match(textOf(marked("move-funds")[0]), /^Move 0\.005 SOL to the program address$/);
+  assert.equal(textOf(marked("move-funds")[0]), "Move to the program address");
+  assert.equal(textOf(marked("move-held")[0]), "Old address: 0.005 SOL", "the balance to move");
   c.sync = { ...c.sync, oldBalance: "0" };
   assert.equal(marked("move").length, 0, "no card once the funds moved");
   Object.assign(c, kept);
@@ -346,12 +454,16 @@ step("a payment past its expiry ends with a clear text");
 
 // ── The move of the beta funds: the last payment with a nonce ──
 {
-  chain.oldUtxos = [utxoOf(G.migrate)];
+  // A second old note that this move does not take: the Worker moves whole UTXOs, as many as one
+  // proof takes, and the intent names what it moves, not the old balance.
+  const extra = { ...utxoOf(G.migrate), hash: "ee".repeat(32), amount: "1000" };
+  chain.oldUtxos = [utxoOf(G.migrate), extra];
   chain.inspected = { salt: G.migrate.salt, firstNullifier: G.migrate.inputs[0].nullifier };
+  const moved = BigInt(G.migrate.inputs[0].amount);
   chain.prepared = (args) => {
     assert.equal(args.kind, "migrate", "the move spends the group key");
     assert.equal(args.recipient, G.group.pdaAddress, "to the PDA address of the group");
-    assert.equal(args.amount, G.migrate.inputs[0].amount, "the whole balance");
+    assert.equal(args.amount, String(moved + 1000n), "the old balance is the bound of the move");
     return preparedOf(G.migrate, args);
   };
   const nonceRun = await proposed("createNonce");
@@ -360,6 +472,7 @@ step("a payment past its expiry ends with a clear text");
   await waitStatus(nonceRun, "sent");
   const id = await proposed("migrate");
   assert.equal(decodeIntent(ssOf(id).intent).kind, "transfer");
+  assert.equal(decodeIntent(ssOf(id).intent).amount, moved, "the intent names the moved amount");
   await approve(c, ssOf(id), 1);
   await approve(c, ssOf(id), 2);
   await waitStatus(id, "sent");

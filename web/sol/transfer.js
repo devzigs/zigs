@@ -30,31 +30,44 @@ const isSpendable = (sdk, tree, e) =>
   e.outputContext.tree === tree &&
   isPlain(e);
 
-// ponytail: the SDK limit of a wallet spend (MAX_SPEND_INPUTS in flows/select.ts, not exported).
-// A wider spend gets a wider proof shape that does not fit one transaction. Ceiling: this copy
-// drifts if the SDK changes its limit. Upgrade path: read the limit from the SDK once exported.
-const MAX_INPUTS = 40;
+// The input counts that have a circuit with two outputs (wasm-sol consts.rs SUPPORTED_SHAPES), up
+// to 16: one execute of the approvals program carries at most 18 inputs (ZOLANA.md 7.2, R7). The
+// SDK pads any other count with a dummy input, and the checker refuses a padded proof.
+const COUNTS = [1, 2, 3, 4, 5, 6, 8, 12, 16];
+export const MAX_INPUTS = COUNTS.at(-1);
 
-/** The synced SOL UTXOs of `tree` that cover `amount`, largest first (the SDK default). */
-export function selectInputs(sdk, wallet, tree, amount) {
-  if (amount <= 0n) throw new Error("the amount must be more than zero");
-  const sorted = wallet
+const spendable = (sdk, wallet, tree) =>
+  wallet
     .utxos()
     .filter((e) => isSpendable(sdk, tree, e))
     .sort(largestFirst);
-  const picked = [];
-  let held = 0n;
-  for (const entry of sorted.slice(0, MAX_INPUTS)) {
-    if (held >= amount) break;
-    picked.push(entry);
-    held += entry.utxo.amount;
+
+/**
+ * The synced SOL UTXOs of `tree` that cover `amount`: largest first (the SDK default), then more
+ * until their count has a circuit. Option D has no merge, so a wider spend is refused.
+ */
+export function selectInputs(sdk, wallet, tree, amount) {
+  if (amount <= 0n) throw new Error("the amount must be more than zero");
+  const sorted = spendable(sdk, wallet, tree);
+  let [held, needed] = [0n, 0];
+  while (needed < sorted.length && held < amount) held += sorted[needed++].utxo.amount;
+  if (held < amount) throw new Error("the synced balance does not cover the amount");
+  const count = COUNTS.find((k) => k >= needed && k <= sorted.length);
+  if (count === undefined) {
+    throw new Error(
+      `the payment needs ${needed} UTXOs, and no proof takes that many: send at most what ` +
+        `${MAX_INPUTS} UTXOs hold, or less`,
+    );
   }
-  if (held >= amount) return picked;
-  const total = sorted.reduce((sum, e) => sum + e.utxo.amount, 0n);
-  if (total >= amount) {
-    throw new Error(`the payment needs more than ${MAX_INPUTS} UTXOs: merge first`);
-  }
-  throw new Error("the synced balance does not cover the amount");
+  return sorted.slice(0, count);
+}
+
+/** The UTXOs of one move of the beta funds: as many whole UTXOs as one proof takes. */
+export function moveInputs(sdk, wallet, tree) {
+  const sorted = spendable(sdk, wallet, tree);
+  const count = COUNTS.findLast((k) => k <= sorted.length);
+  if (count === undefined) throw new Error("the group key holds no private SOL to move");
+  return sorted.slice(0, count);
 }
 
 function proofInput(sdk, entry, address) {
@@ -114,17 +127,24 @@ function checkPayer(identity, payer) {
   }
 }
 
+const sumOf = (entries) => entries.reduce((sum, e) => sum + e.utxo.amount, 0n);
+
 /**
  * The proof inputs that pay `amount` to `recipient` (a ShieldedAddress) from the synced wallet of
  * `identity` ({ address, viewing, owner, groupOwner }), with the change to the owner and `expiry`
- * bound. `payer` (a base58 address) pays the fee: it is not the owner. Returns { proofInputs,
+ * bound. `payer` (a base58 address) pays the fee: it is not the owner. With `whole`, the proof
+ * moves whole UTXOs (moveInputs) and `amount` is the most that it may move. Returns { proofInputs,
  * tree }: the tree is the one that every input sits in.
  */
 export function buildProofInputs(sdk, client, identity, wallet, request) {
-  const { recipient, amount, expiry, payer } = request;
+  const { recipient, expiry, payer } = request;
   checkPayer(identity, payer);
   const { tree } = client;
-  const picked = selectInputs(sdk, wallet, tree, amount);
+  const picked = request.whole
+    ? moveInputs(sdk, wallet, tree)
+    : selectInputs(sdk, wallet, tree, request.amount);
+  const amount = request.whole ? sumOf(picked) : request.amount;
+  if (amount > request.amount) throw new Error("the move takes more than the page asked for");
   const inputs = picked.map((entry) => proofInput(sdk, entry, identity.address));
   const transfer = new sdk.ConfidentialTransfer(identity.address, inputs, payer);
   transfer.send(recipient, sdk.SOL_MINT, amount);

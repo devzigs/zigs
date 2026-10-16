@@ -6,14 +6,24 @@
 // pays the fee of the execute; the rent of the proposal account goes back to the proposing seat.
 // The proposing seat executes when this browser holds it; any other ready seat may.
 //
-// A proposal account that is gone before the expiry was executed by another device (the page
-// never cancels, and only the fee key of the proposing seat could): the page writes the sent mark
-// with the transaction that closed it.
+// An execute that this tab sent and that may still land is checked before any other send: a
+// blockhash lives about 60 to 90 s, so a second execute waits until the first one landed, failed
+// or ran out of time. Only a confirmed execute is a sent mark; a failed one is a counted try.
+// A proposal account that is gone (or holds no body any more) was executed by another device: the
+// page writes the sent mark with the transaction that holds the approval of this payment.
 import { agreement } from "./ceremony.js";
 import { base58 } from "./docs.js";
 import { feeProblem, poorFeeText, readyFee } from "./fee.js";
 import { writerSeats } from "./gate.js";
-import { bytesOf, decodeIntent, intentHex, pinsHex, snapshotHex, wireBase64 } from "./intent.js";
+import {
+  bytesOf,
+  decodeIntent,
+  hexOf,
+  intentHex,
+  pinsHex,
+  snapshotHex,
+  wireBase64,
+} from "./intent.js";
 import { rolesOf, signAsFee } from "./approve.js";
 import { ensureWorker } from "./session.js";
 import { SESSIONS, writePart } from "./sessions.js";
@@ -22,6 +32,14 @@ import { SESSIONS, writePart } from "./sessions.js";
 export const EXECUTE_TRIES = 3;
 const STALE_ROOT = /\b7008\b/;
 const HOLDER = crypto.randomUUID();
+// A blockhash lives 150 slots; a sent execute is past it well before this.
+const SEND_WINDOW_MS = 150_000;
+const CONFIRMED = new Set(["confirmed", "finalized"]);
+const FAILED = "The execute failed on chain. Zigs proves it again.";
+// A sent execute that may still land: no new send, and no counted try.
+const PENDING = "The execute is not confirmed yet.";
+// The history entries that the page reads to find the execute of a gone account.
+const LOOK = 6;
 const sleep = (ms) => new Promise((done) => setTimeout(done, ms));
 const errorText = (e) => String(e?.message ?? e).slice(0, 300);
 
@@ -77,15 +95,32 @@ function refusalOf(sim, seat) {
   return poorFeeText(sim, seat) ?? "The network refused the execute: " + sim.err;
 }
 
+/** True when the account holds the proposal of `ss`: kind 1, a bump, then its body. */
+const holdsBody = (account, ss) =>
+  account.exists &&
+  /^01[0-9a-f]{2}/.test(String(account.data)) &&
+  account.data.slice(4) === String(ss.body);
+
+const bytesOfBase64 = (text) => Uint8Array.from(atob(text), (ch) => ch.charCodeAt(0));
+
 /**
- * The account is gone: the newest transaction that succeeded on it, other than its create, closed
- * it. ponytail: the page reads no instruction of that transaction. Ceiling: a cancel by the fee
- * key of the proposing seat before the expiry would read as the execute; the page never cancels.
- * Upgrade path: read the Ed25519 instruction of the transaction and compare the digest.
+ * The oldest successful transaction on the account that carries the approval signature of this
+ * payment: the execute. No other transaction that names the address carries it.
  */
+async function closingExecute(worker, ss, found) {
+  const tried = found.filter((x) => !x.failed).slice(0, LOOK);
+  for (const x of tried.reverse()) {
+    const got = await worker.call("transaction", { signature: x.signature });
+    const holds = got.found && hexOf(bytesOfBase64(got.tx)).includes(ss.signature);
+    if (holds) return x;
+  }
+  return null;
+}
+
+/** The account is gone: the transaction that executed it, read from its history, is the mark. */
 async function landedElsewhere(c, worker, ss, seat, failSession) {
   const found = await worker.call("history", { account: base58(ss.account) });
-  const closed = found.find((x) => !x.failed && x.signature !== ss.createTx);
+  const closed = await closingExecute(worker, ss, found);
   if (!closed) {
     await failSession(c, ss, "The proposal account is gone, and no execute of it landed.");
     return;
@@ -94,24 +129,61 @@ async function landedElsewhere(c, worker, ss, seat, failSession) {
   await writePart(c, ss.id, "sent", mark, { seat });
 }
 
+const markSent = (c, ss, seat, txId, seen) =>
+  writePart(c, ss.id, "sent", { txId, slot: seen.slot, outcome: seen.status }, { seat });
+
+/** True when the execute that this tab sent before landed and is marked now. */
+async function landedBefore(c, worker, ss, seat) {
+  const sent = c.sending[ss.id];
+  if (!sent) return false;
+  const seen = await worker.call("status", { signature: sent.txId });
+  if (CONFIRMED.has(seen.status)) {
+    delete c.sending[ss.id];
+    await markSent(c, ss, seat, sent.txId, seen);
+    return true;
+  }
+  if (seen.status !== "failed" && Date.now() - sent.at < SEND_WINDOW_MS) throw new Error(PENDING);
+  delete c.sending[ss.id];
+  return false;
+}
+
+/** What the confirm of a sent execute decides: the mark, a counted failure or a later check. */
+function afterConfirm(c, ss, seat, txId, seen) {
+  if (!CONFIRMED.has(seen.status) && seen.status !== "failed") throw new Error(PENDING);
+  delete c.sending[ss.id];
+  if (seen.status === "failed") throw new Error(FAILED);
+  return markSent(c, ss, seat, txId, seen);
+}
+
 async function attempt(c, ss, seat, failSession) {
   const worker = await ensureWorker(c);
   const ref = c.host.sdb.doc(c.base + "/" + SESSIONS + "/" + ss.id);
   if (!(await ref.acquire({ holder: HOLDER, ttlMs: 120_000 })).acquired) return sleep(3000);
+  if (await landedBefore(c, worker, ss, seat)) return undefined;
   const account = await worker.call("account", { account: base58(ss.account) });
-  if (!account.exists) return landedElsewhere(c, worker, ss, seat, failSession);
+  if (!holdsBody(account, ss)) return landedElsewhere(c, worker, ss, seat, failSession);
   const { tx, txId } = await signedExecute(c, worker, ss, seat);
   const sim = await worker.call("simulate", { tx });
   if (sim.err !== null) throw new Error(refusalOf(sim, seat));
   await worker.call("send", { tx });
+  c.sending[ss.id] = { txId, at: Date.now() };
   const seen = await worker.call("confirm", { signature: txId });
-  if (seen.status === "unknown") throw new Error("The execute is not confirmed yet.");
-  return writePart(c, ss.id, "sent", { txId, slot: seen.slot, outcome: seen.status }, { seat });
+  return afterConfirm(c, ss, seat, txId, seen);
 }
 
 /**
- * The reactor step of a signed payment. A failed try is counted; after EXECUTE_TRIES the card shows
- * the last error and a button that tries again. The approval stays valid until the expiry.
+ * The button after the last try: the tries of this tab start again. `once` ends with a pass of
+ * the reactor, which runs the execute; a redraw alone would not.
+ */
+export function tryAgain(c, ss) {
+  delete c.tries[ss.id];
+  c.host.once("sol:retry:" + ss.id, async () => {});
+}
+
+/**
+ * The reactor step of a signed payment. A failed try is counted (an execute that may still land is
+ * not); after EXECUTE_TRIES the card shows the last error and a button that tries again. The
+ * approval stays valid until the expiry.
  */
 export function maybeExecute(c, ss, { launch, failSession }) {
   const seat = executorOf(c, ss);
@@ -121,7 +193,7 @@ export function maybeExecute(c, ss, { launch, failSession }) {
       await attempt(c, ss, seat, failSession);
       delete c.execErrors[ss.id];
     } catch (e) {
-      c.tries[ss.id] = (c.tries[ss.id] ?? 0) + 1;
+      if (errorText(e) !== PENDING) c.tries[ss.id] = (c.tries[ss.id] ?? 0) + 1;
       c.execErrors[ss.id] = errorText(e);
       throw e;
     }

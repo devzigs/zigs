@@ -37,6 +37,9 @@ import { pairsBefore } from "./spend.js";
 /** A proof binds an expiry: 23 hours, inside the 24 hour window of the checker and its skew. */
 const EXPIRY_SECS = 23 * 3600;
 const CONFIRMED = new Set(["confirmed", "finalized"]);
+// A blockhash lives 150 slots: a create that is not confirmed after this did not land.
+const LAND_WINDOW_MS = 150_000;
+const sleep = (ms) => new Promise((done) => setTimeout(done, ms));
 
 const newId = () => hexOf(crypto.getRandomValues(new Uint8Array(16)));
 
@@ -107,6 +110,17 @@ async function proved(worker, kind, { payee, amount }, fee) {
   return { prepared, fields, terms: { expiry, ...counts, payee, amount } };
 }
 
+/** The status of a sent transaction once it landed or failed, or at the end of its blockhash. */
+async function settled(worker, txId) {
+  const end = Date.now() + LAND_WINDOW_MS;
+  let seen = await worker.call("confirm", { signature: txId });
+  while (!CONFIRMED.has(seen.status) && seen.status !== "failed" && Date.now() < end) {
+    await sleep(3000);
+    seen = await worker.call("status", { signature: txId });
+  }
+  return seen;
+}
+
 /** The test run, the send and the confirmation of a transaction that the fee key signed alone. */
 async function land(worker, message, signature, seat) {
   const tx = wireBase64(message, bytesOf(signature));
@@ -114,7 +128,7 @@ async function land(worker, message, signature, seat) {
   if (run.err !== null) throw new Error(refusalOf(run, seat));
   await worker.call("send", { tx });
   const txId = base58(signature);
-  const seen = await worker.call("confirm", { signature: txId });
+  const seen = await settled(worker, txId);
   if (!CONFIRMED.has(seen.status)) {
     throw new Error("The proposal account is not confirmed yet (" + seen.status + "): " + txId);
   }
@@ -167,6 +181,8 @@ async function migrationDraft(c, worker, seat, fee) {
   if (amount <= 0n) throw new Error("The group key holds no private SOL to move.");
   const typed = { payee: done.pdaAddress, amount };
   const { prepared, fields, terms } = await proved(worker, "migrate", typed, fee);
+  // One move takes as many whole UTXOs as one proof can: the intent names what this one moves.
+  terms.amount = BigInt(prepared.outputs.find((o) => o.role === "payee").amount);
   const { nonce } = await lifetimeOf(worker, "transfer", done.groupKey);
   fields.intent = intentHex("transfer", { ...terms, nonce });
   const spend = await draftSpend(c, worker, prepared);

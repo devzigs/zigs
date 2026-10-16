@@ -401,6 +401,23 @@ function pdaOf(c, dones) {
 }
 
 /**
+ * Why a key share of this browser does not fit the documents, or null: its own soldone, and the
+ * PDA identity that a soldone of another seat names (its own may be from before the PDA).
+ */
+function localMisfit(c, dones) {
+  const { host, W, docs } = c;
+  const mine = host.localSeats().filter((i) => solOf(host, c.gid, i).keyPackage);
+  const bad = mine.find((i) => !fitsSolana(W, i, solOf(host, c.gid, i), docs.soldone[i]));
+  if (bad) return "The Solana key share of seat " + bad + " does not fit.";
+  const named = dones.find(hasPda);
+  const seat = mine.find((i) => holdsShare(solOf(host, c.gid, i)));
+  if (!named || seat === undefined) return null;
+  const own = pdaFields(W, solOf(host, c.gid, seat));
+  const fits = PDA_FIELDS.every((k) => own[k] === named[k]);
+  return fits ? null : "The PDA identity of the documents does not fit the key share here.";
+}
+
+/**
  * What the seats published. "wait": a seat has not finished. "agree": every soldone is equal and
  * well formed and each key share of this browser fits its own. Else "differ", with a reason.
  * `done` is the common document when they agree.
@@ -414,9 +431,7 @@ export function agreement(c) {
     samePackages(dones.map((d) => d.publicKeyPackage));
   if (!same || !shaped(W, dones[0]) || !samePda(dones))
     return { state: "differ", why: "The signers published different Solana keys." };
-  const mine = host.localSeats().filter((i) => solOf(host, c.gid, i).keyPackage);
-  const bad = mine.find((i) => !fitsSolana(W, i, solOf(host, c.gid, i), docs.soldone[i]));
-  if (bad)
-    return { state: "differ", why: "The Solana key share of seat " + bad + " does not fit." };
+  const why = localMisfit(c, dones);
+  if (why) return { state: "differ", why };
   return { state: "agree", done: { ...dones[0], ...pdaOf(c, dones) } };
 }

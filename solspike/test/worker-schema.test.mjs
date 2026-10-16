@@ -148,11 +148,13 @@ function otherCommands() {
   checkCommand("preflight", { tx: "AQID" });
   checkCommand("inspect", { tx: "AQID" });
   checkCommand("status", { signature: "5".repeat(88) });
+  checkCommand("transaction", { signature: "5".repeat(88) });
   for (const [cmd, args] of [
     ["balance", { account: "0OIl" }],
     ["preflight", { tx: "not base64!" }],
     ["inspect", { tx: "not base64!" }],
     ["status", { signature: "short" }],
+    ["transaction", { signature: "short" }],
   ]) {
     assert.match(
       text(() => checkCommand(cmd, args)),
@@ -183,6 +185,7 @@ function otherCommands() {
     "status",
     "sync",
     "syncOld",
+    "transaction",
     "treeFees",
   ]);
   step("every command refuses unknown fields, wrong types and malformed values");

@@ -194,6 +194,16 @@ async function history({ account: address }) {
   return found.map((x) => ({ signature: x.signature, failed: x.err !== null, slot: `${x.slot}` }));
 }
 
+/** One landed transaction as its wire bytes (base64): the page looks for the approval in it. */
+async function transaction({ signature }) {
+  const { solanaRpc } = need().client;
+  const options = { encoding: "base64", commitment: "confirmed" };
+  const all = { ...options, maxSupportedTransactionVersion: 1 };
+  const got = await solanaRpc.getTransaction(signature, all).send();
+  if (!got) return { found: false, failed: false, tx: "" };
+  return { found: true, failed: got.meta?.err != null, tx: got.transaction[0] };
+}
+
 async function blockhash() {
   const { value } = await need().client.solanaRpc.getLatestBlockhash().send();
   const key = sdk.getAddressEncoder().encode(value.blockhash);
@@ -279,9 +289,9 @@ function inspect({ tx }) {
  * Syncs a fresh wallet of an identity, builds the proof inputs with the expiry bound and `payer`
  * as the fee payer (transfer.js), proves them and keeps the transact instruction data. `kind` is
  * "pay" (a payment of the PDA identity: the approvals program signs for the PDA, so the
- * instruction lists no owner signer) or "migrate" (the move of the beta funds: the group key is
- * the owner signer, after the nullifier accounts). One command runs at a time: the prover body of
- * the call is kept in the session for the plan.
+ * instruction lists no owner signer) or "migrate" (the move of the beta funds: whole UTXOs, at
+ * most `amount`; the group key is the owner signer, after the nullifier accounts). One command
+ * runs at a time: the prover body of the call is kept in the session for the plan.
  */
 async function prepare({ kind, recipient, amount, expiry, payer }) {
   const s = need();
@@ -292,7 +302,8 @@ async function prepare({ kind, recipient, amount, expiry, payer }) {
   await syncOnce(s, identity, wallet);
   s.trace.prove = null;
   const to = sdk.ShieldedAddress.fromBytes(bytes(recipient));
-  const request = { recipient: to, amount: BigInt(amount), expiry: until, payer };
+  const whole = kind === "migrate";
+  const request = { recipient: to, amount: BigInt(amount), expiry: until, payer, whole };
   const { proofInputs, tree } = buildProofInputs(sdk, s.client, identity, wallet, request);
   const data = await s.client.proveTransact(proofInputs, identity.keys);
   const signers = kind === "pay" ? [] : ownerSigners(sdk, proofInputs);
@@ -402,6 +413,7 @@ const HANDLERS = {
   account,
   rent,
   history,
+  transaction,
   reprove,
   blockhash,
   readNonce,

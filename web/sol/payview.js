@@ -200,7 +200,8 @@ const costLine = (c) =>
   solText(rentOf(c)) +
   " in it as rent until it closes. The seat that executes pays " +
   solText(EXECUTE_FEE) +
-  " and the tree fee. The rent goes back to the proposing seat at the execute.";
+  " and the tree fee. The rent goes back to the proposing seat at the execute. A proposal that " +
+  "expires keeps its rent: this app cannot cancel it yet.";
 
 const button = (c, act, mark, text, run) =>
   c.host.el(
@@ -250,9 +251,10 @@ function sendForm(c, act, actions) {
 }
 
 const MOVE_TEXT =
-  "This wallet holds private SOL from the beta at the address of the group key. Move it once to " +
-  "the program address of the group. The move is the last payment with a nonce: the seats " +
-  "approve and sign it as before. After it, only the program address holds the funds.";
+  "This wallet holds private SOL at the old address of the group key. Move it to the program " +
+  "address of the group. A move uses the nonce account: the seats approve and sign it as before. " +
+  "One move takes up to 16 notes, so many small notes need more than one move. The card shows " +
+  "again if a payer sends SOL to the old address.";
 
 /** The one-time move of the beta funds (SOL-36 condition 3). Null when the group key holds none. */
 function moveCard(c, act, actions) {
@@ -267,7 +269,7 @@ function moveCard(c, act, actions) {
           actions.propose("createNonce"),
         ),
       ]
-    : [button(c, act, "move-funds", "Move " + solText(held) + " to the program address", () =>
+    : [button(c, act, "move-funds", "Move to the program address", () =>
         actions.propose("migrate"),
       )];
   return el(
@@ -275,6 +277,7 @@ function moveCard(c, act, actions) {
     { class: "callout", style: "display:grid;gap:8px", "data-sol": "move" },
     el("h3", {}, "Move the beta funds (one time)"),
     el("p", { class: "small" }, MOVE_TEXT),
+    el("p", { class: "small", "data-sol": "move-held" }, "Old address: " + solText(held)),
     el("p", { class: "small", "data-sol": "nonce-state" }, "Nonce account: " + nonce),
     el("div", { class: "row-actions" }, steps),
   );
@@ -327,7 +330,8 @@ function paymentRows(c, review) {
     ["Program address of the group", pda ? base58(pda) : "?"],
     ...payeeRows(said),
     ["Network fees", feesText(said)],
-    ["Proposal rent", solText(rentOf(c)) + ", back to seat " + review.by + " at the execute."],
+    ["Proposal rent", solText(rentOf(c)) + ", back to seat " + review.by + " at the execute " +
+      "(kept if the proposal expires)."],
     ["Proposal account", base58(said.proposal)],
     ["Lasts", "Until " + utc(said.expiry) + " UTC. A new proof is made at the execute."],
     ["Public", "The proposal account (the group key, the expiry, the fee address of seat " +

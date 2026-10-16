@@ -523,7 +523,22 @@ async function identitiesAndReads() {
     { signature: "5".repeat(88), failed: false, slot: "7" },
     { signature: "4".repeat(88), failed: true, slot: "6" },
   ]);
-  step("sync reads the PDA, syncOld the group key; account, rent and history read the chain");
+  const asked = [];
+  control.rpc.getTransaction = async (signature, options) => {
+    asked.push(options);
+    return signature === "5".repeat(88)
+      ? { meta: { err: null }, transaction: ["AQID", "base64"] }
+      : null;
+  };
+  assert.deepEqual((await ask("transaction", { signature: "5".repeat(88) })).result, {
+    found: true,
+    failed: false,
+    tx: "AQID",
+  });
+  const none = (await ask("transaction", { signature: "4".repeat(88) })).result;
+  assert.deepEqual(none, { found: false, failed: false, tx: "" });
+  assert.equal(asked[0].maxSupportedTransactionVersion, 1, "a v1 execute is read too");
+  step("sync reads the PDA, syncOld the group key; account, rent, history and transaction read");
 }
 
 /** reprove proves only a payment whose first proof, rebuild and new data give the commitment. */

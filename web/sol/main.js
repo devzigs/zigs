@@ -9,6 +9,7 @@ import { approve } from "./approve.js";
 import { backupWords, restoreSolana } from "./backup.js";
 import { addSolana, reactCeremony } from "./ceremony.js";
 import { COLLECTIONS, filterSol } from "./docs.js";
+import { tryAgain } from "./execute.js";
 import { propose } from "./propose.js";
 import { fetchRpcUrl, refreshChain, showSaved, syncSolana } from "./session.js";
 import { SESSIONS, filterSessions } from "./sessions.js";
@@ -43,6 +44,7 @@ const blank = () => ({
   seen: {},
   tries: {},
   execErrors: {},
+  sending: {},
   added: null,
   savedShown: false,
 });
@@ -154,10 +156,7 @@ export async function attach(host) {
     propose: (kind, args) => propose(c, kind, args),
     approve: (ss, seat) => approve(c, ss, seat),
     /** Tries the execute of a signed payment again, after the tries of this tab ran out. */
-    execute(ss) {
-      delete c.tries[ss.id];
-      host.render();
-    },
+    execute: (ss) => tryAgain(c, ss),
     async addSol(args) {
       c.added = await addSol(c, args);
       await refreshChain(c).catch(() => {});
