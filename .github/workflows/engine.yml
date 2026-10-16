@@ -1,0 +1,57 @@
+# The Zcash engine: the tests of the root crate and of wasm/ (VEL-5). Runs only when their files
+# change. No secret is used.
+name: engine
+
+on:
+  push:
+    paths:
+      - Cargo.toml
+      - Cargo.lock
+      - src/**
+      - tests/**
+      - wasm/**
+      - .github/workflows/engine.yml
+  pull_request:
+    paths:
+      - Cargo.toml
+      - Cargo.lock
+      - src/**
+      - tests/**
+      - wasm/**
+      - .github/workflows/engine.yml
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.head_ref || github.ref_name }}
+  cancel-in-progress: true
+
+env:
+  CARGO_TERM_COLOR: never
+  CARGO_INCREMENTAL: 0
+
+jobs:
+  test:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - id: rust
+        run: echo "version=$(rustc -V | cut -d' ' -f2)" >> "$GITHUB_OUTPUT"
+      - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: |
+            ~/.cargo/registry/index
+            ~/.cargo/registry/cache
+            ~/.cargo/git/db
+            target
+            wasm/target
+          key: engine-${{ steps.rust.outputs.version }}-${{ hashFiles('Cargo.lock', 'wasm/Cargo.lock') }}
+      - name: Root crate
+        run: cargo test --release --locked
+      - name: wasm/
+        working-directory: wasm
+        run: cargo test --release --locked

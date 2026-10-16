@@ -27,7 +27,10 @@ set -eu
 cd "$(dirname "$0")"
 unset RUSTFLAGS CARGO_ENCODED_RUSTFLAGS
 
-EXPECTED=b4bad24c6ae7cf2455b52780f78e35573f014ab3bc618fcbb49772b06c0d6eac
+# The ELF holds the paths of the standard library inside platform-tools, which differ between its
+# macOS and its Linux build. So each host has its own hash; CI builds on Linux.
+EXPECTED_DARWIN=b4bad24c6ae7cf2455b52780f78e35573f014ab3bc618fcbb49772b06c0d6eac
+EXPECTED_LINUX=pending
 V2=555f45801f32896c78eb55f962026507dec35ea6d673477326db7913e4475d92
 SBF=${CARGO_BUILD_SBF:-cargo-build-sbf}
 OBJDUMP=$HOME/.cache/solana/v1.54/platform-tools/llvm/bin/llvm-objdump
@@ -41,6 +44,12 @@ fail() {
 sha() {
   shasum -a 256 "$1" | cut -d' ' -f1
 }
+
+case "$(uname -s)" in
+  Darwin) EXPECTED=$EXPECTED_DARWIN ;;
+  Linux) EXPECTED=$EXPECTED_LINUX ;;
+  *) fail "no pinned hash for the host $(uname -s)" ;;
+esac
 
 case "$("$SBF" --version 2>/dev/null | head -1)" in
   "cargo-build-sbf 4.3.0") ;;
@@ -122,7 +131,7 @@ case "${1:-}" in
     cargo test --manifest-path svm-tests/Cargo.toml --locked -j 4 -- --test-threads 2
     exit 0
     ;;
-  v2) ;;
+  v2) [ "$(uname -s)" = Darwin ] || fail "v2 mode needs macOS, where Devnet version 2 was built" ;;
   *) fail "unknown mode $1" ;;
 esac
 

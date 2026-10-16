@@ -1,0 +1,67 @@
+# The Solana checker and signer (wasm-sol): the wasm build, its smoke and diff checks, then the
+# tests that replay them (README.md, Tests; VEL-5). Runs only when its files change.
+name: wasm-sol
+
+on:
+  push:
+    paths:
+      - wasm-sol/**
+      - .github/workflows/wasm-sol.yml
+  pull_request:
+    paths:
+      - wasm-sol/**
+      - .github/workflows/wasm-sol.yml
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.head_ref || github.ref_name }}
+  cancel-in-progress: true
+
+env:
+  CARGO_TERM_COLOR: never
+  CARGO_INCREMENTAL: 0
+
+jobs:
+  test:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 24
+      - id: rust
+        run: |
+          rustup target add wasm32-unknown-unknown
+          echo "version=$(rustc -V | cut -d' ' -f2)" >> "$GITHUB_OUTPUT"
+      - name: wasm-bindgen 0.2.129 (the release binary, checked by its SHA-256)
+        run: |
+          base=https://github.com/wasm-bindgen/wasm-bindgen/releases/download/0.2.129
+          name=wasm-bindgen-0.2.129-x86_64-unknown-linux-musl
+          curl -sSfL -o "$RUNNER_TEMP/$name.tar.gz" "$base/$name.tar.gz"
+          echo "82d12bb940e2d4e72e0d5605387fc1b8ca179044e012b620f0ce4e7440e8320e  $RUNNER_TEMP/$name.tar.gz" \
+            | sha256sum -c -
+          tar -xzf "$RUNNER_TEMP/$name.tar.gz" -C "$RUNNER_TEMP"
+          echo "$RUNNER_TEMP/$name" >> "$GITHUB_PATH"
+      - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: |
+            ~/.cargo/registry/index
+            ~/.cargo/registry/cache
+            ~/.cargo/git/db
+            wasm-sol/target
+          key: wasm-sol-${{ steps.rust.outputs.version }}-${{ hashFiles('wasm-sol/Cargo.lock') }}
+      - name: Build the wasm
+        run: sh wasm-sol/build.sh
+      - name: Smoke and diff checks
+        working-directory: wasm-sol
+        run: |
+          node tools/smoke.cjs target/pkg-node
+          node tools/diff_cases.cjs target/pkg-node
+      - name: Tests
+        working-directory: wasm-sol
+        run: cargo test --release --locked
