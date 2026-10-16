@@ -67,7 +67,7 @@ the P5 run, a secret). tests/common/real.rs is cut to address_of, the one helper
 use; the code that read the solSeed file is removed. Vectors: only the public ones.
 Copied from the P1 crate: tests/data (the RFC 9591 E.1 inputs and the vectors of frost-ed25519).
 
-The wasm of wasm-sol (build.sh): SHA-256 13ce3322253c896813f6b46d41881c76c2dd590b117c15e1dd56b8baf2150647, 1,026,527 bytes raw, 377,028 gzip
+The wasm of wasm-sol (build.sh): SHA-256 bb92d04e04c8857353fd038613c0220e215fe3bb24458e9fa3bd4e1335fb069e, 1,026,997 bytes raw, 377,198 gzip
 
 Changes of the move into the product repo (not signed; no file of src/ changed, so the rules and
 the checker are those that the verdict signed):
@@ -121,8 +121,8 @@ marks each changed file `modified`:
   participant only when a real output paid it.
 - src/fee.rs (new): the fee key. It signs only after `approve` accepted the exact bytes and only
   when it is the payer that the pins name. src/sign.rs makes `approved` visible to it. src/wasm.rs
-  exports sol_fee_key, sol_fee_public, sol_fee_sign, sol_fee_verify. src/roles.rs no longer
-  returns the pins (a pin now holds the payer of a proposal).
+  exports sol_fee_key, sol_fee_sign, sol_fee_verify (the key part: see the next note).
+  src/roles.rs no longer returns the pins (a pin now holds the payer of a proposal).
 - tests: tests/fee_payer.rs and tests/fee_key.rs (new); every other changed test file moves to
   the new template (the P5 messages that the group paid are now refused by the payer rules, and
   the P6 compile test compares with the sponsor layout of the same instructions). The change tag
@@ -143,6 +143,24 @@ marks each changed file `modified`:
   in a simulation, and the template `register` has the accounts and the data of the SDK builder
   (a payer that is not the owner, 5,537 compute units). Nothing landed.
 
+The fee key from the key share (16 October 2026, not signed; ZOLANA.md section 5). A seat derives
+its fee key from its own signing share, so every copy of a seat holds the same key:
+- src/fee.rs: `generate` and `public_of` are gone (no random key, no export from a bare secret).
+  `derive(key_package)` is HKDF-SHA256 with an empty salt, the 32-byte signing share as input key
+  material and the info `zigs-sol/fee-key/v1 || group key || seat` (the seat as 2 bytes, little
+  endian; the group key and the seat come from the key package). The output is the Ed25519 seed.
+  A key package whose share does not fit its public share (`frost::share_fits`) gives no key.
+  `seed_of` is the same without the key package, for the vectors.
+- src/wasm.rs: `sol_fee_key(key_package)` replaces `sol_fee_key()`. `sol_fee_public` is gone.
+- tests/fee_key.rs and vectors/fee_keys.json (new): Node's HKDF and Ed25519 give the vectors
+  (`solspike/tools/fee_vectors.mjs`), seven raw cases and the three key packages of the test
+  group. Tests: both kinds of vector, one key for every copy of a package and one for each seat,
+  the share, the group key and the seat each change the key, and a damaged or foreign share gives
+  no key.
+- tools/mutate_sol.py: 7 more cases (label, no group key, no seat, a salt, a fixed seat, the public
+  share as input, no share check), all killed by their named test.
+- The wasm of wasm-sol: the hash above is of the new build.
+
 Check: python3 -I tools/pin_check.py (the manifest below against the tree).
 
 files:
@@ -154,7 +172,7 @@ bce3e196c3a4064026d8b57f8fe3ebcca600ac9de008df44e7b61cc8c6b1bb46  src/address.rs
 96b9433ec95417f5e8053e700d9012401640563c2bafad87d76591fc178745cd  src/check.rs  modified
 ca3b51e9ea30baeb0b082ca9cb19fe248bc86880d60ae90a3ee3e5a7dcb6b371  src/codec.rs  new
 8957e314083262c03953e54f3cf9f2a88f72bf79fe1b2ce15f5caf523ccf2cad  src/consts.rs  modified
-fb4ab4aede88666ff08e038d18855251ad6199fdcb70f7eec1cae37242063858  src/fee.rs  new
+5e5a4ad927c37aff6890f725b1f48e33410cf4a7cb2d72519b80d99d50d39db8  src/fee.rs  new
 7580593e6b6b3b9e7deff6ea3ef327abda12ba3d7f369abaf041a01461c9bf28  src/fixed.rs  verbatim
 4e23c21ba7958d4915aa41b691c3d4b24615026f07c793a63ebeda3fd8916c7a  src/frost.rs  new
 e69e4ccacb28931921f072919a6ecf9ff3fe6784e3b129a45ff94fa0ccc17d4c  src/hashes.rs  verbatim
@@ -177,7 +195,7 @@ fb32fff67235197779cc2b25cc5fe351d57fdb6140d976546b96ddc4484e28d3  src/snapshot.r
 3d7e69437af85c56d9bcf80172af2c7c866140ceb6e3f889d8cbc11dde9cdf05  src/transact.rs  verbatim
 c9d4c2718f755ac5ebeb8a705e036b3ab9183cb7ef95fe1f14da5ffa931c1c9f  src/v1.rs  verbatim
 ddda30596120fcb6731fa8515b0a06c55e2df70070a9082ed64749b022ddb374  src/viewing.rs  verbatim
-5dc4dd1a307b989d5d4a36d7a6401fdc70a9d6d6363f4a29ec339b2c8830e66f  src/wasm.rs  modified
+890d115e705d6aeb6dc37169845bbafc295c2d90211efcf1578cf84051db89cb  src/wasm.rs  modified
 ab14b07d8870f6c201553f0f5bc066fe65b3a0d79144e293a6a3a9ded2e65ad4  tests/asset_pins.rs  verbatim
 e0a1e751f858e0f7f069ef4a7f8e998f56a775f62723c0ead98f0027db50e986  tests/common/fixture.rs  modified
 67097671c2e6f4ec28087492e43c41a982c316977280420ee2472bc53e498a54  tests/common/mod.rs  modified
@@ -187,7 +205,7 @@ e0a1e751f858e0f7f069ef4a7f8e998f56a775f62723c0ead98f0027db50e986  tests/common/f
 bf5e08d134bedee5dcc2f60126932d89f4f736a3f92596c4ca277262d006570d  tests/cross.rs  modified
 758b15f8ca7f6e18dae2ce907ab727717e19a6476ae62fc3406b82a58470a128  tests/data/frost_ed25519_2_2_0_vectors.json  new
 13674d07bd2498070e38483590668f6dfb6e99f2d6a4f031c215488c78998048  tests/data/rfc9591_e1.json  new
-ee124fbced89d985a33d263bdf66c59acd5548ed47191d32d393a012a994e273  tests/fee_key.rs  new
+10248cd8d2fb360b9a36c0b7ca7e95c175ac0207d5ffc0ad50c4ca654d4ccbd8  tests/fee_key.rs  new
 d9ba107de3e293e4277709f754c47d33e6e9eb1931b213704f85a185063985cd  tests/fee_payer.rs  new
 7eafc71b67f9cd794462625a3c686aa9d913d0dac2e3758ab65c8d72ed730f47  tests/fix_round.rs  modified
 cfc68ad047d9dff9f4cb368c901238019de4d6284cbd23853b5224f97a2bf3ca  tests/frost_dkg.rs  new
@@ -207,6 +225,7 @@ a7d5b2deb2949ec52dba9731c87a4523016d5b1d2abefbb1a8f828ba1fdd9690  tests/verifier
 dd6bb8321cdd53a27128fb8e38421088c624bcbe136b6cc4c22534c957fd0b05  tests/wasm_api.rs  modified
 72c0e4121ece8b0da4524d13a855f8a11dad45515c94930912713e1f1b6d58dd  tests/wasm_native_diff.rs  modified
 b04c7fe3102595c9456fb4b6d30e54567e717cdeb2ec7c31e57b8b3e450ba54f  vectors/devnet-assets.json  verbatim
+8bbb46d666d4c4d21234d4957db2f5d70ff25c3c81506fe53d8447f6a4199ba7  vectors/fee_keys.json  new
 0fda5ee5441e1e8af29e0c22e7056ed526670dbe40d8faeb67e082097267a00a  vectors/facts.json  modified
 1cf909a2204147f1f8f6351ddd8e1df7b38667b768a6ba03cda99bca8f7ff45b  vectors/p2/wire-fund.msg  modified
 03c943095d9d4743da6193265bd4a8d2f14ed677b3650f14e0b008432763fa64  vectors/p2/wire-nonce_create.msg  verbatim

@@ -64,6 +64,9 @@ DUMMY_TEST = (
 FEE_NOT_PAYER_TEST = "a_fee_key_that_is_not_the_payer_of_the_proposal_signs_nothing"
 FEE_REFUSED_TEST = "the_fee_key_signs_nothing_that_approve_refuses"
 WIRE_TEST = "the_wire_of_the_pins_holds_the_payer_last"
+FEE_RAW_TEST = "the_seed_equals_the_independent_node_derivation_for_every_raw_vector"
+FEE_PACKAGE_TEST = "the_fee_key_of_a_key_package_equals_the_independent_node_derivation"
+FEE_DAMAGED_TEST = "a_damaged_share_a_share_of_another_seat_or_junk_gives_no_key"
 
 # (name, file, exact old text, new text, test that must fail)
 CASES = [
@@ -196,6 +199,21 @@ CASES = [
     ("fee-key-no-approve", "src/fee.rs",
      "    let pins = approved(message, check, now.ok_or(\"the fee round has no clock\")?)?;",
      "    let pins = crate::pins::Pins::decode(check.pins)?;", FEE_REFUSED_TEST),
+    # The fee key is derived from the signing share, the group key and the seat (src/fee.rs).
+    ("fee-label", "src/fee.rs", 'b"zigs-sol/fee-key/v1"', 'b"zigs-sol/fee-key/v2"', FEE_RAW_TEST),
+    ("fee-no-group", "src/fee.rs", "    info.extend_from_slice(group);\n", "", FEE_RAW_TEST),
+    ("fee-no-seat", "src/fee.rs", "    info.extend_from_slice(&seat.to_le_bytes());\n", "",
+     FEE_RAW_TEST),
+    ("fee-salt", "src/fee.rs", "Hkdf::<Sha256>::new(None, share)",
+     'Hkdf::<Sha256>::new(Some(b"salt"), share)', FEE_RAW_TEST),
+    ("fee-seat-fixed", "src/fee.rs", "        seat_of(package.identifier())?,", "        1,",
+     FEE_PACKAGE_TEST),
+    ("fee-public-share", "src/fee.rs",
+     "        .signing_share()\n        .serialize()\n        .try_into()",
+     "        .verifying_share()\n        .serialize()\n        .unwrap_or_default()\n"
+     "        .try_into()", FEE_PACKAGE_TEST),
+    ("fee-share-unchecked", "src/fee.rs", "    if !share_fits(key_package) {", "    if false {",
+     FEE_DAMAGED_TEST),
     ("pins-wire-no-payer", "src/pins.rs", "            &self.payer[..],\n", "", WIRE_TEST),
     ("empty-transact", "src/wasm.rs", "        [] => None,",
      '        [] => Some(transact::parse(&[]).map_err(|why| format!("{why:?}"))?),',

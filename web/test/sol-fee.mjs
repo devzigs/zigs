@@ -1,20 +1,17 @@
 // The fee key of a seat (web/sol/fee.js, addsol.js) against the real web/app.js and the real wasm,
-// with the fake chain behind the Worker (sol-chain.mjs): each seat makes its fee key when its
-// Solana setup finishes and publishes the address in a signed document, a group from before the
-// fee key gets a key at its first run without touching its nonces, the fund card shows the fee
-// address of each seat of this browser, a proposal fails with a clear text when its payer has no
-// SOL, and Add SOL puts the SOL of one member into the shielded balance of the group with that
-// member's signature alone.
+// with the fake chain behind the Worker (sol-chain.mjs): the wasm derives the fee key of each seat
+// from the key share of that seat, so every copy of the seat holds the same key, and the seat
+// publishes the address in a signed document. The fund card shows the fee address of each seat of
+// this browser, a proposal fails with a clear text when its payer has no SOL, and Add SOL puts
+// the SOL of one member into the shielded balance of the group with that member's signature alone.
 // Run: node web/test/sol-fee.mjs   (Node 24)
 import assert from "node:assert/strict";
 import { addSol } from "../sol/addsol.js";
 import { feeSignature, reviewOf } from "../sol/approve.js";
 import { base58 } from "../sol/docs.js";
-import { feeOf, newFeePatch } from "../sol/fee.js";
+import { feeOf } from "../sol/fee.js";
 import { bytesOf, describeMessage, hexOf, intentHex, pinsHex } from "../sol/intent.js";
-import { dropNonces, savedNonces, saveNonces } from "../sol/nonces.js";
 import { propose } from "../sol/propose.js";
-import { putSol } from "../sol/secrets.js";
 import { refreshChain } from "../sol/session.js";
 import { readSolSession, writePart } from "../sol/sessions.js";
 import { solView } from "../sol/view.js";
@@ -55,39 +52,42 @@ const J = JSON.parse;
     assert.deepEqual([doc.key, doc.cluster], [key, "devnet"]);
     assert.equal(c.docs.solfee[seat].key, key, "the page reads the document as valid");
     assert.notEqual(key, done.groupKey, "the group key is no fee key");
-    assert.equal(W.sol_fee_public(solOf(seat).feeSecret), key);
+    assert.equal(J(W.sol_fee_key(JSON.stringify(solOf(seat).keyPackage))).public, key);
+    assert.deepEqual(
+      Object.keys(solOf(seat)).filter((name) => name.startsWith("fee")),
+      [],
+      "the seat secret stores no fee key: the key share gives it",
+    );
   }
   const wire = JSON.stringify(chain.commands);
-  for (const i of [1, 2, 3]) assert.equal(wire.includes(solOf(i).feeSecret), false, "no secret");
+  for (const i of [1, 2, 3]) assert.equal(wire.includes(feeOf(c, i).secret), false, "no secret");
   const store = JSON.stringify([...data.values()]);
-  for (const i of [1, 2, 3]) assert.equal(store.includes(solOf(i).feeSecret), false, "no secret");
+  for (const i of [1, 2, 3]) assert.equal(store.includes(feeOf(c, i).secret), false, "no secret");
 }
-step("each seat holds its fee key and published its address in a signed document");
+step("each seat derives its fee key from its key share and published its address");
 
-// ── A group from before the fee key: the key comes at the first run, nonces stay ──
+// ── Any copy of a seat holds the same key: a second tab, a second browser, a restore ──
+const hex32 = () => Buffer.from(crypto.getRandomValues(new Uint8Array(32))).toString("hex");
 {
-  const entry = { digest: "d".repeat(64), nonces: "aa".repeat(40), commitments: "bb".repeat(40) };
-  await saveNonces(c, 2, "older-session", entry);
-  const before = structuredClone(solOf(2));
-  await putSol(c.host, gid, 2, { feeSecret: null, feePublic: null });
-  data.delete(path(gid, "solfee/2"));
-  notify();
-  await waitFor("a new fee key", () => feeOf(c, 2) !== null);
-  await waitFor("its document", () => c.docs.solfee[2]?.key === feeOf(c, 2).key);
-  const after = solOf(2);
-  assert.notEqual(after.feePublic, before.feePublic, "a new key");
-  for (const name of ["keyPackage", "publicKeyPackage", "groupKey", "solSeed", "doneSent"]) {
-    assert.deepEqual(after[name], before[name], name + " is as it was");
+  // The copy has the key share and nothing else of the fee: no stored key, as in a browser that
+  // never ran this page before, and as in any restore of a Solana backup.
+  const copies = Object.fromEntries(
+    [1, 2, 3].map((i) => {
+      const sol = { ...structuredClone(solOf(i)), feeSecret: undefined, feePublic: undefined };
+      return [i, { ...t.sec(gid, i), sol }];
+    }),
+  );
+  const tab = { ...c, host: { ...c.host, sec: (_gid, seat) => copies[seat] } };
+  for (const i of [1, 2, 3]) {
+    assert.equal(feeOf(tab, i).key, feeOf(c, i).key, "seat " + i + ": the same key in a copy");
+    assert.equal(c.docs.solfee[i].key, feeOf(tab, i).key, "and its document already shows it");
   }
-  assert.deepEqual(savedNonces(c, 2, "older-session"), entry, "the saved nonces are untouched");
-  await dropNonces(c, 2, "older-session");
-  chain.balances.set(feeAddress(2), 50_000_000n);
 }
-step("a seat from before the fee key makes one, and its saved nonces stay");
+step("a copy of a seat derives the key that the seat published");
 
 // ── A fee key that its seat did not sign is no fee key ──
 {
-  const stranger = J(W.sol_fee_key()).public;
+  const stranger = hex32();
   const real = data.get(path(gid, "solfee/3"));
   data.set(path(gid, "solfee/3"), { ...real, key: stranger });
   notify();
@@ -146,19 +146,8 @@ step("the fund card shows the fee address of each seat with Copy, the faucet and
 
 await withNonceAccount();
 
-// ── Another fee key in the document: no proposal, no Add SOL, and no rewrite ──
-const ANOTHER = /Seat 1 has another fee key in another browser/;
-{
-  const held = { feeSecret: solOf(1).feeSecret, feePublic: solOf(1).feePublic };
-  await putSol(c.host, gid, 1, newFeePatch(W));
-  await assert.rejects(() => propose(c, "register"), ANOTHER);
-  await assert.rejects(() => addSol(c, { amount: "0.01" }), ANOTHER);
-  await putSol(c.host, gid, 1, held);
-  assert.equal(feeOf(c, 1).key, held.feePublic, "the key of the seat is back");
-}
-step("a proposal and Add SOL stop when the document shows another fee key of the seat");
-
-// ── One seat in two browsers with two fee keys: the page does not answer with its own ──
+// ── A document with another key than the key share gives: an error, and no rewrite ──
+const ANOTHER = /fee document of seat 1 does not show the key of this seat/;
 const rewrites = [];
 const saved = hook.before;
 hook.before = (p, value) => {
@@ -169,25 +158,29 @@ const doc1 = (key, cluster = "devnet") =>
   c.host.signedDoc(gid, "solfee/1", 1, { key, cluster, at: Date.now() });
 {
   const mine = feeOf(c, 1).key,
-    other = J(W.sol_fee_key()).public;
-  // The other browser (an older page that republishes when the document is not its key) answers.
+    other = hex32();
+  // A forged or broken document of seat 1 (valid signature, another key). Every copy of the seat
+  // derives the same key, so no other browser of seat 1 can have written it.
   data.set(path(gid, "solfee/1"), await doc1(other));
   notify();
   await sleep(2000);
-  assert.equal(rewrites.length, 0, "this page never writes while another valid key stands");
+  assert.equal(rewrites.length, 0, "this page never writes while a valid document stands");
   assert.equal(data.get(path(gid, "solfee/1")).key, other, "the document is the other key");
   assert.equal(c.docs.solfee[1].key, other);
-  assert.equal(mark("fee-address-1").length, 0, "no address to fund: this browser cannot pay");
-  assert.match(textOf(mark("fee-conflict-1")[0]), ANOTHER);
+  assert.equal(mark("fee-address-1").length, 0, "no address to fund: this seat cannot pay");
+  assert.match(textOf(mark("fee-mismatch-1")[0]), ANOTHER);
+  assert.match(textOf(mark("fee-mismatch-1")[0]), /can still approve and sign.*other seats can/);
   assert.equal(mark("fee-address-2").length, 1, "the other seats show their address");
+  await assert.rejects(() => propose(c, "register"), ANOTHER);
+  await assert.rejects(() => addSol(c, { amount: "0.01" }), ANOTHER);
   data.set(path(gid, "solfee/1"), await doc1(mine));
   notify();
   await sleep(200);
-  assert.equal(mark("fee-address-1").length, 1, "the key of this browser stands again");
-  assert.equal(mark("fee-conflict-1").length, 0);
+  assert.equal(mark("fee-address-1").length, 1, "the key of the key share stands again");
+  assert.equal(mark("fee-mismatch-1").length, 0);
   assert.equal(rewrites.length, 0, "and still no write");
 }
-step("a seat whose document shows another key writes nothing and says so");
+step("a document with another key than the key share gives is an error, and nothing is written");
 
 // ── No valid document: the seat publishes once. Another cluster is no document ──
 {
@@ -195,7 +188,7 @@ step("a seat whose document shows another key writes nothing and says so");
   for (const [label, doc] of [
     ["none", null],
     ["another cluster", await doc1(mine, "mainnet")],
-    ["another cluster and key", await doc1(J(W.sol_fee_key()).public, "mainnet")],
+    ["another cluster and key", await doc1(hex32(), "mainnet")],
   ]) {
     rewrites.length = 0;
     if (doc === null) data.delete(path(gid, "solfee/1"));

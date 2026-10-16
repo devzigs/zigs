@@ -6,7 +6,7 @@
 import { reviewOf } from "./approve.js";
 import { agreement } from "./ceremony.js";
 import { CLUSTER, base58 } from "./docs.js";
-import { conflictText, feeConflict, feeOf } from "./fee.js";
+import { feeMismatch, feeOf, mismatchText } from "./fee.js";
 import { BASE_FEE, NONCE_RENT, RECORD_RENT, bytesOf, decodeIntent, readVerdict } from "./intent.js";
 import { usedDigest } from "./nonces.js";
 import { holdsShare, solOf } from "./secrets.js";
@@ -66,19 +66,11 @@ const FEE_TEXT =
 
 /** The fee address of one seat of this browser: the address, Copy and the balance. */
 function feeRow(c, seat) {
-  const { el } = c.host,
-    held = feeOf(c, seat);
-  if (held === null) {
-    return el(
-      "p",
-      { class: "small", "data-sol": "fee-wait-" + seat },
-      "The fee key of seat " + seat + " is being made.",
-    );
+  const { el } = c.host;
+  if (feeMismatch(c, seat)) {
+    return el("p", { class: "small bad", "data-sol": "fee-mismatch-" + seat }, mismatchText(seat));
   }
-  if (feeConflict(c, seat)) {
-    return el("p", { class: "small bad", "data-sol": "fee-conflict-" + seat }, conflictText(seat));
-  }
-  const address = base58(held.key);
+  const address = base58(feeOf(c, seat).key);
   return el(
     "div",
     { style: "display:grid;gap:4px", "data-sol": "fee-" + seat },

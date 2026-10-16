@@ -71,14 +71,10 @@ export function sol_dkg3(secret2: string, round1: string, round2: string, ctx: s
 export function sol_echo(wallet_id: string, safety: string, cluster: string, round1: string): string;
 
 /**
- * A fresh fee key of a seat: `{"secret", "public"}` as hex.
+ * The fee key of the seat that holds `key_package`: `{"secret", "public"}` as hex. Every copy of
+ * the key package gives the same key.
  */
-export function sol_fee_key(): string;
-
-/**
- * The public key (hex) of a fee secret.
- */
-export function sol_fee_public(secret: string): string;
+export function sol_fee_key(key_package: string): string;
 
 /**
  * The signature (hex) of the fee key of a proposal. It runs `approve` on the exact bytes first,
@@ -133,8 +129,7 @@ export interface InitOutput {
     readonly sol_dkg2: (a: number, b: number, c: number, d: number, e: number) => void;
     readonly sol_dkg3: (a: number, b: number, c: number, d: number, e: number, f: number, g: number, h: number, i: number) => void;
     readonly sol_echo: (a: number, b: number, c: number, d: number, e: number, f: number, g: number, h: number, i: number) => void;
-    readonly sol_fee_key: (a: number) => void;
-    readonly sol_fee_public: (a: number, b: number, c: number) => void;
+    readonly sol_fee_key: (a: number, b: number, c: number) => void;
     readonly sol_fee_sign: (a: number, b: number, c: number, d: number, e: number, f: number, g: number, h: number, i: number, j: number, k: number) => void;
     readonly sol_fee_verify: (a: number, b: number, c: number, d: number, e: number, f: number) => number;
     readonly sol_nonces: (a: number, b: number, c: number, d: number, e: number) => void;

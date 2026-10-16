@@ -217,16 +217,11 @@ pub fn sol_program_label() -> String {
     frost::PROGRAM_LABEL.to_string()
 }
 
-/// A fresh fee key of a seat: `{"secret", "public"}` as hex.
+/// The fee key of the seat that holds `key_package`: `{"secret", "public"}` as hex. Every copy of
+/// the key package gives the same key.
 #[wasm_bindgen]
-pub fn sol_fee_key() -> Result<String, JsError> {
-    js(fee::generate())
-}
-
-/// The public key (hex) of a fee secret.
-#[wasm_bindgen]
-pub fn sol_fee_public(secret: &str) -> Result<String, JsError> {
-    js(fee::public_of(secret))
+pub fn sol_fee_key(key_package: &str) -> Result<String, JsError> {
+    js(fee::derive(key_package))
 }
 
 /// The signature (hex) of the fee key of a proposal. It runs `approve` on the exact bytes first,

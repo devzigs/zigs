@@ -592,7 +592,7 @@ step("a copied share is ignored, a failed save sends nothing");
   const own = [1, 2, 3].flatMap((i) => [
     solOf(gid, i).solSeed,
     solOf(gid, i).keyPackage.signing_share,
-    solOf(gid, i).feeSecret,
+    feeOf(c, i).secret,
   ]);
   assert.ok(seenNonces.size >= 6, "the nonces were noted");
   for (const secret of [...own, ...seenNonces]) {

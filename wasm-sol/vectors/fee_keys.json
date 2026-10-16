@@ -1,0 +1,111 @@
+{
+ "note": "Test keys made by solspike/tools/fee_vectors.mjs. Never fund them.",
+ "raw": [
+  {
+   "name": "share-11-group-22-seat-1",
+   "signingShare": "1111111111111111111111111111111111111111111111111111111111111111",
+   "groupKey": "2222222222222222222222222222222222222222222222222222222222222222",
+   "seat": 1,
+   "secret": "78536a5220936466a77a79cc028f4ec469db87b6638decfbe33c9fd79a741880",
+   "public": "1d33b706443f128eb2f34f5f8474ffddb9ce62503769427329c71cde84605bc4"
+  },
+  {
+   "name": "seat-2",
+   "signingShare": "1111111111111111111111111111111111111111111111111111111111111111",
+   "groupKey": "2222222222222222222222222222222222222222222222222222222222222222",
+   "seat": 2,
+   "secret": "919c4421dc378a2c782b90953ddedc71121804f741119db36c57a3e6590edc99",
+   "public": "234c36925dee981558ed3993532befccdf3d9253c27202f3f2168e9290778468"
+  },
+  {
+   "name": "seat-7",
+   "signingShare": "1111111111111111111111111111111111111111111111111111111111111111",
+   "groupKey": "2222222222222222222222222222222222222222222222222222222222222222",
+   "seat": 7,
+   "secret": "6b7f63cc8658aeb0465e581ad2c7743fe78108dae8d86af266f936a1cfc6ba6c",
+   "public": "12a9ab9056530c8b3c527e5cc61546f7197adab2cc9c0b559cef82070d303473"
+  },
+  {
+   "name": "share-12",
+   "signingShare": "1212121212121212121212121212121212121212121212121212121212121212",
+   "groupKey": "2222222222222222222222222222222222222222222222222222222222222222",
+   "seat": 1,
+   "secret": "a9d12707c6da01bc67c0e6d2715e84a43f61142c4dbaf26fbeffd933b7c36e35",
+   "public": "94a7aca1b8efcc7748363d316b61a479eea3c9f69e85bd1c10669ff20f1df46b"
+  },
+  {
+   "name": "group-23",
+   "signingShare": "1111111111111111111111111111111111111111111111111111111111111111",
+   "groupKey": "2323232323232323232323232323232323232323232323232323232323232323",
+   "seat": 1,
+   "secret": "51192d64c99e3afc18be20cb9ec25f46cfff6ccc6b5c6a7d175e821905c84ad4",
+   "public": "307557ce67e1fbc566df5628bc53235a36b51942ac074bb4f2fcffc77bb22733"
+  },
+  {
+   "name": "zeros",
+   "signingShare": "0000000000000000000000000000000000000000000000000000000000000000",
+   "groupKey": "0000000000000000000000000000000000000000000000000000000000000000",
+   "seat": 1,
+   "secret": "2d5d76b393b92e19038610590e5ff5f2b4ef43fc81f1c68f55de4a5c52c5dd22",
+   "public": "e8eb0e3c3cd43616690e5c9a0b279a71a39ee837a53b41e42c83e230a3b5cd3b"
+  },
+  {
+   "name": "ones",
+   "signingShare": "ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff",
+   "groupKey": "ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff",
+   "seat": 7,
+   "secret": "edece25cd118f18c5788b2ca8c370bbe5292d5087dc898232581761742c7e7bd",
+   "public": "f0af8bf2fa58f151d13433c88edfe83a0fda37039f3efe66fd096b63f6b9ded5"
+  }
+ ],
+ "packages": [
+  {
+   "name": "seat-1",
+   "keyPackage": {
+    "header": {
+     "ciphersuite": "FROST-ED25519-SHA512-v1",
+     "version": 0
+    },
+    "identifier": "0100000000000000000000000000000000000000000000000000000000000000",
+    "min_signers": 2,
+    "signing_share": "a7f5267bca48795068e2877f19cad60c8ed58b4c5e6861cc98af3b2125b74307",
+    "verifying_key": "4bd1928c89002e43ee10db93fa06d9f8a538d8d81004899b13031cd68a4270dc",
+    "verifying_share": "e4c9267f4a6c5da53bcd17c5dd1b291053fa03b3d7d7d991391187030532c648"
+   },
+   "secret": "afa6b02f3b03c0f4d4684944a2a9471eb0da5e74c9670a0d74345a6090be0b45",
+   "public": "f0adb4687295265b8e169ad2e9c9d2aee0ce497251797fae0c258a3778a014fe"
+  },
+  {
+   "name": "seat-2",
+   "keyPackage": {
+    "header": {
+     "ciphersuite": "FROST-ED25519-SHA512-v1",
+     "version": 0
+    },
+    "identifier": "0200000000000000000000000000000000000000000000000000000000000000",
+    "min_signers": 2,
+    "signing_share": "b70d61a565fd9d6080425354ac4622b5b5b60740086ce750edfadc7fe0a56905",
+    "verifying_key": "4bd1928c89002e43ee10db93fa06d9f8a538d8d81004899b13031cd68a4270dc",
+    "verifying_share": "30b1e44610cfedf906f66fcfa64df2da916a35603bc2a667a273a8910df9ca3d"
+   },
+   "secret": "10d522e1299ebba4de0cf98bc9612b99e62270c32bdf406051fe128874fedf3e",
+   "public": "27fd0e3f33c38bdbe977b533717e654072d43dbbd6a5e2990cf21ec0ce6bf8eb"
+  },
+  {
+   "name": "seat-3",
+   "keyPackage": {
+    "header": {
+     "ciphersuite": "FROST-ED25519-SHA512-v1",
+     "version": 0
+    },
+    "identifier": "0300000000000000000000000000000000000000000000000000000000000000",
+    "min_signers": 2,
+    "signing_share": "c7259bcf00b2c27098a21e293fc36d5ddd978333b26f6dd541467ede9b948f03",
+    "verifying_key": "4bd1928c89002e43ee10db93fa06d9f8a538d8d81004899b13031cd68a4270dc",
+    "verifying_share": "e97c8ff9153651b1b1e14351d2efedb9280fc9f4e5f748fb8e917b7039712526"
+   },
+   "secret": "700c0104643714c6911a58df6496ddf03e53b5e02437d45102f2ef668d23d373",
+   "public": "2d86e09857f07536ba329fc95a68619ae789bb644c464a565bd8825fd4030635"
+  }
+ ]
+}

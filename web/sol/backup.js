@@ -1,15 +1,15 @@
 // The second backup file (ZOLANA.md 4.3). The Zcash `.zigsbackup` and its restore stay as they
 // are. This file has the same Argon2id and XChaCha20-Poly1305 shell (outer kind zigs-backup, made
 // by the unchanged engine) and the inner kind `zigs-sol-backup`: the wallet id, the seat, the
-// cluster, the key package, the public key package, the group key, solSeed and the secret of the
-// fee key (fee.js). It has no snapshot and no nonce. A restore runs only on a seat that settled
-// and fits. A file from before the fee key has no fee secret: the restore then makes a new fee
-// key and says so. When the seat has published another fee key already, the restore says that
-// this browser cannot pay for the seat.
+// cluster, the key package, the public key package, the group key and solSeed. It has no snapshot
+// and no nonce, and no fee key: the key share gives the fee key (fee.js), so a restore of any
+// file brings back the key that the seat published. A restore runs only on a seat that settled
+// and fits. When the document of the seat shows another key than the key share gives, the restore
+// says that this seat cannot pay and what can still be done.
 import { backupName, shareShape } from "../util.js";
 import { agreement, fitsSolana } from "./ceremony.js";
 import { CLUSTER, COLLECTIONS } from "./docs.js";
-import { makeFeeKey, newFeePatch, publishedFee } from "./fee.js";
+import { feeMismatch, mismatchText } from "./fee.js";
 import { holdsShare, putSol, refuseStopped, solOf, stopOf } from "./secrets.js";
 
 /** The inner kind of the sealed text. app.js sends a file of this kind to restoreSolana. */
@@ -34,7 +34,6 @@ export function backupText(host, gid, i) {
     publicKeyPackage: s.publicKeyPackage,
     groupKey: s.groupKey,
     solSeed: s.solSeed,
-    feeSecret: s.feeSecret,
   });
 }
 
@@ -48,14 +47,13 @@ export function backupWords(c, i) {
       "This passphrase opens your Solana key share. Zigs cannot recover it. Write it down " +
       "and keep it apart from the file. It is a second file with its own passphrase.",
     file:
-      "The file holds your Solana key share, the secret that gives the Solana viewing and " +
-      "proving keys, and your fee key. Anyone who has the file and the passphrase can sign as " +
-      "this seat on Solana and spend the SOL of its fee address.",
+      "The file holds your Solana key share and the secret that gives the Solana viewing and " +
+      "proving keys. Your fee key comes from the key share. Anyone who has the file and the " +
+      "passphrase can sign as this seat on Solana and spend the SOL of its fee address.",
     async save(pass) {
       refuseStopped(c);
       if (!holdsShare(solOf(host, gid, i)))
         throw new Error("Seat " + i + " has no Solana part yet.");
-      await makeFeeKey(c, i); // a seat from before the fee key has none yet: the file must hold it
       const name = backupName(host.state.g.name + " solana", i);
       return host.sealAndSave(pass, backupText(host, gid, i), name);
     },
@@ -67,7 +65,6 @@ const FILE_CHECKS = [
   (b) => Number.isInteger(b.seat) && b.seat >= 1 && b.seat <= 7,
   (b) => HEX64.test(b.solSeed) && HEX64.test(b.groupKey),
   (b) => shareShape(b.keyPackage) && isObj(b.publicKeyPackage),
-  (b) => b.feeSecret === undefined || HEX64.test(b.feeSecret),
 ];
 
 function readFile(b) {
@@ -134,27 +131,6 @@ async function settle(c, f) {
   }
 }
 
-const NEW_FEE =
-  " This backup is from a version before the fee key, so Zigs made a new fee key for the seat.";
-const FUND = " Fund its new fee address.";
-const TAKEN =
-  " The seat has published another fee key already, so this browser cannot pay for the seat. " +
-  "Use the browser that holds that key, or restore a newer backup of the seat.";
-
-/** What the banner adds about the fee key of a restored seat (`fee` is from feeOfFile). */
-function feeNote(c, seat, fee) {
-  const shown = publishedFee(c, seat);
-  const taken = shown !== undefined && shown !== fee.patch.feePublic;
-  if (taken) return (fee.made ? NEW_FEE : "") + TAKEN;
-  return fee.made ? NEW_FEE + FUND : "";
-}
-
-/** The fee key of a restored seat: the one in the file, or a new one for an older file. */
-function feeOfFile(W, f) {
-  if (f.feeSecret === undefined) return { patch: newFeePatch(W), made: true };
-  return { patch: { feeSecret: f.feeSecret, feePublic: W.sol_fee_public(f.feeSecret) } };
-}
-
 /**
  * Restores the Solana part of a seat from the decrypted file `b`. It opens the wallet, waits for
  * its documents, and stores the part only when the key share equals the soldone document of the
@@ -169,7 +145,6 @@ export async function restoreSolana(c, b, encrypted) {
   if (host.state.gid !== f.group) host.openGroup(f.group);
   const v = await settle(c, f);
   if (!v.ok) throw new Error(v.refuse ?? v.wait);
-  const fee = feeOfFile(c.W, f);
   const part = {
     keyPackage: f.keyPackage,
     publicKeyPackage: f.publicKeyPackage,
@@ -177,11 +152,10 @@ export async function restoreSolana(c, b, encrypted) {
     solSeed: f.solSeed,
     cluster: CLUSTER,
     doneSent: true,
-    ...fee.patch,
   };
   if (!(await putSol(host, f.group, f.seat, part))) {
     throw new Error("This browser could not save the restored Solana part.");
   }
   const text = "Restored the Solana part of seat " + f.seat + ". It matches the wallet.";
-  host.showBanner("ok", text + feeNote(c, f.seat, fee));
+  host.showBanner("ok", text + (feeMismatch(c, f.seat) ? " " + mismatchText(f.seat) : ""));
 }

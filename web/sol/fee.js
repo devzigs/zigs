@@ -1,25 +1,23 @@
 // The fee key of a seat (ZOLANA.md 5). Each seat has its own Devnet key. It pays the fees and the
-// rents of the proposals that its seat makes, so the group key never pays. The device makes it
-// when the Solana setup of the seat finishes, or at the first run for a seat that finished before
-// the fee key existed. The secret sits in the Solana secret of the seat, so the passkey lock, the
-// tab sync and the Solana backup cover it, and it goes to no Worker: the wasm signs with it.
-// The seat publishes the public key in the signed document `solfee/<i>`, and only when no valid
-// document shows a key for the seat. When two browsers hold the same seat with two keys, the first
-// document stands: the other browser writes nothing, and it says so. Both would write without end
-// if each one answered a document with its own key. An approver takes the payer of a proposal from
-// the document of the proposing seat and never from the proposal.
+// rents of the proposals that its seat makes, so the group key never pays. The wasm derives it from
+// the key share of the seat, so a second tab, a second browser and a restore of any Solana backup
+// hold the same key, and the page stores no fee key. The seat publishes the public key in the
+// signed document `solfee/<i>` when no valid document shows a key for the seat. A valid document
+// with another key is forged or broken: the page writes nothing over it, and the seat says that
+// it cannot pay. An approver takes the payer of a proposal from the document of the proposing
+// seat and never from the proposal.
 import { CLUSTER } from "./docs.js";
-import { putSol, solOf } from "./secrets.js";
+import { holdsShare, solOf } from "./secrets.js";
 
 const J = JSON.parse;
 const isKey = (v) => typeof v === "string" && /^[0-9a-f]{64}$/.test(v);
-const SAVE_FAILED = "This browser could not save the fee key of the seat.";
 
-/** The fee key that seat `seat` holds in this browser: { secret, key } (hex), or null. */
+/** The fee key that the key share of seat `seat` gives: { secret, key } (hex), or null. */
 export function feeOf(c, seat) {
   const s = solOf(c.host, c.gid, seat);
-  const found = isKey(s.feeSecret) && isKey(s.feePublic);
-  return found ? { secret: s.feeSecret, key: s.feePublic } : null;
+  if (!holdsShare(s)) return null;
+  const made = J(c.W.sol_fee_key(JSON.stringify(s.keyPackage)));
+  return { secret: made.secret, key: made.public };
 }
 
 /** The fee key (hex) that seat `seat` published in a valid signed document, or undefined. */
@@ -28,41 +26,26 @@ export function publishedFee(c, seat) {
   return isKey(doc?.key) && doc.cluster === CLUSTER ? doc.key : undefined;
 }
 
-/** A fresh fee key as the patch of the Solana secret of a seat. */
-export function newFeePatch(W) {
-  const made = J(W.sol_fee_key());
-  return { feeSecret: made.secret, feePublic: made.public };
-}
-
-/**
- * Makes the fee key of a seat that has none. The callers check that the seat holds a Solana key
- * share (the reactor step in ceremony.js and the backup): a seat that lost its Solana part must
- * stay empty, or a restore would refuse it ("already has Solana data").
- */
-export async function makeFeeKey(c, seat) {
-  if (solOf(c.host, c.gid, seat).feeSecret) return;
-  if (!(await putSol(c.host, c.gid, seat, newFeePatch(c.W)))) throw new Error(SAVE_FAILED);
-  c.host.log("seat " + seat + ": fee key made");
-}
-
-/** True when this browser holds a fee key of the seat and no valid document shows a key for it. */
+/** True when the seat has a fee key and no valid document shows a key for it. */
 export const feeUnpublished = (c, seat) =>
   feeOf(c, seat) !== null && publishedFee(c, seat) === undefined;
 
-/** True when a valid document shows another key for the seat than this browser holds. */
-export const feeConflict = (c, seat) => {
+/** True when a valid document shows another key for the seat than its key share gives. */
+export const feeMismatch = (c, seat) => {
   const held = feeOf(c, seat),
     shown = publishedFee(c, seat);
   return held !== null && shown !== undefined && shown !== held.key;
 };
 
-/** The text for a seat whose fee key sits in another browser. */
-export const conflictText = (seat) =>
-  "Seat " +
+/** The text for a seat whose valid document shows another key than its key share gives. */
+export const mismatchText = (seat) =>
+  "The fee document of seat " +
   seat +
-  " has another fee key in another browser. This browser cannot pay for seat " +
+  " does not show the key of this seat. It is forged or broken, and seat " +
   seat +
-  ". Use that browser to propose and to add SOL.";
+  " cannot pay until it is fixed. Seat " +
+  seat +
+  " can still approve and sign, and the other seats can propose and add SOL.";
 
 /** The reactor step: publish the signed document of the fee key of a seat. */
 export async function publishFee(c, seat) {
@@ -103,8 +86,9 @@ const NOT_READY = (seat) =>
 
 /** The fee key of `seat`, when its published document shows it. Throws a text when it does not. */
 export function readyFee(c, seat) {
-  if (feeConflict(c, seat)) throw new Error(conflictText(seat));
-  const held = feeOf(c, seat);
-  if (held === null || publishedFee(c, seat) === undefined) throw new Error(NOT_READY(seat));
+  const held = feeOf(c, seat),
+    shown = publishedFee(c, seat);
+  if (held === null || shown === undefined) throw new Error(NOT_READY(seat));
+  if (shown !== held.key) throw new Error(mismatchText(seat));
   return held;
 }

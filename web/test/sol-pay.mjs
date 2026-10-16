@@ -20,8 +20,11 @@ import {
   W,
   c,
   chain,
+  data,
   feeAddress,
   gid,
+  notify,
+  path,
   proposed,
   solOf,
   ssOf,
@@ -122,6 +125,12 @@ async function useTestGroup() {
     await c.host.sdb.doc(c.base + "/soldone/" + i).set(doc);
   }
   await waitFor("the test group", () => agreement(c).done?.groupKey === key);
+  // The key shares changed, so the fee keys that they give changed: the old documents are stale.
+  for (const i of [1, 2, 3]) data.delete(path(gid, "solfee/" + i));
+  notify();
+  const published = () => [1, 2, 3].every((i) => c.docs.solfee[i]?.key === feeOf(c, i).key);
+  await waitFor("the fee keys of the test group", published);
+  for (const i of [1, 2, 3]) chain.balances.set(feeAddress(i), 50_000_000n);
   const owner = base58(key);
   chain.group = { key, owner, shielded: address, nonceAccount: base58(await nonceAccountHex(key)) };
   chain.balances.set(owner, 50_000_000n);

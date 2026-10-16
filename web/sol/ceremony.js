@@ -4,7 +4,7 @@
 // and the boxes carry a curve label, so a Zcash box cannot open here.
 import { fitsPublished, samePackages } from "../util.js";
 import { CLUSTER } from "./docs.js";
-import { feeUnpublished, makeFeeKey, newFeePatch, publishFee } from "./fee.js";
+import { feeUnpublished, publishFee } from "./fee.js";
 import { holdsShare, putSol, refuseStopped, solOf, stopOf } from "./secrets.js";
 
 const J = JSON.parse,
@@ -203,7 +203,6 @@ async function round3(c, i) {
     r1package: null,
     rSol: null,
     echo: null,
-    ...newFeePatch(c.W),
   });
   if (!saved)
     host.showBanner(
@@ -243,14 +242,13 @@ const launch = (c, key, run) => {
 };
 
 // The steps of a seat in order: the first one that is due runs. `open` is true when the Zcash part
-// of the seat is settled. The two fee steps need the Solana key share only: a seat that finished
-// its setup before the fee key existed gets its key and its document here.
+// of the seat is settled. The fee step needs the Solana key share only: a seat that finished its
+// setup before the fee key existed publishes its fee document here.
 const STEPS = [
   ["r1", (c, i, s, open) => open && needR1(c, i, s), round1],
   ["r2", (c, i, s, open) => open && needR2(c, s), round2],
   ["r3", (c, i, s) => needR3(c, i, s), round3],
   ["done", (c, i, s) => needDone(c, i, s), publishDone],
-  ["fee", (c, i, s) => holdsShare(s) && !s.feeSecret, makeFeeKey],
   ["feedoc", (c, i) => c.loaded.solfee && feeUnpublished(c, i), publishFee],
 ];
 

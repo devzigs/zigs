@@ -374,47 +374,19 @@ export function sol_echo(wallet_id, safety, cluster, round1) {
 }
 
 /**
- * A fresh fee key of a seat: `{"secret", "public"}` as hex.
+ * The fee key of the seat that holds `key_package`: `{"secret", "public"}` as hex. Every copy of
+ * the key package gives the same key.
+ * @param {string} key_package
  * @returns {string}
  */
-export function sol_fee_key() {
-    let deferred2_0;
-    let deferred2_1;
-    try {
-        const retptr = wasm.__wbindgen_add_to_stack_pointer(-16);
-        wasm.sol_fee_key(retptr);
-        var r0 = getDataViewMemory0().getInt32(retptr + 4 * 0, true);
-        var r1 = getDataViewMemory0().getInt32(retptr + 4 * 1, true);
-        var r2 = getDataViewMemory0().getInt32(retptr + 4 * 2, true);
-        var r3 = getDataViewMemory0().getInt32(retptr + 4 * 3, true);
-        var ptr1 = r0;
-        var len1 = r1;
-        if (r3) {
-            ptr1 = 0; len1 = 0;
-            throw takeObject(r2);
-        }
-        deferred2_0 = ptr1;
-        deferred2_1 = len1;
-        return getStringFromWasm0(ptr1, len1);
-    } finally {
-        wasm.__wbindgen_add_to_stack_pointer(16);
-        wasm.__wbindgen_export3(deferred2_0, deferred2_1, 1);
-    }
-}
-
-/**
- * The public key (hex) of a fee secret.
- * @param {string} secret
- * @returns {string}
- */
-export function sol_fee_public(secret) {
+export function sol_fee_key(key_package) {
     let deferred3_0;
     let deferred3_1;
     try {
         const retptr = wasm.__wbindgen_add_to_stack_pointer(-16);
-        const ptr0 = passStringToWasm0(secret, wasm.__wbindgen_export2, wasm.__wbindgen_export4);
+        const ptr0 = passStringToWasm0(key_package, wasm.__wbindgen_export2, wasm.__wbindgen_export4);
         const len0 = WASM_VECTOR_LEN;
-        wasm.sol_fee_public(retptr, ptr0, len0);
+        wasm.sol_fee_key(retptr, ptr0, len0);
         var r0 = getDataViewMemory0().getInt32(retptr + 4 * 0, true);
         var r1 = getDataViewMemory0().getInt32(retptr + 4 * 1, true);
         var r2 = getDataViewMemory0().getInt32(retptr + 4 * 2, true);
