@@ -7,7 +7,7 @@ use solana_pubkey::Pubkey;
 use solana_signer::Signer;
 use zigs_min_multisig_svm_tests::{
     approval_ix, cancel_ix, close_cancelled_ix, code, create_ix, execute_ix, refused_with,
-    sample_transact, serialize, Body, Rig, TxResult, DAY, NOW, PROGRAM_ID,
+    sample_transact, serialize, Body, Rig, TxResult, DAY, NOW, PROGRAM_ID, SYSTEM_ID,
 };
 
 fn rig_and_body() -> (Rig, Body) {
@@ -76,6 +76,21 @@ fn create_refuses_bad_bodies() {
     let mut four = body.clone();
     four.authorities = (0..4).map(|_| Pubkey::new_unique()).collect();
     rig.create(&four).expect("four authorities");
+}
+
+/// Review R3: rent paid to the group's owner PDA could never move, and the program and the System
+/// Program cannot take lamports, so execute and cancel would fail for ever.
+#[test]
+fn create_refuses_a_rent_recipient_that_cannot_spend() {
+    let (mut rig, body) = rig_and_body();
+    for recipient in [body.owner(), PROGRAM_ID, SYSTEM_ID] {
+        let mut stuck = body.clone();
+        stuck.rent_recipient = recipient;
+        assert_eq!(
+            refused_with(rig.create(&stuck)),
+            code::RENT_RECIPIENT_NOT_ALLOWED
+        );
+    }
 }
 
 #[test]

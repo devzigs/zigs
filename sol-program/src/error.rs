@@ -23,6 +23,7 @@ pub enum MultisigError {
     NotAbortAuthority = 6017,
     NotExpired = 6019,
     NotACancellation = 6020,
+    RentRecipientNotAllowed = 6021,
 }
 
 impl From<MultisigError> for ProgramError {

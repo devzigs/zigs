@@ -97,6 +97,12 @@ mutant R2 instructions.rs "close_cancelled pays the recorded rent recipient" \
   'if rent_recipient.address().as_array()[..] != record[10..] {' 'if false {'
 mutant P1 instructions.rs "version 2: a funded address does not block create or cancel" \
   'if account.lamports() == 0 {' 'if true {'
+mutant R3 instructions.rs "the rent recipient is not the owner PDA (review R3)" \
+  '[owner, *program_id, SYSTEM_PROGRAM_ID]' '[*program_id, SYSTEM_PROGRAM_ID]'
+mutant R4 instructions.rs "the rent recipient is not this program (review R3)" \
+  '[owner, *program_id, SYSTEM_PROGRAM_ID]' '[owner, SYSTEM_PROGRAM_ID]'
+mutant R5 instructions.rs "the rent recipient is not the System Program (review R3)" \
+  '[owner, *program_id, SYSTEM_PROGRAM_ID]' '[owner, *program_id]'
 mutant O1 instructions.rs "execute checks the owner PDA account" \
   'if owner.address() != &owner_address {' 'if false {'
 mutant L1 instructions.rs "the pool layout has the exact length" \

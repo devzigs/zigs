@@ -67,6 +67,7 @@ pub mod code {
     pub const NOT_ABORT_AUTHORITY: u32 = 6017;
     pub const NOT_EXPIRED: u32 = 6019;
     pub const NOT_A_CANCELLATION: u32 = 6020;
+    pub const RENT_RECIPIENT_NOT_ALLOWED: u32 = 6021;
     pub const INVALID_SPP_PROGRAM: u32 = 14101;
 }
 

@@ -24,7 +24,7 @@ set -eu
 cd "$(dirname "$0")"
 unset RUSTFLAGS CARGO_ENCODED_RUSTFLAGS
 
-EXPECTED=d0bfbdf338a19e7733c0bc74e3d5870a22f42002ea9cb1bd43062ad1c34879ac
+EXPECTED=18561a65b9a50c132f6884498615cdab492835e96fc71ba01cdc491eec9adf6c
 V2=555f45801f32896c78eb55f962026507dec35ea6d673477326db7913e4475d92
 SBF=${CARGO_BUILD_SBF:-cargo-build-sbf}
 OBJDUMP=$HOME/.cache/solana/v1.54/platform-tools/llvm/bin/llvm-objdump

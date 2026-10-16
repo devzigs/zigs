@@ -132,6 +132,22 @@ fn cancellation_address(program_id: &Address, proposal: &Address) -> (Address, u
     Address::find_program_address(&[CANCEL_SEED, proposal.as_array()], program_id)
 }
 
+fn owner_address(program_id: &Address, group: &[u8; 32]) -> (Address, u8) {
+    Address::find_program_address(&[OWNER_SEED, group], program_id)
+}
+
+/// The rent recipient of a new body must be an account that can take lamports and spend them:
+/// not the owner PDA of the group, this program or the System Program (review R3). The body
+/// cannot name its proposal or cancellation address: they derive from the body hash.
+fn check_new_rent_recipient(program_id: &Address, proposal: &Proposal) -> ProgramResult {
+    let recipient = Address::new_from_array(proposal.rent_recipient);
+    let (owner, _) = owner_address(program_id, &proposal.multisig_pubkey);
+    if [owner, *program_id, SYSTEM_PROGRAM_ID].contains(&recipient) {
+        return Err(MultisigError::RentRecipientNotAllowed.into());
+    }
+    Ok(())
+}
+
 fn check_rent_recipient(proposal: &Proposal, account: &AccountView) -> ProgramResult {
     if account.address().as_array() != &proposal.rent_recipient {
         return Err(MultisigError::RentRecipientMismatch.into());
@@ -153,6 +169,7 @@ pub fn create(program_id: &Address, accounts: &mut [AccountView], data: &[u8]) -
     if proposal.expiry_unix_ts <= now()? {
         return Err(MultisigError::ExpiryNotInFuture.into());
     }
+    check_new_rent_recipient(program_id, &proposal)?;
     let hash = body_hash(data)?;
     let [prefix, group, commitment, hash] = proposal_seeds(&proposal, &hash);
     let (address, bump) =
@@ -268,8 +285,7 @@ pub fn execute(program_id: &Address, accounts: &mut [AccountView], data: &[u8]) 
     if authorization_commitment(&ix, prefix)? != proposal.commitment {
         return Err(MultisigError::CommitmentMismatch.into());
     }
-    let (owner_address, bump) =
-        Address::find_program_address(&[OWNER_SEED, &proposal.multisig_pubkey], program_id);
+    let (owner_address, bump) = owner_address(program_id, &proposal.multisig_pubkey);
     if owner.address() != &owner_address {
         return Err(MultisigError::BadOwnerAddress.into());
     }
