@@ -166,6 +166,13 @@ mutant L2 instructions.rs "the owner PDA is the only owner signer" \
   '.all(|(at, account)| (at == owner_at) == (account.address() == owner));' \
   '.all(|(at, account)| at != owner_at || account.address() == owner);'
 mutant L3 instructions.rs "the pool payer is the execute payer" ' || spp[0].address() != payer' ''
+mutant T1 instructions.rs "the transact CPI goes to the pool account only" \
+  'if spp.get(2).map(AccountView::address) != Some(&PROGRAM_ID_PUBKEY) {' 'if false {'
+mutant T2 instructions.rs "the owner PDA signs the transact CPI" \
+  'let signs = account.is_signer() || account.address() == owner;' \
+  'let signs = account.is_signer();'
+mutant T3 instructions.rs "the transact CPI carries the transact tag" \
+  'instruction_data.push(TRANSACT);' 'instruction_data.push(TRANSACT + 1);'
 mutant K1 instructions.rs "a proposal is owned by the program" \
   'if !account.owned_by(program_id) {
         return Err(MultisigError::NotAProposal.into());' \

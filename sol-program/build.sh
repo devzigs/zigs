@@ -10,11 +10,11 @@
 # with platform-tools v1.54. Put it on PATH or set CARGO_BUILD_SBF. cargo-build-sbf removes the
 # working folder from the source paths, so the ELF holds no home path; this script checks that.
 #
-# EXPECTED is version 4: version 2 with the fixes of the review and SOL withdrawals (ZOLANA.md
-# 7.2). It is not deployed. Version 2 on Devnet (program
-# 5PHZEHBMaYbFL9SFmMyP8kUayh3TFEyq2dvEYY3UGjkL) was built as a member of the Zolana workspace, with
-# the default features of zolana-interface turned off in that workspace. Built on its own, the
-# same source gives another ELF:
+# EXPECTED is version 5: version 2 with the fixes of the review, SOL withdrawals, its own
+# transact CPI and the cluster as a build choice (ZOLANA.md 7.2). It is not deployed. Version 2 on
+# Devnet (program 5PHZEHBMaYbFL9SFmMyP8kUayh3TFEyq2dvEYY3UGjkL) was built as a member of the
+# Zolana workspace, with the default features of zolana-interface turned off in that workspace.
+# Built on its own, the version 2 source gives another ELF:
 # - zolana-program turns on the default features of zolana-interface again, which add the unused
 #   Groth16 verifying keys as exported data (no code);
 # - two panic paths are shorter (src/cpi.rs, src/instructions.rs);
@@ -26,7 +26,7 @@ set -eu
 cd "$(dirname "$0")"
 unset RUSTFLAGS CARGO_ENCODED_RUSTFLAGS
 
-EXPECTED=0c846f8b4dddc19a316297eca235ed592faeef3056ec2eff59247c4335c5970c
+EXPECTED=483e2b4a522544e551520d051747567f905b5fd978d13f4b3d94cd3bda3d84ea
 V2=555f45801f32896c78eb55f962026507dec35ea6d673477326db7913e4475d92
 SBF=${CARGO_BUILD_SBF:-cargo-build-sbf}
 OBJDUMP=$HOME/.cache/solana/v1.54/platform-tools/llvm/bin/llvm-objdump

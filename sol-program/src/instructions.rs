@@ -1,8 +1,9 @@
 //! The four instructions of the spec, with the limits of `lib.rs`.
 
 use pinocchio::{
-    cpi::{Seed, Signer},
+    cpi::{invoke_signed_with_bounds, Seed, Signer},
     error::ProgramError,
+    instruction::{InstructionAccount, InstructionView},
     sysvars::{clock::Clock, Sysvar},
     AccountView, Address, ProgramResult,
 };
@@ -16,7 +17,7 @@ use zolana_interface::instruction::{
     tag::TRANSACT,
 };
 use zolana_interface::verifying_keys::CircuitId;
-use zolana_program::cpi::SppTransactAccounts;
+use zolana_interface::PROGRAM_ID_PUBKEY;
 
 use crate::{
     approval::{approval_digest, check_approval},
@@ -240,6 +241,41 @@ fn check_spp_accounts<'a>(
     Ok(settlements)
 }
 
+/// The code of `TransactAccountsError::InvalidSppProgram` in `zolana-program`, whose CPI helper
+/// the program used up to version 4. Clients see the same error.
+const INVALID_SPP_PROGRAM: u32 = 14101;
+
+/// The pool's `transact` as a CPI: the forwarded accounts keep their writable and signer flags,
+/// the owner PDA signs with its seeds, and the data is the tag 16, then `data`. This is what
+/// `SppTransactAccounts` of `zolana-program` does. The program carries it itself because that
+/// crate turns on the Groth16 verifying keys of `zolana-interface`, unused data in the ELF.
+fn invoke_transact(
+    spp: &[AccountView],
+    owner: &Address,
+    data: &[u8],
+    signer: Signer,
+) -> ProgramResult {
+    if spp.get(2).map(AccountView::address) != Some(&PROGRAM_ID_PUBKEY) {
+        return Err(ProgramError::Custom(INVALID_SPP_PROGRAM));
+    }
+    let metas: Vec<InstructionAccount> = spp
+        .iter()
+        .map(|account| {
+            let signs = account.is_signer() || account.address() == owner;
+            InstructionAccount::new(account.address(), account.is_writable(), signs)
+        })
+        .collect();
+    let mut instruction_data = Vec::with_capacity(1 + data.len());
+    instruction_data.push(TRANSACT);
+    instruction_data.extend_from_slice(data);
+    let instruction = InstructionView {
+        program_id: &PROGRAM_ID_PUBKEY,
+        accounts: &metas,
+        data: &instruction_data,
+    };
+    invoke_signed_with_bounds::<MAX_SPP_ACCOUNTS, _>(&instruction, spp, &[signer])
+}
+
 /// Accounts: payer (signer, writable), proposal (writable), owner PDA, cancellation PDA, rent
 /// recipient (writable), instructions sysvar, then the transact accounts. Data: the transact
 /// instruction data without its tag. The instruction before this one is the Ed25519 approval.
@@ -282,15 +318,13 @@ pub fn execute(program_id: &Address, accounts: &mut [AccountView], data: &[u8]) 
     if authorization_commitment(&ix, prefix, settlements)? != proposal.commitment {
         return Err(MultisigError::CommitmentMismatch.into());
     }
-    let signer_pdas = [&owner_address];
-    let transact = SppTransactAccounts::new(spp, &signer_pdas)?;
     let bump_seed = [bump];
     let seeds = [
         Seed::from(OWNER_SEED),
         Seed::from(&proposal.multisig_pubkey),
         Seed::from(&bump_seed),
     ];
-    transact.invoke::<MAX_SPP_ACCOUNTS>(data, &[Signer::from(&seeds)])?;
+    invoke_transact(spp, &owner_address, data, Signer::from(&seeds))?;
     close_to(proposal_account, rent_recipient)
 }
 

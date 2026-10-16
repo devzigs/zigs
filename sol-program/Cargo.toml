@@ -21,7 +21,6 @@ pinocchio = { version = "0.11", features = ["cpi"] }
 pinocchio-system = "0.6.0"
 zolana-hasher = { git = "https://github.com/helius-labs/zolana", rev = "89640630b3ed2402b83bd20c313406cb3fe906d4", default-features = false }
 zolana-interface = { git = "https://github.com/helius-labs/zolana", rev = "89640630b3ed2402b83bd20c313406cb3fe906d4", default-features = false }
-zolana-program = { git = "https://github.com/helius-labs/zolana", rev = "89640630b3ed2402b83bd20c313406cb3fe906d4", features = ["cpi"] }
 
 [lints.rust.unexpected_cfgs]
 level = "allow"
