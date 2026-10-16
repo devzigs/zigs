@@ -11,6 +11,7 @@ export const accountSign: (a: number, b: number, c: number, d: number, e: number
 export const addressAt: (a: number, b: number, c: any) => [number, number, number, number];
 export const backupOpen: (a: number, b: number, c: number, d: number) => [number, number, number, number];
 export const backupSeal: (a: number, b: number, c: number, d: number) => [number, number, number, number];
+export const blockSpanSeconds: (a: number, b: number, c: number, d: number) => [number, number, number];
 export const boxKeypair: () => [number, number];
 export const boxOpen: (a: number, b: number, c: number, d: number, e: number, f: number, g: number, h: number) => [number, number, number, number];
 export const boxSeal: (a: number, b: number, c: number, d: number, e: number, f: number, g: number, h: number) => [number, number, number, number];
@@ -18,7 +19,7 @@ export const chainwallet_attachTransaction: (a: number, b: number, c: number, d:
 export const chainwallet_balance: (a: number) => [number, number];
 export const chainwallet_broadcast: (a: number, b: number, c: number) => any;
 export const chainwallet_createMessage: (a: number, b: number, c: number, d: number, e: number) => any;
-export const chainwallet_createSpend: (a: number, b: number, c: number) => any;
+export const chainwallet_createSpend: (a: number, b: number, c: number, d: number) => any;
 export const chainwallet_memoNeeds: (a: number) => [number, number, number, number];
 export const chainwallet_new: (a: number, b: number, c: number, d: number, e: number) => [number, number, number];
 export const chainwallet_received: (a: number) => [number, number];
@@ -31,6 +32,7 @@ export const dkgPart1: (a: number, b: number, c: number) => [number, number, num
 export const dkgPart2: (a: number, b: number, c: number, d: number) => [number, number, number, number];
 export const dkgPart3: (a: number, b: number, c: number, d: number, e: number, f: number) => [number, number, number, number];
 export const docPayload: (a: number, b: number, c: number, d: number, e: number, f: number, g: number) => [number, number, number, number];
+export const expiryState: (a: number, b: number, c: number, d: number) => [number, number, number, number];
 export const fetchTransaction: (a: number, b: number, c: number, d: number) => any;
 export const finalize: (a: number, b: number) => [number, number, number, number];
 export const inspect: (a: number, b: number, c: number, d: number) => [number, number, number, number];
@@ -55,7 +57,7 @@ export const safetyNumber: (a: number, b: number, c: number, d: number, e: numbe
 export const secretOpen: (a: number, b: number, c: number, d: number, e: number, f: number) => [number, number, number, number];
 export const secretSeal: (a: number, b: number, c: number, d: number, e: number, f: number) => [number, number, number, number];
 export const signAggregate: (a: number, b: number, c: number, d: number, e: number, f: number, g: number, h: number) => [number, number, number, number];
-export const signCommit: (a: number, b: number, c: number, d: number, e: number, f: number) => [number, number, number, number];
+export const signCommit: (a: number, b: number, c: number, d: number, e: number, f: number, g: number) => [number, number, number, number];
 export const signPackage: (a: number, b: number, c: number, d: number, e: number, f: number, g: number) => [number, number, number, number];
 export const signShare: (a: number, b: number, c: number, d: number, e: number, f: number, g: number, h: number, i: number, j: number, k: number) => [number, number, number, number];
 export const skCommit: (a: number, b: number, c: number, d: number, e: number, f: number, g: number) => [number, number, number, number];

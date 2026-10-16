@@ -343,7 +343,13 @@ sequenceDiagram
 - Any signer picks confirmed notes and builds the unsigned transaction (PCZT).
 - A payment has 1 to 20 recipients and one change output. One payroll is one approval round and
   one transaction.
-- The fee follows ZIP 317: 5,000 zatoshis × max(2, spends, outputs).
+- The fee follows ZIP 317: 5,000 zatoshis × max(2, spends, outputs). In the web app, the
+  proposer can choose a priority fee of 10 times that amount, for a faster block when the
+  network is busy.
+- The payment expires one day after its proposal: 3,456 blocks at 25 seconds (NU7), 1,152 blocks
+  at 75 seconds. It expires at the latest at the block before the next network upgrade, because
+  after the upgrade no block can hold it. The approvals, the proof and the send must be done by
+  then (`wasm/src/expiry.rs`).
 - The session document holds the PCZT, the recipient list (address, amount and optional memo),
   the total, a note and the proposer.
 - A recipient can have a memo: ZIP 302 text of at most 512 UTF-8 bytes, with no null character.
@@ -363,7 +369,10 @@ sequenceDiagram
   - It never takes the memo from the proposer's fields. `unknown` means that the engine could
     not read it.
   - It computes the change and the fee.
-  - It refuses a transaction that moves more than the standard fee out of the shielded pool.
+  - It refuses a transaction with a transparent or Sapling part, and one that never expires
+    (expiry height 0). So the value that leaves the shielded pools is the fee.
+  - It refuses a fee below the ZIP 317 fee or above 10 times it. It reports the fee, the ZIP 317
+    fee and the expiry height. The app shows a higher fee as a priority fee.
 - The app compares the decoded outputs with the proposed list: the same addresses, amounts and
   memos, nothing missing and nothing extra. A proposal without a memo matches only an empty memo.
   Any difference disables Approve, also when only the memo differs or the engine cannot read it.
@@ -379,6 +388,18 @@ A proposer cannot hide a different recipient, amount or extra output behind the 
 
 ### 7.3 Approve
 
+- The web app reads the chain height from its light-wallet server at that moment and gives it
+  to the engine. The engine refuses an expired payment: one that a node refuses at the next
+  block, because it expires within 3 blocks. It also refuses a payment that stays valid more
+  than 48 hours from now (the window and one day for a proposer whose view of the chain
+  differs). The iPhone and Mac apps give no chain height yet, so they skip this check
+  (TICKETS.md, ZEC-8).
+- In the web app, a payment that expired before its signing package shows "Propose again". It
+  fills the Send form with the same recipients, amounts, memos, note and fee choice. The new
+  proposal needs new approvals. A payment with a signing package may have a signed transaction
+  on chain, and one seat can rewrite its proposal, so the page asks the signers to check an
+  explorer instead. This holds only while the group server keeps the package: one seat or the
+  server can remove it (TICKETS.md, ZEC-9).
 - The engine makes FROST nonces and their commitments.
 - The device saves the nonces together with the transaction's **sighash** (ZIP 244, v6).
 - Only the commitment goes to the group server.
@@ -407,6 +428,12 @@ Each chosen device signs automatically, after these checks:
 - `alpha` is new for each spend, so spends cannot be linked to the wallet or to each other.
 - A device builds the Halo2 proof, checks the whole transaction, and sends it through its
   light-wallet server.
+- A sent payment keeps the notes of the wallet until a block holds it. In the web app: if no
+  block holds it after 10 minutes, any signer can send the same transaction again. If no synced
+  block holds it 3 blocks after its expiry height, the page no longer holds its notes back, and
+  it asks the signers to check an explorer before anyone proposes it again. The web app takes
+  the id of the payment from the PCZT of the proposal (`txid` of `inspect`), never from the
+  finished transaction, which one seat writes.
 - On chain, the payment is one normal Ironwood shielded transaction.
 
 ### 7.7 Cancel
@@ -794,9 +821,21 @@ received payments yet. The engine has the calls for them.
   or private. The app shows control characters and bidirectional marks of the text as U+FFFD, and
   it puts no memo text in a notification. Memos do not count as unread messages.
 - **Engine interface** (web names; the native names have the prefix `wallet`):
-  - `createSpend(payees)` and `walletSpend`: `payees` is `[{"to", "amount", "memo"?}]`. A row
-    error names the row: `recipient 2: the memo is 513 bytes long; the limit is 512`.
-  - `inspect(pczt, fvk)`: each `output` line has `memo_status` and, for text, `memo`.
+  - `createSpend(payees, priority)` and `walletSpend(key, payees, tip)`: `payees` is
+    `[{"to", "amount", "memo"?}]`. A row error names the row: `recipient 2: the memo is 513
+    bytes long; the limit is 512`. `priority` pays 10 times the ZIP 317 fee. `walletSpend`
+    always pays the standard fee (ZEC-8).
+  - `inspect(pczt, fvk)`: each `output` line has `memo_status` and, for text, `memo`. The result
+    also has `fee`, `standard_fee` (ZIP 317), `expiry_height` and `txid` (ZIP 244, the id that
+    the transaction gets on chain).
+  - `signCommit(pczt, fvk, keyPackage, tip)`: `tip` is the chain height that the device just
+    read. The engine refuses an expired payment (section 7.3). The native `signCommit` takes no
+    tip yet (ZEC-8).
+  - `expiryState(network, expiry, tip)` (web only): `{"expired", "blocks_left",
+    "seconds_left"}`.
+  - `blockSpanSeconds(network, from, to)` (web only): the expected seconds from block `from` to
+    block `to`: 75 for each block before NU7, 25 for each block from NU7. The web app uses it
+    for every time estimate.
   - `memoNeeds()` and `walletMemoNeeds`: `[{"txid", "hash", "height"}]` for the notes whose memo
     is not read yet. `hash` is the transaction id in hex, in the byte order of
     `TxFilter.hash`. `txid` is the id as an explorer shows it. The transactions that were listed

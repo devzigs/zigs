@@ -91,14 +91,16 @@ export class ChainWallet {
     }
     /**
      * `payees` is a JSON list: `[{"to": "<unified address>", "amount": <zat>, "memo": "<text>"},
-     * …]`. The memo is optional: at most 512 UTF-8 bytes.
+     * …]`. The memo is optional: at most 512 UTF-8 bytes. `priority` pays 10 times the ZIP 317
+     * fee. The payment expires one day after it is built (see `expiry`).
      * @param {string} payees
+     * @param {boolean} priority
      * @returns {Promise<string>}
      */
-    createSpend(payees) {
+    createSpend(payees, priority) {
         const ptr0 = passStringToWasm0(payees, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
         const len0 = WASM_VECTOR_LEN;
-        const ret = wasm.chainwallet_createSpend(this.__wbg_ptr, ptr0, len0);
+        const ret = wasm.chainwallet_createSpend(this.__wbg_ptr, ptr0, len0, priority);
         return ret;
     }
     /**
@@ -506,6 +508,24 @@ export function backupSeal(passphrase, plaintext) {
 }
 
 /**
+ * The expected seconds from block `from` to block `to` on `network`, at the block time of each
+ * block (75 seconds before NU7, 25 from it).
+ * @param {string} network_name
+ * @param {number} from
+ * @param {number} to
+ * @returns {number}
+ */
+export function blockSpanSeconds(network_name, from, to) {
+    const ptr0 = passStringToWasm0(network_name, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
+    const len0 = WASM_VECTOR_LEN;
+    const ret = wasm.blockSpanSeconds(ptr0, len0, from, to);
+    if (ret[2]) {
+        throw takeFromExternrefTable0(ret[1]);
+    }
+    return ret[0];
+}
+
+/**
  * @returns {string}
  */
 export function boxKeypair() {
@@ -730,6 +750,35 @@ export function docPayload(wallet_id, path, seat, fields) {
         return getStringFromWasm0(ptr4, len4);
     } finally {
         wasm.__wbindgen_free(deferred5_0, deferred5_1, 1);
+    }
+}
+
+/**
+ * For a payment that expires at block `expiry`, seen at chain height `tip`:
+ * `{"expired", "blocks_left", "seconds_left"}`. An expired payment can no longer be sent.
+ * @param {string} network_name
+ * @param {number} expiry
+ * @param {number} tip
+ * @returns {string}
+ */
+export function expiryState(network_name, expiry, tip) {
+    let deferred3_0;
+    let deferred3_1;
+    try {
+        const ptr0 = passStringToWasm0(network_name, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
+        const len0 = WASM_VECTOR_LEN;
+        const ret = wasm.expiryState(ptr0, len0, expiry, tip);
+        var ptr2 = ret[0];
+        var len2 = ret[1];
+        if (ret[3]) {
+            ptr2 = 0; len2 = 0;
+            throw takeFromExternrefTable0(ret[2]);
+        }
+        deferred3_0 = ptr2;
+        deferred3_1 = len2;
+        return getStringFromWasm0(ptr2, len2);
+    } finally {
+        wasm.__wbindgen_free(deferred3_0, deferred3_1, 1);
     }
 }
 
@@ -1076,9 +1125,10 @@ export function signAggregate(pczt, pkp, _package, shares) {
  * @param {string} pczt
  * @param {string} fvk
  * @param {string} kp
+ * @param {number} tip
  * @returns {string}
  */
-export function signCommit(pczt, fvk, kp) {
+export function signCommit(pczt, fvk, kp, tip) {
     let deferred5_0;
     let deferred5_1;
     try {
@@ -1088,7 +1138,7 @@ export function signCommit(pczt, fvk, kp) {
         const len1 = WASM_VECTOR_LEN;
         const ptr2 = passStringToWasm0(kp, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
         const len2 = WASM_VECTOR_LEN;
-        const ret = wasm.signCommit(ptr0, len0, ptr1, len1, ptr2, len2);
+        const ret = wasm.signCommit(ptr0, len0, ptr1, len1, ptr2, len2, tip);
         var ptr4 = ret[0];
         var len4 = ret[1];
         if (ret[3]) {

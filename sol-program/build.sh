@@ -1,32 +1,38 @@
 #!/bin/sh
 # Builds the Zigs approvals program (ZOLANA.md 7.2) for SBF and checks the SHA-256 of the ELF.
 #   sh sol-program/build.sh       builds target/deploy/zigs_min_multisig.so and checks its hash
-#   sh sol-program/build.sh test  then runs the unit tests and the LiteSVM tests (svm-tests/), with
-#                                 a stub pool and with the pool of the pinned Zolana commit
+#   sh sol-program/build.sh test  then checks the cluster builds and runs the unit tests and the
+#                                 LiteSVM tests (svm-tests/), with a stub pool and with the pool of
+#                                 the pinned Zolana commit
 #   sh sol-program/build.sh v2    then rebuilds Devnet version 2 and compares the code of the two
 #
 # Toolchain: cargo-build-sbf of Agave v4.3.0 (solana-release-aarch64-apple-darwin.tar.bz2 of the
 # GitHub release, SHA-256 0bfbd769a55e32f0a1fe1b92f76f360f01ee19475facf8c31cb90f99dcca7fe0)
 # with platform-tools v1.54. Put it on PATH or set CARGO_BUILD_SBF. cargo-build-sbf removes the
-# working folder from the source paths, so the ELF holds no home path; this script checks that.
+# working folder from the source paths, so the ELF holds no path of this machine; this script
+# checks that.
 #
-# EXPECTED is version 4: version 2 with the fixes of the review and SOL withdrawals (ZOLANA.md
-# 7.2). It is not deployed. Version 2 on Devnet (program
-# 5PHZEHBMaYbFL9SFmMyP8kUayh3TFEyq2dvEYY3UGjkL) was built as a member of the Zolana workspace, with
-# the default features of zolana-interface turned off in that workspace. Built on its own, the
-# same source gives another ELF:
+# EXPECTED is version 5: version 2 with the fixes of the review, SOL withdrawals, its own
+# transact CPI and the cluster as a build choice (ZOLANA.md 7.2). It is not deployed. Version 2 on
+# Devnet (program 5PHZEHBMaYbFL9SFmMyP8kUayh3TFEyq2dvEYY3UGjkL) was built as a member of the
+# Zolana workspace, with the default features of zolana-interface turned off in that workspace.
+# Built on its own, the version 2 source gives another ELF:
 # - zolana-program turns on the default features of zolana-interface again, which add the unused
 #   Groth16 verifying keys as exported data (no code);
 # - two panic paths are shorter (src/cpi.rs, src/instructions.rs);
 # - the functions sit in another order.
 # The v2 mode rebuilds version 2 from the import commit of src/ in that workspace layout, checks
 # its hash, and lists the functions whose code differs from this build (on the import commit:
-# none; since version 3: the functions that the fixes changed).
+# none; later: the functions that changed since version 2).
 set -eu
 cd "$(dirname "$0")"
 unset RUSTFLAGS CARGO_ENCODED_RUSTFLAGS
 
-EXPECTED=0c846f8b4dddc19a316297eca235ed592faeef3056ec2eff59247c4335c5970c
+# The ELF holds the paths of the standard library inside platform-tools, which differ between its
+# macOS and its Linux build. So each host has its own hash; CI builds on Linux. The two ELFs have
+# the same code (fncmp.py on the unstripped CI artifact).
+EXPECTED_DARWIN=b4bad24c6ae7cf2455b52780f78e35573f014ab3bc618fcbb49772b06c0d6eac
+EXPECTED_LINUX=4dd727b04d585403ce7c23ba70497c3922a166690409dfcd63f38c95bfeb2355
 V2=555f45801f32896c78eb55f962026507dec35ea6d673477326db7913e4475d92
 SBF=${CARGO_BUILD_SBF:-cargo-build-sbf}
 OBJDUMP=$HOME/.cache/solana/v1.54/platform-tools/llvm/bin/llvm-objdump
@@ -41,14 +47,26 @@ sha() {
   shasum -a 256 "$1" | cut -d' ' -f1
 }
 
+case "$(uname -s)-$(uname -m)" in
+  Darwin-arm64) EXPECTED=$EXPECTED_DARWIN ;;
+  Linux-x86_64) EXPECTED=$EXPECTED_LINUX ;;
+  *) fail "no pinned hash for the host $(uname -s) $(uname -m)" ;;
+esac
+if [ "${1:-}" = v2 ] && [ "$(uname -s)" != Darwin ]; then
+  fail "v2 mode needs macOS, where Devnet version 2 was built"
+fi
+
 case "$("$SBF" --version 2>/dev/null | head -1)" in
   "cargo-build-sbf 4.3.0") ;;
   *) fail "needs cargo-build-sbf 4.3.0 (Agave v4.3.0); put it on PATH or set CARGO_BUILD_SBF" ;;
 esac
 
-"$SBF" --tools-version v1.54 --jobs 4 -- --locked
-if LC_ALL=C grep -q -F "$HOME" "$SO"; then
-  fail "$SO holds a home path"
+"$SBF" --tools-version v1.54 --jobs 4 -- --locked --features devnet
+# The ELF holds no path of this machine. Its only absolute paths are the build paths of
+# platform-tools itself (.../work/platform-tools/...), which on a CI runner start with its home.
+if LC_ALL=C perl -0777 -ne 'BEGIN { $h = shift } exit(m{\Q$h\E(?!/work/platform-tools/)} ? 0 : 1)' \
+  "$HOME" "$SO"; then
+  fail "$SO holds a path of this machine"
 fi
 echo "$(sha "$SO")  $SO ($(wc -c < "$SO" | tr -d ' ') bytes)"
 [ "$(sha "$SO")" = "$EXPECTED" ] || fail "hash differs from EXPECTED (change it only with src/)"
@@ -58,7 +76,7 @@ find_zolana() {
   ZOLANA=$(cargo metadata --format-version 1 --locked | python3 -I -c '
 import json, os, sys
 for p in json.load(sys.stdin)["packages"]:
-    if p["name"] == "zolana-program":
+    if p["name"] == "zolana-interface":
         print(os.path.dirname(os.path.dirname(os.path.dirname(p["manifest_path"]))))')
   [ "$(git -C "$ZOLANA" rev-parse HEAD)" = 89640630b3ed2402b83bd20c313406cb3fe906d4 ] \
     || fail "$ZOLANA is not at the pinned commit"
@@ -80,10 +98,42 @@ build_real_pool() {
   cp "$POOL/target/deploy/shielded_pool_program.so" svm-tests/target/deploy/
 }
 
+# SOL-42: a build names one cluster, and a mainnet build cannot carry the Devnet genesis hash or
+# the development pool id. Each refused build must fail with its own message. A mainnet build
+# with a test pool id (32 bytes of 0x6d, MAINNET_TEST_POOL in svm-tests/src/lib.rs) must pass its
+# unit tests, and its ELF goes to svm-tests.
+TEST_POOL=8NADbpm7TWNhCsGKYZZ9iR89cJvwQvqNuUeXMRtJSKA4
+check_clusters() {
+  DEV_POOL=sppU489D7A4U1exNo1oeMGZtLEofq3a6o2fR7UeoWB6
+  must_fail "choose the cluster" cargo check --locked -j 4
+  must_fail "choose one cluster" cargo check --locked -j 4 --features devnet,mainnet
+  must_fail "not defined at compile time" env -u ZIGS_MAINNET_POOL_ID \
+    cargo check --locked -j 4 --features mainnet
+  must_fail "development pool id" env ZIGS_MAINNET_POOL_ID=$DEV_POOL \
+    cargo check --locked -j 4 --features mainnet
+  ZIGS_MAINNET_POOL_ID=$TEST_POOL cargo test --locked -j 4 --features mainnet -- --test-threads 2
+  # The mainnet ELF with the test pool id, for svm-tests/tests/cluster.rs. Its own target folder
+  # keeps the Devnet build in target/.
+  ZIGS_MAINNET_POOL_ID=$TEST_POOL CARGO_TARGET_DIR=target/mainnet-test \
+    "$SBF" --tools-version v1.54 --jobs 4 --sbf-out-dir svm-tests/target/deploy/mainnet \
+    -- --locked --features mainnet
+}
+
+# must_fail TEXT COMMAND...: the command fails, and its output names TEXT.
+must_fail() {
+  TEXT=$1
+  shift
+  if OUT=$("$@" 2>&1); then
+    fail "this build must fail: $*"
+  fi
+  echo "$OUT" | grep -q -F "$TEXT" || fail "this build failed without \"$TEXT\": $*"
+}
+
 case "${1:-}" in
   "") exit 0 ;;
   test)
-    cargo test --locked -j 4 -- --test-threads 2
+    cargo test --locked -j 4 --features devnet -- --test-threads 2
+    check_clusters
     "$SBF" --tools-version v1.54 --jobs 4 --manifest-path svm-tests/stub-pool/Cargo.toml -- --locked
     build_real_pool
     cargo test --manifest-path svm-tests/Cargo.toml --locked -j 4 -- --test-threads 2

@@ -6,6 +6,7 @@
 //! owner tags).
 
 pub mod approval;
+pub mod cluster;
 pub mod error;
 pub mod instructions;
 pub mod state;
@@ -31,9 +32,9 @@ pub const CANCEL_SEED: &[u8] = b"cancelled_transaction";
 /// Versioned domain of the approval message. The group key signs nothing else under it.
 pub const APPROVAL_DOMAIN: &[u8] = b"Zigs_SolApproval_v1";
 
-/// The genesis hash of Devnet: an approval for one cluster never verifies on another.
-pub const DEPLOYMENT_ID: [u8; 32] =
-    Address::from_str_const("EtWTRABZaYq6iMfeYKouRu166VU2xqa1wcaWoxPkrZBG").to_bytes();
+/// The genesis hash of the cluster of this build (`cluster.rs`): an approval for one cluster never
+/// verifies on another.
+pub const DEPLOYMENT_ID: [u8; 32] = cluster::GENESIS.to_bytes();
 
 pub const ED25519_PROGRAM_ID: Address =
     Address::from_str_const("Ed25519SigVerify111111111111111111111111111");

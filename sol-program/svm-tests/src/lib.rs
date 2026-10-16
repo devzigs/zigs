@@ -34,8 +34,12 @@ pub const ED25519_ID: Pubkey =
     Pubkey::from_str_const("Ed25519SigVerify111111111111111111111111111");
 pub const INSTRUCTIONS_SYSVAR: Pubkey =
     Pubkey::from_str_const("Sysvar1nstructions1111111111111111111111111");
-const DEVNET_GENESIS: Pubkey =
+pub const DEVNET_GENESIS: Pubkey =
     Pubkey::from_str_const("EtWTRABZaYq6iMfeYKouRu166VU2xqa1wcaWoxPkrZBG");
+pub const MAINNET_GENESIS: Pubkey =
+    Pubkey::from_str_const("5eykt4UsFv8P8NJdTREpY1vzqKqZKvdpKuc147dw2N9d");
+/// The pool id of the mainnet test build (`ZIGS_MAINNET_POOL_ID` in `build.sh test`).
+pub const MAINNET_TEST_POOL: Pubkey = Pubkey::new_from_array([0x6d; 32]);
 pub const DOMAIN: &[u8] = b"Zigs_SolApproval_v1";
 pub const TRANSACT: u8 = 16;
 /// The clock of a new rig, in Unix seconds.
@@ -45,6 +49,7 @@ pub const DAY: u64 = 86_400;
 pub const PRIVATE_TX_HASH: [u8; 32] = [0x5a; 32];
 const STUB: &str = "target/deploy/stub_pool.so";
 const REAL_POOL: &str = "target/deploy/shielded_pool_program.so";
+pub const MAINNET_ELF: &str = "target/deploy/mainnet/zigs_min_multisig.so";
 pub const OUTPUT_TREE: Pubkey = Pubkey::new_from_array([0x70; 32]);
 
 /// The pool's SOL interface PDA, `["sol_interface", 0]`: the first account of each SOL withdrawal's
@@ -415,23 +420,23 @@ const ALLOWED_SYSTEM: [u32; 4] = [0, 1, 2, 8];
 /// ZOLANA.md 7.2: the program calls only the System Program (account creation) and the pool's
 /// `transact`; never `register`, `update_keys`, `set_merging_enabled`, `merge_transact` or
 /// `deposit`.
-pub fn allowed_call(program: &Pubkey, data: &[u8]) -> bool {
+pub fn allowed_call(pool: &Pubkey, program: &Pubkey, data: &[u8]) -> bool {
     let system_kind = data
         .first_chunk::<4>()
         .map(|kind| u32::from_le_bytes(*kind));
     let system = *program == SYSTEM_ID && system_kind.is_some_and(|k| ALLOWED_SYSTEM.contains(&k));
-    let transact = *program == POOL_ID && data.first() == Some(&TRANSACT);
+    let transact = program == pool && data.first() == Some(&TRANSACT);
     system || transact
 }
 
 /// Checks every inner instruction of a transaction with [`allowed_call`]. The stub pool makes
 /// no call, so every inner instruction is the program's.
-pub fn check_cpis(keys: &[Pubkey], meta: &TransactionMetadata) {
+pub fn check_cpis(keys: &[Pubkey], meta: &TransactionMetadata, pool: &Pubkey) {
     for inner in meta.inner_instructions.iter().flatten() {
         let program = keys[usize::from(inner.instruction.program_id_index)];
         let data = &inner.instruction.data;
         assert!(
-            allowed_call(&program, data),
+            allowed_call(pool, &program, data),
             "CPI outside the rules: {program} {data:?}"
         );
     }
@@ -454,18 +459,30 @@ pub struct Rig {
     pub group: Keypair,
     pub authority: Keypair,
     pub rent_recipient: Pubkey,
+    /// The pool that the program calls: the stub, or the real pool of the pinned commit.
+    pub pool: Pubkey,
 }
 
 impl Rig {
+    /// The Devnet build of the program, with the stub pool at the pool id.
     pub fn new() -> Self {
+        let program = program_dir().join("target/deploy/zigs_min_multisig.so");
+        Self::with_program(program, POOL_ID)
+    }
+
+    /// The mainnet test build of the program (`build.sh test`), with the stub at its test pool
+    /// id, where the stub accepts every instruction.
+    pub fn mainnet() -> Self {
+        let program = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join(MAINNET_ELF);
+        Self::with_program(program, MAINNET_TEST_POOL)
+    }
+
+    fn with_program(program: PathBuf, pool: Pubkey) -> Self {
         let mut svm = LiteSVM::new();
+        svm.add_program_from_file(PROGRAM_ID, build_output(program))
+            .expect("load the program");
         svm.add_program_from_file(
-            PROGRAM_ID,
-            build_output(program_dir().join("target/deploy/zigs_min_multisig.so")),
-        )
-        .expect("load the program");
-        svm.add_program_from_file(
-            POOL_ID,
+            pool,
             build_output(PathBuf::from(env!("CARGO_MANIFEST_DIR")).join(STUB)),
         )
         .expect("load the stub pool");
@@ -478,6 +495,7 @@ impl Rig {
             group: Keypair::new(),
             authority: Keypair::new(),
             rent_recipient: Pubkey::new_unique(),
+            pool,
         };
         rig.set_time(NOW);
         rig
@@ -540,7 +558,7 @@ impl Rig {
         );
         let keys = tx.message.account_keys.clone();
         let meta = self.svm.send_transaction(tx).map_err(Box::new)?;
-        check_cpis(&keys, &meta);
+        check_cpis(&keys, &meta, &self.pool);
         Ok(meta)
     }
 
@@ -592,20 +610,20 @@ mod tests {
 
     #[test]
     fn allowed_calls_are_transact_and_account_creation_only() {
-        assert!(allowed_call(&POOL_ID, &[TRANSACT, 1, 2]));
+        assert!(allowed_call(&POOL_ID, &POOL_ID, &[TRANSACT, 1, 2]));
         for kind in ALLOWED_SYSTEM {
-            assert!(allowed_call(&SYSTEM_ID, &kind.to_le_bytes()));
+            assert!(allowed_call(&POOL_ID, &SYSTEM_ID, &kind.to_le_bytes()));
         }
         for tag in (0..=u8::MAX).filter(|tag| *tag != TRANSACT) {
-            assert!(!allowed_call(&POOL_ID, &[tag]), "pool tag {tag}");
+            assert!(!allowed_call(&POOL_ID, &POOL_ID, &[tag]), "pool tag {tag}");
         }
         for kind in (0..16).filter(|kind| !ALLOWED_SYSTEM.contains(kind)) {
             assert!(
-                !allowed_call(&SYSTEM_ID, &u32::to_le_bytes(kind)),
+                !allowed_call(&POOL_ID, &SYSTEM_ID, &u32::to_le_bytes(kind)),
                 "system {kind}"
             );
         }
-        assert!(!allowed_call(&Pubkey::new_unique(), &[TRANSACT]));
-        assert!(!allowed_call(&POOL_ID, &[]));
+        assert!(!allowed_call(&POOL_ID, &Pubkey::new_unique(), &[TRANSACT]));
+        assert!(!allowed_call(&POOL_ID, &POOL_ID, &[]));
     }
 }

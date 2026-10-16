@@ -24,7 +24,8 @@ fail() {
 
 # Builds the copy in $WORK and runs svm-tests on it; returns the exit code of the tests.
 build_and_test() {
-  if ! "$SBF" --tools-version v1.54 --jobs 4 --manifest-path "$WORK/Cargo.toml" -- --locked \
+  if ! "$SBF" --tools-version v1.54 --jobs 4 --manifest-path "$WORK/Cargo.toml" \
+    -- --locked --features devnet \
     > "$WORK/build.log" 2>&1; then
     cat "$WORK/build.log" >&2
     fail "$1 does not build"
@@ -166,6 +167,16 @@ mutant L2 instructions.rs "the owner PDA is the only owner signer" \
   '.all(|(at, account)| (at == owner_at) == (account.address() == owner));' \
   '.all(|(at, account)| at != owner_at || account.address() == owner);'
 mutant L3 instructions.rs "the pool payer is the execute payer" ' || spp[0].address() != payer' ''
+mutant T1 instructions.rs "the transact CPI goes to the pool account only" \
+  'if spp.get(2).map(AccountView::address) != Some(&POOL_ID) {' 'if false {'
+mutant T2 instructions.rs "the owner PDA signs the transact CPI" \
+  'let signs = account.is_signer() || account.address() == owner;' \
+  'let signs = account.is_signer();'
+mutant T4 instructions.rs "the transact CPI keeps the writable flags (only the real pool sees it)" \
+  'InstructionAccount::new(account.address(), account.is_writable(), signs)' \
+  'InstructionAccount::new(account.address(), false, signs)'
+mutant T3 instructions.rs "the transact CPI carries the transact tag" \
+  'instruction_data.push(TRANSACT);' 'instruction_data.push(TRANSACT + 1);'
 mutant K1 instructions.rs "a proposal is owned by the program" \
   'if !account.owned_by(program_id) {
         return Err(MultisigError::NotAProposal.into());' \
@@ -187,14 +198,14 @@ mutant S1 state.rs "no duplicate abort authority" \
 mutant S2 state.rs "at most four abort authorities" \
   'if count > MAX_ABORT_AUTHORITIES {' 'if count > MAX_ABORT_AUTHORITIES + 1 {'
 mutant D1 instructions.rs "option D: no pool call but transact (here: deposit)" \
-  '    transact.invoke::<MAX_SPP_ACCOUNTS>(data, &[Signer::from(&seeds)])?;' \
+  '    invoke_transact(spp, &owner_address, data, Signer::from(&seeds))?;' \
   '    let deposit = pinocchio::instruction::InstructionView {
         program_id: &zolana_interface::PROGRAM_ID_PUBKEY,
         accounts: &[],
         data: &[zolana_interface::instruction::tag::DEPOSIT],
     };
     pinocchio::cpi::invoke_signed_with_bounds::<1, _>(&deposit, &spp[2..3], &[])?;
-    transact.invoke::<MAX_SPP_ACCOUNTS>(data, &[Signer::from(&seeds)])?;'
+    invoke_transact(spp, &owner_address, data, Signer::from(&seeds))?;'
 mutant D2 lib.rs "option D: the program never reads the nullifier key" \
   'pub mod state;' 'pub mod state;
 pub const NULLIFIER_KEY_OFFSET: usize = 0;'

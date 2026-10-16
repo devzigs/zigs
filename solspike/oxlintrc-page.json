@@ -1,0 +1,16 @@
+{
+  "plugins": ["import"],
+  "categories": { "correctness": "off" },
+  "env": { "es2024": true },
+  "globals": {
+    "zigs": "readonly",
+    "btoa": "readonly", "clearTimeout": "readonly", "confirm": "readonly", "crypto": "readonly",
+    "document": "readonly", "Event": "readonly", "FormData": "readonly", "history": "readonly",
+    "indexedDB": "readonly", "localStorage": "readonly", "location": "readonly",
+    "matchMedia": "readonly", "navigator": "readonly", "Node": "readonly",
+    "Notification": "readonly", "performance": "readonly", "queueMicrotask": "readonly",
+    "requestAnimationFrame": "readonly", "setInterval": "readonly", "setTimeout": "readonly",
+    "structuredClone": "readonly", "URL": "readonly", "window": "readonly", "Worker": "readonly"
+  },
+  "rules": { "no-undef": "error", "no-import-assign": "error", "import/named": "error" }
+}

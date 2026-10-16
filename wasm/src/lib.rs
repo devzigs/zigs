@@ -52,6 +52,7 @@ mod account;
 mod backup;
 mod ceremony;
 mod chain;
+mod expiry;
 mod memo;
 mod request;
 mod snapshot;
@@ -66,7 +67,7 @@ use zcash_primitives::transaction::{
     sighash::SignableInput,
     sighash_v5::v5_signature_hash,
     sighash_v6::v6_signature_hash,
-    txid::TxIdDigester,
+    txid::{to_txid, TxIdDigester},
     TxVersion,
 };
 use zcash_protocol::{
@@ -294,12 +295,33 @@ fn pczt_to_b64(p: Pczt) -> R<String> {
 /// A recipient of a payment: address, amount in zatoshis and memo.
 pub(crate) type Payee = (orchard::Address, u64, MemoBytes);
 
+/// The block that a payment is built for, its expiry height (None keeps the builder's default of
+/// target + 40) and its fee: `fee_factor` times the ZIP 317 fee.
+pub(crate) struct Terms {
+    pub(crate) target: BlockHeight,
+    pub(crate) expiry: Option<BlockHeight>,
+    pub(crate) fee_factor: u64,
+}
+
+/// The ZIP 317 rule with `factor` times its marginal fee.
+fn fee_rule(factor: u64) -> R<zip317::FeeRule> {
+    let marginal = zip317::MARGINAL_FEE.into_u64().checked_mul(factor);
+    let marginal = marginal.ok_or("fee factor too large")?;
+    zip317::FeeRule::non_standard(
+        Zatoshis::from_u64(marginal).map_err(e("marginal fee"))?,
+        zip317::GRACE_ACTIONS,
+        zip317::P2PKH_STANDARD_INPUT_SIZE,
+        zip317::P2PKH_STANDARD_OUTPUT_SIZE,
+    )
+    .ok_or_else(|| "bad fee rule".to_string())
+}
+
 /// Build an unsigned, *unproven* PCZT that spends Ironwood notes and pays
 /// each `(payee, amount, memo)` plus `change`. Proving happens after signing, in `finalize`,
 /// because the spend authorization signatures do not commit to the proof.
 fn build_ironwood_pczt<P: Parameters>(
     params: P,
-    target: BlockHeight,
+    terms: &Terms,
     fvk: &FullViewingKey,
     spends: (Vec<(orchard::Note, orchard::tree::MerklePath)>, orchard::Anchor),
     outs: (&[Payee], u64),
@@ -308,7 +330,7 @@ fn build_ironwood_pczt<P: Parameters>(
     let (payees, change) = outs;
     let mut builder = Builder::new(
         params,
-        target,
+        terms.target,
         BuildConfig::Standard {
             sapling_anchor: None,
             orchard_anchor: None,
@@ -317,6 +339,9 @@ fn build_ironwood_pczt<P: Parameters>(
             ironwood_padding: BundlePadding::DEFAULT,
         },
     );
+    if let Some(expiry) = terms.expiry {
+        builder = builder.with_expiry_height(expiry);
+    }
     for (note, path) in notes {
         builder.add_ironwood_spend::<zip317::FeeRule>(fvk.clone(), note, path).map_err(e("builder"))?;
     }
@@ -334,7 +359,7 @@ fn build_ironwood_pczt<P: Parameters>(
         .add_ironwood_output::<zip317::FeeRule>(io, ca, cz, MemoBytes::empty())
         .map_err(e("builder"))?;
     let PcztResult { pczt_parts, .. } = builder
-        .build_for_pczt(rng(), &zip317::FeeRule::standard())
+        .build_for_pczt(rng(), &fee_rule(terms.fee_factor)?)
         .map_err(e("build_for_pczt"))?;
     let pczt = Creator::build_from_parts(pczt_parts).ok_or("creator failed")?;
     IoFinalizer::new(pczt).finalize_io(rng()).map_err(e("io finalizer"))
@@ -368,14 +393,42 @@ fn sighash(p: &Pczt) -> R<(TxVersion, [u8; 32])> {
     Ok((v, h.as_ref().try_into().map_err(|_| "sighash length")?))
 }
 
+/// The id that the transaction of `p` gets on chain (ZIP 244). It covers neither the signatures
+/// nor the proofs, so the PCZT fixes it before anyone signs.
+fn txid_of(p: &Pczt) -> R<String> {
+    let tx = p.clone().into_effects().map_err(e("effects"))?;
+    let parts = tx.digest(TxIdDigester);
+    Ok(to_txid(tx.version(), tx.consensus_branch_id(), &parts).to_string())
+}
+
 #[derive(Debug)]
 struct Custom(#[allow(dead_code)] String);
 
-/// Full participant-side verification. Returns pending spends and a
-/// human-readable list of what the transaction does.
-type Inspected = (Vec<PendingSpend>, Vec<Value>, [u8; 32], TxVersion);
+/// What participant-side verification finds: the pending spends, a human-readable list of what
+/// the transaction does, its sighash and version, and its fee next to the ZIP 317 fee.
+struct Inspected {
+    pending: Vec<PendingSpend>,
+    lines: Vec<Value>,
+    sighash: [u8; 32],
+    version: TxVersion,
+    fee: u64,
+    standard_fee: u64,
+}
+
+/// The pools that `inspect_inner` decodes are the only ones that a payment may touch. A part in
+/// another pool, such as a transparent output, could take value that the fee check would show
+/// as a higher fee.
+fn shielded_only(p: &Pczt) -> R<()> {
+    let t = p.transparent();
+    let none = t.inputs().is_empty() && t.outputs().is_empty();
+    ensure(none, "the transaction has a transparent part")?;
+    let s = p.sapling();
+    ensure(s.spends().is_empty() && s.outputs().is_empty(), "the transaction has a Sapling part")?;
+    ensure(*p.global().expiry_height() != 0, "the transaction never expires")
+}
 
 fn inspect_inner(p: &Pczt, fvk: &FullViewingKey) -> R<Inspected> {
+    shielded_only(p)?;
     let (version, h) = sighash(p)?;
     let pools: &[Pool] = if version == TxVersion::V6 {
         &[Pool::Orchard, Pool::Ironwood]
@@ -445,34 +498,49 @@ fn inspect_inner(p: &Pczt, fvk: &FullViewingKey) -> R<Inspected> {
         lines.extend(ls);
     }
     ensure(!pending.is_empty(), "this transaction spends nothing from this wallet")?;
-    // Anything beyond the standard fee leaves through a part this check cannot show, such as a
-    // transparent output, so refuse it.
-    let fee = chain::zip317_fee(actions, 0);
-    ensure(outflow == i128::from(fee), &format!(
-        "the transaction moves {outflow} zat out of the shielded pool, but the network fee for \
-         {actions} actions is {fee} zat"))?;
-    Ok((pending, lines, h, version))
+    // With no part in another pool, the value that leaves the shielded pools is the fee. It is
+    // at least the ZIP 317 fee and at most the priority fee.
+    let standard_fee = chain::zip317_fee(actions, 0);
+    let most = standard_fee * chain::PRIORITY_FACTOR;
+    let fee = u64::try_from(outflow).ok().filter(|f| (standard_fee..=most).contains(f));
+    let fee = fee.ok_or_else(|| err!(
+        "the transaction pays a fee of {outflow} zat, but the network fee for {actions} actions \
+         is {standard_fee} zat, and Zigs pays at most {most} zat"))?;
+    Ok(Inspected { pending, lines, sighash: h, version, fee, standard_fee })
 }
 
 /// What the transaction does, decoded from the PCZT itself. Each `output` line also carries
 /// `memo_status` and, for a text memo, `memo`, read from the transaction with the wallet's
-/// outgoing viewing keys (see `memo::annotate`).
+/// outgoing viewing keys (see `memo::annotate`). `fee` is what the transaction pays,
+/// `standard_fee` the ZIP 317 fee for its actions, `expiry_height` the last block that can hold
+/// it, and `txid` the id that it gets on chain.
 pub fn inspect(pczt: &str, fvk: &str) -> R<String> {
     let (p, fvk) = (pczt_from_b64(pczt)?, parse_fvk(fvk)?);
-    let (spends, mut lines, h, v) = inspect_inner(&p, &fvk)?;
-    memo::annotate(&mut lines, &memo::recover(&p, &fvk)?);
+    let mut ins = inspect_inner(&p, &fvk)?;
+    memo::annotate(&mut ins.lines, &memo::recover(&p, &fvk)?);
     Ok(json!({
-        "sighash": hex::encode(h),
-        "tx_version": format!("{v:?}"),
-        "spends": spends,
-        "lines": lines,
+        "sighash": hex::encode(ins.sighash),
+        "tx_version": format!("{:?}", ins.version),
+        "spends": ins.pending,
+        "lines": ins.lines,
+        "fee": ins.fee,
+        "standard_fee": ins.standard_fee,
+        "expiry_height": p.global().expiry_height(),
+        "txid": txid_of(&p)?,
     })
     .to_string())
 }
 
-/// Round 1: one nonce pair per pending spend. Nonces are secret, single-use.
-pub fn sign_commit(pczt: &str, fvk: &str, key_package: &str) -> R<String> {
-    let (spends, _, _, _) = inspect_inner(&pczt_from_b64(pczt)?, &parse_fvk(fvk)?)?;
+/// Round 1: one nonce pair per pending spend. Nonces are secret, single-use. `tip` is the chain
+/// height that this device just read: an expired payment, or one that stays valid much longer
+/// than the expiry window, gets no approval. The iPhone and Mac apps pass None until they read
+/// a chain height (TICKETS.md, ZEC-8), so they get only the checks of `inspect`.
+pub fn sign_commit(pczt: &str, fvk: &str, key_package: &str, tip: Option<u32>) -> R<String> {
+    let p = pczt_from_b64(pczt)?;
+    let spends = inspect_inner(&p, &parse_fvk(fvk)?)?.pending;
+    if let Some(tip) = tip {
+        expiry::check(&p, tip)?;
+    }
     let kp: KeyPackage = from_json(key_package, "key package")?;
     let mut nonces = vec![];
     let mut commitments = vec![];
@@ -486,7 +554,8 @@ pub fn sign_commit(pczt: &str, fvk: &str, key_package: &str) -> R<String> {
 
 /// Coordinator: `commitments` is `{id: [SigningCommitments per spend]}`.
 pub fn sign_package(pczt: &str, fvk: &str, commitments: &str, min_signers: u16) -> R<String> {
-    let (spends, _, h, _) = inspect_inner(&pczt_from_b64(pczt)?, &parse_fvk(fvk)?)?;
+    let ins = inspect_inner(&pczt_from_b64(pczt)?, &parse_fvk(fvk)?)?;
+    let (spends, h) = (ins.pending, ins.sighash);
     let per: BTreeMap<Identifier, Vec<SigningCommitments>> =
         id_map(&from_json(commitments, "commitments")?, "commitment list")?;
     ensure(per.len() >= min_signers as usize, &format!("need at least {min_signers} signers"))?;
@@ -525,7 +594,8 @@ pub fn sign_share(
     key_package: &str,
     id: u16,
 ) -> R<String> {
-    let (spends, _, h, _) = inspect_inner(&pczt_from_b64(pczt)?, &parse_fvk(fvk)?)?;
+    let ins = inspect_inner(&pczt_from_b64(pczt)?, &parse_fvk(fvk)?)?;
+    let (spends, h) = (ins.pending, ins.sighash);
     let approval: Value = from_json(approval, "approval")?;
     ensure(
         approval["sighash"].as_str() == Some(&hex::encode(h)),
@@ -839,8 +909,20 @@ pub fn js_inspect(pczt: &str, fvk: &str) -> Result<String, JsError> {
     js(inspect(pczt, fvk))
 }
 #[wasm_bindgen(js_name = signCommit)]
-pub fn js_sign_commit(pczt: &str, fvk: &str, kp: &str) -> Result<String, JsError> {
-    js(sign_commit(pczt, fvk, kp))
+pub fn js_sign_commit(pczt: &str, fvk: &str, kp: &str, tip: u32) -> Result<String, JsError> {
+    js(sign_commit(pczt, fvk, kp, Some(tip)))
+}
+/// The expected seconds from block `from` to block `to` on `network`, at the block time of each
+/// block (75 seconds before NU7, 25 from it).
+#[wasm_bindgen(js_name = blockSpanSeconds)]
+pub fn js_block_span_seconds(network_name: &str, from: u32, to: u32) -> Result<f64, JsError> {
+    js(network(network_name).map(|net| expiry::span_seconds(&net, from, to) as f64))
+}
+/// For a payment that expires at block `expiry`, seen at chain height `tip`:
+/// `{"expired", "blocks_left", "seconds_left"}`. An expired payment can no longer be sent.
+#[wasm_bindgen(js_name = expiryState)]
+pub fn js_expiry_state(network_name: &str, expiry: u32, tip: u32) -> Result<String, JsError> {
+    js(network(network_name).and_then(|net| expiry::state(&net, expiry, tip)))
 }
 #[wasm_bindgen(js_name = signPackage)]
 pub fn js_sign_package(pczt: &str, fvk: &str, commitments: &str, min: u16) -> Result<String, JsError> {
@@ -1053,7 +1135,8 @@ mod tests {
         let payee = payees[0].0;
         let pczt = if ironwood {
             let spends = (vec![(note, path)], anchor);
-            build_ironwood_pczt(regtest(true), 10_000_000.into(), &fvk, spends, (&payees, change))?
+            let terms = group_terms(1);
+            build_ironwood_pczt(regtest(true), &terms, &fvk, spends, (&payees, change))?
         } else {
             let mut builder = Builder::new(
                 regtest(false),
@@ -1106,6 +1189,15 @@ mod tests {
 
     fn v(s: &str) -> Value {
         serde_json::from_str(s).unwrap()
+    }
+
+    /// The test payments are built for block 10,000,000, so the approving device sees this tip.
+    const TIP: u32 = 9_999_999;
+
+    /// The terms of a group payment at block `TIP + 1` with `fee_factor`.
+    fn group_terms(fee_factor: u64) -> Terms {
+        let target = BlockHeight::from_u32(TIP + 1);
+        Terms { target, expiry: Some(expiry::expiry_for(&regtest(true), target)), fee_factor }
     }
 
     /// `{"j": f(j)}` for every seat `j` in `1..=n` except `me`.
@@ -1385,7 +1477,8 @@ mod tests {
         let mut comm = serde_json::Map::new();
         let mut secrets = BTreeMap::new();
         for &i in signers {
-            let c = v(&sign_commit(pczt, fvk, &fin[i as usize - 1]["key_package"].to_string()).unwrap());
+            let kp = fin[i as usize - 1]["key_package"].to_string();
+            let c = v(&sign_commit(pczt, fvk, &kp, Some(TIP)).unwrap());
             comm.insert(i.to_string(), c["commitments"].clone());
             secrets.insert(i, c);
         }
@@ -1408,6 +1501,7 @@ mod tests {
         let agg = v(&sign_aggregate(pczt, &pkp, &pkg, &Value::Object(shares.clone()).to_string()).unwrap());
         let out = v(&finalize(agg["signed_pczt"].as_str().unwrap()).unwrap());
         assert!(out["size"].as_u64().unwrap() > 9000);
+        assert_eq!(ins["txid"], out["txid"], "the PCZT fixes the id of the final transaction");
         if pool == "ironwood" {
             payees_read_their_memos(out["tx_hex"].as_str().unwrap(), &tx);
         }
@@ -1461,12 +1555,157 @@ mod tests {
         let fee = chain::zip317_fee(3, 2);
         assert_eq!(fee, 15_000);
         let outs = (&[(payee, 100_000, MemoBytes::empty())][..], 150_000 - 100_000 - fee);
-        let pczt = build_ironwood_pczt(regtest(true), 10_000_000.into(), &fvk, (spends, anchor), outs)
+        let pczt = build_ironwood_pczt(regtest(true), &group_terms(1), &fvk, (spends, anchor), outs)
             .unwrap();
         let ins = v(&inspect(&pczt_to_b64(pczt).unwrap(), &hex::encode(fvk.to_bytes())).unwrap());
         assert_eq!(ins["spends"].as_array().unwrap().len(), 3);
         let paid = ins["lines"].as_array().unwrap().iter().filter(|l| l["value"] == 100_000).count();
         assert_eq!(paid, 1);
+    }
+
+    /// One note of 1,000,000 zat pays 100,000 zat to one payee with `factor` times the ZIP 317
+    /// fee. `expiry` replaces the window of a group payment.
+    fn one_payment(fvk: &FullViewingKey, factor: u64, expiry: Option<u32>) -> R<String> {
+        let (spends, anchor) = incoming_notes(fvk, &[1_000_000], true)?;
+        let payee = FullViewingKey::from(&random_sk()).address_at(0u32, Scope::External);
+        let fee = chain::zip317_fee(1, 2) * factor;
+        let outs = (&[(payee, 100_000, MemoBytes::empty())][..], 1_000_000 - 100_000 - fee);
+        let mut terms = group_terms(factor);
+        if let Some(h) = expiry {
+            terms.expiry = Some(h.into());
+        }
+        pczt_to_b64(build_ironwood_pczt(regtest(true), &terms, fvk, (spends, anchor), outs)?)
+    }
+
+    #[test]
+    fn inspect_accepts_a_fee_from_the_standard_fee_to_ten_times_it() {
+        let fvk = FullViewingKey::from(&random_sk());
+        let hex = hex::encode(fvk.to_bytes());
+        for factor in [1, 10] {
+            let ins = v(&inspect(&one_payment(&fvk, factor, None).unwrap(), &hex).unwrap());
+            let fees = (&ins["fee"], &ins["standard_fee"]);
+            assert_eq!(fees, (&json!(10_000 * factor), &json!(10_000)));
+            assert_eq!(ins["expiry_height"], TIP + 1 + 1_152, "one day at 75 seconds");
+        }
+        for factor in [0, 11] {
+            let err = inspect(&one_payment(&fvk, factor, None).unwrap(), &hex).unwrap_err();
+            assert!(err.contains("Zigs pays at most 100000 zat"), "{err}");
+        }
+    }
+
+    /// Value that leaves through a transparent output would look like a higher fee, inside the
+    /// range of the priority fee. So `inspect` refuses any transparent part.
+    #[test]
+    fn inspect_refuses_a_transparent_output() {
+        use zcash_keys::address::Address;
+        let fvk = FullViewingKey::from(&random_sk());
+        let (mut spends, anchor) = incoming_notes(&fvk, &[1_000_000], true).unwrap();
+        let (note, path) = spends.remove(0);
+        let t1 = "t1Hsc1LR8yKnbbe3twRp88p6vFfC5t7DLbs";
+        let Some(Address::Transparent(taddr)) = Address::decode(&Network::MainNetwork, t1) else {
+            panic!("not a transparent address");
+        };
+        let config = BuildConfig::Standard {
+            sapling_anchor: None,
+            orchard_anchor: None,
+            ironwood_anchor: Some(anchor),
+            orchard_padding: BundlePadding::DEFAULT,
+            ironwood_padding: BundlePadding::DEFAULT,
+        };
+        let mut b = Builder::new(regtest(true), (TIP + 1).into(), config);
+        let z = |n: u64| Zatoshis::from_u64(n).unwrap();
+        let payee = FullViewingKey::from(&random_sk()).address_at(0u32, Scope::External);
+        let back = fvk.address_at(0u32, Scope::Internal);
+        // ZIP 317: two Ironwood actions and one transparent output.
+        let change = 1_000_000 - 100_000 - 40_000 - 15_000;
+        b.add_ironwood_spend::<zip317::FeeRule>(fvk.clone(), note, path).unwrap();
+        b.add_ironwood_output::<zip317::FeeRule>(None, payee, z(100_000), MemoBytes::empty())
+            .unwrap();
+        b.add_ironwood_output::<zip317::FeeRule>(None, back, z(change), MemoBytes::empty())
+            .unwrap();
+        b.add_transparent_output(&taddr, z(40_000)).unwrap();
+        let parts = b.build_for_pczt(rng(), &zip317::FeeRule::standard()).unwrap().pczt_parts;
+        let pczt = Creator::build_from_parts(parts).unwrap();
+        let pczt = IoFinalizer::new(pczt).finalize_io(rng()).unwrap();
+        let err = inspect(&pczt_to_b64(pczt).unwrap(), &hex::encode(fvk.to_bytes())).unwrap_err();
+        assert_eq!(err, "the transaction has a transparent part");
+    }
+
+    /// The same for a Sapling output: its value would also look like a higher fee.
+    #[test]
+    fn inspect_refuses_a_sapling_output() {
+        use zcash_client_backend::proto::service::TreeState;
+        use zcash_keys::keys::sapling::ExtendedSpendingKey;
+        let fvk = FullViewingKey::from(&random_sk());
+        let (mut spends, anchor) = incoming_notes(&fvk, &[1_000_000], true).unwrap();
+        let (note, path) = spends.remove(0);
+        let empty = TreeState::default().sapling_tree().unwrap().root();
+        let config = BuildConfig::Standard {
+            sapling_anchor: Some(empty.into()),
+            orchard_anchor: None,
+            ironwood_anchor: Some(anchor),
+            orchard_padding: BundlePadding::DEFAULT,
+            ironwood_padding: BundlePadding::DEFAULT,
+        };
+        let mut b = Builder::new(regtest(true), (TIP + 1).into(), config);
+        let z = |n: u64| Zatoshis::from_u64(n).unwrap();
+        let (_, to) = ExtendedSpendingKey::master(&[7; 32]).unwrap().default_address();
+        let payee = FullViewingKey::from(&random_sk()).address_at(0u32, Scope::External);
+        let back = fvk.address_at(0u32, Scope::Internal);
+        // ZIP 317: two Ironwood actions and two Sapling outputs (one of them padding).
+        let change = 1_000_000 - 100_000 - 40_000 - 20_000;
+        b.add_ironwood_spend::<zip317::FeeRule>(fvk.clone(), note, path).unwrap();
+        b.add_ironwood_output::<zip317::FeeRule>(None, payee, z(100_000), MemoBytes::empty())
+            .unwrap();
+        b.add_ironwood_output::<zip317::FeeRule>(None, back, z(change), MemoBytes::empty())
+            .unwrap();
+        b.add_sapling_output::<zip317::FeeRule>(None, to, z(40_000), MemoBytes::empty()).unwrap();
+        let parts = b.build_for_pczt(rng(), &zip317::FeeRule::standard()).unwrap().pczt_parts;
+        let pczt = Creator::build_from_parts(parts).unwrap();
+        let pczt = IoFinalizer::new(pczt).finalize_io(rng()).unwrap();
+        let err = inspect(&pczt_to_b64(pczt).unwrap(), &hex::encode(fvk.to_bytes())).unwrap_err();
+        assert_eq!(err, "the transaction has a Sapling part");
+    }
+
+    /// An approving device refuses a payment that expired or expires within 3 blocks, one that
+    /// stays valid far beyond the window, and one that never expires. A payment that passes the
+    /// check fails here only on the key package.
+    #[test]
+    fn sign_commit_checks_the_expiry() {
+        let fvk = FullViewingKey::from(&random_sk());
+        let hex = hex::encode(fvk.to_bytes());
+        let pczt = |expiry: u32| one_payment(&fvk, 1, Some(expiry)).unwrap();
+        let commit = |expiry: u32, tip: u32| {
+            sign_commit(&pczt(expiry), &hex, "{}", Some(tip)).unwrap_err()
+        };
+        let passes = |err: String| err.starts_with("bad key package");
+        assert!(passes(commit(TIP + 4, TIP)));
+        assert!(commit(TIP + 3, TIP).contains("expired at block 10000002"));
+        assert!(commit(TIP + 100, TIP + 200).contains("Propose it again"));
+        // The coin type of the test chain is the testnet one, where NU7 is active: one day of
+        // window and one day of slack at 25 seconds.
+        let most = TIP + 1 + 2 * 3_456;
+        assert!(passes(commit(most, TIP)));
+        assert!(commit(most + 1, TIP).contains("more than 48 hours from now"));
+        assert!(passes(commit(most + 1, TIP + 1)), "a later tip moves the limit");
+        assert!(passes(commit(u32::MAX - 5, u32::MAX - 10)), "no overflow at the largest height");
+        let never = sign_commit(&pczt(0), &hex, "{}", Some(TIP));
+        assert_eq!(never.unwrap_err(), "the transaction never expires");
+        // The native apps pass no tip yet (ZEC-8): only the checks of `inspect` apply.
+        assert!(passes(sign_commit(&pczt(TIP + 3), &hex, "{}", None).unwrap_err()));
+    }
+
+    /// ZEC-1: this test fails until the pinned zcash_protocol sets the NU7 height of mainnet.
+    /// Then update the Zcash crates, remove the `ignore`, and rebuild the engine for the web
+    /// (`web/pkg`) and for the iPhone and Mac (`ios/build-core.sh`).
+    #[test]
+    #[ignore = "ZEC-1: the pinned zcash_protocol has no NU7 height for mainnet yet"]
+    fn mainnet_activates_nu7() {
+        use zcash_protocol::consensus::{BranchId, NetworkUpgrade};
+        let at = Network::MainNetwork.activation_height(NetworkUpgrade::Nu7);
+        let at = at.expect("the pinned zcash_protocol has no NU7 height for mainnet");
+        assert_eq!(BranchId::for_height(&Network::MainNetwork, at), BranchId::Nu7);
+        assert_eq!(expiry::block_seconds(&Network::MainNetwork, at), 25);
     }
 
     #[test]

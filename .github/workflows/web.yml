@@ -1,0 +1,53 @@
+# The web tests under Node 24: every web/test/*.mjs except the helpers that solspike/baseline.sh
+# names (VEL-5). They use the committed engine and Solana wasm files, the TS vectors of wasm-sol
+# and cf/src/index.js, and need no server.
+name: web
+
+on:
+  push:
+    paths:
+      - web/**
+      - cf/src/**
+      - wasm-sol/vectors/ts/**
+      - .github/workflows/web.yml
+  pull_request:
+    paths:
+      - web/**
+      - cf/src/**
+      - wasm-sol/vectors/ts/**
+      - .github/workflows/web.yml
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.head_ref || github.ref_name }}
+  # A newer push to a branch cancels the stale run; every commit of main keeps its run.
+  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
+
+jobs:
+  test:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 24
+      - name: qrencode for web/test/qr.mjs
+        run: sudo apt-get update -qq && sudo apt-get install -y -qq qrencode
+      - name: Tests
+        run: |
+          failed=""
+          for f in web/test/*.mjs; do
+            case "$(basename "$f" .mjs)" in sol-rig | sol-setup | sol-chain | sol-vector) continue ;; esac
+            echo "::group::$f"
+            if ! timeout 600 node "$f"; then failed="$failed $f"; fi
+            echo "::endgroup::"
+          done
+          if [ -n "$failed" ]; then
+            echo "failed:$failed"
+            exit 1
+          fi

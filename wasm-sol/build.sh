@@ -13,7 +13,7 @@ set -eu
 cd "$(dirname "$0")"
 export RUSTUP_TOOLCHAIN=stable
 export RUSTFLAGS="--remap-path-prefix=$HOME=/build --remap-path-prefix=$(cd .. && pwd)=/zigs"
-cargo build --release --target wasm32-unknown-unknown -j 4
+cargo build --release --locked --target wasm32-unknown-unknown -j 4
 WASM=target/wasm32-unknown-unknown/release/p3_check.wasm
 wasm-bindgen "$WASM" --target web --out-name sol_wasm --out-dir ../web/sol/wasm
 wasm-bindgen "$WASM" --target nodejs --out-name sol_wasm --out-dir target/pkg-node

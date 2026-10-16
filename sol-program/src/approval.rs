@@ -85,14 +85,23 @@ mod tests {
 
     #[test]
     fn digest_matches_an_outside_sha256() {
-        // Computed with Node's crypto over the same concatenation.
-        let expected = hex32("a8df9883be45a5ec3b3909bf0b142b4a1a79e57eb855ed109bbcbb6e1120b939");
+        // Computed with an outside SHA-256 over the same concatenation, for each cluster.
+        let (expected, genesis) = if cfg!(feature = "devnet") {
+            (
+                "a8df9883be45a5ec3b3909bf0b142b4a1a79e57eb855ed109bbcbb6e1120b939",
+                "ce59db5080fc2c6d3bcf7ca90712d3c2e5e6c28f27f0dfbb9953bdb0894c03ab",
+            )
+        } else {
+            (
+                "f5f63b43477a643a321ba5edece824ca5f15038423dd104416a3d48015bf035e",
+                "45296998a6f8e2a784db5d9f95e18fc23f70441a1039446801089879b08c7ef0",
+            )
+        };
         assert_eq!(
             approval_digest(&[1; 32], &[2; 32], &[3, 4, 5]).unwrap(),
-            expected
+            hex32(expected)
         );
-        let genesis = hex32("ce59db5080fc2c6d3bcf7ca90712d3c2e5e6c28f27f0dfbb9953bdb0894c03ab");
-        assert_eq!(DEPLOYMENT_ID, genesis);
+        assert_eq!(DEPLOYMENT_ID, hex32(genesis));
     }
 
     fn canonical(key: &[u8; 32], digest: &[u8; 32]) -> Vec<u8> {
