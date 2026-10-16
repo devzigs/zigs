@@ -84,11 +84,20 @@ export function poorFeeText(run, seat) {
 const NOT_READY = (seat) =>
   "The fee address of seat " + seat + " is not published yet. Try again in a moment.";
 
-/** The fee key of `seat`, when its published document shows it. Throws a text when it does not. */
-export function readyFee(c, seat) {
+/** The fee key of the seat and no reason when its published document shows it, else { why }. */
+function checked(c, seat) {
   const held = feeOf(c, seat),
     shown = publishedFee(c, seat);
-  if (held === null || shown === undefined) throw new Error(NOT_READY(seat));
-  if (shown !== held.key) throw new Error(mismatchText(seat));
+  if (held === null || shown === undefined) return { why: NOT_READY(seat) };
+  return shown === held.key ? { held } : { why: mismatchText(seat) };
+}
+
+/** Why seat `seat` cannot pay now (a text), or null when its document shows its fee key. */
+export const feeProblem = (c, seat) => checked(c, seat).why ?? null;
+
+/** The fee key of `seat`, when its published document shows it. Throws a text when it does not. */
+export function readyFee(c, seat) {
+  const { held, why } = checked(c, seat);
+  if (why) throw new Error(why);
   return held;
 }

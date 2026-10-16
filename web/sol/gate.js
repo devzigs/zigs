@@ -3,6 +3,7 @@
 // signature check, before the collections are loaded, or before the seats agree on one key.
 import { agreement, startBlock } from "./ceremony.js";
 import { COLLECTIONS } from "./docs.js";
+import { feeProblem } from "./fee.js";
 import { holdsShare, solOf, stopOf } from "./secrets.js";
 import { SESSIONS } from "./sessions.js";
 
@@ -40,3 +41,18 @@ export async function settledBlock(c, ms = 3000) {
 /** The seats of this browser that hold a Solana key share and may sign a document. */
 export const writerSeats = (c) =>
   c.host.localSeats().filter((i) => c.host.canWriteAs(i) && holdsShare(solOf(c.host, c.gid, i)));
+
+/** The first seat of this browser that holds a key share and a fee key that its document shows. */
+export const readySeat = (c) => writerSeats(c).find((i) => feeProblem(c, i) === null);
+
+/**
+ * The seat that proposes and pays: the first ready one. Throws why there is none: the reason of
+ * the first seat that can sign, or that this browser holds no such seat.
+ */
+export function payerSeat(c) {
+  const seat = readySeat(c),
+    first = writerSeats(c)[0];
+  if (seat !== undefined) return seat;
+  if (first === undefined) throw new Error("This browser holds no seat that can sign for Solana.");
+  throw new Error(feeProblem(c, first));
+}

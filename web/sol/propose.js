@@ -10,7 +10,7 @@
 import { agreement } from "./ceremony.js";
 import { base58 } from "./docs.js";
 import { poorFeeText, readyFee } from "./fee.js";
-import { settledBlock, writerSeats } from "./gate.js";
+import { payerSeat, settledBlock } from "./gate.js";
 import {
   bytesOf,
   hexOf,
@@ -110,14 +110,13 @@ async function transferDraft(c, worker, kind, args, fee) {
 const DRAFTS = { transfer: transferDraft };
 
 /**
- * Seat 1..n of this browser proposes `kind` ("createNonce", "register" or "transfer" with
- * `args.recipient` and `args.amount`). Its fee key pays. Resolves with the session id.
+ * The first ready seat of this browser proposes `kind` ("createNonce", "register" or "transfer"
+ * with `args.recipient` and `args.amount`). Its fee key pays. Resolves with the session id.
  */
 export async function propose(c, kind, args = {}) {
   const block = await settledBlock(c);
   if (block) throw new Error(block);
-  const seat = writerSeats(c)[0];
-  if (seat === undefined) throw new Error("This browser holds no seat that can sign for Solana.");
+  const seat = payerSeat(c);
   const fee = readyFee(c, seat);
   const worker = await ensureWorker(c);
   const draft = await (DRAFTS[kind] ?? plainDraft)(c, worker, kind, args, fee);

@@ -9,7 +9,8 @@ import assert from "node:assert/strict";
 import { addSol } from "../sol/addsol.js";
 import { feeSignature, reviewOf } from "../sol/approve.js";
 import { base58 } from "../sol/docs.js";
-import { feeOf } from "../sol/fee.js";
+import { feeMismatch, feeOf, readyFee } from "../sol/fee.js";
+import { readySeat } from "../sol/gate.js";
 import { bytesOf, describeMessage, hexOf, intentHex, pinsHex } from "../sol/intent.js";
 import { propose } from "../sol/propose.js";
 import { refreshChain } from "../sol/session.js";
@@ -28,6 +29,7 @@ import {
   hook,
   notify,
   path,
+  proposed,
   solOf,
   ssOf,
   t,
@@ -171,8 +173,7 @@ const doc1 = (key, cluster = "devnet") =>
   assert.match(textOf(mark("fee-mismatch-1")[0]), ANOTHER);
   assert.match(textOf(mark("fee-mismatch-1")[0]), /can still approve and sign.*other seats can/);
   assert.equal(mark("fee-address-2").length, 1, "the other seats show their address");
-  await assert.rejects(() => propose(c, "register"), ANOTHER);
-  await assert.rejects(() => addSol(c, { amount: "0.01" }), ANOTHER);
+  assert.throws(() => readyFee(c, 1), ANOTHER, "no fee key for the seat while the document stands");
   data.set(path(gid, "solfee/1"), await doc1(mine));
   notify();
   await sleep(200);
@@ -207,17 +208,19 @@ step("a seat with no valid document publishes once");
   let release;
   const gate = new Promise((go) => (release = go));
   hook.before = async (p, value) => {
-    if (p.endsWith("/solfee/1")) await gate;
+    if (p.includes("/solfee/")) await gate;
     return value;
   };
-  data.delete(path(gid, "solfee/1"));
+  for (const seat of [1, 2, 3]) data.delete(path(gid, "solfee/" + seat));
   notify();
-  await waitFor("no document", () => c.docs.solfee[1] === undefined);
+  await waitFor("no document", () => [1, 2, 3].every((i) => c.docs.solfee[i] === undefined));
+  assert.equal(readySeat(c), undefined, "no seat is ready");
   await assert.rejects(() => propose(c, "register"), /fee address of seat 1 is not published yet/);
   await assert.rejects(() => addSol(c, { amount: "0.01" }), /not published yet/);
   release();
   hook.before = saved;
-  await waitFor("its document", () => c.docs.solfee[1]?.key === feeOf(c, 1).key);
+  const all = () => [1, 2, 3].every((i) => c.docs.solfee[i]?.key === feeOf(c, i).key);
+  await waitFor("every document", all);
 }
 step("a proposal and Add SOL wait until the document shows the fee key of the seat");
 hook.before = saved;
@@ -442,5 +445,45 @@ step("an Add SOL message written as a session gets a refusal and the tab stays r
   assert.equal(read({ ...paid, txId: base58(paid.feeSig) }), "sent");
 }
 step("a proposal from before the fee keys is read as it was and is never sent again");
+
+// ── A browser that holds several seats uses the first one that is ready ──
+{
+  const docOf = (seat, key) =>
+    c.host.signedDoc(gid, "solfee/" + seat, seat, { key, cluster: "devnet", at: Date.now() });
+  const forge = async (seats) => {
+    for (const seat of seats) data.set(path(gid, "solfee/" + seat), await docOf(seat, hex32()));
+    notify();
+    await waitFor("the forged documents", () => seats.every((i) => feeMismatch(c, i)));
+  };
+  assert.equal(readySeat(c), 1, "the control: seat 1 is the first ready seat");
+  assert.match(textOf(mark("propose-seat")[0]), /^Seat 1 of this browser proposes and pays/);
+  // Seat 1 has a document with another key. Seat 2 pays, and the screen says so.
+  await forge([1]);
+  assert.equal(readySeat(c), 2, "the first ready seat is seat 2");
+  assert.match(textOf(mark("propose-seat")[0]), /^Seat 2 of this browser proposes and pays/);
+  assert.match(textOf(mark("add-sol-seat")[0]), /^Seat 2 of this browser adds this SOL/);
+  const id = await propose(c, "register");
+  await waitFor("the proposal", () => ssOf(id));
+  assert.equal(ssOf(id).by, 2, "seat 2 proposed");
+  assert.equal(reviewOf(c, ssOf(id), 1).payer, feeOf(c, 2).key, "and its fee key pays");
+  const fee2 = chain.balances.get(feeAddress(2));
+  c.added = await addSol(c, { amount: "0.01" });
+  assert.equal(c.added.seat, 2, "seat 2 added the SOL");
+  assert.equal(chain.balances.get(feeAddress(2)) < fee2, true, "from its fee address");
+  assert.match(textOf(mark("added")[0]), /^Added 0\.01 SOL, seat 2: /);
+  // Seats 1 and 2 are in mismatch: seat 3 is the first ready seat.
+  await forge([2]);
+  assert.equal(readySeat(c), 3);
+  assert.equal(ssOf(await proposed("register")).by, 3, "seat 3 proposed");
+  // No seat is ready: the error is the one of the first seat, and nothing is written.
+  await forge([3]);
+  assert.equal(readySeat(c), undefined);
+  assert.equal(mark("propose-seat").length + mark("add-sol-seat").length, 0, "no seat to show");
+  const before = sessions();
+  await assert.rejects(() => propose(c, "register"), ANOTHER);
+  await assert.rejects(() => addSol(c, { amount: "0.01" }), ANOTHER);
+  assert.equal(sessions(), before, "nothing was proposed");
+}
+step("Propose and Add SOL use the first seat of this browser that is ready, and say which");
 console.log("sol-fee: ok");
 process.exit(0);

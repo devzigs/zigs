@@ -76,6 +76,7 @@ const tabState = (gid, hostSec) => ({
     state: t.state,
     seatIds: () => [1, 2, 3],
     localSeats: () => [1, 2, 3],
+    canWriteAs: () => true,
     sec: hostSec ?? t.sec,
     sealAndSave: t.sealAndSave,
     groupVersion: () => 3,

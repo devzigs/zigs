@@ -7,6 +7,7 @@ import { reviewOf } from "./approve.js";
 import { agreement } from "./ceremony.js";
 import { CLUSTER, base58 } from "./docs.js";
 import { feeMismatch, feeOf, mismatchText } from "./fee.js";
+import { readySeat } from "./gate.js";
 import { BASE_FEE, NONCE_RENT, RECORD_RENT, bytesOf, decodeIntent, readVerdict } from "./intent.js";
 import { usedDigest } from "./nonces.js";
 import { holdsShare, solOf } from "./secrets.js";
@@ -127,13 +128,22 @@ const ADD_TEXT =
   "Moves SOL from the fee address of your seat into the shielded balance of the group. " +
   "The amount and the sender are public. It needs no approval: it is your own SOL.";
 
+/** A line that names the seat of this browser that pays: the first ready one. Null when none. */
+function seatLine(c, mark, what) {
+  const seat = readySeat(c);
+  if (seat === undefined) return null;
+  const text = `Seat ${seat} of this browser ${what}`;
+  return c.host.el("p", { class: "small", "data-sol": mark }, text);
+}
+
 /** What the last Add SOL did, as a line of text. */
 function addedLine(c) {
   const a = c.added;
   if (!a) return null;
   const words = { unknown: "Sent, not confirmed yet", failed: "Failed on chain" };
   const word = words[a.status] ?? "Added " + solText(a.amount);
-  return c.host.el("p", { class: "small", "data-sol": "added" }, `${word}: ${a.txId}`);
+  const line = `${word}, seat ${a.seat}: ${a.txId}`;
+  return c.host.el("p", { class: "small", "data-sol": "added" }, line);
 }
 
 function addSolCard(c, act, actions) {
@@ -152,6 +162,7 @@ function addSolCard(c, act, actions) {
     { style: "display:grid;gap:8px" },
     el("h3", {}, "Add SOL"),
     el("p", { class: "small", "data-sol": "add-sol-text" }, ADD_TEXT),
+    seatLine(c, "add-sol-seat", "adds this SOL, from its fee address."),
     el(
       "div",
       { class: "row-actions" },
@@ -174,6 +185,7 @@ function intentCard(c, act, actions) {
     "div",
     { style: "display:grid;gap:8px" },
     el("h3", {}, "Propose"),
+    seatLine(c, "propose-seat", "proposes and pays the fees."),
     el(
       "div",
       { class: "row-actions" },

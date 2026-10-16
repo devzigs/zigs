@@ -8,7 +8,7 @@ import { feeSignature } from "./approve.js";
 import { agreement } from "./ceremony.js";
 import { base58 } from "./docs.js";
 import { poorFeeText, readyFee } from "./fee.js";
-import { settledBlock, writerSeats } from "./gate.js";
+import { payerSeat, settledBlock } from "./gate.js";
 import { bytesOf, hexOf, intentHex, lamportsOf, pinsHex, wireBase64 } from "./intent.js";
 import { ensureWorker } from "./session.js";
 
@@ -21,15 +21,14 @@ function refusalOf(run, seat) {
 }
 
 /**
- * Seat 1..n of this browser adds `args.amount` (SOL, as text) to the shielded balance of the
- * group. Resolves with { seat, amount, txId, status, slot } once the transaction is confirmed or
- * the wait ended (status "unknown").
+ * The first ready seat of this browser adds `args.amount` (SOL, as text) to the shielded balance
+ * of the group. Resolves with { seat, amount, txId, status, slot } once the transaction is
+ * confirmed or the wait ended (status "unknown").
  */
 export async function addSol(c, args) {
   const block = await settledBlock(c);
   if (block) throw new Error(block);
-  const seat = writerSeats(c)[0];
-  if (seat === undefined) throw new Error("This browser holds no seat that can sign for Solana.");
+  const seat = payerSeat(c);
   const amount = lamportsOf(args.amount);
   if (amount === null) throw new Error("Enter an amount of SOL, for example 0.02.");
   const fee = readyFee(c, seat);
