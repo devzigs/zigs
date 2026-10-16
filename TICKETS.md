@@ -46,6 +46,7 @@ design. These tickets list what the beta does not do yet, and what must hold bef
 | SOL-45 | P1 | owner | Move the approvals program upgrade key to a multisig with a timelock before mainnet | The upgrade authority of the program is a multisig whose key holders use separate hardware keys, with a delay longer than the time a group needs to move its funds; the app shows the authority and the delay; ZOLANA.md 7.2 lists the key holders' policy |
 | SOL-46 | P1 | owner | Make the approvals program immutable after the audit | An audit report covers the deployed mainnet build of `sol-program/build.sh` (SOL-47); the program is closed for upgrades with `--final`; the app checks that the upgrade authority is none |
 | SOL-47 | P2 | dev | Add a mainnet release build to `sol-program/build.sh` | `build.sh` builds `--features mainnet` with the mainnet pool id pinned in the repo and checks a pinned mainnet ELF hash; the release notes record both; a dump of the deployed program matches the hash (ZOLANA.md 7.2, version 5) |
+| SOL-48 | P2 | owner | Add staging.zigs.app to the Allowed Domains of the Helius key | The Helius key answers a call with the Origin https://staging.zigs.app (it answers 403 on 16 October 2026), so the Solana tab works on staging (VEL-2) |
 
 ## Zcash NU7
 
@@ -101,7 +102,6 @@ The owner asked on 16 October 2026 for faster development and iteration. Each ro
 | Id | P | Owner | Title | Done when |
 |---|---|---|---|---|
 | VEL-1 | P1 | dev | Move payment rules from the page into the engine | The engine checks the combined signatures and keeps the approved transaction hash (ZEC-9 first), so a document that one seat writes cannot change what the page shows as done or expired; web and apps call the same engine rule |
-| VEL-2 | P1 | dev | Add a staging copy of the app | staging.zigs.app runs the app with its own Durable Object data and its own password; one local command deploys main to staging after each merge; production gets only what staging ran |
 | VEL-3 | P1 | dev | Keep permanent test wallets and one-command live runs | A funded Zcash testnet group and a funded Solana Devnet group live in local files outside the repo (keys mode 600); one command per chain runs pay, approve, send and restore against the local server and reports the transaction ids (SOL-30 covers the Solana part) |
 | VEL-4 | P1 | dev | Make tests fast, stable and deep | No flaky test; a fast suite (engine and unit, seconds) runs on every change and the browser and live suites run before merge; property tests generate random sequences, faked documents included, for the payment session state |
 | VEL-5 | P1 | dev | Run the checks in CI on every push | A GitHub Actions workflow of devzigs/zigs runs the engine, wasm-sol, sol-program and web test suites on every push and pull request, with build caches, no secret and no personal data in logs |
@@ -112,6 +112,7 @@ The owner asked on 16 October 2026 for faster development and iteration. Each ro
 
 | Id | Title | Closed by |
 |---|---|---|
+| VEL-2 | Add a staging copy of the app | `scripts/deploy-staging.sh` and `env.staging` in `cf/wrangler.jsonc`: the Worker zec-frost-staging at staging.zigs.app with its own Durable Object data, password (`~/.config/zigs/staging-password`) and rate counter; the script deploys a clean export of `origin/main` and checks 401 without the password, 200 with it and `/sol/config.json`. First deployed on 16 October 2026. The Solana tab on staging waits for SOL-48 |
 | SOL-44 | Build the approvals program without the unused Groth16 keys | Commit `5cbb799`: the program makes the `transact` CPI itself and drops `zolana-program`; the ELF holds no Groth16 key (53,144 bytes instead of 90,448), so it fits in the Devnet ProgramData without an extension |
 | SOL-42 | Make the cluster of the approvals program a build choice | Commits `b8e858a` and `a1aa0d9`: `src/cluster.rs`; a build names `devnet` or `mainnet`, a mainnet build takes `ZIGS_MAINNET_POOL_ID` and fails with the Devnet genesis hash or the development pool id; `build.sh test` checks the refused builds, builds mainnet with a test pool id, and `tests/cluster.rs` checks both ELFs |
 | SOL-1 | Allowed Domains set on the app's Helius key. Checked 2026-10-15: a call with the app Origin gets 200; another Origin and no Origin get 403; CORS preflights pass. The SDK uses no WebSocket | owner, checked by dev |

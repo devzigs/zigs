@@ -357,6 +357,12 @@ http://127.0.0.1:8787: it is a separate origin, so it has separate storage. Depl
 `npx wrangler deploy` in `cf/`. Until launch, the live app asks for one shared password: set it with
 `npx wrangler secret put APP_PASSWORD`. Without that secret, the app refuses every request.
 
+A staging copy runs at https://staging.zigs.app, with its own Worker, Durable Object data and
+password (`env.staging` in `cf/wrangler.jsonc`). After each merge, `sh scripts/deploy-staging.sh`
+deploys `origin/main` there and checks it from outside. Production gets only what staging ran.
+The staging password is in `~/.config/zigs/staging-password`, which the script makes on its first
+run.
+
 Group payments now expire after one day, and the web app can pay a priority fee (TICKETS.md,
 ZEC-2 and ZEC-4). The iPhone and Mac apps get these screens later (ZEC-8). Their payments also
 expire after one day, because the engine builds them, but they do not check the expiry when
