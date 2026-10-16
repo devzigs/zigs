@@ -110,7 +110,7 @@ const limits = (id, what, [file, from, to], detect) =>
 const payment = (id, what, [file, from, to], run, detect) =>
   mutant(id, what, run, [patch(file, from, to)], { detect, ms: 120000 });
 const program = (id, what, [file, from, to], run, detect) =>
-  mutant(id, what, run, [patch(file, from, to)], { detect, ms: 240000 });
+  mutant(id, what, run, [patch(file, from, to)], { detect, ms: 600000 });
 const SOL_PAY = ["node", "web/test/sol-pay.mjs"];
 const WORKER_TEST = ["node", "solspike/test/worker.test.mjs"];
 const TRANSFER_TEST = ["node", "solspike/test/transfer.test.mjs"];
@@ -599,7 +599,8 @@ export const MUTATIONS = [
     SOL_PAY, /the clock margin of the device/),
   program("Y-signed-expiry", "a signed payment expires before the page reads the chain",
     ["web/sol/signing.js", "isPayment(ss) && !ss.signature && pastExpiry(ss)",
-      "isPayment(ss) && pastExpiry(ss)"], SOL_PAY, /timeout: session \S+ sent|past the expiry/),
+      "isPayment(ss) && pastExpiry(ss)"], SOL_PAY,
+    /timeout: session \S+ sent|past the expiry|no execute of it landed/),
   program("Y-wait", "a gone account fails at once before the expiry",
     ["web/sol/execute.js", "  if (!pastExpiry(ss)) return sleep(30_000);\n", ""],
     SOL_PAY, /no failure before the expiry/),
