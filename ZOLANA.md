@@ -558,6 +558,41 @@ the CORS preflights pass.
 6. How many roots stay valid? Is a durable nonce with a v1 transaction supported?
 7. Will you take a patch for owner signers in `transact`? Can you sign a release manifest?
 
+**Helius answers, 15 October 2026** [HA]. The project asked about long approvals, caching, nullifier
+roots, transaction lifetime, key management, output checks and browser proving.
+
+| Topic | Answer | Effect on Zigs |
+|---|---|---|
+| Long approvals | Write a small Solana program, as in [HM]. It solves the nullifier expiry, with no durable nonce and no cache account | The main redesign: section 7.1 |
+| Custom rings | They will verify an EdDSA signature in the circuit, which solves expiring nullifier roots. Helius thinks about the same for the Default Ring | Watch; it could remove the program later |
+| Caching | It lets a client prove without the state root of a UTXO. Fully supported; Helius fixes SDK gaps. It does not solve the nullifier root expiry | Not the fix for long approvals |
+| Durable nonces | Deprecated next year | The beta flow (section 5) has an end date: ticket SOL-36 |
+| Key derivation | The protocol does not enforce how the viewing and nullifier keys are derived | Our own roles from `solSeed` (4.2) are fine |
+| Output checks | Clients must check outputs and ciphertexts. No change planned | Keep the checker rules of section 5 |
+| Browser proving | It exists, but it is slow. Speed is on the roadmap | SOL-4 stays open |
+
+Questions 2, 3 and 5 above (key holders, mainnet service, audit) are still open.
+
+**7.1 Next design: approvals owned by a program** [HM]. The shielded UTXOs belong to a program
+address that the program derives from the group key (`[b"multisig", group key]`). A proposer creates
+an immutable proposal account that holds a hash of the transaction contents. The FROST group signs
+that hash once, as a detached Ed25519 signature. Roots, witnesses and the proof are not in the hash.
+At execution, any executor makes a fresh proof, adds an Ed25519 verify instruction with the group
+signature, and calls the program. The program checks the signature and the hash, and settles
+through the pool by CPI. An expiry time and abort authorities end a proposal.
+
+| Problem today | With the program |
+|---|---|
+| A stale root forces a new proof and a new FROST round (6.6) | The proof is made at execution, so the group signs once |
+| The group key pays fees and holds a nonce account (5) | The executor pays the fees. No nonce account. This also closes the separate-payer work (SOL-7) |
+| Durable nonces end next year | Not needed |
+| One open payment per nonce account (SOL-6) | One proposal account per payment |
+
+What it costs: a program of our own on Solana, with its own upgrade key, review and audit. The
+group address becomes a program address, so registration and every intent change. The proposal
+account and the Ed25519 instruction are public, as the group key is today. Ticket SOL-35 plans a
+spike on Devnet before any change to the beta.
+
 **Owner decisions.** A committed, hash-pinned bundle in a repo with no bundler. Allowed Domains or a
 proxy host for the key. A second wasm file, or Ed25519 inside the Zcash engine. Durable nonces, with
 approvals that repeat after a stale root. The backup design (4.3), the flat paths (3.2), the pins
@@ -585,6 +620,8 @@ expiry window, the minimum approval time and the fee caps (5, 6). SOL and Devnet
 | [E] | The outside evaluation "Zigs Helius Zolana CTO Integration Evaluation", 12 October 2026 |
 | [Z] | github.com/helius-labs/zolana/blob/89640630b3ed2402b83bd20c313406cb3fe906d4/ (main, 13 October 2026). Cited files equal commit 82dc62d, the pin of [E]. Release: .../releases/tag/v0.4.0-alpha |
 | [H] | helius.dev/docs/privacy (overview, `integration/wallet`) and helius.dev/docs/rpc/protect-your-keys |
+| [HA] | Answers of the Helius team to the project's seven questions, by private message, 15 October 2026 |
+| [HM] | github.com/helius-labs/zolana-examples/blob/827f3d4c83125c5890a5ea9e704351822b406d0f/min-multisig/spec.md (the minimal multisig program spec; read as a summary, not line by line) |
 | [F], [CIO] | github.com/ZcashFoundation/frost/blob/3ffc19d8f473d5bc4e07ed41bc884bdb42d6c29f/ (frost-ed25519 v2.2.0); crates.io/api/v1/crates/frost-ed25519/2.2.0/dependencies |
 | [AG], [CR] | github.com/anza-xyz/agave/blob/2b9f9302fb049d88a11f100ea25e29ecf8dcf677/ and github.com/anza-xyz/cryptography/blob/3efe73c7395f735f073bd25162cdc2fb4333f570/ |
 | [RFC], [SIMD], [SOL] | rfc-editor.org/rfc/rfc9591.html; github.com/solana-foundation/solana-improvement-documents/blob/main/proposals/0385-transaction-v1.md (and 0376); solana.com/docs/core/transactions/confirmation |

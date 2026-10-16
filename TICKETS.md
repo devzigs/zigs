@@ -11,12 +11,12 @@ design. These tickets list what the beta does not do yet, and what must hold bef
 
 | Id | P | Owner | Title | Done when |
 |---|---|---|---|---|
-| SOL-2 | P1 | owner | Get answers from Helius to ZOLANA.md questions 2, 3, 5 and 6 | Written answers on the upgrade key holder, mainnet service and limits, audit scope and timelock, root window and durable nonces |
+| SOL-2 | P1 | owner | Get answers from Helius to ZOLANA.md questions 2, 3 and 5 | Written answers on the upgrade key holder, mainnet service and limits, and audit scope and timelock. Question 6 (roots, durable nonces) was answered on 15 October 2026: see ZOLANA.md section 7 and SOL-35, SOL-36 |
 | SOL-3 | P1 | owner | Get an audit report, or an equal review, of the pool and the SDK version we pin | A report exists that covers the deployed pool and the pinned SDK commit |
-| SOL-4 | P1 | dev | Stop the hosted prover from seeing the witness | Proofs run in the browser or in an attested TEE that the app checks; the nullifier secret never leaves the device. ZOLANA.md question 4 (attestation, local proving) is answered |
-| SOL-5 | P2 | dev | Handle a stale proof root during a long approval | The product decides between "approve again" and "devices sign again for the approved intent"; the UI says what happens; a test forces a stale root |
-| SOL-6 | P2 | dev | Allow more than one open Solana payment | More nonce accounts, or a queue; the UI no longer blocks a second proposal |
-| SOL-7 | P2 | dev | Pay fees from a separate payer | The group key is not the fee payer; the TS SDK owner-signer patch is upstream or vendored; ZOLANA.md question 1 is answered |
+| SOL-4 | P1 | dev | Stop the hosted prover from seeing the witness | Proofs run in the browser or in an attested TEE that the app checks; the nullifier secret never leaves the device. Helius said on 15 October 2026 that browser proving exists but is slow, and that speed is on its roadmap |
+| SOL-5 | P2 | dev | Handle a stale proof root during a long approval | Solved by SOL-35 if the program design passes: the group signs a hash without roots, and the proof is made at execution. Until then, the beta asks for a new proposal |
+| SOL-6 | P2 | dev | Allow more than one open Solana payment | One proposal account per payment (SOL-35), or more nonce accounts; the UI no longer blocks a second proposal |
+| SOL-7 | P2 | dev | Pay fees from a separate payer | The group key is not the fee payer. With the program design (SOL-35) the executor pays, so no SDK patch is needed |
 | SOL-8 | P2 | dev | Share the spent-salt history between devices | Every seat refuses a reused salt from any proposal on the group server, also after a restore |
 | SOL-10 | P2 | owner | Set the product values: expiry window, minimum remaining expiry, fee caps, tree fee cap | The values are decided and pinned in the template with tests |
 | SOL-11 | P2 | dev | Show the custody limits in the app | The Solana details screen shows the pool upgrade authority and the protocol authority, and says that they sit outside the group |
@@ -41,6 +41,8 @@ design. These tickets list what the beta does not do yet, and what must hold bef
 | SOL-32 | P2 | dev | Add withdrawal to a public address to the web beta | The page proposes a withdrawal (intent tag 4 of wasm-sol) with a public recipient and amount, every seat sees them, the page checks the new intent, tests cover it, a Devnet run lands one withdrawal, and ZOLANA.md section 2 and the screen text match. The engine and a script withdrew on Devnet; the page cannot yet |
 | SOL-33 | P3 | dev | Pin the network of a wallet in the iPhone and Mac apps | The apps keep the first `network` that they see for a wallet in `zf-signpins` (key `network:<wallet id>`, as the web app does) and warn when the store shows another; a Swift check changes the field |
 | SOL-34 | P2 | dev | Pin the network from data the people confirmed | The network pin keeps the first value a device sees, and no device had a pin before the beta. A link holder who writes "testnet" into a mainnet group document before a device first loads it makes that device show the Solana tab. Take the network from the values that the safety number covers (the Solana ceremony already refuses on that check), and test a flip that comes before the first load |
+| SOL-35 | P1 | dev | Spike approvals owned by a program, as in the Helius minimal multisig | On Devnet, a program owns the group UTXOs at an address derived from the group key; the FROST group signs a proposal hash that leaves out roots, witnesses and the proof; an executor makes a fresh proof and settles through the pool. A signature made hours before execution still works after the roots move. The checker rules of ZOLANA.md section 5 apply to the proposal contents. ZOLANA.md section 7.1 has the design; the owner decides on deploying and auditing our own program |
+| SOL-36 | P1 | dev | Leave durable nonces before Solana deprecates them next year | The beta no longer needs a nonce account (SOL-35 or another path), before the deprecation date that Solana announces |
 
 ## Zcash NU7
 
