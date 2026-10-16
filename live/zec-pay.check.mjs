@@ -17,20 +17,23 @@ assert.throws(() => zatOfText("0.0001 ZEC"), /cannot read/);
 
 const facts = {
   header,
-  tipBefore: 4509023,
+  tips: [4509023, 4509023],
   totalBefore: 12_190_000,
   totalAfter: 12_080_000,
   pageFee: 10_000,
+  pagePriority: false,
   priority: false,
 };
 assert.deepEqual(verify(facts), { fee: 10_000, problems: [] });
-assert.equal(verify({ ...facts, tipBefore: 4509022 }).problems.length, 0, "one block more");
+assert.equal(verify({ ...facts, tips: [4509021, 4509025] }).problems.length, 0, "inside the tips");
 const failing = (change) => verify({ ...facts, ...change }).problems.length;
-assert.equal(failing({ tipBefore: 4509021 }), 1, "expiry too early");
-assert.equal(failing({ tipBefore: 4509024 }), 1, "expiry too late");
+assert.equal(failing({ tips: [4509024, 4509025] }), 1, "expiry too early");
+assert.equal(failing({ tips: [4509021, 4509022] }), 1, "expiry too late");
 assert.equal(failing({ totalAfter: 12_085_000, pageFee: 5000 }), 1, "k = 1");
+assert.equal(failing({ totalAfter: 12_078_000, pageFee: 12_000 }), 1, "no multiple of 5000");
 assert.equal(failing({ pageFee: 15_000 }), 1, "page fee differs");
-assert.equal(failing({ priority: true }), 1, "10000 is not 50000 x k");
+assert.equal(failing({ pagePriority: true }), 1, "the page chose a priority fee");
+assert.equal(failing({ priority: true, pagePriority: true }), 1, "10000 is not 50000 x k");
 assert.equal(failing({ header: { ...header, version: 5 } }), 1, "version");
 assert.equal(failing({ header: { ...header, branchId: 1 } }), 1, "branch id");
 console.log("zec-pay.check: ok");

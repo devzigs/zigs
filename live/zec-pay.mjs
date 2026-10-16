@@ -26,7 +26,8 @@ import * as Z from "../web/pkg/zigs_engine.js";
 const ROOT = fileURLToPath(new URL("..", import.meta.url));
 const WALLET = join(homedir(), ".config", "zigs", "testwallets", "zec-testnet");
 const WALLET_SHOWN = "~/.config/zigs/testwallets/zec-testnet";
-const LWD = "https://lwd.zigs.app";
+// The testnet servers of the page (NETWORKS in web/app.js), in its order.
+const SERVERS = ["https://lwd.zigs.app", "https://zcash-testnet.chainsafe.dev"];
 const PRIORITY = process.argv.includes("--priority");
 const FACTOR = PRIORITY ? 10 : 1;
 const PAY_ZAT = 100_000;
@@ -38,6 +39,8 @@ const APPROVE_MS = 180_000;
 const PROOF_MS = 600_000;
 const MINED_MS = 600_000;
 const POLL_MS = 15_000;
+const CALL_MS = 30_000;
+const SYNC_MS = 300_000;
 
 const log = (text) => console.error(redact(`zec-pay: ${text}`));
 
@@ -60,18 +63,23 @@ export function zatOfText(text) {
   return Number(m[1].replaceAll(",", "")) * 1e8 + Number((m[2] ?? "").padEnd(8, "0"));
 }
 
-/** The fee and the list of failed checks. `tipBefore` is the chain height read before Propose. */
-export function verify({ header, tipBefore, totalBefore, totalAfter, pageFee, priority }) {
+/**
+ * The fee and the list of failed checks. `tips` are the chain heights read before Propose and
+ * after the payment showed: the engine read its own height between them.
+ */
+export function verify(facts) {
+  const { header, tips, totalBefore, totalAfter, pageFee, pagePriority, priority } = facts;
   const fee = totalBefore - totalAfter - PAY_ZAT;
   const unit = BASE_FEE * (priority ? 10 : 1);
-  const late = header.expiry - EXPIRY_BLOCKS - 1 - tipBefore;
+  const tip = header.expiry - EXPIRY_BLOCKS - 1;
   const checks = [
     [
-      late === 0 || late === 1,
-      `expiry ${header.expiry} is not ${tipBefore} + 1 + ${EXPIRY_BLOCKS}`,
+      tip >= tips[0] && tip <= tips[1],
+      `expiry ${header.expiry} is not ${tips[0]}..${tips[1]} + 1 + ${EXPIRY_BLOCKS}`,
     ],
     [fee % unit === 0 && fee / unit >= 2, `fee ${fee} is not ${unit} x k with k >= 2`],
     [fee === pageFee, `fee ${fee} differs from the fee of the page, ${pageFee}`],
+    [pagePriority === priority, `the page shows a ${pagePriority ? "priority" : "network"} fee`],
     [header.version === 6, `transaction version ${header.version}, not 6`],
     [header.branchId === BRANCH_ID, `branch id ${header.branchId.toString(16)}`],
   ];
@@ -81,16 +89,29 @@ export function verify({ header, tipBefore, totalBefore, totalAfter, pageFee, pr
 // ── Resources: each is released once, also on a failure or a signal ──
 
 const held = new Map();
-const hold = (name, release) => held.set(name, release);
+const releasing = new Set();
+let stopped = false;
+
+/** Keeps `release` for the cleanup. After a signal, the run stops at its next resource. */
+function hold(name, release) {
+  held.set(name, release);
+  if (stopped) throw new Error("stopped by a signal");
+}
 
 async function release(name) {
   const fn = held.get(name);
   held.delete(name);
-  if (fn) await fn().catch((err) => log(`release of ${name} failed: ${err.message}`));
+  if (!fn) return;
+  const done = fn().catch((err) => log(`release of ${name} failed: ${err.message}`));
+  releasing.add(done);
+  await done;
+  releasing.delete(done);
 }
 
+/** Releases every resource, newest first, and waits for the releases that already run. */
 async function releaseAll() {
-  for (const name of [...held.keys()].reverse()) await release(name);
+  while (held.size) await release([...held.keys()].at(-1));
+  await Promise.all(releasing);
 }
 
 const pidAlive = (pid) => {
@@ -160,8 +181,15 @@ async function stopServer(proc, tmp) {
   const family = [...ownProcesses([proc.pid]).keys()];
   proc.kill("SIGTERM");
   const gone = () => family.every((pid) => !pidAlive(pid));
+  const kill = (pid) => {
+    try {
+      process.kill(pid, "SIGKILL");
+    } catch {
+      // It ended after the check.
+    }
+  };
   await waitFor(gone, 20_000, () => "the server to stop").catch(() => {
-    for (const pid of family.filter(pidAlive)) process.kill(pid, "SIGKILL");
+    family.filter(pidAlive).forEach(kill);
   });
   rmSync(tmp, { recursive: true, force: true });
 }
@@ -193,7 +221,15 @@ async function startServer(port) {
 
 /** Both seats, in seat order: { seat, name, pass, text }. Every secret goes to the redactor. */
 function loadWallet() {
-  const read = (name) => JSON.parse(readFileSync(join(WALLET, name), "utf8"));
+  // A parse error quotes the text near the fault, which can be a secret.
+  const read = (name) => {
+    const text = readFileSync(join(WALLET, name), "utf8");
+    try {
+      return JSON.parse(text);
+    } catch {
+      throw new Error(`${WALLET_SHOWN}/${name} is not valid JSON`);
+    }
+  };
   const payee = read("payee.json");
   redact.add(payee.seed, payee.ufvk);
   const files = read("secrets.json").seats.map(({ seat, file, pass }) => ({
@@ -214,7 +250,7 @@ function leaves(value) {
 
 function openBackup(file) {
   const open = JSON.parse(Z.backupOpen(file.pass, file.text));
-  redact.add(open.wallet.ufvk, open.wallet.orchard_fvk, ...leaves(open.secret));
+  redact.add(open.key, open.wallet.ufvk, open.wallet.orchard_fvk, ...leaves(open.secret));
   return open;
 }
 
@@ -226,10 +262,37 @@ function checkSeats(opened) {
   }
 }
 
-const syncOf = async (cw) => JSON.parse(await cw.sync(() => {}));
+/** `promise`, or a failure after `ms`: a server that hangs must not hold the run. */
+function within(ms, what, promise) {
+  let timer;
+  const late = new Promise((_, bad) => {
+    timer = setTimeout(() => bad(new Error(`${what} gave no answer in ${ms / 1000} s`)), ms);
+  });
+  return Promise.race([promise, late]).finally(() => clearTimeout(timer));
+}
+
+let lwd = SERVERS[0];
+
+/** Takes the first server that gives the chain height, as the page does. */
+async function pickServer() {
+  const why = [];
+  for (const url of SERVERS) {
+    try {
+      await within(CALL_MS, url, Z.latestHeight(url));
+      lwd = url;
+      return;
+    } catch (err) {
+      why.push(err.message);
+    }
+  }
+  throw new Error(`no light-wallet server answers: ${why.join("; ")}`);
+}
+
+const tipNow = () => within(CALL_MS, "the chain height", Z.latestHeight(lwd));
+const syncOf = async (cw) => JSON.parse(await within(SYNC_MS, "the sync", cw.sync(() => {})));
 
 async function readChain(open) {
-  const cw = new Z.ChainWallet(open.wallet.ufvk, open.wallet.birthday, LWD);
+  const cw = new Z.ChainWallet(open.wallet.ufvk, open.wallet.birthday, lwd);
   hold("chain wallet", async () => cw.free());
   const bal = await syncOf(cw);
   return { cw, bal, sent: new Set(JSON.parse(cw.sent())) };
@@ -275,7 +338,8 @@ const shownFee = (page) =>
   run(page, () => {
     const rows = [...document.querySelectorAll(".lines > div")];
     const row = rows.find((r) => /^(Network|Priority) fee/.test(r.children[0]?.textContent ?? ""));
-    return row ? row.children[1].textContent.trim() : null;
+    if (!row) return null;
+    return { label: row.children[0].textContent.trim(), text: row.children[1].textContent.trim() };
   });
 
 const explorerTxid = (page) =>
@@ -304,25 +368,29 @@ async function propose(page, address) {
   await setInput(page, '[id^="s-to-"]', address);
   await setInput(page, '[id^="s-amt-"]', "0.001");
   if (PRIORITY) await setInput(page, "#s-priority", true);
-  const tipBefore = await Z.latestHeight(LWD);
+  const tipBefore = await tipNow();
   await press(page, "Propose payment");
   return tipBefore;
 }
 
-/** Proposal, both approvals, proof and broadcast. Returns { txid, tipBefore, pageFee }. */
+/** Proposal, both approvals, proof and broadcast. Returns the txid and what the page showed. */
 async function payInPages([first, second], address) {
   const tipBefore = await propose(first, address);
   const id = await until(first, "the payment", () => sessionId(first), 60_000);
+  const tips = [tipBefore, await tipNow()];
   const shown = await until(first, "the fee of the payment", () => shownFee(first), 120_000);
-  log(`proposed; the page shows a fee of ${shown}`);
+  const pageFee = zatOfText(shown.text);
+  const pagePriority = shown.label.startsWith("Priority");
+  log(`proposed; the page shows "${shown.label}: ${shown.text}"`);
   await press(first, "Approve payment", APPROVE_MS);
   await until(second, "the approval request", () => openRequest(second, id), APPROVE_MS);
   await press(second, "Approve payment", APPROVE_MS);
   log("both seats approved; building the proof");
   await press(first, "Build proof", APPROVE_MS);
   await press(first, "Send to network", PROOF_MS);
+  log("sent to the network; without a link, see the history of the wallet before a new run");
   const txid = await until(first, "the explorer link", () => explorerTxid(first), 120_000);
-  return { txid, tipBefore, pageFee: zatOfText(shown) };
+  return { txid, tips, pageFee, pagePriority };
 }
 
 async function openSeats(harness, rig, files, group) {
@@ -377,7 +445,8 @@ async function waitMined(cw, txid) {
 
 async function headerOf(txid) {
   const hash = Buffer.from(txid, "hex").reverse().toString("hex");
-  return parseHeader(Buffer.from(await Z.fetchTransaction(LWD, hash), "base64"));
+  const raw = await within(CALL_MS, "the transaction", Z.fetchTransaction(lwd, hash));
+  return parseHeader(Buffer.from(raw, "base64"));
 }
 
 function enoughFunds(bal) {
@@ -391,6 +460,7 @@ async function live() {
   const wallet = loadWallet();
   const opened = wallet.files.map(openBackup);
   checkSeats(opened);
+  await pickServer();
   const { cw, bal, sent } = await readChain(opened[0]);
   enoughFunds(bal);
   const made = await paymentInBrowser(wallet, opened[0].group);
@@ -398,9 +468,8 @@ async function live() {
   log(`sent ${made.txid}; waiting for a block`);
   const mined = await waitMined(cw, made.txid);
   const header = await headerOf(made.txid);
-  const facts = { header, tipBefore: made.tipBefore, pageFee: made.pageFee, priority: PRIORITY };
-  const totalBefore = bal.spendable + bal.pending;
-  const { fee, problems } = verify({ ...facts, totalBefore, totalAfter: mined.total });
+  const totals = { totalBefore: bal.spendable + bal.pending, totalAfter: mined.total };
+  const { fee, problems } = verify({ ...made, ...totals, header, priority: PRIORITY });
   if (problems.length) throw new Error(`${made.txid} fails: ${problems.join("; ")}`);
   const line = `txid=${made.txid} block=${mined.block} expiry=${header.expiry} fee=${fee}`;
   return `zec-pay ok ${line}${PRIORITY ? " priority" : ""}`;
@@ -416,11 +485,20 @@ function armBackstop(ms = 12_000) {
   }, ms).unref();
 }
 
+/** A signal stops the server and Chrome at once; `main` then fails at its next step. */
+function stopOnSignal(signal, running) {
+  stopped = true;
+  process.exitCode = 1;
+  log(`${signal}: stopping`);
+  void releaseAll();
+  const settled = Promise.race([running, sleep(30_000)]);
+  void settled.then(releaseAll).finally(() => process.exit(1));
+}
+
 async function main() {
+  const unknown = process.argv.slice(2).filter((arg) => arg !== "--priority");
+  if (unknown.length) throw new Error(`unknown argument ${unknown.join(" ")}; only --priority`);
   const peak = trackPeak(() => [process.pid]);
-  for (const signal of ["SIGINT", "SIGTERM"]) {
-    process.once(signal, () => void releaseAll().finally(() => process.exit(1)));
-  }
   Z.initSync({ module: readFileSync(new URL("../web/pkg/zigs_engine_bg.wasm", import.meta.url)) });
   try {
     takeLock();
@@ -433,10 +511,13 @@ async function main() {
 
 const isMain = realpathSync(process.argv[1]) === realpathSync(fileURLToPath(import.meta.url));
 if (isMain) {
-  main()
+  const running = main()
     .catch((err) => {
       console.error(redact(`zec-pay failed: ${err.message}`));
       process.exitCode = 1;
     })
     .finally(() => armBackstop());
+  for (const signal of ["SIGINT", "SIGTERM"]) {
+    process.once(signal, () => stopOnSignal(signal, running));
+  }
 }
