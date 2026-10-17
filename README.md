@@ -415,8 +415,8 @@ Envoy refuses to start unless `LWD_KEY` has 64 lowercase hex characters. Give th
 Worker secrets `LWD_KEY` of production and staging, and to `~/.config/zigs/lwd-key`. Deploy the
 Worker and its secrets first, then change Envoy. The new Worker also works with the old Envoy. A
 page of the old version calls `lwd.zigs.app` directly, and the new Envoy refuses it. Every device
-of the tailnet can use the `tailnet` listener, so limit the node host in the Tailscale ACL
-(TICKETS.md, PRIV-7).
+of the tailnet can use the `tailnet` listener. The owner accepts that: the keys and listeners
+protect the node against access from outside the tailnet.
 
 ### iPhone and Mac apps
 
