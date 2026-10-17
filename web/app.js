@@ -8,6 +8,7 @@ import "./chat.js";
 import "./personal.js";
 import "./requests.js";
 import "./app-state.js";
+import "./app-kit.js";
 import "./app-rest.js";
 import { adoptInviteKey, draw, loadEngine, lockedVault, render, startUp } from "./app-rest.js";
 

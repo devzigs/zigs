@@ -34,6 +34,10 @@ import {
   busy, clearBadBanner, emptyRaw, inbox, inboxSubs, log, raw, rawInbox, rawReady, ready, readySubs,
   showBanner, state, ui,
 } from "./app-state.js";
+import {
+  about, elapsed, fmtZec, initials, isObj, isStr, J, oldest, randomHex32, readLocal, S, said,
+  saveMerged, short, up, when, withTimeout, writeLocal, ZEC_FMT, zecText,
+} from "./app-kit.js";
 
 // ───────────────────────── Engine (WASM) ─────────────────────────
 let Z = null, engineSettled = false;   // settled: the engine loaded or failed
@@ -61,8 +65,6 @@ export async function loadEngine() {
   engineSettled = true;
   render(); react();
 }
-const J = (s) => JSON.parse(s);
-const S = (o) => JSON.stringify(o);
 
 // Slow steps (the proof, the Argon2id of a backup) run in a worker. Without a worker they run on
 // the main thread, and the page freezes while the step runs, after the busy text has been drawn.
@@ -246,8 +248,6 @@ async function deviceKey() {
     return idb("readonly", (st) => st.get("personal:key"));
   }
 }
-
-const said = (e) => (e && e.message) || String(e);
 
 // The saved account, or null for none. Throws when IndexedDB fails. A throw with `stored` means
 // that a record is there but does not open: it is damaged, and no new account may replace it.
@@ -779,7 +779,6 @@ const myUid = () => { const i = localSeats()[0]; return i ? state.seats[i].uid :
 const isCreator = () => state.g && isMe(state.g.createdBy);
 const seatNameOf = (uid) => (Object.values(state.seats).find((s) => s.uid === uid) || {}).name || "someone";
 const curSession = () => state.sessions.find((s) => s.id === state.sid) || null;
-const isStr = (x) => typeof x === "string";
 const signersOf = (ss) => Array.isArray(ss.signers) ? ss.signers : [];
 
 function seatStage(i) {
@@ -1161,11 +1160,6 @@ function stepV2(i, s) {
   return false;
 }
 
-const randomHex32 = () => {
-  const b = new Uint8Array(32); crypto.getRandomValues(b);
-  return Array.from(b, (x) => x.toString(16).padStart(2, "0")).join("");
-};
-
 const SAVE_FAILED = "This browser could not save your setup secret, so setup did not start.";
 
 // The secret part of sk is saved before its commitment goes out: a seat that loses it cannot finish.
@@ -1420,12 +1414,6 @@ function ensureChain() {
     cw: null, url: null, prog: null, bal: null, ms: 0, error: null, syncing: false,
   };
   runSync(chain);
-}
-
-function withTimeout(promise, ms, what) {
-  let timer;
-  const late = new Promise((_, reject) => { timer = setTimeout(() => reject(new Error(what + " did not answer in " + ms / 1000 + " s")), ms); });
-  return Promise.race([promise, late]).finally(() => clearTimeout(timer));
 }
 
 // Returns the first light-wallet server of `net` that answers, in order of preference.
@@ -1978,8 +1966,6 @@ export async function restore(file) {
     await applyBackup(b, false);
   } catch (e) { showBanner("bad", e.message); }
 }
-
-const isObj = (x) => !!x && typeof x === "object";
 const BACKUP_SEAT_MAX = 7;
 const wellFormed = (b) => isObj(b) && b.kind === BACKUP_KIND && isObj(b.secret);
 const validSeatRef = (b) => validId(b.group) && Number.isInteger(b.seat) && b.seat >= 1
@@ -2162,22 +2148,6 @@ async function takeRestoredKeys({ gid, seat, keys }, published) {
   const held = sec(gid, seat);
   if (held) await putSec(gid, seat, takenKeys(keys, held, good, published));
 }
-
-// ───────────────────────── Messages ─────────────────────────
-// Each wallet has a message room: a store namespace of its own (CHAT.md). The wallet document
-// names it in the sealed field "room". Each message is signed with its seat's Ed25519 key.
-const readLocal = (name) => {
-  try { return { ...JSON.parse(localStorage.getItem(name) || "{}") }; } catch { return {}; }
-};
-const writeLocal = (name, v) => { try { localStorage.setItem(name, S(v)); } catch { /* none */ } };
-// Another tab may have saved too. Merge with its copy before writing: `keep` picks the value.
-function saveMerged(name, mine, keep) {
-  for (const [k, v] of Object.entries(readLocal(name))) {
-    mine[k] = Object.hasOwn(mine, k) ? keep(v, mine[k]) : v;
-  }
-  writeLocal(name, mine);
-}
-const oldest = (stored) => stored;   // a pin keeps the value seen first
 // Reading the memo of a received payment asks the light-wallet server for that transaction, so the
 // server learns which transactions pay the wallet. It is off until a person turns it on, for one
 // wallet in one browser. It is not a field of the wallet, which every signer would read.
@@ -2936,9 +2906,6 @@ const el = (tag, attrs = {}, ...kids) => {
   for (const k of kids.flat()) if (k != null && k !== false) n.append(k instanceof Node ? k : document.createTextNode(String(k)));
   return n;
 };
-const fmtZec = (zat) => Number.isFinite(zat) ? zecText(zat) + " ZEC" : "an unknown amount";
-const zecText = (zat) => ZEC_FMT.format(finite(zat) / 1e8);
-const short = (h, n = 10) => h ? h.slice(0, n) + "…" + h.slice(-6) : "";
 // A success makes an earlier error message obsolete, so it is cleared.
 // A disabled button loses focus, so the key of the focused control is kept to give it back.
 export const act = (fn) => async (ev) => {
@@ -2979,7 +2946,6 @@ function guard(build, ...args) {
 let openLayer = "", tickTimer = null;
 export let opener = "", lastTrigger = "", wantFocus = null;   // focus bookkeeping, see draw()
 function focusAfter(key, force) { wantFocus = key ? { key, force } : null; }
-const ZEC_FMT = new Intl.NumberFormat("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 8 });
 // ZIP 317 for a payment from up to `outputs` notes: one action per output, change included. A
 // priority payment pays PRIORITY_FACTOR times as much (the engine's cap).
 const PRIORITY_FACTOR = 10;
@@ -2990,13 +2956,6 @@ const TOO_MANY = "A payment can have at most " + MAX_PAYEES + " recipients.";
 // The expected milliseconds from block `from` to block `to`, at the block time of each block (75
 // seconds before NU7, 25 from it). The engine knows the upgrade heights of each network.
 const spanMs = (net, from, to) => Z.blockSpanSeconds(net, from, to) * 1000;
-const initials = (name) => String(name || "?").trim().split(/\s+/).map((w) => w[0]).join("")
-  .slice(0, 2).toUpperCase() || "?";
-const when = (ms) => {
-  const d = new Date(Number.isFinite(ms) ? ms : NaN);
-  const fmt = { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" };
-  return isNaN(d) ? "" : d.toLocaleString(undefined, fmt);
-};
 
 // `sign` is "out" or "in" for money leaving or entering the wallet.
 function money(zat, size = "md", sign = "") {
@@ -4209,7 +4168,6 @@ function activityTab() {
 // ── Messages ──
 const FINE = "Signers, and anyone else who has the invite link, can read these messages. The "
   + "group server stores them sealed and sees only when they are sent.";
-const up = (s) => s.charAt(0).toUpperCase() + s.slice(1);
 const sender = (i) => state.seats[i] ? named(i) : "Unknown sender";
 
 function messagesCard() {
@@ -5772,9 +5730,6 @@ function priorityBox(sumUp) {
       + "standard fee, for a faster block when the network is busy. The fee is public on chain. "
       + "An iPhone or Mac app built before this version cannot approve it."));
 }
-
-// ── Payment drawer ──
-const elapsed = (ms) => { const sec = Math.max(0, Math.floor((Date.now() - (ms || Date.now())) / 1000)); return Math.floor(sec / 60) + ":" + String(sec % 60).padStart(2, "0"); };
 // A prover that closed its tab leaves status "proving"; let someone else take over.
 const proofStalled = (ss) => Date.now() - (ss.provingAt || 0) > 180000;
 
@@ -5825,12 +5780,6 @@ export function expired(ss) {
   if (!e || onChain(ss)) return false;
   if (!ss.final) return e.expired;
   return c.bal.height >= inspectOf(ss).expiry_height + EXPIRY_MARGIN;
-}
-
-function about(sec) {
-  if (sec >= 5400) return Math.round(sec / 3600) + " hours";
-  const min = Math.max(1, Math.round(sec / 60));
-  return min === 1 ? "1 minute" : min + " minutes";
 }
 
 // The expiry of an open payment, or why an expired one ends here. The engine counts from the
