@@ -20,7 +20,7 @@ import { createDialog, loadingView, lobby, lockView, renderSide } from "./app-sh
 import { sessionLayer } from "./app-drawer.js";
 import { solReact } from "./app-sol.js";
 import { groupView } from "./app-wallet.js";
-import { receiveDialog, sendDialog } from "./app-rest.js";
+import { receiveDialog, sendDialog } from "./app-send.js";
 
 // Each browser advances the steps it can do for its own seats. Steps that
 // need a human decision (approving a spend) wait for a click.

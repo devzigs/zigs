@@ -31,6 +31,7 @@ import "./app-loop.js";
 import "./app-setup.js";
 import "./app-sol.js";
 import "./app-wallet.js";
+import "./app-send.js";
 import "./app-rest.js";
 import { loadEngine } from "./app-engine.js";
 import { lockedVault } from "./app-keystore.js";
