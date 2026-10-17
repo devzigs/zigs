@@ -17,7 +17,7 @@ import { refilter, signPins } from "./app-filter.js";
 import { pendingChats, roomKeys, sdb, user } from "./app-groups.js";
 import { groupName } from "./app-dom.js";
 import { once, render } from "./app-loop.js";
-import { walletReady } from "./app-rest.js";
+import { walletReady } from "./app-wallet.js";
 
 const roomPins = readLocal("zf-rooms");      // wallet id -> first room id seen
 const readMarks = readLocal("zf-read");      // "room id:thread" -> time of the newest message read

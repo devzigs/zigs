@@ -16,7 +16,7 @@ import {
 } from "./app-dkg.js";
 import { messagesCard } from "./app-thread.js";
 import { react, render } from "./app-loop.js";
-import { activityLog } from "./app-rest.js";
+import { activityLog } from "./app-wallet.js";
 
 export function setupView() {
   const open = seatIds().filter((i) => !state.seats[i]);
