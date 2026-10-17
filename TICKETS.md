@@ -109,6 +109,7 @@ The owner asked on 16 October 2026 for faster development and iteration. Each ro
 | VEL-4 | P1 | dev | Make tests fast, stable and deep | No flaky test; a fast suite (engine and unit, seconds) runs on every change and the browser and live suites run before merge; property tests generate random sequences, faked documents included, for the payment session state. Known flake: on 17 October 2026 `web/test/sol-limits.mjs` and `web/test/sol-sessions.mjs` failed once in a full local run of the CI loop under load, on the merge of SOL-36 into main, and passed alone and in the next full run |
 | VEL-6 | P2 | owner | Decide routine choices by default | Agents take the recommended default for routine choices, log it in TICKETS.md or the design doc, and the owner can veto within a day; money, keys, privacy and anything hard to undo still wait for the owner |
 | VEL-7 | P2 | dev | Merge unfinished features behind a switch | A feature that is not ready ships turned off, so branches stay small; the first such feature adds the smallest switch that works |
+| VEL-9 | P2 | dev | Make lint.sh pass with the oxlint of this machine | With oxlint 1.74.0, `bash solspike/lint.sh` stops at `solspike/build.mjs:66` (no-control-regex: the class `[^/\0]` of the home-path pattern) before it reaches the page lint of the app.js split (`solspike/oxlintrc-page.json`). Done when lint.sh exits 0 with one pinned oxlint version (a dev dependency of solspike, or a version check in lint.sh), because the rules and the browser globals of oxlint change between versions |
 
 ## Closed
 
