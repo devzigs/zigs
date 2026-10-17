@@ -7,6 +7,7 @@
 /cf/.dev.vars
 /.wrangler
 /infra/lwd/.env.tunnel
+/infra/lwd/.env.lwd-key
 /dist
 /build/
 .DS_Store

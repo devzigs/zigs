@@ -78,7 +78,7 @@ To see signer changes, open **Signers**, then **Change signers**. To see the pri
 
 | Criterion | Evidence |
 |---|---|
-| **Privacy** | On chain, the transaction shape matches the standard wallet library: same builder, padding, standard fee and anchor depth. A group payment expires after one day instead of 40 blocks, because its approvals take hours, so the expiry marks it, and so does a priority fee ([comparison](PRIVACY.md#on-chain)). The server stores only encrypted values, padded so that even their length hides amounts. On the device, key shares can be locked with a passkey (web) or Face ID (iPhone) ([how](PRIVACY.md#lock-with-a-passkey-or-face-id)). Key share backups are encrypted with a passphrase (Argon2id and XChaCha20-Poly1305) and open on the web, iPhone and Mac ([how](PRIVACY.md#key-share-backups)). The page can connect only to the group server and three named light-wallet servers (Content-Security-Policy). For testnet wallets, the Solana Worker of the page also connects to the Helius Devnet host ([how](PRIVACY.md#solana-beta-helius-devnet)). It is prepared for Tor Browser, but not yet tested end to end ([how](PRIVACY.md#use-zigs-over-tor)). The Zigs server code keeps no logs; its host, Cloudflare, can see connection data. Every remaining leak is listed in [PRIVACY.md](PRIVACY.md). |
+| **Privacy** | On chain, the transaction shape matches the standard wallet library: same builder, padding, standard fee and anchor depth. A group payment expires after one day instead of 40 blocks, because its approvals take hours, so the expiry marks it, and so does a priority fee ([comparison](PRIVACY.md#on-chain)). The server stores only encrypted values, padded so that even their length hides amounts. On the device, key shares can be locked with a passkey (web) or Face ID (iPhone) ([how](PRIVACY.md#lock-with-a-passkey-or-face-id)). Key share backups are encrypted with a passphrase (Argon2id and XChaCha20-Poly1305) and open on the web, iPhone and Mac ([how](PRIVACY.md#key-share-backups)). The page can connect only to its own host (the group server and the testnet light-wallet relay) and two ChainSafe light-wallet servers (Content-Security-Policy). For testnet wallets, the Solana Worker of the page also connects to the Helius Devnet host ([how](PRIVACY.md#solana-beta-helius-devnet)). It is prepared for Tor Browser, but not yet tested end to end ([how](PRIVACY.md#use-zigs-over-tor)). The Zigs server code keeps no logs; its host, Cloudflare, can see connection data. Every remaining leak is listed in [PRIVACY.md](PRIVACY.md). |
 | **Usefulness** | Designed for team treasuries, DAOs and families. Usable today on testnet, and on mainnet with a warning at 0.5 ZEC: web, iPhone and Mac; invite links and QR codes; batch payments for payroll and grants (up to 20 recipients, one approval round, pasted from a spreadsheet); signer changes; encrypted key share backups. |
 | **Execution** | The live app works end to end. Seventeen testnet transactions made by the apps are [listed below](#proof-on-testnet). The engine has 122 tests, and a command-line suite runs adversarial cases. |
 | **Originality** | An end-user app for re-randomized FROST: no command line, no trusted dealer, and no server that can read the wallet. Each device decodes the PCZT and checks every output before it approves, and binds its approval to the transaction's sighash. Signer changes, batch payments and native iPhone and Mac apps are included. Built during the Zecathon window: the first commit is from October 10, 2026. |
@@ -112,7 +112,7 @@ flowchart LR
 |---|---|
 | Signer device | Its own key share, the wallet secret, the viewing key, all payments |
 | Group server | Wallet ids, document names, timing, IP addresses. Never keys, amounts, addresses or names |
-| Light-wallet server | IP address and the blocks requested, as for any light wallet. Where memo reading is on, it also sees which full transactions a device fetches to read memos. Never a key |
+| Light-wallet server | IP address and the blocks requested, as for any light wallet. On testnet, the app Worker relays the requests, so our node sees the Worker and not the device. Where memo reading is on, it also sees which full transactions a device fetches to read memos. Never a key |
 | Zcash network | A normal shielded transaction |
 | Helius (Solana beta, testnet wallets only) | IP address, the app origin, the owner key, and for each spend the amounts, recipients and the nullifier secret that its prover needs. Never a key share |
 
@@ -238,7 +238,7 @@ The full threat model is in [PRIVACY.md](PRIVACY.md). In short:
 |---|---|---|
 | Chain observers | A normal shielded Ironwood transaction | That a group signed it, the signers, amounts, addresses |
 | Group server | Wallet ids, document paths and field names, timing, which IP addresses connect to which wallet | Wallet and signer names, addresses, viewing key, amounts or their length, recipients, transactions, signing data |
-| Light-wallet server | Your IP address, the wallet's birthday height, the blocks you download, the transactions you send, the full transactions you fetch to read memos (only where memo reading is on) | Which notes are yours while you download blocks (the memo fetches are the exception), any key |
+| Light-wallet server | Your IP address (on testnet, our server sees the app Worker), the wallet's birthday height, the blocks you download, the transactions you send, the full transactions you fetch to read memos (only where memo reading is on) | Which notes are yours while you download blocks (the memo fetches are the exception), any key |
 | Helius (Solana beta, testnet wallets only) | Your IP address, the app origin, the owner key of the wallet, and the witness of each spend: owners, assets, amounts and the nullifier secret. The sender and the recipient of a transfer are public on chain | Any key share, the Ed25519 seed, the viewing key. It cannot sign |
 | Other signers | Everything about the shared wallet | Your key share and your signing nonces |
 
@@ -294,8 +294,9 @@ iPhone.
 | [`wasm/src/ffi.rs`](wasm/src/ffi.rs) | C interface for the iPhone and Mac apps |
 | [`web/index.html`](web/index.html), [`web/app.css`](web/app.css), [`web/app.js`](web/app.js) | The web app: page, styles and script (no inline script or style) |
 | [`web/shim.js`](web/shim.js), [`web/qr.js`](web/qr.js), [`web/payees.js`](web/payees.js), [`web/requests.js`](web/requests.js), [`web/personal.js`](web/personal.js), [`web/vault.js`](web/vault.js), [`web/chat.js`](web/chat.js), [`web/signed.js`](web/signed.js) | Store client, QR encoder, payment list parser with the memo rules and the recipient check, payment request cards and Send form rows, the rules of the personal account (contacts, fee, states of a message, backup), passkey lock, message helpers and the rules for signed writes (no third-party code) |
-| [`cf/src/index.js`](cf/src/index.js) | Group server: Cloudflare Worker with one Durable Object per wallet, limits against abuse. It also serves `/sol` and `/sol/config.json` for the Solana beta |
+| [`cf/src/index.js`](cf/src/index.js) | Group server: Cloudflare Worker with one Durable Object per wallet, limits against abuse. It also serves `/sol` and `/sol/config.json` for the Solana beta, and relays `/lwd` to our testnet light-wallet node |
 | [`web/sol/`](web/sol) | Solana beta in the page: ceremony, signing sessions, backup, the Worker that talks to Helius, the Solana wasm, and the vendored Zolana SDK bundle (third-party code, hash pinned in `SHA256SUMS`) |
+| [`infra/lwd/`](infra/lwd) | Our testnet light-wallet node: Zakura, lightwalletd and Envoy with a keyed tunnel listener and a tailnet listener, and the Cloudflare tunnel |
 | [`wasm-sol/`](wasm-sol) | Solana engine in Rust: message checker, FROST-Ed25519 ceremony and signing, key roles. It has its own lockfile and builds to `web/sol/wasm/` |
 | [`sol-program/`](sol-program) | The Solana program that owns a group's funds at an address of the group key and settles an approved payment through the pool (ZOLANA.md 7.2). `build.sh` rebuilds it and checks the hash, `build.sh test` runs its tests. Not used by the beta yet |
 | [`solspike/`](solspike) | Checks of the Solana beta: the Zcash baseline gate, the headless Chrome harness, the mock run and the bundle build. See [`solspike/README.md`](solspike/README.md) |
@@ -327,6 +328,19 @@ npm install
 echo DEV_NO_AUTH=1 > .dev.vars
 npx wrangler dev --port 8787
 ```
+
+A testnet wallet reaches our light-wallet node through the Worker, at `/lwd` of the page origin. The
+Worker adds the secret `LWD_KEY` (64 lowercase hex characters), which the node checks, and the page
+never holds it. For local development, add the key to `cf/.dev.vars`:
+
+```bash
+echo 'LWD_KEY=<the key of infra/lwd/.env.lwd-key>' >> .dev.vars
+```
+
+Without it, `/lwd` answers 503 and the page uses the ChainSafe server. On the server, set the secret
+of each Worker with `npx wrangler secret put LWD_KEY --env=""` (production) and
+`npx wrangler secret put LWD_KEY --env staging`. `scripts/deploy-staging.sh` sets the staging
+secret from `~/.config/zigs/lwd-key`.
 
 The Solana beta needs the secret `HELIUS_DEVNET_URL`: your Helius Devnet URL, which holds the API
 key. For local development, add it to `cf/.dev.vars`, which Git ignores:
@@ -373,6 +387,36 @@ Do not roll back to an older build after the deploy of 16 October 2026. That dep
 backup format (PROTOCOL.md section 9). An older build refuses the new backup files, and it shows
 every seat as not backed up. Older iPhone and Mac builds cannot open the new files or the new key
 ceremony messages either. If a build is bad, deploy a fixed build of the new format.
+
+### Light-wallet node
+
+`infra/lwd/` runs the testnet node of the web app with Docker Compose: Zakura, lightwalletd and
+Envoy. Only the app Worker and the devices of the tailnet may use it. Envoy has two listeners:
+
+| Listener | Port | Used by | Check |
+|---|---|---|---|
+| `tunnel` | 8080, not published | The Cloudflare tunnel, which sends `lwd.zigs.app` here. Only the app Worker calls it | The header `x-zigs-lwd-key` must hold the key. Any other request gets 404. No CORS |
+| `tailnet` | 8081, published as `${LWD_BIND}:9080` | Devices on the tailnet, at `http://<tailnet address>:9080` | None. CORS allows `https://app.zigs.app` and localhost |
+
+The node host needs these files in one folder, as a copy or a checkout of `infra/lwd`:
+`docker-compose.yml`, `envoy.yaml`, `envoy-start.sh`, `zcash.conf`, `.env.lwd-key` and
+`.env.tunnel`. If `envoy-start.sh` is missing, Docker makes a folder with its name and Envoy does
+not start, so both listeners are down.
+
+Make the key once on the node host, and keep the file private. Git ignores it:
+
+```bash
+cd infra/lwd
+echo "LWD_KEY=$(openssl rand -hex 32)" > .env.lwd-key && chmod 600 .env.lwd-key
+docker compose --profile tunnel up -d
+```
+
+Envoy refuses to start unless `LWD_KEY` has 64 lowercase hex characters. Give the same value to the
+Worker secrets `LWD_KEY` of production and staging, and to `~/.config/zigs/lwd-key`. Deploy the
+Worker and its secrets first, then change Envoy. The new Worker also works with the old Envoy. A
+page of the old version calls `lwd.zigs.app` directly, and the new Envoy refuses it. Every device
+of the tailnet can use the `tailnet` listener, so limit the node host in the Tailscale ACL
+(TICKETS.md, PRIV-7).
 
 ### iPhone and Mac apps
 
@@ -552,6 +596,9 @@ folder path.
 - `node web/test/qr.mjs`: the QR encoder against libqrencode (needs the `qrencode` command).
 - `node web/test/shim.mjs`: the notice of `web/shim.js` when a module of the page does not load
   or link before the first paint, and no notice for an image or style, or after the first paint.
+- `node web/test/lwd.mjs`: the `/lwd` route of `cf/src/index.js` with a stub for `fetch`: the path
+  and method rules, the password gate, the headers to the node (the allowed ones and the key
+  only), the answer, the 503 and 502 cases, and a response that streams.
 - `bash tests/e2e.sh`: the command-line ceremony in separate processes, with attacks: wallet
   substitution, fewer than t signers, tampered randomizer and sighash, nonce reuse, wrong share
   attribution, foreign notes.
