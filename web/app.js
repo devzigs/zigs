@@ -689,7 +689,7 @@ function openGroup(gid) {
     pending: false, log: [],
   });
   Object.assign(raw, emptyRaw());
-  solStartDoc = null;
+  resetSolStart();
   loggedIgnored.delete(gid);
   if (!gid) { setHash("#"); render(); return; }
   setHash("#" + gid);
@@ -871,6 +871,7 @@ const SOL_BACKUP_KIND = "zigs-sol-backup";
 const SOL_OFF = "Solana is not available on this server";
 let sol = null, solLoading = null, solError = "";
 let solStartDoc = null;   // the stored solstart/1 of the open wallet, whoever wrote it
+function resetSolStart() { solStartDoc = null; }
 const solHost = () => ({
   Z, sdb, state, el, act, log, once, render, refilter, showBanner, sec, putSec, signedDoc,
   canWriteAs, localSeats, seatIds, checkIn, safetyNo, seatCheck, openGroup, restore,
