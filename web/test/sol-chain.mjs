@@ -69,10 +69,13 @@ function instructionsOf(message) {
   }));
 }
 
-/** The canonical bump of a proposal address: the bump whose hash is the address. */
+/**
+ * The canonical bump of a proposal address: the bump whose hash is the address. Version 5 seeds:
+ * "proposed_transaction", the group key, the commitment and SHA-256(body).
+ */
 function bumpOf(address, body) {
   const seeds = [Buffer.from("proposed_transaction"), Buffer.from(body.slice(64, 128), "hex")];
-  seeds.push(Buffer.from(body.slice(0, 64), "hex"));
+  seeds.push(Buffer.from(body.slice(0, 64), "hex"), sha256(Buffer.from(body, "hex")));
   const program = Buffer.from(keyHex(PROGRAM), "hex");
   for (let bump = 255; bump >= 0; bump--) {
     const made = sha256(...seeds, Buffer.from([bump]), program, PDA_MARKER);
@@ -86,7 +89,8 @@ function refusalOf(chain, ixs, i) {
   const ix = ixs[i],
     proposal = ix.accounts[1];
   if (ix.data.startsWith("00")) {
-    if (chain.accounts.has(proposal)) return "AccountAlreadyInUse";
+    // System error 0 in the create CPI, as the Worker gives it: the account is in use.
+    if (chain.accounts.has(proposal)) return `{"InstructionError":[${i},{"Custom":0}]}`;
     return bumpOf(proposal, ix.data.slice(2)) === null ? "Custom 6005" : null;
   }
   if (!ix.data.startsWith("01")) return "InvalidInstructionData";
@@ -253,7 +257,11 @@ function answersOf(chain) {
       return { authority: chain.group.owner, nonce: base58(nonce), nonceHex: nonce, lamports: "1" };
     },
     preflight: ({ tx }) => ran(refusal(chain, wire(tx), false)),
-    simulate: ({ tx }) => ran(refusal(chain, wire(tx), true)),
+    simulate: ({ tx }) => {
+      const parts = wire(tx);
+      if (chain.frontRun) frontRun(chain, parts);
+      return ran(refusal(chain, parts, true));
+    },
     send: ({ tx }) => {
       const parts = wire(tx),
         err = refusal(chain, parts, true);
@@ -272,6 +280,22 @@ function answersOf(chain) {
 }
 
 const signatureOf = (parts) => base58(hex(parts.sigs[0]));
+
+// Someone else lands the same create first (`chain.frontRun`, once), after a create of theirs that
+// failed: the create of the page then meets an account in use. "other" stores another body there.
+function frontRun(chain, parts) {
+  const ixs = instructionsOf(parts.message);
+  const create = ixs.find((ix) => ix.program === PROGRAM && ix.data.startsWith("00"));
+  if (!create) return;
+  const other = chain.frontRun === "other";
+  chain.frontRun = false;
+  const proposal = create.accounts[1];
+  chain.history.set(proposal, [{ signature: FRONT_RUN_FAILED, failed: true, slot: "10" }]);
+  programLanded(chain, ixs, FRONT_RUN);
+  if (other) chain.accounts.get(proposal).data += "00";
+}
+export const FRONT_RUN = "9".repeat(87) + "8";
+const FRONT_RUN_FAILED = "9".repeat(87) + "7";
 // How a sent transaction ends: it lands now, it fails on chain (the simulation passed), or it
 // lands later, when the test calls `chain.release()`.
 const SENDS = {

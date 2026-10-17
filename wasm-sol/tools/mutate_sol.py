@@ -73,7 +73,9 @@ FEE_DAMAGED_TEST = "a_damaged_share_a_share_of_another_seat_or_junk_gives_no_key
 LANDED_DIGEST = "the_digest_and_the_ed25519_data_are_those_that_landed_and_the_signature_verifies"
 LANDED_COMMITMENT = "the_commitment_of_the_landed_transact_data_is_the_commitment_of_the_body"
 LANDED_PDA = "the_owner_pda_of_the_spike_group_is_the_landed_owner"
-LANDED_ADDRESSES = "the_proposal_and_cancellation_addresses_are_the_landed_accounts"
+LANDED_ADDRESSES = (
+    "the_proposal_address_is_of_version_5_and_the_cancellation_address_is_the_landed_one"
+)
 PDA_ROLES = "the_pda_identity_of_a_seed_equals_the_independent_node_and_sdk_derivation"
 PAY_SDK = "the_approval_recomputes_the_private_tx_hash_of_the_sdk_and_accepts_the_payment"
 PRIVATE = "a_private_tx_hash_that_is_not_the_recompute_is_refused"
@@ -119,8 +121,12 @@ PROGRAM_CASES = [
      LANDED_COMMITMENT),
     ("owner-seed", "src/program.rs", "derive(&[SEED_OWNER, group], ", "derive(&[SEED_OWNER], ",
      LANDED_PDA),
-    ("proposal-seed", "src/program.rs", "derive(&[SEED_PROPOSAL, group, commitment], ",
-     "derive(&[SEED_PROPOSAL, commitment], ", LANDED_ADDRESSES),
+    ("proposal-seed", "src/program.rs",
+     "&[SEED_PROPOSAL, group, commitment, &body_hash],",
+     "&[SEED_PROPOSAL, commitment, &body_hash],", LANDED_ADDRESSES),
+    ("proposal-no-body", "src/program.rs",
+     "&[SEED_PROPOSAL, group, commitment, &body_hash],",
+     "&[SEED_PROPOSAL, group, commitment],", LANDED_ADDRESSES),
     ("pda-label", "src/roles.rs", 'b"zigs-sol/pda-nullifier-secret/v1"',
      'b"zigs-sol/pda-nullifier-secret/v2"', PDA_ROLES),
     ("pda-tag", "src/roles.rs", "const TAG_PDA: u8 = 2;", "const TAG_PDA: u8 = 1;", PDA_ROLES),

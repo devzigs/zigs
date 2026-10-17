@@ -23,8 +23,8 @@ use crate::intent::{Intent, Pay, Spend};
 use crate::pins::Pins;
 use crate::plan::{Plan, Role};
 use crate::program::{
-    approval_digest, cancellation_address, commitment, private_tx_hash, proposal_address, Body,
-    KIND_PROPOSAL, MAX_EXECUTE_INPUTS,
+    approval_digest, commitment, private_tx_hash, proposal_address, Body, KIND_PROPOSAL,
+    MAX_EXECUTE_INPUTS,
 };
 use crate::rule::{Rule, Violation};
 use crate::spend::{spend_violations, Group, SpendInput, Summary};
@@ -202,15 +202,11 @@ struct Checked {
     summary: Summary,
 }
 
-/// The addresses that a rent recipient may never be: they could never take the rent back.
-fn program_addresses(pins: &Pins, proposal: &Key) -> Result<Vec<Key>, String> {
-    Ok(vec![
-        pins.pda,
-        pins.program,
-        SYSTEM_PROGRAM,
-        *proposal,
-        cancellation_address(proposal)?,
-    ])
+/// The addresses that a rent recipient may never be (error 6021 of the program): they could
+/// never take the rent back. A body cannot name its own proposal or record address: the address
+/// binds the body hash.
+fn program_addresses(pins: &Pins) -> [Key; 3] {
+    [pins.pda, pins.program, SYSTEM_PROGRAM]
 }
 
 /// The fields of a body against the payment that the device computed.
@@ -270,12 +266,11 @@ fn account_violations(account: Option<&Account>, want: (&Body, u8), pins: &Pins)
     }
 }
 
-/// One body per commitment: the address does not bind the rent recipient or the abort
-/// authorities (the commitment binds the pool expiry, and body-expiry ties the body to it), so a
-/// second body for an approved commitment is refused.
+/// One body per commitment: two bodies for one commitment, both signed, are two approvals of one
+/// payment with other rent recipients or abort authorities, and the program cannot tell them apart
+/// (ZOLANA.md 7.2, N3). So a second body for an approved commitment is refused.
 // ponytail: the list lives in the seat secret of this browser, so a restored seat or another
-// browser of the seat starts with none (as the salts, SOL-8, SOL-53). Upgrade path: the body hash
-// in the address (program version 4).
+// browser of the seat starts with none (as the salts, SOL-8). Upgrade path: a signed list (SOL-53).
 fn once_violation(seen: &Seen, commitment: &Key, body: &[u8]) -> Option<Violation> {
     let hash: Key = Sha256::digest(body).into();
     let other = seen
@@ -324,8 +319,8 @@ pub fn approve_pay(
     let commitment = commitment(&private, &tx).map_err(plain)?;
     let want = body_of(pins, commitment, pay.expiry, pins.payer);
     let body = want.write().map_err(plain)?;
-    let (address, bump) = proposal_address(&pins.multisig, &commitment).map_err(plain)?;
-    let banned = program_addresses(pins, &address).map_err(plain)?;
+    let (address, bump) = proposal_address(&pins.multisig, &commitment, &body).map_err(plain)?;
+    let banned = program_addresses(pins);
     if banned.contains(&pins.payer) {
         let why = "the fee key of the proposing seat is an address of the program";
         out.push(Violation::new(Rule::RentRecipient, why));

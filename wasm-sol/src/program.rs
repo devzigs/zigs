@@ -2,9 +2,9 @@
 //! it derives, the proposal body, the approval digest, the Ed25519 instruction that carries the
 //! approval, and the commitment that it recomputes from the `transact` data.
 //!
-//! The program is version 2 on Devnet (`MULTISIG_DEVNET`). Its proposal address is
-//! `["proposed_transaction", group key, commitment]`; `proposal_address` is the one place that
-//! names those seeds.
+//! The client is of program version 5 on Devnet (`MULTISIG_DEVNET`, the interface of version 4).
+//! Its proposal address is `["proposed_transaction", group key, commitment, SHA-256(body)]`;
+//! `proposal_address` is the one place that names those seeds.
 
 use sha2::{Digest, Sha256};
 use zolana_hasher::primitives::right_align;
@@ -41,9 +41,14 @@ pub fn owner_pda(group: &Key) -> Result<Key, String> {
     derive(&[SEED_OWNER, group], "the owner").map(|(key, _)| key)
 }
 
-/// The proposal account of a commitment and its bump (version 2 seeds).
-pub fn proposal_address(group: &Key, commitment: &Key) -> Result<(Key, u8), String> {
-    derive(&[SEED_PROPOSAL, group, commitment], "the proposal")
+/// The proposal account of a body and its bump. The body hash gives each body its own address,
+/// so a body that someone else creates first for the commitment cannot block the signed one.
+pub fn proposal_address(group: &Key, commitment: &Key, body: &[u8]) -> Result<(Key, u8), String> {
+    let body_hash: Key = Sha256::digest(body).into();
+    derive(
+        &[SEED_PROPOSAL, group, commitment, &body_hash],
+        "the proposal",
+    )
 }
 
 /// The record that a cancel of `proposal` leaves: `["cancelled_transaction", proposal]`.

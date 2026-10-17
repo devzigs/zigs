@@ -27,7 +27,8 @@
   "execute_signature": "5Gw2h3D95sZuMTxUYiDYXBS6K8ZUmUNzGNAGNH2j2Ej5v2vSsYNDB2zbwzx6uFB8De8P31tpN98u1QWJ333dQtrk",
   "execute_units": 151077,
   "payer": "04caa10632966782de88f06c544307257020b02dbb195ebc0a61fd9f3e74e632",
-  "proposal": "245d36712aba9d999e5a1f0a9497dc7bcbe7bab57da72cf6fc7b0e60dc7002b3"
+  "proposal": "245d36712aba9d999e5a1f0a9497dc7bcbe7bab57da72cf6fc7b0e60dc7002b3",
+  "proposal_v5": "10ca4071c8ef3d73d6b483174fd3ce2d6beb7b4d6dd1543ab4d202f649da07e7"
  },
  "emain": {
   "body": "029f74d07809ec248862388979e8765c5c37cf4df5cbdd699129deac4616e4129f5719b2eaa329185b25316806d65a7abab6ab7255eb09c7da3a21fdea688fcec542d36a000000004136b1fc9ea440fd240394e99769119e262d4bb1cb88478d51298e678efe1299014136b1fc9ea440fd240394e99769119e262d4bb1cb88478d51298e678efe1299",
@@ -53,9 +54,10 @@
   "execute_signature": "23uKtB13ZDoGb7wDhW2yMYw1hSpTafg86FW1QdBAK9rxB9n1ZxRf5JFVSS5ykBF7pkhGoSC1KrwSmfhRFswCYeqe",
   "execute_units": 148450,
   "payer": "04caa10632966782de88f06c544307257020b02dbb195ebc0a61fd9f3e74e632",
-  "proposal": "fbd47a1b163d22b59e140523bbf12668ab80e2d567e82414f70ba74eb3f46ed6"
+  "proposal": "fbd47a1b163d22b59e140523bbf12668ab80e2d567e82414f70ba74eb3f46ed6",
+  "proposal_v5": "2a564e79283278cebeb47db56aad0372e92d38813bfae052d9dcbe810d569066"
  },
  "group": "9f5719b2eaa329185b25316806d65a7abab6ab7255eb09c7da3a21fdea688fce",
  "pda": "0717c041172668a4b5ee31c23093a7b718ee75e558b486030240a94728d5ceb0",
- "source": "getTransaction on the public Devnet RPC, 16 October 2026: the SOL-35 tracks dmain and emain (ZOLANA.md 6.10)"
+ "source": "getTransaction on the public Devnet RPC, 16 October 2026: the SOL-35 tracks dmain and emain (ZOLANA.md 6.10). proposal_v5: the address of the same body under program version 5 (seeds proposed_transaction, group, commitment, SHA-256(body)), computed with getProgramDerivedAddress of @solana/kit, not with wasm-sol"
 }

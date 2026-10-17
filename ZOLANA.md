@@ -300,22 +300,24 @@ durable nonce, so the message is fixed at proposal time, as the sighash is in Zc
 **5.1 Payments of the program design (SOL-36).** The fee key of the proposing seat pays the create
 and the rent. The rent comes back to that seat at the execute. The group key signs no message.
 
-1. **Propose.** The Worker proves the payment once for the PDA identity (`prepare` with kind
-   `pay`, no owner signers: the program signs as the owner). The checker of the proposing device
-   accepts it as an approver would (`check_payment`, with no chain state) and gives the
-   commitment, the body and the proposal account. The fee key signs the create message, and the
-   device lands it: a create that is not confirmed at once is read again until its blockhash
-   ends. Then the seat publishes the proposal part: the intent (tag 8), the plan, the input ids,
-   the salt, the transact data of the first proof, the account, the body and the id of the create
-   transaction. The Worker takes a count of inputs that has a circuit with no dummy input, at most
-   8. One more input costs about 5,000 compute units (6.12), so 8 inputs stay well under the caps
-   of the template, and 16 would reach them. One `execute` carries at most 18 inputs, and the
-   checker refuses more (`execute-inputs`).
-2. **Check, on each approving device** (`check_payment`). The Outputs, Legs and Ciphertexts rules
-   of the table above, on the first proof. The device recomputes `private_tx_hash` from the inputs
-   of its own snapshot, the plan outputs and the blinding of the first nullifier, then the
-   commitment. It reads the proposal account: the owner is the program, the address derives from
-   the group key and the commitment, and the data is `[1, bump]` and the body. The body names the
+1. **Propose.** The Worker proves the payment once for the PDA identity (`prepare` with kind `pay`,
+   no owner signers: the program signs as the owner). The checker of the proposing device accepts it
+   as an approver would (`check_payment`, with no chain state) and gives the commitment, the body
+   and the proposal account. The fee key signs the create message, and the device lands it: a create
+   that is not confirmed at once is read again until its blockhash ends. A create that meets an
+   account in use (System error 0) reads the account: when it holds the same body, the oldest
+   successful transaction on it is the create (N4 of 7.2); else the propose fails. Then the seat
+   publishes the proposal part: the intent (tag 8), the plan, the input ids, the salt, the transact
+   data of the first proof, the account, the body and the id of the create transaction. The Worker
+   takes a count of inputs that has a circuit with no dummy input, at most 8. One more input costs
+   about 5,000 compute units (6.12), so 8 inputs stay well under the caps of the template, and 16
+   would reach them. One `execute` carries at most 18 inputs, and the checker refuses more
+   (`execute-inputs`).
+2. **Check, on each approving device** (`check_payment`). The Outputs, Legs and Ciphertexts rules of
+   the table above, on the first proof. The device recomputes `private_tx_hash` from the inputs of
+   its own snapshot, the plan outputs and the blinding of the first nullifier, then the commitment.
+   It reads the proposal account: the owner is the program, the address derives from the group key,
+   the commitment and the body hash, and the data is `[1, bump]` and the body. The body names the
    commitment, the group key, an expiry inside the window, and the fee key of the proposing seat as
    rent recipient and as the only abort authority. A seat refuses a second body for a commitment
    that it approved (one body per commitment). The screen shows the payee, the amount, the change,
@@ -1083,8 +1085,9 @@ it binds the program id and not the code.
   expiry.
 - Not built: a cancel of a proposal (SOL-52). SOL withdrawals through the program are in version 4
   (condition 1 below), which is not deployed. The page derives the proposal addresses of version
-  2, the deployed version. Deposits from public SOL need no leg in the program: the beta's Add SOL
-  deposits straight into the pool, to the shielded address of the PDA identity.
+  5. Devnet still runs version 2, so this client goes on only at step 6 of the upgrade plan below.
+  Deposits from public SOL need no leg in the program: the beta's Add SOL deposits straight into
+  the pool, to the shielded address of the PDA identity.
 - One `execute` with one input tree spends at most 18 inputs (the CPI copies at most 24
   accounts), and option D forbids `merge_transact`. A group with many small notes needs several
   payments to spend them.

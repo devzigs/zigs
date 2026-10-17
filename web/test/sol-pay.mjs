@@ -26,7 +26,7 @@ import { deviceSpend } from "../sol/spend.js";
 import { LINK_TEXT } from "../sol/payview.js";
 import { readSolSession, writePart } from "../sol/sessions.js";
 import { solView } from "../sol/view.js";
-import { verifies } from "./sol-chain.mjs";
+import { FRONT_RUN, verifies } from "./sol-chain.mjs";
 import { G, preparedOf, transactOf, useTestGroup, utxoOf } from "./sol-fixture.mjs";
 import {
   W,
@@ -367,6 +367,19 @@ step("an execute that lands late is not sent twice, and the mark names it");
   await waitStatus(id, "sent");
 }
 step("an execute waits for the lease of another device, and stops after its tries");
+
+// ── Someone created the same body first: the page reads the account and takes it ──
+{
+  await forgetPairs();
+  chain.frontRun = "other";
+  await assert.rejects(() => proposedPay(), /"Custom":0\}/, "another body is no create");
+  chain.frontRun = true;
+  const id = await proposedPay();
+  assert.equal(chain.frontRun, false, "the other create landed first");
+  assert.equal(ssOf(id).createTx, FRONT_RUN, "the create of the account is the other one");
+  assert.ok(chain.accounts.has(base58(ssOf(id).account)), "the account holds the body");
+}
+step("a create that meets the same body in its account takes it; another body fails it");
 
 // ── Two payments over one input: the second avoids it, an executed one ends the other ──
 {

@@ -188,10 +188,10 @@ const SPENT =
   "Another payment spent the inputs of this one, so it can never execute. Propose it again.";
 
 /** The input ids of the payments that are still open: a new payment must not take them. */
-export const openInputs = (sessions) =>
-  sessions
-    .filter((ss) => isPayment(ss) && !ENDED.has(ss.status))
-    .flatMap((ss) => ss.inputIds ?? []);
+export function openInputs(sessions) {
+  const open = sessions.filter((ss) => isPayment(ss) && !ENDED.has(ss.status));
+  return [...new Set(open.flatMap((ss) => ss.inputIds ?? []))];
+}
 
 /** A payment that executed spent its inputs: every open payment over one of them ends. */
 function endSpent(sessions) {

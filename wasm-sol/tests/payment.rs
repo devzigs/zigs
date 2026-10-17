@@ -46,8 +46,10 @@ fn want_body(f: &Fixture) -> (Body, Key, u8) {
     let pda = f.pins.for_pda().unwrap();
     let private = f.tx.private_tx_hash;
     let commitment = commitment(&private, &f.tx).unwrap();
-    let (address, bump) = proposal_address(&f.pins.multisig, &commitment).unwrap();
-    (body_of(&pda, commitment, EXPIRY, PAYER), address, bump)
+    let body = body_of(&pda, commitment, EXPIRY, PAYER);
+    let bytes = body.write().unwrap();
+    let (address, bump) = proposal_address(&f.pins.multisig, &commitment, &bytes).unwrap();
+    (body, address, bump)
 }
 
 fn account_of(body: &Body, bump: u8) -> Account {
@@ -275,15 +277,9 @@ fn each_field_of_the_stored_body_must_be_the_body_of_the_payment() {
 
 #[test]
 fn a_rent_recipient_that_is_an_address_of_the_program_is_refused() {
-    let f = payment();
-    let (_, address, _) = want_body(&f);
-    let banned = [
-        pda_wallet().signer,
-        MULTISIG_DEVNET,
-        SYSTEM_PROGRAM,
-        address,
-        cancellation_address(&address).unwrap(),
-    ];
+    // The addresses of error 6021. A body cannot name its own proposal or record address: the
+    // address binds the body hash.
+    let banned = [pda_wallet().signer, MULTISIG_DEVNET, SYSTEM_PROGRAM];
     for key in banned {
         let mut g = payment();
         g.pins.payer = key;

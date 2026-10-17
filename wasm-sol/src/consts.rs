@@ -132,7 +132,8 @@ pub const OFFCHAIN_MAGIC: [u8; 16] = [
 pub const DERIVE_PREFIX: &[u8] = b"TSPP/derive/";
 
 /// `5PHZEHBMaYbFL9SFmMyP8kUayh3TFEyq2dvEYY3UGjkL`, the approvals program of the group on Devnet
-/// (version 2, ZOLANA.md 6.10 and 7.2). It owns the shielded funds of every group at its PDA.
+/// (ZOLANA.md 6.10 and 7.2; this client is of version 5). It owns the shielded funds of every group
+/// at its PDA.
 pub const MULTISIG_DEVNET: Key = [
     0x41, 0x24, 0x3e, 0xbc, 0x6a, 0xa6, 0x46, 0xb9, 0xdc, 0x5c, 0xd6, 0x42, 0xcc, 0x34, 0x34, 0xfa,
     0x27, 0x45, 0x17, 0x64, 0xad, 0x0a, 0x7c, 0x35, 0x31, 0xa0, 0x02, 0xdb, 0x9a, 0xa4, 0xb4, 0x41,
@@ -157,7 +158,7 @@ pub const INSTRUCTIONS_SYSVAR: Key = [
     0xc1, 0x24, 0xc6, 0x8f, 0x21, 0x56, 0x75, 0xa5, 0xdb, 0xba, 0xcb, 0x5f, 0x08, 0x00, 0x00, 0x00,
 ];
 
-/// Seeds and tags of the approvals program (`sol-program/src/lib.rs` at version 2).
+/// Seeds and tags of the approvals program (`sol-program/src/lib.rs`, version 5).
 pub const SEED_OWNER: &[u8] = b"multisig";
 pub const SEED_PROPOSAL: &[u8] = b"proposed_transaction";
 pub const SEED_CANCEL: &[u8] = b"cancelled_transaction";

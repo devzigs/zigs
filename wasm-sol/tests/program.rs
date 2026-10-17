@@ -93,12 +93,20 @@ fn the_landed_body_parses_and_writes_back_to_the_same_bytes() {
 }
 
 #[test]
-fn the_proposal_and_cancellation_addresses_are_the_landed_accounts() {
+fn the_proposal_address_is_of_version_5_and_the_cancellation_address_is_the_landed_one() {
     for name in ["dmain", "emain"] {
         let t = track(name);
         let body = Body::parse(&t.body).unwrap();
-        let (address, _) = proposal_address(&t.group, &body.commitment).unwrap();
-        assert_eq!(address, t.proposal, "{name}: proposal");
+        let (address, _) = proposal_address(&t.group, &body.commitment, &t.body).unwrap();
+        let v5 = key(&landed()[name]["proposal_v5"]);
+        assert_eq!(
+            address, v5,
+            "{name}: the address of @solana/kit for the version 5 seeds"
+        );
+        assert_ne!(
+            address, t.proposal,
+            "{name}: version 5 moves the landed version 2 address"
+        );
         assert_eq!(t.accounts[1], t.proposal, "{name}: execute account 1");
         assert_eq!(
             cancellation_address(&t.proposal).unwrap(),

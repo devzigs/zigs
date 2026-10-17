@@ -113,7 +113,7 @@ fn execute_violations(bytes: &[u8], intent: &Intent, device: &Device) -> Vec<Vio
     }
     let digest = commitment(&tx.private_tx_hash, &tx).and_then(|commitment| {
         let body = body_of(pins, commitment, *expiry, *rent_recipient).write()?;
-        let (proposal, _) = proposal_address(&pins.multisig, &commitment)?;
+        let (proposal, _) = proposal_address(&pins.multisig, &commitment, &body)?;
         Ok(approval_digest(&proposal, &body))
     });
     match digest.map(|digest| verify_strict(&pins.multisig, &digest, signature)) {

@@ -36,7 +36,10 @@ chain.install();
 
 export const ssOf = (id) => c.sessions.find((ss) => ss.id === id);
 export const waitStatus = (id, status, ms = 30000) =>
-  waitFor(`session ${id} ${status}`, () => ssOf(id)?.status === status, ms);
+  waitFor(`session ${id} ${status}`, () => ssOf(id)?.status === status, ms).catch((e) => {
+    const seen = { status: ssOf(id)?.status, tries: c.tries[id], error: c.execErrors[id] };
+    throw new Error(e.message + " " + JSON.stringify(seen));
+  });
 export const proposed = async (kind, args) => {
   const id = await propose(c, kind, args);
   await waitFor("the proposal", () => ssOf(id));

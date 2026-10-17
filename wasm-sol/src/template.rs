@@ -355,7 +355,7 @@ pub fn body_of(pins: &Pins, commitment: Key, expiry: u64, recipient: Key) -> Bod
 /// `create`: the payer funds the proposal account at the address of the commitment.
 fn propose(pins: &Pins, commitment: Key, expiry: u64) -> Result<ExpectedIx, String> {
     let body = body_of(pins, commitment, expiry, pins.payer).write()?;
-    let (proposal, _) = proposal_address(&pins.multisig, &commitment)?;
+    let (proposal, _) = proposal_address(&pins.multisig, &commitment, &body)?;
     let accounts = vec![
         acct(pins.payer, true, true),
         acct(proposal, false, true),
@@ -379,7 +379,7 @@ fn execute(program: &Program, pins: &Pins, tx: &Transact) -> Result<Vec<Expected
     };
     let commitment = commitment(&tx.private_tx_hash, tx)?;
     let body = body_of(pins, commitment, *expiry, *rent_recipient).write()?;
-    let (proposal, _) = proposal_address(&pins.multisig, &commitment)?;
+    let (proposal, _) = proposal_address(&pins.multisig, &commitment, &body)?;
     let digest = approval_digest(&proposal, &body);
     let approval = approval_ix_data(&pins.multisig, signature, &digest);
     let mut accounts = vec![

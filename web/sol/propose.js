@@ -136,6 +136,26 @@ async function land(worker, message, signature, seat) {
   return txId;
 }
 
+// System error 0 at the create (the Worker gives the error as JSON): an account exists at the
+// proposal address.
+const IN_USE = /"Custom":0[,}]/;
+
+/**
+ * The create of an account that exists already: the address binds the body, so someone created
+ * the same body first (ZOLANA.md 7.2, N4). The page reads the account, compares its data, and
+ * takes the oldest transaction on it as the create. Else it throws `error`.
+ */
+async function createdBefore(worker, said, error) {
+  if (!IN_USE.test(error.message)) throw error;
+  const account = await worker.call("account", { account: base58(said.proposal) });
+  const same = account.exists && /^01[0-9a-f]{2}/.test(String(account.data));
+  if (!same || account.data.slice(4) !== said.body) throw error;
+  const found = await worker.call("history", { account: base58(said.proposal) });
+  const create = found.filter((x) => !x.failed).at(-1);
+  if (!create) throw error;
+  return create.signature;
+}
+
 /**
  * A private payment of the program design: the first proof, the check of this device, then the
  * create message of the proposal account. Resolves with the fields of the proposal part.
@@ -160,7 +180,9 @@ async function payDraft(c, worker, seat, fee, args) {
   const createProposal = bytesOf(paymentHex(create, fields));
   const message = c.W.compile_message(createProposal, inputs.pins, new Uint8Array(0));
   const signature = signAsFee(c, seat, message, createProposal, inputs);
-  const createTx = await land(worker, message, signature, seat);
+  const createTx = await land(worker, message, signature, seat).catch((error) =>
+    createdBefore(worker, said, error),
+  );
   return { ...fields, account: said.proposal, body: said.body, createTx };
 }
 
