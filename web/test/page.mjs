@@ -40,7 +40,8 @@ const SETTERS = { personal: "setPersonal", secrets: "setSecrets", gkeys: "setGke
   tabBar: "setTabBar" };
 
 /**
- * Imports the page modules and returns `t`, a live view of the names in NAMES.
+ * Imports the page modules and returns `t`, a live view of the names in NAMES. The modules load
+ * once per process: a second call gives a view of the same module instances.
  * @returns {Promise<object>} t: t.NAME reads the export now; t.personal = v calls setPersonal.
  */
 export async function loadPage() {
@@ -55,12 +56,14 @@ export async function loadPage() {
   // Not page names: an import of the old app.js, and the function binding idb, read now.
   const extra = { proposalFields, getIdb: () => owner.get("idb").idb };
   for (const n of [...NAMES, ...Object.values(SETTERS)]) {
-    if (!(n in extra) && !owner.has(n)) throw new Error(`page.mjs: no page module exports ${n}`);
+    if (!Object.hasOwn(extra, n) && !owner.has(n)) {
+      throw new Error(`page.mjs: no page module exports ${n}`);
+    }
   }
   return new Proxy({}, {
     get(_, k) {
       if (typeof k === "symbol" || k === "then") return undefined;
-      if (k in extra) return extra[k];
+      if (Object.hasOwn(extra, k)) return extra[k];
       if (!NAMES.includes(k)) throw new Error(`t.${k} is not in NAMES of page.mjs`);
       return owner.get(k)[k];
     },

@@ -3,13 +3,17 @@
 // the import graph by its text, then loads every listed module on a stub page in the order of
 // the list, as the browser does:
 // 1. every web/app-*.js is in the list, and every listed file exists;
-// 2. app-kit.js and app-state.js import no page module;
+// 2. app-kit.js, app-state.js and the pure modules import no page module;
 // 3. no page module imports web/sol/ with a static import;
-// 4. no name is exported by two page modules (page.mjs finds a name by its export), and no page
-//    module imports a test setter;
+// 4. no name is exported by two page modules (page.mjs finds a name by its export), no page
+//    module and not web/app.js imports a test setter, and no page module imports another one
+//    with `import * as`;
 // 5. every key that web/sol/*.js reads from the host is a key of solHost();
 // 6. every file that a listed file imports is in the list (so the browser fetches them all at
-//    the second level).
+//    the second level);
+// 7. every name that web/app.js or a listed file imports is an export of its source: the tests
+//    never load web/app.js, so its imports are checked here by their text.
+// A promise of a module that rejects soon after the load fails the test too.
 // The parser is the acorn of the node binary: the test starts itself again with
 // --expose-internals. ponytail: that path is internal to node; the upgrade is acorn as a dev
 // dependency of solspike.
@@ -38,8 +42,10 @@ function importsOf(ast) {
   const out = [];
   for (const n of ast.body) {
     if (!n.source) continue;
-    const names = (n.specifiers ?? []).map((s) => s.imported?.name ?? s.local?.name);
-    out.push({ from: n.source.value.replace(/^\.\//, ""), names });
+    const specs = n.specifiers ?? [];
+    const names = specs.filter((s) => s.imported).map((s) => s.imported.name);
+    const star = specs.some((s) => s.type === "ImportNamespaceSpecifier");
+    out.push({ from: n.source.value.replace(/^\.\//, ""), names, star });
   }
   return out;
 }
@@ -56,17 +62,35 @@ function checkList() {
   for (const f of list) if (!trees.has(f)) problems.push(`app.js lists ${f}, which does not exist`);
 }
 
+// The rules of one import of file f: each one gives a problem text, or nothing.
+const isPage = (f) => PAGE.test(f) || f === "app.js";
+const leaf = (f) => f === "app-kit.js" || f === "app-state.js" || !isPage(f);
+const setters = (f, imp) => (isPage(f) ? imp.names.filter((n) => SEAMS.includes(n)) : []);
+const unknown = (imp) => {
+  const source = trees.get(imp.from);
+  return source ? imp.names.filter((n) => !exportsOf(source).includes(n)) : [];
+};
+const IMPORT_RULES = [
+  (f, imp) => leaf(f) && PAGE.test(imp.from) && `${f} imports the page module ${imp.from}`,
+  (f, imp) => imp.from.startsWith("sol/") && `${f} imports ${imp.from} statically`,
+  (f, imp) => !list.includes(imp.from) && `${f} imports ${imp.from}, which app.js lacks`,
+  (f, imp) => setters(f, imp).length > 0
+    && `${f} imports the test setter ${setters(f, imp).join(", ")}`,
+  (f, imp) => isPage(f) && imp.star && PAGE.test(imp.from) && `${f} imports * from ${imp.from}`,
+  (f, imp) => unknown(imp).length > 0
+    && `${f} imports ${unknown(imp).join(", ")}, which ${imp.from} does not export`,
+];
+
 function checkImport(f, imp) {
-  const leaf = f === "app-kit.js" || f === "app-state.js";
-  if (leaf && PAGE.test(imp.from)) problems.push(`${f} imports the page module ${imp.from}`);
-  if (imp.from.startsWith("sol/")) problems.push(`${f} imports ${imp.from} statically`);
-  if (!list.includes(imp.from)) problems.push(`${f} imports ${imp.from}, which app.js lacks`);
-  const seams = PAGE.test(f) ? imp.names.filter((n) => SEAMS.includes(n)) : [];
-  if (seams.length) problems.push(`${f} imports the test setter ${seams.join(", ")}`);
+  for (const rule of IMPORT_RULES) {
+    const problem = rule(f, imp);
+    if (problem) problems.push(problem);
+  }
 }
 
 function checkImports() {
   const owner = new Map();
+  importsOf(parse("app.js")).forEach((imp) => checkImport("app.js", imp));
   for (const [f, ast] of trees) {
     importsOf(ast).forEach((imp) => checkImport(f, imp));
     if (!PAGE.test(f)) continue;
@@ -137,6 +161,10 @@ if (problems.length) {
   problems.forEach((p) => console.log(`graph: ${p}`));
   process.exit(1);
 }
+process.on("unhandledRejection", (e) => {
+  console.log(`graph: a promise rejected after the load: ${e?.message ?? e}`);
+  process.exit(1);
+});
 for (const f of list) {
   try {
     await import(new URL(f, web).href);
@@ -145,6 +173,7 @@ for (const f of list) {
     process.exit(1);
   }
 }
+await new Promise((r) => setTimeout(r, 300));
 console.log(`graph ok: ${list.length} modules`);
 // app-chain.js starts a 60 s timer when it loads.
 process.exit(0);
