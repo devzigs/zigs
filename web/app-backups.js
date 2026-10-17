@@ -20,7 +20,7 @@ import {
   changePersonal, personal, personalDamaged, personalEnv, restoreAccount,
 } from "./app-account.js";
 import { once, render } from "./app-loop.js";
-import { solRestore } from "./app-rest.js";
+import { solRestore } from "./app-sol.js";
 
 const SOL_BACKUP_KIND = "zigs-sol-backup";
 

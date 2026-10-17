@@ -29,6 +29,7 @@ import "./app-shell.js";
 import "./app-drawer.js";
 import "./app-loop.js";
 import "./app-setup.js";
+import "./app-sol.js";
 import "./app-rest.js";
 import { loadEngine } from "./app-engine.js";
 import { lockedVault } from "./app-keystore.js";

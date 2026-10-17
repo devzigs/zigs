@@ -18,7 +18,8 @@ import { backupDialog, closeBackup, restoreDialog, settleRestore } from "./app-b
 import { contactDialog, contactView } from "./app-account-view.js";
 import { createDialog, loadingView, lobby, lockView, renderSide } from "./app-shell.js";
 import { sessionLayer } from "./app-drawer.js";
-import { groupView, receiveDialog, sendDialog, solReact } from "./app-rest.js";
+import { solReact } from "./app-sol.js";
+import { groupView, receiveDialog, sendDialog } from "./app-rest.js";
 
 // Each browser advances the steps it can do for its own seats. Steps that
 // need a human decision (approving a spend) wait for a click.

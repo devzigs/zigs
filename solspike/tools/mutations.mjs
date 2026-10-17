@@ -21,7 +21,7 @@ const patch = (file, from, to = "") => ({ file, from, to });
 // web/test pins. They run in the node rig (sol-rig.mjs), without a server or a browser.
 const SOL_APP = ["node", "web/test/sol-app.mjs"];
 const SOL_CEREMONY = ["node", "web/test/sol-ceremony.mjs"];
-const APP_JS = "web/app-rest.js";
+const APP_SOL = "web/app-sol.js";
 const APP_GROUPS = "web/app-groups.js";
 const INDEX_JS = "cf/src/index.js";
 const POLICY_TEST = ["node", "solspike/test/policy.test.mjs"];
@@ -242,17 +242,17 @@ export const MUTATIONS = [
     [patch(PROCS, "    const own = ownProcesses(getRoots());",
       "    const own = new Map([...ownProcesses(getRoots()), ...wrappersAbove()]);")], /✖ P3 /),
   mutant("sol-M6", "a wallet of unknown network counts as testnet", SOL_CEREMONY,
-    [patch(APP_JS, 'return g?.network === "testnet" && walletVersion(g) === 3',
+    [patch(APP_SOL, 'return g?.network === "testnet" && walletVersion(g) === 3',
       'return !!g && g.network !== "mainnet" && walletVersion(g) === 3')],
     /network undefined is off/),
   mutant("sol-M6-restore", "a Solana backup of a mainnet wallet is still read", SOL_APP,
-    [patch(APP_JS, "if (solGroup(b.group) && !solOn(b.group)) {", "if (false) {")],
+    [patch(APP_SOL, "if (solGroup(b.group) && !solOn(b.group)) {", "if (false) {")],
     /testnet wallets only/),
   mutant("sol-M6-watch", "a mainnet wallet watches its start document", SOL_CEREMONY,
     [patch(APP_GROUPS, "if (solWatched || !solOn(gid)) return;", "if (solWatched) return;")],
     /a mainnet wallet watches no Solana document/),
   mutant("sol-M9", "an empty solstart snapshot loads Solana", SOL_CEREMONY,
-    [patch(APP_JS, "else if (!solLoading && solStartSigned()) solLoad();",
+    [patch(APP_SOL, "else if (!solLoading && solStartSigned()) solLoad();",
       "else if (!solLoading) solLoad();")],
     /with no start document: no load/),
   mutant("sol-M10", "openGroup does not close the Solana part", SOL_APP,
