@@ -21,7 +21,8 @@ import {
 } from "./app-account.js";
 import { composer } from "./app-thread.js";
 import { openAccountBackup } from "./app-backups.js";
-import { lobby, render, syncLine } from "./app-rest.js";
+import { lobby } from "./app-shell.js";
+import { render, syncLine } from "./app-rest.js";
 
 export function personalCard(pickRestore) {
   if (personalPending) {

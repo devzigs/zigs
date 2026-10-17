@@ -20,7 +20,8 @@ import {
   unreadIn,
 } from "./app-messages.js";
 import { chatRequest, requestCard, requestForm, requestOf, roomRequest } from "./app-payreq.js";
-import { focusAfter, lobby, ON_CHAIN, render } from "./app-rest.js";
+import { lobby } from "./app-shell.js";
+import { focusAfter, ON_CHAIN, render } from "./app-rest.js";
 
 const FINE = "Signers, and anyone else who has the invite link, can read these messages. The "
   + "group server stores them sealed and sees only when they are sent.";
