@@ -40,9 +40,8 @@ import {
 } from "./app-kit.js";
 import { engineOffThread, engineSettled, Z } from "./app-engine.js";
 import {
-  chats, forgetVault, gkeys, idb, loadSnapshot, LOCKED_ELSEWHERE, lockedVault, lockWithPasskey,
-  mySeatSecrets, persist, putKey, putSec, saveSnapshot, sec, secrets, snapId, storageOk,
-  unlockVault, vault,
+  chats, forgetVault, gkeys, idb, LOCKED_ELSEWHERE, lockedVault, lockWithPasskey, mySeatSecrets,
+  persist, putKey, putSec, sec, secrets, storageOk, unlockVault, vault,
 } from "./app-keystore.js";
 import {
   allDone, allR1, allSeated, curSession, fitState, isCreator, isMe, keysAgree, keysDiffer,
@@ -52,6 +51,11 @@ import {
   BAD_CONTACT_LINK, badChatLink, chatLink, chatMessage, followHash, inviteLink, isChatId, openChat,
   setHash,
 } from "./app-links.js";
+import {
+  addrHidden, atCap, balanceNow, balOf, capText, chain, curChain, curNet, dropChain, ensureChain,
+  inFlight, netName, netOf, NETWORKS, openTotal, pickServer, readsMemos, runSync, SERVER_TIMEOUT_MS,
+  setMemoReading, spanMs, underCap, validNet,
+} from "./app-chain.js";
 
 export let personal = null;          // the personal account (web/personal.js), with its seed
 export function setPersonal(v) { personal = v; }
@@ -227,50 +231,12 @@ export let db = null, sdb = null, user = null, downloads = null, me = null, canW
 export function setDb(v) { sdb = v; db = v; }
 export function setMe(v) { me = v; }
 export function setDownloads(v) { downloads = v; }
-// Light-wallet servers in order of preference. Mainnet uses a third-party server, so the group
-// server and the chain server have different operators (see PRIVACY.md). The first testnet server
-// is /lwd of this origin: the Worker relays it to our node (cf/src/index.js).
-const NETWORKS = {
-  testnet: { label: "Testnet",
-    servers: [location.origin + "/lwd", "https://zcash-testnet.chainsafe.dev"],
-    explorer: "https://testnet.zecblock.com/tx/", prefix: "utest1", faucet: "https://zcashfaucet.jinolabs.xyz/" },
-  mainnet: { label: "Mainnet", servers: ["https://zcash-mainnet.chainsafe.dev"],
-    explorer: "https://zecblock.com/tx/", prefix: "u1", cap: 50000000 },
-};
-const validNet = (x) => typeof x === "string" && Object.hasOwn(NETWORKS, x);
-const netName = (g) => g && validNet(g.network) ? g.network : "testnet";
-const netOf = (g) => NETWORKS[netName(g)];
-const curNet = () => netOf(state.g);
-const capText = (zat) => zat / 1e8 + " ZEC";
 const netBadge = (g) => netOf(g).cap
   ? el("span", { class: "badge bad", title: "Real ZEC. Not audited. At " + capText(netOf(g).cap)
     + " the app warns and hides the address. It cannot block deposits." }, "Mainnet")
   : el("span", { class: "badge plain" }, "Testnet");
-const SERVER_TIMEOUT_MS = 8000;
-let chain = null;   // { gid, cw, prog, bal, received, ms, error, syncing } for the open group
-export function setChain(v) { chain = v; }
 export let acct = null;    // the same for the personal account, with account: true (see startAccount)
 export function setAcct(v) { acct = v; }
-// Last known balance per wallet, so the wallet list shows money before a wallet syncs.
-// Balances are sealed with each wallet's key, so the browser's storage does not show amounts.
-let balSealed = {};
-try {
-  balSealed = JSON.parse(localStorage.getItem("zf-bal") || "{}");
-  // Entries from before sealing hold plain amounts; drop them now rather than at the next sync.
-  for (const [gid, v] of Object.entries(balSealed)) if (typeof v !== "string") delete balSealed[gid];
-  localStorage.setItem("zf-bal", JSON.stringify(balSealed));
-} catch {}
-export const balCache = {};
-function balOf(gid) {
-  if (!(gid in balCache) && Z && gkeys[gid] && typeof balSealed[gid] === "string") {
-    try { balCache[gid] = J(Z.secretOpen(gkeys[gid], "bal\n" + gid, balSealed[gid])); } catch { balCache[gid] = null; }
-  }
-  return balCache[gid];
-}
-function saveBal(gid, bal) {
-  balCache[gid] = { total: bal.spendable + bal.pending, at: Date.now() };
-  try { balSealed[gid] = Z.secretSeal(gkeys[gid], "bal\n" + gid, S(balCache[gid])); localStorage.setItem("zf-bal", JSON.stringify(balSealed)); } catch {}
-}
 let unsubGroup = [], unsubSession = [];
 const inspectCache = new Map();
 // A message room is a namespace of its own. Its key never enters gkeys, so it is never a wallet.
@@ -1095,132 +1061,6 @@ export async function takeSeat(i, version = groupVersion()) {
   log("you took seat " + i);
 }
 
-function dropChain() { const c = chain; chain = null; if (c && !c.syncing && c.cw) c.cw.free(); }
-
-function ensureChain() {
-  if (!Z || (chain && chain.gid === state.gid)) return;
-  const w = state.wallet;
-  chain = {
-    gid: state.gid, secret: gkeys[state.gid], net: curNet(), ufvk: w.ufvk, birthday: w.birthday,
-    cw: null, url: null, prog: null, bal: null, ms: 0, error: null, syncing: false,
-  };
-  runSync(chain);
-}
-
-// Returns the first light-wallet server of `net` that answers, in order of preference.
-async function pickServer(net) {
-  for (const url of net.servers) {
-    try { await withTimeout(Z.latestHeight(url), SERVER_TIMEOUT_MS, new URL(url).host); return url; }
-    catch (e) { log(new URL(url).host + " unreachable: " + (e.message || e)); }
-  }
-  throw new Error("No light-wallet server answers. Check your connection, then click Sync.");
-}
-
-// A new server or a reload continues from saved state; without it the wallet syncs from the birthday.
-async function connect(c) {
-  const url = await pickServer(c.net);
-  if (c.cw && c.url === url) return;
-  let snap = null;
-  try { snap = c.cw ? c.cw.snapshot() : await loadSnapshot(c); } catch (e) {
-    log("no usable wallet state: " + (e.message || e));
-  }
-  let next = null;
-  if (snap) {
-    try { next = Z.ChainWallet.restore(c.ufvk, c.birthday, url, snap); } catch (e) { log("saved wallet state rejected: " + (e.message || e)); }
-  }
-  if (c.cw) c.cw.free();
-  c.cw = next || new Z.ChainWallet(c.ufvk, c.birthday, url);
-  c.url = url;
-  log("using " + new URL(url).host + (next ? ", continuing from saved state" : ""));
-  if (next && !c.bal) { c.bal = J(c.cw.balance()); c.received = J(c.cw.received()); c.sent = new Set(J(c.cw.sent())); render(); }
-}
-
-export async function runSync(c) {
-  if (c.syncing) return;
-  c.syncing = true; c.error = null; render();
-  const t0 = performance.now();
-  try {
-    await connect(c);
-    c.bal = J(await c.cw.sync((p) => { c.prog = J(p); render(); }));
-    c.balAt = Date.now();
-    c.received = J(c.cw.received());
-    c.sent = new Set(J(c.cw.sent()));
-    c.prog = null; c.ms = Math.round(performance.now() - t0);
-    if (!c.account) saveBal(c.gid, c.bal);
-    saveSnapshot(c);
-    log("synced to " + c.bal.height + ", spendable " + fmtZec(c.bal.spendable));
-    runMemos(c);
-  }
-  catch (e) {
-    c.error = e.message || String(e); log("sync failed: " + c.error);
-    if (Z.isDeepReorg(c.error)) await rescanFromBirthday(c);
-  }
-  finally { c.syncing = false; if (!current(c) && c.cw) c.cw.free(); render(); }
-}
-
-// Drops the saved state, so that the next sync scans the wallet again from its birthday.
-async function rescanFromBirthday(c) {
-  c.error = "The chain reorganised by more than the wallet can undo. Zigs deleted the saved "
-    + "state of this wallet. Refresh to scan it again from the start.";
-  try { await idb("readwrite", (st) => st.delete(snapId(c))); }
-  catch (e) { log("could not delete wallet state: " + (e.message || e)); }
-  if (c.cw) { c.cw.free(); c.cw = null; }
-  c.bal = null; c.received = []; c.sent = new Set(); c.prog = null;
-}
-
-// Reads the memos of received payments, in the wallets where this browser turned it on. A memo is
-// in the full transaction only, so this asks the light-wallet server for each transaction that the
-// sync found. The server learns which ones (see memoSwitch). It runs after a sync and never blocks
-// it. A failed read skips that transaction. The engine moves it back in its list, so the next run
-// starts with other transactions. The next sync tries again.
-export async function runMemos(c) {
-  if (c.memoBusy || !c.cw || !memosOn(c)) return;
-  c.memoBusy = true;
-  const cw = c.cw;
-  try {
-    const got = await memoPass(c, cw);
-    if (got && !memoStale(c, cw)) { c.received = J(cw.received()); saveSnapshot(c); render(); }
-  }
-  catch (e) { log("could not read memos: " + (e.message || e)); }
-  finally { c.memoBusy = false; }
-}
-
-// The wallet of the open page, or the personal account, is the one that a run may go on for.
-const current = (c) => c === chain || c === acct;
-// The personal account always reads memos, because its messages are memos.
-const memosOn = (c) => c.account === true || readsMemos(c.gid);
-// Another server, wallet or rescan replaced the wallet that started a run, or the signer turned
-// memo reading off: each read tells the light-wallet server which transaction pays the wallet.
-const memoStale = (c, cw) => c.cw !== cw || !current(c) || !memosOn(c);
-
-// Reads the transactions that the engine lists. Three failures to reach the server in a row end
-// the pass: the server is the problem. An answer that the engine refuses does not count, because
-// the server answered. Returns how many notes got a memo.
-async function memoPass(c, cw) {
-  let got = 0, down = 0;
-  for (const n of J(cw.memoNeeds())) {
-    if (memoStale(c, cw) || down >= 3) break;
-    try { got += await readMemo(c, cw, n); down = 0; }
-    catch (e) {
-      down = e.network ? down + 1 : 0;
-      log("could not read the memo of " + short(n.txid, 8) + ": " + (e.message || e));
-    }
-  }
-  return got;
-}
-
-// Fetches the transaction of `n` and gives it to the engine, which checks that it is that
-// transaction. Returns how many notes left the pending state. Only a failure to fetch has
-// `network`.
-async function readMemo(c, cw, n) {
-  const host = new URL(c.url).host;
-  let raw;
-  try { raw = await withTimeout(Z.fetchTransaction(c.url, n.hash), SERVER_TIMEOUT_MS, host); }
-  catch (e) { throw Object.assign(new Error(e.message || String(e)), { network: true }); }
-  if (memoStale(c, cw)) return 0;
-  return J(cw.attachTransaction(n.txid, raw)).attached;
-}
-
 // `payees` (address, amount and optional memo) and `note` are the proposer's words; approvers
 // check `payees` against the transaction.
 export async function newSpend(payees, note, move = null, priority = false) {
@@ -1796,17 +1636,6 @@ async function takeRestoredKeys({ gid, seat, keys }, published) {
   }
   const held = sec(gid, seat);
   if (held) await putSec(gid, seat, takenKeys(keys, held, good, published));
-}
-// Reading the memo of a received payment asks the light-wallet server for that transaction, so the
-// server learns which transactions pay the wallet. It is off until a person turns it on, for one
-// wallet in one browser. It is not a field of the wallet, which every signer would read.
-let memoPref = readLocal("zf-memos");        // wallet id -> true while this browser reads memos
-export const readsMemos = (gid) => memoPref[gid] === true;
-export function setMemoReading(gid, on) {
-  memoPref = readLocal("zf-memos");          // another tab may have changed it
-  if (on) memoPref[gid] = true; else delete memoPref[gid];
-  writeLocal("zf-memos", memoPref);
-  if (on && chain && chain.gid === gid) runMemos(chain);
 }
 const roomPins = readLocal("zf-rooms");      // wallet id -> first room id seen
 export const signPins = readLocal("zf-signpins");   // "wallet id:seat" -> first signing key seen
@@ -2574,9 +2403,6 @@ const feeEstimate = (payees, priority = false) =>
   5000 * Math.max(2, payees + 1) * (priority ? PRIORITY_FACTOR : 1);
 const MAX_PAYEES = 20;
 const TOO_MANY = "A payment can have at most " + MAX_PAYEES + " recipients.";
-// The expected milliseconds from block `from` to block `to`, at the block time of each block (75
-// seconds before NU7, 25 from it). The engine knows the upgrade heights of each network.
-const spanMs = (net, from, to) => Z.blockSpanSeconds(net, from, to) * 1000;
 
 // `sign` is "out" or "in" for money leaving or entering the wallet.
 function money(zat, size = "md", sign = "") {
@@ -2613,12 +2439,9 @@ export function seatCheck(i) {
   if (s) return s.checkedWallet === walletKey() ? true : s.rejectedWallet === walletKey() ? false : null;
   return state.verify[i] ? !!state.verify[i].ok : null;
 }
-const myVerified = () => localSeats().some((i) => seatCheck(i) === true);
+export const myVerified = () => localSeats().some((i) => seatCheck(i) === true);
 const verifiedCount = () => seatIds().filter((i) => seatCheck(i) === true).length;
 const rejectedSeats = () => seatIds().filter((i) => seatCheck(i) === false);
-// A signer shows the address only after its own seat checked it against its key share.
-const addrHidden = () => atCap() || (localSeats().length > 0 && !myVerified());
-const curChain = () => chain && chain.gid === state.gid ? chain : null;
 
 const STATUS = {
   collecting: ["Needs approval", "warn"], signing: ["Signing", "info"], signed: ["Ready to prove", "info"],
@@ -2642,7 +2465,7 @@ function payTitle(ss) {
   return p.length ? "Payment to " + p.length + " recipients" : "Payment";
 }
 // What the proposer says leaves the wallet: the payees plus the fee.
-const leavesOf = (ss) => Number.isFinite(ss.amount) ? ss.amount + finite(ss.fee) : NaN;
+export const leavesOf = (ss) => Number.isFinite(ss.amount) ? ss.amount + finite(ss.fee) : NaN;
 const ruleText = (t, n) => "Any " + t + " of " + n + " signers must approve each payment.";
 export const groupName = (gid) => (state.groups.find((x) => x.id === gid) || {}).name || "the new wallet";
 // In a version 3 wallet the proposer is the seat in `by`. Before, it is the identity in
@@ -2652,23 +2475,6 @@ export const proposer = (ss) => Number.isInteger(ss.by)
   : isMe(ss.createdBy) ? "you" : seatNameOf(ss.createdBy);
 function normalized(addr) { try { return Z.normalizeAddress(addr); } catch { return null; } }
 const onNetwork = (addr) => (normalized(addr) || "").startsWith(curNet().prefix);
-
-// Sent payments that no synced block contains yet. Until one does, the synced balance still
-// counts their inputs as unspent, so the app subtracts them itself.
-export function inFlight() {
-  const c = curChain();
-  if (!c || !c.sent) return [];
-  return state.sessions.filter((ss) => ss.broadcastTxid && ss.final
-    && !c.sent.has(txidOf(ss) ?? ss.final.txid) && !expired(ss));
-}
-function balanceNow(b) {
-  const out = inFlight(), sum = (f) => out.reduce((n, ss) => n + finite(f(ss)), 0);
-  return {
-    spendable: Math.max(0, b.spendable - sum((ss) => ss.noteValue)),
-    pending: b.pending + sum((ss) => ss.change),
-    sending: sum(leavesOf),
-  };
-}
 
 export function sendBlocker() {
   const c = curChain();
@@ -3673,24 +3479,6 @@ function balanceCard(c) {
     atCap() ? capNote() : null,
     syncLine(c));
 }
-
-// Unaudited code holds real money only up to the network's cap; past it the address is hidden.
-function atCap() {
-  const cap = curNet().cap, total = openTotal();
-  return !!cap && total !== undefined && total >= cap;
-}
-
-// The balance of the open wallet, or undefined before its first sync.
-function openTotal() {
-  const c = curChain();
-  if (!c || !c.bal) return undefined;
-  const b = balanceNow(c.bal);
-  return b.spendable + b.pending;
-}
-
-// A request names the address of a wallet, so the app offers it only when it knows that the balance
-// is under the cap of the network. `total` is undefined when the balance is not known.
-const underCap = (g, total) => !netOf(g).cap || total < netOf(g).cap;
 const capNote = () => el("div", { class: "callout bad" },
   "This wallet holds " + capText(curNet().cap) + ", the warning level for unaudited mainnet "
   + "wallets. Do not send more to it. The app cannot block deposits. Payments out still work.");
@@ -5377,7 +5165,7 @@ export function expiryOf(ss) {
 
 // The id that the payment's transaction gets on chain, from the approved PCZT. One seat writes
 // `final.txid` alone, so the page never uses it to decide whether a block holds the payment.
-function txidOf(ss) {
+export function txidOf(ss) {
   const ins = state.wallet && ss.pczt ? inspectOf(ss) : null;
   return ins && !ins.error && isStr(ins.txid) ? ins.txid : null;
 }
@@ -5751,11 +5539,6 @@ document.addEventListener("keydown", (ev) => {
   }
   render();
 });
-// New blocks every 25 s: refresh the open wallet once a minute while someone looks at it.
-setInterval(() => {
-  if (document.visibilityState !== "visible") return;
-  for (const c of [curChain(), acct]) if (c && !c.syncing) runSync(c);
-}, 60000);
 
 // The page does not wait for the saved account: it opens at once, and the account follows.
 export function startUp() {

@@ -13,6 +13,7 @@ import "./app-engine.js";
 import "./app-keystore.js";
 import "./app-seats.js";
 import "./app-links.js";
+import "./app-chain.js";
 import "./app-rest.js";
 import { loadEngine } from "./app-engine.js";
 import { lockedVault } from "./app-keystore.js";
