@@ -11,6 +11,7 @@ import "./app-state.js";
 import "./app-kit.js";
 import "./app-engine.js";
 import "./app-keystore.js";
+import "./app-seats.js";
 import "./app-rest.js";
 import { loadEngine } from "./app-engine.js";
 import { lockedVault } from "./app-keystore.js";
