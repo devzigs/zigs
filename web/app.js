@@ -2971,7 +2971,7 @@ const act = (fn) => async (ev) => {
   } catch (e) { showBanner("bad", e.message || String(e)); }
   finally {
     if (b) b.disabled = false;
-    wantFocus = key ? { key, force: false } : null;
+    focusAfter(key, false);
     render(); react();
   }
 };
@@ -2998,6 +2998,7 @@ function guard(build, ...args) {
 
 let openLayer = "", tickTimer = null;
 let opener = "", lastTrigger = "", wantFocus = null;   // focus bookkeeping, see draw()
+function focusAfter(key, force) { wantFocus = key ? { key, force } : null; }
 // View state that only this browser cares about.
 const ui = {
   forget: false, tab: "overview", send: false, pay: null, payKey: 0, listError: "",
@@ -3761,7 +3762,7 @@ function tabBar(tabs) {
     if (!(ev.key in target)) return;
     ev.preventDefault();
     ui.tab = ids[target[ev.key]];
-    wantFocus = { key: "tab-" + ui.tab, force: true };
+    focusAfter("tab-" + ui.tab, true);
     render();
   };
   const tab = ([id, label, badge]) => el("button", {
@@ -4784,7 +4785,7 @@ function dmItem(m, cid) {
 // The confirm moves focus to Cancel, so a repeated Enter cannot leave the chat.
 function leaveBox(cid) {
   const ask = (on) => () => {
-    ui.leave = on; wantFocus = { key: on ? "leave-no" : "leave-ask", force: true }; render();
+    ui.leave = on; focusAfter(on ? "leave-no" : "leave-ask", true); render();
   };
   const btn = (key, cls, onclick, text) => el("button", {
     class: cls, type: "button", onclick, "data-key": key,
