@@ -518,7 +518,7 @@ folder path.
   - A message of three parts that is built, signed, proved and read by its recipient. A wrong seed
     is refused.
   - The words of a node refusal: a transport error or a forged prefix is not a refusal.
-- `cargo test --release --locked` in `wasm-sol/`: 364 tests: the Solana message checker (86 rules,
+- `cargo test --release --locked` in `wasm-sol/`: 418 tests: the Solana message checker (101 rules,
   with the vectors of the Zolana SDK built with a sponsor as fee payer, and real Devnet messages),
   the fee payer rules and the fee key, the FROST-Ed25519 ceremony and signing, and the key roles.
   First run `sh build.sh` and then `node tools/diff_cases.cjs target/pkg-node` in `wasm-sol/`: the

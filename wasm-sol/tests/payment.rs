@@ -936,7 +936,21 @@ fn the_commitment_of_a_withdrawal_binds_the_sol_interface_and_the_recipient() {
 
 #[test]
 fn a_withdrawal_to_an_account_of_the_pool_the_program_or_the_group_is_refused() {
-    let p = withdrawal().pins.for_pda().unwrap();
+    let f = withdrawal();
+    let p = f.pins.for_pda().unwrap();
+    // `SHIELDED_POOL_CPI_AUTHORITY` of program-libs/interface/src/lib.rs at the pinned commit.
+    let cpi: Key = [
+        69, 71, 220, 185, 216, 143, 158, 144, 194, 192, 35, 58, 192, 36, 234, 87, 129, 254, 240,
+        115, 136, 34, 89, 207, 13, 241, 99, 80, 189, 28, 84, 235,
+    ];
+    assert_eq!(
+        p.cpi_authority().unwrap(),
+        cpi,
+        "the CPI authority of the pool"
+    );
+    let nullifier = p
+        .nullifier_pda(&p.input_tree, &f.tx.inputs[0].nullifier)
+        .unwrap();
     let banned = [
         p.pda,
         p.multisig,
@@ -949,6 +963,8 @@ fn a_withdrawal_to_an_account_of_the_pool_the_program_or_the_group_is_refused() 
         p.output_tree,
         p.program,
         SYSTEM_PROGRAM,
+        cpi,
+        nullifier,
     ];
     for key in banned {
         let f = to(withdrawal(), key);
@@ -1024,6 +1040,11 @@ fn the_proposer_checks_the_recipient_account_that_it_read() {
     };
     let refused = entry(Some(poor));
     assert!(refused.contains("recipient-account"), "{refused}");
+    let unread = entry(None);
+    assert!(
+        unread.contains("did not read the recipient account"),
+        "{unread}"
+    );
 }
 
 #[test]

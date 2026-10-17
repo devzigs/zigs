@@ -11,8 +11,9 @@ use crate::assets::AssetTable;
 use crate::bytes::{short_hex, Reader};
 use crate::consts::{
     Key, COMPUTE_BUDGET_PROGRAM, ED25519_PROGRAM, INSTRUCTIONS_SYSVAR, MULTISIG_DEVNET, NONCE_SEED,
-    POOL_DEVNET, RECENT_BLOCKHASHES, REGISTRY_DEVNET, RENT_SYSVAR, SEED_NULLIFIER,
-    SEED_SOL_INTERFACE, SEED_SOL_INTERFACE_INDEX, SEED_TREE, SEED_USER_RECORD, SYSTEM_PROGRAM,
+    POOL_DEVNET, RECENT_BLOCKHASHES, REGISTRY_DEVNET, RENT_SYSVAR, SEED_CPI_AUTHORITY,
+    SEED_NULLIFIER, SEED_SOL_INTERFACE, SEED_SOL_INTERFACE_INDEX, SEED_TREE, SEED_USER_RECORD,
+    SYSTEM_PROGRAM,
 };
 use crate::hashes::owner_hash;
 use crate::pda::{create_with_seed, find_program_address};
@@ -145,6 +146,12 @@ impl Pins {
             &self.pda_nullifier_pk[..],
         ]
         .concat()
+    }
+
+    /// The CPI authority of the pool: `["cpi_authority"]` under the pool. It signs only SPL
+    /// transfers, so SOL sent to it is out of reach.
+    pub fn cpi_authority(&self) -> Result<Key, String> {
+        derive(&[SEED_CPI_AUTHORITY], &self.pool, "the CPI authority")
     }
 
     /// The nullifier PDA of one input: `["nullifier", tree, nullifier]` under the pool.

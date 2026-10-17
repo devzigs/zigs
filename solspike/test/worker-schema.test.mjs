@@ -178,6 +178,7 @@ function otherCommands() {
     "preflight",
     "prepare",
     "readNonce",
+    "recipientAccount",
     "rent",
     "reprove",
     "send",
@@ -228,10 +229,12 @@ function prepareFields() {
 function programReads(account) {
   checkCommand("syncOld", {});
   checkCommand("account", { account });
+  checkCommand("recipientAccount", { account });
   checkCommand("history", { account });
   checkCommand("rent", { space: "139" });
   for (const [cmd, args] of [
     ["account", { account: "0OIl" }],
+    ["recipientAccount", { account: "0OIl" }],
     ["history", { account: "" }],
     ["rent", { space: "-1" }],
     ["rent", { space: 139 }],

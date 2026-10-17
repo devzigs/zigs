@@ -303,17 +303,18 @@ and the rent. The rent comes back to that seat at the execute. The group key sig
 
 1. **Propose.** The Worker proves the payment once for the PDA identity (`prepare` with kind `pay`,
    no owner signers: the program signs as the owner). The checker of the proposing device accepts it
-   as an approver would (`check_payment`, with no chain state) and gives the commitment, the body
-   and the proposal account. The fee key signs the create message, and the device lands it: a create
-   that is not confirmed at once is read again until its blockhash ends. A create that fails or does
-   not confirm reads the account: when it holds the same body (N4 of 7.2), the successful
-   transaction on it that carries the create data of that body is the create; else the propose
-   fails. Then the seat publishes the proposal part: the intent (tag 8), the plan, the input ids,
-   the salt, the transact data of the first proof, the account, the body and the id of the create
-   transaction. The Worker takes a count of inputs that has a circuit with no dummy input, at most
-   8. One more input costs about 5,000 compute units (6.12), so 8 inputs stay well under the caps of
-   the template, and 16 would reach them. One `execute` carries at most 18 inputs, and the checker
-   refuses more (`execute-inputs`).
+   as an approver would (`check_payment`, with no proposal account; a withdrawal gives the recipient
+   account that the device read) and gives the commitment, the body and the proposal account. The
+   fee key signs the create message, and the device lands it: a create that is not confirmed at once
+   is read again until its blockhash ends. A create that fails or does not confirm reads the
+   account: when it holds the same body (N4 of 7.2), the successful transaction on it that carries
+   the create data of that body is the create; else the propose fails. Then the seat publishes the
+   proposal part: the intent (tag 8), the plan, the input ids, the salt, the transact data of the
+   first proof, the account, the body and the id of the create transaction. The Worker takes a count
+   of inputs that has a circuit with no dummy input, at most 8. One more input costs about 5,000
+   compute units (6.12), so 8 inputs stay well under the caps of the template, and 16 would reach
+   them. One `execute` carries at most 18 inputs (16 for a withdrawal), and the checker refuses more
+   (`execute-inputs`).
 2. **Check, on each approving device** (`check_payment`). The Outputs, Legs and Ciphertexts rules of
    the table above, on the first proof. The device recomputes `private_tx_hash` from the inputs of
    its own snapshot, the plan outputs and the blinding of the first nullifier, then the commitment.
@@ -1117,9 +1118,9 @@ it binds the program id and not the code.
   upgrade plan below).
   Deposits from public SOL need no leg in the program: the beta's Add SOL deposits straight into
   the pool, to the shielded address of the PDA identity.
-- One `execute` with one input tree spends at most 18 inputs (the CPI copies at most 24
-  accounts), and option D forbids `merge_transact`. A group with many small notes needs several
-  payments to spend them.
+- One `execute` with one input tree spends at most 18 inputs (the CPI copies at most 24 accounts; a
+  withdrawal leg takes two of them, so 16), and option D forbids `merge_transact`. A group with many
+  small notes needs several payments to spend them.
 
 **Decision: go** for moving the Devnet beta to approvals owned by a program, as the way off durable
 nonces (SOL-36). The spike showed the claim on Devnet (6.10): a FROST approval whose signature

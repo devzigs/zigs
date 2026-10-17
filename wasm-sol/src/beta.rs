@@ -17,7 +17,7 @@ use crate::approve::{approve, Approved, Device};
 use crate::check::{parse_transact_data, Refusal};
 use crate::consts::MS_EXECUTE;
 use crate::intent::{Intent, Program};
-use crate::pay::{approve_pay, Payment, Recipient, Seen};
+use crate::pay::{approve_pay, Payment, Read, Recipient, Seen};
 use crate::pins::Pins;
 use crate::plan::{Proposal, Role};
 use crate::program::{approval_digest, commitment, proposal_address, settlements};
@@ -134,12 +134,11 @@ fn propose_violations(proposal: &Proposal, device: &Device) -> Vec<Violation> {
     else {
         return Vec::new();
     };
-    // The proposer read the recipient of a withdrawal in `check_payment` before this message.
     match approve_pay(
         (pay, &proposal.plan, &proposal.transact),
         device,
         None,
-        None,
+        Read::Checked,
     ) {
         Ok(payment) if payment.commitment == *commitment => Vec::new(),
         Ok(_) => vec![Violation::new(
@@ -214,6 +213,6 @@ pub fn approve_payment(
         (pay, &proposal.plan, &proposal.transact),
         &device,
         Some(seen),
-        recipient,
+        Read::Device(recipient),
     )
 }

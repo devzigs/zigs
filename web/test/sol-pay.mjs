@@ -337,6 +337,22 @@ const proposedWithdrawal = async (recipient = base58(TO)) => {
   assert.match(rows["What it does"], /to a public Solana address/);
   assert.match(rows.Public, /^The recipient and the amount are public/);
   assert.equal(rows["Create paid by seat 1"], feeAddress(1));
+  // The forms of the tab: each button proposes its kind with the typed address and amount.
+  const asked = [];
+  const view = solView({ ...c, host: { ...c.host, el: node } }, (fn) => fn, {
+    propose: (kind, args) => asked.push([kind, args]),
+  });
+  const one = (mark) => findAll(view, (n) => n.attrs["data-sol"] === mark)[0];
+  Object.assign(one("withdraw-to"), { value: base58(TO) });
+  Object.assign(one("withdraw-amount"), { value: "0.002" });
+  one("withdraw").attrs.onclick();
+  Object.assign(one("send-to"), { value: G.payee.address });
+  Object.assign(one("send-amount"), { value: "0.001" });
+  one("send").attrs.onclick();
+  assert.deepEqual(asked, [
+    ["withdraw", { recipient: base58(TO), amount: "0.002" }],
+    ["pay", { recipient: G.payee.address, amount: "0.001" }],
+  ]);
   await approve(c, ssOf(id), 1);
   await approve(c, ssOf(id), 2);
   await waitStatus(id, "sent");
@@ -361,8 +377,22 @@ step("a withdrawal shows its public recipient and amount, and its execute pays v
   // The proposer reads the recipient account too, and refuses one of a program.
   chain.accounts.set(base58(TO), { owner: "11".repeat(32), data: "" });
   await assert.rejects(() => proposedWithdrawal(), /ordinary System account/);
+  // The checker gets the lamports, the executable flag and the rent minimum that the page read.
+  const system = (lamports, executable = false) => ({
+    owner: "00".repeat(32),
+    lamports,
+    executable,
+  });
+  chain.accounts.set(base58(TO), system("3000000", true));
+  await assert.rejects(() => proposedWithdrawal(), /ordinary System account/);
+  chain.rentFor = (space) => (space === "0" ? "3000000" : undefined);
   chain.accounts.delete(base58(TO));
+  await assert.rejects(() => proposedWithdrawal(), /rent-exempt minimum/);
+  // 1,000,000 lamports and the 2,000,000 of the leg reach the minimum of 3,000,000.
+  chain.accounts.set(base58(TO), system("1000000"));
   const id = await proposedWithdrawal();
+  chain.rentFor = undefined;
+  chain.accounts.delete(base58(TO));
   current = id;
   // Then the recipient account becomes an account of a program: no seat approves the payment.
   chain.accounts.set(base58(TO), { owner: "11".repeat(32), data: "" });

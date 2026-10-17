@@ -320,11 +320,21 @@ fn program_addresses(pins: &Pins) -> [Key; 3] {
     [pins.pda, pins.program, SYSTEM_PROGRAM]
 }
 
+/// The read of the recipient account of a withdrawal that a check has.
+#[derive(Clone, Copy, Debug)]
+pub enum Read<'a> {
+    /// What the device read (`Chain::recipient`). None is refused: the device must read it.
+    Device(Option<&'a Recipient>),
+    /// The `create` message of the proposer: its `check_payment` checked the read before.
+    Checked,
+}
+
 /// The accounts that a withdrawal never pays: the SOL there is out of reach of the group (the beta
-/// signs no plain transfer from the group key, the PDA or the nonce account), or the pool and the
-/// program refuse it.
-fn banned_recipients(pins: &Pins) -> [Key; 12] {
-    [
+/// signs no plain transfer from the group key, the PDA or the nonce account; the CPI authority of
+/// the pool signs only SPL transfers; the nullifier PDAs of the inputs become pool accounts in the
+/// same `transact`, before the pool pays the leg), or the pool and the program refuse it.
+fn banned_recipients(pins: &Pins, tx: &Transact) -> Result<Vec<Key>, String> {
+    let mut banned = vec![
         pins.pda,
         pins.group,
         pins.multisig,
@@ -337,7 +347,12 @@ fn banned_recipients(pins: &Pins) -> [Key; 12] {
         pins.output_tree,
         pins.program,
         SYSTEM_PROGRAM,
-    ]
+        pins.cpi_authority()?,
+    ];
+    for input in &tx.inputs {
+        banned.push(pins.nullifier_pda(&pins.input_tree, &input.nullifier)?);
+    }
+    Ok(banned)
 }
 
 /// The recipient account after the withdrawal: an ordinary System account (or a new one) that
@@ -361,28 +376,22 @@ fn recipient_account_violation(read: &Recipient, amount: u64) -> Option<Violatio
     Some(Violation::new(Rule::RecipientAccount, why))
 }
 
-/// The public recipient of a withdrawal: never an account of the pool, the program or the group,
-/// and its account as the device read it. An approving device must have read it; the proposer
-/// reads it before it signs the `create` message.
-fn recipient_violations(
-    pins: &Pins,
-    to: (Key, u64),
-    approver: bool,
-    read: Option<&Recipient>,
-) -> Vec<Violation> {
+/// The public recipient of a withdrawal: never one of `banned`, and its account as the device
+/// read it.
+fn recipient_violations(pins: &Pins, to: (Key, u64), banned: &[Key], read: Read) -> Vec<Violation> {
     let (recipient, amount) = to;
     let mut out = Vec::new();
-    if banned_recipients(pins).contains(&recipient) {
+    if banned.contains(&recipient) {
         let why = format!("the recipient is the {}", pins.label(&recipient));
         out.push(Violation::new(Rule::WithdrawalRecipient, why));
     }
     match read {
-        Some(read) => out.extend(recipient_account_violation(read, amount)),
-        None if approver => out.push(Violation::new(
+        Read::Device(Some(read)) => out.extend(recipient_account_violation(read, amount)),
+        Read::Device(None) => out.push(Violation::new(
             Rule::RecipientAccount,
             "the device did not read the recipient account",
         )),
-        None => {}
+        Read::Checked => {}
     }
     out
 }
@@ -472,17 +481,18 @@ fn once_violation(seen: &Seen, commitment: &Key, body: &[u8]) -> Option<Violatio
 
 /// The payment `pay` (a private payment or a withdrawal) with its plan and its `transact` data,
 /// on the device with the pins of the PDA identity. `seen` is the chain and approval state; `None`
-/// before the account exists (the proposer, when it signs the `create` message). `recipient` is
-/// what the device read of the public recipient of a withdrawal.
+/// before the account exists (the proposer, when it signs the `create` message). `read` is what
+/// the device read of the public recipient of a withdrawal.
 pub fn approve_pay(
     proposal: (&Pay, &Plan, &[u8]),
     device: &Device,
     seen: Option<&Seen>,
-    recipient: Option<&Recipient>,
+    read: Read,
 ) -> Result<Payment, Refusal> {
     let (pay, plan, data) = proposal;
     let pins = device.pins;
     let refuse = |violations| Refusal { violations };
+    let plain = |why: String| refuse(vec![Violation::new(Rule::PlanInvalid, why)]);
     let owner = owner_hash(&pins.group, &pins.nullifier_pk)
         .map_err(|why| refuse(vec![Violation::new(Rule::PlanInvalid, why)]))?;
     let mut out = pin_violations(pins, owner, &device.snapshot.group_keys());
@@ -492,12 +502,8 @@ pub fn approve_pay(
     let settled = settlements(&pins.sol_interface, pay.recipient());
     out.extend(input_violation(tx.inputs.len(), settled.len()));
     if let Some(to) = pay.recipient() {
-        out.extend(recipient_violations(
-            pins,
-            (to, pay.amount),
-            seen.is_some(),
-            recipient,
-        ));
+        let banned = banned_recipients(pins, &tx).map_err(plain)?;
+        out.extend(recipient_violations(pins, (to, pay.amount), &banned, read));
         // The screen shows the recipient that the commitment binds, from the intent.
         run.summary.recipient = Some(to);
     }
@@ -507,7 +513,6 @@ pub fn approve_pay(
         let why = "the private_tx_hash of the data is not the recompute of the plan";
         out.push(Violation::new(Rule::PrivateTxHash, why));
     }
-    let plain = |why: String| refuse(vec![Violation::new(Rule::PlanInvalid, why)]);
     let commitment = commitment(&private, &tx, &settled).map_err(plain)?;
     let want = body_of(pins, commitment, pay.expiry, pins.payer);
     let body = want.write().map_err(plain)?;

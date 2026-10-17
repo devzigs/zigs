@@ -68,6 +68,7 @@ pub const SEED_TREE: &[u8] = b"tree";
 pub const SEED_SOL_INTERFACE: &[u8] = b"sol_interface";
 pub const SEED_SOL_INTERFACE_INDEX: &[u8] = &[0];
 pub const SEED_NULLIFIER: &[u8] = b"nullifier";
+pub const SEED_CPI_AUTHORITY: &[u8] = b"cpi_authority";
 pub const SEED_USER_RECORD: &[u8] = b"zolana/registry/v0";
 
 /// Public asset slots of every `transact` circuit (`N_PUBLIC_SLOTS`).

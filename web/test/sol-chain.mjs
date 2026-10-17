@@ -124,7 +124,10 @@ function executeTransact(dataHex) {
   for (let n = legs; n > 0; n--) r.skip(r.u8() >= 2 ? 9 : 8);
   for (let i = 0; i < 2; i++) r.skip(r.u8() === 1 ? 32 : 0);
   skipOutputs(r);
-  for (let n = r.u8(); n > 0; n--) r.skip(32 + r.u16());
+  for (let n = r.u8(); n > 0; n--) {
+    r.skip(32);
+    r.skip(r.u16());
+  }
   const at = r.at();
   return { legs, prefix: data.subarray(0, at), privateTxHash: data.subarray(at, at + 32) };
 }
@@ -290,7 +293,16 @@ function answersOf(chain) {
       const found = chain.accounts.get(account);
       return found ? { exists: true, lamports: "1356360", ...found } : { exists: false };
     },
-    rent: ({ space }) => ({ lamports: String(5080n * (128n + BigInt(space))) }),
+    recipientAccount: ({ account }) => {
+      const found = chain.accounts.get(account);
+      if (!found) return { exists: false };
+      const { owner, lamports = "1356360", executable = false } = found;
+      return { exists: true, owner, lamports, executable };
+    },
+    // `chain.rentFor(space)` may give another rent minimum (a test of the recipient read).
+    rent: ({ space }) => ({
+      lamports: chain.rentFor?.(space) ?? String(5080n * (128n + BigInt(space))),
+    }),
     history: ({ account }) => chain.history.get(account) ?? [],
     reprove: (args) => chain.reproved(args),
     treeFees: () => ({

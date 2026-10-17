@@ -13,7 +13,7 @@ use crate::check::Refusal;
 use crate::codec::{unhex, unhex_array};
 use crate::fee;
 use crate::frost;
-use crate::pay::{approve_pay, Chain, Payment};
+use crate::pay::{approve_pay, Chain, Payment, Read};
 use crate::pins::Pins;
 use crate::plan::Proposal;
 use crate::program::{approval_digest, Body};
@@ -141,7 +141,7 @@ fn run_payment(input: &ApprovalCheck, now: u64) -> Result<String, String> {
             ..device
         };
         let terms = (pay, &proposal.plan, &proposal.transact[..]);
-        approve_pay(terms, &device, None, recipient)
+        approve_pay(terms, &device, None, Read::Device(recipient))
     };
     Ok(match verdict {
         Ok(payment) => payment_lines(&payment),

@@ -514,15 +514,19 @@ async function identitiesAndReads() {
     exists: true,
     owner: hex(sdk.getAddressEncoder().encode(PDA)),
     lamports: "9",
-    executable: false,
     data: "010203",
   });
-  const encoded = [data.toString("base64"), "base64"];
-  control.rpc.getAccountInfo = async () => ({
-    value: { owner: PDA, lamports: 9n, executable: true, data: encoded },
-  });
-  const program = await ask("account", { account: PDA });
-  assert.equal(program.result.executable, true, "the executable flag of a program account");
+  let options = null;
+  control.rpc.getAccountInfo = async (_address, given) => {
+    options = given;
+    return { value: { owner: PDA, lamports: 9n, executable: true, data: ["", "base64"] } };
+  };
+  const program = await ask("recipientAccount", { account: PDA });
+  assert.equal(program.ok, true, program.error);
+  const owner = hex(sdk.getAddressEncoder().encode(PDA));
+  const read = { exists: true, owner, lamports: "9", executable: true };
+  assert.deepEqual(program.result, read, "the executable flag of a program account");
+  assert.deepEqual(options.dataSlice, { offset: 0, length: 0 }, "a recipient read takes no data");
   control.rpc.getAccountInfo = async () => ({ value: null });
   assert.deepEqual((await ask("account", { account: PDA })).result, { exists: false });
   control.rpc.getMinimumBalanceForRentExemption = async (space) => 5080n * (128n + space);

@@ -63,6 +63,7 @@ export const SCHEMA = {
   sync: {},
   syncOld: {},
   account: { account: base58 },
+  recipientAccount: { account: base58 },
   rent: { space: decimal },
   history: { account: base58 },
   transaction: { signature },

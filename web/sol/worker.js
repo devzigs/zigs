@@ -174,10 +174,7 @@ async function accountData(address) {
   return { owner, lamports, data: fromBase64(data[0]) };
 }
 
-/**
- * An account as the page checks it (a proposal account, the recipient of a withdrawal): owner,
- * lamports, the executable flag and data, or none.
- */
+/** An account as the page checks it (a proposal account): owner, lamports and data, or none. */
 async function account({ account: address }) {
   const { solanaRpc } = need().client;
   const options = { encoding: "base64", commitment: "confirmed" };
@@ -185,8 +182,22 @@ async function account({ account: address }) {
   if (value === null) return { exists: false };
   const owner = hex(sdk.getAddressEncoder().encode(value.owner));
   const data = hex(fromBase64(value.data[0]));
+  return { exists: true, owner, lamports: value.lamports.toString(), data };
+}
+
+/**
+ * The recipient account of a withdrawal: owner, lamports and the executable flag, or none. It
+ * reads no data, so a recipient with a large data area costs the device nothing.
+ */
+async function recipientAccount({ account: address }) {
+  const { solanaRpc } = need().client;
+  const dataSlice = { offset: 0, length: 0 };
+  const options = { encoding: "base64", commitment: "confirmed", dataSlice };
+  const { value } = await solanaRpc.getAccountInfo(address, options).send();
+  if (value === null) return { exists: false };
+  const owner = hex(sdk.getAddressEncoder().encode(value.owner));
   const executable = value.executable === true;
-  return { exists: true, owner, lamports: value.lamports.toString(), executable, data };
+  return { exists: true, owner, lamports: value.lamports.toString(), executable };
 }
 
 /** The rent of an account of `space` bytes: what a proposal account holds until it closes. */
@@ -440,6 +451,7 @@ const HANDLERS = {
   sync,
   syncOld,
   account,
+  recipientAccount,
   rent,
   history,
   transaction,

@@ -229,7 +229,7 @@ async function checkNonce(c, review) {
  */
 export async function recipientRead(worker, recipient) {
   const [got, rent] = await Promise.all([
-    worker.call("account", { account: base58(recipient) }),
+    worker.call("recipientAccount", { account: base58(recipient) }),
     worker.call("rent", { space: "0" }),
   ]);
   const { owner, lamports, executable } = got;
