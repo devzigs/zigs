@@ -1,7 +1,8 @@
 #!/bin/bash
 # Lints the Solana code: oxlint (complexity 8, 100 lines per function, 5 parameters, depth 3),
 # the same limits for Python, and a check for lines over 100 characters. It covers the tools,
-# the Solana files in web/sol (not the bundle) and the mock run. OXLINT names the oxlint binary.
+# the Solana files in web/sol (not the bundle) and the mock run, and it checks the imports of the
+# page modules (solspike/oxlintrc-page.json). OXLINT names the oxlint binary.
 # oxlint refuses paths with "..", so it runs from the root of the repo.
 cd "$(dirname "$0")/.." || exit 1
 OX=${OXLINT:?set OXLINT to an oxlint binary}
@@ -20,6 +21,9 @@ JS=(solspike/harness/*.mjs solspike/tools/*.mjs solspike/build.mjs solspike/src/
   web/test/sol-transfer.mjs web/test/sol-vector.mjs web/test/sol-pay.mjs web/test/sol-fee.mjs)
 PY=(solspike/tools/*.py)
 "$OX" -c solspike/oxlintrc.json --deny-warnings "${JS[@]}" || exit 1
+# The page modules: no unbound name, no assignment of an import, no missing named import. The
+# rules above do not apply to them yet: they keep the findings of the old app.js.
+"$OX" -c solspike/oxlintrc-page.json --deny-warnings web/app.js web/app-*.js || exit 1
 python3 -I solspike/tools/check_py.py "${PY[@]}" || exit 1
 long=$(awk 'length($0)>100 {print FILENAME":"FNR": "length($0)}' "${JS[@]}" "${PY[@]}" \
   solspike/*.sh)
