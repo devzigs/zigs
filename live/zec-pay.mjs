@@ -26,8 +26,7 @@ import * as Z from "../web/pkg/zigs_engine.js";
 const ROOT = fileURLToPath(new URL("..", import.meta.url));
 const WALLET = join(homedir(), ".config", "zigs", "testwallets", "zec-testnet");
 const WALLET_SHOWN = "~/.config/zigs/testwallets/zec-testnet";
-// The testnet servers of the page (NETWORKS in web/app.js), in its order.
-const SERVERS = ["https://lwd.zigs.app", "https://zcash-testnet.chainsafe.dev"];
+const PUBLIC_LWD = "https://zcash-testnet.chainsafe.dev";
 const PRIORITY = process.argv.includes("--priority");
 const FACTOR = PRIORITY ? 10 : 1;
 const PAY_ZAT = 100_000;
@@ -271,12 +270,27 @@ function within(ms, what, promise) {
   return Promise.race([promise, late]).finally(() => clearTimeout(timer));
 }
 
-let lwd = SERVERS[0];
+let lwd = PUBLIC_LWD;
+
+/**
+ * The light-wallet servers for the chain reads in Node, in order: ZIGS_LWD, the server in lwd.txt
+ * of the wallet folder (our testnet node; lwd.zigs.app answers only the app), then the public
+ * fallback of the page.
+ */
+function lwdServers() {
+  let local = "";
+  try {
+    local = readFileSync(join(WALLET, "lwd.txt"), "utf8").trim();
+  } catch (err) {
+    if (err.code !== "ENOENT") throw err;
+  }
+  return [process.env.ZIGS_LWD, local, PUBLIC_LWD].filter(Boolean);
+}
 
 /** Takes the first server that gives the chain height, as the page does. */
 async function pickServer() {
   const why = [];
-  for (const url of SERVERS) {
+  for (const url of lwdServers()) {
     try {
       await within(CALL_MS, url, Z.latestHeight(url));
       lwd = url;
@@ -430,11 +444,16 @@ async function paymentInBrowser(wallet, group) {
 
 // ── The chain ──
 
+// A failed sync is tried again at the next poll: the coins are spent, so only the deadline ends it.
 async function waitMined(cw, txid) {
   const end = Date.now() + MINED_MS;
   for (;;) {
-    const bal = await syncOf(cw);
-    if (JSON.parse(cw.sent()).includes(txid)) {
+    const bal = await syncOf(cw).catch((err) => {
+      if (stopped || Date.now() > end) throw err;
+      log(`a sync failed, trying again: ${err.message}`);
+      return null;
+    });
+    if (bal && JSON.parse(cw.sent()).includes(txid)) {
       const entry = JSON.parse(cw.snapshot()).sent.find((s) => s.txid === txid);
       return { block: entry.h, total: bal.spendable + bal.pending };
     }

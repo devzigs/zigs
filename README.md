@@ -606,7 +606,9 @@ folder path.
   restores the two seats of the permanent 2-of-2 testnet wallet, pays 0.001 TAZ through the page on
   a local server, and checks the expiry, the fee and the header of the mined transaction. It spends
   0.0011 TAZ of the test wallet (0.002 with `--priority`) and needs the wallet folder
-  `~/.config/zigs/testwallets/zec-testnet/`. `node live/zec-pay.check.mjs` checks its rules offline.
+  `~/.config/zigs/testwallets/zec-testnet/`. Its own chain reads use `ZIGS_LWD`, else the server in
+  `lwd.txt` of that folder (our testnet node), else the public server. `node live/zec-pay.check.mjs` checks its rules
+  offline.
 
 ## Known limits
 
