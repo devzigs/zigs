@@ -44,6 +44,12 @@ const t = await loadPage();
   assert.equal(clock(), 5000, "a stall of 15 minutes does not count");
   wall += 300;
   assert.equal(clock(), 5300, "the time goes on after the stall");
+  wall += 5000;
+  assert.equal(clock(), 10300, "a gap of exactly the limit counts");
+  wall -= 60000;
+  assert.equal(clock(), 10300, "a step back of the wall clock does not count");
+  wall += 100;
+  assert.equal(clock(), 10400);
   assert.equal(Date.now.stallFree, true, "loadPage installs the test clock");
 }
 t.setZ(Z);

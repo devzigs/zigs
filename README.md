@@ -478,8 +478,8 @@ folder path.
   in seconds (the pure modules, the engine calls through the wasm build, the short Solana tests and
   the link test). The long page tests and the browser and live checks run before a merge, with
   `bash solspike/baseline.sh check`. The page tests run on a test clock (`web/test/page.mjs`) that
-  leaves out a stall such as a sleep of the computer, so a lifetime of the page cannot run out in
-  the middle of a test.
+  leaves out a stall such as a sleep of the computer, so a lifetime that the page measures with
+  `Date.now()` cannot run out in the middle of a test. Timers still count a stall.
 - `cargo test --release` in `wasm/` (125 tests, and 1 ignored test for ZEC-1 in TICKETS.md):
   - Signing: full 2-of-3 flows for Ironwood (paying 4 recipients in one transaction) and Orchard.
   - Expiry and fees: a group payment expires after one day of blocks (75 or 25 seconds each), at
