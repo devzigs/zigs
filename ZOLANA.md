@@ -892,6 +892,15 @@ group, PDA `9gk8NEZU…`:
   so one more input costs about 1,000 to 5,000 compute units. With the upper value, 16 inputs
   would need about 224,500 of the 227,156 that the template allows (217,000 for the move): the
   page takes at most 8 inputs.
+- Program version 5 (17 October 2026, step 7 of the upgrade plan in 7.2), the page of main at
+  `15e2060`, the same restored seats: the ProgramData held `b4bad24c…` (deploy slot 512086872)
+  before any send. Payment E, 0.0005 SOL to key B: seat 1 proposed (`5m2CtCRM…`, slot
+  512,121,019), seats 1 and 2 approved, and seat 1 executed (`fbDTsyLs…`, slot 512,121,234):
+  151,254 compute units, fee 10,000 lamports. The proposal address equals the version 5 address
+  of @solana/kit (`["proposed_transaction", group key, commitment, SHA-256(body)]`), the Ed25519
+  instruction holds the group key and the digest of the body, and Node verifies the FROST
+  signature. B rose by 500,000 lamports; the PDA identity holds 0.0005 SOL. No funding was needed,
+  and no proposal account of the program is open.
 
 ## 7. Risks, questions and recommendation
 
@@ -1338,7 +1347,9 @@ development key owned held the ELF. The upgrade
 `39ZZegZ7CfCiArDxGdWjysPyafsgEeDbXXhzt4zeiJN4B6TWBSjuAR1HPtbhvtsxNWLzLFBnUF2x1ryykGejbLEK`
 landed in slot 512086872 and closed the buffer. The dump then held `b4bad24c…` and zero bytes, and
 the authority and the size did not change. Production and staging run the version 5 client from
-main `f5fda18`. Step 7 is open.
+main `f5fda18`, and then `317b8d9`. Step 7, the same day: payment E over a version 5 address,
+execute `fbDTsyLsVNtHpix3R639FGdm1Uhg4P9bFXCZPCRu5tusNS2rRor8npUWXLjXoVCrVBqeBsAjVnFPVQx2eMEi3w7`
+in slot 512121234 (6.12). The withdrawal of step 7 waits for the page (SOL-32).
 
 Mainnet stays no-go under the recommendation below. Our program adds its own audit and upgrade-key
 policy to that list.
