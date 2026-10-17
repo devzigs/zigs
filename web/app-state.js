@@ -9,7 +9,7 @@ export const state = {
   dkg1: {}, dkg2: {}, confirm: {}, abort: {}, done: {}, verify: {}, wallet: null, sessions: [],
   sid: null, commits: {}, shares: {}, ignored: 0, pending: false, log: [],
 };
-// What the store holds, before signed writes are checked (see Signed writes below). `state` holds
+// What the store holds, before signed writes are checked (in app-filter.js). `state` holds
 // what the page may use.
 export const emptyRaw = () => ({
   seats: {}, dkg1: {}, dkg2: {}, confirm: {}, abort: {}, done: {}, verify: {}, wallet: null,

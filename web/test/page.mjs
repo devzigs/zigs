@@ -1,7 +1,7 @@
 // The page for the tests: app.mjs and sol-rig.mjs load the real page modules through loadPage().
 // A test installs its stub page (document, window, localStorage) first. loadPage() imports the
-// files that web/app.js lists, in that order, as the browser does. It does not import web/app.js
-// itself: that file boots the page.
+// files that web/app.js lists, in that order, as the browser does; they run depth first along
+// their imports, not in list order. It does not import web/app.js itself: that file boots the page.
 import fs from "node:fs";
 import { proposalFields } from "../signed.js";
 
