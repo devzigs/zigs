@@ -224,7 +224,10 @@ Devnet upgrade plan). Version 5 (ELF b4bad24c…) keeps the client interface of 
 - src/consts.rs: the comments name version 5. No constant changed.
 - tests/program.rs: the version 5 addresses of the two landed tracks (`proposal_v5` in
   vectors/program/landed.json, from `getProgramDerivedAddress` of @solana/kit, with the body that
-  `body_hash` of sol-program/src/instructions.rs hashes) and the landed cancellation addresses. tests/payment.rs and tests/pay_vectors.rs use the new address.
+  `body_hash` of sol-program/src/instructions.rs hashes) and the landed cancellation addresses.
+  tests/payment.rs and tests/pay_vectors.rs use the new address.
+- src/program.rs, src/template.rs: comments say that Devnet runs version 2 until the upgrade, and
+  that the create funds the address of the body.
 - tools/mutate_sol.py: one more case (`proposal-no-body`), 107 in all.
 
 Check: python3 -I tools/pin_check.py (the manifest below against the tree).
@@ -249,7 +252,7 @@ e69e4ccacb28931921f072919a6ecf9ff3fe6784e3b129a45ff94fa0ccc17d4c  src/hashes.rs 
 4f344e745afed204088395c0101761a0332688de88ab6e57dec9e85de34907a1  src/pda.rs  verbatim
 3220535ef8fb346b3d0f30de9a1a76f3cc20cf1819f0c2e25274648ee5abfbed  src/pins.rs  modified
 df46e9e90b740789623db0bed212c78a8d87fbf608a04be84cab433327fbb738  src/plan.rs  modified
-39f3b5784b36374dffa4ebc28d2a5294bb9ae04cedde44c335cc4719a20d9c51  src/program.rs  new
+22b06afba73b37be1feab42c4cf5362ab8fe458b584417ce4990cf0ac475a2dd  src/program.rs  new
 a44ea553e8f9d4b4cbac46b67a267c8f529de2ce84a34ce96f0f281d6eee156a  src/roles.rs  new
 d6dfcd82fcacc23277ba8b073380d8d8c355a32c9a7dca455bae1440dcb07bf1  src/rule.rs  modified
 c8c4a33103f0c0e811e5d98e43acc3f0f28316d0976beb65788b47fd3f6d5c1c  src/rules_ct.rs  verbatim
@@ -260,7 +263,7 @@ a88175ff29fcbbe4075bf2707c0a825d6026da9e7ae93fa390f7bedda6cc76f4  src/rules_out.
 589933f0a4cd56be2ca3a2474e13a36676bc3b7870ac0700762f720adc087c80  src/sign.rs  new
 fb32fff67235197779cc2b25cc5fe351d57fdb6140d976546b96ddc4484e28d3  src/snapshot.rs  verbatim
 1dd8eb3bea1120da40326466ec83e58fc6f49b40548a553bbcc50bc715131ab8  src/spend.rs  modified
-e7645696b2f7c5b705fc59b83b81a05255e07a94fd0acad8ca1450f40d886c34  src/template.rs  modified
+516e51309fd5d1f13bf15feb207a851d6253c54cea0d01590898181d84d174de  src/template.rs  modified
 3d7e69437af85c56d9bcf80172af2c7c866140ceb6e3f889d8cbc11dde9cdf05  src/transact.rs  verbatim
 c9d4c2718f755ac5ebeb8a705e036b3ab9183cb7ef95fe1f14da5ffa931c1c9f  src/v1.rs  verbatim
 ddda30596120fcb6731fa8515b0a06c55e2df70070a9082ed64749b022ddb374  src/viewing.rs  verbatim

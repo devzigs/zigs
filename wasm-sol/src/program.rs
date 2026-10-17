@@ -2,7 +2,8 @@
 //! it derives, the proposal body, the approval digest, the Ed25519 instruction that carries the
 //! approval, and the commitment that it recomputes from the `transact` data.
 //!
-//! The client is of program version 5 on Devnet (`MULTISIG_DEVNET`, the interface of version 4).
+//! The client is of program version 5 (`MULTISIG_DEVNET`, the interface of version 4). Devnet runs
+//! version 2 until the upgrade of ZOLANA.md 7.2.
 //! Its proposal address is `["proposed_transaction", group key, commitment, SHA-256(body)]`;
 //! `proposal_address` is the one place that names those seeds.
 

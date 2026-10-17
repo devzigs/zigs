@@ -17,6 +17,7 @@ import { feeProblem, poorFeeText, readyFee } from "./fee.js";
 import { writerSeats } from "./gate.js";
 import {
   bytesOf,
+  bytesOfBase64,
   decodeIntent,
   hexOf,
   intentHex,
@@ -108,7 +109,6 @@ const holdsBody = (account, ss) =>
   /^01[0-9a-f]{2}/.test(String(account.data)) &&
   account.data.slice(4) === String(ss.body);
 
-const bytesOfBase64 = (text) => Uint8Array.from(atob(text), (ch) => ch.charCodeAt(0));
 
 // The head of the canonical Ed25519 instruction (wasm-sol program.rs): one signature, offsets
 // 48, 16 and 112 in this instruction, a 32-byte message.

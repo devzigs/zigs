@@ -8,6 +8,7 @@
 // and never a bad signature.
 export const hexOf = (bytes) => Array.from(bytes, (b) => b.toString(16).padStart(2, "0")).join("");
 export const bytesOf = (hex) => Uint8Array.from(hex.match(/../g) ?? [], (h) => parseInt(h, 16));
+export const bytesOfBase64 = (text) => Uint8Array.from(atob(text), (ch) => ch.charCodeAt(0));
 
 const isHex = (n) => (v) => typeof v === "string" && new RegExp(`^[0-9a-f]{${n * 2}}$`).test(v);
 const KEY = isHex(32);

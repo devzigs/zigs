@@ -17,6 +17,7 @@ import { poorFeeText, readyFee } from "./fee.js";
 import { payerSeat, settledBlock } from "./gate.js";
 import {
   bytesOf,
+  bytesOfBase64,
   hexOf,
   intentHex,
   isAddress,
@@ -138,17 +139,20 @@ async function land(worker, message, signature, seat) {
 
 /**
  * A create that failed or did not confirm: when the account holds the same body, someone created
- * that body first (the address binds it, ZOLANA.md 7.2, N4), or this create landed late. The page
- * takes the oldest successful transaction on the account as the create. Else it throws `error`.
+ * that body first (the address binds it, ZOLANA.md 7.2, N4), or this create landed late. The create
+ * is the successful transaction on the account that carries the create data of the body (a
+ * transfer to the address may come first). Else it throws `error`.
  */
 async function createdBefore(worker, said, error) {
   const account = await worker.call("account", { account: base58(said.proposal) });
-  const same = account.exists && /^01[0-9a-f]{2}/.test(String(account.data));
-  if (!same || account.data.slice(4) !== said.body) throw error;
+  if (!account.exists || String(account.data).slice(4) !== said.body) throw error;
   const found = await worker.call("history", { account: base58(said.proposal) });
-  const create = found.filter((x) => !x.failed).at(-1);
-  if (!create) throw error;
-  return create.signature;
+  const create = "00" + said.body;
+  for (const x of found.filter((y) => !y.failed)) {
+    const got = await worker.call("transaction", { signature: x.signature });
+    if (got.found && hexOf(bytesOfBase64(got.tx)).includes(create)) return x.signature;
+  }
+  throw error;
 }
 
 /**

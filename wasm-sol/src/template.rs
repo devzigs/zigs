@@ -352,7 +352,7 @@ pub fn body_of(pins: &Pins, commitment: Key, expiry: u64, recipient: Key) -> Bod
     }
 }
 
-/// `create`: the payer funds the proposal account at the address of the commitment.
+/// `create`: the payer funds the proposal account at the address of the body.
 fn propose(pins: &Pins, commitment: Key, expiry: u64) -> Result<ExpectedIx, String> {
     let body = body_of(pins, commitment, expiry, pins.payer).write()?;
     let (proposal, _) = proposal_address(&pins.multisig, &commitment, &body)?;

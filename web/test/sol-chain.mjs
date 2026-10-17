@@ -284,8 +284,9 @@ function answersOf(chain) {
 const signatureOf = (parts) => base58(hex(parts.sigs[0]));
 
 // Someone else lands the same create first (`chain.frontRun`, once), after a create of theirs that
-// failed: the create of the page then meets an account in use. "other" stores another body there;
-// "send" lands it after the test run of the page passed. Returns the proposal address, or null.
+// failed, and then sends lamports to the account: the create of the page meets an account in use.
+// "other" stores another body there; "send" lands it after the test run of the page passed.
+// Returns the proposal address, or null.
 function frontRun(chain, parts) {
   const ixs = instructionsOf(parts.message);
   const create = ixs.find((ix) => ix.program === PROGRAM && ix.data.startsWith("00"));
@@ -293,8 +294,12 @@ function frontRun(chain, parts) {
   const other = chain.frontRun === "other";
   chain.frontRun = false;
   const proposal = create.accounts[1];
-  chain.history.set(proposal, [{ signature: FRONT_RUN_FAILED, failed: true, slot: "10" }]);
+  chain.history.set(proposal, [{ signature: FRONT_RUN_FAILED, failed: true, slot: "9" }]);
+  chain.txs.set(FRONT_RUN_FAILED, { ...txOf(parts), failed: true });
+  chain.txs.set(FRONT_RUN, txOf(parts));
   programLanded(chain, ixs, FRONT_RUN);
+  chain.history.get(proposal).unshift({ signature: FRONT_RUN_TRANSFER, failed: false, slot: "11" });
+  chain.txs.set(FRONT_RUN_TRANSFER, { ...txOf(parts), tx: randomBytes(200).toString("base64") });
   if (other) chain.accounts.get(proposal).data += "00";
   return proposal;
 }
@@ -304,10 +309,19 @@ function lostRace(chain, parts, proposal) {
   const signature = signatureOf(parts);
   chain.failed.add(signature);
   chain.history.get(proposal).unshift({ signature, failed: true, slot: "12" });
+  chain.txs.set(signature, { ...txOf(parts), failed: true });
   return { signature };
 }
+
+// The answer of `transaction` for a transaction with the bytes of `parts`.
+const txOf = (parts) => ({
+  found: true,
+  failed: false,
+  tx: Buffer.concat([parts.message, ...parts.sigs]).toString("base64"),
+});
 export const FRONT_RUN = "9".repeat(87) + "8";
 const FRONT_RUN_FAILED = "9".repeat(87) + "7";
+const FRONT_RUN_TRANSFER = "9".repeat(87) + "6";
 // How a sent transaction ends: it lands now, it fails on chain (the simulation passed), or it
 // lands later, when the test calls `chain.release()`.
 const SENDS = {
