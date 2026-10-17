@@ -378,6 +378,11 @@ step("an execute waits for the lease of another device, and stops after its trie
   assert.equal(chain.frontRun, false, "the other create landed first");
   assert.equal(ssOf(id).createTx, FRONT_RUN, "the create of the account is the other one");
   assert.ok(chain.accounts.has(base58(ssOf(id).account)), "the account holds the body");
+  // The other create lands after the test run of the page passed: the create of the page fails.
+  chain.frontRun = "send";
+  const raced = await proposedPay();
+  assert.equal(chain.frontRun, false, "the other create landed at the send");
+  assert.equal(ssOf(raced).createTx, FRONT_RUN, "a create that lost the race takes the other one");
 }
 step("a create that meets the same body in its account takes it; another body fails it");
 

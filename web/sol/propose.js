@@ -136,17 +136,12 @@ async function land(worker, message, signature, seat) {
   return txId;
 }
 
-// System error 0 at the create (the Worker gives the error as JSON): an account exists at the
-// proposal address.
-const IN_USE = /"Custom":0[,}]/;
-
 /**
- * The create of an account that exists already: the address binds the body, so someone created
- * the same body first (ZOLANA.md 7.2, N4). The page reads the account, compares its data, and
- * takes the oldest transaction on it as the create. Else it throws `error`.
+ * A create that failed or did not confirm: when the account holds the same body, someone created
+ * that body first (the address binds it, ZOLANA.md 7.2, N4), or this create landed late. The page
+ * takes the oldest successful transaction on the account as the create. Else it throws `error`.
  */
 async function createdBefore(worker, said, error) {
-  if (!IN_USE.test(error.message)) throw error;
   const account = await worker.call("account", { account: base58(said.proposal) });
   const same = account.exists && /^01[0-9a-f]{2}/.test(String(account.data));
   if (!same || account.data.slice(4) !== said.body) throw error;

@@ -259,13 +259,15 @@ function answersOf(chain) {
     preflight: ({ tx }) => ran(refusal(chain, wire(tx), false)),
     simulate: ({ tx }) => {
       const parts = wire(tx);
-      if (chain.frontRun) frontRun(chain, parts);
+      if (chain.frontRun && chain.frontRun !== "send") frontRun(chain, parts);
       return ran(refusal(chain, parts, true));
     },
     send: ({ tx }) => {
       const parts = wire(tx),
         err = refusal(chain, parts, true);
       if (err) throw new Error("Transaction simulation failed: " + err);
+      const raced = chain.frontRun === "send" ? frontRun(chain, parts) : null;
+      if (raced) return lostRace(chain, parts, raced);
       return SENDS[chain.sendMode ?? "land"](chain, parts);
     },
     status: ({ signature }) => statusOf(chain, signature, "pending"),
@@ -282,17 +284,27 @@ function answersOf(chain) {
 const signatureOf = (parts) => base58(hex(parts.sigs[0]));
 
 // Someone else lands the same create first (`chain.frontRun`, once), after a create of theirs that
-// failed: the create of the page then meets an account in use. "other" stores another body there.
+// failed: the create of the page then meets an account in use. "other" stores another body there;
+// "send" lands it after the test run of the page passed. Returns the proposal address, or null.
 function frontRun(chain, parts) {
   const ixs = instructionsOf(parts.message);
   const create = ixs.find((ix) => ix.program === PROGRAM && ix.data.startsWith("00"));
-  if (!create) return;
+  if (!create) return null;
   const other = chain.frontRun === "other";
   chain.frontRun = false;
   const proposal = create.accounts[1];
   chain.history.set(proposal, [{ signature: FRONT_RUN_FAILED, failed: true, slot: "10" }]);
   programLanded(chain, ixs, FRONT_RUN);
   if (other) chain.accounts.get(proposal).data += "00";
+  return proposal;
+}
+
+// The create of the page lands after the other one: it fails on chain, in the account's history.
+function lostRace(chain, parts, proposal) {
+  const signature = signatureOf(parts);
+  chain.failed.add(signature);
+  chain.history.get(proposal).unshift({ signature, failed: true, slot: "12" });
+  return { signature };
 }
 export const FRONT_RUN = "9".repeat(87) + "8";
 const FRONT_RUN_FAILED = "9".repeat(87) + "7";

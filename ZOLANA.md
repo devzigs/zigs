@@ -304,15 +304,14 @@ and the rent. The rent comes back to that seat at the execute. The group key sig
    no owner signers: the program signs as the owner). The checker of the proposing device accepts it
    as an approver would (`check_payment`, with no chain state) and gives the commitment, the body
    and the proposal account. The fee key signs the create message, and the device lands it: a create
-   that is not confirmed at once is read again until its blockhash ends. A create that meets an
-   account in use (System error 0) reads the account: when it holds the same body, the oldest
-   successful transaction on it is the create (N4 of 7.2); else the propose fails. Then the seat
-   publishes the proposal part: the intent (tag 8), the plan, the input ids, the salt, the transact
-   data of the first proof, the account, the body and the id of the create transaction. The Worker
-   takes a count of inputs that has a circuit with no dummy input, at most 8. One more input costs
-   about 5,000 compute units (6.12), so 8 inputs stay well under the caps of the template, and 16
-   would reach them. One `execute` carries at most 18 inputs, and the checker refuses more
-   (`execute-inputs`).
+   that is not confirmed at once is read again until its blockhash ends. A create that fails or does
+   not confirm reads the account: when it holds the same body, the oldest successful transaction on
+   it is the create (N4 of 7.2); else the propose fails. Then the seat publishes the proposal part:
+   the intent (tag 8), the plan, the input ids, the salt, the transact data of the first proof, the
+   account, the body and the id of the create transaction. The Worker takes a count of inputs that
+   has a circuit with no dummy input, at most 8. One more input costs about 5,000 compute units
+   (6.12), so 8 inputs stay well under the caps of the template, and 16 would reach them. One
+   `execute` carries at most 18 inputs, and the checker refuses more (`execute-inputs`).
 2. **Check, on each approving device** (`check_payment`). The Outputs, Legs and Ciphertexts rules of
    the table above, on the first proof. The device recomputes `private_tx_hash` from the inputs of
    its own snapshot, the plan outputs and the blinding of the first nullifier, then the commitment.

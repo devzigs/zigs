@@ -223,8 +223,8 @@ Devnet upgrade plan). Version 5 (ELF b4bad24c…) keeps the client interface of 
 - src/beta.rs, src/template.rs: the propose and execute addresses take the body.
 - src/consts.rs: the comments name version 5. No constant changed.
 - tests/program.rs: the version 5 addresses of the two landed tracks (`proposal_v5` in
-  vectors/program/landed.json, from `getProgramDerivedAddress` of @solana/kit) and the landed
-  cancellation addresses. tests/payment.rs and tests/pay_vectors.rs use the new address.
+  vectors/program/landed.json, from `getProgramDerivedAddress` of @solana/kit, with the body that
+  `body_hash` of sol-program/src/instructions.rs hashes) and the landed cancellation addresses. tests/payment.rs and tests/pay_vectors.rs use the new address.
 - tools/mutate_sol.py: one more case (`proposal-no-body`), 107 in all.
 
 Check: python3 -I tools/pin_check.py (the manifest below against the tree).
@@ -308,7 +308,7 @@ a28662f01b08d11df5d0b3a8ed87eb4b3e169ac3b64659a43de092158a0a8286  vectors/p2/wir
 34326cbe5a624a482ed5af2f6476d660f6b35e6b29657a9daa3b8a730850c401  vectors/pay/pay-all.json  new
 2aa5708cd23ae3a4833b93b0261e9a2c925bdeeea0896553d6b51608d38af9b2  vectors/pay/pay-change.json  new
 da7ecc3e522333be5fde4b5fd583875797dc68ab17e771bcdaceb8a2aadecc40  vectors/pay/pay-two-inputs.json  new
-1b9597aa1dad69fc48bc00a2ebfb2df6ec48893b90caa07ed4f4346f9b18f817  vectors/program/landed.json  new
+000eab1bc460dde942f2c48570bec3b0a364ea0601f05246ad8f386bb7ea47f7  vectors/program/landed.json  new
 c76c4455922d40026491f8f1e16d10d70b959fde9cb5cdba85915a420d016dc9  vectors/real/chain-p6a.msg  verbatim
 69634e9bc1223148d8074b6313ef6f47e09c89dcf5084fd159e874c16b258304  vectors/real/chain-p6b.msg  verbatim
 ea618db42963d0d7d1adb2d3e95501fb1b9f08d257b345e38ad6e065dd2a4cb0  vectors/real/chain-register.msg  verbatim
