@@ -227,7 +227,7 @@ function intentCard(c, act, actions) {
   return el(
     "div",
     { style: "display:grid;gap:8px" },
-    el("h3", {}, "Send privately"),
+    el("h3", {}, "Pay from the group"),
     seatLine(c, "propose-seat", "proposes and pays the fees."),
     el("p", { class: "small", "data-sol": "pay-cost" }, costLine(c)),
     sendForm(c, act, actions),
@@ -370,7 +370,7 @@ const feesText = (said) =>
   solText(EXECUTE_FEE + said.treeFee) +
   " at the execute.";
 
-const PUBLIC_WITHDRAWAL = "The recipient and the amount are public in the execute transaction. ";
+const PUBLIC_WITHDRAWAL = WITHDRAW_PUBLIC + " The execute transaction shows them. ";
 
 /**
  * The rows of a payment or a withdrawal of the program design: what the checker of this device

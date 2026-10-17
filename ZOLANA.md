@@ -258,7 +258,7 @@ recipient, and its life depends on a nonce, an expiry and roots.
 | Add SOL (intent Shield) | Pool `deposit` (tag 15, no proof) from the payer. A recent blockhash, no nonce: the payer signs alone and the group does not approve | The deposit from the payer's public SOL | One output to the PDA identity (7.2) |
 | Move of the beta funds (intent Transfer) | `AdvanceNonceAccount`, `transact` (payer first, the group key as owner signer after the nullifier accounts) | None | The whole balance of the group key to the PDA address, no change (`migration-payee`) |
 | Propose (5.1) | The approvals program `create` (the payer funds the proposal account). A recent blockhash: the fee key of the proposing seat signs alone | None | None |
-| Execute (5.1) | The Ed25519 instruction with the approval, then the program `execute` with the `transact` accounts and the owner PDA last. A recent blockhash: the fee key of the executing seat signs alone | None | Payee, change to the PDA identity, dummies |
+| Execute (5.1) | The Ed25519 instruction with the approval, then the program `execute` with the `transact` accounts and the owner PDA last (a withdrawal: then the SOL interface and the recipient). A recent blockhash: the fee key of the executing seat signs alone | None (a withdrawal: one SOL withdrawal leg) | Payee, change to the PDA identity, dummies (a withdrawal: no payee) |
 
 Nothing signs the intents of the beta that the program design retired: register, a nonce
 withdrawal (tag 4) and a nonce cancel (`intent-retired`). A withdrawal goes through the program
@@ -309,12 +309,12 @@ and the rent. The rent comes back to that seat at the execute. The group key sig
    is read again until its blockhash ends. A create that fails or does not confirm reads the
    account: when it holds the same body (N4 of 7.2), the successful transaction on it that carries
    the create data of that body is the create; else the propose fails. Then the seat publishes the
-   proposal part: the intent (tag 8), the plan, the input ids, the salt, the transact data of the
-   first proof, the account, the body and the id of the create transaction. The Worker takes a count
-   of inputs that has a circuit with no dummy input, at most 8. One more input costs about 5,000
-   compute units (6.12), so 8 inputs stay well under the caps of the template, and 16 would reach
-   them. One `execute` carries at most 18 inputs (16 for a withdrawal), and the checker refuses more
-   (`execute-inputs`).
+   proposal part: the intent (tag 8; tag 10 for a withdrawal), the plan, the input ids, the salt,
+   the transact data of the first proof, the account, the body and the id of the create transaction.
+   The Worker takes a count of inputs that has a circuit with no dummy input, at most 8. One more
+   input costs about 5,000 compute units (6.12), so 8 inputs stay well under the caps of the
+   template, and 16 would reach them. One `execute` carries at most 18 inputs (16 for a withdrawal),
+   and the checker refuses more (`execute-inputs`).
 2. **Check, on each approving device** (`check_payment`). The Outputs, Legs and Ciphertexts rules of
    the table above, on the first proof. The device recomputes `private_tx_hash` from the inputs of
    its own snapshot, the plan outputs and the blinding of the first nullifier, then the commitment.
@@ -358,18 +358,20 @@ and the rent. The rent comes back to that seat at the execute. The group key sig
    the proof spends the inputs to the change and one SOL withdrawal leg
    (`ConfidentialTransfer.withdraw` of the SDK). The session intent is tag 10 (the recipient key
    and the amount), the create message tag 9 and the execute tag 11. The commitment hashes the SOL
-   interface of the pool and the recipient after the prefix, as the pool does, so the approval
+   interface of the pool and the recipient after the prefix, as the pool does. So the approval
    binds the recipient and the amount (the SDK vector `withdraw-change` pins it). The execute lists
    both after the owner PDA, writable. The proposer and every approving device read the recipient
-   account: it is no account of the pool, the program or the group (`withdrawal-recipient`); it is
-   a System account or does not exist yet, it is not executable, and after the payment it holds at
-   least the rent-exempt minimum of an account with no data (`recipient-account`). The screen
-   shows the recipient and the amount that the commitment binds, and says that both are public.
-   One execute of a withdrawal carries at most 16 inputs. The rules hold when the device checks:
-   the pool pays the account as it is at the execute. A program that takes the account over after
-   the approval gets the SOL, which only that program can then move. A new account below the
-   minimum makes every execute fail until the expiry, and the rent of the proposal stays locked
-   (SOL-52).
+   account. It is no account of the pool, the program or the group (`withdrawal-recipient`). It is
+   a System account or a new one, and it is not executable. After the payment it holds at least
+   the rent-exempt minimum of an account with no data (`recipient-account`). The fee key signs the
+   create message after this check of the proposer; the wasm does not read the recipient again for
+   that message. The screen shows the recipient and the amount that the commitment binds, and says
+   that both are public. One execute of a withdrawal carries at most 16 inputs. The rules hold
+   when the device checks: the pool pays the account as it is at the execute. A program that takes
+   the account over after the approval gets the SOL, which only that program can then move. Every
+   execute fails until the expiry when the account then holds less than the minimum: a new
+   account, or one whose holder moved its SOL out while the amount alone is below the minimum. The
+   rent of the proposal then stays locked (SOL-52).
 
 Not built: deposits of public SOL through the program (Add SOL deposits straight into the pool), and
 a cancel or close of a proposal (SOL-52). A proposal account that expires keeps its rent until its

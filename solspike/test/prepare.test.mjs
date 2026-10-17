@@ -239,6 +239,8 @@ async function withdrawalCommitment() {
 
 /** The SOL interface is the program address `["sol_interface", 0]` of the Devnet pool. */
 async function solInterfaceAddress() {
+  if (!process.env.ZOLANA_REPO)
+    return console.log("skip  the SOL interface against the pool (no ZOLANA_REPO)");
   const kit = createRequire(join(zolanaRepo(), "package.json"))("@solana/kit");
   const [derived] = await kit.getProgramDerivedAddress({
     programAddress: kit.address("sppU489D7A4U1exNo1oeMGZtLEofq3a6o2fR7UeoWB6"),
