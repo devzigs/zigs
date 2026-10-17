@@ -474,6 +474,12 @@ function showBanner(kind, text) {
   clearTimeout(bannerTimer);
   if (kind === "ok") bannerTimer = setTimeout(() => { b.hidden = true; }, 4000);
 }
+function clearBadBanner() {
+  if (banner && banner.kind === "bad") {
+    banner = null;
+    document.getElementById("banner").hidden = true;
+  }
+}
 function log(msg) { state.log.unshift(new Date().toLocaleTimeString() + "  " + msg); state.log.length = Math.min(state.log.length, 60); }
 
 // ───────────────────────── Encrypted store ─────────────────────────
@@ -2961,10 +2967,7 @@ const act = (fn) => async (ev) => {
   if (b) b.disabled = true;
   try {
     await fn(ev);
-    if (banner && banner.kind === "bad") {
-      banner = null;
-      document.getElementById("banner").hidden = true;
-    }
+    clearBadBanner();
   } catch (e) { showBanner("bad", e.message || String(e)); }
   finally {
     if (b) b.disabled = false;
