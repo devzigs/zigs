@@ -4,7 +4,8 @@ import { state } from "./app-state.js";
 import { isStr, S } from "./app-kit.js";
 import { Z } from "./app-engine.js";
 import { mySeatSecrets, sec } from "./app-keystore.js";
-import { groupVersion, me, seatCheck, signedMode } from "./app-rest.js";
+import { signedMode } from "./app-filter.js";
+import { groupVersion, me, seatCheck } from "./app-rest.js";
 
 // The seats of the open wallet. A group document with no valid n and t has none, so a made-up n
 // never sizes an array.
