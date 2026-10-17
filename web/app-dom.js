@@ -9,7 +9,8 @@ import { isMe, localSeats, seatMine, seatNameOf } from "./app-seats.js";
 import { capText, curNet, netOf, NETWORKS } from "./app-chain.js";
 import { signedMode } from "./app-filter.js";
 import { closeSession } from "./app-groups.js";
-import { expired, focusAfter, onChain, payeesOf, react, render } from "./app-rest.js";
+import { expired, onChain, payeesOf } from "./app-payments.js";
+import { focusAfter, react, render } from "./app-rest.js";
 
 export const netBadge = (g) => netOf(g).cap
   ? el("span", { class: "badge bad", title: "Real ZEC. Not audited. At " + capText(netOf(g).cap)
