@@ -75,6 +75,36 @@ for (const LWD_KEY of [undefined, "", null]) {
 }
 step("a missing or empty LWD_KEY gives 503 and nothing goes upstream");
 
+// ── The limit for each IP address: after the path and method checks, before upstream ──
+{
+  const keys = [];
+  let allow = false;
+  const LWD_PER_IP = {
+    limit: async ({ key }) => {
+      keys.push(key);
+      return { success: allow };
+    },
+  };
+  const limited = { ...env, LWD_PER_IP };
+  const path = "/lwd" + SERVICE + "GetBlockRange";
+  const from = { headers: { "cf-connecting-ip": "203.0.113.7" } };
+  assert.equal((await ask("/lwd/other", from, limited)).status, 404);
+  assert.equal((await ask(path, { ...from, method: "GET" }, limited)).status, 405);
+  assert.deepEqual(keys, [], "a bad path or method is not counted");
+  const res = await ask(path, from, limited);
+  assert.equal(res.status, 429);
+  assert.match(await res.text(), /Wait a minute/);
+  assert.equal(calls.length, 0, "a limited call sends nothing upstream");
+  const noKey = { ...limited, LWD_KEY: undefined };
+  assert.equal((await ask(path, from, noKey)).status, 429, "the limit comes before the key");
+  allow = true;
+  assert.equal((await ask(path, from, limited)).status, 200);
+  assert.equal(calls.length, 1, "an allowed call goes upstream");
+  assert.deepEqual(keys, Array(3).fill("203.0.113.7"), "the key is the IP address");
+  calls.length = 0;
+  step("over the limit gives 429 and nothing goes upstream; under it the call passes");
+}
+
 // ── The password gate comes first ──
 {
   const gated = { APP_PASSWORD: "pw", LWD_KEY: KEY, ASSETS: assets };

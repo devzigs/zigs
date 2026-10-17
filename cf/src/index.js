@@ -102,12 +102,23 @@ function only(headers, names) {
   return out;
 }
 
+// Like WS_PER_IP in groupSocket, this fails open: without the binding (local tests), no limit.
+async function overLwdLimit(req, env) {
+  if (!env.LWD_PER_IP) return false;
+  const ip = req.headers.get("CF-Connecting-IP") || "local";
+  return !(await env.LWD_PER_IP.limit({ key: ip })).success;
+}
+
 // Both bodies stream: GetBlockRange is a server stream. The redirect stays unfollowed, so the
 // key never goes to another host.
 async function lwd(req, env, url) {
   const path = LWD_PATH.exec(url.pathname)?.[1];
   if (!path) return new Response("Not found\n", { status: 404 });
   if (req.method !== "POST") return new Response("Use POST.\n", { status: 405 });
+  if (await overLwdLimit(req, env)) {
+    const text = "Too many light-wallet calls from this network. Wait a minute.\n";
+    return new Response(text, { status: 429 });
+  }
   if (!env.LWD_KEY) {
     return new Response("The light-wallet server is not set up on this server.\n", { status: 503 });
   }

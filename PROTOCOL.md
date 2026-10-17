@@ -619,7 +619,8 @@ the web, on iPhone and on Mac at the same time.
   secret header `x-zigs-lwd-key` (secret `LWD_KEY`) and sends no header of the user, so neither the
   password nor a cookie reaches the node. Envoy on the node host (`infra/lwd`) serves the tunnel
   listener only with that key. A second listener, for the devices of the owner's tailnet, has no
-  key.
+  key. The Worker also limits `/lwd` to 600 calls a minute for each IP address (`LWD_PER_IP`,
+  TICKETS.md PRIV-8): over it, the answer is 429 and the page uses ChainSafe.
 
 - **Main screens.**
   - Wallet list, and a "Create wallet" form (name, *t*, *n*, network).

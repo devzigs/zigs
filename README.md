@@ -602,8 +602,9 @@ folder path.
 - `node web/test/shim.mjs`: the notice of `web/shim.js` when a module of the page does not load
   or link before the first paint, and no notice for an image or style, or after the first paint.
 - `node web/test/lwd.mjs`: the `/lwd` route of `cf/src/index.js` with a stub for `fetch`: the path
-  and method rules, the password gate, the headers to the node (the allowed ones and the key
-  only), the answer, the 503 and 502 cases, and a response that streams.
+  and method rules, the password gate, the limit for each IP address (429 before the call to the
+  node), the headers to the node (the allowed ones and the key only), the answer, the 503 and
+  502 cases, and a response that streams.
 - `bash tests/e2e.sh`: the command-line ceremony in separate processes, with attacks: wallet
   substitution, fewer than t signers, tampered randomizer and sighash, nonce reuse, wrong share
   attribution, foreign notes.

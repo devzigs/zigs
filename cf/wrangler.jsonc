@@ -17,7 +17,12 @@
     "run_worker_first": true
   },
   // New group connections per IP and minute, counted per Cloudflare location (approximate).
-  "ratelimits": [{ "name": "WS_PER_IP", "namespace_id": "1003", "simple": { "limit": 60, "period": 60 } }],
+  // Light-wallet relay calls (/lwd) per IP and minute, the same way. A first sync of a month of
+  // blocks peaks at 68 calls a minute (TICKETS.md PRIV-8).
+  "ratelimits": [
+    { "name": "WS_PER_IP", "namespace_id": "1003", "simple": { "limit": 60, "period": 60 } },
+    { "name": "LWD_PER_IP", "namespace_id": "1005", "simple": { "limit": 600, "period": 60 } }
+  ],
   "durable_objects": {
     "bindings": [{ "name": "STORE", "class_name": "Store" }]
   },
@@ -33,7 +38,8 @@
       "vars": { "SOL": "1" },
       "routes": [{ "pattern": "staging.zigs.app", "custom_domain": true }],
       "ratelimits": [
-        { "name": "WS_PER_IP", "namespace_id": "1004", "simple": { "limit": 60, "period": 60 } }
+        { "name": "WS_PER_IP", "namespace_id": "1004", "simple": { "limit": 60, "period": 60 } },
+        { "name": "LWD_PER_IP", "namespace_id": "1006", "simple": { "limit": 600, "period": 60 } }
       ],
       "durable_objects": {
         "bindings": [{ "name": "STORE", "class_name": "Store" }]
