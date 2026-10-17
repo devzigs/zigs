@@ -6,7 +6,8 @@ import { Z } from "./app-engine.js";
 import { gkeys, idb, loadSnapshot, saveSnapshot, snapId } from "./app-keystore.js";
 import { localSeats } from "./app-seats.js";
 import { leavesOf } from "./app-dom.js";
-import { acct, expired, myVerified, render, txidOf } from "./app-rest.js";
+import { myVerified } from "./app-dkg.js";
+import { acct, expired, render, txidOf } from "./app-rest.js";
 
 // Light-wallet servers in order of preference. Mainnet uses a third-party server, so the group
 // server and the chain server have different operators (see PRIVACY.md). The first testnet server

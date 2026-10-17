@@ -18,6 +18,7 @@ import "./app-filter.js";
 import "./app-groups.js";
 import "./app-dom.js";
 import "./app-messages.js";
+import "./app-dkg.js";
 import "./app-rest.js";
 import { loadEngine } from "./app-engine.js";
 import { lockedVault } from "./app-keystore.js";
