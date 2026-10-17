@@ -1,7 +1,9 @@
 // The link test of the page modules (APPJS-SPLIT.md, section 8). Run: node web/test/graph.mjs
 // web/app.js lists every module of the page with an `import "./x.js";` line. The test checks
-// the import graph by its text, then loads every listed module on a stub page in the order of
-// the list, as the browser does:
+// the import graph by its text, then imports every listed module on a stub page in the order of
+// the list, as the browser does. The modules run depth first along their imports, not in list
+// order. A second run loads them with a passkey-locked vault in storage, the other branch at load.
+// The rules:
 // 1. every web/app-*.js is in the list, and every listed file exists;
 // 2. app-kit.js, app-state.js and the pure modules import no page module;
 // 3. no page module imports web/sol/ with a static import;
@@ -14,7 +16,9 @@
 // 7. every name that web/app.js or a listed file imports is an export of its source: the tests
 //    never load web/app.js, so its imports are checked here by their text;
 // 8. no page module imports a top-level name of a page module from a pure module: personal.js
-//    and app-chain.js both export NETWORKS, and the page means the one of app-chain.js.
+//    and app-chain.js both export NETWORKS, and the page means the one of app-chain.js;
+// 9. no file of web/sol imports web/app.js or a page module, statically or with import():
+//    web/sol reaches the page only through the keys of solHost().
 // A promise of a module that rejects soon after the load fails the test too.
 // The parser is the acorn of the node binary: the test starts itself again with
 // --expose-internals. ponytail: that path is internal to node; the upgrade is acorn as a dev
@@ -138,6 +142,12 @@ function hostKeys(n) {
   return pattern && n.init && isHost(n.init) ? n.id.properties.map((p) => p.key?.name) : [];
 }
 
+// The source of an import or re-export node, and the paths of the page seen from web/sol.
+const SOURCES = new Set(["ImportDeclaration", "ExportNamedDeclaration", "ExportAllDeclaration",
+  "ImportExpression"]);
+const sourceOf = (n) => (SOURCES.has(n.type) && n.source?.type === "Literal" ? n.source.value : "");
+const PAGE_PATH = /^(\.\.)?\/app(-[\w-]+)?\.js$/;
+
 // The keys of the object that solHost() returns, and the keys that web/sol reads from it.
 function checkHost() {
   const keys = new Set();
@@ -152,6 +162,7 @@ function checkHost() {
   for (const f of fs.readdirSync(new URL("sol/", web)).filter((x) => x.endsWith(".js"))) {
     walk(parse(`sol/${f}`), (n) => {
       for (const k of hostKeys(n)) if (k && !keys.has(k)) problems.push(`sol/${f} reads host.${k}`);
+      if (PAGE_PATH.test(sourceOf(n))) problems.push(`sol/${f} imports ${sourceOf(n)}`);
     });
   }
 }
@@ -172,6 +183,9 @@ Object.assign(globalThis, {
   },
   window: new Proxy(stub(), { get: (t, k) => (k === "crypto" ? globalThis.crypto : t[k]) }),
 });
+const VAULT = JSON.stringify({ v: 1, cred: "c", salt: "s", iv: "i", box: "b" });
+const locked = process.env.GRAPH_VAULT === VAULT;
+if (locked) storage.set("zf-vault", VAULT);
 
 checkList();
 checkImports();
@@ -193,6 +207,16 @@ for (const f of list) {
   }
 }
 await new Promise((r) => setTimeout(r, 300));
-console.log(`graph ok: ${list.length} modules`);
+if (!locked) {
+  const env = { ...process.env, GRAPH_VAULT: VAULT };
+  const again = spawnSync(process.execPath, [...process.execArgv, ...process.argv.slice(1)],
+    { env, encoding: "utf8" });
+  if (again.status !== 0) {
+    console.log(`graph: with a locked vault in storage: ${again.stdout}${again.stderr}`.trim());
+    process.exit(1);
+  }
+}
+const how = locked ? "with a locked vault" : "also with a locked vault";
+console.log(`graph ok: ${list.length} modules, ${how}`);
 // app-chain.js starts a 60 s timer when it loads.
 process.exit(0);
