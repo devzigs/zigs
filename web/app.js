@@ -24,6 +24,7 @@ import "./app-payreq.js";
 import "./app-account.js";
 import "./app-thread.js";
 import "./app-backups.js";
+import "./app-account-view.js";
 import "./app-rest.js";
 import { loadEngine } from "./app-engine.js";
 import { lockedVault } from "./app-keystore.js";
