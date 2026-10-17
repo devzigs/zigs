@@ -4,9 +4,10 @@
 // the values come from the intent bytes that the checker compared with the proof or the message,
 // never from the display fields of the proposer.
 //
-// A payment (the intent `approve`) has no message: the device rebuilds its commitment from the
-// plan, its own snapshot and the first proof, reads the proposal account from the chain, and the
-// group signs the digest of that account once. The move of the beta funds to the PDA signs a v1
+// A payment (the intent `approve`, or `withdraw` to a public address) has no message: the device
+// rebuilds its commitment from the plan, its own snapshot and the first proof, reads the proposal
+// account (and the recipient account of a withdrawal) from the chain, and the group signs the
+// digest of that account once. The move of the beta funds to the PDA signs a v1
 // message, which the payer signed when it was proposed: the device checks that signature too. Only
 // then does the device make its nonces, save them with the digest and publish its commitment.
 import { agreement } from "./ceremony.js";
@@ -15,6 +16,7 @@ import { feeOf, payerOf } from "./fee.js";
 import { settledBlock, signingBlock } from "./gate.js";
 import {
   bytesOf,
+  chainHex,
   decodeIntent,
   describeMessage,
   hexOf,
@@ -22,7 +24,6 @@ import {
   pinsHex,
   proposalHex,
   readVerdict,
-  seenHex,
   snapshotHex,
 } from "./intent.js";
 import { approvedBodies, saveNonces, savedNonces, usedDigest } from "./nonces.js";
@@ -40,8 +41,8 @@ const KEY = /^[0-9a-f]{64}$/;
 const FEE_SIG = /^[0-9a-f]{128}$/;
 const REFUSED = "This device refused the proposal. ";
 const READING = "Zigs is reading your wallet to check this payment. Try again in a moment.";
-// The intents of the PDA identity: a payment, its messages and Add SOL.
-const PDA_KINDS = new Set(["approve", "propose", "execute", "shield"]);
+// The intents of the PDA identity: a payment or a withdrawal, their messages and Add SOL.
+const PDA_KINDS = new Set(["approve", "withdraw", "propose", "execute", "shield"]);
 
 let rules = null;
 const ruleTexts = (W) =>
@@ -108,7 +109,7 @@ export function feeSignature(c, ss, seat, spend) {
 }
 
 const kindOf = (ss) => decodeIntent(ss?.intent)?.kind;
-const isSpend = (ss) => ["transfer", "approve"].includes(kindOf(ss));
+const isSpend = (ss) => ["transfer", "approve", "withdraw"].includes(kindOf(ss));
 const readable = (ss) =>
   HEXTEXT.test(String(ss?.intent)) &&
   (isPayment(ss)
@@ -116,7 +117,7 @@ const readable = (ss) =>
     : HEXTEXT.test(String(ss?.message))) &&
   (!isSpend(ss) || HEXTEXT.test(String(ss.plan)));
 // Add SOL (the intent `shield`) is no session: one member signs it alone and sends it at once.
-const SESSION_KINDS = new Set(["createNonce", "transfer", "approve"]);
+const SESSION_KINDS = new Set(["createNonce", "transfer", "approve", "withdraw"]);
 const NOT_SHOWN = "This proposal is not one that this app can show.";
 /** True for a session that this app shows and signs: a payment or the move of the beta funds. */
 export const showable = (ss) => readable(ss) && SESSION_KINDS.has(kindOf(ss));
@@ -148,8 +149,8 @@ function reviewBlock(c, ss, seat, spend, seen) {
 function paymentReview(c, ss, seat, { spend, seen, intent }) {
   const wasm = inputsOf(c, ss, seat, spend),
     now = BigInt(Math.floor(Date.now() / 1000));
-  const seenBytes = bytesOf(seenHex(seen.account, seen.approved));
-  const verdict = c.W.check_payment(wasm.intent, wasm.pins, wasm.snapshot, seenBytes, now);
+  const chain = bytesOf(chainHex(seen, seen.recipient ?? null));
+  const verdict = c.W.check_payment(wasm.intent, wasm.pins, wasm.snapshot, chain, now);
   if (!verdict.startsWith("accepted")) return { ok: false, why: refusalText(c.W, verdict) };
   const said = readVerdict(verdict);
   if (said.proposal !== ss.account || said.body !== ss.body) {
@@ -222,15 +223,33 @@ async function checkNonce(c, review) {
 }
 
 /**
+ * What this device reads of the public `recipient` (hex) of a withdrawal: its account ({ owner,
+ * lamports, executable }, or null when there is none) and the rent-exempt minimum of an account
+ * with no data. The checker refuses a recipient that could not take the SOL (wasm-sol pay.rs).
+ */
+export async function recipientRead(worker, recipient) {
+  const [got, rent] = await Promise.all([
+    worker.call("account", { account: base58(recipient) }),
+    worker.call("rent", { space: "0" }),
+  ]);
+  const { owner, lamports, executable } = got;
+  return { account: got.exists ? { owner, lamports, executable } : null, rentMin: rent.lamports };
+}
+
+/**
  * What this device sees on chain for the payment `ss`: its proposal account ({ owner, data } as
- * hex, or null when there is none) and the bodies that the seats of this browser approved.
+ * hex, or null when there is none), the bodies that the seats of this browser approved, and for
+ * a withdrawal the recipient account (`recipientRead`).
  */
 export async function deviceSeen(c, ss) {
   if (!KEY.test(String(ss.account))) throw new Error(NOT_SHOWN);
   const worker = await ensureWorker(c);
   const got = await worker.call("account", { account: base58(ss.account) });
   const account = got.exists ? { owner: got.owner, data: got.data } : null;
-  return { account, approved: approvedBodies(c) };
+  const intent = decodeIntent(ss.intent);
+  const recipient =
+    intent?.kind === "withdraw" ? await recipientRead(worker, intent.recipient) : null;
+  return { account, approved: approvedBodies(c), recipient };
 }
 
 const sha256Hex = async (hex) =>

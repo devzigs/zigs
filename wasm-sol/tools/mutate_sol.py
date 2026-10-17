@@ -103,6 +103,17 @@ COMPILE_PDA = "the_compile_entry_builds_add_sol_and_the_create_message_for_the_p
 DIGEST_ENTRY = "the_digest_entry_of_the_page_gives_the_landed_digest_and_refuses_a_bad_body"
 WIDE = "a_payment_of_more_inputs_than_one_execute_carries_is_refused"
 REVIEW_CHAIN = "the_wasm_entry_runs_the_chain_rules_once_the_device_read_the_account"
+VEC_COMMIT = "the_commitment_of_each_vector_equals_the_message_hash_of_the_sdk"
+W_COMMIT = "the_commitment_of_a_withdrawal_binds_the_sol_interface_and_the_recipient"
+W_WIDE = "a_withdrawal_spends_at_most_16_inputs"
+W_BANNED = "a_withdrawal_to_an_account_of_the_pool_the_program_or_the_group_is_refused"
+W_ACCOUNT = "the_recipient_account_must_be_ordinary_and_hold_the_rent_minimum_after_the_withdrawal"
+W_SCREEN = "a_withdrawal_pays_its_public_recipient_and_the_screen_shows_the_recipient_and_the_leg"
+W_EXECUTE = (
+    "the_execute_of_a_withdrawal_adds_the_sol_interface_and_the_recipient_after_the_owner_pda"
+)
+W_TAGS = "the_intents_of_a_withdrawal_have_tags_9_to_11_and_read_back"
+W_PROPOSER = "the_proposer_checks_the_recipient_account_that_it_read"
 
 # The program design (ZOLANA.md 7.2): the client of the approvals program, the approval of a
 # payment, the beta policy and the two templates.
@@ -201,8 +212,9 @@ PROGRAM_CASES = [
      "    let pins = identity(&proposal.intent, &Pins::decode(pins)?).map_err(|r| refused(&r))?;",
      "    let pins = Pins::decode(pins)?;\n    let _ = identity;", COMPILE_PDA),
     ("digest-any-body", "src/wasm.rs", "    Body::parse(&body)?;\n", "", DIGEST_ENTRY),
-    ("execute-any-inputs", "src/pay.rs", "    if tx.inputs.len() > MAX_EXECUTE_INPUTS {",
-     "    if false {", WIDE),
+    ("execute-any-inputs", "src/pay.rs",
+     "    (inputs > cap).then(|| Violation::new(Rule::ExecuteInputs, why))",
+     "    false.then(|| Violation::new(Rule::ExecuteInputs, why))", WIDE),
     ("create-readonly", "src/template.rs", "        acct(proposal, false, true),\n"
      "        acct(SYSTEM_PROGRAM, false, false),", "        acct(proposal, false, false),\n"
      "        acct(SYSTEM_PROGRAM, false, false),", CREATE),
@@ -211,8 +223,53 @@ PROGRAM_CASES = [
      "        acct(proposal, false, false),", EXECUTE_OK),
     ("execute-sysvar", "src/template.rs", "        acct(INSTRUCTIONS_SYSVAR, false, false),",
      "        acct(SYSTEM_PROGRAM, false, false),", EXECUTE_OK),
-    ("review-no-chain", "src/wasm.rs", "    let verdict = if input.seen.is_empty() {",
-     "    let verdict = if true {", REVIEW_CHAIN),
+    ("review-no-chain", "src/wasm.rs", "    let verdict = if let Some(seen) = &chain.seen {",
+     "    let verdict = if let Some(seen) = &None::<crate::pay::Seen> {", REVIEW_CHAIN),
+    # Withdrawals to a public address (SOL-32).
+    ("settlement-unhashed", "src/program.rs",
+     "        sha.update(sol_interface);\n        sha.update(recipient);\n", "", VEC_COMMIT),
+    ("settlement-order", "src/program.rs",
+     "        sha.update(sol_interface);\n        sha.update(recipient);\n",
+     "        sha.update(recipient);\n        sha.update(sol_interface);\n", VEC_COMMIT),
+    ("pay-no-settlement", "src/pay.rs",
+     "    let settled = settlements(&pins.sol_interface, pay.recipient());",
+     "    let settled = settlements(&pins.sol_interface, None);", W_COMMIT),
+    ("leg-cap", "src/program.rs", "    MAX_EXECUTE_INPUTS.saturating_sub(2 * legs)",
+     "    MAX_EXECUTE_INPUTS", W_WIDE),
+    ("recipient-any", "src/pay.rs", "    if banned_recipients(pins).contains(&recipient) {",
+     "    if false {", W_BANNED),
+    ("recipient-owner", "src/pay.rs",
+     "            account.owner == SYSTEM_PROGRAM && !account.executable,",
+     "            !account.executable,", W_ACCOUNT),
+    ("recipient-executable", "src/pay.rs",
+     "            account.owner == SYSTEM_PROGRAM && !account.executable,",
+     "            account.owner == SYSTEM_PROGRAM,", W_ACCOUNT),
+    ("recipient-rent", "src/pay.rs",
+     "    } else if lamports.saturating_add(amount) < read.rent_min {",
+     "    } else if lamports < read.rent_min {", W_ACCOUNT),
+    ("recipient-unread", "src/pay.rs", "        None if approver => out.push(Violation::new(",
+     "        None if false => out.push(Violation::new(", W_ACCOUNT),
+    ("screen-recipient", "src/pay.rs", "        run.summary.recipient = Some(to);\n", "",
+     W_SCREEN),
+    ("execute-no-settlement", "src/template.rs",
+     "        accounts.extend([acct(sol_interface, false, true), acct(to, false, true)]);\n",
+     "        let _ = (sol_interface, to);\n", W_EXECUTE),
+    ("execute-interface-readonly", "src/template.rs",
+     "acct(sol_interface, false, true), acct(to, false, true)",
+     "acct(sol_interface, false, false), acct(to, false, true)", W_EXECUTE),
+    ("execute-commit-plain", "src/template.rs",
+     "    let commitment = commitment(&tx.private_tx_hash, tx, &settled)?;",
+     "    let commitment = commitment(&tx.private_tx_hash, tx, &[])?;", W_EXECUTE),
+    ("beta-no-settlement", "src/beta.rs",
+     "    let settled = settlements(&pins.sol_interface, *recipient);",
+     "    let settled = settlements(&pins.sol_interface, None);", W_EXECUTE),
+    ("share-no-recipient", "src/sign.rs",
+     "approve_payment(&proposal, &device, seen, chain.recipient.as_ref())",
+     "approve_payment(&proposal, &device, seen, None)", W_EXECUTE),
+    ("tag-approve", "src/intent.rs",
+     "out.push(if pay.recipient().is_some() { 10 } else { 8 });", "out.push(8);", W_TAGS),
+    ("proposer-no-recipient", "src/wasm.rs", "    let recipient = chain.recipient.as_ref();",
+     "    let recipient = None;", W_PROPOSER),
 ]
 
 # (name, file, exact old text, new text, test that must fail)

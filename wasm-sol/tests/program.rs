@@ -123,7 +123,7 @@ fn the_commitment_of_the_landed_transact_data_is_the_commitment_of_the_body() {
         let tx = transact::parse(&t.transact).unwrap();
         let body = Body::parse(&t.body).unwrap();
         assert_eq!(
-            commitment(&tx.private_tx_hash, &tx).unwrap(),
+            commitment(&tx.private_tx_hash, &tx, &[]).unwrap(),
             body.commitment,
             "{name}"
         );

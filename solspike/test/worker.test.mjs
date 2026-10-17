@@ -514,8 +514,15 @@ async function identitiesAndReads() {
     exists: true,
     owner: hex(sdk.getAddressEncoder().encode(PDA)),
     lamports: "9",
+    executable: false,
     data: "010203",
   });
+  const encoded = [data.toString("base64"), "base64"];
+  control.rpc.getAccountInfo = async () => ({
+    value: { owner: PDA, lamports: 9n, executable: true, data: encoded },
+  });
+  const program = await ask("account", { account: PDA });
+  assert.equal(program.result.executable, true, "the executable flag of a program account");
   control.rpc.getAccountInfo = async () => ({ value: null });
   assert.deepEqual((await ask("account", { account: PDA })).result, { exists: false });
   control.rpc.getMinimumBalanceForRentExemption = async (space) => 5080n * (128n + space);
@@ -556,9 +563,10 @@ async function reproveChecksTheCommitment() {
   await initialised();
   control.utxos = [syncedInput()];
   const first = landedData();
-  const commitment = await commitmentOf(first);
+  const commitment = await commitmentOf(first, null);
   const args = {
     recipient: "01ab",
+    withdraw: "0",
     payer: PAYER,
     plan: "ab".repeat(32) + "00",
     inputIds: [hex(bytes32(0xaa))],
@@ -587,6 +595,25 @@ async function reproveChecksTheCommitment() {
   control.instructionData = moved;
   await refused("reprove", args, /new proof does not give/, "new data of another payment");
   step("reprove proves and returns only data whose commitment is the approved one");
+  await reproveOfAWithdrawal(first, args);
+}
+
+/** The reprove of a withdrawal binds the leg: the settlement accounts are in every commitment. */
+async function reproveOfAWithdrawal(first, payment) {
+  const to = hex(bytes32(0x66));
+  const commitment = await commitmentOf(first, to);
+  const args = { ...payment, recipient: to, withdraw: "2000000", commitment };
+  control.rebuild = () => ({ messageHash: () => Buffer.from(commitment, "hex") });
+  control.instructionData = first;
+  const done = await ask("reprove", args);
+  assert.equal(done.ok, true, done.error);
+  const leg = { to: sdk.getAddressDecoder().decode(bytes32(0x66)), amount: 2_000_000n };
+  assert.deepEqual(control.rebuilt.withdraw, leg, "the leg goes back into the rebuild");
+  assert.equal(control.rebuilt.recipient, undefined, "a withdrawal has no shielded payee");
+  const plain = { ...args, commitment: payment.commitment };
+  await refused("reprove", plain, /first proof does not give/, "the commitment of no leg");
+  await refused("reprove", { ...args, recipient: "01ab" }, /not a key/, "a short recipient");
+  step("reprove of a withdrawal puts the leg back and binds its settlement accounts");
 }
 
 async function prepareRefusals() {

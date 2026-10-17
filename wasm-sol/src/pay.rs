@@ -19,12 +19,12 @@ use crate::bytes::Reader;
 use crate::check::{parse_transact_data, Facts, Refusal, Run};
 use crate::consts::{Key, SYSTEM_PROGRAM};
 use crate::hashes::{owner_hash, Utxo, TREE_ID};
-use crate::intent::{Intent, Pay, Spend};
+use crate::intent::{Intent, Pay, Payee, Spend};
 use crate::pins::Pins;
 use crate::plan::{Plan, Role};
 use crate::program::{
-    approval_digest, commitment, private_tx_hash, proposal_address, Body, KIND_PROPOSAL,
-    MAX_EXECUTE_INPUTS,
+    approval_digest, commitment, max_execute_inputs, private_tx_hash, proposal_address,
+    settlements, Body, KIND_PROPOSAL,
 };
 use crate::rule::{Rule, Violation};
 use crate::spend::{spend_violations, Group, SpendInput, Summary};
@@ -69,8 +69,16 @@ impl Seen {
 
     /// Reads the wire form. The whole input must be used.
     pub fn decode(bytes: &[u8]) -> Result<Self, String> {
-        let short = |_| "seen: the input ends inside a field".to_string();
         let mut r = Reader::new(bytes);
+        let seen = Self::read(&mut r)?;
+        if !r.is_empty() {
+            return Err("bytes follow the seen data".to_string());
+        }
+        Ok(seen)
+    }
+
+    fn read(r: &mut Reader) -> Result<Self, String> {
+        let short = |_| "seen: the input ends inside a field".to_string();
         let account = match r.u8().map_err(short)? {
             0 => None,
             1 => {
@@ -85,10 +93,105 @@ impl Seen {
         for _ in 0..r.u16().map_err(short)? {
             approved.push((r.array().map_err(short)?, r.array().map_err(short)?));
         }
-        if !r.is_empty() {
-            return Err("bytes follow the seen data".to_string());
-        }
         Ok(Self { account, approved })
+    }
+}
+
+/// A flag byte of a wire form: 0 or 1.
+fn flag(byte: u8, what: &str) -> Result<bool, String> {
+    match byte {
+        0 => Ok(false),
+        1 => Ok(true),
+        _ => Err(format!("{what}: a flag is not 0 or 1")),
+    }
+}
+
+/// What the device read of the public recipient of a withdrawal: its account (none when it does
+/// not exist) and the rent-exempt minimum of an account with no data (the Worker `rent`).
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct Recipient {
+    pub account: Option<RecipientAccount>,
+    pub rent_min: u64,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct RecipientAccount {
+    pub owner: Key,
+    pub lamports: u64,
+    pub executable: bool,
+}
+
+impl Recipient {
+    /// The wire form: a flag, then the owner, the lamports (u64 LE) and the executable flag of
+    /// the account, then the rent minimum (u64 LE).
+    pub fn encode(&self) -> Vec<u8> {
+        let mut out = vec![u8::from(self.account.is_some())];
+        if let Some(account) = &self.account {
+            out.extend_from_slice(&account.owner);
+            out.extend_from_slice(&account.lamports.to_le_bytes());
+            out.push(u8::from(account.executable));
+        }
+        out.extend_from_slice(&self.rent_min.to_le_bytes());
+        out
+    }
+
+    fn read(r: &mut Reader) -> Result<Self, String> {
+        let short = |_| "recipient: the input ends inside a field".to_string();
+        let account = if flag(r.u8().map_err(short)?, "recipient")? {
+            Some(RecipientAccount {
+                owner: r.array().map_err(short)?,
+                lamports: r.u64().map_err(short)?,
+                executable: flag(r.u8().map_err(short)?, "recipient")?,
+            })
+        } else {
+            None
+        };
+        let rent_min = r.u64().map_err(short)?;
+        Ok(Self { account, rent_min })
+    }
+}
+
+/// What the device read from the chain for a payment: the proposal account and the approvals of
+/// its seats (`seen`; none before the account exists, for the proposer), and the recipient account
+/// of a withdrawal (none for a private payment). It is the input `chain` of `check_payment`.
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub struct Chain {
+    pub seen: Option<Seen>,
+    pub recipient: Option<Recipient>,
+}
+
+impl Chain {
+    /// The wire form: a flag and the `Seen` wire, then a flag and the `Recipient` wire.
+    pub fn encode(&self) -> Result<Vec<u8>, String> {
+        let mut out = vec![u8::from(self.seen.is_some())];
+        if let Some(seen) = &self.seen {
+            out.extend(seen.encode()?);
+        }
+        out.push(u8::from(self.recipient.is_some()));
+        if let Some(recipient) = &self.recipient {
+            out.extend(recipient.encode());
+        }
+        Ok(out)
+    }
+
+    /// Reads the wire form. The whole input must be used.
+    pub fn decode(bytes: &[u8]) -> Result<Self, String> {
+        let short = |_| "chain: the input ends inside a field".to_string();
+        let mut r = Reader::new(bytes);
+        let seen = if flag(r.u8().map_err(short)?, "chain")? {
+            Some(Seen::read(&mut r)?)
+        } else {
+            None
+        };
+        let recipient = if flag(r.u8().map_err(short)?, "chain")? {
+            Some(Recipient::read(&mut r)?)
+        } else {
+            None
+        };
+        if !r.is_empty() {
+            return Err("bytes follow the chain data".to_string());
+        }
+        Ok(Self { seen, recipient })
     }
 }
 
@@ -102,21 +205,29 @@ pub struct Payment {
     pub summary: Summary,
 }
 
-/// The rules of section 5 read a spend through a `Transfer` and a message. The payment has
-/// neither, so it gets both: the terms of the payment with no nonce, and a message whose only
-/// instruction is the pool `transact` with no account. An output that names an account index
-/// then names nothing, so only inline owner tags pass, as the program requires.
-fn as_transfer(pay: &Pay) -> Intent {
-    Intent::Transfer {
-        spend: Spend {
-            nonce: [0; 32],
-            expiry: pay.expiry,
-            inputs: pay.inputs,
-            outputs: pay.outputs,
+/// The rules of section 5 read a spend through a `Transfer` (or a `Withdrawal`) and a message.
+/// The payment has neither, so it gets both: the terms of the payment with no nonce, and a message
+/// whose only instruction is the pool `transact` with no account. An output that names an account
+/// index then names nothing, so only inline owner tags pass, as the program requires.
+fn as_spend(pay: &Pay) -> Intent {
+    let spend = Spend {
+        nonce: [0; 32],
+        expiry: pay.expiry,
+        inputs: pay.inputs,
+        outputs: pay.outputs,
+    };
+    match &pay.payee {
+        Payee::Shielded(payee) => Intent::Transfer {
+            spend,
+            payee: payee.clone(),
+            mint: pay.mint,
+            amount: pay.amount,
         },
-        payee: pay.payee.clone(),
-        mint: pay.mint,
-        amount: pay.amount,
+        Payee::Public(recipient) => Intent::Withdrawal {
+            spend,
+            recipient: *recipient,
+            amount: pay.amount,
+        },
     }
 }
 
@@ -169,7 +280,7 @@ fn recompute(pins: &Pins, plan: &Plan, tx: &Transact, device: &Device) -> Result
 fn spend_rules(input: (&Pay, &Plan), tx: &Transact, data: &[u8], device: &Device) -> Checked {
     let (pay, plan) = input;
     let pins = device.pins;
-    let (intent, msg) = (as_transfer(pay), as_message(pins, data));
+    let (intent, msg) = (as_spend(pay), as_message(pins, data));
     let mut run = Run {
         msg: &msg,
         intent: &intent,
@@ -207,6 +318,80 @@ struct Checked {
 /// binds the body hash.
 fn program_addresses(pins: &Pins) -> [Key; 3] {
     [pins.pda, pins.program, SYSTEM_PROGRAM]
+}
+
+/// The accounts that a withdrawal never pays: the SOL there is out of reach of the group (the beta
+/// signs no plain transfer from the group key, the PDA or the nonce account), or the pool and the
+/// program refuse it.
+fn banned_recipients(pins: &Pins) -> [Key; 12] {
+    [
+        pins.pda,
+        pins.group,
+        pins.multisig,
+        pins.nonce_account,
+        pins.sol_interface,
+        pins.pool,
+        pins.registry,
+        pins.user_record,
+        pins.input_tree,
+        pins.output_tree,
+        pins.program,
+        SYSTEM_PROGRAM,
+    ]
+}
+
+/// The recipient account after the withdrawal: an ordinary System account (or a new one) that
+/// holds at least the rent-exempt minimum, else every `execute` fails until the expiry, and the
+/// proposal rent stays locked (no cancel, SOL-52).
+fn recipient_account_violation(read: &Recipient, amount: u64) -> Option<Violation> {
+    let (ordinary, lamports) = match read.account {
+        Some(account) => (
+            account.owner == SYSTEM_PROGRAM && !account.executable,
+            account.lamports,
+        ),
+        None => (true, 0),
+    };
+    let why = if !ordinary {
+        "the recipient account is not an ordinary System account"
+    } else if lamports.saturating_add(amount) < read.rent_min {
+        "after the withdrawal the recipient holds less than the rent-exempt minimum"
+    } else {
+        return None;
+    };
+    Some(Violation::new(Rule::RecipientAccount, why))
+}
+
+/// The public recipient of a withdrawal: never an account of the pool, the program or the group,
+/// and its account as the device read it. An approving device must have read it; the proposer
+/// reads it before it signs the `create` message.
+fn recipient_violations(
+    pins: &Pins,
+    to: (Key, u64),
+    approver: bool,
+    read: Option<&Recipient>,
+) -> Vec<Violation> {
+    let (recipient, amount) = to;
+    let mut out = Vec::new();
+    if banned_recipients(pins).contains(&recipient) {
+        let why = format!("the recipient is the {}", pins.label(&recipient));
+        out.push(Violation::new(Rule::WithdrawalRecipient, why));
+    }
+    match read {
+        Some(read) => out.extend(recipient_account_violation(read, amount)),
+        None if approver => out.push(Violation::new(
+            Rule::RecipientAccount,
+            "the device did not read the recipient account",
+        )),
+        None => {}
+    }
+    out
+}
+
+/// One `execute` carries at most 18 inputs, two fewer per withdrawal leg.
+fn input_violation(inputs: usize, legs: usize) -> Option<Violation> {
+    let cap = max_execute_inputs(legs);
+    let why = format!("{inputs} inputs, and one execute carries {cap}");
+    (inputs > cap).then(|| Violation::new(Rule::ExecuteInputs, why))
 }
 
 /// The fields of a body against the payment that the device computed.
@@ -285,13 +470,15 @@ fn once_violation(seen: &Seen, commitment: &Key, body: &[u8]) -> Option<Violatio
     })
 }
 
-/// The private payment `pay` with its plan and its `transact` data, on the device with the pins
-/// of the PDA identity. `seen` is the chain and approval state; `None` before the account exists
-/// (the proposer, when it signs the `create` message).
+/// The payment `pay` (a private payment or a withdrawal) with its plan and its `transact` data,
+/// on the device with the pins of the PDA identity. `seen` is the chain and approval state; `None`
+/// before the account exists (the proposer, when it signs the `create` message). `recipient` is
+/// what the device read of the public recipient of a withdrawal.
 pub fn approve_pay(
     proposal: (&Pay, &Plan, &[u8]),
     device: &Device,
     seen: Option<&Seen>,
+    recipient: Option<&Recipient>,
 ) -> Result<Payment, Refusal> {
     let (pay, plan, data) = proposal;
     let pins = device.pins;
@@ -300,14 +487,19 @@ pub fn approve_pay(
         .map_err(|why| refuse(vec![Violation::new(Rule::PlanInvalid, why)]))?;
     let mut out = pin_violations(pins, owner, &device.snapshot.group_keys());
     let tx = parse_transact_data(data).map_err(|v| refuse(vec![v]))?;
-    let run = spend_rules((pay, plan), &tx, data, device);
+    let mut run = spend_rules((pay, plan), &tx, data, device);
     out.extend(run.out);
-    if tx.inputs.len() > MAX_EXECUTE_INPUTS {
-        let why = format!(
-            "{} inputs, and one execute carries {MAX_EXECUTE_INPUTS}",
-            tx.inputs.len()
-        );
-        out.push(Violation::new(Rule::ExecuteInputs, why));
+    let settled = settlements(&pins.sol_interface, pay.recipient());
+    out.extend(input_violation(tx.inputs.len(), settled.len()));
+    if let Some(to) = pay.recipient() {
+        out.extend(recipient_violations(
+            pins,
+            (to, pay.amount),
+            seen.is_some(),
+            recipient,
+        ));
+        // The screen shows the recipient that the commitment binds, from the intent.
+        run.summary.recipient = Some(to);
     }
     let private = recompute(pins, plan, &tx, device)
         .map_err(|why| refuse(vec![Violation::new(Rule::PlanInvalid, why)]))?;
@@ -316,7 +508,7 @@ pub fn approve_pay(
         out.push(Violation::new(Rule::PrivateTxHash, why));
     }
     let plain = |why: String| refuse(vec![Violation::new(Rule::PlanInvalid, why)]);
-    let commitment = commitment(&private, &tx).map_err(plain)?;
+    let commitment = commitment(&private, &tx, &settled).map_err(plain)?;
     let want = body_of(pins, commitment, pay.expiry, pins.payer);
     let body = want.write().map_err(plain)?;
     let (address, bump) = proposal_address(&pins.multisig, &commitment, &body).map_err(plain)?;

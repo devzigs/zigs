@@ -136,14 +136,15 @@ function checkPayer(identity, payer) {
 const sumOf = (entries) => entries.reduce((sum, e) => sum + e.utxo.amount, 0n);
 
 /**
- * The proof inputs that pay `amount` to `recipient` (a ShieldedAddress) from the synced wallet of
- * `identity` ({ address, viewing, owner, groupOwner }), with the change to the owner and `expiry`
- * bound. `payer` (a base58 address) pays the fee: it is not the owner. With `whole`, the proof
- * moves whole UTXOs (moveInputs) and `amount` is the most that it may move. Returns { proofInputs,
- * tree }: the tree is the one that every input sits in.
+ * The proof inputs that pay `amount` to `recipient` (a ShieldedAddress), or withdraw it to the
+ * public account `withdrawTo` (a base58 address), from the synced wallet of `identity` ({ address,
+ * viewing, owner, groupOwner }), with the change to the owner and `expiry` bound. `payer` (a
+ * base58 address) pays the fee: it is not the owner. With `whole`, the proof moves whole UTXOs
+ * (moveInputs) and `amount` is the most that it may move. Returns { proofInputs, tree }: the tree
+ * is the one that every input sits in.
  */
 export function buildProofInputs(sdk, client, identity, wallet, request) {
-  const { recipient, expiry, payer } = request;
+  const { recipient, withdrawTo, expiry, payer } = request;
   checkPayer(identity, payer);
   const { tree } = client;
   const picked = request.whole
@@ -153,7 +154,8 @@ export function buildProofInputs(sdk, client, identity, wallet, request) {
   if (amount > request.amount) throw new Error("the move takes more than the page asked for");
   const inputs = picked.map((entry) => proofInput(sdk, entry, identity.address));
   const transfer = new sdk.ConfidentialTransfer(identity.address, inputs, payer);
-  transfer.send(recipient, sdk.SOL_MINT, amount);
+  if (withdrawTo) transfer.withdraw(sdk.SOL_MINT, amount, { kind: "sol", recipient: withdrawTo });
+  else transfer.send(recipient, sdk.SOL_MINT, amount);
   const open = seal(sdk, identity, wallet, transfer.prepare());
   return { proofInputs: withExpiry(sdk, open, expiry), tree };
 }
@@ -184,13 +186,23 @@ function proofOutput(sdk, slot, owners, tag) {
 }
 
 /**
+ * The SOL leg of a withdrawal `withdraw` ({ to, amount }; none for a payment) as the external data
+ * holds it.
+ */
+const legsOf = (withdraw) =>
+  withdraw
+    ? [{ kind: "sol", isDeposit: false, amount: withdraw.amount, userSolAccount: withdraw.to }]
+    : [];
+
+/**
  * The proof inputs of an approved payment, for a new proof with `payer`: the inputs by id from the
  * synced wallet, the outputs of the plan (payee, change to the identity, dummies), the root seed
- * of the plan, and the external data of the first proof (`first`: parseTransact of its data). The
- * payer is not in the commitment, so any seat can execute. The caller compares the commitment.
+ * of the plan, and the external data of the first proof (`first`: parseTransact of its data) with
+ * the leg of a withdrawal (`withdraw`: { to, amount }, null for a private payment). The payer is
+ * not in the commitment, so any seat can execute. The caller compares the commitment.
  */
 export function rebuildProofInputs(sdk, client, identity, wallet, request) {
-  const { recipient, payer, plan, inputIds, first } = request;
+  const { recipient, withdraw, payer, plan, inputIds, first } = request;
   checkPayer(identity, payer);
   if (first.inputs !== inputIds.length || first.outputs !== plan.outputs.length) {
     throw new Error("the first proof does not have the inputs and outputs of the plan");
@@ -214,6 +226,7 @@ export function rebuildProofInputs(sdk, client, identity, wallet, request) {
     outputs: published,
     resolvedOwnerTags: published.map((o) => o.ownerTag.value),
     messages: [],
+    interfaceTransfers: legsOf(withdraw),
   });
   return new sdk.SppProofInputs({
     payer,

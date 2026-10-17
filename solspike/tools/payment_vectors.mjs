@@ -1,6 +1,7 @@
-// Writes wasm-sol/vectors/pay/*.json: private payments of a PDA identity (ZOLANA.md 7.2) that the
-// TS SDK builds offline, in the layout of wasm-sol/vectors/ts, with the values that the program
-// design needs from the SDK: `privateTxHash` and `messageHash` (the commitment of the approval).
+// Writes wasm-sol/vectors/pay/*.json: private payments and one withdrawal of a PDA identity
+// (ZOLANA.md 7.2) that the TS SDK builds offline, in the layout of wasm-sol/vectors/ts, with the
+// values that the program design needs from the SDK: `privateTxHash` and `messageHash` (the
+// commitment of the approval; for a withdrawal it hashes the SOL interface and the recipient).
 // tests/pay_vectors.rs checks the Rust recompute of both against them.
 //
 //   node solspike/tools/payment_vectors.mjs <Zolana repo> [out dir]
@@ -85,8 +86,9 @@ const tagOf = (tag) =>
     ? { kind: "account", index: tag.index }
     : { kind: "inline", value: hex(tag.value) };
 
-/** One payment: `amounts` of the inputs, `send` to the payee, `salt` byte. */
-async function vector(name, { seedLabel, groupByte, amounts, send, saltByte }) {
+/** One payment: `amounts` of the inputs, `send` to the payee or `withdraw` to the public
+ * account of the Ed25519 key of byte 0x71, `salt` byte. */
+async function vector(name, { seedLabel, groupByte, amounts, send, withdraw, saltByte }) {
   const seed = createHash("sha256").update(`zigs-sol pay vectors: ${seedLabel}`).digest();
   const group = ed25519Public(groupByte);
   const owner = await pdaIdentity(seed, group);
@@ -103,7 +105,9 @@ async function vector(name, { seedLabel, groupByte, amounts, send, saltByte }) {
     return ProofInputUtxo.fromNullifierKey(utxo, owner.nullifier);
   });
   const transfer = new ConfidentialTransfer(owner.address, inputs, sponsor);
-  transfer.send(payee.address, SOL, send);
+  const recipient = kit.getAddressDecoder().decode(ed25519Public(0x71));
+  if (withdraw) transfer.withdraw(SOL, withdraw, { kind: "sol", recipient });
+  else transfer.send(payee.address, SOL, send);
   const prepared = transfer.prepare();
   const txKey = owner.viewing.transactionViewingKey(prepared.firstNullifier);
   const salt = new Uint8Array(16).fill(saltByte);
@@ -161,7 +165,8 @@ async function vector(name, { seedLabel, groupByte, amounts, send, saltByte }) {
       utxoHash: hex(input.hash()),
       nullifier: hex(input.nullifier()),
     })),
-    withdraw: null,
+    withdraw: withdraw ? withdraw.toString() : null,
+    ...(withdraw ? { recipient: hex(kit.getAddressEncoder().encode(recipient)) } : {}),
     outputs,
     privateTxHash: hex(proof.privateTxHash()),
     externalDataHash: hex(proof.externalData.hash()),
@@ -177,6 +182,10 @@ const cases = [
   [
     "pay-two-inputs",
     { seedLabel: "c", groupByte: 0x63, amounts: [4_000_000n, 1_000_000n], send: 4_500_000n },
+  ],
+  [
+    "withdraw-change",
+    { seedLabel: "d", groupByte: 0x64, amounts: [5_000_000n], withdraw: 2_000_000n },
   ],
 ];
 mkdirSync(out, { recursive: true });

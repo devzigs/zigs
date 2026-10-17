@@ -58,19 +58,21 @@ export function check_message(message, intent, pins, snapshot, now) {
  * - `proposal`: `Proposal::encode` of an `Approve` (or `Propose`) intent: the payment, the plan
  *   and the `transact` data.
  * - `pins`, `snapshot`, `now`: as `check_message` takes them.
- * - `seen`: `Seen::encode`, the proposal account that the device read and the bodies that its
- *   seats approved. Empty before the account exists: the chain rules do not run then.
+ * - `chain`: `Chain::encode`, what the device read: the proposal account and the bodies that its
+ *   seats approved (none before the account exists: the rules of the account do not run then),
+ *   and for a withdrawal the recipient account and the rent-exempt minimum. An approving device
+ *   must give both for a withdrawal; the proposer gives the recipient account.
  *
  * `accepted` gives the commitment, the proposal address, the digest that the group signs, the
  * body, then the lines of `check_message`. `refused` and `error` as there.
  * @param {Uint8Array} proposal
  * @param {Uint8Array} pins
  * @param {Uint8Array} snapshot
- * @param {Uint8Array} seen
+ * @param {Uint8Array} chain
  * @param {bigint} now
  * @returns {string}
  */
-export function check_payment(proposal, pins, snapshot, seen, now) {
+export function check_payment(proposal, pins, snapshot, chain, now) {
     let deferred5_0;
     let deferred5_1;
     try {
@@ -81,7 +83,7 @@ export function check_payment(proposal, pins, snapshot, seen, now) {
         const len1 = WASM_VECTOR_LEN;
         const ptr2 = passArray8ToWasm0(snapshot, wasm.__wbindgen_export2);
         const len2 = WASM_VECTOR_LEN;
-        const ptr3 = passArray8ToWasm0(seen, wasm.__wbindgen_export2);
+        const ptr3 = passArray8ToWasm0(chain, wasm.__wbindgen_export2);
         const len3 = WASM_VECTOR_LEN;
         wasm.check_payment(retptr, ptr0, len0, ptr1, len1, ptr2, len2, ptr3, len3, now);
         var r0 = getDataViewMemory0().getInt32(retptr + 4 * 0, true);
@@ -228,16 +230,17 @@ export function sol_approval_digest(proposal, body) {
 
 /**
  * The share of a seat over the approval digest of a payment. It runs `check_payment` with the
- * proposal account first and throws the refusal. `round` is `{"now", "cluster", "keyPackage",
- * "nonces", "commitments"}`, as for `sol_sign_share`; the nonces are those of the digest.
+ * proposal account (and for a withdrawal the recipient account) first and throws the refusal.
+ * `round` is `{"now", "cluster", "keyPackage", "nonces", "commitments"}`, as for
+ * `sol_sign_share`; the nonces are those of the digest.
  * @param {Uint8Array} proposal
  * @param {Uint8Array} pins
  * @param {Uint8Array} snapshot
- * @param {Uint8Array} seen
+ * @param {Uint8Array} chain
  * @param {string} round
  * @returns {string}
  */
-export function sol_approval_share(proposal, pins, snapshot, seen, round) {
+export function sol_approval_share(proposal, pins, snapshot, chain, round) {
     let deferred7_0;
     let deferred7_1;
     try {
@@ -248,7 +251,7 @@ export function sol_approval_share(proposal, pins, snapshot, seen, round) {
         const len1 = WASM_VECTOR_LEN;
         const ptr2 = passArray8ToWasm0(snapshot, wasm.__wbindgen_export2);
         const len2 = WASM_VECTOR_LEN;
-        const ptr3 = passArray8ToWasm0(seen, wasm.__wbindgen_export2);
+        const ptr3 = passArray8ToWasm0(chain, wasm.__wbindgen_export2);
         const len3 = WASM_VECTOR_LEN;
         const ptr4 = passStringToWasm0(round, wasm.__wbindgen_export2, wasm.__wbindgen_export4);
         const len4 = WASM_VECTOR_LEN;

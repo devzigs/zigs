@@ -8,8 +8,8 @@
 //!   (`approve_payment`), which signs no message.
 //! - The fee key of a seat signs those two messages as their payer, Add SOL, and the `create`
 //!   and `execute` messages of the approvals program.
-//! - Nothing signs `register`, a withdrawal or a nonce cancel: the group is never registered,
-//!   and the program has no withdrawal path yet.
+//! - Nothing signs `register`, a nonce withdrawal (tag 4) or a nonce cancel: the group is never
+//!   registered. A withdrawal goes through the program (tags 9 to 11, SOL-32).
 //!
 //! The rules of the PDA identity (Shield and the program messages) run with `Pins::for_pda`.
 
@@ -17,10 +17,10 @@ use crate::approve::{approve, Approved, Device};
 use crate::check::{parse_transact_data, Refusal};
 use crate::consts::MS_EXECUTE;
 use crate::intent::{Intent, Program};
-use crate::pay::{approve_pay, Payment, Seen};
+use crate::pay::{approve_pay, Payment, Recipient, Seen};
 use crate::pins::Pins;
 use crate::plan::{Proposal, Role};
-use crate::program::{approval_digest, commitment, proposal_address};
+use crate::program::{approval_digest, commitment, proposal_address, settlements};
 use crate::roles::pda_address;
 use crate::rule::{Rule, Violation};
 use crate::sign::verify_strict;
@@ -94,6 +94,7 @@ fn execute_violations(bytes: &[u8], intent: &Intent, device: &Device) -> Vec<Vio
         expiry,
         rent_recipient,
         signature,
+        recipient,
         ..
     }) = intent
     else {
@@ -111,7 +112,8 @@ fn execute_violations(bytes: &[u8], intent: &Intent, device: &Device) -> Vec<Vio
             "the payment expired or has another expiry",
         ));
     }
-    let digest = commitment(&tx.private_tx_hash, &tx).and_then(|commitment| {
+    let settled = settlements(&pins.sol_interface, *recipient);
+    let digest = commitment(&tx.private_tx_hash, &tx, &settled).and_then(|commitment| {
         let body = body_of(pins, commitment, *expiry, *rent_recipient).write()?;
         let (proposal, _) = proposal_address(&pins.multisig, &commitment, &body)?;
         Ok(approval_digest(&proposal, &body))
@@ -132,7 +134,13 @@ fn propose_violations(proposal: &Proposal, device: &Device) -> Vec<Violation> {
     else {
         return Vec::new();
     };
-    match approve_pay((pay, &proposal.plan, &proposal.transact), device, None) {
+    // The proposer read the recipient of a withdrawal in `check_payment` before this message.
+    match approve_pay(
+        (pay, &proposal.plan, &proposal.transact),
+        device,
+        None,
+        None,
+    ) {
         Ok(payment) if payment.commitment == *commitment => Vec::new(),
         Ok(_) => vec![Violation::new(
             Rule::BodyCommitment,
@@ -185,12 +193,13 @@ pub fn approve_message(
     }
 }
 
-/// The approval of a payment (`Program::Approve`) with its proposal account on chain. `Ok` holds
-/// the digest that the group key signs.
+/// The approval of a payment (`Program::Approve`) with its proposal account on chain, and for a
+/// withdrawal the recipient account. `Ok` holds the digest that the group key signs.
 pub fn approve_payment(
     proposal: &Proposal,
     device: &Device,
     seen: &Seen,
+    recipient: Option<&Recipient>,
 ) -> Result<Payment, Refusal> {
     let Intent::Program(Program::Approve { pay }) = &proposal.intent else {
         let why = "only the approval of a payment has a digest";
@@ -205,5 +214,6 @@ pub fn approve_payment(
         (pay, &proposal.plan, &proposal.transact),
         &device,
         Some(seen),
+        recipient,
     )
 }

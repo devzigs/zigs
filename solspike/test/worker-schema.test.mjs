@@ -198,6 +198,7 @@ function prepareFields() {
   prepare.avoid = ["ab".repeat(32)];
   checkCommand("prepare", { ...prepare, payer });
   checkCommand("prepare", { ...prepare, payer, kind: "migrate" });
+  checkCommand("prepare", { ...prepare, payer, kind: "withdraw" });
   // The payer (the fee key of a seat, as a base58 address) is a field that must be there.
   const lacking = text(() => checkCommand("prepare", prepare));
   assert.match(lacking, /prepare: field payer is missing or malformed/);
@@ -247,6 +248,7 @@ function programReads(account) {
 function reproveFields(payer) {
   const reprove = {
     recipient: "01ab",
+    withdraw: "0",
     payer,
     plan: "aa".repeat(33),
     inputIds: ["12".repeat(32)],
@@ -264,6 +266,8 @@ function reproveFields(payer) {
     ["transact", "00".repeat(8193)],
     ["commitment", "34".repeat(31)],
     ["payer", "ab".repeat(32)],
+    ["withdraw", "-1"],
+    ["withdraw", "01"],
   ]) {
     assert.match(
       text(() => checkCommand("reprove", { ...reprove, [field]: value })),

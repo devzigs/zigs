@@ -69,12 +69,23 @@ export function executorOf(c, ss) {
   return ready.includes(ss.by) ? ss.by : ready[0];
 }
 
+/**
+ * The payee of the session intent as the Worker `reprove` takes it: the shielded payee of a
+ * payment ("0" withdrawn), or the public recipient and the amount of a withdrawal.
+ */
+function payeeOf(ss) {
+  const intent = decodeIntent(ss.intent);
+  if (intent.kind !== "withdraw") return { recipient: intent.payee, withdraw: "0" };
+  return { recipient: intent.recipient, withdraw: String(intent.amount), to: intent.recipient };
+}
+
 /** The message of the execute with a fresh proof, signed by the fee key of `seat`, as a tx. */
 async function signedExecute(c, worker, ss, seat) {
   const body = bodyOf(String(ss.body));
   const fee = readyFee(c, seat);
+  const { to, ...payee } = payeeOf(ss);
   const { data } = await worker.call("reprove", {
-    recipient: decodeIntent(ss.intent).payee,
+    ...payee,
     payer: base58(fee.key),
     plan: ss.plan,
     inputIds: ss.inputIds,
@@ -82,7 +93,7 @@ async function signedExecute(c, worker, ss, seat) {
     commitment: body.commitment,
   });
   const { blockhashHex } = await worker.call("blockhash");
-  const fields = { expiry: body.expiry, rentRecipient: body.rentRecipient };
+  const fields = { expiry: body.expiry, rentRecipient: body.rentRecipient, recipient: to };
   const intent = bytesOf(
     intentHex("execute", { ...fields, signature: ss.signature, blockhash: blockhashHex }),
   );

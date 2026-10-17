@@ -71,7 +71,7 @@ use; the code that read the solSeed file is removed. Vectors: only the public on
 Copied from the P1 crate: tests/data (the RFC 9591 E.1 inputs and the vectors of frost-ed25519).
 
 The wasm of wasm-sol (build.sh): SHA-256
-49eb09bed759621d94d775bcde991156c122d9068fc52825ae1be32a3c6a679c, 1,077,054 bytes raw, 395,325 gzip
+e5b7c93fe3d1d8d0cdb336f06f16578b57b6dd2aae353d43da0813af00d69944, 1,084,088 bytes raw, 398,393 gzip
 
 Changes of the move into the product repo (not signed; no file of src/ changed, so the rules and
 the checker are those that the verdict signed):
@@ -230,6 +230,27 @@ Devnet upgrade plan). Version 5 (ELF b4bad24c…) keeps the client interface of 
   and that the create funds the address of the body.
 - tools/mutate_sol.py: one more case (`proposal-no-body`), 107 in all.
 
+Withdrawals to a public address (SOL-32, 17 October 2026, not signed by a verifier; ZOLANA.md 5.1,
+step 7). Program version 5 takes SOL withdrawal legs:
+- src/intent.rs: `Pay` has `payee: Payee`, a shielded address or a public key. A public payee pays
+  SOL only. Tags 9, 10 and 11 are Propose, Approve and Execute of a withdrawal (Execute carries the
+  recipient); tags 6 to 8 keep their bytes. The nonce-era tag 4 stays retired.
+- src/program.rs: `commitment` and `external_data_hash` take the settlements of the legs (the SOL
+  interface, then the recipient), hashed after the prefix as the pool does. `max_execute_inputs`:
+  two inputs fewer per leg (16 with one leg).
+- src/pay.rs: a withdrawal runs the rules of the nonce-era Withdrawal on the first proof (one leg
+  of the amount, no payee output), and the verdict echoes the recipient of the intent. New rules
+  `withdrawal-recipient` (no account of the pool, the program or the group) and `recipient-account`
+  (a System account or none, not executable, at least the rent-exempt minimum after the payment),
+  101 rules. `Chain` carries what the device read: the proposal account and the recipient account.
+- src/template.rs, src/beta.rs: the execute of a withdrawal lists the SOL interface and the
+  recipient after the owner PDA, both writable, and its approval check uses the same settlements.
+- src/sign.rs, src/wasm.rs: `check_payment` and `sol_approval_share` take `chain` (`Chain::encode`)
+  in place of `seen`. src/rule.rs: the texts of `execute-inputs` and `intent-retired`.
+- tests: payment.rs (the withdrawal cases), pay_vectors.rs and vectors/pay/withdraw-change.json
+  (the SDK `messageHash` of a withdrawal, solspike/tools/payment_vectors.mjs), fixture.rs.
+- tools/mutate_sol.py: 124 cases, all killed by their named test.
+
 Check: python3 -I tools/pin_check.py (the manifest below against the tree).
 
 files:
@@ -237,7 +258,7 @@ bce3e196c3a4064026d8b57f8fe3ebcca600ac9de008df44e7b61cc8c6b1bb46  src/address.rs
 5a9cd223134111a083252d60a92a5f79134519df15ad3d658daf3090199d427d  src/approve.rs  modified
 84bc02b107fb6077a55d51f4fbb0e936e4417d3c7a42505402ce32cebcc82865  src/assets.rs  verbatim
 7709e0fd39c88ad201925f212f7321c0298db4dbfd3c2122b5ce8ddbdb2ece40  src/assets_devnet.bin  verbatim
-0a580261af7844dba98df185b8c0e08cbf1f6709e1198bc0f924d419404efe3b  src/beta.rs  new
+323ae95cc73e55a1800797a193394d437c861560a3ff6825d6f054d9153b16bc  src/beta.rs  new
 0c2c8885a396432c3d84c077cfea3f4f364c57dc6af0e26d169d3b2fc8e34684  src/bytes.rs  verbatim
 34713776c2e344e7319a8b9b55ff17684ac383c055c07d6133fd95878985f2c7  src/check.rs  modified
 ca3b51e9ea30baeb0b082ca9cb19fe248bc86880d60ae90a3ee3e5a7dcb6b371  src/codec.rs  new
@@ -246,30 +267,30 @@ ca3b51e9ea30baeb0b082ca9cb19fe248bc86880d60ae90a3ee3e5a7dcb6b371  src/codec.rs  
 7580593e6b6b3b9e7deff6ea3ef327abda12ba3d7f369abaf041a01461c9bf28  src/fixed.rs  verbatim
 4e23c21ba7958d4915aa41b691c3d4b24615026f07c793a63ebeda3fd8916c7a  src/frost.rs  new
 e69e4ccacb28931921f072919a6ecf9ff3fe6784e3b129a45ff94fa0ccc17d4c  src/hashes.rs  verbatim
-697fd4909c550feceb70bbfeca6812a9ce0814274cb93e50b87430de8875857b  src/intent.rs  modified
+e19bb2e8f340e69af4eba1f6ee5a6a7ff90c4efe96717a0159e83b491cbe2df9  src/intent.rs  modified
 4ee766f3816d4af38f22fd2377a305515af6df48f01e64af2b8713a575dec1f5  src/lib.rs  modified
-88712e122c969e969a64c3407e9a22291096498bd5bd7764bfe88bff14db89c8  src/pay.rs  new
+2db721aa311b7434779d7f43ec6d464735cf8123e27dcb0a6758bc6e34fbecc0  src/pay.rs  new
 4f344e745afed204088395c0101761a0332688de88ab6e57dec9e85de34907a1  src/pda.rs  verbatim
 3220535ef8fb346b3d0f30de9a1a76f3cc20cf1819f0c2e25274648ee5abfbed  src/pins.rs  modified
 df46e9e90b740789623db0bed212c78a8d87fbf608a04be84cab433327fbb738  src/plan.rs  modified
-eeaa24d975d0886c5831a030bd92be636170e814d5badb279b9bf75b3d179e79  src/program.rs  new
+befdc6018a5ad022638cfa66e3a1b140582f3c57b1b65e91e43599d50181167a  src/program.rs  new
 a44ea553e8f9d4b4cbac46b67a267c8f529de2ce84a34ce96f0f281d6eee156a  src/roles.rs  new
-d6dfcd82fcacc23277ba8b073380d8d8c355a32c9a7dca455bae1440dcb07bf1  src/rule.rs  modified
+1fc00e0f2b85ba285be1e23b231eb455bcff02e80054f8a18e1f2395a94b0a6d  src/rule.rs  modified
 c8c4a33103f0c0e811e5d98e43acc3f0f28316d0976beb65788b47fd3f6d5c1c  src/rules_ct.rs  verbatim
 2fc01d89043505c49e3d3173f2f35ba2b3a407aedb6d811c34ddef7955364ab8  src/rules_ix.rs  modified
 3e6b8cd5a979ea45ec96d4bc42eef02677418b7a0f9d4d7f2aada02c7fcaa625  src/rules_legs.rs  verbatim
 a88175ff29fcbbe4075bf2707c0a825d6026da9e7ae93fa390f7bedda6cc76f4  src/rules_out.rs  verbatim
 423e3c005c541c66efd63c27fbba844819e2ade4071d9fb9e9ffd9a50a3c94d6  src/rules_tx.rs  verbatim
-589933f0a4cd56be2ca3a2474e13a36676bc3b7870ac0700762f720adc087c80  src/sign.rs  new
+1f12c8381a04511ffa789646c93e29776f19d5bee234457f7ae6f3cee86ae6f3  src/sign.rs  new
 fb32fff67235197779cc2b25cc5fe351d57fdb6140d976546b96ddc4484e28d3  src/snapshot.rs  verbatim
 1dd8eb3bea1120da40326466ec83e58fc6f49b40548a553bbcc50bc715131ab8  src/spend.rs  modified
-516e51309fd5d1f13bf15feb207a851d6253c54cea0d01590898181d84d174de  src/template.rs  modified
+d5d0c37b66fdf13d8da6546c743332650b549d2cbdef767010d0c538aa13594f  src/template.rs  modified
 3d7e69437af85c56d9bcf80172af2c7c866140ceb6e3f889d8cbc11dde9cdf05  src/transact.rs  verbatim
 c9d4c2718f755ac5ebeb8a705e036b3ab9183cb7ef95fe1f14da5ffa931c1c9f  src/v1.rs  verbatim
 ddda30596120fcb6731fa8515b0a06c55e2df70070a9082ed64749b022ddb374  src/viewing.rs  verbatim
-304edffc28e493eecd5c2d7a17eaf020cc29fbab29d34ca6a33ff88efbd3fa6a  src/wasm.rs  modified
+80283c7fdc0a100fd1a97603099e55d32d68c6b99bd72edfa4eb4e023aa62c24  src/wasm.rs  modified
 ab14b07d8870f6c201553f0f5bc066fe65b3a0d79144e293a6a3a9ded2e65ad4  tests/asset_pins.rs  verbatim
-3437d4c0d11bb120bc221c3212d11d4512d10e7986433397d634a35a7916d1c2  tests/common/fixture.rs  modified
+532eaab96460db7d21ba2dabe724a9b63299098268610f99c587d7a76c059b6e  tests/common/fixture.rs  modified
 be4feeabff9b735b6d73f7f742151bf76ef64a0488027cf71e04400db9abc7eb  tests/common/mod.rs  modified
 27860e0b1f596abac60c720567a8d943e5f89897847a968069f69ec41cc85a02  tests/common/real.rs  modified
 da99aa78491db7e602f9a5f34a43f95fc84d4fd983db005e7a552fdc03c52534  tests/common/ts.rs  modified
@@ -283,10 +304,10 @@ ca8677c3aa51b9e5ec1d98c20e7c2653cd35c037f384b8dedf876820b9735d6b  tests/fee_key.
 cfc68ad047d9dff9f4cb368c901238019de4d6284cbd23853b5224f97a2bf3ca  tests/frost_dkg.rs  new
 30d06cfe796b1238ac2957de71d1d2b285d5ad4e545fc0bab1ce02144c46fd35  tests/negative.rs  modified
 025fcdc92eb9ea2519a623a14d1ea06073c047b20a188bac5ae3a918ccef50ca  tests/p3c.rs  modified
-6fcd947ea476db7ef5e43ce21905ccc833062aff271de7d4e8bf87f3a0d34281  tests/pay_vectors.rs  new
-f922ca9970bae98b8726e86947ac6d0e0fc40adae15c60aabed27698cf3e719d  tests/payment.rs  new
+d3b6abc6195a5cae856db2fb7543964dcd8c5222221d5a839a6a2e81d6e4f14d  tests/pay_vectors.rs  new
+1139ae2d61ddbc7ef96da54987fca1bcc8c7fec278bacaa3666fa87e4c204390  tests/payment.rs  new
 95290d8683b751fb47f647d29eb2486fcd3dad545aa35a368d1a5fb0733151b1  tests/pin_bytes.rs  verbatim
-26e4206ad3caa46f374a69cbfa41873a3d1d7daf1c3688f97e8f7f769a23adfc  tests/program.rs  new
+588ffdab940ee0f56e9faac65cad18c1db6468e3dc8ad06f58314c1e07e342dc  tests/program.rs  new
 3037d149887a37309b07c8765f862acf9994f0802138861188bd9ffc1869e829  tests/real.rs  modified
 f5bf76e96e869245c0261e3c15548dd7591f1625df9e2e87b3aa58097669fa74  tests/repo_pins.rs  modified
 fd7d2f1c27a36ca3864deb93f4ff9583cde64ac5059d47c17854f677cb9808d6  tests/roles.rs  new
@@ -311,6 +332,7 @@ a28662f01b08d11df5d0b3a8ed87eb4b3e169ac3b64659a43de092158a0a8286  vectors/p2/wir
 34326cbe5a624a482ed5af2f6476d660f6b35e6b29657a9daa3b8a730850c401  vectors/pay/pay-all.json  new
 2aa5708cd23ae3a4833b93b0261e9a2c925bdeeea0896553d6b51608d38af9b2  vectors/pay/pay-change.json  new
 da7ecc3e522333be5fde4b5fd583875797dc68ab17e771bcdaceb8a2aadecc40  vectors/pay/pay-two-inputs.json  new
+7573113e698c77f04809685c01778b8666854afcb8cacf8cecc986311cc39720  vectors/pay/withdraw-change.json  new
 000eab1bc460dde942f2c48570bec3b0a364ea0601f05246ad8f386bb7ea47f7  vectors/program/landed.json  new
 c76c4455922d40026491f8f1e16d10d70b959fde9cb5cdba85915a420d016dc9  vectors/real/chain-p6a.msg  verbatim
 69634e9bc1223148d8074b6313ef6f47e09c89dcf5084fd159e874c16b258304  vectors/real/chain-p6b.msg  verbatim

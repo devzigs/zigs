@@ -12,7 +12,7 @@
 import { agreement } from "./ceremony.js";
 import { CLUSTER, base58 } from "./docs.js";
 import { signingBlock, writerSeats } from "./gate.js";
-import { bytesOf, decodeIntent, seenHex, wireBase64 } from "./intent.js";
+import { bytesOf, chainHex, decodeIntent, wireBase64 } from "./intent.js";
 import { clearPending, dropNonces, pendingShare, savedNonces, spendNonces } from "./nonces.js";
 import { BLOCKHASH_MS, deviceSeen, inputsOf, showable } from "./approve.js";
 import { PAYMENT_EXPIRED, maybeExecute, pastExpiry } from "./execute.js";
@@ -164,8 +164,8 @@ function shareAnswer(c, ss, i, { entry, round, seen }) {
   if (!isPayment(ss)) {
     return c.W.sol_sign_share(wasm.message, wasm.intent, wasm.pins, wasm.snapshot, text);
   }
-  const seenBytes = bytesOf(seenHex(seen.account, seen.approved));
-  return c.W.sol_approval_share(wasm.intent, wasm.pins, wasm.snapshot, seenBytes, text);
+  const chain = bytesOf(chainHex(seen, seen.recipient));
+  return c.W.sol_approval_share(wasm.intent, wasm.pins, wasm.snapshot, chain, text);
 }
 
 async function makeShare(c, ss, i) {
@@ -334,7 +334,7 @@ function maybeReadWallet(c, ss) {
   const unread = c.snaps[ss.id] === undefined || accountMissing(c, ss);
   const waiting = ss.status === "collecting" && unread;
   const kind = decodeIntent(ss.intent)?.kind;
-  if (!waiting || !["transfer", "approve"].includes(kind)) return;
+  if (!waiting || !["transfer", "approve", "withdraw"].includes(kind)) return;
   if (!c.rpcUrl || writerSeats(c)[0] === undefined) return;
   launch(c, "snap:" + ss.id, async () => {
     if (isPayment(ss)) c.seen[ss.id] = { ...(await deviceSeen(c, ss)), at: Date.now() };

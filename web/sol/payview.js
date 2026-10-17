@@ -11,7 +11,15 @@ import { CLUSTER, base58 } from "./docs.js";
 import { EXECUTE_TRIES } from "./execute.js";
 import { feeMismatch, feeOf, mismatchText } from "./fee.js";
 import { readySeat } from "./gate.js";
-import { BASE_FEE, EXECUTE_FEE, NONCE_RENT, bytesOf, decodeIntent, readVerdict } from "./intent.js";
+import {
+  BASE_FEE,
+  EXECUTE_FEE,
+  NONCE_RENT,
+  PAYMENT_KINDS,
+  bytesOf,
+  decodeIntent,
+  readVerdict,
+} from "./intent.js";
 import { usedDigest } from "./nonces.js";
 import { holdsShare, solOf } from "./secrets.js";
 import { solText } from "./session.js";
@@ -23,6 +31,7 @@ const TITLES = {
   createNonce: "Create the nonce account for the move",
   transfer: "Move the beta funds to the program address",
   approve: "Send privately",
+  withdraw: "Withdraw to a public address",
 };
 const WHAT = {
   createNonce:
@@ -34,6 +43,9 @@ const WHAT = {
   approve:
     "Pays SOL from the shielded balance of the group to the payee. The chain shows neither " +
     "the payee nor the amount. The change stays with the group.",
+  withdraw:
+    "Pays SOL from the shielded balance of the group to a public Solana address. The chain " +
+    "shows the recipient and the amount. The change stays with the group.",
 };
 const LIFETIME = {
   createNonce: "About 1 to 2 minutes (a recent blockhash). Approve and sign now.",
@@ -219,23 +231,51 @@ function intentCard(c, act, actions) {
     seatLine(c, "propose-seat", "proposes and pays the fees."),
     el("p", { class: "small", "data-sol": "pay-cost" }, costLine(c)),
     sendForm(c, act, actions),
+    withdrawForm(c, act, actions),
+  );
+}
+
+const input = (c, mark, id, value, attrs = {}) =>
+  c.host.el("input", {
+    class: "input mono",
+    id,
+    "data-sol": mark,
+    autocomplete: "off",
+    value,
+    ...attrs,
+  });
+
+/**
+ * The form of a withdrawal: a public Solana address and an amount. The recipient and the amount
+ * become public at the execute (ZOLANA.md 2).
+ */
+function withdrawForm(c, act, actions) {
+  const { el } = c.host;
+  const to = input(c, "withdraw-to", "sol-withdraw-to", "", { spellcheck: "false" });
+  const amount = input(c, "withdraw-amount", "sol-withdraw-amount", "0.005", {
+    inputmode: "decimal",
+  });
+  const run = () => actions.propose("withdraw", { recipient: to.value, amount: amount.value });
+  return el(
+    "div",
+    { style: "display:grid;gap:8px" },
+    el("h3", {}, "Withdraw to a public address"),
+    el("p", { class: "small" }, "The chain shows the recipient and the amount of a withdrawal."),
+    el("label", { class: "field" }, el("span", {}, "Recipient (Solana address)"), to),
+    el(
+      "div",
+      { class: "row-actions" },
+      el("label", { class: "field" }, el("span", {}, "Amount (SOL)"), amount),
+      button(c, act, "withdraw", "Withdraw", run),
+    ),
   );
 }
 
 /** The form of a private payment: the full shielded address of the payee and an amount. */
 function sendForm(c, act, actions) {
   const { el } = c.host;
-  const field = (mark, id, value, attrs = {}) =>
-    el("input", {
-      class: "input mono",
-      id,
-      "data-sol": mark,
-      autocomplete: "off",
-      value,
-      ...attrs,
-    });
-  const to = field("send-to", "sol-send-to", "", { spellcheck: "false" });
-  const amount = field("send-amount", "sol-send-amount", "0.005", { inputmode: "decimal" });
+  const to = input(c, "send-to", "sol-send-to", "", { spellcheck: "false" });
+  const amount = input(c, "send-amount", "sol-send-amount", "0.005", { inputmode: "decimal" });
   const send = () => actions.propose("pay", { recipient: to.value, amount: amount.value });
   return el(
     "div",
@@ -286,6 +326,15 @@ function moveCard(c, act, actions) {
 const sum = (list) => list.reduce((total, one) => total + one.amount, 0n);
 const utc = (secs) => new Date(Number(secs) * 1000).toISOString().slice(0, 16).replace("T", " ");
 
+/** The rows of a withdrawal: the recipient and the leg that the commitment binds (the checker). */
+function recipientRows(said) {
+  return [
+    ["Recipient (public)", base58(said.recipient)],
+    ["Amount (public)", solText(said.withdrawn)],
+    ["Change", solText(sum(said.change)) + " stays with the group."],
+  ];
+}
+
 /** The payee rows of a private spend, from the fingerprint that the checker answered. */
 function payeeRows(said) {
   return [
@@ -318,25 +367,28 @@ const feesText = (said) =>
   solText(EXECUTE_FEE + said.treeFee) +
   " at the execute.";
 
+const PUBLIC_WITHDRAWAL = "The recipient and the amount are public in the execute transaction. ";
+
 /**
- * The rows of a payment of the program design: what the checker of this device answered, who
- * pays, the rent of the proposal account and what becomes public.
+ * The rows of a payment or a withdrawal of the program design: what the checker of this device
+ * answered, who pays, the rent of the proposal account and what becomes public.
  */
 function paymentRows(c, review) {
-  const { said } = review;
+  const { said, intent } = review;
   const pda = agreement(c).done.pda;
+  const withdraw = intent.kind === "withdraw";
   return [
-    ["What it does", WHAT.approve],
+    ["What it does", WHAT[intent.kind]],
     ["Program address of the group", pda ? base58(pda) : "?"],
-    ...payeeRows(said),
+    ...(withdraw ? recipientRows(said) : payeeRows(said)),
     ["Network fees", feesText(said)],
     ["Proposal rent", solText(rentOf(c)) + ", back to seat " + review.by + " at the execute " +
       "(kept if the proposal expires)."],
     ["Proposal account", base58(said.proposal)],
     ["Lasts", "Until " + utc(said.expiry) + " UTC. A new proof is made at the execute."],
-    ["Public", "The proposal account (the group key, the expiry, the fee address of seat " +
-      review.by + ") is public, and the create transaction keeps it in the chain history. " +
-      LINK_TEXT],
+    ["Public", (withdraw ? PUBLIC_WITHDRAWAL : "") + "The proposal account (the group key, the " +
+      "expiry, the fee address of seat " + review.by + ") is public, and the create transaction " +
+      "keeps it in the chain history. " + LINK_TEXT],
   ];
 }
 
@@ -361,7 +413,8 @@ function rowsOf(c, review) {
   const { intent, info } = review,
     { groupKey } = agreement(c).done;
   let rows;
-  if (intent.kind === "approve") rows = paymentRows(c, review);
+  const payment = PAYMENT_KINDS.has(intent.kind);
+  if (payment) rows = paymentRows(c, review);
   else {
     const fee = BASE_FEE * BigInt(info.signatures) + info.priorityFee;
     rows =
@@ -370,7 +423,7 @@ function rowsOf(c, review) {
         : plainRows(intent, groupKey, fee);
   }
   // A payment: the proposing seat paid the create; the seat that executes pays the execute.
-  const label = intent.kind === "approve" ? "Create paid by seat " : "Fees paid by seat ";
+  const label = payment ? "Create paid by seat " : "Fees paid by seat ";
   rows.splice(1, 0, [label + review.by, base58(review.payer)]);
   return rows;
 }

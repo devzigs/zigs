@@ -9,7 +9,7 @@
 // account, and any seat executes it later with a fresh proof. The other sessions are the move of
 // the beta funds to the PDA (`createNonce` and `transfer`), which sign a v1 message with a nonce.
 import { base58, readDocs } from "./docs.js";
-import { decodeIntent } from "./intent.js";
+import { PAYMENT_KINDS, decodeIntent } from "./intent.js";
 
 export const SESSIONS = "solsessions";
 
@@ -94,8 +94,8 @@ function statusOf(ok) {
   return ok.package ? "signing" : "collecting";
 }
 
-/** A payment of the program design: approved once, executed with a fresh proof. */
-export const isPayment = (ss) => decodeIntent(ss?.intent)?.kind === "approve";
+/** A payment or a withdrawal of the program design: approved once, executed with a new proof. */
+export const isPayment = (ss) => PAYMENT_KINDS.has(decodeIntent(ss?.intent)?.kind);
 
 /** A proposal from before the fee keys has no `feeSig`: the group key paid and signed alone. */
 export const beforeFee = (ss) => !isPayment(ss) && ss.feeSig === undefined;

@@ -8,8 +8,15 @@ const ZERO_KEY = "0".repeat(64);
 // hashBytes of the mint address, as in the UTXO commitment). It is not the asset id 1.
 const SOL_ASSET = 0x2098f5fb9e239eab3ceac3f27b81e481dc3124d55ffed523a839ee8446b64864n;
 const TAG_TRANSACT = 16;
+/**
+ * The SOL interface of the Devnet pool (`["sol_interface", 0]` of the pool program, the SDK
+ * `SOL_INTERFACE`, `sol_interface` of wasm-sol/src/pins.rs): the first settlement account of a
+ * withdrawal. solspike/test/prepare.test.mjs derives it again.
+ */
+export const SOL_INTERFACE = "196756c885b9985ace5f78749c1d5fd1738ca0fae278321e27235883a4fefc92";
 
 export const hex = (bytes) => Array.from(bytes, (b) => b.toString(16).padStart(2, "0")).join("");
+const bytes = (text) => Uint8Array.from(text.match(/../g) ?? [], (h) => parseInt(h, 16));
 
 /** The data of the one instruction of a version 1 message that the pool program runs. */
 export function cutTransact(message, pool) {
@@ -111,12 +118,17 @@ const sha256 = async (bytes) => new Uint8Array(await crypto.subtle.digest("SHA-2
 
 /**
  * The commitment of `transact` data (hex): SHA-256(private_tx_hash || external-data hash), the
- * external-data hash being SHA-256 of the prefix with its first byte cleared (a BN254 field), as
- * the approvals program computes it (ZOLANA.md 7.2). The approval of the group binds this value.
+ * external-data hash being SHA-256 of the prefix, then for a withdrawal to `recipient` (hex; null
+ * for a private payment) the SOL interface and the recipient, with its first byte cleared (a BN254
+ * field), as the approvals program computes it (ZOLANA.md 7.2). The approval of the group binds it.
  */
-export async function commitmentOf(data) {
+export async function commitmentOf(data, recipient) {
   const { prefixLength } = parseTransact(data);
-  const external = await sha256(data.subarray(0, prefixLength));
+  const settled = recipient === null ? "" : SOL_INTERFACE + recipient;
+  const preimageOfExternal = new Uint8Array(prefixLength + settled.length / 2);
+  preimageOfExternal.set(data.subarray(0, prefixLength));
+  preimageOfExternal.set(bytes(settled), prefixLength);
+  const external = await sha256(preimageOfExternal);
   external[0] = 0;
   const preimage = new Uint8Array(64);
   preimage.set(data.subarray(prefixLength, prefixLength + 32));

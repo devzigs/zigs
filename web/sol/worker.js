@@ -174,7 +174,10 @@ async function accountData(address) {
   return { owner, lamports, data: fromBase64(data[0]) };
 }
 
-/** An account as the page checks it (a proposal account): owner, lamports and data, or none. */
+/**
+ * An account as the page checks it (a proposal account, the recipient of a withdrawal): owner,
+ * lamports, the executable flag and data, or none.
+ */
 async function account({ account: address }) {
   const { solanaRpc } = need().client;
   const options = { encoding: "base64", commitment: "confirmed" };
@@ -182,7 +185,8 @@ async function account({ account: address }) {
   if (value === null) return { exists: false };
   const owner = hex(sdk.getAddressEncoder().encode(value.owner));
   const data = hex(fromBase64(value.data[0]));
-  return { exists: true, owner, lamports: value.lamports.toString(), data };
+  const executable = value.executable === true;
+  return { exists: true, owner, lamports: value.lamports.toString(), executable, data };
 }
 
 /** The rent of an account of `space` bytes: what a proposal account holds until it closes. */
@@ -294,27 +298,38 @@ function inspect({ tx }) {
 }
 
 /**
+ * The payee of a payment from the bytes (hex) that the page gives: a ShieldedAddress, or for a
+ * withdrawal the base58 address of the 32 byte key of the public recipient.
+ */
+function payeeOf(recipient, withdraw) {
+  if (!withdraw) return { recipient: sdk.ShieldedAddress.fromBytes(bytes(recipient)) };
+  if (recipient.length !== 64) throw new Error("the recipient of a withdrawal is not a key");
+  return { withdrawTo: sdk.getAddressDecoder().decode(bytes(recipient)) };
+}
+
+/**
  * Syncs a fresh wallet of an identity, builds the proof inputs with the expiry bound and `payer`
  * as the fee payer (transfer.js), proves them and keeps the transact instruction data. `kind` is
- * "pay" (a payment of the PDA identity: the approvals program signs for the PDA, so the
- * instruction lists no owner signer) or "migrate" (the move of the beta funds: whole UTXOs, at
- * most `amount`; the group key is the owner signer, after the nullifier accounts). One command
- * runs at a time: the prover body of the call is kept in the session for the plan.
+ * "pay" or "withdraw" (a payment of the PDA identity to a shielded or a public address: the
+ * approvals program signs for the PDA, so the instruction lists no owner signer) or "migrate" (the
+ * move of the beta funds: whole UTXOs, at most `amount`; the group key is the owner signer, after
+ * the nullifier accounts). One command runs at a time: the prover body of the call is kept in the
+ * session for the plan.
  */
 async function prepare({ kind, recipient, amount, expiry, payer, avoid }) {
   const s = need();
   const until = BigInt(expiry);
   if (until === 0n || until >= U64_MAX) throw new Error("the expiry must be finite");
-  const identity = kind === "pay" ? s.pda : s.old;
+  const migrate = kind === "migrate";
+  const identity = migrate ? s.old : s.pda;
   const wallet = new sdk.Wallet({ identity: identity.address });
   await syncOnce(s, identity, wallet);
   s.trace.prove = null;
-  const to = sdk.ShieldedAddress.fromBytes(bytes(recipient));
-  const whole = kind === "migrate";
-  const request = { recipient: to, amount: BigInt(amount), expiry: until, payer, whole, avoid };
+  const to = payeeOf(recipient, kind === "withdraw");
+  const request = { ...to, amount: BigInt(amount), expiry: until, payer, whole: migrate, avoid };
   const { proofInputs, tree } = buildProofInputs(sdk, s.client, identity, wallet, request);
   const data = await s.client.proveTransact(proofInputs, identity.keys);
-  const signers = kind === "pay" ? [] : ownerSigners(sdk, proofInputs);
+  const signers = migrate ? ownerSigners(sdk, proofInputs) : [];
   const call = { payer, ownerSigners: signers, inputTree: tree, outputTree: s.client.tree, data };
   const instruction = await sdk.transactInstruction(call);
   return describePrepared(instruction.data, wallet, s.trace.prove, until);
@@ -322,20 +337,26 @@ async function prepare({ kind, recipient, amount, expiry, payer, avoid }) {
 
 /**
  * A new proof of an approved payment (ZOLANA.md 7.2), paid by `payer`: the plan, the input ids and
- * the data of the first proof give the same proof inputs (transfer.js). The commitment of the
- * first proof, of the rebuilt inputs and of the new data must each be `commitment`, the value that
- * the group approved, or nothing is proved or returned.
+ * the data of the first proof give the same proof inputs (transfer.js). `withdraw` is "0" for a
+ * private payment to `recipient` (a shielded address), else the SOL that a withdrawal moves to the
+ * public key `recipient`. The commitment of the first proof, of the rebuilt inputs and of the new
+ * data must each be `commitment`, the value that the group approved, or nothing is proved or
+ * returned.
  */
-async function reprove({ recipient, payer, plan, inputIds, transact, commitment }) {
+async function reprove({ recipient, withdraw, payer, plan, inputIds, transact, commitment }) {
   const s = need();
+  const to = payeeOf(recipient, withdraw !== "0");
+  const settled = to.withdrawTo ? recipient : null;
   const firstData = bytes(transact);
-  if ((await commitmentOf(firstData)) !== commitment) {
+  if ((await commitmentOf(firstData, settled)) !== commitment) {
     throw new Error("the first proof does not give the approved commitment");
   }
   const wallet = new sdk.Wallet({ identity: s.pda.address });
   await syncOnce(s, s.pda, wallet);
+  const leg = to.withdrawTo ? { to: to.withdrawTo, amount: BigInt(withdraw) } : null;
   const request = {
-    recipient: sdk.ShieldedAddress.fromBytes(bytes(recipient)),
+    recipient: to.recipient,
+    withdraw: leg,
     payer,
     plan: parsePlan(plan),
     inputIds,
@@ -349,7 +370,7 @@ async function reprove({ recipient, payer, plan, inputIds, transact, commitment 
   const tree = s.client.tree;
   const call = { payer, ownerSigners: [], inputTree: tree, outputTree: tree, data };
   const instruction = await sdk.transactInstruction(call);
-  if ((await commitmentOf(instruction.data)) !== commitment) {
+  if ((await commitmentOf(instruction.data, settled)) !== commitment) {
     throw new Error("the new proof does not give the approved commitment");
   }
   return { data: hex(instruction.data) };

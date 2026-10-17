@@ -1,23 +1,25 @@
 // The proposal of a Solana intent (ZOLANA.md 5, steps 1 and 2, and 7.2). The fee key of the
 // proposing seat pays (fee.js).
 //
-// A private payment (`pay`) is a payment of the program design: the Worker proves it once (the
-// first proof holds the outputs and the ciphertexts that the commitment binds), the checker of
-// this device accepts it as an approver would and gives its commitment, body and proposal account,
-// and the fee key signs the create message of that account, after the checker accepted it. The
-// account is created on chain first, then the seat publishes the proposal part. The group then
-// approves its digest once, with no nonce.
+// A private payment (`pay`) and a withdrawal to a public address (`withdraw`, SOL-32) are payments
+// of the program design: the Worker proves it once (the first proof holds the outputs, the
+// ciphertexts and the leg that the commitment binds), the checker of this device accepts it as an
+// approver would and gives its commitment, body and proposal account, and the fee key signs the
+// create message of that account, after the checker accepted it. The account is created on chain
+// first, then the seat publishes the proposal part. The group then approves its digest once, with
+// no nonce.
 //
 // The move of the beta funds to the PDA (`migrate`, and `createNonce` when the nonce account is
 // missing) is the one nonce payment left: the message is compiled from the fixed template with the
 // nonce, signed by the fee key, run once without the group signature, and then proposed.
 import { agreement } from "./ceremony.js";
-import { base58 } from "./docs.js";
+import { base58, keyOfBase58 } from "./docs.js";
 import { poorFeeText, readyFee } from "./fee.js";
 import { payerSeat, settledBlock } from "./gate.js";
 import {
   bytesOf,
   bytesOfBase64,
+  chainHex,
   hexOf,
   intentHex,
   isAddress,
@@ -30,7 +32,14 @@ import {
   snapshotHex,
   wireBase64,
 } from "./intent.js";
-import { feeSignature, refusalText, reviewOf, rolesOf, signAsFee } from "./approve.js";
+import {
+  feeSignature,
+  recipientRead,
+  refusalText,
+  reviewOf,
+  rolesOf,
+  signAsFee,
+} from "./approve.js";
 import { ensureWorker } from "./session.js";
 import { openInputs, writePart } from "./sessions.js";
 import { pairsBefore } from "./spend.js";
@@ -95,6 +104,22 @@ function typedPayment(args) {
   return { payee, amount };
 }
 
+/** The public recipient (a Solana address) and the amount of a withdrawal, checked. */
+function typedWithdrawal(args) {
+  const payee = keyOfBase58(String(args.recipient ?? "").trim());
+  const amount = lamportsOf(args.amount);
+  if (payee === null) throw new Error("Enter the Solana address of the recipient.");
+  if (amount === null) throw new Error("Enter an amount of SOL, for example 0.005.");
+  return { payee, amount };
+}
+
+// The payments of the program design: the session intent, the intent of its create message, and
+// the check of what a person typed. The Worker kind is the key.
+const PAYMENTS = {
+  pay: { session: "approve", create: "propose", typed: typedPayment },
+  withdraw: { session: "withdraw", create: "proposeWithdraw", typed: typedWithdrawal },
+};
+
 /** The Worker proves the spend; the fields of the proposal part that every kind of spend has. */
 async function proved(c, worker, kind, { payee, amount }, fee) {
   const expiry = BigInt(Math.floor(Date.now() / 1000) + EXPIRY_SECS);
@@ -156,26 +181,31 @@ async function createdBefore(worker, said, error) {
 }
 
 /**
- * A private payment of the program design: the first proof, the check of this device, then the
+ * A payment (`kind` "pay") or a withdrawal ("withdraw") of the program design: the first proof,
+ * the check of this device (for a withdrawal with the recipient account that it read), then the
  * create message of the proposal account. Resolves with the fields of the proposal part.
  */
-async function payDraft(c, worker, seat, fee, args) {
-  const { prepared, fields, terms } = await proved(c, worker, "pay", typedPayment(args), fee);
-  Object.assign(fields, { intent: intentHex("approve", terms), transact: prepared.data });
+async function payDraft(c, worker, seat, fee, { kind, args }) {
+  const how = PAYMENTS[kind];
+  const typed = how.typed(args);
+  const { prepared, fields, terms } = await proved(c, worker, kind, typed, fee);
+  const named = { ...terms, recipient: typed.payee };
+  Object.assign(fields, { intent: intentHex(how.session, named), transact: prepared.data });
   const spend = await draftSpend(c, worker, prepared);
-  const roles = rolesOf(c, seat, "approve");
   const inputs = {
     pins: bytesOf(pinsHex(agreement(c).done, fee.key)),
-    snapshot: bytesOf(snapshotHex(roles, spend)),
+    snapshot: bytesOf(snapshotHex(rolesOf(c, seat, how.session), spend)),
   };
+  const read = kind === "withdraw" ? await recipientRead(worker, typed.payee) : null;
   const now = BigInt(Math.floor(Date.now() / 1000));
   const proposal = bytesOf(paymentHex(fields.intent, fields));
-  const verdict = c.W.check_payment(proposal, inputs.pins, inputs.snapshot, new Uint8Array(0), now);
+  const chain = bytesOf(chainHex(null, read));
+  const verdict = c.W.check_payment(proposal, inputs.pins, inputs.snapshot, chain, now);
   if (!verdict.startsWith("accepted")) throw new Error(refusalText(c.W, verdict));
   const said = readVerdict(verdict);
   const { blockhashHex } = await worker.call("blockhash");
   const lifetime = { commitment: said.commitment, blockhash: blockhashHex };
-  const create = intentHex("propose", { ...terms, ...lifetime });
+  const create = intentHex(how.create, { ...named, ...lifetime });
   const createProposal = bytesOf(paymentHex(create, fields));
   const message = c.W.compile_message(createProposal, inputs.pins, new Uint8Array(0));
   const signature = signAsFee(c, seat, message, createProposal, inputs);
@@ -232,20 +262,21 @@ const BETA = {
 
 /**
  * The first ready seat of this browser proposes `kind`: "pay" (a private payment, with
- * `args.recipient` and `args.amount`), or "createNonce" and "migrate" (the move of the beta funds
- * to the PDA). Its fee key pays. Resolves with the session id.
+ * `args.recipient` a full shielded address and `args.amount`), "withdraw" (to a public Solana
+ * address `args.recipient`), or "createNonce" and "migrate" (the move of the beta funds to the
+ * PDA). Its fee key pays. Resolves with the session id.
  */
 export async function propose(c, kind, args = {}) {
   const block = await settledBlock(c);
   if (block) throw new Error(block);
-  if (kind !== "pay" && !Object.hasOwn(BETA, kind)) throw new Error("Unknown proposal: " + kind);
+  const payment = Object.hasOwn(PAYMENTS, kind);
+  if (!payment && !Object.hasOwn(BETA, kind)) throw new Error("Unknown proposal: " + kind);
   const seat = payerSeat(c);
   const fee = readyFee(c, seat);
   const worker = await ensureWorker(c);
-  const fields =
-    kind === "pay"
-      ? await payDraft(c, worker, seat, fee, args)
-      : await betaFields(c, worker, seat, fee, await BETA[kind](c, worker, seat, fee));
+  const fields = payment
+    ? await payDraft(c, worker, seat, fee, { kind, args })
+    : await betaFields(c, worker, seat, fee, await BETA[kind](c, worker, seat, fee));
   const id = newId();
   await writePart(c, id, "proposal", { ...fields, createdAt: Date.now() }, { seat, create: true });
   c.host.log("seat " + seat + ": proposed " + kind);

@@ -18,17 +18,36 @@ pub struct Spend {
     pub outputs: u8,
 }
 
-/// A private payment of the program design (ZOLANA.md 7.2): what the group approves once with
-/// its digest. The approval binds no nonce: the executor proves again at execution.
+/// A payment of the program design (ZOLANA.md 7.2): what the group approves once with its digest.
+/// The approval binds no nonce: the executor proves again at execution.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Pay {
     /// The finite expiry of the pool data and of the proposal body.
     pub expiry: u64,
     pub inputs: u8,
     pub outputs: u8,
-    pub payee: Address,
+    pub payee: Payee,
+    /// The asset. A withdrawal pays SOL only: its mint is all zero and is not on the wire.
     pub mint: Key,
     pub amount: u64,
+}
+
+/// Who a payment pays: the full shielded address of a private payment, or the public SOL account
+/// of a withdrawal through the program (SOL-32).
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum Payee {
+    Shielded(Address),
+    Public(Key),
+}
+
+impl Pay {
+    /// The public recipient of a withdrawal, none for a private payment.
+    pub fn recipient(&self) -> Option<Key> {
+        match self.payee {
+            Payee::Public(recipient) => Some(recipient),
+            Payee::Shielded(_) => None,
+        }
+    }
 }
 
 /// One of the intents of ZOLANA.md section 5, second table, and of the program design (7.2).
@@ -85,12 +104,14 @@ pub enum Program {
         blockhash: Key,
     },
     /// The `execute` message: the approval of the group in an Ed25519 instruction, then the
-    /// program with a fresh proof. The fee key of the executing seat signs it alone.
+    /// program with a fresh proof. The fee key of the executing seat signs it alone. `recipient`
+    /// is the public recipient of a withdrawal (tag 11), none for a private payment (tag 7).
     Execute {
         expiry: u64,
         rent_recipient: Key,
         signature: [u8; 64],
         blockhash: Key,
+        recipient: Option<Key>,
     },
     /// The approval of a payment. It is no message: the group key signs its 32-byte digest.
     Approve { pay: Pay },
@@ -120,7 +141,7 @@ impl Program {
                 commitment,
                 blockhash,
             } => {
-                out.push(6);
+                out.push(if pay.recipient().is_some() { 9 } else { 6 });
                 encode_pay(out, pay);
                 out.extend_from_slice(commitment);
                 out.extend_from_slice(blockhash);
@@ -130,37 +151,42 @@ impl Program {
                 rent_recipient,
                 signature,
                 blockhash,
+                recipient,
             } => {
-                out.push(7);
+                out.push(if recipient.is_some() { 11 } else { 7 });
                 out.extend_from_slice(&expiry.to_le_bytes());
                 out.extend_from_slice(rent_recipient);
                 out.extend_from_slice(signature);
                 out.extend_from_slice(blockhash);
+                out.extend_from_slice(recipient.as_ref().map_or(&[][..], |key| &key[..]));
             }
             Program::Approve { pay } => {
-                out.push(8);
+                out.push(if pay.recipient().is_some() { 10 } else { 8 });
                 encode_pay(out, pay);
             }
         }
     }
 
-    /// Reads the fields after the tag byte `tag`, which must be 6, 7 or 8.
+    /// Reads the fields after the tag byte `tag`: 6 to 8 for a private payment, 9 to 11 for a
+    /// withdrawal (the same intents with a public recipient).
     fn read(tag: u8, r: &mut Reader) -> Result<Self, String> {
         let short = |_| "the intent ends inside a field".to_string();
+        let public = tag >= 9;
         Ok(match tag {
-            6 => Program::Propose {
-                pay: decode_pay(r).map_err(short)?,
+            6 | 9 => Program::Propose {
+                pay: decode_pay(r, public).map_err(short)?,
                 commitment: r.array().map_err(short)?,
                 blockhash: r.array().map_err(short)?,
             },
-            7 => Program::Execute {
+            7 | 11 => Program::Execute {
                 expiry: r.u64().map_err(short)?,
                 rent_recipient: r.array().map_err(short)?,
                 signature: r.array().map_err(short)?,
                 blockhash: r.array().map_err(short)?,
+                recipient: public.then(|| r.array()).transpose().map_err(short)?,
             },
-            8 => Program::Approve {
-                pay: decode_pay(r).map_err(short)?,
+            8 | 10 => Program::Approve {
+                pay: decode_pay(r, public).map_err(short)?,
             },
             tag => return Err(format!("unknown intent tag {tag}")),
         })
@@ -348,21 +374,33 @@ fn decode_spend(r: &mut Reader) -> Result<Spend, crate::bytes::Short> {
     })
 }
 
+/// A private payment writes the shielded address and the mint; a withdrawal writes its recipient.
 fn encode_pay(out: &mut Vec<u8>, pay: &Pay) {
     out.extend_from_slice(&pay.expiry.to_le_bytes());
     out.extend_from_slice(&[pay.inputs, pay.outputs]);
-    pay.payee.write(out);
-    out.extend_from_slice(&pay.mint);
+    match &pay.payee {
+        Payee::Shielded(address) => {
+            address.write(out);
+            out.extend_from_slice(&pay.mint);
+        }
+        Payee::Public(recipient) => out.extend_from_slice(recipient),
+    }
     out.extend_from_slice(&pay.amount.to_le_bytes());
 }
 
-fn decode_pay(r: &mut Reader) -> Result<Pay, crate::bytes::Short> {
+fn decode_pay(r: &mut Reader, public: bool) -> Result<Pay, crate::bytes::Short> {
+    let (expiry, inputs, outputs) = (r.u64()?, r.u8()?, r.u8()?);
+    let (payee, mint) = if public {
+        (Payee::Public(r.array()?), [0; 32])
+    } else {
+        (Payee::Shielded(Address::read(r)?), r.array()?)
+    };
     Ok(Pay {
-        expiry: r.u64()?,
-        inputs: r.u8()?,
-        outputs: r.u8()?,
-        payee: Address::read(r)?,
-        mint: r.array()?,
+        expiry,
+        inputs,
+        outputs,
+        payee,
+        mint,
         amount: r.u64()?,
     })
 }

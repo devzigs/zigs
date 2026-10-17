@@ -25,7 +25,8 @@ use crate::fixed::{AssetKind, Deposit, Entry, Register};
 use crate::intent::{Intent, Program};
 use crate::pins::Pins;
 use crate::program::{
-    approval_digest, approval_ix_data, cancellation_address, commitment, proposal_address, Body,
+    approval_digest, approval_ix_data, cancellation_address, commitment, proposal_address,
+    settlements, Body,
 };
 use crate::transact::{Leg, Transact};
 use crate::v1::{Config, Ix, Message};
@@ -366,18 +367,21 @@ fn propose(pins: &Pins, commitment: Key, expiry: u64) -> Result<ExpectedIx, Stri
 }
 
 /// The Ed25519 approval and `execute`. The body and its digest follow from the commitment of the
-/// `transact` data, so a signature of the group fits only the payment that it approved.
+/// `transact` data, so a signature of the group fits only the payment that it approved. A
+/// withdrawal adds its settlement accounts after the owner PDA, as the pool reads them.
 fn execute(program: &Program, pins: &Pins, tx: &Transact) -> Result<Vec<ExpectedIx>, String> {
     let Program::Execute {
         expiry,
         rent_recipient,
         signature,
+        recipient,
         ..
     } = program
     else {
         return Err("not an execute".to_string());
     };
-    let commitment = commitment(&tx.private_tx_hash, tx)?;
+    let settled = settlements(&pins.sol_interface, *recipient);
+    let commitment = commitment(&tx.private_tx_hash, tx, &settled)?;
     let body = body_of(pins, commitment, *expiry, *rent_recipient).write()?;
     let (proposal, _) = proposal_address(&pins.multisig, &commitment, &body)?;
     let digest = approval_digest(&proposal, &body);
@@ -391,8 +395,11 @@ fn execute(program: &Program, pins: &Pins, tx: &Transact) -> Result<Vec<Expected
         acct(INSTRUCTIONS_SYSVAR, false, false),
     ];
     accounts.extend(transact_head(pins, tx)?);
-    // The owner PDA is the last account and signs only inside the program (`invoke_signed`).
+    // The owner PDA is the last owner signer and signs only inside the program (`invoke_signed`).
     accounts.push(acct(pins.group, false, false));
+    for (sol_interface, to) in settled {
+        accounts.extend([acct(sol_interface, false, true), acct(to, false, true)]);
+    }
     Ok(vec![
         ix(ED25519_PROGRAM, Vec::new(), Data::Exact(approval)),
         ix(pins.program, accounts, Data::Execute),

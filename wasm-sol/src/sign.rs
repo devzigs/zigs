@@ -29,7 +29,7 @@ use crate::beta::{approve_message, approve_payment, Signer};
 use crate::bytes::hex;
 use crate::codec::{blake2b_256, from_json, text_of, unhex, unhex_array};
 use crate::frost::{check_cluster, id_map, key_bytes, seat_of};
-use crate::pay::Seen;
+use crate::pay::Chain;
 use crate::pins::Pins;
 use crate::plan::Proposal;
 use crate::snapshot::Snapshot;
@@ -160,10 +160,11 @@ pub fn sign_share(message: &[u8], check: &Check, round: &str) -> Result<String, 
     .to_string())
 }
 
-/// The approval of a payment (ZOLANA.md 7.2), what the device saw on chain, and the round.
+/// The approval of a payment (ZOLANA.md 7.2) and what the device read from the chain
+/// (`Chain::encode`).
 pub struct ApprovalCheck<'a> {
     pub check: Check<'a>,
-    pub seen: &'a [u8],
+    pub chain: &'a [u8],
 }
 
 /// The signature share of one seat over the approval digest of a payment: `{"seat", "digest",
@@ -175,13 +176,18 @@ pub fn approval_share(input: &ApprovalCheck, round: &str) -> Result<String, Stri
     let proposal = Proposal::decode(input.check.intent)?;
     let snapshot = Snapshot::decode(input.check.snapshot)?;
     let pins = Pins::decode(input.check.pins)?;
-    let seen = Seen::decode(input.seen)?;
+    let chain = Chain::decode(input.chain)?;
+    let seen = chain
+        .seen
+        .as_ref()
+        .ok_or("a share needs the proposal account that the device read")?;
     let device = Device {
         pins: &pins,
         snapshot: &snapshot,
         now: round.now,
     };
-    let payment = approve_payment(&proposal, &device, &seen).map_err(|r| refused(&r))?;
+    let payment = approve_payment(&proposal, &device, seen, chain.recipient.as_ref())
+        .map_err(|r| refused(&r))?;
     if round.digest != payment.digest {
         return Err("the nonces were made for another approval".to_string());
     }

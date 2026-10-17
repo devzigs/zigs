@@ -15,7 +15,7 @@ import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
 import { approve, deviceSeen, reviewOf } from "../sol/approve.js";
 import { agreement } from "../sol/ceremony.js";
-import { base58 } from "../sol/docs.js";
+import { base58, keyOfBase58 } from "../sol/docs.js";
 import { EXECUTE_TRIES, executorOf, tryAgain } from "../sol/execute.js";
 import { ZERO_KEY, bytesOf, decodeIntent, readVerdict } from "../sol/intent.js";
 import { savedNonces, saveNonces } from "../sol/nonces.js";
@@ -298,6 +298,80 @@ step("two seats approve the digest once, and the proposing seat executes a fresh
   assert.equal(ssOf(id).signature.length, 128, "with the one approval of the group");
 }
 step("a stale root at the execute is proved again, and the one approval still holds");
+
+// ── A withdrawal to a public address (SOL-32): the leg goes back into every proof, the screen
+// shows the recipient and the amount that the checker bound, and the execute pays through the SOL
+// interface (the fake program checks the settlement accounts and the commitment) ──
+const TO = G.withdraw.withdraw.recipient;
+const proposedWithdrawal = async (recipient = base58(TO)) => {
+  while (Math.floor(Date.now() / 1000) <= lastSecond) await tick();
+  const id = await proposed("withdraw", { recipient, amount: "0.002" });
+  lastSecond = Math.floor(Date.now() / 1000);
+  return id;
+};
+{
+  await forgetPairs();
+  chain.utxos = [utxoOf(G.withdraw)];
+  chain.prepared = (args) => {
+    assert.equal(args.kind, "withdraw", "a withdrawal spends the PDA identity");
+    assert.equal(args.recipient, TO, "the Worker proves for the typed recipient");
+    assert.equal(args.amount, G.withdraw.withdraw.amount, "and the typed amount");
+    return preparedOf(G.withdraw, args);
+  };
+  const reprovedPay = chain.reproved;
+  chain.reproved = (args) => {
+    const leg = [args.recipient, args.withdraw];
+    assert.deepEqual(leg, [TO, G.withdraw.withdraw.amount], "the leg goes back into the proof");
+    const expiry = decodeIntent(ssOf(current).intent).expiry;
+    return { data: transactOf(G.withdraw, expiry, { proof: "05", root: 300 }) };
+  };
+  const id = await proposedWithdrawal();
+  current = id;
+  const intent = decodeIntent(ssOf(id).intent);
+  assert.deepEqual([intent.kind, intent.recipient, intent.amount], ["withdraw", TO, 2_000_000n]);
+  // The device reads its wallet, the account and the recipient for the review, with no click.
+  await waitFor("the screen of seat 2", () => reviewOf(c, ssOf(id), 2).ok);
+  const rows = rowsOf(id);
+  assert.equal(rows["Recipient (public)"], base58(TO), "the recipient that the checker bound");
+  assert.equal(rows["Amount (public)"], "0.002 SOL", "the leg that the checker bound");
+  assert.match(rows["What it does"], /to a public Solana address/);
+  assert.match(rows.Public, /^The recipient and the amount are public/);
+  assert.equal(rows["Create paid by seat 1"], feeAddress(1));
+  await approve(c, ssOf(id), 1);
+  await approve(c, ssOf(id), 2);
+  await waitStatus(id, "sent");
+  const landed = chain.landed.find((x) => x.signature === ssOf(id).txId);
+  assert.ok(landed, "the execute of the withdrawal landed");
+  assert.ok(landed.message.includes(TO), "the execute names the recipient");
+  assert.equal(chain.accounts.has(base58(ssOf(id).account)), false, "and closed the account");
+  chain.reproved = reprovedPay;
+}
+step("a withdrawal shows its public recipient and amount, and its execute pays via the pool");
+
+// ── A recipient that could never take the SOL: the proposer and the approvers refuse it ──
+{
+  await forgetPairs();
+  // The Worker proves for any typed key: the checker of the device is what refuses.
+  chain.prepared = (args) => preparedOf(G.withdraw, args);
+  await assert.rejects(() => proposedWithdrawal(base58(G.group.pda)), /no account of the pool/);
+  await assert.rejects(() => proposedWithdrawal("not an address"), /Solana address of the/);
+  assert.equal(keyOfBase58(base58(TO)), TO, "an address reads back as its key");
+  assert.equal(keyOfBase58("1".repeat(33)), null, "33 zero bytes are no key");
+  assert.equal(keyOfBase58("1".repeat(31)), null, "31 zero bytes are no key");
+  // The proposer reads the recipient account too, and refuses one of a program.
+  chain.accounts.set(base58(TO), { owner: "11".repeat(32), data: "" });
+  await assert.rejects(() => proposedWithdrawal(), /ordinary System account/);
+  chain.accounts.delete(base58(TO));
+  const id = await proposedWithdrawal();
+  current = id;
+  // Then the recipient account becomes an account of a program: no seat approves the payment.
+  chain.accounts.set(base58(TO), { owner: "11".repeat(32), data: "" });
+  await assert.rejects(() => approve(c, ssOf(id), 2), /ordinary System account/);
+  chain.accounts.delete(base58(TO));
+  chain.utxos = [utxoOf(G.pay)];
+  chain.prepared = preparedPay;
+}
+step("a withdrawal to an account of the group or of a program is refused by every device");
 
 const pause = (ms) => new Promise((go) => setTimeout(go, ms));
 const count = (cmd) => chain.commands.filter((m) => m.cmd === cmd).length;

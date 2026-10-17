@@ -30,13 +30,15 @@ export function check_message(message: Uint8Array, intent: Uint8Array, pins: Uin
  * - `proposal`: `Proposal::encode` of an `Approve` (or `Propose`) intent: the payment, the plan
  *   and the `transact` data.
  * - `pins`, `snapshot`, `now`: as `check_message` takes them.
- * - `seen`: `Seen::encode`, the proposal account that the device read and the bodies that its
- *   seats approved. Empty before the account exists: the chain rules do not run then.
+ * - `chain`: `Chain::encode`, what the device read: the proposal account and the bodies that its
+ *   seats approved (none before the account exists: the rules of the account do not run then),
+ *   and for a withdrawal the recipient account and the rent-exempt minimum. An approving device
+ *   must give both for a withdrawal; the proposer gives the recipient account.
  *
  * `accepted` gives the commitment, the proposal address, the digest that the group signs, the
  * body, then the lines of `check_message`. `refused` and `error` as there.
  */
-export function check_payment(proposal: Uint8Array, pins: Uint8Array, snapshot: Uint8Array, seen: Uint8Array, now: bigint): string;
+export function check_payment(proposal: Uint8Array, pins: Uint8Array, snapshot: Uint8Array, chain: Uint8Array, now: bigint): string;
 
 /**
  * The message bytes of a proposal. A message of another shape than the template is an error.
@@ -62,10 +64,11 @@ export function sol_approval_digest(proposal: string, body: string): string;
 
 /**
  * The share of a seat over the approval digest of a payment. It runs `check_payment` with the
- * proposal account first and throws the refusal. `round` is `{"now", "cluster", "keyPackage",
- * "nonces", "commitments"}`, as for `sol_sign_share`; the nonces are those of the digest.
+ * proposal account (and for a withdrawal the recipient account) first and throws the refusal.
+ * `round` is `{"now", "cluster", "keyPackage", "nonces", "commitments"}`, as for
+ * `sol_sign_share`; the nonces are those of the digest.
  */
-export function sol_approval_share(proposal: Uint8Array, pins: Uint8Array, snapshot: Uint8Array, seen: Uint8Array, round: string): string;
+export function sol_approval_share(proposal: Uint8Array, pins: Uint8Array, snapshot: Uint8Array, chain: Uint8Array, round: string): string;
 
 /**
  * The commitment of a seat to its secret part, as hex.

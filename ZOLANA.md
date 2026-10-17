@@ -260,8 +260,9 @@ recipient, and its life depends on a nonce, an expiry and roots.
 | Propose (5.1) | The approvals program `create` (the payer funds the proposal account). A recent blockhash: the fee key of the proposing seat signs alone | None | None |
 | Execute (5.1) | The Ed25519 instruction with the approval, then the program `execute` with the `transact` accounts and the owner PDA last. A recent blockhash: the fee key of the executing seat signs alone | None | Payee, change to the PDA identity, dummies |
 
-Nothing signs the intents of the beta that the program design retired: register, a withdrawal and
-a nonce cancel (`intent-retired`). Withdrawals wait for SOL-36 condition 1.
+Nothing signs the intents of the beta that the program design retired: register, a nonce
+withdrawal (tag 4) and a nonce cancel (`intent-retired`). A withdrawal goes through the program
+(5.1, step 7; SOL-32).
 
 The wasm refuses these in every intent: a pool `deposit` (tag 15) outside the Shield intent,
 `merge_transact` (tag 17), `update_keys`, `set_merging_enabled`, `WithdrawNonceAccount`,
@@ -352,9 +353,23 @@ and the rent. The rent comes back to that seat at the execute. The group key sig
    as one proof can (at most 8), and pays them to the PDA address with no change.
    A group key with more notes moves them in several steps, and a payment to the old address
    shows the card again.
+7. **A withdrawal to a public address** (SOL-32). The same flow, with `prepare` kind `withdraw`:
+   the proof spends the inputs to the change and one SOL withdrawal leg
+   (`ConfidentialTransfer.withdraw` of the SDK). The session intent is tag 10 (the recipient key
+   and the amount), the create message tag 9 and the execute tag 11. The commitment hashes the SOL
+   interface of the pool and the recipient after the prefix, as the pool does, so the approval
+   binds the recipient and the amount (the SDK vector `withdraw-change` pins it). The execute lists
+   both after the owner PDA, writable. The proposer and every approving device read the recipient
+   account: it is no account of the pool, the program or the group (`withdrawal-recipient`); it is
+   a System account or does not exist yet, it is not executable, and after the payment it holds at
+   least the rent-exempt minimum of an account with no data (`recipient-account`). The screen
+   shows the recipient and the amount that the commitment binds, and says that both are public.
+   One execute of a withdrawal carries at most 16 inputs. A recipient account that changes after
+   the approval (a program takes it over, or its SOL drops below the minimum) makes every execute
+   fail until the expiry, and the rent of the proposal stays locked (SOL-52).
 
-Not built: withdrawals and deposits of public SOL through the program (SOL-36 condition 1), and a
-cancel or close of a proposal (SOL-52). A proposal account that expires keeps its rent until its
+Not built: deposits of public SOL through the program (Add SOL deposits straight into the pool), and
+a cancel or close of a proposal (SOL-52). A proposal account that expires keeps its rent until its
 abort authority (the fee key of the proposing seat) cancels it. So does a create that landed when
 its tab crashed before it published the proposal part.
 
@@ -1097,8 +1112,9 @@ it binds the program id and not the code.
   the record. That rent goes to the body's rent recipient when anyone closes the record after the
   expiry.
 - Not built: a cancel of a proposal (SOL-52). SOL withdrawals through the program are in version 4
-  (condition 1 below) and version 5. The page derives the proposal addresses of version 5. Devnet
-  runs version 5 since 17 October 2026 (the upgrade plan below).
+  (condition 1 below) and version 5, and the page proposes them (5.1, step 7; SOL-32). The page
+  derives the proposal addresses of version 5. Devnet runs version 5 since 17 October 2026 (the
+  upgrade plan below).
   Deposits from public SOL need no leg in the program: the beta's Add SOL deposits straight into
   the pool, to the shielded address of the PDA identity.
 - One `execute` with one input tree spends at most 18 inputs (the CPI copies at most 24

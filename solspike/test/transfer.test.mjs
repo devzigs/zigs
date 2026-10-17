@@ -398,6 +398,33 @@ function aPaymentIsRebuiltWithItsCommitmentForAnyPayer() {
   step("a payment of the PDA rebuilt for another payer has the commitment of its first proof");
 }
 
+function aWithdrawalIsRebuiltWithItsLeg() {
+  const entries = [pdaEntry(100n, 1)];
+  const to = "11111111111111111111111111111119";
+  const request = { withdrawTo: to, amount: 40n, expiry: EXPIRY, payer: PAYER };
+  const { proofInputs } = buildProofInputs(sdk, client, pda, walletOf(entries), request);
+  const legs = proofInputs.externalData.interfaceTransfers.map((leg) => [
+    leg.kind,
+    leg.isDeposit,
+    leg.amount,
+    leg.userSolAccount,
+  ]);
+  assert.deepEqual(legs, [["sol", false, 40n, to]], "one SOL withdrawal leg to the recipient");
+  const { plan, first } = firstOf(proofInputs);
+  assert.ok(!plan.outputs.some((o) => o.role === "payee"), "a withdrawal has no shielded payee");
+  const inputIds = entries.map((e) => hexOf(e.outputContext.hash));
+  const again = { plan, inputIds, first, payer: PAYER };
+  const rebuild = (withdraw) =>
+    rebuildProofInputs(sdk, client, pda, walletOf(entries), { ...again, withdraw });
+  const want = hexOf(proofInputs.messageHash());
+  assert.equal(hexOf(rebuild({ to, amount: 40n }).messageHash()), want, "the same commitment");
+  assert.notEqual(hexOf(rebuild(null).messageHash()), want, "a dropped leg");
+  const other = "11111111111111111111111111111118";
+  assert.notEqual(hexOf(rebuild({ to: other, amount: 40n }).messageHash()), want, "a recipient");
+  assert.notEqual(hexOf(rebuild({ to, amount: 41n }).messageHash()), want, "an amount");
+  step("a withdrawal rebuilt with its leg has the commitment of its first proof, and only then");
+}
+
 function aRebuildRefusesTheGroupKeyAMissingInputAndAnAccountTag() {
   const entries = [pdaEntry(100n, 1)];
   const request = { recipient: payee.address, amount: 40n, expiry: EXPIRY, payer: PAYER };
@@ -426,5 +453,6 @@ exactAmountHasNoChange();
 aMoveTakesWholeUtxos();
 await ownerSignersEqualTheSdk();
 aPaymentIsRebuiltWithItsCommitmentForAnyPayer();
+aWithdrawalIsRebuiltWithItsLeg();
 aRebuildRefusesTheGroupKeyAMissingInputAndAnAccountTag();
 console.log("transfer tests passed");

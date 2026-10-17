@@ -2,6 +2,8 @@
 //! `solspike/tools/payment_vectors.mjs`): the Rust recompute of `private_tx_hash` and of the
 //! commitment must equal the `privateTxHash` and the `messageHash` of the SDK, and the approval of
 //! the payment must hold every rule. A vector with a dummy output pins the zero hash of a dummy.
+//! The withdrawal vector pins the settlement accounts (the SOL interface and the recipient) in the
+//! commitment, as the SDK hashes them.
 
 mod common;
 
@@ -9,19 +11,34 @@ use common::ts::{self, payee_address, plan_of, role_of, text, transact_of, u64_o
 use common::{unhex_n, EXPIRY, NOW};
 use p3_check::approve::Device;
 use p3_check::beta::approve_payment;
-use p3_check::consts::{Key, MULTISIG_DEVNET};
-use p3_check::intent::{Intent, Pay, Program};
-use p3_check::pay::{Account, Seen};
+use p3_check::consts::{Key, MULTISIG_DEVNET, SYSTEM_PROGRAM};
+use p3_check::intent::{Intent, Pay, Payee, Program};
+use p3_check::pay::{Account, Recipient, RecipientAccount, Seen};
 use p3_check::pins::Pins;
 use p3_check::plan::{Proposal, Role};
-use p3_check::program::{commitment, external_data_hash, proposal_address, KIND_PROPOSAL};
+use p3_check::program::{
+    commitment, external_data_hash, proposal_address, settlements, Settlement, KIND_PROPOSAL,
+};
 use p3_check::snapshot::{InputUtxo, Snapshot};
 use p3_check::template::body_of;
 
 fn vectors() -> Vec<Vector> {
     let all = ts::vectors_in("pay");
-    assert!(all.len() >= 3, "{} payment vectors", all.len());
+    assert!(all.len() >= 4, "{} payment vectors", all.len());
+    assert!(
+        all.iter().any(|v| recipient(v).is_some()),
+        "a withdrawal vector"
+    );
     all
+}
+
+/// The public recipient of a withdrawal vector.
+fn recipient(v: &Vector) -> Option<Key> {
+    v.json["recipient"].as_str().map(unhex_n)
+}
+
+fn settled(v: &Vector) -> Vec<Settlement> {
+    settlements(&pins(v).sol_interface, recipient(v))
 }
 
 fn key(v: &Vector, path: &[&str]) -> Key {
@@ -71,21 +88,31 @@ fn snapshot(v: &Vector) -> Snapshot {
     }
 }
 
-fn proposal(v: &Vector) -> Proposal {
-    let tx = transact(v);
+/// The payee and the amount of the vector: the recipient and the leg of a withdrawal, else the
+/// payee output.
+fn payee_of(v: &Vector) -> (Payee, u64) {
+    if let Some(to) = recipient(v) {
+        return (Payee::Public(to), u64_of(&v.json, "withdraw"));
+    }
     let paid = v.json["outputs"]
         .as_array()
         .unwrap()
         .iter()
         .find(|o| role_of(o) == Role::Payee)
         .unwrap();
+    (Payee::Shielded(payee_address(v)), u64_of(paid, "amount"))
+}
+
+fn proposal(v: &Vector) -> Proposal {
+    let tx = transact(v);
+    let (payee, amount) = payee_of(v);
     let pay = Pay {
         expiry: EXPIRY,
         inputs: tx.inputs.len() as u8,
         outputs: tx.outputs.len() as u8,
-        payee: payee_address(v),
+        payee,
         mint: [0; 32],
-        amount: u64_of(paid, "amount"),
+        amount,
     };
     Proposal {
         intent: Intent::Program(Program::Approve { pay }),
@@ -99,14 +126,14 @@ fn the_commitment_of_each_vector_equals_the_message_hash_of_the_sdk() {
     for v in vectors() {
         let tx = transact(&v);
         assert_eq!(u64_of(&v.json, "expiry"), EXPIRY, "{}", v.name);
-        let external = external_data_hash(&tx).unwrap();
+        let external = external_data_hash(&tx, &settled(&v)).unwrap();
         assert_eq!(
             external,
             key(&v, &["externalDataHash"]),
             "{}: external",
             v.name
         );
-        let got = commitment(&tx.private_tx_hash, &tx).unwrap();
+        let got = commitment(&tx.private_tx_hash, &tx, &settled(&v)).unwrap();
         assert_eq!(got, key(&v, &["messageHash"]), "{}: commitment", v.name);
     }
 }
@@ -133,7 +160,15 @@ fn the_approval_recomputes_the_private_tx_hash_of_the_sdk_and_accepts_the_paymen
             }),
             approved: Vec::new(),
         };
-        let got = approve_payment(&proposal(&v), &device, &seen);
+        let read = recipient(&v).map(|_| Recipient {
+            account: Some(RecipientAccount {
+                owner: SYSTEM_PROGRAM,
+                lamports: 1_000_000,
+                executable: false,
+            }),
+            rent_min: 890_880,
+        });
+        let got = approve_payment(&proposal(&v), &device, &seen, read.as_ref());
         let payment = got.unwrap_or_else(|r| panic!("{}: {:?}", v.name, r.violations));
         assert_eq!(payment.commitment, commitment, "{}", v.name);
         dummies += plan_of(&v)

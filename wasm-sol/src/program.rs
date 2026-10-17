@@ -22,9 +22,27 @@ use crate::transact::Transact;
 pub const KIND_PROPOSAL: u8 = 1;
 /// The program accepts at most this many abort authorities.
 pub const MAX_AUTHORITIES: usize = 4;
-/// The most inputs of one `execute` with one input tree: the program forwards at most 24 accounts
-/// to the pool (ZOLANA.md 7.2, review R7).
+/// The most inputs of one `execute` with one input tree and no withdrawal: the program forwards
+/// at most 24 accounts to the pool (ZOLANA.md 7.2, review R7). Each withdrawal leg takes two of
+/// them (`max_execute_inputs`).
 pub const MAX_EXECUTE_INPUTS: usize = 18;
+
+/// The settlement accounts of a withdrawal leg, in the order of the `execute` accounts and of the
+/// commitment: the SOL interface of the pool, then the public recipient.
+pub type Settlement = (Key, Key);
+
+/// The settlements of a payment: one for a withdrawal to `recipient`, none for a private payment.
+pub fn settlements(sol_interface: &Key, recipient: Option<Key>) -> Vec<Settlement> {
+    recipient
+        .map(|recipient| (*sol_interface, recipient))
+        .into_iter()
+        .collect()
+}
+
+/// The most inputs of one `execute` with `legs` withdrawal legs.
+pub fn max_execute_inputs(legs: usize) -> usize {
+    MAX_EXECUTE_INPUTS.saturating_sub(2 * legs)
+}
 const BODY_FIXED: usize = 32 + 32 + 8 + 32 + 1;
 
 /// The length of the canonical Ed25519 instruction data: head, key, signature, digest.
@@ -152,8 +170,14 @@ fn external_prefix(tx: &Transact) -> Result<Vec<u8>, String> {
 }
 
 /// `SHA256BE` of the pool: SHA-256 with the first byte cleared, so the value is a BN254 field.
-pub fn external_data_hash(tx: &Transact) -> Result<Key, String> {
-    let mut hash: Key = Sha256::digest(external_prefix(tx)?).into();
+/// The pool hashes the prefix, then the SOL interface and the recipient of each withdrawal leg.
+pub fn external_data_hash(tx: &Transact, settlements: &[Settlement]) -> Result<Key, String> {
+    let mut sha = Sha256::new().chain_update(external_prefix(tx)?);
+    for (sol_interface, recipient) in settlements {
+        sha.update(sol_interface);
+        sha.update(recipient);
+    }
+    let mut hash: Key = sha.finalize().into();
     if let Some(first) = hash.first_mut() {
         *first = 0;
     }
@@ -162,8 +186,13 @@ pub fn external_data_hash(tx: &Transact) -> Result<Key, String> {
 
 /// `SHA-256(private_tx_hash || external_data_hash)`: the commitment of a payment (the SDK
 /// `messageHash`). `private_tx_hash` is the caller's value, never read from `tx` by `approve`.
-pub fn commitment(private_tx_hash: &Key, tx: &Transact) -> Result<Key, String> {
-    let external = external_data_hash(tx)?;
+/// `settlements` holds one entry per withdrawal leg of `tx`, none for a private payment.
+pub fn commitment(
+    private_tx_hash: &Key,
+    tx: &Transact,
+    settlements: &[Settlement],
+) -> Result<Key, String> {
+    let external = external_data_hash(tx, settlements)?;
     Ok(Sha256::new()
         .chain_update(private_tx_hash)
         .chain_update(external)

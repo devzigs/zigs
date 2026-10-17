@@ -16,7 +16,7 @@ use p3_check::consts::{Key, SUPPORTED_SHAPES};
 use p3_check::hashes::{
     dummy_hash, nullifier_pk, output_blinding, output_seed, owner_hash, Utxo, TREE_ID,
 };
-use p3_check::intent::{Intent, Pay, Program, Spend};
+use p3_check::intent::{Intent, Pay, Payee, Program, Spend};
 use p3_check::pins::Pins;
 use p3_check::plan::{OutPlan, Plan, Proposal, Role};
 use p3_check::program::{owner_pda, private_tx_hash};
@@ -310,7 +310,8 @@ impl Fixture {
         Self::build_for(&Spec::migration(), GROUP, group(), pda_wallet())
     }
 
-    /// A payment of the PDA identity: an `Approve` intent with the true `private_tx_hash`.
+    /// A payment of the PDA identity: an `Approve` intent with the true `private_tx_hash`. A
+    /// withdrawal spec gives the approval of a withdrawal to `[0x33; 32]`.
     pub fn payment(spec: &Spec) -> Self {
         Self::payment_for(spec, GROUP)
     }
@@ -318,14 +319,19 @@ impl Fixture {
     /// `payment` for the PDA of another group key (a group of a real ceremony).
     pub fn payment_for(spec: &Spec, group_key: Key) -> Self {
         let mut fixture = Self::build_for(spec, group_key, pda_wallet_of(&group_key), payee());
-        let Intent::Transfer {
-            spend,
-            payee,
-            mint,
-            amount,
-        } = fixture.intent.clone()
-        else {
-            panic!("a payment pays a payee");
+        let (spend, payee, mint, amount) = match fixture.intent.clone() {
+            Intent::Transfer {
+                spend,
+                payee,
+                mint,
+                amount,
+            } => (spend, Payee::Shielded(payee), mint, amount),
+            Intent::Withdrawal {
+                spend,
+                recipient,
+                amount,
+            } => (spend, Payee::Public(recipient), [0; 32], amount),
+            _ => panic!("a payment pays a payee or a recipient"),
         };
         fixture.intent = Intent::Program(Program::Approve {
             pay: Pay {

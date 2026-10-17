@@ -84,6 +84,67 @@ function bumpOf(address, body) {
   return null;
 }
 
+// The SOL interface of the Devnet pool (`["sol_interface", 0]`): the first settlement account of
+// a withdrawal.
+const SOL_INTERFACE = "2iAazE9tAWcUJhNhfscRzX17Gb32Km9jJYZLGy1AnkVP";
+
+/** A cursor over `data` from `at`: each read moves it first, so a skip uses the value read. */
+function reader(data, at) {
+  return {
+    u8: () => data[at++],
+    u16: () => {
+      at += 2;
+      return data.readUInt16LE(at - 2);
+    },
+    skip: (n) => {
+      at += n;
+    },
+    at: () => at,
+  };
+}
+
+/** The outputs of a transact: hash, owner tag (inline 32 bytes or an index) and data. */
+function skipOutputs(r) {
+  for (let n = r.u8(); n > 0; n--) {
+    r.skip(32);
+    r.skip(r.u8() === 0 ? 32 : 1);
+    r.skip(r.u8() === 1 ? r.u16() : 0);
+  }
+}
+
+/**
+ * The pool `transact` data of an execute (tag 1, then the bytes after the tag 16), read as the
+ * pool reads it: the number of legs, the bytes that the external-data hash covers and
+ * private_tx_hash. Its own reader, so a defect of the page parser does not hide here.
+ */
+function executeTransact(dataHex) {
+  const data = Buffer.concat([Buffer.from([16]), Buffer.from(dataHex.slice(2), "hex")]);
+  const r = reader(data, 1 + 8 + 33 + 16);
+  const legs = r.u8();
+  for (let n = legs; n > 0; n--) r.skip(r.u8() >= 2 ? 9 : 8);
+  for (let i = 0; i < 2; i++) r.skip(r.u8() === 1 ? 32 : 0);
+  skipOutputs(r);
+  for (let n = r.u8(); n > 0; n--) r.skip(32 + r.u16());
+  const at = r.at();
+  return { legs, prefix: data.subarray(0, at), privateTxHash: data.subarray(at, at + 32) };
+}
+
+/**
+ * The accounts after the owner PDA must be one (SOL interface, recipient) pair per leg (6016),
+ * and the commitment of the data with them must be the one of the stored body (6014).
+ */
+function settlementRefusal(ix, body) {
+  const owner = ix.accounts[2];
+  const after = ix.accounts.slice(ix.accounts.lastIndexOf(owner) + 1);
+  const tx = executeTransact(ix.data);
+  const pairs = after.every((key, n) => n % 2 === 1 || key === SOL_INTERFACE);
+  if (after.length !== 2 * tx.legs || !pairs) return "Custom 6016";
+  const external = sha256(tx.prefix, ...after.map((key) => Buffer.from(keyHex(key), "hex")));
+  external[0] = 0;
+  const commitment = sha256(tx.privateTxHash, external).toString("hex");
+  return commitment === body.slice(0, 64) ? null : "Custom 6014";
+}
+
 /** Why the program refuses one instruction (`ixs[i]`), or null. */
 function refusalOf(chain, ixs, i) {
   const ix = ixs[i],
@@ -96,7 +157,9 @@ function refusalOf(chain, ixs, i) {
   if (!ix.data.startsWith("01")) return "InvalidInstructionData";
   const stored = chain.accounts.get(proposal);
   if (!stored) return "Custom 6001";
-  return approves(chain, ixs[i - 1], proposal, stored.data.slice(4)) ? null : "Custom 6012";
+  const body = stored.data.slice(4);
+  if (!approves(chain, ixs[i - 1], proposal, body)) return "Custom 6012";
+  return settlementRefusal(ix, body);
 }
 
 /** Why the approvals program would refuse the message, or null (the effects come in `land`). */

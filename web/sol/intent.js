@@ -1,7 +1,8 @@
 // The wire forms that the Solana wasm takes (wasm-sol/src/intent.rs, plan.rs, snapshot.rs,
 // pins.rs, pay.rs). The group pays with approvals of the approvals program (ZOLANA.md 7.2): the
-// intent `approve` (a private payment that the group approves once), and the two messages that a
-// fee key signs alone, `propose` (the create message of the proposal account) and `execute`. Add
+// intent `approve` (a private payment that the group approves once) or `withdraw` (a payment to a
+// public Solana address), and the two messages that a fee key signs alone, `propose` or
+// `proposeWithdraw` (the create message of the proposal account) and `execute`. Add
 // SOL is the intent `shield`. The move of the beta funds to the PDA is the one nonce payment left:
 // `createNonce` and `transfer`. The page writes the intent bytes, the wasm compiles the messages
 // from them and checks them again on every approving device, so a wrong byte here makes a refusal
@@ -34,20 +35,25 @@ export const EXECUTE_FEE = 2n * BASE_FEE;
 
 /**
  * The intent bytes (hex) of a kind: createNonce and transfer (the move of the beta funds, with a
- * nonce), shield (Add SOL: a recent blockhash, the payer signs alone), approve (a payment of the
- * program design), propose (its create message) and execute.
+ * nonce), shield (Add SOL: a recent blockhash, the payer signs alone), approve and withdraw (a
+ * payment of the program design to a shielded or a public address), propose and proposeWithdraw
+ * (their create messages) and execute (tag 11 with the `recipient` of a withdrawal, else 7).
  */
 export function intentHex(kind, f) {
   const spend = () => f.nonce + le64(f.expiry) + u8(f.inputs) + u8(f.outputs);
   const counts = () => le64(f.expiry) + u8(f.inputs) + u8(f.outputs);
   const pay = () => counts() + checkedAddress(f.payee) + ZERO_KEY + le64(f.amount);
+  const withdrawal = () => counts() + checkedKey(f.recipient) + le64(f.amount);
+  const executed = () => le64(f.expiry) + f.rentRecipient + f.signature + f.blockhash;
   const fields = {
     createNonce: () => "00" + f.blockhash,
     shield: () => "02" + f.blockhash + le64(f.amount),
     transfer: () => "03" + spend() + checkedAddress(f.payee) + ZERO_KEY + le64(f.amount),
     propose: () => "06" + pay() + f.commitment + f.blockhash,
-    execute: () => "07" + le64(f.expiry) + f.rentRecipient + f.signature + f.blockhash,
+    execute: () => (f.recipient ? "0b" + executed() + checkedKey(f.recipient) : "07" + executed()),
     approve: () => "08" + pay(),
+    proposeWithdraw: () => "09" + withdrawal() + f.commitment + f.blockhash,
+    withdraw: () => "0a" + withdrawal(),
   };
   if (!Object.hasOwn(fields, kind)) throw new Error("Unknown Solana intent: " + kind);
   return fields[kind]();
@@ -56,6 +62,11 @@ export function intentHex(kind, f) {
 function checkedAddress(payee) {
   if (!isAddress(payee)) throw new Error("The payee is not a full shielded address.");
   return payee;
+}
+
+function checkedKey(recipient) {
+  if (!KEY(recipient)) throw new Error("The recipient is not a Solana address.");
+  return recipient;
 }
 
 const READERS = {
@@ -80,8 +91,18 @@ const READERS = {
     mint: h.slice(220, 284),
     amount: le64Of(h.slice(284, 300)),
   }),
+  10: (h) => ({
+    kind: "withdraw",
+    expiry: le64Of(h.slice(2, 18)),
+    inputs: parseInt(h.slice(18, 20), 16),
+    outputs: parseInt(h.slice(20, 22), 16),
+    recipient: h.slice(22, 86),
+    amount: le64Of(h.slice(86, 102)),
+  }),
 };
-const LENGTHS = { 0: 33, 2: 41, 3: 182, 8: 150 };
+const LENGTHS = { 0: 33, 2: 41, 3: 182, 8: 150, 10: 51 };
+/** The kinds of a session intent that the group approves with a digest (ZOLANA.md 7.2). */
+export const PAYMENT_KINDS = new Set(["approve", "withdraw"]);
 
 /** The values of an intent (hex) that a session or Add SOL holds, or null for any other bytes. */
 export function decodeIntent(hex) {
@@ -104,13 +125,27 @@ export function pinsHex(done, payer) {
 }
 
 /**
- * What the device saw for an approval (wasm-sol/src/pay.rs `Seen`, hex): the proposal account that
- * it read ({ owner, data } as hex, or null when there is none) and the (commitment, SHA-256 of the
- * body) of every payment that its seats approved before.
+ * What the device read for a payment (wasm-sol/src/pay.rs `Chain`, hex). `seen`: the proposal
+ * account ({ owner, data } as hex, or null when there is none) and the (commitment, SHA-256 of
+ * the body) of every payment that its seats approved before; null before the account exists (the
+ * proposer). `recipient`: for a withdrawal the recipient account ({ owner, lamports, executable },
+ * or null when it does not exist) and `rentMin`, the rent-exempt minimum; null for a payment.
  */
-export function seenHex(account, approved = []) {
+export function chainHex(seen, recipient = null) {
+  const seenPart = seen ? "01" + seenWire(seen.account, seen.approved ?? []) : "00";
+  return seenPart + (recipient ? "01" + recipientWire(recipient) : "00");
+}
+
+function seenWire(account, approved) {
   const head = account ? "01" + account.owner + le16(account.data.length / 2) + account.data : "00";
   return head + le16(approved.length) + approved.map((a) => a.commitment + a.body).join("");
+}
+
+function recipientWire({ account, rentMin }) {
+  const held = account
+    ? "01" + account.owner + le64(account.lamports) + (account.executable ? "01" : "00")
+    : "00";
+  return held + le64(rentMin);
 }
 
 const ROLE = { payee: 0, change: 1, dummy: 2 };
@@ -133,7 +168,7 @@ export function planHex(plan) {
  */
 export function proposalHex(ss) {
   const kind = decodeIntent(ss.intent)?.kind;
-  if (kind === "approve") return paymentHex(ss.intent, ss);
+  if (PAYMENT_KINDS.has(kind)) return paymentHex(ss.intent, ss);
   return ss.intent + (kind === "transfer" ? (ss.plan ?? "") : "");
 }
 
@@ -170,9 +205,12 @@ export async function nonceAccountHex(groupKey) {
 
 const VERDICT_KEYS = ["commitment", "proposal", "digest", "body"];
 
+const AMOUNTS = { expiry: "expiry", tree_fee: "treeFee", withdrawn: "withdrawn" };
+
 /**
  * The fields of the verdict of an accepted transfer or payment: payee, amounts, expiry and tree
- * fee, and for a payment its commitment, proposal account, digest and body (hex).
+ * fee, the public recipient and the withdrawn SOL of a withdrawal (the values that the commitment
+ * binds), and for a payment its commitment, proposal account, digest and body (hex).
  */
 export function readVerdict(verdict) {
   const out = { paid: [], change: [] };
@@ -180,9 +218,8 @@ export function readVerdict(verdict) {
     const [name, a, b, c] = line.split(" ");
     if (name === "payee") out.payee = { tag: a, ownerHash: b, viewingPk: c };
     else if (name === "paid" || name === "change") out[name].push({ mint: a, amount: BigInt(b) });
-    else if (name === "expiry") out.expiry = BigInt(a);
-    else if (name === "tree_fee") out.treeFee = BigInt(a);
-    else if (VERDICT_KEYS.includes(name)) out[name] = a;
+    else if (Object.hasOwn(AMOUNTS, name)) out[AMOUNTS[name]] = BigInt(a);
+    else if (name === "recipient" || VERDICT_KEYS.includes(name)) out[name] = a;
   }
   return out;
 }

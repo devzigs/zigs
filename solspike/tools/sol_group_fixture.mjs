@@ -1,10 +1,11 @@
 // Writes web/test/sol-group.json: a 2-of-3 Solana group made by the real ceremony of the page
-// (web/test/sol-setup.mjs) and two private payments that the TS SDK builds OFFLINE for that group,
+// (web/test/sol-setup.mjs) and the payments that the TS SDK builds OFFLINE for that group,
 // in the layout of wasm-sol/vectors/ts: a sponsor key pays the fee (the fee key of a seat), so the
 // SDK writes the change tag inline. `pay` is a payment of the PDA identity of the group (the
-// approvals program, ZOLANA.md 7.2) with the SDK values of privateTxHash and messageHash; `migrate`
-// moves the whole input of the group key to the PDA address (the one nonce payment of the beta),
-// and `migrate2` does the same with another salt.
+// approvals program, ZOLANA.md 7.2) with the SDK values of privateTxHash and messageHash;
+// `withdraw` is the same with a withdrawal to the public key 0x66..66 (SOL-32); `migrate` moves the
+// whole input of the group key to the PDA address (the one nonce payment of the beta), and
+// `migrate2` does the same with another salt.
 // The keys are test keys made for this file only. web/test/sol-fixture.mjs puts the group into a
 // wallet, and sol-pay.mjs and sol-sessions.mjs run the payments against the fake chain.
 //
@@ -31,6 +32,7 @@ const SOL = "11111111111111111111111111111111";
 const INPUT = 5_000_000n;
 const SEND = 2_000_000n;
 const EXPIRY = 1_800_000_000n; // the expiry of the recorded messageHash; tests write their own
+const RECIPIENT = "66".repeat(32); // the public recipient of the withdrawal
 
 function walletOf(signer, nullifierSecret, viewingSk) {
   const nullifier = NullifierKey.fromSecret(nullifierSecret);
@@ -68,13 +70,17 @@ const tagOf = (tag) =>
     ? { kind: "account", index: tag.index }
     : { kind: "inline", value: hex(tag.value) };
 
-/** One payment of `owner` ({ address, nullifier, viewing }, its UTXO owned by `ownerKey`). */
+/**
+ * One payment of `owner` ({ address, nullifier, viewing }, its UTXO owned by `ownerKey`) to `to`:
+ * a ShieldedAddress, or { withdrawTo } for a withdrawal to a public account (a base58 address).
+ */
 function payment(owner, ownerKey, to, send, saltByte) {
   const blinding = new Uint8Array(32).fill(0x07);
   const utxo = new Utxo({ owner: ownerKey, asset: SOL, amount: INPUT, blinding });
   const input = ProofInputUtxo.fromNullifierKey(utxo, owner.nullifier);
   const transfer = new ConfidentialTransfer(owner.address, [input], sponsor);
-  transfer.send(to, SOL, send);
+  if (to.withdrawTo) transfer.withdraw(SOL, send, { kind: "sol", recipient: to.withdrawTo });
+  else transfer.send(to, SOL, send);
   const prepared = transfer.prepare();
   const txKey = owner.viewing.transactionViewingKey(prepared.firstNullifier);
   const salt = Uint8Array.from({ length: 16 }, (_, i) => saltByte + i);
@@ -124,11 +130,14 @@ function payment(owner, ownerKey, to, send, saltByte) {
     messageHash: hex(proofInputs.messageHash()),
     expiry: EXPIRY.toString(),
   };
+  if (to.withdrawTo) result.withdraw = { recipient: RECIPIENT, amount: send.toString() };
   txKey.destroy();
   return result;
 }
 
-const pay = payment(pda, ShieldedPublicKey.fromPda(bytes(pdaRoles.pda)), payee.address, SEND, 0xb0);
+const pdaKey = ShieldedPublicKey.fromPda(bytes(pdaRoles.pda));
+const pay = payment(pda, pdaKey, payee.address, SEND, 0xb0);
+const withdraw = payment(pda, pdaKey, { withdrawTo: base58(RECIPIENT) }, SEND, 0xc0);
 const groupKeyOwner = ShieldedPublicKey.fromEd25519(group.signer);
 const migrate = payment(group, groupKeyOwner, pda.address, INPUT, 0xd0);
 // A second move of the same input with another salt: two proposals on one nonce (sol-limits.mjs).
@@ -159,6 +168,7 @@ const fixture = {
     ownerHash: hex(payee.address.ownerHash()),
   },
   pay,
+  withdraw,
   migrate,
   migrate2,
 };

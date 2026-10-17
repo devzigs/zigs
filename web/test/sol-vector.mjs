@@ -18,7 +18,8 @@ const byte = (n) => n.toString(16).padStart(2, "0");
 /**
  * The `transact` data as the program reads it (wasm-sol/src/transact.rs, `Transact::write`). The
  * private transaction hash is the one of the SDK when the vector has it (`privateTxHash`), else a
- * placeholder. `proof` (one byte, hex) and `root` (the root index) vary as a new proof does.
+ * placeholder. A vector with `withdraw` ({ amount }) has its SOL withdrawal leg (tag 1). `proof`
+ * (one byte, hex) and `root` (the root index) vary as a new proof does.
  */
 export function transactHex(v, expiry = EXPIRY, { proof = "00", root = 0 } = {}) {
   const owner = (o) =>
@@ -29,7 +30,7 @@ export function transactHex(v, expiry = EXPIRY, { proof = "00", root = 0 } = {})
     u64(expiry) +
     v.txViewingPk +
     v.salt +
-    "00" +
+    (v.withdraw ? "01" + "01" + u64(v.withdraw.amount) : "00") +
     "00" +
     "00" +
     byte(v.outputs.length) +

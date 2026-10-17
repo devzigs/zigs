@@ -69,3 +69,13 @@ export function base58(hex) {
   for (; n > 0n; n /= 58n) out = BASE58[Number(n % 58n)] + out;
   return "1".repeat(/^(?:00)*/.exec(hex)[0].length / 2) + out;
 }
+
+/** The 32 byte key (hex) of a Solana address, or null when the text is not exactly one. */
+export function keyOfBase58(text) {
+  if (typeof text !== "string" || !/^[1-9A-HJ-NP-Za-km-z]{32,44}$/.test(text)) return null;
+  let n = 0n;
+  for (const ch of text) n = n * 58n + BigInt(BASE58.indexOf(ch));
+  const body = n === 0n ? "" : n.toString(16);
+  const hex = "00".repeat(/^1*/.exec(text)[0].length) + (body.length % 2 ? "0" : "") + body;
+  return hex.length === 64 ? hex : null;
+}

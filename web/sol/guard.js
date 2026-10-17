@@ -25,7 +25,7 @@ const base64 = (v) =>
   typeof v === "string" && v.length > 0 && v.length <= 8192 && /^[A-Za-z0-9+/]+={0,2}$/.test(v);
 const decimal = (v) => typeof v === "string" && /^(0|[1-9][0-9]{0,19})$/.test(v);
 const addressHex = (v) => typeof v === "string" && /^([0-9a-f]{2}){1,256}$/.test(v);
-const payKind = (v) => v === "pay" || v === "migrate";
+const payKind = (v) => v === "pay" || v === "migrate" || v === "withdraw";
 const hexText = (v) => typeof v === "string" && v.length <= 16384 && /^([0-9a-f]{2})+$/.test(v);
 const idList = (v) =>
   Array.isArray(v) && v.length >= 1 && v.length <= 40 && v.every(hexOf(32));
@@ -79,6 +79,7 @@ export const SCHEMA = {
   },
   reprove: {
     recipient: addressHex,
+    withdraw: decimal,
     payer: base58,
     plan: hexText,
     inputIds: idList,

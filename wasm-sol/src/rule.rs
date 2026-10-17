@@ -201,14 +201,21 @@ rules! {
     BodyOnce, "body-once", Program,
         "no earlier approval of the device has this commitment with another body";
     ExecuteInputs, "execute-inputs", Program,
-        "a payment spends at most 18 inputs: one execute of the program carries no more";
+        "a payment spends at most 18 inputs, a withdrawal 16: one execute of the program carries \
+         no more";
     ExecuteApproval, "execute-approval", Program,
         "the approval verifies under the group key over the digest of the body of the transact \
          data";
+    WithdrawalRecipient, "withdrawal-recipient", Program,
+        "the recipient of a withdrawal is no account of the pool, the program or the group";
+    RecipientAccount, "recipient-account", Program,
+        "the device read the recipient account: an ordinary System account or none, with at least \
+         the rent-exempt minimum after the withdrawal";
     MigrationPayee, "migration-payee", Policy,
         "a nonce payment pays its inputs whole to the program address of the group, no change";
     IntentRetired, "intent-retired", Policy,
-        "no register, withdrawal or nonce cancel, and the group key signs no program message";
+        "no register, nonce withdrawal or nonce cancel, and the group key signs no program \
+         message";
 }
 
 impl Rule {

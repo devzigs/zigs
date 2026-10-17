@@ -7,11 +7,16 @@
 // 4. The commitment of the transact data of the two payments that landed through the approvals
 //    program (wasm-sol/vectors/program/landed.json) is the commitment of their body, and the plan
 //    of a proposal reads back.
+// 5. A withdrawal adds the SOL interface and the recipient to the commitment, and the SOL
+//    interface is the address that the pool derives (ZOLANA_REPO for @solana/kit).
 import assert from "node:assert/strict";
+import { createHash } from "node:crypto";
 import { readFileSync } from "node:fs";
+import { createRequire } from "node:module";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import {
+  SOL_INTERFACE,
   commitmentOf,
   cutTransact,
   field32,
@@ -21,6 +26,7 @@ import {
   planFromProve,
 } from "../../web/sol/prepare.js";
 import { planHex } from "../../web/sol/intent.js";
+import { zolanaRepo } from "../tools/paths.mjs";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const SDK = pathToFileURL(resolve(HERE, "../../web/sol/zolana.bundle.js")).href;
@@ -202,16 +208,44 @@ async function landedCommitments() {
     const track = APPROVALS[name];
     const execute = bytesOf(track.execute_data);
     const data = Uint8Array.from([16, ...execute.subarray(1)]);
-    assert.equal(await commitmentOf(data), track.body.slice(0, 64), name);
+    assert.equal(await commitmentOf(data, null), track.body.slice(0, 64), name);
     const parsed = parseTransact(data);
     assert.equal(parsed.published.length, parsed.outputs);
     assert.ok(parsed.published.every((o) => /^[0-9a-f]{64}$/.test(o.tag)), "inline tags");
     assert.match(parsed.txViewingPk, /^[0-9a-f]{66}$/);
     const moved = Uint8Array.from(data);
     moved[20] ^= 1;
-    assert.notEqual(await commitmentOf(moved), track.body.slice(0, 64), "a changed key");
+    assert.notEqual(await commitmentOf(moved, null), track.body.slice(0, 64), "a changed key");
   }
   step("the commitment of a landed execute is the commitment of its body (approvals program)");
+}
+
+const sha = (...parts) => createHash("sha256").update(Buffer.concat(parts)).digest();
+
+/** A withdrawal adds the SOL interface and the recipient to the external-data hash, in order. */
+async function withdrawalCommitment() {
+  const track = APPROVALS.dmain;
+  const data = Uint8Array.from([16, ...bytesOf(track.execute_data).subarray(1)]);
+  const { prefixLength } = parseTransact(data);
+  const to = "66".repeat(32);
+  const external = sha(Buffer.from(data.subarray(0, prefixLength)), bytesOf(SOL_INTERFACE + to));
+  external[0] = 0;
+  const want = sha(Buffer.from(data.subarray(prefixLength, prefixLength + 32)), external);
+  assert.equal(await commitmentOf(data, to), want.toString("hex"));
+  assert.notEqual(await commitmentOf(data, "67".repeat(32)), want.toString("hex"), "another key");
+  assert.notEqual(await commitmentOf(data, null), want.toString("hex"), "no settlement");
+  step("a withdrawal commitment hashes the SOL interface and the recipient after the prefix");
+}
+
+/** The SOL interface is the program address `["sol_interface", 0]` of the Devnet pool. */
+async function solInterfaceAddress() {
+  const kit = createRequire(join(zolanaRepo(), "package.json"))("@solana/kit");
+  const [derived] = await kit.getProgramDerivedAddress({
+    programAddress: kit.address("sppU489D7A4U1exNo1oeMGZtLEofq3a6o2fR7UeoWB6"),
+    seeds: [Buffer.from("sol_interface"), Buffer.from([0])],
+  });
+  assert.equal(Buffer.from(kit.getAddressEncoder().encode(derived)).toString("hex"), SOL_INTERFACE);
+  step("the SOL interface of the Worker is the one that the pool derives");
 }
 
 function plansReadBack() {
@@ -237,5 +271,7 @@ refusals();
 plans();
 planRefusals();
 await landedCommitments();
+await withdrawalCommitment();
+await solInterfaceAddress();
 plansReadBack();
 console.log("prepare tests passed");

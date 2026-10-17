@@ -13,7 +13,7 @@ use crate::check::Refusal;
 use crate::codec::{unhex, unhex_array};
 use crate::fee;
 use crate::frost;
-use crate::pay::{approve_pay, Payment, Seen};
+use crate::pay::{approve_pay, Chain, Payment};
 use crate::pins::Pins;
 use crate::plan::Proposal;
 use crate::program::{approval_digest, Body};
@@ -127,7 +127,11 @@ fn run_payment(input: &ApprovalCheck, now: u64) -> Result<String, String> {
         snapshot: &snapshot,
         now,
     };
-    let verdict = if input.seen.is_empty() {
+    let chain = Chain::decode(input.chain)?;
+    let recipient = chain.recipient.as_ref();
+    let verdict = if let Some(seen) = &chain.seen {
+        approve_payment(&proposal, &device, seen, recipient)
+    } else {
         let Some(pay) = proposal.intent.pay() else {
             return Err("the intent is not a payment".to_string());
         };
@@ -136,9 +140,8 @@ fn run_payment(input: &ApprovalCheck, now: u64) -> Result<String, String> {
             pins: &pda,
             ..device
         };
-        approve_pay((pay, &proposal.plan, &proposal.transact), &device, None)
-    } else {
-        approve_payment(&proposal, &device, &Seen::decode(input.seen)?)
+        let terms = (pay, &proposal.plan, &proposal.transact[..]);
+        approve_pay(terms, &device, None, recipient)
     };
     Ok(match verdict {
         Ok(payment) => payment_lines(&payment),
@@ -181,8 +184,10 @@ pub fn check_message(
 /// - `proposal`: `Proposal::encode` of an `Approve` (or `Propose`) intent: the payment, the plan
 ///   and the `transact` data.
 /// - `pins`, `snapshot`, `now`: as `check_message` takes them.
-/// - `seen`: `Seen::encode`, the proposal account that the device read and the bodies that its
-///   seats approved. Empty before the account exists: the chain rules do not run then.
+/// - `chain`: `Chain::encode`, what the device read: the proposal account and the bodies that its
+///   seats approved (none before the account exists: the rules of the account do not run then),
+///   and for a withdrawal the recipient account and the rent-exempt minimum. An approving device
+///   must give both for a withdrawal; the proposer gives the recipient account.
 ///
 /// `accepted` gives the commitment, the proposal address, the digest that the group signs, the
 /// body, then the lines of `check_message`. `refused` and `error` as there.
@@ -191,7 +196,7 @@ pub fn check_payment(
     proposal: &[u8],
     pins: &[u8],
     snapshot: &[u8],
-    seen: &[u8],
+    chain: &[u8],
     now: u64,
 ) -> String {
     let input = ApprovalCheck {
@@ -200,20 +205,21 @@ pub fn check_payment(
             pins,
             snapshot,
         },
-        seen,
+        chain,
     };
     run_payment(&input, now).unwrap_or_else(|why| format!("error\t{why}"))
 }
 
 /// The share of a seat over the approval digest of a payment. It runs `check_payment` with the
-/// proposal account first and throws the refusal. `round` is `{"now", "cluster", "keyPackage",
-/// "nonces", "commitments"}`, as for `sol_sign_share`; the nonces are those of the digest.
+/// proposal account (and for a withdrawal the recipient account) first and throws the refusal.
+/// `round` is `{"now", "cluster", "keyPackage", "nonces", "commitments"}`, as for
+/// `sol_sign_share`; the nonces are those of the digest.
 #[wasm_bindgen]
 pub fn sol_approval_share(
     proposal: &[u8],
     pins: &[u8],
     snapshot: &[u8],
-    seen: &[u8],
+    chain: &[u8],
     round: &str,
 ) -> Result<String, JsError> {
     let input = ApprovalCheck {
@@ -222,7 +228,7 @@ pub fn sol_approval_share(
             pins,
             snapshot,
         },
-        seen,
+        chain,
     };
     js(sign::approval_share(&input, round))
 }
