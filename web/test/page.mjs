@@ -6,7 +6,7 @@ import fs from "node:fs";
 import { proposalFields } from "../signed.js";
 
 // The page names that the tests read, as t.NAME, and the names that this file reads (the
-// setters of SETTERS, idb). move.mjs keeps the export of each. Another t.NAME throws.
+// setters of SETTERS, idb). Each one must stay exported. Another t.NAME throws.
 export const NAMES = [
   "accountCard", "accountInbox", "acct", "acctBalance", "act", "addPersonalContact", "addressBlock",
   "addressFor", "adoptPersonal", "applyBackup", "approve", "backupDialog", "backupNote",
