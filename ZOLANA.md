@@ -629,7 +629,11 @@ verifier who did not write the code). Times are UTC.
   `2hFbQWxixGA9Wx8cA3Y9XE81Cte5B7EgmQH2YLSfrmnZqVyT4oDpSTvuyQbC7pg5RMhGA2pxnAg4KCCo8wFCaLHk`, slot
   511646368. ProgramData holds 57,752 bytes: the version 2 ELF, then 9,440 zero bytes. The verifier
   rebuilt both versions from a clean Zolana clone and the build patch and got the same bytes as the
-  chain (with the author's cargo registry and the extracted toolchain).
+  chain (with the author's cargo registry and the extracted toolchain). Version 5 (53,144 bytes,
+  `b4bad24c…`, the upgrade plan of 7.2), 17 October 2026:
+  `39ZZegZ7CfCiArDxGdWjysPyafsgEeDbXXhzt4zeiJN4B6TWBSjuAR1HPtbhvtsxNWLzLFBnUF2x1ryykGejbLEK`,
+  slot 512086872. ProgramData then holds the version 5 ELF and 4,608 zero bytes; the SHA-256 of
+  all 57,752 bytes is `9f590119…`.
 - A PDA owner needs no registry record. The funder deposited 0.003 SOL to the PDA's shielded
   address
   (`3xYk6a7g9AGUeU7SwXcyevYanKsvkiC5Z8VdieDNZhDcP63ycFzvo7GXVYSxp6yz2nnSgn8nuGfRv1H7sJEAAYFb`),
@@ -1084,8 +1088,8 @@ it binds the program id and not the code.
   the record. That rent goes to the body's rent recipient when anyone closes the record after the
   expiry.
 - Not built: a cancel of a proposal (SOL-52). SOL withdrawals through the program are in version 4
-  (condition 1 below), which is not deployed. The page derives the proposal addresses of version
-  5. Devnet still runs version 2, so this client goes on only at step 6 of the upgrade plan below.
+  (condition 1 below) and version 5. The page derives the proposal addresses of version 5. Devnet
+  runs version 5 since 17 October 2026 (the upgrade plan below).
   Deposits from public SOL need no leg in the program: the beta's Add SOL deposits straight into
   the pool, to the shielded address of the PDA identity.
 - One `execute` with one input tree spends at most 18 inputs (the CPI copies at most 24
@@ -1206,7 +1210,8 @@ interface stays the one of version 4: accounts, seeds, commitment, CPI data and 
   mainnet release records the pool id and the ELF hash of that build, and a dump of the deployed
   program must match that hash (QA F3). `build.sh` builds Devnet only. A mainnet release mode with
   a pinned pool id and hash is SOL-47.
-- Version 5 for Devnet: ELF `b4bad24c…` (53,144 bytes), not deployed. The unit tests (6 for
+- Version 5 for Devnet: ELF `b4bad24c…` (53,144 bytes), deployed on Devnet on 17 October 2026
+  (the upgrade plan below). The unit tests (6 for
   Devnet, 5 for the mainnet test build) and 71 LiteSVM tests pass. New mutants T1 to T4 (the CPI
   target, the owner signature, the tag, the writable flags): all 51 mutants are killed.
 - The Linux build of CI gives `4dd727b0…` (53,144 bytes). `fncmp.py` finds 0 of 70 functions
@@ -1326,6 +1331,14 @@ The order:
    it expire and close it, and check that the program owns no account with kind byte 1. Then
    upgrade to the version 2 ELF of step 3 and turn the old client on. Version 2 cannot read a
    version 5 proposal (6005), so a proposal left open is lost with its rent.
+
+Done on 17 October 2026, steps 1 to 6. The clean build of main `9d03ed5` gave `b4bad24c…`. The
+program owned no account. Its first 48,312 bytes hashed to `555f4580…`. A buffer that the
+development key owned held the ELF. The upgrade
+`39ZZegZ7CfCiArDxGdWjysPyafsgEeDbXXhzt4zeiJN4B6TWBSjuAR1HPtbhvtsxNWLzLFBnUF2x1ryykGejbLEK`
+landed in slot 512086872 and closed the buffer. The dump then held `b4bad24c…` and zero bytes, and
+the authority and the size did not change. Production and staging run the version 5 client from
+main `f5fda18`. Step 7 is open.
 
 Mainnet stays no-go under the recommendation below. Our program adds its own audit and upgrade-key
 policy to that list.
