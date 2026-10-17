@@ -12,7 +12,9 @@
 // 6. every file that a listed file imports is in the list (so the browser fetches them all at
 //    the second level);
 // 7. every name that web/app.js or a listed file imports is an export of its source: the tests
-//    never load web/app.js, so its imports are checked here by their text.
+//    never load web/app.js, so its imports are checked here by their text;
+// 8. no page module imports a top-level name of a page module from a pure module: personal.js
+//    and app-chain.js both export NETWORKS, and the page means the one of app-chain.js.
 // A promise of a module that rejects soon after the load fails the test too.
 // The parser is the acorn of the node binary: the test starts itself again with
 // --expose-internals. ponytail: that path is internal to node; the upgrade is acorn as a dev
@@ -35,7 +37,15 @@ const SEAMS = ["setZ", "setDb", "setMe", "setDownloads", "setChain", "setAcct", 
 const problems = [];
 
 const list = [...read("app.js").matchAll(/^import "\.\/([\w-]+\.js)";$/gm)].map((m) => m[1]);
-const trees = new Map(list.filter((f) => fs.existsSync(new URL(f, web))).map((f) => [f, parse(f)]));
+const parseOrSay = (f) => {
+  try {
+    return [[f, parse(f)]];
+  } catch (e) {
+    problems.push(`${f} does not parse: ${e.message}`);
+    return [];
+  }
+};
+const trees = new Map(list.filter((f) => fs.existsSync(new URL(f, web))).flatMap(parseOrSay));
 
 // The files that one module imports with a static import or a re-export, and the names.
 function importsOf(ast) {
@@ -45,7 +55,8 @@ function importsOf(ast) {
     const specs = n.specifiers ?? [];
     const names = specs.filter((s) => s.imported).map((s) => s.imported.name);
     const star = specs.some((s) => s.type === "ImportNamespaceSpecifier");
-    out.push({ from: n.source.value.replace(/^\.\//, ""), names, star });
+    const locals = specs.map((s) => s.local.name);
+    out.push({ from: n.source.value.replace(/^\.\//, ""), names, locals, star });
   }
   return out;
 }
@@ -61,6 +72,12 @@ function checkList() {
   for (const f of pages) if (!list.includes(f)) problems.push(`${f} is not listed in app.js`);
   for (const f of list) if (!trees.has(f)) problems.push(`app.js lists ${f}, which does not exist`);
 }
+
+// The top-level names that the page modules declare.
+const pageNames = new Set([...trees].filter(([f]) => PAGE.test(f)).flatMap(([, ast]) => ast.body
+  .map((n) => n.declaration ?? n).flatMap(declared)));
+const borrowed = (f, imp) => (isPage(f) && !PAGE.test(imp.from)
+  ? imp.locals.filter((n) => pageNames.has(n)) : []);
 
 // The rules of one import of file f: each one gives a problem text, or nothing.
 const isPage = (f) => PAGE.test(f) || f === "app.js";
@@ -79,6 +96,8 @@ const IMPORT_RULES = [
   (f, imp) => isPage(f) && imp.star && PAGE.test(imp.from) && `${f} imports * from ${imp.from}`,
   (f, imp) => unknown(imp).length > 0
     && `${f} imports ${unknown(imp).join(", ")}, which ${imp.from} does not export`,
+  (f, imp) => borrowed(f, imp).length > 0
+    && `${f} imports the page name ${borrowed(f, imp).join(", ")} from ${imp.from}`,
 ];
 
 function checkImport(f, imp) {
