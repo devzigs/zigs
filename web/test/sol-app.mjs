@@ -1,4 +1,4 @@
-// The Solana secrets, backup and restore against the real web/app.js (see sol-rig.mjs): the Zcash
+// The Solana secrets, backup and restore against the real page modules (see sol-rig.mjs): the Zcash
 // backup carries no Solana field, the second file backs up and restores the Solana part of a
 // seat that settled and fits, and every refusal holds. It also pins what the Zcash restore does
 // with a seat that holds a Solana part, and checks the sealed snapshot store.

@@ -1,5 +1,5 @@
-// Drives the real web/app.js with a stub page and an in-memory store, for the version 3 rules that
-// need the whole page: the pins, the filter, the writers and the ceremony.
+// Drives the real page modules with a stub page and an in-memory store, for the version 3 rules
+// that need the whole page: the pins, the filter, the writers and the ceremony.
 // Run: node web/test/app.mjs
 // The test loads the real page modules through page.mjs (the names it reads: NAMES there).
 import assert from "node:assert/strict";

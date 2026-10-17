@@ -110,7 +110,7 @@ const CHAT = {
   at: 1760000000000,
 };
 
-// What the page decides about a message: trust() and dmTrust() in web/app.js, without the cache.
+// What the page decides about a message: trust() and dmTrust() in web/app-messages.js, no cache.
 async function chatVerdict(c) {
   const m = c.kind === "room" ? parseMsg(c.id, c.doc) : parseDm(c.id, c.doc);
   if (!m) return "drop";

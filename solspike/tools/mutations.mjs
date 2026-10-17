@@ -17,7 +17,7 @@ const SCAN = "solspike/tools/leak_scan.py";
 const SERVE = "solspike/serve.sh";
 const PROCS = "solspike/tools/procs.mjs";
 const patch = (file, from, to = "") => ({ file, from, to });
-// The Solana page tests: each mutant breaks one rule of web/app.js or web/sol that a test of
+// The Solana page tests: each mutant breaks one rule of web/app-*.js or web/sol that a test of
 // web/test pins. They run in the node rig (sol-rig.mjs), without a server or a browser.
 const SOL_APP = ["node", "web/test/sol-app.mjs"];
 const SOL_CEREMONY = ["node", "web/test/sol-ceremony.mjs"];

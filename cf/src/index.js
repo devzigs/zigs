@@ -3,7 +3,7 @@
 import { DurableObject } from "cloudflare:workers";
 
 const GROUP_ID = /^[0-9a-f]{20}$/;
-// The light-wallet servers in NETWORKS (web/app.js) that the page calls itself. The page may
+// The light-wallet servers in NETWORKS (web/app-chain.js) that the page calls itself. The page may
 // connect to nothing else. Our testnet node is /lwd of this Worker, which 'self' covers.
 const CHAIN_SERVERS = ["https://zcash-testnet.chainsafe.dev",
   "https://zcash-mainnet.chainsafe.dev"].join(" ");

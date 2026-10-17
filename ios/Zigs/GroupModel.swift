@@ -30,7 +30,7 @@ extension GroupInfo {
     }
 }
 
-/// One group, decrypted. Same document layout as web/app.js.
+/// One group, decrypted. Same document layout as web/app-groups.js.
 struct GroupState {
     var g: Doc?
     var seats: [String: Doc] = [:]
@@ -466,7 +466,7 @@ final class GroupModel {
     }
 
     /// A seat is this device's when it took the seat, or when it restored the key data that the
-    /// wallet published for the seat (SeatOwner). Same rule as ownsSeat in web/app.js.
+    /// wallet published for the seat (SeatOwner). Same rule as ownsSeat in web/app-seats.js.
     private func owns(_ i: Int, _ st: GroupState, _ gid: String) -> Bool {
         guard let seat = st.seats["\(i)"] else { return false }
         let s = vault.sec(gid, i)
@@ -474,7 +474,7 @@ final class GroupModel {
     }
 
     /// Does the key data in the seat secret `s` equal what the wallet published for seat `i`?
-    /// nil while the documents that decide it have not loaded. Same as fitState in web/app.js.
+    /// nil while the documents that decide it have not loaded. Same as fitState (web/app-seats.js).
     func fit(_ i: Int, _ s: Doc, in st: GroupState) -> Bool? {
         guard let done = st.done["\(i)"], st.g != nil else { return nil }
         return st.published(i, fits: s) ? setupFit(i, s, done, in: st) : false
@@ -506,7 +506,7 @@ final class GroupModel {
     var addressHidden: Bool { !localSeats.isEmpty && !myVerified }
     var isCreator: Bool { isMe(state.g?.str("createdBy")) }
 
-    /// This device, or a seat that it holds in the open wallet. Same rule as isMe in web/app.js.
+    /// This device, or a seat that it holds in the open wallet. Same as isMe in web/app-seats.js.
     func isMe(_ uid: String?) -> Bool {
         guard let uid, !uid.isEmpty else { return false }
         return uid == me || localSeats.contains { state.seats["\($0)"]?.str("uid") == uid }

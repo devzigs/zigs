@@ -150,7 +150,7 @@ they are. Old apps and the iPhone and Mac readers ignore them.
 
 | Topic | Plan or fact |
 |---|---|
-| Secrets | The Solana key package, `solSeed`, role secrets and FROST nonces go into the seat secret with `putSec(gid, seat, patch)` in `web/app.js`, under new field names. The passkey lock, the tab sync (`TAB_KEYS`) and the backup then cover them. They never go into IndexedDB, because a same-origin Worker can read IndexedDB but not `localStorage`. The device saves the nonces with the message digest before it publishes (PROTOCOL.md 7.3) |
+| Secrets | The Solana key package, `solSeed`, role secrets and FROST nonces go into the seat secret with `putSec(gid, seat, patch)` in `web/app-keystore.js`, under new field names. The passkey lock, the tab sync (`TAB_KEYS`) and the backup then cover them. They never go into IndexedDB, because a same-origin Worker can read IndexedDB but not `localStorage`. The device saves the nonces with the message digest before it publishes (PROTOCOL.md 7.3) |
 | Snapshot | UTXOs, cursors, spent flags and the plaintext of open sessions, sealed with a key from `solSeed`, in a new IndexedDB store `sol`. `idb()` opens version 1 and creates only `chain`, so it must open version 2 with an upgrade step. A tab that stays open on version 1 blocks the upgrade (`onblocked`), so it must close its connection and ask for a reload. A device with no snapshot rebuilds it from the indexer. A session plaintext leaves the snapshot only after the indexer output decrypts to it |
 
 ## 4. The second DKG, key roles and backups

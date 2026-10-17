@@ -1,5 +1,5 @@
-// A rig for the Solana tests (sol-ceremony.mjs, sol-app.mjs). It loads the real web/app.js, as
-// app.mjs does, with a stub page, an in-memory group store and the two wasm engines. One browser
+// A rig for the Solana tests (sol-ceremony.mjs, sol-app.mjs). It loads the real page modules,
+// as app.mjs does, with a stub page, an in-memory group store and the two wasm engines. One browser
 // holds every seat of the wallets that it makes, so the page runs both ceremonies by itself.
 // It loads the page modules through page.mjs, as app.mjs does (the names it reads: NAMES there).
 import fs from "node:fs";

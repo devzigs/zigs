@@ -1,4 +1,4 @@
-// The Solana signing sessions against the real web/app.js (see sol-rig.mjs): one browser holds
+// The Solana signing sessions against the real page modules (see sol-rig.mjs): one browser holds
 // the three seats of a 2-of-3 wallet, the real wasm checks and signs, and a fake Worker answers
 // from a model of Devnet (sol-chain.mjs). It runs the one intent that moves no private funds
 // (create the nonce account; the fake chain forgets the account so that it lands again) to a

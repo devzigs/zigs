@@ -24,7 +24,7 @@ export function writerOf(rel) {
 
 /**
  * The documents of the collection `prefix` (`map`: { id: document }) that a seat of the wallet
- * signed. `check(rel, by, sig, fields, need)` answers "yes", "no" or "wait" (the check of app.js).
+ * signed. `check(rel, by, sig, fields, need)` answers "yes", "no" or "wait" (checkIn).
  * A document that is not valid is left out, and `onBad(rel)` hears it. One that waits for its
  * result is left out for now and counted in `wait`.
  */

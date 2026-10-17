@@ -1,4 +1,5 @@
-// The Zigs web app. Loaded by index.html as a module, so the page needs no inline script.
+// The Zigs web app. index.html loads this module, so the page needs no inline script. It lists
+// every module of the page, so the browser asks for all of them at once, then starts the page.
 import "./qr.js";
 import "./payees.js";
 import "./vault.js";

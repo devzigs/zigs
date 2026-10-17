@@ -1,5 +1,5 @@
 // The sealed snapshot of the Solana sync (ZOLANA.md 3.6). It has its own IndexedDB database,
-// `zigs-sol`, so the version 1 database of web/app.js needs no upgrade. The snapshot is sealed
+// `zigs-sol`, so the version 1 database (app-keystore.js) needs no upgrade. The snapshot is sealed
 // with a key from solSeed (`sealKey`, a 32 byte base64url secret of the wasm roles), so the
 // database shows no amount. A same-origin Worker can read the database but not the key. Every
 // call is in try/catch: a browser without IndexedDB gets no snapshot and the page still works.

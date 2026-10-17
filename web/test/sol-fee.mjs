@@ -1,4 +1,4 @@
-// The fee key of a seat (web/sol/fee.js, addsol.js) against the real web/app.js and the real wasm,
+// The fee key of a seat (web/sol/fee.js, addsol.js) against the real page modules and real wasm,
 // with the fake chain behind the Worker (sol-chain.mjs): the wasm derives the fee key of each seat
 // from the key share of that seat, so every copy of the seat holds the same key, and the seat
 // publishes the address in a signed document. The fund card shows the fee address of each seat of

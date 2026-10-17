@@ -12,7 +12,7 @@ import { CLUSTER, COLLECTIONS } from "./docs.js";
 import { feeMismatch, mismatchText } from "./fee.js";
 import { holdsShare, putSol, refuseStopped, solOf, stopOf } from "./secrets.js";
 
-/** The inner kind of the sealed text. app.js sends a file of this kind to restoreSolana. */
+/** The inner kind of the sealed text. app-sol.js sends a file of this kind to restoreSolana. */
 export const KIND = "zigs-sol-backup";
 const NOT_A_BACKUP = "This file is not a Zigs Solana backup.";
 const NOT_ENCRYPTED = "This Solana backup file is not encrypted. Make a new encrypted backup.";
@@ -37,7 +37,7 @@ export function backupText(host, gid, i) {
   });
 }
 
-/** The words and the save call of the backup dialog of seat `i` (see backupDialog in app.js). */
+/** The words and the save call of the backup dialog of seat `i` (backupDialog, app-backups.js). */
 export function backupWords(c, i) {
   const { host, gid } = c;
   refuseStopped(c);
