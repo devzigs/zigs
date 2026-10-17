@@ -239,11 +239,11 @@ for (const [name, tool] of PATHS) {
 // baseline.sh in a fixture whose tool is a stand-in. The web tests and limits.mjs are empty
 // scripts, serve.sh does nothing, and curl finds no server: only the result line is under test.
 const WEB_TESTS = (
-  "chat signed app requests account personal payees vault util qr shim " +
+  "chat signed app requests account personal payees vault util qr shim graph " +
   "sol-docs sol-ceremony sol-app sol-wasm sol-sessions sol-limits sol-pay sol-transfer"
 ).split(" ");
 // The helpers of baseline.sh: in the fixture too, so a gate that forgets one stops.
-const HELPERS = ["sol-rig", "sol-setup", "sol-chain", "sol-vector"];
+const HELPERS = ["sol-rig", "sol-setup", "sol-chain", "sol-vector", "page"];
 
 function runBaselineSh(toolText) {
   const files = { "solspike/tools/baseline.mjs": toolText, "cf/test/limits.mjs": "" };

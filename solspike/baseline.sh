@@ -40,10 +40,10 @@ stopped=0
 stop_server() { [ "$stopped" = 1 ] || "$HERE/serve.sh" stop; stopped=1; }
 trap stop_server EXIT
 
-TESTS=(chat signed app requests account personal payees vault util qr shim lwd
+TESTS=(chat signed app requests account personal payees vault util qr shim lwd graph
   sol-config sol-docs sol-ceremony sol-app sol-wasm sol-sessions sol-limits sol-pay sol-transfer
   sol-fee)
-HELPERS=(sol-rig sol-setup sol-chain sol-vector sol-fixture)
+HELPERS=(sol-rig sol-setup sol-chain sol-vector sol-fixture page)
 for f in web/test/*.mjs; do
   name=$(basename "$f" .mjs)
   if [[ " ${TESTS[*]} ${HELPERS[*]} " != *" $name "* ]]; then
