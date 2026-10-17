@@ -13,9 +13,8 @@ import { dropChain } from "./app-chain.js";
 import {
   loggedIgnored, pinNetwork, pinVersion, refilter, signedMode, signPins,
 } from "./app-filter.js";
-import {
-  expired, render, resetSolStart, sol, solAttach, solOn, startAccount, syncRooms,
-} from "./app-rest.js";
+import { syncRooms } from "./app-messages.js";
+import { expired, render, resetSolStart, sol, solAttach, solOn, startAccount } from "./app-rest.js";
 
 export let db = null, sdb = null, user = null, downloads = null, me = null, canWrite = null, dbReady = false;
 export function setDb(v) { sdb = v; db = v; }
