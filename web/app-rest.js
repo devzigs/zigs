@@ -1,12 +1,11 @@
 // The part of the old app.js that has not moved to a module yet. Step E1 deletes it.
-import { qrSvg } from "./qr.js";
 import {
   allPaid, MEMO_BYTES, memoBytes, memoError, memoShown, pairPayees, parsePayeeList, toZat, zatText,
 } from "./payees.js";
 import { open as openVault, parseVault, seal } from "./vault.js";
 import {
-  abortText, backupName, boxPairMatches, checkNetwork, chunks, confirmGate, conflictReason, finite,
-  fmtInt, heldRefusal, keysOf, lateFields, makePassphrase, numberClash, passIssue, restoredSecret,
+  abortText, backupName, boxPairMatches, checkNetwork, confirmGate, conflictReason, finite, fmtInt,
+  heldRefusal, keysOf, lateFields, makePassphrase, numberClash, passIssue, restoredSecret,
   seatBackedUp, settledFields, shareShape, skey, staleRestore, takenKeys, undoPlan, usesV2,
   walletVersion,
 } from "./util.js";
@@ -27,10 +26,10 @@ import {
   cardState, payeeBlocker, payeeRows, quoted, readRequest, REQUEST_NET, requestNote, requestPayees,
   requestProblem, requestUri, WALLET_NET,
 } from "./requests.js";
-import { busy, clearBadBanner, inbox, log, ready, showBanner, state, ui } from "./app-state.js";
+import { busy, inbox, log, ready, showBanner, state, ui } from "./app-state.js";
 import {
   about, elapsed, fmtZec, initials, isObj, isStr, J, oldest, randomHex32, readLocal, S, said,
-  saveMerged, short, up, when, withTimeout, writeLocal, ZEC_FMT, zecText,
+  saveMerged, short, up, when, withTimeout, writeLocal, zecText,
 } from "./app-kit.js";
 import { engineOffThread, engineSettled, Z } from "./app-engine.js";
 import {
@@ -39,7 +38,7 @@ import {
 } from "./app-keystore.js";
 import {
   allDone, allR1, allSeated, curSession, fitState, isCreator, isMe, keysAgree, keysDiffer,
-  localSeats, myUid, r2For, seatIds, seatMine, seatNameOf, seatStage, signersOf, STAGE_LABEL,
+  localSeats, myUid, r2For, seatIds, seatMine, seatStage, signersOf, STAGE_LABEL,
 } from "./app-seats.js";
 import {
   BAD_CONTACT_LINK, badChatLink, chatLink, chatMessage, inviteLink, isChatId, openChat,
@@ -57,6 +56,12 @@ import {
   boot, canWrite, closeSession, db, dbReady, downloads, me, needsMyApproval, openGroup, openSession,
   pendingChats, roomKeys, sdb, toApprove, unsubGroup, user,
 } from "./app-groups.js";
+import {
+  act, addrGroups, avatar, closeBtn, coarse, copyBtn, countBadge, el, groupName, guard, isPayee,
+  leavesOf, logBox, memoRow, memoTexts, money, named, nameField, netBadge, networkPick, newBadge,
+  normalized, onNetwork, payTitle, proposer, qrBox, ruleText, seatLabel, seatTitle, secretQr,
+  sender, skeleton, statusChip, unreadable, unreadChip,
+} from "./app-dom.js";
 
 export let personal = null;          // the personal account (web/personal.js), with its seed
 export function setPersonal(v) { personal = v; }
@@ -226,10 +231,6 @@ export function changePersonal(change) {
     throw new Error("Could not save this change in the browser, so it was not made.");
   });
 }
-const netBadge = (g) => netOf(g).cap
-  ? el("span", { class: "badge bad", title: "Real ZEC. Not audited. At " + capText(netOf(g).cap)
-    + " the app warns and hides the address. It cannot block deposits." }, "Mainnet")
-  : el("span", { class: "badge plain" }, "Testnet");
 export let acct = null;    // the same for the personal account, with account: true (see startAccount)
 export function setAcct(v) { acct = v; }
 const inspectCache = new Map();
@@ -1855,60 +1856,9 @@ function dmTrust(cid, m) {
   return verdict(m, dmText(cid, m), !!member, member && member.signPk, pk);
 }
 
-// ───────────────────────── Rendering ─────────────────────────
-const el = (tag, attrs = {}, ...kids) => {
-  const n = document.createElement(tag);
-  for (const [k, v] of Object.entries(attrs)) {
-    if (v == null || v === false) continue;
-    if (k.startsWith("on")) n.addEventListener(k.slice(2), v);
-    else if (k === "class") n.className = v;
-    // Through the CSSOM, which the style-src policy allows; a style attribute it refuses.
-    else if (k === "style") n.style.cssText = v;
-    else n.setAttribute(k, v === true ? "" : v);
-  }
-  for (const k of kids.flat()) if (k != null && k !== false) n.append(k instanceof Node ? k : document.createTextNode(String(k)));
-  return n;
-};
-// A success makes an earlier error message obsolete, so it is cleared.
-// A disabled button loses focus, so the key of the focused control is kept to give it back.
-export const act = (fn) => async (ev) => {
-  ev.preventDefault();
-  const b = ev.currentTarget, key = document.activeElement.dataset.key;
-  if (b) b.disabled = true;
-  try {
-    await fn(ev);
-    clearBadBanner();
-  } catch (e) { showBanner("bad", e.message || String(e)); }
-  finally {
-    if (b) b.disabled = false;
-    focusAfter(key, false);
-    render(); react();
-  }
-};
-function copyBtn(text, label = "Copy", cls = "btn sm") {
-  const copy = async (ev) => {
-    const b = ev.currentTarget;
-    try {
-      await navigator.clipboard.writeText(typeof text === "function" ? text() : text);
-      b.textContent = "Copied";
-    } catch { b.textContent = "Select and copy"; }
-    setTimeout(() => b.textContent = label, 1500);
-  };
-  return el("button", { class: cls, type: "button", onclick: copy }, label);
-}
-
-// One bad document from another signer must not break the page: the item it feeds shows as a
-// small unreadable card instead.
-const unreadable = () =>
-  el("div", { class: "bad-card" }, "This item has data this app cannot read.");
-function guard(build, ...args) {
-  try { return build(...args); }
-  catch (e) { log("unreadable item: " + (e && e.message ? e.message : e)); return unreadable(); }
-}
-
 let openLayer = "", tickTimer = null;
 export let opener = "", lastTrigger = "", wantFocus = null;   // focus bookkeeping, see draw()
-function focusAfter(key, force) { wantFocus = key ? { key, force } : null; }
+export function focusAfter(key, force) { wantFocus = key ? { key, force } : null; }
 // ZIP 317 for a payment from up to `outputs` notes: one action per output, change included. A
 // priority payment pays PRIORITY_FACTOR times as much (the engine's cap).
 const PRIORITY_FACTOR = 10;
@@ -1916,35 +1866,6 @@ const feeEstimate = (payees, priority = false) =>
   5000 * Math.max(2, payees + 1) * (priority ? PRIORITY_FACTOR : 1);
 const MAX_PAYEES = 20;
 const TOO_MANY = "A payment can have at most " + MAX_PAYEES + " recipients.";
-
-// `sign` is "out" or "in" for money leaving or entering the wallet.
-function money(zat, size = "md", sign = "") {
-  if (!Number.isFinite(zat)) return el("span", { class: "money " + size }, "unknown");
-  const [i, d] = ZEC_FMT.format(zat / 1e8).split(".");
-  const pre = sign === "out" ? "−" : sign === "in" ? "+" : "";
-  const text = pre + i + "." + (d || "00");
-  // Screen readers get "12.50 ZEC" as one phrase; the visible unit is a separate, smaller span.
-  const cls = "money " + size + (sign ? " " + sign : "");
-  return el("span", { class: cls, role: "img", "aria-label": text + " ZEC" },
-    text, el("span", { class: "cur", "aria-hidden": "true" }, "ZEC"));
-}
-function seatLabel(i) {
-  const s = state.seats[i];
-  if (!s) return "Open seat";
-  if (!seatMine(i)) return s.name || "Signer " + i;
-  return localSeats().length > 1 ? "You (seat " + i + ")" : "You";
-}
-// In a version 3 wallet a name comes with its seat number, because two seats can use one name.
-// A member picks the name, so a name can carry a false seat number: the real one goes after it.
-export function named(i) {
-  const label = seatLabel(i);
-  const tag = " (seat " + i + ")";
-  return signedMode(state.gid) && !label.endsWith(tag) ? label + tag : label;
-}
-function avatar(i, cls = "") {
-  const s = state.seats[i], mine = s && seatMine(i);
-  return el("span", { class: "av round " + cls + (mine ? " me" : ""), title: seatLabel(i) }, s ? initials(mine ? (s.name || "You") : s.name || "M " + i) : "+");
-}
 const walletKey = () => state.wallet ? S(state.wallet) : "";
 // This browser's own result for its seats; other seats' results come from the store.
 export function seatCheck(i) {
@@ -1955,39 +1876,6 @@ export function seatCheck(i) {
 export const myVerified = () => localSeats().some((i) => seatCheck(i) === true);
 const verifiedCount = () => seatIds().filter((i) => seatCheck(i) === true).length;
 const rejectedSeats = () => seatIds().filter((i) => seatCheck(i) === false);
-
-const STATUS = {
-  collecting: ["Needs approval", "warn"], signing: ["Signing", "info"], signed: ["Ready to prove", "info"],
-  proving: ["Building proof", "info"], complete: ["Ready to send", "ok"], broadcast: ["Sent", "ok"], failed: ["Failed", "bad"],
-  cancelled: ["Cancelled", ""],
-};
-export function statusChip(s) {
-  if (onChain(s)) return el("span", { class: "badge ok" }, "Sent");
-  if (expired(s)) return el("span", { class: "badge" }, "Expired");
-  const [t, c] = Object.hasOwn(STATUS, s.status) ? STATUS[s.status] : [String(s.status), ""];
-  return el("span", { class: "badge " + c }, t);
-}
-
-// Payment wording. `who` comes from the engine: an address for the recipient, or a fixed phrase.
-const OWN_OUTPUT = new Set(["this wallet", "change (back to this wallet)"]);
-const isPayee = (l) => l.kind === "output" && !OWN_OUTPUT.has(l.who);
-function payTitle(ss) {
-  const p = payeesOf(ss);
-  if (typeof ss.note === "string" && ss.note) return ss.note;
-  if (p.length === 1) return "Payment to " + short(p[0].to, 8);
-  return p.length ? "Payment to " + p.length + " recipients" : "Payment";
-}
-// What the proposer says leaves the wallet: the payees plus the fee.
-export const leavesOf = (ss) => Number.isFinite(ss.amount) ? ss.amount + finite(ss.fee) : NaN;
-const ruleText = (t, n) => "Any " + t + " of " + n + " signers must approve each payment.";
-export const groupName = (gid) => (state.groups.find((x) => x.id === gid) || {}).name || "the new wallet";
-// In a version 3 wallet the proposer is the seat in `by`. Before, it is the identity in
-// `createdBy`.
-export const proposer = (ss) => Number.isInteger(ss.by)
-  ? (localSeats().includes(ss.by) ? "you" : named(ss.by))
-  : isMe(ss.createdBy) ? "you" : seatNameOf(ss.createdBy);
-function normalized(addr) { try { return Z.normalizeAddress(addr); } catch { return null; } }
-const onNetwork = (addr) => (normalized(addr) || "").startsWith(curNet().prefix);
 
 export function sendBlocker() {
   const c = curChain();
@@ -2247,9 +2135,6 @@ function renderSide() {
 
 const newChat = () => { ui.newChat = true; render(); };
 
-const unreadChip = (u) => u ? el("span", { class: "side-unread", role: "img", title: u + " unread",
-  "aria-label": u + " unread" }, String(u)) : null;
-
 function chatItem(cid) {
   const here = cid === state.cid, name = contactName(cid);
   return el("button", {
@@ -2453,15 +2338,6 @@ function welcome(canCreate, restoreLink) {
       create, restoreLink));
 }
 
-// The name that `to` sees (your signers, or your contact); saved in this browser and read when you
-// take a seat or join a chat.
-function nameField(id, to = "your signers") {
-  let saved = ""; try { saved = localStorage.getItem("zf-name") || ""; } catch {}
-  const save = (ev) => { try { localStorage.setItem("zf-name", ev.target.value.trim()); } catch {} };
-  return el("label", { class: "field" }, el("span", {}, "Your name"),
-    el("input", { class: "input", id, value: saved, maxlength: "40", autocomplete: "nickname", placeholder: "Any nickname · shown to " + to, oninput: save }));
-}
-
 // With `from`, the dialog creates the wallet that replaces `from`, with new signers or a new rule.
 function createDialog(from = null) {
   const close = () => { ui.create = false; ui.move = false; render(); };
@@ -2502,27 +2378,6 @@ function createDialog(from = null) {
       el("button", { class: "btn", type: "button", onclick: close }, "Cancel"),
       el("button", { class: "btn primary", type: "submit", disabled: !Z || !db || canWrite === false }, from ? "Create new wallet" : "Create wallet")));
   return f;
-}
-
-// The choice lives in `sel` (`ui`, or `ui.personal`), so a redraw keeps it. `what` names the thing
-// that holds the funds, and `idp` prefixes the ids.
-function networkPick(sel = ui, what = "wallet", idp = "g") {
-  const on = (value) => (sel.net === value ? " on" : "");
-  const opt = (value, title, text) => el("label", { class: "net-opt" + on(value) },
-    el("input", { type: "radio", name: idp + "-network", value, id: idp + "-net-" + value,
-      checked: sel.net === value, onchange: () => { sel.net = value; render(); } }),
-    el("span", { class: "net-text" }, el("b", {}, title), el("span", { class: "small muted" }, text)));
-  return el("fieldset", { class: "net-pick" },
-    el("legend", { class: "label" }, "Network"),
-    el("div", { class: "two" },
-      opt("testnet", "Testnet", "Free test coins, for trying Zigs."),
-      opt("mainnet", "Mainnet", "Real ZEC. At " + capText(NETWORKS.mainnet.cap)
-        + " the app warns and hides the address. It cannot block deposits.")),
-    sel.net === "mainnet" ? el("label", { class: "ack" },
-      el("input", { type: "checkbox", id: idp + "-ack", checked: sel.ack,
-        onchange: (ev) => { sel.ack = ev.target.checked; } }),
-      el("span", { class: "small" }, "I understand that Zigs is not audited and that I can lose "
-        + "the funds in this " + what + ".")) : null);
 }
 
 // ── Wallet ──
@@ -2618,9 +2473,6 @@ function groupHead(g, ready, why) {
           ? el("span", {}, "Replaces " + ((old || {}).name || "an older wallet")) : null)),
     ready ? el("div", { class: "ph-actions wallet-actions" }, ...walletActions(why)) : null);
 }
-
-const countBadge = (n, what, cls) => n
-  ? el("span", { class: "count " + cls, role: "img", "aria-label": n + " " + what }, n) : null;
 
 // Arrow keys, Home and End move between tabs. Only the selected tab is in the Tab order.
 export function tabBar(tabs) {
@@ -3063,8 +2915,6 @@ function sentRow(ss) {
 
 // The memos of a received payment, for display. A memo that is not text says so.
 const ON_CHAIN = "On chain · shared with all signers";
-const memoTexts = (r) => (Array.isArray(r.memos) ? r.memos : [])
-  .map((m) => m && m.status === "text" && typeof m.text === "string" ? memoShown(m.text) : null);
 
 function receivedRow(r) {
   const memos = memoTexts(r);
@@ -3090,7 +2940,6 @@ function activityTab() {
 // ── Messages ──
 const FINE = "Signers, and anyone else who has the invite link, can read these messages. The "
   + "group server stores them sealed and sees only when they are sent.";
-const sender = (i) => state.seats[i] ? named(i) : "Unknown sender";
 
 function messagesCard() {
   const changed = changedSigners();
@@ -3128,10 +2977,6 @@ function chatLog(thread) {
   const id = (wallet ? "log-wallet-" : "log-pay-") + state.gid;
   return logBox(id, wallet ? "Messages" : "Discussion", items, none);
 }
-
-const logBox = (id, label, items, none) => el("div", {
-  class: "chat-log", id, role: "log", tabindex: "0", "data-key": id, "aria-label": label,
-}, items.length ? items : none);
 
 // Messages of one thread, with the payment events of the wallet thread, oldest first.
 function threadItems(thread, roomId) {
@@ -3196,10 +3041,6 @@ function eventItem(e) {
   }, el("span", {}, EVENT_TEXT[e.what](e.ss), newBadge(n)), el("time", {}, when(e.at)));
 }
 
-const newBadge = (n) => n
-  ? el("span", { class: "badge info plain", role: "img", "aria-label": n + " unread" }, n + " new")
-  : null;
-
 const TRUST = {
   yes: ["ok", "✓ Verified"], wait: ["", "Checking…"], no: ["bad", "Not verified"],
   changed: ["bad", "Key changed. Not verified."], unknown: ["bad", "Unknown sender. Not verified."],
@@ -3220,8 +3061,6 @@ function bubble(m, av, name, verdictKey, mine) {
       req ? requestCard(req, { id: m.id, name, verdict: verdictKey, dm: m.thread === "dm", mine })
         : el("p", { class: "msg-text" }, m.text)));
 }
-
-const coarse = () => matchMedia("(pointer: coarse)").matches;
 
 // Enter sends and Shift+Enter adds a line. A touch screen has no Shift key, so there Enter adds a
 // line and the Send button sends.
@@ -3985,9 +3824,6 @@ function createCard(pickRestore) {
       }, "Create account")));
 }
 
-const skeleton = (cls = "") => el("span", { class: "skel " + cls, role: "img",
-  "aria-label": "Loading balance" });
-
 function accountBalanceBlock(b) {
   const money2 = (zat) => (b ? money(zat) : skeleton());
   return el("div", { style: "display:grid;gap:10px" },
@@ -4316,9 +4152,6 @@ function changeSignersCard() {
       : el("button", { class: "btn", type: "button", disabled: !localSeats().length, onclick: () => { ui.move = true; render(); } }, "Change signers")));
 }
 
-const seatTitle = (i, s) =>
-  s ? (seatMine(i) ? (s.name || "You") : s.name || "Signer " + i) : "Open seat";
-
 function seatBadge(i) {
   const v = seatCheck(i);
   if (v === null) return el("span", { class: "badge" }, STAGE_LABEL[seatStage(i)]);
@@ -4419,24 +4252,6 @@ function activityLog() {
   if (!state.log.length) return null;
   return el("details", {}, el("summary", {}, "Activity in this browser"),
     el("div", { class: "log" }, state.log.join("\n")));
-}
-
-// Groups of 5 characters help people compare an address by eye. Each group is its own span, so
-// the spaces are only layout and a copied address has none.
-const addrGroups = (addr) =>
-  el("span", {}, chunks(addr).map((c) => el("span", { class: "addr-g" }, c)));
-
-// The SVG comes from our own encoder and holds only path data, so innerHTML is safe here.
-function qrBox(text, label) {
-  const box = el("div", { class: "qr" });
-  box.innerHTML = qrSvg(text, label);
-  return box;
-}
-// A link with the wallet secret stays hidden until asked for: cameras and people can read screens.
-function secretQr(link, what = "wallet") {
-  return el("details", { class: "qr-toggle" }, el("summary", {}, "Show QR code"),
-    qrBox(link, what === "chat" ? "Contact link" : "Invite link"),
-    el("p", { class: "small faint" }, "Scan with a phone camera to open the " + what + " there."));
 }
 
 // ── Receive ──
@@ -4683,7 +4498,7 @@ export function txidOf(ss) {
   return ins && !ins.error && isStr(ins.txid) ? ins.txid : null;
 }
 // A synced block holds the payment, whatever the session document says.
-function onChain(ss) {
+export function onChain(ss) {
   const c = curChain(), id = txidOf(ss);
   return !!(c && c.sent && id && c.sent.has(id));
 }
@@ -4753,7 +4568,7 @@ export const priorityTimes = (ins) => ins && !ins.error && ins.fee > ins.standar
   ? Math.round((ins.fee / ins.standard_fee) * 10) / 10 : 0;
 
 // The proposer's list, without entries that have no address text.
-const payeesOf = (ss) => Array.isArray(ss.payees) ? ss.payees.filter((p) => p && typeof p.to === "string") : [];
+export const payeesOf = (ss) => Array.isArray(ss.payees) ? ss.payees.filter((p) => p && typeof p.to === "string") : [];
 
 export function recipientCheck(ss, ins) {
   if (!ins || ins.error) return { rows: [], extra: [], match: null };
@@ -4784,12 +4599,6 @@ function checkWarnings(rc) {
   }
   return out.map((t) => el("div", { class: "callout bad" }, t));
 }
-
-// A memo for display: "" is no memo and null is one that the engine could not read as text.
-const memoWords = (m) => m === null ? "Memo is not text" : m ? memoShown(m) : "No memo";
-const memoRow = (label, m, bad = false) => el("div", { class: "memo-line" + (bad ? " bad" : "") },
-  el("span", { class: "label" }, label),
-  el("span", { class: "memo-text" + (m ? "" : " faint") }, memoWords(m)));
 
 // The memo lines of one payee row. For a payee paid with another memo, the memo that the
 // transaction carries is the decoded one, so it shows as well.
@@ -4916,11 +4725,6 @@ function sessionDrawer(ss) {
         el("p", {}, "Signed message " + short(ins.sighash, 12) + " · " + ins.tx_version)) : null),
     actions.length ? el("div", { class: "drawer-foot" }, ...actions) : null);
 }
-
-const closeBtn = () => el("button", {
-  class: "icon-btn", type: "button", "aria-label": "Close",
-  onclick: () => { closeSession(); render(); },
-}, "×");
 
 // If the payment's document cannot be shown, the drawer still opens and closes.
 function sessionLayer(ss) {
