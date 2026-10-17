@@ -15,6 +15,7 @@ import "./app-seats.js";
 import "./app-links.js";
 import "./app-chain.js";
 import "./app-filter.js";
+import "./app-groups.js";
 import "./app-rest.js";
 import { loadEngine } from "./app-engine.js";
 import { lockedVault } from "./app-keystore.js";

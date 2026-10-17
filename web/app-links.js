@@ -3,7 +3,8 @@ import { LINK_CHAT_ID, linkRefusal } from "./util.js";
 import { parseHash, validRoom } from "./chat.js";
 import { showBanner, state, ui } from "./app-state.js";
 import { chats, gkeys, lockedVault, putKey } from "./app-keystore.js";
-import { joinLinks, openGroup, render, roomKeys } from "./app-rest.js";
+import { openGroup, roomKeys } from "./app-groups.js";
+import { joinLinks, render } from "./app-rest.js";
 
 const MISSING_SECRET = "This link is missing the wallet secret. Ask for the full invite link.";
 export const setHash = (h) => { try { history.replaceState(null, "", h); } catch {} };

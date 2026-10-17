@@ -22,6 +22,7 @@ const patch = (file, from, to = "") => ({ file, from, to });
 const SOL_APP = ["node", "web/test/sol-app.mjs"];
 const SOL_CEREMONY = ["node", "web/test/sol-ceremony.mjs"];
 const APP_JS = "web/app-rest.js";
+const APP_GROUPS = "web/app-groups.js";
 const INDEX_JS = "cf/src/index.js";
 const POLICY_TEST = ["node", "solspike/test/policy.test.mjs"];
 const STORE_URL = '  localStorage.setItem("u", body.rpcUrl);\n';
@@ -248,16 +249,16 @@ export const MUTATIONS = [
     [patch(APP_JS, "if (solGroup(b.group) && !solOn(b.group)) {", "if (false) {")],
     /testnet wallets only/),
   mutant("sol-M6-watch", "a mainnet wallet watches its start document", SOL_CEREMONY,
-    [patch(APP_JS, "if (solWatched || !solOn(gid)) return;", "if (solWatched) return;")],
+    [patch(APP_GROUPS, "if (solWatched || !solOn(gid)) return;", "if (solWatched) return;")],
     /a mainnet wallet watches no Solana document/),
   mutant("sol-M9", "an empty solstart snapshot loads Solana", SOL_CEREMONY,
     [patch(APP_JS, "else if (!solLoading && solStartSigned()) solLoad();",
       "else if (!solLoading) solLoad();")],
     /with no start document: no load/),
   mutant("sol-M10", "openGroup does not close the Solana part", SOL_APP,
-    [patch(APP_JS, "  sol?.close();\n")], /the wallet list watches no Solana document/),
+    [patch(APP_GROUPS, "  sol?.close();\n")], /the wallet list watches no Solana document/),
   mutant("sol-M10-switch", "only the list closes the Solana part, not a switch to a mainnet wallet",
-    SOL_APP, [patch(APP_JS, "  sol?.close();\n", "  if (!gid) sol?.close();\n")],
+    SOL_APP, [patch(APP_GROUPS, "  sol?.close();\n", "  if (!gid) sol?.close();\n")],
     /a mainnet wallet leaves no watch of the last wallet/),
   mutant("sol-cfg-status", "the page takes a URL from an error answer of the server",
     ["node", "web/test/sol-config.mjs"],

@@ -6,8 +6,9 @@ import { log, showBanner } from "./app-state.js";
 import { S, said, withTimeout } from "./app-kit.js";
 import { Z } from "./app-engine.js";
 import { adoptInviteKey } from "./app-links.js";
+import { boot } from "./app-groups.js";
 import {
-  adoptPersonal, boot, dropDeviceCopy, followAccount, personal, personalDamaged, react, render,
+  adoptPersonal, dropDeviceCopy, followAccount, personal, personalDamaged, react, render,
   takeDeviceAccount,
 } from "./app-rest.js";
 
