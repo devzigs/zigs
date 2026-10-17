@@ -21,11 +21,13 @@ import "./app-messages.js";
 import "./app-dkg.js";
 import "./app-payments.js";
 import "./app-payreq.js";
+import "./app-account.js";
 import "./app-rest.js";
 import { loadEngine } from "./app-engine.js";
 import { lockedVault } from "./app-keystore.js";
 import { adoptInviteKey } from "./app-links.js";
-import { draw, render, startUp } from "./app-rest.js";
+import { startUp } from "./app-account.js";
+import { draw, render } from "./app-rest.js";
 
 adoptInviteKey();
 draw();   // the first paint does not wait for the engine

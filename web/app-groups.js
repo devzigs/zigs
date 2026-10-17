@@ -15,7 +15,8 @@ import {
 } from "./app-filter.js";
 import { syncRooms } from "./app-messages.js";
 import { expired } from "./app-payments.js";
-import { render, resetSolStart, sol, solAttach, solOn, startAccount } from "./app-rest.js";
+import { startAccount } from "./app-account.js";
+import { render, resetSolStart, sol, solAttach, solOn } from "./app-rest.js";
 
 export let db = null, sdb = null, user = null, downloads = null, me = null, canWrite = null, dbReady = false;
 export function setDb(v) { sdb = v; db = v; }

@@ -8,9 +8,9 @@ import { Z } from "./app-engine.js";
 import { adoptInviteKey } from "./app-links.js";
 import { boot } from "./app-groups.js";
 import {
-  adoptPersonal, dropDeviceCopy, followAccount, personal, personalDamaged, react, render,
-  takeDeviceAccount,
-} from "./app-rest.js";
+  adoptPersonal, dropDeviceCopy, followAccount, personal, personalDamaged, takeDeviceAccount,
+} from "./app-account.js";
+import { react, render } from "./app-rest.js";
 
 // Key shares, DKG secrets, signing nonces and wallet keys never leave this browser. With the
 // passkey lock on, they are stored only as one sealed record (web/vault.js), and the page asks for
