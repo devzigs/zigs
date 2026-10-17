@@ -37,7 +37,7 @@ use zcash_protocol::{
 use super::{
     account, build_ironwood_pczt, e, ensure, expiry,
     memo::{commitment_bytes, parse_memo, received as memos_in, MemoView},
-    pczt_to_b64,
+    pczt_to_b64, session,
     snapshot::{decode_note, decode_store, encode_note, encode_store, hex32},
     Payee, Terms, R,
 };
@@ -622,6 +622,18 @@ fn sent_ids(s: &Inner) -> String {
     json!(s.sent.iter().map(|(txid, _)| txid).collect::<Vec<_>>()).to_string()
 }
 
+/// The state of a payment of this wallet from data that one seat cannot forge: see
+/// `session::state`. `pczt`, `signed` and `approved` may each be empty.
+fn session_state(s: &Inner, pczt: &str, signed: &str, approved: &str) -> R<String> {
+    let fvk = s.ufvk.orchard().ok_or("the viewing key has no Orchard component")?;
+    let sent: HashSet<String> = s.sent.iter().map(|(txid, _)| txid.clone()).collect();
+    let own: HashSet<[u8; 32]> = s.notes.iter().map(|n| n.nf.to_bytes()).collect();
+    let spent: HashSet<[u8; 32]> =
+        s.notes.iter().filter(|n| n.spent.is_some()).map(|n| n.nf.to_bytes()).collect();
+    let chain = session::Chain { sent: &sent, spent: &spent, own: &own, synced: s.synced };
+    Ok(session::state(fvk, (pczt, signed, approved), &chain))
+}
+
 fn attach(s: &mut Inner, txid: &str, raw_b64: &str) -> R<String> {
     let raw = B64.decode(raw_b64).map_err(|_| "the transaction is not base64".to_string())?;
     Ok(json!({"attached": s.attach_transaction(txid, &raw)?}).to_string())
@@ -867,6 +879,20 @@ impl ChainWallet {
         sent_ids(&self.0.borrow())
     }
 
+    /// Whether a payment is "done", "expired" or "unknown", from verified data only:
+    /// `{"state", "txid", "why"}`. `pczt` is the proposal, `signed` the combined signatures and
+    /// `approved` the sighash (hex) that this device approved; each may be empty. Only a device
+    /// that approved the payment can see "expired".
+    #[wasm_bindgen(js_name = sessionState)]
+    pub fn session_state(
+        &self,
+        pczt: &str,
+        signed: &str,
+        approved: &str,
+    ) -> Result<String, JsError> {
+        super::js(session_state(&self.0.borrow(), pczt, signed, approved))
+    }
+
     /// Transactions whose memos are not read yet: `[{"txid", "hash", "height"}, …]`. Pass `hash`
     /// to `fetchTransaction`, then the result to `attachTransaction`.
     #[wasm_bindgen(js_name = memoNeeds)]
@@ -1004,6 +1030,10 @@ pub(crate) mod native {
 
     pub(crate) fn sent(key: &str) -> R<String> {
         with(key, |w| Ok(sent_ids(w)))
+    }
+
+    pub(crate) fn session_state(key: &str, pczt: &str, signed: &str, approved: &str) -> R<String> {
+        with(key, |w| super::session_state(w, pczt, signed, approved))
     }
 
     pub(crate) fn snapshot(key: &str) -> R<String> {
@@ -1624,6 +1654,171 @@ mod tests {
         }
         let five = message_of(&w, &to, &"é".repeat(1265), tip).unwrap();
         assert_eq!((&five["parts"], &five["fee"]), (&json!(5), &json!(30_000)));
+    }
+
+    /// A payment of `amount` zat from a funded account, its signed copy (a valid spend
+    /// authorization signature, as t seats make it) and its decoded facts.
+    struct Paid {
+        pczt: String,
+        signed: String,
+        sighash: String,
+        txid: String,
+        expiry: u32,
+    }
+
+    fn paid(w: &Inner, seed: &str, tip: u32, amount: u64) -> Paid {
+        let to = address_for(&"0b".repeat(32), 1);
+        let payees = parse_payees(&[json!({"to": to, "amount": amount})], Network::TestNetwork);
+        let made = v(&spend_pczt(w, &payees.unwrap(), tip, false).unwrap());
+        let pczt = made["pczt"].as_str().unwrap().to_string();
+        let signed = v(&account::sign(&pczt, seed, "testnet").unwrap());
+        let fvk = hex::encode(w.ufvk.orchard().unwrap().to_bytes());
+        let ins = v(&crate::inspect(&pczt, &fvk).unwrap());
+        Paid {
+            signed: signed["signed_pczt"].as_str().unwrap().to_string(),
+            sighash: ins["sighash"].as_str().unwrap().to_string(),
+            txid: ins["txid"].as_str().unwrap().to_string(),
+            expiry: u32::try_from(ins["expiry_height"].as_u64().unwrap()).unwrap(),
+            pczt,
+        }
+    }
+
+    /// The PCZT `b64` with the `alpha` of every spend removed, as one seat can remove it after
+    /// the signatures.
+    fn without_alpha(b64: &str) -> String {
+        use group::ff::PrimeField;
+        let mut alphas = vec![];
+        let collect = |b: &orchard::pczt::Bundle| {
+            let found = b.actions().iter().filter_map(|a| a.spend().alpha().map(|x| x.to_repr()));
+            alphas.extend(found);
+            Ok::<(), pczt::roles::verifier::OrchardError<crate::Custom>>(())
+        };
+        let p = crate::pczt_from_b64(b64).unwrap();
+        pczt::roles::verifier::Verifier::new(p).with_ironwood(collect).unwrap();
+        let mut raw = B64.decode(b64).unwrap();
+        for alpha in alphas {
+            let tagged = [&[1u8][..], &alpha[..]].concat(); // Some(alpha) as postcard writes it
+            let at = raw.windows(33).position(|x| x == tagged).expect("the alpha bytes");
+            raw = [&raw[..at], &[0u8][..], &raw[at + 33..]].concat();
+        }
+        B64.encode(raw)
+    }
+
+    fn state_of(w: &Inner, pczt: &str, signed: &str, approved: &str) -> String {
+        v(&session_state(w, pczt, signed, approved).unwrap())["state"].as_str().unwrap().to_string()
+    }
+
+    /// Only signatures under the wallet key and the sighash that this device approved decide
+    /// "done" and "expired". A proposal or a sent mark that one seat writes decides nothing.
+    #[test]
+    fn a_session_state_comes_from_verified_data_only() {
+        let seed = "0a".repeat(32);
+        let (mut w, chain) = funded_account(&seed, &[1_000_000]);
+        let p = paid(&w, &seed, chain.last_height(), 100_000);
+        let (pczt, signed, ok) = (p.pczt.as_str(), p.signed.as_str(), p.sighash.as_str());
+        assert_eq!(state_of(&w, "", "", ""), "unknown");
+        assert_eq!(state_of(&w, pczt, "", ""), "unknown", "a proposal alone proves nothing");
+        assert_eq!(state_of(&w, pczt, pczt, ""), "unknown", "an unsigned copy is no signature");
+        w.synced = p.expiry + 2;
+        assert_eq!(state_of(&w, pczt, "", ok), "unknown", "a reorganisation can still add it");
+        w.synced = p.expiry + 3;
+        assert_eq!(state_of(&w, pczt, "", ok), "expired");
+        assert_eq!(state_of(&w, pczt, signed, ok), "expired");
+        assert_eq!(state_of(&w, pczt, signed, ""), "unknown", "only an approver sees expired");
+        let made = v(&session_state(&w, pczt, signed, ok).unwrap());
+        assert_eq!(made["txid"], json!(p.txid));
+        w.sent.push((p.txid.clone(), p.expiry - 5));
+        assert_eq!(state_of(&w, pczt, signed, ok), "done");
+        assert_eq!(state_of(&w, "", "", ok), "done", "the txid follows from the approved sighash");
+        let seen = v(&session_state(&w, "", signed, "").unwrap());
+        assert_eq!(seen["state"], "unknown", "only an approver sees done");
+        assert_eq!(seen["txid"], json!(p.txid), "it still names what t seats signed");
+        assert!(seen["why"].as_str().unwrap().contains("did not approve"));
+        assert_eq!(state_of(&w, "", pczt, ok), "done", "an unsigned copy changes nothing");
+    }
+
+    /// A rewritten proposal, signatures of another transaction, another wallet or spent notes
+    /// never turn into "expired", and an old signed payment never turns into "done".
+    #[test]
+    fn a_forged_or_spent_session_is_never_expired() {
+        let seed = "0a".repeat(32);
+        let (mut w, chain) = funded_account(&seed, &[1_000_000, 900_000]);
+        let tip = chain.last_height();
+        let (a, b) = (paid(&w, &seed, tip, 100_000), paid(&w, &seed, tip, 100_000));
+        w.synced = a.expiry.max(b.expiry) + 10;
+        assert_eq!(state_of(&w, &a.pczt, "", &a.sighash), "expired");
+        assert_eq!(state_of(&w, "", &a.signed, &a.sighash), "expired", "facts of the signed part");
+        assert_eq!(state_of(&w, &b.pczt, &a.signed, &a.sighash), "expired", "a rewritten proposal");
+        assert_eq!(state_of(&w, &b.pczt, "", &a.sighash), "unknown", "another proposal");
+        let why = v(&session_state(&w, &a.pczt, &b.signed, &a.sighash).unwrap());
+        assert_eq!(why["state"], "unknown");
+        assert!(why["why"].as_str().unwrap().contains("another transaction"));
+        let copy = state_of(&w, &a.pczt, &b.pczt, &a.sighash);
+        assert_eq!(copy, "expired", "an unsigned copy of another proposal contests nothing");
+        let bare = state_of(&w, &a.pczt, &without_alpha(&b.signed), &a.sighash);
+        assert_eq!(bare, "expired", "signatures without alpha are no signatures of the wallet");
+        for bad in [format!("{}00", a.sighash), a.sighash[..62].to_string(), "zz".into()] {
+            assert_eq!(state_of(&w, &a.pczt, "", &bad), "unknown", "approved {bad}");
+        }
+        let other = "0c".repeat(32);
+        let (o, ochain) = funded_account(&other, &[1_000_000]);
+        let foreign = paid(&o, &other, ochain.last_height(), 100_000);
+        let mixed = state_of(&w, &a.pczt, &foreign.signed, &a.sighash);
+        assert_eq!(mixed, "expired", "signatures of another wallet do not count");
+        let (mut fresh, _) = funded_account(&seed, &[2_000_000]);
+        fresh.synced = w.synced;
+        assert_eq!(state_of(&fresh, &a.pczt, "", &a.sighash), "unknown", "notes it never saw");
+        for n in w.notes.iter_mut() {
+            n.spent = Some(a.expiry);
+        }
+        assert_eq!(state_of(&w, &a.pczt, &a.signed, &a.sighash), "unknown", "its notes are spent");
+        w.sent.push((a.txid.clone(), a.expiry - 5));
+        assert_eq!(state_of(&w, &b.pczt, &a.signed, ""), "unknown", "an old payment, copied");
+        let held = state_of(&w, &a.pczt, &b.signed, &a.sighash);
+        assert_eq!(held, "done", "a block holds what this device approved");
+    }
+
+    /// A changed signature on a spend under the wallet key is refused, whatever the value field
+    /// of the spend says: the txid does not cover that field.
+    #[test]
+    fn a_changed_signature_does_not_verify() {
+        let seed = "0a".repeat(32);
+        let (w, chain) = funded_account(&seed, &[600_000, 700_000]);
+        let p = paid(&w, &seed, chain.last_height(), 1_000_000);
+        let fvk = w.ufvk.orchard().unwrap();
+        let raw = B64.decode(&p.signed).unwrap();
+        let facts = |bytes: &[u8]| session::facts(&Pczt::parse(bytes).unwrap(), fvk, true);
+        assert!(facts(&raw).is_ok());
+        let mut sigs = vec![];
+        let collect = |b: &orchard::pczt::Bundle| {
+            for a in b.actions() {
+                let real = a.spend().value().as_ref().is_some_and(|v| v.inner() > 0);
+                if let (true, Some(sig)) = (real, a.spend().spend_auth_sig()) {
+                    sigs.push(<[u8; 64]>::from(sig));
+                }
+            }
+            Ok::<(), pczt::roles::verifier::OrchardError<crate::Custom>>(())
+        };
+        let signed = crate::pczt_from_b64(&p.signed).unwrap();
+        pczt::roles::verifier::Verifier::new(signed).with_ironwood(collect).unwrap();
+        assert_eq!(sigs.len(), 2, "the payment spends both notes");
+        let flip = |bytes: &[u8], sig: &[u8; 64]| {
+            let at = bytes.windows(64).position(|x| x == sig).expect("the signature bytes");
+            let mut bad = bytes.to_vec();
+            bad[at + 40] ^= 1;
+            bad
+        };
+        for sig in &sigs {
+            assert!(facts(&flip(&raw, sig)).is_err(), "one changed signature of two");
+        }
+        // Some(600,000) as postcard writes it, and Some(0).
+        let (value, zero) = ([0x01, 0xc0, 0xcf, 0x24], [0x01, 0x00]);
+        let at = raw.windows(4).position(|x| x == value).expect("the spend value");
+        let zeroed = [&raw[..at], &zero[..], &raw[at + 4..]].concat();
+        assert!(facts(&zeroed).is_ok(), "the value field does not choose the checked spends");
+        for sig in &sigs {
+            assert!(facts(&flip(&zeroed, sig)).is_err(), "a changed signature, value zero");
+        }
     }
 
     /// A group payment expires one day of blocks after its target and may pay 10 times the fee.

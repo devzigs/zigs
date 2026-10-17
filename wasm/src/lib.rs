@@ -55,6 +55,7 @@ mod chain;
 mod expiry;
 mod memo;
 mod request;
+mod session;
 mod snapshot;
 #[cfg(test)]
 mod testchain;
@@ -1499,7 +1500,10 @@ mod tests {
             shares.insert(i.to_string(), v(&s));
         }
         let agg = v(&sign_aggregate(pczt, &pkp, &pkg, &Value::Object(shares.clone()).to_string()).unwrap());
+        let signed = pczt_from_b64(agg["signed_pczt"].as_str().unwrap()).unwrap();
+        let facts = session::facts(&signed, &parse_fvk(fvk).unwrap(), true).unwrap();
         let out = v(&finalize(agg["signed_pczt"].as_str().unwrap()).unwrap());
+        assert_eq!(json!(facts.txid), out["txid"], "the FROST signatures verify, and the id holds");
         assert!(out["size"].as_u64().unwrap() > 9000);
         assert_eq!(ins["txid"], out["txid"], "the PCZT fixes the id of the final transaction");
         if pool == "ironwood" {

@@ -841,6 +841,26 @@ received payments yet. The engine has the calls for them.
     tip yet (ZEC-8).
   - `expiryState(network, expiry, tip)` (web only): `{"expired", "blocks_left",
     "seconds_left"}`.
+  - `ChainWallet.sessionState(pczt, signed, approved)` and `walletSessionState(key, pczt,
+    signed, approved)`: `{"state", "txid", "why"}` for a payment of this wallet, from data that
+    one seat cannot forge. `approved` is the sighash that this device approved. `signed` (the
+    combined signatures) counts only when at least one spend uses the wallet key (its `rk` is
+    the wallet key randomized by its `alpha`) and every such spend carries a valid spend
+    authorization signature over the PCZT's sighash: only t seats together can make one.
+    - "done": this device approved the transaction, and a synced block holds it.
+    - "expired": this device approved it, the signed part holds no other transaction that t
+      seats signed (one seat can remove one), the synced chain passed its expiry height by 3
+      blocks, it spends a note that this device synced, and none of those notes is spent.
+    - "unknown": anything else, with `why`. A device that did not approve never sees "done" or
+      "expired": any seat can copy the signed part of an older session. `txid` then names what t
+      seats signed.
+    - Limits: "expired" speaks only for the approved transaction. Another transaction of the
+      same session, over other notes or some of the same notes, can have landed, or can still
+      land until its own expiry. An older signed payment in the signed part keeps the state at
+      "unknown". "expired" holds against a reorganisation of up to 3 blocks. Both states trust
+      the light-wallet server for the blocks it sends, as `sent()` does. Orchard (version 5)
+      payments stay "unknown", because the chain wallet scans only Ironwood (TICKETS.md ZEC-9,
+      ZEC-13).
   - `blockSpanSeconds(network, from, to)` (web only): the expected seconds from block `from` to
     block `to`: 75 for each block before NU7, 25 for each block from NU7. The web app uses it
     for every time estimate.

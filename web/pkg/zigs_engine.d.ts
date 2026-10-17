@@ -48,6 +48,13 @@ export class ChainWallet {
      */
     sent(): string;
     /**
+     * Whether a payment is "done", "expired" or "unknown", from verified data only:
+     * `{"state", "txid", "why"}`. `pczt` is the proposal, `signed` the combined signatures and
+     * `approved` the sighash (hex) that this device approved; each may be empty. Only a device
+     * that approved the payment can see "expired".
+     */
+    sessionState(pczt: string, signed: string, approved: string): string;
+    /**
      * The sync state as JSON: notes, scan position and note commitment tree.
      */
     snapshot(): string;
@@ -216,6 +223,7 @@ export interface InitOutput {
     readonly chainwallet_received: (a: number) => [number, number];
     readonly chainwallet_restore: (a: number, b: number, c: number, d: number, e: number, f: number, g: number) => [number, number, number];
     readonly chainwallet_sent: (a: number) => [number, number];
+    readonly chainwallet_sessionState: (a: number, b: number, c: number, d: number, e: number, f: number, g: number) => [number, number, number, number];
     readonly chainwallet_snapshot: (a: number) => [number, number, number, number];
     readonly chainwallet_sync: (a: number, b: any) => any;
     readonly dkgEcho: (a: number, b: number, c: number, d: number) => [number, number, number, number];
