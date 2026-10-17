@@ -30,6 +30,10 @@ import {
   cardState, payeeBlocker, payeeRows, quoted, readRequest, REQUEST_NET, requestNote, requestPayees,
   requestProblem, requestUri, WALLET_NET,
 } from "./requests.js";
+import {
+  busy, clearBadBanner, emptyRaw, inbox, inboxSubs, log, raw, rawInbox, rawReady, ready, readySubs,
+  showBanner, state, ui,
+} from "./app-state.js";
 
 // ───────────────────────── Engine (WASM) ─────────────────────────
 let Z = null, engineSettled = false;   // settled: the engine loaded or failed
@@ -451,44 +455,8 @@ function saveBal(gid, bal) {
   balCache[gid] = { total: bal.spendable + bal.pending, at: Date.now() };
   try { balSealed[gid] = Z.secretSeal(gkeys[gid], "bal\n" + gid, S(balCache[gid])); localStorage.setItem("zf-bal", JSON.stringify(balSealed)); } catch {}
 }
-// Payment proposals of every wallet where this browser holds a seat, for the approval counts.
-export const inbox = {}, inboxSubs = new Map();
-export const ready = {}, readySubs = new Map();
-export const state = {
-  groups: [], gid: null, cid: null, contact: null, g: null, seats: {}, seatsLoaded: false,
-  seatsSettled: false,
-  dkg1: {}, dkg2: {}, confirm: {}, abort: {}, done: {}, verify: {}, wallet: null, sessions: [],
-  sid: null, commits: {}, shares: {}, ignored: 0, pending: false, log: [],
-};
-// What the store holds, before signed writes are checked (see Signed writes below). `state` holds
-// what the page may use.
-const emptyRaw = () => ({
-  seats: {}, dkg1: {}, dkg2: {}, confirm: {}, abort: {}, done: {}, verify: {}, wallet: null,
-  sessions: {}, commits: {}, shares: {},
-});
-export const raw = emptyRaw(), rawInbox = {}, rawReady = {};
 let unsubGroup = [], unsubSession = [];
-export const busy = new Set();
 const inspectCache = new Map();
-export let banner = null;
-
-let bannerTimer = null;
-export function showBanner(kind, text) {
-  banner = { kind, text };
-  const b = document.getElementById("banner");
-  b.setAttribute("role", kind === "bad" ? "alert" : "status");
-  b.hidden = false; b.className = kind;
-  document.getElementById("banner-text").textContent = text;
-  clearTimeout(bannerTimer);
-  if (kind === "ok") bannerTimer = setTimeout(() => { b.hidden = true; }, 4000);
-}
-function clearBadBanner() {
-  if (banner && banner.kind === "bad") {
-    banner = null;
-    document.getElementById("banner").hidden = true;
-  }
-}
-function log(msg) { state.log.unshift(new Date().toLocaleTimeString() + "  " + msg); state.log.length = Math.min(state.log.length, 60); }
 
 // ───────────────────────── Encrypted store ─────────────────────────
 // Every field under groups/{gid} is sealed with the group secret. The secret lives in the invite
@@ -3011,15 +2979,6 @@ function guard(build, ...args) {
 let openLayer = "", tickTimer = null;
 export let opener = "", lastTrigger = "", wantFocus = null;   // focus bookkeeping, see draw()
 function focusAfter(key, force) { wantFocus = key ? { key, force } : null; }
-// View state that only this browser cares about.
-export const ui = {
-  forget: false, tab: "overview", send: false, pay: null, payKey: 0, listError: "",
-  create: false, receive: false, move: false, net: "testnet", ack: false, notify: false,
-  newChat: false, leave: false, backup: null, restore: null,
-  request: null, note: "", priority: false, sendFor: null, contactAdd: false,
-  personal: { net: "testnet", ack: false, fund: "0.003", drop: false },
-};
-try { ui.notify = localStorage.getItem("zf-notify") === "1"; } catch { /* no storage */ }
 const ZEC_FMT = new Intl.NumberFormat("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 8 });
 // ZIP 317 for a payment from up to `outputs` notes: one action per output, change included. A
 // priority payment pays PRIORITY_FACTOR times as much (the engine's cap).
@@ -6245,9 +6204,6 @@ const endCompose = () => {
 document.addEventListener("compositionstart", () => { composing = true; });
 document.addEventListener("compositionend", endCompose);
 document.addEventListener("focusout", endCompose);
-document.getElementById("banner-close").addEventListener("click", () => {
-  document.getElementById("banner").hidden = true;
-});
 document.addEventListener("keydown", (ev) => {
   if (ev.key !== "Escape") return;
   if (state.sid) closeSession();
