@@ -352,7 +352,7 @@ and the rent. The rent comes back to that seat at the execute. The group key sig
    shows the card again.
 
 Not built: withdrawals and deposits of public SOL through the program (SOL-36 condition 1), and a
-cancel or close of a proposal (SOL-47). A proposal account that expires keeps its rent until its
+cancel or close of a proposal (SOL-52). A proposal account that expires keeps its rent until its
 abort authority (the fee key of the proposing seat) cancels it. So does a create that landed when
 its tab crashed before it published the proposal part.
 
@@ -1081,7 +1081,7 @@ it binds the program id and not the code.
   abort authority was the funder key). Cancel before the expiry pays 863,600 lamports of rent for
   the record. That rent goes to the body's rent recipient when anyone closes the record after the
   expiry.
-- Not built: a cancel of a proposal (SOL-47). SOL withdrawals through the program are in version 4
+- Not built: a cancel of a proposal (SOL-52). SOL withdrawals through the program are in version 4
   (condition 1 below), which is not deployed. The page derives the proposal addresses of version
   2, the deployed version. Deposits from public SOL need no leg in the program: the beta's Add SOL
   deposits straight into the pool, to the shielded address of the PDA identity.

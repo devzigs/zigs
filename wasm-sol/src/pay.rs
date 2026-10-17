@@ -274,7 +274,7 @@ fn account_violations(account: Option<&Account>, want: (&Body, u8), pins: &Pins)
 /// authorities (the commitment binds the pool expiry, and body-expiry ties the body to it), so a
 /// second body for an approved commitment is refused.
 // ponytail: the list lives in the seat secret of this browser, so a restored seat or another
-// browser of the seat starts with none (as the salts, SOL-8, SOL-48). Upgrade path: the body hash
+// browser of the seat starts with none (as the salts, SOL-8, SOL-53). Upgrade path: the body hash
 // in the address (program version 4).
 fn once_violation(seen: &Seen, commitment: &Key, body: &[u8]) -> Option<Violation> {
     let hash: Key = Sha256::digest(body).into();
