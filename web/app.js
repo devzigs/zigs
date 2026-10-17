@@ -10,9 +10,11 @@ import "./requests.js";
 import "./app-state.js";
 import "./app-kit.js";
 import "./app-engine.js";
+import "./app-keystore.js";
 import "./app-rest.js";
 import { loadEngine } from "./app-engine.js";
-import { adoptInviteKey, draw, lockedVault, render, startUp } from "./app-rest.js";
+import { lockedVault } from "./app-keystore.js";
+import { adoptInviteKey, draw, render, startUp } from "./app-rest.js";
 
 adoptInviteKey();
 draw();   // the first paint does not wait for the engine
