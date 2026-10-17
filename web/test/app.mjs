@@ -67,6 +67,7 @@ export const T = {
   putSec, saveBackup, checkShape, restoredFor, unboxFrom, round3V1,
   getIdb() { return idb; }, setIdbMs(v) { idbOpenMs = v; },
   get personalPending() { return personalPending; },
+  act, showBanner, tabBar, leaveBox, get wantFocus() { return wantFocus; },
 };
 `;
 const dir = fs.mkdtempSync(path.join(os.tmpdir(), "zigs-app-"));
@@ -2211,6 +2212,67 @@ async function runAcctSync() {
   // The sync of the account that the 60 second timer starts.
   t.acct.syncing = false;
   await t.runSync(t.acct);
+}
+
+// Three paths of the page that no check above runs: a good action clears a bad banner, an arrow
+// key moves the tab, and Leave chat asks first. Each one asks for the focus of a control, which
+// the next redraw (120 ms later) takes. A recorder stands in for the page.
+{
+  const realDocument = globalThis.document;
+  class Rec extends Node {
+    constructor(tag) {
+      super();
+      Object.assign(this, { tag, attrs: {}, kids: [], on: {} });
+    }
+    setAttribute(k, v) { this.attrs[k] = String(v); }
+    addEventListener(type, fn) { this.on[type] = fn; }
+    append(...x) { this.kids.push(...x); }
+  }
+  const banner = new Rec("div"), bannerText = new Rec("span");
+  globalThis.document = {
+    activeElement: { dataset: { key: "send-ok" } },
+    getElementById: (id) => ({ banner, "banner-text": bannerText })[id] ?? null,
+    createElement: (tag) => new Rec(tag), createTextNode: (text) => ({ text }),
+  };
+  const ev = { preventDefault() {}, currentTarget: null };
+  const key = (k) => ({ key: k, preventDefault() {} });
+  const { tab, leave } = t.ui;
+  try {
+    t.showBanner("bad", "an earlier error");
+    assert.equal(banner.hidden, false);
+    await t.act(async () => {})(ev);
+    assert.equal(t.banner, null, "a good action clears a bad banner");
+    assert.equal(banner.hidden, true, "and hides it");
+    assert.deepEqual(t.wantFocus, { key: "send-ok", force: false }, "the control gets the focus");
+    t.showBanner("ok", "saved");
+    await t.act(async () => {})(ev);
+    assert.deepEqual(t.banner, { kind: "ok", text: "saved" }, "a good banner stays");
+    await t.act(async () => { throw new Error("no"); })(ev);
+    assert.deepEqual(t.banner, { kind: "bad", text: "no" }, "a failed action shows its error");
+
+    const tabs = [["a", "A"], ["b", "B"], ["c", "C"]];
+    t.ui.tab = "a";
+    t.tabBar(tabs).on.keydown(key("ArrowRight"));
+    assert.equal(t.ui.tab, "b", "the right arrow moves to the next tab");
+    assert.deepEqual(t.wantFocus, { key: "tab-b", force: true }, "and the focus goes with it");
+    t.tabBar(tabs).on.keydown(key("End"));
+    assert.equal(t.ui.tab, "c");
+    t.tabBar(tabs).on.keydown(key("ArrowRight"));
+    assert.equal(t.ui.tab, "a", "the right arrow wraps around");
+    t.tabBar(tabs).on.keydown(key("x"));
+    assert.equal(t.ui.tab, "a", "another key changes nothing");
+
+    t.ui.leave = false;
+    const ask = t.leaveBox("chat-id").kids[0];
+    assert.equal(ask.attrs["data-key"], "leave-ask");
+    ask.on.click();
+    assert.equal(t.ui.leave, true, "Leave chat asks first");
+    assert.deepEqual(t.wantFocus, { key: "leave-no", force: true }, "and the focus goes to Cancel");
+  } finally {
+    globalThis.document = realDocument;
+    Object.assign(t.ui, { tab, leave });
+  }
+  await sleep(200);
 }
 
 console.log("app ok");
