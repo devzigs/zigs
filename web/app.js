@@ -33,8 +33,10 @@ import {
   cardState, payeeBlocker, payeeRows, quoted, readRequest, REQUEST_NET, requestNote, requestPayees,
   requestProblem, requestUri, WALLET_NET,
 } from "/requests.js";
+
 // ───────────────────────── Engine (WASM) ─────────────────────────
 let Z = null, engineSettled = false;   // settled: the engine loaded or failed
+export function setZ(m) { Z = m; }
 const engineDot = document.getElementById("engine-dot");
 const engineText = document.getElementById("engine-text");
 function setEngine(state, text) { engineDot.className = "dot " + state; engineText.textContent = text; }
@@ -108,6 +110,8 @@ const mem = {};
 let storageOk = true;
 let lockedVault = null;   // the sealed record until unlock; { damaged } if it does not parse
 let vault = null;         // { rec, key } while unlocked
+export function setLocked(v) { lockedVault = v; }
+export function setVault(v) { vault = v; }
 try {
   const raw = localStorage.getItem("zf-vault");
   if (raw) lockedVault = parseVault(raw) || { damaged: true };
@@ -116,12 +120,14 @@ function readPlain(name) {
   try { return JSON.parse(localStorage.getItem(name) || "{}"); }
   catch { storageOk = false; return name === "zf-secrets" ? mem : {}; }
 }
-let secrets = lockedVault ? {} : readPlain("zf-secrets");
+export let secrets = lockedVault ? {} : readPlain("zf-secrets");
+function setSecrets(v) { secrets = v; }
 let chats = normChats(lockedVault ? null : readPlain("zf-chats"));
-let personal = null;          // the personal account (web/personal.js), with its seed
-let personalError = "";       // why a saved account cannot be read
+export let personal = null;          // the personal account (web/personal.js), with its seed
+function setPersonal(v) { personal = v; }
+export let personalError = "";       // why a saved account cannot be read
 let personalDamaged = null;   // the saved value that failed to read, kept so that no save erases it
-let personalPending = false;  // the start-up read of the saved account has not ended
+export let personalPending = false;  // the start-up read of the saved account has not ended
 let vaultWrite = Promise.resolve(true);
 const LOCKED_ELSEWHERE = "Zigs was locked in another tab, so this tab cannot save. "
   + "Close it and continue in the locked tab.";
@@ -153,7 +159,7 @@ async function foreignFields() {
   }
 }
 
-async function persistSealed() {
+export async function persistSealed() {
   try {
     const rec = await seal(vault.key, vault.rec, { ...(await foreignFields()), secrets,
       keys: gkeys, chats, personal: personal || personalDamaged });
@@ -176,7 +182,7 @@ function persist() {
   return vaultWrite;
 }
 
-async function lockWithPasskey() {
+export async function lockWithPasskey() {
   if (!storageOk) throw new Error("This browser does not let the page save data.");
   const made = await createPasskey();
   // Another tab may have saved newer secrets: seal what storage holds now.
@@ -200,7 +206,7 @@ async function lockWithPasskey() {
   showBanner("ok", "Locked. Zigs asks for this passkey each time it opens in this browser.");
 }
 
-async function unlockVault() {
+export async function unlockVault() {
   if (lockedVault.damaged) {
     throw new Error("The locked keys in this browser are damaged and cannot be opened.");
   }
@@ -244,7 +250,7 @@ const said = (e) => (e && e.message) || String(e);
 
 // The saved account, or null for none. Throws when IndexedDB fails. A throw with `stored` means
 // that a record is there but does not open: it is damaged, and no new account may replace it.
-async function deviceRead() {
+export async function deviceRead() {
   const [key, rec] = await Promise.all(["personal:key", "personal:rec"]
     .map((name) => idb("readonly", (st) => st.get(name))));
   if (!rec) return null;
@@ -273,7 +279,7 @@ function dropDeviceCopy() {
 
 // Reads a saved account. A record that does not read stays as it is, and no new account is made
 // over it.
-function adoptPersonal(x) {
+export function adoptPersonal(x) {
   personal = null; personalError = ""; personalDamaged = null;
   if (x == null) return;
   try { personal = normPersonal(x, personalEnv()); } catch (e) {
@@ -294,7 +300,7 @@ const personalEnv = () => ({
 // device copy. A failed read of IndexedDB as a whole shows nothing. A record that is there but does
 // not open blocks a new account. A store that lost the account never erases the memory copy. The
 // sync follows the account that it reads.
-async function rereadPersonal() {
+export async function rereadPersonal() {
   if (vault) return rereadVault();
   if (typeof indexedDB === "undefined") return;
   try {
@@ -331,7 +337,7 @@ async function rereadVault() {
 // Before the lock turns on: the account moves into the sealed record. A record that is there but
 // does not open stops the lock, because the account would be left out. A store that fails as a
 // whole holds no account that this page ever saw.
-async function takeDeviceAccount() {
+export async function takeDeviceAccount() {
   if (typeof indexedDB === "undefined") return;
   let stored;
   try { stored = await deviceRead(); } catch (e) {
@@ -346,7 +352,7 @@ async function takeDeviceAccount() {
 }
 
 let personalWrite = Promise.resolve(true);
-function persistPersonal(fresh = false) {
+export function persistPersonal(fresh = false) {
   if (lockedVault) return Promise.resolve(false);
   if (vault) return persist();
   try {
@@ -377,7 +383,7 @@ function exclusive(name, fn) {
 
 // Changes the account and saves it. The change is undone when the save fails. The step reads the
 // saved account first and runs alone, so two changes never overwrite each other.
-function changePersonal(change) {
+export function changePersonal(change) {
   return exclusive("account", async () => {
     await rereadPersonal();
     if (!personal) throw new Error("There is no personal account.");
@@ -389,9 +395,9 @@ function changePersonal(change) {
   });
 }
 
-function mySeatSecrets(gid) { return Object.entries(secrets).filter(([k]) => k.startsWith(gid + ":")).map(([k, v]) => [Number(k.split(":")[1]), v]); }
-function sec(gid, seat) { return secrets[skey(gid, seat)]; }
-function putSec(gid, seat, patch) {
+export function mySeatSecrets(gid) { return Object.entries(secrets).filter(([k]) => k.startsWith(gid + ":")).map(([k, v]) => [Number(k.split(":")[1]), v]); }
+export function sec(gid, seat) { return secrets[skey(gid, seat)]; }
+export function putSec(gid, seat, patch) {
   const held = Object.assign(secrets[skey(gid, seat)] || {}, patch);
   delete held.backedUp;   // the flag of an older version, see seatBackedUp in util.js
   secrets[skey(gid, seat)] = held;
@@ -400,6 +406,9 @@ function putSec(gid, seat, patch) {
 
 // ───────────────────────── Platform ─────────────────────────
 let db = null, sdb = null, user = null, downloads = null, me = null, canWrite = null, dbReady = false;
+export function setDb(v) { sdb = v; db = v; }
+export function setMe(v) { me = v; }
+export function setDownloads(v) { downloads = v; }
 // Light-wallet servers in order of preference. Mainnet uses a third-party server, so the group
 // server and the chain server have different operators (see PRIVACY.md). The first testnet server
 // is /lwd of this origin: the Worker relays it to our node (cf/src/index.js).
@@ -422,7 +431,9 @@ const netBadge = (g) => netOf(g).cap
 const SERVER_TIMEOUT_MS = 8000;
 const MISSING_SECRET = "This link is missing the wallet secret. Ask for the full invite link.";
 let chain = null;   // { gid, cw, prog, bal, received, ms, error, syncing } for the open group
-let acct = null;    // the same for the personal account, with account: true (see startAccount)
+export function setChain(v) { chain = v; }
+export let acct = null;    // the same for the personal account, with account: true (see startAccount)
+export function setAcct(v) { acct = v; }
 // Last known balance per wallet, so the wallet list shows money before a wallet syncs.
 // Balances are sealed with each wallet's key, so the browser's storage does not show amounts.
 let balSealed = {};
@@ -432,7 +443,7 @@ try {
   for (const [gid, v] of Object.entries(balSealed)) if (typeof v !== "string") delete balSealed[gid];
   localStorage.setItem("zf-bal", JSON.stringify(balSealed));
 } catch {}
-const balCache = {};
+export const balCache = {};
 function balOf(gid) {
   if (!(gid in balCache) && Z && gkeys[gid] && typeof balSealed[gid] === "string") {
     try { balCache[gid] = J(Z.secretOpen(gkeys[gid], "bal\n" + gid, balSealed[gid])); } catch { balCache[gid] = null; }
@@ -444,9 +455,9 @@ function saveBal(gid, bal) {
   try { balSealed[gid] = Z.secretSeal(gkeys[gid], "bal\n" + gid, S(balCache[gid])); localStorage.setItem("zf-bal", JSON.stringify(balSealed)); } catch {}
 }
 // Payment proposals of every wallet where this browser holds a seat, for the approval counts.
-const inbox = {}, inboxSubs = new Map();
-const ready = {}, readySubs = new Map();
-const state = {
+export const inbox = {}, inboxSubs = new Map();
+export const ready = {}, readySubs = new Map();
+export const state = {
   groups: [], gid: null, cid: null, contact: null, g: null, seats: {}, seatsLoaded: false,
   seatsSettled: false,
   dkg1: {}, dkg2: {}, confirm: {}, abort: {}, done: {}, verify: {}, wallet: null, sessions: [],
@@ -458,14 +469,14 @@ const emptyRaw = () => ({
   seats: {}, dkg1: {}, dkg2: {}, confirm: {}, abort: {}, done: {}, verify: {}, wallet: null,
   sessions: {}, commits: {}, shares: {},
 });
-const raw = emptyRaw(), rawInbox = {}, rawReady = {};
+export const raw = emptyRaw(), rawInbox = {}, rawReady = {};
 let unsubGroup = [], unsubSession = [];
-const busy = new Set();
+export const busy = new Set();
 const inspectCache = new Map();
-let banner = null;
+export let banner = null;
 
 let bannerTimer = null;
-function showBanner(kind, text) {
+export function showBanner(kind, text) {
   banner = { kind, text };
   const b = document.getElementById("banner");
   b.setAttribute("role", kind === "bad" ? "alert" : "status");
@@ -485,7 +496,8 @@ function log(msg) { state.log.unshift(new Date().toLocaleTimeString() + "  " + m
 // ───────────────────────── Encrypted store ─────────────────────────
 // Every field under groups/{gid} is sealed with the group secret. The secret lives in the invite
 // link fragment and in this browser; the server sees paths and field names only.
-let gkeys = {};
+export let gkeys = {};
+function setGkeys(v) { gkeys = v; }
 if (!lockedVault) gkeys = readPlain("zf-keys");
 function putKey(gid, key) { gkeys[gid] = key; persist(); }
 const setHash = (h) => { try { history.replaceState(null, "", h); } catch {} };
@@ -557,7 +569,7 @@ function plainJson(v, depth = 0) {
   if (v === null || typeof v !== "object") return true;
   return depth < 32 && Object.values(v).every((x) => plainJson(x, depth + 1));
 }
-function openDoc(path, raw) {
+export function openDoc(path, raw) {
   const key = keyOf(path);
   if (!Z || !key || raw == null) return null;
   const out = {}; let ok = 0;
@@ -628,7 +640,7 @@ const validWallet = (g) => validShape(g.n, g.t);
 // Every wallet keeps the first network that this device saw. A version 3 wallet also keeps the
 // first n and t. The group document has no signature, so a holder of the invite link could write
 // other values (PROTOCOL.md section 15).
-function cleanGroup(id, d) {
+export function cleanGroup(id, d) {
   pinVersion(id, d);
   const g = {
     ...d, id, name: typeof d.name === "string" ? d.name : "Wallet", unreadable: !validWallet(d),
@@ -657,7 +669,7 @@ function watchInbox() {
 }
 
 // A seat records its nonces locally when it approves, so no server read is needed.
-function needsMyApproval(gid, ss) {
+export function needsMyApproval(gid, ss) {
   if (ss.status !== "collecting" || ss.package || ss.error) return false;
   if (gid === state.gid && expired(ss)) return false;
   // In the open wallet only owned seats count; a restored seat that does not fit cannot approve.
@@ -674,7 +686,7 @@ function sub(path, fn) {
   }, (e) => log("subscription error on " + path + ": " + e.code));
 }
 
-function openGroup(gid) {
+export function openGroup(gid) {
   for (const u of unsubGroup) u(); unsubGroup = [];
   sol?.close();
   closeSession();
@@ -734,7 +746,7 @@ function closeSession() {
 // ───────────────────────── Derived state ─────────────────────────
 // The seats of the open wallet. A group document with no valid n and t has none, so a made-up n
 // never sizes an array.
-const seatIds = () => state.g && !state.g.unreadable
+export const seatIds = () => state.g && !state.g.unreadable
   ? Array.from({ length: state.g.n }, (_, i) => i + 1) : [];
 const allSeated = () => seatIds().every((i) => {
   const s = state.seats[i];
@@ -788,7 +800,7 @@ function cached(key, inputs, ask) {
 // seat's key share and the share fits the wallet. Tor Browser gets a new identity each session, so
 // identity alone is not enough.
 const ownsSeat = (i, s) => seatOwned(state.seats[i], s, me, () => fitState(i, s));
-const localSeats = () => !state.gid ? []
+export const localSeats = () => !state.gid ? []
   : mySeatSecrets(state.gid).filter(([i, s]) => ownsSeat(i, s)).map(([i]) => i);
 // Is seat i this browser's? In a version 3 wallet it is a seat whose key this browser holds,
 // because a made-up seat document can copy any identity. Before, it is the identity in the seat
@@ -863,13 +875,13 @@ function reactNow() {
 // it.
 const solGroup = (gid) =>
   (gid === state.gid && state.g) || state.groups.find((x) => x.id === gid);
-const solOn = (gid = state.gid) => {
+export const solOn = (gid = state.gid) => {
   const g = solGroup(gid);
   return g?.network === "testnet" && walletVersion(g) === 3 && signedMode(gid);
 };
 const SOL_BACKUP_KIND = "zigs-sol-backup";
 const SOL_OFF = "Solana is not available on this server";
-let sol = null, solLoading = null, solError = "";
+export let sol = null, solLoading = null, solError = "";
 let solStartDoc = null;   // the stored solstart/1 of the open wallet, whoever wrote it
 function resetSolStart() { solStartDoc = null; }
 const solHost = () => ({
@@ -881,7 +893,7 @@ const solHost = () => ({
 // A server with SOL off does not serve the module, and the text says so.
 const solModule = () => import("/sol/main.js").catch(() => { throw new Error(SOL_OFF); });
 // A failed load is final until the page reloads: a retry on every redraw would loop.
-function solLoad() {
+export function solLoad() {
   solLoading ||= solModule().then((m) => m.attach(solHost())).then((m) => {
     sol = m;
     if (solOn()) sol.open(state.gid, "groups/" + state.gid);
@@ -909,7 +921,7 @@ function solReact() {
   if (sol) sol.react();
   else if (!solLoading && solStartSigned()) solLoad();
 }
-const solTab = () => sol ? guard(sol.view)
+export const solTab = () => sol ? guard(sol.view)
   : solError ? el("p", { class: "small" }, solError)
   : (solLoad(), el("p", { class: "small" }, "Loading Solana…"));
 async function solRestore(b, encrypted) {
@@ -1034,7 +1046,7 @@ function openBox(j, i, s, sealed) {
   try { return J(text); } catch { throw new Error("Seat " + j + " sent an unreadable message"); }
 }
 
-async function round3V1(i) {
+export async function round3V1(i) {
   const gid = state.gid, s = sec(gid, i);
   const r1 = {}, r2 = {};
   for (const j of seatIds()) if (j !== i) {
@@ -1117,7 +1129,7 @@ async function createWallet() {
 // signers compare it out of band. A confirm document is only a claim, so a seat also keeps the
 // number its person confirmed ("confirmed"), and the ceremony runs only when both agree with the
 // local number.
-function safetyNo() {
+export function safetyNo() {
   if (!state.g || !allSeated()) return null;
   const keys = {}; for (const i of seatIds()) keys[i] = state.seats[i].boxPk;
   try { return Z.safetyNumber(state.gid, state.g.t, state.g.n, netName(state.g), S(keys)); }
@@ -1247,7 +1259,7 @@ async function round2V2(i) {
 }
 
 // Opens the box seat j sent to seat i: its round-2 package and its secret part of sk.
-function unboxFrom(j, i, s) {
+export function unboxFrom(j, i, s) {
   const d = state.dkg2[j + "-" + i];
   if (d.echo !== s.echo) throw new Error(DIFFERENT);
   const bad = new Error("Seat " + j + " sent an unreadable message");
@@ -1284,7 +1296,7 @@ async function round3V2(i) {
   if (!saved) showBanner("bad", "This browser could not save your key share. Keep this tab open, and use Back up.");
 }
 
-function reactSession(ss) {
+export function reactSession(ss) {
   const fvk = state.wallet.orchard_fvk;
   // The engine takes only strings. A document with another type would crash it.
   if (!isStr(ss.pczt) || !isStr(fvk) || (ss.package != null && !isStr(ss.package))) return;
@@ -1384,7 +1396,7 @@ function aggregateShares(ss) {
 // ───────────────────────── Actions ─────────────────────────
 // `from` is the wallet this one replaces. The old wallet gets only the new id, never its key:
 // signers left out of the new wallet must not get its viewing key.
-async function createGroup(name, n, t, from = null, network = "testnet") {
+export async function createGroup(name, n, t, from = null, network = "testnet") {
   // Signed writes need a signing key for every seat, so check before anything is made.
   if (!(await canSign())) throw new Error(NO_SIGNING_SEAT);
   const ref = sdb.collection("groups").doc();
@@ -1409,7 +1421,7 @@ async function newSeatKey(version) {
 
 // The seat keeps the version of its wallet and its own box key. The store can show another
 // version or key later (reactStops).
-async function takeSeat(i, version = groupVersion()) {
+export async function takeSeat(i, version = groupVersion()) {
   if (!Z || !version) return;
   const gid = state.gid, sign = await newSeatKey(version);
   const ref = sdb.doc("groups/" + gid + "/seats/" + i);
@@ -1466,6 +1478,7 @@ async function pickServer(net) {
 const snapId = (c) => c.id ?? c.gid;
 const snapSecret = (c) => c.secret ?? gkeys[c.gid];
 let idbOpen = null, idbOpenMs = 5000;
+export function setIdbMs(v) { idbOpenMs = v; }
 // Opens the database once. An open that fails or never answers is forgotten, so that the next call
 // tries again and a stuck browser cannot hold a caller for ever.
 function idbHandle() {
@@ -1485,6 +1498,7 @@ function idb(mode, fn) {
     tx.onabort = () => rej(tx.error || new Error("IndexedDB transaction aborted"));
   }));
 }
+export function setIdb(f) { idb = f; }
 async function loadSnapshot(c) {
   try {
     const sealed = await idb("readonly", (st) => st.get(snapId(c)));
@@ -1519,7 +1533,7 @@ async function connect(c) {
   if (next && !c.bal) { c.bal = J(c.cw.balance()); c.received = J(c.cw.received()); c.sent = new Set(J(c.cw.sent())); render(); }
 }
 
-async function runSync(c) {
+export async function runSync(c) {
   if (c.syncing) return;
   c.syncing = true; c.error = null; render();
   const t0 = performance.now();
@@ -1557,7 +1571,7 @@ async function rescanFromBirthday(c) {
 // sync found. The server learns which ones (see memoSwitch). It runs after a sync and never blocks
 // it. A failed read skips that transaction. The engine moves it back in its list, so the next run
 // starts with other transactions. The next sync tries again.
-async function runMemos(c) {
+export async function runMemos(c) {
   if (c.memoBusy || !c.cw || !memosOn(c)) return;
   c.memoBusy = true;
   const cw = c.cw;
@@ -1607,7 +1621,7 @@ async function readMemo(c, cw, n) {
 
 // `payees` (address, amount and optional memo) and `note` are the proposer's words; approvers
 // check `payees` against the transaction.
-async function newSpend(payees, note, move = null, priority = false) {
+export async function newSpend(payees, note, move = null, priority = false) {
   const gid = state.gid, approvals = state.g.t;
   if (!chain || chain.gid !== gid || !chain.bal) {
     throw new Error("The wallet has not finished its first sync.");
@@ -1639,7 +1653,7 @@ async function cancelMove() {
   showBanner("ok", "Move cancelled. This wallet stays as it is.");
 }
 
-async function broadcastTx(ss) {
+export async function broadcastTx(ss) {
   const gid = state.gid, ref = sdb.doc(sessionPath(ss, gid));
   try {
     if (!isStr(ss.final.tx_hex) || !isStr(ss.final.txid)) {
@@ -1692,7 +1706,7 @@ function approveRefusal(ss, i, ins) {
 
 // One approval at a time for each payment and seat: a second click during the waits below would
 // make other nonces.
-async function approve(ss, i) {
+export async function approve(ss, i) {
   const key = "approve:" + ss.id + ":" + i;
   if (busy.has(key)) return;
   busy.add(key);
@@ -1746,7 +1760,7 @@ async function resendTx(ss) {
   showBanner("ok", "Sent again. It confirms with the next block.");
 }
 
-async function cancelPayment(ss) {
+export async function cancelPayment(ss) {
   if (ss.signed || ss.error) throw new Error("This payment is already signed or closed, so it cannot be cancelled.");
   const gid = state.gid, seat = writer(undefined, gid) ?? localSeats()[0];
   const who = ((state.seats[seat] || {}).name || "a signer") + " (seat " + seat + ")";
@@ -1764,7 +1778,7 @@ async function cancelPayment(ss) {
   showBanner("ok", "Payment cancelled.");
 }
 
-async function finalizeTx(ss) {
+export async function finalizeTx(ss) {
   const gid = state.gid, ref = sdb.doc(sessionPath(ss, gid));
   if (!mayAct()) throw new Error(NO_SEAT_KEY);   // checked before a minute of work
   await ref.update({ status: "proving", provingAt: Date.now() });
@@ -1802,7 +1816,7 @@ const PASS_NOTE = "This passphrase opens your key share. Zigs cannot recover it.
   + "keep it apart from the file.";
 
 // Nonces stay out: a restored copy must never sign with a nonce this browser may also use.
-function backupText(i) {
+export function backupText(i) {
   const {
     nonces: _nonces, backupSaved: _saved, backedUp: _oldFlag, sol: _sol, ...s
   } = sec(state.gid, i);
@@ -1827,7 +1841,7 @@ function closeBackup() {
 
 // Seals `plain`, opens the file again in memory to prove it holds the same text, and only then
 // offers the download. Returns false when the person declined to save.
-async function sealAndSave(pass, plain, filename) {
+export async function sealAndSave(pass, plain, filename) {
   const sealed = await engineOffThread("backupSeal", pass, plain);
   if (await engineOffThread("backupOpen", pass, sealed) !== plain) {
     throw new Error("The backup did not open to the same data, so it was not saved. Try again.");
@@ -1841,7 +1855,7 @@ async function sealAndSave(pass, plain, filename) {
   return true;
 }
 
-async function saveBackup(i, pass) {
+export async function saveBackup(i, pass) {
   // The wallet that is open can change while the engine works (the Back button).
   const gid = state.gid, wallet = state.g.name;
   if (!(await sealAndSave(pass, backupText(i), backupName(wallet, i)))) return false;
@@ -1851,7 +1865,7 @@ async function saveBackup(i, pass) {
 
 // The backup of the personal account: the seed, the network, the birthday and the contacts. An
 // account that does not read gives what can be read of it.
-async function saveAccountBackup(pass) {
+export async function saveAccountBackup(pass) {
   const payload = personal ? backupPayload(personal)
     : salvageBackup(personalDamaged, personalEnv());
   if (!payload) {
@@ -1881,7 +1895,7 @@ const ACCOUNT_BACKUP = {
   save: (pass) => saveAccountBackup(pass),
 };
 
-function backupDialog() {
+export function backupDialog() {
   const b = ui.backup, words = b.words ?? (b.personal ? ACCOUNT_BACKUP : seatBackup(b.seat));
   const pass = el("input", {
     class: "input mono", id: "bk-pass", type: b.made ? "text" : "password", autocomplete: "off",
@@ -1986,7 +2000,7 @@ function parseBackup(text) {
 // An encrypted file asks for its passphrase. A plain file of the current kind restores at once and
 // leaves the backup note up, so the person makes an encrypted file. A plain file of an older
 // version has another kind: checkShape refuses it.
-async function restore(file) {
+export async function restore(file) {
   try {
     if (file.size > MAX_BACKUP_BYTES) throw new Error(NOT_A_BACKUP);
     const text = await file.text();
@@ -2010,7 +2024,7 @@ const NO_FIT = "This backup does not fit this wallet. It was not used.";
 const RESTORE_PENDING = "A restore of this seat is still being checked. Open the wallet and "
   + "wait, then try again.";
 
-function checkShape(b) {
+export function checkShape(b) {
   if (!(wellFormed(b) && validSeatRef(b) && validKey(b))) throw new Error(NOT_A_BACKUP);
   if (!shareShape(b.secret.keyPackage)) throw new Error("This backup holds no key share.");
 }
@@ -2042,14 +2056,14 @@ function checkBackup(b) {
 // A restore waits here until the documents of its seat have loaded (settleRestore), by wallet and
 // seat. `keys` holds the key pairs of the file, and `late` its version and room. They are not
 // stored before the published keys of the seat and the wallet document check them.
-const restoreWatch = new Map();
+export const restoreWatch = new Map();
 
 // What a restore stores now: the allowed fields of the file without its key pairs, version and
 // room, which wait for the check of settleRestore. Older backups hold nonces: a restored nonce
 // could sign a second, different package, so the nonces of this browser stay. A seat that held a
 // key share stays what it was: the flag `restored` would put the seat of this browser under the
 // fit rule of seatOwned.
-function restoredFor(b, held) {
+export function restoredFor(b, held) {
   const nonces = (held || {}).nonces || {};
   return { ...restoredSecret(b.secret, held), nonces, ...(held ? {} : { restored: true }),
     backupSaved: false };
@@ -2062,7 +2076,7 @@ const OTHER_BACKUPS = new Map([[PERSONAL_KIND, restoreAccount], [SOL_BACKUP_KIND
 // Stores the key share of a backup, from the fields that restoredFields allows. `encrypted` says
 // the file was sealed: only then does the seat count as backed up, and only when the backup fits
 // the wallet.
-async function applyBackup(b, encrypted) {
+export async function applyBackup(b, encrypted) {
   const other = isObj(b) ? OTHER_BACKUPS.get(b.kind) : undefined;
   if (other) return other(b, encrypted);
   checkBackup(b);
@@ -2091,7 +2105,7 @@ function announceRestore(where, encrypted) {
 
 // Removes the seat secret that the restore made (undoPlan). Returns false when it leaves the seat
 // alone, else true when the wallet went away too.
-function undoRestore(w) {
+export function undoRestore(w) {
   if (undoPlan(w.before) === "keep") return false;
   delete secrets[skey(w.gid, w.seat)];
   const dropped = releaseKey(w);
@@ -2112,7 +2126,7 @@ function releaseKey({ gid, addedKey }) {
 // A restored key share counts when the key data of the seat equals what the wallet published
 // for it, which is known when the documents of the seat have loaded. Else the restore is undone.
 // Each restore settles alone, and the first one may close the wallet.
-function settleRestore() {
+export function settleRestore() {
   let settled = false;
   for (const [key, w] of [...restoreWatch]) settled = settleOne(key, w) || settled;
   if (settled) render();
@@ -2203,19 +2217,19 @@ const oldest = (stored) => stored;   // a pin keeps the value seen first
 // server learns which transactions pay the wallet. It is off until a person turns it on, for one
 // wallet in one browser. It is not a field of the wallet, which every signer would read.
 let memoPref = readLocal("zf-memos");        // wallet id -> true while this browser reads memos
-const readsMemos = (gid) => memoPref[gid] === true;
-function setMemoReading(gid, on) {
+export const readsMemos = (gid) => memoPref[gid] === true;
+export function setMemoReading(gid, on) {
   memoPref = readLocal("zf-memos");          // another tab may have changed it
   if (on) memoPref[gid] = true; else delete memoPref[gid];
   writeLocal("zf-memos", memoPref);
   if (on && chain && chain.gid === gid) runMemos(chain);
 }
 const roomPins = readLocal("zf-rooms");      // wallet id -> first room id seen
-const signPins = readLocal("zf-signpins");   // "wallet id:seat" -> first signing key seen
+export const signPins = readLocal("zf-signpins");   // "wallet id:seat" -> first signing key seen
 const readMarks = readLocal("zf-read");      // "room id:thread" -> time of the newest message read
 const rooms = {};                            // wallet id -> its room id, while it matches the pin
 const roomWarn = new Map(), roomSubs = new Map(), chat = {}, tried = new Set(), checked = new Map();
-let signing = null;                          // does this browser have Ed25519? null until known
+export let signing = null;                          // does this browser have Ed25519? null until known
 canSign().then((ok) => { signing = ok; refilter(); });
 
 const isWalletId = (id) => !!gkeys[id] || !!chats.list[id];   // ids of chats are taken too
@@ -2432,7 +2446,7 @@ const NO_SEAT_KEY = "This browser has no signing key for a seat of this wallet, 
 // lower version written into the store later does not turn the checks off.
 const hasV3Seat = (gid) => mySeatSecrets(gid).some(([, s]) => s.version === 3);
 const versionKey = (gid) => "version:" + gid;   // apart from the "wallet id:seat" keys
-const signedMode = (gid) => !!gid && (hasV3Seat(gid) || signPins[versionKey(gid)] === "3");
+export const signedMode = (gid) => !!gid && (hasV3Seat(gid) || signPins[versionKey(gid)] === "3");
 function pinVersion(gid, g) {
   const v = walletVersion(g);
   if (v && pin(signPins, versionKey(gid), String(v)) === "new") {
@@ -2461,7 +2475,7 @@ const seatCount = (gid) => {
 
 // Checks of documents have a memo of their own, apart from the messages. It keeps the signed text
 // of each entry and answers only for the same text, and it stays bounded (makeMemo).
-const docMemo = makeMemo();
+export const docMemo = makeMemo();
 const SIG_MAX = 128, REL_MAX = 200;   // an Ed25519 signature has 88 characters in base64
 
 // The text that a document signs, from the engine, or null where the engine refuses it.
@@ -2547,7 +2561,7 @@ function pinSeats(gid) {
 // The device logs a document that it ignores once for each time a wallet opens, however often the
 // page checks again. A signature is no part of the key, and the set has a limit.
 const LOG_MAX = 200;
-const loggedIgnored = new Map();   // wallet id -> the documents already logged
+export const loggedIgnored = new Map();   // wallet id -> the documents already logged
 function logIgnored(gid, what) {
   const path = what.slice(0, 120);
   if (!loggedIgnored.has(gid)) loggedIgnored.set(gid, new Set());
@@ -2609,7 +2623,7 @@ function applyFilter() {
 // Every change of a stored document, a pin or a check result ends here: the page filters again,
 // draws, and lets the reactor act. Several changes in one turn make one pass.
 let refilterQueued = false;
-function refilter() {
+export function refilter() {
   if (refilterQueued) return;
   refilterQueued = true;
   queueMicrotask(() => {
@@ -2635,13 +2649,13 @@ async function sigFor(gid, rel, seat, fields) {
   if (!canWriteAs(seat, gid)) throw new Error(NO_SEAT_KEY);
   return { by: seat, sig: await signText(gid, rel, seat, fields) };
 }
-const signedDoc = async (gid, rel, seat, fields) => ({
+export const signedDoc = async (gid, rel, seat, fields) => ({
   ...fields, ...(await sigFor(gid, rel, seat, fields)),
 });
 
 // The same for part `name` of the payment `sid`: the writer is `prefer` if this browser can sign
 // for it, else another seat. Only the fields of the part are signed (signPart).
-async function sigPart(gid, sid, name, fields, prefer) {
+export async function sigPart(gid, sid, name, fields, prefer) {
   if (!signedMode(gid)) return {};
   const seat = writer(prefer, gid);
   if (seat == null) throw new Error(NO_SEAT_KEY);
@@ -2650,7 +2664,7 @@ async function sigPart(gid, sid, name, fields, prefer) {
 
 // May this browser write as seat i? Always before version 3. In version 3 the seat needs the
 // signing key that readers pinned (the key in the seat document only while nothing is pinned).
-function canWriteAs(i, gid = state.gid) {
+export function canWriteAs(i, gid = state.gid) {
   if (!signedMode(gid)) return true;
   const s = sec(gid, i);
   if (!s || !s.signSk) return false;
@@ -2661,7 +2675,7 @@ function canWriteAs(i, gid = state.gid) {
 
 // The seat that signs a write that has no seat of its own: `prefer` if this browser can sign for
 // it, else another seat of this browser.
-function writer(prefer, gid = state.gid) {
+export function writer(prefer, gid = state.gid) {
   if (!signedMode(gid)) return null;
   const held = gid === state.gid ? localSeats() : mySeatSecrets(gid).map(([i]) => i);
   const own = held.filter((i) => canWriteAs(i, gid));
@@ -2672,7 +2686,7 @@ function writer(prefer, gid = state.gid) {
 // that can sign: the signed PCZT, the proof and the sent mark are signed parts.
 const mayAct = () => !signedMode(state.gid) || writer() != null;
 
-async function failSession(gid, ss, error) {
+export async function failSession(gid, ss, error) {
   const sig = await sigPart(gid, ss.id, "failure", { error });
   await sdb.doc(sessionPath(ss, gid)).update({ error, status: "failed", ...sig });
 }
@@ -2962,7 +2976,7 @@ const zecText = (zat) => ZEC_FMT.format(finite(zat) / 1e8);
 const short = (h, n = 10) => h ? h.slice(0, n) + "…" + h.slice(-6) : "";
 // A success makes an earlier error message obsolete, so it is cleared.
 // A disabled button loses focus, so the key of the focused control is kept to give it back.
-const act = (fn) => async (ev) => {
+export const act = (fn) => async (ev) => {
   ev.preventDefault();
   const b = ev.currentTarget, key = document.activeElement.dataset.key;
   if (b) b.disabled = true;
@@ -2998,10 +3012,10 @@ function guard(build, ...args) {
 }
 
 let openLayer = "", tickTimer = null;
-let opener = "", lastTrigger = "", wantFocus = null;   // focus bookkeeping, see draw()
+export let opener = "", lastTrigger = "", wantFocus = null;   // focus bookkeeping, see draw()
 function focusAfter(key, force) { wantFocus = key ? { key, force } : null; }
 // View state that only this browser cares about.
-const ui = {
+export const ui = {
   forget: false, tab: "overview", send: false, pay: null, payKey: 0, listError: "",
   create: false, receive: false, move: false, net: "testnet", ack: false, notify: false,
   newChat: false, leave: false, backup: null, restore: null,
@@ -3047,7 +3061,7 @@ function seatLabel(i) {
 }
 // In a version 3 wallet a name comes with its seat number, because two seats can use one name.
 // A member picks the name, so a name can carry a false seat number: the real one goes after it.
-function named(i) {
+export function named(i) {
   const label = seatLabel(i);
   const tag = " (seat " + i + ")";
   return signedMode(state.gid) && !label.endsWith(tag) ? label + tag : label;
@@ -3058,7 +3072,7 @@ function avatar(i, cls = "") {
 }
 const walletKey = () => state.wallet ? S(state.wallet) : "";
 // This browser's own result for its seats; other seats' results come from the store.
-function seatCheck(i) {
+export function seatCheck(i) {
   const s = localSeats().includes(i) ? sec(state.gid, i) : null;
   if (s) return s.checkedWallet === walletKey() ? true : s.rejectedWallet === walletKey() ? false : null;
   return state.verify[i] ? !!state.verify[i].ok : null;
@@ -3075,7 +3089,7 @@ const STATUS = {
   proving: ["Building proof", "info"], complete: ["Ready to send", "ok"], broadcast: ["Sent", "ok"], failed: ["Failed", "bad"],
   cancelled: ["Cancelled", ""],
 };
-function statusChip(s) {
+export function statusChip(s) {
   if (onChain(s)) return el("span", { class: "badge ok" }, "Sent");
   if (expired(s)) return el("span", { class: "badge" }, "Expired");
   const [t, c] = Object.hasOwn(STATUS, s.status) ? STATUS[s.status] : [String(s.status), ""];
@@ -3094,10 +3108,10 @@ function payTitle(ss) {
 // What the proposer says leaves the wallet: the payees plus the fee.
 const leavesOf = (ss) => Number.isFinite(ss.amount) ? ss.amount + finite(ss.fee) : NaN;
 const ruleText = (t, n) => "Any " + t + " of " + n + " signers must approve each payment.";
-const groupName = (gid) => (state.groups.find((x) => x.id === gid) || {}).name || "the new wallet";
+export const groupName = (gid) => (state.groups.find((x) => x.id === gid) || {}).name || "the new wallet";
 // In a version 3 wallet the proposer is the seat in `by`. Before, it is the identity in
 // `createdBy`.
-const proposer = (ss) => Number.isInteger(ss.by)
+export const proposer = (ss) => Number.isInteger(ss.by)
   ? (localSeats().includes(ss.by) ? "you" : named(ss.by))
   : isMe(ss.createdBy) ? "you" : seatNameOf(ss.createdBy);
 function normalized(addr) { try { return Z.normalizeAddress(addr); } catch { return null; } }
@@ -3105,7 +3119,7 @@ const onNetwork = (addr) => (normalized(addr) || "").startsWith(curNet().prefix)
 
 // Sent payments that no synced block contains yet. Until one does, the synced balance still
 // counts their inputs as unspent, so the app subtracts them itself.
-function inFlight() {
+export function inFlight() {
   const c = curChain();
   if (!c || !c.sent) return [];
   return state.sessions.filter((ss) => ss.broadcastTxid && ss.final
@@ -3120,7 +3134,7 @@ function balanceNow(b) {
   };
 }
 
-function sendBlocker() {
+export function sendBlocker() {
   const c = curChain();
   if (keysDiffer()) return "The signers hold different wallet keys. Do not use this wallet.";
   if (!localSeats().length) return "You hold no seat in this wallet.";
@@ -3207,7 +3221,7 @@ const appFoot = () => el("footer", { class: "app-foot" }, "Beta · not audited �
   el("a", { href: "https://zigs.app", target: "_blank", rel: "noopener" }, "About Zigs"));
 
 // The page when no wallet is open: a direct chat, a contact on chain, or the wallet list.
-const mainView = () => (state.cid ? chatView() : state.contact != null ? contactView() : lobby());
+export const mainView = () => (state.cid ? chatView() : state.contact != null ? contactView() : lobby());
 
 function pageView() {
   try {
@@ -3253,7 +3267,7 @@ function draw() {
 // A field of the request form counts only while its form is open: after a send, the form must go.
 const typingIn = (box) => !!box && (box.id.startsWith("chat-text-") || box.id === "fund-amt"
   || (!!ui.request && /^req-(amt|memo)-/.test(box.id)));
-function typingMessage(app, parts) {
+export function typingMessage(app, parts) {
   const box = document.activeElement;
   if (!typingIn(box) || !app.contains(box)) return false;
   const logs = saveLogs(app);
@@ -3331,7 +3345,7 @@ document.addEventListener("click", (ev) => {
   if (n && n.dataset.key && !n.closest(".dialog, .drawer")) lastTrigger = n.dataset.key;
 }, true);
 
-function layers() {
+export function layers() {
   try { return ui.newChat ? [scrim(() => ui.newChat = false), newChatDialog()] : buildLayers(); }
   catch (e) { log("unreadable layer: " + (e && e.message ? e.message : e)); return []; }
 }
@@ -3409,7 +3423,7 @@ function sideItem(g) {
   el("span", { class: "side-name" }, g.name), el("span", { class: "side-tail" }, unread, tail));
 }
 
-function forgetBox() {
+export function forgetBox() {
   const cancel = () => { ui.forget = false; render(); };
   return el("div", { class: "callout bad" },
     el("p", {}, "Without the passkey, the key shares in this browser cannot be opened. Delete "
@@ -3657,7 +3671,7 @@ function networkPick(sel = ui, what = "wallet", idp = "g") {
 }
 
 // ── Wallet ──
-function groupView() {
+export function groupView() {
   const g = state.g;
   const back = el("button", {
     class: "btn ghost sm", type: "button", onclick: () => openGroup(null),
@@ -3707,7 +3721,7 @@ function signedNotes() {
 const walletReady = () => !!(state.wallet && state.wallet.birthday)
   && rejectedSeats().length === 0 && !keysDiffer();
 
-function walletView(head, why) {
+export function walletView(head, why) {
   const unsaved = localSeats().filter((i) => {
     const s = sec(state.gid, i);
     return s.keyPackage && !seatBackedUp(s);
@@ -3754,7 +3768,7 @@ const countBadge = (n, what, cls) => n
   ? el("span", { class: "count " + cls, role: "img", "aria-label": n + " " + what }, n) : null;
 
 // Arrow keys, Home and End move between tabs. Only the selected tab is in the Tab order.
-function tabBar(tabs) {
+export function tabBar(tabs) {
   const ids = tabs.map(([id]) => id), last = ids.length - 1, at = ids.indexOf(ui.tab);
   const target = {
     ArrowRight: at >= last ? 0 : at + 1, ArrowLeft: at <= 0 ? last : at - 1, Home: 0, End: last,
@@ -3775,9 +3789,10 @@ function tabBar(tabs) {
   return el("div", { class: "tabs", role: "tablist", "aria-label": "Wallet sections", onkeydown },
     tabs.map(tab));
 }
+function setTabBar(f) { tabBar = f; }
 
 // Private windows, Tor Browser and cleared site data delete the key share with the browser data.
-function backupNote(seats) {
+export function backupNote(seats) {
   const text = "Back up your key share. This browser can forget it: private windows and Tor "
     + "Browser delete it when they close. The file is locked with a passphrase that you choose. "
     + "Keep the file safe, and keep the passphrase apart from it. " + BACKUP_CHANGED;
@@ -4048,7 +4063,7 @@ function overviewTab() {
 }
 
 // The steps of a move, read from the old wallet: new wallet ready, payment proposed, funds gone.
-function moveState(c) {
+export function moveState(c) {
   const to = state.g.movedTo;
   const ss = state.sessions.find((x) => x.move === to && !x.error && !expired(x));
   const b = c && c.bal ? balanceNow(c.bal) : null;
@@ -4317,7 +4332,7 @@ function memoItem(m) {
 }
 
 // A memo that is a payment request shows as a card. It has no sender and no signature.
-function memoBody(m) {
+export function memoBody(m) {
   const req = m.text === null ? null : requestOf(m.text, false);
   if (req) return requestCard(req, { id: m.id, name: "a memo", verdict: "memo", dm: false });
   return el("p", { class: "msg-text" + (m.text === null ? " faint" : "") },
@@ -4414,7 +4429,7 @@ function messageBox(o) {
 // send(text, seat) and request (roomRequest or chatRequest, or none: it adds the form that sends a
 // payment request). A message on chain also has label (the button), plan(text) (the fee line) and
 // progress (the words of the step that is running).
-function composer(o) {
+export function composer(o) {
   const sending = busy.has(o.key);
   const box = messageBox(o);
   const form = el("form", { class: "composer", onsubmit: act((ev) => submitMessage(ev.target, o)) },
@@ -4456,7 +4471,7 @@ function walletComposer(thread) {
   });
 }
 
-async function submitMessage(form, o) {
+export async function submitMessage(form, o) {
   const box = form.elements.text, draft = box.value, r = checkText(draft);
   if (r.error) throw new Error(r.error);
   if (busy.has(o.key)) return;
@@ -4499,13 +4514,13 @@ const requestEnv = (dm, network) => ({
 
 // The request in `text`, or null for plain text. Until the engine loads, a request shows as text.
 // The page asks for every message on every draw, so plain text must cost no engine call.
-const requestOf = (text, dm, network) =>
+export const requestOf = (text, dm, network) =>
   Z && requestUri(text) ? readRequest(text, requestEnv(dm, network)) : null;
 
 // Wallets where this browser holds a key share. A wallet that moved or has no address is left out.
 const seatWallets = () => state.groups.filter((g) => !g.unreadable && !g.movedTo && ready[g.id]
   && mySeatSecrets(g.id).some(([, s]) => s.keyPackage));
-const proposeWallets = (net) => seatWallets().filter((g) => netName(g) === WALLET_NET[net]);
+export const proposeWallets = (net) => seatWallets().filter((g) => netName(g) === WALLET_NET[net]);
 
 function requestTotal(req) {
   if (req.total != null) return money(req.total);
@@ -4575,7 +4590,7 @@ function proposeSource(req, o) {
 
 // `o`: id (of the message), name (of the sender), verdict (the sender check, or "memo"), dm, and
 // mine (the message is from this browser).
-function requestCard(req, o) {
+export function requestCard(req, o) {
   if (req.error) return requestError(req);
   const { select, why: where } = proposeSource(req, o);
   const st = cardState(req, o.verdict, where), [cls, mark] = TRUST[o.verdict];
@@ -4600,7 +4615,7 @@ function requestCard(req, o) {
 
 // Opens the Send form with the payees of a request. The normal checks and approvals apply. The
 // note names the sender only when the sender is verified (see requestNote).
-function proposeRequest(req, o, gid) {
+export function proposeRequest(req, o, gid) {
   ui.pay = payeeRows(req.payees, () => ++ui.payKey);
   const room = o.dm || gid === state.gid ? "" : groupName(state.gid);
   ui.note = requestNote(o.name, o.verdict, { mine: o.mine, room });
@@ -4631,7 +4646,7 @@ function roomRequestWhy() {
 }
 
 // In a wallet room, the request pays the open wallet. Only the wallet thread offers it.
-const roomRequest = () => ({
+export const roomRequest = () => ({
   why: roomRequestWhy,
   choices: () => roomRequestWhy() ? []
     : [{ id: state.gid, name: state.g.name, address: state.wallet.address,
@@ -4641,7 +4656,7 @@ const roomRequest = () => ({
 
 // In a direct chat, the person picks one of their wallets. The address is the one that this
 // browser's own seat checked, never the store's copy.
-const chatRequest = () => ({
+export const chatRequest = () => ({
   why: () => dmChoices().length ? "" : "You hold no seat in a wallet that can receive a request. "
     + "A wallet needs a checked address and, on mainnet, a known balance under the cap.",
   choices: dmChoices,
@@ -4649,7 +4664,7 @@ const chatRequest = () => ({
     + "amount and the memo of this request.",
 });
 
-function dmChoices() {
+export function dmChoices() {
   return seatWallets().flatMap((g) => {
     const address = moveAddress(g.id);
     const ok = address && underCap(g, balOf(g.id)?.total);
@@ -4707,7 +4722,7 @@ function chosenWallet(form, o) {
   return choice;
 }
 
-async function submitRequest(form, o) {
+export async function submitRequest(form, o) {
   if (busy.has(o.key)) return;
   const choice = chosenWallet(form, o);
   const made = requestPayees(choice.address, form.elements.amt.value, form.elements.memo.value);
@@ -4784,7 +4799,7 @@ function dmItem(m, cid) {
 }
 
 // The confirm moves focus to Cancel, so a repeated Enter cannot leave the chat.
-function leaveBox(cid) {
+export function leaveBox(cid) {
   const ask = (on) => () => {
     ui.leave = on; focusAfter(on ? "leave-no" : "leave-ask", true); render();
   };
@@ -4830,7 +4845,7 @@ const splitParts = (text) => {
 };
 const joinTexts = (texts) => J(Z.joinMessage(S(texts))).text;
 
-function startAccount() {
+export function startAccount() {
   if (!Z || !personal || acct) return;
   let keys;
   try { keys = J(Z.accountKeys(personal.seed, personal.network)); } catch (e) {
@@ -4859,13 +4874,13 @@ function followAccount() {
 }
 
 const heightNow = () => (acct && acct.bal ? acct.bal.height : undefined);
-function sentStateOf(rec) {
+export function sentStateOf(rec) {
   const sent = acct ? acct.sent : new Set();
   return sentState(rec, { sent, height: heightNow(), live: !!acct && acct.live === rec.txid });
 }
 // The sent messages that hold notes (see holdsNotes): the engine does not know about them yet.
-const flightNow = () => (personal ? personal.sent.filter((r) => holdsNotes(sentStateOf(r))) : []);
-const acctBalance = () => (acct && acct.bal ? accountBalance(acct.bal, flightNow()) : null);
+export const flightNow = () => (personal ? personal.sent.filter((r) => holdsNotes(sentStateOf(r))) : []);
+export const acctBalance = () => (acct && acct.bal ? accountBalance(acct.bal, flightNow()) : null);
 
 // The address of the account is shown on testnet. On mainnet it is shown while the balance is
 // known and under the cap, as for a wallet. Returns why it is not, or "".
@@ -4881,14 +4896,14 @@ function acctAddressWhy() {
 }
 
 // Why the composer is off, or "".
-function messageWhy(fee = feeFor(1)) {
+export function messageWhy(fee = feeFor(1)) {
   if (!acct || !acct.cw) return "Wait for the first sync to finish.";
   if (acct.progress) return "A message is being sent. Wait until it is done.";
   return sendGate(acctBalance(), flightNow(), fee);
 }
 
 // The address of the account at `index`: 0 is the public address, a contact has its own.
-function addressFor(index) {
+export function addressFor(index) {
   if (index === 0) return acct.address;
   if (!acct.addrs.has(index)) acct.addrs.set(index, Z.addressAt(acct.ufvk, index));
   return acct.addrs.get(index);
@@ -4915,7 +4930,7 @@ async function claimAccount(build, failure) {
   });
 }
 
-async function createPersonal(network) {
+export async function createPersonal(network) {
   if (!Z) throw new Error("The crypto engine is not ready.");
   if (network === "mainnet" && !ui.personal.ack) {
     throw new Error("Confirm that you understand Zigs is not audited before you make a mainnet "
@@ -4934,7 +4949,7 @@ async function createPersonal(network) {
 
 // The backup file brings the seed, the network, the birthday and the contacts back. The sync
 // starts at the birthday. The text of sent messages is not in the file.
-async function restoreAccount(b, encrypted) {
+export async function restoreAccount(b, encrypted) {
   if (!encrypted) {
     throw new Error("This backup file is not encrypted. Make a new encrypted backup of the "
       + "account.");
@@ -4948,7 +4963,7 @@ async function restoreAccount(b, encrypted) {
 }
 
 // Removes the account, also one that does not read (`personalDamaged`).
-async function removeAccount() {
+export async function removeAccount() {
   const was = [personal, personalDamaged, personalError];
   personal = personalDamaged = null;
   personalError = "";
@@ -4973,7 +4988,7 @@ function contactCtx(own) {
 const NOT_SYNCED = "Wait for the first sync to finish. Zigs then knows which addresses of the "
   + "account already got a payment.";
 
-async function addPersonalContact(name, address) {
+export async function addPersonalContact(name, address) {
   const c = acct;
   if (!c) throw new Error(NOT_READY);
   if (!c.bal) throw new Error(NOT_SYNCED);
@@ -4990,14 +5005,14 @@ async function addPersonalContact(name, address) {
   return made;
 }
 
-function openContact(index) {
+export function openContact(index) {
   openGroup(null);
   state.contact = index;
   render();
 }
 
 // The funding request: 3 payees to the public address of the account (web/personal.js).
-function fundingUri() {
+export function fundingUri() {
   if (!acct) throw new Error(NOT_READY);
   const made = fundingPayees(acct.address, toZat(ui.personal.fund));
   if (made.error) throw new Error(made.error);
@@ -5005,14 +5020,14 @@ function fundingUri() {
 }
 
 // Opens the Send form of a wallet with the request. It sends nothing: the wallet's approvals apply.
-function fundFromWallet(gid) {
+export function fundFromWallet(gid) {
   const req = requestOf(fundingUri(), true, personal.network);
   if (!req || req.error) throw new Error(req ? requestProblem(req.error) : NOT_READY);
   proposeRequest(req, { name: "", verdict: "yes", mine: true, dm: true }, gid);
   ui.note = FUND_NOTE;
 }
 
-async function copyFundingRequest() {
+export async function copyFundingRequest() {
   const uri = fundingUri();
   try { await navigator.clipboard.writeText(uri); } catch {
     throw new Error("This browser did not let the page copy. Allow clipboard access for this "
@@ -5026,7 +5041,7 @@ async function copyFundingRequest() {
 // it or it expires (sentState). The seed stays on this thread: the worker gets the signed
 // transaction only. One message at a time, also across tabs: the next one starts after the
 // saved record of this one is there to read.
-const sendOnChain = (contact, text) => exclusive("send", () => sendLocked(contact, text));
+export const sendOnChain = (contact, text) => exclusive("send", () => sendLocked(contact, text));
 
 async function sendLocked(contact, text) {
   await rereadPersonal();
@@ -5076,7 +5091,7 @@ async function deliver(c, rec, txHex) {
 
 // The received memos of the account, joined and sorted into the chats of the contacts and the other
 // messages. The result is kept until the list of memos or the contacts change.
-function accountInbox() {
+export function accountInbox() {
   const c = acct;
   if (!c || !personal) return { chats: new Map(), other: [] };
   const key = personal.contacts.map((x) => x.index).join(",");
@@ -5090,7 +5105,7 @@ function accountInbox() {
 // A block height as a time. A received message has only its block height.
 // The time of a block, counted back from the end of the last sync. The clock goes on between
 // syncs and the height does not, so a count from now would move every message later.
-function blockTime(height) {
+export function blockTime(height) {
   const tip = heightNow() ?? height;
   return (acct?.balAt ?? Date.now()) - spanMs(personal.network, height, tip);
 }
@@ -5099,7 +5114,7 @@ const contactRows = (contact) => chatTimeline(accountInbox().chats.get(contact.i
   personal.sent.filter((r) => r.to === contact.index), blockTime);
 
 // ── Personal account: the home page ──
-function personalCard(pickRestore) {
+export function personalCard(pickRestore) {
   if (personalPending) {
     return el("section", { class: "card card-pad" }, el("h2", {}, "Personal account"),
       el("p", { class: "small faint" }, "Loading the saved account…"));
@@ -5110,7 +5125,7 @@ function personalCard(pickRestore) {
 
 // A saved account that does not read. The record stays as it is. If it still holds a seed, the
 // person can save a backup of what reads, or remove it and start again.
-function damagedCard() {
+export function damagedCard() {
   const canSave = !!personalDamaged && !!salvageBackup(personalDamaged, personalEnv());
   return el("section", { class: "card card-pad" }, el("h2", {}, "Personal account"),
     el("div", { class: "callout bad", role: "alert" }, personalError),
@@ -5152,7 +5167,7 @@ function accountBalanceBlock(b) {
       "A message is waiting for its block") : null);
 }
 
-function accountCard() {
+export function accountCard() {
   const c = acct, b = acctBalance();
   return el("section", { class: "card card-pad" },
     el("div", { class: "card-head" }, el("h2", {}, "Personal account"),
@@ -5179,7 +5194,7 @@ function accountBackupNote() {
       "Back up account"));
 }
 
-function addressBlock(c) {
+export function addressBlock(c) {
   const why = acctAddressWhy();
   if (why) return el("div", { class: "callout" + (acctBalance() ? " bad" : "") }, why);
   return el("div", { style: "display:grid;gap:8px" },
@@ -5194,7 +5209,7 @@ function addressBlock(c) {
 }
 
 // The request pays 3 notes, so the account can send a message after each block.
-function fundBlock() {
+export function fundBlock() {
   if (acctAddressWhy()) return null;
   const b = acctBalance();
   const wallets = proposeWallets(REQUEST_NET[personal.network]);
@@ -5253,7 +5268,7 @@ function accountActions(warning, canSave = true) {
 
 // Messages to the public address, or to an address that no contact has. Nobody can say who wrote
 // them, so the page marks them not verified.
-function otherMessages() {
+export function otherMessages() {
   const items = accountInbox().other;
   if (!items.length) return null;
   const rows = chatTimeline(items, [], blockTime).slice(-50);
@@ -5265,7 +5280,7 @@ function otherMessages() {
 }
 
 // ── Personal account: contacts ──
-function contactsCard() {
+export function contactsCard() {
   if (!personal) return null;
   const list = personal.contacts;
   return el("section", { class: "card" },
@@ -5278,7 +5293,7 @@ function contactsCard() {
         + "write to them on chain, also if they do not use Zigs."));
 }
 
-function openContactDialog() {
+export function openContactDialog() {
   ui.contactAdd = true;
   render();
 }
@@ -5304,7 +5319,7 @@ function contactItem(c) {
   }, el("span", { class: "av" }, initials(name)), el("span", { class: "side-name" }, name));
 }
 
-function contactDialog() {
+export function contactDialog() {
   const close = () => { ui.contactAdd = false; render(); };
   const net = NETWORKS[personal.network];
   return el("form", {
@@ -5343,7 +5358,7 @@ const ON_CHAIN_FINE = "The message is a payment of no value, and your text is it
 const ON_CHAIN_LIMITS = "This browser keeps the text of the messages that you sent. It is not in "
   + "the backup file. Private windows and Tor Browser forget it when they close.";
 
-function contactView() {
+export function contactView() {
   const contact = personal && personal.contacts.find((c) => c.index === state.contact);
   if (!contact) return lobby();
   const name = memoShown(contact.name);
@@ -5665,7 +5680,7 @@ function memoBox(r, n) {
 // A whole request pasted in a recipient field replaces that row with the rows of its payees. It
 // returns true when the field holds a request. The rows get new keys, so the redraw does not read
 // the pasted text again.
-function fillFromRequest(r, rows, hint) {
+export function fillFromRequest(r, rows, hint) {
   const req = requestOf(r.to, false);
   if (!req) return false;
   const fresh = req.payees ? payeeRows(req.payees, () => ++ui.payKey) : [];
@@ -5730,7 +5745,7 @@ function pasteList(net) {
     el("button", { class: "btn sm", type: "button", onclick: useList }, "Use this list"));
 }
 
-function sendDialog() {
+export function sendDialog() {
   const c = curChain(), bal = c && c.bal, spendable = bal ? bal.spendable : 0, net = curNet();
   if (!ui.pay) { ui.pay = [{ k: ++ui.payKey, to: "", amt: "", memo: "" }]; ui.listError = ""; }
   const rows = ui.pay;
@@ -5825,7 +5840,7 @@ function inspectOf(ss) {
 
 // When the payment expires, counted by the engine from the height of the last sync:
 // {expired, blocks_left, seconds_left}. Null while this browser cannot tell.
-function expiryOf(ss) {
+export function expiryOf(ss) {
   const c = curChain(), ins = state.wallet && ss.pczt ? inspectOf(ss) : null;
   if (!c || !c.bal || !ins || ins.error || !Number.isInteger(ins.expiry_height)) return null;
   try { return J(Z.expiryState(netName(state.g), ins.expiry_height, c.bal.height)); }
@@ -5849,7 +5864,7 @@ function onChain(ss) {
 // (a send that timed out after a server took it, or a mark that was not saved). So it counts as
 // gone only EXPIRY_MARGIN blocks after its expiry height, as a message does, because a
 // reorganisation of the last blocks can still bring it on chain.
-function expired(ss) {
+export function expired(ss) {
   const e = !ss.error && expiryOf(ss), c = curChain();
   if (!e || onChain(ss)) return false;
   if (!ss.final) return e.expired;
@@ -5864,7 +5879,7 @@ function about(sec) {
 
 // The expiry of an open payment, or why an expired one ends here. The engine counts from the
 // last sync, so the time since that sync comes off. A height from saved state gives no time.
-function expiryLine(ss) {
+export function expiryLine(ss) {
   const e = expiryOf(ss), ins = inspectOf(ss), c = curChain();
   if (!e || ss.error || onChain(ss)) return null;
   const at = "block " + fmtInt(ins.expiry_height);
@@ -5897,7 +5912,7 @@ const signingStarted = (ss) => !!(ss.package || ss.signed || ss.final || ss.broa
 
 // An expired payment ends with a new proposal of the same recipients, amounts, memos, note and
 // fee choice, which needs new approvals. A move proposes the move again.
-async function proposeAgain(ss) {
+export async function proposeAgain(ss) {
   if (ss.move) { closeSession(); await proposeMove(); return; }
   const payees = payeesOf(ss);
   Object.assign(ui, {
@@ -5911,13 +5926,13 @@ async function proposeAgain(ss) {
 
 // A fee above the ZIP 317 fee is a priority fee: this many times the standard fee, or 0. The
 // engine refuses more than 10 times.
-const priorityTimes = (ins) => ins && !ins.error && ins.fee > ins.standard_fee
+export const priorityTimes = (ins) => ins && !ins.error && ins.fee > ins.standard_fee
   ? Math.round((ins.fee / ins.standard_fee) * 10) / 10 : 0;
 
 // The proposer's list, without entries that have no address text.
 const payeesOf = (ss) => Array.isArray(ss.payees) ? ss.payees.filter((p) => p && typeof p.to === "string") : [];
 
-function recipientCheck(ss, ins) {
+export function recipientCheck(ss, ins) {
   if (!ins || ins.error) return { rows: [], extra: [], match: null };
   const paid = ins.lines.filter(isPayee);
   const { rows, extra } = pairPayees(payeesOf(ss), paid, normalized);
@@ -6010,7 +6025,7 @@ const needsProof = (ss) => ss.signed && !ss.final
 
 // The step after the approvals. The proof and the sent mark are signed writes, so they need a seat
 // that can sign.
-function finishButtons(ss) {
+export function finishButtons(ss) {
   if (!mayAct()) return [];
   if (needsProof(ss)) return [bigButton("Build proof", act(() => finalizeTx(ss)))];
   // A node refuses a payment that expires within EXPIRY_MARGIN blocks (see expiryLine).
@@ -6026,7 +6041,7 @@ function finishButtons(ss) {
 // A sent payment that no block holds after this long may be lost: offer to send it again.
 const RESEND_MS = 10 * 60 * 1000;
 
-function nextAction(ss, ins, rc) {
+export function nextAction(ss, ins, rc) {
   if (expired(ss)) {
     return !signingStarted(ss) && mayAct() && localSeats().length
       ? [bigButton("Propose again", act(() => proposeAgain(ss)))] : [];
@@ -6039,7 +6054,7 @@ function nextAction(ss, ins, rc) {
 const CANCEL_ASK = "Cancel this payment? No signer can approve it after this. Anyone can propose it again.";
 // Until the signatures are combined, any signer can withdraw a payment, for example one that lost
 // an approval. A signature share alone cannot move funds.
-const cancelAction = (ss) => ss.signed || expired(ss) || !localSeats().length || !mayAct() ? [] : [
+export const cancelAction = (ss) => ss.signed || expired(ss) || !localSeats().length || !mayAct() ? [] : [
   el("button", { class: "btn lg", type: "button", onclick: act(() => confirm(CANCEL_ASK) && cancelPayment(ss)) }, "Cancel payment"),
 ];
 
@@ -6165,7 +6180,7 @@ function timeline(ss, refused) {
         ss.broadcastError && !ss.broadcastTxid ? el("div", { class: "callout bad" }, ss.broadcastError) : null)));
 }
 
-function txDetails(ss) {
+export function txDetails(ss) {
   const size = Number.isFinite(ss.final.size) ? fmtInt(ss.final.size) + " bytes" : "unknown";
   const id = txidOf(ss);
   const falseId = id && id !== ss.final.txid ? el("div", { class: "callout bad" }, "The finished "
@@ -6197,7 +6212,7 @@ function chainSees() {
 
 // Another tab saved: take its secrets and chats, so this tab neither misses nor overwrites them.
 const TAB_KEYS = new Set(["zf-secrets", "zf-chats", "zf-vault"]);
-async function takeFromTab(key, value) {
+export async function takeFromTab(key, value) {
   if (!vault && key === "zf-secrets") secrets = JSON.parse(value);
   if (!vault && key === "zf-chats") chats = normChats(JSON.parse(value));
   if (vault && key === "zf-vault") await takeVault(value);
@@ -6261,7 +6276,7 @@ setInterval(() => {
 adoptInviteKey();
 draw();   // the first paint does not wait for the engine
 // The page does not wait for the saved account: it opens at once, and the account follows.
-function startUp() {
+export function startUp() {
   personalPending = true;
   boot();
   rereadPersonal().finally(() => { personalPending = false; startAccount(); render(); });
