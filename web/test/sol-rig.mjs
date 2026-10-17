@@ -1,12 +1,11 @@
 // A rig for the Solana tests (sol-ceremony.mjs, sol-app.mjs). It loads the real web/app.js, as
 // app.mjs does, with a stub page, an in-memory group store and the two wasm engines. One browser
 // holds every seat of the wallets that it makes, so the page runs both ceremonies by itself.
-// The test names the inner names of app.js that it needs (HOOKS); app.mjs is untouched.
+// It loads the page modules through page.mjs, as app.mjs does (the names it reads: NAMES there).
 import fs from "node:fs";
-import os from "node:os";
-import path from "node:path";
 import * as Z from "../pkg/zigs_engine.js";
 import * as W from "../sol/wasm/sol_wasm.js";
+import { loadPage } from "./page.mjs";
 
 const KEY_NAME = "api-key";
 
@@ -62,39 +61,9 @@ Object.assign(globalThis, {
   window: new Proxy(stub(), { get: (t, k) => (k === "crypto" ? globalThis.crypto : t[k]) }),
 });
 
-const HOOKS = `
-export const T = {
-  state, raw, signPins, ui, restoreWatch,
-  get secrets() { return secrets; }, set secrets(v) { secrets = v; },
-  get gkeys() { return gkeys; }, set gkeys(v) { gkeys = v; },
-  get sol() { return sol; }, get solLoading() { return solLoading; },
-  get banner() { return banner; }, get tabBar() { return tabBar; }, set tabBar(v) { tabBar = v; },
-  setZ(m) { Z = m; }, setDb(v) { sdb = v; db = v; }, setMe(v) { me = v; },
-  setDownloads(v) { downloads = v; },
-  refilter, signedDoc, canWriteAs, localSeats, seatIds, openGroup, createGroup, takeSeat, sec,
-  putSec, safetyNo, seatCheck, backupText, applyBackup, undoRestore, settleRestore, solLoad,
-  get solError() { return solError; },
-  solOn, signedMode, groupView, solTab, walletView, backupDialog, sealAndSave, restoreAccount,
-  mySeatSecrets, persistSealed,
-  setVault(v) { vault = v; },
-};
-`;
-
-/** Loads app.js and returns { t, Z, W, data, ... }. Call it once in a test. */
+/** Loads the page and returns { t, Z, W, data, ... }. Call it once in a test. */
 export async function loadRig() {
-  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "zigs-sol-app-"));
-  let source = fs.readFileSync(new URL("app.js", web), "utf8");
-  source = source.replace(/from "\/(\w+\.js)"/g, (_, f) => `from "${new URL(f, web).href}"`);
-  source = source.replace(
-    /import\("\/sol\/(\w+\.js)"\)/g,
-    (_, f) => `import("${new URL("sol/" + f, web).href}")`,
-  );
-  source = source.replace(/^loadEngine\(\)\.then.*$/m, "").replace(/^draw\(\);.*$/m, "");
-  const file = path.join(dir, "app.mjs");
-  fs.writeFileSync(file, source + HOOKS);
-  const { T: t } = await import(file);
-  fs.unlinkSync(file);
-  fs.rmdirSync(dir);
+  const t = await loadPage();
   t.setZ(Z);
   await sleep(50);
   const store = makeStore();

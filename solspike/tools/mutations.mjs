@@ -21,7 +21,7 @@ const patch = (file, from, to = "") => ({ file, from, to });
 // web/test pins. They run in the node rig (sol-rig.mjs), without a server or a browser.
 const SOL_APP = ["node", "web/test/sol-app.mjs"];
 const SOL_CEREMONY = ["node", "web/test/sol-ceremony.mjs"];
-const APP_JS = "web/app.js";
+const APP_JS = "web/app-rest.js";
 const INDEX_JS = "cf/src/index.js";
 const POLICY_TEST = ["node", "solspike/test/policy.test.mjs"];
 const STORE_URL = '  localStorage.setItem("u", body.rpcUrl);\n';
