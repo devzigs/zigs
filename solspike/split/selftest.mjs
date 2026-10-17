@@ -1,5 +1,5 @@
 // Tool test of the split tools (APPJS-SPLIT.md, step A5) on a small page in a temporary git
-// clone: step C2 by hand, two moves, the ledger after each, and six changes that the ledger, the
+// clone: step C2 by hand, two moves, the ledger after each, and seven changes that the ledger, the
 // table or the move tool must refuse. Usage: node solspike/split/selftest.mjs
 import assert from "node:assert/strict";
 import { execFileSync, spawnSync } from "node:child_process";
@@ -104,6 +104,9 @@ try {
   assert.match(tool("ledger", d2).out, /new or changed: web\/app-state\.js/);
   put("web/app-kit.js", get("web/app-kit.js").replace("// A pure helper.\n", ""));
   assert.match(tool("ledger", d2).out, /comment lost \(1\): \/\/ A pure helper\./);
+  git("checkout", "--", "web");
+  put("web/app-kit.js", get("web/app-kit.js").replace("other as renamed", "helper as renamed"));
+  assert.match(tool("ledger", d2).out, /binding: renamed in web\/app-kit\.js is util\.js:helper/);
   git("checkout", "--", "web");
   const pair = /^(export const state = .*)\n(export function bump.*)$/m;
   const swapped = stateJs.replace(pair, "$2\n$1");

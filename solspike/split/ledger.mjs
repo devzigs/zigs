@@ -3,14 +3,18 @@
 // is lost, new or changed, that each statement is in the file of its module by table.tsv, that
 // the statements of a file keep their old order, and that every comment line of the parent is
 // in exactly one file (section banners may go: the tool prints them; a new file may add its
-// heading line, and a deleted file takes its heading with it). It also does K6: no module over
+// heading line, and a deleted file takes its heading with it). Each import binding keeps its
+// meaning: a name from a pure module keeps the source and the imported name of the parent, and
+// a name from a page module comes, with no alias, from the module that declares it (no default
+// or namespace import). It also does K6: no module over
 // 800 lines, and no new line over 100 characters. A line that crosses 100 only by the word
 // `export` is counted, not refused. Exit 1 on any difference: for a step that edits code (B, C),
 // read the list.
 // Usage: node solspike/split/ledger.mjs <parent> [<child commit>; default: the working tree]
 import {
-  BANNER, chunkText, fail, pageFiles, parseFile, placement, readTable, withInternals,
+  BANNER, chunkText, fail, pageFiles, parseFile, placement, PURE, readTable, withInternals,
 } from "./lib.mjs";
+import { declaredNames } from "./refs.mjs";
 
 withInternals();
 const [parentRev, childRev] = process.argv.slice(2);
@@ -90,7 +94,33 @@ for (const l of new Set([...before.keys(), ...after.keys()])) {
   }
 }
 
-// 5. K6: sizes and long lines. Import lines do not count; neither does the word `export`.
+// 5. Import bindings.
+const PURE_FILES = new Set(PURE.map((p) => `${p}.js`));
+const sourceOf = (imp) => imp.source.value.replace(/^\.?\//, "");
+const pureBindings = (files) => new Map(files.flatMap((f) => f.imports)
+  .filter((imp) => PURE_FILES.has(sourceOf(imp)))
+  .flatMap((imp) => imp.specifiers
+    .map((s) => [s.local.name, `${sourceOf(imp)}:${s.imported?.name}`])));
+const declaredBy = new Map(child.map((f) => [f.file,
+  new Set(f.chunks.flatMap((c) => c.nodes.flatMap(declaredNames)))]));
+const pureBefore = pureBindings(parent);
+
+function bindingProblem(file, source, s) {
+  if (s.type !== "ImportSpecifier") return `web/${file} has a ${s.type} of ${source}`;
+  const local = s.local.name, now = `${source}:${s.imported.name}`;
+  if (PURE_FILES.has(source)) {
+    const was = pureBefore.get(local);
+    return was === now ? null : `${local} in web/${file} is ${now}, before ${was ?? "no import"}`;
+  }
+  const own = s.imported.name === local && declaredBy.get(source)?.has(local);
+  return own ? null : `${local} in web/${file} does not come from the module that declares it`;
+}
+
+const bindings = child.flatMap((f) => f.imports.flatMap((imp) =>
+  imp.specifiers.map((s) => bindingProblem(f.file, sourceOf(imp), s))));
+bindings.filter(Boolean).forEach((p) => problems.push(`binding: ${p}`));
+
+// 6. K6: sizes and long lines. Import lines do not count; neither does the word `export`.
 const longLines = (files) => new Set(files.flatMap((f) => f.chunks.flatMap((c) => c.plain
   .split("\n"))).filter((l) => l.length > 100));
 const before100 = longLines(parent);
