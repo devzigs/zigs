@@ -1,5 +1,5 @@
 {
-  "baseCommit": "2a81a6db56ba8eb180fd0b34affc1e8a823c25ef",
+  "baseCommit": "bb595e6b2bd4caaf3ee14a2e6442438c89e9da04",
   "node": "v24.11.0",
   "tests": {
     "web/test/chat.mjs": {
@@ -33,6 +33,9 @@
       "exit": 0
     },
     "web/test/shim.mjs": {
+      "exit": 0
+    },
+    "web/test/lwd.mjs": {
       "exit": 0
     },
     "web/test/sol-config.mjs": {
@@ -90,16 +93,16 @@
     "web/signed.js": "0e0dc9608db614571bcf0a587ace968a5735e0b3f516ef136cf4ccbf153a2502"
   },
   "policy": {
-    "sourceSha256": "e919dfed55e85b338b76b2defc834694dd5d0d0c6362cfa24968812be67f8406",
+    "sourceSha256": "f5079e635f53d4c116cdb03f3c23085e808015ee31883ac6cdeef5ff82ebfaf1",
     "byUrl": {
-      "http://localhost:8795/": "default-src 'none'; script-src 'self' 'wasm-unsafe-eval'; worker-src 'self'; style-src 'self'; font-src 'self'; img-src 'self' data: blob:; connect-src 'self' ws://localhost:8795 https://lwd.zigs.app https://zcash-testnet.chainsafe.dev https://zcash-mainnet.chainsafe.dev; base-uri 'none'; form-action 'none'; frame-ancestors 'none'",
-      "https://app.zigs.app/": "default-src 'none'; script-src 'self' 'wasm-unsafe-eval'; worker-src 'self'; style-src 'self'; font-src 'self'; img-src 'self' data: blob:; connect-src 'self' wss://app.zigs.app https://lwd.zigs.app https://zcash-testnet.chainsafe.dev https://zcash-mainnet.chainsafe.dev; base-uri 'none'; form-action 'none'; frame-ancestors 'none'",
-      "http://127.0.0.1:8795/": "default-src 'none'; script-src 'self' 'wasm-unsafe-eval'; worker-src 'self'; style-src 'self'; font-src 'self'; img-src 'self' data: blob:; connect-src 'self' ws://127.0.0.1:8795 https://lwd.zigs.app https://zcash-testnet.chainsafe.dev https://zcash-mainnet.chainsafe.dev; base-uri 'none'; form-action 'none'; frame-ancestors 'none'"
+      "http://localhost:8795/": "default-src 'none'; script-src 'self' 'wasm-unsafe-eval'; worker-src 'self'; style-src 'self'; font-src 'self'; img-src 'self' data: blob:; connect-src 'self' ws://localhost:8795 https://zcash-testnet.chainsafe.dev https://zcash-mainnet.chainsafe.dev; base-uri 'none'; form-action 'none'; frame-ancestors 'none'",
+      "https://app.zigs.app/": "default-src 'none'; script-src 'self' 'wasm-unsafe-eval'; worker-src 'self'; style-src 'self'; font-src 'self'; img-src 'self' data: blob:; connect-src 'self' wss://app.zigs.app https://zcash-testnet.chainsafe.dev https://zcash-mainnet.chainsafe.dev; base-uri 'none'; form-action 'none'; frame-ancestors 'none'",
+      "http://127.0.0.1:8795/": "default-src 'none'; script-src 'self' 'wasm-unsafe-eval'; worker-src 'self'; style-src 'self'; font-src 'self'; img-src 'self' data: blob:; connect-src 'self' ws://127.0.0.1:8795 https://zcash-testnet.chainsafe.dev https://zcash-mainnet.chainsafe.dev; base-uri 'none'; form-action 'none'; frame-ancestors 'none'"
     }
   },
   "served": {
     "strict-transport-security": "max-age=31536000; includeSubDomains",
-    "content-security-policy": "default-src 'none'; script-src 'self' 'wasm-unsafe-eval'; worker-src 'self'; style-src 'self'; font-src 'self'; img-src 'self' data: blob:; connect-src 'self' ws://app.zigs.app https://lwd.zigs.app https://zcash-testnet.chainsafe.dev https://zcash-mainnet.chainsafe.dev; base-uri 'none'; form-action 'none'; frame-ancestors 'none'",
+    "content-security-policy": "default-src 'none'; script-src 'self' 'wasm-unsafe-eval'; worker-src 'self'; style-src 'self'; font-src 'self'; img-src 'self' data: blob:; connect-src 'self' ws://app.zigs.app https://zcash-testnet.chainsafe.dev https://zcash-mainnet.chainsafe.dev; base-uri 'none'; form-action 'none'; frame-ancestors 'none'",
     "permissions-policy": "camera=(), microphone=(), geolocation=(), interest-cohort=()",
     "referrer-policy": "no-referrer",
     "x-content-type-options": "nosniff"

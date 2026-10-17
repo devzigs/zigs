@@ -3,8 +3,9 @@
 import { DurableObject } from "cloudflare:workers";
 
 const GROUP_ID = /^[0-9a-f]{20}$/;
-// The light-wallet servers in NETWORKS (web/app.js). The page may connect to nothing else.
-const CHAIN_SERVERS = ["https://lwd.zigs.app", "https://zcash-testnet.chainsafe.dev",
+// The light-wallet servers in NETWORKS (web/app.js) that the page calls itself. The page may
+// connect to nothing else. Our testnet node is /lwd of this Worker, which 'self' covers.
+const CHAIN_SERVERS = ["https://zcash-testnet.chainsafe.dev",
   "https://zcash-mainnet.chainsafe.dev"].join(" ");
 
 // No inline script or style runs: the app sets styles only through the CSSOM.
@@ -87,6 +88,44 @@ async function assets(req, env, url) {
   return solResponse(await env.ASSETS.fetch(req));
 }
 
+// The public side of the testnet light-wallet server answers this Worker only: Envoy checks the
+// secret LWD_KEY that the Worker adds (infra/lwd). The page calls /lwd behind the password gate
+// and never holds the key. Only the gRPC methods of the server pass, so the route is no open proxy.
+const LWD_ORIGIN = "https://lwd.zigs.app";
+const LWD_PATH = /^\/lwd(\/cash\.z\.wallet\.sdk\.rpc\.CompactTxStreamer\/[A-Za-z]+)$/;
+const LWD_REQUEST = ["content-type", "x-grpc-web", "x-user-agent", "grpc-timeout"];
+const LWD_RESPONSE = ["content-type", "grpc-status", "grpc-message"];
+
+function only(headers, names) {
+  const out = new Headers();
+  for (const name of names) if (headers.has(name)) out.set(name, headers.get(name));
+  return out;
+}
+
+// Both bodies stream: GetBlockRange is a server stream. The redirect stays unfollowed, so the
+// key never goes to another host.
+async function lwd(req, env, url) {
+  const path = LWD_PATH.exec(url.pathname)?.[1];
+  if (!path) return new Response("Not found\n", { status: 404 });
+  if (req.method !== "POST") return new Response("Use POST.\n", { status: 405 });
+  if (!env.LWD_KEY) {
+    return new Response("The light-wallet server is not set up on this server.\n", { status: 503 });
+  }
+  const headers = only(req.headers, LWD_REQUEST);
+  headers.set("x-zigs-lwd-key", env.LWD_KEY);
+  let up;
+  try {
+    up = await fetch(LWD_ORIGIN + path, {
+      method: "POST", headers, body: req.body, redirect: "manual",
+    });
+  } catch {
+    return new Response("The light-wallet server did not answer.\n", { status: 502 });
+  }
+  const out = only(up.headers, LWD_RESPONSE);
+  out.set("Cache-Control", "no-store");
+  return new Response(up.body, { status: up.status, headers: out });
+}
+
 async function groupSocket(req, env, url) {
   const gid = url.searchParams.get("g") || "";
   if (!GROUP_ID.test(gid)) return new Response("Add ?g= with a group id of 20 hex characters.", { status: 400 });
@@ -99,26 +138,32 @@ async function groupSocket(req, env, url) {
   return env.STORE.get(env.STORE.idFromName("g:" + gid)).fetch(fwd);
 }
 
+// The https redirect and the password prompt: the Response to send, or null to let the request on.
+function gate(req, env) {
+  // Redirect before the password prompt, so a password never travels over plain http.
+  // The scheme comes from the edge headers: local dev also sees http URLs.
+  const http = (req.headers.get("cf-visitor") || "").includes('"http"')
+    || req.headers.get("x-forwarded-proto") === "http";
+  if (http) {
+    const to = new URL(req.url);
+    to.protocol = "https:";
+    return Response.redirect(to.toString(), 301);
+  }
+  if (env.DEV_NO_AUTH === "1" || authorized(req, env)) return null;
+  const text = "Zigs is not open yet. This preview needs a password.\n"
+    + "Read about Zigs and get early access at https://zigs.app\n";
+  return new Response(text, {
+    status: 401, headers: { "WWW-Authenticate": 'Basic realm="Zigs preview", charset="UTF-8"' },
+  });
+}
+
 export default {
   async fetch(req, env) {
-    // Redirect before the password prompt, so a password never travels over plain http.
-    // The scheme comes from the edge headers: local dev also sees http URLs.
-    const http = (req.headers.get("cf-visitor") || "").includes('"http"')
-      || req.headers.get("x-forwarded-proto") === "http";
-    if (http) {
-      const to = new URL(req.url);
-      to.protocol = "https:";
-      return Response.redirect(to.toString(), 301);
-    }
-    if (env.DEV_NO_AUTH !== "1" && !authorized(req, env)) {
-      const text = "Zigs is not open yet. This preview needs a password.\n"
-        + "Read about Zigs and get early access at https://zigs.app\n";
-      return new Response(text, {
-        status: 401, headers: { "WWW-Authenticate": 'Basic realm="Zigs preview", charset="UTF-8"' },
-      });
-    }
+    const refused = gate(req, env);
+    if (refused) return refused;
     const url = new URL(req.url);
     if (url.pathname === "/ws") return groupSocket(req, env, url);
+    if (url.pathname.startsWith("/lwd/")) return lwd(req, env, url);
     if (url.pathname === "/" || url.pathname === "/index.html") {
       const page = await env.ASSETS.fetch(new URL("/index.html", url));
       const res = new HTMLRewriter()
