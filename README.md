@@ -80,7 +80,7 @@ To see signer changes, open **Signers**, then **Change signers**. To see the pri
 |---|---|
 | **Privacy** | On chain, the transaction shape matches the standard wallet library: same builder, padding, standard fee and anchor depth. A group payment expires after one day instead of 40 blocks, because its approvals take hours, so the expiry marks it, and so does a priority fee ([comparison](PRIVACY.md#on-chain)). The server stores only encrypted values, padded so that even their length hides amounts. On the device, key shares can be locked with a passkey (web) or Face ID (iPhone) ([how](PRIVACY.md#lock-with-a-passkey-or-face-id)). Key share backups are encrypted with a passphrase (Argon2id and XChaCha20-Poly1305) and open on the web, iPhone and Mac ([how](PRIVACY.md#key-share-backups)). The page can connect only to its own host (the group server and the testnet light-wallet relay) and two ChainSafe light-wallet servers (Content-Security-Policy). For testnet wallets, the Solana Worker of the page also connects to the Helius Devnet host ([how](PRIVACY.md#solana-beta-helius-devnet)). It is prepared for Tor Browser, but not yet tested end to end ([how](PRIVACY.md#use-zigs-over-tor)). The Zigs server code keeps no logs; its host, Cloudflare, can see connection data. Every remaining leak is listed in [PRIVACY.md](PRIVACY.md). |
 | **Usefulness** | Designed for team treasuries, DAOs and families. Usable today on testnet, and on mainnet with a warning at 0.5 ZEC: web, iPhone and Mac; invite links and QR codes; batch payments for payroll and grants (up to 20 recipients, one approval round, pasted from a spreadsheet); signer changes; encrypted key share backups. |
-| **Execution** | The live app works end to end. Seventeen testnet transactions made by the apps are [listed below](#proof-on-testnet). The engine has 122 tests, and a command-line suite runs adversarial cases. |
+| **Execution** | The live app works end to end. Seventeen testnet transactions made by the apps are [listed below](#proof-on-testnet). The engine has 125 tests, and a command-line suite runs adversarial cases. |
 | **Originality** | An end-user app for re-randomized FROST: no command line, no trusted dealer, and no server that can read the wallet. Each device decodes the PCZT and checks every output before it approves, and binds its approval to the transaction's sighash. Signer changes, batch payments and native iPhone and Mac apps are included. Built during the Zecathon window: the first commit is from October 10, 2026. |
 
 ## Architecture
@@ -440,13 +440,18 @@ folder path.
 
 ## Tests
 
-- `cargo test --release` in `wasm/` (122 tests, and 1 ignored test for ZEC-1 in TICKETS.md):
+- `cargo test --release` in `wasm/` (125 tests, and 1 ignored test for ZEC-1 in TICKETS.md):
   - Signing: full 2-of-3 flows for Ironwood (paying 4 recipients in one transaction) and Orchard.
   - Expiry and fees: a group payment expires after one day of blocks (75 or 25 seconds each), at
     most up to the next upgrade. The approver refuses an expired payment and one that stays valid
     much longer. A fee from the ZIP 317 fee to 10 times it passes, and a transparent or Sapling
     output inside that range is refused. The id that `inspect` gives is the id of the final
     transaction.
+  - Session state: "done" and "expired" need the sighash that the device approved, and
+    signatures count only under the wallet key. A proposal alone, an unsigned copy, signatures of
+    another transaction or wallet, a changed signature (also with a value field of zero) and
+    spent notes never give "expired". An old signed payment copied into a session never gives
+    "done".
   - A bad share is attributed to its sender. A swapped recipient on any payee output is refused.
   - Spends of 3 notes for 1 recipient, recipient lists checked row by row, and fees that count
     outputs.

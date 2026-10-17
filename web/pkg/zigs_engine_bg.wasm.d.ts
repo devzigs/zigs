@@ -25,6 +25,7 @@ export const chainwallet_new: (a: number, b: number, c: number, d: number, e: nu
 export const chainwallet_received: (a: number) => [number, number];
 export const chainwallet_restore: (a: number, b: number, c: number, d: number, e: number, f: number, g: number) => [number, number, number];
 export const chainwallet_sent: (a: number) => [number, number];
+export const chainwallet_sessionState: (a: number, b: number, c: number, d: number, e: number, f: number, g: number) => [number, number, number, number];
 export const chainwallet_snapshot: (a: number) => [number, number, number, number];
 export const chainwallet_sync: (a: number, b: any) => any;
 export const dkgEcho: (a: number, b: number, c: number, d: number) => [number, number, number, number];

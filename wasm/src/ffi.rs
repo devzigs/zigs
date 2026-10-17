@@ -80,6 +80,7 @@ const METHODS: &[(&str, Method)] = &[
     ("walletBalance", |a| native::balance(s(a, 0)?)),
     ("walletReceived", |a| native::received(s(a, 0)?)),
     ("walletSent", |a| native::sent(s(a, 0)?)),
+    ("walletSessionState", |a| native::session_state(s(a, 0)?, s(a, 1)?, s(a, 2)?, s(a, 3)?)),
     ("walletSnapshot", |a| native::snapshot(s(a, 0)?)),
     ("walletSpend", |a| native::spend(s(a, 0)?, list(a, 1)?, h(a, 2)?)),
     ("walletMemoNeeds", |a| native::memo_needs(s(a, 0)?)),
