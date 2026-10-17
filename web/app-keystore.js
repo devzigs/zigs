@@ -5,9 +5,10 @@ import { normChats } from "./chat.js";
 import { log, showBanner } from "./app-state.js";
 import { S, said, withTimeout } from "./app-kit.js";
 import { Z } from "./app-engine.js";
+import { adoptInviteKey } from "./app-links.js";
 import {
-  adoptInviteKey, adoptPersonal, boot, dropDeviceCopy, followAccount, personal, personalDamaged,
-  react, render, takeDeviceAccount,
+  adoptPersonal, boot, dropDeviceCopy, followAccount, personal, personalDamaged, react, render,
+  takeDeviceAccount,
 } from "./app-rest.js";
 
 // Key shares, DKG secrets, signing nonces and wallet keys never leave this browser. With the

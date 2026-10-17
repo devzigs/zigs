@@ -12,10 +12,12 @@ import "./app-kit.js";
 import "./app-engine.js";
 import "./app-keystore.js";
 import "./app-seats.js";
+import "./app-links.js";
 import "./app-rest.js";
 import { loadEngine } from "./app-engine.js";
 import { lockedVault } from "./app-keystore.js";
-import { adoptInviteKey, draw, render, startUp } from "./app-rest.js";
+import { adoptInviteKey } from "./app-links.js";
+import { draw, render, startUp } from "./app-rest.js";
 
 adoptInviteKey();
 draw();   // the first paint does not wait for the engine

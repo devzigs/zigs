@@ -6,9 +6,9 @@ import {
 import { open as openVault, parseVault, seal } from "./vault.js";
 import {
   abortText, backupName, boxPairMatches, checkNetwork, chunks, confirmGate, conflictReason, finite,
-  fmtInt, heldRefusal, keysOf, lateFields, LINK_CHAT_ID, linkRefusal, makePassphrase, numberClash,
-  passIssue, restoredSecret, seatBackedUp, settledFields, shareShape, skey, staleRestore, takenKeys,
-  undoPlan, usesV2, walletVersion,
+  fmtInt, heldRefusal, keysOf, lateFields, makePassphrase, numberClash, passIssue, restoredSecret,
+  seatBackedUp, settledFields, shareShape, skey, staleRestore, takenKeys, undoPlan, usesV2,
+  walletVersion,
 } from "./util.js";
 import {
   docFields, filterWallet, IGNORED_NOTE, makeMemo, partFields, proposalFields, readSessions,
@@ -16,8 +16,8 @@ import {
 } from "./signed.js";
 import {
   byTime, canSign, chatWarning, checkText, countUnread, dmText, joinBlock, keyState, membersToPin,
-  newRoom, newSignKey, parseDm, parseHash, parseMsg, pickRoom, pin, pinMember, pinnedMembers,
-  signedText, signMsg, signPairMatches, validId, validPk, validRoom, verifyMsg,
+  newRoom, newSignKey, parseDm, parseMsg, pickRoom, pin, pinMember, pinnedMembers, signedText,
+  signMsg, signPairMatches, validId, validPk, validRoom, verifyMsg,
 } from "./chat.js";
 import {
   accountBackupName, accountBalance, addContact, backupPayload, balanceWarnings, chatTimeline,
@@ -48,6 +48,10 @@ import {
   allDone, allR1, allSeated, curSession, fitState, isCreator, isMe, keysAgree, keysDiffer,
   localSeats, myUid, r2For, seatIds, seatMine, seatNameOf, seatStage, signersOf, STAGE_LABEL,
 } from "./app-seats.js";
+import {
+  BAD_CONTACT_LINK, badChatLink, chatLink, chatMessage, followHash, inviteLink, isChatId, openChat,
+  setHash,
+} from "./app-links.js";
 
 export let personal = null;          // the personal account (web/personal.js), with its seed
 export function setPersonal(v) { personal = v; }
@@ -243,7 +247,6 @@ const netBadge = (g) => netOf(g).cap
     + " the app warns and hides the address. It cannot block deposits." }, "Mainnet")
   : el("span", { class: "badge plain" }, "Testnet");
 const SERVER_TIMEOUT_MS = 8000;
-const MISSING_SECRET = "This link is missing the wallet secret. Ask for the full invite link.";
 let chain = null;   // { gid, cw, prog, bal, received, ms, error, syncing } for the open group
 export function setChain(v) { chain = v; }
 export let acct = null;    // the same for the personal account, with account: true (see startAccount)
@@ -270,42 +273,9 @@ function saveBal(gid, bal) {
 }
 let unsubGroup = [], unsubSession = [];
 const inspectCache = new Map();
-const setHash = (h) => { try { history.replaceState(null, "", h); } catch {} };
-export function adoptInviteKey() {
-  if (lockedVault) return;
-  const { chat, id, key } = parseHash(location.hash);
-  if (chat) adoptChatLink(id, key); else adoptWalletLink(id, key);
-}
-
-function adoptWalletLink(gid, key) {
-  if (!key) return;
-  const refusal = linkRefusal(gkeys[gid], key, isChatId(gid));
-  if (refusal) showBanner("bad", refusal);
-  else if (validRoom({ id: gid, key })) putKey(gid, key);
-  // The id of a chat opens no wallet: clear it, or the missing-secret banner hides the reason.
-  setHash(refusal === LINK_CHAT_ID ? "#" : "#" + gid);
-}
-
-// A chat and a wallet never share an id: a wallet key must not be stored under a chat id.
-const isChatId = (id) => !!chats.list[id] || !!roomKeys[id];
-const badChatLink = (cid, key) => !validRoom({ id: cid, key }) || !!gkeys[cid] || !!roomKeys[cid];
-// The secret leaves the fragment at once. A new chat waits in joinLinks until the person clicks
-// "Join chat": a page that only loads the link, such as a link scanner, must not take the place.
-function adoptChatLink(cid, key) {
-  if (!key) return;
-  const known = chats.list[cid], bad = badChatLink(cid, key);
-  if (bad) showBanner("bad", BAD_CONTACT_LINK);
-  else if (known && known.key !== key) {
-    showBanner("bad", "This contact link has a different secret for a chat you already have, so "
-      + "it was ignored.");
-  }
-  else if (!known) joinLinks.set(cid, key);
-  setHash(bad ? "#" : "#c." + cid);
-}
-const inviteLink = (gid) => location.origin + location.pathname + "#" + gid + "." + gkeys[gid];
 // A message room is a namespace of its own. Its key never enters gkeys, so it is never a wallet.
 // A chat is one too. Its secret is pending while this browser joins it, before it is saved.
-const roomKeys = {}, pendingChats = {};
+export const roomKeys = {}, pendingChats = {};
 const keyOf = (path) => {
   const id = path.split("/")[1];
   return gkeys[id] || roomKeys[id] || (chats.list[id] || {}).key || pendingChats[id];
@@ -2393,10 +2363,7 @@ async function toggleNotify() {
 // A direct chat is a store namespace of its own with two members (PROTOCOL.md 14). It has no
 // wallet document, so it never lists as a wallet. One personal key, chats.profile, signs them all.
 const chatPins = readLocal("zf-chatpins");   // "chat id:member id" -> first signing key seen
-const chatSubs = new Map(), chatMembers = {}, joinLinks = new Map();
-const BAD_CONTACT_LINK = "This contact link is not valid. Ask for a new one.";
-const MISSING_CHAT_SECRET = "This link is missing the chat secret. Ask your contact for the full "
-  + "contact link.";
+export const chatSubs = new Map(), chatMembers = {}, joinLinks = new Map();
 
 const contactOf = (cid) => pinnedMembers(chatPins, cid).find((id) => id !== chats.list[cid].member);
 
@@ -2479,31 +2446,6 @@ async function leaveChat(cid) {
   for (const k of Object.keys(chatPins)) if (k.startsWith(cid + ":")) delete chatPins[k];
   writeLocal("zf-chatpins", chatPins);
   openChat(null);
-}
-
-function openChat(cid) {
-  if (cid) openGroup(null);
-  state.cid = cid; state.contact = null; ui.leave = false;
-  setHash(cid ? "#c." + cid : "#");
-  render();
-}
-
-function followHash() {
-  const { chat: isChat, id } = parseHash(location.hash);
-  if (isChat) { followChat(id); return; }
-  const gid = id || null;
-  if (gid === state.gid && !state.cid) return;
-  if (gid && !gkeys[gid]) { showBanner("bad", MISSING_SECRET); return; }
-  ui.tab = "overview";
-  openGroup(gid);
-}
-
-// `cid` comes from parseHash: "" or 20 hex characters, so it cannot name a property of Object.
-function followChat(cid) {
-  if (state.cid === cid) return;
-  if (joinLinks.has(cid)) openGroup(null);   // the lobby shows the join card
-  else if (chats.list[cid]) openChat(cid);
-  else showBanner("bad", MISSING_CHAT_SECRET);
 }
 
 function watchChats() {
@@ -4333,10 +4275,6 @@ export async function submitRequest(form, o) {
 const DM_FINE = "Your contact, and anyone else who has the contact link, can read these messages. "
   + "Keep the link private. The group server stores them sealed. It sees when you write, and that "
   + "your two devices use this chat.";
-const chatLink = (cid) => location.origin + location.pathname + "#c." + cid + "."
-  + chats.list[cid].key;
-const chatMessage = (link) => "I started a private chat with you on Zigs. Open this link: " + link
-  + ". This link is a secret. Do not post it in a public place. About Zigs: https://zigs.app";
 
 function chatView() {
   const cid = state.cid;
@@ -5812,12 +5750,6 @@ document.addEventListener("keydown", (ev) => {
     closeBackup();
   }
   render();
-});
-
-// Back, forward and pasted invite links change only the fragment; follow them.
-window.addEventListener("hashchange", () => {
-  adoptInviteKey();
-  if (!lockedVault) followHash();
 });
 // New blocks every 25 s: refresh the open wallet once a minute while someone looks at it.
 setInterval(() => {
