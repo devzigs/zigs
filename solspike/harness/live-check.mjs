@@ -88,7 +88,7 @@ async function timing(rig) {
   });
 }
 
-// The asserts of the A4 step of the app.js split: no error, every script answers, no cache.
+// The asserts of the page load: no error, every script answers, no cache.
 function assertScripts(out) {
   assert.deepEqual(out.errors, [], "the page logged an error");
   assert.equal(out.failedRequests, 0, "a request failed");

@@ -600,7 +600,7 @@ built one with FROST. I found no repository, release or audit [U]. Ask the Railg
 | Backup | As is (envelope), pattern (file) | A new inner kind `zigs-evm-backup`. Edit `backupText` to drop an `evm` sub-object. Restore checks the key share against `evmdone` | `wasm/src/backup.rs`, `web/sol/backup.js` |
 | Secrets store | As is | Keep EVM secrets in one `evm` sub-object of the seat secret | `web/sol/secrets.js` |
 | Worker-per-chain CSP | Pattern | `/evm` route with its own CSP that names the RPC host and the proof host. The page policy stays | `cf/src/index.js:39-88`, `web/sol/worker.js` |
-| Page loader | Pattern | Dynamic import only after a seat signed `evmstart/1` | `web/app.js:857-911` |
+| Page loader | Pattern | Dynamic import only after a seat signed `evmstart/1` | `web/app-sol.js` |
 | Roles from a seed | Pattern | Viewing and nullifying keys come from the agreed seed, as `solSeed` does. All seats hold them | ZOLANA.md 4.2 |
 | Fee payer | Decision | Section 3.5 and D3 | ZOLANA.md:270 (branch) |
 | RPC client, chain sync | New | A JSON-RPC client or the Railgun engine bundle | none |

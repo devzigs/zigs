@@ -292,7 +292,7 @@ iPhone.
 | [`wasm/src/snapshot.rs`](wasm/src/snapshot.rs) | Saved sync state: notes and the note commitment tree |
 | [`wasm/src/backup.rs`](wasm/src/backup.rs) | Encrypted key share backups: Argon2id, XChaCha20-Poly1305 |
 | [`wasm/src/ffi.rs`](wasm/src/ffi.rs) | C interface for the iPhone and Mac apps |
-| [`web/index.html`](web/index.html), [`web/app.css`](web/app.css), [`web/app.js`](web/app.js) | The web app: page, styles and script (no inline script or style) |
+| [`web/index.html`](web/index.html), [`web/app.css`](web/app.css), [`web/app.js`](web/app.js), `web/app-*.js` | The web app: page, styles, and the script: `web/app.js` lists the 8 pure modules and the 25 page modules and starts the page (no inline script or style; see [The page modules](#the-page-modules)) |
 | [`web/shim.js`](web/shim.js), [`web/qr.js`](web/qr.js), [`web/payees.js`](web/payees.js), [`web/requests.js`](web/requests.js), [`web/personal.js`](web/personal.js), [`web/vault.js`](web/vault.js), [`web/chat.js`](web/chat.js), [`web/signed.js`](web/signed.js) | Store client, QR encoder, payment list parser with the memo rules and the recipient check, payment request cards and Send form rows, the rules of the personal account (contacts, fee, states of a message, backup), passkey lock, message helpers and the rules for signed writes (no third-party code) |
 | [`cf/src/index.js`](cf/src/index.js) | Group server: Cloudflare Worker with one Durable Object per wallet, limits against abuse. It also serves `/sol` and `/sol/config.json` for the Solana beta, and relays `/lwd` to our testnet light-wallet node |
 | [`web/sol/`](web/sol) | Solana beta in the page: ceremony, signing sessions, backup, the Worker that talks to Helius, the Solana wasm, and the vendored Zolana SDK bundle (third-party code, hash pinned in `SHA256SUMS`) |
@@ -304,6 +304,40 @@ iPhone.
 | [`ios/Zigs/`](ios/Zigs) | SwiftUI app for iPhone and Mac |
 | [`src/`](src), [`tests/e2e.sh`](tests/e2e.sh) | Command-line version of the ceremony (version 1) and adversarial tests |
 | [`PRIVACY.md`](PRIVACY.md) | Threat model |
+
+### The page modules
+
+Each `web/app-*.js` holds one part of the page. A module that assigns a `let` owns it; other
+modules read it as a live import. `web/test/graph.mjs` checks the import graph, and
+`solspike/lint.sh` checks the imports with `solspike/oxlintrc-page.json`.
+
+| Module | Content |
+|---|---|
+| [`web/app-kit.js`](web/app-kit.js) | Pure helpers and the localStorage merge helpers. It imports no page module. |
+| [`web/app-state.js`](web/app-state.js) | Shared state objects (`state`, `ui`, `raw`, `inbox`, `ready`, `busy`), the log and the banner. It imports nothing. |
+| [`web/app-engine.js`](web/app-engine.js) | The WebAssembly engine, and the worker for slow engine calls. |
+| [`web/app-chain.js`](web/app-chain.js) | Networks, chain sync, the balance cache, memo reading and the 60 s refresh. |
+| [`web/app-keystore.js`](web/app-keystore.js) | Local secrets, the passkey lock, other-tab sync and IndexedDB. |
+| [`web/app-account.js`](web/app-account.js) | The personal account: store, sync, send and contacts; `startUp`. |
+| [`web/app-groups.js`](web/app-groups.js) | Boot, the sealed store, the group and session watchers and the approval queue. |
+| [`web/app-seats.js`](web/app-seats.js) | Facts derived from `state`: the seats of this browser and their keys. |
+| [`web/app-dom.js`](web/app-dom.js) | `el`, `act`, widgets, wording and labels. |
+| [`web/app-loop.js`](web/app-loop.js) | Reactor, render loop, focus, layers and page listeners. |
+| [`web/app-filter.js`](web/app-filter.js) | Pins, signature checks, signed writes and the filter from store to state. |
+| [`web/app-dkg.js`](web/app-dkg.js) | Wallet creation, the key ceremony, safety number, address check and seat join. |
+| [`web/app-setup.js`](web/app-setup.js) | The setup page: join, invite, safety and progress. |
+| [`web/app-payments.js`](web/app-payments.js) | Propose, approve, sign, cancel and broadcast; the payment check and expiry. |
+| [`web/app-messages.js`](web/app-messages.js) | Wallet rooms, read marks, notices and direct chats. |
+| [`web/app-links.js`](web/app-links.js) | Invite links and hash routing. |
+| [`web/app-payreq.js`](web/app-payreq.js) | Payment requests: logic, card and form. |
+| [`web/app-backups.js`](web/app-backups.js) | Backup and restore: logic and dialogs. |
+| [`web/app-sol.js`](web/app-sol.js) | Solana host glue: `solHost()` and the lazy load of `web/sol`. |
+| [`web/app-shell.js`](web/app-shell.js) | Side navigation, lock screen, wallet list and create dialog. |
+| [`web/app-wallet.js`](web/app-wallet.js) | The wallet page: tabs, overview, activity, signers and details. |
+| [`web/app-thread.js`](web/app-thread.js) | The message card, composer and bubbles; the direct chat page. |
+| [`web/app-send.js`](web/app-send.js) | Receive and send dialogs. |
+| [`web/app-drawer.js`](web/app-drawer.js) | The payment drawer. |
+| [`web/app-account-view.js`](web/app-account-view.js) | The pages of the personal account and its contacts. |
 
 ## Run it yourself
 
@@ -494,7 +528,7 @@ folder path.
 - `node web/test/sol-config.mjs` and its nine siblings `sol-docs`, `sol-ceremony`, `sol-app`,
   `sol-wasm`, `sol-sessions`, `sol-limits`, `sol-pay`, `sol-transfer` and `sol-fee` (the files
   `sol-rig`, `sol-setup`, `sol-chain` and `sol-vector` are helpers: do not run them). They test the
-  Solana part of the page on the real `web/app.js`: the ceremony, the fee key of each seat, signing
+  Solana part of the page on the real page modules: the ceremony, the fee key of each seat, signing
   sessions, payments, Add SOL, backup and restore, the stop that holds everywhere, the gate (a
   mainnet wallet, a wallet before version 3, a stored network that changed, and a start document
   that no seat signed get no Solana tab and load nothing) and the config from the server.
@@ -532,7 +566,17 @@ folder path.
   did not write the document. Others are a false cancel or proposer, a made-up seat 4 in a wallet
   of 3, made-up payment results and a renamed seat. Every writer of a payment part signs with the
   real engine and Ed25519, and the reader accepts it. The bounded memo of checks is tested too.
-- `node web/test/app.mjs`: the real `web/app.js` with a stub page and an in-memory store. A browser
+- `node web/test/graph.mjs`: the link test of the page modules. Every module that `web/app.js` lists
+  loads on a stub page, once with empty storage and once with a passkey-locked vault. The imports
+  come in the order of the list, as in the browser; the modules run depth first along their
+  imports. The import graph keeps its rules: every `web/app-*.js` is listed, app-kit and app-state
+  and the pure modules import no page module, no module imports `web/sol` statically or a test
+  setter, every imported name is an export of its source, no page module takes a page name from a
+  pure module, no file of `web/sol` imports a page module, and every host key that `web/sol` reads
+  is a key of `solHost()`. `web/test/page.mjs` is a
+  helper: it loads the page modules for `app.mjs` and `sol-rig.mjs`, and its `NAMES` lists the page
+  names that the tests read.
+- `node web/test/app.mjs`: the real page modules with a stub page and an in-memory store. A browser
   that holds every seat runs the whole version 3 ceremony and the payment writers, and the reader
   accepts all of it. A made-up seat 4, a raised `n`, a renamed seat and made-up payment results are
   ignored. A write for a wallet that is not open is signed for its own wallet. The memo of checks

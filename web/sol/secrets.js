@@ -1,7 +1,7 @@
 // The Solana secrets of a seat live in one sub-object, `sol`, of the seat secret (ZOLANA.md 3.6):
 // the key package, the public key package, the group key, `solSeed`, the secret parts of the
 // ceremony and, later, the nonces by digest. The passkey lock, the tab sync and the sealed record
-// cover it because it sits in the secrets. backupText in app.js leaves it out of the Zcash file.
+// cover it because it sits in the secrets. backupText (app-backups.js) skips it in the Zcash file.
 
 /** The Solana secrets of seat `seat` (an empty object when there are none). */
 export const solOf = (host, gid, seat) => host.sec(gid, seat)?.sol ?? {};

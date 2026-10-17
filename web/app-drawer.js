@@ -1,0 +1,296 @@
+// The payment drawer.
+import { finite, fmtInt } from "./util.js";
+import { busy, log, state } from "./app-state.js";
+import { about, elapsed, fmtZec, short, when, zecText } from "./app-kit.js";
+import { sec } from "./app-keystore.js";
+import { localSeats, seatIds, signersOf } from "./app-seats.js";
+import { curChain, curNet, inFlight } from "./app-chain.js";
+import { canWriteAs, mayAct } from "./app-filter.js";
+import {
+  act, addrGroups, avatar, closeBtn, copyBtn, el, groupName, guard, isPayee, leavesOf, memoRow,
+  money, named, payTitle, proposer, statusChip, unreadable,
+} from "./app-dom.js";
+import { seatCheck } from "./app-dkg.js";
+import {
+  approve, broadcastTx, cancelPayment, expired, expiryOf, finalizeTx, inspectOf, onChain,
+  priorityTimes, proofStalled, proposeAgain, recipientCheck, resendTx, signingStarted, txidOf,
+} from "./app-payments.js";
+import { discussion } from "./app-thread.js";
+
+// The expiry of an open payment, or why an expired one ends here. The engine counts from the
+// last sync, so the time since that sync comes off. A height from saved state gives no time.
+export function expiryLine(ss) {
+  const e = expiryOf(ss), ins = inspectOf(ss), c = curChain();
+  if (!e || ss.error || onChain(ss)) return null;
+  const at = "block " + fmtInt(ins.expiry_height);
+  if (expired(ss) && signingStarted(ss)) {
+    return el("div", { class: "callout bad" }, "This payment expired at " + at + ", and no synced "
+      + "block holds the transaction that this page shows. This page cannot prove that the "
+      + "signers signed that transaction. Check the wallet's activity and an explorer before "
+      + "anyone proposes it again.");
+  }
+  if (expired(ss)) {
+    return el("div", { class: "callout bad" }, "This payment expired at " + at + ". No signer "
+      + "can approve, sign or send it now. Propose it again.");
+  }
+  if (e.expired) {
+    return el("div", { class: "callout" }, "This payment can no longer go to the network: it "
+      + "expires at " + at + ". If a signer sent it, a block can still hold it.");
+  }
+  if (ss.broadcastTxid) return null;
+  const must = "The approvals, the proof and the send must be done by then.";
+  if (!c.balAt) return el("p", { class: "small muted" }, "Expires at " + at + ". " + must);
+  const left = e.seconds_left - Math.max(0, (Date.now() - c.balAt) / 1000);
+  return el("p", { class: "small muted" }, "Expires at " + at + ", in about "
+    + about(Math.max(0, left)) + ". " + must);
+}
+
+function checkWarnings(rc) {
+  const out = rc.extra.map((l) => "The transaction also pays " + fmtZec(l.value) + " to " + short(l.who, 12) + ", which the proposer did not list. Do not approve it.");
+  // Paid with another memo (`got` is set): the address and the amount are right.
+  const memoOnly = rc.rows.filter((r) => !r.ok && r.got !== undefined);
+  out.push(...memoOnly.map((r) => "The memo in the transaction for " + short(r.to, 12)
+    + " is not the memo the proposer listed. Do not approve it."));
+  if (!rc.rows.length) out.push("The proposal lists no recipients. Do not approve it.");
+  else if (!rc.match && !rc.extra.length && !memoOnly.length) {
+    out.push("The transaction does not pay what the proposer listed. Do not approve it.");
+  }
+  return out.map((t) => el("div", { class: "callout bad" }, t));
+}
+
+// The memo lines of one payee row. For a payee paid with another memo, the memo that the
+// transaction carries is the decoded one, so it shows as well.
+function memoLines(r) {
+  const own = r.memo == null ? "" : typeof r.memo === "string" ? r.memo : null;
+  if (!r.ok && r.got !== undefined) {
+    return [memoRow("Proposed memo", own), memoRow("Memo in the transaction", r.got, true)];
+  }
+  return own === "" ? [] : [memoRow("Memo", own)];
+}
+
+function checkHead(rc) {
+  return el("div", { class: "card-head" }, el("span", { class: "label" }, rc.rows.length > 1 ? rc.rows.length + " recipients" : "To"),
+    el("span", { class: "badge " + (rc.match ? "ok" : "bad") }, rc.match ? "Matches the transaction" : "Does not match the transaction"));
+}
+
+function recipientBox(ss, rc) {
+  // Payments proposed before batch payments have no list; only one still open for approval needs
+  // the check.
+  if (rc.match === null || (!rc.rows.length && ss.package)) return null;
+  return el("div", { class: "to-box" }, checkHead(rc),
+    rc.rows.map((r) => el("div", { class: "payee-item" },
+      el("div", { class: "payee" }, el("span", { class: "hex" }, addrGroups(r.to)),
+        el("span", { class: "payee-end" }, money(r.amount), r.ok ? null
+          : el("span", { class: "badge bad" },
+            r.got === undefined ? "Not in the transaction" : "Memo differs"))),
+      memoLines(r))),
+    rc.rows.some((r) => r.memo) ? el("p", { class: "small faint" },
+      "A memo goes on chain with the payment. Its recipient and every signer can read it.") : null,
+    checkWarnings(rc),
+    ss.move ? moveNote(ss, rc) : null);
+}
+
+function moveNote(ss, rc) {
+  if (rc.intoNew === false) return el("div", { class: "callout bad" }, "This is not the address of " + groupName(ss.move) + ". Do not approve it.");
+  if (rc.intoNew) return el("div", { class: "callout" }, "This moves all funds to " + groupName(ss.move) + ", the wallet that replaces this one. Your browser checked its address.");
+  return el("div", { class: "callout" }, "This moves all funds to a new wallet that replaces this one. Your browser has no checked copy of its address, so it cannot check it.");
+}
+
+// The seats of this browser that can approve the payment now. None while the wallet's data is
+// being checked: an approval written twice would replace its own nonces.
+const approvers = (ss) => state.pending ? [] : localSeats().filter((i) => canWriteAs(i)
+  && sec(state.gid, i).keyPackage && seatCheck(i) === true && !state.commits[i] && !ss.package);
+
+const bigButton = (label, onclick, extra = {}) =>
+  el("button", { class: "btn primary lg", type: "button", onclick, ...extra }, label);
+
+function approveButtons(ss, myPending) {
+  const several = localSeats().length > 1;
+  return myPending.map((i) => bigButton(several ? "Approve as seat " + i : "Approve payment",
+    act(() => approve(ss, i))));
+}
+
+const needsProof = (ss) => ss.signed && !ss.final
+  && (ss.status !== "proving" || proofStalled(ss));
+
+// The step after the approvals. The proof and the sent mark are signed writes, so they need a seat
+// that can sign.
+export function finishButtons(ss) {
+  if (!mayAct()) return [];
+  if (needsProof(ss)) return [bigButton("Build proof", act(() => finalizeTx(ss)))];
+  // A node refuses a payment that expires within EXPIRY_MARGIN blocks (see expiryLine).
+  if (!ss.final || expiryOf(ss)?.expired || onChain(ss)) return [];
+  if (ss.broadcastTxid) {
+    const late = Date.now() - finite(ss.broadcastAt) > RESEND_MS && inFlight().includes(ss);
+    return late ? [bigButton("Send again", act(() => resendTx(ss)))] : [];
+  }
+  return [bigButton(ss.broadcastError ? "Send again" : "Send to network",
+    act(() => broadcastTx(ss)), { disabled: !curChain() })];
+}
+
+// A sent payment that no block holds after this long may be lost: offer to send it again.
+const RESEND_MS = 10 * 60 * 1000;
+
+export function nextAction(ss, ins, rc) {
+  if (expired(ss)) {
+    return !signingStarted(ss) && mayAct() && localSeats().length
+      ? [bigButton("Propose again", act(() => proposeAgain(ss)))] : [];
+  }
+  const myPending = approvers(ss);
+  const canApprove = myPending.length && rc.match === true && rc.intoNew !== false;
+  return canApprove ? approveButtons(ss, myPending) : finishButtons(ss);
+}
+
+const CANCEL_ASK = "Cancel this payment? No signer can approve it after this. Anyone can propose it again.";
+// Until the signatures are combined, any signer can withdraw a payment, for example one that lost
+// an approval. A signature share alone cannot move funds.
+export const cancelAction = (ss) => ss.signed || expired(ss) || !localSeats().length || !mayAct() ? [] : [
+  el("button", { class: "btn lg", type: "button", onclick: act(() => confirm(CANCEL_ASK) && cancelPayment(ss)) }, "Cancel payment"),
+];
+
+// An approval is a published commitment plus nonces kept here. Without the nonces the seat cannot
+// sign, and the payment waits forever: say so instead of stalling.
+function lostApproval(ss) {
+  if (ss.signed || ss.error) return null;
+  const chosen = (i) => !ss.package || signersOf(ss).includes(i);
+  const lost = localSeats().filter((i) => state.commits[i] && !state.shares[i] && chosen(i)
+    && !((sec(state.gid, i).nonces || {})[ss.id]) && !busy.has("share:" + ss.id + ":" + i));
+  if (!lost.length) return null;
+  return el("div", { class: "callout bad" }, "This browser does not hold its approval for this "
+    + "payment any more: the browser data that held it was deleted. The payment cannot finish "
+    + "with this approval. Cancel it, then propose it again.");
+}
+
+function sessionDrawer(ss) {
+  const ins = inspectOf(ss), refused = ins && ins.error, rc = recipientCheck(ss, ins);
+  // A cancelled or failed payment takes no more steps.
+  const actions = ss.error ? [] : [...nextAction(ss, ins, rc), ...cancelAction(ss)];
+  return el("aside", { class: "drawer", role: "dialog", "aria-modal": "true", "aria-label": "Payment details" },
+    el("div", { class: "drawer-head" }, el("div", { style: "display:flex;align-items:center;gap:10px;min-width:0" }, el("h2", { class: "nowrap", style: "font-size:15px" }, payTitle(ss)), statusChip(ss)),
+      closeBtn()),
+    el("div", { class: "drawer-body" },
+      leavesHead(ss, ins && !refused ? ins : null),
+      refused ? el("div", { class: "callout bad" }, "Your browser refuses this payment: " + ins.error) : null,
+      guard(expiryLine, ss),
+      guard(recipientBox, ss, rc),
+      lostApproval(ss),
+      ins && !refused ? guard(breakdown, ins) : null,
+      guard(timeline, ss, refused),
+      guard(discussion, ss),
+      ss.final ? guard(txDetails, ss) : null,
+      ss.broadcastTxid ? chainSees() : null,
+      ins && !refused ? el("details", { class: "small faint" }, el("summary", {}, "Technical details"),
+        el("p", {}, "Signed message " + short(ins.sighash, 12) + " · " + ins.tx_version)) : null),
+    actions.length ? el("div", { class: "drawer-foot" }, ...actions) : null);
+}
+
+// If the payment's document cannot be shown, the drawer still opens and closes.
+export function sessionLayer(ss) {
+  try { return sessionDrawer(ss); }
+  catch (e) { log("unreadable payment: " + (e && e.message ? e.message : e)); }
+  return el("aside", {
+    class: "drawer", role: "dialog", "aria-modal": "true", "aria-label": "Payment details",
+  },
+  el("div", { class: "drawer-head" }, el("h2", { style: "font-size:15px" }, "Payment"), closeBtn()),
+  el("div", { class: "drawer-body" }, unreadable()));
+}
+
+// The decoded transaction is the truth. Spent notes minus change is what leaves the wallet: the
+// payees and the fee.
+function decodedTotals(ins) {
+  const sum = (keep) => ins.lines.filter(keep).reduce((n, l) => n + finite(l.value), 0);
+  const spent = sum((l) => l.kind === "spend"), paid = sum(isPayee);
+  const back = sum((l) => l.kind !== "spend" && !isPayee(l));
+  return { spent, paid, back, fee: spent - paid - back, leaves: spent - back };
+}
+
+function leavesHead(ss, ins) {
+  const t = ins ? decodedTotals(ins) : { leaves: leavesOf(ss), fee: finite(ss.fee) };
+  return el("div", { class: "leaves" },
+    el("span", { class: "label" }, ins ? "Leaves the wallet" : "Proposed to leave the wallet"),
+    money(t.leaves, "lg"),
+    el("span", { class: "small muted" }, "includes " + zecText(t.fee)
+      + (priorityTimes(ins) ? " priority fee" : " fee")),
+    el("span", { class: "small muted" },
+      "Proposed by " + proposer(ss) + " · " + when(ss.createdAt)));
+}
+
+function feeLabel(ins) {
+  const times = priorityTimes(ins);
+  return times ? "Priority fee (" + times + " times the standard fee)" : "Network fee";
+}
+
+function breakdown(ins) {
+  const t = decodedTotals(ins);
+  const row = (label, zat, cls = "") => el("div", {}, el("span", { class: cls }, label),
+    el("span", { class: "mono " + cls }, zecText(zat)));
+  const own = (l) => l.kind !== "spend" && !isPayee(l);
+  const spent = ins.lines.filter((l) => l.kind === "spend");
+  return el("div", { style: "display:grid;gap:8px" },
+    el("span", { class: "label" }, "What this payment does"),
+    el("div", { class: "lines" },
+      ins.lines.filter(isPayee).map((l) => row("To " + short(l.who, 10), l.value)),
+      row(feeLabel(ins), t.fee, "neg"),
+      el("div", { class: "total" }, el("span", {}, "Leaves the wallet"),
+        el("span", { class: "mono" }, zecText(t.leaves))),
+      el("div", { class: "group" }, "Funds used"),
+      spent.map((l) => row("Spent from this wallet", l.value, "neg")),
+      ins.lines.filter(own).map((l) => row("Change back to this wallet", l.value, "neg"))),
+    el("p", { class: "small faint" }, "Your browser decoded this from the transaction itself, "
+      + "not from the proposer's description."));
+}
+
+// Each seat with its name and seat number, and a check mark when it approved.
+const approverChips = () => el("div", {
+  style: "display:flex;align-items:center;gap:10px;flex-wrap:wrap",
+}, seatIds().map((i) => el("span", { class: "approver" + (state.commits[i] ? " yes" : "") },
+  avatar(i), el("span", { class: "small" }, named(i) + (state.commits[i] ? " ✓" : "")))));
+
+function timeline(ss, refused) {
+  const g = state.g, approvals = Object.keys(state.commits).length;
+  const signers = signersOf(ss), shared = signers.filter((i) => state.shares[i]).length;
+  const tl = (cls, title, body) => el("div", { class: "step " + cls }, el("span", { class: "tick" }, cls === "done" ? "✓" : cls === "bad" ? "!" : "•"), el("div", { style: "display:grid;gap:6px;min-width:0" }, el("h3", {}, title), body));
+  return el("div", { class: "steps" },
+    tl("done", "Proposed", el("p", {}, when(ss.createdAt))),
+    tl(approvals >= g.t ? "done" : refused ? "bad" : "now", "Approvals · " + Math.min(approvals, g.t) + " of " + g.t + " needed",
+      approverChips()),
+    tl(ss.error ? "bad" : ss.signed ? "done" : ss.package ? "now" : "", "Combined signature",
+      el("p", {}, ss.error ? ss.error : ss.signed ? "All signatures combined and verified." : ss.package ? "Signing · " + shared + " of " + signers.length + " shares" : "Starts after " + g.t + " approvals.")),
+    tl(ss.final ? "done" : ss.status === "proving" ? "now" : "", "Proof",
+      el("p", {}, ss.final ? "Proof built and the whole transaction checked." : ss.status === "proving" && !proofStalled(ss) ? "A signer's browser is building the proof · " + elapsed(ss.provingAt) + " of about a minute." : "Any signer can build the zero-knowledge proof once the payment is signed.")),
+    tl(ss.broadcastTxid ? "done" : ss.broadcastError ? "bad" : ss.final ? "now" : "", "Sent to the network",
+      el("div", { style: "display:grid;gap:8px" },
+        ss.broadcastTxid ? el("p", {}, when(ss.broadcastAt) + " · ", el("a", { href: curNet().explorer + ss.broadcastTxid, target: "_blank", rel: "noopener" }, "View in explorer ↗"))
+          : el("p", {}, ss.final ? "Any signer can send the finished transaction." : "Available after the proof."),
+        ss.broadcastError && !ss.broadcastTxid ? el("div", { class: "callout bad" }, ss.broadcastError) : null)));
+}
+
+export function txDetails(ss) {
+  const size = Number.isFinite(ss.final.size) ? fmtInt(ss.final.size) + " bytes" : "unknown";
+  const id = txidOf(ss);
+  const falseId = id && id !== ss.final.txid ? el("div", { class: "callout bad" }, "The finished "
+    + "transaction names the id " + short(String(ss.final.txid), 12) + ", but the proposal gives "
+    + "the id " + short(id, 12) + ". One signer's device wrote one of them alone. Check the "
+    + "payment in an explorer.") : null;
+  return el("div", { style: "display:grid;gap:10px" },
+    el("span", { class: "label" }, "Transaction"),
+    falseId,
+    el("dl", { class: "kv", style: "grid-template-columns:110px minmax(0,1fr)" },
+      el("dt", {}, "ID"), el("dd", { class: "hex" }, id || ss.final.txid),
+      el("dt", {}, "Size"), el("dd", {}, size)),
+    el("details", {}, el("summary", {}, "Raw transaction"),
+      el("div", { class: "log" }, ss.final.tx_hex),
+      el("div", { style: "margin-top:8px" }, copyBtn(ss.final.tx_hex, "Copy hex"))));
+}
+
+// What an observer of the chain learns from a sent payment.
+function chainSees() {
+  const hidden = () => el("span", { class: "redact", role: "img", "aria-label": "Hidden" });
+  const row = (name) => [el("dt", {}, name), el("dd", {}, hidden())];
+  return el("div", { style: "display:grid;gap:10px" },
+    el("span", { class: "label" }, "What the chain sees"),
+    el("p", { class: "small" }, "One shielded transaction."),
+    el("dl", { class: "kv", style: "grid-template-columns:110px minmax(0,1fr)" },
+      ["Recipients", "Amounts", "Signers", "Approval rule"].flatMap(row)),
+    el("p", { class: "small faint" }, "The number of actions is public. So is the fee."));
+}

@@ -218,8 +218,8 @@ step("the rule needs no chain read");
   assert.ok(watches("solsessions/") >= 2, "the commits and shares of the open session");
   t.sol.close();
   assert.equal(watches("solsessions/"), 0, "no session watch outlives the wallet");
-  // app.js keeps its own solstart watch until it opens another wallet.
-  assert.equal(watches("solstart"), 1, "only the solstart watch of app.js");
+  // app-sol.js keeps its own solstart watch until it opens another wallet.
+  assert.equal(watches("solstart"), 1, "only the solstart watch of app-sol.js");
   assert.equal(watches("sol"), 1, "no other Solana watch outlives the wallet");
 }
 step("closing the wallet stops every Solana watch");

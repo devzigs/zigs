@@ -266,7 +266,7 @@ Engine (`wasm/src`), each call in the wasm exports and in the ffi table:
   index of every note of a transaction, also a note with an empty memo or a memo not read yet.
 - `isNodeRefusal(message)`: true when a node answered a broadcast and refused the transaction.
 
-Web (`web/app.js`, `web/chat.js`):
+Web (`web/app-account.js`, `web/app-account-view.js`, `web/chat.js`):
 
 - The **Personal account** card on the home page: create, balance, address, warnings, funding,
   backup, restore.
@@ -290,7 +290,8 @@ the builder accepts. Node tests cover the contact rules and the chat view states
 
 ### 5.5 Built in the web app
 
-The rules are in `web/personal.js`, and the pages and engine calls are in `web/app.js`. The
+The rules are in `web/personal.js`, the engine calls are in `web/app-account.js`, and the pages
+are in `web/app-account-view.js`. The
 checks are `web/test/personal.mjs` and `web/test/app.mjs`.
 
 - **Where the seed lives.** With the passkey lock on, the account is a field of the sealed record,

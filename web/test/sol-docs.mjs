@@ -113,7 +113,7 @@ const signed = async (rel, seat, fields, key = keys[seat]) => ({
 });
 
 // The verdicts need Web Crypto, which is async. This fills a table first, and `check` reads it,
-// as partVerdict of app.js does with its memo.
+// as partVerdict of app-filter.js does with its memo.
 async function checkerFor(raw, known = true) {
   const table = new Map();
   for (const [name, docs] of Object.entries(raw)) {

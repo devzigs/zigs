@@ -432,8 +432,8 @@ extension GroupModel {
         return keyShareSeats.filter { !BackupData.backedUp(vault.sec(gid, $0)) }
     }
 
-    /// The text that a backup seals. Same fields as backupText in web/app.js. Nonces stay out: a
-    /// restored copy must never sign with a nonce that this device may also use.
+    /// The text that a backup seals. Same fields as backupText in web/app-backups.js. Nonces stay
+    /// out: a restored copy must never sign with a nonce that this device may also use.
     func backupText(_ i: Int) throws -> String {
         guard let gid, let key = vault.keys[gid], localSeats.contains(i) else {
             throw ZigsError("This \(deviceName) holds no key share for seat \(i).")

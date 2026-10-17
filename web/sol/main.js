@@ -1,7 +1,7 @@
-// The Solana part of the page (ZOLANA.md 3). app.js loads this file with a dynamic import when the
-// Solana tab of a version 3 testnet wallet opens, or a seat signed the wallet's solstart document.
+// The Solana part of the page (ZOLANA.md 3). app-sol.js loads this file with a dynamic import when
+// the Solana tab of a version 3 testnet wallet opens, or a seat signed the solstart document.
 // `attach(host)` asks the server for the Helius URL, loads the Solana wasm and returns the
-// controller that app.js calls: open and close follow the open wallet, react advances the
+// controller that the page calls: open and close follow the open wallet, react advances the
 // ceremony, the stops and the signing sessions, view builds the tab, restore takes a backup.
 import { reactAborts } from "./abort.js";
 import { addSol } from "./addsol.js";

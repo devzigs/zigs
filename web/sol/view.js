@@ -2,7 +2,7 @@
 // shielded address, the balances of the last sync, the buttons for the sync, the backup and the
 // restore, and (payview.js) the funding, the proposals and their approvals.
 // `data-sol` marks each value for the headless checks. `host.el` builds the elements, `act` wraps
-// a button action (app.js).
+// a button action (act of app-dom.js).
 import { agreement, seatProgress, started, startBlock } from "./ceremony.js";
 import { base58 } from "./docs.js";
 import { payCards } from "./payview.js";

@@ -1,4 +1,4 @@
-// The second DKG on three seats, through the real web/app.js (see sol-rig.mjs): one browser holds
+// The second DKG on three seats, through the real page modules (see sol-rig.mjs): one browser holds
 // every seat. It checks the agreement, the gates (the confirmed safety number, a version 3
 // testnet wallet), a seat whose secret part does not match its commitment, the save before each
 // publish, that the Zcash key and the group server hold no Solana secret, and that a stopped

@@ -206,7 +206,7 @@ function endSpent(sessions) {
 /**
  * The sessions of `raw` and, for each valid one, its commits and shares. `raw` has `solsessions`
  * ({ id: document }), `solcommits` and `solshares` ({ id: { seat: document } }). `check(rel, by,
- * sig, fields, need)` is the check of app.js. A session or document that is not valid is left
+ * sig, fields, need)` is checkIn of app-filter.js. A session or document that is not valid is left
  * out, and `onBad(what)` hears it. Returns { sessions (newest first), commits, shares, bad, wait }.
  */
 export function filterSessions(raw, check, onBad) {

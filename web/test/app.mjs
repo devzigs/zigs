@@ -1,16 +1,15 @@
-// Drives the real web/app.js with a stub page and an in-memory store, for the version 3 rules that
-// need the whole page: the pins, the filter, the writers and the ceremony.
+// Drives the real page modules with a stub page and an in-memory store, for the version 3 rules
+// that need the whole page: the pins, the filter, the writers and the ceremony.
 // Run: node web/test/app.mjs
-// The test loads a copy of app.js that also exports a few inner names (see HOOKS).
+// The test loads the real page modules through page.mjs (the names it reads: NAMES there).
 import assert from "node:assert/strict";
 import fs from "node:fs";
-import os from "node:os";
-import path from "node:path";
 import * as Z from "../pkg/zigs_engine.js";
 import { newSignKey, signMsg, verifyMsg } from "../chat.js";
 import { HIGH_TEXT as HIGH } from "../personal.js";
 import { seatBackedUp } from "../util.js";
 import { aesKey, open as openVault, seal } from "../vault.js";
+import { loadPage } from "./page.mjs";
 
 const web = new URL("../", import.meta.url);
 Z.initSync({ module: fs.readFileSync(new URL("pkg/zigs_engine_bg.wasm", web)) });
@@ -34,48 +33,7 @@ Object.assign(globalThis, {
   window: new Proxy(stub(), { get: (t, k) => (k === "crypto" ? globalThis.crypto : t[k]) }),
 });
 
-const HOOKS = `
-export const T = {
-  state, raw, signPins, docMemo, loggedIgnored, inbox,
-  get secrets() { return secrets; }, set secrets(v) { secrets = v; },
-  get gkeys() { return gkeys; }, set gkeys(v) { gkeys = v; },
-  get signing() { return signing; },
-  setZ(m) { Z = m; }, setDb(v) { sdb = v; db = v; }, setMe(v) { me = v; },
-  setChain(v) { chain = v; },
-  cleanGroup, refilter, sigPart, signedDoc, canWriteAs, writer, named, proposer, signedMode,
-  localSeats, seatIds, openGroup, createGroup, takeSeat, newSpend, cancelPayment, failSession,
-  finalizeTx, broadcastTx, sec, proposalFields, openDoc, recipientCheck,
-  runMemos, runSync, setMemoReading, readsMemos,
-  ui, ready, requestOf, proposeRequest, proposeWallets, dmChoices, fillFromRequest, requestCard,
-  composer, roomRequest, chatRequest, memoBody, sendDialog, submitRequest, typingMessage,
-  balCache, busy, groupName, sendBlocker, blockTime,
-  expired, expiryOf, proposeAgain, inFlight, needsMyApproval, priorityTimes, approve,
-  statusChip, nextAction, finishButtons, cancelAction, expiryLine, moveState, reactSession,
-  txDetails,
-  get banner() { return banner; },
-  get personal() { return personal; }, set personal(v) { personal = v; },
-  get personalError() { return personalError; }, get acct() { return acct; },
-  setVault(v) { vault = v; }, setLocked(v) { lockedVault = v; }, setIdb(f) { idb = f; },
-  setDownloads(v) { downloads = v; }, setAcct(v) { acct = v; },
-  createPersonal, restoreAccount, removeAccount, addPersonalContact, openContact, changePersonal,
-  persistPersonal, adoptPersonal, rereadPersonal, takeDeviceAccount, deviceRead, startAccount,
-  fundingUri, fundFromWallet, copyFundingRequest, sendOnChain, accountInbox, messageWhy,
-  acctBalance, contactView, otherMessages, personalCard, contactsCard, contactDialog, fundBlock,
-  saveAccountBackup, applyBackup, accountCard, persistSealed, unlockVault, forgetBox, flightNow,
-  sentStateOf, addressFor, addressBlock, layers, backupDialog, backupNote, restore, submitMessage,
-  startUp, lockWithPasskey, takeFromTab, openContactDialog, mainView, damagedCard,
-  putSec, saveBackup, checkShape, restoredFor, unboxFrom, round3V1,
-  getIdb() { return idb; }, setIdbMs(v) { idbOpenMs = v; },
-  get personalPending() { return personalPending; },
-};
-`;
-const dir = fs.mkdtempSync(path.join(os.tmpdir(), "zigs-app-"));
-let source = fs.readFileSync(new URL("app.js", web), "utf8");
-source = source.replace(/from "\/(\w+\.js)"/g, (_, f) => `from "${new URL(f, web).href}"`);
-source = source.replace(/^loadEngine\(\)\.then.*$/m, "").replace(/^draw\(\);.*$/m, "");
-fs.writeFileSync(path.join(dir, "app.mjs"), source + HOOKS);
-const { T: t } = await import(path.join(dir, "app.mjs"));
-fs.rmSync(dir, { recursive: true });
+const t = await loadPage();
 t.setZ(Z);
 await sleep(50);
 assert.equal(t.signing, true, "this Node signs with Ed25519");
@@ -2211,6 +2169,67 @@ async function runAcctSync() {
   // The sync of the account that the 60 second timer starts.
   t.acct.syncing = false;
   await t.runSync(t.acct);
+}
+
+// Three paths of the page that no check above runs: a good action clears a bad banner, an arrow
+// key moves the tab, and Leave chat asks first. Each one asks for the focus of a control, which
+// the next redraw (120 ms later) takes. A recorder stands in for the page.
+{
+  const realDocument = globalThis.document;
+  class Rec extends Node {
+    constructor(tag) {
+      super();
+      Object.assign(this, { tag, attrs: {}, kids: [], on: {} });
+    }
+    setAttribute(k, v) { this.attrs[k] = String(v); }
+    addEventListener(type, fn) { this.on[type] = fn; }
+    append(...x) { this.kids.push(...x); }
+  }
+  const banner = new Rec("div"), bannerText = new Rec("span");
+  globalThis.document = {
+    activeElement: { dataset: { key: "send-ok" } },
+    getElementById: (id) => ({ banner, "banner-text": bannerText })[id] ?? null,
+    createElement: (tag) => new Rec(tag), createTextNode: (text) => ({ text }),
+  };
+  const ev = { preventDefault() {}, currentTarget: null };
+  const key = (k) => ({ key: k, preventDefault() {} });
+  const { tab, leave } = t.ui;
+  try {
+    t.showBanner("bad", "an earlier error");
+    assert.equal(banner.hidden, false);
+    await t.act(async () => {})(ev);
+    assert.equal(t.banner, null, "a good action clears a bad banner");
+    assert.equal(banner.hidden, true, "and hides it");
+    assert.deepEqual(t.wantFocus, { key: "send-ok", force: false }, "the control gets the focus");
+    t.showBanner("ok", "saved");
+    await t.act(async () => {})(ev);
+    assert.deepEqual(t.banner, { kind: "ok", text: "saved" }, "a good banner stays");
+    await t.act(async () => { throw new Error("no"); })(ev);
+    assert.deepEqual(t.banner, { kind: "bad", text: "no" }, "a failed action shows its error");
+
+    const tabs = [["a", "A"], ["b", "B"], ["c", "C"]];
+    t.ui.tab = "a";
+    t.tabBar(tabs).on.keydown(key("ArrowRight"));
+    assert.equal(t.ui.tab, "b", "the right arrow moves to the next tab");
+    assert.deepEqual(t.wantFocus, { key: "tab-b", force: true }, "and the focus goes with it");
+    t.tabBar(tabs).on.keydown(key("End"));
+    assert.equal(t.ui.tab, "c");
+    t.tabBar(tabs).on.keydown(key("ArrowRight"));
+    assert.equal(t.ui.tab, "a", "the right arrow wraps around");
+    t.tabBar(tabs).on.keydown(key("x"));
+    assert.equal(t.ui.tab, "a", "another key changes nothing");
+
+    t.ui.leave = false;
+    const ask = t.leaveBox("chat-id").kids[0];
+    assert.equal(ask.attrs["data-key"], "leave-ask");
+    ask.on.click();
+    assert.equal(t.ui.leave, true, "Leave chat asks first");
+    assert.deepEqual(t.wantFocus, { key: "leave-no", force: true }, "and the focus goes to Cancel");
+  } finally {
+    globalThis.document = realDocument;
+    Object.assign(t.ui, { tab, leave });
+  }
+  await sleep(200);
 }
 
 console.log("app ok");

@@ -141,7 +141,7 @@ This links a wallet id to a transaction id, but not to its amount or recipient.
   testnet until APP-3 is done.
 
 Tor Browser hides your IP address from both servers, but not this timing link. To remove the
-link, point the app at a light-wallet server you trust (`NETWORKS` in `web/app.js`,
+link, point the app at a light-wallet server you trust (`NETWORKS` in `web/app-chain.js`,
 `ZcashNetwork` in `ios/Zigs/Chain.swift`).
 
 ## Solana beta (Helius Devnet)

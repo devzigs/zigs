@@ -41,8 +41,9 @@ jobs:
       - name: Tests
         run: |
           failed=""
+          helpers=" sol-rig sol-setup sol-chain sol-vector sol-fixture page "
           for f in web/test/*.mjs; do
-            case "$(basename "$f" .mjs)" in sol-rig | sol-setup | sol-chain | sol-vector) continue ;; esac
+            case "$helpers" in *" $(basename "$f" .mjs) "*) continue ;; esac
             echo "::group::$f"
             if ! timeout 600 node "$f"; then failed="$failed $f"; fi
             echo "::endgroup::"
