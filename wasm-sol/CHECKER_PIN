@@ -254,6 +254,8 @@ step 7). Program version 5 takes SOL withdrawal legs:
   src/consts.rs `SEED_CPI_AUTHORITY`) and the nullifier PDAs of the inputs. `approve_pay` takes a
   `Read`: the proposer in `check_payment` must give the recipient account too; only the `create`
   message, checked after it, skips the read. 127 cases.
+- QA round 2: tests of the nullifier PDA of a second input and of the `create` message of a
+  withdrawal; the comment of `recipient_account_violation` says what the rule holds. 129 cases.
 
 Check: python3 -I tools/pin_check.py (the manifest below against the tree).
 
@@ -273,7 +275,7 @@ ca3b51e9ea30baeb0b082ca9cb19fe248bc86880d60ae90a3ee3e5a7dcb6b371  src/codec.rs  
 e69e4ccacb28931921f072919a6ecf9ff3fe6784e3b129a45ff94fa0ccc17d4c  src/hashes.rs  verbatim
 e19bb2e8f340e69af4eba1f6ee5a6a7ff90c4efe96717a0159e83b491cbe2df9  src/intent.rs  modified
 4ee766f3816d4af38f22fd2377a305515af6df48f01e64af2b8713a575dec1f5  src/lib.rs  modified
-aea3dbffb71e2866a1a8713c9a6c8b57b9432b464190ab0a2b67e5f65889cbbf  src/pay.rs  new
+a71a896274e606d3a4e3e801191b4b65461bfd5cb548343f093a250c4d45bb01  src/pay.rs  new
 4f344e745afed204088395c0101761a0332688de88ab6e57dec9e85de34907a1  src/pda.rs  verbatim
 89ca7f01b3b694c1c4e9c656d779a8eb88039aa2ceb8d4e9321f3d1e86d0cb94  src/pins.rs  modified
 df46e9e90b740789623db0bed212c78a8d87fbf608a04be84cab433327fbb738  src/plan.rs  modified
@@ -309,7 +311,7 @@ cfc68ad047d9dff9f4cb368c901238019de4d6284cbd23853b5224f97a2bf3ca  tests/frost_dk
 30d06cfe796b1238ac2957de71d1d2b285d5ad4e545fc0bab1ce02144c46fd35  tests/negative.rs  modified
 025fcdc92eb9ea2519a623a14d1ea06073c047b20a188bac5ae3a918ccef50ca  tests/p3c.rs  modified
 d3b6abc6195a5cae856db2fb7543964dcd8c5222221d5a839a6a2e81d6e4f14d  tests/pay_vectors.rs  new
-172e94b306caf7efc25743dca172f861f905b415e3274e9b1056ad915e2893b6  tests/payment.rs  new
+dd1effce398d862b6962c9787c36a4c6d830918d76d24bda554716104130a67e  tests/payment.rs  new
 95290d8683b751fb47f647d29eb2486fcd3dad545aa35a368d1a5fb0733151b1  tests/pin_bytes.rs  verbatim
 588ffdab940ee0f56e9faac65cad18c1db6468e3dc8ad06f58314c1e07e342dc  tests/program.rs  new
 3037d149887a37309b07c8765f862acf9994f0802138861188bd9ffc1869e829  tests/real.rs  modified

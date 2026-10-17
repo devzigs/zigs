@@ -365,9 +365,11 @@ and the rent. The rent comes back to that seat at the execute. The group key sig
    a System account or does not exist yet, it is not executable, and after the payment it holds at
    least the rent-exempt minimum of an account with no data (`recipient-account`). The screen
    shows the recipient and the amount that the commitment binds, and says that both are public.
-   One execute of a withdrawal carries at most 16 inputs. A recipient account that changes after
-   the approval (a program takes it over, or its SOL drops below the minimum) makes every execute
-   fail until the expiry, and the rent of the proposal stays locked (SOL-52).
+   One execute of a withdrawal carries at most 16 inputs. The rules hold when the device checks:
+   the pool pays the account as it is at the execute. A program that takes the account over after
+   the approval gets the SOL, which only that program can then move. A new account below the
+   minimum makes every execute fail until the expiry, and the rent of the proposal stays locked
+   (SOL-52).
 
 Not built: deposits of public SOL through the program (Add SOL deposits straight into the pool), and
 a cancel or close of a proposal (SOL-52). A proposal account that expires keeps its rent until its
@@ -1058,7 +1060,7 @@ can never parse as a Solana message. FROST signs the raw digest; the precompile 
 |---|---|
 | Outputs, Legs, Ciphertexts, expiry | Stay. They apply to the plan (inputs, payee, amount, change, ciphertexts), not to message bytes. The device rebuilds the proof inputs from the plan and recomputes the commitment |
 | Instructions template, nonce, fee payer, compute and priority-fee caps, loaded-accounts limit | Go. The executor builds the transaction. A bad transaction costs only the executor's fee |
-| New | The proposal account: owner is the pinned program id, the address derives from the group key, the commitment and the body hash, the commitment equals the device's own, the expiry is inside the window, the rent recipient (an ordinary account: never a PDA of the program, a sysvar or an executable account; version 3 refuses only the group's owner PDA, the program and the System Program) and the abort authorities come from the roster. A withdrawal payee (version 4) is an ordinary System-owned account: not the SOL interface, not a pool account and not a PDA of this program. After the payment it holds at least the rent-exempt minimum. The digest rule: domain, cluster, program id, proposal address. One body per commitment: each body has its own address and its own cancellation record, so a cancel ends one body only; a seat refuses a second body for a commitment that the group already approved |
+| New | The proposal account: owner is the pinned program id, the address derives from the group key, the commitment and the body hash, the commitment equals the device's own, the expiry is inside the window, the rent recipient (an ordinary account: never a PDA of the program, a sysvar or an executable account; version 3 refuses only the group's owner PDA, the program and the System Program) and the abort authorities come from the roster. A withdrawal payee (version 4) is an ordinary System-owned account or a new one: not the owner PDA of the group, the SOL interface, the CPI authority of the pool or another pool account. After the payment it holds at least the rent-exempt minimum. The digest rule: domain, cluster, program id, proposal address. One body per commitment: each body has its own address and its own cancellation record, so a cancel ends one body only; a seat refuses a second body for a commitment that the group already approved |
 
 The spike checked these rules in JavaScript. Since SOL-36 `wasm-sol` has them (`check_payment`,
 `src/pay.rs`, `src/program.rs` and `src/beta.rs`; CHECKER_PIN lists the changes). 5.1 gives the

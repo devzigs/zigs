@@ -114,6 +114,7 @@ W_EXECUTE = (
 )
 W_TAGS = "the_intents_of_a_withdrawal_have_tags_9_to_11_and_read_back"
 W_PROPOSER = "the_proposer_checks_the_recipient_account_that_it_read"
+W_CREATE = "the_create_message_of_a_withdrawal_needs_no_read_and_keeps_the_ban"
 
 # The program design (ZOLANA.md 7.2): the client of the approvals program, the approval of a
 # payment, the beta policy and the two templates.
@@ -252,6 +253,10 @@ PROGRAM_CASES = [
     ("proposer-unread", "src/wasm.rs", "approve_pay(terms, &device, None, Read::Device(recipient))",
      "approve_pay(terms, &device, None, Read::Checked)", W_PROPOSER),
     ("banned-cpi", "src/pay.rs", "        pins.cpi_authority()?,\n", "", W_BANNED),
+    ("banned-first-input", "src/pay.rs", "    for input in &tx.inputs {",
+     "    for input in tx.inputs.iter().take(1) {", W_BANNED),
+    ("create-needs-read", "src/beta.rs", "        Read::Checked,", "        Read::Device(None),",
+     W_CREATE),
     ("banned-nullifier", "src/pay.rs",
      "        banned.push(pins.nullifier_pda(&pins.input_tree, &input.nullifier)?);",
      "        let _ = input;", W_BANNED),

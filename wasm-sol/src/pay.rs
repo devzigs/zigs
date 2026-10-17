@@ -356,8 +356,9 @@ fn banned_recipients(pins: &Pins, tx: &Transact) -> Result<Vec<Key>, String> {
 }
 
 /// The recipient account after the withdrawal: an ordinary System account (or a new one) that
-/// holds at least the rent-exempt minimum, else every `execute` fails until the expiry, and the
-/// proposal rent stays locked (no cancel, SOL-52).
+/// holds at least the rent-exempt minimum. SOL in an account of a program is out of reach of the
+/// person, and a new account below the minimum makes every `execute` fail until the expiry, with
+/// the proposal rent locked (no cancel, SOL-52). The rule holds when the device checks.
 fn recipient_account_violation(read: &Recipient, amount: u64) -> Option<Violation> {
     let (ordinary, lamports) = match read.account {
         Some(account) => (

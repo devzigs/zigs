@@ -325,7 +325,8 @@ const proposedWithdrawal = async (recipient = base58(TO)) => {
     const expiry = decodeIntent(ssOf(current).intent).expiry;
     return { data: transactOf(G.withdraw, expiry, { proof: "05", root: 300 }) };
   };
-  const id = await proposedWithdrawal();
+  // The typed address may have spaces around it.
+  const id = await proposedWithdrawal(" " + base58(TO) + " ");
   current = id;
   const intent = decodeIntent(ssOf(id).intent);
   assert.deepEqual([intent.kind, intent.recipient, intent.amount], ["withdraw", TO, 2_000_000n]);
@@ -337,12 +338,17 @@ const proposedWithdrawal = async (recipient = base58(TO)) => {
   assert.match(rows["What it does"], /to a public Solana address/);
   assert.match(rows.Public, /^The recipient and the amount are public/);
   assert.equal(rows["Create paid by seat 1"], feeAddress(1));
+  assert.equal(rows.Change, "0.003 SOL stays with the group.", "the change of the withdrawal");
   // The forms of the tab: each button proposes its kind with the typed address and amount.
   const asked = [];
   const view = solView({ ...c, host: { ...c.host, el: node } }, (fn) => fn, {
     propose: (kind, args) => asked.push([kind, args]),
   });
   const one = (mark) => findAll(view, (n) => n.attrs["data-sol"] === mark)[0];
+  const card = findAll(view, (n) => n.attrs["data-session"] === id)[0];
+  assert.match(textOf(card), /Withdraw to a public address/, "the card of the session");
+  const said = "Recipient, asset and amount are public.";
+  assert.equal(textOf(one("withdraw-public")), said, "the text of ZOLANA.md section 2");
   Object.assign(one("withdraw-to"), { value: base58(TO) });
   Object.assign(one("withdraw-amount"), { value: "0.002" });
   one("withdraw").attrs.onclick();
@@ -374,6 +380,10 @@ step("a withdrawal shows its public recipient and amount, and its execute pays v
   assert.equal(keyOfBase58(base58(TO)), TO, "an address reads back as its key");
   assert.equal(keyOfBase58("1".repeat(33)), null, "33 zero bytes are no key");
   assert.equal(keyOfBase58("1".repeat(31)), null, "31 zero bytes are no key");
+  const odd = "0f" + "11".repeat(31); // an odd number of hex digits before the pad
+  assert.equal(keyOfBase58(base58(odd)), odd, "a key with a small first byte reads back");
+  const zero = { recipient: base58(TO), amount: "0" };
+  await assert.rejects(() => proposed("withdraw", zero), /Enter an amount of SOL/);
   // The proposer reads the recipient account too, and refuses one of a program.
   chain.accounts.set(base58(TO), { owner: "11".repeat(32), data: "" });
   await assert.rejects(() => proposedWithdrawal(), /ordinary System account/);

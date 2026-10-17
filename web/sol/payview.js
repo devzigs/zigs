@@ -245,6 +245,9 @@ const input = (c, mark, id, value, attrs = {}) =>
     ...attrs,
   });
 
+// The screen text of a withdrawal in ZOLANA.md section 2.
+const WITHDRAW_PUBLIC = "Recipient, asset and amount are public.";
+
 /**
  * The form of a withdrawal: a public Solana address and an amount. The recipient and the amount
  * become public at the execute (ZOLANA.md 2).
@@ -260,7 +263,7 @@ function withdrawForm(c, act, actions) {
     "div",
     { style: "display:grid;gap:8px" },
     el("h3", {}, "Withdraw to a public address"),
-    el("p", { class: "small" }, "The chain shows the recipient and the amount of a withdrawal."),
+    el("p", { class: "small", "data-sol": "withdraw-public" }, WITHDRAW_PUBLIC),
     el("label", { class: "field" }, el("span", {}, "Recipient (Solana address)"), to),
     el(
       "div",

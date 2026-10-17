@@ -975,6 +975,21 @@ fn a_withdrawal_to_an_account_of_the_pool_the_program_or_the_group_is_refused() 
             "{label}"
         );
     }
+    // Every input of the transact: the nullifier PDA of the second one too.
+    let spec = Spec {
+        inputs: vec![(SOL, 50), (SOL, 50)],
+        ..Spec::withdrawal()
+    };
+    let two = Fixture::payment(&spec);
+    let second = p
+        .nullifier_pda(&p.input_tree, &two.tx.inputs[1].nullifier)
+        .unwrap();
+    let f = to(Fixture::payment(&spec), second);
+    assert_eq!(
+        rules(&f, &seen(&f)),
+        vec![Rule::WithdrawalRecipient],
+        "the second input"
+    );
 }
 
 #[test]
@@ -1091,6 +1106,26 @@ fn the_chain_wire_reads_back_and_refuses_bad_flags_and_trailing_bytes() {
     let mut long = only.clone();
     long.push(0);
     assert!(Chain::decode(&long).is_err(), "a trailing byte");
+}
+
+#[test]
+fn the_create_message_of_a_withdrawal_needs_no_read_and_keeps_the_ban() {
+    // Tag 9: the proposer checked the recipient read in `check_payment` before this message.
+    let f = withdrawal();
+    let (body, _, _) = want_body(&f);
+    let (proposal, message) = propose_of(&f, body.commitment);
+    assert_eq!(
+        proposal.intent.encode()[0],
+        9,
+        "the create message of a withdrawal"
+    );
+    approve_message(&message, &proposal, &device(&f), Signer::Fee).expect("approved");
+    let banned = to(withdrawal(), f.pins.for_pda().unwrap().sol_interface);
+    let (body, _, _) = want_body(&banned);
+    let (proposal, message) = propose_of(&banned, body.commitment);
+    let why = approve_message(&message, &proposal, &device(&banned), Signer::Fee).unwrap_err();
+    let found: Vec<Rule> = why.violations.iter().map(|v| v.rule).collect();
+    assert!(found.contains(&Rule::WithdrawalRecipient), "{found:?}");
 }
 
 #[test]
