@@ -13,7 +13,7 @@ import { netName, netOf, pickServer } from "./app-chain.js";
 import { canWriteAs, NO_SIGNING_SEAT, partNow, signedDoc, signedMode } from "./app-filter.js";
 import { me, openGroup, sdb, user } from "./app-groups.js";
 import { ensureSignKey } from "./app-messages.js";
-import { once, react } from "./app-rest.js";
+import { once, react } from "./app-loop.js";
 
 // Version 1 wallets: the creator picks nk and rivk. Version 2 wallets (ZIP 2005): the signers
 // agree on a secret sk together, and nk, qsk and rivk follow from it (PROTOCOL.md section 4).

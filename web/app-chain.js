@@ -9,7 +9,7 @@ import { leavesOf } from "./app-dom.js";
 import { myVerified } from "./app-dkg.js";
 import { expired, txidOf } from "./app-payments.js";
 import { acct } from "./app-account.js";
-import { render } from "./app-rest.js";
+import { render } from "./app-loop.js";
 
 // Light-wallet servers in order of preference. Mainnet uses a third-party server, so the group
 // server and the chain server have different operators (see PRIVACY.md). The first testnet server

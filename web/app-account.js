@@ -18,7 +18,7 @@ import { boot, openGroup } from "./app-groups.js";
 import { normalized } from "./app-dom.js";
 import { broadcastAnywhere } from "./app-payments.js";
 import { proposeRequest, requestOf } from "./app-payreq.js";
-import { render } from "./app-rest.js";
+import { render } from "./app-loop.js";
 
 export let personal = null;          // the personal account (web/personal.js), with its seed
 export function setPersonal(v) { personal = v; }

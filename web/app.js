@@ -27,12 +27,13 @@ import "./app-backups.js";
 import "./app-account-view.js";
 import "./app-shell.js";
 import "./app-drawer.js";
+import "./app-loop.js";
 import "./app-rest.js";
 import { loadEngine } from "./app-engine.js";
 import { lockedVault } from "./app-keystore.js";
 import { adoptInviteKey } from "./app-links.js";
 import { startUp } from "./app-account.js";
-import { draw, render } from "./app-rest.js";
+import { draw, render } from "./app-loop.js";
 
 adoptInviteKey();
 draw();   // the first paint does not wait for the engine

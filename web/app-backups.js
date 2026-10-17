@@ -19,7 +19,8 @@ import { groupVersion } from "./app-dkg.js";
 import {
   changePersonal, personal, personalDamaged, personalEnv, restoreAccount,
 } from "./app-account.js";
-import { once, render, solRestore } from "./app-rest.js";
+import { once, render } from "./app-loop.js";
+import { solRestore } from "./app-rest.js";
 
 const SOL_BACKUP_KIND = "zigs-sol-backup";
 

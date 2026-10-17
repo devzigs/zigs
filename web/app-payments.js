@@ -17,7 +17,7 @@ import {
 import { closeSession, openSession, sdb } from "./app-groups.js";
 import { groupName, isPayee, normalized } from "./app-dom.js";
 import { myVerified, seatCheck } from "./app-dkg.js";
-import { once, render } from "./app-rest.js";
+import { once, render } from "./app-loop.js";
 
 const inspectCache = new Map();
 

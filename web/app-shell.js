@@ -17,7 +17,7 @@ import { createGroup } from "./app-dkg.js";
 import { personal } from "./app-account.js";
 import { restore } from "./app-backups.js";
 import { contactItem, contactsCard, openContactDialog, personalCard } from "./app-account-view.js";
-import { once, render } from "./app-rest.js";
+import { once, render } from "./app-loop.js";
 
 export function renderSide() {
   const nav = document.getElementById("side-nav");

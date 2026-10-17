@@ -11,7 +11,7 @@ import { mySeatSecrets, sec } from "./app-keystore.js";
 import { localSeats, seatIds } from "./app-seats.js";
 import { validNet } from "./app-chain.js";
 import { signing } from "./app-messages.js";
-import { react, render } from "./app-rest.js";
+import { react, render } from "./app-loop.js";
 
 export const signPins = readLocal("zf-signpins");   // "wallet id:seat" -> first signing key seen
 

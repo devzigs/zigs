@@ -10,7 +10,7 @@ import { capText, curNet, netOf, NETWORKS } from "./app-chain.js";
 import { signedMode } from "./app-filter.js";
 import { closeSession } from "./app-groups.js";
 import { expired, onChain, payeesOf } from "./app-payments.js";
-import { focusAfter, react, render } from "./app-rest.js";
+import { focusAfter, react, render } from "./app-loop.js";
 
 export const netBadge = (g) => netOf(g).cap
   ? el("span", { class: "badge bad", title: "Real ZEC. Not audited. At " + capText(netOf(g).cap)

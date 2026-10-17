@@ -19,7 +19,7 @@ import {
 import { myVerified } from "./app-dkg.js";
 import { moveAddress, sendBlocker } from "./app-payments.js";
 import { seatPicker, TRUST } from "./app-thread.js";
-import { render } from "./app-rest.js";
+import { render } from "./app-loop.js";
 
 // A message or a memo whose whole text is a ZIP 321 URI shows as a card (web/requests.js). The
 // engine reads the URI. "Propose this" fills the Send form and sends nothing.

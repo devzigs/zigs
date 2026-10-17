@@ -5,7 +5,7 @@ import { showBanner, state, ui } from "./app-state.js";
 import { chats, gkeys, lockedVault, putKey } from "./app-keystore.js";
 import { openGroup, roomKeys } from "./app-groups.js";
 import { joinLinks } from "./app-messages.js";
-import { render } from "./app-rest.js";
+import { render } from "./app-loop.js";
 
 const MISSING_SECRET = "This link is missing the wallet secret. Ask for the full invite link.";
 export const setHash = (h) => { try { history.replaceState(null, "", h); } catch {} };

@@ -1,7 +1,7 @@
 // The WebAssembly engine, and the worker for slow engine calls.
 import { slowCall } from "./util.js";
 import { showBanner } from "./app-state.js";
-import { react, render } from "./app-rest.js";
+import { react, render } from "./app-loop.js";
 
 export let Z = null, engineSettled = false;   // settled: the engine loaded or failed
 export function setZ(m) { Z = m; }
