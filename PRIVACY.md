@@ -129,9 +129,16 @@ This links a wallet id to a transaction id, but not to its amount or recipient.
   as it does for the page and the group server. It keeps no log and sends no header of yours to the
   node. Envoy also removes the visitor headers of Cloudflare before lightwalletd. Cloudflare sees
   the same traffic as before, because the node was behind Cloudflare too. Devices on the owner's
-  tailnet can also call the node directly: it then sees their tailnet address. The ChainSafe
-  backup still sees your IP address. The iPhone and Mac apps still call `lwd.zigs.app` directly,
-  which refuses them, so they use ChainSafe for testnet until APP-3 is done.
+  tailnet can also call the node directly: it then sees their tailnet address. The Worker also
+  limits `/lwd` to 600 calls a minute for each IP address (`LWD_PER_IP`, counted per Cloudflare
+  location), which uses the IP address in memory only. A first sync runs at about 70 to 90 calls a
+  minute on a fast computer (measured), and an open wallet then makes about 3 a minute. So the
+  limit slows a stranger who uses our node through `/lwd`, but it does not stop one: a stranger
+  can sync a wallet under it. Until launch, the password gate is what keeps strangers out. The
+  ChainSafe backup still sees your IP address. A page over the limit also turns to ChainSafe,
+  which then sees your IP address and, with memos on, which transactions you read. The iPhone and
+  Mac apps still call `lwd.zigs.app` directly, which refuses them, so they use ChainSafe for
+  testnet until APP-3 is done.
 
 Tor Browser hides your IP address from both servers, but not this timing link. To remove the
 link, point the app at a light-wallet server you trust (`NETWORKS` in `web/app.js`,
@@ -241,7 +248,7 @@ What makes this safe to rely on:
 
 Not tested yet: a full session in Tor Browser. Also not tested: whether the light-wallet servers
 accept connections from every Tor exit. Also not tested: whether many Tor users on one exit reach
-the per-IP rate limits of the group server.
+the per-IP rate limits of the group server and of `/lwd`.
 
 ## Your device
 
