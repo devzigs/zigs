@@ -39,7 +39,7 @@ Status on 18 October 2026: none of these items is on main.
 | S10 | The invite text names the password | Give each person the password before the scan |
 | S15 | Copy buttons for the Solana addresses | Copy the payee address from the private note on L1 |
 | S16 | Explorer links for Solana ids | Paste the id into https://explorer.solana.com/?cluster=devnet |
-| S17 | A neutral line while a device reads the wallet | Wait for the Approve button. The red text "Zigs is reading your wallet" is normal for up to about 25 s |
+| S17 | A neutral line while a device reads the wallet | The Approve button shows during the read. While the red text "Zigs is reading your wallet" shows, do not click. Wait until the screen shows the payment (up to about 25 s) |
 
 ## 2. Owner decisions that apply
 
@@ -76,9 +76,14 @@ The owner does every write: deploys, payments, faucet claims and name claims.
 4. Run `solspike/demo-check.sh` (M8). Fix every FAIL. **[waits for M8]**
 5. Prove the faucet: copy the address of a Zigs testnet wallet, then claim one Valar drip into it.
    The drip is 0.125 TAZ, once for each IP address every 24 hours (M2).
-6. Claim a testnet name for the Zcash address of Payee: one small testnet payment to the ZNS Mint.
-   **[waits for M10]** Any signer of the group that a name points to can move the name alone
-   (docs/zns-spike.md 3.3). So check the lookup again at T-1 hour.
+6. Claim a testnet name for the demo payee: one small testnet payment to the ZNS Mint.
+   **[waits for M10]** Open question for the owner: M10 decided "no names for groups while ZNS
+   control is 1-of-n" (docs/zns-spike.md 3.3).
+   - Option A: the name points to a single-signer testnet address of the owner. The 3:30 step
+     then pays that address, not Payee.
+   - Option B: the owner accepts a name for the group Payee on testnet. Any signer of Payee can
+     then move the name alone.
+   - In both cases, check the lookup again at T-1 hour.
 
 ### T-3 to T-1 days: stage on production
 
@@ -98,8 +103,10 @@ Stage on app.zigs.app. The Solana tab of staging works only after D4 adds stagin
 10. Fund Demo A with Zcash: one Valar drip (0.125 TAZ), plus coins from the permanent test wallet
     if needed. Wait for 3 confirmations (about 75 s at 25 s a block). Fund a spare wallet in the
     same way.
-11. Fund the fee address of all three seats with Devnet SOL, at least 0.003 SOL each (S3). The
-    **Get Devnet SOL** link opens faucet.solana.com. Click **Check balance** on each seat.
+11. Fund the fee address of all three seats with Devnet SOL, at least 0.03 SOL each (S3). A seat
+    that proposes or executes needs about 0.003 SOL. The seat that adds SOL also needs the 0.02 SOL
+    of step 12. The **Get Devnet SOL** link opens faucet.solana.com. Click **Check balance** on
+    each seat.
 12. On one seat, use **Add SOL** (default 0.02 SOL). Click **Sync Solana** and read the private
     balance.
 13. Create **Payee**: a second wallet with Zcash and Solana. Save its Zcash address (`utest1…`) and
@@ -136,13 +143,13 @@ says Sent (Zcash) or Executed (Solana).
 | 1:15 | L2, L3 | Scan the QR code. Enter the password if the browser asks. Type a name, then click **Take seat**. | 3 of 3 seats taken. | D1, S10 |
 | 1:45 | L1, L2, L3 | Read the safety number aloud. Each person clicks **It matches**. Narrate the progress card: Zcash key, Solana key, fee address. Keep L1 open until every seat shows its Solana key ready (D7). | Both ceremonies run. Each seat shows **Address checked** and its Solana key ready. | **[waits for M3]**, M4 |
 | 3:00 | L1 | Switch to Demo A. Show the Zcash address, the **Available** balance and the Solana tab. Click **Sync Solana**. | Both balances show. | S2 |
-| 3:30 | L1 | Click **Receive**: show the address and the faucet link. Do not use the faucet live. Click **Send**. Type the ZNS name of Payee. Enter 0.01. Click **Propose payment**. | The form shows the address that the name gives. A payment opens with the name and the address. | M2, **[waits for M10]**: paste the utest1 address of Payee instead |
+| 3:30 | L1 | Click **Receive**: show the address and the faucet link. Do not use the faucet live. Click **Send**. Type the ZNS name of the demo payee (step 6). Enter 0.01. Click **Propose payment**. | The form shows the address that the name gives. A payment opens with the name and the address. | M2, **[waits for M10]**: paste the utest1 address of Payee instead |
 | 4:00 | L2 | Open the payment. Read **What this payment does**. Click **Approve payment**. Keep the payment open. | One approval. With a name, L2 looks it up itself and gets the same address. | **[waits for M5]**, M10 |
 | 4:30 | L1 | Click **Approve payment**. Click **Build proof**. Narrate the privacy model during the proof (about 1 minute). | The proof builds. | **[waits for M5]** |
 | 5:45 | L1 | Click **Send to network**. Click **View in explorer**. | Status Sent. The explorer shows the transaction. | S9 |
 | 6:15 | L1 | Open the Solana tab. Under **Pay from the group**, paste the 198-character shielded address of Payee into **Payee (full shielded address)**. Enter the amount. Click **Send privately**. | A Solana proposal opens: **Collecting approvals**. | S15 |
-| 6:45 | L1 | Click **Approve as seat 1**. | Approvals: 1 of 2. | S17 |
-| 7:00 | L2 | Open the Solana tab. Wait for **Approve as seat 2**. Click it. | Approvals: 2 of 2. The status says **Approved, executing**. | S6, S17 |
+| 6:45 | L1 | When the screen shows the payment, click **Approve as seat 1**. | Approvals: 1 of 2. | S17 |
+| 7:00 | L2 | Open the Solana tab. Wait until the screen shows the payment, not "Zigs is reading your wallet" (up to about 25 s). Click **Approve as seat 2**. | Approvals: 2 of 2. The status says **Approved, executing**. | S6, S17 |
 | 7:30 | L1 | Wait for the execute: a seat with a funded fee address executes by itself. Click **Sync Solana**. | The status says **Executed**. The private balance drops. | S3, S2 |
 | 8:15 | L1 | Open the transaction in the Devnet explorer. | The explorer shows it. | **[waits for S16]**: paste the id into the explorer |
 | 8:45 | L1 | Show the card **Rent of old proposals** (step 14) and the backup buttons. Say what is public (section 7). | The words match ZOLANA.md and PRIVACY.md. | M6 |
