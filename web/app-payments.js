@@ -433,13 +433,14 @@ async function commitNow(ss, i, ins, tip, gid) {
   return doc;
 }
 
-// The chain height now, from the open wallet's light-wallet server, else from the other servers
-// of its network.
+// The chain height now, from the server of the last sync, else from the other servers of the
+// network in the order of preferredServers. After a server stopped answering, the wallet has no
+// server until the next sync, and the others still answer.
 async function freshTip() {
   const c = curChain();
-  if (!c || !c.url) throw new Error("Wait for the first sync to finish, then approve.");
-  const errors = [];
-  for (const url of [c.url, ...curNet().servers.filter((u) => u !== c.url)]) {
+  if (!c || !c.bal) throw new Error("Wait for the first sync to finish, then approve.");
+  const order = preferredServers(curNet()), errors = [];
+  for (const url of c.url ? [c.url, ...order.filter((u) => u !== c.url)] : order) {
     const host = new URL(url).host;
     try { return await withTimeout(Z.latestHeight(url), SERVER_TIMEOUT_MS, host); }
     catch (e) { errors.push(host + ": " + said(e)); }

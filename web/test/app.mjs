@@ -2621,6 +2621,10 @@ const sealed = (gid, rel, seat, fields, key, names = ["by", "sig"]) =>
       const RECONNECT = "The light-wallet server stopped answering. " + WHEN_SYNCED;
       assert.equal(t.sendBlocker(), RECONNECT);
       assert.equal(await propose9("again"), RECONNECT, "no proposal on the silent server");
+      // Approve does not wait for that sync: it asks the other servers for the chain height.
+      const zt = open("zt");
+      await approved(me, zt);
+      assert.equal(markOf(me, "zt")?.approved, "aa", "the approval after the timeout");
       openNext();
       await quiet(async () => {
         await waitFor("the sync on the next server", () => t.chain.url === "https://next.test");
@@ -2634,6 +2638,16 @@ const sealed = (gid, rel, seat, fields, key, names = ["by", "sig"]) =>
       await quiet(() => t.runSync(t.chain));
       assert.equal(t.sendBlocker(), RECONNECT, "no new object: the stall stays");
       Object.assign(t.chain, { stalled: null, url: "https://next.test", error: null });
+      // Approve asks the server of the last sync first, so a server that does not answer, and whose
+      // failure is no longer marked, makes it wait no 8 s.
+      t.chain.url = "https://zcash-testnet.chainsafe.dev";
+      const silentLwd = async (url) => (url.endsWith("/lwd") ? new Promise(() => {}) : 4500001);
+      t.setZ({ ...z8, latestHeight: silentLwd });
+      const t0 = Date.now();
+      await approved(other, open("zu"));
+      assert.equal(markOf(other, "zu")?.approved, "aa", "approved");
+      assert.ok(Date.now() - t0 < 4000, "no wait on the server that does not answer");
+      t.setZ(z8);
       t.state.sessions = sessions8;
       for (const [i, marks] of marks8) await t.putSec(t.state.gid, i, { marks });
       const { o8c: _o8c, ...marksMe } = t.sec(t.state.gid, me).marks;
