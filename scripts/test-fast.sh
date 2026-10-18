@@ -11,7 +11,7 @@ case "$(node -v 2>/dev/null)" in
   v24.*) ;;
   *) echo "test-fast: Node 24 is needed, found $(node -v 2>/dev/null || echo none)" >&2; exit 2 ;;
 esac
-FAST="payees vault chat lwd requests shim signed util account qr personal graph
+FAST="payees vault chat lwd zns requests shim signed util account qr personal graph
   sol-docs sol-transfer sol-wasm sol-config sol-rent demo-check"
 SLOW="app sol-fee sol-sessions sol-limits sol-ceremony sol-app sol-pay"
 HELPERS="sol-rig sol-setup sol-chain sol-vector sol-fixture page"

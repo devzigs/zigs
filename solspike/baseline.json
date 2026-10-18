@@ -38,6 +38,9 @@
     "web/test/lwd.mjs": {
       "exit": 0
     },
+    "web/test/zns.mjs": {
+      "exit": 0
+    },
     "web/test/graph.mjs": {
       "exit": 0
     },
