@@ -583,11 +583,22 @@ function approveRow(c, ss, act, actions, waiting) {
   });
 }
 
-/** The last error of the execute in this tab, and a button once its tries ran out. */
+/** Why no seat of this browser executes the payment (execute.js unfunded), or null. */
+function execWaitLine(c, ss) {
+  const text = c.execWait?.[ss.id];
+  if (!text) return null;
+  return c.host.el("p", { class: "small", "data-sol": "exec-wait-" + ss.id }, text);
+}
+
+/**
+ * The last error of the execute in this tab, and a button once its tries ran out. With no error,
+ * the line that says why no seat of this browser executes, if any.
+ */
 function executeLine(c, ss, act, actions) {
   const { el } = c.host;
   const error = c.execErrors?.[ss.id];
-  if (ss.status !== "signed" || !error) return null;
+  if (ss.status !== "signed") return null;
+  if (!error) return execWaitLine(c, ss);
   const out = (c.tries?.[ss.id] ?? 0) >= EXECUTE_TRIES;
   const again = () => actions.execute(ss);
   const retry = out ? button(c, act, "execute-" + ss.id, "Try the execute again", again) : null;

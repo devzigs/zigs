@@ -7,7 +7,7 @@
 // The proposing seat executes when this browser holds it; any other ready seat may. A seat
 // executes only when its fee address can pay. A browser with no funded seat sends nothing and
 // counts no try: it reads the proposal account (a mark to write when another device executed it)
-// and waits for a funded seat, with the text of a failed read on the card.
+// and waits for a funded seat. Its card says why: a failed read, or no seat that can pay.
 //
 // An execute that this tab sent and that may still land is checked before any other send: a
 // blockhash lives about 60 to 90 s, so a second execute waits until the first one landed, failed
@@ -29,7 +29,7 @@ import {
   wireBase64,
 } from "./intent.js";
 import { rolesOf, signAsFee } from "./approve.js";
-import { ensureWorker } from "./session.js";
+import { ensureWorker, solText } from "./session.js";
 import { SESSIONS, writePart } from "./sessions.js";
 
 /** Tries of the execute in this tab before the card asks for a click (actions.execute). */
@@ -43,8 +43,9 @@ const LEASE_MS = 60_000;
 // The fee address of the executor keeps the rent-exempt minimum of a System account (890,880
 // lamports) after the fee of the execute and the tree fee.
 const EXECUTE_MIN = 1_000_000n;
-// A browser with no funded seat looks again after this time; a balance read holds this long.
-const UNFUNDED_WAIT_MS = 15_000;
+// A browser with no funded seat, and the end check of a payment whose tries ran out, look again
+// after this time. A balance read holds BALANCE_MS.
+const LOOK_AGAIN_MS = 15_000;
 const BALANCE_MS = 30_000;
 // The lamports of each fee address (base58) and when they were read: { lamports, at }.
 const balances = new Map();
@@ -62,6 +63,12 @@ const FAILED = "The execute failed on chain. The approval is still valid.";
 const UNREAD = "The history of the proposal account is not complete yet.";
 export const PAYMENT_EXPIRED = "This payment expired before it was executed. Propose it again.";
 const GONE = "The proposal account is gone, and no execute of it landed.";
+const NO_FUNDED_SEAT =
+  "No seat of this browser can pay the execute. A fee address needs " +
+  solText(EXECUTE_MIN) +
+  ": the fees of the execute, and the minimum balance that the address must keep. A browser " +
+  "with a funded seat can execute this payment. To execute it in this browser, send Devnet SOL " +
+  'to a fee address in "Fund the fee address".';
 // A margin for the clock of this device: the program judges the expiry by the chain clock.
 const CLOCK_MARGIN_S = 600;
 
@@ -278,35 +285,47 @@ export function tryAgain(c, ss) {
   c.host.once("sol:retry:" + ss.id, async () => {});
 }
 
-/** Shows `text` on the card of `ss` (no text clears it), and draws the card now. */
-function showExecError(c, ss, text) {
-  if (c.execErrors[ss.id] === text) return;
-  if (text === undefined) delete c.execErrors[ss.id];
-  else c.execErrors[ss.id] = text;
+/**
+ * Puts `text` in `c[field]` for the card of `ss` (no text clears it), and draws the card now.
+ * `execErrors` holds a red error; `execWait` holds the neutral line of a browser that cannot pay.
+ */
+function showOnCard(c, field, ss, text) {
+  if (c[field][ss.id] === text) return;
+  if (text === undefined) delete c[field][ss.id];
+  else c[field][ss.id] = text;
   c.host.render();
 }
 
 /**
  * A tab with no funded seat: it sends nothing and takes no lease. It reads the proposal account;
  * if another device executed it, `seat` (a local writer) writes the mark. A failed read shows its
- * text and counts no try. Then it waits for a funded seat.
+ * text and counts no try. When every balance read worked, a neutral line says that none can pay.
  */
 async function unfunded(c, worker, ss, { seat, failed }, failSession) {
   const last = looks.get(ss.id);
   if (last && Date.now() - last.at < LOOK_MS) {
-    showExecError(c, ss, failed ?? last.error);
-    return sleep(UNFUNDED_WAIT_MS);
+    showLook(c, ss, failed ?? last.error);
+    return sleep(LOOK_AGAIN_MS);
   }
   const look = { at: Date.now(), error: undefined };
   looks.set(ss.id, look);
   try {
     const account = await worker.call("account", { account: base58(ss.account) });
-    if (!holdsBody(account, ss)) return await landedElsewhere(c, worker, ss, seat, failSession);
+    if (!holdsBody(account, ss)) {
+      showOnCard(c, "execWait", ss, undefined);
+      return await landedElsewhere(c, worker, ss, seat, failSession);
+    }
   } catch (e) {
     look.error = errorText(e);
   }
-  showExecError(c, ss, failed ?? look.error);
-  return sleep(UNFUNDED_WAIT_MS);
+  showLook(c, ss, failed ?? look.error);
+  return sleep(LOOK_AGAIN_MS);
+}
+
+/** A failed read shows its red text; with every read good, the neutral line says none can pay. */
+function showLook(c, ss, error) {
+  showOnCard(c, "execErrors", ss, error);
+  showOnCard(c, "execWait", ss, error === undefined ? NO_FUNDED_SEAT : undefined);
 }
 
 /**
@@ -316,7 +335,9 @@ async function unfunded(c, worker, ss, { seat, failed }, failSession) {
  */
 export function maybeExecute(c, ss, { launch, failSession }) {
   const seats = executorsOf(c, ss);
-  if (!c.rpcUrl || !seats.length || (c.tries[ss.id] ?? 0) >= EXECUTE_TRIES) return;
+  // After the expiry, the end check (attempt) runs also when the tries ran out: it sends nothing.
+  const out = (c.tries[ss.id] ?? 0) >= EXECUTE_TRIES;
+  if (!c.rpcUrl || !seats.length || (out && !pastExpiry(ss))) return;
   launch(c, "exec:" + ss.id, async () => {
     try {
       const worker = await ensureWorker(c);
@@ -324,9 +345,15 @@ export function maybeExecute(c, ss, { launch, failSession }) {
       if (seat === undefined) {
         return await unfunded(c, worker, ss, { seat: seats[0], failed }, failSession);
       }
+      showOnCard(c, "execWait", ss, undefined);
       await attempt(c, worker, ss, seat, failSession);
       delete c.execErrors[ss.id];
     } catch (e) {
+      // A failed end check shows its text and reads again later, with no try and no banner.
+      if (out) {
+        showOnCard(c, "execErrors", ss, errorText(e));
+        return sleep(LOOK_AGAIN_MS);
+      }
       c.tries[ss.id] = (c.tries[ss.id] ?? 0) + 1;
       c.execErrors[ss.id] = errorText(e);
       throw e;

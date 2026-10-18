@@ -836,6 +836,8 @@ const FUNDED = [50_000_000n, 50_000_000n, 50_000_000n];
   assert.equal(ssOf(id).status, "signed", "no execute without a read of the balance");
   assert.equal(c.tries[id] ?? 0, 0, "a refused read counts no try");
   assert.ok(card().includes(refused), "the card shows the text of the Worker");
+  assert.equal(c.execWait[id], undefined, "a refused read is no seat that cannot pay");
+  assert.ok(!card().includes("No seat of this browser can pay"), "and no line of the wait");
   delete chain.balances.get; // the reads work again
   await waitStatus(id, "sent", 90000);
   assert.equal(c.execErrors[id], undefined, "the text goes with the next good read");
@@ -898,6 +900,7 @@ step("a retry after a dropped send uses the seat that sent it");
   assert.equal(ssOf(id).txId, executed, "the transaction of the history");
   assert.equal(count("send"), sent, "the tab sent nothing");
   assert.equal(c.tries[id] ?? 0, 0, "and counted no try");
+  assert.equal(c.execWait[id], undefined, "the account that is gone clears the line of the wait");
   fund(FUNDED);
 }
 step("a tab with no funded seat marks an execute that another device landed");
@@ -957,6 +960,93 @@ step("a tab with no funded seat shows a refused account read and reads once a mi
   await waitStatus(id, "sent");
 }
 step("an execute waits for the lease of another device, and stops after its tries");
+
+// ── No fee address of this browser can pay: a neutral line says why, and no try counts ──
+{
+  await forgetPairs();
+  const id = await proposedPay();
+  current = id;
+  fund([999_999n, 999_999n, 999_999n]); // the create needs seat 1 funded, so this comes after it
+  const sends = count("send");
+  await approve(c, ssOf(id), 1);
+  await approve(c, ssOf(id), 2);
+  await waitFor("the line of the wait", () => c.execWait[id] !== undefined);
+  const [line] = marked("exec-wait-" + id);
+  const NEEDS = /^No seat of this browser can pay the execute\. A fee address needs 0\.001 SOL/;
+  assert.match(textOf(line), NEEDS);
+  assert.doesNotMatch(line.attrs.class, /\bbad\b/, "the line is no error");
+  assert.equal(c.execErrors[id], undefined, "no red text");
+  assert.equal(c.tries[id] ?? 0, 0, "no try");
+  assert.equal(count("send"), sends, "nothing sent");
+  // Seat 3 gets the exact minimum. Its execute lands late, so the card shows it while signed.
+  chain.sendMode = "late";
+  fund([999_999n, 999_999n, 1_000_000n]);
+  await waitFor("the send of seat 3", () => c.sending[id] !== undefined, 60000);
+  assert.equal(c.sending[id].seat, 3, "the funded seat executes");
+  assert.equal(ssOf(id).status, "signed", "the execute did not land yet");
+  assert.equal(marked("exec-wait-" + id).length, 0, "the funded seat clears the line");
+  assert.equal(c.execErrors[id], undefined, "and no red text shows");
+  chain.sendMode = null;
+  chain.release();
+  await waitStatus(id, "sent");
+  const landed = chain.landed.find((x) => x.signature === ssOf(id).txId);
+  assert.ok(verifies(feeOf(c, 3).key, bytesOf(landed.message), bytesOf(landed.sigs[0])));
+  fund(FUNDED);
+}
+step("a browser with no funded seat says why on the card; a funded seat clears it and executes");
+
+// ── A signed payment whose tries ran out still ends at its expiry, with no click ──
+{
+  await forgetPairs();
+  const id = await proposedPay();
+  current = id;
+  chain.refuse = "Custom 9999";
+  await approve(c, ssOf(id), 1);
+  await approve(c, ssOf(id), 2);
+  await waitFor("the tries", () => (c.tries[id] ?? 0) >= EXECUTE_TRIES, 60000);
+  assert.equal(marked("execute-" + id).length, 1, "before the expiry the card asks for a click");
+  chain.refuse = null;
+  const [sims, sends] = [count("simulate"), count("send")];
+  // First the node shows no account and a history with no create: the end check fails.
+  const address = base58(ssOf(id).account);
+  const [stored, history] = [chain.accounts.get(address), chain.history.get(address)];
+  chain.accounts.delete(address);
+  chain.history.set(address, []);
+  later(DAY);
+  notify(); // a pass of the reactor, with no click
+  const unread = () => /history of the proposal account is not complete/.test(c.execErrors[id]);
+  await waitFor("the failed end check", unread);
+  assert.equal(c.tries[id], EXECUTE_TRIES, "a failed end check is no new try");
+  // Then the node shows the open account: the end check reads again later, and the payment ends.
+  chain.accounts.set(address, stored);
+  chain.history.set(address, history);
+  await waitStatus(id, "failed", 60000);
+  Date.now = realNow;
+  assert.match(ssOf(id).error, /expired before it was executed/);
+  assert.equal(c.tries[id], EXECUTE_TRIES, "the end check is no new try");
+  assert.equal(count("simulate"), sims, "it tests no execute");
+  assert.equal(count("send"), sends, "and sends nothing");
+}
+step("a signed payment whose tries ran out ends at its expiry, with no click and no new try");
+
+// ── A signed payment past its expiry ends also when no seat of this browser can pay ──
+{
+  await forgetPairs();
+  const id = await proposedPay();
+  current = id;
+  fund([0n, 0n, 0n]);
+  const reads = count("balance");
+  await approve(c, ssOf(id), 1);
+  await approve(c, ssOf(id), 2);
+  await waitFor("the look of the tab", () => count("balance") >= reads + 3);
+  assert.equal(ssOf(id).status, "signed", "no seat can pay: no execute");
+  later(DAY); // past the expiry and the clock margin of 600 s
+  await waitStatus(id, "failed", 60000);
+  Date.now = realNow;
+  assert.match(ssOf(id).error, /expired before it was executed/);
+  fund(FUNDED);
+}
+step("a signed payment with no funded seat still ends at its expiry: its end pays no fee");
 
 // ── Someone created the same body first: the page reads the account and takes it ──
 {
