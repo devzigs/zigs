@@ -226,6 +226,8 @@ const link = "https://example.test/#" + gid;
 const plain = { text: pageText(), join: joinText(), invite: inviteMessage(link) };
 assert.equal(t.solLoading, null, "a Zcash-only setup loads no Solana file");
 assert.match(plain.text, /Every signer must keep Zigs open until setup finishes/);
+assert.match(plain.text, /Step 2 of 5: Connect\. Every signer takes a seat/,
+  "the stepper of the setup page: seats are open");
 assert.doesNotMatch(plain.join + plain.invite, /Solana/, "no hint: Zcash only");
 data.set(groupPath(gid), { ...data.get(groupPath(gid)), solana: true });
 rig.notify();
@@ -594,7 +596,7 @@ const byId = (node, id) =>
   // Who starts the Solana part: seat 1 with the choice, seat 1 of a moved wallet, another seat.
   assert.match(pageText(), /Create the Solana key.*Starts when the Zcash address is checked\./s);
   t.state.g.movedTo = "elsewhere";
-  assert.match(pageText(), /Tap Add Solana on the Solana tab to start it\./, "a moved wallet");
+  assert.match(pageText(), /Tap Add Solana in the Solana section to start it\./, "a moved wallet");
   delete t.state.g.movedTo;
   const seat1 = t.secrets[gidW + ":1"];
   delete t.secrets[gidW + ":1"];
@@ -629,7 +631,7 @@ const byId = (node, id) =>
   await waitFor("the hint", () => t.state.g.solana === true);
   await t.solLoad();
   // Seat 1 has no choice in its own secret (a hint that someone else wrote): it starts by hand.
-  const BY_HAND = /Solana is still setting up.*Tap Add Solana on the Solana tab to start/s;
+  const BY_HAND = /Solana is still setting up.*Tap Add Solana in the Solana section to start/s;
   assert.match(pageText(), BY_HAND);
   await sleep(1500);
   assert.equal(data.has(`groups/${gidH}/solstart/1`), false, "the hint alone starts nothing");
@@ -646,8 +648,8 @@ const byId = (node, id) =>
   t.sol.ctl.docs = docsKept;
   assert.match(broken, /Activity/, "the Overview still shows");
   assert.doesNotMatch(broken, /cannot read/);
-  assert.match(pageText(), /Send Devnet SOL to your fee address on the Solana tab/);
-  assert.match(pageText(), /Open the Solana tab/);
+  assert.match(pageText(), /Send Devnet SOL to your fee address in the Solana section/);
+  assert.match(pageText(), /Open Solana/);
   assert.match(pageText(), /Each signer funds the fee address of their seat on their own device/);
   // The balances of the last read (refreshChain): every fee address of this browser holds SOL.
   t.sol.ctl.chain = { fees: { 1: "0.006 SOL", 2: "0.0025 SOL", 3: "0.0025 SOL" } };

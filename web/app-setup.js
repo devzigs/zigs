@@ -18,6 +18,7 @@ import { react, render } from "./app-loop.js";
 import { activityLog } from "./app-wallet.js";
 import { offOf } from "./app-shell.js";
 import { newWallet, SOL_DISCLOSURE, solError, solOn, solPlanned, solSetup } from "./app-sol.js";
+import { SETUP_STAGES, setupStage } from "./setup-model.js";
 
 export function setupView() {
   const open = seatIds().filter((i) => !state.seats[i]);
@@ -27,11 +28,36 @@ export function setupView() {
     "The signers made different wallet keys, so this wallet is not safe to use. "
     + "Do not send funds to it. Create a new wallet.") : null;
   const stopped = abortedText();
-  return el("div", { class: "page", style: "gap:16px" }, split,
+  return el("div", { class: "page", style: "gap:16px" }, stageBar(), split,
     stopped ? el("div", { class: "callout bad", role: "alert" }, stopped, newWalletButton()) : null,
     saveFailedCard(), top, safetyCard(),
     el("div", { class: "setup" }, progressCard(), seatsCard(open)),
     localSeats().length ? messagesCard() : null);
+}
+
+// The stage of the setup, from the counts of the progress card. A stop shows its own text: the
+// stepper never shows a stopped setup as a stage on track. The files come on the wallet page.
+function stageBar() {
+  const c = setupCounts();
+  const { index, blocked } = setupStage({ seated: c.seated, n: c.n, verify: c.v2,
+    confirmed: c.conf, keysDone: c.d, checked: c.w ? c.ver : 0, blocked: blockText(c),
+    solPending: bothParts() });
+  return el("nav", { class: "stage-bar", "aria-label": "Setup stages" },
+    el("ol", {}, SETUP_STAGES.map((name, i) => el("li", { class: i < index ? "done" : null,
+      "aria-current": i === index ? "step" : null }, name))),
+    el("p", { class: "small " + (blocked ? "bad" : "muted"), role: "status" }, blocked
+      ? "Setup stopped at " + SETUP_STAGES[index] + ". " + blocked
+      : "Step " + (index + 1) + " of " + SETUP_STAGES.length + ": " + SETUP_STAGES[index]
+        + ". " + STAGE_NOTE[index]));
+}
+const STAGE_NOTE = ["", "Every signer takes a seat with the invite link.",
+  "Every signer compares the safety number and confirms it.",
+  "The devices create the key together and check the address. Keep Zigs open.",
+  "The wallet page asks each signer to back up the key share."];
+function blockText(c) {
+  const key = keyBlock(c);
+  if (key && key[0] === "bad") return key[1];
+  return c.rejected.length ? addrStep(c)[1] : null;
 }
 
 // Version 2 wallets: the signers compare one number before the key ceremony starts. It stays
@@ -248,7 +274,7 @@ function startText() {
   if (sec(state.gid, 1)?.solAuto === true && !state.g.movedTo) {
     return "Starts when the Zcash address is checked.";
   }
-  return "Tap Add Solana on the Solana tab to start it.";
+  return "Tap Add Solana in the Solana section to start it.";
 }
 // The texts of app-sol.js that start with "Solana" say what failed already.
 const loadText = (e) => e.startsWith("Solana") ? e : "Solana did not load: " + e;
@@ -261,7 +287,8 @@ function solFeeStep(s) {
   if (!s || s.status !== "ready") return ["", "Comes after the Solana key."];
   if (!s.fees.length) return ["", "Each seat funds its own fee address on its own device."];
   if (s.fees.every(funded)) return ["done", "Your fee address holds " + s.fees[0].balance + "."];
-  return ["now", "Send Devnet SOL to your fee address on the Solana tab, then check its balance."];
+  return ["now", "Send Devnet SOL to your fee address in the Solana section, then check its "
+    + "balance."];
 }
 
 /** Steps 4 and 5 of a wallet with the Solana hint: the Solana key, then the fee address. */
@@ -274,7 +301,7 @@ export function solSteps(first) {
 // An Overview that showed the key ceremony run keeps the fee step until the fee addresses hold
 // SOL. After a reload the balances are unknown until Check balance, so a funded part shows no card.
 const sawSetup = new Set();
-// The Solana tab exists here: a seat of this browser, and a module that loaded.
+// The Solana section exists here: a seat of this browser, and a module that loaded.
 const solCardHere = () => solPlanned() && solOn() && localSeats().length > 0 && !solError;
 
 /** True while the Solana part of a wallet with the hint is not ready, not funded, or stopped. */
@@ -295,7 +322,7 @@ const newWalletButton = () => el("button", { class: "btn sm", type: "button",
 export function solSetupCard() {
   const stopped = solSetup()?.status === "stopped";
   const toTab = el("button", { class: "btn sm", type: "button",
-    onclick: () => { ui.tab = "solana"; render(); } }, "Open the Solana tab");
+    onclick: () => { ui.tab = "solana"; render(); } }, "Open Solana");
   return el("section", { class: "card card-pad" },
     el("div", { class: "card-head" },
       el("h2", {}, stopped ? "The Solana part stopped" : "Solana is still setting up")),

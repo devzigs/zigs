@@ -615,3 +615,23 @@ body:has(.dialog), body:has(.drawer) { overflow: hidden; }
   letter-spacing: -0.025em;
 }
 .wallet-select:hover { border-color: var(--line); }
+
+/* The setup stepper: five stages, the current one marked; a stop shows its own text. */
+.stage-bar { display: grid; gap: 10px; }
+.stage-bar ol { display: flex; gap: 6px; list-style: none; margin: 0; padding: 0; }
+.stage-bar li {
+  flex: 1; min-width: 0; padding-top: 8px; border-top: 3px solid var(--line);
+  font-size: 12.5px; color: var(--muted); overflow-wrap: anywhere;
+}
+.stage-bar li.done { border-color: var(--ok); }
+.stage-bar li[aria-current="step"] {
+  border-color: var(--accent); color: var(--text); font-weight: 600;
+}
+@media (max-width: 520px) { .stage-bar li { font-size: 11px; } }
+
+/* The numbered sections of the create dialog. */
+.guide-step { display: grid; gap: 12px; min-width: 0; margin: 0; padding: 0; border: 0; }
+.guide-step > legend { padding: 0 0 4px; font: 600 13px/1.4 var(--sans); color: var(--muted); }
+
+/* The welcome card of an empty wallet list. */
+.welcome h2 { font-size: clamp(24px, 3.2vw, 32px); line-height: 1.15; letter-spacing: -0.035em; }
