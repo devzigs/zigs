@@ -85,6 +85,22 @@ launched on mainnet in August 2026 and is not related to ZNS. A forum member who
 says: "Zcash.me and zcashnames.com are separate services from zcashnames.co" [F3]. A name in one
 registry can point to another address in the other one. Zigs must name the registry that it uses.
 
+### 1.4 Facts from a public sweep (18 October 2026)
+
+A coordinator session searched the web, the forum, GitHub, the project site, X and the SDK on 18
+October 2026. These facts matter for tests and for a name of our own.
+
+| Fact | Source |
+|---|---|
+| `craftsoldier` is the testnet name of the wallet checklist of ZcashMe, and it is the only name in the testnet registry. Tests and staging can use it. Do not claim or update it | https://www.zcashnames.com/docs/integrate/testing ; `list_names` on https://light.zcash.me/zns-testnet (total 1) |
+| No public route gives a testnet name today. Every access code serves mainnet Early Access: the waitlist (reservations closed on 15 October 2026), a zcash.me profile verified before May 2026 (a code for its own handle only), protected names (a manual check, no custom names) and ENS holders. The gate of the Mint has no network condition | https://www.zcashnames.com/docs/blogs/users/early-access ; https://www.zcashnames.com/faq ; https://www.zcashnames.com/protected/request ; https://x.com/zcashme/status/2111570116966310358 ; `zns-mint` `src/main.rs:368-391` at `9fa071f` ; https://github.com/zcashme/zns-mint/pull/341 |
+| The contact for wallet teams is partner@zcash.me or the booking page cal.com/zcash. support@zcashnames.com comes second. A contact is the owner's decision | https://www.zcashnames.com/faq (partner@zcash.me) ; https://www.zcashnames.com/community (cal.com/zcash, support@zcashnames.com) |
+| The roadmap lists "Open Registration" from 30 October 2026, marked TBA, and names no network. The Mint at `9fa071f` has no open mode, so open registration needs a new Mint release. Watch the releases of `zns-deployment` and `zns-mint` | https://www.zcashnames.com/docs/roadmap ; https://github.com/zcashme/zns-deployment/releases ; https://github.com/zcashme/zns-mint/releases |
+| The `zigsdemo` claim paid the live testnet treasury `utest1tquw9k9…`, which `status` returns. The security page shows an older address, `utest1nflk83kv…`, from the bug bounty | `status` on https://light.zcash.me/zns-testnet ; https://www.zcashnames.com/security |
+| `zcashname-sdk` 0.15.0-rc.1: `verify()` fails on both networks, because it pins old viewing keys (`uviewtest19e96…` and `uivk1gl26…`) that differ from the published keys. Compare `status().viewing_key` with the Verifying State page instead | `zns-resolver` `sdk/typescript/src/zns.ts:87-98` at `acf8f72` ; https://www.zcashnames.com/docs/resolver/verifying-state |
+| `llms.txt` and the live FAQ still describe the old design: Ed25519 signatures and the actions CLAIM, BUY and DELIST | https://www.zcashnames.com/llms.txt ; https://www.zcashnames.com/faq |
+| zcashnames.co (with a BNB Smart Chain anchor) and zecname.xyz are not the ZNS of ZcashMe | [F3] ; https://zecname.xyz |
+
 ## 2. Resolution
 
 ### 2.1 How the registry works
