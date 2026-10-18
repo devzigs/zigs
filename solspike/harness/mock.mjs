@@ -1,7 +1,7 @@
-// The mock run of a live scenario (--mock): the same pages and steps, and no Devnet call. The Node
+// The mock run of a live scenario (--mock): the same pages and steps, and no Devnet call. The
+// Solana Worker of each page talks to the fake chain of the web tests (mock-chain.mjs). The Node
 // tools refuse the Helius URL and the funder key (tools/paths.mjs), Chrome resolves the Helius
-// host to nothing, and the dev server gets a Helius URL with no key. A step that needs the chain
-// goes into the plan of the run and is not sent.
+// host to nothing, and the dev server gets a Helius URL with a fake key.
 import { setDevVar } from "./server.mjs";
 
 export const MOCK = process.argv.includes("--mock");
@@ -17,10 +17,20 @@ if (MOCK) {
 export async function withMockUrl(body) {
   if (!MOCK) return body();
   const old = setDevVar("HELIUS_DEVNET_URL", MOCK_URL);
+  const restore = () => setDevVar("HELIUS_DEVNET_URL", old);
+  // A stopped run puts the old line back too. A SIGKILL cannot: then the line stays fake.
+  const stop = (signal) => {
+    restore();
+    process.exit(signal === "SIGINT" ? 130 : 143);
+  };
+  process.once("SIGINT", stop);
+  process.once("SIGTERM", stop);
   try {
     return await body();
   } finally {
-    setDevVar("HELIUS_DEVNET_URL", old);
+    restore();
+    process.off("SIGINT", stop);
+    process.off("SIGTERM", stop);
   }
 }
 

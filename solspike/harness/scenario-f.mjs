@@ -5,14 +5,17 @@
 //   (c) pay-a: seat 1 proposes 0.001 SOL to key B, seats 1 and 2 approve, a seat executes
 //   (d) the three contexts close; three blank contexts restore every seat from the files of (a)
 //   (e) pay-b: seat 3 proposes 0.001 SOL to key B and its page closes, seats 1 and 2 approve
-//   (f) withdraw: seat 2 proposes 0.0005 SOL to the fee address of seat 1, seats 2 and 1 approve
-// Each payment is checked on the chain, not with the code of the app (tools/program-chain.mjs):
-// the version 5 ELF, the proposal address of version 5, the group signature over the approval
-// digest, the closed account, the settlement accounts of the withdrawal, and that B (a sync of
+//   (f) withdraw: seat 2 proposes 0.0005 SOL to the fee address of seat 3, seats 2 and 1 approve.
+//       The page of seat 3 is closed, so that address pays no fee in this step.
+// The run checks the version 5 ELF before it sends anything and before each payment. Each payment
+// is checked on the chain, not with the code of the app (tools/program-chain.mjs): the proposal
+// address of version 5, the group signature over the approval digest, the closed account, the
+// seats that pay, the settlement accounts of the withdrawal, and that B (a sync of
 // tools/key-b.mjs) or the recipient got the amount. THIS RUN LANDS TEN TRANSACTIONS on Devnet
 // (PLAN). Results: solspike/logs/scenario-f.json after every step (public values only); the
 // encrypted backup files go to solspike/.state/scenario-f, their passphrases to SOLSPIKE_INTERIM
-// (mode 600). --resume starts again from those backups and skips the steps that are done.
+// (mode 600). A new live run refuses to replace them. --resume starts again from those backups and
+// skips the steps that are done; it stops at a step that an earlier run started and did not end.
 // With --mock (harness/mock.mjs) it makes no Devnet call and writes no passphrase: every step runs
 // against the fake chain of the web tests (harness/mock-chain.mjs), but a payment is live only:
 // the model has no SDK payment for a new group, so the tap of each payment must be refused at
@@ -20,14 +23,14 @@
 // Run: node solspike/harness/scenario-f.mjs [--mock | --resume]   (README.md, "Live scenarios")
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
-import { chmodSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { chmodSync, existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { fund } from "../tools/fund.mjs";
 import { addressOfB, balanceOfB } from "../tools/key-b.mjs";
 import { interimFile } from "../tools/paths.mjs";
 import * as chain from "../tools/program-chain.mjs";
-import { balanceOf } from "../tools/rpc.mjs";
+import { balanceOf, rpcCall } from "../tools/rpc.mjs";
 import * as bk from "./backups.mjs";
 import { waitFor } from "./chrome.mjs";
 import * as flow from "./flow.mjs";
@@ -60,21 +63,39 @@ const PAYMENTS = [
   { label: "withdraw", amount: "0.0005", lamports: 500_000n, proposer: 2, approvers: [2, 1] },
 ];
 // Every Devnet transaction of the run: the payer, and the lamports that leave it (fees aside).
-// The create of a proposal also pays its rent, and the execute gives the rent back.
+// The create pays the rent of the proposal, and the execute gives it back to the proposer. Any
+// open page may execute, so the payer of an execute is a seat with an open page.
+const RENT = 1_356_360n;
 const PLAN = [
   ...[1, 2, 3].map((n) => ({ label: `fund-seat${n}`, payer: "funder", lamports: FUNDS[n] })),
   { label: "add-sol", payer: "fee address of seat 1", lamports: ADD.lamports },
   ...PAYMENTS.flatMap((p) => [
-    { label: `${p.label} create`, payer: `fee address of seat ${p.proposer}`, lamports: 0n },
-    { label: `${p.label} execute`, payer: "fee address of an approving seat", lamports: 0n },
+    { label: `${p.label} create`, payer: `fee address of seat ${p.proposer}`, lamports: RENT },
+    { label: `${p.label} execute`, payer: "fee address of a seat with an open page", lamports: 0n },
   ]),
 ];
-const LIVE_TOOLS = { fund, confirmed: chain.confirmed, payerOf: chain.payerOf };
+const LIVE_TOOLS = {
+  fund,
+  confirmed: chain.confirmed,
+  payerOf: chain.payerOf,
+  elf: chain.deployedElf,
+};
 const fresh = { head: HEAD, cluster: "devnet", mock: MOCK, steps: [], checks: {} };
 const results = RESUME ? JSON.parse(readFileSync(RESULTS, "utf8")) : fresh;
 results.runs = [...(results.runs ?? []), { head: HEAD, resume: RESUME }];
 delete results.error;
 const did = (label) => results.steps.some((s) => s.label === label);
+
+/** Marks a step that sends as started. A step that an earlier run started and did not end stops
+ * the run: its transaction may have landed, and a second tap would send it twice. */
+function once(label) {
+  if (MOCK) return;
+  if (results.started?.includes(label)) {
+    throw new Error(`${label} started in an earlier run and did not end: check it on the chain`);
+  }
+  results.started = [...(results.started ?? []), label];
+  save();
+}
 
 function save() {
   mkdirSync(dirname(RESULTS), { recursive: true });
@@ -160,6 +181,9 @@ async function restored(rig, saved) {
 }
 
 async function created(rig) {
+  if (!MOCK && existsSync(interimFile())) {
+    throw new Error("SOLSPIKE_INTERIM holds the backups of an earlier group: --resume, or move it");
+  }
   const { pages, gid } = await zcashWallet(rig, "Scenario F wallet");
   const keys = await solanaReady(pages, gid);
   results.group = { owner: keys.owner, groupKey: keys.groupKey };
@@ -183,24 +207,40 @@ async function fundSeats(pages, fees, tools) {
 }
 
 async function addSol(page, fees, tools) {
+  once("add-sol");
   const signature = await flow.addSol(page, ADD.text);
   await tools.confirmed(signature);
   assert.equal(await tools.payerOf(signature), fees[1], "the fee address of seat 1 pays Add SOL");
   record("add-sol", { signature });
 }
 
-/** The balance of the payee: key B by a sync that reads `slot`, or the public recipient. */
-const payeeBalance = async (withdrawTo, slot) =>
-  BigInt(withdrawTo ? await balanceOf(withdrawTo) : await balanceOfB(slot));
+/** The recipient of the withdrawal: the fee address of seat 3, whose page pay-b closed. */
+const recipientOf = (spec, fees) => (spec.label === "withdraw" ? fees[3] : undefined);
+
+/** The balance of the payee: the public recipient, or key B by a sync that reads `slot`. */
+async function payeeBalance(withdrawTo, slot) {
+  if (withdrawTo) return BigInt(await balanceOf(withdrawTo));
+  const at = slot ?? (await rpcCall("getSlot", [{ commitment: "confirmed" }]));
+  return BigInt(await balanceOfB(at));
+}
+
+/** The proposer pays the create and gets its rent back, and a seat pays the execute. */
+function checkSeats(facts, { label, proposer }) {
+  assert.equal(facts.create.payerSeat, String(proposer), `${label}: the proposer pays the create`);
+  assert.equal(facts.rentRecipientSeat, String(proposer), `${label}: the rent goes back to it`);
+  assert.notEqual(facts.execute.payerSeat, "none", `${label}: a seat pays the execute`);
+}
 
 /** One payment of PAYMENTS from the live pages, checked on the chain. Returns the live pages. */
-async function payStep(pages, spec, { keys, fees, payee }) {
-  results.checks[`elf-${spec.label}`] = await chain.deployedElf();
+async function payStep(pages, spec, { keys, fees, payee, tools }) {
+  results.checks[`elf-${spec.label}`] = await tools.elf();
   await flow.privateBalance(pages[0], privateNow());
-  const withdrawTo = spec.label === "withdraw" ? fees[1] : undefined;
+  const withdrawTo = recipientOf(spec, fees);
   const before = await payeeBalance(withdrawTo);
+  once(spec.label);
   const done = await flow.pay(pages, { ...spec, payee, withdrawTo }, chain.proposalOpen);
   const facts = await chain.paymentFacts(done.proposal, done.signature, keys.groupKey, fees);
+  checkSeats(facts, spec);
   if (withdrawTo) facts.settlement = await chain.settlementFacts(done.signature, withdrawTo);
   const received = (await payeeBalance(withdrawTo, facts.execute.slot)) - before;
   assert.equal(received, spec.lamports, `${spec.label}: the payee got the amount`);
@@ -212,36 +252,45 @@ async function payStep(pages, spec, { keys, fees, payee }) {
 /** A payment: live, or in a mock run a tap that the fake chain must refuse (live only). */
 async function payment(pages, spec, ctx) {
   if (!MOCK) return payStep(pages, spec, ctx);
-  const withdrawTo = spec.label === "withdraw" ? ctx.fees[1] : undefined;
-  const tap = { ...spec, payee: ctx.payee, withdrawTo };
+  const tap = { ...spec, payee: ctx.payee, withdrawTo: recipientOf(spec, ctx.fees) };
   const refused = await flow.refusedTap(pages[spec.proposer - 1], tap);
   record(`${spec.label} (live only)`, { refused });
   return pages;
 }
 
 /** (d): the pages close, and blank pages restore the seats. A resumed run is a restore already. */
-async function restoreStep(rig, pages, saved) {
+async function restoreStep(rig, pages, saved, fees) {
   if (did("restore") || RESUME) return pages;
   for (const page of pages) await page.context.dispose();
   const fresh = await restored(rig, MOCK ? saved : loadBackups());
+  assert.deepEqual(await flow.feeAddresses(fresh), fees, "the restored seats keep their fee keys");
   record("restore", {});
   return fresh;
 }
 
+/** The problems of every page of the run, also of the pages that closed. */
+function finish(seen) {
+  results.problems = seen.map((p) => flow.problemsOf(p).length);
+  save();
+  assert.ok(results.problems.every((n) => n === 0), "no console problem or CSP violation");
+  if (MOCK) assert.equal(heliusAnswers(seen), 0, "no answer from the Helius host");
+}
+
 async function steps(rig, start, fees, tools) {
   let { pages } = start;
-  const ctx = { keys: start.keys, fees, payee: await addressOfB() };
+  const seen = [...pages];
+  const ctx = { keys: start.keys, fees, payee: await addressOfB(), tools };
+  results.checks.elf = await tools.elf();
   await fundSeats(pages, fees, tools);
   if (!did("add-sol")) await addSol(pages[0], fees, tools);
   if (!did("pay-a")) pages = await payment(pages, PAYMENTS[0], ctx);
-  pages = await restoreStep(rig, pages, start.saved);
+  pages = await restoreStep(rig, pages, start.saved, fees);
+  seen.push(...pages.filter((page) => !seen.includes(page)));
   for (const spec of PAYMENTS.slice(1)) {
     if (!did(spec.label)) pages = await payment(pages, spec, ctx);
   }
   await flow.privateBalance(pages[0], privateNow());
-  results.problems = pages.map((p) => flow.problemsOf(p).length);
-  assert.ok(results.problems.every((n) => n === 0), "no console problem or CSP violation");
-  if (MOCK) assert.equal(heliusAnswers([...start.pages, ...pages]), 0, "no Helius answer");
+  finish(seen);
 }
 
 async function scenario(rig) {

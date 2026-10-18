@@ -3,7 +3,7 @@
 # Usage: serve.sh start | stop | status
 # The server runs on port 8795 (SOLSPIKE_PORT moves it). An https SOLSPIKE_ORIGIN (the Helius key of
 # the app takes only https://app.zigs.app) runs it over https on 127.0.0.1 with the key and cert of
-# .state/tls, made here once: Chrome maps the host to this port and trusts only that key
+# .state/tls/<host>, made here: Chrome maps the host to this port and trusts only that key
 # (harness/chrome.mjs). Start and stop work by PID. The pid file
 # (.state/serve.pid) holds the PID. Before any signal the process must be this repo's wrangler dev
 # server on this port: its command line and its working directory (cf/) must match. A PID that
@@ -17,9 +17,12 @@ PIDFILE=$STATE/serve.pid
 PORT=${SOLSPIKE_PORT:-8795}
 INSPECTOR=${SOLSPIKE_INSPECTOR_PORT:-0}
 URL=http://localhost:$PORT/
-TLS=$STATE/tls
 HTTPS=no
 case "${SOLSPIKE_ORIGIN:-}" in https://*) HTTPS=yes URL=https://127.0.0.1:$PORT/ ;; esac
+HOST=${SOLSPIKE_ORIGIN:-}
+HOST=${HOST#https://}
+HOST=${HOST%%[:/]*}
+TLS=$STATE/tls/$HOST
 
 alive() { kill -0 "$1" 2>/dev/null; }
 # True when $1 is the wrangler dev server of this clone on this port. lsof reports the real path
@@ -62,14 +65,14 @@ descendants() {
     }'
 }
 
-# A self-signed key and cert for the host of the origin and 127.0.0.1, kept for later runs.
+# A self-signed key and cert for the host of the origin and 127.0.0.1. A cert that ends within a
+# day is made again.
 make_cert() {
-  local host
-  [ -f "$TLS/cert.pem" ] && return 0
-  host=${SOLSPIKE_ORIGIN#https://}
-  mkdir -p "$TLS" && chmod 700 "$TLS"
+  [ -f "$TLS/cert.pem" ] && openssl x509 -checkend 86400 -noout -in "$TLS/cert.pem" >/dev/null &&
+    return 0
+  mkdir -p "$TLS" && chmod 700 "$STATE/tls" "$TLS"
   openssl req -x509 -newkey ec -pkeyopt ec_paramgen_curve:prime256v1 -nodes -days 365 \
-    -subj "/CN=$host" -addext "subjectAltName=DNS:$host,IP:127.0.0.1" \
+    -subj "/CN=$HOST" -addext "subjectAltName=DNS:$HOST,IP:127.0.0.1" \
     -keyout "$TLS/key.pem" -out "$TLS/cert.pem" 2>/dev/null
 }
 

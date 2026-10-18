@@ -91,7 +91,8 @@ Run `scenario-e.mjs` and `scenario-f.mjs` with `--mock` first. A mock run makes 
 
 - `tools/paths.mjs` refuses the Helius URL and the funder key.
 - Chrome resolves the Helius host to nothing.
-- The dev server gets a Helius URL with no key, and `cf/.dev.vars` gets its old line back after.
+- The dev server gets a Helius URL with a fake key. `cf/.dev.vars` gets its old line back after
+  the run, also after SIGINT or SIGTERM (not after SIGKILL).
 
 The fake chain of the web tests (`web/test/sol-chain.mjs`) answers the Solana Worker of every
 page (`harness/mock-chain.mjs`). So the group, the backups, the funding of the fee addresses, Add

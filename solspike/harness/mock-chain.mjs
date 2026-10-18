@@ -110,7 +110,7 @@ async function answer(page, answers, payload) {
 
 /**
  * Puts the fake chain behind the Solana Worker of every page that the rig opens from now on.
- * Returns the tools of a scenario that read or move SOL: { chain, fund, confirmed, payerOf }.
+ * Returns the tools of a scenario that read or move SOL: { chain, fund, confirmed, payerOf, elf }.
  */
 export function mockTools(rig) {
   const chain = makeChain();
@@ -134,5 +134,6 @@ export function mockTools(rig) {
       if (!landed(signature)) throw new Error("not on the mock chain: " + signature);
     },
     payerOf: async (signature) => base58(keysOf(landed(signature).message)[0]),
+    elf: async () => ({ mock: "the fake chain runs no program" }),
   };
 }

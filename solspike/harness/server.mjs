@@ -13,10 +13,10 @@ const SERVE = join(HERE, "../serve.sh");
 const PIDFILE = join(HERE, "../.state/serve.pid");
 const DEV_VARS = join(HERE, "../../cf/.dev.vars");
 export const PORT = Number(process.env.SOLSPIKE_PORT ?? 8795);
-export const ORIGIN = process.env.SOLSPIKE_ORIGIN ?? `http://localhost:${PORT}`;
+export const ORIGIN = process.env.SOLSPIKE_ORIGIN || `http://localhost:${PORT}`;
 export const HTTPS = new URL(ORIGIN).protocol === "https:";
 /** The self-signed cert of the https server (serve.sh makes it). */
-export const CERT = join(HERE, "../.state/tls/cert.pem");
+export const CERT = join(HERE, "../.state/tls", new URL(ORIGIN).hostname, "cert.pem");
 
 const serve = (cmd) => execFileSync(SERVE, [cmd], { encoding: "utf8" }).trim();
 export const startServer = () => serve("start");
