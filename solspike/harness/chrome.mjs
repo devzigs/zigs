@@ -148,13 +148,20 @@ export async function launch(waitMs = WAIT_MS) {
   const args = [...FLAGS, ...(await hostFlags()), `--remote-debugging-port=${port}`];
   args.push(`--user-data-dir=${PROFILE}`);
   const proc = spawn(CHROME, args, { stdio: "ignore" });
-  const exited = new Promise((ok) => proc.once("exit", ok));
+  // A missing binary is a spawn error, not an exit: without a handler it ends node.
+  let spawnError = null;
+  proc.once("error", (err) => { spawnError = err; });
+  const exited = new Promise((ok) => {
+    proc.once("exit", ok);
+    proc.once("error", ok);
+  });
   const chrome = { proc, pid: proc.pid, port, exited };
   const exitedEarly = () => proc.exitCode !== null || proc.signalCode !== null;
   const end = Date.now() + waitMs;
   try {
     const info = await waitFor(
       () => {
+        if (spawnError) throw new Error(`Chrome did not start (${CHROME}): ${spawnError.code}`);
         if (exitedEarly()) {
           throw new Error(`Chrome exited with code ${proc.exitCode ?? proc.signalCode}`);
         }

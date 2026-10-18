@@ -11,8 +11,8 @@ design. These tickets list what the beta does not do yet, and what must hold bef
 
 | Id | P | Owner | Title | Done when |
 |---|---|---|---|---|
-| SOL-3 | P1 | owner | Get an audit report, or an equal review, of the pool and the SDK version we pin | A report exists that covers the deployed pool and the pinned SDK commit |
-| SOL-4 | P1 | dev | Stop the hosted prover from seeing the witness | Proofs run in the browser or in an attested TEE that the app checks; the nullifier secret never leaves the device. Helius said on 15 October 2026 that browser proving exists but is slow, and that speed is on its roadmap. The pinned SDK (`c232da1b`, #419) can prove through an attested Nitro enclave: for a Helius Devnet URL it sends the proofs to `d55y5ksdsm1vw.cloudfront.net` and checks an attestation against a policy that it pins (`defaultTeePolicy()`: enclave measurements and an encryption key). The beta turns this off (`proverTee: false`, the Helius gateway as `proverUrl`) and works as before. To turn it on: a real quote verifier in place of the `dcap-qvl` stub that throws, with a review of its trust; that host in `connect-src` of `solWorkerPolicy()` in `cf/src/index.js` and in the fetch guard of `web/sol/worker.js`; trust in the pinned measurements and key, and a plan for their rotation. The nullifier secret would still reach the enclave, but only inside the checked enclave |
+| SOL-3 | P1 | owner | Get an audit report, or an equal review, of the pool and the SDK version we pin | A report exists that covers the deployed pool and the pinned SDK commit. The audit fixes of #431 (18 October 2026) land after `c232da1b`, so the report must cover the commit that SOL-37 pins |
+| SOL-4 | P1 | dev | Stop the hosted prover from seeing the witness | Decided by the owner on 18 October 2026: local proving with Helius's browser prover (zolana-web-sdk), as a group setting that is off by default, that every seat obeys, and that cannot be turned off again. The browser proving spike session builds it; it is not live. An evaluation of 18 October 2026 (no commit, simulation only) proved a 1-input payment of the pinned SDK `c232da1b` against the live pool in headless Chrome: about 2.8 s a proof with Go only and no header change, 0.33 s with 4 threads (needs COOP and COEP), keys of 9.3 MB (1x2) to 58.6 MB (8x2) at first use. The setting must be for the whole group: every seat holds the same nullifier secret, so one hosted proof gives it to Helius, and each hosted proof of the beta already did. Done when a group that turns the setting on before its first spend proves every spend on its devices, a seat that cannot prove shows the error and never falls back to the hosted prover, and our `web/sol/worker.js` with the setting on passes `prepare`, `reprove` and a simulated PDA `execute` on Devnet. The fallback option stays the attested enclave below. Helius said on 15 October 2026 that browser proving exists but is slow, and that speed is on its roadmap. The pinned SDK (`c232da1b`, #419) can prove through an attested Nitro enclave: for a Helius Devnet URL it sends the proofs to `d55y5ksdsm1vw.cloudfront.net` and checks an attestation against a policy that it pins (`defaultTeePolicy()`: enclave measurements and an encryption key). The beta turns this off (`proverTee: false`, the Helius gateway as `proverUrl`) and works as before. To turn it on: a real quote verifier in place of the `dcap-qvl` stub that throws, with a review of its trust; that host in `connect-src` of `solWorkerPolicy()` in `cf/src/index.js` and in the fetch guard of `web/sol/worker.js`; trust in the pinned measurements and key, and a plan for their rotation. The nullifier secret would still reach the enclave, but only inside the checked enclave |
 | SOL-8 | P2 | dev | Share the spent-salt history between devices | Every seat refuses a reused salt from any proposal on the group server, also after a restore. The branch of SOL-8 has it: `pairsBefore` in `web/sol/spend.js` gives the checker the pairs of every spend session on the group server and of the history of the browser, and `web/test/sol-pay.mjs` tests a restored seat. The rule texts of the wasm still say "of the device" (`rule.rs`, `rules_ct.rs`, `snapshot.rs`): they change with the next build of the checker. Closes with the merge |
 | SOL-10 | P2 | owner | Set the product values: expiry window, minimum remaining expiry, fee caps, tree fee cap | The values are decided and pinned in the template with tests |
 | SOL-13 | P3 | dev | Re-run P1 when a published crate has the SIMD-0376 verify | P1 passes with verify_simd0376 |
@@ -32,17 +32,115 @@ design. These tickets list what the beta does not do yet, and what must hold bef
 | SOL-33 | P3 | dev | Pin the network of a wallet in the iPhone and Mac apps | The apps keep the first `network` that they see for a wallet in `zf-signpins` (key `network:<wallet id>`, as the web app does) and warn when the store shows another; a Swift check changes the field |
 | SOL-53 | P3 | dev | Keep the approved bodies of a seat across browsers | The rule "one body per commitment" reads the bodies that the seats of this browser approved (`approvedBodies` in `web/sol/nonces.js`); the salts read the group server too since SOL-8. A restored seat or another browser of the seat starts with none. The body hash in the proposal address (version 5) does not replace the rule: two signed bodies for one commitment are two approvals (ZOLANA.md 7.2, N3). Keep the list in a signed document, with a test of a second browser |
 | SOL-51 | P3 | dev | Check the sent mark of a payment against the chain | A member can write a sent mark with a well-formed transaction id, and every device then stops the execute and shows "Executed". A device reads the proposal account (gone) and the marked transaction (it carries the Ed25519 instruction of the approval) before it trusts a mark of another seat, and a test writes a false mark |
-| SOL-37 | P2 | owner | Move the SDK pin to Zolana main `8178be7c` (or newer) after Helius updates the Devnet pool | Helius deploys a pool with #428 on Devnet (tree 0 of 18,608 bytes, proving key `batch_address-append_40_4999`). Then `PIN` in `solspike/build.mjs`, the bundle, `SHA256SUMS`, `wasm-sol/tests/repo_pins.rs`, ZOLANA.md 3.4 and [Z2] move to the new commit, the nullifier root window (ZOLANA.md 6.10) is measured on Devnet, all checks pass and a Devnet payment lands. Until then `8178be7c` cannot read the live tree (the Worker `treeFees` fails). Ask Helius when. That commit also pays several recipients in one transfer (#426): the beta does not use it. Checked on 16 October 2026: the sponsor code that the fee payer uses is the same at `c232da1b` and `8178be7c`. Watch the unmerged branch `alex/x25519-everywhere` (tag `custom-ring-keys-v19`): it moves viewing keys and shielded addresses to X25519, which would change the viewing key (ZOLANA.md 4.2), the 99-byte address and the ciphertext rule of the checker |
+| SOL-37 | P2 | owner | Freeze the SDK pin through the demo, and move it only by trigger | Keep `PIN` `c232da1b` (`solspike/build.mjs`), the bundle, the wasm and approvals version 5 through the November demo; the rules and the triggers are in "SOL-37: freeze and move plan" below the table. Done when Helius names the stable release after its breaking window, Devnet runs it, the move checklist passes and a Devnet payment lands. Linked: SOL-3 (a new pool or SDK needs a new review), SOL-15 (bundle rules), SOL-43 (pool hash check) |
 | SOL-38 | P3 | dev | Move the public SOL that a group key held before the fee keys | The page proposes a group intent that moves the public SOL of the owner address to the fee address of a seat (a checker rule that allows only that transfer, an approval screen, tests), or ZOLANA.md says that this SOL stays. Today it stays where it is: nothing pays from the group address, and the screen shows its balance |
 | SOL-54 | P3 | dev | Test the replay guard of the approvals program after the nullifier PDA closes | A test shows that a second `execute` of an approved payment (the proposal created again) fails inside `transact` also after the pool closes the nullifier PDA of the first execute. The PDA closes only after a forester batch proof inserts the queued nullifier in the nullifier tree (`is_closable` in the pool), so the test runs the forester of the pinned commit and needs the `batch_address-append` proving key (3.7 GB for the default tree, `batch_address-append_40_250.key`; 137 MB for a test tree with a batch size of 10). SOL-41 covers the queued case only |
 | SOL-43 | P2 | dev | Follow pool upgrades in the approvals program | The seats compare the hash of the deployed pool program with the pinned one and refuse to sign when it differs; a pool upgrade gets a new review of the commitment and the `transact` layout before the program follows it (review R6) |
-| SOL-45 | P1 | owner | Move the approvals program upgrade key to a multisig with a timelock before mainnet | The upgrade authority of the program is a multisig whose key holders use separate hardware keys, with a delay longer than the time a group needs to move its funds; the app shows the authority and the delay; ZOLANA.md 7.2 lists the key holders' policy |
-| SOL-46 | P1 | owner | Make the approvals program immutable after the audit | An audit report covers the deployed mainnet build of `sol-program/build.sh` (SOL-47); the program is closed for upgrades with `--final`; the app checks that the upgrade authority is none |
+| SOL-45 | P1 | owner | Move the approvals program upgrade key to a multisig with a timelock before mainnet | The upgrade authority of the program is a multisig whose key holders use separate hardware keys, with a delay longer than the time a group needs to move its funds; the app shows the authority and the delay; ZOLANA.md 7.2 lists the key holders' policy. SOL-59 may make this unneeded |
+| SOL-46 | P1 | owner | Make the approvals program immutable after the audit | An audit report covers the deployed mainnet build of `sol-program/build.sh` (SOL-47); the program is closed for upgrades with `--final`; the app checks that the upgrade authority is none. SOL-59 may make this unneeded |
 | SOL-47 | P2 | dev | Add a mainnet release build to `sol-program/build.sh` | Blocked until Helius publishes a mainnet pool id: on 17 October 2026, getAccountInfo of `sppU489…` on mainnet-beta returned none, and the pinned Zolana commit and the newest one (`f163d0f`, 16 October) name only the development id. Then `build.sh` builds `--features mainnet` with the mainnet pool id pinned in the repo and checks a pinned mainnet ELF hash; the release notes record both; a dump of the deployed program matches the hash (ZOLANA.md 7.2, version 5) |
 | SOL-48 | P2 | owner | Add staging.zigs.app to the Allowed Domains of the Helius key | The Helius key answers a call with the Origin https://staging.zigs.app (it answers 403 on 16 October 2026), so the Solana tab works on staging (VEL-2) |
 | SOL-56 | P3 | dev | Bring the screen texts of ZOLANA.md section 2 up to date | The table of screen texts in ZOLANA.md section 2 matches the texts of `web/sol/view.js` and `web/sol/payview.js` after SOL-12: the privacy text of the tab, Add SOL, the send form and the rent card. Section 7.2 ("What becomes public") and the sentence "Amounts and payees stay as private as in the beta" say that a private payment hides only its amount |
 | SOL-57 | P2 | dev | Let a group start its Solana part again after a stop | A stopped Solana part offers "Retry Solana": a new start document with a generation number, bound into every signed Solana document, the echo, the box contexts, the stop seal, the fee documents and the fit of a backup, so that no document of an earlier attempt counts. Today a stop is final, and the page offers "Create a new wallet" (release item M3 step 7, S14) |
 | SOL-58 | P2 | dev | Make round 1 of the Solana ceremony a create-only write on the group server | Today the group server (`cf/src/index.js`) has only `set`, `update` and `acquire`. Add a create-only write: a `set` that fails when the document exists. Round 1 in `web/sol/ceremony.js` then uses it for `soldkg1/<i>`, so a copy of a seat whose write comes second gets a refusal and drops its round-1 secret. This closes the race that the lease only narrows: two copies of one seat (a device and a restored copy) both publish round 1 when the server forgot the lease (leases live in memory, and a sleeping object forgets them) or when a write stalls (release item M4, ZOLANA.md 4.1). Proof: a test of `cf/test` writes one path twice on the server, and the second write fails; a web test shows that the refused copy drops its secret and writes no round 2 |
+| SOL-59 | P3 | owner | Decide on the December in-circuit EdDSA custom ring | Helius said on 18 October 2026 that in-circuit EdDSA for custom rings comes in a second release, likely in December. After the demo: read the release, test whether a FROST-Ed25519 group signature verifies in the circuit, and measure the proving key and the proving time. Public source already answers the curve and the hash (ZOLANA.md 7, answers of 18 October). Done when the owner has a written go or no-go. It could remove the approvals program and its upgrade key (SOL-45, SOL-46) and the move of the beta funds to the program address; it keeps the ring authority and the pool upgrade key. After that release, run the Zolana compute benchmark again and measure one execute again; until then, treat the 1.5x compute caps as unproven. Risks to check: a curve that does not accept a FROST-Ed25519 group key, a very large proving key that conflicts with browser proving (SOL-4), and a verifier that costs more compute. No work on this before the demo |
+
+**SOL-37: freeze and move plan.**
+
+Freeze. Keep `PIN` `c232da1b`, the bundle, the wasm and approvals version 5 through the November
+demo. Do not move to `8178be7c`, to Zolana main or to SDK 0.5.0-alpha:
+
+- `8178be7c` and main hold #428. They expect a tree of 18,608 bytes (Zolana
+  `sdk-libs/ts/src/interface/state.ts`). The live tree 0 has 40,080 bytes, so the Worker
+  `treeFees` fails.
+- 0.5.0-alpha is unreleased: npm `latest` is 0.4.0-alpha, and Helius said on 18 October 2026 that
+  Devnet runs 0.4.0-alpha.
+- Helius reverted #428 on `release/devnet-c` (`bdc639f65`, 17 October 2026). That commit is the
+  newest one that the live pool can serve. It adds only #426 (unused), #432 (no effect with a
+  fee-key payer) and #439 (custom-ring indexer). The beta needs none of them.
+- Keep the watch of PR #434 and the branch `alex/x25519-everywhere` (ZOLANA.md 6.11). They move
+  viewing keys to X25519 and owner keys to one Ed25519 secret, and the PR says that programs,
+  prover, SDKs and proving keys must move together. Ask Helius (owner) to announce each Devnet
+  pool or gateway change with a date.
+- A repin in this release overrides the rule "Do not rebuild the Solana SDK bundle in this
+  release" of docs/hackathon-release.md: it needs the owner, and docs/demo.md section 3 sets the
+  cut-off (T-10, never in the last week).
+
+Move checklist (any bundle move):
+
+- `PIN` in `solspike/build.mjs`, the bundle, `SHA256SUMS`, `wasm-sol/tests/repo_pins.rs`,
+  ZOLANA.md 3.4 and [Z2].
+- At the target commit, `TREE_ACCOUNT_SIZE` (Zolana `sdk-libs/ts/src/interface/state.ts`) equals
+  the size of the live tree 0. Otherwise the move is T2.
+- Run `test-vectors/dummy_owner_tags.json` (#432) against the dummy-tag rule of
+  `wasm-sol/src/spend.rs`.
+- All checks pass. A Devnet payment lands.
+
+Triggers, before the demo. During the demo, the "pool program" row of docs/demo.md section 6
+applies: stop the Solana part and show the recorded run.
+
+- **T0:** the pool hash changed, and the "tree 0" check still passes. The source of `programs`
+  and `program-libs` equals `c232da1b`, or differs only in a change that touches no state layout
+  and no transact interface (read the diff). Examples: a redeploy of `release/devnet-c`, or #431
+  on `release/devnet-c`. A redeploy from main is T2. Action: confirm with `git diff`. Update the
+  pool hash in `solspike/tools/demo-check.mjs` and ZOLANA.md 6.1. Simulate one transact (read
+  only): its compute stays between `CU_FLOOR_TRANSACT` 144,591 and the cap 217,000
+  (`wasm-sol/src/template.rs`, `web/sol/worker.js`).
+- **T1:** the gateway takes key paths only. Signal: demo-check "prover" FAIL (it posts to the
+  key-less `/v1/zolana/prove`) or a 404 there. Source: `cc7874855`, `d54d908c8` and `1b25b63fa` on
+  the unmerged branch `sergei/prover-tee-crate`. No commit has both the key paths and the live tree
+  layout, because that branch has #428. Choose one: (a) ask Helius for the key paths on
+  `release/devnet-c`, then follow the checklist; (b) a written SOL-15 exception for the one-line SDK
+  patch (drop the key-less return in `#keyUrl` of `client.ts`), with a change of
+  `solspike/test/build.test.mjs`; (c) map the path in `guardedFetch` of `web/sol/worker.js` from the
+  prover body (untested; it needs the key names of the gateway). Then check `guardedFetch` and the
+  error "the prover call was not seen" of `web/sol/worker.js`, `solspike/tools/cors_probe.mjs`,
+  `solspike/harness/sol-cors.mjs`, the prover check of `solspike/tools/demo-check.mjs`,
+  `solspike/test/worker.test.mjs` and ZOLANA.md 6.4.
+- **T2:** the same pool id with #428, or a new tree. Signal: "pool program" FAIL and "tree 0" FAIL
+  ("tree 0 has N bytes, not the layout of the SDK pin"), or error 7001 together with those FAILs.
+  Follow the checklist at the new commit; change `TREE_BYTES` (the offset 116 stays) and the pool
+  hash in `solspike/tools/demo-check.mjs`; measure the nullifier root window on Devnet (ZOLANA.md
+  6.10: the history of 100 roots becomes 5). A tree id other than 0 also needs
+  `web/sol/transfer.js`, `wasm-sol/src/pins.rs` and an SDK change (Zolana `tree-slot.ts`). Risk:
+  after an in-place upgrade, every transact fails, a withdrawal too, and nothing can be done
+  afterwards. Keep the Devnet balances at what the demo needs.
+- **T3:** a new pool id, or an in-place upgrade that changes the verifying keys or the viewing
+  keys (#434). demo-check cannot show it, because it reads the old pool address. The signal is
+  an announcement of Helius, error 14101 from `execute` (the pool in the call differs from the
+  pool in the approvals ELF, either way), or the stop text. Order:
+  1. Withdraw every funded group, the old group-key identity too, on the current stack, while
+     the gateway still indexes and proves the old pool. If it no longer does, do not upgrade
+     `5PHZ…` in place: deploy the new approvals program at a new id.
+  2. The owner upgrades `5PHZ…` with the new pool id (`sol-program/src/cluster.rs`) and the new
+     interface rev (`sol-program/Cargo.toml`). Rename `ConfidentialEddsa` in
+     `sol-program/src/instructions.rs` if the rev has #434. Never before step 1.
+  3. Change `wasm-sol/src/consts.rs` (and `REGISTRY_DEVNET` if it moves), the label in
+     `wasm-sol/src/frost.rs`, `repo_pins.rs`; rebuild the wasm; change `PIN`, the bundle,
+     `SHA256SUMS`, `web/sol/prepare.js`, `solspike/tools/program-chain.mjs`,
+     `solspike/tools/demo-check.mjs`, `sol-program/svm-tests/src/lib.rs` and its vectors,
+     `sol-program/build.sh`, ZOLANA.md, PRIVACY.md (the pool keys) and `web/sol/view.js` (the
+     pool keys and their date).
+  4. Before the new wasm reaches any host that holds groups, make a label-only mismatch a stale
+     `soldone` that the seat publishes again (as `web/sol/ceremony.js` does for a stale one).
+     With #434 the viewing key (33 bytes) and the address (99 bytes) change shape, so retire the
+     old groups.
+  5. Fund again with Add SOL. Measure a transact and an execute. Apply the cap rule of the repo
+     (1.5 times the largest recorded use, `wasm-sol/src/template.rs`) to the new numbers. A cap
+     change needs a wasm rebuild. Land a Devnet payment.
+
+Signal map (check names of demo-check):
+
+| Signal | Trigger |
+|---|---|
+| "pool program" FAIL, "tree 0" PASS | T0 |
+| "pool program" FAIL, "tree 0" FAIL | T2 |
+| "prover" FAIL | T1 |
+| "the prover call was not seen" (`web/sol/worker.js`) after a bundle move | T1: the new bundle posts to another path than `guardedFetch` records |
+| Error 7001 alone | A tree account that the pool cannot read: run demo-check first |
+| Error 14101 | T3: the pool id differs between the bundle and the approvals ELF |
+| Error 6013 or 6014 | A wire or SOL interface change in the approvals program |
+| "Seat N stopped the Solana part of this wallet" | T3 without step 4, or another stop: read the reason after the text |
 
 ## Zcash NU7
 
@@ -112,7 +210,7 @@ ZNS maps a name to a unified address through an on-chain registry. The spike is
 
 | Id | P | Owner | Title | Done when |
 |---|---|---|---|---|
-| ZNS-1 | P3 | owner | Decide on names, then let the web app pay to a ZNS name | The owner picks the resolver option (B, C or D in docs/zns-spike.md 2.5), says whether mainnet waits for the audit report, and says whether groups get names while ZNS control is 1-of-n (3.3). Then the web app pays to a name on testnet with that option: each approving device resolves the name itself and refuses a mismatch, a live testnet payment lands, and PRIVACY.md and README.md say who learns a looked-up name |
+| ZNS-1 | P1 | dev | Let the web app pay to a ZNS name (M10 of docs/hackathon-release.md) | The owner decided on 18 October 2026: resolver option B, testnet only, and no names for groups while ZNS control is 1-of-n (3.3). Main `447311c` has the `/zns` route, `web/zns.js` with the lookup and the check of an approver, their tests, and the PRIVACY.md and README.md texts. No page module calls `web/zns.js` yet. Done when the Send form takes a name and each approving web app runs the check (the Send form hook, after WP-Z), and a live testnet payment to a name lands (step 7). The demo name needs an Early Access code from ZcashMe: a claim without one is lost (docs/zns-spike.md 3.1) |
 
 ## Closed
 

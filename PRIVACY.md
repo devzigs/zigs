@@ -26,10 +26,10 @@ is a bug: please report it.
   a shielded transaction. The account, its contacts and its messages never reach the group
   server. The light-wallet server sees the transactions that the account fetches and sends, and
   your IP address.
-- A testnet payment to a ZNS name (web app only), such as `alice.zec`, looks the name up on the
-  device, in a copy of the whole name registry that the app Worker downloads. No server learns
-  which name you pay. The registry itself is public: anyone can see which address a name gives.
-  Read [ZNS names](#zns-names-testnet).
+- A testnet payment to a ZNS name (web app only, not finished), such as `alice.zec`, looks the
+  name up on the device, in a copy of the whole name registry that the app Worker downloads. No
+  server learns which name you pay. The registry itself is public: anyone can see which address a
+  name gives. Read [ZNS names](#zns-names-testnet).
 
 ## On chain
 
@@ -154,7 +154,28 @@ Tor Browser hides your IP address from both servers, but not this timing link. T
 link, point the app at a light-wallet server you trust (`NETWORKS` in `web/app-chain.js`,
 `ZcashNetwork` in `ios/Zigs/Chain.swift`).
 
+The link **Get testnet ZEC** opens the Valar testnet faucet (faucet.testnet.valargroup.dev) in a
+new tab. That site is not Zigs. It sees your IP address and the address that you paste, so it can
+link the two. Its public status lists each payout with a short form of the address, the
+transaction id, the amount and the time. It pays once for each IP address and once for each
+address every 24 hours.
+
+Explorer links open a site that is not Zigs, in a new tab. That site sees your IP address and the
+id that you open, and the time, so it can link them. The page sends no referrer.
+
+- **Zcash:** the link **View in explorer**, in the payment panel and on each row of the activity
+  list, opens testnet.zecblock.com (zecblock.com for a mainnet wallet) with the transaction id.
+- **Solana:** the Solana explorer (explorer.solana.com) on Devnet sees the same when you open the
+  id of a transaction or an account there. Links from the Solana tab to it come with the Solana
+  batch (S16 of [docs/hackathon-release.md](docs/hackathon-release.md)), which is not on main yet.
+  Until then, it sees an id only when you paste one into it.
+
 ## ZNS names (testnet)
+
+**Status on 18 October 2026:** main has the `/zns` route and the lookup on the device
+(`web/zns.js`), but the Send form does not take a name yet (M10 of
+[docs/hackathon-release.md](docs/hackathon-release.md)). Until then, the page does not download
+the registry. This section describes the design that M10 finishes.
 
 On testnet, the Send form of the web app accepts a ZNS name in place of an address: `alice`,
 `alice.zec` or `alice.zcash`. ZNS is the naming service of Zcash Names (zcashnames.com), which
@@ -574,8 +595,9 @@ the passkey guards the key share instead. The lock is opt-in.
 - Anyone with an invite link can write many small messages into a wallet room or a chat. The
   iPhone and Mac apps open each message document once and stop reading a conversation with more
   than 10,000 documents. The web app downloads the whole room.
-- The code is not audited. Mainnet wallets are limited to 0.5 ZEC: at that balance the app stops
-  showing the address and warns. It cannot stop someone from sending more, and payments out
+- The code is not audited. The web app of this release makes testnet wallets only. A mainnet
+  wallet made before is limited to 0.5 ZEC: at that balance the app stops showing the address and
+  warns. It cannot stop someone from sending more, and payments out
   always stay possible.
 
 ## Checks

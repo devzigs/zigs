@@ -4,7 +4,8 @@
 its *n* signers must approve each payment. Nobody ever holds the whole key, the server cannot read
 the wallet, and on chain each payment looks like a shielded payment from a standard wallet.
 
-- Web app: https://app.zigs.app (no install, no account; password protected until launch)
+- Web app: https://app.zigs.app (no install, no account). Until launch, the browser asks for a
+  user name and a password. Any user name works. Ask the Zigs team for the password.
 - iPhone and Mac apps: in [`ios/`](ios). They use the same Rust engine. Build them from source in Xcode.
 - Website: https://zigs.app
 - How it works, end to end: [PROTOCOL.md](PROTOCOL.md)
@@ -25,11 +26,13 @@ the wallet, and on chain each payment looks like a shielded payment from a stand
   the Send form with the request, and sends nothing. **Request a payment** makes the link in a
   wallet room or in a direct chat. Pasting a link in the Send form fills its rows. The web app has
   it. The iPhone and Mac apps show the link as text ([how](PROTOCOL.md#payment-requests)).
-- ZNS names (testnet, web app): the Send form accepts a name such as `alice.zec` and shows the
-  address that the name gives. The page looks the name up in a copy of the whole registry, so no
-  server learns which name you pay. Each approver in the web app looks the name up again and
-  refuses a payment whose address the name no longer gives. The iPhone and Mac apps show the
-  address only ([privacy](PRIVACY.md#zns-names-testnet)).
+- ZNS names (testnet, web app). **Not finished:** main has the `/zns` route and the name lookup
+  on the device, but the Send form does not take a name yet (M10 of
+  [docs/hackathon-release.md](docs/hackathon-release.md)). The plan: the Send form accepts a name
+  such as `alice.zec` and shows the address that the name gives. The page looks the name up in a
+  copy of the whole registry, so no server learns which name you pay. Each approver in the web app
+  looks the name up again and refuses a payment whose address the name no longer gives. The iPhone
+  and Mac apps show the address only ([privacy](PRIVACY.md#zns-names-testnet)).
 - Personal account: the web app can hold a small single-signer account that pays the fee of
   messages on chain. Add the shielded address of a contact, and write to them, also if they do not
   use Zigs. Each message is a payment of no value, and its text is the memo. Each contact gets an
@@ -51,30 +54,62 @@ the wallet, and on chain each payment looks like a shielded payment from a stand
   scan the wallet again from its birthday.
 
 Zigs uses re-randomized FROST threshold signatures ([ZIP 312](https://zips.z.cash/zip-0312)) on
-the Ironwood shielded pool. It is a **beta** and **not audited**. Testnet wallets use free test
-coins. Mainnet wallets hold real ZEC. At **0.5 ZEC** the app warns and hides the address. It cannot
-block deposits.
+the Ironwood shielded pool. It is a **beta** and **not audited**. The web app of this release runs
+on **Zcash testnet and Solana Devnet only**, with free test coins, and makes no mainnet wallets. A
+mainnet wallet made before still opens. At **0.5 ZEC** the app warns and hides its address. It
+cannot block deposits.
 
-## For judges: try it alone in five minutes
+## For judges: try it alone
 
-You can play every signer from one browser. Use a desktop browser with Zigs in one tab.
+You can play every signer from one browser. Use a desktop browser with Zigs in one tab, not a
+private window. Zigs runs on Zcash testnet and Solana Devnet only, so every coin is a free test
+coin. The runbook of a demo with three devices is in [docs/demo.md](docs/demo.md).
 
-1. Open https://app.zigs.app and click **New wallet**. Keep **Testnet**, set **Signers** to 2 and
+**Zcash testnet**
+
+1. Open https://app.zigs.app. The browser asks for a user name and a password. Type any user name
+   and the password that the Zigs team gave you.
+2. Click **New wallet**. The network is **Testnet**, the only choice. Set **Signers** to 2 and
    **Approvals needed** to 2, then click **Create wallet**. You now hold seat 1.
-2. Open **Trying Zigs alone? Play the other seats in this browser** and click **Play seat 2**.
+3. Open **Trying Zigs alone? Play the other seats in this browser** and click **Play seat 2**.
    The two seats create the key together. Within half a minute the wallet opens, and both seats
    show **Address checked**.
-3. Click **Receive**, then **Get testnet ZEC**, and send some test ZEC to the address. The
-   balance appears as **Incoming**, then as **Available** after 3 confirmations (a few
-   minutes).
-4. Click **Send**, paste any testnet unified address (`utest1…`), enter an amount, and click
+4. Click **Receive** and copy the address. Then click **Get testnet ZEC**: it opens the Valar
+   faucet, which pays 0.125 TAZ to a `utest1…` address, once for each IP address and once for
+   each address every 24 hours. On a shared network, such as a venue or an office, only the first
+   person gets coins. The faucet lists each payout in public, with a short form of the address and
+   the transaction id. Paste the address there. The balance appears as **Incoming**, then as
+   **Available** after 3 confirmations (about 75 s).
+5. Click **Send**, paste any testnet unified address (`utest1…`), enter an amount, and click
    **Propose payment**. For a payroll, click **Add recipient** or **Paste a list**: up to 20
    recipients go into one transaction with one approval round. A payment request (`zcash:…`) pasted
    in the recipient field fills the rows.
-5. In the payment panel, click **Approve as seat 1** and **Approve as seat 2**. Read **What this
+6. In the payment panel, click **Approve as seat 1** and **Approve as seat 2**. Read **What this
    payment does**: your browser decoded it from the transaction itself.
-6. Click **Build proof** (about one minute in the browser), then **Send to network**, then
+7. Click **Build proof** (about one minute in the browser), then **Send to network**, then
    **View in explorer**.
+
+**Solana Devnet** (beta, web app only)
+
+8. Open the **Solana** tab of the wallet and click **Add Solana**. The two seats of this browser
+   run a second key ceremony. Wait until the tab shows **Seat 1: key ready** and
+   **Seat 2: key ready**.
+9. Under **Fund the fee address**, each seat shows **Your fee address**. Send at least 0.03 SOL of
+   Devnet SOL to each of them (**Get Devnet SOL** opens the Solana faucet), then click **Check
+   balance**. Fund every seat: a seat with an empty fee address can take the execute and fail,
+   and the payment then waits.
+10. Under **Add SOL**, keep 0.02 and click **Add SOL**. Then click **Sync Solana**. The **Private
+    balance** shows the SOL. The first sync can take about 25 s.
+11. Under **Pay from the group**, choose one:
+    - **Send privately** pays the **Shielded address** of another group. Make a second wallet in
+      the same way, and copy the address from its Solana tab. The chain hides the amount.
+    - **Withdraw** pays a public Devnet address, for example the fee address of seat 2 (click
+      its **Copy** button). The chain shows the recipient and the amount.
+12. In the proposal, click **Approve as seat 1** and **Approve as seat 2**. If the screen says
+    "Zigs is reading your wallet to check this payment", wait until it shows the payment, then
+    click. After 2 approvals, a seat with a funded fee address executes the payment by itself. The
+    status goes from **Approved, executing** to **Executed**, with the transaction id. Click
+    **Sync Solana** to see the new balance.
 
 To see signer changes, open **Signers**, then **Change signers**. To see the privacy model, read
 [PRIVACY.md](PRIVACY.md).
@@ -84,7 +119,7 @@ To see signer changes, open **Signers**, then **Change signers**. To see the pri
 | Criterion | Evidence |
 |---|---|
 | **Privacy** | On chain, the transaction shape matches the standard wallet library: same builder, padding, standard fee and anchor depth. A group payment expires after one day instead of 40 blocks, because its approvals take hours, so the expiry marks it, and so does a priority fee ([comparison](PRIVACY.md#on-chain)). The server stores only encrypted values, padded so that even their length hides amounts. On the device, key shares can be locked with a passkey (web) or Face ID (iPhone) ([how](PRIVACY.md#lock-with-a-passkey-or-face-id)). Key share backups are encrypted with a passphrase (Argon2id and XChaCha20-Poly1305) and open on the web, iPhone and Mac ([how](PRIVACY.md#key-share-backups)). The page can connect only to its own host (the group server and the testnet light-wallet relay) and two ChainSafe light-wallet servers (Content-Security-Policy). For testnet wallets, the Solana Worker of the page also connects to the Helius Devnet host ([how](PRIVACY.md#solana-beta-helius-devnet)). It is prepared for Tor Browser, but not yet tested end to end ([how](PRIVACY.md#use-zigs-over-tor)). The Zigs server code keeps no logs; its host, Cloudflare, can see connection data. Every remaining leak is listed in [PRIVACY.md](PRIVACY.md). |
-| **Usefulness** | Designed for team treasuries, DAOs and families. Usable today on testnet, and on mainnet with a warning at 0.5 ZEC: web, iPhone and Mac; invite links and QR codes; batch payments for payroll and grants (up to 20 recipients, one approval round, pasted from a spreadsheet); signer changes; encrypted key share backups. |
+| **Usefulness** | Designed for team treasuries, DAOs and families. Usable today on Zcash testnet (web, iPhone and Mac) and Solana Devnet (web): invite links and QR codes; batch payments for payroll and grants (up to 20 recipients, one approval round, pasted from a spreadsheet); signer changes; encrypted key share backups. |
 | **Execution** | The live app works end to end. Seventeen testnet transactions made by the apps are [listed below](#proof-on-testnet). The engine has 127 tests, and a command-line suite runs adversarial cases. |
 | **Originality** | An end-user app for re-randomized FROST: no command line, no trusted dealer, and no server that can read the wallet. Each device decodes the PCZT and checks every output before it approves, and binds its approval to the transaction's sighash. Signer changes, batch payments and native iPhone and Mac apps are included. Built during the Zecathon window: the first commit is from October 10, 2026. |
 
@@ -285,8 +320,8 @@ with 2-of-2 wallets and one 2-of-3 wallet:
 | [`0e2fc103…da7b`](https://testnet.zecblock.com/tx/0e2fc103d8be65dd12070f683b317a26a6c3f28638b0a25ea2b3d589c824da7b) | 4,498,021 | **Payment request:** a signer posts a ZIP 321 request in the wallet room, the other signer proposes it with **Propose this**, and both approve |
 | [`646e6edd…819e`](https://testnet.zecblock.com/tx/646e6edd0bc003b796f54f2fec4f748a5b65a15290d30d31eb73b4fe79d8819e) | 4,498,648 | **On-chain message:** a personal account sends a 3-part message (3 zero-value outputs with memos), and the recipient's account joins it under the right contact |
 
-A 2-of-2 mainnet wallet was also created and synced to the mainnet tip in the web app and on the
-iPhone.
+Before this release turned mainnet off in the web app, a 2-of-2 mainnet wallet was created and
+synced to the mainnet tip in the web app and on the iPhone.
 
 ## Repository layout
 
@@ -305,7 +340,7 @@ iPhone.
 | [`web/sol/`](web/sol) | Solana beta in the page: ceremony, signing sessions, backup, the Worker that talks to Helius, the Solana wasm, and the vendored Zolana SDK bundle (third-party code, hash pinned in `SHA256SUMS`) |
 | [`infra/lwd/`](infra/lwd) | Our testnet light-wallet node: Zakura, lightwalletd and Envoy with a keyed tunnel listener and a tailnet listener, and the Cloudflare tunnel |
 | [`wasm-sol/`](wasm-sol) | Solana engine in Rust: message checker, FROST-Ed25519 ceremony and signing, key roles. It has its own lockfile and builds to `web/sol/wasm/` |
-| [`sol-program/`](sol-program) | The Solana program that owns a group's funds at an address of the group key and settles an approved payment through the pool (ZOLANA.md 7.2). `build.sh` rebuilds it and checks the hash, `build.sh test` runs its tests. Not used by the beta yet |
+| [`sol-program/`](sol-program) | The Solana program that owns a group's funds at an address of the group key and settles an approved payment through the pool (ZOLANA.md 7.2). `build.sh` rebuilds it and checks the hash, `build.sh test` runs its tests. The beta uses version 5 of it on Devnet (SOL-36) |
 | [`solspike/`](solspike) | Checks of the Solana beta: the Zcash baseline gate, the headless Chrome harness, the mock run and the bundle build. See [`solspike/README.md`](solspike/README.md) |
 | [`ZOLANA.md`](ZOLANA.md), [`TICKETS.md`](TICKETS.md) | The Solana design, spike results and risks. The open work |
 | [`ios/Zigs/`](ios/Zigs) | SwiftUI app for iPhone and Mac |
@@ -402,10 +437,12 @@ tab shows for version 3 wallets on testnet only. Build the Solana wasm with
 To try the beta by hand, make a testnet wallet, add the Solana part, and open the Solana tab. Each
 seat that this browser holds shows **Your fee address**. Send Devnet SOL to it (the **Get Devnet
 SOL** link opens the faucet), then press **Check balance**. The fee address pays the fees and the
-rents of the proposals of its seat, so fund the seat that proposes. Then create the nonce account,
-register the group, and use **Add SOL** to put SOL from the fee address of the seat into the
-shielded balance of the group: only that seat signs it, and the amount and the sender are public.
-A private payment needs the approval of `t` seats, and the proposing seat pays its fees.
+rents of the proposals of its seat, and the fee of each payment that its seat executes, so fund
+every seat. Then use **Add SOL** to put SOL from the fee address of the seat into the shielded
+balance of the group, at the program address of the group: only that seat signs it, and the amount
+and the sender are public. The group is never registered, and a new group needs no nonce account
+(ZOLANA.md 4.2 and 7.2). **Send privately** and **Withdraw** make a proposal. It needs the approval
+of `t` seats, and then a seat with a funded fee address executes it.
 
 Open http://localhost:8787. To act as a second person on the same computer, also open
 http://127.0.0.1:8787: it is a separate origin, so it has separate storage. Deploy production
@@ -481,12 +518,13 @@ folder path.
 
 ## Tests
 
-- `sh scripts/test-fast.sh`: the fast suite, about 5 s, for every change: the 16 web tests that end
-  in seconds (the pure modules, the engine calls through the wasm build, the short Solana tests and
-  the link test). The long page tests and the browser and live checks run before a merge, with
-  `bash solspike/baseline.sh check`. The page tests run on a test clock (`web/test/page.mjs`) that
-  leaves out a stall such as a sleep of the computer, so a lifetime that the page measures with
-  `Date.now()` cannot run out in the middle of a test. Timers still count a stall.
+- `sh scripts/test-fast.sh`: the fast suite, about 5 s, for every change: the web tests that end
+  in seconds, listed in `FAST` of the script (the pure modules, the engine calls through the wasm
+  build, the short Solana tests and the link test). The long page tests and the browser and live
+  checks run before a merge, with `bash solspike/baseline.sh check`. The page tests run on a test
+  clock (`web/test/page.mjs`) that leaves out a stall such as a sleep of the computer, so a
+  lifetime that the page measures with `Date.now()` cannot run out in the middle of a test. Timers
+  still count a stall.
 - `cargo test --release` in `wasm/` (127 tests, and 1 ignored test for ZEC-1 in TICKETS.md):
   - Signing: full 2-of-3 flows for Ironwood (paying 4 recipients in one transaction) and Orchard.
   - Expiry and fees: a group payment expires after one day of blocks (75 or 25 seconds each), at
@@ -540,9 +578,10 @@ folder path.
   second command writes the cases that the test `wasm_native_diff` replays, and that test fails
   without them. Nine tests read the Zolana repo and are ignored: run them with
   `ZOLANA_REPO=<checkout at commit c232da1b> cargo test --release --test repo_pins -- --ignored`.
-- `node web/test/sol-config.mjs` and its nine siblings `sol-docs`, `sol-ceremony`, `sol-app`,
-  `sol-wasm`, `sol-sessions`, `sol-limits`, `sol-pay`, `sol-transfer` and `sol-fee` (the files
-  `sol-rig`, `sol-setup`, `sol-chain` and `sol-vector` are helpers: do not run them). They test the
+- `node web/test/sol-config.mjs` and its ten siblings `sol-docs`, `sol-ceremony`, `sol-app`,
+  `sol-wasm`, `sol-sessions`, `sol-limits`, `sol-pay`, `sol-transfer`, `sol-fee` and `sol-rent`
+  (the files `sol-rig`, `sol-setup`, `sol-chain`, `sol-vector` and `sol-fixture` are helpers: do
+  not run them). They test the
   Solana part of the page on the real page modules: the ceremony, the fee key of each seat, signing
   sessions, payments, Add SOL, backup and restore, the stop that holds everywhere, the gate (a
   mainnet wallet, a wallet before version 3, a stored network that changed, and a start document
@@ -685,6 +724,20 @@ folder path.
   `web/zns.js`: the names that the Send form accepts (no t-address or TEX form), a lookup, an
   unknown name, a registry too far behind the tip of the wallet, a name that moved, and the
   refusal of an approving device whose copy gives another address.
+- `node web/test/mainnet-off.mjs`: mainnet is off for this release. The network picker of a new
+  wallet and of the personal account shows Testnet only and no tick, a chat reads testnet
+  requests only, the page texts name Zcash testnet and Solana Devnet, and the testnet faucet is
+  the Valar faucet.
+- `node web/test/chain-fallback.mjs`: the light-wallet fallback with a fake engine. A server that
+  did not answer goes to the end of the list for 5 minutes, the first try waits 3 s, a sync that
+  gets no blocks for 60 s stops and frees the busy flag, and a tab that comes back syncs at once.
+- `node web/test/shim-status.mjs`: the link state of `web/shim.js` with a fake WebSocket and a
+  virtual clock: connecting, open, retrying with the HTTP status of a refusal, the wallet list
+  that waits for each group, the error callback, the send timeout, and the text of the status
+  line.
+- `node web/test/demo-check.mjs`: `solspike/demo-check.sh`, the read-only preflight of the demo
+  days, against local stubs. Each fault that a stub plays gives FAIL, and the script sends only
+  reads and prints no secret.
 - `bash tests/e2e.sh`: the command-line ceremony in separate processes, with attacks: wallet
   substitution, fewer than t signers, tampered randomizer and sighash, nonce reuse, wrong share
   attribution, foreign notes.
@@ -698,7 +751,8 @@ folder path.
 
 ## Known limits
 
-- **Not audited.** At 0.5 ZEC in a mainnet wallet, the app hides the address and warns. It cannot
+- **Not audited, and test networks only.** The web app of this release makes Zcash testnet wallets
+  only. In a mainnet wallet made before, at 0.5 ZEC the app hides the address and warns. It cannot
   stop someone from sending more.
 - **ZIP 2005 is Proposed, and every signer holds `qsk`.** New wallets are built to it so that funds
   can be recovered if quantum computers break today's keys. A quantum attacker who has `qsk` may

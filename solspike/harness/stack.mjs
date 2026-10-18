@@ -40,7 +40,9 @@ async function stopAll(rig, notes, server, before) {
   const left = newInGroup(before, { roots });
   notes.leftProcesses = left.length;
   if (left.length) notes.left = left.map((p) => `${p.pid} ${p.comm}`);
-  notes.portsFree = (await portOpen(PORT)) && (!rig || (await portOpen(rig.chrome.port)));
+  // A run with no dev server does not own its port: another track may serve there.
+  notes.portsFree = (!server || (await portOpen(PORT)))
+    && (!rig || (await portOpen(rig.chrome.port)));
 }
 
 const runFailed = (n) =>
