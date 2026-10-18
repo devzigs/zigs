@@ -1789,9 +1789,10 @@ const sealed = (gid, rel, seat, fields, key, names = ["by", "sig"]) =>
       t.noteSessions();
       release();
       await assert.rejects(waiting, /signing of this payment started before/);
-      t.setZ({ ...fakeZ, latestHeight: async () => 4500001, normalizeAddress: (a) => a,
+      const z8 = { ...fakeZ, latestHeight: async () => 4500001, normalizeAddress: (a) => a,
         inspect: (p) => { if (!decodes[p]) throw new Error("unreadable"); return S(decodes[p]); },
-        signCommit: () => S({ nonces: ["n"], commitments: ["c"] }) });
+        signCommit: () => S({ nonces: ["n"], commitments: ["c"] }) };
+      t.setZ(z8);
 
       // Without the kept PCZT, the notes of "Propose again" come from the signed part when its
       // sighash is the approved one.
@@ -2590,13 +2591,49 @@ const sealed = (gid, rel, seat, fields, key, names = ["by", "sig"]) =>
       await swapped;
       assert.deepEqual(stallOf(), [null, "https://lwd.test"], "the new object of a sync stays");
       t.chain.cw = engine;
+      // The next server answers when the test lets it: the sync that starts after the timeout
+      // waits for it.
+      let openNext;
+      const nextUp = new Promise((ok) => { openNext = ok; });
+      const made = [];
+      class NextWallet {
+        constructor(ufvk, birthday, url) { made.push(url); }
+        static restore() { throw new Error("no saved state"); }
+        async sync() { return S({ height: 4500002, tip: 4500002, spendable: 1e8, pending: 0 }); }
+        received() { return "[]"; }
+        sent() { return "[]"; }
+        snapshot() { return "{}"; }
+        free() {}
+      }
+      const tipOf = async (url) => { if (url.includes("next")) await nextUp; return 4500001; };
+      t.setZ({ ...z8, latestHeight: tipOf, ChainWallet: NextWallet });
+      t.chain.net = { servers: ["https://lwd.test", "https://next.test"] };
       const stuck = propose9("stuck");
       assert.equal(t.ui.proposing, true, "Propose is off while the engine works");
       const stuckSaid = await stuck;
       globalThis.setTimeout = realTimeout;
-      assert.equal(stuckSaid, "The proposal got no answer in 60 s, so it stopped. Try again.");
+      const WHEN_SYNCED = "Propose again when the wallet is up to date.";
+      assert.equal(stuckSaid, "The proposal got no answer in 60 s, so it stopped. " + WHEN_SYNCED);
       assert.equal(t.ui.proposing, false, "Propose works again");
       assert.deepEqual(stallOf(), [engine, null], "the object is stalled");
+      // Until a sync connects to the next server, a new proposal waits: the old wallet object
+      // would ask the server that stopped answering.
+      const RECONNECT = "The light-wallet server stopped answering. " + WHEN_SYNCED;
+      assert.equal(t.sendBlocker(), RECONNECT);
+      assert.equal(await propose9("again"), RECONNECT, "no proposal on the silent server");
+      openNext();
+      await quiet(async () => {
+        await waitFor("the sync on the next server", () => t.chain.url === "https://next.test");
+        await sleep(300);
+      });
+      assert.deepEqual([made, t.sendBlocker() === RECONNECT], [["https://next.test"], false],
+        "a new wallet object on the next server, and Propose is free of the stall");
+      // A sync that cannot make a new wallet object keeps the stall, and Propose stays off.
+      t.setZ(z8);   // its ChainWallet throws
+      Object.assign(t.chain, { stalled: t.chain.cw, url: null });
+      await quiet(() => t.runSync(t.chain));
+      assert.equal(t.sendBlocker(), RECONNECT, "no new object: the stall stays");
+      Object.assign(t.chain, { stalled: null, url: "https://next.test", error: null });
       t.state.sessions = sessions8;
       for (const [i, marks] of marks8) await t.putSec(t.state.gid, i, { marks });
       const { o8c: _o8c, ...marksMe } = t.sec(t.state.gid, me).marks;

@@ -110,9 +110,11 @@ async function connect(c) {
   const url = await pickServer(c.net);
   if (c.cw && c.url === url) return;
   const next = await restored(c, url);
+  // The new object first: when it cannot be made, the chain keeps its old one, stalled or not.
+  const cw = next || new Z.ChainWallet(c.ufvk, c.birthday, url);
   if (freeable(c)) c.cw.free();
   c.stalled = null;
-  c.cw = next || new Z.ChainWallet(c.ufvk, c.birthday, url);
+  c.cw = cw;
   c.url = url;
   log("using " + new URL(url).host + (next ? ", continuing from saved state" : ""));
   if (next && !c.bal) {
