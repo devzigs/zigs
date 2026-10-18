@@ -25,7 +25,8 @@ export const NAMES = [
   "groupView", "heldApprovals", "idb", "inbox", "inFlight", "isOpen", "layers", "leaveBox",
   "localSeats",
   "lockWithPasskey",
-  "loggedIgnored", "mainView", "memoBody", "messageWhy", "moveState", "mySeatSecrets",
+  "loggedIgnored", "mainView", "memoBody", "menuKey", "menuOutside", "messageWhy", "moveState",
+  "mySeatSecrets",
   "named", "noteSessions",
   "needsMyApproval", "needsWork", "netConfirmed", "newSpend", "nextAction", "openContact",
   "openContactDialog",
@@ -43,22 +44,21 @@ export const NAMES = [
   "sec", "secrets", "sendBlocker", "sendDialog", "sendOnChain", "sentStateOf", "sessionLayer",
   "setAcct",
   "setChain", "setDb", "setDownloads", "setGkeys", "setIdb", "setIdbMs", "setLocked", "setMe",
-  "setMemoReading", "setPersonal", "setSecrets", "setTabBar", "settleRestore", "setVault", "setZ",
+  "setMemoReading", "setPersonal", "setSecrets", "settleRestore", "setVault", "setZ",
   "showBanner", "signedDoc", "signedMode", "signing", "signPins", "sigPart", "sol", "solError",
   "solLoad", "solLoading", "solOn", "solTab", "staleRestoreNote", "startAccount", "startUp",
   "state", "statusChip",
-  "submitMessage", "submitRequest", "syncAgain", "tabBar",
+  "sectionNav", "skipToPage", "submitMessage", "submitRequest", "syncAgain",
   "takeDeviceAccount", "takeFromTab", "takeSeat",
   "takeStored",
   "toApprove", "toWatch",
   "txDetails", "typingMessage", "ui", "unboxFrom", "undoRestore", "unlockVault", "verdict",
-  "walletView",
+  "walletSections", "walletView",
   "wantFocus", "watched", "writer",
 ];
 
-// The tests assign these four names: each goes to the setter of its module.
-const SETTERS = { personal: "setPersonal", secrets: "setSecrets", gkeys: "setGkeys",
-  tabBar: "setTabBar" };
+// The tests assign these three names: each goes to the setter of its module.
+const SETTERS = { personal: "setPersonal", secrets: "setSecrets", gkeys: "setGkeys" };
 
 // The page measures some lifetimes with Date.now(): a nonce proposal lives 120 s (BLOCKHASH_MS,
 // web/sol/approve.js). A computer that sleeps during a test run made such a proposal expire at

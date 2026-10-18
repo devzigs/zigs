@@ -19,7 +19,9 @@ import { newWallet, planSolana, SOL_DISCLOSURE, solPending, solServed } from "./
 import { personal } from "./app-account.js";
 import { restore } from "./app-backups.js";
 import { contactItem, contactsCard, openContactDialog, personalCard } from "./app-account-view.js";
-import { once, render } from "./app-loop.js";
+import { focusAfter, once, render } from "./app-loop.js";
+import { currentSection, walletSections, walletShown } from "./app-wallet.js";
+import { icon } from "./app-icons.js";
 
 /**
  * Why a button is off (S1): `attrs` go on the button, `note` goes next to it. `more` has the
@@ -40,6 +42,7 @@ export function renderSide() {
       el("button", { class: "icon-btn", type: "button", title: "New wallet", "aria-label": "New wallet", onclick: newWallet }, "+")),
     ...(state.groups.length ? state.groups.map((g) => guard(sideItem, g))
       : [el("p", { class: "side-empty" }, sideEmpty())]),
+    ...(walletShown() ? sectionNav(walletSections()) : []),
     el("div", { class: "side-head" }, el("span", { class: "label" }, "Chats"),
       el("button", { class: "icon-btn", type: "button", title: "New chat", "aria-label": "New chat",
       onclick: newChat }, "+")),
@@ -48,7 +51,57 @@ export function renderSide() {
       el("button", { class: "icon-btn", type: "button", title: "Add contact",
         "aria-label": "Add contact", onclick: openContactDialog }, "+")),
     ...personal.contacts.map((c) => guard(contactItem, c))] : []));
+  // Any pick in the list closes the phone menu; the button's own action runs first.
+  nav.onclick = (ev) => { if (ev.target.closest("button")) ui.menu = false; };
+  document.querySelector(".side").classList.toggle("menu-open", !!ui.menu);
+  document.getElementById("wallet-menu").setAttribute("aria-expanded", ui.menu ? "true" : "false");
 }
+
+const SECTION_ICONS = {
+  overview: "home", activity: "activity", messages: "chat", members: "devices",
+  details: "settings", solana: "sol",
+};
+
+/** The side list of the wallet sections ([id, label, count] each); a pick focuses the section. */
+export function sectionNav(sections) {
+  const [now] = currentSection(sections);
+  const item = ([id, label, count]) => el("button", {
+    class: "side-item" + (id === now ? " active" : ""), type: "button", id: "tab-" + id,
+    "data-key": "tab-" + id, "aria-current": id === now ? "page" : null,
+    onclick: () => { ui.tab = id; focusAfter("panel-" + id, true); render(); },
+  }, icon(SECTION_ICONS[id]), el("span", { class: "side-name" }, label),
+  el("span", { class: "side-tail" }, count));
+  return [el("div", { class: "side-head" }, el("span", { class: "label" }, "This wallet")),
+    ...sections.map(item)];
+}
+
+// The Menu button of a phone opens the side list over the page. Escape or a click outside the
+// list closes it.
+function closeMenu(refocus) {
+  ui.menu = false;
+  if (refocus) focusAfter("menu", true);
+  render();
+}
+/** Escape closes the open Menu and gives the focus back to the Menu button. */
+export function menuKey(ev) {
+  if (ev.key === "Escape" && ui.menu) closeMenu(true);
+}
+/** A click outside the side list closes the open Menu. */
+export function menuOutside(ev) {
+  if (ui.menu && !ev.target.closest?.(".side")) closeMenu(false);
+}
+/** The skip link moves the focus to the page. It changes no fragment: that names a wallet. */
+export function skipToPage(ev) {
+  ev.preventDefault();
+  document.getElementById("app").focus();
+}
+document.getElementById("wallet-menu")?.addEventListener("click", () => {
+  ui.menu = !ui.menu;
+  render();
+});
+document.addEventListener("keydown", menuKey);
+document.addEventListener("click", menuOutside);
+document.querySelector(".skip-link")?.addEventListener("click", skipToPage);
 
 const newChat = () => { ui.newChat = true; render(); };
 
@@ -75,7 +128,8 @@ function sideItem(g) {
   const unread = unreadChip(u);
   return el("button", {
     class: "side-item" + (here ? " active" : ""), type: "button",
-    "aria-current": here ? "page" : null, "data-key": "wallet-" + g.id,
+    // With its sections in the list, the section is the page and the wallet the current item.
+    "aria-current": here ? (walletShown() ? "true" : "page") : null, "data-key": "wallet-" + g.id,
     onclick: () => { ui.tab = "overview"; openGroup(g.id); },
   }, el("span", { class: "av" }, initials(g.name)),
   el("span", { class: "side-name" }, g.name), el("span", { class: "side-tail" }, unread, tail));

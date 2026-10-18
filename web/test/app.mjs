@@ -4068,9 +4068,10 @@ async function runAcctSync() {
   await t.runSync(t.acct);
 }
 
-// Three paths of the page that no check above runs: a good action clears a bad banner, an arrow
-// key moves the tab, and Leave chat asks first. Each one asks for the focus of a control, which
-// the next redraw (120 ms later) takes. A recorder stands in for the page.
+// Paths of the page that no check above runs: a good action clears a bad banner, a pick in the
+// side list shows a wallet section, the phone Menu closes, the skip link moves the focus, and
+// Leave chat asks first. Each one asks for the focus of a control, which the next redraw (120 ms
+// later) takes. A recorder stands in for the page.
 {
   const realDocument = globalThis.document;
   class Rec extends Node {
@@ -4083,14 +4084,15 @@ async function runAcctSync() {
     append(...x) { this.kids.push(...x); }
   }
   const banner = new Rec("div"), bannerText = new Rec("span");
+  const page = { focused: false, focus() { this.focused = true; } };
   globalThis.document = {
     activeElement: { dataset: { key: "send-ok" } },
-    getElementById: (id) => ({ banner, "banner-text": bannerText })[id] ?? null,
-    createElement: (tag) => new Rec(tag), createTextNode: (text) => ({ text }),
+    getElementById: (id) => ({ banner, "banner-text": bannerText, app: page })[id] ?? null,
+    createElement: (tag) => new Rec(tag), createElementNS: (ns, tag) => new Rec(tag),
+    createTextNode: (text) => ({ text }),
   };
   const ev = { preventDefault() {}, currentTarget: null };
-  const key = (k) => ({ key: k, preventDefault() {} });
-  const { tab, leave } = t.ui;
+  const { tab, leave, menu } = t.ui;
   try {
     t.showBanner("bad", "an earlier error");
     assert.equal(banner.hidden, false);
@@ -4104,17 +4106,32 @@ async function runAcctSync() {
     await t.act(async () => { throw new Error("no"); })(ev);
     assert.deepEqual(t.banner, { kind: "bad", text: "no" }, "a failed action shows its error");
 
-    const tabs = [["a", "A"], ["b", "B"], ["c", "C"]];
-    t.ui.tab = "a";
-    t.tabBar(tabs).on.keydown(key("ArrowRight"));
-    assert.equal(t.ui.tab, "b", "the right arrow moves to the next tab");
-    assert.deepEqual(t.wantFocus, { key: "tab-b", force: true }, "and the focus goes with it");
-    t.tabBar(tabs).on.keydown(key("End"));
-    assert.equal(t.ui.tab, "c");
-    t.tabBar(tabs).on.keydown(key("ArrowRight"));
-    assert.equal(t.ui.tab, "a", "the right arrow wraps around");
-    t.tabBar(tabs).on.keydown(key("x"));
-    assert.equal(t.ui.tab, "a", "another key changes nothing");
+    const sections = [["overview", "Overview"], ["activity", "Activity"], ["members", "Signers"]];
+    const item = (id) => t.sectionNav(sections).find((n) => n.attrs.id === "tab-" + id);
+    t.ui.tab = "solana";
+    assert.equal(item("overview").attrs["aria-current"], "page",
+      "a section that the wallet lacks shows Overview");
+    assert.equal(t.ui.tab, "overview");
+    assert.equal(item("members").attrs["aria-current"], undefined, "only one section is current");
+    item("members").on.click();
+    assert.equal(t.ui.tab, "members", "a pick shows the section");
+    assert.deepEqual(t.wantFocus, { key: "panel-members", force: true },
+      "and the focus goes to the section");
+
+    t.ui.menu = true;
+    t.menuKey({ key: "x" });
+    assert.equal(t.ui.menu, true, "another key keeps the Menu open");
+    t.menuKey({ key: "Escape" });
+    assert.equal(t.ui.menu, false, "Escape closes the Menu");
+    assert.deepEqual(t.wantFocus, { key: "menu", force: true }, "and the focus goes back to Menu");
+    t.ui.menu = true;
+    t.menuOutside({ target: { closest: (sel) => (sel === ".side" ? {} : null) } });
+    assert.equal(t.ui.menu, true, "a click in the side list keeps it open");
+    t.menuOutside({ target: { closest: () => null } });
+    assert.equal(t.ui.menu, false, "a click outside the side list closes it");
+    let stopped = false;
+    t.skipToPage({ preventDefault: () => { stopped = true; } });
+    assert.ok(stopped && page.focused, "the skip link focuses the page and changes no fragment");
 
     t.ui.leave = false;
     const ask = t.leaveBox("chat-id").kids[0];
@@ -4124,7 +4141,7 @@ async function runAcctSync() {
     assert.deepEqual(t.wantFocus, { key: "leave-no", force: true }, "and the focus goes to Cancel");
   } finally {
     globalThis.document = realDocument;
-    Object.assign(t.ui, { tab, leave });
+    Object.assign(t.ui, { tab, leave, menu });
   }
   await sleep(200);
 }

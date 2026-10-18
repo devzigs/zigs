@@ -130,7 +130,8 @@ function focusSnapshot(root) {
   return snap;
 }
 
-// `wantFocus.force` wins over the old focus (arrow keys in tabs, the opener of a closed layer).
+// `wantFocus.force` wins over the old focus (a pick in the side list, the opener of a closed
+// layer).
 function restoreFocus(root, snap) {
   const want = wantFocus; wantFocus = null;
   const key = want && (want.force || !snap) ? want.key : snap && snap.key;
@@ -232,8 +233,7 @@ function saveFormState(app) {
   }
   const open = new Set([...app.querySelectorAll("details[open] > summary")].map((x) => x.textContent));
   const scroll = app.querySelector(".drawer-body")?.scrollTop || 0;
-  const tabs = app.querySelector(".tabs")?.scrollLeft || 0;
-  return { values, open, logs: saveLogs(app), scroll, tabs };
+  return { values, open, logs: saveLogs(app), scroll };
 }
 
 // A message log that was at its end stays at its end; otherwise it keeps its place.
@@ -259,9 +259,8 @@ function restoreFormState(app, form) {
 }
 
 function restoreScroll(app, form) {
-  const body = app.querySelector(".drawer-body"), tabs = app.querySelector(".tabs");
+  const body = app.querySelector(".drawer-body");
   if (body) body.scrollTop = form.scroll;
-  if (tabs) tabs.scrollLeft = form.tabs;
   for (const l of app.querySelectorAll(".chat-log")) {
     l.scrollTop = form.logs[l.id] ?? l.scrollHeight;
   }

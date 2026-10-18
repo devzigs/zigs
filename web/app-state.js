@@ -41,7 +41,7 @@ export function log(msg) { state.log.unshift(new Date().toLocaleTimeString() + "
 export const ui = {
   forget: false, tab: "overview", send: false, pay: null, payKey: 0, listError: "", after: null,
   create: false, receive: false, move: false, net: "testnet", ack: false, notify: false,
-  newChat: false, leave: false, backup: null, restore: null,
+  newChat: false, leave: false, backup: null, restore: null, menu: false,
   request: null, note: "", priority: false, sendFor: null, contactAdd: false,
   personal: { net: "testnet", ack: false, fund: "0.003", drop: false },
 };

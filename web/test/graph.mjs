@@ -37,7 +37,7 @@ const read = (f) => fs.readFileSync(new URL(f, web), "utf8");
 const parse = (f) => acorn.parse(read(f), { ecmaVersion: "latest", sourceType: "module" });
 const PAGE = /^app-[\w-]+\.js$/;
 const SEAMS = ["setZ", "setDb", "setMe", "setDownloads", "setChain", "setAcct", "setPersonal",
-  "setVault", "setLocked", "setSecrets", "setGkeys", "setIdb", "setIdbMs", "setTabBar"];
+  "setVault", "setLocked", "setSecrets", "setGkeys", "setIdb", "setIdbMs"];
 const problems = [];
 
 const list = [...read("app.js").matchAll(/^import "\.\/([\w-]+\.js)";$/gm)].map((m) => m[1]);

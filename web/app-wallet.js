@@ -1,4 +1,4 @@
-// The wallet page: tabs, overview, activity, signers and details.
+// The wallet page: its sections (overview, activity, messages, signers, details, Solana).
 import { fmtInt, seatBackedUp, usesV2 } from "./util.js";
 import { IGNORED_NOTE } from "./signed.js";
 import { ready, state, ui } from "./app-state.js";
@@ -22,7 +22,7 @@ import { cancelMove, ended, proposeMove, sendBlocker } from "./app-payments.js";
 import { messagesCard } from "./app-thread.js";
 import { openBackup, staleRestoreNote } from "./app-backups.js";
 import { loadingView } from "./app-shell.js";
-import { focusAfter, render } from "./app-loop.js";
+import { render } from "./app-loop.js";
 import { setupView, solSetupCard, solUnfinished } from "./app-setup.js";
 import { themeChoice } from "./app-theme.js";
 import { solBackup, solOn, solPending, solTab, solUnsaved } from "./app-sol.js";
@@ -51,6 +51,10 @@ export function groupView() {
   return ready ? walletView(head, why) : el("div", { class: "page" }, head, setupView());
 }
 
+/** True when groupView shows the formed wallet: its sections then appear in the side menu. */
+export const walletShown = () => !!state.g && !state.g.unreadable && !!groupVersion()
+  && !(signedMode(state.gid) && signing === false) && walletReady();
+
 // A note for any wallet version: the store shows another network than the first this device saw.
 const networkNote = () => state.g.networkMoved ? el("div", { class: "callout bad", role: "alert" },
   "The store shows another network than the first this browser saw. Zigs keeps the first. "
@@ -77,31 +81,43 @@ function signedNotes() {
 export const walletReady = () => !!(state.wallet && state.wallet.birthday)
   && rejectedSeats().length === 0 && !keysDiffer();
 
+/**
+ * The sections of the open wallet: [id, label, count] each. The side menu lists them; the Solana
+ * section exists only while the Solana part is on.
+ */
+export function walletSections() {
+  const sections = [
+    ["overview", "Overview"],
+    ["activity", "Activity", countBadge(toApprove(state.gid).length, "to approve", "attn")],
+    ["messages", "Messages", countBadge(unreadIn(state.gid), "unread", "note")],
+    ["members", "Signers"], ["details", "Details"],
+  ];
+  if (solOn()) sections.push(["solana", "Solana", countBadge(solPending(), "to approve", "attn")]);
+  return sections;
+}
+
+/** The section that the page shows: ui.tab when the wallet has it, else Overview. */
+export function currentSection(sections) {
+  if (!sections.some(([id]) => id === ui.tab)) ui.tab = "overview";
+  return sections.find(([id]) => id === ui.tab);
+}
+
+const BODIES = {
+  overview: () => overviewTab(), activity: () => activityTab(), messages: () => messagesCard(),
+  members: () => membersTab(), details: () => detailsTab(), solana: () => solTab(),
+};
+
 export function walletView(head, why) {
   const unsaved = localSeats().filter((i) => {
     const s = sec(state.gid, i);
     return s.keyPackage && !seatBackedUp(s);
   });
   const solSeats = solUnsaved();
-  const tabs = [
-    ["overview", "Overview"],
-    ["activity", "Activity", countBadge(toApprove(state.gid).length, "to approve", "attn")],
-    ["messages", "Messages", countBadge(unreadIn(state.gid), "unread", "note")],
-    ["members", "Signers"], ["details", "Details"],
-  ];
-  const bodies = {
-    overview: overviewTab, activity: activityTab, messages: messagesCard, members: membersTab,
-    details: detailsTab,
-  };
-  if (solOn()) {
-    tabs.push(["solana", "Solana", countBadge(solPending(), "to approve", "attn")]);
-    bodies.solana = solTab;
-  }
-  if (!Object.hasOwn(bodies, ui.tab)) ui.tab = "overview";
-  return el("div", { class: "page" }, head, tabBar(tabs),
+  const [id, label] = currentSection(walletSections());
+  return el("div", { class: "page" }, head,
     unsaved.length || solSeats.length ? backupNote(unsaved, solSeats) : null,
-    el("div", { role: "tabpanel", id: "panel-" + ui.tab, "aria-labelledby": "tab-" + ui.tab },
-      bodies[ui.tab]()),
+    el("section", { id: "panel-" + id, "data-key": "panel-" + id, tabindex: "-1",
+      "aria-label": label }, BODIES[id]()),
     el("div", { class: "action-bar" }, ...walletActions(why)));
 }
 
@@ -112,7 +128,7 @@ function groupHead(g, ready, why) {
     el("div", { class: "ph-left" },
       el("button", { class: "btn ghost sm back", type: "button", onclick: () => openGroup(null) },
         "← Wallets"),
-      el("h1", {}, g.name),
+      walletTitle(g),
       el("div", { class: "ph-meta" },
         netBadge(g),
         el("span", { class: "badge plain", title: ruleText(g.t, g.n) },
@@ -124,29 +140,15 @@ function groupHead(g, ready, why) {
     ready ? el("div", { class: "ph-actions wallet-actions" }, ...walletActions(why)) : null);
 }
 
-// Arrow keys, Home and End move between tabs. Only the selected tab is in the Tab order.
-export function tabBar(tabs) {
-  const ids = tabs.map(([id]) => id), last = ids.length - 1, at = ids.indexOf(ui.tab);
-  const target = {
-    ArrowRight: at >= last ? 0 : at + 1, ArrowLeft: at <= 0 ? last : at - 1, Home: 0, End: last,
-  };
-  const onkeydown = (ev) => {
-    if (!(ev.key in target)) return;
-    ev.preventDefault();
-    ui.tab = ids[target[ev.key]];
-    focusAfter("tab-" + ui.tab, true);
-    render();
-  };
-  const tab = ([id, label, badge]) => el("button", {
-    class: "tab", type: "button", role: "tab", id: "tab-" + id, "data-key": "tab-" + id,
-    "aria-selected": ui.tab === id ? "true" : "false",
-    "aria-controls": ui.tab === id ? "panel-" + id : null,
-    tabindex: ui.tab === id ? "0" : "-1", onclick: () => { ui.tab = id; render(); },
-  }, label, badge);
-  return el("div", { class: "tabs", role: "tablist", "aria-label": "Wallet sections", onkeydown },
-    tabs.map(tab));
+
+// With more than one wallet, a select switches between them: a phone needs no trip to the list.
+function walletTitle(g) {
+  if (state.groups.length < 2) return el("h1", {}, g.name);
+  const pick = (ev) => { ui.tab = "overview"; openGroup(ev.target.value); };
+  return el("div", { class: "wallet-switcher" }, el("h1", { class: "sr-only" }, g.name),
+    el("select", { class: "input wallet-select", "aria-label": "Switch wallet", onchange: pick },
+      state.groups.map((x) => el("option", { value: x.id, selected: x.id === g.id }, x.name))));
 }
-export function setTabBar(f) { tabBar = f; }
 
 // Private windows, Tor Browser and cleared site data delete the key share with the browser data.
 // `solSeats`: the seats whose Solana part has no saved file yet (solUnsaved, app-sol.js).
