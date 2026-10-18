@@ -6,13 +6,22 @@ import { docFields } from "../signed.js";
 
 // The collections of whole documents. `solsessions` has its own reader (sessions.js): its
 // documents have several writers, and the commits and shares below each one are read per session.
-export const COLLECTIONS = ["solstart", "soldkg1", "soldkg2", "soldone", "solfee", "solabort"];
+// `solprove` holds the switch of local proving (localprove.js).
+export const COLLECTIONS = [
+  "solstart",
+  "soldkg1",
+  "soldkg2",
+  "soldone",
+  "solfee",
+  "solabort",
+  "solprove",
+];
 
 // Devnet is the only cluster of the beta. A testnet wallet gets it, a mainnet wallet gets none.
 export const CLUSTER = "devnet";
 
 const START = /^solstart\/(1)$/;
-const FLAT = /^(?:soldkg1|soldone|solfee|solabort)\/([1-9]\d?)$/;
+const FLAT = /^(?:soldkg1|soldone|solfee|solabort|solprove)\/([1-9]\d?)$/;
 const DKG2 = /^soldkg2\/([1-9]\d?)-[1-9]\d?$/;
 const IN_SESSION = /^solsessions\/[\w-]{1,64}\/(?:commits|shares)\/([1-9]\d?)$/;
 

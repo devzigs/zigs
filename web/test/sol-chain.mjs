@@ -21,8 +21,11 @@ import { config } from "./sol-rig.mjs";
 
 const POLICY =
   "default-src 'none'; script-src 'self' 'wasm-unsafe-eval'; " +
-  "connect-src 'self' https://devnet.helius-rpc.com; base-uri 'none'";
+  "connect-src 'self' https://devnet.helius-rpc.com " +
+  "https://d3gbdb0egjwcw9.cloudfront.net/proving-keys/3a1c88f90f609eb1/; base-uri 'none'";
 export const RPC = config.rpcUrl;
+// The deploy slot of the pool that web/sol/localprover.js pins.
+export const POOL_SLOT = "508538476";
 const SPKI = Buffer.from("302a300506032b6570032100", "hex");
 const hex = (bytes) => Buffer.from(bytes).toString("hex");
 
@@ -298,6 +301,16 @@ function land(chain, parts) {
 }
 
 /** The answer of each command of web/sol/guard.js that the page uses, from the model. */
+/** SOL-4: the device check and the deploy slot of the pool (`chain.poolSlot`). */
+const proveAnswers = (chain) => ({
+  selftest: () => chain.selftest(),
+  poolSlot: () => {
+    const moved = chain.poolSlot !== POOL_SLOT;
+    const text = moved ? "Helius changed the pool." : null;
+    return { slot: chain.poolSlot, pinned: POOL_SLOT, text };
+  },
+});
+
 export function answersOf(chain) {
   const answers = {
     init: () => ({
@@ -345,6 +358,7 @@ export function answersOf(chain) {
     }),
     history: ({ account }) => chain.history.get(account) ?? [],
     reprove: (args) => chain.reproved(args),
+    ...proveAnswers(chain),
     treeFees: () => ({
       feePerNullifier: chain.fee,
       appendReimbursement: "0",
@@ -467,19 +481,39 @@ const wireOf = (landed) => {
 
 const pick = (object, names) => Object.fromEntries(names.map((name) => [name, object[name]]));
 
+// The commands that prove. Before each, the Worker asks the page how the group proves (SOL-4):
+// the answer goes to `chain.gates`, and a refusal fails the command with its text.
+const GATED = new Set(["prepare", "reprove"]);
+function gated(chain, answer) {
+  chain.gates.push(answer.mode ?? "refuse");
+  if (answer.mode !== "local" && answer.mode !== "hosted") throw new Error(answer.refuse);
+}
+
 // The Worker class of the page. Only the Solana Worker is faked: the page starts the engine
 // Worker of the Zcash part on its own, and falls back to the main thread when that start throws.
 function workerClass(chain, answers) {
   return class {
+    gates = new Map();
+    asked = 0;
     constructor(url) {
       if (String(url) !== "/sol/worker.js") throw new Error("no other Worker in this test");
     }
+    /** Asks the page how the group proves, as web/sol/worker.js does before a prove call. */
+    gate() {
+      const id = (this.asked += 1);
+      return new Promise((done) => {
+        this.gates.set(id, done);
+        this.onmessage({ data: { gate: id } });
+      });
+    }
     postMessage(msg) {
+      if (typeof msg.gate === "number") return this.gates.get(msg.gate)?.(msg);
       chain.commands.push(msg);
       if (chain.drop === msg.cmd) return;
       const reply = (ok, body) => this.onmessage({ data: { id: msg.id, ok, ...body } });
-      queueMicrotask(() => {
+      queueMicrotask(async () => {
         try {
+          if (GATED.has(msg.cmd)) gated(chain, await this.gate());
           reply(true, { result: answers[msg.cmd](msg.args) });
         } catch (e) {
           reply(false, { error: String(e.message) });
@@ -515,6 +549,9 @@ export function makeChain() {
     blockhashes: new Set(),
     landed: [], // { signature, message, sig }
     commands: [], // every message that the page posted to the Worker
+    gates: [], // per proof, how the page said the group proves: "local", "hosted" or "refuse"
+    selftest: () => ({ ms: 3100 }), // answer of the device check
+    poolSlot: POOL_SLOT, // the deploy slot of the pool that the RPC shows
     refuse: null, // a text: the next preflight, simulation or send fails with it
     sendMode: null, // "fail" or "late": how a send ends (see SENDS); null lands it
     failed: new Set(), // the signatures of sends that failed on chain

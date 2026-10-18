@@ -6,6 +6,7 @@
 import { showable } from "./approve.js";
 import { agreement, seatProgress, started, startBlock } from "./ceremony.js";
 import { base58 } from "./docs.js";
+import { checkLine, provesLocally } from "./localprove.js";
 import { payCards } from "./payview.js";
 import { feeMismatch, feeOf } from "./fee.js";
 import { writerSeats } from "./gate.js";
@@ -26,6 +27,13 @@ export const PUBLIC_TEXT =
   "address, the group key and the fee address of each seat that pays are public too. Helius " +
   "sees that you use Zigs, your IP address and the keys of this wallet, and its hosted prover " +
   "sees each payment. The Zigs server operator can link this wallet to these addresses by timing.";
+// The same with local proving on (SOL-4): the amounts and the nullifier secret stay on the devices.
+const PUBLIC_LOCAL = PUBLIC_TEXT.replace(
+  ", and its hosted prover sees each payment.",
+  ". This group makes its proofs on its devices, so they give Helius neither the amounts nor " +
+    "the secret that links each spend to its notes.",
+);
+
 const STATUS_TEXT = {
   unavailable: "This wallet cannot get a Solana part.",
   "not started": "The Solana part has not started.",
@@ -104,6 +112,12 @@ function startCard(c, act, actions) {
   );
 }
 
+/** The device check of local proving, under a seat of this browser (SOL-4). */
+function proveLine(c, i) {
+  const line = c.host.localSeats().includes(i) ? checkLine(c, i) : null;
+  return line && c.host.el("div", { class: "small", "data-sol": "prove-check-" + i }, line);
+}
+
 function seatList(c) {
   const { el, seatIds } = c.host;
   return el(
@@ -116,6 +130,7 @@ function seatList(c) {
           "data-sol": "seat-" + i,
         },
         seatProgress(c, i),
+        proveLine(c, i),
       ),
     ),
   );
@@ -319,7 +334,11 @@ export function solView(c, act, actions) {
     // The word stays readable for the checks; a person reads the sentence.
     el("p", { class: "small" }, el("span", { "data-sol": "status", hidden: true }, status),
       STATUS_TEXT[status]),
-    el("p", { class: "small", "data-sol": "public-text" }, PUBLIC_TEXT),
+    el(
+      "p",
+      { class: "small", "data-sol": "public-text" },
+      provesLocally(c) ? PUBLIC_LOCAL : PUBLIC_TEXT,
+    ),
     ...stopCards(c),
     started(c.docs) ? seatList(c) : stopped ? null : startCard(c, act, actions),
     ag.state === "differ" ? el("div", { class: "callout bad", role: "alert" }, ag.why) : null,
