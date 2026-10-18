@@ -10,10 +10,10 @@
 //! its only signer.
 //!
 //! The program design (ZOLANA.md 7.2) adds three messages that the payer signs alone: `Propose`
-//! (the `create` instruction of the approvals program with the proposal body) and `Execute`
-//! (the Ed25519 instruction with the approval of the group, then `execute` with the `transact`
-//! accounts and the owner PDA as a readonly account that the program signs for). and
-//! `Cancel` (SOL-52), which gives the rent of an expired proposal back to the payer.
+//! (the `create` instruction of the approvals program with the proposal body), `Execute` (the
+//! Ed25519 instruction with the approval of the group, then `execute` with the `transact`
+//! accounts and the owner PDA as a readonly account that the program signs for), and `Cancel`
+//! (SOL-52), which gives the rent of an expired proposal back to the payer.
 
 use std::collections::{BTreeMap, BTreeSet};
 
