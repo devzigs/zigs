@@ -13,13 +13,19 @@ import {
 import { acct } from "./app-account.js";
 import { render } from "./app-loop.js";
 
+// This release is for Zcash testnet and Solana Devnet only (M1 of docs/hackathon-release.md): a new
+// wallet or account cannot pick mainnet, and a chat reads testnet requests only. A mainnet wallet
+// made before still opens.
+export const MAINNET_ON = false;
 // Light-wallet servers in order of preference. Mainnet uses a third-party server, so the group
 // server and the chain server have different operators (see PRIVACY.md). The first testnet server
-// is /lwd of this origin: the Worker relays it to our node (cf/src/index.js).
+// is /lwd of this origin: the Worker relays it to our node (cf/src/index.js). The faucet pays
+// 0.125 TAZ to a utest1 address, once a day for each IP address.
 export const NETWORKS = {
   testnet: { label: "Testnet",
     servers: [location.origin + "/lwd", "https://zcash-testnet.chainsafe.dev"],
-    explorer: "https://testnet.zecblock.com/tx/", prefix: "utest1", faucet: "https://zcashfaucet.jinolabs.xyz/" },
+    explorer: "https://testnet.zecblock.com/tx/", prefix: "utest1",
+    faucet: "https://faucet.testnet.valargroup.dev/" },
   mainnet: { label: "Mainnet", servers: ["https://zcash-mainnet.chainsafe.dev"],
     explorer: "https://zecblock.com/tx/", prefix: "u1", cap: 50000000 },
 };
