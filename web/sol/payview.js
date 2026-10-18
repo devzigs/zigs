@@ -95,7 +95,8 @@ export const PROVER_TEXT =
 
 const FEE_TEXT =
   "It pays the fees and the rents of the proposals that this seat makes, and the fee of each " +
-  "payment that this seat executes. Send Devnet SOL to it. " +
+  "payment that this seat executes. Send Devnet SOL to it. Seats that propose or execute need " +
+  "about 0.003 SOL. Seats that only approve need none. " +
   LINK_TEXT +
   " Helius sees this address with your IP address when you check the balance or pay.";
 
@@ -170,13 +171,21 @@ function seatLine(c, mark, what) {
 }
 
 /** What the last Add SOL did, as a line of text. */
+// The explorer of the cluster: a transaction (`tx`) or an account (`address`), in a new tab.
+const EXPLORER = "https://explorer.solana.com/";
+function explorerLink(c, kind, id) {
+  const href = EXPLORER + kind + "/" + encodeURIComponent(id) + "?cluster=" + CLUSTER;
+  return c.host.el("a", { href, target: "_blank", rel: "noopener" }, id);
+}
+
 function addedLine(c) {
   const a = c.added;
   if (!a) return null;
   const words = { unknown: "Sent, not confirmed yet", failed: "Failed on chain" };
   const word = words[a.status] ?? "Added " + solText(a.amount);
-  const line = `${word}, seat ${a.seat}: ${a.txId}`;
-  return c.host.el("p", { class: "small", "data-sol": "added" }, line);
+  const said = `${word}, seat ${a.seat}: `;
+  const link = explorerLink(c, "tx", a.txId);
+  return c.host.el("p", { class: "small", "data-sol": "added" }, said, link);
 }
 
 function addSolCard(c, act, actions) {
@@ -357,9 +366,12 @@ function recipientRows(said) {
 }
 
 /** The payee rows of a private spend, from the fingerprint that the checker answered. */
+const COMPARE = "Compare the Payee with the program address on the Solana tab of the payee group.";
+
 function payeeRows(said) {
   return [
     ["Payee", base58(said.payee.tag)],
+    ["Check the payee", COMPARE],
     ["Payee keys", short(said.payee.ownerHash) + " " + short(said.payee.viewingPk)],
     ["Amount", solText(sum(said.paid))],
     ["Change", solText(sum(said.change)) + " stays with the group."],
@@ -407,9 +419,9 @@ function paymentRows(c, review) {
     ["Program address of the group", pda ? base58(pda) : "?"],
     ...(withdraw ? recipientRows(said) : payeeRows(said)),
     ["Network fees", feesText(said)],
-    ["Proposal rent", solText(rentOf(c)) + ", back to seat " + review.by + " at the execute " +
-      "(kept if the proposal expires)."],
-    ["Proposal account", base58(said.proposal)],
+    ["Proposal rent", solText(rentOf(c)) + ", back to seat " + review.by + " at the execute, " +
+      "or after the expiry with the card \"Rent of old proposals\"."],
+    ["Proposal account", explorerLink(c, "address", base58(said.proposal))],
     ["Lasts", "Until " + utc(said.expiry) + " UTC. A new proof is made at the execute."],
     ["Public", lead + "The proposal account (the group key, the " +
       "expiry, the fee address of seat " + review.by + ") is public, and the create transaction " +
@@ -458,9 +470,12 @@ function rowsOf(c, review) {
   return rows;
 }
 
+const READING_TEXT = "Reading your wallet. The Approve button appears when it is done.";
+
 function reviewBlock(c, ss, seat) {
   const { el } = c.host,
     review = reviewOf(c, ss, seat);
+  if (review.waiting) return el("p", { class: "small", "data-sol": "reading" }, READING_TEXT);
   if (!review.ok) {
     return el("div", { class: "callout bad", role: "alert", "data-sol": "refusal" }, review.why);
   }
@@ -532,7 +547,8 @@ function resultLine(c, ss) {
     return el(
       "p",
       { class: "small", "data-sol": "result" },
-      `${word} in slot ${ss.slot}: ${ss.txId}`,
+      `${word} in slot ${ss.slot}: `,
+      explorerLink(c, "tx", ss.txId),
     );
   }
   if (ss.status === "failed") return el("p", { class: "small bad" }, String(ss.error));
@@ -601,6 +617,14 @@ function rentCard(c, act) {
       ),
     );
   const none = c.rent && !rows.length ? el("p", { class: "small" }, "No rent to get back.") : null;
+  const done = c.rentDone?.txIds.length
+    ? el(
+        "p",
+        { class: "small", "data-sol": "rent-done" },
+        "Cancelled for seat " + c.rentDone.seat + ": ",
+        c.rentDone.txIds.flatMap((id, n) => [n ? ", " : "", explorerLink(c, "tx", id)]),
+      )
+    : null;
   return el(
     "div",
     { style: "display:grid;gap:8px", "data-sol": "rent" },
@@ -608,6 +632,7 @@ function rentCard(c, act) {
     el("p", { class: "small" }, RENT_TEXT),
     ...rows,
     none,
+    done,
     button(c, act, "rent-scan", "Look for rent", () => scanRent(c)),
   );
 }

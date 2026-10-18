@@ -146,7 +146,7 @@ function reviewBlock(c, ss, seat, spend, seen) {
     const why = "Seat " + ss.by + " has not published its fee address, so the payer is unknown.";
     return { why };
   }
-  return waits(ss, spend, seen) ? { why: READING } : { intent };
+  return waits(ss, spend, seen) ? { why: READING, waiting: true } : { intent };
 }
 
 /**
@@ -178,7 +178,8 @@ function paymentReview(c, ss, seat, { spend, seen, intent }) {
  */
 export function reviewOf(c, ss, seat, spend = c.snaps?.[ss.id], seen = c.seen?.[ss.id]) {
   const early = reviewBlock(c, ss, seat, spend, seen);
-  if (early.why) return { ok: false, why: early.why };
+  // `waiting`: the device still reads its wallet or the account, a normal wait and no refusal.
+  if (early.why) return { ok: false, why: early.why, waiting: early.waiting === true };
   const { intent } = early;
   if (isPayment(ss)) return paymentReview(c, ss, seat, { spend, seen, intent });
   return messageReview(c, ss, seat, { spend, intent });

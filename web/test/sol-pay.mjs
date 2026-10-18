@@ -295,6 +295,13 @@ step("propose creates the proposal account first; no screen before the reads of 
   chain.accounts.delete(address);
   delete c.seen[id];
   delete c.snaps[id];
+  // S17: while the device reads, the card shows a wait, not a refusal.
+  assert.equal(reviewOf(c, ssOf(id), 2).waiting, true, "reading is a wait");
+  const view = solView({ ...c, host: { ...c.host, el: node } }, (fn) => fn, {});
+  const card = findAll(view, (n) => n.attrs["data-session"] === id)[0];
+  const marks = (name) => findAll(card, (n) => n.attrs["data-sol"] === name).length;
+  assert.ok(marks("reading") >= 1, "the card says that the device reads its wallet");
+  assert.equal(marks("refusal"), 0, "and shows no alert");
   notify();
   await waitFor("a read with no account", () => c.seen[id]?.account === null);
   assert.equal(reviewOf(c, ssOf(id), 2).ok, false, "no account: no approval yet");
@@ -370,9 +377,16 @@ step("a failed wallet read waits longer each time, shows one banner, and a succe
   assert.equal(rows.Amount, "0.002 SOL");
   const fees = "0.000005 SOL at the proposal, 0.000010162 SOL at the execute.";
   assert.equal(rows["Network fees"], fees, "two signatures and the tree fee at the execute");
-  const rent = "0.00135636 SOL, back to seat 1 at the execute (kept if the proposal expires).";
+  const rent =
+    "0.00135636 SOL, back to seat 1 at the execute, or after the expiry with the card " +
+    '"Rent of old proposals".';
   assert.equal(rows["Proposal rent"], rent);
   assert.equal(rows["Proposal account"], base58(ssOf(id).account));
+  const links = findAll(marked("review-" + id)[0], (n) => n.tag === "a").map((n) => n.attrs);
+  const explorer = "https://explorer.solana.com/address/" + base58(ssOf(id).account);
+  const link = { href: explorer + "?cluster=devnet", target: "_blank", rel: "noopener" };
+  assert.deepEqual(links, [link], "the proposal account links to the explorer");
+  assert.match(rows["Check the payee"], /^Compare the Payee with the program address/);
   assert.ok(rows.Public.includes(LINK_TEXT), "the screen says that the fee address links");
   assert.equal(rows["Create paid by seat 1"], feeAddress(1), "the proposer paid the create only");
   assert.match(textOf(marked("pay-cost")[0]), /pays 0\.000005 SOL .* holds 0\.00135636 SOL/);
@@ -416,6 +430,9 @@ step("a failed wallet read waits longer each time, shows one banner, and a succe
   assert.ok(landed.message.includes(fresh.slice(2)), "the execute carries the fresh proof");
   assert.equal(chain.accounts.has(base58(ss.account)), false, "the execute closed the account");
   assert.equal(reproofs, 1, "one fresh proof");
+  const [result] = marked("result").filter((n) => textOf(n).includes(ss.txId));
+  const tx = findAll(result, (n) => n.tag === "a")[0].attrs.href;
+  assert.equal(tx, "https://explorer.solana.com/tx/" + ss.txId + "?cluster=devnet");
 }
 step("two seats approve the digest once, and the proposing seat executes a fresh proof");
 

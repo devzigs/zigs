@@ -81,14 +81,21 @@ async function cancel(c, worker, seat, p) {
   await worker.call("send", { tx });
   const seen = await worker.call("confirm", { signature: base58(signature) });
   if (seen.status === "failed") throw new Error("The cancel failed: " + base58(signature));
+  return base58(signature);
 }
 
-/** Cancels the expired proposals of seat `seat`, then reads the accounts again. */
+/**
+ * Cancels the expired proposals of seat `seat`, keeps their transaction ids in `c.rentDone` for
+ * the card, then reads the accounts again.
+ */
 export async function reclaimRent(c, seat) {
   const block = await settledBlock(c);
   if (block) throw new Error(block);
   const worker = await ensureWorker(c);
-  for (const p of (await scanRent(c)).found[seat] ?? []) await cancel(c, worker, seat, p);
+  c.rentDone = { seat, txIds: [] };
+  for (const p of (await scanRent(c)).found[seat] ?? []) {
+    c.rentDone.txIds.push(await cancel(c, worker, seat, p));
+  }
   return scanRent(c);
 }
 
