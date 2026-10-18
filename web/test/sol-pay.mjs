@@ -303,6 +303,41 @@ step("propose creates the proposal account first; no screen before the reads of 
 }
 step("a device that read no proposal account reads it again, with no click");
 
+// ── S5: a failed wallet read waits 3 s, then 6 s, shows one banner; a success clears it ──
+{
+  const id = current;
+  const key = "snap:" + id;
+  const address = base58(ssOf(id).account);
+  const stamps = [];
+  const push = chain.commands.push;
+  chain.commands.push = function (msg) {
+    if (msg.cmd === "account" && msg.args?.account === address) stamps.push(Date.now());
+    return push.call(this, msg);
+  };
+  const banners = [];
+  const banner = c.host.showBanner;
+  c.host.showBanner = (kind, text) => banners.push(text);
+  const kept = chain.utxos;
+  chain.utxos = []; // the device does not see the input of the payment: its read fails
+  delete c.snaps[id];
+  delete c.seen[id];
+  const pump = setInterval(notify, 200); // the reactor runs often: the busy key holds the reads
+  await waitFor("three failed reads", () => c.readFails[key]?.n === 3, 30000);
+  const gaps = stamps.slice(1).map((at, n) => at - stamps[n]);
+  assert.equal(stamps.length, 3, "no read while the step waits");
+  assert.ok(gaps[0] >= 2900 && gaps[0] < 4500, "the first wait is 3 s: " + gaps[0]);
+  assert.ok(gaps[1] >= 5900 && gaps[1] < 7500, "the second wait is 6 s: " + gaps[1]);
+  assert.equal(banners.length, 1, "one banner for three failures with one text");
+  chain.utxos = kept;
+  await waitFor("the read succeeds", () => c.snaps[id] !== undefined, 30000);
+  clearInterval(pump);
+  assert.equal(c.readFails[key], undefined, "a success clears the count");
+  assert.equal(stamps.length, 4, "one more read");
+  chain.commands.push = push;
+  c.host.showBanner = banner;
+}
+step("a failed wallet read waits longer each time, shows one banner, and a success clears it");
+
 // ── One payment: two approvals, the digest signed, the execute with a fresh proof ──
 {
   const id = current;

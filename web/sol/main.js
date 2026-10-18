@@ -60,6 +60,7 @@ const blank = () => ({
   seen: {},
   tries: {},
   execErrors: {},
+  readFails: {},
   sending: {},
   added: null,
   savedShown: false,

@@ -45,6 +45,22 @@ const leased = async (ref, ttlMs) => (await ref.acquire({ holder: HOLDER, ttlMs 
 const sessionRef = (c, ss) => c.host.sdb.doc(c.base + "/" + SESSIONS + "/" + ss.id);
 const errorText = (e) => String(e?.message ?? e).slice(0, 300);
 
+// A failed wallet read waits 3 s, then twice as long each time up to 60 s, so a refused or rate
+// limited RPC gets fewer calls. Its banner shows once for each text, not on every try.
+const BACKOFF_FIRST_MS = 3_000;
+const BACKOFF_MAX_MS = 60_000;
+
+/** Records a failed read of step `key`, shows a new text once, and returns the wait in ms. */
+export function backOff(c, key, e) {
+  const last = c.readFails[key];
+  const text = errorText(e);
+  const n = (last?.n ?? 0) + 1;
+  c.readFails[key] = { n, text };
+  c.host.log("✗ " + key + ": " + text);
+  if (last?.text !== text) c.host.showBanner("bad", text);
+  return Math.min(BACKOFF_FIRST_MS * 2 ** (n - 1), BACKOFF_MAX_MS);
+}
+
 async function failSession(c, ss, text) {
   const seat = writerSeats(c)[0];
   if (seat === undefined) return;
@@ -336,12 +352,22 @@ function maybeReadWallet(c, ss) {
   const kind = decodeIntent(ss.intent)?.kind;
   if (!waiting || !["transfer", "approve", "withdraw"].includes(kind)) return;
   if (!c.rpcUrl || writerSeats(c)[0] === undefined) return;
-  launch(c, "snap:" + ss.id, async () => {
-    if (isPayment(ss)) c.seen[ss.id] = { ...(await deviceSeen(c, ss)), at: Date.now() };
-    c.snaps[ss.id] = await deviceSpend(c, ss);
-    // The pass of the reactor after this step reads a missing account again.
-    if (isPayment(ss) && c.seen[ss.id].account === null) await sleep(REREAD_MS + 100);
+  const key = "snap:" + ss.id;
+  launch(c, key, async () => {
+    try {
+      await readWallet(c, ss);
+      delete c.readFails[key];
+    } catch (e) {
+      await sleep(backOff(c, key, e));
+    }
   });
+}
+
+async function readWallet(c, ss) {
+  if (isPayment(ss)) c.seen[ss.id] = { ...(await deviceSeen(c, ss)), at: Date.now() };
+  c.snaps[ss.id] = await deviceSpend(c, ss);
+  // The pass of the reactor after this step reads a missing account again.
+  if (isPayment(ss) && c.seen[ss.id].account === null) await sleep(REREAD_MS + 100);
 }
 
 /** Why a session ends before it is sent, or null. */
