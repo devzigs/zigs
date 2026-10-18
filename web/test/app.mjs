@@ -309,6 +309,7 @@ const sealed = (gid, rel, seat, fields, key, names = ["by", "sig"]) =>
   assert.deepEqual([live().broadcastTxid, data.get(path3).sentBy >= 1], ["T1", true]);
   assert.equal(t.state.ignored, 0, "nothing of an honest wallet is ignored");
 
+  let checkingSession = null;   // a payment that readSession marked "checking" (the M5 block)
   // M5: the signing steps run with no payment open. The proposer's browser builds the package
   // from the approvals, each seat signs its share and the shares are combined, from the watch
   // alone. Then the drawer is open on another payment, and the watch goes on.
@@ -594,6 +595,43 @@ const sealed = (gid, rel, seat, fields, key, names = ["by", "sig"]) =>
     await drop(pathF);
     const pathOf = (ss) => `groups/${gid}/sessions/${ss.id}`;
     const liveOf = (ss) => t.state.sessions.find((x) => x.id === ss.id);
+    // A cancel part of another seat whose check has no result yet: the payment is "checking" and
+    // needs no approval. When the check ends, it is cancelled. The cards below show its chip.
+    const mu = await propose("mu", 4);
+    t.closeSession();
+    const cancelU = { error: "Cancelled by a signer (seat 2)." };
+    const sigU = await t.sigPart(gid, mu.id, "cancel", cancelU, 2);
+    const subtleU = globalThis.crypto.subtle, verifyU = subtleU.verify.bind(subtleU);
+    let openChecks;
+    const checksHeld = new Promise((ok) => { openChecks = ok; });
+    subtleU.verify = (...a) => checksHeld.then(() => verifyU(...a));   // no result for now
+    data.set(pathOf(mu), { ...data.get(pathOf(mu)), ...cancelU, status: "cancelled", ...sigU });
+    notify();
+    await waitFor("the cancel part waits for its check", () => !!liveOf(mu)?.checking);
+    checkingSession = liveOf(mu);
+    assert.deepEqual([checkingSession.status, t.needsMyApproval(gid, checkingSession)],
+      ["collecting", false], "checking");
+    openChecks();
+    delete subtleU.verify;
+    await waitFor("the check of the cancel", () => liveOf(mu)?.status === "cancelled");
+    assert.equal(liveOf(mu).checking, false);
+    await drop(pathOf(mu));
+    // The cancel of this browser drops a share that it made and could not send yet.
+    let downC = true;
+    t.setDb({ doc: (p) => p.endsWith("/shares/1") && downC
+      ? { ...docRef(p), set: async () => { throw new Error("down"); } } : docRef(p),
+    collection: colRef });
+    const mv2 = await propose("mv2", 4);
+    t.closeSession();
+    await approveAs(mv2.id, [1, 2]);
+    notify();
+    await waitFor("the kept share of mv2", () => !!(t.sec(gid, 1).unsent || {})[mv2.id]);
+    downC = false;
+    t.setDb({ doc: docRef, collection: colRef });
+    await t.cancelPayment(liveOf(mv2));
+    assert.equal((t.sec(gid, 1).unsent || {})[mv2.id], undefined,
+      "the cancel drops the kept share");
+    await drop(pathOf(mv2));
     // The person cancels while the share steps wait for the lock: they sign nothing.
     const mk = await propose("mk", 4);
     t.closeSession();
@@ -1212,6 +1250,7 @@ const sealed = (gid, rel, seat, fields, key, names = ["by", "sig"]) =>
     createElement: (tag) => new Rec(tag), createTextNode: (text) => ({ text }),
   };
   try {
+    assert.equal(textOf(t.statusChip(checkingSession)), "Checking", "the chip of that payment");
     const setBal = (spendable) => t.setChain({ gid, bal: { spendable, pending: 0 }, received: [],
       sent: new Set(["T1"]), cw: null });
     setBal(0);
@@ -2710,6 +2749,50 @@ const sealed = (gid, rel, seat, fields, key, names = ["by", "sig"]) =>
   assert.deepEqual(tried, ["https://b9.test"], "the server that failed is not asked first");
 }
 
+
+// The inbox of a wallet that is not open: a part of a seat that this device has not pinned waits
+// for good. It stays out, and the payment is not "checking", so a forged part hides no proposal.
+{
+  const W = "cd".repeat(10), SID = "ab12cd34ef56ab12cd34";
+  const k1 = await newSignKey(), k2 = await newSignKey();
+  const made = { pool: "ironwood", amount: 5, change: 1, fee: 10000, note_value: 20, pczt: "AAA" };
+  const fields = t.proposalFields([{ to: "utest1x", amount: 5 }], "", made, null, 1760000000000);
+  const proposal = await sealed(W, "sessions/" + SID, 1, fields, k1);
+  const pins = { [W + ":1"]: k1.signPk, [W + ":2"]: k2.signPk, ["version:" + W]: "3" };
+  Object.assign(t.signPins, pins);
+  t.secrets[W + ":2"] = { version: 3, ...k2, keyPackage: "kp" };
+  const groupsBefore = t.state.groups;
+  t.state.groups = [...groupsBefore,
+    t.cleanGroup(W, { name: "W", n: 3, t: 2, version: 3, network: "testnet" })];
+  const listed = async (extra) => {
+    t.rawInbox[W] = [{ id: SID, ...proposal, status: "collecting", ...extra }];
+    t.refilter();
+    await sleep(300);
+    const ss = t.inbox[W]?.find((x) => x.id === SID);
+    return [ss?.checking, ss?.status, t.toApprove(W).length];
+  };
+  assert.deepEqual(await listed({}), [false, "collecting", 1], "control");
+  const forged = { cancelBy: 3, cancelSig: "AAAA", error: "x", status: "cancelled" };
+  assert.deepEqual(await listed(forged), [false, "collecting", 1],
+    "a part of a seat that is not pinned hides nothing");
+  // A cancel of a pinned seat whose check has no result yet: the payment is "checking".
+  const cancelW = await t.sigPart(W, SID, "cancel", { error: "Cancelled." }, 2);
+  const subtleW = globalThis.crypto.subtle, verifyW = subtleW.verify.bind(subtleW);
+  let openW;
+  const heldW = new Promise((ok) => { openW = ok; });
+  subtleW.verify = (...a) => heldW.then(() => verifyW(...a));
+  const cancelled = { error: "Cancelled.", status: "cancelled", ...cancelW };
+  assert.deepEqual(await listed(cancelled), [true, "collecting", 0], "a pinned seat: checking");
+  openW();
+  delete subtleW.verify;
+  assert.deepEqual(await listed(cancelled), [false, "cancelled", 0], "then cancelled");
+  delete t.rawInbox[W];
+  delete t.inbox[W];
+  delete t.secrets[W + ":2"];
+  for (const k of Object.keys(pins)) delete t.signPins[k];
+  t.state.groups = groupsBefore;
+  t.refilter();
+}
 
 // ── The personal account: storage, sync, sending, funding, backup and restore ──
 {

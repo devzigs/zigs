@@ -181,6 +181,7 @@ Evidence marked "checked" was read in the repo during this synthesis. All other 
 - **Scope:** the watch fix and the texts. Letting any seat build the package is not needed for the demo, because the proposer's browser stays open.
 - **Files:** web/app-loop.js, web/app-groups.js, web/app-payments.js, web/app-drawer.js, web/test/app.mjs.
 - **Package:** WP-Z.
+- **Status:** done, on main in 2cee058 (the merge of zec-s8-open 993b88c). Live proof on main c7a5cb5, 18 October 2026, with the owner's yes: a 2-of-2 testnet payment of 0.001 TAZ in which both seats approved, closed the payment and signed in the background; txid `1f26db1bd88dc7e7ffdc8fdcfe1331bc85a4b3f5ca891a875445ff2b8397de7b`, block 4,516,013, fee 10,000 zat (live/zec-pay.mjs). QA: four rounds, the coordinator's review of 15 findings and its regression pass, all fixed.
 
 ### M6 Correct the false privacy claim on the Solana approval screen
 - **Why:** The screen says "The chain shows neither the payee nor the amount" (checked: web/sol/payview.js:44-46). PRIVACY.md:187 says "The payee and the amount stay hidden" (checked). ZOLANA.md:67 says "Sender and recipient are public" (checked). ZOLANA.md:77 says an owner key tag marks each output. Judges who know Zolana will see the wrong claim. The SOL-12 branch, which is in QA, keeps the sentence (audit), so QA does not cover it.
@@ -379,6 +380,7 @@ Evidence marked "checked" was read in the repo during this synthesis. All other 
 - **Mitigation:** do not Cancel after Approve in the demo. Keep a spare funded wallet.
 - **Files:** web/app-payments.js, web/app-drawer.js, web/test/app.mjs.
 - **Package:** WP-Z.
+- **Status:** done, on main in 2cee058 (S7 0597450 and R2 001ab26). The page tests cover both cases of D2, the confirmed release, a save that fails and a release of two seats. The live payment above approved and sent; it did not cancel or release.
 
 ### S8 Block Send while a proposal is open, and guard the button (ZEC-10)
 - **Why:**
@@ -394,6 +396,7 @@ Evidence marked "checked" was read in the repo during this synthesis. All other 
 - **Mitigation:** one proposal at a time in the demo.
 - **Files:** web/app-payments.js, web/app-send.js, web/app-drawer.js, web/test/app.mjs.
 - **Package:** WP-Z.
+- **Status:** done, on main in 2cee058 (ec4b434); ZEC-10 is closed. The live payment above ran on it.
 
 ### S9 Light-wallet sync with the lwd node off
 - **Why:**
@@ -411,6 +414,7 @@ Evidence marked "checked" was read in the repo during this synthesis. All other 
   - Add a page test for the fallback.
 - **Mitigation:** power on the lwd box (D5).
 - **Files:** web/app-chain.js (WP-A); web/app-payments.js (WP-Z).
+- **Status:** done. The WP-A part came with WP-A. The WP-Z part is on main in 2cee058 (45575e0): the broadcast asks first the servers that did not fail in the last 5 minutes, and a proposal with no answer in 60 s stops with a text and frees Propose.
 
 ### S10 Invite texts: password and browser hint (owner decision D1)
 - **Why:**
