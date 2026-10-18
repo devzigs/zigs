@@ -199,7 +199,7 @@ Zolana is not Zcash. This table says what differs:
 | Amount and asset | Hidden | Hidden on chain in a transfer. Public in a deposit and in a withdrawal |
 | Sender and recipient | Hidden | Public: the payer (a member fee address) and the owner signer (the PDA of the group) are in the transaction, and the owner key tags each output. The proposal account and the approval show the group key |
 | Link between spends and the group | None: each spend has a new key | The PDA and the group key are stable tags. A FROST signature does not show a multisig |
-| Who sees the witness | Nobody: the proof runs on the device | The hosted prover of Helius: owners, assets, amounts, blindings and the nullifier secret. Local proving is not available yet |
+| Who sees the witness | Nobody: the proof runs on the device | The hosted prover of Helius: owners, assets, amounts, blindings and the nullifier secret. With local proving on (below), nobody: the proof runs on the device |
 | What the index learns | IP address and blocks | The owner key (tag queries), IP address, timing, Merkle proofs of the inputs, and the app origin |
 | What the group server can link | Nothing that it can match to the chain | The time of its Solana writes matches chain time. That links a wallet id to the owner key and the full history |
 | Custody | Fewer than `t` seats cannot spend | The same for the seats. The pool upgrade key can replace the pool, and the protocol authority can pause trees |
@@ -210,14 +210,35 @@ spend. It can read the whole Solana history of the wallet. It cannot spend, beca
 the group signature. It sees no key share. Every signer of the wallet reads the whole Solana
 history too.
 
+**Local proving.** A group can make its proofs on its own devices. One seat turns it on for the
+whole group, after its device made a test proof, and nobody can turn it off. With it on, no
+device of the group sends a proof to the hosted prover of Helius, so Helius no longer gets the
+witness of a spend: not the amounts, the payees and the notes that a payment spends, and not the
+nullifier secret that links each spend to its notes. A device that cannot prove shows an error
+and sends nothing; it never falls back to the hosted prover. What stays visible:
+
+- The indexer of Helius still sees the queries of the wallet (the tags and the nullifiers that it
+  looks up, and the Merkle proofs of the notes that a payment spends) and your IP address.
+- The key server of Helius (a CloudFront host) sees your IP address and the origin of the app when
+  it sends a proving key, once per payment size and device. The name of the key gives the number
+  of notes that the payment spends.
+- Every hosted proof that the group made before the switch gave Helius the nullifier secret of
+  the group. The setting protects new payments from then on, and helps most when it is on before
+  the first payment.
+
+Proofs on a device are slower (about 3 s for one note to about 15 s for eight on a fast laptop),
+and the first use downloads about 5 MB plus 9 to 59 MB for each payment size. Phones are not
+tested: a phone may be too slow or run out of memory.
+
 Each Solana screen says what is public and what Helius sees:
 
 - **The Solana tab, in each state** (also before Add Solana and while the setup runs): a deposit
   shows its sender and amount on chain, and a withdrawal its recipient and amount. A private
   payment hides its amount, but it shows the owner key of the payee. The program address, the
   group key and the fee address of each seat that pays are public too. Helius sees that you use
-  Zigs, your IP address and the keys of the wallet, and its hosted prover sees each payment. The
-  Zigs server operator can link the wallet to these addresses by timing.
+  Zigs, your IP address and the keys of the wallet, and its hosted prover sees each payment (with
+  local proving on: the group makes its proofs on its devices, so Helius does not see the
+  payments). The Zigs server operator can link the wallet to these addresses by timing.
 - **Before Add Solana:** the program address links to the group key, a fee address needs a public
   SOL funding trail, and the program and its upgrade key are outside the group.
 - **The details of the wallet:** the two keys of the pool outside the group (below).
@@ -229,7 +250,10 @@ Each Solana screen says what is public and what Helius sees:
   deposit.
 - **Pay from the group:** the rent and the fees, and what the hosted prover sees: the owner keys,
   the payee, the amount, the notes that the payment spends and the secret that links each spend
-  to its notes. A private payment shows the owner key of the payee and hides the amount. The
+  to its notes. With local proving on, it says that Helius does not see them, and that its
+  indexer still sees the queries of the wallet and your IP address.
+- **Local proving:** the card of the switch says what it hides and what stays visible, the time
+  and the downloads, that phones are not tested, and that it cannot be turned off. A private payment shows the owner key of the payee and hides the amount. The
   withdrawal form says that the recipient, the asset and the amount are public.
 - **The move of the beta funds:** it links the old address and the program address in public, and
   the hosted prover sees it.
@@ -278,7 +302,8 @@ What makes this safe to rely on:
   server and the light-wallet servers in `NETWORKS` (our testnet server through `/lwd` of its own
   host, and two ChainSafe servers), and to nothing else. The Solana Worker
   (`/sol/worker.js`, testnet wallets only) has a policy of its own, which also names the Helius
-  Devnet host. The policy of the page names no Helius host.
+  Devnet host and the one folder of proving keys of the local prover. The policy of the page
+  names neither.
 - A restored seat works in a new session. The app checks the restored key data against what the
   wallet published for that seat. A proposal records the identity of the seat, not of the session.
 - Backups leave out signing nonces, and a restore drops the nonces in older backup files, so a

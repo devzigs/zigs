@@ -239,7 +239,7 @@ The full threat model is in [PRIVACY.md](PRIVACY.md). In short:
 | Chain observers | A normal shielded Ironwood transaction | That a group signed it, the signers, amounts, addresses |
 | Group server | Wallet ids, document paths and field names, timing, which IP addresses connect to which wallet | Wallet and signer names, addresses, viewing key, amounts or their length, recipients, transactions, signing data |
 | Light-wallet server | Your IP address (on testnet, our server sees the app Worker), the wallet's birthday height, the blocks you download, the transactions you send, the full transactions you fetch to read memos (only where memo reading is on) | Which notes are yours while you download blocks (the memo fetches are the exception), any key |
-| Helius (Solana beta, testnet wallets only) | Your IP address, the app origin, the owner key of the wallet, and the witness of each spend: owners, assets, amounts and the nullifier secret. The sender and the recipient of a transfer are public on chain | Any key share, the Ed25519 seed, the viewing key. It cannot sign |
+| Helius (Solana beta, testnet wallets only) | Your IP address, the app origin, the owner key of the wallet, and the witness of each spend: owners, assets, amounts and the nullifier secret. With local proving on (a group setting), no witness: the devices of the group make the proofs. The sender and the recipient of a transfer are public on chain | Any key share, the Ed25519 seed, the viewing key. It cannot sign |
 | Other signers | Everything about the shared wallet | Your key share and your signing nonces |
 
 How the group server is kept blind:
@@ -704,8 +704,9 @@ folder path.
   Ironwood.
 - **One mainnet server.** Mainnet wallets depend on ChainSafe's public light-wallet server.
 - **Solana is a beta on Devnet.** Testnet wallets only, web app only, not audited. The hosted prover
-  of Helius sees the witness of each spend, the pool has an upgrade key outside the group, and
-  sender and recipient of a transfer are public. [TICKETS.md](TICKETS.md) lists the open work.
+  of Helius sees the witness of each spend unless the group turns on local proving (experimental,
+  slower, not tested on phones), the pool has an upgrade key outside the group, and sender and
+  recipient of a transfer are public. [TICKETS.md](TICKETS.md) lists the open work.
 
 ## License
 
