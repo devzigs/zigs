@@ -18,6 +18,8 @@ const rig = await loadRig();
 const { SOL_DISCLOSURE, solPlanned } = await import("../app-sol.js");
 const { inviteMessage, joinText } = await import("../app-setup.js");
 const { chatMessage } = await import("../app-links.js");
+const { chatInviteCard } = await import("../app-thread.js");
+const { chats } = await import("../app-keystore.js");
 const { backupWords } = await import("../sol/backup.js");
 const { pendingCount } = await import("../sol/view.js");
 const { createDialog, renderSide } = await import("../app-shell.js");
@@ -197,14 +199,34 @@ assert.match(inviteMessage(link), /a shared wallet for Zcash testnet and Solana 
 assert.doesNotMatch(inviteMessage(link), /shielded|private shared/, "Solana is not shielded");
 assert.match(inviteMessage(link), /until the Zcash and the Solana parts are ready/);
 assert.ok(inviteMessage(link).includes(link), "the invite still carries the link");
-// The password of the site and the browser (S10, owner decision D1), in every invite text.
-const PASSWORD = /The browser asks for a password before Zigs opens\. I send it to you apart/;
+// The password of the site and the browser (S10, owner decision D1), in every invite text. The
+// site asks for a user name too, and any user name works (cf/src/index.js).
+const PASSWORD = new RegExp("The browser asks for a user name and a password before Zigs opens\\. "
+  + "Use any user name\\. I send the password to you apart from this link\\.");
 const BROWSER = /Open the link in Safari or Chrome, not in the browser of a chat app and not in a/;
 for (const text of [inviteMessage(link), plain.invite, chatMessage(link)]) {
   assert.match(text, PASSWORD);
   assert.match(text, BROWSER);
 }
-assert.match(pageText(), /asks for the password of this site before Zigs opens: send it to them/);
+// The invite cards of a wallet and of a chat say the same to the sender.
+const SENDER = new RegExp("asks for a user name and a password before Zigs opens\\. Any user name "
+  + "works\\. Send the password apart from the link\\. Tell (each signer|your contact) to open the "
+  + "link in Safari or Chrome, not in the browser of a chat app and not in a private window");
+assert.match(pageText(), SENDER, "the invite card of a wallet");
+{
+  const cid = "c0ffee00c0ffee00c0ff";
+  chats.list[cid] = { key: "ab".repeat(32), member: "m", at: Date.now() };
+  const real = globalThis.document;
+  globalThis.document = { createElement: () => new Rec(), createTextNode: (text) => ({ text }) };
+  try {
+    const card = chatInviteCard(cid);
+    assert.match(textOf(card), SENDER, "the invite card of a chat");
+    assert.match(textOf(card), /The browser of your contact asks/);
+  } finally {
+    globalThis.document = real;
+    delete chats.list[cid];
+  }
+}
 assert.match(SOL_DISCLOSURE, /public program address.*fee address.*Helius.*no audit/);
 assert.ok(SOL_DISCLOSURE.includes(PUBLIC_TEXT), "the choice says what the Solana tab says");
 assert.match(SOL_DISCLOSURE, /Every signer sees the whole Solana history/);

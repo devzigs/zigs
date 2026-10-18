@@ -6,7 +6,7 @@ import { sec } from "./app-keystore.js";
 import {
   allDone, allSeated, keysDiffer, localSeats, seatIds, seatMine, seatStage, STAGE_LABEL,
 } from "./app-seats.js";
-import { BROWSER_NOTE, inviteLink, PASSWORD_NOTE } from "./app-links.js";
+import { BROWSER_NOTE, inviteLink, PASSWORD_NOTE, senderNote } from "./app-links.js";
 import { signedMode } from "./app-filter.js";
 import { canWrite } from "./app-groups.js";
 import { act, avatar, copyBtn, el, guard, nameField, seatLabel, secretQr } from "./app-dom.js";
@@ -131,9 +131,8 @@ function inviteCard(openCount) {
       el("span", { class: "badge plain" },
         openCount === 1 ? "1 seat open" : openCount + " seats open")),
     el("p", { class: "small muted" }, "Send this invite link to each signer through a private "
-      + "channel. It contains the wallet secret: anyone who has it can take an open seat. The "
-      + "browser of each signer asks for the password of this site before Zigs opens: send it to "
-      + "them apart from the link."),
+      + "channel. It contains the wallet secret: anyone who has it can take an open seat. "
+      + senderNote("each signer")),
     el("div", { class: "addr-box" }, el("span", { class: "hex nowrap" }, link),
       copyBtn(link, "Copy link", "btn sm primary"), copyBtn(message, "Copy invite message", "btn sm"),
       share),
