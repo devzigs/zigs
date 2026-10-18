@@ -21,6 +21,8 @@ import { config, loadRig, sleep, storage } from "./sol-rig.mjs";
 
 const rig = await loadRig();
 const { t, Z, W, data, waitFor } = rig;
+// The page modules need the stub page of the rig, so this one loads after it.
+const { confirmedNo } = await import("../app-dkg.js");
 const sha = (text) => createHash("sha256").update(text).digest("hex");
 const path = (gid, rel) => `groups/${gid}/${rel}`;
 const dones = (gid) => [1, 2, 3].map((i) => data.get(path(gid, "soldone/" + i)));
@@ -81,6 +83,9 @@ const tabState = (gid, hostSec) => ({
     localSeats: () => [1, 2, 3],
     canWriteAs: () => true,
     sec: hostSec ?? t.sec,
+    seatCheck: t.seatCheck,
+    safetyNo: t.safetyNo,
+    confirmedNo,
     sealAndSave: t.sealAndSave,
     groupVersion: () => 3,
     network: () => "testnet",
@@ -824,6 +829,143 @@ assert.deepEqual(
   await t.putSec(gid3, 2, { confirmed });
   t.refilter();
   await waitFor("every soldone", () => haveDones(gid3), 30000);
+}
+
+// ── Restored seats join the Solana ceremony ──
+// A restore does not take the confirmed number from the file. Seats 1 and 2 restore before the
+// Solana part exists, and their own signed confirm documents let them start.
+{
+  const gidR = await rig.wallet({ name: "Restored" });
+  const files = [1, 2].map((i) => JSON.parse(t.backupText(i)));
+  for (const i of [1, 2]) delete t.secrets[gidR + ":" + i];
+  t.refilter();
+  await sleep(200);
+  for (const file of files) await t.applyBackup(structuredClone(file), true);
+  const restored = (i) => t.localSeats().includes(i) && t.seatCheck(i) === true;
+  await waitFor("seats 1 and 2 restored and checked", () => restored(1) && restored(2), 40000);
+  for (const i of [1, 2]) {
+    assert.equal(t.sec(gidR, i).confirmed, undefined, "a restore takes no confirmed number");
+  }
+  // With no confirm document of its own, a restored seat says why it waits. A document without a
+  // valid signature of its own key confirms nothing: unsigned, or the document of seat 1 laid
+  // under seat 2.
+  await t.solLoad();
+  const doc = data.get(path(gidR, "confirm/2"));
+  const why = "Seat 2 waits: this browser has not confirmed the safety number.";
+  const unsigned = { number: t.safetyNo() };
+  for (const bad of [null, unsigned, data.get(path(gidR, "confirm/1"))]) {
+    if (bad) data.set(path(gidR, "confirm/2"), bad);
+    else data.delete(path(gidR, "confirm/2"));
+    rig.notify();
+    await sleep(300);
+    const forged = "a forged confirm document starts no Solana seat";
+    assert.equal(seatProgress(t.sol.ctl, 2), why, forged);
+  }
+  data.set(path(gidR, "confirm/2"), doc);
+  rig.notify();
+  await sleep(300);
+  assert.equal(seatProgress(t.sol.ctl, 2), "Seat 2 has not started");
+  // A seat that keeps another number: the safety number changed after it confirmed.
+  await t.putSec(gidR, 2, { confirmed: "00000 00000 00000" });
+  const moved = "Seat 2 waits: the safety number changed after this browser confirmed it.";
+  assert.equal(seatProgress(t.sol.ctl, 2), moved);
+  await t.putSec(gidR, 2, { confirmed: null });
+  // The same for a restored seat whose own confirm document holds an older number.
+  const doc2 = data.get(path(gidR, "confirm/2"));
+  const old = await t.signedDoc(gidR, "confirm/2", 2, { number: "00000 00000 00000" });
+  data.set(path(gidR, "confirm/2"), old);
+  rig.notify();
+  await sleep(300);
+  assert.equal(seatProgress(t.sol.ctl, 2), moved, "an old number of its own document: changed");
+  data.set(path(gidR, "confirm/2"), doc2);
+  rig.notify();
+  await sleep(300);
+  // Seat 1 says why it cannot add Solana yet.
+  const doc1 = data.get(path(gidR, "confirm/1"));
+  data.delete(path(gidR, "confirm/1"));
+  rig.notify();
+  await sleep(300);
+  await assert.rejects(() => t.sol.add(), /^Error: Seat 1 waits: this browser has not confirmed/);
+  data.set(path(gidR, "confirm/1"), doc1);
+  rig.notify();
+  await sleep(300);
+  await addSolana();
+  await waitFor("every soldone", () => haveDones(gidR), 30000);
+}
+
+// ── Two copies of one seat: the lease of round 1 lets only one of them publish ──
+{
+  const gidL = await rig.wallet({ name: "Lease" });
+  rig.hook.lease = (p) => !p.endsWith("/soldkg1/2");
+  await addSolana();
+  const started = () => data.has(path(gidL, "soldkg1/1")) && data.has(path(gidL, "soldkg1/3"));
+  await waitFor("seat 1 and 3 start", started, 20000);
+  await sleep(1200);
+  assert.equal(data.has(path(gidL, "soldkg1/2")), false, "the other copy holds the lease");
+  assert.deepEqual(solOf(gidL, 2), {}, "and seat 2 made no Solana secret");
+  rig.hook.lease = () => true;
+  t.refilter();
+  await waitFor("every soldone", () => haveDones(gidL), 30000);
+}
+
+// ── A seat retries round 1 under its own lease ──
+// The lease as the group server keeps it: the same holder renews, another one waits for the end.
+{
+  const gidH = await rig.wallet({ name: "Holder" });
+  const leases = new Map();
+  rig.hook.lease = (p, o) => {
+    const cur = leases.get(p),
+      now = Date.now();
+    if (cur && cur.until > now && cur.holder !== o.holder) return false;
+    leases.set(p, { holder: o.holder, until: now + o.ttlMs });
+    return true;
+  };
+  let failOnce = true;
+  rig.hook.before = (p, v) => {
+    if (!failOnce || !p.endsWith("/soldkg1/2")) return v;
+    failOnce = false;
+    throw new Error("the group server did not answer");
+  };
+  await addSolana();
+  const again = () => data.has(path(gidH, "soldkg1/2"));
+  await waitFor("its own lease does not block the retry of round 1", again, 20000);
+  rig.hook.before = (_p, v) => v;
+  rig.hook.lease = () => true;
+  await waitFor("every soldone", () => haveDones(gidH), 30000);
+}
+
+// ── A round-1 secret that another copy of the seat published differently takes no part ──
+{
+  const gidS = await rig.wallet({ name: "Stale" });
+  rig.hook.lease = (p) => !p.endsWith("/soldkg1/2");
+  await addSolana();
+  const started = () => data.has(path(gidS, "soldkg1/1")) && data.has(path(gidS, "soldkg1/3"));
+  await waitFor("seat 1 and 3 start", started, 20000);
+  // The other copy of seat 2 publishes its round 1. This copy holds another, unpublished secret.
+  const [n, k] = [t.state.g.n, t.state.g.t];
+  const other = JSON.parse(W.sol_dkg1(2, n, k)),
+    mine = JSON.parse(W.sol_dkg1(2, n, k));
+  const commit = W.sol_commit(gidS, 2, t.state.seats[2].boxPk, "devnet", "ab".repeat(32));
+  const fields = { package: other.package, commit, at: Date.now() };
+  data.set(path(gidS, "soldkg1/2"), await t.signedDoc(gidS, "soldkg1/2", 2, fields));
+  const sol = { r1secret: mine.secret, r1package: mine.package, rSol: "cd".repeat(32) };
+  await t.putSec(gidS, 2, { sol: { ...sol, cluster: "devnet" } });
+  rig.hook.lease = () => true;
+  rig.notify();
+  await waitFor("the stale secret goes", () => !solOf(gidS, 2).r1secret, 20000);
+  await sleep(1500);
+  const wrote = [1, 3].some((j) => data.has(path(gidS, "soldkg2/2-" + j)));
+  assert.equal(wrote, false, "a stale round-1 secret takes no part");
+  const elsewhere =
+    "Seat 2: another device of this seat runs its Solana setup. This browser takes no part.";
+  assert.equal(seatProgress(t.sol.ctl, 2), elsewhere);
+  // Only the mark stays, so the backup of the finished copy restores into this seat later.
+  assert.deepEqual(solOf(gidS, 2), { otherCopy: true }, "the dropped part keeps only its mark");
+  assert.equal([1, 2, 3].some((i) => solOf(gidS, i).aborted), false, "and nothing stops");
+  // A seat of a wallet that is not the open one waits for it.
+  const shut = { ...tabState(gid), docs: { solstart: {}, soldkg1: {}, soldkg2: {}, soldone: {} } };
+  assert.notEqual(t.state.gid, gid);
+  assert.equal(seatProgress(shut, 1), "Seat 1 waits: open its wallet.");
 }
 
 // ── A seat whose Zcash part has not settled does not start ──

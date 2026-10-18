@@ -124,8 +124,8 @@ function makeStore() {
     async get() {
       return { exists: data.has(p), data: () => data.get(p) };
     },
-    async acquire() {
-      return { acquired: hook.lease(p) };
+    async acquire(o) {
+      return { acquired: hook.lease(p, o) };
     },
     onSnapshot: (cb) =>
       listen(p, () =>
