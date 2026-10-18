@@ -1186,6 +1186,10 @@ one defect, which version 2 fixed. The move needs these first:
   - SOL withdrawals, also against the pool of the [Z] commit (condition 1);
   - the option D rules: the CPI check, no registry crate, no forbidden name in the code;
   - the cluster: the refused builds and both ELFs (`tests/cluster.rs`, version 5).
+  - the replay of an approved payment against the pool with a real proof (R4, SOL-41,
+    `tests/replay.rs`). It is not part of `build.sh test`: the cargo feature `proofs` turns it
+    on, and `sh sol-program/build.sh proofs` runs it with a prover (see the header of
+    `build.sh`).
 - Track "main" as a vector: the landed approval passes the precompile, its signed values match the
   rig, and its `transact` bytes pass the commitment check of versions 4 and 5. The landed approval
   signs
@@ -1282,7 +1286,7 @@ with the spike notes.
 | R1 | Medium | The proposal address bound only the group key and the commitment. A front-runner who saw them could create another body there, cancel it as its own abort authority, and block the signed body for good (a record with expiry `u64::MAX`) | Fixed in version 3: the seeds also hold SHA-256(body). Test `a_front_runner_cannot_take_or_block_the_signed_body` |
 | R2 | Low | A record kept the expiry of the cancelled body, so a second body for the same commitment could not be cancelled in time | Fixed by R1: each body has its own record (`each_body_has_its_own_cancellation_record`). Error 6018 is gone |
 | R3 | Low | A rent recipient equal to the proposal, the record, the owner PDA or an executable account blocked the proposal or lost the rent | Fixed: `create` refuses the owner PDA, the program and the System Program (6021). After R1 a body cannot name its proposal or record address. "An ordinary account" stays a seat rule |
-| R4 | Info | After `execute` the same body can be created again with the same approval. The pool nullifier stops a second settlement, not the program | SOL-41: a test against the real pool |
+| R4 | Info | After `execute` the same body can be created again with the same approval. The pool nullifier stops a second settlement, not the program | Tested for a queued nullifier (SOL-41, 18 October 2026). Test `the_pool_refuses_a_replay_of_an_approved_payment`, command `ZOLANA_PROVER_URL=<prover> sh sol-program/build.sh proofs`, result `1 passed`. Setup: the pool of the pinned commit in the LiteSVM of the approvals program, a UTXO of 1 SOL owned by the owner PDA, real Groth16 proofs of `transfer_confidential_1_2`. The first `execute` lands (the instruction uses 151,467 compute units, 141,372 of them in the pool): the payee gets 1 SOL, the nullifier PDA exists and the proposal closes. The body is created again, and the same approval executes again with a new proof. The pool refuses it with `NullifierAlreadyQueued` (7043), raised by `load_unused_nullifier_pda` after 6,315 compute units, before it checks the proof. The transaction rolls back: the tree, the nullifier PDA and the payee are unchanged, and the proposal stays. The case after the nullifier PDA closes needs a forester batch proof: SOL-54 |
 | R5 | Info | The Devnet genesis hash and the pool id are build constants | Fixed in version 5: the cluster is a build choice (SOL-42) |
 | R6 | Info | The commitment uses the parser of the pinned commit. A pool upgrade can change what it must bind, or stop every `execute` | SOL-43 |
 | R7 | Info | At most 18 inputs per `execute`; no merge or withdrawal path | In the beta list above; withdrawals are condition 1 |
