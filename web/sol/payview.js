@@ -5,7 +5,7 @@
 // and the proof, never from the display fields of the proposer. Each screen of a payment says who
 // pays, what it costs and what it makes public (ZOLANA.md 7.2). `data-session` marks a session and
 // `data-sol` marks a control, for the headless checks.
-import { reviewOf } from "./approve.js";
+import { approvalClosed, reviewOf } from "./approve.js";
 import { agreement } from "./ceremony.js";
 import { CLUSTER, base58 } from "./docs.js";
 import { EXECUTE_TRIES } from "./execute.js";
@@ -562,16 +562,27 @@ function resultLine(c, ss) {
   return null;
 }
 
+// After the expiry no seat can approve: the card says so until the page ends the proposal, a few
+// minutes later (the end waits for the clock margin of execute.js).
+const EXPIRED_TEXT = "This proposal expired, so no seat can approve it. The page closes it soon.";
+const approvable = (ss) => ss.status === "collecting" && !approvalClosed(ss);
+
+function expiredLine(c, ss) {
+  if (ss.status !== "collecting" || !approvalClosed(ss)) return null;
+  return c.host.el("p", { class: "small", "data-sol": "expired" }, EXPIRED_TEXT);
+}
+
 function sessionBody(c, ss, act, actions) {
   const { el } = c.host,
     open = seatsOf(c, ss).find((s) => s.state === "open");
   const count = Object.keys(c.commits[ss.id] ?? {}).length;
-  const collecting = ss.status === "collecting";
+  const collecting = approvable(ss);
   const proposer = `Proposed by seat ${ss.by}. Approvals: ${count} of ${c.host.state.g.t}.`;
   const review = collecting && open ? reviewOf(c, ss, open.seat) : null;
   const buttons = collecting ? approveRow(c, ss, act, actions, review?.waiting) : null;
   return [
     el("p", { class: "small" }, proposer),
+    expiredLine(c, ss),
     review ? reviewBlock(c, ss, review) : null,
     buttons ? el("div", { class: "row-actions" }, buttons) : null,
     executeLine(c, ss, act, actions),

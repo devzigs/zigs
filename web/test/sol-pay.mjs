@@ -313,6 +313,43 @@ step("propose creates the proposal account first; no screen before the reads of 
 }
 step("a device that read no proposal account reads it again, with no click");
 
+// ── A missing account is a wait, a click keeps the re-read, an expired proposal has no button
+{
+  const id = current;
+  const address = base58(ssOf(id).account);
+  const stored = chain.accounts.get(address);
+  const marks = (name) => {
+    const view = solView({ ...c, host: { ...c.host, el: node } }, (fn) => fn, {});
+    const card = findAll(view, (n) => n.attrs["data-session"] === id)[0];
+    return findAll(card, (n) => String(n.attrs["data-sol"]).startsWith(name)).length;
+  };
+  chain.accounts.delete(address);
+  delete c.seen[id];
+  delete c.snaps[id];
+  notify();
+  await waitFor("a read with no account", () => c.seen[id]?.account === null);
+  assert.equal(reviewOf(c, ssOf(id), 2).waiting, true, "a missing account is a wait at first");
+  assert.deepEqual([marks("refusal"), marks("approve-")], [0, 0], "no alert and no button");
+  // A click reads the account itself and keeps the time of that read: the re-read goes on.
+  await assert.rejects(approve(c, ssOf(id), 2), /reading your wallet/);
+  assert.ok(c.seen[id].at > 0, "the click keeps the time of its read");
+  // A miss that lasts 30 s is a refusal: the checker says why.
+  const since = c.seen[id].missedSince;
+  c.seen[id].missedSince = Date.now() - 31_000;
+  assert.equal(marks("refusal"), 1, "a long miss shows the refusal");
+  c.seen[id].missedSince = since;
+  chain.accounts.set(address, stored);
+  await waitFor("the account read again", () => reviewOf(c, ssOf(id), 2).ok, 30000);
+  // After the expiry no seat can approve, also before the page ends the proposal (600 s later).
+  const ahead = (Number(ssOf(id).expiry) + 100) * 1000 - Date.now();
+  later(ahead);
+  const shown = [marks("expired"), marks("approve-"), marks("refusal"), marks("review-")];
+  Date.now = realNow;
+  assert.deepEqual(shown, [1, 0, 0, 0], "an expired proposal shows one line and no button");
+  assert.ok(marks("approve-") > 0, "control: the buttons before the expiry");
+}
+step("a missing account is a wait, a click keeps the re-read, and an expiry hides Approve");
+
 // ── S5: a failed wallet read waits 3 s, then 6 s, shows one banner; a success clears it ──
 {
   const id = current;
@@ -390,6 +427,8 @@ step("a failed wallet read waits longer each time, shows one banner, and a succe
   const link = { href: explorer + "?cluster=devnet", target: "_blank", rel: "noopener" };
   assert.deepEqual(links, [link], "the proposal account links to the explorer");
   assert.match(rows["Check the payee"], /^Compare the Payee with the program address/);
+  const part = /This checks only the first part of the shielded address\.$/;
+  assert.match(rows["Check the payee"], part, "the S15 limit is on the screen");
   assert.ok(rows.Public.includes(LINK_TEXT), "the screen says that the fee address links");
   assert.equal(rows["Create paid by seat 1"], feeAddress(1), "the proposer paid the create only");
   assert.match(textOf(marked("pay-cost")[0]), /pays 0\.000005 SOL .* holds 0\.00135636 SOL/);

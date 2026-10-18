@@ -14,7 +14,7 @@ import { CLUSTER, base58 } from "./docs.js";
 import { signingBlock, writerSeats } from "./gate.js";
 import { bytesOf, chainHex, decodeIntent, wireBase64 } from "./intent.js";
 import { clearPending, dropNonces, pendingShare, savedNonces, spendNonces } from "./nonces.js";
-import { BLOCKHASH_MS, deviceSeen, inputsOf, showable } from "./approve.js";
+import { BLOCKHASH_MS, deviceSeen, inputsOf, showable, stampSeen } from "./approve.js";
 import { PAYMENT_EXPIRED, maybeExecute, pastExpiry } from "./execute.js";
 import { solOf, stopOf } from "./secrets.js";
 import { ensureWorker } from "./session.js";
@@ -364,7 +364,7 @@ function maybeReadWallet(c, ss) {
 }
 
 async function readWallet(c, ss) {
-  if (isPayment(ss)) c.seen[ss.id] = { ...(await deviceSeen(c, ss)), at: Date.now() };
+  if (isPayment(ss)) c.seen[ss.id] = stampSeen(c.seen[ss.id], await deviceSeen(c, ss));
   c.snaps[ss.id] = await deviceSpend(c, ss);
   // The pass of the reactor after this step reads a missing account again.
   if (isPayment(ss) && c.seen[ss.id].account === null) await sleep(REREAD_MS + 100);
