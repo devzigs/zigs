@@ -61,7 +61,7 @@ export function guardedFetch(origin, s) {
   return async (input, init) => {
     const request = input instanceof Request;
     const url = new URL(request ? input.url : String(input));
-    const ours = passes(origin, s, url, init);
+    const ours = passes(origin, s, url, { method: methodOf(input, init) });
     // The last call to Helius in the command decides: a handled refusal is followed by a success.
     // A key download is no reply of Helius, so it leaves the status alone.
     if (ours) refusedStatus = null;
@@ -71,7 +71,10 @@ export function guardedFetch(origin, s) {
   };
 }
 
-/** Throws when the guard stops `url`. True for a call to the Helius origin, false for a key. */
+/**
+ * Throws when the guard stops `url`. True for a call to the Helius origin, false for a key.
+ * `init` carries the method of the call, also when the input is a Request.
+ */
 function passes(origin, s, url, init) {
   const ours = url.origin === origin;
   if (!ours && !isKeyFetch(url, init)) throw new Error(`blocked a request to ${url.host}`);
@@ -152,15 +155,19 @@ function sdkFetch(s) {
   };
 }
 
+// Every call to the prove path that can carry a body waits for the gate; GET and HEAD carry none.
 const isProveCall = (s, url, input, init) =>
   url.origin === s.origin &&
   url.pathname.startsWith(PROVE_PATH) &&
-  methodOf(input, init) === "POST";
+  !["GET", "HEAD"].includes(methodOf(input, init));
 
 /** The prove call as the page answered: here, at the hosted prover, or not at all. */
 function route(s, answer, input, init) {
   if (answer.mode === "local") return proveHere(s, input, init);
-  if (answer.mode === "hosted" && !s.local) return s.guarded(input, init);
+  if (answer.mode === "hosted" && !s.local) {
+    proverFailure = null; // an SDK retry that goes hosted ends any earlier "nothing was sent"
+    return s.guarded(input, init);
+  }
   const why = answer.mode === "hosted" ? LATCHED : (answer.refuse ?? GATE_LATE);
   proverFailure = String(why).slice(0, 400);
   throw new Error(proverFailure);

@@ -211,20 +211,28 @@ the group signature. It sees no key share. Every signer of the wallet reads the 
 history too.
 
 **Local proving.** A group can make its proofs on its own devices. One seat turns it on for the
-whole group, after its device made a test proof, and nobody can turn it off. With it on, no
-device of the group sends a proof to the hosted prover of Helius, so Helius no longer gets the
-witness of a spend: not the amounts, the payees and the notes that a payment spends, and not the
-nullifier secret that links each spend to its notes. A device that cannot prove shows an error
-and sends nothing; it never falls back to the hosted prover. What stays visible:
+whole group, after its device made a test proof, and nobody can turn it off. With it on, the
+devices of the group do not send proofs to the hosted prover of Helius, so Helius no longer gets
+the witness of a spend: the amounts, the blindings and the nullifier secret that links each spend
+to its notes. A device that cannot prove shows an error and sends nothing; it never falls back to
+the hosted prover. What stays visible:
 
-- The indexer of Helius still sees the queries of the wallet (the tags and the nullifiers that it
-  looks up, and the Merkle proofs of the notes that a payment spends) and your IP address.
+- The indexer of Helius still sees which notes a payment spends (the device asks it for their
+  Merkle and non-inclusion proofs), the other queries of the wallet (the tags and nullifiers that
+  it looks up) and your IP address. The owner key of the payee is public on chain, as without
+  local proving.
 - The key server of Helius (a CloudFront host) sees your IP address and the origin of the app when
   it sends a proving key, once per payment size and device. The name of the key gives the number
   of notes that the payment spends.
 - Every hosted proof that the group made before the switch gave Helius the nullifier secret of
   the group. The setting protects new payments from then on, and helps most when it is on before
   the first payment.
+
+Two gaps remain. A tab that opened before the version of Zigs with local proving does not ask
+before it proves: reload every open tab of the group after the switch. A browser that never saw
+the switch, or a seat restored from a backup made before it, learns the switch from the group
+server, so a server that hides it could make that device prove on the hosted prover: make the
+Solana backups again after the switch, so that they carry it.
 
 Proofs on a device are slower (about 3 s for one note to about 15 s for eight on a fast laptop),
 and the first use downloads about 5 MB plus 9 to 59 MB for each payment size. Phones are not
@@ -237,8 +245,9 @@ Each Solana screen says what is public and what Helius sees:
   payment hides its amount, but it shows the owner key of the payee. The program address, the
   group key and the fee address of each seat that pays are public too. Helius sees that you use
   Zigs, your IP address and the keys of the wallet, and its hosted prover sees each payment (with
-  local proving on: the group makes its proofs on its devices, so Helius does not see the
-  payments). The Zigs server operator can link the wallet to these addresses by timing.
+  local proving on: the group makes its proofs on its devices, so Helius does not see the amounts
+  or the nullifier secret). The Zigs server operator can link the wallet to these addresses by
+  timing.
 - **Before Add Solana:** the program address links to the group key, a fee address needs a public
   SOL funding trail, and the program and its upgrade key are outside the group.
 - **The details of the wallet:** the two keys of the pool outside the group (below).
@@ -253,13 +262,15 @@ Each Solana screen says what is public and what Helius sees:
   deposit.
 - **Pay from the group:** the rent and the fees, and what the hosted prover sees: the owner keys,
   the payee, the amount, the notes that the payment spends and the secret that links each spend
-  to its notes. With local proving on, it says that Helius does not see them, and that its
-  indexer still sees the queries of the wallet and your IP address.
-- **Local proving:** the card of the switch says what it hides and what stays visible, the time
-  and the downloads, that phones are not tested, and that it cannot be turned off. A private payment shows the owner key of the payee and hides the amount. The
+  to its notes. With local proving on, it says that Helius does not see the amount, the
+  blindings or that secret, and that its indexer still sees which notes the payment spends and
+  your IP address. A private payment shows the owner key of the payee and hides the amount. The
   withdrawal form says that the recipient, the asset and the amount are public.
+- **Local proving:** the card of the switch says what it hides and what stays visible, the time
+  and the downloads, that phones are not tested, that it cannot be turned off, and that the tabs
+  and the Solana backups of the group need a reload and a new backup after the switch.
 - **The move of the beta funds:** it links the old address and the program address in public, and
-  the hosted prover sees it.
+  the hosted prover sees it (with local proving on, the devices make that proof).
 - **The rent of old proposals:** the cancel shows the fee address, the proposal account and the
   rent. The search asks Helius for the proposals of the group key and of the fee addresses of
   this browser, with your IP address.

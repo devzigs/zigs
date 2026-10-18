@@ -23,10 +23,11 @@ const PUBLIC_TEXT =
   "address, the group key and the fee address of each seat that pays are public too. Helius " +
   "sees that you use Zigs, your IP address and the keys of this wallet, and its hosted prover " +
   "sees each payment. The Zigs server operator can link this wallet to these addresses by timing.";
-// The same with local proving on (SOL-4): the prover of Helius sees no payment.
+// The same with local proving on (SOL-4): the amounts and the nullifier secret stay on the devices.
 const PUBLIC_LOCAL = PUBLIC_TEXT.replace(
   ", and its hosted prover sees each payment.",
-  ". This group makes its proofs on its devices, so Helius does not see the payments.",
+  ". This group makes its proofs on its devices, so Helius does not see the amounts or the " +
+    "secret that links each spend to its notes.",
 );
 function statusOf(c, ag) {
   if (startBlock(c.host)) return "unavailable";

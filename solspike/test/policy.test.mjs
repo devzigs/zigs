@@ -27,6 +27,9 @@ const WORKER_POLICY =
   "default-src 'none'; script-src 'self' 'wasm-unsafe-eval'; " +
   "connect-src 'self' https://devnet.helius-rpc.com " +
   "https://d3gbdb0egjwcw9.cloudfront.net/proving-keys/3a1c88f90f609eb1/; base-uri 'none'";
+// The nested Worker of the local prover (SOL-4) holds the witness: it connects to no other host.
+const PROVER_POLICY =
+  "default-src 'none'; script-src 'self' 'wasm-unsafe-eval'; connect-src 'self'; base-uri 'none'";
 const step = (name) => console.log(`ok  ${name}`);
 
 const baseSource = () =>
@@ -130,6 +133,31 @@ async function workerHeaders(worker) {
   const base = policyOf(baseSource()).run(new URL("https://app.zigs.app/"));
   assert.equal(page.headers.get("content-security-policy"), base, "the page policy changed");
   step("with SOL=1 every spelling of a /sol path carries the Worker policy; the page does not");
+}
+
+// Every spelling of a path below /sol/prover, and paths next to it that are not below it.
+const PROVER_PATHS = [
+  "/sol/prover/prover.worker.js",
+  "/sol/prover/zolana-prover.wasm",
+  "/SOL/Prover/prover.worker.js",
+  "/sol//prover/prover.worker.js",
+  "/sol/%70rover/prover.worker.js",
+  "/sol%2Fprover%2Fprover.worker.js",
+  "/sol\\prover\\prover.worker.js",
+  "/sol/prover",
+];
+const NOT_PROVER = ["/sol/proverx.js", "/sol/xprover/a.js", "/sol/worker.js", "/prover/a.js"];
+
+async function proverHeaders(worker) {
+  const env = { DEV_NO_AUTH: "1", SOL: "1", ASSETS: assets };
+  const policyOf = async (path) =>
+    (await ask(worker, env, `https://app.zigs.app${path}`)).headers.get("content-security-policy");
+  for (const path of PROVER_PATHS) assert.equal(await policyOf(path), PROVER_POLICY, path);
+  for (const path of NOT_PROVER.slice(0, 3)) {
+    assert.equal(await policyOf(path), WORKER_POLICY, path);
+  }
+  assert.equal(await policyOf(NOT_PROVER[3]), null, "a path outside /sol");
+  step("every spelling of /sol/prover carries the prover policy, which connects to no other host");
 }
 
 async function flagOff(worker) {
@@ -237,6 +265,7 @@ async function configGuarded(worker) {
 const worker = loadWorker();
 samePolicy();
 await workerHeaders(worker);
+await proverHeaders(worker);
 await flagOff(worker);
 await gate(worker);
 await configRoute(worker);

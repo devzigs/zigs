@@ -92,6 +92,18 @@ step("SOL-4 a yes signs the switch of the seat and pins every seat of this brows
   const added = [...data.keys()].filter((k) => !known.has(k) && !k.includes("/solprove/"));
   assert.deepEqual(added, [], "the device check wrote to the group server");
   chain.selftest = () => ({ ms: 3100 });
+  // A browser that cannot store the result still checks once per open wallet, not on each pass.
+  for (const i of [1, 2, 3]) await putSol(c.host, gid, i, { proveCheck: null });
+  const putSec = c.host.putSec;
+  c.host.putSec = async () => false;
+  c.proveChecked = false;
+  const once = selftests();
+  for (let i = 0; i < 3; i += 1) {
+    notify();
+    await sleep(300);
+  }
+  c.host.putSec = putSec;
+  assert.equal(selftests(), once + 1, "a check that could not be stored ran again");
 }
 step("SOL-4 a seat that sees the switch tests its device once, and the tile shows the result");
 

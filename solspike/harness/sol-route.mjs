@@ -28,6 +28,11 @@ const SOL_PATHS = [
   "/sol/../sol/worker.js", "/sol\\worker.js", "/sol/worker.js/", "/sol/%zz", "/%zz",
 ];
 const OTHER_PATHS = ["/app.js", "/sol-nothing.js", "/solar.js", "/nosuch.js"];
+// The nested Worker of the local prover (SOL-4): its own files, no other host.
+const PROVER_POLICY =
+  "default-src 'none'; script-src 'self' 'wasm-unsafe-eval'; connect-src 'self'; base-uri 'none'";
+const PROVER_PATHS = ["/sol/prover/prover.worker.js", "/SOL/prover/prover.worker.js",
+  "/sol/prover/zolana-prover.wasm"];
 
 /** One GET with the path as given. Resolves { status, csp, location, cache, body }. */
 const get = (path) =>
@@ -79,6 +84,9 @@ async function switchOn() {
   expect(worker.status === 200 && worker.csp === POLICY, "SOL=1: /sol/worker.js is not served");
   for (const path of OTHER_PATHS) {
     expect((await get(path)).csp === null, `SOL=1: ${path} has the Worker policy`);
+  }
+  for (const path of PROVER_PATHS) {
+    expect((await get(path)).csp === PROVER_POLICY, `SOL=1: ${path} lacks the prover policy`);
   }
   console.log(`SOL=1: ${SOL_PATHS.length} /sol spellings checked, ${served} answered 200`);
 }

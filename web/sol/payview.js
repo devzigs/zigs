@@ -92,11 +92,11 @@ export const LINK_TEXT =
 export const PROVER_TEXT =
   "Helius makes the proof on its hosted prover. So it sees the owner keys, the payee, the amount " +
   "and the notes that the payment spends. It also sees the secret that links each spend to its " +
-  "notes. Local proving keeps all of this on your devices: see Local proving below.";
+  "notes. Local proving keeps the amount and that secret on your devices: see Local proving below.";
 export const PROVER_LOCAL =
-  "This group makes its proofs on its devices, so Helius does not see the payee, the amount, the " +
-  "notes that the payment spends or the secret that links each spend to its notes. Its indexer " +
-  "still sees the queries of this wallet and your IP address.";
+  "This group makes its proofs on its devices, so Helius does not see the amount, the blindings " +
+  "or the secret that links each spend to its notes. Its indexer still sees which notes the " +
+  "payment spends and your IP address, and the owner key of the payee is public on chain.";
 /** What the prover of a payment of this group sees: hosted, or local with the switch (SOL-4). */
 const proverSays = (local) => (local ? PROVER_LOCAL : PROVER_TEXT);
 

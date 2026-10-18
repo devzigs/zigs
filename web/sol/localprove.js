@@ -187,22 +187,27 @@ export async function poolNote(c, worker, text) {
 
 export const SWITCH_TEXT = [
   "Local proving makes the proofs of this group on its own devices, in place of the hosted " +
-    "prover of Helius. Helius then no longer sees the payments: not the amounts, the payees and " +
-    "the notes that a payment spends, and not the secret that links each spend to its notes " +
-    "(the nullifier secret). Its indexer still sees the queries of this wallet (the tags and " +
-    "nullifiers that it looks up) and your IP address. The key server of Helius sees your IP " +
-    "address and that the request comes from Zigs when it sends a proving key.",
+    "prover of Helius. Helius then no longer sees the amounts and the blindings of the payments, " +
+    "or the secret that links each spend to its notes (the nullifier secret). Its indexer still " +
+    "sees which notes a payment spends (the device asks it for their proofs), the other queries " +
+    "of this wallet and your IP address, and the owner key of a payee stays public on chain. The " +
+    "key server of Helius sees your IP address, that the request comes from Zigs, and the name " +
+    "of the key, which gives the number of notes that a payment spends.",
   "Proofs are slower: from about 3 s for one input to about 15 s for eight, on a fast laptop. " +
     "The first use downloads about 5 MB, plus 9 to 59 MB for each payment size. A phone may be " +
     "too slow, or may run out of memory: local proving is not tested on phones.",
   "Every hosted proof that this group made before gave Helius its nullifier secret, so the " +
-    "setting helps most when it is on before the first payment. Once on, it is on for every " +
-    "device of the group and cannot be turned off. If a change of Helius breaks the local " +
-    "prover, the group cannot pay until a Zigs update.",
+    "setting helps most when it is on before the first payment. Once on, it is on for the group " +
+    "and cannot be turned off. After you turn it on, reload every open Zigs tab of the group and " +
+    "make the Solana backups again: a tab that opened before this version of Zigs does not ask " +
+    "before it proves, and a seat restored from an older backup learns the setting from the " +
+    "group server. If a change of Helius breaks the local prover, the group cannot pay until a " +
+    "Zigs update.",
 ];
 const ON_TEXT =
-  "Local proving is on: every device of this group makes its proofs itself, and none uses the " +
-  "hosted prover.";
+  "Local proving is on for this group: its devices make their proofs themselves. Reload every " +
+  "open Zigs tab of the group, and make the Solana backups again, so that no old tab or old " +
+  "backup uses the hosted prover.";
 
 /** The card of the switch, among the payment cards. `actions.proveOn` turns it on. */
 export function switchCard(c, act, actions) {

@@ -101,6 +101,7 @@ async function freshWorker({ testMode = false } = {}) {
   proverControl.reply = () => new Response('{"proof":"local"}', { status: 200 });
   gate.answer = { mode: "hosted" };
   gate.asked = 0;
+  gate.queue.length = 0;
   globalThis.self = {
     location: { href: "https://app.zigs.app/sol/worker.js" },
     postMessage: (message) => {
@@ -114,10 +115,12 @@ async function freshWorker({ testMode = false } = {}) {
 }
 
 /** The page side of the gate (client.js): it answers each prove call with `gate.answer`. */
-const gate = { answer: { mode: "hosted" }, asked: 0 };
+// `gate.queue` answers the next gates in order; then `gate.answer` answers the rest.
+const gate = { answer: { mode: "hosted" }, asked: 0, queue: [] };
 function answerGate(id) {
   gate.asked += 1;
-  queueMicrotask(() => globalThis.self.onmessage({ data: { gate: id, ...gate.answer } }));
+  const answer = gate.queue.shift() ?? gate.answer;
+  queueMicrotask(() => globalThis.self.onmessage({ data: { gate: id, ...answer } }));
 }
 
 /** Sends one command to the Worker. Resolves with its answer { id, ok, result | error }. */
@@ -873,8 +876,44 @@ async function keyFetchGuard() {
   for (const [url, init] of blocked) {
     await assert.rejects(async () => sdkFetch(url, init), /blocked a request to/, url);
   }
+  const posted = new Request(`${KEYS}transfer_confidential_1_2.key`, { method: "POST", body: "w" });
+  await assert.rejects(async () => sdkFetch(posted), /blocked a request to/, "a POST Request");
   assert.equal(fetched.length, 2, "a blocked request reached the network");
   step("SOL-4 the guard passes GET of a pinned N x 2 key and nothing else of that host");
+}
+
+/** Any call to the prove path that can carry a body waits for the gate; GET and HEAD do not. */
+async function everyBodyIsGated() {
+  await initialised();
+  const { fetch: sdkFetch } = control.options;
+  await sdkFetch(`${PROVE_URL}?${KEY_NAME}=k`, { method: "PUT", body: "{}" });
+  assert.equal(gate.asked, 1, "a PUT with a body went out with no gate");
+  await sdkFetch(new Request(`${PROVE_URL}?${KEY_NAME}=k`, { method: "POST", body: "{}" }));
+  assert.equal(gate.asked, 2, "a POST Request went out with no gate");
+  await sdkFetch(`${PROVE_URL}/status?${KEY_NAME}=k`);
+  await sdkFetch(`${PROVE_URL}/status?${KEY_NAME}=k`, { method: "HEAD" });
+  assert.equal(gate.asked, 2, "a GET or a HEAD asked the gate");
+  step("SOL-4 every call to the prove path that can carry a body waits for the gate");
+}
+
+/** An SDK retry that goes hosted after a refusal does not end with "nothing was sent". */
+async function retryAfterRefusal() {
+  await initialised();
+  gate.queue.push({ refuse: "Could not read the proving setting. Nothing was sent to Helius." });
+  control.utxos = [syncedInput()];
+  giveProof(proveBody());
+  control.prove = async () => {
+    const init = { method: "POST", body: JSON.stringify(proveBody()) };
+    const url = `${PROVE_URL}?${KEY_NAME}=k`;
+    await control.options.fetch(url, init).catch(() => null); // the SDK tries again
+    await control.options.fetch(url, init);
+    throw new Error("CLIENT_PROVER_HTTP");
+  };
+  const done = await ask("prepare", { ...PREPARE, kind: "pay", avoid: [] });
+  assert.equal(done.ok, false);
+  assert.doesNotMatch(done.error, /Nothing was sent/, "a hosted retry kept the refusal text");
+  assert.equal(toHelius().length, 1, "the retry went to the hosted prover");
+  step("SOL-4 a hosted retry after a refusal does not say that nothing was sent");
 }
 
 /** selftest proves the pinned test request here; poolSlot reads the deploy slot of the pool. */
@@ -924,5 +963,7 @@ await localStaysOnTheDevice();
 await refusedProvesNothing();
 await localFailureTexts();
 await keyFetchGuard();
+await everyBodyIsGated();
+await retryAfterRefusal();
 await deviceCheckAndPool();
 console.log("worker tests passed");
