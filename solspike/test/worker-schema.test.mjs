@@ -161,7 +161,7 @@ function otherCommands() {
       /malformed/,
     );
   }
-  for (const cmd of ["balance", "preflight", "inspect", "status"]) {
+  for (const cmd of ["balance", "preflight", "inspect", "status", "owned"]) {
     assert.match(
       text(() => checkCommand(cmd, { extra: 1 })),
       /not allowed/,
@@ -175,6 +175,7 @@ function otherCommands() {
     "history",
     "init",
     "inspect",
+    "owned",
     "preflight",
     "prepare",
     "readNonce",
@@ -225,9 +226,14 @@ function prepareFields() {
   reproveFields(payer);
 }
 
-/** The reads of the program design: the old wallet, an account, its history and the rent. */
+/**
+ * The reads of the program design: the old wallet, an account, its history, the rent, and the open
+ * proposals of a fee key in a group (SOL-52).
+ */
 function programReads(account) {
+  const key = "ab".repeat(32);
   checkCommand("syncOld", {});
+  checkCommand("owned", { fee: key, group: key });
   checkCommand("account", { account });
   checkCommand("recipientAccount", { account });
   checkCommand("history", { account });
@@ -238,6 +244,10 @@ function programReads(account) {
     ["history", { account: "" }],
     ["rent", { space: "-1" }],
     ["rent", { space: 139 }],
+    ["owned", { fee: key.slice(2), group: key }],
+    ["owned", { fee: key, group: key.toUpperCase() }],
+    ["owned", { fee: account, group: key }],
+    ["owned", { group: key }],
   ]) {
     assert.match(
       text(() => checkCommand(cmd, args)),
