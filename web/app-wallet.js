@@ -187,8 +187,8 @@ function overviewTab() {
   const c = curChain(), list = activity(), pend = toApprove(state.gid);
   return el("div", { class: "page", style: "gap:16px" },
     state.g.movedTo ? moveCard(c) : null,
-    solUnfinished() ? solSetupCard() : null,
     pend.length ? approvalsCard(pend) : null,
+    solUnfinished() ? solSetupCard() : null,
     el("div", { class: "grid-ov" }, balanceCard(c), receiveCard()),
     signersCard(),
     el("section", { class: "card" },

@@ -9,6 +9,56 @@ const engineDot = document.getElementById("engine-dot");
 const engineText = document.getElementById("engine-text");
 function setEngine(state, text) { engineDot.className = "dot " + state; engineText.textContent = text; }
 
+// The link to the group server (the "link" of web/shim.js) gets a line under the engine line
+// while it is not open. An open link shows nothing, so the line never hides the engine line on a
+// phone (app.css hides the side foot when it holds an ok dot).
+const LINK_WHY = { 0: "no network", 401: "the preview password is missing or wrong",
+  429: "too many connections from this network" };
+const linkWhy = (code) => LINK_WHY[code] ?? (code >= 500 ? "the server has a problem" : null);
+// What the line shows: { show, dot, text, wait }. The wait counts down and is not read out.
+export function linkView(s, now) {
+  if (s.state === "idle" || s.state === "open") return { show: false, dot: "", text: "", wait: "" };
+  if (s.state === "connecting") {
+    return { show: true, dot: "busy", text: "Connecting to the group server…", wait: "" };
+  }
+  const why = linkWhy(s.code), left = Math.ceil((s.retryAt - now) / 1000);
+  return { show: true, dot: "bad",
+    text: "The group server does not answer" + (why ? " (" + why + ")" : "") + ".",
+    wait: left > 0 ? " Next try in " + left + " s." : " Trying again now." };
+}
+let linkNow = null, linkTick = 0;
+function showLink(s) {
+  linkNow = s;
+  const line = document.getElementById("link") ?? addLinkLine();
+  if (!line) return;
+  const v = linkView(s, Date.now());
+  // Through the CSSOM: .engine sets display, which the hidden attribute does not beat.
+  line.style.display = v.show ? "" : "none";
+  const [dot, text, wait] = line.children;
+  dot.className = "dot " + v.dot;
+  if (text.textContent !== v.text) text.textContent = v.text;
+  wait.textContent = v.wait;
+  // The wait counts down while the state is "retrying", on the second marks of retryAt.
+  if (s.state === "retrying" && !linkTick) {
+    const next = (s.retryAt - Date.now()) % 1000;
+    linkTick = setTimeout(() => { linkTick = 0; showLink(linkNow); }, next > 0 ? next : 1000);
+  }
+}
+function addLinkLine() {
+  const engine = document.getElementById("engine");
+  if (!engine) return null;
+  const line = document.createElement("div");
+  line.className = "engine";
+  line.id = "link";
+  line.setAttribute("role", "status");
+  const wait = document.createElement("span");
+  wait.setAttribute("aria-hidden", "true");
+  line.append(document.createElement("span"), document.createElement("span"), wait);
+  engine.after(line);
+  return line;
+}
+if (typeof zigs !== "undefined") zigs.use("link").then((link) => link?.watch(showLink));
+
 export async function loadEngine() {
   try {
     const mod = await import("./pkg/zigs_engine.js");

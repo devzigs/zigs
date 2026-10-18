@@ -18,13 +18,16 @@ export async function openApp(rig, name, url) {
 }
 
 // `solana`: the box "Also set up Solana Devnet" of the dialog. The page shows it once the server
-// answered /sol/config.json, so the run waits for it before it sets it.
+// answered /sol/config.json, and it is on by default. So on a server that serves Solana, the run
+// waits for the box before it sets it, also to clear it.
 async function makeWallet(page, name, { solana = false } = {}) {
   await clickText(page, "Create wallet");
   await waitForText(page, "New shared wallet");
   await setInput(page, "#g-name", name);
   const box = () => run(page, () => !!document.getElementById("g-sol"));
-  if (solana) await waitFor(box, 20000, () => "the Solana box of the dialog");
+  const served = () =>
+    run(page, async () => (await fetch("/sol/config.json", { cache: "no-store" })).ok);
+  if (solana || (await served())) await waitFor(box, 20000, () => "the Solana box of the dialog");
   // A click fires the change handler, so the page keeps the choice through a redraw.
   await run(page, (on) => {
     const el = document.getElementById("g-sol");
@@ -85,6 +88,24 @@ export async function solValues(page) {
 
 const status = async (page) => (await solValues(page)).status;
 
+// Each shown label of a key-value list sits on the row of its value, left of it (the rig page is
+// 1280 px wide, so the lists have two columns).
+async function labelsAligned(page) {
+  const off = await run(page, () =>
+    [...document.querySelectorAll(".kv dt")]
+      .filter((dt) => dt.offsetParent !== null)
+      .filter((dt) => {
+        const dd = dt.nextElementSibling;
+        if (dd?.tagName !== "DD") return true;
+        const a = dt.getBoundingClientRect(),
+          b = dd.getBoundingClientRect();
+        return Math.abs(a.top - b.top) > 2 || b.left <= a.left;
+      })
+      .map((dt) => dt.textContent),
+  );
+  if (off.length) throw new Error("labels off the row of their value: " + off.join(", "));
+}
+
 /** Seat 1 opens the Solana tab and taps Add Solana, unless the part starts by itself. */
 async function startSolana(page, auto) {
   await clickText(page, "Solana", { exact: true });
@@ -121,6 +142,7 @@ export async function solanaReady(pages, gid, { auto = false } = {}) {
     if (values.size !== 1) throw new Error(`the pages show different ${name} values`);
   }
   const { owner, "group-key": groupKey, shielded } = seen[0];
+  await labelsAligned(pages[0]);
   await sleep(500);
   return { owner, groupKey, shielded };
 }
