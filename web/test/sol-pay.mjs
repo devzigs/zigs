@@ -17,7 +17,7 @@ import { approve, deviceSeen, reviewOf } from "../sol/approve.js";
 import { agreement } from "../sol/ceremony.js";
 import { base58, keyOfBase58 } from "../sol/docs.js";
 import { EXECUTE_TRIES, executorOf, tryAgain } from "../sol/execute.js";
-import { ZERO_KEY, bytesOf, decodeIntent, readVerdict } from "../sol/intent.js";
+import { ZERO_KEY, bytesOf, decodeIntent, planHex, readVerdict } from "../sol/intent.js";
 import { savedNonces, saveNonces } from "../sol/nonces.js";
 import { feeOf } from "../sol/fee.js";
 import { putSol } from "../sol/secrets.js";
@@ -141,11 +141,24 @@ step("the earlier pairs come from the other sessions only");
     if (hex === "22".repeat(16)) throw new Error("the message has 0 pool instructions");
     return own;
   };
+  // A payment and a withdrawal hold the plan and the first proof. One with no input, or with a
+  // byte after its plan (the checker would read another proof), has no pair that the page reads.
+  const proof = (payment, more = {}) => ({
+    plan: planHex(preparedOf(payment, { expiry: "1" })),
+    transact: transactOf({ ...payment, ...more }, 1),
+  });
+  const pay = { intent: "08" + "00".repeat(149), ...proof(G.pay) };
   const written = {
     "server-move": { intent: move.intent, message: "11".repeat(16) },
     "server-bad": { intent: move.intent, message: "22".repeat(16) },
     "server-nonce": { intent: "00" + "00".repeat(32), message: "33".repeat(16) },
+    "server-withdraw": { intent: "0a" + "00".repeat(50), ...proof(G.withdraw) },
+    "server-empty": { ...pay, ...proof(G.pay, { inputs: [] }) },
+    "server-plan": { ...pay, plan: pay.plan + "00" },
   };
+  const withdrawn = { first: G.withdraw.inputs[0].nullifier, salt: G.withdraw.salt };
+  const key = (p) => p.first + p.salt;
+  const sorted = (list) => [...list].sort((a, b) => key(a).localeCompare(key(b)));
   for (const [id, fields] of Object.entries(written)) {
     await writePart(c, id, "proposal", { ...fields, createdAt: 1 }, { seat: 1, create: true });
   }
@@ -155,12 +168,19 @@ step("the earlier pairs come from the other sessions only");
   await waitFor("the failed move", () => ssOf("server-move")?.status === "failed");
   const both = await deviceSpend(c, move);
   const local = { first: "01".repeat(32), salt: "02".repeat(16) };
-  assert.deepEqual(both.salts, [local, theirs], "the pair of this browser and of the server");
+  const want = sorted([local, theirs, withdrawn]);
+  assert.deepEqual(sorted(both.salts), want, "the pair of this browser and of the server");
   for (const i of [1, 2, 3]) await putSol(c.host, gid, i, { salts: null });
   const restored = await deviceSpend(c, move);
-  assert.deepEqual(restored.salts, [theirs], "a restored seat reads the pair on the group server");
+  const server = sorted([theirs, withdrawn]);
+  assert.deepEqual(sorted(restored.salts), server, "a restored seat reads the pairs of the server");
   const mine = await deviceSpend(c, { ...move, id: "server-move" });
-  assert.deepEqual(mine.salts, [], "the session itself is no other proposal");
+  assert.deepEqual(mine.salts, [withdrawn], "the session itself is no other proposal");
+  // A session whose signature check waits is not in the list yet: no list until it is checked.
+  c.sessWait = 1;
+  const waiting = "a list read while a signature check waits is refused";
+  await assert.rejects(() => deviceSpend(c, move), /still checking/, waiting);
+  c.sessWait = 0;
   assert.ok(!asked.includes("33".repeat(16)), "the message of the nonce account has no pair");
   await dropSessions(Object.keys(written));
   chain.inspected = own;
