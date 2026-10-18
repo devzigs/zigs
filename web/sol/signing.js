@@ -14,7 +14,7 @@ import { CLUSTER, base58 } from "./docs.js";
 import { signingBlock, writerSeats } from "./gate.js";
 import { bytesOf, chainHex, decodeIntent, wireBase64 } from "./intent.js";
 import { clearPending, dropNonces, pendingShare, savedNonces, spendNonces } from "./nonces.js";
-import { BLOCKHASH_MS, deviceSeen, inputsOf, showable, stampSeen } from "./approve.js";
+import { BLOCKHASH_MS, REREAD_MS, deviceSeen, inputsOf, showable, stampSeen } from "./approve.js";
 import { PAYMENT_EXPIRED, maybeExecute, pastExpiry } from "./execute.js";
 import { solOf, stopOf } from "./secrets.js";
 import { ensureWorker } from "./session.js";
@@ -339,8 +339,7 @@ const expired = (ss) =>
 const paymentExpired = (ss) => isPayment(ss) && !ss.signature && pastExpiry(ss);
 
 // A node may show a new proposal account a moment after the create: a device that read none
-// reads it again after this, so its screen does not keep a refusal.
-const REREAD_MS = 5000;
+// reads it again after REREAD_MS (approve.js), so its screen does not keep a refusal.
 const accountMissing = (c, ss) =>
   isPayment(ss) && c.seen[ss.id]?.account === null && Date.now() - c.seen[ss.id].at > REREAD_MS;
 

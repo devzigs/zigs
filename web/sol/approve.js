@@ -131,8 +131,9 @@ const NOT_SHOWN = "This proposal is not one that this app can show.";
 export const showable = (ss) => readable(ss) && SESSION_KINDS.has(kindOf(ss));
 
 // A node may show a new proposal account a few seconds after the create. A read that finds none
-// is a wait, with re-reads, for this long; then the checker refusal shows.
+// is a wait for this long, with a re-read every REREAD_MS; then the checker refusal shows.
 const ACCOUNT_WAIT_MS = 30_000;
+export const REREAD_MS = 5000;
 
 /** The chain state of a payment as read now: the time of the read, and of the first miss. */
 export function stampSeen(prev, seen) {
@@ -292,6 +293,13 @@ async function makeNonces(c, ss, seat, review) {
   return entry;
 }
 
+/** The chain state of a payment, read for a click, with the time of the read. */
+async function readSeen(c, ss) {
+  c.seen[ss.id] = stampSeen(c.seen[ss.id], await deviceSeen(c, ss));
+  // No account yet: a pass of the reactor reads it again, also on an idle page.
+  if (c.seen[ss.id].account === null) setTimeout(() => c.host.refilter(), REREAD_MS + 100);
+}
+
 /**
  * Seat `seat` approves the proposal `ss`. A retry after a crash between the save and the publish
  * publishes the saved commitment again: the nonces are never made twice for one session.
@@ -300,7 +308,7 @@ export async function approve(c, ss, seat) {
   const why = (await settledBlock(c)) ?? approveBlock(c, ss, seat);
   if (why) throw new Error(why);
   if (isSpend(ss)) c.snaps[ss.id] = await deviceSpend(c, ss);
-  if (isPayment(ss)) c.seen[ss.id] = stampSeen(c.seen[ss.id], await deviceSeen(c, ss));
+  if (isPayment(ss)) await readSeen(c, ss);
   const review = reviewOf(c, ss, seat);
   if (!review.ok) throw new Error(review.why);
   await checkNonce(c, review);

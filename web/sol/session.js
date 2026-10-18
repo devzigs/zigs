@@ -270,15 +270,18 @@ function syncJob(c, run) {
 }
 
 /**
- * The Sync button: a sync that works shows the payments that were sent before it, and it ends the
- * back-off of the automatic syncs.
+ * The Sync button: a sync that works ends the back-off of the automatic syncs. When it shows a
+ * change, it also counts the payments that were sent before it as synced.
  */
 export async function syncNow(c) {
   const { opened } = c;
   const ids = unsynced(c).map((ss) => ss.id);
+  const before = [c.sync.balance, c.sync.oldBalance];
   await syncSolana(c);
   if (!stillOpen(c, opened)) return;
-  for (const id of ids) c.syncedSent.add(id);
+  // The indexer may lag: a sync that shows no change leaves the payments to the poll.
+  const changed = c.sync.balance !== before[0] || c.sync.oldBalance !== before[1];
+  if (changed) for (const id of ids) c.syncedSent.add(id);
   Object.assign(c, { autoSyncFails: 0, autoSyncAfter: 0 });
 }
 

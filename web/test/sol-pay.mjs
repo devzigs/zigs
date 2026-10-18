@@ -330,9 +330,20 @@ step("a device that read no proposal account reads it again, with no click");
   await waitFor("a read with no account", () => c.seen[id]?.account === null);
   assert.equal(reviewOf(c, ssOf(id), 2).waiting, true, "a missing account is a wait at first");
   assert.deepEqual([marks("refusal"), marks("approve-")], [0, 0], "no alert and no button");
-  // A click reads the account itself and keeps the time of that read: the re-read goes on.
+  // A click reads the account itself and keeps the time of that read: the re-read goes on, with
+  // a pass of the reactor after 5 s also on an idle page. The click comes a while after the read.
+  const firstMiss = c.seen[id].missedSince;
+  await new Promise((done) => setTimeout(done, 1500));
+  const passes = [];
+  const refilter = c.host.refilter;
+  c.host.refilter = () => (passes.push(Date.now()), refilter());
+  const clicked = Date.now();
   await assert.rejects(approve(c, ssOf(id), 2), /reading your wallet/);
-  assert.ok(c.seen[id].at > 0, "the click keeps the time of its read");
+  assert.ok(c.seen[id].at > firstMiss, "the click keeps the time of its read");
+  assert.equal(c.seen[id].missedSince, firstMiss, "and the time of the first miss");
+  await new Promise((done) => setTimeout(done, 5300));
+  c.host.refilter = refilter;
+  assert.ok(passes.some((at) => at - clicked >= 5000), "a pass of the reactor after the click");
   // A miss that lasts 30 s is a refusal: the checker says why.
   const since = c.seen[id].missedSince;
   c.seen[id].missedSince = Date.now() - 31_000;

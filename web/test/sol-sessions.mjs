@@ -182,6 +182,9 @@ const created = await proposed("createNonce");
   const ss = ssOf(created);
   assert.equal(ss.status, "collecting");
   assert.equal(decodeIntent(ss.intent).kind, "createNonce");
+  // A nonce proposal lives about as long as its blockhash: after 120 s no seat can approve it.
+  const old = { ...ss, createdAt: Date.now() - 121_000 };
+  await assert.rejects(approve(c, old, 2), /This proposal expired/);
   const message = bytesOf(ss.message);
   const account = Buffer.from(await nonceAccountHex(done.groupKey), "hex");
   assert.ok(Buffer.from(message).includes(account), "the message holds the derived nonce account");
@@ -325,7 +328,7 @@ step("a failed poll is tried again, and a sync must work before a payment counts
   const set = (v) => (real = v);
   Object.defineProperty(c, "sessions", { get: () => [...real, ...extra], set, configurable: true });
   const call = c.worker.call;
-  let [syncs, refused, lamports] = [0, 0, 8_000_000];
+  let [syncs, refused, lamports, same] = [0, 0, 8_000_000, false];
   const gates = []; // each sync waits for the next gate in the list, if any
   const gate = () => {
     const g = {};
@@ -338,7 +341,8 @@ step("a failed poll is tried again, and a sync must work before a payment counts
     syncs += 1;
     await gates.shift()?.wait;
     if (refused-- > 0) throw new Error("Helius is not answering.");
-    return { ...(await call(cmd, args)), balance: String((lamports += 1000)) };
+    if (!same) lamports += 1000;
+    return { ...(await call(cmd, args)), balance: String(lamports) };
   };
   const fields = { expiry: 1n, inputs: 1, outputs: 2, recipient: "11".repeat(32), amount: 4n };
   const pay = (id) => ({ id, status: "sent", intent: intentHex("withdraw", fields) });
@@ -365,6 +369,25 @@ step("a failed poll is tried again, and a sync must work before a payment counts
   await syncNow(c);
   const state = [c.autoSyncFails, c.autoSyncAfter, c.syncedSent.has("p5")];
   assert.deepEqual(state, [0, 0, true], "the Sync button ends the back-off");
+  // A payment that ends during a Sync waits for a sync after it: the Sync takes its ids first.
+  c.autoSyncAfter = Date.now() + 60_000; // no automatic poll during this Sync
+  const held = gate();
+  const run = syncNow(c);
+  await waitFor("the Sync in flight", () => !gates.includes(held));
+  extra.push(pay("p6"));
+  held.open();
+  await run;
+  assert.equal(c.syncedSent.has("p6"), false, "p6 ended during the Sync");
+  // A Sync that shows no change (the indexer lags) ends the back-off and leaves p6 to the poll.
+  same = true;
+  Object.assign(c, { autoSyncFails: 2, autoSyncAfter: Date.now() + 60_000 });
+  await syncNow(c);
+  const lagged = [c.autoSyncFails, c.autoSyncAfter, c.syncedSent.has("p6")];
+  assert.deepEqual(lagged, [0, 0, false], "a Sync with no change leaves the poll");
+  same = false;
+  autoSync(c);
+  await waitFor("the poll of p6", () => c.syncedSent.has("p6"), 30000);
+  await waitFor("the job end", () => !c.autoSyncBusy);
   c.worker.call = call;
   delete c.sessions;
   c.sessions = real;
