@@ -112,6 +112,15 @@ The owner asked on 16 October 2026 for faster development and iteration. Each ro
 | VEL-7 | P2 | dev | Merge unfinished features behind a switch | A feature that is not ready ships turned off, so branches stay small; the first such feature adds the smallest switch that works |
 | VEL-9 | P2 | dev | Make lint.sh pass with the oxlint of this machine | With oxlint 1.74.0, `bash solspike/lint.sh` stops at `solspike/build.mjs:66` (no-control-regex: the class `[^/\0]` of the home-path pattern) before it reaches the page lint of the app.js split (`solspike/oxlintrc-page.json`). Done when lint.sh exits 0 with one pinned oxlint version (a dev dependency of solspike, or a version check in lint.sh), because the rules and the browser globals of oxlint change between versions. CI runs no lint today: a workflow should run lint.sh, so the page lint guards every push |
 
+## Zcash Names (ZNS)
+
+ZNS maps a name to a unified address through an on-chain registry. The spike is
+[docs/zns-spike.md](docs/zns-spike.md).
+
+| Id | P | Owner | Title | Done when |
+|---|---|---|---|---|
+| ZNS-1 | P3 | owner | Decide on names, then let the web app pay to a ZNS name | The owner picks the resolver option (B, C or D in docs/zns-spike.md 2.5), says whether mainnet waits for the audit report, and says whether groups get names while ZNS control is 1-of-n (3.3). Then the web app pays to a name on testnet with that option: each approving device resolves the name itself and refuses a mismatch, a live testnet payment lands, and PRIVACY.md and README.md say who learns a looked-up name |
+
 ## Closed
 
 | Id | Title | Closed by |
