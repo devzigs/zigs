@@ -700,9 +700,9 @@ const sealed = (gid, rel, seat, fields, key, names = ["by", "sig"]) =>
     c = card(chatReq, "yes", true);
     assert.match(textOf(c), /You hold no seat in a testnet wallet\./);
     assert.equal(named(c, "button", "Propose this").attrs.disabled, "");
+    // Mainnet is off (M1): a chat reads a mainnet request as one for testnet, and refuses it.
     c = card(t.requestOf(`zcash:${mainAddr}`, true), "yes", true);
-    assert.match(textOf(c), /You hold no seat in a mainnet wallet\./);
-    assert.match(textOf(c), /Payment requestMainnet/, "a chat card names the network");
+    assert.match(textOf(c), /Payee 1: the address is not a testnet address\./);
 
     // The Send form starts with the note of the request.
     t.ui.note = "Request from Alice";

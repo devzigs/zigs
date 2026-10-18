@@ -3,7 +3,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>Zigs</title>
-<meta name="description" content="Zigs is a private shared wallet for shielded Zcash. Any t of n signers approve each payment, and on chain it looks like a shielded payment from a standard wallet.">
+<meta name="description" content="Zigs is a private shared wallet for Zcash testnet and Solana Devnet. Any t of n signers approve each payment, and on chain it looks like a shielded payment from a standard wallet.">
 <link rel="modulepreload" href="/pkg/zigs_engine.js">
 <link rel="preload" href="/pkg/zigs_engine_bg.wasm" as="fetch" type="application/wasm" crossorigin>
 <link rel="icon" type="image/png" href="/favicon.png">
@@ -16,14 +16,13 @@
     <a class="logo" href="#" aria-label="Zigs home">
       <img src="/logo.png" alt="" width="28" height="28">
       Zigs
-      <span class="net" title="Beta: testnet, and mainnet with a warning at 0.5 ZEC. Not audited.">Beta</span>
+      <span class="net" title="Beta: Zcash testnet and Solana Devnet. Not audited.">Beta</span>
     </a>
     <nav id="side-nav" aria-label="Your wallets and chats"></nav>
     <div class="side-foot">
       <div class="engine" id="engine"><span class="dot busy" id="engine-dot"></span><span id="engine-text">Loading crypto engine…</span></div>
-      <p class="side-note">Keys are made and used in this browser. Beta: testnet, and mainnet with
-        a warning at 0.5 ZEC. Not audited. At 0.5 ZEC the app warns and hides the address. It cannot block
-        deposits.
+      <p class="side-note">Keys are made and used in this browser. Beta: Zcash testnet and Solana
+        Devnet. Not audited.
         <a href="https://zigs.app" target="_blank" rel="noopener">About Zigs</a></p>
     </div>
   </aside>

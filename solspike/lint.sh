@@ -16,7 +16,7 @@ JS=(solspike/harness/*.mjs solspike/tools/*.mjs solspike/build.mjs solspike/src/
   web/sol/approve.js web/sol/gate.js web/sol/intent.js web/sol/nonces.js web/sol/payview.js
   web/sol/propose.js web/sol/sessions.js web/sol/signing.js web/sol/fee.js web/sol/addsol.js
   web/sol/execute.js web/test/sol-rig.mjs web/test/sol-fixture.mjs web/test/page.mjs
-  web/test/graph.mjs
+  web/test/graph.mjs web/test/demo-check.mjs
   web/test/sol-config.mjs web/test/sol-docs.mjs web/test/sol-ceremony.mjs web/test/sol-app.mjs
   web/test/sol-wasm.mjs web/test/sol-chain.mjs web/test/sol-sessions.mjs
   web/sol/spend.js web/sol/transfer.js web/test/sol-limits.mjs web/test/sol-setup.mjs

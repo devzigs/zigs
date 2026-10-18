@@ -99,8 +99,11 @@ const notSettled = (c, f) =>
 const noDone = (c, f) =>
   !c.docs.soldone[f.seat] &&
   REFUSE("This wallet has no published Solana " + "key for seat " + f.seat + ".");
+// A copy that dropped its stale round 1 for another copy of the seat keeps only that mark: its
+// part is empty, so the file of the finished copy restores into it.
+const EMPTY_MARKS = new Set(["otherCopy"]);
 const hasData = (c, f) =>
-  Object.keys(solOf(c.host, f.group, f.seat)).length > 0 &&
+  Object.keys(solOf(c.host, f.group, f.seat)).some((k) => !EMPTY_MARKS.has(k)) &&
   REFUSE("Seat " + f.seat + " already has Solana data in this browser, so it was not restored.");
 const noFit = (c, f) =>
   (!fitsSolana(c.W, f.seat, f, c.docs.soldone[f.seat]) || agreement(c).state === "differ") &&
@@ -152,6 +155,7 @@ export async function restoreSolana(c, b, encrypted) {
     solSeed: f.solSeed,
     cluster: CLUSTER,
     doneSent: true,
+    otherCopy: null,
   };
   if (!(await putSol(host, f.group, f.seat, part))) {
     throw new Error("This browser could not save the restored Solana part.");

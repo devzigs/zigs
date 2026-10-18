@@ -26,6 +26,10 @@ is a bug: please report it.
   a shielded transaction. The account, its contacts and its messages never reach the group
   server. The light-wallet server sees the transactions that the account fetches and sends, and
   your IP address.
+- A testnet payment to a ZNS name (web app only), such as `alice.zec`, looks the name up on the
+  device, in a copy of the whole name registry that the app Worker downloads. No server learns
+  which name you pay. The registry itself is public: anyone can see which address a name gives.
+  Read [ZNS names](#zns-names-testnet).
 
 ## On chain
 
@@ -84,8 +88,10 @@ What the server can still see:
 | Nothing for the personal account and its messages | The account, its contacts and its on-chain messages never touch the group server. | None needed |
 
 The server keeps no logs: Workers Logs are off (`observability.enabled = false`), and the code
-writes nothing about requests. IP addresses are used in memory only: to apply rate limits, and as
-a tag on each open WebSocket. The limits count each IPv4 address, or each /64 network of IPv6
+writes nothing about requests. One line is the exception: when the `/zns` route cannot read the
+name registry, it writes a fixed cause, such as `zns: status`. That line holds nothing about the
+request and no text of the resolver. IP addresses are used in memory only: to apply rate limits,
+and as a tag on each open WebSocket. The limits count each IPv4 address, or each /64 network of IPv6
 addresses, because one IPv6 user usually holds a whole /64. So users who share an IPv4 address or
 a /64 (one home, one office, one VPN exit) also share a counter, and one of them can use up the
 limit of the others.
@@ -147,6 +153,63 @@ Tor Browser hides your IP address from both servers, but not this timing link. T
 link, point the app at a light-wallet server you trust (`NETWORKS` in `web/app-chain.js`,
 `ZcashNetwork` in `ios/Zigs/Chain.swift`).
 
+## ZNS names (testnet)
+
+On testnet, the Send form of the web app accepts a ZNS name in place of an address: `alice`,
+`alice.zec` or `alice.zcash`. ZNS is the naming service of Zcash Names (zcashnames.com), which
+ZcashMe, Inc. runs. Its registry is on chain and public. Anyone can read every name, the address
+that it gives and the history of both.
+
+How the app reads the registry:
+
+- The route `/zns` of the app Worker downloads the list of all names of the testnet registry from
+  the public resolver `light.zcash.me`. It sends no header of yours to the resolver. It checks
+  that the resolver states the published key of the registry. That shows which registry the
+  resolver reads, but it does not prove the records. The Worker leaves out a record that fails
+  its checks, and a name that comes with two addresses, so that name gives "not found". It serves
+  a copy that is at most 60 seconds old.
+- The page downloads that copy, behind the same password as every other request, and finds the
+  name on the device. It never asks a server about one name.
+
+| Party | What it learns |
+|---|---|
+| ZNS resolver (`light.zcash.me`) | That the app Worker downloads the registry, and when. Not your IP address and not a name |
+| App Worker | Your IP address and when your page downloads the registry. Not the name that you type |
+| Group server | Nothing new. The name is one more field of the sealed proposal |
+| Other signers of the wallet | The name and the address in the proposal, as for every recipient |
+| Chain observers | A normal shielded payment. Nothing shows that a name was used |
+
+The timing of a download can still tell the Worker something:
+
+- The page downloads the registry when a testnet wallet opens. It downloads it again when a copy
+  older than 60 seconds must check a name, before a proposal or an approval.
+- The Worker sees each download and its IP address. As the group server, it also sees which IP
+  addresses open which wallet.
+- So a download near a proposal or an approval can tell the Worker that a wallet may pay a name.
+  When the registry holds few names, that can point to the payee.
+
+What the app trusts, and what it checks:
+
+- The address comes from the registry. One registrar, the ZNS Mint, writes the registry. The app
+  checks the key that the resolver states, not each record on chain.
+- The page trusts the app Worker for the registry, as it trusts it for the code of the page. A
+  false Worker could send a false registry to the devices of one wallet. The approvers read the
+  same copy, so their check would not see it. They still see the address, and the payment goes
+  only to the address that they approve.
+- A name can move to another address. The proposer sees the address that the name gives, and a
+  note when the name changed recently. Each approving web app looks the name up again, in its own
+  copy, and refuses the approval when the name now gives another address than the payment. The
+  iPhone and Mac apps show the address and do not check the name.
+- The page uses its copy for at most 60 seconds, so the copy is at most about 2 minutes behind
+  the resolver. The resolver can fall behind the chain too. So the page refuses a registry that is
+  more than 10 blocks below the chain height of the wallet.
+- A Zigs wallet gets no name of its own. Under ZNS, anyone who can read the memos of an address
+  can change the name of that address. Every signer of a wallet can read its memos
+  ([docs/zns-spike.md](docs/zns-spike.md), section 3.3).
+- Mainnet wallets do not look up names.
+- zcashnames.co is another registry, with names that look the same. The app reads only the ZNS
+  registry of zcashnames.com.
+
 ## Solana beta (Helius Devnet)
 
 A testnet wallet in the web app can also hold private SOL on Devnet, in Zolana, the Helius
@@ -205,18 +268,54 @@ Zolana is not Zcash. This table says what differs:
 | Custody | Fewer than `t` seats cannot spend | The same for the seats. The pool upgrade key can replace the pool, and the protocol authority can pause trees |
 
 What Helius sees: your IP address, the origin of the app, the owner keys of the wallet (the PDA
-and the group key), and the witness of each spend. It can read the whole Solana history of the
-wallet. It cannot spend, because a spend needs the group signature. It sees no key share. Every
-signer of the wallet reads the whole Solana history too.
+and the group key), the fee addresses of the seats of this browser, and the witness of each
+spend. It can read the whole Solana history of the wallet. It cannot spend, because a spend needs
+the group signature. It sees no key share. Every signer of the wallet reads the whole Solana
+history too.
 
-The screen before **Add Solana** says that the Solana address of the wallet is public, that each
-seat also gets a fee address that appears on chain next to the group, that the Zigs server operator
-can link the wallet to these addresses by timing, that Helius sees that you use Zigs, and that a
-fee address needs a public SOL funding trail. The fund card says that the fee address appears on
-chain next to the group, and the Add SOL card says that the amount and the sender are public. The
-Send privately card and the approval screen of a payment show the rent, the fees, the proposal
-account and the public link of the fee address. The other Solana screens do not yet state the
-limits above (ticket SOL-12 in [TICKETS.md](TICKETS.md)).
+Each Solana screen says what is public and what Helius sees:
+
+- **The Solana tab, in each state** (also before Add Solana and while the setup runs): a deposit
+  shows its sender and amount on chain, and a withdrawal its recipient and amount. A private
+  payment hides its amount, but it shows the owner key of the payee. The program address, the
+  group key and the fee address of each seat that pays are public too. Helius sees that you use
+  Zigs, your IP address and the keys of the wallet, and its hosted prover sees each payment. The
+  Zigs server operator can link the wallet to these addresses by timing.
+- **Before Add Solana:** the program address links to the group key, a fee address needs a public
+  SOL funding trail, and the program and its upgrade key are outside the group.
+- **The details of the wallet:** the two keys of the pool outside the group (below).
+- **The sync:** each sync shows Helius the keys of the wallet with your IP address, so Helius can
+  list every note of the wallet.
+- **The fund card:** the fee address appears on chain next to the group, and Helius sees it with
+  your IP address when you check the balance or pay.
+- **Add SOL:** the amount and the sender are public, and Helius sees your IP address with the
+  deposit.
+- **Pay from the group:** the rent and the fees, and what the hosted prover sees: the owner keys,
+  the payee, the amount, the notes that the payment spends and the secret that links each spend
+  to its notes. A private payment shows the owner key of the payee and hides the amount. The
+  withdrawal form says that the recipient, the asset and the amount are public.
+- **The move of the beta funds:** it links the old address and the program address in public, and
+  the hosted prover sees it.
+- **The rent of old proposals:** the cancel shows the fee address, the proposal account and the
+  rent. The search asks Helius for the proposals of the group key and of the fee addresses of
+  this browser, with your IP address.
+- **The approval screen** of a payment, a withdrawal, the move and the nonce account: what becomes
+  public (for a payment, the owner key of the payee), the public link of the fee address that
+  pays, and for each spend what the hosted prover sees.
+
+The details screen also shows the two keys of the pool, as read from Devnet on 18 October 2026.
+Both sit outside the group, and Zigs does not know who holds them:
+
+- The upgrade key `2kgbLowvCQuMWxDKbHUZAURycziuRrvmtTuDEYMGMRsj` (in the ProgramData account of
+  the pool). It is a signing key, not a program address; the chain does not show how many people
+  hold it. It can replace the pool program.
+- The protocol authority `263Kgjft9NezaYTspFquMbAhgRf7xfAiyusaweLowdXo` (in the protocol config
+  account `2AJashtYixa5hkGpBcT9dUdUqqx6wvDWrJdtXqHqQXvE`). It is a program address, by the
+  Zolana spec a 2-of-5 Squads account. It can pause the trees, and then no payment can move the
+  funds. It can also set the fees of the pool and change its other authorities, but not the
+  upgrade key. The fee authority is the same address.
+
+The screen does not read these keys live, so a change of a key does not show there.
 
 Tor Browser hides your IP address from Helius. It does not hide the timing link of the group
 server. A person who reads "private" may expect Zcash privacy. The Solana part gives less.
@@ -240,7 +339,8 @@ What makes this safe to rely on:
 
 - The page sends a Content-Security-Policy header. The browser lets it connect only to the group
   server and the light-wallet servers in `NETWORKS` (our testnet server through `/lwd` of its own
-  host, and two ChainSafe servers), and to nothing else. The Solana Worker
+  host, and two ChainSafe servers), and to nothing else. The name registry also comes from its
+  own host, through `/zns`. The Solana Worker
   (`/sol/worker.js`, testnet wallets only) has a policy of its own, which also names the Helius
   Devnet host. The policy of the page names no Helius host.
 - A restored seat works in a new session. The app checks the restored key data against what the
@@ -447,6 +547,9 @@ the passkey guards the key share instead. The lock is opt-in.
   you pay. A request from an unverified sender, and every request in a memo, shows a warning. The
   name and the message in a request are text from the sender. The card cuts them and marks them as
   not checked.
+- A ZNS name gives the address that its registry holds. Whoever controls a name can point it at
+  another address. The approvers check the name again, and the payment goes to the address that
+  they approved. Before a large payment, check the address with the payee.
 - **Propose this** sends nothing: the normal checks and approvals of a payment apply. Every
   approver reads its note. The note names the sender only when the sender is verified. Any holder
   of the invite link can write a message with a seat number and a bad signature.

@@ -223,12 +223,12 @@ export function safetyNo(net = netName(state.g)) {
 // secret of this browser signed it. A restore does not take "confirmed" from the file. The
 // documents of other seats do not count: a device that opens a wallet for the first time pins
 // their keys from the store. null while no number matches, or when both networks match.
+const ownConfirm = (i) => {
+  const d = raw.confirm[i];
+  return signedByMe(state.gid, i, "confirm/" + i, d) === "yes" ? d.number : null;
+};
 export function confirmedNetwork() {
-  const own = (i) => {
-    const d = raw.confirm[i];
-    return signedByMe(state.gid, i, "confirm/" + i, d) === "yes" ? d.number : null;
-  };
-  const numbers = localSeats().flatMap((i) => [sec(state.gid, i).confirmed, own(i)]);
+  const numbers = localSeats().flatMap((i) => [sec(state.gid, i).confirmed, ownConfirm(i)]);
   const matches = (net) => {
     const no = safetyNo(net);
     return !!no && numbers.includes(no);
@@ -236,6 +236,9 @@ export function confirmedNetwork() {
   const nets = Object.keys(NETWORKS).filter(matches);
   return nets.length === 1 ? nets[0] : null;
 }
+// The safety number that the person of seat i of this browser confirmed. A seat with no number
+// (a restore does not take it from the file) has the number of its own signed confirm document.
+export const confirmedNo = (i) => sec(state.gid, i).confirmed ?? ownConfirm(i);
 const gateOf = (s) => confirmGate(safetyNo(), s.confirmed, state.confirm, seatIds());
 const canConfirm = (s) => !s.keyPackage && !s.aborted && usesV2(seatMode(s));
 export const confirmSeatsOf = () => localSeats()

@@ -12,7 +12,7 @@ import {
 } from "./app-filter.js";
 import { openGroup, sdb, unsubGroup } from "./app-groups.js";
 import { act, el, guard } from "./app-dom.js";
-import { groupVersion, safetyNo, seatCheck } from "./app-dkg.js";
+import { confirmedNo, groupVersion, safetyNo, seatCheck } from "./app-dkg.js";
 import { restore, sealAndSave } from "./app-backups.js";
 import { once, react, render } from "./app-loop.js";
 
@@ -35,7 +35,7 @@ let solWatched = null;    // the wallet whose start document is watched
 export function resetSolStart() { solStartDoc = null; solWatched = null; }
 const solHost = () => ({
   Z, sdb, state, el, act, log, once, render, refilter, showBanner, sec, putSec, signedDoc,
-  canWriteAs, localSeats, seatIds, checkIn, safetyNo, seatCheck, openGroup, restore,
+  canWriteAs, localSeats, seatIds, checkIn, safetyNo, seatCheck, confirmedNo, openGroup, restore,
   groupVersion, sealAndSave, network: () => netName(state.g),
   askBackup: (words) => { ui.backup = { words, made: false, busy: false }; render(); },
 });

@@ -6,7 +6,7 @@ import { clearBadBanner, log, showBanner, state, ui } from "./app-state.js";
 import { initials, short, ZEC_FMT } from "./app-kit.js";
 import { Z } from "./app-engine.js";
 import { isMe, localSeats, seatMine, seatNameOf } from "./app-seats.js";
-import { capText, curNet, netOf, NETWORKS } from "./app-chain.js";
+import { capText, curNet, MAINNET_ON, netOf, NETWORKS } from "./app-chain.js";
 import { signedMode } from "./app-filter.js";
 import { closeSession } from "./app-groups.js";
 import { approvedHold, ended, expired, landed, payeesOf, signingSeen } from "./app-payments.js";
@@ -147,7 +147,9 @@ export function nameField(id, to = "your signers") {
 
 // The choice lives in `sel` (`ui`, or `ui.personal`), so a redraw keeps it. `what` names the thing
 // that holds the funds, and `idp` prefixes the ids.
+// While MAINNET_ON is false, the picker shows Testnet only and no tick (M1).
 export function networkPick(sel = ui, what = "wallet", idp = "g") {
+  if (!MAINNET_ON) sel.net = "testnet";
   const on = (value) => (sel.net === value ? " on" : "");
   const opt = (value, title, text) => el("label", { class: "net-opt" + on(value) },
     el("input", { type: "radio", name: idp + "-network", value, id: idp + "-net-" + value,
@@ -157,8 +159,8 @@ export function networkPick(sel = ui, what = "wallet", idp = "g") {
     el("legend", { class: "label" }, "Network"),
     el("div", { class: "two" },
       opt("testnet", "Testnet", "Free test coins, for trying Zigs."),
-      opt("mainnet", "Mainnet", "Real ZEC. At " + capText(NETWORKS.mainnet.cap)
-        + " the app warns and hides the address. It cannot block deposits.")),
+      MAINNET_ON ? opt("mainnet", "Mainnet", "Real ZEC. At " + capText(NETWORKS.mainnet.cap)
+        + " the app warns and hides the address. It cannot block deposits.") : null),
     sel.net === "mainnet" ? el("label", { class: "ack" },
       el("input", { type: "checkbox", id: idp + "-ack", checked: sel.ack,
         onchange: (ev) => { sel.ack = ev.target.checked; } }),
