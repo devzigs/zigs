@@ -35,6 +35,9 @@
     "web/test/shim.mjs": {
       "exit": 0
     },
+    "web/test/shim-status.mjs": {
+      "exit": 0
+    },
     "web/test/lwd.mjs": {
       "exit": 0
     },
@@ -78,6 +81,12 @@
       "exit": 0
     },
     "web/test/demo-check.mjs": {
+      "exit": 0
+    },
+    "web/test/mainnet-off.mjs": {
+      "exit": 0
+    },
+    "web/test/chain-fallback.mjs": {
       "exit": 0
     },
     "cf/test/limits.mjs": {

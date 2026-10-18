@@ -13,13 +13,19 @@ import {
 import { acct } from "./app-account.js";
 import { render } from "./app-loop.js";
 
+// This release is for Zcash testnet and Solana Devnet only (M1 of docs/hackathon-release.md): a new
+// wallet or account cannot pick mainnet, and a chat reads testnet requests only. A mainnet wallet
+// made before still opens.
+export const MAINNET_ON = false;
 // Light-wallet servers in order of preference. Mainnet uses a third-party server, so the group
 // server and the chain server have different operators (see PRIVACY.md). The first testnet server
-// is /lwd of this origin: the Worker relays it to our node (cf/src/index.js).
+// is /lwd of this origin: the Worker relays it to our node (cf/src/index.js). The faucet pays
+// 0.125 TAZ to a utest1 address, once a day for each IP address.
 export const NETWORKS = {
   testnet: { label: "Testnet",
     servers: [location.origin + "/lwd", "https://zcash-testnet.chainsafe.dev"],
-    explorer: "https://testnet.zecblock.com/tx/", prefix: "utest1", faucet: "https://zcashfaucet.jinolabs.xyz/" },
+    explorer: "https://testnet.zecblock.com/tx/", prefix: "utest1",
+    faucet: "https://faucet.testnet.valargroup.dev/" },
   mainnet: { label: "Mainnet", servers: ["https://zcash-mainnet.chainsafe.dev"],
     explorer: "https://zecblock.com/tx/", prefix: "u1", cap: 50000000 },
 };
@@ -29,6 +35,7 @@ export const netOf = (g) => NETWORKS[netName(g)];
 export const curNet = () => netOf(state.g);
 export const capText = (zat) => zat / 1e8 + " ZEC";
 export const SERVER_TIMEOUT_MS = 8000;
+const FIRST_TIMEOUT_MS = 3000, FAILED_MS = 5 * 60000, SYNC_STALL_MS = 60000;
 export let chain = null;   // { gid, cw, prog, bal, received, ms, error, syncing } for the open group
 export function setChain(v) { chain = v; }
 // Last known balance per wallet, so the wallet list shows money before a wallet syncs.
@@ -52,7 +59,13 @@ function saveBal(gid, bal) {
   try { balSealed[gid] = Z.secretSeal(gkeys[gid], "bal\n" + gid, S(balCache[gid])); localStorage.setItem("zf-bal", JSON.stringify(balSealed)); } catch {}
 }
 
-export function dropChain() { const c = chain; chain = null; if (c && !c.syncing && c.cw) c.cw.free(); }
+// The wallet object of a chain may be freed, unless the engine may still use it (a stalled sync).
+const freeable = (c) => !!c.cw && c.cw !== c.stalled;
+export function dropChain() {
+  const c = chain;
+  chain = null;
+  if (c && !c.syncing && freeable(c)) c.cw.free();
+}
 
 export function ensureChain() {
   if (!Z || (chain && chain.gid === state.gid)) return;
@@ -64,32 +77,61 @@ export function ensureChain() {
   runSync(chain);
 }
 
-// Returns the first light-wallet server of `net` that answers, in order of preference.
+// A server that did not answer goes to the end of the list for FAILED_MS, so that a sync and a
+// broadcast do not wait for it each time (S9). Returns the servers of `net` in that order.
+const failedAt = new Map();   // url -> when it last failed
+const failedNow = (url) => Date.now() - (failedAt.get(url) ?? -Infinity) < FAILED_MS;
+export const preferredServers = (net) =>
+  [...net.servers.filter((u) => !failedNow(u)), ...net.servers.filter(failedNow)];
+
+// Returns the first light-wallet server of `net` that answers. The first server of a list with a
+// fallback, in its own first place, waits FIRST_TIMEOUT_MS: our node answers in well under a
+// second. A fallback and the only server of a network keep the full wait.
 export async function pickServer(net) {
-  for (const url of net.servers) {
-    try { await withTimeout(Z.latestHeight(url), SERVER_TIMEOUT_MS, new URL(url).host); return url; }
-    catch (e) { log(new URL(url).host + " unreachable: " + (e.message || e)); }
+  for (const [at, url] of preferredServers(net).entries()) {
+    const quick = at === 0 && url === net.servers[0] && net.servers.length > 1;
+    const wait = quick ? FIRST_TIMEOUT_MS : SERVER_TIMEOUT_MS;
+    try {
+      await withTimeout(Z.latestHeight(url), wait, new URL(url).host);
+      failedAt.delete(url);
+      return url;
+    } catch (e) {
+      failedAt.set(url, Date.now());
+      log(new URL(url).host + " unreachable: " + (e.message || e));
+    }
   }
-  throw new Error("No light-wallet server answers. Check your connection, then click Sync.");
+  // The sync says that the page tries again; a click (Create account) does not.
+  throw Object.assign(new Error("No light-wallet server answers. Check your connection."),
+    { noServer: true });
 }
 
 // A new server or a reload continues from saved state; without it the wallet syncs from the birthday.
 async function connect(c) {
   const url = await pickServer(c.net);
   if (c.cw && c.url === url) return;
-  let snap = null;
-  try { snap = c.cw ? c.cw.snapshot() : await loadSnapshot(c); } catch (e) {
-    log("no usable wallet state: " + (e.message || e));
-  }
-  let next = null;
-  if (snap) {
-    try { next = Z.ChainWallet.restore(c.ufvk, c.birthday, url, snap); } catch (e) { log("saved wallet state rejected: " + (e.message || e)); }
-  }
-  if (c.cw) c.cw.free();
+  const next = await restored(c, url);
+  if (freeable(c)) c.cw.free();
+  c.stalled = null;
   c.cw = next || new Z.ChainWallet(c.ufvk, c.birthday, url);
   c.url = url;
   log("using " + new URL(url).host + (next ? ", continuing from saved state" : ""));
-  if (next && !c.bal) { c.bal = J(c.cw.balance()); c.received = J(c.cw.received()); c.sent = new Set(J(c.cw.sent())); render(); }
+  if (next && !c.bal) {
+    c.bal = J(c.cw.balance()); c.received = J(c.cw.received()); c.sent = new Set(J(c.cw.sent()));
+    render();
+  }
+}
+// A wallet object for `url` with the state of the old object, else with the saved state, or null.
+async function restored(c, url) {
+  const snap = await stateOf(c);
+  if (!snap) return null;
+  try { return Z.ChainWallet.restore(c.ufvk, c.birthday, url, snap); }
+  catch (e) { log("saved wallet state rejected: " + (e.message || e)); return null; }
+}
+async function stateOf(c) {
+  try { if (c.cw) return c.cw.snapshot(); }
+  catch (e) { log("no state of the old wallet: " + (e.message || e)); }
+  try { return await loadSnapshot(c); }
+  catch (e) { log("no usable wallet state: " + (e.message || e)); return null; }
 }
 
 export async function runSync(c) {
@@ -98,7 +140,7 @@ export async function runSync(c) {
   const t0 = performance.now();
   try {
     await connect(c);
-    c.bal = J(await c.cw.sync((p) => { c.prog = J(p); render(); }));
+    c.bal = J(await syncOrStall(c, c.cw));
     c.balAt = Date.now();
     c.received = J(c.cw.received());
     c.sent = new Set(J(c.cw.sent()));
@@ -108,11 +150,48 @@ export async function runSync(c) {
     log("synced to " + c.bal.height + ", spendable " + fmtZec(c.bal.spendable));
     runMemos(c);
   }
-  catch (e) {
-    c.error = e.message || String(e); log("sync failed: " + c.error);
-    if (Z.isDeepReorg(c.error)) await rescanFromBirthday(c);
+  catch (e) { await syncFailed(c, e); }
+  finally {
+    c.syncing = false;
+    if (!current(c) && freeable(c)) c.cw.free();
+    render();
   }
-  finally { c.syncing = false; if (!current(c) && c.cw) c.cw.free(); render(); }
+}
+async function syncFailed(c, e) {
+  c.error = (e.message || String(e)) + (e.noServer ? " The page tries again by itself." : "");
+  log("sync failed: " + c.error);
+  if (e.stalled) dropStalled(c);
+  else if (Z.isDeepReorg(c.error)) await rescanFromBirthday(c);
+}
+
+// A sync that gets no new blocks for SYNC_STALL_MS stopped: the stream of the server stalled
+// (S9). The wait starts again with each batch, so a long first sync goes on.
+async function syncOrStall(c, cw) {
+  let timer, stop;
+  const stalled = new Promise((_, rej) => { stop = rej; });
+  const wait = () => {
+    clearTimeout(timer);
+    timer = setTimeout(() => stop(Object.assign(new Error("The light-wallet server stopped "
+      + "sending blocks. The page tries again by itself."), { stalled: true })), SYNC_STALL_MS);
+  };
+  wait();
+  const progress = (p) => {
+    wait();
+    if (c.cw === cw && c.stalled !== cw) { c.prog = J(p); render(); }
+  };
+  try { return await Promise.race([cw.sync(progress), stalled]); }
+  finally { clearTimeout(timer); }
+}
+// The engine may still use the stalled wallet object, so it is never freed. It stays the wallet of
+// the chain until the next sync, so the balance and a payment keep working, and the next sync
+// starts a new object from its state (with the batches before the stall) on the next server.
+// ponytail: each stall leaves one object, which wasm-bindgen frees when it is collected after its
+// stream ends; nothing stops that stream.
+function dropStalled(c) {
+  if (c.url) failedAt.set(c.url, Date.now());
+  c.stalled = c.cw;
+  c.url = null;
+  c.prog = null;
 }
 
 // Drops the saved state, so that the next sync scans the wallet again from its birthday.
@@ -248,3 +327,13 @@ setInterval(() => {
   if (document.visibilityState !== "visible") return;
   for (const c of [curChain(), acct]) if (c && !c.syncing) runSync(c);
 }, 60000);
+// The refresh skips a hidden tab, so a tab that comes back syncs at once when its last sync is
+// older than 15 s (S9).
+export function syncOnReturn() {
+  if (document.visibilityState !== "visible") return;
+  for (const c of [curChain(), acct]) {
+    if (c && !c.syncing && Date.now() - (c.balAt ?? 0) > 15000) runSync(c);
+  }
+}
+document.addEventListener("visibilitychange", syncOnReturn);
+window.addEventListener("focus", syncOnReturn);
