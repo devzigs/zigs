@@ -220,6 +220,18 @@ function inboxOf(gid, list) {
   return readSessions(list.map((d) => [d.id, d]), checkIn(gid), t);
 }
 
+// The approvals and shares of session `sid` of the open wallet, from the raw maps of its watch,
+// checked as the open payment's are. A wallet before version 3 signs none.
+const NO_DOCS = { seats: {}, dkg1: {}, dkg2: {}, confirm: {}, abort: {}, done: {}, verify: {},
+  wallet: null, sessions: {} };
+export function sessionParts(sid, parts) {
+  const gid = state.gid;
+  if (!signedMode(gid)) return parts;
+  const onBad = (what) => logIgnored(gid, what);
+  const f = filterWallet({ ...NO_DOCS, ...parts }, sid, checkIn(gid), onBad);
+  return { commits: f.docs.commits, shares: f.docs.shares };
+}
+
 // Shows the stored documents as they are in a wallet before version 3.
 function copyRaw() {
   if (signedMode(state.gid)) return;   // its group document has not come yet: show nothing
