@@ -13,9 +13,10 @@
 // (PLAN). Results: solspike/logs/scenario-f.json after every step (public values only); the
 // encrypted backup files go to solspike/.state/scenario-f, their passphrases to SOLSPIKE_INTERIM
 // (mode 600). --resume starts again from those backups and skips the steps that are done.
-// With --mock (harness/mock.mjs) it makes no Devnet call and writes no passphrase: (a) and (d)
-// run in full, the taps of (b), (c) and (f) must be refused, and the plan goes to
-// solspike/logs/mock-f.json.
+// With --mock (harness/mock.mjs) it makes no Devnet call and writes no passphrase: every step runs
+// against the fake chain of the web tests (harness/mock-chain.mjs), but a payment is live only:
+// the model has no SDK payment for a new group, so the tap of each payment must be refused at
+// prepare. The results go to solspike/logs/mock-f.json.
 // Run: node solspike/harness/scenario-f.mjs [--mock | --resume]   (README.md, "Live scenarios")
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
@@ -35,7 +36,6 @@ import { clickText, run } from "./page.mjs";
 import { redact } from "./redact.mjs";
 import { openApp, solValues, solanaReady, zcashWallet } from "./seats.mjs";
 import { ORIGIN } from "./server.mjs";
-import { consoleProblems } from "./sol-facts.mjs";
 import { withStack } from "./stack.mjs";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
@@ -69,6 +69,7 @@ const PLAN = [
     { label: `${p.label} execute`, payer: "fee address of an approving seat", lamports: 0n },
   ]),
 ];
+const LIVE_TOOLS = { fund, confirmed: chain.confirmed, payerOf: chain.payerOf };
 const fresh = { head: HEAD, cluster: "devnet", mock: MOCK, steps: [], checks: {} };
 const results = RESUME ? JSON.parse(readFileSync(RESULTS, "utf8")) : fresh;
 results.runs = [...(results.runs ?? []), { head: HEAD, resume: RESUME }];
@@ -172,19 +173,19 @@ async function resumed(rig) {
   return { pages: await restored(rig, saved), keys: saved.keys, saved };
 }
 
-async function fundSeats(pages, fees) {
+async function fundSeats(pages, fees, tools) {
   for (const seat of [1, 2, 3]) {
     if (did(`fund-seat${seat}`)) continue;
-    const sent = await fund({ to: fees[seat], shown: fees[seat], lamports: FUNDS[seat] });
+    const sent = await tools.fund({ to: fees[seat], shown: fees[seat], lamports: FUNDS[seat] });
     record(`fund-seat${seat}`, { signature: sent.signature, lamports: String(FUNDS[seat]) });
   }
   for (const [i, page] of pages.entries()) await flow.feeFunded(page, i + 1);
 }
 
-async function addSol(page, fees) {
+async function addSol(page, fees, tools) {
   const signature = await flow.addSol(page, ADD.text);
-  await chain.confirmed(signature);
-  assert.equal(await chain.payerOf(signature), fees[1], "the fee address of seat 1 pays Add SOL");
+  await tools.confirmed(signature);
+  assert.equal(await tools.payerOf(signature), fees[1], "the fee address of seat 1 pays Add SOL");
   record("add-sol", { signature });
 }
 
@@ -208,46 +209,49 @@ async function payStep(pages, spec, { keys, fees, payee }) {
   return done.alive;
 }
 
-async function liveRun(rig, start, fees) {
-  let { pages } = start;
-  const ctx = { keys: start.keys, fees, payee: await addressOfB() };
-  await fundSeats(pages, fees);
-  if (!did("add-sol")) await addSol(pages[0], fees);
-  if (!did("pay-a")) pages = await payStep(pages, PAYMENTS[0], ctx);
-  if (!did("restore") && !RESUME) {
-    for (const page of pages) await page.context.dispose();
-    pages = await restored(rig, loadBackups());
-    record("restore", {});
-  }
-  for (const spec of PAYMENTS.slice(1)) {
-    if (!did(spec.label)) pages = await payStep(pages, spec, ctx);
-  }
-  await flow.privateBalance(pages[0], privateNow());
-  results.problems = pages.map((p) => consoleProblems(p.records).length);
-  assert.ok(results.problems.every((n) => n === 0), "no console problem or CSP violation");
+/** A payment: live, or in a mock run a tap that the fake chain must refuse (live only). */
+async function payment(pages, spec, ctx) {
+  if (!MOCK) return payStep(pages, spec, ctx);
+  const withdrawTo = spec.label === "withdraw" ? ctx.fees[1] : undefined;
+  const tap = { ...spec, payee: ctx.payee, withdrawTo };
+  const refused = await flow.refusedTap(pages[spec.proposer - 1], tap);
+  record(`${spec.label} (live only)`, { refused });
+  return pages;
 }
 
-/** The mock run: the restore runs in full, and each tap that needs the chain must be refused. */
-async function mockRun(rig, start, fees) {
-  record("add-sol", { refused: await flow.refusedTap(start.pages[0], "add-sol") });
-  for (const page of start.pages) await page.context.dispose();
-  const pages = await restored(rig, start.saved);
+/** (d): the pages close, and blank pages restore the seats. A resumed run is a restore already. */
+async function restoreStep(rig, pages, saved) {
+  if (did("restore") || RESUME) return pages;
+  for (const page of pages) await page.context.dispose();
+  const fresh = await restored(rig, MOCK ? saved : loadBackups());
   record("restore", {});
-  const payee = await addressOfB();
-  const taps = [{ ...PAYMENTS[0], payee }, { ...PAYMENTS[2], withdrawTo: fees[1] }];
-  for (const spec of taps) {
-    record(spec.label, { refused: await flow.refusedTap(pages[spec.proposer - 1], spec) });
+  return fresh;
+}
+
+async function steps(rig, start, fees, tools) {
+  let { pages } = start;
+  const ctx = { keys: start.keys, fees, payee: await addressOfB() };
+  await fundSeats(pages, fees, tools);
+  if (!did("add-sol")) await addSol(pages[0], fees, tools);
+  if (!did("pay-a")) pages = await payment(pages, PAYMENTS[0], ctx);
+  pages = await restoreStep(rig, pages, start.saved);
+  for (const spec of PAYMENTS.slice(1)) {
+    if (!did(spec.label)) pages = await payment(pages, spec, ctx);
   }
-  assert.equal(heliusAnswers([...start.pages, ...pages]), 0, "no answer from the Helius host");
+  await flow.privateBalance(pages[0], privateNow());
+  results.problems = pages.map((p) => flow.problemsOf(p).length);
+  assert.ok(results.problems.every((n) => n === 0), "no console problem or CSP violation");
+  if (MOCK) assert.equal(heliusAnswers([...start.pages, ...pages]), 0, "no Helius answer");
 }
 
 async function scenario(rig) {
   results.plan = PLAN.map((tx) => ({ ...tx, lamports: String(tx.lamports) }));
+  const tools = MOCK ? (await import("./mock-chain.mjs")).mockTools(rig) : LIVE_TOOLS;
   const start = RESUME ? await resumed(rig) : await created(rig);
   const fees = await flow.feeAddresses(start.pages);
   if (results.fees) assert.deepEqual(fees, results.fees, "the same fee addresses");
   results.fees = fees;
-  await (MOCK ? mockRun(rig, start, fees) : liveRun(rig, start, fees));
+  await steps(rig, start, fees, tools);
   console.log(redact(JSON.stringify({ mock: MOCK, steps: results.steps.map((s) => s.label) })));
 }
 

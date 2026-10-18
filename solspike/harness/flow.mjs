@@ -6,6 +6,7 @@ import { sleep, waitFor } from "./chrome.mjs";
 import { run, setInput } from "./page.mjs";
 import { redact } from "./redact.mjs";
 import { solValues } from "./seats.mjs";
+import { consoleProblems } from "./sol-facts.mjs";
 
 /** Clicks a control that the page marks with data-sol. Waits for it, and for it to be enabled. */
 export async function clickMark(page, mark, ms = 30000) {
@@ -128,18 +129,18 @@ async function tapPay(page, { amount, payee, withdrawTo }) {
 const sessionIds = async (page) => new Set((await sessions(page)).map((s) => s.id));
 
 /**
- * The tap of a mock run (harness/mock.mjs): the Helius host resolves to nothing, so the tap must
- * reach the network of the Worker, end with a new banner that says so, and propose nothing.
- * `what` is "add-sol" or a payment spec. Returns the banner text.
+ * The tap of a payment in a mock run (harness/mock-chain.mjs): the fake chain has no payment for
+ * a new group, so the prepare of the Worker must refuse it. The page shows a new banner with that
+ * refusal and proposes nothing. Returns the banner text.
  */
-export async function refusedTap(page, what) {
+export async function refusedTap(page, spec) {
   const known = await sessionIds(page);
   const before = await banner(page);
-  await (what === "add-sol" ? tapAddSol(page, "0.001") : tapPay(page, what));
+  await tapPay(page, spec);
   let last = before;
   const refused = async () => {
     last = await banner(page);
-    return last !== before && /Failed to fetch/.test(last) ? last : "";
+    return last !== before && /no payment is prepared/.test(last) ? last : "";
   };
   const text = await waitFor(refused, 120000, () => `the refusal (last ${redact(last)})`);
   const added = [...(await sessionIds(page))].filter((id) => !known.has(id));
@@ -227,6 +228,17 @@ export async function privateBalance(page, want) {
     () => `the private balance ${want} (last ${seen})`,
   );
   return seen;
+}
+
+/**
+ * The console problems of a page and its Workers, without a 503 of /lwd: the dev server has no
+ * light-wallet key (README.md, "The local server"), so the Zcash part uses another server. Any
+ * other 503 response counts.
+ */
+export function problemsOf(page) {
+  const others = consoleProblems(page.records).filter((p) => !/status of 503/.test(p.text));
+  const down = page.records.filter((r) => r.kind === "response" && r.status === 503);
+  return [...others, ...down.filter((r) => !new URL(r.url).pathname.startsWith("/lwd/"))];
 }
 
 // After the last session, no page holds a nonce or a made share: they are spent or dropped.

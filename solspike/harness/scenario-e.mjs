@@ -4,8 +4,8 @@
 // seat 1 adds 0.002 SOL to the private balance of the group (Add SOL). Checks outside the app: the
 // fee address of seat 1 pays the Add SOL transaction, and every seat syncs the private balance.
 // THIS RUN LANDS TWO TRANSACTIONS on Devnet (PLAN). Results: solspike/logs/scenario-e.json.
-// With --mock (harness/mock.mjs) it makes no Devnet call: the pages up to the Add SOL tap, which
-// the page refuses, and the plan, in solspike/logs/mock-e.json.
+// With --mock (harness/mock.mjs) it makes no Devnet call: every step runs against the fake chain
+// of the web tests (harness/mock-chain.mjs), and the results go to solspike/logs/mock-e.json.
 // Run: node solspike/harness/scenario-e.mjs [--mock]   (README.md, "Live scenarios")
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
@@ -14,12 +14,11 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { fund } from "../tools/fund.mjs";
 import { confirmed, payerOf } from "../tools/program-chain.mjs";
-import { addSol, feeAddresses, feeFunded, privateBalance, refusedTap } from "./flow.mjs";
+import { addSol, feeAddresses, feeFunded, privateBalance, problemsOf } from "./flow.mjs";
 import { MOCK, heliusAnswers, withMockUrl } from "./mock.mjs";
 import { run } from "./page.mjs";
 import { redact } from "./redact.mjs";
 import { solanaReady, zcashWallet } from "./seats.mjs";
-import { consoleProblems } from "./sol-facts.mjs";
 import { withStack } from "./stack.mjs";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
@@ -31,6 +30,7 @@ const PLAN = [
   { label: "fund-seat1", payer: "funder", to: "fee address of seat 1", lamports: 3_000_000n },
   { label: "add-sol", payer: "fee address of seat 1", to: "the pool", lamports: 2_000_000n },
 ];
+const LIVE_TOOLS = { fund, confirmed, payerOf };
 const results = { head: HEAD, cluster: "devnet", mock: MOCK, steps: [] };
 
 function save() {
@@ -58,28 +58,25 @@ async function newGroup(rig) {
   return { pages, fees };
 }
 
-async function live(pages, fees) {
-  const sent = await fund({ to: fees[1], shown: fees[1], lamports: PLAN[0].lamports });
+async function steps(pages, fees, tools) {
+  const sent = await tools.fund({ to: fees[1], shown: fees[1], lamports: PLAN[0].lamports });
   record("fund-seat1", { signature: sent.signature, lamports: String(PLAN[0].lamports) });
   await feeFunded(pages[0], 1);
   const signature = await addSol(pages[0], ADD);
-  await confirmed(signature);
-  assert.equal(await payerOf(signature), fees[1], "the fee address of seat 1 pays Add SOL");
+  await tools.confirmed(signature);
+  assert.equal(await tools.payerOf(signature), fees[1], "the fee address of seat 1 pays Add SOL");
   record("add-sol", { signature });
   for (const page of pages) await privateBalance(page, `${ADD} SOL`);
-  results.problems = pages.map((p) => consoleProblems(p.records).length);
+  results.problems = pages.map((p) => problemsOf(p).length);
   assert.deepEqual(results.problems, [0, 0, 0], "no console problem or CSP violation");
-}
-
-async function mock(pages) {
-  record("add-sol", { refused: await refusedTap(pages[0], "add-sol") });
-  assert.equal(heliusAnswers(pages), 0, "no answer from the Helius host");
+  if (MOCK) assert.equal(heliusAnswers(pages), 0, "no answer from the Helius host");
 }
 
 async function scenario(rig) {
   results.plan = PLAN.map((tx) => ({ ...tx, lamports: String(tx.lamports) }));
+  const tools = MOCK ? (await import("./mock-chain.mjs")).mockTools(rig) : LIVE_TOOLS;
   const { pages, fees } = await newGroup(rig);
-  await (MOCK ? mock(pages) : live(pages, fees));
+  await steps(pages, fees, tools);
   console.log(redact(JSON.stringify({ mock: MOCK, steps: results.steps.map((s) => s.label) })));
 }
 

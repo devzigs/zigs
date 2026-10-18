@@ -155,6 +155,11 @@ async function attachChild(state, m) {
 
 const SESSION_EVENTS = {
   "Target.attachedToTarget": (state, m) => void attachChild(state, m),
+  // The CSP binding is a record. Another binding goes to page.onBinding (harness/mock-chain.mjs).
+  "Runtime.bindingCalled": (state, m) => {
+    if (m.params.name === BINDING) return record(state, m);
+    state.sessions.get(m.sessionId)?.page.onBinding?.(m.params);
+  },
   "Target.detachedFromTarget": (state, m) => state.sessions.delete(m.params.sessionId),
   "Page.loadEventFired": (state, m) => {
     const info = state.sessions.get(m.sessionId);
@@ -226,6 +231,7 @@ async function openPage(state, ctx, url) {
   await page.send("Page.addScriptToEvaluateOnNewDocument", { source: CSP_HOOK });
   const auto = { autoAttach: true, waitForDebuggerOnStart: true, flatten: true };
   await page.send("Target.setAutoAttach", auto);
+  if (state.pageHook) await state.pageHook(page);
   if (url) await page.navigate(url);
   return page;
 }
@@ -266,6 +272,10 @@ export async function startRig(label, waitMs) {
     records: state.loose,
     contextIds: () => state.cdp.send("Target.getBrowserContexts").then((r) => r.browserContextIds),
     newContext: (name) => newContext(state, name),
+    // hook(page) runs on each new page before its first load.
+    onPage: (hook) => {
+      state.pageHook = hook;
+    },
     close: () => shutdown(state.cdp, chrome),
   };
 }

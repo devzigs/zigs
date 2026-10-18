@@ -93,9 +93,13 @@ Run `scenario-e.mjs` and `scenario-f.mjs` with `--mock` first. A mock run makes 
 - Chrome resolves the Helius host to nothing.
 - The dev server gets a Helius URL with no key, and `cf/.dev.vars` gets its old line back after.
 
-The mock run makes the group, the backups and the restore in full. Each tap that needs the chain
-must end with a network refusal of the Worker, and the plan of the transactions goes to
-`logs/mock-e.json` or `logs/mock-f.json`. It needs `ZOLANA_REPO` and `SOLSPIKE_KEY_B`:
+The fake chain of the web tests (`web/test/sol-chain.mjs`) answers the Solana Worker of every
+page (`harness/mock-chain.mjs`). So the group, the backups, the funding of the fee addresses, Add
+SOL, the private balance and the restore run in full. A payment is live only: the model has no
+SDK payment for a new group, so the tap of each payment must be refused at prepare. The results
+and the plan of the transactions go to `logs/mock-e.json` or `logs/mock-f.json`. A mock run needs
+`ZOLANA_REPO` and `SOLSPIKE_KEY_B`, and no other stack may run from this clone at the same time
+(`serve.sh` keeps one pid file):
 
 ```bash
 SOLSPIKE_ORIGIN=https://app.zigs.app node solspike/harness/scenario-f.mjs --mock

@@ -267,7 +267,7 @@ function land(chain, parts) {
 }
 
 /** The answer of each command of web/sol/guard.js that the page uses, from the model. */
-function answersOf(chain) {
+export function answersOf(chain) {
   const answers = {
     init: () => ({
       hasherMs: 1,
