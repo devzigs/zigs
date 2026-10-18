@@ -176,6 +176,20 @@ assert.notEqual(c.sync.balance, undefined, "the private balance is shown");
 assert.ok(chain.commands.some((m) => m.cmd === "sync"), "the Worker synced the PDA identity");
 step("the Solana tab syncs by itself when it opens");
 
+// ── The page keeps the hash and the amount of each synced note, not its blinding (S4) ──
+{
+  const kept = chain.utxos;
+  const note = { hash: "ab".repeat(32), mint: "SOL", amount: "1500", blinding: "cd".repeat(32) };
+  chain.utxos = [{ ...note, tree: "T", leaf: "4" }];
+  await syncSolana(c);
+  const notes = [{ hash: note.hash, amount: "1500" }];
+  assert.deepEqual(c.sync.notes, notes, "the sync keeps no blinding in the page state");
+  assert.equal(c.sync.lamports, "0", "and the private lamports of the sync");
+  chain.utxos = kept;
+  await syncSolana(c);
+}
+step("the page keeps the hash and the amount of each synced note");
+
 // ── Create the nonce account: the screen, two approvals, a landed transaction ──
 const created = await proposed("createNonce");
 {

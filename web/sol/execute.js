@@ -68,6 +68,8 @@ const CLOCK_MARGIN_S = 600;
 /** True when the expiry of the body of `ss` passed, with the clock margin. */
 export const pastExpiry = (ss) =>
   !(Math.floor(Date.now() / 1000) < Number(ss.expiry) + CLOCK_MARGIN_S);
+/** When the page ends a payment that did not execute (Unix seconds): its expiry and the margin. */
+export const endsAt = (expiry) => BigInt(expiry) + BigInt(CLOCK_MARGIN_S);
 const sleep = (ms) => new Promise((done) => setTimeout(done, ms));
 const errorText = (e) => String(e?.message ?? e).slice(0, 300);
 

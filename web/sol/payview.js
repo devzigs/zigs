@@ -8,7 +8,7 @@
 import { approvalClosed, reviewOf } from "./approve.js";
 import { agreement } from "./ceremony.js";
 import { CLUSTER, base58 } from "./docs.js";
-import { EXECUTE_TRIES } from "./execute.js";
+import { EXECUTE_TRIES, endsAt } from "./execute.js";
 import { feeMismatch, feeOf, mismatchText } from "./fee.js";
 import { readySeat } from "./gate.js";
 import {
@@ -24,7 +24,7 @@ import { usedDigest } from "./nonces.js";
 import { heldOf, reclaimRent, scanRent } from "./rent.js";
 import { holdsShare, solOf } from "./secrets.js";
 import { solText } from "./session.js";
-import { isPayment } from "./sessions.js";
+import { heldLamports, heldNotes, isPayment } from "./sessions.js";
 
 const SHOWN = 12;
 const FAUCET = "https://faucet.solana.com/";
@@ -241,12 +241,40 @@ const button = (c, act, mark, text, run) =>
     text,
   );
 
+// S4: an open payment holds its notes until it executes or ends, so a new payment cannot spend
+// them. The line says what a new payment can spend, or which proposal holds all of it.
+function availableLine(c) {
+  const { notes, lamports } = c.sync ?? {};
+  if (!notes || lamports === undefined) return null;
+  const held = heldLamports(c.sessions, notes);
+  if (held === 0n) return null;
+  const free = BigInt(lamports) - held;
+  const text =
+    free > 0n
+      ? `Available for a new payment: ${solText(free)}. Open proposals hold ${solText(held)} ` +
+        "until they execute or end."
+      : holderText(heldNotes(c.sessions, notes));
+  return c.host.el("p", { class: "small", "data-sol": "available" }, text);
+}
+
+/** Who holds all the notes: the open proposal that ends first, and when the page ends it. */
+function holderText(holders) {
+  const [first] = holders;
+  const end = utc(endsAt(first.expiry)) + " UTC";
+  const who =
+    holders.length === 1
+      ? `an open proposal (${first.id}). It ends at ${end}.`
+      : `${holders.length} open proposals. The first one (${first.id}) ends at ${end}.`;
+  return `All your notes are held by ${who} Add SOL or wait.`;
+}
+
 function intentCard(c, act, actions) {
   const { el } = c.host;
   return el(
     "div",
     { style: "display:grid;gap:8px" },
     el("h3", {}, "Pay from the group"),
+    availableLine(c),
     seatLine(c, "propose-seat", "proposes and pays the fees."),
     el("p", { class: "small", "data-sol": "pay-cost" }, costLine(c)),
     el("p", { class: "small", "data-sol": "pay-prover" }, PROVER_TEXT),

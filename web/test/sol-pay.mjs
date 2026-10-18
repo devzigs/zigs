@@ -16,7 +16,7 @@ import { createHash } from "node:crypto";
 import { approve, deviceSeen, reviewOf } from "../sol/approve.js";
 import { agreement } from "../sol/ceremony.js";
 import { base58, keyOfBase58 } from "../sol/docs.js";
-import { EXECUTE_TRIES, executorsOf, forgetBalances, tryAgain } from "../sol/execute.js";
+import { EXECUTE_TRIES, endsAt, executorsOf, forgetBalances, tryAgain } from "../sol/execute.js";
 import {
   ZERO_KEY,
   bytesOf,
@@ -28,7 +28,7 @@ import {
 import { savedNonces, saveNonces } from "../sol/nonces.js";
 import { feeOf } from "../sol/fee.js";
 import { putSol } from "../sol/secrets.js";
-import { syncSolana } from "../sol/session.js";
+import { solText, syncSolana } from "../sol/session.js";
 import { deviceSpend } from "../sol/spend.js";
 import { LINK_TEXT, PROVER_TEXT } from "../sol/payview.js";
 import {
@@ -952,6 +952,25 @@ step("a create that meets the same body in its account takes it; another body fa
   assert.deepEqual(held.map((h) => h.lamports), [note, note], "the amount of the held note");
   assert.equal(held[0].expiry, decodeIntent(ssOf(held[0].id).intent).expiry);
   assert.equal(heldLamports(c.sessions, chain.utxos), note, "but the note is held once");
+  // The pay card says what a new payment can spend, or which proposals hold all of it.
+  const kept = { sync: c.sync, sessions: c.sessions };
+  const notes = chain.utxos.map(({ hash, amount }) => ({ hash, amount }));
+  const line = () => marked("available").map(textOf);
+  const at = new Date(Number(endsAt(held[0].expiry)) * 1000).toISOString().slice(0, 16);
+  const end = at.replace("T", " ") + " UTC";
+  c.sync = { ...kept.sync, lamports: String(note), notes };
+  const two = `All your notes are held by 2 open proposals. The first one (${held[0].id}) ends`;
+  assert.deepEqual(line(), [`${two} at ${end}. Add SOL or wait.`], "two holders");
+  c.sessions = kept.sessions.filter((ss) => ss.id !== held[1].id);
+  const one = `All your notes are held by an open proposal (${held[0].id}). It ends at ${end}.`;
+  assert.deepEqual(line(), [one + " Add SOL or wait."], "one holder");
+  c.sessions = kept.sessions;
+  c.sync = { ...c.sync, lamports: String(note + 1000n) };
+  const free = `Available for a new payment: ${solText(1000n)}. Open proposals hold `;
+  assert.deepEqual(line(), [free + solText(note) + " until they execute or end."]);
+  c.sync = { ...c.sync, notes: [] };
+  assert.deepEqual(line(), [], "no line while no open proposal holds a synced note");
+  c.sync = kept.sync;
   current = id;
   await approve(c, ssOf(id), 1);
   await approve(c, ssOf(id), 2);

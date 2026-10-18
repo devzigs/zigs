@@ -121,6 +121,13 @@ export async function ensureWorker(c) {
   return c.worker;
 }
 
+// The private lamports and the hash and the amount of each synced note, for the available balance
+// (S4). The blinding of a note stays in the sealed snapshot.
+const notesOf = ({ balance, utxos }) => ({
+  lamports: balance,
+  notes: (utxos ?? []).map(({ hash, amount }) => ({ hash, amount })),
+});
+
 /**
  * Starts the Worker if needed, syncs the funds of the group (the PDA identity) and the beta funds
  * of the group key, and seals the result into the snapshot store. `busyText` is the worker line
@@ -141,6 +148,7 @@ export async function syncSolana(c, busyText = "syncing") {
     if (!stillOpen(c, opened)) return;
     c.sync = {
       balance: solText(r.balance),
+      ...notesOf(r),
       oldBalance: old.movable,
       text: "synced at slot " + r.slot + ", " + c.workerAddress,
     };
@@ -319,6 +327,11 @@ export async function showSaved(c) {
   const snap = await loadSnap(host.Z, roles.seal_key, gid);
   if (!snap || c.gid !== gid || c.sync.balance !== undefined) return;
   const oldBalance = snap.old?.movable;
-  c.sync = { balance: solText(snap.balance), oldBalance, text: "saved sync of slot " + snap.slot };
+  c.sync = {
+    balance: solText(snap.balance),
+    ...notesOf(snap),
+    oldBalance,
+    text: "saved sync of slot " + snap.slot,
+  };
   host.render();
 }
