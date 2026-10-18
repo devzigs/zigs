@@ -1,7 +1,7 @@
 // Live check of payments through the approvals program (ZOLANA.md 7.2), the restore, and a
-// withdrawal. Three seats in three in-memory contexts of one Chrome (the rig) make a new group, with
-// the unified setup (release item M3): the create dialog chooses Solana too, and the Solana part
-// starts by itself after the Zcash part:
+// withdrawal. Three seats in three in-memory contexts of one Chrome (the rig) make a new group,
+// with the unified setup (release item M3): the create dialog chooses Solana too, and the Solana
+// part starts by itself after the Zcash part:
 //   (a) every seat saves its Zcash and its Solana backup: the restore source of (d) and --resume
 //   (b) the funder sends SOL to the fee address of each seat; seat 1 adds 0.003 SOL (Add SOL)
 //   (c) pay-a: seat 1 proposes 0.001 SOL to key B, seats 1 and 2 approve, a seat executes
