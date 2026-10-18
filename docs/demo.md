@@ -196,6 +196,7 @@ says Sent (Zcash) or Executed (Solana).
 |---|---|
 | The light-wallet server is slow | Wait. The ChainSafe fallback works (S9) |
 | Solana shows a Helius error | Wait one minute. Then show the Zcash part and the recorded run (S5) |
+| demo-check says FAIL for "pool program": the hash of the Devnet pool (`sppU489D…`) is no longer `3641ffe2…`. Helius plans SDK releases with breaking changes before its mainnet launch | Stop the Solana part of the demo, and show the recorded run. Tell the coordinator, who pins the new pool and runs the checks again |
 | The side bar says "Connecting to the group server…" for a long time, or "The group server does not answer" | Read the reason in brackets (S1). For "no network" or "too many connections from this network" (M9), move one laptop to the phone hotspot. For "the preview password is missing or wrong", reload the page and enter the password. For "the server has a problem", wait one minute, then show the recorded run |
 | A hold blocks Send | Use the spare wallet (S7) |
 | Solana says "the synced balance does not cover the amount" | An open proposal holds the notes (S4). Use the spare wallet, or show the recorded run |
