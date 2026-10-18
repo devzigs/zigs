@@ -375,7 +375,10 @@ a.row-item { text-decoration: none; }
 .callout.warn { background: var(--accent-soft); color: var(--accent-text); }
 .callout.bad { background: var(--bad-soft); color: var(--bad); }
 .callout.ok { background: var(--ok-soft); color: var(--ok); }
-.dialog-actions { display: flex; justify-content: flex-end; gap: 8px; }
+.dialog-actions { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 8px; }
+/* The reason that a button is off, as text next to it: a touch screen has no tooltip (S1). */
+.off-why { flex-basis: 100%; font-size: 12.5px; color: var(--muted); }
+.dialog-actions .off-why { text-align: right; }
 .lines { display: grid; border: 1px solid var(--line); border-radius: 10px; overflow: hidden; }
 .lines > div { display: flex; justify-content: space-between; gap: 12px; padding: 11px 14px; border-top: 1px solid var(--line); font-size: 13.5px; }
 .lines > div:first-child { border-top: 0; }

@@ -17,13 +17,14 @@ import { config, loadRig, sleep } from "./sol-rig.mjs";
 const rig = await loadRig();
 // The page modules need the stub page of the rig, so they load after it.
 const { SOL_DISCLOSURE, solPlanned } = await import("../app-sol.js");
-const { inviteMessage, joinText } = await import("../app-setup.js");
+const { inviteMessage, joinText, onLink } = await import("../app-setup.js");
 const { chatMessage } = await import("../app-links.js");
 const { chatInviteCard } = await import("../app-thread.js");
 const { chats } = await import("../app-keystore.js");
 const { backupWords } = await import("../sol/backup.js");
 const { pendingCount } = await import("../sol/view.js");
-const { createDialog, renderSide } = await import("../app-shell.js");
+const { createDialog, lobby, renderSide } = await import("../app-shell.js");
+const { offReason } = await import("../util.js");
 const { intentHex } = await import("../sol/intent.js");
 const { ui } = await import("../app-state.js");
 const { planSolana } = await import("../app-sol.js");
@@ -351,6 +352,131 @@ const byId = (node, id) =>
   assert.doesNotMatch(dialogText(), CHOICE, "not on a server without Solana");
   config.down = false;
   delete ui.solServed;
+}
+
+// ── S1: a button that is off shows why, as text next to it ──
+// The first reason that holds wins: the engine, the group server, a read-only page, a wallet
+// that waits for its check, a join that runs.
+{
+  const WHY = {
+    loading: "Zigs is still loading its crypto engine.",
+    failed: "The crypto engine did not load. Reload the page.",
+    server: "Zigs is not connected to the group server yet.",
+    readOnly: "This page is read-only here.",
+    pending: "Zigs is still checking this wallet's data. Try again in a moment.",
+    joining: "Zigs is joining the chat. Wait a moment.",
+  };
+  const on = { Z: {}, settled: true, canWrite: true, db: true, pending: false, joining: false };
+  assert.equal(offReason(on), "", "everything ready: no reason");
+  assert.equal(offReason({ ...on, Z: null }), WHY.failed);
+  assert.equal(offReason({ ...on, Z: null, settled: false }), WHY.loading);
+  assert.equal(offReason({ ...on, db: false }), WHY.server);
+  assert.equal(offReason({ ...on, canWrite: false }), WHY.readOnly);
+  assert.equal(offReason({ ...on, pending: true }), WHY.pending);
+  assert.equal(offReason({ ...on, joining: true }), WHY.joining);
+  const noDb = { ...on, db: undefined };
+  assert.equal(offReason(noDb), "", "a button that does not need the server leaves db out");
+  const all = { Z: null, settled: false, canWrite: false, db: false, pending: true, joining: true };
+  assert.equal(offReason(all), WHY.loading, "the engine comes first");
+  const noZ = { ...all, Z: {} };
+  assert.equal(offReason(noZ), WHY.server, "then the group server");
+  assert.equal(offReason({ ...noZ, db: true }), WHY.readOnly, "then a read-only page");
+  assert.equal(offReason({ ...noZ, db: true, canWrite: true }), WHY.pending, "then the check");
+
+  // The pages: each button is off, with its reason in the text and its id in aria-describedby.
+  const swap = (build, change) => {
+    const keep = { Z: engine.Z, db: groups.db };
+    if ("Z" in change) t.setZ(change.Z);
+    if ("db" in change) t.setDb(change.db);
+    const real = globalThis.document;
+    globalThis.document = { createElement: () => new Rec(), createTextNode: (text) => ({ text }) };
+    try {
+      return build();
+    } finally {
+      globalThis.document = real;
+      t.setZ(keep.Z);
+      t.setDb(keep.db);
+    }
+  };
+  const engine = await import("../app-engine.js"), groups = await import("../app-groups.js");
+  const { joinLinks } = await import("../app-messages.js");
+  const { busy } = await import("../app-state.js");
+  const buttons = [
+    ["Create wallet", "why-create", () => lobby()],
+    ["Create wallet", "why-create-submit", () => createDialog()],
+    ["New chat", "why-new-chat", () => lobby()],
+    ["Join chat", "why-chat-join-cc", () => lobby()],
+  ];
+  const cc = "cc".repeat(10);
+  joinLinks.set(cc, "k".repeat(64));
+  try {
+    for (const [label, id, build] of buttons) {
+      const idFor = id.replace("-cc", "-" + cc);
+      for (const [change, why] of [[{ Z: null }, WHY.loading], [{ db: null }, WHY.server]]) {
+        const tree = swap(build, change);
+        const button = byText(tree, label);
+        assert.ok(button, label + " is on the page");
+        assert.equal(button.attrs.disabled, "", label + " is off: " + why);
+        assert.equal(button.attrs["aria-describedby"], idFor);
+        const note = byId(tree, idFor);
+        assert.equal(textOf(note), why, label + " says why");
+      }
+      const tree = swap(build, {});
+      assert.ok(!("disabled" in byText(tree, label).attrs), label + " is on");
+      assert.equal(byId(tree, idFor), null, label + " has no reason");
+    }
+    // A join that runs also switches Join chat off.
+    busy.add("chatjoin:" + cc);
+    const tree = swap(() => lobby(), {});
+    assert.equal(textOf(byId(tree, "why-chat-join-" + cc)), WHY.joining);
+    busy.delete("chatjoin:" + cc);
+  } finally {
+    joinLinks.delete(cc);
+    busy.delete("chatjoin:" + cc);
+  }
+  // The setup page: It matches, Take seat and Play seat.
+  const setup = (change, pending = false) => {
+    t.state.pending = pending;
+    try {
+      return swap(() => t.groupView(), change);
+    } finally {
+      t.state.pending = false;
+    }
+  };
+  assert.equal(textOf(byId(setup({ Z: null }), "why-play")), WHY.loading, "Play seat");
+  assert.equal(textOf(byId(setup({}, true), "why-play")), WHY.pending, "Play seat waits");
+  assert.equal(byId(setup({}), "why-play"), null, "Play seat is on");
+  const kept = t.secrets[gid + ":1"];
+  delete t.secrets[gid + ":1"];
+  try {
+    const join = (change, pending) => byId(setup(change, pending), "why-take");
+    assert.equal(textOf(join({ Z: null })), WHY.loading, "Take seat");
+    assert.equal(textOf(join({}, true)), WHY.pending, "Take seat waits");
+    assert.equal(join({}), null, "Take seat is on");
+  } finally {
+    t.secrets[gid + ":1"] = kept;
+  }
+}
+
+// ── S1: the setup card shows the state of the link to the group server while not open ──
+{
+  const states = { state: "retrying", retryAt: Date.now() + 5000, code: 0, groups: {} };
+  const SHOWN = /Connecting to the group server…|The group server does not answer[^.]*\./;
+  const line = (s) => {
+    onLink(s);
+    return pageText().match(SHOWN);
+  };
+  assert.equal(line({ state: "idle", retryAt: 0, code: null, groups: {} }), null, "idle");
+  assert.equal(line({ ...states, state: "open", retryAt: 0, code: null })?.[0], undefined, "open");
+  assert.equal(line({ ...states, state: "connecting", code: null })[0],
+    "Connecting to the group server…");
+  assert.equal(line(states)[0], "The group server does not answer (no network).");
+  assert.equal(line({ ...states, code: 401 })[0],
+    "The group server does not answer (the preview password is missing or wrong).");
+  assert.equal(line({ ...states, code: 429 })[0].includes("too many connections"), true);
+  assert.equal(line({ ...states, code: 404 })[0], "The group server does not answer.");
+  onLink({ state: "open", retryAt: 0, code: null, groups: {} });
+  assert.doesNotMatch(pageText(), /group server does not answer|Connecting to the group server/);
 }
 
 // ── The choice starts the Solana ceremony with no button, after the Zcash part ──

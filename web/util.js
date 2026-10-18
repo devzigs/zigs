@@ -30,6 +30,21 @@ export function samePackages(list) {
   } catch { return false; }
 }
 
+// Why a button is off, or "" when it is on (S1). A touch screen has no tooltip, so the page shows
+// the text next to the button. `s` has Z (the engine, null until it loads), settled (the engine
+// loaded or failed), canWrite, and for the buttons that need them db (false: no group server
+// yet), pending (the wallet data waits for its check) and joining. The first reason that holds
+// wins.
+const OFF_REASONS = [
+  (s) => !s.Z && (s.settled ? "The crypto engine did not load. Reload the page."
+    : "Zigs is still loading its crypto engine."),
+  (s) => s.db === false && "Zigs is not connected to the group server yet.",
+  (s) => s.canWrite === false && "This page is read-only here.",
+  (s) => s.pending && "Zigs is still checking this wallet's data. Try again in a moment.",
+  (s) => s.joining && "Zigs is joining the chat. Wait a moment.",
+];
+export const offReason = (s) => OFF_REASONS.map((why) => why(s)).find(Boolean) || "";
+
 // Wallet document version: 1 when the document has none, 2 for the ZIP 2005 ceremony, 3 for that
 // ceremony with signed writes, 0 for a version this app does not know.
 export const walletVersion = (g) =>

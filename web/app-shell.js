@@ -1,6 +1,7 @@
 // Side navigation, lock screen, wallet list and create dialog.
 import { busy, ready, state, ui } from "./app-state.js";
 import { initials } from "./app-kit.js";
+import { offReason } from "./util.js";
 import { engineSettled, Z } from "./app-engine.js";
 import {
   chats, forgetVault, lockedVault, lockWithPasskey, mySeatSecrets, secrets, storageOk, unlockVault,
@@ -19,6 +20,18 @@ import { personal } from "./app-account.js";
 import { restore } from "./app-backups.js";
 import { contactItem, contactsCard, openContactDialog, personalCard } from "./app-account-view.js";
 import { once, render } from "./app-loop.js";
+
+/**
+ * Why a button is off (S1): `attrs` go on the button, `note` goes next to it. `more` has the
+ * checks that only this button needs (db, pending, joining), `id` names the note.
+ */
+export function offOf(more, id) {
+  const why = offReason({ Z, settled: engineSettled, canWrite, ...more });
+  return {
+    attrs: { disabled: !!why, "aria-describedby": why ? id : null },
+    note: why ? el("span", { class: "off-why", id }, why) : null,
+  };
+}
 
 export function renderSide() {
   const nav = document.getElementById("side-nav");
@@ -128,8 +141,8 @@ export function lobby() {
   const restoreBtn = (cls) => el("button", {
     class: cls, type: "button", onclick: () => restoreInput.click(),
   }, "Restore from backup");
-  const canCreate = Z && db && canWrite !== false;
-  const actions = lobbyActions(canCreate, restoreBtn("btn"));
+  const off = offOf({ db: !!db }, "why-new-wallet");
+  const actions = lobbyActions(off, restoreBtn("btn"));
   const head = el("header", { class: "page-head" },
     el("div", { class: "ph-left" }, el("h1", {}, "Wallets"),
       el("p", { class: "muted" }, "Each wallet is a separate shared account, with its own address, "
@@ -138,7 +151,7 @@ export function lobby() {
   const rows = state.groups.map((g) => guard(walletRow, g));
   const body = state.groups.length
     ? el("section", { class: "card" }, el("div", { class: "list" }, rows))
-    : welcome(canCreate, restoreBtn("btn ghost sm"));
+    : welcome(offOf({ db: !!db }, "why-create"), restoreBtn("btn ghost sm"));
   const joins = [...joinLinks.keys()].map((cid) => guard(chatJoinCard, cid));
   return el("div", { class: "page" }, ...joins, head, body, chatsCard(),
     guard(personalCard, () => restoreInput.click()), guard(contactsCard), restoreInput);
@@ -147,6 +160,7 @@ export function lobby() {
 // A contact link waits here until the person clicks Join. The link is kept after a failure.
 function chatJoinCard(cid) {
   const key = "chatjoin:" + cid, joining = busy.has(key);
+  const off = offOf({ db: !!db, joining }, "why-chat-join-" + cid);
   const join = (ev) => {
     ev.preventDefault();
     once(key, () => joinChat(cid, joinLinks.get(cid)));
@@ -161,18 +175,18 @@ function chatJoinCard(cid) {
     el("div", { class: "dialog-actions" },
       el("button", { class: "btn", type: "button", disabled: joining,
         onclick: () => { joinLinks.delete(cid); render(); } }, "Cancel"),
-      el("button", { class: "btn primary", type: "submit",
-        disabled: joining || !Z || !db || canWrite === false },
-      joining ? "Joining the chat…" : "Join chat")));
+      el("button", { class: "btn primary", type: "submit", ...off.attrs },
+        joining ? "Joining the chat…" : "Join chat"),
+      off.note));
 }
 
 // The sidebar is hidden on a phone, so the chats are listed here too.
 function chatsCard() {
-  const ids = Object.keys(chats.list);
+  const ids = Object.keys(chats.list), off = offOf({ db: !!db }, "why-new-chat");
   return el("section", { class: "card" },
     el("div", { class: "card-head card-pad", style: "padding-bottom:12px" }, el("h2", {}, "Chats"),
-      el("button", { class: "btn sm", type: "button", disabled: !Z || !db || canWrite === false,
-        onclick: newChat }, "New chat")),
+      el("button", { class: "btn sm", type: "button", ...off.attrs, onclick: newChat }, "New chat")),
+    off.note ? el("p", { class: "small muted card-pad", style: "padding-top:0" }, off.note) : null,
     ids.length ? el("div", { class: "list", style: "border-top:1px solid var(--line)" },
       ids.map((cid) => guard(chatRow, cid)))
       : el("p", { class: "small muted card-pad" }, "Write to one person who uses Zigs."));
@@ -192,12 +206,12 @@ function chatRow(cid) {
 
 // With no wallet yet, the welcome card has the only actions. Locking waits until there is a wallet
 // or a key share to lock.
-function lobbyActions(canCreate, restoreBtn) {
+function lobbyActions(off, restoreBtn) {
   const newBtn = el("button", {
-    class: "btn primary", type: "button", disabled: !canCreate,
+    class: "btn primary", type: "button", ...off.attrs,
     onclick: () => { ui.create = true; render(); },
   }, "New wallet");
-  if (state.groups.length) return [lockButton(), restoreBtn, newBtn];
+  if (state.groups.length) return [lockButton(), restoreBtn, newBtn, off.note];
   return Object.keys(secrets).length || vault ? [lockButton()] : [];
 }
 
@@ -221,7 +235,7 @@ function walletRow(g) {
   el("span", { class: "chev" }, "›"));
 }
 
-function welcome(canCreate, restoreLink) {
+function welcome(off, restoreLink) {
   const steps = [
     ["Pick a rule", "For example, any 2 of 3 signers must approve each payment."],
     ["Invite your signers", "Send one private invite link. Each device creates its own key share."],
@@ -229,7 +243,7 @@ function welcome(canCreate, restoreLink) {
       + "like a shielded payment from a standard wallet."],
   ];
   const create = el("button", {
-    class: "btn primary lg", type: "button", disabled: !canCreate,
+    class: "btn primary lg", type: "button", ...off.attrs,
     onclick: () => { ui.create = true; render(); },
   }, "Create wallet");
   return el("section", { class: "card card-pad welcome" },
@@ -240,7 +254,7 @@ function welcome(canCreate, restoreLink) {
       el("span", { class: "how-no" }, String(i + 1)),
       el("div", { style: "display:grid;gap:2px" }, el("h3", {}, t), el("p", { class: "small muted" }, d))))),
     el("div", { style: "display:flex;align-items:center;gap:12px;flex-wrap:wrap" },
-      create, restoreLink));
+      create, restoreLink, off.note));
 }
 
 // A new testnet wallet can get its Solana Devnet part in the same setup, on a server that serves
@@ -261,6 +275,7 @@ export function createDialog(from = null) {
   const close = () => { ui.create = false; ui.move = false; ui.sol = undefined; render(); };
   const n0 = from ? from.n : 3, t0 = from ? from.t : 2;
   const rule = el("p", { class: "rule", id: "rule-text" }, ruleText(t0, n0));
+  const off = offOf({ db: !!db }, "why-create-submit");
   const update = () => {
     const n = Number(document.getElementById("g-n")?.value), t = Number(document.getElementById("g-t")?.value);
     const ok = n >= 2 && n <= 7 && t >= 2 && t <= n;
@@ -298,6 +313,7 @@ export function createDialog(from = null) {
       : "You take seat 1. Then share the invite link with your signers. When every seat is taken, your devices create the wallet key together."),
     el("div", { class: "dialog-actions" },
       el("button", { class: "btn", type: "button", onclick: close }, "Cancel"),
-      el("button", { class: "btn primary", type: "submit", disabled: !Z || !db || canWrite === false }, from ? "Create new wallet" : "Create wallet")));
+      el("button", { class: "btn primary", type: "submit", ...off.attrs }, from ? "Create new wallet" : "Create wallet"),
+      off.note));
   return f;
 }

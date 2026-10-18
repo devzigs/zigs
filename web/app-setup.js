@@ -1,14 +1,13 @@
 // The setup page: join, invite, safety and progress.
 import { numberClash, usesV2 } from "./util.js";
 import { state, ui } from "./app-state.js";
-import { Z } from "./app-engine.js";
+import { linkView } from "./app-engine.js";
 import { sec } from "./app-keystore.js";
 import {
   allDone, allSeated, keysDiffer, localSeats, seatIds, seatMine, seatStage, STAGE_LABEL,
 } from "./app-seats.js";
 import { BROWSER_NOTE, inviteLink, PASSWORD_NOTE, senderNote } from "./app-links.js";
 import { signedMode } from "./app-filter.js";
-import { canWrite } from "./app-groups.js";
 import { act, avatar, copyBtn, el, guard, nameField, seatLabel, secretQr } from "./app-dom.js";
 import {
   abortedText, confirmedBy, confirmSeats, confirmSeatsOf, groupVersion, holdsAllSeats,
@@ -17,6 +16,7 @@ import {
 import { messagesCard } from "./app-thread.js";
 import { react, render } from "./app-loop.js";
 import { activityLog } from "./app-wallet.js";
+import { offOf } from "./app-shell.js";
 import { newWallet, SOL_DISCLOSURE, solError, solOn, solPlanned, solSetup } from "./app-sol.js";
 
 export function setupView() {
@@ -69,10 +69,12 @@ function safetyCard() {
     todo.length ? confirmButton(todo, no) : null);
 }
 
-const confirmButton = (todo, no) => el("div", {}, el("button", {
-  class: "btn primary", type: "button", disabled: !Z || canWrite === false,
-  onclick: act(() => confirmSeats(todo, no)),
-}, "It matches"));
+function confirmButton(todo, no) {
+  const off = offOf({}, "why-match");
+  return el("div", {}, el("button", {
+    class: "btn primary", type: "button", ...off.attrs, onclick: act(() => confirmSeats(todo, no)),
+  }, "It matches"), off.note);
+}
 
 const NOT_ZIP2005 = "This wallet is not built to ZIP 2005. Funds cannot be recovered if quantum "
   + "computers break today's keys. Do you want to take a seat?";
@@ -96,8 +98,9 @@ export const joinText = () => solPlanned()
     + "the wallet is ready.";
 
 function joinCard(seat) {
+  const off = offOf({ pending: state.pending }, "why-take");
   const take = el("button", {
-    class: "btn primary lg", type: "button", disabled: !Z || canWrite === false || state.pending,
+    class: "btn primary lg", type: "button", ...off.attrs,
     onclick: act(() => (usesV2(groupVersion()) || confirm(NOT_ZIP2005)) && takeSeat(seat)),
   }, "Take seat " + seat);
   return el("section", { class: "card card-pad hero-card" },
@@ -106,7 +109,7 @@ function joinCard(seat) {
       el("p", { class: "small muted" }, OPEN_HERE),
       solPlanned() ? el("p", { class: "small muted" }, SOL_DISCLOSURE) : null),
     nameField("seat-name"),
-    el("div", {}, take));
+    el("div", { style: "display:grid;gap:6px;justify-items:start" }, take, off.note));
 }
 
 // The message carries the link, so it is as secret as the link.
@@ -303,6 +306,22 @@ const SOL_STOP_NEXT = "The Zcash part of this wallet still works. To use Solana,
   + "wallet.";
 const FUND_TEXT = "Each signer funds the fee address of their seat on their own device.";
 
+// The state of the link to the group server (web/shim.js, app-engine.js shows it under the engine
+// line). The setup card shows it while the link is not open (S1). A change of the wait does not
+// redraw the page: only a new state or a new HTTP code does.
+let linkNow = null;
+export function onLink(s) {
+  const same = linkNow?.state === s.state && linkNow?.code === s.code;
+  linkNow = s;
+  if (!same) render();
+}
+if (typeof zigs !== "undefined") zigs.use("link").then((link) => link?.watch(onLink));
+function linkLine() {
+  const v = linkNow ? linkView(linkNow, Date.now()) : { show: false };
+  return v.show ? el("p", { class: "small " + (v.dot === "bad" ? "bad" : "muted"), role: "status" },
+    v.text) : null;
+}
+
 function progressCard() {
   const c = setupCounts(), pct = setupProgress(c);
   const [keyStage, keyText] = keyStep(c), [addrStage, addrText] = addrStep(c);
@@ -310,6 +329,7 @@ function progressCard() {
     el("div", { class: "card-head" }, el("h2", {}, "Setting up your wallet"),
       el("span", { class: "mono faint" }, pct + "%")),
     el("div", { class: "progress" }, el("i", { style: "width:" + pct + "%" })),
+    linkLine(),
     el("div", { class: "steps", style: "margin-top:6px" },
       setupStep(allSeated() ? "done" : "now", 1, "Signers join",
         c.seated + " of " + c.n + " seats taken."),
@@ -322,13 +342,13 @@ function progressCard() {
 }
 
 function seatsCard(open) {
+  const off = offOf({ pending: state.pending }, "why-play");
   const testing = localSeats().length && open.length
     ? el("details", { class: "testing" }, el("summary", {}, "Trying Zigs alone? Play the other seats in this browser"),
       el("p", { class: "small faint" }, "For a demo or a review only. In real use, each signer takes a seat on their own device."),
       el("div", { style: "display:flex;gap:8px;flex-wrap:wrap" }, open.map((i) => el("button", {
-        class: "btn sm", type: "button", disabled: !Z || canWrite === false || state.pending,
-        onclick: act(() => takeSeat(i)),
-      }, "Play seat " + i))))
+        class: "btn sm", type: "button", ...off.attrs, onclick: act(() => takeSeat(i)),
+      }, "Play seat " + i)), off.note))
     : null;
   return el("section", { class: "card card-pad" },
     el("div", { class: "card-head" }, el("h2", {}, "Seats"), el("span", { class: "small muted" }, state.g.t + " of " + state.g.n + " signers must approve")),
