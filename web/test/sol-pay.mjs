@@ -421,6 +421,7 @@ step("a missing account is a wait, a click keeps the re-read, and an expiry hide
   const card = findAll(view, (n) => n.attrs["data-session"] === id)[0];
   const inCard = (name) => findAll(card, (n) => n.attrs["data-sol"] === name);
   const [failed] = inCard("read-failed");
+  assert.equal(failed.attrs.class, "small bad", "the cause is an error line");
   assert.match(textOf(failed), /^Zigs could not read your wallet: .*does not see every input/);
   assert.deepEqual([inCard("wait").length, inCard("approve-" + id + "-2").length], [0, 0]);
   const gaps = stamps.slice(1).map((at, n) => at - stamps[n]);
@@ -562,6 +563,11 @@ step("a read of a wallet that closed shows no banner and writes no count");
   assert.equal(tx, "https://explorer.solana.com/tx/" + ss.txId + "?cluster=devnet");
   const note = /explorer\.solana\.com in a new tab\. That site is not Zigs: it sees the id/;
   assert.match(textOf(marked("explorer-text")[0]), note, "the list says what the link shows");
+  c.added = { status: "confirmed", amount: 10_000_000n, seat: 1, txId: ss.txId };
+  const notes = () => marked("explorer-text").length;
+  const withLine = notes();
+  c.added = null;
+  assert.equal(notes(), withLine - 1, "the Add SOL line has its explorer note");
   c.added = { status: "confirmed", amount: 10_000_000n, seat: 1, txId: ss.txId };
   const [added] = marked("added");
   assert.equal(findAll(added, (n) => n.tag === "a")[0].attrs.href, tx, "Add SOL links its id");
@@ -1015,9 +1021,17 @@ step("a browser with no funded seat says why on the card; a funded seat clears i
   const id = await proposedPay();
   current = id;
   chain.refuse = "Custom 9999";
+  const delays = []; // a quiet tab: the step arms a pass of the reactor for the end of the payment
+  const setTimer = globalThis.setTimeout;
+  globalThis.setTimeout = (fn, ms, ...rest) => (delays.push(ms), setTimer(fn, ms, ...rest));
   await approve(c, ssOf(id), 1);
   await approve(c, ssOf(id), 2);
   await waitFor("the tries", () => (c.tries[id] ?? 0) >= EXECUTE_TRIES, 60000);
+  const end = (Number(ssOf(id).expiry) + 600) * 1000 + 1000;
+  const armed = () => delays.some((ms) => Math.abs(Date.now() + ms - end) < 10_000);
+  notify();
+  await waitFor("the pass at the end of the payment", armed);
+  globalThis.setTimeout = setTimer;
   assert.equal(marked("execute-" + id).length, 1, "before the expiry the card asks for a click");
   chain.refuse = null;
   const [sims, sends] = [count("simulate"), count("send")];

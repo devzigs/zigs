@@ -333,11 +333,22 @@ function showLook(c, ss, error) {
  * still land is no try); after EXECUTE_TRIES the card shows the last error and a button that
  * tries again. The approval stays valid until the expiry.
  */
+// A payment whose tries ran out ends at its expiry and the margin. A quiet tab gets one pass of
+// the reactor then, so the end does not wait for another event.
+const endWakes = new Set();
+function wakeAtEnd(c, ss) {
+  if (endWakes.has(ss.id)) return;
+  endWakes.add(ss.id);
+  const ms = Number(endsAt(ss.expiry)) * 1000 - Date.now() + 1000;
+  setTimeout(() => c.host.refilter(), Math.min(Math.max(ms, 0), 2 ** 31 - 1));
+}
+
 export function maybeExecute(c, ss, { launch, failSession }) {
   const seats = executorsOf(c, ss);
   // After the expiry, the end check (attempt) runs also when the tries ran out: it sends nothing.
   const out = (c.tries[ss.id] ?? 0) >= EXECUTE_TRIES;
-  if (!c.rpcUrl || !seats.length || (out && !pastExpiry(ss))) return;
+  if (!c.rpcUrl || !seats.length) return;
+  if (out && !pastExpiry(ss)) return wakeAtEnd(c, ss);
   launch(c, "exec:" + ss.id, async () => {
     try {
       const worker = await ensureWorker(c);

@@ -22,8 +22,9 @@ const WORKER_POLICY =
   "default-src 'none'; script-src 'self' 'wasm-unsafe-eval'; " +
   "connect-src 'self' https://devnet.helius-rpc.com; base-uri 'none'";
 
-// The page shows it after "Solana did not load: " (S12), next to its Try again button.
-export const NOT_LOADED = "Check your connection, then press Try again or reload.";
+// The text of app-sol.js for a load that failed on the connection (SOL_DOWN, S12): the page
+// shows it as it is, and the tab turns it into the text of its Try again button.
+export const NOT_LOADED = "Solana did not load. Check your connection, then reload the page.";
 
 /**
  * The Helius Devnet URL that the server serves. Throws UNAVAILABLE when the server has no Solana
