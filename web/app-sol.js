@@ -28,6 +28,14 @@ export const solOn = (gid = state.gid) => {
   const testnet = g?.network === "testnet" && netConfirmed(gid) === "testnet";
   return testnet && walletVersion(g) === 3 && signedMode(gid);
 };
+// The group document asks for a Solana part (createGroup). It is a hint only: any holder of the
+// link can write it, so it changes the texts and the preload, and it never starts the ceremony.
+export const solPlanned = (g = state.g) =>
+  g?.solana === true && (g.network || "testnet") === "testnet" && walletVersion(g) === 3;
+// What a person accepts with the Solana part (the Add Solana card of web/sol/view.js says more).
+export const SOL_DISCLOSURE = "Solana Devnet: a program owns the funds of the group at a public "
+  + "program address. Each seat gets a fee address, which appears on chain next to the group. "
+  + "Helius sees that you use Zigs. The program has no audit.";
 const SOL_OFF = "Solana is not available on this server";
 export let sol = null, solLoading = null, solError = "";
 let solStartDoc = null;   // the stored solstart/1 of the open wallet, whoever wrote it

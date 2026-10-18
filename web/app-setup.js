@@ -17,6 +17,7 @@ import {
 import { messagesCard } from "./app-thread.js";
 import { react, render } from "./app-loop.js";
 import { activityLog } from "./app-wallet.js";
+import { SOL_DISCLOSURE, solPlanned } from "./app-sol.js";
 
 export function setupView() {
   const open = seatIds().filter((i) => !state.seats[i]);
@@ -61,7 +62,7 @@ function safetyCard() {
     el("div", { class: "safety" }, no),
     el("p", { class: "small muted" }, "Compare this number with every signer, on a call or in "
       + "person. If it is different, someone else took a seat. In that case, do not tap "
-      + "\"It matches\". Create a new wallet."),
+      + "\"It matches\". Create a new wallet." + (solPlanned() ? " " + BOTH_OPEN : "")),
     clash.length ? el("div", { class: "callout bad", role: "alert" }, "Seat " + clash.join(", ")
       + " confirmed another number. Someone else may have taken a seat. Do not continue. "
       + "Create a new wallet.") : null,
@@ -76,6 +77,19 @@ const confirmButton = (todo, no) => el("div", {}, el("button", {
 const NOT_ZIP2005 = "This wallet is not built to ZIP 2005. Funds cannot be recovered if quantum "
   + "computers break today's keys. Do you want to take a seat?";
 
+// A wallet with a Solana part has two key ceremonies, one after the other.
+const BOTH_OPEN = "Every signer keeps this wallet open until the Zcash and the Solana parts are "
+  + "ready.";
+export const joinText = () => solPlanned()
+  ? "Zigs is a shared wallet for shielded Zcash testnet and for Solana Devnet. Any " + state.g.t
+    + " of the " + state.g.n + " signers approve each payment. Take a seat to become a signer. "
+    + "Your device creates its own key shares, one for Zcash and one for Solana. They never leave "
+    + "this browser unless you save a backup. " + BOTH_OPEN
+  : "Zigs is a shared wallet for shielded Zcash. Any " + state.g.t + " of the " + state.g.n
+    + " signers approve each payment. Take a seat to become a signer. Your device creates its own "
+    + "key share. It never leaves this browser unless you save a backup. Keep this page open until "
+    + "the wallet is ready.";
+
 function joinCard(seat) {
   const take = el("button", {
     class: "btn primary lg", type: "button", disabled: !Z || canWrite === false || state.pending,
@@ -83,20 +97,20 @@ function joinCard(seat) {
   }, "Take seat " + seat);
   return el("section", { class: "card card-pad hero-card" },
     el("div", { style: "display:grid;gap:4px" }, el("h2", {}, "Join " + state.g.name),
-      el("p", { class: "small muted" }, "Zigs is a shared wallet for shielded Zcash. Any "
-        + state.g.t + " of the " + state.g.n + " signers approve each payment. Take a seat to "
-        + "become a signer. Your device creates its own key share. It never leaves this browser "
-        + "unless you save a backup. Keep this page open until the wallet is ready.")),
+      el("p", { class: "small muted" }, joinText()),
+      solPlanned() ? el("p", { class: "small muted" }, SOL_DISCLOSURE) : null),
     nameField("seat-name"),
     el("div", {}, take));
 }
 
 // The message carries the link, so it is as secret as the link.
-const inviteMessage = (link) => "I made a shared wallet \"" + state.g.name + "\" on Zigs, a "
-  + "private shared wallet for shielded Zcash. You are one of " + state.g.n + " signers, and "
-  + state.g.t + " must approve each payment.\n\n1. Open this link on your phone or computer: "
-  + link + "\n2. Take a seat.\n3. Keep the page open until the wallet is ready.\n\nThis link is "
-  + "a secret. Do not post it in a public place. About Zigs: https://zigs.app";
+export const inviteMessage = (link) => "I made a shared wallet \"" + state.g.name + "\" on Zigs, a "
+  + "private shared wallet for shielded Zcash" + (solPlanned() ? " testnet and Solana Devnet" : "")
+  + ". You are one of " + state.g.n + " signers, and " + state.g.t + " must approve each payment."
+  + "\n\n1. Open this link on your phone or computer: " + link + "\n2. Take a seat.\n3. Keep the "
+  + "page open until the " + (solPlanned() ? "Zcash and the Solana parts are" : "wallet is")
+  + " ready.\n\nThis link is a secret. Do not post it in a public place. About Zigs: "
+  + "https://zigs.app";
 
 function inviteCard(openCount) {
   const link = inviteLink(state.gid), message = inviteMessage(link);
@@ -211,8 +225,8 @@ function progressCard() {
         c.seated + " of " + c.n + " seats taken."),
       setupStep(keyStage, 2, "Create the key together", keyText),
       setupStep(addrStage, 3, "Check the address", addrText)),
-    addrStage === "done" ? null : el("p", { class: "small muted" }, "Every signer must keep Zigs "
-      + "open until setup finishes."),
+    addrStage === "done" ? null : el("p", { class: "small muted" }, solPlanned() ? BOTH_OPEN
+      : "Every signer must keep Zigs open until setup finishes."),
     activityLog());
 }
 
