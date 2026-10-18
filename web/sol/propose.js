@@ -16,6 +16,7 @@ import { agreement } from "./ceremony.js";
 import { base58, keyOfBase58 } from "./docs.js";
 import { poorFeeText, readyFee } from "./fee.js";
 import { payerSeat, settledBlock } from "./gate.js";
+import { poolNote } from "./localprove.js";
 import {
   bytesOf,
   bytesOfBase64,
@@ -251,7 +252,9 @@ async function betaFields(c, worker, seat, fee, draft) {
   const feeSig = feeSignature(c, unsigned, seat, draft.spend);
   const own = reviewOf(c, { ...unsigned, feeSig }, seat, draft.spend);
   if (!own.ok) throw new Error(own.why);
-  await preflight(worker, unsigned.message, seat);
+  await preflight(worker, unsigned.message, seat).catch(async (e) => {
+    throw new Error(await poolNote(c, worker, e.message));
+  });
   return { ...draft.fields, message: unsigned.message, feeSig };
 }
 

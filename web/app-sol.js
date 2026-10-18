@@ -95,7 +95,7 @@ const solHost = () => ({
 // steps (solSetup). A browser keeps a failed import() for the life of the page, so only a reload
 // mends it; Try again (the Solana tab) can mend a failure after the import.
 const SOL_DOWN = "Solana did not load. Check your connection, then reload the page.";
-let setupSummary = null, pendingCount = null, importFailed = false;
+let setupSummary = null, pendingCount = null, collections = null, importFailed = false;
 const SOL_RETRY = "Solana did not load. Check your connection, then press Try again.";
 /** The tab text of a failed load. `retry`: Try again can mend it (a failure after the import). */
 export const failText = (error, retry) => (retry ? SOL_RETRY : error);
@@ -106,8 +106,12 @@ export async function whyNotLoaded() {
 }
 // main.js imports the wasm glue again in attach: the browser gives it the module of this load.
 const solModule = () => Promise.all([import("./sol/main.js"), import("./sol/view.js"),
-  import("./sol/wasm/sol_wasm.js")])
-  .then(([m, v]) => { ({ setupSummary, pendingCount } = v); return m; })
+  import("./sol/docs.js"), import("./sol/wasm/sol_wasm.js")])
+  .then(([m, v, d]) => {
+    ({ setupSummary, pendingCount } = v);
+    collections = d.COLLECTIONS;
+    return m;
+  })
   .catch(async () => {
     importFailed = true;
     throw new Error(await whyNotLoaded());
@@ -123,15 +127,22 @@ function fromSol(what, read, none) {
     return none;
   }
 }
-export const solSetup = () =>
-  solOpenHere() && setupSummary ? fromSol("setup steps", setupSummary, null) : null;
+// Null until the Solana documents of the wallet arrived: before, a ready part reads as not
+// started.
+export const solSetup = () => solOpenHere() && setupSummary
+  ? fromSol("setup steps", (c) => (collections.every((n) => c.loaded[n]) ? setupSummary(c) : null),
+    null) : null;
 // The Solana proposals that this browser can still approve, for wallet `gid`. The module follows
 // the open wallet only, so any other wallet counts 0.
 export const solPending = (gid = state.gid) =>
   solOpenHere(gid) && pendingCount ? fromSol("approval count", pendingCount, 0) : 0;
-// The private balance text of the last sync (or of the saved sync) of wallet `gid`, or null.
+// The private balance text of the last sync (or of the saved sync) of wallet `gid`, or null,
+// and the state of that sync: {text, busy}.
 export const solBalance = (gid = state.gid) =>
   solOpenHere(gid) ? fromSol("balance", (c) => c.sync?.balance ?? null, null) : null;
+export const solSync = (gid = state.gid) => solOpenHere(gid)
+  ? fromSol("sync", (c) => ({ text: String(c.sync?.text ?? ""), busy: !!c.sync?.busy }), null)
+  : null;
 // A failed load waits for Try again (solRetry): a retry on every redraw would loop.
 export function solRetry() {
   if (!solError) return;   // a second tap while the retry loads

@@ -21,6 +21,9 @@ const WAIT_MS = 20000;
 const HEX64 = /^[0-9a-f]{64}$/;
 const isObj = (x) => !!x && typeof x === "object";
 
+// The pin of local proving (SOL-4): a restored seat proves on its device without the server.
+const pinOf = (part) => (part.proveLocal === true ? { proveLocal: true } : {});
+
 /** The plain text of the backup of seat `i`. */
 export function backupText(host, gid, i) {
   const s = solOf(host, gid, i);
@@ -34,6 +37,7 @@ export function backupText(host, gid, i) {
     publicKeyPackage: s.publicKeyPackage,
     groupKey: s.groupKey,
     solSeed: s.solSeed,
+    ...pinOf(s),
   });
 }
 
@@ -68,6 +72,7 @@ const FILE_CHECKS = [
   (b) => Number.isInteger(b.seat) && b.seat >= 1 && b.seat <= 7,
   (b) => HEX64.test(b.solSeed) && HEX64.test(b.groupKey),
   (b) => shareShape(b.keyPackage) && isObj(b.publicKeyPackage),
+  (b) => b.proveLocal === undefined || b.proveLocal === true,
 ];
 
 function readFile(b) {
@@ -160,6 +165,7 @@ export async function restoreSolana(c, b, encrypted) {
     doneSent: true,
     otherCopy: null,
     backupSaved: true,
+    ...pinOf(f),
   };
   if (!(await putSol(host, f.group, f.seat, part))) {
     throw new Error("This browser could not save the restored Solana part.");

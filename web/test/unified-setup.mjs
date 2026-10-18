@@ -138,6 +138,28 @@ function sideTree() {
     globalThis.document = real;
   }
 }
+// The Overview reads the Solana part of the open wallet: its balance, the age of its sync, and
+// the proposals to approve (two here).
+function overviewWiring(ctl) {
+  const { tab } = t.ui, sync = ctl.sync;
+  t.ui.tab = "overview";
+  try {
+    ctl.sync = { balance: "1.25 SOL", text: "synced at slot 7, x", busy: false };
+    assert.match(pageText(), /1\.25\s*SOL.*at the last sync\./, "the SOL row shows the balance");
+    assert.match(pageText(), /2 Solana proposals wait for your approval\./, "the shortcut");
+    ctl.sync = { ...ctl.sync, text: "failed: offline" };
+    assert.match(pageText(), /The last sync failed/, "an old balance says so");
+    ctl.sync = { balance: null, text: "", busy: false };
+    assert.match(pageText(), /Not synced yet/);
+    const loaded = ctl.loaded;
+    ctl.loaded = {};
+    assert.match(pageText(), /SOL.*Loading…/, "no state before the Solana documents arrive");
+    ctl.loaded = loaded;
+  } finally {
+    Object.assign(ctl, { sync });
+    t.ui.tab = tab;
+  }
+}
 // The phone Menu closes on a pick; the sections show for the formed wallet only; the switcher
 // shows with two or more wallets.
 function sideMenu() {
@@ -194,6 +216,7 @@ function approvalCount(ctl) {
     assert.ok(section && labelled(section, "2 to approve"), "the Solana section shows the count");
     const inbox = side.find((n) => n.attrs?.id === "tab-approvals");
     assert.ok(inbox && labelled(inbox, "2 to approve"), "the Approvals section counts them too");
+    overviewWiring(ctl);
     Object.assign(ctl, { sessions: [], commits: {} });
     assert.ok(!labelled(sideTree(), "2 to approve"), "no count without a proposal");
     sideMenu();

@@ -1442,17 +1442,17 @@ only. A mainnet wallet never loads the Solana code.
 
 The Solana part uses a second key ceremony on the same seats (section 4 does not change), with a
 FROST-Ed25519 group key as the Zolana owner. The Solana documents use their own flat names
-(`solstart`, `soldkg1`, `soldkg2`, `soldone`, `solfee`, `solabort`, `solsessions`) in the same
-store, with the signed writes of section 15. Each seat publishes the public key of its fee key in
-`solfee/<i>`: that key pays the fees and the rents of the proposals of the seat, and the group key
-never pays. The seat derives the key from its own Solana signing share (ZOLANA.md section 5), so
-every copy of the seat holds the same key. A seat writes the document only when no valid document
-shows a key for the seat. The Zcash key, its engine and its wasm file stay as they are.
+(`solstart`, `soldkg1`, `soldkg2`, `soldone`, `solfee`, `solabort`, `solprove`, `solsessions`) in
+the same store, with the signed writes of section 15. Each seat publishes the public key of its fee
+key in `solfee/<i>`: that key pays the fees and the rents of the proposals of the seat, and the
+group key never pays. The seat derives the key from its own Solana signing share (ZOLANA.md section
+5), so every copy of the seat holds the same key. A seat writes the document only when no valid
+document shows a key for the seat. The Zcash key, its engine and its wasm file stay as they are.
 
 | Party | Learns | Does not learn |
 |---|---|---|
 | Chain observer | The owner key (the group key), which stays the same for every spend. The payer of each transaction (the fee address of a member, which links that member to the group) and the owner signer. The registry record. The amount and the asset of a deposit and of a withdrawal. The recipient of a withdrawal | The amount and the asset of a private transfer. That a group signed: a FROST signature looks like one Ed25519 signature |
-| Helius (RPC, indexer and prover) | The IP address of each device. The origin of the app. The owner key, through the tag queries. For each spend, the witness that the hosted prover needs: owners, assets, amounts, blindings and the nullifier secret. So it can read the whole Solana history of the wallet | Any key share. The Ed25519 seed. The viewing key. It cannot spend: a spend needs the group signature |
+| Helius (RPC, indexer and prover) | The IP address of each device. The origin of the app. The owner key, through the tag queries. For each spend, the witness that the hosted prover needs: owners, assets, amounts, blindings and the nullifier secret, unless the group turned on local proving (ZOLANA.md 3.7). So it can read the whole Solana history of the wallet | Any key share. The Ed25519 seed. The viewing key. It cannot spend: a spend needs the group signature |
 | Group server | The paths of the Solana documents, their timing and their sizes. The time of its Solana writes matches chain time, so a server operator can link a wallet id to the owner key and to its history | Keys, amounts, recipients and the content of any document |
 | Other signers | The whole Solana history of the wallet. The nullifier secret and the viewing key. They cannot spend alone | The key share and the signing nonces of another seat |
 
@@ -1461,8 +1461,13 @@ Limits that the beta states, and that section 13 does not cover:
 - The guarantee that fewer than `t` seats cannot spend covers the seats only. The upgrade key of the
   pool can replace the pool program, and the protocol authority can pause trees. Both sit outside
   the group (ZOLANA.md section 7).
-- The hosted prover sees the witness, and Zigs cannot stop that today. Local proving is not
-  available in Zolana.
+- The hosted prover sees the witness, unless the group turns on local proving (ZOLANA.md 3.7): one
+  seat turns it on for the group after a test proof on its device (the signed document
+  `solprove/<i>`), and nobody can turn it off. Then the devices of the group prove themselves and
+  Helius no longer gets the amounts, the blindings or the nullifier secret; its indexer still sees
+  which notes a payment spends. Proofs made before the switch already gave Helius the nullifier
+  secret. A tab that loaded an older page, and a browser with no pin whose server hides the
+  switch, can still prove hosted: reload the tabs and make the Solana backups again after it.
 - Sender and recipient of a private transfer are public. Only the amount and the asset are hidden.
 - The Helius URL holds an API key. The page receives it from `/sol/config.json`, so every user of
   the page can read it. Only Allowed Domains at Helius limits its use by other sites.
