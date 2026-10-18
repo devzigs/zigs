@@ -16,7 +16,7 @@ import { createHash } from "node:crypto";
 import { approve, deviceSeen, reviewOf } from "../sol/approve.js";
 import { agreement } from "../sol/ceremony.js";
 import { base58, keyOfBase58 } from "../sol/docs.js";
-import { EXECUTE_TRIES, executorsOf, forgetBalances, tryAgain } from "../sol/execute.js";
+import { EXECUTE_TRIES, endsAt, executorsOf, forgetBalances, tryAgain } from "../sol/execute.js";
 import {
   ZERO_KEY,
   bytesOf,
@@ -28,9 +28,9 @@ import {
 import { savedNonces, saveNonces } from "../sol/nonces.js";
 import { feeOf } from "../sol/fee.js";
 import { putSol } from "../sol/secrets.js";
-import { syncSolana } from "../sol/session.js";
+import { solText, syncSolana } from "../sol/session.js";
 import { deviceSpend } from "../sol/spend.js";
-import { LINK_TEXT, PROVER_TEXT } from "../sol/payview.js";
+import { LINK_TEXT, PROVER_TEXT, SHOWN, approveSeats } from "../sol/payview.js";
 import {
   heldLamports,
   heldNotes,
@@ -297,12 +297,14 @@ step("propose creates the proposal account first; no screen before the reads of 
   delete c.snaps[id];
   // S17: while the device reads, the card shows a wait, not a refusal.
   assert.equal(reviewOf(c, ssOf(id), 2).waiting, true, "reading is a wait");
-  const view = solView({ ...c, host: { ...c.host, el: node } }, (fn) => fn, {});
-  const card = findAll(view, (n) => n.attrs["data-session"] === id)[0];
-  const marks = (name) => findAll(card, (n) => n.attrs["data-sol"] === name).length;
-  assert.ok(marks("reading") >= 1, "the card says that the device reads its wallet");
+  const marks = (name) => {
+    const view = solView({ ...c, host: { ...c.host, el: node } }, (fn) => fn, {});
+    const card = findAll(view, (n) => n.attrs["data-session"] === id)[0];
+    return findAll(card, (n) => n.attrs["data-sol"] === name).length;
+  };
+  assert.ok(marks("wait") >= 1, "the card says that the device loads its data");
   assert.equal(marks("refusal"), 0, "and shows no alert");
-  const buttons = () => marked("approve-" + id + "-2").length;
+  const buttons = () => marks("approve-" + id + "-2");
   assert.equal(buttons(), 0, "and no Approve button before the review shows");
   notify();
   await waitFor("a read with no account", () => c.seen[id]?.account === null);
@@ -310,6 +312,17 @@ step("propose creates the proposal account first; no screen before the reads of 
   chain.accounts.set(address, stored);
   await waitFor("the account read again", () => reviewOf(c, ssOf(id), 2).ok, 30000);
   assert.equal(buttons(), 1, "the Approve button comes with the review");
+  // A document that waits for its signature check is a wait too: no alert and no button.
+  c.sessWait += 1;
+  assert.equal(reviewOf(c, ssOf(id), 2).waiting, true, "a check of the documents is a wait");
+  assert.deepEqual([marks("wait"), marks("refusal"), buttons()], [1, 0, 0]);
+  c.sessWait -= 1;
+  assert.deepEqual([marks("wait"), buttons()], [0, 1], "the button comes back after the check");
+  // A collection that is not loaded yet is a wait too.
+  c.loaded.solsessions = false;
+  assert.equal(reviewOf(c, ssOf(id), 2).waiting, true, "a load of the documents is a wait");
+  assert.deepEqual([marks("wait"), marks("refusal"), buttons()], [1, 0, 0]);
+  c.loaded.solsessions = true;
 }
 step("a device that read no proposal account reads it again, with no click");
 
@@ -323,6 +336,17 @@ step("a device that read no proposal account reads it again, with no click");
     const card = findAll(view, (n) => n.attrs["data-session"] === id)[0];
     return findAll(card, (n) => String(n.attrs["data-sol"]).startsWith(name)).length;
   };
+  // The S6 count of the proposals that wait for this browser uses approveSeats: it must name the
+  // proposals whose cards show an Approve button, in every state below.
+  const agree = (what) => {
+    const view = solView({ ...c, host: { ...c.host, el: node } }, (fn) => fn, {});
+    const shown = c.sessions.slice(0, SHOWN);
+    const button = (ss) => (n) => String(n.attrs["data-sol"]).startsWith(`approve-${ss.id}-`);
+    const withButton = shown.filter((ss) => findAll(view, button(ss)).length > 0);
+    const counted = shown.filter((ss) => approveSeats(c, ss).length > 0);
+    assert.deepEqual(counted.map((ss) => ss.id), withButton.map((ss) => ss.id), what);
+  };
+  agree("the count and the buttons agree before the read");
   chain.accounts.delete(address);
   delete c.seen[id];
   delete c.snaps[id];
@@ -330,6 +354,7 @@ step("a device that read no proposal account reads it again, with no click");
   await waitFor("a read with no account", () => c.seen[id]?.account === null);
   assert.equal(reviewOf(c, ssOf(id), 2).waiting, true, "a missing account is a wait at first");
   assert.deepEqual([marks("refusal"), marks("approve-")], [0, 0], "no alert and no button");
+  agree("the count and the buttons agree while the account is missing");
   // A click reads the account itself and keeps the time of that read: the re-read goes on, with
   // a pass of the reactor after 5 s also on an idle page. The click comes a while after the read.
   const firstMiss = c.seen[id].missedSince;
@@ -356,6 +381,7 @@ step("a device that read no proposal account reads it again, with no click");
   const since = c.seen[id].missedSince;
   c.seen[id].missedSince = Date.now() - 31_000;
   assert.equal(marks("refusal"), 1, "a long miss shows the refusal");
+  agree("the count and the buttons agree after a long miss");
   c.seen[id].missedSince = since;
   chain.accounts.set(address, stored);
   await waitFor("the account read again", () => reviewOf(c, ssOf(id), 2).ok, 30000);
@@ -363,6 +389,7 @@ step("a device that read no proposal account reads it again, with no click");
   const ahead = (Number(ssOf(id).expiry) + 100) * 1000 - Date.now();
   later(ahead);
   const shown = [marks("expired"), marks("approve-"), marks("refusal"), marks("review-")];
+  agree("the count and the buttons agree after the expiry");
   Date.now = realNow;
   assert.deepEqual(shown, [1, 0, 0, 0], "an expired proposal shows one line and no button");
   assert.ok(marks("approve-") > 0, "control: the buttons before the expiry");
@@ -389,6 +416,14 @@ step("a missing account is a wait, a click keeps the re-read, and an expiry hide
   delete c.seen[id];
   const pump = setInterval(notify, 200); // the reactor runs often: the busy key holds the reads
   await waitFor("three failed reads", () => c.readFails[key]?.n === 3, 30000);
+  // After two failures the card says why the read fails, and still shows no Approve button.
+  const view = solView({ ...c, host: { ...c.host, el: node } }, (fn) => fn, {});
+  const card = findAll(view, (n) => n.attrs["data-session"] === id)[0];
+  const inCard = (name) => findAll(card, (n) => n.attrs["data-sol"] === name);
+  const [failed] = inCard("read-failed");
+  assert.equal(failed.attrs.class, "small bad", "the cause is an error line");
+  assert.match(textOf(failed), /^Zigs could not read your wallet: .*does not see every input/);
+  assert.deepEqual([inCard("wait").length, inCard("approve-" + id + "-2").length], [0, 0]);
   const gaps = stamps.slice(1).map((at, n) => at - stamps[n]);
   assert.equal(stamps.length, 3, "no read while the step waits");
   assert.ok(gaps[0] >= 2900 && gaps[0] < 4500, "the first wait is 3 s: " + gaps[0]);
@@ -403,6 +438,38 @@ step("a missing account is a wait, a click keeps the re-read, and an expiry hide
   c.host.showBanner = banner;
 }
 step("a failed wallet read waits longer each time, shows one banner, and a success clears it");
+
+// ── A read that fails because the wallet closed writes nothing into the next wallet ──
+{
+  const id = current;
+  const key = "snap:" + id;
+  const banners = [];
+  const banner = c.host.showBanner;
+  c.host.showBanner = (kind, text) => banners.push(text);
+  const reads = () => chain.commands.filter((m) => m.cmd === "account").length;
+  const before = reads();
+  chain.drop = "account"; // the read waits for an answer that does not come
+  delete c.snaps[id];
+  delete c.seen[id];
+  notify();
+  await waitFor("a read in flight", () => reads() > before);
+  // What a close does to this state: a new number, and the Worker closes with its calls.
+  const opened = c.opened;
+  c.opened = opened + 1;
+  c.worker.close();
+  Object.assign(c, { worker: null, inited: null });
+  await new Promise((done) => setTimeout(done, 300));
+  assert.deepEqual(banners, [], "no banner of the closed wallet");
+  assert.equal(c.readFails[key], undefined, "and no count in the next wallet state");
+  chain.drop = null;
+  c.opened = opened;
+  c.worker?.close(); // a read that started meanwhile belongs to the other number
+  Object.assign(c, { worker: null, inited: null });
+  notify();
+  await waitFor("the read again", () => c.snaps[id] !== undefined, 30000);
+  c.host.showBanner = banner;
+}
+step("a read of a wallet that closed shows no banner and writes no count");
 
 // ── One payment: two approvals, the digest signed, the execute with a fresh proof ──
 {
@@ -494,6 +561,13 @@ step("a failed wallet read waits longer each time, shows one banner, and a succe
   const [result] = marked("result").filter((n) => textOf(n).includes(ss.txId));
   const tx = findAll(result, (n) => n.tag === "a")[0].attrs.href;
   assert.equal(tx, "https://explorer.solana.com/tx/" + ss.txId + "?cluster=devnet");
+  const note = /explorer\.solana\.com in a new tab\. That site is not Zigs: it sees the id/;
+  assert.match(textOf(marked("explorer-text")[0]), note, "the list says what the link shows");
+  c.added = { status: "confirmed", amount: 10_000_000n, seat: 1, txId: ss.txId };
+  const notes = () => marked("explorer-text").length;
+  const withLine = notes();
+  c.added = null;
+  assert.equal(notes(), withLine - 1, "the Add SOL line has its explorer note");
   c.added = { status: "confirmed", amount: 10_000_000n, seat: 1, txId: ss.txId };
   const [added] = marked("added");
   assert.equal(findAll(added, (n) => n.tag === "a")[0].attrs.href, tx, "Add SOL links its id");
@@ -782,6 +856,8 @@ const FUNDED = [50_000_000n, 50_000_000n, 50_000_000n];
   assert.equal(ssOf(id).status, "signed", "no execute without a read of the balance");
   assert.equal(c.tries[id] ?? 0, 0, "a refused read counts no try");
   assert.ok(card().includes(refused), "the card shows the text of the Worker");
+  assert.equal(c.execWait[id], undefined, "a refused read is no seat that cannot pay");
+  assert.ok(!card().includes("No seat of this browser can pay"), "and no line of the wait");
   delete chain.balances.get; // the reads work again
   await waitStatus(id, "sent", 90000);
   assert.equal(c.execErrors[id], undefined, "the text goes with the next good read");
@@ -844,6 +920,7 @@ step("a retry after a dropped send uses the seat that sent it");
   assert.equal(ssOf(id).txId, executed, "the transaction of the history");
   assert.equal(count("send"), sent, "the tab sent nothing");
   assert.equal(c.tries[id] ?? 0, 0, "and counted no try");
+  assert.equal(c.execWait[id], undefined, "the account that is gone clears the line of the wait");
   fund(FUNDED);
 }
 step("a tab with no funded seat marks an execute that another device landed");
@@ -904,6 +981,101 @@ step("a tab with no funded seat shows a refused account read and reads once a mi
 }
 step("an execute waits for the lease of another device, and stops after its tries");
 
+// ── No fee address of this browser can pay: a neutral line says why, and no try counts ──
+{
+  await forgetPairs();
+  const id = await proposedPay();
+  current = id;
+  fund([999_999n, 999_999n, 999_999n]); // the create needs seat 1 funded, so this comes after it
+  const sends = count("send");
+  await approve(c, ssOf(id), 1);
+  await approve(c, ssOf(id), 2);
+  await waitFor("the line of the wait", () => c.execWait[id] !== undefined);
+  const [line] = marked("exec-wait-" + id);
+  const NEEDS = /^No seat of this browser can pay the execute\. A fee address needs 0\.001 SOL/;
+  assert.match(textOf(line), NEEDS);
+  assert.doesNotMatch(line.attrs.class, /\bbad\b/, "the line is no error");
+  assert.equal(c.execErrors[id], undefined, "no red text");
+  assert.equal(c.tries[id] ?? 0, 0, "no try");
+  assert.equal(count("send"), sends, "nothing sent");
+  // Seat 3 gets the exact minimum. Its execute lands late, so the card shows it while signed.
+  chain.sendMode = "late";
+  fund([999_999n, 999_999n, 1_000_000n]);
+  await waitFor("the send of seat 3", () => c.sending[id] !== undefined, 60000);
+  assert.equal(c.sending[id].seat, 3, "the funded seat executes");
+  assert.equal(ssOf(id).status, "signed", "the execute did not land yet");
+  assert.equal(marked("exec-wait-" + id).length, 0, "the funded seat clears the line");
+  assert.equal(c.execErrors[id], undefined, "and no red text shows");
+  chain.sendMode = null;
+  chain.release();
+  await waitStatus(id, "sent");
+  const landed = chain.landed.find((x) => x.signature === ssOf(id).txId);
+  assert.ok(verifies(feeOf(c, 3).key, bytesOf(landed.message), bytesOf(landed.sigs[0])));
+  fund(FUNDED);
+}
+step("a browser with no funded seat says why on the card; a funded seat clears it and executes");
+
+// ── A signed payment whose tries ran out still ends at its expiry, with no click ──
+{
+  await forgetPairs();
+  const id = await proposedPay();
+  current = id;
+  chain.refuse = "Custom 9999";
+  const delays = []; // a quiet tab: the step arms a pass of the reactor for the end of the payment
+  const setTimer = globalThis.setTimeout;
+  globalThis.setTimeout = (fn, ms, ...rest) => (delays.push(ms), setTimer(fn, ms, ...rest));
+  await approve(c, ssOf(id), 1);
+  await approve(c, ssOf(id), 2);
+  await waitFor("the tries", () => (c.tries[id] ?? 0) >= EXECUTE_TRIES, 60000);
+  const end = (Number(ssOf(id).expiry) + 600) * 1000 + 1000;
+  const armed = () => delays.some((ms) => Math.abs(Date.now() + ms - end) < 10_000);
+  notify();
+  await waitFor("the pass at the end of the payment", armed);
+  globalThis.setTimeout = setTimer;
+  assert.equal(marked("execute-" + id).length, 1, "before the expiry the card asks for a click");
+  chain.refuse = null;
+  const [sims, sends] = [count("simulate"), count("send")];
+  // First the node shows no account and a history with no create: the end check fails.
+  const address = base58(ssOf(id).account);
+  const [stored, history] = [chain.accounts.get(address), chain.history.get(address)];
+  chain.accounts.delete(address);
+  chain.history.set(address, []);
+  later(DAY);
+  notify(); // a pass of the reactor, with no click
+  const unread = () => /history of the proposal account is not complete/.test(c.execErrors[id]);
+  await waitFor("the failed end check", unread);
+  assert.equal(c.tries[id], EXECUTE_TRIES, "a failed end check is no new try");
+  // Then the node shows the open account: the end check reads again later, and the payment ends.
+  chain.accounts.set(address, stored);
+  chain.history.set(address, history);
+  await waitStatus(id, "failed", 60000);
+  Date.now = realNow;
+  assert.match(ssOf(id).error, /expired before it was executed/);
+  assert.equal(c.tries[id], EXECUTE_TRIES, "the end check is no new try");
+  assert.equal(count("simulate"), sims, "it tests no execute");
+  assert.equal(count("send"), sends, "and sends nothing");
+}
+step("a signed payment whose tries ran out ends at its expiry, with no click and no new try");
+
+// ── A signed payment past its expiry ends also when no seat of this browser can pay ──
+{
+  await forgetPairs();
+  const id = await proposedPay();
+  current = id;
+  fund([0n, 0n, 0n]);
+  const reads = count("balance");
+  await approve(c, ssOf(id), 1);
+  await approve(c, ssOf(id), 2);
+  await waitFor("the look of the tab", () => count("balance") >= reads + 3);
+  assert.equal(ssOf(id).status, "signed", "no seat can pay: no execute");
+  later(DAY); // past the expiry and the clock margin of 600 s
+  await waitStatus(id, "failed", 60000);
+  Date.now = realNow;
+  assert.match(ssOf(id).error, /expired before it was executed/);
+  fund(FUNDED);
+}
+step("a signed payment with no funded seat still ends at its expiry: its end pays no fee");
+
 // ── Someone created the same body first: the page reads the account and takes it ──
 {
   await forgetPairs();
@@ -944,6 +1116,36 @@ step("a create that meets the same body in its account takes it; another body fa
   assert.deepEqual(held.map((h) => h.lamports), [note, note], "the amount of the held note");
   assert.equal(held[0].expiry, decodeIntent(ssOf(held[0].id).intent).expiry);
   assert.equal(heldLamports(c.sessions, chain.utxos), note, "but the note is held once");
+  // The pay card says what a new payment can spend, or which proposals hold all of it.
+  const kept = { sync: c.sync, sessions: c.sessions };
+  const notes = chain.utxos.map(({ hash, amount }) => ({ hash, amount }));
+  const line = () => marked("available").map(textOf);
+  // The page ends a payment 600 s after its expiry (the clock margin of execute.js).
+  const at = new Date((Number(held[0].expiry) + 600) * 1000).toISOString().slice(0, 16);
+  const end = at.replace("T", " ") + " UTC";
+  assert.equal(endsAt(held[0].expiry), held[0].expiry + 600n, "the margin of the end");
+  const name = `of seat ${ssOf(held[0].id).by} (${held[0].id})`;
+  c.sync = { ...kept.sync, lamports: String(note), notes };
+  const two = `All your notes are held by 2 open proposals. The one that ends first, ${name}, ends`;
+  assert.deepEqual(line(), [`${two} at ${end}. Add SOL or wait.`], "two holders");
+  c.sessions = kept.sessions.filter((ss) => ss.id !== held[1].id);
+  const one = `All your notes are held by an open proposal ${name}. It ends at ${end}.`;
+  assert.deepEqual(line(), [one + " Add SOL or wait."], "one holder");
+  c.sessions = kept.sessions;
+  const extra = { hash: "ee".repeat(32), amount: "1000" };
+  c.sync = { ...c.sync, lamports: String(note + 1000n), notes: [...notes, extra] };
+  const free = `Available for a new payment: ${solText(1000n)}. Open proposals hold `;
+  assert.deepEqual(line(), [free + solText(note) + " until they execute or end."]);
+  // A sent payment spent its notes: they are not available, also before the next sync.
+  const sentFields = { expiry: 1n, inputs: 1, outputs: 2, recipient: "11".repeat(32), amount: 1n };
+  const intent = intentHex("withdraw", sentFields);
+  const spent = { id: "spent-s4", by: 1, status: "sent", intent, inputIds: [extra.hash] };
+  c.sessions = [...kept.sessions, spent];
+  assert.deepEqual(line(), [`${two} at ${end}. Add SOL or wait.`], "the spent note is gone");
+  c.sessions = kept.sessions;
+  c.sync = { ...c.sync, notes: [] };
+  assert.deepEqual(line(), [], "no line while no open proposal holds a synced note");
+  c.sync = kept.sync;
   current = id;
   await approve(c, ssOf(id), 1);
   await approve(c, ssOf(id), 2);
@@ -972,6 +1174,10 @@ step("a payment avoids the inputs of an open one, and an executed one ends the o
   const small = { utxos: () => [1, 2, 3, 4, 5, 6, 7].map((n) => note(1n, n)) };
   const seven = () => selectInputs({ SOL_MINT: "SOL" }, small, "T", 7n, new Set(["01"]));
   assert.throws(seven, /needs 7 UTXOs, and no proof takes that many/);
+  // A held note of 70 would pay alone, but the seven free notes of 10 need a proof of 7 inputs.
+  const mixed = { utxos: () => [note(70n, 1), ...[2, 3, 4, 5, 6, 7, 8].map((n) => note(10n, n))] };
+  const seventy = () => selectInputs({ SOL_MINT: "SOL" }, mixed, "T", 70n, new Set(["01"]));
+  assert.throws(seventy, /held by an open proposal: wait until it ends or add SOL/);
   // heldNotes: the open payments only, each note once, synced notes only, the first to end first.
   const utxos = [{ hash: "aa", amount: "100" }, { hash: "bb", amount: "40" }];
   const pay = (id, status, expiry, inputIds) => {

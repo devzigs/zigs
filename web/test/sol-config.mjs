@@ -1,6 +1,6 @@
 // Where the page gets the Helius URL (cf/src/index.js serves /sol/config.json). fetchRpcUrl takes
-// the URL from the server answer only, keeps nothing in storage, asks to check the connection when
-// the request fails, and says "not available" for every other answer. When the server gives no
+// the URL from the server answer only, keeps nothing in storage, says "not available" for a 503 or
+// a 404, and asks to check the connection for every other failure. When the server gives no
 // URL, the page loads nothing of Solana, says so once, and does not ask again at the next redraw.
 // Run: node web/test/sol-config.mjs   (Node 24)
 import assert from "node:assert/strict";
@@ -34,24 +34,31 @@ const json = (value, status = 200) => () => Response.json(value, { status });
   assert.deepEqual(asked.at(-1), ["/sol/config.json", { cache: "no-store" }]);
   assert.equal(storage.size, before, "the URL is not stored");
   assert.equal(UNAVAILABLE, "Solana is not available on this server");
-  const bad = [
+  // S12: only a 503 or a 404 says that this server has no Solana.
+  const off = [
     ["a 503 answer", json({ error: "Solana is not set up on this server." }, 503)],
     ["a 404 answer", () => new Response("Not found\n", { status: 404 })],
+    ["a rpcUrl in an error answer", json({ rpcUrl: URL_OK }, 503)],
+  ];
+  for (const [what, make] of off) {
+    await assert.rejects(() => withFetch(make, fetchRpcUrl), { message: UNAVAILABLE }, what);
+  }
+  // Any other failure is the connection: the person can press Try again.
+  const offline = () => {
+    throw new TypeError("offline");
+  };
+  const down = [
+    ["no answer", offline],
+    ["a 500 answer", () => new Response("", { status: 500 })],
     ["a body that is no JSON", () => new Response("<html>", { status: 200 })],
     ["no rpcUrl", json({})],
     ["an empty rpcUrl", json({ rpcUrl: "" })],
     ["a number as rpcUrl", json({ rpcUrl: 7 })],
     ["null", json(null)],
-    ["a rpcUrl in an error answer", json({ rpcUrl: URL_OK }, 503)],
   ];
-  for (const [what, make] of bad) {
-    await assert.rejects(() => withFetch(make, fetchRpcUrl), new RegExp(UNAVAILABLE), what);
+  for (const [what, make] of down) {
+    await assert.rejects(() => withFetch(make, fetchRpcUrl), { message: NOT_LOADED }, what);
   }
-  const offline = () => {
-    throw new TypeError("offline");
-  };
-  // S12: a network error is no "not available": the person can try again.
-  await assert.rejects(() => withFetch(offline, fetchRpcUrl), { message: NOT_LOADED });
 }
 
 // ── The page, with a server that gives no URL ──

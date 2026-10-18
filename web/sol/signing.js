@@ -17,7 +17,7 @@ import { clearPending, dropNonces, pendingShare, savedNonces, spendNonces } from
 import { BLOCKHASH_MS, REREAD_MS, deviceSeen, inputsOf, showable, stampSeen } from "./approve.js";
 import { PAYMENT_EXPIRED, maybeExecute, pastExpiry } from "./execute.js";
 import { solOf, stopOf } from "./secrets.js";
-import { ensureWorker } from "./session.js";
+import { ensureWorker, stillOpen } from "./session.js";
 import { BEFORE_FEE, SESSIONS, beforeFee, isPayment, writePart } from "./sessions.js";
 import { deviceSpend } from "./spend.js";
 
@@ -314,10 +314,9 @@ async function land(c, ss, worker, txId) {
   try {
     await worker.call("send", { tx });
   } catch (e) {
-    if (!STILL_THERE.test(String(e.message))) {
-      await failSession(c, ss, "The network refused the transaction: " + errorText(e));
-      return null;
-    }
+    // The simulation passed, so this is Helius or the network (a 429, a 5xx): a counted try. The
+    // next try reads the status first, and SEND_TRIES ends the session.
+    if (!STILL_THERE.test(String(e.message))) throw e;
   }
   return waitFor(worker, txId);
 }
@@ -352,12 +351,13 @@ function maybeReadWallet(c, ss) {
   if (!waiting || !["transfer", "approve", "withdraw"].includes(kind)) return;
   if (!c.rpcUrl || writerSeats(c)[0] === undefined) return;
   const key = "snap:" + ss.id;
+  const { opened } = c;
   launch(c, key, async () => {
     try {
       await readWallet(c, ss);
       delete c.readFails[key];
     } catch (e) {
-      await sleep(backOff(c, key, e));
+      if (stillOpen(c, opened)) await sleep(backOff(c, key, e)); // else: no text on the next wallet
     }
   });
 }

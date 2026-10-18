@@ -10,7 +10,7 @@ import { loadKept, mySeatSecrets, putSec, saveKept, sec, takeStored } from "./ap
 import { isMe, keysDiffer, localSeats, myUid, signersOf } from "./app-seats.js";
 import {
   balanceNow, chain, curChain, curNet, dropStalled, inFlight, netName, preferredServers, runSync,
-  SERVER_TIMEOUT_MS,
+  SERVER_TIMEOUT_MS, serverWait, syncAgain,
 } from "./app-chain.js";
 import {
   canWriteAs, mayAct, NO_SEAT_KEY, partNow, signedDoc, signedMode, sigPart, writer,
@@ -284,17 +284,22 @@ async function proposeNow(payees, note, move = null, priority = false, after) {
 // Only a PCZT text goes to the engine: a click event that a handler passes on is none.
 const pcztOrNone = (p) => (isStr(p) ? p : undefined);
 
-// A proposal with no answer in SPEND_TIMEOUT_MS stops, so Propose works again (S9). The engine may
-// still use the wallet object, so it counts as stalled, and the next sync starts a new one.
+// A proposal with no answer in SPEND_TIMEOUT_MS stops (S9). The engine may still use the wallet
+// object, so it counts as stalled, and a sync starts at once on the next server: Propose waits for
+// it (RECONNECT), so it does not wait on the same server again.
 // ponytail: the late answer of the engine is dropped; nothing stops the engine call.
 const SPEND_TIMEOUT_MS = 60000;
+const WHEN_SYNCED = "Propose again when the wallet is up to date.";
 function spendOrStall(c, payees, priority, after) {
   const cw = c.cw;
   let timer;
   const late = new Promise((_, reject) => {
     timer = setTimeout(() => {
-      if (c.cw === cw) dropStalled(c);
-      reject(new Error("The proposal got no answer in 60 s, so it stopped. Try again."));
+      if (c.cw === cw) {
+        dropStalled(c);
+        if (c === chain) syncAgain(c);   // not the chain of a wallet that closed meanwhile
+      }
+      reject(new Error("The proposal got no answer in 60 s, so it stopped. " + WHEN_SYNCED));
     }, SPEND_TIMEOUT_MS);
   });
   return Promise.race([cw.createSpend(S(payees), priority, pcztOrNone(after)), late])
@@ -431,15 +436,17 @@ async function commitNow(ss, i, ins, tip, gid) {
   return doc;
 }
 
-// The chain height now, from the open wallet's light-wallet server, else from the other servers
-// of its network.
+// The chain height now, from the server of the last sync, else from the other servers of the
+// network in the order of preferredServers. After a server stopped answering, the wallet has no
+// server until the next sync, and the others still answer.
 async function freshTip() {
   const c = curChain();
-  if (!c || !c.url) throw new Error("Wait for the first sync to finish, then approve.");
-  const errors = [];
-  for (const url of [c.url, ...curNet().servers.filter((u) => u !== c.url)]) {
+  if (!c || !c.bal) throw new Error("Wait for the first sync to finish, then approve.");
+  const net = curNet(), order = preferredServers(net), errors = [];
+  const urls = c.url ? [c.url, ...order.filter((u) => u !== c.url)] : order;
+  for (const [at, url] of urls.entries()) {
     const host = new URL(url).host;
-    try { return await withTimeout(Z.latestHeight(url), SERVER_TIMEOUT_MS, host); }
+    try { return await withTimeout(Z.latestHeight(url), serverWait(net, at, url), host); }
     catch (e) { errors.push(host + ": " + said(e)); }
   }
   throw new Error("No light-wallet server gave the chain height, so this browser did not "
@@ -549,8 +556,12 @@ function setupBlocker() {
 }
 
 const OPEN_TEXT = "Finish or cancel the open payment, or wait until it expires.";
+// After a server stopped answering a proposal or a sync, the wallet keeps the stalled object until
+// a sync connects to the next server. A proposal on it would wait on the same server.
+const RECONNECT = "The light-wallet server stopped answering. " + WHEN_SYNCED;
 function holdBlocker() {
   if (ui.proposing) return PROPOSING;
+  if (curChain()?.stalled) return RECONNECT;
   // ponytail: the engine does not know about unmined spends and would pick the same notes again.
   if (inFlight().length) return "A payment is waiting for its block. Send again in a minute.";
   if (state.sessions.some(isOpen)) return OPEN_TEXT;
