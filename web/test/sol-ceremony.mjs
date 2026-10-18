@@ -231,21 +231,11 @@ function pageText() {
 const NETWORK_NOTE = /The store shows another network than the first this browser saw/;
 
 // ── Only a testnet wallet gets the tab, and a start document of another loads nothing ──
-// The ids of the tabs that the open wallet offers (the page builds them in walletView).
+// The ids of the sections that the open wallet offers. A wallet with a wallet document must also
+// draw its page; a wallet made by hand has none.
 function tabIds() {
-  let ids;
-  const real = t.tabBar;
-  t.tabBar = (tabs) => ((ids = tabs.map(([id]) => id)), real(tabs));
-  try {
-    t.walletView([], null);
-  } catch (e) {
-    // The tab bar is built before the tab body, which needs a wallet document that a wallet
-    // made by hand does not have. A wallet with a wallet document must build all of it.
-    if (!ids || t.state.wallet) throw e;
-  } finally {
-    t.tabBar = real;
-  }
-  return ids;
+  if (t.state.wallet) t.walletView([], null);
+  return t.walletSections().map(([id]) => id);
 }
 {
   const gidMain = await rig.wallet({ name: "Main", network: "mainnet" });

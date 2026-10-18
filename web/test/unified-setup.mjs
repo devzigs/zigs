@@ -126,8 +126,10 @@ function sideTree() {
   const real = globalThis.document;
   const nav = new Rec();
   nav.replaceChildren = (...nodes) => void (nav.kids = nodes);
-  const fake = { createElement: () => new Rec(), createTextNode: (text) => ({ text }) };
-  globalThis.document = { ...fake, getElementById: () => nav };
+  const fake = { createElement: () => new Rec(), createElementNS: () => new Rec(),
+    createTextNode: (text) => ({ text }) };
+  const side = { classList: { toggle() {} } };
+  globalThis.document = { ...fake, getElementById: () => nav, querySelector: () => side };
   try {
     renderSide();
     return nav;
@@ -156,13 +158,16 @@ function approvalCount(ctl) {
   const stop = docs({ solabort: { 2: { reason: "A test stop." } } });
   assert.equal(count(two, {}, stop), 0, "a stopped part has no proposal to approve");
   assert.equal(count(two, {}, docs({ soldone: {} })), 0, "the seats do not agree on one key");
-  // The side item and the tab show the count of the open wallet.
+  // The side item of the wallet and its Solana section show the count of the open wallet.
   const kept = [ctl.sessions, ctl.commits, t.state.groups];
   Object.assign(ctl, { sessions: two, commits: {} });
   t.state.groups = [t.state.g];
   try {
-    assert.ok(labelled(sideTree(), "2 to approve"), "the side item shows the count");
-    assert.ok(labelled(pageTree(), "2 to approve"), "the Solana tab shows the count");
+    const side = sideTree().kids;
+    const wallet = side.find((n) => n.attrs?.["data-key"] === "wallet-" + t.state.gid);
+    assert.ok(labelled(wallet, "2 to approve"), "the side item shows the count");
+    const section = side.find((n) => n.attrs?.id === "tab-solana");
+    assert.ok(section && labelled(section, "2 to approve"), "the Solana section shows the count");
     Object.assign(ctl, { sessions: [], commits: {} });
     assert.ok(!labelled(sideTree(), "2 to approve"), "no count without a proposal");
   } finally {
@@ -170,14 +175,15 @@ function approvalCount(ctl) {
   }
 }
 
-// ── S6: the tab bar wraps at every width, so no tab sits past the edge ──
-// The widths are measured in Chrome (solspike phone checks): the rule here is what they need.
+// ── S6: every section of the wallet stays in reach at every width ──
+// The sections stack in the side list, which a Menu button opens on a phone and which scrolls
+// there, so no section sits past the edge. The widths are measured in Chrome (solspike phone
+// checks): the rules here are what they need.
 {
   const css = readFileSync(new URL("../app.css", import.meta.url), "utf8");
-  const bar = css.match(/^\.tabs \{([^}]*)\}/m)?.[1] ?? "";
-  assert.match(bar, /flex-wrap: wrap/, "the bar wraps");
-  assert.doesNotMatch(bar, /overflow/, "and does not scroll");
-  assert.doesNotMatch(css, /\.tabs \{[^}]*overflow/, "no width brings the scroll back");
+  assert.doesNotMatch(css, /^\.tabs? \{/m, "no tab bar comes back");
+  assert.match(css, /^#side-nav \{[^}]*display: grid/m, "the sections stack");
+  assert.match(css, /\.side\.menu-open #side-nav \{[^}]*overflow: auto/, "the phone menu scrolls");
 }
 
 // ── The hint: version 3 testnet wallets only ──

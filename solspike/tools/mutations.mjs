@@ -422,13 +422,13 @@ export const MUTATIONS = [
   ),
   program(
     "W-tab-badge",
-    "the Solana tab has no count badge",
+    "the Solana section has no count badge",
     ["web/app-wallet.js",
-      "tabs.push([\"solana\", \"Solana\", countBadge(solPending(), \"to approve\", " +
+      "sections.push([\"solana\", \"Solana\", countBadge(solPending(), \"to approve\", " +
       "\"attn\")]);",
-      "tabs.push([\"solana\", \"Solana\"]);"],
+      "sections.push([\"solana\", \"Solana\"]);"],
     UNIFIED,
-    /the Solana tab shows the count/,
+    /the Solana section shows the count/,
   ),
   program(
     "W-why-503",
@@ -526,12 +526,12 @@ export const MUTATIONS = [
   ),
   program(
     "W-tabs-wrap",
-    "the tab bar does not wrap",
+    "the sections of the side list do not stack",
     ["web/app.css",
-      ".tabs { display: flex; flex-wrap: wrap; gap: 4px;",
-      ".tabs { display: flex; gap: 4px;"],
+      "#side-nav { display: grid;",
+      "#side-nav { display: flex;"],
     UNIFIED,
-    /the bar wraps/,
+    /the sections stack/,
   ),
   program(
     "W-join-openhere",

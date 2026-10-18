@@ -3952,8 +3952,8 @@ async function runAcctSync() {
   await t.runSync(t.acct);
 }
 
-// Three paths of the page that no check above runs: a good action clears a bad banner, an arrow
-// key moves the tab, and Leave chat asks first. Each one asks for the focus of a control, which
+// Three paths of the page that no check above runs: a good action clears a bad banner, a pick in
+// the side list shows a wallet section, and Leave chat asks first. Each one asks for the focus of a control, which
 // the next redraw (120 ms later) takes. A recorder stands in for the page.
 {
   const realDocument = globalThis.document;
@@ -3970,10 +3970,10 @@ async function runAcctSync() {
   globalThis.document = {
     activeElement: { dataset: { key: "send-ok" } },
     getElementById: (id) => ({ banner, "banner-text": bannerText })[id] ?? null,
-    createElement: (tag) => new Rec(tag), createTextNode: (text) => ({ text }),
+    createElement: (tag) => new Rec(tag), createElementNS: (ns, tag) => new Rec(tag),
+    createTextNode: (text) => ({ text }),
   };
   const ev = { preventDefault() {}, currentTarget: null };
-  const key = (k) => ({ key: k, preventDefault() {} });
   const { tab, leave } = t.ui;
   try {
     t.showBanner("bad", "an earlier error");
@@ -3988,17 +3988,17 @@ async function runAcctSync() {
     await t.act(async () => { throw new Error("no"); })(ev);
     assert.deepEqual(t.banner, { kind: "bad", text: "no" }, "a failed action shows its error");
 
-    const tabs = [["a", "A"], ["b", "B"], ["c", "C"]];
-    t.ui.tab = "a";
-    t.tabBar(tabs).on.keydown(key("ArrowRight"));
-    assert.equal(t.ui.tab, "b", "the right arrow moves to the next tab");
-    assert.deepEqual(t.wantFocus, { key: "tab-b", force: true }, "and the focus goes with it");
-    t.tabBar(tabs).on.keydown(key("End"));
-    assert.equal(t.ui.tab, "c");
-    t.tabBar(tabs).on.keydown(key("ArrowRight"));
-    assert.equal(t.ui.tab, "a", "the right arrow wraps around");
-    t.tabBar(tabs).on.keydown(key("x"));
-    assert.equal(t.ui.tab, "a", "another key changes nothing");
+    const sections = [["overview", "Overview"], ["activity", "Activity"], ["members", "Signers"]];
+    const item = (id) => t.sectionNav(sections).find((n) => n.attrs.id === "tab-" + id);
+    t.ui.tab = "solana";
+    assert.equal(item("overview").attrs["aria-current"], "page",
+      "a section that the wallet lacks shows Overview");
+    assert.equal(t.ui.tab, "overview");
+    assert.equal(item("members").attrs["aria-current"], undefined, "only one section is current");
+    item("members").on.click();
+    assert.equal(t.ui.tab, "members", "a pick shows the section");
+    assert.deepEqual(t.wantFocus, { key: "panel-members", force: true },
+      "and the focus goes to the section");
 
     t.ui.leave = false;
     const ask = t.leaveBox("chat-id").kids[0];
