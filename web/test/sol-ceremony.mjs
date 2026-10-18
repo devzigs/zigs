@@ -21,6 +21,8 @@ import { config, loadRig, sleep, storage } from "./sol-rig.mjs";
 
 const rig = await loadRig();
 const { t, Z, W, data, waitFor } = rig;
+// The page modules need the stub page of the rig, so this one loads after it.
+const { confirmedNo } = await import("../app-dkg.js");
 const sha = (text) => createHash("sha256").update(text).digest("hex");
 const path = (gid, rel) => `groups/${gid}/${rel}`;
 const dones = (gid) => [1, 2, 3].map((i) => data.get(path(gid, "soldone/" + i)));
@@ -81,6 +83,9 @@ const tabState = (gid, hostSec) => ({
     localSeats: () => [1, 2, 3],
     canWriteAs: () => true,
     sec: hostSec ?? t.sec,
+    seatCheck: t.seatCheck,
+    safetyNo: t.safetyNo,
+    confirmedNo,
     sealAndSave: t.sealAndSave,
     groupVersion: () => 3,
     network: () => "testnet",

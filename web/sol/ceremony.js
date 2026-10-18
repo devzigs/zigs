@@ -119,11 +119,12 @@ async function round1(c, i) {
     g = host.state.g,
     boxPk = host.state.seats[i].boxPk; // read before the first await: another wallet may open
   // Two copies of one seat (a device and a restored copy) must not both publish round 1: the lease
-  // lets one go first, and the other then finds the document. The pause keeps the reactor from
-  // asking again at once.
+  // lets one go first, and the other then finds its signed document. A document that fails its
+  // signature check does not count, so a seat still publishes one again. The pause keeps the
+  // reactor from asking again at once.
   const ref = host.sdb.doc(base + "/soldkg1/" + i);
   if (!(await ref.acquire({ holder: randomHex32(), ttlMs: LEASE_MS })).acquired) return pause();
-  if ((await ref.get()).exists) return pause();
+  if (c.docs.soldkg1[i]) return pause();
   let s = solOf(host, gid, i);
   if (!s.r1secret) {
     const r = J(W.sol_dkg1(i, g.n, g.t));
