@@ -193,6 +193,32 @@ export function openInputs(sessions) {
   return [...new Set(open.flatMap((ss) => ss.inputIds ?? []))];
 }
 
+const amountsOf = (utxos) => new Map(utxos.map((u) => [u.hash, BigInt(u.amount)]));
+// The lamports of the notes `ids` (each id once) among the synced amounts.
+const sumOver = (amountOf, ids) =>
+  [...new Set(ids)].reduce((sum, id) => sum + (amountOf.get(id) ?? 0n), 0n);
+
+/**
+ * The open payments that hold synced notes (S4): for each payment over some of `utxos` (the sync,
+ * { hash, amount }), its id, its expiry (Unix seconds) and the lamports of its notes, the payment
+ * that ends first first. Two payments may hold one note: `heldLamports` counts it once.
+ */
+export function heldNotes(sessions, utxos) {
+  const amountOf = amountsOf(utxos);
+  return sessions
+    .filter((ss) => isPayment(ss) && !ENDED.has(ss.status))
+    .map((ss) => ({
+      id: ss.id,
+      expiry: decodeIntent(ss.intent).expiry,
+      lamports: sumOver(amountOf, ss.inputIds ?? []),
+    }))
+    .filter((held) => held.lamports > 0n)
+    .sort((a, b) => Number(a.expiry - b.expiry));
+}
+
+/** The lamports of the synced notes that open payments hold, each note once: not available. */
+export const heldLamports = (sessions, utxos) => sumOver(amountsOf(utxos), openInputs(sessions));
+
 /** A payment that executed spent its inputs: every open payment over one of them ends. */
 function endSpent(sessions) {
   const sent = sessions.filter((ss) => ss.status === "sent" && isPayment(ss));

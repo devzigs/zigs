@@ -53,7 +53,7 @@ export function selectInputs(sdk, wallet, tree, amount, avoid = new Set()) {
   const sorted = spendable(sdk, wallet, tree, avoid);
   let [held, needed] = [0n, 0];
   while (needed < sorted.length && held < amount) held += sorted[needed++].utxo.amount;
-  if (held < amount) throw new Error("the synced balance does not cover the amount");
+  if (held < amount) throw new Error(coverText(sdk, wallet, tree, amount));
   const count = COUNTS.find((k) => k >= needed && k <= sorted.length);
   if (count === undefined) {
     const most = COUNTS.findLast((k) => k <= sorted.length);
@@ -63,6 +63,24 @@ export function selectInputs(sdk, wallet, tree, amount, avoid = new Set()) {
     );
   }
   return sorted.slice(0, count);
+}
+
+// When the payment would go through once the open payments release their notes, the text says
+// so: the person can wait for them to end or add SOL (S4). Else it gives the reason that stays.
+const HELD =
+  "the notes that cover this amount are held by an open proposal: wait until it ends or add SOL";
+
+/** Why the synced notes of `tree`, outside the open payments, do not cover `amount`. */
+function coverText(sdk, wallet, tree, amount) {
+  if (sumOf(spendable(sdk, wallet, tree)) < amount) {
+    return "the synced balance does not cover the amount";
+  }
+  try {
+    selectInputs(sdk, wallet, tree, amount); // with every note: is the hold the only reason?
+    return HELD;
+  } catch (e) {
+    return e.message;
+  }
 }
 
 /** The SOL that the spends of `tree` can take: the plain SOL UTXOs that a move would take. */

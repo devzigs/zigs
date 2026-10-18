@@ -17,14 +17,28 @@ import { approve, deviceSeen, reviewOf } from "../sol/approve.js";
 import { agreement } from "../sol/ceremony.js";
 import { base58, keyOfBase58 } from "../sol/docs.js";
 import { EXECUTE_TRIES, executorOf, tryAgain } from "../sol/execute.js";
-import { ZERO_KEY, bytesOf, decodeIntent, planHex, readVerdict } from "../sol/intent.js";
+import {
+  ZERO_KEY,
+  bytesOf,
+  decodeIntent,
+  intentHex,
+  planHex,
+  readVerdict,
+} from "../sol/intent.js";
 import { savedNonces, saveNonces } from "../sol/nonces.js";
 import { feeOf } from "../sol/fee.js";
 import { putSol } from "../sol/secrets.js";
 import { syncSolana } from "../sol/session.js";
 import { deviceSpend } from "../sol/spend.js";
 import { LINK_TEXT } from "../sol/payview.js";
-import { partFields, readSolSession, writePart } from "../sol/sessions.js";
+import {
+  heldLamports,
+  heldNotes,
+  partFields,
+  readSolSession,
+  writePart,
+} from "../sol/sessions.js";
+import { selectInputs } from "../sol/transfer.js";
 import { solView } from "../sol/view.js";
 import { FRONT_RUN, verifies } from "./sol-chain.mjs";
 import { G, preparedOf, transactOf, useTestGroup, utxoOf } from "./sol-fixture.mjs";
@@ -608,6 +622,13 @@ step("a create that meets the same body in its account takes it; another body fa
   const id = await proposedPay();
   const asked = chain.commands.filter((m) => m.cmd === "prepare").at(-1).args;
   assert.deepEqual(asked.avoid, ssOf(open).inputIds, "the Worker avoids the open inputs");
+  // S4: the page can name the open payments that hold the notes, and the end of each.
+  const held = heldNotes(c.sessions, chain.utxos);
+  assert.deepEqual(held.map((h) => h.id).sort(), [open, id].sort(), "both hold the one note");
+  const note = BigInt(chain.utxos[0].amount);
+  assert.deepEqual(held.map((h) => h.lamports), [note, note], "the amount of the held note");
+  assert.equal(held[0].expiry, decodeIntent(ssOf(held[0].id).intent).expiry);
+  assert.equal(heldLamports(c.sessions, chain.utxos), note, "but the note is held once");
   current = id;
   await approve(c, ssOf(id), 1);
   await approve(c, ssOf(id), 2);
@@ -616,6 +637,44 @@ step("a create that meets the same body in its account takes it; another body fa
   assert.match(ssOf(open).error, /Another payment spent the inputs of this one/);
 }
 step("a payment avoids the inputs of an open one, and an executed one ends the other");
+
+// ── S4: a payment that only held notes cover says so (transfer.js runs in the Worker) ──
+{
+  const note = (amount, n) => ({
+    spent: false,
+    utxo: { asset: "SOL", amount, data: { isEmpty: () => true } },
+    outputContext: { hash: Uint8Array.of(n), tree: "T" },
+  });
+  const wallet = { utxos: () => [note(70n, 1), note(30n, 2)] };
+  const pick = (amount, held) => () =>
+    selectInputs({ SOL_MINT: "SOL" }, wallet, "T", amount, new Set(held));
+  assert.throws(pick(80n, ["01"]), /held by an open proposal: wait until it ends or add SOL/);
+  assert.throws(pick(101n, ["01"]), /the synced balance does not cover the amount/);
+  assert.throws(pick(101n, []), /the synced balance does not cover the amount/);
+  assert.equal(pick(30n, ["01"])()[0].utxo.amount, 30n, "a free note still pays");
+  assert.throws(pick(100n, ["01"]), /held by an open proposal/, "all notes, to the lamport");
+  // Seven notes of 1: no proof takes 7, so a release would not help. The text says why.
+  const small = { utxos: () => [1, 2, 3, 4, 5, 6, 7].map((n) => note(1n, n)) };
+  const seven = () => selectInputs({ SOL_MINT: "SOL" }, small, "T", 7n, new Set(["01"]));
+  assert.throws(seven, /needs 7 UTXOs, and no proof takes that many/);
+  // heldNotes: the open payments only, each note once, synced notes only, the first to end first.
+  const utxos = [{ hash: "aa", amount: "100" }, { hash: "bb", amount: "40" }];
+  const pay = (id, status, expiry, inputIds) => {
+    const fields = { expiry, inputs: 1, outputs: 2, recipient: "11".repeat(32), amount: 1n };
+    return { id, status, intent: intentHex("withdraw", fields), inputIds };
+  };
+  const sessions = [
+    pay("late", "collecting", 20n, ["aa", "aa"]),
+    pay("early", "signed", 10n, ["bb", "cc"]),
+    pay("sent", "sent", 5n, ["aa"]),
+    pay("failed", "failed", 5n, ["bb"]),
+    pay("unsynced", "signing", 5n, ["cc"]),
+  ];
+  const list = heldNotes(sessions, utxos).map((h) => [h.id, h.expiry, h.lamports]);
+  assert.deepEqual(list, [["early", 10n, 40n], ["late", 20n, 100n]]);
+  assert.equal(heldLamports(sessions, utxos), 140n);
+}
+step("a payment that only held notes cover names the open proposal as the cause");
 
 // ── A create that fails writes no session; a create that lands late is waited for ──
 {
