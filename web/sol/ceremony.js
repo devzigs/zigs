@@ -34,12 +34,18 @@ export function startBlock(host) {
 /** The start document of seat 1 names the cluster of this build. */
 export const started = (docs) => docs.solstart[1]?.cluster === CLUSTER;
 
-/** The Zcash part of seat i is settled and its person confirmed the safety number it has now. */
-function seatReady(host, gid, i) {
-  const z = host.sec(gid, i),
-    no = host.safetyNo();
-  return !!z.keyPackage && host.seatCheck(i) === true && !!no && z.confirmed === no;
-}
+// Why seat i of this browser cannot start yet, or null: its Zcash part is settled and its person
+// confirmed the safety number it has now (also a restored seat, by its own confirm document).
+const WAITS = [
+  ["has no Zcash key share", (host, gid, i) => !host.sec(gid, i).keyPackage],
+  ["waits for Address checked", (host, gid, i) => host.seatCheck(i) !== true],
+  [
+    "this browser has not confirmed the safety number",
+    (host, gid, i) => !host.safetyNo() || host.confirmedNo(i) !== host.safetyNo(),
+  ],
+];
+const waitOf = (host, gid, i) => WAITS.find(([, waits]) => waits(host, gid, i))?.[0] ?? null;
+const seatReady = (host, gid, i) => waitOf(host, gid, i) === null;
 
 const allR1 = (c) =>
   c.host.seatIds().every((i) => {
@@ -340,7 +346,8 @@ export function seatProgress(c, i) {
     return "Seat " + i + ": this browser lost its setup secret";
   if (others.some((j) => docs.soldkg2[i + "-" + j])) return "Seat " + i + ": sharing keys";
   if (docs.soldkg1[i]) return "Seat " + i + ": round 1 sent";
-  return "Seat " + i + " has not started";
+  const wait = c.host.localSeats().includes(i) ? waitOf(c.host, c.gid, i) : null;
+  return wait ? "Seat " + i + ": " + wait : "Seat " + i + " has not started";
 }
 
 const PDA_SHAPES = {

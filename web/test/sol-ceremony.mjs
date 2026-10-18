@@ -814,6 +814,36 @@ assert.deepEqual(
   await waitFor("every soldone", () => haveDones(gid3), 30000);
 }
 
+// ── Restored seats join the Solana ceremony ──
+// A restore does not take the confirmed number from the file. Seats 1 and 2 restore before the
+// Solana part exists, and their own signed confirm documents let them start.
+{
+  const gidR = await rig.wallet({ name: "Restored" });
+  const files = [1, 2].map((i) => JSON.parse(t.backupText(i)));
+  for (const i of [1, 2]) delete t.secrets[gidR + ":" + i];
+  t.refilter();
+  await sleep(200);
+  for (const file of files) await t.applyBackup(structuredClone(file), true);
+  const restored = (i) => t.localSeats().includes(i) && t.seatCheck(i) === true;
+  await waitFor("seats 1 and 2 restored and checked", () => restored(1) && restored(2), 40000);
+  for (const i of [1, 2]) {
+    assert.equal(t.sec(gidR, i).confirmed, undefined, "a restore takes no confirmed number");
+  }
+  // With no confirm document of its own, a restored seat says why it waits.
+  const doc = data.get(path(gidR, "confirm/2"));
+  data.delete(path(gidR, "confirm/2"));
+  rig.notify();
+  await sleep(300);
+  const why = "Seat 2: this browser has not confirmed the safety number";
+  assert.equal(seatProgress(t.sol.ctl, 2), why);
+  data.set(path(gidR, "confirm/2"), doc);
+  rig.notify();
+  await sleep(300);
+  assert.equal(seatProgress(t.sol.ctl, 2), "Seat 2 has not started");
+  await addSolana();
+  await waitFor("every soldone", () => haveDones(gidR), 30000);
+}
+
 // ── A seat whose Zcash part has not settled does not start ──
 {
   const gid3b = await rig.wallet({ name: "Settle" });
