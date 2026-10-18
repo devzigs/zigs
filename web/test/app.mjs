@@ -3503,18 +3503,27 @@ const sealed = (gid, rel, seat, fields, key, names = ["by", "sig"]) =>
     const roomU = { key: "u".repeat(43), member: "dd".repeat(10), at: 1 };
     newer.chats = { profile: null, list: { [cidU]: roomU } };
     storage.set("zf-vault", JSON.stringify(await seal(prfKey, rec0, newer)));
-    // And a save of another tab during the unlock comes in after it.
+    // And a save of another tab during the decrypt of the unlock comes in, also when an invite link
+    // waits in the fragment: the unlock takes that save before the link saves.
     const cidD = "fb".repeat(10), roomD = { ...roomU, key: "d".repeat(43) };
     const during = JSON.stringify(await seal(prfKey, rec0,
       { ...newer, chats: { profile: null, list: { [cidU]: roomU, [cidD]: roomD } } }));
     const subtleU = globalThis.crypto.subtle, decryptU = subtleU.decrypt.bind(subtleU);
     subtleU.decrypt = (...a) => { storage.set("zf-vault", during); return decryptU(...a); };
+    const gidI = "ac".repeat(10), keyI = "i".repeat(43);
+    location.hash = "#" + gidI + "." + keyI;
     await t.unlockVault();
     delete subtleU.decrypt;
-    assert.deepEqual(t.chats.list[cidU], roomU, "the unlock opens the record of now");
-    await waitFor("the save during the unlock", () => !!t.chats.list[cidD]);
+    location.hash = "";
+    assert.deepEqual([t.chats.list[cidU], t.chats.list[cidD], t.gkeys[gidI]], [roomU, roomD, keyI],
+      "the unlock opens the record of now, then takes the save during it, then the link");
+    await waitFor("the link is saved", () => storage.get("zf-vault") !== during);
+    const sealedU = await openVault(prfKey, JSON.parse(storage.get("zf-vault")));
+    assert.deepEqual([sealedU.chats.list[cidD], sealedU.keys[gidI]], [roomD, keyI],
+      "the save of the link keeps the save of the other tab");
     delete t.chats.list[cidU];
     delete t.chats.list[cidD];
+    delete t.gkeys[gidI];
     await sleep(30);
     assert.deepEqual([t.personal, /bad index/.test(t.personalError), copy()], [null, true, []]);
     t.setVault(null);
