@@ -1,5 +1,5 @@
 {
-  "baseCommit": "447311c66c322569fd5f962416e8da3587607863",
+  "baseCommit": "6c5e1301daf5a6906c1e4aaec554b9ccbd0de8a0",
   "node": "v24.11.0",
   "tests": {
     "web/test/chat.mjs": {
@@ -44,9 +44,6 @@
     "web/test/zns.mjs": {
       "exit": 0
     },
-    "web/test/graph.mjs": {
-      "exit": 0
-    },
     "web/test/sol-config.mjs": {
       "exit": 0
     },
@@ -72,6 +69,9 @@
       "exit": 0
     },
     "web/test/sol-transfer.mjs": {
+      "exit": 0
+    },
+    "web/test/graph.mjs": {
       "exit": 0
     },
     "web/test/sol-fee.mjs": {
