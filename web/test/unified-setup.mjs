@@ -95,11 +95,11 @@ assert.match(setupText, /Create the Solana key.*Starts after the Zcash part\./s)
 assert.match(setupText, /Fund your fee address.*Comes after the Solana key\./s);
 
 // ── The create dialog offers Solana for a testnet wallet, on a server that serves it ──
-function dialogTree() {
+function dialogTree(from = null) {
   const real = globalThis.document;
   globalThis.document = { createElement: () => new Rec(), createTextNode: (text) => ({ text }) };
   try {
-    return createDialog();
+    return createDialog(from);
   } finally {
     globalThis.document = real;
   }
@@ -118,9 +118,8 @@ const byId = (node, id) =>
   ui.sol = false; // what its change handler keeps when the person clears the box
   assert.ok(!("checked" in byId(dialogTree(), "g-sol").attrs), "a redraw keeps the person's no");
   ui.sol = undefined;
-  ui.net = "mainnet";
-  assert.doesNotMatch(dialogText(), CHOICE, "never for a mainnet wallet");
-  ui.net = "testnet";
+  // The picker offers testnet only (mainnet-off.mjs). A Change signers dialog has no choice.
+  assert.doesNotMatch(textOf(dialogTree({ ...g, network: "mainnet" })), CHOICE, "never for `from`");
   config.down = true;
   delete ui.solServed;
   dialogText();
