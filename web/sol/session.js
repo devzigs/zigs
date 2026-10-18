@@ -29,12 +29,13 @@ export const NOT_LOADED = "Check your connection, then press Try again or reload
  * The Helius Devnet URL that the server serves. Throws UNAVAILABLE when the server has no Solana
  * (a 503 or a 404), and NOT_LOADED for any other failure: no answer, another status, or no URL.
  */
+const NO_SOLANA = new Set([503, 404]);
 export async function fetchRpcUrl() {
   const res = await fetch("/sol/config.json", { cache: "no-store" }).catch(() => null);
-  if (res?.status === 503 || res?.status === 404) throw new Error(UNAVAILABLE);
-  const body = res?.ok ? await res.json().catch(() => undefined) : undefined;
-  if (typeof body?.rpcUrl !== "string" || !body.rpcUrl) throw new Error(NOT_LOADED);
-  return body.rpcUrl;
+  if (NO_SOLANA.has(res?.status)) throw new Error(UNAVAILABLE);
+  const url = res?.ok ? (await res.json().catch(() => null))?.rpcUrl : undefined;
+  if (typeof url !== "string" || !url) throw new Error(NOT_LOADED);
+  return url;
 }
 
 /** Lamports (a decimal text) as SOL text. */
