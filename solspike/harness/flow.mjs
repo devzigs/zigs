@@ -183,7 +183,7 @@ async function approveAll(pages, id, approvers, stillOpen) {
 /** The screen names the proposal account, the amount, the public link, and the recipient. */
 function screenProposal(lines, { amount, withdrawTo }) {
   const text = lines.join("\n");
-  const proposal = rowOf(lines, "Proposal account");
+  const proposal = rowOf(lines, "Proposal account")?.replace(/ ↗$/, ""); // the explorer link
   assert.ok(proposal, "the screen names the proposal account");
   assert.ok(text.includes(`${amount} SOL`) && text.includes("Public link"), "the screen");
   if (withdrawTo) assert.ok(text.includes(withdrawTo), "the screen names the recipient");
