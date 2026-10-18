@@ -2,7 +2,8 @@
 // for Zcash testnet and Solana Devnet. The group document carries `solana: true` as a hint only.
 // It changes the texts: the join card, the invite message, the safety card and the progress note
 // say that the wallet has a Zcash part and a Solana part, and that every signer keeps the page
-// open through both key ceremonies.
+// open through both key ceremonies. The backup note of the wallet asks for the Solana file of each
+// seat too, until that file is saved.
 // Run: node web/test/unified-setup.mjs   (Node 24)
 import assert from "node:assert/strict";
 import { loadRig } from "./sol-rig.mjs";
@@ -11,6 +12,7 @@ const rig = await loadRig();
 // The page modules need the stub page of the rig, so they load after it.
 const { SOL_DISCLOSURE, solPlanned } = await import("../app-sol.js");
 const { inviteMessage, joinText } = await import("../app-setup.js");
+const { backupWords } = await import("../sol/backup.js");
 const { t, data, waitFor } = rig;
 const groupPath = (gid) => `groups/${gid}`;
 const BOTH_OPEN = /Every signer keeps this wallet open until the Zcash and the Solana parts/;
@@ -68,6 +70,25 @@ assert.match(inviteMessage(link), /shielded Zcash testnet and Solana Devnet\./);
 assert.match(inviteMessage(link), /until the Zcash and the Solana parts are ready/);
 assert.ok(inviteMessage(link).includes(link), "the invite still carries the link");
 assert.match(SOL_DISCLOSURE, /public program address.*fee address.*Helius.*no audit/);
+
+// ── The backup note asks for the Solana file of each seat, until it is saved ──
+{
+  const gidS = await rig.wallet({ name: "Files" });
+  await t.solLoad();
+  await t.sol.add();
+  const done = (i) => data.has(`groups/${gidS}/soldone/${i}`);
+  await waitFor("every soldone", () => [1, 2, 3].every(done), 30000);
+  const solButtons = () => pageText().match(/Back up Solana, seat \d/g) ?? [];
+  await waitFor("the note", () => solButtons().length === 3);
+  assert.match(pageText(), /The Solana part of a seat is a second file, with its own passphrase/);
+  const saved = [];
+  t.setDownloads({ save: async (file) => void saved.push(file) });
+  const words = backupWords(t.sol.ctl, 2);
+  assert.equal(await words.save("a long passphrase for the solana file"), true);
+  assert.equal(saved.length, 1, "one file");
+  assert.equal(t.sec(gidS, 2).sol.backupSaved, true);
+  assert.deepEqual(solButtons(), ["Back up Solana, seat 1", "Back up Solana, seat 3"]);
+}
 
 console.log("unified-setup: ok");
 process.exit(0);

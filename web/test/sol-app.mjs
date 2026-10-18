@@ -46,7 +46,13 @@ t.setDownloads({
 const words = (gid, i) =>
   backupWords(
     {
-      host: { state: t.state, sec: t.sec, localSeats: t.localSeats, sealAndSave: t.sealAndSave },
+      host: {
+        state: t.state,
+        sec: t.sec,
+        putSec: t.putSec,
+        localSeats: t.localSeats,
+        sealAndSave: t.sealAndSave,
+      },
       gid,
     },
     i,
@@ -102,6 +108,9 @@ const hashes = [1, 2, 3].map((i) => sha(solOf(gid, i).solSeed));
 const dialog = words(gid, 1);
 assert.match(dialog.title, /Solana part of seat 1/);
 assert.equal(await dialog.save(PASS_S), true);
+assert.equal(solOf(gid, 1).backupSaved, true, "the saved file is marked, so the note stops asking");
+// A restored part came from a file, so it is marked as saved too.
+const restoredPart = { ...original, backupSaved: true };
 const solFile = saved.at(-1);
 assert.equal(solFile.filename, backupName("Backup solana", 1));
 assert.match(solFile.filename, /^zigs-Backup-solana-seat-1\.zigsbackup$/);
@@ -159,7 +168,7 @@ const zcashFile = saved.at(-1);
   assert.doesNotThrow(() => feeOf(t.sol.ctl, 1), "a seat with no key share has no fee key");
   assert.equal(feeOf(t.sol.ctl, 1), null, "a seat with no key share has no fee key");
   await t.applyBackup(plainSol, true);
-  assert.deepEqual(solOf(gid, 1), original, "the Solana part is back, as it was");
+  assert.deepEqual(solOf(gid, 1), restoredPart, "the Solana part is back, as it was");
   assert.equal(sha(solOf(gid, 1).solSeed), hashes[0]);
   assert.match(t.banner.text, /Restored the Solana part of seat 1/);
   // Twice: the seat holds Solana data now.
@@ -242,7 +251,7 @@ const zcashFile = saved.at(-1);
   t.openGroup(gid);
   await waitFor("wallet", () => t.state.gid === gid && t.state.g && t.state.wallet);
   await t.applyBackup(good, true);
-  assert.deepEqual(solOf(gid, 1), original, "and for the testnet wallet it restores");
+  assert.deepEqual(solOf(gid, 1), restoredPart, "and for the testnet wallet it restores");
   // A restore of any file gives the seat the key that its key share gives. The document of the
   // seat shows that key already: nothing to fund, nothing to publish, no other key to explain.
   const ctl = t.sol.ctl;
@@ -260,7 +269,7 @@ const zcashFile = saved.at(-1);
   await clean(1);
   assert.equal(feeOf(ctl, 1), null, "a seat with no key share has no fee key");
   await t.applyBackup(good, true);
-  assert.deepEqual(solOf(gid, 1), original, "the Solana part is back, with no fee field");
+  assert.deepEqual(solOf(gid, 1), restoredPart, "the Solana part is back, with no fee field");
   assert.equal(feeOf(ctl, 1).key, key, "the same fee key after the restore");
   assert.match(t.banner.text, /Restored the Solana part of seat 1/);
   assert.doesNotMatch(t.banner.text, /fee/i, "the restore has nothing to say about the fee key");
@@ -307,7 +316,8 @@ const zcashFile = saved.at(-1);
   await waitFor("the list", () => t.state.gid === null);
   await t.applyBackup(file3, true);
   assert.equal(t.state.gid, gid, "the restore opened the wallet");
-  assert.deepEqual(solOf(gid, 3), kept, "and restored the part of seat 3");
+  const restored3 = { ...kept, backupSaved: true };
+  assert.deepEqual(solOf(gid, 3), restored3, "and restored the part of seat 3, marked as saved");
 }
 
 // ── Leaving a wallet closes its Solana part: no watch of its documents stays open ──

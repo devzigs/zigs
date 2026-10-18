@@ -36,6 +36,20 @@ export const solPlanned = (g = state.g) =>
 export const SOL_DISCLOSURE = "Solana Devnet: a program owns the funds of the group at a public "
   + "program address. Each seat gets a fee address, which appears on chain next to the group. "
   + "Helius sees that you use Zigs. The program has no audit.";
+// The seats of this browser with a Solana key share whose backup file was not saved. A stopped
+// part gets no backup (web/sol/backup.js refuses it).
+export const solUnsaved = () => solOn() ? localSeats().filter((i) => {
+  const s = sec(state.gid, i)?.sol;
+  return !!(s?.keyPackage && s.solSeed && s.groupKey) && !s.aborted && s.backupSaved !== true;
+}) : [];
+// The backup dialog of the Solana part of seat i, from the backup note of the wallet.
+export async function solBackup(i) {
+  await solLoad();
+  if (!sol) throw new Error(solError || "Solana did not load.");
+  const { backupWords } = await import("./sol/backup.js");
+  ui.backup = { words: backupWords(sol.ctl, i), made: false, busy: false };
+  render();
+}
 const SOL_OFF = "Solana is not available on this server";
 export let sol = null, solLoading = null, solError = "";
 let solStartDoc = null;   // the stored solstart/1 of the open wallet, whoever wrote it
