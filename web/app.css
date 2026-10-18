@@ -223,7 +223,9 @@ button { font: inherit; color: inherit; }
 .progress { height: 4px; border-radius: 999px; background: var(--raised); overflow: hidden; }
 .progress i { display: block; height: 100%; background: var(--accent); border-radius: inherit; transition: width 0.3s; }
 .addr-box { min-width: 0; display: flex; align-items: center; gap: 10px; padding: 10px 12px; border-radius: 10px; background: var(--sunk); border: 1px solid var(--line); }
-.addr-box .hex { flex: 1; min-width: 0; color: var(--muted); }
+.addr-box .hex { flex: 1 1 12rem; min-width: 0; color: var(--muted); }
+/* With its 48 px buttons, the box wraps, so the value keeps a row of its own on a phone. */
+.addr-box { flex-wrap: wrap; }
 .addr-full { font-family: var(--mono); font-size: 12px; word-break: break-all; color: var(--muted); padding: 12px; border-radius: 10px; background: var(--sunk); border: 1px solid var(--line); }
 
 /* Lists and tables */
