@@ -398,6 +398,8 @@ const byId = (node, id) =>
       t.setDb(keep.db);
     }
   };
+  // The text of the reason with this id, or "none" when the page shows no such reason.
+  const says = (tree, id) => (byId(tree, id) ? textOf(byId(tree, id)) : "none");
   const engine = await import("../app-engine.js"), groups = await import("../app-groups.js");
   const { joinLinks } = await import("../app-messages.js");
   const { busy } = await import("../app-state.js");
@@ -417,8 +419,9 @@ const byId = (node, id) =>
         const button = byText(tree, label);
         assert.ok(button, label + " is on the page");
         assert.equal(button.attrs.disabled, "", label + " is off: " + why);
-        assert.equal(button.attrs["aria-describedby"], idFor);
+        assert.equal(button.attrs["aria-describedby"], idFor, label + " points at its reason");
         const note = byId(tree, idFor);
+        assert.ok(note, label + " has a reason next to it");
         assert.equal(textOf(note), why, label + " says why");
       }
       const tree = swap(build, {});
@@ -428,7 +431,7 @@ const byId = (node, id) =>
     // A join that runs also switches Join chat off.
     busy.add("chatjoin:" + cc);
     const tree = swap(() => lobby(), {});
-    assert.equal(textOf(byId(tree, "why-chat-join-" + cc)), WHY.joining);
+    assert.equal(says(tree, "why-chat-join-" + cc), WHY.joining, "a join that runs");
     busy.delete("chatjoin:" + cc);
   } finally {
     joinLinks.delete(cc);
@@ -443,16 +446,16 @@ const byId = (node, id) =>
       t.state.pending = false;
     }
   };
-  assert.equal(textOf(byId(setup({ Z: null }), "why-play")), WHY.loading, "Play seat");
-  assert.equal(textOf(byId(setup({}, true), "why-play")), WHY.pending, "Play seat waits");
+  assert.equal(says(setup({ Z: null }), "why-play"), WHY.loading, "Play seat");
+  assert.equal(says(setup({}, true), "why-play"), WHY.pending, "Play seat waits");
   assert.equal(byId(setup({}), "why-play"), null, "Play seat is on");
   const kept = t.secrets[gid + ":1"];
   delete t.secrets[gid + ":1"];
   try {
-    const join = (change, pending) => byId(setup(change, pending), "why-take");
-    assert.equal(textOf(join({ Z: null })), WHY.loading, "Take seat");
-    assert.equal(textOf(join({}, true)), WHY.pending, "Take seat waits");
-    assert.equal(join({}), null, "Take seat is on");
+    const join = (change, pending) => setup(change, pending);
+    assert.equal(says(join({ Z: null }), "why-take"), WHY.loading, "Take seat");
+    assert.equal(says(join({}, true), "why-take"), WHY.pending, "Take seat waits");
+    assert.equal(byId(join({}), "why-take"), null, "Take seat is on");
   } finally {
     t.secrets[gid + ":1"] = kept;
   }
@@ -467,14 +470,15 @@ const byId = (node, id) =>
     return pageText().match(SHOWN);
   };
   assert.equal(line({ state: "idle", retryAt: 0, code: null, groups: {} }), null, "idle");
-  assert.equal(line({ ...states, state: "open", retryAt: 0, code: null })?.[0], undefined, "open");
-  assert.equal(line({ ...states, state: "connecting", code: null })[0],
+  assert.equal(line({ ...states, state: "open", retryAt: 0, code: null }), null, "open");
+  assert.equal(line({ ...states, state: "connecting", code: null })?.[0],
     "Connecting to the group server…");
-  assert.equal(line(states)[0], "The group server does not answer (no network).");
-  assert.equal(line({ ...states, code: 401 })[0],
+  assert.equal(line(states)?.[0], "The group server does not answer (no network).");
+  assert.equal(line({ ...states, code: 401 })?.[0],
     "The group server does not answer (the preview password is missing or wrong).");
-  assert.equal(line({ ...states, code: 429 })[0].includes("too many connections"), true);
-  assert.equal(line({ ...states, code: 404 })[0], "The group server does not answer.");
+  assert.equal(line({ ...states, code: 429 })?.[0],
+    "The group server does not answer (too many connections from this network).");
+  assert.equal(line({ ...states, code: 404 })?.[0], "The group server does not answer.");
   onLink({ state: "open", retryAt: 0, code: null, groups: {} });
   assert.doesNotMatch(pageText(), /group server does not answer|Connecting to the group server/);
 }
