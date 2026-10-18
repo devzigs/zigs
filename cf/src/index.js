@@ -307,8 +307,8 @@ function znsValid(r) {
 }
 
 // An address in bech32 is the same in upper case. One such record must not fail the registry, so
-// the Worker serves it in lower case. Any other shape fails the check above.
-const znsLower = (r) => (r && typeof r.address === "string"
+// the Worker serves it in lower case. A mixed-case address is no bech32 and fails the check above.
+const znsLower = (r) => (r && typeof r.address === "string" && r.address === r.address.toUpperCase()
   ? { ...r, address: r.address.toLowerCase() } : r);
 
 const znsRecord = ({ name, address, txid, height, last_action, expires_at }) =>
@@ -362,6 +362,7 @@ async function znsNames(signal) {
 // ponytail: the snapshot lives in one isolate, and each isolate loads the registry on its own. A
 // refresh reads every page: about 20 pages a minute per isolate at 10,000 names. The upgrade is a
 // delta with a check for a reorganisation, and one copy in the Cache API or a Durable Object.
+// Above ZNS_MAX_PAGES pages (20,000 names) every request answers 502.
 let znsSnap = null; // { at, body }
 let znsLoading = null; // the refresh in flight, shared by parallel requests
 let znsPausedUntil = 0; // no call upstream before this time
@@ -392,7 +393,9 @@ function znsSnapshot(ctx) {
   if (Date.now() < znsPausedUntil) return Promise.reject(znsFail("paused"));
   if (!znsLoading) {
     znsLoading = znsRefresh().catch(znsFailed).finally(() => { znsLoading = null; });
-    ctx?.waitUntil(znsLoading);
+    // The waiting requests get the error. waitUntil gets a promise that does not reject, so the
+    // runtime logs no second report of the same failure.
+    ctx?.waitUntil(znsLoading.catch(() => {}));
   }
   return znsLoading;
 }

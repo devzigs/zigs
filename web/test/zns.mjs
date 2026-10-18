@@ -140,6 +140,7 @@ const faults = {
   "a synced that is no boolean": [tamper("status", (r) => { r.synced = "yes"; }), "status"],
   "a name in capitals": [bad("name", "Bad-Name"), "bad record"],
   "an address of another network": [bad("address", "u1" + "q".repeat(60)), "bad record"],
+  "an address in mixed case": [bad("address", "uTeSt1" + "q".repeat(40)), "bad record"],
   "a txid that is no hash": [bad("txid", "xyz"), "bad record"],
   "an expiry that is no number": [bad("expires_at", "soon"), "bad record"],
   "a negative height": [bad("height", -1), "bad record"],

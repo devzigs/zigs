@@ -90,8 +90,8 @@ What the server can still see:
 The server keeps no logs: Workers Logs are off (`observability.enabled = false`), and the code
 writes nothing about requests. One line is the exception: when the `/zns` route cannot read the
 name registry, it writes a fixed cause, such as `zns: status`. That line holds nothing about the
-request and no text of the resolver. IP addresses are used in memory only: to apply rate limits, and as
-a tag on each open WebSocket. The limits count each IPv4 address, or each /64 network of IPv6
+request and no text of the resolver. IP addresses are used in memory only: to apply rate limits,
+and as a tag on each open WebSocket. The limits count each IPv4 address, or each /64 network of IPv6
 addresses, because one IPv6 user usually holds a whole /64. So users who share an IPv4 address or
 a /64 (one home, one office, one VPN exit) also share a counter, and one of them can use up the
 limit of the others.
