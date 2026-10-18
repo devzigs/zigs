@@ -50,6 +50,7 @@ const json = (value, status = 200) => () => Response.json(value, { status });
   const down = [
     ["no answer", offline],
     ["a 500 answer", () => new Response("", { status: 500 })],
+    ["a rpcUrl in a 500 answer", json({ rpcUrl: URL_OK }, 500)],
     ["a body that is no JSON", () => new Response("<html>", { status: 200 })],
     ["no rpcUrl", json({})],
     ["an empty rpcUrl", json({ rpcUrl: "" })],
