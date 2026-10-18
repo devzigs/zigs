@@ -8,7 +8,7 @@
 import { approvalClosed, reviewOf } from "./approve.js";
 import { agreement } from "./ceremony.js";
 import { CLUSTER, base58 } from "./docs.js";
-import { EXECUTE_TRIES } from "./execute.js";
+import { EXECUTE_TRIES, endsAt } from "./execute.js";
 import { feeMismatch, feeOf, mismatchText } from "./fee.js";
 import { readySeat } from "./gate.js";
 import {
@@ -24,9 +24,9 @@ import { usedDigest } from "./nonces.js";
 import { heldOf, reclaimRent, scanRent } from "./rent.js";
 import { holdsShare, solOf } from "./secrets.js";
 import { solText } from "./session.js";
-import { isPayment } from "./sessions.js";
+import { heldLamports, heldNotes, isPayment, spentLamports } from "./sessions.js";
 
-const SHOWN = 12;
+export const SHOWN = 12;
 const FAUCET = "https://faucet.solana.com/";
 const TITLES = {
   createNonce: "Create the nonce account for the move",
@@ -179,7 +179,14 @@ function explorerLink(c, kind, id) {
   return c.host.el("a", { href, target: "_blank", rel: "noopener" }, id + " ↗");
 }
 
-/** What the last Add SOL did, as a line of text. */
+// The explorer is not Zigs: a click shows it the id and the IP address (PRIVACY.md).
+const EXPLORER_TEXT =
+  "A link with ↗ opens explorer.solana.com in a new tab. That site is not Zigs: it sees the id " +
+  "that you open and your IP address.";
+const explorerNote = (c) =>
+  c.host.el("p", { class: "small", "data-sol": "explorer-text" }, EXPLORER_TEXT);
+
+/** What the last Add SOL did, as a line of text, and what its link shows to the explorer. */
 function addedLine(c) {
   const a = c.added;
   if (!a) return null;
@@ -187,7 +194,7 @@ function addedLine(c) {
   const word = words[a.status] ?? "Added " + solText(a.amount);
   const said = `${word}, seat ${a.seat}: `;
   const link = explorerLink(c, "tx", a.txId);
-  return c.host.el("p", { class: "small", "data-sol": "added" }, said, link);
+  return [c.host.el("p", { class: "small", "data-sol": "added" }, said, link), explorerNote(c)];
 }
 
 function addSolCard(c, act, actions) {
@@ -241,12 +248,41 @@ const button = (c, act, mark, text, run) =>
     text,
   );
 
+// S4: an open payment holds its notes until it executes or ends, so a new payment cannot spend
+// them. The line says what a new payment can spend, or which proposal holds all of it.
+function availableLine(c) {
+  const { notes, lamports } = c.sync ?? {};
+  if (!notes || lamports === undefined) return null;
+  const held = heldLamports(c.sessions, notes);
+  if (held === 0n) return null;
+  const free = BigInt(lamports) - held - spentLamports(c.sessions, notes);
+  const text =
+    free > 0n
+      ? `Available for a new payment: ${solText(free)}. Open proposals hold ${solText(held)} ` +
+        "until they execute or end."
+      : holderText(heldNotes(c.sessions, notes));
+  return c.host.el("p", { class: "small", "data-sol": "available" }, text);
+}
+
+/** Who holds all the notes: the open proposal that ends first, and when the page ends it. */
+function holderText(holders) {
+  const [first] = holders;
+  const end = utc(endsAt(first.expiry)) + " UTC";
+  const name = `of seat ${first.by} (${first.id})`;
+  const who =
+    holders.length === 1
+      ? `an open proposal ${name}. It ends at ${end}.`
+      : `${holders.length} open proposals. The one that ends first, ${name}, ends at ${end}.`;
+  return `All your notes are held by ${who} Add SOL or wait.`;
+}
+
 function intentCard(c, act, actions) {
   const { el } = c.host;
   return el(
     "div",
     { style: "display:grid;gap:8px" },
     el("h3", {}, "Pay from the group"),
+    availableLine(c),
     seatLine(c, "propose-seat", "proposes and pays the fees."),
     el("p", { class: "small", "data-sol": "pay-cost" }, costLine(c)),
     el("p", { class: "small", "data-sol": "pay-prover" }, PROVER_TEXT),
@@ -475,13 +511,23 @@ function rowsOf(c, review) {
   return rows;
 }
 
-const READING_TEXT = "Zigs reads your wallet. The Approve button appears when it is done.";
+// The wallet read, the account read, and the load and the check of the documents (S17).
+const WAIT_TEXT =
+  "Zigs loads and checks the data of this proposal. The Approve button appears when it is done.";
+
+// A wallet read that failed twice says why on the card: such a wait may not end by itself (P6).
+function waitLine(c, ss) {
+  const fail = c.readFails?.["snap:" + ss.id];
+  if (!fail || fail.n < 2) {
+    return c.host.el("p", { class: "small", role: "status", "data-sol": "wait" }, WAIT_TEXT);
+  }
+  const text = `Zigs could not read your wallet: ${fail.text} It tries again by itself.`;
+  return c.host.el("p", { class: "small bad", role: "status", "data-sol": "read-failed" }, text);
+}
 
 function reviewBlock(c, ss, review) {
   const { el } = c.host;
-  if (review.waiting) {
-    return el("p", { class: "small", role: "status", "data-sol": "reading" }, READING_TEXT);
-  }
+  if (review.waiting) return waitLine(c, ss);
   if (!review.ok) {
     return el("div", { class: "callout bad", role: "alert", "data-sol": "refusal" }, review.why);
   }
@@ -503,7 +549,7 @@ function digestOf(c, ss) {
 }
 
 /** The seats of this browser that hold a share, each with what it may do with this proposal. */
-function seatsOf(c, ss) {
+export function seatsOf(c, ss) {
   const digest = digestOf(c, ss);
   return c.host
     .localSeats()
@@ -520,7 +566,8 @@ const SEAT_TEXT = {
 };
 
 // A seat that approved, or that signed these exact bytes, gets no approval screen and no button.
-// While the device reads its wallet, no seat gets a button: the review is not on the screen yet.
+// While the review waits (a wallet read, an account read, a check of the documents), no seat gets
+// a button: the review is not on the screen yet.
 function approveRow(c, ss, act, actions, waiting) {
   const { el } = c.host;
   return seatsOf(c, ss).map(({ seat, state }) => {
@@ -536,11 +583,22 @@ function approveRow(c, ss, act, actions, waiting) {
   });
 }
 
-/** The last error of the execute in this tab, and a button once its tries ran out. */
+/** Why no seat of this browser executes the payment (execute.js unfunded), or null. */
+function execWaitLine(c, ss) {
+  const text = c.execWait?.[ss.id];
+  if (!text) return null;
+  return c.host.el("p", { class: "small", "data-sol": "exec-wait-" + ss.id }, text);
+}
+
+/**
+ * The last error of the execute in this tab, and a button once its tries ran out. With no error,
+ * the line that says why no seat of this browser executes, if any.
+ */
 function executeLine(c, ss, act, actions) {
   const { el } = c.host;
   const error = c.execErrors?.[ss.id];
-  if (ss.status !== "signed" || !error) return null;
+  if (ss.status !== "signed") return null;
+  if (!error) return execWaitLine(c, ss);
   const out = (c.tries?.[ss.id] ?? 0) >= EXECUTE_TRIES;
   const again = () => actions.execute(ss);
   const retry = out ? button(c, act, "execute-" + ss.id, "Try the execute again", again) : null;
@@ -567,6 +625,18 @@ function resultLine(c, ss) {
 // minutes later (the end waits for the clock margin of execute.js).
 const EXPIRED_TEXT = "This proposal expired, so no seat can approve it. The page closes it soon.";
 const approvable = (ss) => ss.status === "collecting" && !approvalClosed(ss);
+
+/**
+ * The seats of this browser that show an Approve button for `ss` now: the rules of approveRow.
+ * A proposal that expired, or whose review still waits for a read, shows none. The S6 count of
+ * the proposals that wait for this browser uses it, so the count and the buttons agree.
+ */
+export function approveSeats(c, ss) {
+  if (!approvable(ss)) return [];
+  const open = seatsOf(c, ss).filter((s) => s.state === "open");
+  if (!open.length || reviewOf(c, ss, open[0].seat).waiting) return [];
+  return open.map((s) => s.seat);
+}
 
 function expiredLine(c, ss) {
   if (ss.status !== "collecting" || !approvalClosed(ss)) return null;
@@ -609,11 +679,12 @@ function sessionList(c, act, actions) {
   const { el } = c.host;
   const shown = (c.sessions ?? []).slice(0, SHOWN);
   if (!shown.length) return el("p", { class: "small" }, "No Solana proposals yet.");
-  return el(
+  const list = el(
     "div",
     { class: "list" },
     shown.map((ss) => sessionCard(c, ss, act, actions)),
   );
+  return el("div", {}, explorerNote(c), list);
 }
 
 const RENT_TEXT =
@@ -639,12 +710,15 @@ function rentCard(c, act) {
     );
   const none = c.rent && !rows.length ? el("p", { class: "small" }, "No rent to get back.") : null;
   const done = c.rentDone?.txIds.length
-    ? el(
-        "p",
-        { class: "small", "data-sol": "rent-done" },
-        "Cancel transactions of seat " + c.rentDone.seat + ": ",
-        c.rentDone.txIds.flatMap((id, n) => [n ? ", " : "", explorerLink(c, "tx", id)]),
-      )
+    ? [
+        el(
+          "p",
+          { class: "small", "data-sol": "rent-done" },
+          "Cancel transactions of seat " + c.rentDone.seat + ": ",
+          c.rentDone.txIds.flatMap((id, n) => [n ? ", " : "", explorerLink(c, "tx", id)]),
+        ),
+        explorerNote(c),
+      ]
     : null;
   return el(
     "div",

@@ -82,21 +82,26 @@ function closeMenu(refocus) {
   if (refocus) focusAfter("menu", true);
   render();
 }
+/** Escape closes the open Menu and gives the focus back to the Menu button. */
+export function menuKey(ev) {
+  if (ev.key === "Escape" && ui.menu) closeMenu(true);
+}
+/** A click outside the side list closes the open Menu. */
+export function menuOutside(ev) {
+  if (ui.menu && !ev.target.closest?.(".side")) closeMenu(false);
+}
+/** The skip link moves the focus to the page. It changes no fragment: that names a wallet. */
+export function skipToPage(ev) {
+  ev.preventDefault();
+  document.getElementById("app").focus();
+}
 document.getElementById("wallet-menu")?.addEventListener("click", () => {
   ui.menu = !ui.menu;
   render();
 });
-document.addEventListener("keydown", (ev) => {
-  if (ev.key === "Escape" && ui.menu) closeMenu(true);
-});
-document.addEventListener("click", (ev) => {
-  if (ui.menu && !ev.target.closest?.(".side")) closeMenu(false);
-});
-// The skip link moves the focus to the page. It changes no fragment: the fragment names a wallet.
-document.querySelector(".skip-link")?.addEventListener("click", (ev) => {
-  ev.preventDefault();
-  document.getElementById("app").focus();
-});
+document.addEventListener("keydown", menuKey);
+document.addEventListener("click", menuOutside);
+document.querySelector(".skip-link")?.addEventListener("click", skipToPage);
 
 const newChat = () => { ui.newChat = true; render(); };
 
@@ -123,7 +128,8 @@ function sideItem(g) {
   const unread = unreadChip(u);
   return el("button", {
     class: "side-item" + (here ? " active" : ""), type: "button",
-    "aria-current": here ? "page" : null, "data-key": "wallet-" + g.id,
+    // With its sections in the list, the section is the page and the wallet the current item.
+    "aria-current": here ? (walletShown() ? "true" : "page") : null, "data-key": "wallet-" + g.id,
     onclick: () => { ui.tab = "overview"; openGroup(g.id); },
   }, el("span", { class: "av" }, initials(g.name)),
   el("span", { class: "side-name" }, g.name), el("span", { class: "side-tail" }, unread, tail));

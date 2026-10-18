@@ -28,7 +28,7 @@ const { offReason } = await import("../util.js");
 const { intentHex } = await import("../sol/intent.js");
 const { ui } = await import("../app-state.js");
 const { planSolana, solSetup } = await import("../app-sol.js");
-const { walletReady } = await import("../app-wallet.js");
+const { walletReady, walletShown } = await import("../app-wallet.js");
 const { PUBLIC_TEXT } = await import("../sol/view.js");
 const { reactCeremony } = await import("../sol/ceremony.js");
 const { t, data, waitFor } = rig;
@@ -137,6 +137,27 @@ function sideTree() {
     globalThis.document = real;
   }
 }
+// The phone Menu closes on a pick; the sections show for the formed wallet only; the switcher
+// shows with two or more wallets.
+function sideMenu() {
+  t.ui.menu = true;
+  sideTree().onclick({ target: { closest: () => ({}) } });
+  assert.equal(t.ui.menu, false, "a pick in the side list closes the phone Menu");
+  assert.ok(walletShown(), "the formed wallet shows its sections");
+  const { g, wallet } = t.state;
+  try {
+    t.state.g = { ...g, unreadable: true };
+    assert.equal(walletShown(), false, "an unreadable wallet shows no sections");
+    t.state.g = g;
+    t.state.wallet = null;
+    assert.equal(walletShown(), false, "a wallet in setup shows no sections");
+  } finally {
+    Object.assign(t.state, { g, wallet });
+  }
+  assert.ok(!labelled(pageTree(), "Switch wallet"), "one wallet: its name, no switcher");
+  t.state.groups = [t.state.g, { id: "other", name: "Other" }];
+  assert.ok(labelled(pageTree(), "Switch wallet"), "two wallets: a switcher");
+}
 function approvalCount(ctl) {
   const count = (sessions, commits = {}, change = {}) =>
     pendingCount({ ...ctl, ...change, sessions, commits });
@@ -170,6 +191,7 @@ function approvalCount(ctl) {
     assert.ok(section && labelled(section, "2 to approve"), "the Solana section shows the count");
     Object.assign(ctl, { sessions: [], commits: {} });
     assert.ok(!labelled(sideTree(), "2 to approve"), "no count without a proposal");
+    sideMenu();
   } finally {
     [ctl.sessions, ctl.commits, t.state.groups] = kept;
   }

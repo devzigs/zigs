@@ -2,7 +2,8 @@
    Dark is the default. The light palette applies when the device prefers light, unless the
    viewer picks Dark, and always when the viewer picks Light (app-theme.js sets data-theme).
    Surfaces for money and keys stay opaque; only the sidebar and the scrim use blur.
-   web/test/contrast.mjs checks the text colours on each surface at 4.5:1 or more. */
+   web/test/contrast.mjs checks the text colours on each surface at 4.5:1 or more, and the edge
+   of a field or a tick box at 3:1 or more. */
 :root {
   color-scheme: dark;
   --bg: #0e1013;
@@ -13,6 +14,7 @@
   --sheet: rgba(25, 29, 35, 0.98);
   --line: #343b45;
   --line-2: #505a68;
+  --line-field: #6b7789;
   --edge: rgba(235, 243, 255, 0.09);
   --text: #f4f5f7;
   --muted: #b4bdca;
@@ -56,7 +58,7 @@
     color-scheme: light;
     --bg: #edf0f4; --side: rgba(246, 248, 251, 0.93); --panel: #fafbfd;
     --raised: #e9edf2; --sunk: #f0f3f7; --sheet: rgba(250, 251, 253, 0.98);
-    --line: #d0d7e1; --line-2: #a9b4c3; --edge: rgba(255, 255, 255, 0.85);
+    --line: #d0d7e1; --line-2: #a9b4c3; --line-field: #78849a; --edge: rgba(255, 255, 255, 0.85);
     --text: #18212e; --muted: #4d5c70; --faint: #5c6b7e;
     --accent-text: #8c3b08; --accent-soft: rgba(168, 83, 25, 0.08); --accent-edge: #c07a44;
     --ok: #196342; --ok-soft: rgba(25, 99, 66, 0.08);
@@ -74,7 +76,7 @@
   color-scheme: light;
   --bg: #edf0f4; --side: rgba(246, 248, 251, 0.93); --panel: #fafbfd;
   --raised: #e9edf2; --sunk: #f0f3f7; --sheet: rgba(250, 251, 253, 0.98);
-  --line: #d0d7e1; --line-2: #a9b4c3; --edge: rgba(255, 255, 255, 0.85);
+  --line: #d0d7e1; --line-2: #a9b4c3; --line-field: #78849a; --edge: rgba(255, 255, 255, 0.85);
   --text: #18212e; --muted: #4d5c70; --faint: #5c6b7e;
   --accent-text: #8c3b08; --accent-soft: rgba(168, 83, 25, 0.08); --accent-edge: #c07a44;
   --ok: #196342; --ok-soft: rgba(25, 99, 66, 0.08);

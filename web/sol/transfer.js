@@ -55,20 +55,35 @@ export function selectInputs(sdk, wallet, tree, amount, avoid = new Set()) {
   while (needed < sorted.length && held < amount) held += sorted[needed++].utxo.amount;
   if (held < amount) throw new Error(coverText(sdk, wallet, tree, amount));
   const count = COUNTS.find((k) => k >= needed && k <= sorted.length);
-  if (count === undefined) {
-    const most = COUNTS.findLast((k) => k <= sorted.length);
-    throw new Error(
-      `the payment needs ${needed} UTXOs, and no proof takes that many: send at most what ` +
-        `the ${most} largest UTXOs hold`,
-    );
-  }
+  const shape = { needed, sorted, avoid };
+  if (count === undefined) throw new Error(countText(sdk, wallet, tree, amount, shape));
   return sorted.slice(0, count);
+}
+
+/** Why no proof takes the `needed` inputs: a hold that ends, or too many small notes. */
+function countText(sdk, wallet, tree, amount, { needed, sorted, avoid }) {
+  if (avoid.size && paysWithAll(sdk, wallet, tree, amount)) return HELD;
+  const most = COUNTS.findLast((k) => k <= sorted.length);
+  return (
+    `the payment needs ${needed} UTXOs, and no proof takes that many: send at most what ` +
+    `the ${most} largest UTXOs hold`
+  );
 }
 
 // When the payment would go through once the open payments release their notes, the text says
 // so: the person can wait for them to end or add SOL (S4). Else it gives the reason that stays.
 const HELD =
   "the notes that cover this amount are held by an open proposal: wait until it ends or add SOL";
+
+/** True when every synced note of `tree`, the held ones too, would pay `amount`. */
+function paysWithAll(sdk, wallet, tree, amount) {
+  try {
+    selectInputs(sdk, wallet, tree, amount);
+    return true;
+  } catch {
+    return false;
+  }
+}
 
 /** Why the synced notes of `tree`, outside the open payments, do not cover `amount`. */
 function coverText(sdk, wallet, tree, amount) {

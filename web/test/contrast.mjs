@@ -1,23 +1,24 @@
 // The colour tokens of web/design-system.css: every text colour reads at 4.5:1 or more (WCAG AA
-// for normal text) on every surface, in the dark and in the light palette, and the two copies of
-// the light palette stay the same. Translucent colours are put over the surface below them.
+// for normal text) on every surface, the edge of a field or a tick box at 3:1 or more (WCAG
+// 1.4.11), in the dark and in the light palette, and the two copies of the light palette stay the
+// same. Translucent colours are put over the surface below them.
 // Run: node web/test/contrast.mjs   (Node 24)
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 
 const css = readFileSync(new URL("../design-system.css", import.meta.url), "utf8");
-const MIN = 4.5;
+const MIN = 4.5, MIN_EDGE = 3;
 const TEXTS = ["text", "muted", "faint", "accent-text", "ok", "bad", "info", "warning"];
 const SOFT = { ok: "ok-soft", bad: "bad-soft", info: "info-soft", warning: "warning-soft",
   "accent-text": "accent-soft" };
 
-// The custom properties of the first rule whose selector is `selector`.
+// The declarations of the first rule whose selector is `selector`, as name to value.
 function tokens(selector) {
   const at = css.indexOf(selector + " {");
   assert.ok(at >= 0, "design-system.css has a rule " + selector);
   const body = css.slice(css.indexOf("{", at) + 1, css.indexOf("}", at));
-  return Object.fromEntries([...body.matchAll(/--([\w-]+):\s*([^;]+);/g)]
-    .map((m) => [m[1], m[2].trim()]));
+  return Object.fromEntries([...body.matchAll(/([\w-]+):\s*([^;]+);/g)]
+    .map((m) => [m[1].replace(/^--/, ""), m[2].trim()]));
 }
 
 // [r, g, b, alpha] of a #rgb, #rrggbb or rgba() value.
@@ -61,14 +62,24 @@ function pairs(t) {
   return out;
 }
 
+// The edge of a field or a tick box on the surfaces that hold them.
+function edges(t) {
+  const bg = rgba(t.bg).slice(0, 3);
+  return ["sunk", "panel", "raised", "sheet"].map((s) =>
+    ["line-field on " + s, ratio(rgba(t["line-field"]), over(rgba(t[s]), bg))]);
+}
+
 const dark = tokens(":root");
 const light = tokens(':root[data-theme="light"]');
 assert.deepEqual(tokens(':root:not([data-theme="dark"])'), light,
   "the light palette of the device setting is the same as the light palette of the choice");
+const below = (list, min) =>
+  list.filter(([, r]) => r < min).map(([k, r]) => k + " " + r.toFixed(2));
 for (const [name, palette] of [["dark", dark], ["light", { ...dark, ...light }]]) {
-  const low = pairs(palette).filter(([, r]) => r < MIN);
-  assert.deepEqual(low.map(([k, r]) => k + " " + r.toFixed(2)), [],
+  assert.deepEqual(below(pairs(palette), MIN), [],
     name + ": every text colour reads at " + MIN + ":1 or more");
-  console.log("ok  " + name + ": " + pairs(palette).length + " pairs at " + MIN + ":1 or more");
+  assert.deepEqual(below(edges(palette), MIN_EDGE), [],
+    name + ": the edge of a field shows at " + MIN_EDGE + ":1 or more");
+  console.log("ok  " + name + ": " + pairs(palette).length + " text pairs, 4 field edges");
 }
 console.log("contrast: ok");

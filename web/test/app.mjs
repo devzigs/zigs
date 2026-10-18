@@ -1789,9 +1789,10 @@ const sealed = (gid, rel, seat, fields, key, names = ["by", "sig"]) =>
       t.noteSessions();
       release();
       await assert.rejects(waiting, /signing of this payment started before/);
-      t.setZ({ ...fakeZ, latestHeight: async () => 4500001, normalizeAddress: (a) => a,
+      const z8 = { ...fakeZ, latestHeight: async () => 4500001, normalizeAddress: (a) => a,
         inspect: (p) => { if (!decodes[p]) throw new Error("unreadable"); return S(decodes[p]); },
-        signCommit: () => S({ nonces: ["n"], commitments: ["c"] }) });
+        signCommit: () => S({ nonces: ["n"], commitments: ["c"] }) };
+      t.setZ(z8);
 
       // Without the kept PCZT, the notes of "Propose again" come from the signed part when its
       // sighash is the approved one.
@@ -2590,13 +2591,128 @@ const sealed = (gid, rel, seat, fields, key, names = ["by", "sig"]) =>
       await swapped;
       assert.deepEqual(stallOf(), [null, "https://lwd.test"], "the new object of a sync stays");
       t.chain.cw = engine;
+      // The next server answers when the test lets it: the sync that starts after the timeout
+      // waits for it.
+      let openNext;
+      const nextUp = new Promise((ok) => { openNext = ok; });
+      const made = [];
+      class NextWallet {
+        constructor(ufvk, birthday, url) { made.push(url); }
+        static restore() { throw new Error("no saved state"); }
+        async sync() { return S({ height: 4500002, tip: 4500002, spendable: 1e8, pending: 0 }); }
+        received() { return "[]"; }
+        sent() { return "[]"; }
+        snapshot() { return "{}"; }
+        free() { this.freed = true; }
+      }
+      const tipOf = async (url) => { if (url.includes("next")) await nextUp; return 4500001; };
+      t.setZ({ ...z8, latestHeight: tipOf, ChainWallet: NextWallet });
+      t.chain.net = { servers: ["https://lwd.test", "https://next.test"] };
       const stuck = propose9("stuck");
       assert.equal(t.ui.proposing, true, "Propose is off while the engine works");
       const stuckSaid = await stuck;
       globalThis.setTimeout = realTimeout;
-      assert.equal(stuckSaid, "The proposal got no answer in 60 s, so it stopped. Try again.");
+      const WHEN_SYNCED = "Propose again when the wallet is up to date.";
+      assert.equal(stuckSaid, "The proposal got no answer in 60 s, so it stopped. " + WHEN_SYNCED);
       assert.equal(t.ui.proposing, false, "Propose works again");
       assert.deepEqual(stallOf(), [engine, null], "the object is stalled");
+      // Until a sync connects to the next server, a new proposal waits: the old wallet object
+      // would ask the server that stopped answering.
+      const RECONNECT = "The light-wallet server stopped answering. " + WHEN_SYNCED;
+      assert.equal(t.sendBlocker(), RECONNECT);
+      assert.equal(await propose9("again"), RECONNECT, "no proposal on the silent server");
+      // Approve does not wait for that sync: it asks the other servers for the chain height.
+      const zt = open("zt");
+      await approved(me, zt);
+      assert.equal(markOf(me, "zt")?.approved, "aa", "the approval after the timeout");
+      // With no server of a sync, Approve takes the order of preferredServers: a /lwd that failed
+      // comes after ChainSafe. When both failed, /lwd in first place waits 3 s, as in pickServer.
+      const LWD = "http://localhost/lwd", CS = "https://zcash-testnet.chainsafe.dev";
+      const both = { servers: [LWD, CS] };
+      const withTip = (latestHeight) => t.setZ({ ...z8, latestHeight, ChainWallet: NextWallet });
+      withTip(async (u) => { if (u === LWD) throw new Error("down"); return 4500001; });
+      assert.equal(await t.pickServer(both), CS, "/lwd is marked failed");
+      withTip(async (u) => (u === LWD ? new Promise(() => {}) : 4500001));
+      const timed = async (id) => {
+        const t1 = Date.now();
+        await approved(me, open(id));
+        return [markOf(me, id)?.approved, Date.now() - t1 < 2000, Date.now() - t1 < 6000];
+      };
+      assert.deepEqual((await timed("zv9")).slice(0, 2), ["aa", true], "ChainSafe first");
+      withTip(async () => { throw new Error("down"); });
+      await t.pickServer(both).catch(() => {});   // both are marked failed now
+      withTip(async (u) => (u === LWD ? new Promise(() => {}) : 4500001));
+      const bothFailed = await timed("zy9");
+      assert.deepEqual([bothFailed[0], bothFailed[2]], ["aa", true],
+        "both failed: /lwd waits 3 s, not 8");
+      // Before the first sync, Approve refuses.
+      const balNow = t.chain.bal;
+      t.chain.bal = null;
+      const early = await quiet(() => t.approve(open("zq9"), me)
+        .then(() => "approved", (e) => e.message));
+      t.chain.bal = balNow;
+      assert.equal(early, "Wait for the first sync to finish, then approve.");
+      withTip(tipOf);
+      openNext();
+      await quiet(async () => {
+        await waitFor("the sync on the next server", () => t.chain.url === "https://next.test");
+        await sleep(300);
+      });
+      assert.deepEqual([made, t.sendBlocker() === RECONNECT], [["https://next.test"], false],
+        "a new wallet object on the next server, and Propose is free of the stall");
+      // A sync that cannot make a new wallet object keeps the stall, and Propose stays off.
+      t.setZ(z8);   // its ChainWallet throws
+      Object.assign(t.chain, { stalled: t.chain.cw, url: null });
+      await quiet(() => t.runSync(t.chain));
+      assert.equal(t.sendBlocker(), RECONNECT, "no new object: the stall stays");
+      Object.assign(t.chain, { stalled: null, url: "https://next.test", error: null });
+      // A sync on another server frees the old object when it is not stalled.
+      const oldCw = t.chain.cw;
+      withTip(async (u) => { if (u.includes("next")) throw new Error("down"); return 4500001; });
+      await quiet(async () => { await t.runSync(t.chain); await sleep(200); });
+      assert.deepEqual([t.chain.url, oldCw.freed], ["https://lwd.test", true],
+        "the old one is freed");
+      // syncAgain while a sync runs: one more sync follows it, and only one.
+      let openSync, tips = 0;
+      const syncHeld = new Promise((ok) => { openSync = ok; });
+      withTip(async () => { tips += 1; await syncHeld; return 4500001; });
+      const firstSync = quiet(() => t.runSync(t.chain));
+      await sleep(50);
+      t.syncAgain(t.chain);
+      assert.deepEqual([t.chain.syncing, tips], [true, 1], "no second sync while one runs");
+      openSync();
+      await firstSync;
+      await quiet(async () => {
+        await waitFor("one more sync", () => tips === 2 && !t.chain.syncing, 3000);
+        await sleep(200);
+      });
+      assert.equal(tips, 2, "one more, and no loop");
+      // Approve asks the server of the last sync first, so a server that does not answer, and whose
+      // failure is no longer marked, makes it wait no 8 s.
+      t.chain.url = "https://zcash-testnet.chainsafe.dev";
+      const silentLwd = async (url) => (url.endsWith("/lwd") ? new Promise(() => {}) : 4500001);
+      t.setZ({ ...z8, latestHeight: silentLwd });
+      const t0 = Date.now();
+      await approved(other, open("zu"));
+      assert.equal(markOf(other, "zu")?.approved, "aa", "approved");
+      assert.ok(Date.now() - t0 < 2000, "no wait on the server that does not answer");
+      // The person opened another wallet while its proposal waited: the closed wallet gets no
+      // sync after the timeout.
+      t.state.sessions = [];
+      for (const i of t.localSeats()) await t.putSec(t.state.gid, i, { marks: {} });   // no holds
+      Object.assign(t.chain, { cw: engine, url: "https://lwd.test", stalled: null });
+      let closedTips = 0;
+      withTip(async () => { closedTips += 1; return 4500001; });
+      globalThis.setTimeout = (fn, ms, ...a) => realTimeout(fn, ms >= 60000 ? ms / 600 : ms, ...a);
+      const closed = propose9("closed");
+      const closedChain = t.chain;
+      t.setChain({ ...closedChain });   // another chain object is the open one now
+      const closedSaid = await closed;
+      globalThis.setTimeout = realTimeout;
+      await quiet(() => sleep(300));
+      assert.deepEqual([closedSaid.slice(0, 26), closedTips], ["The proposal got no answer", 0],
+        "no sync of the closed wallet");
+      t.setZ(z8);
       t.state.sessions = sessions8;
       for (const [i, marks] of marks8) await t.putSec(t.state.gid, i, { marks });
       const { o8c: _o8c, ...marksMe } = t.sec(t.state.gid, me).marks;
@@ -3952,9 +4068,10 @@ async function runAcctSync() {
   await t.runSync(t.acct);
 }
 
-// Three paths of the page that no check above runs: a good action clears a bad banner, a pick in
-// the side list shows a wallet section, and Leave chat asks first. Each one asks for the focus of a control, which
-// the next redraw (120 ms later) takes. A recorder stands in for the page.
+// Paths of the page that no check above runs: a good action clears a bad banner, a pick in the
+// side list shows a wallet section, the phone Menu closes, the skip link moves the focus, and
+// Leave chat asks first. Each one asks for the focus of a control, which the next redraw (120 ms
+// later) takes. A recorder stands in for the page.
 {
   const realDocument = globalThis.document;
   class Rec extends Node {
@@ -3967,14 +4084,15 @@ async function runAcctSync() {
     append(...x) { this.kids.push(...x); }
   }
   const banner = new Rec("div"), bannerText = new Rec("span");
+  const page = { focused: false, focus() { this.focused = true; } };
   globalThis.document = {
     activeElement: { dataset: { key: "send-ok" } },
-    getElementById: (id) => ({ banner, "banner-text": bannerText })[id] ?? null,
+    getElementById: (id) => ({ banner, "banner-text": bannerText, app: page })[id] ?? null,
     createElement: (tag) => new Rec(tag), createElementNS: (ns, tag) => new Rec(tag),
     createTextNode: (text) => ({ text }),
   };
   const ev = { preventDefault() {}, currentTarget: null };
-  const { tab, leave } = t.ui;
+  const { tab, leave, menu } = t.ui;
   try {
     t.showBanner("bad", "an earlier error");
     assert.equal(banner.hidden, false);
@@ -4000,6 +4118,21 @@ async function runAcctSync() {
     assert.deepEqual(t.wantFocus, { key: "panel-members", force: true },
       "and the focus goes to the section");
 
+    t.ui.menu = true;
+    t.menuKey({ key: "x" });
+    assert.equal(t.ui.menu, true, "another key keeps the Menu open");
+    t.menuKey({ key: "Escape" });
+    assert.equal(t.ui.menu, false, "Escape closes the Menu");
+    assert.deepEqual(t.wantFocus, { key: "menu", force: true }, "and the focus goes back to Menu");
+    t.ui.menu = true;
+    t.menuOutside({ target: { closest: (sel) => (sel === ".side" ? {} : null) } });
+    assert.equal(t.ui.menu, true, "a click in the side list keeps it open");
+    t.menuOutside({ target: { closest: () => null } });
+    assert.equal(t.ui.menu, false, "a click outside the side list closes it");
+    let stopped = false;
+    t.skipToPage({ preventDefault: () => { stopped = true; } });
+    assert.ok(stopped && page.focused, "the skip link focuses the page and changes no fragment");
+
     t.ui.leave = false;
     const ask = t.leaveBox("chat-id").kids[0];
     assert.equal(ask.attrs["data-key"], "leave-ask");
@@ -4008,7 +4141,7 @@ async function runAcctSync() {
     assert.deepEqual(t.wantFocus, { key: "leave-no", force: true }, "and the focus goes to Cancel");
   } finally {
     globalThis.document = realDocument;
-    Object.assign(t.ui, { tab, leave });
+    Object.assign(t.ui, { tab, leave, menu });
   }
   await sleep(200);
 }

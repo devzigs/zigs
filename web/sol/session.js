@@ -22,23 +22,21 @@ const WORKER_POLICY =
   "default-src 'none'; script-src 'self' 'wasm-unsafe-eval'; " +
   "connect-src 'self' https://devnet.helius-rpc.com; base-uri 'none'";
 
-// The page shows it after "Solana did not load: " (S12): the server did not answer at all.
-export const NOT_LOADED = "Check your connection. Then reload the page.";
+// The text of app-sol.js for a load that failed on the connection (SOL_DOWN, S12): the page
+// shows it as it is, and the tab turns it into the text of its Try again button.
+export const NOT_LOADED = "Solana did not load. Check your connection, then reload the page.";
 
 /**
- * The Helius Devnet URL that the server serves. Throws NOT_LOADED when the request fails, and
- * UNAVAILABLE when the server answers with no URL (SOL off, a 503).
+ * The Helius Devnet URL that the server serves. Throws UNAVAILABLE when the server has no Solana
+ * (a 503 or a 404), and NOT_LOADED for any other failure: no answer, another status, or no URL.
  */
+const NO_SOLANA = new Set([503, 404]);
 export async function fetchRpcUrl() {
-  let res;
-  try {
-    res = await fetch("/sol/config.json", { cache: "no-store" });
-  } catch {
-    throw new Error(NOT_LOADED);
-  }
-  const body = res.ok ? await res.json().catch(() => undefined) : undefined;
-  if (typeof body?.rpcUrl !== "string" || !body.rpcUrl) throw new Error(UNAVAILABLE);
-  return body.rpcUrl;
+  const res = await fetch("/sol/config.json", { cache: "no-store" }).catch(() => null);
+  if (NO_SOLANA.has(res?.status)) throw new Error(UNAVAILABLE);
+  const url = res?.ok ? (await res.json().catch(() => null))?.rpcUrl : undefined;
+  if (typeof url !== "string" || !url) throw new Error(NOT_LOADED);
+  return url;
 }
 
 /** Lamports (a decimal text) as SOL text. */
@@ -121,6 +119,13 @@ export async function ensureWorker(c) {
   return c.worker;
 }
 
+// The private lamports and the hash and the amount of each synced note, for the available balance
+// (S4). The blinding of a note stays in the sealed snapshot.
+const notesOf = ({ balance, utxos }) => ({
+  lamports: balance,
+  notes: (utxos ?? []).map(({ hash, amount }) => ({ hash, amount })),
+});
+
 /**
  * Starts the Worker if needed, syncs the funds of the group (the PDA identity) and the beta funds
  * of the group key, and seals the result into the snapshot store. `busyText` is the worker line
@@ -141,6 +146,7 @@ export async function syncSolana(c, busyText = "syncing") {
     if (!stillOpen(c, opened)) return;
     c.sync = {
       balance: solText(r.balance),
+      ...notesOf(r),
       oldBalance: old.movable,
       text: "synced at slot " + r.slot + ", " + c.workerAddress,
     };
@@ -319,6 +325,11 @@ export async function showSaved(c) {
   const snap = await loadSnap(host.Z, roles.seal_key, gid);
   if (!snap || c.gid !== gid || c.sync.balance !== undefined) return;
   const oldBalance = snap.old?.movable;
-  c.sync = { balance: solText(snap.balance), oldBalance, text: "saved sync of slot " + snap.slot };
+  c.sync = {
+    balance: solText(snap.balance),
+    ...notesOf(snap),
+    oldBalance,
+    text: "saved sync of slot " + snap.slot,
+  };
   host.render();
 }

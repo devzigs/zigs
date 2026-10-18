@@ -1,4 +1,4 @@
-// The wallet page: tabs, overview, activity, signers and details.
+// The wallet page: its sections (overview, activity, messages, signers, details, Solana).
 import { fmtInt, seatBackedUp, usesV2 } from "./util.js";
 import { IGNORED_NOTE } from "./signed.js";
 import { ready, state, ui } from "./app-state.js";
