@@ -19,7 +19,7 @@ export const chainwallet_attachTransaction: (a: number, b: number, c: number, d:
 export const chainwallet_balance: (a: number) => [number, number];
 export const chainwallet_broadcast: (a: number, b: number, c: number) => any;
 export const chainwallet_createMessage: (a: number, b: number, c: number, d: number, e: number) => any;
-export const chainwallet_createSpend: (a: number, b: number, c: number, d: number) => any;
+export const chainwallet_createSpend: (a: number, b: number, c: number, d: number, e: number, f: number) => any;
 export const chainwallet_memoNeeds: (a: number) => [number, number, number, number];
 export const chainwallet_new: (a: number, b: number, c: number, d: number, e: number) => [number, number, number];
 export const chainwallet_received: (a: number) => [number, number];

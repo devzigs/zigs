@@ -14,7 +14,7 @@ import {
   loggedIgnored, pinNetwork, pinVersion, refilter, signedMode, signPins,
 } from "./app-filter.js";
 import { syncRooms } from "./app-messages.js";
-import { expired } from "./app-payments.js";
+import { expired, noApproval } from "./app-payments.js";
 import { startAccount } from "./app-account.js";
 import { render } from "./app-loop.js";
 import { resetSolStart, sol, solAttach, solOn } from "./app-sol.js";
@@ -163,10 +163,12 @@ function watchInbox() {
 export function needsMyApproval(gid, ss) {
   if (ss.status !== "collecting" || ss.package || ss.error) return false;
   if (gid === state.gid && expired(ss)) return false;
+  // Never again once this browser saw the signing start or a seat approved (TICKETS.md ZEC-9).
+  if (noApproval(ss, gid)) return false;
   // In the open wallet only owned seats count; a restored seat that does not fit cannot approve.
   const owned = gid === state.gid ? localSeats() : null;
   return mySeatSecrets(gid).some(([i, s]) => (!owned || owned.includes(i))
-    && s.keyPackage && !(s.nonces && s.nonces[ss.id]));
+    && s.keyPackage && !(s.nonces && s.nonces[ss.id]) && !(s.marks || {})[ss.id]?.approved);
 }
 export const toApprove = (gid) => (gid === state.gid ? state.sessions : inbox[gid] || []).filter((ss) => needsMyApproval(gid, ss));
 
@@ -183,6 +185,7 @@ export function openGroup(gid) {
   closeSession();
   // A form filled from a request belongs to the wallet it was made for.
   if (ui.sendFor && ui.sendFor !== gid) { ui.send = false; ui.pay = null; ui.note = ""; }
+  ui.after = null;   // the notes of an expired payment of the wallet that was open
   ui.backup = null;   // the dialog names a seat of the wallet that was open
   dropChain();
   Object.assign(state, {

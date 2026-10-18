@@ -6,7 +6,7 @@
 //! which it keeps itself. This module decides "done", "expired" or "unknown" from those alone,
 //! together with the chain that this device synced.
 
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 
 use orchard::keys::{FullViewingKey, SpendValidatingKey};
 use pczt::{
@@ -18,7 +18,8 @@ use serde_json::json;
 use super::{ensure, pczt_from_b64, shielded_only, sighash, txid_of, Custom, R};
 
 /// A block reorganisation of up to this many blocks can still bring a transaction on chain after
-/// its expiry height. The web app waits the same margin (`EXPIRY_MARGIN` in web/personal.js).
+/// its expiry height, or take back a spend. The web app waits the same margin (`EXPIRY_MARGIN` in
+/// web/personal.js).
 const REORG_MARGIN: u32 = 3;
 
 /// What a transaction is: its id on chain, its sighash, its expiry height (if known) and the
@@ -89,10 +90,10 @@ fn txid_from_sighash(h: &[u8; 32]) -> String {
 }
 
 /// What this device knows of its own chain: the txids that spent its notes, the nullifiers that
-/// are spent, the nullifiers of its notes, and the synced height.
+/// are spent with the height of the spend, the nullifiers of its notes, and the synced height.
 pub(crate) struct Chain<'a> {
     pub(crate) sent: &'a HashSet<String>,
-    pub(crate) spent: &'a HashSet<[u8; 32]>,
+    pub(crate) spent: &'a HashMap<[u8; 32], u32>,
     pub(crate) own: &'a HashSet<[u8; 32]>,
     pub(crate) synced: u32,
 }
@@ -160,41 +161,52 @@ fn parse_sighash(hex_text: &str) -> R<Option<[u8; 32]>> {
 fn is_expired(tx: &Facts, chain: &Chain) -> bool {
     let past = tx.expiry.is_some_and(|e| chain.synced >= e.saturating_add(REORG_MARGIN));
     let ours = tx.nullifiers.iter().any(|nf| chain.own.contains(nf));
-    let free = tx.nullifiers.iter().all(|nf| !chain.spent.contains(nf));
+    let free = tx.nullifiers.iter().all(|nf| !chain.spent.contains_key(nf));
     past && ours && free
 }
 
-/// `{"state", "txid", "why"}`. "done": this device approved the transaction, and a block that
-/// it synced holds it. "expired": this device approved it, the signed part holds no other
-/// transaction that t seats signed (one seat can remove one), and `is_expired`. "unknown":
-/// anything else; `why` says what is missing. A device that did not approve never sees "done"
-/// or "expired": it cannot tell that the signatures belong to this session, but `txid` names
-/// the transaction that t seats signed.
+/// `{"state", "txid", "why", "spent"}`. `spent`: no synced block holds the transaction, and
+/// another one spent a note of it `REORG_MARGIN` blocks deep, so it can no longer land (it stays
+/// "unknown": that other transaction may be the same payment). Without a PCZT the notes are not
+/// known, so `spent` is false. "done": this device approved the transaction, and a
+/// block that it synced holds it. "expired": this device approved it, the signed part holds no
+/// other transaction that t seats signed (one seat can remove one), and `is_expired`.
+/// "unknown": anything else; `why` says what is missing. A device that did not approve never
+/// sees "done" or "expired": it cannot tell that the signatures belong to this session, but
+/// `txid` names the transaction that t seats signed.
 pub(crate) fn state(
     fvk: &FullViewingKey,
     session: (&str, &str, &str),
     chain: &Chain,
 ) -> String {
     let (pczt, signed, approved) = session;
-    let answer = |state: &str, txid: Option<&str>, why: &str| {
-        json!({"state": state, "txid": txid, "why": why}).to_string()
+    let answer = |state: &str, txid: Option<&str>, why: &str, spent: bool| {
+        json!({"state": state, "txid": txid, "why": why, "spent": spent}).to_string()
     };
     let (tx, bond) = match trusted(fvk, pczt, signed, approved) {
         Ok(found) => found,
-        Err(why) => return answer("unknown", None, &why),
+        Err(why) => return answer("unknown", None, &why, false),
     };
     let txid = Some(tx.txid.as_str());
     let landed = chain.sent.contains(&tx.txid);
+    // A payment that landed spent its own notes; otherwise another transaction spent one.
+    let deep = |nf: &[u8; 32]| {
+        chain.spent.get(nf).is_some_and(|h| chain.synced >= h.saturating_add(REORG_MARGIN))
+    };
+    let spent = !landed && tx.nullifiers.iter().any(deep);
+    let say = |state: &str, why: &str| answer(state, txid, why, spent);
     match (bond, landed) {
-        (Bond::Signed, true) => answer("unknown", txid, "t seats signed it and a synced block \
-            holds it, but this device did not approve it, so nothing ties it to this session"),
-        (_, true) => answer("done", txid, "a synced block holds it"),
-        (Bond::Contested, false) => answer("unknown", txid, "the combined signatures cover \
-            another transaction than the one this device approved: an older payment, or one \
-            that can still land"),
+        (Bond::Signed, true) => say("unknown", "t seats signed it and a synced block holds it, \
+            but this device did not approve it, so nothing ties it to this session"),
+        (_, true) => say("done", "a synced block holds it"),
+        (_, false) if spent => say("unknown", "another transaction spent a note of it, so it \
+            can no longer land"),
+        (Bond::Contested, false) => say("unknown", "the combined signatures cover another \
+            transaction than the one this device approved: an older payment, or one that can \
+            still land"),
         (Bond::Approved, false) if is_expired(&tx, chain) => {
-            answer("expired", txid, "it expired and its notes are unspent")
+            say("expired", "it expired and its notes are unspent")
         }
-        _ => answer("unknown", txid, "no synced block holds it, and it may still land"),
+        _ => say("unknown", "no synced block holds it, and it may still land"),
     }
 }

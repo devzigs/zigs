@@ -37,7 +37,7 @@ use zcash_protocol::{
 use super::{
     account, build_ironwood_pczt, e, ensure, expiry,
     memo::{commitment_bytes, parse_memo, received as memos_in, MemoView},
-    pczt_to_b64, session,
+    pczt_from_b64, pczt_to_b64, session,
     snapshot::{decode_note, decode_store, encode_note, encode_store, hex32},
     Payee, Terms, R,
 };
@@ -550,21 +550,50 @@ fn select_notes(
 fn pick_notes(
     notes: &[(u64, u32)], amount: u64, outputs: usize, synced: u32, factor: u64,
 ) -> R<Pick> {
-    let mut eligible: Vec<usize> = (0..notes.len())
-        .filter(|&i| is_confirmed(notes[i].1, synced) && notes[i].0 > 0)
+    pick_notes_after(notes, &[], (amount, outputs), synced, factor)
+}
+
+/// `pick_notes` that spends the notes `first` (indices into `notes`) whatever their value, and
+/// then confirmed notes, largest first, until `want` (amount and outputs) and the fee are covered.
+fn pick_notes_after(
+    notes: &[(u64, u32)], first: &[usize], want: (u64, usize), synced: u32, factor: u64,
+) -> R<Pick> {
+    let (amount, outputs) = want;
+    let mut rest: Vec<usize> = (0..notes.len())
+        .filter(|i| !first.contains(i) && is_confirmed(notes[*i].1, synced) && notes[*i].0 > 0)
         .collect();
-    eligible.sort_by_key(|&i| std::cmp::Reverse(notes[i].0));
-    let (mut picked, mut total) = (vec![], 0u64);
-    for i in eligible {
-        picked.push(i);
-        total += notes[i].0;
+    rest.sort_by_key(|&i| std::cmp::Reverse(notes[i].0));
+    let (mut picked, mut rest) = (first.to_vec(), rest.into_iter());
+    let mut total: u64 = first.iter().map(|&i| notes[i].0).sum();
+    loop {
         let fee = zip317_fee(picked.len(), outputs) * factor;
-        if total >= amount.saturating_add(fee) {
+        if !picked.is_empty() && total >= amount.saturating_add(fee) {
             return Ok(Pick { picked, fee, change: total - amount - fee, total });
         }
+        let Some(i) = rest.next() else { break };
+        picked.push(i);
+        total += notes[i].0;
     }
     let need = amount.saturating_add(zip317_fee(picked.len(), outputs) * factor);
     Err(format!("not enough funds: {total} zat spendable, {need} zat needed (amount + fee)"))
+}
+
+/// The unspent notes that `after` spends, as indices in the order of `build_spend`. A payment
+/// proposed again after `after` expired spends all of them, so that it and any other
+/// transaction over those notes cannot both land (TICKETS.md ZEC-13).
+fn notes_of(s: &Inner, after: &Pczt) -> R<Vec<usize>> {
+    let fvk = s.ufvk.orchard().ok_or("the viewing key has no Orchard component")?;
+    let facts = session::facts(after, fvk, false)?;
+    let spends: HashSet<[u8; 32]> = facts.nullifiers.into_iter().collect();
+    let ours: Vec<&Rec> = s.notes.iter().filter(|n| spends.contains(&n.nf.to_bytes())).collect();
+    ensure(!ours.is_empty(), "the expired payment spends no note that this wallet knows")?;
+    ensure(
+        ours.iter().all(|n| n.spent.is_none()),
+        "a note of the expired payment is spent now: another transaction may hold it. Check the \
+         activity of the wallet",
+    )?;
+    let unspent = s.notes.iter().filter(|n| n.spent.is_none()).enumerate();
+    Ok(unspent.filter(|(_, n)| spends.contains(&n.nf.to_bytes())).map(|(i, _)| i).collect())
 }
 
 /// The largest amount one payment can send: every confirmed note, less the fee for spending them.
@@ -628,8 +657,8 @@ fn session_state(s: &Inner, pczt: &str, signed: &str, approved: &str) -> R<Strin
     let fvk = s.ufvk.orchard().ok_or("the viewing key has no Orchard component")?;
     let sent: HashSet<String> = s.sent.iter().map(|(txid, _)| txid.clone()).collect();
     let own: HashSet<[u8; 32]> = s.notes.iter().map(|n| n.nf.to_bytes()).collect();
-    let spent: HashSet<[u8; 32]> =
-        s.notes.iter().filter(|n| n.spent.is_some()).map(|n| n.nf.to_bytes()).collect();
+    let spent: HashMap<[u8; 32], u32> =
+        s.notes.iter().filter_map(|n| Some((n.nf.to_bytes(), n.spent?))).collect();
     let chain = session::Chain { sent: &sent, spent: &spent, own: &own, synced: s.synced };
     Ok(session::state(fvk, (pczt, signed, approved), &chain))
 }
@@ -740,8 +769,11 @@ fn build_spend(
 }
 
 /// A group payment: its approvals take hours, so it expires after the window of `expiry`.
-/// `priority` pays `PRIORITY_FACTOR` times the ZIP 317 fee.
-fn spend_pczt(s: &Inner, payees: &[Payee], tip: u32, priority: bool) -> R<String> {
+/// `priority` pays `PRIORITY_FACTOR` times the ZIP 317 fee. With `after`, the payment of an
+/// expired one, it also spends every note of that one (`notes_of`).
+fn spend_pczt(
+    s: &Inner, payees: &[Payee], tip: u32, priority: bool, after: Option<&Pczt>,
+) -> R<String> {
     let amount = payees
         .iter()
         .try_fold(0u64, |sum, p| sum.checked_add(p.1))
@@ -751,7 +783,11 @@ fn spend_pczt(s: &Inner, payees: &[Payee], tip: u32, priority: bool) -> R<String
     let expiry = Some(expiry::expiry_for(&s.net, target));
     let terms = Terms { target, expiry, fee_factor: factor };
     let outputs = payees.len() + 1;
-    let choose = |values: &[(u64, u32)]| select_notes(values, amount, outputs, s.synced, factor);
+    let first = after.map(|p| notes_of(s, p)).transpose()?.unwrap_or_default();
+    let choose = |values: &[(u64, u32)]| match first.as_slice() {
+        [] => select_notes(values, amount, outputs, s.synced, factor),
+        first => pick_notes_after(values, first, (amount, outputs), s.synced, factor),
+    };
     let (pczt, pick) = build_spend(s, payees, &terms, choose)?;
     Ok(json!({"pczt": pczt_to_b64(pczt)?, "pool": "ironwood", "amount": amount,
         "change": pick.change, "fee": pick.fee, "note_value": pick.total})
@@ -776,14 +812,17 @@ fn message_pczt(s: &Inner, payees: &[Payee], tip: u32) -> R<String> {
     .to_string())
 }
 
-async fn create_spend(state: &RefCell<Inner>, payees: &str, priority: bool) -> R<String> {
+async fn create_spend(
+    state: &RefCell<Inner>, payees: &str, priority: bool, after: Option<&str>,
+) -> R<String> {
     let rows: Vec<Value> = serde_json::from_str(payees).map_err(e("recipient list"))?;
     let payees = parse_payees(&rows, state.borrow().net)?;
+    let after = after.map(pczt_from_b64).transpose()?;
     let endpoint = state.borrow().endpoint.clone();
     let tip = tip_of(&endpoint).await?;
     let mut s = state.borrow_mut();
     s.tip = tip;
-    spend_pczt(&s, &payees, tip, priority)
+    spend_pczt(&s, &payees, tip, priority, after.as_ref())
 }
 
 async fn create_message(state: &RefCell<Inner>, to: &str, text: &str) -> R<String> {
@@ -910,10 +949,17 @@ impl ChainWallet {
 
     /// `payees` is a JSON list: `[{"to": "<unified address>", "amount": <zat>, "memo": "<text>"},
     /// …]`. The memo is optional: at most 512 UTF-8 bytes. `priority` pays 10 times the ZIP 317
-    /// fee. The payment expires one day after it is built (see `expiry`).
+    /// fee. The payment expires one day after it is built (see `expiry`). `after` (optional) is
+    /// the PCZT of an expired payment that this one replaces: this one also spends every note of
+    /// it, and fails if one of them is spent now.
     #[wasm_bindgen(js_name = createSpend)]
-    pub async fn create_spend(&self, payees: String, priority: bool) -> Result<String, JsError> {
-        super::js(create_spend(&self.0, &payees, priority).await)
+    pub async fn create_spend(
+        &self,
+        payees: String,
+        priority: bool,
+        after: Option<String>,
+    ) -> Result<String, JsError> {
+        super::js(create_spend(&self.0, &payees, priority, after.as_deref()).await)
     }
 
     /// A message on chain. `to` is a unified address with an Orchard receiver and `text` is the
@@ -1055,7 +1101,7 @@ pub(crate) mod native {
         with(key, |w| {
             let payees = parse_payees(payees, w.net)?;
             w.tip = w.tip.max(tip);
-            spend_pczt(w, &payees, tip, false)
+            spend_pczt(w, &payees, tip, false, None)
         })
     }
 }
@@ -1669,7 +1715,7 @@ mod tests {
     fn paid(w: &Inner, seed: &str, tip: u32, amount: u64) -> Paid {
         let to = address_for(&"0b".repeat(32), 1);
         let payees = parse_payees(&[json!({"to": to, "amount": amount})], Network::TestNetwork);
-        let made = v(&spend_pczt(w, &payees.unwrap(), tip, false).unwrap());
+        let made = v(&spend_pczt(w, &payees.unwrap(), tip, false, None).unwrap());
         let pczt = made["pczt"].as_str().unwrap().to_string();
         let signed = v(&account::sign(&pczt, seed, "testnet").unwrap());
         let fvk = hex::encode(w.ufvk.orchard().unwrap().to_bytes());
@@ -1772,10 +1818,45 @@ mod tests {
             n.spent = Some(a.expiry);
         }
         assert_eq!(state_of(&w, &a.pczt, &a.signed, &a.sighash), "unknown", "its notes are spent");
+        let gone = v(&session_state(&w, &a.pczt, &a.signed, &a.sighash).unwrap());
+        assert_eq!(gone["spent"], true, "another transaction spent them: it can no longer land");
         w.sent.push((a.txid.clone(), a.expiry - 5));
         assert_eq!(state_of(&w, &b.pczt, &a.signed, ""), "unknown", "an old payment, copied");
         let held = state_of(&w, &a.pczt, &b.signed, &a.sighash);
         assert_eq!(held, "done", "a block holds what this device approved");
+        let done = v(&session_state(&w, &a.pczt, "", &a.sighash).unwrap());
+        assert_eq!(done["spent"], false, "its own notes, spent by itself");
+    }
+
+    /// `spent` needs a spend by another transaction 3 blocks deep, and a reorganisation that drops
+    /// the spend clears it. The sighash alone names no note.
+    #[test]
+    fn spent_needs_a_spend_three_blocks_deep() {
+        let seed = "0a".repeat(32);
+        let (mut w, chain) = funded_account(&seed, &[1_000_000, 900_000]);
+        let tip = chain.last_height();
+        let p = paid(&w, &seed, tip, 100_000);
+        let got = |w: &Inner, pczt: &str| v(&session_state(w, pczt, "", &p.sighash).unwrap());
+        assert_eq!(got(&w, &p.pczt)["spent"], false, "its notes are unspent");
+        let key = w.ufvk.orchard().unwrap().clone();
+        let facts = session::facts(&crate::pczt_from_b64(&p.pczt).unwrap(), &key, false).unwrap();
+        let note = w.notes.iter().find(|n| facts.nullifiers.contains(&n.nf.to_bytes())).unwrap().nf;
+        let mut a = chain.fork(tip);
+        a.push(vec![pays(external(&fvk(8)), 5_000, no_memo(), Some(note)).0], 0);
+        follow(&mut w, &a).unwrap();
+        assert_eq!(got(&w, &p.pczt)["spent"], false, "a spend in the newest block");
+        a.grow(2, 0);
+        follow(&mut w, &a).unwrap();
+        assert_eq!(got(&w, &p.pczt)["spent"], false, "a spend 2 blocks deep");
+        a.grow(1, 0);
+        follow(&mut w, &a).unwrap();
+        let deep = got(&w, &p.pczt);
+        assert_eq!((deep["spent"].clone(), deep["state"].clone()), (json!(true), json!("unknown")));
+        assert_eq!(got(&w, "")["spent"], false, "the sighash alone");
+        let mut b = chain.fork(tip);
+        b.grow(5, 9);
+        follow(&mut w, &b).unwrap();
+        assert_eq!(got(&w, &p.pczt)["spent"], false, "a reorganisation dropped the spend");
     }
 
     /// A changed signature on a spend under the wallet key is refused, whatever the value field
@@ -1821,6 +1902,50 @@ mod tests {
         }
     }
 
+    /// A payment proposed again after an expired one spends every note of the expired one, so that
+    /// at most one of them lands (TICKETS.md ZEC-13). A note of it that is spent now stops it.
+    #[test]
+    fn a_payment_proposed_again_spends_every_note_of_the_expired_one() {
+        let seed = "0a".repeat(32);
+        let (mut w, chain) = funded_account(&seed, &[600_000, 700_000, 900_000]);
+        let tip = chain.last_height();
+        let old = crate::pczt_from_b64(&paid(&w, &seed, tip, 1_000_000).pczt).unwrap();
+        let fvk = hex::encode(w.ufvk.orchard().unwrap().to_bytes());
+        let spent = |made: &str| {
+            let ins = v(&crate::inspect(v(made)["pczt"].as_str().unwrap(), &fvk).unwrap());
+            let lines = ins["lines"].as_array().unwrap().clone();
+            let mut values: Vec<u64> = lines.iter().filter(|l| l["kind"] == "spend")
+                .map(|l| l["value"].as_u64().unwrap()).collect();
+            values.sort_unstable();
+            values
+        };
+        let to = address_for(&"0b".repeat(32), 1);
+        let payees = parse_payees(&[json!({"to": to, "amount": 100_000})], Network::TestNetwork);
+        let payees = payees.unwrap();
+        let plain = spend_pczt(&w, &payees, tip, false, None).unwrap();
+        assert_eq!(spent(&plain), [900_000], "one note covers it");
+        // A spent note of the wallet that the old payment does not spend changes no index.
+        w.notes.iter_mut().find(|n| n.value() == 600_000).unwrap().spent = Some(tip);
+        let again = spend_pczt(&w, &payees, tip, false, Some(&old)).unwrap();
+        assert_eq!(spent(&again), [700_000, 900_000], "both notes of the expired payment");
+        w.notes.iter_mut().find(|n| n.value() == 600_000).unwrap().spent = None;
+        let big = parse_payees(&[json!({"to": to, "amount": 1_700_000})], Network::TestNetwork);
+        let more = spend_pczt(&w, &big.unwrap(), tip, false, Some(&old)).unwrap();
+        assert_eq!(spent(&more), [600_000, 700_000, 900_000], "and more notes when it needs them");
+        let other = "0c".repeat(32);
+        let (o, ochain) = funded_account(&other, &[1_000_000]);
+        let foreign = crate::pczt_from_b64(&paid(&o, &other, ochain.last_height(), 100_000).pczt);
+        let err = spend_pczt(&w, &payees, tip, false, Some(&foreign.unwrap())).unwrap_err();
+        assert!(err.contains("spends nothing from this wallet"), "{err}");
+        let (fresh, _) = funded_account(&seed, &[2_000_000]);
+        let err = spend_pczt(&fresh, &payees, tip, false, Some(&old)).unwrap_err();
+        assert!(err.contains("no note that this wallet knows"), "{err}");
+        let first = w.notes.iter_mut().find(|n| n.value() == 900_000).unwrap();
+        first.spent = Some(tip);
+        let err = spend_pczt(&w, &payees, tip, false, Some(&old)).unwrap_err();
+        assert!(err.contains("is spent now"), "{err}");
+    }
+
     /// A group payment expires one day of blocks after its target and may pay 10 times the fee.
     /// A message keeps the builder's 40 blocks and the standard fee.
     #[test]
@@ -1834,7 +1959,7 @@ mod tests {
             v(&crate::inspect(made["pczt"].as_str().unwrap(), &fvk).unwrap())
         };
         for (priority, fee) in [(false, 10_000), (true, 100_000)] {
-            let made = v(&spend_pczt(&w, &payees, tip, priority).unwrap());
+            let made = v(&spend_pczt(&w, &payees, tip, priority, None).unwrap());
             assert_eq!((&made["fee"], &made["change"]), (&json!(fee), &json!(900_000 - fee)));
             let ins = inspect(&made);
             assert_eq!((&ins["fee"], &ins["standard_fee"]), (&json!(fee), &json!(10_000)));

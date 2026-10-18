@@ -92,15 +92,20 @@ export class ChainWallet {
     /**
      * `payees` is a JSON list: `[{"to": "<unified address>", "amount": <zat>, "memo": "<text>"},
      * …]`. The memo is optional: at most 512 UTF-8 bytes. `priority` pays 10 times the ZIP 317
-     * fee. The payment expires one day after it is built (see `expiry`).
+     * fee. The payment expires one day after it is built (see `expiry`). `after` (optional) is
+     * the PCZT of an expired payment that this one replaces: this one also spends every note of
+     * it, and fails if one of them is spent now.
      * @param {string} payees
      * @param {boolean} priority
+     * @param {string | null} [after]
      * @returns {Promise<string>}
      */
-    createSpend(payees, priority) {
+    createSpend(payees, priority, after) {
         const ptr0 = passStringToWasm0(payees, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
         const len0 = WASM_VECTOR_LEN;
-        const ret = wasm.chainwallet_createSpend(this.__wbg_ptr, ptr0, len0, priority);
+        var ptr1 = isLikeNone(after) ? 0 : passStringToWasm0(after, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
+        var len1 = WASM_VECTOR_LEN;
+        const ret = wasm.chainwallet_createSpend(this.__wbg_ptr, ptr0, len0, priority, ptr1, len1);
         return ret;
     }
     /**
@@ -1849,17 +1854,17 @@ function __wbg_get_imports() {
             return isLikeNone(ret) ? 0 : addToExternrefTable0(ret);
         },
         __wbindgen_generic_0000000000000001: function(arg0, arg1) {
-            // Cast intrinsic for `Closure(Closure { owned: true, function: Function { arguments: [Externref], shim_idx: 1829, ret: Result(Unit), inner_ret: Some(Result(Unit)) }, mutable: true }) -> Externref`.
+            // Cast intrinsic for `Closure(Closure { owned: true, function: Function { arguments: [Externref], shim_idx: 1830, ret: Result(Unit), inner_ret: Some(Result(Unit)) }, mutable: true }) -> Externref`.
             const ret = makeMutClosure(arg0, arg1, wasm_bindgen_731503a097e03799___convert__closures_____invoke___wasm_bindgen_731503a097e03799___JsValue__core_f0fd674eaa06beef___result__Result_____wasm_bindgen_731503a097e03799___JsError___true_);
             return ret;
         },
         __wbindgen_generic_0000000000000002: function(arg0, arg1) {
-            // Cast intrinsic for `Closure(Closure { owned: true, function: Function { arguments: [Externref], shim_idx: 801, ret: Unit, inner_ret: Some(Unit) }, mutable: true }) -> Externref`.
+            // Cast intrinsic for `Closure(Closure { owned: true, function: Function { arguments: [Externref], shim_idx: 802, ret: Unit, inner_ret: Some(Unit) }, mutable: true }) -> Externref`.
             const ret = makeMutClosure(arg0, arg1, wasm_bindgen_731503a097e03799___convert__closures_____invoke___wasm_bindgen_731503a097e03799___JsValue______true_);
             return ret;
         },
         __wbindgen_generic_0000000000000003: function(arg0, arg1) {
-            // Cast intrinsic for `Closure(Closure { owned: true, function: Function { arguments: [], shim_idx: 769, ret: Unit, inner_ret: Some(Unit) }, mutable: true }) -> Externref`.
+            // Cast intrinsic for `Closure(Closure { owned: true, function: Function { arguments: [], shim_idx: 770, ret: Unit, inner_ret: Some(Unit) }, mutable: true }) -> Externref`.
             const ret = makeMutClosure(arg0, arg1, wasm_bindgen_731503a097e03799___convert__closures_____invoke_______true_);
             return ret;
         },

@@ -150,6 +150,10 @@ function pasteList(net) {
     el("button", { class: "btn sm", type: "button", onclick: useList }, "Use this list"));
 }
 
+// A payment proposed again after an expired one that was signed (TICKETS.md ZEC-13).
+const afterNote = () => ui.after ? el("p", { class: "small" }, "This payment also spends every "
+  + "note of the expired payment, so that at most one of them can go on chain.") : null;
+
 export function sendDialog() {
   const c = curChain(), bal = c && c.bal, spendable = bal ? bal.spendable : 0, net = curNet();
   if (!ui.pay) { ui.pay = [{ k: ++ui.payKey, to: "", amt: "", memo: "" }]; ui.listError = ""; }
@@ -167,8 +171,8 @@ export function sendDialog() {
     const need = payees.reduce((n, p) => n + p.amount, 0) + feeEstimate(payees.length, ui.priority);
     if (need > spendable) throw new Error("Not enough funds: " + fmtZec(spendable) + " available, " + fmtZec(need) + " needed (amounts + fee).");
     const note = String(new FormData(ev.target).get("note") || "").trim();
-    await newSpend(payees, note, null, ui.priority);
-    ui.send = false;
+    await newSpend(payees, note, null, ui.priority, ui.after);
+    ui.send = false; ui.after = null;
   }) },
     el("div", { class: "card-head" }, el("h2", { id: "send-title" }, "Send ZEC"), el("button", { class: "icon-btn", type: "button", "aria-label": "Close", onclick: () => { ui.send = false; render(); } }, "×")),
     el("div", { class: "field" }, el("span", {}, rows.length > 1 ? rows.length + " recipients, one transaction" : "To and amount"),
@@ -195,6 +199,7 @@ export function sendDialog() {
       el("div", { class: "total" }, el("span", {}, "Total leaving the wallet"), total),
       el("div", {}, el("span", { class: "muted" }, "Approvals needed"), el("span", {}, state.g.t + " of " + state.g.n))),
     el("p", { class: "small faint" }, EXPIRY_NOTE),
+    afterNote(),
     el("div", { class: "dialog-actions" },
       el("button", { class: "btn", type: "button", onclick: () => { ui.send = false; render(); } }, "Cancel"),
       el("button", {

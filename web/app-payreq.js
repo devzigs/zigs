@@ -153,7 +153,7 @@ export function proposeRequest(req, o, gid) {
   ui.pay = payeeRows(req.payees, () => ++ui.payKey);
   const room = o.dm || gid === state.gid ? "" : groupName(state.gid);
   ui.note = requestNote(o.name, o.verdict, { mine: o.mine, room });
-  ui.listError = ""; ui.priority = false;
+  ui.listError = ""; ui.priority = false; ui.after = null;
   ui.send = true;
   ui.sendFor = gid;
   if (gid === state.gid) { closeSession(); render(); return; }

@@ -6,7 +6,7 @@ import { payeeRows } from "./requests.js";
 import { busy, log, ready, showBanner, state, ui } from "./app-state.js";
 import { fmtZec, isStr, J, S, said, withTimeout } from "./app-kit.js";
 import { engineOffThread, Z } from "./app-engine.js";
-import { mySeatSecrets, putSec, sec } from "./app-keystore.js";
+import { loadKept, mySeatSecrets, putSec, saveKept, sec } from "./app-keystore.js";
 import { isMe, keysDiffer, localSeats, myUid, signersOf } from "./app-seats.js";
 import {
   balanceNow, chain, curChain, curNet, inFlight, netName, runSync, SERVER_TIMEOUT_MS,
@@ -120,7 +120,7 @@ function aggregateShares(ss) {
 
 // `payees` (address, amount and optional memo) and `note` are the proposer's words; approvers
 // check `payees` against the transaction.
-export async function newSpend(payees, note, move = null, priority = false) {
+export async function newSpend(payees, note, move = null, priority = false, after) {
   const gid = state.gid, approvals = state.g.t;
   if (!chain || chain.gid !== gid || !chain.bal) {
     throw new Error("The wallet has not finished its first sync.");
@@ -128,7 +128,8 @@ export async function newSpend(payees, note, move = null, priority = false) {
   if (!mayAct()) throw new Error(NO_SEAT_KEY);
   // A payee has a memo only when it has text. A proposal without memos stays {to, amount}.
   payees = payees.map(({ to, amount, memo }) => memo ? { to, amount, memo } : { to, amount });
-  const t = J(await chain.cw.createSpend(S(payees), priority));
+  // `after`: the approved PCZT of an expired payment. The engine spends all of its notes too.
+  const t = J(await chain.cw.createSpend(S(payees), priority, pcztOrNone(after)));
   const ref = sdb.collection("groups/" + gid + "/sessions").doc();
   const fields = proposalFields(payees, note, t, move, Date.now());
   const sig = await sigPart(gid, ref.id, "proposal", fields);
@@ -138,13 +139,16 @@ export async function newSpend(payees, note, move = null, priority = false) {
   if (state.gid === gid) openSession(ref.id);
 }
 
+// Only a PCZT text goes to the engine: a click event that a handler passes on is none.
+const pcztOrNone = (p) => (isStr(p) ? p : undefined);
+
 // Sends every confirmed note to the wallet that replaces this one.
-export async function proposeMove() {
+export async function proposeMove(after = null) {
   const to = state.g.movedTo, tw = ready[to], c = curChain();
   if (!tw) throw new Error("The new wallet has no address yet.");
   const amount = c && c.bal ? c.bal.max_send : 0;
   if (!(amount > 0)) throw new Error("No confirmed funds to move yet.");
-  await newSpend([{ to: tw.address, amount }], "Move to " + groupName(to), to);
+  await newSpend([{ to: tw.address, amount }], "Move to " + groupName(to), to, false, after);
 }
 
 export async function cancelMove() {
@@ -199,8 +203,25 @@ function approveRefusal(ss, i, ins) {
   if (expired(ss)) return "This payment expired, so it was not approved. Propose it again.";
   if (state.pending) return "Zigs is still checking this wallet's data. Try again in a moment.";
   if (!ins || ins.error) return "This browser could not check the payment, so it did not approve.";
-  if (seatCheck(i) === true) return null;
-  return "Seat " + i + " has not checked this wallet against its key share, so it did not approve.";
+  if (seatCheck(i) !== true) {
+    return "Seat " + i + " has not checked this wallet against its key share, so it did not "
+      + "approve.";
+  }
+  return markRefusal(ss, i, ins);
+}
+
+// A session that this browser saw sign, or that a seat of it approved, never gets an approval
+// again: one seat can reset a signed session to a fresh proposal (TICKETS.md ZEC-9).
+function markRefusal(ss, i, ins) {
+  const gid = state.gid, m = markOf(gid, ss.id);
+  if (seenSigning(ss.id, true)) {
+    return "The signing of this payment started before, so this browser does not approve it again.";
+  }
+  if ((sec(gid, i).marks || {})[ss.id]?.approved) return "This seat already approved this payment.";
+  if (m.approved && m.approved !== ins.sighash) {
+    return "This payment changed after this browser approved it, so it was not approved again.";
+  }
+  return null;
 }
 
 // One approval at a time for each payment and seat: a second click during the waits below would
@@ -222,6 +243,8 @@ async function approveNow(ss, i) {
   // Another tab can save the secrets of this seat during the waits. Read them after each wait, so
   // that a write here neither brings back a burned nonce nor drops a new one.
   if ((sec(gid, i).nonces || {})[ss.id]) throw new Error("This seat already approved this payment.");
+  const late = markRefusal(ss, i, ins);
+  if (late) throw new Error(late);
   const r = J(Z.signCommit(ss.pczt, state.wallet.orchard_fvk, S(sec(gid, i).keyPackage), tip));
   // The approval covers this exact transaction: a share is signed later only for the same sighash.
   const mine = { nonces: r.nonces, commitments: r.commitments, sighash: ins.sighash };
@@ -229,9 +252,12 @@ async function approveNow(ss, i) {
   // A seat that cannot sign fails here, before the approval is saved.
   const doc = await signedDoc(gid, rel, i, { commitments: r.commitments, at: Date.now() });
   const nonces = { ...(sec(gid, i).nonces || {}), [ss.id]: mine };
-  if (!(await putSec(gid, i, { nonces }))) {
+  // The approved sighash stays after the nonce burn: the session state needs it (ZEC-13).
+  const marks = withMark(sec(gid, i).marks, ss.id, { approved: ins.sighash, tip });
+  if (!(await putSec(gid, i, { nonces, marks }))) {
     throw new Error("Could not save the approval in this browser, so it was not sent.");
   }
+  await keep(gid, ss.id, ss.pczt);
   await sdb.doc("groups/" + gid + "/" + rel).set(doc);
   log("seat " + i + ": approved the spend, nonce commitment published");
   showBanner("ok", "Approved" + (localSeats().length > 1 ? " as seat " + i : "") + ".");
@@ -302,15 +328,25 @@ export const PRIORITY_FACTOR = 10;
 export const feeEstimate = (payees, priority = false) =>
   5000 * Math.max(2, payees + 1) * (priority ? PRIORITY_FACTOR : 1);
 
-export function sendBlocker() {
+export const sendBlocker = () => setupBlocker() || holdBlocker() || fundsBlocker(curChain().bal);
+
+function setupBlocker() {
   const c = curChain();
   if (keysDiffer()) return "The signers hold different wallet keys. Do not use this wallet.";
   if (!localSeats().length) return "You hold no seat in this wallet.";
   if (!myVerified()) return "Your seat is still checking the wallet address.";
-  if (!c || !c.bal) return "Wait for the first sync to finish.";
+  return !c || !c.bal ? "Wait for the first sync to finish." : null;
+}
+
+function holdBlocker() {
   // ponytail: the engine does not know about unmined spends and would pick the same notes again.
   if (inFlight().length) return "A payment is waiting for its block. Send again in a minute.";
-  const b = balanceNow(c.bal);
+  return heldApprovals().length ? "A payment that you approved can still go on chain. Send "
+    + "again when a block holds it or it expires." : null;
+}
+
+function fundsBlocker(bal) {
+  const b = balanceNow(bal);
   if (b.spendable > feeEstimate(1)) return null;
   if (b.pending) return "Incoming funds need 3 confirmations first.";
   return b.spendable ? "The balance does not cover the network fee." : "This wallet has no funds yet.";
@@ -319,8 +355,9 @@ export function sendBlocker() {
 export const proofStalled = (ss) => Date.now() - (ss.provingAt || 0) > 180000;
 
 // Keyed by the transaction itself: a session whose transaction is replaced is decoded again.
-export function inspectOf(ss) {
-  const key = ss.pczt, fvk = state.wallet.orchard_fvk;
+export const inspectOf = (ss) => inspectPczt(ss.pczt);
+function inspectPczt(key) {
+  const fvk = state.wallet.orchard_fvk;
   let ins = inspectCache.get(key);
   if (!ins && Z && key) {
     // The engine takes only strings. A document with another type would crash it.
@@ -337,10 +374,19 @@ export function inspectOf(ss) {
 // When the payment expires, counted by the engine from the height of the last sync:
 // {expired, blocks_left, seconds_left}. Null while this browser cannot tell.
 export function expiryOf(ss) {
-  const c = curChain(), ins = state.wallet && ss.pczt ? inspectOf(ss) : null;
-  if (!c || !c.bal || !ins || ins.error || !Number.isInteger(ins.expiry_height)) return null;
-  try { return J(Z.expiryState(netName(state.g), ins.expiry_height, c.bal.height)); }
+  const c = curChain(), at = expiryAt(ss);
+  if (!c || !c.bal || at === null) return null;
+  try { return J(Z.expiryState(netName(state.g), at, c.bal.height)); }
   catch { return null; }
+}
+
+// The expiry height that counts, or null: of the approved transaction on a browser that
+// approved (one seat can rewrite the proposal), else of the proposal.
+export function expiryAt(ss) {
+  if (!state.wallet) return null;
+  const own = markOf(state.gid, ss.id).approved ? afterOf(ss) : ss.pczt;
+  const ins = own ? inspectPczt(own) : null;
+  return ins && !ins.error && Number.isInteger(ins.expiry_height) ? ins.expiry_height : null;
 }
 
 // The id that the payment's transaction gets on chain, from the approved PCZT. One seat writes
@@ -361,11 +407,274 @@ export function onChain(ss) {
 // gone only EXPIRY_MARGIN blocks after its expiry height, as a message does, because a
 // reorganisation of the last blocks can still bring it on chain.
 export function expired(ss) {
+  // A browser that approved takes the engine's word, also when the proposal does not decode.
+  if (boundExpired(ss) || pastCeiling(ss)) return true;
   const e = !ss.error && expiryOf(ss), c = curChain();
-  if (!e || onChain(ss)) return false;
+  // `landed`: once signing started, a proposal that one seat rewrote does not count.
+  if (!e || landed(ss)) return false;
   if (!ss.final) return e.expired;
-  return c.bal.height >= inspectOf(ss).expiry_height + EXPIRY_MARGIN;
+  return c.bal.height >= expiryAt(ss) + EXPIRY_MARGIN;
 }
+
+// Two days of 25-second blocks (more days at 75 seconds, so the bounds below only grow).
+export const DAY2_BLOCKS = 2 * 3456;
+// A seat approves only a payment that expires at most one day of blocks and one day of slack
+// after the next block (`expiry::check` of the engine), so nothing that it approved can land
+// after that and the margin, even when this browser lost the PCZT.
+function pastCeiling(ss) {
+  const tip = markOf(state.gid, ss.id).tip, c = curChain();
+  if (!Number.isInteger(tip) || !c || !c.bal) return false;
+  return c.bal.height >= tip + 1 + DAY2_BLOCKS + EXPIRY_MARGIN && !landed(ss);
+}
+
+// ── What this browser keeps about a session (TICKETS.md ZEC-9, ZEC-13) ──
+// `approved`: the sighash that a seat approved, and `tip`, the chain height at that moment, in
+// the secrets of the seat next to the nonces, where the burn of a nonce does not reach.
+// ponytail: one small entry per approval, never pruned (and one per session in `zf-signing`).
+export function markOf(gid, sid) {
+  const all = mySeatSecrets(gid).map(([, s]) => (s.marks || {})[sid]).filter(Boolean);
+  const m = all.find((x) => isStr(x.approved));
+  return { approved: m?.approved ?? null, tip: m?.tip ?? null };
+}
+const withMark = (marks, sid, patch) => ({ ...marks, [sid]: { ...(marks || {})[sid], ...patch } });
+
+// What this browser saw of a session, in its own local key: that its signing started (a package,
+// a signed or final part or a sent mark) under "<gid>:<sid>", and that it was sent under
+// "<gid>:<sid>:sent". One seat or the server can drop those parts later. It is no secret.
+// A check reads the stored text at most every SEEN_MS (an approval reads it at once), so a mark
+// of another tab counts. Only `true` values are taken, and they are merged into the marks of this
+// tab, so broken storage drops none. A tab that cannot read the key writes nothing, so it cannot
+// drop the marks of another tab. A failed write, or a stored text without a mark of this tab
+// (another tab wrote in the same moment), is written again at the next note.
+const SEEN_KEY = "zf-signing", SEEN_MS = 250;
+let seen = {}, seenText = null, seenAt = 0, seenRead = true, unsaved = false;
+function seenNow(fresh = false) {
+  if (!fresh && Date.now() - seenAt < SEEN_MS) return seen;
+  seenAt = Date.now();
+  let text = null;
+  try { text = localStorage.getItem(SEEN_KEY); seenRead = true; }
+  catch { seenRead = false; return seen; }
+  if (text !== seenText) {
+    seenText = text;
+    const stored = trueOnly(text);
+    // Another tab wrote without a mark of this tab: write the merged marks at the next note.
+    if (Object.keys(seen).some((k) => !stored[k])) unsaved = true;
+    seen = { ...seen, ...stored };
+  }
+  return seen;
+}
+function trueOnly(text) {
+  try {
+    const marks = Object.entries(JSON.parse(text || "{}"));
+    return Object.fromEntries(marks.filter(([, v]) => v === true));
+  } catch { return {}; }
+}
+export const sawSigning = (gid, sid, fresh) => seenNow(fresh)[gid + ":" + sid] === true;
+const seenSigning = (sid, fresh) => sawSigning(state.gid, sid, fresh);
+const sawSent = (sid) => seenNow()[state.gid + ":" + sid + ":sent"] === true;
+export function noteSessions() {
+  const keys = state.sessions.flatMap((ss) => seenKeys(ss)).filter((k) => seenNow()[k] !== true);
+  if (!keys.length && !unsaved) return;
+  seen = { ...seenNow(true) };
+  for (const k of keys) seen[k] = true;
+  unsaved = !seenRead || !saveSeen();   // saved again at the next call
+}
+
+function saveSeen() {
+  try { localStorage.setItem(SEEN_KEY, S(seen)); } catch { return false; }
+  seenText = S(seen);
+  return true;
+}
+const seenKeys = (ss) => [
+  ...(signingStarted(ss) ? [state.gid + ":" + ss.id] : []),
+  ...(ss.broadcastTxid ? [state.gid + ":" + ss.id + ":sent"] : []),
+];
+
+// The PCZT that a seat of this browser approved, kept in its own sealed store. Null until it
+// loads (the page draws again then) and when there is none.
+const kept = new Map();
+function keptPczt(gid, sid) {
+  const k = gid + ":" + sid;
+  if (!kept.has(k)) {
+    kept.set(k, null);
+    loadKept(gid, sid).then((p) => {
+      if (isStr(p) && kept.get(k) == null) { kept.set(k, p); keptRev += 1; render(); }
+    });
+  }
+  return kept.get(k);
+}
+async function keep(gid, sid, pczt) {
+  kept.set(gid + ":" + sid, pczt);
+  keptRev += 1;
+  await saveKept(gid, sid, pczt);
+}
+
+// Signing started: the document says so, this browser saw it before, or a seat of it approved.
+// Then only the engine says "done" and "expired" for a browser that approved.
+export const signingSeen = (ss) => signingStarted(ss) || seenSigning(ss.id)
+  || !!markOf(state.gid, ss.id).approved;
+// The document lost the signing parts that this browser saw: one seat reset it.
+export const signingLost = (ss) => seenSigning(ss.id) && !signingStarted(ss);
+// A seat of this browser approved another transaction than the proposal shows now.
+export const approvalChanged = (ss) => {
+  const bound = markOf(state.gid, ss.id).approved, ins = inspectOf(ss);
+  return !!bound && (!ins || ins.error || ins.sighash !== bound);
+};
+// No seat of this browser approves this session now: one seat reset or rewrote it. For another
+// wallet than the open one, only the seen mark counts (its proposals are not decoded here).
+export const noApproval = (ss, gid = state.gid) => sawSigning(gid, ss.id)
+  || (gid === state.gid && approvalChanged(ss));
+
+// ── The hold of an approval (TICKETS.md ZEC-13; the owner chose it on 18 October 2026) ──
+// An approval of a seat of this browser holds Send until the approved transaction can no longer
+// land. The hold comes from this browser's own records only (the approval marks and the kept
+// PCZT): one seat writes or removes the session documents, also the sent mark, and can send the
+// payment without one. It ends when a block holds the approved transaction, the engine says that
+// it expired or that another transaction spent a note of it (a payment over the same notes, a
+// move), it is 3 blocks past the expiry of the kept PCZT, or at the ceiling of the approval.
+let holdCache = null, keptRev = 0, marksCache = null;
+export function heldApprovals() {
+  const c = curChain();
+  if (!chainReady(c)) return [];
+  const marks = approvedMarks(state.gid), hit = holdCache;
+  const same = hit && hit.marks === marks && hit.rev === keptRev;
+  if (same && hit.bal === c.bal && hit.sent === c.sent) return hit.list;
+  const list = [...marks].filter(([sid, m]) => stillHolds(sid, m, c)).map(([sid]) => sid);
+  holdCache = { marks, rev: keptRev, bal: c.bal, sent: c.sent, list };
+  return list;
+}
+
+// The approvals of the seats of this browser in wallet `gid`: session id to {approved, tip}. A
+// mark without a chain height has no ceiling, so it holds nothing (only `approveNow` writes
+// marks, always with one). Each write of marks puts a new object (`withMark`, a read of
+// storage), so the same objects hold the same marks.
+function approvedMarks(gid) {
+  const refs = mySeatSecrets(gid).map(([, s]) => s.marks), hit = marksCache;
+  if (hit && hit.gid === gid && sameRefs(hit.refs, refs)) return hit.out;
+  marksCache = { gid, refs, out: collectMarks(refs) };
+  return marksCache.out;
+}
+const sameRefs = (a, b) => a.length === b.length && a.every((r, i) => r === b[i]);
+const validMark = (m) => !!m && isStr(m.approved) && Number.isInteger(m.tip);
+function collectMarks(refs) {
+  const out = new Map();
+  for (const marks of refs) {
+    for (const [sid, m] of Object.entries(marks || {})) {
+      if (!out.has(sid) && validMark(m)) out.set(sid, m);
+    }
+  }
+  return out;
+}
+
+function stillHolds(sid, m, c) {
+  if (c.bal.height >= m.tip + 1 + DAY2_BLOCKS + EXPIRY_MARGIN) return false;
+  const own = keptPczt(state.gid, sid), v = holdState(own, m.approved, c);
+  if (v.state === "done" || v.state === "expired" || v.spent === true) return false;
+  return !keptExpired(own, m.approved, c.bal.height);
+}
+
+// What the engine says of the approved transaction alone, without any session document.
+function holdState(own, bound, c) {
+  try { return J(c.cw.sessionState(own || "", "", bound)); }
+  catch { return { state: "unknown" }; }
+}
+
+function keptExpired(own, bound, height) {
+  const ins = own ? inspectPczt(own) : null;
+  if (!ins || ins.error || ins.sighash !== bound) return false;
+  return height >= ins.expiry_height + EXPIRY_MARGIN;
+}
+
+// A payment that a seat of this browser approved and that it saw sent: its chip says
+// "Confirming" while the approval holds, whatever the document says later.
+export const approvedHold = (ss) => (sawSent(ss.id) || !!ss.broadcastTxid)
+  && heldApprovals().includes(ss.id);
+// Another transaction spent a note of the transaction that a seat of this browser approved, 3
+// blocks deep, so it can no longer land.
+export const approvedSpent = (ss) => !!markOf(state.gid, ss.id).approved
+  && verdict(ss)?.spent === true;
+const chainReady = (c) => !!(c && c.cw && c.bal && c.sent);
+const verdicts = new Map();
+
+// The state of a payment from the engine once its signing started (TICKETS.md ZEC-13): "done",
+// "expired" or "unknown", with `txid` and `why`. `bound`: a seat of this browser approved it.
+// Without an approval the engine names only what t seats signed. Null before signing starts and
+// before the first sync. A cancel or failure part does not count: one seat writes it.
+export function verdict(ss) {
+  const c = curChain();
+  if (!chainReady(c) || !signingSeen(ss)) return null;
+  const at = verdictInputs(ss), id = state.gid + ":" + ss.id, hit = verdicts.get(id);
+  if (sameInputs(hit, at) && (sameSync(hit, c) || settled(hit.v, c))) return hit.v;
+  let v;
+  try { v = J(c.cw.sessionState(at.pczt, at.signed, at.bound)); }
+  catch (e) { v = { state: "unknown", txid: null, why: said(e) }; }
+  v = { ...v, bound: !!at.bound };
+  verdicts.set(id, { ...at, bal: c.bal, sent: c.sent, v });
+  return v;
+}
+
+// A sync gives the chain a new `bal` and a new `sent`, so they count by identity. A verdict whose
+// transaction a block still holds needs no new call after a sync (most of the history).
+const sameInputs = (hit, at) => !!hit && hit.bound === at.bound && hit.pczt === at.pczt
+  && hit.signed === at.signed;
+const sameSync = (hit, c) => hit.bal === c.bal && hit.sent === c.sent;
+const settled = (v, c) => (v.state === "done" || !v.bound) && isStr(v.txid) && c.sent.has(v.txid);
+
+// The inputs of `sessionState`: the approved sighash (empty when there is none), the kept PCZT
+// (else the proposal) and the signed part.
+function verdictInputs(ss) {
+  const bound = markOf(state.gid, ss.id).approved || "";
+  const own = bound ? keptPczt(state.gid, ss.id) : null;
+  const signed = isStr(ss.signed) ? ss.signed : "";
+  return { bound, pczt: own || (isStr(ss.pczt) ? ss.pczt : ""), signed };
+}
+
+// A block holds the payment: from the engine once signing started, else from the id of the
+// proposal. A browser without an approval takes what t seats signed, and the id of the proposal
+// as before (one seat can copy an older payment into its session: TICKETS.md ZEC-13).
+export function landed(ss) {
+  const v = verdict(ss);
+  if (!v || !v.bound) return onChain(ss) || (!!v && isStr(v.txid) && curChain().sent.has(v.txid));
+  return v.state === "done";
+}
+
+// A payment that "Propose again" may follow: by height before its signing starts. After, only
+// when the engine says "expired" and this browser knows the notes that the new proposal spends.
+export const ended = (ss) => signingSeen(ss)
+  ? verdict(ss)?.state === "expired" && !!afterOf(ss) : expired(ss);
+
+// The PCZT whose notes a payment proposed again must spend: of the kept PCZT, the proposal and the
+// signed part, the one whose sighash is the approved one. Null when there is none.
+function afterOf(ss) {
+  const bound = markOf(state.gid, ss.id).approved;
+  if (!bound || !state.wallet) return null;
+  const list = [keptPczt(state.gid, ss.id), ss.pczt, ss.signed].filter(isStr);
+  return list.find((p) => inspectPczt(p)?.sighash === bound) ?? null;
+}
+
+// The transactions of this wallet that went on chain from two days of blocks before the expiry
+// of the approved transaction, from the engine (`snapshot().sent`, each with its height `h`): the
+// signers check them before they propose an expired payment again. One seat writes the session
+// documents, so none of them counts here. Null when this browser cannot tell.
+let sinceCache = { sent: null, list: new Map() };
+export function sinceOf(ss) {
+  const c = curChain(), at = expiryAt(ss);
+  if (!chainReady(c) || at === null) return null;
+  const from = Math.max(0, at - DAY2_BLOCKS);
+  if (sinceCache.sent !== c.sent) sinceCache = { sent: c.sent, list: new Map() };
+  if (!sinceCache.list.has(from)) {
+    let txids = null;
+    try { txids = J(c.cw.snapshot()).sent.filter((x) => x.h >= from).map((x) => x.txid); }
+    catch (e) { log("could not read the sent transactions: " + said(e)); }
+    sinceCache.list.set(from, txids && { from, txids });
+  }
+  return sinceCache.list.get(from);
+}
+
+const boundExpired = (ss) => {
+  const v = verdict(ss);
+  return !!v && v.bound && v.state === "expired";
+};
 
 // A payment that has a signing package may have a signed transaction that a block holds. One seat
 // can rewrite the proposal and drop the later parts, so the page cannot tell which transaction
@@ -375,15 +684,31 @@ export const signingStarted = (ss) => !!(ss.package || ss.signed || ss.final || 
 // An expired payment ends with a new proposal of the same recipients, amounts, memos, note and
 // fee choice, which needs new approvals. A move proposes the move again.
 export async function proposeAgain(ss) {
-  if (ss.move) { closeSession(); await proposeMove(); return; }
-  const payees = payeesOf(ss);
+  const after = afterOf(ss);
+  if (signingSeen(ss) && !after) {
+    throw new Error("This browser cannot tell which notes the expired payment spent, so it does "
+      + "not propose it again. Check the activity of the wallet.");
+  }
+  if (ss.move) { closeSession(); await proposeMove(after); return; }
+  const payees = payeesOf(ss), ins = againFrom(ss, after);
   Object.assign(ui, {
     pay: payees.length ? payeeRows(payees, () => ++ui.payKey) : null, listError: "",
-    note: typeof ss.note === "string" ? ss.note : "", priority: priorityTimes(inspectOf(ss)) > 0,
-    send: true, sendFor: null,
+    note: typeof ss.note === "string" ? ss.note : "", priority: priorityTimes(ins) > 0,
+    send: true, sendFor: null, after,
   });
   closeSession();
   render();
+}
+
+// After signing, the rows of the document (one seat writes it) must be what the approved
+// transaction pays, and the fee is that of the approved transaction.
+function againFrom(ss, after) {
+  const ins = after ? inspectPczt(after) : inspectOf(ss);
+  if (after && recipientCheck(ss, ins).match !== true) {
+    throw new Error("The recipients of this payment changed after your approval, so this browser "
+      + "does not propose it again. Check the activity of the wallet.");
+  }
+  return ins;
 }
 
 // A fee above the ZIP 317 fee is a priority fee: this many times the standard fee, or 0. The

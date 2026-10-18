@@ -38,7 +38,7 @@ export function clearBadBanner() {
 export function log(msg) { state.log.unshift(new Date().toLocaleTimeString() + "  " + msg); state.log.length = Math.min(state.log.length, 60); }
 // View state that only this browser cares about.
 export const ui = {
-  forget: false, tab: "overview", send: false, pay: null, payKey: 0, listError: "",
+  forget: false, tab: "overview", send: false, pay: null, payKey: 0, listError: "", after: null,
   create: false, receive: false, move: false, net: "testnet", ack: false, notify: false,
   newChat: false, leave: false, backup: null, restore: null,
   request: null, note: "", priority: false, sendFor: null, contactAdd: false,

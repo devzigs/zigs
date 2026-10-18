@@ -192,6 +192,24 @@ export async function saveSnapshot(c) {
   catch (e) { log("could not save wallet state: " + (e.message || e)); }
 }
 
+// The PCZT of a payment that a seat of this browser approved (TICKETS.md ZEC-13), sealed
+// with the group key like the sync state. Losing it only turns "expired" into "unknown".
+const keptId = (gid, sid) => "kept:" + gid + ":" + sid;
+export async function saveKept(gid, sid, pczt) {
+  try {
+    const sealed = Z.secretSeal(gkeys[gid], "kept\n" + gid + ":" + sid, pczt);
+    await idb("readwrite", (st) => st.put(sealed, keptId(gid, sid)));
+  }
+  catch (e) { log("could not keep the approved payment: " + (e.message || e)); }
+}
+export async function loadKept(gid, sid) {
+  try {
+    const sealed = await idb("readonly", (st) => st.get(keptId(gid, sid)));
+    return sealed ? Z.secretOpen(gkeys[gid], "kept\n" + gid + ":" + sid, sealed) : null;
+  }
+  catch (e) { log("kept payment unreadable: " + (e.message || e)); return null; }
+}
+
 // Another tab saved: take its secrets and chats, so this tab neither misses nor overwrites them.
 const TAB_KEYS = new Set(["zf-secrets", "zf-chats", "zf-vault"]);
 export async function takeFromTab(key, value) {

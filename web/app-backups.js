@@ -21,6 +21,7 @@ import {
 } from "./app-account.js";
 import { once, render } from "./app-loop.js";
 import { solRestore } from "./app-sol.js";
+import { heldApprovals } from "./app-payments.js";
 
 const SOL_BACKUP_KIND = "zigs-sol-backup";
 
@@ -45,10 +46,11 @@ const ACCOUNT_FILE_NOTE = "The file holds the seed of the account and your conta
 const PASS_NOTE = "This passphrase opens your key share. Zigs cannot recover it. Write it down and "
   + "keep it apart from the file.";
 
-// Nonces stay out: a restored copy must never sign with a nonce this browser may also use.
+// Nonces stay out: a restored copy must never sign with a nonce this browser may also use. The
+// marks of the payments (ZEC-13) stay out too: a restore does not take them back.
 export function backupText(i) {
   const {
-    nonces: _nonces, backupSaved: _saved, backedUp: _oldFlag, sol: _sol, ...s
+    nonces: _nonces, backupSaved: _saved, backedUp: _oldFlag, sol: _sol, marks: _marks, ...s
   } = sec(state.gid, i);
   s.uid = s.uid || state.seats[i].uid;
   return S({
@@ -378,13 +380,21 @@ function rejectRestore(w) {
 // A restored seat that does not fit is no seat of this browser (seatOwned). The watch of a restore
 // is in memory, so after a reload no restore settles it: the note stays.
 // Removing it deletes only this browser's copy. The wallet's verdict can come from a document that
-// any holder of the invite link can rewrite, so removal asks first.
+// any holder of the invite link can rewrite, so removal asks first. A seat whose approval still
+// holds Send stays: its removal would end that hold (ZEC-13).
 const STALE_RESTORE = "This restored seat does not match the wallet, so this browser does not use "
   + "it. Remove it from this browser, then restore the right backup.";
+const STALE_HOLDS = "This restored seat does not match the wallet, so this browser does not use "
+  + "it. It approved a payment that can still go on chain, so it stays until a block holds that "
+  + "payment or it expires. Then remove it and restore the right backup.";
+const holdsApproval = (gid, i) => heldApprovals().some((sid) => (sec(gid, i).marks || {})[sid]);
 export function staleRestoreNote() {
   const gid = state.gid, stale = mySeatSecrets(gid).filter(([i, s]) =>
     staleRestore(s, () => fitState(i, s), restoreWatch.has(skey(gid, i)))).map(([i]) => i);
   if (!stale.length) return null;
+  if (stale.some((i) => holdsApproval(gid, i))) {
+    return el("div", { class: "callout bad", role: "alert" }, STALE_HOLDS);
+  }
   const sure = ui.dropStale === gid;
   const drop = () => {
     for (const i of stale) delete secrets[skey(gid, i)];
