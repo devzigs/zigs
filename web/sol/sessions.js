@@ -209,6 +209,7 @@ export function heldNotes(sessions, utxos) {
     .filter((ss) => isPayment(ss) && !ENDED.has(ss.status))
     .map((ss) => ({
       id: ss.id,
+      by: ss.by,
       expiry: decodeIntent(ss.intent).expiry,
       lamports: sumOver(amountOf, ss.inputIds ?? []),
     }))
@@ -218,6 +219,12 @@ export function heldNotes(sessions, utxos) {
 
 /** The lamports of the synced notes that open payments hold, each note once: not available. */
 export const heldLamports = (sessions, utxos) => sumOver(amountsOf(utxos), openInputs(sessions));
+
+/** The lamports of the synced notes that a sent payment spent: the next sync drops them (S4). */
+export function spentLamports(sessions, utxos) {
+  const sent = sessions.filter((ss) => ss.status === "sent" && isPayment(ss));
+  return sumOver(amountsOf(utxos), sent.flatMap((ss) => ss.inputIds ?? []));
+}
 
 /** A payment that executed spent its inputs: every open payment over one of them ends. */
 function endSpent(sessions) {

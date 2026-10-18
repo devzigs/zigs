@@ -318,6 +318,7 @@ Evidence marked "checked" was read in the repo during this synthesis. All other 
 - **Scope:** the executor choice, the lease and the text.
 - **Mitigation:** fund all three fee addresses before the demo (section 8).
 - **Files:** web/sol/execute.js, web/sol/signing.js, web/sol/payview.js, web/test/sol-pay.mjs.
+- **Live check (passed, 18 October 2026):** `solspike/harness/scenario-g.mjs` at `dbd240e` on Devnet, with the owner's approval. Only the fee address of seat 1 had SOL; seats 2 and 3 held 0 lamports. Seat 1 proposed P1 (0.001 SOL to key B, create `d9fkHyUTEJNShdfjtXKufC1KQ3jn2MhLtTyoEpywmH9KNcrAbb8iZWNJkyxcw8PAHjPvGNMEWGoHzDLwMcxT5r2`, slot 512517250) and its page closed. Seats 2 and 3 approved, and for 90 s (18 polls) they showed no execute error and no red banner while the proposal account kept its body. A new page of seat 1 executed P1 (`3ZytbWVsua1GgmLVSG2ocervHPTRU2EqynfD4YJvGKj3sAem5Atuw9LYvAkm3b1dgykscg8EiBz5LwaE1ck17YPT`, slot 512517818, 150,254 compute units), paid the fee and got the rent back; key B received 1,000,000 lamports. The fee addresses of seats 2 and 3 have no transaction on Devnet. Not checked live: whether seats 2 and 3 take an execute lease (the run does not read the lease documents).
 - **Package:** WP-S.
 
 ### S4 Show the notes that an open Solana proposal holds
@@ -332,6 +333,7 @@ Evidence marked "checked" was read in the repo during this synthesis. All other 
   - Name the holder: "All your notes are held by an open proposal (id). It ends at <time>. Add SOL or wait."
 - **Mitigation:** check the payee twice before Propose. The Abandon action is in the NICE list.
 - **Files:** web/sol/transfer.js, web/sol/sessions.js, web/sol/payview.js.
+- **Live check (passed, 18 October 2026):** the same run. While P2 (0.0015 SOL, create `617Y2CHxHa8V1wX3WHq1PcoN62CEGEveL3K3Hzur1pZMo6znJN9uE7wjt4knzUDuuqHPr6UashvAM6Ns3NWBgg7N`, slot 512517876) held the only note, the tap of P3 (0.0015 SOL) was refused with "the notes that cover this amount are held by an open proposal: wait until it ends or add SOL", and the tap of P4 (0.003 SOL) with "the synced balance does not cover the amount"; neither sent anything. The pay card said: "All your notes are held by an open proposal of seat 1 (e1c50378a2b76171cd64eb5885e3e1ea). It ends at 2026-10-19 17:04 UTC. Add SOL or wait." Seat 1 then executed P2 (`3B9VZjhMXaqVYHvdGwwwxzkDFxdDYtVM6ZjwDBLo3K4isjkRBM1Ygri4s6ZJizNP7nMAZXfHXtPQCSxPi7Q78VAy`, slot 512518243, 151,502 compute units), and key B received 1,500,000 lamports.
 - **Package:** WP-S.
 
 ### S5 Helius errors: readable text and a retry backoff

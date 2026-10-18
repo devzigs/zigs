@@ -52,6 +52,17 @@ const J = JSON.parse;
 const PASS = "a long phrase for the solana test 7";
 const step = (name) => console.log("ok  " + name);
 
+// The tab of the test can be hidden: the page listens for the "visibilitychange" of the document.
+const tab = { state: "visible", shown: [] };
+const page = globalThis.document;
+globalThis.document = new Proxy(page, {
+  get(target, key) {
+    if (key === "visibilityState") return tab.state;
+    if (key !== "addEventListener") return Reflect.get(target, key);
+    return (type, fn) => (type === "visibilitychange" ? tab.shown.push(fn) : undefined);
+  },
+});
+
 // ── A wallet with a Solana part, and the fake chain behind the Worker ──
 const gid = await rig.wallet({ name: "Pay" });
 await t.solLoad();
@@ -175,6 +186,20 @@ await waitFor("a sync with no click", () => c.autoSynced, 40000);
 assert.notEqual(c.sync.balance, undefined, "the private balance is shown");
 assert.ok(chain.commands.some((m) => m.cmd === "sync"), "the Worker synced the PDA identity");
 step("the Solana tab syncs by itself when it opens");
+
+// ── The page keeps the hash and the amount of each synced note, not its blinding (S4) ──
+{
+  const kept = chain.utxos;
+  const note = { hash: "ab".repeat(32), mint: "SOL", amount: "1500", blinding: "cd".repeat(32) };
+  chain.utxos = [{ ...note, tree: "T", leaf: "4" }];
+  await syncSolana(c);
+  const notes = [{ hash: note.hash, amount: "1500" }];
+  assert.deepEqual(c.sync.notes, notes, "the sync keeps no blinding in the page state");
+  assert.equal(c.sync.lamports, "0", "and the private lamports of the sync");
+  chain.utxos = kept;
+  await syncSolana(c);
+}
+step("the page keeps the hash and the amount of each synced note");
 
 // ── Create the nonce account: the screen, two approvals, a landed transaction ──
 const created = await proposed("createNonce");
@@ -393,6 +418,31 @@ step("a failed poll is tried again, and a sync must work before a payment counts
   c.sessions = real;
 }
 step("a payment or a deposit during a poll gets its own poll, and Sync ends a back-off");
+
+// ── A retry that comes due while the tab is hidden runs when the tab shows again ──
+{
+  const call = c.worker.call;
+  let [refused, lamports] = [1, 9_000_000];
+  c.worker.call = async (cmd, args) => {
+    if (cmd !== "sync") return call(cmd, args);
+    if (refused-- > 0) throw new Error("Helius is not answering.");
+    return { ...(await call(cmd, args)), balance: String((lamports += 1000)) };
+  };
+  pollBalances(c);
+  await waitFor("the failed poll", () => c.autoSyncFails === 1);
+  tab.state = "hidden";
+  c.autoSyncAfter = 0; // the retry is due while the tab is hidden
+  t.sol.react();
+  await sleep(300);
+  assert.equal(c.pollWanted, 1, "a hidden tab runs no sync");
+  tab.state = "visible";
+  for (const shown of tab.shown) shown();
+  // Well before the 15 s timer of the retry: the visibilitychange runs it.
+  await waitFor("the poll when the tab shows", () => c.pollWanted === 0, 5000);
+  await waitFor("the job end", () => !c.autoSyncBusy);
+  c.worker.call = call;
+}
+step("a retry that came due in a hidden tab runs when the tab shows");
 
 // ── A close during a poll: the old poll writes nothing; the reopened wallet syncs (S2) ──
 {
@@ -681,8 +731,17 @@ await waitFor("a made share that waits", () => held !== null && pendingShare(c, 
   assert.equal(savedNonces(c, seat, again), undefined, "the nonces went before the publish");
   assert.equal(usedDigest(c, seat, digestOf(again)), true);
   assert.equal(data.has(path(gid, `solsessions/${again}/shares/${seat}`)), false);
+  // The first send is refused (a Helius 429): a counted try, not the end of the session.
+  const call = c.worker.call;
+  let refused = 1;
+  c.worker.call = async (cmd, args) => {
+    if (cmd === "send" && refused-- > 0) throw new Error("Too many Helius calls. Wait a minute.");
+    return call(cmd, args);
+  };
   crash(new Error("crash before the share"));
   await waitSession(again, "sent", 40000);
+  assert.equal(refused, -1, "the refused send was tried again");
+  c.worker.call = call;
   assert.equal(data.get(path(gid, `solsessions/${again}/shares/${seat}`)).share, share);
   assert.equal(pendingShare(c, seat, again), undefined, "the pending share is cleared");
 }

@@ -84,6 +84,7 @@ with `SOLSPIKE_ORIGIN=https://app.zigs.app`:
 |---|---|
 | `harness/scenario-e.mjs` | A new group. Seat 2 restores its Zcash seat on a blank page before seat 1 taps Add Solana (a restored seat joins the Solana ceremony). The fee address of seat 1 gets 0.003 SOL, and seat 1 adds 0.002 SOL. Two transactions |
 | `harness/scenario-f.mjs` | A new group with the unified setup: the create dialog chooses Solana too, and the Solana part starts with no button. Then backups, the fee addresses, Add SOL, a payment to key B, a restore on blank pages, a second payment and a withdrawal to a public address. Ten transactions. `--resume` continues a run that stopped |
+| `harness/scenario-g.mjs` | S3 and S4 on a new group where only the fee address of seat 1 has SOL: fund seat 1 (6,000,000 lamports), Add SOL (3,000,000), P1 create and execute (seats 2 and 3 approve, seat 1 executes), P2 create and execute (it holds the only note while taps of P3 and P4 are refused). Six transactions. Set `SOLSPIKE_INTERIM` to another file than for scenario-f. `--resume` continues a run that stopped. `--mock` writes `logs/mock-g.json` |
 | `harness/sol-live.mjs` | Read only: the Worker syncs an empty wallet and reads a nonce account and the tree fees, and the policy probes |
 | `harness/scenario-d.mjs`, `harness/sol-cors.mjs` | Checks of the spike. They have not run in this tree |
 

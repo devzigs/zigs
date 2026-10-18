@@ -13,7 +13,7 @@
 import { agreement } from "./ceremony.js";
 import { CLUSTER, base58 } from "./docs.js";
 import { feeOf, payerOf } from "./fee.js";
-import { settledBlock, signingBlock } from "./gate.js";
+import { isWait, settledBlock, signingBlock } from "./gate.js";
 import {
   bytesOf,
   chainHex,
@@ -151,7 +151,7 @@ const waits = (ss, spend, seen) =>
 /** The intent of `ss` and no reason, or the reason why seat `seat` cannot review it yet. */
 function reviewBlock(c, ss, seat, spend, seen) {
   const block = signingBlock(c);
-  if (block) return { why: block };
+  if (block) return { why: block, waiting: isWait(block) };
   if (!showable(ss)) return { why: NOT_SHOWN };
   const intent = decodeIntent(ss.intent);
   if (!holdsShare(solOf(c.host, c.gid, seat))) {
@@ -193,7 +193,8 @@ function paymentReview(c, ss, seat, { spend, seen, intent }) {
  */
 export function reviewOf(c, ss, seat, spend = c.snaps?.[ss.id], seen = c.seen?.[ss.id]) {
   const early = reviewBlock(c, ss, seat, spend, seen);
-  // `waiting`: the device still reads its wallet or the account, a normal wait and no refusal.
+  // `waiting`: a normal wait and no refusal. The device still reads its wallet or the account, or
+  // a document of the wallet is still loaded or checked.
   if (early.why) return { ok: false, why: early.why, waiting: early.waiting === true };
   const { intent } = early;
   if (isPayment(ss)) return paymentReview(c, ss, seat, { spend, seen, intent });

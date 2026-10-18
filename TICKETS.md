@@ -32,6 +32,7 @@ design. These tickets list what the beta does not do yet, and what must hold bef
 | SOL-33 | P3 | dev | Pin the network of a wallet in the iPhone and Mac apps | The apps keep the first `network` that they see for a wallet in `zf-signpins` (key `network:<wallet id>`, as the web app does) and warn when the store shows another; a Swift check changes the field |
 | SOL-53 | P3 | dev | Keep the approved bodies of a seat across browsers | The rule "one body per commitment" reads the bodies that the seats of this browser approved (`approvedBodies` in `web/sol/nonces.js`); the salts read the group server too since SOL-8. A restored seat or another browser of the seat starts with none. The body hash in the proposal address (version 5) does not replace the rule: two signed bodies for one commitment are two approvals (ZOLANA.md 7.2, N3). Keep the list in a signed document, with a test of a second browser |
 | SOL-51 | P3 | dev | Check the sent mark of a payment against the chain | A member can write a sent mark with a well-formed transaction id, and every device then stops the execute and shows "Executed". A device reads the proposal account (gone) and the marked transaction (it carries the Ed25519 instruction of the approval) before it trusts a mark of another seat, and a test writes a false mark |
+| SOL-60 | P2 | dev | Let a seat check the full payee address before it approves | The approval screen of a private payment shows the whole shielded address of the payee (99 bytes: signing key, nullifier key, viewing key), and a seat can compare all of it with the Shielded address on the Solana tab of the payee group. Today the "Payee" row and the program address cover the first 34 bytes only (`wasm-sol/src/address.rs:6-17`), so a typo in the rest passes the check and the payee group cannot find or spend the note. S15 of `docs/hackathon-release.md` accepts the 34-byte check for the demo. This needs a spec change: the checked intent holds the owner hash and the viewing key (the "Payee keys" row), and the spec must say how the screen shows and checks the rest |
 | SOL-37 | P2 | owner | Freeze the SDK pin through the demo, and move it only by trigger | Keep `PIN` `c232da1b` (`solspike/build.mjs`), the bundle, the wasm and approvals version 5 through the November demo; the rules and the triggers are in "SOL-37: freeze and move plan" below the table. Done when Helius names the stable release after its breaking window, Devnet runs it, the move checklist passes and a Devnet payment lands. Linked: SOL-3 (a new pool or SDK needs a new review), SOL-15 (bundle rules), SOL-43 (pool hash check) |
 | SOL-38 | P3 | dev | Move the public SOL that a group key held before the fee keys | The page proposes a group intent that moves the public SOL of the owner address to the fee address of a seat (a checker rule that allows only that transfer, an approval screen, tests), or ZOLANA.md says that this SOL stays. Today it stays where it is: nothing pays from the group address, and the screen shows its balance |
 | SOL-54 | P3 | dev | Test the replay guard of the approvals program after the nullifier PDA closes | A test shows that a second `execute` of an approved payment (the proposal created again) fails inside `transact` also after the pool closes the nullifier PDA of the first execute. The PDA closes only after a forester batch proof inserts the queued nullifier in the nullifier tree (`is_closable` in the pool), so the test runs the forester of the pinned commit and needs the `batch_address-append` proving key (3.7 GB for the default tree, `batch_address-append_40_250.key`; 137 MB for a test tree with a batch size of 10). SOL-41 covers the queued case only |
@@ -62,6 +63,16 @@ demo. Do not move to `8178be7c`, to Zolana main or to SDK 0.5.0-alpha:
   viewing keys to X25519 and owner keys to one Ed25519 secret, and the PR says that programs,
   prover, SDKs and proving keys must move together. Ask Helius (owner) to announce each Devnet
   pool or gateway change with a date.
+- Also watch two open PRs of Zolana. #427 (draft) rotates every transfer proving key: the bundle and
+  the SOL-4 local prover must pin the new keys, every proof of the old bundle fails, and so no open
+  proposal may stay at the switch. #427 in the deployed commit is T3. #425 refuses plaintext proofs
+  to a remote prover, which stops the hosted-prover path of `web/sol/worker.js`; the owner then
+  chooses the SOL-4 local prover or a TEE policy.
+- The branch `claude/sol37-readiness` (on main `3a31a5f`) holds the move to Zolana main `eabd8e0f`
+  for T2: the bundle, the approvals program crates, the checker pins and the tree of 18,608 bytes in
+  demo-check. It fails against today's Devnet by design. Merge it only together with a T2 redeploy,
+  never before, and rebase it on the main of that day first. It is not enough when #434, #427 or
+  #425 is in the release.
 - A repin in this release overrides the rule "Do not rebuild the Solana SDK bundle in this
   release" of docs/hackathon-release.md: it needs the owner, and docs/demo.md section 3 sets the
   cut-off (T-10, never in the last week).
@@ -81,8 +92,8 @@ applies: stop the Solana part and show the recorded run.
 
 - **T0:** the pool hash changed, and the "tree 0" check still passes. The source of `programs`
   and `program-libs` equals `c232da1b`, or differs only in a change that touches no state layout
-  and no transact interface (read the diff). Examples: a redeploy of `release/devnet-c`, or #431
-  on `release/devnet-c`. A redeploy from main is T2. Action: confirm with `git diff`. Update the
+  and no transact interface (read the diff). Example: a redeploy of `release/devnet-c` (#431 is
+  not on that branch today). A redeploy from main is T2. Action: confirm with `git diff`. Update the
   pool hash in `solspike/tools/demo-check.mjs` and ZOLANA.md 6.1. Simulate one transact (read
   only): its compute stays between `CU_FLOOR_TRANSACT` 144,591 and the cap 217,000
   (`wasm-sol/src/template.rs`, `web/sol/worker.js`).
@@ -101,12 +112,13 @@ applies: stop the Solana part and show the recorded run.
   ("tree 0 has N bytes, not the layout of the SDK pin"), or error 7001 together with those FAILs.
   Follow the checklist at the new commit; change `TREE_BYTES` (the offset 116 stays) and the pool
   hash in `solspike/tools/demo-check.mjs`; measure the nullifier root window on Devnet (ZOLANA.md
-  6.10: the history of 100 roots becomes 5). A tree id other than 0 also needs
-  `web/sol/transfer.js`, `wasm-sol/src/pins.rs` and an SDK change (Zolana `tree-slot.ts`). Risk:
+  6.10: the history of 100 roots becomes 5). A tree id other than 0 needs no SDK change
+  (`createZolanaClient({ treeId })`), only `web/sol/transfer.js`, `web/sol/worker.js`,
+  `wasm-sol/src/pins.rs` and demo-check. Risk:
   after an in-place upgrade, every transact fails, a withdrawal too, and nothing can be done
   afterwards. Keep the Devnet balances at what the demo needs.
 - **T3:** a new pool id, or an in-place upgrade that changes the verifying keys or the viewing
-  keys (#434). demo-check cannot show it, because it reads the old pool address. The signal is
+  keys (#434, #427). demo-check cannot show it, because it reads the old pool address. The signal is
   an announcement of Helius, error 14101 from `execute` (the pool in the call differs from the
   pool in the approvals ELF, either way), or the stop text. Order:
   1. Withdraw every funded group, the old group-key identity too, on the current stack, while
@@ -216,6 +228,7 @@ ZNS maps a name to a unified address through an on-chain registry. The spike is
 
 | Id | Title | Closed by |
 |---|---|---|
+| S3, S4 (WP-S) | Prove on Devnet that only a funded seat executes, and that a held note names its proposal | `scenario-g.mjs` at `dbd240e`, 18 October 2026, with the owner's approval: 6 transactions (fund `5vBUWLxn…`, Add SOL `4pvkrFRL…`, P1 create and execute, P2 create and execute; slots 512517250 to 512518243). Seats 2 and 3 held 0 lamports and sent nothing during the 90 s window; seat 1 executed both payments. P3 and P4 were refused with no send. Not checked live: whether seats 2 and 3 take an execute lease. Details: S3 and S4 of docs/hackathon-release.md |
 | M3, M4 | One setup for Zcash testnet and Solana Devnet, and a restored seat in the Solana ceremony (docs/hackathon-release.md) | Merged in main 0ffd3ee. The live Devnet run on 0ffd3ee passed `scenario-f.mjs` (M3) and `scenario-e.mjs` (M4) on 18 October 2026; the slots and signatures are in docs/hackathon-release.md, M3 and M4 (rebuilt from Devnet: the harness JSON was lost) |
 | ZEC-10 | Allow one open payment, or keep its notes apart | S8 (ec4b434, on main in 2cee058): Send is off while a payment is open (not cancelled, failed, sent or expired, and in the expiry window of the synced height), every proposal asks the blockers of Send, and a second click on Propose waits for the first; tests in web/test/app.mjs. The live 2-of-2 payment of 18 October 2026 ran on it (txid `1f26db1b…`, block 4,516,013) |
 | SOL-52 | Get back the rent of a proposal that expired | Branch `claude/sol52-rent` (live run on 13b77d9, merged at 0168633): the page lists the proposal accounts of its fee keys and offers `cancel` and `close_cancelled` after the expiry, and a checker rule allows only those messages. Live on Devnet on 18 October 2026 (ZOLANA.md 6.14): a cancel before the expiry was refused (6017), and the cancel after the expiry (`TT5FcQJt…`) closed the account and gave back the 1,356,360 lamports of rent |
