@@ -41,7 +41,7 @@ import {
 } from "../sol/sessions.js";
 import { selectInputs } from "../sol/transfer.js";
 import { solView } from "../sol/view.js";
-import { FRONT_RUN, verifies } from "./sol-chain.mjs";
+import { FRONT_RUN, POOL_SLOT, verifies } from "./sol-chain.mjs";
 import { G, preparedOf, transactOf, useTestGroup, utxoOf } from "./sol-fixture.mjs";
 import {
   W,
@@ -1304,5 +1304,31 @@ step("SOL-4 with the switch on, prepare and the fresh proof of the execute run o
   }
 }
 step("SOL-4 the gate answers local with the pin alone, and refuses when it cannot read the server");
+// ── SOL-4 after a pool upgrade: a local group names it first, and proves here ──
+{
+  for (const i of [1, 2, 3]) await putSol(c.host, gid, i, { proveLocal: true });
+  await forgetPairs();
+  chain.prepared = preparedPay;
+  chain.utxos = [utxoOf(G.pay)];
+  chain.gates.length = 0;
+  current = await proposedPay();
+  // Helius redeployed the pool: its verifier refuses the proof of the old keys.
+  chain.poolSlot = "600000000";
+  chain.refuse = JSON.stringify({ InstructionError: [1, { Custom: 6000 }] });
+  try {
+    await approve(c, ssOf(current), 1);
+    await approve(c, ssOf(current), 2);
+    const said = () => c.execErrors[current] ?? "";
+    const moved = () => said().startsWith("Helius changed the pool. ");
+    await waitFor("the text of the moved pool", moved);
+    assert.match(said(), /The network refused the execute: .*6000/, "the refusal follows");
+  } finally {
+    chain.refuse = null;
+    chain.poolSlot = POOL_SLOT;
+  }
+  assert.ok(chain.gates.length >= 2, "the proof and the fresh proof asked the page");
+  assert.deepEqual(chain.gates.filter((mode) => mode !== "local"), [], "a proof left the device");
+}
+step("SOL-4 after a pool upgrade the execute of a local group names it first, and proves here");
 console.log("sol-pay: ok");
 process.exit(0);

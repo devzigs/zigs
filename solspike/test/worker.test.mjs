@@ -890,9 +890,13 @@ async function everyBodyIsGated() {
   assert.equal(gate.asked, 1, "a PUT with a body went out with no gate");
   await sdkFetch(new Request(`${PROVE_URL}?${KEY_NAME}=k`, { method: "POST", body: "{}" }));
   assert.equal(gate.asked, 2, "a POST Request went out with no gate");
+  // The keyed route that a coming SDK posts to instead of the bare /prove (Zolana #436).
+  const keyed = `${PROVE_URL}/transfer_confidential_1_2?${KEY_NAME}=k`;
+  await sdkFetch(keyed, { method: "POST", body: "{}" });
+  assert.equal(gate.asked, 3, "a POST to /prove/<key> went out with no gate");
   await sdkFetch(`${PROVE_URL}/status?${KEY_NAME}=k`);
   await sdkFetch(`${PROVE_URL}/status?${KEY_NAME}=k`, { method: "HEAD" });
-  assert.equal(gate.asked, 2, "a GET or a HEAD asked the gate");
+  assert.equal(gate.asked, 3, "a GET or a HEAD asked the gate");
   step("SOL-4 every call to the prove path that can carry a body waits for the gate");
 }
 

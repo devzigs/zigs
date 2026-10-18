@@ -8,6 +8,7 @@
 // Run: node web/test/sol-prove.mjs   (Node 24)
 import assert from "node:assert/strict";
 import {
+  UNREAD,
   checkLine,
   gateAnswer,
   provesLocally,
@@ -24,6 +25,19 @@ const switchDocs = () => [...data.keys()].filter((k) => k.startsWith(path(gid, "
 const pins = () => [1, 2, 3].map((i) => solOf(i).proveLocal === true);
 const selftests = () => chain.commands.filter((m) => m.cmd === "selftest").length;
 const NONE = [false, false, false];
+// A second wallet. moveWallet() does what main.js openGroup does to the fields that a step reads
+// (the id, the base path, the open count) and returns the function that moves back.
+const OTHER = "f".repeat(20);
+function moveWallet() {
+  const kept = { gid: c.gid, base: c.base, opened: c.opened };
+  Object.assign(c, { gid: OTHER, base: path(OTHER, "").slice(0, -1), opened: c.opened + 1 });
+  return () => Object.assign(c, kept);
+}
+/** Anything that a step wrote to the second wallet: a document or a seat secret. */
+const inOther = () => [
+  ...[...data.keys()].filter((k) => k.startsWith(path(OTHER, ""))),
+  ...[1, 2, 3].filter((i) => c.host.sec(OTHER, i)).map((i) => "seat " + i),
+];
 const worker = await ensureWorker(c);
 const asked = [];
 
@@ -31,6 +45,21 @@ const asked = [];
 {
   assert.equal(provesLocally(c), false);
   assert.deepEqual(await gateAnswer(c), { mode: "hosted" });
+  // The person opens another wallet during the round trip: the gate refuses, it reads nothing.
+  const sdb = c.host.sdb;
+  let back = null;
+  const lease = async () => {
+    back = moveWallet();
+    return { acquired: true };
+  };
+  c.host.sdb = { ...sdb, doc: (p) => ({ ...sdb.doc(p), acquire: lease }) };
+  try {
+    assert.deepEqual(await gateAnswer(c), { refuse: UNREAD }, "a gate across a wallet switch");
+  } finally {
+    back?.();
+    c.host.sdb = sdb;
+  }
+  assert.deepEqual(inOther(), [], "the gate wrote to the other wallet");
 }
 step("SOL-4 off: the gate answers hosted after its round trip to the group server");
 
@@ -60,28 +89,48 @@ step("SOL-4 a moved pool, a failed test proof or a no writes no switch and pins 
 
 // ── A wallet switch during the turn-on stops it: the next wallet gets nothing ──
 {
-  const opened = c.opened;
   const said = globalThis.confirm;
   globalThis.confirm = () => true; // the person would say yes: only the switch stops it
-  // The person opens another wallet while the test proof runs (main.js openGroup counts up).
+  let back = null;
+  // The person opens another wallet while the test proof runs.
   const switching = {
     call: async (cmd) => {
       if (cmd === "poolSlot") return { slot: POOL_SLOT, pinned: POOL_SLOT, text: null };
-      c.opened += 1;
+      back = moveWallet();
       return { ms: 3100 };
     },
   };
-  await assert.rejects(() => turnOnLocal(c, switching), /The wallet changed during this step/);
-  c.opened = opened;
-  globalThis.confirm = said;
+  try {
+    await assert.rejects(() => turnOnLocal(c, switching), /The wallet changed during this step/);
+  } finally {
+    back?.();
+    globalThis.confirm = said;
+  }
   assert.deepEqual([switchDocs(), pins()], [[], NONE], "a switch mid-step wrote the switch");
+  assert.deepEqual(inOther(), [], "the turn-on wrote to the other wallet");
 }
 step("SOL-4 a wallet switch during the turn-on writes no switch and pins no seat");
 
 // ── A yes: the seat signs the document, and every seat of this browser is pinned ──
 {
   globalThis.confirm = () => true;
-  await turnOnLocal(c, worker);
+  // The person opens another wallet while the seat signs: the write still goes to this wallet,
+  // the one that the person turned on, and nothing to the other one.
+  const signedDoc = c.host.signedDoc;
+  let back = null;
+  c.host.signedDoc = async (...args) => {
+    const doc = await signedDoc(...args);
+    back = moveWallet();
+    return doc;
+  };
+  try {
+    await turnOnLocal(c, worker);
+  } finally {
+    back?.();
+    c.host.signedDoc = signedDoc;
+  }
+  assert.deepEqual(inOther(), [], "the switch went to the other wallet");
+  assert.deepEqual(pins(), [true, true, true], "the seats of this wallet are pinned at once");
   assert.deepEqual(switchDocs(), [path(gid, "solprove/1")], "seat 1 signs the switch");
   await waitFor("the switch", () => provesLocally(c));
   assert.deepEqual(pins(), [true, true, true]);

@@ -100,10 +100,20 @@ export const PROVER_LOCAL =
   "and your IP address. The owner key of the payee is public on chain.";
 // The rows of one payment: the group proves on its devices now, but this payment may have been
 // proposed before the switch or from an older page, and then Helius made its first proof.
+const HOSTED_SAW =
+  "Then it saw the payee, the amount, the blindings and the secret that links each spend to " +
+  "its notes. ";
 export const PROVER_ROW_LOCAL =
   "The proof of the execute runs on a device of this group. Helius made the first proof only " +
-  "if the payment was proposed before the switch or from an older page: then it saw the amount. " +
+  "if the payment was proposed before the switch or from an older page. " +
+  HOSTED_SAW +
   "Its indexer sees which notes the payment spends.";
+// The move of the beta funds has one proof, made when it is proposed.
+export const PROVER_MOVE_LOCAL =
+  "A device of this group makes the proof of the move. Helius made it only if the move was " +
+  "proposed before the switch or from an older page. " +
+  HOSTED_SAW +
+  "Its indexer sees which notes the move spends.";
 /** What the prover of a payment of this group sees: hosted, or local with the switch (SOL-4). */
 const proverSays = (local) => (local ? PROVER_LOCAL : PROVER_TEXT);
 const proverRow = (local) => (local ? PROVER_ROW_LOCAL : PROVER_TEXT);
@@ -419,7 +429,7 @@ export function transferRows(groupKey, review, fee, local = false) {
     ["Network fee", solText(fee + said.treeFee)],
     ["Lasts", "Until " + utc(said.expiry) + " UTC, or until the nonce account advances."],
     ["Public", MOVE_PUBLIC + " " + LINK_TEXT],
-    ["Helius", proverRow(local)],
+    ["Helius", local ? PROVER_MOVE_LOCAL : PROVER_TEXT],
   ];
 }
 
