@@ -150,7 +150,9 @@ export function setTabBar(f) { tabBar = f; }
 // Private windows, Tor Browser and cleared site data delete the key share with the browser data.
 // `solSeats`: the seats whose Solana part has no saved file yet (solUnsaved, app-sol.js).
 export function backupNote(seats, solSeats = []) {
-  const text = "Back up your key share. This browser can forget it: private windows and Tor "
+  const first = seats.length ? "Back up your key share."
+    : "Back up the Solana part of your key share.";
+  const text = first + " This browser can forget it: private windows and Tor "
     + "Browser delete it when they close. The file is locked with a passphrase that you choose. "
     + "Keep the file safe, and keep the passphrase apart from it."
     + (solSeats.length ? " " + SOL_FILE : "");

@@ -249,6 +249,7 @@ assert.match(SOL_DISCLOSURE, /Every signer sees the whole Solana history/);
   t.secrets[gid + ":1"] = kept;
   assert.match(join, /Take seat 2/);
   assert.ok(join.includes(SOL_DISCLOSURE), "the join card says what Solana makes public");
+  assert.match(join, /open the link in Safari or Chrome first/, "and where to open the link");
 }
 // The preload: the module loads at the start of setup, and no Solana watch opens before the
 // people of the wallet confirmed the network.
@@ -469,6 +470,20 @@ const byId = (node, id) =>
   await waitFor("the ready tab", () => /The Solana part is ready\./.test(pageText()));
   ui.tab = "overview";
   approvalCount(t.sol.ctl);
+  // The first sentence names the file that is unsaved: a Zcash file, or only a Solana file.
+  const note = (...args) => {
+    const real = globalThis.document;
+    globalThis.document = { createElement: () => new Rec(), createTextNode: (text) => ({ text }) };
+    try {
+      return textOf(t.backupNote(...args));
+    } finally {
+      globalThis.document = real;
+    }
+  };
+  assert.match(note([2], [1]), /^Back up your key share\. This browser can forget it/);
+  assert.match(note([], [1]), /^Back up the Solana part of your key share\. This browser can/);
+  assert.match(note([], [1]), /second file, with its own passphrase/);
+  assert.doesNotMatch(note([2], []), /Solana/);
   const solButtons = () => pageText().match(/Back up Solana, seat \d/g) ?? [];
   await waitFor("the note", () => solButtons().length === 3);
   assert.match(pageText(), /The Solana part of a seat is a second file, with its own passphrase/);
