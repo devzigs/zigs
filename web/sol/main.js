@@ -11,7 +11,14 @@ import { addSolana, reactCeremony } from "./ceremony.js";
 import { COLLECTIONS, filterSol } from "./docs.js";
 import { tryAgain } from "./execute.js";
 import { propose } from "./propose.js";
-import { fetchRpcUrl, refreshChain, showSaved, syncSolana } from "./session.js";
+import {
+  autoSync,
+  fetchRpcUrl,
+  refreshChain,
+  showSaved,
+  pollBalances,
+  syncSolana,
+} from "./session.js";
 import { SESSIONS, filterSessions } from "./sessions.js";
 import { reactSessions } from "./signing.js";
 import { solView } from "./view.js";
@@ -23,8 +30,11 @@ const WATCH_MAX = 50;
 const SESSION_ID = /^[\w-]{1,64}$/;
 const ENDED = new Set(["sent", "failed"]);
 
-// What belongs to the open wallet. The host, the wasm and the Worker session outlive it.
+// What belongs to the open wallet. The host, the wasm and the Worker session outlive it. Each
+// blank state gets a new number: a step that started before a close writes nothing after it.
+let opens = 0;
 const blank = () => ({
+  opened: ++opens,
   gid: null,
   base: null,
   raw: {},
@@ -32,6 +42,12 @@ const blank = () => ({
   unsubs: [],
   logged: new Set(),
   sync: {},
+  viewed: false,
+  autoSynced: false,
+  autoSyncFails: 0,
+  autoSyncAfter: 0,
+  autoSyncBusy: false,
+  syncedSent: new Set(),
   chain: {},
   docs: Object.fromEntries(COLLECTIONS.map((name) => [name, {}])),
   wait: 0,
@@ -159,8 +175,8 @@ export async function attach(host) {
     execute: (ss) => tryAgain(c, ss),
     async addSol(args) {
       c.added = await addSol(c, args);
-      await refreshChain(c).catch(() => {});
       host.render();
+      if (c.added.status !== "failed") pollBalances(c);
     },
   };
   return {
@@ -174,9 +190,11 @@ export async function attach(host) {
       reactCeremony(c);
       reactAborts(c);
       reactSessions(c);
+      autoSync(c);
       showSaved(c).catch((e) => host.log("saved Solana state not shown: " + (e.message ?? e)));
     },
     view: () => {
+      c.viewed = true; // the Solana tab shows this wallet: autoSync may call Helius
       refresh(c);
       return solView(c, host.act, actions);
     },

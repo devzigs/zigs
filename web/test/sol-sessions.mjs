@@ -29,7 +29,7 @@ import {
 import { clearPending, pendingShare, savedNonces, spendNonces, usedDigest } from "../sol/nonces.js";
 import { propose } from "../sol/propose.js";
 import { putSol, remoteStop, stopOf } from "../sol/secrets.js";
-import { refreshChain } from "../sol/session.js";
+import { autoSync, refreshChain, syncSolana, syncUntilChanged } from "../sol/session.js";
 import { readSolSession, writePart } from "../sol/sessions.js";
 import { solView } from "../sol/view.js";
 import { createPrivateKey, sign as nodeSign } from "node:crypto";
@@ -160,6 +160,14 @@ assert.deepEqual(
 );
 step("the fund card reads the balances of the fee addresses");
 
+// ── The Solana tab syncs with no click once it shows the loaded wallet (S2) ──
+t.sol.view();
+t.sol.react();
+await waitFor("a sync with no click", () => c.autoSynced, 40000);
+assert.notEqual(c.sync.balance, undefined, "the private balance is shown");
+assert.ok(chain.commands.some((m) => m.cmd === "sync"), "the Worker synced the PDA identity");
+step("the Solana tab syncs by itself when it opens");
+
 // ── Create the nonce account: the screen, two approvals, a landed transaction ──
 const created = await proposed("createNonce");
 {
@@ -219,6 +227,74 @@ await waitSession(created, "sent");
 }
 
 step("create nonce account landed");
+
+// ── A landed nonce session starts no poll; a sent payment does (S2) ──
+{
+  assert.equal(c.syncedSent.size, 0, "a nonce session moves no balance");
+  const fields = { expiry: 1n, inputs: 1, outputs: 2, recipient: "11".repeat(32), amount: 1n };
+  const paid = { id: "paid", status: "sent", intent: intentHex("withdraw", fields) };
+  const [once, sessions, keys] = [c.host.once, c.sessions, []];
+  c.host.once = (key) => keys.push(key);
+  autoSync(c);
+  c.sessions = [...sessions, paid];
+  autoSync(c);
+  [c.host.once, c.sessions] = [once, sessions];
+  assert.deepEqual(keys, ["sol:autosync:" + c.opened], "only the sent payment starts a sync");
+}
+step("a nonce session starts no poll, and a sent payment does");
+
+// ── A poll waits for a late indexer (S2) ──
+{
+  const call = c.worker.call;
+  let syncs = 0;
+  const texts = [];
+  c.worker.call = async (cmd, args) => {
+    const answer = await call(cmd, args);
+    if (cmd !== "sync") return answer;
+    syncs += 1;
+    texts.push(c.sync.text);
+    return { ...answer, balance: syncs >= 3 ? "5000000" : answer.balance };
+  };
+  await syncUntilChanged(c);
+  c.worker.call = call;
+  assert.equal(syncs, 3, "the third sync shows the deposit");
+  assert.deepEqual(texts.slice(1), ["Waiting for the indexer", "Waiting for the indexer"]);
+  assert.equal(c.sync.balance, "0.005 SOL");
+}
+step("a poll after a payment waits for a late indexer");
+
+// ── A close during a poll: the old poll writes nothing; the reopened wallet syncs (S2) ──
+{
+  const syncs = () => chain.commands.filter((m) => m.cmd === "sync").length;
+  await syncSolana(c); // the shown balance is the one of the fake chain: the poll waits
+  const fields = { expiry: 1n, inputs: 1, outputs: 2, recipient: "11".repeat(32), amount: 2n };
+  const paid = { id: "paid-2", status: "sent", intent: intentHex("withdraw", fields) };
+  c.sessions = [...c.sessions, paid];
+  autoSync(c);
+  const waiting = () => c.sync.text === "Waiting for the indexer";
+  await waitFor("the poll waits for the indexer", waiting);
+  t.sol.close();
+  t.sol.open(gid, "groups/" + gid);
+  const before = syncs();
+  await sleep(4500);
+  assert.equal(syncs(), before, "the poll of the closed wallet stops");
+  assert.notEqual(c.sync.text, "Waiting for the indexer", "and writes nothing into the new state");
+  // The first sync of the reopened wallet fails once (no Worker script), then tries again by
+  // itself after 15 s: no click and no document change wakes it.
+  await waitFor("the sessions", () => c.loaded.solsessions, 30000);
+  const fetch = globalThis.fetch;
+  let refused = 0;
+  globalThis.fetch = async (url, init) => {
+    if (String(url) === "/sol/worker.js" && !refused++) return new Response("", { status: 503 });
+    return fetch(url, init);
+  };
+  t.sol.view();
+  t.sol.react();
+  await waitFor("the failed first sync", () => c.autoSyncFails === 1, 15000);
+  await waitFor("the retry", () => c.autoSynced, 30000);
+  globalThis.fetch = fetch;
+}
+step("a close during a poll writes nothing, and a failed first sync tries again by itself");
 // ── Nonces: saved before the commit, deleted before the share, never made twice ──
 {
   for (const seat of [1, 2]) {

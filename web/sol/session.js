@@ -11,6 +11,7 @@ import { base58 } from "./docs.js";
 import { feeOf } from "./fee.js";
 import { PROPOSAL_SPACE, nonceAccountHex } from "./intent.js";
 import { holdsShare, refuseStopped, solOf, stopOf } from "./secrets.js";
+import { SESSIONS, isPayment } from "./sessions.js";
 import { loadSnap, saveSnap } from "./store.js";
 
 const J = JSON.parse;
@@ -57,9 +58,28 @@ async function requireWorkerPolicy() {
 export const shareSeat = (c) =>
   stopOf(c) ? undefined : c.host.localSeats().find((i) => holdsShare(solOf(c.host, c.gid, i)));
 
+// A step that awaits checks this after each await: a wallet that closed (or opened again) meanwhile
+// gets a new number, and the step writes nothing into its state.
+const CLOSED = "The wallet closed during this Solana step.";
+export const stillOpen = (c, opened) => c.opened === opened;
+
+/** Throws when the Worker made other addresses than the wasm for this group. */
+function sameAddresses(init, roles, groupKey) {
+  const { pda } = roles;
+  const old = init.shielded === roles.address && init.owner === base58(groupKey);
+  const owner = init.pdaShielded === pda.address && init.pda === base58(pda.pda);
+  if (!old || !owner) {
+    throw new Error(
+      "The Solana worker made another address than the wasm. Do not use this wallet.",
+    );
+  }
+}
+
 async function start(c, rpcUrl, roles, groupKey) {
   if (c.worker && c.inited === rpcUrl) return;
+  const opened = c.opened;
   await requireWorkerPolicy();
+  if (!stillOpen(c, opened)) throw new Error(CLOSED);
   c.worker ??= startSolWorker();
   const { pda } = roles;
   const init = await c.worker.call("init", {
@@ -70,13 +90,7 @@ async function start(c, rpcUrl, roles, groupKey) {
     groupKey,
     pda: pda.pda,
   });
-  const old = init.shielded === roles.address && init.owner === base58(groupKey);
-  const owner = init.pdaShielded === pda.address && init.pda === base58(pda.pda);
-  if (!old || !owner) {
-    throw new Error(
-      "The Solana worker made another address than the wasm. Do not use this wallet.",
-    );
-  }
+  sameAddresses(init, roles, groupKey);
   c.inited = rpcUrl;
   c.workerAddress = "the SDK addresses equal the wasm addresses";
 }
@@ -103,12 +117,13 @@ export async function ensureWorker(c) {
 
 /**
  * Starts the Worker if needed, syncs the funds of the group (the PDA identity) and the beta funds
- * of the group key, and seals the result into the snapshot store.
+ * of the group key, and seals the result into the snapshot store. `busyText` is the worker line
+ * while it runs.
  */
-export async function syncSolana(c) {
-  const { host, gid } = c;
+export async function syncSolana(c, busyText = "syncing") {
+  const { host, gid, opened } = c;
   const { rpcUrl, s, roles } = workerInputs(c);
-  c.sync = { ...c.sync, busy: true, text: "syncing" };
+  c.sync = { ...c.sync, busy: true, text: busyText };
   host.render();
   try {
     await start(c, rpcUrl, roles, s.groupKey);
@@ -117,12 +132,14 @@ export async function syncSolana(c) {
     const snap = { slot: r.slot, balance: r.balance, utxos: r.utxos, at: Date.now() };
     snap.old = { balance: old.balance, movable: old.movable, utxos: old.utxos };
     await saveSnap(host.Z, roles.seal_key, gid, snap);
+    if (!stillOpen(c, opened)) return;
     c.sync = {
       balance: solText(r.balance),
       oldBalance: old.movable,
       text: "synced at slot " + r.slot + ", " + c.workerAddress,
     };
   } catch (e) {
+    if (!stillOpen(c, opened)) return;
     c.sync = { ...c.sync, busy: false, text: "failed: " + (e.message ?? e) };
     throw e;
   } finally {
@@ -138,6 +155,7 @@ export async function syncSolana(c) {
  */
 export async function refreshChain(c) {
   const { groupKey } = agreement(c).done;
+  const { opened } = c;
   const worker = await ensureWorker(c);
   const owner = base58(groupKey),
     nonce = base58(await nonceAccountHex(groupKey));
@@ -149,6 +167,7 @@ export async function refreshChain(c) {
     worker.call("rent", { space: String(PROPOSAL_SPACE) }),
     ...seats.map((i) => read(base58(feeOf(c, i).key))),
   ]);
+  if (!stillOpen(c, opened)) return;
   c.chain = {
     balance: solText(funds.lamports),
     nonce: held.lamports === "0" ? "missing" : "created",
@@ -157,6 +176,93 @@ export async function refreshChain(c) {
     at: Date.now(),
   };
   c.host.render();
+}
+
+const sleep = (ms) => new Promise((done) => setTimeout(done, ms));
+// The indexer shows a deposit or an execute a few seconds after it lands.
+const POLL_MS = 4_000;
+const INDEXER_WAIT_MS = 60_000;
+const INDEXER_TEXT = "Waiting for the indexer";
+
+/**
+ * Reads the chain, then syncs every 4 s until the private balance or the beta funds change, for
+ * 60 s at most. The worker line says that the page waits for the indexer.
+ */
+export async function syncUntilChanged(c) {
+  const { opened } = c;
+  const before = [c.sync.balance, c.sync.oldBalance];
+  const end = Date.now() + INDEXER_WAIT_MS;
+  await refreshChain(c);
+  for (let text = "syncing"; stillOpen(c, opened); text = INDEXER_TEXT) {
+    await syncSolana(c, text);
+    const changed = c.sync.balance !== before[0] || c.sync.oldBalance !== before[1];
+    if (!stillOpen(c, opened) || changed || Date.now() > end) return;
+    c.sync = { ...c.sync, busy: true, text: INDEXER_TEXT }; // the Sync button waits too
+    c.host.render();
+    await sleep(POLL_MS);
+  }
+}
+
+// A first sync that failed is tried again after 15 s, then twice as long each time up to 5 min.
+const RETRY_FIRST_MS = 15_000;
+const RETRY_MAX_MS = 300_000;
+const unsynced = (c) =>
+  c.sessions.filter((ss) => ss.status === "sent" && isPayment(ss) && !c.syncedSent.has(ss.id));
+const markSynced = (c) => unsynced(c).forEach((ss) => c.syncedSent.add(ss.id));
+// The Solana tab showed this wallet, its sessions are loaded and checked: a sync may call Helius.
+const shown = (c) => c.viewed && c.rpcUrl && c.loaded[SESSIONS] && c.sessWait === 0;
+// No sync runs, the retry time passed, and the tab of the browser is not hidden.
+const due = (c) =>
+  !c.autoSyncBusy &&
+  Date.now() >= c.autoSyncAfter &&
+  globalThis.document?.visibilityState !== "hidden";
+
+async function firstSync(c, opened) {
+  try {
+    await refreshChain(c);
+    if (stillOpen(c, opened)) await syncSolana(c);
+    if (!stillOpen(c, opened)) return;
+    c.autoSynced = true;
+    markSynced(c); // a payment sent before the tab opened needs no second sync
+  } catch (e) {
+    if (!stillOpen(c, opened)) return;
+    c.autoSyncFails += 1;
+    const wait = Math.min(RETRY_FIRST_MS * 2 ** (c.autoSyncFails - 1), RETRY_MAX_MS);
+    c.autoSyncAfter = Date.now() + wait;
+    c.sync = { ...c.sync, busy: false, text: "failed: " + (e?.message ?? e) };
+    c.host.render();
+    setTimeout(() => c.host.refilter(), wait + 100); // a pass of the reactor tries again
+  }
+}
+
+/** Runs one sync job of this open wallet, under one key, with `autoSyncBusy` set. */
+function syncJob(c, run) {
+  const { opened } = c;
+  c.host.once("sol:autosync:" + opened, async () => {
+    c.autoSyncBusy = true;
+    try {
+      await run(opened);
+    } finally {
+      if (stillOpen(c, opened)) c.autoSyncBusy = false;
+    }
+  });
+}
+
+/** Syncs until the balances change, after a deposit (Add SOL) that this browser sent. */
+export const pollBalances = (c) => syncJob(c, () => syncUntilChanged(c));
+
+/**
+ * Syncs with no click (S2): once when the Solana tab shows a loaded wallet, and again until the
+ * balances change after a payment ends as sent, on this device or another. The reactor calls it
+ * on every pass, so the cheap checks come first.
+ */
+export function autoSync(c) {
+  if (!shown(c) || !due(c)) return;
+  if (c.autoSynced && !unsynced(c).length) return;
+  if (shareSeat(c) === undefined || agreement(c).state !== "agree") return;
+  if (!c.autoSynced) return syncJob(c, (opened) => firstSync(c, opened));
+  markSynced(c);
+  return syncJob(c, () => syncUntilChanged(c));
 }
 
 /** Shows the saved snapshot once, before the first sync of this tab. */
