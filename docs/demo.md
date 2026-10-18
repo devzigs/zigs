@@ -71,6 +71,46 @@ Decided by the owner on 18 October 2026:
 
 The owner does every write: deploys, payments, faucet claims and name claims.
 
+### From now until the demo
+
+- **Daily check.** Every day until the demo, run `sh solspike/demo-check.sh` on the owner's Mac.
+  It is read only. A launchd job (`StartCalendarInterval`) runs it from a small wrapper outside
+  the repo; launchd also runs a missed job when the Mac wakes. The wrapper:
+  - sets PATH to Node 22 or later (launchd has no Homebrew or nvm PATH);
+  - keeps the last output and prints the lines that changed;
+  - alerts on exit code 2, and when the summary line `demo-check: … pass, … fail, … skipped` is
+    missing;
+  - alerts on FAIL for `pool program`, `approvals program`, `tree 0` or `prover` only. Other FAIL
+    lines give no alert: the Helius origin of staging (until SOL-48 closes), the fee floors, and
+    the light-wallet and faucet checks.
+
+  On an alert, write the date, follow the "pool program" row of section 6, and tell the
+  coordinator. A FAIL for `pool program` or `tree 0` means that Devnet has moved. A daily PASS
+  does not cover the hosted prover or the indexer: the prover check sends an empty body only, and
+  no check calls the indexer. So step 18 (T-1 hour) and the rehearsal (step 16) stay.
+- **Freeze.** Freeze is the default (TICKETS.md SOL-37). If Devnet has moved, do not change the
+  pin, and run the Solana part from the recording. A repin needs a decision of the owner, because
+  docs/hackathon-release.md forbids a rebuild of the Solana SDK bundle in this release. It is
+  allowed only if the SOL-37 checks pass and a Devnet payment lands by T-7. The cut-off is T-10:
+  after it, no repin. Never repin in the last week.
+- **After a repin or a pool redeploy that changes the tree layout** (SOL-37 T2 or T3): make Demo
+  A, the spare wallet and Payee again, because groups made before cannot spend. After any pool
+  redeploy, compare the upgrade key and the protocol authority on Devnet with
+  `web/sol/view.js`. The Details screen shows constants and does not read them again.
+- **First recording.** Record a full run now, while Devnet matches the demo-check pins: the
+  Zcash payment as the flow stands, and the Solana private payment (propose, approve, prove,
+  execute). The coordinator starts the live steps, after the owner says yes in the coordinator
+  session; send the command, the amount and the wallets first.
+  - Write the pins of that day in the notes of the file: the pool ELF `3641ffe2…`, the
+    ProgramData slot 508538476, tree 0 of 40,080 bytes, the approvals ELF `b4bad24c…`.
+  - Record only the browser window, in a clean profile, with no menu bar, notifications, real
+    names or password prompt (D1).
+  - Keep the unedited original outside the repo, never in git, with a copy on a second device.
+  - Record again after M3, M5 or M10 lands, after a repin (SOL-37) and after a redeploy of the
+    approvals program. Keep the old file until the new one plays.
+  - With the current pin, no new run is possible after Devnet moves. A new run needs the SOL-37
+    repin, and maybe a change of the approvals program (SOL-43).
+
 ### T-7 days
 
 1. Helius: add app.zigs.app and staging.zigs.app to Allowed Domains. Read the plan limits. Set a
@@ -154,7 +194,8 @@ Stage on app.zigs.app. The Solana tab of staging works only after D4 adds stagin
     - Type the ZNS name (placeholder `zigsdemo.zec`) in the Send form of Demo A, and compare
       the address with the note.
       Close the form without a proposal. **[waits for M10]**
-19. Keep a phone hotspot as a backup network. Keep a screen recording of a full run.
+19. Keep a phone hotspot as a backup network. Check that the recording plays offline on L1, and
+    that its pins equal the demo-check output.
 
 ## 4. Demo script: 10 minutes
 
@@ -192,11 +233,15 @@ says Sent (Zcash) or Executed (Solana).
 
 ## 6. Contingencies
 
+The recorded run (section 3) is the fallback for the rows about a Helius error, a moved pool, a
+Solana error, a server problem and a synced balance that is too low.
+
 | Problem | Action |
 |---|---|
 | The light-wallet server is slow | Wait. The ChainSafe fallback works (S9) |
 | Solana shows a Helius error | Wait one minute. Then show the Zcash part and the recorded run (S5) |
-| demo-check says FAIL for "pool program": the hash of the Devnet pool (`sppU489D…`) is no longer `3641ffe2…`. Helius plans SDK releases with breaking changes before its mainnet launch | Stop the Solana part of the demo, and show the recorded run. Tell the coordinator, who pins the new pool and runs the checks again |
+| demo-check says FAIL for "pool program" or "tree 0": the Devnet pool (`sppU489D…`) no longer has the hash `3641ffe2…`, or its tree 0 changed. Helius plans SDK releases with breaking changes before its mainnet launch | Stop the Solana part, show the recorded run, and tell the coordinator. No repin in the last week (section 3) |
+| A Solana error that starts with "WalletError", "ClientError" or "Solana error #" and stays after one minute | Stop the Solana part, show the recorded run, and tell the coordinator |
 | The side bar says "Connecting to the group server…" for a long time, or "The group server does not answer" | Read the reason in brackets (S1). For "no network" or "too many connections from this network" (M9), move one laptop to the phone hotspot. For "the preview password is missing or wrong", reload the page and enter the password. For "the server has a problem", wait one minute, then show the recorded run |
 | A hold blocks Send | Use the spare wallet (S7) |
 | Solana says "the synced balance does not cover the amount" | An open proposal holds the notes (S4). Use the spare wallet, or show the recorded run |
@@ -212,8 +257,9 @@ says Sent (Zcash) or Executed (Solana).
   The group server stores only sealed, padded values.
 - **Solana.** The amount of a private payment is hidden on chain. The owner key of the payee, the
   fee address of the seat that pays and the group are public. The hosted prover of Helius sees
-  each payment while it builds the proof. The Zigs server operator can link the wallet to its
-  Solana addresses by timing.
+  each payment while it builds the proof. Helius has a browser prover (zolana-web-sdk), which
+  Helius calls experimental. Zigs does not use it yet (SOL-4). The Zigs server operator can link
+  the wallet to its Solana addresses by timing.
 - **ZNS.** Our Worker downloads the whole testnet registry, and each device looks the name up
   itself. So no resolver learns which name a person pays. **[waits for M10]**
 - **Limits.** Zcash testnet and Solana Devnet only. The code is not audited. PRIVACY.md lists the
