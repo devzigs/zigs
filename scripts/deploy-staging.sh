@@ -94,3 +94,11 @@ expect 401 /
 expect 200 / with
 expect 200 /sol/config.json with
 echo "deploy-staging: $COMMIT ($REF) is live at $URL"
+
+# The app part of the demo preflight (M8): the gate, the pages, /lwd, the group socket and the
+# Helius Origin of staging. It only warns, because the deploy is live already. Its Helius check
+# fails until staging.zigs.app is on the Allowed Domains of the key (owner decision D4).
+printf '{"apps": [{"origin": "%s", "passwordFile": "%s"}]}\n' "$URL" "$PASSWORD" \
+  > "$WORK/demo-check.json"
+sh "$ROOT/solspike/demo-check.sh" --app-only --config "$WORK/demo-check.json" \
+  || echo "deploy-staging: the preflight above has a FAIL; the deploy itself is live" >&2
