@@ -75,10 +75,11 @@ coin. The runbook of a demo with three devices is in [docs/demo.md](docs/demo.md
    The two seats create the key together. Within half a minute the wallet opens, and both seats
    show **Address checked**.
 4. Click **Receive** and copy the address. Then click **Get testnet ZEC**: it opens the Valar
-   faucet, which pays 0.125 TAZ to a `utest1…` address, once for each IP address every 24 hours.
-   On a shared network, such as a venue or an office, only the first person gets coins. Paste the
-   address there. The balance appears as **Incoming**, then as **Available** after 3
-   confirmations (about 75 s).
+   faucet, which pays 0.125 TAZ to a `utest1…` address, once for each IP address and once for
+   each address every 24 hours. On a shared network, such as a venue or an office, only the first
+   person gets coins. The faucet lists each payout in public, with a short form of the address and
+   the transaction id. Paste the address there. The balance appears as **Incoming**, then as
+   **Available** after 3 confirmations (about 75 s).
 5. Click **Send**, paste any testnet unified address (`utest1…`), enter an amount, and click
    **Propose payment**. For a payroll, click **Add recipient** or **Paste a list**: up to 20
    recipients go into one transaction with one approval round. A payment request (`zcash:…`) pasted

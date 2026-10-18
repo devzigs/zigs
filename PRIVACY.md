@@ -156,7 +156,16 @@ link, point the app at a light-wallet server you trust (`NETWORKS` in `web/app-c
 
 The link **Get testnet ZEC** opens the Valar testnet faucet (faucet.testnet.valargroup.dev) in a
 new tab. That site is not Zigs. It sees your IP address and the address that you paste, so it can
-link the two. It pays once for each IP address every 24 hours.
+link the two. Its public status lists each payout with a short form of the address, the
+transaction id, the amount and the time. It pays once for each IP address and once for each
+address every 24 hours.
+
+The link **View in explorer**, in the payment panel and on each row of the activity list, opens an
+explorer (testnet.zecblock.com on testnet, zecblock.com on mainnet) in a new tab. That site is not
+Zigs. It sees your IP address and the transaction id that you open, so it can link the two. The
+page sends no referrer. The Solana tab has no explorer link yet (S16 of
+[docs/hackathon-release.md](docs/hackathon-release.md)). The Solana explorer (explorer.solana.com)
+sees the same when you paste a Solana id into it.
 
 ## ZNS names (testnet)
 
