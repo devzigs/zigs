@@ -21,6 +21,11 @@ const stub = () => new Proxy(function () {}, {
   apply: () => stub(), construct: () => stub(), set: () => true, has: () => true,
 });
 const storage = new Map();
+// The listeners of the page on window, so that a test can fire a real storage event.
+const windowOn = {};
+const onWindow = (type, fn) => { (windowOn[type] ||= []).push(fn); };
+const storageEvent = (key) =>
+  Promise.all((windowOn.storage || []).map((fn) => fn({ key, newValue: storage.get(key) })));
 Object.assign(globalThis, {
   Node: class {}, document: stub(), history: { replaceState() {} }, requestAnimationFrame: () => 0,
   matchMedia: () => ({ matches: false }),
@@ -30,7 +35,9 @@ Object.assign(globalThis, {
     setItem: (k, v) => { storage.set(k, String(v)); }, removeItem: (k) => { storage.delete(k); },
   },
   // The engine takes its random numbers from window.crypto in a page.
-  window: new Proxy(stub(), { get: (t, k) => (k === "crypto" ? globalThis.crypto : t[k]) }),
+  window: new Proxy(stub(), {
+    get: (t, k) => ({ crypto: globalThis.crypto, addEventListener: onWindow })[k] ?? t[k],
+  }),
 });
 
 const t = await loadPage();
@@ -302,6 +309,617 @@ const sealed = (gid, rel, seat, fields, key, names = ["by", "sig"]) =>
   assert.deepEqual([live().broadcastTxid, data.get(path3).sentBy >= 1], ["T1", true]);
   assert.equal(t.state.ignored, 0, "nothing of an honest wallet is ignored");
 
+  let checkingSession = null;   // a payment that readSession marked "checking" (the M5 block)
+  // M5: the signing steps run with no payment open. The proposer's browser builds the package
+  // from the approvals, each seat signs its share and the shares are combined, from the watch
+  // alone. Then the drawer is open on another payment, and the watch goes on.
+  {
+    const m5Spend = { ...spend, pczt: "M5P" }, engine = [];
+    t.setChain({ gid, url: "https://lwd.test", bal: { spendable: 1e8, pending: 0, height: 4500000 },
+      balAt: Date.now(), received: [], sent: new Set(),
+      cw: { createSpend: async () => JSON.stringify(m5Spend), free() {} } });
+    const z5 = { ...fakeZ, latestHeight: async () => 4500001,
+      inspect: () => JSON.stringify({ sighash: "aa", txid: "tm5", tx_version: "V6", spends: [],
+        lines: [], fee: 10000, standard_fee: 10000, expiry_height: 4503456 }),
+      signPackage: () => { engine.push("package"); return "PKG5"; },
+      signShare: (pczt, fvk, pkg, n, kp, i) => { engine.push("share " + i); return "[1]"; },
+      signCommit: () => {
+        engine.push("commit");
+        return JSON.stringify({ nonces: ["n"], commitments: ["c"] });
+      },
+      signAggregate: () => {
+        engine.push("combine");
+        return JSON.stringify({ signed_pczt: "SIG5", signatures: [] });
+      } };
+    t.setZ(z5);
+    t.closeSession();
+    const listeners = subs.length;
+    const approveAs = async (sid, seats) => {
+      for (const i of seats) {
+        const rel = `sessions/${sid}/commits/${i}`;
+        const nonces = { ...t.sec(gid, i).nonces, [sid]: { nonces: "n" + i, sighash: "aa" } };
+        await t.putSec(gid, i, { nonces });
+        const doc = await t.signedDoc(gid, rel, i, { commitments: "c", at: 1 });
+        data.set(`groups/${gid}/${rel}`, doc);
+      }
+    };
+    const m5 = await propose("m5", 4);
+    // Closing the drawer reacts on nothing: the open payment is watched already (QA H1).
+    assert.equal(t.watched.has(m5.id), true, "the open payment is watched");
+    t.closeSession();
+    assert.equal(t.watched.has(m5.id), true, "and stays watched when its drawer closes");
+    const path5 = `groups/${gid}/sessions/${m5.id}`;
+    await approveAs(m5.id, [2, 3]);
+    // A made-up approval of seat 1 (no signature) is no approval for the watch either.
+    data.set(`${path5}/commits/1`, { commitments: "forged", at: 1 });
+    notify();
+    await waitFor("the package", () => data.get(path5)?.package === "PKG5");
+    assert.deepEqual(data.get(path5).signers, [2, 3], "the package names the signed approvals");
+    assert.equal(t.state.sid, null, "no payment is open");
+    await waitFor("the first share", () => engine.includes("share 2"));
+    t.openSession(third.id);
+    const both = () => data.has(path5 + "/shares/2") && data.has(path5 + "/shares/3");
+    await waitFor("both shares", both);
+    await waitFor("combined", () => data.get(path5)?.signed === "SIG5");
+    assert.deepEqual(engine, ["package", "share 2", "share 3", "combine"]);
+    assert.equal(t.state.sid, third.id, "the drawer stays on the other payment");
+    t.closeSession();
+    await waitFor("no watch", () => !t.watched.has(m5.id));
+    assert.equal(subs.length, listeners, "the listeners of the watch end with it");
+    const drop = async (path) => {
+      for (const k of [...data.keys()]) if (k.startsWith(path)) data.delete(k);
+      notify();
+      await waitFor("three payments", () => t.state.sessions.length === 3 && !t.state.pending);
+    };
+    await drop(path5);
+    // Another tab of this browser signs for seat 1: it holds the lock of the secrets, and it saves
+    // its burn before it lets go. This tab waits, takes what storage holds, and signs nothing for
+    // seat 1 (QA M1). Seat 2 signs after the lock.
+    engine.length = 0;
+    let unlock;
+    const otherTab = t.exclusive("secrets", () => new Promise((ok) => { unlock = ok; }));
+    const m6 = await propose("m6", 4);
+    t.closeSession();
+    const path6 = `groups/${gid}/sessions/${m6.id}`;
+    await approveAs(m6.id, [1, 2]);
+    notify();
+    await waitFor("the package of m6", () => data.get(path6)?.package === "PKG5");
+    await sleep(200);
+    assert.deepEqual(engine, ["package"], "no share while the other tab holds the lock");
+    const kept = JSON.parse(storage.get("zf-secrets"));
+    delete kept[gid + ":1"].nonces[m6.id];
+    kept[gid + ":3"] = null;   // a damaged entry: the check of the other seats still holds
+    storage.set("zf-secrets", JSON.stringify(kept));
+    unlock();
+    await otherTab;
+    await waitFor("the share of seat 2", () => data.has(path6 + "/shares/2"));
+    await sleep(300);
+    assert.equal(data.has(path6 + "/shares/1"), false, "the used nonce signs nothing");
+    assert.deepEqual(engine, ["package", "share 2"]);
+    assert.equal((t.sec(gid, 1).nonces || {})[m6.id], undefined, "and leaves this tab too");
+    assert.equal(!!t.sec(gid, 3)?.keyPackage, true, "the damaged entry leaves seat 3 as it is");
+    await drop(path6);
+    // A seat whose share the payment holds already does not sign again.
+    const m7 = { id: "m7", pczt: "M5P", package: "PKG7", signers: [1], status: "signing", by: 1,
+      createdAt: 1 };
+    await t.putSec(gid, 1, { nonces: { ...t.sec(gid, 1).nonces, m7: { sighash: "aa" } } });
+    t.reactSession(m7, { commits: {}, shares: { 1: { shares: "[1]" } } });
+    assert.equal(t.busy.has("share:m7:1"), false, "the share is there");
+    // The person opens another wallet while the step waits for the lock: it signs nothing.
+    let unlock7;
+    const held7 = t.exclusive("secrets", () => new Promise((ok) => { unlock7 = ok; }));
+    t.reactSession(m7, { commits: {}, shares: {} });
+    assert.equal(t.busy.has("share:m7:1"), true, "control: without it, seat 1 would sign");
+    t.state.gid = B;
+    unlock7();
+    await held7;
+    await waitFor("the step ends", () => !t.busy.has("share:m7:1"));
+    t.state.gid = gid;
+    assert.equal(engine.includes("share 1"), false, "no share for another wallet");
+    for (const k of [...data.keys()]) if (k.includes("/sessions/m7/")) data.delete(k);
+    // An approval and a cancel wait for the lock of the secrets, and a share write that does not
+    // end holds no lock.
+    const holdLock = () => {
+      let open;
+      const done = t.exclusive("secrets", () => new Promise((ok) => { open = ok; }));
+      return () => { open(); return done; };
+    };
+    engine.length = 0;
+    const m8 = await propose("m8", 4);
+    t.closeSession();
+    const path8 = `groups/${gid}/sessions/${m8.id}`;
+    const live8 = () => t.state.sessions.find((x) => x.id === m8.id);
+    let unhold = holdLock();
+    const approving = t.approve(live8(), 2);
+    await sleep(200);
+    assert.deepEqual(engine, [], "the approval waits for the lock");
+    await unhold();
+    await approving;
+    assert.deepEqual(engine, ["commit"]);
+    // The person opens another wallet while the approval waits for the lock: it stops.
+    unhold = holdLock();
+    const approving3 = t.approve(live8(), 3).then(() => "approved", (e) => e.message);
+    t.state.gid = B;
+    await unhold();
+    assert.match(await approving3, /Another wallet is open now/);
+    t.state.gid = gid;
+    assert.deepEqual(engine, ["commit"], "no approval for another wallet");
+    unhold = holdLock();
+    const cancelling = t.cancelPayment(live8());
+    await sleep(200);
+    assert.ok((t.sec(gid, 2).nonces || {})[m8.id], "the cancel waits for the lock");
+    await unhold();
+    await cancelling;
+    assert.equal((t.sec(gid, 2).nonces || {})[m8.id], undefined);
+    await drop(path8);
+    const { [m8.id]: _m8, ...marks8 } = t.sec(gid, 2).marks || {};
+    await t.putSec(gid, 2, { marks: marks8 });   // the test approval holds nothing
+    let openShares;
+    const shareGate = new Promise((ok) => { openShares = ok; });
+    t.setDb({ doc: (p) => p.includes("/shares/")
+      ? { ...docRef(p), set: (v) => shareGate.then(() => docRef(p).set(v)) } : docRef(p),
+    collection: colRef });
+    const m9 = await propose("m9", 4);
+    t.closeSession();
+    const path9 = `groups/${gid}/sessions/${m9.id}`;
+    await approveAs(m9.id, [1, 2]);
+    notify();
+    const signed9 = () => engine.filter((x) => x.startsWith("share")).length === 2;
+    await waitFor("the shares are signed", signed9);
+    assert.equal(await Promise.race([t.exclusive("secrets", async () => "free"),
+      sleep(500).then(() => "held")]), "free", "no lock while the share write waits");
+    openShares();
+    await waitFor("the shares of m9", () => data.has(path9 + "/shares/2"));
+    t.setDb({ doc: docRef, collection: colRef });
+    await drop(path9);
+    // A save that fails keeps its change in this tab, and a locked step keeps it too: of that
+    // seat, only the nonces and marks (also the Solana ones) come from storage. Every other stored
+    // seat comes in whole, so a newer save of another tab stays. A wallet key that only storage
+    // holds (a new wallet of another tab) stays, and one from the save of another tab comes in.
+    const mx = await propose("mx", 4);
+    t.closeSession();
+    const pathX = `groups/${gid}/sessions/${mx.id}`;
+    await approveAs(mx.id, [1, 2]);
+    storage.set("zf-vault", "{}");   // the plain save refuses
+    assert.equal(await t.putSec(gid, 3, { m5Flag: 2 }), false, "the save fails");
+    storage.delete("zf-vault");
+    const storedX = JSON.parse(storage.get("zf-secrets")), seat3 = storedX[gid + ":3"];
+    seat3.marks = { ...seat3.marks, m5x: { seen: 1 } };   // a mark that another tab saved
+    const sol2 = t.sec(gid, 2).sol, sol3 = t.sec(gid, 3).sol;
+    const sol2Used = { ...sol2, used: { d2: "s" } };
+    storedX[gid + ":2"] = { ...storedX[gid + ":2"], m5kp: "KPY", sol: sol2Used };   // a key share
+    seat3.sol = { ...sol3, used: { d3: "s" }, salts: { z3: "p3" }, bodies: { c3: "b3" } };
+    seat3.unsent = { zk3: { changed: true } };   // approval records that another tab saved
+    storedX[gid + ":9"] = { m5new: 1 };   // a new seat of another tab
+    storage.set("zf-secrets", JSON.stringify(storedX));
+    const keysX = JSON.parse(storage.get("zf-keys"));
+    storage.set("zf-keys", JSON.stringify({ ...keysX, m5other: "k" }));
+    const chatsX = storage.get("zf-chats"), cidX = "cc".repeat(10), oldChats = JSON.parse(chatsX);
+    const roomX = { key: "k".repeat(43), member: "dd".repeat(10), at: 1 };
+    const chatsWith = { ...oldChats, list: { ...oldChats.list, [cidX]: roomX } };
+    storage.set("zf-chats", JSON.stringify(chatsWith));   // a chat of another tab
+    const cidM = "ab".repeat(10);
+    t.chats.list[cidM] = roomX;   // a chat that only this tab holds
+    notify();
+    await waitFor("the shares of mx", () => data.has(pathX + "/shares/2"));
+    await sleep(300);
+    assert.equal(t.sec(gid, 3).m5Flag, 2, "the unsaved change stays in this tab");
+    assert.equal(JSON.parse(storage.get("zf-secrets"))[gid + ":3"].m5Flag, 2, "the burn saves it");
+    assert.deepEqual(t.sec(gid, 3).marks.m5x, { seen: 1 }, "a mark of another tab comes in");
+    const storedAfter = JSON.parse(storage.get("zf-secrets"));
+    assert.deepEqual([t.sec(gid, 2).m5kp, storedAfter[gid + ":2"].m5kp, t.sec(gid, 2).sol.used],
+      ["KPY", "KPY", { d2: "s" }], "a newer save of another tab stays");
+    assert.deepEqual([t.sec(gid, 3).sol.used, t.sec(gid, 9), storedAfter[gid + ":9"]],
+      [{ d3: "s" }, { m5new: 1 }, { m5new: 1 }], "the Solana nonces and a new seat come in");
+    const s3 = t.sec(gid, 3);
+    assert.deepEqual([s3.sol.salts, s3.sol.bodies, s3.unsent],
+      [{ z3: "p3" }, { c3: "b3" }, { zk3: { changed: true } }], "and the other approval records");
+    assert.equal(JSON.parse(storage.get("zf-keys")).m5other, "k", "the key of the other tab stays");
+    assert.deepEqual([t.chats.list[cidX], t.chats.list[cidM]], [roomX, roomX], "both chats stay");
+    delete t.chats.list[cidM];
+    storage.set("zf-keys", JSON.stringify({ ...JSON.parse(storage.get("zf-keys")), m5tab: "k" }));
+    await storageEvent("zf-keys");
+    assert.deepEqual([t.gkeys.m5tab, t.gkeys[gid] === keysX[gid]], ["k", true], "both keep");
+    delete t.gkeys.m5other; delete t.gkeys.m5tab;
+    const { m5x: _m5x, ...marks3 } = t.sec(gid, 3).marks;
+    delete t.secrets[gid + ":9"];
+    await t.putSec(gid, 2, { m5kp: undefined, sol: sol2 });
+    await t.putSec(gid, 3, { m5Flag: undefined, marks: marks3, sol: sol3, unsent: undefined });
+    // A storage event of another tab: the seats of its save come in, and a seat that only this
+    // tab holds stays, because it may be the last copy.
+    t.secrets["zz:9"] = { m5only: 1 };
+    const fromTab = JSON.parse(storage.get("zf-secrets"));
+    fromTab[gid + ":2"] = { ...fromTab[gid + ":2"], m5ev: 1 };
+    storage.set("zf-secrets", JSON.stringify(fromTab));
+    const unholdEv = holdLock();
+    const eventDone = storageEvent("zf-secrets");
+    await sleep(100);
+    assert.equal(t.sec(gid, 2).m5ev, undefined, "the event waits for a locked step");
+    await unholdEv();
+    await eventDone;
+    assert.deepEqual([t.secrets["zz:9"], t.sec(gid, 2).m5ev], [{ m5only: 1 }, 1], "both stay");
+    delete t.secrets["zz:9"];
+    await t.putSec(gid, 2, { m5ev: undefined });
+    // The chats come in as the other tab saved them: a chat that it left goes here too.
+    storage.set("zf-chats", chatsX);
+    await storageEvent("zf-chats");
+    assert.equal(t.chats.list[cidX], undefined, "a chat that the other tab left goes");
+    await drop(pathX);
+    // A payment that changed after an approval fails for everyone, and the nonce goes. With the
+    // drawer on another payment, the banner names the payment that changed.
+    const mc = await propose("mc\n" + "x".repeat(60), 4);
+    t.closeSession();
+    const pathC = `groups/${gid}/sessions/${mc.id}`;
+    await approveAs(mc.id, [1, 2]);
+    await t.putSec(gid, 1, { nonces: { ...t.sec(gid, 1).nonces, [mc.id]: { sighash: "bb" } } });
+    t.openSession(third.id);
+    notify();
+    await waitFor("the error of mc", () => !!data.get(pathC)?.error);
+    await sleep(300);
+    assert.equal(data.get(pathC).error, "The payment changed after a signer approved it.");
+    assert.equal((t.sec(gid, 1).nonces || {})[mc.id], undefined, "the nonce of seat 1 goes");
+    assert.equal(data.has(pathC + "/shares/1"), false, "seat 1 signs nothing");
+    assert.equal(t.banner.text, "\"mc " + "x".repeat(37)
+      + "\": This payment changed after you approved it, so this browser did not sign it.");
+    t.closeSession();
+    await drop(pathC);
+    // With its drawer open, the payment needs no name.
+    const md = await propose("md", 4);
+    assert.equal(t.state.sid, md.id, "the drawer is on md");
+    const pathD = `groups/${gid}/sessions/${md.id}`;
+    await approveAs(md.id, [1, 2]);
+    await t.putSec(gid, 1, { nonces: { ...t.sec(gid, 1).nonces, [md.id]: { sighash: "bb" } } });
+    notify();
+    await waitFor("the error of md", () => !!data.get(pathD)?.error);
+    await sleep(300);
+    assert.equal(t.banner.text,
+      "This payment changed after you approved it, so this browser did not sign it.");
+    t.closeSession();
+    await drop(pathD);
+    // The drawer at the time of the failure counts: here it moves to another payment while the
+    // step waits for the lock.
+    const mf = await propose("mf", 4);
+    const pathF = `groups/${gid}/sessions/${mf.id}`;
+    await approveAs(mf.id, [1, 2]);
+    await t.putSec(gid, 1, { nonces: { ...t.sec(gid, 1).nonces, [mf.id]: { sighash: "bb" } } });
+    const unholdF = holdLock();
+    notify();
+    await waitFor("the share step waits", () => t.busy.has("share:" + mf.id + ":1"));
+    t.openSession(third.id);
+    await unholdF();
+    await waitFor("the error of mf", () => !!data.get(pathF)?.error);
+    await sleep(300);
+    assert.equal(t.banner.text,
+      "\"mf\": This payment changed after you approved it, so this browser did not sign it.");
+    t.closeSession();
+    await drop(pathF);
+    const pathOf = (ss) => `groups/${gid}/sessions/${ss.id}`;
+    const liveOf = (ss) => t.state.sessions.find((x) => x.id === ss.id);
+    // A cancel part of another seat whose check has no result yet: the payment is "checking" and
+    // needs no approval. When the check ends, it is cancelled. The cards below show its chip.
+    const mu = await propose("mu", 4);
+    t.closeSession();
+    const cancelU = { error: "Cancelled by a signer (seat 2)." };
+    const sigU = await t.sigPart(gid, mu.id, "cancel", cancelU, 2);
+    const subtleU = globalThis.crypto.subtle, verifyU = subtleU.verify.bind(subtleU);
+    let openChecks;
+    const checksHeld = new Promise((ok) => { openChecks = ok; });
+    subtleU.verify = (...a) => checksHeld.then(() => verifyU(...a));   // no result for now
+    data.set(pathOf(mu), { ...data.get(pathOf(mu)), ...cancelU, status: "cancelled", ...sigU });
+    notify();
+    await waitFor("the cancel part waits for its check", () => !!liveOf(mu)?.checking);
+    checkingSession = liveOf(mu);
+    assert.deepEqual([checkingSession.status, t.needsMyApproval(gid, checkingSession)],
+      ["collecting", false], "checking");
+    openChecks();
+    delete subtleU.verify;
+    await waitFor("the check of the cancel", () => liveOf(mu)?.status === "cancelled");
+    assert.equal(liveOf(mu).checking, false);
+    await drop(pathOf(mu));
+    // The cancel of this browser drops a share that it made and could not send yet.
+    let downC = true;
+    t.setDb({ doc: (p) => p.endsWith("/shares/1") && downC
+      ? { ...docRef(p), set: async () => { throw new Error("down"); } } : docRef(p),
+    collection: colRef });
+    const mv2 = await propose("mv2", 4);
+    t.closeSession();
+    await approveAs(mv2.id, [1, 2]);
+    notify();
+    await waitFor("the kept share of mv2", () => !!(t.sec(gid, 1).unsent || {})[mv2.id]);
+    downC = false;
+    t.setDb({ doc: docRef, collection: colRef });
+    await t.cancelPayment(liveOf(mv2));
+    assert.equal((t.sec(gid, 1).unsent || {})[mv2.id], undefined,
+      "the cancel drops the kept share");
+    await drop(pathOf(mv2));
+    // The person cancels while the share steps wait for the lock: they sign nothing.
+    const mk = await propose("mk", 4);
+    t.closeSession();
+    await approveAs(mk.id, [1, 2]);
+    engine.length = 0;
+    const unholdK = holdLock();
+    notify();
+    await waitFor("the share steps wait", () => t.busy.has("share:" + mk.id + ":1"));
+    const cancelK = t.cancelPayment(liveOf(mk));
+    await unholdK();
+    await cancelK;
+    await sleep(300);
+    assert.deepEqual([data.get(pathOf(mk)).status, engine.filter((x) => x.startsWith("share"))],
+      ["cancelled", []], "no share after the cancel");
+    await drop(pathOf(mk));
+    // An approval that waits for the lock when the person cancels is refused.
+    const mn = await propose("mn", 4);
+    t.closeSession();
+    const unholdN = holdLock();
+    const approvingN = t.approve(liveOf(mn), 3).then(() => "approved", (e) => e.message);
+    await sleep(100);
+    const cancelN = t.cancelPayment(liveOf(mn));
+    await unholdN();
+    await cancelN;
+    assert.match(await approvingN, /cancelled or failed, so it was not approved/);
+    assert.equal(data.has(pathOf(mn) + "/commits/3"), false, "no commitment goes out");
+    await drop(pathOf(mn));
+    // A share whose write fails stays kept with the burn, and the next try sends it. It is signed
+    // once.
+    let failShare = true;
+    t.setDb({ doc: (p) => p.endsWith("/shares/1") && failShare
+      ? { ...docRef(p), set: async () => { failShare = false; throw new Error("not connected"); } }
+      : docRef(p), collection: colRef });
+    engine.length = 0;
+    const mr = await propose("mr", 4);
+    t.closeSession();
+    await approveAs(mr.id, [1, 2]);
+    notify();
+    await waitFor("the share of seat 1 after a retry", () => data.has(pathOf(mr) + "/shares/1"),
+      10000);
+    t.setDb({ doc: docRef, collection: colRef });
+    assert.deepEqual([failShare, engine.filter((x) => x === "share 1").length], [false, 1]);
+    await waitFor("the kept copy goes", () => !(t.sec(gid, 1).unsent || {})[mr.id]);
+    await drop(pathOf(mr));
+    // A payment that changed: when the write of its failure fails, the next try writes it.
+    let failUpdate = true;
+    t.setDb({ doc: (p) => ({ ...docRef(p), update: async (v) => {
+      if (!v.error || !failUpdate) return docRef(p).update(v);
+      failUpdate = false;
+      throw new Error("not connected");
+    } }), collection: colRef });
+    const mq = await propose("mq", 4);
+    t.closeSession();
+    await approveAs(mq.id, [1, 2]);
+    await t.putSec(gid, 1, { nonces: { ...t.sec(gid, 1).nonces, [mq.id]: { sighash: "bb" } } });
+    notify();
+    await waitFor("the failure after a retry", () => !!data.get(pathOf(mq))?.error, 10000);
+    t.setDb({ doc: docRef, collection: colRef });
+    assert.deepEqual([failUpdate, data.get(pathOf(mq)).error],
+      [false, "The payment changed after a signer approved it."]);
+    await drop(pathOf(mq));
+    // The save of the burn fails: no share goes out, the nonce stays, and the next try signs.
+    const mb = await propose("mb", 4);
+    t.closeSession();
+    await approveAs(mb.id, [1, 2]);
+    storage.set("zf-vault", "{}");   // every plain save refuses
+    notify();
+    await waitFor("the failed burn", () => /Could not save the used nonce/.test(t.banner?.text));
+    assert.deepEqual([data.has(pathOf(mb) + "/shares/1"), !!(t.sec(gid, 1).nonces || {})[mb.id]],
+      [false, true], "no share, and the nonce stays");
+    storage.delete("zf-vault");
+    notify();
+    await waitFor("the shares of mb", () => data.has(pathOf(mb) + "/shares/1"), 10000);
+    await drop(pathOf(mb));
+    // A burn that keeps failing: each new try waits longer, so the engine does not sign again and
+    // again while the save fails. The step goes on by itself when the wait ends.
+    engine.length = 0;
+    const mt = await propose("mt", 4);
+    t.closeSession();
+    await approveAs(mt.id, [1, 2]);
+    storage.set("zf-vault", "{}");
+    notify();
+    await waitFor("the first try", () => engine.includes("share 1"));
+    await sleep(200);
+    for (let k = 0; k < 5; k++) { notify(); await sleep(100); }
+    assert.equal(engine.filter((x) => x === "share 1").length, 1, "no new try during the wait");
+    const tries = () => engine.filter((x) => x === "share 1").length;
+    await waitFor("the second try", () => tries() === 2, 10000);
+    await sleep(200);
+    storage.delete("zf-vault");   // nothing reacts now: the end of the 6 s wait starts the step
+    await waitFor("the shares of mt", () => data.has(pathOf(mt) + "/shares/1"), 10000);
+    await drop(pathOf(mt));
+    // A share is made and its write fails, so it stays kept. Another seat cancels, and the person
+    // releases the hold. When a seat then resets the payment to signing, no share of this browser
+    // goes out.
+    let shareDown = true;
+    t.setDb({ doc: (p) => p.endsWith("/shares/1") && shareDown
+      ? { ...docRef(p), set: async () => { throw new Error("down"); } } : docRef(p),
+    collection: colRef });
+    const mp = await propose("mp", 4);
+    t.closeSession();
+    await approveAs(mp.id, [1, 2]);
+    const markP = { approved: "aa", tip: 4500000 };
+    await t.putSec(gid, 1, { marks: { ...t.sec(gid, 1).marks, [mp.id]: markP } });
+    notify();
+    await waitFor("the kept share", () => !!(t.sec(gid, 1).unsent || {})[mp.id]);
+    const signingP = { ...data.get(pathOf(mp)) };
+    const cancelP = { error: "Cancelled by a signer (seat 2)." };
+    const sigP = await t.sigPart(gid, mp.id, "cancel", cancelP, 2);
+    data.set(pathOf(mp), { ...signingP, ...cancelP, status: "cancelled", ...sigP });
+    notify();
+    await waitFor("the cancel", () => !!liveOf(mp)?.error);
+    await t.releaseHold(mp.id);
+    const s1 = t.sec(gid, 1);
+    assert.deepEqual([s1.marks[mp.id].released, (s1.unsent || {})[mp.id], (s1.nonces || {})[mp.id]],
+      [true, undefined, undefined], "the release burns the kept share too");
+    shareDown = false;
+    data.set(pathOf(mp), signingP);   // a seat resets the payment
+    notify();
+    await sleep(500);
+    assert.equal(data.has(pathOf(mp) + "/shares/1"), false, "no share after the release");
+    t.setDb({ doc: docRef, collection: colRef });
+    const { [mp.id]: _mp, ...marksP } = t.sec(gid, 1).marks;
+    await t.putSec(gid, 1, { marks: marksP });
+    await drop(pathOf(mp));
+    // The save of an approval fails: no commitment goes out, and memory gets its old state back,
+    // so the next click approves.
+    const ma = await propose("ma", 4);
+    t.closeSession();
+    storage.set("zf-vault", "{}");
+    assert.match(await t.approve(liveOf(ma), 3).then(() => "approved", (e) => e.message),
+      /Could not save the approval/);
+    storage.delete("zf-vault");
+    const seatA = () => [(t.sec(gid, 3).nonces || {})[ma.id], (t.sec(gid, 3).marks || {})[ma.id]];
+    assert.deepEqual([data.has(pathOf(ma) + "/commits/3"), ...seatA()],
+      [false, undefined, undefined], "nothing went out, and memory is as before");
+    await t.approve(liveOf(ma), 3);
+    assert.equal(data.has(pathOf(ma) + "/commits/3"), true, "the next click approves");
+    const { [ma.id]: _na, ...noncesA } = t.sec(gid, 3).nonces;
+    const { [ma.id]: _ma, ...marksA } = t.sec(gid, 3).marks;
+    await t.putSec(gid, 3, { nonces: noncesA, marks: marksA });
+    await drop(pathOf(ma));
+    // A locked step with a damaged or a missing record keeps this tab's copy, and its save writes
+    // that copy again.
+    for (const bad of ["not json", null]) {
+      const mh = await propose("mh", 4);
+      t.closeSession();
+      await approveAs(mh.id, [1]);
+      if (bad === null) storage.delete("zf-secrets");
+      else storage.set("zf-secrets", bad);
+      await t.cancelPayment(liveOf(mh));
+      const back = JSON.parse(storage.get("zf-secrets"))[gid + ":1"];
+      assert.deepEqual([!!t.sec(gid, 1)?.keyPackage, !!back?.keyPackage], [true, true],
+        String(bad));
+      await drop(pathOf(mh));
+    }
+    // The package and the combine steps name their payment too.
+    const { signPackage, signAggregate } = z5;
+    z5.signPackage = () => { throw new Error("no package"); };
+    const mg = await propose("mg", 4);
+    t.openSession(third.id);
+    await approveAs(mg.id, [1, 2]);
+    notify();
+    await waitFor("the package error", () => t.banner?.text === "\"mg\": no package");
+    Object.assign(z5, { signPackage, signAggregate: () => { throw new Error("no signature"); } });
+    notify();
+    await waitFor("the combine error", () => t.banner?.text === "\"mg\": no signature", 10000);
+    z5.signAggregate = signAggregate;
+    assert.equal(data.get(pathOf(mg)).error, "no signature");
+    t.closeSession();
+    await drop(pathOf(mg));
+    // A sealed store (the passkey lock): a nonce that the sealed record lacks signs nothing and
+    // says so in the log. A write of this tab during the decrypt is kept.
+    engine.length = 0;
+    const vkey = await crypto.subtle.importKey("raw", crypto.getRandomValues(new Uint8Array(32)),
+      "AES-GCM", false, ["encrypt", "decrypt"]);
+    const vrec = { cred: "c", salt: "s" };
+    t.setVault({ rec: vrec, key: vkey });
+    const mv = await propose("mv", 4);
+    t.closeSession();
+    const pathV = `groups/${gid}/sessions/${mv.id}`;
+    await approveAs(mv.id, [1, 2]);
+    await sleep(100);
+    const sealed = await openVault(vkey, JSON.parse(storage.get("zf-vault")));
+    delete sealed.secrets[gid + ":1"].nonces[mv.id];
+    sealed.keys = { ...sealed.keys, m5sealed: "k" };   // a new wallet of another tab
+    sealed.secrets[gid + ":2"].m5kp = "KPY";   // a newer save of another tab
+    const cidV = "ee".repeat(10), roomV = { key: "v".repeat(43), member: "dd".repeat(10), at: 1 };
+    sealed.chats = { ...sealed.chats, list: { ...sealed.chats?.list, [cidV]: roomV } };
+    storage.set("zf-vault", JSON.stringify(await seal(vkey, vrec, sealed)));
+    const keysBefore = t.gkeys;
+    t.gkeys = { ...keysBefore, m5probe: "kept" };   // only this tab knows it
+    t.setLocked({});   // the save of the next change does not happen
+    assert.equal(await t.putSec(gid, 3, { m5Flag: 3 }), false);
+    t.setLocked(null);
+    notify();
+    await waitFor("the share of seat 2 (sealed)", () => data.has(pathV + "/shares/2"));
+    await sleep(300);
+    assert.deepEqual(engine, ["package", "share 2"], "seat 1 signs nothing");
+    const said = (x) => x.includes("seat 1: its nonce for this payment is used or gone");
+    assert.ok(t.state.log.some(said), "the log says why");
+    assert.deepEqual([t.gkeys.m5probe, t.gkeys.m5sealed], ["kept", "k"], "both wallet keys");
+    assert.equal(t.sec(gid, 3).m5Flag, 3, "the change that this tab did not save stays");
+    assert.equal(t.sec(gid, 2).m5kp, "KPY", "a newer save of another tab stays");
+    await t.putSec(gid, 2, { m5kp: undefined });
+    assert.deepEqual(t.chats.list[cidV], roomV, "a chat of another tab comes in");
+    delete t.chats.list[cidV];
+    t.gkeys = keysBefore;
+    await drop(pathV);
+    const mw = await propose("mw", 4);
+    t.closeSession();
+    const pathW = `groups/${gid}/sessions/${mw.id}`;
+    await approveAs(mw.id, [1, 2]);
+    await sleep(100);
+    const subtle = globalThis.crypto.subtle, decrypt = subtle.decrypt.bind(subtle);
+    let wrote = false;
+    subtle.decrypt = (...a) => {
+      if (!wrote) { wrote = true; t.putSec(gid, 3, { m5Flag: 1 }); }
+      return decrypt(...a);
+    };
+    notify();
+    await waitFor("the shares of mw", () => data.has(pathW + "/shares/2"));
+    await sleep(300);
+    delete subtle.decrypt;
+    assert.equal(wrote, true);
+    assert.equal(t.sec(gid, 3).m5Flag, 1, "a write during the decrypt stays in memory");
+    const after = await openVault(vkey, JSON.parse(storage.get("zf-vault")));
+    assert.equal(after.secrets[gid + ":3"].m5Flag, 1, "and in the sealed record");
+    // A storage event of another tab takes what storage holds now, after the writes of this tab: a
+    // burn of this tab during its decrypt stays, in memory and in the sealed record.
+    await t.putSec(gid, 3, { nonces: { ...t.sec(gid, 3).nonces, m5e: { sighash: "aa" } } });
+    let burnedE = false;
+    subtle.decrypt = (...a) => {
+      if (!burnedE) {
+        burnedE = true;
+        const { m5e: _e, ...rest } = t.sec(gid, 3).nonces;
+        t.putSec(gid, 3, { nonces: rest });
+      }
+      return decrypt(...a);
+    };
+    await storageEvent("zf-vault");
+    delete subtle.decrypt;
+    const afterE = await openVault(vkey, JSON.parse(storage.get("zf-vault")));
+    const nonceE = (x) => (x.nonces || {}).m5e;
+    assert.deepEqual([burnedE, nonceE(t.sec(gid, 3)), nonceE(afterE.secrets[gid + ":3"])],
+      [true, undefined, undefined], "the burn stays");
+    await drop(pathW);
+    // A sealed record that does not open stops an approval, with a message that says what to do.
+    const mz = await propose("mz", 4);
+    t.closeSession();
+    storage.set("zf-vault", "{\"v\":1,\"junk\":true}");
+    const liveZ = t.state.sessions.find((x) => x.id === mz.id);
+    assert.equal(await t.approve(liveZ, 3).then(() => "approved", (e) => e.message),
+      "The locked keys in this browser cannot be read again. Reload the page.");
+    storage.delete("zf-vault");
+    t.setVault(null);
+    await t.putSec(gid, 3, { m5Flag: undefined });
+    await drop(`groups/${gid}/sessions/${mz.id}`);
+    // Which payments the watch takes: a proposal of a seat here, a package that a seat here
+    // approved (its mark, or the nonce of an approval from before the marks), not one with an
+    // error or past its expiry. Payments with a package come first, at most 8.
+    const far = (id, extra) => ({ id, pczt: "M5P", status: "collecting", createdAt: 1, ...extra });
+    const others = { by: 99, package: "P" };
+    const mark2 = { approved: "aa", tip: 4500001 };
+    await t.putSec(gid, 2, { marks: { ...t.sec(gid, 2).marks, w2: mark2 },
+      nonces: { ...t.sec(gid, 2).nonces, w3: { sighash: "aa" } } });
+    assert.deepEqual([far("w1", { by: 1 }), far("w2", others), far("w3", others),
+      far("w4", others), far("w5", { by: 1, error: "Failed." })].map((x) => t.needsWork(x)),
+    [true, true, true, false, false], "proposer; mark; old nonce; neither; failed");
+    t.setChain({ gid, url: "https://lwd.test", bal: { spendable: 1e8, pending: 0, height: 4503500 },
+      balAt: Date.now(), received: [], sent: new Set(), cw: { free() {} } });
+    assert.equal(t.needsWork(far("w1", { by: 1 })), false, "past its expiry");
+    const { w2: _w2, ...marks2 } = t.sec(gid, 2).marks;
+    const { w3: _w3, ...nonces2 } = t.sec(gid, 2).nonces;
+    await t.putSec(gid, 2, { marks: marks2, nonces: nonces2 });   // the test approvals hold nothing
+    t.setChain({ gid, url: "https://lwd.test", bal: { spendable: 1e8, pending: 0, height: 4500000 },
+      balAt: Date.now(), received: [], sent: new Set(), cw: { free() {} } });
+    const bare = Array.from({ length: 9 }, (_, k) => far("v" + k, { by: 1 }));
+    const picked = t.toWatch([...bare, far("vp", { by: 1, package: "P" })]).map((x) => x.id);
+    assert.deepEqual([picked.length, picked[0], picked.includes("v8")], [8, "vp", false],
+      "at most 8, a package first, then the newest");
+    // The steps that failed above try again after 3 s, and each step draws when it ends. Those
+    // end here, while the page can draw, and not under the recorder of the tests below.
+    await sleep(3500);
+    t.setZ({ ...fakeZ, ChainWallet: Sent });
+    t.setChain({ gid, bal: {}, sent: new Set(), syncing: true, cw: null });
+  }
+
   // A holder of the link: made-up results on the cancelled payment, a seat 4, n = 7, a new name.
   const p1 = `groups/${gid}/sessions/${first.id}`;
   const madeUp = { signed: "x", final: { txid: "t" }, broadcastTxid: "t", broadcastAt: 1 };
@@ -408,6 +1026,8 @@ const sealed = (gid, rel, seat, fields, key, names = ["by", "sig"]) =>
   assert.equal(t.expired(lateOne()), false);
   assert.equal(t.priorityTimes(decoded), 10);
   assert.equal(t.needsMyApproval(gid, lateOne()), true);
+  assert.equal(t.needsMyApproval(gid, { ...lateOne(), checking: true }), false,
+    "a part waits for its check: it may be a cancel");
   lateChain(4503453);
   assert.equal(t.expired(lateOne()), true, "a node refuses it 3 blocks before its height");
   assert.equal(t.needsMyApproval(gid, lateOne()), false);
@@ -446,6 +1066,7 @@ const sealed = (gid, rel, seat, fields, key, names = ["by", "sig"]) =>
   const click1 = t.approve(lateOne(), seat), click2 = t.approve(lateOne(), seat);
   await click2;
   t.secrets = { ...t.secrets, [slot]: { ...t.secrets[slot], nonces: { other: { sighash: "11" } } } };
+  storage.set("zf-secrets", JSON.stringify(t.secrets));   // the other tab saved it
   release();
   await click1;
   const kept = t.sec(t.state.gid, seat).nonces;
@@ -629,6 +1250,7 @@ const sealed = (gid, rel, seat, fields, key, names = ["by", "sig"]) =>
     createElement: (tag) => new Rec(tag), createTextNode: (text) => ({ text }),
   };
   try {
+    assert.equal(textOf(t.statusChip(checkingSession)), "Checking", "the chip of that payment");
     const setBal = (spendable) => t.setChain({ gid, bal: { spendable, pending: 0 }, received: [],
       sent: new Set(["T1"]), cw: null });
     setBal(0);
@@ -898,6 +1520,10 @@ const sealed = (gid, rel, seat, fields, key, names = ["by", "sig"]) =>
     assert.equal(sessions(), stored, "a refused submit proposes nothing");
     t.setChain(chainOf({ spendable: 1e8, pending: 0 }));
     assert.equal(named(t.sendDialog(), "button", "Propose payment").attrs.disabled, undefined);
+    t.ui.proposing = true;
+    assert.notEqual(named(t.sendDialog(), "button", "Propose payment").attrs.disabled, undefined,
+      "off while a proposal runs (S8)");
+    t.ui.proposing = false;
 
     // An expired payment: the chip and the drawer say so, the drawer offers "Propose again" and
     // no Cancel, and the page signs nothing for it. "Send again" comes 10 minutes after a send
@@ -913,6 +1539,8 @@ const sealed = (gid, rel, seat, fields, key, names = ["by", "sig"]) =>
     const labels = (list) => list.map(textOf);
     tipAt(4500000);
     assert.equal(textOf(t.statusChip(proposal)), "Needs approval");
+    assert.equal(textOf(t.statusChip({ ...proposal, checking: true })), "Checking",
+      "a part of it waits for its check");
     assert.match(textOf(t.expiryLine(proposal)), /^Expires at block 4,503,456, in about 24 hours/);
     tipAt(4500000, new Set(), Date.now() - 2 * 3600 * 1000);
     assert.match(textOf(t.expiryLine(proposal)), /in about 22 hours/, "the time since the sync");
@@ -1382,8 +2010,13 @@ const sealed = (gid, rel, seat, fields, key, names = ["by", "sig"]) =>
       answer = (p, sg, a) =>
         ({ state: a === "aa" ? "expired" : "unknown", txid: "tx-a", why: "x" });
       assert.equal(t.moveState(at(4503501)).propose, true, "the expired move goes again");
-      // The Move button of the card proposes the move, and the click event is no PCZT.
+      // The Move button of the card proposes the move, and the click event is no PCZT. Nothing
+      // may block Send then (S8): no payment in flight or open, and no approval that holds.
       t.state.sessions = t.state.sessions.filter((x) => x.id !== "zm");
+      const sessionsBefore = t.state.sessions;
+      const marksBefore = t.localSeats().map((i) => [i, t.sec(t.state.gid, i).marks]);
+      t.state.sessions = [];
+      for (const [i] of marksBefore) await t.putSec(t.state.gid, i, { marks: {} });
       const mc = at(4500000);
       mc.bal.max_send = 50000;
       Object.assign(t.ui, { tab: "overview" });
@@ -1395,6 +2028,8 @@ const sealed = (gid, rel, seat, fields, key, names = ["by", "sig"]) =>
       const moveCall = asked.find((x) => x[0] === "spend");
       assert.ok(moveCall, "the move is proposed");
       assert.equal(moveCall[3], undefined, "no PCZT of an expired payment");
+      t.state.sessions = sessionsBefore;
+      for (const [i, marks] of marksBefore) await t.putSec(t.state.gid, i, { marks });
       t.state.g = group;
       await settle();
 
@@ -1491,7 +2126,8 @@ const sealed = (gid, rel, seat, fields, key, names = ["by", "sig"]) =>
       await approved(me, h1);
       at(4500100);
       assert.ok(t.heldApprovals().includes("h1"), "the approval holds");
-      assert.match(String(t.sendBlocker()), /approved can still go on chain|waiting for its block/);
+      assert.match(String(t.sendBlocker()),
+        /approved can still go on chain|waiting for its block|Finish or cancel the open payment/);
       // Path A of QA round 4: no sent mark ever comes, and one seat writes a failure part.
       put({ ...h1, package: "PK", signed: "SA", status: "failed", error: "Failed." });
       at(4500101);
@@ -1618,9 +2254,370 @@ const sealed = (gid, rel, seat, fields, key, names = ["by", "sig"]) =>
       await quiet(() => sleep(20));
       assert.equal(t.heldApprovals().includes("h12"), false,
         "its expiry frees it in the same sync");
+      // S7 (the owner's decision D2): Approve, then Cancel in the drawer. With t < n the hold
+      // stays, and the drawer of the cancelled payment releases it after a check and a second
+      // click. The page takes t and n from the store again after each write: the tests set them
+      // just before a check.
+      const gid7 = t.state.gid, all7 = { ...group, t: group.n, shapeMoved: false };
+      const drawerOn = async (ss) => {
+        put(ss);
+        await quiet(async () => {
+          t.openSession(ss.id);
+          await waitFor("the approvals of " + ss.id, () => Object.keys(t.state.commits).length > 0);
+          await sleep(150);   // the draw of the open drawer runs with the stub page
+        });
+      };
+      const storeWithout = (seat, sid) => {
+        const inStore = JSON.parse(storage.get("zf-secrets"));
+        delete inStore[gid7 + ":" + seat].nonces[sid];
+        storage.set("zf-secrets", JSON.stringify(inStore));
+      };
+      at(4500000);
+      const s7 = open("s7", "PA");
+      await approved(me, s7);
+      await drawerOn(s7);
+      at(4500100);
+      await quiet(() => t.cancelPayment(s7));
+      assert.deepEqual([markOf(me, "s7").burned, (t.sec(gid7, me).nonces || {}).s7],
+        [true, undefined], "the nonce went without a share");
+      t.closeSession();
+      at(4500101);
+      assert.ok(t.heldApprovals().includes("s7"), "t < n: one cancel does not stop the others");
+      const gone = { ...s7, status: "cancelled", error: "Cancelled by a signer." };
+      const holdOf = (ss) => all(t.sessionLayer(ss),
+        (x) => x.attrs?.["data-key"] === "hold-" + ss.id)[0];
+      assert.equal(holdOf(s7), undefined, "a payment that can still finish offers no release");
+      put(gone);
+      const kept7 = t.state.sessions;
+      t.state.sessions = [gone];
+      assert.match(String(t.sendBlocker()), /After a cancel, open that payment to release it\./);
+      t.state.sessions = kept7;
+      const card = () => holdOf(gone);
+      assert.match(textOf(card()), new RegExp("other signers can still sign and send it\\. Send "
+        + "stays off until block 4,503,459, in about \\d+ hours\\. Release Send only"));
+      const hours = () => Number(/in about (\d+) hours/.exec(textOf(card()))[1]);
+      const fresh = hours();
+      at(4500101, new Set(), Date.now() - 2 * 3600 * 1000);
+      assert.equal(hours(), fresh - 2, "the time since the sync counts");
+      at(4500101);
+      const labels7 = () => all(card(), (x) => x.tag === "button").map(textOf);
+      const press = async (label, now = false) => {
+        if (label === "Release Send now" && !now) await quiet(() => sleep(450));
+        const button = named(card(), "button", label);
+        await quiet(() => button.on.click(click));
+      };
+      t.ui.release = "another";
+      assert.deepEqual(labels7(), ["I checked, release"], "the check of another payment");
+      t.ui.release = null;
+      await press("I checked, release");
+      assert.equal(t.heldApprovals().includes("s7"), true, "one click releases nothing");
+      assert.deepEqual(labels7(), ["Release Send now", "Keep the hold"],
+        "Keep the hold takes the place of the first button");
+      await quiet(async () => { t.openSession("s7"); await sleep(150); });
+      t.closeSession();
+      assert.deepEqual(labels7(), ["I checked, release"], "a closed drawer forgets the check");
+      await press("I checked, release");
+      await press("Keep the hold");
+      assert.equal(named(card(), "button", "Release Send now"), undefined, "kept");
+      await press("I checked, release");
+      await press("Release Send now", true);
+      assert.equal(t.heldApprovals().includes("s7"), true, "a double click releases nothing");
+      await press("Release Send now");
+      assert.equal(t.heldApprovals().includes("s7"), false, "released by hand");
+      assert.equal(card(), undefined, "no card once released");
+      // A failure part that one seat wrote, with no cancel here: the release burns the nonce of
+      // each seat here first, so this browser never signs that payment after Send opens again.
+      at(4500000);
+      const s7h = open("s7h", "PA");
+      await approved(other, s7h);
+      at(4500100);
+      const fakeFail = { ...s7h, status: "failed", error: "Failed." };
+      put(fakeFail);
+      assert.ok((t.sec(gid7, other).nonces || {}).s7h, "the nonce is live");
+      Object.assign(t.ui, { release: "s7h", releaseAt: 0 });
+      const release7h = named(holdOf(fakeFail), "button", "Release Send now");
+      await quiet(() => release7h.on.click(click));
+      assert.equal(t.heldApprovals().includes("s7h"), false, "released by hand (the second seat)");
+      assert.equal((t.sec(gid7, other).nonces || {}).s7h, undefined, "and its nonce is gone");
+      t.reactSession({ ...s7h, package: "PK", signers: [other] });
+      assert.equal(t.busy.has("share:s7h:" + other), false, "no share after the release");
+      // A release that this browser cannot save changes nothing.
+      at(4500000);
+      const s7q = open("s7q", "PA");
+      await approved(other, s7q);
+      at(4500100);
+      const failQ = { ...s7q, status: "failed", error: "Failed." };
+      put(failQ);
+      Object.assign(t.ui, { release: "s7q", releaseAt: 0 });
+      const releaseQ = named(holdOf(failQ), "button", "Release Send now");
+      // A lock of another tab makes the plain save refuse, with no change of the storage state.
+      storage.set("zf-vault", "{}");
+      await quiet(() => releaseQ.on.click(click));
+      storage.delete("zf-vault");
+      assert.match(t.banner.text, /could not save the change of seat/);
+      assert.ok(t.heldApprovals().includes("s7q"), "still held");
+      assert.ok((t.sec(gid7, other).nonces || {}).s7q, "and the nonce is still there");
+      // Two seats here approved. The save of the second burn fails: the first nonce is gone,
+      // nothing says released, and the hold stays (no release next to a live nonce).
+      const s7p = open("s7p", "PA");
+      await approved(me, s7p);
+      await approved(other, s7p);
+      const failP = { ...s7p, status: "failed", error: "Failed." };
+      put(failP);
+      Object.assign(t.ui, { release: "s7p", releaseAt: 0 });
+      const releaseP = named(holdOf(failP), "button", "Release Send now");
+      const setItem = localStorage.setItem;
+      let writes = 0;
+      localStorage.setItem = (k, v) => {
+        setItem.call(localStorage, k, v);
+        if (k === "zf-secrets" && ++writes === 1) storage.set("zf-vault", "{}");
+      };
+      await quiet(() => releaseP.on.click(click));
+      localStorage.setItem = setItem;
+      storage.delete("zf-vault");
+      assert.match(t.banner.text, /could not save the change of seat/);
+      assert.deepEqual([markOf(me, "s7p").released, markOf(other, "s7p").released],
+        [undefined, undefined], "nothing says released");
+      assert.ok(t.heldApprovals().includes("s7p"), "the hold stays");
+      // A release waits for the lock of the secrets.
+      let unlockP;
+      const busyTab = t.exclusive("secrets", () => new Promise((ok) => { unlockP = ok; }));
+      const releaseP2 = named(holdOf(failP), "button", "Release Send now");
+      const releasing = quiet(async () => { releaseP2.on.click(click); await sleep(200); });
+      await releasing;
+      assert.ok(t.heldApprovals().includes("s7p"), "it waits for the lock");
+      unlockP();
+      await busyTab;
+      await quiet(() => sleep(100));
+      assert.equal(t.heldApprovals().includes("s7p"), false, "then it releases");
+      t.ui.release = null;
+      // The second burn fails once: the release stops before any mark. The first nonce is gone,
+      // the second stays, nothing says released, and the hold stays.
+      const s7d = open("s7d", "PA");
+      await approved(me, s7d);
+      await approved(other, s7d);
+      const failD = { ...s7d, status: "failed", error: "Failed." };
+      put(failD);
+      Object.assign(t.ui, { release: "s7d", releaseAt: 0 });
+      const releaseD = named(holdOf(failD), "button", "Release Send now");
+      const getItem = localStorage.getItem, setItemD = localStorage.setItem;
+      let burns = 0, refused = false;
+      localStorage.setItem = (k, v) => {
+        setItemD.call(localStorage, k, v);
+        if (k === "zf-secrets") burns++;
+      };
+      localStorage.getItem = (k) => {
+        if (k !== "zf-vault" || burns !== 1 || refused) return getItem.call(localStorage, k);
+        refused = true;
+        return "{}";
+      };
+      await quiet(() => releaseD.on.click(click));
+      Object.assign(localStorage, { getItem, setItem: setItemD });
+      assert.equal(refused, true, "one save refused");
+      assert.equal(t.banner.text, "This browser could not save the change of seat " + other + ".");
+      const nonceD = (seat) => !!(t.sec(gid7, seat).nonces || {}).s7d;
+      assert.deepEqual([markOf(me, "s7d").released, markOf(other, "s7d").released, nonceD(me),
+        nonceD(other)], [undefined, undefined, false, true], "no release next to a live nonce");
+      assert.ok(t.heldApprovals().includes("s7d"), "the hold stays");
+      t.ui.release = null;
+      // A cancel whose burn cannot be saved says that the payment is cancelled, that the approval
+      // stays here, and how to end the hold.
+      at(4500000);
+      const s7f = open("s7f", "PA");
+      await approved(me, s7f);
+      await drawerOn(s7f);
+      storage.set("zf-vault", "{}");
+      const saidF = await quiet(() => t.cancelPayment(s7f).then(() => "", (e) => e.message));
+      storage.delete("zf-vault");
+      t.closeSession();
+      assert.match(saidF, new RegExp("^The payment is cancelled, but this browser could not "
+        + "change its saved keys, so its approval stays here\\. This browser could not save the "
+        + "change of seat " + me + "\\. To end the hold, release it in the payment\\.$"));
+      assert.ok((t.sec(gid7, me).nonces || {}).s7f, "the nonce stays");
+      // With t = n every seat must sign, so the cancel of a seat that made no share ends the
+      // hold. Both seats of this browser that approved burn. Only a signed shape counts.
+      at(4500000);
+      const s7n = open("s7n", "PA");
+      await approved(me, s7n);
+      await approved(other, s7n);
+      await drawerOn(s7n);
+      at(4500100);
+      await quiet(() => t.cancelPayment(s7n));
+      t.closeSession();
+      assert.deepEqual([markOf(me, "s7n").burned, markOf(other, "s7n").burned], [true, true]);
+      t.state.g = all7;
+      at(4500101);
+      assert.equal(t.heldApprovals().includes("s7n"), false, "t = n: the hold ends");
+      t.state.g = { ...all7, shapeMoved: true };
+      at(4500102);
+      assert.equal(t.heldApprovals().includes("s7n"), true, "a shape that moved does not count");
+      t.state.g = { ...group };
+      at(4500103);
+      assert.equal(t.heldApprovals().includes("s7n"), true, "control: with t < n it holds");
+      // No burn when a share of the seat may exist: storage has no nonce (a share went out), the
+      // drawer is closed, the open payment shows a share of the seat, or another copy approved.
+      const noBurn = async (sid, before) => {
+        at(4500000);
+        const ss = open(sid, "PA");
+        await approved(me, ss);
+        await drawerOn(ss);
+        await before(ss);
+        await quiet(() => t.cancelPayment(ss));
+        t.closeSession();
+        t.state.g = all7;
+        at(4500104);
+        assert.equal(markOf(me, sid).burned, undefined, sid + ": not burned");
+        assert.ok(t.heldApprovals().includes(sid), sid + ": the hold stays");
+        t.state.g = group;
+      };
+      await noBurn("s7s", () => storeWithout(me, "s7s"));
+      await noBurn("s7o", () => t.closeSession());
+      await noBurn("s7m", async (ss) => {
+        const rel = "sessions/" + ss.id + "/commits/" + me;
+        data.set("groups/" + gid7 + "/" + rel,
+          await t.signedDoc(gid7, rel, me, { commitments: ["another copy"], at: 1 }));
+        notify();
+        await waitFor("the other approval", () => S(t.state.commits[me]?.commitments)
+          === S(["another copy"]));
+      });
+      await noBurn("s7c", async (ss) => {
+        const rel = "sessions/" + ss.id + "/shares/" + me;
+        data.set("groups/" + gid7 + "/" + rel,
+          await t.signedDoc(gid7, rel, me, { shares: "[1]", at: 1 }));
+        notify();
+        await waitFor("the share of " + ss.id, () => t.state.shares[me]);
+      });
+      // A cancel waits for the lock of a seat that signs. Inside the lock the seat saved its burn
+      // and sent its share, so the cancel marks nothing.
+      const s7w = open("s7w", "PA");
+      await approved(me, s7w);
+      await drawerOn(s7w);
+      let unlock;
+      const signing = t.exclusive("secrets", () => new Promise((ok) => { unlock = ok; }));
+      const cancelling = quiet(() => t.cancelPayment(s7w));
+      await sleep(50);
+      storeWithout(me, "s7w");
+      unlock();
+      await signing;
+      await cancelling;
+      t.closeSession();
+      assert.equal(markOf(me, "s7w").burned, undefined, "the cancel waited for the share");
+      t.state.g = group;
+      // S8 (ZEC-10): one open payment at a time. A faucet wallet holds one note, so a second
+      // proposal would spend it again and fail only at the broadcast.
+      const OPEN8 = "Finish or cancel the open payment, or wait until it expires.";
+      at(4500100);
+      const o8 = open("o8", "PA");
+      await t.putSec(t.state.gid, me, { marks: { ...t.sec(t.state.gid, me).marks,
+        o8c: { approved: "aa", tip: 4500001 } } });
+      // The approved PCZT is kept, so the expiry of the changed payment is known.
+      keptStore.set(`kept:${t.state.gid}:o8c`,
+        Z.secretSeal(t.gkeys[t.state.gid], `kept\n${t.state.gid}:o8c`, "PA"));
+      t.expiryAt(open("o8c", "PB"));
+      await quiet(() => sleep(20));
+      assert.equal(t.expiryAt(open("o8c", "PB")), 4503456, "the kept PCZT gives the expiry");
+      const cases = [o8, { ...o8, error: "Cancelled." }, { ...o8, broadcastTxid: "tx-a" },
+        open("o8u", "UNREADABLE"), open("o8f", "PF"), open("o8c", "PB")];
+      assert.deepEqual(cases.map((x) => t.isOpen(x)), [true, false, false, false, false, false],
+        "open; cancelled; sent; unreadable; an expiry past any approval; an approval changed");
+      at(4500100, new Set(["tx-a"]));
+      assert.equal(t.isOpen(o8), false, "a block holds it");
+      at(4503456 - 1 - 6912);
+      assert.equal(t.isOpen(o8), true, "the latest expiry that an approval allows counts");
+      at(4503456 - 2 - 6912);
+      assert.equal(t.isOpen(o8), false, "one block later than that does not");
+      at(4503500);
+      assert.equal(t.isOpen(o8), false, "an expired proposal is not open");
+      // Send and every proposal refuse while one is open, also "Propose again" on a move: all go
+      // through newSpend. The approvals of this block hold Send, so they step aside here.
+      at(4500100);
+      const sessions8 = t.state.sessions;
+      const marks8 = t.localSeats().map((i) => [i, t.sec(t.state.gid, i).marks]);
+      for (const [i] of marks8) await t.putSec(t.state.gid, i, { marks: {} });
+      t.state.sessions = [{ ...o8, status: "cancelled", error: "Cancelled." }, o8];
+      assert.equal(t.sendBlocker(), OPEN8, "one open payment in the list is enough");
+      asked.length = 0;
+      await assert.rejects(quiet(() => t.newSpend([{ to: "utest1x", amount: 5 }], "two")),
+        /Finish or cancel the open payment/);
+      assert.equal(asked.some((x) => x[0] === "spend"), false, "the engine makes nothing");
+      t.state.sessions = [{ ...o8, status: "cancelled", error: "Cancelled." }];
+      assert.equal(t.sendBlocker(), null, "a cancelled one blocks nothing");
+      // A proposal also refuses on a payment in flight and on a held approval, with their texts.
+      const flying8 = { ...o8, id: "o8s", signed: "SA", broadcastTxid: "tx-a", broadcastAt: 1,
+        final: { txid: "tx-a", tx_hex: "00" }, status: "broadcast" };
+      t.state.sessions = [flying8];
+      await assert.rejects(quiet(() => t.newSpend([{ to: "utest1x", amount: 5 }], "f")),
+        /waiting for its block/);
+      t.state.sessions = [open("o8c", "PB")];
+      await t.putSec(t.state.gid, me, { marks: { o8c: { approved: "aa", tip: 4500001 } } });
+      assert.match(String(t.sendBlocker()), /approved can still go on chain/,
+        "a changed approval shows the text of its hold");
+      await assert.rejects(quiet(() => t.newSpend([{ to: "utest1x", amount: 5 }], "h")),
+        /approved can still go on chain/);
+      await t.putSec(t.state.gid, me, { marks: {} });
+      t.state.sessions = [];
+      assert.equal(asked.some((x) => x[0] === "spend"), false, "the engine makes nothing");
+      // A double tap proposes once: the second call refuses at once.
+      let free8;
+      const slow = new Promise((ok) => { free8 = ok; });
+      const real = engine.createSpend;
+      engine.createSpend = async () => { await slow; throw new Error("No notes."); };
+      const one = quiet(() => t.newSpend([{ to: "utest1x", amount: 5 }], "one"));
+      assert.equal(t.ui.proposing, true, "the Propose button is off");
+      const late = sleep(500).then(() => "the second call waited");
+      const second = quiet(() => t.newSpend([{ to: "utest1x", amount: 5 }], "two"))
+        .then(() => "the second call ran", (e) => e.message);
+      assert.equal(await Promise.race([second, late]),
+        "The proposal of a payment is not complete yet. Wait a moment.");
+      free8();
+      await assert.rejects(one, /No notes/);
+      assert.equal(t.ui.proposing, false, "on again after the call");
+      // S9: a proposal with no answer in 60 s stops and frees Propose. The engine may still use
+      // the wallet object, so it counts as stalled, and the next sync starts a new one. An answer
+      // ends the wait, and an object that a sync started meanwhile stays.
+      const realTimeout = globalThis.setTimeout;
+      globalThis.setTimeout = (fn, ms, ...a) => realTimeout(fn, ms >= 60000 ? ms / 600 : ms, ...a);
+      const propose9 = (note) => quiet(() => t.newSpend([{ to: "utest1x", amount: 5 }], note))
+        .then(() => "proposed", (e) => e.message);
+      const stallOf = () => [t.chain.stalled ?? null, t.chain.url];
+      engine.createSpend = async () => { throw new Error("No notes."); };
+      assert.equal(await propose9("fast"), "No notes.");
+      await quiet(() => sleep(300));
+      assert.deepEqual(stallOf(), [null, "https://lwd.test"], "an answer ends the wait");
+      engine.createSpend = () => new Promise(() => {});
+      const swapped = propose9("swap");
+      t.chain.cw = { ...engine };
+      await swapped;
+      assert.deepEqual(stallOf(), [null, "https://lwd.test"], "the new object of a sync stays");
+      t.chain.cw = engine;
+      const stuck = propose9("stuck");
+      assert.equal(t.ui.proposing, true, "Propose is off while the engine works");
+      const stuckSaid = await stuck;
+      globalThis.setTimeout = realTimeout;
+      assert.equal(stuckSaid, "The proposal got no answer in 60 s, so it stopped. Try again.");
+      assert.equal(t.ui.proposing, false, "Propose works again");
+      assert.deepEqual(stallOf(), [engine, null], "the object is stalled");
+      t.state.sessions = sessions8;
+      for (const [i, marks] of marks8) await t.putSec(t.state.gid, i, { marks });
+      const { o8c: _o8c, ...marksMe } = t.sec(t.state.gid, me).marks;
+      await t.putSec(t.state.gid, me, { marks: marksMe });
+      engine.createSpend = real;
+      // M5: the drawer says what the signature step waits for.
+      const enough = Object.fromEntries(t.seatIds().slice(0, t.state.g.t).map((i) => [i, {}]));
+      const drawn = (ss, shares) => {
+        Object.assign(t.state, { commits: enough, shares });
+        return textOf(t.sessionLayer(ss));
+      };
+      assert.match(drawn(open("w5", "PA"), {}),
+        /Waiting for the proposer's browser to build the signing package/);
+      const w5 = { ...open("w5", "PA"), package: "PK", signers: [me, other], status: "signing" };
+      assert.match(drawn(w5, { [me]: {} }),
+        /Signing · 1 of 2 shares\. Waiting for [^:,]+: each browser signs while this wallet/);
+      Object.assign(t.state, { commits: {}, shares: {} });
       const mine = new Set(["za", "zh", "zs", "zp", "zw", "zf", "zn", "zx", "zl", "zm", "zr", "zq",
         "zv", "zy", "zu", "zt", "zk", "zj", "zg", "zz", "zal", "zho", "zc1", "zc2", "h1", "h4",
-        "h5", "h5b", "h7", "h10"]);
+        "h5", "h5b", "h7", "h10", "s7", "s7h", "s7q", "s7p", "s7n", "s7s", "s7o", "s7m", "s7c",
+        "s7w", "s7d", "s7f"]);
       t.state.sessions = t.state.sessions.filter((x) => !mine.has(x.id));
       t.state.g = group;
       t.setZ(fakeZ);
@@ -1732,8 +2729,70 @@ const sealed = (gid, rel, seat, fields, key, names = ["by", "sig"]) =>
   const [kept] = await sync("lightwalletd: unavailable");
   assert.equal(kept.error, "lightwalletd: unavailable");
   assert.deepEqual([kept.cw !== null, kept.bal.height], [true, 9], "another error keeps the state");
+  // S9: a broadcast starts at the servers that did not fail in the last 5 minutes.
+  const tried = [];
+  class Recorder {
+    constructor(ufvk, birthday, url) { tried.push(url); }
+    async broadcast() { return JSON.stringify({ txid: "t9" }); }
+    free() {}
+  }
+  const down = async (url) => { if (url.includes("a9")) throw new Error("down"); return 1; };
+  t.setZ({ ...Z, latestHeight: down, ChainWallet: Recorder });
+  const where = (net) => ({ net, ufvk: "u", birthday: 1 });
+  const fresh = { servers: ["https://a8.test", "https://b8.test"] };
+  await t.broadcastAnywhere("00", where(fresh));
+  assert.deepEqual(tried, ["https://a8.test"], "control: the configured order");
+  const net9 = { servers: ["https://a9.test", "https://b9.test"] };
+  assert.equal(await t.pickServer(net9), "https://b9.test");
+  tried.length = 0;
+  assert.equal((await t.broadcastAnywhere("00", where(net9))).txid, "t9");
+  assert.deepEqual(tried, ["https://b9.test"], "the server that failed is not asked first");
 }
 
+
+// The inbox of a wallet that is not open: a part of a seat that this device has not pinned waits
+// for good. It stays out, and the payment is not "checking", so a forged part hides no proposal.
+{
+  const W = "cd".repeat(10), SID = "ab12cd34ef56ab12cd34";
+  const k1 = await newSignKey(), k2 = await newSignKey();
+  const made = { pool: "ironwood", amount: 5, change: 1, fee: 10000, note_value: 20, pczt: "AAA" };
+  const fields = t.proposalFields([{ to: "utest1x", amount: 5 }], "", made, null, 1760000000000);
+  const proposal = await sealed(W, "sessions/" + SID, 1, fields, k1);
+  const pins = { [W + ":1"]: k1.signPk, [W + ":2"]: k2.signPk, ["version:" + W]: "3" };
+  Object.assign(t.signPins, pins);
+  t.secrets[W + ":2"] = { version: 3, ...k2, keyPackage: "kp" };
+  const groupsBefore = t.state.groups;
+  t.state.groups = [...groupsBefore,
+    t.cleanGroup(W, { name: "W", n: 3, t: 2, version: 3, network: "testnet" })];
+  const listed = async (extra) => {
+    t.rawInbox[W] = [{ id: SID, ...proposal, status: "collecting", ...extra }];
+    t.refilter();
+    await sleep(300);
+    const ss = t.inbox[W]?.find((x) => x.id === SID);
+    return [ss?.checking, ss?.status, t.toApprove(W).length];
+  };
+  assert.deepEqual(await listed({}), [false, "collecting", 1], "control");
+  const forged = { cancelBy: 3, cancelSig: "AAAA", error: "x", status: "cancelled" };
+  assert.deepEqual(await listed(forged), [false, "collecting", 1],
+    "a part of a seat that is not pinned hides nothing");
+  // A cancel of a pinned seat whose check has no result yet: the payment is "checking".
+  const cancelW = await t.sigPart(W, SID, "cancel", { error: "Cancelled." }, 2);
+  const subtleW = globalThis.crypto.subtle, verifyW = subtleW.verify.bind(subtleW);
+  let openW;
+  const heldW = new Promise((ok) => { openW = ok; });
+  subtleW.verify = (...a) => heldW.then(() => verifyW(...a));
+  const cancelled = { error: "Cancelled.", status: "cancelled", ...cancelW };
+  assert.deepEqual(await listed(cancelled), [true, "collecting", 0], "a pinned seat: checking");
+  openW();
+  delete subtleW.verify;
+  assert.deepEqual(await listed(cancelled), [false, "cancelled", 0], "then cancelled");
+  delete t.rawInbox[W];
+  delete t.inbox[W];
+  delete t.secrets[W + ":2"];
+  for (const k of Object.keys(pins)) delete t.signPins[k];
+  t.state.groups = groupsBefore;
+  t.refilter();
+}
 
 // ── The personal account: storage, sync, sending, funding, backup and restore ──
 {
@@ -2308,6 +3367,11 @@ const sealed = (gid, rel, seat, fields, key, names = ["by", "sig"]) =>
   t.setZ(Zp);
   assert.equal(storage.get("zf-vault"), otherTab, "nothing wrote over the account of the other tab");
   assert.equal(t.personal.seed, seed, "this tab took the account of the other tab");
+  // A locked step keeps an account that a record of another tab holds and this tab does not have
+  // yet, so it never seals "no account" over one.
+  t.adoptPersonal(null);
+  await t.takeStored();
+  assert.equal(t.personal?.seed, seed, "a locked step takes the account of the record");
   await synced();
   // A page from before the accounts saves the record with no `personal` field and drops the
   // account. This page keeps it in memory and seals it again. A null means that a page removed it.
@@ -2600,12 +3664,12 @@ const sealed = (gid, rel, seat, fields, key, names = ["by", "sig"]) =>
     t.ui.backup = { seat: 2, made: false, busy: false };
     assert.match(textOf(t.backupDialog()),
       /Back up seat 2.*opens your key share.*sign as this seat/);
-    // The seat dialog and the note say why old files stop opening. The account file did not change.
-    const CHANGED = /backup format changed on 16 October 2026\. Older backup files no longer open/;
-    assert.match(textOf(t.backupDialog()), CHANGED);
-    assert.match(textOf(t.backupDialog()), /Save a new backup now/);
-    assert.match(textOf(t.backupNote([2])), CHANGED);
-    assert.match(textOf(t.backupNote([2])), /Save a new backup now/);
+    // S13: the seat dialog and the note no longer name the format change of 16 October 2026 or
+    // the iPhone and Mac apps. Only the restore error of an old file names the change.
+    const CHANGED = /backup format changed on 16 October 2026|iPhone and Mac apps/;
+    assert.doesNotMatch(textOf(t.backupDialog()), CHANGED);
+    assert.doesNotMatch(textOf(t.backupNote([2])), CHANGED);
+    assert.match(textOf(t.backupNote([2])), /Back up your key share/);
     t.ui.backup = { personal: true, made: false, busy: false };
     const backup = textOf(t.backupDialog());
     assert.match(backup, /Back up the personal account.*opens the backup of your personal account/);
@@ -2709,7 +3773,33 @@ const sealed = (gid, rel, seat, fields, key, names = ["by", "sig"]) =>
     idbMap.set("personal:key", "x");
     idbMap.set("personal:rec", "y");
     globalThis.zigs = { use: async () => null };
+    // Another tab saves after this page loaded: the unlock opens the record that storage holds now.
+    const rec0 = JSON.parse(storage.get("zf-vault")), cidU = "fa".repeat(10);
+    const newer = await openVault(prfKey, rec0);
+    const roomU = { key: "u".repeat(43), member: "dd".repeat(10), at: 1 };
+    newer.chats = { profile: null, list: { [cidU]: roomU } };
+    storage.set("zf-vault", JSON.stringify(await seal(prfKey, rec0, newer)));
+    // And a save of another tab during the decrypt of the unlock comes in, also when an invite link
+    // waits in the fragment: the unlock takes that save before the link saves.
+    const cidD = "fb".repeat(10), roomD = { ...roomU, key: "d".repeat(43) };
+    const during = JSON.stringify(await seal(prfKey, rec0,
+      { ...newer, chats: { profile: null, list: { [cidU]: roomU, [cidD]: roomD } } }));
+    const subtleU = globalThis.crypto.subtle, decryptU = subtleU.decrypt.bind(subtleU);
+    subtleU.decrypt = (...a) => { storage.set("zf-vault", during); return decryptU(...a); };
+    const gidI = "ac".repeat(10), keyI = "i".repeat(43);
+    location.hash = "#" + gidI + "." + keyI;
     await t.unlockVault();
+    delete subtleU.decrypt;
+    location.hash = "";
+    assert.deepEqual([t.chats.list[cidU], t.chats.list[cidD], t.gkeys[gidI]], [roomU, roomD, keyI],
+      "the unlock opens the record of now, then takes the save during it, then the link");
+    await waitFor("the link is saved", () => storage.get("zf-vault") !== during);
+    const sealedU = await openVault(prfKey, JSON.parse(storage.get("zf-vault")));
+    assert.deepEqual([sealedU.chats.list[cidD], sealedU.keys[gidI]], [roomD, keyI],
+      "the save of the link keeps the save of the other tab");
+    delete t.chats.list[cidU];
+    delete t.chats.list[cidD];
+    delete t.gkeys[gidI];
     await sleep(30);
     assert.deepEqual([t.personal, /bad index/.test(t.personalError), copy()], [null, true, []]);
     t.setVault(null);
@@ -2780,6 +3870,33 @@ const sealed = (gid, rel, seat, fields, key, names = ["by", "sig"]) =>
   assert.equal(t.banner.kind, "bad");
   assert.deepEqual(Object.keys(t.secrets).sort(), [A + ":2", A + ":3"],
     "a refused file stores nothing");
+  // A step that failed shows its error until the same step succeeds (S11). The error of another
+  // step stays.
+  const fails = (text) => async () => { throw new Error(text); };
+  await t.once("s11-a", fails("A failed."));
+  assert.equal(t.banner.text, "A failed.");
+  await t.once("s11-a", async () => {});
+  assert.equal(t.banner, null, "the success of the step hides its error");
+  await t.once("s11-a", fails("A failed."));
+  await t.once("s11-b", fails("B failed."));
+  await t.once("s11-a", async () => {});
+  assert.equal(t.banner.text, "B failed.", "the error of another step stays");
+  await t.once("s11-b", async () => {});
+  assert.equal(t.banner, null);
+  await t.once("s11-c", fails("C1."));
+  await t.once("s11-c", fails("C2."));
+  await t.once("s11-c", async () => {});
+  assert.equal(t.banner, null, "the last text of the step counts");
+  await t.once("s11-d", fails("D failed."));
+  await t.once("s11-e", async () => {});
+  assert.equal(t.banner.text, "D failed.", "a step that never failed hides nothing");
+  await t.once("s11-d", async () => {});
+  await t.once("s11-f", fails("F."));
+  await t.once("s11-f", async () => {});
+  await t.once("s11-g", fails("F."));
+  await t.once("s11-f", async () => {});
+  assert.equal(t.banner.text, "F.", "a success forgets the step: it hides nothing later");
+  await t.once("s11-g", async () => {});
 
   // A browser that holds nothing takes the file. The seat counts as backed up only after it fits.
   const quiet = { onSnapshot: () => () => {} };

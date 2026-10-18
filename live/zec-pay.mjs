@@ -380,6 +380,34 @@ const openRequest = (page, id) =>
     id,
   );
 
+// The drawer of the open payment closes; the page shows the wallet (M5: signing goes on).
+const closeDrawer = (page) =>
+  run(page, () => {
+    const close = document.querySelector('.drawer [aria-label="Close"]');
+    if (close) close.click();
+    return !!close;
+  });
+const drawerOpen = (page) => run(page, () => !!document.querySelector(".drawer"));
+const approvedNow = (page) =>
+  run(page, () => {
+    const text = document.querySelector("#banner-text")?.textContent ?? "";
+    return text.startsWith("Approved");
+  });
+
+// The text of the activity row of payment `id`, with its chip.
+const rowText = (page, id) =>
+  run(page, (sid) => document.querySelector(`[data-key="pay-${sid}"]`)?.textContent ?? "", id);
+const openRow = (page, id) =>
+  run(
+    page,
+    (sid) => {
+      const row = document.querySelector(`[data-key="pay-${sid}"]`);
+      if (row) row.click();
+      return !!row;
+    },
+    id,
+  );
+
 /** Fills the Send form and proposes. Returns the chain height read just before the click. */
 async function propose(page, address) {
   await press(page, "Send", SEND_MS);
@@ -401,15 +429,30 @@ async function payInPages([first, second], address) {
   const pageFee = zatOfText(shown.text);
   const pagePriority = shown.label.startsWith("Priority");
   log(`proposed; the page shows "${shown.label}: ${shown.text}"`);
+  // A person closes the payment after the approval ends: the page has reacted for the last time
+  // with the drawer open, and the approvals that come later must still reach it.
   await press(first, "Approve payment", APPROVE_MS);
+  await until(first, "the approval", () => approvedNow(first), APPROVE_MS);
+  await until(first, "the closed drawer", () => closeDrawer(first), 20_000);
   await until(second, "the approval request", () => openRequest(second, id), APPROVE_MS);
   await press(second, "Approve payment", APPROVE_MS);
-  log("both seats approved; building the proof");
+  await until(second, "the approval", () => approvedNow(second), APPROVE_MS);
+  await until(second, "the closed drawer", () => closeDrawer(second), 20_000);
+  // M5: with both drawers closed, the proposer's browser builds the package, both browsers sign
+  // and the shares are combined.
+  const signed = async () =>
+    !(await drawerOpen(first)) && /Ready to prove/.test(await rowText(first, id));
+  await until(first, "the signatures with the drawers closed", signed, APPROVE_MS);
+  if ((await drawerOpen(first)) || (await drawerOpen(second))) {
+    throw new Error("a drawer opened again while the browsers signed");
+  }
+  log("both seats approved and closed the payment; both browsers signed in the background");
+  await until(first, "the payment row", () => openRow(first, id), 20_000);
   await press(first, "Build proof", APPROVE_MS);
   await press(first, "Send to network", PROOF_MS);
   log("sent to the network; without a link, see the history of the wallet before a new run");
   const txid = await until(first, "the explorer link", () => explorerTxid(first), 120_000);
-  return { txid, tips, pageFee, pagePriority };
+  return { txid, tips, pageFee, pagePriority, id };
 }
 
 async function openSeats(harness, rig, files, group) {
@@ -445,8 +488,8 @@ async function paymentInBrowser(wallet, group) {
 
 // The chip of the open payment. A click on Refresh, at most every 20 s, syncs the page; the
 // drawer covers the button, so the click goes through the page.
-const chipNow = (page) =>
-  run(page, () => {
+const chipNow = (page, id) =>
+  run(page, (sid) => {
     const now = Date.now();
     const refresh = [...document.querySelectorAll("button")].find(
       (b) => b.textContent.trim() === "Refresh",
@@ -455,13 +498,16 @@ const chipNow = (page) =>
       window.zecPayRefresh = now;
       refresh.click();
     }
-    return document.querySelector(".drawer-head .badge")?.textContent.trim() ?? null;
-  });
+    // The open drawer, else the activity row of the payment: a seat may keep it closed (M5).
+    const chip = document.querySelector(".drawer-head .badge")
+      ?? document.querySelector(`[data-key="pay-${sid}"] .badge`);
+    return chip?.textContent.trim() ?? null;
+  }, id);
 
 /** After the block, both seats show "Sent": the engine's session state of each (ZEC-13). */
-async function bothSent(pages) {
+async function bothSent(pages, id) {
   for (const [i, page] of pages.entries()) {
-    const sent = async () => (await chipNow(page)) === "Sent";
+    const sent = async () => (await chipNow(page, id)) === "Sent";
     await until(page, `"Sent" on the page of seat ${i + 1}`, sent, CHIP_MS);
   }
 }
@@ -510,7 +556,7 @@ async function live() {
   if (sent.has(made.txid)) throw new Error(`transaction ${made.txid} was in the wallet before`);
   log(`sent ${made.txid}; waiting for a block`);
   const mined = await waitMined(cw, made.txid);
-  await bothSent(made.pages);
+  await bothSent(made.pages, made.id);
   log("both pages show the payment as sent");
   await release("browser");
   await release("server");

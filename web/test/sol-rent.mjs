@@ -145,6 +145,37 @@ const [cancelled] = findAll(after, (n) => n.attrs["data-sol"] === "rent-done");
 assert.match(textOf(cancelled), new RegExp("Cancel transactions of seat 1:\\s+" + cancelId));
 const href = findAll(cancelled, (n) => n.tag === "a")[0].attrs.href;
 assert.equal(href, "https://explorer.solana.com/tx/" + cancelId + "?cluster=devnet");
+const [note] = findAll(after, (n) => n.attrs["data-sol"] === "explorer-text");
+assert.match(textOf(note), /That site is not Zigs: it sees the id that you open and your IP/);
+
+// A cancel that fails on chain ends the reclaim; the cancels that landed before it stay listed.
+const rentDone = () => {
+  const shown = solView({ ...c, host: { ...c.host, el: node } }, (fn) => fn, {});
+  return findAll(shown, (n) => n.attrs["data-sol"] === "rent-done").map(textOf);
+};
+const third = openProposal("03".repeat(32), now + DAY - 10n);
+const fourth = openProposal("04".repeat(32), now + DAY - 10n);
+await scanRent(c);
+assert.equal(c.rent.found[seat].length, 2);
+const push = chain.commands.push;
+let sends = 0;
+chain.commands.push = function (msg) {
+  if (msg.cmd === "send" && ++sends === 2) chain.sendMode = "fail"; // the second cancel fails
+  return push.call(this, msg);
+};
+await assert.rejects(reclaimRent(c, seat), /The cancel failed: /);
+chain.commands.push = push;
+chain.sendMode = null;
+const landed = chain.landed.at(-1).signature;
+assert.deepEqual(c.rentDone, { seat, txIds: [landed] }, "the failed cancel is not listed");
+assert.equal([third, fourth].filter((a) => chain.accounts.has(a)).length, 1, "one stays open");
+assert.match(rentDone()[0], new RegExp("Cancel transactions of seat 1:\\s+" + landed));
+// A first cancel that fails lists nothing: no line with no id.
+await scanRent(c);
+chain.sendMode = "fail";
+await assert.rejects(reclaimRent(c, seat), /The cancel failed: /);
+chain.sendMode = null;
+assert.deepEqual([c.rentDone.txIds, rentDone()], [[], []], "no empty line");
 
 console.log("sol-rent: all checks passed");
 process.exit(0);

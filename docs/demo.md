@@ -43,7 +43,7 @@ below that say "on main" need nothing more.
 | S10 | The invite text names the password | Give each person the password before the scan |
 | S15 | Copy buttons for the Solana addresses | Copy the payee address from the private note on L1 |
 | S16 | Explorer links for Solana ids | Paste the id into https://explorer.solana.com/?cluster=devnet |
-| SOL-4 | Local proving on Demo A | Keep local proving off: all groups use the hosted prover |
+| SOL-4 | Local proving on Demo A (the card **Local proving** of the Solana tab) | Keep local proving off: all groups use the hosted prover |
 | S17 | A neutral line while a device reads the wallet | The Approve button shows during the read. While the red text "Zigs is reading your wallet" shows, do not click. Wait until the screen shows the payment (up to about 25 s) |
 
 ## 2. Owner decisions that apply
@@ -149,11 +149,22 @@ Stage on app.zigs.app. The Solana tab of staging works only after D4 adds stagin
    - Without M3: after all three seats show **Address checked**, L1 opens the Solana tab and
      clicks **Add Solana**. Keep L1, L2 and L3 open on the wallet until every seat shows its
      Solana key ready.
-   - With SOL-4: turn on local proving for Demo A before its first spend. **[waits for SOL-4]:
-     the name of the setting comes when it lands.** Keep it off on the spare wallet (step 10). A
-     group with local proving on can never go back to the hosted prover. If a Devnet change
-     breaks the web prover, Demo A cannot pay until a Zigs update ships a new prover, and the
-     spare wallet, with the hosted prover and Devnet SOL on its fee addresses, is the fallback.
+   - With SOL-4, before the first spend of Demo A: on the Solana tab, in the card **Local
+     proving**, click **Test this device, then prove on our devices**. Confirm "Turn on local
+     proving for every device of this group? It cannot be turned off." Then reload every open
+     Zigs tab of the group, and make the Solana backups after this step (step 9), as the card
+     says. **[waits for SOL-4]**
+     - Each seat then shows "Local proving: this device made a test proof in N s." On the test
+       Mac of 18 October 2026, a test proof took 6.3 to 6.6 s.
+     - A seat that shows "Local proving: this device could not make a test proof, so it cannot
+       pay for this group." cannot pay. Use another device for that seat.
+     - If the card says "Helius changed the Solana pool after this version of Zigs was tested
+       with it. Local proving cannot be turned on until Zigs is tested with the new pool.",
+       Devnet moved: follow the "pool program" row of section 6.
+     - Keep local proving off on the spare wallet (step 10). A group with local proving on can
+       never go back to the hosted prover. If a Devnet change breaks the web prover, Demo A
+       cannot pay until a Zigs update brings a new prover. The spare wallet, with the hosted
+       prover and Devnet SOL on its fee addresses, is then the fallback.
 9. Save the backups of each seat: the Zcash file (**Back up key share**) and the Solana file
    (**Back up Solana part, seat N** on the Solana tab). Keep the two passphrases offline. Restore
    one seat on a blank browser profile once.
@@ -246,7 +257,7 @@ Solana error, a server problem and a synced balance that is too low.
 | A Solana error that starts with "WalletError", "ClientError" or "Solana error #" and stays after one minute | Stop the Solana part, show the recorded run, and tell the coordinator |
 | The side bar says "Connecting to the group server…" for a long time, or "The group server does not answer" | Read the reason in brackets (S1). For "no network" or "too many connections from this network" (M9), move one laptop to the phone hotspot. For "the preview password is missing or wrong", reload the page and enter the password. For "the server has a problem", wait one minute, then show the recorded run |
 | A hold blocks Send | Use the spare wallet (S7) |
-| Demo A, with local proving on, shows the text that Helius changed the pool | Pay from the spare wallet, which uses the hosted prover. **[waits for SOL-4]** |
+| Demo A, with local proving on, says "This group makes its proofs on its devices, and the local prover no longer fits the Solana pool" | Pay from the spare wallet, which uses the hosted prover. The page sent nothing to Helius for that payment, and the funds of Demo A stay in the pool until a Zigs update brings a new prover. **[waits for SOL-4]** |
 | Solana says "the synced balance does not cover the amount" | An open proposal holds the notes (S4). Use the spare wallet, or show the recorded run |
 | A seat laptop is lost | Restore the seat from its two backup files (M4) |
 | L2 refuses the payment: the name gives another address | L1 has not approved yet, so L1 cancels the payment and proposes again with the pasted utest1 address. **[waits for M10]** |
@@ -261,7 +272,8 @@ Solana error, a server problem and a synced balance that is too low.
 - **Solana.** The amount of a private payment is hidden on chain. The owner key of the payee, the
   fee address of the seat that pays and the group are public. The hosted prover of Helius sees
   each payment while it builds the proof. Helius has a browser prover (zolana-web-sdk), which
-  Helius calls experimental. Zigs does not use it yet (SOL-4). The Zigs server operator can link
+  Helius calls experimental. With SOL-4, Demo A makes every proof on its devices, so Helius
+  gets no witness of its payments. **[waits for SOL-4]** The Zigs server operator can link
   the wallet to its Solana addresses by timing.
 - **ZNS.** Our Worker downloads the whole testnet registry, and each device looks the name up
   itself. So no resolver learns which name a person pays. **[waits for M10]**

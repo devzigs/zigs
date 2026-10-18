@@ -576,7 +576,8 @@ const syncState = (rpcUrl = RPC) => ({
     },
   };
   const roles = JSON.parse(W.sol_roles(original.solSeed, original.groupKey));
-  const snap = { slot: "123", balance: "123456789", utxos: [{ hash: "ab".repeat(32) }] };
+  const note = { hash: "ab".repeat(32), amount: "5", blinding: "cd".repeat(32) };
+  const snap = { slot: "123", balance: "123456789", utxos: [note] };
   snap.old = { balance: "900", movable: "700", utxos: [] };
   assert.equal(await saveSnap(Z, roles.seal_key, gid, snap), true);
   assert.deepEqual([world.name, world.stores], ["zigs-sol", 1], "its own database");
@@ -598,6 +599,8 @@ const syncState = (rpcUrl = RPC) => ({
   await showSaved(free);
   assert.equal(free.sync.balance, "0.123456789 SOL", "control: a saved sync is shown");
   assert.equal(free.sync.oldBalance, "700", "the move card counts the movable old SOL");
+  const notes = [{ hash: note.hash, amount: "5" }];
+  assert.deepEqual([free.sync.lamports, free.sync.notes], ["123456789", notes], "no blinding");
   await showSaved(stopped);
   assert.deepEqual([stopped.sync, stopped.savedShown], [{}, false], "a stopped wallet shows none");
   const other = JSON.parse(W.sol_roles("44".repeat(32), original.groupKey)).seal_key;

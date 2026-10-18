@@ -142,6 +142,8 @@ function askPart(name, d, check, verdict) {
 // Reads a session document. `check(name, by, sig, fields)` answers "yes", "no" or "wait" for one
 // part. A session with no valid proposal is dropped (`ss` null). Another part that is not valid
 // is taken out of it. `bad` names the parts that failed, and `wait` counts the unanswered ones.
+// While a part waits, the session leaves it out and says `checking`: a cancel that waits must not
+// show the payment as one that needs approval.
 export function readSession(id, d, check) {
   const res = { ss: null, bad: [], wait: 0 };
   const ok = {}, verdict = {};
@@ -153,7 +155,7 @@ export function readSession(id, d, check) {
     else if (v === "wait") res.wait++;
     if (name === "proposal" && !ok.proposal) return res;
   }
-  res.ss = build(id, d, ok);
+  res.ss = { ...build(id, d, ok), checking: res.wait > 0 };
   return res;
 }
 

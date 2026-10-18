@@ -1,8 +1,9 @@
 // P8d live headless check: the second DKG on three seats, in one Chrome with three in-memory
 // contexts and the local dev server (cf/.dev.vars has HELIUS_DEVNET_URL). No landed transaction,
 // no fund move.
-// 1. Seat 1 makes a 2-of-3 testnet wallet, seats 2 and 3 join by the invite link, all three
-//    confirm the safety number, and the Zcash part is ready. Zero Solana requests so far.
+// 1. Seat 1 makes a 2-of-3 testnet wallet with the Solana box of the dialog cleared (M3), seats 2
+//    and 3 join by the invite link, all three confirm the safety number, and the Zcash part is
+//    ready. Zero Solana requests so far.
 // 2. The pages reload. With the tab closed they still fetch no Solana file.
 // 3. Seat 1 opens the Solana tab and taps Add Solana. The three pages run the ceremony alone.
 // 4. The pages show one group key and one shielded address. Seat 1 starts the Worker with the
@@ -30,6 +31,7 @@ import {
   waitForText,
 } from "./page.mjs";
 import { redact } from "./redact.mjs";
+import { makeWallet } from "./seats.mjs";
 import { ORIGIN } from "./server.mjs";
 import { consoleProblems, isSolana, requests, responses, transfer } from "./sol-facts.mjs";
 import { withStack } from "./stack.mjs";
@@ -62,20 +64,11 @@ async function openApp(rig, name, url) {
   return page;
 }
 
-async function makeWallet(page) {
-  await clickText(page, "Create wallet");
-  await waitForText(page, "New shared wallet");
-  await setInput(page, "#g-name", "P8d wallet");
-  await run(page, () => document.querySelector("form[role=dialog] button[type=submit]").click());
-  const shown = () => run(page, () => !!document.querySelector(".addr-box .hex"));
-  await waitFor(shown, 30000, () => "the invite link");
-  return run(page, () => document.querySelector(".addr-box .hex").textContent.trim());
-}
-
 /** Phase 1: the Zcash wallet on three pages. */
 async function zcashPhase(rig) {
   const first = await openApp(rig, "seat1", `${ORIGIN}/`);
-  const link = await makeWallet(first);
+  // Solana off: phase 3 adds it by the tab, so no part may start by itself here.
+  const link = await makeWallet(first, "P8d wallet", { solana: false });
   const pages = [first];
   for (const seat of [2, 3]) {
     const page = await openApp(rig, "seat" + seat, link);

@@ -1,7 +1,7 @@
 // Solana host glue: solHost() and the lazy load of web/sol.
 import { walletVersion } from "./util.js";
 import { docFields } from "./signed.js";
-import { log, showBanner, state, ui } from "./app-state.js";
+import { banner, clearBadBanner, log, showBanner, state, ui } from "./app-state.js";
 import { said } from "./app-kit.js";
 import { Z } from "./app-engine.js";
 import { putSec, sec } from "./app-keystore.js";
@@ -35,10 +35,11 @@ export const solPlanned = (g = state.g) =>
 export function solServed() {
   if (ui.solServed === undefined) {
     ui.solServed = null;
+    // The small body is read to its end: a cancelled request counts as a failed one (S19).
     globalThis.fetch("/sol/config.json", { cache: "no-store" }).then((r) => {
       ui.solServed = r.ok;
-      r.body?.cancel();
-    }, () => { ui.solServed = false; }).finally(render);
+      return r.text();
+    }).catch(() => { if (ui.solServed === null) ui.solServed = false; }).finally(render);
   }
   return ui.solServed === true;
 }
@@ -89,32 +90,65 @@ const solHost = () => ({
   askBackup: (words) => { ui.backup = { words, made: false, busy: false }; render(); },
   newWallet,
 });
-// A server with SOL off does not serve the module, and the text says so. view.js is part of the
-// module: it gives the setup steps (solSetup).
-let setupSummary = null;
-const solModule = () => Promise.all([import("./sol/main.js"), import("./sol/view.js")])
-  .then(([m, v]) => { setupSummary = v.setupSummary; return m; })
-  .catch(() => { throw new Error(SOL_OFF); });
-// The Solana part of the open wallet for the setup steps, or null while it is not open here. The
-// Zcash pages call it, so a throw gives null and a log line, not a broken wallet page.
-export function solSetup() {
-  if (!(sol && setupSummary && solOn() && sol.ctl.gid === state.gid)) return null;
+// A server with SOL off does not serve the module (its config answers 503), and the text says so.
+// Any other failure is the connection (SOL-26). view.js is part of the module: it gives the setup
+// steps (solSetup). A browser keeps a failed import() for the life of the page, so only a reload
+// mends it; Try again (the Solana tab) can mend a failure after the import.
+const SOL_DOWN = "Solana did not load. Check your connection, then reload the page.";
+let setupSummary = null, pendingCount = null, importFailed = false;
+const SOL_RETRY = "Solana did not load. Check your connection, then press Try again.";
+/** The tab text of a failed load. `retry`: Try again can mend it (a failure after the import). */
+export const failText = (error, retry) => (retry ? SOL_RETRY : error);
+export async function whyNotLoaded() {
+  const status = await globalThis.fetch("/sol/config.json", { cache: "no-store" })
+    .then((r) => r.status, () => 0);
+  return status === 503 || status === 404 ? SOL_OFF : SOL_DOWN;
+}
+// main.js imports the wasm glue again in attach: the browser gives it the module of this load.
+const solModule = () => Promise.all([import("./sol/main.js"), import("./sol/view.js"),
+  import("./sol/wasm/sol_wasm.js")])
+  .then(([m, v]) => { ({ setupSummary, pendingCount } = v); return m; })
+  .catch(async () => {
+    importFailed = true;
+    throw new Error(await whyNotLoaded());
+  });
+// The Solana part of the open wallet for the setup steps and the approval count. The Zcash pages
+// call them, so a throw gives a log line, not a broken wallet page.
+const solOpenHere = (gid = state.gid) => !!sol && solOn(gid) && sol.ctl.gid === gid;
+function fromSol(what, read, none) {
   try {
-    return setupSummary(sol.ctl);
+    return read(sol.ctl);
   } catch (e) {
-    log("Solana setup steps: " + said(e));
-    return null;
+    log("Solana " + what + ": " + said(e));
+    return none;
   }
 }
-// A failed load is final until the page reloads: a retry on every redraw would loop.
+export const solSetup = () =>
+  solOpenHere() && setupSummary ? fromSol("setup steps", setupSummary, null) : null;
+// The Solana proposals that this browser can still approve, for wallet `gid`. The module follows
+// the open wallet only, so any other wallet counts 0.
+export const solPending = (gid = state.gid) =>
+  solOpenHere(gid) && pendingCount ? fromSol("approval count", pendingCount, 0) : 0;
+// A failed load waits for Try again (solRetry): a retry on every redraw would loop.
+export function solRetry() {
+  if (!solError) return;   // a second tap while the retry loads
+  solLoading = null;
+  solError = "";
+  solLoad();
+  render();
+}
+let failBanner = "";   // the text of the banner that the last failed load showed
 export function solLoad() {
   solLoading ||= solModule().then((m) => m.attach(solHost())).then((m) => {
     sol = m;
+    if (failBanner && banner?.text === failBanner) clearBadBanner();
+    failBanner = "";
     if (solOn()) sol.open(state.gid, "groups/" + state.gid);
     render(); react();
   }, (e) => {
     solError = said(e);
-    showBanner("bad", "Solana did not load: " + solError);
+    failBanner = solError === SOL_DOWN ? SOL_DOWN : "Solana did not load: " + solError;
+    showBanner("bad", failBanner);
     render();
   });
   return solLoading;
@@ -151,8 +185,13 @@ export function solReact() {
   if (sol) sol.react();
   else if (!solLoading && solStartSigned()) solLoad();
 }
+const retryButton = () => el("button", { class: "btn sm", type: "button", "data-sol": "retry-load",
+  onclick: solRetry }, "Try again");
+/** The Solana tab after a failed load: its text, and Try again only where a retry can mend it. */
+export const loadFail = (error, retry) => el("div", { style: "display:grid;gap:8px" },
+  el("p", { class: "small" }, failText(error, retry)), retry ? el("div", {}, retryButton()) : null);
 export const solTab = () => sol ? guard(sol.view)
-  : solError ? el("p", { class: "small" }, solError)
+  : solError ? loadFail(solError, !importFailed)
   : (solLoad(), el("p", { class: "small" }, "Loading Solana…"));
 const NET_UNCONFIRMED = "This device does not know yet which network the people of this wallet "
   + "confirmed. Open the wallet, wait until its seat shows Address checked, then try again.";

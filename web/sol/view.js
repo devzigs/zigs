@@ -3,12 +3,15 @@
 // restore, and (payview.js) the funding, the proposals and their approvals.
 // `data-sol` marks each value for the headless checks. `host.el` builds the elements, `act` wraps
 // a button action (act of app-dom.js).
+import { showable } from "./approve.js";
 import { agreement, seatProgress, started, startBlock } from "./ceremony.js";
 import { base58 } from "./docs.js";
 import { checkLine, provesLocally } from "./localprove.js";
 import { payCards } from "./payview.js";
 import { feeMismatch, feeOf } from "./fee.js";
+import { writerSeats } from "./gate.js";
 import { holdsShare, remoteStop, solOf, stopOf } from "./secrets.js";
+import { beforeFee } from "./sessions.js";
 
 const ADD_TEXT =
   "A Solana program owns the funds of the group at a program address, which is public and links " +
@@ -30,6 +33,16 @@ const PUBLIC_LOCAL = PUBLIC_TEXT.replace(
   ". This group makes its proofs on its devices, so they give Helius neither the amounts nor " +
     "the secret that links each spend to its notes.",
 );
+
+const STATUS_TEXT = {
+  unavailable: "This wallet cannot get a Solana part.",
+  "not started": "The Solana part has not started.",
+  running: "The Solana setup is running. Keep this page open until it is ready.",
+  ready: "The Solana part is ready.",
+  stopped: "The Solana part stopped.",
+  differs: "The seats published different Solana keys. Do not use the Solana part.",
+};
+
 function statusOf(c, ag) {
   if (startBlock(c.host)) return "unavailable";
   if (stopOf(c)) return "stopped";
@@ -57,6 +70,22 @@ export function setupSummary(c) {
     n: seats.length,
     fees,
   };
+}
+
+/**
+ * The open Solana proposals that a seat of this browser can still approve (S6): the tab lists
+ * them (the documents agree and the part is not stopped), the app can show and sign them, and
+ * a seat that holds a share and a signing key gave no approval for them yet.
+ */
+export function pendingCount(c) {
+  if (stopOf(c) || agreement(c).state !== "agree") return 0;
+  const seats = writerSeats(c);
+  const open = (ss) =>
+    ss.status === "collecting" &&
+    showable(ss) &&
+    !beforeFee(ss) &&
+    seats.some((i) => !c.commits[ss.id]?.[i]);
+  return c.sessions.filter(open).length;
 }
 
 function startCard(c, act, actions) {
@@ -124,18 +153,52 @@ const CUSTODY_TEXT =
   "set the fees of the pool and change its other authorities, but not the upgrade key. Read " +
   "from Devnet on 18 October 2026.";
 
+/** Copy for an address (the fee address has its own in payview.js). `what` names the value. */
+function copyButton(c, text, mark, what) {
+  const copy = async (ev) => {
+    const button = ev.currentTarget;
+    try {
+      await navigator.clipboard.writeText(text);
+      button.textContent = "Copied";
+    } catch {
+      button.textContent = "Select and copy";
+    }
+  };
+  const attrs = {
+    class: "btn sm",
+    type: "button",
+    "data-sol": mark,
+    "aria-label": "Copy the " + what + " address",
+    onclick: copy,
+  };
+  return c.host.el("button", attrs, "Copy");
+}
+
 function keyBlock(c, done) {
   const { el } = c.host,
     row = (name, label, value) => [
       el("dt", {}, label),
       el("dd", { class: "hex", "data-sol": name }, value),
     ];
+  // A payer copies the full shielded address: it has no checksum, so a typed character more or
+  // less gives another address that looks right. The program address is copied to compare it.
+  // The button sits in the dd of its value, so the label, the value and the button stay together.
+  const copyRow = (name, label, value, mark, what) => [
+    el("dt", {}, label),
+    el(
+      "dd",
+      { class: "row-actions" },
+      el("span", { class: "hex", "data-sol": name }, value ?? "?"),
+      value ? copyButton(c, value, mark, what) : null,
+    ),
+  ];
+  const owner = done.pda ? base58(done.pda) : null;
   return el(
     "dl",
     { class: "kv" },
-    row("owner", "Program address of the group (Devnet)", done.pda ? base58(done.pda) : "?"),
+    copyRow("owner", "Program address of the group (Devnet)", owner, "copy-program", "program"),
     row("group-key", "Group key", done.groupKey),
-    row("shielded", "Shielded address", done.pdaAddress ?? "?"),
+    copyRow("shielded", "Shielded address", done.pdaAddress, "copy-shielded", "shielded"),
     el("dd", { class: "small", "data-sol": "pay-to" }, PAY_TO),
     row("balance-private", "Private balance", c.sync.balance ?? "not synced"),
     row(
@@ -268,7 +331,9 @@ export function solView(c, act, actions) {
       el("h2", {}, "Solana"),
       el("span", { class: "badge plain" }, "Devnet only · beta"),
     ),
-    el("p", { class: "small", "data-sol": "status" }, status),
+    // The word stays readable for the checks; a person reads the sentence.
+    el("p", { class: "small" }, el("span", { "data-sol": "status", hidden: true }, status),
+      STATUS_TEXT[status]),
     el(
       "p",
       { class: "small", "data-sol": "public-text" },

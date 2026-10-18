@@ -129,27 +129,28 @@ async function tapPay(page, { amount, payee, withdrawTo }) {
 const sessionIds = async (page) => new Set((await sessions(page)).map((s) => s.id));
 
 /**
- * The tap of a payment in a mock run (harness/mock-chain.mjs): the fake chain has no payment for
- * a new group, so the prepare of the Worker must refuse it. The page shows a new banner with that
- * refusal and proposes nothing. Returns the banner text.
+ * A tap of a payment that the page must refuse: it shows a new banner that matches `want` and
+ * proposes nothing. The default `want` is the refusal of a mock run (harness/mock-chain.mjs): the
+ * fake chain has no payment for a new group, so the prepare of the Worker refuses it. Returns the
+ * banner text.
  */
-export async function refusedTap(page, spec) {
+export async function refusedTap(page, spec, want = /no payment is prepared/) {
   const known = await sessionIds(page);
   const before = await banner(page);
   await tapPay(page, spec);
   let last = before;
   const refused = async () => {
     last = await banner(page);
-    return last !== before && /no payment is prepared/.test(last) ? last : "";
+    return last !== before && want.test(last) ? last : "";
   };
   const text = await waitFor(refused, 120000, () => `the refusal (last ${redact(last)})`);
   const added = [...(await sessionIds(page))].filter((id) => !known.has(id));
-  assert.deepEqual(added, [], "a mock run proposed nothing");
+  assert.deepEqual(added, [], "the refused tap proposed nothing");
   return redact(text);
 }
 
 /** The approval screen of session `id` on each page but `skip`, as lines, keyed by "seat N". */
-async function screensOf(pages, id, skip) {
+export async function screensOf(pages, id, skip) {
   const out = {};
   for (const [i, each] of pages.entries()) {
     if (i === skip) continue;
@@ -161,7 +162,7 @@ async function screensOf(pages, id, skip) {
 }
 
 /** The proposer taps the form. Resolves the id of its new session. */
-async function proposed(page, spec) {
+export async function proposed(page, spec) {
   const known = await sessionIds(page);
   await tapPay(page, spec);
   const kind = spec.withdrawTo ? "withdraw" : "approve";
@@ -171,7 +172,7 @@ async function proposed(page, spec) {
 }
 
 /** The approvers tap Approve one by one. After the first, `stillOpen()` must hold for 30 s. */
-async function approveAll(pages, id, approvers, stillOpen) {
+export async function approveAll(pages, id, approvers, stillOpen) {
   for (const [n, seat] of approvers.entries()) {
     await clickMark(pages[seat - 1], `approve-${id}-${seat}`);
     if (n > 0) continue;
@@ -181,7 +182,7 @@ async function approveAll(pages, id, approvers, stillOpen) {
 }
 
 /** The screen names the proposal account, the amount, the public link, and the recipient. */
-function screenProposal(lines, { amount, withdrawTo }) {
+export function screenProposal(lines, { amount, withdrawTo }) {
   const text = lines.join("\n");
   const proposal = rowOf(lines, "Proposal account")?.replace(/ ↗$/, ""); // the explorer link
   assert.ok(proposal, "the screen names the proposal account");

@@ -214,13 +214,38 @@ function readyOf(gid, d) {
   return verdict === "yes" ? docFields(d) : verdict === "wait" ? undefined : false;
 }
 
+// A wallet before version 3 checks no part, so its stored fields count as they are, `checking`
+// too: any holder of its link can write any field of it.
 function inboxOf(gid, list) {
   if (!signedMode(gid)) return list;
   const t = { bad: 0, wait: 0, onBad: (what) => logIgnored(gid, what) };
-  return readSessions(list.map((d) => [d.id, d]), checkIn(gid), t);
+  return readSessions(list.map((d) => [d.id, d]), inboxCheck(gid), t);
+}
+// The seats of a wallet that is not open do not load, so a part of a seat that this device has not
+// pinned would wait for good. Its answer is "unknown": the part stays out, and it does not make the
+// payment "checking", so a forged part cannot hide a proposal that needs approval.
+function inboxCheck(gid) {
+  const check = checkIn(gid);
+  return (rel, by, sig, fields, need) => {
+    const v = check(rel, by, sig, fields, need);
+    return v === "wait" && !validPk(signPins[skey(gid, by)]) ? "unknown" : v;
+  };
+}
+
+// The approvals and shares of session `sid` of the open wallet, from the raw maps of its watch,
+// checked as the open payment's are. A wallet before version 3 signs none.
+const NO_DOCS = { seats: {}, dkg1: {}, dkg2: {}, confirm: {}, abort: {}, done: {}, verify: {},
+  wallet: null, sessions: {} };
+export function sessionParts(sid, parts) {
+  const gid = state.gid;
+  if (!signedMode(gid)) return parts;
+  const onBad = (what) => logIgnored(gid, what);
+  const f = filterWallet({ ...NO_DOCS, ...parts }, sid, checkIn(gid), onBad);
+  return { commits: f.docs.commits, shares: f.docs.shares };
 }
 
 // Shows the stored documents as they are in a wallet before version 3.
+// A wallet before version 3 checks no part: see inboxOf.
 function copyRaw() {
   if (signedMode(state.gid)) return;   // its group document has not come yet: show nothing
   Object.assign(state, {
