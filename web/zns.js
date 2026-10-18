@@ -16,11 +16,18 @@ const TEXT = {
   expires_at: /^(?:none|[0-9]+)$/,
 };
 
-// The name in what a person typed, or null. A unified address is too long to match.
+// A transparent address as typed (t and 34 characters of base58), and the TEX forms (ZIP 320).
+// Their letters could pass as a name, and a name could be squatted to catch a pasted address.
+const T_ADDRESS = /^t[1-9A-HJ-NP-Za-km-z]{34}$/;
+const TEX_ADDRESS = /^tex(?:test)?1/i;
+
+// The name in what a person typed, or null: one .zcash or .zec removed, ASCII letters and digits
+// only, in lower case. A unified address is too long to match, and transparent forms are refused.
 export function nameOf(text) {
   if (typeof text !== "string") return null;
-  const name = text.trim().toLowerCase().replace(/\.(?:zcash|zec)$/, "");
-  return TEXT.name.test(name) ? name : null;
+  const typed = text.trim().replace(/\.(?:zcash|zec)$/i, "");
+  if (T_ADDRESS.test(typed) || TEX_ADDRESS.test(typed)) return null;
+  return /^[A-Za-z0-9]{1,63}$/.test(typed) ? typed.toLowerCase() : null;
 }
 
 export const zecName = (name) => name + ".zec";
@@ -32,26 +39,41 @@ function validRecord(r) {
     && isHeight(r.height) && ["claim", "update"].includes(r.last_action);
 }
 
+const headOk = (b) => !!b && b.network === "test" && b.key === ZNS_KEY && isHeight(b.height)
+  && typeof b.synced === "boolean";
+
 // The registry of an answer of /zns, or null when the answer is not sound.
 function parse(body) {
-  const head = body && body.network === "test" && body.key === ZNS_KEY && isHeight(body.height);
-  if (!head || !Array.isArray(body.names) || !body.names.every(validRecord)) return null;
+  if (!headOk(body) || !Array.isArray(body.names) || !body.names.every(validRecord)) return null;
   const byName = new Map(body.names.map((r) => [r.name, r]));
-  return byName.size === body.names.length ? { height: body.height, byName } : null;
+  const { height, synced } = body;
+  return byName.size === body.names.length ? { height, synced, byName } : null;
 }
 
-// `get()` gives `{height, byName}`: the last good answer for `ttlMs`, one shared request, and a
-// new request after a failure. The default fetch is looked up per call, because a browser refuses
-// a fetch that is called as the method of another object.
-export function createRegistry(
-  { fetch = (...a) => globalThis.fetch(...a), now = Date.now, ttlMs = 60_000, url = "/zns" } = {},
-) {
+// A registry copy that is far below the synced tip of the wallet may be stuck or still scanning.
+export const ZNS_MAX_LAG = 10;
+
+// Why a copy cannot be used at the tip of the wallet (a block height), or null. A missing or
+// invalid tip is a reason too: nothing then tells how old the copy is.
+function lagNote(reg, tip) {
+  if (!isHeight(tip)) return "This wallet has no synced chain height to compare with the registry";
+  const lag = tip - reg.height;
+  return lag > ZNS_MAX_LAG ? `The ZNS registry is ${lag} blocks behind the chain` : null;
+}
+
+// `get()` gives `{height, synced, byName}`: the last good answer for `ttlMs`, one shared request
+// with a time limit, and a new request after a failure. The default fetch is looked up per call,
+// because a browser refuses a fetch that is called as the method of another object.
+export function createRegistry({
+  fetch = (...a) => globalThis.fetch(...a), now = Date.now, ttlMs = 60_000, url = "/zns",
+  timeoutMs = 15_000,
+} = {}) {
   let last = null, loading = null;
   async function load() {
     const at = now();
     let reg = null, cause;
     try {
-      const res = await fetch(url);
+      const res = await fetch(url, { signal: AbortSignal.timeout(timeoutMs) });
       reg = res.status === 200 ? parse(await res.json()) : null;
     } catch (e) { cause = e; }
     if (!reg) throw new Error("The ZNS registry cannot be read. Try again.", { cause });
@@ -69,11 +91,14 @@ export function createRegistry(
 
 export const registry = createRegistry();
 
-// The address of a typed name: `{name, address, record}`, or null when `text` is no name.
-export function resolveRecipient(text, network, reg) {
+// The address of a typed name: `{name, address, record}`, or null when `text` is no name. `tip`
+// is the synced chain height of the wallet.
+export function resolveRecipient(text, network, reg, tip) {
   const name = nameOf(text);
   if (name === null) return null;
   if (network !== "test") throw new Error("ZNS names work on testnet only.");
+  const note = lagNote(reg, tip);
+  if (note) throw new Error(note + ", so a ZNS name cannot be used now.");
   const record = reg.byName.get(name);
   if (!record) throw new Error(`${text.trim()} is not a unified address, and the testnet ZNS `
     + `registry has no name ${name}.`);
@@ -83,20 +108,25 @@ export function resolveRecipient(text, network, reg) {
 export const movedNote = (record) => record.last_action === "update"
   ? `This name moved to a new address at block ${record.height}.` : null;
 
+// The reason, without its ending, that a payee with a `name` key cannot be approved, or null.
+function payeeNote(p, reg, tip) {
+  const name = p.name, record = reg.byName.get(name);
+  if (typeof name !== "string" || nameOf(name) !== name) {
+    return "This payment names an invalid ZNS name";
+  }
+  const lag = lagNote(reg, tip);
+  if (lag) return lag;
+  if (!record) return `The ZNS name ${zecName(name)} has no address in the registry now`;
+  return record.address === p.to ? null
+    : `The ZNS name ${zecName(name)} now gives another address than this payment`;
+}
+
 // An approving device resolves each payee name on its own copy: the first reason to refuse, or
-// null. A payee without a `name` key is a plain address.
-export function nameRefusal(payees, reg) {
-  const end = ", so this browser did not approve.";
+// null. A payee without a `name` key is a plain address. `tip` is the synced chain height.
+export function nameRefusal(payees, reg, tip) {
   for (const p of payees) {
-    if (!p || !Object.hasOwn(p, "name")) continue;
-    const name = p.name, record = reg.byName.get(name);
-    if (typeof name !== "string" || nameOf(name) !== name) {
-      return "This payment names an invalid ZNS name" + end;
-    }
-    if (!record) return `The ZNS name ${zecName(name)} has no address in the registry now${end}`;
-    if (record.address !== p.to) {
-      return `The ZNS name ${zecName(name)} now gives another address than this payment${end}`;
-    }
+    const note = p && Object.hasOwn(p, "name") ? payeeNote(p, reg, tip) : null;
+    if (note) return note + ", so this browser did not approve.";
   }
   return null;
 }

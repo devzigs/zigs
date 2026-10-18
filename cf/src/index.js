@@ -286,108 +286,129 @@ const ZNS_KEY = [
   "ek06llhjtuz2fft9rg6cuuwg4n7299vajnmq6swg3sf563r0jjzuwuvfpjhmfmydar9dcu3fkuawt6u8qu08vhg5mt",
   "hrcggrjuhht6f0perh0tqmdfrtgzvhjymay7h9ymvfxgd4r56uz6zrsf5gnvw5jy",
 ].join("");
-const ZNS_PAGE = 500, ZNS_MAX_PAGES = 200; // the largest page of the resolver; pages per load
-const ZNS_FRESH_MS = 60_000, ZNS_FULL_MS = 3_600_000; // a full load heals a missed event
+const ZNS_PAGE = 500, ZNS_MAX_PAGES = 40; // the largest page of the resolver; pages per refresh
+const ZNS_FRESH_MS = 60_000, ZNS_PAUSE_MS = 30_000, ZNS_DEADLINE_MS = 20_000;
+// The only causes that the log holds: no text of the resolver, no text of an exception.
+const ZNS_CAUSES = ["upstream", "deadline", "status", "bad record", "bad page", "page cap"];
 // The address has at most 1,000 characters: "utest1" and up to 994 more.
 const ZNS_TEXT = {
   name: /^[a-z0-9]{1,63}$/, address: /^utest1[0-9a-z]{1,994}$/, txid: /^[0-9a-f]{64}$/,
   expires_at: /^(?:none|[0-9]+)$/,
 };
 
-// A payment path fails closed: one unsound item fails the whole refresh.
-function znsValid(item, actionField, actions) {
-  const text = ([field, re]) => typeof item[field] === "string" && re.test(item[field]);
-  return item !== null && typeof item === "object" && Object.entries(ZNS_TEXT).every(text)
-    && Number.isSafeInteger(item.height) && item.height >= 0 && actions.includes(item[actionField]);
+const znsFail = (cause) => new Error(cause);
+
+// A payment path fails closed: one unsound record fails the whole refresh.
+function znsValid(r) {
+  const text = ([field, re]) => typeof r[field] === "string" && re.test(r[field]);
+  return r !== null && typeof r === "object" && Object.entries(ZNS_TEXT).every(text)
+    && Number.isSafeInteger(r.height) && r.height >= 0
+    && ["claim", "update"].includes(r.last_action);
 }
 
-const znsRecord = ({ name, address, txid, height, expires_at }, last_action) =>
+// An address in bech32 is the same in upper case. One such record must not fail the registry, so
+// the Worker serves it in lower case. Any other shape fails the check above.
+const znsLower = (r) => (r && typeof r.address === "string"
+  ? { ...r, address: r.address.toLowerCase() } : r);
+
+const znsRecord = ({ name, address, txid, height, last_action, expires_at }) =>
   ({ name, address, txid, height, last_action, expires_at });
 
-async function znsCall(method, params) {
-  const res = await fetch("https://light.zcash.me/zns-testnet", {
-    method: "POST", headers: new Headers({ "content-type": "application/json" }),
-    body: JSON.stringify({ jsonrpc: "2.0", id: 1, method, params }),
-    redirect: "manual", signal: AbortSignal.timeout(10_000),
-  });
-  if (res.status !== 200) throw new Error(`${method}: upstream status ${res.status}`);
-  const { result, error } = await res.json();
-  if (error != null || !result || typeof result !== "object") throw new Error(method + " failed");
-  return result;
+// One call. The error holds only a cause of ZNS_CAUSES: the text of a failure can hold text of the
+// resolver, such as the start of a body that is not JSON.
+async function znsCall(method, params, signal) {
+  let body;
+  try {
+    const res = await fetch("https://light.zcash.me/zns-testnet", {
+      method: "POST", headers: new Headers({ "content-type": "application/json" }),
+      body: JSON.stringify({ jsonrpc: "2.0", id: 1, method, params }),
+      redirect: "manual", signal,
+    });
+    body = res.status === 200 ? await res.json() : null;
+  } catch {
+    throw znsFail(signal.aborted ? "deadline" : "upstream");
+  }
+  if (!body || body.error != null || !body.result || typeof body.result !== "object") {
+    throw znsFail("upstream");
+  }
+  return body.result;
 }
 
-// Every item of a paged method, in answer order. A short page is the last page.
-async function znsPages(method, params, field) {
+// The height that the resolver has read, from a resolver that shows the pinned key.
+async function znsStatus(signal) {
+  const { viewing_key, synced_height, synced } = await znsCall("status", {}, signal);
+  const heightOk = Number.isSafeInteger(synced_height) && synced_height >= 0;
+  if (viewing_key !== ZNS_KEY || !heightOk || typeof synced !== "boolean") throw znsFail("status");
+  return { height: synced_height, synced };
+}
+
+// Every record of list_names. A page with fewer items than its limit is the last page, and then
+// the count must reach `total`: a resolver that cuts a page short would hide names.
+async function znsNames(signal) {
   const items = [];
   for (let n = 0; n < ZNS_MAX_PAGES; n++) {
-    const page = { ...params, limit: ZNS_PAGE, offset: items.length };
-    const got = (await znsCall(method, page))[field];
-    if (!Array.isArray(got)) throw new Error(`${method}: no ${field}`);
-    items.push(...got);
-    if (got.length < ZNS_PAGE) return items;
+    const page = await znsCall("list_names", { limit: ZNS_PAGE, offset: items.length }, signal);
+    const sound = Array.isArray(page.items) && Number.isSafeInteger(page.limit) && page.limit > 0
+      && Number.isSafeInteger(page.total);
+    if (!sound) throw znsFail("bad page");
+    items.push(...page.items);
+    if (page.items.length >= page.limit) continue;
+    if (items.length < page.total) throw znsFail("bad page");
+    return items;
   }
-  throw new Error(`${method}: more than ${ZNS_MAX_PAGES} pages`);
+  throw znsFail("page cap");
 }
 
-async function znsFull() {
-  const rows = await znsPages("list_names", {}, "items");
-  if (!rows.every((r) => znsValid(r, "last_action", ["claim", "update"]))) {
-    throw new Error("list_names: bad record");
-  }
-  return new Map(rows.map((r) => [r.name, znsRecord(r, r.last_action)]));
-}
+// ponytail: the snapshot lives in one isolate, and each isolate loads the registry on its own. A
+// refresh reads every page: about 20 pages a minute per isolate at 10,000 names. The upgrade is a
+// delta with a check for a reorganisation, and one copy in the Cache API or a Durable Object.
+let znsSnap = null; // { at, body }
+let znsLoading = null; // the refresh in flight, shared by parallel requests
+let znsPausedUntil = 0; // no call upstream before this time
 
-// The events come newest first, and a page boundary can repeat one. A copy of the old names takes
-// them oldest first, so a failure keeps the old names.
-async function znsDelta(old) {
-  const events = await znsPages("events", { since_height: old.height }, "events");
-  const names = new Map(old.names), seen = new Set();
-  for (const e of events.reverse()) {
-    const ok = znsValid(e, "action", ["claim", "update", "release"]) && e.id != null;
-    if (!ok) throw new Error("events: bad event");
-    if (seen.has(e.id)) continue;
-    seen.add(e.id);
-    if (e.action === "release") names.delete(e.name);
-    else names.set(e.name, znsRecord(e, e.action));
-  }
-  return names;
-}
-
-// ponytail: the snapshot lives in one isolate, and each isolate loads the registry on its own.
-// If that load matters, keep one copy in the Cache API or a Durable Object.
-let znsSnap = null, znsLoading = null; // { height, names, at, fullAt }; the refresh in flight
-
+// One refresh with one deadline. The answer body is made once, for all requests of the minute.
 async function znsRefresh() {
-  const started = Date.now(), old = znsSnap;
-  const { viewing_key, synced_height: height } = await znsCall("status", {});
-  if (viewing_key !== ZNS_KEY || !Number.isSafeInteger(height) || height < 0) {
-    throw new Error("status: another registry key or no height");
-  }
-  // A resolver below the height of the snapshot rolled the chain back: read everything again.
-  const full = !old || started - old.fullAt >= ZNS_FULL_MS || height < old.height;
-  const names = await (full ? znsFull() : znsDelta(old));
-  znsSnap = { height, names, at: started, fullAt: full ? started : old.fullAt };
+  const signal = AbortSignal.timeout(ZNS_DEADLINE_MS), started = Date.now();
+  const { height, synced } = await znsStatus(signal);
+  const rows = (await znsNames(signal)).map(znsLower);
+  if (!rows.every(znsValid)) throw znsFail("bad record");
+  const byName = new Map(rows.map((r) => [r.name, znsRecord(r)]));
+  const names = [...byName.values()].sort((a, b) => (a.name < b.name ? -1 : 1));
+  const body = JSON.stringify({ network: "test", key: ZNS_KEY, height, synced, names });
+  znsSnap = { at: started, body };
   return znsSnap;
 }
 
-function znsSnapshot() {
-  if (znsSnap && Date.now() - znsSnap.at < ZNS_FRESH_MS) return znsSnap;
-  znsLoading ??= znsRefresh().finally(() => { znsLoading = null; });
+function znsFailed(e) {
+  znsPausedUntil = Date.now() + ZNS_PAUSE_MS;
+  console.error("zns: " + (ZNS_CAUSES.includes(e.message) ? e.message : "internal"));
+  throw e;
+}
+
+// The shared refresh outlives the request that starts it (ctx.waitUntil). After a failure the
+// route answers 502 with no call upstream for ZNS_PAUSE_MS, so a failing resolver is not hammered.
+function znsSnapshot(ctx) {
+  if (znsSnap && Date.now() - znsSnap.at < ZNS_FRESH_MS) return Promise.resolve(znsSnap);
+  if (Date.now() < znsPausedUntil) return Promise.reject(znsFail("paused"));
+  if (!znsLoading) {
+    znsLoading = znsRefresh().catch(znsFailed).finally(() => { znsLoading = null; });
+    ctx?.waitUntil(znsLoading);
+  }
   return znsLoading;
 }
 
-async function zns(req) {
-  if (req.method !== "GET") return new Response("Use GET.\n", { status: 405 });
-  let snap;
+async function zns(req, ctx) {
+  if (req.method !== "GET") {
+    return new Response("Use GET.\n", { status: 405, headers: { Allow: "GET" } });
+  }
   try {
-    snap = await znsSnapshot();
-  } catch (e) {
-    console.error("The ZNS registry could not be read:", e.message);
+    const { body } = await znsSnapshot(ctx);
+    return new Response(body, {
+      headers: { "content-type": "application/json", "cache-control": "no-store" },
+    });
+  } catch {
     return new Response("The ZNS registry could not be read.\n", { status: 502 });
   }
-  const names = [...snap.names.values()].sort((a, b) => (a.name < b.name ? -1 : 1));
-  return Response.json({ network: "test", key: ZNS_KEY, height: snap.height, names },
-    { headers: { "cache-control": "no-store" } });
 }
 
 async function groupSocket(req, env, url) {
@@ -421,13 +442,13 @@ function gate(req, env) {
 }
 
 export default {
-  async fetch(req, env) {
+  async fetch(req, env, ctx) {
     const refused = gate(req, env);
     if (refused) return refused;
     const url = new URL(req.url);
     if (url.pathname === "/ws") return groupSocket(req, env, url);
     if (url.pathname.startsWith("/lwd/")) return lwd(req, env, url);
-    if (url.pathname === "/zns") return zns(req);
+    if (url.pathname === "/zns") return zns(req, ctx);
     if (url.pathname === "/" || url.pathname === "/index.html") {
       const page = await env.ASSETS.fetch(new URL("/index.html", url));
       const res = new HTMLRewriter()
