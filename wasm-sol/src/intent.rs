@@ -115,14 +115,13 @@ pub enum Program {
     },
     /// The approval of a payment. It is no message: the group key signs its 32-byte digest.
     Approve { pay: Pay },
-    /// The `cancel` message of a proposal of the signing seat (SOL-52): the body gives its address.
+    /// The `cancel` message of an expired proposal of the signing seat (SOL-52): the body gives
+    /// its address. It carries no abort authority, so the program refuses it before the expiry.
     Cancel {
         commitment: Key,
         expiry: u64,
         blockhash: Key,
     },
-    /// The `close_cancelled` message: the fee key closes the record of that cancellation.
-    CloseCancelled { proposal: Key, blockhash: Key },
 }
 
 impl Program {
@@ -131,8 +130,7 @@ impl Program {
         match self {
             Program::Propose { blockhash, .. }
             | Program::Execute { blockhash, .. }
-            | Program::Cancel { blockhash, .. }
-            | Program::CloseCancelled { blockhash, .. } => *blockhash,
+            | Program::Cancel { blockhash, .. } => *blockhash,
             Program::Approve { .. } => [0; 32],
         }
     }
@@ -143,7 +141,6 @@ impl Program {
             Program::Execute { .. } => "execute",
             Program::Approve { .. } => "approve",
             Program::Cancel { .. } => "cancel-proposal",
-            Program::CloseCancelled { .. } => "close-cancelled",
         }
     }
 
@@ -177,13 +174,6 @@ impl Program {
                 out.push(if pay.recipient().is_some() { 10 } else { 8 });
                 encode_pay(out, pay);
             }
-            Program::Cancel { .. } | Program::CloseCancelled { .. } => self.encode_reclaim(out),
-        }
-    }
-
-    /// The wire form of the two messages that give a rent back (the other variants write none).
-    fn encode_reclaim(&self, out: &mut Vec<u8>) {
-        match self {
             Program::Cancel {
                 commitment,
                 expiry,
@@ -194,20 +184,11 @@ impl Program {
                 out.extend_from_slice(&expiry.to_le_bytes());
                 out.extend_from_slice(blockhash);
             }
-            Program::CloseCancelled {
-                proposal,
-                blockhash,
-            } => {
-                out.push(13);
-                out.extend_from_slice(proposal);
-                out.extend_from_slice(blockhash);
-            }
-            _ => {}
         }
     }
 
     /// Reads the fields after the tag byte `tag`: 6 to 8 for a private payment, 9 to 11 for a
-    /// withdrawal (the same intents with a public recipient), 12 and 13 to give a rent back.
+    /// withdrawal (the same intents with a public recipient), 12 to cancel an expired proposal.
     fn read(tag: u8, r: &mut Reader) -> Result<Self, String> {
         let short = |_| "the intent ends inside a field".to_string();
         let public = tag >= 9;
@@ -230,10 +211,6 @@ impl Program {
             12 => Program::Cancel {
                 commitment: r.array().map_err(short)?,
                 expiry: r.u64().map_err(short)?,
-                blockhash: r.array().map_err(short)?,
-            },
-            13 => Program::CloseCancelled {
-                proposal: r.array().map_err(short)?,
                 blockhash: r.array().map_err(short)?,
             },
             tag => return Err(format!("unknown intent tag {tag}")),

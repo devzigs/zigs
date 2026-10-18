@@ -5,8 +5,8 @@
 use crate::bytes::short_hex;
 use crate::check::{parse_transact_data, Run};
 use crate::consts::{
-    COMPUTE_BUDGET_PROGRAM, ED25519_PROGRAM, MS_CANCEL, MS_CLOSE_CANCELLED, MS_CREATE, MS_EXECUTE,
-    REG_REGISTER, REG_SET_MERGING_ENABLED, REG_UPDATE_KEYS, SYSTEM_PROGRAM, SYS_ADVANCE_NONCE,
+    COMPUTE_BUDGET_PROGRAM, ED25519_PROGRAM, MS_CANCEL, MS_CREATE, MS_EXECUTE, REG_REGISTER,
+    REG_SET_MERGING_ENABLED, REG_UPDATE_KEYS, SYSTEM_PROGRAM, SYS_ADVANCE_NONCE,
     SYS_AUTHORIZE_NONCE, SYS_CREATE_ACCOUNT, SYS_CREATE_WITH_SEED, SYS_INIT_NONCE, SYS_TRANSFER,
     SYS_TRANSFER_WITH_SEED, SYS_WITHDRAW_NONCE, TAG_DEPOSIT, TAG_MERGE_TRANSACT, TAG_TRANSACT,
 };
@@ -75,14 +75,13 @@ fn registry_verdict(data: &[u8]) -> Verdict {
     }
 }
 
-/// The approvals program: `create` only in Propose, `execute` only in Execute, `cancel` only in
-/// Cancel and `close_cancelled` only in CloseCancelled.
+/// The approvals program: `create` only in Propose, `execute` only in Execute and `cancel` only
+/// in Cancel.
 fn program_verdict(data: &[u8], intent: &Intent) -> Verdict {
     let allowed = match intent {
         Intent::Program(Program::Propose { .. }) => MS_CREATE,
         Intent::Program(Program::Execute { .. }) => MS_EXECUTE,
         Intent::Program(Program::Cancel { .. }) => MS_CANCEL,
-        Intent::Program(Program::CloseCancelled { .. }) => MS_CLOSE_CANCELLED,
         _ => {
             return Some((
                 Rule::ProgramNotAllowed,

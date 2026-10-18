@@ -7,8 +7,8 @@
 //!   the group's own PDA address. Every payment after that is an approval digest
 //!   (`approve_payment`), which signs no message.
 //! - The fee key of a seat signs those two messages as their payer, Add SOL, the `create` and
-//!   `execute` messages of the approvals program, and the `cancel` and `close_cancelled` messages
-//!   that give back the rent of its own proposals (SOL-52).
+//!   `execute` messages of the approvals program, and the `cancel` message of its own expired
+//!   proposals (SOL-52).
 //! - Nothing signs `register`, a nonce withdrawal (tag 4) or a nonce cancel: the group is never
 //!   registered. A withdrawal goes through the program (tags 9 to 11, SOL-32).
 //!
@@ -42,10 +42,7 @@ fn retired(intent: &Intent, signer: Signer) -> Option<String> {
         Intent::CreateNonce { .. } | Intent::Transfer { .. } => None,
         Intent::Shield { .. }
         | Intent::Program(
-            Program::Propose { .. }
-            | Program::Execute { .. }
-            | Program::Cancel { .. }
-            | Program::CloseCancelled { .. },
+            Program::Propose { .. } | Program::Execute { .. } | Program::Cancel { .. },
         ) => (signer == Signer::Group).then(|| format!("only a fee key signs the intent {name}")),
         _ => Some(format!("nothing signs the intent {name}")),
     }
