@@ -14,6 +14,7 @@ that made them. Run every command from the root of the repo with Node 24.
 | `harness/` | Headless Chrome with in-memory browser contexts, and the live scenarios |
 | `build.mjs`, `src/`, `stubs/` | Builds `web/sol/zolana.bundle.js` and copies the hasher wasm files. The build rewrites no SDK source: it has no plugin, only module aliases |
 | `tools/` | The leak scan, the mutation check, the process counter and the Devnet tools (fund, read, verify) |
+| `smoke.mjs` | The read-only browser smoke check of staging (S19): the page loads with no console error, every network picker shows Testnet only, the Solana part loads and its Worker answers, and the group server link opens with its status line. It reads the password from `~/.config/zigs/staging-password` |
 | `lint.sh` | oxlint (complexity 8, 100 lines per function, 5 parameters), the same limits for Python, and the 100 character line limit. oxlint is the version of `package-lock.json`. CI runs it (`.github/workflows/lint.yml`) |
 
 ## Files outside the repo
