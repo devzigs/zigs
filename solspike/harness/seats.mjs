@@ -1,7 +1,8 @@
 // Three seats in three in-memory contexts of one Chrome (the rig), up to a Solana part that every
 // page shows as ready: a 2-of-3 testnet wallet, the second DKG of web/sol, one group key. Used by
-// scenario-e.mjs. scenario-d.mjs keeps its own copy of the first steps (it is the verified P8d
-// check and stays as it is). Nothing here reads a secret: the pages show public values only.
+// scenario-e.mjs. scenario-d.mjs keeps its own copy of the other first steps (it is the verified
+// P8d check), and takes makeWallet from here. Nothing here reads a secret: the pages show public
+// values only.
 import { sleep, waitFor } from "./chrome.mjs";
 import { clickText, run, setInput, waitForText } from "./page.mjs";
 import { ORIGIN } from "./server.mjs";
@@ -20,7 +21,7 @@ export async function openApp(rig, name, url) {
 // `solana`: the box "Also set up Solana Devnet" of the dialog. The page shows it once the server
 // answered /sol/config.json, and it is on by default. So on a server that serves Solana, the run
 // waits for the box before it sets it, also to clear it.
-async function makeWallet(page, name, { solana = false } = {}) {
+export async function makeWallet(page, name, { solana = false } = {}) {
   await clickText(page, "Create wallet");
   await waitForText(page, "New shared wallet");
   await setInput(page, "#g-name", name);
