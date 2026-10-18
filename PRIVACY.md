@@ -26,6 +26,10 @@ is a bug: please report it.
   a shielded transaction. The account, its contacts and its messages never reach the group
   server. The light-wallet server sees the transactions that the account fetches and sends, and
   your IP address.
+- A testnet payment to a ZNS name (web app only), such as `alice.zec`, looks the name up on the
+  device, in a copy of the whole name registry that the app Worker downloads. No server learns
+  which name you pay. The registry itself is public: anyone can see which address a name gives.
+  Read [ZNS names](#zns-names-testnet).
 
 ## On chain
 
@@ -147,6 +151,48 @@ Tor Browser hides your IP address from both servers, but not this timing link. T
 link, point the app at a light-wallet server you trust (`NETWORKS` in `web/app-chain.js`,
 `ZcashNetwork` in `ios/Zigs/Chain.swift`).
 
+## ZNS names (testnet)
+
+On testnet, the Send form of the web app accepts a ZNS name in place of an address: `alice`,
+`alice.zec` or `alice.zcash`. ZNS is the naming service of Zcash Names (zcashnames.com), which
+ZcashMe, Inc. runs. Its registry is on chain and public. Anyone can read every name, the address
+that it gives and the history of both.
+
+How the app reads the registry:
+
+- The route `/zns` of the app Worker downloads the whole testnet registry from the public resolver
+  `light.zcash.me`: first the list of all names, then the changes since the last download. It
+  sends no header of yours to the resolver. It checks the published key of the registry, and it
+  keeps its copy for at most 60 seconds.
+- The page downloads that copy, behind the same password as every other request, and finds the
+  name on the device. It never asks a server about one name.
+
+| Party | What it learns |
+|---|---|
+| ZNS resolver (`light.zcash.me`) | That the app Worker downloads the registry, and when. Not your IP address and not a name |
+| App Worker | Your IP address and when your page downloads the registry. Not the name that you type. It keeps no log |
+| Group server | Nothing new. The name is one more field of the sealed proposal |
+| Other signers of the wallet | The name and the address in the proposal, as for every recipient |
+| Chain observers | A normal shielded payment. Nothing shows that a name was used |
+
+A download of the registry just before a proposal tells the Worker that someone may pay a name
+soon. It does not tell which name.
+
+What the app trusts, and what it checks:
+
+- The address comes from the registry. One registrar, the ZNS Mint, writes the registry. The app
+  checks the key of the registry, not each record on chain.
+- A name can move to another address. The proposer sees the address that the name gives, and a
+  note when the name moved. Each approving device looks the name up again, in its own copy, and
+  refuses the approval when the name now gives another address than the payment.
+- A copy can be up to about 2 minutes old: 60 seconds in the Worker and 60 seconds in the page.
+- A Zigs wallet gets no name of its own. ZNS lets anyone who can read the memos of an address
+  change the name of that address, and every signer of a wallet can read them
+  ([docs/zns-spike.md](docs/zns-spike.md), section 3.3).
+- Mainnet wallets do not look up names.
+- zcashnames.co is another registry, with names that look the same. The app reads only the ZNS
+  registry of zcashnames.com.
+
 ## Solana beta (Helius Devnet)
 
 A testnet wallet in the web app can also hold private SOL on Devnet, in Zolana, the Helius
@@ -239,7 +285,8 @@ What makes this safe to rely on:
 
 - The page sends a Content-Security-Policy header. The browser lets it connect only to the group
   server and the light-wallet servers in `NETWORKS` (our testnet server through `/lwd` of its own
-  host, and two ChainSafe servers), and to nothing else. The Solana Worker
+  host, and two ChainSafe servers), and to nothing else. The name registry also comes from its
+  own host, through `/zns`. The Solana Worker
   (`/sol/worker.js`, testnet wallets only) has a policy of its own, which also names the Helius
   Devnet host. The policy of the page names no Helius host.
 - A restored seat works in a new session. The app checks the restored key data against what the
@@ -446,6 +493,9 @@ the passkey guards the key share instead. The lock is opt-in.
   you pay. A request from an unverified sender, and every request in a memo, shows a warning. The
   name and the message in a request are text from the sender. The card cuts them and marks them as
   not checked.
+- A ZNS name gives the address that its registry holds. Whoever controls a name can point it at
+  another address. The approvers check the name again, and the payment goes to the address that
+  they approved. Before a large payment, check the address with the payee.
 - **Propose this** sends nothing: the normal checks and approvals of a payment apply. Every
   approver reads its note. The note names the sender only when the sender is verified. Any holder
   of the invite link can write a message with a seat number and a bad signature.

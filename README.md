@@ -25,6 +25,10 @@ the wallet, and on chain each payment looks like a shielded payment from a stand
   the Send form with the request, and sends nothing. **Request a payment** makes the link in a
   wallet room or in a direct chat. Pasting a link in the Send form fills its rows. The web app has
   it. The iPhone and Mac apps show the link as text ([how](PROTOCOL.md#payment-requests)).
+- ZNS names (testnet, web app): the Send form accepts a name such as `alice.zec` and shows the
+  address that the name gives. The page looks the name up in a copy of the whole registry, so no
+  server learns which name you pay. Each approver looks the name up again and refuses a payment
+  whose address the name no longer gives ([privacy](PRIVACY.md#zns-names-testnet)).
 - Personal account: the web app can hold a small single-signer account that pays the fee of
   messages on chain. Add the shielded address of a contact, and write to them, also if they do not
   use Zigs. Each message is a payment of no value, and its text is the memo. Each contact gets an
@@ -115,6 +119,7 @@ flowchart LR
 | Light-wallet server | IP address and the blocks requested, as for any light wallet. On testnet, the app Worker relays the requests, so our node sees the Worker and not the device. Where memo reading is on, it also sees which full transactions a device fetches to read memos. Never a key |
 | Zcash network | A normal shielded transaction |
 | Helius (Solana beta, testnet wallets only) | IP address, the app origin, the owner key, and for each spend the amounts, recipients and the nullifier secret that its prover needs. Never a key share |
+| ZNS resolver (testnet names) | That the app Worker downloads the whole name registry. Never which name a person pays, never a key |
 
 ## Creating a wallet
 
@@ -240,6 +245,7 @@ The full threat model is in [PRIVACY.md](PRIVACY.md). In short:
 | Group server | Wallet ids, document paths and field names, timing, which IP addresses connect to which wallet | Wallet and signer names, addresses, viewing key, amounts or their length, recipients, transactions, signing data |
 | Light-wallet server | Your IP address (on testnet, our server sees the app Worker), the wallet's birthday height, the blocks you download, the transactions you send, the full transactions you fetch to read memos (only where memo reading is on) | Which notes are yours while you download blocks (the memo fetches are the exception), any key |
 | Helius (Solana beta, testnet wallets only) | Your IP address, the app origin, the owner key of the wallet, and the witness of each spend: owners, assets, amounts and the nullifier secret. The sender and the recipient of a transfer are public on chain | Any key share, the Ed25519 seed, the viewing key. It cannot sign |
+| ZNS resolver (testnet names) | That the app Worker downloads the whole name registry, and when | Your IP address, which name you look up or pay |
 | Other signers | Everything about the shared wallet | Your key share and your signing nonces |
 
 How the group server is kept blind:
@@ -293,7 +299,7 @@ iPhone.
 | [`wasm/src/backup.rs`](wasm/src/backup.rs) | Encrypted key share backups: Argon2id, XChaCha20-Poly1305 |
 | [`wasm/src/ffi.rs`](wasm/src/ffi.rs) | C interface for the iPhone and Mac apps |
 | [`web/index.html`](web/index.html), [`web/app.css`](web/app.css), [`web/app.js`](web/app.js), `web/app-*.js` | The web app: page, styles, and the script: `web/app.js` lists the 8 pure modules and the 25 page modules and starts the page (no inline script or style; see [The page modules](#the-page-modules)) |
-| [`web/shim.js`](web/shim.js), [`web/qr.js`](web/qr.js), [`web/payees.js`](web/payees.js), [`web/requests.js`](web/requests.js), [`web/personal.js`](web/personal.js), [`web/vault.js`](web/vault.js), [`web/chat.js`](web/chat.js), [`web/signed.js`](web/signed.js) | Store client, QR encoder, payment list parser with the memo rules and the recipient check, payment request cards and Send form rows, the rules of the personal account (contacts, fee, states of a message, backup), passkey lock, message helpers and the rules for signed writes (no third-party code) |
+| [`web/shim.js`](web/shim.js), [`web/qr.js`](web/qr.js), [`web/payees.js`](web/payees.js), [`web/requests.js`](web/requests.js), [`web/personal.js`](web/personal.js), [`web/vault.js`](web/vault.js), [`web/chat.js`](web/chat.js), [`web/signed.js`](web/signed.js), [`web/zns.js`](web/zns.js) | Store client, QR encoder, payment list parser with the memo rules and the recipient check, payment request cards and Send form rows, the rules of the personal account (contacts, fee, states of a message, backup), passkey lock, message helpers, the rules for signed writes, and the ZNS name lookup with the check of an approver (no third-party code) |
 | [`cf/src/index.js`](cf/src/index.js) | Group server: Cloudflare Worker with one Durable Object per wallet, limits against abuse. It also serves `/sol` and `/sol/config.json` for the Solana beta, and relays `/lwd` to our testnet light-wallet node |
 | [`web/sol/`](web/sol) | Solana beta in the page: ceremony, signing sessions, backup, the Worker that talks to Helius, the Solana wasm, and the vendored Zolana SDK bundle (third-party code, hash pinned in `SHA256SUMS`) |
 | [`infra/lwd/`](infra/lwd) | Our testnet light-wallet node: Zakura, lightwalletd and Envoy with a keyed tunnel listener and a tailnet listener, and the Cloudflare tunnel |
@@ -670,6 +676,12 @@ folder path.
   (429 before the call to the node), the key of a network at the three limits (an IPv4 address, or
   the /64 of IPv6), the headers to the node (the allowed ones and the key only), the answer, the 503
   and 502 cases, and a response that streams.
+- `node web/test/zns.mjs`: the `/zns` route with a fake resolver: a full load over pages, the
+  changes since the last load (oldest first, a repeated event dropped), the full load after a
+  lower resolver height or after one hour, the 502 cases (another registry key, bad data, a failed
+  call), the method rule, the password gate, and the headers to the resolver (content-type only).
+  Then `web/zns.js`: the names that the Send form accepts, a lookup, an unknown name, a name that
+  moved, and the refusal of an approving device whose copy gives another address.
 - `bash tests/e2e.sh`: the command-line ceremony in separate processes, with attacks: wallet
   substitution, fewer than t signers, tampered randomizer and sighash, nonce reuse, wrong share
   attribution, foreign notes.
@@ -703,6 +715,9 @@ folder path.
   rev `ed49e9c` for FROST. Mainnet follows the NU6.3 rules, which already use v6 transactions and
   Ironwood.
 - **One mainnet server.** Mainnet wallets depend on ChainSafe's public light-wallet server.
+- **ZNS names trust the registry.** A name gives the address that the ZNS Mint wrote, and one
+  registrar runs it. The app checks the key of the registry, not each record on chain. Names
+  work on testnet only.
 - **Solana is a beta on Devnet.** Testnet wallets only, web app only, not audited. The hosted prover
   of Helius sees the witness of each spend, the pool has an upgrade key outside the group, and
   sender and recipient of a transfer are public. [TICKETS.md](TICKETS.md) lists the open work.
