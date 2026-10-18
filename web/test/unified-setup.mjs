@@ -273,7 +273,9 @@ const solTabText = () => {
 assert.match(solTabText(), /not available on this server.*Try again/s);
 const NOT_SERVED = /Solana did not load: Solana is not available on this server/;
 assert.match(t.banner.text, NOT_SERVED, "the banner says why");
-// The setup step says it once, with no Try again button on this page.
+// The setup step says it once, with no Try again button on this page, and the page asks no one
+// to wait for a Solana part that did not load.
+assert.doesNotMatch(pageText(), BOTH_OPEN, "no wait for a Solana part that did not load");
 assert.match(pageText(), /Create the Solana key.*Solana is not available on this server/s);
 assert.doesNotMatch(pageText(), /Solana did not load: Solana is not/);
 const { solRetry, whyNotLoaded, failText } = await import("../app-sol.js");

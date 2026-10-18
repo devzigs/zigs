@@ -472,6 +472,14 @@ export const MUTATIONS = [
     /Check your connection, then reload the page/,
   ),
   program(
+    "W-both-failed",
+    "the page asks the signers to wait for a Solana part that did not load",
+    ["web/app-setup.js", "const bothParts = () => solPlanned() && !solError;",
+      "const bothParts = () => solPlanned();"],
+    UNIFIED,
+    /no wait for a Solana part that did not load/,
+  ),
+  program(
     "W-retry-once",
     "a second tap on Try again starts a second load",
     ["web/app-sol.js", "  if (!solError) return;   // a second tap while the retry loads\n", ""],
