@@ -544,7 +544,7 @@ Order and sessions (one session for each package; heavy commands go through heav
 2. Helius: add every demo origin to Allowed Domains, read the plan limits, set a usage alert (D4).
 3. Power on the lwd box, or accept the ChainSafe fallback (D5).
 4. Deploy the raised WS_PER_IP (M9). Revert after the demo.
-5. Run solspike/demo-check.sh (M8). Fix every FAIL. Also run it every day until the demo: docs/demo.md section 3 has the schedule and the alert rule.
+5. Run solspike/demo-check.sh (M8). Fix every FAIL. Also run it by hand at least every two days until the demo, and after any Helius release note (docs/demo.md section 3).
 6. Prove the faucet: send one Valar drip to a Zigs testnet address (M2).
 
 **T-3 to T-1 days: stage on production only** (staging has no working Solana tab until SOL-48 closes)
@@ -560,7 +560,7 @@ Order and sessions (one session for each package; heavy commands go through heav
 14. Use three laptops with desktop Chrome or Safari. No private window. No chat app browser. One tab for each wallet. A phone may approve. Build the proof on a laptop unless a phone run was rehearsed.
 15. Rehearse the whole script once on the real devices and network. Write down the time of the Zcash key ceremony, the Solana ceremony, the proof and the Solana execute. If the live setup takes more than 2.5 minutes, narrate it and switch to Demo A (section 9).
 16. Open both explorers once: testnet.zecblock.com and the Solana explorer on Devnet.
-17. T-1 h: run demo-check again (the daily run does not cover the hosted prover or the indexer). Confirm the Zcash Available balance and the three fee balances. Cancel old Zcash proposals: a Solana proposal ends only at its expiry. Confirm that no approval hold blocks Demo A.
+17. T-1 h: run demo-check again (a PASS does not cover the hosted prover or the indexer). Confirm the Zcash Available balance and the three fee balances. Cancel old Zcash proposals: a Solana proposal ends only at its expiry. Confirm that no approval hold blocks Demo A.
 18. Keep a phone hotspot as a backup network. Keep a screen recording of a full run.
 
 ## 9. Demo script: 10 minutes, 2-of-3 group, Zcash testnet and Solana Devnet

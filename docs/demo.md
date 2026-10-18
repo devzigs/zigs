@@ -43,6 +43,7 @@ below that say "on main" need nothing more.
 | S10 | The invite text names the password | Give each person the password before the scan |
 | S15 | Copy buttons for the Solana addresses | Copy the payee address from the private note on L1 |
 | S16 | Explorer links for Solana ids | Paste the id into https://explorer.solana.com/?cluster=devnet |
+| SOL-4 | Local proving on Demo A | Keep local proving off: all groups use the hosted prover |
 | S17 | A neutral line while a device reads the wallet | The Approve button shows during the read. While the red text "Zigs is reading your wallet" shows, do not click. Wait until the screen shows the payment (up to about 25 s) |
 
 ## 2. Owner decisions that apply
@@ -73,21 +74,14 @@ The owner does every write: deploys, payments, faucet claims and name claims.
 
 ### From now until the demo
 
-- **Daily check.** Every day until the demo, run `sh solspike/demo-check.sh` on the owner's Mac.
-  It is read only. A launchd job (`StartCalendarInterval`) runs it from a small wrapper outside
-  the repo; launchd also runs a missed job when the Mac wakes. The wrapper:
-  - sets PATH to Node 22 or later (launchd has no Homebrew or nvm PATH);
-  - keeps the last output and prints the lines that changed;
-  - alerts on exit code 2, and when the summary line `demo-check: … pass, … fail, … skipped` is
-    missing;
-  - alerts on FAIL for `pool program`, `approvals program`, `tree 0` or `prover` only. Other FAIL
-    lines give no alert: the Helius origin of staging (until SOL-48 closes), the fee floors, and
-    the light-wallet and faucet checks.
-
-  On an alert, write the date, follow the "pool program" row of section 6, and tell the
-  coordinator. A FAIL for `pool program` or `tree 0` means that Devnet has moved. A daily PASS
-  does not cover the hosted prover or the indexer: the prover check sends an empty body only, and
-  no check calls the indexer. So step 18 (T-1 hour) and the rehearsal (step 16) stay.
+- **Regular check.** Until the demo, run `sh solspike/demo-check.sh` by hand at least every two
+  days, and after any Helius release note. The coordinator also runs it at every deploy. It is
+  read only.
+  - A FAIL for `pool program`, `approvals program`, `tree 0` or `prover` means that Devnet moved.
+    Write the date, follow the "pool program" row of section 6, and tell the coordinator.
+  - A PASS does not cover the hosted prover or the indexer: the prover check sends an empty body
+    only, and no check calls the indexer. So step 18 (T-1 hour) and the rehearsal (step 16)
+    stay.
 - **Freeze.** Freeze is the default (TICKETS.md SOL-37). If Devnet has moved, do not change the
   pin, and run the Solana part from the recording. A repin needs a decision of the owner, because
   docs/hackathon-release.md forbids a rebuild of the Solana SDK bundle in this release. It is
@@ -155,6 +149,11 @@ Stage on app.zigs.app. The Solana tab of staging works only after D4 adds stagin
    - Without M3: after all three seats show **Address checked**, L1 opens the Solana tab and
      clicks **Add Solana**. Keep L1, L2 and L3 open on the wallet until every seat shows its
      Solana key ready.
+   - With SOL-4: turn on local proving for Demo A before its first spend. **[waits for SOL-4]:
+     the name of the setting comes when it lands.** Keep it off on the spare wallet (step 10). A
+     group with local proving on can never go back to the hosted prover. If a Devnet change
+     breaks the web prover, Demo A cannot pay until a Zigs update ships a new prover, and the
+     spare wallet, with the hosted prover and Devnet SOL on its fee addresses, is the fallback.
 9. Save the backups of each seat: the Zcash file (**Back up key share**) and the Solana file
    (**Back up Solana part, seat N** on the Solana tab). Keep the two passphrases offline. Restore
    one seat on a blank browser profile once.
@@ -188,6 +187,9 @@ Stage on app.zigs.app. The Solana tab of staging works only after D4 adds stagin
 17. Open both explorers once: testnet.zecblock.com and the Solana explorer on Devnet.
 18. T-1 hour:
     - Run `sh solspike/demo-check.sh` again. It also checks the three fee balances.
+    - With local proving on Demo A: check that the "pool program" line of demo-check shows the
+      deploy slot that Zigs pins (508,538,476, deployed 7 October 2026 at 18:01 UTC). Make one
+      payment on Demo A, proved on the device. **[waits for SOL-4]**
     - Confirm the Zcash **Available** balance of Demo A in the app.
     - Cancel a Zcash payment that has no approval (**Cancel payment**). A Solana proposal ends
       only at its expiry. Confirm that no approval hold blocks Send on Demo A.
@@ -240,10 +242,11 @@ Solana error, a server problem and a synced balance that is too low.
 |---|---|
 | The light-wallet server is slow | Wait. The ChainSafe fallback works (S9) |
 | Solana shows a Helius error | Wait one minute. Then show the Zcash part and the recorded run (S5) |
-| demo-check says FAIL for "pool program" or "tree 0": the Devnet pool (`sppU489D…`) no longer has the hash `3641ffe2…`, or its tree 0 changed. Helius plans SDK releases with breaking changes before its mainnet launch | Stop the Solana part, show the recorded run, and tell the coordinator. No repin in the last week (section 3) |
+| demo-check says FAIL for "pool program", "approvals program", "tree 0" or "prover": Devnet moved. For example, the Devnet pool (`sppU489D…`) no longer has the hash `3641ffe2…`, or its tree 0 changed. Helius plans SDK releases with breaking changes before its mainnet launch | Stop the Solana part, show the recorded run, and tell the coordinator. No repin in the last week (section 3) |
 | A Solana error that starts with "WalletError", "ClientError" or "Solana error #" and stays after one minute | Stop the Solana part, show the recorded run, and tell the coordinator |
 | The side bar says "Connecting to the group server…" for a long time, or "The group server does not answer" | Read the reason in brackets (S1). For "no network" or "too many connections from this network" (M9), move one laptop to the phone hotspot. For "the preview password is missing or wrong", reload the page and enter the password. For "the server has a problem", wait one minute, then show the recorded run |
 | A hold blocks Send | Use the spare wallet (S7) |
+| Demo A, with local proving on, shows the text that Helius changed the pool | Pay from the spare wallet, which uses the hosted prover. **[waits for SOL-4]** |
 | Solana says "the synced balance does not cover the amount" | An open proposal holds the notes (S4). Use the spare wallet, or show the recorded run |
 | A seat laptop is lost | Restore the seat from its two backup files (M4) |
 | L2 refuses the payment: the name gives another address | L1 has not approved yet, so L1 cancels the payment and proposes again with the pasted utest1 address. **[waits for M10]** |

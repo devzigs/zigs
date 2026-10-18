@@ -1045,7 +1045,7 @@ roots, transaction lifetime, key management, output checks and browser proving.
 | Browser proving | It exists in zolana-web-sdk. It is experimental and slow | The owner approved local proving as a one-way group setting on 18 October 2026. SOL-4 builds it; it is not live |
 | Custom rings | In-circuit EdDSA for custom rings comes in a second release, likely in December | TICKETS.md SOL-57, after the demo |
 | Compute | About 150,000 compute units per transact is the floor | Our largest recorded transact used 144,591 units (`CU_FLOOR_TRANSACT`), and an execute 151,437. The caps add 50 percent: 217,000 and 227,156 (`wasm-sol/src/template.rs`) |
-| Breaking releases | Breaking SDK releases come over about two weeks, before the mainnet launch | The pin stays frozen (SOL-37). demo-check runs every day until the demo (docs/demo.md section 3) |
+| Breaking releases | Breaking SDK releases come over about two weeks, before the mainnet launch | The pin stays frozen (SOL-37). demo-check runs at least every two days until the demo (docs/demo.md section 3) |
 
 Public source answers the curve and the hash of the coming circuit. In PR #434, `curve.go:1` says
 that it "verifies canonical prime-subgroup Ed25519 signatures on BN254", with a SHA-512 gadget in

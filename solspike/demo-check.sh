@@ -1,7 +1,7 @@
 #!/bin/sh
-# The read-only preflight of the demo days (M8 of docs/hackathon-release.md). Run it every day
-# until the demo and again one hour before it (docs/demo.md section 3 has the schedule and the
-# alert rule). scripts/deploy-staging.sh runs its --app-only part.
+# The read-only preflight of the demo days (M8 of docs/hackathon-release.md). Run it by hand at
+# least every two days until the demo, after any Helius release note, and one hour before the demo
+# (docs/demo.md section 3). scripts/deploy-staging.sh runs its --app-only part.
 #   sh solspike/demo-check.sh [--dry-run] [--app-only] [--config FILE]
 # Each check prints PASS, FAIL or SKIP with a reason. The exit code is 1 on any FAIL and 2 on a
 # bad config. --dry-run lists the checks and sends nothing. tools/demo-check.mjs has the checks
