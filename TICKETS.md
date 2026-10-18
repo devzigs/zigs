@@ -222,7 +222,7 @@ ZNS maps a name to a unified address through an on-chain registry. The spike is
 
 | Id | P | Owner | Title | Done when |
 |---|---|---|---|---|
-| ZNS-1 | P1 | dev | Let the web app pay to a ZNS name (M10 of docs/hackathon-release.md) | The owner decided on 18 October 2026: resolver option B, testnet only, and no names for groups while ZNS control is 1-of-n (3.3). Main `447311c` has the `/zns` route, `web/zns.js` with the lookup and the check of an approver, their tests, and the PRIVACY.md and README.md texts. No page module calls `web/zns.js` yet. Done when the Send form takes a name and each approving web app runs the check (the Send form hook, after WP-Z), and a live testnet payment to a name lands (step 7). The demo name needs an Early Access code from ZcashMe: a claim without one is lost (docs/zns-spike.md 3.1) |
+| ZNS-1 | P1 | dev | Let the web app pay to a ZNS name (M10 of docs/hackathon-release.md) | The owner decided on 18 October 2026: resolver option B, testnet only, and no names for groups while ZNS control is 1-of-n (3.3). Main has the `/zns` route and `web/zns.js`. The branch `claude/zns-hook` has the Send form hook and the check of each approving web app. Done when that branch merges and a live testnet payment to a name lands (step 7). The demo name needs an Early Access code from ZcashMe: a claim without one is lost (docs/zns-spike.md 3.1). The `zigsdemo` claim with a code landed on 18 October 2026 (txid `088d00f4…`, block 4,515,884), and the registry showed no record for it hours later |
 
 ## Closed
 

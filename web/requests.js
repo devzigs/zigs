@@ -2,6 +2,7 @@
 // makeRequest). These helpers decide what a message shows and what the Send form gets. Checked by
 // web/test/requests.mjs.
 import { memoError, memoShown, toZat, zatText } from "./payees.js";
+import { nameOf } from "./zns.js";
 
 // A message is a payment request when its whole text, trimmed, is one ZIP 321 URI. A URI has no
 // white space, so a URI inside other text is plain text.
@@ -66,10 +67,12 @@ export const payeeBlocker = (address, normalize) => normalize(address) ? "" : NO
 const LINE_BREAKS = /[\r\n\u2028\u2029]+/g;
 export const oneLine = (text) => memoShown(String(text ?? "").replace(LINE_BREAKS, " "));
 
-// The rows of the Send form for payees `{ to, amount, memo? }`. An amount of null leaves the field
-// empty for the person to fill. `key()` gives a new row key.
+// The rows of the Send form for payees `{ to, amount, memo?, name? }`. An amount of null leaves
+// the field empty for the person to fill. `key()` gives a new row key. A row keeps the ZNS name of
+// a payee when it is a valid bare name, so that a new proposal keeps the name check.
 export const payeeRows = (payees, key) => payees.map((p) => ({
   k: key(), to: p.to, amt: p.amount == null ? "" : zatText(p.amount), memo: oneLine(p.memo),
+  ...(typeof p.name === "string" && nameOf(p.name) === p.name ? { name: p.name } : {}),
 }));
 
 // The note of a proposal that starts from a request. The field holds at most 80 characters. The

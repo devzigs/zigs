@@ -108,6 +108,15 @@ export function resolveRecipient(text, network, reg, tip) {
 export const movedNote = (record) => record.last_action === "update"
   ? `This name moved to a new address at block ${record.height}.` : null;
 
+// One day of blocks (25 s each). A name that got its address in this time may be a takeover.
+export const ZNS_RECENT_BLOCKS = 3456;
+
+// What the Send form says about a name at the tip of the wallet: a warning when the address is
+// less than a day old (a claim after a release counts too), else the note of a moved name.
+export const recentNote = (record, tip) => tip - record.height < ZNS_RECENT_BLOCKS
+  ? `This name got this address at block ${record.height}, less than a day ago. `
+    + "Check the address with the payee." : movedNote(record);
+
 // The reason, without its ending, that a payee with a `name` key cannot be approved, or null.
 function payeeNote(p, reg, tip) {
   const name = p.name, record = reg.byName.get(name);

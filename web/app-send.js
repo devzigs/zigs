@@ -4,10 +4,11 @@ import { payeeRows, requestProblem } from "./requests.js";
 import { state, ui } from "./app-state.js";
 import { fmtZec } from "./app-kit.js";
 import { Z } from "./app-engine.js";
-import { addrHidden, atCap, curChain, curNet } from "./app-chain.js";
+import { addrHidden, atCap, curChain, curNet, netName } from "./app-chain.js";
 import { act, addrGroups, copyBtn, el, money, normalized, onNetwork, qrBox } from "./app-dom.js";
 import { feeEstimate, newSpend, PRIORITY_FACTOR, sendBlocker } from "./app-payments.js";
 import { requestOf } from "./app-payreq.js";
+import { nameOf, recentNote, registry, resolveRecipient, zecName } from "./zns.js";
 import { render } from "./app-loop.js";
 import { capNote, receiveLimit, receiveWhat } from "./app-wallet.js";
 
@@ -41,19 +42,81 @@ function addressHint(hint, to) {
   hint.className = "hint " + (!v ? "" : ok ? "ok" : "bad");
 }
 
+// A recipient field holds an address or, in a testnet wallet, a ZNS name. Text that is an address
+// on this network is never a name. A mainnet wallet looks no name up.
+const znsOn = () => netName(state.g) === "testnet";
+const nameIn = (to) => (znsOn() && !onNetwork(to.trim()) ? nameOf(to) : null);
+const toLabel = () => (znsOn() ? "Recipient address or ZNS name" : "Recipient address");
+const toPlaceholder = () => curNet().prefix + (znsOn() ? "… or alice.zec" : "…");
+
+const showHint = (hint, text, cls = "") => {
+  hint.textContent = text;
+  hint.className = "hint " + cls;
+};
+
+// What the form shows for a name: its address, with the note of a recent change. The row keeps it
+// as `r.shown`, so that a submit pays only what the form showed. `seen` is false until a hint
+// draws it: an address that no hint drew yet is not shown to the person.
+function shownOf(typed, hit, tip) {
+  const note = recentNote(hit.record, tip);
+  return { typed, name: hit.name, address: hit.address, seen: false,
+    text: zecName(hit.name) + " gives this address: " + hit.address + (note ? " " + note : "") };
+}
+
+// The answer for a typed name from the registry of this moment: `{ shown }` or `{ error }`.
+async function nameAnswer(typed) {
+  try {
+    const reg = await registry.get(), tip = curChain()?.bal?.height;
+    return { shown: shownOf(typed, resolveRecipient(typed, "test", reg, tip), tip) };
+  } catch (e) { return { error: e.message }; }
+}
+
+// Draws the address of a name in a hint: from now on the person has seen it.
+function showShown(hint, shown) {
+  shown.seen = true;
+  showHint(hint, shown.text, "ok");
+}
+
+// An address that "Propose again" kept with the name of the first proposal (a testnet wallet).
+const keptName = (r, typed) => znsOn() && r.name && onNetwork(typed.trim());
+const keptHint = (hint, name) => showHint(hint, "Kept from the first proposal: " + zecName(name)
+  + ". Each approver in the web app checks the name again.", "ok");
+
+// The hint of a recipient field. The answer for a name comes later, and only the newest text of
+// the field may show it. A row keeps the address that its hint showed (`r.shown`), and a redraw
+// shows it again without a new lookup.
+function recipientHint(hint, r) {
+  const typed = r.to, name = nameIn(typed);
+  if (name === null) {
+    r.shown = null;
+    return keptName(r, typed) ? keptHint(hint, r.name) : addressHint(hint, typed);
+  }
+  if (r.shown?.typed === typed) return showShown(hint, r.shown);
+  r.shown = null;
+  showHint(hint, "Looking up " + zecName(name) + "…");
+  return nameAnswer(typed).then(({ shown, error }) => {
+    if (r.to !== typed) return;
+    r.shown = shown ?? null;
+    if (shown) showShown(hint, shown);
+    else showHint(hint, error, "bad");
+  });
+}
+
 function payRow(r, i, rows, sumUp) {
-  const c = curChain(), hint = el("span", { class: "hint" }), n = rows.length > 1 ? " " + (i + 1) : "";
+  const c = curChain(), n = rows.length > 1 ? " " + (i + 1) : "";
+  const hint = el("span", { class: "hint", role: "status", style: "overflow-wrap:anywhere" });
   const amt = el("input", { class: "input", id: "s-amt-" + r.k, type: "text", inputmode: "decimal", placeholder: "0.00", required: true, autocomplete: "off", "aria-label": "Amount" + n, value: r.amt, oninput: (ev) => { r.amt = ev.target.value.trim(); sumUp(); } });
   const max = () => { r.amt = zatText(Math.max(0, c && c.bal ? c.bal.max_send : 0)); amt.value = r.amt; sumUp(); };
-  addressHint(hint, r.to);
+  recipientHint(hint, r);
   return el("div", { class: "pay-row" },
     el("input", {
-      class: "input mono", id: "s-to-" + r.k, type: "text", placeholder: curNet().prefix + "…",
+      class: "input mono", id: "s-to-" + r.k, type: "text", placeholder: toPlaceholder(),
       required: true, autocomplete: "off", spellcheck: "false",
-      "aria-label": "Recipient address" + n, value: r.to,
+      "aria-label": toLabel() + n, value: r.to,
       oninput: (ev) => {
         r.to = ev.target.value;
-        fillFromRequest(r, rows, hint) || addressHint(hint, r.to);
+        r.name = null;   // text that the person typed has no name from an earlier proposal
+        fillFromRequest(r, rows, hint) || recipientHint(hint, r);
       },
     }),
     el("div", { class: "input-wrap" }, amt, rows.length === 1 ? el("button", { class: "btn sm", type: "button", onclick: max }, "Max") : null),
@@ -122,17 +185,72 @@ function useList() {
   render();
 }
 
-// Checks each row and returns the payees in zatoshis, or throws with the row number.
-function readPayees(rows) {
+const whoOf = (rows, i) => (rows.length > 1 ? "Recipient " + (i + 1) + ": " : "");
+
+// The fresh answer of the registry for a name row. The row pays it only when it is the address
+// that the form showed. A name that moved since is kept as not seen yet: the next hint draws it,
+// and until then no submit pays it. The person proposes again after that.
+function freshHit(r, reg, tip) {
+  const hit = resolveRecipient(r.to, "test", reg, tip), name = zecName(hit.name);
+  if (r.shown?.typed !== r.to || !r.shown.seen) {
+    throw new Error(`Wait until the form shows the address of ${name}.`);
+  }
+  if (r.shown.address === hit.address) return hit;
+  r.shown = shownOf(r.to, hit, tip);
+  render();
+  throw new Error(`The name ${name} now gives another address. Check it, then propose again.`);
+}
+
+// The name rows, looked up in the registry as of now: a Map of row to `{name, address, record}`.
+// Rows with an address take no lookup. Every name row is checked, so that each moved name shows.
+async function resolveNames(rows) {
+  const found = new Map();
+  if (!rows.some((r) => nameIn(r.to) !== null)) return found;
+  const bal = curChain()?.bal;
+  if (!bal) throw new Error("The wallet has not finished its first sync.");
+  const reg = await registry.get();
+  let first = null;
+  rows.forEach((r, i) => {
+    if (nameIn(r.to) === null) return;
+    try { found.set(r, freshHit(r, reg, bal.height)); }
+    catch (e) { first ??= new Error(whoOf(rows, i) + e.message, { cause: e }); }
+  });
+  if (first) throw first;
+  return found;
+}
+
+const addressError = (net, hit) => (hit
+  ? `The name ${zecName(hit.name)} gives an address that Zigs cannot pay.`
+  : "Enter a shielded Zcash " + net.label.toLowerCase() + " address. It starts with "
+    + net.prefix + ".");
+
+// A payee has a memo only when it has text, and a name only when it is paid by name: the name of
+// a name row, or the name that "Propose again" kept with an address (a testnet wallet only).
+function payeeOf(to, amount, memo, name) {
+  const p = { to, amount };
+  if (memo) p.memo = memo;
+  if (name) p.name = name;
+  return p;
+}
+const nameOfRow = (r, hit) => (hit ? hit.name : znsOn() && r.name);
+
+// Checks each row and returns the payees in zatoshis, or throws with the row number. `found` has
+// the registry answer of each name row: that row pays the address of the registry.
+function readPayees(rows, found) {
   const net = curNet(), own = normalized(state.wallet.address);
   return rows.map((r, i) => {
-    const to = r.to.trim(), amount = toZat(r.amt), who = rows.length > 1 ? "Recipient " + (i + 1) + ": " : "";
-    const memo = String(r.memo || "").trim();
-    if (!onNetwork(to)) throw new Error(who + "Enter a shielded Zcash " + net.label.toLowerCase() + " address. It starts with " + net.prefix + ".");
-    if (normalized(to) === own) throw new Error(who + "This is the address of this wallet. Enter the address of someone else.");
-    if (!amount) throw new Error(who + "Enter an amount greater than zero, with at most 8 decimals.");
+    const hit = found.get(r), to = hit ? hit.address : r.to.trim(), amount = toZat(r.amt);
+    const who = whoOf(rows, i), memo = String(r.memo || "").trim();
+    if (!onNetwork(to)) throw new Error(who + addressError(net, hit));
+    if (normalized(to) === own) {
+      throw new Error(who + "This is the address of this wallet. Enter the address of someone "
+        + "else.");
+    }
+    if (!amount) {
+      throw new Error(who + "Enter an amount greater than zero, with at most 8 decimals.");
+    }
     if (memoError(memo)) throw new Error(who + memoError(memo));
-    return memo ? { to, amount, memo } : { to, amount };
+    return payeeOf(to, amount, memo, nameOfRow(r, hit));
   });
 }
 
@@ -144,8 +262,8 @@ function pasteList(net) {
       placeholder: net.prefix + "…, 0.5, October rent\n" + net.prefix + "…, 1.25",
     }),
     el("span", { class: "hint" },
-      "One address and amount per line, then an optional memo. A spreadsheet copy works. "
-      + "A payment request (zcash:) works too."),
+      "One " + (znsOn() ? "address or ZNS name" : "address") + " and amount per line, then an "
+      + "optional memo. A spreadsheet copy works. A payment request (zcash:) works too."),
     ui.listError ? el("span", { class: "hint bad" }, ui.listError) : null,
     el("button", { class: "btn sm", type: "button", onclick: useList }, "Use this list"));
 }
@@ -167,7 +285,7 @@ export function sendDialog() {
   const why = sendBlocker();
   const f = el("form", { class: "dialog", role: "dialog", "aria-modal": "true", "aria-labelledby": "send-title", onsubmit: act(async (ev) => {
     if (why) throw new Error(why);
-    const payees = readPayees(rows);
+    const payees = readPayees(rows, await resolveNames(rows));
     const need = payees.reduce((n, p) => n + p.amount, 0) + feeEstimate(payees.length, ui.priority);
     if (need > spendable) throw new Error("Not enough funds: " + fmtZec(spendable) + " available, " + fmtZec(need) + " needed (amounts + fee).");
     const note = String(new FormData(ev.target).get("note") || "").trim();
