@@ -59,7 +59,7 @@ export function renderSide() {
 
 const SECTION_ICONS = {
   overview: "home", approvals: "approvals", activity: "activity", messages: "chat",
-  members: "devices",
+  members: "devices", recovery: "key",
   details: "settings", solana: "sol",
 };
 

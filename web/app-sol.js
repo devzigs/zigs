@@ -66,10 +66,14 @@ export const newWallet = () => { openGroup(null); ui.create = true; render(); };
 // The seats of this browser with a Solana key share whose backup file was not saved. A stopped
 // part gets no backup (web/sol/backup.js refuses it), also when another seat stopped it.
 const solStopped = () => solSetup()?.status === "stopped";
-export const solUnsaved = () => solOn() && !solStopped() ? localSeats().filter((i) => {
+export const solUnsaved = () => localSeats().filter((i) => solFile(i)?.saved === false);
+/** The Solana file of seat i of this browser, or null when the seat holds no share to save. */
+export function solFile(i) {
+  if (!solOn() || solStopped()) return null;
   const s = sec(state.gid, i)?.sol;
-  return !!(s?.keyPackage && s.solSeed && s.groupKey) && !s.aborted && s.backupSaved !== true;
-}) : [];
+  return s?.keyPackage && s.solSeed && s.groupKey && !s.aborted
+    ? { saved: s.backupSaved === true } : null;
+}
 // The backup dialog of the Solana part of seat i, from the backup note of the wallet.
 export async function solBackup(i) {
   await solLoad();

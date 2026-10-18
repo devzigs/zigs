@@ -157,6 +157,12 @@ function sideMenu() {
   } finally {
     Object.assign(t.state, { g, wallet });
   }
+  const tab = t.ui.tab;
+  t.ui.tab = "recovery";
+  assert.match(pageText(), /Seats in this browser.*file (saved here|not saved)/,
+    "the Recovery section shows the file state of each seat of this browser");
+  assert.match(pageText(), /cannot see the files of the other devices/);
+  t.ui.tab = tab;
   assert.ok(!labelled(pageTree(), "Switch wallet"), "one wallet: its name, no switcher");
   t.state.groups = [t.state.g, { id: "other", name: "Other" }];
   assert.ok(labelled(pageTree(), "Switch wallet"), "two wallets: a switcher");
