@@ -1,5 +1,5 @@
 {
-  "baseCommit": "833be4b89278a5f142373e75d3265fc7959f1754",
+  "baseCommit": "22fa46bd36948ea7b7db9f7f5374bb71ff91a2ea",
   "node": "v24.11.0",
   "tests": {
     "web/test/chat.mjs": {
@@ -33,6 +33,9 @@
       "exit": 0
     },
     "web/test/shim.mjs": {
+      "exit": 0
+    },
+    "web/test/shim-status.mjs": {
       "exit": 0
     },
     "web/test/lwd.mjs": {
