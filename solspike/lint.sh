@@ -22,7 +22,8 @@ JS=(solspike/harness/*.mjs solspike/tools/*.mjs solspike/build.mjs solspike/buil
   web/sol/spend.js web/sol/transfer.js web/test/sol-limits.mjs web/test/sol-setup.mjs
   web/test/sol-transfer.mjs web/test/sol-vector.mjs web/test/sol-pay.mjs web/test/sol-fee.mjs
   web/test/unified-setup.mjs web/sol/owned.js web/sol/rent.js web/test/sol-rent.mjs
-  web/test/sol-errors.mjs web/sol/localprove.js web/sol/localprover.js web/test/sol-prove.mjs)
+  web/test/sol-errors.mjs web/sol/localprove.js web/sol/localprover.js web/test/sol-prove.mjs
+  web/app-icons.js web/app-theme.js web/test/contrast.mjs web/theme.js)
 PY=(solspike/tools/*.py)
 # The page modules first: no unbound name, no assignment of an import, no missing named import.
 # This is the only check for an import that a function body needs and that no test runs. The full
@@ -31,6 +32,6 @@ PY=(solspike/tools/*.py)
 "$OX" -c solspike/oxlintrc.json --deny-warnings "${JS[@]}" || exit 1
 python3 -I solspike/tools/check_py.py "${PY[@]}" || exit 1
 long=$(awk 'length($0)>100 {print FILENAME":"FNR": "length($0)}' "${JS[@]}" "${PY[@]}" \
-  solspike/*.sh)
+  solspike/*.sh web/design-system.css)
 if [ -n "$long" ]; then echo "lines over 100 characters:"; echo "$long"; exit 1; fi
 echo "lint ok: ${#JS[@]} js files, ${#PY[@]} python files"

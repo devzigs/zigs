@@ -101,6 +101,9 @@
     "web/test/smoke.mjs": {
       "exit": 0
     },
+    "web/test/contrast.mjs": {
+      "exit": 0
+    },
     "cf/test/limits.mjs": {
       "exit": 0
     }

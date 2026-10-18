@@ -24,6 +24,7 @@ import { openBackup, staleRestoreNote } from "./app-backups.js";
 import { loadingView } from "./app-shell.js";
 import { focusAfter, render } from "./app-loop.js";
 import { setupView, solSetupCard, solUnfinished } from "./app-setup.js";
+import { themeChoice } from "./app-theme.js";
 import { solBackup, solOn, solPending, solTab, solUnsaved } from "./app-sol.js";
 
 export function groupView() {
@@ -419,7 +420,16 @@ function memberRow(i) {
 }
 
 function detailsTab() {
-  return el("div", { class: "page", style: "gap:16px" }, walletFacts(), privacyCard());
+  return el("div", { class: "page", style: "gap:16px" }, walletFacts(), privacyCard(),
+    appearanceCard());
+}
+
+function appearanceCard() {
+  return el("section", { class: "card card-pad" },
+    el("h2", { style: "font-size:15px" }, "This browser"),
+    el("p", { class: "small muted" }, "The appearance applies to this browser only. Device "
+      + "setting follows the light or dark mode of this device."),
+    themeChoice());
 }
 
 function checkedBadge() {
