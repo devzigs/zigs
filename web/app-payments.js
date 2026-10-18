@@ -10,7 +10,7 @@ import { loadKept, mySeatSecrets, putSec, saveKept, sec, takeStored } from "./ap
 import { isMe, keysDiffer, localSeats, myUid, signersOf } from "./app-seats.js";
 import {
   balanceNow, chain, curChain, curNet, dropStalled, inFlight, netName, preferredServers, runSync,
-  SERVER_TIMEOUT_MS,
+  SERVER_TIMEOUT_MS, serverWait, syncAgain,
 } from "./app-chain.js";
 import {
   canWriteAs, mayAct, NO_SEAT_KEY, partNow, signedDoc, signedMode, sigPart, writer,
@@ -295,7 +295,10 @@ function spendOrStall(c, payees, priority, after) {
   let timer;
   const late = new Promise((_, reject) => {
     timer = setTimeout(() => {
-      if (c.cw === cw) { dropStalled(c); runSync(c); }
+      if (c.cw === cw) {
+        dropStalled(c);
+        if (c === chain) syncAgain(c);   // not the chain of a wallet that closed meanwhile
+      }
       reject(new Error("The proposal got no answer in 60 s, so it stopped. " + WHEN_SYNCED));
     }, SPEND_TIMEOUT_MS);
   });
@@ -439,10 +442,11 @@ async function commitNow(ss, i, ins, tip, gid) {
 async function freshTip() {
   const c = curChain();
   if (!c || !c.bal) throw new Error("Wait for the first sync to finish, then approve.");
-  const order = preferredServers(curNet()), errors = [];
-  for (const url of c.url ? [c.url, ...order.filter((u) => u !== c.url)] : order) {
+  const net = curNet(), order = preferredServers(net), errors = [];
+  const urls = c.url ? [c.url, ...order.filter((u) => u !== c.url)] : order;
+  for (const [at, url] of urls.entries()) {
     const host = new URL(url).host;
-    try { return await withTimeout(Z.latestHeight(url), SERVER_TIMEOUT_MS, host); }
+    try { return await withTimeout(Z.latestHeight(url), serverWait(net, at, url), host); }
     catch (e) { errors.push(host + ": " + said(e)); }
   }
   throw new Error("No light-wallet server gave the chain height, so this browser did not "
