@@ -184,7 +184,8 @@ create transaction keeps these values in the chain history after the execute. Th
 seats sign an approval, off chain. Then a seat executes: the transaction shows the approval (the
 group key, a digest and the group signature), the PDA as the owner, and the fee address of the
 executing seat as payer. So the chain links the group key, the PDA and the fee addresses in
-public, and shows when a payment waits. The payee and the amount stay hidden. The program has an
+public, and shows when a payment waits. A private payment hides its amount, but the owner key of
+the payee is public. A withdrawal shows its recipient and its amount. The program has an
 upgrade key. With it, someone could replace the program and sign for the PDA of every group. A
 spend also needs a proof, so a seat or the hosted prover would have to help (ZOLANA.md 7.2).
 
