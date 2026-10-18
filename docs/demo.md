@@ -19,7 +19,7 @@ Names in this file:
 
 ## 1. What the demo needs, and what to do without it
 
-Status on 18 October 2026: none of these items is on main.
+Status on 18 October 2026: M6 is on main (8330312). The other items are not.
 
 | Item | What the demo needs | Without it |
 |---|---|---|
