@@ -110,11 +110,44 @@ function only(headers, names) {
   return out;
 }
 
+// One group of an IPv6 address as numbers: a hex group, or a dotted IPv4 tail as two groups.
+function ipv6Group(text) {
+  if (/^[0-9a-f]{1,4}$/.test(text)) return [parseInt(text, 16)];
+  const v4 = /^(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})$/.exec(text)?.slice(1).map(Number);
+  return v4 && v4.every((x) => x < 256) ? [v4[0] * 256 + v4[1], v4[2] * 256 + v4[3]] : [NaN];
+}
+
+// The eight 16-bit groups of an IPv6 address, with "::" and a dotted IPv4 tail, or null.
+function ipv6Groups(ip) {
+  const halves = ip.toLowerCase().split("::");
+  const side = (text) => (text ? text.split(":").flatMap(ipv6Group) : []);
+  const head = side(halves[0]), tail = side(halves[1] ?? "");
+  const gap = 8 - head.length - tail.length;
+  const fits = halves.length === 1 ? gap === 0 : halves.length === 2 && gap >= 1;
+  const groups = [...head, ...Array(Math.max(gap, 0)).fill(0), ...tail];
+  return fits && !groups.some(Number.isNaN) ? groups : null;
+}
+
+// The key of a client for the limits per network (WS_PER_IP, LWD_PER_IP and the sockets and
+// writes of a Store): an IPv4 address, or the /64 of an IPv6 address, because a client usually
+// holds a whole /64. An IPv4-mapped IPv6 address is its IPv4 address. Without the header (local
+// dev) the key is "local", and an address that does not parse is its own key.
+// ponytail: an ISP that gives a customer a /56 or a /48 still gives it many counters.
+function clientKey(req) {
+  const ip = (req.headers.get("CF-Connecting-IP") || "").trim();
+  if (!ip.includes(":")) return ip || "local";
+  const g = ipv6Groups(ip);
+  if (!g) return ip;
+  if (g.slice(0, 5).every((x) => x === 0) && g[5] === 0xffff) {
+    return [g[6] >> 8, g[6] & 255, g[7] >> 8, g[7] & 255].join(".");
+  }
+  return g.slice(0, 4).map((x) => x.toString(16)).join(":") + "::/64";
+}
+
 // Like WS_PER_IP in groupSocket, this fails open: without the binding (local tests), no limit.
 async function overLwdLimit(req, env) {
   if (!env.LWD_PER_IP) return false;
-  const ip = req.headers.get("CF-Connecting-IP") || "local";
-  return !(await env.LWD_PER_IP.limit({ key: ip })).success;
+  return !(await env.LWD_PER_IP.limit({ key: clientKey(req) })).success;
 }
 
 // A protobuf varint at p of b: [value, next p], or null. The value stays exact up to 2^53, which
@@ -245,8 +278,7 @@ async function lwd(req, env, url) {
 async function groupSocket(req, env, url) {
   const gid = url.searchParams.get("g") || "";
   if (!GROUP_ID.test(gid)) return new Response("Add ?g= with a group id of 20 hex characters.", { status: 400 });
-  const ip = req.headers.get("CF-Connecting-IP") || "local";
-  if (env.WS_PER_IP && !(await env.WS_PER_IP.limit({ key: ip })).success) {
+  if (env.WS_PER_IP && !(await env.WS_PER_IP.limit({ key: clientKey(req) })).success) {
     return new Response("Too many connections from this network. Wait a minute.", { status: 429 });
   }
   const fwd = new Request(req);
@@ -304,8 +336,8 @@ const MAX_DOC = 256_000; // characters in one stored document
 const MAX_PATH = 200;
 // Per group: members download their group's whole store on connect, so this also bounds that.
 const MAX_TOTAL = 10_000_000;
-const WRITES_PER_MIN = 300; // per client IP
-const CHARS_PER_MIN = 8_000_000; // per client IP
+const WRITES_PER_MIN = 300; // per client key (clientKey)
+const CHARS_PER_MIN = 8_000_000; // per client key
 // Global caps bound the cost when many IPs spam together; they can delay real users instead.
 const WRITES_PER_MIN_ALL = 3_000;
 const MAX_SOCKETS = 200;
@@ -331,7 +363,7 @@ export class Store extends DurableObject {
     const gid = req.headers.get("X-Group") || "";
     if (!GROUP_ID.test(gid)) return new Response("missing group", { status: 400 });
     await this.adopt(gid);
-    const ip = req.headers.get("CF-Connecting-IP") || "local";
+    const ip = clientKey(req);
     if (this.ctx.getWebSockets().length >= MAX_SOCKETS) {
       return new Response("The group server is busy. Try again in a minute.", { status: 503 });
     }
@@ -361,8 +393,8 @@ export class Store extends DurableObject {
     }
   }
 
-  // ponytail: counters live in memory per IP and reset when the object is evicted.
-  // A blocked IP does not count toward the global cap, so one IP cannot stop everyone.
+  // ponytail: counters live in memory per client key and reset when the object is evicted.
+  // A blocked key does not count toward the global cap, so one network cannot stop everyone.
   limitRate(ip, size) {
     if (this.rates.size > 10_000) this.rates.clear();
     const mine = this.window(ip);

@@ -16,9 +16,11 @@
     "binding": "ASSETS",
     "run_worker_first": true
   },
-  // New group connections per IP and minute, counted per Cloudflare location (approximate).
-  // Light-wallet relay calls (/lwd) per IP and minute, the same way. A first sync of a month of
-  // blocks peaks at 68 calls a minute (TICKETS.md PRIV-8).
+  // New group connections per network and minute, counted per Cloudflare location
+  // (approximate). A network is an IPv4 address or the /64 of an IPv6 address (clientKey in
+  // src/index.js).
+  // Light-wallet relay calls (/lwd) per network and minute, the same way. A first sync of a
+  // month of blocks peaks at 68 calls a minute (TICKETS.md PRIV-8).
   "ratelimits": [
     { "name": "WS_PER_IP", "namespace_id": "1003", "simple": { "limit": 60, "period": 60 } },
     { "name": "LWD_PER_IP", "namespace_id": "1005", "simple": { "limit": 600, "period": 60 } }

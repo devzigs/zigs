@@ -1,6 +1,7 @@
 // The /lwd route of cf/src/index.js. The Worker relays the light-wallet calls of the page to the
-// testnet server, adds the secret key, and passes no credential of the user. The Cloudflare import
-// and fetch are stubs, so nothing here reaches a network.
+// testnet server, adds the secret key, and passes no credential of the user. Also the key of a
+// client for the limits per network (PRIV-9) at its three places. The Cloudflare import and fetch
+// are stubs, so nothing here reaches a network.
 // Run: node web/test/lwd.mjs   (Node 24)
 import assert from "node:assert/strict";
 import { timingSafeEqual } from "node:crypto";
@@ -8,10 +9,10 @@ import { readFileSync } from "node:fs";
 
 const source = readFileSync(new URL("../../cf/src/index.js", import.meta.url), "utf8").replace(
   'import { DurableObject } from "cloudflare:workers";',
-  "const DurableObject = class {};",
+  "const DurableObject = class { constructor(ctx, env) { this.ctx = ctx; this.env = env; } };",
 );
 assert.ok(!source.includes("cloudflare:workers"), "the Cloudflare import is stubbed");
-const { default: worker } = await import(
+const { default: worker, Store } = await import(
   `data:text/javascript;base64,${Buffer.from(source).toString("base64")}`
 );
 // timingSafeEqual on crypto.subtle is a Cloudflare extension: Node has it in node:crypto.
@@ -328,6 +329,69 @@ step("a missing or empty LWD_KEY gives 503 and nothing goes upstream");
   }
   assert.equal(new TextDecoder().decode(Buffer.concat(rest)), "block 2");
   step("a response body streams through and is not held back");
+}
+
+// ── The key of a client for the limits per network: IPv4, or the /64 of IPv6 (PRIV-9) ──
+{
+  const cases = [
+    ["203.0.113.7", "203.0.113.7"],
+    [" 203.0.113.7 ", "203.0.113.7"],
+    ["2001:db8:1:2:3:4:5:6", "2001:db8:1:2::/64"],
+    ["2001:0DB8:0001:0002::9", "2001:db8:1:2::/64"],
+    ["2001:db8:1:2::", "2001:db8:1:2::/64"],
+    ["2001:db8:1:3::1", "2001:db8:1:3::/64"],
+    ["::1", "0:0:0:0::/64"],
+    ["64:ff9b::198.51.100.1", "64:ff9b:0:0::/64"],
+    ["::ffff:203.0.113.7", "203.0.113.7"],
+    ["::FFFF:cb00:7107", "203.0.113.7"],
+    ["0:0:0:0:0:ffff:203.0.113.7", "203.0.113.7"],
+    ["1:0:0:0:0:ffff:203.0.113.7", "1:0:0:0::/64"],
+    [undefined, "local"],
+    ["", "local"],
+    ["1::2::3", "1::2::3"],
+    ["2001:db8::1::2", "2001:db8::1::2"],
+    ["1:2:3:4:5:6:7:8:9", "1:2:3:4:5:6:7:8:9"],
+    ["1:2:3:4::5:6:7:8", "1:2:3:4::5:6:7:8"],
+    ["::ffff:300.1.2.3", "::ffff:300.1.2.3"],
+    ["fe80::1%eth0", "fe80::1%eth0"],
+  ];
+  const headers = (ip) => (ip === undefined ? {} : { "cf-connecting-ip": ip });
+  const keys = [];
+  const counter = { limit: async ({ key }) => (keys.push(key), { success: true }) };
+  upstream = () => new Response("ok");
+  for (const [ip] of cases) {
+    await ask("/lwd" + SERVICE + "GetLatestBlock", { headers: headers(ip) }, {
+      ...env, LWD_PER_IP: counter,
+    });
+  }
+  assert.deepEqual(keys, cases.map(([, key]) => key), "LWD_PER_IP");
+  // The group socket route: WS_PER_IP, then the Store of the group.
+  keys.length = 0;
+  const up = { fetch: async () => new Response("up") };
+  const store = { idFromName: (name) => name, get: () => up };
+  for (const [ip] of cases) {
+    const url = "https://app.zigs.app/ws?g=" + "a".repeat(20);
+    const req = new Request(url, { headers: headers(ip) });
+    const res = await worker.fetch(req, { ...env, WS_PER_IP: counter, STORE: store });
+    assert.equal(await res.text(), "up");
+  }
+  assert.deepEqual(keys, cases.map(([, key]) => key), "WS_PER_IP");
+  // The sockets of a Store: a client with 20 sockets under its key gets 429.
+  const sql = { exec: () => ({ one: () => ({ n: 0 }), toArray: () => [{ v: "adopted" }] }) };
+  const tags = [];
+  const ctx = {
+    storage: { sql },
+    getWebSockets: (tag) => (tag === undefined ? [] : (tags.push(tag), Array(20).fill({}))),
+  };
+  const room = new Store(ctx, env);
+  for (const [ip] of cases) {
+    const h = { ...headers(ip), upgrade: "websocket", "x-group": "a".repeat(20) };
+    const res = await room.fetch(new Request("https://store/ws", { headers: h }));
+    assert.equal(res.status, 429);
+  }
+  assert.deepEqual(tags, cases.map(([, key]) => key), "the socket count of a Store");
+  calls.length = 0;
+  step("one key at three places: an IPv4 address, the /64 of IPv6, the IPv4 of a mapped address");
 }
 
 console.log("lwd tests passed");
