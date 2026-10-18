@@ -400,8 +400,9 @@ A proposer cannot hide a different recipient, amount or extra output behind the 
   differs). The iPhone and Mac apps give no chain height yet, so they skip this check
   (TICKETS.md, ZEC-8).
 - In the web app, a payment that expired before its signing package shows "Propose again". It
-  fills the Send form with the same recipients, amounts, memos, note and fee choice. The new
-  proposal needs new approvals.
+  fills the Send form with the same recipients, amounts, memos, note and fee choice, and on
+  testnet with the same ZNS names. The new proposal needs new approvals, and each approving web
+  app checks the names again.
 - The signing of a payment counts as started when it has a signing package, signed, final or
   sent part, when this browser saw one before (one seat or the server can remove them), or when
   a seat of this browser approved it. The browser keeps:
