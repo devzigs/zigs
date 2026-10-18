@@ -31,6 +31,7 @@ import { propose } from "../sol/propose.js";
 import { putSol, remoteStop, stopOf } from "../sol/secrets.js";
 import {
   autoSync,
+  ensureWorker,
   pollBalances,
   refreshChain,
   syncSolana,
@@ -348,6 +349,33 @@ step("a failed poll is tried again, and a sync must work before a payment counts
   globalThis.fetch = fetch;
 }
 step("a close during a poll writes nothing, and a failed first sync tries again by itself");
+
+// ── A wallet that closes while its Worker starts: the old start leaves no Worker behind ──
+{
+  t.sol.close();
+  t.sol.open(gid, "groups/" + gid);
+  await waitFor("the sessions", () => c.loaded.solsessions, 30000);
+  const fetch = globalThis.fetch;
+  let release;
+  const held = new Promise((go) => (release = go));
+  globalThis.fetch = async (url, init) => {
+    if (String(url) === "/sol/worker.js") await held;
+    return fetch(url, init);
+  };
+  const old = ensureWorker(c).then(() => "started", (e) => e.message);
+  await sleep(300);
+  t.sol.close();
+  t.sol.open(gid, "groups/" + gid);
+  release();
+  assert.equal(await old, "The wallet closed during this Solana step.");
+  assert.deepEqual([c.worker, c.inited], [null, null], "no Worker of the closed wallet");
+  globalThis.fetch = fetch;
+  await waitFor("the sessions", () => c.loaded.solsessions, 30000);
+  t.sol.view();
+  t.sol.react();
+  await waitFor("the first sync of the reopened wallet", () => c.autoSynced, 30000);
+}
+step("a wallet that closes while its Worker starts keeps no Worker of it");
 
 // ── Nonces: saved before the commit, deleted before the share, never made twice ──
 {
