@@ -26,7 +26,8 @@ import {
 const COMPUTE_UNITS = 217_000;
 const SYSTEM_PROGRAM = "11111111111111111111111111111111";
 const U64_MAX = 0xffff_ffff_ffff_ffffn;
-const CONFIRM_MS = 60_000;
+// Shorter than the execute lease of 60 s (execute.js), which a tab renews right after a send.
+const CONFIRM_MS = 45_000;
 
 const redact = makeRedactor();
 let session = null;

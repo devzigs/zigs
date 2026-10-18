@@ -4,7 +4,9 @@
 // Ed25519 instruction with the approval, then the program) and checks that the approval verifies
 // over the digest of the new proof, and only then does the fee key of that seat sign it. The seat
 // pays the fee of the execute; the rent of the proposal account goes back to the proposing seat.
-// The proposing seat executes when this browser holds it; any other ready seat may.
+// The proposing seat executes when this browser holds it; any other ready seat may. A seat
+// executes only when its fee address can pay: a browser with no funded seat waits, with no banner,
+// for a funded one.
 //
 // An execute that this tab sent and that may still land is checked before any other send: a
 // blockhash lives about 60 to 90 s, so a second execute waits until the first one landed, failed
@@ -13,7 +15,7 @@
 // page writes the sent mark with the transaction that holds the approval of this payment.
 import { agreement } from "./ceremony.js";
 import { base58 } from "./docs.js";
-import { feeProblem, poorFeeText, readyFee } from "./fee.js";
+import { feeOf, feeProblem, poorFeeText, readyFee } from "./fee.js";
 import { writerSeats } from "./gate.js";
 import {
   bytesOf,
@@ -35,8 +37,18 @@ const STALE_ROOT = /\b7008\b/;
 const HOLDER = crypto.randomUUID();
 // A blockhash lives 150 slots; a sent execute is past it well before this.
 const SEND_WINDOW_MS = 150_000;
-// Longer than one try: a re-proof, a test run, a send and a confirm of up to 60 s.
-const LEASE_MS = 240_000;
+// The server keeps a lease 60 s at most (cf/src/index.js), so a try takes it again before send.
+const LEASE_MS = 60_000;
+// The fee address of the executor keeps the rent-exempt minimum of a System account (890,880
+// lamports) after the fee of the execute and the tree fee.
+const EXECUTE_MIN = 1_000_000n;
+// A browser with no funded seat looks again after this time; a balance read holds this long.
+const UNFUNDED_WAIT_MS = 15_000;
+const BALANCE_MS = 30_000;
+// The lamports of each fee address (base58) and when they were read: { lamports, at }.
+const balances = new Map();
+/** Forgets the balances read so far: the next choice of an executor reads them again. */
+export const forgetBalances = () => balances.clear();
 const CONFIRMED = new Set(["confirmed", "finalized"]);
 const FAILED = "The execute failed on chain. The approval is still valid.";
 const UNREAD = "The history of the proposal account is not complete yet.";
@@ -63,10 +75,39 @@ export function bodyOf(hex) {
   };
 }
 
-/** The seat that executes: the proposing seat when this browser holds it ready, else the first. */
-export function executorOf(c, ss) {
+/** The seats of this browser that may execute `ss`, with a ready fee key: the proposer first. */
+export function executorsOf(c, ss) {
   const ready = writerSeats(c).filter((i) => feeProblem(c, i) === null);
-  return ready.includes(ss.by) ? ss.by : ready[0];
+  return ready.includes(ss.by) ? [ss.by, ...ready.filter((i) => i !== ss.by)] : ready;
+}
+
+/** The lamports of a fee address, read at most once in BALANCE_MS. A failed read gives 0. */
+async function feeBalance(worker, account) {
+  const held = balances.get(account);
+  if (held && Date.now() - held.at < BALANCE_MS) return held.lamports;
+  const lamports = await worker.call("balance", { account }).then(
+    (r) => BigInt(r.lamports),
+    () => 0n, // an RPC that fails now: no seat counts as funded, and no try is counted
+  );
+  balances.set(account, { lamports, at: Date.now() });
+  return lamports;
+}
+
+/** The first seat of `seats` whose fee address can pay an execute, or undefined. */
+async function fundedSeat(c, worker, seats) {
+  for (const seat of seats) {
+    if ((await feeBalance(worker, base58(feeOf(c, seat).key))) >= EXECUTE_MIN) return seat;
+  }
+  return undefined;
+}
+
+/**
+ * The seat that tries the execute now, or undefined. A tab that sent an execute checks it, and a
+ * payment past its expiry ends: neither pays a fee, so the funding check does not hold them up.
+ */
+async function executor(c, worker, ss, seats) {
+  if (c.sending[ss.id] !== undefined || pastExpiry(ss)) return seats[0];
+  return fundedSeat(c, worker, seats);
 }
 
 /**
@@ -186,10 +227,11 @@ function afterConfirm(c, ss, seat, txId, seen) {
   return markSent(c, ss, seat, txId, seen);
 }
 
-async function attempt(c, ss, seat, failSession) {
-  const worker = await ensureWorker(c);
+const leased = async (ref) => (await ref.acquire({ holder: HOLDER, ttlMs: LEASE_MS })).acquired;
+
+async function attempt(c, worker, ss, seat, failSession) {
   const ref = c.host.sdb.doc(c.base + "/" + SESSIONS + "/" + ss.id);
-  if (!(await ref.acquire({ holder: HOLDER, ttlMs: LEASE_MS })).acquired) return sleep(3000);
+  if (!(await leased(ref))) return sleep(3000);
   const state = await sentState(c, worker, ss, seat);
   if (state === "wait") return sleep(3000);
   if (state === "done") return undefined;
@@ -199,8 +241,12 @@ async function attempt(c, ss, seat, failSession) {
   const { tx, txId } = await signedExecute(c, worker, ss, seat);
   const sim = await worker.call("simulate", { tx });
   if (sim.err !== null) throw new Error(refusalOf(sim, seat));
+  // The re-proof may outlast the lease: take it again, or leave the send to the tab that holds it.
+  if (!(await leased(ref))) return sleep(3000);
   await worker.call("send", { tx });
   c.sending[ss.id] = { txId, at: Date.now() };
+  // The confirm (45 s at most) ends before this lease, so no other tab sends meanwhile.
+  await leased(ref);
   const seen = await worker.call("confirm", { signature: txId });
   return afterConfirm(c, ss, seat, txId, seen);
 }
@@ -220,11 +266,17 @@ export function tryAgain(c, ss) {
  * tries again. The approval stays valid until the expiry.
  */
 export function maybeExecute(c, ss, { launch, failSession }) {
-  const seat = executorOf(c, ss);
-  if (!c.rpcUrl || seat === undefined || (c.tries[ss.id] ?? 0) >= EXECUTE_TRIES) return;
+  const seats = executorsOf(c, ss);
+  if (!c.rpcUrl || !seats.length || (c.tries[ss.id] ?? 0) >= EXECUTE_TRIES) return;
   launch(c, "exec:" + ss.id, async () => {
     try {
-      await attempt(c, ss, seat, failSession);
+      const worker = await ensureWorker(c);
+      const seat = await executor(c, worker, ss, seats);
+      if (seat === undefined) {
+        delete c.execErrors[ss.id]; // another browser that can pay executes; no banner here
+        return sleep(UNFUNDED_WAIT_MS);
+      }
+      await attempt(c, worker, ss, seat, failSession);
       delete c.execErrors[ss.id];
     } catch (e) {
       c.tries[ss.id] = (c.tries[ss.id] ?? 0) + 1;
