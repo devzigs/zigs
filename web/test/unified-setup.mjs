@@ -93,10 +93,28 @@ assert.match(pageText(), /asks for the password of this site before Zigs opens: 
 assert.match(SOL_DISCLOSURE, /public program address.*fee address.*Helius.*no audit/);
 // The preload: the module loads at the start of setup, and no Solana watch opens before the
 // people of the wallet confirmed the network.
+// S12: a failed load says why and waits for Try again. The server first answers 503.
+config.down = true;
 t.refilter();
 await waitFor("the preload", () => t.solLoading !== null);
 await t.solLoading;
-assert.ok(t.sol, "the module loaded");
+assert.equal(t.sol, null, "the load failed");
+assert.match(t.solError, /not available on this server/);
+const solTabText = () => {
+  const real = globalThis.document;
+  globalThis.document = { createElement: () => new Rec(), createTextNode: (text) => ({ text }) };
+  try {
+    return textOf(t.solTab());
+  } finally {
+    globalThis.document = real;
+  }
+};
+assert.match(solTabText(), /not available on this server.*Try again/s);
+config.down = false;
+const { solRetry } = await import("../app-sol.js");
+solRetry();
+await waitFor("the load after Try again", () => !!t.sol);
+assert.equal(t.solError, "", "and the error is gone");
 assert.equal(rig.live(`groups/${gid}/sol`), 0, "and opened no Solana watch");
 // The setup card lists the two Solana steps after the three Zcash steps.
 const setupText = pageText();

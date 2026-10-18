@@ -86,16 +86,29 @@ const solHost = () => ({
   askBackup: (words) => { ui.backup = { words, made: false, busy: false }; render(); },
   newWallet: () => { ui.create = true; render(); },
 });
-// A server with SOL off does not serve the module, and the text says so. view.js is part of the
-// module: it gives the setup steps (solSetup).
+// A server with SOL off does not serve the module (its config answers 503), and the text says so.
+// Any other failure is the connection (SOL-26). view.js is part of the module: it gives the setup
+// steps (solSetup).
+const SOL_DOWN = "Solana did not load. Check your connection, then press Try again or reload.";
 let setupSummary = null;
+async function whyNotLoaded() {
+  const status = await globalThis.fetch("/sol/config.json", { cache: "no-store" })
+    .then((r) => r.status, () => 0);
+  return status === 503 || status === 404 ? SOL_OFF : SOL_DOWN;
+}
 const solModule = () => Promise.all([import("./sol/main.js"), import("./sol/view.js")])
   .then(([m, v]) => { setupSummary = v.setupSummary; return m; })
-  .catch(() => { throw new Error(SOL_OFF); });
+  .catch(async () => { throw new Error(await whyNotLoaded()); });
 // The Solana part of the open wallet for the setup steps, or null while it is not open here.
 export const solSetup = () => sol && setupSummary && solOn() && sol.ctl.gid === state.gid
   ? setupSummary(sol.ctl) : null;
-// A failed load is final until the page reloads: a retry on every redraw would loop.
+// A failed load waits for Try again (solRetry): a retry on every redraw would loop.
+export function solRetry() {
+  solLoading = null;
+  solError = "";
+  solLoad();
+  render();
+}
 export function solLoad() {
   solLoading ||= solModule().then((m) => m.attach(solHost())).then((m) => {
     sol = m;
@@ -103,7 +116,7 @@ export function solLoad() {
     render(); react();
   }, (e) => {
     solError = said(e);
-    showBanner("bad", "Solana did not load: " + solError);
+    showBanner("bad", solError === SOL_DOWN ? SOL_DOWN : "Solana did not load: " + solError);
     render();
   });
   return solLoading;
@@ -140,8 +153,11 @@ export function solReact() {
   if (sol) sol.react();
   else if (!solLoading && solStartSigned()) solLoad();
 }
+const retryButton = () => el("button", { class: "btn sm", type: "button", "data-sol": "retry-load",
+  onclick: solRetry }, "Try again");
 export const solTab = () => sol ? guard(sol.view)
-  : solError ? el("p", { class: "small" }, solError)
+  : solError ? el("div", { style: "display:grid;gap:8px" }, el("p", { class: "small" }, solError),
+    el("div", {}, retryButton()))
   : (solLoad(), el("p", { class: "small" }, "Loading Solana…"));
 const NET_UNCONFIRMED = "This device does not know yet which network the people of this wallet "
   + "confirmed. Open the wallet, wait until its seat shows Address checked, then try again.";
