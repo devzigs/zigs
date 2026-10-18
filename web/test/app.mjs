@@ -4068,9 +4068,10 @@ async function runAcctSync() {
   await t.runSync(t.acct);
 }
 
-// Three paths of the page that no check above runs: a good action clears a bad banner, a pick in
-// the side list shows a wallet section, and Leave chat asks first. Each one asks for the focus of a control, which
-// the next redraw (120 ms later) takes. A recorder stands in for the page.
+// Paths of the page that no check above runs: a good action clears a bad banner, a pick in the
+// side list shows a wallet section, the phone Menu closes, the skip link moves the focus, and
+// Leave chat asks first. Each one asks for the focus of a control, which the next redraw (120 ms
+// later) takes. A recorder stands in for the page.
 {
   const realDocument = globalThis.document;
   class Rec extends Node {
@@ -4083,14 +4084,15 @@ async function runAcctSync() {
     append(...x) { this.kids.push(...x); }
   }
   const banner = new Rec("div"), bannerText = new Rec("span");
+  const page = { focused: false, focus() { this.focused = true; } };
   globalThis.document = {
     activeElement: { dataset: { key: "send-ok" } },
-    getElementById: (id) => ({ banner, "banner-text": bannerText })[id] ?? null,
+    getElementById: (id) => ({ banner, "banner-text": bannerText, app: page })[id] ?? null,
     createElement: (tag) => new Rec(tag), createElementNS: (ns, tag) => new Rec(tag),
     createTextNode: (text) => ({ text }),
   };
   const ev = { preventDefault() {}, currentTarget: null };
-  const { tab, leave } = t.ui;
+  const { tab, leave, menu } = t.ui;
   try {
     t.showBanner("bad", "an earlier error");
     assert.equal(banner.hidden, false);
@@ -4116,6 +4118,21 @@ async function runAcctSync() {
     assert.deepEqual(t.wantFocus, { key: "panel-members", force: true },
       "and the focus goes to the section");
 
+    t.ui.menu = true;
+    t.menuKey({ key: "x" });
+    assert.equal(t.ui.menu, true, "another key keeps the Menu open");
+    t.menuKey({ key: "Escape" });
+    assert.equal(t.ui.menu, false, "Escape closes the Menu");
+    assert.deepEqual(t.wantFocus, { key: "menu", force: true }, "and the focus goes back to Menu");
+    t.ui.menu = true;
+    t.menuOutside({ target: { closest: (sel) => (sel === ".side" ? {} : null) } });
+    assert.equal(t.ui.menu, true, "a click in the side list keeps it open");
+    t.menuOutside({ target: { closest: () => null } });
+    assert.equal(t.ui.menu, false, "a click outside the side list closes it");
+    let stopped = false;
+    t.skipToPage({ preventDefault: () => { stopped = true; } });
+    assert.ok(stopped && page.focused, "the skip link focuses the page and changes no fragment");
+
     t.ui.leave = false;
     const ask = t.leaveBox("chat-id").kids[0];
     assert.equal(ask.attrs["data-key"], "leave-ask");
@@ -4124,7 +4141,7 @@ async function runAcctSync() {
     assert.deepEqual(t.wantFocus, { key: "leave-no", force: true }, "and the focus goes to Cancel");
   } finally {
     globalThis.document = realDocument;
-    Object.assign(t.ui, { tab, leave });
+    Object.assign(t.ui, { tab, leave, menu });
   }
   await sleep(200);
 }
