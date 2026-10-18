@@ -898,6 +898,35 @@ assert.deepEqual(
   await waitFor("every soldone", () => haveDones(gidL), 30000);
 }
 
+// ── A round-1 secret that another copy of the seat published differently takes no part ──
+{
+  const gidS = await rig.wallet({ name: "Stale" });
+  rig.hook.lease = (p) => !p.endsWith("/soldkg1/2");
+  await addSolana();
+  const started = () => data.has(path(gidS, "soldkg1/1")) && data.has(path(gidS, "soldkg1/3"));
+  await waitFor("seat 1 and 3 start", started, 20000);
+  // The other copy of seat 2 publishes its round 1. This copy holds another, unpublished secret.
+  const [n, k] = [t.state.g.n, t.state.g.t];
+  const other = JSON.parse(W.sol_dkg1(2, n, k)),
+    mine = JSON.parse(W.sol_dkg1(2, n, k));
+  const commit = W.sol_commit(gidS, 2, t.state.seats[2].boxPk, "devnet", "ab".repeat(32));
+  const fields = { package: other.package, commit, at: Date.now() };
+  data.set(path(gidS, "soldkg1/2"), await t.signedDoc(gidS, "soldkg1/2", 2, fields));
+  const sol = { r1secret: mine.secret, r1package: mine.package, rSol: "cd".repeat(32) };
+  await t.putSec(gidS, 2, { sol: { ...sol, cluster: "devnet" } });
+  rig.hook.lease = () => true;
+  rig.notify();
+  await waitFor("the stale secret goes", () => !solOf(gidS, 2).r1secret, 20000);
+  await sleep(1500);
+  const wrote = [1, 3].some((j) => data.has(path(gidS, "soldkg2/2-" + j)));
+  assert.equal(wrote, false, "a stale round-1 secret takes no part");
+  assert.equal([1, 2, 3].some((i) => solOf(gidS, i).aborted), false, "and nothing stops");
+  // A seat of a wallet that is not the open one waits for it.
+  const shut = { ...tabState(gid), docs: { solstart: {}, soldkg1: {}, soldkg2: {}, soldone: {} } };
+  assert.notEqual(t.state.gid, gid);
+  assert.equal(seatProgress(shut, 1), "Seat 1 waits: open its wallet.");
+}
+
 // ── A seat whose Zcash part has not settled does not start ──
 {
   const gid3b = await rig.wallet({ name: "Settle" });

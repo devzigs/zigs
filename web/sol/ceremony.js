@@ -19,6 +19,7 @@ const randomHex32 = () =>
   ).join("");
 const boxContext = (gid, from, to) => gid + ":sol:" + from + "->" + to;
 const LEASE_MS = 10000;
+const HOLDER = randomHex32(); // one lease holder per page, so a retry is not blocked by itself
 const pause = () => new Promise((ok) => setTimeout(ok, 3000));
 const stopText = (e) =>
   "Solana setup stopped: " +
@@ -36,13 +37,13 @@ export function startBlock(host) {
 /** The start document of seat 1 names the cluster of this build. */
 export const started = (docs) => docs.solstart[1]?.cluster === CLUSTER;
 
-// Why seat i of this browser cannot start yet, or null: its Zcash part is settled and its person
-// confirmed the safety number it has now (also a restored seat, by its own confirm document).
-const numberMoved = (host, gid, i) => {
-  const kept = host.sec(gid, i).confirmed,
+const numberMoved = (host, i) => {
+  const kept = host.confirmedNo(i),
     no = host.safetyNo();
   return kept !== undefined && kept !== null && !!no && kept !== no;
 };
+// Why seat i of this browser cannot start yet, or null: its Zcash part is settled and its person
+// confirmed the safety number it has now (also a restored seat, by its own confirm document).
 const WAITS = [
   [(i) => "Seat " + i + " waits: open its wallet.", (h, g) => g !== h.state.gid],
   [
@@ -52,7 +53,7 @@ const WAITS = [
   [(i) => "Seat " + i + " waits for Address checked.", (h, g, i) => h.seatCheck(i) !== true],
   [
     (i) => "Seat " + i + " waits: the safety number changed after this browser confirmed it.",
-    numberMoved,
+    (h, g, i) => numberMoved(h, i),
   ],
   [
     (i) => "Seat " + i + " waits: this browser has not confirmed the safety number.",
@@ -77,7 +78,13 @@ const r2For = (c, to) =>
     .every((i) => !!c.docs.soldkg2[i + "-" + to]);
 
 const needR1 = (c, i, s) => !c.docs.soldkg1[i] && !s.keyPackage;
-const needR2 = (c, s) => !!s.r1secret && !s.r2secret && !s.keyPackage && allR1(c);
+// The verified round 1 of seat i holds the package of this secret. Another copy of the seat can
+// publish its own: then this secret is stale, takes no part and goes (staleR1).
+const ownR1 = (c, i, s) => S(c.docs.soldkg1[i]?.package) === S(s.r1package);
+const staleR1 = (c, i, s) =>
+  !!s.r1secret && !s.keyPackage && !!c.docs.soldkg1[i] && !ownR1(c, i, s);
+const needR2 = (c, i, s) =>
+  !!s.r1secret && !s.r2secret && !s.keyPackage && allR1(c) && ownR1(c, i, s);
 const needR3 = (c, i, s) => !!s.r2secret && !s.keyPackage && allR1(c) && r2For(c, i);
 const needDone = (c, i, s) => !!s.keyPackage && !s.doneSent && !c.docs.soldone[i];
 // A seat that published its soldone before the program design publishes it again with the PDA
@@ -118,12 +125,10 @@ async function round1(c, i) {
   const { host, W, gid, base } = c,
     g = host.state.g,
     boxPk = host.state.seats[i].boxPk; // read before the first await: another wallet may open
-  // Two copies of one seat (a device and a restored copy) must not both publish round 1: the lease
-  // lets one go first, and the other then finds its signed document. A document that fails its
-  // signature check does not count, so a seat still publishes one again. The pause keeps the
-  // reactor from asking again at once.
+  // Two copies of one seat (a device and a restored copy) must not both publish round 1. A document
+  // that fails its signature check does not count, so a seat still publishes one again.
   const ref = host.sdb.doc(base + "/soldkg1/" + i);
-  if (!(await ref.acquire({ holder: randomHex32(), ttlMs: LEASE_MS })).acquired) return pause();
+  if (!(await ref.acquire({ holder: HOLDER, ttlMs: LEASE_MS })).acquired) return pause();
   if (c.docs.soldkg1[i]) return pause();
   let s = solOf(host, gid, i);
   if (!s.r1secret) {
@@ -145,6 +150,13 @@ async function round1(c, i) {
   const doc = await host.signedDoc(gid, "soldkg1/" + i, i, fields);
   await ref.set(doc);
   host.log("seat " + i + ": Solana round 1 commitment published");
+}
+
+/** A round-1 secret whose package another copy of the seat did not publish goes. */
+async function dropR1(c, i) {
+  const gone = { r1secret: null, r1package: null, rSol: null, r2secret: null };
+  await putSol(c.host, c.gid, i, gone);
+  c.host.log("seat " + i + ": another copy of this seat published its Solana round 1");
 }
 
 function makeBoxes(c, i, s) {
@@ -298,7 +310,8 @@ const launch = (c, key, run) => {
 // setup before the fee key existed publishes its fee document here.
 const STEPS = [
   ["r1", (c, i, s, open) => open && needR1(c, i, s), round1],
-  ["r2", (c, i, s, open) => open && needR2(c, s), round2],
+  ["stale", (c, i, s) => staleR1(c, i, s), dropR1],
+  ["r2", (c, i, s, open) => open && needR2(c, i, s), round2],
   ["r3", (c, i, s) => needR3(c, i, s), round3],
   ["done", (c, i, s) => needDone(c, i, s), publishDone],
   ["pdadoc", (c, i, s) => needPdaDoc(c, i, s), publishDone],
