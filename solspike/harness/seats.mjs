@@ -25,9 +25,10 @@ async function makeWallet(page, name, { solana = false } = {}) {
   await setInput(page, "#g-name", name);
   const box = () => run(page, () => !!document.getElementById("g-sol"));
   if (solana) await waitFor(box, 20000, () => "the Solana box of the dialog");
+  // A click fires the change handler, so the page keeps the choice through a redraw.
   await run(page, (on) => {
     const el = document.getElementById("g-sol");
-    if (el) el.checked = on;
+    if (el && el.checked !== on) el.click();
   }, solana);
   await run(page, () => document.querySelector("form[role=dialog] button[type=submit]").click());
   const shown = () => run(page, () => !!document.querySelector(".addr-box .hex"));

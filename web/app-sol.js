@@ -47,19 +47,22 @@ export function solServed() {
 // The person who makes a wallet chose its Solana part. Seat 1 of this browser keeps `solAuto`, so
 // its reactor starts the Solana ceremony with no button (web/sol/ceremony.js). The group document
 // gets the hint for the other seats.
-export async function planSolana() {
-  const gid = state.gid;
+// The hint goes first: when its write fails, no seat starts by itself with joiners who never saw
+// the Solana texts.
+export async function planSolana(gid) {
   if (!sec(gid, 1)) return;
-  await putSec(gid, 1, { solAuto: true });
   await sdb.doc("groups/" + gid).update({ solana: true });
+  await putSec(gid, 1, { solAuto: true });
 }
 // What a person accepts with the Solana part (the Add Solana card of web/sol/view.js says more).
 export const SOL_DISCLOSURE = "Solana Devnet: a program owns the funds of the group at a public "
-  + "program address. Each seat gets a fee address, which appears on chain next to the group. "
-  + "Helius sees that you use Zigs. The program has no audit.";
+  + "program address. Each seat gets a fee address, which appears on chain next to the group, and "
+  + "its funding shows who sent the SOL. Helius sees that you use Zigs, and the prover sees your "
+  + "payments. The program has no audit, and its upgrade key is outside the group.";
 // The seats of this browser with a Solana key share whose backup file was not saved. A stopped
-// part gets no backup (web/sol/backup.js refuses it).
-export const solUnsaved = () => solOn() ? localSeats().filter((i) => {
+// part gets no backup (web/sol/backup.js refuses it), also when another seat stopped it.
+const solStopped = () => solSetup()?.status === "stopped";
+export const solUnsaved = () => solOn() && !solStopped() ? localSeats().filter((i) => {
   const s = sec(state.gid, i)?.sol;
   return !!(s?.keyPackage && s.solSeed && s.groupKey) && !s.aborted && s.backupSaved !== true;
 }) : [];
@@ -124,11 +127,14 @@ export function solAttach(gid, base) {
 }
 const solStartSigned = () => !!solStartDoc && checkIn(state.gid)("solstart/1", solStartDoc.by,
   solStartDoc.sig, docFields(solStartDoc), 1) === "yes";
-export function solReact() {
-  // A seat of a wallet with the Solana hint loads the module at the start of setup, so the key
-  // ceremony does not wait for it. The watch still opens only for a confirmed testnet wallet.
+// A seat of a wallet with the Solana hint loads the module at the start of setup, so the key
+// ceremony does not wait for it. The watch still opens only for a confirmed testnet wallet.
+function solPreload() {
   const auto = sec(state.gid, 1)?.solAuto === true;
   if (!sol && !solLoading && (solPlanned() || auto) && localSeats().length) solLoad();
+}
+export function solReact() {
+  solPreload();
   if (!solOn()) return;
   solWatch();
   if (sol) sol.react();

@@ -22,6 +22,8 @@ const patch = (file, from, to = "") => ({ file, from, to });
 const SOL_APP = ["node", "web/test/sol-app.mjs"];
 const SOL_CEREMONY = ["node", "web/test/sol-ceremony.mjs"];
 const UNIFIED = ["node", "web/test/unified-setup.mjs"];
+const HINT_FIRST = '  await sdb.doc("groups/" + gid).update({ solana: true });\n' +
+  "  await putSec(gid, 1, { solAuto: true });";
 const APP_SOL = "web/app-sol.js";
 const APP_GROUPS = "web/app-groups.js";
 const INDEX_JS = "cf/src/index.js";
@@ -253,6 +255,15 @@ export const MUTATIONS = [
       "(c) => c.host.state.g?.solana === true,")], /the hint alone starts nothing/),
   mutant("W-auto-off", "the choice of Solana does not start the ceremony", UNIFIED,
     [patch(SOL_CEREMONY_JS, "  autoStart(c);\n", "")], /the Solana part, with no button/),
+  mutant("W-dialog-keep", "a redraw of the create dialog turns the Solana box on again", UNIFIED,
+    [patch("web/app-shell.js", "checked: ui.sol !== false,", "checked: true,")],
+    /a redraw keeps the person's no/),
+  mutant("W-plan-order", "seat 1 keeps the Solana choice before the hint is written", UNIFIED,
+    [patch("web/app-sol.js", HINT_FIRST, HINT_FIRST.split("\n").reverse().join("\n"))],
+    /no seat starts by itself/),
+  mutant("W-auto-ready", "the start does not wait until seat 1 is ready", UNIFIED,
+    [patch(SOL_CEREMONY_JS, "  (c) => seatReady(c.host, c.gid, 1),\n", "")],
+    /no refusal before it/),
   mutant("W-label-compare", "a seat does not compare the label of the documents",
     SOL_CEREMONY, [patch(SOL_CEREMONY_JS, LABEL_LINE, "  true;")], /another label/),
   mutant("W-label-const", "a seat compares the label with a text of the page, not of the wasm",

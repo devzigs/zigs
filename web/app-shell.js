@@ -243,18 +243,21 @@ function welcome(canCreate, restoreLink) {
 }
 
 // A new testnet wallet can get its Solana Devnet part in the same setup, on a server that serves
-// Solana. The box is on by default: the demo shows one setup.
+// Solana. The box is on by default: the demo shows one setup. `ui.sol` keeps a "no" through a
+// redraw, and the submit takes the choice only from a box that the person saw.
+const solChosen = (from, network, fd) => !from && network === "testnet" && fd.get("sol") === "on";
 function solChoice() {
   if (ui.net !== "testnet" || !solServed()) return null;
   return el("label", { class: "ack" },
-    el("input", { type: "checkbox", id: "g-sol", name: "sol", checked: true }),
+    el("input", { type: "checkbox", id: "g-sol", name: "sol", checked: ui.sol !== false,
+      onchange: (ev) => { ui.sol = ev.target.checked; } }),
     el("span", {}, el("b", {}, "Also set up Solana Devnet. "),
       el("span", { class: "small muted" }, SOL_DISCLOSURE)));
 }
 
 // With `from`, the dialog creates the wallet that replaces `from`, with new signers or a new rule.
 export function createDialog(from = null) {
-  const close = () => { ui.create = false; ui.move = false; render(); };
+  const close = () => { ui.create = false; ui.move = false; ui.sol = undefined; render(); };
   const n0 = from ? from.n : 3, t0 = from ? from.t : 2;
   const rule = el("p", { class: "rule", id: "rule-text" }, ruleText(t0, n0));
   const update = () => {
@@ -270,10 +273,11 @@ export function createDialog(from = null) {
     // A replacement wallet stays on its predecessor's network: funds cannot move between networks.
     const network = from ? from.network || "testnet" : ui.net;
     if (network === "mainnet" && !ui.ack) throw new Error("Confirm that you understand Zigs is not audited before you create a mainnet wallet.");
-    const withSol = !from && network === "testnet" && fd.get("sol") === "on";
-    ui.create = false; ui.move = false; ui.net = "testnet"; ui.ack = false;
-    await createGroup(String(fd.get("name") || "").trim() || (from ? from.name : "Treasury"), n, t, from && from.id, network);
-    if (withSol) await planSolana();
+    const withSol = solChosen(from, network, fd);
+    ui.create = false; ui.move = false; ui.net = "testnet"; ui.ack = false; ui.sol = undefined;
+    const name = String(fd.get("name") || "").trim() || (from ? from.name : "Treasury");
+    const gid = await createGroup(name, n, t, from && from.id, network);
+    if (withSol) await planSolana(gid);
   }) },
     el("div", { class: "card-head" }, el("h2", { id: "create-title" }, from ? "Change signers" : "New shared wallet"), el("button", { class: "icon-btn", type: "button", "aria-label": "Close", onclick: close }, "×")),
     from ? el("ol", { class: "small muted move-steps" },

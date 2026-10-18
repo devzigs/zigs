@@ -217,14 +217,15 @@ function stopCards(c) {
     .map((i) => solOf(c.host, c.gid, i).aborted)
     .filter(Boolean);
   const texts = own.length ? own : [remoteStop(c.docs)].filter(Boolean);
-  const next = el(
-    "button",
-    { class: "btn sm", type: "button", "data-sol": "new-wallet", onclick: c.host.newWallet },
-    "Create a new wallet",
-  );
+  const next = () =>
+    el(
+      "button",
+      { class: "btn sm", type: "button", "data-sol": "new-wallet", onclick: c.host.newWallet },
+      "Create a new wallet",
+    );
   const card = (text) =>
     el("div", { class: "callout bad", role: "alert", "data-sol": "stopped" }, text, " ", STOP_NEXT);
-  return texts.map((text) => [card(text), next]);
+  return texts.map((text) => [card(text), next()]);
 }
 
 // The keys and the sync need agreeing documents. A stopped wallet shows neither.

@@ -17,7 +17,7 @@ import {
 import { messagesCard } from "./app-thread.js";
 import { react, render } from "./app-loop.js";
 import { activityLog } from "./app-wallet.js";
-import { SOL_DISCLOSURE, solPlanned, solSetup } from "./app-sol.js";
+import { SOL_DISCLOSURE, solError, solPlanned, solSetup } from "./app-sol.js";
 
 export function setupView() {
   const open = seatIds().filter((i) => !state.seats[i]);
@@ -105,7 +105,8 @@ function joinCard(seat) {
 
 // The message carries the link, so it is as secret as the link.
 export const inviteMessage = (link) => "I made a shared wallet \"" + state.g.name + "\" on Zigs, a "
-  + "private shared wallet for shielded Zcash" + (solPlanned() ? " testnet and Solana Devnet" : "")
+  + (solPlanned() ? "shared wallet for shielded Zcash testnet and Solana Devnet"
+    : "private shared wallet for shielded Zcash")
   + ". You are one of " + state.g.n + " signers, and " + state.g.t + " must approve each payment."
   + "\n\n1. Open this link on your phone or computer: " + link + "\n2. Take a seat.\n3. Keep the "
   + "page open until the " + (solPlanned() ? "Zcash and the Solana parts are" : "wallet is")
@@ -216,14 +217,23 @@ function setupStep(cls, no, title, text) {
 // The Solana steps of a wallet with the Solana hint, from setupSummary (web/sol/view.js). null
 // while the module is not open here: the key ceremony starts after the Zcash address check.
 const SOL_KEY = {
-  "not started": () => ["", "Starts when the Zcash address is checked."],
+  "not started": () => ["", startText()],
   running: (s) => ["now", s.keys + " of " + s.n + " seats hold their Solana key share…"],
   ready: () => ["done", "Each signer holds one piece of the Solana key."],
   stopped: () => ["bad", "The Solana setup stopped. The Zcash part still works."],
   differs: () => ["bad", "The signers made different Solana keys. Do not use the Solana part."],
   unavailable: () => ["bad", "This wallet cannot get a Solana part."],
 };
-const solKeyStep = (s) => s ? SOL_KEY[s.status](s) : ["", "Starts after the Zcash part."];
+// Only seat 1 with the choice in its own secret starts by itself (planSolana). Seat 1 without it
+// (a restore, or a hint that someone else wrote) starts with Add Solana.
+function startText() {
+  if (!localSeats().includes(1)) return "Seat 1 starts it after the Zcash address check.";
+  if (sec(state.gid, 1)?.solAuto === true) return "Starts when the Zcash address is checked.";
+  return "Tap Add Solana on the Solana tab to start it.";
+}
+const solKeyStep = (s) => s ? SOL_KEY[s.status](s)
+  : solError ? ["bad", "Solana did not load: " + solError]
+  : ["", "Starts after the Zcash part."];
 
 const funded = (f) => !!f.balance && f.balance !== "0 SOL";
 function solFeeStep(s) {
@@ -240,11 +250,20 @@ export function solSteps(first) {
     setupStep(feeStage, first + 1, "Fund your fee address", feeText)];
 }
 
+// A page that saw the Solana setup keeps the fee step until the fee addresses hold SOL. After a
+// reload the balances are unknown until Check balance, so a funded part shows no card then.
+const sawSetup = new Set();
+
 /** True while the Solana part of a wallet with the hint is not ready, not funded, or stopped. */
 export function solUnfinished() {
   if (!solPlanned()) return false;
-  const [feeStage] = solFeeStep(solSetup());
-  return feeStage !== "done";
+  const s = solSetup();
+  if (s?.status !== "ready") {
+    if (s) sawSetup.add(state.gid);
+    return true;
+  }
+  if (solFeeStep(s)[0] === "done") return false;
+  return sawSetup.has(state.gid) || s.fees.some((f) => f.balance === "0 SOL");
 }
 
 const newWalletButton = () => el("button", { class: "btn sm", type: "button",
