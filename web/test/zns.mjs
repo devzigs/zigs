@@ -171,6 +171,12 @@ for (const [label, make] of Object.entries(badRecords)) {
     [null, ["zns: left out"]]);
   assert.deepEqual(await twice((r) => ({ ...r, txid: "xyz" })), [null, ["zns: left out"]]);
   assert.deepEqual(await twice((r) => structuredClone(r)), [chain.names.get(first).address, []]);
+  // Two names left out in one refresh still give one line.
+  errors.length = 0;
+  fault = tamper("list_names", (r) => { r.items[0].txid = "xyz"; r.items[1].txid = "xyz"; });
+  const two = await byName(await ask(await loadWorker()));
+  fault = null;
+  assert.deepEqual([two.size, errors], [chain.names.size - 2, ["zns: left out"]]);
 }
 step("a bad record is left out, and so is a name with two addresses or a bad copy; the rest is "
   + "served, and a refresh that leaves something out logs one fixed line");
