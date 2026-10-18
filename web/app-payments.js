@@ -181,7 +181,40 @@ function aggregateShares(ss, shares) {
 
 // `payees` (address, amount and optional memo) and `note` are the proposer's words; approvers
 // check `payees` against the transaction.
-export async function newSpend(payees, note, move = null, priority = false, after) {
+// One open payment at a time (ZEC-10, S8): the engine picks from all unspent notes, so a second
+// proposal would spend the same notes and fail only at the broadcast. A proposal counts until it
+// is cancelled, failed, sent or expired. One that this browser cannot read, or that expires more
+// than 1 + DAY2_BLOCKS blocks after the synced height, does not count. A payment whose approval
+// here changed counts through the hold of that approval, with its own text.
+// ponytail: one document stops Send for up to 6912 blocks (2 days at 25 s, 6 at 75 s), and one
+// seat can write documents one after another, also with a signed part that removes Cancel.
+// ZEC-14 tracks the documents that one seat writes.
+export function isOpen(ss) {
+  const c = curChain();
+  if (!chainReady(c) || ss.error || ss.broadcastTxid || landed(ss) || expired(ss)) return false;
+  if (approvalChanged(ss)) return false;
+  const at = expiryAt(ss);   // null for a proposal that this browser cannot read
+  return at !== null && at <= c.bal.height + 1 + DAY2_BLOCKS;
+}
+
+// A double tap on Propose must not make two proposals.
+// Every proposal asks the blockers of Send that guard the notes (a proposal that runs, a payment
+// in flight, an open payment, a hold), also "Propose again" on a move.
+// ponytail: the flag holds in this tab only; two tabs or two seats can still race for seconds. A
+// createSpend that never answers keeps it until a reload (S9 adds the timeout). A document whose
+// check still waits does not count as open yet, and neither does a proposal that this browser
+// sees from a sync far behind the chain.
+const PROPOSING = "The proposal of a payment is not complete yet. Wait a moment.";
+export async function newSpend(...args) {
+  const why = holdBlocker();
+  if (why) throw new Error(why);
+  ui.proposing = true;
+  render();
+  try { return await proposeNow(...args); }
+  finally { ui.proposing = false; }
+}
+
+async function proposeNow(payees, note, move = null, priority = false, after) {
   const gid = state.gid, approvals = state.g.t;
   if (!chain || chain.gid !== gid || !chain.bal) {
     throw new Error("The wallet has not finished its first sync.");
@@ -438,9 +471,12 @@ function setupBlocker() {
   return !c || !c.bal ? "Wait for the first sync to finish." : null;
 }
 
+const OPEN_TEXT = "Finish or cancel the open payment, or wait until it expires.";
 function holdBlocker() {
+  if (ui.proposing) return PROPOSING;
   // ponytail: the engine does not know about unmined spends and would pick the same notes again.
   if (inFlight().length) return "A payment is waiting for its block. Send again in a minute.";
+  if (state.sessions.some(isOpen)) return OPEN_TEXT;
   return heldApprovals().length ? "A payment that you approved can still go on chain. Send "
     + "again when a block holds it or it expires. After a cancel, open that payment to release "
     + "it." : null;

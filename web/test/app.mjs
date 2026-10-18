@@ -441,6 +441,8 @@ const sealed = (gid, rel, seat, fields, key, names = ["by", "sig"]) =>
     await cancelling;
     assert.equal((t.sec(gid, 2).nonces || {})[m8.id], undefined);
     await drop(path8);
+    const { [m8.id]: _m8, ...marks8 } = t.sec(gid, 2).marks || {};
+    await t.putSec(gid, 2, { marks: marks8 });   // the test approval holds nothing
     let openShares;
     const shareGate = new Promise((ok) => { openShares = ok; });
     t.setDb({ doc: (p) => p.includes("/shares/")
@@ -592,6 +594,9 @@ const sealed = (gid, rel, seat, fields, key, names = ["by", "sig"]) =>
     t.setChain({ gid, url: "https://lwd.test", bal: { spendable: 1e8, pending: 0, height: 4503500 },
       balAt: Date.now(), received: [], sent: new Set(), cw: { free() {} } });
     assert.equal(t.needsWork(far("w1", { by: 1 })), false, "past its expiry");
+    const { w2: _w2, ...marks2 } = t.sec(gid, 2).marks;
+    const { w3: _w3, ...nonces2 } = t.sec(gid, 2).nonces;
+    await t.putSec(gid, 2, { marks: marks2, nonces: nonces2 });   // the test approvals hold nothing
     t.setChain({ gid, url: "https://lwd.test", bal: { spendable: 1e8, pending: 0, height: 4500000 },
       balAt: Date.now(), received: [], sent: new Set(), cw: { free() {} } });
     const bare = Array.from({ length: 9 }, (_, k) => far("v" + k, { by: 1 }));
@@ -1199,6 +1204,10 @@ const sealed = (gid, rel, seat, fields, key, names = ["by", "sig"]) =>
     assert.equal(sessions(), stored, "a refused submit proposes nothing");
     t.setChain(chainOf({ spendable: 1e8, pending: 0 }));
     assert.equal(named(t.sendDialog(), "button", "Propose payment").attrs.disabled, undefined);
+    t.ui.proposing = true;
+    assert.notEqual(named(t.sendDialog(), "button", "Propose payment").attrs.disabled, undefined,
+      "off while a proposal runs (S8)");
+    t.ui.proposing = false;
 
     // An expired payment: the chip and the drawer say so, the drawer offers "Propose again" and
     // no Cancel, and the page signs nothing for it. "Send again" comes 10 minutes after a send
@@ -1683,8 +1692,13 @@ const sealed = (gid, rel, seat, fields, key, names = ["by", "sig"]) =>
       answer = (p, sg, a) =>
         ({ state: a === "aa" ? "expired" : "unknown", txid: "tx-a", why: "x" });
       assert.equal(t.moveState(at(4503501)).propose, true, "the expired move goes again");
-      // The Move button of the card proposes the move, and the click event is no PCZT.
+      // The Move button of the card proposes the move, and the click event is no PCZT. Nothing
+      // may block Send then (S8): no payment in flight or open, and no approval that holds.
       t.state.sessions = t.state.sessions.filter((x) => x.id !== "zm");
+      const sessionsBefore = t.state.sessions;
+      const marksBefore = t.localSeats().map((i) => [i, t.sec(t.state.gid, i).marks]);
+      t.state.sessions = [];
+      for (const [i] of marksBefore) await t.putSec(t.state.gid, i, { marks: {} });
       const mc = at(4500000);
       mc.bal.max_send = 50000;
       Object.assign(t.ui, { tab: "overview" });
@@ -1696,6 +1710,8 @@ const sealed = (gid, rel, seat, fields, key, names = ["by", "sig"]) =>
       const moveCall = asked.find((x) => x[0] === "spend");
       assert.ok(moveCall, "the move is proposed");
       assert.equal(moveCall[3], undefined, "no PCZT of an expired payment");
+      t.state.sessions = sessionsBefore;
+      for (const [i, marks] of marksBefore) await t.putSec(t.state.gid, i, { marks });
       t.state.g = group;
       await settle();
 
@@ -1792,7 +1808,8 @@ const sealed = (gid, rel, seat, fields, key, names = ["by", "sig"]) =>
       await approved(me, h1);
       at(4500100);
       assert.ok(t.heldApprovals().includes("h1"), "the approval holds");
-      assert.match(String(t.sendBlocker()), /approved can still go on chain|waiting for its block/);
+      assert.match(String(t.sendBlocker()),
+        /approved can still go on chain|waiting for its block|Finish or cancel the open payment/);
       // Path A of QA round 4: no sent mark ever comes, and one seat writes a failure part.
       put({ ...h1, package: "PK", signed: "SA", status: "failed", error: "Failed." });
       at(4500101);
@@ -2168,6 +2185,80 @@ const sealed = (gid, rel, seat, fields, key, names = ["by", "sig"]) =>
       t.closeSession();
       assert.equal(markOf(me, "s7w").burned, undefined, "the cancel waited for the share");
       t.state.g = group;
+      // S8 (ZEC-10): one open payment at a time. A faucet wallet holds one note, so a second
+      // proposal would spend it again and fail only at the broadcast.
+      const OPEN8 = "Finish or cancel the open payment, or wait until it expires.";
+      at(4500100);
+      const o8 = open("o8", "PA");
+      await t.putSec(t.state.gid, me, { marks: { ...t.sec(t.state.gid, me).marks,
+        o8c: { approved: "aa", tip: 4500001 } } });
+      // The approved PCZT is kept, so the expiry of the changed payment is known.
+      keptStore.set(`kept:${t.state.gid}:o8c`,
+        Z.secretSeal(t.gkeys[t.state.gid], `kept\n${t.state.gid}:o8c`, "PA"));
+      t.expiryAt(open("o8c", "PB"));
+      await quiet(() => sleep(20));
+      assert.equal(t.expiryAt(open("o8c", "PB")), 4503456, "the kept PCZT gives the expiry");
+      const cases = [o8, { ...o8, error: "Cancelled." }, { ...o8, broadcastTxid: "tx-a" },
+        open("o8u", "UNREADABLE"), open("o8f", "PF"), open("o8c", "PB")];
+      assert.deepEqual(cases.map((x) => t.isOpen(x)), [true, false, false, false, false, false],
+        "open; cancelled; sent; unreadable; an expiry past any approval; an approval changed");
+      at(4500100, new Set(["tx-a"]));
+      assert.equal(t.isOpen(o8), false, "a block holds it");
+      at(4503456 - 1 - 6912);
+      assert.equal(t.isOpen(o8), true, "the latest expiry that an approval allows counts");
+      at(4503456 - 2 - 6912);
+      assert.equal(t.isOpen(o8), false, "one block later than that does not");
+      at(4503500);
+      assert.equal(t.isOpen(o8), false, "an expired proposal is not open");
+      // Send and every proposal refuse while one is open, also "Propose again" on a move: all go
+      // through newSpend. The approvals of this block hold Send, so they step aside here.
+      at(4500100);
+      const sessions8 = t.state.sessions;
+      const marks8 = t.localSeats().map((i) => [i, t.sec(t.state.gid, i).marks]);
+      for (const [i] of marks8) await t.putSec(t.state.gid, i, { marks: {} });
+      t.state.sessions = [{ ...o8, status: "cancelled", error: "Cancelled." }, o8];
+      assert.equal(t.sendBlocker(), OPEN8, "one open payment in the list is enough");
+      asked.length = 0;
+      await assert.rejects(quiet(() => t.newSpend([{ to: "utest1x", amount: 5 }], "two")),
+        /Finish or cancel the open payment/);
+      assert.equal(asked.some((x) => x[0] === "spend"), false, "the engine makes nothing");
+      t.state.sessions = [{ ...o8, status: "cancelled", error: "Cancelled." }];
+      assert.equal(t.sendBlocker(), null, "a cancelled one blocks nothing");
+      // A proposal also refuses on a payment in flight and on a held approval, with their texts.
+      const flying8 = { ...o8, id: "o8s", signed: "SA", broadcastTxid: "tx-a", broadcastAt: 1,
+        final: { txid: "tx-a", tx_hex: "00" }, status: "broadcast" };
+      t.state.sessions = [flying8];
+      await assert.rejects(quiet(() => t.newSpend([{ to: "utest1x", amount: 5 }], "f")),
+        /waiting for its block/);
+      t.state.sessions = [open("o8c", "PB")];
+      await t.putSec(t.state.gid, me, { marks: { o8c: { approved: "aa", tip: 4500001 } } });
+      assert.match(String(t.sendBlocker()), /approved can still go on chain/,
+        "a changed approval shows the text of its hold");
+      await assert.rejects(quiet(() => t.newSpend([{ to: "utest1x", amount: 5 }], "h")),
+        /approved can still go on chain/);
+      await t.putSec(t.state.gid, me, { marks: {} });
+      t.state.sessions = [];
+      assert.equal(asked.some((x) => x[0] === "spend"), false, "the engine makes nothing");
+      // A double tap proposes once: the second call refuses at once.
+      let free8;
+      const slow = new Promise((ok) => { free8 = ok; });
+      const real = engine.createSpend;
+      engine.createSpend = async () => { await slow; throw new Error("No notes."); };
+      const one = quiet(() => t.newSpend([{ to: "utest1x", amount: 5 }], "one"));
+      assert.equal(t.ui.proposing, true, "the Propose button is off");
+      const late = sleep(500).then(() => "the second call waited");
+      const second = quiet(() => t.newSpend([{ to: "utest1x", amount: 5 }], "two"))
+        .then(() => "the second call ran", (e) => e.message);
+      assert.equal(await Promise.race([second, late]),
+        "The proposal of a payment is not complete yet. Wait a moment.");
+      free8();
+      await assert.rejects(one, /No notes/);
+      assert.equal(t.ui.proposing, false, "on again after the call");
+      t.state.sessions = sessions8;
+      for (const [i, marks] of marks8) await t.putSec(t.state.gid, i, { marks });
+      const { o8c: _o8c, ...marksMe } = t.sec(t.state.gid, me).marks;
+      await t.putSec(t.state.gid, me, { marks: marksMe });
+      engine.createSpend = real;
       // M5: the drawer says what the signature step waits for.
       const enough = Object.fromEntries(t.seatIds().slice(0, t.state.g.t).map((i) => [i, {}]));
       const drawn = (ss, shares) => {
