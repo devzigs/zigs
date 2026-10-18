@@ -1,8 +1,9 @@
 // Tests of solspike/demo-check.sh (M8) against local stubs. Usage: node web/test/demo-check.mjs
 // Two stub listeners play the app origins: the config gives host 0 a password file and host 1
-// none. Host 0 also plays the fallback light-wallet server, Helius, the prover and both faucets.
-// Each run names the faults that the stub plays. The stub notes each call, so the test also checks
-// that the script sends only reads and prints no secret.
+// none. Host 0 also plays the fallback light-wallet server, Helius, its indexer, the prover and
+// both faucets. Each run names the faults that the stub plays. The stub notes each call, so the
+// test also checks that the script sends only reads and prints no secret. The last tests run the
+// steps of solspike/tools/prove-canary.mjs (S20) with a stub SDK client, offline.
 import assert from "node:assert/strict";
 import { execFile } from "node:child_process";
 import { createHash, randomBytes } from "node:crypto";
@@ -11,6 +12,8 @@ import { createServer } from "node:http";
 import { dirname, join, resolve } from "node:path";
 import { after, before, test } from "node:test";
 import { fileURLToPath } from "node:url";
+import { redact } from "../../solspike/harness/redact.mjs";
+import { STEPS, runCanary } from "../../solspike/tools/prove-canary.mjs";
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "../..");
 const TMP = join(ROOT, "solspike/.state/tmp/demo-check");
@@ -25,7 +28,10 @@ const FEE = `Fee${"1".repeat(40)}`;
 const TADDR = `tm${"1".repeat(33)}`;
 const READS = new RegExp(
   "^(GET /(|sol/config.json|valar/api/status|solfaucet)|POST /v1/zolana/prove|ws|" +
-    "rpc (getVersion|getAccountInfo|getBalance)|" +
+    "POST /v1/zolana/(getShieldedTransactionsBy(Signature|Tags|Nullifiers)|getMerkleProofs|" +
+    "getNonInclusionProofs|getEncryptedUtxosByTags)|" +
+    "OPTIONS /v1/zolana/(prove|getShieldedTransactionsByTags)|" +
+    "rpc (getVersion|getAccountInfo|getBalance|getSlot)|" +
     "lwd (GetLatestBlock|GetLightdInfo|GetTaddressBalance))$",
 );
 const stub = { calls: [], faults: new Set(), ports: [] };
@@ -76,7 +82,9 @@ const ACCOUNTS = {
   PD2: elfAccount,
   [TREE]: treeAccount,
 };
+const SLOT = 512_000_000;
 const RPC = {
+  getSlot: () => SLOT,
   getVersion: () => ({ "solana-core": "stub" }),
   getBalance: () => ({ value: has("sol-low") ? 1000 : 5_000_000 }),
   getAccountInfo: ([address]) => ACCOUNTS[address]?.() ?? { value: null },
@@ -138,6 +146,83 @@ function prove(req, res) {
   send(res, 400, JSON.stringify({ code: "malformed_body" }));
 }
 
+// The indexer answers with the rows of the recorded sync of key B. No proof answer is recorded,
+// so the stub writes the proofs by hand.
+const SYNC = JSON.parse(readFileSync(join(ROOT, "solspike/mock/fixtures/sync.json"), "utf8"));
+const recorded = (method) =>
+  JSON.parse(SYNC.entries.find((e) => e.rpcMethod === method).body).result;
+const ROWS = recorded("getShieldedTransactionsByTags").transactions;
+const MATCHES = recorded("getEncryptedUtxosByTags").matches;
+const MINE = MATCHES[0].outputSlot.viewTag;
+const HASH = ROWS[0].outputSlots[0].outputContext.hash;
+
+function bySignature({ txSignature }) {
+  if (has("canary-empty")) return { outputTreeId: 0, transactions: [] };
+  const tree = has("canary-tree") ? APPROVALS : TREE;
+  const outputSlots = ROWS[0].outputSlots.map((slot) => ({
+    ...slot,
+    outputContext: { ...slot.outputContext, tree },
+  }));
+  const transaction = { ...ROWS[0], txSignature, outputSlots };
+  // canary-shape: the row without its wrapper, as the impact review first expected it.
+  const row = has("canary-shape") ? transaction : { eventIndex: 0, transaction };
+  return { outputTreeId: 0, transactions: [row] };
+}
+
+const proof = (leaf, treeType, more) => ({
+  leaf,
+  merkleContext: { treeType, tree: TREE },
+  path: [HASH, HASH],
+  ...more,
+  root: HASH,
+  rootSeq: 1,
+  rootIndex: 0,
+});
+const bounds = { lowElement: HASH, lowElementIndex: 1, highElement: HASH, highElementIndex: 2 };
+const INDEXER = {
+  getShieldedTransactionsBySignature: bySignature,
+  getMerkleProofs: ({ leaves }) => ({ proofs: leaves.map((l) => proof(l, 1, { leafIndex: 7 })) }),
+  getNonInclusionProofs: ({ leaves }) => ({
+    proofs: leaves.map((leaf) => proof(leaf, 2, bounds)),
+    ...(has("indexer-extra") ? { note: "a field of a new release" } : {}),
+  }),
+  getShieldedTransactionsByTags: ({ tags }) => ({
+    outputTreeId: 0,
+    transactions: tags.includes(MINE) ? ROWS : [],
+  }),
+  getEncryptedUtxosByTags: ({ tags }) => ({
+    outputTreeId: 0,
+    matches: tags.includes(MINE) ? MATCHES : [],
+  }),
+  getShieldedTransactionsByNullifiers: () => ({ outputTreeId: 0, transactions: [] }),
+};
+
+function indexer(req, res, method, body) {
+  stub.calls.push(`POST /v1/zolana/${method}`);
+  if (req.headers.origin !== "https://app.zigs.app") return send(res, 403, "Forbidden");
+  const { id, params } = JSON.parse(body);
+  // 150 slots behind the RPC is the largest lag that passes.
+  const context = { blockTime: 1_792_340_760, slot: SLOT - (has("indexer-stale") ? 151 : 150) };
+  if (has("indexer-blocktime") && method === "getMerkleProofs") delete context.blockTime;
+  const result = { context, ...INDEXER[method](params) };
+  const json = { "content-type": "application/json" };
+  send(res, 200, JSON.stringify({ jsonrpc: "2.0", id, result }), json);
+}
+
+// Host 0 gets "*", host 1 its own origin back. The header list has the case of a real server.
+function preflight(req, res, path) {
+  stub.calls.push(`OPTIONS ${path}`);
+  if (has("cors-403")) return send(res, 403, "Forbidden");
+  const { origin: asker } = req.headers;
+  const echo = has("cors-origin") ? "https://other.example" : asker;
+  const methods = has("cors-methods") ? "GET, HEAD" : "GET, HEAD, POST, PUT, OPTIONS";
+  send(res, 204, "", {
+    "access-control-allow-origin": asker === origin(0) ? "*" : echo,
+    "access-control-allow-headers": `Content-Type, X-Sync${has("cors-headers") ? "" : ", X-Async"}`,
+    "access-control-allow-methods": methods,
+  });
+}
+
 const PAGES = {
   "/": home,
   "/sol/config.json": solConfig,
@@ -152,6 +237,9 @@ function route(req, res, body) {
   const grpc = /^\/(lwd|chain)\/cash\.z\.wallet\.sdk\.rpc\.CompactTxStreamer\/(\w+)$/.exec(path);
   if (grpc) return lwd(req, res, grpc, body);
   if (path === "/rpc") return rpc(req, res, body);
+  if (req.method === "OPTIONS") return preflight(req, res, path);
+  const method = path.replace(/^\/v1\/zolana\//, "");
+  if (Object.hasOwn(INDEXER, method)) return indexer(req, res, method, body);
   stub.calls.push(`${req.method} ${path}`);
   (PAGES[path] ?? ((_, r) => send(r, 404, "no route")))(req, res);
 }
@@ -247,10 +335,13 @@ const appWords = (changes = {}) => ({
 });
 
 // The stub ELF cannot have the pinned hashes, so both program checks fail on good stubs too.
+// The ports are known only after before(): a function, not a constant.
+const cors = () => [0, 1].map((i) => `${host(i)} Helius CORS`);
 const allWords = (changes = {}) => ({
   ...appWords(),
   ...marked("PASS", ["fallback lwd", "lwd heights", "tree 0", "prover", "Valar faucet"]),
   ...marked("PASS", ["Solana faucet", `SOL fee ${short(FEE)}`, `TAZ ${short(TADDR)}`]),
+  ...marked("PASS", ["indexer", "indexer canary", ...cors()]),
   ...marked("FAIL", ["approvals program", "pool program"]),
   ...changes,
 });
@@ -280,7 +371,61 @@ test("a full run fails only the pinned hashes, sends only reads and prints no se
   assert.match(out, /PASS {2}SOL fee Fee111…1111: 0\.005 SOL, floor 0\.003/);
   assert.deepEqual(stub.calls.filter((call) => !READS.test(call)), []);
   assert.ok(stub.calls.includes("ws") && stub.calls.includes("lwd GetTaddressBalance"));
+  assert.match(out, /PASS {2}indexer: 8 reads decode in the SDK of the bundle, 150 slots behind/);
+  assert.match(out, /PASS {2}indexer canary: the execute and the recorded sync are indexed in/);
+  assert.match(out, /Helius CORS: the 3 preflights of the prover and the indexer allow http:/);
+  assert.equal(stub.calls.filter((call) => call.startsWith("OPTIONS")).length, 6);
   noSecret(out);
+});
+
+// Each run plays one fault of the indexer canary and one of the CORS preflights.
+const CANARY_CASES = [
+  ["canary-empty", /canary: \S+ is not indexed: outage, reset or a new pool\?/,
+    /indexer: the recorded signature is not indexed: the pool or the indexer was replaced\?/],
+  ["canary-tree", /canary: \S+ has no output in tree 0 \(33KVhb…cWFN\)/,
+    /indexer: CLIENT_INVALID_RPC_RESPONSE \(getShieldedTransactionsBySignature[^)]*\)/],
+  ["canary-shape", /canary: no row of \S+ has its transaction\.txSignature/,
+    /indexer: CLIENT_INVALID_RPC_RESPONSE \(getShieldedTransactionsBySignature[^)]*\)/],
+];
+const CORS_CASES = [
+  ["cors-403", /answered 403/, [0, 1]],
+  ["cors-origin", /does not allow http:/, [1]],
+  ["cors-headers", /\(content-type,x-async\) does not allow these headers/, [0, 1]],
+];
+
+test("the indexer canary fails when a probe is gone, moved or reshaped", async () => {
+  for (const [i, [fault, canary, shape]] of CANARY_CASES.entries()) {
+    const [corsFault, cors, hosts] = CORS_CASES[i];
+    const { code, out } = await run(["--config", CONFIGS.good], [fault, corsFault]);
+    assert.equal(code, 1, out);
+    const failed = ["indexer canary", "indexer", ...hosts.map((h) => `${host(h)} Helius CORS`)];
+    assert.deepEqual(words(out), allWords(marked("FAIL", failed)), out);
+    assert.match(out, canary, out);
+    assert.match(out, shape, out);
+    for (const h of hosts) {
+      assert.match(out, new RegExp(`${host(h)} Helius CORS: OPTIONS /.*${cors.source}`));
+    }
+    noSecret(out);
+  }
+});
+
+test("the shape check fails on a new field, a missing field and a stale indexer", async () => {
+  const blockTime = /CLIENT_INVALID_RPC_RESPONSE \(getMerkleProofs \$\.context\.blockTime\)/;
+  const cases = [
+    [["indexer-extra", "cors-methods"], /CLIENT_INVALID_RPC_RESPONSE \(getNonInclusionProofs\)/],
+    [["indexer-blocktime"], blockTime],
+    [["indexer-stale"], /the indexer trails the RPC by 151 > 150 slots/],
+  ];
+  for (const [faults, problem] of cases) {
+    const { code, out } = await run(["--config", CONFIGS.good], faults);
+    assert.equal(code, 1, out);
+    const methods = faults.includes("cors-methods") ? cors() : [];
+    // The canary reads no field of these: it passes, so the two checks are not the same test.
+    assert.deepEqual(words(out), allWords(marked("FAIL", ["indexer", ...methods])), out);
+    assert.match(out, new RegExp(`FAIL {2}indexer: ${problem.source}`), out);
+    if (methods.length) assert.match(out, /Helius CORS: OPTIONS .* does not allow POST/);
+    noSecret(out);
+  }
 });
 
 test("broken servers give a FAIL with a reason, and the secrets stay hidden", async () => {
@@ -362,4 +507,52 @@ test("the pins are ELF_V5 of program-chain.mjs and the pool release hash of ZOLA
   assert.match(script, new RegExp(`sha256: "${v5}"`));
   const [, pool] = /equals the release hash `([0-9a-f]{8})…`/.exec(text("ZOLANA.md"));
   assert.match(script, new RegExp(`address: POOL,\\s+sha256: "${pool}[0-9a-f]{56}"`));
+});
+
+const CANARY = join(ROOT, "solspike/tools/prove-canary.mjs");
+
+test("the prove canary prints the code of a refused proving key and stops before the simulation",
+  async () => {
+    const details = { keyName: "transfer_confidential_1_2", expectedSha256: "a".repeat(64) };
+    details.reportedSha256 = "b".repeat(64);
+    const code = "CLIENT_PROVING_KEY_MISMATCH";
+    const asked = [];
+    const client = {
+      proveTransact: async (...args) => {
+        asked.push(args);
+        throw Object.assign(new Error(code), { code, details });
+      },
+    };
+    const steps = {
+      ...STEPS,
+      sync: async () => ({ keys: "keys of B", text: "synced" }),
+      build: () => ({ proofInputs: "inputs", text: "built" }),
+      simulate: () => assert.fail("a refused proof reached the simulation"),
+    };
+    const lines = [];
+    assert.equal(await runCanary(steps, { client }, (line) => lines.push(line)), 1);
+    assert.deepEqual(asked, [["inputs", "keys of B"]], "the real prove step got the built inputs");
+    const refused = `FAIL  prove: ${code} {"keyName":"transfer_confidential_1_2",` +
+      `"expectedSha256":"${details.expectedSha256}","reportedSha256":"${details.reportedSha256}"}`;
+    assert.deepEqual(lines, ["PASS  sync: synced", "PASS  build: built", refused,
+      "prove-canary: FAIL"]);
+  });
+
+test("the prove canary hides the Helius URL, needs its setup, and has no way to send", async () => {
+  redact.add(heliusUrl());
+  const leak = { ...STEPS, sync: () => Promise.reject(new Error(`no answer from ${heliusUrl()}`)) };
+  const lines = [];
+  assert.equal(await runCanary(leak, {}, (line) => lines.push(line)), 1);
+  const hidden = `FAIL  sync: no answer from ${origin(0)}/rpc?api-key=[REDACTED]`;
+  assert.deepEqual(lines, [hidden, "prove-canary: FAIL"]);
+  const env = { ...process.env };
+  delete env.ZOLANA_REPO;
+  const out = await new Promise((done) => {
+    execFile(process.execPath, [CANARY], { env }, (err, stdout, stderr) =>
+      done({ code: err?.code ?? 0, text: stdout + stderr }),
+    );
+  });
+  assert.deepEqual(out, { code: 2, text: "prove-canary: set ZOLANA_REPO\n" });
+  const source = readFileSync(CANARY, "utf8");
+  assert.doesNotMatch(source, /sendTransaction|sendAndConfirm|\.send\(/, "no send call");
 });
