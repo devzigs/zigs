@@ -475,12 +475,14 @@ function rowsOf(c, review) {
   return rows;
 }
 
-const READING_TEXT = "Zigs reads your wallet. The Approve button appears when it is done.";
+// The wallet read, the account read, and the load and the check of the documents (S17).
+const WAIT_TEXT =
+  "Zigs loads and checks the data of this proposal. The Approve button appears when it is done.";
 
 function reviewBlock(c, ss, review) {
   const { el } = c.host;
   if (review.waiting) {
-    return el("p", { class: "small", role: "status", "data-sol": "reading" }, READING_TEXT);
+    return el("p", { class: "small", role: "status", "data-sol": "wait" }, WAIT_TEXT);
   }
   if (!review.ok) {
     return el("div", { class: "callout bad", role: "alert", "data-sol": "refusal" }, review.why);

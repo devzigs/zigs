@@ -297,12 +297,14 @@ step("propose creates the proposal account first; no screen before the reads of 
   delete c.snaps[id];
   // S17: while the device reads, the card shows a wait, not a refusal.
   assert.equal(reviewOf(c, ssOf(id), 2).waiting, true, "reading is a wait");
-  const view = solView({ ...c, host: { ...c.host, el: node } }, (fn) => fn, {});
-  const card = findAll(view, (n) => n.attrs["data-session"] === id)[0];
-  const marks = (name) => findAll(card, (n) => n.attrs["data-sol"] === name).length;
-  assert.ok(marks("reading") >= 1, "the card says that the device reads its wallet");
+  const marks = (name) => {
+    const view = solView({ ...c, host: { ...c.host, el: node } }, (fn) => fn, {});
+    const card = findAll(view, (n) => n.attrs["data-session"] === id)[0];
+    return findAll(card, (n) => n.attrs["data-sol"] === name).length;
+  };
+  assert.ok(marks("wait") >= 1, "the card says that the device loads its data");
   assert.equal(marks("refusal"), 0, "and shows no alert");
-  const buttons = () => marked("approve-" + id + "-2").length;
+  const buttons = () => marks("approve-" + id + "-2");
   assert.equal(buttons(), 0, "and no Approve button before the review shows");
   notify();
   await waitFor("a read with no account", () => c.seen[id]?.account === null);
@@ -310,6 +312,12 @@ step("propose creates the proposal account first; no screen before the reads of 
   chain.accounts.set(address, stored);
   await waitFor("the account read again", () => reviewOf(c, ssOf(id), 2).ok, 30000);
   assert.equal(buttons(), 1, "the Approve button comes with the review");
+  // A document that waits for its signature check is a wait too: no alert and no button.
+  c.sessWait += 1;
+  assert.equal(reviewOf(c, ssOf(id), 2).waiting, true, "a check of the documents is a wait");
+  assert.deepEqual([marks("wait"), marks("refusal"), buttons()], [1, 0, 0]);
+  c.sessWait -= 1;
+  assert.deepEqual([marks("wait"), buttons()], [0, 1], "the button comes back after the check");
 }
 step("a device that read no proposal account reads it again, with no click");
 
