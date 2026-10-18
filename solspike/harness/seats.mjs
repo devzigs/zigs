@@ -73,6 +73,24 @@ export async function solValues(page) {
 
 const status = async (page) => (await solValues(page)).status;
 
+// Each shown label of a key-value list sits on the row of its value, left of it (the rig page is
+// 1280 px wide, so the lists have two columns).
+async function labelsAligned(page) {
+  const off = await run(page, () =>
+    [...document.querySelectorAll(".kv dt")]
+      .filter((dt) => dt.offsetParent !== null)
+      .filter((dt) => {
+        const dd = dt.nextElementSibling;
+        if (dd?.tagName !== "DD") return true;
+        const a = dt.getBoundingClientRect(),
+          b = dd.getBoundingClientRect();
+        return Math.abs(a.top - b.top) > 2 || b.left <= a.left;
+      })
+      .map((dt) => dt.textContent),
+  );
+  if (off.length) throw new Error("labels off the row of their value: " + off.join(", "));
+}
+
 /** Pages reloaded, seat 1 adds Solana, every page shows "ready". Returns the keys. */
 export async function solanaReady(pages, gid) {
   for (const page of pages) {
@@ -104,6 +122,7 @@ export async function solanaReady(pages, gid) {
     if (values.size !== 1) throw new Error(`the pages show different ${name} values`);
   }
   const { owner, "group-key": groupKey, shielded } = seen[0];
+  await labelsAligned(pages[0]);
   await sleep(500);
   return { owner, groupKey, shielded };
 }
