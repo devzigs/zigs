@@ -114,6 +114,28 @@ Evidence marked "checked" was read in the repo during this synthesis. All other 
   - Run the demo with two ceremonies (section 9).
 - **Files:** web/app-shell.js, web/app-dkg.js, web/app-setup.js, web/app-wallet.js, web/app-sol.js, web/app-backups.js, web/sol/ceremony.js, web/sol/view.js, web/sol/backup.js, web/sol/secrets.js, web/test/sol-ceremony.mjs, new web/test/unified-setup.mjs, solspike/harness/scenario-e.mjs, solspike/harness/scenario-f.mjs.
 - **Package:** WP-U.
+- **Done:** merged in main 0ffd3ee (the M3 branch at 2a7527e, with M4). Step 9 stays deferred (D7)
+  and step 7 is SOL-57. The live Devnet run, on 0ffd3ee on 18 October 2026, after the owner's yes
+  (`batch3.sh`, `SOLSPIKE_ORIGIN=https://app.zigs.app`), passed `scenario-f.mjs`. The box "Also
+  set up Solana Devnet" was on, and the Solana key ceremony started with no button. Its steps:
+  ready, backups, fund-seat1 to fund-seat3, add-sol, pay-a, restore, pay-b, withdraw (exit 0).
+  - The funder (`5PZseBHm…`) sent 6,000,000, 2,500,000 and 2,500,000 lamports to the fee
+    addresses of seats 1 to 3 (`3Ao3ivF3…`, slot 512,511,056; `9WorNwvV…`, 512,511,066;
+    `4WevLF75…`, 512,511,076). Seat 1 added 3,000,000 lamports to the pool (`5TZ87BDj…`,
+    512,511,119).
+  - pay-a, 0.001 SOL private to key B: seat 1 created `FVxydENk…` (`4aQtwCur…`, 512,511,173) and
+    executed it (`27FUfeCX…`, 512,511,392, 147,380 compute units).
+  - All seats were restored from their backup files. Then pay-b, 0.001 SOL private to key B: seat
+    3 created `4W2rYeLy…` (`4RkgvG3C…`, 512,511,508), and seat 2 executed it (`3R5pMvnU…`,
+    512,511,728, 159,258 compute units).
+  - A withdrawal of 0.0005 SOL to the public fee address of seat 3: seat 2 created `FwjBbrJv…`
+    (`xEosZJC1…`, 512,511,782), and seat 1 executed it (`3YZTyFn9…`, 512,512,005, 150,812 compute
+    units). The fee address of seat 3 got 500,000 lamports from the SOL vault of the pool.
+  - Each execute calls the Ed25519 verify program and the approvals program `5PHZEHBM…`. Each
+    proposal account is closed, and its rent (1,356,360 lamports) went back to its proposer.
+  - The harness JSON of the run was lost (the batch worktree was removed after the run). This
+    record comes from the steps lines of the logs and from Devnet, read with getTransaction,
+    getSignaturesForAddress and getAccountInfo only.
 
 ### M4 A restored seat must be able to join the Solana ceremony
 - **Why:** This is a dead end today. M3 step 2 needs the same gate, so it is a MUST for M3.
@@ -131,6 +153,15 @@ Evidence marked "checked" was read in the repo during this synthesis. All other 
   - Add a test: restore a seat before the Solana part exists, then run the whole ceremony.
 - **Files:** web/sol/ceremony.js, web/app-dkg.js, web/util.js, web/app-filter.js, web/test/sol-ceremony.mjs, web/test/sol-app.mjs.
 - **Package:** WP-U.
+- **Done:** merged in main 0ffd3ee (in the M3 branch). The live Devnet run, on 0ffd3ee on 18
+  October 2026, after the owner's yes, passed `scenario-e.mjs`: in a new group E, seat 2 was
+  restored from its backup file on a blank page before the Solana part started, seat 1 tapped Add
+  Solana, and every seat, the restored one too, made its part of the Solana key. Its steps:
+  restored-seat2, ready, fund-seat1, add-sol (exit 0).
+  - The funder (`5PZseBHm…`) sent 3,000,000 lamports to the fee address of seat 1 (`GdJEUBUa…`;
+    `4vxA7d4m…`, slot 512,510,924). Seat 1 added 2,000,000 lamports to the pool, paid by its fee
+    address (`Li7cxr88…`, 512,510,944).
+  - The record comes from the steps line of the log and from Devnet (read only), as for M3.
 
 ### M5 Zcash signing steps must run without the payment drawer open
 - **Why:** Two real devices stall the payment.
