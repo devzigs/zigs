@@ -351,8 +351,12 @@ sequenceDiagram
   at 75 seconds. It expires at the latest at the block before the next network upgrade, because
   after the upgrade no block can hold it. The approvals, the proof and the send must be done by
   then (`wasm/src/expiry.rs`).
-- The session document holds the PCZT, the recipient list (address, amount and optional memo),
-  the total, a note and the proposer.
+- The session document holds the PCZT, the recipient list (address, amount, optional memo and
+  optional ZNS name), the total, a note and the proposer.
+- On testnet, a recipient can come from a ZNS name. The web app stores the exact address string of
+  the registry in `to` and the bare name in `name`. The name is part of the signed field `payees`.
+  Each approving web app looks the name up again and refuses when it gives another address
+  (PRIVACY.md, ZNS names). A proposal without names stays as it was.
 - A recipient can have a memo: ZIP 302 text of at most 512 UTF-8 bytes, with no null character.
   The engine puts it in the output of that recipient. A recipient with no memo gets the empty
   memo (0xF6). A memo for an address without a shielded receiver is refused. The memo is part of
@@ -1346,7 +1350,7 @@ signature over only its own fields. The path in the signed text is `sessions/<se
 
 | Part | Signed fields | Writer fields | Writer |
 |---|---|---|---|
-| proposal | `payees` (each `{to, amount}` and `memo` when set), `note`, `pool`, `amount`, `change`, `fee`, `noteValue`, `pczt`, `move`, `createdAt` | `by`, `sig` | a seat |
+| proposal | `payees` (each `{to, amount}`, `memo` when set, and `name` for a ZNS name), `note`, `pool`, `amount`, `change`, `fee`, `noteValue`, `pczt`, `move`, `createdAt` | `by`, `sig` | a seat |
 | package | `package`, `signers` | `packageBy`, `packageSig` | a seat |
 | signed | `signed`, `signatures` | `signedBy`, `signedSig` | a seat, after the package |
 | final | `final` | `finalBy`, `finalSig` | a seat, after `signed` |

@@ -220,12 +220,13 @@ What the app trusts, and what it checks:
   same copy, so their check would not see it. They still see the address, and the payment goes
   only to the address that they approve.
 - A name can move to another address. The proposer sees the address that the name gives, and a
-  note when the name changed recently. Each approving web app looks the name up again, in its own
-  copy, and refuses the approval when the name now gives another address than the payment. The
-  iPhone and Mac apps show the address and do not check the name.
-- "Propose again" after an expired payment pays the address of the first proposal, without the
-  name, so the approvers of the new proposal do not check the name again. Type the name again in
-  a new payment to get the check.
+  note when the name changed recently. The form pays only the address that it showed: when the
+  name gives another address at the proposal, the form refuses and shows the new address. Each
+  approving web app looks the name up again, in its own copy, and refuses the approval when the
+  name now gives another address than the payment. The iPhone and Mac apps show the address and do
+  not check the name.
+- "Propose again" after an expired payment keeps the name and the address of the first proposal,
+  so the approvers check the name again.
 - The page uses its copy for at most 60 seconds, so the copy is at most about 2 minutes behind
   the resolver. The resolver can fall behind the chain too. So the page refuses a registry that is
   more than 10 blocks below the chain height of the wallet.
@@ -577,8 +578,8 @@ the passkey guards the key share instead. The lock is opt-in.
   name and the message in a request are text from the sender. The card cuts them and marks them as
   not checked.
 - A ZNS name gives the address that its registry holds. Whoever controls a name can point it at
-  another address. The approvers check the name again, and the payment goes to the address that
-  they approved. Before a large payment, check the address with the payee.
+  another address. The approvers in the web app check the name again, and the payment goes to the
+  address that they approved. Before a large payment, check the address with the payee.
 - **Propose this** sends nothing: the normal checks and approvals of a payment apply. Every
   approver reads its note. The note names the sender only when the sender is verified. Any holder
   of the invite link can write a message with a seat number and a bad signature.
