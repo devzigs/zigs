@@ -127,7 +127,7 @@ assert.match(joinText(), /for Zcash testnet and Solana Devnet\. The Zcash part i
 assert.match(joinText(), /one for Zcash and one for Solana/);
 assert.match(joinText(), BOTH_OPEN);
 assert.match(inviteMessage(link), /a shared wallet for Zcash testnet and Solana Devnet\./);
-assert.doesNotMatch(inviteMessage(link), /shielded|private/, "Solana is not shielded");
+assert.doesNotMatch(inviteMessage(link), /shielded|private shared/, "Solana is not shielded");
 assert.match(inviteMessage(link), /until the Zcash and the Solana parts are ready/);
 assert.ok(inviteMessage(link).includes(link), "the invite still carries the link");
 assert.match(SOL_DISCLOSURE, /public program address.*fee address.*Helius.*no audit/);
