@@ -55,10 +55,11 @@ const showHint = (hint, text, cls = "") => {
 };
 
 // What the form shows for a name: its address, with the note of a recent change. The row keeps it
-// as `r.shown`, so that a submit pays only what the form showed.
+// as `r.shown`, so that a submit pays only what the form showed. `seen` is false until a hint
+// draws it: an address that no hint drew yet is not shown to the person.
 function shownOf(typed, hit, tip) {
   const note = recentNote(hit.record, tip);
-  return { typed, name: hit.name, address: hit.address,
+  return { typed, name: hit.name, address: hit.address, seen: false,
     text: zecName(hit.name) + " gives this address: " + hit.address + (note ? " " + note : "") };
 }
 
@@ -70,9 +71,16 @@ async function nameAnswer(typed) {
   } catch (e) { return { error: e.message }; }
 }
 
-// An address that "Propose again" kept with the name of the first proposal.
-const keptHint = (hint, name) => showHint(hint, "Valid " + curNet().label.toLowerCase()
-  + " address for " + zecName(name) + ". Each approver checks the name again.", "ok");
+// Draws the address of a name in a hint: from now on the person has seen it.
+function showShown(hint, shown) {
+  shown.seen = true;
+  showHint(hint, shown.text, "ok");
+}
+
+// An address that "Propose again" kept with the name of the first proposal (a testnet wallet).
+const keptName = (r, typed) => znsOn() && r.name && onNetwork(typed.trim());
+const keptHint = (hint, name) => showHint(hint, "Kept from the first proposal: " + zecName(name)
+  + ". Each approver in the web app checks the name again.", "ok");
 
 // The hint of a recipient field. The answer for a name comes later, and only the newest text of
 // the field may show it. A row keeps the address that its hint showed (`r.shown`), and a redraw
@@ -81,15 +89,16 @@ function recipientHint(hint, r) {
   const typed = r.to, name = nameIn(typed);
   if (name === null) {
     r.shown = null;
-    return r.name && onNetwork(typed.trim()) ? keptHint(hint, r.name) : addressHint(hint, typed);
+    return keptName(r, typed) ? keptHint(hint, r.name) : addressHint(hint, typed);
   }
-  if (r.shown?.typed === typed) return showHint(hint, r.shown.text, "ok");
+  if (r.shown?.typed === typed) return showShown(hint, r.shown);
   r.shown = null;
   showHint(hint, "Looking up " + zecName(name) + "…");
   return nameAnswer(typed).then(({ shown, error }) => {
     if (r.to !== typed) return;
     r.shown = shown ?? null;
-    showHint(hint, shown ? shown.text : error, shown ? "ok" : "bad");
+    if (shown) showShown(hint, shown);
+    else showHint(hint, error, "bad");
   });
 }
 
@@ -179,10 +188,13 @@ function useList() {
 const whoOf = (rows, i) => (rows.length > 1 ? "Recipient " + (i + 1) + ": " : "");
 
 // The fresh answer of the registry for a name row. The row pays it only when it is the address
-// that the form showed. A name that moved since is shown now, and the person proposes again.
+// that the form showed. A name that moved since is kept as not seen yet: the next hint draws it,
+// and until then no submit pays it. The person proposes again after that.
 function freshHit(r, reg, tip) {
   const hit = resolveRecipient(r.to, "test", reg, tip), name = zecName(hit.name);
-  if (r.shown?.typed !== r.to) throw new Error(`Wait until the form shows the address of ${name}.`);
+  if (r.shown?.typed !== r.to || !r.shown.seen) {
+    throw new Error(`Wait until the form shows the address of ${name}.`);
+  }
   if (r.shown.address === hit.address) return hit;
   r.shown = shownOf(r.to, hit, tip);
   render();

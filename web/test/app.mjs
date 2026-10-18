@@ -2556,6 +2556,7 @@ const sealed = (gid, rel, seat, fields, key, names = ["by", "sig"]) =>
       let againPayees = null;
       {
         at(4500100);
+        t.ui.send = false;   // the page draws no Send form of its own during these cases
         t.setZ(zStub(canon));
         const sessionDocs = () => [...data.keys()].filter((k) => /\/sessions\/[^/]+$/.test(k));
         const rowsOf = (...list) => {
@@ -2577,21 +2578,39 @@ const sealed = (gid, rel, seat, fields, key, names = ["by", "sig"]) =>
           return hintOf(d, n);
         };
         const shows = (hint) => [hint.textContent, hint.className];
-        // A submit with the stub page, as the page draws and reacts after it.
-        const submit = async (dialog) => {
-          const before = new Set(sessionDocs());
-          globalThis.document = { ...recorder, activeElement: { dataset: {} },
-            getElementById: () => new Rec("div") };
-          await dialog.on.submit({ preventDefault() {}, currentTarget: null });
-          globalThis.document = realDocument;
-          await sleep(300);
-          globalThis.document = recorder;
+        // The proposals made since `before`: their payees. They are taken out of the store.
+        const proposedSince = async (before) => {
           const fresh = sessionDocs().filter((k) => !before.has(k));
           const payees = fresh.map((k) => data.get(k).payees);
           for (const k of fresh) data.delete(k);
           if (fresh.length) { t.closeSession(); notify(); await quiet(settle); }
           t.state.sessions = [];
           return payees;
+        };
+        // A submit with the stub page, as the page draws and reacts after it.
+        const stubPage = () => ({ ...recorder, activeElement: { dataset: {} },
+          getElementById: () => new Rec("div") });
+        const submit = async (dialog) => {
+          const before = new Set(sessionDocs());
+          globalThis.document = stubPage();
+          await dialog.on.submit({ preventDefault() {}, currentTarget: null });
+          globalThis.document = realDocument;
+          await sleep(300);
+          globalThis.document = recorder;
+          return proposedSince(before);
+        };
+        // Two submits at once: `release()` runs when both wait for the registry.
+        const submitTwice = async (dialog, release) => {
+          const before = new Set(sessionDocs());
+          const ev = { preventDefault() {}, currentTarget: null };
+          globalThis.document = stubPage();
+          const both = [dialog.on.submit(ev), dialog.on.submit(ev)];
+          globalThis.document = realDocument;
+          release();
+          await Promise.all(both);
+          await sleep(300);
+          globalThis.document = recorder;
+          return proposedSince(before);
         };
         const refused = async (dialog, text) => {
           asked.length = 0;
@@ -2680,11 +2699,36 @@ const sealed = (gid, rel, seat, fields, key, names = ["by", "sig"]) =>
         znsServes(znsOk([znsRec("alice", MOVED, 4500090)]));
         await refused(form, "The name alice.zec now gives another address. Check it, then "
           + "propose again.");
-        assert.equal(t.ui.pay[0].shown.address, MOVED, "the row shows the new address");
+        assert.equal(t.ui.pay[0].shown.address, MOVED, "the row keeps the new address");
+        assert.equal(t.ui.pay[0].shown.seen, false, "but no hint drew it yet");
+        // A second click before the redraw pays nothing: the form never showed that address.
+        await refused(form, "Wait until the form shows the address of alice.zec.");
         const redrawn = hintOf(t.sendDialog()).textContent;
+        assert.equal(t.ui.pay[0].shown.seen, true, "the hint drew it");
         assert.equal(redrawn, `alice.zec gives this address: ${MOVED} This name got this address `
           + "at block 4500090, less than a day ago. Check the address with the payee.");
-        assert.deepEqual(await submit(form), [[{ to: MOVED, amount: 50000000, name: "alice" }]]);
+        assert.deepEqual(await submit(form), [[{ to: MOVED, amount: 50000000, name: "alice" }]],
+          "after the redraw one submit proposes it");
+        // Two submits at once, the answer of the registry held: the first refuses with the new
+        // address, and the second does not pay it either.
+        znsServes(znsOk());
+        form = await settled(["alice"]);
+        const held = [];
+        registry.get = () => new Promise((ok) => { held.push(ok); });
+        const movedReg = await createRegistry({
+          fetch: async () => znsOk([znsRec("alice", MOVED, 4500090)])() }).get();
+        asked.length = 0;
+        const twice = await submitTwice(form, () => {
+          assert.equal(held.length, 2, "both submits wait for the registry");
+          held.forEach((ok) => ok(movedReg));
+        });
+        assert.deepEqual(twice, [], "neither pays the address that the form never showed");
+        assert.equal(asked.some((x) => x[0] === "spend"), false, "the engine makes nothing");
+        assert.deepEqual([t.ui.pay[0].shown.address, t.ui.pay[0].shown.seen], [MOVED, false]);
+        znsServes(znsOk([znsRec("alice", MOVED, 4500090)]));
+        hintOf(t.sendDialog());
+        assert.deepEqual(await submit(form), [[{ to: MOVED, amount: 50000000, name: "alice" }]],
+          "after the redraw one submit proposes it");
         // Two rows that moved both show the new address after one refusal.
         znsServes(znsOk());
         form = await settled(["alice"], ["bob", "0.2"]);
@@ -2708,8 +2752,8 @@ const sealed = (gid, rel, seat, fields, key, names = ["by", "sig"]) =>
         assert.deepEqual(t.ui.pay.map(({ to, amt, name }) => ({ to, amt, name })),
           [{ to: NAMED, amt: "0.00000005", name: "alice" }]);
         form = t.sendDialog();
-        assert.deepEqual(shows(hintOf(form)), ["Valid testnet address for alice.zec. Each "
-          + "approver checks the name again.", "hint ok"]);
+        assert.deepEqual(shows(hintOf(form)), ["Kept from the first proposal: alice.zec. Each "
+          + "approver in the web app checks the name again.", "hint ok"]);
         assert.deepEqual([gets, fetches], [0, 0], "an address row asks no registry");
         againPayees = (await submit(form))[0];
         assert.deepEqual(againPayees, [{ to: NAMED, amount: 5, name: "alice" }]);
@@ -2770,6 +2814,17 @@ const sealed = (gid, rel, seat, fields, key, names = ["by", "sig"]) =>
         await refused(rowsOf(["alice.zec"]), "Enter a shielded Zcash mainnet address. It starts "
           + "with u1.");
         assert.deepEqual([gets, fetches], [0, 0], "a mainnet wallet makes no lookup");
+        // "Propose again" on a mainnet wallet keeps no name: no name text in the hint, and the
+        // payee is {to, amount}.
+        const mainPay = { ...open("pa2", "PA"),
+          payees: [{ to: "u1mainnetpayee", amount: 5, name: "alice" }] };
+        Object.assign(t.ui, { send: false, after: null });
+        await quiet(() => t.proposeAgain(mainPay));
+        form = t.sendDialog();
+        assert.deepEqual(shows(hintOf(form)), ["Valid mainnet address", "hint ok"]);
+        assert.deepEqual(await submit(form), [[{ to: "u1mainnetpayee", amount: 5 }]],
+          "a mainnet payee keeps no name");
+        t.ui.send = false;
         t.state.g = testnet;
         t.ui.pay = null;
         t.setZ(zStub());
