@@ -1,351 +1,257 @@
-// P8f live check: a private payment from the group to key B, the restore rehearsal, and a second
-// payment after the restore. Three seats in three in-memory contexts of one Chrome (the rig) on
-// the local dev server (cf/.dev.vars has SOL=1). THIS RUN LANDS SEVEN TRANSACTIONS on Devnet and
-// spends at most 0.05 SOL of the funder (the brief of the P8f track allows it; it is the only run
-// that does). The P8e group could not be used: its seats lived in memory and nobody saved a
-// backup, so no share is left. This run makes a new group and does the setup of P8e again.
-//   (a) fund 0.015 SOL, create the nonce account, register, shield 0.008 SOL (seats 1+2, 2+3, 1+3)
-//   (b) pay 0.005 SOL to B: seat 1 proposes, seats 1 and 2 approve and sign, seat 3 only reads
-//   (c) every seat saves its Zcash backup and its Solana backup; the three contexts are disposed
-//   (d) three new blank contexts restore the Zcash seat, then the Solana part, from the files
-//   (e) pay 0.002 SOL to B: seat 3 proposes, seats 2 and 3 approve and sign
-// It checks outside the app (tools/verify-chain.mjs, tools/key-b.mjs): each first signature under
-// the group key, the lifetime (the nonce value), B's shielded balance and the group balance.
-// The results go to solspike/logs/p8f-results.json after every step (public values only). The files
-// of the backups (encrypted text) go to solspike/.state/p8f, the passphrases stay in memory.
-// With --rehearse it moves no fund and lands nothing: it makes the group and its Solana part, then
-// runs the backup, the wipe and the restore. The results go to solspike/logs/rehearsal-f.json.
-// Run: lockf -k "$SOL/heavy.lock" node solspike/harness/scenario-f.mjs     (Node 24, with
-// SOLSPIKE_PORT=8797 SOLSPIKE_CHROME_PORTS=9380-9389 on this track, ONE lockf wrapper).
+// Live check of payments through the approvals program (ZOLANA.md 7.2), the restore, and a
+// withdrawal. Three seats in three in-memory contexts of one Chrome (the rig) make a new group:
+//   (a) every seat saves its Zcash and its Solana backup: the restore source of (d) and --resume
+//   (b) the funder sends SOL to the fee address of each seat; seat 1 adds 0.003 SOL (Add SOL)
+//   (c) pay-a: seat 1 proposes 0.001 SOL to key B, seats 1 and 2 approve, a seat executes
+//   (d) the three contexts close; three blank contexts restore every seat from the files of (a)
+//   (e) pay-b: seat 3 proposes 0.001 SOL to key B and its page closes, seats 1 and 2 approve
+//   (f) withdraw: seat 2 proposes 0.0005 SOL to the fee address of seat 1, seats 2 and 1 approve
+// Each payment is checked on the chain, not with the code of the app (tools/program-chain.mjs):
+// the version 5 ELF, the proposal address of version 5, the group signature over the approval
+// digest, the closed account, the settlement accounts of the withdrawal, and that B (a sync of
+// tools/key-b.mjs) or the recipient got the amount. THIS RUN LANDS TEN TRANSACTIONS on Devnet
+// (PLAN). Results: solspike/logs/scenario-f.json after every step (public values only); the
+// encrypted backup files go to solspike/.state/scenario-f, their passphrases to SOLSPIKE_INTERIM
+// (mode 600). --resume starts again from those backups and skips the steps that are done.
+// With --mock (harness/mock.mjs) it makes no Devnet call and writes no passphrase: (a) and (d)
+// run in full, the taps of (b), (c) and (f) must be refused, and the plan goes to
+// solspike/logs/mock-f.json.
+// Run: node solspike/harness/scenario-f.mjs [--mock | --resume]   (README.md, "Live scenarios")
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
 import { chmodSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { fund } from "../tools/fund.mjs";
-import { interimFile } from "../tools/paths.mjs";
 import { addressOfB, balanceOfB } from "../tools/key-b.mjs";
-import {
-  addressOfKey,
-  nonceAccountOf,
-  verifyNonceAccount,
-  verifyRecord,
-  verifyTransaction,
-} from "../tools/verify-chain.mjs";
-import {
-  assertBlank,
-  checkFiles,
-  restoreSolana,
-  restoreZcash,
-  solanaBackup,
-  zcashBackup,
-} from "./backups.mjs";
+import { interimFile } from "../tools/paths.mjs";
+import * as chain from "../tools/program-chain.mjs";
+import { balanceOf } from "../tools/rpc.mjs";
+import * as bk from "./backups.mjs";
 import { waitFor } from "./chrome.mjs";
-import { landStep, noncesGone, privateBalance, publicBalance } from "./flow.mjs";
-import { clickText, run, setInput } from "./page.mjs";
+import * as flow from "./flow.mjs";
+import { MOCK, heliusAnswers, withMockUrl } from "./mock.mjs";
+import { clickText, run } from "./page.mjs";
 import { redact } from "./redact.mjs";
 import { openApp, solValues, solanaReady, zcashWallet } from "./seats.mjs";
+import { ORIGIN } from "./server.mjs";
 import { consoleProblems } from "./sol-facts.mjs";
 import { withStack } from "./stack.mjs";
-import { ORIGIN } from "./server.mjs";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
-const REHEARSE = process.argv.includes("--rehearse");
-const RESULTS = join(HERE, REHEARSE ? "../logs/rehearsal-f.json" : "../logs/p8f-results.json");
-const FILES = join(HERE, "../.state/p8f");
-// The interim backups (after the shield) let a run that fails before the payment start again from
-// a restore, without a second funding. Their passphrases are the only secret that this run writes:
-// one file outside the repo (SOLSPIKE_INTERIM), mode 600, for the test group of this run.
-const INTERIM = interimFile();
+const RESULTS = join(HERE, MOCK ? "../logs/mock-f.json" : "../logs/scenario-f.json");
+const FILES = join(HERE, "../.state/scenario-f");
 const RESUME = process.argv.includes("--resume");
 const HEAD = execFileSync("git", ["rev-parse", "HEAD"], { encoding: "utf8", cwd: HERE }).trim();
-const FUND = 15_000_000n;
-const results = { head: HEAD, cluster: "devnet", transactions: [], checks: {}, restore: {} };
+const FUNDS = { 1: 6_000_000n, 2: 2_500_000n, 3: 2_500_000n };
+const ADD = { text: "0.003", lamports: 3_000_000n };
+// The page of seat 3 is the last one, so the pages of seats 1 and 2 keep their places after
+// pay-b closes it.
+const PAYMENTS = [
+  { label: "pay-a", amount: "0.001", lamports: 1_000_000n, proposer: 1, approvers: [1, 2] },
+  {
+    label: "pay-b",
+    amount: "0.001",
+    lamports: 1_000_000n,
+    proposer: 3,
+    approvers: [1, 2],
+    dropProposer: true,
+  },
+  { label: "withdraw", amount: "0.0005", lamports: 500_000n, proposer: 2, approvers: [2, 1] },
+];
+// Every Devnet transaction of the run: the payer, and the lamports that leave it (fees aside).
+// The create of a proposal also pays its rent, and the execute gives the rent back.
+const PLAN = [
+  ...[1, 2, 3].map((n) => ({ label: `fund-seat${n}`, payer: "funder", lamports: FUNDS[n] })),
+  { label: "add-sol", payer: "fee address of seat 1", lamports: ADD.lamports },
+  ...PAYMENTS.flatMap((p) => [
+    { label: `${p.label} create`, payer: `fee address of seat ${p.proposer}`, lamports: 0n },
+    { label: `${p.label} execute`, payer: "fee address of an approving seat", lamports: 0n },
+  ]),
+];
+const fresh = { head: HEAD, cluster: "devnet", mock: MOCK, steps: [], checks: {} };
+const results = RESUME ? JSON.parse(readFileSync(RESULTS, "utf8")) : fresh;
+results.runs = [...(results.runs ?? []), { head: HEAD, resume: RESUME }];
+delete results.error;
+const did = (label) => results.steps.some((s) => s.label === label);
 
 function save() {
   mkdirSync(dirname(RESULTS), { recursive: true });
   writeFileSync(RESULTS, redact(JSON.stringify(results, null, 1)) + "\n");
 }
 
-const onRetry = (step, error) => {
-  results.retries = [...(results.retries ?? []), { step, error }];
+const record = (label, facts) => {
+  results.steps.push({ label, ...facts });
   save();
+  console.log(redact(`${label} ${JSON.stringify(facts).slice(0, 240)}`));
 };
 
-const setValue = (selector, value) => (page) => setInput(page, selector, value);
-const SETUP = [
-  { label: "nonce", kind: "createNonce", button: "create-nonce", proposer: 1, approvers: [1, 2] },
-  { label: "register", kind: "register", button: "register", proposer: 2, approvers: [2, 3] },
-  {
-    label: "shield",
-    kind: "shield",
-    button: "shield",
-    proposer: 3,
-    approvers: [1, 3],
-    before: setValue("#sol-amount", "0.008"),
-  },
-];
-
-/** The step of a private payment to the payee, proposed by one seat, signed by two. */
-function payment(label, { payee, amount, proposer, approvers, observers }) {
-  const before = async (page) => {
-    await setInput(page, "#sol-send-to", payee);
-    await setInput(page, "#sol-send-amount", amount);
-  };
-  const base = { label, kind: "transfer", button: "send", proposer, approvers, observers };
-  return { ...base, before, proposalMs: 300000 };
+/** The private balance of the group after the steps that are done, as the page shows it. */
+function privateNow() {
+  const paid = PAYMENTS.filter((p) => did(p.label)).reduce((sum, p) => sum + p.lamports, 0n);
+  const lamports = did("add-sol") ? ADD.lamports - paid : 0n;
+  return `${Number(lamports) / 1e9} SOL`;
 }
 
-const slotOf = async (page) => {
-  const seen = /slot (\d+)/.exec((await solValues(page)).worker ?? "");
-  assert.ok(seen, "the page shows the slot of its sync");
-  return Number(seen[1]);
-};
-
-async function funding(pages, keys) {
-  const to = addressOfKey(keys.groupKey);
-  assert.equal(keys.owner, to, "the app shows the base58 text of the group key");
-  const sent = await fund({ to, shown: keys.owner, lamports: FUND });
-  results.transactions.push({ label: "fund", signedBy: "funder", ...sent });
-  save();
-  await publicBalance(pages[0], "0.015 SOL");
-  return sent;
-}
-
-/** Checks one landed transaction outside the app and adds its numbers to the record. */
-async function verified(tx, keys, lifetime) {
-  const check = await verifyTransaction(tx.signature, keys.owner);
-  Object.assign(tx, check);
-  assert.equal(check.err, null, tx.label + " has no error");
-  assert.ok(check.firstSignatureVerifies, tx.label + ": the first signature verifies");
-  assert.ok(check.payerIsSigner && check.firstSignatureIsTxId, tx.label + ": payer and id");
-  if (lifetime) assert.equal(check.lifetime, lifetime, tx.label + ": the lifetime is the nonce");
-  return check;
-}
-
-async function setupGroup(pages, keys) {
-  const sent = await funding(pages, keys);
-  const record = (tx) => results.transactions.push(tx) && save();
-  for (const step of SETUP) {
-    const done = await landStep(pages, step, onRetry);
-    record({ label: step.label, seats: step.approvers, ...done });
-  }
-  const account = nonceAccountOf(keys.groupKey);
-  const nonce = await verifyNonceAccount(account, keys.groupKey);
-  const nullifierPk = keys.shielded.slice(68, 132);
-  const viewingPk = keys.shielded.slice(132, 198);
-  const rec = await verifyRecord(keys.groupKey, { nullifierPk, viewingPk });
-  results.checks.setup = { nonceAccount: nonce, registryRecord: rec };
-  await verified(results.transactions[0], { owner: sent.funder });
-  await privateBalance(pages[0], "0.008 SOL");
-  save();
-}
-
-const sameScreens = (screens) => {
-  const [first, ...rest] = Object.values(screens);
-  return rest.every((one) => JSON.stringify(one) === JSON.stringify(first));
-};
-
-/** One private payment of `lamports`, landed and checked. `pages` are the three live pages. */
-async function pay(pages, keys, spec) {
-  const { label, amount, lamports, expectPrivate } = spec;
-  const before = await balanceOfB();
-  const account = nonceAccountOf(keys.groupKey);
-  const nonce = (await verifyNonceAccount(account, keys.groupKey)).nonce;
-  const publicBefore = await publicBalance(pages[0]);
-  const step = payment(label, spec);
-  const done = await landStep(pages, step, onRetry);
-  const tx = { label, seats: spec.approvers, proposer: spec.proposer, amount, ...done };
-  results.transactions.push(tx);
-  save();
-  const check = await verified(tx, keys, nonce);
-  assert.equal(Object.keys(done.screens).length, 3, "all three seats show the screen");
-  assert.ok(sameScreens(done.screens), "the three checkers give the same text");
-  const text = done.screens["seat " + spec.approvers[0]].join("\n");
-  assert.match(
-    text,
-    new RegExp(amount.replace(".", "\\.") + " SOL"),
-    "the screen shows the amount",
-  );
-  const after = await balanceOfB(done.slot);
-  assert.equal(after - before, lamports, label + ": B rises by the amount");
-  const group = await privateBalance(pages[0], expectPrivate);
-  const publicAfter = await publicBalance(pages[0]);
-  Object.assign(tx, {
-    template: check.template,
-    nonceBefore: nonce,
-    b: { before: String(before), after: String(after), delta: String(after - before) },
-    group: { private: group, publicBefore, publicAfter },
-  });
-  save();
-  return tx;
-}
-
-/** Every seat saves its Zcash and its Solana backup. Returns { zcash: [...], solana: [...] }. */
-async function backups(pages, prefix = "") {
-  const out = { zcash: [], solana: [] };
-  const facts = [];
+/** The backup files of the seats are written, and their passphrases go to SOLSPIKE_INTERIM. */
+function keepBackups(saved) {
   mkdirSync(FILES, { recursive: true });
-  for (const [i, page] of pages.entries()) {
-    const seat = i + 1;
-    for (const [kind, make] of [
-      ["zcash", () => zcashBackup(page)],
-      ["solana", () => solanaBackup(page, seat)],
-    ]) {
-      const file = await make();
-      assert.ok(!/solSeed|keyPackage|signing_share/.test(file.text), "the file shows no secret");
-      writeFileSync(join(FILES, `${prefix}seat${seat}-${kind}.zigsbackup`), file.text);
-      out[kind].push(file);
+  for (const kind of ["zcash", "solana"]) {
+    for (const [i, file] of saved[kind].entries()) {
+      writeFileSync(join(FILES, `seat${i + 1}-${kind}.zigsbackup`), file.text);
     }
-    facts.push(checkFiles(out.zcash[i], out.solana[i]));
   }
-  results.restore.files = facts;
-  return out;
+  const list = (kind) => saved[kind].map(({ name, pass }) => ({ name, pass }));
+  const passes = { gid: saved.gid, keys: saved.keys, zcash: list("zcash"), solana: list("solana") };
+  mkdirSync(dirname(interimFile()), { recursive: true });
+  writeFileSync(interimFile(), JSON.stringify(passes), { mode: 0o600 });
+  chmodSync(interimFile(), 0o600);
 }
 
-async function restored(rig, files, gid) {
+/** Every seat makes its Zcash and its Solana backup. A live run keeps them (keepBackups). */
+async function backups(pages, gid, keys) {
+  const saved = { gid, keys, zcash: [], solana: [] };
+  for (const [i, page] of pages.entries()) {
+    const zcash = await bk.zcashBackup(page);
+    const solana = await bk.solanaBackup(page, i + 1);
+    bk.checkFiles(zcash, solana);
+    saved.zcash.push(zcash);
+    saved.solana.push(solana);
+  }
+  if (!MOCK) keepBackups(saved);
+  record("backups", { files: 6 });
+  return saved;
+}
+
+/** The kept backups of keepBackups, each file with its text. */
+function loadBackups() {
+  const saved = JSON.parse(readFileSync(interimFile(), "utf8"));
+  const withText = (kind) =>
+    saved[kind].map((f, i) => {
+      redact.add(f.pass);
+      return { ...f, text: readFileSync(join(FILES, `seat${i + 1}-${kind}.zigsbackup`), "utf8") };
+    });
+  return { ...saved, zcash: withText("zcash"), solana: withText("solana") };
+}
+
+/** Three blank contexts restore every seat from the backups and show the Solana part ready. */
+async function restored(rig, saved) {
   const pages = [];
   for (const i of [1, 2, 3]) {
     const page = await openApp(rig, "restore" + i, `${ORIGIN}/`);
-    await assertBlank(page);
+    await bk.assertBlank(page);
     pages.push(page);
   }
-  for (const [i, page] of pages.entries()) await restoreZcash(page, files.zcash[i], gid);
+  for (const [i, page] of pages.entries()) await bk.restoreZcash(page, saved.zcash[i], saved.gid);
   for (const [i, page] of pages.entries()) {
-    await waitFor(
-      () => run(page, () => !!document.getElementById("tab-solana")),
-      60000,
-      () => "the Solana tab",
-    );
+    const tab = () => run(page, () => !!document.getElementById("tab-solana"));
+    await waitFor(tab, 60000, () => "the Solana tab");
     await clickText(page, "Solana", { exact: true });
-    await restoreSolana(page, files.solana[i]);
+    await bk.restoreSolana(page, saved.solana[i]);
+  }
+  for (const page of pages) {
+    const ready = async () => (await solValues(page)).status === "ready";
+    await waitFor(ready, 180000, () => "status ready after the restore");
+    const seen = await solValues(page);
+    assert.equal(seen["group-key"], saved.keys.groupKey, "the restored group key");
   }
   return pages;
 }
 
-async function afterRestore(pages, keys, before) {
-  for (const page of pages) {
-    await waitFor(
-      async () => (await solValues(page)).status === "ready",
-      180000,
-      () => "status ready after the restore",
-    );
-  }
-  const seen = await Promise.all(pages.map(solValues));
-  for (const name of ["owner", "group-key", "shielded"]) {
-    assert.ok(seen.every((v) => v[name] === keys[name === "group-key" ? "groupKey" : name]));
-  }
-  const balances = [];
-  for (const page of pages) balances.push(await privateBalance(page, before.balance));
-  const slots = await Promise.all(pages.map(slotOf));
-  assert.ok(
-    slots.every((s) => s >= before.slot),
-    "every sync reads the slot S or a later one",
-  );
-  return { balances, slots };
-}
-
-async function rehearsal(rig, pages, gid, keys, want = "0.003 SOL") {
-  const before = { balance: await privateBalance(pages[0], want), slot: 0 };
-  before.slot = await slotOf(pages[0]);
-  results.noncesBeforeBackup = (await noncesGone(pages, gid)).nonces;
-  const files = await backups(pages);
-  results.problemsBefore = pages.map((p) => consoleProblems(p.records).length);
-  Object.assign(results.restore, { oldBalance: before.balance, slotS: before.slot, wiped: true });
-  for (const page of pages) await page.context.dispose();
-  save();
-  const fresh = await restored(rig, files, gid);
-  const after = await afterRestore(fresh, keys, before);
-  Object.assign(results.restore, { restoredBalances: after.balances, slots: after.slots });
-  save();
-  return fresh;
-}
-
-async function finish(pages, gid) {
-  results.nonces = (await noncesGone(pages, gid)).nonces;
-  results.problems = pages.map((p) => consoleProblems(p.records).length);
-  assert.ok(
-    results.problems.every((n) => n === 0),
-    "no console problem or CSP violation",
-  );
-  save();
-}
-
-const paidA = () => results.transactions.some((t) => t.label === "pay-a");
-
-function saveInterim(files, gid, keys) {
-  mkdirSync(dirname(INTERIM), { recursive: true });
-  const list = (kind) => files[kind].map(({ name, pass }) => ({ name, pass }));
-  const saved = { gid, keys, zcash: list("zcash"), solana: list("solana") };
-  writeFileSync(INTERIM, JSON.stringify(saved), { mode: 0o600 });
-  chmodSync(INTERIM, 0o600);
-}
-
-function loadInterim() {
-  const saved = JSON.parse(readFileSync(INTERIM, "utf8"));
-  const withText = (kind) =>
-    saved[kind].map((f, i) => ({
-      ...f,
-      text: readFileSync(join(FILES, `interim-seat${i + 1}-${kind}.zigsbackup`), "utf8"),
-    }));
-  const files = { zcash: withText("zcash"), solana: withText("solana") };
-  for (const one of [...files.zcash, ...files.solana]) redact.add(one.pass);
-  return { gid: saved.gid, keys: saved.keys, files };
-}
-
-/** A new group on three pages: Zcash wallet, Solana part, funding, nonce, register, shield. */
 async function created(rig) {
-  const { pages, gid } = await zcashWallet(rig, "P8f wallet");
+  const { pages, gid } = await zcashWallet(rig, "Scenario F wallet");
   const keys = await solanaReady(pages, gid);
   results.group = { owner: keys.owner, groupKey: keys.groupKey };
-  await Promise.all(pages.map((page) => publicBalance(page, "0 SOL")));
-  save();
-  if (REHEARSE) return { pages, gid, keys };
-  await setupGroup(pages, keys);
-  saveInterim(await backups(pages, "interim-"), gid, keys);
-  return { pages, gid, keys };
+  record("ready", {});
+  return { pages, keys, saved: await backups(pages, gid, keys) };
 }
 
-/** The pages of an earlier run of this scenario, restored from its interim backups. */
+/** A run of --resume: the seats of the earlier run, restored from its kept backups. */
 async function resumed(rig) {
-  const { gid, keys, files } = loadInterim();
-  const pages = await restored(rig, files, gid);
-  // The payment (a) may have landed in the run that stopped: the balance is then the change.
-  const balance = paidA() ? "0.003 SOL" : "0.008 SOL";
-  await afterRestore(pages, keys, { balance, slot: 0 });
-  results.resumed = (results.resumed ?? 0) + 1;
-  return { pages, gid, keys };
+  const saved = loadBackups();
+  return { pages: await restored(rig, saved), keys: saved.keys, saved };
+}
+
+async function fundSeats(pages, fees) {
+  for (const seat of [1, 2, 3]) {
+    if (did(`fund-seat${seat}`)) continue;
+    const sent = await fund({ to: fees[seat], shown: fees[seat], lamports: FUNDS[seat] });
+    record(`fund-seat${seat}`, { signature: sent.signature, lamports: String(FUNDS[seat]) });
+  }
+  for (const [i, page] of pages.entries()) await flow.feeFunded(page, i + 1);
+}
+
+async function addSol(page, fees) {
+  const signature = await flow.addSol(page, ADD.text);
+  await chain.confirmed(signature);
+  assert.equal(await chain.payerOf(signature), fees[1], "the fee address of seat 1 pays Add SOL");
+  record("add-sol", { signature });
+}
+
+/** The balance of the payee: key B by a sync that reads `slot`, or the public recipient. */
+const payeeBalance = async (withdrawTo, slot) =>
+  BigInt(withdrawTo ? await balanceOf(withdrawTo) : await balanceOfB(slot));
+
+/** One payment of PAYMENTS from the live pages, checked on the chain. Returns the live pages. */
+async function payStep(pages, spec, { keys, fees, payee }) {
+  results.checks[`elf-${spec.label}`] = await chain.deployedElf();
+  await flow.privateBalance(pages[0], privateNow());
+  const withdrawTo = spec.label === "withdraw" ? fees[1] : undefined;
+  const before = await payeeBalance(withdrawTo);
+  const done = await flow.pay(pages, { ...spec, payee, withdrawTo }, chain.proposalOpen);
+  const facts = await chain.paymentFacts(done.proposal, done.signature, keys.groupKey, fees);
+  if (withdrawTo) facts.settlement = await chain.settlementFacts(done.signature, withdrawTo);
+  const received = (await payeeBalance(withdrawTo, facts.execute.slot)) - before;
+  assert.equal(received, spec.lamports, `${spec.label}: the payee got the amount`);
+  const { id, proposal } = done;
+  record(spec.label, { id, proposal, ...facts, received: String(received) });
+  return done.alive;
+}
+
+async function liveRun(rig, start, fees) {
+  let { pages } = start;
+  const ctx = { keys: start.keys, fees, payee: await addressOfB() };
+  await fundSeats(pages, fees);
+  if (!did("add-sol")) await addSol(pages[0], fees);
+  if (!did("pay-a")) pages = await payStep(pages, PAYMENTS[0], ctx);
+  if (!did("restore") && !RESUME) {
+    for (const page of pages) await page.context.dispose();
+    pages = await restored(rig, loadBackups());
+    record("restore", {});
+  }
+  for (const spec of PAYMENTS.slice(1)) {
+    if (!did(spec.label)) pages = await payStep(pages, spec, ctx);
+  }
+  await flow.privateBalance(pages[0], privateNow());
+  results.problems = pages.map((p) => consoleProblems(p.records).length);
+  assert.ok(results.problems.every((n) => n === 0), "no console problem or CSP violation");
+}
+
+/** The mock run: the restore runs in full, and each tap that needs the chain must be refused. */
+async function mockRun(rig, start, fees) {
+  record("add-sol", { refused: await flow.refusedTap(start.pages[0], "add-sol") });
+  for (const page of start.pages) await page.context.dispose();
+  const pages = await restored(rig, start.saved);
+  record("restore", {});
+  const payee = await addressOfB();
+  const taps = [{ ...PAYMENTS[0], payee }, { ...PAYMENTS[2], withdrawTo: fees[1] }];
+  for (const spec of taps) {
+    record(spec.label, { refused: await flow.refusedTap(pages[spec.proposer - 1], spec) });
+  }
+  assert.equal(heliusAnswers([...start.pages, ...pages]), 0, "no answer from the Helius host");
 }
 
 async function scenario(rig) {
-  const payee = await addressOfB();
-  if (RESUME) {
-    Object.assign(results, JSON.parse(readFileSync(RESULTS, "utf8")));
-    delete results.error; // the run that stopped left its error here
-  }
-  // Each run adds its head: a resumed run can have code that the first run did not have.
-  results.runs = [...(results.runs ?? []), { head: HEAD, resume: RESUME }];
-  results.head = HEAD;
-  const { pages, gid, keys } = await (RESUME ? resumed(rig) : created(rig));
-  if (REHEARSE) {
-    // No fund moves and nothing lands: the backup, the wipe and the restore of an empty group.
-    await rehearsal(rig, pages, gid, keys, "0 SOL");
-    return;
-  }
-  if (!paidA()) {
-    const first = { amount: "0.005", lamports: 5_000_000n, expectPrivate: "0.003 SOL" };
-    const seatsA = { proposer: 1, approvers: [1, 2], observers: [3], payee };
-    await pay(pages, keys, { label: "pay-a", ...first, ...seatsA });
-  }
-  const fresh = await rehearsal(rig, pages, gid, keys);
-  const second = { amount: "0.002", lamports: 2_000_000n, expectPrivate: "0.001 SOL" };
-  const seatsC = { proposer: 3, approvers: [2, 3], observers: [1], payee };
-  await pay(fresh, keys, { label: "pay-c", ...second, ...seatsC });
-  await finish(fresh, gid);
-  console.log(redact(JSON.stringify({ transactions: results.transactions.length })));
+  results.plan = PLAN.map((tx) => ({ ...tx, lamports: String(tx.lamports) }));
+  const start = RESUME ? await resumed(rig) : await created(rig);
+  const fees = await flow.feeAddresses(start.pages);
+  if (results.fees) assert.deepEqual(fees, results.fees, "the same fee addresses");
+  results.fees = fees;
+  await (MOCK ? mockRun(rig, start, fees) : liveRun(rig, start, fees));
+  console.log(redact(JSON.stringify({ mock: MOCK, steps: results.steps.map((s) => s.label) })));
 }
 
-withStack("scenario-f", scenario).catch((err) => {
+withMockUrl(() => withStack("scenario-f", scenario)).catch((err) => {
   results.error = redact(String(err?.message ?? err));
   save();
   console.error(redact(String(err?.stack ?? err)));

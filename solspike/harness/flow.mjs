@@ -1,9 +1,9 @@
 // The steps that the live scenarios share (scenario-e.mjs, scenario-f.mjs): taps on the controls
-// that the Solana tab marks with data-sol, the wait for a session to land, and the balances. The
-// pages show public values only, and every error text goes through redact().
+// that the Solana tab marks with data-sol, Add SOL, one payment through the approvals program,
+// and the balances. The pages show public values only, and every error text goes through redact().
 import assert from "node:assert/strict";
 import { sleep, waitFor } from "./chrome.mjs";
-import { run } from "./page.mjs";
+import { run, setInput } from "./page.mjs";
 import { redact } from "./redact.mjs";
 import { solValues } from "./seats.mjs";
 
@@ -66,71 +66,151 @@ export const screenOf = (page, id) =>
 export const noApprove = (page, id) =>
   run(page, (name) => !document.querySelector(`[data-sol^="approve-${name}"]`), id);
 
-/**
- * One intent: the proposer taps the button (after `step.before(page)`, which fills a form), the
- * approvers tap Approve in parallel. The `observers` only read their screen.
- */
-export async function land(pages, step) {
-  const page = pages[step.proposer - 1];
-  const known = new Set((await sessions(page)).map((s) => s.id));
-  await step.before?.(page);
-  await clickMark(page, step.button);
-  const found = async () =>
-    (await sessions(page)).find((s) => s.kind === step.kind && !known.has(s.id))?.id;
-  const id = await withBanner(
-    page,
-    waitFor(found, step.proposalMs ?? 60000, () => `the proposal of ${step.label}`),
-  );
-  const screens = {};
-  const read = async (seat) => {
-    const mine = pages[seat - 1];
-    await waitState(mine, id, "collecting", 60000);
-    await waitFor(
-      () => screenOf(mine, id),
-      60000,
-      () => "the approval screen",
-    );
-    screens["seat " + seat] = (await screenOf(mine, id)).split("\n").filter(Boolean);
-    return mine;
-  };
-  const approve = async (seat) => clickMark(await read(seat), `approve-${id}-${seat}`);
-  await Promise.all([...step.approvers.map(approve), ...(step.observers ?? []).map(read)]);
-  for (const each of pages) await waitState(each, id, "sent", 180000);
-  for (const each of pages) assert.ok(await noApprove(each, id), "no Approve control is left");
-  const [first] = (await sessions(page)).filter((s) => s.id === id);
-  const seen = /^(Landed|Failed on chain) in slot (\d+): (\w+)$/.exec(first.result ?? "");
-  assert.ok(seen, `the result line of ${step.label}`);
-  assert.equal(seen[1], "Landed", `${step.label} failed on chain`);
-  return { id, slot: Number(seen[2]), signature: seen[3], screens };
-}
+const rowOf = (lines, name) => {
+  const i = lines.indexOf(name);
+  return i >= 0 ? lines[i + 1] : null;
+};
 
-// A session that failed before it landed cost nothing (a refused test run charges no fee, an
-// expired blockhash neither), and the SOL is still on the address: one more proposal is free.
-// A failure on chain is no such case and is not tried again. `onRetry(label, text)` records it.
-export async function landStep(pages, step, onRetry) {
-  try {
-    return await land(pages, step);
-  } catch (err) {
-    if (!err.message.startsWith("session failed")) throw err;
-    onRetry(step.label, redact(err.message));
-    return land(pages, step);
+/** The fee address of each seat, as the pages show them (seat i on page i). */
+export async function feeAddresses(pages) {
+  const out = {};
+  for (const [i, page] of pages.entries()) {
+    const mark = `fee-address-${i + 1}`;
+    await waitFor(async () => (await solValues(page))[mark], 60000, () => "the mark " + mark);
+    out[i + 1] = (await solValues(page))[mark];
   }
+  return out;
 }
 
-/** Taps "Check balance" until the page shows `want`, or (no `want`) until it shows a balance. */
-export async function publicBalance(page, want) {
+/** Taps "Check balance" until the page shows a balance above 0 for the fee address of `seat`. */
+export async function feeFunded(page, seat) {
   let seen = "";
   await waitFor(
     async () => {
       await clickMark(page, "refresh");
       await sleep(2500);
-      seen = (await solValues(page))["balance-public"];
-      return want === undefined ? seen !== "not read yet" : seen === want;
+      seen = (await solValues(page))[`fee-balance-${seat}`] ?? "";
+      return /^Balance: 0\.\d*[1-9]\d* SOL$/.test(seen);
     },
-    60000,
-    () => `the public balance ${want} (last ${seen})`,
+    90000,
+    () => `the fee balance of seat ${seat} (last ${seen})`,
   );
   return seen;
+}
+
+/** Types `amount` (text, for example "0.002") in the Add SOL form and taps Add SOL. */
+async function tapAddSol(page, amount) {
+  await setInput(page, "#sol-add-amount", amount);
+  await clickMark(page, "add-sol");
+}
+
+/** Add SOL from the fee address of the seat of `page`. Returns the signature that it shows. */
+export async function addSol(page, amount) {
+  await tapAddSol(page, amount);
+  const line = new RegExp(`^Added ${amount.replace(".", "\\.")} SOL, seat \\d: (\\w+)$`);
+  let seen = "";
+  await waitFor(
+    async () => line.test((seen = (await solValues(page)).added ?? "")),
+    180000,
+    () => `the Add SOL line (last ${seen})`,
+  );
+  return line.exec(seen)[1];
+}
+
+/** Fills the send form (or the withdraw form, with `withdrawTo`) and taps it. */
+async function tapPay(page, { amount, payee, withdrawTo }) {
+  const [form, to] = withdrawTo ? ["withdraw", withdrawTo] : ["send", payee];
+  await setInput(page, `#sol-${form}-to`, to);
+  await setInput(page, `#sol-${form}-amount`, amount);
+  await clickMark(page, form);
+}
+
+const sessionIds = async (page) => new Set((await sessions(page)).map((s) => s.id));
+
+/**
+ * The tap of a mock run (harness/mock.mjs): the Helius host resolves to nothing, so the tap must
+ * reach the network of the Worker, end with a new banner that says so, and propose nothing.
+ * `what` is "add-sol" or a payment spec. Returns the banner text.
+ */
+export async function refusedTap(page, what) {
+  const known = await sessionIds(page);
+  const before = await banner(page);
+  await (what === "add-sol" ? tapAddSol(page, "0.001") : tapPay(page, what));
+  let last = before;
+  const refused = async () => {
+    last = await banner(page);
+    return last !== before && /Failed to fetch/.test(last) ? last : "";
+  };
+  const text = await waitFor(refused, 120000, () => `the refusal (last ${redact(last)})`);
+  const added = [...(await sessionIds(page))].filter((id) => !known.has(id));
+  assert.deepEqual(added, [], "a mock run proposed nothing");
+  return redact(text);
+}
+
+/** The approval screen of session `id` on each page but `skip`, as lines, keyed by "seat N". */
+async function screensOf(pages, id, skip) {
+  const out = {};
+  for (const [i, each] of pages.entries()) {
+    if (i === skip) continue;
+    await waitState(each, id, "collecting", 120000);
+    await waitFor(() => screenOf(each, id), 120000, () => "the screen of seat " + (i + 1));
+    out["seat " + (i + 1)] = (await screenOf(each, id)).split("\n").filter(Boolean);
+  }
+  return out;
+}
+
+/** The proposer taps the form. Resolves the id of its new session. */
+async function proposed(page, spec) {
+  const known = await sessionIds(page);
+  await tapPay(page, spec);
+  const kind = spec.withdrawTo ? "withdraw" : "approve";
+  const found = async () =>
+    (await sessions(page)).find((s) => s.kind === kind && !known.has(s.id))?.id;
+  return withBanner(page, waitFor(found, 400000, () => "the proposal of " + spec.label));
+}
+
+/** The approvers tap Approve one by one. After the first, `stillOpen()` must hold for 30 s. */
+async function approveAll(pages, id, approvers, stillOpen) {
+  for (const [n, seat] of approvers.entries()) {
+    await clickMark(pages[seat - 1], `approve-${id}-${seat}`);
+    if (n > 0) continue;
+    await sleep(30000);
+    assert.ok(await stillOpen(), "one approval: the account waits and nothing executes");
+  }
+}
+
+/** The screen names the proposal account, the amount, the public link, and the recipient. */
+function screenProposal(lines, { amount, withdrawTo }) {
+  const text = lines.join("\n");
+  const proposal = rowOf(lines, "Proposal account");
+  assert.ok(proposal, "the screen names the proposal account");
+  assert.ok(text.includes(`${amount} SOL`) && text.includes("Public link"), "the screen");
+  if (withdrawTo) assert.ok(text.includes(withdrawTo), "the screen names the recipient");
+  return proposal;
+}
+
+/**
+ * One payment, or a withdrawal with `spec.withdrawTo`: seat `proposer` taps the form, every page
+ * shows the screen, the approvers tap Approve, and every page shows the session as sent. With
+ * `dropProposer` the page of the proposer closes before the approvals. `proposalOpen(address)`
+ * reads the proposal account on the chain. Returns { id, proposal, signature, screens, alive }.
+ */
+export async function pay(pages, spec, proposalOpen) {
+  const { proposer, approvers, dropProposer } = spec;
+  const page = pages[proposer - 1];
+  const id = await proposed(page, spec);
+  const screens = await screensOf(pages, id, dropProposer ? proposer - 1 : -1);
+  const proposal = screenProposal(screens["seat " + approvers[0]], spec);
+  assert.ok(await proposalOpen(proposal), "the proposal account exists before any approval");
+  const alive = dropProposer ? pages.filter((p) => p !== page) : pages;
+  if (dropProposer) await page.context.dispose();
+  await approveAll(pages, id, approvers, () => proposalOpen(proposal));
+  for (const each of alive) await waitState(each, id, "sent", 400000);
+  for (const each of alive) assert.ok(await noApprove(each, id), "no Approve control is left");
+  const [mine] = (await sessions(alive[0])).filter((s) => s.id === id);
+  const seen = /^(Executed|Failed on chain) in slot (\d+): (\w+)$/.exec(mine.result ?? "");
+  assert.ok(seen && seen[1] === "Executed", `the result line of ${spec.label}: ${mine.result}`);
+  return { id, proposal, signature: seen[3], screens, alive };
 }
 
 /** Taps "Sync Solana" until the shielded balance is `want`: the indexer may need a moment. */

@@ -1,6 +1,7 @@
 // Key B of P4 (a registered Devnet key), read-only: its full shielded address (public) and its
 // shielded balance by a Node sync with the Zolana SDK. The seed is read from its file here and
-// goes to redact() at once. Nothing here prints a secret, signs or sends.
+// goes to redact() at once. Nothing here prints a secret, signs or sends. The key of the app takes
+// only calls with the app origin, so the SDK calls to the Helius host get that Origin header.
 //   import { addressOfB, balanceOfB } from "./key-b.mjs";
 import "./quiet.mjs";
 import { join } from "node:path";
@@ -8,9 +9,23 @@ import { pathToFileURL } from "node:url";
 import { redact } from "../harness/redact.mjs";
 import { roleSecretsOfB } from "../mock/roles.mjs";
 import { zolanaRepo, heliusFile } from "./paths.mjs";
-import { readText, sleep } from "./rpc.mjs";
+import { APP_ORIGIN, readText, sleep } from "./rpc.mjs";
 
 const REPO = zolanaRepo();
+const HELIUS_HOST = "devnet.helius-rpc.com";
+
+/** fetch with the app Origin on every request to the Helius host. */
+const realFetch = globalThis.fetch;
+async function appFetch(input, init) {
+  const asked = input instanceof Request ? input : null;
+  if (new URL(asked ? asked.url : String(input)).hostname !== HELIUS_HOST) {
+    return realFetch(input, init);
+  }
+  const headers = new Headers(init?.headers ?? asked?.headers ?? {});
+  headers.set("origin", APP_ORIGIN);
+  return realFetch(input, { ...init, headers });
+}
+
 const hex = (bytes) => Buffer.from(bytes).toString("hex");
 
 async function keysOfB(sdk) {
@@ -40,6 +55,7 @@ async function syncOnce(sdk, keypair, requireSlot) {
   redact.add(url);
   const zolana = new URL(url);
   zolana.pathname = "/v1/zolana";
+  globalThis.fetch = appFetch; // the Solana RPC of the SDK uses the global fetch
   const client = await sdk.createZolanaClient({
     solanaRpcUrl: url,
     indexerUrl: zolana.href,

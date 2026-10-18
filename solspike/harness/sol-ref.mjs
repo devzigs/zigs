@@ -1,8 +1,7 @@
 // Independent references for the live Solana check (P8c), computed outside the Worker:
 // - the shielded address of a set of role secrets, with the SDK dist of the Zolana repo (Node);
-// - raw account reads over JSON-RPC (read-only), parsed here with fixed offsets.
-// The Helius URL is read from its file inside this module. Nothing here prints it, and every error
-// text passes redact() before it is thrown.
+// - raw account reads over JSON-RPC (read-only, tools/rpc.mjs), parsed here with fixed offsets.
+// Nothing here prints the Helius URL, and every error text passes redact() before it is thrown.
 import { execFileSync } from "node:child_process";
 import "../tools/quiet.mjs";
 import { randomBytes, createECDH, generateKeyPairSync } from "node:crypto";
@@ -11,11 +10,11 @@ import { createRequire } from "node:module";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { runInNewContext } from "node:vm";
-import { heliusFile, zolanaRepo } from "../tools/paths.mjs";
+import { zolanaRepo } from "../tools/paths.mjs";
+import { rpcCall } from "../tools/rpc.mjs";
 import { redact } from "./redact.mjs";
 
 const REPO = zolanaRepo();
-const URL_FILE = heliusFile();
 const hex = (bytes) => Buffer.from(bytes).toString("hex");
 
 /** Fresh random role secrets and a fresh Ed25519 public key: nothing of any real group. */
@@ -54,20 +53,12 @@ export const hexOfBase58 = (text) =>
 
 /** getAccountInfo over JSON-RPC: { owner, lamports, data (Buffer) }. Read-only. */
 export async function rawAccount(address) {
-  const url = readFileSync(URL_FILE, "utf8").trim();
   try {
-    const res = await fetch(url, {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({
-        jsonrpc: "2.0",
-        id: 1,
-        method: "getAccountInfo",
-        params: [address, { encoding: "base64", commitment: "confirmed" }],
-      }),
-    });
-    const { result, error } = await res.json();
-    if (error || !result?.value) throw new Error(`no account data (HTTP ${res.status})`);
+    const result = await rpcCall("getAccountInfo", [
+      address,
+      { encoding: "base64", commitment: "confirmed" },
+    ]);
+    if (!result?.value) throw new Error("no account data");
     const { owner, lamports, data } = result.value;
     return { owner, lamports: BigInt(lamports), data: Buffer.from(data[0], "base64") };
   } catch (err) {

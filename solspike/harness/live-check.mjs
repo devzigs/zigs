@@ -6,6 +6,7 @@
 // dev server. The output (logs/live-check.json) also has the text of #app and #side-nav after
 // the engine is ready, and the timing of a second load with 100 ms of latency on each request:
 // the first paint and the start of each script. Timing is data, not a check.
+// Over https (server.mjs) the recorded policy must have wss:// in place of ws://.
 // Usage: lockf -k "$SOL/heavy.lock" node harness/live-check.mjs [earlier live-check.json]
 // With an earlier output, the text of #app and #side-nav must be the same (app.js split, K8).
 import assert from "node:assert/strict";
@@ -14,12 +15,12 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { sleep } from "./chrome.mjs";
 import { run, waitForText } from "./page.mjs";
-import { ORIGIN } from "./server.mjs";
+import { HTTPS, ORIGIN, localGet } from "./server.mjs";
 import { withStack } from "./stack.mjs";
 
 const SPIKE = join(dirname(fileURLToPath(import.meta.url)), "..");
 const OUT = join(SPIKE, "logs/live-check.json");
-const WASM = `${ORIGIN}/pkg/zigs_engine_bg.wasm`;
+const WASM = "/pkg/zigs_engine_bg.wasm";
 const CSP_TEXT = /content security policy|refused to/i;
 const CSP_HEADER = "content-security-policy";
 const READY = "Crypto engine ready (WebAssembly)";
@@ -27,9 +28,13 @@ const LATENCY = { offline: false, latency: 100, downloadThroughput: -1, uploadTh
 const PASSWORD = { Authorization: `Basic ${btoa("check:any")}` };
 const recordedPolicy = () =>
   JSON.parse(readFileSync(join(SPIKE, "baseline.json"), "utf8")).served?.[CSP_HEADER];
+const expectedPolicy = () => {
+  const recorded = recordedPolicy();
+  return HTTPS ? recorded.replace("ws://", "wss://") : recorded;
+};
 
 async function headers() {
-  const [wasm, page] = await Promise.all([fetch(WASM), fetch(`${ORIGIN}/`)]);
+  const [wasm, page] = await Promise.all([localGet(WASM), localGet("/")]);
   const csp = page.headers.get(CSP_HEADER);
   return { wasmType: wasm.headers.get("content-type"), csp };
 }
@@ -60,7 +65,7 @@ function facts(page) {
 async function scriptCache(urls) {
   const out = {};
   for (const url of urls) {
-    const res = await fetch(url, { headers: PASSWORD });
+    const res = await localGet(new URL(url).pathname, PASSWORD);
     out[new URL(url).pathname] = res.headers.get("cache-control");
   }
   return out;
@@ -113,7 +118,7 @@ async function check(rig) {
   assert.equal(out.cspEvents + out.cspLogEntries, 0, "CSP violations");
   assert.equal(out.wasmType, "application/wasm");
   assert.equal(out.wasmResponse?.mime, "application/wasm");
-  assert.equal(out.pagePolicy, recordedPolicy(), "the page policy is not the recorded one");
+  assert.equal(out.pagePolicy, expectedPolicy(), "the page policy is not the recorded one");
   assert.deepEqual(out.requestedOrigins, [ORIGIN], "the page asked another origin");
   assertScripts(out);
   if (earlier) assert.deepEqual(out.dump, earlier, "the first screen is not the earlier one");

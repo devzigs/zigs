@@ -1,7 +1,10 @@
 #!/bin/bash
 # Local wrangler dev server of this repo. It never deploys and never logs in. It reads cf/.dev.vars.
 # Usage: serve.sh start | stop | status
-# The server runs on port 8795 (SOLSPIKE_PORT moves it). Start and stop work by PID. The pid file
+# The server runs on port 8795 (SOLSPIKE_PORT moves it). An https SOLSPIKE_ORIGIN (the Helius key of
+# the app takes only https://app.zigs.app) runs it over https on 127.0.0.1 with the key and cert of
+# .state/tls, made here once: Chrome maps the host to this port and trusts only that key
+# (harness/chrome.mjs). Start and stop work by PID. The pid file
 # (.state/serve.pid) holds the PID. Before any signal the process must be this repo's wrangler dev
 # server on this port: its command line and its working directory (cf/) must match. A PID that
 # another process reused is a stale entry, and nothing is signalled. Nothing here reads a time or
@@ -14,6 +17,9 @@ PIDFILE=$STATE/serve.pid
 PORT=${SOLSPIKE_PORT:-8795}
 INSPECTOR=${SOLSPIKE_INSPECTOR_PORT:-0}
 URL=http://localhost:$PORT/
+TLS=$STATE/tls
+HTTPS=no
+case "${SOLSPIKE_ORIGIN:-}" in https://*) HTTPS=yes URL=https://127.0.0.1:$PORT/ ;; esac
 
 alive() { kill -0 "$1" 2>/dev/null; }
 # True when $1 is the wrangler dev server of this clone on this port. lsof reports the real path
@@ -56,13 +62,30 @@ descendants() {
     }'
 }
 
+# A self-signed key and cert for the host of the origin and 127.0.0.1, kept for later runs.
+make_cert() {
+  local host
+  [ -f "$TLS/cert.pem" ] && return 0
+  host=${SOLSPIKE_ORIGIN#https://}
+  mkdir -p "$TLS" && chmod 700 "$TLS"
+  openssl req -x509 -newkey ec -pkeyopt ec_paramgen_curve:prime256v1 -nodes -days 365 \
+    -subj "/CN=$host" -addext "subjectAltName=DNS:$host,IP:127.0.0.1" \
+    -keyout "$TLS/key.pem" -out "$TLS/cert.pem" 2>/dev/null
+}
+
 port_busy() { lsof -nP -iTCP:"$PORT" -sTCP:LISTEN >/dev/null 2>&1; }
+
+status_code() {
+  local ca=""
+  [ "$HTTPS" = yes ] && ca=$TLS/cert.pem
+  curl -s ${ca:+--cacert "$ca"} -o /dev/null -w '%{http_code}' --max-time 2 "$URL"
+}
 
 wait_ready() {
   local pid=$1 i
   for i in $(seq 1 120); do
     alive "$pid" || { echo "serve: wrangler exited, see .state/serve.log" >&2; return 1; }
-    [ "$(curl -s -o /dev/null -w '%{http_code}' --max-time 2 "$URL")" = 200 ] && return 0
+    [ "$(status_code)" = 200 ] && return 0
     sleep 0.5
   done
   echo "serve: no answer from $URL after 60 s" >&2
@@ -74,11 +97,19 @@ start() {
   drop_stale
   port_busy && { echo "serve: port $PORT is busy, not starting" >&2; return 1; }
   mkdir -p "$STATE/xdg" "$STATE/wrangler-logs"
+  local tls=""
+  if [ "$HTTPS" = yes ]; then
+    make_cert || { echo "serve: no cert in $TLS" >&2; return 1; }
+    export WRANGLER_HTTPS_KEY_PATH=$TLS/key.pem WRANGLER_HTTPS_CERT_PATH=$TLS/cert.pem
+    tls="--ip 127.0.0.1 --local-protocol https"
+  fi
   cd "$ROOT/cf" || return 1
+  # $tls comes after the port, so is_server() still matches "--port $PORT ".
+  # shellcheck disable=SC2086 # $tls is a list of flags without spaces in them
   WRANGLER_SEND_METRICS=false XDG_CONFIG_HOME="$STATE/xdg" \
     WRANGLER_LOG_PATH="$STATE/wrangler-logs" WRANGLER_REGISTRY_PATH="$STATE/registry" CI=1 \
     nohup node --no-warnings node_modules/wrangler/wrangler-dist/cli.js dev --local --port "$PORT" \
-    --inspector-port "$INSPECTOR" --persist-to "$STATE" --show-interactive-dev-session=false \
+    $tls --inspector-port "$INSPECTOR" --persist-to "$STATE" --show-interactive-dev-session=false \
     >"$STATE/serve.log" 2>&1 </dev/null &
   local pid=$!
   echo "$pid" >"$PIDFILE"

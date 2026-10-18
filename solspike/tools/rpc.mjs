@@ -7,7 +7,7 @@ import { redact } from "../harness/redact.mjs";
 import { heliusFile } from "./paths.mjs";
 
 export const sleep = (ms) => new Promise((done) => setTimeout(done, ms));
-const APP_ORIGIN = "https://app.zigs.app";
+export const APP_ORIGIN = "https://app.zigs.app";
 
 /** The text of a file. */
 export const readText = (file) => readFileSync(file, "utf8").trim();

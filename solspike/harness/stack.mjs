@@ -10,13 +10,12 @@
 // must not hold heavy.lock. Call withStack once per process.
 import { createServer } from "node:net";
 import { startRig } from "./rig.mjs";
-import { ORIGIN, serverPid, startServer, stopServer } from "./server.mjs";
+import { PORT, serverPid, startServer, stopServer } from "./server.mjs";
 import { groupSnapshot, newInGroup, trackPeak } from "../tools/procs.mjs";
 
 const PROCESS_CAP = 16;
 // Idle keep-alive sockets of fetch() close after about 4 s, so a clean run ends well before this.
 const BACKSTOP_MS = 12000;
-const PORT = Number(new URL(ORIGIN).port);
 
 const portOpen = (port) =>
   new Promise((ok) => {

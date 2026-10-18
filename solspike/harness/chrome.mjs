@@ -2,11 +2,13 @@
 // browser contexts: disposing a context wipes its storage (see rig.mjs). Chrome closes with
 // Browser.close. Only our own PID gets a SIGTERM, and only as a last resort.
 import { spawn } from "node:child_process";
-import { mkdirSync } from "node:fs";
+import { X509Certificate, createHash } from "node:crypto";
+import { mkdirSync, readFileSync } from "node:fs";
 import net from "node:net";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { redact } from "./redact.mjs";
+import { CERT, HTTPS, ORIGIN, PORT } from "./server.mjs";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const CHROME =
@@ -48,6 +50,24 @@ const FLAGS = [
   "--use-mock-keychain",
   "--password-store=basic",
 ];
+
+const LOCAL_HOSTS = new Set(["localhost", "127.0.0.1"]);
+
+/**
+ * The flags of an https origin: its host maps to the local server, and only the key of the cert of
+ * serve.sh is trusted without a CA. SOLSPIKE_HOST_RULES adds rules (the mock run sends the Helius
+ * host nowhere). Read at launch, so a module can set it first.
+ */
+function hostFlags() {
+  const { hostname } = new URL(ORIGIN);
+  const rules = LOCAL_HOSTS.has(hostname) ? [] : [`MAP ${hostname} 127.0.0.1:${PORT}`];
+  if (process.env.SOLSPIKE_HOST_RULES) rules.push(process.env.SOLSPIKE_HOST_RULES);
+  const flags = rules.length ? [`--host-resolver-rules=${rules.join(", ")}`] : [];
+  if (!HTTPS) return flags;
+  const key = new X509Certificate(readFileSync(CERT)).publicKey;
+  const pin = createHash("sha256").update(key.export({ type: "spki", format: "der" }));
+  return [...flags, `--ignore-certificate-errors-spki-list=${pin.digest("base64")}`];
+}
 
 export const sleep = (ms) => new Promise((ok) => setTimeout(ok, ms));
 
@@ -124,7 +144,8 @@ export async function failWith(chrome, err) {
 export async function launch(waitMs = WAIT_MS) {
   mkdirSync(PROFILE, { recursive: true });
   const port = await freePort();
-  const args = [...FLAGS, `--remote-debugging-port=${port}`, `--user-data-dir=${PROFILE}`];
+  const args = [...FLAGS, ...hostFlags(), `--remote-debugging-port=${port}`];
+  args.push(`--user-data-dir=${PROFILE}`);
   const proc = spawn(CHROME, args, { stdio: "ignore" });
   const exited = new Promise((ok) => proc.once("exit", ok));
   const chrome = { proc, pid: proc.pid, port, exited };
