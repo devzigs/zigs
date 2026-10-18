@@ -300,8 +300,8 @@ function describePrepared(data, wallet, prove, expiry) {
   };
 }
 
-/** The salt and the first nullifier of the transact data of a message (base64): the page keeps
- * the pairs of the proposals that it approved, so no pair is used twice (rule SaltReused). */
+/** The salt and the first nullifier of the transact data of a message (base64): the page compares
+ * them with the pairs of the other proposals, so no pair is used twice (rule SaltReused). */
 function inspect({ tx }) {
   const message = sdk.getCompiledTransactionMessageDecoder().decode(fromBase64(tx));
   const parsed = parseTransact(cutTransact(message, sdk.SHIELDED_POOL_PROGRAM_ID));

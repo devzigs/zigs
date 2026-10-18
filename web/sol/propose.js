@@ -89,7 +89,7 @@ async function draftSpend(c, worker, prepared) {
   return {
     fee: fees.feePerNullifier,
     inputs: prepared.inputs.map(({ mint, amount, blinding }) => ({ mint, amount, blinding })),
-    salts: pairsBefore(c, "new"),
+    salts: await pairsBefore(c, worker, "new"),
   };
 }
 
