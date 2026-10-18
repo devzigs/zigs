@@ -21,6 +21,7 @@ import {
   readVerdict,
 } from "./intent.js";
 import { usedDigest } from "./nonces.js";
+import { heldOf, reclaimRent, scanRent } from "./rent.js";
 import { holdsShare, solOf } from "./secrets.js";
 import { solText } from "./session.js";
 import { isPayment } from "./sessions.js";
@@ -212,8 +213,8 @@ const costLine = (c) =>
   solText(rentOf(c)) +
   " in it as rent until it closes. The seat that executes pays " +
   solText(EXECUTE_FEE) +
-  " and the tree fee. The rent goes back to the proposing seat at the execute. A proposal that " +
-  "expires keeps its rent: this app cannot cancel it yet.";
+  " and the tree fee. The rent goes back to the proposing seat at the execute. The rent of a " +
+  "proposal that expires comes back with the card \"Rent of old proposals\".";
 
 const button = (c, act, mark, text, run) =>
   c.host.el(
@@ -552,6 +553,37 @@ function sessionList(c, act, actions) {
   );
 }
 
+const RENT_TEXT =
+  "A proposal that expires still holds the rent of the seat that created it. The fee key of " +
+  "that seat cancels it and gets the rent back. The program accepts this cancel only after " +
+  "the expiry.";
+
+/** The rent of expired proposals that each seat of this browser can get back (SOL-52). */
+function rentCard(c, act) {
+  const { el } = c.host;
+  const seats = Object.keys(c.rent?.found ?? {}).map(Number);
+  const rows = seats
+    .filter((seat) => heldOf(c, seat) > 0n)
+    .map((seat) =>
+      el(
+        "div",
+        { class: "row-actions", "data-sol": "rent-" + seat },
+        el("span", { class: "small" }, "Seat " + seat + ": " + solText(heldOf(c, seat))),
+        button(c, act, "reclaim-" + seat, "Get it back", () => reclaimRent(c, seat)),
+      ),
+    );
+  const none = c.rent && !rows.length ? el("p", { class: "small" }, "No rent to get back.") : null;
+  return el(
+    "div",
+    { style: "display:grid;gap:8px", "data-sol": "rent" },
+    el("h3", {}, "Rent of old proposals"),
+    el("p", { class: "small" }, RENT_TEXT),
+    ...rows,
+    none,
+    button(c, act, "rent-scan", "Look for rent", () => scanRent(c)),
+  );
+}
+
 /** The cards of a ready wallet: fund, Add SOL, the move of the beta funds, pay, the sessions. */
 export function payCards(c, act, actions) {
   return [
@@ -560,5 +592,6 @@ export function payCards(c, act, actions) {
     moveCard(c, act, actions),
     intentCard(c, act, actions),
     sessionList(c, act, actions),
+    rentCard(c, act),
   ].filter(Boolean);
 }

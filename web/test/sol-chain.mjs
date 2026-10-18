@@ -15,6 +15,7 @@
 import { createHash, createPublicKey, randomBytes, verify } from "node:crypto";
 import { base58 } from "../sol/docs.js";
 import { nonceAccountHex } from "../sol/intent.js";
+import { proposalFilters } from "../sol/owned.js";
 import * as kit from "../sol/zolana.bundle.js";
 import { config } from "./sol-rig.mjs";
 
@@ -148,10 +149,25 @@ function settlementRefusal(ix, body) {
   return commitment === body.slice(0, 64) ? null : "Custom 6014";
 }
 
+const CLOCK = "SysvarC1ock11111111111111111111111111111111";
+const le64 = (n) => Buffer.from(new BigUint64Array([BigInt(n)]).buffer).toString("hex");
+const expiryOf = (stored) => Buffer.from(stored.data.slice(132, 148), "hex").readBigUInt64LE(0);
+
+/**
+ * `cancel` (SOL-52) of an open proposal. The message of the page carries no abort authority, so
+ * the program refuses it before the expiry (NotAbortAuthority).
+ */
+function cancelRefusal(chain, ix) {
+  const stored = chain.accounts.get(ix.accounts[1]);
+  if (!stored?.data.startsWith("01")) return "Custom 6006";
+  return chain.now > expiryOf(stored) || ix.accounts.length > 5 ? null : "Custom 6017";
+}
+
 /** Why the program refuses one instruction (`ixs[i]`), or null. */
 function refusalOf(chain, ixs, i) {
   const ix = ixs[i],
     proposal = ix.accounts[1];
+  if (ix.data === "02") return cancelRefusal(chain, ix);
   if (ix.data.startsWith("00")) {
     // System error 0 in the create CPI, as the Worker gives it: the account is in use.
     if (chain.accounts.has(proposal)) return `{"InstructionError":[${i},{"Custom":0}]}`;
@@ -191,13 +207,28 @@ function approves(chain, approval, proposal, body) {
   return key === group && digest === want && signed;
 }
 
+/** True when the account data (hex) holds the bytes of an RPC `memcmp` filter at its offset. */
+function held(data, { offset, bytes, encoding }) {
+  const part = Buffer.from(bytes, encoding).toString("hex");
+  return data.slice(2 * offset, 2 * offset + part.length) === part;
+}
+
+/** `cancel` closes the proposal and pays its rent to the rent recipient of its body. */
+function cancelLanded(chain, proposal) {
+  const stored = chain.accounts.get(proposal);
+  const to = base58(stored.data.slice(148, 212));
+  chain.balances.set(to, (chain.balances.get(to) ?? 0n) + BigInt(stored.lamports ?? "1356360"));
+  chain.accounts.delete(proposal);
+}
+
 /** The effects of a landed message on the approvals program, and the history of its accounts. */
 function programLanded(chain, ixs, signature) {
   for (const ix of ixs.filter((x) => x.program === PROGRAM)) {
     const proposal = ix.accounts[1];
     const seen = chain.history.get(proposal) ?? [];
     chain.history.set(proposal, [{ signature, failed: false, slot: "11" }, ...seen]);
-    if (ix.data.startsWith("00")) {
+    if (ix.data === "02") cancelLanded(chain, proposal);
+    else if (ix.data.startsWith("00")) {
       const body = ix.data.slice(2);
       const bump = bumpOf(proposal, body).toString(16).padStart(2, "0");
       chain.accounts.set(proposal, { owner: keyHex(PROGRAM), data: "01" + bump + body });
@@ -290,9 +321,18 @@ export function answersOf(chain) {
       undecryptable: 0,
     }),
     account: ({ account }) => {
+      // The Clock sysvar: unix_timestamp at byte 32. `chain.rpcNow` is a false answer of the RPC.
+      const shown = chain.rpcNow ?? chain.now;
+      if (account === CLOCK) return { exists: true, data: "00".repeat(32) + le64(shown) };
       const found = chain.accounts.get(account);
       return found ? { exists: true, lamports: "1356360", ...found } : { exists: false };
     },
+    // The open proposals of `group` that pay `fee` (SOL-52): the RPC filters of the Worker.
+    owned: ({ fee, group }) =>
+      [...chain.accounts]
+        .filter(([, a]) => a.owner === keyHex(PROGRAM))
+        .filter(([, a]) => proposalFilters(group, fee).every(({ memcmp }) => held(a.data, memcmp)))
+        .map(([address, a]) => ({ address, lamports: a.lamports ?? "1356360", data: a.data })),
     recipientAccount: ({ account }) => {
       const found = chain.accounts.get(account);
       if (!found) return { exists: false };
@@ -468,6 +508,8 @@ export function makeChain() {
     },
     oldUtxos: [], // what the sync of the group key returns: the beta funds before the move
     accounts: new Map(), // the proposal accounts of the approvals program, by address
+    now: 0n, // the unix_timestamp of the Clock sysvar, which the program uses
+    rpcNow: null, // a false unix_timestamp that the RPC answers instead
     history: new Map(), // per proposal address: the transactions that touched it, newest first
     nonce: null, // the current nonce value (hex) once the account exists
     blockhashes: new Set(),

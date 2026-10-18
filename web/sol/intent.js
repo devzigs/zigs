@@ -37,7 +37,8 @@ export const EXECUTE_FEE = 2n * BASE_FEE;
  * The intent bytes (hex) of a kind: createNonce and transfer (the move of the beta funds, with a
  * nonce), shield (Add SOL: a recent blockhash, the payer signs alone), approve and withdraw (a
  * payment of the program design to a shielded or a public address), propose and proposeWithdraw
- * (their create messages) and execute (tag 11 with the `recipient` of a withdrawal, else 7).
+ * (their create messages) and execute (tag 11 with the `recipient` of a withdrawal, else 7), and
+ * cancelProposal, which gets back the rent of an expired proposal (SOL-52).
  */
 export function intentHex(kind, f) {
   const spend = () => f.nonce + le64(f.expiry) + u8(f.inputs) + u8(f.outputs);
@@ -54,6 +55,7 @@ export function intentHex(kind, f) {
     approve: () => "08" + pay(),
     proposeWithdraw: () => "09" + withdrawal() + f.commitment + f.blockhash,
     withdraw: () => "0a" + withdrawal(),
+    cancelProposal: () => "0c" + f.commitment + le64(f.expiry) + f.blockhash,
   };
   if (!Object.hasOwn(fields, kind)) throw new Error("Unknown Solana intent: " + kind);
   return fields[kind]();

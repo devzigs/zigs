@@ -115,13 +115,22 @@ pub enum Program {
     },
     /// The approval of a payment. It is no message: the group key signs its 32-byte digest.
     Approve { pay: Pay },
+    /// The `cancel` message of an expired proposal of the signing seat (SOL-52): the body gives
+    /// its address. It carries no abort authority, so the program refuses it before the expiry.
+    Cancel {
+        commitment: Key,
+        expiry: u64,
+        blockhash: Key,
+    },
 }
 
 impl Program {
     /// The lifetime of the message: a recent blockhash. An approval has no message.
     fn lifetime(&self) -> Key {
         match self {
-            Program::Propose { blockhash, .. } | Program::Execute { blockhash, .. } => *blockhash,
+            Program::Propose { blockhash, .. }
+            | Program::Execute { blockhash, .. }
+            | Program::Cancel { blockhash, .. } => *blockhash,
             Program::Approve { .. } => [0; 32],
         }
     }
@@ -131,6 +140,7 @@ impl Program {
             Program::Propose { .. } => "propose",
             Program::Execute { .. } => "execute",
             Program::Approve { .. } => "approve",
+            Program::Cancel { .. } => "cancel-proposal",
         }
     }
 
@@ -164,11 +174,21 @@ impl Program {
                 out.push(if pay.recipient().is_some() { 10 } else { 8 });
                 encode_pay(out, pay);
             }
+            Program::Cancel {
+                commitment,
+                expiry,
+                blockhash,
+            } => {
+                out.push(12);
+                out.extend_from_slice(commitment);
+                out.extend_from_slice(&expiry.to_le_bytes());
+                out.extend_from_slice(blockhash);
+            }
         }
     }
 
     /// Reads the fields after the tag byte `tag`: 6 to 8 for a private payment, 9 to 11 for a
-    /// withdrawal (the same intents with a public recipient).
+    /// withdrawal (the same intents with a public recipient), 12 to cancel an expired proposal.
     fn read(tag: u8, r: &mut Reader) -> Result<Self, String> {
         let short = |_| "the intent ends inside a field".to_string();
         let public = tag >= 9;
@@ -187,6 +207,11 @@ impl Program {
             },
             8 | 10 => Program::Approve {
                 pay: decode_pay(r, public).map_err(short)?,
+            },
+            12 => Program::Cancel {
+                commitment: r.array().map_err(short)?,
+                expiry: r.u64().map_err(short)?,
+                blockhash: r.array().map_err(short)?,
             },
             tag => return Err(format!("unknown intent tag {tag}")),
         })

@@ -165,6 +165,7 @@ pub const SEED_PROPOSAL: &[u8] = b"proposed_transaction";
 pub const SEED_CANCEL: &[u8] = b"cancelled_transaction";
 pub const MS_CREATE: u8 = 0;
 pub const MS_EXECUTE: u8 = 1;
+pub const MS_CANCEL: u8 = 2;
 
 /// The domain of the approval digest. The group key signs nothing else under it.
 pub const APPROVAL_DOMAIN: &[u8] = b"Zigs_SolApproval_v1";

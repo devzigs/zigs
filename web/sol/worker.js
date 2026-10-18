@@ -6,6 +6,7 @@
 // the policy binds this file and every module that it imports.
 import * as sdk from "/sol/zolana.bundle.js";
 import { checkCommand, makeRedactor } from "/sol/guard.js";
+import { proposalFilters } from "/sol/owned.js";
 import {
   commitmentOf,
   cutTransact,
@@ -215,6 +216,23 @@ async function history({ account: address }) {
   const options = { limit: 1000, commitment: "confirmed" };
   const found = await solanaRpc.getSignaturesForAddress(address, options).send();
   return found.map((x) => ({ signature: x.signature, failed: x.err !== null, slot: `${x.slot}` }));
+}
+
+const PROGRAM = "5PHZEHBMaYbFL9SFmMyP8kUayh3TFEyq2dvEYY3UGjkL";
+
+/** The open proposals of `group` that pay the fee key `fee` (both hex), SOL-52 (owned.js). */
+async function owned({ fee, group }) {
+  const { solanaRpc } = need().client;
+  const filters = proposalFilters(group, fee).map(({ memcmp }) => ({
+    memcmp: { ...memcmp, offset: BigInt(memcmp.offset) },
+  }));
+  const options = { encoding: "base64", commitment: "confirmed", filters };
+  const found = await solanaRpc.getProgramAccounts(PROGRAM, options).send();
+  return found.map((x) => ({
+    address: x.pubkey,
+    lamports: x.account.lamports.toString(),
+    data: hex(fromBase64(x.account.data[0])),
+  }));
 }
 
 /** One landed transaction as its wire bytes (base64): the page looks for the approval in it. */
@@ -455,6 +473,7 @@ const HANDLERS = {
   rent,
   history,
   transaction,
+  owned,
   reprove,
   blockhash,
   readNonce,

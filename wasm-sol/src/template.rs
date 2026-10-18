@@ -9,15 +9,16 @@
 //! the registry record and the owner signer of `transact`. Add SOL (`Shield`) has the payer as
 //! its only signer.
 //!
-//! The program design (ZOLANA.md 7.2) adds two messages that the payer signs alone: `Propose`
-//! (the `create` instruction of the approvals program with the proposal body) and `Execute`
-//! (the Ed25519 instruction with the approval of the group, then `execute` with the `transact`
-//! accounts and the owner PDA as a readonly account that the program signs for).
+//! The program design (ZOLANA.md 7.2) adds three messages that the payer signs alone: `Propose`
+//! (the `create` instruction of the approvals program with the proposal body), `Execute` (the
+//! Ed25519 instruction with the approval of the group, then `execute` with the `transact`
+//! accounts and the owner PDA as a readonly account that the program signs for), and `Cancel`
+//! (SOL-52), which gives the rent of an expired proposal back to the payer.
 
 use std::collections::{BTreeMap, BTreeSet};
 
 use crate::consts::{
-    Key, ED25519_PROGRAM, INSTRUCTIONS_SYSVAR, MS_CREATE, NONCE_SEED, NONCE_SPACE,
+    Key, ED25519_PROGRAM, INSTRUCTIONS_SYSVAR, MS_CANCEL, MS_CREATE, NONCE_SEED, NONCE_SPACE,
     RECENT_BLOCKHASHES, RENT_SYSVAR, SYSTEM_PROGRAM, SYS_ADVANCE_NONCE, SYS_CREATE_WITH_SEED,
     SYS_INIT_NONCE,
 };
@@ -67,10 +68,12 @@ pub const CU_CAP_SHIELD: u32 = 56_877;
 pub const CU_CAP_REGISTER: u32 = 24_048;
 /// Nonce instructions: 300 (P2, two System instructions) times 1.5.
 pub const CU_CAP_SYSTEM: u32 = 450;
-/// `create` of a proposal with one abort authority: 7,832 (SOL-35, ZOLANA.md 6.10) times 1.5.
-pub const CU_CAP_PROPOSE: u32 = 11_748;
+/// `create` of a proposal: the floor below times 1.5.
+pub const CU_CAP_PROPOSE: u32 = 57_093;
 /// `execute` with its `transact`: 151,437 (SOL-35 track main) times 1.5.
 pub const CU_CAP_EXECUTE: u32 = 227_156;
+/// `cancel` of an expired proposal: 1,224 (SOL-52) times 1.5.
+pub const CU_CAP_CANCEL_PROPOSAL: u32 = 1_836;
 
 /// Compute unit floors: the largest recorded consumption of the intent, the value that the cap
 /// adds 50 percent to. A limit under it can fail at run time (the fee is charged and the nonce
@@ -82,8 +85,17 @@ pub const CU_FLOOR_REGISTER: u32 = 16_032;
 /// 150, so `Cancel` (`AdvanceNonceAccount` only) has the floor 150.
 pub const CU_FLOOR_CREATE_NONCE: u32 = 300;
 pub const CU_FLOOR_CANCEL: u32 = 150;
-pub const CU_FLOOR_PROPOSE: u32 = 7_832;
+/// `create`: 2,062 plus 1,500 for each bump try of the proposal address and of the owner PDA
+/// (LiteSVM, SOL-52), and up to 2,283 more if someone funded the proposal address. The floor is
+/// 24 tries in all: the chance of more is about 1.5e-6. The landed `create` (7,832, SOL-35) had 4.
+/// The owner PDA tries are fixed for a group: a group that needs k tries exceeds the floor with
+/// a chance of 2^-(24-k) per proposal. The cap leaves room for about 35 tries with a funded
+/// proposal address.
+pub const CU_FLOOR_PROPOSE: u32 = 38_062;
 pub const CU_FLOOR_EXECUTE: u32 = 151_437;
+/// `cancel` after the expiry, the largest of 400 random proposals in LiteSVM (SOL-52): 1,224. It
+/// reads no record address, so the cost does not depend on a bump.
+pub const CU_FLOOR_CANCEL_PROPOSAL: u32 = 1_224;
 
 /// The smallest loaded accounts limit that does not fail at load (a failure still charges the
 /// fee and advances the nonce, ZOLANA.md 6.3). The estimate is the sum of the account data
@@ -182,18 +194,28 @@ pub fn limits(intent: &Intent) -> Limits {
         Intent::Transfer { .. } | Intent::Withdrawal { .. } => {
             (CU_CAP_TRANSACT, CU_FLOOR_TRANSACT, LOADED_MIN_POOL)
         }
-        Intent::Program(Program::Propose { .. }) | Intent::Program(Program::Approve { .. }) => {
-            (CU_CAP_PROPOSE, CU_FLOOR_PROPOSE, LOADED_MIN_PROPOSE)
-        }
-        Intent::Program(Program::Execute { .. }) => {
-            (CU_CAP_EXECUTE, CU_FLOOR_EXECUTE, LOADED_MIN_EXECUTE)
-        }
+        Intent::Program(program) => program_limits(program),
     };
     Limits {
         cu_cap,
         cu_floor,
         loaded_min,
         priority_max: PRIORITY_MAX,
+    }
+}
+
+/// The cap, floor and loaded minimum of a message of the program design.
+fn program_limits(program: &Program) -> (u32, u32, u32) {
+    match program {
+        Program::Propose { .. } | Program::Approve { .. } => {
+            (CU_CAP_PROPOSE, CU_FLOOR_PROPOSE, LOADED_MIN_PROPOSE)
+        }
+        Program::Execute { .. } => (CU_CAP_EXECUTE, CU_FLOOR_EXECUTE, LOADED_MIN_EXECUTE),
+        Program::Cancel { .. } => (
+            CU_CAP_CANCEL_PROPOSAL,
+            CU_FLOOR_CANCEL_PROPOSAL,
+            LOADED_MIN_PROPOSE,
+        ),
     }
 }
 
@@ -366,6 +388,21 @@ fn propose(pins: &Pins, commitment: Key, expiry: u64) -> Result<ExpectedIx, Stri
     Ok(ix(pins.program, accounts, Data::Exact(data)))
 }
 
+/// `cancel` of an expired proposal of the payer, which is its rent recipient. The message has no
+/// abort authority, so the program refuses it before the expiry (`NotAbortAuthority`).
+fn cancel_proposal(pins: &Pins, commitment: Key, expiry: u64) -> Result<ExpectedIx, String> {
+    let body = body_of(pins, commitment, expiry, pins.payer).write()?;
+    let (proposal, _) = proposal_address(&pins.multisig, &commitment, &body)?;
+    let accounts = vec![
+        acct(pins.payer, true, true),
+        acct(proposal, false, true),
+        acct(cancellation_address(&proposal)?, false, true),
+        acct(pins.payer, false, true),
+        acct(SYSTEM_PROGRAM, false, false),
+    ];
+    Ok(ix(pins.program, accounts, Data::Exact(vec![MS_CANCEL])))
+}
+
 /// The Ed25519 approval and `execute`. The body and its digest follow from the commitment of the
 /// `transact` data, so a signature of the group fits only the payment that it approved. A
 /// withdrawal adds its settlement accounts after the owner PDA, as the pool reads them.
@@ -422,6 +459,9 @@ fn program_ixs(
             tx.ok_or("an execute needs its transact data")?,
         ),
         Program::Approve { .. } => Ok(Vec::new()),
+        Program::Cancel {
+            commitment, expiry, ..
+        } => Ok(vec![cancel_proposal(pins, *commitment, *expiry)?]),
     }
 }
 

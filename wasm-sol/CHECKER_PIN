@@ -71,7 +71,7 @@ use; the code that read the solSeed file is removed. Vectors: only the public on
 Copied from the P1 crate: tests/data (the RFC 9591 E.1 inputs and the vectors of frost-ed25519).
 
 The wasm of wasm-sol (build.sh): SHA-256
-354a8e92b7ef8d316b8909a5254a964f6a901cf4c79d5babaaa06a0dfc6b0692, 1,085,009 bytes raw, 398,930 gzip
+6e151b445bd12d8c04ac7ff5ba238fe7780c35e944082700a7ecf5504d6d53f4, 1,086,693 bytes raw, 399,545 gzip
 
 Changes of the move into the product repo (not signed; no file of src/ changed, so the rules and
 the checker are those that the verdict signed):
@@ -257,6 +257,27 @@ step 7). Program version 5 takes SOL withdrawal legs:
 - QA round 2: tests of the nullifier PDA of a second input and of the `create` message of a
   withdrawal; the comment of `recipient_account_violation` says what the rule holds. 129 cases.
 
+Cancel of an expired proposal (SOL-52, 18 October 2026, not signed by a verifier). The fee key
+signs one more message alone. Program version 5 is not changed.
+- src/intent.rs: `Program::Cancel` (tag 12: commitment, expiry, blockhash). Tag 13 is no intent:
+  this app writes no cancellation record, so it has no close. src/consts.rs: `MS_CANCEL`.
+- src/template.rs: `cancel` has the body of `body_of` (the payer is the rent recipient), the data
+  `[2]` and five accounts: payer, proposal, record, payer, System Program. It carries no abort
+  authority, so the program refuses it before the expiry (`NotAbortAuthority`, 6017): the program
+  enforces the expiry, the fee key can never cancel a live proposal, and the checker has no clock
+  rule. A sixth account (the payer as authority) fails `account-count`.
+- src/beta.rs, src/rules_ix.rs: only a fee key signs it, and the approvals program runs only the
+  tag 2. Compute units (LiteSVM, version 5): `cancel` after the expiry costs 1,224 whatever the
+  bump (it reads no record address): the largest of 400 random proposals, with the record or the
+  proposal address funded or not. The floor is 1,224 and the cap 1,836. tests/payment.rs: 15 tests.
+- Cap of `create`: `find_program_address` costs 1,500 per bump try, for the proposal address and
+  for the owner PDA, so `create` costs 2,062 + 1,500 x tries (LiteSVM), and up to 2,283 more if
+  the address is funded. `CU_FLOOR_PROPOSE` is 38,062 (24 tries) and `CU_CAP_PROPOSE` 57,093
+  (were 7,832 and 11,748: 4 tries). The owner PDA tries are fixed for a group: a group that needs
+  k tries exceeds the floor with a chance of 2^-(24-k) per proposal. The cap leaves room for about
+  35 tries with a funded address. No vector or message held the old values. `Approve` has no
+  message and shares the limits.
+
 Check: python3 -I tools/pin_check.py (the manifest below against the tree).
 
 files:
@@ -264,16 +285,16 @@ bce3e196c3a4064026d8b57f8fe3ebcca600ac9de008df44e7b61cc8c6b1bb46  src/address.rs
 5a9cd223134111a083252d60a92a5f79134519df15ad3d658daf3090199d427d  src/approve.rs  modified
 84bc02b107fb6077a55d51f4fbb0e936e4417d3c7a42505402ce32cebcc82865  src/assets.rs  verbatim
 7709e0fd39c88ad201925f212f7321c0298db4dbfd3c2122b5ce8ddbdb2ece40  src/assets_devnet.bin  verbatim
-698291c8ee68b5a4cd22a078997669b00f11c8db0edcaba92d443dc69f40b41f  src/beta.rs  new
+3003f18b0c3ea572039f300582ac2ae5bec9edbf83ea73d491334743b62c3e32  src/beta.rs  new
 0c2c8885a396432c3d84c077cfea3f4f364c57dc6af0e26d169d3b2fc8e34684  src/bytes.rs  verbatim
 34713776c2e344e7319a8b9b55ff17684ac383c055c07d6133fd95878985f2c7  src/check.rs  modified
 ca3b51e9ea30baeb0b082ca9cb19fe248bc86880d60ae90a3ee3e5a7dcb6b371  src/codec.rs  new
-374f3d015fe9534c81bfff3e453fa5f6444ef9e797fc104ba26b76eeddc019fd  src/consts.rs  modified
+b4847bc1ce9c8027efddf4bde31aed08445193b610fd5927c73776902a179284  src/consts.rs  modified
 7a08e707a51b6264f62db1bb802e718ffea87886aad961e641f784e80f2e4321  src/fee.rs  new
 7580593e6b6b3b9e7deff6ea3ef327abda12ba3d7f369abaf041a01461c9bf28  src/fixed.rs  verbatim
 4e23c21ba7958d4915aa41b691c3d4b24615026f07c793a63ebeda3fd8916c7a  src/frost.rs  new
 e69e4ccacb28931921f072919a6ecf9ff3fe6784e3b129a45ff94fa0ccc17d4c  src/hashes.rs  verbatim
-e19bb2e8f340e69af4eba1f6ee5a6a7ff90c4efe96717a0159e83b491cbe2df9  src/intent.rs  modified
+613570475a3d4ec0402a0914063e8df83ddc1df5e78774e2774937fef131dac5  src/intent.rs  modified
 4ee766f3816d4af38f22fd2377a305515af6df48f01e64af2b8713a575dec1f5  src/lib.rs  modified
 a71a896274e606d3a4e3e801191b4b65461bfd5cb548343f093a250c4d45bb01  src/pay.rs  new
 4f344e745afed204088395c0101761a0332688de88ab6e57dec9e85de34907a1  src/pda.rs  verbatim
@@ -283,14 +304,14 @@ befdc6018a5ad022638cfa66e3a1b140582f3c57b1b65e91e43599d50181167a  src/program.rs
 a44ea553e8f9d4b4cbac46b67a267c8f529de2ce84a34ce96f0f281d6eee156a  src/roles.rs  new
 1fc00e0f2b85ba285be1e23b231eb455bcff02e80054f8a18e1f2395a94b0a6d  src/rule.rs  modified
 c8c4a33103f0c0e811e5d98e43acc3f0f28316d0976beb65788b47fd3f6d5c1c  src/rules_ct.rs  verbatim
-2fc01d89043505c49e3d3173f2f35ba2b3a407aedb6d811c34ddef7955364ab8  src/rules_ix.rs  modified
+6036f8b35f36c72463456c0f946b1dc569fa2cb99fa2794f0a6443941761323e  src/rules_ix.rs  modified
 3e6b8cd5a979ea45ec96d4bc42eef02677418b7a0f9d4d7f2aada02c7fcaa625  src/rules_legs.rs  verbatim
 a88175ff29fcbbe4075bf2707c0a825d6026da9e7ae93fa390f7bedda6cc76f4  src/rules_out.rs  verbatim
 423e3c005c541c66efd63c27fbba844819e2ade4071d9fb9e9ffd9a50a3c94d6  src/rules_tx.rs  verbatim
 1f12c8381a04511ffa789646c93e29776f19d5bee234457f7ae6f3cee86ae6f3  src/sign.rs  new
 fb32fff67235197779cc2b25cc5fe351d57fdb6140d976546b96ddc4484e28d3  src/snapshot.rs  verbatim
 1dd8eb3bea1120da40326466ec83e58fc6f49b40548a553bbcc50bc715131ab8  src/spend.rs  modified
-d5d0c37b66fdf13d8da6546c743332650b549d2cbdef767010d0c538aa13594f  src/template.rs  modified
+5e71f75897abf5c307c15d427bb7b0b3379dd7adf1665f19543044bc46c24274  src/template.rs  modified
 3d7e69437af85c56d9bcf80172af2c7c866140ceb6e3f889d8cbc11dde9cdf05  src/transact.rs  verbatim
 c9d4c2718f755ac5ebeb8a705e036b3ab9183cb7ef95fe1f14da5ffa931c1c9f  src/v1.rs  verbatim
 ddda30596120fcb6731fa8515b0a06c55e2df70070a9082ed64749b022ddb374  src/viewing.rs  verbatim
@@ -311,7 +332,7 @@ cfc68ad047d9dff9f4cb368c901238019de4d6284cbd23853b5224f97a2bf3ca  tests/frost_dk
 30d06cfe796b1238ac2957de71d1d2b285d5ad4e545fc0bab1ce02144c46fd35  tests/negative.rs  modified
 025fcdc92eb9ea2519a623a14d1ea06073c047b20a188bac5ae3a918ccef50ca  tests/p3c.rs  modified
 d3b6abc6195a5cae856db2fb7543964dcd8c5222221d5a839a6a2e81d6e4f14d  tests/pay_vectors.rs  new
-dd1effce398d862b6962c9787c36a4c6d830918d76d24bda554716104130a67e  tests/payment.rs  new
+60c36d7f131b8ec07d9d2256241873f31488cfee379f48b1f926e21b41c2b81d  tests/payment.rs  new
 95290d8683b751fb47f647d29eb2486fcd3dad545aa35a368d1a5fb0733151b1  tests/pin_bytes.rs  verbatim
 588ffdab940ee0f56e9faac65cad18c1db6468e3dc8ad06f58314c1e07e342dc  tests/program.rs  new
 3037d149887a37309b07c8765f862acf9994f0802138861188bd9ffc1869e829  tests/real.rs  modified

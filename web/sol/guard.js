@@ -67,6 +67,7 @@ export const SCHEMA = {
   rent: { space: decimal },
   history: { account: base58 },
   transaction: { signature },
+  owned: { fee: hexOf(32), group: hexOf(32) },
   blockhash: {},
   readNonce: { account: base58 },
   treeFees: { tree: base58 },

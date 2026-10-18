@@ -11,7 +11,7 @@ mod common;
 use std::collections::BTreeMap;
 
 use common::fixture::*;
-use common::{EXPIRY, NOW};
+use common::{flags_of, mutate, rebuild, replace_key, with_flags, with_ix, ATTACKER, EXPIRY, NOW};
 use p3_check::approve::Device;
 use p3_check::beta::{approve_message, approve_payment, Signer};
 use p3_check::consts::{Key, INSTRUCTIONS_SYSVAR, MULTISIG_DEVNET, SYSTEM_PROGRAM};
@@ -26,7 +26,7 @@ use p3_check::program::{
 };
 use p3_check::rule::Rule;
 use p3_check::sign::{self, verify_strict, ApprovalCheck, Check};
-use p3_check::template::{body_of, compile};
+use p3_check::template::{body_of, compile, limits, LOADED_MIN_PROPOSE};
 use p3_check::transact::OwnerTag;
 use p3_check::v1;
 use serde_json::{json, Value};
@@ -414,6 +414,32 @@ fn a_create_message_of_a_payment_that_breaks_a_rule_is_refused() {
     let (proposal, message) = propose_of(&f, body.commitment);
     let why = approve_message(&message, &proposal, &device(&f), Signer::Fee).unwrap_err();
     assert!(why.violations.iter().any(|v| v.rule == Rule::PrivateTxHash));
+}
+
+#[test]
+fn the_create_message_carries_the_cap_that_covers_24_bump_tries() {
+    let f = payment();
+    let (proposal, message) = propose_of(&f, want_body(&f).0.commitment);
+    let limit = limits(&proposal.intent);
+    assert_eq!((limit.cu_floor, limit.cu_cap), (2_062 + 1_500 * 24, 57_093));
+    assert_eq!(limit.cu_cap, (limit.cu_floor * 3).div_ceil(2));
+    assert_eq!(
+        v1::parse(&message).unwrap().config.compute_units,
+        Some(57_093)
+    );
+    assert_eq!(
+        limits(&f.intent).cu_cap,
+        57_093,
+        "the approval shares the limits"
+    );
+    for (units, rule) in [
+        (11_748, Rule::ComputeUnitsUnderFloor),
+        (57_094, Rule::ComputeUnitsOverCap),
+    ] {
+        let changed = mutate(&message, |msg| msg.config.compute_units = Some(units));
+        let why = approve_message(&changed, &proposal, &device(&f), Signer::Fee).unwrap_err();
+        assert_eq!(why.violations[0].rule, rule);
+    }
 }
 
 // ---- Add SOL and the beta policy -------------------------------------------------------------
@@ -1245,4 +1271,216 @@ fn the_intents_of_a_withdrawal_have_tags_9_to_11_and_read_back() {
         (8, 150),
         "a private payment keeps tag 8"
     );
+}
+
+// ---- the cancel of an expired proposal (SOL-52) ------------------------------------------------
+
+const FEE_SECRET: [u8; 32] = [0x21; 32];
+const COMMITMENT: Key = [0x77; 32];
+/// The floor and the cap of `cancel` after the expiry (LiteSVM, CHECKER_PIN).
+const CANCEL_CU: (u32, u32) = (1_224, 1_836);
+
+/// The proposal of the fee key of `f`: the body names it as rent recipient and abort authority.
+fn proposal_of(f: &Fixture) -> Key {
+    let body = body_of(&f.pins.for_pda().unwrap(), COMMITMENT, EXPIRY, f.pins.payer);
+    let (key, _) = proposal_address(&f.pins.multisig, &COMMITMENT, &body.write().unwrap()).unwrap();
+    key
+}
+
+fn record_of(f: &Fixture) -> Key {
+    cancellation_address(&proposal_of(f)).unwrap()
+}
+
+/// The wire form that the page writes: the tag 12, the fields in order, then the blockhash.
+fn cancel_wire(commitment: Key, expiry: u64) -> Vec<u8> {
+    [&[12][..], &commitment, &expiry.to_le_bytes(), &[5; 32]].concat()
+}
+
+/// The `cancel` intent of the fixture with its template message.
+fn cancel_case(f: &Fixture) -> (Intent, Vec<u8>) {
+    let intent = Intent::decode(&cancel_wire(COMMITMENT, EXPIRY)).unwrap();
+    let message = compile(&intent, &f.pins.for_pda().unwrap(), None).unwrap();
+    (intent, v1::write(&message).unwrap())
+}
+
+/// The rules that refuse `message` for `signer`, none if it is approved.
+fn cancel_rules(f: &Fixture, intent: &Intent, message: &[u8], signer: Signer) -> Vec<Rule> {
+    let proposal = Proposal::decode(&intent.encode()).unwrap();
+    let refusal = approve_message(message, &proposal, &device(f), signer).err();
+    refusal.map_or(vec![], |r| r.violations.iter().map(|v| v.rule).collect())
+}
+
+/// The fee key refuses the cancel message after `change`, with `rule`.
+fn refused_by(rule: Rule, change: impl Fn(&Fixture, &[u8]) -> Vec<u8>) {
+    let f = payment();
+    let (intent, message) = cancel_case(&f);
+    let got = cancel_rules(&f, &intent, &change(&f, &message), Signer::Fee);
+    assert!(got.contains(&rule), "{got:?}");
+}
+
+/// The message with account `at` of its instruction changed to `key`, a writable non-signer.
+fn retarget(message: &[u8], at: usize, key: Key) -> Vec<u8> {
+    mutate(message, |msg| {
+        let mut flags = flags_of(msg);
+        flags.entry(key).or_insert((false, true));
+        rebuild(msg, &flags);
+        msg.ixs[0].accounts[at] = msg.keys.iter().position(|k| *k == key).unwrap() as u8;
+    })
+}
+
+#[test]
+fn the_fee_key_cancels_an_expired_proposal_with_one_signature_and_five_accounts() {
+    let f = payment();
+    let (intent, message) = cancel_case(&f);
+    assert_eq!(
+        cancel_rules(&f, &intent, &message, Signer::Fee),
+        Vec::<Rule>::new()
+    );
+    let msg = v1::parse(&message).unwrap();
+    let ix = &msg.ixs[0];
+    assert_eq!((msg.header[0], msg.ixs.len()), (1, 1));
+    let at = |i: &u8| usize::from(*i);
+    let keys: Vec<Key> = ix.accounts.iter().map(|i| msg.keys[at(i)]).collect();
+    let flags: Vec<_> = ix
+        .accounts
+        .iter()
+        .map(|i| (msg.is_signer(at(i)), msg.is_writable(at(i))))
+        .collect();
+    let (prop, rec) = (proposal_of(&f), record_of(&f));
+    assert_eq!(keys, [PAYER, prop, rec, PAYER, SYSTEM_PROGRAM]);
+    let (pay, rw, ro) = ((true, true), (false, true), (false, false));
+    assert_eq!(flags, [pay, rw, rw, pay, ro]);
+    assert_eq!(
+        (msg.program_key(ix), &ix.data[..]),
+        (Some(&MULTISIG_DEVNET), &[2][..])
+    );
+}
+
+#[test]
+fn the_wire_form_of_the_cancel_intent_reads_back_and_refuses_short_and_long_input() {
+    let wire = cancel_wire(COMMITMENT, EXPIRY);
+    let intent = Intent::decode(&wire).unwrap();
+    assert_eq!(
+        (intent.encode(), intent.name()),
+        (wire.clone(), "cancel-proposal")
+    );
+    assert!(Intent::decode(&wire[..wire.len() - 1]).is_err(), "short");
+    assert!(Intent::decode(&[&wire[..], &[0]].concat()).is_err(), "long");
+}
+
+#[test]
+fn the_tag_13_of_the_close_is_an_unknown_intent() {
+    let wire = [&[13][..], &[0x88; 32], &[5; 32]].concat();
+    assert_eq!(Intent::decode(&wire).unwrap_err(), "unknown intent tag 13");
+    assert!(Proposal::decode(&wire).is_err());
+}
+
+#[test]
+fn the_wasm_entries_compile_the_cancel_with_no_transact_data_and_the_fee_key_signs() {
+    let mut f = payment();
+    let key = ed25519_dalek::SigningKey::from_bytes(&FEE_SECRET);
+    f.pins.payer = key.verifying_key().to_bytes();
+    let (pins, snapshot) = (f.pins.wire(), f.snapshot.encode().unwrap());
+    let (intent, message) = cancel_case(&f);
+    let wire = intent.encode();
+    let compiled = p3_check::wasm::compile_proposal(&wire, &pins, &[]);
+    assert_eq!(compiled.unwrap(), message);
+    let check = Check {
+        intent: &wire,
+        pins: &pins,
+        snapshot: &snapshot,
+    };
+    let round = json!({"now": NOW, "secret": hex::encode(FEE_SECRET)}).to_string();
+    let signature = p3_check::fee::sign(&message, &check, &round).expect("signed");
+    assert!(p3_check::fee::verify(&hex::encode(f.pins.payer), &message, &signature).is_ok());
+}
+
+#[test]
+fn the_group_key_does_not_sign_the_cancel() {
+    let f = payment();
+    let (intent, message) = cancel_case(&f);
+    let got = cancel_rules(&f, &intent, &message, Signer::Group);
+    assert_eq!(got, [Rule::IntentRetired]);
+}
+
+#[test]
+fn a_cancel_with_the_payer_as_abort_authority_in_a_sixth_account_is_refused() {
+    let six = |_: &Fixture, m: &[u8]| mutate(m, |x| x.ixs[0].accounts.push(0));
+    refused_by(Rule::AccountCount, six);
+}
+
+#[test]
+fn a_cancel_to_another_program_id_is_refused() {
+    let change = |_: &Fixture, m: &[u8]| replace_key(m, &MULTISIG_DEVNET, ATTACKER);
+    refused_by(Rule::ProgramNotAllowed, change);
+}
+
+#[test]
+fn a_cancel_with_another_instruction_tag_is_refused() {
+    let close = |_: &Fixture, m: &[u8]| mutate(m, |x| x.ixs[0].data[0] = 3);
+    refused_by(Rule::InstructionNotAllowed, close);
+    let execute = |_: &Fixture, m: &[u8]| mutate(m, |x| x.ixs[0].data[0] = 1);
+    refused_by(Rule::InstructionNotAllowed, execute);
+}
+
+#[test]
+fn a_cancel_with_an_extra_instruction_is_refused() {
+    let extra = |_: &Fixture, m: &[u8]| with_ix(m, MULTISIG_DEVNET, &[], vec![2]);
+    refused_by(Rule::InstructionCount, extra);
+}
+
+#[test]
+fn a_cancel_of_a_body_with_another_commitment_expiry_or_group_is_refused() {
+    let f = payment();
+    let pda = f.pins.for_pda().unwrap();
+    let group = Pins {
+        multisig: [0x99; 32],
+        ..pda.clone()
+    };
+    let others = [
+        (cancel_wire([0x78; 32], EXPIRY), &pda),
+        (cancel_wire(COMMITMENT, EXPIRY + 1), &pda),
+        (cancel_wire(COMMITMENT, EXPIRY), &group),
+    ];
+    let (intent, _) = cancel_case(&f);
+    for (wire, pins) in others {
+        let other = Intent::decode(&wire).unwrap();
+        let message = v1::write(&compile(&other, pins, None).unwrap()).unwrap();
+        let got = cancel_rules(&f, &intent, &message, Signer::Fee);
+        assert!(got.contains(&Rule::AccountAddress), "{got:?}");
+    }
+}
+
+#[test]
+fn a_cancel_with_another_cancellation_address_is_refused() {
+    let change = |f: &Fixture, m: &[u8]| replace_key(m, &record_of(f), ATTACKER);
+    refused_by(Rule::AccountAddress, change);
+}
+
+#[test]
+fn a_cancel_with_a_rent_recipient_that_is_not_the_fee_key_is_refused() {
+    refused_by(Rule::AccountAddress, |_, m| retarget(m, 3, ATTACKER));
+}
+
+#[test]
+fn a_cancel_with_a_writable_flag_removed_is_refused() {
+    let change = |f: &Fixture, m: &[u8]| with_flags(m, &record_of(f), false, false);
+    refused_by(Rule::AccountFlags, change);
+}
+
+#[test]
+fn a_cancel_with_a_second_signer_is_refused() {
+    let change = |f: &Fixture, m: &[u8]| with_flags(m, &record_of(f), true, true);
+    refused_by(Rule::SignerSet, change);
+}
+
+#[test]
+fn the_cancel_cap_is_the_floor_plus_half_and_the_message_carries_it() {
+    let (floor, cap) = CANCEL_CU;
+    assert_eq!(cap, (floor * 3).div_ceil(2));
+    let (intent, message) = cancel_case(&payment());
+    let limit = limits(&intent);
+    assert_eq!((limit.cu_floor, limit.cu_cap), CANCEL_CU);
+    assert_eq!(limit.loaded_min, LOADED_MIN_PROPOSE);
+    assert_eq!(v1::parse(&message).unwrap().config.compute_units, Some(cap));
 }
