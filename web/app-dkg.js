@@ -4,13 +4,15 @@ import {
 } from "./util.js";
 import { docFields } from "./signed.js";
 import { canSign, newSignKey, signMsg } from "./chat.js";
-import { log, showBanner, state } from "./app-state.js";
+import { log, raw, showBanner, state } from "./app-state.js";
 import { isStr, J, randomHex32, S } from "./app-kit.js";
 import { Z } from "./app-engine.js";
 import { mySeatSecrets, putKey, putSec, sec } from "./app-keystore.js";
 import { allR1, allSeated, isCreator, keysAgree, localSeats, r2For, seatIds } from "./app-seats.js";
-import { netName, netOf, pickServer } from "./app-chain.js";
-import { canWriteAs, NO_SIGNING_SEAT, partNow, signedDoc, signedMode } from "./app-filter.js";
+import { netName, netOf, NETWORKS, pickServer } from "./app-chain.js";
+import {
+  canWriteAs, NO_SIGNING_SEAT, partNow, signedByMe, signedDoc, signedMode,
+} from "./app-filter.js";
 import { me, openGroup, sdb, user } from "./app-groups.js";
 import { ensureSignKey } from "./app-messages.js";
 import { once, react } from "./app-loop.js";
@@ -209,11 +211,30 @@ export async function createWallet() {
 // signers compare it out of band. A confirm document is only a claim, so a seat also keeps the
 // number its person confirmed ("confirmed"), and the ceremony runs only when both agree with the
 // local number.
-export function safetyNo() {
+export function safetyNo(net = netName(state.g)) {
   if (!state.g || !allSeated()) return null;
   const keys = {}; for (const i of seatIds()) keys[i] = state.seats[i].boxPk;
-  try { return Z.safetyNumber(state.gid, state.g.t, state.g.n, netName(state.g), S(keys)); }
+  try { return Z.safetyNumber(state.gid, state.g.t, state.g.n, net, S(keys)); }
   catch { return null; }
+}
+
+// The network whose safety number the person of a seat of this browser confirmed (SOL-34): the
+// number that the seat keeps, or the stored confirm document of the seat when the key in the seat
+// secret of this browser signed it. A restore does not take "confirmed" from the file. The
+// documents of other seats do not count: a device that opens a wallet for the first time pins
+// their keys from the store. null while no number matches, or when both networks match.
+export function confirmedNetwork() {
+  const own = (i) => {
+    const d = raw.confirm[i];
+    return signedByMe(state.gid, i, "confirm/" + i, d) === "yes" ? d.number : null;
+  };
+  const numbers = localSeats().flatMap((i) => [sec(state.gid, i).confirmed, own(i)]);
+  const matches = (net) => {
+    const no = safetyNo(net);
+    return !!no && numbers.includes(no);
+  };
+  const nets = Object.keys(NETWORKS).filter(matches);
+  return nets.length === 1 ? nets[0] : null;
 }
 const gateOf = (s) => confirmGate(safetyNo(), s.confirmed, state.confirm, seatIds());
 const canConfirm = (s) => !s.keyPackage && !s.aborted && usesV2(seatMode(s));

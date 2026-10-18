@@ -1239,18 +1239,33 @@ Messages (section 14) were already signed.
   are in `zf-signpins`, under the key `shape:<wallet id>`, as `n/t`. A device reads `n` and `t`
   from the pin, never from a later value in the store. So a holder of the link cannot add a seat
   above `n`. If the store shows other values, the wallet page says so.
-- The web app also keeps the first `network` that it sees for a wallet of any version. It is in
-  `zf-signpins`, under the key `network:<wallet id>`. A name that is not `testnet` or `mainnet` is
-  not kept. The page reads the network from the pin, never from a later value in the store, so a
-  holder of the link cannot make a mainnet wallet use the testnet servers or show the Solana tab
-  (ZOLANA.md section 3). If the store shows another network, the wallet page says so. The iPhone
-  and Mac apps do not keep this pin yet (`TICKETS.md`, SOL-33).
+- The web app takes the network of a wallet from the safety number, which covers it (section 4). A
+  seat of this device keeps the number that its person confirmed (`confirmed`). The stored confirm
+  document of the seat counts too, but only when the key in the seat secret of this device signed
+  it: a restore does not copy `confirmed`. The device keeps the network whose safety number matches,
+  and only when exactly one network matches, in `zf-signpins` under the key
+  `confirmednet:<wallet id>`. The confirm documents of other seats do not count: a device that opens
+  a wallet for the first time takes their keys from the store.
+- Until then, the web app uses the first `network` that it sees for a wallet of any version, under
+  the key `network:<wallet id>`. A name that is not `testnet` or `mainnet` is not kept. A holder of
+  the link can change the network before a device opens the wallet for the first time. The confirmed
+  network replaces the first one as soon as the seat documents, the confirm documents and the keys
+  of a restored seat are in. This happens before a setup step compares safety numbers, and a sync
+  that started on the other network starts again. The Solana tab needs the confirmed network
+  (ZOLANA.md section 3). If the store shows another network, the wallet page says so. The iPhone and
+  Mac apps do not keep these pins yet (`TICKETS.md`, SOL-33).
+- These keep the first network, because no number of an own seat matches: a version 1 wallet (it has
+  no safety number), a device that holds no seat of the wallet, a restored seat of a version 2
+  wallet (its confirm document has no signature), a restored seat whose confirm document a holder of
+  the link deleted, and a wallet whose `n`, `t` or seat keys a holder changed before the first load.
+  On such a device a testnet wallet shows no Solana tab, and a restore of a Solana part says that
+  the network is not confirmed yet.
 - A seat in a version 3 wallet needs Ed25519. A browser without it cannot create a wallet or
   take a seat ("This browser cannot sign, so it cannot take part in this wallet."). It shows
   "This wallet needs signatures, and this browser cannot check them." instead of the wallet.
   The iPhone and Mac apps always have Ed25519 (CryptoKit).
 - The iPhone and Mac apps keep the same pins in `UserDefaults`, under the same name
-  (`zf-signpins`) and with the same keys, except the network pin above.
+  (`zf-signpins`) and with the same keys, except the network pins above.
 
 ### 15.2 Keys
 
@@ -1406,9 +1421,10 @@ signature over only its own fields. The path in the signed text is `sessions/<se
   first sees the wallet sets them for that device. The safety number covers `t` and `n`, so
   signers who compare it in the setup find the change.
 - These documents stay unsigned: the wallet document `groups/<id>` (`name`, `room`, `movedTo`,
-  `version`, `n`, `t`, `createdBy`), and the progress marks listed in section 15.5. A holder can
-  write a progress mark such as `status: "proving"`. A signer then cannot start the proof until
-  the mark is three minutes old, and the holder can write it again. This is a denial of service.
+  `version`, `n`, `t`, `network`, `createdBy`), and the progress marks listed in section 15.5. A
+  holder can write a progress mark such as `status: "proving"`. A signer then cannot start the proof
+  until the mark is three minutes old, and the holder can write it again. This is a denial of
+  service.
 
 ## 16. Solana beta (Zolana)
 

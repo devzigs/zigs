@@ -7,27 +7,32 @@ import { Z } from "./app-engine.js";
 import { putSec, sec } from "./app-keystore.js";
 import { localSeats, seatIds } from "./app-seats.js";
 import { netName } from "./app-chain.js";
-import { canWriteAs, checkIn, refilter, signedDoc, signedMode } from "./app-filter.js";
+import {
+  canWriteAs, checkIn, netConfirmed, refilter, signedDoc, signedMode,
+} from "./app-filter.js";
 import { openGroup, sdb, unsubGroup } from "./app-groups.js";
 import { act, el, guard } from "./app-dom.js";
 import { groupVersion, safetyNo, seatCheck } from "./app-dkg.js";
 import { restore, sealAndSave } from "./app-backups.js";
 import { once, react, render } from "./app-loop.js";
 
-// Devnet, for version 3 wallets on testnet only. The network is the first one that this device
-// saw (pinNetwork). web/sol loads when the Solana tab opens, or when a seat signed the wallet's
+// Devnet, for version 3 wallets on testnet only. The network must be the one that the people of
+// the wallet confirmed with the safety number (netConfirmed, SOL-34), not only the first one that
+// this device saw. web/sol loads when the Solana tab opens, or when a seat signed the wallet's
 // solstart document. Any other wallet, and a wallet that is not loaded yet, never fetches any of
 // it.
 const solGroup = (gid) =>
   (gid === state.gid && state.g) || state.groups.find((x) => x.id === gid);
 export const solOn = (gid = state.gid) => {
   const g = solGroup(gid);
-  return g?.network === "testnet" && walletVersion(g) === 3 && signedMode(gid);
+  const testnet = g?.network === "testnet" && netConfirmed(gid) === "testnet";
+  return testnet && walletVersion(g) === 3 && signedMode(gid);
 };
 const SOL_OFF = "Solana is not available on this server";
 export let sol = null, solLoading = null, solError = "";
 let solStartDoc = null;   // the stored solstart/1 of the open wallet, whoever wrote it
-export function resetSolStart() { solStartDoc = null; }
+let solWatched = null;    // the wallet whose start document is watched
+export function resetSolStart() { solStartDoc = null; solWatched = null; }
 const solHost = () => ({
   Z, sdb, state, el, act, log, once, render, refilter, showBanner, sec, putSec, signedDoc,
   canWriteAs, localSeats, seatIds, checkIn, safetyNo, seatCheck, openGroup, restore,
@@ -49,6 +54,14 @@ export function solLoad() {
   });
   return solLoading;
 }
+// The open wallet gets its watch once it is a Solana wallet. The confirmed network can come after
+// the wallet opened, so the reactor asks again.
+export function solWatch() {
+  const gid = state.gid;
+  if (!gid || solWatched === gid || !solOn(gid)) return;
+  solWatched = gid;
+  solAttach(gid, "groups/" + gid);
+}
 // Before the module loads, one watch keeps the start document. Any holder of the invite link can
 // write one, so solReact loads the module only when a seat signed it.
 export function solAttach(gid, base) {
@@ -62,15 +75,19 @@ const solStartSigned = () => !!solStartDoc && checkIn(state.gid)("solstart/1", s
   solStartDoc.sig, docFields(solStartDoc), 1) === "yes";
 export function solReact() {
   if (!solOn()) return;
+  solWatch();
   if (sol) sol.react();
   else if (!solLoading && solStartSigned()) solLoad();
 }
 export const solTab = () => sol ? guard(sol.view)
   : solError ? el("p", { class: "small" }, solError)
   : (solLoad(), el("p", { class: "small" }, "Loading Solana…"));
+const NET_UNCONFIRMED = "This device does not know yet which network the people of this wallet "
+  + "confirmed. Open the wallet, wait until its seat shows Address checked, then try again.";
 export async function solRestore(b, encrypted) {
   if (solGroup(b.group) && !solOn(b.group)) {
-    throw new Error("Solana runs on version 3 testnet wallets only.");
+    throw new Error(netConfirmed(b.group) ? "Solana runs on version 3 testnet wallets only."
+      : NET_UNCONFIRMED);
   }
   await solLoad();
   if (!sol) throw new Error(solError || "Solana did not load.");
