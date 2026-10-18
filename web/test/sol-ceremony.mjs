@@ -829,17 +829,39 @@ assert.deepEqual(
   for (const i of [1, 2]) {
     assert.equal(t.sec(gidR, i).confirmed, undefined, "a restore takes no confirmed number");
   }
-  // With no confirm document of its own, a restored seat says why it waits.
+  // With no confirm document of its own, a restored seat says why it waits. A document without a
+  // valid signature of its own key confirms nothing: unsigned, or the document of seat 1 laid
+  // under seat 2.
+  await t.solLoad();
   const doc = data.get(path(gidR, "confirm/2"));
-  data.delete(path(gidR, "confirm/2"));
-  rig.notify();
-  await sleep(300);
-  const why = "Seat 2: this browser has not confirmed the safety number";
-  assert.equal(seatProgress(t.sol.ctl, 2), why);
+  const why = "Seat 2 waits: this browser has not confirmed the safety number.";
+  const unsigned = { number: t.safetyNo() };
+  for (const bad of [null, unsigned, data.get(path(gidR, "confirm/1"))]) {
+    if (bad) data.set(path(gidR, "confirm/2"), bad);
+    else data.delete(path(gidR, "confirm/2"));
+    rig.notify();
+    await sleep(300);
+    const forged = "a forged confirm document starts no Solana seat";
+    assert.equal(seatProgress(t.sol.ctl, 2), why, forged);
+  }
   data.set(path(gidR, "confirm/2"), doc);
   rig.notify();
   await sleep(300);
   assert.equal(seatProgress(t.sol.ctl, 2), "Seat 2 has not started");
+  // A seat that keeps another number: the safety number changed after it confirmed.
+  await t.putSec(gidR, 2, { confirmed: "00000 00000 00000" });
+  const moved = "Seat 2 waits: the safety number changed after this browser confirmed it.";
+  assert.equal(seatProgress(t.sol.ctl, 2), moved);
+  await t.putSec(gidR, 2, { confirmed: null });
+  // Seat 1 says why it cannot add Solana yet.
+  const doc1 = data.get(path(gidR, "confirm/1"));
+  data.delete(path(gidR, "confirm/1"));
+  rig.notify();
+  await sleep(300);
+  await assert.rejects(() => t.sol.add(), /^Error: Seat 1 waits: this browser has not confirmed/);
+  data.set(path(gidR, "confirm/1"), doc1);
+  rig.notify();
+  await sleep(300);
   await addSolana();
   await waitFor("every soldone", () => haveDones(gidR), 30000);
 }

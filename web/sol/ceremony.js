@@ -36,15 +36,30 @@ export const started = (docs) => docs.solstart[1]?.cluster === CLUSTER;
 
 // Why seat i of this browser cannot start yet, or null: its Zcash part is settled and its person
 // confirmed the safety number it has now (also a restored seat, by its own confirm document).
+const numberMoved = (host, gid, i) => {
+  const kept = host.sec(gid, i).confirmed,
+    no = host.safetyNo();
+  return kept !== undefined && kept !== null && !!no && kept !== no;
+};
 const WAITS = [
-  ["has no Zcash key share", (host, gid, i) => !host.sec(gid, i).keyPackage],
-  ["waits for Address checked", (host, gid, i) => host.seatCheck(i) !== true],
   [
-    "this browser has not confirmed the safety number",
-    (host, gid, i) => !host.safetyNo() || host.confirmedNo(i) !== host.safetyNo(),
+    (i) => "Seat " + i + " has no Zcash key share in this browser.",
+    (h, g, i) => !h.sec(g, i).keyPackage,
+  ],
+  [(i) => "Seat " + i + " waits for Address checked.", (h, g, i) => h.seatCheck(i) !== true],
+  [
+    (i) => "Seat " + i + " waits: the safety number changed after this browser confirmed it.",
+    numberMoved,
+  ],
+  [
+    (i) => "Seat " + i + " waits: this browser has not confirmed the safety number.",
+    (h, g, i) => !h.safetyNo() || h.confirmedNo(i) !== h.safetyNo(),
   ],
 ];
-const waitOf = (host, gid, i) => WAITS.find(([, waits]) => waits(host, gid, i))?.[0] ?? null;
+const waitOf = (host, gid, i) => {
+  const wait = WAITS.find(([, waits]) => waits(host, gid, i));
+  return wait ? wait[0](i) : null;
+};
 const seatReady = (host, gid, i) => waitOf(host, gid, i) === null;
 
 const allR1 = (c) =>
@@ -322,9 +337,8 @@ export async function addSolana(c) {
   if (!host.localSeats().includes(1) || !host.canWriteAs(1)) {
     throw new Error("Only the signer of seat 1 can add Solana to this wallet.");
   }
-  if (!seatReady(host, gid, 1)) {
-    throw new Error("Seat 1 must show Address checked, with the safety number confirmed.");
-  }
+  const wait = waitOf(host, gid, 1);
+  if (wait) throw new Error(wait);
   const doc = await host.signedDoc(gid, "solstart/1", 1, { cluster: CLUSTER, at: Date.now() });
   await host.sdb.doc(base + "/solstart/1").set(doc);
 }
@@ -347,7 +361,7 @@ export function seatProgress(c, i) {
   if (others.some((j) => docs.soldkg2[i + "-" + j])) return "Seat " + i + ": sharing keys";
   if (docs.soldkg1[i]) return "Seat " + i + ": round 1 sent";
   const wait = c.host.localSeats().includes(i) ? waitOf(c.host, c.gid, i) : null;
-  return wait ? "Seat " + i + ": " + wait : "Seat " + i + " has not started";
+  return wait ?? "Seat " + i + " has not started";
 }
 
 const PDA_SHAPES = {
