@@ -29,10 +29,8 @@ const SOL_BACKUP_KIND = "zigs-sol-backup";
 // does the Argon2id and the cipher. The passphrase lives only in the dialog's input and in the
 // worker call, never in `ui`.
 const BACKUP_KIND = "zigs-key-share";   // what the sealed text holds, also in a plain file
-// The key share files changed on this date (PROTOCOL.md section 9). Account and Solana files did
-// not, so only the seat backup screens and these two texts say it.
-export const BACKUP_CHANGED = "The backup format changed on 16 October 2026. Older backup files no longer "
-  + "open. Save a new backup now. iPhone and Mac apps need their next version to open new files.";
+// The key share files changed on 16 October 2026 (PROTOCOL.md section 9). Only the restore of an
+// older file says it: a new person has no older file.
 const NOT_A_BACKUP = "This file is not a Zigs backup, or an older version of Zigs made it. "
   + "The backup format changed on 16 October 2026, and older files no longer open. "
   + "Make a new backup on a device that still holds the seat.";
@@ -120,7 +118,6 @@ export function openAccountBackup() {
 // The words of the backup dialog and the call that saves, for a seat and for the account.
 const seatBackup = (i) => ({
   title: "Back up seat " + i, pass: PASS_NOTE, save: (pass) => saveBackup(i, pass),
-  changed: BACKUP_CHANGED,
   file: "The file holds your key share. Anyone who has the file and the passphrase can sign as "
     + "this seat.",
 });
@@ -174,7 +171,6 @@ export function backupDialog() {
       class: "icon-btn", type: "button", "aria-label": "Close", onclick: closeBackup,
     }, "×")),
   el("p", { class: "small" }, words.pass),
-  words.changed ? el("p", { class: "small" }, words.changed) : null,
   el("label", { class: "field" }, el("span", {}, "Passphrase"), pass),
   el("div", { class: "row-actions" },
     el("button", { class: "btn sm", type: "button", disabled: b.busy, onclick: make },

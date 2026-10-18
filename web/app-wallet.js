@@ -20,7 +20,7 @@ import { signing, unreadIn } from "./app-messages.js";
 import { groupVersion, rejectedSeats, seatCheck, verifiedCount } from "./app-dkg.js";
 import { cancelMove, ended, proposeMove, sendBlocker } from "./app-payments.js";
 import { messagesCard } from "./app-thread.js";
-import { BACKUP_CHANGED, openBackup, staleRestoreNote } from "./app-backups.js";
+import { openBackup, staleRestoreNote } from "./app-backups.js";
 import { loadingView } from "./app-shell.js";
 import { focusAfter, render } from "./app-loop.js";
 import { setupView, solSetupCard, solUnfinished } from "./app-setup.js";
@@ -149,7 +149,7 @@ export function setTabBar(f) { tabBar = f; }
 export function backupNote(seats, solSeats = []) {
   const text = "Back up your key share. This browser can forget it: private windows and Tor "
     + "Browser delete it when they close. The file is locked with a passphrase that you choose. "
-    + "Keep the file safe, and keep the passphrase apart from it. " + BACKUP_CHANGED
+    + "Keep the file safe, and keep the passphrase apart from it."
     + (solSeats.length ? " " + SOL_FILE : "");
   const many = seats.length + solSeats.length > 1;
   return el("div", { class: "callout warn", role: "status" },
@@ -461,7 +461,8 @@ function privacyCard() {
     el("p", { class: "small muted" }, "Your key share is created and used in this browser. "
       + "It leaves this browser only if you save a backup. The group server stores encrypted "
       + "data it cannot read. This page downloads blocks from " + host
-      + ", which sees your IP address but never a key. The wallet syncs again on every load."),
+      + ", which sees your IP address but never a key. On each load, the wallet continues its "
+      + "sync from the state that this browser saved."),
     memoSwitch(host),
     el("details", {}, el("summary", {}, "Viewing key"),
       el("div", { class: "addr-full", style: "margin-top:10px" }, w.ufvk),

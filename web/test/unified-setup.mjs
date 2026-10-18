@@ -238,6 +238,8 @@ const byId = (node, id) =>
   const solButtons = () => pageText().match(/Back up Solana, seat \d/g) ?? [];
   await waitFor("the note", () => solButtons().length === 3);
   assert.match(pageText(), /The Solana part of a seat is a second file, with its own passphrase/);
+  // S13: a new wallet has no older file, so the note says nothing about an older format.
+  assert.doesNotMatch(pageText(), /backup format changed|iPhone and Mac apps/);
   const saved = [];
   t.setDownloads({ save: async (file) => void saved.push(file) });
   const words = backupWords(t.sol.ctl, 2);
