@@ -9,7 +9,8 @@ import { engineOffThread, Z } from "./app-engine.js";
 import { loadKept, mySeatSecrets, putSec, saveKept, sec, takeStored } from "./app-keystore.js";
 import { isMe, keysDiffer, localSeats, myUid, signersOf } from "./app-seats.js";
 import {
-  balanceNow, chain, curChain, curNet, inFlight, netName, runSync, SERVER_TIMEOUT_MS,
+  balanceNow, chain, curChain, curNet, dropStalled, inFlight, netName, preferredServers, runSync,
+  SERVER_TIMEOUT_MS,
 } from "./app-chain.js";
 import {
   canWriteAs, mayAct, NO_SEAT_KEY, partNow, signedDoc, signedMode, sigPart, writer,
@@ -201,9 +202,8 @@ export function isOpen(ss) {
 // Every proposal asks the blockers of Send that guard the notes (a proposal that runs, a payment
 // in flight, an open payment, a hold), also "Propose again" on a move.
 // ponytail: the flag holds in this tab only; two tabs or two seats can still race for seconds. A
-// createSpend that never answers keeps it until a reload (S9 adds the timeout). A document whose
-// check still waits does not count as open yet, and neither does a proposal that this browser
-// sees from a sync far behind the chain.
+// document whose check still waits does not count as open yet, and neither does a proposal that
+// this browser sees from a sync far behind the chain.
 const PROPOSING = "The proposal of a payment is not complete yet. Wait a moment.";
 export async function newSpend(...args) {
   const why = holdBlocker();
@@ -223,7 +223,7 @@ async function proposeNow(payees, note, move = null, priority = false, after) {
   // A payee has a memo only when it has text. A proposal without memos stays {to, amount}.
   payees = payees.map(({ to, amount, memo }) => memo ? { to, amount, memo } : { to, amount });
   // `after`: the approved PCZT of an expired payment. The engine spends all of its notes too.
-  const t = J(await chain.cw.createSpend(S(payees), priority, pcztOrNone(after)));
+  const t = J(await spendOrStall(chain, payees, priority, after));
   const ref = sdb.collection("groups/" + gid + "/sessions").doc();
   const fields = proposalFields(payees, note, t, move, Date.now());
   const sig = await sigPart(gid, ref.id, "proposal", fields);
@@ -235,6 +235,23 @@ async function proposeNow(payees, note, move = null, priority = false, after) {
 
 // Only a PCZT text goes to the engine: a click event that a handler passes on is none.
 const pcztOrNone = (p) => (isStr(p) ? p : undefined);
+
+// A proposal with no answer in SPEND_TIMEOUT_MS stops, so Propose works again (S9). The engine may
+// still use the wallet object, so it counts as stalled, and the next sync starts a new one.
+// ponytail: the late answer of the engine is dropped; nothing stops the engine call.
+const SPEND_TIMEOUT_MS = 60000;
+function spendOrStall(c, payees, priority, after) {
+  const cw = c.cw;
+  let timer;
+  const late = new Promise((_, reject) => {
+    timer = setTimeout(() => {
+      if (c.cw === cw) dropStalled(c);
+      reject(new Error("The proposal got no answer in 60 s, so it stopped. Try again."));
+    }, SPEND_TIMEOUT_MS);
+  });
+  return Promise.race([cw.createSpend(S(payees), priority, pcztOrNone(after)), late])
+    .finally(() => clearTimeout(timer));
+}
 
 // Sends every confirmed note to the wallet that replaces this one.
 export async function proposeMove(after = null) {
@@ -270,7 +287,8 @@ export async function broadcastTx(ss) {
   }
 }
 
-// Tries each server in turn; a temporary wallet is enough because broadcasting needs no sync.
+// Tries each server in turn, first those that did not fail lately (S9); a temporary wallet is
+// enough because broadcasting needs no sync.
 // `where` names the network, viewing key and birthday of the sender: the open wallet or account.
 // The error has `refused` when every server answered with a refusal. Any other failure (a timeout,
 // a lost connection) leaves open whether a server took the transaction.
@@ -279,7 +297,7 @@ export async function broadcastAnywhere(txHex, where = {
 }) {
   const errors = [];
   let refused = true;
-  for (const url of where.net.servers) {
+  for (const url of preferredServers(where.net)) {
     const cw = new Z.ChainWallet(where.ufvk, where.birthday, url);
     try { return J(await withTimeout(cw.broadcast(txHex), SERVER_TIMEOUT_MS * 2, new URL(url).host)); }
     catch (e) {

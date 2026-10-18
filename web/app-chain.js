@@ -187,7 +187,7 @@ async function syncOrStall(c, cw) {
 // starts a new object from its state (with the batches before the stall) on the next server.
 // ponytail: each stall leaves one object, which wasm-bindgen frees when it is collected after its
 // stream ends; nothing stops that stream.
-function dropStalled(c) {
+export function dropStalled(c) {
   if (c.url) failedAt.set(c.url, Date.now());
   c.stalled = c.cw;
   c.url = null;

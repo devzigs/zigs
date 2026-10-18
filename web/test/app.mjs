@@ -2254,6 +2254,31 @@ const sealed = (gid, rel, seat, fields, key, names = ["by", "sig"]) =>
       free8();
       await assert.rejects(one, /No notes/);
       assert.equal(t.ui.proposing, false, "on again after the call");
+      // S9: a proposal with no answer in 60 s stops and frees Propose. The engine may still use
+      // the wallet object, so it counts as stalled, and the next sync starts a new one. An answer
+      // ends the wait, and an object that a sync started meanwhile stays.
+      const realTimeout = globalThis.setTimeout;
+      globalThis.setTimeout = (fn, ms, ...a) => realTimeout(fn, ms >= 60000 ? ms / 600 : ms, ...a);
+      const propose9 = (note) => quiet(() => t.newSpend([{ to: "utest1x", amount: 5 }], note))
+        .then(() => "proposed", (e) => e.message);
+      const stallOf = () => [t.chain.stalled ?? null, t.chain.url];
+      engine.createSpend = async () => { throw new Error("No notes."); };
+      assert.equal(await propose9("fast"), "No notes.");
+      await quiet(() => sleep(300));
+      assert.deepEqual(stallOf(), [null, "https://lwd.test"], "an answer ends the wait");
+      engine.createSpend = () => new Promise(() => {});
+      const swapped = propose9("swap");
+      t.chain.cw = { ...engine };
+      await swapped;
+      assert.deepEqual(stallOf(), [null, "https://lwd.test"], "the new object of a sync stays");
+      t.chain.cw = engine;
+      const stuck = propose9("stuck");
+      assert.equal(t.ui.proposing, true, "Propose is off while the engine works");
+      const stuckSaid = await stuck;
+      globalThis.setTimeout = realTimeout;
+      assert.equal(stuckSaid, "The proposal got no answer in 60 s, so it stopped. Try again.");
+      assert.equal(t.ui.proposing, false, "Propose works again");
+      assert.deepEqual(stallOf(), [engine, null], "the object is stalled");
       t.state.sessions = sessions8;
       for (const [i, marks] of marks8) await t.putSec(t.state.gid, i, { marks });
       const { o8c: _o8c, ...marksMe } = t.sec(t.state.gid, me).marks;
@@ -2386,6 +2411,24 @@ const sealed = (gid, rel, seat, fields, key, names = ["by", "sig"]) =>
   const [kept] = await sync("lightwalletd: unavailable");
   assert.equal(kept.error, "lightwalletd: unavailable");
   assert.deepEqual([kept.cw !== null, kept.bal.height], [true, 9], "another error keeps the state");
+  // S9: a broadcast starts at the servers that did not fail in the last 5 minutes.
+  const tried = [];
+  class Recorder {
+    constructor(ufvk, birthday, url) { tried.push(url); }
+    async broadcast() { return JSON.stringify({ txid: "t9" }); }
+    free() {}
+  }
+  const down = async (url) => { if (url.includes("a9")) throw new Error("down"); return 1; };
+  t.setZ({ ...Z, latestHeight: down, ChainWallet: Recorder });
+  const where = (net) => ({ net, ufvk: "u", birthday: 1 });
+  const fresh = { servers: ["https://a8.test", "https://b8.test"] };
+  await t.broadcastAnywhere("00", where(fresh));
+  assert.deepEqual(tried, ["https://a8.test"], "control: the configured order");
+  const net9 = { servers: ["https://a9.test", "https://b9.test"] };
+  assert.equal(await t.pickServer(net9), "https://b9.test");
+  tried.length = 0;
+  assert.equal((await t.broadcastAnywhere("00", where(net9))).txid, "t9");
+  assert.deepEqual(tried, ["https://b9.test"], "the server that failed is not asked first");
 }
 
 

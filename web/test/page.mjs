@@ -10,7 +10,8 @@ import { proposalFields } from "../signed.js";
 export const NAMES = [
   "accountCard", "accountInbox", "acct", "acctBalance", "act", "addPersonalContact", "addressBlock",
   "addressFor", "adoptPersonal", "applyBackup", "approve", "backupDialog", "backupNote",
-  "backupText", "balCache", "banner", "blockTime", "broadcastTx", "busy", "cancelAction",
+  "backupText", "balCache", "banner", "blockTime", "broadcastAnywhere", "broadcastTx", "busy",
+  "cancelAction",
   "cancelPayment", "canWriteAs", "chain", "changePersonal", "chatRequest", "checkShape",
   "cleanGroup", "closeSession",
   "composer", "confirmedNetwork", "contactDialog", "contactsCard", "contactView",
@@ -29,7 +30,7 @@ export const NAMES = [
   "openContactDialog",
   "openDoc",
   "once", "openGroup", "openSession", "otherMessages", "persistPersonal", "persistSealed",
-  "personal", "personalCard",
+  "personal", "personalCard", "pickServer",
   "personalError", "personalPending", "priorityTimes", "proposalFields", "proposeAgain", "proposer",
   "proposeRequest", "proposeWallets", "putSec", "raw", "reactSession", "readsMemos", "ready",
   "recipientCheck", "refilter", "removeAccount", "requestCard", "requestOf", "rereadPersonal",
