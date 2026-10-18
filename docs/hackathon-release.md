@@ -218,8 +218,9 @@ Evidence marked "checked" was read in the repo during this synthesis. All other 
   Testnet only.
 - **Fix:**
   1. A Worker route `/zns` behind the gate, like `/lwd`: it fetches the whole testnet registry
-     from a public resolver (`list_names` pages, then `events` deltas with no name filter) and caches
-     it. It forwards no user header.
+     from a public resolver (all `list_names` pages on each refresh, with no name filter) and caches
+     it. It forwards no user header. A full load on each refresh heals a reorg within one refresh;
+     deltas came back wrong for up to 1 hour after a reorg (WP-ZN QA round 1, F2).
   2. `web/zns.js`: the device looks names up in the downloaded registry. It never asks a resolver
      for one name.
   3. The Send form accepts `name`, `name.zec` and `name.zcash`, and shows the address that the name
