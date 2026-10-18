@@ -243,8 +243,10 @@ function startText() {
   if (sec(state.gid, 1)?.solAuto === true) return "Starts when the Zcash address is checked.";
   return "Tap Add Solana on the Solana tab to start it.";
 }
+// The texts of app-sol.js that start with "Solana" say what failed already.
+const loadText = (e) => e.startsWith("Solana") ? e : "Solana did not load: " + e;
 const solKeyStep = (s) => s ? SOL_KEY[s.status](s)
-  : solError ? ["bad", "Solana did not load: " + solError]
+  : solError ? ["bad", loadText(solError)]
   : ["", "Starts after the Zcash part."];
 
 const funded = (f) => !!f.balance && f.balance !== "0 SOL";
