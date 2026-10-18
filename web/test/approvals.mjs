@@ -50,14 +50,15 @@ assert.equal(bucketOf({ status: "collecting", error: true }), null, "cancelled, 
 assert.equal(bucketOf({ status: undefined }), "attention", "a document with no status");
 console.log("ok  the named cases");
 
-const known = { loaded: true, failed: false, checking: false, ignored: 0, solKnown: true };
+const known = { loaded: true, failed: false, checking: false, ignored: 0, sol: false };
 assert.equal(emptyState(known), "empty");
 assert.equal(emptyState({ ...known, loaded: false }), "loading", "the payments did not arrive");
 assert.equal(emptyState({ ...known, failed: true }), "failed", "their read failed");
 assert.equal(emptyState({ ...known, failed: true, loaded: false }), "failed");
 assert.equal(emptyState({ ...known, checking: true }), "loading", "a check is open");
-assert.equal(emptyState({ ...known, solKnown: false }), "loading", "Solana not read yet");
 assert.equal(emptyState({ ...known, ignored: 2 }), "ignored", "records failed their check");
+assert.equal(emptyState({ ...known, sol: true }), "zec",
+  "with a Solana part, the empty text speaks of Zcash only");
 console.log("ok  the inbox says that nothing waits only when it knows");
 
 const ready = { status: "ready" };

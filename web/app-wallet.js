@@ -446,7 +446,7 @@ function approvalsTab() {
     el("p", { class: "small muted" }, "Open a payment to approve, sign or send it. A payment "
       + "needs " + state.g.t + " of " + state.g.n + " signers."),
     state.sessionsFailed ? el("div", { class: "callout bad", role: "alert" }, INBOX_EMPTY.failed)
-      : sections.length ? null : inboxEmpty(sol),
+      : sections.length ? null : inboxEmpty(),
     ...sections, other);
 }
 
@@ -485,13 +485,13 @@ const solInbox = () => solLine({ on: solOn(), error: solError, loading: !!(sol |
 const INBOX_EMPTY = {
   failed: "The payments of this wallet could not be read. Reload the page.",
   loading: "Checking the payments of this wallet…",
-  ignored: "No payment waits here. " + IGNORED_NOTE,
+  ignored: "No payment shows here. " + IGNORED_NOTE,
+  zec: "No Zcash payment waits for this browser, the other signers or the network.",
   empty: "No payment waits for this browser, the other signers or the network.",
 };
-function inboxEmpty(sol) {
-  const solKnown = !sol || ["info", "review"].includes(sol.kind);
+function inboxEmpty() {
   const why = emptyState({ loaded: state.sessionsLoaded, failed: state.sessionsFailed,
-    checking: state.pending, ignored: state.ignored, solKnown });
+    checking: state.pending, ignored: state.ignored, sol: solOn() });
   return el("div", { class: "card empty", role: "status" }, INBOX_EMPTY[why]);
 }
 

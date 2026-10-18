@@ -35,16 +35,18 @@ const stuck = (f) => f.held || f.check;
 const over = (f) => f.ended || f.error;
 
 /**
- * What the inbox may say when it shows no payment: "failed", "loading", "ignored" or "empty".
- * Only "empty" lets the page say that nothing waits.
+ * What the inbox may say when it shows no payment: "failed", "loading", "ignored", "zec" or
+ * "empty". Only "empty" lets the page say that no payment waits; "zec" says it of Zcash only,
+ * because the Solana line counts only the proposals that this browser can approve.
  * @param {object} s loaded: the payments of the wallet arrived; failed: their read failed;
  *   checking: a check of a stored record is still open; ignored: records that failed their check;
- *   solKnown: the Solana part is off, or its state is known.
+ *   sol: the wallet can have a Solana part.
  */
-export function emptyState({ loaded, failed, checking, ignored, solKnown }) {
+export function emptyState({ loaded, failed, checking, ignored, sol }) {
   if (failed) return "failed";
-  if (!loaded || checking || !solKnown) return "loading";
-  return ignored ? "ignored" : "empty";
+  if (!loaded || checking) return "loading";
+  if (ignored) return "ignored";
+  return sol ? "zec" : "empty";
 }
 
 const SOL_READING = { kind: "loading", text: "Reading the Solana proposals…" };
