@@ -7,7 +7,9 @@ import { gkeys, idb, loadSnapshot, saveSnapshot, snapId } from "./app-keystore.j
 import { localSeats } from "./app-seats.js";
 import { leavesOf } from "./app-dom.js";
 import { myVerified } from "./app-dkg.js";
-import { expired, txidOf } from "./app-payments.js";
+import {
+  approvedHold, approvedSpent, DAY2_BLOCKS, expired, expiryAt, landed, txidOf,
+} from "./app-payments.js";
 import { acct } from "./app-account.js";
 import { render } from "./app-loop.js";
 
@@ -197,9 +199,23 @@ export const curChain = () => chain && chain.gid === state.gid ? chain : null;
 // counts their inputs as unspent, so the app subtracts them itself.
 export function inFlight() {
   const c = curChain();
-  if (!c || !c.sent) return [];
-  return state.sessions.filter((ss) => ss.broadcastTxid && ss.final
-    && !c.sent.has(txidOf(ss) ?? ss.final.txid) && !expired(ss));
+  if (!c || !c.sent || !c.bal) return [];
+  return state.sessions.filter((ss) => keepsNotes(ss, c));
+}
+
+// A browser that approved and saw the payment sent holds by what it approved (approvedHold). For
+// any other browser one seat writes the document, so a payment with an error part, with no
+// expiry that counts (see expiryAt), or that expires later than any approval allows holds no
+// notes: holding them for ever would stop every payment (TICKETS.md ZEC-13).
+const sentNow = (ss) => !!(ss.broadcastTxid && ss.final && !ss.error);
+// A block holds the payment, or it can no longer land.
+const over = (ss) => landed(ss) || expired(ss) || approvedSpent(ss);
+function keepsNotes(ss, c) {
+  if (approvedHold(ss)) return true;
+  if (!sentNow(ss)) return false;
+  const at = expiryAt(ss);
+  if (at === null || at > c.bal.height + 1 + DAY2_BLOCKS) return false;
+  return !c.sent.has(txidOf(ss) ?? ss.final.txid) && !over(ss);
 }
 export function balanceNow(b) {
   const out = inFlight(), sum = (f) => out.reduce((n, ss) => n + finite(f(ss)), 0);

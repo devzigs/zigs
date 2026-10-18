@@ -27,8 +27,10 @@ const facts = {
 assert.deepEqual(verify(facts), { fee: 10_000, problems: [] });
 assert.equal(verify({ ...facts, tips: [4509021, 4509025] }).problems.length, 0, "inside the tips");
 const failing = (change) => verify({ ...facts, ...change }).problems.length;
-assert.equal(failing({ tips: [4509024, 4509025] }), 1, "expiry too early");
-assert.equal(failing({ tips: [4509021, 4509022] }), 1, "expiry too late");
+assert.equal(failing({ tips: [4509025, 4509026] }), 0, "2 blocks of server skew pass");
+assert.equal(failing({ tips: [4509026, 4509027] }), 1, "expiry too early");
+assert.equal(failing({ tips: [4509018, 4509021] }), 0, "2 blocks of server skew pass");
+assert.equal(failing({ tips: [4509018, 4509020] }), 1, "expiry too late");
 assert.equal(failing({ totalAfter: 12_085_000, pageFee: 5000 }), 1, "k = 1");
 assert.equal(failing({ totalAfter: 12_078_000, pageFee: 12_000 }), 1, "no multiple of 5000");
 assert.equal(failing({ pageFee: 15_000 }), 1, "page fee differs");

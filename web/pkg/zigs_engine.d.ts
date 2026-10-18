@@ -29,9 +29,11 @@ export class ChainWallet {
     /**
      * `payees` is a JSON list: `[{"to": "<unified address>", "amount": <zat>, "memo": "<text>"},
      * …]`. The memo is optional: at most 512 UTF-8 bytes. `priority` pays 10 times the ZIP 317
-     * fee. The payment expires one day after it is built (see `expiry`).
+     * fee. The payment expires one day after it is built (see `expiry`). `after` (optional) is
+     * the PCZT of an expired payment that this one replaces: this one also spends every note of
+     * it, and fails if one of them is spent now.
      */
-    createSpend(payees: string, priority: boolean): Promise<string>;
+    createSpend(payees: string, priority: boolean, after?: string | null): Promise<string>;
     /**
      * Transactions whose memos are not read yet: `[{"txid", "hash", "height"}, …]`. Pass `hash`
      * to `fetchTransaction`, then the result to `attachTransaction`.
@@ -217,7 +219,7 @@ export interface InitOutput {
     readonly chainwallet_balance: (a: number) => [number, number];
     readonly chainwallet_broadcast: (a: number, b: number, c: number) => any;
     readonly chainwallet_createMessage: (a: number, b: number, c: number, d: number, e: number) => any;
-    readonly chainwallet_createSpend: (a: number, b: number, c: number, d: number) => any;
+    readonly chainwallet_createSpend: (a: number, b: number, c: number, d: number, e: number, f: number) => any;
     readonly chainwallet_memoNeeds: (a: number) => [number, number, number, number];
     readonly chainwallet_new: (a: number, b: number, c: number, d: number, e: number) => [number, number, number];
     readonly chainwallet_received: (a: number) => [number, number];

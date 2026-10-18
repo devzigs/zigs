@@ -946,10 +946,11 @@ const sealed = (gid, rel, seat, fields, key, names = ["by", "sig"]) =>
     assert.deepEqual(t.finishButtons(sentOne), [], "a node refuses it now");
     assert.match(textOf(t.expiryLine(sentOne)), /can no longer go to the network/);
     tipAt(4503459);
-    assert.equal(textOf(t.statusChip(sentOne)), "Expired");
+    // After signing, only the engine can say "Expired" (TICKETS.md ZEC-13): the chip asks to check.
+    assert.equal(textOf(t.statusChip(sentOne)), "Check");
     const unmarkedOne = { ...proposal, id: "x5", signed: "s", final: { txid: "f", tx_hex: "00" },
       broadcastError: "timeout" };
-    assert.equal(textOf(t.statusChip(unmarkedOne)), "Expired");
+    assert.equal(textOf(t.statusChip(unmarkedOne)), "Check");
     // One seat can rewrite the proposal of a signed payment, so after signing the page never says
     // that no block holds it and never offers "Propose again": it asks the signers to check.
     for (const signedOne of [sentOne, unmarkedOne]) {
@@ -980,6 +981,651 @@ const sealed = (gid, rel, seat, fields, key, names = ["by", "sig"]) =>
     t.state.sessions.splice(t.state.sessions.indexOf(move), 1);
     t.state.g = group;
     delete t.ready.MV1;
+
+    {
+      // ── ZEC-13: after signing, "done", "expired" and "Propose again" come from the engine
+      // The engine is a stub that records what the page passes. The browser keeps the sighash
+      // that it approved (in the seat secrets) and the PCZT (sealed in IndexedDB), and passes them,
+      // not a proposal that one seat rewrote.
+      const keptStore = new Map(), idbBefore = t.getIdb();
+      let slowKey = null, slowGate = null;
+      t.setIdb(async (mode, fn) => {
+        const r = fn({
+          get: (k) => ({ result: keptStore.get(k), wait: k === slowKey ? slowGate : null }),
+          put: (v, k) => { keptStore.set(k, v); return { result: k }; },
+          delete: (k) => { keptStore.delete(k); return { result: undefined }; },
+        });
+        if (r.wait) await r.wait;
+        return r.result;
+      });
+      const tx = (sighash, txid) => ({ sighash, txid, tx_version: "V6", spends: [], lines: [],
+        fee: 10000, standard_fee: 10000, expiry_height: 4503456 });
+      // The approved transaction pays what the test proposals list: 5 to utest1x.
+      const pays5 = [{ kind: "output", who: "utest1x", value: 5, memo_status: "empty" }];
+      const decodes = { PA: { ...tx("aa", "tx-a"), lines: pays5 }, PB: tx("bb", "tx-b"),
+        PC: tx("cc", "tx-c"), PD: tx("dd", "tx-d"), SA: { ...tx("aa", "tx-a"), lines: pays5 },
+        PH: { ...tx("hh", "tx-h"), fee: 20000 },
+        PE: { ...tx("ee", "tx-e"), expiry_height: 4400000 },
+        PF: { ...tx("ff", "tx-f"), expiry_height: 4999999 },
+        PG: { ...tx("aa", "tx-a"), expiry_height: 4503556 } };
+      const asked = [];
+      let answer = () => ({ state: "unknown", txid: null, why: "no transaction" });
+      const S = JSON.stringify;
+      // From = 4,503,456 - 6,912 = 4,496,544: x4 is at the first block that counts, x5 before it.
+      const history = [{ txid: "x1", h: 4496000 }, { txid: "x2", h: 4497000 },
+        { txid: "x3", h: 4500000 }, { txid: "x4", h: 4496544 }, { txid: "x5", h: 4496543 }];
+      const engine = {
+        sessionState: (p, sg, a) => { asked.push([p, sg, a]); return S(answer(p, sg, a)); },
+        createSpend: async (...args) => { asked.push(["spend", ...args]); return S(spend); },
+        snapshot: () => S({ sent: history }),
+        free() {},
+      };
+      // A new chain state is a new sync: the page asks the engine again.
+      const at = (height, sent = new Set(), balAt = Date.now()) => {
+        const c = { gid: t.state.gid, url: "https://lwd.test", bal: { spendable: 1e8, pending: 0,
+          height }, balAt, received: [], sent, cw: engine };
+        t.setChain(c);
+        return c;
+      };
+      t.setZ({ ...fakeZ, latestHeight: async () => 4500001, normalizeAddress: (a) => a,
+        inspect: (p) => { if (!decodes[p]) throw new Error("unreadable"); return S(decodes[p]); },
+        signCommit: () => S({ nonces: ["n"], commitments: ["c"] }) });
+      const [me, other, third] = t.localSeats();
+      const markOf = (seat, sid) => (t.sec(t.state.gid, seat).marks || {})[sid];
+      const none = { rows: [], extra: [] };
+      // These calls show banners: they run with the stub page, not the recorder.
+      const quiet = async (fn) => {
+        const drawing = globalThis.document;
+        globalThis.document = realDocument;
+        try { return await fn(); } finally { globalThis.document = drawing; }
+      };
+      // The page rebuilds its list from the store after a write: a test session goes in by id.
+      const put = (...list) => {
+        const ids = new Set(list.map((x) => x.id));
+        t.state.sessions = [...t.state.sessions.filter((x) => !ids.has(x.id)), ...list];
+      };
+      const open = (id, pczt = "PA", createdAt = 10) => ({ id, pczt, status: "collecting",
+        amount: 5, createdAt, payees: [{ to: "utest1x", amount: 5 }] });
+      const unburn = async (seat, sid) => {
+        const nonces = { ...t.sec(t.state.gid, seat).nonces };
+        delete nonces[sid];
+        await t.putSec(t.state.gid, seat, { nonces });
+      };
+      const approved = async (seat, ss) => { put(ss); await quiet(() => t.approve(ss, seat)); };
+
+      // An approval keeps the sighash after the nonce burn, and the PCZT in its own store.
+      at(4500000);
+      const za = open("za");
+      await approved(me, za);
+      assert.deepEqual([markOf(me, "za").approved, markOf(me, "za").tip], ["aa", 4500001],
+        "the sighash and the chain height of the approval");
+      assert.ok(keptStore.has(`kept:${t.state.gid}:za`), "the approved PCZT is kept, sealed");
+      await unburn(me, "za");
+      assert.equal(markOf(me, "za").approved, "aa", "the burn of the nonce leaves the approval");
+      assert.equal(JSON.parse(t.backupText(me)).secret.marks, undefined, "no marks in a backup");
+
+      // Signing started. One seat rewrites the proposal: the page passes the kept PCZT and the
+      // approved sighash, and only the engine says "expired".
+      const signedA = { ...za, pczt: "PB", status: "signing", package: "PK", signed: "SA" };
+      put(signedA);
+      t.noteSessions();
+      assert.equal(t.sawSigning(t.state.gid, "za"), true, "this browser saw the signing start");
+      answer = (p, sg, a) => a === "aa" && p === "PA"
+        ? { state: "expired", txid: "tx-a", why: "it expired and its notes are unspent" }
+        : { state: "unknown", txid: null, why: "no" };
+      at(4503500);
+      assert.equal(textOf(t.statusChip(signedA)), "Expired");
+      assert.deepEqual(asked.at(-1), ["PA", "SA", "aa"], "the kept PCZT and sighash, not PB");
+      const line = textOf(t.expiryLine(signedA));
+      assert.match(line, /none of its notes is spent/);
+      assert.match(line, /3 transactions of this wallet went on chain from block 4,496,544/,
+        "the engine's list, from 2 days of blocks before the expiry, the first block included");
+      assert.deepEqual(labels(t.nextAction(signedA, null, none)), ["Propose again"]);
+      Object.assign(t.ui, { send: false, after: null });
+      await quiet(() => t.proposeAgain(signedA));
+      assert.deepEqual([t.ui.send, t.ui.after], [true, "PA"], "the new proposal spends its notes");
+      t.ui.send = false;
+      const again = [{ to: "utest1x", amount: 5 }];
+      await quiet(() => t.newSpend(again, "again", null, false, t.ui.after));
+      assert.equal(asked.find((x) => x[0] === "spend")[3], "PA", "createSpend gets the old PCZT");
+      t.ui.after = null;
+      // The fee comes from the approved transaction, and rows that one seat rewrote are not
+      // proposed again.
+      const highA = { ...signedA, pczt: "PH" };
+      put(highA);
+      await quiet(() => t.proposeAgain(highA));
+      assert.deepEqual([t.ui.send, t.ui.priority], [true, false], "the fee of the approved one");
+      Object.assign(t.ui, { send: false, after: null });
+      const evilA = { ...signedA, payees: [{ to: "utest1evil", amount: 5 }] };
+      put(evilA);
+      await assert.rejects(quiet(() => t.proposeAgain(evilA)),
+        /recipients of this payment changed/);
+      assert.equal(t.ui.send, false);
+      assert.match(textOf(t.sessionLayer(evilA)), /proposal changed after a seat of this browser/);
+      put(signedA);
+      await settle();
+
+      // A reset of the signed session to a fresh proposal asks no seat of this browser to approve
+      // again, the approval is refused, and Cancel does not show.
+      const reset = open("za", "PB");
+      put(reset);
+      answer = () => ({ state: "unknown", txid: "tx-a", why: "it may still land" });
+      at(4500000);
+      assert.equal(t.needsMyApproval(t.state.gid, reset), false);
+      await assert.rejects(quiet(() => t.approve(reset, other)),
+        /signing of this payment started before/);
+      assert.deepEqual(labels(t.nextAction(reset, null, none)), [], "no Propose again");
+      assert.deepEqual(t.cancelAction(reset), [], "no Cancel on a reset document");
+
+      // An approver that never saw the package: after a reset to a proposal that expired, the
+      // engine decides, and while it says "unknown" the page asks the signers to check.
+      const zh = open("zh");
+      await approved(me, zh);
+      await unburn(me, "zh");
+      const zhReset = open("zh", "PD");
+      put(zhReset);
+      at(4503500);
+      assert.equal(t.sawSigning(t.state.gid, "zh"), false);
+      assert.ok(t.verdict(zhReset), "the approval is enough for the engine to decide");
+      assert.equal(textOf(t.statusChip(zhReset)), "Check");
+      assert.deepEqual(labels(t.nextAction(zhReset, null, none)), []);
+
+      // A seat whose nonce was lost but whose approval stays is not asked again and is refused.
+      // A changed proposal is refused for another seat of this browser.
+      at(4500000);
+      const zs = open("zs", "PC");
+      await approved(me, zs);
+      await unburn(me, "zs");
+      await assert.rejects(quiet(() => t.approve(zs, me)), /already approved this payment/);
+      const zsChanged = open("zs", "PB");
+      put(zsChanged);
+      await assert.rejects(quiet(() => t.approve(zsChanged, other)), /changed after this browser/);
+      const zp = open("zp", "PC");
+      put(zp);
+      for (const seat of [me, other, third]) {
+        await t.putSec(t.state.gid, seat, { marks: { ...t.sec(t.state.gid, seat).marks,
+          zp: { approved: "cc" } } });
+      }
+      assert.equal(t.needsMyApproval(t.state.gid, zp), false, "every seat approved");
+
+      // The signing starts while the approval waits for the chain height: it is refused.
+      const zw = open("zw", "PC");
+      put(zw);
+      let release;
+      const gate = new Promise((done) => { release = done; });
+      t.setZ({ ...fakeZ, latestHeight: () => gate.then(() => 4500001),
+        inspect: (p) => { if (!decodes[p]) throw new Error("unreadable"); return S(decodes[p]); },
+        signCommit: () => S({ nonces: ["n"], commitments: ["c"] }) });
+      const waiting = quiet(() => t.approve(zw, third));
+      put({ ...zw, package: "PK", status: "signing" });
+      t.noteSessions();
+      release();
+      await assert.rejects(waiting, /signing of this payment started before/);
+      t.setZ({ ...fakeZ, latestHeight: async () => 4500001, normalizeAddress: (a) => a,
+        inspect: (p) => { if (!decodes[p]) throw new Error("unreadable"); return S(decodes[p]); },
+        signCommit: () => S({ nonces: ["n"], commitments: ["c"] }) });
+
+      // Without the kept PCZT, the notes of "Propose again" come from the signed part when its
+      // sighash is the approved one.
+      const zf = { ...open("zf", "PB"), package: "PK", signed: "SA", status: "signing" };
+      put(zf);
+      await t.putSec(t.state.gid, me, { marks: { ...t.sec(t.state.gid, me).marks,
+        zf: { approved: "aa" } } });
+      answer = (p, sg, a) => a === "aa" ? { state: "expired", txid: "tx-a", why: "x" }
+        : { state: "unknown", txid: null, why: "no" };
+      at(4503500);
+      Object.assign(t.ui, { send: false, after: null });
+      await quiet(() => t.proposeAgain(zf));
+      assert.equal(t.ui.after, "SA");
+      Object.assign(t.ui, { send: false, after: null });
+
+      // The engine says "expired", but no PCZT here has the approved sighash: the page cannot tell
+      // which notes a new proposal must spend, so it offers no Propose again.
+      const zn = { ...open("zn", "PB"), package: "PK", status: "signing" };
+      put(zn);
+      await t.putSec(t.state.gid, me, { marks: { ...t.sec(t.state.gid, me).marks,
+        zn: { approved: "aa" } } });
+      at(4503500);
+      assert.deepEqual(t.nextAction(zn, null, none), []);
+      assert.equal(textOf(t.statusChip(zn)), "Check");
+      // A sent payment whose proposal does not decode: the engine's "expired" frees its notes,
+      // and while it may still land it holds them.
+      const zx = { ...open("zx", "PX"), package: "PK", signed: "SA", status: "broadcast",
+        broadcastTxid: "tx-x", final: { txid: "tx-x", tx_hex: "00" }, broadcastAt: 1 };
+      put(zx);
+      await t.putSec(t.state.gid, me, { marks: { ...t.sec(t.state.gid, me).marks,
+        zx: { approved: "aa" } } });
+      at(4503500);
+      assert.equal(t.inFlight().includes(zx), false, "the engine says that it expired");
+      answer = () => ({ state: "unknown", txid: "tx-a", why: "it may still land" });
+      at(4500100);
+      assert.equal(t.inFlight().includes(zx), true, "it may still land");
+
+      // Another tab marked the signing start of a session that this tab has not noted: the mark
+      // counts at once. Blocked or broken storage keeps the marks of this tab.
+      const zr = open("zr", "PC");
+      put(zr);
+      localStorage.setItem("zf-signing", JSON.stringify({
+        ...JSON.parse(localStorage.getItem("zf-signing") || "{}"), [t.state.gid + ":zr"]: true }));
+      at(4500000);
+      // The approval reads the key at once; other checks read it at most every 250 ms.
+      await assert.rejects(quiet(() => t.approve(zr, third)), /signing of this payment started/);
+      await quiet(() => sleep(300));
+      assert.equal(t.needsMyApproval(t.state.gid, zr), false, "the other tab's mark counts");
+      const realGet = localStorage.getItem;
+      const before = realGet.call(localStorage, "zf-signing");
+      localStorage.getItem = () => { throw new Error("blocked"); };
+      put({ ...open("zq", "PC"), package: "PK", status: "signing" });
+      t.noteSessions();
+      localStorage.getItem = realGet;
+      assert.equal(localStorage.getItem("zf-signing"), before, "a blocked read writes nothing");
+      assert.equal(t.sawSigning(t.state.gid, "zr"), true, "a blocked read drops no mark");
+      t.noteSessions();   // the read works again: the mark of zq is saved now
+      const stored = JSON.parse(localStorage.getItem("zf-signing"));
+      assert.equal(stored[t.state.gid + ":zr"] && stored[t.state.gid + ":zq"], true, "merged");
+      localStorage.setItem("zf-signing", "{broken");
+      assert.equal(t.sawSigning(t.state.gid, "zr"), true, "a broken stored text drops no mark");
+      localStorage.setItem("zf-signing", "{}");
+      assert.equal(t.sawSigning(t.state.gid, "zr"), true, "a stored text without it drops none");
+      localStorage.setItem("zf-signing", JSON.stringify(stored));
+
+      // A seen session that is still signing keeps its Cancel; a sent one says "Confirming"
+      // until a block holds it.
+      const live = { ...open("zv", "PC"), package: "PK", status: "signing" };
+      put(live);
+      t.noteSessions();
+      assert.deepEqual(labels(t.cancelAction(live)), ["Cancel payment"]);
+      const liveReset = open("zv", "PC");
+      put(liveReset);
+      assert.deepEqual(t.cancelAction(liveReset), [], "no Cancel after a reset, without approval");
+      put(live);
+      const going = { ...live, status: "broadcast", signed: "SC", broadcastTxid: "tx-c",
+        final: { txid: "tx-c", tx_hex: "00" }, broadcastAt: Date.now() };
+      put(going);
+      answer = () => ({ state: "unknown", txid: "tx-c", why: "it may still land" });
+      at(4500100);
+      assert.equal(textOf(t.statusChip(going)), "Confirming");
+
+      // A sent payment holds no notes when one seat can make it hold them for ever: an error part,
+      // a proposal that does not decode, an expiry more than two days away.
+      const failed = { ...going, id: "zy", error: "Failed." };
+      const unreadable = { ...going, id: "zu", pczt: "UNREADABLE" };
+      const far = { ...going, id: "zt", pczt: "PF" };
+      put(failed, unreadable, far);
+      at(4500100);
+      for (const x of [failed, unreadable, far]) {
+        assert.equal(t.inFlight().includes(x), false, x.id + " holds no notes");
+      }
+      assert.equal(t.inFlight().includes(going), true, "an honest sent payment holds its notes");
+
+      // On a browser that approved, the expiry of the approved transaction counts, not that of a
+      // proposal that one seat rewrote. Without the approved transaction, nothing that the seat
+      // approved can land two days of blocks after its approval.
+      const zk = { ...open("zk", "PA"), signed: "SA", package: "PK", status: "broadcast",
+        broadcastTxid: "tx-a", final: { txid: "tx-a", tx_hex: "00" }, broadcastAt: Date.now() };
+      put(zk);
+      await t.putSec(t.state.gid, me, { marks: { ...t.sec(t.state.gid, me).marks,
+        zk: { approved: "aa", tip: 4500001 } } });
+      const zkRewritten = { ...zk, pczt: "PE" };
+      put(zkRewritten);
+      answer = () => ({ state: "unknown", txid: "tx-a", why: "it may still land" });
+      at(4500100);
+      assert.equal(t.expiryAt(zkRewritten), 4503456, "the expiry of the approved one");
+      assert.equal(t.expired(zkRewritten), false);
+      assert.equal(t.inFlight().includes(zkRewritten), true, "it may still land");
+      const zj = { ...zkRewritten, id: "zj", signed: "" };
+      put(zj);
+      await t.putSec(t.state.gid, me, { marks: { ...t.sec(t.state.gid, me).marks,
+        zj: { approved: "aa", tip: 4500001 } } });
+      at(4506916);
+      assert.equal(t.expiryAt(zj), null, "no PCZT with the approved sighash");
+      assert.equal(t.expired(zj), false, "the ceiling is 4,500,001 + 1 + 6,912 + 3");
+      at(4506917);
+      assert.equal(t.expired(zj), true);
+      assert.match(textOf(t.expiryLine(zj)), /can no longer go on chain/);
+
+      // A verdict of "done" counts again after a sync without its txid (a reorganisation).
+      answer = () => ({ state: "done", txid: "tx-a", why: "a synced block holds it" });
+      at(4500100, new Set(["tx-a"]));
+      assert.equal(textOf(t.statusChip(zk)), "Sent");
+      answer = () => ({ state: "unknown", txid: "tx-a", why: "it may still land" });
+      at(4500101, new Set());
+      assert.notEqual(textOf(t.statusChip(zk)), "Sent", "a reorganisation took it back");
+
+      // Two expired payments with other expiries: each callout counts from its own block.
+      const zg = { ...signedA, id: "zg", pczt: "PG", signed: "" };
+      put(zg);
+      await t.putSec(t.state.gid, me, { marks: { ...t.sec(t.state.gid, me).marks,
+        zg: { approved: "aa", tip: 4500001 } } });
+      answer = (p, sg, a) => (a === "aa"
+        ? { state: "expired", txid: "tx-a", why: "x" }
+        : { state: "unknown", txid: null, why: "no" });
+      at(4503600);
+      assert.match(textOf(t.expiryLine(signedA)), /from block 4,496,544/);
+      assert.match(textOf(t.expiryLine(zg)), /from block 4,496,644/);
+
+      // A load of a kept PCZT that ends after an approval does not replace the approved one.
+      answer = () => ({ state: "unknown", txid: "tx-a", why: "it may still land" });
+      const zz = open("zz", "PA");
+      put(zz);
+      const sealedOld = Z.secretSeal(t.gkeys[t.state.gid], `kept\n${t.state.gid}:zz`, "PC");
+      keptStore.set(`kept:${t.state.gid}:zz`, sealedOld);
+      slowKey = `kept:${t.state.gid}:zz`;
+      let releaseLoad;
+      slowGate = new Promise((done) => { releaseLoad = done; });
+      await t.putSec(t.state.gid, other, { marks: { ...t.sec(t.state.gid, other).marks,
+        zz: { approved: "aa", tip: 4500001 } } });
+      at(4500100);
+      t.verdict(zz);   // starts the load, which waits
+      await approved(me, zz);
+      releaseLoad();
+      await sleep(20);
+      at(4500101);
+      t.verdict(zz);
+      assert.equal(asked.at(-1)[0], "PA", "the approved PCZT stays");
+      slowKey = null;
+
+      // The signed part of an older payment, copied into the session: a browser that approved does
+      // not show it as sent, offers no Propose again and asks the signers to check. tx-b, the txid
+      // of the rewritten proposal, is an older payment that a block holds.
+      const copied = { ...signedA, signed: "OLD" };
+      put(copied);
+      answer = () => ({ state: "unknown", txid: "tx-a", why: "the combined signatures cover "
+        + "another transaction than the one this device approved" });
+      at(4503500, new Set(["tx-old", "tx-b"]));
+      assert.equal(textOf(t.statusChip(copied)), "Check");
+      assert.deepEqual(t.nextAction(copied, null, none), []);
+      assert.match(textOf(t.expiryLine(copied)), /cannot prove.*another transaction/s);
+      // The approved transaction that a block holds is "done", whatever the signed part says, and
+      // a cancel part that one seat writes does not hide it. It no longer holds Send.
+      answer = () => ({ state: "done", txid: "tx-a", why: "a synced block holds it" });
+      at(4503500, new Set(["tx-a"]));
+      assert.equal(textOf(t.statusChip(copied)), "Sent");
+      assert.equal(t.expiryLine(copied), null);
+      const cancelled = { ...copied, error: "Cancelled by a seat." };
+      assert.equal(textOf(t.statusChip(cancelled)), "Sent");
+      const rewrittenSent = { ...signedA, broadcastTxid: "tx-b", final: { txid: "tx-b",
+        tx_hex: "00" }, broadcastAt: 1 };
+      put(rewrittenSent);
+      at(4500100, new Set(["tx-a"]));
+      assert.equal(t.inFlight().includes(rewrittenSent), false, "the approved one landed");
+      assert.doesNotMatch(String(t.sendBlocker()), /waiting for its block/);
+
+      // A browser that did not approve keeps no tie and shows what t seats signed. A sent payment
+      // frees its notes by height, and one whose signed transaction a block holds is "Sent" and
+      // holds no notes.
+      const loose = { id: "zl", pczt: "PD", status: "broadcast", signed: "SL",
+        broadcastTxid: "tx-d", final: { txid: "tx-d", tx_hex: "00" }, broadcastAt: 1,
+        createdAt: 30 };
+      put(loose);
+      t.noteSessions();
+      assert.equal(markOf(me, "zl"), undefined, "no tie");
+      answer = () => ({ state: "unknown", txid: "tx-old", why: "t seats signed it" });
+      at(4503459);
+      assert.equal(t.verdict(loose).bound, false);
+      assert.equal(asked.at(-1)[2], "", "no approved sighash");
+      assert.deepEqual([t.expired(loose), t.inFlight().includes(loose)], [true, false]);
+      assert.equal(textOf(t.statusChip(loose)), "Check");
+      at(4500100, new Set(["tx-old"]));
+      assert.equal(textOf(t.statusChip(loose)), "Sent", "what t seats signed landed");
+      assert.equal(t.inFlight().includes(loose), false);
+
+      // A move that started signing goes again only when the engine says that it expired.
+      t.state.g = { ...group, movedTo: "MV1" };
+      t.ready.MV1 = { address: "utest1m" };
+      const mv = { ...signedA, id: "zm", move: "MV1" };
+      put(mv);
+      await t.putSec(t.state.gid, me, { marks: { ...t.sec(t.state.gid, me).marks,
+        zm: { approved: "aa" } } });
+      answer = () => ({ state: "unknown", txid: "tx-a", why: "it may still land" });
+      assert.equal(t.moveState(at(4503500)).session, mv, "no second move while it may land");
+      answer = (p, sg, a) =>
+        ({ state: a === "aa" ? "expired" : "unknown", txid: "tx-a", why: "x" });
+      assert.equal(t.moveState(at(4503501)).propose, true, "the expired move goes again");
+      // The Move button of the card proposes the move, and the click event is no PCZT.
+      t.state.sessions = t.state.sessions.filter((x) => x.id !== "zm");
+      const mc = at(4500000);
+      mc.bal.max_send = 50000;
+      Object.assign(t.ui, { tab: "overview" });
+      const moveBtn = all(t.walletView(null, null),
+        (x) => x.tag === "button" && textOf(x).startsWith("Move "))[0];
+      asked.length = 0;
+      const click = { type: "click", preventDefault() {}, currentTarget: null };
+      await quiet(() => moveBtn.on.click(click));
+      const moveCall = asked.find((x) => x[0] === "spend");
+      assert.ok(moveCall, "the move is proposed");
+      assert.equal(moveCall[3], undefined, "no PCZT of an expired payment");
+      t.state.g = group;
+      await settle();
+
+      // A payment that this browser approved and saw sent holds its notes whatever one seat
+      // writes or removes later: an error part, a reset without the sent mark.
+      const sentA = { ...signedA, status: "broadcast", broadcastTxid: "tx-a",
+        final: { txid: "tx-a", tx_hex: "00" }, broadcastAt: Date.now() };
+      put(sentA);
+      t.noteSessions();
+      answer = () => ({ state: "unknown", txid: "tx-a", why: "it may still land" });
+      at(4500100);
+      assert.equal(t.inFlight().includes(sentA), true);
+      // Another transaction spent a note of it 3 blocks deep: neither the approval nor the sent
+      // document holds its notes then.
+      answer = () => ({ state: "unknown", txid: "tx-a", why: "spent", spent: true });
+      at(4500100);
+      assert.equal(t.inFlight().includes(sentA), false, "a spend of one of its notes frees it");
+      const notMine = { ...open("h13", "PA"), package: "PK", signed: "SA", status: "broadcast",
+        broadcastTxid: "tx-a", final: { txid: "tx-a", tx_hex: "00" }, broadcastAt: Date.now() };
+      put(notMine);
+      at(4500100);
+      assert.equal(t.inFlight().includes(notMine), true, "no approval here: `spent` frees nothing");
+      t.state.sessions = t.state.sessions.filter((x) => x.id !== "h13");
+      answer = () => ({ state: "unknown", txid: "tx-a", why: "it may still land" });
+      at(4500100);
+      const failedA = { ...sentA, error: "Failed.", status: "failed" };
+      put(failedA);
+      at(4500101);
+      assert.equal(t.inFlight().includes(failedA), true, "an error part frees nothing");
+      assert.equal(textOf(t.statusChip(failedA)), "Confirming");
+      const resetA = open("za", "PB");
+      put(resetA);
+      at(4500102);
+      assert.equal(t.inFlight().includes(resetA), true, "a dropped sent mark frees nothing");
+      assert.match(String(t.sendBlocker()), /waiting for its block/);
+      at(4503459);
+      assert.equal(t.inFlight().includes(resetA), false, "free after the approved expiry + 3");
+
+      // A browser that approved but lost the PCZT gets no approval prompt, no Approve button and no
+      // Cancel after a reset.
+      const zal = open("zal", "PC");
+      put(zal);
+      await t.putSec(t.state.gid, me, { marks: { ...t.sec(t.state.gid, me).marks,
+        zal: { approved: "aa", tip: 4500001 } } });
+      at(4500100);
+      const match = { rows: [{ to: "utest1x", ok: true }], extra: [], match: true };
+      assert.equal(t.needsMyApproval(t.state.gid, zal), false);
+      assert.deepEqual(t.nextAction(zal, decodes.PC, match), [], "no Approve button");
+      assert.deepEqual(t.cancelAction(zal), [], "no Cancel");
+      const honest = open("zho", "PC");
+      put(honest);
+      assert.deepEqual(labels(t.cancelAction(honest)), ["Cancel payment"],
+        "an open payment keeps its Cancel");
+
+      // A browser without an approval holds a sent payment up to the latest expiry that an
+      // approval allows: 1 + 6912 blocks after the height.
+      const capOk = { ...going, id: "zc1", pczt: "PH" };
+      const capOver = { ...going, id: "zc2", pczt: "PI" };
+      decodes.PH = { ...tx("hh", "tx-h"), expiry_height: 4500100 + 1 + 6912 };
+      decodes.PI = { ...tx("ii", "tx-i"), expiry_height: 4500100 + 2 + 6912 };
+      put(capOk, capOver);
+      at(4500100);
+      assert.deepEqual([t.inFlight().includes(capOk), t.inFlight().includes(capOver)],
+        [true, false]);
+
+      // A snapshot that cannot be read leaves the expired callout without its list.
+      answer = (p, sg, a) => (a === "aa" && p === "PA"
+        ? { state: "expired", txid: "tx-a", why: "x" }
+        : { state: "unknown", txid: null, why: "no" });
+      put(signedA);
+      const snap = engine.snapshot;
+      engine.snapshot = () => { throw new Error("no snapshot"); };
+      at(4503600);
+      assert.match(textOf(t.expiryLine(signedA)), /none of its notes is spent/);
+      engine.snapshot = snap;
+
+      // The drawer of a browser that approved gives the expiry of the approved transaction, not
+      // that of a proposal that one seat rewrote.
+      answer = () => ({ state: "unknown", txid: "tx-a", why: "it may still land" });
+      put({ ...signedA, pczt: "PE" });
+      at(4500000);
+      assert.match(textOf(t.expiryLine({ ...signedA, pczt: "PE" })), /block 4,503,456/);
+
+      // A stored `false` does not undo a mark.
+      localStorage.setItem("zf-signing", JSON.stringify({ [t.state.gid + ":za"]: false }));
+      await quiet(() => sleep(300));
+      assert.equal(t.sawSigning(t.state.gid, "za"), true);
+      // ── The hold of an approval (the owner's choice of 18 October 2026): the approval alone
+      // holds Send until the approved transaction can no longer land, from the records of this
+      // browser only. ──
+      answer = () => ({ state: "unknown", txid: "tx-a", why: "it may still land", spent: false });
+      at(4500000);
+      const h1 = open("h1", "PA");
+      await approved(me, h1);
+      at(4500100);
+      assert.ok(t.heldApprovals().includes("h1"), "the approval holds");
+      assert.match(String(t.sendBlocker()), /approved can still go on chain|waiting for its block/);
+      // Path A of QA round 4: no sent mark ever comes, and one seat writes a failure part.
+      put({ ...h1, package: "PK", signed: "SA", status: "failed", error: "Failed." });
+      at(4500101);
+      assert.ok(t.heldApprovals().includes("h1"), "an error part ends no hold");
+      // Path B: the document leaves the list (a rewrite that fails its check drops it).
+      t.state.sessions = t.state.sessions.filter((x) => x.id !== "h1");
+      at(4500102);
+      const askedFrom = asked.length;
+      assert.ok(t.heldApprovals().includes("h1"), "a dropped document ends no hold");
+      assert.ok(asked.slice(askedFrom).some((x) => S(x) === S(["PA", "", "aa"])),
+        "the engine gets the kept PCZT and the approved sighash alone");
+      // The hold ends when a block holds the approved transaction, when it expired, when another
+      // transaction spent a note of it, and 3 blocks past the expiry of the kept PCZT.
+      answer = () => ({ state: "done", txid: "tx-a", why: "in a block", spent: false });
+      at(4500103);
+      assert.equal(t.heldApprovals().includes("h1"), false, "a block holds it");
+      answer = () => ({ state: "expired", txid: "tx-a", why: "x", spent: false });
+      at(4500104);
+      assert.equal(t.heldApprovals().includes("h1"), false, "the engine says that it expired");
+      answer = () => ({ state: "unknown", txid: "tx-a", why: "spent", spent: true });
+      at(4500105);
+      assert.equal(t.heldApprovals().includes("h1"), false, "a move or another payment spent it");
+      answer = () => ({ state: "unknown", txid: "tx-a", why: "it may still land", spent: false });
+      at(4503458);
+      assert.ok(t.heldApprovals().includes("h1"), "held up to the expiry + 2");
+      at(4503459);
+      assert.equal(t.heldApprovals().includes("h1"), false, "free at the expiry + 3");
+      // Without the kept PCZT the ceiling ends it: 4,500,001 + 1 + 6,912 + 3.
+      await t.putSec(t.state.gid, me, { marks: { ...t.sec(t.state.gid, me).marks,
+        h2: { approved: "zz", tip: 4500001 }, h3: { approved: "zz" } } });
+      at(4506916);
+      assert.ok(t.heldApprovals().includes("h2"), "no PCZT: held up to the ceiling");
+      assert.equal(t.heldApprovals().includes("h3"), false, "no height, no hold");
+      at(4506917);
+      assert.equal(t.heldApprovals().includes("h2"), false, "free at the ceiling");
+      // A document with a sent mark shows "Confirming" while the approval holds, also before this
+      // browser noted the send.
+      at(4500000);
+      const h4 = open("h4", "PA");
+      await approved(me, h4);
+      const h4sent = { ...h4, status: "failed", error: "Failed.", signed: "SA",
+        broadcastTxid: "tx-a", final: { txid: "tx-a", tx_hex: "00" }, broadcastAt: Date.now() };
+      put(h4sent);
+      at(4500100);
+      assert.equal(textOf(t.statusChip(h4sent)), "Confirming", "not the Failed of one seat");
+      // A new approval in the same sync holds at once.
+      t.heldApprovals();
+      await t.putSec(t.state.gid, me, { marks: { ...t.sec(t.state.gid, me).marks,
+        h9: { approved: "aa", tip: 4500001 } } });
+      assert.ok(t.heldApprovals().includes("h9"), "no stale list");
+      // A kept PCZT whose sighash is not the approved one does not end the hold by its expiry.
+      keptStore.set(`kept:${t.state.gid}:h8`,
+        Z.secretSeal(t.gkeys[t.state.gid], `kept\n${t.state.gid}:h8`, "PE"));
+      await t.putSec(t.state.gid, me, { marks: { ...t.sec(t.state.gid, me).marks,
+        h8: { approved: "aa", tip: 4500001 } } });
+      t.heldApprovals();
+      await quiet(() => sleep(20));
+      at(4500101);
+      assert.ok(t.heldApprovals().includes("h8"), "another sighash: its expiry does not count");
+      // An approved session whose proposal no longer decodes asks for no approval.
+      const h5 = { ...open("h5", "UNREADABLE") };
+      put(h5);
+      await t.putSec(t.state.gid, me, { marks: { ...t.sec(t.state.gid, me).marks,
+        h5: { approved: "aa", tip: 4500001 } } });
+      assert.equal(t.needsMyApproval(t.state.gid, h5), false);
+      const h5b = { ...open("h5b", "PA"), pczt: undefined };
+      put(h5b);
+      await t.putSec(t.state.gid, me, { marks: { ...t.sec(t.state.gid, me).marks,
+        h5b: { approved: "aa", tip: 4500001 } } });
+      assert.equal(t.needsMyApproval(t.state.gid, h5b), false, "no proposal to compare");
+      // A mark of another tab counts after the read window, with no approval in between.
+      localStorage.setItem("zf-signing", JSON.stringify({
+        ...JSON.parse(localStorage.getItem("zf-signing") || "{}"), [t.state.gid + ":h6"]: true }));
+      await quiet(() => sleep(300));
+      assert.equal(t.sawSigning(t.state.gid, "h6"), true);
+      // A failed write is written again, and so are the marks of this tab that another tab's
+      // write left out.
+      const realSet = localStorage.setItem;
+      localStorage.setItem = () => { throw new Error("quota"); };
+      put({ ...open("h7", "PC"), package: "PK", status: "signing" });
+      t.noteSessions();
+      localStorage.setItem = realSet;
+      assert.equal(JSON.parse(localStorage.getItem("zf-signing"))[t.state.gid + ":h7"], undefined);
+      t.noteSessions();
+      assert.equal(JSON.parse(localStorage.getItem("zf-signing"))[t.state.gid + ":h7"], true,
+        "written again");
+      localStorage.setItem("zf-signing", JSON.stringify({ other: true }));
+      await quiet(() => sleep(300));
+      t.sawSigning(t.state.gid, "h7");
+      t.noteSessions();
+      const back = JSON.parse(localStorage.getItem("zf-signing"));
+      assert.equal(back[t.state.gid + ":h7"] && back.other, true, "merged and written again");
+      // The activity list shows "Confirming" for a payment that holds notes, also when the status
+      // of the document says otherwise.
+      at(4500100);
+      const h10 = { ...open("h10", "PB", Date.now()), package: "PK", status: "complete",
+        broadcastTxid: "tx-b", final: { txid: "tx-b", tx_hex: "00" } };
+      put(h10);
+      assert.equal(textOf(t.statusChip(h10)), "Ready to send");
+      const row = all(t.walletView(null, null), (x) => x.attrs?.["data-key"] === "pay-h10")[0];
+      assert.match(textOf(row), /Confirming/);
+      // The approval of another seat of this browser holds too. A stale restored seat whose
+      // approval holds stays in this browser.
+      const marks3 = t.sec(t.state.gid, third).marks;
+      await t.putSec(t.state.gid, third, { marks: { h11: { approved: "aa", tip: 4500001 } } });
+      assert.ok(t.heldApprovals().includes("h11"), "the approval of another seat");
+      const was3 = { restored: t.sec(t.state.gid, third).restored,
+        groupKey: t.sec(t.state.gid, third).groupKey };
+      await t.putSec(t.state.gid, third, { restored: true, groupKey: "another key" });
+      const stale = t.staleRestoreNote();
+      assert.match(textOf(stale), /can still go on chain/);
+      assert.equal(all(stale, (x) => x.tag === "button").length, 0, "no Remove while it holds");
+      await t.putSec(t.state.gid, third, { marks: { old: { approved: "aa", tip: 4400000 } } });
+      assert.notEqual(named(t.staleRestoreNote(), "button", "Remove from this browser"), undefined,
+        "a mark past its ceiling holds nothing");
+      await t.putSec(t.state.gid, third, { ...was3, marks: marks3 });
+      // A kept PCZT that loads late counts in the same sync: here its expiry ends the hold.
+      keptStore.set(`kept:${t.state.gid}:h12`,
+        Z.secretSeal(t.gkeys[t.state.gid], `kept\n${t.state.gid}:h12`, "PA"));
+      await t.putSec(t.state.gid, me, { marks: { ...t.sec(t.state.gid, me).marks,
+        h12: { approved: "aa", tip: 4500001 } } });
+      at(4503459);
+      assert.ok(t.heldApprovals().includes("h12"), "held until the kept PCZT loads");
+      await quiet(() => sleep(20));
+      assert.equal(t.heldApprovals().includes("h12"), false,
+        "its expiry frees it in the same sync");
+      const mine = new Set(["za", "zh", "zs", "zp", "zw", "zf", "zn", "zx", "zl", "zm", "zr", "zq",
+        "zv", "zy", "zu", "zt", "zk", "zj", "zg", "zz", "zal", "zho", "zc1", "zc2", "h1", "h4",
+        "h5", "h5b", "h7", "h10"]);
+      t.state.sessions = t.state.sessions.filter((x) => !mine.has(x.id));
+      t.state.g = group;
+      t.setZ(fakeZ);
+      t.setIdb(idbBefore);
+    }
 
     for (const id of [W2, M]) {
       delete t.secrets[`${id}:1`]; delete t.ready[id]; delete t.balCache[id];
@@ -2249,6 +2895,11 @@ async function runAcctSync() {
   }
   await sleep(200);
 }
+
+// ── Opening another wallet drops the notes of an expired payment of the open one ──
+t.ui.after = "PA";
+t.openGroup(null);
+assert.equal(t.ui.after, null);
 
 console.log("app ok");
 process.exit(0);

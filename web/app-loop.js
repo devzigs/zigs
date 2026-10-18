@@ -11,7 +11,7 @@ import { markRead, syncRooms, unreadIn } from "./app-messages.js";
 import {
   canCreateWallet, createWallet, groupVersion, myVerified, reactConfirm, reactSeat, reactStops,
 } from "./app-dkg.js";
-import { reactSession } from "./app-payments.js";
+import { noteSessions, reactSession } from "./app-payments.js";
 import { personal } from "./app-account.js";
 import { chatView, newChatDialog } from "./app-thread.js";
 import { backupDialog, closeBackup, restoreDialog, settleRestore } from "./app-backups.js";
@@ -52,7 +52,7 @@ function reactNow() {
   reactStops();
   reactConfirm();
   for (const i of localSeats()) reactSeat(i);
-  if (chainReady()) ensureChain();
+  if (chainReady()) { ensureChain(); noteSessions(); }
   // Group creator builds the shared wallet once all group keys agree.
   if (canCreateWallet()) once("wallet", createWallet);
   // Signing.

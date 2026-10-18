@@ -18,7 +18,7 @@ import {
 } from "./app-dom.js";
 import { signing, unreadIn } from "./app-messages.js";
 import { groupVersion, rejectedSeats, seatCheck, verifiedCount } from "./app-dkg.js";
-import { cancelMove, expired, proposeMove, sendBlocker } from "./app-payments.js";
+import { cancelMove, ended, proposeMove, sendBlocker } from "./app-payments.js";
 import { messagesCard } from "./app-thread.js";
 import { BACKUP_CHANGED, openBackup, staleRestoreNote } from "./app-backups.js";
 import { loadingView } from "./app-shell.js";
@@ -162,7 +162,9 @@ function walletActions(why) {
     el("button", {
       class: "btn primary", type: "button", disabled: !!why, title: why,
       onclick: () => {
-        Object.assign(ui, { send: true, pay: null, note: "", priority: false, sendFor: null });
+        Object.assign(ui, {
+          send: true, pay: null, note: "", priority: false, sendFor: null, after: null,
+        });
         render();
       },
     }, "Send"),
@@ -186,7 +188,7 @@ function overviewTab() {
 // The steps of a move, read from the old wallet: new wallet ready, payment proposed, funds gone.
 export function moveState(c) {
   const to = state.g.movedTo;
-  const ss = state.sessions.find((x) => x.move === to && !x.error && !expired(x));
+  const ss = state.sessions.find((x) => x.move === to && !x.error && !ended(x));
   const b = c && c.bal ? balanceNow(c.bal) : null;
   if (!gkeys[to]) return { text: "A signer started moving this wallet to a new one. If you are one of its signers, ask them for its invite link." };
   if (!ready[to]) return { text: groupName(to) + " is still setting up. When its address is ready, move the funds here.", open: to };
@@ -198,13 +200,13 @@ export function moveState(c) {
 
 function moveCard(c) {
   const m = moveState(c), why = m.propose ? sendBlocker() : null;
-  const started = state.sessions.some((x) => x.move === state.g.movedTo && !x.error && !expired(x));
+  const started = state.sessions.some((x) => x.move === state.g.movedTo && !x.error && !ended(x));
   return el("section", { class: "card card-pad " + (m.done ? "" : "attention") },
     el("div", { class: "card-head" }, el("h2", {}, m.done ? "This wallet moved" : "Changing signers"),
       m.done ? el("span", { class: "badge plain" }, "Closed") : null),
     el("p", { class: "small muted" }, m.text),
     el("div", { style: "display:flex;gap:8px;flex-wrap:wrap" },
-      m.propose ? el("button", { class: "btn primary", type: "button", disabled: !!why, title: why, onclick: act(proposeMove) }, "Move " + fmtZec(c && c.bal ? c.bal.max_send : 0)) : null,
+      m.propose ? el("button", { class: "btn primary", type: "button", disabled: !!why, title: why, onclick: act(() => proposeMove()) }, "Move " + fmtZec(c && c.bal ? c.bal.max_send : 0)) : null,
       m.session ? el("button", { class: "btn primary", type: "button", onclick: () => openSession(m.session.id) }, "Open the payment") : null,
       m.open ? el("button", { class: "btn", type: "button", onclick: () => { ui.tab = "overview"; openGroup(m.open); } }, "Open " + groupName(m.open)) : null,
       !started ? el("button", { class: "btn ghost", type: "button", onclick: act(cancelMove) }, "Cancel move") : null),
@@ -309,13 +311,16 @@ function activityRows(list) {
       el("p", { class: "small" },
         "Money you receive and payments your signers propose show up here."));
   }
-  const rows = list.map((a) => guard(a.ss ? sentRow : receivedRow, a.ss || a.r));
+  // One list of sent payments for the whole draw: a row does not walk all sessions again.
+  const flying = new Set(inFlight());
+  const sentOf = (ss) => sentRow(ss, flying);
+  const rows = list.map((a) => guard(a.ss ? sentOf : receivedRow, a.ss || a.r));
   return el("div", { class: "list", style: line }, rows);
 }
 
-function sentRow(ss) {
+function sentRow(ss, flying) {
   const chip = needsMyApproval(state.gid, ss) ? el("span", { class: "badge warn" }, "Your approval")
-    : inFlight().includes(ss) ? el("span", { class: "badge info" }, "Confirming") : statusChip(ss);
+    : flying.has(ss) ? el("span", { class: "badge info" }, "Confirming") : statusChip(ss);
   return el("button", {
     class: "row-item", type: "button", "data-key": "pay-" + ss.id,
     "aria-current": ss.id === state.sid ? "true" : "false", onclick: () => openSession(ss.id),

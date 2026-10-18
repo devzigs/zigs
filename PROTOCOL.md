@@ -396,10 +396,78 @@ A proposer cannot hide a different recipient, amount or extra output behind the 
   (TICKETS.md, ZEC-8).
 - In the web app, a payment that expired before its signing package shows "Propose again". It
   fills the Send form with the same recipients, amounts, memos, note and fee choice. The new
-  proposal needs new approvals. A payment with a signing package may have a signed transaction
-  on chain, and one seat can rewrite its proposal, so the page asks the signers to check an
-  explorer instead. This holds only while the group server keeps the package: one seat or the
-  server can remove it (TICKETS.md, ZEC-9).
+  proposal needs new approvals.
+- The signing of a payment counts as started when it has a signing package, signed, final or
+  sent part, when this browser saw one before (one seat or the server can remove them), or when
+  a seat of this browser approved it. The browser keeps:
+  - in the secrets of each seat: the sighash that the seat approved and the chain height at that
+    moment. They stay after the nonce burn, and key share backups leave them out, as they leave
+    out the nonces;
+  - in its own local key (`zf-signing`): a mark for each session in which it saw the signing
+    start, and one for each session that it saw sent. A check reads the key at most every
+    250 ms, an approval at once, so a mark of another tab counts. Only `true` values count, and
+    they are merged into the marks of the tab, so broken storage drops none; a tab that cannot
+    read the key writes nothing. Two tabs that write in the same moment can lose one mark until
+    the page notes that session again;
+  - in IndexedDB, sealed with the group key: the PCZT that a seat approved.
+- After the start, a browser that approved takes "Sent", "Expired" and "Propose again" only from
+  the engine's `sessionState` (TICKETS.md ZEC-9, ZEC-13). It passes the kept PCZT and the
+  approved sighash, so a proposal that one seat rewrote does not count, and a cancel or failure
+  part that one seat writes does not hide a payment that a block holds. Its expiry height is the
+  one of the approved transaction. When the height passed but the engine does not say
+  "expired", the chip says "Check" and the drawer asks the signers to check the wallet.
+- A session that this browser saw sign, or whose proposal is not the transaction that a seat of
+  it approved, shows no approval prompt, no Approve button and no Cancel, also after a reset to
+  a fresh proposal. A seat that approved never approves that session again. The drawer says
+  that the proposal changed after the approval of this browser.
+- "Propose again" after the start needs "expired" from the engine and a PCZT here with the
+  approved sighash. One seat writes the rows of the document, so the form takes them only when
+  they match what the approved transaction pays, and its fee from that transaction. Otherwise
+  it refuses. The new proposal spends every note of the expired transaction
+  (`createSpend` with `after`), so at most one of them can land. Another transaction of the
+  same session over other notes can still land. The drawer lists the transactions of the wallet
+  that went on chain from two days of blocks before the expiry, from the engine
+  (`snapshot().sent`, each `{txid, h}`), with explorer links.
+- A browser that did not approve keeps no tie to the session: one seat chooses the proposal
+  that it would tie to (QA of ZEC-13). It shows "Sent" when what t seats signed, or the
+  proposal, is in a synced block, and it never offers "Propose again" after the start. A
+  browser that neither approved nor saw the start behaves as before ZEC-13: by height.
+- **The hold of an approval** (the owner's choice of 18 October 2026). The approval alone holds
+  Send on the browser that approved, until the approved transaction can no longer land. The
+  hold comes from the browser's own records only (the approval marks and the kept PCZT), not
+  from the session documents: one seat writes or removes those, also the sent mark, and can send
+  the payment without one. No other seat can end the hold. It ends when:
+  - a synced block holds the approved transaction;
+  - the engine says that it expired, or that another transaction spent a note of it 3 blocks
+    deep (`spent`): a payment over the same notes, or a move, so the group can end it early only
+    by a spend that makes the approved transaction invalid. A reorganisation of up to 3 blocks can
+    take a spend back. Such a spend also ends the hold of the sent document on this browser;
+  - the approved transaction is 3 blocks past the expiry of the kept PCZT;
+  - the ceiling passed: a seat approves only a payment that expires at most one day of blocks
+    and one day of slack after the next block (`expiry::check`), so 3 blocks after
+    `tip + 1 + 6912` nothing that it approved can land, also when the browser lost the PCZT.
+- While the hold lasts, Send and the move card say "A payment that you approved can still go on
+  chain", or "A payment is waiting for its block" while the payment also holds notes as a sent
+  payment. A held payment with a sent mark shows "Confirming", also when one seat writes an error
+  part later, and "Check" from its expiry height until the engine says that it expired. Without
+  the PCZT, the drawer asks the signers to check only at the ceiling.
+- Limits of the hold:
+  - It does not stop an approval of another proposal: a duplicate of the same payment needs its
+    approvers to check it.
+  - The approval is kept before the group server takes it. When that write fails, the hold
+    lasts all the same (the write may have reached the server), and the seat cannot approve that
+    payment again.
+  - A restored seat that does not match the wallet stays in the browser while its approval
+    holds, because its removal would end the hold.
+- Any other browser holds the notes of a sent payment by the expiry of the proposal, up to the
+  latest expiry that an approval allows (`1 + 6912` blocks after the synced height). One seat
+  writes that document, so a payment with an error part or a proposal that does not decode
+  holds nothing there, and fake sent documents can hold Send for some days (TICKETS.md ZEC-14).
+- The "broadcast" status of a document shows "Confirming" until a block holds the payment. On a
+  browser that did not approve, a document whose proposal and signed part do not match what a
+  block holds stays "Confirming" or "Check".
+- In a version 1 or 2 wallet the parts are not signed, so any holder of the invite link can
+  write them, not only a seat.
 - The engine makes FROST nonces and their commitments.
 - The device saves the nonces together with the transaction's **sighash** (ZIP 244, v6).
 - Only the commitment goes to the group server.
@@ -830,10 +898,12 @@ received payments yet. The engine has the calls for them.
   or private. The app shows control characters and bidirectional marks of the text as U+FFFD, and
   it puts no memo text in a notification. Memos do not count as unread messages.
 - **Engine interface** (web names; the native names have the prefix `wallet`):
-  - `createSpend(payees, priority)` and `walletSpend(key, payees, tip)`: `payees` is
+  - `createSpend(payees, priority, after)` and `walletSpend(key, payees, tip)`: `payees` is
     `[{"to", "amount", "memo"?}]`. A row error names the row: `recipient 2: the memo is 513
     bytes long; the limit is 512`. `priority` pays 10 times the ZIP 317 fee. `walletSpend`
-    always pays the standard fee (ZEC-8).
+    always pays the standard fee (ZEC-8). `after` (web only, optional) is the PCZT of an expired
+    payment that this one replaces: the payment also spends every note of it, and fails when
+    one of them is spent now or when this wallet knows none of them (ZEC-13).
   - `inspect(pczt, fvk)`: each `output` line has `memo_status` and, for text, `memo`. The result
     also has `fee`, `standard_fee` (ZIP 317), `expiry_height` and `txid` (ZIP 244, the id that
     the transaction gets on chain).
@@ -843,11 +913,11 @@ received payments yet. The engine has the calls for them.
   - `expiryState(network, expiry, tip)` (web only): `{"expired", "blocks_left",
     "seconds_left"}`.
   - `ChainWallet.sessionState(pczt, signed, approved)` and `walletSessionState(key, pczt,
-    signed, approved)`: `{"state", "txid", "why"}` for a payment of this wallet, from data that
-    one seat cannot forge. `approved` is the sighash that this device approved. `signed` (the
-    combined signatures) counts only when at least one spend uses the wallet key (its `rk` is
-    the wallet key randomized by its `alpha`) and every such spend carries a valid spend
-    authorization signature over the PCZT's sighash: only t seats together can make one.
+    signed, approved)`: `{"state", "txid", "why", "spent"}` for a payment of this wallet, from
+    data that one seat cannot forge. `approved` is the sighash that this device approved.
+    `signed` (the combined signatures) counts only when at least one spend uses the wallet key
+    (its `rk` is the wallet key randomized by its `alpha`) and every such spend carries a valid
+    spend authorization signature over the PCZT's sighash: only t seats together can make one.
     - "done": this device approved the transaction, and a synced block holds it.
     - "expired": this device approved it, the signed part holds no other transaction that t
       seats signed (one seat can remove one), the synced chain passed its expiry height by 3
@@ -855,6 +925,10 @@ received payments yet. The engine has the calls for them.
     - "unknown": anything else, with `why`. A device that did not approve never sees "done" or
       "expired": any seat can copy the signed part of an older session. `txid` then names what t
       seats signed.
+    - `spent`: no synced block holds the transaction, and another one spent a note of it at
+      least 3 blocks deep, so it can no longer land. A reorganisation of up to 3 blocks can take
+      a newer spend back. The state stays "unknown": that other transaction can be the same
+      payment. With the sighash alone (no PCZT) the notes are not known, so `spent` is false.
     - Limits: "expired" speaks only for the approved transaction. Another transaction of the
       same session, over other notes or some of the same notes, can have landed, or can still
       land until its own expiry. An older signed payment in the signed part keeps the state at

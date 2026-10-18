@@ -257,6 +257,9 @@ the per-IP rate limits of the group server and of `/lwd`.
 | Key share, signing nonces, and for a version 2 or 3 wallet `vaultSk` | Browser local storage; sealed with a passkey when the lock is on | iPhone: Keychain, this device only, not in iCloud or iTunes device backups; sealed behind Face ID when the lock is on. Mac: login keychain |
 | Wallet secrets (from invite links) | Same as the key share | Same as the key share |
 | Sync state (notes, tree) | IndexedDB, sealed with the wallet key | File, sealed with the wallet key |
+| For each payment: the sighash that a seat approved | With the key share (a field of the seat's secrets). Not in key share backups | Not kept yet (ZEC-8) |
+| For each payment: a mark that this browser saw the signing start | Local storage, in plain (`zf-signing`) | Not kept yet (ZEC-8) |
+| The PCZT that a seat approved | IndexedDB, sealed with the wallet key | Not kept yet (ZEC-8) |
 | Cached balances for the wallet list | Local storage, sealed with the wallet key | Settings, sealed with the wallet key |
 | Signing key of the seat (messages, and signed writes in a version 3 wallet) | With the key share (it is a field of the seat's secrets) | With the key share: Keychain, this device only. A seat gets it when the seat is taken |
 | Direct chats (chat secrets, member ids) and the personal signing key | With the key share: local storage, or the sealed record when the lock is on. Not in key share backups. | Keychain, this device only, or the sealed record when the Face ID lock is on. Not in key share backups |

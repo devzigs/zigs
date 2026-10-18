@@ -1,5 +1,5 @@
 {
-  "baseCommit": "4dfef52c96238cc3624b0fc74bb68584384e5f12",
+  "baseCommit": "45a281ff90f2a1f9cd2bbac93f9d105c2373d2cf",
   "node": "v24.11.0",
   "tests": {
     "web/test/chat.mjs": {
@@ -81,19 +81,19 @@
     "wasm/src/account.rs": "fe2d7194d60423bd7873d8ac7109626ba823cac4a68cfa5be43d09f5bd040bc7",
     "wasm/src/backup.rs": "e4e646d5fa284cb0181bef7bb53a80b0ab41176209ba16f07e3eed624c1abbb2",
     "wasm/src/ceremony.rs": "e853b8f576da64434abf784cffeac0c340dc7df7397013bb26d9490905add052",
-    "wasm/src/chain.rs": "1715c443b25d3f048043e4e748bd43a96b9fa1b09a21610cf5249fab943a1510",
+    "wasm/src/chain.rs": "a701da9f1318409793a81aaa366d4c374f99858dcf6cff560376773940a90eb6",
     "wasm/src/expiry.rs": "90c1cd219cc4d037a1e18b4470b082a279dc46308531398c11a0cf0669b85591",
     "wasm/src/ffi.rs": "da2ad331c905ec89a87d19565034111f762f230d6a6f7971fe5d38452f7fe3a6",
     "wasm/src/lib.rs": "888390116855b74e03063d94a9139d8646a3ebb75cd41c9b046c213aa7212a55",
     "wasm/src/memo.rs": "d91971ad626a4148cb4420a6ae127110556fe1437a5f3a4a9b0bb54ea64683bd",
     "wasm/src/request.rs": "61b0d03697336a37e9351bfcd809e95cd3fc0fdcb7049f64f0f86a75bf7efd1f",
-    "wasm/src/session.rs": "aabecd2f7e4428c956dcd69131004879a5ec3b17e11f1e3519a5e32003590a8f",
+    "wasm/src/session.rs": "567e450b0922df5f70daff77a5b1dca84135777d288e29e46173be2071caae35",
     "wasm/src/snapshot.rs": "619654365bbce58bf95105e4e8b14554d522aa0f86fc4ac43c13933b27e41f7e",
     "wasm/src/testchain.rs": "9b5e71c5e00c980ee33b93f79aaff9c03af4a38c559a60a2365c58c716c26863",
-    "web/pkg/zigs_engine.d.ts": "b5f17c87ef067309cf63f0c97a561c3a969b13457f7aa469e490355c9fd54a2a",
-    "web/pkg/zigs_engine.js": "77492acafe20f5c12615a49fb94ba71de02b26161d08edfb0cc72eaaa8f4a8d9",
-    "web/pkg/zigs_engine_bg.wasm": "e6ad320f7f3c135fff606c5cc8b70ba9ba221a37e086c237780e80feb87c4708",
-    "web/pkg/zigs_engine_bg.wasm.d.ts": "de792e8451b1819dc20142bd57de4d997f55bfee02128dc5400275ffa290a331",
+    "web/pkg/zigs_engine.d.ts": "27b2904268263e7d57511141a4bbdd1c57c23afad0f3781a93b5197e8e626b89",
+    "web/pkg/zigs_engine.js": "6b0542b1852f8f6fbd04b0fed8f35f557b8131d33825cc26831058d0558e1c3d",
+    "web/pkg/zigs_engine_bg.wasm": "25a493dc65534357e8e0732036f09ef33ddae782167e70c3812f57cfb4662d08",
+    "web/pkg/zigs_engine_bg.wasm.d.ts": "6e3a3844e487471c7db4da8877493c140648a522d6331f834f6303afbe2644df",
     "web/signed.js": "0e0dc9608db614571bcf0a587ace968a5735e0b3f516ef136cf4ccbf153a2502"
   },
   "policy": {

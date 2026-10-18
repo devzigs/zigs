@@ -40,6 +40,7 @@ const MINED_MS = 600_000;
 const POLL_MS = 15_000;
 const CALL_MS = 30_000;
 const SYNC_MS = 300_000;
+const CHIP_MS = 240_000;
 
 const log = (text) => console.error(redact(`zec-pay: ${text}`));
 
@@ -62,6 +63,10 @@ export function zatOfText(text) {
   return Number(m[1].replaceAll(",", "")) * 1e8 + Number((m[2] ?? "").padEnd(8, "0"));
 }
 
+// The page reads the chain height from its own server (our node through /lwd, or ChainSafe), and
+// this script from ours: two servers can be a block or two apart.
+const SKEW = 2;
+
 /**
  * The fee and the list of failed checks. `tips` are the chain heights read before Propose and
  * after the payment showed: the engine read its own height between them.
@@ -73,8 +78,8 @@ export function verify(facts) {
   const tip = header.expiry - EXPIRY_BLOCKS - 1;
   const checks = [
     [
-      tip >= tips[0] && tip <= tips[1],
-      `expiry ${header.expiry} is not ${tips[0]}..${tips[1]} + 1 + ${EXPIRY_BLOCKS}`,
+      tip >= tips[0] - SKEW && tip <= tips[1] + SKEW,
+      `expiry ${header.expiry} is not ${tips[0]}..${tips[1]} (± ${SKEW}) + 1 + ${EXPIRY_BLOCKS}`,
     ],
     [fee % unit === 0 && fee / unit >= 2, `fee ${fee} is not ${unit} x k with k >= 2`],
     [fee === pageFee, `fee ${fee} differs from the fee of the page, ${pageFee}`],
@@ -435,11 +440,30 @@ async function paymentInBrowser(wallet, group) {
   hold("browser", () => rig.close());
   const pages = await openSeats(harness, rig, wallet.files, group);
   const made = await payInPages(pages, wallet.address);
-  // The sent mark is stored on the server when the link shows; a short wait lets it settle.
-  await sleep(3000);
-  await release("browser");
-  await release("server");
-  return made;
+  return { ...made, pages };
+}
+
+// The chip of the open payment. A click on Refresh, at most every 20 s, syncs the page; the
+// drawer covers the button, so the click goes through the page.
+const chipNow = (page) =>
+  run(page, () => {
+    const now = Date.now();
+    const refresh = [...document.querySelectorAll("button")].find(
+      (b) => b.textContent.trim() === "Refresh",
+    );
+    if (refresh && !refresh.disabled && now - (window.zecPayRefresh || 0) > 20_000) {
+      window.zecPayRefresh = now;
+      refresh.click();
+    }
+    return document.querySelector(".drawer-head .badge")?.textContent.trim() ?? null;
+  });
+
+/** After the block, both seats show "Sent": the engine's session state of each (ZEC-13). */
+async function bothSent(pages) {
+  for (const [i, page] of pages.entries()) {
+    const sent = async () => (await chipNow(page)) === "Sent";
+    await until(page, `"Sent" on the page of seat ${i + 1}`, sent, CHIP_MS);
+  }
 }
 
 // ── The chain ──
@@ -486,6 +510,10 @@ async function live() {
   if (sent.has(made.txid)) throw new Error(`transaction ${made.txid} was in the wallet before`);
   log(`sent ${made.txid}; waiting for a block`);
   const mined = await waitMined(cw, made.txid);
+  await bothSent(made.pages);
+  log("both pages show the payment as sent");
+  await release("browser");
+  await release("server");
   const header = await headerOf(made.txid);
   const totals = { totalBefore: bal.spendable + bal.pending, totalAfter: mined.total };
   const { fee, problems } = verify({ ...made, ...totals, header, priority: PRIORITY });

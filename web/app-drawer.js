@@ -12,23 +12,32 @@ import {
 } from "./app-dom.js";
 import { seatCheck } from "./app-dkg.js";
 import {
-  approve, broadcastTx, cancelPayment, expired, expiryOf, finalizeTx, inspectOf, onChain,
-  priorityTimes, proofStalled, proposeAgain, recipientCheck, resendTx, signingStarted, txidOf,
+  approve, broadcastTx, cancelPayment, ended, expired, expiryAt, expiryOf, finalizeTx, inspectOf,
+  landed,
+  approvalChanged, noApproval, priorityTimes, proofStalled, proposeAgain, recipientCheck, resendTx,
+  signingLost, signingSeen,
+  sinceOf, txidOf, verdict,
 } from "./app-payments.js";
 import { discussion } from "./app-thread.js";
 
 // The expiry of an open payment, or why an expired one ends here. The engine counts from the
 // last sync, so the time since that sync comes off. A height from saved state gives no time.
 export function expiryLine(ss) {
-  const e = expiryOf(ss), ins = inspectOf(ss), c = curChain();
-  if (!e || ss.error || onChain(ss)) return null;
-  const at = "block " + fmtInt(ins.expiry_height);
-  if (expired(ss) && signingStarted(ss)) {
-    return el("div", { class: "callout bad" }, "This payment expired at " + at + ", and no synced "
-      + "block holds the transaction that this page shows. This page cannot prove that the "
-      + "signers signed that transaction. Check the wallet's activity and an explorer before "
-      + "anyone proposes it again.");
-  }
+  if (ss.error || landed(ss)) return null;
+  const v = verdict(ss), e = expiryOf(ss);
+  if (v && v.state === "expired") return expiredSigned(ss);
+  return e ? heightLine(ss, v, e) : lostLine(ss, v);
+}
+
+// A browser that approved but no longer has the approved transaction: once nothing that it
+// approved can land, it asks the signers to check.
+const lostLine = (ss, v) => v && v.bound && expired(ss) ? checkLine(null, v) : null;
+
+// The expiry from the height of the last sync, for a payment that the engine does not call
+// expired.
+function heightLine(ss, v, e) {
+  const c = curChain(), at = "block " + fmtInt(expiryAt(ss));
+  if (expired(ss) && signingSeen(ss)) return checkLine(at, v);
   if (expired(ss)) {
     return el("div", { class: "callout bad" }, "This payment expired at " + at + ". No signer "
       + "can approve, sign or send it now. Propose it again.");
@@ -43,6 +52,37 @@ export function expiryLine(ss) {
   const left = e.seconds_left - Math.max(0, (Date.now() - c.balAt) / 1000);
   return el("p", { class: "small muted" }, "Expires at " + at + ", in about "
     + about(Math.max(0, left)) + ". " + must);
+}
+
+// The signing started, so only the engine can say that the payment expired, and it does not.
+// `at` is null when this browser approved but no longer has the approved transaction.
+function checkLine(at, v) {
+  const why = v ? el("p", { class: "small" }, "Why: " + v.why + ".") : null;
+  const when = at ? "This payment expired at " + at : "The payment that this browser approved "
+    + "can no longer go on chain";
+  return el("div", { class: "callout bad" }, when + ", and no synced block holds the "
+    + "transaction that this page shows. This page cannot prove that the signers signed that "
+    + "transaction. Check the wallet's activity and an explorer before anyone proposes it again.",
+  why);
+}
+
+// The engine says that the transaction that this browser approved expired and that none of its
+// notes is spent (TICKETS.md ZEC-13). A new proposal spends the same notes. The list of sent
+// transactions comes from the engine, so the signers can check each in an explorer.
+function expiredSigned(ss) {
+  const since = sinceOf(ss);
+  return el("div", { class: "callout bad" }, "The transaction that this browser approved expired, "
+    + "and none of its notes is spent. A new proposal spends the same notes, so at most one of "
+    + "them can go on chain. Check the transactions of the wallet in an explorer before you "
+    + "propose it again.", since ? sentSince(since) : null);
+}
+
+function sentSince({ from, txids }) {
+  const head = (txids.length === 1 ? "1 transaction" : txids.length + " transactions")
+    + " of this wallet went on chain from block " + fmtInt(from) + ".";
+  const link = (id) => el("a", { href: curNet().explorer + id, target: "_blank", rel: "noopener" },
+    short(id, 10));
+  return el("p", { class: "small" }, head, ...txids.slice(0, 8).flatMap((id) => [" ", link(id)]));
 }
 
 function checkWarnings(rc) {
@@ -98,7 +138,8 @@ function moveNote(ss, rc) {
 
 // The seats of this browser that can approve the payment now. None while the wallet's data is
 // being checked: an approval written twice would replace its own nonces.
-const approvers = (ss) => state.pending ? [] : localSeats().filter((i) => canWriteAs(i)
+const approvers = (ss) => state.pending || noApproval(ss) ? []
+  : localSeats().filter((i) => canWriteAs(i)
   && sec(state.gid, i).keyPackage && seatCheck(i) === true && !state.commits[i] && !ss.package);
 
 const bigButton = (label, onclick, extra = {}) =>
@@ -119,7 +160,7 @@ export function finishButtons(ss) {
   if (!mayAct()) return [];
   if (needsProof(ss)) return [bigButton("Build proof", act(() => finalizeTx(ss)))];
   // A node refuses a payment that expires within EXPIRY_MARGIN blocks (see expiryLine).
-  if (!ss.final || expiryOf(ss)?.expired || onChain(ss)) return [];
+  if (!ss.final || expiryOf(ss)?.expired || landed(ss)) return [];
   if (ss.broadcastTxid) {
     const late = Date.now() - finite(ss.broadcastAt) > RESEND_MS && inFlight().includes(ss);
     return late ? [bigButton("Send again", act(() => resendTx(ss)))] : [];
@@ -132,10 +173,11 @@ export function finishButtons(ss) {
 const RESEND_MS = 10 * 60 * 1000;
 
 export function nextAction(ss, ins, rc) {
-  if (expired(ss)) {
-    return !signingStarted(ss) && mayAct() && localSeats().length
+  if (ended(ss)) {
+    return mayAct() && localSeats().length
       ? [bigButton("Propose again", act(() => proposeAgain(ss)))] : [];
   }
+  if (expired(ss)) return [];   // signing started, and the engine cannot say that it expired
   const myPending = approvers(ss);
   const canApprove = myPending.length && rc.match === true && rc.intoNew !== false;
   return canApprove ? approveButtons(ss, myPending) : finishButtons(ss);
@@ -144,7 +186,9 @@ export function nextAction(ss, ins, rc) {
 const CANCEL_ASK = "Cancel this payment? No signer can approve it after this. Anyone can propose it again.";
 // Until the signatures are combined, any signer can withdraw a payment, for example one that lost
 // an approval. A signature share alone cannot move funds.
-export const cancelAction = (ss) => ss.signed || expired(ss) || !localSeats().length || !mayAct() ? [] : [
+// A document that lost the signing parts that this browser saw gets no Cancel: one seat reset it.
+export const cancelAction = (ss) => ss.signed || signingLost(ss) || approvalChanged(ss)
+  || expired(ss) || !localSeats().length || !mayAct() ? [] : [
   el("button", { class: "btn lg", type: "button", onclick: act(() => confirm(CANCEL_ASK) && cancelPayment(ss)) }, "Cancel payment"),
 ];
 
@@ -161,6 +205,11 @@ function lostApproval(ss) {
     + "with this approval. Cancel it, then propose it again.");
 }
 
+// One seat rewrote the proposal after a seat of this browser approved it.
+const changedNote = (ss) => approvalChanged(ss) ? el("div", { class: "callout bad" },
+  "The proposal changed after a seat of this browser approved it. The details below come from the "
+  + "changed proposal, not from what you approved.") : null;
+
 function sessionDrawer(ss) {
   const ins = inspectOf(ss), refused = ins && ins.error, rc = recipientCheck(ss, ins);
   // A cancelled or failed payment takes no more steps.
@@ -174,6 +223,7 @@ function sessionDrawer(ss) {
       guard(expiryLine, ss),
       guard(recipientBox, ss, rc),
       lostApproval(ss),
+      changedNote(ss),
       ins && !refused ? guard(breakdown, ins) : null,
       guard(timeline, ss, refused),
       guard(discussion, ss),
