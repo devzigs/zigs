@@ -16,7 +16,7 @@ import { createHash } from "node:crypto";
 import { approve, deviceSeen, reviewOf } from "../sol/approve.js";
 import { agreement } from "../sol/ceremony.js";
 import { base58, keyOfBase58 } from "../sol/docs.js";
-import { EXECUTE_TRIES, executorOf, tryAgain } from "../sol/execute.js";
+import { EXECUTE_TRIES, executorsOf, forgetBalances, tryAgain } from "../sol/execute.js";
 import { ZERO_KEY, bytesOf, decodeIntent, planHex, readVerdict } from "../sol/intent.js";
 import { savedNonces, saveNonces } from "../sol/nonces.js";
 import { feeOf } from "../sol/fee.js";
@@ -327,8 +327,8 @@ step("a device that read no proposal account reads it again, with no click");
   assert.equal(rows["Create paid by seat 1"], feeAddress(1), "the proposer paid the create only");
   assert.match(textOf(marked("pay-cost")[0]), /pays 0\.000005 SOL .* holds 0\.00135636 SOL/);
   assert.ok(textOf(marked("fee-text")[0]).includes(LINK_TEXT), "the fund card says it too");
-  assert.equal(executorOf(c, ssOf(id)), 1, "the proposing seat executes");
-  assert.equal(executorOf(c, { ...ssOf(id), by: 3 }), 3, "whichever seat proposed");
+  assert.deepEqual(executorsOf(c, ssOf(id)), [1, 2, 3], "the proposing seat executes first");
+  assert.deepEqual(executorsOf(c, { ...ssOf(id), by: 3 }), [3, 1, 2], "whichever seat proposed");
   await approve(c, ssOf(id), 2);
   await waitStatus(id, "sent");
   const ss = ssOf(id);
@@ -391,6 +391,59 @@ step("a seat refuses a salt of another proposal on the group server, also after 
   assert.equal(ssOf(id).signature.length, 128, "with the one approval of the group");
 }
 step("a stale root at the execute is proved again, and the one approval still holds");
+
+// ── Only a seat whose fee address can pay executes (S3); the lease is renewed ──
+{
+  await forgetPairs();
+  const id = await proposedPay();
+  current = id;
+  const kept = [1, 2, 3].map((i) => chain.balances.get(feeAddress(i)));
+  const start = chain.commands.length;
+  const cmds = () => chain.commands.slice(start).map((m) => m.cmd);
+  // Every execute lease of this session (60 s; the publish of a FROST package takes 10 s), with
+  // the number of Worker commands before it. The second one (the renewal before the send of the
+  // funded try) is refused once.
+  const doc = c.host.sdb.doc;
+  const leases = [];
+  c.host.sdb.doc = (path) => {
+    const ref = doc(path);
+    if (!path.endsWith("/" + id)) return ref;
+    const spy = Object.create(ref);
+    spy.acquire = async (o) => {
+      if (o.ttlMs !== 60000) return ref.acquire(o);
+      leases.push({ at: cmds().length });
+      return leases.length === 2 ? { acquired: false } : ref.acquire(o);
+    };
+    return spy;
+  };
+  for (const i of [1, 2, 3]) chain.balances.set(feeAddress(i), 999_999n);
+  forgetBalances(); // the earlier payments read these addresses funded
+  await approve(c, ssOf(id), 1);
+  await approve(c, ssOf(id), 2);
+  await waitFor("the balance reads", () => cmds().includes("balance"));
+  await new Promise((go) => setTimeout(go, 1000));
+  assert.equal(ssOf(id).status, "signed", "no seat of this browser can pay: no execute");
+  assert.equal(c.tries[id] ?? 0, 0, "no try is counted");
+  assert.equal(c.execErrors[id], undefined, "and no banner shows");
+  assert.equal(leases.length, 0, "a tab with no funded seat takes no lease");
+  const reads = cmds().filter((x) => x === "balance").length;
+  assert.ok(reads <= 3, reads + " balance reads: one for each seat, then a wait");
+  chain.balances.set(feeAddress(3), 1_000_000n);
+  await waitStatus(id, "sent", 90000);
+  c.host.sdb.doc = doc;
+  const landed = chain.landed.find((x) => x.signature === ssOf(id).txId);
+  assert.ok(verifies(feeOf(c, 3).key, bytesOf(landed.message), bytesOf(landed.sigs[0])));
+  const all = cmds();
+  assert.equal(all.filter((x) => x === "send").length, 1, "one send");
+  const sendAt = all.indexOf("send");
+  const tests = all.flatMap((x, n) => (x === "simulate" ? [n] : []));
+  assert.ok(tests.length >= 2 && sendAt > tests[1], "the refused renewal sent nothing");
+  const renewed = leases.slice(2).filter((l) => l.at > tests.at(-1) && l.at <= sendAt);
+  assert.equal(renewed.length, 1, "the lease is taken again after the test run, before send");
+  assert.ok(leases.some((l) => l.at > sendAt), "and again after the send, for the confirm");
+  [1, 2, 3].forEach((i, n) => chain.balances.set(feeAddress(i), kept[n]));
+}
+step("only a funded seat executes: the others skip with no banner, and the lease is renewed");
 
 // ── A withdrawal to a public address (SOL-32): the leg goes back into every proof, the screen
 // shows the recipient and the amount that the checker bound, and the execute pays through the SOL
