@@ -12,7 +12,8 @@ import {
 } from "./app-dom.js";
 import { seatCheck } from "./app-dkg.js";
 import {
-  approve, broadcastTx, cancelPayment, ended, expired, expiryAt, expiryOf, finalizeTx, inspectOf,
+  approvalKept, approve, broadcastTx, cancelPayment, ended, expired, expiryAt, expiryOf, finalizeTx,
+  inspectOf,
   landed,
   approvalChanged, noApproval, priorityTimes, proofStalled, proposeAgain, recipientCheck, resendTx,
   signingLost, signingSeen,
@@ -193,12 +194,13 @@ export const cancelAction = (ss) => ss.signed || signingLost(ss) || approvalChan
 ];
 
 // An approval is a published commitment plus nonces kept here. Without the nonces the seat cannot
-// sign, and the payment waits forever: say so instead of stalling.
+// sign, and the payment waits forever: say so instead of stalling. A made share that did not go
+// out yet still counts.
 function lostApproval(ss) {
   if (ss.signed || ss.error) return null;
   const chosen = (i) => !ss.package || signersOf(ss).includes(i);
   const lost = localSeats().filter((i) => state.commits[i] && !state.shares[i] && chosen(i)
-    && !((sec(state.gid, i).nonces || {})[ss.id]) && !busy.has("share:" + ss.id + ":" + i));
+    && !approvalKept(sec(state.gid, i), ss.id) && !busy.has("share:" + ss.id + ":" + i));
   if (!lost.length) return null;
   return el("div", { class: "callout bad" }, "This browser does not hold its approval for this "
     + "payment any more: the browser data that held it was deleted. The payment cannot finish "

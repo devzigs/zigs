@@ -3,7 +3,7 @@ import { createPasskey, open as openVault, parseVault, seal, unlockKey } from ".
 import { skey } from "./util.js";
 import { normChats } from "./chat.js";
 import { log, showBanner } from "./app-state.js";
-import { S, said, withTimeout } from "./app-kit.js";
+import { exclusive, isObj, S, said, withTimeout } from "./app-kit.js";
 import { Z } from "./app-engine.js";
 import { adoptInviteKey } from "./app-links.js";
 import { boot } from "./app-groups.js";
@@ -78,13 +78,21 @@ export async function persistSealed() {
 }
 
 // Writes the secrets and wallet keys. Resolves true once saved. Sealed writes are queued, so the
-// last one always holds the newest state.
+// last one always holds the newest state. A save also saves the changes that came before it.
 export function persist() {
+  const upTo = changes;
+  const done = (ok) => {
+    if (ok) for (const [k, n] of unsaved) if (n <= upTo) unsaved.delete(k);
+    return ok;
+  };
   if (lockedVault) return Promise.resolve(false);
-  if (!vault) return Promise.resolve(persistPlain());
-  vaultWrite = vaultWrite.then(persistSealed);
+  if (!vault) return Promise.resolve(done(persistPlain()));
+  vaultWrite = vaultWrite.then(persistSealed).then(done);
   return vaultWrite;
 }
+// The seats whose last change no save holds yet, with the number of that change (putSec).
+const unsaved = new Map();
+let changes = 0;
 
 export async function lockWithPasskey() {
   if (!storageOk) throw new Error("This browser does not let the page save data.");
@@ -115,8 +123,10 @@ export async function unlockVault() {
     throw new Error("The locked keys in this browser are damaged and cannot be opened.");
   }
   const key = await unlockKey(lockedVault);
+  // Another tab may have saved since this page loaded: open the record that storage holds now.
+  const rec = parseVault(localStorage.getItem("zf-vault")) || lockedVault;
   let got;
-  try { got = await openVault(key, lockedVault); }
+  try { got = await openVault(key, rec); }
   catch { throw new Error("This passkey does not open the saved keys. Use the Zigs passkey."); }
   secrets = got.secrets || {};
   gkeys = got.keys || {};
@@ -127,6 +137,8 @@ export async function unlockVault() {
   lockedVault = null;
   adoptInviteKey();   // an invite link opened while locked waits in the fragment
   boot();
+  // A storage event of another tab during the unlock was dropped: take what storage holds now.
+  takeFromTab("zf-vault").catch((e) => log("could not read another tab's save: " + said(e)));
 }
 
 export function forgetVault() {
@@ -136,37 +148,65 @@ export function forgetVault() {
 
 /**
  * Takes what storage holds now into this tab, after this tab's own queued writes: another tab
- * may have saved a change that this tab has not taken yet (takeSecrets, takeKeys). A missing or
- * unreadable plain record leaves this tab as it is: it may be the last copy. A sealed record
- * that does not open stops the step.
+ * may have saved a change that this tab has not taken yet (takeSecrets, takeKeys, takeChats and,
+ * from a sealed record, takeAccount). A missing or unreadable plain record leaves this tab as it
+ * is: it may be the last copy. A sealed record that does not open stops the step. Resolves to the
+ * opened sealed record, else null.
  */
 export async function takeStored() {
-  if (lockedVault) return;
+  if (lockedVault) return null;
   if (vault) return takeSealed();
-  if (secrets === mem) return;
+  if (secrets === mem) return null;
   try {
-    if (localStorage.getItem("zf-vault")) return;
-    takeSecrets(JSON.parse(localStorage.getItem("zf-secrets") || "{}"));
-    takeKeys(JSON.parse(localStorage.getItem("zf-keys") || "{}"));
+    if (localStorage.getItem("zf-vault")) return null;
+    takeSecrets(plainRecord("zf-secrets", {}));
+    takeKeys(plainRecord("zf-keys", {}));
+    takeChats(normChats(plainRecord("zf-chats", null)));
   } catch { /* blocked or damaged: keep this tab's copy */ }
+  return null;
 }
-// Of each seat in storage, the nonces and marks come from there: another tab may have used a
-// nonce or set a mark. The other fields stay as this tab holds them, since a save of this tab may
-// have failed. A seat that only one side holds stays.
+// The plain record `name`, or `empty` when there is none. A damaged record throws.
+const plainRecord = (name, empty) => JSON.parse(localStorage.getItem(name)) ?? empty;
+// Each seat in storage comes in whole: another tab may have saved it since this tab read it. A
+// seat whose last change no save holds keeps that change, and only its nonces and marks come from
+// storage, the Solana ones too. A change that was not saved never went out. A seat that only this
+// tab holds stays.
 function takeSecrets(stored) {
   for (const [k, v] of Object.entries(stored)) {
-    secrets[k] = secrets[k] ? { ...secrets[k], nonces: v.nonces, marks: v.marks } : v;
+    if (!isObj(v)) continue;
+    secrets[k] = unsaved.has(k) && secrets[k] ? withStoredNonces(secrets[k], v) : v;
   }
+}
+function withStoredNonces(mine, v) {
+  const out = { ...mine, nonces: v.nonces, marks: v.marks };
+  if (!mine.sol && !v.sol) return out;
+  const s = v.sol || {};
+  out.sol = { ...mine.sol, nonces: s.nonces, used: s.used, pending: s.pending };
+  return out;
 }
 // Both sides keep their wallet keys. ponytail: a key that an undone restore removed in another tab
 // comes back here, and opens that wallet with no seat, as an invite link does.
 const takeKeys = (stored) => { gkeys = { ...stored, ...gkeys }; };
+// Both sides keep their chats, and this tab keeps its profile. ponytail: a chat that the person
+// left in another tab comes back when a step here saves before the storage event of the leave.
+const takeChats = (stored) => {
+  chats = { profile: chats.profile || stored.profile, list: { ...stored.list, ...chats.list } };
+};
+// A step here keeps an account that a record of another tab holds and this tab does not have
+// yet, so it never seals "no account" over one.
+function takeAccount(got) {
+  if (personal || personalDamaged || got.personal == null) return;
+  adoptPersonal(got.personal);
+  followAccount();
+}
 export function mySeatSecrets(gid) { return Object.entries(secrets).filter(([k]) => k.startsWith(gid + ":")).map(([k, v]) => [Number(k.split(":")[1]), v]); }
 export function sec(gid, seat) { return secrets[skey(gid, seat)]; }
 export function putSec(gid, seat, patch) {
-  const held = Object.assign(secrets[skey(gid, seat)] || {}, patch);
+  const k = skey(gid, seat);
+  const held = Object.assign(secrets[k] || {}, patch);
   delete held.backedUp;   // the flag of an older version, see seatBackedUp in util.js
-  secrets[skey(gid, seat)] = held;
+  secrets[k] = held;
+  unsaved.set(k, ++changes);
   return persist();
 }
 
@@ -237,36 +277,41 @@ export async function loadKept(gid, sid) {
   catch (e) { log("kept payment unreadable: " + (e.message || e)); return null; }
 }
 
-// Another tab saved: take its secrets, wallet keys and chats, so this tab neither misses nor
-// overwrites them.
+// Another tab saved. Under the lock of the secrets this tab takes what storage holds now, as a
+// locked step does, so a step of this tab is never undone and a late event changes nothing. Then
+// the chats, and the account of a sealed record, come in as the other tab saved them: a chat or an
+// account that it removed goes here too.
 const TAB_KEYS = new Set(["zf-secrets", "zf-keys", "zf-chats", "zf-vault"]);
-const TAKE_PLAIN = {
-  "zf-secrets": (v) => { secrets = v; },
-  "zf-keys": takeKeys,
-  "zf-chats": (v) => { chats = normChats(v); },
-};
-export async function takeFromTab(key, value) {
-  if (!vault) TAKE_PLAIN[key]?.(JSON.parse(value));
-  else if (key === "zf-vault") await takeVault(value);
-}
-
-// Reads the sealed record after this tab's queued writes. The secrets and wallet keys come in as in
-// takeStored, so a write of this tab during the decrypt keeps its fields in memory. The chats and
-// the account stay as they are.
-async function takeSealed() {
-  await vaultWrite;
-  const text = localStorage.getItem("zf-vault");
-  if (!text) return;
-  const got = await openVault(vault.key, parseVault(text)).catch(() => {
-    throw new Error("The locked keys in this browser cannot be read again. Reload the page.");
+export function takeFromTab(key) {
+  if (vault ? key !== "zf-vault" : key === "zf-vault") return Promise.resolve();
+  return exclusive("secrets", async () => {
+    const got = await takeStored();
+    if (got) takeVaultRest(got);
+    else if (key === "zf-chats") chats = normChats(plainRecord(key, null));
   });
-  if (got.secrets) takeSecrets(got.secrets);
-  if (got.keys) takeKeys(got.keys);
 }
 
-async function takeVault(value) {
-  const got = await openVault(vault.key, parseVault(value));
-  ({ secrets, keys: gkeys } = got);
+// Reads the sealed record again until no write of this tab came in during the decrypt, so such a
+// write (a removed seat too) is never undone. Resolves to the opened record.
+async function takeSealed() {
+  for (;;) {
+    const queued = vaultWrite;
+    await queued;
+    const text = localStorage.getItem("zf-vault");
+    if (!text) return null;
+    const got = await openVault(vault.key, parseVault(text)).catch(() => {
+      throw new Error("The locked keys in this browser cannot be read again. Reload the page.");
+    });
+    if (queued !== vaultWrite) continue;
+    if (got.secrets) takeSecrets(got.secrets);
+    if (got.keys) takeKeys(got.keys);
+    takeChats(normChats(got.chats));
+    takeAccount(got);
+    return got;
+  }
+}
+
+function takeVaultRest(got) {
   chats = normChats(got.chats);
   // A page from before the accounts writes no `personal` field, not even null. It erased the
   // account from the record: seal ours again. A null means that another tab removed it.
@@ -280,7 +325,7 @@ async function takeVault(value) {
 
 window.addEventListener("storage", async (ev) => {
   if (lockedVault || !TAB_KEYS.has(ev.key) || !ev.newValue) return;
-  try { await takeFromTab(ev.key, ev.newValue); }
+  try { await takeFromTab(ev.key); }
   catch (e) { log("could not read another tab's save: " + (e.message || e)); }
   render(); react();
 });
