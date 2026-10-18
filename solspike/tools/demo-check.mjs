@@ -16,7 +16,8 @@
 // - zecTransparent: transparent addresses only. A unified address needs a viewing key: read its
 //   Available balance in the app.
 // The Helius URL comes from ~/.config/zigs/helius-app.url (HELIUS_URL_FILE moves it). The
-// variables DEMO_CHECK_LWD, DEMO_CHECK_VALAR and DEMO_CHECK_SOL_FAUCET move the other servers.
+// variables DEMO_CHECK_LWD, DEMO_CHECK_VALAR and DEMO_CHECK_SOL_FAUCET move the other servers, and
+// DEMO_CHECK_TIMEOUT_MS changes the 10 s limit of each call.
 import { createHash } from "node:crypto";
 import { existsSync, readFileSync, statSync } from "node:fs";
 import { homedir } from "node:os";
@@ -31,7 +32,7 @@ const SOL_FAUCET = process.env.DEMO_CHECK_SOL_FAUCET ?? "https://faucet.solana.c
 const CONFIG = join(homedir(), ".config", "zigs", "demo-check.json");
 const DEFAULT_APPS = [{ origin: "https://app.zigs.app" }, { origin: "https://staging.zigs.app" }];
 const KEYS = ["apps", "solFees", "zecTransparent"];
-const TIMEOUT_MS = 10_000;
+const TIMEOUT_MS = Number(process.env.DEMO_CHECK_TIMEOUT_MS) || 10_000; // each call and the socket
 const HEIGHT_GAP = 5n; // blocks between the light-wallet servers
 const SOL_FLOOR = "0.003"; // docs/hackathon-release.md section 8, step 10
 // Each connect makes the group server keep one small row for this id, so it stays the same.
@@ -96,10 +97,15 @@ function readConfig(file) {
   } catch (err) {
     bad(`cannot read the config ${path}: ${err.message}`);
   }
-  if (Object.prototype.toString.call(config) !== "[object Object]") bad(`${path}: not an object`);
-  const unknown = Object.keys(config).find((key) => !KEYS.includes(key));
-  if (unknown) bad(`${path}: unknown key ${unknown}, use ${KEYS.join(", ")}`);
-  return config;
+  return objectOf(config, KEYS, path);
+}
+
+/** The value, when it is a JSON object with no key outside `keys`. A misspelled key stops it. */
+function objectOf(value, keys, where) {
+  if (Object.prototype.toString.call(value) !== "[object Object]") bad(`${where}: not an object`);
+  const unknown = Object.keys(value).find((key) => !keys.includes(key));
+  if (unknown) bad(`${where}: unknown key ${unknown}, use ${keys.join(", ")}`);
+  return value;
 }
 
 const listOf = (config, key) =>
@@ -117,8 +123,9 @@ const amount = (n, decimals) => {
   return `${digits.slice(0, -decimals)}.${digits.slice(-decimals)}`.replace(/\.?0+$/, "");
 };
 
-function appOf(entry) {
-  const origin = String(entry?.origin ?? "");
+function appOf(value) {
+  const entry = objectOf(value, ["origin", "passwordFile"], "apps");
+  const origin = String(entry.origin ?? "");
   if (!/^https?:\/\/[^/]+$/.test(origin)) bad(`apps: "${origin}" is no origin`);
   const app = { origin, host: new URL(origin).host };
   if (!entry.passwordFile) return app;
@@ -134,14 +141,16 @@ function appOf(entry) {
   return app;
 }
 
-function solFeeOf(entry) {
-  const address = String(entry?.address ?? "");
+function solFeeOf(value) {
+  const entry = objectOf(value, ["address", "min"], "solFees");
+  const address = String(entry.address ?? "");
   if (!SOL_ADDRESS.test(address)) bad(`solFees: "${address}" is no Solana address`);
   return { address, floor: units(entry.min ?? SOL_FLOOR, 9, `solFees ${short(address)}`) };
 }
 
-function zecOf(entry) {
-  const address = String(entry?.address ?? "");
+function zecOf(value) {
+  const entry = objectOf(value, ["address", "min"], "zecTransparent");
+  const address = String(entry.address ?? "");
   if (address.startsWith("utest1")) {
     bad(`zecTransparent: ${short(address)} is a unified address. A shielded balance needs the ` +
       "viewing key: read the Available balance in the app.");
@@ -240,15 +249,27 @@ function helius() {
   return heliusUrl;
 }
 
-async function rpc(method, params, origin = APP_ORIGIN) {
+// A missing key file gives null here; the Helius checks report it with its path.
+const localHelius = () => {
+  try {
+    return helius();
+  } catch {
+    return null;
+  }
+};
+
+async function rpc(method, params, origin = APP_ORIGIN, url = helius()) {
   const body = JSON.stringify({ jsonrpc: "2.0", id: 1, method, params });
   const headers = { "content-type": "application/json", origin };
-  const res = await fetch(helius(), { method: "POST", headers, body, signal: signal() });
+  const res = await fetch(url, { method: "POST", headers, body, signal: signal() });
   if (res.status === 403) {
     throw new Error(`${method} answered 403 for Origin ${origin}: add it to the Allowed Domains ` +
       "of the Helius key (D4)");
   }
   if (res.status !== 200) throw new Error(`${method} answered HTTP ${res.status}`);
+  // The Solana Worker of the page can read an answer only when its CORS header allows the origin.
+  const cors = res.headers.get("access-control-allow-origin");
+  if (cors !== "*" && cors !== origin) throw new Error(`${method}: CORS does not allow ${origin}`);
   const reply = await res.json();
   if (reply.error) throw new Error(`${method}: ${reply.error.message}`);
   return reply.result;
@@ -272,14 +293,22 @@ async function pagesCheck(app) {
   const rpcUrl = config.status === 200 ? (await config.json()).rpcUrl : undefined;
   if (typeof rpcUrl !== "string") throw new Error(`/sol/config.json answered ${config.status}`);
   redact.add(rpcUrl);
-  return "/ and /sol/config.json answer 200 with the password";
+  const pages = "/ and /sol/config.json answer 200 with the password";
+  // The other Helius checks use the local key file: a server with another key gets its own read.
+  if (rpcUrl === localHelius()) return pages;
+  await rpc("getVersion", [], app.origin, rpcUrl);
+  return `${pages}; its own Helius key answers for this origin`;
 }
 
 function socketCheck(app) {
   const url = `${app.origin.replace(/^http/, "ws")}/ws?g=${PROBE_GROUP}`;
   return new Promise((done, fail) => {
     const ws = new WebSocket(url, { headers: { authorization: app.auth } });
+    // Node 22 fires error again inside close() of a socket that is not open: run end() once.
+    let ended = false;
     const end = (error) => {
+      if (ended) return;
+      ended = true;
       clearTimeout(timer);
       ws.close();
       if (error) fail(new Error(error));

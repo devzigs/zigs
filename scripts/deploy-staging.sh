@@ -101,4 +101,4 @@ echo "deploy-staging: $COMMIT ($REF) is live at $URL"
 printf '{"apps": [{"origin": "%s", "passwordFile": "%s"}]}\n' "$URL" "$PASSWORD" \
   > "$WORK/demo-check.json"
 sh "$ROOT/solspike/demo-check.sh" --app-only --config "$WORK/demo-check.json" \
-  || echo "deploy-staging: the preflight above has a FAIL; the deploy itself is live" >&2
+  || echo "deploy-staging: the preflight above did not pass; the deploy itself is live" >&2
