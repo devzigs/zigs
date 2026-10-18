@@ -83,6 +83,9 @@
     "web/test/sol-rent.mjs": {
       "exit": 0
     },
+    "web/test/sol-errors.mjs": {
+      "exit": 0
+    },
     "web/test/demo-check.mjs": {
       "exit": 0
     },

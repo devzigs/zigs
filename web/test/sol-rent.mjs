@@ -137,5 +137,14 @@ await reclaimRent(c, seat);
 assert.equal(chain.accounts.has(live), false);
 assert.equal(chain.balances.get(feeAddress(seat)), held + RENT - FEE);
 
+// S16: the card names the cancel that landed, with a link to the explorer.
+const cancelId = chain.landed.at(-1).signature;
+assert.deepEqual(c.rentDone, { seat, txIds: [cancelId] });
+const after = solView({ ...c, host: { ...c.host, el: node } }, (fn) => fn, {});
+const [cancelled] = findAll(after, (n) => n.attrs["data-sol"] === "rent-done");
+assert.match(textOf(cancelled), new RegExp("Cancel transactions of seat 1:\\s+" + cancelId));
+const href = findAll(cancelled, (n) => n.tag === "a")[0].attrs.href;
+assert.equal(href, "https://explorer.solana.com/tx/" + cancelId + "?cluster=devnet");
+
 console.log("sol-rent: all checks passed");
 process.exit(0);

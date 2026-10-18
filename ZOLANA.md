@@ -334,8 +334,12 @@ and the rent. The rent comes back to that seat at the execute. The group key sig
 3. **Approve.** One FROST round over the 32-byte digest of 7.2. There is no nonce account and no
    message. The nonces are saved under the digest, and `sol_approval_share` signs only a digest
    that the checker gave for this payment.
-4. **Execute.** A seat of a browser with a ready fee key executes: the proposing seat when this
-   browser holds it, else the first ready seat. The Worker proves again with the same plan
+4. **Execute.** A seat of a browser with a ready fee key executes when its fee address holds
+   0.001 SOL or more (the fee, and the rent-exempt minimum of 890,880 lamports after it): the
+   proposing seat when this browser holds it and it is funded, else the first funded ready seat. A
+   browser with no funded seat waits with no banner and looks again every 15 s. The executing seat
+   holds the execute lease (60 s, the server cap) and renews it before and after the send, so no
+   other device sends at the same time. The Worker proves again with the same plan
    (`reprove`), and checks that the first proof and the new proof give the commitment of the body.
    The wasm compiles the execute message, checks that the approval verifies under the group key
    over the digest of the new data, and only then does the fee key sign. The executing seat pays

@@ -306,10 +306,13 @@ Each Solana screen says what is public and what Helius sees:
 - **Before Add Solana:** the program address links to the group key, a fee address needs a public
   SOL funding trail, and the program and its upgrade key are outside the group.
 - **The details of the wallet:** the two keys of the pool outside the group (below).
-- **The sync:** each sync shows Helius the keys of the wallet with your IP address, so Helius can
-  list every note of the wallet.
-- **The fund card:** the fee address appears on chain next to the group, and Helius sees it with
-  your IP address when you check the balance or pay.
+- **The sync:** the page syncs with no click when the Solana tab opens and after a payment or a
+  deposit. Each sync shows Helius the keys of the wallet with your IP address, so Helius can list
+  every note of the wallet.
+- **The fund card:** the fee address appears on chain next to the group. The page asks Helius for
+  the balance of each fee address of this browser with your IP address, with no click. It asks
+  when the Solana tab opens, after a payment or Add SOL, and again when such a read failed. It
+  also asks every 30 s while a signed payment waits for a seat that can pay.
 - **Add SOL:** the amount and the sender are public, and Helius sees your IP address with the
   deposit.
 - **Pay from the group:** the rent and the fees, and what the hosted prover sees: the owner keys,

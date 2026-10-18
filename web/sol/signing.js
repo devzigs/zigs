@@ -14,7 +14,7 @@ import { CLUSTER, base58 } from "./docs.js";
 import { signingBlock, writerSeats } from "./gate.js";
 import { bytesOf, chainHex, decodeIntent, wireBase64 } from "./intent.js";
 import { clearPending, dropNonces, pendingShare, savedNonces, spendNonces } from "./nonces.js";
-import { BLOCKHASH_MS, deviceSeen, inputsOf, showable } from "./approve.js";
+import { BLOCKHASH_MS, REREAD_MS, deviceSeen, inputsOf, showable, stampSeen } from "./approve.js";
 import { PAYMENT_EXPIRED, maybeExecute, pastExpiry } from "./execute.js";
 import { solOf, stopOf } from "./secrets.js";
 import { ensureWorker } from "./session.js";
@@ -44,6 +44,22 @@ const HOLDER = crypto.randomUUID();
 const leased = async (ref, ttlMs) => (await ref.acquire({ holder: HOLDER, ttlMs })).acquired;
 const sessionRef = (c, ss) => c.host.sdb.doc(c.base + "/" + SESSIONS + "/" + ss.id);
 const errorText = (e) => String(e?.message ?? e).slice(0, 300);
+
+// A failed wallet read waits 3 s, then twice as long each time up to 60 s, so a refused or rate
+// limited RPC gets fewer calls. Its banner shows once for each text, not on every try.
+const BACKOFF_FIRST_MS = 3_000;
+const BACKOFF_MAX_MS = 60_000;
+
+/** Records a failed read of step `key`, shows a new text once, and returns the wait in ms. */
+export function backOff(c, key, e) {
+  const last = c.readFails[key];
+  const text = errorText(e);
+  const n = (last?.n ?? 0) + 1;
+  c.readFails[key] = { n, text };
+  c.host.log("✗ " + key + ": " + text);
+  if (last?.text !== text) c.host.showBanner("bad", text);
+  return Math.min(BACKOFF_FIRST_MS * 2 ** (n - 1), BACKOFF_MAX_MS);
+}
 
 async function failSession(c, ss, text) {
   const seat = writerSeats(c)[0];
@@ -323,8 +339,7 @@ const expired = (ss) =>
 const paymentExpired = (ss) => isPayment(ss) && !ss.signature && pastExpiry(ss);
 
 // A node may show a new proposal account a moment after the create: a device that read none
-// reads it again after this, so its screen does not keep a refusal.
-const REREAD_MS = 5000;
+// reads it again after REREAD_MS (approve.js), so its screen does not keep a refusal.
 const accountMissing = (c, ss) =>
   isPayment(ss) && c.seen[ss.id]?.account === null && Date.now() - c.seen[ss.id].at > REREAD_MS;
 
@@ -336,12 +351,26 @@ function maybeReadWallet(c, ss) {
   const kind = decodeIntent(ss.intent)?.kind;
   if (!waiting || !["transfer", "approve", "withdraw"].includes(kind)) return;
   if (!c.rpcUrl || writerSeats(c)[0] === undefined) return;
-  launch(c, "snap:" + ss.id, async () => {
-    if (isPayment(ss)) c.seen[ss.id] = { ...(await deviceSeen(c, ss)), at: Date.now() };
-    c.snaps[ss.id] = await deviceSpend(c, ss);
-    // The pass of the reactor after this step reads a missing account again.
-    if (isPayment(ss) && c.seen[ss.id].account === null) await sleep(REREAD_MS + 100);
+  const key = "snap:" + ss.id;
+  launch(c, key, async () => {
+    try {
+      await readWallet(c, ss);
+      delete c.readFails[key];
+    } catch (e) {
+      await sleep(backOff(c, key, e));
+    }
   });
+}
+
+async function readWallet(c, ss) {
+  if (isPayment(ss)) c.seen[ss.id] = stampSeen(c.seen[ss.id], await deviceSeen(c, ss));
+  try {
+    c.snaps[ss.id] = await deviceSpend(c, ss);
+  } finally {
+    // The pass of the reactor after this step reads a missing account again, also after a
+    // failed wallet read: a shorter wait would end before the re-read is due.
+    if (isPayment(ss) && c.seen[ss.id].account === null) await sleep(REREAD_MS + 100);
+  }
 }
 
 /** Why a session ends before it is sent, or null. */
