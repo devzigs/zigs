@@ -163,8 +163,10 @@ that it gives and the history of both.
 How the app reads the registry:
 
 - The route `/zns` of the app Worker downloads the list of all names of the testnet registry from
-  the public resolver `light.zcash.me`. It sends no header of yours to the resolver. It checks the
-  published key of the registry. It serves a copy that is at most 60 seconds old.
+  the public resolver `light.zcash.me`. It sends no header of yours to the resolver. It checks
+  that the resolver states the published key of the registry. That shows which registry the
+  resolver reads, but it does not prove the records. The Worker leaves out a record that fails
+  its checks, so that name gives "not found". It serves a copy that is at most 60 seconds old.
 - The page downloads that copy, behind the same password as every other request, and finds the
   name on the device. It never asks a server about one name.
 
@@ -188,10 +190,15 @@ The timing of a download can still tell the Worker something:
 What the app trusts, and what it checks:
 
 - The address comes from the registry. One registrar, the ZNS Mint, writes the registry. The app
-  checks the key of the registry, not each record on chain.
+  checks the key that the resolver states, not each record on chain.
+- The page trusts the app Worker for the registry, as it trusts it for the code of the page. A
+  false Worker could send a false registry to the devices of one wallet. The approvers read the
+  same copy, so their check would not see it. They still see the address, and the payment goes
+  only to the address that they approve.
 - A name can move to another address. The proposer sees the address that the name gives, and a
-  note when the name changed recently. Each approving device looks the name up again, in its own
-  copy, and refuses the approval when the name now gives another address than the payment.
+  note when the name changed recently. Each approving web app looks the name up again, in its own
+  copy, and refuses the approval when the name now gives another address than the payment. The
+  iPhone and Mac apps show the address and do not check the name.
 - The page uses its copy for at most 60 seconds, so the copy is at most about 2 minutes behind
   the resolver. The resolver can fall behind the chain too. So the page refuses a registry that is
   more than 10 blocks below the chain height of the wallet.

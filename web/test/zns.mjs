@@ -135,16 +135,43 @@ for (let i = 0; i < 499; i++) put(`n${i}`, addr(`n${i}`), 3 + i);
 const bad = (field, value) => tamper("list_names", (r) => { r.items[0][field] = value; });
 const hang = (c) => c.method === "list_names" && c.params.offset ? new Promise((_, no) =>
   c.init.signal.addEventListener("abort", () => no(new Error("SECRET")))) : undefined;
+// A bad record is left out: its name gives "not found", every other name stays, nothing is logged.
+const badRecords = {
+  "a name in capitals": bad("name", "Bad-Name"),
+  "an address of another network": bad("address", "u1" + "q".repeat(60)),
+  "an address in mixed case": bad("address", "uTeSt1" + "q".repeat(40)),
+  "a txid that is no hash": bad("txid", "xyz"),
+  "an expiry that is no number": bad("expires_at", 5),
+  "a negative height": bad("height", -1),
+  "a release record": bad("last_action", "release"),
+  "a record that is no object": tamper("list_names", (r) => { r.items[0] = null; }),
+};
+for (const [label, make] of Object.entries(badRecords)) {
+  const w = await loadWorker(), first = [...chain.names.keys()][0];
+  errors.length = 0;
+  fault = make;
+  const res = await ask(w);
+  fault = null;
+  const got = await byName(res);
+  assert.deepEqual([res.status, got.has(first), got.size, errors], [200, false,
+    chain.names.size - 1, []], label);
+}
+{
+  // The name of items[0] comes twice: with another address, then as the same record.
+  const first = [...chain.names.keys()][0];
+  fault = tamper("list_names", (r) => { r.items[1] = { ...r.items[0], address: addr("other") }; });
+  const got = await byName(await ask(await loadWorker()));
+  fault = tamper("list_names", (r) => { r.items[1] = structuredClone(r.items[0]); });
+  const again = await byName(await ask(await loadWorker()));
+  fault = null;
+  assert.deepEqual([got.has(first), again.get(first)?.address], [false, chain.names.get(first)
+    .address]);
+}
+step("a bad record is left out, and so is a name with two addresses; the rest is served");
+
 const faults = {
   "a wrong registry key": [tamper("status", (r) => { r.viewing_key = "uviewtest1x"; }), "status"],
   "a synced that is no boolean": [tamper("status", (r) => { r.synced = "yes"; }), "status"],
-  "a name in capitals": [bad("name", "Bad-Name"), "bad record"],
-  "an address of another network": [bad("address", "u1" + "q".repeat(60)), "bad record"],
-  "an address in mixed case": [bad("address", "uTeSt1" + "q".repeat(40)), "bad record"],
-  "a txid that is no hash": [bad("txid", "xyz"), "bad record"],
-  "an expiry that is no number": [bad("expires_at", "soon"), "bad record"],
-  "a negative height": [bad("height", -1), "bad record"],
-  "a release record": [bad("last_action", "release"), "bad record"],
   "a page with no limit": [tamper("list_names", (r) => { delete r.limit; }), "bad page"],
   "a page cut short": [tamper("list_names", (r) => { r.items.length = 100; }), "bad page"],
   "a JSON-RPC error": [(c) => Response.json({ jsonrpc: "2.0", id: c.id, error: { code: -1 } }),

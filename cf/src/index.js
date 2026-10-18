@@ -289,7 +289,7 @@ const ZNS_KEY = [
 const ZNS_PAGE = 500, ZNS_MAX_PAGES = 40; // the largest page of the resolver; pages per refresh
 const ZNS_FRESH_MS = 60_000, ZNS_PAUSE_MS = 30_000, ZNS_DEADLINE_MS = 20_000;
 // The only causes that the log holds: no text of the resolver, no text of an exception.
-const ZNS_CAUSES = ["upstream", "deadline", "status", "bad record", "bad page", "page cap"];
+const ZNS_CAUSES = ["upstream", "deadline", "status", "bad page", "page cap"];
 // The address has at most 1,000 characters: "utest1" and up to 994 more.
 const ZNS_TEXT = {
   name: /^[a-z0-9]{1,63}$/, address: /^utest1[0-9a-z]{1,994}$/, txid: /^[0-9a-f]{64}$/,
@@ -298,7 +298,8 @@ const ZNS_TEXT = {
 
 const znsFail = (cause) => new Error(cause);
 
-// A payment path fails closed: one unsound record fails the whole refresh.
+// A record that fails this check is left out, so its name gives "not found" and never a wrong
+// address. One odd record must not stop the names of everyone else.
 function znsValid(r) {
   const text = ([field, re]) => typeof r[field] === "string" && re.test(r[field]);
   return r !== null && typeof r === "object" && Object.entries(ZNS_TEXT).every(text)
@@ -367,13 +368,23 @@ let znsSnap = null; // { at, body }
 let znsLoading = null; // the refresh in flight, shared by parallel requests
 let znsPausedUntil = 0; // no call upstream before this time
 
+// The sound records by name. A page boundary can repeat a record. A name with two different
+// addresses is left out, because its address is not clear.
+function znsByName(rows) {
+  const byName = new Map(), unclear = new Set();
+  for (const r of rows.map(znsLower).filter(znsValid)) {
+    if (byName.has(r.name) && byName.get(r.name).address !== r.address) unclear.add(r.name);
+    byName.set(r.name, znsRecord(r));
+  }
+  for (const name of unclear) byName.delete(name);
+  return byName;
+}
+
 // One refresh with one deadline. The answer body is made once, for all requests of the minute.
 async function znsRefresh() {
   const signal = AbortSignal.timeout(ZNS_DEADLINE_MS), started = Date.now();
   const { height, synced } = await znsStatus(signal);
-  const rows = (await znsNames(signal)).map(znsLower);
-  if (!rows.every(znsValid)) throw znsFail("bad record");
-  const byName = new Map(rows.map((r) => [r.name, znsRecord(r)]));
+  const byName = znsByName(await znsNames(signal));
   const names = [...byName.values()].sort((a, b) => (a.name < b.name ? -1 : 1));
   const body = JSON.stringify({ network: "test", key: ZNS_KEY, height, synced, names });
   znsSnap = { at: started, body };

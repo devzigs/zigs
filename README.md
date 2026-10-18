@@ -27,8 +27,9 @@ the wallet, and on chain each payment looks like a shielded payment from a stand
   it. The iPhone and Mac apps show the link as text ([how](PROTOCOL.md#payment-requests)).
 - ZNS names (testnet, web app): the Send form accepts a name such as `alice.zec` and shows the
   address that the name gives. The page looks the name up in a copy of the whole registry, so no
-  server learns which name you pay. Each approver looks the name up again and refuses a payment
-  whose address the name no longer gives ([privacy](PRIVACY.md#zns-names-testnet)).
+  server learns which name you pay. Each approver in the web app looks the name up again and
+  refuses a payment whose address the name no longer gives. The iPhone and Mac apps show the
+  address only ([privacy](PRIVACY.md#zns-names-testnet)).
 - Personal account: the web app can hold a small single-signer account that pays the fee of
   messages on chain. Add the shielded address of a contact, and write to them, also if they do not
   use Zigs. Each message is a payment of no value, and its text is the memo. Each contact gets an
@@ -677,9 +678,10 @@ folder path.
   the /64 of IPv6), the headers to the node (the allowed ones and the key only), the answer, the 503
   and 502 cases, and a response that streams.
 - `node web/test/zns.mjs`: the `/zns` route with a fake resolver: a full load over pages on each
-  refresh after 60 s, a page size that the resolver states, the page cap, the 502 cases (another
-  registry key, bad data, a cut page, a failed or hung call) with one fixed cause and a 30 s pause,
-  the method rule, the password gate, and the headers to the resolver (content-type only). Then
+  refresh after 60 s, a page size that the resolver states, the page cap, a bad record or a name
+  with two addresses left out, the 502 cases (another registry key, a cut page, a failed or hung
+  call) with one fixed cause and a 30 s pause, the method rule, the password gate, and the headers
+  to the resolver (content-type only). Then
   `web/zns.js`: the names that the Send form accepts (no t-address or TEX form), a lookup, an
   unknown name, a registry too far behind the tip of the wallet, a name that moved, and the
   refusal of an approving device whose copy gives another address.
@@ -717,8 +719,8 @@ folder path.
   Ironwood.
 - **One mainnet server.** Mainnet wallets depend on ChainSafe's public light-wallet server.
 - **ZNS names trust the registry.** A name gives the address that the ZNS Mint wrote, and one
-  registrar runs it. The app checks the key of the registry, not each record on chain. Names
-  work on testnet only.
+  registrar runs it. The app checks the key that the resolver states, not each record on chain,
+  and it trusts the app Worker for its copy. Names work on testnet only.
 - **Solana is a beta on Devnet.** Testnet wallets only, web app only, not audited. The hosted prover
   of Helius sees the witness of each spend, the pool has an upgrade key outside the group, and
   sender and recipient of a transfer are public. [TICKETS.md](TICKETS.md) lists the open work.
