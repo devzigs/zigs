@@ -270,8 +270,8 @@ export function solSteps(first) {
     setupStep(feeStage, first + 1, "Fund your fee address", feeText)];
 }
 
-// A page that saw the Solana key ceremony run keeps the fee step until the fee addresses hold SOL.
-// After a reload the balances are unknown until Check balance, so a funded part shows no card.
+// An Overview that showed the key ceremony run keeps the fee step until the fee addresses hold
+// SOL. After a reload the balances are unknown until Check balance, so a funded part shows no card.
 const sawSetup = new Set();
 // The Solana tab exists here: a seat of this browser, and a module that loaded.
 const solCardHere = () => solPlanned() && solOn() && localSeats().length > 0 && !solError;
@@ -280,8 +280,9 @@ const solCardHere = () => solPlanned() && solOn() && localSeats().length > 0 && 
 export function solUnfinished() {
   if (!solCardHere()) return false;
   const s = solSetup();
-  if (s?.status === "running") sawSetup.add(state.gid);
-  if (s?.status !== "ready") return true;
+  if (!s) return false;   // the module still loads: no Solana state to show yet
+  if (s.status === "running") sawSetup.add(state.gid);
+  if (s.status !== "ready") return true;
   if (solFeeStep(s)[0] === "done") return false;
   return sawSetup.has(state.gid) || s.fees.some((f) => f.balance === "0 SOL");
 }

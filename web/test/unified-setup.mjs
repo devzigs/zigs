@@ -652,6 +652,9 @@ const byId = (node, id) =>
   await waitFor("the stop", () => solSetup()?.status === "stopped");
   assert.match(pageText(), /The Solana part stopped/);
   assert.ok(walletReady(), "the Zcash part is still ready");
+  ui.tab = "solana";
+  assert.doesNotMatch(pageText(), /Add Solana/, "a stopped part offers no start");
+  ui.tab = "overview";
 }
 
 // ── The backup note asks for the Solana file of each seat, until it is saved ──

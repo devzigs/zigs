@@ -321,7 +321,7 @@ export function solView(c, act, actions) {
       STATUS_TEXT[status]),
     el("p", { class: "small", "data-sol": "public-text" }, PUBLIC_TEXT),
     ...stopCards(c),
-    started(c.docs) ? seatList(c) : startCard(c, act, actions),
+    started(c.docs) ? seatList(c) : stopped ? null : startCard(c, act, actions),
     ag.state === "differ" ? el("div", { class: "callout bad", role: "alert" }, ag.why) : null,
     ...readyCards(c, act, actions, ag),
     stopped ? null : backupCard(c, act, actions),
