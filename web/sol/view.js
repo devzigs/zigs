@@ -25,8 +25,8 @@ export const PUBLIC_TEXT =
   "sees each payment. The Zigs server operator can link this wallet to these addresses by timing.";
 function statusOf(c, ag) {
   if (startBlock(c.host)) return "unavailable";
-  if (!started(c.docs)) return "not started";
   if (stopOf(c)) return "stopped";
+  if (!started(c.docs)) return "not started";
   return { agree: "ready", differ: "differs", wait: "running" }[ag.state];
 }
 

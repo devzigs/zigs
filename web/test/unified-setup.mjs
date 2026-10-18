@@ -20,7 +20,7 @@ const { inviteMessage, joinText } = await import("../app-setup.js");
 const { backupWords } = await import("../sol/backup.js");
 const { createDialog } = await import("../app-shell.js");
 const { ui } = await import("../app-state.js");
-const { planSolana } = await import("../app-sol.js");
+const { planSolana, solSetup } = await import("../app-sol.js");
 const { walletReady } = await import("../app-wallet.js");
 const { PUBLIC_TEXT } = await import("../sol/view.js");
 const { reactCeremony } = await import("../sol/ceremony.js");
@@ -175,7 +175,8 @@ const byId = (node, id) =>
   await waitFor("the answer", () => ui.solServed === true);
   assert.match(dialogText(), CHOICE);
   assert.ok("checked" in byId(dialogTree(), "g-sol").attrs, "the box is on by default");
-  ui.sol = false; // what its change handler keeps when the person clears the box
+  byId(dialogTree(), "g-sol").on.change({ target: { checked: false } }); // the person clears it
+  assert.equal(ui.sol, false, "the box keeps the person's no");
   assert.ok(!("checked" in byId(dialogTree(), "g-sol").attrs), "a redraw keeps the person's no");
   ui.sol = undefined;
   // The picker offers testnet only (mainnet-off.mjs). A Change signers dialog has no choice.
@@ -220,6 +221,16 @@ const byId = (node, id) =>
   await sleep(3500);
   assert.equal(data.has(`groups/${gidW}/solstart/1`), false, "no start before Address checked");
   assert.doesNotMatch(t.banner?.text ?? "", /Seat 1 waits/, "and no refusal before it");
+  // Who starts the Solana part: seat 1 with the choice, seat 1 of a moved wallet, another seat.
+  assert.match(pageText(), /Create the Solana key.*Starts when the Zcash address is checked\./s);
+  t.state.g.movedTo = "elsewhere";
+  assert.match(pageText(), /Tap Add Solana on the Solana tab to start it\./, "a moved wallet");
+  delete t.state.g.movedTo;
+  const seat1 = t.secrets[gidW + ":1"];
+  delete t.secrets[gidW + ":1"];
+  const other = pageText();
+  t.secrets[gidW + ":1"] = seat1;
+  assert.match(other, /Seat 1 starts it after the Zcash address check\./, "a browser of seat 2");
   Object.assign(seat, { checkedWallet: wallet, rejectedWallet: null });
   t.refilter();
   const done = (i) => data.has(`groups/${gidW}/soldone/${i}`);
@@ -253,6 +264,8 @@ const byId = (node, id) =>
   await sleep(1500);
   assert.equal(data.has(`groups/${gidH}/solstart/1`), false, "the hint alone starts nothing");
   await t.sol.add();
+  // The page sees the key ceremony run, so it keeps the fee step after it (sawSetup).
+  await waitFor("the ceremony on screen", () => (pageText(), solSetup()?.status === "running"));
   const done = (i) => data.has(`groups/${gidH}/soldone/${i}`);
   await waitFor("every soldone", () => [1, 2, 3].every(done), 30000);
   await waitFor("the key step", () => /one piece of the Solana key/.test(pageText()));
@@ -291,7 +304,48 @@ const byId = (node, id) =>
   ui.create = false;
   t.openGroup(gidH);
   await waitFor("the wallet again", () => t.state.g?.solana === true && t.state.wallet);
+  // The stop card of the Solana tab has the same button.
+  ui.tab = "solana";
+  await waitFor("the stop card", () => byText(pageTree(), "Create a new wallet"));
+  byText(pageTree(), "Create a new wallet").on.click();
+  assert.equal(t.state.gid, null, "the Solana tab button closes the wallet too");
+  Object.assign(ui, { create: false, tab: "overview" });
+  t.openGroup(gidH);
+  await waitFor("the wallet again", () => t.state.g?.solana === true && t.state.wallet);
   await t.putSec(gidH, 1, { sol: kept });
+}
+
+// ── A page that did not see the ceremony run (a reload): the fee step only on a read ──
+{
+  const gidR = await rig.wallet({ name: "Reloaded" });
+  data.set(groupPath(gidR), { ...data.get(groupPath(gidR)), solana: true });
+  rig.notify();
+  await waitFor("the hint", () => t.state.g.solana === true);
+  await t.solLoad();
+  pageText(); // the page while the Solana documents load
+  await t.sol.add();
+  const done = (i) => data.has(`groups/${gidR}/soldone/${i}`);
+  await waitFor("every soldone", () => [1, 2, 3].every(done), 30000);
+  await waitFor("the key", () => solSetup()?.status === "ready");
+  assert.doesNotMatch(pageText(), /Solana is still setting up/, "balances not read: no card");
+  t.sol.ctl.chain = { fees: { 1: "0 SOL" } };
+  assert.match(pageText(), /Send Devnet SOL to your fee address/, "an empty fee address: a card");
+  t.sol.ctl.chain = {};
+}
+
+// ── A signed stop before the start: the Solana part shows as stopped ──
+{
+  const gidX = await rig.wallet({ name: "Stopped early" });
+  data.set(groupPath(gidX), { ...data.get(groupPath(gidX)), solana: true });
+  rig.notify();
+  await waitFor("the hint", () => t.state.g.solana === true);
+  await t.solLoad();
+  const stop = await t.signedDoc(gidX, "solabort/2", 2, { reason: "A test stop.", at: Date.now() });
+  data.set(`groups/${gidX}/solabort/2`, stop);
+  rig.notify();
+  await waitFor("the stop", () => solSetup()?.status === "stopped");
+  assert.match(pageText(), /The Solana part stopped/);
+  assert.ok(walletReady(), "the Zcash part is still ready");
 }
 
 // ── The backup note asks for the Solana file of each seat, until it is saved ──

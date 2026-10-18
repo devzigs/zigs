@@ -16,12 +16,9 @@ import { confirmedNo, groupVersion, safetyNo, seatCheck } from "./app-dkg.js";
 import { restore, sealAndSave } from "./app-backups.js";
 import { once, react, render } from "./app-loop.js";
 
-// Devnet, for version 3 wallets on testnet only. The network must be the one that the people of
-// the wallet confirmed with the safety number (netConfirmed, SOL-34), not only the first one that
-// this device saw. web/sol loads when the Solana tab opens, when a seat signed the wallet's
-// solstart document, or early in the setup of a wallet with the Solana hint (solPreload). The
-// hint is not signed, so a holder of the invite link can make the seats of a wallet fetch the
-// module. Any other wallet never fetches any of it.
+// Devnet, for version 3 wallets on the testnet that the people of the wallet confirmed (SOL-34).
+// web/sol loads from the Solana tab, a signed solstart document, or the unsigned Solana hint
+// (solPreload), which any holder of the invite link can write.
 const solGroup = (gid) =>
   (gid === state.gid && state.g) || state.groups.find((x) => x.id === gid);
 export const solOn = (gid = state.gid) => {
@@ -45,11 +42,8 @@ export function solServed() {
   }
   return ui.solServed === true;
 }
-// The person who makes a wallet chose its Solana part. Seat 1 of this browser keeps `solAuto`, so
-// its reactor starts the Solana ceremony with no button (web/sol/ceremony.js). The group document
-// gets the hint for the other seats.
-// The hint goes first: when its write fails, no seat starts by itself with joiners who never saw
-// the Solana texts.
+// The Solana choice of the create dialog: the hint for the other seats first, then `solAuto` in
+// the secret of seat 1, which starts the ceremony with no button. A failed hint starts nothing.
 export async function planSolana(gid) {
   if (!sec(gid, 1)) return;
   await sdb.doc("groups/" + gid).update({ solana: true });

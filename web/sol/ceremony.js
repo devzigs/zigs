@@ -351,10 +351,9 @@ function stopOnDiffer(c) {
   return true;
 }
 
-// Seat 1 starts by itself when its own seat secret holds `solAuto`: its person chose Solana when
-// they made the wallet (planSolana, app-sol.js). The group document hint must still be there, so
-// the joiners saw the Solana texts, but any holder of the link can write it, so alone it starts
-// nothing. A wallet that moved to new signers starts nothing. The checks run in order.
+// Only `solAuto` in the own secret of seat 1 starts Solana with no button (planSolana). The
+// unsigned hint must still be there, so the joiners saw the Solana texts. A moved wallet starts
+// nothing.
 const AUTO = [
   (c) => c.host.sec(c.gid, 1)?.solAuto === true,
   (c) => c.host.state.g?.solana === true && !c.host.state.g.movedTo,

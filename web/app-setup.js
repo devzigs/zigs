@@ -62,7 +62,7 @@ function safetyCard() {
     el("div", { class: "safety" }, no),
     el("p", { class: "small muted" }, "Compare this number with every signer, on a call or in "
       + "person. If it is different, someone else took a seat. In that case, do not tap "
-      + "\"It matches\". Create a new wallet." + (solPlanned() ? " " + BOTH_OPEN : "")),
+      + "\"It matches\". Create a new wallet." + (bothParts() ? " " + BOTH_OPEN : "")),
     clash.length ? el("div", { class: "callout bad", role: "alert" }, "Seat " + clash.join(", ")
       + " confirmed another number. Someone else may have taken a seat. Do not continue. "
       + "Create a new wallet.") : null,
@@ -80,6 +80,7 @@ const NOT_ZIP2005 = "This wallet is not built to ZIP 2005. Funds cannot be recov
 // A wallet with a Solana part has two key ceremonies, one after the other.
 const BOTH_OPEN = "Every signer keeps this wallet open until the Zcash and the Solana parts are "
   + "ready.";
+const bothParts = () => solPlanned() && !solError;
 export const joinText = () => solPlanned()
   ? "Zigs is a shared wallet for Zcash testnet and Solana Devnet. The Zcash part is shielded. Any "
     + state.g.t
@@ -229,7 +230,9 @@ const SOL_KEY = {
 // (a restore, or a hint that someone else wrote) starts with Add Solana.
 function startText() {
   if (!localSeats().includes(1)) return "Seat 1 starts it after the Zcash address check.";
-  if (sec(state.gid, 1)?.solAuto === true) return "Starts when the Zcash address is checked.";
+  if (sec(state.gid, 1)?.solAuto === true && !state.g.movedTo) {
+    return "Starts when the Zcash address is checked.";
+  }
   return "Tap Add Solana on the Solana tab to start it.";
 }
 const solKeyStep = (s) => s ? SOL_KEY[s.status](s)
@@ -251,21 +254,18 @@ export function solSteps(first) {
     setupStep(feeStage, first + 1, "Fund your fee address", feeText)];
 }
 
-// A page that saw the Solana setup keeps the fee step until the fee addresses hold SOL. After a
-// reload the balances are unknown until Check balance, so a funded part shows no card then.
+// A page that saw the Solana key ceremony run keeps the fee step until the fee addresses hold SOL.
+// After a reload the balances are unknown until Check balance, so a funded part shows no card.
 const sawSetup = new Set();
+// The Solana tab exists here: a seat of this browser, and a module that loaded.
+const solCardHere = () => solPlanned() && solOn() && localSeats().length > 0 && !solError;
 
-/**
- * True while the Solana part of a wallet with the hint is not ready, not funded, or stopped. A
- * page with no Solana tab here (no seat, or a module that did not load) shows no card.
- */
+/** True while the Solana part of a wallet with the hint is not ready, not funded, or stopped. */
 export function solUnfinished() {
-  if (!solPlanned() || !solOn() || !localSeats().length || solError) return false;
+  if (!solCardHere()) return false;
   const s = solSetup();
-  if (s?.status !== "ready") {
-    if (s) sawSetup.add(state.gid);
-    return true;
-  }
+  if (s?.status === "running") sawSetup.add(state.gid);
+  if (s?.status !== "ready") return true;
   if (solFeeStep(s)[0] === "done") return false;
   return sawSetup.has(state.gid) || s.fees.some((f) => f.balance === "0 SOL");
 }
@@ -303,7 +303,7 @@ function progressCard() {
       setupStep(keyStage, 2, "Create the key together", keyText),
       setupStep(addrStage, 3, "Check the address", addrText),
       ...(solPlanned() ? solSteps(4) : [])),
-    addrStage === "done" ? null : el("p", { class: "small muted" }, solPlanned() ? BOTH_OPEN
+    addrStage === "done" ? null : el("p", { class: "small muted" }, bothParts() ? BOTH_OPEN
       : "Every signer must keep Zigs open until setup finishes."),
     activityLog());
 }
