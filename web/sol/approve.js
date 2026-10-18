@@ -130,8 +130,23 @@ const NOT_SHOWN = "This proposal is not one that this app can show.";
 /** True for a session that this app shows and signs: a payment or the move of the beta funds. */
 export const showable = (ss) => readable(ss) && SESSION_KINDS.has(kindOf(ss));
 
+// A node may show a new proposal account a few seconds after the create. A read that finds none
+// is a wait for this long, with a re-read every REREAD_MS; then the checker refusal shows.
+const ACCOUNT_WAIT_MS = 30_000;
+export const REREAD_MS = 5000;
+
+/** The chain state of a payment as read now: the time of the read, and of the first miss. */
+export function stampSeen(prev, seen) {
+  const at = Date.now();
+  if (seen.account !== null) return { ...seen, at };
+  return { ...seen, at, missedSince: prev?.missedSince ?? at };
+}
+
+const accountLate = (seen) =>
+  seen.account === null && Date.now() - seen.missedSince < ACCOUNT_WAIT_MS;
 // A spend waits for the snapshot of this device, and a payment for its chain state too.
-const waits = (ss, spend, seen) => (isSpend(ss) && !spend) || (isPayment(ss) && !seen);
+const waits = (ss, spend, seen) =>
+  (isSpend(ss) && !spend) || (isPayment(ss) && (!seen || accountLate(seen)));
 
 /** The intent of `ss` and no reason, or the reason why seat `seat` cannot review it yet. */
 function reviewBlock(c, ss, seat, spend, seen) {
@@ -201,8 +216,8 @@ function messageReview(c, ss, seat, { spend, intent }) {
 }
 
 // A proposal of the recent-blockhash kind lives about as long as the blockhash. A payment lives
-// until the expiry of its body.
-const expired = (ss) => {
+// until the expiry of its body. After that no seat can approve it (the card shows no button).
+export const approvalClosed = (ss) => {
   if (isPayment(ss)) return !(Math.floor(Date.now() / 1000) < Number(ss.expiry));
   return kindOf(ss) === "createNonce" && !(Date.now() - Number(ss.createdAt) <= BLOCKHASH_MS);
 };
@@ -215,7 +230,7 @@ function approveBlock(c, ss, seat) {
   }
   if (ss.status !== "collecting") return "This proposal is not collecting approvals any more.";
   if (c.commits[ss.id]?.[seat]) return "Seat " + seat + " approved this already.";
-  return expired(ss) ? "This proposal expired. Propose it again." : null;
+  return approvalClosed(ss) ? "This proposal expired. Propose it again." : null;
 }
 
 /** The nonce account must hold the nonce that the proposal names, and the group must own it. */
@@ -278,6 +293,13 @@ async function makeNonces(c, ss, seat, review) {
   return entry;
 }
 
+/** The chain state of a payment, read for a click, with the time of the read. */
+async function readSeen(c, ss) {
+  c.seen[ss.id] = stampSeen(c.seen[ss.id], await deviceSeen(c, ss));
+  // No account yet: a pass of the reactor reads it again, also on an idle page.
+  if (c.seen[ss.id].account === null) setTimeout(() => c.host.refilter(), REREAD_MS + 100);
+}
+
 /**
  * Seat `seat` approves the proposal `ss`. A retry after a crash between the save and the publish
  * publishes the saved commitment again: the nonces are never made twice for one session.
@@ -286,7 +308,7 @@ export async function approve(c, ss, seat) {
   const why = (await settledBlock(c)) ?? approveBlock(c, ss, seat);
   if (why) throw new Error(why);
   if (isSpend(ss)) c.snaps[ss.id] = await deviceSpend(c, ss);
-  if (isPayment(ss)) c.seen[ss.id] = await deviceSeen(c, ss);
+  if (isPayment(ss)) await readSeen(c, ss);
   const review = reviewOf(c, ss, seat);
   if (!review.ok) throw new Error(review.why);
   await checkNonce(c, review);

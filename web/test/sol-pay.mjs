@@ -314,6 +314,54 @@ step("propose creates the proposal account first; no screen before the reads of 
 }
 step("a device that read no proposal account reads it again, with no click");
 
+// ── A missing account is a wait, a click keeps the re-read, an expired proposal has no button
+{
+  const id = current;
+  const address = base58(ssOf(id).account);
+  const stored = chain.accounts.get(address);
+  const marks = (name) => {
+    const view = solView({ ...c, host: { ...c.host, el: node } }, (fn) => fn, {});
+    const card = findAll(view, (n) => n.attrs["data-session"] === id)[0];
+    return findAll(card, (n) => String(n.attrs["data-sol"]).startsWith(name)).length;
+  };
+  chain.accounts.delete(address);
+  delete c.seen[id];
+  delete c.snaps[id];
+  notify();
+  await waitFor("a read with no account", () => c.seen[id]?.account === null);
+  assert.equal(reviewOf(c, ssOf(id), 2).waiting, true, "a missing account is a wait at first");
+  assert.deepEqual([marks("refusal"), marks("approve-")], [0, 0], "no alert and no button");
+  // A click reads the account itself and keeps the time of that read: the re-read goes on, with
+  // a pass of the reactor after 5 s also on an idle page. The click comes a while after the read.
+  const firstMiss = c.seen[id].missedSince;
+  await new Promise((done) => setTimeout(done, 1500));
+  const passes = [];
+  const refilter = c.host.refilter;
+  c.host.refilter = () => (passes.push(Date.now()), refilter());
+  const clicked = Date.now();
+  await assert.rejects(approve(c, ssOf(id), 2), /reading your wallet/);
+  assert.ok(c.seen[id].at > firstMiss, "the click keeps the time of its read");
+  assert.equal(c.seen[id].missedSince, firstMiss, "and the time of the first miss");
+  await new Promise((done) => setTimeout(done, 5300));
+  c.host.refilter = refilter;
+  assert.ok(passes.some((at) => at - clicked >= 5000), "a pass of the reactor after the click");
+  // A miss that lasts 30 s is a refusal: the checker says why.
+  const since = c.seen[id].missedSince;
+  c.seen[id].missedSince = Date.now() - 31_000;
+  assert.equal(marks("refusal"), 1, "a long miss shows the refusal");
+  c.seen[id].missedSince = since;
+  chain.accounts.set(address, stored);
+  await waitFor("the account read again", () => reviewOf(c, ssOf(id), 2).ok, 30000);
+  // After the expiry no seat can approve, also before the page ends the proposal (600 s later).
+  const ahead = (Number(ssOf(id).expiry) + 100) * 1000 - Date.now();
+  later(ahead);
+  const shown = [marks("expired"), marks("approve-"), marks("refusal"), marks("review-")];
+  Date.now = realNow;
+  assert.deepEqual(shown, [1, 0, 0, 0], "an expired proposal shows one line and no button");
+  assert.ok(marks("approve-") > 0, "control: the buttons before the expiry");
+}
+step("a missing account is a wait, a click keeps the re-read, and an expiry hides Approve");
+
 // ── S5: a failed wallet read waits 3 s, then 6 s, shows one banner; a success clears it ──
 {
   const id = current;
@@ -391,6 +439,8 @@ step("a failed wallet read waits longer each time, shows one banner, and a succe
   const link = { href: explorer + "?cluster=devnet", target: "_blank", rel: "noopener" };
   assert.deepEqual(links, [link], "the proposal account links to the explorer");
   assert.match(rows["Check the payee"], /^Compare the Payee with the program address/);
+  const part = /This checks only the first part of the shielded address\.$/;
+  assert.match(rows["Check the payee"], part, "the S15 limit is on the screen");
   assert.ok(rows.Public.includes(LINK_TEXT), "the screen says that the fee address links");
   assert.equal(rows["Create paid by seat 1"], feeAddress(1), "the proposer paid the create only");
   assert.match(textOf(marked("pay-cost")[0]), /pays 0\.000005 SOL .* holds 0\.00135636 SOL/);
@@ -410,7 +460,7 @@ step("a failed wallet read waits longer each time, shows one banner, and a succe
   assert.match(PROVER_TEXT, /the payee, the amount and the notes that the payment spends\./);
   assert.match(PROVER_TEXT, /the secret that links each spend to its notes/);
   assert.match(shown("send-public"), /hides the amount, but it shows the owner key of the payee/);
-  assert.match(shown("fee-text"), /Helius sees this address with your IP address/);
+  assert.match(shown("fee-text"), /asks Helius for the balance of this address with your IP/);
   assert.match(shown("rent"), /The cancel is public.*"Look for rent" asks Helius .* your IP/);
   assert.match(shown("add-sol-text"), /amount and the sender are public.*IP address/);
   assert.equal(shown("pool-upgrade"), "2kgbLowvCQuMWxDKbHUZAURycziuRrvmtTuDEYMGMRsj");
@@ -700,6 +750,125 @@ step("an execute that fails on chain is tried again, and only a landed execute i
   assert.equal(count("send"), sent + 1, "one execute in all");
 }
 step("an execute that lands late is not sent twice, and the mark names it");
+
+// The fee addresses of the seats: all at `lamports`, or one amount for each seat.
+const fund = (amounts) => {
+  amounts.forEach((lamports, n) => chain.balances.set(feeAddress(n + 1), lamports));
+  forgetBalances();
+};
+const FUNDED = [50_000_000n, 50_000_000n, 50_000_000n];
+
+// ── A refused balance read is no empty seat: the card shows its text, and no try counts ──
+{
+  await forgetPairs();
+  const id = await proposedPay();
+  current = id;
+  const refused = "Too many Helius calls. Wait a minute.";
+  const card = () => textOf(solView({ ...c, host: { ...c.host, el: node } }, (fn) => fn, {}));
+  chain.balances.get = () => {
+    throw new Error(refused);
+  };
+  forgetBalances();
+  await approve(c, ssOf(id), 1);
+  await approve(c, ssOf(id), 2);
+  await waitFor("the text of the refused reads", () => c.execErrors[id] === refused);
+  assert.equal(ssOf(id).status, "signed", "no execute without a read of the balance");
+  assert.equal(c.tries[id] ?? 0, 0, "a refused read counts no try");
+  assert.ok(card().includes(refused), "the card shows the text of the Worker");
+  delete chain.balances.get; // the reads work again
+  await waitStatus(id, "sent", 90000);
+  assert.equal(c.execErrors[id], undefined, "the text goes with the next good read");
+  assert.equal(c.tries[id] ?? 0, 0, "and no try was counted");
+}
+step("a refused balance read shows its text, counts no try, and the next good read executes");
+
+// ── A retry after a dropped send uses the seat that sent, not the first seat ──
+{
+  await forgetPairs();
+  const id = await proposedPay();
+  current = id;
+  fund([0n, 0n, 5_000_000n]); // only seat 3 can pay
+  chain.sendMode = "late";
+  const sent = count("send");
+  await approve(c, ssOf(id), 1);
+  await approve(c, ssOf(id), 2);
+  await waitFor("the send of seat 3", () => c.sending[id] !== undefined, 60000);
+  assert.equal(c.sending[id].seat, 3, "the tab keeps the seat that sent");
+  const poor = [];
+  const watch = setInterval(() => poor.push(c.execErrors[id] ?? ""), 50);
+  chain.late.splice(0); // the send is dropped: it never lands
+  chain.sendMode = null;
+  c.sending[id].at -= 200_000; // past the send window: the retry runs
+  await waitStatus(id, "sent", 60000);
+  clearInterval(watch);
+  assert.ok(!poor.some((text) => /too little Devnet SOL/.test(text)), "no text of an empty seat");
+  assert.equal(c.tries[id] ?? 0, 0, "the retry is no counted try");
+  assert.equal(count("send"), sent + 2, "the dropped send, then the retry");
+  const landed = chain.landed.find((x) => x.signature === ssOf(id).txId);
+  assert.ok(verifies(feeOf(c, 3).key, bytesOf(landed.message), bytesOf(landed.sigs[0])));
+  fund(FUNDED);
+}
+step("a retry after a dropped send uses the seat that sent it");
+
+// ── A tab with no funded seat writes the mark of an execute that another device landed ──
+{
+  await forgetPairs();
+  const id = await proposedPay();
+  current = id;
+  fund([0n, 0n, 0n]);
+  const sent = count("send");
+  const reads = count("balance");
+  await approve(c, ssOf(id), 1);
+  await approve(c, ssOf(id), 2);
+  await waitFor("the look of the tab", () => count("balance") >= reads + 3);
+  assert.equal(ssOf(id).status, "signed", "the account is open: nothing to mark yet");
+  // Another device executed it: the account is a System account, the history holds the execute.
+  const address = base58(ssOf(id).account);
+  const executed = "3".repeat(88);
+  const tx = Buffer.from("aa" + approvalOf(ssOf(id)), "hex").toString("base64");
+  chain.accounts.set(address, { owner: "00".repeat(32), data: "" });
+  chain.history.set(address, [
+    { signature: executed, failed: false, slot: "14" },
+    ...(chain.history.get(address) ?? []),
+  ]);
+  chain.txs.set(executed, { found: true, failed: false, tx });
+  forgetBalances(); // the tab looks at the account once a minute: the next pass looks now
+  await waitStatus(id, "sent", 60000);
+  assert.equal(ssOf(id).txId, executed, "the transaction of the history");
+  assert.equal(count("send"), sent, "the tab sent nothing");
+  assert.equal(c.tries[id] ?? 0, 0, "and counted no try");
+  fund(FUNDED);
+}
+step("a tab with no funded seat marks an execute that another device landed");
+
+// ── An unfunded tab: a refused account read shows its text, no try, one read a minute ──
+{
+  await forgetPairs();
+  const id = await proposedPay();
+  current = id;
+  fund([0n, 0n, 0n]);
+  await approve(c, ssOf(id), 1);
+  await approve(c, ssOf(id), 2);
+  await waitFor("signed", () => ssOf(id).status === "signed");
+  const refused = "Helius refused this website. Its key does not allow this domain.";
+  const address = base58(ssOf(id).account);
+  const get = chain.accounts.get;
+  chain.accounts.get = function (key) {
+    if (key === address) throw new Error(refused);
+    return get.call(this, key);
+  };
+  forgetBalances();
+  await waitFor("the text of the refused read", () => c.execErrors[id] === refused, 30000);
+  assert.equal(c.tries[id] ?? 0, 0, "a refused account read counts no try");
+  const reads = count("account");
+  await new Promise((done) => setTimeout(done, 16_000)); // one more pass of the tab
+  assert.equal(count("account"), reads, "no second account read within a minute");
+  assert.equal(c.execErrors[id], refused, "the text stays between the reads");
+  delete chain.accounts.get;
+  fund(FUNDED);
+  await waitStatus(id, "sent", 90000);
+}
+step("a tab with no funded seat shows a refused account read and reads once a minute");
 
 // ── The lease of another device holds the execute back; the last try waits for a click ──
 {

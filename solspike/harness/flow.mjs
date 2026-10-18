@@ -108,7 +108,7 @@ async function tapAddSol(page, amount) {
 /** Add SOL from the fee address of the seat of `page`. Returns the signature that it shows. */
 export async function addSol(page, amount) {
   await tapAddSol(page, amount);
-  const line = new RegExp(`^Added ${amount.replace(".", "\\.")} SOL, seat \\d: (\\w+)$`);
+  const line = new RegExp(`^Added ${amount.replace(".", "\\.")} SOL, seat \\d: (\\w+)(?: ↗)?$`);
   let seen = "";
   await waitFor(
     async () => line.test((seen = (await solValues(page)).added ?? "")),
@@ -183,7 +183,7 @@ async function approveAll(pages, id, approvers, stillOpen) {
 /** The screen names the proposal account, the amount, the public link, and the recipient. */
 function screenProposal(lines, { amount, withdrawTo }) {
   const text = lines.join("\n");
-  const proposal = rowOf(lines, "Proposal account");
+  const proposal = rowOf(lines, "Proposal account")?.replace(/ ↗$/, ""); // the explorer link
   assert.ok(proposal, "the screen names the proposal account");
   assert.ok(text.includes(`${amount} SOL`) && text.includes("Public link"), "the screen");
   if (withdrawTo) assert.ok(text.includes(withdrawTo), "the screen names the recipient");
@@ -209,7 +209,7 @@ export async function pay(pages, spec, proposalOpen) {
   for (const each of alive) await waitState(each, id, "sent", 400000);
   for (const each of alive) assert.ok(await noApprove(each, id), "no Approve control is left");
   const [mine] = (await sessions(alive[0])).filter((s) => s.id === id);
-  const seen = /^(Executed|Failed on chain) in slot (\d+): (\w+)$/.exec(mine.result ?? "");
+  const seen = /^(Executed|Failed on chain) in slot (\d+): (\w+)(?: ↗)?$/.exec(mine.result ?? "");
   assert.ok(seen && seen[1] === "Executed", `the result line of ${spec.label}: ${mine.result}`);
   return { id, proposal, signature: seen[3], screens, alive };
 }

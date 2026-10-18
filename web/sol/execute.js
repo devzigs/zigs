@@ -5,8 +5,9 @@
 // over the digest of the new proof, and only then does the fee key of that seat sign it. The seat
 // pays the fee of the execute; the rent of the proposal account goes back to the proposing seat.
 // The proposing seat executes when this browser holds it; any other ready seat may. A seat
-// executes only when its fee address can pay: a browser with no funded seat waits, with no banner,
-// for a funded one.
+// executes only when its fee address can pay. A browser with no funded seat sends nothing and
+// counts no try: it reads the proposal account (a mark to write when another device executed it)
+// and waits for a funded seat, with the text of a failed read on the card.
 //
 // An execute that this tab sent and that may still land is checked before any other send: a
 // blockhash lives about 60 to 90 s, so a second execute waits until the first one landed, failed
@@ -48,8 +49,15 @@ const UNFUNDED_WAIT_MS = 15_000;
 const BALANCE_MS = 30_000;
 // The lamports of each fee address (base58) and when they were read: { lamports, at }.
 const balances = new Map();
-/** Forgets the balances read so far: the next choice of an executor reads them again. */
-export const forgetBalances = () => balances.clear();
+// A tab with no funded seat reads the proposal account of a payment at most once a minute: a
+// funded device usually executes in seconds, and each read is a Helius call. { at, error }.
+const LOOK_MS = 60_000;
+const looks = new Map();
+/** Forgets the balances and the account reads so far: the next pass reads them again. */
+export function forgetBalances() {
+  balances.clear();
+  looks.clear();
+}
 const CONFIRMED = new Set(["confirmed", "finalized"]);
 const FAILED = "The execute failed on chain. The approval is still valid.";
 const UNREAD = "The history of the proposal account is not complete yet.";
@@ -82,32 +90,40 @@ export function executorsOf(c, ss) {
   return ready.includes(ss.by) ? [ss.by, ...ready.filter((i) => i !== ss.by)] : ready;
 }
 
-/** The lamports of a fee address, read at most once in BALANCE_MS. A failed read gives 0. */
+/** The lamports of a fee address, read at most once in BALANCE_MS. A failed read throws. */
 async function feeBalance(worker, account) {
   const held = balances.get(account);
   if (held && Date.now() - held.at < BALANCE_MS) return held.lamports;
-  const lamports = await worker.call("balance", { account }).then(
-    (r) => BigInt(r.lamports),
-    () => 0n, // an RPC that fails now: no seat counts as funded, and no try is counted
-  );
+  const lamports = BigInt((await worker.call("balance", { account })).lamports);
   balances.set(account, { lamports, at: Date.now() });
   return lamports;
 }
 
-/** The first seat of `seats` whose fee address can pay an execute, or undefined. */
+/**
+ * The first seat of `seats` whose fee address can pay an execute: { seat }. With none, { failed }
+ * holds the text of a failed balance read, which is no empty seat.
+ */
 async function fundedSeat(c, worker, seats) {
+  let failed;
   for (const seat of seats) {
-    if ((await feeBalance(worker, base58(feeOf(c, seat).key))) >= EXECUTE_MIN) return seat;
+    try {
+      if ((await feeBalance(worker, base58(feeOf(c, seat).key))) >= EXECUTE_MIN) return { seat };
+    } catch (e) {
+      failed = errorText(e);
+    }
   }
-  return undefined;
+  return { failed };
 }
 
 /**
- * The seat that tries the execute now, or undefined. A tab that sent an execute checks it, and a
- * payment past its expiry ends: neither pays a fee, so the funding check does not hold them up.
+ * The seat that tries the execute now: { seat }, or { failed } as fundedSeat gives it. A tab that
+ * sent an execute checks it with the seat that sent it, and a payment past its expiry ends:
+ * neither pays a fee, so the funding check does not hold them up.
  */
 async function executor(c, worker, ss, seats) {
-  if (c.sending[ss.id] !== undefined || pastExpiry(ss)) return seats[0];
+  const sent = c.sending[ss.id];
+  if (sent) return { seat: sent.seat };
+  if (pastExpiry(ss)) return { seat: seats[0] };
   return fundedSeat(c, worker, seats);
 }
 
@@ -245,7 +261,7 @@ async function attempt(c, worker, ss, seat, failSession) {
   // The re-proof may outlast the lease: take it again, or leave the send to the tab that holds it.
   if (!(await leased(ref))) return sleep(3000);
   await worker.call("send", { tx });
-  c.sending[ss.id] = { txId, at: Date.now() };
+  c.sending[ss.id] = { txId, at: Date.now(), seat };
   // The confirm (45 s at most) ends before this lease, so no other tab sends meanwhile.
   await leased(ref);
   const seen = await worker.call("confirm", { signature: txId });
@@ -261,6 +277,37 @@ export function tryAgain(c, ss) {
   c.host.once("sol:retry:" + ss.id, async () => {});
 }
 
+/** Shows `text` on the card of `ss` (no text clears it), and draws the card now. */
+function showExecError(c, ss, text) {
+  if (c.execErrors[ss.id] === text) return;
+  if (text === undefined) delete c.execErrors[ss.id];
+  else c.execErrors[ss.id] = text;
+  c.host.render();
+}
+
+/**
+ * A tab with no funded seat: it sends nothing and takes no lease. It reads the proposal account;
+ * if another device executed it, `seat` (a local writer) writes the mark. A failed read shows its
+ * text and counts no try. Then it waits for a funded seat.
+ */
+async function unfunded(c, worker, ss, { seat, failed }, failSession) {
+  const last = looks.get(ss.id);
+  if (last && Date.now() - last.at < LOOK_MS) {
+    showExecError(c, ss, failed ?? last.error);
+    return sleep(UNFUNDED_WAIT_MS);
+  }
+  const look = { at: Date.now(), error: undefined };
+  looks.set(ss.id, look);
+  try {
+    const account = await worker.call("account", { account: base58(ss.account) });
+    if (!holdsBody(account, ss)) return await landedElsewhere(c, worker, ss, seat, failSession);
+  } catch (e) {
+    look.error = errorText(e);
+  }
+  showExecError(c, ss, failed ?? look.error);
+  return sleep(UNFUNDED_WAIT_MS);
+}
+
 /**
  * The reactor step of a signed payment. A failed try is counted (a wait for an execute that may
  * still land is no try); after EXECUTE_TRIES the card shows the last error and a button that
@@ -272,10 +319,9 @@ export function maybeExecute(c, ss, { launch, failSession }) {
   launch(c, "exec:" + ss.id, async () => {
     try {
       const worker = await ensureWorker(c);
-      const seat = await executor(c, worker, ss, seats);
+      const { seat, failed } = await executor(c, worker, ss, seats);
       if (seat === undefined) {
-        delete c.execErrors[ss.id]; // another browser that can pay executes; no banner here
-        return sleep(UNFUNDED_WAIT_MS);
+        return await unfunded(c, worker, ss, { seat: seats[0], failed }, failSession);
       }
       await attempt(c, worker, ss, seat, failSession);
       delete c.execErrors[ss.id];

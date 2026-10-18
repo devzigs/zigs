@@ -19,7 +19,7 @@ import {
   refreshChain,
   showSaved,
   pollBalances,
-  syncSolana,
+  syncNow,
 } from "./session.js";
 import { SESSIONS, filterSessions } from "./sessions.js";
 import { reactSessions } from "./signing.js";
@@ -50,6 +50,7 @@ const blank = () => ({
   autoSyncAfter: 0,
   autoSyncBusy: false,
   syncedSent: new Set(),
+  pollWanted: 0,
   chain: {},
   docs: Object.fromEntries(COLLECTIONS.map((name) => [name, {}])),
   wait: 0,
@@ -171,7 +172,7 @@ export async function attach(host) {
   c.refresh = () => refresh(c);
   const actions = {
     add: () => addSolana(c),
-    sync: () => syncSolana(c),
+    sync: () => syncNow(c),
     backup: (seat) => host.askBackup(backupWords(c, seat)),
     restoreFile: (file) => host.restore(file),
     refresh: () => refreshChain(c),

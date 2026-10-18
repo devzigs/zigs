@@ -211,12 +211,13 @@ export async function syncUntilChanged(c) {
   }
 }
 
-// A first sync that failed is tried again after 15 s, then twice as long each time up to 5 min.
+// A sync job that failed is tried again after 15 s, then twice as long each time up to 5 min.
 const RETRY_FIRST_MS = 15_000;
 const RETRY_MAX_MS = 300_000;
 const unsynced = (c) =>
   c.sessions.filter((ss) => ss.status === "sent" && isPayment(ss) && !c.syncedSent.has(ss.id));
-const markSynced = (c) => unsynced(c).forEach((ss) => c.syncedSent.add(ss.id));
+// Nothing to sync: the first sync is done, and no sent payment or deposit waits for a poll.
+const idle = (c, ids) => c.autoSynced && !ids.length && !c.pollWanted;
 // The Solana tab showed this wallet, its sessions are loaded and checked: a sync may call Helius.
 const shown = (c) => c.viewed && c.rpcUrl && c.loaded[SESSIONS] && c.sessWait === 0;
 // No sync runs, the retry time passed, and the tab of the browser is not hidden.
@@ -226,20 +227,34 @@ const due = (c) =>
   globalThis.document?.visibilityState !== "hidden";
 
 async function firstSync(c, opened) {
+  await refreshChain(c);
+  if (stillOpen(c, opened)) await syncSolana(c);
+  if (stillOpen(c, opened)) c.autoSynced = true;
+}
+
+/** A failed sync job: the worker line says why, and a pass of the reactor tries again later. */
+function retryLater(c, e) {
+  c.autoSyncFails += 1;
+  const wait = Math.min(RETRY_FIRST_MS * 2 ** (c.autoSyncFails - 1), RETRY_MAX_MS);
+  c.autoSyncAfter = Date.now() + wait;
+  c.sync = { ...c.sync, busy: false, text: "failed: " + (e?.message ?? e) };
+  c.host.render();
+  setTimeout(() => c.host.refilter(), wait + 100);
+}
+
+/**
+ * Runs `sync`. Only when it worked do the payments `ids` and `polls` deposits count as synced; a
+ * failed sync leaves them waiting and is tried again later.
+ */
+async function syncedAfter(c, opened, sync, { ids, polls }) {
   try {
-    await refreshChain(c);
-    if (stillOpen(c, opened)) await syncSolana(c);
+    await sync();
     if (!stillOpen(c, opened)) return;
-    c.autoSynced = true;
-    markSynced(c); // a payment sent before the tab opened needs no second sync
+    for (const id of ids) c.syncedSent.add(id);
+    c.pollWanted -= polls;
+    c.autoSyncFails = 0;
   } catch (e) {
-    if (!stillOpen(c, opened)) return;
-    c.autoSyncFails += 1;
-    const wait = Math.min(RETRY_FIRST_MS * 2 ** (c.autoSyncFails - 1), RETRY_MAX_MS);
-    c.autoSyncAfter = Date.now() + wait;
-    c.sync = { ...c.sync, busy: false, text: "failed: " + (e?.message ?? e) };
-    c.host.render();
-    setTimeout(() => c.host.refilter(), wait + 100); // a pass of the reactor tries again
+    if (stillOpen(c, opened)) retryLater(c, e);
   }
 }
 
@@ -256,8 +271,27 @@ function syncJob(c, run) {
   });
 }
 
+/**
+ * The Sync button: a sync that works ends the back-off of the automatic syncs. When it shows a
+ * change, it also counts the payments that were sent before it as synced.
+ */
+export async function syncNow(c) {
+  const { opened } = c;
+  const ids = unsynced(c).map((ss) => ss.id);
+  const before = [c.sync.balance, c.sync.oldBalance];
+  await syncSolana(c);
+  if (!stillOpen(c, opened)) return;
+  // The indexer may lag: a sync that shows no change leaves the payments to the poll.
+  const changed = c.sync.balance !== before[0] || c.sync.oldBalance !== before[1];
+  if (changed) for (const id of ids) c.syncedSent.add(id);
+  Object.assign(c, { autoSyncFails: 0, autoSyncAfter: 0 });
+}
+
 /** Syncs until the balances change, after a deposit (Add SOL) that this browser sent. */
-export const pollBalances = (c) => syncJob(c, () => syncUntilChanged(c));
+export function pollBalances(c) {
+  c.pollWanted += 1;
+  autoSync(c);
+}
 
 /**
  * Syncs with no click (S2): once when the Solana tab shows a loaded wallet, and again until the
@@ -266,11 +300,14 @@ export const pollBalances = (c) => syncJob(c, () => syncUntilChanged(c));
  */
 export function autoSync(c) {
   if (!shown(c) || !due(c)) return;
-  if (c.autoSynced && !unsynced(c).length) return;
+  const ids = unsynced(c).map((ss) => ss.id);
+  if (idle(c, ids)) return;
   if (shareSeat(c) === undefined || agreement(c).state !== "agree") return;
-  if (!c.autoSynced) return syncJob(c, (opened) => firstSync(c, opened));
-  markSynced(c);
-  return syncJob(c, () => syncUntilChanged(c));
+  // The first sync shows the payments sent before it started; a deposit waits for a poll.
+  const [sync, polls] = c.autoSynced
+    ? [() => syncUntilChanged(c), c.pollWanted]
+    : [(opened) => firstSync(c, opened), 0];
+  syncJob(c, (opened) => syncedAfter(c, opened, () => sync(opened), { ids, polls }));
 }
 
 /** Shows the saved snapshot once, before the first sync of this tab. */

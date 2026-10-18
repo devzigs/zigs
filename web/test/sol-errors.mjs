@@ -46,7 +46,7 @@ globalThis.fetch = async (input, init) => {
 
 const waiting = new Map();
 globalThis.self = { postMessage: (message) => waiting.get(message.id)?.(message) };
-await import(new URL("worker.js", WEB_SOL).href);
+const { guardedFetch, heliusText } = await import(new URL("worker.js", WEB_SOL).href);
 let ids = 0;
 function ask(cmd, args) {
   ids += 1;
@@ -95,6 +95,21 @@ assert.equal((await ask("balance", ACCOUNT)).ok, true);
 assert.match(await errorOf("balance", ACCOUNT, rpc("cors")), /^TypeError: Failed to fetch/);
 assert.match(await errorOf("sync", {}, indexer("cors")), /WALLET_SYNC/, "no status: as it was");
 step("an error with no HTTP status stays as it was");
+
+// A refusal that the SDK handled (the 429 that queues a proof, a 5xx in the job poll) is followed
+// by other replies of the same command: a later error of another kind keeps its own text.
+{
+  const call = guardedFetch("https://devnet.helius-rpc.com", {});
+  const slot = { method: "POST", body: JSON.stringify({ id: 1, method: "getSlot" }) };
+  const plain = new Error("the new proof does not give the approved commitment");
+  mode = rpc(429);
+  await call("https://devnet.helius-rpc.com/?api-key=x", slot);
+  assert.equal(heliusText(plain), TOO_MANY, "control: the refusal is the last reply");
+  mode = rpc(200);
+  await call("https://devnet.helius-rpc.com/?api-key=x", slot);
+  assert.equal(heliusText(plain), null, "a later reply clears the refusal");
+}
+step("a refusal that later replies follow does not name a later error");
 
 // ---- the wallet read ----
 

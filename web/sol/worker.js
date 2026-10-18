@@ -57,11 +57,14 @@ function need() {
  * error, so no second URL is ever fetched without a check. Once this Worker proved on the device,
  * no request to the prove path of Helius passes: the switch of the group is one-way.
  */
-function guardedFetch(origin, s) {
+export function guardedFetch(origin, s) {
   return async (input, init) => {
     const request = input instanceof Request;
     const url = new URL(request ? input.url : String(input));
     const ours = passes(origin, s, url, init);
+    // The last call to Helius in the command decides: a handled refusal is followed by a success.
+    // A key download is no reply of Helius, so it leaves the status alone.
+    if (ours) refusedStatus = null;
     const reply = await fetch(request ? input : url.href, { ...init, redirect: "error" });
     if (!reply.ok && ours) refusedStatus = reply.status;
     return reply;
@@ -621,9 +624,11 @@ const HANDLERS = {
 
 // The SDK bundle has no error texts (a production build): a refused HTTP call of Helius reads as
 // "Solana error #8100002", or as "WalletError: WALLET_SYNC" when the indexer refused it (the SDK
-// drops the status on the way). So the fetch of this Worker keeps the status of the last refused
-// call of the command (one command runs at a time), and an RPC error also holds it in its context
-// (@solana/errors SOLANA_ERROR__RPC__TRANSPORT_HTTP_ERROR), maybe in a cause.
+// drops the status on the way). So the fetch of this Worker keeps the status of the last call of
+// the command when Helius refused it (one command runs at a time). A refusal that the SDK handled
+// (the 429 that queues a proof) is followed by other calls, which clear it; a call that gets no
+// reply (a CORS failure) clears it too, so its own error shows. An RPC error also holds the status
+// in its context (@solana/errors SOLANA_ERROR__RPC__TRANSPORT_HTTP_ERROR).
 const RPC_HTTP_ERROR = 8100002;
 let refusedStatus = null;
 // The text of a local proof that failed or was refused during the command (SOL-4). The SDK wraps
@@ -637,7 +642,7 @@ function httpStatus(err) {
 }
 
 /** A readable text for a call that Helius refused or did not answer, or null. */
-function heliusText(err) {
+export function heliusText(err) {
   const status = httpStatus(err);
   if (status === 403) return "Helius refused this website. Its key does not allow this domain.";
   if (status === 429) return "Too many Helius calls. Wait a minute.";
