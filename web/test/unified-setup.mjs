@@ -566,6 +566,9 @@ const byId = (node, id) =>
   t.sol.ctl.chain = { fees: { 1: "0.006 SOL", 2: "0 SOL", 3: "0.0025 SOL" } };
   assert.match(pageText(), /Solana is still setting up/, "one empty fee address keeps the card");
   t.sol.ctl.chain = {};
+  ui.tab = "members";
+  assert.match(pageText(), SENDER, "the invite link of the Signers tab");
+  ui.tab = "overview";
   // A stopped Solana part: the Zcash part still works, and the next step is a new wallet.
   const kept = t.sec(gidH, 1).sol;
   const aborted = "Solana setup stopped: a test. Do not use the Solana part of this wallet.";

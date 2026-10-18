@@ -5,7 +5,7 @@ import { ready, state, ui } from "./app-state.js";
 import { fmtZec, short, when } from "./app-kit.js";
 import { gkeys, sec } from "./app-keystore.js";
 import { keysDiffer, localSeats, seatIds, seatMine, seatStage, STAGE_LABEL } from "./app-seats.js";
-import { inviteLink } from "./app-links.js";
+import { inviteLink, senderNote } from "./app-links.js";
 import {
   addrHidden, atCap, balanceNow, capText, chain, curChain, curNet, inFlight, netName, readsMemos,
   runSync, setMemoReading, spanMs,
@@ -380,7 +380,7 @@ function membersTab() {
       el("h2", { style: "font-size:15px" }, "Invite link"),
       el("p", { class: "small muted" }, "Signers open this wallet on another device with this "
         + "invite link and their key share backup. The link contains the wallet secret, so share "
-        + "it only with signers."),
+        + "it only with signers. " + senderNote("each signer")),
       el("div", { class: "addr-box" }, el("span", { class: "hex nowrap" }, inviteLink(state.gid)), copyBtn(inviteLink(state.gid), "Copy link")),
       secretQr(inviteLink(state.gid))));
 }
