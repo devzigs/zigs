@@ -41,6 +41,19 @@ Evidence marked "checked" was read in the repo during this synthesis. All other 
 6. **D6 WS_PER_IP.** Pick the value for demo day and the date to revert it (M9).
 7. **D7 Unified setup cut line.** Step 9 of M3 may be deferred. See the fallback in M3.
 
+**Decided by the owner on 18 October 2026:**
+
+- D1: keep the password gate. The invite texts and the README say that the browser asks for a
+  password and that the host gives it (S10).
+- D2: S7 as written. When t = n and this seat made no share, the hold ends. Otherwise the hold
+  stays, the page says why and shows the time left, and it offers a confirmed "I checked, release".
+- D3: existing mainnet wallets stay readable. M1 hides the creation of new ones only.
+- D4: the owner adds app.zigs.app and staging.zigs.app to the Allowed Domains of the Helius key,
+  reads the plan limits and sets a usage alert. The key stays readable behind the gate (SOL-24).
+- D5: the ChainSafe fallback day to day. The owner powers on the lwd box for the demo week.
+- D6: WS_PER_IP goes from 60 to 600 for the demo week, and back after it.
+- D7: step 9 of M3 is deferred.
+
 ## 4. MUST items
 
 ### M1 Hide mainnet for this release, behind one switch (3 h)
