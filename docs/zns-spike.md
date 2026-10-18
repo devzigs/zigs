@@ -167,8 +167,8 @@ the group server and the light-wallet servers in `NETWORKS`. A name is a recipie
 | D. The engine scans the registry from the ceremony height and verifies it | Only the light-wallet server, which sees that the device reads registry transactions | Large | Best trust: no resolver at all. The 1-of-n and Mint limits stay |
 
 The registry is small today: 137 names. The testnet record of `craftsoldier` is 351 bytes of
-JSON, so 10,000 names are about 3.5 MB. The waitlist had 10,802 names on 15 October 2026. Measure the size again after open
-registration.
+JSON, so 10,000 names are about 3.5 MB. The waitlist had 10,802 names on 15 October 2026.
+Measure the size again after open registration.
 
 ## 3. Registration and updates
 
