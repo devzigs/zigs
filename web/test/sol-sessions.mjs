@@ -454,6 +454,34 @@ step("a close during a poll writes nothing, and a failed first sync tries again 
 }
 step("a wallet that closes while its Worker starts keeps no Worker of it");
 
+// ── A Sync of a wallet that closed writes nothing into the next wallet state ──
+{
+  const call = c.worker.call;
+  let [release, started] = [null, false];
+  const held = new Promise((go) => (release = go));
+  c.worker.call = async (cmd, args) => {
+    if (cmd === "sync") {
+      started = true;
+      await held;
+    }
+    return call(cmd, args);
+  };
+  const run = syncNow(c).catch((e) => e);
+  await waitFor("the Sync in flight", () => started);
+  t.sol.close();
+  t.sol.open(gid, "groups/" + gid);
+  Object.assign(c, { autoSyncFails: 3, autoSyncAfter: 42 }); // the state of the next wallet
+  release();
+  await run;
+  assert.deepEqual([c.autoSyncFails, c.autoSyncAfter], [3, 42], "the closed Sync writes nothing");
+  Object.assign(c, { autoSyncFails: 0, autoSyncAfter: 0 });
+  await waitFor("the sessions", () => c.loaded.solsessions, 30000);
+  t.sol.view();
+  t.sol.react();
+  await waitFor("the first sync of the reopened wallet", () => c.autoSynced, 30000);
+}
+step("a Sync of a wallet that closed writes nothing into the next one");
+
 // ── Nonces: saved before the commit, deleted before the share, never made twice ──
 {
   for (const seat of [1, 2]) {

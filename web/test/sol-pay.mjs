@@ -344,6 +344,14 @@ step("a device that read no proposal account reads it again, with no click");
   await new Promise((done) => setTimeout(done, 5300));
   c.host.refilter = refilter;
   assert.ok(passes.some((at) => at - clicked >= 5000), "a pass of the reactor after the click");
+  await waitFor("an automatic re-read", () => c.seen[id].at > clicked + 5000, 15000);
+  assert.equal(c.seen[id].missedSince, firstMiss, "an automatic re-read keeps the first miss");
+  // A wallet read that fails right after a miss still reads the account again, on an idle page.
+  const accountReads = () => chain.commands.filter((m) => m.cmd === "account").length;
+  const [kept, reads] = [chain.utxos, accountReads()];
+  chain.utxos = []; // the snapshot of the device fails after each account read
+  await waitFor("two more account reads", () => accountReads() >= reads + 2, 40000);
+  chain.utxos = kept;
   // A miss that lasts 30 s is a refusal: the checker says why.
   const since = c.seen[id].missedSince;
   c.seen[id].missedSince = Date.now() - 31_000;
