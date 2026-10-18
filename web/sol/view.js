@@ -3,11 +3,14 @@
 // restore, and (payview.js) the funding, the proposals and their approvals.
 // `data-sol` marks each value for the headless checks. `host.el` builds the elements, `act` wraps
 // a button action (act of app-dom.js).
+import { showable } from "./approve.js";
 import { agreement, seatProgress, started, startBlock } from "./ceremony.js";
 import { base58 } from "./docs.js";
 import { payCards } from "./payview.js";
 import { feeMismatch, feeOf } from "./fee.js";
+import { writerSeats } from "./gate.js";
 import { holdsShare, remoteStop, solOf, stopOf } from "./secrets.js";
+import { beforeFee } from "./sessions.js";
 
 const ADD_TEXT =
   "A Solana program owns the funds of the group at a program address, which is public and links " +
@@ -62,12 +65,18 @@ export function setupSummary(c) {
 }
 
 /**
- * The open Solana proposals that a seat of this browser can still approve: the proposal collects
- * approvals, and a seat here holds a share and gave no commit for it (S6).
+ * The open Solana proposals that a seat of this browser can still approve (S6): the tab lists
+ * them (the documents agree and the part is not stopped), the app can show and sign them, and
+ * a seat that holds a share and a signing key gave no approval for them yet.
  */
 export function pendingCount(c) {
-  const seats = c.host.localSeats().filter((i) => holdsShare(solOf(c.host, c.gid, i)));
-  const open = (ss) => ss.status === "collecting" && seats.some((i) => !c.commits[ss.id]?.[i]);
+  if (stopOf(c) || agreement(c).state !== "agree") return 0;
+  const seats = writerSeats(c);
+  const open = (ss) =>
+    ss.status === "collecting" &&
+    showable(ss) &&
+    !beforeFee(ss) &&
+    seats.some((i) => !c.commits[ss.id]?.[i]);
   return c.sessions.filter(open).length;
 }
 

@@ -20,7 +20,8 @@ const { inviteMessage, joinText } = await import("../app-setup.js");
 const { chatMessage } = await import("../app-links.js");
 const { backupWords } = await import("../sol/backup.js");
 const { pendingCount } = await import("../sol/view.js");
-const { createDialog } = await import("../app-shell.js");
+const { createDialog, renderSide } = await import("../app-shell.js");
+const { intentHex } = await import("../sol/intent.js");
 const { ui } = await import("../app-state.js");
 const { planSolana } = await import("../app-sol.js");
 const { walletReady } = await import("../app-wallet.js");
@@ -102,21 +103,67 @@ const byText = (node, text) => node.text === undefined && textOf(node) === text 
 }
 
 // ── S6: the Solana proposals that a seat of this browser can still approve ──
-{
-  const share = { keyPackage: {}, solSeed: "s", groupKey: "k" };
-  const ctl = (commits) => ({
-    host: { localSeats: () => [1, 2], sec: (_g, i) => ({ sol: i === 3 ? {} : share }) },
-    gid: "g",
-    sessions: [
-      { id: "a", status: "collecting" },
-      { id: "b", status: "collecting" },
-      { id: "c", status: "sent" },
-    ],
-    commits,
-  });
-  assert.equal(pendingCount(ctl({})), 2, "two open proposals, a sent one does not count");
-  assert.equal(pendingCount(ctl({ a: { 1: {} } })), 2, "seat 2 can still approve a");
-  assert.equal(pendingCount(ctl({ a: { 1: {}, 2: {} } })), 1, "both seats approved a");
+// The count follows the Approve button of the tab: it needs agreeing documents, a part that
+// did not stop, a proposal that the app can show and sign, and a seat that holds a share and a
+// signing key and gave no approval yet. The side item and the Solana tab show it.
+const proposal = (id, change = {}) => ({
+  id,
+  status: "collecting",
+  by: 1,
+  intent: intentHex("createNonce", { blockhash: "11".repeat(32) }),
+  message: "ab".repeat(8),
+  feeSig: "00".repeat(64),
+  ...change,
+});
+const labelled = (node, label) =>
+  node.attrs?.["aria-label"] === label ||
+  (node.kids ?? []).some((kid) => labelled(kid, label));
+function sideTree() {
+  const real = globalThis.document;
+  const nav = new Rec();
+  nav.replaceChildren = (...nodes) => void (nav.kids = nodes);
+  const fake = { createElement: () => new Rec(), createTextNode: (text) => ({ text }) };
+  globalThis.document = { ...fake, getElementById: () => nav };
+  try {
+    renderSide();
+    return nav;
+  } finally {
+    globalThis.document = real;
+  }
+}
+function approvalCount(ctl) {
+  const count = (sessions, commits = {}, change = {}) =>
+    pendingCount({ ...ctl, ...change, sessions, commits });
+  const docs = (change) => ({ docs: { ...ctl.docs, ...change } });
+  const two = [proposal("a"), proposal("b"), proposal("c", { status: "sent" })];
+  assert.equal(count(two), 2, "two open proposals, a sent one does not count");
+  assert.equal(count(two, { a: { 1: {} } }), 2, "seats 2 and 3 can still approve a");
+  assert.equal(count(two, { a: { 1: {}, 2: {}, 3: {} } }), 1, "every seat approved a");
+  assert.equal(count([proposal("d", { intent: "zz" })]), 0, "a proposal the app cannot show");
+  const old = proposal("e", { feeSig: undefined });
+  assert.equal(count([old]), 0, "a proposal from before the fee keys");
+  const only3 = { host: { ...ctl.host, canWriteAs: (i) => i === 3 } };
+  assert.equal(count(two, {}, only3), 2, "seat 3 can sign");
+  assert.equal(count(two, { a: { 3: {} }, b: { 3: {} } }, only3), 0, "seat 3 approved both");
+  const none = { host: { ...ctl.host, canWriteAs: () => false } };
+  assert.equal(count(two, {}, none), 0, "no seat of this browser has a signing key");
+  const noShare = { host: { ...ctl.host, sec: () => ({ sol: {} }) } };
+  assert.equal(count(two, {}, noShare), 0, "no seat holds a Solana key share");
+  const stop = docs({ solabort: { 2: { reason: "A test stop." } } });
+  assert.equal(count(two, {}, stop), 0, "a stopped part has no proposal to approve");
+  assert.equal(count(two, {}, docs({ soldone: {} })), 0, "the seats do not agree on one key");
+  // The side item and the tab show the count of the open wallet.
+  const kept = [ctl.sessions, ctl.commits, t.state.groups];
+  Object.assign(ctl, { sessions: two, commits: {} });
+  t.state.groups = [t.state.g];
+  try {
+    assert.ok(labelled(sideTree(), "2 to approve"), "the side item shows the count");
+    assert.ok(labelled(pageTree(), "2 to approve"), "the Solana tab shows the count");
+    Object.assign(ctl, { sessions: [], commits: {} });
+    assert.ok(!labelled(sideTree(), "2 to approve"), "no count without a proposal");
+  } finally {
+    [ctl.sessions, ctl.commits, t.state.groups] = kept;
+  }
 }
 
 // ── The hint: version 3 testnet wallets only ──
@@ -351,6 +398,7 @@ const byId = (node, id) =>
   ui.tab = "solana";
   await waitFor("the ready tab", () => /The Solana part is ready\./.test(pageText()));
   ui.tab = "overview";
+  approvalCount(t.sol.ctl);
   const solButtons = () => pageText().match(/Back up Solana, seat \d/g) ?? [];
   await waitFor("the note", () => solButtons().length === 3);
   assert.match(pageText(), /The Solana part of a seat is a second file, with its own passphrase/);
