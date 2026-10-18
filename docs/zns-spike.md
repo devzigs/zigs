@@ -17,8 +17,11 @@ web pages were read on 18 October 2026. The project's documents say "Last update
   name into the memo of an Ironwood note. The viewing key of the registry is public, so anyone can
   rebuild the registry from the chain. Open-source resolvers serve it over JSON-RPC.
 - **Registration.** A claim is one shielded payment to the Mint with a text memo. A Zigs group can
-  most likely make it today: paste the ZIP 321 link that zcashnames.com builds into the Send form.
-  This was not tested.
+  send it: paste the ZIP 321 link that zcashnames.com builds into the Send form. But while Early
+  Access lasts, the Mint refuses every claim without a six-digit access code, and every claim of a
+  name that is not on its list, and it keeps the payment (`zns-mint` `src/main.rs:368-390` at
+  `9fa071f`). A test claim of `zigsdemo` on 18 October 2026 had no code: it landed, and the Mint
+  registered nothing (section 3.1).
 - **Main finding.** After the claim, control of a name is **1-of-n** for a Zigs group, not t-of-n.
   ZNS gives control to whoever can read memos at the bound address. Every signer can do that, and
   so can every holder of the invite link. Any one of them can point the name at their own address.
@@ -81,6 +84,22 @@ earlier integrations follow an older design.
 launched on mainnet in August 2026 and is not related to ZNS. A forum member who edits the thread
 says: "Zcash.me and zcashnames.com are separate services from zcashnames.co" [F3]. A name in one
 registry can point to another address in the other one. Zigs must name the registry that it uses.
+
+### 1.4 Facts from a public sweep (18 October 2026)
+
+A coordinator session searched the web, the forum, GitHub, the project site, X and the SDK on 18
+October 2026. These facts matter for tests and for a name of our own.
+
+| Fact | Source |
+|---|---|
+| `craftsoldier` is the testnet name of the wallet checklist of ZcashMe, and it is the only name in the testnet registry. Tests and staging can use it. Our advice: do not claim or update it | https://www.zcashnames.com/docs/integrate/testing ; `list_names` on https://light.zcash.me/zns-testnet (total 1) |
+| No public route gives a testnet name today. Every access code serves mainnet Early Access: the waitlist (reservations closed on 15 October 2026), profiles "Verified on Zcash.me since May", protected names (a manual check; "Custom names are not accepted") and ENS holders. The gate of the Mint has no network condition. Three pages of ZcashMe say otherwise: the testing page says to send testnet claims to the testnet treasury, the FAQ describes a testnet mode, and the roadmap says that claims "are available on testnet and mainnet". The Mint that runs now refuses a claim with no code | https://www.zcashnames.com/docs/blogs/users/early-access ; https://www.zcashnames.com/faq ; https://www.zcashnames.com/protected/request ; https://x.com/zcashme/status/2111570116966310358 ; `zns-mint` `src/main.rs:368-391` at `9fa071f` ; https://github.com/zcashme/zns-mint/pull/341 ; against: https://www.zcashnames.com/docs/integrate/testing ; https://www.zcashnames.com/docs/roadmap |
+| The contact for wallet teams is partner@zcash.me or the booking page cal.com/zcash. support@zcashnames.com comes second. A contact is the owner's decision | https://www.zcashnames.com/faq (partner@zcash.me) ; https://www.zcashnames.com/community (cal.com/zcash, support@zcashnames.com) |
+| The roadmap lists "Open Registration" from 30 October 2026, marked TBA, and names no network. The Mint at `9fa071f` has no open mode, so open registration needs a new Mint release. Watch the releases of `zns-deployment` and `zns-mint` | https://www.zcashnames.com/docs/roadmap ; https://github.com/zcashme/zns-deployment/releases ; https://github.com/zcashme/zns-mint/releases |
+| The `zigsdemo` claim paid the live testnet treasury `utest1tquw9k9…`, which `status` returns. The security page shows an older address, `utest1nflk83kv…`, from the bug bounty | Our test (section 3.1) ; `status` on https://light.zcash.me/zns-testnet ; https://www.zcashnames.com/security |
+| `zcashname-sdk` 0.15.0-rc.1: `verify()` fails on both networks, because it pins old viewing keys (`uviewtest19e96…` and `uivk1gl26…`) that differ from the published keys. Compare `status().viewing_key` with the Verifying State page instead | `zns-resolver` `sdk/typescript/src/zns.ts:87-98` at `acf8f72` ; https://www.zcashnames.com/docs/resolver/verifying-state |
+| `llms.txt` still describes the old design: Ed25519 signatures and the actions CLAIM, BUY and DELIST. The live FAQ describes the same actions and a "signed BUY claim" | https://www.zcashnames.com/llms.txt ; https://www.zcashnames.com/faq |
+| zcashnames.co, with a BNB Smart Chain anchor, is not the ZNS of ZcashMe. zecname.xyz was named in the sweep as another such service, but the site did not load on 18 October 2026 ("Application not found") | [F3] ; https://zecname.xyz |
 
 ## 2. Resolution
 
@@ -162,7 +181,7 @@ the group server and the light-wallet servers in `NETWORKS`. A name is a recipie
 | Option | Who learns the name that you pay | Work | Fit |
 |---|---|---|---|
 | A. Ask a remote resolver for each name (the SDK way) | ZcashMe: the name, your IP address and the time. With a Worker proxy, our Worker sees them in memory | Small | Poor. A new party learns recipients. The CSP gets a new host |
-| B. Download the whole registry (`list_names` pages, then `events` deltas with no name filter) through a Worker route such as `/zns`, as `/lwd` works, and look names up on the device | Nobody. ZcashMe sees our Worker fetch the registry. Our Worker sees your IP address and the download, as for `/lwd` | Medium | Good. The CSP does not change. PRIVACY.md needs a new section |
+| B. Download the whole registry (all `list_names` pages on each refresh; a delta of `events` with a reorganisation check is the upgrade) through a Worker route such as `/zns`, as `/lwd` works, and look names up on the device | Nobody. ZcashMe sees our Worker fetch the registry. Our Worker sees your IP address and the download, as for `/lwd` | Medium | Good. The CSP does not change. PRIVACY.md needs a new section |
 | C. B with our own `zns-resolver` behind the Worker | Nobody | B, plus one service to run | Good. It removes the trust in the resolver of ZcashMe, not in the Mint. It is an infrastructure decision of the owner |
 | D. The engine scans the registry from the ceremony height and verifies it | Only the light-wallet server, which sees that the device reads registry transactions | Large | Best trust: no resolver at all. The 1-of-n and Mint limits stay |
 
@@ -180,11 +199,11 @@ is the request" [D7].
 | Part | Value |
 |---|---|
 | Recipient | Treasury, mainnet `u1f68wxdxsrswjl04kcc397a9ljedg88rl8dgazrk8l9v8jx6t3gqsktvqyvmc3ypgf4pum03q4ftvy5s0fe803nrxm8kw6dgzlvnv83nv`. Testnet: see [D8]. `status` returns it too |
-| Memo | `ZNS:claim:<term>:<name>:<ua>`, or `ZNS:claim:<code>:<term>:<name>:<ua>` for a protected name. `<term>` is `forever` or `1y` to `99y`. The memo is ZIP 302 text, zero-padded to 512 bytes |
+| Memo | `ZNS:claim:<term>:<name>:<ua>`, or `ZNS:claim:<code>:<term>:<name>:<ua>` with an access code. `<term>` is `forever` or `1y` to `99y`. The memo is ZIP 302 text, zero-padded to 512 bytes. While Early Access lasts, every claim needs the code, and the name must be on the list of the Mint (`src/main.rs:368-390` at `9fa071f`). The docs and the whitepaper say that an open name takes the ordinary path; the code at `9fa071f` does not. The code is HMAC-SHA256 of the name under a key from the Mint seed, modulo 1,000,000 (`src/boot.rs:519`, `src/mint/presale.rs:383-391`), so only ZcashMe can give one |
 | Amount | The price at the daily rate of the Mint (zatoshis per USD), "in force when the Mint first sees the payment". USD per year by name length: 1 = 10,000; 2 = 2,500; 3 = 800; 4 = 400; 5 = 100; 6 or more = 20. `forever` costs 3 years [D13] |
 | Fee | The normal fee. ZNS adds no fee to a claim |
 | Transparent parts | None. The output must be an Ironwood output |
-| Rules | "First sufficient payment wins." "Underpaid or malformed requests are not refunded." The Mint does not check the address in the memo: anyone can claim a name for any address |
+| Rules | "First sufficient payment wins." "Underpaid or malformed requests are not refunded." A claim that the Early Access gate refuses is dropped for good, and the Mint keeps the payment: there is no refund path. The Mint does not check the address in the memo: anyone can claim a name for any address |
 
 **Fit with a Zigs payment.** A Zigs payment has 1 to 20 recipients, each with an optional memo of
 at most 512 bytes. It has no transparent part and uses the ZIP 317 fee. Every approving device
@@ -197,9 +216,17 @@ receiver, so it qualifies. A Zigs mainnet address has 106 characters, so a claim
 
 zcashnames.com builds the claim as a ZIP 321 link: `zcash:<treasury>?amount=<ZEC>&memo=<base64url>`
 (`BuildZcashURI` in the SDK [R4]). The Send form of the web app accepts a pasted `zcash:` link and
-reads it with the `zip321` crate (`wasm/src/request.rs`). So a group can most likely claim a name
-today with no code change: a signer pastes the link, and t seats approve as for any payment. **Not
-tested.** The approval screen shows the memo as raw text, with no explanation.
+reads it with the `zip321` crate (`wasm/src/request.rs`). So a group can send a claim with no code
+change: a signer pastes the link, and t seats approve as for any payment. The approval screen shows
+the memo as raw text, with no explanation.
+
+**Test of 18 October 2026.** The permanent 2-of-2 testnet wallet sent a claim of `zigsdemo` for the
+payee address of the test wallet, through a pasted link: transaction
+`2fd709292ecc2380c9aa7516f571e1502f4005af295e641d997a913a6aa9cef9`, block 4,515,013. Its outgoing
+viewing key shows 2,100,000 zatoshis to the Orchard receiver of the testnet treasury, with the memo
+`ZNS:claim:1y:zigsdemo:<payee address>` byte for byte (132 bytes, then zero padding). The memo had
+no access code, so the Early Access gate refused it, and the Mint kept the 0.021 TAZ. The registry
+shows no `zigsdemo`. A new claim needs a code from ZcashMe, or a Mint that runs open registration.
 
 Group risks of a claim:
 

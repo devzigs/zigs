@@ -364,9 +364,13 @@ function maybeReadWallet(c, ss) {
 
 async function readWallet(c, ss) {
   if (isPayment(ss)) c.seen[ss.id] = stampSeen(c.seen[ss.id], await deviceSeen(c, ss));
-  c.snaps[ss.id] = await deviceSpend(c, ss);
-  // The pass of the reactor after this step reads a missing account again.
-  if (isPayment(ss) && c.seen[ss.id].account === null) await sleep(REREAD_MS + 100);
+  try {
+    c.snaps[ss.id] = await deviceSpend(c, ss);
+  } finally {
+    // The pass of the reactor after this step reads a missing account again, also after a
+    // failed wallet read: a shorter wait would end before the re-read is due.
+    if (isPayment(ss) && c.seen[ss.id].account === null) await sleep(REREAD_MS + 100);
+  }
 }
 
 /** Why a session ends before it is sent, or null. */

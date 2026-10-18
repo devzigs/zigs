@@ -9,21 +9,20 @@ cd "$(dirname "$0")/.." || exit 1
 OX=solspike/node_modules/.bin/oxlint
 [ -x "$OX" ] || { echo "lint.sh: $OX is missing, run npm ci in solspike" >&2; exit 2; }
 JS=(solspike/harness/*.mjs solspike/tools/*.mjs solspike/build.mjs solspike/build-prover.mjs
-  solspike/src/*.js
-  solspike/stubs/*.js solspike/test/*.mjs solspike/mock/*.mjs
+  solspike/src/*.js solspike/smoke.mjs solspike/stubs/*.js solspike/test/*.mjs solspike/mock/*.mjs
   solspike/mock/page/*.js web/sol/guard.js web/sol/prepare.js web/sol/worker.js web/sol/client.js
   web/sol/main.js web/sol/docs.js web/sol/secrets.js web/sol/ceremony.js web/sol/view.js
   web/sol/store.js web/sol/backup.js web/sol/session.js web/sol/abort.js
   web/sol/approve.js web/sol/gate.js web/sol/intent.js web/sol/nonces.js web/sol/payview.js
   web/sol/propose.js web/sol/sessions.js web/sol/signing.js web/sol/fee.js web/sol/addsol.js
   web/sol/execute.js web/test/sol-rig.mjs web/test/sol-fixture.mjs web/test/page.mjs
-  web/test/graph.mjs web/test/demo-check.mjs
+  web/test/graph.mjs web/test/demo-check.mjs web/test/smoke.mjs
   web/test/sol-config.mjs web/test/sol-docs.mjs web/test/sol-ceremony.mjs web/test/sol-app.mjs
   web/test/sol-wasm.mjs web/test/sol-chain.mjs web/test/sol-sessions.mjs
   web/sol/spend.js web/sol/transfer.js web/test/sol-limits.mjs web/test/sol-setup.mjs
   web/test/sol-transfer.mjs web/test/sol-vector.mjs web/test/sol-pay.mjs web/test/sol-fee.mjs
-  web/sol/owned.js web/sol/rent.js web/test/sol-rent.mjs web/test/sol-errors.mjs
-  web/sol/localprove.js web/sol/localprover.js web/test/sol-prove.mjs)
+  web/test/unified-setup.mjs web/sol/owned.js web/sol/rent.js web/test/sol-rent.mjs
+  web/test/sol-errors.mjs web/sol/localprove.js web/sol/localprover.js web/test/sol-prove.mjs)
 PY=(solspike/tools/*.py)
 # The page modules first: no unbound name, no assignment of an import, no missing named import.
 # This is the only check for an import that a function body needs and that no test runs. The full

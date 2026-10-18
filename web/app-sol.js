@@ -12,15 +12,13 @@ import {
 } from "./app-filter.js";
 import { openGroup, sdb, unsubGroup } from "./app-groups.js";
 import { act, el, guard } from "./app-dom.js";
-import { groupVersion, safetyNo, seatCheck } from "./app-dkg.js";
+import { confirmedNo, groupVersion, safetyNo, seatCheck } from "./app-dkg.js";
 import { restore, sealAndSave } from "./app-backups.js";
 import { once, react, render } from "./app-loop.js";
 
-// Devnet, for version 3 wallets on testnet only. The network must be the one that the people of
-// the wallet confirmed with the safety number (netConfirmed, SOL-34), not only the first one that
-// this device saw. web/sol loads when the Solana tab opens, or when a seat signed the wallet's
-// solstart document. Any other wallet, and a wallet that is not loaded yet, never fetches any of
-// it.
+// Devnet, for version 3 wallets on the testnet that the people of the wallet confirmed (SOL-34).
+// web/sol loads from the Solana tab, a signed solstart document, or the unsigned Solana hint
+// (solPreload), which any holder of the invite link can write.
 const solGroup = (gid) =>
   (gid === state.gid && state.g) || state.groups.find((x) => x.id === gid);
 export const solOn = (gid = state.gid) => {
@@ -28,6 +26,57 @@ export const solOn = (gid = state.gid) => {
   const testnet = g?.network === "testnet" && netConfirmed(gid) === "testnet";
   return testnet && walletVersion(g) === 3 && signedMode(gid);
 };
+// The group document asks for a Solana part (createGroup). It is a hint only: any holder of the
+// link can write it, so it changes the texts and the preload, and it never starts the ceremony.
+export const solPlanned = (g = state.g) =>
+  g?.solana === true && (g.network || "testnet") === "testnet" && walletVersion(g) === 3;
+// Does this server serve Solana? undefined: not asked yet, null: asked, then true or false. The
+// create dialog offers the Solana part only on a server that answers.
+export function solServed() {
+  if (ui.solServed === undefined) {
+    ui.solServed = null;
+    globalThis.fetch("/sol/config.json", { cache: "no-store" }).then((r) => {
+      ui.solServed = r.ok;
+      r.body?.cancel();
+    }, () => { ui.solServed = false; }).finally(render);
+  }
+  return ui.solServed === true;
+}
+// The Solana choice of the create dialog: the hint for the other seats first, then `solAuto` in
+// the secret of seat 1, which starts the ceremony with no button. A failed hint starts nothing.
+export async function planSolana(gid) {
+  if (!sec(gid, 1)) return;
+  await sdb.doc("groups/" + gid).update({ solana: true });
+  await putSec(gid, 1, { solAuto: true });
+}
+// What a person accepts with the Solana part. It holds PUBLIC_TEXT of web/sol/view.js, which loads
+// only with the module (unified-setup.mjs keeps the two equal).
+export const SOL_DISCLOSURE = "Solana Devnet: a program owns the funds of the group at a public "
+  + "program address. A deposit shows its sender and amount on chain. A withdrawal shows its "
+  + "recipient and amount. A private payment hides its amount, but it shows the owner key of the "
+  + "payee. The program address, the group key and the fee address of each seat that pays are "
+  + "public too. Helius sees that you use Zigs, your IP address and the keys of this wallet, and "
+  + "its hosted prover sees each payment. The Zigs server operator can link this wallet to these "
+  + "addresses by timing. Each seat funds its own fee address, and that funding shows who sent "
+  + "the SOL. Every signer sees the whole Solana history of the wallet. The program has no audit, "
+  + "and its upgrade key is outside the group.";
+// The wallet list with the create dialog open. Inside an open wallet the dialog does not show.
+export const newWallet = () => { openGroup(null); ui.create = true; render(); };
+// The seats of this browser with a Solana key share whose backup file was not saved. A stopped
+// part gets no backup (web/sol/backup.js refuses it), also when another seat stopped it.
+const solStopped = () => solSetup()?.status === "stopped";
+export const solUnsaved = () => solOn() && !solStopped() ? localSeats().filter((i) => {
+  const s = sec(state.gid, i)?.sol;
+  return !!(s?.keyPackage && s.solSeed && s.groupKey) && !s.aborted && s.backupSaved !== true;
+}) : [];
+// The backup dialog of the Solana part of seat i, from the backup note of the wallet.
+export async function solBackup(i) {
+  await solLoad();
+  if (!sol) throw new Error(solError || "Solana did not load.");
+  const { backupWords } = await import("./sol/backup.js");
+  ui.backup = { words: backupWords(sol.ctl, i), made: false, busy: false };
+  render();
+}
 const SOL_OFF = "Solana is not available on this server";
 export let sol = null, solLoading = null, solError = "";
 let solStartDoc = null;   // the stored solstart/1 of the open wallet, whoever wrote it
@@ -35,12 +84,28 @@ let solWatched = null;    // the wallet whose start document is watched
 export function resetSolStart() { solStartDoc = null; solWatched = null; }
 const solHost = () => ({
   Z, sdb, state, el, act, log, once, render, refilter, showBanner, sec, putSec, signedDoc,
-  canWriteAs, localSeats, seatIds, checkIn, safetyNo, seatCheck, openGroup, restore,
+  canWriteAs, localSeats, seatIds, checkIn, safetyNo, seatCheck, confirmedNo, openGroup, restore,
   groupVersion, sealAndSave, network: () => netName(state.g),
   askBackup: (words) => { ui.backup = { words, made: false, busy: false }; render(); },
+  newWallet,
 });
-// A server with SOL off does not serve the module, and the text says so.
-const solModule = () => import("./sol/main.js").catch(() => { throw new Error(SOL_OFF); });
+// A server with SOL off does not serve the module, and the text says so. view.js is part of the
+// module: it gives the setup steps (solSetup).
+let setupSummary = null;
+const solModule = () => Promise.all([import("./sol/main.js"), import("./sol/view.js")])
+  .then(([m, v]) => { setupSummary = v.setupSummary; return m; })
+  .catch(() => { throw new Error(SOL_OFF); });
+// The Solana part of the open wallet for the setup steps, or null while it is not open here. The
+// Zcash pages call it, so a throw gives null and a log line, not a broken wallet page.
+export function solSetup() {
+  if (!(sol && setupSummary && solOn() && sol.ctl.gid === state.gid)) return null;
+  try {
+    return setupSummary(sol.ctl);
+  } catch (e) {
+    log("Solana setup steps: " + said(e));
+    return null;
+  }
+}
 // A failed load is final until the page reloads: a retry on every redraw would loop.
 export function solLoad() {
   solLoading ||= solModule().then((m) => m.attach(solHost())).then((m) => {
@@ -63,7 +128,7 @@ export function solWatch() {
   solAttach(gid, "groups/" + gid);
 }
 // Before the module loads, one watch keeps the start document. Any holder of the invite link can
-// write one, so solReact loads the module only when a seat signed it.
+// write one, so solReact loads the module from it only when a seat signed it.
 export function solAttach(gid, base) {
   if (sol) { sol.open(gid, base); return; }
   unsubGroup.push(sdb.collection(base + "/solstart").onSnapshot((snap) => {
@@ -73,7 +138,14 @@ export function solAttach(gid, base) {
 }
 const solStartSigned = () => !!solStartDoc && checkIn(state.gid)("solstart/1", solStartDoc.by,
   solStartDoc.sig, docFields(solStartDoc), 1) === "yes";
+// A seat of a wallet with the Solana hint loads the module at the start of setup, so the key
+// ceremony does not wait for it. The watch still opens only for a confirmed testnet wallet.
+function solPreload() {
+  const auto = sec(state.gid, 1)?.solAuto === true;
+  if (!sol && !solLoading && (solPlanned() || auto) && localSeats().length) solLoad();
+}
 export function solReact() {
+  solPreload();
   if (!solOn()) return;
   solWatch();
   if (sol) sol.react();

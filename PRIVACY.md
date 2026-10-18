@@ -26,6 +26,10 @@ is a bug: please report it.
   a shielded transaction. The account, its contacts and its messages never reach the group
   server. The light-wallet server sees the transactions that the account fetches and sends, and
   your IP address.
+- A testnet payment to a ZNS name (web app only, not finished), such as `alice.zec`, looks the
+  name up on the device, in a copy of the whole name registry that the app Worker downloads. No
+  server learns which name you pay. The registry itself is public: anyone can see which address a
+  name gives. Read [ZNS names](#zns-names-testnet).
 
 ## On chain
 
@@ -84,8 +88,11 @@ What the server can still see:
 | Nothing for the personal account and its messages | The account, its contacts and its on-chain messages never touch the group server. | None needed |
 
 The server keeps no logs: Workers Logs are off (`observability.enabled = false`), and the code
-writes nothing about requests. IP addresses are used in memory only: to apply rate limits, and as
-a tag on each open WebSocket. The limits count each IPv4 address, or each /64 network of IPv6
+writes nothing about requests. The `/zns` route is the exception. When it cannot read the name
+registry, it writes a fixed cause, such as `zns: status`. When a refresh leaves out records of
+the registry, it writes `zns: left out` once. These lines hold nothing about the request and no
+text of the resolver. IP addresses are used in memory only: to apply rate limits, and as a tag
+on each open WebSocket. The limits count each IPv4 address, or each /64 network of IPv6
 addresses, because one IPv6 user usually holds a whole /64. So users who share an IPv4 address or
 a /64 (one home, one office, one VPN exit) also share a counter, and one of them can use up the
 limit of the others.
@@ -146,6 +153,84 @@ This links a wallet id to a transaction id, but not to its amount or recipient.
 Tor Browser hides your IP address from both servers, but not this timing link. To remove the
 link, point the app at a light-wallet server you trust (`NETWORKS` in `web/app-chain.js`,
 `ZcashNetwork` in `ios/Zigs/Chain.swift`).
+
+The link **Get testnet ZEC** opens the Valar testnet faucet (faucet.testnet.valargroup.dev) in a
+new tab. That site is not Zigs. It sees your IP address and the address that you paste, so it can
+link the two. Its public status lists each payout with a short form of the address, the
+transaction id, the amount and the time. It pays once for each IP address and once for each
+address every 24 hours.
+
+Explorer links open a site that is not Zigs, in a new tab. That site sees your IP address and the
+id that you open, and the time, so it can link them. The page sends no referrer.
+
+- **Zcash:** the link **View in explorer**, in the payment panel and on each row of the activity
+  list, opens testnet.zecblock.com (zecblock.com for a mainnet wallet) with the transaction id.
+- **Solana:** the Solana explorer (explorer.solana.com) on Devnet sees the same when you open the
+  id of a transaction or an account there. Links from the Solana tab to it come with the Solana
+  batch (S16 of [docs/hackathon-release.md](docs/hackathon-release.md)), which is not on main yet.
+  Until then, it sees an id only when you paste one into it.
+
+## ZNS names (testnet)
+
+**Status on 18 October 2026:** main has the `/zns` route and the lookup on the device
+(`web/zns.js`), but the Send form does not take a name yet (M10 of
+[docs/hackathon-release.md](docs/hackathon-release.md)). Until then, the page does not download
+the registry. This section describes the design that M10 finishes.
+
+On testnet, the Send form of the web app accepts a ZNS name in place of an address: `alice`,
+`alice.zec` or `alice.zcash`. ZNS is the naming service of Zcash Names (zcashnames.com), which
+ZcashMe, Inc. runs. Its registry is on chain and public. Anyone can read every name, the address
+that it gives and the history of both.
+
+How the app reads the registry:
+
+- The route `/zns` of the app Worker downloads the list of all names of the testnet registry from
+  the public resolver `light.zcash.me`. It sends no header of yours to the resolver. It checks
+  that the resolver states the published key of the registry. That shows which registry the
+  resolver reads, but it does not prove the records. The Worker leaves out a name with a record
+  that fails its checks, and a name that comes with two addresses, so that name gives "not
+  found". It serves a copy that is at most 60 seconds old.
+- The page downloads that copy, behind the same password as every other request, and finds the
+  name on the device. It never asks a server about one name.
+
+| Party | What it learns |
+|---|---|
+| ZNS resolver (`light.zcash.me`) | That the app Worker downloads the registry, and when. Not your IP address and not a name |
+| App Worker | Your IP address and when your page downloads the registry. Not the name that you type |
+| Group server | Nothing new. The name is one more field of the sealed proposal |
+| Other signers of the wallet | The name and the address in the proposal, as for every recipient |
+| Chain observers | A normal shielded payment. Nothing shows that a name was used |
+
+The timing of a download can still tell the Worker something:
+
+- The page downloads the registry when a testnet wallet opens. It downloads it again when a copy
+  older than 60 seconds must check a name, before a proposal or an approval.
+- The Worker sees each download and its IP address. As the group server, it also sees which IP
+  addresses open which wallet.
+- So a download near a proposal or an approval can tell the Worker that a wallet may pay a name.
+  When the registry holds few names, that can point to the payee.
+
+What the app trusts, and what it checks:
+
+- The address comes from the registry. One registrar, the ZNS Mint, writes the registry. The app
+  checks the key that the resolver states, not each record on chain.
+- The page trusts the app Worker for the registry, as it trusts it for the code of the page. A
+  false Worker could send a false registry to the devices of one wallet. The approvers read the
+  same copy, so their check would not see it. They still see the address, and the payment goes
+  only to the address that they approve.
+- A name can move to another address. The proposer sees the address that the name gives, and a
+  note when the name changed recently. Each approving web app looks the name up again, in its own
+  copy, and refuses the approval when the name now gives another address than the payment. The
+  iPhone and Mac apps show the address and do not check the name.
+- The page uses its copy for at most 60 seconds, so the copy is at most about 2 minutes behind
+  the resolver. The resolver can fall behind the chain too. So the page refuses a registry that is
+  more than 10 blocks below the chain height of the wallet.
+- A Zigs wallet gets no name of its own. Under ZNS, anyone who can read the memos of an address
+  can change the name of that address. Every signer of a wallet can read its memos
+  ([docs/zns-spike.md](docs/zns-spike.md), section 3.3).
+- Mainnet wallets do not look up names.
+- zcashnames.co is another registry, with names that look the same. The app reads only the ZNS
+  registry of zcashnames.com.
 
 ## Solana beta (Helius Devnet)
 
@@ -314,7 +399,8 @@ What makes this safe to rely on:
 
 - The page sends a Content-Security-Policy header. The browser lets it connect only to the group
   server and the light-wallet servers in `NETWORKS` (our testnet server through `/lwd` of its own
-  host, and two ChainSafe servers), and to nothing else. The Solana Worker
+  host, and two ChainSafe servers), and to nothing else. The name registry also comes from its
+  own host, through `/zns`. The Solana Worker
   (`/sol/worker.js`, testnet wallets only) has a policy of its own, which also names the Helius
   Devnet host and the one folder of proving keys of the local prover. The policy of the page
   names neither.
@@ -522,6 +608,9 @@ the passkey guards the key share instead. The lock is opt-in.
   you pay. A request from an unverified sender, and every request in a memo, shows a warning. The
   name and the message in a request are text from the sender. The card cuts them and marks them as
   not checked.
+- A ZNS name gives the address that its registry holds. Whoever controls a name can point it at
+  another address. The approvers check the name again, and the payment goes to the address that
+  they approved. Before a large payment, check the address with the payee.
 - **Propose this** sends nothing: the normal checks and approvals of a payment apply. Every
   approver reads its note. The note names the sender only when the sender is verified. Any holder
   of the invite link can write a message with a seat number and a bad signature.
@@ -545,8 +634,9 @@ the passkey guards the key share instead. The lock is opt-in.
 - Anyone with an invite link can write many small messages into a wallet room or a chat. The
   iPhone and Mac apps open each message document once and stop reading a conversation with more
   than 10,000 documents. The web app downloads the whole room.
-- The code is not audited. Mainnet wallets are limited to 0.5 ZEC: at that balance the app stops
-  showing the address and warns. It cannot stop someone from sending more, and payments out
+- The code is not audited. The web app of this release makes testnet wallets only. A mainnet
+  wallet made before is limited to 0.5 ZEC: at that balance the app stops showing the address and
+  warns. It cannot stop someone from sending more, and payments out
   always stay possible.
 
 ## Checks

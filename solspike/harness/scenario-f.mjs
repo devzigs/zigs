@@ -1,5 +1,7 @@
 // Live check of payments through the approvals program (ZOLANA.md 7.2), the restore, and a
-// withdrawal. Three seats in three in-memory contexts of one Chrome (the rig) make a new group:
+// withdrawal. Three seats in three in-memory contexts of one Chrome (the rig) make a new group,
+// with the unified setup (release item M3): the create dialog chooses Solana too, and the Solana
+// part starts by itself after the Zcash part:
 //   (a) every seat saves its Zcash and its Solana backup: the restore source of (d) and --resume
 //   (b) the funder sends SOL to the fee address of each seat; seat 1 adds 0.003 SOL (Add SOL)
 //   (c) pay-a: seat 1 proposes 0.001 SOL to key B, seats 1 and 2 approve, a seat executes
@@ -194,8 +196,9 @@ async function created(rig) {
   if (!MOCK && existsSync(interimFile())) {
     throw new Error("SOLSPIKE_INTERIM holds the backups of an earlier group: --resume, or move it");
   }
-  const { pages, gid } = await zcashWallet(rig, LOCAL ? "Scenario L wallet" : "Scenario F wallet");
-  const keys = await solanaReady(pages, gid);
+  const name = LOCAL ? "Scenario L wallet" : "Scenario F wallet";
+  const { pages, gid } = await zcashWallet(rig, name, { solana: true });
+  const keys = await solanaReady(pages, gid, { auto: true });
   results.group = { owner: keys.owner, groupKey: keys.groupKey };
   record("ready", {});
   return { pages, keys, saved: await backups(pages, gid, keys) };

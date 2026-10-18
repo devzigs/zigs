@@ -20,8 +20,12 @@ The beta switches:
   before version 3, a wallet whose network no seat of this device confirmed, and a wallet that is
   not loaded yet, never show the tab. They load `/sol` only when the person opens a Solana backup
   file for a wallet that this device does not list.
-- The page loads `/sol` before the tab opens only when a seat signed `solstart/1`. A start
-  document without a valid signature of seat 1 loads nothing.
+- The page loads `/sol` before the tab opens in two cases. A seat signed `solstart/1` (a start
+  document without a valid signature of seat 1 loads nothing), or this device holds a seat of a
+  wallet whose group document holds the Solana hint `solana: true` (release item M3), in setup or
+  later. The hint has no signature, so a holder of the invite link can make the seats of a wallet
+  load `/sol` early. The hint starts nothing. The ceremony starts from Add Solana on seat 1, or
+  with no button from `solAuto` in the secret of seat 1 (the choice in the create dialog).
 - The browser has no switch. The spike flag `zf-sol` and the spike setting `zf-sol-rpc` are gone.
 
 The question: can a Zigs group also hold private Solana balances in Zolana, the Helius shielded pool
@@ -185,8 +189,8 @@ Zcash key. Each step writes a signed document (3.2).
 
 | Step | Document | Content |
 |---|---|---|
-| 1 Start | `solstart/1` | Cluster (4.4). A seat refuses unless the wallet is version 3 and the safety number that the device computes now equals the number its person confirmed. That number covers the wallet id, `t`, `n`, `network` and every box key (PROTOCOL.md 4.1). Testnet gives Devnet. A mainnet wallet gets no Solana. The ceremony needs all `n` seats. A seat on an app without Solana support writes nothing. The wallet page then shows "Seat N has not started" for each seat with no `soldkg1` document |
-| 2 Round 1 | `soldkg1/<i>` | The `frost-ed25519` round-1 package and a commitment to a fresh 32-byte part `rSol`. The commitment is BLAKE2b-256 with the personalization `Zigs_SolCmt___v1` over the wallet id, seat, box key, cluster and `rSol` |
+| 1 Start | `solstart/1` | Cluster (4.4). A seat refuses unless the wallet is version 3 and the safety number that the device computes now equals the number its person confirmed. A restored seat has no such number (a restore does not take it from the file): its own stored confirm document counts, when the key of the seat signed it and it carries the number of now. That number covers the wallet id, `t`, `n`, `network` and every box key (PROTOCOL.md 4.1). Testnet gives Devnet. A mainnet wallet gets no Solana. The ceremony needs all `n` seats. A seat on an app without Solana support writes nothing. The wallet page then shows "Seat N has not started" for each seat with no `soldkg1` document. A seat of this browser that waits says why: no Zcash key share, no Address checked, or a safety number that it did not confirm or that changed |
+| 2 Round 1 | `soldkg1/<i>` | A seat takes a lease on the document first (60 s, the longest of the group server) and looks for a published document again just before it writes, so two copies of one seat (a device and a restored copy) do not publish it at the same time. This narrows that race and does not close it: the group server keeps leases in memory and forgets them when it sleeps, and a write that stalls can still land over the document of the other copy. A copy whose secret does not hold the published package drops that secret and takes no part. The `frost-ed25519` round-1 package and a commitment to a fresh 32-byte part `rSol`. The commitment is BLAKE2b-256 with the personalization `Zigs_SolCmt___v1` over the wallet id, seat, box key, cluster and `rSol` |
 | 3 Echo | none | BLAKE2b-256 with `Zigs_SolEcho__v1` over the wallet id, safety number, cluster, and every package and commitment, in seat order |
 | 4 Round 2 | `soldkg2/<i>-<j>` | A box with the share and `rSol`. The box context carries a curve label (`<id>:sol:<i>-><j>`). Today's context `<id>:<i>-><j>` would let a Zcash box open here |
 | 5 Round 3 | none | Each device checks the echo and every commitment, then builds its key package, the group key and `solSeed = BLAKE2b-256("Zigs_SolSeed__v1", walletId, echo, rSol_1 … rSol_n)` |
@@ -849,7 +853,9 @@ the CORS preflights pass.
   508538476, read on 16 October). Its tree 0 has 40,080 bytes, and the newest SDK refuses it
   (`decodeTreeFees`: `INTERFACE_INVALID_ACCOUNT_DATA`), so the Worker could not read the tree fee.
   `programs` and `program-libs` are equal at `89640630` and `c232da1b`, so `c232da1b` is the
-  newest commit that the live pool serves. TICKETS.md SOL-37 moves the pin after a Devnet update.
+  newest commit that the live pool serves. Helius reverted #428 on its branch `release/devnet-c`
+  (`bdc639f65`, 17 October), which the live pool can serve too. TICKETS.md SOL-37 freezes the pin
+  through the demo and moves it only by trigger.
 - The enclave prover is off. #419 sends the proofs of a Helius Devnet URL to the enclave host
   `d55y5ksdsm1vw.cloudfront.net`, unless the caller names a prover. The Worker names the gateway
   and sets `proverTee: false`. Proving works as before, and the Worker policy has no new host. A
@@ -1040,7 +1046,9 @@ public Devnet RPC; a new fee key `AxyGpUZN…` of a new test group `23yfnuAB…`
 3. Do the services run on mainnet? Is there a free tier, a rate limit and a CORS header for
    browsers? Does Allowed Domains cover `/v1/zolana/` and WebSocket, read `Origin` or `Referer`, and
    need a plan?
-4. Does the gateway serve `/tee/v1/attestation`? When does local proving ship?
+4. Answered on 18 October 2026 for local proving (answers of 18 October below): zolana-web-sdk
+   proves in the browser, experimental and slow. Nobody asked whether the gateway serves
+   `/tee/v1/attestation`.
 5. What is the audit scope? Who holds the pool upgrade key, and is there a timelock?
 6. How many roots stay valid? Is a durable nonce with a v1 transaction supported?
 7. Answered by the SDK since #424 (section 5, SDK sponsor mode): no patch is needed. Can you sign
@@ -1058,6 +1066,23 @@ roots, transaction lifetime, key management, output checks and browser proving.
 | Key derivation | The protocol does not enforce how the viewing and nullifier keys are derived | Our own roles from `solSeed` (4.2) are fine |
 | Output checks | Clients must check outputs and ciphertexts. No change planned | Keep the checker rules of section 5 |
 | Browser proving | It exists, but it is slow. Speed is on the roadmap | SOL-4 stays open |
+
+**Helius answers, 18 October 2026** [HA2].
+
+| Topic | Answer | Effect on Zigs |
+|---|---|---|
+| Devnet version | Devnet runs 0.4.0-alpha | The pin `c232da1b` serves it: `programs` and `program-libs` are equal (6.10). The pin stays frozen through the demo (TICKETS.md SOL-37) |
+| Browser proving | It exists in zolana-web-sdk. It is experimental and slow | The owner approved local proving as a one-way group setting on 18 October 2026. SOL-4 builds it; it is not live |
+| Custom rings | In-circuit EdDSA for custom rings comes in a second release, likely in December | TICKETS.md SOL-59, after the demo |
+| Compute | About 150,000 compute units per transact is the floor | Our largest recorded transact used 144,591 units (`CU_FLOOR_TRANSACT`), and an execute 151,437. The caps add 50 percent: 217,000 and 227,156 (`wasm-sol/src/template.rs`) |
+| Breaking releases | Breaking SDK releases come over about two weeks, before the mainnet launch | The pin stays frozen (SOL-37). demo-check runs at least every two days until the demo (docs/demo.md section 3) |
+
+Public source answers the curve and the hash of the coming circuit. In PR #434, `curve.go:1` says
+that it "verifies canonical prime-subgroup Ed25519 signatures on BN254", with a SHA-512 gadget in
+`circuits/ed25519/internal/sha512`. `docs/spec.md:1054` says that the signature covers
+SHA-256(`private_tx_hash` || `external_data_hash`). FROST-Ed25519 signatures already pass
+`verify_strict` (6.2). Approvals version 5 does not need this circuit: the program address owns
+the notes, and the program checks the group signature with an Ed25519 instruction.
 
 The owner decided on 16 October 2026 not to ask questions 2, 3 and 5 (key holders, mainnet
 service, audit). They stay open as risks: the custody and maturity rows of the risk table.
@@ -1509,6 +1534,7 @@ expiry window, the minimum approval time and the fee caps (5, 6). SOL and Devnet
 | [Z2] | github.com/helius-labs/zolana/blob/c232da1bd6748628b56bb8c277bcffbaaf2b0774/ (main, 13 October 2026): the commit of the bundle, 6.10. Newer main: `8178be7cb2f0d3fee4c76040093653a1bcb2a420` (14 October 2026, still the newest on 16 October) |
 | [H] | helius.dev/docs/privacy (overview, `integration/wallet`) and helius.dev/docs/rpc/protect-your-keys |
 | [HA] | Answers of the Helius team to the project's seven questions, by private message, 15 October 2026 |
+| [HA2] | Answers of the Helius team, by private message, 18 October 2026 |
 | [HM] | github.com/helius-labs/zolana-examples/blob/827f3d4c83125c5890a5ea9e704351822b406d0f/min-multisig/spec.md (the minimal multisig program spec; read as a summary, not line by line) |
 | [F], [CIO] | github.com/ZcashFoundation/frost/blob/3ffc19d8f473d5bc4e07ed41bc884bdb42d6c29f/ (frost-ed25519 v2.2.0); crates.io/api/v1/crates/frost-ed25519/2.2.0/dependencies |
 | [AG], [CR] | github.com/anza-xyz/agave/blob/2b9f9302fb049d88a11f100ea25e29ecf8dcf677/ and github.com/anza-xyz/cryptography/blob/3efe73c7395f735f073bd25162cdc2fb4333f570/ |

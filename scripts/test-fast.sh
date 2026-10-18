@@ -11,9 +11,10 @@ case "$(node -v 2>/dev/null)" in
   v24.*) ;;
   *) echo "test-fast: Node 24 is needed, found $(node -v 2>/dev/null || echo none)" >&2; exit 2 ;;
 esac
-FAST="payees vault chat lwd requests shim signed util account qr personal graph
-  sol-docs sol-transfer sol-wasm sol-config sol-rent sol-errors demo-check"
-SLOW="app sol-fee sol-sessions sol-limits sol-ceremony sol-app sol-pay sol-prove"
+FAST="payees vault chat lwd zns requests shim shim-status signed util account qr personal graph
+  sol-docs sol-transfer sol-wasm sol-config sol-rent sol-errors demo-check mainnet-off
+  chain-fallback smoke"
+SLOW="app sol-fee sol-sessions sol-limits sol-ceremony sol-app sol-pay unified-setup sol-prove"
 HELPERS="sol-rig sol-setup sol-chain sol-vector sol-fixture page"
 # A new test file goes into FAST or SLOW here, and into TESTS of solspike/baseline.sh.
 all=" $(echo $FAST $SLOW $HELPERS) "

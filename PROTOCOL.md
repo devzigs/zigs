@@ -1427,7 +1427,8 @@ signature over only its own fields. The path in the signed text is `sessions/<se
   first sees the wallet sets them for that device. The safety number covers `t` and `n`, so
   signers who compare it in the setup find the change.
 - These documents stay unsigned: the wallet document `groups/<id>` (`name`, `room`, `movedTo`,
-  `version`, `n`, `t`, `network`, `createdBy`), and the progress marks listed in section 15.5. A
+  `version`, `n`, `t`, `network`, `createdBy`, and the Solana hint `solana`, which changes texts
+  and the early load of web/sol only), and the progress marks listed in section 15.5. A
   holder can write a progress mark such as `status: "proving"`. A signer then cannot start the proof
   until the mark is three minutes old, and the holder can write it again. This is a denial of
   service.
