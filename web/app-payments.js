@@ -754,18 +754,21 @@ export function holdEnd(sid) {
 
 /**
  * Ends the hold of session `sid` by hand (S7). First every seat here that approved it burns its
- * nonce, then the marks say `released`: a release never sits next to a live nonce, also when a
- * save fails halfway. So this browser never signs that payment after Send opens again.
+ * nonce and its kept share, then the marks say `released`: a release never sits next to a live
+ * nonce or share, also when a save fails halfway. So this browser never signs or sends a share of
+ * that payment after Send opens again.
  */
 export function releaseHold(sid) {
   const gid = state.gid;
   return withSecrets(async () => {
     const seats = mySeatSecrets(gid).filter(([, s]) => (s.marks || {})[sid]).map(([i]) => i);
     for (const i of seats) {
-      const s = sec(gid, i), nonces = { ...(s.nonces || {}) };
-      if (!nonces[sid]) continue;
+      const s = sec(gid, i);
+      if (!approvalKept(s, sid)) continue;
+      const nonces = { ...s.nonces }, unsent = { ...s.unsent };
       delete nonces[sid];
-      await saveOrUndo(gid, i, { nonces }, s);
+      delete unsent[sid];
+      await saveOrUndo(gid, i, { nonces, unsent }, s);
     }
     for (const i of seats) {
       const s = sec(gid, i);

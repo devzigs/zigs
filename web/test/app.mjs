@@ -684,6 +684,39 @@ const sealed = (gid, rel, seat, fields, key, names = ["by", "sig"]) =>
     storage.delete("zf-vault");   // nothing reacts now: the end of the 6 s wait starts the step
     await waitFor("the shares of mt", () => data.has(pathOf(mt) + "/shares/1"), 10000);
     await drop(pathOf(mt));
+    // A share is made and its write fails, so it stays kept. Another seat cancels, and the person
+    // releases the hold. When a seat then resets the payment to signing, no share of this browser
+    // goes out.
+    let shareDown = true;
+    t.setDb({ doc: (p) => p.endsWith("/shares/1") && shareDown
+      ? { ...docRef(p), set: async () => { throw new Error("down"); } } : docRef(p),
+    collection: colRef });
+    const mp = await propose("mp", 4);
+    t.closeSession();
+    await approveAs(mp.id, [1, 2]);
+    const markP = { approved: "aa", tip: 4500000 };
+    await t.putSec(gid, 1, { marks: { ...t.sec(gid, 1).marks, [mp.id]: markP } });
+    notify();
+    await waitFor("the kept share", () => !!(t.sec(gid, 1).unsent || {})[mp.id]);
+    const signingP = { ...data.get(pathOf(mp)) };
+    const cancelP = { error: "Cancelled by a signer (seat 2)." };
+    const sigP = await t.sigPart(gid, mp.id, "cancel", cancelP, 2);
+    data.set(pathOf(mp), { ...signingP, ...cancelP, status: "cancelled", ...sigP });
+    notify();
+    await waitFor("the cancel", () => !!liveOf(mp)?.error);
+    await t.releaseHold(mp.id);
+    const s1 = t.sec(gid, 1);
+    assert.deepEqual([s1.marks[mp.id].released, (s1.unsent || {})[mp.id], (s1.nonces || {})[mp.id]],
+      [true, undefined, undefined], "the release burns the kept share too");
+    shareDown = false;
+    data.set(pathOf(mp), signingP);   // a seat resets the payment
+    notify();
+    await sleep(500);
+    assert.equal(data.has(pathOf(mp) + "/shares/1"), false, "no share after the release");
+    t.setDb({ doc: docRef, collection: colRef });
+    const { [mp.id]: _mp, ...marksP } = t.sec(gid, 1).marks;
+    await t.putSec(gid, 1, { marks: marksP });
+    await drop(pathOf(mp));
     // The save of an approval fails: no commitment goes out, and memory gets its old state back,
     // so the next click approves.
     const ma = await propose("ma", 4);
