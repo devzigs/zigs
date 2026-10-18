@@ -18,7 +18,7 @@ import {
 import { closeSession, openSession, sdb } from "./app-groups.js";
 import { groupName, isPayee, normalized, payTitle } from "./app-dom.js";
 import { myVerified, seatCheck } from "./app-dkg.js";
-import { once, render } from "./app-loop.js";
+import { once, react, render } from "./app-loop.js";
 
 const inspectCache = new Map();
 
@@ -131,7 +131,7 @@ function buildPackage(ss, fvk, commits) {
 function signMyShares(ss, fvk, shares) {
   const gid = state.gid;
   for (const i of localSeats()) {
-    const ready = approvalKept(sec(gid, i), ss.id);
+    const ready = approvalKept(sec(gid, i), ss.id) && !waitsForSave(ss.id, i);
     if (canWriteAs(i) && signersOf(ss).includes(i) && ready && !shares[i]) {
       step("share:" + ss.id + ":" + i, ss, () => signShare(ss, fvk, i, gid));
     }
@@ -169,9 +169,26 @@ async function signShareNow(ss, fvk, i, n, gid) {
     out = { rel, doc: await signedDoc(gid, rel, i, { shares, at: Date.now() }) };
   }
   // Save the burn before the share goes out: a nonce that comes back could sign twice.
-  await saveOrUndo(gid, i, { nonces, unsent: { ...s.unsent, [ss.id]: out } }, s,
-    "Could not save the used nonce, so the signature share was not sent.");
+  await saveBurn(gid, i, ss, { nonces, unsent: { ...s.unsent, [ss.id]: out } }, s);
   return out;
+}
+
+// A share step whose burn does not save waits longer before each new try: 3 s, then 6, 12 and up
+// to 60 s. So a browser that cannot save does not sign again and again.
+const burnRetry = new Map();   // "<payment>:<seat>" -> { n, at }
+const waitsForSave = (sid, i) => (burnRetry.get(sid + ":" + i)?.at ?? 0) > Date.now();
+async function saveBurn(gid, i, ss, patch, s) {
+  const k = ss.id + ":" + i;
+  try {
+    await saveOrUndo(gid, i, patch, s,
+      "Could not save the used nonce, so the signature share was not sent.");
+  } catch (e) {
+    const n = (burnRetry.get(k)?.n ?? 0) + 1, wait = Math.min(3000 * 2 ** (n - 1), 60000);
+    burnRetry.set(k, { n, at: Date.now() + wait });
+    setTimeout(react, wait + 50);
+    throw e;
+  }
+  burnRetry.delete(k);
 }
 
 // After the lock: sends the share, or fails the payment that changed. Then the kept copy goes.
@@ -791,18 +808,21 @@ export function holdEnd(sid) {
 
 /**
  * Ends the hold of session `sid` by hand (S7). First every seat here that approved it burns its
- * nonce, then the marks say `released`: a release never sits next to a live nonce, also when a
- * save fails halfway. So this browser never signs that payment after Send opens again.
+ * nonce and its kept share, then the marks say `released`: a release never sits next to a live
+ * nonce or share, also when a save fails halfway. So this browser never signs or sends a share of
+ * that payment after Send opens again.
  */
 export function releaseHold(sid) {
   const gid = state.gid;
   return withSecrets(async () => {
     const seats = mySeatSecrets(gid).filter(([, s]) => (s.marks || {})[sid]).map(([i]) => i);
     for (const i of seats) {
-      const s = sec(gid, i), nonces = { ...(s.nonces || {}) };
-      if (!nonces[sid]) continue;
+      const s = sec(gid, i);
+      if (!approvalKept(s, sid)) continue;
+      const nonces = { ...s.nonces }, unsent = { ...s.unsent };
       delete nonces[sid];
-      await saveOrUndo(gid, i, { nonces }, s);
+      delete unsent[sid];
+      await saveOrUndo(gid, i, { nonces, unsent }, s);
     }
     for (const i of seats) {
       const s = sec(gid, i);

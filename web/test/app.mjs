@@ -487,7 +487,8 @@ const sealed = (gid, rel, seat, fields, key, names = ["by", "sig"]) =>
     const sol2 = t.sec(gid, 2).sol, sol3 = t.sec(gid, 3).sol;
     const sol2Used = { ...sol2, used: { d2: "s" } };
     storedX[gid + ":2"] = { ...storedX[gid + ":2"], m5kp: "KPY", sol: sol2Used };   // a key share
-    seat3.sol = { ...sol3, used: { d3: "s" } };   // Solana digests that another tab used
+    seat3.sol = { ...sol3, used: { d3: "s" }, salts: { z3: "p3" }, bodies: { c3: "b3" } };
+    seat3.unsent = { zk3: { changed: true } };   // approval records that another tab saved
     storedX[gid + ":9"] = { m5new: 1 };   // a new seat of another tab
     storage.set("zf-secrets", JSON.stringify(storedX));
     const keysX = JSON.parse(storage.get("zf-keys"));
@@ -509,6 +510,9 @@ const sealed = (gid, rel, seat, fields, key, names = ["by", "sig"]) =>
       ["KPY", "KPY", { d2: "s" }], "a newer save of another tab stays");
     assert.deepEqual([t.sec(gid, 3).sol.used, t.sec(gid, 9), storedAfter[gid + ":9"]],
       [{ d3: "s" }, { m5new: 1 }, { m5new: 1 }], "the Solana nonces and a new seat come in");
+    const s3 = t.sec(gid, 3);
+    assert.deepEqual([s3.sol.salts, s3.sol.bodies, s3.unsent],
+      [{ z3: "p3" }, { c3: "b3" }, { zk3: { changed: true } }], "and the other approval records");
     assert.equal(JSON.parse(storage.get("zf-keys")).m5other, "k", "the key of the other tab stays");
     assert.deepEqual([t.chats.list[cidX], t.chats.list[cidM]], [roomX, roomX], "both chats stay");
     delete t.chats.list[cidM];
@@ -519,7 +523,7 @@ const sealed = (gid, rel, seat, fields, key, names = ["by", "sig"]) =>
     const { m5x: _m5x, ...marks3 } = t.sec(gid, 3).marks;
     delete t.secrets[gid + ":9"];
     await t.putSec(gid, 2, { m5kp: undefined, sol: sol2 });
-    await t.putSec(gid, 3, { m5Flag: undefined, marks: marks3, sol: sol3 });
+    await t.putSec(gid, 3, { m5Flag: undefined, marks: marks3, sol: sol3, unsent: undefined });
     // A storage event of another tab: the seats of its save come in, and a seat that only this
     // tab holds stays, because it may be the last copy.
     t.secrets["zz:9"] = { m5only: 1 };
@@ -664,6 +668,57 @@ const sealed = (gid, rel, seat, fields, key, names = ["by", "sig"]) =>
     notify();
     await waitFor("the shares of mb", () => data.has(pathOf(mb) + "/shares/1"), 10000);
     await drop(pathOf(mb));
+    // A burn that keeps failing: each new try waits longer, so the engine does not sign again and
+    // again while the save fails. The step goes on by itself when the wait ends.
+    engine.length = 0;
+    const mt = await propose("mt", 4);
+    t.closeSession();
+    await approveAs(mt.id, [1, 2]);
+    storage.set("zf-vault", "{}");
+    notify();
+    await waitFor("the first try", () => engine.includes("share 1"));
+    await sleep(200);
+    for (let k = 0; k < 5; k++) { notify(); await sleep(100); }
+    assert.equal(engine.filter((x) => x === "share 1").length, 1, "no new try during the wait");
+    const tries = () => engine.filter((x) => x === "share 1").length;
+    await waitFor("the second try", () => tries() === 2, 10000);
+    await sleep(200);
+    storage.delete("zf-vault");   // nothing reacts now: the end of the 6 s wait starts the step
+    await waitFor("the shares of mt", () => data.has(pathOf(mt) + "/shares/1"), 10000);
+    await drop(pathOf(mt));
+    // A share is made and its write fails, so it stays kept. Another seat cancels, and the person
+    // releases the hold. When a seat then resets the payment to signing, no share of this browser
+    // goes out.
+    let shareDown = true;
+    t.setDb({ doc: (p) => p.endsWith("/shares/1") && shareDown
+      ? { ...docRef(p), set: async () => { throw new Error("down"); } } : docRef(p),
+    collection: colRef });
+    const mp = await propose("mp", 4);
+    t.closeSession();
+    await approveAs(mp.id, [1, 2]);
+    const markP = { approved: "aa", tip: 4500000 };
+    await t.putSec(gid, 1, { marks: { ...t.sec(gid, 1).marks, [mp.id]: markP } });
+    notify();
+    await waitFor("the kept share", () => !!(t.sec(gid, 1).unsent || {})[mp.id]);
+    const signingP = { ...data.get(pathOf(mp)) };
+    const cancelP = { error: "Cancelled by a signer (seat 2)." };
+    const sigP = await t.sigPart(gid, mp.id, "cancel", cancelP, 2);
+    data.set(pathOf(mp), { ...signingP, ...cancelP, status: "cancelled", ...sigP });
+    notify();
+    await waitFor("the cancel", () => !!liveOf(mp)?.error);
+    await t.releaseHold(mp.id);
+    const s1 = t.sec(gid, 1);
+    assert.deepEqual([s1.marks[mp.id].released, (s1.unsent || {})[mp.id], (s1.nonces || {})[mp.id]],
+      [true, undefined, undefined], "the release burns the kept share too");
+    shareDown = false;
+    data.set(pathOf(mp), signingP);   // a seat resets the payment
+    notify();
+    await sleep(500);
+    assert.equal(data.has(pathOf(mp) + "/shares/1"), false, "no share after the release");
+    t.setDb({ doc: docRef, collection: colRef });
+    const { [mp.id]: _mp, ...marksP } = t.sec(gid, 1).marks;
+    await t.putSec(gid, 1, { marks: marksP });
+    await drop(pathOf(mp));
     // The save of an approval fails: no commitment goes out, and memory gets its old state back,
     // so the next click approves.
     const ma = await propose("ma", 4);
