@@ -600,3 +600,25 @@ body:has(.dialog), body:has(.drawer) { overflow: hidden; }
   letter-spacing: -0.025em;
 }
 .wallet-select:hover { border-color: var(--line); }
+
+/* Overview: one row per asset with its amount as the largest number, then the shortcut to the
+   payments in progress. */
+.assets-grid {
+  display: grid; grid-template-columns: repeat(auto-fit, minmax(min(280px, 100%), 1fr)); gap: 16px;
+}
+.asset-card { align-content: start; }
+.asset-title { display: flex; align-items: center; gap: 12px; }
+.asset-title h2 { font-size: 18px; line-height: 1.2; }
+.asset-title p { font-size: 12.5px; color: var(--muted); margin-top: 2px; }
+.coin-mark {
+  width: 44px; height: 44px; display: grid; place-items: center; flex: none; border-radius: 50%;
+  border: 1px solid var(--line-2); color: var(--metal); box-shadow: var(--shadow-control);
+  background: linear-gradient(140deg, var(--control-hi), var(--sunk));
+}
+.coin-mark .symbol { width: 24px; height: 24px; }
+.asset-balance {
+  font: 600 clamp(28px, 4vw, 40px)/1.15 var(--sans); letter-spacing: -0.04em;
+  font-variant-numeric: tabular-nums; overflow-wrap: anywhere;
+}
+.asset-balance.unknown { font-size: 22px; color: var(--muted); letter-spacing: -0.02em; }
+.pending-shortcut .btn { margin-left: auto; }

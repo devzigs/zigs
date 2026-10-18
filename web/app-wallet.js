@@ -18,14 +18,18 @@ import {
 } from "./app-dom.js";
 import { signing, unreadIn } from "./app-messages.js";
 import { groupVersion, rejectedSeats, seatCheck, verifiedCount } from "./app-dkg.js";
-import { cancelMove, ended, proposeMove, sendBlocker } from "./app-payments.js";
+import { cancelMove, ended, isOpen, proposeMove, sendBlocker } from "./app-payments.js";
 import { messagesCard } from "./app-thread.js";
 import { openBackup, staleRestoreNote } from "./app-backups.js";
 import { loadingView } from "./app-shell.js";
 import { render } from "./app-loop.js";
 import { setupView, solSetupCard, solUnfinished } from "./app-setup.js";
 import { themeChoice } from "./app-theme.js";
-import { solBackup, solOn, solPending, solTab, solUnsaved } from "./app-sol.js";
+import {
+  solBackup, solBalance, solError, solOn, solPending, solSetup, solTab, solUnsaved,
+} from "./app-sol.js";
+import { pendingShortcut, solRow, zecTotal } from "./overview-model.js";
+import { icon } from "./app-icons.js";
 
 export function groupView() {
   const g = state.g;
@@ -192,10 +196,11 @@ function overviewTab() {
   const c = curChain(), list = activity(), pend = toApprove(state.gid);
   return el("div", { class: "page", style: "gap:16px" },
     state.g.movedTo ? moveCard(c) : null,
+    pendingCard(),
     pend.length ? approvalsCard(pend) : null,
     solUnfinished() ? solSetupCard() : null,
-    el("div", { class: "grid-ov" }, balanceCard(c), receiveCard()),
-    signersCard(),
+    el("div", { class: "assets-grid" }, zecAsset(c), solAsset()),
+    el("div", { class: "grid-ov" }, receiveCard(), signersCard()),
     el("section", { class: "card" },
       el("div", { class: "card-head card-pad", style: "padding-bottom:12px" }, el("h2", {}, "Activity"),
         list.length > 6 ? el("button", { class: "btn ghost sm", type: "button", onclick: () => { ui.tab = "activity"; render(); } }, "View all") : null),
@@ -258,11 +263,27 @@ function approvalRow(ss) {
   el("span", { class: "btn sm primary", "aria-hidden": "true" }, "Review"));
 }
 
-function balanceCard(c) {
+// The shortcut to the payments in progress: open ZEC payments, ZEC payments that wait for their
+// block, and the Solana proposals that a seat of this browser can approve.
+function pendingCard() {
+  const p = pendingShortcut({ zecOpen: state.sessions.filter(isOpen).length,
+    zecFlying: inFlight().length, solToApprove: solOn() ? solPending() : 0 });
+  if (!p) return null;
+  return el("section", { class: "callout pending-shortcut", role: "status" }, icon("activity"),
+    el("span", {}, p.text),
+    el("button", { class: "btn sm", type: "button",
+      onclick: () => { ui.tab = p.to; render(); } }, "Review"));
+}
+
+const assetHead = (id, symbol, network) => el("div", { class: "asset-title" },
+  el("span", { class: "coin-mark" }, icon(id)),
+  el("div", {}, el("h2", { id: "asset-" + id }, symbol), el("p", {}, network)));
+
+function zecAsset(c) {
   const b = c && c.bal ? balanceNow(c.bal) : null, empty = b && b.spendable + b.pending + b.sending === 0 && !state.g.movedTo;
-  return el("section", { class: "card card-pad balance" },
-    el("span", { class: "label" }, "Balance"),
-    b ? money(b.spendable + b.pending, "xl")
+  return el("section", { class: "card card-pad asset-card", "aria-labelledby": "asset-zec" },
+    assetHead("zec", "ZEC", "Zcash " + netName(state.g)),
+    b ? money(zecTotal(b), "xl")
       : el("span", { class: "skel xl", role: "img", "aria-label": "Loading balance" }),
     el("div", { class: "stats" },
       el("div", {}, el("span", { class: "label" }, "Available"), b ? money(b.spendable) : el("span", { class: "skel" })),
@@ -277,6 +298,27 @@ function balanceCard(c) {
     atCap() ? capNote() : null,
     syncLine(c));
 }
+const SOL_NOTE = {
+  synced: "The private balance of the group at the last sync. Open Solana for payments, deposits "
+    + "and the fee addresses.",
+  unsynced: "Open Solana to sync the private balance.",
+  setup: "The Solana part of this wallet is still setting up.",
+  stopped: "The Solana part stopped. The Zcash part still works.",
+  loading: "The Solana part loads.",
+};
+
+// The SOL row: the private balance of the last sync, or the state of the Solana part.
+function solAsset() {
+  const row = solRow({ on: solOn(), error: solError, setup: solSetup(), balance: solBalance() });
+  if (!row) return null;
+  return el("section", { class: "card card-pad asset-card", "aria-labelledby": "asset-sol" },
+    assetHead("sol", "SOL", "Solana Devnet"),
+    el("p", { class: "asset-balance" + (row.state === "synced" ? "" : " unknown") }, row.text),
+    el("p", { class: "small muted" }, row.state === "failed" ? solError : SOL_NOTE[row.state]),
+    el("div", { class: "row-actions" }, el("button", { class: "btn", type: "button",
+      onclick: () => { ui.tab = "solana"; render(); } }, "Open Solana")));
+}
+
 export const capNote = () => el("div", { class: "callout bad" },
   "This wallet holds " + capText(curNet().cap) + ", the warning level for unaudited mainnet "
   + "wallets. Do not send more to it. The app cannot block deposits. Payments out still work.");

@@ -129,6 +129,9 @@ export const solSetup = () =>
 // the open wallet only, so any other wallet counts 0.
 export const solPending = (gid = state.gid) =>
   solOpenHere(gid) && pendingCount ? fromSol("approval count", pendingCount, 0) : 0;
+// The private balance text of the last sync (or of the saved sync) of wallet `gid`, or null.
+export const solBalance = (gid = state.gid) =>
+  solOpenHere(gid) ? fromSol("balance", (c) => c.sync?.balance ?? null, null) : null;
 // A failed load waits for Try again (solRetry): a retry on every redraw would loop.
 export function solRetry() {
   if (!solError) return;   // a second tap while the retry loads
