@@ -4,10 +4,11 @@ import { payeeRows, requestProblem } from "./requests.js";
 import { state, ui } from "./app-state.js";
 import { fmtZec } from "./app-kit.js";
 import { Z } from "./app-engine.js";
-import { addrHidden, atCap, curChain, curNet } from "./app-chain.js";
+import { addrHidden, atCap, curChain, curNet, netName } from "./app-chain.js";
 import { act, addrGroups, copyBtn, el, money, normalized, onNetwork, qrBox } from "./app-dom.js";
 import { feeEstimate, newSpend, PRIORITY_FACTOR, sendBlocker } from "./app-payments.js";
 import { requestOf } from "./app-payreq.js";
+import { nameOf, recentNote, registry, resolveRecipient, zecName } from "./zns.js";
 import { render } from "./app-loop.js";
 import { capNote, receiveLimit, receiveWhat } from "./app-wallet.js";
 
@@ -41,19 +42,53 @@ function addressHint(hint, to) {
   hint.className = "hint " + (!v ? "" : ok ? "ok" : "bad");
 }
 
+// A recipient field holds an address or, in a testnet wallet, a ZNS name. Text that is an address
+// on this network is never a name. A mainnet wallet looks no name up.
+const znsOn = () => netName(state.g) === "testnet";
+const nameIn = (to) => (znsOn() && !onNetwork(to.trim()) ? nameOf(to) : null);
+const toLabel = () => (znsOn() ? "Recipient address or ZNS name" : "Recipient address");
+const toPlaceholder = () => curNet().prefix + (znsOn() ? "… or alice.zec" : "…");
+
+const showHint = (hint, text, cls = "") => {
+  hint.textContent = text;
+  hint.className = "hint " + cls;
+};
+
+// The text and the class of the hint for a typed name, from the registry of this moment.
+async function nameAnswer(typed) {
+  try {
+    const reg = await registry.get(), tip = curChain()?.bal?.height;
+    const { name, address, record } = resolveRecipient(typed, "test", reg, tip);
+    const note = recentNote(record, tip);
+    return [zecName(name) + " gives this address: " + address + (note ? " " + note : ""), "ok"];
+  } catch (e) { return [e.message, "bad"]; }
+}
+
+// The hint of a recipient field. The answer for a name comes later, and only the newest text of
+// the field may show it.
+function recipientHint(hint, r) {
+  const typed = r.to, name = nameIn(typed);
+  if (name === null) return addressHint(hint, typed);
+  showHint(hint, "Looking up " + zecName(name) + "…");
+  return nameAnswer(typed).then(([text, cls]) => {
+    if (r.to === typed) showHint(hint, text, cls);
+  });
+}
+
 function payRow(r, i, rows, sumUp) {
-  const c = curChain(), hint = el("span", { class: "hint" }), n = rows.length > 1 ? " " + (i + 1) : "";
+  const c = curChain(), n = rows.length > 1 ? " " + (i + 1) : "";
+  const hint = el("span", { class: "hint", style: "overflow-wrap:anywhere" });
   const amt = el("input", { class: "input", id: "s-amt-" + r.k, type: "text", inputmode: "decimal", placeholder: "0.00", required: true, autocomplete: "off", "aria-label": "Amount" + n, value: r.amt, oninput: (ev) => { r.amt = ev.target.value.trim(); sumUp(); } });
   const max = () => { r.amt = zatText(Math.max(0, c && c.bal ? c.bal.max_send : 0)); amt.value = r.amt; sumUp(); };
-  addressHint(hint, r.to);
+  recipientHint(hint, r);
   return el("div", { class: "pay-row" },
     el("input", {
-      class: "input mono", id: "s-to-" + r.k, type: "text", placeholder: curNet().prefix + "…",
+      class: "input mono", id: "s-to-" + r.k, type: "text", placeholder: toPlaceholder(),
       required: true, autocomplete: "off", spellcheck: "false",
-      "aria-label": "Recipient address" + n, value: r.to,
+      "aria-label": toLabel() + n, value: r.to,
       oninput: (ev) => {
         r.to = ev.target.value;
-        fillFromRequest(r, rows, hint) || addressHint(hint, r.to);
+        fillFromRequest(r, rows, hint) || recipientHint(hint, r);
       },
     }),
     el("div", { class: "input-wrap" }, amt, rows.length === 1 ? el("button", { class: "btn sm", type: "button", onclick: max }, "Max") : null),
@@ -122,17 +157,54 @@ function useList() {
   render();
 }
 
-// Checks each row and returns the payees in zatoshis, or throws with the row number.
-function readPayees(rows) {
+const whoOf = (rows, i) => (rows.length > 1 ? "Recipient " + (i + 1) + ": " : "");
+
+// The name rows, looked up in the registry as of now: a Map of row to `{name, address, record}`.
+// A payment never uses the answer of an older hint. Rows with an address take no lookup.
+async function resolveNames(rows) {
+  const found = new Map();
+  if (!rows.some((r) => nameIn(r.to) !== null)) return found;
+  const bal = curChain()?.bal;
+  if (!bal) throw new Error("The wallet has not finished its first sync.");
+  const reg = await registry.get();
+  rows.forEach((r, i) => {
+    if (nameIn(r.to) === null) return;
+    try { found.set(r, resolveRecipient(r.to, "test", reg, bal.height)); }
+    catch (e) { throw new Error(whoOf(rows, i) + e.message, { cause: e }); }
+  });
+  return found;
+}
+
+const addressError = (net, hit) => (hit
+  ? `The name ${zecName(hit.name)} gives an address that Zigs cannot pay.`
+  : "Enter a shielded Zcash " + net.label.toLowerCase() + " address. It starts with "
+    + net.prefix + ".");
+
+// A payee has a memo only when it has text, and a name only when the row held a name.
+function payeeOf(to, amount, memo, hit) {
+  const p = { to, amount };
+  if (memo) p.memo = memo;
+  if (hit) p.name = hit.name;
+  return p;
+}
+
+// Checks each row and returns the payees in zatoshis, or throws with the row number. `found` has
+// the registry answer of each name row: that row pays the address of the registry.
+function readPayees(rows, found) {
   const net = curNet(), own = normalized(state.wallet.address);
   return rows.map((r, i) => {
-    const to = r.to.trim(), amount = toZat(r.amt), who = rows.length > 1 ? "Recipient " + (i + 1) + ": " : "";
-    const memo = String(r.memo || "").trim();
-    if (!onNetwork(to)) throw new Error(who + "Enter a shielded Zcash " + net.label.toLowerCase() + " address. It starts with " + net.prefix + ".");
-    if (normalized(to) === own) throw new Error(who + "This is the address of this wallet. Enter the address of someone else.");
-    if (!amount) throw new Error(who + "Enter an amount greater than zero, with at most 8 decimals.");
+    const hit = found.get(r), to = hit ? hit.address : r.to.trim(), amount = toZat(r.amt);
+    const who = whoOf(rows, i), memo = String(r.memo || "").trim();
+    if (!onNetwork(to)) throw new Error(who + addressError(net, hit));
+    if (normalized(to) === own) {
+      throw new Error(who + "This is the address of this wallet. Enter the address of someone "
+        + "else.");
+    }
+    if (!amount) {
+      throw new Error(who + "Enter an amount greater than zero, with at most 8 decimals.");
+    }
     if (memoError(memo)) throw new Error(who + memoError(memo));
-    return memo ? { to, amount, memo } : { to, amount };
+    return payeeOf(to, amount, memo, hit);
   });
 }
 
@@ -167,7 +239,7 @@ export function sendDialog() {
   const why = sendBlocker();
   const f = el("form", { class: "dialog", role: "dialog", "aria-modal": "true", "aria-labelledby": "send-title", onsubmit: act(async (ev) => {
     if (why) throw new Error(why);
-    const payees = readPayees(rows);
+    const payees = readPayees(rows, await resolveNames(rows));
     const need = payees.reduce((n, p) => n + p.amount, 0) + feeEstimate(payees.length, ui.priority);
     if (need > spendable) throw new Error("Not enough funds: " + fmtZec(spendable) + " available, " + fmtZec(need) + " needed (amounts + fee).");
     const note = String(new FormData(ev.target).get("note") || "").trim();

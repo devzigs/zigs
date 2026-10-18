@@ -172,10 +172,10 @@ id that you open, and the time, so it can link them. The page sends no referrer.
 
 ## ZNS names (testnet)
 
-**Status on 18 October 2026:** main has the `/zns` route and the lookup on the device
-(`web/zns.js`), but the Send form does not take a name yet (M10 of
-[docs/hackathon-release.md](docs/hackathon-release.md)). Until then, the page does not download
-the registry. This section describes the design that M10 finishes.
+**Status on 18 October 2026:** the Send form takes a name and looks it up on the device
+(`web/zns.js`), in the copy that `/zns` serves. An approving web app checks the name again (M10 of
+[docs/hackathon-release.md](docs/hackathon-release.md)). A live testnet payment to a name is not
+done yet.
 
 On testnet, the Send form of the web app accepts a ZNS name in place of an address: `alice`,
 `alice.zec` or `alice.zcash`. ZNS is the naming service of Zcash Names (zcashnames.com), which

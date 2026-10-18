@@ -19,6 +19,7 @@ import { closeSession, openSession, sdb } from "./app-groups.js";
 import { groupName, isPayee, normalized, payTitle } from "./app-dom.js";
 import { myVerified, seatCheck } from "./app-dkg.js";
 import { once, react, render } from "./app-loop.js";
+import { nameRefusal, registry } from "./zns.js";
 
 const inspectCache = new Map();
 
@@ -262,14 +263,22 @@ export async function newSpend(...args) {
   finally { ui.proposing = false; }
 }
 
+// A payee has a memo only when it has text, and a name only when it was paid by name. A payee
+// without them stays {to, amount}.
+function keptPayee({ to, amount, memo, name }) {
+  const p = { to, amount };
+  if (memo) p.memo = memo;
+  if (isStr(name) && name) p.name = name;
+  return p;
+}
+
 async function proposeNow(payees, note, move = null, priority = false, after) {
   const gid = state.gid, approvals = state.g.t;
   if (!chain || chain.gid !== gid || !chain.bal) {
     throw new Error("The wallet has not finished its first sync.");
   }
   if (!mayAct()) throw new Error(NO_SEAT_KEY);
-  // A payee has a memo only when it has text. A proposal without memos stays {to, amount}.
-  payees = payees.map(({ to, amount, memo }) => memo ? { to, amount, memo } : { to, amount });
+  payees = payees.map(keptPayee);
   // `after`: the approved PCZT of an expired payment. The engine spends all of its notes too.
   const t = J(await spendOrStall(chain, payees, priority, after));
   const ref = sdb.collection("groups/" + gid + "/sessions").doc();
@@ -400,6 +409,7 @@ async function approveNow(ss, i) {
   // The engine refuses an expired payment. It checks against the chain height now, because the
   // last sync can be minutes old.
   const tip = await freshTip();
+  await checkNames(ss, tip);
   // Under the lock of the secrets: a write here neither brings back a burned nonce nor drops a
   // new one of another tab.
   const doc = await withSecrets(() => commitNow(ss, i, ins, tip, gid));
@@ -408,6 +418,19 @@ async function approveNow(ss, i) {
   await sdb.doc("groups/" + gid + "/" + rel).set(doc);
   log("seat " + i + ": approved the spend, nonce commitment published");
   showBanner("ok", "Approved" + (localSeats().length > 1 ? " as seat " + i : "") + ".");
+}
+
+// A payee with a ZNS name (testnet only): this browser looks the name up again, in its own copy of
+// the registry, and approves only the address that the name gives now. A proposal without names
+// asks no registry.
+async function checkNames(ss, tip) {
+  const payees = payeesOf(ss);
+  if (!payees.some((p) => Object.hasOwn(p, "name"))) return;
+  if (netName(state.g) !== "testnet") {
+    throw new Error("ZNS names work on testnet only, so this browser did not approve.");
+  }
+  const why = nameRefusal(payees, await registry.get(), tip);
+  if (why) throw new Error(why);
 }
 
 // Makes and saves the nonces of the approval of seat `i`. Returns the commitment document.

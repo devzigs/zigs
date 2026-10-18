@@ -334,7 +334,7 @@ synced to the mainnet tip in the web app and on the iPhone.
 | [`wasm/src/snapshot.rs`](wasm/src/snapshot.rs) | Saved sync state: notes and the note commitment tree |
 | [`wasm/src/backup.rs`](wasm/src/backup.rs) | Encrypted key share backups: Argon2id, XChaCha20-Poly1305 |
 | [`wasm/src/ffi.rs`](wasm/src/ffi.rs) | C interface for the iPhone and Mac apps |
-| [`web/index.html`](web/index.html), [`web/app.css`](web/app.css), [`web/app.js`](web/app.js), `web/app-*.js` | The web app: page, styles, and the script: `web/app.js` lists the 8 pure modules and the 25 page modules and starts the page (no inline script or style; see [The page modules](#the-page-modules)) |
+| [`web/index.html`](web/index.html), [`web/app.css`](web/app.css), [`web/app.js`](web/app.js), `web/app-*.js` | The web app: page, styles, and the script: `web/app.js` lists the 9 pure modules and the 25 page modules and starts the page (no inline script or style; see [The page modules](#the-page-modules)) |
 | [`web/shim.js`](web/shim.js), [`web/qr.js`](web/qr.js), [`web/payees.js`](web/payees.js), [`web/requests.js`](web/requests.js), [`web/personal.js`](web/personal.js), [`web/vault.js`](web/vault.js), [`web/chat.js`](web/chat.js), [`web/signed.js`](web/signed.js), [`web/zns.js`](web/zns.js) | Store client, QR encoder, payment list parser with the memo rules and the recipient check, payment request cards and Send form rows, the rules of the personal account (contacts, fee, states of a message, backup), passkey lock, message helpers, the rules for signed writes, and the ZNS name lookup with the check of an approver (no third-party code) |
 | [`cf/src/index.js`](cf/src/index.js) | Group server: Cloudflare Worker with one Durable Object per wallet, limits against abuse. It also serves `/sol` and `/sol/config.json` for the Solana beta, relays `/lwd` to our testnet light-wallet node, and serves `/zns`, a copy of the testnet ZNS name registry |
 | [`web/sol/`](web/sol) | Solana beta in the page: ceremony, signing sessions, backup, the Worker that talks to Helius, the Solana wasm, and the vendored Zolana SDK bundle (third-party code, hash pinned in `SHA256SUMS`) |
@@ -644,6 +644,9 @@ folder path.
   - A mainnet wallet with no known balance gets no request form.
   - No card offers a wallet that the request pays.
   - The Send form refuses a submit when **Send** is off.
+  - A testnet wallet takes a ZNS name in the Send form: an address, a request or a mainnet wallet
+    asks no registry, the payment names the registry address, and an approving browser looks the
+    name up again and makes no nonce for a moved name. The wallet downloads the registry on open.
   - A field of a closed request form does not keep the page from drawing.
   - After signing, "Sent", "Expired" and "Propose again" come from the engine's session state
     on a browser that approved (ZEC-13). The page passes the PCZT and sighash that it kept, not

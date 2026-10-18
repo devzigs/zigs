@@ -12,6 +12,7 @@ import {
 } from "./app-payments.js";
 import { acct } from "./app-account.js";
 import { render } from "./app-loop.js";
+import { registry } from "./zns.js";
 
 // This release is for Zcash testnet and Solana Devnet only (M1 of docs/hackathon-release.md): a new
 // wallet or account cannot pick mainnet, and a chat reads testnet requests only. A mainnet wallet
@@ -74,6 +75,9 @@ export function ensureChain() {
     gid: state.gid, secret: gkeys[state.gid], net: curNet(), ufvk: w.ufvk, birthday: w.birthday,
     cw: null, url: null, prog: null, bal: null, ms: 0, error: null, syncing: false,
   };
+  // A testnet wallet downloads the ZNS registry when it opens, so that the time of a download
+  // does not mark a payment (PRIVACY.md). The first name lookup retries a failed download.
+  if (netName(state.g) === "testnet") registry.get().catch(() => {});
   runSync(chain);
 }
 
