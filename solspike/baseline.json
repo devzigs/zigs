@@ -1,5 +1,5 @@
 {
-  "baseCommit": "83244435f0c06b963a6049517b81919805870687",
+  "baseCommit": "a29e9ea855c4b411b7dc140b00dcd8cd487c0d88",
   "node": "v24.11.0",
   "tests": {
     "web/test/chat.mjs": {
@@ -36,6 +36,9 @@
       "exit": 0
     },
     "web/test/lwd.mjs": {
+      "exit": 0
+    },
+    "web/test/zns.mjs": {
       "exit": 0
     },
     "web/test/graph.mjs": {

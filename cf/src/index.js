@@ -275,6 +275,121 @@ async function lwd(req, env, url) {
   return new Response(up.body, { status: up.status, headers: out });
 }
 
+// The testnet registry of ZNS (docs/zns-spike.md). The page asks /zns for the whole registry and
+// looks names up on the device, so no resolver learns which name a person pays. No header of the
+// user goes upstream. web/zns.js holds the same ZNS_KEY, and web/test/zns.mjs checks both.
+const ZNS_KEY = [
+  "uviewtest1gkq78nsemsvs4qekadrv6qlqdmvcv2cct8k3c8cwycedpk90p8rtkx24qe8q73gg2ark8crqmmaavrer",
+  "f7cxu0sp50an54crmeaalfxl72aetxnr89ksad4lvxzmnkyejhhwn65euzamt9wsukgfemeayhcesreasarmq600lf",
+  "eju3qenh05e5e5cz6nhhsw3cfdcd3d08d0nxswxmkkxl2fq0hzv6t5dm3ftnz4y76236a49v3us4uq2tlsewf86tjt",
+  "fwm6kue348me04rm7dw6uawv8myw7t5tyx2t453clhjz5f55lvh7hnvr8g8zt8lf4sy5rzq23ntp7g5ly6kyz2nkwf",
+  "ek06llhjtuz2fft9rg6cuuwg4n7299vajnmq6swg3sf563r0jjzuwuvfpjhmfmydar9dcu3fkuawt6u8qu08vhg5mt",
+  "hrcggrjuhht6f0perh0tqmdfrtgzvhjymay7h9ymvfxgd4r56uz6zrsf5gnvw5jy",
+].join("");
+const ZNS_PAGE = 500, ZNS_MAX_PAGES = 200; // the largest page of the resolver; pages per load
+const ZNS_FRESH_MS = 60_000, ZNS_FULL_MS = 3_600_000; // a full load heals a missed event
+// The address has at most 1,000 characters: "utest1" and up to 994 more.
+const ZNS_TEXT = {
+  name: /^[a-z0-9]{1,63}$/, address: /^utest1[0-9a-z]{1,994}$/, txid: /^[0-9a-f]{64}$/,
+  expires_at: /^(?:none|[0-9]+)$/,
+};
+
+// A payment path fails closed: one unsound item fails the whole refresh.
+function znsValid(item, actionField, actions) {
+  const text = ([field, re]) => typeof item[field] === "string" && re.test(item[field]);
+  return item !== null && typeof item === "object" && Object.entries(ZNS_TEXT).every(text)
+    && Number.isSafeInteger(item.height) && item.height >= 0 && actions.includes(item[actionField]);
+}
+
+const znsRecord = ({ name, address, txid, height, expires_at }, last_action) =>
+  ({ name, address, txid, height, last_action, expires_at });
+
+async function znsCall(method, params) {
+  const res = await fetch("https://light.zcash.me/zns-testnet", {
+    method: "POST", headers: new Headers({ "content-type": "application/json" }),
+    body: JSON.stringify({ jsonrpc: "2.0", id: 1, method, params }),
+    redirect: "manual", signal: AbortSignal.timeout(10_000),
+  });
+  if (res.status !== 200) throw new Error(`${method}: upstream status ${res.status}`);
+  const { result, error } = await res.json();
+  if (error != null || !result || typeof result !== "object") throw new Error(method + " failed");
+  return result;
+}
+
+// Every item of a paged method, in answer order. A short page is the last page.
+async function znsPages(method, params, field) {
+  const items = [];
+  for (let n = 0; n < ZNS_MAX_PAGES; n++) {
+    const page = { ...params, limit: ZNS_PAGE, offset: items.length };
+    const got = (await znsCall(method, page))[field];
+    if (!Array.isArray(got)) throw new Error(`${method}: no ${field}`);
+    items.push(...got);
+    if (got.length < ZNS_PAGE) return items;
+  }
+  throw new Error(`${method}: more than ${ZNS_MAX_PAGES} pages`);
+}
+
+async function znsFull() {
+  const rows = await znsPages("list_names", {}, "items");
+  if (!rows.every((r) => znsValid(r, "last_action", ["claim", "update"]))) {
+    throw new Error("list_names: bad record");
+  }
+  return new Map(rows.map((r) => [r.name, znsRecord(r, r.last_action)]));
+}
+
+// The events come newest first, and a page boundary can repeat one. A copy of the old names takes
+// them oldest first, so a failure keeps the old names.
+async function znsDelta(old) {
+  const events = await znsPages("events", { since_height: old.height }, "events");
+  const names = new Map(old.names), seen = new Set();
+  for (const e of events.reverse()) {
+    const ok = znsValid(e, "action", ["claim", "update", "release"]) && e.id != null;
+    if (!ok) throw new Error("events: bad event");
+    if (seen.has(e.id)) continue;
+    seen.add(e.id);
+    if (e.action === "release") names.delete(e.name);
+    else names.set(e.name, znsRecord(e, e.action));
+  }
+  return names;
+}
+
+// ponytail: the snapshot lives in one isolate, and each isolate loads the registry on its own.
+// If that load matters, keep one copy in the Cache API or a Durable Object.
+let znsSnap = null, znsLoading = null; // { height, names, at, fullAt }; the refresh in flight
+
+async function znsRefresh() {
+  const started = Date.now(), old = znsSnap;
+  const { viewing_key, synced_height: height } = await znsCall("status", {});
+  if (viewing_key !== ZNS_KEY || !Number.isSafeInteger(height) || height < 0) {
+    throw new Error("status: another registry key or no height");
+  }
+  // A resolver below the height of the snapshot rolled the chain back: read everything again.
+  const full = !old || started - old.fullAt >= ZNS_FULL_MS || height < old.height;
+  const names = await (full ? znsFull() : znsDelta(old));
+  znsSnap = { height, names, at: started, fullAt: full ? started : old.fullAt };
+  return znsSnap;
+}
+
+function znsSnapshot() {
+  if (znsSnap && Date.now() - znsSnap.at < ZNS_FRESH_MS) return znsSnap;
+  znsLoading ??= znsRefresh().finally(() => { znsLoading = null; });
+  return znsLoading;
+}
+
+async function zns(req) {
+  if (req.method !== "GET") return new Response("Use GET.\n", { status: 405 });
+  let snap;
+  try {
+    snap = await znsSnapshot();
+  } catch (e) {
+    console.error("The ZNS registry could not be read:", e.message);
+    return new Response("The ZNS registry could not be read.\n", { status: 502 });
+  }
+  const names = [...snap.names.values()].sort((a, b) => (a.name < b.name ? -1 : 1));
+  return Response.json({ network: "test", key: ZNS_KEY, height: snap.height, names },
+    { headers: { "cache-control": "no-store" } });
+}
+
 async function groupSocket(req, env, url) {
   const gid = url.searchParams.get("g") || "";
   if (!GROUP_ID.test(gid)) return new Response("Add ?g= with a group id of 20 hex characters.", { status: 400 });
@@ -312,6 +427,7 @@ export default {
     const url = new URL(req.url);
     if (url.pathname === "/ws") return groupSocket(req, env, url);
     if (url.pathname.startsWith("/lwd/")) return lwd(req, env, url);
+    if (url.pathname === "/zns") return zns(req);
     if (url.pathname === "/" || url.pathname === "/index.html") {
       const page = await env.ASSETS.fetch(new URL("/index.html", url));
       const res = new HTMLRewriter()
