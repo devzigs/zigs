@@ -295,9 +295,8 @@ export const MUTATIONS = [
       '      solPlanned() ? el("p", { class: "small muted" }, SOL_DISCLOSURE) : null),',
       "      null),")], /the join card says what Solana makes public/),
   mutant("W-disclosure-public", "the Solana choice says less than the Solana tab", UNIFIED,
-    [patch("web/app-sol.js", '"payee. The program address, the group key and the fee address of '
-      + 'each seat that pays are "', '"payee. "')],
-    /public program address\.\*fee address\.\*Helius/),
+    [patch("web/app-sol.js", "A withdrawal shows its ", "A withdrawal shows the ")],
+    /the choice says what the Solana tab says/),
   mutant("W-new-wallet", "Create a new wallet does nothing inside an open wallet", UNIFIED,
     [patch("web/app-sol.js", "=> { openGroup(null); ui.create = true;", "=> { ui.create = true;")],
     /the wallet closed/),

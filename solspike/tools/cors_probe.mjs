@@ -4,9 +4,12 @@
 // Access-Control headers are printed, never the URL or its key.
 // Usage: node solspike/tools/cors_probe.mjs [URL_FILE]   (writes logs/cors-probe.json)
 import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { dirname, join } from "node:path";
+import { fileURLToPath } from "node:url";
 import { redact } from "../harness/redact.mjs";
 import { heliusFile } from "./paths.mjs";
 
+const HERE = dirname(fileURLToPath(import.meta.url));
 const FILE = process.argv[2] ?? heliusFile();
 const ORIGINS = ["http://localhost:8795", "http://127.0.0.1:8795"];
 // [name, path, keyed]: the prover paths take no key (ZOLANA.md 6.4), the others do.
