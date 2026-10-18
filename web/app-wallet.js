@@ -562,9 +562,10 @@ function recoveryTab() {
   const r = recoveryState(seats), risk = protectionRisk(state.g.t, state.g.n);
   return el("div", { class: "page", style: "gap:16px" },
     el("section", { class: "card card-pad" + (r.state === "missing" ? " attention" : "") },
-      el("h2", {}, r.label), el("p", { class: "small muted" }, RECOVERY_LIMITS)),
-    el("section", { class: "card card-pad" }, el("h2", {}, risk.title),
-      el("p", { class: "small muted" }, risk.detail)),
+      el("div", { class: "card-head" }, el("h2", {}, r.label)),
+      el("p", { class: "small muted" }, RECOVERY_LIMITS)),
+    el("section", { class: "card card-pad" }, el("div", { class: "card-head" },
+      el("h2", {}, risk.title)), el("p", { class: "small muted" }, risk.detail)),
     seats.some((x) => x.zec.has) ? el("section", { class: "card" },
       el("div", { class: "card-head card-pad" }, el("h2", {}, "Seats in this browser")),
       el("div", {}, seats.filter((x) => x.zec.has).map((x) => guard(recoveryRow, x)))) : null,

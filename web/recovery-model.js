@@ -15,7 +15,8 @@ export function protectionRisk(t, n) {
   }
   return { margin, title: margin === 1 ? "1 device can be lost" : margin + " devices can be lost",
     detail: "A payment needs " + t + " of " + n + " signers, so the wallet still pays when "
-      + margin + " of them lose their device. Two files of the same seat count as one signer." };
+      + (margin === 1 ? "1 device is" : "up to " + margin + " devices are") + " lost. Two files "
+      + "of the same seat count as one signer." };
 }
 
 /**

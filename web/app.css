@@ -644,3 +644,9 @@ body:has(.dialog), body:has(.drawer) { overflow: hidden; }
   display: flex; flex-wrap: wrap; align-items: center; gap: 8px; padding: 12px 20px;
   border-top: 1px solid var(--line); font-size: 13px; color: var(--muted);
 }
+
+/* On a narrow screen the actions of a seat row go under its name. */
+@media (max-width: 520px) {
+  .member { grid-template-columns: 36px minmax(0, 1fr); }
+  .member .m-actions { grid-column: 2; justify-content: flex-start; }
+}
