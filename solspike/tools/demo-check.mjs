@@ -1,8 +1,10 @@
 // The read-only preflight of the demo days (M8 of docs/hackathon-release.md). Each check prints
 // PASS, FAIL or SKIP with a reason; the exit code is 1 on any FAIL and 2 on a bad config. Nothing
-// here writes to a chain: Helius gets getVersion, getAccountInfo and getBalance, the light-wallet
-// servers get GetLatestBlock, GetLightdInfo and GetTaddressBalance, the prover gets an empty body
-// that it refuses, and the group socket opens and closes without a message.
+// here writes to a chain. Helius gets getVersion, getAccountInfo, getBalance and getSlot. Its
+// indexer gets reads of recorded rows and of random values, and its gateway gets three CORS
+// preflights per app (S20). The prover gets an empty body that it refuses. The light-wallet
+// servers get GetLatestBlock, GetLightdInfo and GetTaddressBalance. The group socket opens and
+// closes without a message.
 // Usage: sh solspike/demo-check.sh [--dry-run] [--app-only] [--config FILE]
 // The config (default ~/.config/zigs/demo-check.json, outside the repo) is optional:
 //   { "apps": [
@@ -18,14 +20,16 @@
 // The Helius URL comes from ~/.config/zigs/helius-app.url (HELIUS_URL_FILE moves it). The
 // variables DEMO_CHECK_LWD, DEMO_CHECK_VALAR and DEMO_CHECK_SOL_FAUCET move the other servers, and
 // DEMO_CHECK_TIMEOUT_MS changes the 10 s limit of each call.
-import { createHash } from "node:crypto";
+import { createHash, randomBytes } from "node:crypto";
 import { existsSync, readFileSync, statSync } from "node:fs";
 import { homedir } from "node:os";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
+import { fileURLToPath, pathToFileURL } from "node:url";
 import { redact } from "../harness/redact.mjs";
 import { heliusFile } from "./paths.mjs";
 import { APP_ORIGIN, readText } from "./rpc.mjs";
 
+const ROOT = join(dirname(fileURLToPath(import.meta.url)), "../..");
 const LWD = process.env.DEMO_CHECK_LWD ?? "https://zcash-testnet.chainsafe.dev";
 const VALAR = process.env.DEMO_CHECK_VALAR ?? "https://faucet.testnet.valargroup.dev";
 const SOL_FAUCET = process.env.DEMO_CHECK_SOL_FAUCET ?? "https://faucet.solana.com";
@@ -45,6 +49,17 @@ const POOL = "sppU489D7A4U1exNo1oeMGZtLEofq3a6o2fR7UeoWB6";
 const TREE = "33KVhbT4QtdQDrrrGwwThqD47Dh4Q6tA443t9jMNcWFN";
 const TREE_BYTES = 40_080;
 const ELF_MAGIC = 0x7f454c46;
+// The recorded sync of key B and the execute of the approvals program: old rows of tree 0.
+const SYNC_FILE = "solspike/mock/fixtures/sync.json";
+const VECTOR_FILE = "sol-program/svm-tests/vectors/devnet-main.txt";
+// The page waits up to 60 s for the indexer after Add SOL (docs/hackathon-release.md): 150 slots.
+const SLOT_LAG = 150n;
+// The CORS preflights of the page: a proof (sync and async) and an indexer read (worker.js).
+const PREFLIGHTS = [
+  ["/prove", "content-type,x-sync"],
+  ["/prove", "content-type,x-async"],
+  ["/getShieldedTransactionsByTags", "content-type"],
+];
 // The SHA-256 of the ELF in ProgramData, cut at the size in its ELF header. The approvals value is
 // ELF_V5 of tools/program-chain.mjs; the pool value is the release hash of ZOLANA.md 6.1.
 const PINS = [
@@ -250,6 +265,13 @@ function helius() {
   return heliusUrl;
 }
 
+/** The Helius URL with a path of the Zolana gateway. The api-key query stays. */
+function zolanaUrl(path) {
+  const url = new URL(helius());
+  url.pathname = `/v1/zolana${path}`;
+  return url;
+}
+
 // A missing key file gives null here; the Helius checks report it with its path.
 const localHelius = () => {
   try {
@@ -394,15 +416,188 @@ async function treeCheck() {
 }
 
 async function proverCheck() {
-  const url = new URL(helius());
-  url.pathname = "/v1/zolana/prove";
   const headers = { "content-type": "application/json", "x-sync": "true", origin: APP_ORIGIN };
-  const res = await fetch(url, { method: "POST", headers, body: "{}", signal: signal() });
+  const init = { method: "POST", headers, body: "{}", signal: signal() };
+  const res = await fetch(zolanaUrl("/prove"), init);
   const text = await res.text();
   if (res.status !== 400 || !text.includes("malformed_body")) {
     throw new Error(`an empty body answered ${res.status}: ${text.slice(0, 120)}`);
   }
   return "an empty body gets 400 malformed_body";
+}
+
+/** The recorded sync of key B: a signature, the hash of its first output, and the view tag of B. */
+function recorded() {
+  const { entries } = JSON.parse(readFileSync(join(ROOT, SYNC_FILE), "utf8"));
+  const result = (method) => JSON.parse(entries.find((e) => e.rpcMethod === method).body).result;
+  const [first] = result("getShieldedTransactionsByTags").transactions;
+  const [match] = result("getEncryptedUtxosByTags").matches;
+  const { hash } = first.outputSlots[0].outputContext;
+  return { signature: first.txSignature, hash, viewTag: match.outputSlot.viewTag };
+}
+
+/** The execute of the approvals program on Devnet (ZOLANA.md 6.10): its pool part is a CPI. */
+function executeSignature() {
+  const vector = readFileSync(join(ROOT, VECTOR_FILE), "utf8");
+  const [, signature] = /^# execute (\S+)$/m.exec(vector) ?? [];
+  if (!signature) throw new Error(`${VECTOR_FILE} names no execute signature`);
+  return signature;
+}
+
+/** One indexer call as plain JSON-RPC with the app Origin, as the page sends it. */
+async function indexerCall(method, params) {
+  const body = JSON.stringify({ jsonrpc: "2.0", id: 1, method, params });
+  const headers = { "content-type": "application/json", origin: APP_ORIGIN };
+  // A redirect fails: the page would not follow it either (worker.js).
+  const init = { method: "POST", headers, body, redirect: "error", signal: signal() };
+  const res = await fetch(zolanaUrl(`/${method}`), init);
+  if (res.status !== 200) throw new Error(`${method} answered HTTP ${res.status}`);
+  const reply = await res.json();
+  if (reply.error) throw new Error(`${method}: ${reply.error.message}`);
+  return reply.result;
+}
+
+const asList = (value) => (Array.isArray(value) ? value : []);
+
+/**
+ * The rows of `signature` in the indexer: one names it and has an output in tree 0. Returns the
+ * outputTreeId of the answer, the newest tree of the whole indexer: it tells nothing of the pool.
+ */
+async function indexedRows(signature) {
+  const name = short(signature);
+  const method = "getShieldedTransactionsBySignature";
+  const result = await indexerCall(method, { txSignature: signature });
+  const rows = result?.transactions;
+  if (!Array.isArray(rows)) throw new Error(`the answer for ${name} has no transactions list`);
+  if (rows.length === 0) throw new Error(`${name} is not indexed: an outage or a reset?`);
+  const own = rows.map((row) => row?.transaction).filter((tx) => tx?.txSignature === signature);
+  if (own.length === 0) throw new Error(`no row of ${name} has its transaction.txSignature`);
+  const trees = own.flatMap((tx) => asList(tx.outputSlots)).map((s) => s?.outputContext?.tree);
+  if (!trees.includes(TREE)) throw new Error(`${name} has no output in tree 0 (${short(TREE)})`);
+  return result.outputTreeId;
+}
+
+/**
+ * The liveness and wire-shape canary of the indexer: two old signatures stay indexed. It sees an
+ * outage, a reset of the index and a changed answer. It does not see a new pool id: the rows of
+ * the old pool can stay.
+ */
+async function canaryCheck() {
+  const ids = await Promise.all([executeSignature(), recorded().signature].map(indexedRows));
+  return `the execute and the recorded sync are indexed in tree 0 (outputTreeId ${ids.join(", ")})`;
+}
+
+let shipped = null;
+/** The SDK client of the shipped bundle (web/sol). Its decoders refuse any unknown field. */
+function bundleClient() {
+  shipped ??= loadBundle();
+  return shipped;
+}
+
+async function loadBundle() {
+  // The bundle fetches its hasher wasm by a file: URL, and the fetch of Node refuses those.
+  const realFetch = globalThis.fetch;
+  globalThis.fetch = (input, init) => {
+    const href = String(input instanceof Request ? input.url : input);
+    if (!href.startsWith("file:")) return realFetch(input, init);
+    const wasm = { headers: { "content-type": "application/wasm" } };
+    return Promise.resolve(new Response(readFileSync(fileURLToPath(href)), wasm));
+  };
+  const sdk = await import(pathToFileURL(join(ROOT, "web/sol/zolana.bundle.js")).href);
+  const withOrigin = (input, init = {}) => {
+    const headers = new Headers(init.headers);
+    headers.set("origin", APP_ORIGIN);
+    const abort = AbortSignal.any([signal(), ...(init.signal ? [init.signal] : [])]);
+    return realFetch(input, { ...init, headers, signal: abort });
+  };
+  const gateway = zolanaUrl("").href;
+  const client = await sdk.createZolanaClient({
+    solanaRpcUrl: helius(),
+    indexerUrl: gateway,
+    proverUrl: gateway,
+    proverTee: false,
+    fetch: withOrigin,
+  });
+  return { sdk, client };
+}
+
+/** 32 random bytes that match no row. Byte 0 is zero, so the value is in the BN254 field. */
+const unknown = () => Uint8Array.from(randomBytes(32).fill(0, 0, 1));
+
+/** The reads of a sync, on recorded rows and on random values. No list is empty. */
+function shapeCalls(sdk, client, rows) {
+  const bytes = (base58) => sdk.getAddressEncoder().encode(base58);
+  const mine = { tags: [bytes(rows.viewTag)] };
+  const none = { tags: [unknown()] };
+  return [
+    () => client.getShieldedTransactionsBySignature(rows.signature),
+    () => client.getMerkleProofs(TREE, [bytes(rows.hash)]),
+    () => client.getNonInclusionProofs(TREE, [unknown()]),
+    () => client.getShieldedTransactionsByTags(mine),
+    () => client.getEncryptedUtxosByTags(mine),
+    () => client.getShieldedTransactionsByTags(none),
+    () => client.getEncryptedUtxosByTags(none),
+    () => client.getShieldedTransactionsByNullifiers({ nullifiers: [unknown()] }),
+  ];
+}
+
+/** A refusal of the SDK as its code, method and path. These hold no key. */
+function sdkRefusal(err) {
+  if (typeof err?.code !== "string") throw err;
+  const where = [err.details?.method, err.details?.path].filter(Boolean).join(" ");
+  throw new Error(where ? `${err.code} (${where})` : err.code);
+}
+
+/**
+ * The indexer shape check. The reads of a sync go through the SDK client of the shipped bundle.
+ * So a new or a missing field fails here before it fails in the page. The indexer must also be
+ * at most SLOT_LAG slots behind the RPC. An indexer ahead of the RPC is fine.
+ */
+async function shapeCheck() {
+  const rows = recorded();
+  const { sdk, client } = await bundleClient();
+  // The RPC slot comes first, so the time of the calls does not count as lag.
+  const rpcSlot = BigInt(await rpc("getSlot", [{ commitment: "confirmed" }]));
+  const calls = shapeCalls(sdk, client, rows);
+  const answers = await Promise.all(calls.map((call) => call().catch(sdkRefusal)));
+  if (answers[0].transactions.length === 0) {
+    throw new Error("the recorded signature is not indexed: the pool or the indexer was replaced?");
+  }
+  const oldest = answers.map((a) => a.context.slot).reduce((a, b) => (a < b ? a : b));
+  const lag = rpcSlot > oldest ? rpcSlot - oldest : 0n;
+  if (lag > SLOT_LAG) throw new Error(`the indexer trails the RPC by ${lag} > ${SLOT_LAG} slots`);
+  return `${calls.length} reads decode in the SDK of the bundle, ${lag} slots behind the RPC`;
+}
+
+/** True when a CORS list (comma separated, any case) is "*" or names each item of `wanted`. */
+function allows(list, wanted) {
+  const names = String(list ?? "").toLowerCase().split(",").map((name) => name.trim());
+  return names.includes("*") || wanted.split(",").every((name) => names.includes(name));
+}
+
+/**
+ * One CORS preflight of the page, with the api-key query that the page sends. A browser fails on
+ * a redirected preflight. It does not read allow-methods for POST, a CORS-safelisted method.
+ */
+async function preflight(origin, [path, asked]) {
+  const headers = {
+    origin,
+    "access-control-request-method": "POST",
+    "access-control-request-headers": asked,
+  };
+  const init = { method: "OPTIONS", headers, redirect: "error", signal: signal() };
+  const res = await fetch(zolanaUrl(path), init);
+  const allowed = (name) => res.headers.get(`access-control-allow-${name}`);
+  const what = `OPTIONS ${path} (${asked})`;
+  if (res.status >= 300) throw new Error(`${what} answered ${res.status}`);
+  const origins = [origin, "*"];
+  if (!origins.includes(allowed("origin"))) throw new Error(`${what} does not allow ${origin}`);
+  if (!allows(allowed("headers"), asked)) throw new Error(`${what} does not allow these headers`);
+}
+
+async function corsCheck(app) {
+  await Promise.all(PREFLIGHTS.map((route) => preflight(app.origin, route)));
+  return `the ${PREFLIGHTS.length} preflights of the prover and the indexer allow ${app.origin}`;
 }
 
 async function valarCheck() {
@@ -444,7 +639,13 @@ function chainChecks(config, apps) {
     { ...heights, target: lwds.map(([base]) => base).join(" ") },
     ...PINS.map((pin) => ({ name: pin.name, target: pin.address, run: () => programCheck(pin) })),
     { name: "tree 0", target: TREE, run: treeCheck },
+    { name: "indexer", target: "Helius /v1/zolana, 8 reads in the SDK client", run: shapeCheck },
+    { name: "indexer canary", target: "Helius by-signature reads", run: canaryCheck },
     { name: "prover", target: "Helius /v1/zolana/prove", run: proverCheck },
+    // In chainChecks, not appChecks: scripts/deploy-staging.sh runs --app-only.
+    ...apps.map((app) => ({
+      name: `${app.host} Helius CORS`, target: app.origin, run: () => corsCheck(app),
+    })),
     { name: "Valar faucet", target: VALAR, run: valarCheck },
     { name: "Solana faucet", target: SOL_FAUCET, run: () => pageCheck(SOL_FAUCET) },
     ...listOf(config, "solFees").map(solFeeOf).map((fee) => ({
