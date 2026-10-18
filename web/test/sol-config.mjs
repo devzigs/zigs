@@ -4,7 +4,7 @@
 // does not ask again at the next redraw.
 // Run: node web/test/sol-config.mjs   (Node 24)
 import assert from "node:assert/strict";
-import { UNAVAILABLE, fetchRpcUrl } from "../sol/session.js";
+import { NOT_LOADED, UNAVAILABLE, fetchRpcUrl } from "../sol/session.js";
 import { config, loadRig, sleep, storage } from "./sol-rig.mjs";
 
 const KEY_NAME = "api-key";
@@ -43,16 +43,15 @@ const json = (value, status = 200) => () => Response.json(value, { status });
     ["a number as rpcUrl", json({ rpcUrl: 7 })],
     ["null", json(null)],
     ["a rpcUrl in an error answer", json({ rpcUrl: URL_OK }, 503)],
-    [
-      "a network error",
-      () => {
-        throw new TypeError("offline");
-      },
-    ],
   ];
   for (const [what, make] of bad) {
     await assert.rejects(() => withFetch(make, fetchRpcUrl), new RegExp(UNAVAILABLE), what);
   }
+  const offline = () => {
+    throw new TypeError("offline");
+  };
+  // S12: a network error is no "not available": the person can try again.
+  await assert.rejects(() => withFetch(offline, fetchRpcUrl), { message: NOT_LOADED });
 }
 
 // ── The page, with a server that gives no URL ──

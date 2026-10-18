@@ -22,15 +22,21 @@ const WORKER_POLICY =
   "default-src 'none'; script-src 'self' 'wasm-unsafe-eval'; " +
   "connect-src 'self' https://devnet.helius-rpc.com; base-uri 'none'";
 
-/** The Helius Devnet URL that the server serves. Throws UNAVAILABLE when it gives none. */
+// The page shows it after "Solana did not load: " (S12): the server did not answer at all.
+export const NOT_LOADED = "Check your connection, then press Try again or reload.";
+
+/**
+ * The Helius Devnet URL that the server serves. Throws NOT_LOADED when the request fails, and
+ * UNAVAILABLE when the server answers with no URL (SOL off, a 503).
+ */
 export async function fetchRpcUrl() {
-  let body;
+  let res;
   try {
-    const res = await fetch("/sol/config.json", { cache: "no-store" });
-    if (res.ok) body = await res.json();
+    res = await fetch("/sol/config.json", { cache: "no-store" });
   } catch {
-    /* the text below says it */
+    throw new Error(NOT_LOADED);
   }
+  const body = res.ok ? await res.json().catch(() => undefined) : undefined;
   if (typeof body?.rpcUrl !== "string" || !body.rpcUrl) throw new Error(UNAVAILABLE);
   return body.rpcUrl;
 }
