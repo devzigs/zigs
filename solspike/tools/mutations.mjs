@@ -464,7 +464,7 @@ export const MUTATIONS = [
       "export const failText = (error, retry) => (retry ? SOL_RETRY : error)",
       "export const failText = (error, retry) => error"],
     UNIFIED,
-    /a failure after the import says Try again/,
+    /a config failure says Try again/,
   ),
   program(
     "W-down-retry",
@@ -489,7 +489,7 @@ export const MUTATIONS = [
     ["web/app-sol.js", "retry ? el(\"div\", {}, retryButton()) : null);",
       "el(\"div\", {}, retryButton()));"],
     UNIFIED,
-    /and no Try again button/,
+    /an import failure: reload/,
   ),
   program(
     "W-config-read",

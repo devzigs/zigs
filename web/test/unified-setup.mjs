@@ -270,7 +270,8 @@ const solTabText = () => {
     globalThis.document = real;
   }
 };
-assert.match(solTabText(), /^Solana did not load\. Check your connection, then press Try again/);
+assert.match(solTabText(), /^Solana did not load\. Check your connection, then press Try again/,
+  "a config failure says Try again");
 const NOT_SERVED = /Solana did not load: Solana is not available on this server/;
 assert.match(t.banner.text, NOT_SERVED, "the banner says why");
 // The setup step says it once, with no Try again button on this page, and the page asks no one
