@@ -223,6 +223,5 @@ function priorityBox(sumUp) {
       onchange: (ev) => { ui.priority = ev.target.checked; sumUp(); },
     }),
     el("span", { class: "small" }, "Pay a priority fee: " + PRIORITY_FACTOR + " times the "
-      + "standard fee, for a faster block when the network is busy. The fee is public on chain. "
-      + "An iPhone or Mac app built before this version cannot approve it."));
+      + "standard fee, for a faster block when the network is busy. The fee is public on chain."));
 }

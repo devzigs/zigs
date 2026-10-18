@@ -10,7 +10,7 @@ import {
 } from "./personal.js";
 import { REQUEST_NET, requestProblem } from "./requests.js";
 import { log, showBanner, state, ui } from "./app-state.js";
-import { J, S, said } from "./app-kit.js";
+import { exclusive, J, S, said } from "./app-kit.js";
 import { engineOffThread, Z } from "./app-engine.js";
 import { idb, LOCKED_ELSEWHERE, lockedVault, persist, vault } from "./app-keystore.js";
 import { capText, NETWORKS, pickServer, runSync, spanMs } from "./app-chain.js";
@@ -161,17 +161,6 @@ export function persistPersonal(fresh = false) {
     return false;
   });
   return personalWrite;
-}
-
-// Runs `fn` when no other step with this name runs, in this tab and, where the browser has Web
-// Locks, in every other tab. Web Locks are not reentrant: a step must not wait for its own name.
-// ponytail: without Web Locks, only the steps of this tab queue.
-const turns = new Map();
-function exclusive(name, fn) {
-  if (globalThis.navigator?.locks) return navigator.locks.request("zigs-" + name, fn);
-  const next = (turns.get(name) || Promise.resolve()).then(fn);
-  turns.set(name, next.catch(() => {}));
-  return next;
 }
 
 // Changes the account and saves it. The change is undone when the save fails. The step reads the

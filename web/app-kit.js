@@ -20,6 +20,17 @@ export function withTimeout(promise, ms, what) {
 
 export const isObj = (x) => !!x && typeof x === "object";
 
+// Runs `fn` when no other step with this name runs, in this tab and, where the browser has Web
+// Locks, in every other tab. Web Locks are not reentrant: a step must not wait for its own name.
+// ponytail: without Web Locks, only the steps of this tab queue.
+const turns = new Map();
+export function exclusive(name, fn) {
+  if (globalThis.navigator?.locks) return navigator.locks.request("zigs-" + name, fn);
+  const next = (turns.get(name) || Promise.resolve()).then(fn);
+  turns.set(name, next.catch(() => {}));
+  return next;
+}
+
 // Each wallet has a message room: a store namespace of its own (CHAT.md). The wallet document
 // names it in the sealed field "room". Each message is signed with its seat's Ed25519 key.
 export const readLocal = (name) => {

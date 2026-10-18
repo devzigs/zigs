@@ -102,6 +102,7 @@ const STATUS = {
   cancelled: ["Cancelled", ""],
 };
 export function statusChip(s) {
+  if (s.checking) return el("span", { class: "badge" }, "Checking");
   if (landed(s)) return el("span", { class: "badge ok" }, "Sent");
   if (ended(s)) return el("span", { class: "badge" }, "Expired");
   // After signing, only the engine can say that it expired (TICKETS.md ZEC-13).
