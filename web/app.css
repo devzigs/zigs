@@ -68,7 +68,11 @@ button { font: inherit; color: inherit; }
   box-shadow: inset -1px 0 0 var(--edge);
   backdrop-filter: blur(24px) saturate(115%); -webkit-backdrop-filter: blur(24px) saturate(115%);
 }
-.logo { display: flex; align-items: center; gap: 10px; padding: 4px 8px; font-weight: 600; font-size: 16px; letter-spacing: -0.02em; text-decoration: none; color: var(--text); }
+.logo {
+  display: flex; align-items: center; gap: 10px; min-height: 48px; padding: 4px 8px;
+  font-weight: 600; font-size: 16px; letter-spacing: -0.02em; text-decoration: none;
+  color: var(--text);
+}
 .logo img {
   width: 34px; height: 34px; flex: none; border-radius: 10px; box-shadow: 0 0 0 1px var(--line);
 }
@@ -90,7 +94,9 @@ button { font: inherit; color: inherit; }
 .side-count { min-width: 20px; height: 20px; padding-inline: 6px; border-radius: 999px; background: var(--accent); color: var(--on-accent); font: 600 11px/20px var(--sans); text-align: center; }
 .side-empty { padding: 6px 8px; color: var(--faint); font-size: 13px; }
 .side-foot { display: grid; gap: 10px; border-top: 1px solid var(--line); padding: 14px 8px 0; }
-.engine { display: flex; align-items: center; gap: 8px; font-size: 12px; color: var(--muted); }
+.engine {
+  display: flex; align-items: center; gap: 8px; min-width: 0; font-size: 12px; color: var(--muted);
+}
 .dot { width: 7px; height: 7px; border-radius: 50%; background: var(--faint); flex: none; }
 .dot.ok { background: var(--ok); box-shadow: 0 0 0 3px var(--ok-soft); }
 .dot.bad { background: var(--bad); }
@@ -164,7 +170,7 @@ button { font: inherit; color: inherit; }
 .badge.plain::before { display: none; }
 .badge.ok { background: var(--ok-soft); color: var(--ok); }
 .badge.bad { background: var(--bad-soft); color: var(--bad); }
-.badge.warn { background: var(--accent-soft); color: var(--accent-text); }
+.badge.warn { background: var(--warning-soft); color: var(--warning); }
 .badge.info { background: var(--info-soft); color: var(--info); }
 
 /* Page header and tabs */
@@ -395,7 +401,7 @@ a.row-item { text-decoration: none; }
 @media (max-width: 520px) { .pay-row { grid-template-columns: minmax(0, 1fr) auto; } .pay-row .input-wrap { grid-row: 2; } }
 .input {
   width: 100%; min-height: 52px; padding: 12px 14px; border-radius: var(--r-control);
-  border: 1px solid var(--line-2); background: var(--sunk); color: var(--text);
+  border: 1px solid var(--line-field); background: var(--sunk); color: var(--text);
   box-shadow: inset 0 2px 3px rgba(0, 0, 0, 0.06); font: 400 16px/1.5 var(--sans);
   transition: border-color var(--fast), box-shadow var(--fast);
 }
@@ -425,7 +431,7 @@ a.row-item { text-decoration: none; }
   background: var(--info-soft); color: var(--info);
 }
 .callout a { color: inherit; text-underline-offset: 3px; }
-.callout.warn { background: var(--accent-soft); color: var(--accent-text); }
+.callout.warn { background: var(--warning-soft); color: var(--warning); }
 .callout.bad { background: var(--bad-soft); color: var(--bad); border-color: var(--bad); }
 .callout.ok { background: var(--ok-soft); color: var(--ok); }
 .dialog-actions {
@@ -471,7 +477,7 @@ details > summary {
 #banner.ok { border-color: var(--ok); color: var(--ok); }
 #banner .icon-btn { flex: none; color: inherit; }
 /* Keep a toast clear of the buttons at the bottom: the payment drawer and the mobile action bar. */
-body:has(.drawer-foot) #banner { bottom: calc(92px + env(safe-area-inset-bottom, 0px)); }
+body:has(.drawer-foot) #banner { bottom: calc(104px + env(safe-area-inset-bottom, 0px)); }
 
 @media (max-width: 960px) {
   .grid-ov, .setup { grid-template-columns: 1fr; }
@@ -500,6 +506,8 @@ body:has(.drawer-foot) #banner { bottom: calc(92px + env(safe-area-inset-bottom,
   .main { padding-bottom: 148px; }
   body:has(.action-bar) #banner { bottom: calc(84px + env(safe-area-inset-bottom, 0px)); }
   body:has(.send-why) #banner { bottom: calc(128px + env(safe-area-inset-bottom, 0px)); }
+  /* The drawer foot can take two rows of 48 px buttons on a phone. */
+  body:has(.drawer-foot) #banner { bottom: calc(156px + env(safe-area-inset-bottom, 0px)); }
   .row-item .btn { display: none; }
   .dialog {
     top: auto; bottom: 0; left: 0; transform: none; width: 100%; border-bottom: 0;
@@ -510,6 +518,12 @@ body:has(.drawer-foot) #banner { bottom: calc(92px + env(safe-area-inset-bottom,
   .drawer { inset: 12px 0 0; width: 100%; border-radius: var(--r-sheet) var(--r-sheet) 0 0; }
   .drawer-head, .drawer-body, .drawer-foot { padding-inline: 20px; }
   .drawer-foot { background: var(--sheet); }
+  /* The buttons of a long dialog stay in view at the bottom of the sheet. */
+  .dialog:has(> .dialog-actions:last-child) { padding-bottom: 0; }
+  .dialog > .dialog-actions:last-child {
+    position: sticky; bottom: 0; z-index: 1; background: var(--sheet);
+    padding: 12px 0 calc(16px + env(safe-area-inset-bottom, 0px)); border-top: 1px solid var(--line);
+  }
 }
 @media (max-width: 520px) {
   .tabs { gap: 2px; }
@@ -546,7 +560,7 @@ body:has(.drawer-foot) #banner { bottom: calc(92px + env(safe-area-inset-bottom,
 /* Ticks and choices in the palette of the page; forced colours keep the native control. */
 input[type="checkbox"], input[type="radio"] {
   appearance: none; -webkit-appearance: none; position: relative; width: 20px; height: 20px;
-  flex: none; background: var(--sunk); border: 1px solid var(--line-2); border-radius: 6px;
+  flex: none; background: var(--sunk); border: 1px solid var(--line-field); border-radius: 6px;
   cursor: pointer; transition: background var(--fast), border-color var(--fast);
 }
 input[type="radio"] { border-radius: 50%; }
