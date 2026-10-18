@@ -23,6 +23,8 @@ export function signingBlock(c) {
 }
 
 const TRANSIENT = [LOADING, CHECKING];
+/** True when `why` of `signingBlock` is a short wait: a document is still loaded or checked. */
+export const isWait = (why) => TRANSIENT.includes(why);
 const sleep = (ms) => new Promise((done) => setTimeout(done, ms));
 
 /**
@@ -33,7 +35,7 @@ export async function settledBlock(c, ms = 3000) {
   const end = Date.now() + ms;
   for (;;) {
     const why = signingBlock(c);
-    if (!TRANSIENT.includes(why) || Date.now() > end) return why;
+    if (!isWait(why) || Date.now() > end) return why;
     await sleep(50);
   }
 }
