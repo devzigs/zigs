@@ -34,13 +34,14 @@ export function solRow({ on, error, loading, setup, balance }) {
 }
 
 /**
- * The pending shortcut: ZEC payments that are open or wait for their block, and the Solana
- * proposals that a seat of this browser can approve. Null when nothing is pending.
- * @returns {{count: number, text: string, to: string} | null} `to`: the section to open.
+ * The pending shortcut to the Approvals inbox: ZEC payments that are open or wait for their
+ * block, and the Solana proposals that a seat of this browser can approve. Null when nothing is
+ * pending.
+ * @returns {{count: number, text: string} | null}
  */
 export function pendingShortcut({ zecOpen = 0, zecFlying = 0, solToApprove = 0 }) {
-  const zec = zecOpen + zecFlying, count = zec + solToApprove;
+  const count = zecOpen + zecFlying + solToApprove;
   if (count <= 0) return null;
-  const text = count === 1 ? "1 payment is in progress." : count + " payments are in progress.";
-  return { count, text, to: zec > 0 ? "activity" : "solana" };
+  return { count, text: count === 1 ? "1 payment is in progress."
+    : count + " payments are in progress." };
 }

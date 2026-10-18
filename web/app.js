@@ -9,6 +9,7 @@ import "./chat.js";
 import "./personal.js";
 import "./requests.js";
 import "./overview-model.js";
+import "./approvals-model.js";
 import "./app-state.js";
 import "./app-kit.js";
 import "./app-engine.js";

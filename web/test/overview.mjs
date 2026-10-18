@@ -36,11 +36,8 @@ console.log("ok  the SOL row");
 
 assert.equal(pendingShortcut({}), null, "nothing pending, no shortcut");
 assert.equal(pendingShortcut({ zecOpen: 0, zecFlying: 0, solToApprove: 0 }), null);
-assert.deepEqual(pendingShortcut({ zecOpen: 1 }),
-  { count: 1, text: "1 payment is in progress.", to: "activity" });
+assert.deepEqual(pendingShortcut({ zecOpen: 1 }), { count: 1, text: "1 payment is in progress." });
 assert.deepEqual(pendingShortcut({ zecFlying: 1, solToApprove: 2 }),
-  { count: 3, text: "3 payments are in progress.", to: "activity" },
-  "ZEC first: the Activity section lists the ZEC payments");
-assert.equal(pendingShortcut({ solToApprove: 2 }).to, "solana", "only Solana: its section");
+  { count: 3, text: "3 payments are in progress." }, "both chains count");
 console.log("ok  the pending shortcut");
 console.log("overview: ok");

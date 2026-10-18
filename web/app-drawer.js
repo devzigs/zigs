@@ -156,23 +156,31 @@ function approveButtons(ss, myPending) {
 const needsProof = (ss) => ss.signed && !ss.final
   && (ss.status !== "proving" || proofStalled(ss));
 
-// The step after the approvals. The proof and the sent mark are signed writes, so they need a seat
-// that can sign.
-export function finishButtons(ss) {
-  if (!mayAct()) return [];
-  if (needsProof(ss)) return [bigButton("Build proof", act(() => finalizeTx(ss)))];
+// The step after the approvals that a signer here can take: "proof", "send", "resend" or null.
+// The proof and the sent mark are signed writes, so they need a seat that can sign. The Approvals
+// inbox reads the same step, so the two never disagree.
+export function finishStep(ss) {
+  if (!mayAct()) return null;
+  if (needsProof(ss)) return "proof";
   // A node refuses a payment that expires within EXPIRY_MARGIN blocks (see expiryLine).
-  if (!ss.final || expiryOf(ss)?.expired || landed(ss)) return [];
-  if (ss.broadcastTxid) {
-    const late = Date.now() - finite(ss.broadcastAt) > RESEND_MS && inFlight().includes(ss);
-    return late ? [bigButton("Send again", act(() => resendTx(ss)))] : [];
-  }
+  if (!ss.final || expiryOf(ss)?.expired || landed(ss)) return null;
+  if (!ss.broadcastTxid) return "send";
+  return lateSend(ss) ? "resend" : null;
+}
+
+export function finishButtons(ss) {
+  const step = finishStep(ss);
+  if (step === "proof") return [bigButton("Build proof", act(() => finalizeTx(ss)))];
+  if (step === "resend") return [bigButton("Send again", act(() => resendTx(ss)))];
+  if (step !== "send") return [];
   return [bigButton(ss.broadcastError ? "Send again" : "Send to network",
     act(() => broadcastTx(ss)), { disabled: !curChain() })];
 }
 
 // A sent payment that no block holds after this long may be lost: offer to send it again.
 const RESEND_MS = 10 * 60 * 1000;
+const lateSend = (ss) => Date.now() - finite(ss.broadcastAt) > RESEND_MS
+  && inFlight().includes(ss);
 
 export function nextAction(ss, ins, rc) {
   if (ended(ss)) {

@@ -58,7 +58,8 @@ export function renderSide() {
 }
 
 const SECTION_ICONS = {
-  overview: "home", activity: "activity", messages: "chat", members: "devices",
+  overview: "home", approvals: "approvals", activity: "activity", messages: "chat",
+  members: "devices",
   details: "settings", solana: "sol",
 };
 

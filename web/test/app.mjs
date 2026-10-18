@@ -1567,16 +1567,22 @@ const sealed = (gid, rel, seat, fields, key, names = ["by", "sig"]) =>
     const sentOne = { id: "x2", pczt: "EXP1", status: "broadcast", signed: "s", broadcastTxid: "t5",
       final: { txid: "t5", tx_hex: "00" }, broadcastAt: Date.now() };
     t.state.sessions.push(sentOne);
+    // The bucket of the Approvals inbox that holds a payment, or null.
+    const bucket = (ss) =>
+      Object.entries(t.inboxRows()).find(([, list]) => list.includes(ss))?.[0] ?? null;
     tipAt(4500000);
     assert.deepEqual(t.finishButtons(sentOne), [], "no Send again before 10 minutes");
+    assert.equal(bucket(sentOne), "waiting", "the inbox: a sent payment waits for its block");
     sentOne.broadcastAt = Date.now() - 11 * 60 * 1000;
     assert.deepEqual(labels(t.finishButtons(sentOne)), ["Send again"]);
+    assert.equal(bucket(sentOne), "ready", "the inbox: Send again is the next step");
     tipAt(4503453);
     assert.deepEqual(t.finishButtons(sentOne), [], "a node refuses it now");
     assert.match(textOf(t.expiryLine(sentOne)), /can no longer go to the network/);
     tipAt(4503459);
     // After signing, only the engine can say "Expired" (TICKETS.md ZEC-13): the chip asks to check.
     assert.equal(textOf(t.statusChip(sentOne)), "Check");
+    assert.equal(bucket(sentOne), "attention", "the inbox: the Check state needs attention");
     const unmarkedOne = { ...proposal, id: "x5", signed: "s", final: { txid: "f", tx_hex: "00" },
       broadcastError: "timeout" };
     assert.equal(textOf(t.statusChip(unmarkedOne)), "Check");

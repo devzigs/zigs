@@ -145,6 +145,8 @@ function sideMenu() {
   sideTree().onclick({ target: { closest: () => ({}) } });
   assert.equal(t.ui.menu, false, "a pick in the side list closes the phone Menu");
   assert.ok(walletShown(), "the formed wallet shows its sections");
+  assert.equal(t.state.sessionsLoaded, true, "the payments of the open wallet arrived");
+  assert.equal(t.state.sessionsFailed, false);
   const { g, wallet } = t.state;
   try {
     t.state.g = { ...g, unreadable: true };
@@ -190,6 +192,8 @@ function approvalCount(ctl) {
     assert.ok(labelled(wallet, "2 to approve"), "the side item shows the count");
     const section = side.find((n) => n.attrs?.id === "tab-solana");
     assert.ok(section && labelled(section, "2 to approve"), "the Solana section shows the count");
+    const inbox = side.find((n) => n.attrs?.id === "tab-approvals");
+    assert.ok(inbox && labelled(inbox, "2 to approve"), "the Approvals section counts them too");
     Object.assign(ctl, { sessions: [], commits: {} });
     assert.ok(!labelled(sideTree(), "2 to approve"), "no count without a proposal");
     sideMenu();
