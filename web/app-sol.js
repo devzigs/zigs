@@ -127,11 +127,15 @@ function fromSol(what, read, none) {
     return none;
   }
 }
-// Null until the Solana documents of the wallet arrived: before, a ready part reads as not
-// started.
-export const solSetup = () => solOpenHere() && setupSummary
-  ? fromSol("setup steps", (c) => (collections.every((n) => c.loaded[n]) ? setupSummary(c) : null),
-    null) : null;
+// Null until the Solana documents of the wallet arrived. While some still wait for their signature
+// check, "not started" can be a part that is ready, so it counts as not known yet either.
+function setupOf(c) {
+  if (!collections.every((n) => c.loaded[n])) return null;
+  const s = setupSummary(c);
+  return s.status === "not started" && c.wait > 0 ? null : s;
+}
+export const solSetup = () =>
+  solOpenHere() && setupSummary ? fromSol("setup steps", setupOf, null) : null;
 // The Solana proposals that this browser can still approve, for wallet `gid`. The module follows
 // the open wallet only, so any other wallet counts 0.
 export const solPending = (gid = state.gid) =>

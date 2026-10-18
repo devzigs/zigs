@@ -33,7 +33,7 @@ import {
   sol, solBackup, solBalance, solError, solLoading, solOn, solPending, solSetup, solSync, solTab,
   solUnsaved,
 } from "./app-sol.js";
-import { pendingShortcut, solRow, zecTotal } from "./overview-model.js";
+import { pendingShortcut, solRow, zecInProgress, zecTotal } from "./overview-model.js";
 import { icon } from "./app-icons.js";
 
 export function groupView() {
@@ -275,9 +275,9 @@ function approvalRow(ss) {
 // its block, or held by an approval here (S7). For Solana it counts the proposals that a seat of
 // this browser can approve.
 function pendingCard() {
-  const zec = new Set([...state.sessions.filter(isOpen).map((ss) => ss.id),
-    ...inFlight().map((ss) => ss.id), ...heldApprovals()]);
-  const p = pendingShortcut({ zec: zec.size, sol: solOn() ? solPending() : 0 });
+  const zec = zecInProgress(state.sessions.filter(isOpen).map((ss) => ss.id),
+    inFlight().map((ss) => ss.id), heldApprovals());
+  const p = pendingShortcut({ zec, sol: solOn() ? solPending() : 0 });
   if (!p) return null;
   return el("section", { class: "callout pending-shortcut", role: "status" }, icon("activity"),
     el("span", {}, p.text),
@@ -321,6 +321,7 @@ const SOL_NOTE = {
   stale: "The last sync failed. This balance comes from an earlier sync. Open Solana to sync "
     + "again.",
   syncing: "The private balance of the group is syncing.",
+  resync: "A sync runs. This balance comes from an earlier sync.",
   unsynced: "Open Solana to sync the private balance.",
   setup: "The Solana part of this wallet is still setting up.",
   stopped: "The Solana part stopped. The Zcash part still works.",

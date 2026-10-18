@@ -2,7 +2,7 @@
 // pending shortcut. An unknown amount is never zero, and nothing pending gives no shortcut.
 // Run: node web/test/overview.mjs   (Node 24)
 import assert from "node:assert/strict";
-import { pendingShortcut, solRow, zecTotal } from "../overview-model.js";
+import { pendingShortcut, solRow, zecInProgress, zecTotal } from "../overview-model.js";
 
 assert.equal(zecTotal(null), null, "no sync yet: unknown, not zero");
 assert.equal(zecTotal({ spendable: 0, pending: 0, sending: 0 }), 0, "an empty wallet is zero");
@@ -37,7 +37,8 @@ const synced = (text, busy = false) => solRow({ on: true, setup: ready, balance:
 assert.equal(synced("synced at slot 9, x"), "synced");
 assert.equal(synced("saved sync of slot 9"), "saved", "a balance of the saved sync says so");
 assert.equal(synced("failed: offline"), "stale", "a failed sync marks the old balance");
-assert.equal(synced("failed: offline", true), "stale");
+assert.equal(synced("failed: offline", true), "resync", "a retry keeps the balance marked old");
+assert.equal(synced("saved sync of slot 9", true), "resync");
 assert.equal(solRow({ on: true, setup: ready, balance: null, sync: { text: "", busy: true } })
   .state, "syncing", "a first sync runs");
 console.log("ok  the SOL row");
@@ -51,5 +52,8 @@ assert.deepEqual(pendingShortcut({ zec: 2, sol: 1 }), { count: 3,
   "each chain says what it counts");
 assert.deepEqual(pendingShortcut({ zec: 0, sol: 2 }),
   { count: 2, text: "2 Solana proposals wait for your approval." }, "only Solana");
+assert.equal(zecInProgress(["a", "b"], ["a"], ["c", "a"]), 3, "each payment once");
+assert.equal(zecInProgress([], [], ["h"]), 1, "a held approval alone counts");
+assert.equal(zecInProgress([], [], []), 0);
 console.log("ok  the pending shortcut");
 console.log("overview: ok");

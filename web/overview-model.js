@@ -33,16 +33,20 @@ export function solRow({ on, error, loading, setup, balance, sync }) {
   return balanceRow(balance, sync ?? {});
 }
 
-// A balance carries the age of its sync: this page, a saved sync, or an older one when the last
-// sync failed.
+// A balance carries the age of its sync: this page, a saved sync, an older one while a new sync
+// runs, or an older one when the last sync failed.
 function balanceRow(balance, { text = "", busy = false }) {
   if (balance == null) {
     return busy ? { state: "syncing", text: "Syncing…" }
       : { state: "unsynced", text: "Not synced yet" };
   }
+  if (busy) return { state: "resync", text: balance };
   if (text.startsWith("failed")) return { state: "stale", text: balance };
   return { state: text.startsWith("saved") ? "saved" : "synced", text: balance };
 }
+
+/** The ZEC payments in progress, each counted once: open, waiting for their block, or held. */
+export const zecInProgress = (open, flying, held) => new Set([...open, ...flying, ...held]).size;
 
 /**
  * The pending shortcut to the Approvals inbox, or null when nothing is pending. zec: the ZEC
