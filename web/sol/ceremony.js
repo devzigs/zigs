@@ -18,8 +18,9 @@ const randomHex32 = () =>
     b.toString(16).padStart(2, "0"),
   ).join("");
 const boxContext = (gid, from, to) => gid + ":sol:" + from + "->" + to;
-// The longest lease of the group server: a write of round 1 must stall longer than this to land
-// over the document of another copy of the seat.
+// The longest lease of the group server. The server keeps leases in memory and forgets them when
+// it sleeps, so the lease and a second look at the documents narrow the race of two copies of a
+// seat; they do not close it.
 const LEASE_MS = 60000;
 // One lease holder per page, so a retry is not blocked by itself. A copy that cannot save its
 // secret takes a new one, so it cannot renew the lease for ever.
@@ -153,13 +154,15 @@ async function round1(c, i) {
   const commit = W.sol_commit(gid, i, boxPk, CLUSTER, s.rSol);
   const fields = { package: s.r1package, commit, at: Date.now() };
   const doc = await host.signedDoc(gid, "soldkg1/" + i, i, fields);
+  if (c.docs.soldkg1[i]) return pause();
   await ref.set(doc);
   host.log("seat " + i + ": Solana round 1 commitment published");
 }
 
 /** A round-1 secret whose package another copy of the seat did not publish goes. */
 async function dropR1(c, i) {
-  const gone = { r1secret: null, r1package: null, rSol: null, r2secret: null, otherCopy: true };
+  const gone = { r1secret: null, r1package: null, rSol: null, r2secret: null, cluster: null };
+  Object.assign(gone, { otherCopy: true });
   await putSol(c.host, c.gid, i, gone);
   c.host.log("seat " + i + ": another copy of this seat published its Solana round 1");
 }

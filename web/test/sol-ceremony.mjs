@@ -959,6 +959,8 @@ assert.deepEqual(
   const elsewhere =
     "Seat 2: another device of this seat runs its Solana setup. This browser takes no part.";
   assert.equal(seatProgress(t.sol.ctl, 2), elsewhere);
+  // Only the mark stays, so the backup of the finished copy restores into this seat later.
+  assert.deepEqual(solOf(gidS, 2), { otherCopy: true }, "the dropped part keeps only its mark");
   assert.equal([1, 2, 3].some((i) => solOf(gidS, i).aborted), false, "and nothing stops");
   // A seat of a wallet that is not the open one waits for it.
   const shut = { ...tabState(gid), docs: { solstart: {}, soldkg1: {}, soldkg2: {}, soldone: {} } };
