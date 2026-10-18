@@ -2529,6 +2529,9 @@ const sealed = (gid, rel, seat, fields, key, names = ["by", "sig"]) =>
         expires_at: "none" });
       const NAMED = "utest1x", MOVED = "utest1bobnow", UNPAYABLE = "utest1unpayable";
       const OTHER = "utest1someoneelse";
+      // The engine gives another form of the address of "alice": a payee must keep the string of
+      // the registry, not this one.
+      const canon = (a) => (a === NAMED ? "utest1canonicalform" : a);
       const OWN = t.state.wallet.address;
       const ZNS_NAMES = [znsRec("alice", NAMED), znsRec("bob", MOVED), znsRec("odd", UNPAYABLE),
         znsRec("self", OWN), znsRec("fresh", NAMED, 4500100 - 3455),
@@ -2550,13 +2553,21 @@ const sealed = (gid, rel, seat, fields, key, names = ["by", "sig"]) =>
           if (!decodes[p]) throw new Error("unreadable");
           return S(decodes[p]);
         } });
+      let againPayees = null;
       {
         at(4500100);
+        t.setZ(zStub(canon));
         const sessionDocs = () => [...data.keys()].filter((k) => /\/sessions\/[^/]+$/.test(k));
         const rowsOf = (...list) => {
           t.ui.pay = list.map(([to, amt = "0.5", memo = ""]) =>
             ({ k: ++t.ui.payKey, to, amt, memo }));
           return t.sendDialog();
+        };
+        // A form whose hints have answered, as a person sees it before the click.
+        const settled = async (...list) => {
+          const form = rowsOf(...list);
+          await quiet(() => sleep(10));
+          return form;
         };
         const boxOf = (d, n = 0) => all(d, (x) => /^s-to-/.test(x.attrs?.id ?? ""))[n];
         const hintOf = (d, n = 0) => all(d, (x) => x.className === "pay-row")[n].kids
@@ -2594,7 +2605,9 @@ const sealed = (gid, rel, seat, fields, key, names = ["by", "sig"]) =>
         let form = rowsOf([""]);
         assert.equal(boxOf(form).attrs.placeholder, "utest1… or alice.zec");
         assert.equal(boxOf(form).attrs["aria-label"], "Recipient address or ZNS name");
+        assert.match(textOf(form), /One address or ZNS name and amount per line, then an optional/);
         let hint = typeIn(form, "Alice.ZEC ");
+        assert.equal(hint.attrs.role, "status", "a screen reader hears the hint");
         assert.deepEqual(shows(hint), ["Looking up alice.zec…", "hint "]);
         await quiet(() => sleep(20));
         assert.deepEqual(shows(hint), [`alice.zec gives this address: ${NAMED}`, "hint ok"]);
@@ -2647,22 +2660,66 @@ const sealed = (gid, rel, seat, fields, key, names = ["by", "sig"]) =>
         await quiet(() => sleep(10));
         assert.equal(hint.textContent, `bob.zec gives this address: ${MOVED}`);
 
-        // The submit looks the name up again, and pays the address of the registry.
+        // The submit looks the name up again, and pays the address of the registry. The row shows
+        // the address first: a form whose hint did not answer refuses.
         znsServes(znsOk());
-        let sent = await submit(rowsOf(["alice.zec"]));
-        assert.deepEqual(sent, [[{ to: NAMED, amount: 50000000, name: "alice" }]]);
+        await refused(rowsOf(["alice.zec"]), "Wait until the form shows the address of alice.zec.");
+        let sent = await submit(await settled(["alice.zec"]));
+        assert.deepEqual(sent, [[{ to: NAMED, amount: 50000000, name: "alice" }]],
+          "the string of the registry, not the form of the engine");
         assert.equal(t.banner.kind, "ok");
         assert.equal(gets >= 1, true, "the submit asks the registry");
-        sent = await submit(rowsOf([OTHER, "0.1"], ["Bob", "0.2", "rent"]));
+        sent = await submit(await settled([OTHER, "0.1"], ["Bob", "0.2", "rent"]));
         assert.deepEqual(sent, [[{ to: OTHER, amount: 10000000 },
           { to: MOVED, amount: 20000000, memo: "rent", name: "bob" }]],
         "an address row keeps no name key");
-        // The name moved after the hint: the submit pays the new address and the new name.
-        form = rowsOf(["alice"]);
-        await quiet(() => sleep(10));
-        znsServes(znsOk([znsRec("alice", MOVED)]));
-        sent = await submit(form);
-        assert.deepEqual(sent, [[{ to: MOVED, amount: 50000000, name: "alice" }]]);
+        // The name moves after the hint: the submit refuses and the form shows the new address
+        // with the note of a recent change. A second submit proposes the new address.
+        form = await settled(["alice"]);
+        assert.equal(t.ui.pay[0].shown.address, NAMED);
+        znsServes(znsOk([znsRec("alice", MOVED, 4500090)]));
+        await refused(form, "The name alice.zec now gives another address. Check it, then "
+          + "propose again.");
+        assert.equal(t.ui.pay[0].shown.address, MOVED, "the row shows the new address");
+        const redrawn = hintOf(t.sendDialog()).textContent;
+        assert.equal(redrawn, `alice.zec gives this address: ${MOVED} This name got this address `
+          + "at block 4500090, less than a day ago. Check the address with the payee.");
+        assert.deepEqual(await submit(form), [[{ to: MOVED, amount: 50000000, name: "alice" }]]);
+        // Two rows that moved both show the new address after one refusal.
+        znsServes(znsOk());
+        form = await settled(["alice"], ["bob", "0.2"]);
+        znsServes(znsOk([znsRec("alice", OTHER), znsRec("bob", NAMED)]));
+        await refused(form, "Recipient 1: The name alice.zec now gives another address. Check it, "
+          + "then propose again.");
+        assert.deepEqual(t.ui.pay.map((r) => r.shown.address), [OTHER, NAMED]);
+        // Typing again clears the shown address until the new hint answers.
+        znsServes(znsOk());
+        form = await settled(["alice"]);
+        typeIn(form, "bob");
+        assert.equal(t.ui.pay[0].shown, null);
+        await refused(form, "Wait until the form shows the address of bob.zec.");
+        // "Propose again" keeps the name with the address: the same payee, and the approvers check
+        // the name. Typing in the field drops the name.
+        znsServes(znsOk());
+        const expired8 = { ...open("pa1", "PA"),
+          payees: [{ to: NAMED, amount: 5, name: "alice" }] };
+        Object.assign(t.ui, { send: false, after: null });
+        await quiet(() => t.proposeAgain(expired8));
+        assert.deepEqual(t.ui.pay.map(({ to, amt, name }) => ({ to, amt, name })),
+          [{ to: NAMED, amt: "0.00000005", name: "alice" }]);
+        form = t.sendDialog();
+        assert.deepEqual(shows(hintOf(form)), ["Valid testnet address for alice.zec. Each "
+          + "approver checks the name again.", "hint ok"]);
+        assert.deepEqual([gets, fetches], [0, 0], "an address row asks no registry");
+        againPayees = (await submit(form))[0];
+        assert.deepEqual(againPayees, [{ to: NAMED, amount: 5, name: "alice" }]);
+        Object.assign(t.ui, { send: false, after: null });
+        await quiet(() => t.proposeAgain(expired8));
+        form = t.sendDialog();
+        typeIn(form, OTHER);
+        assert.equal(t.ui.pay[0].name, null);
+        assert.deepEqual(await submit(form), [[{ to: OTHER, amount: 5 }]], "no name key");
+        t.ui.send = false;
 
         // These stop the proposal with their text.
         znsServes(znsOk());
@@ -2670,16 +2727,17 @@ const sealed = (gid, rel, seat, fields, key, names = ["by", "sig"]) =>
           + "registry has no name nobody.");
         await refused(rowsOf([OTHER, "0.1"], ["nobody"]), "Recipient 2: nobody is "
           + "not a unified address, and the testnet ZNS registry has no name nobody.");
-        await refused(rowsOf(["self"]), "This is the address of this wallet. Enter the address of "
-          + "someone else.");
-        await refused(rowsOf(["alice", ""]), "Enter an amount greater than zero, with at most 8 "
-          + "decimals.");
-        await refused(rowsOf(["alice", "0.5", "x".repeat(600)]), memoError("x".repeat(600)));
+        await refused(await settled(["self"]), "This is the address of this wallet. Enter the "
+          + "address of someone else.");
+        await refused(await settled(["alice", ""]), "Enter an amount greater than zero, with at "
+          + "most 8 decimals.");
+        await refused(await settled(["alice", "0.5", "x".repeat(600)]),
+          memoError("x".repeat(600)));
         znsServes(znsOk(ZNS_NAMES, 4500089));
         await refused(rowsOf(["alice"]), "The ZNS registry is 11 blocks behind the chain, so a ZNS "
           + "name cannot be used now.");
         znsServes(znsOk(ZNS_NAMES, 4500090));
-        assert.deepEqual(await submit(rowsOf(["alice"])),
+        assert.deepEqual(await submit(await settled(["alice"])),
           [[{ to: NAMED, amount: 50000000, name: "alice" }]], "10 blocks behind still works");
         znsServes(znsDown);
         await refused(rowsOf(["alice"]), ZNS_DOWN);
@@ -2688,11 +2746,12 @@ const sealed = (gid, rel, seat, fields, key, names = ["by", "sig"]) =>
         assert.deepEqual(shows(hint), [ZNS_DOWN, "hint bad"]);
         // A registry address that the engine does not accept for this network.
         znsServes(znsOk());
-        t.setZ(zStub((a) => { if (a === UNPAYABLE) throw new Error("no"); return a; }));
-        await refused(rowsOf(["odd"]), "The name odd.zec gives an address that Zigs cannot pay.");
-        t.setZ(zStub());
+        t.setZ(zStub((a) => { if (a === UNPAYABLE) throw new Error("no"); return canon(a); }));
+        await refused(await settled(["odd"]),
+          "The name odd.zec gives an address that Zigs cannot pay.");
+        t.setZ(zStub(canon));
         // The wallet lost its sync between the draw and the submit.
-        form = rowsOf(["alice"]);
+        form = await settled(["alice"]);
         const keptChain = t.chain;
         t.setChain({ ...keptChain, bal: null });
         await refused(form, "The wallet has not finished its first sync.");
@@ -2705,6 +2764,7 @@ const sealed = (gid, rel, seat, fields, key, names = ["by", "sig"]) =>
         form = rowsOf([""]);
         assert.equal(boxOf(form).attrs.placeholder, "u1…");
         assert.equal(boxOf(form).attrs["aria-label"], "Recipient address");
+        assert.match(textOf(form), /One address and amount per line, then an optional memo/);
         assert.deepEqual(shows(typeIn(form, "alice.zec")),
           ["Not a shielded Zcash mainnet address. It starts with u1.", "hint bad"]);
         await refused(rowsOf(["alice.zec"]), "Enter a shielded Zcash mainnet address. It starts "
@@ -2712,6 +2772,7 @@ const sealed = (gid, rel, seat, fields, key, names = ["by", "sig"]) =>
         assert.deepEqual([gets, fetches], [0, 0], "a mainnet wallet makes no lookup");
         t.state.g = testnet;
         t.ui.pay = null;
+        t.setZ(zStub());
       }
       // A double tap proposes once: the second call refuses at once.
       let free8;
@@ -2810,6 +2871,14 @@ const sealed = (gid, rel, seat, fields, key, names = ["by", "sig"]) =>
           + "chain, so this browser did not approve.", "behind");
         znsServes(znsDown);
         await refuses(znsPay("n7", "alice"), me, ZNS_DOWN, "down");
+        // The proposal made again (same address, same name): the approver checks the name.
+        znsServes(znsOk());
+        await approved(third, { ...znsPay("n10", "alice"), payees: againPayees });
+        assert.equal(markOf(third, "n10").approved, "aa", "the name still gives the address");
+        znsServes(znsOk([znsRec("alice", MOVED)]));
+        await refuses({ ...znsPay("n11", "alice"), payees: againPayees }, other, "The ZNS name "
+          + "alice.zec now gives another address than this payment, so this browser did not "
+          + "approve.", "moved after Propose again");
         // A proposal without names asks no registry.
         znsServes(znsDown);
         const plain = open("n8");
