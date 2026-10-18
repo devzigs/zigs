@@ -183,8 +183,9 @@ async function syncOrStall(c, cw) {
   finally { clearTimeout(timer); }
 }
 // The engine may still use the stalled wallet object, so it is never freed. It stays the wallet of
-// the chain until the next sync, so the balance and a payment keep working, and the next sync
-// starts a new object from its state (with the batches before the stall) on the next server.
+// the chain until the next sync, so the balance stays. A proposal on it still asks the server that
+// stalled, so it can wait until spendOrStall stops it after 60 s (S9). The next sync starts a new
+// object from its state (with the batches before the stall) on the next server.
 // ponytail: each stall leaves one object, which wasm-bindgen frees when it is collected after its
 // stream ends; nothing stops that stream.
 export function dropStalled(c) {
