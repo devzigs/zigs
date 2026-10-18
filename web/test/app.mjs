@@ -666,6 +666,24 @@ const sealed = (gid, rel, seat, fields, key, names = ["by", "sig"]) =>
     notify();
     await waitFor("the shares of mb", () => data.has(pathOf(mb) + "/shares/1"), 10000);
     await drop(pathOf(mb));
+    // A burn that keeps failing: each new try waits longer, so the engine does not sign again and
+    // again while the save fails. The step goes on by itself when the wait ends.
+    engine.length = 0;
+    const mt = await propose("mt", 4);
+    t.closeSession();
+    await approveAs(mt.id, [1, 2]);
+    storage.set("zf-vault", "{}");
+    notify();
+    await waitFor("the first try", () => engine.includes("share 1"));
+    await sleep(200);
+    for (let k = 0; k < 5; k++) { notify(); await sleep(100); }
+    assert.equal(engine.filter((x) => x === "share 1").length, 1, "no new try during the wait");
+    const tries = () => engine.filter((x) => x === "share 1").length;
+    await waitFor("the second try", () => tries() === 2, 10000);
+    await sleep(200);
+    storage.delete("zf-vault");   // nothing reacts now: the end of the 6 s wait starts the step
+    await waitFor("the shares of mt", () => data.has(pathOf(mt) + "/shares/1"), 10000);
+    await drop(pathOf(mt));
     // The save of an approval fails: no commitment goes out, and memory gets its old state back,
     // so the next click approves.
     const ma = await propose("ma", 4);
