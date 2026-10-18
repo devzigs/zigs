@@ -300,7 +300,7 @@ iPhone.
 | [`wasm/src/ffi.rs`](wasm/src/ffi.rs) | C interface for the iPhone and Mac apps |
 | [`web/index.html`](web/index.html), [`web/app.css`](web/app.css), [`web/app.js`](web/app.js), `web/app-*.js` | The web app: page, styles, and the script: `web/app.js` lists the 8 pure modules and the 25 page modules and starts the page (no inline script or style; see [The page modules](#the-page-modules)) |
 | [`web/shim.js`](web/shim.js), [`web/qr.js`](web/qr.js), [`web/payees.js`](web/payees.js), [`web/requests.js`](web/requests.js), [`web/personal.js`](web/personal.js), [`web/vault.js`](web/vault.js), [`web/chat.js`](web/chat.js), [`web/signed.js`](web/signed.js), [`web/zns.js`](web/zns.js) | Store client, QR encoder, payment list parser with the memo rules and the recipient check, payment request cards and Send form rows, the rules of the personal account (contacts, fee, states of a message, backup), passkey lock, message helpers, the rules for signed writes, and the ZNS name lookup with the check of an approver (no third-party code) |
-| [`cf/src/index.js`](cf/src/index.js) | Group server: Cloudflare Worker with one Durable Object per wallet, limits against abuse. It also serves `/sol` and `/sol/config.json` for the Solana beta, and relays `/lwd` to our testnet light-wallet node |
+| [`cf/src/index.js`](cf/src/index.js) | Group server: Cloudflare Worker with one Durable Object per wallet, limits against abuse. It also serves `/sol` and `/sol/config.json` for the Solana beta, relays `/lwd` to our testnet light-wallet node, and serves `/zns`, a copy of the testnet ZNS name registry |
 | [`web/sol/`](web/sol) | Solana beta in the page: ceremony, signing sessions, backup, the Worker that talks to Helius, the Solana wasm, and the vendored Zolana SDK bundle (third-party code, hash pinned in `SHA256SUMS`) |
 | [`infra/lwd/`](infra/lwd) | Our testnet light-wallet node: Zakura, lightwalletd and Envoy with a keyed tunnel listener and a tailnet listener, and the Cloudflare tunnel |
 | [`wasm-sol/`](wasm-sol) | Solana engine in Rust: message checker, FROST-Ed25519 ceremony and signing, key roles. It has its own lockfile and builds to `web/sol/wasm/` |
@@ -676,12 +676,13 @@ folder path.
   (429 before the call to the node), the key of a network at the three limits (an IPv4 address, or
   the /64 of IPv6), the headers to the node (the allowed ones and the key only), the answer, the 503
   and 502 cases, and a response that streams.
-- `node web/test/zns.mjs`: the `/zns` route with a fake resolver: a full load over pages, the
-  changes since the last load (oldest first, a repeated event dropped), the full load after a
-  lower resolver height or after one hour, the 502 cases (another registry key, bad data, a failed
-  call), the method rule, the password gate, and the headers to the resolver (content-type only).
-  Then `web/zns.js`: the names that the Send form accepts, a lookup, an unknown name, a name that
-  moved, and the refusal of an approving device whose copy gives another address.
+- `node web/test/zns.mjs`: the `/zns` route with a fake resolver: a full load over pages on each
+  refresh after 60 s, a page size that the resolver states, the page cap, the 502 cases (another
+  registry key, bad data, a cut page, a failed or hung call) with one fixed cause and a 30 s pause,
+  the method rule, the password gate, and the headers to the resolver (content-type only). Then
+  `web/zns.js`: the names that the Send form accepts (no t-address or TEX form), a lookup, an
+  unknown name, a registry too far behind the tip of the wallet, a name that moved, and the
+  refusal of an approving device whose copy gives another address.
 - `bash tests/e2e.sh`: the command-line ceremony in separate processes, with attacks: wallet
   substitution, fewer than t signers, tampered randomizer and sighash, nonce reuse, wrong share
   attribution, foreign notes.

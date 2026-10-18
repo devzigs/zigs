@@ -162,7 +162,7 @@ the group server and the light-wallet servers in `NETWORKS`. A name is a recipie
 | Option | Who learns the name that you pay | Work | Fit |
 |---|---|---|---|
 | A. Ask a remote resolver for each name (the SDK way) | ZcashMe: the name, your IP address and the time. With a Worker proxy, our Worker sees them in memory | Small | Poor. A new party learns recipients. The CSP gets a new host |
-| B. Download the whole registry (`list_names` pages, then `events` deltas with no name filter) through a Worker route such as `/zns`, as `/lwd` works, and look names up on the device | Nobody. ZcashMe sees our Worker fetch the registry. Our Worker sees your IP address and the download, as for `/lwd` | Medium | Good. The CSP does not change. PRIVACY.md needs a new section |
+| B. Download the whole registry (all `list_names` pages on each refresh; a delta of `events` with a reorganisation check is the upgrade) through a Worker route such as `/zns`, as `/lwd` works, and look names up on the device | Nobody. ZcashMe sees our Worker fetch the registry. Our Worker sees your IP address and the download, as for `/lwd` | Medium | Good. The CSP does not change. PRIVACY.md needs a new section |
 | C. B with our own `zns-resolver` behind the Worker | Nobody | B, plus one service to run | Good. It removes the trust in the resolver of ZcashMe, not in the Mint. It is an infrastructure decision of the owner |
 | D. The engine scans the registry from the ceremony height and verifies it | Only the light-wallet server, which sees that the device reads registry transactions | Large | Best trust: no resolver at all. The 1-of-n and Mint limits stay |
 

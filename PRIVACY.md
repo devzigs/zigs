@@ -88,7 +88,9 @@ What the server can still see:
 | Nothing for the personal account and its messages | The account, its contacts and its on-chain messages never touch the group server. | None needed |
 
 The server keeps no logs: Workers Logs are off (`observability.enabled = false`), and the code
-writes nothing about requests. IP addresses are used in memory only: to apply rate limits, and as
+writes nothing about requests. One line is the exception: when the `/zns` route cannot read the
+name registry, it writes a fixed cause, such as `zns: status`. That line holds nothing about the
+request and no text of the resolver. IP addresses are used in memory only: to apply rate limits, and as
 a tag on each open WebSocket. The limits count each IPv4 address, or each /64 network of IPv6
 addresses, because one IPv6 user usually holds a whole /64. So users who share an IPv4 address or
 a /64 (one home, one office, one VPN exit) also share a counter, and one of them can use up the
@@ -160,34 +162,41 @@ that it gives and the history of both.
 
 How the app reads the registry:
 
-- The route `/zns` of the app Worker downloads the whole testnet registry from the public resolver
-  `light.zcash.me`: first the list of all names, then the changes since the last download. It
-  sends no header of yours to the resolver. It checks the published key of the registry, and it
-  keeps its copy for at most 60 seconds.
+- The route `/zns` of the app Worker downloads the list of all names of the testnet registry from
+  the public resolver `light.zcash.me`. It sends no header of yours to the resolver. It checks the
+  published key of the registry. It serves a copy that is at most 60 seconds old.
 - The page downloads that copy, behind the same password as every other request, and finds the
   name on the device. It never asks a server about one name.
 
 | Party | What it learns |
 |---|---|
 | ZNS resolver (`light.zcash.me`) | That the app Worker downloads the registry, and when. Not your IP address and not a name |
-| App Worker | Your IP address and when your page downloads the registry. Not the name that you type. It keeps no log |
+| App Worker | Your IP address and when your page downloads the registry. Not the name that you type |
 | Group server | Nothing new. The name is one more field of the sealed proposal |
 | Other signers of the wallet | The name and the address in the proposal, as for every recipient |
 | Chain observers | A normal shielded payment. Nothing shows that a name was used |
 
-A download of the registry just before a proposal tells the Worker that someone may pay a name
-soon. It does not tell which name.
+The timing of a download can still tell the Worker something:
+
+- The page downloads the registry when a testnet wallet opens. It downloads it again when a copy
+  older than 60 seconds must check a name, before a proposal or an approval.
+- The Worker sees each download and its IP address. As the group server, it also sees which IP
+  addresses open which wallet.
+- So a download near a proposal or an approval can tell the Worker that a wallet may pay a name.
+  When the registry holds few names, that can point to the payee.
 
 What the app trusts, and what it checks:
 
 - The address comes from the registry. One registrar, the ZNS Mint, writes the registry. The app
   checks the key of the registry, not each record on chain.
 - A name can move to another address. The proposer sees the address that the name gives, and a
-  note when the name moved. Each approving device looks the name up again, in its own copy, and
-  refuses the approval when the name now gives another address than the payment.
-- A copy can be up to about 2 minutes old: 60 seconds in the Worker and 60 seconds in the page.
-- A Zigs wallet gets no name of its own. ZNS lets anyone who can read the memos of an address
-  change the name of that address, and every signer of a wallet can read them
+  note when the name changed recently. Each approving device looks the name up again, in its own
+  copy, and refuses the approval when the name now gives another address than the payment.
+- The page uses its copy for at most 60 seconds, so the copy is at most about 2 minutes behind
+  the resolver. The resolver can fall behind the chain too. So the page refuses a registry that is
+  more than 10 blocks below the chain height of the wallet.
+- A Zigs wallet gets no name of its own. Under ZNS, anyone who can read the memos of an address
+  can change the name of that address. Every signer of a wallet can read its memos
   ([docs/zns-spike.md](docs/zns-spike.md), section 3.3).
 - Mainnet wallets do not look up names.
 - zcashnames.co is another registry, with names that look the same. The app reads only the ZNS
