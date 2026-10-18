@@ -63,6 +63,16 @@ demo. Do not move to `8178be7c`, to Zolana main or to SDK 0.5.0-alpha:
   viewing keys to X25519 and owner keys to one Ed25519 secret, and the PR says that programs,
   prover, SDKs and proving keys must move together. Ask Helius (owner) to announce each Devnet
   pool or gateway change with a date.
+- Also watch two open PRs of Zolana. #427 (draft) rotates every transfer proving key: the bundle and
+  the SOL-4 local prover must pin the new keys, every proof of the old bundle fails, and so no open
+  proposal may stay at the switch. #427 in the deployed commit is T3. #425 refuses plaintext proofs
+  to a remote prover, which stops the hosted-prover path of `web/sol/worker.js`; the owner then
+  chooses the SOL-4 local prover or a TEE policy.
+- The branch `claude/sol37-readiness` (on main `3a31a5f`) holds the move to Zolana main `eabd8e0f`
+  for T2: the bundle, the approvals program crates, the checker pins and the tree of 18,608 bytes in
+  demo-check. It fails against today's Devnet by design. Merge it only together with a T2 redeploy,
+  never before, and rebase it on the main of that day first. It is not enough when #434, #427 or
+  #425 is in the release.
 - A repin in this release overrides the rule "Do not rebuild the Solana SDK bundle in this
   release" of docs/hackathon-release.md: it needs the owner, and docs/demo.md section 3 sets the
   cut-off (T-10, never in the last week).
@@ -82,8 +92,8 @@ applies: stop the Solana part and show the recorded run.
 
 - **T0:** the pool hash changed, and the "tree 0" check still passes. The source of `programs`
   and `program-libs` equals `c232da1b`, or differs only in a change that touches no state layout
-  and no transact interface (read the diff). Examples: a redeploy of `release/devnet-c`, or #431
-  on `release/devnet-c`. A redeploy from main is T2. Action: confirm with `git diff`. Update the
+  and no transact interface (read the diff). Example: a redeploy of `release/devnet-c` (#431 is
+  not on that branch today). A redeploy from main is T2. Action: confirm with `git diff`. Update the
   pool hash in `solspike/tools/demo-check.mjs` and ZOLANA.md 6.1. Simulate one transact (read
   only): its compute stays between `CU_FLOOR_TRANSACT` 144,591 and the cap 217,000
   (`wasm-sol/src/template.rs`, `web/sol/worker.js`).
@@ -102,12 +112,13 @@ applies: stop the Solana part and show the recorded run.
   ("tree 0 has N bytes, not the layout of the SDK pin"), or error 7001 together with those FAILs.
   Follow the checklist at the new commit; change `TREE_BYTES` (the offset 116 stays) and the pool
   hash in `solspike/tools/demo-check.mjs`; measure the nullifier root window on Devnet (ZOLANA.md
-  6.10: the history of 100 roots becomes 5). A tree id other than 0 also needs
-  `web/sol/transfer.js`, `wasm-sol/src/pins.rs` and an SDK change (Zolana `tree-slot.ts`). Risk:
+  6.10: the history of 100 roots becomes 5). A tree id other than 0 needs no SDK change
+  (`createZolanaClient({ treeId })`), only `web/sol/transfer.js`, `web/sol/worker.js`,
+  `wasm-sol/src/pins.rs` and demo-check. Risk:
   after an in-place upgrade, every transact fails, a withdrawal too, and nothing can be done
   afterwards. Keep the Devnet balances at what the demo needs.
 - **T3:** a new pool id, or an in-place upgrade that changes the verifying keys or the viewing
-  keys (#434). demo-check cannot show it, because it reads the old pool address. The signal is
+  keys (#434, #427). demo-check cannot show it, because it reads the old pool address. The signal is
   an announcement of Helius, error 14101 from `execute` (the pool in the call differs from the
   pool in the approvals ELF, either way), or the stop text. Order:
   1. Withdraw every funded group, the old group-key identity too, on the current stack, while
