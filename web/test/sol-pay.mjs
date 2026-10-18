@@ -412,6 +412,38 @@ step("a missing account is a wait, a click keeps the re-read, and an expiry hide
 }
 step("a failed wallet read waits longer each time, shows one banner, and a success clears it");
 
+// ── A read that fails because the wallet closed writes nothing into the next wallet ──
+{
+  const id = current;
+  const key = "snap:" + id;
+  const banners = [];
+  const banner = c.host.showBanner;
+  c.host.showBanner = (kind, text) => banners.push(text);
+  const reads = () => chain.commands.filter((m) => m.cmd === "account").length;
+  const before = reads();
+  chain.drop = "account"; // the read waits for an answer that does not come
+  delete c.snaps[id];
+  delete c.seen[id];
+  notify();
+  await waitFor("a read in flight", () => reads() > before);
+  // What a close does to this state: a new number, and the Worker closes with its calls.
+  const opened = c.opened;
+  c.opened = opened + 1;
+  c.worker.close();
+  Object.assign(c, { worker: null, inited: null });
+  await new Promise((done) => setTimeout(done, 300));
+  assert.deepEqual(banners, [], "no banner of the closed wallet");
+  assert.equal(c.readFails[key], undefined, "and no count in the next wallet state");
+  chain.drop = null;
+  c.opened = opened;
+  c.worker?.close(); // a read that started meanwhile belongs to the other number
+  Object.assign(c, { worker: null, inited: null });
+  notify();
+  await waitFor("the read again", () => c.snaps[id] !== undefined, 30000);
+  c.host.showBanner = banner;
+}
+step("a read of a wallet that closed shows no banner and writes no count");
+
 // ── One payment: two approvals, the digest signed, the execute with a fresh proof ──
 {
   const id = current;

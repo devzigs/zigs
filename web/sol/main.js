@@ -167,6 +167,9 @@ export async function attach(host) {
   await W.default();
   const c = { host, W, rpcUrl, worker: null, inited: null, ...blank() };
   c.refresh = () => refresh(c);
+  // A hidden tab runs no sync, and the page only redraws when the tab shows again: a pass of the
+  // reactor runs the retry or the first sync that came due meanwhile.
+  globalThis.document?.addEventListener("visibilitychange", () => host.refilter());
   const actions = {
     add: () => addSolana(c),
     sync: () => syncNow(c),
