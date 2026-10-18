@@ -253,6 +253,10 @@ const byId = (node, id) =>
   await t.sol.add();
   const done = (i) => data.has(`groups/${gidS}/soldone/${i}`);
   await waitFor("every soldone", () => [1, 2, 3].every(done), 30000);
+  // S15: the tab says the status in a sentence.
+  ui.tab = "solana";
+  await waitFor("the ready tab", () => /The Solana part is ready\./.test(pageText()));
+  ui.tab = "overview";
   const solButtons = () => pageText().match(/Back up Solana, seat \d/g) ?? [];
   await waitFor("the note", () => solButtons().length === 3);
   assert.match(pageText(), /The Solana part of a seat is a second file, with its own passphrase/);

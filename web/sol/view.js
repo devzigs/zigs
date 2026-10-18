@@ -23,6 +23,15 @@ const PUBLIC_TEXT =
   "address, the group key and the fee address of each seat that pays are public too. Helius " +
   "sees that you use Zigs, your IP address and the keys of this wallet, and its hosted prover " +
   "sees each payment. The Zigs server operator can link this wallet to these addresses by timing.";
+const STATUS_TEXT = {
+  unavailable: "This wallet cannot get a Solana part.",
+  "not started": "The Solana part has not started.",
+  running: "The Solana setup is running. Keep this page open until it is ready.",
+  ready: "The Solana part is ready.",
+  stopped: "The Solana part stopped.",
+  differs: "The seats published different Solana keys. Do not use the Solana part.",
+};
+
 function statusOf(c, ag) {
   if (startBlock(c.host)) return "unavailable";
   if (!started(c.docs)) return "not started";
@@ -110,18 +119,39 @@ const CUSTODY_TEXT =
   "set the fees of the pool and change its other authorities, but not the upgrade key. Read " +
   "from Devnet on 18 October 2026.";
 
+/** Copy for an address (the fee address has its own in payview.js). */
+function copyButton(c, text, mark) {
+  const copy = async (ev) => {
+    const button = ev.currentTarget;
+    try {
+      await navigator.clipboard.writeText(text);
+      button.textContent = "Copied";
+    } catch {
+      button.textContent = "Select and copy";
+    }
+  };
+  const attrs = { class: "btn sm", type: "button", "data-sol": mark, onclick: copy };
+  return c.host.el("button", attrs, "Copy");
+}
+
 function keyBlock(c, done) {
   const { el } = c.host,
     row = (name, label, value) => [
       el("dt", {}, label),
       el("dd", { class: "hex", "data-sol": name }, value),
     ];
+  // A payer copies the full shielded address: it has no checksum, so a typed character more or
+  // less gives another address that looks right. The program address is copied to compare it.
+  const copyRow = (value, mark) => (value ? el("dd", {}, copyButton(c, value, mark)) : null);
+  const owner = done.pda ? base58(done.pda) : null;
   return el(
     "dl",
     { class: "kv" },
-    row("owner", "Program address of the group (Devnet)", done.pda ? base58(done.pda) : "?"),
+    row("owner", "Program address of the group (Devnet)", owner ?? "?"),
+    copyRow(owner, "copy-program"),
     row("group-key", "Group key", done.groupKey),
     row("shielded", "Shielded address", done.pdaAddress ?? "?"),
+    copyRow(done.pdaAddress, "copy-shielded"),
     el("dd", { class: "small", "data-sol": "pay-to" }, PAY_TO),
     row("balance-private", "Private balance", c.sync.balance ?? "not synced"),
     row(
@@ -254,7 +284,9 @@ export function solView(c, act, actions) {
       el("h2", {}, "Solana"),
       el("span", { class: "badge plain" }, "Devnet only · beta"),
     ),
-    el("p", { class: "small", "data-sol": "status" }, status),
+    // The word stays readable for the checks; a person reads the sentence.
+    el("p", { class: "small" }, el("span", { "data-sol": "status", hidden: true }, status),
+      STATUS_TEXT[status]),
     el("p", { class: "small", "data-sol": "public-text" }, PUBLIC_TEXT),
     ...stopCards(c),
     started(c.docs) ? seatList(c) : startCard(c, act, actions),
