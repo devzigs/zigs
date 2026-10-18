@@ -184,7 +184,8 @@ create transaction keeps these values in the chain history after the execute. Th
 seats sign an approval, off chain. Then a seat executes: the transaction shows the approval (the
 group key, a digest and the group signature), the PDA as the owner, and the fee address of the
 executing seat as payer. So the chain links the group key, the PDA and the fee addresses in
-public, and shows when a payment waits. The payee and the amount stay hidden. The program has an
+public, and shows when a payment waits. A private payment hides its amount, but the owner key of
+the payee is public. A withdrawal shows its recipient and its amount. The program has an
 upgrade key. With it, someone could replace the program and sign for the PDA of every group. A
 spend also needs a proof, so a seat or the hosted prover would have to help (ZOLANA.md 7.2).
 
@@ -204,18 +205,54 @@ Zolana is not Zcash. This table says what differs:
 | Custody | Fewer than `t` seats cannot spend | The same for the seats. The pool upgrade key can replace the pool, and the protocol authority can pause trees |
 
 What Helius sees: your IP address, the origin of the app, the owner keys of the wallet (the PDA
-and the group key), and the witness of each spend. It can read the whole Solana history of the
-wallet. It cannot spend, because a spend needs the group signature. It sees no key share. Every
-signer of the wallet reads the whole Solana history too.
+and the group key), the fee addresses of the seats of this browser, and the witness of each
+spend. It can read the whole Solana history of the wallet. It cannot spend, because a spend needs
+the group signature. It sees no key share. Every signer of the wallet reads the whole Solana
+history too.
 
-The screen before **Add Solana** says that the Solana address of the wallet is public, that each
-seat also gets a fee address that appears on chain next to the group, that the Zigs server operator
-can link the wallet to these addresses by timing, that Helius sees that you use Zigs, and that a
-fee address needs a public SOL funding trail. The fund card says that the fee address appears on
-chain next to the group, and the Add SOL card says that the amount and the sender are public. The
-Send privately card and the approval screen of a payment show the rent, the fees, the proposal
-account and the public link of the fee address. The other Solana screens do not yet state the
-limits above (ticket SOL-12 in [TICKETS.md](TICKETS.md)).
+Each Solana screen says what is public and what Helius sees:
+
+- **The Solana tab, in each state** (also before Add Solana and while the setup runs): a deposit
+  shows its sender and amount on chain, and a withdrawal its recipient and amount. A private
+  payment hides its amount, but it shows the owner key of the payee. The program address, the
+  group key and the fee address of each seat that pays are public too. Helius sees that you use
+  Zigs, your IP address and the keys of the wallet, and its hosted prover sees each payment. The
+  Zigs server operator can link the wallet to these addresses by timing.
+- **Before Add Solana:** the program address links to the group key, a fee address needs a public
+  SOL funding trail, and the program and its upgrade key are outside the group.
+- **The details of the wallet:** the two keys of the pool outside the group (below).
+- **The sync:** each sync shows Helius the keys of the wallet with your IP address, so Helius can
+  list every note of the wallet.
+- **The fund card:** the fee address appears on chain next to the group, and Helius sees it with
+  your IP address when you check the balance or pay.
+- **Add SOL:** the amount and the sender are public, and Helius sees your IP address with the
+  deposit.
+- **Pay from the group:** the rent and the fees, and what the hosted prover sees: the owner keys,
+  the payee, the amount, the notes that the payment spends and the secret that links each spend
+  to its notes. A private payment shows the owner key of the payee and hides the amount. The
+  withdrawal form says that the recipient, the asset and the amount are public.
+- **The move of the beta funds:** it links the old address and the program address in public, and
+  the hosted prover sees it.
+- **The rent of old proposals:** the cancel shows the fee address, the proposal account and the
+  rent. The search asks Helius for the proposals of the group key and of the fee addresses of
+  this browser, with your IP address.
+- **The approval screen** of a payment, a withdrawal, the move and the nonce account: what becomes
+  public (for a payment, the owner key of the payee), the public link of the fee address that
+  pays, and for each spend what the hosted prover sees.
+
+The details screen also shows the two keys of the pool, as read from Devnet on 18 October 2026.
+Both sit outside the group, and Zigs does not know who holds them:
+
+- The upgrade key `2kgbLowvCQuMWxDKbHUZAURycziuRrvmtTuDEYMGMRsj` (in the ProgramData account of
+  the pool). It is a signing key, not a program address; the chain does not show how many people
+  hold it. It can replace the pool program.
+- The protocol authority `263Kgjft9NezaYTspFquMbAhgRf7xfAiyusaweLowdXo` (in the protocol config
+  account `2AJashtYixa5hkGpBcT9dUdUqqx6wvDWrJdtXqHqQXvE`). It is a program address, by the
+  Zolana spec a 2-of-5 Squads account. It can pause the trees, and then no payment can move the
+  funds. It can also set the fees of the pool and change its other authorities, but not the
+  upgrade key. The fee authority is the same address.
+
+The screen does not read these keys live, so a change of a key does not show there.
 
 Tor Browser hides your IP address from Helius. It does not hide the timing link of the group
 server. A person who reads "private" may expect Zcash privacy. The Solana part gives less.

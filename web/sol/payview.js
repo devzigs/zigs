@@ -42,8 +42,8 @@ const WHAT = {
     "Moves private SOL of the group key to the program address of the group, with a nonce. One " +
     "move takes up to 8 notes; the card shows again while the old address holds more.",
   approve:
-    "Pays SOL from the shielded balance of the group to the payee. The chain shows neither " +
-    "the payee nor the amount. The change stays with the group.",
+    "Pays SOL from the shielded balance of the group to the payee. The chain hides the amount, " +
+    "but it shows the owner key of the payee. The change stays with the group.",
   withdraw:
     "Pays SOL from the shielded balance of the group to a public Solana address. The chain " +
     "shows the recipient and the amount. The change stays with the group.",
@@ -87,10 +87,17 @@ export const LINK_TEXT =
   "address of the group. So anyone can link this seat to the group. Its funding transfer links " +
   "the sender of that SOL too.";
 
+/** What the hosted prover of Helius sees of a payment, a withdrawal or the move (ZOLANA.md 7.2). */
+export const PROVER_TEXT =
+  "Helius makes the proof on its hosted prover. So it sees the owner keys, the payee, the amount " +
+  "and the notes that the payment spends. It also sees the secret that links each spend to its " +
+  "notes. Local proving is not available yet.";
+
 const FEE_TEXT =
   "It pays the fees and the rents of the proposals that this seat makes, and the fee of each " +
   "payment that this seat executes. Send Devnet SOL to it. " +
-  LINK_TEXT;
+  LINK_TEXT +
+  " Helius sees this address with your IP address when you check the balance or pay.";
 
 /** The fee address of one seat of this browser: the address, Copy and the balance. */
 function feeRow(c, seat) {
@@ -152,7 +159,7 @@ function fundCard(c, act, actions) {
 const ADD_TEXT =
   "Moves SOL from the fee address of your seat into the shielded balance of the group, at its " +
   "program address. The amount and the sender are public. It needs no approval: it is your own " +
-  "SOL.";
+  "SOL. Helius sees your IP address with this deposit.";
 
 /** A line that names the seat of this browser that pays: the first ready one. Null when none. */
 function seatLine(c, mark, what) {
@@ -231,6 +238,7 @@ function intentCard(c, act, actions) {
     el("h3", {}, "Pay from the group"),
     seatLine(c, "propose-seat", "proposes and pays the fees."),
     el("p", { class: "small", "data-sol": "pay-cost" }, costLine(c)),
+    el("p", { class: "small", "data-sol": "pay-prover" }, PROVER_TEXT),
     sendForm(c, act, actions),
     withdrawForm(c, act, actions),
   );
@@ -275,6 +283,10 @@ function withdrawForm(c, act, actions) {
   );
 }
 
+const SEND_PUBLIC =
+  "Send privately: the chain hides the amount, but it shows the owner key of the payee. It also " +
+  "shows the proposal account and the fee addresses that pay.";
+
 /** The form of a private payment: the full shielded address of the payee and an amount. */
 function sendForm(c, act, actions) {
   const { el } = c.host;
@@ -284,6 +296,7 @@ function sendForm(c, act, actions) {
   return el(
     "div",
     { style: "display:grid;gap:8px" },
+    el("p", { class: "small", "data-sol": "send-public" }, SEND_PUBLIC),
     el("label", { class: "field" }, el("span", {}, "Payee (full shielded address)"), to),
     el(
       "div",
@@ -293,6 +306,9 @@ function sendForm(c, act, actions) {
     ),
   );
 }
+
+const MOVE_PUBLIC =
+  "The move links the old address of the group key and the program address in public.";
 
 const MOVE_TEXT =
   "This wallet holds private SOL at the old address of the group key. Move it to the program " +
@@ -321,6 +337,7 @@ function moveCard(c, act, actions) {
     { class: "callout", style: "display:grid;gap:8px", "data-sol": "move" },
     el("h3", {}, "Move the beta funds (one time)"),
     el("p", { class: "small" }, MOVE_TEXT),
+    el("p", { class: "small", "data-sol": "move-public" }, MOVE_PUBLIC + " " + PROVER_TEXT),
     el("p", { class: "small", "data-sol": "move-held" }, "Old address: " + solText(held)),
     el("p", { class: "small", "data-sol": "nonce-state" }, "Nonce account: " + nonce),
     el("div", { class: "row-actions" }, steps),
@@ -361,6 +378,8 @@ export function transferRows(groupKey, review, fee) {
     ...payeeRows(said),
     ["Network fee", solText(fee + said.treeFee)],
     ["Lasts", "Until " + utc(said.expiry) + " UTC, or until the nonce account advances."],
+    ["Public", MOVE_PUBLIC + " " + LINK_TEXT],
+    ["Helius", PROVER_TEXT],
   ];
 }
 
@@ -372,6 +391,7 @@ const feesText = (said) =>
   " at the execute.";
 
 const PUBLIC_WITHDRAWAL = WITHDRAW_PUBLIC + " The execute transaction shows them. ";
+const PAYEE_PUBLIC = "The owner key of the payee becomes public. ";
 
 /**
  * The rows of a payment or a withdrawal of the program design: what the checker of this device
@@ -381,6 +401,7 @@ function paymentRows(c, review) {
   const { said, intent } = review;
   const pda = agreement(c).done.pda;
   const withdraw = intent.kind === "withdraw";
+  const lead = withdraw ? PUBLIC_WITHDRAWAL : PAYEE_PUBLIC;
   return [
     ["What it does", WHAT[intent.kind]],
     ["Program address of the group", pda ? base58(pda) : "?"],
@@ -390,11 +411,15 @@ function paymentRows(c, review) {
       "(kept if the proposal expires)."],
     ["Proposal account", base58(said.proposal)],
     ["Lasts", "Until " + utc(said.expiry) + " UTC. A new proof is made at the execute."],
-    ["Public", (withdraw ? PUBLIC_WITHDRAWAL : "") + "The proposal account (the group key, the " +
+    ["Public", lead + "The proposal account (the group key, the " +
       "expiry, the fee address of seat " + review.by + ") is public, and the create transaction " +
       "keeps it in the chain history. " + LINK_TEXT],
+    ["Helius", PROVER_TEXT],
   ];
 }
+
+const NONCE_PUBLIC =
+  "The nonce account, its rent and the group key that owns it are public. " + LINK_TEXT;
 
 /** The rows of the nonce account of the move. */
 function plainRows(intent, groupKey, fee) {
@@ -406,6 +431,7 @@ function plainRows(intent, groupKey, fee) {
     ["Change", "None."],
     ["Network fee", solText(fee)],
     ["Lasts", LIFETIME[intent.kind] ?? LIFETIME.other],
+    ["Public", NONCE_PUBLIC],
   ];
 }
 
@@ -556,7 +582,9 @@ function sessionList(c, act, actions) {
 const RENT_TEXT =
   "A proposal that expires still holds the rent of the seat that created it. The fee key of " +
   "that seat cancels it and gets the rent back. The program accepts this cancel only after " +
-  "the expiry.";
+  "the expiry. The cancel is public: the chain shows the fee address, the proposal account and " +
+  "the rent. \"Look for rent\" asks Helius for the proposals of the group key and of the fee " +
+  "addresses of this browser, with your IP address.";
 
 /** The rent of expired proposals that each seat of this browser can get back (SOL-52). */
 function rentCard(c, act) {

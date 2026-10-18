@@ -179,7 +179,10 @@ const created = await proposed("createNonce");
     "Change",
     "Network fee",
     "Lasts",
+    "Public",
   ]);
+  assert.match(rows.Public, /^The nonce account, its rent and the group key that owns it/);
+  assert.match(rows.Public, /Public link: this fee address pays in public SOL/);
   assert.equal(rows["Rent kept by the nonce account"], "0.00105664 SOL");
   assert.equal(rows["Network fee"], "0.00001 SOL", "two signatures");
   assert.equal(rows["Fees paid by seat 1"], feeAddress(1), "the fee address of the proposing seat");

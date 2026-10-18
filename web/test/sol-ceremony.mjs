@@ -110,6 +110,7 @@ async function stoppedEverywhere(gid, lost = 1) {
   assert.equal(agreement(c).state, "agree", "the documents agree again");
   const shown = marksOf(solView(c, (f) => f, noActions));
   assert.ok(shown.includes("status") && shown.includes("stopped"), "the stop is shown");
+  assert.ok(shown.includes("public-text"), "a started wallet shows what is public too");
   for (const mark of [...KEY_MARKS, "add", "backup-2", "backup-3", "balance-private"]) {
     assert.ok(!shown.includes(mark), "a stopped wallet shows no " + mark);
   }
@@ -505,6 +506,17 @@ await sleep(50);
 assert.equal(t.solLoading, null, "a testnet wallet with no start document: no load");
 assert.equal(t.sol, null, "the tab is closed and there is no start document");
 const zcash = [1, 2, 3].map((i) => zcashOf(gid, i));
+// The start card says what is public and what Helius sees (SOL-12).
+{
+  const none = { solstart: {}, soldkg1: {}, soldkg2: {}, soldone: {} };
+  // The tree holds null children, which textOf does not take: the JSON holds every text.
+  const start = JSON.stringify(solView({ ...tabState(gid), docs: none }, (f) => f, noActions));
+  assert.match(start, /A deposit shows its sender and amount on chain\. A withdrawal shows/);
+  assert.match(start, /A private payment hides its amount, but it shows the owner key of/);
+  const running = { ...none, solstart: { 1: { cluster: "devnet" } } };
+  const setup = marksOf(solView({ ...tabState(gid), docs: running }, (f) => f, noActions));
+  assert.ok(setup.includes("seat-1") && setup.includes("public-text"), "the setup shows it too");
+}
 
 // ── A start document that no seat signed loads nothing ──
 // Any holder of the wallet link can write one. The page loads the module only when seat 1 signed

@@ -11,9 +11,17 @@ import { holdsShare, remoteStop, solOf, stopOf } from "./secrets.js";
 const ADD_TEXT =
   "A Solana program owns the funds of the group at a program address, which is public and links " +
   "to the group key. Each seat also gets a fee address, which appears on chain next to the " +
-  "group. The Zigs server operator can link this wallet to these addresses by timing. Helius " +
-  "sees that you use Zigs. A fee address needs a public SOL funding trail. The program and its " +
+  "group when the seat pays. A fee address needs a public SOL funding trail. The program and its " +
   "upgrade key are outside the group, and the beta has no audit.";
+
+// What is public and what Helius sees (SOL-12). The tab shows it in each state, also while the
+// setup runs: the seats of this browser join the setup with no click.
+const PUBLIC_TEXT =
+  "A deposit shows its sender and amount on chain. A withdrawal shows its recipient and amount. " +
+  "A private payment hides its amount, but it shows the owner key of the payee. The program " +
+  "address, the group key and the fee address of each seat that pays are public too. Helius " +
+  "sees that you use Zigs, your IP address and the keys of this wallet, and its hosted prover " +
+  "sees each payment. The Zigs server operator can link this wallet to these addresses by timing.";
 function statusOf(c, ag) {
   if (startBlock(c.host)) return "unavailable";
   if (!started(c.docs)) return "not started";
@@ -66,6 +74,19 @@ const PAY_TO =
   "Pay this group only to its full shielded address. The program address alone is not enough, " +
   "and a payment to another key is not counted.";
 
+// ponytail: read from Devnet on 18 October 2026 (the ProgramData account of the pool and its
+// protocol config), not live. Helius can change them; reading both accounts in the Worker
+// would show the current ones.
+const POOL_UPGRADE_KEY = "2kgbLowvCQuMWxDKbHUZAURycziuRrvmtTuDEYMGMRsj";
+const PROTOCOL_AUTHORITY = "263Kgjft9NezaYTspFquMbAhgRf7xfAiyusaweLowdXo";
+const CUSTODY_TEXT =
+  "Both keys sit outside the group: no seat holds them, no seat can stop them, and Zigs does not " +
+  "know who holds them. The upgrade key is a signing key, and it can replace the pool program. " +
+  "The protocol authority is an account that needs 2 of its 5 keys to act (a Squads account, by " +
+  "the Zolana spec). It can pause the trees, and then no payment can move the funds. It can also " +
+  "set the fees of the pool and change its other authorities, but not the upgrade key. Read " +
+  "from Devnet on 18 October 2026.";
+
 function keyBlock(c, done) {
   const { el } = c.host,
     row = (name, label, value) => [
@@ -85,8 +106,15 @@ function keyBlock(c, done) {
       "Public balance of the group key",
       c.chain?.balance ?? "not read yet",
     ),
+    row("pool-upgrade", "Upgrade key of the pool (Devnet)", POOL_UPGRADE_KEY),
+    row("pool-protocol", "Protocol authority of the pool (Devnet)", PROTOCOL_AUTHORITY),
+    el("dd", { class: "small", "data-sol": "custody-text" }, CUSTODY_TEXT),
   );
 }
+
+const SYNC_TEXT =
+  "A sync asks Helius for the notes of the program address and the group key. So Helius sees " +
+  "these keys with your IP address, and it can list every note of the wallet.";
 
 function syncCard(c, act, actions) {
   const { el } = c.host;
@@ -109,6 +137,7 @@ function syncCard(c, act, actions) {
       ),
       el("span", { class: "small", "data-sol": "worker" }, c.sync.text ?? "not started"),
     ),
+    el("p", { class: "small", "data-sol": "sync-text" }, SYNC_TEXT),
   );
 }
 
@@ -193,6 +222,7 @@ export function solView(c, act, actions) {
       el("span", { class: "badge plain" }, "Devnet only · beta"),
     ),
     el("p", { class: "small", "data-sol": "status" }, status),
+    el("p", { class: "small", "data-sol": "public-text" }, PUBLIC_TEXT),
     ...stopCards(c),
     started(c.docs) ? seatList(c) : startCard(c, act, actions),
     ag.state === "differ" ? el("div", { class: "callout bad", role: "alert" }, ag.why) : null,

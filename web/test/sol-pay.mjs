@@ -23,7 +23,7 @@ import { feeOf } from "../sol/fee.js";
 import { putSol } from "../sol/secrets.js";
 import { syncSolana } from "../sol/session.js";
 import { deviceSpend } from "../sol/spend.js";
-import { LINK_TEXT } from "../sol/payview.js";
+import { LINK_TEXT, PROVER_TEXT } from "../sol/payview.js";
 import { partFields, readSolSession, writePart } from "../sol/sessions.js";
 import { solView } from "../sol/view.js";
 import { FRONT_RUN, verifies } from "./sol-chain.mjs";
@@ -316,6 +316,7 @@ step("a device that read no proposal account reads it again, with no click");
   // The screen of a payment: the costs in public SOL, the proposal account and the public link.
   const rows = rowsOf(id);
   assert.match(rows["What it does"], /^Pays SOL from the shielded balance of the group/);
+  assert.match(rows["What it does"], /hides the amount, but it shows the owner key of the payee/);
   assert.equal(rows["Program address of the group"], base58(G.group.pda));
   assert.equal(rows.Amount, "0.002 SOL");
   const fees = "0.000005 SOL at the proposal, 0.000010162 SOL at the execute.";
@@ -327,6 +328,30 @@ step("a device that read no proposal account reads it again, with no click");
   assert.equal(rows["Create paid by seat 1"], feeAddress(1), "the proposer paid the create only");
   assert.match(textOf(marked("pay-cost")[0]), /pays 0\.000005 SOL .* holds 0\.00135636 SOL/);
   assert.ok(textOf(marked("fee-text")[0]).includes(LINK_TEXT), "the fund card says it too");
+  // Each screen says what is public and what Helius sees (SOL-12), and the details name the
+  // keys of the pool that sit outside the group (SOL-11).
+  assert.equal(rows.Helius, PROVER_TEXT, "the screen of a payment names the hosted prover");
+  assert.match(rows.Public, /^The owner key of the payee becomes public\. /, "the payee is public");
+  const shown = (mark) => textOf(marked(mark)[0]);
+  const PUBLIC = [/A deposit shows its sender and amount on chain\. A withdrawal shows its/,
+    /A private payment hides its amount, but it shows the owner key of the payee\./,
+    /fee address of each seat that pays/, /Helius sees that you use Zigs, your IP address/,
+    /link this wallet to these addresses by timing/];
+  for (const re of PUBLIC) assert.match(shown("public-text"), re);
+  assert.match(shown("sync-text"), /and the group key\. So Helius sees these keys with your IP/);
+  assert.equal(shown("pay-prover"), PROVER_TEXT, "the pay card");
+  assert.match(PROVER_TEXT, /the payee, the amount and the notes that the payment spends\./);
+  assert.match(PROVER_TEXT, /the secret that links each spend to its notes/);
+  assert.match(shown("send-public"), /hides the amount, but it shows the owner key of the payee/);
+  assert.match(shown("fee-text"), /Helius sees this address with your IP address/);
+  assert.match(shown("rent"), /The cancel is public.*"Look for rent" asks Helius .* your IP/);
+  assert.match(shown("add-sol-text"), /amount and the sender are public.*IP address/);
+  assert.equal(shown("pool-upgrade"), "2kgbLowvCQuMWxDKbHUZAURycziuRrvmtTuDEYMGMRsj");
+  assert.equal(shown("pool-protocol"), "263Kgjft9NezaYTspFquMbAhgRf7xfAiyusaweLowdXo");
+  const CUSTODY = new RegExp("outside the group.*The upgrade key is a signing key.*replace the " +
+    "pool program.*needs 2 of its 5 keys.*pause the trees.*set the fees of the pool and change " +
+    "its other authorities, but not the upgrade key");
+  assert.match(shown("custody-text"), CUSTODY);
   assert.equal(executorOf(c, ssOf(id)), 1, "the proposing seat executes");
   assert.equal(executorOf(c, { ...ssOf(id), by: 3 }), 3, "whichever seat proposed");
   await approve(c, ssOf(id), 2);
@@ -430,6 +455,7 @@ const proposedWithdrawal = async (recipient = base58(TO)) => {
   assert.equal(rows["Amount (public)"], "0.002 SOL", "the leg that the checker bound");
   assert.match(rows["What it does"], /to a public Solana address/);
   assert.match(rows.Public, /^Recipient, asset and amount are public\. /, "the text of section 2");
+  assert.equal(rows.Helius, PROVER_TEXT, "the screen of a withdrawal names the hosted prover");
   assert.equal(rows["Create paid by seat 1"], feeAddress(1));
   assert.equal(rows.Change, "0.003 SOL stays with the group.", "the change of the withdrawal");
   // The forms of the tab: each button proposes its kind with the typed address and amount.
@@ -783,6 +809,7 @@ step("the sent mark of a payment needs a transaction id");
   c.sync = { ...c.sync, oldBalance: "5000000" };
   c.chain = { ...c.chain, nonce: "missing" };
   assert.equal(marked("move").length, 1, "the card of the move");
+  assert.match(textOf(marked("move")[0]), /links the old address .* in public\. Helius makes/);
   assert.equal(marked("create-nonce").length, 1, "first the nonce account");
   assert.equal(marked("move-funds").length, 0);
   c.chain = { ...c.chain, nonce: "created" };
