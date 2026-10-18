@@ -98,7 +98,8 @@ const FEE_TEXT =
   "payment that this seat executes. Send Devnet SOL to it. Seats that propose or execute need " +
   "about 0.003 SOL. Seats that only approve need none. " +
   LINK_TEXT +
-  " Helius sees this address with your IP address when you check the balance or pay.";
+  " The page asks Helius for the balance of this address with your IP address, with no click: " +
+  "when the Solana tab opens, after a payment, and before each execute.";
 
 /** The fee address of one seat of this browser: the address, Copy and the balance. */
 function feeRow(c, seat) {

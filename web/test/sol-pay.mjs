@@ -409,7 +409,7 @@ step("a failed wallet read waits longer each time, shows one banner, and a succe
   assert.match(PROVER_TEXT, /the payee, the amount and the notes that the payment spends\./);
   assert.match(PROVER_TEXT, /the secret that links each spend to its notes/);
   assert.match(shown("send-public"), /hides the amount, but it shows the owner key of the payee/);
-  assert.match(shown("fee-text"), /Helius sees this address with your IP address/);
+  assert.match(shown("fee-text"), /asks Helius for the balance of this address with your IP/);
   assert.match(shown("rent"), /The cancel is public.*"Look for rent" asks Helius .* your IP/);
   assert.match(shown("add-sol-text"), /amount and the sender are public.*IP address/);
   assert.equal(shown("pool-upgrade"), "2kgbLowvCQuMWxDKbHUZAURycziuRrvmtTuDEYMGMRsj");
