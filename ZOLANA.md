@@ -921,6 +921,14 @@ group, PDA `9gk8NEZU…`:
   instruction holds the group key and the digest of the body, and Node verifies the FROST
   signature. B rose by 500,000 lamports; the PDA identity holds 0.0005 SOL. No funding was needed,
   and no proposal account of the program is open.
+- A withdrawal (SOL-32, 18 October 2026, the page of `7d66a12`, the same restored seats; the
+  ProgramData held `b4bad24c…`). Payment F, 0.0002 SOL to the public fee address of seat 1: seat 2
+  proposed (`4oupfEAk…`, slot 512,352,544), seats 2 and 3 approved, and seat 3 executed
+  (`2b6pE57p…`, slot 512,352,767): 149,671 compute units, fee 10,000 lamports. The execute ends
+  with the owner PDA, the SOL interface and the recipient. The recipient rose by 200,000
+  lamports, and the PDA identity holds 0.0003 SOL. The proposal address equals the version 5
+  address of @solana/kit, and Node verifies the FROST signature over the digest of the body. No
+  proposal account of the program is open.
 
 ## 7. Risks, questions and recommendation
 
@@ -1370,7 +1378,9 @@ landed in slot 512086872 and closed the buffer. The dump then held `b4bad24c…`
 the authority and the size did not change. Production and staging run the version 5 client from
 main `f5fda18`, and then `317b8d9`. Step 7, the same day: payment E over a version 5 address,
 execute `fbDTsyLsVNtHpix3R639FGdm1Uhg4P9bFXCZPCRu5tusNS2rRor8npUWXLjXoVCrVBqeBsAjVnFPVQx2eMEi3w7`
-in slot 512121234 (6.12). The withdrawal of step 7 waits for the page (SOL-32).
+in slot 512121234 (6.12). The withdrawal of step 7: payment F, execute
+`2b6pE57pqpQt5jggj2Vn9q85Gd3eMAMW51ZAmtVq9hZJ5dxfLxCcmviykFbHKeR2R1dPHtzH2wPZG3ikXVEv5LFY` in slot
+512352767, from the page of SOL-32 (6.12).
 
 Mainnet stays no-go under the recommendation below. Our program adds its own audit and upgrade-key
 policy to that list.
