@@ -110,7 +110,7 @@ ZNS maps a name to a unified address through an on-chain registry. The spike is
 
 | Id | P | Owner | Title | Done when |
 |---|---|---|---|---|
-| ZNS-1 | P3 | owner | Decide on names, then let the web app pay to a ZNS name | The owner picks the resolver option (B, C or D in docs/zns-spike.md 2.5), says whether mainnet waits for the audit report, and says whether groups get names while ZNS control is 1-of-n (3.3). Then the web app pays to a name on testnet with that option: each approving device resolves the name itself and refuses a mismatch, a live testnet payment lands, and PRIVACY.md and README.md say who learns a looked-up name |
+| ZNS-1 | P1 | dev | Let the web app pay to a ZNS name (M10 of docs/hackathon-release.md) | The owner decided on 18 October 2026: resolver option B, testnet only, and no names for groups while ZNS control is 1-of-n (3.3). Main `447311c` has the `/zns` route, `web/zns.js` with the lookup and the check of an approver, their tests, and the PRIVACY.md and README.md texts. No page module calls `web/zns.js` yet. Done when the Send form takes a name and each approving web app runs the check (the Send form hook, after WP-Z), and a live testnet payment to a name lands (step 7). The demo name needs an Early Access code from ZcashMe: a claim without one is lost (docs/zns-spike.md 3.1) |
 
 ## Closed
 

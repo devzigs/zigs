@@ -26,11 +26,13 @@ the wallet, and on chain each payment looks like a shielded payment from a stand
   the Send form with the request, and sends nothing. **Request a payment** makes the link in a
   wallet room or in a direct chat. Pasting a link in the Send form fills its rows. The web app has
   it. The iPhone and Mac apps show the link as text ([how](PROTOCOL.md#payment-requests)).
-- ZNS names (testnet, web app): the Send form accepts a name such as `alice.zec` and shows the
-  address that the name gives. The page looks the name up in a copy of the whole registry, so no
-  server learns which name you pay. Each approver in the web app looks the name up again and
-  refuses a payment whose address the name no longer gives. The iPhone and Mac apps show the
-  address only ([privacy](PRIVACY.md#zns-names-testnet)).
+- ZNS names (testnet, web app). **Not finished:** main has the `/zns` route and the name lookup
+  on the device, but the Send form does not take a name yet (M10 of
+  [docs/hackathon-release.md](docs/hackathon-release.md)). The plan: the Send form accepts a name
+  such as `alice.zec` and shows the address that the name gives. The page looks the name up in a
+  copy of the whole registry, so no server learns which name you pay. Each approver in the web app
+  looks the name up again and refuses a payment whose address the name no longer gives. The iPhone
+  and Mac apps show the address only ([privacy](PRIVACY.md#zns-names-testnet)).
 - Personal account: the web app can hold a small single-signer account that pays the fee of
   messages on chain. Add the shielded address of a contact, and write to them, also if they do not
   use Zigs. Each message is a payment of no value, and its text is the memo. Each contact gets an
@@ -721,6 +723,20 @@ folder path.
   `web/zns.js`: the names that the Send form accepts (no t-address or TEX form), a lookup, an
   unknown name, a registry too far behind the tip of the wallet, a name that moved, and the
   refusal of an approving device whose copy gives another address.
+- `node web/test/mainnet-off.mjs`: mainnet is off for this release. The network picker of a new
+  wallet and of the personal account shows Testnet only and no tick, a chat reads testnet
+  requests only, the page texts name Zcash testnet and Solana Devnet, and the testnet faucet is
+  the Valar faucet.
+- `node web/test/chain-fallback.mjs`: the light-wallet fallback with a fake engine. A server that
+  did not answer goes to the end of the list for 5 minutes, the first try waits 3 s, a sync that
+  gets no blocks for 60 s stops and frees the busy flag, and a tab that comes back syncs at once.
+- `node web/test/shim-status.mjs`: the link state of `web/shim.js` with a fake WebSocket and a
+  virtual clock: connecting, open, retrying with the HTTP status of a refusal, the wallet list
+  that waits for each group, the error callback, the send timeout, and the text of the status
+  line.
+- `node web/test/demo-check.mjs`: `solspike/demo-check.sh`, the read-only preflight of the demo
+  days, against local stubs. Each fault that a stub plays gives FAIL, and the script sends only
+  reads and prints no secret.
 - `bash tests/e2e.sh`: the command-line ceremony in separate processes, with attacks: wallet
   substitution, fewer than t signers, tampered randomizer and sighash, nonce reuse, wrong share
   attribution, foreign notes.

@@ -1,7 +1,7 @@
 # Zigs demo runbook
 
 **Status: draft of 18 October 2026.** Sources: sections 3, 8 and 9 of
-[hackathon-release.md](hackathon-release.md) (main a29e9ea) and the page code on main. A step
+[hackathon-release.md](hackathon-release.md) and the page code on main df210da. A step
 marked **[waits for Mx]** or **[waits for Sx]** needs a package that is not on main yet. Each such
 step gives the way to run the demo without it. Finalize this file when M3 (unified setup), M5
 (Zcash signing in the background) and M10 (pay to a ZNS name) land.
@@ -19,19 +19,22 @@ Names in this file:
 
 ## 1. What the demo needs, and what to do without it
 
-Status on 18 October 2026: M6 is on main (8330312). The other items are not.
+On main df210da (18 October 2026): M1, M2, M4, M6, M8 and S1. M10 is in part: the `/zns` route
+and the lookup on the device are on main, but the Send form does not take a name yet. The rows
+below that say "on main" need nothing more.
 
 | Item | What the demo needs | Without it |
 |---|---|---|
-| M1 | The network picker shows Testnet only | Keep Testnet. Say that mainnet is off for this release |
-| M2 | Get testnet ZEC opens the Valar faucet | Open https://faucet.testnet.valargroup.dev/ by hand |
+| M1 | The network picker shows Testnet only | On main |
+| M2 | Get testnet ZEC opens the Valar faucet | On main |
 | M3 | One setup for Zcash and Solana | Run two ceremonies: section 5 |
-| M4 | A restored seat can join the Solana ceremony | Restore a seat only after its Solana part is ready |
+| M4 | A restored seat can join the Solana ceremony | On main |
 | M5 | Zcash signing goes on when the payment drawer is closed | Keep the payment open on every approving laptop until it says Sent |
-| M6 | The Solana approval screen says what is public | Do not read the old sentence aloud. Say the public parts (section 7) |
-| M8 | `solspike/demo-check.sh` | Run `solspike/harness/sol-live.mjs` and `sol-cors.mjs` by hand |
+| M6 | The Solana approval screen says what is public | On main |
+| M8 | `solspike/demo-check.sh` | On main |
 | M9 | WS_PER_IP at 600 for the demo week (D6) | Use one network for each laptop, or the phone hotspot |
-| M10 | Pay to a ZNS name | Paste the utest1 address of Payee |
+| M10 | Pay to a ZNS name in the Send form | Paste the utest1 address of Payee |
+| S1 | The side bar says when the group server does not answer | On main |
 | S2 | The Solana balances refresh by themselves | Click **Sync Solana** after each Solana step |
 | S3 | Only a funded seat executes | Fund the fee address of all three seats |
 | S7 | The Send hold ends after Approve then Cancel | Never click Cancel after Approve. Keep a spare funded wallet |
@@ -73,12 +76,18 @@ The owner does every write: deploys, payments, faucet claims and name claims.
 2. Power on the lwd box (D5).
 3. Set WS_PER_IP to 600 in both entries of `cf/wrangler.jsonc` (production and staging), and
    deploy (D6, M9). Write the date to set it back.
-4. Run `solspike/demo-check.sh` (M8). Fix every FAIL. **[waits for M8]**
+4. Run `sh solspike/demo-check.sh` (M8). Fix every FAIL. It reads `~/.config/zigs/demo-check.json`,
+   outside the repo: the app origins with their password files (mode 600), and the fee addresses
+   of Demo A with `"min": "0.003"`. Without a password file, the checks behind the gate say SKIP.
+   The script sends no write and prints no secret.
 5. Prove the faucet: copy the address of a Zigs testnet wallet, then claim one Valar drip into it.
    The drip is 0.125 TAZ, once for each IP address every 24 hours (M2).
 6. Claim a testnet name for the demo payee: one small testnet payment to the ZNS Mint.
    **[waits for M10]** The name `zigsdemo` in this file is a placeholder: the owner chooses the
-   final name. Open question for the owner: M10 decided "no names for groups while ZNS
+   final name. While ZNS Early Access lasts, the Mint refuses a claim without a six-digit access
+   code and keeps the payment (docs/zns-spike.md 3.1). A test claim of `zigsdemo` on 18 October
+   2026 had no code and registered nothing. So get a code from ZcashMe first, or wait for open
+   registration. Open question for the owner: M10 decided "no names for groups while ZNS
    control is 1-of-n" (docs/zns-spike.md 3.3).
    - Option A: the name points to a single-signer testnet address of the owner. The 3:30 step
      then pays that address, not Payee.
@@ -125,8 +134,8 @@ Stage on app.zigs.app. The Solana tab of staging works only after D4 adds stagin
     more than 2.5 minutes, narrate it and switch to Demo A.
 17. Open both explorers once: testnet.zecblock.com and the Solana explorer on Devnet.
 18. T-1 hour:
-    - Run demo-check again. **[waits for M8]**
-    - Confirm the Zcash **Available** balance of Demo A and the three fee balances.
+    - Run `sh solspike/demo-check.sh` again. It also checks the three fee balances.
+    - Confirm the Zcash **Available** balance of Demo A in the app.
     - Close old proposals. Confirm that no approval hold blocks Send on Demo A.
     - Type the ZNS name (placeholder `zigsdemo.zec`) in the Send form of Demo A, and compare
       the address with the note.
@@ -173,7 +182,7 @@ says Sent (Zcash) or Executed (Solana).
 |---|---|
 | The light-wallet server is slow | Wait. The ChainSafe fallback works (S9) |
 | Solana shows a Helius error | Wait one minute. Then show the Zcash part and the recorded run (S5) |
-| The page shows "Connecting" for a long time | Switch to the phone hotspot (S1) |
+| The side bar says "Connecting to the group server…" for a long time, or "The group server does not answer" | Read the reason in brackets. For "too many connections from this network" (M9), move one laptop to the phone hotspot. For any other reason, switch to the phone hotspot (S1) |
 | A hold blocks Send | Use the spare wallet (S7) |
 | A seat laptop is lost | Restore the seat from its two backup files (M4) |
 | L2 refuses the payment: the name gives another address | L1 has not approved yet, so L1 cancels the payment and proposes again with the pasted utest1 address. **[waits for M10]** |
