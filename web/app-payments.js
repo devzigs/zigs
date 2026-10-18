@@ -53,9 +53,11 @@ const WATCH_MAX = 8;
 export const toWatch = (list) => list.filter(needsWork)
   .sort((a, b) => Number(!!b.package) - Number(!!a.package)).slice(0, WATCH_MAX);
 
-// An approval of a seat here: its mark, or its nonce (an approval from before the marks).
+// An approval of a seat here: its mark, or what approvalKept says.
 const approvedHere = (ss) => !!markOf(state.gid, ss.id).approved
-  || mySeatSecrets(state.gid).some(([, s]) => !!(s.nonces || {})[ss.id]);
+  || mySeatSecrets(state.gid).some(([, s]) => approvalKept(s, ss.id));
+/** Seat secret `s` holds the nonces of payment `sid`, or a share of it that did not go out yet. */
+export const approvalKept = (s, sid) => !!(s?.nonces || {})[sid] || !!(s?.unsent || {})[sid];
 
 // Every change of the nonces of this browser (an approval, a share, a cancel) runs under one
 // lock, and first takes what storage holds now. The secrets are saved as one record, so two tabs
@@ -63,6 +65,20 @@ const approvedHere = (ss) => !!markOf(state.gid, ss.id).approved
 // ponytail: the other writes of the record (a backup, a room, the account, Solana) take no lock,
 // so one of them can still bring a nonce back; ZEC-12 writes only `nonces[<payment>]`.
 const withSecrets = (fn) => exclusive("secrets", async () => { await takeStored(); return fn(); });
+// A cancel of this tab that is not in the store yet: no approval or share of this tab goes out for
+// it. A payment that this browser knows as cancelled or failed is stopped too.
+const cancelling = new Set();
+const stopped = (ss) => cancelling.has(ss.id)
+  || !!state.sessions.find((x) => x.id === ss.id)?.error;
+
+// Saves `patch` for seat i. When the save fails, memory gets the old values back, so that a try
+// again starts from what storage holds, and the step fails with `failure`.
+async function saveOrUndo(gid, i, patch, s, failure) {
+  const before = Object.fromEntries(Object.keys(patch).map((k) => [k, s[k]]));
+  if (await putSec(gid, i, patch)) return;
+  await putSec(gid, i, before);
+  throw new Error(failure ?? "This browser could not save the change of seat " + i + ".");
+}
 
 const sessionPath = (ss, gid = state.gid) => "groups/" + gid + "/sessions/" + ss.id;
 // In a version 3 wallet the proposer is the seat in `by`. Before, it is the identity in
@@ -82,9 +98,12 @@ async function packageStands(gid, sid, d) {
   return (await partNow(gid, part)) !== "no";
 }
 
-// A step of a payment whose drawer is not open names that payment in its error.
+// A step of a payment whose drawer is not open names that payment in its error. The title is the
+// proposer's text, so it is quoted, on one line and short.
 const step = (key, ss, fn) => once(key, () => fn().catch((e) => {
-  throw ss.id === state.sid ? e : new Error(payTitle(ss) + ": " + said(e));
+  if (ss.id === state.sid) throw e;
+  const title = payTitle(ss).replace(/\p{Cc}+/gu, " ").slice(0, 40);
+  throw new Error("\"" + title + "\": " + said(e));
 }));
 
 // Coordinator: once t approvals are in, build the signing package.
@@ -107,24 +126,27 @@ function buildPackage(ss, fvk, commits) {
   });
 }
 
-// Signer: once the package names a seat of this browser, re-verify everything and sign.
+// Signer: once the package names a seat of this browser, re-verify everything and sign. A share
+// that this browser made and did not send yet goes out again.
 function signMyShares(ss, fvk, shares) {
   const gid = state.gid;
   for (const i of localSeats()) {
-    const n = (sec(gid, i).nonces || {})[ss.id];
-    if (canWriteAs(i) && signersOf(ss).includes(i) && n && !shares[i]) {
+    const ready = approvalKept(sec(gid, i), ss.id);
+    if (canWriteAs(i) && signersOf(ss).includes(i) && ready && !shares[i]) {
       step("share:" + ss.id + ":" + i, ss, () => signShare(ss, fvk, i, gid));
     }
   }
 }
 
-// Inside the lock the nonce comes from storage: a nonce that another tab used signs nothing. The
-// step keeps its wallet: when the person opened another one meanwhile, it stops. The network
-// write comes after the lock, so a server that does not answer holds no other step.
+// Inside the lock the nonce comes from storage: a nonce that another tab used signs nothing, and
+// neither does a payment that was cancelled. The step keeps its wallet: when the person opened
+// another one meanwhile, it stops. The network write comes after the lock, so a server that does
+// not answer holds no other step.
 function signShare(ss, fvk, i, gid) {
   return withSecrets(async () => {
-    if (state.gid !== gid) return null;
-    const n = (sec(gid, i)?.nonces || {})[ss.id];
+    if (state.gid !== gid || stopped(ss)) return null;
+    const s = sec(gid, i) || {}, kept = (s.unsent || {})[ss.id], n = (s.nonces || {})[ss.id];
+    if (kept) return kept;
     if (!n) {
       log("seat " + i + ": its nonce for this payment is used or gone, so it signs nothing");
       return null;
@@ -133,33 +155,42 @@ function signShare(ss, fvk, i, gid) {
   }).then((out) => out && sendShare(ss, gid, i, out));
 }
 
-// Signs and saves the burn. Returns the share to send, or `{ changed: true }`.
+// Signs, and saves the burn with what the step made: the share, or `{ changed: true }` when the
+// payment changed after the approval. That goes out also after a write that failed or a reload.
+// Returns what to send.
 async function signShareNow(ss, fvk, i, n, gid) {
-  const s = sec(gid, i);
-  const nonces = { ...(s.nonces || {}) }; delete nonces[ss.id];
-  const ins = inspectOf(ss);
-  if (!n.sighash || !ins || ins.error || ins.sighash !== n.sighash) {
-    await putSec(gid, i, { nonces });
-    return { changed: true };
+  const s = sec(gid, i), ins = inspectOf(ss);
+  const nonces = { ...s.nonces }; delete nonces[ss.id];
+  let out = { changed: true };
+  if (n.sighash && ins && !ins.error && ins.sighash === n.sighash) {
+    // The engine checks the approved sighash again before it signs.
+    const shares = Z.signShare(ss.pczt, fvk, ss.package, S(n), S(s.keyPackage), i);
+    const rel = "sessions/" + ss.id + "/shares/" + i;
+    out = { rel, doc: await signedDoc(gid, rel, i, { shares, at: Date.now() }) };
   }
-  // The engine checks the approved sighash again before it signs.
-  const shares = Z.signShare(ss.pczt, fvk, ss.package, S(n), S(s.keyPackage), i);
-  const rel = "sessions/" + ss.id + "/shares/" + i;
-  const doc = await signedDoc(gid, rel, i, { shares, at: Date.now() });
   // Save the burn before the share goes out: a nonce that comes back could sign twice.
-  if (!(await putSec(gid, i, { nonces }))) {
-    throw new Error("Could not save the used nonce, so the signature share was not sent.");
-  }
-  return { rel, doc };
+  await saveOrUndo(gid, i, { nonces, unsent: { ...s.unsent, [ss.id]: out } }, s,
+    "Could not save the used nonce, so the signature share was not sent.");
+  return out;
 }
 
+// After the lock: sends the share, or fails the payment that changed. Then the kept copy goes.
 async function sendShare(ss, gid, i, out) {
+  if (out.changed) await failSession(gid, ss, "The payment changed after a signer approved it.");
+  else await sdb.doc("groups/" + gid + "/" + out.rel).set(out.doc);
+  await withSecrets(() => dropUnsent(gid, i, ss.id));
   if (out.changed) {
-    await failSession(gid, ss, "The payment changed after a signer approved it.");
     throw new Error("This payment changed after you approved it, so this browser did not sign it.");
   }
-  await sdb.doc("groups/" + gid + "/" + out.rel).set(out.doc);
   log("seat " + i + ": signature share sent");
+}
+// ponytail: a kept copy whose removal does not save stays in the record until a later removal.
+async function dropUnsent(gid, i, sid) {
+  const s = sec(gid, i);
+  if (!(s?.unsent || {})[sid]) return;
+  const unsent = { ...s.unsent };
+  delete unsent[sid];
+  await putSec(gid, i, { unsent });
 }
 
 // Any participant: aggregate. The result is deterministic, so a race is harmless.
@@ -365,6 +396,7 @@ async function approveNow(ss, i) {
 // Makes and saves the nonces of the approval of seat `i`. Returns the commitment document.
 async function commitNow(ss, i, ins, tip, gid) {
   if (state.gid !== gid) throw new Error("Another wallet is open now. Open this one and approve.");
+  if (stopped(ss)) throw new Error("This payment was cancelled or failed, so it was not approved.");
   if ((sec(gid, i).nonces || {})[ss.id]) throw new Error("This seat already approved this payment.");
   const late = markRefusal(ss, i, ins);
   if (late) throw new Error(late);
@@ -377,9 +409,8 @@ async function commitNow(ss, i, ins, tip, gid) {
   const nonces = { ...(sec(gid, i).nonces || {}), [ss.id]: mine };
   // The approved sighash stays after the nonce burn: the session state needs it (ZEC-13).
   const marks = withMark(sec(gid, i).marks, ss.id, { approved: ins.sighash, tip });
-  if (!(await putSec(gid, i, { nonces, marks }))) {
-    throw new Error("Could not save the approval in this browser, so it was not sent.");
-  }
+  await saveOrUndo(gid, i, { nonces, marks }, sec(gid, i),
+    "Could not save the approval in this browser, so it was not sent.");
   return doc;
 }
 
@@ -407,20 +438,39 @@ export async function resendTx(ss) {
 
 export async function cancelPayment(ss) {
   if (ss.signed || ss.error) throw new Error("This payment is already signed or closed, so it cannot be cancelled.");
+  // From the click on, no step of this tab approves or signs it (stopped).
+  cancelling.add(ss.id);
+  try { await cancelNow(ss); }
+  catch (e) {
+    if (!e.cancelled) cancelling.delete(ss.id);
+    throw e;
+  }
+  showBanner("ok", "Payment cancelled.");
+}
+async function cancelNow(ss) {
   const gid = state.gid, seat = writer(undefined, gid) ?? localSeats()[0];
   const who = ((state.seats[seat] || {}).name || "a signer") + " (seat " + seat + ")";
   const fields = { error: "Cancelled by " + who + "." };
   const sig = await sigPart(gid, ss.id, "cancel", fields);
-  await sdb.doc(sessionPath(ss, gid)).update({
-    ...fields, status: "cancelled", cancelledAt: Date.now(), ...sig,
-  });
-  try {
+  // The nonces go first, under the lock: a step of any tab that waits for the lock then signs
+  // nothing. When their save fails, the cancel still goes out, and the approval stays here.
+  const unsaved = await withSecrets(async () => {
     for (const [i] of mySeatSecrets(gid)) await burnUnsigned(gid, i, ss);
+  }).then(() => null, (e) => e);
+  try {
+    await sdb.doc(sessionPath(ss, gid)).update({
+      ...fields, status: "cancelled", cancelledAt: Date.now(), ...sig,
+    });
   } catch (e) {
-    throw new Error("The payment is cancelled, but this browser could not change its saved keys, "
-      + "so its approval stays here. " + said(e) + " To end the hold, release it in the payment.");
+    if (unsaved) throw e;
+    throw new Error("This browser no longer signs this payment, but the cancel did not reach the "
+      + "store. Cancel again. " + said(e));
   }
-  showBanner("ok", "Payment cancelled.");
+  if (unsaved) {
+    throw Object.assign(new Error("The payment is cancelled, but this browser could not change its "
+      + "saved keys, so its approval stays here. " + said(unsaved) + " To end the hold, release it "
+      + "in the payment."), { cancelled: true });
+  }
 }
 
 // Cancel burns the nonce of each seat here (S7). The mark says `burned` only when the seat surely
@@ -428,31 +478,23 @@ export async function cancelPayment(ss) {
 // burn before the share goes out), the open payment shows no share of the seat, and its approval
 // shows the commitments of this nonce, so no restored copy of the seat elsewhere approved for it.
 // The approvals and shares of the drawer belong to the open payment only, so another payment
-// never matches.
-function burnUnsigned(gid, i, ss) {
-  return withSecrets(async () => {
-    const s = sec(gid, i), kept = (s?.nonces || {})[ss.id];
-    if (!kept) return;
-    const nonces = { ...s.nonces };
-    delete nonces[ss.id];
-    const patch = { nonces };
-    if ((s.marks || {})[ss.id] && unsignedHere(i, kept)) {
-      patch.marks = withMark(s.marks, ss.id, { burned: true });
-    }
-    await saveOrUndo(gid, i, patch, s);
-  });
+// never matches. A made share that did not go out goes too. It runs under the lock of the secrets.
+async function burnUnsigned(gid, i, ss) {
+  const s = sec(gid, i);
+  if (!approvalKept(s, ss.id)) return;
+  const nonces = { ...s.nonces }, unsent = { ...s.unsent };
+  delete nonces[ss.id];
+  delete unsent[ss.id];
+  const patch = { nonces, unsent };
+  if (surelyUnsigned(s, i, ss.id)) patch.marks = withMark(s.marks, ss.id, { burned: true });
+  await saveOrUndo(gid, i, patch, s);
+}
+function surelyUnsigned(s, i, sid) {
+  const kept = (s.nonces || {})[sid];
+  return !!kept && !!(s.marks || {})[sid] && unsignedHere(i, kept);
 }
 const unsignedHere = (i, nonce) => !state.shares[i]
   && S(state.commits[i]?.commitments) === S(nonce.commitments);
-
-// Saves `patch` for seat i. When the save fails, memory gets the old values back, and the step
-// fails: a change that only this tab knows is no change.
-async function saveOrUndo(gid, i, patch, s) {
-  const before = Object.fromEntries(Object.keys(patch).map((k) => [k, s[k]]));
-  if (await putSec(gid, i, patch)) return;
-  await putSec(gid, i, before);
-  throw new Error("This browser could not save the change of seat " + i + ".");
-}
 
 export async function finalizeTx(ss) {
   const gid = state.gid, ref = sdb.doc(sessionPath(ss, gid));

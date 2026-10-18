@@ -21,6 +21,11 @@ const stub = () => new Proxy(function () {}, {
   apply: () => stub(), construct: () => stub(), set: () => true, has: () => true,
 });
 const storage = new Map();
+// The listeners of the page on window, so that a test can fire a real storage event.
+const windowOn = {};
+const onWindow = (type, fn) => { (windowOn[type] ||= []).push(fn); };
+const storageEvent = (key) =>
+  Promise.all((windowOn.storage || []).map((fn) => fn({ key, newValue: storage.get(key) })));
 Object.assign(globalThis, {
   Node: class {}, document: stub(), history: { replaceState() {} }, requestAnimationFrame: () => 0,
   matchMedia: () => ({ matches: false }),
@@ -30,7 +35,9 @@ Object.assign(globalThis, {
     setItem: (k, v) => { storage.set(k, String(v)); }, removeItem: (k) => { storage.delete(k); },
   },
   // The engine takes its random numbers from window.crypto in a page.
-  window: new Proxy(stub(), { get: (t, k) => (k === "crypto" ? globalThis.crypto : t[k]) }),
+  window: new Proxy(stub(), {
+    get: (t, k) => ({ crypto: globalThis.crypto, addEventListener: onWindow })[k] ?? t[k],
+  }),
 });
 
 const t = await loadPage();
@@ -310,7 +317,7 @@ const sealed = (gid, rel, seat, fields, key, names = ["by", "sig"]) =>
     t.setChain({ gid, url: "https://lwd.test", bal: { spendable: 1e8, pending: 0, height: 4500000 },
       balAt: Date.now(), received: [], sent: new Set(),
       cw: { createSpend: async () => JSON.stringify(m5Spend), free() {} } });
-    t.setZ({ ...fakeZ, latestHeight: async () => 4500001,
+    const z5 = { ...fakeZ, latestHeight: async () => 4500001,
       inspect: () => JSON.stringify({ sighash: "aa", txid: "tm5", tx_version: "V6", spends: [],
         lines: [], fee: 10000, standard_fee: 10000, expiry_height: 4503456 }),
       signPackage: () => { engine.push("package"); return "PKG5"; },
@@ -322,7 +329,8 @@ const sealed = (gid, rel, seat, fields, key, names = ["by", "sig"]) =>
       signAggregate: () => {
         engine.push("combine");
         return JSON.stringify({ signed_pczt: "SIG5", signatures: [] });
-      } });
+      } };
+    t.setZ(z5);
     t.closeSession();
     const listeners = subs.length;
     const approveAs = async (sid, seats) => {
@@ -379,6 +387,7 @@ const sealed = (gid, rel, seat, fields, key, names = ["by", "sig"]) =>
     assert.deepEqual(engine, ["package"], "no share while the other tab holds the lock");
     const kept = JSON.parse(storage.get("zf-secrets"));
     delete kept[gid + ":1"].nonces[m6.id];
+    kept[gid + ":3"] = null;   // a damaged entry: the check of the other seats still holds
     storage.set("zf-secrets", JSON.stringify(kept));
     unlock();
     await otherTab;
@@ -387,6 +396,7 @@ const sealed = (gid, rel, seat, fields, key, names = ["by", "sig"]) =>
     assert.equal(data.has(path6 + "/shares/1"), false, "the used nonce signs nothing");
     assert.deepEqual(engine, ["package", "share 2"]);
     assert.equal((t.sec(gid, 1).nonces || {})[m6.id], undefined, "and leaves this tab too");
+    assert.equal(!!t.sec(gid, 3)?.keyPackage, true, "the damaged entry leaves seat 3 as it is");
     await drop(path6);
     // A seat whose share the payment holds already does not sign again.
     const m7 = { id: "m7", pczt: "M5P", package: "PKG7", signers: [1], status: "signing", by: 1,
@@ -461,9 +471,10 @@ const sealed = (gid, rel, seat, fields, key, names = ["by", "sig"]) =>
     await waitFor("the shares of m9", () => data.has(path9 + "/shares/2"));
     t.setDb({ doc: docRef, collection: colRef });
     await drop(path9);
-    // A save that fails keeps its change in this tab, and a locked step keeps it too: of the stored
-    // record, only the nonces and marks come in. A wallet key that only storage holds (a new
-    // wallet of another tab) stays in storage, and one from the save of another tab comes in.
+    // A save that fails keeps its change in this tab, and a locked step keeps it too: of that
+    // seat, only the nonces and marks (also the Solana ones) come from storage. Every other stored
+    // seat comes in whole, so a newer save of another tab stays. A wallet key that only storage
+    // holds (a new wallet of another tab) stays, and one from the save of another tab comes in.
     const mx = await propose("mx", 4);
     t.closeSession();
     const pathX = `groups/${gid}/sessions/${mx.id}`;
@@ -473,25 +484,65 @@ const sealed = (gid, rel, seat, fields, key, names = ["by", "sig"]) =>
     storage.delete("zf-vault");
     const storedX = JSON.parse(storage.get("zf-secrets")), seat3 = storedX[gid + ":3"];
     seat3.marks = { ...seat3.marks, m5x: { seen: 1 } };   // a mark that another tab saved
+    const sol2 = t.sec(gid, 2).sol, sol3 = t.sec(gid, 3).sol;
+    const sol2Used = { ...sol2, used: { d2: "s" } };
+    storedX[gid + ":2"] = { ...storedX[gid + ":2"], m5kp: "KPY", sol: sol2Used };   // a key share
+    seat3.sol = { ...sol3, used: { d3: "s" } };   // Solana digests that another tab used
+    storedX[gid + ":9"] = { m5new: 1 };   // a new seat of another tab
     storage.set("zf-secrets", JSON.stringify(storedX));
     const keysX = JSON.parse(storage.get("zf-keys"));
     storage.set("zf-keys", JSON.stringify({ ...keysX, m5other: "k" }));
+    const chatsX = storage.get("zf-chats"), cidX = "cc".repeat(10), oldChats = JSON.parse(chatsX);
+    const roomX = { key: "k".repeat(43), member: "dd".repeat(10), at: 1 };
+    const chatsWith = { ...oldChats, list: { ...oldChats.list, [cidX]: roomX } };
+    storage.set("zf-chats", JSON.stringify(chatsWith));   // a chat of another tab
+    const cidM = "ab".repeat(10);
+    t.chats.list[cidM] = roomX;   // a chat that only this tab holds
     notify();
     await waitFor("the shares of mx", () => data.has(pathX + "/shares/2"));
     await sleep(300);
     assert.equal(t.sec(gid, 3).m5Flag, 2, "the unsaved change stays in this tab");
     assert.equal(JSON.parse(storage.get("zf-secrets"))[gid + ":3"].m5Flag, 2, "the burn saves it");
     assert.deepEqual(t.sec(gid, 3).marks.m5x, { seen: 1 }, "a mark of another tab comes in");
+    const storedAfter = JSON.parse(storage.get("zf-secrets"));
+    assert.deepEqual([t.sec(gid, 2).m5kp, storedAfter[gid + ":2"].m5kp, t.sec(gid, 2).sol.used],
+      ["KPY", "KPY", { d2: "s" }], "a newer save of another tab stays");
+    assert.deepEqual([t.sec(gid, 3).sol.used, t.sec(gid, 9), storedAfter[gid + ":9"]],
+      [{ d3: "s" }, { m5new: 1 }, { m5new: 1 }], "the Solana nonces and a new seat come in");
     assert.equal(JSON.parse(storage.get("zf-keys")).m5other, "k", "the key of the other tab stays");
-    await t.takeFromTab("zf-keys", JSON.stringify({ m5tab: "k" }));
+    assert.deepEqual([t.chats.list[cidX], t.chats.list[cidM]], [roomX, roomX], "both chats stay");
+    delete t.chats.list[cidM];
+    storage.set("zf-keys", JSON.stringify({ ...JSON.parse(storage.get("zf-keys")), m5tab: "k" }));
+    await storageEvent("zf-keys");
     assert.deepEqual([t.gkeys.m5tab, t.gkeys[gid] === keysX[gid]], ["k", true], "both keep");
     delete t.gkeys.m5other; delete t.gkeys.m5tab;
     const { m5x: _m5x, ...marks3 } = t.sec(gid, 3).marks;
-    await t.putSec(gid, 3, { m5Flag: undefined, marks: marks3 });
+    delete t.secrets[gid + ":9"];
+    await t.putSec(gid, 2, { m5kp: undefined, sol: sol2 });
+    await t.putSec(gid, 3, { m5Flag: undefined, marks: marks3, sol: sol3 });
+    // A storage event of another tab: the seats of its save come in, and a seat that only this
+    // tab holds stays, because it may be the last copy.
+    t.secrets["zz:9"] = { m5only: 1 };
+    const fromTab = JSON.parse(storage.get("zf-secrets"));
+    fromTab[gid + ":2"] = { ...fromTab[gid + ":2"], m5ev: 1 };
+    storage.set("zf-secrets", JSON.stringify(fromTab));
+    const unholdEv = holdLock();
+    const eventDone = storageEvent("zf-secrets");
+    await sleep(100);
+    assert.equal(t.sec(gid, 2).m5ev, undefined, "the event waits for a locked step");
+    await unholdEv();
+    await eventDone;
+    assert.deepEqual([t.secrets["zz:9"], t.sec(gid, 2).m5ev], [{ m5only: 1 }, 1], "both stay");
+    delete t.secrets["zz:9"];
+    await t.putSec(gid, 2, { m5ev: undefined });
+    // The chats come in as the other tab saved them: a chat that it left goes here too.
+    storage.set("zf-chats", chatsX);
+    await storageEvent("zf-chats");
+    assert.equal(t.chats.list[cidX], undefined, "a chat that the other tab left goes");
     await drop(pathX);
     // A payment that changed after an approval fails for everyone, and the nonce goes. With the
     // drawer on another payment, the banner names the payment that changed.
-    const mc = await propose("mc", 4);
+    const mc = await propose("mc\n" + "x".repeat(60), 4);
     t.closeSession();
     const pathC = `groups/${gid}/sessions/${mc.id}`;
     await approveAs(mc.id, [1, 2]);
@@ -503,8 +554,8 @@ const sealed = (gid, rel, seat, fields, key, names = ["by", "sig"]) =>
     assert.equal(data.get(pathC).error, "The payment changed after a signer approved it.");
     assert.equal((t.sec(gid, 1).nonces || {})[mc.id], undefined, "the nonce of seat 1 goes");
     assert.equal(data.has(pathC + "/shares/1"), false, "seat 1 signs nothing");
-    assert.equal(t.banner.text,
-      "mc: This payment changed after you approved it, so this browser did not sign it.");
+    assert.equal(t.banner.text, "\"mc " + "x".repeat(37)
+      + "\": This payment changed after you approved it, so this browser did not sign it.");
     t.closeSession();
     await drop(pathC);
     // With its drawer open, the payment needs no name.
@@ -520,6 +571,145 @@ const sealed = (gid, rel, seat, fields, key, names = ["by", "sig"]) =>
       "This payment changed after you approved it, so this browser did not sign it.");
     t.closeSession();
     await drop(pathD);
+    // The drawer at the time of the failure counts: here it moves to another payment while the
+    // step waits for the lock.
+    const mf = await propose("mf", 4);
+    const pathF = `groups/${gid}/sessions/${mf.id}`;
+    await approveAs(mf.id, [1, 2]);
+    await t.putSec(gid, 1, { nonces: { ...t.sec(gid, 1).nonces, [mf.id]: { sighash: "bb" } } });
+    const unholdF = holdLock();
+    notify();
+    await waitFor("the share step waits", () => t.busy.has("share:" + mf.id + ":1"));
+    t.openSession(third.id);
+    await unholdF();
+    await waitFor("the error of mf", () => !!data.get(pathF)?.error);
+    await sleep(300);
+    assert.equal(t.banner.text,
+      "\"mf\": This payment changed after you approved it, so this browser did not sign it.");
+    t.closeSession();
+    await drop(pathF);
+    const pathOf = (ss) => `groups/${gid}/sessions/${ss.id}`;
+    const liveOf = (ss) => t.state.sessions.find((x) => x.id === ss.id);
+    // The person cancels while the share steps wait for the lock: they sign nothing.
+    const mk = await propose("mk", 4);
+    t.closeSession();
+    await approveAs(mk.id, [1, 2]);
+    engine.length = 0;
+    const unholdK = holdLock();
+    notify();
+    await waitFor("the share steps wait", () => t.busy.has("share:" + mk.id + ":1"));
+    const cancelK = t.cancelPayment(liveOf(mk));
+    await unholdK();
+    await cancelK;
+    await sleep(300);
+    assert.deepEqual([data.get(pathOf(mk)).status, engine.filter((x) => x.startsWith("share"))],
+      ["cancelled", []], "no share after the cancel");
+    await drop(pathOf(mk));
+    // An approval that waits for the lock when the person cancels is refused.
+    const mn = await propose("mn", 4);
+    t.closeSession();
+    const unholdN = holdLock();
+    const approvingN = t.approve(liveOf(mn), 3).then(() => "approved", (e) => e.message);
+    await sleep(100);
+    const cancelN = t.cancelPayment(liveOf(mn));
+    await unholdN();
+    await cancelN;
+    assert.match(await approvingN, /cancelled or failed, so it was not approved/);
+    assert.equal(data.has(pathOf(mn) + "/commits/3"), false, "no commitment goes out");
+    await drop(pathOf(mn));
+    // A share whose write fails stays kept with the burn, and the next try sends it. It is signed
+    // once.
+    let failShare = true;
+    t.setDb({ doc: (p) => p.endsWith("/shares/1") && failShare
+      ? { ...docRef(p), set: async () => { failShare = false; throw new Error("not connected"); } }
+      : docRef(p), collection: colRef });
+    engine.length = 0;
+    const mr = await propose("mr", 4);
+    t.closeSession();
+    await approveAs(mr.id, [1, 2]);
+    notify();
+    await waitFor("the share of seat 1 after a retry", () => data.has(pathOf(mr) + "/shares/1"),
+      10000);
+    t.setDb({ doc: docRef, collection: colRef });
+    assert.deepEqual([failShare, engine.filter((x) => x === "share 1").length], [false, 1]);
+    await waitFor("the kept copy goes", () => !(t.sec(gid, 1).unsent || {})[mr.id]);
+    await drop(pathOf(mr));
+    // A payment that changed: when the write of its failure fails, the next try writes it.
+    let failUpdate = true;
+    t.setDb({ doc: (p) => ({ ...docRef(p), update: async (v) => {
+      if (!v.error || !failUpdate) return docRef(p).update(v);
+      failUpdate = false;
+      throw new Error("not connected");
+    } }), collection: colRef });
+    const mq = await propose("mq", 4);
+    t.closeSession();
+    await approveAs(mq.id, [1, 2]);
+    await t.putSec(gid, 1, { nonces: { ...t.sec(gid, 1).nonces, [mq.id]: { sighash: "bb" } } });
+    notify();
+    await waitFor("the failure after a retry", () => !!data.get(pathOf(mq))?.error, 10000);
+    t.setDb({ doc: docRef, collection: colRef });
+    assert.deepEqual([failUpdate, data.get(pathOf(mq)).error],
+      [false, "The payment changed after a signer approved it."]);
+    await drop(pathOf(mq));
+    // The save of the burn fails: no share goes out, the nonce stays, and the next try signs.
+    const mb = await propose("mb", 4);
+    t.closeSession();
+    await approveAs(mb.id, [1, 2]);
+    storage.set("zf-vault", "{}");   // every plain save refuses
+    notify();
+    await waitFor("the failed burn", () => /Could not save the used nonce/.test(t.banner?.text));
+    assert.deepEqual([data.has(pathOf(mb) + "/shares/1"), !!(t.sec(gid, 1).nonces || {})[mb.id]],
+      [false, true], "no share, and the nonce stays");
+    storage.delete("zf-vault");
+    notify();
+    await waitFor("the shares of mb", () => data.has(pathOf(mb) + "/shares/1"), 10000);
+    await drop(pathOf(mb));
+    // The save of an approval fails: no commitment goes out, and memory gets its old state back,
+    // so the next click approves.
+    const ma = await propose("ma", 4);
+    t.closeSession();
+    storage.set("zf-vault", "{}");
+    assert.match(await t.approve(liveOf(ma), 3).then(() => "approved", (e) => e.message),
+      /Could not save the approval/);
+    storage.delete("zf-vault");
+    const seatA = () => [(t.sec(gid, 3).nonces || {})[ma.id], (t.sec(gid, 3).marks || {})[ma.id]];
+    assert.deepEqual([data.has(pathOf(ma) + "/commits/3"), ...seatA()],
+      [false, undefined, undefined], "nothing went out, and memory is as before");
+    await t.approve(liveOf(ma), 3);
+    assert.equal(data.has(pathOf(ma) + "/commits/3"), true, "the next click approves");
+    const { [ma.id]: _na, ...noncesA } = t.sec(gid, 3).nonces;
+    const { [ma.id]: _ma, ...marksA } = t.sec(gid, 3).marks;
+    await t.putSec(gid, 3, { nonces: noncesA, marks: marksA });
+    await drop(pathOf(ma));
+    // A locked step with a damaged or a missing record keeps this tab's copy, and its save writes
+    // that copy again.
+    for (const bad of ["not json", null]) {
+      const mh = await propose("mh", 4);
+      t.closeSession();
+      await approveAs(mh.id, [1]);
+      if (bad === null) storage.delete("zf-secrets");
+      else storage.set("zf-secrets", bad);
+      await t.cancelPayment(liveOf(mh));
+      const back = JSON.parse(storage.get("zf-secrets"))[gid + ":1"];
+      assert.deepEqual([!!t.sec(gid, 1)?.keyPackage, !!back?.keyPackage], [true, true],
+        String(bad));
+      await drop(pathOf(mh));
+    }
+    // The package and the combine steps name their payment too.
+    const { signPackage, signAggregate } = z5;
+    z5.signPackage = () => { throw new Error("no package"); };
+    const mg = await propose("mg", 4);
+    t.openSession(third.id);
+    await approveAs(mg.id, [1, 2]);
+    notify();
+    await waitFor("the package error", () => t.banner?.text === "\"mg\": no package");
+    Object.assign(z5, { signPackage, signAggregate: () => { throw new Error("no signature"); } });
+    notify();
+    await waitFor("the combine error", () => t.banner?.text === "\"mg\": no signature", 10000);
+    z5.signAggregate = signAggregate;
+    assert.equal(data.get(pathOf(mg)).error, "no signature");
+    t.closeSession();
+    await drop(pathOf(mg));
     // A sealed store (the passkey lock): a nonce that the sealed record lacks signs nothing and
     // says so in the log. A write of this tab during the decrypt is kept.
     engine.length = 0;
@@ -535,10 +725,15 @@ const sealed = (gid, rel, seat, fields, key, names = ["by", "sig"]) =>
     const sealed = await openVault(vkey, JSON.parse(storage.get("zf-vault")));
     delete sealed.secrets[gid + ":1"].nonces[mv.id];
     sealed.keys = { ...sealed.keys, m5sealed: "k" };   // a new wallet of another tab
+    sealed.secrets[gid + ":2"].m5kp = "KPY";   // a newer save of another tab
+    const cidV = "ee".repeat(10), roomV = { key: "v".repeat(43), member: "dd".repeat(10), at: 1 };
+    sealed.chats = { ...sealed.chats, list: { ...sealed.chats?.list, [cidV]: roomV } };
     storage.set("zf-vault", JSON.stringify(await seal(vkey, vrec, sealed)));
     const keysBefore = t.gkeys;
     t.gkeys = { ...keysBefore, m5probe: "kept" };   // only this tab knows it
-    t.sec(gid, 3).m5Flag = 3;   // a change that this tab did not save
+    t.setLocked({});   // the save of the next change does not happen
+    assert.equal(await t.putSec(gid, 3, { m5Flag: 3 }), false);
+    t.setLocked(null);
     notify();
     await waitFor("the share of seat 2 (sealed)", () => data.has(pathV + "/shares/2"));
     await sleep(300);
@@ -547,6 +742,10 @@ const sealed = (gid, rel, seat, fields, key, names = ["by", "sig"]) =>
     assert.ok(t.state.log.some(said), "the log says why");
     assert.deepEqual([t.gkeys.m5probe, t.gkeys.m5sealed], ["kept", "k"], "both wallet keys");
     assert.equal(t.sec(gid, 3).m5Flag, 3, "the change that this tab did not save stays");
+    assert.equal(t.sec(gid, 2).m5kp, "KPY", "a newer save of another tab stays");
+    await t.putSec(gid, 2, { m5kp: undefined });
+    assert.deepEqual(t.chats.list[cidV], roomV, "a chat of another tab comes in");
+    delete t.chats.list[cidV];
     t.gkeys = keysBefore;
     await drop(pathV);
     const mw = await propose("mw", 4);
@@ -568,6 +767,24 @@ const sealed = (gid, rel, seat, fields, key, names = ["by", "sig"]) =>
     assert.equal(t.sec(gid, 3).m5Flag, 1, "a write during the decrypt stays in memory");
     const after = await openVault(vkey, JSON.parse(storage.get("zf-vault")));
     assert.equal(after.secrets[gid + ":3"].m5Flag, 1, "and in the sealed record");
+    // A storage event of another tab takes what storage holds now, after the writes of this tab: a
+    // burn of this tab during its decrypt stays, in memory and in the sealed record.
+    await t.putSec(gid, 3, { nonces: { ...t.sec(gid, 3).nonces, m5e: { sighash: "aa" } } });
+    let burnedE = false;
+    subtle.decrypt = (...a) => {
+      if (!burnedE) {
+        burnedE = true;
+        const { m5e: _e, ...rest } = t.sec(gid, 3).nonces;
+        t.putSec(gid, 3, { nonces: rest });
+      }
+      return decrypt(...a);
+    };
+    await storageEvent("zf-vault");
+    delete subtle.decrypt;
+    const afterE = await openVault(vkey, JSON.parse(storage.get("zf-vault")));
+    const nonceE = (x) => (x.nonces || {}).m5e;
+    assert.deepEqual([burnedE, nonceE(t.sec(gid, 3)), nonceE(afterE.secrets[gid + ":3"])],
+      [true, undefined, undefined], "the burn stays");
     await drop(pathW);
     // A sealed record that does not open stops an approval, with a message that says what to do.
     const mz = await propose("mz", 4);
@@ -3005,6 +3222,11 @@ const sealed = (gid, rel, seat, fields, key, names = ["by", "sig"]) =>
   t.setZ(Zp);
   assert.equal(storage.get("zf-vault"), otherTab, "nothing wrote over the account of the other tab");
   assert.equal(t.personal.seed, seed, "this tab took the account of the other tab");
+  // A locked step keeps an account that a record of another tab holds and this tab does not have
+  // yet, so it never seals "no account" over one.
+  t.adoptPersonal(null);
+  await t.takeStored();
+  assert.equal(t.personal?.seed, seed, "a locked step takes the account of the record");
   await synced();
   // A page from before the accounts saves the record with no `personal` field and drops the
   // account. This page keeps it in memory and seals it again. A null means that a page removed it.
@@ -3406,7 +3628,24 @@ const sealed = (gid, rel, seat, fields, key, names = ["by", "sig"]) =>
     idbMap.set("personal:key", "x");
     idbMap.set("personal:rec", "y");
     globalThis.zigs = { use: async () => null };
+    // Another tab saves after this page loaded: the unlock opens the record that storage holds now.
+    const rec0 = JSON.parse(storage.get("zf-vault")), cidU = "fa".repeat(10);
+    const newer = await openVault(prfKey, rec0);
+    const roomU = { key: "u".repeat(43), member: "dd".repeat(10), at: 1 };
+    newer.chats = { profile: null, list: { [cidU]: roomU } };
+    storage.set("zf-vault", JSON.stringify(await seal(prfKey, rec0, newer)));
+    // And a save of another tab during the unlock comes in after it.
+    const cidD = "fb".repeat(10), roomD = { ...roomU, key: "d".repeat(43) };
+    const during = JSON.stringify(await seal(prfKey, rec0,
+      { ...newer, chats: { profile: null, list: { [cidU]: roomU, [cidD]: roomD } } }));
+    const subtleU = globalThis.crypto.subtle, decryptU = subtleU.decrypt.bind(subtleU);
+    subtleU.decrypt = (...a) => { storage.set("zf-vault", during); return decryptU(...a); };
     await t.unlockVault();
+    delete subtleU.decrypt;
+    assert.deepEqual(t.chats.list[cidU], roomU, "the unlock opens the record of now");
+    await waitFor("the save during the unlock", () => !!t.chats.list[cidD]);
+    delete t.chats.list[cidU];
+    delete t.chats.list[cidD];
     await sleep(30);
     assert.deepEqual([t.personal, /bad index/.test(t.personalError), copy()], [null, true, []]);
     t.setVault(null);
