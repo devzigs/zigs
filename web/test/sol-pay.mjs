@@ -30,7 +30,7 @@ import { feeOf } from "../sol/fee.js";
 import { putSol } from "../sol/secrets.js";
 import { solText, syncSolana } from "../sol/session.js";
 import { deviceSpend } from "../sol/spend.js";
-import { LINK_TEXT, PROVER_TEXT } from "../sol/payview.js";
+import { LINK_TEXT, PROVER_TEXT, SHOWN, approveSeats } from "../sol/payview.js";
 import {
   heldLamports,
   heldNotes,
@@ -336,6 +336,17 @@ step("a device that read no proposal account reads it again, with no click");
     const card = findAll(view, (n) => n.attrs["data-session"] === id)[0];
     return findAll(card, (n) => String(n.attrs["data-sol"]).startsWith(name)).length;
   };
+  // The S6 count of the proposals that wait for this browser uses approveSeats: it must name the
+  // proposals whose cards show an Approve button, in every state below.
+  const agree = (what) => {
+    const view = solView({ ...c, host: { ...c.host, el: node } }, (fn) => fn, {});
+    const shown = c.sessions.slice(0, SHOWN);
+    const button = (ss) => (n) => String(n.attrs["data-sol"]).startsWith(`approve-${ss.id}-`);
+    const withButton = shown.filter((ss) => findAll(view, button(ss)).length > 0);
+    const counted = shown.filter((ss) => approveSeats(c, ss).length > 0);
+    assert.deepEqual(counted.map((ss) => ss.id), withButton.map((ss) => ss.id), what);
+  };
+  agree("the count and the buttons agree before the read");
   chain.accounts.delete(address);
   delete c.seen[id];
   delete c.snaps[id];
@@ -343,6 +354,7 @@ step("a device that read no proposal account reads it again, with no click");
   await waitFor("a read with no account", () => c.seen[id]?.account === null);
   assert.equal(reviewOf(c, ssOf(id), 2).waiting, true, "a missing account is a wait at first");
   assert.deepEqual([marks("refusal"), marks("approve-")], [0, 0], "no alert and no button");
+  agree("the count and the buttons agree while the account is missing");
   // A click reads the account itself and keeps the time of that read: the re-read goes on, with
   // a pass of the reactor after 5 s also on an idle page. The click comes a while after the read.
   const firstMiss = c.seen[id].missedSince;
@@ -369,6 +381,7 @@ step("a device that read no proposal account reads it again, with no click");
   const since = c.seen[id].missedSince;
   c.seen[id].missedSince = Date.now() - 31_000;
   assert.equal(marks("refusal"), 1, "a long miss shows the refusal");
+  agree("the count and the buttons agree after a long miss");
   c.seen[id].missedSince = since;
   chain.accounts.set(address, stored);
   await waitFor("the account read again", () => reviewOf(c, ssOf(id), 2).ok, 30000);
@@ -376,6 +389,7 @@ step("a device that read no proposal account reads it again, with no click");
   const ahead = (Number(ssOf(id).expiry) + 100) * 1000 - Date.now();
   later(ahead);
   const shown = [marks("expired"), marks("approve-"), marks("refusal"), marks("review-")];
+  agree("the count and the buttons agree after the expiry");
   Date.now = realNow;
   assert.deepEqual(shown, [1, 0, 0, 0], "an expired proposal shows one line and no button");
   assert.ok(marks("approve-") > 0, "control: the buttons before the expiry");

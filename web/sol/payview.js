@@ -26,7 +26,7 @@ import { holdsShare, solOf } from "./secrets.js";
 import { solText } from "./session.js";
 import { heldLamports, heldNotes, isPayment, spentLamports } from "./sessions.js";
 
-const SHOWN = 12;
+export const SHOWN = 12;
 const FAUCET = "https://faucet.solana.com/";
 const TITLES = {
   createNonce: "Create the nonce account for the move",
@@ -549,7 +549,7 @@ function digestOf(c, ss) {
 }
 
 /** The seats of this browser that hold a share, each with what it may do with this proposal. */
-function seatsOf(c, ss) {
+export function seatsOf(c, ss) {
   const digest = digestOf(c, ss);
   return c.host
     .localSeats()
@@ -625,6 +625,18 @@ function resultLine(c, ss) {
 // minutes later (the end waits for the clock margin of execute.js).
 const EXPIRED_TEXT = "This proposal expired, so no seat can approve it. The page closes it soon.";
 const approvable = (ss) => ss.status === "collecting" && !approvalClosed(ss);
+
+/**
+ * The seats of this browser that show an Approve button for `ss` now: the rules of approveRow.
+ * A proposal that expired, or whose review still waits for a read, shows none. The S6 count of
+ * the proposals that wait for this browser uses it, so the count and the buttons agree.
+ */
+export function approveSeats(c, ss) {
+  if (!approvable(ss)) return [];
+  const open = seatsOf(c, ss).filter((s) => s.state === "open");
+  if (!open.length || reviewOf(c, ss, open[0].seat).waiting) return [];
+  return open.map((s) => s.seat);
+}
 
 function expiredLine(c, ss) {
   if (ss.status !== "collecting" || !approvalClosed(ss)) return null;
