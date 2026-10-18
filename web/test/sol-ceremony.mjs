@@ -866,6 +866,21 @@ assert.deepEqual(
   await waitFor("every soldone", () => haveDones(gidR), 30000);
 }
 
+// ── Two copies of one seat: the lease of round 1 lets only one of them publish ──
+{
+  const gidL = await rig.wallet({ name: "Lease" });
+  rig.hook.lease = (p) => !p.endsWith("/soldkg1/2");
+  await addSolana();
+  const started = () => data.has(path(gidL, "soldkg1/1")) && data.has(path(gidL, "soldkg1/3"));
+  await waitFor("seat 1 and 3 start", started, 20000);
+  await sleep(1200);
+  assert.equal(data.has(path(gidL, "soldkg1/2")), false, "the other copy holds the lease");
+  assert.deepEqual(solOf(gidL, 2), {}, "and seat 2 made no Solana secret");
+  rig.hook.lease = () => true;
+  t.refilter();
+  await waitFor("every soldone", () => haveDones(gidL), 30000);
+}
+
 // ── A seat whose Zcash part has not settled does not start ──
 {
   const gid3b = await rig.wallet({ name: "Settle" });

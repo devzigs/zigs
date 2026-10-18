@@ -18,6 +18,8 @@ const randomHex32 = () =>
     b.toString(16).padStart(2, "0"),
   ).join("");
 const boxContext = (gid, from, to) => gid + ":sol:" + from + "->" + to;
+const LEASE_MS = 10000;
+const pause = () => new Promise((ok) => setTimeout(ok, 3000));
 const stopText = (e) =>
   "Solana setup stopped: " +
   String(e?.message ?? e).replace(/\.+$/, "") +
@@ -42,6 +44,7 @@ const numberMoved = (host, gid, i) => {
   return kept !== undefined && kept !== null && !!no && kept !== no;
 };
 const WAITS = [
+  [(i) => "Seat " + i + " waits: open its wallet.", (h, g) => g !== h.state.gid],
   [
     (i) => "Seat " + i + " has no Zcash key share in this browser.",
     (h, g, i) => !h.sec(g, i).keyPackage,
@@ -115,6 +118,12 @@ async function round1(c, i) {
   const { host, W, gid, base } = c,
     g = host.state.g,
     boxPk = host.state.seats[i].boxPk; // read before the first await: another wallet may open
+  // Two copies of one seat (a device and a restored copy) must not both publish round 1: the lease
+  // lets one go first, and the other then finds the document. The pause keeps the reactor from
+  // asking again at once.
+  const ref = host.sdb.doc(base + "/soldkg1/" + i);
+  if (!(await ref.acquire({ holder: randomHex32(), ttlMs: LEASE_MS })).acquired) return pause();
+  if ((await ref.get()).exists) return pause();
   let s = solOf(host, gid, i);
   if (!s.r1secret) {
     const r = J(W.sol_dkg1(i, g.n, g.t));
@@ -133,7 +142,7 @@ async function round1(c, i) {
   const commit = W.sol_commit(gid, i, boxPk, CLUSTER, s.rSol);
   const fields = { package: s.r1package, commit, at: Date.now() };
   const doc = await host.signedDoc(gid, "soldkg1/" + i, i, fields);
-  await host.sdb.doc(base + "/soldkg1/" + i).set(doc);
+  await ref.set(doc);
   host.log("seat " + i + ": Solana round 1 commitment published");
 }
 
