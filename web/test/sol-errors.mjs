@@ -25,19 +25,23 @@ const step = (name) => console.log(`ok  ${name}`);
 
 // What Helius answers: 200, an HTTP status, or "cors" (the browser hides the status).
 let mode = { rpc: 200, indexer: 200 };
-globalThis.fetch = async (input, init) => {
-  const href = String(input instanceof Request ? input.url : input);
-  if (href.startsWith("file:")) {
-    const body = readFileSync(fileURLToPath(href));
-    return new Response(body, { headers: { "content-type": "application/wasm" } });
-  }
-  const url = new URL(href);
+function wasmFile(href) {
+  const body = readFileSync(fileURLToPath(href));
+  return new Response(body, { headers: { "content-type": "application/wasm" } });
+}
+function rpcAnswer(init) {
   const body = init?.body ? JSON.parse(init.body) : null;
-  const status = url.pathname.startsWith("/v1/zolana") ? mode.indexer : mode.rpc;
-  if (status === "cors") throw new TypeError("Failed to fetch");
-  if (status !== 200) return new Response("no", { status });
   const results = { getSlot: 9, getBalance: { context: { slot: 9 }, value: 5 } };
   return Response.json({ jsonrpc: "2.0", id: body?.id, result: results[body?.method] ?? null });
+}
+function helius(url, init) {
+  const status = url.pathname.startsWith("/v1/zolana") ? mode.indexer : mode.rpc;
+  if (status === "cors") throw new TypeError("Failed to fetch");
+  return status === 200 ? rpcAnswer(init) : new Response("no", { status });
+}
+globalThis.fetch = async (input, init) => {
+  const href = String(input instanceof Request ? input.url : input);
+  return href.startsWith("file:") ? wasmFile(href) : helius(new URL(href), init);
 };
 
 const waiting = new Map();
