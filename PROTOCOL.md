@@ -683,7 +683,11 @@ the web, on iPhone and on Mac at the same time.
   | Mainnet | `zcash-mainnet.chainsafe.dev` | `u1` | Real ZEC. Warning and hidden address at 0.5 ZEC |
 
 - **Light-wallet relay.** `/lwd` is behind the password gate. It accepts POST only, and only the
-  methods of `cash.z.wallet.sdk.rpc.CompactTxStreamer`, so it is no open proxy. The Worker adds the
+  five methods of `cash.z.wallet.sdk.rpc.CompactTxStreamer` that the engine calls (`GetLatestBlock`,
+  `GetTreeState`, `GetBlockRange`, `GetTransaction`, `SendTransaction`), so it is no open proxy and
+  the long streams of the service stay closed. A `GetBlockRange` body must be one uncompressed
+  gRPC-web frame of 256 bytes at most, for at most 2,000 blocks (`LWD_MAX_BLOCKS`; the engine
+  asks for 1,000), so no call asks for the whole chain; any other body gets 400. The Worker adds the
   secret header `x-zigs-lwd-key` (secret `LWD_KEY`) and sends no header of the user, so neither the
   password nor a cookie reaches the node. Envoy on the node host (`infra/lwd`) serves the tunnel
   listener only with that key. A second listener, for the devices of the owner's tailnet, has no

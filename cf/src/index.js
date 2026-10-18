@@ -90,9 +90,17 @@ async function assets(req, env, url) {
 
 // The public side of the testnet light-wallet server answers this Worker only: Envoy checks the
 // secret LWD_KEY that the Worker adds (infra/lwd). The page calls /lwd behind the password gate
-// and never holds the key. Only the gRPC methods of the server pass, so the route is no open proxy.
+// and never holds the key. Only the gRPC methods that the engine calls pass (wasm/src/chain.rs),
+// so the route is no open proxy, and long streams such as GetMempoolStream stay closed.
 const LWD_ORIGIN = "https://lwd.zigs.app";
-const LWD_PATH = /^\/lwd(\/cash\.z\.wallet\.sdk\.rpc\.CompactTxStreamer\/[A-Za-z]+)$/;
+const LWD_PATH = /^\/lwd(\/cash\.z\.wallet\.sdk\.rpc\.CompactTxStreamer\/([A-Za-z]+))$/;
+const LWD_METHODS = new Set(["GetLatestBlock", "GetTreeState", "GetBlockRange", "GetTransaction",
+  "SendTransaction"]);
+// One GetBlockRange call asks for at most this many blocks, so no call asks for the whole chain.
+// The engine asks for BATCH (1,000) blocks at a time (wasm/src/chain.rs); the margin of one more
+// batch keeps a later, larger BATCH working. web/test/lwd.mjs checks that the limit stays above.
+const LWD_MAX_BLOCKS = 2_000;
+const LWD_MAX_RANGE_BODY = 256; // bytes; the frame of the engine has 19
 const LWD_REQUEST = ["content-type", "x-grpc-web", "x-user-agent", "grpc-timeout"];
 const LWD_RESPONSE = ["content-type", "grpc-status", "grpc-message"];
 
@@ -109,16 +117,113 @@ async function overLwdLimit(req, env) {
   return !(await env.LWD_PER_IP.limit({ key: ip })).success;
 }
 
-// Both bodies stream: GetBlockRange is a server stream. The redirect stays unfollowed, so the
-// key never goes to another host.
+// A protobuf varint at p of b: [value, next p], or null. The value stays exact up to 2^53, which
+// is far above any height that is allowed.
+function varint(b, p) {
+  let value = 0, scale = 1;
+  for (let i = 0; i < 10 && p < b.length; i++, p++) {
+    value += (b[p] & 0x7f) * scale;
+    if (b[p] < 0x80) return [value, p + 1];
+    scale *= 128;
+  }
+  return null;
+}
+
+// The readers of the protobuf wire types: [value, next p], or null. Groups (3, 4) are refused.
+const WIRE = [
+  varint,
+  (b, p) => (p + 8 <= b.length ? [null, p + 8] : null),
+  (b, p) => {
+    const len = varint(b, p);
+    const end = len && len[1] + len[0];
+    return len && end <= b.length ? [b.subarray(len[1], end), end] : null;
+  },
+  null, null,
+  (b, p) => (p + 4 <= b.length ? [null, p + 4] : null),
+];
+
+// The fields of one protobuf message: field number -> the values in order, or null.
+function fields(b) {
+  const out = new Map();
+  for (let p = 0; p < b.length;) {
+    const tag = varint(b, p);
+    const read = tag && tag[0] >= 8 ? WIRE[tag[0] % 8] : null;
+    const got = read ? read(b, tag[1]) : null;
+    if (!got) return null;
+    const num = Math.floor(tag[0] / 8);
+    out.set(num, [...(out.get(num) ?? []), got[0]]);
+    p = got[1];
+  }
+  return out;
+}
+
+// The height in the BlockID of a BlockRange field: 0 when it is absent (proto3 leaves zeros out),
+// null when the field repeats or does not parse (protobuf would merge a repeat or take the last).
+function heightOf(values) {
+  if (!values) return 0;
+  const one = values.length === 1 && values[0] instanceof Uint8Array;
+  return one ? blockHeight(fields(values[0])) : null;
+}
+
+// The height (field 1) of a parsed BlockID: below 2^32 (the engine uses u32), 0 when absent.
+function blockHeight(id) {
+  if (!id) return null;
+  const h = id.get(1) ?? [0];
+  return h.length === 1 && typeof h[0] === "number" && h[0] < 2 ** 32 ? h[0] : null;
+}
+
+// The number of blocks that a GetBlockRange body asks for, or null when the body is not one
+// uncompressed gRPC-web frame (flag 0) of a BlockRange. lightwalletd also streams a range
+// backwards, so the span counts both ways.
+function rangeSpan(b) {
+  const len = ((b[1] * 256 + b[2]) * 256 + b[3]) * 256 + b[4];
+  const range = b.length >= 5 && b[0] === 0 && len + 5 === b.length ? fields(b.subarray(5)) : null;
+  const start = range && heightOf(range.get(1)), end = range && heightOf(range.get(2));
+  return start === null || end === null ? null : Math.abs(end - start) + 1;
+}
+
+// The whole body of a request when it has at most `max` bytes, else null.
+async function smallBody(req, max) {
+  const parts = [];
+  let size = 0;
+  for (const reader = req.body?.getReader(); reader;) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    size += value.length;
+    if (size > max) {
+      await reader.cancel();
+      return null;
+    }
+    parts.push(value);
+  }
+  const out = new Uint8Array(size);
+  parts.reduce((at, part) => (out.set(part, at), at + part.length), 0);
+  return out;
+}
+
+// The body to send upstream: a GetBlockRange body only when its range is small enough. Other
+// bodies stream as they come. A Response when the call is refused.
+async function lwdBody(req, method) {
+  if (method !== "GetBlockRange") return req.body;
+  const bytes = await smallBody(req, LWD_MAX_RANGE_BODY);
+  const span = bytes && rangeSpan(bytes);
+  if (!span) return new Response("Send one GetBlockRange request.\n", { status: 400 });
+  if (span <= LWD_MAX_BLOCKS) return bytes;
+  return new Response(`A block range has at most ${LWD_MAX_BLOCKS} blocks.\n`, { status: 400 });
+}
+
+// The answer bodies stream: GetBlockRange is a server stream. The redirect stays unfollowed, so
+// the key never goes to another host.
 async function lwd(req, env, url) {
-  const path = LWD_PATH.exec(url.pathname)?.[1];
-  if (!path) return new Response("Not found\n", { status: 404 });
+  const [, path, method] = LWD_PATH.exec(url.pathname) ?? [];
+  if (!LWD_METHODS.has(method)) return new Response("Not found\n", { status: 404 });
   if (req.method !== "POST") return new Response("Use POST.\n", { status: 405 });
   if (await overLwdLimit(req, env)) {
     const text = "Too many light-wallet calls from this network. Wait a minute.\n";
     return new Response(text, { status: 429 });
   }
+  const body = await lwdBody(req, method);
+  if (body instanceof Response) return body;
   if (!env.LWD_KEY) {
     return new Response("The light-wallet server is not set up on this server.\n", { status: 503 });
   }
@@ -127,7 +232,7 @@ async function lwd(req, env, url) {
   let up;
   try {
     up = await fetch(LWD_ORIGIN + path, {
-      method: "POST", headers, body: req.body, redirect: "manual",
+      method: "POST", headers, body, redirect: "manual",
     });
   } catch {
     return new Response("The light-wallet server did not answer.\n", { status: 502 });
