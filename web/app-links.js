@@ -71,8 +71,15 @@ function followChat(cid) {
 }
 export const chatLink = (cid) => location.origin + location.pathname + "#c." + cid + "."
   + chats.list[cid].key;
+// Owner decision D1: the page keeps its password, so every invite text says who gives it. A chat
+// app browser or a private window can delete the browser data, with the key share in it.
+export const PASSWORD_NOTE = "The browser asks for a password before Zigs opens. I send it to you "
+  + "apart from this link.";
+export const BROWSER_NOTE = "Open the link in Safari or Chrome, not in the browser of a chat app "
+  + "and not in a private window: those can delete your key.";
 export const chatMessage = (link) => "I started a private chat with you on Zigs. Open this link: " + link
-  + ". This link is a secret. Do not post it in a public place. About Zigs: https://zigs.app";
+  + ". " + BROWSER_NOTE + " " + PASSWORD_NOTE + " This link is a secret. Do not post it in a public "
+  + "place. About Zigs: https://zigs.app";
 
 // Back, forward and pasted invite links change only the fragment; follow them.
 window.addEventListener("hashchange", () => {

@@ -6,7 +6,7 @@ import { sec } from "./app-keystore.js";
 import {
   allDone, allSeated, keysDiffer, localSeats, seatIds, seatMine, seatStage, STAGE_LABEL,
 } from "./app-seats.js";
-import { inviteLink } from "./app-links.js";
+import { BROWSER_NOTE, inviteLink, PASSWORD_NOTE } from "./app-links.js";
 import { signedMode } from "./app-filter.js";
 import { canWrite } from "./app-groups.js";
 import { act, avatar, copyBtn, el, guard, nameField, seatLabel, secretQr } from "./app-dom.js";
@@ -77,6 +77,10 @@ const confirmButton = (todo, no) => el("div", {}, el("button", {
 const NOT_ZIP2005 = "This wallet is not built to ZIP 2005. Funds cannot be recovered if quantum "
   + "computers break today's keys. Do you want to take a seat?";
 
+// The joiner passed the password already. A chat app browser or a private window can still lose
+// the key share, so the card says where to open the link before the seat is taken.
+const OPEN_HERE = "If this page is in the browser of a chat app or in a private window, open the "
+  + "link in Safari or Chrome first: those can delete your key share.";
 // A wallet with a Solana part has two key ceremonies, one after the other.
 const BOTH_OPEN = "Every signer keeps this wallet open until the Zcash and the Solana parts are "
   + "ready.";
@@ -98,6 +102,7 @@ function joinCard(seat) {
   return el("section", { class: "card card-pad hero-card" },
     el("div", { style: "display:grid;gap:4px" }, el("h2", {}, "Join " + state.g.name),
       el("p", { class: "small muted" }, joinText()),
+      el("p", { class: "small muted" }, OPEN_HERE),
       solPlanned() ? el("p", { class: "small muted" }, SOL_DISCLOSURE) : null),
     nameField("seat-name"),
     el("div", {}, take));
@@ -108,10 +113,10 @@ export const inviteMessage = (link) => "I made a shared wallet \"" + state.g.nam
   + (solPlanned() ? "shared wallet for shielded Zcash testnet and Solana Devnet"
     : "private shared wallet for shielded Zcash")
   + ". You are one of " + state.g.n + " signers, and " + state.g.t + " must approve each payment."
-  + "\n\n1. Open this link on your phone or computer: " + link + "\n2. Take a seat.\n3. Keep the "
-  + "page open until the " + (solPlanned() ? "Zcash and the Solana parts are" : "wallet is")
-  + " ready.\n\nThis link is a secret. Do not post it in a public place. About Zigs: "
-  + "https://zigs.app";
+  + "\n\n1. Open this link on your phone or computer: " + link + "\n" + BROWSER_NOTE + "\n2. "
+  + PASSWORD_NOTE + "\n3. Take a seat.\n4. Keep the page open until the "
+  + (solPlanned() ? "Zcash and the Solana parts are" : "wallet is") + " ready.\n\nThis link is a "
+  + "secret. Do not post it in a public place. About Zigs: https://zigs.app";
 
 function inviteCard(openCount) {
   const link = inviteLink(state.gid), message = inviteMessage(link);
@@ -125,7 +130,9 @@ function inviteCard(openCount) {
       el("span", { class: "badge plain" },
         openCount === 1 ? "1 seat open" : openCount + " seats open")),
     el("p", { class: "small muted" }, "Send this invite link to each signer through a private "
-      + "channel. It contains the wallet secret: anyone who has it can take an open seat."),
+      + "channel. It contains the wallet secret: anyone who has it can take an open seat. The "
+      + "browser of each signer asks for the password of this site before Zigs opens: send it to "
+      + "them apart from the link."),
     el("div", { class: "addr-box" }, el("span", { class: "hex nowrap" }, link),
       copyBtn(link, "Copy link", "btn sm primary"), copyBtn(message, "Copy invite message", "btn sm"),
       share),

@@ -17,6 +17,7 @@ const rig = await loadRig();
 // The page modules need the stub page of the rig, so they load after it.
 const { SOL_DISCLOSURE, solPlanned } = await import("../app-sol.js");
 const { inviteMessage, joinText } = await import("../app-setup.js");
+const { chatMessage } = await import("../app-links.js");
 const { backupWords } = await import("../sol/backup.js");
 const { createDialog } = await import("../app-shell.js");
 const { ui } = await import("../app-state.js");
@@ -81,6 +82,14 @@ assert.match(joinText(), BOTH_OPEN);
 assert.match(inviteMessage(link), /shielded Zcash testnet and Solana Devnet\./);
 assert.match(inviteMessage(link), /until the Zcash and the Solana parts are ready/);
 assert.ok(inviteMessage(link).includes(link), "the invite still carries the link");
+// The password of the site and the browser (S10, owner decision D1), in every invite text.
+const PASSWORD = /The browser asks for a password before Zigs opens\. I send it to you apart/;
+const BROWSER = /Open the link in Safari or Chrome, not in the browser of a chat app and not in a/;
+for (const text of [inviteMessage(link), plain.invite, chatMessage(link)]) {
+  assert.match(text, PASSWORD);
+  assert.match(text, BROWSER);
+}
+assert.match(pageText(), /asks for the password of this site before Zigs opens: send it to them/);
 assert.match(SOL_DISCLOSURE, /public program address.*fee address.*Helius.*no audit/);
 // The preload: the module loads at the start of setup, and no Solana watch opens before the
 // people of the wallet confirmed the network.

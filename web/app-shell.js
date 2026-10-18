@@ -155,7 +155,8 @@ function chatJoinCard(cid) {
   return el("form", { class: "card card-pad hero-card", onsubmit: join },
     el("div", { class: "card-head" }, el("h2", {}, "Join a chat")),
     el("p", { class: "small muted" }, "Someone sent you a contact link. A chat holds two people. "
-      + "Your contact sees the name below."),
+      + "Your contact sees the name below. If this page is in the browser of a chat app or in a "
+      + "private window, open the link in Safari or Chrome first: those can delete your chat key."),
     nameField("chat-join-" + cid, "your contact"),
     el("div", { class: "dialog-actions" },
       el("button", { class: "btn", type: "button", disabled: joining,
