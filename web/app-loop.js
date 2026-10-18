@@ -1,5 +1,5 @@
 // Reactor, render loop, focus, layers and page listeners.
-import { busy, log, showBanner, state, ui } from "./app-state.js";
+import { busy, clearBadBanner, log, showBanner, state, ui } from "./app-state.js";
 import { Z } from "./app-engine.js";
 import { chats, lockedVault } from "./app-keystore.js";
 import { curSession, keysDiffer, localSeats } from "./app-seats.js";
@@ -25,13 +25,20 @@ import { receiveDialog, sendDialog } from "./app-send.js";
 // Each browser advances the steps it can do for its own seats. Steps that
 // need a human decision (approving a spend) wait for a click.
 const RETRY_MS = 3000;
+// The text of the bad banner that each step showed. A later success of the same step hides it,
+// unless the banner shows another text by then. ponytail: two steps that fail with the same text
+// share the banner, so the success of one hides it until the next try of the other (3 s).
+const failedWith = new Map();
 export async function once(key, fn) {
   if (busy.has(key)) return; busy.add(key);
   let wait = 0;
-  try { await fn(); } catch (e) {
+  try {
+    await fn();
+    if (failedWith.has(key)) { clearBadBanner(failedWith.get(key)); failedWith.delete(key); }
+  } catch (e) {
     wait = RETRY_MS;
     const text = e && e.message ? e.message : String(e);
-    log("✗ " + key + ": " + text); showBanner("bad", text);
+    log("✗ " + key + ": " + text); showBanner("bad", text); failedWith.set(key, text);
   }
   finally { busy.delete(key); render(); setTimeout(react, wait); }
 }

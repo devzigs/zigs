@@ -2780,6 +2780,33 @@ const sealed = (gid, rel, seat, fields, key, names = ["by", "sig"]) =>
   assert.equal(t.banner.kind, "bad");
   assert.deepEqual(Object.keys(t.secrets).sort(), [A + ":2", A + ":3"],
     "a refused file stores nothing");
+  // A step that failed shows its error until the same step succeeds (S11). The error of another
+  // step stays.
+  const fails = (text) => async () => { throw new Error(text); };
+  await t.once("s11-a", fails("A failed."));
+  assert.equal(t.banner.text, "A failed.");
+  await t.once("s11-a", async () => {});
+  assert.equal(t.banner, null, "the success of the step hides its error");
+  await t.once("s11-a", fails("A failed."));
+  await t.once("s11-b", fails("B failed."));
+  await t.once("s11-a", async () => {});
+  assert.equal(t.banner.text, "B failed.", "the error of another step stays");
+  await t.once("s11-b", async () => {});
+  assert.equal(t.banner, null);
+  await t.once("s11-c", fails("C1."));
+  await t.once("s11-c", fails("C2."));
+  await t.once("s11-c", async () => {});
+  assert.equal(t.banner, null, "the last text of the step counts");
+  await t.once("s11-d", fails("D failed."));
+  await t.once("s11-e", async () => {});
+  assert.equal(t.banner.text, "D failed.", "a step that never failed hides nothing");
+  await t.once("s11-d", async () => {});
+  await t.once("s11-f", fails("F."));
+  await t.once("s11-f", async () => {});
+  await t.once("s11-g", fails("F."));
+  await t.once("s11-f", async () => {});
+  assert.equal(t.banner.text, "F.", "a success forgets the step: it hides nothing later");
+  await t.once("s11-g", async () => {});
 
   // A browser that holds nothing takes the file. The seat counts as backed up only after it fits.
   const quiet = { onSnapshot: () => () => {} };

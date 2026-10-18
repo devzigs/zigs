@@ -29,8 +29,9 @@ export function showBanner(kind, text) {
   clearTimeout(bannerTimer);
   if (kind === "ok") bannerTimer = setTimeout(() => { b.hidden = true; }, 4000);
 }
-export function clearBadBanner() {
-  if (banner && banner.kind === "bad") {
+// Hides a bad banner. With `text`, only while the banner still shows that text.
+export function clearBadBanner(text) {
+  if (banner && banner.kind === "bad" && (text === undefined || banner.text === text)) {
     banner = null;
     document.getElementById("banner").hidden = true;
   }
