@@ -77,7 +77,8 @@ The owner does every write: deploys, payments, faucet claims and name claims.
 5. Prove the faucet: copy the address of a Zigs testnet wallet, then claim one Valar drip into it.
    The drip is 0.125 TAZ, once for each IP address every 24 hours (M2).
 6. Claim a testnet name for the demo payee: one small testnet payment to the ZNS Mint.
-   **[waits for M10]** Open question for the owner: M10 decided "no names for groups while ZNS
+   **[waits for M10]** The name `zigsdemo` in this file is a placeholder: the owner chooses the
+   final name. Open question for the owner: M10 decided "no names for groups while ZNS
    control is 1-of-n" (docs/zns-spike.md 3.3).
    - Option A: the name points to a single-signer testnet address of the owner. The 3:30 step
      then pays that address, not Payee.
@@ -127,7 +128,8 @@ Stage on app.zigs.app. The Solana tab of staging works only after D4 adds stagin
     - Run demo-check again. **[waits for M8]**
     - Confirm the Zcash **Available** balance of Demo A and the three fee balances.
     - Close old proposals. Confirm that no approval hold blocks Send on Demo A.
-    - Type the ZNS name in the Send form of Demo A, and compare the address with the note.
+    - Type the ZNS name (placeholder `zigsdemo.zec`) in the Send form of Demo A, and compare
+      the address with the note.
       Close the form without a proposal. **[waits for M10]**
 19. Keep a phone hotspot as a backup network. Keep a screen recording of a full run.
 
@@ -143,7 +145,7 @@ says Sent (Zcash) or Executed (Solana).
 | 1:15 | L2, L3 | Scan the QR code. Enter the password if the browser asks. Type a name, then click **Take seat**. | 3 of 3 seats taken. | D1, S10 |
 | 1:45 | L1, L2, L3 | Read the safety number aloud. Each person clicks **It matches**. Narrate the progress card: Zcash key, Solana key, fee address. Keep L1 open until every seat shows its Solana key ready (D7). | Both ceremonies run. Each seat shows **Address checked** and its Solana key ready. | **[waits for M3]**, M4 |
 | 3:00 | L1 | Switch to Demo A. Show the Zcash address, the **Available** balance and the Solana tab. Click **Sync Solana**. | Both balances show. | S2 |
-| 3:30 | L1 | Click **Receive**: show the address and the faucet link. Do not use the faucet live. Click **Send**. Type the ZNS name of the demo payee (step 6). Enter 0.01. Click **Propose payment**. | The form shows the address that the name gives. A payment opens with the name and the address. | M2, **[waits for M10]**: paste the utest1 address of Payee instead |
+| 3:30 | L1 | Click **Receive**: show the address and the faucet link. Do not use the faucet live. Click **Send**. Type the ZNS name of the demo payee (placeholder `zigsdemo.zec`, step 6). Enter 0.01. Click **Propose payment**. | The form shows the address that the name gives. A payment opens with the name and the address. | M2, **[waits for M10]**: paste the utest1 address of Payee instead |
 | 4:00 | L2 | Open the payment. Read **What this payment does**. Click **Approve payment**. Keep the payment open. | One approval. With a name, L2 looks it up itself and gets the same address. | **[waits for M5]**, M10 |
 | 4:30 | L1 | Click **Approve payment**. Click **Build proof**. Narrate the privacy model during the proof (about 1 minute). | The proof builds. | **[waits for M5]** |
 | 5:45 | L1 | Click **Send to network**. Click **View in explorer**. | Status Sent. The explorer shows the transaction. | S9 |
