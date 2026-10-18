@@ -129,8 +129,8 @@ const CUSTODY_TEXT =
   "set the fees of the pool and change its other authorities, but not the upgrade key. Read " +
   "from Devnet on 18 October 2026.";
 
-/** Copy for an address (the fee address has its own in payview.js). */
-function copyButton(c, text, mark) {
+/** Copy for an address (the fee address has its own in payview.js). `what` names the value. */
+function copyButton(c, text, mark, what) {
   const copy = async (ev) => {
     const button = ev.currentTarget;
     try {
@@ -140,7 +140,13 @@ function copyButton(c, text, mark) {
       button.textContent = "Select and copy";
     }
   };
-  const attrs = { class: "btn sm", type: "button", "data-sol": mark, onclick: copy };
+  const attrs = {
+    class: "btn sm",
+    type: "button",
+    "data-sol": mark,
+    "aria-label": "Copy the " + what + " address",
+    onclick: copy,
+  };
   return c.host.el("button", attrs, "Copy");
 }
 
@@ -152,16 +158,23 @@ function keyBlock(c, done) {
     ];
   // A payer copies the full shielded address: it has no checksum, so a typed character more or
   // less gives another address that looks right. The program address is copied to compare it.
-  const copyRow = (value, mark) => (value ? el("dd", {}, copyButton(c, value, mark)) : null);
+  // The button sits in the dd of its value, so the label, the value and the button stay together.
+  const copyRow = (name, label, value, mark, what) => [
+    el("dt", {}, label),
+    el(
+      "dd",
+      { class: "row-actions" },
+      el("span", { class: "hex", "data-sol": name }, value ?? "?"),
+      value ? copyButton(c, value, mark, what) : null,
+    ),
+  ];
   const owner = done.pda ? base58(done.pda) : null;
   return el(
     "dl",
     { class: "kv" },
-    row("owner", "Program address of the group (Devnet)", owner ?? "?"),
-    copyRow(owner, "copy-program"),
+    copyRow("owner", "Program address of the group (Devnet)", owner, "copy-program", "program"),
     row("group-key", "Group key", done.groupKey),
-    row("shielded", "Shielded address", done.pdaAddress ?? "?"),
-    copyRow(done.pdaAddress, "copy-shielded"),
+    copyRow("shielded", "Shielded address", done.pdaAddress, "copy-shielded", "shielded"),
     el("dd", { class: "small", "data-sol": "pay-to" }, PAY_TO),
     row("balance-private", "Private balance", c.sync.balance ?? "not synced"),
     row(
