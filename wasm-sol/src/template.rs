@@ -68,8 +68,8 @@ pub const CU_CAP_SHIELD: u32 = 56_877;
 pub const CU_CAP_REGISTER: u32 = 24_048;
 /// Nonce instructions: 300 (P2, two System instructions) times 1.5.
 pub const CU_CAP_SYSTEM: u32 = 450;
-/// `create` of a proposal with one abort authority: 7,832 (SOL-35, ZOLANA.md 6.10) times 1.5.
-pub const CU_CAP_PROPOSE: u32 = 11_748;
+/// `create` of a proposal: the floor below times 1.5.
+pub const CU_CAP_PROPOSE: u32 = 57_093;
 /// `execute` with its `transact`: 151,437 (SOL-35 track main) times 1.5.
 pub const CU_CAP_EXECUTE: u32 = 227_156;
 /// `cancel` and `close_cancelled`: 21,802 (SOL-52) times 1.5.
@@ -85,7 +85,10 @@ pub const CU_FLOOR_REGISTER: u32 = 16_032;
 /// 150, so `Cancel` (`AdvanceNonceAccount` only) has the floor 150.
 pub const CU_FLOOR_CREATE_NONCE: u32 = 300;
 pub const CU_FLOOR_CANCEL: u32 = 150;
-pub const CU_FLOOR_PROPOSE: u32 = 7_832;
+/// `create`: 2,062 plus 1,500 for each bump try of the proposal address and of the owner PDA
+/// (LiteSVM, SOL-52), and up to 2,283 more if someone funded the proposal address. The floor is
+/// 24 tries in all: the chance of more is about 1.5e-6. The landed `create` (7,832, SOL-35) had 4.
+pub const CU_FLOOR_PROPOSE: u32 = 38_062;
 pub const CU_FLOOR_EXECUTE: u32 = 151_437;
 /// `cancel` before the expiry, the largest of 400 random proposals in LiteSVM (SOL-52): 21,802.
 /// It costs up to 4,959 plus 1,500 per bump try of the record address. `close_cancelled`: 569.

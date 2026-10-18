@@ -416,6 +416,32 @@ fn a_create_message_of_a_payment_that_breaks_a_rule_is_refused() {
     assert!(why.violations.iter().any(|v| v.rule == Rule::PrivateTxHash));
 }
 
+#[test]
+fn the_create_message_carries_the_cap_that_covers_24_bump_tries() {
+    let f = payment();
+    let (proposal, message) = propose_of(&f, want_body(&f).0.commitment);
+    let limit = limits(&proposal.intent);
+    assert_eq!((limit.cu_floor, limit.cu_cap), (2_062 + 1_500 * 24, 57_093));
+    assert_eq!(limit.cu_cap, (limit.cu_floor * 3).div_ceil(2));
+    assert_eq!(
+        v1::parse(&message).unwrap().config.compute_units,
+        Some(57_093)
+    );
+    assert_eq!(
+        limits(&f.intent).cu_cap,
+        57_093,
+        "the approval shares the limits"
+    );
+    for (units, rule) in [
+        (11_748, Rule::ComputeUnitsUnderFloor),
+        (57_094, Rule::ComputeUnitsOverCap),
+    ] {
+        let changed = mutate(&message, |msg| msg.config.compute_units = Some(units));
+        let why = approve_message(&changed, &proposal, &device(&f), Signer::Fee).unwrap_err();
+        assert_eq!(why.violations[0].rule, rule);
+    }
+}
+
 // ---- Add SOL and the beta policy -------------------------------------------------------------
 
 fn shield_message(pins: &Pins) -> (Proposal, Vec<u8>) {
