@@ -363,15 +363,44 @@ export async function cancelPayment(ss) {
   await sdb.doc(sessionPath(ss, gid)).update({
     ...fields, status: "cancelled", cancelledAt: Date.now(), ...sig,
   });
-  await withSecrets(async () => {
-    for (const [i, s] of mySeatSecrets(gid)) {
-      const nonces = { ...(s.nonces || {}) };
-      if (!nonces[ss.id]) continue;
-      delete nonces[ss.id];
-      await putSec(gid, i, { nonces });
-    }
-  });
+  try {
+    for (const [i] of mySeatSecrets(gid)) await burnUnsigned(gid, i, ss);
+  } catch (e) {
+    throw new Error("The payment is cancelled, but this browser could not change its saved keys, "
+      + "so its approval stays here. " + said(e) + " To end the hold, release it in the payment.");
+  }
   showBanner("ok", "Payment cancelled.");
+}
+
+// Cancel burns the nonce of each seat here (S7). The mark says `burned` only when the seat surely
+// made no share: under the lock of the secrets storage still holds the nonce (signShare saves its
+// burn before the share goes out), the open payment shows no share of the seat, and its approval
+// shows the commitments of this nonce, so no restored copy of the seat elsewhere approved for it.
+// The approvals and shares of the drawer belong to the open payment only, so another payment
+// never matches.
+function burnUnsigned(gid, i, ss) {
+  return withSecrets(async () => {
+    const s = sec(gid, i), kept = (s?.nonces || {})[ss.id];
+    if (!kept) return;
+    const nonces = { ...s.nonces };
+    delete nonces[ss.id];
+    const patch = { nonces };
+    if ((s.marks || {})[ss.id] && unsignedHere(i, kept)) {
+      patch.marks = withMark(s.marks, ss.id, { burned: true });
+    }
+    await saveOrUndo(gid, i, patch, s);
+  });
+}
+const unsignedHere = (i, nonce) => !state.shares[i]
+  && S(state.commits[i]?.commitments) === S(nonce.commitments);
+
+// Saves `patch` for seat i. When the save fails, memory gets the old values back, and the step
+// fails: a change that only this tab knows is no change.
+async function saveOrUndo(gid, i, patch, s) {
+  const before = Object.fromEntries(Object.keys(patch).map((k) => [k, s[k]]));
+  if (await putSec(gid, i, patch)) return;
+  await putSec(gid, i, before);
+  throw new Error("This browser could not save the change of seat " + i + ".");
 }
 
 export async function finalizeTx(ss) {
@@ -413,7 +442,8 @@ function holdBlocker() {
   // ponytail: the engine does not know about unmined spends and would pick the same notes again.
   if (inFlight().length) return "A payment is waiting for its block. Send again in a minute.";
   return heldApprovals().length ? "A payment that you approved can still go on chain. Send "
-    + "again when a block holds it or it expires." : null;
+    + "again when a block holds it or it expires. After a cancel, open that payment to release "
+    + "it." : null;
 }
 
 function fundsBlocker(bal) {
@@ -638,10 +668,51 @@ function collectMarks(refs) {
 }
 
 function stillHolds(sid, m, c) {
-  if (c.bal.height >= m.tip + 1 + DAY2_BLOCKS + EXPIRY_MARGIN) return false;
+  if (releasedHold(sid) || c.bal.height >= m.tip + 1 + DAY2_BLOCKS + EXPIRY_MARGIN) return false;
   const own = keptPczt(state.gid, sid), v = holdState(own, m.approved, c);
   if (v.state === "done" || v.state === "expired" || v.spent === true) return false;
   return !keptExpired(own, m.approved, c.bal.height);
+}
+
+// The owner's decision D2 (S7). When t = n every seat must sign, so a seat here that burned its
+// nonce without a share ends the hold. Otherwise only a person who checked releases it by hand.
+function releasedHold(sid) {
+  // t and n count only where the seats signed the wallet's shape (version 3, not moved).
+  const g = state.g, all = !!g && signedMode(state.gid) && !g.shapeMoved && g.t === g.n;
+  const marks = mySeatSecrets(state.gid).map(([, s]) => (s.marks || {})[sid]);
+  return marks.some((m) => !!m && (m.released === true || (all && m.burned === true)));
+}
+
+/** The block at which the hold of the approval of session `sid` ends, or null. */
+export function holdEnd(sid) {
+  const m = approvedMarks(state.gid).get(sid);
+  if (!m) return null;
+  const ceiling = m.tip + 1 + DAY2_BLOCKS + EXPIRY_MARGIN, own = keptPczt(state.gid, sid);
+  const ins = own ? inspectPczt(own) : null;
+  const kept = ins && !ins.error && ins.sighash === m.approved;
+  return kept ? Math.min(ceiling, ins.expiry_height + EXPIRY_MARGIN) : ceiling;
+}
+
+/**
+ * Ends the hold of session `sid` by hand (S7). First every seat here that approved it burns its
+ * nonce, then the marks say `released`: a release never sits next to a live nonce, also when a
+ * save fails halfway. So this browser never signs that payment after Send opens again.
+ */
+export function releaseHold(sid) {
+  const gid = state.gid;
+  return withSecrets(async () => {
+    const seats = mySeatSecrets(gid).filter(([, s]) => (s.marks || {})[sid]).map(([i]) => i);
+    for (const i of seats) {
+      const s = sec(gid, i), nonces = { ...(s.nonces || {}) };
+      if (!nonces[sid]) continue;
+      delete nonces[sid];
+      await saveOrUndo(gid, i, { nonces }, s);
+    }
+    for (const i of seats) {
+      const s = sec(gid, i);
+      await saveOrUndo(gid, i, { marks: withMark(s.marks, sid, { released: true }) }, s);
+    }
+  });
 }
 
 // What the engine says of the approved transaction alone, without any session document.

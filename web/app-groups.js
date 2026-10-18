@@ -244,7 +244,7 @@ export function openSession(sid) {
 }
 export function closeSession() {
   for (const u of unsubSession) u();
-  unsubSession = []; state.sid = null;
+  unsubSession = []; state.sid = null; ui.release = null;
   state.commits = {}; state.shares = {}; raw.commits = {}; raw.shares = {};
 }
 

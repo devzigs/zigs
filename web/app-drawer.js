@@ -1,10 +1,11 @@
 // The payment drawer.
 import { finite, fmtInt } from "./util.js";
-import { busy, log, state } from "./app-state.js";
-import { about, elapsed, fmtZec, short, when, zecText } from "./app-kit.js";
+import { busy, log, showBanner, state, ui } from "./app-state.js";
+import { about, elapsed, fmtZec, J, short, when, zecText } from "./app-kit.js";
 import { sec } from "./app-keystore.js";
 import { localSeats, seatIds, signersOf } from "./app-seats.js";
-import { curChain, curNet, inFlight } from "./app-chain.js";
+import { curChain, curNet, inFlight, netName } from "./app-chain.js";
+import { Z } from "./app-engine.js";
 import { canWriteAs, mayAct } from "./app-filter.js";
 import {
   act, addrGroups, avatar, closeBtn, copyBtn, el, groupName, guard, isPayee, leavesOf, memoRow,
@@ -12,13 +13,14 @@ import {
 } from "./app-dom.js";
 import { seatCheck } from "./app-dkg.js";
 import {
-  approve, broadcastTx, cancelPayment, ended, expired, expiryAt, expiryOf, finalizeTx, inspectOf,
-  landed,
+  approve, broadcastTx, cancelPayment, ended, expired, expiryAt, expiryOf, finalizeTx,
+  heldApprovals, holdEnd, inspectOf, landed, releaseHold,
   approvalChanged, noApproval, priorityTimes, proofStalled, proposeAgain, recipientCheck, resendTx,
   signingLost, signingSeen,
   sinceOf, txidOf, verdict,
 } from "./app-payments.js";
 import { discussion } from "./app-thread.js";
+import { render } from "./app-loop.js";
 
 // The expiry of an open payment, or why an expired one ends here. The engine counts from the
 // last sync, so the time since that sync comes off. A height from saved state gives no time.
@@ -210,6 +212,41 @@ const changedNote = (ss) => approvalChanged(ss) ? el("div", { class: "callout ba
   "The proposal changed after a seat of this browser approved it. The details below come from the "
   + "changed proposal, not from what you approved.") : null;
 
+// After a cancel or a failure, the approval of this browser can still hold Send (ZEC-13). The
+// person can release it by hand, after a check and a second click (S7, the owner's decision D2).
+function holdCard(ss) {
+  if (!ss.error || !heldApprovals().includes(ss.id)) return null;
+  const sure = ui.release === ss.id, end = holdEnd(ss.id);
+  const set = (v) => () => { ui.release = v; ui.releaseAt = Date.now(); render(); };
+  // A double click must not reach the second step: it counts only 400 ms after the first.
+  const release = act(async () => {
+    if (Date.now() - (ui.releaseAt || 0) < 400) return;
+    await releaseHold(ss.id);
+    ui.release = null;
+    showBanner("ok", "This payment does not hold Send now.");
+  });
+  const button = (label, onclick) => el("button", { class: "btn", type: "button", onclick }, label);
+  // "Keep the hold" takes the place of the first button, so a double click releases nothing.
+  const actions = sure ? [button("Release Send now", release), button("Keep the hold", set(null))]
+    : [button("I checked, release", set(ss.id))];
+  return el("div", { class: "callout", "data-key": "hold-" + ss.id },
+    el("p", {}, "This browser approved this payment, and the other signers can still sign and "
+      + "send it. Send stays off until block " + fmtInt(end) + holdLeft(end) + ". Release Send "
+      + "only if you are sure that nobody will send it."),
+    el("div", { class: "dialog-actions" }, actions));
+}
+
+// ", in about …" until block `end`, from the last sync, or "" without a sync time.
+function holdLeft(end) {
+  const c = curChain();
+  if (!c || !c.bal || !c.balAt) return "";
+  try {
+    const e = J(Z.expiryState(netName(state.g), end, c.bal.height));
+    const since = Math.max(0, (Date.now() - c.balAt) / 1000);
+    return ", in about " + about(Math.max(0, e.seconds_left - since));
+  } catch { return ""; }
+}
+
 function sessionDrawer(ss) {
   const ins = inspectOf(ss), refused = ins && ins.error, rc = recipientCheck(ss, ins);
   // A cancelled or failed payment takes no more steps.
@@ -223,6 +260,7 @@ function sessionDrawer(ss) {
       guard(expiryLine, ss),
       guard(recipientBox, ss, rc),
       lostApproval(ss),
+      holdCard(ss),
       changedNote(ss),
       ins && !refused ? guard(breakdown, ins) : null,
       guard(timeline, ss, refused),
