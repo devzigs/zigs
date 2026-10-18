@@ -967,6 +967,21 @@ each payment):
 - Cost: the funder sent 14,000,000 lamports to the fee addresses and paid four transfer fees. No
   proposal account of the program is open after the run.
 
+**6.14 SOL-52 live run, 18 October 2026** (`wasm-sol/tools/rent_live.mjs` of `13b77d9` on the
+public Devnet RPC; a new fee key `AxyGpUZN…` of a new test group `23yfnuAB…`):
+
+- The funder sent 0.003 SOL to the fee key (`5X62SQuX…`, slot 512,394,689).
+- The fee key created one proposal `DB4jpcJE…` that expires 60 s later (`2phPXQJ5…`, slot
+  512,394,696). Its rent is 1,356,360 lamports.
+- Before the expiry, the filter of the page (`web/sol/owned.js`, then `reclaimable`) offered
+  nothing, and the network refused the cancel in a simulation with no fee:
+  `{"InstructionError":[0,{"Custom":6017}]}` (`NotAbortAuthority`).
+- After the expiry, the filter offered the proposal, and the cancel that the checker compiles and
+  signs landed (`TT5FcQJt…`, slot 512,394,973). The account is closed, and the fee key held
+  3,000,000 lamports minus two fees: the rent came back in full.
+- The fee key returned the rest to the funder (`cy1CJtix…`, slot 512,394,979). Cost: 4
+  transactions, 20,000 lamports of fees.
+
 ## 7. Risks, questions and recommendation
 
 | Risk | Fact |
