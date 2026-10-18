@@ -30,7 +30,15 @@ import { feeOf } from "../sol/fee.js";
 import { putSol } from "../sol/secrets.js";
 import { solText, syncSolana } from "../sol/session.js";
 import { deviceSpend } from "../sol/spend.js";
-import { LINK_TEXT, PROVER_TEXT, SHOWN, approveSeats } from "../sol/payview.js";
+import { gateAnswer, provesLocally, UNREAD } from "../sol/localprove.js";
+import {
+  LINK_TEXT,
+  PROVER_LOCAL,
+  PROVER_ROW_LOCAL,
+  PROVER_TEXT,
+  SHOWN,
+  approveSeats,
+} from "../sol/payview.js";
 import {
   heldLamports,
   heldNotes,
@@ -40,7 +48,7 @@ import {
 } from "../sol/sessions.js";
 import { selectInputs } from "../sol/transfer.js";
 import { solView } from "../sol/view.js";
-import { FRONT_RUN, verifies } from "./sol-chain.mjs";
+import { FRONT_RUN, POOL_SLOT, verifies } from "./sol-chain.mjs";
 import { G, preparedOf, transactOf, useTestGroup, utxoOf } from "./sol-fixture.mjs";
 import {
   W,
@@ -1452,5 +1460,88 @@ step("the beta funds move to the PDA address with the last nonce payment");
   assert.match(ssOf(fresh).error, /proof expired because the pool moved on/);
 }
 step("a move on a stale nonce is refused, and a stale proof at the send ends the move");
+// ── SOL-4: with the switch on, the approvals path proves on the device, and stays so ──
+{
+  const shown = (mark) => textOf(marked(mark)[0]);
+  c.viewed = true; // the tab shows this wallet, so the device check may start
+  assert.ok(chain.gates.length > 0, "the earlier proofs asked the page first");
+  assert.ok(chain.gates.every((mode) => mode === "hosted"), "a proof with the switch off");
+  // Seat 2 turns the switch on: the signed document that turnOnLocal writes.
+  const fields = { local: true, cluster: "devnet", at: Date.now() };
+  const doc = await c.host.signedDoc(gid, "solprove/2", 2, fields);
+  await c.host.sdb.doc(path(gid, "solprove/2")).set(doc);
+  await waitFor("the switch is on", () => provesLocally(c));
+  assert.equal(shown("pay-prover"), PROVER_LOCAL, "the pay card says that the group proves here");
+  const local = /makes its proofs on its devices, so they give Helius neither/;
+  assert.match(shown("public-text"), local);
+  await waitFor("every seat pins it", () => [1, 2, 3].every((i) => solOf(i).proveLocal === true));
+  const docs = () => [1, 2, 3].every((i) => data.has(path(gid, "solprove/" + i)));
+  await waitFor("every seat of this browser writes its document", docs);
+  await waitFor("the device check", () => [1, 2, 3].every((i) => solOf(i).proveCheck?.ok));
+  assert.match(shown("prove-check-1"), /this device made a test proof in 3\.1 s/);
+  await forgetPairs();
+  chain.prepared = preparedPay;
+  chain.utxos = [utxoOf(G.pay)];
+  chain.gates.length = 0;
+  current = await proposedPay();
+  await waitFor("the screen of seat 2", () => reviewOf(c, ssOf(current), 2).ok);
+  assert.equal(rowsOf(current).Helius, PROVER_ROW_LOCAL, "the screen of the payment says it too");
+  await approve(c, ssOf(current), 1);
+  await approve(c, ssOf(current), 2);
+  await waitStatus(current, "sent");
+  assert.deepEqual(chain.gates, ["local", "local"], "the proof and the fresh proof, here");
+  assert.ok(chain.landed.some((x) => x.signature === ssOf(current).txId), "the execute landed");
+}
+step("SOL-4 with the switch on, prepare and the fresh proof of the execute run on the device");
+
+// ── SOL-4: the gate fails closed, and the pin outlives the documents of the server ──
+{
+  hook.lease = (p) => !p.includes("/solgate/");
+  for (const i of [1, 2, 3]) await putSol(c.host, gid, i, { proveLocal: null });
+  // The documents still stand: a lease that is not free does not matter, the barrier answered.
+  assert.deepEqual(await gateAnswer(c), { mode: "local" }, "the documents turn it on again");
+  await waitFor("pinned again", () => solOf(1).proveLocal === true);
+  // The server loses every document: the pin of this browser keeps the switch on.
+  for (const i of [1, 2, 3]) data.delete(path(gid, "solprove/" + i));
+  notify();
+  assert.deepEqual(await gateAnswer(c), { mode: "local" }, "the pin holds without the server");
+  // A browser with no pin that cannot reach the server proves nothing.
+  for (const i of [1, 2, 3]) await putSol(c.host, gid, i, { proveLocal: null });
+  const acquire = c.host.sdb.doc;
+  c.host.sdb.doc = (p) => ({ ...acquire(p), acquire: async () => { throw new Error("offline"); } });
+  try {
+    assert.deepEqual(await gateAnswer(c), { refuse: UNREAD }, "no server, no proof");
+  } finally {
+    c.host.sdb.doc = acquire;
+    hook.lease = () => true;
+  }
+}
+step("SOL-4 the gate answers local with the pin alone, and refuses when it cannot read the server");
+// ── SOL-4 after a pool upgrade: a local group names it first, and proves here ──
+{
+  for (const i of [1, 2, 3]) await putSol(c.host, gid, i, { proveLocal: true });
+  await forgetPairs();
+  chain.prepared = preparedPay;
+  chain.utxos = [utxoOf(G.pay)];
+  chain.gates.length = 0;
+  current = await proposedPay();
+  // Helius redeployed the pool: its verifier refuses the proof of the old keys.
+  chain.poolSlot = "600000000";
+  chain.refuse = JSON.stringify({ InstructionError: [1, { Custom: 6000 }] });
+  try {
+    await approve(c, ssOf(current), 1);
+    await approve(c, ssOf(current), 2);
+    const said = () => c.execErrors[current] ?? "";
+    const moved = () => said().startsWith("Helius changed the pool. ");
+    await waitFor("the text of the moved pool", moved);
+    assert.match(said(), /The network refused the execute: .*6000/, "the refusal follows");
+  } finally {
+    chain.refuse = null;
+    chain.poolSlot = POOL_SLOT;
+  }
+  assert.ok(chain.gates.length >= 2, "the proof and the fresh proof asked the page");
+  assert.deepEqual(chain.gates.filter((mode) => mode !== "local"), [], "a proof left the device");
+}
+step("SOL-4 after a pool upgrade the execute of a local group names it first, and proves here");
 console.log("sol-pay: ok");
 process.exit(0);

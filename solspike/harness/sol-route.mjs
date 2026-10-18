@@ -18,7 +18,8 @@ const CONFIG_SPELLINGS = ["/SOL/config.json", "/sol//config.json", "/sol/config.
   "/sol/%63onfig.json", "//sol/config.json"];
 const POLICY =
   "default-src 'none'; script-src 'self' 'wasm-unsafe-eval'; " +
-  "connect-src 'self' https://devnet.helius-rpc.com; base-uri 'none'";
+  "connect-src 'self' https://devnet.helius-rpc.com " +
+  "https://d3gbdb0egjwcw9.cloudfront.net/proving-keys/3a1c88f90f609eb1/; base-uri 'none'";
 const SOL_PATHS = [
   "/sol/worker.js", "/sol/worker.js?x=1", "/sol/guard.js", "/sol/zolana.bundle.js",
   "/sol/hasher_wasm_simd_bg.wasm", "/sol/wasm/sol_wasm_bg.wasm", "/sol", "/sol/", "/SOL/worker.js",
@@ -27,6 +28,11 @@ const SOL_PATHS = [
   "/sol/../sol/worker.js", "/sol\\worker.js", "/sol/worker.js/", "/sol/%zz", "/%zz",
 ];
 const OTHER_PATHS = ["/app.js", "/sol-nothing.js", "/solar.js", "/nosuch.js"];
+// The nested Worker of the local prover (SOL-4): its own files, no other host.
+const PROVER_POLICY =
+  "default-src 'none'; script-src 'self' 'wasm-unsafe-eval'; connect-src 'self'; base-uri 'none'";
+const PROVER_PATHS = ["/sol/prover/prover.worker.js", "/SOL/prover/prover.worker.js",
+  "/sol/prover/zolana-prover.wasm"];
 
 /** One GET with the path as given. Resolves { status, csp, location, cache, body }. */
 const get = (path) =>
@@ -78,6 +84,9 @@ async function switchOn() {
   expect(worker.status === 200 && worker.csp === POLICY, "SOL=1: /sol/worker.js is not served");
   for (const path of OTHER_PATHS) {
     expect((await get(path)).csp === null, `SOL=1: ${path} has the Worker policy`);
+  }
+  for (const path of PROVER_PATHS) {
+    expect((await get(path)).csp === PROVER_POLICY, `SOL=1: ${path} lacks the prover policy`);
   }
   console.log(`SOL=1: ${SOL_PATHS.length} /sol spellings checked, ${served} answered 200`);
 }

@@ -2,7 +2,8 @@
 // Solana Worker, which syncs a throwaway empty wallet, reads the P5 nonce account and the tree 0
 // fee schedule on Devnet. The Helius URL comes from /sol/config.json (cf/.dev.vars has
 // HELIUS_DEVNET_URL) and every record and error is redacted. There is no send, simulate or
-// prepare call.
+// prepare call. It also reads the deploy slot of the pool and makes one local test proof in the
+// nested prover Worker, with the key from the pinned CDN folder (SOL-4).
 // Usage: node solspike/harness/sol-live.mjs
 // It writes logs/sol-live.json. SOL_LIVE_QUICK=1 skips the load runs.
 import { mkdirSync, writeFileSync } from "node:fs";
@@ -22,14 +23,21 @@ const LOGS = join(HERE, "../logs");
 const NONCE_ACCOUNT = "4kf6Z6LTZC7E7PRvUAoADayFXQfDGppBx8m1AuUvUndE";
 const TREE_ACCOUNT = "33KVhbT4QtdQDrrrGwwThqD47Dh4Q6tA443t9jMNcWFN";
 const HELIUS = "devnet.helius-rpc.com";
+// SOL-4: the key host of the local prover, and the one folder and the file names it may serve.
+const KEY_HOST = "d3gbdb0egjwcw9.cloudfront.net";
+const KEY_PATH = /^\/proving-keys\/3a1c88f90f609eb1\/transfer_confidential_[1-9]\d?_2\.key$/;
 const WORKER = "worker:/sol/worker.js";
 const WORKER_POLICY =
   "default-src 'none'; script-src 'self' 'wasm-unsafe-eval'; " +
-  "connect-src 'self' https://devnet.helius-rpc.com; base-uri 'none'";
+  "connect-src 'self' https://devnet.helius-rpc.com " +
+  "https://d3gbdb0egjwcw9.cloudfront.net/proving-keys/3a1c88f90f609eb1/; base-uri 'none'";
 const FEE_FIELDS = ["feePerNullifier", "appendReimbursement", "closeReimbursement", "feeBalance"];
 
 // Runs in the page: fn must not use outer variables (see run() in page.mjs).
 const READ = (method, args) => window.__sol.call(method, args);
+// The same, with the error text as the answer: a failed device check is a finding, not a crash.
+const TRY = (method, args) =>
+  window.__sol.call(method, args).catch((e) => ({ error: String(e?.message ?? e) }));
 
 const pageFetchHelius = () =>
   fetch("https://devnet.helius-rpc.com/", {
@@ -83,6 +91,9 @@ async function liveRun(rig, roles) {
   out.nonce = await run(page, READ, "readNonce", { account: NONCE_ACCOUNT });
   out.fees = await run(page, READ, "treeFees", { tree: TREE_ACCOUNT });
   out.blockhash = await run(page, READ, "blockhash", {});
+  // SOL-4, read only: the deploy slot of the pool, and one test proof on this device.
+  out.pool = await run(page, TRY, "poolSlot", {});
+  out.selftest = await run(page, TRY, "selftest", {});
   out.workerControl = await control(page, () => workerProbe(page));
   await ctx.dispose();
   return out;
@@ -133,13 +144,30 @@ function liveFacts(run1, truth) {
   };
 }
 
+/** SOL-4: the key downloads, no hosted prove call, the pool slot and the local test proof. */
+function proverChecks(run1, f) {
+  const keys = f.workerOut.filter((r) => r.host === KEY_HOST);
+  const keyOk = (r) => r.method === "GET" && KEY_PATH.test(r.path) && r.blocked === null;
+  const hosted = (r) => r.host === HELIUS && r.path.startsWith("/v1/zolana/prove");
+  return [
+    ["the key host serves only GET of a pinned N x 2 key", keys.length > 0 && keys.every(keyOk)],
+    ["no Worker call reaches the prove path of Helius", !f.workerOut.some(hosted)],
+    is("poolSlot reads the deploy slot that the prover pins", run1.pool.slot, run1.pool.pinned),
+    is("the pinned deploy slot is the one of 7 October 2026", run1.pool.pinned, "508538476"),
+    [
+      "selftest makes a test proof on this device (nested prover Worker, Go only)",
+      typeof run1.selftest.ms === "number",
+    ],
+  ];
+}
+
 function checks(run1, f) {
   const { init, sync } = run1.started;
   const headers = f.script?.headers ?? {};
   const answered = f.preflights.every((p) => p.status < 300);
   const origin = (p) =>
     ["*", ORIGIN].includes(p.headers["access-control-allow-origin"]);
-  const hosts = [...new Set(f.workerOut.map((r) => r.host))];
+  const hosts = [...new Set(f.workerOut.map((r) => r.host))].sort();
   return [
     is(
       "zero CSP violations in the page and the Worker (controls excluded)",
@@ -153,7 +181,8 @@ function checks(run1, f) {
       "the Worker reached the Helius host and none of its calls was blocked",
       f.workerOut.length > 0 && f.workerOut.every((r) => r.blocked === null),
     ],
-    is("every Worker call goes to one host", hosts.join(), HELIUS),
+    is("every Worker call goes to Helius or the key host", hosts.join(), [KEY_HOST, HELIUS].join()),
+    ...proverChecks(run1, f),
     is("no WebSocket was created", f.webSockets, 0),
     is("/sol/worker.js carries the Worker CSP", headers["content-security-policy"], WORKER_POLICY),
     is("/sol/worker.js carries Referrer-Policy", headers["referrer-policy"], "no-referrer"),

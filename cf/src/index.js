@@ -40,13 +40,27 @@ function authorized(req, env) {
 // The Solana Worker (web/sol/worker.js) owns all Helius traffic. A Worker takes the policy of its
 // own script response, so only the /sol responses name the Helius host and policy() stays as is.
 const SOL_HOST = "https://devnet.helius-rpc.com";
+// The pinned key folder of the local prover (SOL-4): a path source, so no other object of that
+// host. Only the /sol policy names it: the Solana Worker fetches the keys, the page does not.
+const SOL_KEYS = "https://d3gbdb0egjwcw9.cloudfront.net/proving-keys/3a1c88f90f609eb1/";
 const SOL_CONFIG = "/sol/config.json";
 
 function solWorkerPolicy() {
   return [
     "default-src 'none'",
     "script-src 'self' 'wasm-unsafe-eval'",
-    `connect-src 'self' ${SOL_HOST}`,
+    `connect-src 'self' ${SOL_HOST} ${SOL_KEYS}`,
+    "base-uri 'none'",
+  ].join("; ");
+}
+
+// The nested Worker of the local prover (/sol/prover/prover.worker.js, SOL-4) holds the whole
+// witness. It loads its own files and connects nowhere else: the Solana Worker fetches the keys.
+function proverPolicy() {
+  return [
+    "default-src 'none'",
+    "script-src 'self' 'wasm-unsafe-eval'",
+    "connect-src 'self'",
     "base-uri 'none'",
   ].join("; ");
 }
@@ -60,9 +74,16 @@ function isSolPath(url) {
   return /^[/\\]+sol([/\\]|$)/i.test(path);
 }
 
-function solResponse(res) {
+// A path below /sol/prover, in any spelling that decodes to it, gets the policy of the prover.
+function isProverPath(url) {
+  let path;
+  try { path = decodeURIComponent(url.pathname); } catch { return false; }
+  return /^[/\\]+sol[/\\]+prover([/\\]|$)/i.test(path);
+}
+
+function solResponse(res, policy = solWorkerPolicy()) {
   const out = new Response(res.body, res);
-  out.headers.set("Content-Security-Policy", solWorkerPolicy());
+  out.headers.set("Content-Security-Policy", policy);
   out.headers.set("Referrer-Policy", "no-referrer");
   out.headers.set("X-Content-Type-Options", "nosniff");
   return out;
@@ -85,7 +106,8 @@ async function assets(req, env, url) {
   if (!isSolPath(url)) return env.ASSETS.fetch(req);
   if (env.SOL !== "1") return new Response("Not found\n", { status: 404 });
   if (url.pathname === SOL_CONFIG) return solConfig(req, env);
-  return solResponse(await env.ASSETS.fetch(req));
+  const policy = isProverPath(url) ? proverPolicy() : solWorkerPolicy();
+  return solResponse(await env.ASSETS.fetch(req), policy);
 }
 
 // The public side of the testnet light-wallet server answers this Worker only: Envoy checks the

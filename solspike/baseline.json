@@ -1,5 +1,5 @@
 {
-  "baseCommit": "0eaa7802676f4ce704c048f2ccb159e1d3c51c1c",
+  "baseCommit": "52c0ac9f027408d2795f6feccb7f625aa40b1330",
   "node": "v24.11.0",
   "tests": {
     "web/test/chat.mjs": {
@@ -86,6 +86,9 @@
     "web/test/sol-errors.mjs": {
       "exit": 0
     },
+    "web/test/sol-prove.mjs": {
+      "exit": 0
+    },
     "web/test/demo-check.mjs": {
       "exit": 0
     },
@@ -99,9 +102,6 @@
       "exit": 0
     },
     "web/test/contrast.mjs": {
-      "exit": 0
-    },
-    "web/test/overview.mjs": {
       "exit": 0
     },
     "cf/test/limits.mjs": {

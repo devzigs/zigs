@@ -95,6 +95,8 @@ export const SCHEMA = {
   send: { tx: base64 },
   status: { signature },
   confirm: { signature },
+  selftest: {},
+  poolSlot: {},
 };
 
 const shown = (name) => JSON.stringify(String(name).slice(0, 40));
