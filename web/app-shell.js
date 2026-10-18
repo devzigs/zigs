@@ -14,6 +14,7 @@ import {
 } from "./app-dom.js";
 import { contactName, contactOf, joinChat, joinLinks, unreadIn } from "./app-messages.js";
 import { createGroup } from "./app-dkg.js";
+import { newWallet, planSolana, SOL_DISCLOSURE, solServed } from "./app-sol.js";
 import { personal } from "./app-account.js";
 import { restore } from "./app-backups.js";
 import { contactItem, contactsCard, openContactDialog, personalCard } from "./app-account-view.js";
@@ -21,7 +22,6 @@ import { once, render } from "./app-loop.js";
 
 export function renderSide() {
   const nav = document.getElementById("side-nav");
-  const newWallet = () => { openGroup(null); ui.create = true; render(); };
   nav.replaceChildren(
     el("div", { class: "side-head" }, el("span", { class: "label" }, "Wallets"),
       el("button", { class: "icon-btn", type: "button", title: "New wallet", "aria-label": "New wallet", onclick: newWallet }, "+")),
@@ -241,9 +241,22 @@ function welcome(canCreate, restoreLink) {
       create, restoreLink));
 }
 
+// A new testnet wallet can get its Solana Devnet part in the same setup, on a server that serves
+// Solana. The box is on by default: the demo shows one setup. `ui.sol` keeps a "no" through a
+// redraw, and the submit takes the choice only from a box that the person saw.
+const solChosen = (from, network, fd) => !from && network === "testnet" && fd.get("sol") === "on";
+function solChoice() {
+  if (ui.net !== "testnet" || !solServed()) return null;
+  return el("label", { class: "ack" },
+    el("input", { type: "checkbox", id: "g-sol", name: "sol", checked: ui.sol !== false,
+      onchange: (ev) => { ui.sol = ev.target.checked; } }),
+    el("span", {}, el("b", {}, "Also set up Solana Devnet. "),
+      el("span", { class: "small muted" }, SOL_DISCLOSURE)));
+}
+
 // With `from`, the dialog creates the wallet that replaces `from`, with new signers or a new rule.
 export function createDialog(from = null) {
-  const close = () => { ui.create = false; ui.move = false; render(); };
+  const close = () => { ui.create = false; ui.move = false; ui.sol = undefined; render(); };
   const n0 = from ? from.n : 3, t0 = from ? from.t : 2;
   const rule = el("p", { class: "rule", id: "rule-text" }, ruleText(t0, n0));
   const update = () => {
@@ -259,8 +272,11 @@ export function createDialog(from = null) {
     // A replacement wallet stays on its predecessor's network: funds cannot move between networks.
     const network = from ? from.network || "testnet" : ui.net;
     if (network === "mainnet" && !ui.ack) throw new Error("Confirm that you understand Zigs is not audited before you create a mainnet wallet.");
-    ui.create = false; ui.move = false; ui.net = "testnet"; ui.ack = false;
-    await createGroup(String(fd.get("name") || "").trim() || (from ? from.name : "Treasury"), n, t, from && from.id, network);
+    const withSol = solChosen(from, network, fd);
+    ui.create = false; ui.move = false; ui.net = "testnet"; ui.ack = false; ui.sol = undefined;
+    const name = String(fd.get("name") || "").trim() || (from ? from.name : "Treasury");
+    const gid = await createGroup(name, n, t, from && from.id, network);
+    if (withSol) await planSolana(gid);
   }) },
     el("div", { class: "card-head" }, el("h2", { id: "create-title" }, from ? "Change signers" : "New shared wallet"), el("button", { class: "icon-btn", type: "button", "aria-label": "Close", onclick: close }, "×")),
     from ? el("ol", { class: "small muted move-steps" },
@@ -274,6 +290,7 @@ export function createDialog(from = null) {
       el("label", { class: "field" }, el("span", {}, "Approvals needed"), el("input", { class: "input", id: "g-t", name: "t", type: "number", min: "2", max: "7", value: String(t0) }))),
     rule,
     from ? null : networkPick(),
+    from ? null : solChoice(),
     el("div", { class: "callout" }, from
       ? "The new wallet gets a new address. Signers you leave out can still see this old wallet's payments, but not the new wallet's."
       : "You take seat 1. Then share the invite link with your signers. When every seat is taken, your devices create the wallet key together."),

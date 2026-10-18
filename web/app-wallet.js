@@ -23,8 +23,8 @@ import { messagesCard } from "./app-thread.js";
 import { BACKUP_CHANGED, openBackup, staleRestoreNote } from "./app-backups.js";
 import { loadingView } from "./app-shell.js";
 import { focusAfter, render } from "./app-loop.js";
-import { setupView } from "./app-setup.js";
-import { solOn, solTab } from "./app-sol.js";
+import { setupView, solSetupCard, solUnfinished } from "./app-setup.js";
+import { solBackup, solOn, solTab, solUnsaved } from "./app-sol.js";
 
 export function groupView() {
   const g = state.g;
@@ -81,6 +81,7 @@ export function walletView(head, why) {
     const s = sec(state.gid, i);
     return s.keyPackage && !seatBackedUp(s);
   });
+  const solSeats = solUnsaved();
   const tabs = [
     ["overview", "Overview"],
     ["activity", "Activity", countBadge(toApprove(state.gid).length, "to approve", "attn")],
@@ -94,7 +95,7 @@ export function walletView(head, why) {
   if (solOn()) { tabs.push(["solana", "Solana"]); bodies.solana = solTab; }
   if (!Object.hasOwn(bodies, ui.tab)) ui.tab = "overview";
   return el("div", { class: "page" }, head, tabBar(tabs),
-    unsaved.length ? backupNote(unsaved) : null,
+    unsaved.length || solSeats.length ? backupNote(unsaved, solSeats) : null,
     el("div", { role: "tabpanel", id: "panel-" + ui.tab, "aria-labelledby": "tab-" + ui.tab },
       bodies[ui.tab]()),
     el("div", { class: "action-bar" }, ...walletActions(why)));
@@ -144,16 +145,23 @@ export function tabBar(tabs) {
 export function setTabBar(f) { tabBar = f; }
 
 // Private windows, Tor Browser and cleared site data delete the key share with the browser data.
-export function backupNote(seats) {
+// `solSeats`: the seats whose Solana part has no saved file yet (solUnsaved, app-sol.js).
+export function backupNote(seats, solSeats = []) {
   const text = "Back up your key share. This browser can forget it: private windows and Tor "
     + "Browser delete it when they close. The file is locked with a passphrase that you choose. "
-    + "Keep the file safe, and keep the passphrase apart from it. " + BACKUP_CHANGED;
+    + "Keep the file safe, and keep the passphrase apart from it. " + BACKUP_CHANGED
+    + (solSeats.length ? " " + SOL_FILE : "");
+  const many = seats.length + solSeats.length > 1;
   return el("div", { class: "callout warn", role: "status" },
     el("span", { style: "flex:1 1 16rem" }, text),
     seats.map((i) => el("button", {
       class: "btn sm", type: "button", onclick: () => openBackup(i),
-    }, seats.length > 1 ? "Back up seat " + i : "Back up key share")));
+    }, many ? "Back up seat " + i : "Back up key share")),
+    solSeats.map((i) => el("button", {
+      class: "btn sm", type: "button", onclick: act(() => solBackup(i)),
+    }, "Back up Solana, seat " + i)));
 }
+const SOL_FILE = "The Solana part of a seat is a second file, with its own passphrase.";
 
 // `why` is the reason Send is off, shown as text because touch screens have no tooltip.
 function walletActions(why) {
@@ -177,6 +185,7 @@ function overviewTab() {
   return el("div", { class: "page", style: "gap:16px" },
     state.g.movedTo ? moveCard(c) : null,
     pend.length ? approvalsCard(pend) : null,
+    solUnfinished() ? solSetupCard() : null,
     el("div", { class: "grid-ov" }, balanceCard(c), receiveCard()),
     signersCard(),
     el("section", { class: "card" },

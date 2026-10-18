@@ -20,8 +20,12 @@ The beta switches:
   before version 3, a wallet whose network no seat of this device confirmed, and a wallet that is
   not loaded yet, never show the tab. They load `/sol` only when the person opens a Solana backup
   file for a wallet that this device does not list.
-- The page loads `/sol` before the tab opens only when a seat signed `solstart/1`. A start
-  document without a valid signature of seat 1 loads nothing.
+- The page loads `/sol` before the tab opens in two cases. A seat signed `solstart/1` (a start
+  document without a valid signature of seat 1 loads nothing), or this device holds a seat of a
+  wallet whose group document holds the Solana hint `solana: true` (release item M3), in setup or
+  later. The hint has no signature, so a holder of the invite link can make the seats of a wallet
+  load `/sol` early. The hint starts nothing. The ceremony starts from Add Solana on seat 1, or
+  with no button from `solAuto` in the secret of seat 1 (the choice in the create dialog).
 - The browser has no switch. The spike flag `zf-sol` and the spike setting `zf-sol-rpc` are gone.
 
 The question: can a Zigs group also hold private Solana balances in Zolana, the Helius shielded pool
@@ -1043,7 +1047,7 @@ roots, transaction lifetime, key management, output checks and browser proving.
 |---|---|---|
 | Devnet version | Devnet runs 0.4.0-alpha | The pin `c232da1b` serves it: `programs` and `program-libs` are equal (6.10). The pin stays frozen through the demo (TICKETS.md SOL-37) |
 | Browser proving | It exists in zolana-web-sdk. It is experimental and slow | The owner approved local proving as a one-way group setting on 18 October 2026. SOL-4 builds it; it is not live |
-| Custom rings | In-circuit EdDSA for custom rings comes in a second release, likely in December | TICKETS.md SOL-57, after the demo |
+| Custom rings | In-circuit EdDSA for custom rings comes in a second release, likely in December | TICKETS.md SOL-59, after the demo |
 | Compute | About 150,000 compute units per transact is the floor | Our largest recorded transact used 144,591 units (`CU_FLOOR_TRANSACT`), and an execute 151,437. The caps add 50 percent: 217,000 and 227,156 (`wasm-sol/src/template.rs`) |
 | Breaking releases | Breaking SDK releases come over about two weeks, before the mainnet launch | The pin stays frozen (SOL-37). demo-check runs at least every two days until the demo (docs/demo.md section 3) |
 

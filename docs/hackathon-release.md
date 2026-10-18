@@ -439,7 +439,7 @@ Evidence marked "checked" was read in the repo during this synthesis. All other 
 - **Fix:**
   - Change the stop text: the Zcash part still works, and a new wallet is the way to a new Solana part.
   - Add a "Create a new wallet" button to both stop callouts.
-  - When lostSecret is true, publish a stop with "Seat N lost its Solana setup secret. Create a new wallet to use Solana." (reactAborts already publishes stops).
+  - When lostSecret is true, publish no stop. A restored copy of a seat looks the same (no secret, round 1 in the store) while the other copy of that seat finishes the ceremony, and a stale copy drops its secret on purpose (M4). A stop from that copy would end a good ceremony. The seat itself shows "Seat N: this browser lost its setup secret. If another device of this seat does not finish the Solana setup, create a new wallet to use Solana." (or the other-copy text). The other seats show "Seat N: round 1 sent" for that seat and wait for its round 2.
   - A real restart (a new start document) belongs to M3 step 7.
 - **Files:** web/sol/ceremony.js, web/sol/abort.js, web/sol/view.js, web/app-setup.js, web/test/sol-ceremony.mjs.
 - **Package:** WP-U.

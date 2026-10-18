@@ -71,6 +71,9 @@
     "web/test/sol-transfer.mjs": {
       "exit": 0
     },
+    "web/test/unified-setup.mjs": {
+      "exit": 0
+    },
     "web/test/graph.mjs": {
       "exit": 0
     },
