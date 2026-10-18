@@ -269,6 +269,19 @@ function syncJob(c, run) {
   });
 }
 
+/**
+ * The Sync button: a sync that works shows the payments that were sent before it, and it ends the
+ * back-off of the automatic syncs.
+ */
+export async function syncNow(c) {
+  const { opened } = c;
+  const ids = unsynced(c).map((ss) => ss.id);
+  await syncSolana(c);
+  if (!stillOpen(c, opened)) return;
+  for (const id of ids) c.syncedSent.add(id);
+  Object.assign(c, { autoSyncFails: 0, autoSyncAfter: 0 });
+}
+
 /** Syncs until the balances change, after a deposit (Add SOL) that this browser sent. */
 export function pollBalances(c) {
   c.pollWanted += 1;

@@ -820,6 +820,7 @@ step("a retry after a dropped send uses the seat that sent it");
     ...(chain.history.get(address) ?? []),
   ]);
   chain.txs.set(executed, { found: true, failed: false, tx });
+  forgetBalances(); // the tab looks at the account once a minute: the next pass looks now
   await waitStatus(id, "sent", 60000);
   assert.equal(ssOf(id).txId, executed, "the transaction of the history");
   assert.equal(count("send"), sent, "the tab sent nothing");
@@ -827,6 +828,35 @@ step("a retry after a dropped send uses the seat that sent it");
   fund(FUNDED);
 }
 step("a tab with no funded seat marks an execute that another device landed");
+
+// ── An unfunded tab: a refused account read shows its text, no try, one read a minute ──
+{
+  await forgetPairs();
+  const id = await proposedPay();
+  current = id;
+  fund([0n, 0n, 0n]);
+  await approve(c, ssOf(id), 1);
+  await approve(c, ssOf(id), 2);
+  await waitFor("signed", () => ssOf(id).status === "signed");
+  const refused = "Helius refused this website. Its key does not allow this domain.";
+  const address = base58(ssOf(id).account);
+  const get = chain.accounts.get;
+  chain.accounts.get = function (key) {
+    if (key === address) throw new Error(refused);
+    return get.call(this, key);
+  };
+  forgetBalances();
+  await waitFor("the text of the refused read", () => c.execErrors[id] === refused, 30000);
+  assert.equal(c.tries[id] ?? 0, 0, "a refused account read counts no try");
+  const reads = count("account");
+  await new Promise((done) => setTimeout(done, 16_000)); // one more pass of the tab
+  assert.equal(count("account"), reads, "no second account read within a minute");
+  assert.equal(c.execErrors[id], refused, "the text stays between the reads");
+  delete chain.accounts.get;
+  fund(FUNDED);
+  await waitStatus(id, "sent", 90000);
+}
+step("a tab with no funded seat shows a refused account read and reads once a minute");
 
 // ── The lease of another device holds the execute back; the last try waits for a click ──
 {

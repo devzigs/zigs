@@ -33,6 +33,7 @@ import {
   autoSync,
   ensureWorker,
   pollBalances,
+  syncNow,
   refreshChain,
   syncSolana,
   syncUntilChanged,
@@ -316,6 +317,59 @@ step("a poll after a payment waits for a late indexer");
   c.sessions = c.sessions.filter((ss) => ss !== paid);
 }
 step("a failed poll is tried again, and a sync must work before a payment counts as synced");
+
+// ── A payment or a deposit during a poll gets a poll of its own; Sync ends a back-off ──
+{
+  let real = c.sessions;
+  const extra = [];
+  const set = (v) => (real = v);
+  Object.defineProperty(c, "sessions", { get: () => [...real, ...extra], set, configurable: true });
+  const call = c.worker.call;
+  let [syncs, refused, lamports] = [0, 0, 8_000_000];
+  const gates = []; // each sync waits for the next gate in the list, if any
+  const gate = () => {
+    const g = {};
+    g.wait = new Promise((open) => (g.open = open));
+    gates.push(g);
+    return g;
+  };
+  c.worker.call = async (cmd, args) => {
+    if (cmd !== "sync") return call(cmd, args);
+    syncs += 1;
+    await gates.shift()?.wait;
+    if (refused-- > 0) throw new Error("Helius is not answering.");
+    return { ...(await call(cmd, args)), balance: String((lamports += 1000)) };
+  };
+  const fields = { expiry: 1n, inputs: 1, outputs: 2, recipient: "11".repeat(32), amount: 4n };
+  const pay = (id) => ({ id, status: "sent", intent: intentHex("withdraw", fields) });
+  const [first, second] = [gate(), gate()];
+  extra.push(pay("p3"));
+  autoSync(c);
+  await waitFor("the poll of p3", () => syncs === 1);
+  extra.push(pay("p4")); // p4 ends during the poll of p3
+  pollBalances(c); // and Add SOL asks for a poll
+  first.open();
+  await waitFor("p3 synced", () => c.syncedSent.has("p3"));
+  autoSync(c); // the next poll (a pass of the reactor may have started it already)
+  await waitFor("the next poll", () => syncs === 2);
+  assert.equal(c.syncedSent.has("p4"), false, "p4 needs a sync after its end");
+  assert.equal(c.pollWanted, 1, "the deposit needs a poll after it");
+  second.open();
+  await waitFor("p4 and the deposit", () => c.syncedSent.has("p4") && c.pollWanted === 0, 30000);
+  // A poll that fails waits; a Sync that works ends the wait and shows the payments before it.
+  await waitFor("the job end", () => !c.autoSyncBusy);
+  refused = 1;
+  extra.push(pay("p5"));
+  autoSync(c);
+  await waitFor("the failed poll", () => c.autoSyncFails === 1);
+  await syncNow(c);
+  const state = [c.autoSyncFails, c.autoSyncAfter, c.syncedSent.has("p5")];
+  assert.deepEqual(state, [0, 0, true], "the Sync button ends the back-off");
+  c.worker.call = call;
+  delete c.sessions;
+  c.sessions = real;
+}
+step("a payment or a deposit during a poll gets its own poll, and Sync ends a back-off");
 
 // ── A close during a poll: the old poll writes nothing; the reopened wallet syncs (S2) ──
 {

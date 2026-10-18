@@ -52,7 +52,7 @@ export function guardedFetch(origin, trace) {
     const url = new URL(request ? input.url : String(input));
     if (url.origin !== origin) throw new Error(`blocked a request to ${url.host}`);
     keepProverBody(trace, url, init);
-    refusedStatus = null; // only the last reply counts: the SDK handles some refusals and goes on
+    refusedStatus = null; // the last call of the command decides: a handled refusal is followed
     const reply = await fetch(request ? input : url.href, { ...init, redirect: "error" });
     if (!reply.ok) refusedStatus = reply.status;
     return reply;
@@ -500,10 +500,11 @@ const HANDLERS = {
 
 // The SDK bundle has no error texts (a production build): a refused HTTP call of Helius reads as
 // "Solana error #8100002", or as "WalletError: WALLET_SYNC" when the indexer refused it (the SDK
-// drops the status on the way). So the fetch of this Worker keeps the status of the last reply of
+// drops the status on the way). So the fetch of this Worker keeps the status of the last call of
 // the command when Helius refused it (one command runs at a time). A refusal that the SDK handled
-// (the 429 that queues a proof) is followed by other replies, which clear it. An RPC error also
-// holds the status in its context (@solana/errors SOLANA_ERROR__RPC__TRANSPORT_HTTP_ERROR).
+// (the 429 that queues a proof) is followed by other calls, which clear it; a call that gets no
+// reply (a CORS failure) clears it too, so its own error shows. An RPC error also holds the status
+// in its context (@solana/errors SOLANA_ERROR__RPC__TRANSPORT_HTTP_ERROR).
 const RPC_HTTP_ERROR = 8100002;
 let refusedStatus = null;
 function httpStatus(err) {

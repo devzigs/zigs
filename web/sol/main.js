@@ -17,7 +17,7 @@ import {
   refreshChain,
   showSaved,
   pollBalances,
-  syncSolana,
+  syncNow,
 } from "./session.js";
 import { SESSIONS, filterSessions } from "./sessions.js";
 import { reactSessions } from "./signing.js";
@@ -169,7 +169,7 @@ export async function attach(host) {
   c.refresh = () => refresh(c);
   const actions = {
     add: () => addSolana(c),
-    sync: () => syncSolana(c),
+    sync: () => syncNow(c),
     backup: (seat) => host.askBackup(backupWords(c, seat)),
     restoreFile: (file) => host.restore(file),
     refresh: () => refreshChain(c),

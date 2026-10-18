@@ -48,8 +48,15 @@ const UNFUNDED_WAIT_MS = 15_000;
 const BALANCE_MS = 30_000;
 // The lamports of each fee address (base58) and when they were read: { lamports, at }.
 const balances = new Map();
-/** Forgets the balances read so far: the next choice of an executor reads them again. */
-export const forgetBalances = () => balances.clear();
+// A tab with no funded seat reads the proposal account of a payment at most once a minute: a
+// funded device usually executes in seconds, and each read is a Helius call. { at, error }.
+const LOOK_MS = 60_000;
+const looks = new Map();
+/** Forgets the balances and the account reads so far: the next pass reads them again. */
+export function forgetBalances() {
+  balances.clear();
+  looks.clear();
+}
 const CONFIRMED = new Set(["confirmed", "finalized"]);
 const FAILED = "The execute failed on chain. The approval is still valid.";
 const UNREAD = "The history of the proposal account is not complete yet.";
@@ -283,13 +290,20 @@ function showExecError(c, ss, text) {
  * text and counts no try. Then it waits for a funded seat.
  */
 async function unfunded(c, worker, ss, { seat, failed }, failSession) {
+  const last = looks.get(ss.id);
+  if (last && Date.now() - last.at < LOOK_MS) {
+    showExecError(c, ss, failed ?? last.error);
+    return sleep(UNFUNDED_WAIT_MS);
+  }
+  const look = { at: Date.now(), error: undefined };
+  looks.set(ss.id, look);
   try {
     const account = await worker.call("account", { account: base58(ss.account) });
     if (!holdsBody(account, ss)) return await landedElsewhere(c, worker, ss, seat, failSession);
-    showExecError(c, ss, failed);
   } catch (e) {
-    showExecError(c, ss, errorText(e));
+    look.error = errorText(e);
   }
+  showExecError(c, ss, failed ?? look.error);
   return sleep(UNFUNDED_WAIT_MS);
 }
 
@@ -306,7 +320,7 @@ export function maybeExecute(c, ss, { launch, failSession }) {
       const worker = await ensureWorker(c);
       const { seat, failed } = await executor(c, worker, ss, seats);
       if (seat === undefined) {
-        return unfunded(c, worker, ss, { seat: seats[0], failed }, failSession);
+        return await unfunded(c, worker, ss, { seat: seats[0], failed }, failSession);
       }
       await attempt(c, worker, ss, seat, failSession);
       delete c.execErrors[ss.id];
