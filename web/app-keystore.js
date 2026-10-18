@@ -169,9 +169,9 @@ export async function takeStored() {
 // The plain record `name`, or `empty` when there is none. A damaged record throws.
 const plainRecord = (name, empty) => JSON.parse(localStorage.getItem(name)) ?? empty;
 // Each seat in storage comes in whole: another tab may have saved it since this tab read it. A
-// seat whose last change no save holds keeps that change, and only its nonces and marks come from
-// storage, the Solana ones too. A change that was not saved never went out. A seat that only this
-// tab holds stays.
+// seat whose last change no save holds keeps that change. Only the records of its approvals come
+// from storage: the nonces, the marks, the kept shares and the Solana records (SOL_RECORDS). A
+// change that was not saved never went out. A seat that only this tab holds stays.
 function takeSecrets(stored) {
   for (const [k, v] of Object.entries(stored)) {
     if (!isObj(v)) continue;
@@ -179,12 +179,14 @@ function takeSecrets(stored) {
   }
 }
 function withStoredNonces(mine, v) {
-  const out = { ...mine, nonces: v.nonces, marks: v.marks };
+  const out = { ...mine, nonces: v.nonces, marks: v.marks, unsent: v.unsent };
   if (!mine.sol && !v.sol) return out;
-  const s = v.sol || {};
-  out.sol = { ...mine.sol, nonces: s.nonces, used: s.used, pending: s.pending };
+  out.sol = { ...mine.sol };
+  for (const f of SOL_RECORDS) out.sol[f] = v.sol?.[f];
   return out;
 }
+// The Solana records of the approvals of a seat (web/sol/nonces.js).
+const SOL_RECORDS = ["nonces", "used", "pending", "salts", "bodies"];
 // Both sides keep their wallet keys. ponytail: a key that an undone restore removed in another tab
 // comes back here, and opens that wallet with no seat, as an invite link does.
 const takeKeys = (stored) => { gkeys = { ...stored, ...gkeys }; };

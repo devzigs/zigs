@@ -485,7 +485,8 @@ const sealed = (gid, rel, seat, fields, key, names = ["by", "sig"]) =>
     const sol2 = t.sec(gid, 2).sol, sol3 = t.sec(gid, 3).sol;
     const sol2Used = { ...sol2, used: { d2: "s" } };
     storedX[gid + ":2"] = { ...storedX[gid + ":2"], m5kp: "KPY", sol: sol2Used };   // a key share
-    seat3.sol = { ...sol3, used: { d3: "s" } };   // Solana digests that another tab used
+    seat3.sol = { ...sol3, used: { d3: "s" }, salts: { z3: "p3" }, bodies: { c3: "b3" } };
+    seat3.unsent = { zk3: { changed: true } };   // approval records that another tab saved
     storedX[gid + ":9"] = { m5new: 1 };   // a new seat of another tab
     storage.set("zf-secrets", JSON.stringify(storedX));
     const keysX = JSON.parse(storage.get("zf-keys"));
@@ -507,6 +508,9 @@ const sealed = (gid, rel, seat, fields, key, names = ["by", "sig"]) =>
       ["KPY", "KPY", { d2: "s" }], "a newer save of another tab stays");
     assert.deepEqual([t.sec(gid, 3).sol.used, t.sec(gid, 9), storedAfter[gid + ":9"]],
       [{ d3: "s" }, { m5new: 1 }, { m5new: 1 }], "the Solana nonces and a new seat come in");
+    const s3 = t.sec(gid, 3);
+    assert.deepEqual([s3.sol.salts, s3.sol.bodies, s3.unsent],
+      [{ z3: "p3" }, { c3: "b3" }, { zk3: { changed: true } }], "and the other approval records");
     assert.equal(JSON.parse(storage.get("zf-keys")).m5other, "k", "the key of the other tab stays");
     assert.deepEqual([t.chats.list[cidX], t.chats.list[cidM]], [roomX, roomX], "both chats stay");
     delete t.chats.list[cidM];
@@ -517,7 +521,7 @@ const sealed = (gid, rel, seat, fields, key, names = ["by", "sig"]) =>
     const { m5x: _m5x, ...marks3 } = t.sec(gid, 3).marks;
     delete t.secrets[gid + ":9"];
     await t.putSec(gid, 2, { m5kp: undefined, sol: sol2 });
-    await t.putSec(gid, 3, { m5Flag: undefined, marks: marks3, sol: sol3 });
+    await t.putSec(gid, 3, { m5Flag: undefined, marks: marks3, sol: sol3, unsent: undefined });
     // A storage event of another tab: the seats of its save come in, and a seat that only this
     // tab holds stays, because it may be the last copy.
     t.secrets["zz:9"] = { m5only: 1 };
