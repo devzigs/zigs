@@ -26,7 +26,8 @@ import { render } from "./app-loop.js";
 import { setupView, solSetupCard, solUnfinished } from "./app-setup.js";
 import { themeChoice } from "./app-theme.js";
 import {
-  solBackup, solBalance, solError, solOn, solPending, solSetup, solTab, solUnsaved,
+  sol, solBackup, solBalance, solError, solLoading, solOn, solPending, solSetup, solTab,
+  solUnsaved,
 } from "./app-sol.js";
 import { pendingShortcut, solRow, zecTotal } from "./overview-model.js";
 import { icon } from "./app-icons.js";
@@ -305,11 +306,18 @@ const SOL_NOTE = {
   setup: "The Solana part of this wallet is still setting up.",
   stopped: "The Solana part stopped. The Zcash part still works.",
   loading: "The Solana part loads.",
+  idle: "Open Solana to load the Solana part of this wallet.",
+  none: "This wallet has no Solana part yet. Open Solana to add it.",
+  unavailable: "This browser cannot use the Solana part of this wallet. Open Solana to see why.",
+  differs: "The seats do not agree on one Solana key. Do not use the Solana part. Open Solana for "
+    + "the details.",
+  unknown: "Open Solana to see the state of its part.",
 };
 
 // The SOL row: the private balance of the last sync, or the state of the Solana part.
 function solAsset() {
-  const row = solRow({ on: solOn(), error: solError, setup: solSetup(), balance: solBalance() });
+  const row = solRow({ on: solOn(), error: solError, loading: !!(sol || solLoading),
+    setup: solSetup(), balance: solBalance() });
   if (!row) return null;
   return el("section", { class: "card card-pad asset-card", "aria-labelledby": "asset-sol" },
     assetHead("sol", "SOL", "Solana Devnet"),

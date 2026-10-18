@@ -13,9 +13,19 @@ console.log("ok  the ZEC total");
 const ready = { status: "ready" };
 assert.equal(solRow({ on: false, setup: ready, balance: "1 SOL" }), null, "no Solana part");
 assert.equal(solRow({ on: true, error: "x", setup: ready, balance: "1 SOL" }).state, "failed");
-assert.equal(solRow({ on: true, setup: null }).state, "loading", "the module still loads");
-assert.equal(solRow({ on: true, setup: { status: "stopped" } }).state, "stopped");
-assert.equal(solRow({ on: true, setup: { status: "running" } }).state, "setup");
+assert.equal(solRow({ on: true, loading: true, setup: null }).state, "loading",
+  "the module still loads");
+assert.deepEqual(solRow({ on: true, loading: false, setup: null }),
+  { state: "idle", text: "Not open" }, "nothing loads: no Loading text");
+const status = (s) => solRow({ on: true, setup: { status: s }, balance: "1 SOL" });
+assert.equal(status("stopped").state, "stopped");
+assert.equal(status("running").state, "setup");
+assert.deepEqual(status("not started"), { state: "none", text: "Not added" });
+assert.equal(status("unavailable").state, "unavailable");
+assert.deepEqual(status("differs"), { state: "differs", text: "Keys differ" },
+  "seats with different keys never show a balance");
+assert.deepEqual(status("something new"), { state: "unknown", text: "Unknown" },
+  "an unknown status is no setup step");
 assert.deepEqual(solRow({ on: true, setup: ready, balance: null }),
   { state: "unsynced", text: "Not synced yet" }, "no sync yet: unknown, not zero");
 assert.deepEqual(solRow({ on: true, setup: ready, balance: "0 SOL" }),

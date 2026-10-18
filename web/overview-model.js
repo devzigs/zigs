@@ -5,19 +5,30 @@
 /** The ZEC of the asset row in zatoshi: spendable plus incoming, or null before the first sync. */
 export const zecTotal = (b) => (b ? b.spendable + b.pending : null);
 
+// The row for each setup status of the Solana part (setupSummary of web/sol/view.js) but ready.
+const SOL_STATES = {
+  "not started": ["none", "Not added"], unavailable: ["unavailable", "Not available"],
+  differs: ["differs", "Keys differ"], running: ["setup", "Setting up"],
+  stopped: ["stopped", "Stopped"],
+};
+
 /**
- * The SOL asset row, or null when the wallet has no Solana part.
- * @param {object} s on: the part is on; error: the module did not load; setup: the setup
- *   summary of the module (null while it loads); balance: the private balance text of the last
- *   sync, or null.
+ * The SOL asset row, or null when the wallet cannot have a Solana part.
+ * @param {object} s on: the wallet can have the part; error: the module did not load; loading:
+ *   the module loads or runs; setup: its setup summary (null before the module knows the
+ *   wallet); balance: the private balance text of the last sync, or null.
  * @returns {{state: string, text: string} | null}
  */
-export function solRow({ on, error, setup, balance }) {
+export function solRow({ on, error, loading, setup, balance }) {
   if (!on) return null;
   if (error) return { state: "failed", text: "Did not load" };
-  if (!setup) return { state: "loading", text: "Loading…" };
-  if (setup.status === "stopped") return { state: "stopped", text: "Stopped" };
-  if (setup.status !== "ready") return { state: "setup", text: "Setting up" };
+  if (!setup) {
+    return loading ? { state: "loading", text: "Loading…" } : { state: "idle", text: "Not open" };
+  }
+  if (setup.status !== "ready") {
+    const [state, text] = SOL_STATES[setup.status] ?? ["unknown", "Unknown"];
+    return { state, text };
+  }
   if (balance == null) return { state: "unsynced", text: "Not synced yet" };
   return { state: "synced", text: balance };
 }
