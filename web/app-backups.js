@@ -47,10 +47,12 @@ const PASS_NOTE = "This passphrase opens your key share. Zigs cannot recover it.
   + "keep it apart from the file.";
 
 // Nonces stay out: a restored copy must never sign with a nonce this browser may also use. The
-// marks of the payments (ZEC-13) stay out too: a restore does not take them back.
+// marks of the payments (ZEC-13) stay out too: a restore does not take them back. So does the
+// Solana choice of seat 1 (solAuto): a restored seat 1 adds Solana with its button.
 export function backupText(i) {
   const {
-    nonces: _nonces, backupSaved: _saved, backedUp: _oldFlag, sol: _sol, marks: _marks, ...s
+    nonces: _nonces, backupSaved: _saved, backedUp: _oldFlag, sol: _sol, marks: _marks,
+    solAuto: _auto, ...s
   } = sec(state.gid, i);
   s.uid = s.uid || state.seats[i].uid;
   return S({

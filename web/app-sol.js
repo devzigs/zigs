@@ -32,6 +32,27 @@ export const solOn = (gid = state.gid) => {
 // link can write it, so it changes the texts and the preload, and it never starts the ceremony.
 export const solPlanned = (g = state.g) =>
   g?.solana === true && (g.network || "testnet") === "testnet" && walletVersion(g) === 3;
+// Does this server serve Solana? undefined: not asked yet, null: asked, then true or false. The
+// create dialog offers the Solana part only on a server that answers.
+export function solServed() {
+  if (ui.solServed === undefined) {
+    ui.solServed = null;
+    globalThis.fetch("/sol/config.json", { cache: "no-store" }).then((r) => {
+      ui.solServed = r.ok;
+      r.body?.cancel();
+    }, () => { ui.solServed = false; }).finally(render);
+  }
+  return ui.solServed === true;
+}
+// The person who makes a wallet chose its Solana part. Seat 1 of this browser keeps `solAuto`, so
+// its reactor starts the Solana ceremony with no button (web/sol/ceremony.js). The group document
+// gets the hint for the other seats.
+export async function planSolana() {
+  const gid = state.gid;
+  if (!sec(gid, 1)) return;
+  await putSec(gid, 1, { solAuto: true });
+  await sdb.doc("groups/" + gid).update({ solana: true });
+}
 // What a person accepts with the Solana part (the Add Solana card of web/sol/view.js says more).
 export const SOL_DISCLOSURE = "Solana Devnet: a program owns the funds of the group at a public "
   + "program address. Each seat gets a fee address, which appears on chain next to the group. "
@@ -105,7 +126,8 @@ const solStartSigned = () => !!solStartDoc && checkIn(state.gid)("solstart/1", s
 export function solReact() {
   // A seat of a wallet with the Solana hint loads the module at the start of setup, so the key
   // ceremony does not wait for it. The watch still opens only for a confirmed testnet wallet.
-  if (!sol && !solLoading && solPlanned() && localSeats().length) solLoad();
+  const auto = sec(state.gid, 1)?.solAuto === true;
+  if (!sol && !solLoading && (solPlanned() || auto) && localSeats().length) solLoad();
   if (!solOn()) return;
   solWatch();
   if (sol) sol.react();

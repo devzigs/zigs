@@ -21,6 +21,7 @@ const patch = (file, from, to = "") => ({ file, from, to });
 // web/test pins. They run in the node rig (sol-rig.mjs), without a server or a browser.
 const SOL_APP = ["node", "web/test/sol-app.mjs"];
 const SOL_CEREMONY = ["node", "web/test/sol-ceremony.mjs"];
+const UNIFIED = ["node", "web/test/unified-setup.mjs"];
 const APP_SOL = "web/app-sol.js";
 const APP_GROUPS = "web/app-groups.js";
 const INDEX_JS = "cf/src/index.js";
@@ -247,6 +248,11 @@ export const MUTATIONS = [
     [patch(SOL_CEREMONY_JS, "acquire({ holder, ttlMs: LEASE_MS })",
       "acquire({ holder: randomHex32(), ttlMs: LEASE_MS })")],
     /its own lease does not block the retry of round 1/),
+  mutant("W-auto-hint", "the unsigned hint of the group document starts Solana", UNIFIED,
+    [patch(SOL_CEREMONY_JS, "(c) => c.host.sec(c.gid, 1)?.solAuto === true,",
+      "(c) => c.host.state.g?.solana === true,")], /the hint alone starts nothing/),
+  mutant("W-auto-off", "the choice of Solana does not start the ceremony", UNIFIED,
+    [patch(SOL_CEREMONY_JS, "  autoStart(c);\n", "")], /the Solana part, with no button/),
   mutant("W-label-compare", "a seat does not compare the label of the documents",
     SOL_CEREMONY, [patch(SOL_CEREMONY_JS, LABEL_LINE, "  true;")], /another label/),
   mutant("W-label-const", "a seat compares the label with a text of the page, not of the wasm",

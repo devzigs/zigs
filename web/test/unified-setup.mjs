@@ -5,16 +5,22 @@
 // open through both key ceremonies. A seat of such a wallet loads web/sol at the start of setup,
 // and opens no Solana watch before the confirmed network. The setup card and, after the Zcash part,
 // the Overview card show the Solana key and the fee address as steps. The backup note of the wallet
-// asks for the Solana file of each seat too, until that file is saved.
+// asks for the Solana file of each seat too, until that file is saved. The create dialog offers the
+// Solana part for a testnet wallet on a server that serves it. The choice puts solAuto into the
+// secret of seat 1, whose reactor starts the Solana ceremony after the Zcash address check. The
+// hint of the group document alone starts nothing.
 // Run: node web/test/unified-setup.mjs   (Node 24)
 import assert from "node:assert/strict";
-import { loadRig } from "./sol-rig.mjs";
+import { config, loadRig, sleep } from "./sol-rig.mjs";
 
 const rig = await loadRig();
 // The page modules need the stub page of the rig, so they load after it.
 const { SOL_DISCLOSURE, solPlanned } = await import("../app-sol.js");
 const { inviteMessage, joinText } = await import("../app-setup.js");
 const { backupWords } = await import("../sol/backup.js");
+const { createDialog } = await import("../app-shell.js");
+const { ui } = await import("../app-state.js");
+const { planSolana } = await import("../app-sol.js");
 const { t, data, waitFor } = rig;
 const groupPath = (gid) => `groups/${gid}`;
 const BOTH_OPEN = /Every signer keeps this wallet open until the Zcash and the Solana parts/;
@@ -85,6 +91,52 @@ const setupText = pageText();
 assert.match(setupText, /Create the Solana key.*Starts after the Zcash part\./s);
 assert.match(setupText, /Fund your fee address.*Comes after the Solana key\./s);
 
+// ── The create dialog offers Solana for a testnet wallet, on a server that serves it ──
+function dialogText() {
+  const real = globalThis.document;
+  globalThis.document = { createElement: () => new Rec(), createTextNode: (text) => ({ text }) };
+  try {
+    return textOf(createDialog());
+  } finally {
+    globalThis.document = real;
+  }
+}
+{
+  const CHOICE = /Also set up Solana Devnet\..*public program address/s;
+  ui.net = "testnet";
+  delete ui.solServed;
+  assert.doesNotMatch(dialogText(), CHOICE, "not before the server answered");
+  await waitFor("the answer", () => ui.solServed === true);
+  assert.match(dialogText(), CHOICE);
+  ui.net = "mainnet";
+  assert.doesNotMatch(dialogText(), CHOICE, "never for a mainnet wallet");
+  ui.net = "testnet";
+  config.down = true;
+  delete ui.solServed;
+  dialogText();
+  await waitFor("the refusal", () => ui.solServed === false);
+  assert.doesNotMatch(dialogText(), CHOICE, "not on a server without Solana");
+  config.down = false;
+  delete ui.solServed;
+}
+
+// ── The choice starts the Solana ceremony with no button, after the Zcash part ──
+{
+  await t.createGroup("Chosen", 3, 2, null, "testnet");
+  const gidC = t.state.gid;
+  await waitFor("seat 1", () => t.state.seats[1]);
+  await planSolana();
+  assert.equal(t.sec(gidC, 1).solAuto, true, "seat 1 keeps the choice");
+  assert.equal(data.get(groupPath(gidC)).solana, true, "and the group gets the hint");
+  assert.ok(!t.backupText(1).includes("solAuto"), "the Zcash backup file does not carry it");
+  for (const i of [2, 3]) await t.takeSeat(i, 3);
+  const checked = () => Object.keys(t.state.verify).length === 3 && t.state.wallet;
+  await waitFor("wallet checked", checked);
+  const done = (i) => data.has(`groups/${gidC}/soldone/${i}`);
+  await waitFor("the Solana part, with no button", () => [1, 2, 3].every(done), 60000);
+  assert.ok(data.has(`groups/${gidC}/solstart/1`), "seat 1 wrote the start document");
+}
+
 // ── After the Zcash part, the Overview card shows the Solana steps until the fee is funded ──
 {
   const gidH = await rig.wallet({ name: "Hinted" });
@@ -93,6 +145,8 @@ assert.match(setupText, /Fund your fee address.*Comes after the Solana key\./s);
   await waitFor("the hint", () => t.state.g.solana === true);
   await t.solLoad();
   assert.match(pageText(), /Solana is still setting up.*Starts when the Zcash address is checked/s);
+  await sleep(1500);
+  assert.equal(data.has(`groups/${gidH}/solstart/1`), false, "the hint alone starts nothing");
   await t.sol.add();
   const done = (i) => data.has(`groups/${gidH}/soldone/${i}`);
   await waitFor("every soldone", () => [1, 2, 3].every(done), 30000);

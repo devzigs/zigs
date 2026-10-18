@@ -351,9 +351,22 @@ function stopOnDiffer(c) {
   return true;
 }
 
+// Seat 1 starts by itself when its own seat secret holds `solAuto`: its person chose Solana when
+// they made the wallet (planSolana, app-sol.js). The group document says so too, but any holder of
+// the link can write it, so it starts nothing. Each check is cheap and the last one runs once.
+const AUTO = [
+  (c) => c.host.sec(c.gid, 1)?.solAuto === true,
+  (c) => !!c.loaded.solstart && !c.docs.solstart[1] && c.wait === 0,
+  (c) => !stopOf(c) && !startBlock(c.host),
+  (c) => c.host.localSeats().includes(1) && c.host.canWriteAs(1),
+  (c) => seatReady(c.host, c.gid, 1),
+];
+const autoStart = (c) => AUTO.every((due) => due(c)) && launch(c, "solstart", () => addSolana(c));
+
 /** Advances the ceremony of every seat that this browser holds. It acts only on verified data. */
 export function reactCeremony(c) {
   const { host } = c;
+  autoStart(c);
   if (startBlock(host) || !started(c.docs) || c.wait > 0 || stopOnDiffer(c)) return;
   if (stopOf(c)) return;
   for (const i of host.localSeats()) if (host.canWriteAs(i)) stepSeat(c, i);
