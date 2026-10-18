@@ -89,10 +89,8 @@ export const preferredServers = (net) =>
 // second. A fallback and the only server of a network keep the full wait.
 export async function pickServer(net) {
   for (const [at, url] of preferredServers(net).entries()) {
-    const quick = at === 0 && url === net.servers[0] && net.servers.length > 1;
-    const wait = quick ? FIRST_TIMEOUT_MS : SERVER_TIMEOUT_MS;
     try {
-      await withTimeout(Z.latestHeight(url), wait, new URL(url).host);
+      await withTimeout(Z.latestHeight(url), serverWait(net, at, url), new URL(url).host);
       failedAt.delete(url);
       return url;
     } catch (e) {
@@ -105,14 +103,20 @@ export async function pickServer(net) {
     { noServer: true });
 }
 
+/** How long `url`, at place `at` of a list of servers of `net`, may take to answer (pickServer). */
+export const serverWait = (net, at, url) => (at === 0 && url === net.servers[0]
+  && net.servers.length > 1 ? FIRST_TIMEOUT_MS : SERVER_TIMEOUT_MS);
+
 // A new server or a reload continues from saved state; without it the wallet syncs from the birthday.
 async function connect(c) {
   const url = await pickServer(c.net);
   if (c.cw && c.url === url) return;
   const next = await restored(c, url);
+  // The new object first: when it cannot be made, the chain keeps its old one, stalled or not.
+  const cw = next || new Z.ChainWallet(c.ufvk, c.birthday, url);
   if (freeable(c)) c.cw.free();
   c.stalled = null;
-  c.cw = next || new Z.ChainWallet(c.ufvk, c.birthday, url);
+  c.cw = cw;
   c.url = url;
   log("using " + new URL(url).host + (next ? ", continuing from saved state" : ""));
   if (next && !c.bal) {
@@ -155,7 +159,14 @@ export async function runSync(c) {
     c.syncing = false;
     if (!current(c) && freeable(c)) c.cw.free();
     render();
+    if (c.again) { c.again = false; runSync(c); }
   }
+}
+// A sync now, or one more after the sync that runs: a proposal stalled during it, and that sync can
+// still use the stalled object. Once for each call, so a dead server makes no loop.
+export function syncAgain(c) {
+  if (c.syncing) c.again = true;
+  else runSync(c);
 }
 async function syncFailed(c, e) {
   c.error = (e.message || String(e)) + (e.noServer ? " The page tries again by itself." : "");
