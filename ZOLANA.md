@@ -944,6 +944,56 @@ group, PDA `9gk8NEZU…`:
   address of @solana/kit, and Node verifies the FROST signature over the digest of the body. No
   proposal account of the program is open.
 
+**6.13 SOL-30 live run, 18 October 2026** (the harness of this repo at main `c5804b0` with
+`SOLSPIKE_ORIGIN=https://app.zigs.app` on a local https server; three seats in three browser
+contexts; the ProgramData held `b4bad24c…`, deploy slot 512086872, before any send and before
+each payment):
+
+- `sol-live.mjs`, read only: 29 of 29 checks pass. They cover the policies of the page and the
+  Worker, the Worker reads of the P5 nonce account and the tree fees against raw reads, CORS for
+  the page origin, and the load budget. The first try stopped at the Worker init, because its
+  throwaway roles had no PDA identity (fixed in `39bf2ad`).
+- `scenario-e.mjs`, a new group E: no move card and no nonce account step. The funder sent
+  0.003 SOL to the fee address of seat 1 (`WzwvwZf1…`). Seat 1 added 0.002 SOL (`46qvFESW…`),
+  paid by its fee address, and every seat read 0.002 SOL.
+- `scenario-f.mjs`, a new group F. Every seat saved its Zcash and its Solana backup. The fee
+  addresses got 0.006, 0.0025 and 0.0025 SOL (`3NLt481z…`, `QnVpCstA…`, `33RFivZ7…`), and seat 1
+  added 0.003 SOL (`2hYmEhTu…`).
+  - pay-a, 0.001 SOL to key B: seat 1 created `CtzeXw8f…` (`3KL8xpoD…`, slot 512,389,962), seats 1
+    and 2 approved, and seat 1 executed (`5wKPVwiC…`, slot 512,390,178, 154,001 compute units).
+  - The three contexts closed. Three blank contexts restored every seat from the backup files,
+    with the same group key and fee addresses, and seat 1 read 0.002 SOL.
+  - pay-b, 0.001 SOL to key B: seat 3 created `EyvcsVMT…` (`2iu2PQ82…`, slot 512,390,297), and its
+    context closed. Seats 1 and 2 approved, and seat 2 executed (`S9v6zjTN…`, slot 512,390,515,
+    152,128 compute units).
+  - A withdrawal, 0.0005 SOL to the public fee address of seat 3: seat 2 created `5Nz9Zidc…`
+    (`5AxchEce…`, slot 512,390,568), seats 2 and 1 approved, and seat 2 executed (`WpPBjb8T…`,
+    slot 512,390,792, 157,270 compute units). The execute ends with the owner PDA, the SOL
+    interface and the recipient.
+  - The chain, read with the kit decoder and Node's own Ed25519: each proposal address is the
+    version 5 address, the Ed25519 instruction holds the group key and the digest of the body,
+    and the FROST signature verifies. Each account is closed, the proposer paid the create and got
+    the rent back, and each payee got exactly the amount (1,000,000, 1,000,000 and 500,000
+    lamports). Each execute cost 10,000 lamports. The PDA identity holds 0.0005 SOL, and no page
+    had a console problem.
+- Cost: the funder sent 14,000,000 lamports to the fee addresses and paid four transfer fees. No
+  proposal account of the program is open after the run.
+
+**6.14 SOL-52 live run, 18 October 2026** (`wasm-sol/tools/rent_live.mjs` of `13b77d9` on the
+public Devnet RPC; a new fee key `AxyGpUZN…` of a new test group `23yfnuAB…`):
+
+- The funder sent 0.003 SOL to the fee key (`5X62SQuX…`, slot 512,394,689).
+- The fee key created one proposal `DB4jpcJE…` that expires 60 s later (`2phPXQJ5…`, slot
+  512,394,696). Its rent is 1,356,360 lamports.
+- Before the expiry, the filter of the page (`web/sol/owned.js`, then `reclaimable`) offered
+  nothing, and the network refused the cancel in a simulation with no fee:
+  `{"InstructionError":[0,{"Custom":6017}]}` (`NotAbortAuthority`).
+- After the expiry, the filter offered the proposal, and the cancel that the checker compiles and
+  signs landed (`TT5FcQJt…`, slot 512,394,973). The account is closed, and the fee key held
+  3,000,000 lamports minus two fees: the rent came back in full.
+- The fee key returned the rest to the funder (`cy1CJtix…`, slot 512,394,979). Cost: 4
+  transactions, 20,000 lamports of fees.
+
 ## 7. Risks, questions and recommendation
 
 | Risk | Fact |
