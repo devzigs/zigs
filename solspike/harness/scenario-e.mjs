@@ -1,6 +1,8 @@
 // Live check of the setup of a new group: three seats in three in-memory contexts of one Chrome
-// (the rig) make a 2-of-3 wallet and its Solana part. A new group shows no move card and no nonce
-// account step. The funder sends 0.003 SOL to the fee address of seat 1, the proposing seat, and
+// (the rig) make a 2-of-3 wallet. Seat 2 then restores its Zcash seat from its backup on a blank
+// page, before the wallet has a Solana part, and the three seats make the Solana part (a restored
+// seat joins the ceremony, release item M4). A new group shows no move card and no nonce account
+// step. The funder sends 0.003 SOL to the fee address of seat 1, the proposing seat, and
 // seat 1 adds 0.002 SOL to the private balance of the group (Add SOL). Checks outside the app: the
 // fee address of seat 1 pays the Add SOL transaction, and every seat syncs the private balance.
 // THIS RUN LANDS TWO TRANSACTIONS on Devnet (PLAN). Results: solspike/logs/scenario-e.json.
@@ -15,10 +17,12 @@ import { fileURLToPath } from "node:url";
 import { fund } from "../tools/fund.mjs";
 import { confirmed, payerOf } from "../tools/program-chain.mjs";
 import { addSol, feeAddresses, feeFunded, privateBalance, problemsOf } from "./flow.mjs";
+import { assertBlank, restoreZcash, zcashBackup } from "./backups.mjs";
 import { MOCK, heliusAnswers, withMockUrl } from "./mock.mjs";
 import { run } from "./page.mjs";
 import { redact } from "./redact.mjs";
-import { solanaReady, zcashWallet } from "./seats.mjs";
+import { openApp, solanaReady, zcashWallet } from "./seats.mjs";
+import { ORIGIN } from "./server.mjs";
 import { withStack } from "./stack.mjs";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
@@ -45,8 +49,20 @@ const record = (label, facts) => {
 
 const has = (page, mark) => run(page, (m) => !!document.querySelector(`[data-sol="${m}"]`), mark);
 
+/** The seat of `page` backs up its Zcash seat, its page closes, and a blank page restores it. */
+async function restoredSeat(rig, page, gid, seat) {
+  const file = await zcashBackup(page);
+  await page.context.dispose();
+  const fresh = await openApp(rig, "restored" + seat, `${ORIGIN}/`);
+  await assertBlank(fresh);
+  await restoreZcash(fresh, file, gid);
+  return fresh;
+}
+
 async function newGroup(rig) {
   const { pages, gid } = await zcashWallet(rig, "Scenario E wallet");
+  pages[1] = await restoredSeat(rig, pages[1], gid, 2);
+  record("restored-seat2", {});
   const keys = await solanaReady(pages, gid);
   for (const page of pages) {
     assert.equal(await has(page, "move"), false, "a new group has no move card");

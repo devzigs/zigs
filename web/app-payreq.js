@@ -10,7 +10,7 @@ import { S, short } from "./app-kit.js";
 import { Z } from "./app-engine.js";
 import { mySeatSecrets } from "./app-keystore.js";
 import {
-  balOf, capText, curNet, netName, netOf, NETWORKS, openTotal, underCap,
+  balOf, capText, curNet, MAINNET_ON, netName, netOf, NETWORKS, openTotal, underCap,
 } from "./app-chain.js";
 import { closeSession, openGroup } from "./app-groups.js";
 import {
@@ -40,9 +40,13 @@ function parseCached(uri, net) {
 }
 
 // A wallet reads a request for its own network, and so does the personal account (`network`). A
-// chat has no wallet, so it tries both.
+// chat has no wallet, so it tries both; while MAINNET_ON is false it tries testnet only (M1). A
+// mainnet wallet or account made before still reads its own requests (owner decision D3).
+const chatNets = () => (MAINNET_ON ? ["test", "main"] : ["test"]);
+const requestNets = (dm, network) => network ? [REQUEST_NET[network]]
+  : dm ? chatNets() : [REQUEST_NET[netName(state.g)]];
 const requestEnv = (dm, network) => ({
-  nets: network ? [REQUEST_NET[network]] : dm ? ["test", "main"] : [REQUEST_NET[netName(state.g)]],
+  nets: requestNets(dm, network),
   parse: parseCached, blocker: (to) => payeeBlocker(to, normalized),
 });
 
@@ -192,7 +196,8 @@ export const roomRequest = () => ({
 // browser's own seat checked, never the store's copy.
 export const chatRequest = () => ({
   why: () => dmChoices().length ? "" : "You hold no seat in a wallet that can receive a request. "
-    + "A wallet needs a checked address and, on mainnet, a known balance under the cap.",
+    + "A wallet needs a checked address" + (MAINNET_ON ? " and, on mainnet, a known balance under "
+    + "the cap" : "") + ".",
   choices: dmChoices,
   fine: "Your contact, and anyone else who has the contact link, can read the address, the "
     + "amount and the memo of this request.",
