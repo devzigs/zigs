@@ -11,14 +11,21 @@
 // hint of the group document alone starts nothing.
 // Run: node web/test/unified-setup.mjs   (Node 24)
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
 import { config, loadRig, sleep } from "./sol-rig.mjs";
 
 const rig = await loadRig();
 // The page modules need the stub page of the rig, so they load after it.
-const { SOL_DISCLOSURE, solPlanned } = await import("../app-sol.js");
-const { inviteMessage, joinText } = await import("../app-setup.js");
+const { SOL_DISCLOSURE, solPlanned, solServed } = await import("../app-sol.js");
+const { inviteMessage, joinText, onLink } = await import("../app-setup.js");
+const { chatMessage } = await import("../app-links.js");
+const { chatInviteCard } = await import("../app-thread.js");
+const { chats } = await import("../app-keystore.js");
 const { backupWords } = await import("../sol/backup.js");
-const { createDialog } = await import("../app-shell.js");
+const { pendingCount } = await import("../sol/view.js");
+const { createDialog, lobby, renderSide } = await import("../app-shell.js");
+const { offReason } = await import("../util.js");
+const { intentHex } = await import("../sol/intent.js");
 const { ui } = await import("../app-state.js");
 const { planSolana, solSetup } = await import("../app-sol.js");
 const { walletReady } = await import("../app-wallet.js");
@@ -99,6 +106,80 @@ const byText = (node, text) => node.text === undefined && textOf(node) === text 
   for (const [why, change] of Object.entries(shut)) assert.equal(auto(change), false, why);
 }
 
+// ── S6: the Solana proposals that a seat of this browser can still approve ──
+// The count follows the Approve button of the tab: it needs agreeing documents, a part that
+// did not stop, a proposal that the app can show and sign, and a seat that holds a share and a
+// signing key and gave no approval yet. The side item and the Solana tab show it.
+const proposal = (id, change = {}) => ({
+  id,
+  status: "collecting",
+  by: 1,
+  intent: intentHex("createNonce", { blockhash: "11".repeat(32) }),
+  message: "ab".repeat(8),
+  feeSig: "00".repeat(64),
+  ...change,
+});
+const labelled = (node, label) =>
+  node.attrs?.["aria-label"] === label ||
+  (node.kids ?? []).some((kid) => labelled(kid, label));
+function sideTree() {
+  const real = globalThis.document;
+  const nav = new Rec();
+  nav.replaceChildren = (...nodes) => void (nav.kids = nodes);
+  const fake = { createElement: () => new Rec(), createTextNode: (text) => ({ text }) };
+  globalThis.document = { ...fake, getElementById: () => nav };
+  try {
+    renderSide();
+    return nav;
+  } finally {
+    globalThis.document = real;
+  }
+}
+function approvalCount(ctl) {
+  const count = (sessions, commits = {}, change = {}) =>
+    pendingCount({ ...ctl, ...change, sessions, commits });
+  const docs = (change) => ({ docs: { ...ctl.docs, ...change } });
+  const two = [proposal("a"), proposal("b"), proposal("c", { status: "sent" })];
+  assert.equal(count(two), 2, "two open proposals, a sent one does not count");
+  assert.equal(count(two, { a: { 1: {} } }), 2, "seats 2 and 3 can still approve a");
+  assert.equal(count(two, { a: { 1: {}, 2: {}, 3: {} } }), 1, "every seat approved a");
+  assert.equal(count([proposal("d", { intent: "zz" })]), 0, "a proposal the app cannot show");
+  const old = proposal("e", { feeSig: undefined });
+  assert.equal(count([old]), 0, "a proposal from before the fee keys");
+  const only3 = { host: { ...ctl.host, canWriteAs: (i) => i === 3 } };
+  assert.equal(count(two, {}, only3), 2, "seat 3 can sign");
+  assert.equal(count(two, { a: { 3: {} }, b: { 3: {} } }, only3), 0, "seat 3 approved both");
+  const none = { host: { ...ctl.host, canWriteAs: () => false } };
+  assert.equal(count(two, {}, none), 0, "no seat of this browser has a signing key");
+  const noShare = { host: { ...ctl.host, sec: () => ({ sol: {} }) } };
+  assert.equal(count(two, {}, noShare), 0, "no seat holds a Solana key share");
+  const stop = docs({ solabort: { 2: { reason: "A test stop." } } });
+  assert.equal(count(two, {}, stop), 0, "a stopped part has no proposal to approve");
+  assert.equal(count(two, {}, docs({ soldone: {} })), 0, "the seats do not agree on one key");
+  // The side item and the tab show the count of the open wallet.
+  const kept = [ctl.sessions, ctl.commits, t.state.groups];
+  Object.assign(ctl, { sessions: two, commits: {} });
+  t.state.groups = [t.state.g];
+  try {
+    assert.ok(labelled(sideTree(), "2 to approve"), "the side item shows the count");
+    assert.ok(labelled(pageTree(), "2 to approve"), "the Solana tab shows the count");
+    Object.assign(ctl, { sessions: [], commits: {} });
+    assert.ok(!labelled(sideTree(), "2 to approve"), "no count without a proposal");
+  } finally {
+    [ctl.sessions, ctl.commits, t.state.groups] = kept;
+  }
+}
+
+// ── S6: the tab bar wraps at every width, so no tab sits past the edge ──
+// The widths are measured in Chrome (solspike phone checks): the rule here is what they need.
+{
+  const css = readFileSync(new URL("../app.css", import.meta.url), "utf8");
+  const bar = css.match(/^\.tabs \{([^}]*)\}/m)?.[1] ?? "";
+  assert.match(bar, /flex-wrap: wrap/, "the bar wraps");
+  assert.doesNotMatch(bar, /overflow/, "and does not scroll");
+  assert.doesNotMatch(css, /\.tabs \{[^}]*overflow/, "no width brings the scroll back");
+}
+
 // ── The hint: version 3 testnet wallets only ──
 const g = { solana: true, network: "testnet", version: 3 };
 assert.equal(solPlanned(g), true);
@@ -130,6 +211,34 @@ assert.match(inviteMessage(link), /a shared wallet for Zcash testnet and Solana 
 assert.doesNotMatch(inviteMessage(link), /shielded|private shared/, "Solana is not shielded");
 assert.match(inviteMessage(link), /until the Zcash and the Solana parts are ready/);
 assert.ok(inviteMessage(link).includes(link), "the invite still carries the link");
+// The password of the site and the browser (S10, owner decision D1), in every invite text. The
+// site asks for a user name too, and any user name works (cf/src/index.js).
+const PASSWORD = new RegExp("The browser asks for a user name and a password before Zigs opens\\. "
+  + "Use any user name\\. I send the password to you apart from this link\\.");
+const BROWSER = /Open the link in Safari or Chrome\. Do not open it in a chat app browser or a/;
+for (const text of [inviteMessage(link), plain.invite, chatMessage(link)]) {
+  assert.match(text, PASSWORD);
+  assert.match(text, BROWSER);
+}
+// The invite cards of a wallet and of a chat say the same to the sender.
+const SENDER = new RegExp("asks for a user name and a password before Zigs opens\\. Any user name "
+  + "works\\. Send the password apart from the link\\. Tell (each signer|your contact) to open the "
+  + "link in Safari or Chrome\\. The browser of a chat app or a private window can delete the key");
+assert.match(pageText(), SENDER, "the invite card of a wallet");
+{
+  const cid = "c0ffee00c0ffee00c0ff";
+  chats.list[cid] = { key: "ab".repeat(32), member: "m", at: Date.now() };
+  const real = globalThis.document;
+  globalThis.document = { createElement: () => new Rec(), createTextNode: (text) => ({ text }) };
+  try {
+    const card = chatInviteCard(cid);
+    assert.match(textOf(card), SENDER, "the invite card of a chat");
+    assert.match(textOf(card), /The browser of your contact asks/);
+  } finally {
+    globalThis.document = real;
+    delete chats.list[cid];
+  }
+}
 assert.match(SOL_DISCLOSURE, /public program address.*fee address.*Helius.*no audit/);
 assert.ok(SOL_DISCLOSURE.includes(PUBLIC_TEXT), "the choice says what the Solana tab says");
 assert.match(SOL_DISCLOSURE, /Every signer sees the whole Solana history/);
@@ -141,13 +250,92 @@ assert.match(SOL_DISCLOSURE, /Every signer sees the whole Solana history/);
   t.secrets[gid + ":1"] = kept;
   assert.match(join, /Take seat 2/);
   assert.ok(join.includes(SOL_DISCLOSURE), "the join card says what Solana makes public");
+  assert.match(join, /Then open the link in Safari or Chrome first\./, "where to open the link");
 }
 // The preload: the module loads at the start of setup, and no Solana watch opens before the
 // people of the wallet confirmed the network.
+// S12: a failed load says why and waits for Try again. The server first answers 503.
+config.down = true;
 t.refilter();
 await waitFor("the preload", () => t.solLoading !== null);
 await t.solLoading;
-assert.ok(t.sol, "the module loaded");
+assert.equal(t.sol, null, "the load failed");
+assert.match(t.solError, /not available on this server/);
+const solTabText = () => {
+  const real = globalThis.document;
+  globalThis.document = { createElement: () => new Rec(), createTextNode: (text) => ({ text }) };
+  try {
+    return textOf(t.solTab());
+  } finally {
+    globalThis.document = real;
+  }
+};
+assert.match(solTabText(), /^Solana did not load\. Check your connection, then press Try again/,
+  "a config failure says Try again");
+const NOT_SERVED = /Solana did not load: Solana is not available on this server/;
+assert.match(t.banner.text, NOT_SERVED, "the banner says why");
+// The setup step says it once, with no Try again button on this page, and the page asks no one
+// to wait for a Solana part that did not load.
+assert.doesNotMatch(pageText(), BOTH_OPEN, "no wait for a Solana part that did not load");
+assert.match(pageText(), /Create the Solana key.*Solana is not available on this server/s);
+assert.doesNotMatch(pageText(), /Solana did not load: Solana is not/);
+const { solRetry, whyNotLoaded, loadFail } = await import("../app-sol.js");
+solRetry();
+await t.solLoading;
+assert.match(t.solError, /not available on this server/, "a failed retry fails again");
+assert.match(t.banner?.text ?? "", NOT_SERVED, "and the banner stays");
+config.down = false;
+solRetry();
+await waitFor("the load after Try again", () => !!t.sol);
+assert.equal(t.solError, "", "and the error is gone");
+assert.equal(t.banner, null, "and the banner goes away");
+{
+  const loaded = t.solLoading;
+  solRetry();
+  assert.equal(t.solLoading, loaded, "a second tap after a good retry loads nothing");
+}
+{
+  // A failed load that is not a refusal of the server is the connection (SOL-26). A refusal is
+  // a 503 (SOL off) or a 404. Only the Solana tab has a Try again button.
+  const real = globalThis.fetch;
+  const why = async (status) => {
+    globalThis.fetch = async () => {
+      if (!status) throw new TypeError("Failed to fetch");
+      return new Response("x", { status });
+    };
+    try {
+      return await whyNotLoaded();
+    } finally {
+      globalThis.fetch = real;
+    }
+  };
+  for (const status of [503, 404]) {
+    assert.match(await why(status), /^Solana is not available on this server$/, "status " + status);
+  }
+  for (const status of [500, 200, 0]) {
+    const text = await why(status);
+    assert.match(text, /^Solana did not load\. Check your connection, then reload the page\.$/);
+  }
+  // The Solana tab: an import failure says reload (a browser keeps a failed import for the
+  // page), and a failure after the import gets Try again.
+  const down = await why(0);
+  const failTree = (error, retry) => {
+    const real = globalThis.document;
+    globalThis.document = { createElement: () => new Rec(), createTextNode: (text) => ({ text }) };
+    try {
+      return loadFail(error, retry);
+    } finally {
+      globalThis.document = real;
+    }
+  };
+  const imported = failTree(down, false);
+  assert.equal(textOf(imported), down, "an import failure: reload");
+  assert.equal(byText(imported, "Try again"), null, "and no Try again button");
+  const after = failTree("Failed to fetch", true);
+  const RETRY = /^Solana did not load\. Check your connection, then press Try again\./;
+  assert.match(textOf(after), RETRY, "a failure after the import says Try again");
+  assert.ok(byText(after, "Try again"), "next to the button");
+}
 assert.equal(rig.live(`groups/${gid}/sol`), 0, "and opened no Solana watch");
 // The setup card lists the two Solana steps after the three Zcash steps.
 const setupText = pageText();
@@ -187,6 +375,160 @@ const byId = (node, id) =>
   await waitFor("the refusal", () => ui.solServed === false);
   assert.doesNotMatch(dialogText(), CHOICE, "not on a server without Solana");
   config.down = false;
+  delete ui.solServed;
+}
+
+// ── S1: a button that is off shows why, as text next to it ──
+// The first reason that holds wins: the engine, the group server, a read-only page, a wallet
+// that waits for its check, a join that runs.
+{
+  const WHY = {
+    loading: "Zigs is still loading its crypto engine.",
+    failed: "The crypto engine did not load. Reload the page.",
+    server: "Zigs is not connected to the group server yet.",
+    readOnly: "This page is read-only here.",
+    pending: "Zigs is still checking this wallet's data. Try again in a moment.",
+    joining: "Zigs is joining the chat. Wait a moment.",
+  };
+  const on = { Z: {}, settled: true, canWrite: true, db: true, pending: false, joining: false };
+  assert.equal(offReason(on), "", "everything ready: no reason");
+  assert.equal(offReason({ ...on, Z: null }), WHY.failed);
+  assert.equal(offReason({ ...on, Z: null, settled: false }), WHY.loading);
+  assert.equal(offReason({ ...on, db: false }), WHY.server);
+  assert.equal(offReason({ ...on, canWrite: false }), WHY.readOnly);
+  assert.equal(offReason({ ...on, pending: true }), WHY.pending);
+  assert.equal(offReason({ ...on, joining: true }), WHY.joining);
+  const noDb = { ...on, db: undefined };
+  assert.equal(offReason(noDb), "", "a button that does not need the server leaves db out");
+  const all = { Z: null, settled: false, canWrite: false, db: false, pending: true, joining: true };
+  assert.equal(offReason(all), WHY.loading, "the engine comes first");
+  const noZ = { ...all, Z: {} };
+  assert.equal(offReason(noZ), WHY.server, "then the group server");
+  assert.equal(offReason({ ...noZ, db: true }), WHY.readOnly, "then a read-only page");
+  assert.equal(offReason({ ...noZ, db: true, canWrite: true }), WHY.pending, "then the check");
+
+  // The pages: each button is off, with its reason in the text and its id in aria-describedby.
+  const swap = (build, change) => {
+    const keep = { Z: engine.Z, db: groups.db };
+    if ("Z" in change) t.setZ(change.Z);
+    if ("db" in change) t.setDb(change.db);
+    const real = globalThis.document;
+    globalThis.document = { createElement: () => new Rec(), createTextNode: (text) => ({ text }) };
+    try {
+      return build();
+    } finally {
+      globalThis.document = real;
+      t.setZ(keep.Z);
+      t.setDb(keep.db);
+    }
+  };
+  // The text of the reason with this id, or "none" when the page shows no such reason.
+  const says = (tree, id) => (byId(tree, id) ? textOf(byId(tree, id)) : "none");
+  const engine = await import("../app-engine.js"), groups = await import("../app-groups.js");
+  const { joinLinks } = await import("../app-messages.js");
+  const { busy } = await import("../app-state.js");
+  const buttons = [
+    ["Create wallet", "why-create", () => lobby()],
+    ["Create wallet", "why-create-submit", () => createDialog()],
+    ["New chat", "why-new-chat", () => lobby()],
+    ["Join chat", "why-chat-join-cc", () => lobby()],
+  ];
+  const cc = "cc".repeat(10);
+  joinLinks.set(cc, "k".repeat(64));
+  try {
+    for (const [label, id, build] of buttons) {
+      const idFor = id.replace("-cc", "-" + cc);
+      for (const [change, why] of [[{ Z: null }, WHY.loading], [{ db: null }, WHY.server]]) {
+        const tree = swap(build, change);
+        const button = byText(tree, label);
+        assert.ok(button, label + " is on the page");
+        assert.equal(button.attrs.disabled, "", label + " is off: " + why);
+        assert.equal(button.attrs["aria-describedby"], idFor, label + " points at its reason");
+        const note = byId(tree, idFor);
+        assert.ok(note, label + " has a reason next to it");
+        assert.equal(textOf(note), why, label + " says why");
+      }
+      const tree = swap(build, {});
+      assert.ok(!("disabled" in byText(tree, label).attrs), label + " is on");
+      assert.equal(byId(tree, idFor), null, label + " has no reason");
+    }
+    // A join that runs also switches Join chat off.
+    busy.add("chatjoin:" + cc);
+    const tree = swap(() => lobby(), {});
+    assert.equal(says(tree, "why-chat-join-" + cc), WHY.joining, "a join that runs");
+    busy.delete("chatjoin:" + cc);
+  } finally {
+    joinLinks.delete(cc);
+    busy.delete("chatjoin:" + cc);
+  }
+  // The setup page: It matches, Take seat and Play seat.
+  const setup = (change, pending = false) => {
+    t.state.pending = pending;
+    try {
+      return swap(() => t.groupView(), change);
+    } finally {
+      t.state.pending = false;
+    }
+  };
+  assert.equal(says(setup({ Z: null }), "why-play"), WHY.loading, "Play seat");
+  assert.equal(says(setup({}, true), "why-play"), WHY.pending, "Play seat waits");
+  assert.equal(byId(setup({}), "why-play"), null, "Play seat is on");
+  const kept = t.secrets[gid + ":1"];
+  delete t.secrets[gid + ":1"];
+  try {
+    const join = (change, pending) => setup(change, pending);
+    assert.equal(says(join({ Z: null }), "why-take"), WHY.loading, "Take seat");
+    assert.equal(says(join({}, true), "why-take"), WHY.pending, "Take seat waits");
+    assert.equal(byId(join({}), "why-take"), null, "Take seat is on");
+  } finally {
+    t.secrets[gid + ":1"] = kept;
+  }
+}
+
+// ── S1: the setup card shows the state of the link to the group server while not open ──
+{
+  const states = { state: "retrying", retryAt: Date.now() + 5000, code: 0, groups: {} };
+  const SHOWN = /Connecting to the group server…|The group server does not answer[^.]*\./;
+  const line = (s) => {
+    onLink(s);
+    return pageText().match(SHOWN);
+  };
+  assert.equal(line({ state: "idle", retryAt: 0, code: null, groups: {} }), null, "idle");
+  assert.equal(line({ ...states, state: "open", retryAt: 0, code: null }), null, "open");
+  assert.equal(line({ ...states, state: "connecting", code: null })?.[0],
+    "Connecting to the group server…");
+  assert.equal(line(states)?.[0], "The group server does not answer (no network).");
+  assert.equal(line({ ...states, code: 401 })?.[0],
+    "The group server does not answer (the preview password is missing or wrong).");
+  assert.equal(line({ ...states, code: 429 })?.[0],
+    "The group server does not answer (too many connections from this network).");
+  assert.equal(line({ ...states, code: 404 })?.[0], "The group server does not answer.");
+  onLink({ state: "open", retryAt: 0, code: null, groups: {} });
+  assert.doesNotMatch(pageText(), /group server does not answer|Connecting to the group server/);
+}
+
+// ── The dialog reads the small config body to its end: a cancel is a failed request ──
+{
+  const real = globalThis.fetch;
+  let cancelled = false, read = false;
+  globalThis.fetch = async () => new Response(new ReadableStream({
+    pull(ctl) {
+      ctl.enqueue(new TextEncoder().encode("{}"));
+      ctl.close();
+      read = true;
+    },
+    cancel() {
+      cancelled = true;
+    },
+  }), { status: 200 });
+  try {
+    delete ui.solServed;
+    solServed();
+    await waitFor("the config answer", () => ui.solServed === true && (read || cancelled));
+  } finally {
+    globalThis.fetch = real;
+  }
+  assert.equal(cancelled, false, "the config body is read, not cancelled");
   delete ui.solServed;
 }
 
@@ -285,6 +627,9 @@ const byId = (node, id) =>
   t.sol.ctl.chain = { fees: { 1: "0.006 SOL", 2: "0 SOL", 3: "0.0025 SOL" } };
   assert.match(pageText(), /Solana is still setting up/, "one empty fee address keeps the card");
   t.sol.ctl.chain = {};
+  ui.tab = "members";
+  assert.match(pageText(), SENDER, "the invite link of the Signers tab");
+  ui.tab = "overview";
   // A stopped Solana part: the Zcash part still works, and the next step is a new wallet.
   const kept = t.sec(gidH, 1).sol;
   const aborted = "Solana setup stopped: a test. Do not use the Solana part of this wallet.";
@@ -358,9 +703,30 @@ const byId = (node, id) =>
   await t.sol.add();
   const done = (i) => data.has(`groups/${gidS}/soldone/${i}`);
   await waitFor("every soldone", () => [1, 2, 3].every(done), 30000);
+  // S15: the tab says the status in a sentence.
+  ui.tab = "solana";
+  await waitFor("the ready tab", () => /The Solana part is ready\./.test(pageText()));
+  ui.tab = "overview";
+  approvalCount(t.sol.ctl);
+  // The first sentence names the file that is unsaved: a Zcash file, or only a Solana file.
+  const note = (...args) => {
+    const real = globalThis.document;
+    globalThis.document = { createElement: () => new Rec(), createTextNode: (text) => ({ text }) };
+    try {
+      return textOf(t.backupNote(...args));
+    } finally {
+      globalThis.document = real;
+    }
+  };
+  assert.match(note([2], [1]), /^Back up your key share\. This browser can forget it/);
+  assert.match(note([], [1]), /^Back up the Solana part of your key share\. This browser can/);
+  assert.match(note([], [1]), /second file, with its own passphrase/);
+  assert.doesNotMatch(note([2], []), /Solana/);
   const solButtons = () => pageText().match(/Back up Solana, seat \d/g) ?? [];
   await waitFor("the note", () => solButtons().length === 3);
   assert.match(pageText(), /The Solana part of a seat is a second file, with its own passphrase/);
+  // S13: a new wallet has no older file, so the note says nothing about an older format.
+  assert.doesNotMatch(pageText(), /backup format changed|iPhone and Mac apps/);
   const saved = [];
   t.setDownloads({ save: async (file) => void saved.push(file) });
   const words = backupWords(t.sol.ctl, 2);

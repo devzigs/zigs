@@ -15,6 +15,7 @@ import { docFields } from "../signed.js";
 import { newSignKey, signMsg } from "../chat.js";
 import { agreement, fitsSolana, seatProgress, startBlock } from "../sol/ceremony.js";
 import { backupText as solBackupText, backupWords } from "../sol/backup.js";
+import { base58 } from "../sol/docs.js";
 import { syncSolana } from "../sol/session.js";
 import { solView } from "../sol/view.js";
 import { config, loadRig, sleep, storage } from "./sol-rig.mjs";
@@ -107,6 +108,43 @@ const KEY_MARKS = ["owner", "group-key", "shielded", "sync", "restore", "backup-
 const STOP_TEXT = "Solana setup stopped: a test. Do not use the Solana part of this wallet.";
 const STOP = /Solana setup stopped: .*Do not use the Solana part of this wallet/;
 
+const nodesOf = (node, pick) =>
+  typeof node !== "object"
+    ? []
+    : [...(pick(node) ? [node] : []), ...node.kids.flatMap((kid) => nodesOf(kid, pick))];
+
+// Each Copy button sits in the dd of its value, has a name for a screen reader and copies that
+// value. A dd of its own would take the place of a label in the two-column list (S15).
+async function copiesItsValue(view, done) {
+  const dds = nodesOf(view, (n) => n.tag === "dd");
+  const notes = ["pay-to", "custody-text"];
+  const [dl] = nodesOf(view, (n) => n.tag === "dl" && n.attrs.class === "kv");
+  dl.kids.forEach((kid, at) => {
+    const note = notes.includes(kid.attrs["data-sol"]);
+    assert.ok(kid.tag !== "dd" || note || dl.kids[at - 1].tag === "dt", "a dd with no label");
+  });
+  const expected = [
+    ["owner", "copy-program", base58(done.pda), "Copy the program address"],
+    ["shielded", "copy-shielded", done.pdaAddress, "Copy the shielded address"],
+  ];
+  const copied = [];
+  const clipboard = { writeText: async (text) => void copied.push(text) };
+  const nav = globalThis.navigator;
+  Object.defineProperty(nav, "clipboard", { value: clipboard, configurable: true });
+  for (const [mark, copy, value, label] of expected) {
+    const dd = dds.find((n) => nodeOf(n, mark));
+    assert.equal(plain(nodeOf(dd, mark)), value, mark + " shows its value");
+    const button = nodeOf(dd, copy);
+    assert.ok(button, copy + " sits in the dd of " + mark);
+    assert.equal(button.attrs["aria-label"], label);
+    const target = { textContent: "Copy" };
+    await button.attrs.onclick({ currentTarget: target });
+    assert.equal(copied.pop(), value, copy + " copies the value of " + mark);
+    assert.equal(target.textContent, "Copied");
+  }
+}
+const plain = (node) => (typeof node === "object" ? node.kids.map(plain).join("") : String(node));
+
 // A stopped wallet stays stopped when the documents agree again: the tab shows no key, no sync
 // and no backup, and the sync, the backup, the restore and a new start all refuse. `lost` is the
 // seat that loses its Solana part for the restore: it must not be the one that holds the stop.
@@ -132,6 +170,7 @@ async function stoppedEverywhere(gid, lost = 1) {
     ["a", "https://faucet.solana.com/", "_blank", "noopener"],
     "the fund card links to the Devnet faucet in a new tab",
   );
+  await copiesItsValue(control, agreement(c).done);
   // The sync refuses before it starts the Worker or makes a request.
   const realFetch = globalThis.fetch;
   globalThis.fetch = () => assert.fail("no request while the wallet is stopped");

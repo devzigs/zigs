@@ -6,7 +6,7 @@ import { fmtZec, initials, up, when } from "./app-kit.js";
 import { Z } from "./app-engine.js";
 import { chats } from "./app-keystore.js";
 import { seatMine } from "./app-seats.js";
-import { chatLink, chatMessage, openChat } from "./app-links.js";
+import { chatLink, chatMessage, openChat, senderNote } from "./app-links.js";
 import { curChain, curNet, netName, readsMemos, spanMs } from "./app-chain.js";
 import { changedSigners } from "./app-filter.js";
 import { canWrite, db, openSession } from "./app-groups.js";
@@ -285,12 +285,13 @@ function chatCard(cid) {
     leaveBox(cid));
 }
 
-function chatInviteCard(cid) {
+export function chatInviteCard(cid) {
   const link = chatLink(cid);
   return el("section", { class: "card card-pad hero-card" },
     el("div", { class: "card-head" }, el("h2", {}, "Invite your contact")),
     el("p", { class: "small muted" }, "Send this link to one person through a private channel. "
-      + "Until they open it, anyone who has the link can join the chat."),
+      + "Until they open it, anyone who has the link can join the chat. "
+      + senderNote("your contact")),
     el("div", { class: "addr-box" }, el("span", { class: "hex nowrap" }, link),
       copyBtn(link, "Copy link", "btn sm primary"),
       copyBtn(chatMessage(link), "Copy message", "btn sm")),

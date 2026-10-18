@@ -5,7 +5,7 @@ import { ready, state, ui } from "./app-state.js";
 import { fmtZec, short, when } from "./app-kit.js";
 import { gkeys, sec } from "./app-keystore.js";
 import { keysDiffer, localSeats, seatIds, seatMine, seatStage, STAGE_LABEL } from "./app-seats.js";
-import { inviteLink } from "./app-links.js";
+import { inviteLink, senderNote } from "./app-links.js";
 import {
   addrHidden, atCap, balanceNow, capText, chain, curChain, curNet, inFlight, netName, readsMemos,
   runSync, setMemoReading, spanMs,
@@ -20,11 +20,11 @@ import { signing, unreadIn } from "./app-messages.js";
 import { groupVersion, rejectedSeats, seatCheck, verifiedCount } from "./app-dkg.js";
 import { cancelMove, ended, proposeMove, sendBlocker } from "./app-payments.js";
 import { messagesCard } from "./app-thread.js";
-import { BACKUP_CHANGED, openBackup, staleRestoreNote } from "./app-backups.js";
+import { openBackup, staleRestoreNote } from "./app-backups.js";
 import { loadingView } from "./app-shell.js";
 import { focusAfter, render } from "./app-loop.js";
 import { setupView, solSetupCard, solUnfinished } from "./app-setup.js";
-import { solBackup, solOn, solTab, solUnsaved } from "./app-sol.js";
+import { solBackup, solOn, solPending, solTab, solUnsaved } from "./app-sol.js";
 
 export function groupView() {
   const g = state.g;
@@ -92,7 +92,10 @@ export function walletView(head, why) {
     overview: overviewTab, activity: activityTab, messages: messagesCard, members: membersTab,
     details: detailsTab,
   };
-  if (solOn()) { tabs.push(["solana", "Solana"]); bodies.solana = solTab; }
+  if (solOn()) {
+    tabs.push(["solana", "Solana", countBadge(solPending(), "to approve", "attn")]);
+    bodies.solana = solTab;
+  }
   if (!Object.hasOwn(bodies, ui.tab)) ui.tab = "overview";
   return el("div", { class: "page" }, head, tabBar(tabs),
     unsaved.length || solSeats.length ? backupNote(unsaved, solSeats) : null,
@@ -147,9 +150,11 @@ export function setTabBar(f) { tabBar = f; }
 // Private windows, Tor Browser and cleared site data delete the key share with the browser data.
 // `solSeats`: the seats whose Solana part has no saved file yet (solUnsaved, app-sol.js).
 export function backupNote(seats, solSeats = []) {
-  const text = "Back up your key share. This browser can forget it: private windows and Tor "
+  const first = seats.length ? "Back up your key share."
+    : "Back up the Solana part of your key share.";
+  const text = first + " This browser can forget it: private windows and Tor "
     + "Browser delete it when they close. The file is locked with a passphrase that you choose. "
-    + "Keep the file safe, and keep the passphrase apart from it. " + BACKUP_CHANGED
+    + "Keep the file safe, and keep the passphrase apart from it."
     + (solSeats.length ? " " + SOL_FILE : "");
   const many = seats.length + solSeats.length > 1;
   return el("div", { class: "callout warn", role: "status" },
@@ -375,7 +380,7 @@ function membersTab() {
       el("h2", { style: "font-size:15px" }, "Invite link"),
       el("p", { class: "small muted" }, "Signers open this wallet on another device with this "
         + "invite link and their key share backup. The link contains the wallet secret, so share "
-        + "it only with signers."),
+        + "it only with signers. " + senderNote("each signer")),
       el("div", { class: "addr-box" }, el("span", { class: "hex nowrap" }, inviteLink(state.gid)), copyBtn(inviteLink(state.gid), "Copy link")),
       secretQr(inviteLink(state.gid))));
 }
@@ -461,7 +466,8 @@ function privacyCard() {
     el("p", { class: "small muted" }, "Your key share is created and used in this browser. "
       + "It leaves this browser only if you save a backup. The group server stores encrypted "
       + "data it cannot read. This page downloads blocks from " + host
-      + ", which sees your IP address but never a key. The wallet syncs again on every load."),
+      + ", which sees your IP address but never a key. On each load, the wallet continues its "
+      + "sync from the state that this browser saved."),
     memoSwitch(host),
     el("details", {}, el("summary", {}, "Viewing key"),
       el("div", { class: "addr-full", style: "margin-top:10px" }, w.ufvk),

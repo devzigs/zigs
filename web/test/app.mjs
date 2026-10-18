@@ -3664,12 +3664,12 @@ const sealed = (gid, rel, seat, fields, key, names = ["by", "sig"]) =>
     t.ui.backup = { seat: 2, made: false, busy: false };
     assert.match(textOf(t.backupDialog()),
       /Back up seat 2.*opens your key share.*sign as this seat/);
-    // The seat dialog and the note say why old files stop opening. The account file did not change.
-    const CHANGED = /backup format changed on 16 October 2026\. Older backup files no longer open/;
-    assert.match(textOf(t.backupDialog()), CHANGED);
-    assert.match(textOf(t.backupDialog()), /Save a new backup now/);
-    assert.match(textOf(t.backupNote([2])), CHANGED);
-    assert.match(textOf(t.backupNote([2])), /Save a new backup now/);
+    // S13: the seat dialog and the note no longer name the format change of 16 October 2026 or
+    // the iPhone and Mac apps. Only the restore error of an old file names the change.
+    const CHANGED = /backup format changed on 16 October 2026|iPhone and Mac apps/;
+    assert.doesNotMatch(textOf(t.backupDialog()), CHANGED);
+    assert.doesNotMatch(textOf(t.backupNote([2])), CHANGED);
+    assert.match(textOf(t.backupNote([2])), /Back up your key share/);
     t.ui.backup = { personal: true, made: false, busy: false };
     const backup = textOf(t.backupDialog());
     assert.match(backup, /Back up the personal account.*opens the backup of your personal account/);
