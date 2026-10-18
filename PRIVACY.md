@@ -88,9 +88,10 @@ What the server can still see:
 | Nothing for the personal account and its messages | The account, its contacts and its on-chain messages never touch the group server. | None needed |
 
 The server keeps no logs: Workers Logs are off (`observability.enabled = false`), and the code
-writes nothing about requests. One line is the exception: when the `/zns` route cannot read the
-name registry, it writes a fixed cause, such as `zns: status`. That line holds nothing about the
-request and no text of the resolver. IP addresses are used in memory only: to apply rate limits,
+writes nothing about requests. The `/zns` route is the exception. When it cannot read the name
+registry, it writes a fixed cause, such as `zns: status`. When it leaves out a record of the
+registry, it writes `zns: left out`. These lines hold nothing about the request and no text of
+the resolver. IP addresses are used in memory only: to apply rate limits,
 and as a tag on each open WebSocket. The limits count each IPv4 address, or each /64 network of IPv6
 addresses, because one IPv6 user usually holds a whole /64. So users who share an IPv4 address or
 a /64 (one home, one office, one VPN exit) also share a counter, and one of them can use up the
@@ -165,9 +166,9 @@ How the app reads the registry:
 - The route `/zns` of the app Worker downloads the list of all names of the testnet registry from
   the public resolver `light.zcash.me`. It sends no header of yours to the resolver. It checks
   that the resolver states the published key of the registry. That shows which registry the
-  resolver reads, but it does not prove the records. The Worker leaves out a record that fails
-  its checks, and a name that comes with two addresses, so that name gives "not found". It serves
-  a copy that is at most 60 seconds old.
+  resolver reads, but it does not prove the records. The Worker leaves out a name with a record
+  that fails its checks, and a name that comes with two addresses, so that name gives "not
+  found". It serves a copy that is at most 60 seconds old.
 - The page downloads that copy, behind the same password as every other request, and finds the
   name on the device. It never asks a server about one name.
 
