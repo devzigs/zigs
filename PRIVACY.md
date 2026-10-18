@@ -166,7 +166,8 @@ How the app reads the registry:
   the public resolver `light.zcash.me`. It sends no header of yours to the resolver. It checks
   that the resolver states the published key of the registry. That shows which registry the
   resolver reads, but it does not prove the records. The Worker leaves out a record that fails
-  its checks, so that name gives "not found". It serves a copy that is at most 60 seconds old.
+  its checks, and a name that comes with two addresses, so that name gives "not found". It serves
+  a copy that is at most 60 seconds old.
 - The page downloads that copy, behind the same password as every other request, and finds the
   name on the device. It never asks a server about one name.
 
