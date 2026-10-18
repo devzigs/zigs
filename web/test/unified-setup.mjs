@@ -54,7 +54,8 @@ class Rec extends Node {
 const textOf = (node) => node.text ?? node.kids.map(textOf).join("");
 function pageTree() {
   const real = globalThis.document;
-  globalThis.document = { createElement: () => new Rec(), createTextNode: (text) => ({ text }) };
+  globalThis.document = { createElement: () => new Rec(), createElementNS: () => new Rec(),
+    createTextNode: (text) => ({ text }) };
   try {
     return t.groupView();
   } finally {
@@ -257,7 +258,8 @@ assert.match(pageText(), SENDER, "the invite card of a wallet");
   const cid = "c0ffee00c0ffee00c0ff";
   chats.list[cid] = { key: "ab".repeat(32), member: "m", at: Date.now() };
   const real = globalThis.document;
-  globalThis.document = { createElement: () => new Rec(), createTextNode: (text) => ({ text }) };
+  globalThis.document = { createElement: () => new Rec(), createElementNS: () => new Rec(),
+    createTextNode: (text) => ({ text }) };
   try {
     const card = chatInviteCard(cid);
     assert.match(textOf(card), SENDER, "the invite card of a chat");
@@ -291,7 +293,8 @@ assert.equal(t.sol, null, "the load failed");
 assert.match(t.solError, /not available on this server/);
 const solTabText = () => {
   const real = globalThis.document;
-  globalThis.document = { createElement: () => new Rec(), createTextNode: (text) => ({ text }) };
+  globalThis.document = { createElement: () => new Rec(), createElementNS: () => new Rec(),
+    createTextNode: (text) => ({ text }) };
   try {
     return textOf(t.solTab());
   } finally {
@@ -349,7 +352,8 @@ assert.equal(t.banner, null, "and the banner goes away");
   const down = await why(0);
   const failTree = (error, retry) => {
     const real = globalThis.document;
-    globalThis.document = { createElement: () => new Rec(), createTextNode: (text) => ({ text }) };
+    globalThis.document = { createElement: () => new Rec(), createElementNS: () => new Rec(),
+      createTextNode: (text) => ({ text }) };
     try {
       return loadFail(error, retry);
     } finally {
@@ -373,7 +377,8 @@ assert.match(setupText, /Fund your fee address.*Comes after the Solana key\./s);
 // ── The create dialog offers Solana for a testnet wallet, on a server that serves it ──
 function dialogTree(from = null) {
   const real = globalThis.document;
-  globalThis.document = { createElement: () => new Rec(), createTextNode: (text) => ({ text }) };
+  globalThis.document = { createElement: () => new Rec(), createElementNS: () => new Rec(),
+    createTextNode: (text) => ({ text }) };
   try {
     return createDialog(from);
   } finally {
@@ -441,7 +446,8 @@ const byId = (node, id) =>
     if ("Z" in change) t.setZ(change.Z);
     if ("db" in change) t.setDb(change.db);
     const real = globalThis.document;
-    globalThis.document = { createElement: () => new Rec(), createTextNode: (text) => ({ text }) };
+    globalThis.document = { createElement: () => new Rec(), createElementNS: () => new Rec(),
+      createTextNode: (text) => ({ text }) };
     try {
       return build();
     } finally {
@@ -739,7 +745,8 @@ const byId = (node, id) =>
   // The first sentence names the file that is unsaved: a Zcash file, or only a Solana file.
   const note = (...args) => {
     const real = globalThis.document;
-    globalThis.document = { createElement: () => new Rec(), createTextNode: (text) => ({ text }) };
+    globalThis.document = { createElement: () => new Rec(), createElementNS: () => new Rec(),
+      createTextNode: (text) => ({ text }) };
     try {
       return textOf(t.backupNote(...args));
     } finally {

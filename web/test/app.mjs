@@ -1247,7 +1247,8 @@ const sealed = (gid, rel, seat, fields, key, names = ["by", "sig"]) =>
   const named = (n, tag, label) => all(n, (x) => x.tag === tag && textOf(x) === label)[0];
   const callouts = (n) => all(n, (x) => x.className === "callout bad").map(textOf);
   globalThis.document = {
-    createElement: (tag) => new Rec(tag), createTextNode: (text) => ({ text }),
+    createElement: (tag) => new Rec(tag), createElementNS: (ns, tag) => new Rec(tag),
+    createTextNode: (text) => ({ text }),
   };
   try {
     assert.equal(textOf(t.statusChip(checkingSession)), "Checking", "the chip of that payment");
@@ -3554,7 +3555,8 @@ const sealed = (gid, rel, seat, fields, key, names = ["by", "sig"]) =>
   const named = (n, tag, label) => all(n, (x) => x.tag === tag && textOf(x) === label)[0];
   const marks = (n) => all(n, (x) => /^vmark/.test(x.className || "")).map(textOf);
   globalThis.document = {
-    createElement: (tag) => new Rec(tag), createTextNode: (text) => ({ text }),
+    createElement: (tag) => new Rec(tag), createElementNS: (ns, tag) => new Rec(tag),
+    createTextNode: (text) => ({ text }),
   };
   // The recorder has no layout. A step that redraws the page runs with the stub page, and the
   // redraw timer (120 ms) fires before the recorder comes back.
