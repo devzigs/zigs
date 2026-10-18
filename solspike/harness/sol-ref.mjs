@@ -17,15 +17,20 @@ import { redact } from "./redact.mjs";
 const REPO = zolanaRepo();
 const hex = (bytes) => Buffer.from(bytes).toString("hex");
 
-/** Fresh random role secrets and a fresh Ed25519 public key: nothing of any real group. */
+/**
+ * Fresh random role secrets and a fresh Ed25519 public key: nothing of any real group. The Worker
+ * also takes the PDA identity of the approvals program: a nullifier secret and a 32-byte PDA.
+ */
 export function throwawayRoles() {
   const ecdh = createECDH("prime256v1");
   ecdh.generateKeys();
   const { publicKey } = generateKeyPairSync("ed25519");
   return {
     nullifierSecret: randomBytes(31).toString("hex"),
+    pdaNullifierSecret: randomBytes(31).toString("hex"),
     viewingSecret: ecdh.getPrivateKey().toString("hex").padStart(64, "0"),
     groupKey: publicKey.export({ format: "der", type: "spki" }).subarray(-32).toString("hex"),
+    pda: randomBytes(32).toString("hex"),
   };
 }
 
