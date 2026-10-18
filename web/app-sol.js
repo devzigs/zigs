@@ -97,13 +97,15 @@ const solHost = () => ({
 });
 // A server with SOL off does not serve the module (its config answers 503), and the text says so.
 // Any other failure is the connection (SOL-26). view.js is part of the module: it gives the setup
-// steps (solSetup). Only the Solana tab has a Try again button: every other place says reload.
-const SOL_DOWN_START = "Solana did not load. Check your connection, then ";
-const SOL_DOWN = SOL_DOWN_START + "reload the page.";
-const SOL_DOWN_TAB = SOL_DOWN_START + "press Try again.";
-/** The text of a failed load. `retry` says that a Try again button is on screen next to it. */
-export const failText = (error, retry) => (error === SOL_DOWN && retry ? SOL_DOWN_TAB : error);
-let setupSummary = null, pendingCount = null;
+// steps (solSetup). A browser keeps a failed import() for the life of the page, so only a reload
+// mends it; Try again (the Solana tab) can mend a failure after the import.
+const SOL_DOWN = "Solana did not load. Check your connection, then reload the page.";
+let setupSummary = null, pendingCount = null, importFailed = false;
+/** The tab text of a failed load, and whether Try again can mend it. */
+export const failText = (error, retry) => retry
+  ? "Solana did not load: " + error.replace(/\.$/, "") + ". Check your connection, then press Try "
+    + "again."
+  : error;
 export async function whyNotLoaded() {
   const status = await globalThis.fetch("/sol/config.json", { cache: "no-store" })
     .then((r) => r.status, () => 0);
@@ -111,7 +113,10 @@ export async function whyNotLoaded() {
 }
 const solModule = () => Promise.all([import("./sol/main.js"), import("./sol/view.js")])
   .then(([m, v]) => { ({ setupSummary, pendingCount } = v); return m; })
-  .catch(async () => { throw new Error(await whyNotLoaded()); });
+  .catch(async () => {
+    importFailed = true;
+    throw new Error(await whyNotLoaded());
+  });
 // The Solana part of the open wallet for the setup steps and the approval count. The Zcash pages
 // call them, so a throw gives a log line, not a broken wallet page.
 const solOpenHere = (gid = state.gid) => !!sol && solOn(gid) && sol.ctl.gid === gid;
@@ -131,6 +136,7 @@ export const solPending = (gid = state.gid) =>
   solOpenHere(gid) && pendingCount ? fromSol("approval count", pendingCount, 0) : 0;
 // A failed load waits for Try again (solRetry): a retry on every redraw would loop.
 export function solRetry() {
+  if (!solError) return;   // a second tap while the retry loads
   solLoading = null;
   solError = "";
   solLoad();
@@ -188,8 +194,8 @@ const retryButton = () => el("button", { class: "btn sm", type: "button", "data-
   onclick: solRetry }, "Try again");
 export const solTab = () => sol ? guard(sol.view)
   : solError ? el("div", { style: "display:grid;gap:8px" },
-    el("p", { class: "small" }, failText(solError, true)),
-    el("div", {}, retryButton()))
+    el("p", { class: "small" }, failText(solError, !importFailed)),
+    importFailed ? null : el("div", {}, retryButton()))
   : (solLoad(), el("p", { class: "small" }, "Loading Solana…"));
 const NET_UNCONFIRMED = "This device does not know yet which network the people of this wallet "
   + "confirmed. Open the wallet, wait until its seat shows Address checked, then try again.";

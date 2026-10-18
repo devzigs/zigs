@@ -169,8 +169,9 @@ function chatJoinCard(cid) {
   return el("form", { class: "card card-pad hero-card", onsubmit: join },
     el("div", { class: "card-head" }, el("h2", {}, "Join a chat")),
     el("p", { class: "small muted" }, "Someone sent you a contact link. A chat holds two people. "
-      + "Your contact sees the name below. If this page is in the browser of a chat app or in a "
-      + "private window, open the link in Safari or Chrome first: those can delete your chat key."),
+      + "Your contact sees the name below. Is this page in the browser of a chat app or in a "
+      + "private window? Then open the link in Safari or Chrome first. Those can delete your chat "
+      + "key."),
     nameField("chat-join-" + cid, "your contact"),
     el("div", { class: "dialog-actions" },
       el("button", { class: "btn", type: "button", disabled: joining,
@@ -185,7 +186,8 @@ function chatsCard() {
   const ids = Object.keys(chats.list), off = offOf({ db: !!db }, "why-new-chat");
   return el("section", { class: "card" },
     el("div", { class: "card-head card-pad", style: "padding-bottom:12px" }, el("h2", {}, "Chats"),
-      el("button", { class: "btn sm", type: "button", ...off.attrs, onclick: newChat }, "New chat")),
+      el("button", { class: "btn sm", type: "button", ...off.attrs, onclick: newChat },
+        "New chat")),
     off.note ? el("p", { class: "small muted card-pad", style: "padding-top:0" }, off.note) : null,
     ids.length ? el("div", { class: "list", style: "border-top:1px solid var(--line)" },
       ids.map((cid) => guard(chatRow, cid)))
@@ -313,7 +315,8 @@ export function createDialog(from = null) {
       : "You take seat 1. Then share the invite link with your signers. When every seat is taken, your devices create the wallet key together."),
     el("div", { class: "dialog-actions" },
       el("button", { class: "btn", type: "button", onclick: close }, "Cancel"),
-      el("button", { class: "btn primary", type: "submit", ...off.attrs }, from ? "Create new wallet" : "Create wallet"),
+      el("button", { class: "btn primary", type: "submit", ...off.attrs },
+        from ? "Create new wallet" : "Create wallet"),
       off.note));
   return f;
 }

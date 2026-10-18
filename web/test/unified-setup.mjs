@@ -215,7 +215,7 @@ assert.ok(inviteMessage(link).includes(link), "the invite still carries the link
 // site asks for a user name too, and any user name works (cf/src/index.js).
 const PASSWORD = new RegExp("The browser asks for a user name and a password before Zigs opens\\. "
   + "Use any user name\\. I send the password to you apart from this link\\.");
-const BROWSER = /Open the link in Safari or Chrome, not in the browser of a chat app and not in a/;
+const BROWSER = /Open the link in Safari or Chrome\. Do not open it in the browser of a chat app/;
 for (const text of [inviteMessage(link), plain.invite, chatMessage(link)]) {
   assert.match(text, PASSWORD);
   assert.match(text, BROWSER);
@@ -223,7 +223,7 @@ for (const text of [inviteMessage(link), plain.invite, chatMessage(link)]) {
 // The invite cards of a wallet and of a chat say the same to the sender.
 const SENDER = new RegExp("asks for a user name and a password before Zigs opens\\. Any user name "
   + "works\\. Send the password apart from the link\\. Tell (each signer|your contact) to open the "
-  + "link in Safari or Chrome, not in the browser of a chat app and not in a private window");
+  + "link in Safari or Chrome\\. The browser of a chat app or a private window can delete the key");
 assert.match(pageText(), SENDER, "the invite card of a wallet");
 {
   const cid = "c0ffee00c0ffee00c0ff";
@@ -250,7 +250,7 @@ assert.match(SOL_DISCLOSURE, /Every signer sees the whole Solana history/);
   t.secrets[gid + ":1"] = kept;
   assert.match(join, /Take seat 2/);
   assert.ok(join.includes(SOL_DISCLOSURE), "the join card says what Solana makes public");
-  assert.match(join, /open the link in Safari or Chrome first/, "and where to open the link");
+  assert.match(join, /Then open the link in Safari or Chrome first\./, "where to open the link");
 }
 // The preload: the module loads at the start of setup, and no Solana watch opens before the
 // people of the wallet confirmed the network.
@@ -287,6 +287,11 @@ await waitFor("the load after Try again", () => !!t.sol);
 assert.equal(t.solError, "", "and the error is gone");
 assert.equal(t.banner, null, "and the banner goes away");
 {
+  const loaded = t.solLoading;
+  solRetry();
+  assert.equal(t.solLoading, loaded, "a second tap after a good retry loads nothing");
+}
+{
   // A failed load that is not a refusal of the server is the connection (SOL-26). A refusal is
   // a 503 (SOL off) or a 404. Only the Solana tab has a Try again button.
   const real = globalThis.fetch;
@@ -308,10 +313,12 @@ assert.equal(t.banner, null, "and the banner goes away");
     const text = await why(status);
     assert.match(text, /^Solana did not load\. Check your connection, then reload the page\.$/);
   }
+  // The Solana tab: an import failure says reload (a browser keeps a failed import for the
+  // page), and a failure after the import gets Try again.
   const down = await why(0);
-  assert.match(failText(down, true), /then press Try again\.$/, "the tab has the button");
-  assert.equal(failText(down, false), down, "every other place says reload");
-  assert.equal(failText("Solana is not available on this server", true).includes("Try"), false);
+  assert.equal(failText(down, false), down, "an import failure: reload");
+  assert.equal(failText("Failed to fetch.", true),
+    "Solana did not load: Failed to fetch. Check your connection, then press Try again.");
 }
 assert.equal(rig.live(`groups/${gid}/sol`), 0, "and opened no Solana watch");
 // The setup card lists the two Solana steps after the three Zcash steps.

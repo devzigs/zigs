@@ -71,7 +71,7 @@ function safetyCard() {
 
 function confirmButton(todo, no) {
   const off = offOf({}, "why-match");
-  return el("div", {}, el("button", {
+  return el("div", { class: "row-actions" }, el("button", {
     class: "btn primary", type: "button", ...off.attrs, onclick: act(() => confirmSeats(todo, no)),
   }, "It matches"), off.note);
 }
@@ -81,8 +81,8 @@ const NOT_ZIP2005 = "This wallet is not built to ZIP 2005. Funds cannot be recov
 
 // The joiner passed the password already. A chat app browser or a private window can still lose
 // the key share, so the card says where to open the link before the seat is taken.
-const OPEN_HERE = "If this page is in the browser of a chat app or in a private window, open the "
-  + "link in Safari or Chrome first: those can delete your key share.";
+const OPEN_HERE = "Is this page in the browser of a chat app or in a private window? Then open the "
+  + "link in Safari or Chrome first. Those can delete your key share.";
 // A wallet with a Solana part has two key ceremonies, one after the other.
 const BOTH_OPEN = "Every signer keeps this wallet open until the Zcash and the Solana parts are "
   + "ready.";
