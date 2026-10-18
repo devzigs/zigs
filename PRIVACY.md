@@ -204,7 +204,8 @@ How the app reads the registry:
 The timing of a download can still tell the Worker something:
 
 - The page downloads the registry when a testnet wallet opens. It downloads it again when a copy
-  older than 60 seconds must check a name, before a proposal or an approval.
+  older than 60 seconds must check a name: when you type a name, before a proposal, and before an
+  approval.
 - The Worker sees each download and its IP address. As the group server, it also sees which IP
   addresses open which wallet.
 - So a download near a proposal or an approval can tell the Worker that a wallet may pay a name.
@@ -222,6 +223,9 @@ What the app trusts, and what it checks:
   note when the name changed recently. Each approving web app looks the name up again, in its own
   copy, and refuses the approval when the name now gives another address than the payment. The
   iPhone and Mac apps show the address and do not check the name.
+- "Propose again" after an expired payment pays the address of the first proposal, without the
+  name, so the approvers of the new proposal do not check the name again. Type the name again in
+  a new payment to get the check.
 - The page uses its copy for at most 60 seconds, so the copy is at most about 2 minutes behind
   the resolver. The resolver can fall behind the chain too. So the page refuses a registry that is
   more than 10 blocks below the chain height of the wallet.

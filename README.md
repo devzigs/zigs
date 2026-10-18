@@ -26,13 +26,11 @@ the wallet, and on chain each payment looks like a shielded payment from a stand
   the Send form with the request, and sends nothing. **Request a payment** makes the link in a
   wallet room or in a direct chat. Pasting a link in the Send form fills its rows. The web app has
   it. The iPhone and Mac apps show the link as text ([how](PROTOCOL.md#payment-requests)).
-- ZNS names (testnet, web app). **Not finished:** main has the `/zns` route and the name lookup
-  on the device, but the Send form does not take a name yet (M10 of
-  [docs/hackathon-release.md](docs/hackathon-release.md)). The plan: the Send form accepts a name
-  such as `alice.zec` and shows the address that the name gives. The page looks the name up in a
-  copy of the whole registry, so no server learns which name you pay. Each approver in the web app
-  looks the name up again and refuses a payment whose address the name no longer gives. The iPhone
-  and Mac apps show the address only ([privacy](PRIVACY.md#zns-names-testnet)).
+- ZNS names (testnet, web app): the Send form accepts a name such as `alice.zec` and shows the
+  address that the name gives. The page looks the name up in a copy of the whole registry, so no
+  server learns which name you pay. Each approver in the web app looks the name up again and
+  refuses a payment whose address the name no longer gives. The iPhone and Mac apps show the
+  address only ([privacy](PRIVACY.md#zns-names-testnet)).
 - Personal account: the web app can hold a small single-signer account that pays the fee of
   messages on chain. Add the shielded address of a contact, and write to them, also if they do not
   use Zigs. Each message is a payment of no value, and its text is the memo. Each contact gets an
