@@ -196,13 +196,18 @@ function addrStage(c) {
   return c.d === c.n ? "now" : "";
 }
 
+// Only the device of seat 1 builds the wallet document. The other seats wait for it (S11).
+const buildingText = () => localSeats().includes(1) ? "Building the shared address…"
+  : "Seat 1 builds the shared address on its device. If this takes more than a minute, ask the "
+    + "signer of seat 1 to open this wallet.";
+
 function addrStep(c) {
   const stage = addrStage(c);
   if (c.rejected.length) {
     const seats = c.rejected.join(", ");
     return [stage, "Seat " + seats + " rejected the address. Do not use this wallet."];
   }
-  if (!c.w) return [stage, c.d === c.n ? "Building the shared address…" : "Comes after the key."];
+  if (!c.w) return [stage, c.d === c.n ? buildingText() : "Comes after the key."];
   if (!c.w.birthday) return [stage, "An older version of Zigs made this wallet. Create a new wallet."];
   const checked = c.ver + " of " + c.n;
   const wait = c.ver < c.n ? " Send funds only after all " + c.n + " checked." : "";
