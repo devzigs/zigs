@@ -271,6 +271,7 @@ const sealed = (gid, rel, seat, fields, key, names = ["by", "sig"]) =>
   assert.equal(Object.keys(t.state.dkg2).length, 6);
   assert.equal(data.get(`groups/${gid}/meta/wallet`).by, 1);
   assert.equal(t.state.wallet.by, undefined);
+  assert.equal(data.get(`groups/${gid}/meta/wallet`).birthday, 1000, "the height of the check");
 
   // Payments, through the real writers.
   const spend = { pool: "ironwood", amount: 5, change: 1, fee: 10000, note_value: 20, pczt: "AAA" };
@@ -3352,9 +3353,12 @@ const sealed = (gid, rel, seat, fields, key, names = ["by", "sig"]) =>
   // would wait on the same server, so the composer says why and builds nothing. `during` runs
   // while the engine builds the message.
   const realTimeout = globalThis.setTimeout, buildMessage = Wallet.prototype.createMessage;
+  const scaleTimers = () => {
+    globalThis.setTimeout = (fn, ms, ...a) => realTimeout(fn, ms >= 60000 ? ms / 600 : ms, ...a);
+  };
   const silentSend = async (text, during = () => {}) => {
     let stopped = null;
-    globalThis.setTimeout = (fn, ms, ...a) => realTimeout(fn, ms >= 60000 ? ms / 600 : ms, ...a);
+    scaleTimers();
     Wallet.prototype.createMessage = function (to, words) {
       net.created.push([to, words]);
       during();
@@ -3397,6 +3401,58 @@ const sealed = (gid, rel, seat, fields, key, names = ["by", "sig"]) =>
   await waitFor("no sync", () => !t.acct.syncing);
   assert.deepEqual([net.opened.length, net.freed, t.messageWhy()],
     [openedBefore, freedBefore, ""], "the old account is dropped, the new one sends");
+  // The message stops while a sync of the same object runs: one more sync follows that sync, and
+  // it connects to the next server.
+  const realSync = Wallet.prototype.sync;
+  let letBlocks, inSync = false;
+  const blocksHeld = new Promise((r) => { letBlocks = r; });
+  Wallet.prototype.sync = function () {
+    inSync = true;
+    return blocksHeld.then(() => JSON.stringify(net.bal));
+  };
+  const syncing = runAcctSync();
+  await waitFor("the sync runs", () => inSync);   // its own stall timer is not scaled
+  const duringCw = t.acct.cw;
+  await silentSend("during a sync");
+  assert.match(t.messageWhy(), /stopped answering/);
+  Wallet.prototype.sync = realSync;
+  letBlocks();
+  await syncing;
+  await synced();
+  assert.deepEqual([t.acct.cw !== duringCw, t.messageWhy()], [true, ""], "the next sync connects");
+  // No server answers the sync after the stall: the stalled object still builds nothing.
+  t.setZ({ ...Zp, latestHeight: async () => { throw new Error("down"); } });
+  const downBuilt = net.created.length;
+  await silentSend("both down");
+  await waitFor("the failed sync", () => !t.acct.syncing && t.acct.error);
+  await assert.rejects(t.sendOnChain(ana, "still down"), /stopped answering/);
+  assert.equal(net.created.length, downBuilt + 1, "nothing is built after the failed sync");
+  t.setZ(Zp);
+  await runAcctSync();
+  assert.equal(t.messageWhy(), "", "a sync that connects opens the composer");
+  // A message that the engine builds in time leaves no timer that stalls the account later, and
+  // the limit is not shorter than a slow answer. The signature fails, so no message goes out.
+  const builtIn = async (ms, scale) => {
+    if (scale) scaleTimers();
+    Wallet.prototype.createMessage = async function (to, words) {
+      await sleep(ms);
+      return buildMessage.call(this, to, words);
+    };
+    t.setZ({ ...Zp, accountSign: () => { throw new Error("no signature"); } });
+    const keptCw = t.acct.cw;
+    try {
+      await assert.rejects(t.sendOnChain(ana, "built"), /no signature/);
+      await sleep(150);   // longer than the 60 s limit of a scaled timer
+    } finally {
+      globalThis.setTimeout = realTimeout;
+      Wallet.prototype.createMessage = buildMessage;
+      t.setZ(Zp);
+    }
+    // A late stall would start a sync that makes a new object.
+    assert.deepEqual([t.acct.cw === keptCw, t.acct.stalled, t.messageWhy()], [true, null, ""]);
+  };
+  await builtIn(0, true);
+  await builtIn(700, false);
 
   // The sync follows the saved account. Another tab can leave a record that does not read, or an
   // account with another sync key. Then a send stops with a sentence, and the contact addresses
