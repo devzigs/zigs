@@ -316,7 +316,9 @@ learns each name that a Zigs user pays.
    height and date) and the source: "ZNS registry (zcashnames.com), not checked on chain". It
    warns when the last change is recent, and when the name lapses before the payment expires.
 4. **Propose.** The PCZT pays the address, as today. The payee gets an optional `name` in the
-   signed `payees` field, as memos did (PROTOCOL.md 7.1). Older apps keep working.
+   signed `payees` field, as memos did (PROTOCOL.md 7.1). To check: older web apps and the iPhone
+   and Mac apps must accept a payee with an unknown `name` key. If one of them refuses it, a web
+   proposal with a name stops that approver.
 5. **Approve.** Each approving device looks the name up in its own copy. If it gets another
    address, it refuses to approve and says why. The PCZT check does not change.
 6. **Errors.** "Name not found" for no record. A clear retry message when the registry cannot be
@@ -330,7 +332,7 @@ allow list, and one live testnet run (pay `craftsoldier`, or a name of our own).
 |---|---|
 | Worker route `/zns`, allow list, limit, tests | 1 |
 | Registry copy: download, pages, deltas, key pin, sealed cache, tests | 1 to 1.5 |
-| Send form, approval screen, `name` in `payees` (engine and page), approver check, tests | 1.5 to 2.5 |
+| Send form, approval screen, `name` in `payees` (engine and page), approver check, tests. Add 0.5 if older or native readers refuse an unknown payee key | 1.5 to 2.5 |
 | PRIVACY.md, README.md, live testnet run | 0.5 to 1 |
 | **Web app total** | **4 to 6** |
 | iPhone and Mac apps (Swift screens; the engine part is shared) | 3 to 4 more |
@@ -344,8 +346,9 @@ Minimal design, recommended now:
 1. **Guided claim.** A screen explains the public link, the 1-of-n control, the yearly update and
    the cost. The signer gets the ZIP 321 link from zcashnames.com, which has the daily rate, and
    pastes it. The approval screen shows the memo as "ZNS claim: name, term, address". It refuses a
-   claim whose address is not this wallet's checked address. It warns that the rate can change
-   before the Mint sees the payment.
+   claim whose recipient is not the treasury address that `status` returns for the pinned
+   registry key. It also refuses a claim whose memo address is not this wallet's checked address.
+   It warns that the rate can change before the Mint sees the payment.
 2. **Last check.** Before the device that sends the transaction broadcasts it, it checks in its
    registry copy that the name is still free. If not, it stops: the payment would be lost.
 3. **Name status.** The wallet shows its name, the expiry and the liveness deadline (last claim or
@@ -384,7 +387,8 @@ to 5 more days.
 8. **Privacy** (section 4): a permanent public link, reverse lookup, the link of "Change signers",
    the mainnet cap, inbound spam.
 9. **Confusion with zcashnames.co.** The same name can point elsewhere in that registry. Name the
-   registry in every screen.
+   registry in every screen. A claim link from a false site can carry a correct memo and another
+   recipient, so the app checks the recipient against the treasury address (5.2).
 10. **Look-alike names.** Names are ASCII only, but `l` and `1`, or `o` and `0`, look alike. Always
     show the address next to the name.
 
