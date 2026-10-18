@@ -700,6 +700,95 @@ step("an execute that fails on chain is tried again, and only a landed execute i
 }
 step("an execute that lands late is not sent twice, and the mark names it");
 
+// The fee addresses of the seats: all at `lamports`, or one amount for each seat.
+const fund = (amounts) => {
+  amounts.forEach((lamports, n) => chain.balances.set(feeAddress(n + 1), lamports));
+  forgetBalances();
+};
+const FUNDED = [50_000_000n, 50_000_000n, 50_000_000n];
+
+// ── A refused balance read is no empty seat: the card shows its text, and no try counts ──
+{
+  await forgetPairs();
+  const id = await proposedPay();
+  current = id;
+  const refused = "Too many Helius calls. Wait a minute.";
+  const card = () => textOf(solView({ ...c, host: { ...c.host, el: node } }, (fn) => fn, {}));
+  chain.balances.get = () => {
+    throw new Error(refused);
+  };
+  forgetBalances();
+  await approve(c, ssOf(id), 1);
+  await approve(c, ssOf(id), 2);
+  await waitFor("the text of the refused reads", () => c.execErrors[id] === refused);
+  assert.equal(ssOf(id).status, "signed", "no execute without a read of the balance");
+  assert.equal(c.tries[id] ?? 0, 0, "a refused read counts no try");
+  assert.ok(card().includes(refused), "the card shows the text of the Worker");
+  delete chain.balances.get; // the reads work again
+  await waitStatus(id, "sent", 90000);
+  assert.equal(c.execErrors[id], undefined, "the text goes with the next good read");
+  assert.equal(c.tries[id] ?? 0, 0, "and no try was counted");
+}
+step("a refused balance read shows its text, counts no try, and the next good read executes");
+
+// ── A retry after a dropped send uses the seat that sent, not the first seat ──
+{
+  await forgetPairs();
+  const id = await proposedPay();
+  current = id;
+  fund([0n, 0n, 5_000_000n]); // only seat 3 can pay
+  chain.sendMode = "late";
+  const sent = count("send");
+  await approve(c, ssOf(id), 1);
+  await approve(c, ssOf(id), 2);
+  await waitFor("the send of seat 3", () => c.sending[id] !== undefined, 60000);
+  assert.equal(c.sending[id].seat, 3, "the tab keeps the seat that sent");
+  const poor = [];
+  const watch = setInterval(() => poor.push(c.execErrors[id] ?? ""), 50);
+  chain.late.splice(0); // the send is dropped: it never lands
+  chain.sendMode = null;
+  c.sending[id].at -= 200_000; // past the send window: the retry runs
+  await waitStatus(id, "sent", 60000);
+  clearInterval(watch);
+  assert.ok(!poor.some((text) => /too little Devnet SOL/.test(text)), "no text of an empty seat");
+  assert.equal(c.tries[id] ?? 0, 0, "the retry is no counted try");
+  assert.equal(count("send"), sent + 2, "the dropped send, then the retry");
+  const landed = chain.landed.find((x) => x.signature === ssOf(id).txId);
+  assert.ok(verifies(feeOf(c, 3).key, bytesOf(landed.message), bytesOf(landed.sigs[0])));
+  fund(FUNDED);
+}
+step("a retry after a dropped send uses the seat that sent it");
+
+// ── A tab with no funded seat writes the mark of an execute that another device landed ──
+{
+  await forgetPairs();
+  const id = await proposedPay();
+  current = id;
+  fund([0n, 0n, 0n]);
+  const sent = count("send");
+  const reads = count("balance");
+  await approve(c, ssOf(id), 1);
+  await approve(c, ssOf(id), 2);
+  await waitFor("the look of the tab", () => count("balance") >= reads + 3);
+  assert.equal(ssOf(id).status, "signed", "the account is open: nothing to mark yet");
+  // Another device executed it: the account is a System account, the history holds the execute.
+  const address = base58(ssOf(id).account);
+  const executed = "3".repeat(88);
+  const tx = Buffer.from("aa" + approvalOf(ssOf(id)), "hex").toString("base64");
+  chain.accounts.set(address, { owner: "00".repeat(32), data: "" });
+  chain.history.set(address, [
+    { signature: executed, failed: false, slot: "14" },
+    ...(chain.history.get(address) ?? []),
+  ]);
+  chain.txs.set(executed, { found: true, failed: false, tx });
+  await waitStatus(id, "sent", 60000);
+  assert.equal(ssOf(id).txId, executed, "the transaction of the history");
+  assert.equal(count("send"), sent, "the tab sent nothing");
+  assert.equal(c.tries[id] ?? 0, 0, "and counted no try");
+  fund(FUNDED);
+}
+step("a tab with no funded seat marks an execute that another device landed");
+
 // ── The lease of another device holds the execute back; the last try waits for a click ──
 {
   await forgetPairs();
