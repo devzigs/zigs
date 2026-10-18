@@ -9,23 +9,20 @@ Evidence marked "checked" was read in the repo during this synthesis. All other 
 - **MUST:** the demo breaks or misleads on the demo path without the item, or the owner asked for it.
 - **SHOULD:** a visible rough edge, or a failure that needs a user mistake. Each SHOULD has a preparation step as mitigation.
 - **NICE:** the demo works without it.
-- **Hours:** one estimate for each merged item. Where auditors gave two numbers, the entry names the scope the number covers. Hours include tests. Hours exclude owner preparation (section 8).
 - Duplicates are merged. The strongest evidence stays.
 
 ## 2. Totals
 
-| Class | Items | Hours |
-|---|---|---|
-| MUST | 9 | **41.0** |
-| SHOULD | 18 | **52.0** |
-| MUST + SHOULD | 27 | **93.0** |
-| NICE | 11 | 25.5 (not planned) |
+| Class | Items |
+|---|---|
+| MUST | 10 |
+| SHOULD | 18 |
+| NICE | 11 (not planned) |
 
-- Unified setup (M3) is 20 h of the MUST total.
-- The M3 hours overlap with M4 (the same gate) and with S14 (stop text and restart). Nobody should read the totals as counting M3 steps twice, but up to about 3 h may be saved if M3 lands first.
-- The local limit of two workers caps real parallelism. Package WP-U is the long pole (36.75 h).
+- M3 (unified setup) and M10 (ZNS) are the largest items. M4 is part of the gate that M3 needs.
+- Section 7 gives the order and the dependencies of the packages.
 
-## 3. Owner decisions (not part of the hours)
+## 3. Owner decisions
 
 1. **D1 Preview password.**
    - Option A: add "ask <host> for the password" to the invite texts (S10). This is the recommendation.
@@ -56,7 +53,7 @@ Evidence marked "checked" was read in the repo during this synthesis. All other 
 
 ## 4. MUST items
 
-### M1 Hide mainnet for this release, behind one switch (3 h)
+### M1 Hide mainnet for this release, behind one switch
 - **Why:** Mainnet is not hidden.
   - The Mainnet radio and the "I understand" tick are live (checked: web/app-dom.js:159-166).
   - Create wallet (web/app-shell.js:276) and Personal account (web/app-account-view.js:56) both call that picker.
@@ -75,9 +72,8 @@ Evidence marked "checked" was read in the repo during this synthesis. All other 
 - **Keep:** NETWORKS.mainnet, the CSP entry (cf/src/index.js:8-9) and reading of existing mainnet wallets. Removing the CSP entry changes the page policy hash in solspike/baseline.json.
 - **Known gap:** a restore of a mainnet backup is not refused. Leave it for this release.
 - **Files:** web/app-chain.js, web/app-dom.js, web/index.html, web/app-payreq.js, new web/test/mainnet-off.mjs, README.md.
-- **Hours split:** WP-A 2.5, WP-D 0.5.
 
-### M2 Replace the dead Zcash testnet faucet link (1.5 h)
+### M2 Replace the dead Zcash testnet faucet link
 - **Why:** NETWORKS.testnet.faucet points to zcashfaucet.jinolabs.xyz (checked: web/app-chain.js:22).
   - The link shows in the Receive dialog (web/app-send.js:23-25), in the empty-wallet callout (web/app-wallet.js:254-256) and in README.md:62-64.
   - Audit read-only check, 18 Oct: that faucet reports "Drips are paused for the testnet NU7 upgrade" and shows 0 drips in 7 days.
@@ -88,9 +84,8 @@ Evidence marked "checked" was read in the repo during this synthesis. All other 
   - Change README step 3: copy the address first, 0.125 TAZ, one claim per IP per day, wait 3 confirmations (about 75 s).
   - Owner: prove one drip into a Zigs wallet before the demo. The audit could not do this, because it needs a write.
 - **Files:** web/app-chain.js, README.md.
-- **Hours split:** WP-A 1, WP-D 0.5.
 
-### M3 Unified setup: one flow for Zcash testnet and Solana Devnet (20 h)
+### M3 Unified setup: one flow for Zcash testnet and Solana Devnet
 - **Why:** The owner plans it, and the demo shows one setup, not two ceremonies.
   - Today seat 1 must press Add Solana after its own "Address checked" (web/sol/ceremony.js:311-324).
   - The Solana tab exists only after the wallet is ready (web/app-wallet.js:76, :94).
@@ -98,7 +93,7 @@ Evidence marked "checked" was read in the repo during this synthesis. All other 
   - The invite and join texts talk about Zcash only (web/app-setup.js:79-99).
   - The Zcash backup carries no Solana part (web/app-backups.js:51-56).
   - A stopped Solana part is final (ceremony.js:314-315, web/sol/secrets.js:35-42).
-- **Fix (steps; the 20 h is the audit total, and the steps are not costed):**
+- **Fix (steps):**
   1. Add a Solana choice to createDialog. Offer it on testnet only, and only when /sol/config.json answers 200.
   2. Let the reactor write solstart/1 for seat 1 when seatReady holds, with no button. Keep the gates: safety number, signed start, all n seats. This step needs M4.
   3. Show "Solana key" and "Fee address" steps in progressCard. Keep the setup view up until the Solana agreement holds, or open the wallet with "Solana is still setting up". walletReady (app-wallet.js:76) ignores Solana now.
@@ -120,7 +115,7 @@ Evidence marked "checked" was read in the repo during this synthesis. All other 
 - **Files:** web/app-shell.js, web/app-dkg.js, web/app-setup.js, web/app-wallet.js, web/app-sol.js, web/app-backups.js, web/sol/ceremony.js, web/sol/view.js, web/sol/backup.js, web/sol/secrets.js, web/test/sol-ceremony.mjs, new web/test/unified-setup.mjs, solspike/harness/scenario-e.mjs, solspike/harness/scenario-f.mjs.
 - **Package:** WP-U.
 
-### M4 A restored seat must be able to join the Solana ceremony (3 h)
+### M4 A restored seat must be able to join the Solana ceremony
 - **Why:** This is a dead end today. M3 step 2 needs the same gate, so it is a MUST for M3.
   - seatReady needs `z.confirmed === safetyNo` (checked: web/sol/ceremony.js:36-42).
   - Only web/app-dkg.js:269 writes `confirmed`.
@@ -137,7 +132,7 @@ Evidence marked "checked" was read in the repo during this synthesis. All other 
 - **Files:** web/sol/ceremony.js, web/app-dkg.js, web/util.js, web/app-filter.js, web/test/sol-ceremony.mjs, web/test/sol-app.mjs.
 - **Package:** WP-U.
 
-### M5 Zcash signing steps must run without the payment drawer open (6 h)
+### M5 Zcash signing steps must run without the payment drawer open
 - **Why:** Two real devices stall the payment.
   - The reactor runs only for the open payment: `reactSession(curSession())` (web/app-loop.js:60-61).
   - Commits and shares are subscribed only in openSession (web/app-groups.js:236-243).
@@ -152,11 +147,11 @@ Evidence marked "checked" was read in the repo during this synthesis. All other 
   - Run reactSession on them in the background.
   - Change the drawer texts: "Waiting for the proposer's browser to build the package", "Waiting for seat N to sign: open this payment".
   - Add a two-browser test in which the approver leaves the drawer.
-- **Scope:** 6 h covers the watch fix and the texts. The 8 h estimate also lets any seat build the package. The demo does not need that, because the proposer's browser stays open.
+- **Scope:** the watch fix and the texts. Letting any seat build the package is not needed for the demo, because the proposer's browser stays open.
 - **Files:** web/app-loop.js, web/app-groups.js, web/app-payments.js, web/app-drawer.js, web/test/app.mjs.
 - **Package:** WP-Z.
 
-### M6 Correct the false privacy claim on the Solana approval screen (1 h)
+### M6 Correct the false privacy claim on the Solana approval screen
 - **Why:** The screen says "The chain shows neither the payee nor the amount" (checked: web/sol/payview.js:44-46). PRIVACY.md:187 says "The payee and the amount stay hidden" (checked). ZOLANA.md:67 says "Sender and recipient are public" (checked). ZOLANA.md:77 says an owner key tag marks each output. Judges who know Zolana will see the wrong claim. The SOL-12 branch, which is in QA, keeps the sentence (audit), so QA does not cover it.
 - **Fix:**
   - New text: "The amount is hidden on the chain. The payee key tag, the fee address and the group are public."
@@ -164,9 +159,8 @@ Evidence marked "checked" was read in the repo during this synthesis. All other 
   - Update the tests that check the text.
   - Put the same fix on the SOL-12 branch before it merges, or start WP-S after SOL-11 and SOL-12 merge.
 - **Files:** web/sol/payview.js, web/test/sol-sessions.mjs, PRIVACY.md.
-- **Hours split:** WP-S 0.5, WP-D 0.5.
 
-### M7 Demo runbook and README fixes (3 h)
+### M7 Demo runbook and README fixes
 - **Why:** No document lists the steps before a first payment.
   - The judges walkthrough (README.md:53-75) has no Solana step and no password step. It points to the dead faucet.
   - README.md:395-401 still says "create the nonce account, register the group". SOL-36 (TICKETS.md:131) and ZOLANA.md:195 replaced that.
@@ -182,7 +176,7 @@ Evidence marked "checked" was read in the repo during this synthesis. All other 
 - **Files:** README.md, docs/demo.md (new).
 - **Package:** WP-D.
 
-### M8 Read-only preflight script for the demo days (3 h)
+### M8 Read-only preflight script for the demo days
 - **Why:**
   - Helius will deploy a pool with a new tree layout on Devnet. The pinned SDK then cannot read the live tree, and Helius sets the date (SOL-37, TICKETS.md:37).
   - The page does not compare the pool hash (SOL-43).
@@ -207,7 +201,7 @@ Evidence marked "checked" was read in the repo during this synthesis. All other 
 - **Files:** new solspike/demo-check.sh, scripts/deploy-staging.sh.
 - **Package:** WP-P.
 
-### M9 Raise the connection limit for demo day (0.5 h)
+### M9 Raise the connection limit for demo day
 - **Why:** cf/wrangler.jsonc:25 (production) and :43 (staging) allow 60 new group connections a minute for each IPv4 address or IPv6 /64 (checked).
   - Each wallet and each chat opens a socket on load.
   - Each retry counts (web/shim.js:60-65).
@@ -217,9 +211,34 @@ Evidence marked "checked" was read in the repo during this synthesis. All other 
 - **Files:** cf/wrangler.jsonc.
 - **Package:** WP-N.
 
+### M10 Pay to a ZNS name on testnet
+- **Why:** the owner made it a MUST on 18 October 2026. "Pay alice.zec" is the demo moment.
+  docs/zns-spike.md has the protocol, the resolver options and the risks (ticket ZNS-1).
+- **Decided:** resolver option B. No names for groups while ZNS control is 1-of-n (spike 3.3).
+  Testnet only.
+- **Fix:**
+  1. A Worker route `/zns` behind the gate, like `/lwd`: it fetches the whole testnet registry
+     from a public resolver (`list_names` pages, then `events` deltas with no name filter) and caches
+     it. It forwards no user header.
+  2. `web/zns.js`: the device looks names up in the downloaded registry. It never asks a resolver
+     for one name.
+  3. The Send form accepts `name`, `name.zec` and `name.zcash`, and shows the address that the name
+     gives, with the name. The proposal records the name and the address.
+  4. Each approving device resolves the name itself and refuses the approval when its answer
+     differs from the address in the proposal.
+  5. PRIVACY.md and README.md say who learns a looked-up name: our Worker sees the registry
+     download, and nobody learns which name a person pays.
+  6. Tests: lookup, unknown name, a name that moved, a mismatch on an approving device.
+  7. A live testnet payment to a testnet name.
+- **Owner:** claim a testnet name for the demo payee (one small testnet payment to the ZNS Mint).
+- **Review:** payment state: Gate 0, QA up to 3 rounds, the live testnet payment, a cold read.
+- **Files:** cf/src/index.js (the `/zns` route only), new web/zns.js, new web/test/zns.mjs,
+  web/app-send.js (the Send form hook, after WP-Z), PRIVACY.md and README.md (ZNS parts).
+- **Package:** WP-ZN.
+
 ## 5. SHOULD items
 
-### S1 Show the group server state and stop the false empty lobby (4 h)
+### S1 Show the group server state and stop the false empty lobby
 - **Why:**
   - The page never shows the socket state.
   - A refused socket retries without a message, up to 30 s (web/shim.js:59-64).
@@ -234,9 +253,9 @@ Evidence marked "checked" was read in the repo during this synthesis. All other 
   - Keep the lobby on "Connecting" until each wallet loaded or failed.
   - Call the error callback.
   - WP-U then shows the reason on the disabled buttons and on the setup card.
-- **Files:** web/shim.js, web/app-engine.js (WP-N, 3 h); web/app-shell.js, web/app-setup.js (WP-U, 1 h).
+- **Files:** web/shim.js, web/app-engine.js (WP-N); web/app-shell.js, web/app-setup.js (WP-U).
 
-### S2 Refresh the Solana balances by itself (4 h)
+### S2 Refresh the Solana balances by itself
 - **Why:**
   - The private balance is set only by syncSolana, which only the Sync button calls (web/sol/session.js:108-131, web/sol/main.js:152).
   - Add SOL refreshes the public balance only (main.js:160-164).
@@ -250,7 +269,7 @@ Evidence marked "checked" was read in the repo during this synthesis. All other 
 - **Files:** web/sol/main.js, web/sol/session.js, web/sol/payview.js, web/sol/signing.js.
 - **Package:** WP-S.
 
-### S3 Only funded seats take the execute lease (6 h)
+### S3 Only funded seats take the execute lease
 - **Why:**
   - executorOf picks every local seat with a published fee document and reads no balance (web/sol/execute.js:67-70).
   - A browser with an empty fee address takes the lease first (execute.js:192), re-proves, fails, and tries 3 times.
@@ -263,12 +282,12 @@ Evidence marked "checked" was read in the repo during this synthesis. All other 
   - Set LEASE_MS to 60000 and renew it before send().
   - Add to the fund card: "Seats that propose or execute need about 0.003 SOL. Seats that only approve need none."
   - Add a test with one funded seat and two unfunded browsers.
-- **Scope:** 4 h executor choice, 1.5 h lease, 0.5 h text.
+- **Scope:** the executor choice, the lease and the text.
 - **Mitigation:** fund all three fee addresses before the demo (section 8).
 - **Files:** web/sol/execute.js, web/sol/signing.js, web/sol/payview.js, web/test/sol-pay.mjs.
 - **Package:** WP-S.
 
-### S4 Show the notes that an open Solana proposal holds (3 h)
+### S4 Show the notes that an open Solana proposal holds
 - **Why:**
   - A payment cannot be cancelled before its 23-hour expiry (web/sol/propose.js:48, ZOLANA.md:388-390).
   - openInputs hides its notes from new payments (web/sol/sessions.js:191-194).
@@ -282,7 +301,7 @@ Evidence marked "checked" was read in the repo during this synthesis. All other 
 - **Files:** web/sol/transfer.js, web/sol/sessions.js, web/sol/payview.js.
 - **Package:** WP-S.
 
-### S5 Helius errors: readable text and a retry backoff (5 h)
+### S5 Helius errors: readable text and a retry backoff
 - **Why:**
   - The SDK bundle is built with NODE_ENV=production (solspike/build.mjs:98), so a 403, 429 or 5xx reaches the page as "Solana error #8100002; Decode this error by running npx @solana/errors decode" (web/sol/worker.js:491-500, web/app-dom.js:42, web/sol/session.js:125-127).
   - Staging gets 403 for its origin (SOL-48, TICKETS.md:44). The ceremony needs no Helius call, so staging looks fine until the first Sync.
@@ -299,7 +318,7 @@ Evidence marked "checked" was read in the repo during this synthesis. All other 
 - **Files:** web/sol/worker.js, web/sol/signing.js, new web/test/sol-errors.mjs.
 - **Package:** WP-S.
 
-### S6 Solana approval count, and a Solana tab that a phone can reach (4 h)
+### S6 Solana approval count, and a Solana tab that a phone can reach
 - **Why:**
   - toApprove counts Zcash sessions only (web/app-groups.js:174). The side count, the tab and the page title ignore Solana.
   - The Solana tab has no badge (web/app-wallet.js:94).
@@ -312,7 +331,7 @@ Evidence marked "checked" was read in the repo during this synthesis. All other 
 - **Files:** web/app-wallet.js, web/app-shell.js, web/app-sol.js, web/app.css.
 - **Package:** WP-U.
 
-### S7 Release the Send hold after Approve then Cancel (3 h, owner decision D2)
+### S7 Release the Send hold after Approve then Cancel (owner decision D2)
 - **Why:** The owner chose the hold on 18 Oct (ZEC-13).
   - cancelPayment keeps the approval mark (web/app-payments.js:288-304).
   - stillHolds ends the hold only for done, expired, spent, expiry+3 blocks or the ceiling (569-574).
@@ -329,7 +348,7 @@ Evidence marked "checked" was read in the repo during this synthesis. All other 
 - **Files:** web/app-payments.js, web/app-drawer.js, web/test/app.mjs.
 - **Package:** WP-Z.
 
-### S8 Block Send while a proposal is open, and guard the button (ZEC-10) (4 h)
+### S8 Block Send while a proposal is open, and guard the button (ZEC-10)
 - **Why:**
   - ZEC-10 is open (TICKETS.md:60).
   - sendBlocker blocks only on a sent payment or an approval hold (web/app-payments.js:331-346).
@@ -344,7 +363,7 @@ Evidence marked "checked" was read in the repo during this synthesis. All other 
 - **Files:** web/app-payments.js, web/app-send.js, web/app-drawer.js, web/test/app.mjs.
 - **Package:** WP-Z.
 
-### S9 Light-wallet sync with the lwd node off (3.5 h)
+### S9 Light-wallet sync with the lwd node off
 - **Why:**
   - pickServer tries /lwd first on every sync, waits up to 8 s, and keeps no memory (web/app-chain.js:68-74, :95-101, :247-250).
   - broadcastAnywhere starts at /lwd with a 16 s timeout (web/app-payments.js:183-198). That is the last step of the Zcash payment.
@@ -359,9 +378,9 @@ Evidence marked "checked" was read in the repo during this synthesis. All other 
   - Export `preferredServer()` and use it in broadcastAnywhere.
   - Add a page test for the fallback.
 - **Mitigation:** power on the lwd box (D5).
-- **Files:** web/app-chain.js (WP-A, 2.5 h); web/app-payments.js (WP-Z, 1 h).
+- **Files:** web/app-chain.js (WP-A); web/app-payments.js (WP-Z).
 
-### S10 Invite texts: password and browser hint (1.5 h, owner decision D1)
+### S10 Invite texts: password and browser hint (owner decision D1)
 - **Why:**
   - cf/src/index.js:290-306 asks every request, including /ws, for one shared Basic password. A refused prompt ends in the plain text "Zigs is not open yet" (index.js:301).
   - inviteMessage and the invite card (web/app-setup.js:95-118) do not mention the password.
@@ -373,7 +392,7 @@ Evidence marked "checked" was read in the repo during this synthesis. All other 
 - **Files:** web/app-setup.js, web/app-shell.js, web/app-links.js.
 - **Package:** WP-U.
 
-### S11 A red banner stays after the step succeeds (2 h)
+### S11 A red banner stays after the step succeeds
 - **Why:**
   - once() shows showBanner('bad', ...) on each failure and retries every 3 s (web/app-loop.js:28-37).
   - Only a button action clears a bad banner (web/app-dom.js:41).
@@ -384,9 +403,9 @@ Evidence marked "checked" was read in the repo during this synthesis. All other 
   - In once(), clear the banner (clearBadBanner) when the same key later succeeds.
   - Change the pickServer text to "The page tries again by itself." where no Sync button shows.
   - Show a waiting line on the setup card of the other seats.
-- **Files:** web/app-loop.js, web/app-state.js (WP-Z, 1.5 h); web/app-chain.js (WP-A, 0.25 h); web/app-setup.js (WP-U, 0.25 h).
+- **Files:** web/app-loop.js, web/app-state.js (WP-Z); web/app-chain.js (WP-A); web/app-setup.js (WP-U).
 
-### S12 A failed Solana load needs Try again and a clear text (2 h, SOL-26)
+### S12 A failed Solana load needs Try again and a clear text (SOL-26)
 - **Why:**
   - solLoad keeps the failed promise until a reload (web/app-sol.js:43-55).
   - fetchRpcUrl turns every network error into "Solana is not available on this server" (web/sol/session.js:25-35).
@@ -396,9 +415,9 @@ Evidence marked "checked" was read in the repo during this synthesis. All other 
   - Add a Try again button to the Solana tab that clears solLoading once.
   - Use "Solana did not load. Check your connection, then press Try again or reload." for a network error.
   - Keep "not available on this server" for a 503.
-- **Files:** web/app-sol.js (WP-U, 1.5 h); web/sol/session.js (WP-S, 0.5 h).
+- **Files:** web/app-sol.js (WP-U); web/sol/session.js (WP-S).
 
-### S13 Stale and wrong texts on the main screens (1.5 h)
+### S13 Stale and wrong texts on the main screens
 - **Why:**
   - Every new wallet shows the note "The backup format changed on 16 October 2026. Older backup files no longer open ... iPhone and Mac apps need their next version" (web/app-wallet.js:147-151, web/app-backups.js:34-35, :121). A first-time user has no older file.
   - The Send form says "An iPhone or Mac app built before this version cannot approve it" (web/app-send.js:227).
@@ -408,9 +427,9 @@ Evidence marked "checked" was read in the repo during this synthesis. All other 
   - Remove the iPhone and Mac sentence.
   - Fix the privacy card.
   - The integrator updates the assertion at web/test/app.mjs:2604.
-- **Files:** web/app-wallet.js, web/app-backups.js (WP-U, 1 h); web/app-send.js (WP-Z, 0.25 h); README.md (WP-D, 0.25 h).
+- **Files:** web/app-wallet.js, web/app-backups.js (WP-U); web/app-send.js (WP-Z); README.md (WP-D).
 
-### S14 A stopped or stuck Solana ceremony needs a next step (3.5 h)
+### S14 A stopped or stuck Solana ceremony needs a next step
 - **Why:**
   - The Zcash stop text ends with "Create a new wallet." (web/util.js:60-64). The Solana stop text ends with "Do not use the Solana part of this wallet." (web/sol/ceremony.js:21-24). It does not say that Zcash still works.
   - A second start is refused: "Solana was added already." (ceremony.js:314-315).
@@ -424,7 +443,7 @@ Evidence marked "checked" was read in the repo during this synthesis. All other 
 - **Files:** web/sol/ceremony.js, web/sol/abort.js, web/sol/view.js, web/app-setup.js, web/test/sol-ceremony.mjs.
 - **Package:** WP-U.
 
-### S15 Copy buttons for the Solana addresses, and a compare hint (1.5 h)
+### S15 Copy buttons for the Solana addresses, and a compare hint
 - **Why:**
   - The payee needs the 198-character shielded address of another group (web/sol/intent.js:23). keyBlock shows it as plain text with no Copy button (web/sol/view.js:69-88). Only the fee address has Copy (web/sol/payview.js:96-118).
   - The address has no checksum, so one wrong character gives another well-formed payee.
@@ -436,9 +455,9 @@ Evidence marked "checked" was read in the repo during this synthesis. All other 
   - Replace the raw status words with sentences.
   - Add `.small.bad { color: var(--bad) }`.
   - Add to the approval screen: "Compare the Payee with the program address on the Solana tab of the payee group."
-- **Files:** web/sol/view.js, web/app.css (WP-U, 1 h); web/sol/payview.js (WP-S, 0.5 h).
+- **Files:** web/sol/view.js, web/app.css (WP-U); web/sol/payview.js (WP-S).
 
-### S16 Explorer links for Solana ids (1 h)
+### S16 Explorer links for Solana ids
 - **Why:**
   - The Add SOL line and the session result show bare ids (web/sol/payview.js:166-173, :501-513). The rent cancel shows no id (web/sol/rent.js:67-84).
   - The Zcash drawer has explorer links (web/app-drawer.js:313).
@@ -447,13 +466,13 @@ Evidence marked "checked" was read in the repo during this synthesis. All other 
 - **Files:** web/sol/payview.js, web/sol/rent.js.
 - **Package:** WP-S.
 
-### S17 Show "reading the wallet" as a wait, not as an alert (0.5 h)
+### S17 Show "reading the wallet" as a wait, not as an alert
 - **Why:** While the device reads the wallet, reviewOf returns READING (web/sol/approve.js:43, :149). reviewBlock renders it as a red alert (web/sol/payview.js:435-440). A first sync takes up to about 25 s (ZOLANA.md 6.10), so each approver sees an error during a normal wait.
 - **Fix:** return a separate "waiting" result. Show a neutral line: "Reading your wallet. The Approve button appears when it is done."
 - **Files:** web/sol/approve.js, web/sol/payview.js.
 - **Package:** WP-S.
 
-### S18 Align the site and the note with the app (2 h)
+### S18 Align the site and the note with the app
 - **Why:**
   - zigs-site/index.html:22 and :84-86 promise "One unified wallet", "shielded ZEC, SOL and USDC", "Solana Privacy Rings" and "Native privacy on both chains". The mock shows Phantom, Keystone, Swap and a USD balance.
   - The app has SOL only (SOL-16 is open), and a unified setup is not yet built.
@@ -466,21 +485,21 @@ Evidence marked "checked" was read in the repo during this synthesis. All other 
 - **Files:** zigs-site/index.html, zigs-site/note.html.
 - **Package:** WP-D.
 
-## 6. NICE items (not in the totals)
+## 6. NICE items
 
-| Item | Hours | Files |
-|---|---|---|
-| Solana payment thread and events in the wallet room (polish) | 4 | web/app-thread.js, web/app-messages.js, web/sol/payview.js |
-| "Abandon this payment" for a Solana proposal that lost its nonces; frees the notes | 6 | web/sol/payview.js, web/sol/signing.js, web/sol/sessions.js |
-| One Web Lock per wallet; a second tab shows "open in another tab" | 4 | web/app-keystore.js, web/app-loop.js, web/sol/ceremony.js |
-| Rent recovery: scan on tab open, read-only "owned" check in sol-live.mjs | 2 | web/sol/payview.js, web/sol/rent.js, solspike/harness/sol-live.mjs |
-| "Remove this wallet from this browser" action; script that stages the Solana group (VEL-3) | 5 | web/app-wallet.js, web/app-backups.js, solspike/harness/scenario-f.mjs |
-| Faucet link and funding default on the testnet personal account | 1 | web/app-account-view.js, web/app-chain.js |
-| Show the invite link as a short form with a "Show link" toggle | 1 | web/app-setup.js, web/app-wallet.js |
-| "A computer is faster" in the proof text on phones | 0.5 | web/app-drawer.js |
-| One vocabulary on Zcash and Solana screens, after SOL-11 and SOL-12 | 1 | web/sol/payview.js, web/sol/view.js |
-| Solana approval count in the page title | 0.5 | web/app-loop.js |
-| "Updated N s ago" label on the Solana balances | 0.5 | web/sol/payview.js |
+| Item | Files |
+|---|---|
+| Solana payment thread and events in the wallet room (polish) | web/app-thread.js, web/app-messages.js, web/sol/payview.js |
+| "Abandon this payment" for a Solana proposal that lost its nonces; frees the notes | web/sol/payview.js, web/sol/signing.js, web/sol/sessions.js |
+| One Web Lock per wallet; a second tab shows "open in another tab" | web/app-keystore.js, web/app-loop.js, web/sol/ceremony.js |
+| Rent recovery: scan on tab open, read-only "owned" check in sol-live.mjs | web/sol/payview.js, web/sol/rent.js, solspike/harness/sol-live.mjs |
+| "Remove this wallet from this browser" action; script that stages the Solana group (VEL-3) | web/app-wallet.js, web/app-backups.js, solspike/harness/scenario-f.mjs |
+| Faucet link and funding default on the testnet personal account | web/app-account-view.js, web/app-chain.js |
+| Show the invite link as a short form with a "Show link" toggle | web/app-setup.js, web/app-wallet.js |
+| "A computer is faster" in the proof text on phones | web/app-drawer.js |
+| One vocabulary on Zcash and Solana screens, after SOL-11 and SOL-12 | web/sol/payview.js, web/sol/view.js |
+| Solana approval count in the page title | web/app-loop.js |
+| "Updated N s ago" label on the Solana balances | web/sol/payview.js |
 
 ## 7. Work packages
 
@@ -489,16 +508,16 @@ Rules:
 - Packages touch no common file, except the two integrator steps below.
 - An item that spans two owners is split by file. The interface is named.
 
-| Package | Items (hours) | Files owned | Hours |
-|---|---|---|---|
-| **WP-U** Setup, wallet shell, Solana ceremony | M3 20, M4 3, S1 1, S6 4, S10 1.5, S11 0.25, S12 1.5, S13 1, S14 3.5, S15 1 | web/app-shell.js, web/app-dkg.js, web/app-setup.js, web/app-wallet.js, web/app-sol.js, web/app-backups.js, web/app-links.js, web/app-filter.js, web/util.js, web/app.css, web/sol/ceremony.js, web/sol/view.js, web/sol/backup.js, web/sol/secrets.js, web/sol/abort.js, web/test/sol-ceremony.mjs, web/test/sol-app.mjs, new web/test/unified-setup.mjs, solspike/harness/scenario-e.mjs, solspike/harness/scenario-f.mjs | **36.75** |
-| **WP-S** Solana payments | M6 0.5, S2 4, S3 6, S4 3, S5 5, S12 0.5, S15 0.5, S16 1, S17 0.5 | web/sol/payview.js, web/sol/main.js, web/sol/session.js, web/sol/execute.js, web/sol/signing.js, web/sol/transfer.js, web/sol/sessions.js, web/sol/worker.js, web/sol/approve.js, web/sol/rent.js, web/test/sol-pay.mjs, web/test/sol-sessions.mjs, new web/test/sol-errors.mjs | **21.0** |
-| **WP-Z** Zcash payment flow | M5 6, S7 3, S8 4, S9 1, S11 1.5, S13 0.25 | web/app-loop.js, web/app-payments.js, web/app-groups.js, web/app-drawer.js, web/app-send.js, web/app-state.js, web/test/app.mjs | **15.75** |
-| **WP-A** Chain and chrome | M1 2.5, M2 1, S9 2.5, S11 0.25 | web/app-chain.js, web/app-dom.js, web/index.html, web/app-payreq.js, new web/test/mainnet-off.mjs, new web/test/chain-fallback.mjs | **6.25** |
-| **WP-N** Group server link | M9 0.5, S1 3 | web/shim.js, web/app-engine.js, cf/wrangler.jsonc, new web/test/shim-status.mjs | **3.5** |
-| **WP-P** Preflight | M8 3 | new solspike/demo-check.sh, scripts/deploy-staging.sh | **3.0** |
-| **WP-D** Docs and site | M1 0.5, M2 0.5, M6 0.5, M7 3, S13 0.25, S18 2 | README.md, PRIVACY.md, TICKETS.md, docs/demo.md (new), zigs-site/index.html, zigs-site/note.html | **6.75** |
-| **Total** | | | **93.0** |
+| Package | Items | Files owned |
+|---|---|---|
+| **WP-U** Setup, wallet shell, Solana ceremony | M3, M4, S1, S6, S10, S11, S12, S13, S14, S15 | web/app-shell.js, web/app-dkg.js, web/app-setup.js, web/app-wallet.js, web/app-sol.js, web/app-backups.js, web/app-links.js, web/app-filter.js, web/util.js, web/app.css, web/sol/ceremony.js, web/sol/view.js, web/sol/backup.js, web/sol/secrets.js, web/sol/abort.js, web/test/sol-ceremony.mjs, web/test/sol-app.mjs, new web/test/unified-setup.mjs, solspike/harness/scenario-e.mjs, solspike/harness/scenario-f.mjs |
+| **WP-S** Solana payments | M6, S2, S3, S4, S5, S12, S15, S16, S17 | web/sol/payview.js, web/sol/main.js, web/sol/session.js, web/sol/execute.js, web/sol/signing.js, web/sol/transfer.js, web/sol/sessions.js, web/sol/worker.js, web/sol/approve.js, web/sol/rent.js, web/test/sol-pay.mjs, web/test/sol-sessions.mjs, new web/test/sol-errors.mjs |
+| **WP-Z** Zcash payment flow | M5, S7, S8, S9, S11, S13 | web/app-loop.js, web/app-payments.js, web/app-groups.js, web/app-drawer.js, web/app-send.js, web/app-state.js, web/test/app.mjs |
+| **WP-A** Chain and chrome | M1, M2, S9, S11 | web/app-chain.js, web/app-dom.js, web/index.html, web/app-payreq.js, new web/test/mainnet-off.mjs, new web/test/chain-fallback.mjs |
+| **WP-N** Group server link | M9, S1 | web/shim.js, web/app-engine.js, cf/wrangler.jsonc, new web/test/shim-status.mjs |
+| **WP-P** Preflight | M8 | new solspike/demo-check.sh, scripts/deploy-staging.sh |
+| **WP-ZN** ZNS pay to a name | M10 | cf/src/index.js (`/zns` route), web/zns.js, web/test/zns.mjs, web/app-send.js (after WP-Z) |
+| **WP-D** Docs and site | M1, M2, M6, M7, S13, S18 | README.md, PRIVACY.md, TICKETS.md, docs/demo.md (new), zigs-site/index.html, zigs-site/note.html |
 
 Cross-package interfaces:
 1. WP-N exports the group server status from web/shim.js. WP-U reads it in the lobby, createDialog and the setup card (S1). Merge WP-N first.
@@ -510,13 +529,14 @@ Integrator steps (one person, after the packages land):
 - Fix the existing assertion at web/test/app.mjs:2604 (backup text, from S13 in WP-U). WP-Z owns app.mjs and WP-U must not edit it.
 - Run the CI gate (baseline.sh) after each package. The polish audit did not run it. Do not rebuild the Solana SDK bundle in this release.
 
-Order and workers (the limit is two workers and one heavy command at a time):
-- Worker 1: WP-N (3.5 h), WP-P (3 h), then WP-U (36.75 h). About 43 h.
-- Worker 2: WP-A (6.25 h), WP-Z (15.75 h), then WP-S (21 h). About 43 h.
+Order and sessions (one session for each package; heavy commands go through heavy.sh):
+- WP-N and WP-A ship first, because WP-U and WP-Z read their exports.
+- WP-U, WP-S, WP-Z and WP-ZN run in parallel.
+- WP-ZN hooks into the Send form (web/app-send.js) only after WP-Z has landed its Send changes.
 - WP-S starts after SOL-11 and SOL-12 merge, because all three touch web/sol/payview.js. Otherwise put the M6 text fix on the SOL-12 branch first.
 - WP-D runs on the planning side. M7 needs the final flow, so finish it last.
 
-## 8. Owner preparation (not in the totals; the owner does every write)
+## 8. Owner preparation (the owner does every write)
 
 **T-7 days**
 1. Decide D1 to D7.

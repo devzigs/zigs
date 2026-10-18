@@ -114,6 +114,9 @@ step("a payment of the group key to another payee is refused by the rule of the 
   assert.equal(rows.Payee, base58(G.group.pda), "the payee key is the PDA");
   assert.equal(rows.Amount, "0.005 SOL", "the amount is the lamports of the payee output");
   assert.equal(rows.Change, "0 SOL stays with the group.", "a move keeps no change");
+  assert.match(rows.Public, /links the old address of the group key and the program address/);
+  assert.match(rows.Public, /Public link: this fee address pays in public SOL/);
+  assert.match(rows.Helius, /hosted prover/);
   const until = new Date(Number(EXPIRY) * 1000).toISOString().slice(0, 16).replace("T", " ");
   assert.match(rows.Lasts, new RegExp(`^Until ${until} UTC`));
   assert.match(rows["Network fee"], /^0\.000005 SOL$/);

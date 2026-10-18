@@ -511,6 +511,8 @@ step("a proposal from before the fee keys is read as it was and is never sent ag
   const id = await propose(c, "createNonce");
   await waitFor("the proposal", () => ssOf(id));
   assert.equal(ssOf(id).by, 2, "seat 2 proposed");
+  const card = findAll(tabOf(), (n) => n.attrs["data-session"] === id)[0];
+  assert.match(textOf(card), /The nonce account, its rent and the group key that owns it are/);
   assert.equal(reviewOf(c, ssOf(id), 1).payer, feeOf(c, 2).key, "and its fee key pays");
   const fee2 = chain.balances.get(feeAddress(2));
   c.added = await addSol(c, { amount: "0.01" });
