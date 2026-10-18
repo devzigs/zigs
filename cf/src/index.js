@@ -40,13 +40,16 @@ function authorized(req, env) {
 // The Solana Worker (web/sol/worker.js) owns all Helius traffic. A Worker takes the policy of its
 // own script response, so only the /sol responses name the Helius host and policy() stays as is.
 const SOL_HOST = "https://devnet.helius-rpc.com";
+// The pinned key folder of the local prover (SOL-4): a path source, so no other object of that
+// host. Only the /sol policy names it: the Solana Worker fetches the keys, the page does not.
+const SOL_KEYS = "https://d3gbdb0egjwcw9.cloudfront.net/proving-keys/3a1c88f90f609eb1/";
 const SOL_CONFIG = "/sol/config.json";
 
 function solWorkerPolicy() {
   return [
     "default-src 'none'",
     "script-src 'self' 'wasm-unsafe-eval'",
-    `connect-src 'self' ${SOL_HOST}`,
+    `connect-src 'self' ${SOL_HOST} ${SOL_KEYS}`,
     "base-uri 'none'",
   ].join("; ");
 }

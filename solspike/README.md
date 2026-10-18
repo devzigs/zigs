@@ -83,6 +83,7 @@ with `SOLSPIKE_ORIGIN=https://app.zigs.app`:
 |---|---|
 | `harness/scenario-e.mjs` | A new group: the fee address of seat 1 gets 0.003 SOL, and seat 1 adds 0.002 SOL. Two transactions |
 | `harness/scenario-f.mjs` | A new group: backups, the fee addresses, Add SOL, a payment to key B, a restore on blank pages, a second payment and a withdrawal to a public address. Ten transactions. `--resume` continues a run that stopped |
+| `harness/scenario-f.mjs --local` | SOL-4: a new group turns local proving on before its first spend (the device check of seat 1, then the switch; every page shows it on and its own device check), then the payment to key B with both proofs made on the devices. It checks that no page sent a request to the prove path of Helius. Six transactions, results in `logs/scenario-l.json`, backups in `.state/scenario-l` (set `SOLSPIKE_INTERIM` to a new file) |
 | `harness/sol-live.mjs` | Read only: the Worker syncs an empty wallet and reads a nonce account and the tree fees, and the policy probes |
 | `harness/scenario-d.mjs`, `harness/sol-cors.mjs` | Checks of the spike. They have not run in this tree |
 

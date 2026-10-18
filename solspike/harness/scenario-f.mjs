@@ -20,7 +20,13 @@
 // against the fake chain of the web tests (harness/mock-chain.mjs), but a payment is live only:
 // the model has no SDK payment for a new group, so the tap of each payment must be refused at
 // prepare. The results go to solspike/logs/mock-f.json.
-// Run: node solspike/harness/scenario-f.mjs [--mock | --resume]   (README.md, "Live scenarios")
+// With --local (SOL-4) a new group turns local proving on before its first spend: (a) and (b),
+// then seat 1 taps the switch (the page tests the device first and the rig accepts the confirm),
+// every page shows it on and its device check, then pay-a. The proof of prepare and of the
+// execute run on the devices: no page sends a request to the prove path of Helius. That run lands
+// six transactions; its results go to logs/scenario-l.json, its backups to .state/scenario-l.
+// Run: node solspike/harness/scenario-f.mjs [--mock | --resume] [--local]
+// (README.md, "Live scenarios")
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
 import { chmodSync, existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
@@ -39,18 +45,21 @@ import { clickText, run } from "./page.mjs";
 import { redact } from "./redact.mjs";
 import { openApp, solValues, solanaReady, zcashWallet } from "./seats.mjs";
 import { ORIGIN } from "./server.mjs";
+import * as facts from "./sol-facts.mjs";
 import { withStack } from "./stack.mjs";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
-const RESULTS = join(HERE, MOCK ? "../logs/mock-f.json" : "../logs/scenario-f.json");
-const FILES = join(HERE, "../.state/scenario-f");
+const LOCAL = process.argv.includes("--local");
+const NAME = LOCAL ? "l" : "f";
+const RESULTS = join(HERE, MOCK ? `../logs/mock-${NAME}.json` : `../logs/scenario-${NAME}.json`);
+const FILES = join(HERE, `../.state/scenario-${NAME}`);
 const RESUME = process.argv.includes("--resume");
 const HEAD = execFileSync("git", ["rev-parse", "HEAD"], { encoding: "utf8", cwd: HERE }).trim();
 const FUNDS = { 1: 6_000_000n, 2: 2_500_000n, 3: 2_500_000n };
 const ADD = { text: "0.003", lamports: 3_000_000n };
 // The page of seat 3 is the last one, so the pages of seats 1 and 2 keep their places after
 // pay-b closes it.
-const PAYMENTS = [
+const ALL_PAYMENTS = [
   { label: "pay-a", amount: "0.001", lamports: 1_000_000n, proposer: 1, approvers: [1, 2] },
   {
     label: "pay-b",
@@ -62,6 +71,7 @@ const PAYMENTS = [
   },
   { label: "withdraw", amount: "0.0005", lamports: 500_000n, proposer: 2, approvers: [2, 1] },
 ];
+const PAYMENTS = LOCAL ? ALL_PAYMENTS.slice(0, 1) : ALL_PAYMENTS;
 // Every Devnet transaction of the run: the payer, and the lamports that leave it (fees aside).
 // The create pays the rent of the proposal, and the execute gives it back to the proposer. Any
 // open page may execute, so the payer of an execute is a seat with an open page.
@@ -80,7 +90,7 @@ const LIVE_TOOLS = {
   payerOf: chain.payerOf,
   elf: chain.deployedElf,
 };
-const fresh = { head: HEAD, cluster: "devnet", mock: MOCK, steps: [], checks: {} };
+const fresh = { head: HEAD, cluster: "devnet", mock: MOCK, local: LOCAL, steps: [], checks: {} };
 const results = RESUME ? JSON.parse(readFileSync(RESULTS, "utf8")) : fresh;
 results.runs = [...(results.runs ?? []), { head: HEAD, resume: RESUME }];
 delete results.error;
@@ -184,7 +194,7 @@ async function created(rig) {
   if (!MOCK && existsSync(interimFile())) {
     throw new Error("SOLSPIKE_INTERIM holds the backups of an earlier group: --resume, or move it");
   }
-  const { pages, gid } = await zcashWallet(rig, "Scenario F wallet");
+  const { pages, gid } = await zcashWallet(rig, LOCAL ? "Scenario L wallet" : "Scenario F wallet");
   const keys = await solanaReady(pages, gid);
   results.group = { owner: keys.owner, groupKey: keys.groupKey };
   record("ready", {});
@@ -293,6 +303,46 @@ async function steps(rig, start, fees, tools) {
   finish(seen);
 }
 
+/** --local (SOL-4): seat 1 turns local proving on; every page shows it and its device check. */
+async function localSwitch(pages) {
+  await flow.clickMark(pages[0], "prove-switch", 60000);
+  const on = (page) => run(page, () => !!document.querySelector('[data-sol="prove-on"]'));
+  const line = (seat) => document.querySelector(`[data-sol="prove-check-${seat}"]`)?.textContent;
+  const lines = [];
+  for (const [i, page] of pages.entries()) {
+    await waitFor(() => on(page), 120000, () => `the switch on the page of seat ${i + 1}`);
+    const checked = async () => (lines[i] = (await run(page, line, i + 1)) ?? null) !== null;
+    await waitFor(checked, 240000, () => `the device check of seat ${i + 1}`);
+  }
+  const proved = lines.every((text) => /made a test proof/.test(text));
+  assert.ok(proved, "every device made a test proof");
+  record("local", { lines });
+}
+
+/** The requests of every page to the prove path of Helius: none when the group proves here. */
+const hostedProofs = (pages) =>
+  pages.flatMap((page) =>
+    facts.requests(page.records).filter(
+      (r) => r.host === "devnet.helius-rpc.com" && r.path.startsWith("/v1/zolana/prove"),
+    ),
+  );
+
+/** --local: the steps of a group that proves on its devices from its first spend. */
+async function localSteps(rig, start, fees, tools) {
+  const { pages } = start;
+  const ctx = { keys: start.keys, fees, payee: await addressOfB(), tools };
+  results.checks.elf = await tools.elf();
+  await fundSeats(pages, fees, tools);
+  if (!did("add-sol")) await addSol(pages[0], fees, tools);
+  if (!did("local")) await localSwitch(pages);
+  const alive = did("pay-a") ? pages : await payment(pages, PAYMENTS[0], ctx);
+  results.checks.hostedProofs = hostedProofs(pages).length;
+  save();
+  assert.equal(results.checks.hostedProofs, 0, "a page sent a proof to the hosted prover");
+  if (!MOCK) await flow.privateBalance(alive[0], privateNow());
+  finish(pages);
+}
+
 async function scenario(rig) {
   results.plan = PLAN.map((tx) => ({ ...tx, lamports: String(tx.lamports) }));
   const tools = MOCK ? (await import("./mock-chain.mjs")).mockTools(rig) : LIVE_TOOLS;
@@ -300,7 +350,7 @@ async function scenario(rig) {
   const fees = await flow.feeAddresses(start.pages);
   if (results.fees) assert.deepEqual(fees, results.fees, "the same fee addresses");
   results.fees = fees;
-  await steps(rig, start, fees, tools);
+  await (LOCAL ? localSteps : steps)(rig, start, fees, tools);
   console.log(redact(JSON.stringify({ mock: MOCK, steps: results.steps.map((s) => s.label) })));
 }
 

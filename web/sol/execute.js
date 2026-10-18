@@ -17,6 +17,7 @@ import { agreement } from "./ceremony.js";
 import { base58 } from "./docs.js";
 import { feeOf, feeProblem, poorFeeText, readyFee } from "./fee.js";
 import { writerSeats } from "./gate.js";
+import { poolNote } from "./localprove.js";
 import {
   bytesOf,
   bytesOfBase64,
@@ -240,7 +241,7 @@ async function attempt(c, worker, ss, seat, failSession) {
   if (pastExpiry(ss)) return failSession(c, ss, PAYMENT_EXPIRED);
   const { tx, txId } = await signedExecute(c, worker, ss, seat);
   const sim = await worker.call("simulate", { tx });
-  if (sim.err !== null) throw new Error(refusalOf(sim, seat));
+  if (sim.err !== null) throw new Error(await poolNote(c, worker, refusalOf(sim, seat)));
   // The re-proof may outlast the lease: take it again, or leave the send to the tab that holds it.
   if (!(await leased(ref))) return sleep(3000);
   await worker.call("send", { tx });

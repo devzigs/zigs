@@ -9,6 +9,7 @@ import { startSolWorker } from "./client.js";
 import { agreement } from "./ceremony.js";
 import { base58 } from "./docs.js";
 import { feeOf } from "./fee.js";
+import { gateAnswer } from "./localprove.js";
 import { PROPOSAL_SPACE, nonceAccountHex } from "./intent.js";
 import { holdsShare, refuseStopped, solOf, stopOf } from "./secrets.js";
 import { SESSIONS, isPayment } from "./sessions.js";
@@ -20,7 +21,8 @@ export const UNAVAILABLE = "Solana is not available on this server";
 // it the Worker would run with no policy of its own, so the page does not start it.
 const WORKER_POLICY =
   "default-src 'none'; script-src 'self' 'wasm-unsafe-eval'; " +
-  "connect-src 'self' https://devnet.helius-rpc.com; base-uri 'none'";
+  "connect-src 'self' https://devnet.helius-rpc.com " +
+  "https://d3gbdb0egjwcw9.cloudfront.net/proving-keys/3a1c88f90f609eb1/; base-uri 'none'";
 
 // The page shows it after "Solana did not load: " (S12): the server did not answer at all.
 export const NOT_LOADED = "Check your connection. Then reload the page.";
@@ -86,7 +88,7 @@ async function start(c, rpcUrl, roles, groupKey) {
   const opened = c.opened;
   await requireWorkerPolicy();
   if (!stillOpen(c, opened)) throw new Error(CLOSED);
-  c.worker ??= startSolWorker();
+  c.worker ??= startSolWorker(undefined, () => gateAnswer(c));
   const { pda } = roles;
   const init = await c.worker.call("init", {
     rpcUrl,

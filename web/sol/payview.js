@@ -20,6 +20,7 @@ import {
   decodeIntent,
   readVerdict,
 } from "./intent.js";
+import { provesLocally, switchCard } from "./localprove.js";
 import { usedDigest } from "./nonces.js";
 import { heldOf, reclaimRent, scanRent } from "./rent.js";
 import { holdsShare, solOf } from "./secrets.js";
@@ -91,7 +92,13 @@ export const LINK_TEXT =
 export const PROVER_TEXT =
   "Helius makes the proof on its hosted prover. So it sees the owner keys, the payee, the amount " +
   "and the notes that the payment spends. It also sees the secret that links each spend to its " +
-  "notes. Local proving is not available yet.";
+  "notes. Local proving keeps all of this on your devices: see Local proving below.";
+export const PROVER_LOCAL =
+  "This group makes its proofs on its devices, so Helius does not see the payee, the amount, the " +
+  "notes that the payment spends or the secret that links each spend to its notes. Its indexer " +
+  "still sees the queries of this wallet and your IP address.";
+/** What the prover of a payment of this group sees: hosted, or local with the switch (SOL-4). */
+const proverSays = (local) => (local ? PROVER_LOCAL : PROVER_TEXT);
 
 const FEE_TEXT =
   "It pays the fees and the rents of the proposals that this seat makes, and the fee of each " +
@@ -247,7 +254,11 @@ function intentCard(c, act, actions) {
     el("h3", {}, "Pay from the group"),
     seatLine(c, "propose-seat", "proposes and pays the fees."),
     el("p", { class: "small", "data-sol": "pay-cost" }, costLine(c)),
-    el("p", { class: "small", "data-sol": "pay-prover" }, PROVER_TEXT),
+    el(
+      "p",
+      { class: "small", "data-sol": "pay-prover" },
+      proverSays(provesLocally(c)),
+    ),
     sendForm(c, act, actions),
     withdrawForm(c, act, actions),
   );
@@ -346,7 +357,11 @@ function moveCard(c, act, actions) {
     { class: "callout", style: "display:grid;gap:8px", "data-sol": "move" },
     el("h3", {}, "Move the beta funds (one time)"),
     el("p", { class: "small" }, MOVE_TEXT),
-    el("p", { class: "small", "data-sol": "move-public" }, MOVE_PUBLIC + " " + PROVER_TEXT),
+    el(
+      "p",
+      { class: "small", "data-sol": "move-public" },
+      MOVE_PUBLIC + " " + proverSays(provesLocally(c)),
+    ),
     el("p", { class: "small", "data-sol": "move-held" }, "Old address: " + solText(held)),
     el("p", { class: "small", "data-sol": "nonce-state" }, "Nonce account: " + nonce),
     el("div", { class: "row-actions" }, steps),
@@ -385,7 +400,7 @@ function payeeRows(said) {
  * The rows of the move of the beta funds, from the fingerprint, the amounts and the expiry that
  * the checker answered: the payee is the key that the payee output commits to.
  */
-export function transferRows(groupKey, review, fee) {
+export function transferRows(groupKey, review, fee, local = false) {
   const said = readVerdict(review.verdict);
   return [
     ["What it does", WHAT.transfer],
@@ -394,7 +409,7 @@ export function transferRows(groupKey, review, fee) {
     ["Network fee", solText(fee + said.treeFee)],
     ["Lasts", "Until " + utc(said.expiry) + " UTC, or until the nonce account advances."],
     ["Public", MOVE_PUBLIC + " " + LINK_TEXT],
-    ["Helius", PROVER_TEXT],
+    ["Helius", proverSays(local)],
   ];
 }
 
@@ -429,7 +444,7 @@ function paymentRows(c, review) {
     ["Public", lead + "The proposal account (the group key, the " +
       "expiry, the fee address of seat " + review.by + ") is public, and the create transaction " +
       "keeps it in the chain history. " + LINK_TEXT],
-    ["Helius", PROVER_TEXT],
+    ["Helius", proverSays(provesLocally(c))],
   ];
 }
 
@@ -464,7 +479,7 @@ function rowsOf(c, review) {
     const fee = BASE_FEE * BigInt(info.signatures) + info.priorityFee;
     rows =
       intent.kind === "transfer"
-        ? transferRows(groupKey, review, fee)
+        ? transferRows(groupKey, review, fee, provesLocally(c))
         : plainRows(intent, groupKey, fee);
   }
   // A payment: the proposing seat paid the create; the seat that executes pays the execute.
@@ -654,5 +669,6 @@ export function payCards(c, act, actions) {
     intentCard(c, act, actions),
     sessionList(c, act, actions),
     rentCard(c, act),
+    switchCard(c, act, actions),
   ].filter(Boolean);
 }

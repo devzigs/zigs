@@ -42,7 +42,8 @@ const WORKER = "worker:/sol/worker.js";
 const SELF = new URL(ORIGIN).host;
 const WORKER_POLICY =
   "default-src 'none'; script-src 'self' 'wasm-unsafe-eval'; " +
-  "connect-src 'self' https://devnet.helius-rpc.com; base-uri 'none'";
+  "connect-src 'self' https://devnet.helius-rpc.com " +
+  "https://d3gbdb0egjwcw9.cloudfront.net/proving-keys/3a1c88f90f609eb1/; base-uri 'none'";
 // A throwaway phrase for a throwaway wallet: the file is checked and then dropped with the context.
 const PASS = "p8d-live-check-passphrase-0001";
 const facts = {};

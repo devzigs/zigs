@@ -10,9 +10,11 @@ import { backupWords, restoreSolana } from "./backup.js";
 import { addSolana, reactCeremony } from "./ceremony.js";
 import { COLLECTIONS, filterSol } from "./docs.js";
 import { tryAgain } from "./execute.js";
+import { reactProve, turnOnLocal } from "./localprove.js";
 import { propose } from "./propose.js";
 import {
   autoSync,
+  ensureWorker,
   fetchRpcUrl,
   refreshChain,
   showSaved,
@@ -66,6 +68,7 @@ const blank = () => ({
   savedShown: false,
   rent: null,
   rentDone: null,
+  proveChecked: false,
 });
 
 function teardown(c) {
@@ -176,6 +179,8 @@ export async function attach(host) {
     approve: (ss, seat) => approve(c, ss, seat),
     /** Tries the execute of a signed payment again, after the tries of this tab ran out. */
     execute: (ss) => tryAgain(c, ss),
+    /** Turns on local proving for the group, after the pool and device checks (SOL-4). */
+    proveOn: async () => turnOnLocal(c, await ensureWorker(c)),
     async addSol(args) {
       c.added = await addSol(c, args);
       host.render();
@@ -193,6 +198,7 @@ export async function attach(host) {
       reactCeremony(c);
       reactAborts(c);
       reactSessions(c);
+      reactProve(c, () => ensureWorker(c));
       autoSync(c);
       showSaved(c).catch((e) => host.log("saved Solana state not shown: " + (e.message ?? e)));
     },

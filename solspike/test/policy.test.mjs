@@ -25,7 +25,8 @@ const BASE = JSON.parse(readFileSync(join(ROOT, "solspike/baseline.json"), "utf8
 const URLS = ["http://localhost:8795/", "https://app.zigs.app/", "http://127.0.0.1:8795/"];
 const WORKER_POLICY =
   "default-src 'none'; script-src 'self' 'wasm-unsafe-eval'; " +
-  "connect-src 'self' https://devnet.helius-rpc.com; base-uri 'none'";
+  "connect-src 'self' https://devnet.helius-rpc.com " +
+  "https://d3gbdb0egjwcw9.cloudfront.net/proving-keys/3a1c88f90f609eb1/; base-uri 'none'";
 const step = (name) => console.log(`ok  ${name}`);
 
 const baseSource = () =>

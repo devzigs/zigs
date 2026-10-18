@@ -21,6 +21,7 @@ const KEY_NAME = "api-key";
 const HERE = dirname(fileURLToPath(import.meta.url));
 const WEB_SOL = new URL("../../web/sol/", import.meta.url);
 const STUB = new URL("./worker-sdk-stub.mjs", import.meta.url).href;
+const PROVER_STUB = new URL("./prover-stub.mjs", import.meta.url).href;
 const WORKER = new URL("worker.js", WEB_SOL).href;
 const ENTRY = new URL("../mock/page/test-worker.js", import.meta.url).href;
 
@@ -30,6 +31,7 @@ registerHooks({
   resolve(specifier, context, next) {
     if (specifier === "/sol/zolana.bundle.js") return { url: STUB, shortCircuit: true };
     if (specifier === "/sol/transfer.js") return { url: STUB, shortCircuit: true };
+    if (specifier === "/sol/prover/prover.js") return { url: PROVER_STUB, shortCircuit: true };
     if (!specifier.startsWith("/sol/")) return next(specifier, context);
     const { search } = new URL(context.parentURL);
     return { url: new URL(specifier.slice(5), WEB_SOL).href + search, shortCircuit: true };
@@ -37,6 +39,7 @@ registerHooks({
 });
 
 const { control } = await import(STUB);
+const { proverControl } = await import(PROVER_STUB);
 const { commitmentOf, cutTransact, hex, planFromProve } = await import("../../web/sol/prepare.js");
 const sdk = await import(new URL("zolana.bundle.js", WEB_SOL).href);
 
@@ -94,14 +97,27 @@ async function freshWorker({ testMode = false } = {}) {
   fetched.length = 0;
   modes.length = 0;
   posted.length = 0;
+  Object.assign(proverControl, { made: [], calls: [] });
+  proverControl.reply = () => new Response('{"proof":"local"}', { status: 200 });
+  gate.answer = { mode: "hosted" };
+  gate.asked = 0;
   globalThis.self = {
+    location: { href: "https://app.zigs.app/sol/worker.js" },
     postMessage: (message) => {
       posted.push(message);
+      if (typeof message.gate === "number") return answerGate(message.gate);
       waiting.get(message.id)?.(message);
     },
   };
   loads += 1;
   await import(`${testMode ? ENTRY : WORKER}?load=${loads}`);
+}
+
+/** The page side of the gate (client.js): it answers each prove call with `gate.answer`. */
+const gate = { answer: { mode: "hosted" }, asked: 0 };
+function answerGate(id) {
+  gate.asked += 1;
+  queueMicrotask(() => globalThis.self.onmessage({ data: { gate: id, ...gate.answer } }));
 }
 
 /** Sends one command to the Worker. Resolves with its answer { id, ok, result | error }. */
@@ -739,6 +755,152 @@ async function inspectCommand() {
   step("inspect gives the salt and the first nullifier of the transact data of a message");
 }
 
+// ---- SOL-4: local proving behind the switch of the group ----
+
+const PROVE_URL = "https://devnet.helius-rpc.com/v1/zolana/prove";
+const KEYS = "https://d3gbdb0egjwcw9.cloudfront.net/proving-keys/3a1c88f90f609eb1/";
+const LOADER = "BPFLoaderUpgradeab1e11111111111111111111111";
+const toHelius = () => fetched.filter((url) => url.startsWith(PROVE_URL));
+
+/** The ProgramData of the pool as the RPC gives it (a slice of 8 bytes: the deploy slot). */
+function poolData(slot, owner = LOADER) {
+  const bytes = Buffer.alloc(8);
+  bytes.writeBigUInt64LE(BigInt(slot));
+  control.rpc.getAccountInfo = async () => ({
+    value: { owner, data: [bytes.toString("base64"), "base64"] },
+  });
+}
+
+async function payWith(answer) {
+  gate.answer = answer;
+  control.utxos = [syncedInput()];
+  giveProof(proveBody());
+  const posts = control.prove;
+  // As the SDK does: a prover reply that is not ok fails the proof (CLIENT_PROVER_HTTP).
+  control.prove = async (inputs) => {
+    const sent = control.options.fetch;
+    control.options.fetch = async (...args) => {
+      const reply = await sent(...args);
+      if (!reply.ok) throw new Error("WalletError: CLIENT_PROVER_HTTP");
+      return reply;
+    };
+    try {
+      return await posts(inputs);
+    } finally {
+      control.options.fetch = sent;
+    }
+  };
+  return ask("prepare", { ...PREPARE, kind: "pay", avoid: [] });
+}
+
+/** Off: the page answers "hosted", and the prove call goes to Helius after one gate. */
+async function hostedAfterTheGate() {
+  await initialised();
+  const done = await payWith({ mode: "hosted" });
+  assert.equal(done.ok, true, done.error);
+  assert.equal(gate.asked, 1, "the Worker proved without asking the page");
+  assert.equal(toHelius().length, 1, "the hosted prover did not get the call");
+  assert.deepEqual(proverControl.made, [], "a local prover was made for a hosted group");
+  step("SOL-4 off: one gate per proof, then the hosted prover");
+}
+
+/** On: the web prover answers on the device; Helius gets nothing of the proof, ever after. */
+async function localStaysOnTheDevice() {
+  await initialised();
+  const done = await payWith({ mode: "local" });
+  assert.equal(done.ok, true, done.error);
+  assert.deepEqual(toHelius(), [], "a local proof reached Helius");
+  assert.equal(proverControl.calls.length, 1, "the web prover did not get the prove call");
+  assert.match(proverControl.calls[0].url, /\/v1\/zolana\/prove\?/);
+  const [made] = proverControl.made;
+  assert.deepEqual([made.threads, made.proverUrl], [0, ZOLANA], "Go only, on the SDK prover URL");
+  assert.equal(made.wasmUrl, "https://app.zigs.app/sol/prover/zolana-prover.wasm");
+  assert.equal(done.result.expiry, "1792048408", "prepare did not read the traced body");
+  const again = await payWith({ mode: "hosted" });
+  assert.equal(again.ok, false, "a hosted proof after a local one");
+  assert.match(again.error, /proved on the device before/);
+  const { fetch: sdkFetch } = control.options;
+  await assert.rejects(sdkFetch(`${PROVE_URL}/status?${KEY_NAME}=k`), /blocked a hosted proof/);
+  assert.deepEqual(toHelius(), [], "the latch let a prove path through");
+  step("SOL-4 on: the web prover answers here, and the Worker never proves hosted after it");
+}
+
+/** A refusal of the page proves nothing and sends nothing. */
+async function refusedProvesNothing() {
+  await initialised();
+  const done = await payWith({ refuse: "Could not read the proving setting." });
+  assert.equal(done.ok, false);
+  assert.match(done.error, /^Could not read the proving setting\.$/);
+  assert.deepEqual([toHelius(), proverControl.calls], [[], []], "a refused proof was made");
+  const silent = await payWith({});
+  assert.match(silent.error, /did not say how this group proves/, "an empty answer");
+  assert.deepEqual(toHelius(), [], "an empty answer sent the proof to Helius");
+  step("SOL-4 a refused or empty gate answer proves nothing, here or at Helius");
+}
+
+/** A failed local proof says why; when the pool moved, it says that first. */
+async function localFailureTexts() {
+  await initialised();
+  proverControl.reply = () =>
+    new Response('{"code":"wasm_key_download_failed"}', { status: 500 });
+  poolData("508538476");
+  const down = await payWith({ mode: "local" });
+  assert.equal(down.ok, false);
+  assert.match(down.error, /could not load the proving key.*Nothing was sent to Helius\.$/);
+  poolData("508538477");
+  const moved = await payWith({ mode: "local" });
+  assert.match(moved.error, /^This group makes its proofs on its devices.*Helius changed the pool/);
+  assert.deepEqual(toHelius(), [], "a failed local proof went to Helius");
+  step("SOL-4 a failed local proof names its cause, and a moved pool first");
+}
+
+/** The guard lets GET of a key of our circuits pass, in the pinned folder only. */
+async function keyFetchGuard() {
+  await initialised();
+  const { fetch: sdkFetch } = control.options;
+  await sdkFetch(`${KEYS}transfer_confidential_1_2.key`);
+  await sdkFetch(`${KEYS}transfer_confidential_8_2.key`, { method: "GET" });
+  assert.equal(fetched.length, 2, "a key download was blocked");
+  const blocked = [
+    [`${KEYS}transfer_confidential_1_2.key`, { method: "POST", body: "x" }],
+    [`${KEYS}transfer_confidential_1_4.key`],
+    [`${KEYS}merge_8_1.key`],
+    [`${KEYS}transfer_confidential_1_2.key?x=1`],
+    [`${KEYS}sub/transfer_confidential_1_2.key`],
+    ["https://d3gbdb0egjwcw9.cloudfront.net/proving-keys/other/transfer_confidential_1_2.key"],
+    ["https://d3gbdb0egjwcw9.cloudfront.net/v1/zolana/prove"],
+  ];
+  for (const [url, init] of blocked) {
+    await assert.rejects(async () => sdkFetch(url, init), /blocked a request to/, url);
+  }
+  assert.equal(fetched.length, 2, "a blocked request reached the network");
+  step("SOL-4 the guard passes GET of a pinned N x 2 key and nothing else of that host");
+}
+
+/** selftest proves the pinned test request here; poolSlot reads the deploy slot of the pool. */
+async function deviceCheckAndPool() {
+  await initialised();
+  const done = await ask("selftest", {});
+  assert.equal(done.ok, true, done.error);
+  assert.equal(typeof done.result.ms, "number");
+  assert.equal(proverControl.calls[0].selftest, "{}", "the test request did not reach the prover");
+  assert.deepEqual(toHelius(), []);
+  proverControl.proveRequest = async () => {
+    throw Object.assign(new Error("Prover worker failed"), { code: "wasm_worker_failed" });
+  };
+  const failed = await ask("selftest", {});
+  assert.match(failed.error, /could not start the local prover.*Nothing was sent/);
+  proverControl.proveRequest = async () => ({ proof: "{}" });
+  poolData("508538476");
+  const same = await ask("poolSlot", {});
+  assert.deepEqual(same.result, { slot: "508538476", pinned: "508538476", text: null });
+  poolData("600000000");
+  assert.match((await ask("poolSlot", {})).result.text, /Helius changed the pool/);
+  poolData("508538476", SYSTEM);
+  assert.match((await ask("poolSlot", {})).error, /pool program data is missing/);
+  step("SOL-4 selftest proves on the device; poolSlot reads the deploy slot of the pool");
+}
+
 await refusalsBeforeInit();
 await initWiring();
 await fetchGuard();
@@ -757,4 +919,10 @@ await prepareRefusals();
 await commandOrder();
 await readCommands();
 await inspectCommand();
+await hostedAfterTheGate();
+await localStaysOnTheDevice();
+await refusedProvesNothing();
+await localFailureTexts();
+await keyFetchGuard();
+await deviceCheckAndPool();
 console.log("worker tests passed");
