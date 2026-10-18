@@ -47,13 +47,21 @@ function need() {
  */
 function guardedFetch(origin, trace) {
   return async (input, init) => {
-    const url = new URL(input instanceof Request ? input.url : String(input));
+    const request = input instanceof Request;
+    const url = new URL(request ? input.url : String(input));
     if (url.origin !== origin) throw new Error(`blocked a request to ${url.host}`);
-    if (init?.method === "POST" && url.pathname === "/v1/zolana/prove") {
-      trace.prove = typeof init.body === "string" ? JSON.parse(init.body) : null;
-    }
-    return fetch(input instanceof Request ? input : url.href, { ...init, redirect: "error" });
+    keepProverBody(trace, url, init);
+    const reply = await fetch(request ? input : url.href, { ...init, redirect: "error" });
+    if (!reply.ok) refusedStatus = reply.status;
+    return reply;
   };
+}
+
+/** The body of a call of the prover, which `prepare` keeps. */
+function keepProverBody(trace, url, init) {
+  if (init?.method === "POST" && url.pathname === "/v1/zolana/prove") {
+    trace.prove = typeof init.body === "string" ? JSON.parse(init.body) : null;
+  }
 }
 
 /** One identity: its address, its keys, its synced wallet and the owner that never pays. */
@@ -488,14 +496,39 @@ const HANDLERS = {
   confirm,
 };
 
+// The SDK bundle has no error texts (a production build): a refused HTTP call of Helius reads as
+// "Solana error #8100002", or as "WalletError: WALLET_SYNC" when the indexer refused it (the SDK
+// drops the status on the way). So the fetch of this Worker keeps the status of the last refused
+// call of the command (one command runs at a time), and an RPC error also holds it in its context
+// (@solana/errors SOLANA_ERROR__RPC__TRANSPORT_HTTP_ERROR), maybe in a cause.
+const RPC_HTTP_ERROR = 8100002;
+let refusedStatus = null;
+function httpStatus(err) {
+  for (let e = err, depth = 0; e && depth < 4; e = e.cause, depth += 1) {
+    if (e.context?.__code === RPC_HTTP_ERROR) return Number(e.context.statusCode);
+  }
+  return refusedStatus;
+}
+
+/** A readable text for a call that Helius refused or did not answer, or null. */
+function heliusText(err) {
+  const status = httpStatus(err);
+  if (status === 403) return "Helius refused this website. Its key does not allow this domain.";
+  if (status === 429) return "Too many Helius calls. Wait a minute.";
+  if (status >= 500) return "Helius is not answering.";
+  return null;
+}
+
 async function answer({ id, cmd, args }) {
+  refusedStatus = null;
   try {
     const input = args ?? {};
     checkCommand(cmd, input);
     const result = await HANDLERS[cmd](input);
     self.postMessage({ id, ok: true, result });
   } catch (err) {
-    self.postMessage({ id, ok: false, error: redact(`${err?.name ?? "Error"}: ${err?.message}`) });
+    const text = heliusText(err) ?? `${err?.name ?? "Error"}: ${err?.message}`;
+    self.postMessage({ id, ok: false, error: redact(text) });
   }
 }
 
