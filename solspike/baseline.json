@@ -1,5 +1,5 @@
 {
-  "baseCommit": "83244435f0c06b963a6049517b81919805870687",
+  "baseCommit": "404559b917506b8004cfd2a7e460e3a9c9e96c5f",
   "node": "v24.11.0",
   "tests": {
     "web/test/chat.mjs": {
@@ -66,6 +66,9 @@
       "exit": 0
     },
     "web/test/sol-transfer.mjs": {
+      "exit": 0
+    },
+    "web/test/unified-setup.mjs": {
       "exit": 0
     },
     "web/test/sol-fee.mjs": {

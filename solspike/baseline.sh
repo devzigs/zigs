@@ -42,6 +42,7 @@ trap stop_server EXIT
 
 TESTS=(chat signed app requests account personal payees vault util qr shim lwd graph
   sol-config sol-docs sol-ceremony sol-app sol-wasm sol-sessions sol-limits sol-pay sol-transfer
+  unified-setup
   sol-fee sol-rent)
 HELPERS=(sol-rig sol-setup sol-chain sol-vector sol-fixture page)
 for f in web/test/*.mjs; do

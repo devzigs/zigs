@@ -13,7 +13,7 @@ case "$(node -v 2>/dev/null)" in
 esac
 FAST="payees vault chat lwd requests shim signed util account qr personal graph
   sol-docs sol-transfer sol-wasm sol-config sol-rent"
-SLOW="app sol-fee sol-sessions sol-limits sol-ceremony sol-app sol-pay"
+SLOW="app sol-fee sol-sessions sol-limits sol-ceremony sol-app sol-pay unified-setup"
 HELPERS="sol-rig sol-setup sol-chain sol-vector sol-fixture page"
 # A new test file goes into FAST or SLOW here, and into TESTS of solspike/baseline.sh.
 all=" $(echo $FAST $SLOW $HELPERS) "
