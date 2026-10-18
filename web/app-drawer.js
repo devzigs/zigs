@@ -162,11 +162,14 @@ const needsProof = (ss) => ss.signed && !ss.final
 export function finishStep(ss) {
   if (!mayAct()) return null;
   if (needsProof(ss)) return "proof";
-  // A node refuses a payment that expires within EXPIRY_MARGIN blocks (see expiryLine).
-  if (!ss.final || expiryOf(ss)?.expired || landed(ss)) return null;
+  if (unsendable(ss)) return null;
   if (!ss.broadcastTxid) return "send";
   return lateSend(ss) ? "resend" : null;
 }
+
+// No proof yet, a block holds it, or a node refuses it: it expires within EXPIRY_MARGIN blocks
+// (see expiryLine).
+const unsendable = (ss) => !ss.final || expiryOf(ss)?.expired || landed(ss);
 
 export function finishButtons(ss) {
   const step = finishStep(ss);

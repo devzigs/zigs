@@ -1583,6 +1583,20 @@ const sealed = (gid, rel, seat, fields, key, names = ["by", "sig"]) =>
     // After signing, only the engine can say "Expired" (TICKETS.md ZEC-13): the chip asks to check.
     assert.equal(textOf(t.statusChip(sentOne)), "Check");
     assert.equal(bucket(sentOne), "attention", "the inbox: the Check state needs attention");
+    // The inbox for the other states: a proposal to approve, an expired one, a cancelled one, and
+    // a document whose facts cannot be read, which never drops out of the list.
+    tipAt(4500000);
+    const fresh = { ...proposal, id: "x9" }, cancelled = { ...proposal, id: "x8", error: "x" };
+    const odd = { id: "x7", get status() { throw new Error("unreadable"); } };
+    t.state.sessions.push(fresh, cancelled, odd);
+    assert.equal(t.needsMyApproval(t.state.gid, fresh), true, "a seat here can approve x9");
+    assert.equal(bucket(fresh), "review", "the inbox: a proposal to approve");
+    assert.equal(bucket(cancelled), null, "the inbox: a cancelled payment that holds nothing");
+    assert.equal(bucket(odd), "attention", "the inbox: a payment it cannot read");
+    tipAt(4503453);
+    assert.equal(bucket(fresh), null, "the inbox: an expired proposal is finished");
+    t.state.sessions.splice(t.state.sessions.indexOf(fresh), 3);
+    tipAt(4503459);
     const unmarkedOne = { ...proposal, id: "x5", signed: "s", final: { txid: "f", tx_hex: "00" },
       broadcastError: "timeout" };
     assert.equal(textOf(t.statusChip(unmarkedOne)), "Check");
@@ -2137,9 +2151,15 @@ const sealed = (gid, rel, seat, fields, key, names = ["by", "sig"]) =>
       assert.match(String(t.sendBlocker()),
         /approved can still go on chain|waiting for its block|Finish or cancel the open payment/);
       // Path A of QA round 4: no sent mark ever comes, and one seat writes a failure part.
+      const inboxOf = (id) => Object.entries(t.inboxRows())
+        .find(([, list]) => list.some((x) => x.id === id))?.[0] ?? null;
+      assert.notEqual(inboxOf("h1"), "attention",
+        "the inbox: an approval with no error is no hold");
       put({ ...h1, package: "PK", signed: "SA", status: "failed", error: "Failed." });
       at(4500101);
       assert.ok(t.heldApprovals().includes("h1"), "an error part ends no hold");
+      assert.equal(inboxOf("h1"), "attention",
+        "the inbox: a failed payment that an approval here still holds (S7)");
       // Path B: the document leaves the list (a rewrite that fails its check drops it).
       t.state.sessions = t.state.sessions.filter((x) => x.id !== "h1");
       at(4500102);

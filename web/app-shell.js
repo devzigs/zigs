@@ -274,7 +274,8 @@ function lobbyActions(off, restoreBtn) {
 
 function walletRow(g) {
   if (g.unreadable) return unreadable();
-  const seats = mySeatSecrets(g.id).length, n = toApprove(g.id).length, bal = balOf(g.id);
+  const seats = mySeatSecrets(g.id).length, bal = balOf(g.id);
+  const n = solPending(g.id) + toApprove(g.id).length;
   const unread = newBadge(unreadIn(g.id));
   const status = g.movedTo ? el("span", { class: "badge plain" }, "Moved")
     : ready[g.id] === false ? el("span", { class: "badge info" }, "Setting up")

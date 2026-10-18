@@ -160,6 +160,28 @@ function overviewWiring(ctl) {
     t.ui.tab = tab;
   }
 }
+// The Approvals inbox of the open wallet: the Solana line counts the two proposals, and the empty
+// card never says that nothing waits while the payments are unknown.
+function inboxWiring() {
+  const { tab } = t.ui, kept = { ...t.state };
+  t.ui.tab = "approvals";
+  try {
+    assert.match(pageText(), /Needs your approval2.*2 Solana proposals wait for your approval/,
+      "the Solana line and its count in the review bucket");
+    Object.assign(t.state, { sessions: [], sessionsFailed: true });
+    assert.match(pageText(), /could not be read/, "a failed read");
+    Object.assign(t.state, { sessionsFailed: false, sessionsLoaded: false });
+    assert.match(pageText(), /Checking the payments of this wallet/, "not arrived yet");
+    Object.assign(t.state, { sessionsLoaded: true, pending: true });
+    assert.match(pageText(), /Checking the payments of this wallet/, "a check is open");
+    Object.assign(t.state, { pending: false });
+    assert.doesNotMatch(pageText(), /Checking the payments|could not be read/);
+  } finally {
+    Object.assign(t.state, { sessions: kept.sessions, sessionsFailed: kept.sessionsFailed,
+      sessionsLoaded: kept.sessionsLoaded, pending: kept.pending });
+    t.ui.tab = tab;
+  }
+}
 // The phone Menu closes on a pick; the sections show for the formed wallet only; the switcher
 // shows with two or more wallets.
 function sideMenu() {
@@ -217,6 +239,7 @@ function approvalCount(ctl) {
     const inbox = side.find((n) => n.attrs?.id === "tab-approvals");
     assert.ok(inbox && labelled(inbox, "2 to approve"), "the Approvals section counts them too");
     overviewWiring(ctl);
+    inboxWiring();
     Object.assign(ctl, { sessions: [], commits: {} });
     assert.ok(!labelled(sideTree(), "2 to approve"), "no count without a proposal");
     sideMenu();
