@@ -53,15 +53,25 @@ export function pinVersion(gid, g) {
   }
 }
 
-// The first network name that this device saw for a wallet, in `zf-signpins` under
-// "network:<wallet id>". A missing or unknown name is not pinned. Returns the fields that replace
-// the stored ones: the pinned `network`, and `networkMoved` when the store shows another.
+// The network that the people of a wallet confirmed with the safety number (confirmedNetwork),
+// in `zf-signpins` under "confirmednet:<wallet id>". The store alone never sets it (SOL-34).
+const confirmedNetKey = (gid) => "confirmednet:" + gid;
+export const netConfirmed = (gid) => signPins[confirmedNetKey(gid)];
+export function pinConfirmedNet(gid, net) {
+  if (!validNet(net) || pin(signPins, confirmedNetKey(gid), net) !== "new") return false;
+  saveMerged("zf-signpins", signPins, oldest);
+  return true;
+}
+
+// The network of a wallet: the confirmed one, else the first name that this device saw, in
+// `zf-signpins` under "network:<wallet id>". A missing or unknown name is not pinned. Returns the
+// fields that replace the stored ones: `network`, and `networkMoved` when the store shows another.
 export function pinNetwork(gid, d) {
   const key = "network:" + gid;
   if (validNet(d.network) && pin(signPins, key, d.network) === "new") {
     saveMerged("zf-signpins", signPins, oldest);
   }
-  const pinned = signPins[key];
+  const pinned = netConfirmed(gid) || signPins[key];
   return pinned ? { network: pinned, networkMoved: d.network !== pinned } : {};
 }
 
@@ -123,6 +133,14 @@ function partVerdict(gid, part, known) {
   const ok = docMemo.ask(key, S(part.fields), gate.pk,
     (entry) => startCheck(entry, gid, part, gate.pk));
   return ok === null ? "wait" : ok ? "yes" : "no";
+}
+
+// The verdict for the stored document `d` at `rel` when the key of this device for seat `i` must
+// have signed it, whatever key the device pinned for that seat (SOL-34).
+export function signedByMe(gid, i, rel, d) {
+  const pk = sec(gid, i).signPk;
+  if (!d || !validPk(pk)) return "no";
+  return partVerdict(gid, { rel, by: d.by, sig: d.sig, fields: docFields(d), need: i, pk }, true);
 }
 
 // The same for a decision that cannot wait for a redraw (it reads the store again).

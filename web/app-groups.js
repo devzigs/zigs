@@ -11,13 +11,14 @@ import { localSeats } from "./app-seats.js";
 import { followHash, setHash } from "./app-links.js";
 import { dropChain } from "./app-chain.js";
 import {
-  loggedIgnored, pinNetwork, pinVersion, refilter, signedMode, signPins,
+  loggedIgnored, pinConfirmedNet, pinNetwork, pinVersion, refilter, signedMode, signPins,
 } from "./app-filter.js";
 import { syncRooms } from "./app-messages.js";
 import { expired } from "./app-payments.js";
 import { startAccount } from "./app-account.js";
 import { render } from "./app-loop.js";
-import { resetSolStart, sol, solAttach, solOn } from "./app-sol.js";
+import { resetSolStart, sol, solWatch } from "./app-sol.js";
+import { confirmedNetwork } from "./app-dkg.js";
 
 export let db = null, sdb = null, user = null, downloads = null, me = null, canWrite = null, dbReady = false;
 export function setDb(v) { sdb = v; db = v; }
@@ -177,8 +178,22 @@ function sub(path, fn) {
   }, (e) => log("subscription error on " + path + ": " + e.code));
 }
 
+let groupDoc = null;   // the group document of the open wallet, as the store shows it
+
+// The network that the people of the open wallet confirmed replaces the first one that this device
+// saw (SOL-34). The reactor asks first, before a setup step compares safety numbers. A chain that
+// runs on the other network starts again.
+export function learnNetwork() {
+  const gid = state.gid, before = state.g?.network;
+  if (!groupDoc || !pinConfirmedNet(gid, confirmedNetwork())) return;
+  state.g = cleanGroup(gid, groupDoc);
+  state.groups = state.groups.map((g) => (g.id === gid ? cleanGroup(gid, groupDoc) : g));
+  if (state.g.network !== before) dropChain();
+}
+
 export function openGroup(gid) {
   for (const u of unsubGroup) u(); unsubGroup = [];
+  groupDoc = null;
   sol?.close();
   closeSession();
   // A form filled from a request belongs to the wallet it was made for.
@@ -197,15 +212,10 @@ export function openGroup(gid) {
   if (!gid) { setHash("#"); render(); return; }
   setHash("#" + gid);
   const base = "groups/" + gid;
-  let solWatched = false;
-  const watchSol = () => {
-    if (solWatched || !solOn(gid)) return;
-    solWatched = true;
-    solAttach(gid, base);
-  };
   unsubGroup.push(sdb.doc(base).onSnapshot((d) => {
-    state.g = d.exists ? cleanGroup(d.id, d.data()) : null;
-    watchSol();
+    groupDoc = d.exists ? d.data() : null;
+    state.g = groupDoc ? cleanGroup(d.id, groupDoc) : null;
+    solWatch();
     refilter();
   }));
   unsubGroup.push(sub(base + "/seats", (m) => { raw.seats = m; state.seatsLoaded = true; }));
@@ -216,7 +226,7 @@ export function openGroup(gid) {
     raw.wallet = d.exists ? d.data() : null;
     refilter();
   }));
-  watchSol();
+  solWatch();
   render();
 }
 

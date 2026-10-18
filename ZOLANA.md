@@ -13,10 +13,13 @@ The beta switches:
   gives it to the page at `/sol/config.json`, behind the password gate, with the header
   `Cache-Control: no-store`. Without the secret that path answers 503, and the page says "Solana is
   not available on this server". In local development, the secret goes into `cf/.dev.vars`.
-- The Solana tab shows for every version 3 wallet whose network is `testnet`. The network is the
-  first one that the device saw for the wallet: the group document has no signature, so a later
-  value in the store never counts (PROTOCOL.md section 15.1). A mainnet wallet, a wallet before
-  version 3, and a wallet that is not loaded yet, never load `/sol` and never show the tab.
+- The Solana tab shows for every version 3 wallet whose network is `testnet`. The network must be
+  the one that the people of the wallet confirmed with the safety number, as a seat of this device
+  shows it (PROTOCOL.md section 15.1). The group document has no signature, so a value in the
+  store never counts alone, not even the first one that a device sees. A mainnet wallet, a wallet
+  before version 3, a wallet whose network no seat of this device confirmed, and a wallet that is
+  not loaded yet, never show the tab. They load `/sol` only when the person opens a Solana backup
+  file for a wallet that this device does not list.
 - The page loads `/sol` before the tab opens only when a seat signed `solstart/1`. A start
   document without a valid signature of seat 1 loads nothing.
 - The browser has no switch. The spike flag `zf-sol` and the spike setting `zf-sol-rpc` are gone.

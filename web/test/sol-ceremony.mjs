@@ -12,6 +12,7 @@
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
 import { docFields } from "../signed.js";
+import { newSignKey, signMsg } from "../chat.js";
 import { agreement, fitsSolana, seatProgress, startBlock } from "../sol/ceremony.js";
 import { backupText as solBackupText, backupWords } from "../sol/backup.js";
 import { syncSolana } from "../sol/session.js";
@@ -242,6 +243,202 @@ function tabIds() {
   assert.equal(t.solLoading, null, "a start document does not load Solana for it");
   assert.equal(rig.live(`groups/${gidMain}/sol`), 0, "it opens no Solana watch");
   assert.equal(config.calls, 0, "and the page never asks the server for the Helius URL");
+}
+
+// A flip before the first load (SOL-34). A device that never opened the wallet has no pin, as
+// every device before the beta, so the first network that it sees is the one a holder of the link
+// wrote. The page takes the network from the safety number that the person of a seat of this
+// device confirmed, and the Solana tab needs that network.
+{
+  const groupPath = (gid) => `groups/${gid}`;
+  const flip = (gid, network) => {
+    data.set(groupPath(gid), { ...data.get(groupPath(gid)), network });
+    rig.notify();
+  };
+  // A device that never opened the wallet since the beta: no network pin, in memory or in
+  // storage. With `all`, no pin of the wallet at all: its seat keys, version and shape too.
+  const forget = (gid, all = false) => {
+    const ours = (k) => all ? k.startsWith(gid + ":") || k.endsWith(":" + gid)
+      : k === "network:" + gid || k === "confirmednet:" + gid;
+    const stored = JSON.parse(storage.get("zf-signpins"));
+    for (const k of Object.keys(t.signPins).filter(ours)) delete t.signPins[k];
+    for (const k of Object.keys(stored).filter(ours)) delete stored[k];
+    storage.set("zf-signpins", JSON.stringify(stored));
+  };
+  // `chain` stands for a sync that started on the first network seen.
+  const reopen = async (gid, chain) => {
+    t.openGroup("");
+    await sleep(50);
+    t.openGroup(gid);
+    if (chain) t.setChain(chain);
+    assert.equal(t.solOn(gid), false, "no tab before the wallet document is in");
+    await waitFor("the wallet", () => t.state.gid === gid && t.state.g && t.state.wallet);
+    const tab = tabIds().includes("solana");
+    assert.ok(!tab || t.netConfirmed(gid) === "testnet", "no tab before the network is confirmed");
+  };
+  const stored = () => JSON.parse(storage.get("zf-signpins"));
+
+  // A mainnet wallet. The device that made it learns its network from the confirmed number.
+  const late = await rig.wallet({ name: "Late", network: "mainnet" });
+  assert.equal(t.netConfirmed(late), "mainnet", "control: the confirmed network is mainnet");
+  t.openGroup("");
+  await sleep(50);
+  forget(late);
+  flip(late, "testnet");
+  await sleep(100);
+  // The rig has no wallet list: one entry, as the list of the page shows a wallet.
+  const list = t.state.groups;
+  t.state.groups = [{ id: late, name: "Late", network: "testnet" }];
+  const early = { gid: late, syncing: true, cw: null };
+  await reopen(late, early);
+  await waitFor("the confirmed network", () => t.netConfirmed(late) === "mainnet");
+  assert.notEqual(t.chain, early, "the sync on the first network seen stops");
+  const firstSeen = (gid) => t.signPins["network:" + gid];
+  assert.equal(firstSeen(late), "testnet", "the first network seen is the flipped one");
+  assert.equal(stored()["confirmednet:" + late], "mainnet", "the confirmed network is saved");
+  assert.deepEqual([t.state.g.network, t.state.g.networkMoved], ["mainnet", true]);
+  assert.equal(t.state.groups[0].network, "mainnet", "also in the list");
+  t.state.groups = list;
+  assert.match(pageText(), NETWORK_NOTE, "the page says that the store shows another network");
+  assert.equal(t.solOn(), false, "a mainnet wallet flipped before the first load is off");
+  assert.ok(!tabIds().includes("solana"), "and gets no tab");
+  assert.equal(rig.live(`groups/${late}/sol`), 0, "and opens no Solana watch");
+
+  // A seat without the number it confirmed, as after a restore: its own signed confirm document
+  // gives the network.
+  for (const i of [1, 2, 3]) await t.putSec(late, i, { confirmed: null });
+  t.openGroup("");
+  await sleep(50);
+  forget(late);
+  await reopen(late);
+  await waitFor("the confirmed network", () => t.netConfirmed(late) === "mainnet");
+  assert.equal(t.state.g.network, "mainnet", "the signed confirm document names mainnet");
+
+  // A confirm document without a valid signature is no confirmation, even with the number of the
+  // flipped network: the device keeps the first network that it saw and gets no tab.
+  const real = [1, 2, 3].map((i) => data.get(path(late, "confirm/" + i)));
+  const forged = t.safetyNo("testnet");
+  assert.ok(forged && forged !== t.safetyNo(), "the testnet number differs");
+  for (const i of [1, 2, 3]) data.set(path(late, "confirm/" + i), { number: forged });
+  t.openGroup("");
+  await sleep(50);
+  forget(late);
+  await reopen(late);
+  await sleep(300);
+  assert.equal(t.netConfirmed(late), undefined, "a forged confirm document confirms nothing");
+  assert.equal(t.state.g.network, "testnet", "the first network seen stays");
+  assert.equal(t.solOn(), false, "a network that nobody confirmed is off");
+  assert.ok(!tabIds().includes("solana"), "and gets no tab");
+  assert.equal(rig.live(`groups/${late}/sol`), 0, "and opens no Solana watch");
+  real.forEach((d, at) => data.set(path(late, "confirm/" + (at + 1)), d));
+  rig.notify();
+  await waitFor("the confirmed network", () => t.netConfirmed(late) === "mainnet");
+  assert.deepEqual([t.state.g.network, t.state.g.networkMoved], ["mainnet", true]);
+  assert.equal(t.solOn(), false, "the real documents confirm mainnet");
+  assert.equal(config.calls, 0, "the page never asks the server for the Helius URL");
+  // A wallet with an empty seat has no safety number yet, and a seat without a number confirms
+  // nothing: no number is no match.
+  const seats = t.state.seats;
+  t.state.seats = { 1: seats[1] };
+  assert.equal(t.safetyNo(), null, "no safety number with an empty seat");
+  assert.equal(t.confirmedNetwork(), null, "and no confirmed network");
+  t.state.seats = seats;
+  // Numbers of own seats that name both networks confirm neither.
+  await t.putSec(late, 1, { confirmed: t.safetyNo() });
+  data.set(path(late, "confirm/1"), await t.signedDoc(late, "confirm/1", 1, { number: forged }));
+  rig.notify();
+  await waitFor("both networks match", () => t.confirmedNetwork() === null, 5000);
+  await t.putSec(late, 1, { confirmed: null });
+  data.set(path(late, "confirm/1"), real[0]);
+  rig.notify();
+  // A holder of the link replaces the document of an own seat before the first load: a new key
+  // signs it, and the confirm document of the seat with the testnet number. The device pins the
+  // new key, but only the key in the seat secret of this device counts.
+  const fresh = await newSignKey();
+  const sealed = async (rel, fields) => ({ ...fields, by: 2,
+    sig: await signMsg(fresh.signSk, Z.docPayload(late, rel, 2, JSON.stringify(fields))) });
+  const { by: _by, sig: _sig, ...seat2 } = data.get(path(late, "seats/2"));
+  data.set(path(late, "seats/2"), await sealed("seats/2", { ...seat2, signPk: fresh.signPk }));
+  data.set(path(late, "confirm/2"), await sealed("confirm/2", { number: forged }));
+  for (const i of [1, 3]) data.delete(path(late, "confirm/" + i));
+  t.openGroup("");
+  await sleep(50);
+  forget(late, true);
+  await reopen(late);
+  await sleep(500);
+  assert.equal(t.signPins[late + ":2"], fresh.signPk, "the device pinned the new key of seat 2");
+  assert.equal(t.netConfirmed(late), undefined, "the replaced seat confirms nothing");
+  assert.equal(t.solOn(), false, "a mainnet wallet with a replaced seat is off");
+  assert.ok(!tabIds().includes("solana"), "and gets no tab");
+
+  // A testnet wallet flipped to mainnet before the first load keeps its tab, and the watch of its
+  // start document comes after the network is confirmed.
+  const kept = await rig.wallet({ name: "Kept" });
+  t.openGroup("");
+  await sleep(50);
+  forget(kept);
+  flip(kept, "mainnet");
+  await sleep(100);
+  await reopen(kept);
+  await waitFor("the confirmed network", () => t.netConfirmed(kept) === "testnet");
+  assert.equal(firstSeen(kept), "mainnet", "the first network seen is the flipped one");
+  assert.deepEqual([t.state.g.network, t.state.g.networkMoved], ["testnet", true]);
+  assert.equal(t.solOn(), true, "the confirmed testnet wallet is on");
+  assert.ok(tabIds().includes("solana"), "and keeps its tab");
+  await waitFor("the start watch", () => rig.live(`groups/${kept}/solstart`) === 1);
+  assert.equal(t.solLoading, null, "no start document, so nothing loads");
+  // The first network seen is the confirmed one: a sync that started on it goes on.
+  t.openGroup("");
+  await sleep(50);
+  flip(kept, "testnet");
+  forget(kept);
+  const same = { gid: kept, syncing: true, cw: null };
+  await reopen(kept, same);
+  await waitFor("the confirmed network", () => t.netConfirmed(kept) === "testnet");
+  assert.equal(t.chain, same, "the sync on the confirmed network goes on");
+
+  // A new device restores a seat. A holder of the link wrote version 2, testnet and unsigned
+  // confirm documents with the testnet number before, so the device first reads the documents as
+  // a wallet before version 3. The restore then makes the seat version 3: the unsigned documents
+  // must not count, and version 3 again does not turn the tab on.
+  const down = await rig.wallet({ name: "Down", network: "mainnet" });
+  const downTest = t.safetyNo("testnet");
+  const file = JSON.parse(t.backupText(2));
+  t.openGroup("");
+  await sleep(50);
+  for (const i of [1, 2, 3]) delete t.secrets[down + ":" + i];
+  forget(down, true);
+  data.set(groupPath(down), { ...data.get(groupPath(down)), version: 2, network: "testnet" });
+  for (const i of [1, 2, 3]) data.set(path(down, "confirm/" + i), { number: downTest });
+  rig.notify();
+  await t.applyBackup(structuredClone(file), true);
+  await sleep(2500);
+  data.set(groupPath(down), { ...data.get(groupPath(down)), version: 3 });
+  rig.notify();
+  await sleep(1500);
+  assert.notEqual(t.netConfirmed(down), "testnet", "unsigned documents confirm no network");
+  assert.equal(t.solOn(down), false, "the restored mainnet wallet is off");
+  if (t.state.gid === down) assert.ok(!tabIds().includes("solana"), "and gets no tab");
+
+  // Seats in setup on a device that opens a flipped mainnet wallet for the first time: no step
+  // compares the safety number of the flipped network, so no seat stops or confirms it.
+  const setup = await rig.wallet({ name: "Setup", network: "mainnet" });
+  const setupNo = t.safetyNo();
+  t.openGroup("");
+  await sleep(50);
+  for (const i of [1, 2, 3]) delete t.secrets[setup + ":" + i].keyPackage;
+  forget(setup);
+  flip(setup, "testnet");
+  await reopen(setup);
+  await sleep(1500);
+  const seatsOf = (f) => [1, 2, 3].map((i) => f(t.secrets[setup + ":" + i], i));
+  assert.deepEqual(seatsOf((s) => s.aborted ?? null), [null, null, null], "no seat stops");
+  assert.deepEqual(seatsOf((s) => s.confirmed === setupNo), [true, true, true]);
+  assert.deepEqual(seatsOf((_s, i) => data.get(path(setup, "confirm/" + i)).number === setupNo),
+    [true, true, true], "no confirm document gets the testnet number");
+  assert.equal(t.state.g.network, "mainnet");
+  t.openGroup("");
+  await sleep(50);
 }
 
 // A wallet before version 3 never gets the tab: the Solana ceremony needs signed documents. The

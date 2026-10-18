@@ -5,7 +5,7 @@ import { chats, lockedVault } from "./app-keystore.js";
 import { curSession, keysDiffer, localSeats } from "./app-seats.js";
 import { ensureChain } from "./app-chain.js";
 import { signedHold } from "./app-filter.js";
-import { closeSession, db, dbReady, openGroup, toApprove } from "./app-groups.js";
+import { closeSession, db, dbReady, learnNetwork, openGroup, toApprove } from "./app-groups.js";
 import { el } from "./app-dom.js";
 import { markRead, syncRooms, unreadIn } from "./app-messages.js";
 import {
@@ -49,6 +49,7 @@ const chainReady = () => state.wallet && state.wallet.birthday && myVerified() &
 
 function reactNow() {
   if (!canReact() || signedHold()) return;
+  learnNetwork();
   reactStops();
   reactConfirm();
   for (const i of localSeats()) reactSeat(i);
