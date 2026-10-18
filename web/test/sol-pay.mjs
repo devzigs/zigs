@@ -402,6 +402,13 @@ step("a missing account is a wait, a click keeps the re-read, and an expiry hide
   delete c.seen[id];
   const pump = setInterval(notify, 200); // the reactor runs often: the busy key holds the reads
   await waitFor("three failed reads", () => c.readFails[key]?.n === 3, 30000);
+  // After two failures the card says why the read fails, and still shows no Approve button.
+  const view = solView({ ...c, host: { ...c.host, el: node } }, (fn) => fn, {});
+  const card = findAll(view, (n) => n.attrs["data-session"] === id)[0];
+  const inCard = (name) => findAll(card, (n) => n.attrs["data-sol"] === name);
+  const [failed] = inCard("read-failed");
+  assert.match(textOf(failed), /^Zigs could not read your wallet: .*does not see every input/);
+  assert.deepEqual([inCard("wait").length, inCard("approve-" + id + "-2").length], [0, 0]);
   const gaps = stamps.slice(1).map((at, n) => at - stamps[n]);
   assert.equal(stamps.length, 3, "no read while the step waits");
   assert.ok(gaps[0] >= 2900 && gaps[0] < 4500, "the first wait is 3 s: " + gaps[0]);
@@ -539,6 +546,8 @@ step("a read of a wallet that closed shows no banner and writes no count");
   const [result] = marked("result").filter((n) => textOf(n).includes(ss.txId));
   const tx = findAll(result, (n) => n.tag === "a")[0].attrs.href;
   assert.equal(tx, "https://explorer.solana.com/tx/" + ss.txId + "?cluster=devnet");
+  const note = /explorer\.solana\.com in a new tab\. That site is not Zigs: it sees the id/;
+  assert.match(textOf(marked("explorer-text")[0]), note, "the list says what the link shows");
   c.added = { status: "confirmed", amount: 10_000_000n, seat: 1, txId: ss.txId };
   const [added] = marked("added");
   assert.equal(findAll(added, (n) => n.tag === "a")[0].attrs.href, tx, "Add SOL links its id");

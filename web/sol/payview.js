@@ -179,7 +179,14 @@ function explorerLink(c, kind, id) {
   return c.host.el("a", { href, target: "_blank", rel: "noopener" }, id + " ↗");
 }
 
-/** What the last Add SOL did, as a line of text. */
+// The explorer is not Zigs: a click shows it the id and the IP address (PRIVACY.md).
+const EXPLORER_TEXT =
+  "A link with ↗ opens explorer.solana.com in a new tab. That site is not Zigs: it sees the id " +
+  "that you open and your IP address.";
+const explorerNote = (c) =>
+  c.host.el("p", { class: "small", "data-sol": "explorer-text" }, EXPLORER_TEXT);
+
+/** What the last Add SOL did, as a line of text, and what its link shows to the explorer. */
 function addedLine(c) {
   const a = c.added;
   if (!a) return null;
@@ -187,7 +194,7 @@ function addedLine(c) {
   const word = words[a.status] ?? "Added " + solText(a.amount);
   const said = `${word}, seat ${a.seat}: `;
   const link = explorerLink(c, "tx", a.txId);
-  return c.host.el("p", { class: "small", "data-sol": "added" }, said, link);
+  return [c.host.el("p", { class: "small", "data-sol": "added" }, said, link), explorerNote(c)];
 }
 
 function addSolCard(c, act, actions) {
@@ -508,11 +515,19 @@ function rowsOf(c, review) {
 const WAIT_TEXT =
   "Zigs loads and checks the data of this proposal. The Approve button appears when it is done.";
 
+// A wallet read that failed twice says why on the card: such a wait may not end by itself (P6).
+function waitLine(c, ss) {
+  const fail = c.readFails?.["snap:" + ss.id];
+  if (!fail || fail.n < 2) {
+    return c.host.el("p", { class: "small", role: "status", "data-sol": "wait" }, WAIT_TEXT);
+  }
+  const text = `Zigs could not read your wallet: ${fail.text} It tries again by itself.`;
+  return c.host.el("p", { class: "small bad", role: "status", "data-sol": "read-failed" }, text);
+}
+
 function reviewBlock(c, ss, review) {
   const { el } = c.host;
-  if (review.waiting) {
-    return el("p", { class: "small", role: "status", "data-sol": "wait" }, WAIT_TEXT);
-  }
+  if (review.waiting) return waitLine(c, ss);
   if (!review.ok) {
     return el("div", { class: "callout bad", role: "alert", "data-sol": "refusal" }, review.why);
   }
@@ -641,11 +656,12 @@ function sessionList(c, act, actions) {
   const { el } = c.host;
   const shown = (c.sessions ?? []).slice(0, SHOWN);
   if (!shown.length) return el("p", { class: "small" }, "No Solana proposals yet.");
-  return el(
+  const list = el(
     "div",
     { class: "list" },
     shown.map((ss) => sessionCard(c, ss, act, actions)),
   );
+  return el("div", {}, explorerNote(c), list);
 }
 
 const RENT_TEXT =
@@ -671,12 +687,15 @@ function rentCard(c, act) {
     );
   const none = c.rent && !rows.length ? el("p", { class: "small" }, "No rent to get back.") : null;
   const done = c.rentDone?.txIds.length
-    ? el(
-        "p",
-        { class: "small", "data-sol": "rent-done" },
-        "Cancel transactions of seat " + c.rentDone.seat + ": ",
-        c.rentDone.txIds.flatMap((id, n) => [n ? ", " : "", explorerLink(c, "tx", id)]),
-      )
+    ? [
+        el(
+          "p",
+          { class: "small", "data-sol": "rent-done" },
+          "Cancel transactions of seat " + c.rentDone.seat + ": ",
+          c.rentDone.txIds.flatMap((id, n) => [n ? ", " : "", explorerLink(c, "tx", id)]),
+        ),
+        explorerNote(c),
+      ]
     : null;
   return el(
     "div",
