@@ -1,5 +1,5 @@
 {
-  "baseCommit": "6c5e1301daf5a6906c1e4aaec554b9ccbd0de8a0",
+  "baseCommit": "6f7a7fefb975aa21de32d028865adac2f2109657",
   "node": "v24.11.0",
   "tests": {
     "web/test/chat.mjs": {
@@ -87,6 +87,9 @@
       "exit": 0
     },
     "web/test/chain-fallback.mjs": {
+      "exit": 0
+    },
+    "web/test/smoke.mjs": {
       "exit": 0
     },
     "cf/test/limits.mjs": {
