@@ -90,18 +90,22 @@ const solHost = () => ({
 // Any other failure is the connection (SOL-26). view.js is part of the module: it gives the setup
 // steps (solSetup).
 const SOL_DOWN = "Solana did not load. Check your connection, then press Try again or reload.";
-let setupSummary = null;
+let setupSummary = null, pendingCount = null;
 async function whyNotLoaded() {
   const status = await globalThis.fetch("/sol/config.json", { cache: "no-store" })
     .then((r) => r.status, () => 0);
   return status === 503 || status === 404 ? SOL_OFF : SOL_DOWN;
 }
 const solModule = () => Promise.all([import("./sol/main.js"), import("./sol/view.js")])
-  .then(([m, v]) => { setupSummary = v.setupSummary; return m; })
+  .then(([m, v]) => { ({ setupSummary, pendingCount } = v); return m; })
   .catch(async () => { throw new Error(await whyNotLoaded()); });
 // The Solana part of the open wallet for the setup steps, or null while it is not open here.
-export const solSetup = () => sol && setupSummary && solOn() && sol.ctl.gid === state.gid
-  ? setupSummary(sol.ctl) : null;
+const solOpenHere = (gid = state.gid) => !!sol && solOn(gid) && sol.ctl.gid === gid;
+export const solSetup = () => solOpenHere() && setupSummary ? setupSummary(sol.ctl) : null;
+// The Solana proposals that this browser can still approve, for wallet `gid`. The module follows
+// the open wallet only, so any other wallet counts 0.
+export const solPending = (gid = state.gid) =>
+  solOpenHere(gid) && pendingCount ? pendingCount(sol.ctl) : 0;
 // A failed load waits for Try again (solRetry): a retry on every redraw would loop.
 export function solRetry() {
   solLoading = null;

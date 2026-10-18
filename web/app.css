@@ -181,6 +181,8 @@ button { font: inherit; color: inherit; }
 .tab .count { margin-left: 6px; font: 500 11px/1 var(--mono); padding: 2px 6px; border-radius: 6px; background: var(--raised); color: var(--muted); }
 .tab .count.attn { background: var(--accent); color: var(--on-accent); font-weight: 600; }
 .tab .count.note { background: var(--info-soft); color: var(--info); font-weight: 600; }
+/* A phone shows every tab: the bar wraps, so no tab sits past the edge (S6). */
+@media (max-width: 520px) { .tabs { flex-wrap: wrap; overflow-x: visible; } .tab { padding-inline: 8px; } }
 
 /* Cards */
 .card { background: var(--panel); border: 1px solid var(--line); border-radius: var(--r); min-width: 0; }

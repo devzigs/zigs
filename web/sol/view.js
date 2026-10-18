@@ -61,6 +61,16 @@ export function setupSummary(c) {
   };
 }
 
+/**
+ * The open Solana proposals that a seat of this browser can still approve: the proposal collects
+ * approvals, and a seat here holds a share and gave no commit for it (S6).
+ */
+export function pendingCount(c) {
+  const seats = c.host.localSeats().filter((i) => holdsShare(solOf(c.host, c.gid, i)));
+  const open = (ss) => ss.status === "collecting" && seats.some((i) => !c.commits[ss.id]?.[i]);
+  return c.sessions.filter(open).length;
+}
+
 function startCard(c, act, actions) {
   const { el, localSeats } = c.host,
     why = startBlock(c.host);

@@ -19,6 +19,7 @@ const { SOL_DISCLOSURE, solPlanned } = await import("../app-sol.js");
 const { inviteMessage, joinText } = await import("../app-setup.js");
 const { chatMessage } = await import("../app-links.js");
 const { backupWords } = await import("../sol/backup.js");
+const { pendingCount } = await import("../sol/view.js");
 const { createDialog } = await import("../app-shell.js");
 const { ui } = await import("../app-state.js");
 const { planSolana } = await import("../app-sol.js");
@@ -50,6 +51,24 @@ function pageText() {
   } finally {
     globalThis.document = real;
   }
+}
+
+// ── S6: the Solana proposals that a seat of this browser can still approve ──
+{
+  const share = { keyPackage: {}, solSeed: "s", groupKey: "k" };
+  const ctl = (commits) => ({
+    host: { localSeats: () => [1, 2], sec: (_g, i) => ({ sol: i === 3 ? {} : share }) },
+    gid: "g",
+    sessions: [
+      { id: "a", status: "collecting" },
+      { id: "b", status: "collecting" },
+      { id: "c", status: "sent" },
+    ],
+    commits,
+  });
+  assert.equal(pendingCount(ctl({})), 2, "two open proposals, a sent one does not count");
+  assert.equal(pendingCount(ctl({ a: { 1: {} } })), 2, "seat 2 can still approve a");
+  assert.equal(pendingCount(ctl({ a: { 1: {}, 2: {} } })), 1, "both seats approved a");
 }
 
 // ── The hint: version 3 testnet wallets only ──

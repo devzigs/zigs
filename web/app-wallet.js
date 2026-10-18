@@ -24,7 +24,7 @@ import { openBackup, staleRestoreNote } from "./app-backups.js";
 import { loadingView } from "./app-shell.js";
 import { focusAfter, render } from "./app-loop.js";
 import { setupView, solSetupCard, solUnfinished } from "./app-setup.js";
-import { solBackup, solOn, solTab, solUnsaved } from "./app-sol.js";
+import { solBackup, solOn, solPending, solTab, solUnsaved } from "./app-sol.js";
 
 export function groupView() {
   const g = state.g;
@@ -92,7 +92,10 @@ export function walletView(head, why) {
     overview: overviewTab, activity: activityTab, messages: messagesCard, members: membersTab,
     details: detailsTab,
   };
-  if (solOn()) { tabs.push(["solana", "Solana"]); bodies.solana = solTab; }
+  if (solOn()) {
+    tabs.push(["solana", "Solana", countBadge(solPending(), "to approve", "attn")]);
+    bodies.solana = solTab;
+  }
   if (!Object.hasOwn(bodies, ui.tab)) ui.tab = "overview";
   return el("div", { class: "page" }, head, tabBar(tabs),
     unsaved.length || solSeats.length ? backupNote(unsaved, solSeats) : null,

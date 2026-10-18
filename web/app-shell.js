@@ -14,7 +14,7 @@ import {
 } from "./app-dom.js";
 import { contactName, contactOf, joinChat, joinLinks, unreadIn } from "./app-messages.js";
 import { createGroup } from "./app-dkg.js";
-import { planSolana, SOL_DISCLOSURE, solServed } from "./app-sol.js";
+import { planSolana, SOL_DISCLOSURE, solPending, solServed } from "./app-sol.js";
 import { personal } from "./app-account.js";
 import { restore } from "./app-backups.js";
 import { contactItem, contactsCard, openContactDialog, personalCard } from "./app-account-view.js";
@@ -53,7 +53,8 @@ function chatItem(cid) {
 const sideEmpty = () => lockedVault ? "Locked." : dbReady ? "No wallets yet." : "Connecting…";
 
 function sideItem(g) {
-  const n = toApprove(g.id).length, u = unreadIn(g.id), here = g.id === state.gid;
+  const n = toApprove(g.id).length + solPending(g.id);
+  const u = unreadIn(g.id), here = g.id === state.gid;
   const tail = n
     ? el("span", { class: "side-count", role: "img", title: n + " to approve",
       "aria-label": n + " to approve" }, String(n))
