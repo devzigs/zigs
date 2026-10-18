@@ -46,12 +46,13 @@ function need() {
  * Every call checks its own URL and fetches the URL that it checked. A redirect is an error, so
  * no second URL is ever fetched without a check.
  */
-function guardedFetch(origin, trace) {
+export function guardedFetch(origin, trace) {
   return async (input, init) => {
     const request = input instanceof Request;
     const url = new URL(request ? input.url : String(input));
     if (url.origin !== origin) throw new Error(`blocked a request to ${url.host}`);
     keepProverBody(trace, url, init);
+    refusedStatus = null; // only the last reply counts: the SDK handles some refusals and goes on
     const reply = await fetch(request ? input : url.href, { ...init, redirect: "error" });
     if (!reply.ok) refusedStatus = reply.status;
     return reply;
@@ -499,9 +500,10 @@ const HANDLERS = {
 
 // The SDK bundle has no error texts (a production build): a refused HTTP call of Helius reads as
 // "Solana error #8100002", or as "WalletError: WALLET_SYNC" when the indexer refused it (the SDK
-// drops the status on the way). So the fetch of this Worker keeps the status of the last refused
-// call of the command (one command runs at a time), and an RPC error also holds it in its context
-// (@solana/errors SOLANA_ERROR__RPC__TRANSPORT_HTTP_ERROR), maybe in a cause.
+// drops the status on the way). So the fetch of this Worker keeps the status of the last reply of
+// the command when Helius refused it (one command runs at a time). A refusal that the SDK handled
+// (the 429 that queues a proof) is followed by other replies, which clear it. An RPC error also
+// holds the status in its context (@solana/errors SOLANA_ERROR__RPC__TRANSPORT_HTTP_ERROR).
 const RPC_HTTP_ERROR = 8100002;
 let refusedStatus = null;
 function httpStatus(err) {
@@ -512,7 +514,7 @@ function httpStatus(err) {
 }
 
 /** A readable text for a call that Helius refused or did not answer, or null. */
-function heliusText(err) {
+export function heliusText(err) {
   const status = httpStatus(err);
   if (status === 403) return "Helius refused this website. Its key does not allow this domain.";
   if (status === 429) return "Too many Helius calls. Wait a minute.";
