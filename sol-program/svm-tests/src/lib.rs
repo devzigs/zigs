@@ -429,10 +429,15 @@ pub fn allowed_call(pool: &Pubkey, program: &Pubkey, data: &[u8]) -> bool {
     system || transact
 }
 
-/// Checks every inner instruction of a transaction with [`allowed_call`]. The stub pool makes
-/// no call, so every inner instruction is the program's.
+/// Checks every CPI of the program (stack height 2) with [`allowed_call`]. The stub pool makes no
+/// call. The real pool makes its own calls at a greater height; the pool is not under this rule.
 pub fn check_cpis(keys: &[Pubkey], meta: &TransactionMetadata, pool: &Pubkey) {
-    for inner in meta.inner_instructions.iter().flatten() {
+    for inner in meta
+        .inner_instructions
+        .iter()
+        .flatten()
+        .filter(|inner| inner.stack_height == 2)
+    {
         let program = keys[usize::from(inner.instruction.program_id_index)];
         let data = &inner.instruction.data;
         assert!(

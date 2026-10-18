@@ -21,6 +21,35 @@ solana-transaction = "4.1"
 solana-transaction-error = "3.3"
 zolana-interface = { git = "https://github.com/helius-labs/zolana", rev = "89640630b3ed2402b83bd20c313406cb3fe906d4", default-features = false }
 
+# tests/replay.rs (`sh sol-program/build.sh proofs`): the pool with a real proof, which needs a
+# running Zolana prover. `build.sh test` and CI do not build these.
+num-bigint = { version = "0.4", optional = true }
+zolana-client = { git = "https://github.com/helius-labs/zolana", rev = "89640630b3ed2402b83bd20c313406cb3fe906d4", optional = true }
+zolana-hasher = { git = "https://github.com/helius-labs/zolana", rev = "89640630b3ed2402b83bd20c313406cb3fe906d4", optional = true }
+zolana-keypair = { git = "https://github.com/helius-labs/zolana", rev = "89640630b3ed2402b83bd20c313406cb3fe906d4", optional = true }
+zolana-merkle-tree = { git = "https://github.com/helius-labs/zolana", rev = "89640630b3ed2402b83bd20c313406cb3fe906d4", optional = true }
+zolana-program-test = { git = "https://github.com/helius-labs/zolana", rev = "89640630b3ed2402b83bd20c313406cb3fe906d4", optional = true }
+zolana-test-utils = { git = "https://github.com/helius-labs/zolana", rev = "89640630b3ed2402b83bd20c313406cb3fe906d4", optional = true }
+zolana-transaction = { git = "https://github.com/helius-labs/zolana", rev = "89640630b3ed2402b83bd20c313406cb3fe906d4", optional = true }
+zolana-tree = { git = "https://github.com/helius-labs/zolana", rev = "89640630b3ed2402b83bd20c313406cb3fe906d4", optional = true }
+
+[features]
+proofs = [
+    "dep:num-bigint",
+    "dep:zolana-client",
+    "dep:zolana-hasher",
+    "dep:zolana-keypair",
+    "dep:zolana-merkle-tree",
+    "dep:zolana-program-test",
+    "dep:zolana-test-utils",
+    "dep:zolana-transaction",
+    "dep:zolana-tree",
+]
+
+[[test]]
+name = "replay"
+required-features = ["proofs"]
+
 [workspace]
 members = ["stub-pool"]
 

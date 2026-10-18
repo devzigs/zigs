@@ -5,6 +5,18 @@
 #                                 LiteSVM tests (svm-tests/), with a stub pool and with the pool of
 #                                 the pinned Zolana commit
 #   sh sol-program/build.sh v2    then rebuilds Devnet version 2 and compares the code of the two
+#   sh sol-program/build.sh proofs  runs svm-tests/tests/replay.rs (SOL-41): the pool of the pinned
+#                                 commit with real proofs. It does not build the ELFs: run
+#                                 `build.sh test` first. CI does not run it.
+#
+# The proofs mode needs a prover of the pinned Zolana commit that serves transfer_confidential_1_2
+# at ZOLANA_PROVER_URL. To make one, build prover/server of the Zolana checkout with `go build`
+# into an empty folder (its go.mod can name a newer Go than the one installed), download
+# transfer_confidential_1_2.key (about 9 MB) into another empty folder, check its SHA-256 against
+# prover/server/prover/provingkeys/proving-keys.lock, and start the prover on 127.0.0.1:
+#   prover start --prover-address 127.0.0.1:PORT --metrics-address 127.0.0.1:PORT2 \
+#     --keys-dir KEYS --serve transfer_confidential_1_2
+# The key URL is the base URL and the prefix of that lock file, then the file name.
 #
 # Toolchain: cargo-build-sbf of Agave v4.3.0 (solana-release-aarch64-apple-darwin.tar.bz2 of the
 # GitHub release, SHA-256 0bfbd769a55e32f0a1fe1b92f76f360f01ee19475facf8c31cb90f99dcca7fe0)
@@ -54,6 +66,18 @@ case "$(uname -s)-$(uname -m)" in
 esac
 if [ "${1:-}" = v2 ] && [ "$(uname -s)" != Darwin ]; then
   fail "v2 mode needs macOS, where Devnet version 2 was built"
+fi
+
+# The proofs mode runs on the outputs of `build.sh test`, so it needs no SBF toolchain.
+if [ "${1:-}" = proofs ]; then
+  [ -f "$SO" ] && [ "$(sha "$SO")" = "$EXPECTED" ] \
+    || fail "$SO is missing or differs from EXPECTED; run build.sh test first"
+  [ -f svm-tests/target/deploy/shielded_pool_program.so ] \
+    || fail "the pool ELF is missing; run build.sh test first"
+  [ -n "${ZOLANA_PROVER_URL:-}" ] \
+    || fail "ZOLANA_PROVER_URL is not set; start a prover (see the header of this script)"
+  exec cargo test --manifest-path svm-tests/Cargo.toml --locked -j 4 --features proofs \
+    --test replay -- --test-threads 1
 fi
 
 case "$("$SBF" --version 2>/dev/null | head -1)" in
