@@ -54,7 +54,8 @@ class Rec extends Node {
 const textOf = (node) => node.text ?? node.kids.map(textOf).join("");
 function pageTree() {
   const real = globalThis.document;
-  globalThis.document = { createElement: () => new Rec(), createTextNode: (text) => ({ text }) };
+  globalThis.document = { createElement: () => new Rec(), createElementNS: () => new Rec(),
+    createTextNode: (text) => ({ text }) };
   try {
     return t.groupView();
   } finally {
@@ -137,6 +138,28 @@ function sideTree() {
     globalThis.document = real;
   }
 }
+// The Overview reads the Solana part of the open wallet: its balance, the age of its sync, and
+// the proposals to approve (two here).
+function overviewWiring(ctl) {
+  const { tab } = t.ui, sync = ctl.sync;
+  t.ui.tab = "overview";
+  try {
+    ctl.sync = { balance: "1.25 SOL", text: "synced at slot 7, x", busy: false };
+    assert.match(pageText(), /1\.25\s*SOL.*at the last sync\./, "the SOL row shows the balance");
+    assert.match(pageText(), /2 Solana proposals wait for your approval\./, "the shortcut");
+    ctl.sync = { ...ctl.sync, text: "failed: offline" };
+    assert.match(pageText(), /The last sync failed/, "an old balance says so");
+    ctl.sync = { balance: null, text: "", busy: false };
+    assert.match(pageText(), /Not synced yet/);
+    const loaded = ctl.loaded;
+    ctl.loaded = {};
+    assert.match(pageText(), /SOL.*Loading…/, "no state before the Solana documents arrive");
+    ctl.loaded = loaded;
+  } finally {
+    Object.assign(ctl, { sync });
+    t.ui.tab = tab;
+  }
+}
 // The phone Menu closes on a pick; the sections show for the formed wallet only; the switcher
 // shows with two or more wallets.
 function sideMenu() {
@@ -189,6 +212,7 @@ function approvalCount(ctl) {
     assert.ok(labelled(wallet, "2 to approve"), "the side item shows the count");
     const section = side.find((n) => n.attrs?.id === "tab-solana");
     assert.ok(section && labelled(section, "2 to approve"), "the Solana section shows the count");
+    overviewWiring(ctl);
     Object.assign(ctl, { sessions: [], commits: {} });
     assert.ok(!labelled(sideTree(), "2 to approve"), "no count without a proposal");
     sideMenu();
@@ -257,7 +281,8 @@ assert.match(pageText(), SENDER, "the invite card of a wallet");
   const cid = "c0ffee00c0ffee00c0ff";
   chats.list[cid] = { key: "ab".repeat(32), member: "m", at: Date.now() };
   const real = globalThis.document;
-  globalThis.document = { createElement: () => new Rec(), createTextNode: (text) => ({ text }) };
+  globalThis.document = { createElement: () => new Rec(), createElementNS: () => new Rec(),
+    createTextNode: (text) => ({ text }) };
   try {
     const card = chatInviteCard(cid);
     assert.match(textOf(card), SENDER, "the invite card of a chat");
@@ -291,7 +316,8 @@ assert.equal(t.sol, null, "the load failed");
 assert.match(t.solError, /not available on this server/);
 const solTabText = () => {
   const real = globalThis.document;
-  globalThis.document = { createElement: () => new Rec(), createTextNode: (text) => ({ text }) };
+  globalThis.document = { createElement: () => new Rec(), createElementNS: () => new Rec(),
+    createTextNode: (text) => ({ text }) };
   try {
     return textOf(t.solTab());
   } finally {
@@ -349,7 +375,8 @@ assert.equal(t.banner, null, "and the banner goes away");
   const down = await why(0);
   const failTree = (error, retry) => {
     const real = globalThis.document;
-    globalThis.document = { createElement: () => new Rec(), createTextNode: (text) => ({ text }) };
+    globalThis.document = { createElement: () => new Rec(), createElementNS: () => new Rec(),
+      createTextNode: (text) => ({ text }) };
     try {
       return loadFail(error, retry);
     } finally {
@@ -373,7 +400,8 @@ assert.match(setupText, /Fund your fee address.*Comes after the Solana key\./s);
 // ── The create dialog offers Solana for a testnet wallet, on a server that serves it ──
 function dialogTree(from = null) {
   const real = globalThis.document;
-  globalThis.document = { createElement: () => new Rec(), createTextNode: (text) => ({ text }) };
+  globalThis.document = { createElement: () => new Rec(), createElementNS: () => new Rec(),
+    createTextNode: (text) => ({ text }) };
   try {
     return createDialog(from);
   } finally {
@@ -441,7 +469,8 @@ const byId = (node, id) =>
     if ("Z" in change) t.setZ(change.Z);
     if ("db" in change) t.setDb(change.db);
     const real = globalThis.document;
-    globalThis.document = { createElement: () => new Rec(), createTextNode: (text) => ({ text }) };
+    globalThis.document = { createElement: () => new Rec(), createElementNS: () => new Rec(),
+      createTextNode: (text) => ({ text }) };
     try {
       return build();
     } finally {
@@ -739,7 +768,8 @@ const byId = (node, id) =>
   // The first sentence names the file that is unsaved: a Zcash file, or only a Solana file.
   const note = (...args) => {
     const real = globalThis.document;
-    globalThis.document = { createElement: () => new Rec(), createTextNode: (text) => ({ text }) };
+    globalThis.document = { createElement: () => new Rec(), createElementNS: () => new Rec(),
+      createTextNode: (text) => ({ text }) };
     try {
       return textOf(t.backupNote(...args));
     } finally {

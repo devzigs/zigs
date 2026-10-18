@@ -221,7 +221,8 @@ class Rec extends Node {
 const textOf = (node) => node.text ?? node.kids.map(textOf).join("");
 function pageText() {
   const real = globalThis.document;
-  globalThis.document = { createElement: () => new Rec(), createTextNode: (text) => ({ text }) };
+  globalThis.document = { createElement: () => new Rec(), createElementNS: () => new Rec(),
+    createTextNode: (text) => ({ text }) };
   try {
     return textOf(t.groupView());
   } finally {
