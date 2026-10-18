@@ -236,11 +236,48 @@ const solTabText = () => {
   }
 };
 assert.match(solTabText(), /not available on this server.*Try again/s);
+const NOT_SERVED = /Solana did not load: Solana is not available on this server/;
+assert.match(t.banner.text, NOT_SERVED, "the banner says why");
+// The setup step says it once, with no Try again button on this page.
+assert.match(pageText(), /Create the Solana key.*Solana is not available on this server/s);
+assert.doesNotMatch(pageText(), /Solana did not load: Solana is not/);
+const { solRetry, whyNotLoaded, failText } = await import("../app-sol.js");
+solRetry();
+await t.solLoading;
+assert.match(t.solError, /not available on this server/, "a failed retry fails again");
+assert.match(t.banner?.text ?? "", NOT_SERVED, "and the banner stays");
 config.down = false;
-const { solRetry } = await import("../app-sol.js");
 solRetry();
 await waitFor("the load after Try again", () => !!t.sol);
 assert.equal(t.solError, "", "and the error is gone");
+assert.equal(t.banner, null, "and the banner goes away");
+{
+  // A failed load that is not a refusal of the server is the connection (SOL-26). A refusal is
+  // a 503 (SOL off) or a 404. Only the Solana tab has a Try again button.
+  const real = globalThis.fetch;
+  const why = async (status) => {
+    globalThis.fetch = async () => {
+      if (!status) throw new TypeError("Failed to fetch");
+      return new Response("x", { status });
+    };
+    try {
+      return await whyNotLoaded();
+    } finally {
+      globalThis.fetch = real;
+    }
+  };
+  for (const status of [503, 404]) {
+    assert.match(await why(status), /^Solana is not available on this server$/, "status " + status);
+  }
+  for (const status of [500, 200, 0]) {
+    const text = await why(status);
+    assert.match(text, /^Solana did not load\. Check your connection, then reload the page\.$/);
+  }
+  const down = await why(0);
+  assert.match(failText(down, true), /then press Try again\.$/, "the tab has the button");
+  assert.equal(failText(down, false), down, "every other place says reload");
+  assert.equal(failText("Solana is not available on this server", true).includes("Try"), false);
+}
 assert.equal(rig.live(`groups/${gid}/sol`), 0, "and opened no Solana watch");
 // The setup card lists the two Solana steps after the three Zcash steps.
 const setupText = pageText();

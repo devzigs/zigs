@@ -1,7 +1,7 @@
 // Solana host glue: solHost() and the lazy load of web/sol.
 import { walletVersion } from "./util.js";
 import { docFields } from "./signed.js";
-import { log, showBanner, state, ui } from "./app-state.js";
+import { banner, clearBadBanner, log, showBanner, state, ui } from "./app-state.js";
 import { said } from "./app-kit.js";
 import { Z } from "./app-engine.js";
 import { putSec, sec } from "./app-keystore.js";
@@ -97,10 +97,14 @@ const solHost = () => ({
 });
 // A server with SOL off does not serve the module (its config answers 503), and the text says so.
 // Any other failure is the connection (SOL-26). view.js is part of the module: it gives the setup
-// steps (solSetup).
-const SOL_DOWN = "Solana did not load. Check your connection, then press Try again or reload.";
+// steps (solSetup). Only the Solana tab has a Try again button: every other place says reload.
+const SOL_DOWN_START = "Solana did not load. Check your connection, then ";
+const SOL_DOWN = SOL_DOWN_START + "reload the page.";
+const SOL_DOWN_TAB = SOL_DOWN_START + "press Try again.";
+/** The text of a failed load. `retry` says that a Try again button is on screen next to it. */
+export const failText = (error, retry) => (error === SOL_DOWN && retry ? SOL_DOWN_TAB : error);
 let setupSummary = null, pendingCount = null;
-async function whyNotLoaded() {
+export async function whyNotLoaded() {
   const status = await globalThis.fetch("/sol/config.json", { cache: "no-store" })
     .then((r) => r.status, () => 0);
   return status === 503 || status === 404 ? SOL_OFF : SOL_DOWN;
@@ -132,14 +136,18 @@ export function solRetry() {
   solLoad();
   render();
 }
+let failBanner = "";   // the text of the banner that the last failed load showed
 export function solLoad() {
   solLoading ||= solModule().then((m) => m.attach(solHost())).then((m) => {
     sol = m;
+    if (failBanner && banner?.text === failBanner) clearBadBanner();
+    failBanner = "";
     if (solOn()) sol.open(state.gid, "groups/" + state.gid);
     render(); react();
   }, (e) => {
     solError = said(e);
-    showBanner("bad", solError === SOL_DOWN ? SOL_DOWN : "Solana did not load: " + solError);
+    failBanner = solError === SOL_DOWN ? SOL_DOWN : "Solana did not load: " + solError;
+    showBanner("bad", failBanner);
     render();
   });
   return solLoading;
@@ -179,7 +187,8 @@ export function solReact() {
 const retryButton = () => el("button", { class: "btn sm", type: "button", "data-sol": "retry-load",
   onclick: solRetry }, "Try again");
 export const solTab = () => sol ? guard(sol.view)
-  : solError ? el("div", { style: "display:grid;gap:8px" }, el("p", { class: "small" }, solError),
+  : solError ? el("div", { style: "display:grid;gap:8px" },
+    el("p", { class: "small" }, failText(solError, true)),
     el("div", {}, retryButton()))
   : (solLoad(), el("p", { class: "small" }, "Loading Solana…"));
 const NET_UNCONFIRMED = "This device does not know yet which network the people of this wallet "
