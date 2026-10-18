@@ -135,10 +135,11 @@ export async function unlockVault() {
   dropDeviceCopy();   // a copy that an earlier lock could not delete
   vault = { rec: { cred: lockedVault.cred, salt: lockedVault.salt }, key };
   lockedVault = null;
+  // A storage event of another tab during the unlock was dropped: take what storage holds now,
+  // before this tab saves anything over it.
+  await takeFromTab("zf-vault").catch((e) => log("could not read another tab's save: " + said(e)));
   adoptInviteKey();   // an invite link opened while locked waits in the fragment
   boot();
-  // A storage event of another tab during the unlock was dropped: take what storage holds now.
-  takeFromTab("zf-vault").catch((e) => log("could not read another tab's save: " + said(e)));
 }
 
 export function forgetVault() {
