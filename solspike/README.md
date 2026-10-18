@@ -81,8 +81,8 @@ with `SOLSPIKE_ORIGIN=https://app.zigs.app`:
 
 | Script | What it does on Devnet |
 |---|---|
-| `harness/scenario-e.mjs` | A new group: the fee address of seat 1 gets 0.003 SOL, and seat 1 adds 0.002 SOL. Two transactions |
-| `harness/scenario-f.mjs` | A new group: backups, the fee addresses, Add SOL, a payment to key B, a restore on blank pages, a second payment and a withdrawal to a public address. Ten transactions. `--resume` continues a run that stopped |
+| `harness/scenario-e.mjs` | A new group. Seat 2 restores its Zcash seat on a blank page before seat 1 taps Add Solana (a restored seat joins the Solana ceremony). The fee address of seat 1 gets 0.003 SOL, and seat 1 adds 0.002 SOL. Two transactions |
+| `harness/scenario-f.mjs` | A new group with the unified setup: the create dialog chooses Solana too, and the Solana part starts with no button. Then backups, the fee addresses, Add SOL, a payment to key B, a restore on blank pages, a second payment and a withdrawal to a public address. Ten transactions. `--resume` continues a run that stopped |
 | `harness/sol-live.mjs` | Read only: the Worker syncs an empty wallet and reads a nonce account and the tree fees, and the policy probes |
 | `harness/scenario-d.mjs`, `harness/sol-cors.mjs` | Checks of the spike. They have not run in this tree |
 

@@ -17,10 +17,18 @@ export async function openApp(rig, name, url) {
   return page;
 }
 
-async function makeWallet(page, name) {
+// `solana`: the box "Also set up Solana Devnet" of the dialog. The page shows it once the server
+// answered /sol/config.json, so the run waits for it before it sets it.
+async function makeWallet(page, name, { solana = false } = {}) {
   await clickText(page, "Create wallet");
   await waitForText(page, "New shared wallet");
   await setInput(page, "#g-name", name);
+  const box = () => run(page, () => !!document.getElementById("g-sol"));
+  if (solana) await waitFor(box, 20000, () => "the Solana box of the dialog");
+  await run(page, (on) => {
+    const el = document.getElementById("g-sol");
+    if (el) el.checked = on;
+  }, solana);
   await run(page, () => document.querySelector("form[role=dialog] button[type=submit]").click());
   const shown = () => run(page, () => !!document.querySelector(".addr-box .hex"));
   await waitFor(shown, 30000, () => "the invite link");
@@ -29,10 +37,13 @@ async function makeWallet(page, name) {
 
 const hasTab = (page, id) => run(page, (name) => !!document.getElementById(name), id);
 
-/** The Zcash wallet on three pages: seat 1 creates it, seats 2 and 3 join, all confirm. */
-export async function zcashWallet(rig, name) {
+/**
+ * The Zcash wallet on three pages: seat 1 creates it, seats 2 and 3 join, all confirm. With
+ * `{ solana: true }` the dialog also chooses the Solana part, which then starts by itself.
+ */
+export async function zcashWallet(rig, name, opts = {}) {
   const first = await openApp(rig, "seat1", `${ORIGIN}/`);
-  const link = await makeWallet(first, name);
+  const link = await makeWallet(first, name, opts);
   const pages = [first];
   for (const seat of [2, 3]) {
     const page = await openApp(rig, "seat" + seat, link);
@@ -73,8 +84,19 @@ export async function solValues(page) {
 
 const status = async (page) => (await solValues(page)).status;
 
-/** Pages reloaded, seat 1 adds Solana, every page shows "ready". Returns the keys. */
-export async function solanaReady(pages, gid) {
+/** Seat 1 opens the Solana tab and taps Add Solana, unless the part starts by itself. */
+async function startSolana(page, auto) {
+  await clickText(page, "Solana", { exact: true });
+  if (auto) return;
+  await waitFor(async () => (await status(page)) === "not started", 30000, () => "the tab");
+  await clickText(page, "Add Solana");
+}
+
+/**
+ * Pages reloaded, seat 1 adds Solana (or, with `{ auto: true }`, it started by itself), every page
+ * shows "ready". Returns the keys.
+ */
+export async function solanaReady(pages, gid, { auto = false } = {}) {
   for (const page of pages) {
     await reload(page, gid);
     await waitFor(
@@ -83,13 +105,7 @@ export async function solanaReady(pages, gid) {
       () => "the Solana tab",
     );
   }
-  await clickText(pages[0], "Solana", { exact: true });
-  await waitFor(
-    async () => (await status(pages[0])) === "not started",
-    30000,
-    () => "the tab",
-  );
-  await clickText(pages[0], "Add Solana");
+  await startSolana(pages[0], auto);
   for (const page of pages) {
     if (!(await status(page))) await clickText(page, "Solana", { exact: true });
     await waitFor(
