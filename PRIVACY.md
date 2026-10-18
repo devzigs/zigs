@@ -166,9 +166,9 @@ id that you open, and the time, so it can link them. The page sends no referrer.
 - **Zcash:** the link **View in explorer**, in the payment panel and on each row of the activity
   list, opens testnet.zecblock.com (zecblock.com for a mainnet wallet) with the transaction id.
 - **Solana:** the Solana explorer (explorer.solana.com) on Devnet sees the same when you open the
-  id of a transaction or an account there. Links from the Solana tab to it come with the Solana
-  batch (S16 of [docs/hackathon-release.md](docs/hackathon-release.md)), which is not on main yet.
-  Until then, it sees an id only when you paste one into it.
+  id of a transaction or an account there. The Solana tab links to it from the Add SOL line, the
+  result of a proposal, the proposal account and the cancels of old proposals (S16 of
+  [docs/hackathon-release.md](docs/hackathon-release.md)). A line next to these links says so.
 
 ## ZNS names (testnet)
 
