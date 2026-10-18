@@ -23,7 +23,7 @@ import { messagesCard } from "./app-thread.js";
 import { BACKUP_CHANGED, openBackup, staleRestoreNote } from "./app-backups.js";
 import { loadingView } from "./app-shell.js";
 import { focusAfter, render } from "./app-loop.js";
-import { setupView } from "./app-setup.js";
+import { setupView, solSetupCard, solUnfinished } from "./app-setup.js";
 import { solBackup, solOn, solTab, solUnsaved } from "./app-sol.js";
 
 export function groupView() {
@@ -184,6 +184,7 @@ function overviewTab() {
   const c = curChain(), list = activity(), pend = toApprove(state.gid);
   return el("div", { class: "page", style: "gap:16px" },
     state.g.movedTo ? moveCard(c) : null,
+    solUnfinished() ? solSetupCard() : null,
     pend.length ? approvalsCard(pend) : null,
     el("div", { class: "grid-ov" }, balanceCard(c), receiveCard()),
     signersCard(),

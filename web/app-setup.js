@@ -1,6 +1,6 @@
 // The setup page: join, invite, safety and progress.
 import { numberClash, usesV2 } from "./util.js";
-import { state } from "./app-state.js";
+import { state, ui } from "./app-state.js";
 import { Z } from "./app-engine.js";
 import { sec } from "./app-keystore.js";
 import {
@@ -17,7 +17,7 @@ import {
 import { messagesCard } from "./app-thread.js";
 import { react, render } from "./app-loop.js";
 import { activityLog } from "./app-wallet.js";
-import { SOL_DISCLOSURE, solPlanned } from "./app-sol.js";
+import { SOL_DISCLOSURE, solPlanned, solSetup } from "./app-sol.js";
 
 export function setupView() {
   const open = seatIds().filter((i) => !state.seats[i]);
@@ -213,6 +213,50 @@ function setupStep(cls, no, title, text) {
     el("div", { style: "display:grid;gap:2px" }, el("h3", {}, title), el("p", {}, text)));
 }
 
+// The Solana steps of a wallet with the Solana hint, from setupSummary (web/sol/view.js). null
+// while the module is not open here: the key ceremony starts after the Zcash address check.
+const SOL_KEY = {
+  "not started": () => ["", "Starts when the Zcash address is checked."],
+  running: (s) => ["now", s.keys + " of " + s.n + " seats hold their Solana key share…"],
+  ready: () => ["done", "Each signer holds one piece of the Solana key."],
+  stopped: () => ["bad", "The Solana setup stopped. The Zcash part still works."],
+  differs: () => ["bad", "The signers made different Solana keys. Do not use the Solana part."],
+  unavailable: () => ["bad", "This wallet cannot get a Solana part."],
+};
+const solKeyStep = (s) => s ? SOL_KEY[s.status](s) : ["", "Starts after the Zcash part."];
+
+const funded = (f) => !!f.balance && f.balance !== "0 SOL";
+function solFeeStep(s) {
+  if (!s || s.status !== "ready") return ["", "Comes after the Solana key."];
+  if (!s.fees.length) return ["", "Each seat funds its own fee address on its own device."];
+  if (s.fees.every(funded)) return ["done", "Your fee address holds " + s.fees[0].balance + "."];
+  return ["now", "Send Devnet SOL to your fee address on the Solana tab, then check its balance."];
+}
+
+/** Steps 4 and 5 of a wallet with the Solana hint: the Solana key, then the fee address. */
+export function solSteps(first) {
+  const s = solSetup(), [keyStage, keyText] = solKeyStep(s), [feeStage, feeText] = solFeeStep(s);
+  return [setupStep(keyStage, first, "Create the Solana key", keyText),
+    setupStep(feeStage, first + 1, "Fund your fee address", feeText)];
+}
+
+/** True while the Solana part of a wallet with the hint is not ready or not funded here. */
+export function solUnfinished() {
+  if (!solPlanned()) return false;
+  const [feeStage] = solFeeStep(solSetup());
+  return feeStage !== "done" && solSetup()?.status !== "stopped";
+}
+
+/** The Overview card of a wallet whose Solana part is still setting up. */
+export function solSetupCard() {
+  const toTab = el("button", { class: "btn sm", type: "button",
+    onclick: () => { ui.tab = "solana"; render(); } }, "Open the Solana tab");
+  return el("section", { class: "card card-pad" },
+    el("div", { class: "card-head" }, el("h2", {}, "Solana is still setting up")),
+    el("div", { class: "steps" }, ...solSteps(1)),
+    el("p", { class: "small muted" }, BOTH_OPEN), el("div", {}, toTab));
+}
+
 function progressCard() {
   const c = setupCounts(), pct = setupProgress(c);
   const [keyStage, keyText] = keyStep(c), [addrStage, addrText] = addrStep(c);
@@ -224,7 +268,8 @@ function progressCard() {
       setupStep(allSeated() ? "done" : "now", 1, "Signers join",
         c.seated + " of " + c.n + " seats taken."),
       setupStep(keyStage, 2, "Create the key together", keyText),
-      setupStep(addrStage, 3, "Check the address", addrText)),
+      setupStep(addrStage, 3, "Check the address", addrText),
+      ...(solPlanned() ? solSteps(4) : [])),
     addrStage === "done" ? null : el("p", { class: "small muted" }, solPlanned() ? BOTH_OPEN
       : "Every signer must keep Zigs open until setup finishes."),
     activityLog());

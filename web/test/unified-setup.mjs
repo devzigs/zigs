@@ -2,8 +2,10 @@
 // for Zcash testnet and Solana Devnet. The group document carries `solana: true` as a hint only.
 // It changes the texts: the join card, the invite message, the safety card and the progress note
 // say that the wallet has a Zcash part and a Solana part, and that every signer keeps the page
-// open through both key ceremonies. The backup note of the wallet asks for the Solana file of each
-// seat too, until that file is saved.
+// open through both key ceremonies. A seat of such a wallet loads web/sol at the start of setup,
+// and opens no Solana watch before the confirmed network. The setup card and, after the Zcash part,
+// the Overview card show the Solana key and the fee address as steps. The backup note of the wallet
+// asks for the Solana file of each seat too, until that file is saved.
 // Run: node web/test/unified-setup.mjs   (Node 24)
 import assert from "node:assert/strict";
 import { loadRig } from "./sol-rig.mjs";
@@ -56,6 +58,7 @@ const gid = t.state.gid;
 await waitFor("seat 1", () => t.state.seats[1]);
 const link = "https://example.test/#" + gid;
 const plain = { text: pageText(), join: joinText(), invite: inviteMessage(link) };
+assert.equal(t.solLoading, null, "a Zcash-only setup loads no Solana file");
 assert.match(plain.text, /Every signer must keep Zigs open until setup finishes/);
 assert.doesNotMatch(plain.join + plain.invite, /Solana/, "no hint: Zcash only");
 data.set(groupPath(gid), { ...data.get(groupPath(gid)), solana: true });
@@ -70,6 +73,39 @@ assert.match(inviteMessage(link), /shielded Zcash testnet and Solana Devnet\./);
 assert.match(inviteMessage(link), /until the Zcash and the Solana parts are ready/);
 assert.ok(inviteMessage(link).includes(link), "the invite still carries the link");
 assert.match(SOL_DISCLOSURE, /public program address.*fee address.*Helius.*no audit/);
+// The preload: the module loads at the start of setup, and no Solana watch opens before the
+// people of the wallet confirmed the network.
+t.refilter();
+await waitFor("the preload", () => t.solLoading !== null);
+await t.solLoading;
+assert.ok(t.sol, "the module loaded");
+assert.equal(rig.live(`groups/${gid}/sol`), 0, "and opened no Solana watch");
+// The setup card lists the two Solana steps after the three Zcash steps.
+const setupText = pageText();
+assert.match(setupText, /Create the Solana key.*Starts after the Zcash part\./s);
+assert.match(setupText, /Fund your fee address.*Comes after the Solana key\./s);
+
+// ── After the Zcash part, the Overview card shows the Solana steps until the fee is funded ──
+{
+  const gidH = await rig.wallet({ name: "Hinted" });
+  data.set(groupPath(gidH), { ...data.get(groupPath(gidH)), solana: true });
+  rig.notify();
+  await waitFor("the hint", () => t.state.g.solana === true);
+  await t.solLoad();
+  assert.match(pageText(), /Solana is still setting up.*Starts when the Zcash address is checked/s);
+  await t.sol.add();
+  const done = (i) => data.has(`groups/${gidH}/soldone/${i}`);
+  await waitFor("every soldone", () => [1, 2, 3].every(done), 30000);
+  await waitFor("the key step", () => /one piece of the Solana key/.test(pageText()));
+  assert.match(pageText(), /Send Devnet SOL to your fee address on the Solana tab/);
+  assert.match(pageText(), /Open the Solana tab/);
+  // The balances of the last read (refreshChain): every fee address of this browser holds SOL.
+  t.sol.ctl.chain = { fees: { 1: "0.006 SOL", 2: "0.0025 SOL", 3: "0.0025 SOL" } };
+  assert.doesNotMatch(pageText(), /Solana is still setting up/, "a funded part needs no card");
+  t.sol.ctl.chain = { fees: { 1: "0.006 SOL", 2: "0 SOL", 3: "0.0025 SOL" } };
+  assert.match(pageText(), /Solana is still setting up/, "one empty fee address keeps the card");
+  t.sol.ctl.chain = {};
+}
 
 // ── The backup note asks for the Solana file of each seat, until it is saved ──
 {

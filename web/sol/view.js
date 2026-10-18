@@ -6,6 +6,7 @@
 import { agreement, seatProgress, started, startBlock } from "./ceremony.js";
 import { base58 } from "./docs.js";
 import { payCards } from "./payview.js";
+import { feeMismatch, feeOf } from "./fee.js";
 import { holdsShare, remoteStop, solOf, stopOf } from "./secrets.js";
 
 const ADD_TEXT =
@@ -27,6 +28,28 @@ function statusOf(c, ag) {
   if (!started(c.docs)) return "not started";
   if (stopOf(c)) return "stopped";
   return { agree: "ready", differ: "differs", wait: "running" }[ag.state];
+}
+
+/**
+ * The Solana part for the setup steps of the page (app-setup.js): the status, how many seats
+ * published their key, and the fee addresses of this browser with the balance of the last read
+ * ("0.006 SOL", or undefined before the first read). Public values only.
+ */
+export function setupSummary(c) {
+  const { host } = c,
+    seats = host.seatIds();
+  const mine = host.localSeats().filter((i) => holdsShare(solOf(host, c.gid, i)));
+  const feeRow = (i) => {
+    const address = base58(feeOf(c, i).key);
+    return { seat: i, address, balance: c.chain?.fees?.[i] };
+  };
+  const fees = mine.filter((i) => !feeMismatch(c, i) && feeOf(c, i)).map(feeRow);
+  return {
+    status: statusOf(c, agreement(c)),
+    keys: seats.filter((i) => c.docs.soldone[i]).length,
+    n: seats.length,
+    fees,
+  };
 }
 
 function startCard(c, act, actions) {

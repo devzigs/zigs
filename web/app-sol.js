@@ -61,8 +61,15 @@ const solHost = () => ({
   groupVersion, sealAndSave, network: () => netName(state.g),
   askBackup: (words) => { ui.backup = { words, made: false, busy: false }; render(); },
 });
-// A server with SOL off does not serve the module, and the text says so.
-const solModule = () => import("./sol/main.js").catch(() => { throw new Error(SOL_OFF); });
+// A server with SOL off does not serve the module, and the text says so. view.js is part of the
+// module: it gives the setup steps (solSetup).
+let setupSummary = null;
+const solModule = () => Promise.all([import("./sol/main.js"), import("./sol/view.js")])
+  .then(([m, v]) => { setupSummary = v.setupSummary; return m; })
+  .catch(() => { throw new Error(SOL_OFF); });
+// The Solana part of the open wallet for the setup steps, or null while it is not open here.
+export const solSetup = () => sol && setupSummary && solOn() && sol.ctl.gid === state.gid
+  ? setupSummary(sol.ctl) : null;
 // A failed load is final until the page reloads: a retry on every redraw would loop.
 export function solLoad() {
   solLoading ||= solModule().then((m) => m.attach(solHost())).then((m) => {
@@ -96,6 +103,9 @@ export function solAttach(gid, base) {
 const solStartSigned = () => !!solStartDoc && checkIn(state.gid)("solstart/1", solStartDoc.by,
   solStartDoc.sig, docFields(solStartDoc), 1) === "yes";
 export function solReact() {
+  // A seat of a wallet with the Solana hint loads the module at the start of setup, so the key
+  // ceremony does not wait for it. The watch still opens only for a confirmed testnet wallet.
+  if (!sol && !solLoading && solPlanned() && localSeats().length) solLoad();
   if (!solOn()) return;
   solWatch();
   if (sol) sol.react();
