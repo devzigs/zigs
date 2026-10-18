@@ -112,6 +112,16 @@ assert.deepEqual([r.ss, r.bad, r.wait], [null, [], 1]);
 r = readSession("s1", { ...base, pczt: undefined }, allow("proposal"));
 assert.equal(asks.at(-1).fields.pczt, undefined, "a missing field is not signed");
 
+// A cancel whose check waits: the session leaves it out for now and says `checking`. A stored
+// `checking` field counts for nothing.
+const withCancel = { ...base, error: "Cancelled by x.", cancelBy: 1, cancelSig: "c",
+  status: "cancelled" };
+r = readSession("s1", withCancel, (name) => (name === "proposal" ? "yes" : "wait"));
+assert.deepEqual([r.ss.status, r.ss.error, r.ss.checking, r.wait],
+  ["collecting", undefined, true, 1]);
+r = readSession("s1", { ...withCancel, checking: true }, allow("proposal", "cancel"));
+assert.deepEqual([r.ss.status, r.ss.checking], ["cancelled", false]);
+
 // The package part: kept when it verifies, taken out when not.
 const withPackage = { ...base, package: "PKG", signers: [1, 2], packageBy: 1, packageSig: "p",
   status: "signing" };

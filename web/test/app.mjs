@@ -988,6 +988,8 @@ const sealed = (gid, rel, seat, fields, key, names = ["by", "sig"]) =>
   assert.equal(t.expired(lateOne()), false);
   assert.equal(t.priorityTimes(decoded), 10);
   assert.equal(t.needsMyApproval(gid, lateOne()), true);
+  assert.equal(t.needsMyApproval(gid, { ...lateOne(), checking: true }), false,
+    "a part waits for its check: it may be a cancel");
   lateChain(4503453);
   assert.equal(t.expired(lateOne()), true, "a node refuses it 3 blocks before its height");
   assert.equal(t.needsMyApproval(gid, lateOne()), false);
@@ -1498,6 +1500,8 @@ const sealed = (gid, rel, seat, fields, key, names = ["by", "sig"]) =>
     const labels = (list) => list.map(textOf);
     tipAt(4500000);
     assert.equal(textOf(t.statusChip(proposal)), "Needs approval");
+    assert.equal(textOf(t.statusChip({ ...proposal, checking: true })), "Checking",
+      "a part of it waits for its check");
     assert.match(textOf(t.expiryLine(proposal)), /^Expires at block 4,503,456, in about 24 hours/);
     tipAt(4500000, new Set(), Date.now() - 2 * 3600 * 1000);
     assert.match(textOf(t.expiryLine(proposal)), /in about 22 hours/, "the time since the sync");

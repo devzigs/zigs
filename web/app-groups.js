@@ -161,8 +161,10 @@ function watchInbox() {
 }
 
 // A seat records its nonces locally when it approves, so no server read is needed.
+// A proposal with no package and no error, whose parts all passed their check.
+const openProposal = (ss) => ss.status === "collecting" && !ss.package && !ss.error && !ss.checking;
 export function needsMyApproval(gid, ss) {
-  if (ss.status !== "collecting" || ss.package || ss.error) return false;
+  if (!openProposal(ss)) return false;
   if (gid === state.gid && expired(ss)) return false;
   // Never again once this browser saw the signing start or a seat approved (TICKETS.md ZEC-9).
   if (noApproval(ss, gid)) return false;
