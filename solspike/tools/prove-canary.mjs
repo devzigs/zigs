@@ -1,13 +1,15 @@
 // The prove canary (S20): one real proof of key B at the Helius gateway, then a simulation of the
-// signed transaction on the live pool, with the signature checked. It never lands anything: no
-// call of this file can submit a transaction, and web/test/demo-check.mjs checks its source. Key B
-// is a test key, so its witness may go to the hosted prover. The empty body of demo-check cannot
-// see a new proving key, a new request schema or a gateway that refuses a real witness; this can.
-// One sync proof at low load does not reach the 429 or async path of the SDK.
+// signed transaction on the live pool, with the signature checked. It never lands anything. Its
+// fetch refuses every JSON-RPC method that writes, and web/test/demo-check.mjs tests that guard.
+// Key B is a test key, so its witness may go to the hosted prover. The empty body of demo-check
+// cannot see a new proving key, a new request schema or a gateway that refuses a real witness.
+// This canary can. One sync proof at low load does not reach the 429 or async path of the SDK.
 //   ZOLANA_REPO=<pinned checkout> SOLSPIKE_KEY_B=<key file> node solspike/tools/prove-canary.mjs
-// ZOLANA_REPO gives kit and the v1 compiler of the SDK; HELIUS_URL_FILE moves the Helius URL file.
-// Each step prints PASS or FAIL. The exit code is 0 on PASS, 1 on a FAIL and 2 on a bad setup.
+// ZOLANA_REPO gives kit and the v1 compiler of the SDK, at the PIN of solspike/build.mjs.
+// HELIUS_URL_FILE moves the Helius URL file. Each step prints PASS or FAIL and has 120 s. The
+// exit code is 0 on PASS, 1 on a FAIL and 2 on a bad setup.
 import "./quiet.mjs";
+import { execFileSync } from "node:child_process";
 import { readFileSync, realpathSync } from "node:fs";
 import { createRequire } from "node:module";
 import { join } from "node:path";
@@ -20,32 +22,59 @@ const WEB_SOL = new URL("../../web/sol/", import.meta.url);
 const COMPUTE_UNITS = 217_000; // the cap of the P3 template, as in worker.js
 const AMOUNT = 1000n; // lamports, as the run of ZOLANA.md 6.10 (SDK move)
 const BASELINE_UNITS = 138_355; // the same run: the pool transact of key B
+const FEE_FLOOR = 10_000n; // lamports: the fee of a transaction with two signatures
 const EXPIRY_S = 3600;
 const SYNC_TRIES = 8;
+const STEP_MS = 120_000;
+// The Solana JSON-RPC methods that write: the send and the airdrop request.
+const WRITES = /^(send|request)/i;
 
-/** The bundle gets its wasm from disk, Helius gets the app Origin, and no other host is reached. */
-function heliusFetch(host) {
-  const realFetch = globalThis.fetch;
+const hex = (bytes) => Buffer.from(bytes).toString("hex");
+
+function wasmOf(target) {
+  const wasm = { headers: { "content-type": "application/wasm" } };
+  return new Response(readFileSync(fileURLToPath(target)), wasm);
+}
+
+/** The JSON-RPC methods of a text body. A body that is no text cannot be checked. */
+function methodsOf(body) {
+  if (body === undefined || body === null) return [];
+  if (typeof body !== "string") throw new Error("blocked a request body that is no text");
+  try {
+    return [JSON.parse(body)].flat().map((call) => String(call?.method ?? ""));
+  } catch {
+    return [];
+  }
+}
+
+/**
+ * The fetch of the bundle: its wasm from disk, the app Origin on each call to `host`, no other
+ * host, and no JSON-RPC method that writes.
+ */
+export function heliusFetch(host, realFetch = globalThis.fetch) {
   return async (input, init) => {
     const target = new URL(input instanceof Request ? input.url : String(input));
-    if (target.protocol === "file:") {
-      const wasm = { headers: { "content-type": "application/wasm" } };
-      return new Response(readFileSync(fileURLToPath(target)), wasm);
-    }
+    if (target.protocol === "file:") return wasmOf(target);
     if (target.host !== host) throw new Error(`blocked a request to ${target.host}`);
-    const headers = new Headers(init?.headers ?? (input instanceof Request ? input.headers : {}));
+    if (input instanceof Request) throw new Error("blocked a Request object: no body check");
+    const write = methodsOf(init?.body).find((method) => WRITES.test(method));
+    if (write !== undefined) throw new Error(`blocked the write method ${write}`);
+    const headers = new Headers(init?.headers);
     headers.set("origin", APP_ORIGIN);
-    return realFetch(input, { ...init, headers });
+    return realFetch(target.href, { ...init, headers });
   };
 }
 
-/** Key B as the bundle and kit see it. The seed goes to the redactor at once. */
-async function keysOfB(sdk, kit) {
+/** Key B as the bundle and kit see it. The seed and the secrets of its keys go to the redactor. */
+export async function keysOfB(sdk, kit) {
   const { seedHex } = JSON.parse(readFileSync(keyBFile(), "utf8"));
+  if (!/^[0-9a-f]{64}$/i.test(String(seedHex))) throw new Error("the key B file has no seedHex");
   redact.add(seedHex);
   const seed = Uint8Array.from(Buffer.from(seedHex, "hex"));
   try {
     const keypair = sdk.ShieldedKeypair.fromKeypair(sdk.SigningKey.fromEd25519Bytes(seed));
+    // As mock/roles.mjs: the secrets that the seed gives are needles too.
+    redact.add(hex(keypair.nullifierKey().secretBytes()), hex(keypair.viewingKey().secretBytes()));
     const signer = await kit.createKeyPairSignerFromPrivateKeyBytes(seed);
     const owner = keypair.shieldedAddress().solanaAddress();
     if (signer.address !== owner) throw new Error("the kit signer of key B is not its owner");
@@ -55,14 +84,22 @@ async function keysOfB(sdk, kit) {
   }
 }
 
+/** Kit and the compiler come from the checkout: it must be the commit of the bundle. */
+function checkPin(repo) {
+  const build = readFileSync(new URL("../build.mjs", import.meta.url), "utf8");
+  const [, pin] = /export const PIN = "([0-9a-f]{40})"/.exec(build) ?? [];
+  const head = execFileSync("git", ["-C", repo, "rev-parse", "HEAD"], { encoding: "utf8" }).trim();
+  if (!pin || head !== pin) throw new Error(`ZOLANA_REPO is at ${head}, not at the PIN ${pin}`);
+}
+
 /** The pieces of a live run: the shipped bundle, web/sol/transfer.js, kit, and an SDK client. */
 async function setup() {
   const repo = zolanaRepo();
+  checkPin(repo);
   const url = readText(heliusFile());
-  const { host, search, searchParams } = new URL(url);
-  redact.add(url, search, searchParams.get("api-key"));
+  redact.add(url);
   // The Solana RPC of the SDK takes the global fetch, so the global fetch is the guarded one.
-  globalThis.fetch = heliusFetch(host);
+  globalThis.fetch = heliusFetch(new URL(url).host);
   const sdk = await import(new URL("zolana.bundle.js", WEB_SOL).href);
   const transfer = await import(new URL("transfer.js", WEB_SOL).href);
   // Kit signs only in a secure context (its error 3610000), and Node marks none.
@@ -80,7 +117,8 @@ async function setup() {
     fetch: globalThis.fetch,
     computeUnitLimit: COMPUTE_UNITS,
   });
-  return { sdk, transfer, kit, compile, client, ...(await keysOfB(sdk, kit)) };
+  const keys = await keysOfB(sdk, kit);
+  return { sdk, transfer, kit, compile, client, rpc: rpcCall, ...keys };
 }
 
 /** A sync of key B. A sync that the indexer refuses or has not caught up with is tried again. */
@@ -107,8 +145,13 @@ async function sync(w) {
     throw new Error(`key B holds ${held} lamports in plain SOL notes of tree 0, not ${AMOUNT}: ` +
       "fund it with Add SOL (a write: ask the owner)");
   }
-  const reply = await rpcCall("getBalance", [w.owner, { commitment: "confirmed" }]);
-  const text = `key B holds ${held} lamports to spend in tree 0 and ${reply.value} public`;
+  const reply = await w.rpc("getBalance", [w.owner, { commitment: "confirmed" }]);
+  const lamports = BigInt(reply.value);
+  if (lamports < FEE_FLOOR) {
+    throw new Error(`key B holds ${lamports} public lamports, under ${FEE_FLOOR}: it cannot pay ` +
+      "the fee (funding is a write: ask the owner)");
+  }
+  const text = `key B holds ${held} lamports to spend in tree 0 and ${lamports} public`;
   return { wallet, keys, text };
 }
 
@@ -139,7 +182,7 @@ async function simulate(w, s) {
   const { owner } = w;
   const call = { payer: owner, ownerSigners: [], inputTree: s.tree, outputTree: w.client.tree };
   const ix = await w.sdk.transactInstruction({ ...call, data: s.data });
-  const { value } = await rpcCall("getLatestBlockhash", [{ commitment: "confirmed" }]);
+  const { value } = await w.rpc("getLatestBlockhash", [{ commitment: "confirmed" }]);
   const lifetime = { ...value, lastValidBlockHeight: BigInt(value.lastValidBlockHeight) };
   const instructions = [ix];
   const message = { feePayer: owner, lifetime, computeUnitLimit: COMPUTE_UNITS, instructions };
@@ -147,7 +190,7 @@ async function simulate(w, s) {
   const signed = await w.kit.signTransactionWithSigners([w.signer], unsigned);
   const wire = w.kit.getBase64EncodedWireTransaction(signed);
   const options = { encoding: "base64", sigVerify: true, commitment: "confirmed" };
-  const result = (await rpcCall("simulateTransaction", [wire, options])).value;
+  const result = (await w.rpc("simulateTransaction", [wire, options])).value;
   const units = Number(result.unitsConsumed ?? 0);
   if (result.err !== null) {
     const logs = (result.logs ?? []).slice(-3).join(" | ");
@@ -163,20 +206,47 @@ async function simulate(w, s) {
 
 export const STEPS = { sync, build, prove, simulate };
 
-/** The SDK code, the text and the details of an error. SDK details hold no secret by design. */
-export function failureText(err) {
+const codeOf = (err) => (["string", "number"].includes(typeof err?.code) ? String(err.code) : "");
+
+const factsOf = (err) => {
+  const facts = err?.details ?? err?.facts;
+  return facts ? ` ${JSON.stringify(facts, plain)}` : "";
+};
+
+/** One error as its code, its text and its details. SDK details hold no server text. */
+function errorText(err) {
   const message = String(err?.message ?? err);
-  const code = typeof err?.code === "string" && err.code !== message ? `${err.code}: ` : "";
-  const details = err?.details ? ` ${JSON.stringify(err.details, plain)}` : "";
-  return redact(`${code}${message}${details}`);
+  const code = codeOf(err);
+  const head = code && !message.startsWith(code) ? `${code}: ${message}` : message;
+  return `${head}${factsOf(err)}`;
+}
+
+/** An error and its causes, at most four, with every secret masked. */
+export function failureText(err) {
+  const parts = [];
+  for (let e = err; e && parts.length < 4; e = e.cause) parts.push(errorText(e));
+  return redact(parts.join(" <- "));
+}
+
+/** The answer of a step, or a FAIL when it gives none within `ms`. */
+async function inTime(run, ms) {
+  let timer = null;
+  const late = new Promise((_, fail) => {
+    timer = setTimeout(() => fail(new Error(`no answer in ${ms / 1000} s`)), ms);
+  });
+  try {
+    return await Promise.race([Promise.resolve().then(run), late]);
+  } finally {
+    clearTimeout(timer);
+  }
 }
 
 /** Runs the steps in order, one line each, and stops at the first FAIL. Returns 0 or 1. */
-export async function runCanary(steps, world, print = console.log) {
+export async function runCanary(steps, world, print = console.log, stepMs = STEP_MS) {
   let state = {};
   for (const name of Object.keys(STEPS)) {
     try {
-      const { text, ...more } = await steps[name](world, state);
+      const { text, ...more } = await inTime(() => steps[name](world, state), stepMs);
       state = { ...state, ...more };
       print(redact(`PASS  ${name}: ${text}`));
     } catch (err) {
@@ -210,4 +280,11 @@ const isMain = () => {
   }
 };
 
-if (isMain()) process.exitCode = await main();
+const flushed = (stream) => new Promise((done) => stream.write("", done));
+
+if (isMain()) {
+  const code = await main();
+  // A step past its time can leave a request open: exit once the text is out.
+  await Promise.all([flushed(process.stdout), flushed(process.stderr)]);
+  process.exit(code);
+}

@@ -1,10 +1,10 @@
 // The read-only preflight of the demo days (M8 of docs/hackathon-release.md). Each check prints
 // PASS, FAIL or SKIP with a reason; the exit code is 1 on any FAIL and 2 on a bad config. Nothing
-// here writes to a chain: Helius gets getVersion, getAccountInfo, getBalance and getSlot, its
-// indexer gets reads of recorded rows and of random tags (S20), its gateway gets three CORS
-// preflights per app, the prover gets an empty body that it refuses, the light-wallet servers get
-// GetLatestBlock, GetLightdInfo and GetTaddressBalance, and the group socket opens and closes
-// without a message.
+// here writes to a chain. Helius gets getVersion, getAccountInfo, getBalance and getSlot. Its
+// indexer gets reads of recorded rows and of random values, and its gateway gets three CORS
+// preflights per app (S20). The prover gets an empty body that it refuses. The light-wallet
+// servers get GetLatestBlock, GetLightdInfo and GetTaddressBalance. The group socket opens and
+// closes without a message.
 // Usage: sh solspike/demo-check.sh [--dry-run] [--app-only] [--config FILE]
 // The config (default ~/.config/zigs/demo-check.json, outside the repo) is optional:
 //   { "apps": [
@@ -259,11 +259,8 @@ async function latestHeight(base, auth) {
 let heliusUrl = null;
 function helius() {
   if (heliusUrl === null) {
-    const url = readText(heliusFile());
-    // As worker.js: the SDK puts the query or the bare key into some of its error texts.
-    const { search, searchParams } = new URL(url);
-    redact.add(url, search, searchParams.get("api-key"));
-    heliusUrl = url;
+    heliusUrl = readText(heliusFile());
+    redact.add(heliusUrl);
   }
   return heliusUrl;
 }
@@ -451,7 +448,8 @@ function executeSignature() {
 async function indexerCall(method, params) {
   const body = JSON.stringify({ jsonrpc: "2.0", id: 1, method, params });
   const headers = { "content-type": "application/json", origin: APP_ORIGIN };
-  const init = { method: "POST", headers, body, signal: signal() };
+  // A redirect fails: the page would not follow it either (worker.js).
+  const init = { method: "POST", headers, body, redirect: "error", signal: signal() };
   const res = await fetch(zolanaUrl(`/${method}`), init);
   if (res.status !== 200) throw new Error(`${method} answered HTTP ${res.status}`);
   const reply = await res.json();
@@ -471,7 +469,7 @@ async function indexedRows(signature) {
   const result = await indexerCall(method, { txSignature: signature });
   const rows = result?.transactions;
   if (!Array.isArray(rows)) throw new Error(`the answer for ${name} has no transactions list`);
-  if (rows.length === 0) throw new Error(`${name} is not indexed: outage, reset or a new pool?`);
+  if (rows.length === 0) throw new Error(`${name} is not indexed: an outage or a reset?`);
   const own = rows.map((row) => row?.transaction).filter((tx) => tx?.txSignature === signature);
   if (own.length === 0) throw new Error(`no row of ${name} has its transaction.txSignature`);
   const trees = own.flatMap((tx) => asList(tx.outputSlots)).map((s) => s?.outputContext?.tree);
@@ -551,8 +549,8 @@ function sdkRefusal(err) {
 }
 
 /**
- * The indexer shape check: the reads of a sync go through the SDK client of the shipped bundle,
- * so a new or a missing field fails here before it fails in the page. The indexer must also be
+ * The indexer shape check. The reads of a sync go through the SDK client of the shipped bundle.
+ * So a new or a missing field fails here before it fails in the page. The indexer must also be
  * at most SLOT_LAG slots behind the RPC. An indexer ahead of the RPC is fine.
  */
 async function shapeCheck() {
@@ -577,21 +575,24 @@ function allows(list, wanted) {
   return names.includes("*") || wanted.split(",").every((name) => names.includes(name));
 }
 
-/** One CORS preflight of the page, with the api-key query that the page sends. */
+/**
+ * One CORS preflight of the page, with the api-key query that the page sends. A browser fails on
+ * a redirected preflight. It does not read allow-methods for POST, a CORS-safelisted method.
+ */
 async function preflight(origin, [path, asked]) {
   const headers = {
     origin,
     "access-control-request-method": "POST",
     "access-control-request-headers": asked,
   };
-  const res = await fetch(zolanaUrl(path), { method: "OPTIONS", headers, signal: signal() });
+  const init = { method: "OPTIONS", headers, redirect: "error", signal: signal() };
+  const res = await fetch(zolanaUrl(path), init);
   const allowed = (name) => res.headers.get(`access-control-allow-${name}`);
   const what = `OPTIONS ${path} (${asked})`;
   if (res.status >= 300) throw new Error(`${what} answered ${res.status}`);
   const origins = [origin, "*"];
   if (!origins.includes(allowed("origin"))) throw new Error(`${what} does not allow ${origin}`);
   if (!allows(allowed("headers"), asked)) throw new Error(`${what} does not allow these headers`);
-  if (!allows(allowed("methods"), "post")) throw new Error(`${what} does not allow POST`);
 }
 
 async function corsCheck(app) {
