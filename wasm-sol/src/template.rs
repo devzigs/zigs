@@ -12,14 +12,15 @@
 //! The program design (ZOLANA.md 7.2) adds two messages that the payer signs alone: `Propose`
 //! (the `create` instruction of the approvals program with the proposal body) and `Execute`
 //! (the Ed25519 instruction with the approval of the group, then `execute` with the `transact`
-//! accounts and the owner PDA as a readonly account that the program signs for).
+//! accounts and the owner PDA as a readonly account that the program signs for). `Cancel` and
+//! `CloseCancelled` (SOL-52) give a rent back to the payer.
 
 use std::collections::{BTreeMap, BTreeSet};
 
 use crate::consts::{
-    Key, ED25519_PROGRAM, INSTRUCTIONS_SYSVAR, MS_CREATE, NONCE_SEED, NONCE_SPACE,
-    RECENT_BLOCKHASHES, RENT_SYSVAR, SYSTEM_PROGRAM, SYS_ADVANCE_NONCE, SYS_CREATE_WITH_SEED,
-    SYS_INIT_NONCE,
+    Key, ED25519_PROGRAM, INSTRUCTIONS_SYSVAR, MS_CANCEL, MS_CLOSE_CANCELLED, MS_CREATE,
+    NONCE_SEED, NONCE_SPACE, RECENT_BLOCKHASHES, RENT_SYSVAR, SYSTEM_PROGRAM, SYS_ADVANCE_NONCE,
+    SYS_CREATE_WITH_SEED, SYS_INIT_NONCE,
 };
 use crate::fixed::{AssetKind, Deposit, Entry, Register};
 use crate::intent::{Intent, Program};
@@ -71,6 +72,8 @@ pub const CU_CAP_SYSTEM: u32 = 450;
 pub const CU_CAP_PROPOSE: u32 = 11_748;
 /// `execute` with its `transact`: 151,437 (SOL-35 track main) times 1.5.
 pub const CU_CAP_EXECUTE: u32 = 227_156;
+/// `cancel` and `close_cancelled`: 21,802 (SOL-52) times 1.5.
+pub const CU_CAP_RECLAIM: u32 = 32_703;
 
 /// Compute unit floors: the largest recorded consumption of the intent, the value that the cap
 /// adds 50 percent to. A limit under it can fail at run time (the fee is charged and the nonce
@@ -84,6 +87,9 @@ pub const CU_FLOOR_CREATE_NONCE: u32 = 300;
 pub const CU_FLOOR_CANCEL: u32 = 150;
 pub const CU_FLOOR_PROPOSE: u32 = 7_832;
 pub const CU_FLOOR_EXECUTE: u32 = 151_437;
+/// `cancel` before the expiry, the largest of 400 random proposals in LiteSVM (SOL-52): 21,802.
+/// It costs up to 4,959 plus 1,500 per bump try of the record address. `close_cancelled`: 569.
+pub const CU_FLOOR_RECLAIM: u32 = 21_802;
 
 /// The smallest loaded accounts limit that does not fail at load (a failure still charges the
 /// fee and advances the nonce, ZOLANA.md 6.3). The estimate is the sum of the account data
@@ -182,18 +188,26 @@ pub fn limits(intent: &Intent) -> Limits {
         Intent::Transfer { .. } | Intent::Withdrawal { .. } => {
             (CU_CAP_TRANSACT, CU_FLOOR_TRANSACT, LOADED_MIN_POOL)
         }
-        Intent::Program(Program::Propose { .. }) | Intent::Program(Program::Approve { .. }) => {
-            (CU_CAP_PROPOSE, CU_FLOOR_PROPOSE, LOADED_MIN_PROPOSE)
-        }
-        Intent::Program(Program::Execute { .. }) => {
-            (CU_CAP_EXECUTE, CU_FLOOR_EXECUTE, LOADED_MIN_EXECUTE)
-        }
+        Intent::Program(program) => program_limits(program),
     };
     Limits {
         cu_cap,
         cu_floor,
         loaded_min,
         priority_max: PRIORITY_MAX,
+    }
+}
+
+/// The cap, floor and loaded minimum of a message of the program design.
+fn program_limits(program: &Program) -> (u32, u32, u32) {
+    match program {
+        Program::Propose { .. } | Program::Approve { .. } => {
+            (CU_CAP_PROPOSE, CU_FLOOR_PROPOSE, LOADED_MIN_PROPOSE)
+        }
+        Program::Execute { .. } => (CU_CAP_EXECUTE, CU_FLOOR_EXECUTE, LOADED_MIN_EXECUTE),
+        Program::Cancel { .. } | Program::CloseCancelled { .. } => {
+            (CU_CAP_RECLAIM, CU_FLOOR_RECLAIM, LOADED_MIN_PROPOSE)
+        }
     }
 }
 
@@ -366,6 +380,34 @@ fn propose(pins: &Pins, commitment: Key, expiry: u64) -> Result<ExpectedIx, Stri
     Ok(ix(pins.program, accounts, Data::Exact(data)))
 }
 
+/// `cancel` of a proposal of the payer, which is its rent recipient and abort authority. Before
+/// the expiry the payer also funds the cancellation record that `close_cancelled` closes.
+fn cancel_proposal(pins: &Pins, commitment: Key, expiry: u64) -> Result<ExpectedIx, String> {
+    let body = body_of(pins, commitment, expiry, pins.payer).write()?;
+    let (proposal, _) = proposal_address(&pins.multisig, &commitment, &body)?;
+    let accounts = vec![
+        acct(pins.payer, true, true),
+        acct(proposal, false, true),
+        acct(cancellation_address(&proposal)?, false, true),
+        acct(pins.payer, false, true),
+        acct(SYSTEM_PROGRAM, false, false),
+        acct(pins.payer, true, false),
+    ];
+    Ok(ix(pins.program, accounts, Data::Exact(vec![MS_CANCEL])))
+}
+
+/// `close_cancelled`: the program pays the rent of the record to the payer, or it refuses.
+fn close_cancelled(pins: &Pins, proposal: Key) -> Result<ExpectedIx, String> {
+    let accounts = vec![
+        acct(pins.payer, true, true),
+        acct(proposal, false, false),
+        acct(cancellation_address(&proposal)?, false, true),
+        acct(pins.payer, false, true),
+    ];
+    let data = Data::Exact(vec![MS_CLOSE_CANCELLED]);
+    Ok(ix(pins.program, accounts, data))
+}
+
 /// The Ed25519 approval and `execute`. The body and its digest follow from the commitment of the
 /// `transact` data, so a signature of the group fits only the payment that it approved. A
 /// withdrawal adds its settlement accounts after the owner PDA, as the pool reads them.
@@ -422,6 +464,10 @@ fn program_ixs(
             tx.ok_or("an execute needs its transact data")?,
         ),
         Program::Approve { .. } => Ok(Vec::new()),
+        Program::Cancel {
+            commitment, expiry, ..
+        } => Ok(vec![cancel_proposal(pins, *commitment, *expiry)?]),
+        Program::CloseCancelled { proposal, .. } => Ok(vec![close_cancelled(pins, *proposal)?]),
     }
 }
 
