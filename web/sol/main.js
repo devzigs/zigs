@@ -48,6 +48,7 @@ const blank = () => ({
   autoSyncAfter: 0,
   autoSyncBusy: false,
   syncedSent: new Set(),
+  pollWanted: 0,
   chain: {},
   docs: Object.fromEntries(COLLECTIONS.map((name) => [name, {}])),
   wait: 0,
