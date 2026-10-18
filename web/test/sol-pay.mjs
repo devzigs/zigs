@@ -17,14 +17,14 @@ import { approve, deviceSeen, reviewOf } from "../sol/approve.js";
 import { agreement } from "../sol/ceremony.js";
 import { base58, keyOfBase58 } from "../sol/docs.js";
 import { EXECUTE_TRIES, executorOf, tryAgain } from "../sol/execute.js";
-import { ZERO_KEY, bytesOf, decodeIntent, readVerdict } from "../sol/intent.js";
+import { ZERO_KEY, bytesOf, decodeIntent, planHex, readVerdict } from "../sol/intent.js";
 import { savedNonces, saveNonces } from "../sol/nonces.js";
 import { feeOf } from "../sol/fee.js";
 import { putSol } from "../sol/secrets.js";
 import { syncSolana } from "../sol/session.js";
 import { deviceSpend } from "../sol/spend.js";
 import { LINK_TEXT } from "../sol/payview.js";
-import { readSolSession, writePart } from "../sol/sessions.js";
+import { partFields, readSolSession, writePart } from "../sol/sessions.js";
 import { solView } from "../sol/view.js";
 import { FRONT_RUN, verifies } from "./sol-chain.mjs";
 import { G, preparedOf, transactOf, useTestGroup, utxoOf } from "./sol-fixture.mjs";
@@ -80,6 +80,13 @@ const HASH = "aa".repeat(32);
 const OTHER = "bb".repeat(32);
 const move = { id: "p1", intent: "03" + "00".repeat(181), inputIds: [HASH] };
 move.message = "00".repeat(16);
+const dropSessions = async (ids) => {
+  for (const key of data.keys()) {
+    if (ids.some((id) => key.includes("solsessions/" + id))) data.delete(key);
+  }
+  notify();
+  await waitFor("the sessions go", () => !c.sessions.some((x) => ids.includes(x.id)));
+};
 
 // ── The snapshot of the move is read from the wallet of the group key, matched by id ──
 chain.oldUtxos = [input(HASH, "TREE1"), input(OTHER, "TREE2")];
@@ -121,6 +128,66 @@ step("a missing input, inputs of two trees and another mint are refused");
 }
 step("the earlier pairs come from the other sessions only");
 
+// ── The pairs of the proposals on the group server count, also after a restore ──
+{
+  chain.oldUtxos = [input(HASH, "TREE1")];
+  const own = chain.inspected;
+  const theirs = { first: "03".repeat(32), salt: "04".repeat(16) };
+  const asked = [];
+  chain.inspected = ({ tx }) => {
+    const hex = Buffer.from(tx, "base64").toString("hex");
+    asked.push(hex);
+    if (hex === "11".repeat(16)) return { firstNullifier: theirs.first, salt: theirs.salt };
+    if (hex === "22".repeat(16)) throw new Error("the message has 0 pool instructions");
+    return own;
+  };
+  // A payment and a withdrawal hold the plan and the first proof. One with no input, or with a
+  // byte after its plan (the checker would read another proof), has no pair that the page reads.
+  const proof = (payment, more = {}) => ({
+    plan: planHex(preparedOf(payment, { expiry: "1" })),
+    transact: transactOf({ ...payment, ...more }, 1),
+  });
+  const pay = { intent: "08" + "00".repeat(149), ...proof(G.pay) };
+  const written = {
+    "server-move": { intent: move.intent, message: "11".repeat(16) },
+    "server-bad": { intent: move.intent, message: "22".repeat(16) },
+    "server-nonce": { intent: "00" + "00".repeat(32), message: "33".repeat(16) },
+    "server-withdraw": { intent: "0a" + "00".repeat(50), ...proof(G.withdraw) },
+    "server-empty": { ...pay, ...proof(G.pay, { inputs: [] }) },
+    "server-plan": { ...pay, plan: pay.plan + "00" },
+  };
+  const withdrawn = { first: G.withdraw.inputs[0].nullifier, salt: G.withdraw.salt };
+  const key = (p) => p.first + p.salt;
+  const sorted = (list) => [...list].sort((a, b) => key(a).localeCompare(key(b)));
+  for (const [id, fields] of Object.entries(written)) {
+    await writePart(c, id, "proposal", { ...fields, createdAt: 1 }, { seat: 1, create: true });
+  }
+  await waitFor("the server sessions", () => Object.keys(written).every((id) => ssOf(id)));
+  // An ended session counts too: a failed proposal can still have published its data.
+  await writePart(c, "server-move", "failure", { error: "refused" }, { seat: 1 });
+  await waitFor("the failed move", () => ssOf("server-move")?.status === "failed");
+  const both = await deviceSpend(c, move);
+  const local = { first: "01".repeat(32), salt: "02".repeat(16) };
+  const want = sorted([local, theirs, withdrawn]);
+  assert.deepEqual(sorted(both.salts), want, "the pair of this browser and of the server");
+  for (const i of [1, 2, 3]) await putSol(c.host, gid, i, { salts: null });
+  const restored = await deviceSpend(c, move);
+  const server = sorted([theirs, withdrawn]);
+  assert.deepEqual(sorted(restored.salts), server, "a restored seat reads the pairs of the server");
+  const mine = await deviceSpend(c, { ...move, id: "server-move" });
+  assert.deepEqual(mine.salts, [withdrawn], "the session itself is no other proposal");
+  // A session whose signature check waits is not in the list yet: no list until it is checked.
+  c.sessWait = 1;
+  const waiting = "a list read while a signature check waits is refused";
+  await assert.rejects(() => deviceSpend(c, move), /still checking/, waiting);
+  c.sessWait = 0;
+  assert.ok(!asked.includes("33".repeat(16)), "the message of the nonce account has no pair");
+  await dropSessions(Object.keys(written));
+  chain.inspected = own;
+  chain.oldUtxos = [];
+}
+step("the pairs of the group server count after a restore; the nonce account has none");
+
 // ── The test group, and its payment ──
 await useTestGroup(c, { gid, data, notify, waitFor, path, W, chain });
 for (const i of [1, 2, 3]) chain.balances.set(feeAddress(i), 50_000_000n);
@@ -147,18 +214,16 @@ chain.reproved = (args) => {
   return { data: transactOf(G.pay, expiry, { proof, root: 200 + reproofs }) };
 };
 let current = null;
-// The fixture has one salt and one input, and this device refuses a pair that it approved before
-// (rule salt-reused). Each later payment here starts as a browser with no such history would.
-// The fixture has one input for every payment, so an ended payment over it would end the next one
-// too (another payment spent its inputs): each payment starts as if the earlier ones were gone.
+// The fixture has one salt and one input, and a device refuses a pair that another proposal holds
+// on the group server or in its own history (rule salt-reused). The fixture has one input for
+// every payment too, so an ended payment over it would end the next one (another payment spent
+// its inputs). So each payment here starts as a browser with no salt history would, on a server
+// where the earlier payments and moves are gone.
 const forgetPairs = async () => {
   for (const i of [1, 2, 3]) await putSol(c.host, gid, i, { salts: null });
-  const ended = c.sessions.filter((ss) => ["sent", "failed"].includes(ss.status)).map((x) => x.id);
-  for (const key of data.keys()) {
-    if (ended.some((id) => key.includes("solsessions/" + id))) data.delete(key);
-  }
-  notify();
-  await waitFor("the ended sessions go", () => !c.sessions.some((x) => ended.includes(x.id)));
+  const ended = c.sessions.filter((ss) => ["sent", "failed"].includes(ss.status));
+  const spends = c.sessions.filter((ss) => ss.transact !== undefined || ss.plan !== undefined);
+  await dropSessions([...new Set([...ended, ...spends].map((x) => x.id))]);
 };
 // The page and the program judge an expiry by the clock: `later` moves the clock of this test.
 const realNow = Date.now;
@@ -279,6 +344,34 @@ step("a device that read no proposal account reads it again, with no click");
   assert.equal(reproofs, 1, "one fresh proof");
 }
 step("two seats approve the digest once, and the proposing seat executes a fresh proof");
+
+// ── A reused salt of another proposal on the group server: refused, after a restore too ──
+{
+  await forgetPairs();
+  const id = await proposedPay();
+  current = id;
+  // A copy of the payment under another id holds the same first nullifier and salt.
+  const copy = { ...partFields("proposal", ssOf(id)), createdAt: Date.now() };
+  await writePart(c, "reused", "proposal", copy, { seat: 1, create: true });
+  await waitFor("the copy", () => ssOf("reused"));
+  // A restore: no seat of this browser has a salt history or an approved body.
+  for (const i of [1, 2, 3]) await putSol(c.host, gid, i, { salts: null, bodies: null });
+  const pair = { first: G.pay.inputs[0].nullifier, salt: G.pay.salt };
+  const spend = await deviceSpend(c, ssOf("reused"));
+  assert.deepEqual(spend.salts, [pair], "the pair of the other proposal on the group server");
+  const REUSED = /same first nullifier and salt/;
+  await assert.rejects(() => approve(c, ssOf("reused"), 2), REUSED, "a restored seat refuses it");
+  await assert.rejects(() => approve(c, ssOf(id), 3), REUSED, "the copy stops the open one too");
+  await assert.rejects(() => proposedPay(), REUSED, "the proposer refuses its own draft too");
+  // With the copy gone, no other proposal holds the pair: it passes, and the payment executes.
+  await dropSessions(["reused"]);
+  const own = await deviceSpend(c, ssOf(id));
+  assert.deepEqual(own.salts, [], "the pair of the session itself is no other proposal");
+  await approve(c, ssOf(id), 2);
+  await approve(c, ssOf(id), 3);
+  await waitStatus(id, "sent");
+}
+step("a seat refuses a salt of another proposal on the group server, also after a restore");
 
 // ── A stale proof at the execute is proved again, with the same approval ──
 {
@@ -493,6 +586,8 @@ step("an execute waits for the lease of another device, and stops after its trie
   assert.equal(ssOf(id).createTx, FRONT_RUN, "the create of the account is the other one");
   assert.ok(chain.accounts.has(base58(ssOf(id).account)), "the account holds the body");
   // The other create lands after the test run of the page passed: the create of the page fails.
+  // The next payment has the one salt of the fixture, so the open one goes first.
+  await dropSessions([id]);
   chain.frontRun = "send";
   const raced = await proposedPay();
   assert.equal(chain.frontRun, false, "the other create landed at the send");
@@ -504,6 +599,12 @@ step("a create that meets the same body in its account takes it; another body fa
 {
   await forgetPairs();
   const open = await proposedPay();
+  // Two real payments over one input have two salts. The fixture has one, so the open payment
+  // gets another one here (no seat approves it: its ciphertexts do not fit that salt).
+  const other = transactOf({ ...G.pay, salt: "5a".repeat(16) }, ssOf(open).expiry);
+  const moved = { ...partFields("proposal", ssOf(open)), transact: other };
+  await writePart(c, open, "proposal", moved, { seat: 1 });
+  await waitFor("the other salt", () => ssOf(open)?.transact === other);
   const id = await proposedPay();
   const asked = chain.commands.filter((m) => m.cmd === "prepare").at(-1).args;
   assert.deepEqual(asked.avoid, ssOf(open).inputIds, "the Worker avoids the open inputs");

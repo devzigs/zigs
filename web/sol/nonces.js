@@ -56,8 +56,9 @@ export const saveNonces = (c, seat, sid, entry) =>
 
 /**
  * The (commitment, SHA-256 of the body) of every payment that a seat of this browser approved.
- * ponytail: the list lives in this browser only, as the salts (SOL-8): a restored seat or another
- * browser of the seat starts with none. Upgrade path: a signed list (SOL-53).
+ * ponytail: the list lives in this browser only (the salts also read the group server, SOL-8): a
+ * restored seat or another browser of the seat starts with none. Upgrade path: a signed list
+ * (SOL-53).
  */
 export function approvedBodies(c) {
   const seen = new Map();
