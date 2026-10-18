@@ -81,6 +81,7 @@ const solHost = () => ({
   canWriteAs, localSeats, seatIds, checkIn, safetyNo, seatCheck, confirmedNo, openGroup, restore,
   groupVersion, sealAndSave, network: () => netName(state.g),
   askBackup: (words) => { ui.backup = { words, made: false, busy: false }; render(); },
+  newWallet: () => { ui.create = true; render(); },
 });
 // A server with SOL off does not serve the module, and the text says so. view.js is part of the
 // module: it gives the setup steps (solSetup).

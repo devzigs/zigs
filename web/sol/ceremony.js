@@ -397,11 +397,15 @@ function lostSecret(c, i) {
 
 const OTHER_COPY = ": another device of this seat runs its Solana setup. This browser takes no "
   + "part.";
+const LOST = ": this browser lost its setup secret. If another device of this seat does not "
+  + "finish the Solana setup, create a new wallet to use Solana.";
 
+// No stop goes out for a seat with no secret: a restored copy of the seat looks the same while the
+// other copy finishes the ceremony.
 /** Seat i of this browser published round 1 but holds no secret now: why, or null. */
 function noSecretText(c, i) {
   if (solOf(c.host, c.gid, i).otherCopy) return "Seat " + i + OTHER_COPY;
-  return lostSecret(c, i) ? "Seat " + i + ": this browser lost its setup secret" : null;
+  return lostSecret(c, i) ? "Seat " + i + LOST : null;
 }
 
 /** The text of the progress of seat i, from the documents in the store. */

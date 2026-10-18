@@ -207,15 +207,24 @@ function backupCard(c, act, actions) {
   );
 }
 
+// A stop is final for the Solana part only. The next step for Solana is a new wallet.
+export const STOP_NEXT =
+  "The Zcash part of this wallet still works. To use Solana, create a new wallet.";
+
 function stopCards(c) {
   const { el, localSeats } = c.host;
   const own = localSeats()
     .map((i) => solOf(c.host, c.gid, i).aborted)
     .filter(Boolean);
   const texts = own.length ? own : [remoteStop(c.docs)].filter(Boolean);
-  return texts.map((text) =>
-    el("div", { class: "callout bad", role: "alert", "data-sol": "stopped" }, text),
+  const next = el(
+    "button",
+    { class: "btn sm", type: "button", "data-sol": "new-wallet", onclick: c.host.newWallet },
+    "Create a new wallet",
   );
+  const card = (text) =>
+    el("div", { class: "callout bad", role: "alert", "data-sol": "stopped" }, text, " ", STOP_NEXT);
+  return texts.map((text) => [card(text), next]);
 }
 
 // The keys and the sync need agreeing documents. A stopped wallet shows neither.

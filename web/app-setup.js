@@ -28,7 +28,7 @@ export function setupView() {
     + "Do not send funds to it. Create a new wallet.") : null;
   const stopped = abortedText();
   return el("div", { class: "page", style: "gap:16px" }, split,
-    stopped ? el("div", { class: "callout bad", role: "alert" }, stopped) : null,
+    stopped ? el("div", { class: "callout bad", role: "alert" }, stopped, newWalletButton()) : null,
     saveFailedCard(), top, safetyCard(),
     el("div", { class: "setup" }, progressCard(), seatsCard(open)),
     localSeats().length ? messagesCard() : null);
@@ -240,22 +240,30 @@ export function solSteps(first) {
     setupStep(feeStage, first + 1, "Fund your fee address", feeText)];
 }
 
-/** True while the Solana part of a wallet with the hint is not ready or not funded here. */
+/** True while the Solana part of a wallet with the hint is not ready, not funded, or stopped. */
 export function solUnfinished() {
   if (!solPlanned()) return false;
   const [feeStage] = solFeeStep(solSetup());
-  return feeStage !== "done" && solSetup()?.status !== "stopped";
+  return feeStage !== "done";
 }
 
-/** The Overview card of a wallet whose Solana part is still setting up. */
+const newWalletButton = () => el("button", { class: "btn sm", type: "button",
+  onclick: () => { ui.create = true; render(); } }, "Create a new wallet");
+
+/** The Overview card of a wallet whose Solana part is still setting up, or stopped. */
 export function solSetupCard() {
+  const stopped = solSetup()?.status === "stopped";
   const toTab = el("button", { class: "btn sm", type: "button",
     onclick: () => { ui.tab = "solana"; render(); } }, "Open the Solana tab");
   return el("section", { class: "card card-pad" },
-    el("div", { class: "card-head" }, el("h2", {}, "Solana is still setting up")),
+    el("div", { class: "card-head" },
+      el("h2", {}, stopped ? "The Solana part stopped" : "Solana is still setting up")),
     el("div", { class: "steps" }, ...solSteps(1)),
-    el("p", { class: "small muted" }, BOTH_OPEN), el("div", {}, toTab));
+    el("p", { class: "small muted" }, stopped ? SOL_STOP_NEXT : BOTH_OPEN),
+    el("div", { class: "row-actions" }, toTab, stopped ? newWalletButton() : null));
 }
+const SOL_STOP_NEXT = "The Zcash part of this wallet still works. To use Solana, create a new "
+  + "wallet.";
 
 function progressCard() {
   const c = setupCounts(), pct = setupProgress(c);

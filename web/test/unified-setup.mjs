@@ -21,6 +21,7 @@ const { backupWords } = await import("../sol/backup.js");
 const { createDialog } = await import("../app-shell.js");
 const { ui } = await import("../app-state.js");
 const { planSolana } = await import("../app-sol.js");
+const { walletReady } = await import("../app-wallet.js");
 const { t, data, waitFor } = rig;
 const groupPath = (gid) => `groups/${gid}`;
 const BOTH_OPEN = /Every signer keeps this wallet open until the Zcash and the Solana parts/;
@@ -159,6 +160,19 @@ function dialogText() {
   t.sol.ctl.chain = { fees: { 1: "0.006 SOL", 2: "0 SOL", 3: "0.0025 SOL" } };
   assert.match(pageText(), /Solana is still setting up/, "one empty fee address keeps the card");
   t.sol.ctl.chain = {};
+  // A stopped Solana part: the Zcash part still works, and the next step is a new wallet.
+  const kept = t.sec(gidH, 1).sol;
+  const aborted = "Solana setup stopped: a test. Do not use the Solana part of this wallet.";
+  await t.putSec(gidH, 1, { sol: { ...kept, aborted } });
+  const NEXT = /The Zcash part of this wallet still works\. To use Solana, create a new wallet\./;
+  assert.match(pageText(), /The Solana part stopped.*The Solana setup stopped/s);
+  assert.match(pageText(), NEXT);
+  assert.match(pageText(), /Create a new wallet/);
+  assert.ok(walletReady(), "the Zcash part is still ready");
+  ui.tab = "solana";
+  assert.match(pageText(), new RegExp(aborted.replace(/\./g, "\\.") + " " + NEXT.source));
+  ui.tab = "overview";
+  await t.putSec(gidH, 1, { sol: kept });
 }
 
 // ── The backup note asks for the Solana file of each seat, until it is saved ──
