@@ -11,6 +11,7 @@
 // hint of the group document alone starts nothing.
 // Run: node web/test/unified-setup.mjs   (Node 24)
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
 import { config, loadRig, sleep } from "./sol-rig.mjs";
 
 const rig = await loadRig();
@@ -166,6 +167,16 @@ function approvalCount(ctl) {
   } finally {
     [ctl.sessions, ctl.commits, t.state.groups] = kept;
   }
+}
+
+// ── S6: the tab bar wraps at every width, so no tab sits past the edge ──
+// The widths are measured in Chrome (solspike phone checks): the rule here is what they need.
+{
+  const css = readFileSync(new URL("../app.css", import.meta.url), "utf8");
+  const bar = css.match(/^\.tabs \{([^}]*)\}/m)?.[1] ?? "";
+  assert.match(bar, /flex-wrap: wrap/, "the bar wraps");
+  assert.doesNotMatch(bar, /overflow/, "and does not scroll");
+  assert.doesNotMatch(css, /\.tabs \{[^}]*overflow/, "no width brings the scroll back");
 }
 
 // ── The hint: version 3 testnet wallets only ──
