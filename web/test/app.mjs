@@ -820,6 +820,9 @@ const sealed = (gid, rel, seat, fields, key, names = ["by", "sig"]) =>
     const picked = t.toWatch([...bare, far("vp", { by: 1, package: "P" })]).map((x) => x.id);
     assert.deepEqual([picked.length, picked[0], picked.includes("v8")], [8, "vp", false],
       "at most 8, a package first, then the newest");
+    // The steps that failed above try again after 3 s, and each step draws when it ends. Those
+    // end here, while the page can draw, and not under the recorder of the tests below.
+    await sleep(3500);
     t.setZ({ ...fakeZ, ChainWallet: Sent });
     t.setChain({ gid, bal: {}, sent: new Set(), syncing: true, cw: null });
   }
