@@ -371,12 +371,21 @@ and the rent. The rent comes back to that seat at the execute. The group key sig
    the account over after the approval gets the SOL, which only that program can then move. Every
    execute fails until the expiry when the account then holds less than the minimum: a new
    account, or one whose holder moved its SOL out while the amount alone is below the minimum. The
-   rent of the proposal then stays locked (SOL-52).
+   rent of the proposal then comes back only after the expiry (SOL-52, below).
 
-Not built: deposits of public SOL through the program (Add SOL deposits straight into the pool), and
-a cancel or close of a proposal (SOL-52). A proposal account that expires keeps its rent until its
-abort authority (the fee key of the proposing seat) cancels it. So does a create that landed when
-its tab crashed before it published the proposal part.
+Not built: deposits of public SOL through the program (Add SOL deposits straight into the pool).
+
+The rent of expired proposals (SOL-52). A proposal account that expires keeps its rent until a
+cancel closes it. So does a create that landed when its tab crashed before it published the
+proposal part: no seat approves it, and it expires. The card "Rent of old proposals" reads the open
+proposals of the group that pay each fee key of the browser (`getProgramAccounts` on the kind, the
+group and the rent recipient, `web/sol/owned.js`), and the fee key cancels those that expired. The
+cancel message carries no abort authority, so the program refuses it before the expiry
+(`NotAbortAuthority`). The page reads the expiry from the Clock sysvar, but a false answer of the
+RPC costs at most one transaction fee: it cannot cancel a live payment. A cancel before
+the expiry, with a record, is not offered: the page cannot prove that no session will name the
+proposal. The checker lets a fee key sign this cancel only for a body that names it alone, with
+the rent back to it.
 
 ## 6. Devnet proof of concept
 
@@ -1126,10 +1135,10 @@ it binds the program id and not the code.
   abort authority was the funder key). Cancel before the expiry pays 863,600 lamports of rent for
   the record. That rent goes to the body's rent recipient when anyone closes the record after the
   expiry.
-- Not built: a cancel of a proposal (SOL-52). SOL withdrawals through the program are in version 4
-  (condition 1 below) and version 5, and the page proposes them (5.1, step 7; SOL-32). The page
-  derives the proposal addresses of version 5. Devnet runs version 5 since 17 October 2026 (the
-  upgrade plan below).
+- The page cancels its own expired proposals (SOL-52, 5.1). SOL withdrawals through the program are
+  in version 4 (condition 1 below) and version 5, and the page proposes them (5.1, step 7; SOL-32).
+  The page derives the proposal addresses of version 5. Devnet runs version 5 since 17 October 2026
+  (the upgrade plan below).
   Deposits from public SOL need no leg in the program: the beta's Add SOL deposits straight into
   the pool, to the shielded address of the PDA identity.
 - One `execute` with one input tree spends at most 18 inputs (the CPI copies at most 24 accounts; a
