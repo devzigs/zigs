@@ -5,7 +5,7 @@
 // and the proof, never from the display fields of the proposer. Each screen of a payment says who
 // pays, what it costs and what it makes public (ZOLANA.md 7.2). `data-session` marks a session and
 // `data-sol` marks a control, for the headless checks.
-import { reviewOf } from "./approve.js";
+import { approvalClosed, reviewOf } from "./approve.js";
 import { agreement } from "./ceremony.js";
 import { CLUSTER, base58 } from "./docs.js";
 import { EXECUTE_TRIES } from "./execute.js";
@@ -95,9 +95,12 @@ export const PROVER_TEXT =
 
 const FEE_TEXT =
   "It pays the fees and the rents of the proposals that this seat makes, and the fee of each " +
-  "payment that this seat executes. Send Devnet SOL to it. " +
+  "payment that this seat executes. Send Devnet SOL to it. Seats that propose or execute need " +
+  "about 0.003 SOL. Seats that only approve need none. " +
   LINK_TEXT +
-  " Helius sees this address with your IP address when you check the balance or pay.";
+  " The page asks Helius for the balance of this address with your IP address, with no click. " +
+  "It asks when the Solana tab opens, after a payment or Add SOL, and again when such a read " +
+  "failed. It also asks every 30 s while a signed payment waits for a seat that can pay.";
 
 /** The fee address of one seat of this browser: the address, Copy and the balance. */
 function feeRow(c, seat) {
@@ -169,14 +172,22 @@ function seatLine(c, mark, what) {
   return c.host.el("p", { class: "small", "data-sol": mark }, text);
 }
 
+// The explorer of the cluster: a transaction (`tx`) or an account (`address`), in a new tab.
+const EXPLORER = "https://explorer.solana.com/";
+function explorerLink(c, kind, id) {
+  const href = EXPLORER + kind + "/" + encodeURIComponent(id) + "?cluster=" + CLUSTER;
+  return c.host.el("a", { href, target: "_blank", rel: "noopener" }, id + " ↗");
+}
+
 /** What the last Add SOL did, as a line of text. */
 function addedLine(c) {
   const a = c.added;
   if (!a) return null;
   const words = { unknown: "Sent, not confirmed yet", failed: "Failed on chain" };
   const word = words[a.status] ?? "Added " + solText(a.amount);
-  const line = `${word}, seat ${a.seat}: ${a.txId}`;
-  return c.host.el("p", { class: "small", "data-sol": "added" }, line);
+  const said = `${word}, seat ${a.seat}: `;
+  const link = explorerLink(c, "tx", a.txId);
+  return c.host.el("p", { class: "small", "data-sol": "added" }, said, link);
 }
 
 function addSolCard(c, act, actions) {
@@ -356,10 +367,16 @@ function recipientRows(said) {
   ];
 }
 
+// The Payee is the first part of the shielded address only: a typo in the rest still matches.
+const COMPARE =
+  "Compare the Payee with the program address on the Solana tab of the payee group. " +
+  "This checks only the first part of the shielded address.";
+
 /** The payee rows of a private spend, from the fingerprint that the checker answered. */
 function payeeRows(said) {
   return [
     ["Payee", base58(said.payee.tag)],
+    ["Check the payee", COMPARE],
     ["Payee keys", short(said.payee.ownerHash) + " " + short(said.payee.viewingPk)],
     ["Amount", solText(sum(said.paid))],
     ["Change", solText(sum(said.change)) + " stays with the group."],
@@ -407,9 +424,9 @@ function paymentRows(c, review) {
     ["Program address of the group", pda ? base58(pda) : "?"],
     ...(withdraw ? recipientRows(said) : payeeRows(said)),
     ["Network fees", feesText(said)],
-    ["Proposal rent", solText(rentOf(c)) + ", back to seat " + review.by + " at the execute " +
-      "(kept if the proposal expires)."],
-    ["Proposal account", base58(said.proposal)],
+    ["Proposal rent", solText(rentOf(c)) + ", back to seat " + review.by + " at the execute, " +
+      "or after the expiry with the card \"Rent of old proposals\"."],
+    ["Proposal account", explorerLink(c, "address", base58(said.proposal))],
     ["Lasts", "Until " + utc(said.expiry) + " UTC. A new proof is made at the execute."],
     ["Public", lead + "The proposal account (the group key, the " +
       "expiry, the fee address of seat " + review.by + ") is public, and the create transaction " +
@@ -458,9 +475,13 @@ function rowsOf(c, review) {
   return rows;
 }
 
-function reviewBlock(c, ss, seat) {
-  const { el } = c.host,
-    review = reviewOf(c, ss, seat);
+const READING_TEXT = "Zigs reads your wallet. The Approve button appears when it is done.";
+
+function reviewBlock(c, ss, review) {
+  const { el } = c.host;
+  if (review.waiting) {
+    return el("p", { class: "small", role: "status", "data-sol": "reading" }, READING_TEXT);
+  }
   if (!review.ok) {
     return el("div", { class: "callout bad", role: "alert", "data-sol": "refusal" }, review.why);
   }
@@ -499,10 +520,12 @@ const SEAT_TEXT = {
 };
 
 // A seat that approved, or that signed these exact bytes, gets no approval screen and no button.
-function approveRow(c, ss, act, actions) {
+// While the device reads its wallet, no seat gets a button: the review is not on the screen yet.
+function approveRow(c, ss, act, actions, waiting) {
   const { el } = c.host;
   return seatsOf(c, ss).map(({ seat, state }) => {
     if (state !== "open") return el("span", { class: "small" }, SEAT_TEXT[state](seat));
+    if (waiting) return null;
     const attrs = {
       class: "btn primary",
       type: "button",
@@ -532,23 +555,37 @@ function resultLine(c, ss) {
     return el(
       "p",
       { class: "small", "data-sol": "result" },
-      `${word} in slot ${ss.slot}: ${ss.txId}`,
+      `${word} in slot ${ss.slot}: `,
+      explorerLink(c, "tx", ss.txId),
     );
   }
   if (ss.status === "failed") return el("p", { class: "small bad" }, String(ss.error));
   return null;
 }
 
+// After the expiry no seat can approve: the card says so until the page ends the proposal, a few
+// minutes later (the end waits for the clock margin of execute.js).
+const EXPIRED_TEXT = "This proposal expired, so no seat can approve it. The page closes it soon.";
+const approvable = (ss) => ss.status === "collecting" && !approvalClosed(ss);
+
+function expiredLine(c, ss) {
+  if (ss.status !== "collecting" || !approvalClosed(ss)) return null;
+  return c.host.el("p", { class: "small", "data-sol": "expired" }, EXPIRED_TEXT);
+}
+
 function sessionBody(c, ss, act, actions) {
   const { el } = c.host,
     open = seatsOf(c, ss).find((s) => s.state === "open");
   const count = Object.keys(c.commits[ss.id] ?? {}).length;
-  const collecting = ss.status === "collecting";
+  const collecting = approvable(ss);
   const proposer = `Proposed by seat ${ss.by}. Approvals: ${count} of ${c.host.state.g.t}.`;
+  const review = collecting && open ? reviewOf(c, ss, open.seat) : null;
+  const buttons = collecting ? approveRow(c, ss, act, actions, review?.waiting) : null;
   return [
     el("p", { class: "small" }, proposer),
-    collecting && open ? reviewBlock(c, ss, open.seat) : null,
-    collecting ? el("div", { class: "row-actions" }, approveRow(c, ss, act, actions)) : null,
+    expiredLine(c, ss),
+    review ? reviewBlock(c, ss, review) : null,
+    buttons ? el("div", { class: "row-actions" }, buttons) : null,
     executeLine(c, ss, act, actions),
     resultLine(c, ss),
   ];
@@ -601,6 +638,14 @@ function rentCard(c, act) {
       ),
     );
   const none = c.rent && !rows.length ? el("p", { class: "small" }, "No rent to get back.") : null;
+  const done = c.rentDone?.txIds.length
+    ? el(
+        "p",
+        { class: "small", "data-sol": "rent-done" },
+        "Cancel transactions of seat " + c.rentDone.seat + ": ",
+        c.rentDone.txIds.flatMap((id, n) => [n ? ", " : "", explorerLink(c, "tx", id)]),
+      )
+    : null;
   return el(
     "div",
     { style: "display:grid;gap:8px", "data-sol": "rent" },
@@ -608,6 +653,7 @@ function rentCard(c, act) {
     el("p", { class: "small" }, RENT_TEXT),
     ...rows,
     none,
+    done,
     button(c, act, "rent-scan", "Look for rent", () => scanRent(c)),
   );
 }

@@ -154,20 +154,32 @@ for (const [label, make] of Object.entries(badRecords)) {
   fault = null;
   const got = await byName(res);
   assert.deepEqual([res.status, got.has(first), got.size, errors], [200, false,
-    chain.names.size - 1, []], label);
+    chain.names.size - 1, ["zns: left out"]], label);
 }
 {
-  // The name of items[0] comes twice: with another address, then as the same record.
+  // The name of items[0] comes twice: with another address, with a copy that fails the check,
+  // and as the same record. Only the plain repeat keeps the name, and it logs nothing.
   const first = [...chain.names.keys()][0];
-  fault = tamper("list_names", (r) => { r.items[1] = { ...r.items[0], address: addr("other") }; });
-  const got = await byName(await ask(await loadWorker()));
-  fault = tamper("list_names", (r) => { r.items[1] = structuredClone(r.items[0]); });
-  const again = await byName(await ask(await loadWorker()));
+  const twice = async (copy) => {
+    errors.length = 0;
+    fault = tamper("list_names", (r) => { r.items[1] = copy(r.items[0]); });
+    const got = await byName(await ask(await loadWorker()));
+    fault = null;
+    return [got.get(first)?.address ?? null, errors.slice()];
+  };
+  assert.deepEqual(await twice((r) => ({ ...r, address: addr("other") })),
+    [null, ["zns: left out"]]);
+  assert.deepEqual(await twice((r) => ({ ...r, txid: "xyz" })), [null, ["zns: left out"]]);
+  assert.deepEqual(await twice((r) => structuredClone(r)), [chain.names.get(first).address, []]);
+  // Two names left out in one refresh still give one line.
+  errors.length = 0;
+  fault = tamper("list_names", (r) => { r.items[0].txid = "xyz"; r.items[1].txid = "xyz"; });
+  const two = await byName(await ask(await loadWorker()));
   fault = null;
-  assert.deepEqual([got.has(first), again.get(first)?.address], [false, chain.names.get(first)
-    .address]);
+  assert.deepEqual([two.size, errors], [chain.names.size - 2, ["zns: left out"]]);
 }
-step("a bad record is left out, and so is a name with two addresses; the rest is served");
+step("a bad record is left out, and so is a name with two addresses or a bad copy; the rest is "
+  + "served, and a refresh that leaves something out logs one fixed line");
 
 const faults = {
   "a wrong registry key": [tamper("status", (r) => { r.viewing_key = "uviewtest1x"; }), "status"],

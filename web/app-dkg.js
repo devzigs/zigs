@@ -410,6 +410,7 @@ export async function createGroup(name, n, t, from = null, network = "testnet") 
   if (from) await sdb.doc("groups/" + from).update({ movedTo: ref.id, movedAt: Date.now() });
   openGroup(ref.id);
   await takeSeat(1, 3);
+  return ref.id;
 }
 
 // The signing key of a new seat, or null where Ed25519 is missing (a seat then has no messages).

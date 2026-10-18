@@ -7,6 +7,8 @@
 // and goes only into one CDP command; every record and error is redacted.
 // Usage: lockf -k "$SOL/heavy.lock" node solspike/harness/sol-cors.mjs  (writes logs/sol-cors.json)
 import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { dirname, join } from "node:path";
+import { fileURLToPath } from "node:url";
 import { heliusFile } from "../tools/paths.mjs";
 import { sleep, waitFor } from "./chrome.mjs";
 import { run } from "./page.mjs";
@@ -15,6 +17,7 @@ import { ORIGIN } from "./server.mjs";
 import { withStack } from "./stack.mjs";
 import { openApp } from "./sol-load.mjs";
 
+const HERE = dirname(fileURLToPath(import.meta.url));
 const WORKER = "worker:/sol/worker.js";
 const PROVE = "/v1/zolana/prove";
 

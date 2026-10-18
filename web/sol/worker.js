@@ -26,7 +26,8 @@ import {
 const COMPUTE_UNITS = 217_000;
 const SYSTEM_PROGRAM = "11111111111111111111111111111111";
 const U64_MAX = 0xffff_ffff_ffff_ffffn;
-const CONFIRM_MS = 60_000;
+// Shorter than the execute lease of 60 s (execute.js), which a tab renews right after a send.
+const CONFIRM_MS = 45_000;
 
 const redact = makeRedactor();
 let session = null;
@@ -45,15 +46,24 @@ function need() {
  * Every call checks its own URL and fetches the URL that it checked. A redirect is an error, so
  * no second URL is ever fetched without a check.
  */
-function guardedFetch(origin, trace) {
+export function guardedFetch(origin, trace) {
   return async (input, init) => {
-    const url = new URL(input instanceof Request ? input.url : String(input));
+    const request = input instanceof Request;
+    const url = new URL(request ? input.url : String(input));
     if (url.origin !== origin) throw new Error(`blocked a request to ${url.host}`);
-    if (init?.method === "POST" && url.pathname === "/v1/zolana/prove") {
-      trace.prove = typeof init.body === "string" ? JSON.parse(init.body) : null;
-    }
-    return fetch(input instanceof Request ? input : url.href, { ...init, redirect: "error" });
+    keepProverBody(trace, url, init);
+    refusedStatus = null; // the last call of the command decides: a handled refusal is followed
+    const reply = await fetch(request ? input : url.href, { ...init, redirect: "error" });
+    if (!reply.ok) refusedStatus = reply.status;
+    return reply;
   };
+}
+
+/** The body of a call of the prover, which `prepare` keeps. */
+function keepProverBody(trace, url, init) {
+  if (init?.method === "POST" && url.pathname === "/v1/zolana/prove") {
+    trace.prove = typeof init.body === "string" ? JSON.parse(init.body) : null;
+  }
 }
 
 /** One identity: its address, its keys, its synced wallet and the owner that never pays. */
@@ -488,14 +498,41 @@ const HANDLERS = {
   confirm,
 };
 
+// The SDK bundle has no error texts (a production build): a refused HTTP call of Helius reads as
+// "Solana error #8100002", or as "WalletError: WALLET_SYNC" when the indexer refused it (the SDK
+// drops the status on the way). So the fetch of this Worker keeps the status of the last call of
+// the command when Helius refused it (one command runs at a time). A refusal that the SDK handled
+// (the 429 that queues a proof) is followed by other calls, which clear it; a call that gets no
+// reply (a CORS failure) clears it too, so its own error shows. An RPC error also holds the status
+// in its context (@solana/errors SOLANA_ERROR__RPC__TRANSPORT_HTTP_ERROR).
+const RPC_HTTP_ERROR = 8100002;
+let refusedStatus = null;
+function httpStatus(err) {
+  for (let e = err, depth = 0; e && depth < 4; e = e.cause, depth += 1) {
+    if (e.context?.__code === RPC_HTTP_ERROR) return Number(e.context.statusCode);
+  }
+  return refusedStatus;
+}
+
+/** A readable text for a call that Helius refused or did not answer, or null. */
+export function heliusText(err) {
+  const status = httpStatus(err);
+  if (status === 403) return "Helius refused this website. Its key does not allow this domain.";
+  if (status === 429) return "Too many Helius calls. Wait a minute.";
+  if (status >= 500) return "Helius is not answering.";
+  return null;
+}
+
 async function answer({ id, cmd, args }) {
+  refusedStatus = null;
   try {
     const input = args ?? {};
     checkCommand(cmd, input);
     const result = await HANDLERS[cmd](input);
     self.postMessage({ id, ok: true, result });
   } catch (err) {
-    self.postMessage({ id, ok: false, error: redact(`${err?.name ?? "Error"}: ${err?.message}`) });
+    const text = heliusText(err) ?? `${err?.name ?? "Error"}: ${err?.message}`;
+    self.postMessage({ id, ok: false, error: redact(text) });
   }
 }
 

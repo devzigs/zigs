@@ -1,5 +1,5 @@
 {
-  "baseCommit": "0c208f5a44d4183b0f0a61320b86aa2ab7a28611",
+  "baseCommit": "2cee0587c4c4d523190a292bb5e1d30fa71d9417",
   "node": "v24.11.0",
   "tests": {
     "web/test/chat.mjs": {
@@ -71,6 +71,9 @@
     "web/test/sol-transfer.mjs": {
       "exit": 0
     },
+    "web/test/unified-setup.mjs": {
+      "exit": 0
+    },
     "web/test/graph.mjs": {
       "exit": 0
     },
@@ -80,6 +83,9 @@
     "web/test/sol-rent.mjs": {
       "exit": 0
     },
+    "web/test/sol-errors.mjs": {
+      "exit": 0
+    },
     "web/test/demo-check.mjs": {
       "exit": 0
     },
@@ -87,6 +93,9 @@
       "exit": 0
     },
     "web/test/chain-fallback.mjs": {
+      "exit": 0
+    },
+    "web/test/smoke.mjs": {
       "exit": 0
     },
     "cf/test/limits.mjs": {

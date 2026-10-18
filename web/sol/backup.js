@@ -55,7 +55,10 @@ export function backupWords(c, i) {
       if (!holdsShare(solOf(host, gid, i)))
         throw new Error("Seat " + i + " has no Solana part yet.");
       const name = backupName(host.state.g.name + " solana", i);
-      return host.sealAndSave(pass, backupText(host, gid, i), name);
+      if (!(await host.sealAndSave(pass, backupText(host, gid, i), name))) return false;
+      // The flag makes the backup note of the wallet stop asking for this file.
+      await putSol(host, gid, i, { backupSaved: true });
+      return true;
     },
   };
 }
@@ -156,6 +159,7 @@ export async function restoreSolana(c, b, encrypted) {
     cluster: CLUSTER,
     doneSent: true,
     otherCopy: null,
+    backupSaved: true,
   };
   if (!(await putSol(host, f.group, f.seat, part))) {
     throw new Error("This browser could not save the restored Solana part.");

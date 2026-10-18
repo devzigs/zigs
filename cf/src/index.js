@@ -369,14 +369,18 @@ let znsLoading = null; // the refresh in flight, shared by parallel requests
 let znsPausedUntil = 0; // no call upstream before this time
 
 // The sound records by name. A page boundary can repeat a record. A name with two different
-// addresses is left out, because its address is not clear.
+// addresses, or with one record that fails the check, is left out: its address is not clear. A
+// refresh that leaves something out writes one fixed line, so the operator sees it.
 function znsByName(rows) {
-  const byName = new Map(), unclear = new Set();
-  for (const r of rows.map(znsLower).filter(znsValid)) {
-    if (byName.has(r.name) && byName.get(r.name).address !== r.address) unclear.add(r.name);
+  const all = rows.map(znsLower), good = all.filter(znsValid), byName = new Map();
+  const unclear = new Set(all.filter((r) => !znsValid(r)).map((r) => r && r.name));
+  for (const r of good) {
+    const seen = byName.get(r.name);
+    if (seen && seen.address !== r.address) unclear.add(r.name);
     byName.set(r.name, znsRecord(r));
   }
   for (const name of unclear) byName.delete(name);
+  if (unclear.size) console.error("zns: left out");
   return byName;
 }
 

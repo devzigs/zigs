@@ -6,6 +6,7 @@
 import { agreement, seatProgress, started, startBlock } from "./ceremony.js";
 import { base58 } from "./docs.js";
 import { payCards } from "./payview.js";
+import { feeMismatch, feeOf } from "./fee.js";
 import { holdsShare, remoteStop, solOf, stopOf } from "./secrets.js";
 
 const ADD_TEXT =
@@ -16,7 +17,7 @@ const ADD_TEXT =
 
 // What is public and what Helius sees (SOL-12). The tab shows it in each state, also while the
 // setup runs: the seats of this browser join the setup with no click.
-const PUBLIC_TEXT =
+export const PUBLIC_TEXT =
   "A deposit shows its sender and amount on chain. A withdrawal shows its recipient and amount. " +
   "A private payment hides its amount, but it shows the owner key of the payee. The program " +
   "address, the group key and the fee address of each seat that pays are public too. Helius " +
@@ -24,9 +25,31 @@ const PUBLIC_TEXT =
   "sees each payment. The Zigs server operator can link this wallet to these addresses by timing.";
 function statusOf(c, ag) {
   if (startBlock(c.host)) return "unavailable";
-  if (!started(c.docs)) return "not started";
   if (stopOf(c)) return "stopped";
+  if (!started(c.docs)) return "not started";
   return { agree: "ready", differ: "differs", wait: "running" }[ag.state];
+}
+
+/**
+ * The Solana part for the setup steps of the page (app-setup.js): the status, how many seats
+ * published their key, and the fee addresses of this browser with the balance of the last read
+ * ("0.006 SOL", or undefined before the first read). Public values only.
+ */
+export function setupSummary(c) {
+  const { host } = c,
+    seats = host.seatIds();
+  const mine = host.localSeats().filter((i) => holdsShare(solOf(host, c.gid, i)));
+  const feeRow = (i) => {
+    const address = base58(feeOf(c, i).key);
+    return { seat: i, address, balance: c.chain?.fees?.[i] };
+  };
+  const fees = mine.filter((i) => !feeMismatch(c, i) && feeOf(c, i)).map(feeRow);
+  return {
+    status: statusOf(c, agreement(c)),
+    keys: seats.filter((i) => c.docs.soldone[i]).length,
+    n: seats.length,
+    fees,
+  };
 }
 
 function startCard(c, act, actions) {
@@ -184,15 +207,25 @@ function backupCard(c, act, actions) {
   );
 }
 
+// A stop is final for the Solana part only. The next step for Solana is a new wallet.
+export const STOP_NEXT =
+  "The Zcash part of this wallet still works. To use Solana, create a new wallet.";
+
 function stopCards(c) {
   const { el, localSeats } = c.host;
   const own = localSeats()
     .map((i) => solOf(c.host, c.gid, i).aborted)
     .filter(Boolean);
   const texts = own.length ? own : [remoteStop(c.docs)].filter(Boolean);
-  return texts.map((text) =>
-    el("div", { class: "callout bad", role: "alert", "data-sol": "stopped" }, text),
-  );
+  const next = () =>
+    el(
+      "button",
+      { class: "btn sm", type: "button", "data-sol": "new-wallet", onclick: c.host.newWallet },
+      "Create a new wallet",
+    );
+  const card = (text) =>
+    el("div", { class: "callout bad", role: "alert", "data-sol": "stopped" }, text, " ", STOP_NEXT);
+  return texts.map((text) => [card(text), next()]);
 }
 
 // The keys and the sync need agreeing documents. A stopped wallet shows neither.
@@ -224,7 +257,7 @@ export function solView(c, act, actions) {
     el("p", { class: "small", "data-sol": "status" }, status),
     el("p", { class: "small", "data-sol": "public-text" }, PUBLIC_TEXT),
     ...stopCards(c),
-    started(c.docs) ? seatList(c) : startCard(c, act, actions),
+    started(c.docs) ? seatList(c) : stopped ? null : startCard(c, act, actions),
     ag.state === "differ" ? el("div", { class: "callout bad", role: "alert" }, ag.why) : null,
     ...readyCards(c, act, actions, ag),
     stopped ? null : backupCard(c, act, actions),

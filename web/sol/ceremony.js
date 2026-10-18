@@ -351,9 +351,23 @@ function stopOnDiffer(c) {
   return true;
 }
 
+// Only `solAuto` in the own secret of seat 1 starts Solana with no button (planSolana). The
+// unsigned hint must still be there, so the joiners saw the Solana texts. A moved wallet starts
+// nothing.
+const AUTO = [
+  (c) => c.host.sec(c.gid, 1)?.solAuto === true,
+  (c) => c.host.state.g?.solana === true && !c.host.state.g.movedTo,
+  (c) => !!c.loaded.solstart && !c.docs.solstart[1] && c.wait === 0,
+  (c) => !stopOf(c) && !startBlock(c.host),
+  (c) => c.host.localSeats().includes(1) && c.host.canWriteAs(1),
+  (c) => seatReady(c.host, c.gid, 1),
+];
+const autoStart = (c) => AUTO.every((due) => due(c)) && launch(c, "solstart", () => addSolana(c));
+
 /** Advances the ceremony of every seat that this browser holds. It acts only on verified data. */
 export function reactCeremony(c) {
   const { host } = c;
+  autoStart(c);
   if (startBlock(host) || !started(c.docs) || c.wait > 0 || stopOnDiffer(c)) return;
   if (stopOf(c)) return;
   for (const i of host.localSeats()) if (host.canWriteAs(i)) stepSeat(c, i);
@@ -384,11 +398,15 @@ function lostSecret(c, i) {
 
 const OTHER_COPY = ": another device of this seat runs its Solana setup. This browser takes no "
   + "part.";
+const LOST = ": this browser lost its setup secret. If another device of this seat does not "
+  + "finish the Solana setup, create a new wallet to use Solana.";
 
+// No stop goes out for a seat with no secret: a restored copy of the seat looks the same while the
+// other copy finishes the ceremony.
 /** Seat i of this browser published round 1 but holds no secret now: why, or null. */
 function noSecretText(c, i) {
   if (solOf(c.host, c.gid, i).otherCopy) return "Seat " + i + OTHER_COPY;
-  return lostSecret(c, i) ? "Seat " + i + ": this browser lost its setup secret" : null;
+  return lostSecret(c, i) ? "Seat " + i + LOST : null;
 }
 
 /** The text of the progress of seat i, from the documents in the store. */
