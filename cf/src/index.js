@@ -90,9 +90,17 @@ async function assets(req, env, url) {
 
 // The public side of the testnet light-wallet server answers this Worker only: Envoy checks the
 // secret LWD_KEY that the Worker adds (infra/lwd). The page calls /lwd behind the password gate
-// and never holds the key. Only the gRPC methods of the server pass, so the route is no open proxy.
+// and never holds the key. Only the gRPC methods that the engine calls pass (wasm/src/chain.rs),
+// so the route is no open proxy, and long streams such as GetMempoolStream stay closed.
 const LWD_ORIGIN = "https://lwd.zigs.app";
-const LWD_PATH = /^\/lwd(\/cash\.z\.wallet\.sdk\.rpc\.CompactTxStreamer\/[A-Za-z]+)$/;
+const LWD_PATH = /^\/lwd(\/cash\.z\.wallet\.sdk\.rpc\.CompactTxStreamer\/([A-Za-z]+))$/;
+const LWD_METHODS = new Set(["GetLatestBlock", "GetTreeState", "GetBlockRange", "GetTransaction",
+  "SendTransaction"]);
+// One GetBlockRange call asks for at most this many blocks, so no call asks for the whole chain.
+// The engine asks for BATCH (1,000) blocks at a time (wasm/src/chain.rs); the margin of one more
+// batch keeps a later, larger BATCH working. web/test/lwd.mjs checks that the limit stays above.
+const LWD_MAX_BLOCKS = 2_000;
+const LWD_MAX_RANGE_BODY = 256; // bytes; the frame of the engine has 19
 const LWD_REQUEST = ["content-type", "x-grpc-web", "x-user-agent", "grpc-timeout"];
 const LWD_RESPONSE = ["content-type", "grpc-status", "grpc-message"];
 
@@ -102,23 +110,153 @@ function only(headers, names) {
   return out;
 }
 
+// One group of an IPv6 address as numbers: a hex group, or a dotted IPv4 tail as two groups.
+function ipv6Group(text) {
+  if (/^[0-9a-f]{1,4}$/.test(text)) return [parseInt(text, 16)];
+  const v4 = /^(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})$/.exec(text)?.slice(1).map(Number);
+  return v4 && v4.every((x) => x < 256) ? [v4[0] * 256 + v4[1], v4[2] * 256 + v4[3]] : [NaN];
+}
+
+// The eight 16-bit groups of an IPv6 address, with "::" and a dotted IPv4 tail, or null.
+function ipv6Groups(ip) {
+  const halves = ip.toLowerCase().split("::");
+  const side = (text) => (text ? text.split(":").flatMap(ipv6Group) : []);
+  const head = side(halves[0]), tail = side(halves[1] ?? "");
+  const gap = 8 - head.length - tail.length;
+  const fits = halves.length === 1 ? gap === 0 : halves.length === 2 && gap >= 1;
+  const groups = [...head, ...Array(Math.max(gap, 0)).fill(0), ...tail];
+  return fits && !groups.some(Number.isNaN) ? groups : null;
+}
+
+// The key of a client for the limits per network (WS_PER_IP, LWD_PER_IP and the sockets and
+// writes of a Store): an IPv4 address, or the /64 of an IPv6 address, because a client usually
+// holds a whole /64. An IPv4-mapped IPv6 address is its IPv4 address. Without the header (local
+// dev) the key is "local", and an address that does not parse is its own key.
+// ponytail: an ISP that gives a customer a /56 or a /48 still gives it many counters.
+function clientKey(req) {
+  const ip = (req.headers.get("CF-Connecting-IP") || "").trim();
+  if (!ip.includes(":")) return ip || "local";
+  const g = ipv6Groups(ip);
+  if (!g) return ip;
+  if (g.slice(0, 5).every((x) => x === 0) && g[5] === 0xffff) {
+    return [g[6] >> 8, g[6] & 255, g[7] >> 8, g[7] & 255].join(".");
+  }
+  return g.slice(0, 4).map((x) => x.toString(16)).join(":") + "::/64";
+}
+
 // Like WS_PER_IP in groupSocket, this fails open: without the binding (local tests), no limit.
 async function overLwdLimit(req, env) {
   if (!env.LWD_PER_IP) return false;
-  const ip = req.headers.get("CF-Connecting-IP") || "local";
-  return !(await env.LWD_PER_IP.limit({ key: ip })).success;
+  return !(await env.LWD_PER_IP.limit({ key: clientKey(req) })).success;
 }
 
-// Both bodies stream: GetBlockRange is a server stream. The redirect stays unfollowed, so the
-// key never goes to another host.
+// A protobuf varint at p of b: [value, next p], or null. The value stays exact up to 2^53, which
+// is far above any height that is allowed.
+function varint(b, p) {
+  let value = 0, scale = 1;
+  for (let i = 0; i < 10 && p < b.length; i++, p++) {
+    value += (b[p] & 0x7f) * scale;
+    if (b[p] < 0x80) return [value, p + 1];
+    scale *= 128;
+  }
+  return null;
+}
+
+// The readers of the protobuf wire types: [value, next p], or null. Groups (3, 4) are refused.
+const WIRE = [
+  varint,
+  (b, p) => (p + 8 <= b.length ? [null, p + 8] : null),
+  (b, p) => {
+    const len = varint(b, p);
+    const end = len && len[1] + len[0];
+    return len && end <= b.length ? [b.subarray(len[1], end), end] : null;
+  },
+  null, null,
+  (b, p) => (p + 4 <= b.length ? [null, p + 4] : null),
+];
+
+// The fields of one protobuf message: field number -> the values in order, or null.
+function fields(b) {
+  const out = new Map();
+  for (let p = 0; p < b.length;) {
+    const tag = varint(b, p);
+    const read = tag && tag[0] >= 8 ? WIRE[tag[0] % 8] : null;
+    const got = read ? read(b, tag[1]) : null;
+    if (!got) return null;
+    const num = Math.floor(tag[0] / 8);
+    out.set(num, [...(out.get(num) ?? []), got[0]]);
+    p = got[1];
+  }
+  return out;
+}
+
+// The height in the BlockID of a BlockRange field: 0 when it is absent (proto3 leaves zeros out),
+// null when the field repeats or does not parse (protobuf would merge a repeat or take the last).
+function heightOf(values) {
+  if (!values) return 0;
+  const one = values.length === 1 && values[0] instanceof Uint8Array;
+  return one ? blockHeight(fields(values[0])) : null;
+}
+
+// The height (field 1) of a parsed BlockID: below 2^32 (the engine uses u32), 0 when absent.
+function blockHeight(id) {
+  if (!id) return null;
+  const h = id.get(1) ?? [0];
+  return h.length === 1 && typeof h[0] === "number" && h[0] < 2 ** 32 ? h[0] : null;
+}
+
+// The number of blocks that a GetBlockRange body asks for, or null when the body is not one
+// uncompressed gRPC-web frame (flag 0) of a BlockRange. lightwalletd also streams a range
+// backwards, so the span counts both ways.
+function rangeSpan(b) {
+  const len = ((b[1] * 256 + b[2]) * 256 + b[3]) * 256 + b[4];
+  const range = b.length >= 5 && b[0] === 0 && len + 5 === b.length ? fields(b.subarray(5)) : null;
+  const start = range && heightOf(range.get(1)), end = range && heightOf(range.get(2));
+  return start === null || end === null ? null : Math.abs(end - start) + 1;
+}
+
+// The whole body of a request when it has at most `max` bytes, else null.
+async function smallBody(req, max) {
+  const parts = [];
+  let size = 0;
+  for (const reader = req.body?.getReader(); reader;) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    size += value.length;
+    if (size > max) {
+      await reader.cancel();
+      return null;
+    }
+    parts.push(value);
+  }
+  const out = new Uint8Array(size);
+  parts.reduce((at, part) => (out.set(part, at), at + part.length), 0);
+  return out;
+}
+
+// The body to send upstream: a GetBlockRange body only when its range is small enough. Other
+// bodies stream as they come. A Response when the call is refused.
+async function lwdBody(req, method) {
+  if (method !== "GetBlockRange") return req.body;
+  const bytes = await smallBody(req, LWD_MAX_RANGE_BODY);
+  const span = bytes && rangeSpan(bytes);
+  if (!span) return new Response("Send one GetBlockRange request.\n", { status: 400 });
+  if (span <= LWD_MAX_BLOCKS) return bytes;
+  return new Response(`A block range has at most ${LWD_MAX_BLOCKS} blocks.\n`, { status: 400 });
+}
+
+// The answer bodies stream: GetBlockRange is a server stream. The redirect stays unfollowed, so
+// the key never goes to another host.
 async function lwd(req, env, url) {
-  const path = LWD_PATH.exec(url.pathname)?.[1];
-  if (!path) return new Response("Not found\n", { status: 404 });
+  const [, path, method] = LWD_PATH.exec(url.pathname) ?? [];
+  if (!LWD_METHODS.has(method)) return new Response("Not found\n", { status: 404 });
   if (req.method !== "POST") return new Response("Use POST.\n", { status: 405 });
   if (await overLwdLimit(req, env)) {
     const text = "Too many light-wallet calls from this network. Wait a minute.\n";
     return new Response(text, { status: 429 });
   }
+  const body = await lwdBody(req, method);
+  if (body instanceof Response) return body;
   if (!env.LWD_KEY) {
     return new Response("The light-wallet server is not set up on this server.\n", { status: 503 });
   }
@@ -127,7 +265,7 @@ async function lwd(req, env, url) {
   let up;
   try {
     up = await fetch(LWD_ORIGIN + path, {
-      method: "POST", headers, body: req.body, redirect: "manual",
+      method: "POST", headers, body, redirect: "manual",
     });
   } catch {
     return new Response("The light-wallet server did not answer.\n", { status: 502 });
@@ -140,8 +278,7 @@ async function lwd(req, env, url) {
 async function groupSocket(req, env, url) {
   const gid = url.searchParams.get("g") || "";
   if (!GROUP_ID.test(gid)) return new Response("Add ?g= with a group id of 20 hex characters.", { status: 400 });
-  const ip = req.headers.get("CF-Connecting-IP") || "local";
-  if (env.WS_PER_IP && !(await env.WS_PER_IP.limit({ key: ip })).success) {
+  if (env.WS_PER_IP && !(await env.WS_PER_IP.limit({ key: clientKey(req) })).success) {
     return new Response("Too many connections from this network. Wait a minute.", { status: 429 });
   }
   const fwd = new Request(req);
@@ -199,8 +336,8 @@ const MAX_DOC = 256_000; // characters in one stored document
 const MAX_PATH = 200;
 // Per group: members download their group's whole store on connect, so this also bounds that.
 const MAX_TOTAL = 10_000_000;
-const WRITES_PER_MIN = 300; // per client IP
-const CHARS_PER_MIN = 8_000_000; // per client IP
+const WRITES_PER_MIN = 300; // per client key (clientKey)
+const CHARS_PER_MIN = 8_000_000; // per client key
 // Global caps bound the cost when many IPs spam together; they can delay real users instead.
 const WRITES_PER_MIN_ALL = 3_000;
 const MAX_SOCKETS = 200;
@@ -226,7 +363,7 @@ export class Store extends DurableObject {
     const gid = req.headers.get("X-Group") || "";
     if (!GROUP_ID.test(gid)) return new Response("missing group", { status: 400 });
     await this.adopt(gid);
-    const ip = req.headers.get("CF-Connecting-IP") || "local";
+    const ip = clientKey(req);
     if (this.ctx.getWebSockets().length >= MAX_SOCKETS) {
       return new Response("The group server is busy. Try again in a minute.", { status: 503 });
     }
@@ -256,8 +393,8 @@ export class Store extends DurableObject {
     }
   }
 
-  // ponytail: counters live in memory per IP and reset when the object is evicted.
-  // A blocked IP does not count toward the global cap, so one IP cannot stop everyone.
+  // ponytail: counters live in memory per client key and reset when the object is evicted.
+  // A blocked key does not count toward the global cap, so one network cannot stop everyone.
   limitRate(ip, size) {
     if (this.rates.size > 10_000) this.rates.clear();
     const mine = this.window(ip);

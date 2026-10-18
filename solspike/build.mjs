@@ -63,6 +63,8 @@ export function aliases(repo) {
  * place, so every offset stays valid.
  */
 export function withoutHomePaths(bytes) {
+  // The class stops a match at a NUL byte, so that a match stays in one string of the wasm data.
+  // oxlint-disable-next-line no-control-regex
   const home = /\/Users\/[^/\0]*\//g;
   const text = bytes.toString("latin1");
   return Buffer.from(
