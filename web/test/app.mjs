@@ -9,7 +9,7 @@ import { newSignKey, signMsg, verifyMsg } from "../chat.js";
 import { HIGH_TEXT as HIGH } from "../personal.js";
 import { seatBackedUp } from "../util.js";
 import { aesKey, open as openVault, seal } from "../vault.js";
-import { loadPage } from "./page.mjs";
+import { loadPage, stallFreeClock } from "./page.mjs";
 
 const web = new URL("../", import.meta.url);
 Z.initSync({ module: fs.readFileSync(new URL("pkg/zigs_engine_bg.wasm", web)) });
@@ -34,6 +34,24 @@ Object.assign(globalThis, {
 });
 
 const t = await loadPage();
+// The test clock leaves out a stall, such as a sleep of the computer (VEL-4).
+{
+  let wall = 1000;
+  const clock = stallFreeClock(() => wall, 5000);
+  wall += 4000;
+  assert.equal(clock(), 5000, "a gap under the limit counts");
+  wall += 900000;
+  assert.equal(clock(), 5000, "a stall of 15 minutes does not count");
+  wall += 300;
+  assert.equal(clock(), 5300, "the time goes on after the stall");
+  wall += 5000;
+  assert.equal(clock(), 10300, "a gap of exactly the limit counts");
+  wall -= 60000;
+  assert.equal(clock(), 10300, "a step back of the wall clock does not count");
+  wall += 100;
+  assert.equal(clock(), 10400);
+  assert.equal(Date.now.stallFree, true, "loadPage installs the test clock");
+}
 t.setZ(Z);
 await sleep(50);
 assert.equal(t.signing, true, "this Node signs with Ed25519");

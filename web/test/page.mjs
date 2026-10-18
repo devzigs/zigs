@@ -39,12 +39,42 @@ export const NAMES = [
 const SETTERS = { personal: "setPersonal", secrets: "setSecrets", gkeys: "setGkeys",
   tabBar: "setTabBar" };
 
+// The page measures some lifetimes with Date.now(): a nonce proposal lives 120 s (BLOCKHASH_MS,
+// web/sol/approve.js). A computer that sleeps during a test run made such a proposal expire at
+// random (VEL-4). The test clock leaves out every gap of more than STALL_MS in which no JavaScript
+// ran, and every step back of the wall clock. A heartbeat reads it every 200 ms, so a wait counts
+// as usual. Timers (setTimeout) still count a stall.
+const STALL_MS = 5000;
+
 /**
- * Imports the page modules and returns `t`, a live view of the names in NAMES. The modules load
- * once per process: a second call gives a view of the same module instances.
+ * A clock on `wall` that leaves out each gap of more than `stallMs` between two of its reads, and
+ * each step back of `wall`.
+ * @returns {() => number} a clock that never goes back and never jumps forward by a stall.
+ */
+export function stallFreeClock(wall, stallMs) {
+  let offset = 0, last = wall();
+  return () => {
+    const now = wall();
+    if (now - last > stallMs || now < last) offset += now - last;
+    last = now;
+    return now - offset;
+  };
+}
+
+function installTestClock() {
+  if (Date.now.stallFree) return;
+  Date.now = stallFreeClock(Date.now.bind(Date), STALL_MS);
+  Date.now.stallFree = true;
+  setInterval(Date.now, 200).unref();
+}
+
+/**
+ * Installs the test clock, imports the page modules and returns `t`, a live view of the names in
+ * NAMES. The modules load once per process: a second call gives a view of the same instances.
  * @returns {Promise<object>} t: t.NAME reads the export now; t.personal = v calls setPersonal.
  */
 export async function loadPage() {
+  installTestClock();
   const web = new URL("../", import.meta.url);
   const entry = fs.readFileSync(new URL("app.js", web), "utf8");
   const files = [...entry.matchAll(/^import "\.\/([\w-]+\.js)";$/gm)].map((m) => m[1]);
