@@ -4,14 +4,16 @@ import { Z } from "./app-engine.js";
 import { chats, lockedVault } from "./app-keystore.js";
 import { curSession, keysDiffer, localSeats } from "./app-seats.js";
 import { ensureChain } from "./app-chain.js";
-import { signedHold } from "./app-filter.js";
-import { closeSession, db, dbReady, learnNetwork, openGroup, toApprove } from "./app-groups.js";
+import { sessionParts, signedHold } from "./app-filter.js";
+import {
+  closeSession, db, dbReady, learnNetwork, openGroup, toApprove, watched, watchOnly,
+} from "./app-groups.js";
 import { el } from "./app-dom.js";
 import { markRead, syncRooms, unreadIn } from "./app-messages.js";
 import {
   canCreateWallet, createWallet, groupVersion, myVerified, reactConfirm, reactSeat, reactStops,
 } from "./app-dkg.js";
-import { noteSessions, reactSession } from "./app-payments.js";
+import { noteSessions, reactSession, toWatch } from "./app-payments.js";
 import { personal } from "./app-account.js";
 import { chatView, newChatDialog } from "./app-thread.js";
 import { backupDialog, closeBackup, restoreDialog, settleRestore } from "./app-backups.js";
@@ -63,10 +65,23 @@ function reactNow() {
   if (chainReady()) { ensureChain(); noteSessions(); }
   // Group creator builds the shared wallet once all group keys agree.
   if (canCreateWallet()) once("wallet", createWallet);
-  // Signing.
+  // Signing: the open payment, and in the background each other one that waits for this browser.
   const ss = curSession();
   if (ss && state.wallet) reactSession(ss);
+  reactWatched();
   solReact();
+}
+
+// The open payment is watched too: closing its drawer reacts on nothing, and the approvals that
+// come later must still reach this browser. The shared once() keys stop a second run.
+function reactWatched() {
+  if (!state.wallet) return;
+  const want = toWatch(state.sessions);
+  watchOnly(want.map((x) => x.id));
+  for (const x of want) {
+    const w = watched.get(x.id);
+    if (w) reactSession(x, sessionParts(x.id, w.raw));
+  }
 }
 
 let openLayer = "", tickTimer = null;

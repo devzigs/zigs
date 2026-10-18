@@ -198,6 +198,7 @@ export function openGroup(gid) {
   groupDoc = null;
   sol?.close();
   closeSession();
+  watchOnly([]);
   // A form filled from a request belongs to the wallet it was made for.
   if (ui.sendFor && ui.sendFor !== gid) { ui.send = false; ui.pay = null; ui.note = ""; }
   ui.after = null;   // the notes of an expired payment of the wallet that was open
@@ -245,4 +246,28 @@ export function closeSession() {
   for (const u of unsubSession) u();
   unsubSession = []; state.sid = null;
   state.commits = {}; state.shares = {}; raw.commits = {}; raw.shares = {};
+}
+
+// The approvals and shares of the payments that this browser must act on while their drawer is
+// closed (M5): session id to { gid, raw: { commits, shares }, unsubs }. A snapshot that comes after
+// an unwatch or for another wallet changes nothing.
+export const watched = new Map();
+function watchSession(sid) {
+  const gid = state.gid, base = "groups/" + gid + "/sessions/" + sid;
+  const w = { gid, raw: { commits: {}, shares: {} }, unsubs: [] };
+  const take = (name) => (m) => {
+    if (watched.get(sid) === w && state.gid === gid) w.raw[name] = m;
+  };
+  watched.set(sid, w);
+  w.unsubs.push(sub(base + "/commits", take("commits")), sub(base + "/shares", take("shares")));
+}
+function unwatch(sid) {
+  for (const u of watched.get(sid)?.unsubs ?? []) u();
+  watched.delete(sid);
+}
+/** Watches exactly the sessions `sids` of the open wallet. */
+export function watchOnly(sids) {
+  const want = new Set(sids);
+  for (const [sid, w] of watched) if (!want.has(sid) || w.gid !== state.gid) unwatch(sid);
+  for (const sid of want) if (!watched.has(sid)) watchSession(sid);
 }

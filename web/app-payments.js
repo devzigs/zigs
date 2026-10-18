@@ -4,9 +4,9 @@ import { partFields, proposalFields } from "./signed.js";
 import { EXPIRY_MARGIN } from "./personal.js";
 import { payeeRows } from "./requests.js";
 import { busy, log, ready, showBanner, state, ui } from "./app-state.js";
-import { fmtZec, isStr, J, S, said, withTimeout } from "./app-kit.js";
+import { exclusive, fmtZec, isStr, J, S, said, withTimeout } from "./app-kit.js";
 import { engineOffThread, Z } from "./app-engine.js";
-import { loadKept, mySeatSecrets, putSec, saveKept, sec } from "./app-keystore.js";
+import { loadKept, mySeatSecrets, putSec, saveKept, sec, takeStored } from "./app-keystore.js";
 import { isMe, keysDiffer, localSeats, myUid, signersOf } from "./app-seats.js";
 import {
   balanceNow, chain, curChain, curNet, inFlight, netName, runSync, SERVER_TIMEOUT_MS,
@@ -15,21 +15,53 @@ import {
   canWriteAs, mayAct, NO_SEAT_KEY, partNow, signedDoc, signedMode, sigPart, writer,
 } from "./app-filter.js";
 import { closeSession, openSession, sdb } from "./app-groups.js";
-import { groupName, isPayee, normalized } from "./app-dom.js";
+import { groupName, isPayee, normalized, payTitle } from "./app-dom.js";
 import { myVerified, seatCheck } from "./app-dkg.js";
 import { once, render } from "./app-loop.js";
 
 const inspectCache = new Map();
 
-export function reactSession(ss) {
+// The signing steps of payment `ss`, with its approvals and shares (`parts`): those of the open
+// drawer, or of a watched payment (needsWork).
+export function reactSession(ss, parts = { commits: state.commits, shares: state.shares }) {
   const fvk = state.wallet.orchard_fvk;
-  // The engine takes only strings. A document with another type would crash it.
-  if (!isStr(ss.pczt) || !isStr(fvk) || (ss.package != null && !isStr(ss.package))) return;
-  if (ss.error || expired(ss)) return;
-  if (!ss.package && isProposer(ss)) buildPackage(ss, fvk);
-  if (ss.package) signMyShares(ss, fvk);
-  if (ss.package && !ss.signed) aggregateShares(ss);
+  if (!signable(ss, fvk)) return;
+  if (!ss.package && isProposer(ss)) buildPackage(ss, fvk, parts.commits);
+  if (ss.package) signMyShares(ss, fvk, parts.shares);
+  if (ss.package && !ss.signed) aggregateShares(ss, parts.shares);
 }
+
+// The engine takes only strings. A document with another type would crash it.
+const readable = (ss, fvk) => isStr(ss.pczt) && isStr(fvk)
+  && (ss.package == null || isStr(ss.package));
+const signable = (ss, fvk) => readable(ss, fvk) && !ss.error && !expired(ss);
+
+// A payment of the open wallet that this browser must act on also when its drawer is closed: a
+// proposal of a seat here that waits for its package, or a package that a seat here proposed or
+// approved and that is not signed yet (a seat here signs, or this browser combines the shares).
+// The cheap tests come first: `expired` asks the engine.
+export function needsWork(ss) {
+  if (ss.error || ss.signed || !isStr(ss.pczt)) return false;
+  const mine = ss.package ? isProposer(ss) || approvedHere(ss) : isProposer(ss);
+  return mine && !expired(ss);
+}
+// ponytail: at most WATCH_MAX payments at once, those with a package first, then the newest.
+// More wait until the older ones end or expire.
+const WATCH_MAX = 8;
+/** The payments of `list` that this browser watches (M5). */
+export const toWatch = (list) => list.filter(needsWork)
+  .sort((a, b) => Number(!!b.package) - Number(!!a.package)).slice(0, WATCH_MAX);
+
+// An approval of a seat here: its mark, or its nonce (an approval from before the marks).
+const approvedHere = (ss) => !!markOf(state.gid, ss.id).approved
+  || mySeatSecrets(state.gid).some(([, s]) => !!(s.nonces || {})[ss.id]);
+
+// Every change of the nonces of this browser (an approval, a share, a cancel) runs under one
+// lock, and first takes what storage holds now. The secrets are saved as one record, so two tabs
+// that change it at once would undo each other's change and could bring a burned nonce back.
+// ponytail: the other writes of the record (a backup, a room, the account, Solana) take no lock,
+// so one of them can still bring a nonce back; ZEC-12 writes only `nonces[<payment>]`.
+const withSecrets = (fn) => exclusive("secrets", async () => { await takeStored(); return fn(); });
 
 const sessionPath = (ss, gid = state.gid) => "groups/" + gid + "/sessions/" + ss.id;
 // In a version 3 wallet the proposer is the seat in `by`. Before, it is the identity in
@@ -49,13 +81,18 @@ async function packageStands(gid, sid, d) {
   return (await partNow(gid, part)) !== "no";
 }
 
+// A step of a payment whose drawer is not open names that payment in its error.
+const step = (key, ss, fn) => once(key, () => fn().catch((e) => {
+  throw ss.id === state.sid ? e : new Error(payTitle(ss) + ": " + said(e));
+}));
+
 // Coordinator: once t approvals are in, build the signing package.
-function buildPackage(ss, fvk) {
+function buildPackage(ss, fvk, commits) {
   const gid = state.gid, t = state.g.t;
-  const ids = Object.keys(state.commits).map(Number).sort((a, b) => a - b).slice(0, t);
+  const ids = Object.keys(commits).map(Number).sort((a, b) => a - b).slice(0, t);
   if (ids.length < t) return;
-  once("pkg:" + ss.id, async () => {
-    const c = {}; for (const i of ids) c[i] = state.commits[i].commitments;
+  step("pkg:" + ss.id, ss, async () => {
+    const c = {}; for (const i of ids) c[i] = commits[i].commitments;
     const pkg = Z.signPackage(ss.pczt, fvk, S(c), t);
     // Two browsers can hold the same seat (a restored copy): only one writes the package.
     const ref = sdb.doc(sessionPath(ss, gid));
@@ -70,23 +107,39 @@ function buildPackage(ss, fvk) {
 }
 
 // Signer: once the package names a seat of this browser, re-verify everything and sign.
-function signMyShares(ss, fvk) {
+function signMyShares(ss, fvk, shares) {
+  const gid = state.gid;
   for (const i of localSeats()) {
-    const n = (sec(state.gid, i).nonces || {})[ss.id];
-    if (canWriteAs(i) && signersOf(ss).includes(i) && n && !state.shares[i]) {
-      once("share:" + ss.id + ":" + i, () => signShare(ss, fvk, i, n));
+    const n = (sec(gid, i).nonces || {})[ss.id];
+    if (canWriteAs(i) && signersOf(ss).includes(i) && n && !shares[i]) {
+      step("share:" + ss.id + ":" + i, ss, () => signShare(ss, fvk, i, gid));
     }
   }
 }
 
-async function signShare(ss, fvk, i, n) {
-  const gid = state.gid, s = sec(gid, i);
+// Inside the lock the nonce comes from storage: a nonce that another tab used signs nothing. The
+// step keeps its wallet: when the person opened another one meanwhile, it stops. The network
+// write comes after the lock, so a server that does not answer holds no other step.
+function signShare(ss, fvk, i, gid) {
+  return withSecrets(async () => {
+    if (state.gid !== gid) return null;
+    const n = (sec(gid, i)?.nonces || {})[ss.id];
+    if (!n) {
+      log("seat " + i + ": its nonce for this payment is used or gone, so it signs nothing");
+      return null;
+    }
+    return signShareNow(ss, fvk, i, n, gid);
+  }).then((out) => out && sendShare(ss, gid, i, out));
+}
+
+// Signs and saves the burn. Returns the share to send, or `{ changed: true }`.
+async function signShareNow(ss, fvk, i, n, gid) {
+  const s = sec(gid, i);
   const nonces = { ...(s.nonces || {}) }; delete nonces[ss.id];
   const ins = inspectOf(ss);
   if (!n.sighash || !ins || ins.error || ins.sighash !== n.sighash) {
     await putSec(gid, i, { nonces });
-    await failSession(gid, ss, "The payment changed after a signer approved it.");
-    throw new Error("This payment changed after you approved it, so this browser did not sign it.");
+    return { changed: true };
   }
   // The engine checks the approved sighash again before it signs.
   const shares = Z.signShare(ss.pczt, fvk, ss.package, S(n), S(s.keyPackage), i);
@@ -96,16 +149,24 @@ async function signShare(ss, fvk, i, n) {
   if (!(await putSec(gid, i, { nonces }))) {
     throw new Error("Could not save the used nonce, so the signature share was not sent.");
   }
-  await sdb.doc("groups/" + gid + "/" + rel).set(doc);
+  return { rel, doc };
+}
+
+async function sendShare(ss, gid, i, out) {
+  if (out.changed) {
+    await failSession(gid, ss, "The payment changed after a signer approved it.");
+    throw new Error("This payment changed after you approved it, so this browser did not sign it.");
+  }
+  await sdb.doc("groups/" + gid + "/" + out.rel).set(out.doc);
   log("seat " + i + ": signature share sent");
 }
 
 // Any participant: aggregate. The result is deterministic, so a race is harmless.
-function aggregateShares(ss) {
+function aggregateShares(ss, shares) {
   const gid = state.gid;
-  if (!localSeats().length || !mayAct() || !signersOf(ss).every((i) => state.shares[i])) return;
-  once("agg:" + ss.id, async () => {
-    const sh = {}; for (const i of signersOf(ss)) sh[i] = J(state.shares[i].shares);
+  if (!localSeats().length || !mayAct() || !signersOf(ss).every((i) => shares[i])) return;
+  step("agg:" + ss.id, ss, async () => {
+    const sh = {}; for (const i of signersOf(ss)) sh[i] = J(shares[i].shares);
     const ref = sdb.doc(sessionPath(ss, gid));
     let r;
     try { r = J(Z.signAggregate(ss.pczt, state.done[1].publicKeyPackage, ss.package, S(sh))); }
@@ -240,8 +301,19 @@ async function approveNow(ss, i) {
   // The engine refuses an expired payment. It checks against the chain height now, because the
   // last sync can be minutes old.
   const tip = await freshTip();
-  // Another tab can save the secrets of this seat during the waits. Read them after each wait, so
-  // that a write here neither brings back a burned nonce nor drops a new one.
+  // Under the lock of the secrets: a write here neither brings back a burned nonce nor drops a
+  // new one of another tab.
+  const doc = await withSecrets(() => commitNow(ss, i, ins, tip, gid));
+  const rel = "sessions/" + ss.id + "/commits/" + i;
+  await keep(gid, ss.id, ss.pczt);
+  await sdb.doc("groups/" + gid + "/" + rel).set(doc);
+  log("seat " + i + ": approved the spend, nonce commitment published");
+  showBanner("ok", "Approved" + (localSeats().length > 1 ? " as seat " + i : "") + ".");
+}
+
+// Makes and saves the nonces of the approval of seat `i`. Returns the commitment document.
+async function commitNow(ss, i, ins, tip, gid) {
+  if (state.gid !== gid) throw new Error("Another wallet is open now. Open this one and approve.");
   if ((sec(gid, i).nonces || {})[ss.id]) throw new Error("This seat already approved this payment.");
   const late = markRefusal(ss, i, ins);
   if (late) throw new Error(late);
@@ -257,10 +329,7 @@ async function approveNow(ss, i) {
   if (!(await putSec(gid, i, { nonces, marks }))) {
     throw new Error("Could not save the approval in this browser, so it was not sent.");
   }
-  await keep(gid, ss.id, ss.pczt);
-  await sdb.doc("groups/" + gid + "/" + rel).set(doc);
-  log("seat " + i + ": approved the spend, nonce commitment published");
-  showBanner("ok", "Approved" + (localSeats().length > 1 ? " as seat " + i : "") + ".");
+  return doc;
 }
 
 // The chain height now, from the open wallet's light-wallet server, else from the other servers
@@ -294,12 +363,14 @@ export async function cancelPayment(ss) {
   await sdb.doc(sessionPath(ss, gid)).update({
     ...fields, status: "cancelled", cancelledAt: Date.now(), ...sig,
   });
-  for (const [i, s] of mySeatSecrets(gid)) {
-    const nonces = { ...(s.nonces || {}) };
-    if (!nonces[ss.id]) continue;
-    delete nonces[ss.id];
-    await putSec(gid, i, { nonces });
-  }
+  await withSecrets(async () => {
+    for (const [i, s] of mySeatSecrets(gid)) {
+      const nonces = { ...(s.nonces || {}) };
+      if (!nonces[ss.id]) continue;
+      delete nonces[ss.id];
+      await putSec(gid, i, { nonces });
+    }
+  });
   showBanner("ok", "Payment cancelled.");
 }
 

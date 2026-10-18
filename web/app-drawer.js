@@ -296,6 +296,23 @@ const approverChips = () => el("div", {
 }, seatIds().map((i) => el("span", { class: "approver" + (state.commits[i] ? " yes" : "") },
   avatar(i), el("span", { class: "small" }, named(i) + (state.commits[i] ? " ✓" : "")))));
 
+// What the signature step waits for. Each browser does its step while this wallet is open there,
+// with the payment open or not.
+const WHERE = " while this wallet is open there.";
+function signatureText(ss, approvals, shared) {
+  const t = state.g.t, signers = signersOf(ss);
+  if (ss.error) return ss.error;
+  if (ss.signed) return "All signatures combined and verified.";
+  if (!ss.package) {
+    return approvals < t ? "Starts after " + t + " approvals."
+      : "Waiting for the proposer's browser to build the signing package. It does this" + WHERE;
+  }
+  const waiting = signers.filter((i) => !state.shares[i]).map(named);
+  const next = waiting.length ? "Waiting for " + waiting.join(", ") + ": each browser signs"
+    : "A signer's browser combines the shares";
+  return "Signing · " + shared + " of " + signers.length + " shares. " + next + WHERE;
+}
+
 function timeline(ss, refused) {
   const g = state.g, approvals = Object.keys(state.commits).length;
   const signers = signersOf(ss), shared = signers.filter((i) => state.shares[i]).length;
@@ -305,7 +322,7 @@ function timeline(ss, refused) {
     tl(approvals >= g.t ? "done" : refused ? "bad" : "now", "Approvals · " + Math.min(approvals, g.t) + " of " + g.t + " needed",
       approverChips()),
     tl(ss.error ? "bad" : ss.signed ? "done" : ss.package ? "now" : "", "Combined signature",
-      el("p", {}, ss.error ? ss.error : ss.signed ? "All signatures combined and verified." : ss.package ? "Signing · " + shared + " of " + signers.length + " shares" : "Starts after " + g.t + " approvals.")),
+      el("p", {}, signatureText(ss, approvals, shared))),
     tl(ss.final ? "done" : ss.status === "proving" ? "now" : "", "Proof",
       el("p", {}, ss.final ? "Proof built and the whole transaction checked." : ss.status === "proving" && !proofStalled(ss) ? "A signer's browser is building the proof · " + elapsed(ss.provingAt) + " of about a minute." : "Any signer can build the zero-knowledge proof once the payment is signed.")),
     tl(ss.broadcastTxid ? "done" : ss.broadcastError ? "bad" : ss.final ? "now" : "", "Sent to the network",

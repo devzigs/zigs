@@ -302,6 +302,306 @@ const sealed = (gid, rel, seat, fields, key, names = ["by", "sig"]) =>
   assert.deepEqual([live().broadcastTxid, data.get(path3).sentBy >= 1], ["T1", true]);
   assert.equal(t.state.ignored, 0, "nothing of an honest wallet is ignored");
 
+  // M5: the signing steps run with no payment open. The proposer's browser builds the package
+  // from the approvals, each seat signs its share and the shares are combined, from the watch
+  // alone. Then the drawer is open on another payment, and the watch goes on.
+  {
+    const m5Spend = { ...spend, pczt: "M5P" }, engine = [];
+    t.setChain({ gid, url: "https://lwd.test", bal: { spendable: 1e8, pending: 0, height: 4500000 },
+      balAt: Date.now(), received: [], sent: new Set(),
+      cw: { createSpend: async () => JSON.stringify(m5Spend), free() {} } });
+    t.setZ({ ...fakeZ, latestHeight: async () => 4500001,
+      inspect: () => JSON.stringify({ sighash: "aa", txid: "tm5", tx_version: "V6", spends: [],
+        lines: [], fee: 10000, standard_fee: 10000, expiry_height: 4503456 }),
+      signPackage: () => { engine.push("package"); return "PKG5"; },
+      signShare: (pczt, fvk, pkg, n, kp, i) => { engine.push("share " + i); return "[1]"; },
+      signCommit: () => {
+        engine.push("commit");
+        return JSON.stringify({ nonces: ["n"], commitments: ["c"] });
+      },
+      signAggregate: () => {
+        engine.push("combine");
+        return JSON.stringify({ signed_pczt: "SIG5", signatures: [] });
+      } });
+    t.closeSession();
+    const listeners = subs.length;
+    const approveAs = async (sid, seats) => {
+      for (const i of seats) {
+        const rel = `sessions/${sid}/commits/${i}`;
+        const nonces = { ...t.sec(gid, i).nonces, [sid]: { nonces: "n" + i, sighash: "aa" } };
+        await t.putSec(gid, i, { nonces });
+        const doc = await t.signedDoc(gid, rel, i, { commitments: "c", at: 1 });
+        data.set(`groups/${gid}/${rel}`, doc);
+      }
+    };
+    const m5 = await propose("m5", 4);
+    // Closing the drawer reacts on nothing: the open payment is watched already (QA H1).
+    assert.equal(t.watched.has(m5.id), true, "the open payment is watched");
+    t.closeSession();
+    assert.equal(t.watched.has(m5.id), true, "and stays watched when its drawer closes");
+    const path5 = `groups/${gid}/sessions/${m5.id}`;
+    await approveAs(m5.id, [2, 3]);
+    // A made-up approval of seat 1 (no signature) is no approval for the watch either.
+    data.set(`${path5}/commits/1`, { commitments: "forged", at: 1 });
+    notify();
+    await waitFor("the package", () => data.get(path5)?.package === "PKG5");
+    assert.deepEqual(data.get(path5).signers, [2, 3], "the package names the signed approvals");
+    assert.equal(t.state.sid, null, "no payment is open");
+    await waitFor("the first share", () => engine.includes("share 2"));
+    t.openSession(third.id);
+    const both = () => data.has(path5 + "/shares/2") && data.has(path5 + "/shares/3");
+    await waitFor("both shares", both);
+    await waitFor("combined", () => data.get(path5)?.signed === "SIG5");
+    assert.deepEqual(engine, ["package", "share 2", "share 3", "combine"]);
+    assert.equal(t.state.sid, third.id, "the drawer stays on the other payment");
+    t.closeSession();
+    await waitFor("no watch", () => !t.watched.has(m5.id));
+    assert.equal(subs.length, listeners, "the listeners of the watch end with it");
+    const drop = async (path) => {
+      for (const k of [...data.keys()]) if (k.startsWith(path)) data.delete(k);
+      notify();
+      await waitFor("three payments", () => t.state.sessions.length === 3 && !t.state.pending);
+    };
+    await drop(path5);
+    // Another tab of this browser signs for seat 1: it holds the lock of the secrets, and it saves
+    // its burn before it lets go. This tab waits, takes what storage holds, and signs nothing for
+    // seat 1 (QA M1). Seat 2 signs after the lock.
+    engine.length = 0;
+    let unlock;
+    const otherTab = t.exclusive("secrets", () => new Promise((ok) => { unlock = ok; }));
+    const m6 = await propose("m6", 4);
+    t.closeSession();
+    const path6 = `groups/${gid}/sessions/${m6.id}`;
+    await approveAs(m6.id, [1, 2]);
+    notify();
+    await waitFor("the package of m6", () => data.get(path6)?.package === "PKG5");
+    await sleep(200);
+    assert.deepEqual(engine, ["package"], "no share while the other tab holds the lock");
+    const kept = JSON.parse(storage.get("zf-secrets"));
+    delete kept[gid + ":1"].nonces[m6.id];
+    storage.set("zf-secrets", JSON.stringify(kept));
+    unlock();
+    await otherTab;
+    await waitFor("the share of seat 2", () => data.has(path6 + "/shares/2"));
+    await sleep(300);
+    assert.equal(data.has(path6 + "/shares/1"), false, "the used nonce signs nothing");
+    assert.deepEqual(engine, ["package", "share 2"]);
+    assert.equal((t.sec(gid, 1).nonces || {})[m6.id], undefined, "and leaves this tab too");
+    await drop(path6);
+    // A seat whose share the payment holds already does not sign again.
+    const m7 = { id: "m7", pczt: "M5P", package: "PKG7", signers: [1], status: "signing", by: 1,
+      createdAt: 1 };
+    await t.putSec(gid, 1, { nonces: { ...t.sec(gid, 1).nonces, m7: { sighash: "aa" } } });
+    t.reactSession(m7, { commits: {}, shares: { 1: { shares: "[1]" } } });
+    assert.equal(t.busy.has("share:m7:1"), false, "the share is there");
+    // The person opens another wallet while the step waits for the lock: it signs nothing.
+    let unlock7;
+    const held7 = t.exclusive("secrets", () => new Promise((ok) => { unlock7 = ok; }));
+    t.reactSession(m7, { commits: {}, shares: {} });
+    assert.equal(t.busy.has("share:m7:1"), true, "control: without it, seat 1 would sign");
+    t.state.gid = B;
+    unlock7();
+    await held7;
+    await waitFor("the step ends", () => !t.busy.has("share:m7:1"));
+    t.state.gid = gid;
+    assert.equal(engine.includes("share 1"), false, "no share for another wallet");
+    for (const k of [...data.keys()]) if (k.includes("/sessions/m7/")) data.delete(k);
+    // An approval and a cancel wait for the lock of the secrets, and a share write that does not
+    // end holds no lock.
+    const holdLock = () => {
+      let open;
+      const done = t.exclusive("secrets", () => new Promise((ok) => { open = ok; }));
+      return () => { open(); return done; };
+    };
+    engine.length = 0;
+    const m8 = await propose("m8", 4);
+    t.closeSession();
+    const path8 = `groups/${gid}/sessions/${m8.id}`;
+    const live8 = () => t.state.sessions.find((x) => x.id === m8.id);
+    let unhold = holdLock();
+    const approving = t.approve(live8(), 2);
+    await sleep(200);
+    assert.deepEqual(engine, [], "the approval waits for the lock");
+    await unhold();
+    await approving;
+    assert.deepEqual(engine, ["commit"]);
+    // The person opens another wallet while the approval waits for the lock: it stops.
+    unhold = holdLock();
+    const approving3 = t.approve(live8(), 3).then(() => "approved", (e) => e.message);
+    t.state.gid = B;
+    await unhold();
+    assert.match(await approving3, /Another wallet is open now/);
+    t.state.gid = gid;
+    assert.deepEqual(engine, ["commit"], "no approval for another wallet");
+    unhold = holdLock();
+    const cancelling = t.cancelPayment(live8());
+    await sleep(200);
+    assert.ok((t.sec(gid, 2).nonces || {})[m8.id], "the cancel waits for the lock");
+    await unhold();
+    await cancelling;
+    assert.equal((t.sec(gid, 2).nonces || {})[m8.id], undefined);
+    await drop(path8);
+    let openShares;
+    const shareGate = new Promise((ok) => { openShares = ok; });
+    t.setDb({ doc: (p) => p.includes("/shares/")
+      ? { ...docRef(p), set: (v) => shareGate.then(() => docRef(p).set(v)) } : docRef(p),
+    collection: colRef });
+    const m9 = await propose("m9", 4);
+    t.closeSession();
+    const path9 = `groups/${gid}/sessions/${m9.id}`;
+    await approveAs(m9.id, [1, 2]);
+    notify();
+    const signed9 = () => engine.filter((x) => x.startsWith("share")).length === 2;
+    await waitFor("the shares are signed", signed9);
+    assert.equal(await Promise.race([t.exclusive("secrets", async () => "free"),
+      sleep(500).then(() => "held")]), "free", "no lock while the share write waits");
+    openShares();
+    await waitFor("the shares of m9", () => data.has(path9 + "/shares/2"));
+    t.setDb({ doc: docRef, collection: colRef });
+    await drop(path9);
+    // A save that fails keeps its change in this tab, and a locked step keeps it too: of the stored
+    // record, only the nonces and marks come in. A wallet key that only storage holds (a new
+    // wallet of another tab) stays in storage, and one from the save of another tab comes in.
+    const mx = await propose("mx", 4);
+    t.closeSession();
+    const pathX = `groups/${gid}/sessions/${mx.id}`;
+    await approveAs(mx.id, [1, 2]);
+    storage.set("zf-vault", "{}");   // the plain save refuses
+    assert.equal(await t.putSec(gid, 3, { m5Flag: 2 }), false, "the save fails");
+    storage.delete("zf-vault");
+    const storedX = JSON.parse(storage.get("zf-secrets")), seat3 = storedX[gid + ":3"];
+    seat3.marks = { ...seat3.marks, m5x: { seen: 1 } };   // a mark that another tab saved
+    storage.set("zf-secrets", JSON.stringify(storedX));
+    const keysX = JSON.parse(storage.get("zf-keys"));
+    storage.set("zf-keys", JSON.stringify({ ...keysX, m5other: "k" }));
+    notify();
+    await waitFor("the shares of mx", () => data.has(pathX + "/shares/2"));
+    await sleep(300);
+    assert.equal(t.sec(gid, 3).m5Flag, 2, "the unsaved change stays in this tab");
+    assert.equal(JSON.parse(storage.get("zf-secrets"))[gid + ":3"].m5Flag, 2, "the burn saves it");
+    assert.deepEqual(t.sec(gid, 3).marks.m5x, { seen: 1 }, "a mark of another tab comes in");
+    assert.equal(JSON.parse(storage.get("zf-keys")).m5other, "k", "the key of the other tab stays");
+    await t.takeFromTab("zf-keys", JSON.stringify({ m5tab: "k" }));
+    assert.deepEqual([t.gkeys.m5tab, t.gkeys[gid] === keysX[gid]], ["k", true], "both keep");
+    delete t.gkeys.m5other; delete t.gkeys.m5tab;
+    const { m5x: _m5x, ...marks3 } = t.sec(gid, 3).marks;
+    await t.putSec(gid, 3, { m5Flag: undefined, marks: marks3 });
+    await drop(pathX);
+    // A payment that changed after an approval fails for everyone, and the nonce goes. With the
+    // drawer on another payment, the banner names the payment that changed.
+    const mc = await propose("mc", 4);
+    t.closeSession();
+    const pathC = `groups/${gid}/sessions/${mc.id}`;
+    await approveAs(mc.id, [1, 2]);
+    await t.putSec(gid, 1, { nonces: { ...t.sec(gid, 1).nonces, [mc.id]: { sighash: "bb" } } });
+    t.openSession(third.id);
+    notify();
+    await waitFor("the error of mc", () => !!data.get(pathC)?.error);
+    await sleep(300);
+    assert.equal(data.get(pathC).error, "The payment changed after a signer approved it.");
+    assert.equal((t.sec(gid, 1).nonces || {})[mc.id], undefined, "the nonce of seat 1 goes");
+    assert.equal(data.has(pathC + "/shares/1"), false, "seat 1 signs nothing");
+    assert.equal(t.banner.text,
+      "mc: This payment changed after you approved it, so this browser did not sign it.");
+    t.closeSession();
+    await drop(pathC);
+    // With its drawer open, the payment needs no name.
+    const md = await propose("md", 4);
+    assert.equal(t.state.sid, md.id, "the drawer is on md");
+    const pathD = `groups/${gid}/sessions/${md.id}`;
+    await approveAs(md.id, [1, 2]);
+    await t.putSec(gid, 1, { nonces: { ...t.sec(gid, 1).nonces, [md.id]: { sighash: "bb" } } });
+    notify();
+    await waitFor("the error of md", () => !!data.get(pathD)?.error);
+    await sleep(300);
+    assert.equal(t.banner.text,
+      "This payment changed after you approved it, so this browser did not sign it.");
+    t.closeSession();
+    await drop(pathD);
+    // A sealed store (the passkey lock): a nonce that the sealed record lacks signs nothing and
+    // says so in the log. A write of this tab during the decrypt is kept.
+    engine.length = 0;
+    const vkey = await crypto.subtle.importKey("raw", crypto.getRandomValues(new Uint8Array(32)),
+      "AES-GCM", false, ["encrypt", "decrypt"]);
+    const vrec = { cred: "c", salt: "s" };
+    t.setVault({ rec: vrec, key: vkey });
+    const mv = await propose("mv", 4);
+    t.closeSession();
+    const pathV = `groups/${gid}/sessions/${mv.id}`;
+    await approveAs(mv.id, [1, 2]);
+    await sleep(100);
+    const sealed = await openVault(vkey, JSON.parse(storage.get("zf-vault")));
+    delete sealed.secrets[gid + ":1"].nonces[mv.id];
+    sealed.keys = { ...sealed.keys, m5sealed: "k" };   // a new wallet of another tab
+    storage.set("zf-vault", JSON.stringify(await seal(vkey, vrec, sealed)));
+    const keysBefore = t.gkeys;
+    t.gkeys = { ...keysBefore, m5probe: "kept" };   // only this tab knows it
+    t.sec(gid, 3).m5Flag = 3;   // a change that this tab did not save
+    notify();
+    await waitFor("the share of seat 2 (sealed)", () => data.has(pathV + "/shares/2"));
+    await sleep(300);
+    assert.deepEqual(engine, ["package", "share 2"], "seat 1 signs nothing");
+    const said = (x) => x.includes("seat 1: its nonce for this payment is used or gone");
+    assert.ok(t.state.log.some(said), "the log says why");
+    assert.deepEqual([t.gkeys.m5probe, t.gkeys.m5sealed], ["kept", "k"], "both wallet keys");
+    assert.equal(t.sec(gid, 3).m5Flag, 3, "the change that this tab did not save stays");
+    t.gkeys = keysBefore;
+    await drop(pathV);
+    const mw = await propose("mw", 4);
+    t.closeSession();
+    const pathW = `groups/${gid}/sessions/${mw.id}`;
+    await approveAs(mw.id, [1, 2]);
+    await sleep(100);
+    const subtle = globalThis.crypto.subtle, decrypt = subtle.decrypt.bind(subtle);
+    let wrote = false;
+    subtle.decrypt = (...a) => {
+      if (!wrote) { wrote = true; t.putSec(gid, 3, { m5Flag: 1 }); }
+      return decrypt(...a);
+    };
+    notify();
+    await waitFor("the shares of mw", () => data.has(pathW + "/shares/2"));
+    await sleep(300);
+    delete subtle.decrypt;
+    assert.equal(wrote, true);
+    assert.equal(t.sec(gid, 3).m5Flag, 1, "a write during the decrypt stays in memory");
+    const after = await openVault(vkey, JSON.parse(storage.get("zf-vault")));
+    assert.equal(after.secrets[gid + ":3"].m5Flag, 1, "and in the sealed record");
+    await drop(pathW);
+    // A sealed record that does not open stops an approval, with a message that says what to do.
+    const mz = await propose("mz", 4);
+    t.closeSession();
+    storage.set("zf-vault", "{\"v\":1,\"junk\":true}");
+    const liveZ = t.state.sessions.find((x) => x.id === mz.id);
+    assert.equal(await t.approve(liveZ, 3).then(() => "approved", (e) => e.message),
+      "The locked keys in this browser cannot be read again. Reload the page.");
+    storage.delete("zf-vault");
+    t.setVault(null);
+    await t.putSec(gid, 3, { m5Flag: undefined });
+    await drop(`groups/${gid}/sessions/${mz.id}`);
+    // Which payments the watch takes: a proposal of a seat here, a package that a seat here
+    // approved (its mark, or the nonce of an approval from before the marks), not one with an
+    // error or past its expiry. Payments with a package come first, at most 8.
+    const far = (id, extra) => ({ id, pczt: "M5P", status: "collecting", createdAt: 1, ...extra });
+    const others = { by: 99, package: "P" };
+    const mark2 = { approved: "aa", tip: 4500001 };
+    await t.putSec(gid, 2, { marks: { ...t.sec(gid, 2).marks, w2: mark2 },
+      nonces: { ...t.sec(gid, 2).nonces, w3: { sighash: "aa" } } });
+    assert.deepEqual([far("w1", { by: 1 }), far("w2", others), far("w3", others),
+      far("w4", others), far("w5", { by: 1, error: "Failed." })].map((x) => t.needsWork(x)),
+    [true, true, true, false, false], "proposer; mark; old nonce; neither; failed");
+    t.setChain({ gid, url: "https://lwd.test", bal: { spendable: 1e8, pending: 0, height: 4503500 },
+      balAt: Date.now(), received: [], sent: new Set(), cw: { free() {} } });
+    assert.equal(t.needsWork(far("w1", { by: 1 })), false, "past its expiry");
+    t.setChain({ gid, url: "https://lwd.test", bal: { spendable: 1e8, pending: 0, height: 4500000 },
+      balAt: Date.now(), received: [], sent: new Set(), cw: { free() {} } });
+    const bare = Array.from({ length: 9 }, (_, k) => far("v" + k, { by: 1 }));
+    const picked = t.toWatch([...bare, far("vp", { by: 1, package: "P" })]).map((x) => x.id);
+    assert.deepEqual([picked.length, picked[0], picked.includes("v8")], [8, "vp", false],
+      "at most 8, a package first, then the newest");
+    t.setZ({ ...fakeZ, ChainWallet: Sent });
+    t.setChain({ gid, bal: {}, sent: new Set(), syncing: true, cw: null });
+  }
+
   // A holder of the link: made-up results on the cancelled payment, a seat 4, n = 7, a new name.
   const p1 = `groups/${gid}/sessions/${first.id}`;
   const madeUp = { signed: "x", final: { txid: "t" }, broadcastTxid: "t", broadcastAt: 1 };
@@ -446,6 +746,7 @@ const sealed = (gid, rel, seat, fields, key, names = ["by", "sig"]) =>
   const click1 = t.approve(lateOne(), seat), click2 = t.approve(lateOne(), seat);
   await click2;
   t.secrets = { ...t.secrets, [slot]: { ...t.secrets[slot], nonces: { other: { sighash: "11" } } } };
+  storage.set("zf-secrets", JSON.stringify(t.secrets));   // the other tab saved it
   release();
   await click1;
   const kept = t.sec(t.state.gid, seat).nonces;
@@ -1618,6 +1919,18 @@ const sealed = (gid, rel, seat, fields, key, names = ["by", "sig"]) =>
       await quiet(() => sleep(20));
       assert.equal(t.heldApprovals().includes("h12"), false,
         "its expiry frees it in the same sync");
+      // M5: the drawer says what the signature step waits for.
+      const enough = Object.fromEntries(t.seatIds().slice(0, t.state.g.t).map((i) => [i, {}]));
+      const drawn = (ss, shares) => {
+        Object.assign(t.state, { commits: enough, shares });
+        return textOf(t.sessionLayer(ss));
+      };
+      assert.match(drawn(open("w5", "PA"), {}),
+        /Waiting for the proposer's browser to build the signing package/);
+      const w5 = { ...open("w5", "PA"), package: "PK", signers: [me, other], status: "signing" };
+      assert.match(drawn(w5, { [me]: {} }),
+        /Signing · 1 of 2 shares\. Waiting for [^:,]+: each browser signs while this wallet/);
+      Object.assign(t.state, { commits: {}, shares: {} });
       const mine = new Set(["za", "zh", "zs", "zp", "zw", "zf", "zn", "zx", "zl", "zm", "zr", "zq",
         "zv", "zy", "zu", "zt", "zk", "zj", "zg", "zz", "zal", "zho", "zc1", "zc2", "h1", "h4",
         "h5", "h5b", "h7", "h10"]);
