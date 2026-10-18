@@ -231,9 +231,14 @@ const sealed = (gid, rel, seat, fields, key, names = ["by", "sig"]) =>
     onSnapshot: (cb) => listen(() => cb({ docs: under(p).map((k) => ({
       id: k.split("/").pop(), data: () => data.get(k) })) })),
   });
-  // No network: the chain height is fixed, the sync fails, the proof is a fixed answer.
+  // No network: the chain height is fixed, the sync fails, the proof is a fixed answer. Until the
+  // wallet is made, the server answers one height, then stops answering: the birthday is the
+  // answer to the server check, so making the wallet never waits for a second one.
   class Offline { constructor() { throw new Error("offline"); } }
-  const fakeZ = { ...Z, latestHeight: async () => 1000, ChainWallet: Offline,
+  let heights = 0, letHeights;
+  const heldHeight = new Promise((r) => { letHeights = () => r(1000); });
+  const fakeZ = { ...Z, latestHeight: () => (heights++ ? heldHeight : Promise.resolve(1000)),
+    ChainWallet: Offline,
     finalize: () => JSON.stringify({ tx_hex: "00ff", txid: "T1", size: 2, version: "V5" }) };
   t.secrets = {};
   t.setZ(fakeZ);
@@ -253,6 +258,8 @@ const sealed = (gid, rel, seat, fields, key, names = ["by", "sig"]) =>
   await waitFor("three seats", () => Object.keys(t.state.seats).length === 3);
   assert.deepEqual(t.localSeats(), [1, 2, 3]);
   // This browser holds every seat, so the page runs the whole ceremony by itself.
+  await waitFor("wallet made with one height", () => data.get(`groups/${gid}/meta/wallet`));
+  letHeights();
   await waitFor("wallet checked", () => Object.keys(t.state.verify).length === 3 && t.state.wallet);
   assert.equal(t.state.ignored, 0, "an honest wallet ignores nothing");
   for (const kind of ["confirm", "dkg1", "done", "verify"]) {
@@ -266,6 +273,7 @@ const sealed = (gid, rel, seat, fields, key, names = ["by", "sig"]) =>
   assert.equal(Object.keys(t.state.dkg2).length, 6);
   assert.equal(data.get(`groups/${gid}/meta/wallet`).by, 1);
   assert.equal(t.state.wallet.by, undefined);
+  assert.equal(data.get(`groups/${gid}/meta/wallet`).birthday, 1000, "the height of the check");
 
   // Payments, through the real writers.
   const spend = { pool: "ironwood", amount: 5, change: 1, fee: 10000, note_value: 20, pczt: "AAA" };
@@ -3188,10 +3196,11 @@ const sealed = (gid, rel, seat, fields, key, names = ["by", "sig"]) =>
     t.setZ({ ...Z, fetchTransaction: async (url, hash) => {
       fetched.push(hash);
       if (plan["t" + hash.slice(1)] === "net") throw new Error("no answer");
-      if (mid) mid();
+      if (mid) mid(c);
       return "AAAA";
     } });
     const c = { gid: G, url: "https://lwd.test", cw: wallet(ids, plan), received: [] };
+    t.state.log.length = 0;
     t.setChain(null);   // turning reading on starts a run of the open wallet; there is none yet
     t.setMemoReading(G, on);
     t.setChain(c);
@@ -3220,6 +3229,12 @@ const sealed = (gid, rel, seat, fields, key, names = ["by", "sig"]) =>
   // The signer turns reading off while the first read waits: no further request goes out.
   await run([1, 2, 3], {}, { mid: () => { t.setMemoReading(G, false); } });
   assert.deepEqual([fetched, attached], [["h1"], []], "turning reading off stops the run");
+  // A proposal stalls while the first read waits, so dropStalled clears the server: the run keeps
+  // the memo it read and ends without an "Invalid URL" for each other transaction.
+  const c3 = await run([1, 2, 3], {}, { mid: (at) => { at.url = null; } });
+  assert.deepEqual([fetched, attached, c3.received.length], [["h1"], ["t1"], 1]);
+  const tried = t.state.log.find((l) => /Invalid URL|memo of/.test(l));
+  assert.equal(tried, undefined, "no read goes out without a server");
 }
 
 // ── A reorganisation deeper than the wallet can undo: the saved state goes ──
@@ -3452,7 +3467,16 @@ const sealed = (gid, rel, seat, fields, key, names = ["by", "sig"]) =>
   assert.deepEqual([t.personal, t.acct, [...idbMap.keys()].includes("personal:rec")],
     [null, null, false], "a failed save makes no account");
   idbFail.put = false;
-  await t.createPersonal("testnet");
+  // The server answers the server check, then stops answering until the test lets it: the
+  // birthday is that answer, so Create account does not wait for a second one.
+  let heights = 0, letHeights, accountMade = false;
+  const heldHeight = new Promise((r) => { letHeights = () => r(4500000); });
+  t.setZ({ ...Zp, latestHeight: () => (heights++ ? heldHeight : Promise.resolve(4500000)) });
+  const making = t.createPersonal("testnet").then(() => { accountMade = true; });
+  await waitFor("Create account with one height", () => accountMade, 5000);
+  t.setZ(Zp);
+  letHeights();
+  await making;
   const seed = t.personal.seed, keys = JSON.parse(Z.accountKeys(seed, "testnet"));
   assert.match(seed, /^[0-9a-f]{64}$/);
   assert.deepEqual([t.personal.network, t.personal.birthday, t.personal.contacts,
@@ -3725,6 +3749,112 @@ const sealed = (gid, rel, seat, fields, key, names = ["by", "sig"]) =>
   await runAcctSync();
   delete nav.locks;
   assert.equal(t.messageWhy(), "");
+
+  // The server does not answer a message: it stops after 60 s, so the lock of the send, which the
+  // sends of every tab wait for, comes free. Until a sync connects to the next server, a message
+  // would wait on the same server, so the composer says why and builds nothing. `during` runs
+  // while the engine builds the message.
+  const realTimeout = globalThis.setTimeout, buildMessage = Wallet.prototype.createMessage;
+  const scaleTimers = () => {
+    globalThis.setTimeout = (fn, ms, ...a) => realTimeout(fn, ms >= 60000 ? ms / 600 : ms, ...a);
+  };
+  const silentSend = async (text, during = () => {}) => {
+    let stopped = null;
+    scaleTimers();
+    Wallet.prototype.createMessage = function (to, words) {
+      net.created.push([to, words]);
+      during();
+      return new Promise(() => {});
+    };
+    try {
+      t.sendOnChain(ana, text).catch((e) => { stopped = e; });
+      await waitFor("the silent message stops", () => stopped, 5000);
+    } finally {
+      globalThis.setTimeout = realTimeout;
+      Wallet.prototype.createMessage = buildMessage;
+    }
+    return stopped.message;
+  };
+  let letSync;
+  const syncHeld = new Promise((r) => { letSync = () => r(4500000); });
+  const silentCw = t.acct.cw, freedBefore = net.freed, builtBefore = net.created.length;
+  t.setZ({ ...Zp, latestHeight: () => syncHeld });
+  assert.match(await silentSend("silent"),
+    /^The message got no answer in 60 s, so it stopped. Send it again/);
+  assert.match(t.messageWhy(), /^The light-wallet server stopped answering. Wait until/);
+  await assert.rejects(t.sendOnChain(ana, "too soon"), /stopped answering/, "the lock is free");
+  assert.equal(net.created.length, builtBefore + 1, "nothing is built on the stalled object");
+  assert.equal(t.acct.syncing, true, "a sync on the next server started at once");
+  letSync();
+  await synced();
+  t.setZ(Zp);
+  assert.notEqual(t.acct.cw, silentCw, "the sync made a new wallet object");
+  assert.equal(net.freed, freedBefore, "the engine may still use the stalled object: not freed");
+  assert.equal(t.messageWhy(), "", "the next message can go");
+  // A sync replaced the wallet object while the message waited: the new object is not stalled,
+  // and no sync starts.
+  const liveCw = t.acct.cw, openedBefore = net.opened.length;
+  await silentSend("replaced", () => { t.acct.cw = Object.create(Wallet.prototype); });
+  await waitFor("no sync", () => !t.acct.syncing);
+  assert.deepEqual([t.acct.stalled, t.messageWhy(), net.opened.length], [null, "", openedBefore]);
+  t.acct.cw = liveCw;
+  // Another tab replaced the account while the message waited: the old account gets no sync.
+  await silentSend("account replaced", () => { t.setAcct({ ...t.acct, progress: "" }); });
+  await waitFor("no sync", () => !t.acct.syncing);
+  assert.deepEqual([net.opened.length, net.freed, t.messageWhy()],
+    [openedBefore, freedBefore, ""], "the old account is dropped, the new one sends");
+  // The message stops while a sync of the same object runs: one more sync follows that sync, and
+  // it connects to the next server.
+  const realSync = Wallet.prototype.sync;
+  let letBlocks, inSync = false;
+  const blocksHeld = new Promise((r) => { letBlocks = r; });
+  Wallet.prototype.sync = function () {
+    inSync = true;
+    return blocksHeld.then(() => JSON.stringify(net.bal));
+  };
+  const syncing = runAcctSync();
+  await waitFor("the sync runs", () => inSync);   // its own stall timer is not scaled
+  const duringCw = t.acct.cw;
+  await silentSend("during a sync");
+  assert.match(t.messageWhy(), /stopped answering/);
+  Wallet.prototype.sync = realSync;
+  letBlocks();
+  await syncing;
+  await synced();
+  assert.deepEqual([t.acct.cw !== duringCw, t.messageWhy()], [true, ""], "the next sync connects");
+  // No server answers the sync after the stall: the stalled object still builds nothing.
+  t.setZ({ ...Zp, latestHeight: async () => { throw new Error("down"); } });
+  const downBuilt = net.created.length;
+  await silentSend("both down");
+  await waitFor("the failed sync", () => !t.acct.syncing && t.acct.error);
+  await assert.rejects(t.sendOnChain(ana, "still down"), /stopped answering/);
+  assert.equal(net.created.length, downBuilt + 1, "nothing is built after the failed sync");
+  t.setZ(Zp);
+  await runAcctSync();
+  assert.equal(t.messageWhy(), "", "a sync that connects opens the composer");
+  // A message that the engine builds in time leaves no timer that stalls the account later, and
+  // the limit is not shorter than a slow answer. The signature fails, so no message goes out.
+  const builtIn = async (ms, scale) => {
+    if (scale) scaleTimers();
+    Wallet.prototype.createMessage = async function (to, words) {
+      await sleep(ms);
+      return buildMessage.call(this, to, words);
+    };
+    t.setZ({ ...Zp, accountSign: () => { throw new Error("no signature"); } });
+    const keptCw = t.acct.cw;
+    try {
+      await assert.rejects(t.sendOnChain(ana, "built"), /no signature/);
+      await sleep(150);   // longer than the 60 s limit of a scaled timer
+    } finally {
+      globalThis.setTimeout = realTimeout;
+      Wallet.prototype.createMessage = buildMessage;
+      t.setZ(Zp);
+    }
+    // A late stall would start a sync that makes a new object.
+    assert.deepEqual([t.acct.cw === keptCw, t.acct.stalled, t.messageWhy()], [true, null, ""]);
+  };
+  await builtIn(0, true);
+  await builtIn(700, false);
 
   // The sync follows the saved account. Another tab can leave a record that does not read, or an
   // account with another sync key. Then a send stops with a sentence, and the contact addresses
