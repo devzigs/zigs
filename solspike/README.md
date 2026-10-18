@@ -14,7 +14,7 @@ that made them. Run every command from the root of the repo with Node 24.
 | `harness/` | Headless Chrome with in-memory browser contexts, and the live scenarios |
 | `build.mjs`, `src/`, `stubs/` | Builds `web/sol/zolana.bundle.js` and copies the hasher wasm files. The build rewrites no SDK source: it has no plugin, only module aliases |
 | `tools/` | The leak scan, the mutation check, the process counter and the Devnet tools (fund, read, verify) |
-| `lint.sh` | oxlint (complexity 8, 100 lines per function, 5 parameters), the same limits for Python, and the 100 character line limit |
+| `lint.sh` | oxlint (complexity 8, 100 lines per function, 5 parameters), the same limits for Python, and the 100 character line limit. oxlint is the version of `package-lock.json`. CI runs it (`.github/workflows/lint.yml`) |
 
 ## Files outside the repo
 
@@ -28,10 +28,9 @@ No tool writes a secret into the repo. Keep these files outside the repo.
 | `SOLSPIKE_FUNDER` | The Devnet funder key (a JSON array of 64 bytes) | `tools/fund.mjs`, the leak scan |
 | `SOLSPIKE_KEY_B` | A JSON file with the field `seedHex`: key B, a registered Devnet key | `mock/roles.mjs`, `tools/key-b.mjs` |
 | `SOLSPIKE_INTERIM` | A file for the backup passphrases of the test group of `scenario-f.mjs`, mode 600 | `harness/scenario-f.mjs` |
-| `OXLINT` | An oxlint binary | `lint.sh` |
 
 `tools/node_modules` must link to `node_modules` of the Zolana checkout (it gives `@solana/kit` to
-the Devnet tools). `solspike/node_modules` holds esbuild: run `npm ci` here. `cf/node_modules` holds
+the Devnet tools). `solspike/node_modules` holds esbuild and oxlint: run `npm ci` here. `cf/node_modules` holds
 wrangler: run `npm ci` in `cf/`.
 
 ## The local server
@@ -56,7 +55,7 @@ done
 node --test-timeout=60000 solspike/test/harness.test.mjs
 ZOLANA_REPO=... node solspike/test/build.test.mjs
 ZOLANA_REPO=... SOLSPIKE_KEY_B=... node solspike/mock/run.mjs
-OXLINT=... bash solspike/lint.sh
+bash solspike/lint.sh                            # needs npm ci in solspike
 python3 -I solspike/tools/leak_scan.py           # counts secrets in the repo: needs the files above
 ZOLANA_REPO=... node solspike/tools/mutate.mjs   # every mutant must be killed (long)
 ```
