@@ -870,6 +870,16 @@ assert.deepEqual(
   const moved = "Seat 2 waits: the safety number changed after this browser confirmed it.";
   assert.equal(seatProgress(t.sol.ctl, 2), moved);
   await t.putSec(gidR, 2, { confirmed: null });
+  // The same for a restored seat whose own confirm document holds an older number.
+  const doc2 = data.get(path(gidR, "confirm/2"));
+  const old = await t.signedDoc(gidR, "confirm/2", 2, { number: "00000 00000 00000" });
+  data.set(path(gidR, "confirm/2"), old);
+  rig.notify();
+  await sleep(300);
+  assert.equal(seatProgress(t.sol.ctl, 2), moved, "an old number of its own document: changed");
+  data.set(path(gidR, "confirm/2"), doc2);
+  rig.notify();
+  await sleep(300);
   // Seat 1 says why it cannot add Solana yet.
   const doc1 = data.get(path(gidR, "confirm/1"));
   data.delete(path(gidR, "confirm/1"));
@@ -898,6 +908,32 @@ assert.deepEqual(
   await waitFor("every soldone", () => haveDones(gidL), 30000);
 }
 
+// ── A seat retries round 1 under its own lease ──
+// The lease as the group server keeps it: the same holder renews, another one waits for the end.
+{
+  const gidH = await rig.wallet({ name: "Holder" });
+  const leases = new Map();
+  rig.hook.lease = (p, o) => {
+    const cur = leases.get(p),
+      now = Date.now();
+    if (cur && cur.until > now && cur.holder !== o.holder) return false;
+    leases.set(p, { holder: o.holder, until: now + o.ttlMs });
+    return true;
+  };
+  let failOnce = true;
+  rig.hook.before = (p, v) => {
+    if (!failOnce || !p.endsWith("/soldkg1/2")) return v;
+    failOnce = false;
+    throw new Error("the group server did not answer");
+  };
+  await addSolana();
+  const again = () => data.has(path(gidH, "soldkg1/2"));
+  await waitFor("its own lease does not block the retry of round 1", again, 20000);
+  rig.hook.before = (_p, v) => v;
+  rig.hook.lease = () => true;
+  await waitFor("every soldone", () => haveDones(gidH), 30000);
+}
+
 // ── A round-1 secret that another copy of the seat published differently takes no part ──
 {
   const gidS = await rig.wallet({ name: "Stale" });
@@ -920,6 +956,9 @@ assert.deepEqual(
   await sleep(1500);
   const wrote = [1, 3].some((j) => data.has(path(gidS, "soldkg2/2-" + j)));
   assert.equal(wrote, false, "a stale round-1 secret takes no part");
+  const elsewhere =
+    "Seat 2: another device of this seat runs its Solana setup. This browser takes no part.";
+  assert.equal(seatProgress(t.sol.ctl, 2), elsewhere);
   assert.equal([1, 2, 3].some((i) => solOf(gidS, i).aborted), false, "and nothing stops");
   // A seat of a wallet that is not the open one waits for it.
   const shut = { ...tabState(gid), docs: { solstart: {}, soldkg1: {}, soldkg2: {}, soldone: {} } };

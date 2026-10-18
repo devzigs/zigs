@@ -18,8 +18,12 @@ const randomHex32 = () =>
     b.toString(16).padStart(2, "0"),
   ).join("");
 const boxContext = (gid, from, to) => gid + ":sol:" + from + "->" + to;
-const LEASE_MS = 10000;
-const HOLDER = randomHex32(); // one lease holder per page, so a retry is not blocked by itself
+// The longest lease of the group server: a write of round 1 must stall longer than this to land
+// over the document of another copy of the seat.
+const LEASE_MS = 60000;
+// One lease holder per page, so a retry is not blocked by itself. A copy that cannot save its
+// secret takes a new one, so it cannot renew the lease for ever.
+let holder = randomHex32();
 const pause = () => new Promise((ok) => setTimeout(ok, 3000));
 const stopText = (e) =>
   "Solana setup stopped: " +
@@ -80,7 +84,7 @@ const r2For = (c, to) =>
 const needR1 = (c, i, s) => !c.docs.soldkg1[i] && !s.keyPackage;
 // The verified round 1 of seat i holds the package of this secret. Another copy of the seat can
 // publish its own: then this secret is stale, takes no part and goes (staleR1).
-const ownR1 = (c, i, s) => S(c.docs.soldkg1[i]?.package) === S(s.r1package);
+const ownR1 = (c, i, s) => samePackages([c.docs.soldkg1[i]?.package, s.r1package]);
 const staleR1 = (c, i, s) =>
   !!s.r1secret && !s.keyPackage && !!c.docs.soldkg1[i] && !ownR1(c, i, s);
 const needR2 = (c, i, s) =>
@@ -128,7 +132,7 @@ async function round1(c, i) {
   // Two copies of one seat (a device and a restored copy) must not both publish round 1. A document
   // that fails its signature check does not count, so a seat still publishes one again.
   const ref = host.sdb.doc(base + "/soldkg1/" + i);
-  if (!(await ref.acquire({ holder: HOLDER, ttlMs: LEASE_MS })).acquired) return pause();
+  if (!(await ref.acquire({ holder, ttlMs: LEASE_MS })).acquired) return pause();
   if (c.docs.soldkg1[i]) return pause();
   let s = solOf(host, gid, i);
   if (!s.r1secret) {
@@ -141,6 +145,7 @@ async function round1(c, i) {
     };
     if (!(await putSol(host, gid, i, made))) {
       await putSol(host, gid, i, { r1secret: null, r1package: null, rSol: null, cluster: null });
+      holder = randomHex32();
       throw new Error(SAVE_FAILED);
     }
     s = solOf(host, gid, i);
@@ -154,7 +159,7 @@ async function round1(c, i) {
 
 /** A round-1 secret whose package another copy of the seat did not publish goes. */
 async function dropR1(c, i) {
-  const gone = { r1secret: null, r1package: null, rSol: null, r2secret: null };
+  const gone = { r1secret: null, r1package: null, rSol: null, r2secret: null, otherCopy: true };
   await putSol(c.host, c.gid, i, gone);
   c.host.log("seat " + i + ": another copy of this seat published its Solana round 1");
 }
@@ -374,13 +379,22 @@ function lostSecret(c, i) {
   );
 }
 
+const OTHER_COPY = ": another device of this seat runs its Solana setup. This browser takes no "
+  + "part.";
+
+/** Seat i of this browser published round 1 but holds no secret now: why, or null. */
+function noSecretText(c, i) {
+  if (solOf(c.host, c.gid, i).otherCopy) return "Seat " + i + OTHER_COPY;
+  return lostSecret(c, i) ? "Seat " + i + ": this browser lost its setup secret" : null;
+}
+
 /** The text of the progress of seat i, from the documents in the store. */
 export function seatProgress(c, i) {
   const { docs } = c,
     others = c.host.seatIds().filter((j) => j !== i);
   if (docs.soldone[i]) return "Seat " + i + ": key ready";
-  if (docs.soldkg1[i] && lostSecret(c, i))
-    return "Seat " + i + ": this browser lost its setup secret";
+  const gone = docs.soldkg1[i] ? noSecretText(c, i) : null;
+  if (gone) return gone;
   if (others.some((j) => docs.soldkg2[i + "-" + j])) return "Seat " + i + ": sharing keys";
   if (docs.soldkg1[i]) return "Seat " + i + ": round 1 sent";
   const wait = c.host.localSeats().includes(i) ? waitOf(c.host, c.gid, i) : null;
