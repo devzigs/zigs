@@ -318,6 +318,11 @@ step("propose creates the proposal account first; no screen before the reads of 
   assert.deepEqual([marks("wait"), marks("refusal"), buttons()], [1, 0, 0]);
   c.sessWait -= 1;
   assert.deepEqual([marks("wait"), buttons()], [0, 1], "the button comes back after the check");
+  // A collection that is not loaded yet is a wait too.
+  c.loaded.solsessions = false;
+  assert.equal(reviewOf(c, ssOf(id), 2).waiting, true, "a load of the documents is a wait");
+  assert.deepEqual([marks("wait"), marks("refusal"), buttons()], [1, 0, 0]);
+  c.loaded.solsessions = true;
 }
 step("a device that read no proposal account reads it again, with no click");
 
@@ -988,18 +993,29 @@ step("a create that meets the same body in its account takes it; another body fa
   const kept = { sync: c.sync, sessions: c.sessions };
   const notes = chain.utxos.map(({ hash, amount }) => ({ hash, amount }));
   const line = () => marked("available").map(textOf);
-  const at = new Date(Number(endsAt(held[0].expiry)) * 1000).toISOString().slice(0, 16);
+  // The page ends a payment 600 s after its expiry (the clock margin of execute.js).
+  const at = new Date((Number(held[0].expiry) + 600) * 1000).toISOString().slice(0, 16);
   const end = at.replace("T", " ") + " UTC";
+  assert.equal(endsAt(held[0].expiry), held[0].expiry + 600n, "the margin of the end");
+  const name = `of seat ${ssOf(held[0].id).by} (${held[0].id})`;
   c.sync = { ...kept.sync, lamports: String(note), notes };
-  const two = `All your notes are held by 2 open proposals. The first one (${held[0].id}) ends`;
+  const two = `All your notes are held by 2 open proposals. The one that ends first, ${name}, ends`;
   assert.deepEqual(line(), [`${two} at ${end}. Add SOL or wait.`], "two holders");
   c.sessions = kept.sessions.filter((ss) => ss.id !== held[1].id);
-  const one = `All your notes are held by an open proposal (${held[0].id}). It ends at ${end}.`;
+  const one = `All your notes are held by an open proposal ${name}. It ends at ${end}.`;
   assert.deepEqual(line(), [one + " Add SOL or wait."], "one holder");
   c.sessions = kept.sessions;
-  c.sync = { ...c.sync, lamports: String(note + 1000n) };
+  const extra = { hash: "ee".repeat(32), amount: "1000" };
+  c.sync = { ...c.sync, lamports: String(note + 1000n), notes: [...notes, extra] };
   const free = `Available for a new payment: ${solText(1000n)}. Open proposals hold `;
   assert.deepEqual(line(), [free + solText(note) + " until they execute or end."]);
+  // A sent payment spent its notes: they are not available, also before the next sync.
+  const sentFields = { expiry: 1n, inputs: 1, outputs: 2, recipient: "11".repeat(32), amount: 1n };
+  const intent = intentHex("withdraw", sentFields);
+  const spent = { id: "spent-s4", by: 1, status: "sent", intent, inputIds: [extra.hash] };
+  c.sessions = [...kept.sessions, spent];
+  assert.deepEqual(line(), [`${two} at ${end}. Add SOL or wait.`], "the spent note is gone");
+  c.sessions = kept.sessions;
   c.sync = { ...c.sync, notes: [] };
   assert.deepEqual(line(), [], "no line while no open proposal holds a synced note");
   c.sync = kept.sync;
@@ -1031,6 +1047,10 @@ step("a payment avoids the inputs of an open one, and an executed one ends the o
   const small = { utxos: () => [1, 2, 3, 4, 5, 6, 7].map((n) => note(1n, n)) };
   const seven = () => selectInputs({ SOL_MINT: "SOL" }, small, "T", 7n, new Set(["01"]));
   assert.throws(seven, /needs 7 UTXOs, and no proof takes that many/);
+  // A held note of 70 would pay alone, but the seven free notes of 10 need a proof of 7 inputs.
+  const mixed = { utxos: () => [note(70n, 1), ...[2, 3, 4, 5, 6, 7, 8].map((n) => note(10n, n))] };
+  const seventy = () => selectInputs({ SOL_MINT: "SOL" }, mixed, "T", 70n, new Set(["01"]));
+  assert.throws(seventy, /held by an open proposal: wait until it ends or add SOL/);
   // heldNotes: the open payments only, each note once, synced notes only, the first to end first.
   const utxos = [{ hash: "aa", amount: "100" }, { hash: "bb", amount: "40" }];
   const pay = (id, status, expiry, inputIds) => {

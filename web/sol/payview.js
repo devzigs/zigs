@@ -24,7 +24,7 @@ import { usedDigest } from "./nonces.js";
 import { heldOf, reclaimRent, scanRent } from "./rent.js";
 import { holdsShare, solOf } from "./secrets.js";
 import { solText } from "./session.js";
-import { heldLamports, heldNotes, isPayment } from "./sessions.js";
+import { heldLamports, heldNotes, isPayment, spentLamports } from "./sessions.js";
 
 const SHOWN = 12;
 const FAUCET = "https://faucet.solana.com/";
@@ -248,7 +248,7 @@ function availableLine(c) {
   if (!notes || lamports === undefined) return null;
   const held = heldLamports(c.sessions, notes);
   if (held === 0n) return null;
-  const free = BigInt(lamports) - held;
+  const free = BigInt(lamports) - held - spentLamports(c.sessions, notes);
   const text =
     free > 0n
       ? `Available for a new payment: ${solText(free)}. Open proposals hold ${solText(held)} ` +
@@ -261,10 +261,11 @@ function availableLine(c) {
 function holderText(holders) {
   const [first] = holders;
   const end = utc(endsAt(first.expiry)) + " UTC";
+  const name = `of seat ${first.by} (${first.id})`;
   const who =
     holders.length === 1
-      ? `an open proposal (${first.id}). It ends at ${end}.`
-      : `${holders.length} open proposals. The first one (${first.id}) ends at ${end}.`;
+      ? `an open proposal ${name}. It ends at ${end}.`
+      : `${holders.length} open proposals. The one that ends first, ${name}, ends at ${end}.`;
   return `All your notes are held by ${who} Add SOL or wait.`;
 }
 
@@ -550,7 +551,8 @@ const SEAT_TEXT = {
 };
 
 // A seat that approved, or that signed these exact bytes, gets no approval screen and no button.
-// While the device reads its wallet, no seat gets a button: the review is not on the screen yet.
+// While the review waits (a wallet read, an account read, a check of the documents), no seat gets
+// a button: the review is not on the screen yet.
 function approveRow(c, ss, act, actions, waiting) {
   const { el } = c.host;
   return seatsOf(c, ss).map(({ seat, state }) => {
