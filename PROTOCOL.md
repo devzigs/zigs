@@ -1442,11 +1442,11 @@ only. A mainnet wallet never loads the Solana code.
 The Solana part uses a second key ceremony on the same seats (section 4 does not change), with a
 FROST-Ed25519 group key as the Zolana owner. The Solana documents use their own flat names
 (`solstart`, `soldkg1`, `soldkg2`, `soldone`, `solfee`, `solabort`, `solprove`, `solsessions`) in
-the same store, with the signed writes of section 15. Each seat publishes the public key of its fee key in
-`solfee/<i>`: that key pays the fees and the rents of the proposals of the seat, and the group key
-never pays. The seat derives the key from its own Solana signing share (ZOLANA.md section 5), so
-every copy of the seat holds the same key. A seat writes the document only when no valid document
-shows a key for the seat. The Zcash key, its engine and its wasm file stay as they are.
+the same store, with the signed writes of section 15. Each seat publishes the public key of its fee
+key in `solfee/<i>`: that key pays the fees and the rents of the proposals of the seat, and the
+group key never pays. The seat derives the key from its own Solana signing share (ZOLANA.md section
+5), so every copy of the seat holds the same key. A seat writes the document only when no valid
+document shows a key for the seat. The Zcash key, its engine and its wasm file stay as they are.
 
 | Party | Learns | Does not learn |
 |---|---|---|
