@@ -17,7 +17,7 @@ const ADD_TEXT =
 
 // What is public and what Helius sees (SOL-12). The tab shows it in each state, also while the
 // setup runs: the seats of this browser join the setup with no click.
-const PUBLIC_TEXT =
+export const PUBLIC_TEXT =
   "A deposit shows its sender and amount on chain. A withdrawal shows its recipient and amount. " +
   "A private payment hides its amount, but it shows the owner key of the payee. The program " +
   "address, the group key and the fee address of each seat that pays are public too. Helius " +

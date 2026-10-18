@@ -17,7 +17,7 @@ import {
 import { messagesCard } from "./app-thread.js";
 import { react, render } from "./app-loop.js";
 import { activityLog } from "./app-wallet.js";
-import { SOL_DISCLOSURE, solError, solPlanned, solSetup } from "./app-sol.js";
+import { newWallet, SOL_DISCLOSURE, solError, solOn, solPlanned, solSetup } from "./app-sol.js";
 
 export function setupView() {
   const open = seatIds().filter((i) => !state.seats[i]);
@@ -81,7 +81,8 @@ const NOT_ZIP2005 = "This wallet is not built to ZIP 2005. Funds cannot be recov
 const BOTH_OPEN = "Every signer keeps this wallet open until the Zcash and the Solana parts are "
   + "ready.";
 export const joinText = () => solPlanned()
-  ? "Zigs is a shared wallet for shielded Zcash testnet and for Solana Devnet. Any " + state.g.t
+  ? "Zigs is a shared wallet for Zcash testnet and Solana Devnet. The Zcash part is shielded. Any "
+    + state.g.t
     + " of the " + state.g.n + " signers approve each payment. Take a seat to become a signer. "
     + "Your device creates its own key shares, one for Zcash and one for Solana. They never leave "
     + "this browser unless you save a backup. " + BOTH_OPEN
@@ -105,7 +106,7 @@ function joinCard(seat) {
 
 // The message carries the link, so it is as secret as the link.
 export const inviteMessage = (link) => "I made a shared wallet \"" + state.g.name + "\" on Zigs, a "
-  + (solPlanned() ? "shared wallet for shielded Zcash testnet and Solana Devnet"
+  + (solPlanned() ? "shared wallet for Zcash testnet and Solana Devnet"
     : "private shared wallet for shielded Zcash")
   + ". You are one of " + state.g.n + " signers, and " + state.g.t + " must approve each payment."
   + "\n\n1. Open this link on your phone or computer: " + link + "\n2. Take a seat.\n3. Keep the "
@@ -254,9 +255,12 @@ export function solSteps(first) {
 // reload the balances are unknown until Check balance, so a funded part shows no card then.
 const sawSetup = new Set();
 
-/** True while the Solana part of a wallet with the hint is not ready, not funded, or stopped. */
+/**
+ * True while the Solana part of a wallet with the hint is not ready, not funded, or stopped. A
+ * page with no Solana tab here (no seat, or a module that did not load) shows no card.
+ */
 export function solUnfinished() {
-  if (!solPlanned()) return false;
+  if (!solPlanned() || !solOn() || !localSeats().length || solError) return false;
   const s = solSetup();
   if (s?.status !== "ready") {
     if (s) sawSetup.add(state.gid);
@@ -267,7 +271,7 @@ export function solUnfinished() {
 }
 
 const newWalletButton = () => el("button", { class: "btn sm", type: "button",
-  onclick: () => { ui.create = true; render(); } }, "Create a new wallet");
+  onclick: newWallet }, "Create a new wallet");
 
 /** The Overview card of a wallet whose Solana part is still setting up, or stopped. */
 export function solSetupCard() {
@@ -278,11 +282,13 @@ export function solSetupCard() {
     el("div", { class: "card-head" },
       el("h2", {}, stopped ? "The Solana part stopped" : "Solana is still setting up")),
     el("div", { class: "steps" }, ...solSteps(1)),
-    el("p", { class: "small muted" }, stopped ? SOL_STOP_NEXT : BOTH_OPEN),
+    el("p", { class: "small muted" }, stopped ? SOL_STOP_NEXT
+      : solSetup()?.status === "ready" ? FUND_TEXT : BOTH_OPEN),
     el("div", { class: "row-actions" }, toTab, stopped ? newWalletButton() : null));
 }
 const SOL_STOP_NEXT = "The Zcash part of this wallet still works. To use Solana, create a new "
   + "wallet.";
+const FUND_TEXT = "Each signer funds the fee address of their seat on their own device.";
 
 function progressCard() {
   const c = setupCounts(), pct = setupProgress(c);

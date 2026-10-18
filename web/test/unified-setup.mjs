@@ -22,6 +22,8 @@ const { createDialog } = await import("../app-shell.js");
 const { ui } = await import("../app-state.js");
 const { planSolana } = await import("../app-sol.js");
 const { walletReady } = await import("../app-wallet.js");
+const { PUBLIC_TEXT } = await import("../sol/view.js");
+const { reactCeremony } = await import("../sol/ceremony.js");
 const { t, data, waitFor } = rig;
 const groupPath = (gid) => `groups/${gid}`;
 const BOTH_OPEN = /Every signer keeps this wallet open until the Zcash and the Solana parts/;
@@ -30,25 +32,71 @@ const BOTH_OPEN = /Every signer keeps this wallet open until the Zcash and the S
 class Rec extends Node {
   constructor() {
     super();
-    Object.assign(this, { kids: [], style: {}, attrs: {} });
+    Object.assign(this, { kids: [], style: {}, attrs: {}, on: {} });
   }
   setAttribute(k, v) {
     this.attrs[k] = v;
   }
-  addEventListener() {}
+  addEventListener(type, fn) {
+    this.on[type] = fn;
+  }
   append(...nodes) {
     this.kids.push(...nodes);
   }
 }
 const textOf = (node) => node.text ?? node.kids.map(textOf).join("");
-function pageText() {
+function pageTree() {
   const real = globalThis.document;
   globalThis.document = { createElement: () => new Rec(), createTextNode: (text) => ({ text }) };
   try {
-    return textOf(t.groupView());
+    return t.groupView();
   } finally {
     globalThis.document = real;
   }
+}
+const pageText = () => textOf(pageTree());
+const byText = (node, text) => node.text === undefined && textOf(node) === text ? node
+  : (node.kids ?? []).map((k) => byText(k, text)).find(Boolean) ?? null;
+
+// ── The auto start, on a fake host: each gate alone keeps the start back ──
+{
+  const auto = (change = {}) => {
+    const launched = [];
+    const seat1 = { solAuto: true, keyPackage: "k", ...change.seat1 };
+    const host = {
+      state: { gid: "G", g: { solana: true, movedTo: null, ...change.g } },
+      sec: (_gid, i) => (i === 1 ? seat1 : {}),
+      localSeats: () => change.local ?? [1],
+      canWriteAs: () => change.write ?? true,
+      seatIds: () => [1, 2, 3],
+      groupVersion: () => 3,
+      network: () => change.network ?? "testnet",
+      seatCheck: () => change.checked ?? true,
+      safetyNo: () => "77",
+      confirmedNo: () => "77",
+      once: (key) => launched.push(key),
+    };
+    const docs = { solstart: {}, solabort: {}, ...change.docs };
+    const loaded = { solstart: true, ...change.loaded };
+    reactCeremony({ host, gid: "G", loaded, docs, wait: change.wait ?? 0 });
+    return launched.includes("sol:solstart");
+  };
+  assert.equal(auto(), true, "every gate open: seat 1 starts");
+  const shut = {
+    "no choice in the secret of seat 1": { seat1: { solAuto: undefined } },
+    "no hint in the group document": { g: { solana: undefined } },
+    "a wallet that moved": { g: { movedTo: "H" } },
+    "start documents not loaded": { loaded: { solstart: false } },
+    "a start document exists": { docs: { solstart: { 1: { cluster: "x" } } } },
+    "a start document waits for its check": { wait: 1 },
+    "a stopped part": { seat1: { sol: { aborted: "Solana setup stopped: a test." } } },
+    "a stop of another seat": { docs: { solabort: { 2: { reason: "A test stop." } } } },
+    "a mainnet wallet": { network: "mainnet" },
+    "seat 1 is not in this browser": { local: [2] },
+    "seat 1 cannot write": { write: false },
+    "seat 1 has no Address checked": { checked: false },
+  };
+  for (const [why, change] of Object.entries(shut)) assert.equal(auto(change), false, why);
 }
 
 // ── The hint: version 3 testnet wallets only ──
@@ -75,13 +123,25 @@ rig.notify();
 await waitFor("the hint", () => t.state.g.solana === true);
 assert.equal(solPlanned(), true);
 assert.match(pageText(), BOTH_OPEN, "the progress card names both parts");
-assert.match(joinText(), /shielded Zcash testnet and for Solana Devnet/);
+assert.match(joinText(), /for Zcash testnet and Solana Devnet\. The Zcash part is shielded\./);
 assert.match(joinText(), /one for Zcash and one for Solana/);
 assert.match(joinText(), BOTH_OPEN);
-assert.match(inviteMessage(link), /shielded Zcash testnet and Solana Devnet\./);
+assert.match(inviteMessage(link), /a shared wallet for Zcash testnet and Solana Devnet\./);
+assert.doesNotMatch(inviteMessage(link), /shielded|private/, "Solana is not shielded");
 assert.match(inviteMessage(link), /until the Zcash and the Solana parts are ready/);
 assert.ok(inviteMessage(link).includes(link), "the invite still carries the link");
 assert.match(SOL_DISCLOSURE, /public program address.*fee address.*Helius.*no audit/);
+assert.ok(SOL_DISCLOSURE.includes(PUBLIC_TEXT), "the choice says what the Solana tab says");
+assert.match(SOL_DISCLOSURE, /Every signer sees the whole Solana history/);
+// A browser with no seat of the wallet gets the join card, with the disclosure before the seat.
+{
+  const kept = t.secrets[gid + ":1"];
+  delete t.secrets[gid + ":1"];
+  const join = pageText();
+  t.secrets[gid + ":1"] = kept;
+  assert.match(join, /Take seat 2/);
+  assert.ok(join.includes(SOL_DISCLOSURE), "the join card says what Solana makes public");
+}
 // The preload: the module loads at the start of setup, and no Solana watch opens before the
 // people of the wallet confirmed the network.
 t.refilter();
@@ -180,7 +240,7 @@ const byId = (node, id) =>
   rig.hook.before = (_p, v) => v;
 }
 
-// ── After the Zcash part, the Overview card shows the Solana steps until the fee is funded ──
+// ── After the Zcash part, the Overview shows the Solana steps until the fee is funded ──
 {
   const gidH = await rig.wallet({ name: "Hinted" });
   data.set(groupPath(gidH), { ...data.get(groupPath(gidH)), solana: true });
@@ -188,15 +248,24 @@ const byId = (node, id) =>
   await waitFor("the hint", () => t.state.g.solana === true);
   await t.solLoad();
   // Seat 1 has no choice in its own secret (a hint that someone else wrote): it starts by hand.
-  assert.match(pageText(), /Solana is still setting up.*Tap Add Solana on the Solana tab to start/s);
+  const BY_HAND = /Solana is still setting up.*Tap Add Solana on the Solana tab to start/s;
+  assert.match(pageText(), BY_HAND);
   await sleep(1500);
   assert.equal(data.has(`groups/${gidH}/solstart/1`), false, "the hint alone starts nothing");
   await t.sol.add();
   const done = (i) => data.has(`groups/${gidH}/soldone/${i}`);
   await waitFor("every soldone", () => [1, 2, 3].every(done), 30000);
   await waitFor("the key step", () => /one piece of the Solana key/.test(pageText()));
+  // A throw in the Solana steps leaves the Zcash page as it is.
+  const docsKept = t.sol.ctl.docs;
+  t.sol.ctl.docs = null;
+  const broken = pageText();
+  t.sol.ctl.docs = docsKept;
+  assert.match(broken, /Activity/, "the Overview still shows");
+  assert.doesNotMatch(broken, /cannot read/);
   assert.match(pageText(), /Send Devnet SOL to your fee address on the Solana tab/);
   assert.match(pageText(), /Open the Solana tab/);
+  assert.match(pageText(), /Each signer funds the fee address of their seat on their own device/);
   // The balances of the last read (refreshChain): every fee address of this browser holds SOL.
   t.sol.ctl.chain = { fees: { 1: "0.006 SOL", 2: "0.0025 SOL", 3: "0.0025 SOL" } };
   assert.doesNotMatch(pageText(), /Solana is still setting up/, "a funded part needs no card");
@@ -215,6 +284,13 @@ const byId = (node, id) =>
   ui.tab = "solana";
   assert.match(pageText(), new RegExp(aborted.replace(/\./g, "\\.") + " " + NEXT.source));
   ui.tab = "overview";
+  // The button leaves the wallet for the wallet list, where the create dialog shows.
+  byText(pageTree(), "Create a new wallet").on.click();
+  assert.equal(t.state.gid, null, "the wallet closed");
+  assert.equal(ui.create, true, "the create dialog opens");
+  ui.create = false;
+  t.openGroup(gidH);
+  await waitFor("the wallet again", () => t.state.g?.solana === true && t.state.wallet);
   await t.putSec(gidH, 1, { sol: kept });
 }
 
@@ -240,6 +316,30 @@ const byId = (node, id) =>
   data.set(`groups/${gidS}/solabort/2`, stop);
   rig.notify();
   await waitFor("no Solana backup is asked", () => solButtons().length === 0);
+}
+
+// ── The submit: the choice reaches seat 1 only for a new wallet with the box on ──
+{
+  const real = globalThis.FormData;
+  const submit = async (from, sol) => {
+    globalThis.FormData = class {
+      get(k) {
+        return { name: "Submitted", n: "3", t: "2", sol }[k] ?? null;
+      }
+    };
+    try {
+      ui.net = "testnet";
+      await dialogTree(from).on.submit({ preventDefault() {}, currentTarget: null, target: {} });
+    } finally {
+      globalThis.FormData = real;
+    }
+    const gidN = t.state.gid;
+    return { auto: t.sec(gidN, 1)?.solAuto === true, hint: data.get(groupPath(gidN)).solana };
+  };
+  assert.deepEqual(await submit(null, "on"), { auto: true, hint: true }, "the box on");
+  assert.deepEqual(await submit(null, null), { auto: false, hint: undefined }, "the box off");
+  const old = t.state.g;
+  assert.deepEqual(await submit(old, "on"), { auto: false, hint: undefined }, "Change signers");
 }
 
 console.log("unified-setup: ok");

@@ -14,7 +14,7 @@ import {
 } from "./app-dom.js";
 import { contactName, contactOf, joinChat, joinLinks, unreadIn } from "./app-messages.js";
 import { createGroup } from "./app-dkg.js";
-import { planSolana, SOL_DISCLOSURE, solServed } from "./app-sol.js";
+import { newWallet, planSolana, SOL_DISCLOSURE, solServed } from "./app-sol.js";
 import { personal } from "./app-account.js";
 import { restore } from "./app-backups.js";
 import { contactItem, contactsCard, openContactDialog, personalCard } from "./app-account-view.js";
@@ -22,7 +22,6 @@ import { once, render } from "./app-loop.js";
 
 export function renderSide() {
   const nav = document.getElementById("side-nav");
-  const newWallet = () => { openGroup(null); ui.create = true; render(); };
   nav.replaceChildren(
     el("div", { class: "side-head" }, el("span", { class: "label" }, "Wallets"),
       el("button", { class: "icon-btn", type: "button", title: "New wallet", "aria-label": "New wallet", onclick: newWallet }, "+")),

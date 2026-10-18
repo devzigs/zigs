@@ -20,8 +20,11 @@ The beta switches:
   before version 3, a wallet whose network no seat of this device confirmed, and a wallet that is
   not loaded yet, never show the tab. They load `/sol` only when the person opens a Solana backup
   file for a wallet that this device does not list.
-- The page loads `/sol` before the tab opens only when a seat signed `solstart/1`. A start
-  document without a valid signature of seat 1 loads nothing.
+- The page loads `/sol` before the tab opens in two cases. A seat signed `solstart/1` (a start
+  document without a valid signature of seat 1 loads nothing), or a seat of this device is in the
+  setup of a wallet whose group document holds the Solana hint `solana: true` (release item M3).
+  The hint has no signature, so a holder of the invite link can make the seats of a wallet load
+  `/sol` early. It starts nothing: only `solAuto` in the secret of seat 1 starts the ceremony.
 - The browser has no switch. The spike flag `zf-sol` and the spike setting `zf-sol-rpc` are gone.
 
 The question: can a Zigs group also hold private Solana balances in Zolana, the Helius shielded pool

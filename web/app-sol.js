@@ -18,9 +18,10 @@ import { once, react, render } from "./app-loop.js";
 
 // Devnet, for version 3 wallets on testnet only. The network must be the one that the people of
 // the wallet confirmed with the safety number (netConfirmed, SOL-34), not only the first one that
-// this device saw. web/sol loads when the Solana tab opens, or when a seat signed the wallet's
-// solstart document. Any other wallet, and a wallet that is not loaded yet, never fetches any of
-// it.
+// this device saw. web/sol loads when the Solana tab opens, when a seat signed the wallet's
+// solstart document, or early in the setup of a wallet with the Solana hint (solPreload). The
+// hint is not signed, so a holder of the invite link can make the seats of a wallet fetch the
+// module. Any other wallet never fetches any of it.
 const solGroup = (gid) =>
   (gid === state.gid && state.g) || state.groups.find((x) => x.id === gid);
 export const solOn = (gid = state.gid) => {
@@ -54,11 +55,19 @@ export async function planSolana(gid) {
   await sdb.doc("groups/" + gid).update({ solana: true });
   await putSec(gid, 1, { solAuto: true });
 }
-// What a person accepts with the Solana part (the Add Solana card of web/sol/view.js says more).
+// What a person accepts with the Solana part. It holds PUBLIC_TEXT of web/sol/view.js, which loads
+// only with the module (unified-setup.mjs keeps the two equal).
 export const SOL_DISCLOSURE = "Solana Devnet: a program owns the funds of the group at a public "
-  + "program address. Each seat gets a fee address, which appears on chain next to the group, and "
-  + "its funding shows who sent the SOL. Helius sees that you use Zigs, and the prover sees your "
-  + "payments. The program has no audit, and its upgrade key is outside the group.";
+  + "program address. A deposit shows its sender and amount on chain. A withdrawal shows its "
+  + "recipient and amount. A private payment hides its amount, but it shows the owner key of the "
+  + "payee. The program address, the group key and the fee address of each seat that pays are "
+  + "public too. Helius sees that you use Zigs, your IP address and the keys of this wallet, and "
+  + "its hosted prover sees each payment. The Zigs server operator can link this wallet to these "
+  + "addresses by timing. Each seat funds its own fee address, and that funding shows who sent "
+  + "the SOL. Every signer sees the whole Solana history of the wallet. The program has no audit, "
+  + "and its upgrade key is outside the group.";
+// The wallet list with the create dialog open. Inside an open wallet the dialog does not show.
+export const newWallet = () => { openGroup(null); ui.create = true; render(); };
 // The seats of this browser with a Solana key share whose backup file was not saved. A stopped
 // part gets no backup (web/sol/backup.js refuses it), also when another seat stopped it.
 const solStopped = () => solSetup()?.status === "stopped";
@@ -84,7 +93,7 @@ const solHost = () => ({
   canWriteAs, localSeats, seatIds, checkIn, safetyNo, seatCheck, confirmedNo, openGroup, restore,
   groupVersion, sealAndSave, network: () => netName(state.g),
   askBackup: (words) => { ui.backup = { words, made: false, busy: false }; render(); },
-  newWallet: () => { ui.create = true; render(); },
+  newWallet,
 });
 // A server with SOL off does not serve the module, and the text says so. view.js is part of the
 // module: it gives the setup steps (solSetup).
@@ -92,9 +101,17 @@ let setupSummary = null;
 const solModule = () => Promise.all([import("./sol/main.js"), import("./sol/view.js")])
   .then(([m, v]) => { setupSummary = v.setupSummary; return m; })
   .catch(() => { throw new Error(SOL_OFF); });
-// The Solana part of the open wallet for the setup steps, or null while it is not open here.
-export const solSetup = () => sol && setupSummary && solOn() && sol.ctl.gid === state.gid
-  ? setupSummary(sol.ctl) : null;
+// The Solana part of the open wallet for the setup steps, or null while it is not open here. The
+// Zcash pages call it, so a throw gives null and a log line, not a broken wallet page.
+export function solSetup() {
+  if (!(sol && setupSummary && solOn() && sol.ctl.gid === state.gid)) return null;
+  try {
+    return setupSummary(sol.ctl);
+  } catch (e) {
+    log("Solana setup steps: " + said(e));
+    return null;
+  }
+}
 // A failed load is final until the page reloads: a retry on every redraw would loop.
 export function solLoad() {
   solLoading ||= solModule().then((m) => m.attach(solHost())).then((m) => {
@@ -117,7 +134,7 @@ export function solWatch() {
   solAttach(gid, "groups/" + gid);
 }
 // Before the module loads, one watch keeps the start document. Any holder of the invite link can
-// write one, so solReact loads the module only when a seat signed it.
+// write one, so solReact loads the module from it only when a seat signed it.
 export function solAttach(gid, base) {
   if (sol) { sol.open(gid, base); return; }
   unsubGroup.push(sdb.collection(base + "/solstart").onSnapshot((snap) => {
