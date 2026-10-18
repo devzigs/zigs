@@ -58,6 +58,26 @@ step("SOL-4 off: the gate answers hosted after its round trip to the group serve
 }
 step("SOL-4 a moved pool, a failed test proof or a no writes no switch and pins no seat");
 
+// ── A wallet switch during the turn-on stops it: the next wallet gets nothing ──
+{
+  const opened = c.opened;
+  const said = globalThis.confirm;
+  globalThis.confirm = () => true; // the person would say yes: only the switch stops it
+  // The person opens another wallet while the test proof runs (main.js openGroup counts up).
+  const switching = {
+    call: async (cmd) => {
+      if (cmd === "poolSlot") return { slot: POOL_SLOT, pinned: POOL_SLOT, text: null };
+      c.opened += 1;
+      return { ms: 3100 };
+    },
+  };
+  await assert.rejects(() => turnOnLocal(c, switching), /The wallet changed during this step/);
+  c.opened = opened;
+  globalThis.confirm = said;
+  assert.deepEqual([switchDocs(), pins()], [[], NONE], "a switch mid-step wrote the switch");
+}
+step("SOL-4 a wallet switch during the turn-on writes no switch and pins no seat");
+
 // ── A yes: the seat signs the document, and every seat of this browser is pinned ──
 {
   globalThis.confirm = () => true;
@@ -104,6 +124,20 @@ step("SOL-4 a yes signs the switch of the seat and pins every seat of this brows
   }
   c.host.putSec = putSec;
   assert.equal(selftests(), once + 1, "a check that could not be stored ran again");
+  // A check that ends after a wallet switch stores nothing: the Worker of that wallet was closed.
+  for (const i of [1, 2, 3]) await putSol(c.host, gid, i, { proveCheck: null });
+  const opened = c.opened;
+  chain.selftest = () => {
+    c.opened += 1;
+    throw new Error("The Solana worker was closed");
+  };
+  c.proveChecked = false;
+  notify();
+  await waitFor("the check ends", () => c.proveChecked && selftests() === once + 2);
+  await sleep(300);
+  c.opened = opened;
+  chain.selftest = () => ({ ms: 3100 });
+  assert.equal(solOf(1).proveCheck, undefined, "a check of a closed wallet was stored");
 }
 step("SOL-4 a seat that sees the switch tests its device once, and the tile shows the result");
 

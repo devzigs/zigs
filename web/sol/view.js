@@ -27,8 +27,8 @@ export const PUBLIC_TEXT =
 // The same with local proving on (SOL-4): the amounts and the nullifier secret stay on the devices.
 const PUBLIC_LOCAL = PUBLIC_TEXT.replace(
   ", and its hosted prover sees each payment.",
-  ". This group makes its proofs on its devices, so Helius does not see the amounts or the " +
-    "secret that links each spend to its notes.",
+  ". This group makes its proofs on its devices, so they give Helius neither the amounts nor " +
+    "the secret that links each spend to its notes.",
 );
 function statusOf(c, ag) {
   if (startBlock(c.host)) return "unavailable";

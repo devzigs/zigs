@@ -31,7 +31,7 @@ import { putSol } from "../sol/secrets.js";
 import { syncSolana } from "../sol/session.js";
 import { deviceSpend } from "../sol/spend.js";
 import { gateAnswer, provesLocally, UNREAD } from "../sol/localprove.js";
-import { LINK_TEXT, PROVER_LOCAL, PROVER_TEXT } from "../sol/payview.js";
+import { LINK_TEXT, PROVER_LOCAL, PROVER_ROW_LOCAL, PROVER_TEXT } from "../sol/payview.js";
 import {
   heldLamports,
   heldNotes,
@@ -1259,7 +1259,8 @@ step("a move on a stale nonce is refused, and a stale proof at the send ends the
   await c.host.sdb.doc(path(gid, "solprove/2")).set(doc);
   await waitFor("the switch is on", () => provesLocally(c));
   assert.equal(shown("pay-prover"), PROVER_LOCAL, "the pay card says that the group proves here");
-  assert.match(shown("public-text"), /makes its proofs on its devices, so Helius does not see/);
+  const local = /makes its proofs on its devices, so they give Helius neither/;
+  assert.match(shown("public-text"), local);
   await waitFor("every seat pins it", () => [1, 2, 3].every((i) => solOf(i).proveLocal === true));
   const docs = () => [1, 2, 3].every((i) => data.has(path(gid, "solprove/" + i)));
   await waitFor("every seat of this browser writes its document", docs);
@@ -1271,7 +1272,7 @@ step("a move on a stale nonce is refused, and a stale proof at the send ends the
   chain.gates.length = 0;
   current = await proposedPay();
   await waitFor("the screen of seat 2", () => reviewOf(c, ssOf(current), 2).ok);
-  assert.equal(rowsOf(current).Helius, PROVER_LOCAL, "the screen of the payment says it too");
+  assert.equal(rowsOf(current).Helius, PROVER_ROW_LOCAL, "the screen of the payment says it too");
   await approve(c, ssOf(current), 1);
   await approve(c, ssOf(current), 2);
   await waitStatus(current, "sent");

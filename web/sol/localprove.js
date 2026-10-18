@@ -33,10 +33,20 @@ export const provesLocally = (c) =>
   pinned(c) || Object.values(c.docs[COLLECTION] ?? {}).some(valid);
 
 /** Pins the switch in the Solana part of each seat of this browser that holds a key share. */
-async function pinSeats(c) {
-  for (const i of shareSeats(c)) {
-    if (solOf(c.host, c.gid, i).proveLocal !== true) {
-      await putSol(c.host, c.gid, i, { proveLocal: true });
+// A step that awaits works on the wallet that was open when it started: a wallet switch replaces
+// the fields of `c` in place (main.js openGroup). `w` is that wallet: its id, its base path, the
+// seats of this browser that hold a share, and the open count that session.js stillOpen compares.
+const walletOf = (c) => ({ gid: c.gid, base: c.base, opened: c.opened, seats: shareSeats(c) });
+const stillOpen = (c, w) => c.opened === w.opened;
+const CLOSED = "The wallet changed during this step, so local proving was not turned on.";
+const need = (c, w) => {
+  if (!stillOpen(c, w)) throw new Error(CLOSED);
+};
+
+async function pinSeats(c, w = walletOf(c)) {
+  for (const i of w.seats) {
+    if (solOf(c.host, w.gid, i).proveLocal !== true) {
+      await putSol(c.host, w.gid, i, { proveLocal: true });
     }
   }
 }
@@ -64,17 +74,17 @@ function serverSwitch(c) {
  */
 export async function gateAnswer(c) {
   if (pinned(c)) return LOCAL;
-  const seat = shareSeats(c)[0];
-  if (seat === undefined) return { refuse: UNREAD };
+  const w = walletOf(c);
+  if (w.seats.length === 0) return { refuse: UNREAD };
   try {
-    await barrier(c, seat);
+    await barrier(c, w.seats[0]);
   } catch {
     return { refuse: UNREAD };
   }
-  for (let i = 0; i < CHECK_TRIES; i += 1) {
+  for (let i = 0; i < CHECK_TRIES && stillOpen(c, w); i += 1) {
     const now = serverSwitch(c);
     if (now === "on") {
-      await pinSeats(c);
+      await pinSeats(c, w);
       return LOCAL;
     }
     if (now === "off") return HOSTED;
@@ -84,11 +94,11 @@ export async function gateAnswer(c) {
 }
 
 /** The signed switch document of `seat`. */
-async function publishSwitch(c, seat) {
+async function publishSwitch(c, seat, w = walletOf(c)) {
   const rel = COLLECTION + "/" + seat;
   const fields = { local: true, cluster: CLUSTER, at: Date.now() };
-  const doc = await c.host.signedDoc(c.gid, rel, seat, fields);
-  await c.host.sdb.doc(c.base + "/" + rel).set(doc);
+  const doc = await c.host.signedDoc(w.gid, rel, seat, fields);
+  await c.host.sdb.doc(w.base + "/" + rel).set(doc);
   c.host.log("seat " + seat + ": local proving is on for the group");
 }
 
@@ -103,8 +113,8 @@ export const turnOnAsk = (ms) =>
   ". Turn on local proving for every device of this group? It cannot be turned off.";
 
 /** Keeps the result of the device check in the Solana part of each seat of this browser. */
-async function keepCheck(c, check) {
-  for (const i of shareSeats(c)) await putSol(c.host, c.gid, i, { proveCheck: check });
+async function keepCheck(c, check, w) {
+  for (const i of w.seats) await putSol(c.host, w.gid, i, { proveCheck: check });
 }
 
 /**
@@ -114,21 +124,27 @@ async function keepCheck(c, check) {
  */
 export async function turnOnLocal(c, worker) {
   if (provesLocally(c)) return;
-  const seat = shareSeats(c).find((i) => c.host.canWriteAs(i));
+  const w = walletOf(c);
+  const seat = w.seats.find((i) => c.host.canWriteAs(i));
   if (seat === undefined) throw new Error("This browser holds no Solana key share of this wallet.");
   const pool = await worker.call("poolSlot");
+  need(c, w);
   if (pool.slot !== pool.pinned) throw new Error(POOL_MOVED);
   const test = await worker.call("selftest").catch((e) => {
     throw new Error("This device could not make a test proof: " + e.message + NOT_ON);
   });
-  await keepCheck(c, { ok: true, ms: test.ms, at: Date.now() });
+  need(c, w);
+  await keepCheck(c, { ok: true, ms: test.ms, at: Date.now() }, w);
+  need(c, w);
   if (!globalThis.confirm(turnOnAsk(test.ms))) return;
-  await publishSwitch(c, seat);
-  await pinSeats(c);
+  need(c, w);
+  await publishSwitch(c, seat, w);
+  await pinSeats(c, w);
 }
 
 /** The device check of a browser that sees the switch on: once, in the background, no write. */
 async function checkDevice(c, ensure) {
+  const w = walletOf(c);
   let check;
   try {
     const worker = await ensure();
@@ -136,7 +152,8 @@ async function checkDevice(c, ensure) {
   } catch (e) {
     check = { ok: false, why: String(e?.message ?? e).slice(0, 300), at: Date.now() };
   }
-  await keepCheck(c, check);
+  // After a wallet switch the Worker was closed: the result says nothing about this device.
+  if (stillOpen(c, w)) await keepCheck(c, check, w);
 }
 
 const needsDoc = (c, i) =>

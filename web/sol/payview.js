@@ -94,11 +94,19 @@ export const PROVER_TEXT =
   "and the notes that the payment spends. It also sees the secret that links each spend to its " +
   "notes. Local proving keeps the amount and that secret on your devices: see Local proving below.";
 export const PROVER_LOCAL =
-  "This group makes its proofs on its devices, so Helius does not see the amount, the blindings " +
-  "or the secret that links each spend to its notes. Its indexer still sees which notes the " +
-  "payment spends and your IP address. The owner key of the payee is public on chain.";
+  "This group makes its proofs on its devices, so they give Helius neither the amount, the " +
+  "blindings nor the secret that links each spend to its notes. Each proof that Helius made " +
+  "before the switch gave it that secret. Its indexer still sees which notes a payment spends " +
+  "and your IP address. The owner key of the payee is public on chain.";
+// The rows of one payment: the group proves on its devices now, but this payment may have been
+// proposed before the switch or from an older page, and then Helius made its first proof.
+export const PROVER_ROW_LOCAL =
+  "The proof of the execute runs on a device of this group. Helius made the first proof only " +
+  "if the payment was proposed before the switch or from an older page: then it saw the amount. " +
+  "Its indexer sees which notes the payment spends.";
 /** What the prover of a payment of this group sees: hosted, or local with the switch (SOL-4). */
 const proverSays = (local) => (local ? PROVER_LOCAL : PROVER_TEXT);
+const proverRow = (local) => (local ? PROVER_ROW_LOCAL : PROVER_TEXT);
 
 const FEE_TEXT =
   "It pays the fees and the rents of the proposals that this seat makes, and the fee of each " +
@@ -411,7 +419,7 @@ export function transferRows(groupKey, review, fee, local = false) {
     ["Network fee", solText(fee + said.treeFee)],
     ["Lasts", "Until " + utc(said.expiry) + " UTC, or until the nonce account advances."],
     ["Public", MOVE_PUBLIC + " " + LINK_TEXT],
-    ["Helius", proverSays(local)],
+    ["Helius", proverRow(local)],
   ];
 }
 
@@ -446,7 +454,7 @@ function paymentRows(c, review) {
     ["Public", lead + "The proposal account (the group key, the " +
       "expiry, the fee address of seat " + review.by + ") is public, and the create transaction " +
       "keeps it in the chain history. " + LINK_TEXT],
-    ["Helius", proverSays(provesLocally(c))],
+    ["Helius", proverRow(provesLocally(c))],
   ];
 }
 
