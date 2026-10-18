@@ -160,12 +160,13 @@ function upgrade(req, socket) {
   stub.calls.push("ws");
   socket.on("error", () => {});
   if (req.headers.authorization !== AUTH) return socket.end("HTTP/1.1 401 No\r\n\r\n");
+  // A held upgrade leaves the socket in CONNECTING, where Node 22 fired error inside close().
+  if (has("socket-hang")) return;
   const key = `${req.headers["sec-websocket-key"]}258EAFA5-E914-47DA-95CA-C5AB0DC85B11`;
   const accept = createHash("sha1").update(key).digest("base64");
   socket.write("HTTP/1.1 101 Switching Protocols\r\nUpgrade: websocket\r\nConnection: Upgrade\r\n");
   socket.write(`Sec-WebSocket-Accept: ${accept}\r\n\r\n`);
   socket.on("data", () => socket.end());
-  if (has("socket-silent")) return;
   const text = Buffer.from(has("socket-other") ? '{"type":"reply"}' : '{"type":"init","docs":[]}');
   socket.write(Buffer.concat([Buffer.from([0x81, text.length]), text]));
 }
@@ -302,7 +303,7 @@ test("broken servers give a FAIL with a reason, and the secrets stay hidden", as
 });
 
 test("dead servers give a FAIL, and one light-wallet server alone is a SKIP", async () => {
-  const faults = ["gate-no-prompt", "page-500", "socket-silent", "lwd-503", "lightd-status"];
+  const faults = ["gate-no-prompt", "page-500", "socket-hang", "lwd-503", "lightd-status"];
   faults.push("tree-anchor", "prover-403", "solfaucet-503");
   const fast = { DEMO_CHECK_TIMEOUT_MS: "500" };
   const { code, out } = await run(["--config", CONFIGS.good], faults, fast);
@@ -320,7 +321,7 @@ test("a wrong tree owner and a refused Helius key of the app are a FAIL", async 
   const { code, out } = await run(["--config", CONFIGS.good], ["tree-owner", "served-refused"]);
   assert.equal(code, 1, out);
   assert.deepEqual(words(out), allWords(marked("FAIL", ["tree 0", `${host(0)} pages`])));
-  assert.match(out, /pages: getVersion answered 403 for Origin/);
+  assert.match(out, /pages: the app serves another Helius key .*: getVersion answered 403/);
   assert.ok(!out.includes(OTHER_KEY), out);
 });
 
@@ -343,6 +344,8 @@ test("a bad config stops the run with exit 2 and names the problem", async () =>
     [open, /open-password must exist with mode 600/],
     [{ solFee: [] }, /unknown key solFee/],
     [{ apps: [{ origin: origin(0), passwrdFile: "x" }] }, /apps: unknown key passwrdFile/],
+    [{ solFees: [{ address: FEE, minimum: "1" }] }, /solFees: unknown key minimum/],
+    [{ zecTransparent: [{ address: TADDR, min: "1", floor: "1" }] }, /unknown key floor/],
     [{ solFees: [{ address: FEE, min: "0.0000000001" }] }, /is no amount of this unit/],
   ];
   for (const [bad, problem] of cases) {

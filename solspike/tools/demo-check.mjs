@@ -32,7 +32,8 @@ const SOL_FAUCET = process.env.DEMO_CHECK_SOL_FAUCET ?? "https://faucet.solana.c
 const CONFIG = join(homedir(), ".config", "zigs", "demo-check.json");
 const DEFAULT_APPS = [{ origin: "https://app.zigs.app" }, { origin: "https://staging.zigs.app" }];
 const KEYS = ["apps", "solFees", "zecTransparent"];
-const TIMEOUT_MS = Number(process.env.DEMO_CHECK_TIMEOUT_MS) || 10_000; // each call and the socket
+const TIMEOUT = process.env.DEMO_CHECK_TIMEOUT_MS ?? "";
+const TIMEOUT_MS = /^[1-9]\d{0,6}$/.test(TIMEOUT) ? Number(TIMEOUT) : 10_000; // each call, socket
 const HEIGHT_GAP = 5n; // blocks between the light-wallet servers
 const SOL_FLOOR = "0.003"; // docs/hackathon-release.md section 8, step 10
 // Each connect makes the group server keep one small row for this id, so it stays the same.
@@ -296,7 +297,9 @@ async function pagesCheck(app) {
   const pages = "/ and /sol/config.json answer 200 with the password";
   // The other Helius checks use the local key file: a server with another key gets its own read.
   if (rpcUrl === localHelius()) return pages;
-  await rpc("getVersion", [], app.origin, rpcUrl);
+  await rpc("getVersion", [], app.origin, rpcUrl).catch((err) => {
+    throw new Error(`the app serves another Helius key than the local file: ${err.message}`);
+  });
   return `${pages}; its own Helius key answers for this origin`;
 }
 
