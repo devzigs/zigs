@@ -16,7 +16,7 @@ import { config, loadRig, sleep } from "./sol-rig.mjs";
 
 const rig = await loadRig();
 // The page modules need the stub page of the rig, so they load after it.
-const { SOL_DISCLOSURE, solPlanned } = await import("../app-sol.js");
+const { SOL_DISCLOSURE, solPlanned, solServed } = await import("../app-sol.js");
 const { inviteMessage, joinText, onLink } = await import("../app-setup.js");
 const { chatMessage } = await import("../app-links.js");
 const { chatInviteCard } = await import("../app-thread.js");
@@ -215,7 +215,7 @@ assert.ok(inviteMessage(link).includes(link), "the invite still carries the link
 // site asks for a user name too, and any user name works (cf/src/index.js).
 const PASSWORD = new RegExp("The browser asks for a user name and a password before Zigs opens\\. "
   + "Use any user name\\. I send the password to you apart from this link\\.");
-const BROWSER = /Open the link in Safari or Chrome\. Do not open it in the browser of a chat app/;
+const BROWSER = /Open the link in Safari or Chrome\. Do not open it in a chat app browser or a/;
 for (const text of [inviteMessage(link), plain.invite, chatMessage(link)]) {
   assert.match(text, PASSWORD);
   assert.match(text, BROWSER);
@@ -270,7 +270,7 @@ const solTabText = () => {
     globalThis.document = real;
   }
 };
-assert.match(solTabText(), /not available on this server.*Try again/s);
+assert.match(solTabText(), /^Solana did not load\. Check your connection, then press Try again/);
 const NOT_SERVED = /Solana did not load: Solana is not available on this server/;
 assert.match(t.banner.text, NOT_SERVED, "the banner says why");
 // The setup step says it once, with no Try again button on this page, and the page asks no one
@@ -278,7 +278,7 @@ assert.match(t.banner.text, NOT_SERVED, "the banner says why");
 assert.doesNotMatch(pageText(), BOTH_OPEN, "no wait for a Solana part that did not load");
 assert.match(pageText(), /Create the Solana key.*Solana is not available on this server/s);
 assert.doesNotMatch(pageText(), /Solana did not load: Solana is not/);
-const { solRetry, whyNotLoaded, failText } = await import("../app-sol.js");
+const { solRetry, whyNotLoaded, loadFail } = await import("../app-sol.js");
 solRetry();
 await t.solLoading;
 assert.match(t.solError, /not available on this server/, "a failed retry fails again");
@@ -318,9 +318,22 @@ assert.equal(t.banner, null, "and the banner goes away");
   // The Solana tab: an import failure says reload (a browser keeps a failed import for the
   // page), and a failure after the import gets Try again.
   const down = await why(0);
-  assert.equal(failText(down, false), down, "an import failure: reload");
-  assert.equal(failText("Failed to fetch.", true),
-    "Solana did not load: Failed to fetch. Check your connection, then press Try again.");
+  const failTree = (error, retry) => {
+    const real = globalThis.document;
+    globalThis.document = { createElement: () => new Rec(), createTextNode: (text) => ({ text }) };
+    try {
+      return loadFail(error, retry);
+    } finally {
+      globalThis.document = real;
+    }
+  };
+  const imported = failTree(down, false);
+  assert.equal(textOf(imported), down, "an import failure: reload");
+  assert.equal(byText(imported, "Try again"), null, "and no Try again button");
+  const after = failTree("Failed to fetch", true);
+  const RETRY = /^Solana did not load\. Check your connection, then press Try again\./;
+  assert.match(textOf(after), RETRY, "a failure after the import says Try again");
+  assert.ok(byText(after, "Try again"), "next to the button");
 }
 assert.equal(rig.live(`groups/${gid}/sol`), 0, "and opened no Solana watch");
 // The setup card lists the two Solana steps after the three Zcash steps.
@@ -491,6 +504,31 @@ const byId = (node, id) =>
   assert.equal(line({ ...states, code: 404 })?.[0], "The group server does not answer.");
   onLink({ state: "open", retryAt: 0, code: null, groups: {} });
   assert.doesNotMatch(pageText(), /group server does not answer|Connecting to the group server/);
+}
+
+// ── The dialog reads the small config body to its end: a cancel is a failed request ──
+{
+  const real = globalThis.fetch;
+  let cancelled = false, read = false;
+  globalThis.fetch = async () => new Response(new ReadableStream({
+    pull(ctl) {
+      ctl.enqueue(new TextEncoder().encode("{}"));
+      ctl.close();
+      read = true;
+    },
+    cancel() {
+      cancelled = true;
+    },
+  }), { status: 200 });
+  try {
+    delete ui.solServed;
+    solServed();
+    await waitFor("the config answer", () => ui.solServed === true && (read || cancelled));
+  } finally {
+    globalThis.fetch = real;
+  }
+  assert.equal(cancelled, false, "the config body is read, not cancelled");
+  delete ui.solServed;
 }
 
 // ── The choice starts the Solana ceremony with no button, after the Zcash part ──

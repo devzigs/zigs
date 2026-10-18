@@ -82,7 +82,8 @@ const NOT_ZIP2005 = "This wallet is not built to ZIP 2005. Funds cannot be recov
 // The joiner passed the password already. A chat app browser or a private window can still lose
 // the key share, so the card says where to open the link before the seat is taken.
 const OPEN_HERE = "Is this page in the browser of a chat app or in a private window? Then open the "
-  + "link in Safari or Chrome first. Those can delete your key share.";
+  + "link in Safari or Chrome first. A chat app browser or a private window can delete your key "
+  + "share.";
 // A wallet with a Solana part has two key ceremonies, one after the other.
 const BOTH_OPEN = "Every signer keeps this wallet open until the Zcash and the Solana parts are "
   + "ready.";

@@ -170,8 +170,8 @@ function chatJoinCard(cid) {
     el("div", { class: "card-head" }, el("h2", {}, "Join a chat")),
     el("p", { class: "small muted" }, "Someone sent you a contact link. A chat holds two people. "
       + "Your contact sees the name below. Is this page in the browser of a chat app or in a "
-      + "private window? Then open the link in Safari or Chrome first. Those can delete your chat "
-      + "key."),
+      + "private window? Then open the link in Safari or Chrome first. A chat app browser or a "
+      + "private window can delete your chat key."),
     nameField("chat-join-" + cid, "your contact"),
     el("div", { class: "dialog-actions" },
       el("button", { class: "btn", type: "button", disabled: joining,

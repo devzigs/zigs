@@ -35,10 +35,11 @@ export const solPlanned = (g = state.g) =>
 export function solServed() {
   if (ui.solServed === undefined) {
     ui.solServed = null;
+    // The small body is read to its end: a cancelled request counts as a failed one (S19).
     globalThis.fetch("/sol/config.json", { cache: "no-store" }).then((r) => {
       ui.solServed = r.ok;
-      r.body?.cancel();
-    }, () => { ui.solServed = false; }).finally(render);
+      return r.text();
+    }).catch(() => { if (ui.solServed === null) ui.solServed = false; }).finally(render);
   }
   return ui.solServed === true;
 }
@@ -95,17 +96,17 @@ const solHost = () => ({
 // mends it; Try again (the Solana tab) can mend a failure after the import.
 const SOL_DOWN = "Solana did not load. Check your connection, then reload the page.";
 let setupSummary = null, pendingCount = null, importFailed = false;
-/** The tab text of a failed load, and whether Try again can mend it. */
-export const failText = (error, retry) => retry
-  ? "Solana did not load: " + error.replace(/\.$/, "") + ". Check your connection, then press Try "
-    + "again."
-  : error;
+const SOL_RETRY = "Solana did not load. Check your connection, then press Try again.";
+/** The tab text of a failed load. `retry`: Try again can mend it (a failure after the import). */
+export const failText = (error, retry) => (retry ? SOL_RETRY : error);
 export async function whyNotLoaded() {
   const status = await globalThis.fetch("/sol/config.json", { cache: "no-store" })
     .then((r) => r.status, () => 0);
   return status === 503 || status === 404 ? SOL_OFF : SOL_DOWN;
 }
-const solModule = () => Promise.all([import("./sol/main.js"), import("./sol/view.js")])
+// main.js imports the wasm glue again in attach: the browser gives it the module of this load.
+const solModule = () => Promise.all([import("./sol/main.js"), import("./sol/view.js"),
+  import("./sol/wasm/sol_wasm.js")])
   .then(([m, v]) => { ({ setupSummary, pendingCount } = v); return m; })
   .catch(async () => {
     importFailed = true;
@@ -186,10 +187,11 @@ export function solReact() {
 }
 const retryButton = () => el("button", { class: "btn sm", type: "button", "data-sol": "retry-load",
   onclick: solRetry }, "Try again");
+/** The Solana tab after a failed load: its text, and Try again only where a retry can mend it. */
+export const loadFail = (error, retry) => el("div", { style: "display:grid;gap:8px" },
+  el("p", { class: "small" }, failText(error, retry)), retry ? el("div", {}, retryButton()) : null);
 export const solTab = () => sol ? guard(sol.view)
-  : solError ? el("div", { style: "display:grid;gap:8px" },
-    el("p", { class: "small" }, failText(solError, !importFailed)),
-    importFailed ? null : el("div", {}, retryButton()))
+  : solError ? loadFail(solError, !importFailed)
   : (solLoad(), el("p", { class: "small" }, "Loading Solana…"));
 const NET_UNCONFIRMED = "This device does not know yet which network the people of this wallet "
   + "confirmed. Open the wallet, wait until its seat shows Address checked, then try again.";

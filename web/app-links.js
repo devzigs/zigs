@@ -76,8 +76,8 @@ export const chatLink = (cid) => location.origin + location.pathname + "#c." + c
 // app browser or a private window can delete the browser data, with the key share in it.
 export const PASSWORD_NOTE = "The browser asks for a user name and a password before Zigs opens. "
   + "Use any user name. I send the password to you apart from this link.";
-export const BROWSER_NOTE = "Open the link in Safari or Chrome. Do not open it in the browser of a "
-  + "chat app or in a private window: they can delete your key.";
+export const BROWSER_NOTE = "Open the link in Safari or Chrome. Do not open it in a chat app "
+  + "browser or a private window: they can delete your key.";
 export const chatMessage = (link) => "I started a private chat with you on Zigs. Open this link: "
   + link + ". " + BROWSER_NOTE + " " + PASSWORD_NOTE + " This link is a secret. Do not post it "
   + "in a public place. About Zigs: https://zigs.app";
