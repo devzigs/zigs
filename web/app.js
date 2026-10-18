@@ -18,6 +18,8 @@ import "./app-chain.js";
 import "./app-filter.js";
 import "./app-groups.js";
 import "./app-dom.js";
+import "./app-icons.js";
+import "./app-theme.js";
 import "./app-messages.js";
 import "./app-dkg.js";
 import "./app-payments.js";

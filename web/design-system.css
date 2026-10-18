@@ -1,0 +1,95 @@
+/* The design tokens of the page: colours, type, radii, sizes and motion. app.css uses them.
+   Dark is the default. The light palette applies when the device prefers light, unless the
+   viewer picks Dark, and always when the viewer picks Light (app-theme.js sets data-theme).
+   Surfaces for money and keys stay opaque; only the sidebar and the scrim use blur.
+   web/test/contrast.mjs checks the text colours on each surface at 4.5:1 or more. */
+:root {
+  color-scheme: dark;
+  --bg: #0e1013;
+  --side: rgba(20, 23, 28, 0.92);
+  --panel: #191d23;
+  --raised: #242a32;
+  --sunk: #12161b;
+  --sheet: rgba(25, 29, 35, 0.98);
+  --line: #343b45;
+  --line-2: #505a68;
+  --edge: rgba(235, 243, 255, 0.09);
+  --text: #f4f5f7;
+  --muted: #b4bdca;
+  --faint: #9aa6b6;
+  --accent: #ff9a58;
+  --accent-text: #ffb988;
+  --on-accent: #21150d;
+  --accent-soft: rgba(255, 154, 88, 0.1);
+  --accent-edge: rgba(255, 174, 113, 0.35);
+  --ok: #83d5ad;
+  --ok-soft: rgba(131, 213, 173, 0.1);
+  --bad: #ffa39b;
+  --bad-soft: rgba(255, 163, 155, 0.1);
+  --info: #a8c7ef;
+  --info-soft: rgba(168, 199, 239, 0.09);
+  --warning: #e3b56f;
+  --warning-soft: rgba(227, 181, 111, 0.09);
+  --control-hi: #353d49;
+  --control-lo: #252c35;
+  --metal: #ccd4de;
+  --ambient: rgba(163, 186, 218, 0.075);
+  --scrim: rgba(3, 6, 10, 0.72);
+  --shadow: 0 24px 72px -28px rgba(0, 0, 0, 0.65), 0 8px 24px -16px rgba(0, 0, 0, 0.45);
+  --shadow-card: inset 0 1px 0 var(--edge), 0 4px 16px -12px rgba(0, 0, 0, 0.5);
+  --shadow-control: inset 0 1px 0 rgba(255, 255, 255, 0.1), 0 2px 4px rgba(0, 0, 0, 0.16);
+  --sans: "Geist", -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  --mono: "Geist Mono", ui-monospace, "SF Mono", Menlo, monospace;
+  --r-sm: 10px;
+  --r-control: 14px;
+  --r: 22px;
+  --r-sheet: 28px;
+  --sidebar-width: 236px;
+  --content-width: 1080px;
+  --fast: 120ms;
+  --settle: 220ms;
+  --ease: cubic-bezier(0.2, 0.7, 0.2, 1);
+}
+/* The two light blocks must stay the same: contrast.mjs compares them. */
+@media (prefers-color-scheme: light) {
+  :root:not([data-theme="dark"]) {
+    color-scheme: light;
+    --bg: #edf0f4; --side: rgba(246, 248, 251, 0.93); --panel: #fafbfd;
+    --raised: #e9edf2; --sunk: #f0f3f7; --sheet: rgba(250, 251, 253, 0.98);
+    --line: #d0d7e1; --line-2: #a9b4c3; --edge: rgba(255, 255, 255, 0.85);
+    --text: #18212e; --muted: #4d5c70; --faint: #5c6b7e;
+    --accent-text: #8c3b08; --accent-soft: rgba(168, 83, 25, 0.08); --accent-edge: #c07a44;
+    --ok: #196342; --ok-soft: rgba(25, 99, 66, 0.08);
+    --bad: #a3322a; --bad-soft: rgba(163, 50, 42, 0.07);
+    --info: #305a8a; --info-soft: rgba(48, 90, 138, 0.07);
+    --warning: #80510e; --warning-soft: rgba(128, 81, 14, 0.07);
+    --control-hi: #ffffff; --control-lo: #e9edf3; --metal: #415167;
+    --ambient: rgba(95, 120, 155, 0.08); --scrim: rgba(27, 38, 54, 0.36);
+    --shadow: 0 24px 72px -28px rgba(28, 45, 68, 0.28), 0 8px 24px -16px rgba(28, 45, 68, 0.15);
+    --shadow-card: inset 0 1px 0 var(--edge), 0 4px 16px -12px rgba(28, 45, 68, 0.2);
+    --shadow-control: inset 0 1px 0 #ffffff, 0 2px 4px rgba(28, 45, 68, 0.07);
+  }
+}
+:root[data-theme="light"] {
+  color-scheme: light;
+  --bg: #edf0f4; --side: rgba(246, 248, 251, 0.93); --panel: #fafbfd;
+  --raised: #e9edf2; --sunk: #f0f3f7; --sheet: rgba(250, 251, 253, 0.98);
+  --line: #d0d7e1; --line-2: #a9b4c3; --edge: rgba(255, 255, 255, 0.85);
+  --text: #18212e; --muted: #4d5c70; --faint: #5c6b7e;
+  --accent-text: #8c3b08; --accent-soft: rgba(168, 83, 25, 0.08); --accent-edge: #c07a44;
+  --ok: #196342; --ok-soft: rgba(25, 99, 66, 0.08);
+  --bad: #a3322a; --bad-soft: rgba(163, 50, 42, 0.07);
+  --info: #305a8a; --info-soft: rgba(48, 90, 138, 0.07);
+  --warning: #80510e; --warning-soft: rgba(128, 81, 14, 0.07);
+  --control-hi: #ffffff; --control-lo: #e9edf3; --metal: #415167;
+  --ambient: rgba(95, 120, 155, 0.08); --scrim: rgba(27, 38, 54, 0.36);
+  --shadow: 0 24px 72px -28px rgba(28, 45, 68, 0.28), 0 8px 24px -16px rgba(28, 45, 68, 0.15);
+  --shadow-card: inset 0 1px 0 var(--edge), 0 4px 16px -12px rgba(28, 45, 68, 0.2);
+  --shadow-control: inset 0 1px 0 #ffffff, 0 2px 4px rgba(28, 45, 68, 0.07);
+}
+@keyframes sheet-in { from { opacity: 0; translate: 0 16px; } to { opacity: 1; translate: 0 0; } }
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation: none !important; transition: none !important; scroll-behavior: auto !important;
+  }
+}
