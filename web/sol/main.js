@@ -64,6 +64,8 @@ const blank = () => ({
   sending: {},
   added: null,
   savedShown: false,
+  rent: null,
+  rentDone: null,
 });
 
 function teardown(c) {

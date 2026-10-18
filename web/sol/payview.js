@@ -170,14 +170,14 @@ function seatLine(c, mark, what) {
   return c.host.el("p", { class: "small", "data-sol": mark }, text);
 }
 
-/** What the last Add SOL did, as a line of text. */
 // The explorer of the cluster: a transaction (`tx`) or an account (`address`), in a new tab.
 const EXPLORER = "https://explorer.solana.com/";
 function explorerLink(c, kind, id) {
   const href = EXPLORER + kind + "/" + encodeURIComponent(id) + "?cluster=" + CLUSTER;
-  return c.host.el("a", { href, target: "_blank", rel: "noopener" }, id);
+  return c.host.el("a", { href, target: "_blank", rel: "noopener" }, id + " ↗");
 }
 
+/** What the last Add SOL did, as a line of text. */
 function addedLine(c) {
   const a = c.added;
   if (!a) return null;
@@ -365,9 +365,12 @@ function recipientRows(said) {
   ];
 }
 
-/** The payee rows of a private spend, from the fingerprint that the checker answered. */
-const COMPARE = "Compare the Payee with the program address on the Solana tab of the payee group.";
+// The Payee is the first part of the shielded address only: a typo in the rest still matches.
+const COMPARE =
+  "Compare the Payee with the program address on the Solana tab of the payee group. " +
+  "This checks only the first part of the shielded address.";
 
+/** The payee rows of a private spend, from the fingerprint that the checker answered. */
 function payeeRows(said) {
   return [
     ["Payee", base58(said.payee.tag)],
@@ -470,12 +473,13 @@ function rowsOf(c, review) {
   return rows;
 }
 
-const READING_TEXT = "Reading your wallet. The Approve button appears when it is done.";
+const READING_TEXT = "Zigs reads your wallet. The Approve button appears when it is done.";
 
-function reviewBlock(c, ss, seat) {
-  const { el } = c.host,
-    review = reviewOf(c, ss, seat);
-  if (review.waiting) return el("p", { class: "small", "data-sol": "reading" }, READING_TEXT);
+function reviewBlock(c, ss, review) {
+  const { el } = c.host;
+  if (review.waiting) {
+    return el("p", { class: "small", role: "status", "data-sol": "reading" }, READING_TEXT);
+  }
   if (!review.ok) {
     return el("div", { class: "callout bad", role: "alert", "data-sol": "refusal" }, review.why);
   }
@@ -514,10 +518,12 @@ const SEAT_TEXT = {
 };
 
 // A seat that approved, or that signed these exact bytes, gets no approval screen and no button.
-function approveRow(c, ss, act, actions) {
+// While the device reads its wallet, no seat gets a button: the review is not on the screen yet.
+function approveRow(c, ss, act, actions, waiting) {
   const { el } = c.host;
   return seatsOf(c, ss).map(({ seat, state }) => {
     if (state !== "open") return el("span", { class: "small" }, SEAT_TEXT[state](seat));
+    if (waiting) return null;
     const attrs = {
       class: "btn primary",
       type: "button",
@@ -561,10 +567,12 @@ function sessionBody(c, ss, act, actions) {
   const count = Object.keys(c.commits[ss.id] ?? {}).length;
   const collecting = ss.status === "collecting";
   const proposer = `Proposed by seat ${ss.by}. Approvals: ${count} of ${c.host.state.g.t}.`;
+  const review = collecting && open ? reviewOf(c, ss, open.seat) : null;
+  const buttons = collecting ? approveRow(c, ss, act, actions, review?.waiting) : null;
   return [
     el("p", { class: "small" }, proposer),
-    collecting && open ? reviewBlock(c, ss, open.seat) : null,
-    collecting ? el("div", { class: "row-actions" }, approveRow(c, ss, act, actions)) : null,
+    review ? reviewBlock(c, ss, review) : null,
+    buttons ? el("div", { class: "row-actions" }, buttons) : null,
     executeLine(c, ss, act, actions),
     resultLine(c, ss),
   ];
@@ -621,7 +629,7 @@ function rentCard(c, act) {
     ? el(
         "p",
         { class: "small", "data-sol": "rent-done" },
-        "Cancelled for seat " + c.rentDone.seat + ": ",
+        "Cancel transactions of seat " + c.rentDone.seat + ": ",
         c.rentDone.txIds.flatMap((id, n) => [n ? ", " : "", explorerLink(c, "tx", id)]),
       )
     : null;

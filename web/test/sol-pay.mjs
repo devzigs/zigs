@@ -302,11 +302,14 @@ step("propose creates the proposal account first; no screen before the reads of 
   const marks = (name) => findAll(card, (n) => n.attrs["data-sol"] === name).length;
   assert.ok(marks("reading") >= 1, "the card says that the device reads its wallet");
   assert.equal(marks("refusal"), 0, "and shows no alert");
+  const buttons = () => marked("approve-" + id + "-2").length;
+  assert.equal(buttons(), 0, "and no Approve button before the review shows");
   notify();
   await waitFor("a read with no account", () => c.seen[id]?.account === null);
   assert.equal(reviewOf(c, ssOf(id), 2).ok, false, "no account: no approval yet");
   chain.accounts.set(address, stored);
   await waitFor("the account read again", () => reviewOf(c, ssOf(id), 2).ok, 30000);
+  assert.equal(buttons(), 1, "the Approve button comes with the review");
 }
 step("a device that read no proposal account reads it again, with no click");
 
@@ -381,7 +384,7 @@ step("a failed wallet read waits longer each time, shows one banner, and a succe
     "0.00135636 SOL, back to seat 1 at the execute, or after the expiry with the card " +
     '"Rent of old proposals".';
   assert.equal(rows["Proposal rent"], rent);
-  assert.equal(rows["Proposal account"], base58(ssOf(id).account));
+  assert.equal(rows["Proposal account"], base58(ssOf(id).account) + " ↗");
   const links = findAll(marked("review-" + id)[0], (n) => n.tag === "a").map((n) => n.attrs);
   const explorer = "https://explorer.solana.com/address/" + base58(ssOf(id).account);
   const link = { href: explorer + "?cluster=devnet", target: "_blank", rel: "noopener" };
@@ -433,6 +436,10 @@ step("a failed wallet read waits longer each time, shows one banner, and a succe
   const [result] = marked("result").filter((n) => textOf(n).includes(ss.txId));
   const tx = findAll(result, (n) => n.tag === "a")[0].attrs.href;
   assert.equal(tx, "https://explorer.solana.com/tx/" + ss.txId + "?cluster=devnet");
+  c.added = { status: "confirmed", amount: 10_000_000n, seat: 1, txId: ss.txId };
+  const [added] = marked("added");
+  assert.equal(findAll(added, (n) => n.tag === "a")[0].attrs.href, tx, "Add SOL links its id");
+  c.added = null;
 }
 step("two seats approve the digest once, and the proposing seat executes a fresh proof");
 

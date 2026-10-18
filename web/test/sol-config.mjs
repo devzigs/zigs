@@ -1,7 +1,7 @@
 // Where the page gets the Helius URL (cf/src/index.js serves /sol/config.json). fetchRpcUrl takes
-// the URL from the server answer only, keeps nothing in storage, and says "not available" for every
-// other answer. When the server gives no URL, the page loads nothing of Solana, says so once, and
-// does not ask again at the next redraw.
+// the URL from the server answer only, keeps nothing in storage, asks to check the connection when
+// the request fails, and says "not available" for every other answer. When the server gives no
+// URL, the page loads nothing of Solana, says so once, and does not ask again at the next redraw.
 // Run: node web/test/sol-config.mjs   (Node 24)
 import assert from "node:assert/strict";
 import { NOT_LOADED, UNAVAILABLE, fetchRpcUrl } from "../sol/session.js";

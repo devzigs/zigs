@@ -23,7 +23,7 @@ const WORKER_POLICY =
   "connect-src 'self' https://devnet.helius-rpc.com; base-uri 'none'";
 
 // The page shows it after "Solana did not load: " (S12): the server did not answer at all.
-export const NOT_LOADED = "Check your connection, then press Try again or reload.";
+export const NOT_LOADED = "Check your connection. Then reload the page.";
 
 /**
  * The Helius Devnet URL that the server serves. Throws NOT_LOADED when the request fails, and
