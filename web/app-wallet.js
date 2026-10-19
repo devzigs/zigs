@@ -3,7 +3,7 @@ import { fmtInt, seatBackedUp, usesV2 } from "./util.js";
 import { IGNORED_NOTE } from "./signed.js";
 import { log, ready, state, ui } from "./app-state.js";
 import { fmtZec, short, when } from "./app-kit.js";
-import { gkeys, sec } from "./app-keystore.js";
+import { gkeys, mySeatSecrets, sec } from "./app-keystore.js";
 import { keysDiffer, localSeats, seatIds, seatMine, seatStage, STAGE_LABEL } from "./app-seats.js";
 import { inviteLink, senderNote } from "./app-links.js";
 import {
@@ -17,9 +17,7 @@ import {
   named, netBadge, payTitle, proposer, ruleText, seatTitle, secretQr, statusChip, unreadable,
 } from "./app-dom.js";
 import { signing, unreadIn } from "./app-messages.js";
-import {
-  abortedText, groupVersion, myVerified, rejectedSeats, seatCheck, verifiedCount,
-} from "./app-dkg.js";
+import { groupVersion, rejectedSeats, seatCheck, verifiedCount } from "./app-dkg.js";
 import {
   cancelMove, chainReady, ended, expired, heldApprovals, isOpen, landed, proposeMove, sendBlocker,
   signingSeen,
@@ -94,11 +92,11 @@ function signedNotes() {
     ? el("div", { style: "display:grid;gap:8px" }, lost, moved, ignored) : null;
 }
 
-// A seat of this browser that stopped its setup keeps the setup page and its stop, also when a
-// wallet document came. A browser whose seat checked the address keeps the wallet: a later stop
-// (an unsigned group document can trigger one) must not lock its people out of their funds.
+// A person's stop keeps the setup page, also when a wallet document came. Another abort (an
+// unsigned group document can trigger one) must not take the wallet from a device with a share.
 export const walletReady = () => !!(state.wallet && state.wallet.birthday)
-  && rejectedSeats().length === 0 && !keysDiffer() && (!abortedText() || myVerified());
+  && rejectedSeats().length === 0 && !keysDiffer()
+  && !mySeatSecrets(state.gid).some(([, s]) => s.stopped);
 
 /**
  * The sections of the open wallet: [id, label, count] each. The side menu lists them; the Solana

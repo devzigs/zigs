@@ -205,6 +205,7 @@ export async function createWallet() {
   const w = J(mine ? Z.walletCreateV2(S(mine.publicKeyPackage), net, mine.vaultSk)
     : Z.walletCreate(state.done[1].publicKeyPackage, net));
   const doc = await signedDoc(gid, "meta/wallet", 1, { ...w, birthday, at: Date.now() });
+  if (abortedText() || remoteAborts().length) return;   // a stop came while the server answered
   await sdb.doc(base + "/meta/wallet").set(doc);
   log("wallet created: " + w.address.slice(0, 24) + "…");
 }
@@ -288,8 +289,8 @@ export async function stopSetup() {
   for (const [i, s] of mySeatSecrets(gid)) {
     if (s.aborted) continue;
     const text = abortText("The person who uses device " + i + " saw a different safety number");
-    // The stop also drops the address check of the seat, so the wallet page does not come back.
-    saved = (await putSec(gid, i, { aborted: text, checkedWallet: null })) && saved;
+    // The stop mark keeps the setup page, also when a wallet document comes later.
+    saved = (await putSec(gid, i, { aborted: text, stopped: true })) && saved;
   }
   if (!saved) throw new Error(STOP_UNSAVED);
 }

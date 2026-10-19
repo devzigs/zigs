@@ -1992,6 +1992,9 @@ assert.match(marginText(3, 3), /Each payment needs every device/);
       checkedWallet: undefined };
     button("They don't match").on.click();
     await button("Stop setup").on.click();
+    t.state.abort = {};
+    assert.equal(creates(), false,
+      "the own stop of seat 1 builds no wallet before any abort document");
     assert.deepEqual([t.secrets[k1].aborted, t.secrets[k2].aborted], [1, 2].map((i) => "The "
       + "person who uses device " + i + " saw a different safety number. Do not use this wallet. "
       + "Create a new wallet."), "every seat of this browser stops");
@@ -1999,15 +2002,17 @@ assert.match(marginText(3, 3), /Each payment needs every device/);
     const stopNote = findNode(view(), (n) => n.attrs?.["data-key"] === "stop-setup");
     assert.equal(stopNote?.attrs.tabindex, "-1", "the focus stays on the stop");
     assert.match(seen(), /Stopped: no address\./, "the address step says that the setup stopped");
-    assert.equal(t.secrets[k1].checkedWallet, null, "the stop drops the address check of the seat");
+    assert.deepEqual([t.secrets[k1].stopped, t.secrets[k2].stopped], [true, true],
+      "the stop marks each seat as stopped by its person");
     await waitFor("the abort document", () => !!data.get(`groups/${gidV}/abort/1`));
     assert.equal(creates(), false, "a stopped seat 1 builds no wallet");
     t.state.wallet = keep.wallet;
     assert.equal(walletReady(), false, "a stopped browser keeps its setup page and its stop");
-    t.secrets[k1] = { ...t.secrets[k1], checkedWallet: kept[1].checkedWallet };
-    assert.equal(walletReady(), true,
-      "a browser that checked the address keeps its wallet after a stop");
-    t.secrets[k1] = { ...t.secrets[k1], checkedWallet: undefined };
+    // An abort with no stop of a person (a version flip, for example) keeps the wallet page.
+    t.secrets[k1] = { ...t.secrets[k1], stopped: undefined };
+    assert.equal(walletReady(), false, "a stop of the other seat of this browser keeps the setup");
+    t.secrets[k2] = { ...t.secrets[k2], stopped: undefined };
+    assert.equal(walletReady(), true, "an abort without a person's stop keeps the wallet page");
     // A stop of another device: the card goes, and seat 1 builds no wallet either.
     t.secrets[k1] = { ...t.secrets[k1], aborted: undefined };
     delete t.secrets[k2];
