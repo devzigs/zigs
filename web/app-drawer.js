@@ -43,12 +43,12 @@ function heightLine(ss, v, e) {
   const c = curChain(), at = "block " + fmtInt(expiryAt(ss));
   if (expired(ss) && signingSeen(ss)) return checkLine(at, v);
   if (expired(ss)) {
-    return el("div", { class: "callout bad" }, "This payment expired at " + at + ". No signer "
+    return el("div", { class: "callout bad" }, "This payment expired at " + at + ". No device "
       + "can approve, sign or send it now. Propose it again.");
   }
   if (e.expired) {
     return el("div", { class: "callout" }, "This payment can no longer go to the network: it "
-      + "expires at " + at + ". If a signer sent it, a block can still hold it.");
+      + "expires at " + at + ". If a device sent it, a block can still hold it.");
   }
   if (ss.broadcastTxid) return null;
   const must = "The approvals, the proof and the send must be done by then.";
@@ -65,7 +65,7 @@ function checkLine(at, v) {
   const when = at ? "This payment expired at " + at : "The payment that this browser approved "
     + "can no longer go on chain";
   return el("div", { class: "callout bad" }, when + ", and no synced block holds the "
-    + "transaction that this page shows. This page cannot prove that the signers signed that "
+    + "transaction that this page shows. This page cannot prove that the devices signed that "
     + "transaction. Check the wallet's activity and an explorer before anyone proposes it again.",
   why);
 }
@@ -135,7 +135,8 @@ function recipientBox(ss, rc) {
             r.got === undefined ? "Not in the transaction" : "Memo differs"))),
       nameLine(r), memoLines(r))),
     rc.rows.some((r) => r.memo) ? el("p", { class: "small faint" },
-      "A memo goes on chain with the payment. Its recipient and every signer can read it.") : null,
+      "A memo goes on chain with the payment. Its recipient and every device of this wallet can "
+      + "read it.") : null,
     checkWarnings(rc),
     ss.move ? moveNote(ss, rc) : null);
 }
@@ -157,7 +158,7 @@ const bigButton = (label, onclick, extra = {}) =>
 
 function approveButtons(ss, myPending) {
   const several = localSeats().length > 1;
-  return myPending.map((i) => bigButton(several ? "Approve as seat " + i : "Approve payment",
+  return myPending.map((i) => bigButton(several ? "Approve as device " + i : "Approve payment",
     act(() => approve(ss, i))));
 }
 
@@ -213,7 +214,8 @@ const canApprove = (ss, rc) => approvers(ss).length > 0 && rc.match === true
   && rc.intoNew !== false && !enoughApprovals();
 const enoughApprovals = () => Object.keys(state.commits).length >= state.g.t;
 
-const CANCEL_ASK = "Cancel this payment? No signer can approve it after this. Anyone can propose it again.";
+const CANCEL_ASK = "Cancel this payment? No device can approve it after this. Anyone can propose "
+  + "it again.";
 // Until the signatures are combined, any signer can withdraw a payment, for example one that lost
 // an approval. A signature share alone cannot move funds.
 // A document that lost the signing parts that this browser saw gets no Cancel: one seat reset it.
@@ -243,8 +245,8 @@ const resetNote = (ss) => signingLost(ss) ? el("div", { class: "callout bad" }, 
 
 // One seat rewrote the proposal after a seat of this browser approved it.
 const changedNote = (ss) => approvalChanged(ss) ? el("div", { class: "callout bad" },
-  "The proposal changed after a seat of this browser approved it. The details below come from the "
-  + "changed proposal, not from what you approved.") : null;
+  "The proposal changed after this browser approved it. The details below come from the changed "
+  + "proposal, not from what you approved.") : null;
 
 // After a cancel or a failure, the approval of this browser can still hold Send (ZEC-13). The
 // person can release it by hand, after a check and a second click (S7, the owner's decision D2).
@@ -264,7 +266,7 @@ function holdCard(ss) {
   const actions = sure ? [button("Release Send now", release), button("Keep the hold", set(null))]
     : [button("I checked, release", set(ss.id))];
   return el("div", { class: "callout", "data-key": "hold-" + ss.id },
-    el("p", {}, "This browser approved this payment, and the other signers can still sign and "
+    el("p", {}, "This browser approved this payment, and the other devices can still sign and "
       + "send it. Send stays off until block " + fmtInt(end) + holdLeft(end) + ". Release Send "
       + "only if you are sure that nobody will send it."),
     el("div", { class: "dialog-actions" }, actions));
@@ -530,7 +532,7 @@ export function txDetails(ss) {
   const source = markOf(state.gid, ss.id).approved ? "the approved proposal" : "the proposal";
   const falseId = id && id !== ss.final.txid ? el("div", { class: "callout bad" }, "The finished "
     + "transaction names the id " + short(String(ss.final.txid), 12) + ", but " + source
-    + " gives the id " + short(id, 12) + ". One signer's device wrote one of them alone. "
+    + " gives the id " + short(id, 12) + ". One device wrote one of them alone. "
     + "Check the payment in an explorer.") : null;
   return el("div", { style: "display:grid;gap:10px" },
     el("span", { class: "label" }, "Transaction"),

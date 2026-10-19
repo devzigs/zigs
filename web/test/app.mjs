@@ -1935,7 +1935,7 @@ const sealed = (gid, rel, seat, fields, key, names = ["by", "sig"]) =>
     for (const signedOne of [sentOne, unmarkedOne]) {
       assert.equal(t.expired(signedOne), true);
       assert.deepEqual(t.nextAction(signedOne, null, { rows: [], extra: [] }), []);
-      assert.match(textOf(t.expiryLine(signedOne)), /cannot prove that the signers signed/);
+      assert.match(textOf(t.expiryLine(signedOne)), /cannot prove that the devices signed/);
     }
     const falseId = callouts(t.txDetails(unmarkedOne)).join(" ");
     assert.match(falseId, /names the id f…f, but the proposal gives the id realtx…realtx/,
@@ -2126,7 +2126,7 @@ const sealed = (gid, rel, seat, fields, key, names = ["by", "sig"]) =>
       await assert.rejects(quiet(() => t.proposeAgain(evilA)),
         /recipients of this payment changed/);
       assert.equal(t.ui.send, false);
-      assert.match(textOf(t.sessionLayer(evilA)), /proposal changed after a seat of this browser/);
+      assert.match(textOf(t.sessionLayer(evilA)), /proposal changed after this browser approved/);
       put(signedA);
       await settle();
 
@@ -2501,7 +2501,7 @@ const sealed = (gid, rel, seat, fields, key, names = ["by", "sig"]) =>
         const changed = look(signedA);
         assert.match(changed.head, /^Payment needs attentionOne device changed the proposal after /,
           "headline: one device rewrote the proposal after the approval here");
-        assert.match(changed.text, /proposal changed after a seat of this browser approved it/);
+        assert.match(changed.text, /proposal changed after this browser approved it/);
         // A move pays the address that the store names, not the one that this browser checked.
         t.secrets["MVX:1"] = { checkedWallet: JSON.stringify({ address: "utest1other" }) };
         const moveOff = look({ ...open("hd8", "PA"), move: "MVX" });
@@ -2960,7 +2960,7 @@ const sealed = (gid, rel, seat, fields, key, names = ["by", "sig"]) =>
       assert.match(String(t.sendBlocker()), /After a cancel, open that payment to release it\./);
       t.state.sessions = kept7;
       const card = () => holdOf(gone);
-      assert.match(textOf(card()), new RegExp("other signers can still sign and send it\\. Send "
+      assert.match(textOf(card()), new RegExp("other devices can still sign and send it\\. Send "
         + "stays off until block 4,503,459, in about \\d+ hours\\. Release Send only"));
       const hours = () => Number(/in about (\d+) hours/.exec(textOf(card()))[1]);
       const fresh = hours();
