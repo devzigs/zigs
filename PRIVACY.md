@@ -172,10 +172,10 @@ id that you open, and the time, so it can link them. The page sends no referrer.
 
 ## ZNS names (testnet)
 
-**Status on 18 October 2026:** main has the `/zns` route and the lookup on the device
-(`web/zns.js`), but the Send form does not take a name yet (M10 of
-[docs/hackathon-release.md](docs/hackathon-release.md)). Until then, the page does not download
-the registry. This section describes the design that M10 finishes.
+**Status on 18 October 2026:** the Send form takes a name and looks it up on the device
+(`web/zns.js`), in the copy that `/zns` serves. An approving web app checks the name again (M10 of
+[docs/hackathon-release.md](docs/hackathon-release.md)). A live testnet payment to a name is not
+done yet.
 
 On testnet, the Send form of the web app accepts a ZNS name in place of an address: `alice`,
 `alice.zec` or `alice.zcash`. ZNS is the naming service of Zcash Names (zcashnames.com), which
@@ -204,7 +204,8 @@ How the app reads the registry:
 The timing of a download can still tell the Worker something:
 
 - The page downloads the registry when a testnet wallet opens. It downloads it again when a copy
-  older than 60 seconds must check a name, before a proposal or an approval.
+  older than 60 seconds must check a name: when you type a name, before a proposal, and before an
+  approval.
 - The Worker sees each download and its IP address. As the group server, it also sees which IP
   addresses open which wallet.
 - So a download near a proposal or an approval can tell the Worker that a wallet may pay a name.
@@ -219,9 +220,13 @@ What the app trusts, and what it checks:
   same copy, so their check would not see it. They still see the address, and the payment goes
   only to the address that they approve.
 - A name can move to another address. The proposer sees the address that the name gives, and a
-  note when the name changed recently. Each approving web app looks the name up again, in its own
-  copy, and refuses the approval when the name now gives another address than the payment. The
-  iPhone and Mac apps show the address and do not check the name.
+  note when the name changed recently. The form pays only the address that it showed: when the
+  name gives another address at the proposal, the form refuses and shows the new address. Each
+  approving web app looks the name up again, in its own copy, and refuses the approval when the
+  name now gives another address than the payment. The iPhone and Mac apps show the address and do
+  not check the name.
+- "Propose again" after an expired payment keeps the name and the address of the first proposal,
+  so the approvers check the name again.
 - The page uses its copy for at most 60 seconds, so the copy is at most about 2 minutes behind
   the resolver. The resolver can fall behind the chain too. So the page refuses a registry that is
   more than 10 blocks below the chain height of the wallet.
@@ -611,8 +616,8 @@ the passkey guards the key share instead. The lock is opt-in.
   name and the message in a request are text from the sender. The card cuts them and marks them as
   not checked.
 - A ZNS name gives the address that its registry holds. Whoever controls a name can point it at
-  another address. The approvers check the name again, and the payment goes to the address that
-  they approved. Before a large payment, check the address with the payee.
+  another address. The approvers in the web app check the name again, and the payment goes to the
+  address that they approved. Before a large payment, check the address with the payee.
 - **Propose this** sends nothing: the normal checks and approvals of a payment apply. Every
   approver reads its note. The note names the sender only when the sender is verified. Any holder
   of the invite link can write a message with a seat number and a bad signature.

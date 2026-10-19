@@ -6,9 +6,11 @@ import assert from "node:assert/strict";
 import fs from "node:fs";
 import * as Z from "../pkg/zigs_engine.js";
 import { newSignKey, signMsg, verifyMsg } from "../chat.js";
+import { memoError } from "../payees.js";
 import { HIGH_TEXT as HIGH } from "../personal.js";
 import { seatBackedUp } from "../util.js";
 import { aesKey, open as openVault, seal } from "../vault.js";
+import { createRegistry, registry, ZNS_KEY } from "../zns.js";
 import { loadPage, stallFreeClock } from "./page.mjs";
 
 const web = new URL("../", import.meta.url);
@@ -229,9 +231,14 @@ const sealed = (gid, rel, seat, fields, key, names = ["by", "sig"]) =>
     onSnapshot: (cb) => listen(() => cb({ docs: under(p).map((k) => ({
       id: k.split("/").pop(), data: () => data.get(k) })) })),
   });
-  // No network: the chain height is fixed, the sync fails, the proof is a fixed answer.
+  // No network: the chain height is fixed, the sync fails, the proof is a fixed answer. Until the
+  // wallet is made, the server answers one height, then stops answering: the birthday is the
+  // answer to the server check, so making the wallet never waits for a second one.
   class Offline { constructor() { throw new Error("offline"); } }
-  const fakeZ = { ...Z, latestHeight: async () => 1000, ChainWallet: Offline,
+  let heights = 0, letHeights;
+  const heldHeight = new Promise((r) => { letHeights = () => r(1000); });
+  const fakeZ = { ...Z, latestHeight: () => (heights++ ? heldHeight : Promise.resolve(1000)),
+    ChainWallet: Offline,
     finalize: () => JSON.stringify({ tx_hex: "00ff", txid: "T1", size: 2, version: "V5" }) };
   t.secrets = {};
   t.setZ(fakeZ);
@@ -251,6 +258,8 @@ const sealed = (gid, rel, seat, fields, key, names = ["by", "sig"]) =>
   await waitFor("three seats", () => Object.keys(t.state.seats).length === 3);
   assert.deepEqual(t.localSeats(), [1, 2, 3]);
   // This browser holds every seat, so the page runs the whole ceremony by itself.
+  await waitFor("wallet made with one height", () => data.get(`groups/${gid}/meta/wallet`));
+  letHeights();
   await waitFor("wallet checked", () => Object.keys(t.state.verify).length === 3 && t.state.wallet);
   assert.equal(t.state.ignored, 0, "an honest wallet ignores nothing");
   for (const kind of ["confirm", "dkg1", "done", "verify"]) {
@@ -264,6 +273,7 @@ const sealed = (gid, rel, seat, fields, key, names = ["by", "sig"]) =>
   assert.equal(Object.keys(t.state.dkg2).length, 6);
   assert.equal(data.get(`groups/${gid}/meta/wallet`).by, 1);
   assert.equal(t.state.wallet.by, undefined);
+  assert.equal(data.get(`groups/${gid}/meta/wallet`).birthday, 1000, "the height of the check");
 
   // Payments, through the real writers.
   const spend = { pool: "ironwood", amount: 5, change: 1, fee: 10000, note_value: 20, pczt: "AAA" };
@@ -2585,6 +2595,315 @@ const sealed = (gid, rel, seat, fields, key, names = ["by", "sig"]) =>
       await t.putSec(t.state.gid, me, { marks: {} });
       t.state.sessions = [];
       assert.equal(asked.some((x) => x[0] === "spend"), false, "the engine makes nothing");
+      // ── Pay to a ZNS name (testnet). Each case starts a new registry on a fake /zns, so that
+      // no copy of an earlier case is left. `gets` counts the calls of the page to
+      // registry.get(), `fetches` the downloads.
+      const pageGet = registry.get;
+      const znsRec = (name, address, height = 1, lastAction = "claim") => ({
+        name, address, txid: "ab".repeat(32), height, last_action: lastAction,
+        expires_at: "none" });
+      const NAMED = "utest1x", MOVED = "utest1bobnow", UNPAYABLE = "utest1unpayable";
+      const OTHER = "utest1someoneelse";
+      // The engine gives another form of the address of "alice": a payee must keep the string of
+      // the registry, not this one.
+      const canon = (a) => (a === NAMED ? "utest1canonicalform" : a);
+      const OWN = t.state.wallet.address;
+      const ZNS_NAMES = [znsRec("alice", NAMED), znsRec("bob", MOVED), znsRec("odd", UNPAYABLE),
+        znsRec("self", OWN), znsRec("fresh", NAMED, 4500100 - 3455),
+        znsRec("aged", NAMED, 4500100 - 3456),
+        znsRec("moved", NAMED, 4495100, "update")];
+      let gets = 0, fetches = 0;
+      const znsServes = (answer) => {
+        gets = 0; fetches = 0;
+        const fresh = createRegistry({ fetch: async () => { fetches++; return answer(); } });
+        registry.get = () => { gets++; return fresh.get(); };
+      };
+      const znsOk = (names = ZNS_NAMES, height = 4500100) => () => Response.json(
+        { network: "test", key: ZNS_KEY, height, synced: true, names });
+      const znsDown = () => new Response("down", { status: 503 });
+      const ZNS_DOWN = "The ZNS registry cannot be read. Try again.";
+      const zStub = (normalizeAddress = (a) => a) => ({ ...fakeZ, latestHeight: async () => 4500001,
+        normalizeAddress, signCommit: () => S({ nonces: ["n"], commitments: ["c"] }),
+        inspect: (p) => {
+          if (!decodes[p]) throw new Error("unreadable");
+          return S(decodes[p]);
+        } });
+      let againPayees = null;
+      {
+        at(4500100);
+        t.ui.send = false;   // the page draws no Send form of its own during these cases
+        t.setZ(zStub(canon));
+        const sessionDocs = () => [...data.keys()].filter((k) => /\/sessions\/[^/]+$/.test(k));
+        const rowsOf = (...list) => {
+          t.ui.pay = list.map(([to, amt = "0.5", memo = ""]) =>
+            ({ k: ++t.ui.payKey, to, amt, memo }));
+          return t.sendDialog();
+        };
+        // A form whose hints have answered, as a person sees it before the click.
+        const settled = async (...list) => {
+          const form = rowsOf(...list);
+          await quiet(() => sleep(10));
+          return form;
+        };
+        const boxOf = (d, n = 0) => all(d, (x) => /^s-to-/.test(x.attrs?.id ?? ""))[n];
+        const hintOf = (d, n = 0) => all(d, (x) => x.className === "pay-row")[n].kids
+          .find((k) => k.tag === "span" && /^hint/.test(k.className));
+        const typeIn = (d, text, n = 0) => {
+          boxOf(d, n).on.input({ target: { value: text } });
+          return hintOf(d, n);
+        };
+        const shows = (hint) => [hint.textContent, hint.className];
+        // The proposals made since `before`: their payees. They are taken out of the store.
+        const proposedSince = async (before) => {
+          const fresh = sessionDocs().filter((k) => !before.has(k));
+          const payees = fresh.map((k) => data.get(k).payees);
+          for (const k of fresh) data.delete(k);
+          if (fresh.length) { t.closeSession(); notify(); await quiet(settle); }
+          t.state.sessions = [];
+          return payees;
+        };
+        // A submit with the stub page, as the page draws and reacts after it.
+        const stubPage = () => ({ ...recorder, activeElement: { dataset: {} },
+          getElementById: () => new Rec("div") });
+        const submit = async (dialog) => {
+          const before = new Set(sessionDocs());
+          globalThis.document = stubPage();
+          await dialog.on.submit({ preventDefault() {}, currentTarget: null });
+          globalThis.document = realDocument;
+          await sleep(300);
+          globalThis.document = recorder;
+          return proposedSince(before);
+        };
+        // Two submits at once: `release()` runs when both wait for the registry.
+        const submitTwice = async (dialog, release) => {
+          const before = new Set(sessionDocs());
+          const ev = { preventDefault() {}, currentTarget: null };
+          globalThis.document = stubPage();
+          const both = [dialog.on.submit(ev), dialog.on.submit(ev)];
+          globalThis.document = realDocument;
+          release();
+          await Promise.all(both);
+          await sleep(300);
+          globalThis.document = recorder;
+          return proposedSince(before);
+        };
+        const refused = async (dialog, text) => {
+          asked.length = 0;
+          assert.deepEqual(await submit(dialog), [], "nothing is proposed");
+          assert.deepEqual(t.banner, { kind: "bad", text });
+          assert.equal(asked.some((x) => x[0] === "spend"), false, "the engine makes nothing");
+        };
+
+        // The label and the placeholder, and the lookup of a name in the hint.
+        znsServes(znsOk());
+        let form = rowsOf([""]);
+        assert.equal(boxOf(form).attrs.placeholder, "utest1… or alice.zec");
+        assert.equal(boxOf(form).attrs["aria-label"], "Recipient address or ZNS name");
+        assert.match(textOf(form), /One address or ZNS name and amount per line, then an optional/);
+        let hint = typeIn(form, "Alice.ZEC ");
+        assert.equal(hint.attrs.role, "status", "a screen reader hears the hint");
+        assert.deepEqual(shows(hint), ["Looking up alice.zec…", "hint "]);
+        await quiet(() => sleep(20));
+        assert.deepEqual(shows(hint), [`alice.zec gives this address: ${NAMED}`, "hint ok"]);
+        assert.deepEqual([gets, fetches], [1, 1]);
+        for (const [typed, note] of [["bob", ""], ["fresh.zcash", " This name got this address at "
+          + "block 4496645, less than a day ago. Check the address with the payee."],
+        ["aged", ""], ["moved", " This name moved to a new address at block 4495100."]]) {
+          hint = typeIn(form, typed);
+          await quiet(() => sleep(10));
+          const address = ZNS_NAMES.find((r) => r.name === typed.split(".")[0]).address;
+          const name = typed.split(".")[0];
+          assert.equal(hint.textContent, `${name}.zec gives this address: ${address}${note}`);
+        }
+        hint = typeIn(form, "nobody");
+        await quiet(() => sleep(10));
+        assert.deepEqual(shows(hint), ["nobody is not a unified address, and the testnet ZNS "
+          + "registry has no name nobody.", "hint bad"]);
+        assert.equal(fetches, 1, "one download serves every lookup");
+
+        // An address, a request and a transparent address are no names: no lookup.
+        znsServes(znsOk());
+        form = rowsOf([""]);
+        assert.deepEqual(shows(typeIn(form, OWN)), ["Valid testnet address", "hint ok"]);
+        const tAddress = "tmBsTi2xWTjUdEXnuTceL7fecEQKeWaPDJd";
+        assert.deepEqual(shows(typeIn(form, tAddress)),
+          ["Not a shielded Zcash testnet address. It starts with utest1.", "hint bad"]);
+        assert.equal(typeIn(form, "tex1" + "q".repeat(30)).className, "hint bad");
+        typeIn(form, `zcash:${OWN}?amount=1`);
+        assert.equal(t.ui.pay.length, 1);
+        assert.equal(t.ui.pay[0].to, OWN, "the request fills the row");
+        await quiet(() => sleep(20));
+        assert.deepEqual([gets, fetches], [0, 0],
+          "no address, request or t-address asks the registry");
+        await refused(rowsOf([tAddress]), "Enter a shielded Zcash testnet address. It starts with "
+          + "utest1.");
+        assert.deepEqual([gets, fetches], [0, 0], "the submit asks no registry either");
+
+        // A late answer does not overwrite the hint of newer text.
+        const waiting = [];
+        registry.get = () => new Promise((ok) => { waiting.push(ok); });
+        const parsed = await createRegistry({ fetch: async () => znsOk()() }).get();
+        form = rowsOf([""]);
+        hint = typeIn(form, "alice");
+        typeIn(form, "bob");
+        assert.equal(waiting.length, 2);
+        waiting[0](parsed);
+        await quiet(() => sleep(10));
+        assert.equal(hint.textContent, "Looking up bob.zec…", "the answer for alice is late");
+        waiting[1](parsed);
+        await quiet(() => sleep(10));
+        assert.equal(hint.textContent, `bob.zec gives this address: ${MOVED}`);
+
+        // The submit looks the name up again, and pays the address of the registry. The row shows
+        // the address first: a form whose hint did not answer refuses.
+        znsServes(znsOk());
+        await refused(rowsOf(["alice.zec"]), "Wait until the form shows the address of alice.zec.");
+        let sent = await submit(await settled(["alice.zec"]));
+        assert.deepEqual(sent, [[{ to: NAMED, amount: 50000000, name: "alice" }]],
+          "the string of the registry, not the form of the engine");
+        assert.equal(t.banner.kind, "ok");
+        assert.equal(gets >= 1, true, "the submit asks the registry");
+        sent = await submit(await settled([OTHER, "0.1"], ["Bob", "0.2", "rent"]));
+        assert.deepEqual(sent, [[{ to: OTHER, amount: 10000000 },
+          { to: MOVED, amount: 20000000, memo: "rent", name: "bob" }]],
+        "an address row keeps no name key");
+        // The name moves after the hint: the submit refuses and the form shows the new address
+        // with the note of a recent change. A second submit proposes the new address.
+        form = await settled(["alice"]);
+        assert.equal(t.ui.pay[0].shown.address, NAMED);
+        znsServes(znsOk([znsRec("alice", MOVED, 4500090)]));
+        await refused(form, "The name alice.zec now gives another address. Check it, then "
+          + "propose again.");
+        assert.equal(t.ui.pay[0].shown.address, MOVED, "the row keeps the new address");
+        assert.equal(t.ui.pay[0].shown.seen, false, "but no hint drew it yet");
+        // A second click before the redraw pays nothing: the form never showed that address.
+        await refused(form, "Wait until the form shows the address of alice.zec.");
+        const redrawn = hintOf(t.sendDialog()).textContent;
+        assert.equal(t.ui.pay[0].shown.seen, true, "the hint drew it");
+        assert.equal(redrawn, `alice.zec gives this address: ${MOVED} This name got this address `
+          + "at block 4500090, less than a day ago. Check the address with the payee.");
+        assert.deepEqual(await submit(form), [[{ to: MOVED, amount: 50000000, name: "alice" }]],
+          "after the redraw one submit proposes it");
+        // Two submits at once, the answer of the registry held: the first refuses with the new
+        // address, and the second does not pay it either.
+        znsServes(znsOk());
+        form = await settled(["alice"]);
+        const held = [];
+        registry.get = () => new Promise((ok) => { held.push(ok); });
+        const movedReg = await createRegistry({
+          fetch: async () => znsOk([znsRec("alice", MOVED, 4500090)])() }).get();
+        asked.length = 0;
+        const twice = await submitTwice(form, () => {
+          assert.equal(held.length, 2, "both submits wait for the registry");
+          held.forEach((ok) => ok(movedReg));
+        });
+        assert.deepEqual(twice, [], "neither pays the address that the form never showed");
+        assert.equal(asked.some((x) => x[0] === "spend"), false, "the engine makes nothing");
+        assert.deepEqual([t.ui.pay[0].shown.address, t.ui.pay[0].shown.seen], [MOVED, false]);
+        znsServes(znsOk([znsRec("alice", MOVED, 4500090)]));
+        hintOf(t.sendDialog());
+        assert.deepEqual(await submit(form), [[{ to: MOVED, amount: 50000000, name: "alice" }]],
+          "after the redraw one submit proposes it");
+        // Two rows that moved both show the new address after one refusal.
+        znsServes(znsOk());
+        form = await settled(["alice"], ["bob", "0.2"]);
+        znsServes(znsOk([znsRec("alice", OTHER), znsRec("bob", NAMED)]));
+        await refused(form, "Recipient 1: The name alice.zec now gives another address. Check it, "
+          + "then propose again.");
+        assert.deepEqual(t.ui.pay.map((r) => r.shown.address), [OTHER, NAMED]);
+        // Typing again clears the shown address until the new hint answers.
+        znsServes(znsOk());
+        form = await settled(["alice"]);
+        typeIn(form, "bob");
+        assert.equal(t.ui.pay[0].shown, null);
+        await refused(form, "Wait until the form shows the address of bob.zec.");
+        // "Propose again" keeps the name with the address: the same payee, and the approvers check
+        // the name. Typing in the field drops the name.
+        znsServes(znsOk());
+        const expired8 = { ...open("pa1", "PA"),
+          payees: [{ to: NAMED, amount: 5, name: "alice" }] };
+        Object.assign(t.ui, { send: false, after: null });
+        await quiet(() => t.proposeAgain(expired8));
+        assert.deepEqual(t.ui.pay.map(({ to, amt, name }) => ({ to, amt, name })),
+          [{ to: NAMED, amt: "0.00000005", name: "alice" }]);
+        form = t.sendDialog();
+        assert.deepEqual(shows(hintOf(form)), ["Kept from the first proposal: alice.zec. Each "
+          + "approver in the web app checks the name again.", "hint ok"]);
+        assert.deepEqual([gets, fetches], [0, 0], "an address row asks no registry");
+        againPayees = (await submit(form))[0];
+        assert.deepEqual(againPayees, [{ to: NAMED, amount: 5, name: "alice" }]);
+        Object.assign(t.ui, { send: false, after: null });
+        await quiet(() => t.proposeAgain(expired8));
+        form = t.sendDialog();
+        typeIn(form, OTHER);
+        assert.equal(t.ui.pay[0].name, null);
+        assert.deepEqual(await submit(form), [[{ to: OTHER, amount: 5 }]], "no name key");
+        t.ui.send = false;
+
+        // These stop the proposal with their text.
+        znsServes(znsOk());
+        await refused(rowsOf(["nobody"]), "nobody is not a unified address, and the testnet ZNS "
+          + "registry has no name nobody.");
+        await refused(rowsOf([OTHER, "0.1"], ["nobody"]), "Recipient 2: nobody is "
+          + "not a unified address, and the testnet ZNS registry has no name nobody.");
+        await refused(await settled(["self"]), "This is the address of this wallet. Enter the "
+          + "address of someone else.");
+        await refused(await settled(["alice", ""]), "Enter an amount greater than zero, with at "
+          + "most 8 decimals.");
+        await refused(await settled(["alice", "0.5", "x".repeat(600)]),
+          memoError("x".repeat(600)));
+        znsServes(znsOk(ZNS_NAMES, 4500089));
+        await refused(rowsOf(["alice"]), "The ZNS registry is 11 blocks behind the chain, so a ZNS "
+          + "name cannot be used now.");
+        znsServes(znsOk(ZNS_NAMES, 4500090));
+        assert.deepEqual(await submit(await settled(["alice"])),
+          [[{ to: NAMED, amount: 50000000, name: "alice" }]], "10 blocks behind still works");
+        znsServes(znsDown);
+        await refused(rowsOf(["alice"]), ZNS_DOWN);
+        hint = typeIn(rowsOf([""]), "alice");
+        await quiet(() => sleep(10));
+        assert.deepEqual(shows(hint), [ZNS_DOWN, "hint bad"]);
+        // A registry address that the engine does not accept for this network.
+        znsServes(znsOk());
+        t.setZ(zStub((a) => { if (a === UNPAYABLE) throw new Error("no"); return canon(a); }));
+        await refused(await settled(["odd"]),
+          "The name odd.zec gives an address that Zigs cannot pay.");
+        t.setZ(zStub(canon));
+        // The wallet lost its sync between the draw and the submit.
+        form = await settled(["alice"]);
+        const keptChain = t.chain;
+        t.setChain({ ...keptChain, bal: null });
+        await refused(form, "The wallet has not finished its first sync.");
+        t.setChain(keptChain);
+
+        // A mainnet wallet looks no name up and keeps the address error.
+        const testnet = t.state.g;
+        t.state.g = { ...testnet, network: "mainnet" };
+        znsServes(znsOk());
+        form = rowsOf([""]);
+        assert.equal(boxOf(form).attrs.placeholder, "u1…");
+        assert.equal(boxOf(form).attrs["aria-label"], "Recipient address");
+        assert.match(textOf(form), /One address and amount per line, then an optional memo/);
+        assert.deepEqual(shows(typeIn(form, "alice.zec")),
+          ["Not a shielded Zcash mainnet address. It starts with u1.", "hint bad"]);
+        await refused(rowsOf(["alice.zec"]), "Enter a shielded Zcash mainnet address. It starts "
+          + "with u1.");
+        assert.deepEqual([gets, fetches], [0, 0], "a mainnet wallet makes no lookup");
+        // "Propose again" on a mainnet wallet keeps no name: no name text in the hint, and the
+        // payee is {to, amount}.
+        const mainPay = { ...open("pa2", "PA"),
+          payees: [{ to: "u1mainnetpayee", amount: 5, name: "alice" }] };
+        Object.assign(t.ui, { send: false, after: null });
+        await quiet(() => t.proposeAgain(mainPay));
+        form = t.sendDialog();
+        assert.deepEqual(shows(hintOf(form)), ["Valid mainnet address", "hint ok"]);
+        assert.deepEqual(await submit(form), [[{ to: "u1mainnetpayee", amount: 5 }]],
+          "a mainnet payee keeps no name");
+        t.ui.send = false;
+        t.state.g = testnet;
+        t.ui.pay = null;
+        t.setZ(zStub());
+      }
       // A double tap proposes once: the second call refuses at once.
       let free8;
       const slow = new Promise((ok) => { free8 = ok; });
@@ -2757,7 +3076,98 @@ const sealed = (gid, rel, seat, fields, key, names = ["by", "sig"]) =>
       assert.match(drawn(w5, { [me]: {} }),
         /Signing · 1 of 2 shares\. Waiting for [^:,]+: each browser signs while this wallet/);
       Object.assign(t.state, { commits: {}, shares: {} });
-      const mine = new Set(["za", "zh", "zs", "zp", "zw", "zf", "zn", "zx", "zl", "zm", "zr", "zq",
+      // ── The approval of a payment to a ZNS name: this browser looks the name up again.
+      const znsIds = [];
+      const znsPay = (id, name, to = NAMED) => {
+        znsIds.push(id);
+        return { ...open(id, "PA"), payees: [{ to, amount: 5, name }] };
+      };
+      {
+        const untouched = (sid, seat, why) => {
+          const commit = `groups/${t.state.gid}/sessions/${sid}/commits/${seat}`;
+          assert.equal(data.has(commit), false, why + ": no approval is published");
+          assert.equal((t.sec(t.state.gid, seat).nonces || {})[sid], undefined, why + ": no nonce");
+          assert.equal(markOf(seat, sid), undefined, why + ": no mark");
+          assert.equal(keptStore.has(`kept:${t.state.gid}:${sid}`), false, why + ": no kept PCZT");
+        };
+        const refuses = async (ss, seat, message, why) => {
+          put(ss);
+          await assert.rejects(quiet(() => t.approve(ss, seat)), { message });
+          untouched(ss.id, seat, why);
+        };
+        at(4500000);
+        znsServes(znsOk());
+        await approved(me, znsPay("n1", "alice"));
+        assert.equal(markOf(me, "n1").approved, "aa", "the name still gives the address");
+        assert.deepEqual([gets, fetches], [1, 1]);
+        // The name moved to another address, or is gone, or is not a name; the copy is behind or
+        // cannot be read.
+        znsServes(znsOk());
+        await refuses(znsPay("n2", "bob"), me, "The ZNS name bob.zec now gives another address "
+          + "than this payment, so this browser did not approve.", "moved");
+        await refuses(znsPay("n3", "ghost"), me, "The ZNS name ghost.zec has no address in the "
+          + "registry now, so this browser did not approve.", "unknown");
+        await refuses(znsPay("n4", "Alice.zec"), me, "This payment names an invalid ZNS name, so "
+          + "this browser did not approve.", "invalid");
+        await refuses(znsPay("n5", ""), me, "This payment names an invalid ZNS name, so this "
+          + "browser did not approve.", "empty name");
+        znsServes(znsOk(ZNS_NAMES, 4499000));
+        await refuses(znsPay("n6", "alice"), me, "The ZNS registry is 1001 blocks behind the "
+          + "chain, so this browser did not approve.", "behind");
+        znsServes(znsDown);
+        await refuses(znsPay("n7", "alice"), me, ZNS_DOWN, "down");
+        // The proposal made again (same address, same name): the approver checks the name.
+        znsServes(znsOk());
+        await approved(third, { ...znsPay("n10", "alice"), payees: againPayees });
+        assert.equal(markOf(third, "n10").approved, "aa", "the name still gives the address");
+        znsServes(znsOk([znsRec("alice", MOVED)]));
+        await refuses({ ...znsPay("n11", "alice"), payees: againPayees }, other, "The ZNS name "
+          + "alice.zec now gives another address than this payment, so this browser did not "
+          + "approve.", "moved after Propose again");
+        // A proposal without names asks no registry.
+        znsServes(znsDown);
+        const plain = open("n8");
+        znsIds.push("n8");
+        await approved(other, plain);
+        assert.equal(markOf(other, "n8").approved, "aa");
+        assert.deepEqual([gets, fetches], [0, 0], "a payment without names asks no registry");
+        // A mainnet wallet looks no name up.
+        const testnet = t.state.g;
+        t.state.g = { ...testnet, network: "mainnet" };
+        await refuses(znsPay("n9", "alice"), third, "ZNS names work on testnet only, so this "
+          + "browser did not approve.", "mainnet");
+        assert.deepEqual([gets, fetches], [0, 0], "a mainnet wallet makes no lookup");
+        t.state.g = testnet;
+        // The drawer shows the name of a payee and says that this browser checks it again.
+        const NOTE = /alice\.zec This browser checks the name again when it approves\./;
+        assert.match(drawn(znsPay("d1", "alice"), {}), NOTE);
+        assert.doesNotMatch(drawn(open("d2"), {}), /checks the name again/);
+        assert.doesNotMatch(drawn(znsPay("d3", "Alice.zec"), {}), /checks the name again/,
+          "a name that is not valid is not shown");
+        const rc = t.recipientCheck(znsPay("d4", "alice"), { lines: pays5 });
+        assert.deepEqual([rc.match, rc.rows[0].name], [true, "alice"]);
+        // A testnet wallet downloads the registry once when it opens. A mainnet wallet makes no
+        // call. Drawing the page again asks nothing, and a failed download is ignored.
+        const syncing = t.chain;
+        znsServes(znsDown);
+        t.setChain(null);
+        t.ensureChain();
+        await quiet(() => sleep(20));
+        assert.deepEqual([gets, fetches], [1, 1], "the wallet opens: one download");
+        t.ensureChain();
+        t.ensureChain();
+        assert.equal(gets, 1, "no call for each draw");
+        t.setChain(null);
+        t.state.g = { ...testnet, network: "mainnet" };
+        t.ensureChain();
+        await quiet(() => sleep(20));
+        assert.equal(gets, 1, "a mainnet wallet makes no call");
+        t.state.g = testnet;
+        t.setChain(syncing);
+        registry.get = pageGet;
+      }
+      const mine = new Set([...znsIds, "za", "zh", "zs", "zp", "zw", "zf", "zn", "zx", "zl", "zm",
+        "zr", "zq",
         "zv", "zy", "zu", "zt", "zk", "zj", "zg", "zz", "zal", "zho", "zc1", "zc2", "h1", "h4",
         "h5", "h5b", "h7", "h10", "s7", "s7h", "s7q", "s7p", "s7n", "s7s", "s7o", "s7m", "s7c",
         "s7w", "s7d", "s7f"]);
@@ -2813,10 +3223,11 @@ const sealed = (gid, rel, seat, fields, key, names = ["by", "sig"]) =>
     t.setZ({ ...Z, fetchTransaction: async (url, hash) => {
       fetched.push(hash);
       if (plan["t" + hash.slice(1)] === "net") throw new Error("no answer");
-      if (mid) mid();
+      if (mid) mid(c);
       return "AAAA";
     } });
     const c = { gid: G, url: "https://lwd.test", cw: wallet(ids, plan), received: [] };
+    t.state.log.length = 0;
     t.setChain(null);   // turning reading on starts a run of the open wallet; there is none yet
     t.setMemoReading(G, on);
     t.setChain(c);
@@ -2845,6 +3256,12 @@ const sealed = (gid, rel, seat, fields, key, names = ["by", "sig"]) =>
   // The signer turns reading off while the first read waits: no further request goes out.
   await run([1, 2, 3], {}, { mid: () => { t.setMemoReading(G, false); } });
   assert.deepEqual([fetched, attached], [["h1"], []], "turning reading off stops the run");
+  // A proposal stalls while the first read waits, so dropStalled clears the server: the run keeps
+  // the memo it read and ends without an "Invalid URL" for each other transaction.
+  const c3 = await run([1, 2, 3], {}, { mid: (at) => { at.url = null; } });
+  assert.deepEqual([fetched, attached, c3.received.length], [["h1"], ["t1"], 1]);
+  const tried = t.state.log.find((l) => /Invalid URL|memo of/.test(l));
+  assert.equal(tried, undefined, "no read goes out without a server");
 }
 
 // ── A reorganisation deeper than the wallet can undo: the saved state goes ──
@@ -3077,7 +3494,16 @@ const sealed = (gid, rel, seat, fields, key, names = ["by", "sig"]) =>
   assert.deepEqual([t.personal, t.acct, [...idbMap.keys()].includes("personal:rec")],
     [null, null, false], "a failed save makes no account");
   idbFail.put = false;
-  await t.createPersonal("testnet");
+  // The server answers the server check, then stops answering until the test lets it: the
+  // birthday is that answer, so Create account does not wait for a second one.
+  let heights = 0, letHeights, accountMade = false;
+  const heldHeight = new Promise((r) => { letHeights = () => r(4500000); });
+  t.setZ({ ...Zp, latestHeight: () => (heights++ ? heldHeight : Promise.resolve(4500000)) });
+  const making = t.createPersonal("testnet").then(() => { accountMade = true; });
+  await waitFor("Create account with one height", () => accountMade, 5000);
+  t.setZ(Zp);
+  letHeights();
+  await making;
   const seed = t.personal.seed, keys = JSON.parse(Z.accountKeys(seed, "testnet"));
   assert.match(seed, /^[0-9a-f]{64}$/);
   assert.deepEqual([t.personal.network, t.personal.birthday, t.personal.contacts,
@@ -3350,6 +3776,112 @@ const sealed = (gid, rel, seat, fields, key, names = ["by", "sig"]) =>
   await runAcctSync();
   delete nav.locks;
   assert.equal(t.messageWhy(), "");
+
+  // The server does not answer a message: it stops after 60 s, so the lock of the send, which the
+  // sends of every tab wait for, comes free. Until a sync connects to the next server, a message
+  // would wait on the same server, so the composer says why and builds nothing. `during` runs
+  // while the engine builds the message.
+  const realTimeout = globalThis.setTimeout, buildMessage = Wallet.prototype.createMessage;
+  const scaleTimers = () => {
+    globalThis.setTimeout = (fn, ms, ...a) => realTimeout(fn, ms >= 60000 ? ms / 600 : ms, ...a);
+  };
+  const silentSend = async (text, during = () => {}) => {
+    let stopped = null;
+    scaleTimers();
+    Wallet.prototype.createMessage = function (to, words) {
+      net.created.push([to, words]);
+      during();
+      return new Promise(() => {});
+    };
+    try {
+      t.sendOnChain(ana, text).catch((e) => { stopped = e; });
+      await waitFor("the silent message stops", () => stopped, 5000);
+    } finally {
+      globalThis.setTimeout = realTimeout;
+      Wallet.prototype.createMessage = buildMessage;
+    }
+    return stopped.message;
+  };
+  let letSync;
+  const syncHeld = new Promise((r) => { letSync = () => r(4500000); });
+  const silentCw = t.acct.cw, freedBefore = net.freed, builtBefore = net.created.length;
+  t.setZ({ ...Zp, latestHeight: () => syncHeld });
+  assert.match(await silentSend("silent"),
+    /^The message got no answer in 60 s, so it stopped. Send it again/);
+  assert.match(t.messageWhy(), /^The light-wallet server stopped answering. Wait until/);
+  await assert.rejects(t.sendOnChain(ana, "too soon"), /stopped answering/, "the lock is free");
+  assert.equal(net.created.length, builtBefore + 1, "nothing is built on the stalled object");
+  assert.equal(t.acct.syncing, true, "a sync on the next server started at once");
+  letSync();
+  await synced();
+  t.setZ(Zp);
+  assert.notEqual(t.acct.cw, silentCw, "the sync made a new wallet object");
+  assert.equal(net.freed, freedBefore, "the engine may still use the stalled object: not freed");
+  assert.equal(t.messageWhy(), "", "the next message can go");
+  // A sync replaced the wallet object while the message waited: the new object is not stalled,
+  // and no sync starts.
+  const liveCw = t.acct.cw, openedBefore = net.opened.length;
+  await silentSend("replaced", () => { t.acct.cw = Object.create(Wallet.prototype); });
+  await waitFor("no sync", () => !t.acct.syncing);
+  assert.deepEqual([t.acct.stalled, t.messageWhy(), net.opened.length], [null, "", openedBefore]);
+  t.acct.cw = liveCw;
+  // Another tab replaced the account while the message waited: the old account gets no sync.
+  await silentSend("account replaced", () => { t.setAcct({ ...t.acct, progress: "" }); });
+  await waitFor("no sync", () => !t.acct.syncing);
+  assert.deepEqual([net.opened.length, net.freed, t.messageWhy()],
+    [openedBefore, freedBefore, ""], "the old account is dropped, the new one sends");
+  // The message stops while a sync of the same object runs: one more sync follows that sync, and
+  // it connects to the next server.
+  const realSync = Wallet.prototype.sync;
+  let letBlocks, inSync = false;
+  const blocksHeld = new Promise((r) => { letBlocks = r; });
+  Wallet.prototype.sync = function () {
+    inSync = true;
+    return blocksHeld.then(() => JSON.stringify(net.bal));
+  };
+  const syncing = runAcctSync();
+  await waitFor("the sync runs", () => inSync);   // its own stall timer is not scaled
+  const duringCw = t.acct.cw;
+  await silentSend("during a sync");
+  assert.match(t.messageWhy(), /stopped answering/);
+  Wallet.prototype.sync = realSync;
+  letBlocks();
+  await syncing;
+  await synced();
+  assert.deepEqual([t.acct.cw !== duringCw, t.messageWhy()], [true, ""], "the next sync connects");
+  // No server answers the sync after the stall: the stalled object still builds nothing.
+  t.setZ({ ...Zp, latestHeight: async () => { throw new Error("down"); } });
+  const downBuilt = net.created.length;
+  await silentSend("both down");
+  await waitFor("the failed sync", () => !t.acct.syncing && t.acct.error);
+  await assert.rejects(t.sendOnChain(ana, "still down"), /stopped answering/);
+  assert.equal(net.created.length, downBuilt + 1, "nothing is built after the failed sync");
+  t.setZ(Zp);
+  await runAcctSync();
+  assert.equal(t.messageWhy(), "", "a sync that connects opens the composer");
+  // A message that the engine builds in time leaves no timer that stalls the account later, and
+  // the limit is not shorter than a slow answer. The signature fails, so no message goes out.
+  const builtIn = async (ms, scale) => {
+    if (scale) scaleTimers();
+    Wallet.prototype.createMessage = async function (to, words) {
+      await sleep(ms);
+      return buildMessage.call(this, to, words);
+    };
+    t.setZ({ ...Zp, accountSign: () => { throw new Error("no signature"); } });
+    const keptCw = t.acct.cw;
+    try {
+      await assert.rejects(t.sendOnChain(ana, "built"), /no signature/);
+      await sleep(150);   // longer than the 60 s limit of a scaled timer
+    } finally {
+      globalThis.setTimeout = realTimeout;
+      Wallet.prototype.createMessage = buildMessage;
+      t.setZ(Zp);
+    }
+    // A late stall would start a sync that makes a new object.
+    assert.deepEqual([t.acct.cw === keptCw, t.acct.stalled, t.messageWhy()], [true, null, ""]);
+  };
+  await builtIn(0, true);
+  await builtIn(700, false);
 
   // The sync follows the saved account. Another tab can leave a record that does not read, or an
   // account with another sync key. Then a send stops with a sentence, and the contact addresses
