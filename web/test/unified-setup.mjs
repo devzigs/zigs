@@ -63,6 +63,8 @@ function pageTree() {
   }
 }
 const pageText = () => textOf(pageTree());
+const findNode = (node, pred) => pred(node) ? node
+  : (node.kids ?? []).map((k) => findNode(k, pred)).find(Boolean) ?? null;
 const byText = (node, text) => node.text === undefined && textOf(node) === text ? node
   : (node.kids ?? []).map((k) => byText(k, text)).find(Boolean) ?? null;
 
@@ -169,8 +171,11 @@ function inboxWiring() {
   const { tab } = t.ui, kept = { ...t.state };
   t.ui.tab = "approvals";
   try {
-    assert.match(pageText(), /Needs your approval2.*2 Solana proposals wait for your approval/,
-      "the Solana line and its count in the review bucket");
+    assert.match(pageText(), /Needs your approval.*2 Solana proposals wait for your approval/,
+      "the Solana line in the review bucket");
+    const review = findNode(pageTree(), (n) => n.attrs?.["aria-label"] === "Needs your approval");
+    assert.equal(textOf(findNode(review, (n) => n.className === "badge plain")), "2",
+      "the review bucket counts each proposal");
     assert.match(pageText(), /The wallet syncs\. .*Needs your approval/,
       "before the first sync of the chain, the note shows next to the rows");
     Object.assign(t.state, { sessions: [], sessionsFailed: true });

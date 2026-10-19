@@ -1,7 +1,8 @@
 // The Approvals inbox model (web/approvals-model.js). Every combination of facts lands in one
 // bucket or counts as finished, by the precedence that the drawer and the Activity chips use; a
-// payment that is not finished never drops out. The inbox says that nothing waits only when it
-// knows it, and the Solana line never says that nothing else waits.
+// payment that is not finished, or that an approval here still holds, never drops out. The inbox
+// says that nothing waits only when it knows it, and the Solana line never says that nothing else
+// waits.
 // Run: node web/test/approvals.mjs   (Node 24)
 import assert from "node:assert/strict";
 import { BUCKETS, bucketOf, emptyState, solLine } from "../approvals-model.js";
@@ -9,17 +10,19 @@ import { BUCKETS, bucketOf, emptyState, solLine } from "../approvals-model.js";
 const IDS = BUCKETS.map(([id]) => id);
 assert.deepEqual(IDS, ["review", "ready", "waiting", "attention"]);
 
-// The expected bucket: the first rule that holds, written as a table.
+// The expected bucket: the first rule that holds, written as a table. A finished payment and the
+// Check state go to "attention" while an approval here holds Send, else out of the inbox.
+const hold = (f) => (f.held ? "attention" : null);
 const RULES = [
-  [(f) => f.held || f.check, "attention"],
-  [(f) => f.review, "review"],
-  [(f) => f.landed || f.ended || f.error, null],
-  [(f) => f.step, "ready"],
-  [(f) => f.status === "lost", "attention"],
+  [(f) => f.check, hold],
+  [(f) => f.review, () => "review"],
+  [(f) => f.landed || f.ended || f.error, hold],
+  [(f) => f.step, () => "ready"],
+  [(f) => f.status === "lost", () => "attention"],
 ];
 const expected = (f) => {
   const hit = RULES.find(([holds]) => holds(f));
-  return hit ? hit[1] : "waiting";
+  return hit ? hit[1](f) : "waiting";
 };
 const FLAGS = ["landed", "held", "check", "review", "ended", "error"];
 const STATUSES = ["collecting", "signing", "signed", "proving", "complete", "broadcast", "lost"];
@@ -32,6 +35,7 @@ for (let bits = 0; bits < 1 << FLAGS.length; bits++) {
       const got = bucketOf(f);
       assert.equal(got, expected(f), JSON.stringify(f));
       assert.ok(got === null || IDS.includes(got));
+      assert.ok(!f.held || got !== null, "a hold never drops out: " + JSON.stringify(f));
       n += 1;
     }
   }
@@ -40,7 +44,12 @@ console.log("ok  " + n + " combinations: one bucket each, by the precedence of t
 
 assert.equal(bucketOf({ held: true, ended: true, error: true, status: "collecting" }),
   "attention", "an approval that still holds notes after a cancel is no finished payment (S7)");
-assert.equal(bucketOf({ check: true, status: "broadcast" }), "attention", "the Check state");
+assert.equal(bucketOf({ held: true, ended: true, status: "collecting" }), "attention",
+  "an approval that holds Send after its payment ended, with no error part");
+assert.equal(bucketOf({ check: true, held: true, status: "broadcast" }), "attention",
+  "the Check state of an approval here");
+assert.equal(bucketOf({ check: true, status: "broadcast" }), null,
+  "the Check state with no hold here: the Activity chip says Check");
 assert.equal(bucketOf({ status: "collecting" }), "waiting", "another seat must approve");
 assert.equal(bucketOf({ status: "proving" }), "waiting", "another browser builds the proof");
 assert.equal(bucketOf({ step: "proof", status: "signed" }), "ready");

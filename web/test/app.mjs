@@ -1592,7 +1592,8 @@ const sealed = (gid, rel, seat, fields, key, names = ["by", "sig"]) =>
     tipAt(4503459);
     // After signing, only the engine can say "Expired" (TICKETS.md ZEC-13): the chip asks to check.
     assert.equal(textOf(t.statusChip(sentOne)), "Check");
-    assert.equal(bucket(sentOne), "attention", "the inbox: the Check state needs attention");
+    assert.equal(bucket(sentOne), null,
+      "the inbox: no approval here holds Send, so the Check state shows in Activity only");
     // The inbox for the other states: a proposal to approve, an expired one, a cancelled one, and
     // a document whose facts cannot be read, which never drops out of the list.
     tipAt(4500000);
@@ -2164,14 +2165,30 @@ const sealed = (gid, rel, seat, fields, key, names = ["by", "sig"]) =>
       // Path A of QA round 4: no sent mark ever comes, and one seat writes a failure part.
       const inboxOf = (id) => Object.entries(t.inboxRows())
         .find(([k, list]) => k !== "lost" && list.some((x) => x.id === id))?.[0] ?? null;
+      // Every approval that holds Send is in a bucket of the inbox or in its lost note.
+      const heldListed = () => {
+        const list = { sessionsLoaded: t.state.sessionsLoaded,
+          sessionsFailed: t.state.sessionsFailed, pending: t.state.pending };
+        Object.assign(t.state, { sessionsLoaded: true, sessionsFailed: false, pending: false });
+        try {
+          const rows = t.inboxRows(), shown = new Set(rows.lost);
+          for (const [k, list] of Object.entries(rows)) {
+            if (k !== "lost") list.forEach((x) => shown.add(x.id));
+          }
+          for (const id of t.heldApprovals()) assert.ok(shown.has(id), "the inbox holds " + id);
+        } finally {
+          Object.assign(t.state, list);
+        }
+      };
       put(h1);
-      assert.equal(inboxOf("h1"), t.needsMyApproval(t.state.gid, h1) ? "review" : "waiting",
-        "the inbox: an approval with no error is no hold");
+      assert.equal(inboxOf("h1"), "review", "the inbox: two other seats here can approve it");
+      heldListed();
       put({ ...h1, package: "PK", signed: "SA", status: "failed", error: "Failed." });
       at(4500101);
       assert.ok(t.heldApprovals().includes("h1"), "an error part ends no hold");
       assert.equal(inboxOf("h1"), "attention",
         "the inbox: a failed payment that an approval here still holds (S7)");
+      heldListed();
       // Path B: the document leaves the list (a rewrite that fails its check drops it).
       t.state.sessions = t.state.sessions.filter((x) => x.id !== "h1");
       at(4500102);
@@ -2193,8 +2210,12 @@ const sealed = (gid, rel, seat, fields, key, names = ["by", "sig"]) =>
       t.ui.tab = tab;
       const attention = all(page, (x) => x.attrs?.["aria-label"] === "Needs attention")[0];
       assert.ok(attention, "the lost note shows in Needs attention");
-      const count = t.inboxRows().attention.length + t.inboxRows().lost.length;
-      assert.ok(textOf(attention).startsWith("Needs attention" + count), "the count holds it");
+      const badge = all(attention, (x) => x.className === "badge plain")[0];
+      const rows = t.inboxRows();
+      assert.ok(rows.lost.length > 0);
+      assert.equal(textOf(badge), String(rows.attention.length + rows.lost.length),
+        "the count holds the lost records");
+      heldListed();
       assert.match(textOf(attention), /approved ha(s|ve) no record here any more/);
       Object.assign(t.state, keptList);
       assert.ok(asked.slice(askedFrom).some((x) => S(x) === S(["PA", "", "aa"])),
@@ -2215,12 +2236,38 @@ const sealed = (gid, rel, seat, fields, key, names = ["by", "sig"]) =>
       assert.ok(t.heldApprovals().includes("h1"), "held up to the expiry + 2");
       at(4503459);
       assert.equal(t.heldApprovals().includes("h1"), false, "free at the expiry + 3");
+      // A failed payment that no approval here holds any more leaves the inbox, also in the Check
+      // state (the Activity chip says Check), and so does one whose notes another payment spent.
+      put({ ...h1, package: "PK", signed: "SA", status: "failed", error: "Failed." });
+      at(4503460);
+      assert.equal(inboxOf("h1"), null, "past its hold");
+      answer = () => ({ state: "unknown", txid: "tx-a", why: "spent", spent: true });
+      at(4503461);
+      assert.equal(inboxOf("h1"), null, "another payment spent its notes");
+      t.state.sessions = t.state.sessions.filter((x) => x.id !== "h1");
+      answer = () => ({ state: "unknown", txid: "tx-a", why: "it may still land", spent: false });
       // Without the kept PCZT the ceiling ends it: 4,500,001 + 1 + 6,912 + 3.
       await t.putSec(t.state.gid, me, { marks: { ...t.sec(t.state.gid, me).marks,
         h2: { approved: "zz", tip: 4500001 }, h3: { approved: "zz" } } });
       at(4506916);
       assert.ok(t.heldApprovals().includes("h2"), "no PCZT: held up to the ceiling");
       assert.equal(t.heldApprovals().includes("h3"), false, "no height, no hold");
+      // An approval of the listed proposal whose PCZT this browser did not keep: the engine says
+      // that the proposal expired, so the payment ended, but with the approved sighash alone it
+      // cannot say so, and the approval holds Send up to the ceiling. The inbox lists it under
+      // attention, never as finished.
+      await t.putSec(t.state.gid, me, { marks: { ...t.sec(t.state.gid, me).marks,
+        hk1: { approved: "aa", tip: 4500001 } } });
+      put(open("hk1", "PA"));
+      answer = (p) => (p === "" ? { state: "unknown", txid: "tx-a", why: "no expiry", spent: false }
+        : { state: "expired", txid: "tx-a", why: "it expired", spent: false });
+      at(4503460);
+      assert.equal(t.ended(open("hk1", "PA")), true, "the payment ended");
+      assert.ok(t.heldApprovals().includes("hk1"), "the approval still holds Send");
+      assert.equal(inboxOf("hk1"), "attention", "a listed hold with no kept PCZT");
+      heldListed();
+      t.state.sessions = t.state.sessions.filter((x) => x.id !== "hk1");
+      answer = () => ({ state: "unknown", txid: "tx-a", why: "it may still land", spent: false });
       at(4506917);
       assert.equal(t.heldApprovals().includes("h2"), false, "free at the ceiling");
       // A document with a sent mark shows "Confirming" while the approval holds, also before this
