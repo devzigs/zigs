@@ -6,12 +6,16 @@ import assert from "node:assert/strict";
 import { protectionRisk, recoveryState } from "../recovery-model.js";
 
 assert.equal(protectionRisk(2, 3).margin, 1);
-assert.equal(protectionRisk(2, 3).title, "1 device can be lost");
-assert.equal(protectionRisk(2, 4).title, "2 devices can be lost");
-assert.match(protectionRisk(2, 3).detail, /needs 2 of 3 signers, .* when 1 device is lost/);
-assert.match(protectionRisk(2, 4).detail, /when up to 2 devices are lost/);
-assert.equal(protectionRisk(3, 3).title, "No device can be lost", "every signer is needed");
+assert.equal(protectionRisk(2, 3).title, "1 key share can be lost");
+assert.equal(protectionRisk(2, 4).title, "2 key shares can be lost");
+assert.match(protectionRisk(2, 3).detail, /needs 2 of 3 signers, .* when 1 key share is lost/);
+assert.match(protectionRisk(2, 4).detail, /when up to 2 key shares are lost/);
+assert.equal(protectionRisk(3, 3).title, "No key share can be lost", "every signer is needed");
 assert.equal(protectionRisk(1, 1).margin, 0);
+assert.equal(protectionRisk(2, 3).here, "", "one seat here: no extra line");
+assert.equal(protectionRisk(2, 3, 3).here, "This browser holds 3 seats, so its loss loses 3 key "
+  + "shares at once: more than the wallet can lose.", "all seats in one browser");
+assert.match(protectionRisk(2, 4, 2).here, /loses 2 key shares at once\.$/, "within the margin");
 console.log("ok  the margin");
 
 const seat = (id, zecSaved, sol) => ({ id, zec: { has: true, saved: zecSaved }, sol });

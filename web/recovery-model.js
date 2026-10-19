@@ -3,21 +3,24 @@
 // text here says that the wallet is safe. Display only: nothing here makes or opens a file.
 
 /**
- * How many devices the wallet can lose and still pay.
- * @returns {{margin: number, title: string, detail: string}}
+ * How many key shares the wallet can lose and still pay, and what one browser that holds `here`
+ * seats puts at risk: its loss loses all of them at once.
+ * @returns {{margin: number, title: string, detail: string, here: string}}
  */
-export function protectionRisk(t, n) {
+export function protectionRisk(t, n, here = 1) {
   const margin = n - t;
-  if (margin <= 0) {
-    return { margin, title: "No device can be lost",
-      detail: "Each payment needs every signer. When one device is lost, the wallet cannot pay "
-        + "until its seat comes back from its file." };
-  }
-  return { margin, title: margin === 1 ? "1 device can be lost" : margin + " devices can be lost",
-    detail: "A payment needs " + t + " of " + n + " signers, so the wallet still pays when "
-      + (margin === 1 ? "1 device is" : "up to " + margin + " devices are") + " lost. Two files "
-      + "of the same seat count as one signer." };
+  return { margin, title: marginTitle(margin), detail: marginDetail(t, n, margin),
+    here: here > 1 ? "This browser holds " + here + " seats, so its loss loses " + here
+      + " key shares at once" + (here > margin ? ": more than the wallet can lose." : ".") : "" };
 }
+const marginTitle = (m) => (m <= 0 ? "No key share can be lost"
+  : m === 1 ? "1 key share can be lost" : m + " key shares can be lost");
+const marginDetail = (t, n, m) => (m <= 0
+  ? "Each payment needs every signer. When one key share is lost, the wallet cannot pay until "
+    + "its seat comes back from its file."
+  : "A payment needs " + t + " of " + n + " signers, so the wallet still pays when "
+    + (m === 1 ? "1 key share is" : "up to " + m + " key shares are") + " lost. Two files of "
+    + "the same seat count as one signer.");
 
 /**
  * The recovery state of the seats of this browser.

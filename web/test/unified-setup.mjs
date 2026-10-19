@@ -27,8 +27,8 @@ const { createDialog, lobby, renderSide } = await import("../app-shell.js");
 const { offReason } = await import("../util.js");
 const { intentHex } = await import("../sol/intent.js");
 const { ui } = await import("../app-state.js");
-const { planSolana, solSetup } = await import("../app-sol.js");
-const { walletReady, walletShown } = await import("../app-wallet.js");
+const { planSolana, solFile, solSetup } = await import("../app-sol.js");
+const { backupNote, walletReady, walletShown } = await import("../app-wallet.js");
 const { PUBLIC_TEXT } = await import("../sol/view.js");
 const { reactCeremony } = await import("../sol/ceremony.js");
 const { t, data, waitFor } = rig;
@@ -187,6 +187,36 @@ function inboxWiring() {
     t.ui.tab = tab;
   }
 }
+// The Recovery section reads the saved flag of each seat, and the Solana file of a stopped share
+// is no file; a note for the Solana file alone is plain while the part sets up.
+function recoveryFacts() {
+  const real = t.secrets;
+  const k = Object.keys(real)
+    .find((key) => key.startsWith(t.state.gid + ":") && real[key].keyPackage);
+  const seat = Number(k.split(":").pop());
+  const with_ = (patch) => ({ ...real, [k]: { ...real[k], ...patch } });
+  try {
+    t.secrets = with_({ backupSaved: false });
+    assert.match(pageText(), /Zcash file not saved/, "a Zcash file that is not saved shows");
+    t.secrets = with_({ backupSaved: true });
+    assert.doesNotMatch(pageText(), new RegExp("Seat " + seat + "Zcash file not saved"));
+    if (real[k].sol) {
+      t.secrets = with_({ sol: { ...real[k].sol, aborted: "A test stop." } });
+      assert.equal(solFile(seat), null, "a stopped share has no file to save");
+    }
+  } finally {
+    t.secrets = real;
+  }
+  const doc = globalThis.document;
+  globalThis.document = { createElement: () => new Rec(), createElementNS: () => new Rec(),
+    createTextNode: (text) => ({ text }) };
+  try {
+    assert.equal(backupNote([], [1], true).className, "callout", "plain while Solana sets up");
+    assert.equal(backupNote([], [1], false).className, "callout warn");
+  } finally {
+    globalThis.document = doc;
+  }
+}
 // The phone Menu closes on a pick; the sections show for the formed wallet only; the switcher
 // shows with two or more wallets.
 function sideMenu() {
@@ -211,6 +241,7 @@ function sideMenu() {
   assert.match(pageText(), /Seats in this browser.*file (saved here|not saved)/,
     "the Recovery section shows the file state of each seat of this browser");
   assert.match(pageText(), /cannot see the files of the other devices/);
+  recoveryFacts();
   t.ui.tab = tab;
   assert.ok(!labelled(pageTree(), "Switch wallet"), "one wallet: its name, no switcher");
   t.state.groups = [t.state.g, { id: "other", name: "Other" }];

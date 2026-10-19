@@ -32,8 +32,7 @@ import { setupView, solSetupCard, solUnfinished } from "./app-setup.js";
 import { themeChoice } from "./app-theme.js";
 import {
   sol, solBackup, solBalance, solError, solFile, solLoading, solOn, solPending, solSetup, solSync,
-  solTab,
-  solUnsaved,
+  solTab, solUnsaved,
 } from "./app-sol.js";
 import { pendingShortcut, solRow, zecInProgress, zecTotal } from "./overview-model.js";
 import { protectionRisk, recoveryState } from "./recovery-model.js";
@@ -131,7 +130,8 @@ export function walletView(head, why) {
   const solSeats = solUnsaved();
   const [id, label] = currentSection(walletSections());
   return el("div", { class: "page" }, head,
-    unsaved.length || solSeats.length ? backupNote(unsaved, solSeats, solUnfinished()) : null,
+    unsaved.length || solSeats.length
+      ? backupNote(unsaved, solSeats, !unsaved.length && solUnfinished()) : null,
     el("section", { id: "panel-" + id, "data-key": "panel-" + id, tabindex: "-1",
       "aria-label": label }, BODIES[id]()),
     el("div", { class: "action-bar" }, ...walletActions(why)));
@@ -168,7 +168,8 @@ function walletTitle(g) {
 
 // Private windows, Tor Browser and cleared site data delete the key share with the browser data.
 // `solSeats`: the seats whose Solana part has no saved file yet (solUnsaved, app-sol.js).
-// While the Solana part still sets up, the note is plain: the amber one comes after the setup.
+// A note for the Solana file alone is plain while the Solana part still sets up; the amber one
+// comes after the setup. A Zcash file that is not saved is always amber.
 export function backupNote(seats, solSeats = [], settling = false) {
   const first = seats.length ? "Back up your key share."
     : "Back up the Solana part of your key share.";
@@ -601,13 +602,16 @@ function recoveryTab() {
     return { id: i, zec: { has: !!s.keyPackage, saved: seatBackedUp(s) },
       sol: sol && { has: true, saved: sol.saved } };
   });
-  const r = recoveryState(seats), risk = protectionRisk(state.g.t, state.g.n);
+  const r = recoveryState(seats);
+  const risk = protectionRisk(state.g.t, state.g.n, seats.filter((x) => x.zec.has).length);
   return el("div", { class: "page", style: "gap:16px" },
     el("section", { class: "card card-pad" + (r.state === "missing" ? " attention" : "") },
       el("div", { class: "card-head" }, el("h2", {}, r.label)),
       el("p", { class: "small muted" }, RECOVERY_LIMITS)),
-    el("section", { class: "card card-pad" }, el("div", { class: "card-head" },
-      el("h2", {}, risk.title)), el("p", { class: "small muted" }, risk.detail)),
+    el("section", { class: "card card-pad" + (risk.here ? " attention" : "") },
+      el("div", { class: "card-head" }, el("h2", {}, risk.title)),
+      el("p", { class: "small muted" }, risk.detail),
+      risk.here ? el("p", { class: "small" }, risk.here) : null),
     seats.some((x) => x.zec.has) ? el("section", { class: "card" },
       el("div", { class: "card-head card-pad" }, el("h2", {}, "Seats in this browser")),
       el("div", {}, seats.filter((x) => x.zec.has).map((x) => guard(recoveryRow, x)))) : null,
@@ -620,9 +624,10 @@ const RECOVERY_LIMITS = "Zigs knows only the files that this browser saved. It c
   + "saved file again: keep each file and its passphrase apart, and make sure that you can find "
   + "both.";
 const lostText = (t) => "Keep the devices that still work, and do not delete their data. While "
-  + t + " signers remain, they can move the funds to a new wallet (Signers, Change signers). "
-  + "With fewer, first restore seats from their files. Zigs cannot go around the approval rule. "
-  + "A lost device can still hold its key share, so move the funds when you can.";
+  + t + " signers remain, they can move the Zcash funds to a new wallet (Signers, Change "
+  + "signers); a Solana part does not move this way. With fewer, first restore seats from their "
+  + "files. Zigs cannot go around the approval rule. A lost device can still hold its key share, "
+  + "so move the funds when you can.";
 
 function recoveryRow(x) {
   const part = (name, f) => el("span", { class: "badge " + (f.saved ? "ok" : "warn") },
@@ -631,10 +636,11 @@ function recoveryRow(x) {
     el("div", { class: "ri-main" }, el("span", { class: "ri-title" }, seatTitle(x.id,
       state.seats[x.id])), el("span", { class: "ri-sub" }, "Seat " + x.id)),
     el("div", { class: "m-actions" }, part("Zcash", x.zec), x.sol ? part("Solana", x.sol) : null,
-      el("button", { class: "btn sm", type: "button", onclick: () => openBackup(x.id) },
-        "Back up the Zcash part"),
-      x.sol ? el("button", { class: "btn sm", type: "button", onclick: act(() => solBackup(x.id)) },
-        "Back up the Solana part") : null));
+      el("button", { class: "btn sm", type: "button", onclick: () => openBackup(x.id),
+        "aria-label": "Back up the Zcash part of seat " + x.id }, "Back up the Zcash part"),
+      x.sol ? el("button", { class: "btn sm", type: "button", onclick: act(() => solBackup(x.id)),
+        "aria-label": "Back up the Solana part of seat " + x.id }, "Back up the Solana part")
+        : null));
 }
 
 function detailsTab() {

@@ -71,9 +71,9 @@ export const solUnsaved = () => localSeats().filter((i) => solFile(i)?.saved ===
 export function solFile(i) {
   if (!solOn() || solStopped()) return null;
   const s = sec(state.gid, i)?.sol;
-  return s?.keyPackage && s.solSeed && s.groupKey && !s.aborted
-    ? { saved: s.backupSaved === true } : null;
+  return solShare(s) ? { saved: s.backupSaved === true } : null;
 }
+const solShare = (s) => !!(s?.keyPackage && s.solSeed && s.groupKey) && !s.aborted;
 // The backup dialog of the Solana part of seat i, from the backup note of the wallet.
 export async function solBackup(i) {
   await solLoad();
