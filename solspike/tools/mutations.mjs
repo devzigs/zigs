@@ -23,6 +23,8 @@ const SOL_APP = ["node", "web/test/sol-app.mjs"];
 const SOL_CEREMONY = ["node", "web/test/sol-ceremony.mjs"];
 const UNIFIED = ["node", "web/test/unified-setup.mjs"];
 const NONCE_TABS = ["node", "web/test/sol-nonce-tabs.mjs"];
+const APP_TEST = ["node", "web/test/app.mjs"];
+const PAYMENTS = "web/app-payments.js";
 const AUTO_HINT = "  (c) => c.host.state.g?.solana === true && !c.host.state.g.movedTo,\n";
 const AUTO_DOCS = "(c) => !!c.loaded.solstart && !c.docs.solstart[1] && c.wait === 0,";
 const HINT_FIRST = '  await sdb.doc("groups/" + gid).update({ solana: true });\n' +
@@ -1323,4 +1325,23 @@ export const MUTATIONS = [
   program("R-sol-restored", "a Solana part restored from its file shows as saved here",
     ["web/app-sol.js", "return { saved: s.backupSaved === true, restored: s.restored === true };",
       "return { saved: s.backupSaved === true };"], UNIFIED, /a part opened from its file/),
+  mutant("Z-send-guard", "a finished transaction with another id goes to the network", APP_TEST,
+    [patch(PAYMENTS, "  if (why) throw new Error(why);\n  const gid = state.gid, ref",
+      "  const gid = state.gid, ref")], { detect: /AssertionError/, ms: 300000 }),
+  mutant("Z-send-compare", "the send step takes the id of a rewritten proposal", APP_TEST,
+    [patch(PAYMENTS, "  if (ss.final.txid === want) return null;",
+      "  if (ss.final.txid !== want) return null;")],
+    { detect: /AssertionError/, ms: 300000 }),
+  mutant("Z-send-inbox", "the inbox lists a refused send as ready",
+    ["node", "web/test/approvals.mjs"],
+    [patch("web/approvals-model.js", '  if (f.sendRefused) return "attention";\n', "")],
+    /AssertionError/),
+  program("Z-discard-fields", "Discard draft leaves the typed fields, which come back",
+    ["web/app-send.js", "    n.value = \"\";\n", ""], APP_TEST, /and empties the typed fields/),
+  program("Z-chip-refused", "a refused send shows Ready to send",
+    ["web/app-dom.js", '  || (s.status === "complete" && !!sendRefusal(s));', ";"], APP_TEST,
+    /a refused send is not Ready to send/),
+  program("Z-reviewing", "the Send form says that a proposal runs while a review builds",
+    ["web/app-payments.js", '  ui.proposing = "review";', "  ui.proposing = true;"], APP_TEST,
+    /a review, no proposal/),
 ];

@@ -28,8 +28,15 @@ const windowOn = {};
 const onWindow = (type, fn) => { (windowOn[type] ||= []).push(fn); };
 const storageEvent = (key) =>
   Promise.all((windowOn.storage || []).map((fn) => fn({ key, newValue: storage.get(key) })));
+// The listeners of the page on document, so that a test can press a real key.
+const documentOn = {};
+const pageDocument = new Proxy(stub(), {
+  get: (t, k) => (k === "addEventListener"
+    ? (type, fn) => { (documentOn[type] ||= []).push(fn); } : t[k]),
+});
 Object.assign(globalThis, {
-  Node: class {}, document: stub(), history: { replaceState() {} }, requestAnimationFrame: () => 0,
+  Node: class {}, document: pageDocument, history: { replaceState() {} },
+  requestAnimationFrame: () => 0,
   matchMedia: () => ({ matches: false }),
   location: { hash: "", href: "http://localhost/", origin: "http://localhost" },
   localStorage: {
@@ -295,6 +302,14 @@ const sealed = (gid, rel, seat, fields, key, names = ["by", "sig"]) =>
   const statusOf = (id) => t.state.sessions.find((x) => x.id === id)?.status;
   await waitFor("failed", () => statusOf(second.id) === "failed");
 
+  // The third payment has a PCZT of its own, which the engine decodes: its id is the id of the
+  // finished transaction (fakeZ.finalize).
+  const decode3 = { sighash: "s3", txid: "T1", tx_version: "V5", spends: [], lines: [] };
+  const z3 = { ...fakeZ,
+    inspect: (p, f) => (p === "P3" ? JSON.stringify(decode3) : fakeZ.inspect(p, f)) };
+  t.setZ(z3);
+  t.setChain({ ...t.chain, cw: { createSpend: async () => JSON.stringify({ ...spend, pczt: "P3" }),
+    free() {} } });
   const third = await propose("third", 3);
   const path3 = `groups/${gid}/sessions/${third.id}`;
   const put = async (name, f, prefer, extra) => {
@@ -312,16 +327,23 @@ const sealed = (gid, rel, seat, fields, key, names = ["by", "sig"]) =>
   assert.equal(live().final.txid, "T1");
   assert.equal(typeof data.get(path3).finalSig, "string");
   // The person opens the lobby while the transaction goes out: the payment still counts as sent.
-  let duringSend = () => t.setChain(null);
+  let sends = 0, duringSend = () => t.setChain(null);
   class Sent {
-    async broadcast() { duringSend(); return JSON.stringify({ txid: "T1" }); }
+    async broadcast() { sends += 1; duringSend(); return JSON.stringify({ txid: "T1" }); }
     free() {}
   }
-  t.setZ({ ...fakeZ, ChainWallet: Sent });
+  t.setZ({ ...z3, ChainWallet: Sent });
   t.setChain({ gid, bal: {}, sent: new Set(), syncing: true, cw: null });
+  // A finished transaction with another id goes nowhere, and the payment keeps no error of it.
+  for (const send of [t.broadcastTx, t.resendTx]) {
+    await assert.rejects(send({ ...live(), final: { ...live().final, txid: "T2" } }),
+      /another id than the proposal/);
+  }
+  assert.deepEqual([sends, data.get(path3).broadcastError, data.get(path3).sentBy],
+    [0, undefined, undefined], "no send, no error, no sent mark");
   await t.broadcastTx(live());
   await waitFor("sent", () => live().status === "broadcast");
-  assert.deepEqual([live().broadcastTxid, data.get(path3).sentBy >= 1], ["T1", true]);
+  assert.deepEqual([live().broadcastTxid, data.get(path3).sentBy >= 1, sends], ["T1", true, 1]);
   assert.equal(data.get(path3).broadcastError, null, "no sync error on a payment that went out");
   // Another wallet is open by then: its chain gets no sync from this payment.
   const otherChain = { gid: "ffffffffffffffffffff", syncing: false, error: "untouched" };
@@ -973,7 +995,9 @@ const sealed = (gid, rel, seat, fields, key, names = ["by", "sig"]) =>
   // write is signed for the first wallet, with its key and its id.
   data.set(`groups/${B}`, { name: "B", n: 2, t: 2, version: 2 });
   t.gkeys = { ...t.gkeys, [B]: "k".repeat(43) };
+  t.ui.sendReview = { prep: { gid }, note: "of wallet A" };
   t.openGroup(B);
+  assert.equal(t.ui.sendReview, null, "a review stays with the wallet that built it");
   await waitFor("wallet B", () => t.state.gid === B);
   assert.equal(t.signedMode(B), false);
   await t.failSession(gid, { id: second.id }, "Late failure.");
@@ -1535,7 +1559,7 @@ const sealed = (gid, rel, seat, fields, key, names = ["by", "sig"]) =>
     t.setChain(chainOf(null));
     t.ui.pay = null;
     const blocked = t.sendDialog();
-    assert.equal(named(blocked, "button", "Propose payment").attrs.disabled, "");
+    assert.equal(named(blocked, "button", "Review payment").attrs.disabled, "");
     assert.match(textOf(blocked), /Wait for the first sync to finish\./);
     const sessions = () => [...data.keys()].filter((k) => k.includes("/sessions/")).join();
     const stored = sessions();
@@ -1548,11 +1572,263 @@ const sealed = (gid, rel, seat, fields, key, names = ["by", "sig"]) =>
     assert.deepEqual(t.banner, { kind: "bad", text: "Wait for the first sync to finish." });
     assert.equal(sessions(), stored, "a refused submit proposes nothing");
     t.setChain(chainOf({ spendable: 1e8, pending: 0 }));
-    assert.equal(named(t.sendDialog(), "button", "Propose payment").attrs.disabled, undefined);
+    assert.equal(named(t.sendDialog(), "button", "Review payment").attrs.disabled, undefined);
     t.ui.proposing = true;
-    assert.notEqual(named(t.sendDialog(), "button", "Propose payment").attrs.disabled, undefined,
+    assert.notEqual(named(t.sendDialog(), "button", "Review payment").attrs.disabled, undefined,
       "off while a proposal runs (S8)");
+    assert.match(t.sendBlocker(), /proposal of a payment is not complete yet/);
     t.ui.proposing = false;
+
+    // Drafts: the typed form, sealed with the wallet key on this device, for 24 hours. A restored
+    // name shows its address again; a locked key keeps the draft; an expired one goes without a
+    // key; Discard deletes it.
+    {
+      const gidNow = t.state.gid, book = () => JSON.parse(storage.get("zf-drafts") || "{}");
+      t.ui.draftGid = gidNow;
+      Object.assign(t.ui, { after: null, sendFor: null, note: "rent", priority: true, pay: [{ k: 1,
+        to: "alice.zec", amt: "0.5", memo: "m", name: "alice", shown: { address: "utest1x" } }] });
+      t.keepDraft();
+      const entry = book()[gidNow];
+      assert.ok(Number.isSafeInteger(entry.at) && !/alice|rent/.test(entry.box), "sealed");
+      Object.assign(t.ui, { pay: null, note: "", priority: false });
+      const restored = t.sendDialog();
+      assert.deepEqual(t.ui.pay.map((r) => [r.to, r.amt, r.memo, r.shown ?? null, r.name]),
+        [["alice.zec", "0.5", "m", null, undefined]], "the typed text, no shown address");
+      assert.deepEqual([t.ui.note, t.ui.priority], ["rent", true]);
+      assert.match(textOf(restored), /Draft saved on this device for 24 hours\./);
+      const keys = t.gkeys;
+      t.gkeys = { ...keys, [gidNow]: undefined };
+      t.ui.pay = null;
+      t.sendDialog();
+      assert.equal(t.ui.pay[0].to, "", "a locked key restores nothing");
+      assert.ok(book()[gidNow], "and keeps the draft");
+      t.gkeys = keys;
+      storage.set("zf-drafts", JSON.stringify({ [gidNow]: { ...entry, at: entry.at - 86400001 },
+        other: { at: entry.at, box: "x" } }));
+      t.sweepDrafts();
+      assert.deepEqual(Object.keys(book()), ["other"], "an expired draft goes, a live one stays");
+      Object.assign(t.ui, { pay: [{ k: 2, to: "x", amt: "", memo: "" }], note: "rent",
+        after: null });
+      t.keepDraft();
+      // The page keeps typed values over a redraw (saveFormState), so Discard empties the fields.
+      const fields = [{ value: "x" }, { value: "rent" }];
+      named(t.sendDialog(), "button", "Discard draft").on.click({ currentTarget: { form: {
+        querySelectorAll: () => fields } } });
+      assert.equal(book()[gidNow], undefined, "Discard deletes it");
+      assert.deepEqual(fields.map((f) => f.value), ["", ""], "and empties the typed fields");
+      assert.deepEqual([t.ui.note, t.ui.pay.map((r) => r.to)], ["", [""]], "a new form");
+      assert.deepEqual(t.wantFocus, { key: "INPUT:s-to-" + t.ui.pay[0].k + ":0", force: true },
+        "the focus goes to the first recipient field");
+      t.keepDraft();   // the click goes on to the form, which saves what it holds now
+      assert.equal(book()[gidNow], undefined, "the empty form saves no new draft");
+      Object.assign(t.ui, { pay: [{ k: 3, to: "x", amt: "", memo: "" }],
+        after: { pczt: "EXP1" } });
+      t.keepDraft();
+      assert.equal(book()[gidNow], undefined, "no draft for Propose again");
+      // A form that does not fit (a memo too long) keeps the last draft and says so.
+      Object.assign(t.ui, { pay: [{ k: 5, to: "kept", amt: "", memo: "" }], after: null });
+      t.keepDraft();
+      const last = book()[gidNow];
+      t.ui.pay = [{ k: 6, to: "kept", amt: "", memo: "m".repeat(2049) }];
+      t.keepDraft();
+      assert.deepEqual(book()[gidNow], last, "the last draft stays");
+      const failed = t.sendDialog();
+      assert.match(textOf(failed), /draft could not be saved on this device/);
+      assert.equal(failed.on.click, t.keepDraft, "a click saves too: Remove, Max, Use this list");
+      t.endSend();
+      assert.equal(t.ui.draftFailed, false, "a close forgets the failure of that form");
+      Object.assign(t.ui, { draftFailed: true, pay: null });
+      assert.doesNotMatch(textOf(t.sendDialog()), /could not be saved/, "so does a new form");
+      // A form that a payment request filled is no draft of the person: it saves nothing and
+      // offers no Discard, so Cancel keeps the person's own draft.
+      Object.assign(t.ui, { pay: [{ k: 9, to: "utest1request", amt: "1", memo: "" }],
+        note: "Request from Bob", sendFor: gidNow });
+      t.keepDraft();
+      assert.deepEqual(book()[gidNow], last, "the draft of the person stays");
+      assert.equal(named(t.sendDialog(), "button", "Discard draft"), undefined);
+      t.ui.sendFor = null;
+      // A click with no change keeps the time of the draft; a draft from the future goes.
+      Object.assign(t.ui, { pay: [{ k: 11, to: "same", amt: "", memo: "" }], note: "",
+        priority: false });
+      t.keepDraft();
+      const timed = book()[gidNow].at;
+      await sleep(5);
+      t.keepDraft();
+      assert.equal(book()[gidNow].at, timed, "no new 24 hours without typing");
+      storage.set("zf-drafts", JSON.stringify({ ...book(), future: { at: Date.now() + 400000,
+        box: "x" } }));
+      t.sweepDrafts();
+      assert.equal(book().future, undefined, "a clock that was ahead");
+      // The form of another wallet is no draft of this one.
+      t.ui.draftGid = "another wallet";
+      t.ui.pay = [{ k: 10, to: "utest1other", amt: "", memo: "" }];
+      t.keepDraft();
+      assert.equal(book()[gidNow].at, timed, "the draft of this wallet stays");
+      t.ui.draftGid = gidNow;
+      // A draft that this browser cannot open shows no draft line and fills nothing, also when
+      // only its sealed time is old.
+      const aad = "draft\n" + gidNow, seal = (d) => Z.secretSeal(t.gkeys[gidNow], aad,
+        JSON.stringify(d));
+      const typed = { v: 1, rows: [{ to: "old", amt: "", memo: "" }], note: "", priority: false };
+      for (const box of ["not a box", seal({ ...typed, at: Date.now() - 86400001 })]) {
+        storage.set("zf-drafts", JSON.stringify({ [gidNow]: { at: Date.now(), box } }));
+        t.ui.pay = null;
+        assert.doesNotMatch(textOf(t.sendDialog()), /Draft saved/);
+        assert.equal(t.ui.pay[0].to, "", "nothing restored");
+      }
+      // Forget deletes the drafts too: they are sealed with keys that go with the vault.
+      const vault = storage.get("zf-vault"), reload = location.reload;
+      location.reload = () => {};
+      try {
+        t.forgetVault();
+      } finally {
+        location.reload = reload;
+        if (vault !== undefined) storage.set("zf-vault", vault);
+      }
+      assert.equal(storage.has("zf-drafts"), false, "Forget deletes the sealed drafts");
+      // A draft for the review below, which must delete it.
+      Object.assign(t.ui, { pay: [{ k: 4, to: "utest1d", amt: "1", memo: "" }], after: null });
+      t.keepDraft();
+      assert.ok(book()[gidNow]);
+    }
+
+    // The Send review: prepareSpend builds the transaction, the review shows what the engine
+    // decoded from it, and Propose publishes that transaction as it is. A decode that does not
+    // match the payees offers no Propose; a stale review is built again.
+    {
+      let builds = 0;
+      const reviewed = { ...spend, pczt: "REV1", amount: 5, fee: 10000 };
+      // The approvals of the tests above hold Send until the engine says that they expired.
+      const expiredAll = () => JSON.stringify({ state: "expired", txid: "x", why: "t",
+        spent: false });
+      t.setChain({ ...chainOf({ spendable: 1e8, pending: 0 }),
+        cw: { createSpend: async () => { builds += 1; return JSON.stringify(reviewed); },
+          sessionState: expiredAll, free() {} } });
+      const decodes = { REV1: 5, REV2: 6, REV3: 5 };
+      t.setZ({ ...fakeZ, inspect: (pczt, fvk) => {
+        if (!(pczt in decodes)) return fakeZ.inspect(pczt, fvk);
+        const fee = pczt === "REV3" ? 100000 : 10000;
+        return JSON.stringify({ sighash: "rr", tx_version: "V6", spends: [], fee,
+          lines: [{ kind: "output", who, value: decodes[pczt], memo_status: "empty" }],
+          standard_fee: 10000, expiry_height: 4503456, txid: "revtx" });
+      } });
+      // Async steps draw the page later: they run with the page stub, the dialogs with the
+      // recorder.
+      const recorderDoc = globalThis.document;
+      const drawn = () => { globalThis.document = recorderDoc; return t.sendDialog(); };
+      globalThis.document = realDocument;
+      try {
+        const prep = await t.prepareSpend([{ to: addr, amount: 5 }], false);
+        assert.equal(builds, 1, "one build for the review");
+        t.ui.sendReview = { prep, note: "reviewed", priority: false };
+        const shown = drawn();
+        assert.match(textOf(shown), /decoded the transaction that it built/);
+        assert.match(textOf(shown), /Network fee0/, "the decoded fee is the standard fee");
+        assert.ok(named(shown, "button", "Propose payment"), "a match can be proposed");
+        t.ui.sendReview = { prep: { ...prep, t: { ...prep.t, pczt: "REV3" } }, note: "x" };
+        assert.match(textOf(drawn()), /Network fee \(priority\)/, "the fee as decoded");
+        globalThis.document = realDocument;
+        // A close while the build runs opens no review when the build ends.
+        let release;
+        const held = new Promise((r) => { release = r; });
+        const built = t.chain.cw.createSpend;
+        t.chain.cw.createSpend = async (...a) => { await held; return built(...a); };
+        Object.assign(t.ui, { send: true, sendReview: null });
+        const building = t.openReview([{ to: addr, amount: 5 }], "late");
+        await sleep(20);
+        assert.match(t.sendBlocker(), /still builds the review of a payment/,
+          "while the review builds, Send says so: a review, no proposal");
+        for (const press of documentOn.keydown) press({ key: "Escape" });
+        release();
+        await building;
+        assert.equal(t.ui.sendReview, null, "the review of a closed Send does not open");
+        t.chain.cw.createSpend = built;
+        Object.assign(t.ui, { send: true });
+        await t.openReview([{ to: addr, amount: 5 }], "open");
+        assert.equal(t.ui.sendReview?.note, "open", "control: an open Send gets its review");
+        Object.assign(t.ui, { send: false, sendReview: null });
+        // Each opener starts a new run: no review of an earlier Send comes back.
+        t.ui.sendReview = { prep, note: "old" };
+        t.openSend({ pay: null, after: null });
+        assert.deepEqual([t.ui.send, t.ui.sendReview], [true, null], "the Send button");
+        await t.openReview([{ to: addr, amount: 5 }], "stale", -1);
+        assert.equal(t.ui.sendReview, null, "a build of an earlier run opens no review");
+        t.ui.send = false;
+        // The review shows a memo as the drawer does: a character that hides text is replaced.
+        t.ui.sendReview = { prep: { ...prep, payees: [{ ...prep.payees[0], memo: "a\u202eb" }] },
+          note: "m" };
+        assert.match(textOf(drawn()), /Memoa\ufffdb/);
+        globalThis.document = realDocument;
+        t.ui.sendReview = null;
+        // Every close drops the review, so it never comes back over another payment: the scrim,
+        // Escape, and then "Propose again" opens its own form with a direct Propose.
+        t.closeSession();
+        Object.assign(t.ui, { send: true, sendReview: { prep, note: "x" } });
+        globalThis.document = recorderDoc;
+        const [scrim] = t.layers();
+        globalThis.document = realDocument;
+        scrim.on.click();
+        assert.deepEqual([t.ui.send, t.ui.sendReview], [false, null], "the scrim drops it");
+        Object.assign(t.ui, { send: true, sendReview: { prep, note: "x" } });
+        for (const press of documentOn.keydown) press({ key: "Escape" });
+        assert.deepEqual([t.ui.send, t.ui.sendReview], [false, null], "Escape drops it");
+        Object.assign(t.ui, { send: true, pay: null, after: { pczt: "EXP1" } });
+        const again = drawn();
+        globalThis.document = realDocument;
+        assert.ok(named(again, "button", "Propose payment"), "Propose again: the form");
+        Object.assign(t.ui, { send: false, pay: null, after: null });
+        // The checks of Send run again at Propose: here the funds went meanwhile. A review of
+        // another wallet goes nowhere either.
+        const funded = t.chain;
+        t.setChain({ ...funded, bal: { ...funded.bal, spendable: 0 } });
+        await assert.rejects(t.proposeReviewed({ prep, note: "x" }), /no funds/);
+        t.setChain(funded);
+        await assert.rejects(t.proposeReviewed({ prep: { ...prep, gid: "other" }, note: "x" }),
+          /another wallet/);
+        t.ui.sendReview = { prep: { ...prep, t: { ...prep.t, pczt: "REV2" } }, note: "x",
+          priority: false };
+        const odd = drawn();
+        globalThis.document = realDocument;
+        assert.match(textOf(odd), /does not match the form/, "a decode that differs");
+        assert.doesNotMatch(textOf(odd), /Leaves the wallet|Network fee/,
+          "no total that the decode did not confirm");
+        assert.equal(named(odd, "button", "Propose payment"), undefined, "and no Propose");
+        await assert.rejects(t.proposeReviewed(t.ui.sendReview), /does not match the form/,
+          "nor a Propose by another path");
+        const before = t.state.sessions.length;
+        t.ui.sendReview = { prep: { ...prep, at: prep.at - 5 * 60 * 1000 }, note: "old",
+          priority: false };
+        await assert.rejects(t.proposeReviewed(t.ui.sendReview), /out of date/, "a stale review");
+        assert.equal(t.ui.sendReview, null, "the person reviews it again");
+        t.ui.sendReview = { prep, note: "reviewed", priority: false };
+        const buildsBefore = builds;
+        await t.proposeReviewed(t.ui.sendReview);
+        await waitFor("the reviewed proposal", () => t.state.sessions.length > before);
+        const made = t.state.sessions.find((x) => x.note === "reviewed");
+        assert.equal(made.pczt, "REV1", "the proposal is the reviewed transaction");
+        assert.equal(builds, buildsBefore, "with no second build");
+        assert.equal(t.ui.sendReview, null);
+        assert.equal(storage.has("zf-drafts") && JSON.parse(storage.get("zf-drafts"))[t.state.gid],
+          undefined, "a proposal deletes the draft of its wallet");
+        // A review of a form that a request filled: its proposal keeps the person's draft.
+        Object.assign(t.ui, { draftGid: t.state.gid, sendFor: null, after: null,
+          pay: [{ k: 12, to: "mine", amt: "", memo: "" }], note: "", priority: false });
+        t.keepDraft();
+        t.ui.sendFor = t.state.gid;
+        await t.openReview([{ to: addr, amount: 5 }], "from a request");
+        assert.equal(t.ui.sendReview.own, false);
+        const count = t.state.sessions.length;
+        await t.proposeReviewed(t.ui.sendReview);
+        await waitFor("the request proposal", () => t.state.sessions.length > count);
+        assert.ok(JSON.parse(storage.get("zf-drafts"))[t.state.gid], "the draft stays");
+        t.ui.sendFor = null;
+      } finally {
+        await sleep(300);
+        globalThis.document = recorderDoc;
+        t.setZ(fakeZ);
+        t.ui.sendReview = null;
+      }
+    }
 
     // An expired payment: the chip and the drawer say so, the drawer offers "Propose again" and
     // no Cancel, and the page signs nothing for it. "Send again" comes 10 minutes after a send
@@ -1592,8 +1868,9 @@ const sealed = (gid, rel, seat, fields, key, names = ["by", "sig"]) =>
       "with a signing package, shares can make a transaction: no Propose again");
     await t.putSec(t.state.gid, signer, { nonces });
 
-    const sentOne = { id: "x2", pczt: "EXP1", status: "broadcast", signed: "s", broadcastTxid: "t5",
-      final: { txid: "t5", tx_hex: "00" }, broadcastAt: Date.now() };
+    const sentOne = { id: "x2", pczt: "EXP1", status: "broadcast", signed: "s",
+      broadcastTxid: "realtx",
+      final: { txid: "realtx", tx_hex: "00" }, broadcastAt: Date.now() };
     t.state.sessions.push(sentOne);
     // The bucket of the Approvals inbox that holds a payment, or null.
     const bucket = (ss) =>
@@ -1603,7 +1880,26 @@ const sealed = (gid, rel, seat, fields, key, names = ["by", "sig"]) =>
     assert.equal(bucket(sentOne), "waiting", "the inbox: a sent payment waits for its block");
     sentOne.broadcastAt = Date.now() - 11 * 60 * 1000;
     assert.deepEqual(labels(t.finishButtons(sentOne)), ["Send again"]);
+    assert.equal(t.finishButtons(sentOne)[0].attrs.disabled, undefined);
     assert.equal(bucket(sentOne), "ready", "the inbox: Send again is the next step");
+    // A finished transaction whose id is not the id of the proposal: Send again is off with its
+    // reason, and the inbox lists the payment under attention, not as ready.
+    const otherId = { ...sentOne, id: "x2b", final: { txid: "t5", tx_hex: "00" } };
+    t.state.sessions.push(otherId);
+    const [again, why] = t.finishButtons(otherId);
+    assert.deepEqual([textOf(again), again.attrs.disabled], ["Send again", ""]);
+    assert.match(textOf(why), /another id than the proposal/);
+    assert.equal(t.refusedSend(otherId), true);
+    assert.equal(bucket(otherId), "attention", "the inbox agrees with the drawer");
+    const unsent = { ...otherId, status: "complete", broadcastTxid: undefined };
+    assert.equal(textOf(t.statusChip(unsent)), "Check", "a refused send is not Ready to send");
+    const cancelledOther = { ...otherId, id: "x2c", error: "Cancelled.", status: "cancelled",
+      broadcastTxid: undefined };
+    t.state.sessions.push(cancelledOther);
+    assert.equal(t.refusedSend(cancelledOther), true, "a send step that this browser refuses");
+    assert.equal(bucket(cancelledOther), null, "a cancelled payment offers no send step");
+    t.state.sessions.splice(t.state.sessions.indexOf(cancelledOther), 1);
+    t.state.sessions.splice(t.state.sessions.indexOf(otherId), 1);
     tipAt(4503453);
     assert.deepEqual(t.finishButtons(sentOne), [], "a node refuses it now");
     assert.match(textOf(t.expiryLine(sentOne)), /can no longer go to the network/);
@@ -1612,6 +1908,11 @@ const sealed = (gid, rel, seat, fields, key, names = ["by", "sig"]) =>
     assert.equal(textOf(t.statusChip(sentOne)), "Check");
     assert.equal(bucket(sentOne), null,
       "the inbox: no approval here holds Send, so the Check state shows in Activity only");
+    const checkOther = { ...otherId, id: "x2d" };
+    t.state.sessions.push(checkOther);
+    assert.equal(textOf(t.statusChip(checkOther)), "Check");
+    assert.equal(bucket(checkOther), null, "a refused send in the Check state: no step, no row");
+    t.state.sessions.splice(t.state.sessions.indexOf(checkOther), 1);
     // The inbox for the other states: a proposal to approve, an expired one, a cancelled one, and
     // a document whose facts cannot be read, which never drops out of the list.
     tipAt(4500000);
@@ -1637,14 +1938,21 @@ const sealed = (gid, rel, seat, fields, key, names = ["by", "sig"]) =>
       assert.match(textOf(t.expiryLine(signedOne)), /cannot prove that the signers signed/);
     }
     const falseId = callouts(t.txDetails(unmarkedOne)).join(" ");
-    assert.match(falseId, /names the id f…f, but the proposal gives the id realtx…realtx/);
+    assert.match(falseId, /names the id f…f, but the proposal gives the id realtx…realtx/,
+      "the false id note");
     tipAt(4503459, new Set(["realtx"]));
     assert.equal(t.expired(sentOne), false);
     assert.equal(textOf(t.statusChip(unmarkedOne)), "Sent", "a block holds the approved one");
     assert.equal(bucket(sentOne), null, "the inbox: a sent payment in a block is finished");
     assert.equal(t.expiryLine(unmarkedOne), null);
     tipAt(4500000);
-    assert.deepEqual(labels(t.finishButtons(unmarkedOne)), ["Send again"]);
+    // Its finished transaction names another id than the proposal: the drawer that shows the
+    // false id above sends nothing.
+    const [resend, refused] = t.finishButtons(unmarkedOne);
+    assert.deepEqual([textOf(resend), resend.attrs.disabled], ["Send again", ""]);
+    assert.match(textOf(refused), /another id than the proposal/);
+    assert.deepEqual(labels(t.finishButtons({ ...unmarkedOne,
+      final: { txid: "realtx", tx_hex: "00" } })), ["Send again"]);
     tipAt(4500000, new Set(["realtx"]));
     assert.deepEqual(t.finishButtons(unmarkedOne), [], "no Send again for a payment on chain");
     t.state.sessions.splice(t.state.sessions.indexOf(sentOne), 1);
@@ -1749,6 +2057,22 @@ const sealed = (gid, rel, seat, fields, key, names = ["by", "sig"]) =>
       put(signedA);
       t.noteSessions();
       assert.equal(t.sawSigning(t.state.gid, "za"), true, "this browser saw the signing start");
+      // The send step takes the id of the approved PCZT, never the id of a rewritten proposal.
+      const finished = (txid) => ({ ...signedA, final: { txid, tx_hex: "00" } });
+      assert.equal(t.sendRefusal(finished("tx-a")), null, "the approved transaction goes out");
+      assert.match(String(t.sendRefusal(finished("tx-b"))), /another id than the approved one/,
+        "the rewritten proposal does not");
+      assert.deepEqual(callouts(t.txDetails(finished("tx-a"))), [],
+        "the drawer shows no false id next to a Send that goes out");
+      assert.match(callouts(t.txDetails(finished("tx-b"))).join(" "), /names the id tx-b/);
+      assert.match(String(t.sendRefusal({ id: "zq", pczt: "PX", final: { txid: "tx-x" } })),
+        /cannot read the proposal/, "nothing unreadable goes out");
+      await t.putSec(t.state.gid, me, { marks: { ...t.sec(t.state.gid, me).marks,
+        zq: { approved: "qq" } } });   // no height: it holds nothing
+      assert.match(String(t.sendRefusal({ id: "zq", pczt: "PX", final: { txid: "tx-x" } })),
+        /cannot read the approved transaction/, "nor without the approved one");
+      assert.match(String(t.sendRefusal({ ...signedA, final: { tx_hex: "00" } })),
+        /finished transaction cannot be read/, "a finished transaction with no id");
       answer = (p, sg, a) => a === "aa" && p === "PA"
         ? { state: "expired", txid: "tx-a", why: "it expired and its notes are unspent" }
         : { state: "unknown", txid: null, why: "no" };
@@ -1760,6 +2084,18 @@ const sealed = (gid, rel, seat, fields, key, names = ["by", "sig"]) =>
       assert.match(line, /3 transactions of this wallet went on chain from block 4,496,544/,
         "the engine's list, from 2 days of blocks before the expiry, the first block included");
       assert.deepEqual(labels(t.nextAction(signedA, null, none)), ["Propose again"]);
+      // The engine says that it expired before its height does, and the finished id is not the
+      // approved one: the drawer offers Propose again, and the inbox lists no refused send.
+      const endedOther = { ...signedA, final: { txid: "tx-b", tx_hex: "00" } };
+      put(endedOther);
+      at(4500100);
+      assert.equal(t.refusedSend(endedOther), true);
+      assert.deepEqual(labels(t.nextAction(endedOther, null, none)), ["Propose again"]);
+      const zaBucket = Object.entries(t.inboxRows())
+        .find(([k, list]) => k !== "lost" && list.some((x) => x.id === "za"))?.[0] ?? null;
+      assert.equal(zaBucket, null, "the inbox agrees with the drawer");
+      put(signedA);
+      at(4503500);
       Object.assign(t.ui, { send: false, after: null });
       await quiet(() => t.proposeAgain(signedA));
       assert.deepEqual([t.ui.send, t.ui.after], [true, "PA"], "the new proposal spends its notes");
@@ -2030,6 +2366,28 @@ const sealed = (gid, rel, seat, fields, key, names = ["by", "sig"]) =>
       at(4500100, new Set(["tx-a"]));
       assert.equal(t.inFlight().includes(rewrittenSent), false, "the approved one landed");
       assert.doesNotMatch(String(t.sendBlocker()), /waiting for its block/);
+      // The last step of the drawer, "In a block", from the synced blocks of this browser only.
+      const landedA = { ...signedA, broadcastTxid: "tx-a", final: { txid: "tx-a", tx_hex: "00" },
+        broadcastAt: 1 };
+      const blockStep = (ss) => textOf(t.sessionLayer(ss));
+      const stepClass = (ss) => all(t.sessionLayer(ss), (x) => /^step /.test(x.className ?? "")
+        && textOf(x).includes("In a block"))[0].className;
+      assert.match(blockStep(landedA), /In a blockA synced block holds the payment\./);
+      assert.equal(stepClass(landedA), "step done");
+      answer = () => ({ state: "unknown", txid: "tx-a", why: "it may still land" });
+      at(4500100);
+      assert.match(blockStep(landedA), /In a blockNo synced block holds it yet\./);
+      assert.equal(stepClass(landedA), "step now", "a sent mark is no block");
+      assert.match(blockStep(signedA), /In a blockAfter the send\./);
+      assert.equal(stepClass(signedA), "step ");
+      at(4503460);
+      assert.match(blockStep(landedA), /In a blockNo synced block holds it\./,
+        "past its expiry it waits for no block");
+      t.setChain({ ...t.chain, cw: null });
+      assert.match(blockStep(landedA), /In a blockThis browser has not checked the blocks since/,
+        "before a sync the page does not say that no block holds it");
+      answer = () => ({ state: "done", txid: "tx-a", why: "a synced block holds it" });
+      at(4500100, new Set(["tx-a"]));
 
       // A browser that did not approve keeps no tie and shows what t seats signed. A sent payment
       // frees its notes by height, and one whose signed transaction a block holds is "Sent" and
@@ -2754,6 +3112,12 @@ const sealed = (gid, rel, seat, fields, key, names = ["by", "sig"]) =>
           t.state.sessions = [];
           return payees;
         };
+        // The form gives a review, or for "Propose again" a proposal: the payees of either.
+        const madeSince = async (before) => {
+          const review = t.ui.sendReview;
+          t.ui.sendReview = null;
+          return review ? [review.prep.payees] : proposedSince(before);
+        };
         // A submit with the stub page, as the page draws and reacts after it.
         const stubPage = () => ({ ...recorder, activeElement: { dataset: {} },
           getElementById: () => new Rec("div") });
@@ -2764,7 +3128,7 @@ const sealed = (gid, rel, seat, fields, key, names = ["by", "sig"]) =>
           globalThis.document = realDocument;
           await sleep(300);
           globalThis.document = recorder;
-          return proposedSince(before);
+          return madeSince(before);
         };
         // Two submits at once: `release()` runs when both wait for the registry.
         const submitTwice = async (dialog, release) => {
@@ -2777,7 +3141,7 @@ const sealed = (gid, rel, seat, fields, key, names = ["by", "sig"]) =>
           await Promise.all(both);
           await sleep(300);
           globalThis.document = recorder;
-          return proposedSince(before);
+          return madeSince(before);
         };
         const refused = async (dialog, text) => {
           asked.length = 0;
@@ -2853,7 +3217,7 @@ const sealed = (gid, rel, seat, fields, key, names = ["by", "sig"]) =>
         let sent = await submit(await settled(["alice.zec"]));
         assert.deepEqual(sent, [[{ to: NAMED, amount: 50000000, name: "alice" }]],
           "the string of the registry, not the form of the engine");
-        assert.equal(t.banner.kind, "ok");
+        assert.notEqual(t.banner?.kind, "bad", "the review opens with no error");
         assert.equal(gets >= 1, true, "the submit asks the registry");
         sent = await submit(await settled([OTHER, "0.1"], ["Bob", "0.2", "rent"]));
         assert.deepEqual(sent, [[{ to: OTHER, amount: 10000000 },
@@ -2876,6 +3240,24 @@ const sealed = (gid, rel, seat, fields, key, names = ["by", "sig"]) =>
           + "at block 4500090, less than a day ago. Check the address with the payee.");
         assert.deepEqual(await submit(form), [[{ to: MOVED, amount: 50000000, name: "alice" }]],
           "after the redraw one submit proposes it");
+        // A close of Send while the names are looked up: the build that follows opens no review.
+        znsServes(znsOk());
+        form = await settled(["alice"]);
+        const lookups = [];
+        registry.get = () => new Promise((ok) => { lookups.push(ok); });
+        const named0 = await createRegistry({ fetch: async () => znsOk()() }).get();
+        const bannerBefore = t.banner;
+        globalThis.document = stubPage();
+        const lateSubmit = form.on.submit({ preventDefault() {}, currentTarget: null });
+        globalThis.document = realDocument;
+        assert.equal(lookups.length, 1, "the submit waits for the registry");
+        t.endSend();
+        lookups.forEach((ok) => ok(named0));
+        await lateSubmit;
+        await sleep(300);
+        globalThis.document = recorder;
+        assert.equal(t.ui.sendReview, null, "no review after a close during the lookup");
+        assert.ok(t.banner === bannerBefore || t.banner?.kind !== "bad", "the build ran");
         // Two submits at once, the answer of the registry held: the first refuses with the new
         // address, and the second does not pay it either.
         znsServes(znsOk());

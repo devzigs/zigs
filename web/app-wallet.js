@@ -22,12 +22,13 @@ import {
   cancelMove, chainReady, ended, expired, heldApprovals, isOpen, landed, proposeMove, sendBlocker,
   signingSeen,
 } from "./app-payments.js";
-import { finishStep } from "./app-drawer.js";
+import { finishStep, refusedSend } from "./app-drawer.js";
 import { BUCKETS, bucketOf, emptyState, solLine } from "./approvals-model.js";
 import { messagesCard } from "./app-thread.js";
 import { openBackup, staleRestoreNote } from "./app-backups.js";
 import { loadingView } from "./app-shell.js";
 import { render } from "./app-loop.js";
+import { openSend } from "./app-send.js";
 import { setupView, solSetupCard, solUnfinished } from "./app-setup.js";
 import { themeChoice } from "./app-theme.js";
 import {
@@ -196,9 +197,7 @@ function walletActions(why) {
     el("button", {
       class: "btn primary", type: "button", disabled: !!why, title: why,
       onclick: () => {
-        Object.assign(ui, {
-          send: true, pay: null, note: "", priority: false, sendFor: null, after: null,
-        });
+        openSend({ pay: null, note: "", priority: false, sendFor: null, after: null });
         render();
       },
     }, "Send"),
@@ -506,11 +505,13 @@ export function inboxRows() {
 
 function inboxBucket(ss, held) {
   try {
-    const end = ended(ss);
+    const end = ended(ss), step = finishStep(ss);
     return bucketOf({
+      // In the Check state the drawer offers no step (nextAction): no row either.
+      sendRefused: !end && !ss.error && !expired(ss) && refusedSend(ss, step),
       landed: landed(ss), held: held.has(ss.id),
       check: !end && signingSeen(ss) && expired(ss),
-      review: needsMyApproval(state.gid, ss), step: finishStep(ss), ended: end,
+      review: needsMyApproval(state.gid, ss), step, ended: end,
       error: !!ss.error, status: ss.status,
     });
   } catch (e) {

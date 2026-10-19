@@ -19,6 +19,7 @@ import { closeSession, openSession, sdb } from "./app-groups.js";
 import { groupName, isPayee, normalized, payTitle } from "./app-dom.js";
 import { myVerified, seatCheck } from "./app-dkg.js";
 import { once, react, render } from "./app-loop.js";
+import { openSend } from "./app-send.js";
 import { nameRefusal, registry } from "./zns.js";
 
 const inspectCache = new Map();
@@ -254,12 +255,16 @@ export function isOpen(ss) {
 // document whose check still waits does not count as open yet, and neither does a proposal that
 // this browser sees from a sync far behind the chain.
 const PROPOSING = "The proposal of a payment is not complete yet. Wait a moment.";
-export async function newSpend(...args) {
+const REVIEWING = "This browser still builds the review of a payment. Wait a moment.";
+export const newSpend = (...args) => proposing(() => proposeNow(...args));
+/** Proposes the transaction that the Send review showed (prepareSpend), as it is. */
+export const proposePrepared = (prep, note) => proposing(() => proposeBuilt(prep, note));
+async function proposing(run) {
   const why = holdBlocker();
   if (why) throw new Error(why);
   ui.proposing = true;
   render();
-  try { return await proposeNow(...args); }
+  try { return await run(); }
   finally { ui.proposing = false; }
 }
 
@@ -273,21 +278,53 @@ function keptPayee({ to, amount, memo, name }) {
 }
 
 async function proposeNow(payees, note, move = null, priority = false, after) {
-  const gid = state.gid, approvals = state.g.t;
+  const at = { gid: state.gid, approvals: state.g.t };
+  readyToSpend(at.gid);
+  payees = payees.map(keptPayee);
+  // `after`: the approved PCZT of an expired payment. The engine spends all of its notes too.
+  await publishSpend(at, payees, note, J(await spendOrStall(chain, payees, priority, after)), move);
+}
+async function proposeBuilt(prep, note) {
+  const at = { gid: state.gid, approvals: state.g.t };
+  readyToSpend(at.gid);
+  if (prep.gid !== at.gid) throw new Error("The review belongs to another wallet.");
+  await publishSpend(at, prep.payees, note, prep.t, null);
+}
+// The proposal document of transaction `t`, signed by a seat of this browser, in wallet `at.gid`.
+async function publishSpend(at, payees, note, t, move) {
+  const ref = sdb.collection("groups/" + at.gid + "/sessions").doc();
+  const fields = proposalFields(payees, note, t, move, Date.now());
+  const sig = await sigPart(at.gid, ref.id, "proposal", fields);
+  await ref.set({ createdBy: myUid(), status: "collecting", ...fields, ...sig });
+  log("new spend: " + fmtZec(t.amount));
+  showBanner("ok", "Payment proposed. It needs " + at.approvals + " approvals.");
+  if (state.gid === at.gid) openSession(ref.id);
+}
+
+function readyToSpend(gid) {
   if (!chain || chain.gid !== gid || !chain.bal) {
     throw new Error("The wallet has not finished its first sync.");
   }
   if (!mayAct()) throw new Error(NO_SEAT_KEY);
-  payees = payees.map(keptPayee);
-  // `after`: the approved PCZT of an expired payment. The engine spends all of its notes too.
-  const t = J(await spendOrStall(chain, payees, priority, after));
-  const ref = sdb.collection("groups/" + gid + "/sessions").doc();
-  const fields = proposalFields(payees, note, t, move, Date.now());
-  const sig = await sigPart(gid, ref.id, "proposal", fields);
-  await ref.set({ createdBy: myUid(), status: "collecting", ...fields, ...sig });
-  log("new spend: " + fmtZec(t.amount));
-  showBanner("ok", "Payment proposed. It needs " + approvals + " approvals.");
-  if (state.gid === gid) openSession(ref.id);
+}
+
+/**
+ * Builds the transaction of a new payment without proposing it, for the Send review: the same
+ * guards as a proposal (the Send holds, the first sync, a seat that can sign) and the same engine
+ * call. The review decodes `t.pczt`, and proposing it later needs no new build.
+ * @returns {Promise<{gid: string, payees: object[], t: object, at: number}>}
+ */
+export async function prepareSpend(payees, priority) {
+  const why = holdBlocker();
+  if (why) throw new Error(why);
+  const gid = state.gid;
+  readyToSpend(gid);
+  ui.proposing = "review";
+  render();
+  try {
+    const kept = payees.map(keptPayee);
+    return { gid, payees: kept, t: J(await spendOrStall(chain, kept, priority)), at: Date.now() };
+  } finally { ui.proposing = false; }
 }
 
 // Only a PCZT text goes to the engine: a click event that a handler passes on is none.
@@ -329,7 +366,33 @@ export async function cancelMove() {
   showBanner("ok", "Move cancelled. This wallet stays as it is.");
 }
 
+// The id that the finished transaction must have: of the PCZT whose sighash a seat of this
+// browser approved (afterOf), else of the proposal. Null when it cannot be read.
+export const approvedTxid = (ss) => markOf(state.gid, ss.id).approved
+  ? txidOf({ pczt: afterOf(ss) }) : txidOf(ss);
+
+// Null when the finished transaction has the approved id, else why it does not go out. Nothing
+// that cannot be read goes out.
+// ponytail: compares the `final.txid` that one seat wrote; it does not prove that `tx_hex` carries
+// it. The FROST signatures still bind the approved sighash. ZEC-18: an engine check of the bytes.
+export function sendRefusal(ss) {
+  if (!isStr(ss.final?.txid)) return "The finished transaction cannot be read.";
+  const bound = !!markOf(state.gid, ss.id).approved, want = approvedTxid(ss);
+  if (!want) return unread(bound ? "the approved transaction" : "the proposal");
+  if (ss.final.txid === want) return null;
+  return bound ? SEND_OTHER : SEND_NOT_PROPOSED;
+}
+const unread = (what) => "This browser cannot read " + what + ", so it does not send the "
+  + "finished one.";
+const SEND_OTHER = "The finished transaction has another id than the approved one, so this "
+  + "browser does not send it. Check the payment with the other signers.";
+const SEND_NOT_PROPOSED = "The finished transaction has another id than the proposal, so this "
+  + "browser does not send it. Check the payment with the other signers.";
+
 export async function broadcastTx(ss) {
+  // Before the try: a refusal writes no error into the payment.
+  const why = sendRefusal(ss);
+  if (why) throw new Error(why);
   const gid = state.gid, ref = sdb.doc(sessionPath(ss, gid));
   try {
     if (!isStr(ss.final.tx_hex) || !isStr(ss.final.txid)) {
@@ -484,6 +547,8 @@ async function freshTip() {
 // A sent payment that no block holds yet keeps the wallet's notes until it expires. A node can
 // drop it, so any signer can send the same transaction again. The sent mark stays as it is.
 export async function resendTx(ss) {
+  const why = sendRefusal(ss);
+  if (why) throw new Error(why);
   // A seat writes the final part: a value that is not text would trap in the engine.
   if (!isStr(ss.final?.tx_hex)) throw new Error("The finished transaction cannot be read.");
   await broadcastAnywhere(ss.final.tx_hex);
@@ -590,7 +655,7 @@ const OPEN_TEXT = "Finish or cancel the open payment, or wait until it expires."
 // a sync connects to the next server. A proposal on it would wait on the same server.
 const RECONNECT = "The light-wallet server stopped answering. " + WHEN_SYNCED;
 function holdBlocker() {
-  if (ui.proposing) return PROPOSING;
+  if (ui.proposing) return ui.proposing === "review" ? REVIEWING : PROPOSING;
   if (curChain()?.stalled) return RECONNECT;
   // ponytail: the engine does not know about unmined spends and would pick the same notes again.
   if (inFlight().length) return "A payment is waiting for its block. Send again in a minute.";
@@ -991,10 +1056,10 @@ export async function proposeAgain(ss) {
   }
   if (ss.move) { closeSession(); await proposeMove(after); return; }
   const payees = payeesOf(ss), ins = againFrom(ss, after);
-  Object.assign(ui, {
+  openSend({
     pay: payees.length ? payeeRows(payees, () => ++ui.payKey) : null, listError: "",
     note: typeof ss.note === "string" ? ss.note : "", priority: priorityTimes(ins) > 0,
-    send: true, sendFor: null, after,
+    sendFor: null, after,
   });
   closeSession();
   render();

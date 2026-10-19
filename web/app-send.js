@@ -1,15 +1,24 @@
 // Receive and send dialogs.
-import { MEMO_BYTES, memoBytes, memoError, parsePayeeList, toZat, zatText } from "./payees.js";
+import {
+  MEMO_BYTES, memoBytes, memoError, parsePayeeList, toZat, zatText,
+} from "./payees.js";
 import { payeeRows, requestProblem } from "./requests.js";
 import { state, ui } from "./app-state.js";
 import { fmtZec } from "./app-kit.js";
 import { Z } from "./app-engine.js";
+import { gkeys } from "./app-keystore.js";
+import { DRAFT_MS, draftLive, draftOf, emptyForm, reviewFresh } from "./payment-model.js";
 import { addrHidden, atCap, curChain, curNet, netName } from "./app-chain.js";
-import { act, addrGroups, copyBtn, el, money, normalized, onNetwork, qrBox } from "./app-dom.js";
-import { feeEstimate, newSpend, PRIORITY_FACTOR, sendBlocker } from "./app-payments.js";
+import {
+  act, addrGroups, copyBtn, el, memoRow, money, normalized, onNetwork, qrBox,
+} from "./app-dom.js";
+import {
+  feeEstimate, inspectOf, newSpend, prepareSpend, PRIORITY_FACTOR, proposePrepared, recipientCheck,
+  sendBlocker,
+} from "./app-payments.js";
 import { requestOf } from "./app-payreq.js";
 import { nameOf, recentNote, registry, resolveRecipient, zecName } from "./zns.js";
-import { render } from "./app-loop.js";
+import { focusAfter, render } from "./app-loop.js";
 import { capNote, receiveLimit, receiveWhat } from "./app-wallet.js";
 
 const MAX_PAYEES = 20;
@@ -272,9 +281,140 @@ function pasteList(net) {
 const afterNote = () => ui.after ? el("p", { class: "small" }, "This payment also spends every "
   + "note of the expired payment, so that at most one of them can go on chain.") : null;
 
+// ── Drafts: the typed Send form, sealed with the wallet key on this device for 24 hours ──
+// `at` stays plain next to the sealed box, so an expired draft goes without a key, also while
+// the vault is locked. A draft that has not expired stays while its key is locked.
+const DRAFTS = "zf-drafts";
+const draftAad = (gid) => "draft\n" + gid;
+function draftBook() {
+  try { return JSON.parse(localStorage.getItem(DRAFTS) || "{}") || {}; } catch { return {}; }
+}
+// A time from the future (a clock that was ahead) counts as expired too.
+const expiredAt = (at, now) => !Number.isSafeInteger(at) || now - at > DRAFT_MS
+  || at > now + 300000;
+
+/** Deletes the expired drafts of every wallet. */
+export function sweepDrafts(now = Date.now()) {
+  try {
+    const book = draftBook(), old = Object.keys(book).filter((g) => expiredAt(book[g]?.at, now));
+    for (const g of old) delete book[g];
+    if (old.length) localStorage.setItem(DRAFTS, JSON.stringify(book));
+  } catch { /* no storage: nothing to delete */ }
+}
+export function dropDraft(gid) {
+  try {
+    const book = draftBook();
+    if (!book[gid]) return;
+    delete book[gid];
+    localStorage.setItem(DRAFTS, JSON.stringify(book));
+  } catch { /* no storage: nothing to delete */ }
+}
+// The draft of wallet `gid`, or null: none, expired (then deleted), locked or unreadable.
+function readDraft(gid) {
+  sweepDrafts();
+  const entry = draftBook()[gid], key = gkeys[gid];
+  if (!entry || !key || !Z) return null;
+  try {
+    const d = JSON.parse(Z.secretOpen(key, draftAad(gid), entry.box));
+    return draftLive(d, Date.now()) ? d : null;
+  } catch { return null; }
+}
+// Saves the form as it is now. A request or "Propose again" fills the form: that is no draft of
+// the person, so it saves nothing. The draft line follows at once when a save starts to fail.
+export function keepDraft() {
+  const gid = state.gid, key = gkeys[gid], was = ui.draftFailed;
+  // The form of another wallet (a link changed the wallet) is no draft of this one.
+  if (ui.after || ui.sendFor || ui.draftGid !== gid || !key || !Z) return;
+  ui.draftFailed = !saveDraft(gid, key);
+  if (ui.draftFailed !== was) render();
+}
+// False when the form does not fit (a memo too long): the last draft then stays. A form with
+// nothing typed deletes the draft.
+function saveDraft(gid, key) {
+  const form = { rows: ui.pay, note: ui.note, priority: ui.priority };
+  const d = draftOf(form, Date.now());
+  if (!d) {
+    if (emptyForm(form)) dropDraft(gid);
+    return emptyForm(form);
+  }
+  // A click with no change keeps the time of the draft: only typing gives it 24 hours more.
+  if (lastDraft === draftText(gid, d) && draftBook()[gid]) return true;
+  try {
+    const book = draftBook();
+    book[gid] = { at: d.at, box: Z.secretSeal(key, draftAad(gid), JSON.stringify(d)) };
+    localStorage.setItem(DRAFTS, JSON.stringify(book));
+    lastDraft = draftText(gid, d);
+    return true;
+  } catch { return false; }
+}
+// The draft that this tab saved or restored last, without its time.
+let lastDraft = null;
+const draftText = (gid, d) => gid + "\n" + JSON.stringify({ ...d, at: 0 });
+// A new form: the draft of this wallet when one lives, never for "Propose again".
+function freshForm() {
+  const d = ui.after ? null : readDraft(state.gid);
+  ui.pay = d ? d.rows.map((r) => ({ k: ++ui.payKey, ...r }))
+    : [{ k: ++ui.payKey, to: "", amt: "", memo: "" }];
+  if (d) Object.assign(ui, { note: d.note, priority: d.priority });
+  if (d) lastDraft = draftText(state.gid, d);
+  Object.assign(ui, { listError: "", draftFailed: false, draftGid: state.gid });
+}
+function draftLine() {
+  if (ui.after || ui.sendFor) return null;
+  if (ui.draftFailed) return el("p", { class: "small faint" }, "This draft could not be saved on "
+    + "this device. The form still works.");
+  if (!readDraft(state.gid)) return null;
+  return el("p", { class: "small faint" }, "Draft saved on this device for 24 hours. ",
+    el("button", { class: "btn ghost sm", type: "button",
+      onclick: (ev) => discardDraft(ev.currentTarget.form) }, "Discard draft"));
+}
+// Discard empties the typed fields too: a redraw keeps typed values (saveFormState), so they
+// would come back and the form would save them as a new draft. The focus goes to the first
+// recipient field.
+function discardDraft(form) {
+  dropDraft(state.gid);
+  for (const n of form.querySelectorAll("input[id]:not([type=checkbox]), textarea[id]")) {
+    n.value = "";
+  }
+  Object.assign(ui, { pay: null, note: "", priority: false });
+  freshForm();
+  focusAfter("INPUT:s-to-" + ui.pay[0].k + ":0", true);
+  render();
+}
+// Each close of Send and each change of wallet starts a new run: a build that ends after it
+// opens no review.
+let sendRun = 0;
+/** Drops the review and any build in flight: their Send closed, or their wallet closed. */
+export function dropReview() {
+  sendRun += 1;
+  ui.sendReview = null;
+}
+/** Closes Send and drops its review: a review never comes back after its dialog closed. */
+export function endSend() {
+  dropReview();
+  Object.assign(ui, { send: false, draftFailed: false });
+}
+/** Opens Send with `fields`: a new run, so no review of an earlier Send comes back. */
+export function openSend(fields) {
+  dropReview();
+  Object.assign(ui, { ...fields, send: true });
+}
+/**
+ * Builds the transaction of the form and opens its review, unless Send closed or opened again
+ * since `run` (read when the person clicked, before the names were looked up). `own`: the form
+ * is the person's own, so a proposal deletes its draft; a request filled it otherwise.
+ */
+export async function openReview(payees, note, run = sendRun) {
+  const own = !ui.sendFor, prep = await prepareSpend(payees, ui.priority);
+  if (run === sendRun) ui.sendReview = { prep, note, own };
+}
+const closeSend = () => { endSend(); render(); };
+sweepDrafts();
+
 export function sendDialog() {
+  if (ui.sendReview) return reviewDialog();
   const c = curChain(), bal = c && c.bal, spendable = bal ? bal.spendable : 0, net = curNet();
-  if (!ui.pay) { ui.pay = [{ k: ++ui.payKey, to: "", amt: "", memo: "" }]; ui.listError = ""; }
+  if (!ui.pay) freshForm();
   const rows = ui.pay;
   const fee = el("span", {}), total = el("span", { id: "s-total" });
   const sumUp = () => {
@@ -283,16 +423,26 @@ export function sendDialog() {
     total.replaceChildren(money(rows.reduce((n, r) => n + (toZat(r.amt) || 0), 0) + f));
   };
   const why = sendBlocker();
-  const f = el("form", { class: "dialog", role: "dialog", "aria-modal": "true", "aria-labelledby": "send-title", onsubmit: act(async (ev) => {
+  const f = el("form", { class: "dialog", role: "dialog", "aria-modal": "true",
+    "aria-labelledby": "send-title", oninput: keepDraft, onchange: keepDraft, onclick: keepDraft,
+    onsubmit: act(async (ev) => {
     if (why) throw new Error(why);
-    const payees = readPayees(rows, await resolveNames(rows));
+    const run = sendRun, payees = readPayees(rows, await resolveNames(rows));
     const need = payees.reduce((n, p) => n + p.amount, 0) + feeEstimate(payees.length, ui.priority);
     if (need > spendable) throw new Error("Not enough funds: " + fmtZec(spendable) + " available, " + fmtZec(need) + " needed (amounts + fee).");
     const note = String(new FormData(ev.target).get("note") || "").trim();
-    await newSpend(payees, note, null, ui.priority, ui.after);
-    ui.send = false; ui.after = null;
+    // "Propose again" keeps its direct path: it spends the notes of the expired payment too.
+    if (ui.after) {
+      await newSpend(payees, note, null, ui.priority, ui.after);
+      endSend();
+      ui.after = null;
+      return;
+    }
+    await openReview(payees, note, run);
   }) },
-    el("div", { class: "card-head" }, el("h2", { id: "send-title" }, "Send ZEC"), el("button", { class: "icon-btn", type: "button", "aria-label": "Close", onclick: () => { ui.send = false; render(); } }, "×")),
+    el("div", { class: "card-head" }, el("h2", { id: "send-title" }, "Send ZEC"),
+      el("button", { class: "icon-btn", type: "button", "aria-label": "Close", onclick: closeSend },
+        "×")),
     el("div", { class: "field" }, el("span", {}, rows.length > 1 ? rows.length + " recipients, one transaction" : "To and amount"),
       rows.map((r, i) => payRow(r, i, rows, sumUp)),
       el("div", { class: "row-actions" },
@@ -317,15 +467,92 @@ export function sendDialog() {
       el("div", { class: "total" }, el("span", {}, "Total leaving the wallet"), total),
       el("div", {}, el("span", { class: "muted" }, "Approvals needed"), el("span", {}, state.g.t + " of " + state.g.n))),
     el("p", { class: "small faint" }, EXPIRY_NOTE),
-    afterNote(),
-    el("div", { class: "dialog-actions" },
-      el("button", { class: "btn", type: "button", onclick: () => { ui.send = false; render(); } }, "Cancel"),
-      el("button", {
-        class: "btn primary", type: "submit", disabled: !Z || !!why,
-      }, "Propose payment")),
-    why ? el("p", { class: "small faint" }, why) : null);
+    sendFoot(why));
   sumUp();
   return f;
+}
+
+// The foot of the Send form: the note of "Propose again", the draft, the buttons, why Send is off.
+function sendFoot(why) {
+  return [afterNote(), draftLine(),
+    el("div", { class: "dialog-actions" },
+      el("button", { class: "btn", type: "button", onclick: closeSend }, "Cancel"),
+      el("button", {
+        class: "btn primary", type: "submit", disabled: !Z || !!why,
+      }, ui.after ? "Propose payment" : "Review payment")),
+    why ? el("p", { class: "small faint" }, why) : null];
+}
+
+// ── The review: what the engine decoded from the transaction that this browser built. The
+// proposal is that transaction, as it is: the form is not read again. ──
+const REVIEW_OK = "This browser decoded the transaction that it built: it pays exactly these "
+  + "recipients, amounts and memos.";
+const REVIEW_BAD = "The transaction that this browser built does not match the form. Go back and "
+  + "check the payment.";
+
+// The engine decoded the transaction of `prep`, and it pays exactly its payees: null when not.
+function decodedMatch(prep) {
+  const ins = inspectOf({ pczt: prep.t.pczt });
+  const ok = !!ins && !ins.error
+    && recipientCheck({ payees: prep.payees, amount: prep.t.amount }, ins).match === true;
+  return ok ? ins : null;
+}
+
+function reviewDialog() {
+  const { prep, note } = ui.sendReview, t = prep.t;
+  if (prep.gid !== state.gid) { ui.sendReview = null; return sendDialog(); }
+  const ins = decodedMatch(prep), ok = !!ins;
+  return el("section", { class: "dialog", role: "dialog", "aria-modal": "true",
+    "aria-labelledby": "review-title" },
+  el("div", { class: "card-head" }, el("h2", { id: "review-title" }, "Review the payment"),
+    el("button", { class: "icon-btn", type: "button", "aria-label": "Close", onclick: closeSend },
+      "×")),
+  ok ? el("div", { class: "review-hero" }, el("span", { class: "label" }, "Leaves the wallet"),
+    money(t.amount + ins.fee, "lg"), el("span", { class: "small muted" }, "Zcash "
+      + netName(state.g) + ": the amounts and the network fee")) : null,
+  ok ? el("p", { class: "callout ok" }, REVIEW_OK)
+    : el("p", { class: "callout bad", role: "alert" }, REVIEW_BAD),
+  prep.payees.map((p, i) => reviewRow(p, i, prep.payees.length)),
+  reviewFacts(ins, note),
+  el("p", { class: "small faint" }, EXPIRY_NOTE + " Proposing asks the signers to approve; it "
+    + "does not sign or send the payment."),
+  el("div", { class: "dialog-actions" },
+    el("button", { class: "btn", type: "button",
+      onclick: () => { ui.sendReview = null; render(); } }, "Back to edit"),
+    ok ? el("button", { class: "btn primary", type: "button", disabled: !!ui.proposing,
+      onclick: act(() => proposeReviewed(ui.sendReview)) }, "Propose payment") : null));
+}
+
+// The fee as the engine decoded it (none when the decode does not match), the approvals, the note.
+function reviewFacts(ins, note) {
+  const fee = ins ? [el("dt", {}, ins.fee > ins.standard_fee ? "Network fee (priority)"
+    : "Network fee"), el("dd", {}, money(ins.fee))] : null;
+  return el("dl", { class: "kv" }, fee, el("dt", {}, "Approvals needed"),
+    el("dd", {}, state.g.t + " of " + state.g.n),
+    note ? [el("dt", {}, "Note for signers"), el("dd", {}, note)] : null);
+}
+
+function reviewRow(p, i, n) {
+  return el("section", { class: "review-row" },
+    el("span", { class: "label" }, n > 1 ? "Recipient " + (i + 1) : "Recipient"),
+    p.name ? el("p", { class: "small" }, zecName(p.name) + " gives this address:") : null,
+    el("div", { class: "addr-full" }, addrGroups(p.to)), money(p.amount),
+    memoRow("Memo", p.memo));
+}
+
+// Proposes the reviewed transaction after the guards of a new one: Send is not held, the decode
+// still matches, and the review is fresh (a stale one is built again).
+export async function proposeReviewed(r) {
+  const gid = state.gid, why = sendBlocker();
+  if (why) throw new Error(why);
+  if (!decodedMatch(r.prep)) throw new Error(REVIEW_BAD);
+  if (!reviewFresh(r.prep.at, Date.now())) {
+    ui.sendReview = null;
+    throw new Error("This review is out of date. Review the payment again.");
+  }
+  await proposePrepared(r.prep, r.note);
+  if (r.own !== false) dropDraft(gid);
+  Object.assign(ui, { send: false, sendReview: null, pay: null, note: "", priority: false });
 }
 
 // The expiry window of the engine (wasm/src/expiry.rs), in words.

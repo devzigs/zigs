@@ -651,7 +651,7 @@ Devices: D1 (presenter, seat 1), D2 (seat 2), D3 (seat 3). Rule for the whole de
 | 1:15 | D2, D3 | Scan the QR, type a name, click Take seat. | 3 of 3 seats taken. | S10 |
 | 1:45 | D1, D2, D3 | Read the safety number aloud. Each person presses It matches. Narrate the progress card: Zcash key, Solana key, fee address. | Both ceremonies run. Each seat shows Address checked and key ready. | M3, M4 |
 | 3:00 | D1 | Switch to Demo A. Show the Zcash address, the Available balance and the Solana tab. Press Sync Solana. | Both balances show. | S2 |
-| 3:30 | D1 | Receive: show the address and the faucet link. Do not use the faucet live. Click Send. Paste the Payee utest1 address. Enter 0.01. Click Propose payment. | A payment opens. | M2 |
+| 3:30 | D1 | Receive: show the address and the faucet link. Do not use the faucet live. Click Send. Paste the Payee utest1 address. Enter 0.01. Click Review payment, then Propose payment. | A payment opens. | M2 |
 | 4:00 | D2 | Open the payment. Read "What this payment does". Click Approve. Keep the payment open. | One approval. | M5 |
 | 4:30 | D1 | Click Approve. Click Build proof. Narrate the privacy model during the proof (about 1 minute). | The proof builds. | M5 |
 | 5:45 | D1 | Click Send to network. Click View in explorer. | Status Sent. The explorer shows the transaction. | S9 |
