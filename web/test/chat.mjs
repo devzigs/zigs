@@ -336,22 +336,6 @@ assert.equal(PASTE_GLUED.includes("another Zigs server"), false, "glued text is 
 // holds this page, or an address that has no origin. The text says so, and it never says that the
 // link is for another server.
 const glued = {
-  // A foreign host, or text, in a form that a URL parser reads differently: letters and full stops
-  // of other scripts, and a backslash.
-  "a fullwidth host glued to the fragment": "ｅｖｉｌ。ｃｏｍ#" + GID + "." + K,
-  "a fullwidth host and a backslash before the link": "ｅｖｉｌ。ｃｏｍ\\" + LINK,
-  "text of another script glued to the fragment": "Ссылка:#" + GID + "." + K,
-  "text of another script before the link": "Ссылка" + LINK,
-  "text of another script and a colon before the link": "Ссылка:" + LINK,
-  "a Japanese word before the link": "リンク" + LINK,
-  "a letter with an accent before the link": "é" + LINK,
-  "a digit of another script before the link": "１" + LINK,
-  "a backslash before the link": "\\" + LINK,
-  "a backslash before the fragment": "\\#" + GID + "." + K,
-  "an ASCII host and a backslash before the link": "evil.example\\" + LINK,
-  "an ideographic full stop before the link": "。" + LINK,
-  "a fullwidth full stop before the link": "．" + LINK,
-  "a halfwidth ideographic full stop before the link": "｡" + LINK,
   "a prefix with no scheme": "evil.example/?u=" + LINK,
   "a prefix with a host and a path": "evil.example/" + LINK,
   "a prefix with a user name": "user@evil.example/" + LINK,
@@ -368,6 +352,22 @@ const glued = {
   "text that is no address before the link": "a<b.example/#" + GID + "." + K,
   "a bracket host that does not end": "https://[::1/#" + GID + "." + K,
   "a prefix of another origin in a message": "Open evil.example/?u=" + LINK + " now",
+  // A foreign host, or text, in a form that a URL parser reads differently: letters and full stops
+  // of other scripts, and a backslash.
+  "a fullwidth host glued to the fragment": "ｅｖｉｌ。ｃｏｍ#" + GID + "." + K,
+  "a fullwidth host and a backslash before the link": "ｅｖｉｌ。ｃｏｍ\\" + LINK,
+  "text of another script glued to the fragment": "Ссылка:#" + GID + "." + K,
+  "text of another script before the link": "Ссылка" + LINK,
+  "text of another script and a colon before the link": "Ссылка:" + LINK,
+  "a Japanese word before the link": "リンク" + LINK,
+  "a letter with an accent before the link": "é" + LINK,
+  "a digit of another script before the link": "１" + LINK,
+  "a backslash before the link": "\\" + LINK,
+  "a backslash before the fragment": "\\#" + GID + "." + K,
+  "an ASCII host and a backslash before the link": "evil.example\\" + LINK,
+  "an ideographic full stop before the link": "。" + LINK,
+  "a fullwidth full stop before the link": "．" + LINK,
+  "a halfwidth ideographic full stop before the link": "｡" + LINK,
 };
 for (const [what, text] of Object.entries(glued)) {
   assert.deepEqual(pastedInvite(text, HERE), { error: PASTE_GLUED }, "text stands before: " + what);
