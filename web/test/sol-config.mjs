@@ -118,6 +118,8 @@ function pageText(t) {
     assert.match(t.banner.text, /Solana did not load: Solana is not available on this server/);
     // The diagnostics tell a failed load from a read that is still going (unified-setup.mjs).
     const { diagnostics } = await import("../app-help.js");
+    assert.match(diagnostics(), /^Solana part: could not read$/m,
+      "the Solana part of a failed load says could not read");
     assert.match(diagnostics(), /^Solana backup files not saved: could not read$/m,
       "a failed Solana load says could not read");
     assert.match(diagnostics(), /^Solana payments to approve: could not read$/m,

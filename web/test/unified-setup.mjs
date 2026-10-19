@@ -407,12 +407,46 @@ function solanaUnread(gid) {
   t.sol.ctl.loaded = { ...loaded, soldone: false };
   try {
     const text = diagnostics();
+    assert.match(text, /^Solana part: not read yet$/m, "the Solana part says not read yet");
     assert.match(text, /^Solana backup files not saved: not read yet$/m,
       "the Solana files say not read yet");
     assert.match(text, /^Solana payments to approve: not read yet$/m);
   } finally {
     t.secrets = real;
     t.sol.ctl.loaded = loaded;
+  }
+}
+// The Solana part line is one word of the setup state. The Solana counts show only for a part.
+function solanaPart() {
+  const ctl = t.sol.ctl, docs = ctl.docs, done = docs.soldone, g = t.state.g;
+  const COUNTS = /^Solana (backup files not saved|payments to approve): /m;
+  const facts = (change) => {
+    ctl.docs = { ...docs, ...change };
+    return diagnostics();
+  };
+  try {
+    assert.match(facts({}), /^Solana part: ready$/m, "a ready Solana part says ready");
+    for (const [what, change, word] of [
+      ["a part that stopped", { solabort: { 2: { reason: "A test stop." } } }, "stopped"],
+      ["keys that differ", { soldone: { ...done, 2: { ...done[2], groupKey: "00".repeat(32) } } },
+        "keys differ"],
+      ["a part that sets up", { soldone: { 1: done[1], 2: done[2] } }, "setting up"],
+    ]) {
+      const text = facts(change);
+      assert.match(text, new RegExp("^Solana part: " + word + "$", "m"), "the word of " + what);
+      assert.match(text, COUNTS, "the Solana counts of " + what);
+    }
+    const none = facts({ solstart: {} });
+    assert.match(none, /^Solana part: not added$/m, "a part that never started says not added");
+    assert.doesNotMatch(none, COUNTS, "a wallet with no Solana part counts nothing of it");
+    ctl.docs = docs;
+    t.state.g = { ...g, network: "mainnet" };
+    const main = diagnostics();
+    assert.match(main, /^Solana part: unavailable$/m, "a mainnet wallet gets no Solana part");
+    assert.doesNotMatch(main, COUNTS, "and counts nothing of it");
+  } finally {
+    ctl.docs = docs;
+    t.state.g = g;
   }
 }
 // The sync line is one word of a fixed list, or the height of the last block. The error text of
@@ -484,7 +518,9 @@ async function diagnosticsFacts(w, gid) {
       }
       assert.match(text, /Approval rule: 2 of 3 devices/, "but they keep the facts");
     }
+    assert.equal(box.attrs["data-key"], "diagnostics", "the box keeps its focus through a redraw");
     solanaUnread(gid);
+    solanaPart();
     syncWords(gid);
   } finally {
     Object.assign(t.state, { log, g, seats });
