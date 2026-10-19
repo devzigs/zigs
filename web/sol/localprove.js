@@ -108,7 +108,7 @@ const POOL_MOVED =
   "cannot be turned on until Zigs is tested with the new pool.";
 const NOT_ON = " Local proving was not turned on.";
 export const turnOnAsk = (ms) =>
-  "This device made a test proof in " +
+  "This browser made a test proof in " +
   secs(ms) +
   ". Turn on local proving for every device of this group? It cannot be turned off.";
 
@@ -131,7 +131,7 @@ export async function turnOnLocal(c, worker) {
   need(c, w);
   if (pool.slot !== pool.pinned) throw new Error(POOL_MOVED);
   const test = await worker.call("selftest").catch((e) => {
-    throw new Error("This device could not make a test proof: " + e.message + NOT_ON);
+    throw new Error("This browser could not make a test proof: " + e.message + NOT_ON);
   });
   need(c, w);
   await keepCheck(c, { ok: true, ms: test.ms, at: Date.now() }, w);
@@ -188,9 +188,9 @@ function maybeCheck(c, seats, ensure) {
 export function checkLine(c, seat) {
   const check = solOf(c.host, c.gid, seat).proveCheck;
   if (!provesLocally(c) || !check) return null;
-  if (check.ok) return "Local proving: this device made a test proof in " + secs(check.ms) + ".";
+  if (check.ok) return "Local proving: this browser made a test proof in " + secs(check.ms) + ".";
   return (
-    "Local proving: this device could not make a test proof, so it cannot pay for this group. " +
+    "Local proving: this browser could not make a test proof, so it cannot pay for this group. " +
     check.why
   );
 }
@@ -246,7 +246,7 @@ export function switchCard(c, act, actions) {
             "data-sol": "prove-switch",
             onclick: act(actions.proveOn),
           },
-          "Test this device, then prove on our devices",
+          "Test this browser, then prove on our devices",
         ),
   );
 }

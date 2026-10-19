@@ -68,6 +68,8 @@ function pageTree() {
   }
 }
 const pageText = () => textOf(pageTree());
+const h3Texts = (node) => [...(node.tag === "h3" ? [textOf(node)] : []),
+  ...(node.kids ?? []).flatMap(h3Texts)];
 const findNode = (node, pred) => pred(node) ? node
   : (node.kids ?? []).map((k) => findNode(k, pred)).find(Boolean) ?? null;
 const byText = (node, text) => node.text === undefined && textOf(node) === text ? node
@@ -362,14 +364,16 @@ function offline(build) {
 async function settingsSection() {
   const { tab, technical } = t.ui, { gid, wallet: w, g } = t.state;
   try {
-    const page = offline(() => {
+    const { page, cards } = offline(() => {
       headingBlocks();
       t.ui.tab = "settings";
-      return pageText();
+      const heads = h3Texts(pageTree());
+      return { page: pageText(), cards: heads };
     });
-    for (const part of ["This wallet", "This app on this device", "Advanced", "Help"]) {
-      assert.ok(page.includes(part), "Settings has the part " + part);
+    for (const part of ["This wallet", "This browser", "Advanced", "Help"]) {
+      assert.ok(cards.includes(part), "Settings has the card " + part);
     }
+    assert.ok(!page.includes("This app on this device"), "the card is the browser, not a device");
     assert.ok(page.includes("Any " + g.t + " of " + g.n + " devices"), "the rule says devices");
     await technicalBox(w, gid);
     await diagnosticsFacts(w, gid);

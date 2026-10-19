@@ -87,7 +87,7 @@ function passes(origin, s, url, init) {
 // The page answers each gate (client.js) with { mode: "local" }, { mode: "hosted" } or { refuse }.
 const GATE_MS = 30_000;
 const GATE_LATE = "The page did not say how this group proves, so nothing was proved. Try again.";
-const LATCHED = "This Worker proved on the device before, so it does not use the hosted prover.";
+const LATCHED = "This Worker proved in this browser before, so it does not use the hosted prover.";
 const gates = new Map();
 let gateIds = 0;
 

@@ -821,7 +821,7 @@ async function localStaysOnTheDevice() {
   assert.equal(done.result.expiry, "1792048408", "prepare did not read the traced body");
   const again = await payWith({ mode: "hosted" });
   assert.equal(again.ok, false, "a hosted proof after a local one");
-  assert.match(again.error, /proved on the device before/);
+  assert.match(again.error, /proved in this browser before/);
   const { fetch: sdkFetch } = control.options;
   await assert.rejects(sdkFetch(`${PROVE_URL}/status?${KEY_NAME}=k`), /blocked a hosted proof/);
   assert.deepEqual(toHelius(), [], "the latch let a prove path through");

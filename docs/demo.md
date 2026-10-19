@@ -153,13 +153,13 @@ Stage on app.zigs.app. The Solana tab of staging works only after D4 adds stagin
      clicks **Add Solana**. Keep L1, L2 and L3 open on the wallet until every device shows its
      Solana key ready.
    - With SOL-4, before the first spend of Demo A: on the Solana tab, in the card **Local
-     proving**, click **Test this device, then prove on our devices**. Confirm "Turn on local
+     proving**, click **Test this browser, then prove on our devices**. Confirm "Turn on local
      proving for every device of this group? It cannot be turned off." Then reload every open
      Zigs tab of the group, and make the Solana backups after this step (step 9), as the card
      says. **[waits for SOL-4]**
-     - Each device then shows "Local proving: this device made a test proof in N s." On the test
+     - Each device then shows "Local proving: this browser made a test proof in N s." On the test
        Mac of 18 October 2026, a test proof took 6.3 to 6.6 s.
-     - A device that shows "Local proving: this device could not make a test proof, so it cannot
+     - A device that shows "Local proving: this browser could not make a test proof, so it cannot
        pay for this group." cannot pay. Use another laptop for that device.
      - If the card says "Helius changed the Solana pool after this version of Zigs was tested
        with it. Local proving cannot be turned on until Zigs is tested with the new pool.",

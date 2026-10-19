@@ -1522,7 +1522,7 @@ step("a move on a stale nonce is refused, and a stale proof at the send ends the
   const docs = () => [1, 2, 3].every((i) => data.has(path(gid, "solprove/" + i)));
   await waitFor("every seat of this browser writes its document", docs);
   await waitFor("the device check", () => [1, 2, 3].every((i) => solOf(i).proveCheck?.ok));
-  assert.match(shown("prove-check-1"), /this device made a test proof in 3\.1 s/);
+  assert.match(shown("prove-check-1"), /this browser made a test proof in 3\.1 s/);
   await forgetPairs();
   chain.prepared = preparedPay;
   chain.utxos = [utxoOf(G.pay)];

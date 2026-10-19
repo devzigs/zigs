@@ -1617,7 +1617,7 @@ const sealed = (gid, rel, seat, fields, key, names = ["by", "sig"]) =>
       assert.deepEqual(t.ui.pay.map((r) => [r.to, r.amt, r.memo, r.shown ?? null, r.name]),
         [["alice.zec", "0.5", "m", null, undefined]], "the typed text, no shown address");
       assert.deepEqual([t.ui.note, t.ui.priority], ["rent", true]);
-      assert.match(textOf(restored), /Draft saved on this device for 24 hours\./);
+      assert.match(textOf(restored), /Draft saved in this browser for 24 hours\./);
       const keys = t.gkeys;
       t.gkeys = { ...keys, [gidNow]: undefined };
       t.ui.pay = null;
@@ -1655,7 +1655,7 @@ const sealed = (gid, rel, seat, fields, key, names = ["by", "sig"]) =>
       t.keepDraft();
       assert.deepEqual(book()[gidNow], last, "the last draft stays");
       const failed = t.sendDialog();
-      assert.match(textOf(failed), /draft could not be saved on this device/);
+      assert.match(textOf(failed), /draft could not be saved in this browser/);
       assert.equal(failed.on.click, t.keepDraft, "a click saves too: Remove, Max, Use this list");
       t.endSend();
       assert.equal(t.ui.draftFailed, false, "a close forgets the failure of that form");
@@ -2144,7 +2144,8 @@ const sealed = (gid, rel, seat, fields, key, names = ["by", "sig"]) =>
       await assert.rejects(quiet(() => t.proposeAgain(evilA)),
         /recipients of this payment changed/);
       assert.equal(t.ui.send, false);
-      assert.match(textOf(t.sessionLayer(evilA)), /proposal changed after a seat of this browser/);
+      assert.match(textOf(t.sessionLayer(evilA)),
+        /proposal changed after a device of this browser/);
       put(signedA);
       await settle();
 

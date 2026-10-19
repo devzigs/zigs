@@ -835,7 +835,7 @@ const settingsCard = (title, ...kids) =>
 function settingsTab() {
   return el("div", { class: "page", style: "gap:16px" },
     settingsCard("This wallet", walletFacts()),
-    settingsCard("This app on this device", appSettings()),
+    settingsCard("This browser", appSettings()),
     settingsCard("Advanced", technicalDetails()),
     helpView());
 }
@@ -850,8 +850,8 @@ function appSettings() {
 }
 
 const appearanceChoice = () => el("div", { class: "setting" },
-  el("p", { class: "small muted" }, "The appearance applies to this browser only. Device "
-    + "setting follows the light or dark mode of this device."),
+  el("p", { class: "small muted" }, "The appearance applies to this browser only. Browser "
+    + "setting follows the light or dark mode of this browser."),
   themeChoice());
 
 function checkedBadge() {

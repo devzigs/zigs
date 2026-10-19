@@ -4,7 +4,7 @@
 import { el } from "./app-dom.js";
 
 const KEY = "zf-theme";
-const CHOICES = [["device", "Device setting"], ["dark", "Dark"], ["light", "Light"]];
+const CHOICES = [["device", "Browser setting"], ["dark", "Dark"], ["light", "Light"]];
 
 function apply(theme) {
   const root = document.documentElement;

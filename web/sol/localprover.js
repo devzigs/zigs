@@ -77,19 +77,19 @@ export const POOL_CHANGED =
   "brings a prover for the new pool.";
 
 // The codes of WasmProverError (web prover errors.ts), each with the text that the page shows.
-const KEY = "This device could not load the proving key for this payment size.";
-const START = "This device could not start the local prover.";
+const KEY = "This browser could not load the proving key for this payment size.";
+const START = "This browser could not start the local prover.";
 const CODES = {
   wasm_key_download_failed: KEY + " Check the connection and try again.",
   wasm_key_digest_mismatch: KEY + " The key did not match its pinned SHA-256.",
   wasm_key_manifest_error: KEY + " The prover has no key for this payment size.",
-  wasm_key_load_failed: KEY + " The device may not have enough memory.",
+  wasm_key_load_failed: KEY + " This browser may not have enough memory.",
   wasm_init_failed: START,
   wasm_worker_failed: START + " It may have run out of memory.",
   wasm_invalid_request:
     "The local prover does not take this payment: the prover and the SDK differ.",
   wasm_prove_failed:
-    "The local prover could not make the proof. The device may not have enough memory.",
+    "The local prover could not make the proof. This browser may not have enough memory.",
   wasm_verify_failed: "The local prover made a proof that does not verify.",
 };
 const OTHER = "The local prover failed (its key or its program did not load).";

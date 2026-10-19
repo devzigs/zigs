@@ -39,7 +39,7 @@ export const BLOCKHASH_MS = 120_000;
 const HEXTEXT = /^([0-9a-f]{2})+$/;
 const KEY = /^[0-9a-f]{64}$/;
 const FEE_SIG = /^[0-9a-f]{128}$/;
-const REFUSED = "This device refused the proposal. ";
+const REFUSED = "This browser refused the proposal. ";
 const READING = "Zigs is reading your wallet to check this payment. Try again in a moment.";
 // The intents of the PDA identity: a payment or a withdrawal, their messages, Add SOL and the
 // cancel that gets back the rent of an expired proposal.

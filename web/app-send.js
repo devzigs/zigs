@@ -78,7 +78,7 @@ function shareBtn(address) {
     onclick: () => navigator.share({ text: address }).catch(failed),
   }, "Share address");
 }
-const SHARE_FAILED = "This device could not share the address. Use Copy address.";
+const SHARE_FAILED = "This browser could not share the address. Use Copy address.";
 
 // The address of the open wallet: Send refuses it, as it refuses an address of another network.
 const OWN_ADDRESS = "This is the address of this wallet. Enter the address of someone else.";
@@ -428,10 +428,10 @@ function freshForm() {
 }
 function draftLine() {
   if (ui.after || ui.sendFor) return null;
-  if (ui.draftFailed) return el("p", { class: "small faint" }, "This draft could not be saved on "
-    + "this device. The form still works.");
+  if (ui.draftFailed) return el("p", { class: "small faint" }, "This draft could not be saved in "
+    + "this browser. The form still works.");
   if (!readDraft(state.gid)) return null;
-  return el("p", { class: "small faint" }, "Draft saved on this device for 24 hours. ",
+  return el("p", { class: "small faint" }, "Draft saved in this browser for 24 hours. ",
     el("button", { class: "btn ghost sm", type: "button",
       onclick: (ev) => discardDraft(ev.currentTarget.form) }, "Discard draft"));
 }

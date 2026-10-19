@@ -85,9 +85,9 @@ coin. The runbook of a demo with three devices is in [docs/demo.md](docs/demo.md
    **Review payment**. The review shows what your browser decoded from the transaction that it
    built. Click **Propose payment**. For a payroll, click **Add recipient** or **Paste a list**: up
    to 20 recipients go into one transaction with one approval round. A payment request (`zcash:…`)
-   pasted in the recipient field fills the rows. The form keeps what you typed as a draft on this
-   device for 24 hours.
-6. In the payment panel, click **Approve as seat 1** and **Approve as seat 2**. Read **What this
+   pasted in the recipient field fills the rows. The form keeps what you typed as a draft in this
+   browser for 24 hours.
+6. In the payment panel, click **Approve as device 1** and **Approve as device 2**. Read **What this
    payment does**: your browser decoded it from the transaction itself.
 7. Click **Build proof** (about one minute in the browser), then **Send to network**, then
    **View in explorer**.

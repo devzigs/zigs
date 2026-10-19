@@ -901,8 +901,8 @@ received payments yet. The engine has the calls for them.
   accepts a third column in "Paste a list". In that list, a comma directly between digits makes
   the line an error. It could be a decimal comma or a field separator. The person writes the
   amount with a point, or puts a space after the comma.
-- **Receiving.** Section 6 gives the rules. Reading memos is a switch in Settings, under "This app on
-  this device". It is off for every wallet until a signer turns it on. The switch keeps its state in
+- **Receiving.** Section 6 gives the rules. Reading memos is a switch in Settings, under "This
+  browser". It is off for every wallet until a signer turns it on. The switch keeps its state in
   the browser only (`zf-memos`, wallet id to true). Its text names the leak: the light-wallet
   server learns which transactions pay the wallet. A payment whose memo is not read yet shows
   "Memo not read yet" while the switch is on. A received memo shows on the Activity row of its

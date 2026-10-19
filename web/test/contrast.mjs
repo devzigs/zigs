@@ -72,7 +72,7 @@ function edges(t) {
 const dark = tokens(":root");
 const light = tokens(':root[data-theme="light"]');
 assert.deepEqual(tokens(':root:not([data-theme="dark"])'), light,
-  "the light palette of the device setting is the same as the light palette of the choice");
+  "the light palette of the browser setting is the same as the light palette of the choice");
 const below = (list, min) =>
   list.filter(([, r]) => r < min).map(([k, r]) => k + " " + r.toFixed(2));
 for (const [name, palette] of [["dark", dark], ["light", { ...dark, ...light }]]) {
