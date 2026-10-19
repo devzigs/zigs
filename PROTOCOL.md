@@ -176,7 +176,7 @@ sequenceDiagram
    nonce, and the box is `hex(nonce)`, a dot and the base64 of the ciphertext.
    It writes `dkg2/<from>-<to> = { sealed, echo }`.
    A box that an older version made has another box key, so it does not open. The device ends its
-   setup with "The message of seat <j> was made by another version of Zigs. Do not use this
+   setup with "The message of device <j> was made by another version of Zigs. Do not use this
    wallet. Create a new wallet." A version 1 ceremony does the same, so it does not retry.
 7. **Round 3.** A device does these checks before it makes any key.
    - Its stored echo equals the echo it computes now from the `dkg1` documents.
@@ -1403,9 +1403,9 @@ signature over only its own fields. The path in the signed text is `sessions/<se
 - The device logs each ignored document once. The log key is the path, never the signature. The
   log starts again each time the wallet opens, and it keeps at most 200 paths for a wallet.
 - The wallet page shows one quiet line when any document was ignored: "Some data in this wallet
-  was not signed by a device of this wallet. Zigs ignored it." The line counts the documents of the wallet and
-  of its payments. It counts the approvals and shares of the open payment only, because the web
-  app loads only those.
+  was not signed by a device of this wallet. Zigs ignored it." The line counts the documents of
+  the wallet and of its payments. It counts the approvals and shares of the open payment only,
+  because the web app loads only those.
 - Verification is asynchronous in a browser. A device keeps the result for the signed text, the
   key and the signature together. A text of the same length is a new check. The memo has a limit,
   and it drops old entries first.

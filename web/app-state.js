@@ -49,6 +49,7 @@ export const ui = {
 // A create dialog opens at its first step, with no values kept from an earlier one.
 export function resetCreate() {
   ui.createStep = 0; ui.createDraft = null; ui.marginAck = false; ui.sol = undefined;
+  ui.createError = null;
 }
 export const openCreate = () => { resetCreate(); ui.create = true; };
 try { ui.notify = localStorage.getItem("zf-notify") === "1"; } catch { /* no storage */ }
