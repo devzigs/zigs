@@ -59,7 +59,7 @@ export async function createPasskey() {
   const salt = random(32);
   const made = await navigator.credentials.create({ publicKey: {
     rp: { name: "Zigs" },
-    user: { id: random(16), name: "Zigs signer", displayName: "Zigs signer" },
+    user: { id: random(16), name: "Zigs device", displayName: "Zigs device" },
     challenge: random(32), timeout: 120000,
     pubKeyCredParams: [{ type: "public-key", alg: -7 }, { type: "public-key", alg: -257 }],
     authenticatorSelection: { residentKey: "preferred", userVerification: "required" },

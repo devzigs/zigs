@@ -39,13 +39,13 @@ export const feeMismatch = (c, seat) => {
 
 /** The text for a seat whose valid document shows another key than its key share gives. */
 export const mismatchText = (seat) =>
-  "The fee document of seat " +
+  "The fee document of device " +
   seat +
-  " does not show the key of this seat. It is forged or broken, and seat " +
+  " does not show the key of this device. It is forged or broken, and device " +
   seat +
-  " cannot pay while that document stands. Seat " +
+  " cannot pay while that document stands. Device " +
   seat +
-  " can still approve and sign, and the other seats can propose and add SOL.";
+  " can still approve and sign, and the other devices can propose and add SOL.";
 
 /** The reactor step: publish the signed document of the fee key of a seat. */
 export async function publishFee(c, seat) {
@@ -58,7 +58,7 @@ export async function publishFee(c, seat) {
     at: Date.now(),
   });
   await c.host.sdb.doc(c.base + "/" + rel).set(doc);
-  c.host.log("seat " + seat + ": fee address published");
+  c.host.log("device " + seat + ": fee address published");
 }
 
 /**
@@ -74,7 +74,7 @@ const NO_SOL = /AccountNotFound|InsufficientFunds|insufficient lamports/i;
 export function poorFeeText(run, seat) {
   if (!NO_SOL.test(run.err + " " + run.logs.join(" "))) return null;
   return (
-    "The fee address of seat " +
+    "The fee address of device " +
     seat +
     " has too little Devnet SOL. " +
     "Fund it with the link in the fund card, then try again."
@@ -82,7 +82,7 @@ export function poorFeeText(run, seat) {
 }
 
 const NOT_READY = (seat) =>
-  "The fee address of seat " + seat + " is not published yet. Try again in a moment.";
+  "The fee address of device " + seat + " is not published yet. Try again in a moment.";
 
 /** The fee key of the seat and no reason when its published document shows it, else { why }. */
 function checked(c, seat) {

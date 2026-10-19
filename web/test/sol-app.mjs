@@ -113,7 +113,7 @@ const hashes = [1, 2, 3].map((i) => sha(solOf(gid, i).solSeed));
 
 // ── The second file ──
 const dialog = words(gid, 1);
-assert.match(dialog.title, /Solana part of seat 1/);
+assert.match(dialog.title, /Solana part of device 1/);
 assert.equal(await dialog.save(PASS_S), true);
 assert.equal(solOf(gid, 1).backupSaved, true, "the saved file is marked, so the note stops asking");
 // A restored part came from a file, so it is marked as saved too.
@@ -164,7 +164,7 @@ const zcashFile = saved.at(-1);
   assert.equal(t.localSeats().includes(1), false, "the seat is gone");
   const plainSol = JSON.parse(Z.backupOpen(PASS_S, solFile.data));
   // No seat yet: the Solana file has nothing to join.
-  await assert.rejects(() => t.applyBackup(plainSol, true), /holds no seat 1/);
+  await assert.rejects(() => t.applyBackup(plainSol, true), /holds no device 1/);
   await t.applyBackup(JSON.parse(Z.backupOpen(PASS_Z, zcashFile.data)), true);
   await waitFor(
     "the seat fits and its address is checked",
@@ -178,7 +178,7 @@ const zcashFile = saved.at(-1);
   await t.applyBackup(plainSol, true);
   assert.deepEqual(solOf(gid, 1), restoredPart, "the Solana part is back, as it was");
   assert.equal(sha(solOf(gid, 1).solSeed), hashes[0]);
-  assert.match(t.banner.text, /Restored the Solana part of seat 1/);
+  assert.match(t.banner.text, /Restored the Solana part of device 1/);
   // Twice: the seat holds Solana data now.
   await assert.rejects(() => t.applyBackup(plainSol, true), /already has Solana data/);
 }
@@ -201,7 +201,7 @@ const zcashFile = saved.at(-1);
   await refuses({ ...good, solSeed: "zz" }, /not a Zigs Solana backup/);
   await refuses({ ...good, seat: 9 }, /not a Zigs Solana backup/);
   // A file of a wallet this browser does not hold.
-  await refuses({ ...good, group: "b".repeat(20) }, /holds no seat 1/);
+  await refuses({ ...good, group: "b".repeat(20) }, /holds no device 1/);
   // A seat of this wallet that the file does not fit: the key share of seat 1 for seat 2, and the
   // keys of another wallet's ceremony under the id of this one.
   await refuses({ ...good, seat: 2 }, /does not fit this wallet/);
@@ -234,7 +234,7 @@ const zcashFile = saved.at(-1);
       wallet = seat.checkedWallet;
     Object.assign(seat, { checkedWallet: null, rejectedWallet: wallet });
     assert.equal(t.seatCheck(1), false, "seat 1 is not settled");
-    await refuses(good, /Seat 1 must show Address checked/);
+    await refuses(good, /Device 1 must show Address checked/);
     Object.assign(seat, { checkedWallet: wallet, rejectedWallet: null });
     assert.equal(t.seatCheck(1), true);
     assert.deepEqual(solOf(gid, 1), {}, "a seat that did not settle stores nothing");
@@ -279,7 +279,7 @@ const zcashFile = saved.at(-1);
   await t.applyBackup(good, true);
   assert.deepEqual(solOf(gid, 1), restoredPart, "the Solana part is back, with no fee field");
   assert.equal(feeOf(ctl, 1).key, key, "the same fee key after the restore");
-  assert.match(t.banner.text, /Restored the Solana part of seat 1/);
+  assert.match(t.banner.text, /Restored the Solana part of device 1/);
   assert.doesNotMatch(t.banner.text, /fee/i, "the restore has nothing to say about the fee key");
   t.refilter(); // the page runs its reactor after a restore, as after any change
   await sleep(500);
@@ -300,8 +300,8 @@ const zcashFile = saved.at(-1);
   rig.notify();
   await waitFor("the other key", () => ctl.docs.solfee[1]?.key === another);
   await t.applyBackup(good, true);
-  assert.match(t.banner.text, /Restored the Solana part of seat 1/);
-  assert.match(t.banner.text, /does not show the key of this seat.*can still approve and sign/);
+  assert.match(t.banner.text, /Restored the Solana part of device 1/);
+  assert.match(t.banner.text, /does not show the key of this device.*can still approve and sign/);
   assert.doesNotMatch(t.banner.text, /restore a newer backup|Fund its new/);
   t.refilter();
   await sleep(300);
@@ -387,7 +387,7 @@ const zcashFile = saved.at(-1);
     encrypted: true,
     before: undefined,
     addedKey: false,
-    where: "seat 3 of Backup",
+    where: "device 3 of Backup",
     keys: {},
     late: {},
   });
@@ -403,7 +403,7 @@ const zcashFile = saved.at(-1);
     encrypted: true,
     before: now,
     addedKey: false,
-    where: "seat 2 of Backup",
+    where: "device 2 of Backup",
     keys: {},
     late: {},
   });

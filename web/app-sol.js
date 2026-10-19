@@ -55,11 +55,11 @@ export async function planSolana(gid) {
 export const SOL_DISCLOSURE = "Solana Devnet: a program owns the funds of the group at a public "
   + "program address. A deposit shows its sender and amount on chain. A withdrawal shows its "
   + "recipient and amount. A private payment hides its amount, but it shows the owner key of the "
-  + "payee. The program address, the group key and the fee address of each seat that pays are "
+  + "payee. The program address, the group key and the fee address of each device that pays are "
   + "public too. Helius sees that you use Zigs, your IP address and the keys of this wallet, and "
   + "its hosted prover sees each payment. The Zigs server operator can link this wallet to these "
-  + "addresses by timing. Each seat funds its own fee address, and that funding shows who sent "
-  + "the SOL. Every signer sees the whole Solana history of the wallet. The program has no audit, "
+  + "addresses by timing. Each device funds its own fee address, and that funding shows who sent "
+  + "the SOL. Every device sees the whole Solana history of the wallet. The program has no audit, "
   + "and its upgrade key is outside the group.";
 // The wallet list with the create dialog open. Inside an open wallet the dialog does not show.
 export const newWallet = () => { openGroup(null); openCreate(); render(); };
@@ -248,7 +248,7 @@ export const solTab = () => sol ? guard(sol.view)
   : solError ? loadFail(solError, !importFailed)
   : (solLoad(), el("p", { class: "small" }, "Loading Solana…"));
 const NET_UNCONFIRMED = "This device does not know yet which network the people of this wallet "
-  + "confirmed. Open the wallet, wait until its seat shows Address checked, then try again.";
+  + "confirmed. Open the wallet, wait until your device shows Address checked, then try again.";
 export async function solRestore(b, encrypted) {
   if (solGroup(b.group) && !solOn(b.group)) {
     throw new Error(netConfirmed(b.group) ? "Solana runs on version 3 testnet wallets only."

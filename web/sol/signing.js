@@ -115,7 +115,7 @@ async function publishPackage(c, ss, { seat, ids, digest }) {
   const map = Object.fromEntries(ids.map((i) => [i, commits[i].commitments]));
   const fields = { package: S(map), signers: ids, digest };
   await writePart(c, ss.id, "package", fields, { seat });
-  c.host.log("Solana signing package sent to signers " + ids.join(", "));
+  c.host.log("Solana signing package sent to devices " + ids.join(", "));
 }
 
 // Share
@@ -132,7 +132,7 @@ function verifiedCommits(c, ss, digest) {
   for (const j of signersOf(ss)) {
     const commit = c.commits[ss.id]?.[j];
     if (!commit) return null;
-    if (commit.digest !== digest) throw new Error("Seat " + j + " approved other bytes.");
+    if (commit.digest !== digest) throw new Error("Device " + j + " approved other bytes.");
     verified[j] = commit.commitments;
   }
   return verified;
@@ -143,7 +143,7 @@ function checkSigners(c, ss, i, entry, digest) {
   const t = c.host.state.g.t,
     signers = signersOf(ss);
   if (new Set(signers).size !== t || signers.length !== t || !signers.includes(i)) {
-    throw new Error("The signers of the package are wrong.");
+    throw new Error("The devices of the package are wrong.");
   }
   if (ss.digest !== digest || entry.digest !== digest) throw new Error("The digest differs.");
 }
@@ -174,7 +174,7 @@ async function publishShare(c, ss, i, made) {
   const doc = await c.host.signedDoc(c.gid, rel, i, { ...made, at: Date.now() });
   await c.host.sdb.doc(c.base + "/" + rel).set(doc);
   await clearPending(c, i, ss.id);
-  c.host.log("seat " + i + ": Solana signature share sent");
+  c.host.log("device " + i + ": Solana signature share sent");
 }
 
 /**
@@ -203,7 +203,7 @@ async function makeShare(c, ss, i) {
     return round === null ? null : J(shareAnswer(c, ss, i, { entry, round, seen: now }));
   });
   if (made && "refused" in made) {
-    await failSession(c, ss, "A signer did not sign: " + errorText(made.refused));
+    await failSession(c, ss, "A device did not sign: " + errorText(made.refused));
     throw made.refused;
   }
   if (made) await publishShare(c, ss, i, { share: made.share, digest: made.digest });

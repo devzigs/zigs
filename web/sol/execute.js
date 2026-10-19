@@ -65,10 +65,10 @@ const UNREAD = "The history of the proposal account is not complete yet.";
 export const PAYMENT_EXPIRED = "This payment expired before it was executed. Propose it again.";
 const GONE = "The proposal account is gone, and no execute of it landed.";
 const NO_FUNDED_SEAT =
-  "No seat of this browser can pay the execute. A fee address needs " +
+  "No device of this browser can pay the execute. A fee address needs " +
   solText(EXECUTE_MIN) +
   ": the fees of the execute, and the minimum balance that the address must keep. A browser " +
-  "with a funded seat can execute this payment. To execute it in this browser, send Devnet SOL " +
+  "with a funded device can execute this payment. To execute it in this browser, send Devnet SOL " +
   'to a fee address in "Fund the fee address".';
 // A margin for the clock of this device: the program judges the expiry by the chain clock.
 const CLOCK_MARGIN_S = 600;

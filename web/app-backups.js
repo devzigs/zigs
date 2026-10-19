@@ -33,7 +33,7 @@ const BACKUP_KIND = "zigs-key-share";   // what the sealed text holds, also in a
 // older file says it: a new person has no older file.
 const NOT_A_BACKUP = "This file is not a Zigs backup, or an older version of Zigs made it. "
   + "The backup format changed on 16 October 2026, and older files no longer open. "
-  + "Make a new backup on a device that still holds the seat.";
+  + "Make a new backup in a browser that still holds the key share.";
 const NOT_ENCRYPTED = "This backup file is not encrypted. Make a new encrypted backup now.";
 const MAX_BACKUP_BYTES = 1000000;
 const ACCOUNT_PASS_NOTE = "This passphrase opens the backup of your personal account. Zigs cannot "
@@ -117,9 +117,9 @@ export function openAccountBackup() {
 
 // The words of the backup dialog and the call that saves, for a seat and for the account.
 const seatBackup = (i) => ({
-  title: "Back up seat " + i, pass: PASS_NOTE, save: (pass) => saveBackup(i, pass),
+  title: "Back up device " + i, pass: PASS_NOTE, save: (pass) => saveBackup(i, pass),
   file: "The file holds your key share. Anyone who has the file and the passphrase can sign as "
-    + "this seat.",
+    + "this device.",
 });
 const ACCOUNT_BACKUP = {
   title: "Back up the personal account", pass: ACCOUNT_PASS_NOTE, file: ACCOUNT_FILE_NOTE,
@@ -249,7 +249,7 @@ const validSeatRef = (b) => validId(b.group) && Number.isInteger(b.seat) && b.se
   && b.seat <= BACKUP_SEAT_MAX;
 const validKey = (b) => b.key === undefined || validRoom({ id: b.group, key: b.key });
 const NO_FIT = "This backup does not fit this wallet. It was not used.";
-const RESTORE_PENDING = "A restore of this seat is still being checked. Open the wallet and "
+const RESTORE_PENDING = "A restore of this device is still being checked. Open the wallet and "
   + "wait, then try again.";
 
 export function checkShape(b) {
@@ -316,7 +316,7 @@ export async function applyBackup(b, encrypted) {
   if (!(await putSec(group, seat, restoredFor(b, held)))) {
     throw new Error("This browser could not save the restored key share.");
   }
-  const where = "seat " + seat + " of " + (b.groupName || "wallet");
+  const where = "device " + seat + " of " + (b.groupName || "wallet");
   restoreWatch.set(skey(group, seat), {
     gid: group, seat, encrypted, before, addedKey, where, keys: keysOf(b.secret),
     late: lateFields(b.secret, held),
@@ -326,7 +326,7 @@ export async function applyBackup(b, encrypted) {
 }
 
 function announceRestore(where, encrypted) {
-  const text = "Restored " + where + ". It counts as your seat once it matches the wallet.";
+  const text = "Restored " + where + ". It counts as your device once it matches the wallet.";
   if (encrypted) showBanner("ok", text);
   else showBanner("bad", text + " " + NOT_ENCRYPTED);
 }
@@ -380,11 +380,11 @@ function rejectRestore(w) {
 // Removing it deletes only this browser's copy. The wallet's verdict can come from a document that
 // any holder of the invite link can rewrite, so removal asks first. A seat whose approval still
 // holds Send stays: its removal would end that hold (ZEC-13).
-const STALE_RESTORE = "This restored seat does not match the wallet, so this browser does not use "
-  + "it. Remove it from this browser, then restore the right backup.";
-const STALE_HOLDS = "This restored seat does not match the wallet, so this browser does not use "
-  + "it. It approved a payment that can still go on chain, so it stays until a block holds that "
-  + "payment or it expires. Then remove it and restore the right backup.";
+const STALE_RESTORE = "This restored device does not match the wallet, so this browser does not "
+  + "use it. Remove it from this browser, then restore the right backup.";
+const STALE_HOLDS = "This restored device does not match the wallet, so this browser does not "
+  + "use it. It approved a payment that can still go on chain, so it stays until a block holds "
+  + "that payment or it expires. Then remove it and restore the right backup.";
 const holdsApproval = (gid, i) => heldApprovals().some((sid) => (sec(gid, i).marks || {})[sid]);
 export function staleRestoreNote() {
   const gid = state.gid, stale = mySeatSecrets(gid).filter(([i, s]) =>
@@ -404,7 +404,8 @@ export function staleRestoreNote() {
       sure ? el("button", { class: "btn", type: "button", onclick: keep }, "Keep it") : null,
       el("button", {
         class: "btn", type: "button", onclick: sure ? drop : () => { ui.dropStale = gid; render(); },
-      }, sure ? "Remove seat " + stale.join(", ") + " from this browser" : "Remove from this browser")));
+      }, sure ? "Remove device " + stale.join(", ") + " from this browser"
+        : "Remove from this browser")));
 }
 
 // The version and room of the file join the seat only when they equal the wallet's own.

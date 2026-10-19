@@ -45,6 +45,6 @@ export async function addSol(c, args) {
   await worker.call("send", { tx });
   const txId = base58(signature);
   const { status, slot } = await worker.call("confirm", { signature: txId });
-  c.host.log("seat " + seat + ": added SOL, " + status);
+  c.host.log("device " + seat + ": added SOL, " + status);
   return { seat, amount, txId, status, slot };
 }

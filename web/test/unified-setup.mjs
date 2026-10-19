@@ -218,10 +218,10 @@ function recoveryFacts() {
     .concat(n.attrs?.["aria-label"] ? [n.attrs["aria-label"]] : []);
   try {
     t.secrets = with_({ backupSaved: false });
-    assert.match(textOf(row()), new RegExp("Seat " + seat + "Zcash file not saved"));
+    assert.match(textOf(row()), new RegExp("Device " + seat + "Zcash file not saved"));
     t.secrets = with_({ backupSaved: true });
-    assert.match(textOf(row()), new RegExp("Seat " + seat + "Zcash file saved here"));
-    assert.ok(labels(row()).includes("Back up the Zcash part of seat " + seat));
+    assert.match(textOf(row()), new RegExp("Device " + seat + "Zcash file saved here"));
+    assert.ok(labels(row()).includes("Back up the Zcash part of device " + seat));
     t.secrets = with_({ backupSaved: true, restored: true });
     assert.match(textOf(row()), /Zcash restored from its file/, "a seat opened from its file");
     assert.ok(real[k].sol, "the seat holds a Solana part, so the checks below run");
@@ -231,7 +231,7 @@ function recoveryFacts() {
       assert.ok(solUnsaved().includes(seat), "an unsaved Solana file is in the backup note");
       t.secrets = with_({ sol: { ...real[k].sol, backupSaved: true } });
       assert.match(textOf(row()), /Solana file saved here/);
-      assert.ok(labels(row()).includes("Back up the Solana part of seat " + seat));
+      assert.ok(labels(row()).includes("Back up the Solana part of device " + seat));
       t.secrets = with_({ sol: { ...real[k].sol, backupSaved: true, restored: true } });
       assert.match(textOf(row()), /Solana restored from its file/, "a part opened from its file");
       t.secrets = with_({ sol: { ...real[k].sol, aborted: "A test stop." } });
@@ -341,7 +341,8 @@ function receiveTexts() {
       [k, k.startsWith(t.state.gid + ":") ? { ...v, checkedWallet: "another" } : v]));
     try {
       const hidden = textOf(receiveDialog());
-      assert.match(hidden, /The address shows here after your seat checks it against its own key\./,
+      assert.match(hidden,
+        /The address shows here after your device checks it against its own key\./,
         "the dialog says why the address is not shown");
       assert.doesNotMatch(hidden, /Copy address|Share address|Send only/, "and shows no address");
     } finally {
@@ -352,7 +353,7 @@ function receiveTexts() {
     assert.ok(byText(main, "Zcash Mainnet"), "a mainnet wallet reads Mainnet");
     assert.doesNotMatch(textOf(main), /testnet|faucet/i, "and claims no testnet");
     assert.match(textOf(main), /Send only ZEC on Zcash Mainnet to this address\./);
-    assert.match(textOf(main), /The signers of this wallet can see its balance and history\./);
+    assert.match(textOf(main), /The devices of this wallet can see its balance and history\./);
     // At the cap of a mainnet wallet the dialog shows the cap note and no address.
     t.setChain({ gid: t.state.gid, cw: {}, bal: { spendable: 60000000, pending: 0,
       height: 4500100 }, sent: new Set(), received: [] });
@@ -404,10 +405,11 @@ function sideMenu() {
   }
   const tab = t.ui.tab;
   t.ui.tab = "recovery";
-  assert.match(pageText(), /Your seats in this wallet.*file (saved here|not saved)/,
+  assert.match(pageText(), /Your devices in this wallet.*file (saved here|not saved)/,
     "the Recovery section shows the file state of each seat of this browser");
   assert.match(pageText(), /cannot see the files of the other devices/);
-  assert.match(pageText(), /covers your seats in this wallet only: each other wallet has its own/);
+  assert.match(pageText(),
+    /covers your devices in this wallet only: each other wallet has its own/);
   assert.match(pageText(), /the personal account has its own backup file, and direct chats are/);
   recoveryFacts();
   t.ui.tab = tab;
@@ -570,7 +572,7 @@ assert.match(pageText(), SENDER, "the invite card of a wallet");
 }
 assert.match(SOL_DISCLOSURE, /public program address.*fee address.*Helius.*no audit/);
 assert.ok(SOL_DISCLOSURE.includes(PUBLIC_TEXT), "the choice says what the Solana tab says");
-assert.match(SOL_DISCLOSURE, /Every signer sees the whole Solana history/);
+assert.match(SOL_DISCLOSURE, /Every device sees the whole Solana history/);
 // A browser with no seat of the wallet gets the join card, with the disclosure before the seat.
 {
   const kept = t.secrets[gid + ":1"];
@@ -912,7 +914,8 @@ async function walkSteps(fields, times, fresh = true) {
   assert.equal(t.sec(gidC, 1).solAuto, true, "seat 1 keeps the choice");
   await sleep(1500);
   assert.equal(data.has(`groups/${gidC}/solstart/1`), false, "the start waits for every seat");
-  assert.doesNotMatch(t.banner?.text ?? "", /Seat 1 waits/, "and shows no refusal while it waits");
+  assert.doesNotMatch(t.banner?.text ?? "", /Device 1 waits/,
+    "and shows no refusal while it waits");
   assert.equal(data.get(groupPath(gidC)).solana, true, "and the group gets the hint");
   assert.ok(!t.backupText(1).includes("solAuto"), "the Zcash backup file does not carry it");
   for (const i of [2, 3]) await t.takeSeat(i, 3);
@@ -934,7 +937,7 @@ async function walkSteps(fields, times, fresh = true) {
   assert.match(pageText(), /Setup stopped at Prepare\. /, "a seat that rejected the address");
   await sleep(3500);
   assert.equal(data.has(`groups/${gidW}/solstart/1`), false, "no start before Address checked");
-  assert.doesNotMatch(t.banner?.text ?? "", /Seat 1 waits/, "and no refusal before it");
+  assert.doesNotMatch(t.banner?.text ?? "", /Device 1 waits/, "and no refusal before it");
   // Who starts the Solana part: seat 1 with the choice, seat 1 of a moved wallet, another seat.
   assert.match(pageText(), /Create the Solana key.*Starts when the Zcash address is checked\./s);
   t.state.g.movedTo = "elsewhere";
@@ -1100,9 +1103,9 @@ async function walkSteps(fields, times, fresh = true) {
   assert.match(note([], [1]), /^Back up the Solana part of your key share\. This browser can/);
   assert.match(note([], [1]), /second file, with its own passphrase/);
   assert.doesNotMatch(note([2], []), /Solana/);
-  const solButtons = () => pageText().match(/Back up Solana, seat \d/g) ?? [];
+  const solButtons = () => pageText().match(/Back up Solana, device \d/g) ?? [];
   await waitFor("the note", () => solButtons().length === 3);
-  assert.match(pageText(), /The Solana part of a seat is a second file, with its own passphrase/);
+  assert.match(pageText(), /The Solana part of a device is a second file, with its own passphrase/);
   // S13: a new wallet has no older file, so the note says nothing about an older format.
   assert.doesNotMatch(pageText(), /backup format changed|iPhone and Mac apps/);
   const saved = [];
@@ -1111,7 +1114,7 @@ async function walkSteps(fields, times, fresh = true) {
   assert.equal(await words.save("a long passphrase for the solana file"), true);
   assert.equal(saved.length, 1, "one file");
   assert.equal(t.sec(gidS, 2).sol.backupSaved, true);
-  assert.deepEqual(solButtons(), ["Back up Solana, seat 1", "Back up Solana, seat 3"]);
+  assert.deepEqual(solButtons(), ["Back up Solana, device 1", "Back up Solana, device 3"]);
   // A stop by another seat stops the Solana backups too.
   const stop = await t.signedDoc(gidS, "solabort/2", 2, { reason: "A test stop.", at: Date.now() });
   data.set(`groups/${gidS}/solabort/2`, stop);

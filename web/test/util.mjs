@@ -333,7 +333,7 @@ assert.match(SETUP_HELD, /still being set up/);
 assert.equal(heldRefusal(undefined, mineKey.keyPackage, 2), null);           // no secret
 assert.equal(heldRefusal(null, mineKey.keyPackage, 2), null);
 assert.equal(heldRefusal(heldShare, mineKey.keyPackage, 2), null);           // the same share
-assert.match(heldRefusal(heldShare, otherShare, 2), /another key share for seat 2/);
+assert.match(heldRefusal(heldShare, otherShare, 2), /another key share for device 2/);
 
 // A restored seat counts as a seat of this browser only while it fits the wallet, whatever its
 // identity says. Without the flag, the identity decides.

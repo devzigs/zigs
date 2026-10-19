@@ -327,7 +327,7 @@ step("propose creates the proposal account first; no screen before the reads of 
   const keyless = findAll(noKey, (n) => n.attrs["data-session"] === id)[0];
   assert.equal(findAll(keyless, (n) => String(n.attrs["data-sol"]).startsWith("approve-")).length,
     0, "a seat with no signing key gets no Approve button");
-  assert.match(textOf(keyless), /cannot sign for seat 2\./, "and the card says why");
+  assert.match(textOf(keyless), /cannot sign for device 2\./, "and the card says why");
   // A document that waits for its signature check is a wait too: no alert and no button.
   c.sessWait += 1;
   assert.equal(reviewOf(c, ssOf(id), 2).waiting, true, "a check of the documents is a wait");
@@ -522,7 +522,7 @@ step("a read of a wallet that closed shows no banner and writes no count");
   const fees = "0.000005 SOL at the proposal, 0.000010162 SOL at the execute.";
   assert.equal(rows["Network fees"], fees, "two signatures and the tree fee at the execute");
   const rent =
-    "0.00135636 SOL, back to seat 1 at the execute, or after the expiry with the card " +
+    "0.00135636 SOL, back to device 1 at the execute, or after the expiry with the card " +
     '"Rent of old proposals".';
   assert.equal(rows["Proposal rent"], rent);
   assert.equal(rows["Proposal account"], base58(ssOf(id).account) + " ↗");
@@ -534,7 +534,7 @@ step("a read of a wallet that closed shows no banner and writes no count");
   const part = /This checks only the first part of the shielded address\.$/;
   assert.match(rows["Check the payee"], part, "the S15 limit is on the screen");
   assert.ok(rows.Public.includes(LINK_TEXT), "the screen says that the fee address links");
-  assert.equal(rows["Create paid by seat 1"], feeAddress(1), "the proposer paid the create only");
+  assert.equal(rows["Create paid by device 1"], feeAddress(1), "the proposer paid the create only");
   assert.match(textOf(marked("pay-cost")[0]), /pays 0\.000005 SOL .* holds 0\.00135636 SOL/);
   assert.ok(textOf(marked("fee-text")[0]).includes(LINK_TEXT), "the fund card says it too");
   // Each screen says what is public and what Helius sees (SOL-12), and the details name the
@@ -544,7 +544,7 @@ step("a read of a wallet that closed shows no banner and writes no count");
   const shown = (mark) => textOf(marked(mark)[0]);
   const PUBLIC = [/A deposit shows its sender and amount on chain\. A withdrawal shows its/,
     /A private payment hides its amount, but it shows the owner key of the payee\./,
-    /fee address of each seat that pays/, /Helius sees that you use Zigs, your IP address/,
+    /fee address of each device that pays/, /Helius sees that you use Zigs, your IP address/,
     /link this wallet to these addresses by timing/];
   for (const re of PUBLIC) assert.match(shown("public-text"), re);
   assert.match(shown("sync-text"), /and the group key\. So Helius sees these keys with your IP/);
@@ -732,7 +732,7 @@ const proposedWithdrawal = async (recipient = base58(TO)) => {
   assert.match(rows["What it does"], /to a public Solana address/);
   assert.match(rows.Public, /^Recipient, asset and amount are public\. /, "the text of section 2");
   assert.equal(rows.Helius, PROVER_TEXT, "the screen of a withdrawal names the hosted prover");
-  assert.equal(rows["Create paid by seat 1"], feeAddress(1));
+  assert.equal(rows["Create paid by device 1"], feeAddress(1));
   assert.equal(rows.Change, "0.003 SOL stays with the group.", "the change of the withdrawal");
   // The forms of the tab: each button proposes its kind with the typed address and amount.
   const asked = [];
@@ -909,7 +909,7 @@ const FUNDED = [50_000_000n, 50_000_000n, 50_000_000n];
   assert.equal(c.tries[id] ?? 0, 0, "a refused read counts no try");
   assert.ok(card().includes(refused), "the card shows the text of the Worker");
   assert.equal(c.execWait[id], undefined, "a refused read is no seat that cannot pay");
-  assert.ok(!card().includes("No seat of this browser can pay"), "and no line of the wait");
+  assert.ok(!card().includes("No device of this browser can pay"), "and no line of the wait");
   delete chain.balances.get; // the reads work again
   await waitStatus(id, "sent", 90000);
   assert.equal(c.execErrors[id], undefined, "the text goes with the next good read");
@@ -1044,7 +1044,7 @@ step("an execute waits for the lease of another device, and stops after its trie
   await approve(c, ssOf(id), 2);
   await waitFor("the line of the wait", () => c.execWait[id] !== undefined);
   const [line] = marked("exec-wait-" + id);
-  const NEEDS = /^No seat of this browser can pay the execute\. A fee address needs 0\.001 SOL/;
+  const NEEDS = /^No device of this browser can pay the execute\. A fee address needs 0\.001 SOL/;
   assert.match(textOf(line), NEEDS);
   assert.doesNotMatch(line.attrs.class, /\bbad\b/, "the line is no error");
   assert.equal(c.execErrors[id], undefined, "no red text");
@@ -1176,7 +1176,7 @@ step("a create that meets the same body in its account takes it; another body fa
   const at = new Date((Number(held[0].expiry) + 600) * 1000).toISOString().slice(0, 16);
   const end = at.replace("T", " ") + " UTC";
   assert.equal(endsAt(held[0].expiry), held[0].expiry + 600n, "the margin of the end");
-  const name = `of seat ${ssOf(held[0].id).by} (${held[0].id})`;
+  const name = `of device ${ssOf(held[0].id).by} (${held[0].id})`;
   c.sync = { ...kept.sync, lamports: String(note), notes };
   const two = `All your notes are held by 2 open proposals. The one that ends first, ${name}, ends`;
   assert.deepEqual(line(), [`${two} at ${end}. Add SOL or wait.`], "two holders");

@@ -134,7 +134,7 @@ const PACKAGE_LINE =
 const CHAIN_LINE =
   'if (need && verdict[need] !== "yes") return verdict[need] === "wait" ? "wait" : "no";\n';
 const TWICE_LINE =
-  'if (c.commits[ss.id]?.[seat]) return "Seat " + seat + " approved this already.";\n';
+  'if (c.commits[ss.id]?.[seat]) return "Device " + seat + " approved this already.";\n';
 
 export const MUTATIONS = [
   mutant("D1", "launch() leaves a Chrome that never answers", only("^D1 launch"),
@@ -238,7 +238,7 @@ export const MUTATIONS = [
     { detect: /AssertionError|timeout/, ms: 240000 }),
   mutant("W-restored-confirm", "a restored seat cannot use its own signed confirm document",
     SOL_CEREMONY, [patch(SOL_CEREMONY_JS, "h.confirmedNo(i) !== h.safetyNo()",
-      "h.sec(g, i).confirmed !== h.safetyNo()")], /Seat 2 has not started/),
+      "h.sec(g, i).confirmed !== h.safetyNo()")], /Device 2 has not started/),
   mutant("W-restored-forged", "a restored seat starts on a confirm document of no signature",
     SOL_CEREMONY, [patch("web/app-dkg.js", "sec(state.gid, i).confirmed ?? ownConfirm(i);",
       "sec(state.gid, i).confirmed ?? raw.confirm[i]?.number;")],
@@ -997,7 +997,7 @@ export const MUTATIONS = [
     ["node", "web/test/sol-pay.mjs"], /keeps the pair of the proof/),
   payment("B-settle", "a Solana restore does not wait for the address check of the seat",
     ["web/sol/backup.js", "c.host.seatCheck(f.seat) !== true", "false"],
-    ["node", "web/test/sol-app.mjs"], /Seat 1 must show Address checked/),
+    ["node", "web/test/sol-app.mjs"], /Device 1 must show Address checked/),
   // The fee payer (ZOLANA.md 5): each mutant undoes one rule of the fee key, the payer or the
   // order of the signatures, and the test that pins the rule must fail.
   payment("F-sig", "an approver does not check the signature of the payer",
@@ -1046,11 +1046,11 @@ export const MUTATIONS = [
     ["node", "web/test/sol-fee.mjs"], /a fee key for each seat/),
   payment("F-restore-text", "a restore does not say that the document shows another key",
     ["web/sol/backup.js", '(feeMismatch(c, f.seat) ? " " + mismatchText(f.seat) : "")', '""'],
-    SOL_APP, /does not show the key of this seat/),
+    SOL_APP, /does not show the key of this device/),
   payment("F-ready", "a proposal does not wait for the document of the fee key",
     ["web/sol/fee.js", "if (held === null || shown === undefined) return",
       "if (held === null) return"],
-    ["node", "web/test/sol-fee.mjs"], /fee address of seat 1 is not published/),
+    ["node", "web/test/sol-fee.mjs"], /fee address of device 1 is not published/),
   payment("F-doc-path", "the reader knows no solfee path",
     ["web/sol/docs.js", "soldone|solfee|solabort", "soldone|solabort"],
     ["node", "web/test/sol-docs.mjs"], /solfee\/1/),
@@ -1062,7 +1062,8 @@ export const MUTATIONS = [
   payment("F-mismatch", "a proposal goes on while the document shows another key of the seat",
     ["web/sol/fee.js", "return shown === held.key ? { held } : { why: mismatchText(seat) };",
       "return { held };"],
-    ["node", "web/test/sol-fee.mjs"], /fee document of seat 1 does not show the key of this seat/),
+    ["node", "web/test/sol-fee.mjs"],
+    /fee document of device 1 does not show the key of this device/),
   payment("F-first-seat", "Propose and Add SOL use the first seat that can sign, ready or not",
     ["web/sol/gate.js", "writerSeats(c).find((i) => feeProblem(c, i) === null)",
       "writerSeats(c).find(() => true)"],
@@ -1139,11 +1140,12 @@ export const MUTATIONS = [
     ["web/sol/spend.js", 'isPayment(ss) ? "sync" : "syncOld"', '"sync"'], SOL_PAY,
     /every input|the move spends the group key/),
   program("V-rent", "the screen of a payment does not show the rent of its account",
-    ["web/sol/payview.js", '    ["Proposal rent", solText(rentOf(c)) + ", back to seat "',
-      '    ["Proposal rent", "?" + ", back to seat "'], SOL_PAY, /0\.00135636 SOL, back to seat 1/),
+    ["web/sol/payview.js", '    ["Proposal rent", solText(rentOf(c)) + ", back to device "',
+      '    ["Proposal rent", "?" + ", back to device "'], SOL_PAY,
+    /0\.00135636 SOL, back to device 1/),
   program("V-link", "the screen of a payment does not say that the fee address links",
-    ["web/sol/payview.js", '"keeps it in the chain history. " + LINK_TEXT],',
-      '"keeps it in the chain history."],'],
+    ["web/sol/payview.js", '"transaction keeps it in the chain history. " + LINK_TEXT],',
+      '"transaction keeps it in the chain history."],'],
     SOL_PAY, /the fee address links/),
   program("V-move", "the one-time move does not show while the group key holds SOL",
     ["web/sol/payview.js", "  if (held <= 0n) return null;\n  const missing",
@@ -1226,7 +1228,7 @@ export const MUTATIONS = [
     ["web/sol/signing.js", " || accountMissing(c, ss);", ";"],
     SOL_PAY, /timeout: the account read again/),
   program("Y-label", "the screen of a payment says that the proposer pays every fee",
-    ["web/sol/payview.js", "\"Create paid by seat \" : ", "\"Fees paid by seat \" : "],
+    ["web/sol/payview.js", "\"Create paid by device \" : ", "\"Fees paid by device \" : "],
     SOL_PAY, /the proposer paid the create only/),
   program("X-failed", "an execute that failed on chain is marked as sent",
     ["web/sol/execute.js", "  if (seen.status === \"failed\") throw new Error(FAILED);\n", ""],
@@ -1459,7 +1461,7 @@ export const MUTATIONS = [
     UNIFIED, /could not share the address/),
   program("R-hidden-lead", "Receive says nothing about an address that is not shown yet",
     ["web/app-send.js", "  if (hidden) {\n    return el(\"p\", { class: \"small muted\" }, "
-      + "\"The address shows here after your seat checks it \"\n"
+      + "\"The address shows here after your device checks it \"\n"
       + "      + \"against its own key.\");\n"
       + "  }\n", ""], UNIFIED, /the dialog says why the address is not shown/),
   program("R-moved-lead", "a moved wallet leads with the text of a live address",

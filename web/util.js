@@ -251,8 +251,8 @@ export function boxPairMatches(Z, sk, pk) {
 // that held a secret without a key share takes no restore (heldRefusal).
 export const undoPlan = (before) => before ? "keep" : "remove";
 
-export const SETUP_HELD = "This seat is still being set up on this device. Finish setup, or "
-  + "remove the seat first.";
+export const SETUP_HELD = "This device is still being set up in this browser. Finish setup, or "
+  + "remove the device first.";
 
 // Why the seat secret `held` blocks a restore of the key share `file` for `seat`, or null. A seat
 // in setup holds secrets but no key share. A restore would take its data from the file at once.
@@ -260,7 +260,7 @@ export function heldRefusal(held, file, seat) {
   if (!held) return null;
   if (!shareShape(held.keyPackage)) return SETUP_HELD;
   return sameShare(held.keyPackage, file) ? null
-    : "This browser holds another key share for seat " + seat + " of this wallet, so the backup "
+    : "This browser holds another key share for device " + seat + " of this wallet, so the backup "
       + "was not restored.";
 }
 

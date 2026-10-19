@@ -57,7 +57,7 @@ export function remoteStop(docs) {
   if (!found) return undefined;
   const [seat, doc] = found;
   return (
-    "Seat " + seat + " stopped the Solana part of this wallet. " + doc.reason.slice(0, ABORT_MAX)
+    "Device " + seat + " stopped the Solana part of this wallet. " + doc.reason.slice(0, ABORT_MAX)
   );
 }
 

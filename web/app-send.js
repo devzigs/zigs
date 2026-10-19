@@ -51,12 +51,12 @@ function receiveLead(hidden, moved) {
   if (moved) return movedNote();
   if (atCap()) return capNote();
   if (hidden) {
-    return el("p", { class: "small muted" }, "The address shows here after your seat checks it "
+    return el("p", { class: "small muted" }, "The address shows here after your device checks it "
       + "against its own key.");
   }
   return el("p", { class: "small muted" }, "Use this shielded address to receive "
     + receiveWhat() + ". Senders and the network cannot see the balance or who controls it. "
-    + "The signers of this wallet can see its balance and history." + receiveLimit());
+    + "The devices of this wallet can see its balance and history." + receiveLimit());
 }
 
 function sendOnly(net) {
@@ -487,15 +487,15 @@ export function sendDialog() {
           onclick: () => { rows.push({ k: ++ui.payKey, to: "", amt: "", memo: "" }); render(); },
         }, "Add recipient"),
         pasteList(net))),
-    el("label", { class: "field" }, el("span", {}, "Note for signers (optional)"),
+    el("label", { class: "field" }, el("span", {}, "Note for the devices (optional)"),
       el("input", {
         class: "input", id: "s-note", name: "note", type: "text", maxlength: "80",
         placeholder: rows.length > 1 ? "October payroll" : "Pay the audit firm",
         autocomplete: "off", value: ui.note, oninput: (ev) => { ui.note = ev.target.value; },
       }),
-      el("span", { class: "hint" }, "Encrypted. Only signers of this wallet can read it.")),
+      el("span", { class: "hint" }, "Encrypted. Only the devices of this wallet can read it.")),
     el("p", { class: "small faint" }, "A memo goes on chain with the payment. Its recipient and "
-      + "every signer of this wallet can read it."),
+      + "every device of this wallet can read it."),
     priorityBox(sumUp),
     el("div", { class: "summary" },
       el("div", {}, el("span", { class: "muted" }, "Available"), money(spendable)),
@@ -550,7 +550,7 @@ function reviewDialog() {
     : el("p", { class: "callout bad", role: "alert" }, REVIEW_BAD),
   prep.payees.map((p, i) => reviewRow(p, i, prep.payees.length)),
   reviewFacts(ins, note),
-  el("p", { class: "small faint" }, EXPIRY_NOTE + " Proposing asks the signers to approve; it "
+  el("p", { class: "small faint" }, EXPIRY_NOTE + " Proposing asks the devices to approve; it "
     + "does not sign or send the payment."),
   el("div", { class: "dialog-actions" },
     el("button", { class: "btn", type: "button",
@@ -565,7 +565,7 @@ function reviewFacts(ins, note) {
     : "Network fee"), el("dd", {}, money(ins.fee))] : null;
   return el("dl", { class: "kv" }, fee, el("dt", {}, "Approvals needed"),
     el("dd", {}, state.g.t + " of " + state.g.n),
-    note ? [el("dt", {}, "Note for signers"), el("dd", {}, note)] : null);
+    note ? [el("dt", {}, "Note for the devices"), el("dd", {}, note)] : null);
 }
 
 function reviewRow(p, i, n) {
@@ -593,7 +593,7 @@ export async function proposeReviewed(r) {
 
 // The expiry window of the engine (wasm/src/expiry.rs), in words.
 const EXPIRY_NOTE = "The approvals must finish within about 24 hours. After that the payment "
-  + "expires, and a signer proposes it again.";
+  + "expires, and a device proposes it again.";
 
 // The priority fee: 10 times the standard fee, for a faster block when the network is busy. It
 // is public on chain, so it marks the payment. Older builds of the apps refuse it.

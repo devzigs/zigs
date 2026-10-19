@@ -11,18 +11,18 @@
 export function protectionRisk(t, n, here = 1) {
   const margin = n - t;
   return { margin, title: marginTitle(margin), detail: marginDetail(t, n, margin),
-    here: here > 1 ? "This browser holds " + here + " seats of this wallet, so its loss loses "
+    here: here > 1 ? "This browser holds " + here + " devices of this wallet, so its loss loses "
       + here + " key shares at once" + (here > margin ? ": more than the wallet can lose." : ".")
       : "" };
 }
 const marginTitle = (m) => (m <= 0 ? "No key share can be lost"
   : m === 1 ? "1 key share can be lost" : m + " key shares can be lost");
 const marginDetail = (t, n, m) => (m <= 0
-  ? "Each payment needs every signer. When one key share is lost, the wallet cannot pay until "
-    + "its seat comes back from its file."
-  : "A payment needs " + t + " of " + n + " signers, so the wallet still pays when "
+  ? "Each payment needs every device. When one key share is lost, the wallet cannot pay until "
+    + "its key share comes back from its file."
+  : "A payment needs " + t + " of " + n + " devices, so the wallet still pays when "
     + (m === 1 ? "1 key share is" : "up to " + m + " key shares are") + " lost. Two files of "
-    + "the same seat count as one signer.");
+    + "the same key share count as one device.");
 
 /**
  * The recovery state of your seats in the open wallet. A part with `missing` has no share here;
@@ -38,13 +38,14 @@ export function recoveryState(seats) {
     .filter(([, part]) => part?.has && !part.saved).map(([what]) => [s.id, what]));
   const unread = seats.find((s) => s.sol?.unknown)?.sol;
   if (!seats.some((s) => s.zec.has)) {
-    return { state: "none", label: "No seat of this wallet in this browser", missing };
+    return { state: "none", label: "No device of this wallet in this browser", missing };
   }
   if (missing.length) {
-    return { state: "missing", label: "A file of your seats in this wallet is not saved", missing };
+    const label = "A file of your devices in this wallet is not saved";
+    return { state: "missing", label, missing };
   }
   if (unread) return { state: "unknown", label: unreadLabel(unread.failed), missing };
-  return { state: "saved", label: "The files of your seats in this wallet are saved", missing };
+  return { state: "saved", label: "The files of your devices in this wallet are saved", missing };
 }
-const unreadLabel = (failed) => (failed ? "Zigs could not read the Solana part of your seats"
-  : "Zigs is still reading the Solana part of your seats");
+const unreadLabel = (failed) => (failed ? "Zigs could not read the Solana part of your devices"
+  : "Zigs is still reading the Solana part of your devices");

@@ -46,18 +46,18 @@ export function backupWords(c, i) {
   const { host, gid } = c;
   refuseStopped(c);
   return {
-    title: "Back up the Solana part of seat " + i,
+    title: "Back up the Solana part of device " + i,
     pass:
       "This passphrase opens your Solana key share. Zigs cannot recover it. Write it down " +
       "and keep it apart from the file. It is a second file with its own passphrase.",
     file:
       "The file holds your Solana key share and the secret that gives the Solana viewing and " +
       "proving keys. Your fee key comes from the key share. Anyone who has the file and the " +
-      "passphrase can sign as this seat on Solana and spend the SOL of its fee address.",
+      "passphrase can sign as this device on Solana and spend the SOL of its fee address.",
     async save(pass) {
       refuseStopped(c);
       if (!holdsShare(solOf(host, gid, i)))
-        throw new Error("Seat " + i + " has no Solana part yet.");
+        throw new Error("Device " + i + " has no Solana part yet.");
       const name = backupName(host.state.g.name + " solana", i);
       if (!(await host.sealAndSave(pass, backupText(host, gid, i), name))) return false;
       // The flag makes the backup note of the wallet stop asking for this file.
@@ -88,9 +88,9 @@ const WAIT = (text) => ({ wait: text });
 const noSeat = (c, f) =>
   !c.host.sec(f.group, f.seat) &&
   REFUSE(
-    "This browser holds no seat " +
+    "This browser holds no device " +
       f.seat +
-      " of this wallet. Restore the seat first, then open the Solana backup.",
+      " of this wallet. Restore the device first, then open the Solana backup.",
   );
 const notLoaded = (c, f) =>
   (c.host.state.gid !== f.group || !c.host.state.g || !loaded(c, f.group)) &&
@@ -102,17 +102,17 @@ const stopped = (c) => {
 const notSettled = (c, f) =>
   (!c.host.localSeats().includes(f.seat) || c.host.seatCheck(f.seat) !== true) &&
   WAIT(
-    "Seat " + f.seat + " must show Address checked " + "before its Solana part can be restored.",
+    "Device " + f.seat + " must show Address checked " + "before its Solana part can be restored.",
   );
 const noDone = (c, f) =>
   !c.docs.soldone[f.seat] &&
-  REFUSE("This wallet has no published Solana " + "key for seat " + f.seat + ".");
+  REFUSE("This wallet has no published Solana " + "key for device " + f.seat + ".");
 // A copy that dropped its stale round 1 for another copy of the seat keeps only that mark: its
 // part is empty, so the file of the finished copy restores into it.
 const EMPTY_MARKS = new Set(["otherCopy"]);
 const hasData = (c, f) =>
   Object.keys(solOf(c.host, f.group, f.seat)).some((k) => !EMPTY_MARKS.has(k)) &&
-  REFUSE("Seat " + f.seat + " already has Solana data in this browser, so it was not restored.");
+  REFUSE("Device " + f.seat + " already has Solana data in this browser, so it was not restored.");
 const noFit = (c, f) =>
   (!fitsSolana(c.W, f.seat, f, c.docs.soldone[f.seat]) || agreement(c).state === "differ") &&
   REFUSE(NO_FIT);
@@ -171,6 +171,6 @@ export async function restoreSolana(c, b, encrypted) {
   if (!(await putSol(host, f.group, f.seat, part))) {
     throw new Error("This browser could not save the restored Solana part.");
   }
-  const text = "Restored the Solana part of seat " + f.seat + ". It matches the wallet.";
+  const text = "Restored the Solana part of device " + f.seat + ". It matches the wallet.";
   host.showBanner("ok", text + (feeMismatch(c, f.seat) ? " " + mismatchText(f.seat) : ""));
 }

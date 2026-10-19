@@ -99,7 +99,7 @@ async function publishSwitch(c, seat, w = walletOf(c)) {
   const fields = { local: true, cluster: CLUSTER, at: Date.now() };
   const doc = await c.host.signedDoc(w.gid, rel, seat, fields);
   await c.host.sdb.doc(w.base + "/" + rel).set(doc);
-  c.host.log("seat " + seat + ": local proving is on for the group");
+  c.host.log("device " + seat + ": local proving is on for the group");
 }
 
 const secs = (ms) => (ms / 1000).toFixed(1) + " s";
@@ -217,7 +217,7 @@ export const SWITCH_TEXT = [
     "setting helps most when it is on before the first payment. Once on, it is on for the group " +
     "and cannot be turned off. After you turn it on, reload every open Zigs tab of the group and " +
     "make the Solana backups again. A tab that opened before this version of Zigs does not ask " +
-    "before it proves. A seat restored from an older backup learns the setting from the group " +
+    "before it proves. A device restored from an older backup learns the setting from the group " +
     "server. If a change of Helius breaks the local prover, the group cannot pay until a Zigs " +
     "update.",
 ];

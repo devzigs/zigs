@@ -69,7 +69,8 @@ async function blankRefusals(page, gid, files) {
   const { pass } = files.sol1;
   const unopened = /^Wrong passphrase, or the file is damaged\.$/;
   const cases = [
-    ["beforeZcash", files.sol1, pass, /holds no seat 1 of this wallet\. Restore the seat first/],
+    ["beforeZcash", files.sol1, pass,
+      /holds no device 1 of this wallet\. Restore the device first/],
     ["wrongPass", files.sol1, pass + "x", unopened],
     ["changedFile", changed(files.sol1), pass, unopened],
   ];
@@ -105,7 +106,7 @@ async function unsettledRefusal(page, gid, file) {
   await run(page, unsettle, gid, false);
   await startPage(page); // such a seat has no Solana tab: the file goes in from the wallet list
   await B.openWithPass(page, "restore", file);
-  const want = /Seat 1 must show Address checked before its Solana part can be restored/;
+  const want = /Device 1 must show Address checked before its Solana part can be restored/;
   await waitFor(async () => want.test(await banner(page)), 60000, () => "the settle refusal");
   seen.unsettled = redact(await banner(page));
   assert.deepEqual(await solKeys(page, gid, 1), [], "a seat that did not settle stores nothing");
@@ -121,7 +122,7 @@ async function zcashThenOtherSeat(page, gid, files) {
   await sleep(3000); // the restored key pairs are checked and stored after the banner
   await solanaTab(page, gid);
   seen.otherSeat = await refusal(page, "sol-restore", files.sol2);
-  assert.match(seen.otherSeat, /holds no seat 2 of this wallet/, "the file of seat 2");
+  assert.match(seen.otherSeat, /holds no device 2 of this wallet/, "the file of seat 2");
   for (const seat of [1, 2]) {
     assert.deepEqual(await solKeys(page, gid, seat), [], "the file of seat 2 stored nothing");
   }
@@ -146,7 +147,7 @@ async function scenario(rig) {
   await reload(page, gid);
   await clickText(page, "Solana", { exact: true });
   await B.restoreSolana(page, files.sol1);
-  const restored = async () => /Restored the Solana part of seat 1/.test(await banner(page));
+  const restored = async () => /Restored the Solana part of device 1/.test(await banner(page));
   await waitFor(restored, 60000, () => "the good file to restore");
   await waitFor(async () => (await solValues(page)).status === "ready", 120000, () => "ready");
   assert.equal((await solValues(page))["group-key"], keys.groupKey, "the same group key");

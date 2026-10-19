@@ -70,10 +70,10 @@ not copy the Helius claim that the RPC cannot decrypt state, because the prover 
 |---|---|
 | Transfer | "Hidden on the public chain. Helius sees amount, asset and recipient while it builds the proof. Sender and recipient are public." |
 | Deposit | "Sender, recipient, asset and amount are public." |
-| Add SOL | "Moves SOL from the fee address of your seat into the shielded balance of the group. The amount and the sender are public. It needs no approval: it is your own SOL." |
+| Add SOL | "Moves SOL from the fee address of your device into the shielded balance of the group. The amount and the sender are public. It needs no approval: it is your own SOL." |
 | Withdrawal | "Recipient, asset and amount are public." |
-| Add Solana | "Your Solana address is public. Each seat also gets a fee address, which appears on chain next to the group. The Zigs server operator can link this wallet to these addresses by timing. Helius sees that you use Zigs. A fee address needs a public SOL funding trail." |
-| Fund card | "It pays the fees and the rents of the proposals that this seat makes. It appears on chain next to the group. Send Devnet SOL to it." |
+| Add Solana | "Your Solana address is public. Each device also gets a fee address, which appears on chain next to the group. The Zigs server operator can link this wallet to these addresses by timing. Helius sees that you use Zigs. A fee address needs a public SOL funding trail." |
+| Fund card | "It pays the fees and the rents of the proposals that this device makes. It appears on chain next to the group. Send Devnet SOL to it." |
 
 | Property | Zcash (Ironwood, today) | Solana (Zolana Default Ring) |
 |---|---|---|
@@ -270,7 +270,7 @@ recipient, and its life depends on a nonce, an expiry and roots.
    proposal part (PROTOCOL.md 15.5).
 3. **Check, on each approving device, in the Solana wasm.** Every rule that applies to the intent
    must hold. The approval screen shows the payee fingerprint, the amount, the computed change, the
-   fee, the expiry and who pays ("Fees paid by seat N" with its address).
+   fee, the expiry and who pays ("Fees paid by device N" with its address).
 
 | Rule | Check |
 |---|---|

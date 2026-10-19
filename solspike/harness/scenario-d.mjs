@@ -250,8 +250,8 @@ async function dialogPass(page, id) {
 async function backupPhase(first, gid) {
   await captureDownloads(first);
   const before = (await run(first, DIGESTS, gid))["1"];
-  await clickText(first, "Back up Solana part, seat 1");
-  await waitForText(first, "Back up the Solana part of seat 1");
+  await clickText(first, "Back up Solana part, device 1");
+  await waitForText(first, "Back up the Solana part of device 1");
   await dialogPass(first, "#bk-pass");
   await setInput(first, "#bk-again", PASS);
   await run(first, () => document.querySelector("form[role=dialog] button[type=submit]").click());
