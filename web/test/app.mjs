@@ -1581,7 +1581,7 @@ const sealed = (gid, rel, seat, fields, key, names = ["by", "sig"]) =>
     // key; Discard deletes it.
     {
       const gidNow = t.state.gid, book = () => JSON.parse(storage.get("zf-drafts") || "{}");
-      Object.assign(t.ui, { after: null, note: "rent", priority: true, pay: [{ k: 1,
+      Object.assign(t.ui, { after: null, sendFor: null, note: "rent", priority: true, pay: [{ k: 1,
         to: "alice.zec", amt: "0.5", memo: "m", name: "alice", shown: { address: "utest1x" } }] });
       t.keepDraft();
       const entry = book()[gidNow];
@@ -1621,6 +1621,16 @@ const sealed = (gid, rel, seat, fields, key, names = ["by", "sig"]) =>
       const failed = t.sendDialog();
       assert.match(textOf(failed), /draft could not be saved on this device/);
       assert.equal(failed.on.click, t.keepDraft, "a click saves too: Remove, Max, Use this list");
+      t.endSend();
+      assert.equal(t.ui.draftFailed, false, "a close forgets the failure of that form");
+      // A form that a payment request filled is no draft of the person: it saves nothing and
+      // offers no Discard, so Cancel keeps the person's own draft.
+      Object.assign(t.ui, { pay: [{ k: 9, to: "utest1request", amt: "1", memo: "" }],
+        note: "Request from Bob", sendFor: gidNow });
+      t.keepDraft();
+      assert.deepEqual(book()[gidNow], last, "the draft of the person stays");
+      assert.equal(named(t.sendDialog(), "button", "Discard draft"), undefined);
+      t.ui.sendFor = null;
       // A draft that this browser cannot open shows no draft line and fills nothing, also when
       // only its sealed time is old.
       const aad = "draft\n" + gidNow, seal = (d) => Z.secretSeal(t.gkeys[gidNow], aad,
@@ -1674,6 +1684,23 @@ const sealed = (gid, rel, seat, fields, key, names = ["by", "sig"]) =>
         t.ui.sendReview = { prep: { ...prep, t: { ...prep.t, pczt: "REV3" } }, note: "x" };
         assert.match(textOf(drawn()), /Network fee \(priority\)/, "the fee as decoded");
         globalThis.document = realDocument;
+        // A close while the build runs opens no review when the build ends.
+        let release;
+        const held = new Promise((r) => { release = r; });
+        const built = t.chain.cw.createSpend;
+        t.chain.cw.createSpend = async (...a) => { await held; return built(...a); };
+        Object.assign(t.ui, { send: true, sendReview: null });
+        const building = t.openReview([{ to: addr, amount: 5 }], "late");
+        await sleep(20);
+        for (const press of documentOn.keydown) press({ key: "Escape" });
+        release();
+        await building;
+        assert.equal(t.ui.sendReview, null, "the review of a closed Send does not open");
+        t.chain.cw.createSpend = built;
+        Object.assign(t.ui, { send: true });
+        await t.openReview([{ to: addr, amount: 5 }], "open");
+        assert.equal(t.ui.sendReview?.note, "open", "control: an open Send gets its review");
+        Object.assign(t.ui, { send: false, sendReview: null });
         // Every close drops the review, so it never comes back over another payment: the scrim,
         // Escape, and then "Propose again" opens its own form with a direct Propose.
         t.closeSession();
@@ -1715,11 +1742,12 @@ const sealed = (gid, rel, seat, fields, key, names = ["by", "sig"]) =>
         await assert.rejects(t.proposeReviewed(t.ui.sendReview), /out of date/, "a stale review");
         assert.equal(t.ui.sendReview, null, "the person reviews it again");
         t.ui.sendReview = { prep, note: "reviewed", priority: false };
+        const buildsBefore = builds;
         await t.proposeReviewed(t.ui.sendReview);
         await waitFor("the reviewed proposal", () => t.state.sessions.length > before);
         const made = t.state.sessions.find((x) => x.note === "reviewed");
         assert.equal(made.pczt, "REV1", "the proposal is the reviewed transaction");
-        assert.equal(builds, 1, "with no second build");
+        assert.equal(builds, buildsBefore, "with no second build");
         assert.equal(t.ui.sendReview, null);
         assert.equal(storage.has("zf-drafts") && JSON.parse(storage.get("zf-drafts"))[t.state.gid],
           undefined, "a proposal deletes the draft of its wallet");

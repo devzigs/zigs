@@ -313,24 +313,29 @@ function readDraft(gid) {
     return draftLive(d, Date.now()) ? d : null;
   } catch { return null; }
 }
-// Saves the form as it is now. A form with nothing typed deletes the draft; a form that does not
-// fit (a memo too long) keeps the last draft and says so.
+// Saves the form as it is now. A request or "Propose again" fills the form: that is no draft of
+// the person, so it saves nothing. The draft line follows at once when a save starts to fail.
 export function keepDraft() {
-  const gid = state.gid, key = gkeys[gid];
-  if (ui.after || !key || !Z) return;
+  const gid = state.gid, key = gkeys[gid], was = ui.draftFailed;
+  if (ui.after || ui.sendFor || !key || !Z) return;
+  ui.draftFailed = !saveDraft(gid, key);
+  if (ui.draftFailed !== was) render();
+}
+// False when the form does not fit (a memo too long): the last draft then stays. A form with
+// nothing typed deletes the draft.
+function saveDraft(gid, key) {
   const form = { rows: ui.pay, note: ui.note, priority: ui.priority };
   const d = draftOf(form, Date.now());
   if (!d) {
-    ui.draftFailed = !emptyForm(form);
-    if (!ui.draftFailed) dropDraft(gid);
-    return;
+    if (emptyForm(form)) dropDraft(gid);
+    return emptyForm(form);
   }
   try {
     const book = draftBook();
     book[gid] = { at: d.at, box: Z.secretSeal(key, draftAad(gid), JSON.stringify(d)) };
     localStorage.setItem(DRAFTS, JSON.stringify(book));
-    ui.draftFailed = false;
-  } catch { ui.draftFailed = true; }
+    return true;
+  } catch { return false; }
 }
 // A new form: the draft of this wallet when one lives, never for "Propose again".
 function freshForm() {
@@ -338,10 +343,10 @@ function freshForm() {
   ui.pay = d ? d.rows.map((r) => ({ k: ++ui.payKey, ...r }))
     : [{ k: ++ui.payKey, to: "", amt: "", memo: "" }];
   if (d) Object.assign(ui, { note: d.note, priority: d.priority });
-  ui.listError = "";
+  Object.assign(ui, { listError: "", draftFailed: false });
 }
 function draftLine() {
-  if (ui.after) return null;
+  if (ui.after || ui.sendFor) return null;
   if (ui.draftFailed) return el("p", { class: "small faint" }, "This draft could not be saved on "
     + "this device. The form still works.");
   if (!readDraft(state.gid)) return null;
@@ -353,8 +358,18 @@ function draftLine() {
   return el("p", { class: "small faint" }, "Draft saved on this device for 24 hours. ",
     el("button", { class: "btn ghost sm", type: "button", onclick: discard }, "Discard draft"));
 }
+// Each close of Send starts a new run: a build that ends after a close opens no review.
+let sendRun = 0;
 /** Closes Send and drops its review: a review never comes back after its dialog closed. */
-export const endSend = () => Object.assign(ui, { send: false, sendReview: null });
+export function endSend() {
+  sendRun += 1;
+  Object.assign(ui, { send: false, sendReview: null, draftFailed: false });
+}
+/** Builds the transaction of the form and opens its review, unless Send closed meanwhile. */
+export async function openReview(payees, note) {
+  const run = sendRun, prep = await prepareSpend(payees, ui.priority);
+  if (run === sendRun) ui.sendReview = { prep, note };
+}
 const closeSend = () => { endSend(); render(); };
 sweepDrafts();
 
@@ -385,7 +400,7 @@ export function sendDialog() {
       ui.after = null;
       return;
     }
-    ui.sendReview = { prep: await prepareSpend(payees, ui.priority), note, priority: ui.priority };
+    await openReview(payees, note);
   }) },
     el("div", { class: "card-head" }, el("h2", { id: "send-title" }, "Send ZEC"),
       el("button", { class: "icon-btn", type: "button", "aria-label": "Close", onclick: closeSend },
