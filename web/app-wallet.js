@@ -18,7 +18,7 @@ import {
 } from "./app-dom.js";
 import { signing, unreadIn } from "./app-messages.js";
 import {
-  abortedText, groupVersion, rejectedSeats, seatCheck, verifiedCount,
+  abortedText, groupVersion, myVerified, rejectedSeats, seatCheck, verifiedCount,
 } from "./app-dkg.js";
 import {
   cancelMove, chainReady, ended, expired, heldApprovals, isOpen, landed, proposeMove, sendBlocker,
@@ -93,9 +93,10 @@ function signedNotes() {
 }
 
 // A seat of this browser that stopped its setup keeps the setup page and its stop, also when a
-// wallet document came.
+// wallet document came. A browser whose seat checked the address keeps the wallet: a later stop
+// (an unsigned group document can trigger one) must not lock its people out of their funds.
 export const walletReady = () => !!(state.wallet && state.wallet.birthday)
-  && rejectedSeats().length === 0 && !keysDiffer() && !abortedText();
+  && rejectedSeats().length === 0 && !keysDiffer() && (!abortedText() || myVerified());
 
 /**
  * The sections of the open wallet: [id, label, count] each. The side menu lists them; the Solana

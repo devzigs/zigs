@@ -308,7 +308,8 @@ function addrStep(c) {
     const seats = c.rejected.join(", ");
     return [stage, "Device " + seats + " rejected the address. Do not use this wallet."];
   }
-  if (!c.w) return [stage, c.d === c.n ? buildingText() : "Comes after the key."];
+  if (!c.w) return [stage, c.stopped || c.aborts.length ? "Stopped: no address."
+    : c.d === c.n ? buildingText() : "Comes after the key."];
   if (!c.w.birthday) return [stage, "An older version of Zigs made this wallet. Create a new wallet."];
   const checked = c.ver + " of " + c.n;
   const wait = c.ver < c.n ? " Send funds only after all " + c.n + " checked." : "";
