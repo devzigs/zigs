@@ -245,6 +245,9 @@ const joins = {
   "guillemets": "«" + LINK + "»",
   "an em dash before the link": "—" + LINK,
   "a zero-width space before the link": "\u200b" + LINK,
+  // A Chinese word, then a space that is no plain space: the word is not glued to the link.
+  "a Chinese word and an ideographic space before the link": "钱包链接\u3000" + LINK,
+  "a Chinese word and a tab before the link": "钱包链接\t" + LINK,
   "eighty marks before the link": "(".repeat(80) + LINK,
   "a link in square brackets": "[" + LINK + "]",
   "a message with a link in square brackets": "Invite: [" + LINK + "]",
@@ -317,6 +320,7 @@ const elsewhere = {
   "a punycode site": "https://xn--e1afmkfd.xn--p1ai/#" + GID + "." + K,
   "an IDN host with a slash": "пример.рф/#" + GID + "." + K,
   "a fullwidth host with a slash": "ｅｖｉｌ。ｃｏｍ/#" + GID + "." + K,
+  "a host of circled letters with a slash": "ⓔⓥⓘⓛ。ⓒⓞⓜ/#" + GID + "." + K,
   "another scheme": "http://app.zigs.app/#" + GID + "." + K,
   "another port": "https://app.zigs.app:8443/#" + GID + "." + K,
   "a longer host": "https://app.zigs.app.evil.example/#" + GID + "." + K,
@@ -355,6 +359,11 @@ const glued = {
   // A foreign host, or text, in a form that a URL parser reads differently: letters and full stops
   // of other scripts, and a backslash.
   "a fullwidth host glued to the fragment": "ｅｖｉｌ。ｃｏｍ#" + GID + "." + K,
+  // Symbols that a URL parser reads as letters, digits and dots of a host.
+  "circled letters and an ideographic full stop glued to the fragment":
+    "ⓔⓥⓘⓛ。ⓒⓞⓜ#" + GID + "." + K,
+  "TM and tel signs glued to the fragment": "™℡。ⓒⓞⓜ#" + GID + "." + K,
+  "circled letters before the link": "ⓔⓥⓘⓛ" + LINK,
   "a fullwidth host and a backslash before the link": "ｅｖｉｌ。ｃｏｍ\\" + LINK,
   "text of another script glued to the fragment": "Ссылка:#" + GID + "." + K,
   "text of another script before the link": "Ссылка" + LINK,
@@ -382,6 +391,25 @@ for (const [what, text] of Object.entries(wrongPath)) {
   assert.deepEqual(pastedInvite(text, HERE), { error: PASTE_PATH }, "another path: " + what);
 }
 assert.equal(PASTE_PATH.includes("another Zigs server"), false, "a wrong path is no other server");
+// A URL parser reads many symbols as the letters, digits and dots of a host (circled letters, "TM",
+// full stops of other scripts). No such code point may pass as a mark before a link or before a
+// bare fragment. The list comes from the URL parser of this Node, so a new table is checked too.
+const hostRead = (ch) => {
+  try { return new URL("https://a" + ch + "b/").hostname; } catch { return ""; }
+};
+const hostChars = [];
+for (let cp = 0x80; cp <= 0x10ffff; cp++) {
+  if (cp >= 0xd800 && cp <= 0xdfff) continue;
+  const ch = String.fromCodePoint(cp), host = hostRead(ch);
+  if (host === "a.b" || /^a[a-z\d]+b$/.test(host)) hostChars.push(ch);
+}
+assert.equal(hostChars.length > 500, true, "the URL parser reads many code points as host text");
+for (const ch of hostChars) {
+  for (const text of [ch + LINK, ch + "#" + GID + "." + K]) {
+    const refused = "error" in pastedInvite(text, HERE);
+    assert.equal(refused, true, "a host character is no mark: U+" + ch.codePointAt(0).toString(16));
+  }
+}
 // A text with two different wallet links names none: the wallet name of an invite message has no
 // signature, so a link in it must not win over the link that follows.
 const KEY2 = "k".repeat(43), many = {

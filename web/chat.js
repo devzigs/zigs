@@ -116,19 +116,26 @@ const INVITE = new RegExp("#(" + part(ROOM_ID) + ")\\.(" + part(ROOM_KEY) + ")(?
 // The origin and path of a page. The server shows one page at "/" and at "/index.html".
 export const pageKey = (url) => url.origin + url.pathname.replace(/\/index\.html$/, "/");
 
-// What may stand before an "http(s)://" in the same word: marks, as in "(", "<", "**" or a
-// Markdown label "[Team](". Anything with a letter or a digit of any script, or with a sign of an
-// address, is text of another URL, and the "http(s)://" after it is a part of that URL. The signs
-// of an address are also the backslash and the full stops of other scripts: a URL parser reads
-// them as "/" and ".". A "[" is a mark, unless a label follows it. A label holds no bracket: each
-// character has one parse, so the time is linear.
-const MARKS = /^(?:[^\p{L}\p{N}:/.?=&#%@~+\\。．｡[-]|\[(?![^\][]*\]\()|\[[^\][]*\]\()*$/iu;
+// The marks that may stand before a link: brackets, quotes, dashes, format characters (such as a
+// zero-width space), spaces, and a few signs of ASCII. This is a list of marks, not of letters: a
+// URL parser reads many symbols as letters, digits or dots (circled letters, "TM", fullwidth and
+// ideographic full stops). A text must not be normalized for this check: the normal form can join
+// text that a URL parser keeps apart.
+const MARK = "\\p{Ps}\\p{Pe}\\p{Pi}\\p{Pf}\\p{Pd}\\p{Cf}\\p{Zs}<>*\"'_|`!,;";
+
+// What may stand before an "http(s)://" in the same word: marks. A Markdown label "[Team](" is a
+// mark too. A "[" is a mark, unless a label follows it. The class leaves out the hyphen, which a
+// host holds, and the "[", which the label alternatives take: so each character has one parse. A
+// label holds no bracket. The time is linear.
+const MARKS = new RegExp("^(?:(?![\\[-])[" + MARK + "]|"
+  + "\\[(?![^\\][]*\\]\\()|\\[[^\\][]*\\]\\()*$", "u");
+const LEAD = new RegExp("^[" + MARK + "]+", "u");
 
 // The URL before a link: from the first "http(s)://" on, or a host with no scheme. null when that
 // "http(s)://" sits inside other text that is no mark.
 function urlBefore(before) {
   const start = before.search(/https?:\/\//i);
-  if (start < 0) return before.replace(/^[^\p{L}\p{N}/\\]+/u, "");
+  if (start < 0) return before.replace(LEAD, "");
   return start <= 80 && MARKS.test(before.slice(0, start)) ? before.slice(start) : null;
 }
 
