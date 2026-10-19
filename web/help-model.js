@@ -1,6 +1,6 @@
 // The words of the Help part of Settings, and the diagnostics text. Help works offline: it holds
-// no link and asks for nothing. The diagnostics hold a fixed list of facts and the recent events
-// of this browser with every long token hidden. Display only: nothing here sends anything.
+// no link and asks for nothing. The diagnostics hold a fixed list of facts and no line of the
+// log, which has free text. Display only: nothing here sends anything.
 
 export const HELP = [
   ["What does a payment need?",
@@ -20,8 +20,10 @@ export const HELP = [
   ["What do the servers see?",
     "The group server keeps the encrypted data of the wallet. It cannot read the data, and it "
     + "sees when data is sent. The light-wallet server sends the blocks to this page. It sees "
-    + "your IP address, and never a key. The Solana part also asks Helius, which sees your IP "
-    + "address and the keys of this wallet."],
+    + "your IP address, and it never sees a secret key. The Solana part also asks Helius. Helius "
+    + "sees your IP address and the public keys of this wallet. Unless local proving is on, the "
+    + "hosted prover of Helius also sees each Solana payment. The Zigs server operator can link "
+    + "this wallet to its Solana addresses by timing."],
   ["How do I read the memos of payments to this wallet?",
     "Turn on Read memos of incoming payments, under This app on this device. A memo is only in "
     + "the full transaction, so this browser then asks the light-wallet server for each "
@@ -36,27 +38,11 @@ export const HELP = [
     + "tests. Zigs is not audited."],
 ];
 
-const LONG = 20;
-const HEX_RUN = /[0-9a-f]{12}/i;
-const EVENTS = 20;
-
 /**
- * Hides each token of `text` that can be a secret, a key, an address, a link, an id or a part
- * of one: a run of 20 or more characters without a space, or a token with 12 hex digits in a row.
- * A plain word is shorter than 20 characters and stays.
+ * The diagnostics text. `facts` is a list of [name, value] pairs that the page chose: counts,
+ * words of a fixed list and facts of the browser. It holds no free text, so no name, note,
+ * amount, address, key or link of the wallet can get in.
  */
-export const redact = (text) => String(text).replace(/\S+/g, (token) =>
-  token.length >= LONG || HEX_RUN.test(token) ? "[hidden]" : token);
-
-/**
- * The diagnostics text. `facts` is a list of [name, value] pairs that the page chose, so a fact
- * holds no free text. `events` are the recent lines of the log, newest first; they come from
- * many places, so each one goes through redact.
- */
-export function diagnosticsText(facts, events) {
-  const shown = events.slice(0, EVENTS).map((line) => "  " + redact(line));
-  return ["Zigs diagnostics", "Made in this browser. Zigs sends nothing.", "",
-    ...facts.map(([name, value]) => name + ": " + value), "",
-    shown.length ? "Recent events (long tokens hidden):" : "No recent events.", ...shown,
-  ].join("\n");
-}
+export const diagnosticsText = (facts) => ["Zigs diagnostics",
+  "Made in this browser. Zigs sends nothing.", "",
+  ...facts.map(([name, value]) => name + ": " + value)].join("\n");

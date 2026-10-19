@@ -769,7 +769,7 @@ function technicalDetails() {
     render();
   };
   return el("details", { open: open || null, ontoggle: toggle },
-    el("summary", {}, "Technical details"), open ? technicalBody() : null);
+    el("summary", {}, "Technical details of this wallet"), open ? technicalBody() : null);
 }
 
 function technicalBody() {

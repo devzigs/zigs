@@ -8,13 +8,13 @@ import { localSeats, seatIds } from "./app-seats.js";
 import { curChain, netName, readsMemos } from "./app-chain.js";
 import { toApprove } from "./app-groups.js";
 import { groupVersion, rejectedSeats, verifiedCount } from "./app-dkg.js";
-import { solOn, solPending, solUnsaved } from "./app-sol.js";
+import { sol, solFile, solOn, solPending, solUnsaved } from "./app-sol.js";
 import { copyBtn, el } from "./app-dom.js";
 import { HELP, diagnosticsText } from "./help-model.js";
 
-const DIAGNOSTICS_NOTE = "These lines show the state of this app in this browser. They hold no "
-  + "key, no secret, no invite link and no full address. Zigs sends nothing: copy the text and "
-  + "send it yourself if you want help.";
+const DIAGNOSTICS_NOTE = "These lines are a fixed list of facts about this app in this browser. "
+  + "They hold no key, no secret, no invite link, no address, no name, no amount and no message. "
+  + "Zigs sends nothing: copy the text and send it yourself if you want help.";
 
 const syncWord = (c) => !c ? "not started" : c.error ? "failed" : c.syncing ? "syncing"
   : c.bal ? "synced to block " + c.bal.height : "waiting";
@@ -24,6 +24,10 @@ function browserFacts() {
     ["Online", navigator.onLine !== false], ["WebAssembly engine", Z ? "ready" : "not ready"],
     ["Web Locks", !!navigator.locks?.request]];
 }
+
+// Zigs counts nothing of the Solana part until it has read it: a count then would say 0.
+const solUnread = () => solOn() && (!sol || localSeats().some((i) => solFile(i)?.unknown));
+const solCount = (count) => (solUnread() ? "not read yet" : count());
 
 function deviceFacts() {
   const here = localSeats();
@@ -37,20 +41,20 @@ function deviceFacts() {
     ["Devices that checked the address", verifiedCount()],
     ["Devices that rejected the wallet", rejectedSeats().length],
     ["Zcash backup files not saved", unsaved.length],
-    ["Solana backup files not saved", solUnsaved().length]];
+    ["Solana backup files not saved", solCount(() => solUnsaved().length)]];
 }
 
 function stateFacts() {
   return [["Network", netName(state.g)], ["Wallet version", groupVersion()],
     ["Zcash sync", syncWord(curChain())], ["Solana part", solOn() ? "on" : "off"],
     ["Zcash payments to approve", toApprove(state.gid).length],
-    ["Solana payments to approve", solPending()],
+    ["Solana payments to approve", solCount(solPending)],
     ["Memo reading", readsMemos(state.gid) ? "on" : "off"]];
 }
 
 /** The diagnostics text of the open wallet and this browser. */
 export const diagnostics = () =>
-  diagnosticsText([...browserFacts(), ...stateFacts(), ...deviceFacts()], state.log);
+  diagnosticsText([...browserFacts(), ...stateFacts(), ...deviceFacts()]);
 
 export function helpView() {
   return el("section", { class: "card card-pad settings-section" },
