@@ -519,12 +519,14 @@ function activityHistory(state, draw) {
   assert.match(draw("all"), /No activity yet/, "a finished sync with nothing: the empty list");
   t.setChain({ gid: state.gid, cw: null, bal: null, sent: null, received: [], syncing: true });
   const syncing = draw("all");
-  assert.match(syncing, /Reading the chain.*Payments you received show after the first sync\./);
+  assert.match(syncing, /Reading the chain.*Payments you received show after the first sync\./,
+    "a sync that did not finish says that it reads the chain");
   assert.doesNotMatch(syncing, /No activity yet/,
     "a sync that did not finish says nothing is there");
   t.setChain({ ...ready, error: "The server did not answer." });
   const failed = draw("all");
-  assert.match(failed, /The sync failed.*This list can be incomplete\. Use Refresh/);
+  assert.match(failed, /The sync failed.*This list can be incomplete\. Use Refresh/,
+    "a failed sync says that the list can be incomplete");
   assert.doesNotMatch(failed, /No activity yet/, "a failed sync says nothing is there");
   const solana = draw("sol");
   assert.doesNotMatch(solana, /Reading the chain|The sync failed/, "the Solana choice");

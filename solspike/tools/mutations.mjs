@@ -1534,8 +1534,8 @@ export const MUTATIONS = [
     /a seat of this browser reads you/),
   program("A-sync-failed", "a failed sync reads as a finished one with nothing there",
     ["web/app-wallet.js", '  if (c?.error) return "failed";\n', ""], UNIFIED,
-    /a failed sync says nothing is there/),
+    /a failed sync says that the list can be incomplete/),
   program("A-sync-syncing", "a sync that did not finish reads as a finished one",
-    ["web/app-wallet.js", '  return chainReady(c) ? "ready" : "syncing";',
-      '  return "ready";'], UNIFIED, /a sync that did not finish says nothing is there/),
+    ["web/app-wallet.js", '  return chainReady(c) ? "ready" : "syncing";', '  return "ready";'],
+    UNIFIED, /a sync that did not finish says that it reads the chain/),
 ];
