@@ -1,5 +1,5 @@
-// The Send drafts and the age of a review. Display and convenience only: a draft fills the form,
-// never the review, and nothing here proposes, approves or signs.
+// The Send drafts, the age of a review and the headline of a payment. Display and convenience
+// only: a draft fills the form, never the review, and nothing here proposes, approves or signs.
 
 /** A draft lives 24 hours; after that the next read deletes it. */
 export const DRAFT_MS = 24 * 60 * 60 * 1000;
@@ -47,3 +47,42 @@ export function draftLive(d, now) {
 /** True while a reviewed transaction, built at `at`, may still be proposed at `now`. */
 export const reviewFresh = (at, now) => Number.isSafeInteger(at) && now >= at
   && now - at < REVIEW_MS;
+
+// The headline of a payment and its one sentence: the first rule that holds names the state.
+const HEADLINES = [
+  ["landed", "In a block", "A block that this browser synced holds the payment."],
+  ["ended", "Payment expired", "No signer can send it now. A new payment needs a new review and "
+    + "new approvals."],
+  ["check", "Check the payment", "It may still go on chain. Check it before you make another "
+    + "payment."],
+  ["error", "Payment stopped", "This payment takes no more steps. The reason is below."],
+  ["rejected", "Payment needs attention", "This browser refuses this payment. The reason is "
+    + "above. Do not approve it."],
+  ["refused", "Payment needs attention", "This browser does not send this transaction. The reason "
+    + "is below."],
+  ["sent", "Waiting for a block", "The payment went to the network. Check it here before you make "
+    + "another payment."],
+  ["sendFailed", "The send failed", "Read the error below, then send it again."],
+  ["proved", "Ready to send", "Sending is a separate step. This browser checks the transaction "
+    + "again before it sends it."],
+  ["proving", "Building the proof", "A signer's browser builds the proof. It takes about a "
+    + "minute."],
+  ["signed", "Ready for the proof", "Any signer can build the proof now."],
+  ["signing", "Signing", "The devices that approved sign while this wallet is open on them."],
+  ["mine", "Your approval is needed", "Check the recipient, amount, network and fee before you "
+    + "approve. An approval sends nothing."],
+];
+const WAITING = { title: "Waiting for approvals",
+  detail: "You can close this and come back. Opening it makes no new payment." };
+
+/**
+ * The headline of a payment drawer, from facts that the drawer already reads.
+ * @param {object} f landed, ended, check (the engine cannot say that it expired), error, rejected
+ *   (this browser refuses the transaction), refused (the send step refuses it), sent, sendFailed,
+ *   proved, proving, signed, signing, mine (this browser can approve it): true or false each.
+ * @returns {{title: string, detail: string}}
+ */
+export function stageHeadline(f) {
+  const hit = HEADLINES.find(([fact]) => f[fact] === true);
+  return hit ? { title: hit[1], detail: hit[2] } : WAITING;
+}

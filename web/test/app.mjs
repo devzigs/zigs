@@ -2374,15 +2374,28 @@ const sealed = (gid, rel, seat, fields, key, names = ["by", "sig"]) =>
         && textOf(x).includes("In a block"))[0].className;
       assert.match(blockStep(landedA), /In a blockA synced block holds the payment\./);
       assert.equal(stepClass(landedA), "step done");
+      // The headline above the steps names the state; the steps that wait show their number.
+      const headline = (ss) =>
+        textOf(all(t.sessionLayer(ss), (x) => x.className === "pay-status")[0]);
+      const current = (ss) => all(t.sessionLayer(ss), (x) => x.attrs?.["aria-current"] === "step")
+        .map(textOf);
+      assert.match(headline(landedA), /^In a blockA block that this browser synced holds/);
       answer = () => ({ state: "unknown", txid: "tx-a", why: "it may still land" });
       at(4500100);
       assert.match(blockStep(landedA), /In a blockNo synced block holds it yet\./);
       assert.equal(stepClass(landedA), "step now", "a sent mark is no block");
       assert.match(blockStep(signedA), /In a blockAfter the send\./);
       assert.equal(stepClass(signedA), "step ");
+      assert.match(headline(landedA), /^Waiting for a block/, "sent, and no block holds it yet");
+      assert.match(current(landedA).join(), /In a blockNo synced block holds it yet/,
+        "the step that waits is the current step");
+      assert.match(headline(signedA), /^Ready for the proof/);
+      assert.deepEqual(all(t.sessionLayer(signedA), (x) => x.className === "tick").map(textOf)
+        .slice(3), ["4", "5", "6"], "the steps that wait show their number");
       at(4503460);
       assert.match(blockStep(landedA), /In a blockNo synced block holds it\./,
         "past its expiry it waits for no block");
+      assert.match(headline(landedA), /^Check the payment/, "only the engine can say expired");
       t.setChain({ ...t.chain, cw: null });
       assert.match(blockStep(landedA), /In a blockThis browser has not checked the blocks since/,
         "before a sync the page does not say that no block holds it");

@@ -22,6 +22,7 @@ import {
 import { discussion } from "./app-thread.js";
 import { nameOf, zecName } from "./zns.js";
 import { render } from "./app-loop.js";
+import { stageHeadline } from "./payment-model.js";
 
 // The expiry of an open payment, or why an expired one ends here. The engine counts from the
 // last sync, so the time since that sync comes off. A height from saved state gives no time.
@@ -284,13 +285,13 @@ function sessionDrawer(ss) {
     el("div", { class: "drawer-body" },
       leavesHead(ss, ins && !refused ? ins : null),
       refused ? el("div", { class: "callout bad" }, "Your browser refuses this payment: " + ins.error) : null,
+      guard(timeline, ss, refused),
       guard(expiryLine, ss),
       guard(recipientBox, ss, rc),
       lostApproval(ss),
       holdCard(ss),
       changedNote(ss),
       ins && !refused ? guard(breakdown, ins) : null,
-      guard(timeline, ss, refused),
       guard(discussion, ss),
       ss.final ? guard(txDetails, ss) : null,
       ss.broadcastTxid ? chainSees() : null,
@@ -378,11 +379,34 @@ function signatureText(ss, approvals, shared) {
   return "Signing · " + shared + " of " + signers.length + " shares. " + next + WHERE;
 }
 
+// The headline of the payment, from the facts that the steps below show. `rejected`: this
+// browser refuses the transaction itself (its decode).
+function headline(ss, rejected) {
+  const { title, detail } = stageHeadline({
+    landed: landed(ss), ended: ended(ss), check: signingSeen(ss) && expired(ss),
+    error: !!ss.error, rejected: !!rejected, refused: refusedSend(ss), sent: !!ss.broadcastTxid,
+    sendFailed: !!ss.broadcastError, proved: !!ss.final,
+    proving: ss.status === "proving" && !proofStalled(ss), signed: !!ss.signed,
+    signing: !!ss.package, mine: approvers(ss).length > 0,
+  });
+  return el("div", { class: "pay-status", role: "status" }, el("h3", {}, title),
+    el("p", { class: "small muted" }, detail));
+}
+
+// The numbered steps of a payment, under its headline. The current step is the step of the list.
 function timeline(ss, refused) {
   const g = state.g, approvals = Object.keys(state.commits).length;
   const signers = signersOf(ss), shared = signers.filter((i) => state.shares[i]).length;
-  const tl = (cls, title, body) => el("div", { class: "step " + cls }, el("span", { class: "tick" }, cls === "done" ? "✓" : cls === "bad" ? "!" : "•"), el("div", { style: "display:grid;gap:6px;min-width:0" }, el("h3", {}, title), body));
-  return el("div", { class: "steps" },
+  let n = 0;
+  const mark = (cls) => (cls === "done" ? "✓" : cls === "bad" ? "!" : String(n));
+  const tl = (cls, title, body) => {
+    n += 1;
+    return el("li", { class: "step " + cls, "aria-current": cls === "now" ? "step" : null },
+      el("span", { class: "tick", "aria-hidden": "true" }, mark(cls)),
+      el("div", { style: "display:grid;gap:6px;min-width:0" }, el("h3", {}, title), body));
+  };
+  return el("section", { class: "stage-panel", "aria-label": "Steps of the payment" },
+    headline(ss, refused), el("ol", { class: "steps" },
     tl("done", "Proposed", el("p", {}, when(ss.createdAt))),
     tl(approvals >= g.t ? "done" : refused ? "bad" : "now", "Approvals · " + Math.min(approvals, g.t) + " of " + g.t + " needed",
       approverChips()),
@@ -396,7 +420,7 @@ function timeline(ss, refused) {
           : el("p", {}, ss.final ? "Any signer can send the finished transaction." : "Available after the proof."),
         ss.broadcastError && !ss.broadcastTxid
           ? el("div", { class: "callout bad" }, ss.broadcastError) : null)),
-    tl(blockStep(ss), "In a block", el("p", {}, blockText(ss))));
+    tl(blockStep(ss), "In a block", el("p", {}, blockText(ss)))));
 }
 
 // The last step, from this browser's synced blocks only: a sent mark does not say that a block
