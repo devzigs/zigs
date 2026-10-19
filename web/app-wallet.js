@@ -22,7 +22,7 @@ import {
   cancelMove, chainReady, ended, expired, heldApprovals, isOpen, landed, proposeMove, sendBlocker,
   signingSeen,
 } from "./app-payments.js";
-import { finishStep } from "./app-drawer.js";
+import { finishStep, refusedSend } from "./app-drawer.js";
 import { BUCKETS, bucketOf, emptyState, solLine } from "./approvals-model.js";
 import { messagesCard } from "./app-thread.js";
 import { openBackup, staleRestoreNote } from "./app-backups.js";
@@ -499,11 +499,11 @@ export function inboxRows() {
 
 function inboxBucket(ss, held) {
   try {
-    const end = ended(ss);
+    const end = ended(ss), step = finishStep(ss);
     return bucketOf({
       landed: landed(ss), held: !!ss.error && held.has(ss.id),
-      check: !end && signingSeen(ss) && expired(ss),
-      review: needsMyApproval(state.gid, ss), step: finishStep(ss), ended: end,
+      check: refusedSend(ss, step) || (!end && signingSeen(ss) && expired(ss)),
+      review: needsMyApproval(state.gid, ss), step, ended: end,
       error: !!ss.error, status: ss.status,
     });
   } catch (e) {

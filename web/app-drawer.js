@@ -16,8 +16,8 @@ import {
   approvalKept, approve, broadcastTx, cancelPayment, ended, expired, expiryAt, expiryOf, finalizeTx,
   heldApprovals, holdEnd, inspectOf, landed, releaseHold,
   approvalChanged, noApproval, priorityTimes, proofStalled, proposeAgain, recipientCheck, resendTx,
-  signingLost, signingSeen,
-  sinceOf, txidOf, verdict,
+  sendRefusal, signingLost, signingSeen,
+  approvedTxid, chainReady, sinceOf, verdict,
 } from "./app-payments.js";
 import { discussion } from "./app-thread.js";
 import { nameOf, zecName } from "./zns.js";
@@ -178,13 +178,21 @@ export function finishStep(ss) {
 // (see expiryLine).
 const unsendable = (ss) => !ss.final || expiryOf(ss)?.expired || landed(ss);
 
+// A send step that this browser refuses (sendRefusal): its button is off, and the inbox lists
+// the payment under "Needs attention".
+export const refusedSend = (ss, step = finishStep(ss)) => (step === "send" || step === "resend")
+  && !!sendRefusal(ss);
+
 export function finishButtons(ss) {
   const step = finishStep(ss);
   if (step === "proof") return [bigButton("Build proof", act(() => finalizeTx(ss)))];
-  if (step === "resend") return [bigButton("Send again", act(() => resendTx(ss)))];
-  if (step !== "send") return [];
+  if (step !== "send" && step !== "resend") return [];
+  const why = sendRefusal(ss), note = why ? [el("p", { class: "send-why" }, why)] : [];
+  if (step === "resend") {
+    return [bigButton("Send again", act(() => resendTx(ss)), { disabled: !!why }), ...note];
+  }
   return [bigButton(ss.broadcastError ? "Send again" : "Send to network",
-    act(() => broadcastTx(ss)), { disabled: !curChain() })];
+    act(() => broadcastTx(ss)), { disabled: !curChain() || !!why }), ...note];
 }
 
 // A sent payment that no block holds after this long may be lost: offer to send it again.
@@ -386,12 +394,25 @@ function timeline(ss, refused) {
       el("div", { style: "display:grid;gap:8px" },
         ss.broadcastTxid ? el("p", {}, when(ss.broadcastAt) + " · ", el("a", { href: curNet().explorer + ss.broadcastTxid, target: "_blank", rel: "noopener" }, "View in explorer ↗"))
           : el("p", {}, ss.final ? "Any signer can send the finished transaction." : "Available after the proof."),
-        ss.broadcastError && !ss.broadcastTxid ? el("div", { class: "callout bad" }, ss.broadcastError) : null)));
+        ss.broadcastError && !ss.broadcastTxid
+          ? el("div", { class: "callout bad" }, ss.broadcastError) : null)),
+    tl(blockStep(ss), "In a block", el("p", {}, blockText(ss))));
+}
+
+// The last step, from this browser's synced blocks only: a sent mark does not say that a block
+// holds the payment, and before a sync the page does not know.
+const blockStep = (ss) => landed(ss) ? "done" : ss.broadcastTxid ? "now" : "";
+function blockText(ss) {
+  if (landed(ss)) return "A synced block holds the payment.";
+  if (!ss.broadcastTxid) return "After the send.";
+  return chainReady(curChain()) ? "No synced block holds it yet. It waits for the next block."
+    : "This browser has not checked the blocks since the send yet.";
 }
 
 export function txDetails(ss) {
   const size = Number.isFinite(ss.final.size) ? fmtInt(ss.final.size) + " bytes" : "unknown";
-  const id = txidOf(ss);
+  // The id that the send step checks (sendRefusal), so a false id never sits next to a Send.
+  const id = approvedTxid(ss);
   const falseId = id && id !== ss.final.txid ? el("div", { class: "callout bad" }, "The finished "
     + "transaction names the id " + short(String(ss.final.txid), 12) + ", but the proposal gives "
     + "the id " + short(id, 12) + ". One signer's device wrote one of them alone. Check the "

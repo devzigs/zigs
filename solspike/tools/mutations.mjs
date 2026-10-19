@@ -22,6 +22,8 @@ const patch = (file, from, to = "") => ({ file, from, to });
 const SOL_APP = ["node", "web/test/sol-app.mjs"];
 const SOL_CEREMONY = ["node", "web/test/sol-ceremony.mjs"];
 const UNIFIED = ["node", "web/test/unified-setup.mjs"];
+const APP_TEST = ["node", "web/test/app.mjs"];
+const PAYMENTS = "web/app-payments.js";
 const AUTO_HINT = "  (c) => c.host.state.g?.solana === true && !c.host.state.g.movedTo,\n";
 const AUTO_DOCS = "(c) => !!c.loaded.solstart && !c.docs.solstart[1] && c.wait === 0,";
 const HINT_FIRST = '  await sdb.doc("groups/" + gid).update({ solana: true });\n' +
@@ -1277,4 +1279,11 @@ export const MUTATIONS = [
   program("C-settlement", "the commitment of a withdrawal hashes no settlement accounts",
     ["web/sol/prepare.js", 'const settled = recipient === null ? "" : SOL_INTERFACE + recipient;',
       'const settled = "";'], PREPARE_TEST, /AssertionError/),
+  mutant("Z-send-guard", "a finished transaction with another id goes to the network", APP_TEST,
+    [patch(PAYMENTS, "  if (why) throw new Error(why);\n  const gid = state.gid, ref",
+      "  const gid = state.gid, ref")], { detect: /AssertionError/, ms: 300000 }),
+  mutant("Z-send-compare", "the send step takes the id of a rewritten proposal", APP_TEST,
+    [patch(PAYMENTS, "  return ss.final?.txid === want ? null : SEND_OTHER;",
+      "  return ss.final?.txid !== want ? null : SEND_OTHER;")],
+    { detect: /AssertionError/, ms: 300000 }),
 ];

@@ -354,7 +354,29 @@ export async function cancelMove() {
   showBanner("ok", "Move cancelled. This wallet stays as it is.");
 }
 
+// The id that the finished transaction must have: of the PCZT whose sighash a seat of this
+// browser approved (afterOf), else of the proposal. Null when it cannot be read.
+export const approvedTxid = (ss) => markOf(state.gid, ss.id).approved
+  ? txidOf({ pczt: afterOf(ss) }) : txidOf(ss);
+
+// Null when the finished transaction has the approved id, else why it does not go out. Nothing
+// that cannot be read goes out.
+// ponytail: compares the `final.txid` that one seat wrote, not the bytes of `tx_hex`. The full
+// check needs an engine call that computes the id of a finished transaction from its bytes.
+export function sendRefusal(ss) {
+  const want = approvedTxid(ss);
+  if (!want) return SEND_UNREAD;
+  return ss.final?.txid === want ? null : SEND_OTHER;
+}
+const SEND_UNREAD = "This browser cannot read the approved transaction, so it does not send the "
+  + "finished one.";
+const SEND_OTHER = "The finished transaction has another id than the approved one, so this "
+  + "browser does not send it. Check the payment with the other signers.";
+
 export async function broadcastTx(ss) {
+  // Before the try: a refusal writes no error into the payment.
+  const why = sendRefusal(ss);
+  if (why) throw new Error(why);
   const gid = state.gid, ref = sdb.doc(sessionPath(ss, gid));
   try {
     if (!isStr(ss.final.tx_hex) || !isStr(ss.final.txid)) {
@@ -504,6 +526,8 @@ async function freshTip() {
 // A sent payment that no block holds yet keeps the wallet's notes until it expires. A node can
 // drop it, so any signer can send the same transaction again. The sent mark stays as it is.
 export async function resendTx(ss) {
+  const why = sendRefusal(ss);
+  if (why) throw new Error(why);
   await broadcastAnywhere(ss.final.tx_hex);
   showBanner("ok", "Sent again. It confirms with the next block.");
 }

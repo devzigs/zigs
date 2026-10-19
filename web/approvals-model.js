@@ -18,10 +18,11 @@ const UNDER_WAY = new Set(["collecting", "signing", "signed", "proving", "comple
  * The bucket of one payment, or null when it is finished (the Activity list keeps it).
  * @param {object} f held: it has an error and an approval here still holds its notes (the S7
  *   card of the drawer); check: the signing started, it did not end, and the engine says it
- *   expired (the "Check" chip); review: a seat here can approve it (needsMyApproval, the count of
- *   the badge); landed: a block holds it; ended: it ended (the "Expired" chip); error: cancelled,
- *   failed or refused (the drawer offers no step); step: the next step that a signer here can
- *   take (finishStep); status: the status of the payment document.
+ *   expired (the "Check" chip), or this browser refuses its send step (refusedSend); review: a
+ *   seat here can approve it (needsMyApproval, the count of the badge); landed: a block holds
+ *   it; ended: it ended (the "Expired" chip); error: cancelled, failed or refused (the drawer
+ *   offers no step); step: the next step that a signer here can take (finishStep); status: the
+ *   status of the payment document.
  * @returns {string | null}
  */
 export function bucketOf(f) {

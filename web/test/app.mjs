@@ -295,6 +295,14 @@ const sealed = (gid, rel, seat, fields, key, names = ["by", "sig"]) =>
   const statusOf = (id) => t.state.sessions.find((x) => x.id === id)?.status;
   await waitFor("failed", () => statusOf(second.id) === "failed");
 
+  // The third payment has a PCZT of its own, which the engine decodes: its id is the id of the
+  // finished transaction (fakeZ.finalize).
+  const decode3 = { sighash: "s3", txid: "T1", tx_version: "V5", spends: [], lines: [] };
+  const z3 = { ...fakeZ,
+    inspect: (p, f) => (p === "P3" ? JSON.stringify(decode3) : fakeZ.inspect(p, f)) };
+  t.setZ(z3);
+  t.setChain({ ...t.chain, cw: { createSpend: async () => JSON.stringify({ ...spend, pczt: "P3" }),
+    free() {} } });
   const third = await propose("third", 3);
   const path3 = `groups/${gid}/sessions/${third.id}`;
   const put = async (name, f, prefer, extra) => {
@@ -311,12 +319,20 @@ const sealed = (gid, rel, seat, fields, key, names = ["by", "sig"]) =>
   await waitFor("complete", () => live().status === "complete");
   assert.equal(live().final.txid, "T1");
   assert.equal(typeof data.get(path3).finalSig, "string");
-  class Sent { async broadcast() { return JSON.stringify({ txid: "T1" }); } free() {} }
-  t.setZ({ ...fakeZ, ChainWallet: Sent });
+  let sends = 0;
+  class Sent { async broadcast() { sends += 1; return JSON.stringify({ txid: "T1" }); } free() {} }
+  t.setZ({ ...z3, ChainWallet: Sent });
   t.setChain({ gid, bal: {}, sent: new Set(), syncing: true, cw: null });
+  // A finished transaction with another id goes nowhere, and the payment keeps no error of it.
+  for (const send of [t.broadcastTx, t.resendTx]) {
+    await assert.rejects(send({ ...live(), final: { ...live().final, txid: "T2" } }),
+      /another id than the approved one/);
+  }
+  assert.deepEqual([sends, data.get(path3).broadcastError, data.get(path3).sentBy],
+    [0, undefined, undefined], "no send, no error, no sent mark");
   await t.broadcastTx(live());
   await waitFor("sent", () => live().status === "broadcast");
-  assert.deepEqual([live().broadcastTxid, data.get(path3).sentBy >= 1], ["T1", true]);
+  assert.deepEqual([live().broadcastTxid, data.get(path3).sentBy >= 1, sends], ["T1", true, 1]);
   assert.equal(t.state.ignored, 0, "nothing of an honest wallet is ignored");
 
   let checkingSession = null;   // a payment that readSession marked "checking" (the M5 block)
@@ -1676,8 +1692,9 @@ const sealed = (gid, rel, seat, fields, key, names = ["by", "sig"]) =>
       "with a signing package, shares can make a transaction: no Propose again");
     await t.putSec(t.state.gid, signer, { nonces });
 
-    const sentOne = { id: "x2", pczt: "EXP1", status: "broadcast", signed: "s", broadcastTxid: "t5",
-      final: { txid: "t5", tx_hex: "00" }, broadcastAt: Date.now() };
+    const sentOne = { id: "x2", pczt: "EXP1", status: "broadcast", signed: "s",
+      broadcastTxid: "realtx",
+      final: { txid: "realtx", tx_hex: "00" }, broadcastAt: Date.now() };
     t.state.sessions.push(sentOne);
     // The bucket of the Approvals inbox that holds a payment, or null.
     const bucket = (ss) =>
@@ -1687,7 +1704,18 @@ const sealed = (gid, rel, seat, fields, key, names = ["by", "sig"]) =>
     assert.equal(bucket(sentOne), "waiting", "the inbox: a sent payment waits for its block");
     sentOne.broadcastAt = Date.now() - 11 * 60 * 1000;
     assert.deepEqual(labels(t.finishButtons(sentOne)), ["Send again"]);
+    assert.equal(t.finishButtons(sentOne)[0].attrs.disabled, undefined);
     assert.equal(bucket(sentOne), "ready", "the inbox: Send again is the next step");
+    // A finished transaction whose id is not the id of the proposal: Send again is off with its
+    // reason, and the inbox lists the payment under attention, not as ready.
+    const otherId = { ...sentOne, id: "x2b", final: { txid: "t5", tx_hex: "00" } };
+    t.state.sessions.push(otherId);
+    const [again, why] = t.finishButtons(otherId);
+    assert.deepEqual([textOf(again), again.attrs.disabled], ["Send again", ""]);
+    assert.match(textOf(why), /another id than the approved one/);
+    assert.equal(t.refusedSend(otherId), true);
+    assert.equal(bucket(otherId), "attention", "the inbox agrees with the drawer");
+    t.state.sessions.splice(t.state.sessions.indexOf(otherId), 1);
     tipAt(4503453);
     assert.deepEqual(t.finishButtons(sentOne), [], "a node refuses it now");
     assert.match(textOf(t.expiryLine(sentOne)), /can no longer go to the network/);
@@ -1727,7 +1755,13 @@ const sealed = (gid, rel, seat, fields, key, names = ["by", "sig"]) =>
     assert.equal(bucket(sentOne), null, "the inbox: a sent payment in a block is finished");
     assert.equal(t.expiryLine(unmarkedOne), null);
     tipAt(4500000);
-    assert.deepEqual(labels(t.finishButtons(unmarkedOne)), ["Send again"]);
+    // Its finished transaction names another id than the proposal: the drawer that shows the
+    // false id above sends nothing.
+    const [resend, refused] = t.finishButtons(unmarkedOne);
+    assert.deepEqual([textOf(resend), resend.attrs.disabled], ["Send again", ""]);
+    assert.match(textOf(refused), /another id than the approved one/);
+    assert.deepEqual(labels(t.finishButtons({ ...unmarkedOne,
+      final: { txid: "realtx", tx_hex: "00" } })), ["Send again"]);
     tipAt(4500000, new Set(["realtx"]));
     assert.deepEqual(t.finishButtons(unmarkedOne), [], "no Send again for a payment on chain");
     t.state.sessions.splice(t.state.sessions.indexOf(sentOne), 1);
@@ -1832,6 +1866,16 @@ const sealed = (gid, rel, seat, fields, key, names = ["by", "sig"]) =>
       put(signedA);
       t.noteSessions();
       assert.equal(t.sawSigning(t.state.gid, "za"), true, "this browser saw the signing start");
+      // The send step takes the id of the approved PCZT, never the id of a rewritten proposal.
+      const finished = (txid) => ({ ...signedA, final: { txid, tx_hex: "00" } });
+      assert.equal(t.sendRefusal(finished("tx-a")), null, "the approved transaction goes out");
+      assert.match(String(t.sendRefusal(finished("tx-b"))), /another id than the approved one/,
+        "the rewritten proposal does not");
+      assert.deepEqual(callouts(t.txDetails(finished("tx-a"))), [],
+        "the drawer shows no false id next to a Send that goes out");
+      assert.match(callouts(t.txDetails(finished("tx-b"))).join(" "), /names the id tx-b/);
+      assert.match(String(t.sendRefusal({ id: "zq", pczt: "PX", final: { txid: "tx-x" } })),
+        /cannot read the approved transaction/, "nothing unreadable goes out");
       answer = (p, sg, a) => a === "aa" && p === "PA"
         ? { state: "expired", txid: "tx-a", why: "it expired and its notes are unspent" }
         : { state: "unknown", txid: null, why: "no" };
@@ -2113,6 +2157,20 @@ const sealed = (gid, rel, seat, fields, key, names = ["by", "sig"]) =>
       at(4500100, new Set(["tx-a"]));
       assert.equal(t.inFlight().includes(rewrittenSent), false, "the approved one landed");
       assert.doesNotMatch(String(t.sendBlocker()), /waiting for its block/);
+      // The last step of the drawer, "In a block", from the synced blocks of this browser only.
+      const landedA = { ...signedA, broadcastTxid: "tx-a", final: { txid: "tx-a", tx_hex: "00" },
+        broadcastAt: 1 };
+      const blockStep = (ss) => textOf(t.sessionLayer(ss));
+      assert.match(blockStep(landedA), /In a blockA synced block holds the payment\./);
+      answer = () => ({ state: "unknown", txid: "tx-a", why: "it may still land" });
+      at(4500100);
+      assert.match(blockStep(landedA), /In a blockNo synced block holds it yet\./);
+      assert.match(blockStep(signedA), /In a blockAfter the send\./);
+      t.setChain({ ...t.chain, cw: null });
+      assert.match(blockStep(landedA), /In a blockThis browser has not checked the blocks since/,
+        "before a sync the page does not say that no block holds it");
+      answer = () => ({ state: "done", txid: "tx-a", why: "a synced block holds it" });
+      at(4500100, new Set(["tx-a"]));
 
       // A browser that did not approve keeps no tie and shows what t seats signed. A sent payment
       // frees its notes by height, and one whose signed transaction a block holds is "Sent" and

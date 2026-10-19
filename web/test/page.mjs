@@ -35,6 +35,7 @@ export const NAMES = [
   "openDoc",
   "once", "openGroup", "openSession", "otherMessages", "persistPersonal", "persistSealed",
   "personal", "personalCard", "prepareSpend", "proposeReviewed", "keepDraft", "sweepDrafts",
+  "resendTx", "sendRefusal", "refusedSend",
   "pickServer",
   "personalError", "personalPending", "priorityTimes", "proposalFields", "proposeAgain", "proposer",
   "proposeRequest", "proposeWallets", "putSec", "raw", "rawInbox",
