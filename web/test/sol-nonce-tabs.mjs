@@ -27,8 +27,10 @@ function browser(sol) {
     let mem = copy(store.sol);
     const host = {
       sec: () => ({ sol: mem }),
+      // As the page does: memory changes first, then the save, which fails while `full` is set.
       async putSec(_gid, _seat, patch) {
         mem = patch.sol;
+        if (host.full) return false;
         await tick();
         store.sol = copy(mem);
         return true;
@@ -91,6 +93,24 @@ const signer = (made, pkg) => (e) => {
   assert.equal(store.sol.backupSaved, true, "and saves its own record");
 }
 
+// ── A late write at the same time as a spend: the lock of putSol orders them ──
+{
+  const { store, tab } = browser({ nonces: { s1: entry } });
+  const [a, b] = [tab(), tab()];
+  let took;
+  const inside = new Promise((done) => (took = done));
+  const takeA = a.host.takeStored;
+  a.host.takeStored = async () => {
+    await takeA();
+    took();
+  };
+  const spending = shareOnce(a, 1, "s1", signer([], "P1"));
+  await inside; // the first tab holds the lock and read storage
+  await Promise.all([spending, putSol(b.host, "G", 1, { backupSaved: true })]);
+  assert.equal(store.sol.nonces.s1, undefined, "a write during the spend keeps the nonce spent");
+  assert.equal(store.sol.backupSaved, true, "and both changes are saved");
+}
+
 // ── A share that waits, a share that is not ready, a refused share, a failed save ──
 {
   // s0: a made share waits, and a stale write brought its nonces back.
@@ -109,10 +129,11 @@ const signer = (made, pkg) => (e) => {
   assert.equal(store.sol.nonces.s1, undefined, "and deletes the nonces");
   await saveNonces(a, 1, "s3", entry);
   const full = tab();
-  full.host.putSec = async () => false;
+  full.host.full = true;
   await assert.rejects(() => shareOnce(full, 1, "s3", signer(made, "P3")), /used nonce/);
-  assert.ok(store.sol.nonces.s3, "a failed save keeps the nonces");
-  assert.equal(pendingShare(a, 1, "s3"), undefined, "and keeps no share to send");
+  assert.ok(store.sol.nonces.s3, "a failed save keeps the nonces in storage");
+  assert.equal(pendingShare(full, 1, "s3"), undefined, "and memory keeps no share to send");
+  assert.ok(savedNonces(full, 1, "s3"), "and memory keeps the nonces");
 }
 
 console.log("sol-nonce-tabs: ok");

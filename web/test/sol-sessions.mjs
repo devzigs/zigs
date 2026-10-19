@@ -26,7 +26,7 @@ import {
   pinsHex,
   wireBase64,
 } from "../sol/intent.js";
-import { clearPending, pendingShare, savedNonces, spendNonces, usedDigest } from "../sol/nonces.js";
+import { clearPending, pendingShare, savedNonces, usedDigest } from "../sol/nonces.js";
 import { propose } from "../sol/propose.js";
 import { putSol, remoteStop, stopOf } from "../sol/secrets.js";
 import {
@@ -815,8 +815,7 @@ step("a third nonce account landed after a lost share publish");
     throw new Error("disk full");
   };
   await assert.rejects(() => approve(c, ssOf(third), 2), /Could not save the approval/);
-  const share = () => spendNonces(c, 2, third, { digest: "d".repeat(64) }, "s");
-  await assert.rejects(share, /Could not save the used nonce/);
+  // A failed save of a spent nonce: web/test/sol-nonce-tabs.mjs.
   localStorage.setItem = setItem;
   assert.equal(data.has(path(gid, `solsessions/${third}/commits/2`)), false, "nothing went out");
   await clearPending(c, 2, third);
@@ -970,9 +969,12 @@ const file = J(Z.backupOpen(PASS, backed.at(-1).data));
   assert.equal(typeof doc.sig, "string");
   await waitFor("the document is read", () => c.docs.solabort[2]);
   // A browser that holds seat 1 only reads it and stops too.
+  // Storage holds what memory holds: each Solana write takes the stored seats first.
+  const saveMemory = () => localStorage.setItem("zf-secrets", JSON.stringify(t.secrets));
   const away = { 2: t.secrets[gid + ":2"], 3: t.secrets[gid + ":3"] };
   delete t.secrets[gid + ":2"];
   delete t.secrets[gid + ":3"];
+  saveMemory();
   notify();
   await sleep(200);
   assert.deepEqual(t.localSeats(), [1]);
@@ -990,6 +992,7 @@ const file = J(Z.backupOpen(PASS, backed.at(-1).data));
   assert.equal(t.secrets[gid + ":1"].sol, undefined, "nothing was restored");
   t.secrets[gid + ":1"].sol = sol;
   Object.assign(t.secrets, { [gid + ":2"]: away[2], [gid + ":3"]: away[3] });
+  saveMemory();
   notify();
 }
 

@@ -15,18 +15,30 @@ export const solOf = (host, gid, seat) => host.sec(gid, seat)?.sol ?? {};
  */
 export const putSol = (host, gid, seat, patch) =>
   host.exclusive("secrets", async () => {
-    await host.takeStored();
+    try {
+      await host.takeStored();
+    } catch (e) {
+      host.log?.("Solana save refused: storage did not read: " + String(e?.message ?? e));
+      return false;
+    }
     return putSolHeld(host, gid, seat, patch);
   });
 
-/** putSol for a step that holds the lock of the secrets already: the lock is not reentrant. */
-export function putSolHeld(host, gid, seat, patch) {
-  const next = { ...solOf(host, gid, seat) };
+/**
+ * putSol for a step that holds the lock of the secrets already: the lock is not reentrant. putSec
+ * changes memory before it saves, so a failed save gives memory the old values back: no step acts
+ * on a change that storage does not hold, such as a spent nonce whose share would go out.
+ */
+export async function putSolHeld(host, gid, seat, patch) {
+  const before = host.sec(gid, seat)?.sol;
+  const next = { ...before };
   for (const [key, value] of Object.entries(patch)) {
     if (value === null) delete next[key];
     else next[key] = value;
   }
-  return host.putSec(gid, seat, { sol: next });
+  if (await host.putSec(gid, seat, { sol: next })) return true;
+  await host.putSec(gid, seat, { sol: before });
+  return false;
 }
 
 /** True when the seat holds a finished Solana key share. */

@@ -27,9 +27,10 @@ export const pendingShare = (c, seat, sid) => part(c, seat, "pending")[sid];
 // Each change runs under the lock of the secrets, after this tab took what storage holds now, as
 // the Zcash nonces do (app-payments.js). The secrets are one record that each tab writes whole, so
 // two tabs that change it at once undo each other, and a nonce that one tab burned comes back.
-// Every other Solana write takes the same lock (putSol). ponytail: the Zcash writes of a backup,
-// a room, the ceremony and the account take no lock, so a stale tab can still write old Solana
-// records back through them (ZEC-12).
+// Every other Solana write takes the same lock (putSol). The lock holds across the tabs with Web
+// Locks only (app-kit.js). ponytail: every other save of the record takes no lock (ZEC-12: Zcash
+// steps, a backup, a restore, a room, the account, the chats, the wallet keys, a seat field such
+// as solAuto), so a stale tab can still write old Solana records back through them.
 const locked = (c, run) =>
   c.host.exclusive("secrets", async () => {
     await c.host.takeStored();
@@ -87,10 +88,6 @@ const spent = (c, seat, sid, entry, share) => () => ({
   pending: { ...part(c, seat, "pending"), [sid]: { share, digest: entry.digest } },
 });
 const dropped = (c, seat, sid) => () => ({ nonces: without(part(c, seat, "nonces"), sid) });
-
-/** Saves a made share as spent (rule 2) on its own. shareOnce does it inside its lock. */
-export const spendNonces = (c, seat, sid, entry, share) =>
-  save(c, seat, spent(c, seat, sid, entry, share), SPEND_FAILED);
 
 /**
  * Makes the share of seat `seat` for session `sid` at most once in this browser, also across its

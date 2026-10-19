@@ -13,7 +13,7 @@ import { agreement } from "./ceremony.js";
 import { CLUSTER, base58 } from "./docs.js";
 import { signingBlock, writerSeats } from "./gate.js";
 import { bytesOf, chainHex, decodeIntent, wireBase64 } from "./intent.js";
-import { clearPending, pendingShare, savedNonces, shareOnce } from "./nonces.js";
+import { approvedBodies, clearPending, pendingShare, savedNonces, shareOnce } from "./nonces.js";
 import { BLOCKHASH_MS, REREAD_MS, deviceSeen, inputsOf, showable, stampSeen } from "./approve.js";
 import { PAYMENT_EXPIRED, maybeExecute, pastExpiry } from "./execute.js";
 import { solOf, stopOf } from "./secrets.js";
@@ -191,9 +191,11 @@ async function makeShare(c, ss, i) {
   const seen = isPayment(ss) ? await deviceSeen(c, ss) : null;
   const made = await shareOnce(c, i, ss.id, (entry) => {
     const round = roundOf(c, ss, i, entry);
-    return round === null ? null : J(shareAnswer(c, ss, i, { entry, round, seen }));
+    // The approved bodies come from what storage holds now, inside the lock.
+    const now = seen && { ...seen, approved: approvedBodies(c) };
+    return round === null ? null : J(shareAnswer(c, ss, i, { entry, round, seen: now }));
   });
-  if (made?.refused) {
+  if (made && "refused" in made) {
     await failSession(c, ss, "A signer did not sign: " + errorText(made.refused));
     throw made.refused;
   }
