@@ -333,17 +333,45 @@ function solChoice() {
       el("span", { class: "small muted" }, SOL_DISCLOSURE)));
 }
 
+// The parts of the dialog. A new wallet shows them in numbered sections; a change of signers keeps
+// its steps first. The ids are the ones that the tests and the harness fill.
+const names = (from) => [nameField("my-name"),
+  el("label", { class: "field" }, el("span", {}, from ? "New wallet name" : "Wallet name"),
+    el("input", { class: "input", id: "g-name", name: "name", maxlength: "40",
+      placeholder: from ? from.name : "Team treasury", autocomplete: "off",
+      "data-first-focus": !from }))];
+// `note`: the id of the line that says what the numbers mean, for a screen reader.
+const number = (label, id, name, value, note) => el("label", { class: "field" },
+  el("span", {}, label), el("input", { class: "input", id, name, type: "number", min: "2",
+    max: "7", value: String(value), "aria-describedby": note ?? null }));
+const counts = (n0, t0, note) => el("div", { class: "two" },
+  number("Signers", "g-n", "n", n0, note), number("Approvals needed", "g-t", "t", t0, note));
+const moveParts = (from, nameParts, ruleParts) => [el("ol", { class: "small muted move-steps" },
+  el("li", {}, "You create a new wallet with the signers and rule you want."),
+  el("li", {}, "The new signers join it with an invite link."),
+  el("li", {}, "This wallet sends all its funds to the new one. Like any payment, this needs "
+    + from.t + " approvals.")),
+...nameParts, ...ruleParts];
+const guideStep = (title, ...kids) => el("fieldset", { class: "guide-step" },
+  el("legend", {}, title), ...kids);
+// With every signer needed, one lost device stops the wallet: the dialog says so.
+export const marginText = (t, n) => (t === n ? "Each payment needs every signer. When one "
+  + "device is lost, the wallet cannot pay until its seat comes back from its backup file." : "");
+
 // With `from`, the dialog creates the wallet that replaces `from`, with new signers or a new rule.
 export function createDialog(from = null) {
   const close = () => { ui.create = false; ui.move = false; ui.sol = undefined; render(); };
   const n0 = from ? from.n : 3, t0 = from ? from.t : 2;
   const rule = el("p", { class: "rule", id: "rule-text" }, ruleText(t0, n0));
+  const margin = el("p", { class: "small muted", id: "margin-text", role: "status" },
+    marginText(t0, n0));
   const off = offOf({ db: !!db }, "why-create-submit");
   const update = () => {
     const n = Number(document.getElementById("g-n")?.value), t = Number(document.getElementById("g-t")?.value);
     const ok = n >= 2 && n <= 7 && t >= 2 && t <= n;
     rule.textContent = ok ? ruleText(t, n) : "Choose 2 to 7 signers, and at least 2 approvals but no more than the signers.";
     rule.classList.toggle("bad", !ok);
+    margin.textContent = ok ? marginText(t, n) : "";
   };
   const f = el("form", { class: "dialog", role: "dialog", "aria-modal": "true", "aria-labelledby": "create-title", oninput: update, onsubmit: act(async (ev) => {
     const fd = new FormData(ev.target); const n = Number(fd.get("n")), t = Number(fd.get("t"));
@@ -359,18 +387,10 @@ export function createDialog(from = null) {
     if (withSol) await planSolana(gid);
   }) },
     el("div", { class: "card-head" }, el("h2", { id: "create-title" }, from ? "Change signers" : "New shared wallet"), el("button", { class: "icon-btn", type: "button", "aria-label": "Close", onclick: close }, "×")),
-    from ? el("ol", { class: "small muted move-steps" },
-      el("li", {}, "You create a new wallet with the signers and rule you want."),
-      el("li", {}, "The new signers join it with an invite link."),
-      el("li", {}, "This wallet sends all its funds to the new one. Like any payment, this needs " + from.t + " approvals.")) : null,
-    nameField("my-name"),
-    el("label", { class: "field" }, el("span", {}, from ? "New wallet name" : "Wallet name"), el("input", { class: "input", id: "g-name", name: "name", placeholder: from ? from.name : "Team treasury", maxlength: "40", autocomplete: "off" })),
-    el("div", { class: "two" },
-      el("label", { class: "field" }, el("span", {}, "Signers"), el("input", { class: "input", id: "g-n", name: "n", type: "number", min: "2", max: "7", value: String(n0) })),
-      el("label", { class: "field" }, el("span", {}, "Approvals needed"), el("input", { class: "input", id: "g-t", name: "t", type: "number", min: "2", max: "7", value: String(t0) }))),
-    rule,
-    from ? null : networkPick(),
-    from ? null : solChoice(),
+    ...(from ? moveParts(from, names(from), [counts(n0, t0), rule])
+      : [guideStep("1. Approval rule", counts(n0, t0, "margin-text"), rule, margin),
+        guideStep("2. Names", ...names(from)),
+        guideStep("3. Networks", networkPick(), solChoice())]),
     el("div", { class: "callout" }, from
       ? "The new wallet gets a new address. Signers you leave out can still see this old wallet's payments, but not the new wallet's."
       : "You take seat 1. Then share the invite link with your signers. When every seat is taken, your devices create the wallet key together."),

@@ -23,7 +23,7 @@ const { chatInviteCard } = await import("../app-thread.js");
 const { chats } = await import("../app-keystore.js");
 const { backupWords } = await import("../sol/backup.js");
 const { pendingCount } = await import("../sol/view.js");
-const { createDialog, lobby, renderSide } = await import("../app-shell.js");
+const { createDialog, lobby, marginText, renderSide } = await import("../app-shell.js");
 const { offReason } = await import("../util.js");
 const { intentHex } = await import("../sol/intent.js");
 const { ui } = await import("../app-state.js");
@@ -314,6 +314,8 @@ const link = "https://example.test/#" + gid;
 const plain = { text: pageText(), join: joinText(), invite: inviteMessage(link) };
 assert.equal(t.solLoading, null, "a Zcash-only setup loads no Solana file");
 assert.match(plain.text, /Every signer must keep Zigs open until setup finishes/);
+assert.match(plain.text, /Step 2 of 5: Connect\. Every signer takes a seat/,
+  "the stepper of the setup page: seats are open");
 assert.doesNotMatch(plain.join + plain.invite, /Solana/, "no hint: Zcash only");
 data.set(groupPath(gid), { ...data.get(groupPath(gid)), solana: true });
 rig.notify();
@@ -472,7 +474,7 @@ function dialogTree(from = null) {
     globalThis.document = real;
   }
 }
-const dialogText = () => textOf(dialogTree());
+const dialogText = (from = null) => textOf(dialogTree(from));
 const byId = (node, id) =>
   node.attrs?.id === id ? node : (node.kids ?? []).map((k) => byId(k, id)).find(Boolean) ?? null;
 {
@@ -681,13 +683,14 @@ const byId = (node, id) =>
   await t.putSec(gidW, 1, { checkedWallet: null, rejectedWallet: wallet });
   await planSolana(gidW);
   t.refilter();
+  assert.match(pageText(), /Setup stopped at Prepare\. /, "a seat that rejected the address");
   await sleep(3500);
   assert.equal(data.has(`groups/${gidW}/solstart/1`), false, "no start before Address checked");
   assert.doesNotMatch(t.banner?.text ?? "", /Seat 1 waits/, "and no refusal before it");
   // Who starts the Solana part: seat 1 with the choice, seat 1 of a moved wallet, another seat.
   assert.match(pageText(), /Create the Solana key.*Starts when the Zcash address is checked\./s);
   t.state.g.movedTo = "elsewhere";
-  assert.match(pageText(), /Tap Add Solana on the Solana tab to start it\./, "a moved wallet");
+  assert.match(pageText(), /Tap Add Solana in the Solana section to start it\./, "a moved wallet");
   delete t.state.g.movedTo;
   const seat1 = t.secrets[gidW + ":1"];
   delete t.secrets[gidW + ":1"];
@@ -722,7 +725,7 @@ const byId = (node, id) =>
   await waitFor("the hint", () => t.state.g.solana === true);
   await t.solLoad();
   // Seat 1 has no choice in its own secret (a hint that someone else wrote): it starts by hand.
-  const BY_HAND = /Solana is still setting up.*Tap Add Solana on the Solana tab to start/s;
+  const BY_HAND = /Solana is still setting up.*Tap Add Solana in the Solana section to start/s;
   assert.match(pageText(), BY_HAND);
   await sleep(1500);
   assert.equal(data.has(`groups/${gidH}/solstart/1`), false, "the hint alone starts nothing");
@@ -739,8 +742,8 @@ const byId = (node, id) =>
   t.sol.ctl.docs = docsKept;
   assert.match(broken, /Activity/, "the Overview still shows");
   assert.doesNotMatch(broken, /cannot read/);
-  assert.match(pageText(), /Send Devnet SOL to your fee address on the Solana tab/);
-  assert.match(pageText(), /Open the Solana tab/);
+  assert.match(pageText(), /Send Devnet SOL to your fee address in the Solana section/);
+  assert.match(pageText(), /Open Solana/);
   assert.match(pageText(), /Each signer funds the fee address of their seat on their own device/);
   // The balances of the last read (refreshChain): every fee address of this browser holds SOL.
   t.sol.ctl.chain = { fees: { 1: "0.006 SOL", 2: "0.0025 SOL", 3: "0.0025 SOL" } };
@@ -885,6 +888,58 @@ const byId = (node, id) =>
   assert.deepEqual(await submit(null, null), { auto: false, hint: undefined }, "the box off");
   const old = t.state.g;
   assert.deepEqual(await submit(old, "on"), { auto: false, hint: undefined }, "Change signers");
+}
+
+// ── The stepper: a stop shows its own text at its stage, never a stage on track ──
+{
+  const gidS = t.state.gid;
+  assert.match(pageText(), /Step 2 of 5: Connect\./, "a new wallet waits for its seats");
+  await t.putSec(gidS, 1, { aborted: "A test stop of this device." });
+  assert.match(pageText(), /Setup stopped at Connect\. A test stop of this device\./,
+    "the stop and its text");
+  assert.doesNotMatch(pageText(), /Step 2 of 5/);
+}
+
+// ── The stepper at each stage of a formed wallet; a stop stays at its stage ──
+{
+  await rig.wallet({ name: "Stages" });
+  const keep = { wallet: t.state.wallet, confirm: t.state.confirm, done: t.state.done };
+  try {
+    Object.assign(t.state, { wallet: null, confirm: {} });
+    assert.match(pageText(), /Step 3 of 5: Verify\. /, "every seat taken, no number confirmed");
+    Object.assign(t.state, { confirm: keep.confirm, done: {} });
+    assert.match(pageText(), /Step 4 of 5: Prepare\. /, "the key ceremony runs");
+    Object.assign(t.state, { done: keep.done, wallet: { ...keep.wallet, birthday: undefined } });
+    assert.match(pageText(), /Setup stopped at Prepare\. /, "a wallet with no birthday");
+    assert.doesNotMatch(pageText(), /stopped at Back up/);
+  } finally {
+    Object.assign(t.state, keep);
+  }
+}
+
+// ── The create dialog: numbered sections for a new wallet, the old form for a change ──
+assert.match(dialogText(), /1\. Approval rule.*2\. Names.*3\. Networks/s);
+assert.doesNotMatch(dialogText(t.state.g), /1\. Approval rule/, "Change signers keeps its form");
+assert.equal(marginText(2, 3), "", "a margin: no warning");
+assert.match(marginText(3, 3), /Each payment needs every signer/);
+{
+  // The line of t = n is in the dialog, a screen reader hears it change, and a change of the
+  // numbers updates it. The first focus goes to the wallet name.
+  const dialog = dialogTree();
+  const margin = byId(dialog, "margin-text");
+  assert.equal(margin?.attrs.role, "status");
+  assert.equal(byId(dialog, "g-t").attrs["aria-describedby"], "margin-text");
+  assert.equal(byId(dialog, "g-name").attrs["data-first-focus"], "");
+  assert.equal(byId(dialogTree(t.state.g), "g-name").attrs["data-first-focus"], undefined);
+  byId(dialog, "rule-text").classList = { toggle() {} };
+  const real = globalThis.document;
+  globalThis.document = { getElementById: (id) => ({ value: { "g-n": "3", "g-t": "3" }[id] }) };
+  try {
+    dialog.on.input();
+  } finally {
+    globalThis.document = real;
+  }
+  assert.match(margin.textContent, /Each payment needs every signer/, "update() names the risk");
 }
 
 console.log("unified-setup: ok");
