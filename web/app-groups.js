@@ -19,6 +19,7 @@ import { startAccount } from "./app-account.js";
 import { render } from "./app-loop.js";
 import { resetSolStart, sol, solWatch } from "./app-sol.js";
 import { confirmedNetwork } from "./app-dkg.js";
+import { dropReview } from "./app-send.js";
 
 export let db = null, sdb = null, user = null, downloads = null, me = null, canWrite = null, dbReady = false;
 export function setDb(v) { sdb = v; db = v; }
@@ -202,8 +203,10 @@ export function openGroup(gid) {
   sol?.close();
   closeSession();
   watchOnly([]);
-  // A form filled from a request belongs to the wallet it was made for.
+  // A form filled from a request belongs to the wallet it was made for, and a review to the
+  // wallet that built it.
   if (ui.sendFor && ui.sendFor !== gid) { ui.send = false; ui.pay = null; ui.note = ""; }
+  dropReview();
   ui.after = null;   // the notes of an expired payment of the wallet that was open
   ui.backup = null;   // the dialog names a seat of the wallet that was open
   dropChain();

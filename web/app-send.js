@@ -358,12 +358,18 @@ function draftLine() {
   return el("p", { class: "small faint" }, "Draft saved on this device for 24 hours. ",
     el("button", { class: "btn ghost sm", type: "button", onclick: discard }, "Discard draft"));
 }
-// Each close of Send starts a new run: a build that ends after a close opens no review.
+// Each close of Send and each change of wallet starts a new run: a build that ends after it
+// opens no review.
 let sendRun = 0;
+/** Drops the review and any build in flight: their Send closed, or their wallet closed. */
+export function dropReview() {
+  sendRun += 1;
+  ui.sendReview = null;
+}
 /** Closes Send and drops its review: a review never comes back after its dialog closed. */
 export function endSend() {
-  sendRun += 1;
-  Object.assign(ui, { send: false, sendReview: null, draftFailed: false });
+  dropReview();
+  Object.assign(ui, { send: false, draftFailed: false });
 }
 /** Builds the transaction of the form and opens its review, unless Send closed meanwhile. */
 export async function openReview(payees, note) {

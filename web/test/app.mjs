@@ -995,7 +995,9 @@ const sealed = (gid, rel, seat, fields, key, names = ["by", "sig"]) =>
   // write is signed for the first wallet, with its key and its id.
   data.set(`groups/${B}`, { name: "B", n: 2, t: 2, version: 2 });
   t.gkeys = { ...t.gkeys, [B]: "k".repeat(43) };
+  t.ui.sendReview = { prep: { gid }, note: "of wallet A" };
   t.openGroup(B);
+  assert.equal(t.ui.sendReview, null, "a review stays with the wallet that built it");
   await waitFor("wallet B", () => t.state.gid === B);
   assert.equal(t.signedMode(B), false);
   await t.failSession(gid, { id: second.id }, "Late failure.");
@@ -1623,6 +1625,8 @@ const sealed = (gid, rel, seat, fields, key, names = ["by", "sig"]) =>
       assert.equal(failed.on.click, t.keepDraft, "a click saves too: Remove, Max, Use this list");
       t.endSend();
       assert.equal(t.ui.draftFailed, false, "a close forgets the failure of that form");
+      Object.assign(t.ui, { draftFailed: true, pay: null });
+      assert.doesNotMatch(textOf(t.sendDialog()), /could not be saved/, "so does a new form");
       // A form that a payment request filled is no draft of the person: it saves nothing and
       // offers no Discard, so Cancel keeps the person's own draft.
       Object.assign(t.ui, { pay: [{ k: 9, to: "utest1request", amt: "1", memo: "" }],
