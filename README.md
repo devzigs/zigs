@@ -72,7 +72,7 @@ coin. The runbook of a demo with three devices is in [docs/demo.md](docs/demo.md
 3. Open **Trying Zigs alone? Play the other seats in this browser** and click **Play seat 2**.
    The two seats create the key together. Within half a minute the wallet opens, and both seats
    show **Address checked**.
-4. Click **Receive** and copy the address. Then click **Get testnet ZEC**: it opens the Valar
+4. Click **Receive** and copy the address. Then click **faucet** in its notice: it opens the Valar
    faucet, which pays 0.125 TAZ to a `utest1…` address, once for each IP address and once for
    each address every 24 hours. On a shared network, such as a venue or an office, only the first
    person gets coins. The faucet lists each payout in public, with a short form of the address and

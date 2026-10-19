@@ -366,11 +366,15 @@ export const receiveWhat = () => curNet().cap ? "ZEC" : "testnet ZEC";
 export const receiveLimit = () => curNet().cap ? " Keep the total under " + capText(curNet().cap)
   + ". The app warns at that level and cannot block deposits." : "";
 
+/** The note of a wallet that moved: its senders must use the address of the new wallet. */
+export const movedNote = () => el("div", { class: "callout" }, "This wallet moved to "
+  + groupName(state.g.movedTo) + ". Ask senders to use the new wallet's address.");
+
 function receiveCard() {
   const w = state.wallet;
   return el("section", { class: "card card-pad" },
     el("div", { class: "card-head" }, el("h2", {}, "Receive"), el("span", { class: "badge ok plain" }, "Private address")),
-    state.g.movedTo ? el("div", { class: "callout" }, "This wallet moved to " + groupName(state.g.movedTo) + ". Ask senders to use the new wallet's address.")
+    state.g.movedTo ? movedNote()
       : atCap() ? capNote()
       : el("p", { class: "small muted" }, "Share this address to receive " + receiveWhat()
         + ". Payments to it are shielded." + receiveLimit()),
@@ -438,8 +442,9 @@ function receivedRow(r) {
   return el("a", { class: "row-item", href: curNet().explorer + r.txid, target: "_blank", rel: "noopener", title: "View in explorer" },
     el("span", { class: "tx-ico in", "aria-hidden": "true" }, "↙"),
     el("span", { class: "ri-main" },
-      el("span", { class: "ri-title" }, "Received"),
-      el("span", { class: "ri-sub" }, "Block " + r.height.toLocaleString()),
+      el("span", { class: "ri-title" }, "Received ZEC"),
+      el("span", { class: "ri-sub" }, "Zcash " + curNet().label + " · block\u00a0"
+        + r.height.toLocaleString()),
       memos.map((m) => el("span", { class: "ri-memo" + (m === null ? " faint" : "") },
         m === null ? "Memo is not text" : m)),
       memos.length ? el("span", { class: "ri-sub" }, ON_CHAIN) : null,
