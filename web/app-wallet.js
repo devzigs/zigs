@@ -32,8 +32,8 @@ import { openSend } from "./app-send.js";
 import { setupView, solSetupCard, solUnfinished } from "./app-setup.js";
 import { themeChoice } from "./app-theme.js";
 import {
-  sol, solBackup, solBalance, solError, solFile, solLoad, solLoading, solOn, solPending, solSetup,
-  solSync, solTab, solUnsaved,
+  sol, solBackup, solBalance, solError, solFile, solLoad, solLoading, solLoadingCount,
+  solOlderCount, solOn, solPending, solPendingRows, solSetup, solSync, solTab, solUnsaved,
 } from "./app-sol.js";
 import { pendingShortcut, solRow, zecInProgress, zecTotal } from "./overview-model.js";
 import { protectionRisk, recoveryState } from "./recovery-model.js";
@@ -70,7 +70,7 @@ export const walletShown = () => !!state.g && !state.g.unreadable && !!groupVers
 // A note for any wallet version: the store shows another network than the first this device saw.
 const networkNote = () => state.g.networkMoved ? el("div", { class: "callout bad", role: "alert" },
   "The store shows another network than the first this browser saw. Zigs keeps the first. "
-  + "Ask your signers.") : null;
+  + "Ask the other people who use this wallet.") : null;
 
 const NO_SIGNING_WALLET = "This wallet needs signatures, and this browser cannot check them. "
   + "Use a current Chrome, Edge, Firefox or Safari.";
@@ -80,11 +80,11 @@ function signedNotes() {
   if (!signedMode(state.gid)) return null;
   const mute = localSeats().filter((i) => !canWriteAs(i));
   const lost = mute.length ? el("div", { class: "callout bad", role: "alert" },
-    "This browser has no signing key for seat " + mute.join(", ") + ", so it cannot write to "
-    + "this wallet. Restore a backup of the seat.") : null;
+    "This browser has no signing key for device " + mute.join(", ") + ", so it cannot write to "
+    + "this wallet. Restore the backup file of that device.") : null;
   const moved = state.g.shapeMoved ? el("div", { class: "callout bad", role: "alert" },
-    "The store shows another number of signers or approval rule than the first this browser saw. "
-    + "Zigs keeps the first. Ask your signers.") : null;
+    "The store shows another number of devices or approval rule than the first this browser "
+    + "saw. Zigs keeps the first. Ask the other people who use this wallet.") : null;
   const ignored = state.ignored ? el("p", { class: "small faint" }, IGNORED_NOTE) : null;
   return lost || moved || ignored
     ? el("div", { style: "display:grid;gap:8px" }, lost, moved, ignored) : null;
@@ -104,7 +104,7 @@ export function walletSections() {
       countBadge(toApprove(state.gid).length + solPending(), "to approve", "attn")],
     ["activity", "Activity"],
     ["messages", "Messages", countBadge(unreadIn(state.gid), "unread", "note")],
-    ["members", "Signers"], ["recovery", "Recovery"], ["details", "Details"],
+    ["members", "Devices"], ["recovery", "Recovery"], ["details", "Details"],
   ];
   if (solOn()) sections.push(["solana", "Solana", countBadge(solPending(), "to approve", "attn")]);
   return sections;
@@ -149,9 +149,9 @@ function groupHead(g, ready, why) {
       el("div", { class: "ph-meta" },
         netBadge(g),
         el("span", { class: "badge plain", title: ruleText(g.t, g.n) },
-          g.t + " of " + g.n + " signers must approve"),
+          "Any " + g.t + " of " + g.n + " devices"),
         el("span", { class: "stack" }, seatIds().map((i) => avatar(i))),
-        el("span", {}, seated + " of " + g.n + " signers joined"),
+        el("span", {}, seated + " of " + g.n + " devices joined"),
         g.movedFrom
           ? el("span", {}, "Replaces " + ((old || {}).name || "an older wallet")) : null)),
     ready ? el("div", { class: "ph-actions wallet-actions" }, ...walletActions(why)) : null);
@@ -225,7 +225,10 @@ export function moveState(c) {
   const to = state.g.movedTo;
   const ss = state.sessions.find((x) => x.move === to && !x.error && !ended(x));
   const b = c && c.bal ? balanceNow(c.bal) : null;
-  if (!gkeys[to]) return { text: "A signer started moving this wallet to a new one. If you are one of its signers, ask them for its invite link." };
+  if (!gkeys[to]) {
+    return { text: "Someone started moving this wallet to a new one. If one of your devices is "
+      + "in the new wallet, ask its creator for its invite link." };
+  }
   if (!ready[to]) return { text: groupName(to) + " is still setting up. When its address is ready, move the funds here.", open: to };
   if (ss && !ss.broadcastTxid) return { text: "Moving the funds to " + groupName(to) + " is in progress. Open the payment to approve it or take the next step.", session: ss };
   if (ss && inFlight().includes(ss)) return { text: "The funds are on their way to " + groupName(to) + ". They arrive with the next block.", open: to };
@@ -237,7 +240,7 @@ function moveCard(c) {
   const m = moveState(c), why = m.propose ? sendBlocker() : null;
   const started = state.sessions.some((x) => x.move === state.g.movedTo && !x.error && !ended(x));
   return el("section", { class: "card card-pad " + (m.done ? "" : "attention") },
-    el("div", { class: "card-head" }, el("h2", {}, m.done ? "This wallet moved" : "Changing signers"),
+    el("div", { class: "card-head" }, el("h2", {}, m.done ? "This wallet moved" : "Changing devices"),
       m.done ? el("span", { class: "badge plain" }, "Closed") : null),
     el("p", { class: "small muted" }, m.text),
     el("div", { style: "display:flex;gap:8px;flex-wrap:wrap" },
@@ -250,7 +253,7 @@ function moveCard(c) {
 
 function signersCard() {
   return el("section", { class: "card card-pad" },
-    el("div", { class: "card-head" }, el("h2", {}, "Signers"),
+    el("div", { class: "card-head" }, el("h2", {}, "Devices"),
       el("button", { class: "btn ghost sm", type: "button", onclick: () => { ui.tab = "members"; render(); } }, "Manage")),
     el("p", { class: "small muted" }, ruleText(state.g.t, state.g.n)),
     el("div", { class: "signer-list" }, seatIds().map((i) => el("span", { class: "signer" },
@@ -334,7 +337,7 @@ const SOL_NOTE = {
   idle: "Open Solana to load the Solana part of this wallet.",
   none: "This wallet has no Solana part yet. Open Solana to add it.",
   unavailable: "This wallet cannot have a Solana part. Open Solana to see why.",
-  differs: "The seats do not agree on one Solana key. Do not use the Solana part. Open Solana for "
+  differs: "The devices do not agree on one Solana key. Do not use the Solana part. Open Solana for "
     + "the details.",
   unknown: "Open Solana to see the state of its part.",
 };
@@ -366,20 +369,25 @@ export const receiveWhat = () => curNet().cap ? "ZEC" : "testnet ZEC";
 export const receiveLimit = () => curNet().cap ? " Keep the total under " + capText(curNet().cap)
   + ". The app warns at that level and cannot block deposits." : "";
 
+/** The note of a wallet that moved: its senders must use the address of the new wallet. */
+export const movedNote = () => el("div", { class: "callout" }, "This wallet moved to "
+  + groupName(state.g.movedTo) + ". Ask senders to use the new wallet's address.");
+
 function receiveCard() {
   const w = state.wallet;
   return el("section", { class: "card card-pad" },
     el("div", { class: "card-head" }, el("h2", {}, "Receive"), el("span", { class: "badge ok plain" }, "Private address")),
-    state.g.movedTo ? el("div", { class: "callout" }, "This wallet moved to " + groupName(state.g.movedTo) + ". Ask senders to use the new wallet's address.")
+    state.g.movedTo ? movedNote()
       : atCap() ? capNote()
       : el("p", { class: "small muted" }, "Share this address to receive " + receiveWhat()
         + ". Payments to it are shielded." + receiveLimit()),
     addrHidden() ? null : el("div", { class: "addr-box" }, el("span", { class: "hex" }, short(w.address, 18)), copyBtn(w.address)),
-    el("p", { class: "small faint" }, verifiedCount() + " of " + state.g.n + " signers checked this address against their own key."));
+    el("p", { class: "small faint" }, verifiedCount() + " of " + state.g.n + " devices checked "
+      + "this address against their own key."));
 }
 
 export function syncLine(c) {
-  if (!c) return el("div", { class: "sync" }, el("span", {}, el("span", { class: "dot" }), "Sync starts after your seat checks the address."));
+  if (!c) return el("div", { class: "sync" }, el("span", {}, el("span", { class: "dot" }), "Sync starts after this device checks the address."));
   const p = c.prog || c.bal;
   const span = p ? p.tip - c.birthday : 0;
   const pct = span > 0 ? Math.max(0, Math.min(100, ((p.height - c.birthday) / span) * 100)) : 0;
@@ -407,7 +415,7 @@ function activityRows(list) {
   if (!list.length) {
     return el("div", { class: "empty", style: line }, el("h3", {}, "No activity yet"),
       el("p", { class: "small" },
-        "Money you receive and payments your signers propose show up here."));
+        "Money you receive and payments that this wallet proposes show up here."));
   }
   // One list of sent payments for the whole draw: a row does not walk all sessions again.
   const flying = new Set(inFlight());
@@ -431,15 +439,16 @@ function sentRow(ss, flying) {
 }
 
 // The memos of a received payment, for display. A memo that is not text says so.
-export const ON_CHAIN = "On chain · shared with all signers";
+export const ON_CHAIN = "On chain · shared with all devices";
 
 function receivedRow(r) {
   const memos = memoTexts(r);
   return el("a", { class: "row-item", href: curNet().explorer + r.txid, target: "_blank", rel: "noopener", title: "View in explorer" },
     el("span", { class: "tx-ico in", "aria-hidden": "true" }, "↙"),
     el("span", { class: "ri-main" },
-      el("span", { class: "ri-title" }, "Received"),
-      el("span", { class: "ri-sub" }, "Block " + r.height.toLocaleString()),
+      el("span", { class: "ri-title" }, "Received ZEC"),
+      el("span", { class: "ri-sub" }, "Zcash " + curNet().label + " · block\u00a0"
+        + r.height.toLocaleString()),
       memos.map((m) => el("span", { class: "ri-memo" + (m === null ? " faint" : "") },
         m === null ? "Memo is not text" : m)),
       memos.length ? el("span", { class: "ri-sub" }, ON_CHAIN) : null,
@@ -454,14 +463,11 @@ function receivedRow(r) {
 // payment; the drawer keeps every action. Empty buckets do not show.
 function approvalsTab() {
   const rows = inboxRows(), sol = solInbox(), flying = new Set(inFlight());
-  // The Solana line joins a bucket as one row; for review it counts each proposal.
-  const solNote = (id) => sol && sol.kind === id ? el("p", { class: "row-note" }, sol.text,
-    " ", openSolanaButton()) : null;
   const sections = BUCKETS.map(([id, label]) => {
-    const list = rows[id], extra = solNote(id);
+    const list = rows[id], extra = solExtra(sol, id);
     const lost = id === "attention" ? lostNote(rows.lost) : null;
     if (!list.length && !extra && !lost) return null;
-    const count = list.length + (extra ? (id === "review" ? solPending() : 1) : 0)
+    const count = list.length + (Array.isArray(extra) ? extra.length : extra ? 1 : 0)
       + (lost ? rows.lost.length : 0);
     return el("section", { class: "card inbox", "aria-label": label },
       el("div", { class: "card-head card-pad" }, el("h2", {}, label),
@@ -484,8 +490,27 @@ const lostNote = (ids) => ids.length ? el("p", { class: "row-note" }, ids.length
   : ids.length + " payments that you approved have no record here any more. Send stays held "
     + "until they can no longer go on chain.") : null;
 
+const openSolana = () => { ui.tab = "solana"; render(); };
 const openSolanaButton = () => el("button", { class: "btn sm", type: "button",
-  onclick: () => { ui.tab = "solana"; render(); } }, "Open Solana");
+  onclick: openSolana }, "Open Solana");
+
+// The Solana part of a bucket: in review, one row for each proposal that waits for this browser
+// (the rule of the count); else, or while the list is empty, the one line of solLine. A row opens
+// the Solana section, which holds the Approve buttons, as a Zcash row opens its drawer.
+function solExtra(line, id) {
+  if (!line || line.kind !== id) return null;
+  const list = id === "review" ? solPendingRows() : [];
+  return list.length ? list.map(solInboxRow)
+    : el("p", { class: "row-note" }, line.text, " ", openSolanaButton());
+}
+const solInboxRow = (r) => el("button", {
+  class: "row-item", type: "button", "data-key": "sol-" + r.id, onclick: openSolana,
+},
+el("span", { class: "tx-ico out", "aria-hidden": "true" }, "↗"),
+el("span", { class: "ri-main" }, el("span", { class: "ri-title" }, r.title),
+  el("span", { class: "ri-sub" }, "Solana Devnet · proposed by seat " + r.by)),
+el("span", { class: "ri-end" }, el("span", { class: "badge warn" }, "Your approval")),
+el("span", { class: "chev" }, "›"));
 
 // The payments of the open wallet by bucket. A payment whose facts cannot be read lands in
 // "attention", never out of the list. `lost`: the ids of approvals here that still hold Send
@@ -521,7 +546,8 @@ function inboxBucket(ss, held) {
 }
 
 const solInbox = () => solLine({ on: solOn(), error: solError, loading: !!(sol || solLoading),
-  setup: solSetup(), toApprove: solPending() });
+  setup: solSetup(), toApprove: solPending(), reading: solLoadingCount(),
+  older: solOlderCount() });
 
 const INBOX_EMPTY = {
   failed: "The payments of this wallet could not be read. Reload the page.",
@@ -553,15 +579,16 @@ function activityTab() {
 function membersTab() {
   return el("div", { class: "page", style: "gap:16px" },
     el("section", { class: "card" },
-      el("div", { class: "card-pad", style: "padding-bottom:14px" }, el("div", { class: "card-head" }, el("h2", {}, "Signers"), el("span", { class: "small muted" }, ruleText(state.g.t, state.g.n)))),
+      el("div", { class: "card-pad", style: "padding-bottom:14px" }, el("div", { class: "card-head" }, el("h2", {}, "Devices"), el("span", { class: "small muted" }, ruleText(state.g.t, state.g.n)))),
       el("div", { style: "border-top:1px solid var(--line)" },
         seatIds().map((i) => guard(memberRow, i)))),
     changeSignersCard(),
     el("section", { class: "card card-pad" },
       el("h2", { style: "font-size:15px" }, "Invite link"),
-      el("p", { class: "small muted" }, "Signers open this wallet on another device with this "
-        + "invite link and their key share backup. The link contains the wallet secret, so share "
-        + "it only with signers. " + senderNote("each signer")),
+      el("p", { class: "small muted" }, "To use a device of this wallet in another browser, open "
+        + "this invite link there and restore the backup file of its key share. The link holds "
+        + "the wallet secret, so share it only with the people who use this wallet. "
+        + senderNote("each person who opens it")),
       el("div", { class: "addr-box" }, el("span", { class: "hex nowrap" }, inviteLink(state.gid)), copyBtn(inviteLink(state.gid), "Copy link")),
       secretQr(inviteLink(state.gid))));
 }
@@ -570,12 +597,13 @@ function membersTab() {
 function changeSignersCard() {
   const moving = !!state.g.movedTo;
   return el("section", { class: "card card-pad" },
-    el("h2", { style: "font-size:15px" }, "Add or remove signers"),
-    el("p", { class: "small muted" }, "The signers and the approval rule are part of the wallet key, so they cannot change in place. "
-      + "To change them, create a new wallet with the signers you want, then move the funds to it."),
+    el("h2", { style: "font-size:15px" }, "Add or remove devices"),
+    el("p", { class: "small muted" }, "The devices and the approval rule are part of the wallet "
+      + "key, so they cannot change in place. To change them, create a new wallet with the devices "
+      + "you want, then move the funds to it."),
     el("div", {}, moving
       ? el("button", { class: "btn", type: "button", onclick: () => { ui.tab = "overview"; render(); } }, "See the move")
-      : el("button", { class: "btn", type: "button", disabled: !localSeats().length, onclick: () => { ui.move = true; render(); } }, "Change signers")));
+      : el("button", { class: "btn", type: "button", disabled: !localSeats().length, onclick: () => { ui.move = true; render(); } }, "Change devices")));
 }
 
 function seatBadge(i) {
@@ -589,11 +617,18 @@ const keyBackupButton = (i) => el("button", {
   class: "btn sm", type: "button", onclick: () => openBackup(i),
 }, "Back up key share");
 
+// The line under a device: its number, unless its title is "Device N" already, and when it joined.
+function memberSub(i, s) {
+  const joined = s ? "joined " + when(s.at) : "";
+  if (seatTitle(i, s) !== "Device " + i) return "Device " + i + (joined && " · " + joined);
+  return joined && "J" + joined.slice(1);
+}
+
 function memberRow(i) {
   const s = state.seats[i], mine = s && seatMine(i) && sec(state.gid, i);
   const title = el("span", { class: "ri-title" }, seatTitle(i, s),
     mine ? el("span", { class: "you" }, "You") : null);
-  const sub = el("span", { class: "ri-sub" }, "Seat " + i + (s ? " · joined " + when(s.at) : ""));
+  const sub = el("span", { class: "ri-sub" }, memberSub(i, s));
   const backup = mine && sec(state.gid, i).keyPackage ? keyBackupButton(i) : null;
   return el("div", { class: "member" }, avatar(i, "lg"), el("div", { class: "ri-main" }, title, sub),
     el("div", { class: "m-actions" }, seatBadge(i), backup));
@@ -634,8 +669,8 @@ const RECOVERY_LIMITS = "Zigs knows only the files that this browser saved. It c
   + "both. This section covers your seats in this wallet only: each other wallet has its own, "
   + "the personal account has its own backup file, and direct chats are in no backup file.";
 const lostText = (t, sol) => "Keep the devices that still work, and do not delete their data. "
-  + "While " + t + " signers remain, they can move the Zcash funds to a new wallet (Signers, "
-  + "Change signers)" + (sol ? "; a Solana part does not move this way" : "") + ". With fewer, "
+  + "While " + t + " devices remain, they can move the Zcash funds to a new wallet (Devices, "
+  + "Change devices)" + (sol ? "; a Solana part does not move this way" : "") + ". With fewer, "
   + "first restore seats from their files. Zigs cannot go around the approval rule. A lost "
   + "device can still hold its key share, so move the funds when you can.";
 
@@ -681,16 +716,16 @@ function appearanceCard() {
 function checkedBadge() {
   const rejected = rejectedSeats(), ver = verifiedCount(), n = state.g.n;
   if (rejected.length) {
-    const text = "Seat " + rejected.join(", ") + " rejected this wallet";
+    const text = "Device " + rejected.join(", ") + " rejected this wallet";
     return el("span", { class: "badge bad" }, text);
   }
-  return el("span", { class: "badge " + (ver === n ? "ok" : "") }, ver + " of " + n + " signers");
+  return el("span", { class: "badge " + (ver === n ? "ok" : "") }, ver + " of " + n + " devices");
 }
 
 function walletFacts() {
   const w = state.wallet, net = curNet();
   const address = addrHidden()
-    ? el("dd", {}, "Shown after your seat checks it against your key share.")
+    ? el("dd", {}, "Shown after this device checks it against its key share.")
     : el("dd", {}, el("div", { class: "addr-full" }, addrGroups(w.address)),
       el("div", { style: "margin-top:8px" }, copyBtn(w.address, "Copy address")));
   return el("section", { class: "card card-pad" },
@@ -698,7 +733,7 @@ function walletFacts() {
     el("dl", { class: "kv" },
       el("dt", {}, "Address"), address,
       el("dt", {}, "Approval rule"),
-      el("dd", {}, "Any " + state.g.t + " of " + state.g.n + " signers"),
+      el("dd", {}, "Any " + state.g.t + " of " + state.g.n + " devices"),
       el("dt", {}, "Checked by"), el("dd", {}, checkedBadge()),
       el("dt", {}, "Network"), el("dd", {}, "Zcash " + net.label.toLowerCase()
         + (net.cap ? " · warning at " + capText(net.cap) : "")),
@@ -707,11 +742,11 @@ function walletFacts() {
       usesV2(groupVersion()) ? [el("dt", {}, "Key setup"),
         el("dd", {}, "Built to ZIP 2005 (Proposed) so that funds can be recovered if quantum "
           + "computers break today's keys.")] : null,
-      signedMode(state.gid) ? [el("dt", {}, "Signed writes"), el("dd", {}, "Each signer signs the "
+      signedMode(state.gid) ? [el("dt", {}, "Signed writes"), el("dd", {}, "Each device signs the "
         + "data it writes to this wallet. Zigs ignores data without a valid signature.")] : null),
     groupVersion() === 1 ? el("p", { class: "small muted", style: "margin-top:12px" },
       "This wallet was made before quantum recoverability (ZIP 2005). To get it, move the funds "
-      + "to a new wallet with Change signers.") : null);
+      + "to a new wallet with Change devices.") : null);
 }
 
 function privacyCard() {

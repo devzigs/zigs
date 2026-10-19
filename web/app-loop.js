@@ -18,7 +18,7 @@ import { personal } from "./app-account.js";
 import { chatView, newChatDialog } from "./app-thread.js";
 import { backupDialog, closeBackup, restoreDialog, settleRestore } from "./app-backups.js";
 import { contactDialog, contactView } from "./app-account-view.js";
-import { createDialog, loadingView, lobby, lockView, renderSide } from "./app-shell.js";
+import { createDialog, endCreate, loadingView, lobby, lockView, renderSide } from "./app-shell.js";
 import { sessionLayer } from "./app-drawer.js";
 import { solPending, solReact } from "./app-sol.js";
 import { groupView } from "./app-wallet.js";
@@ -177,8 +177,8 @@ function pageView() {
     }, "← Wallets");
     return el("div", { class: "page" }, back,
       el("div", { class: "card empty" }, el("h3", {}, "This wallet has data this app cannot read"),
-        el("p", { class: "small" }, "Another signer may use a newer version of Zigs. "
-          + "Reload the page, or ask them.")));
+        el("p", { class: "small" }, "A device of this wallet may run a newer version of Zigs. "
+          + "Reload the page, or ask the other people who use this wallet.")));
   }
 }
 
@@ -299,9 +299,9 @@ const DIALOGS = [
   [(open) => ui.backup && (open || ui.backup.personal), closeBackup, () => backupDialog()],
   [(open) => ui.send && open, endSend, () => sendDialog()],
   [(open) => ui.receive && open, () => ui.receive = false, () => receiveDialog()],
-  [() => ui.create && !state.gid, () => ui.create = false, () => createDialog()],
+  [() => ui.create && !state.gid, endCreate, () => createDialog()],
   [() => ui.contactAdd && !!personal, () => ui.contactAdd = false, () => contactDialog()],
-  [(open) => ui.move && open, () => ui.move = false, () => createDialog(state.g)],
+  [(open) => ui.move && open, endCreate, () => createDialog(state.g)],
 ];
 
 function buildLayers() {
@@ -325,7 +325,7 @@ document.addEventListener("keydown", (ev) => {
   if (ev.key !== "Escape") return;
   if (state.sid) closeSession();
   else {
-    endSend(); ui.create = false; ui.receive = false; ui.move = false; ui.newChat = false;
+    endSend(); endCreate(); ui.receive = false; ui.newChat = false;
     ui.contactAdd = false;
     closeBackup();
   }

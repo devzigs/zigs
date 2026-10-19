@@ -156,7 +156,7 @@ Tor Browser hides your IP address from both servers, but not this timing link. T
 link, point the app at a light-wallet server you trust (`NETWORKS` in `web/app-chain.js`,
 `ZcashNetwork` in `ios/Zigs/Chain.swift`).
 
-The link **Get testnet ZEC** opens the Valar testnet faucet (faucet.testnet.valargroup.dev) in a
+The **faucet** link of Receive opens the Valar testnet faucet (faucet.testnet.valargroup.dev) in a
 new tab. That site is not Zigs. It sees your IP address and the address that you paste, so it can
 link the two. Its public status lists each payout with a short form of the address, the
 transaction id, the amount and the time. It pays once for each IP address and once for each

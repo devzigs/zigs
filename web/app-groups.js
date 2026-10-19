@@ -109,7 +109,7 @@ export async function boot() {
     showBanner("bad", "The group server is not available. Reload the page, or try again later.");
     return;
   }
-  if (!me) showBanner("bad", "This browser cannot tell who you are, so you cannot take a seat.");
+  if (!me) showBanner("bad", "This browser cannot tell who you are, so you cannot join.");
   if (canWrite === false) showBanner("bad", "This page is read-only here. You cannot take part.");
   if (!storageOk) showBanner("bad", "This browser does not let the page save your key share. Keep this tab open, and use Back up.");
   // The server keeps each wallet apart, so this browser opens the wallets it has keys for.

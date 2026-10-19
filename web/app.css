@@ -353,6 +353,18 @@ a.row-item { text-decoration: none; }
 .step.done .tick { background: var(--ok); border-color: var(--ok); color: var(--panel); }
 .step.now .tick { border-color: var(--accent); color: var(--accent-text); box-shadow: 0 0 0 4px var(--accent-soft); }
 .step.bad .tick { background: var(--bad); border-color: var(--bad); color: var(--panel); }
+/* The Solana section: its ids and links (88 characters, no space) wrap on a phone. */
+.sol-view { min-width: 0; overflow-wrap: anywhere; }
+.sol-view h4 { margin: 4px 0 0; font-size: 14px; font-weight: 600; }
+/* A Solana proposal: the same steps, smaller, and the amount above its approval screen. */
+.sol-steps .step { padding-bottom: 12px; }
+.sol-steps .step:last-child { padding-bottom: 0; }
+.step-text { display: grid; gap: 2px; min-width: 0; align-self: center; }
+.sol-hero { display: grid; gap: 4px; padding-bottom: 12px; border-bottom: 1px solid var(--line); }
+.sol-amount {
+  font-size: 28px; font-weight: 600; letter-spacing: -0.02em; font-variant-numeric: tabular-nums;
+  overflow-wrap: anywhere;
+}
 .step h3 { font-size: 14.5px; letter-spacing: -0.01em; padding-top: 4px; }
 .step p { color: var(--muted); font-size: 13px; }
 .seat-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 10px; }
@@ -688,13 +700,12 @@ body:has(.dialog), body:has(.drawer) { overflow: hidden; }
 }
 @media (max-width: 520px) { .stage-bar li { font-size: 11px; } }
 
-/* The numbered sections of the create dialog. */
-.guide-step { display: grid; gap: 12px; min-width: 0; margin: 0; padding: 0; border: 0; }
-.guide-step > legend { padding: 0 0 4px; font: 600 13px/1.4 var(--sans); color: var(--muted); }
-/* The section legend names the network choice; its own legend stays for screen readers. */
-.guide-step .net-pick > legend {
-  position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%);
-}
+/* The steps of the create dialog: one step shows at a time. */
+.guide-step { display: grid; gap: 12px; min-width: 0; }
+.guide-step[hidden] { display: none; }
+.guide-step > h3 { font-size: 18px; line-height: 1.3; }
+.margin-ack { display: grid; gap: 8px; justify-items: start; }
+.margin-ack[hidden] { display: none; }
 
 /* The welcome card of an empty wallet list. */
 .welcome h2 { font-size: clamp(24px, 3.2vw, 32px); line-height: 1.15; letter-spacing: -0.035em; }

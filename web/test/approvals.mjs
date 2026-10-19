@@ -93,5 +93,15 @@ assert.match(solLine({ on: true, setup: ready, toApprove: 2 }).text, /^2 Solana 
 const none = solLine({ on: true, setup: ready, toApprove: 0 });
 assert.equal(none.kind, "info");
 assert.match(none.text, /waits for your approval/, "it speaks of your approval only");
+assert.deepEqual(solLine({ on: true, setup: ready, toApprove: 0, reading: 1 }),
+  { kind: "loading", text: "A Solana proposal is loading. Open Solana." },
+  "a proposal that this device still reads: no claim that nothing waits");
+assert.equal(solLine({ on: true, setup: ready, toApprove: 1, reading: 1 }).kind, "review",
+  "a proposal to approve comes first");
+assert.match(solLine({ on: true, setup: ready, toApprove: 0, older: 2 }).text,
+  / 2 older Solana proposals are not listed here or in Solana\.$/, "older ones are not hidden");
+assert.match(solLine({ on: true, setup: ready, toApprove: 1, older: 1 }).text,
+  /^1 Solana proposal waits.* 1 older Solana proposal is not listed/);
+assert.equal(solLine({ on: true, setup: ready, toApprove: 0, older: 0 }).text, none.text);
 console.log("ok  the Solana line");
 console.log("approvals: ok");

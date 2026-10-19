@@ -702,7 +702,8 @@ the web, on iPhone and on Mac at the same time.
   ChainSafe.
 
 - **Main screens.**
-  - Wallet list, and a "Create wallet" form (name, *t*, *n*, network).
+  - Wallet list, and a "New shared wallet" dialog in steps: the rule (*t* of *n*), the names and
+    the network, then a review before the wallet is made.
   - Invite card with the link and a QR code.
   - Setup steps: signers join, create the key together, check the address. A version 2 or 3
     wallet shows a safety number card before the three steps.
@@ -905,7 +906,7 @@ received payments yet. The engine has the calls for them.
   server learns which transactions pay the wallet. A payment whose memo is not read yet shows
   "Memo not read yet" while the switch is on. A received memo shows on the Activity row of its
   payment. It also shows as a message in the Messages tab of the wallet, with the label "On chain
-  · shared with all signers". It has no sender and no signature. The app never calls it verified
+  · shared with all devices". It has no sender and no signature. The app never calls it verified
   or private. The app shows control characters and bidirectional marks of the text as U+FFFD, and
   it puts no memo text in a notification. Memos do not count as unread messages.
 - **Engine interface** (web names; the native names have the prefix `wallet`):
@@ -1402,7 +1403,7 @@ signature over only its own fields. The path in the signed text is `sessions/<se
 - The device logs each ignored document once. The log key is the path, never the signature. The
   log starts again each time the wallet opens, and it keeps at most 200 paths for a wallet.
 - The wallet page shows one quiet line when any document was ignored: "Some data in this wallet
-  was not signed by a signer. Zigs ignored it." The line counts the documents of the wallet and
+  was not signed by a device of this wallet. Zigs ignored it." The line counts the documents of the wallet and
   of its payments. It counts the approvals and shares of the open payment only, because the web
   app loads only those.
 - Verification is asynchronous in a browser. A device keeps the result for the signed text, the
