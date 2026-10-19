@@ -22,6 +22,7 @@ import {
 import { discussion } from "./app-thread.js";
 import { nameOf, zecName } from "./zns.js";
 import { render } from "./app-loop.js";
+import { icon } from "./app-icons.js";
 
 // The expiry of an open payment, or why an expired one ends here. The engine counts from the
 // last sync, so the time since that sync comes off. A height from saved state gives no time.
@@ -151,13 +152,14 @@ const approvers = (ss) => state.pending || noApproval(ss) ? []
   : localSeats().filter((i) => canWriteAs(i)
   && sec(state.gid, i).keyPackage && seatCheck(i) === true && !state.commits[i] && !ss.package);
 
-const bigButton = (label, onclick, extra = {}) =>
-  el("button", { class: "btn primary lg", type: "button", onclick, ...extra }, label);
+const bigButton = (label, onclick, extra = {}, symbol = null) =>
+  el("button", { class: "btn primary lg", type: "button", onclick, ...extra },
+    symbol && icon(symbol), label);
 
 function approveButtons(ss, myPending) {
   const several = localSeats().length > 1;
   return myPending.map((i) => bigButton(several ? "Approve as seat " + i : "Approve payment",
-    act(() => approve(ss, i))));
+    act(() => approve(ss, i)), {}, "approvals"));
 }
 
 const needsProof = (ss) => ss.signed && !ss.final
@@ -189,10 +191,10 @@ export function finishButtons(ss) {
   if (step !== "send" && step !== "resend") return [];
   const why = sendRefusal(ss), note = why ? [el("p", { class: "send-why" }, why)] : [];
   if (step === "resend") {
-    return [bigButton("Send again", act(() => resendTx(ss)), { disabled: !!why }), ...note];
+    return [bigButton("Send again", act(() => resendTx(ss)), { disabled: !!why }, "send"), ...note];
   }
   return [bigButton(ss.broadcastError ? "Send again" : "Send to network",
-    act(() => broadcastTx(ss)), { disabled: !curChain() || !!why }), ...note];
+    act(() => broadcastTx(ss)), { disabled: !curChain() || !!why }, "send"), ...note];
 }
 
 // A sent payment that no block holds after this long may be lost: offer to send it again.
@@ -217,7 +219,10 @@ const CANCEL_ASK = "Cancel this payment? No signer can approve it after this. An
 // A document that lost the signing parts that this browser saw gets no Cancel: one seat reset it.
 export const cancelAction = (ss) => ss.signed || signingLost(ss) || approvalChanged(ss)
   || expired(ss) || !localSeats().length || !mayAct() ? [] : [
-  el("button", { class: "btn lg", type: "button", onclick: act(() => confirm(CANCEL_ASK) && cancelPayment(ss)) }, "Cancel payment"),
+  el("button", {
+    class: "btn lg danger", type: "button",
+    onclick: act(() => confirm(CANCEL_ASK) && cancelPayment(ss)),
+  }, "Cancel payment"),
 ];
 
 // An approval is a published commitment plus nonces kept here. Without the nonces the seat cannot

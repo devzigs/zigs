@@ -1563,6 +1563,10 @@ const sealed = (gid, rel, seat, fields, key, names = ["by", "sig"]) =>
     const blocked = t.sendDialog();
     assert.equal(named(blocked, "button", "Review payment").attrs.disabled, "");
     assert.match(textOf(blocked), /Wait for the first sync to finish\./);
+    const reasonId = named(blocked, "button", "Review payment").attrs["aria-describedby"];
+    assert.equal(all(blocked, (x) => x.attrs?.id === reasonId
+      && /Wait for the first sync/.test(textOf(x))).length, 1,
+    "the Review button points at the reason that it is off");
     const sessions = () => [...data.keys()].filter((k) => k.includes("/sessions/")).join();
     const stored = sessions();
     globalThis.document = { ...recorder, activeElement: { dataset: {} },
@@ -1575,6 +1579,8 @@ const sealed = (gid, rel, seat, fields, key, names = ["by", "sig"]) =>
     assert.equal(sessions(), stored, "a refused submit proposes nothing");
     t.setChain(chainOf({ spendable: 1e8, pending: 0 }));
     assert.equal(named(t.sendDialog(), "button", "Review payment").attrs.disabled, undefined);
+    assert.equal(named(t.sendDialog(), "button", "Review payment").attrs["aria-describedby"],
+      undefined, "no reason, no pointer");
     t.ui.proposing = true;
     assert.notEqual(named(t.sendDialog(), "button", "Review payment").attrs.disabled, undefined,
       "off while a proposal runs (S8)");
@@ -3195,10 +3201,22 @@ const sealed = (gid, rel, seat, fields, key, names = ["by", "sig"]) =>
         // An address, a request and a transparent address are no names: no lookup.
         znsServes(znsOk());
         form = rowsOf([""]);
-        assert.deepEqual(shows(typeIn(form, OWN)), ["Valid testnet address", "hint ok"]);
+        const OWN_REFUSAL = "This is the address of this wallet. Enter the address of someone "
+          + "else.";
+        assert.deepEqual(shows(typeIn(form, OTHER)), ["Valid testnet address", "hint ok"]);
+        assert.equal(boxOf(form).attrs["aria-invalid"], "false",
+          "an address that Send takes is no error");
+        assert.equal(boxOf(form).attrs["aria-describedby"], hintOf(form).attrs.id,
+          "the field points at the note under it");
+        assert.deepEqual(shows(typeIn(form, OWN)), [OWN_REFUSAL, "hint bad"],
+          "the address of this wallet reads as refused");
+        assert.equal(boxOf(form).attrs["aria-invalid"], "true",
+          "the address of this wallet marks the field as invalid, as Review refuses it");
         const tAddress = "tmBsTi2xWTjUdEXnuTceL7fecEQKeWaPDJd";
         assert.deepEqual(shows(typeIn(form, tAddress)),
           ["Not a shielded Zcash testnet address. It starts with utest1.", "hint bad"]);
+        assert.equal(boxOf(form).attrs["aria-invalid"], "true",
+          "a red hint marks the recipient field as invalid");
         assert.equal(typeIn(form, "tex1" + "q".repeat(30)).className, "hint bad");
         typeIn(form, `zcash:${OWN}?amount=1`);
         assert.equal(t.ui.pay.length, 1);
@@ -3335,8 +3353,12 @@ const sealed = (gid, rel, seat, fields, key, names = ["by", "sig"]) =>
           + "registry has no name nobody.");
         await refused(rowsOf([OTHER, "0.1"], ["nobody"]), "Recipient 2: nobody is "
           + "not a unified address, and the testnet ZNS registry has no name nobody.");
-        await refused(await settled(["self"]), "This is the address of this wallet. Enter the "
-          + "address of someone else.");
+        form = await settled(["self"]);
+        assert.deepEqual(shows(hintOf(form)), [OWN_REFUSAL, "hint bad"],
+          "a name that gives the address of this wallet reads as refused");
+        assert.equal(boxOf(form).attrs["aria-invalid"], "true",
+          "and marks the field as invalid, as Review refuses it");
+        await refused(form, OWN_REFUSAL);
         await refused(await settled(["alice", ""]), "Enter an amount greater than zero, with at "
           + "most 8 decimals.");
         await refused(await settled(["alice", "0.5", "x".repeat(600)]),
@@ -3355,9 +3377,35 @@ const sealed = (gid, rel, seat, fields, key, names = ["by", "sig"]) =>
         // A registry address that the engine does not accept for this network.
         znsServes(znsOk());
         t.setZ(zStub((a) => { if (a === UNPAYABLE) throw new Error("no"); return canon(a); }));
-        await refused(await settled(["odd"]),
-          "The name odd.zec gives an address that Zigs cannot pay.");
+        form = await settled(["odd"]);
+        assert.deepEqual(shows(hintOf(form)),
+          ["The name odd.zec gives an address that Zigs cannot pay.", "hint bad"],
+          "a name that gives an address that Send cannot take reads as refused");
+        assert.equal(boxOf(form).attrs["aria-invalid"], "true",
+          "and marks the field as invalid, as Review refuses it");
+        await refused(form, "The name odd.zec gives an address that Zigs cannot pay.");
         t.setZ(zStub(canon));
+        // The memo and the pasted list mark their fields as well.
+        const idOf = (re) => (d, n = 0) => all(d, (x) => re.test(x.attrs?.id ?? ""))[n];
+        form = rowsOf([OTHER, "0.1", "x".repeat(600)]);
+        const memoField = idOf(/^s-memo-\d/)(form), memoNote = idOf(/^s-memo-hint-/)(form);
+        assert.equal(memoField.attrs["aria-invalid"], "true",
+          "an over-long memo marks the memo field as invalid");
+        assert.equal(memoField.attrs["aria-describedby"], memoNote.attrs.id);
+        memoField.on.input({ target: { value: "rent" } });
+        assert.equal(memoField.attrs["aria-invalid"], "false", "a short memo clears the mark");
+        t.ui.listError = "Paste at least one line.";
+        form = t.sendDialog();
+        const listField = idOf(/^s-list$/)(form), listNote = idOf(/^s-list-error$/)(form);
+        assert.deepEqual([listField.attrs["aria-invalid"], listNote.textContent],
+          ["true", "Paste at least one line."], "the pasted list is marked invalid with its error");
+        assert.equal(listField.attrs["aria-describedby"], "s-list-error");
+        listField.on.input({ target: { value: "" } });
+        assert.equal(listField.attrs["aria-invalid"], "true",
+          "a redraw that puts the same text back keeps the error of the list");
+        listField.on.input({ target: { value: "0.5" } });
+        assert.deepEqual([listField.attrs["aria-invalid"], listNote.textContent, t.ui.listError],
+          ["false", "", ""], "an edit of the list clears its error");
         // The wallet lost its sync between the draw and the submit.
         form = await settled(["alice"]);
         const keptChain = t.chain;
@@ -4743,7 +4791,10 @@ const sealed = (gid, rel, seat, fields, key, names = ["by", "sig"]) =>
       box.on.input();
       assert.equal(line.textContent.includes(fee), true, value.length + ": " + line.textContent);
       assert.equal(line.className, bad ? "hint bad" : "hint");
+      assert.equal(box.attrs["aria-invalid"], String(bad),
+        "the message box is invalid exactly when its line shows an error: " + value.length);
     }
+    assert.equal(box.attrs["aria-describedby"], line.attrs.id, "the box points at its line");
     t.acct.progress = "";
     t.acct.bal = { ...net.bal, spendable: 5000 };
     form = all(t.contactView(), (x) => x.tag === "form").at(-1);
@@ -4782,11 +4833,17 @@ const sealed = (gid, rel, seat, fields, key, names = ["by", "sig"]) =>
     t.acct.bal = { ...net.bal, spendable: 400000, pending: 0 };
     const form0 = t.fundBlock();
     const amount0 = all(form0, (x) => x.attrs && x.attrs.id === "fund-amt")[0];
-    for (const [typed, warned] of [["0.003", false], ["0.006", false], ["0.0060001", true],
-      ["0.02", true], ["x", false], ["", false]]) {
+    // The warning is advice for an amount that the request takes. Only an amount that the request
+    // refuses marks the field as invalid.
+    for (const [typed, warned, refused] of [["0.003", false, false], ["0.006", false, false],
+      ["0.0060001", true, false], ["0.02", true, false], ["x", false, true], ["", false, true],
+      ["0", false, true], ["0.00000001", false, true]]) {
       amount0.on.input({ target: { value: typed } });
       assert.equal(warnOf(form0).textContent, warned ? HIGH : "", typed);
+      assert.equal(amount0.attrs["aria-invalid"], String(refused),
+        "the amount field is invalid exactly when the request refuses the amount: " + typed);
     }
+    assert.match(amount0.attrs["aria-describedby"], /fund-error/, "the field points at the note");
     t.ui.personal.fund = "0.02";
     assert.equal(warnOf(t.fundBlock()).textContent, HIGH, "the form shows it when it is drawn");
     t.ui.personal.fund = "0.003";
@@ -5255,6 +5312,318 @@ async function runAcctSync() {
     Object.assign(t.ui, { tab, leave, menu });
   }
   await sleep(200);
+}
+
+// ── The status line of an offline browser ──
+// It shows while navigator.onLine is false and goes away when the browser is online again. A
+// recorder stands in for the page, and the listeners are the ones that the page put on window.
+{
+  const realDocument = globalThis.document;
+  const realNavigator = Object.getOwnPropertyDescriptor(globalThis, "navigator");
+  class Rec extends Node {
+    constructor(tag) {
+      super();
+      Object.assign(this, { tag, attrs: {}, kids: [] });
+    }
+    setAttribute(k, v) { this.attrs[k] = String(v); }
+    addEventListener() {}
+    append(...x) { this.kids.push(...x); }
+  }
+  const textOf = (n) => n.text ?? n.kids.map(textOf).join("");
+  const box = { kids: [], replaceChildren(...x) { this.kids = x; } };
+  globalThis.document = {
+    getElementById: (id) => (id === "offline" ? box : null),
+    createElement: (tag) => new Rec(tag), createTextNode: (text) => ({ text }),
+  };
+  const browser = (value) => Object.defineProperty(globalThis, "navigator",
+    { configurable: true, value });
+  const fire = (type) => { for (const fn of windowOn[type] ?? []) fn(); };
+  try {
+    browser({ onLine: false });
+    fire("offline");
+    assert.match(box.kids.map(textOf).join(""),
+      /^No network connection\. Network actions need a connection\. .* can be old\.$/,
+      "offline, the line shows");
+    assert.equal(box.kids[0].className, "callout warn");
+    browser({ onLine: true });
+    fire("online");
+    assert.deepEqual(box.kids, [], "back online, the line goes away");
+    browser({});
+    t.showOffline();
+    assert.deepEqual(box.kids, [], "a browser that does not say its state is not offline");
+    delete globalThis.navigator;
+    t.showOffline();
+    assert.deepEqual(box.kids, [], "a page without navigator is not offline");
+  } finally {
+    globalThis.document = realDocument;
+    if (realNavigator) Object.defineProperty(globalThis, "navigator", realNavigator);
+    else delete globalThis.navigator;
+  }
+}
+
+// ── Tab in an open dialog or drawer goes round (layerTab) ──
+// A recorder stands in for the layer, its controls and the banner. The key goes through the
+// listeners that the page put on document, so the check covers the listener too.
+{
+  const realDocument = globalThis.document;
+  const control = (over = {}) => ({
+    tabIndex: 0, disabled: false, getClientRects: () => [{}], checkVisibility: () => true,
+    focus() { document.activeElement = this; }, ...over,
+  });
+  let layer = null, banner = { querySelectorAll: () => [] };
+  let stops = 0;
+  globalThis.document = {
+    activeElement: null,
+    querySelector: (selector) => (selector === ".dialog, .drawer" ? layer : null),
+    getElementById: (id) => (id === "banner" ? banner : null),
+  };
+  const open = (...controls) => {
+    layer = { querySelectorAll: () => controls, focus() { document.activeElement = layer; } };
+  };
+  const press = (shiftKey, key = "Tab") => {
+    const preventDefault = () => { stops += 1; };
+    for (const fn of documentOn.keydown) fn({ key, shiftKey, preventDefault });
+  };
+  const from = (control0) => { document.activeElement = control0; stops = 0; };
+  try {
+    const [a, b, c] = [control(), control(), control()];
+    open(a, b, c);
+    from(c);
+    press(false);
+    assert.equal(document.activeElement, a, "Tab on the last control goes to the first");
+    assert.equal(stops, 1, "and the page does not move the focus as well");
+    from(a);
+    press(true);
+    assert.equal(document.activeElement, c, "Shift+Tab on the first control goes to the last");
+    from(b);
+    press(false);
+    press(true);
+    assert.deepEqual([stops, document.activeElement], [0, b], "Tab in the middle moves as usual");
+    from({});
+    press(false);
+    assert.equal(document.activeElement, a, "Tab from outside the layer goes to the first one");
+    from({});
+    press(true);
+    assert.equal(document.activeElement, c, "Shift+Tab from outside goes to the last control");
+    from(layer);
+    press(true);
+    assert.equal(document.activeElement, c, "Shift+Tab on the layer itself goes to the last one");
+    from(c);
+    press(false, "Enter");
+    assert.equal(stops, 0, "another key moves nothing");
+    for (const [what, off] of [["a disabled control", control({ disabled: true })],
+      ["a control that is not shown", control({ getClientRects: () => [] })],
+      ["a control in a closed details", control({ checkVisibility: () => false })],
+      ["a control with tabindex -1", control({ tabIndex: -1 })]]) {
+      open(a, c, off);
+      from(c);
+      press(false);
+      assert.equal(document.activeElement, a, what + " is no stop at the end");
+      open(off, a, c);
+      from(a);
+      press(true);
+      assert.equal(document.activeElement, c, what + " is no stop at the start");
+    }
+    // The Close button of an open banner is a stop after the controls of the layer.
+    const close = control();
+    banner = { querySelectorAll: () => [close] };
+    open(a, b, c);
+    from(c);
+    press(false);
+    // Native Tab goes from the last control of the layer to the banner only when nothing between
+    // them takes focus: the footer is inert while a layer is open (the next block).
+    assert.deepEqual([stops, document.activeElement], [0, c],
+      "Tab on the last control of the layer moves on to the banner as usual");
+    from(close);
+    press(false);
+    assert.equal(document.activeElement, a, "Tab on the Close button of the banner goes round");
+    from(a);
+    press(true);
+    assert.equal(document.activeElement, close, "Shift+Tab on the first control reaches it");
+    banner = { querySelectorAll: () => [control({ getClientRects: () => [] })] };
+    open(a, b, c);
+    from(c);
+    press(false);
+    assert.equal(document.activeElement, a, "the Close button of a hidden banner is no stop");
+    open(control({ disabled: true }));
+    from({});
+    assert.doesNotThrow(() => press(false), "Tab in a layer without controls keeps the focus");
+    assert.deepEqual([stops, document.activeElement], [1, layer], "in the layer itself");
+    assert.equal(layer.tabIndex, -1, "a layer without controls can take the focus after a redraw");
+    layer = null;
+    from(a);
+    assert.doesNotThrow(() => press(false), "Tab with no open layer does nothing");
+    assert.equal(stops, 0, "and the page moves the focus as usual");
+  } finally {
+    globalThis.document = realDocument;
+  }
+}
+
+// ── A layer takes the page, the side list and the footer out of reach (setModal) ──
+{
+  const realDocument = globalThis.document;
+  const marks = [];
+  const part = (name) => ({ toggleAttribute: (k, on) => marks.push(name + ":" + k + ":" + on) });
+  const parts = { ".side": part("side"), ".app-foot": part("foot") };
+  globalThis.document = { querySelector: (selector) => parts[selector] ?? null };
+  try {
+    t.setModal(part("view"), true);
+    assert.deepEqual(marks, ["view:inert:true", "side:inert:true", "foot:inert:true"],
+      "an open layer takes the footer out of reach, as the page and the side list");
+    marks.length = 0;
+    t.setModal(part("view"), false);
+    assert.deepEqual(marks, ["view:inert:false", "side:inert:false", "foot:inert:false"],
+      "a closed layer gives them back");
+  } finally {
+    globalThis.document = realDocument;
+  }
+}
+
+// ── The keyboard fit of a phone (fitKeyboard) ──
+// The visual viewport, the window and the focused field are recorders. Each call to view() is one
+// resize event of the visual viewport.
+{
+  const realWindow = globalThis.window, realDocument = globalThis.document;
+  const style = {}, scrolled = [];
+  const inLayer = (name) => ({
+    closest: (selector) => (selector === ".dialog, .drawer" && name !== "outside" ? {} : null),
+    scrollIntoView: (o) => scrolled.push(name + ":" + o.block),
+    getAttribute: (k) => (k === "aria-describedby" ? "other-note field-note" : null),
+  });
+  const note = { scrollIntoView: (o) => scrolled.push("note:" + o.block) };
+  globalThis.document = {
+    activeElement: inLayer("field"),
+    documentElement: { style: { setProperty: (k, v) => { style[k] = v; } } },
+    getElementById: (id) => (id === "field-note" ? note : null),
+  };
+  const view = (visual) => {
+    globalThis.window = { innerHeight: 812,
+      visualViewport: { height: 812, offsetTop: 0, scale: 1, ...visual } };
+    scrolled.length = 0;
+    t.fitKeyboard();
+    return [style["--keyboard-inset"], style["--visual-height"], scrolled.join(" ")];
+  };
+  try {
+    assert.deepEqual(view({ scale: 2 }).slice(0, 2), ["0px", "100dvh"],
+      "a pinch zoom turns the fit off");
+    assert.deepEqual(view({ height: 476 }), ["336px", "476px", "field:nearest note:nearest"],
+      "the keyboard opens: the dialog ends above it, and the field and its note scroll into view");
+    assert.deepEqual(view({ height: 476 }), ["336px", "476px", ""],
+      "an event with the same inset scrolls nothing");
+    assert.deepEqual(view({ height: 400 }), ["412px", "400px", "field:nearest note:nearest"],
+      "a keyboard that grows scrolls again");
+    assert.deepEqual(view({ height: 476, offsetTop: 100 }), ["236px", "476px", ""],
+      "a pan of the visual viewport that shrinks the inset scrolls nothing");
+    assert.deepEqual(view({ scale: 2, height: 400 }), ["0px", "100dvh", ""], "zoom again");
+    assert.deepEqual(view({ scale: 1.005, height: 476 }),
+      ["336px", "476px", "field:nearest note:nearest"],
+      "a scale within 0.01 of 1 counts as no zoom");
+    assert.equal(view({ scale: 1.02, height: 476 })[0], "0px", "a scale of 1.02 is a zoom");
+    view({ height: 812 });
+    globalThis.document.activeElement = inLayer("outside");
+    assert.equal(view({ height: 476 })[2], "", "a field outside a layer does not scroll");
+    const before = { ...style };
+    assert.doesNotThrow(() => view({ height: NaN }), "an unknown height does not throw");
+    assert.deepEqual(style, before, "and it changes nothing");
+    globalThis.window = { innerHeight: 812 };
+    assert.doesNotThrow(() => t.fitKeyboard(), "a page without a visual viewport does not throw");
+    assert.deepEqual(style, before, "and it changes nothing");
+  } finally {
+    globalThis.window = realWindow;
+    globalThis.document = realDocument;
+  }
+}
+
+// ── The second field of the backup dialog is tied to its note ──
+{
+  const realDocument = globalThis.document;
+  class Rec extends Node {
+    constructor(tag) {
+      super();
+      Object.assign(this, { tag, attrs: {}, kids: [], on: {}, style: {} });
+    }
+    setAttribute(k, v) { this.attrs[k] = String(v); }
+    addEventListener(type, fn) { this.on[type] = fn; }
+    append(...x) { this.kids.push(...x); }
+  }
+  const all = (n, pred, out = []) => {
+    if (n.kids) { if (pred(n)) out.push(n); n.kids.forEach((k) => all(k, pred, out)); }
+    return out;
+  };
+  globalThis.document = {
+    createElement: (tag) => new Rec(tag), createElementNS: (ns, tag) => new Rec(tag),
+    createTextNode: (text) => ({ text }),
+  };
+  const { backup } = t.ui;
+  try {
+    t.ui.backup = { seat: 2, made: false, busy: false };
+    const dialog = t.backupDialog();
+    const [pass, again, note] = ["bk-pass", "bk-again", "bk-hint"]
+      .map((id) => all(dialog, (x) => x.attrs?.id === id)[0]);
+    const good = "abcdefghijklmnopqrstuvwxyz0123";
+    const type = (first, second) => {
+      pass.value = first;
+      again.value = second;
+      dialog.on.input();
+    };
+    assert.equal(again.attrs["aria-describedby"], "bk-hint", "the field points at its note");
+    type(good, good.slice(0, 29) + "X");
+    assert.deepEqual([again.attrs["aria-invalid"], note.className], ["true", "hint bad"],
+      "a wrong confirmation marks the second passphrase field as invalid");
+    type(good, good.slice(0, 5));
+    assert.equal(again.attrs["aria-invalid"], "false",
+      "a confirmation that is still being typed is fine");
+    type(good, good);
+    assert.deepEqual([again.attrs["aria-invalid"], note.className], ["false", "hint ok"]);
+  } finally {
+    t.ui.backup = backup;
+    globalThis.document = realDocument;
+  }
+}
+
+// ── The note under the passphrase fields is red only for a confirmation that is wrong ──
+{
+  const good = "abcdefghijklmnopqrstuvwxyz0123";
+  const [, weak] = t.passNote("short", "short".repeat(9));
+  assert.equal(weak, "hint ", "a weak first passphrase is not an error of the second field");
+  assert.equal(t.passNote(good, "")[1], "hint ", "no confirmation yet");
+  assert.equal(t.passNote(good, good.slice(0, 10))[1], "hint ",
+    "a confirmation that is still being typed is no error");
+  assert.equal(t.passNote(good, good.slice(0, 29) + "X")[1], "hint bad",
+    "a full confirmation that differs is an error");
+  assert.equal(t.passNote(good, good + "x")[1], "hint bad", "a longer confirmation is an error");
+  assert.deepEqual(t.passNote(good, good), ["The passphrases match.", "hint ok"]);
+}
+
+// ── A page that loads offline shows the line at once ──
+// A second copy of app-loop.js runs its load code with an offline browser. The other modules are
+// the copies that the test already loaded. This block stays last: the second copy adds listeners.
+{
+  const realDocument = globalThis.document;
+  const realNavigator = Object.getOwnPropertyDescriptor(globalThis, "navigator");
+  class Rec extends Node {
+    constructor(tag) {
+      super();
+      Object.assign(this, { tag, attrs: {}, kids: [] });
+    }
+    setAttribute(k, v) { this.attrs[k] = String(v); }
+    addEventListener() {}
+    append(...x) { this.kids.push(...x); }
+  }
+  const box = { kids: [], replaceChildren(...x) { this.kids = x; } };
+  globalThis.document = {
+    addEventListener() {}, getElementById: (id) => (id === "offline" ? box : null),
+    createElement: (tag) => new Rec(tag), createTextNode: (text) => ({ text }),
+  };
+  Object.defineProperty(globalThis, "navigator", { configurable: true, value: { onLine: false } });
+  try {
+    await import(new URL("app-loop.js?load-offline", web));
+    assert.equal(box.kids.length, 1, "a page that loads offline shows the line");
+  } finally {
+    globalThis.document = realDocument;
+    if (realNavigator) Object.defineProperty(globalThis, "navigator", realNavigator);
+    else delete globalThis.navigator;
+  }
 }
 
 // ── Opening another wallet drops the notes of an expired payment of the open one ──

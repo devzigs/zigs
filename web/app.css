@@ -120,6 +120,8 @@ button { font: inherit; color: inherit; }
 .app-foot { display: none; font-size: 12px; color: var(--faint); }
 .app-foot a { color: var(--muted); }
 .main { min-width: 0; padding: 40px clamp(20px, 4vw, 56px) 48px; }
+/* The status line while the browser is offline (showOffline in app-loop.js). */
+#offline:not(:empty) { width: 100%; max-width: var(--content-width); margin: 0 auto 24px; }
 .page {
   width: 100%; max-width: var(--content-width); margin-inline: auto; display: grid; gap: 24px;
   min-width: 0;
@@ -158,6 +160,15 @@ button { font: inherit; color: inherit; }
   background: transparent; border-color: transparent; box-shadow: none; color: var(--muted);
 }
 .btn.ghost:hover:not(:disabled) { color: var(--text); background: var(--raised); }
+/* A button that deletes or removes something. It stays red when it is hovered. */
+.btn.danger {
+  background: var(--bad-soft); color: var(--bad); border-color: var(--bad); box-shadow: none;
+}
+.btn.danger:hover:not(:disabled) {
+  background: color-mix(in srgb, var(--bad) 18%, transparent); border-color: var(--bad);
+}
+.btn .symbol { width: 18px; height: 18px; }
+.btn.lg .symbol { width: 20px; height: 20px; }
 .btn.sm { min-height: 48px; padding: 10px 12px; font-size: 13px; border-radius: var(--r-sm); }
 .btn.lg { min-height: 54px; padding-inline: 24px; font-size: 15px; }
 .btn.block { width: 100%; }
@@ -293,6 +304,16 @@ a.row-item { text-decoration: none; }
 .empty { padding: 36px 20px; text-align: center; display: grid; gap: 8px; justify-items: center; color: var(--muted); }
 .empty h3 { color: var(--text); font-size: 15px; }
 
+/* The lock card and the launch card: one symbol, a heading and a short text, in the middle. */
+.launch-card, .lock-card {
+  width: min(540px, 100%); margin: 8vh auto 0; padding: 48px 28px; gap: 12px;
+}
+.launch-card > .symbol, .lock-card > .symbol { width: 40px; height: 40px; color: var(--metal); }
+.launch-card h1, .lock-card h1 {
+  color: var(--text); font-size: 24px; line-height: 1.25; letter-spacing: -0.03em;
+}
+.lock-card .callout { text-align: left; }
+
 /* Messages */
 .chat { gap: 12px; }
 .chat-section { display: grid; gap: 10px; }
@@ -414,7 +435,13 @@ a.row-item { text-decoration: none; }
 .payee { display: flex; justify-content: space-between; gap: 12px; align-items: baseline; }
 .payee .hex { min-width: 0; overflow-wrap: anywhere; }
 .payee-end { display: flex; gap: 8px; align-items: center; flex: none; }
-@media (max-width: 520px) { .pay-row { grid-template-columns: minmax(0, 1fr) auto; } .pay-row .input-wrap { grid-row: 2; } }
+/* On a phone the note of the recipient stays under the recipient, and the amount follows it. */
+@media (max-width: 520px) {
+  .pay-row { grid-template-columns: minmax(0, 1fr) auto; }
+  .pay-row > .hint { grid-row: 2; }
+  .pay-row .input-wrap { grid-row: 3; }
+}
+.paste > .hint:empty { display: none; }
 .input {
   width: 100%; min-height: 52px; padding: 12px 14px; border-radius: var(--r-control);
   border: 1px solid var(--line-field); background: var(--sunk); color: var(--text);
@@ -422,11 +449,14 @@ a.row-item { text-decoration: none; }
   transition: border-color var(--fast), box-shadow var(--fast);
 }
 .input::placeholder { color: var(--faint); opacity: 1; }
-.input[aria-invalid="true"] { border-color: var(--bad); }
 .input.mono { font-family: var(--mono); font-size: 16px; }
 .input:focus {
   outline: 2px solid var(--accent-text); outline-offset: 3px; border-color: var(--metal);
   box-shadow: inset 0 1px 0 var(--edge);
+}
+/* A field with an error has a red edge of 2 px, also with focus. The note under it says why. */
+.input[aria-invalid="true"], .input[aria-invalid="true"]:focus {
+  border-color: var(--bad); box-shadow: inset 0 0 0 1px var(--bad);
 }
 .input-wrap { position: relative; }
 .input-wrap .btn { position: absolute; right: 2px; top: 2px; padding: 8px; }
@@ -559,12 +589,16 @@ body:has(.drawer-foot) #banner { bottom: calc(104px + env(safe-area-inset-bottom
   body:has(.drawer-foot) #banner { bottom: calc(156px + env(safe-area-inset-bottom, 0px)); }
   .row-item .btn { display: none; }
   .dialog {
-    top: auto; bottom: 0; left: 0; transform: none; width: 100%; border-bottom: 0;
-    max-height: calc(100dvh - 24px - env(safe-area-inset-top, 0px));
+    top: auto; bottom: var(--keyboard-inset, 0px); left: 0; transform: none; width: 100%;
+    border-bottom: 0; scroll-padding-bottom: 96px;
+    max-height: calc(var(--visual-height, 100dvh) - 24px - env(safe-area-inset-top, 0px));
     border-radius: var(--r-sheet) var(--r-sheet) 0 0;
     padding: 24px 20px calc(24px + env(safe-area-inset-bottom, 0px));
   }
-  .drawer { inset: 12px 0 0; width: 100%; border-radius: var(--r-sheet) var(--r-sheet) 0 0; }
+  .drawer {
+    inset: 12px 0 var(--keyboard-inset, 0px); width: 100%;
+    border-radius: var(--r-sheet) var(--r-sheet) 0 0;
+  }
   .drawer-head, .drawer-body, .drawer-foot { padding-inline: 20px; }
   .drawer-foot { background: var(--sheet); }
   /* The buttons of a long dialog stay in view at the bottom of the sheet. */

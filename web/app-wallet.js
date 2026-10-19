@@ -200,14 +200,16 @@ const SOL_FILE = "The Solana part of a seat is a second file, with its own passp
 // `why` is the reason Send is off, shown as text because touch screens have no tooltip.
 function walletActions(why) {
   return [
-    el("button", { class: "btn", type: "button", onclick: () => { ui.receive = true; render(); } }, "Receive"),
+    el("button", {
+      class: "btn", type: "button", onclick: () => { ui.receive = true; render(); },
+    }, icon("receive"), "Receive"),
     el("button", {
       class: "btn primary", type: "button", disabled: !!why, title: why,
       onclick: () => {
         openSend({ pay: null, note: "", priority: false, sendFor: null, after: null });
         render();
       },
-    }, "Send"),
+    }, icon("send"), "Send"),
     why ? el("p", { class: "send-why" }, why) : null,
   ];
 }
