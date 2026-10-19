@@ -479,16 +479,19 @@ function approvalsTab() {
 
 // Approvals that hold Send although the list has no record of their payment: the Overview counts
 // them, so the inbox names them.
-const lostNote = (ids) => ids.length ? el("p", { class: "row-note" }, (ids.length === 1
-  ? "A payment that you approved has" : ids.length + " payments that you approved have")
-  + " no record here any more. Send stays held until they can no longer go on chain.") : null;
+const lostNote = (ids) => ids.length ? el("p", { class: "row-note" }, ids.length === 1
+  ? "A payment that you approved has no record here any more. Send stays held until it can no "
+    + "longer go on chain."
+  : ids.length + " payments that you approved have no record here any more. Send stays held "
+    + "until they can no longer go on chain.") : null;
 
 const openSolanaButton = () => el("button", { class: "btn sm", type: "button",
   onclick: () => { ui.tab = "solana"; render(); } }, "Open Solana");
 
 // The payments of the open wallet by bucket. A payment whose facts cannot be read lands in
 // "attention", never out of the list. `lost`: the ids of approvals here that still hold Send
-// while the list has no record of their payment (dropped or rewritten).
+// while the list has no record of their payment (dropped or rewritten). Only a list that arrived
+// and passed its checks can lack a record.
 export function inboxRows() {
   const held = new Set(heldApprovals());
   const rows = Object.fromEntries(BUCKETS.map(([id]) => [id, []]));
@@ -497,14 +500,15 @@ export function inboxRows() {
     if (b) rows[b].push(ss);
   }
   const listed = new Set(state.sessions.map((ss) => ss.id));
-  return { ...rows, lost: [...held].filter((id) => !listed.has(id)) };
+  const known = state.sessionsLoaded && !state.sessionsFailed && !state.pending;
+  return { ...rows, lost: known ? [...held].filter((id) => !listed.has(id)) : [] };
 }
 
 function inboxBucket(ss, held) {
   try {
     const end = ended(ss);
     return bucketOf({
-      landed: landed(ss), held: !!ss.error && held.has(ss.id),
+      landed: landed(ss), held: held.has(ss.id),
       check: !end && signingSeen(ss) && expired(ss),
       review: needsMyApproval(state.gid, ss), step: finishStep(ss), ended: end,
       error: !!ss.error, status: ss.status,

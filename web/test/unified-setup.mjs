@@ -63,6 +63,8 @@ function pageTree() {
   }
 }
 const pageText = () => textOf(pageTree());
+const findNode = (node, pred) => pred(node) ? node
+  : (node.kids ?? []).map((k) => findNode(k, pred)).find(Boolean) ?? null;
 const byText = (node, text) => node.text === undefined && textOf(node) === text ? node
   : (node.kids ?? []).map((k) => byText(k, text)).find(Boolean) ?? null;
 
@@ -169,8 +171,11 @@ function inboxWiring() {
   const { tab } = t.ui, kept = { ...t.state };
   t.ui.tab = "approvals";
   try {
-    assert.match(pageText(), /Needs your approval2.*2 Solana proposals wait for your approval/,
-      "the Solana line and its count in the review bucket");
+    assert.match(pageText(), /Needs your approval.*2 Solana proposals wait for your approval/,
+      "the Solana line in the review bucket");
+    const review = findNode(pageTree(), (n) => n.attrs?.["aria-label"] === "Needs your approval");
+    assert.equal(textOf(findNode(review, (n) => n.className === "badge plain")), "2",
+      "the review bucket counts each proposal");
     assert.match(pageText(), /The wallet syncs\. .*Needs your approval/,
       "before the first sync of the chain, the note shows next to the rows");
     Object.assign(t.state, { sessions: [], sessionsFailed: true });
@@ -215,6 +220,23 @@ function recoveryFacts() {
     assert.equal(backupNote([], [1], false).className, "callout warn");
   } finally {
     globalThis.document = doc;
+  }
+}
+// With nothing to list after the sync, the inbox speaks for Zcash alone: the Solana line below it
+// speaks for Solana.
+function emptyInbox() {
+  const { tab } = t.ui, chain = t.chain, sessions = t.state.sessions;
+  t.ui.tab = "approvals";
+  t.state.sessions = [];
+  t.setChain({ gid: t.state.gid, cw: {}, bal: { spendable: 0, pending: 0 }, sent: new Set(),
+    received: [] });
+  try {
+    assert.match(pageText(), /No Zcash payment waits for this browser.*No Solana proposal waits/,
+      "the empty inbox of a wallet with a Solana part");
+  } finally {
+    t.setChain(chain);
+    t.state.sessions = sessions;
+    t.ui.tab = tab;
   }
 }
 // The phone Menu closes on a pick; the sections show for the formed wallet only; the switcher
@@ -284,6 +306,7 @@ function approvalCount(ctl) {
     inboxWiring();
     Object.assign(ctl, { sessions: [], commits: {} });
     assert.ok(!labelled(sideTree(), "2 to approve"), "no count without a proposal");
+    emptyInbox();
     sideMenu();
   } finally {
     [ctl.sessions, ctl.commits, t.state.groups] = kept;
