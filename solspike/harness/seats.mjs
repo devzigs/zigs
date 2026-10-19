@@ -41,7 +41,7 @@ export async function makeWallet(page, name, { solana = false } = {}) {
   }, solana);
   await clickText(page, "Review wallet");
   await waitForText(page, "Review your wallet");
-  // The welcome card behind the dialog has a "Create wallet" button too.
+  // The last step has a "Create wallet" button. The run takes it from the dialog form.
   await run(page, () => document.querySelector("form[role=dialog] button[type=submit]").click());
   const shown = () => run(page, () => !!document.querySelector(".addr-box .hex"));
   await waitFor(shown, 30000, () => "the invite link");

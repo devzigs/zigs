@@ -239,6 +239,12 @@ const joins = {
   "a link in a mark": "[Team](" + LINK + ")",
   "a link in stars": "**" + LINK + "**",
   "a link in quotes": '"' + LINK + '"',
+  // Marks of other scripts and quotes are marks, not text.
+  "corner brackets": "「" + LINK + "」",
+  "curly quotes": "“" + LINK + "”",
+  "guillemets": "«" + LINK + "»",
+  "an em dash before the link": "—" + LINK,
+  "a zero-width space before the link": "\u200b" + LINK,
   "eighty marks before the link": "(".repeat(80) + LINK,
   "a link in square brackets": "[" + LINK + "]",
   "a message with a link in square brackets": "Invite: [" + LINK + "]",
@@ -274,6 +280,9 @@ const worst = {
   "only brackets": "[]".repeat(40),
   "stray brackets and marks": "[(".repeat(40) + "a",
   "stray brackets in labels": "[a[a[a(".repeat(11) + "a",
+  "letters of another script": "ж".repeat(200000) + "a",
+  "full stops of other scripts": "。".repeat(200000) + "a",
+  "backslashes": "\\".repeat(200000) + "a",
 };
 for (const [what, prefix] of Object.entries(worst)) {
   const at = performance.now();
@@ -304,6 +313,10 @@ for (const [what, text] of Object.entries(bad)) {
 // A link whose origin is another server.
 const elsewhere = {
   "another site": "https://evil.example/#" + GID + "." + K,
+  "an IDN site": "https://пример.рф/#" + GID + "." + K,
+  "a punycode site": "https://xn--e1afmkfd.xn--p1ai/#" + GID + "." + K,
+  "an IDN host with a slash": "пример.рф/#" + GID + "." + K,
+  "a fullwidth host with a slash": "ｅｖｉｌ。ｃｏｍ/#" + GID + "." + K,
   "another scheme": "http://app.zigs.app/#" + GID + "." + K,
   "another port": "https://app.zigs.app:8443/#" + GID + "." + K,
   "a longer host": "https://app.zigs.app.evil.example/#" + GID + "." + K,
@@ -323,6 +336,22 @@ assert.equal(PASTE_GLUED.includes("another Zigs server"), false, "glued text is 
 // holds this page, or an address that has no origin. The text says so, and it never says that the
 // link is for another server.
 const glued = {
+  // A foreign host, or text, in a form that a URL parser reads differently: letters and full stops
+  // of other scripts, and a backslash.
+  "a fullwidth host glued to the fragment": "ｅｖｉｌ。ｃｏｍ#" + GID + "." + K,
+  "a fullwidth host and a backslash before the link": "ｅｖｉｌ。ｃｏｍ\\" + LINK,
+  "text of another script glued to the fragment": "Ссылка:#" + GID + "." + K,
+  "text of another script before the link": "Ссылка" + LINK,
+  "text of another script and a colon before the link": "Ссылка:" + LINK,
+  "a Japanese word before the link": "リンク" + LINK,
+  "a letter with an accent before the link": "é" + LINK,
+  "a digit of another script before the link": "１" + LINK,
+  "a backslash before the link": "\\" + LINK,
+  "a backslash before the fragment": "\\#" + GID + "." + K,
+  "an ASCII host and a backslash before the link": "evil.example\\" + LINK,
+  "an ideographic full stop before the link": "。" + LINK,
+  "a fullwidth full stop before the link": "．" + LINK,
+  "a halfwidth ideographic full stop before the link": "｡" + LINK,
   "a prefix with no scheme": "evil.example/?u=" + LINK,
   "a prefix with a host and a path": "evil.example/" + LINK,
   "a prefix with a user name": "user@evil.example/" + LINK,

@@ -117,16 +117,18 @@ const INVITE = new RegExp("#(" + part(ROOM_ID) + ")\\.(" + part(ROOM_KEY) + ")(?
 export const pageKey = (url) => url.origin + url.pathname.replace(/\/index\.html$/, "/");
 
 // What may stand before an "http(s)://" in the same word: marks, as in "(", "<", "**" or a
-// Markdown label "[Team](". Anything with a letter, a digit or a sign of an address is text of
-// another URL, and the "http(s)://" after it is a part of that URL. A "[" is a mark, unless a
-// label follows it. A label holds no bracket: each character has one parse, so the time is linear.
-const MARKS = /^(?:[^a-z\d:/.?=&#%@~+[-]|\[(?![^\][]*\]\()|\[[^\][]*\]\()*$/i;
+// Markdown label "[Team](". Anything with a letter or a digit of any script, or with a sign of an
+// address, is text of another URL, and the "http(s)://" after it is a part of that URL. The signs
+// of an address are also the backslash and the full stops of other scripts: a URL parser reads
+// them as "/" and ".". A "[" is a mark, unless a label follows it. A label holds no bracket: each
+// character has one parse, so the time is linear.
+const MARKS = /^(?:[^\p{L}\p{N}:/.?=&#%@~+\\。．｡[-]|\[(?![^\][]*\]\()|\[[^\][]*\]\()*$/iu;
 
 // The URL before a link: from the first "http(s)://" on, or a host with no scheme. null when that
 // "http(s)://" sits inside other text that is no mark.
 function urlBefore(before) {
   const start = before.search(/https?:\/\//i);
-  if (start < 0) return before.replace(/^[^a-z\d/]+/i, "");
+  if (start < 0) return before.replace(/^[^\p{L}\p{N}/\\]+/u, "");
   return start <= 80 && MARKS.test(before.slice(0, start)) ? before.slice(start) : null;
 }
 
