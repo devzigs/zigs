@@ -6,10 +6,15 @@
 import { agreement, seatProgress, started, startBlock } from "./ceremony.js";
 import { base58 } from "./docs.js";
 import { checkLine, provesLocally } from "./localprove.js";
-import { SHOWN, approveLater, approveSeats, payCards, titleOf } from "./payview.js";
+import {
+  PAYMENT_STATES, SHOWN, STATES, approveLater, approveSeats, payCards, titleOf,
+} from "./payview.js";
 import { feeMismatch, feeOf } from "./fee.js";
 import { signingBlock } from "./gate.js";
+import { PAYMENT_KINDS, decodeIntent } from "./intent.js";
 import { holdsShare, remoteStop, solOf, stopOf } from "./secrets.js";
+import { solText } from "./session.js";
+import { SESSIONS, isPayment } from "./sessions.js";
 
 const ADD_TEXT =
   "A Solana program owns the funds of the group at a program address, which is public and links " +
@@ -87,6 +92,46 @@ export const olderCount = (c) => Math.max(0, (c.sessions ?? []).length - SHOWN);
 /** The same proposals as rows of the Approvals inbox: id, title and the proposing seat. */
 export const pendingRows = (c) =>
   pendingList(c).map((ss) => ({ id: ss.id, title: titleOf(ss), by: ss.by }));
+
+const TONES = { collecting: "plain", signing: "info", signed: "info", sent: "ok", failed: "bad" };
+// The badge of a proposal in the Activity list: the word of its card, in the tone of a Zcash row.
+function badgeOf(ss, waits) {
+  if (waits) return ["Your approval", "warn"];
+  if (ss.status === "sent" && ss.outcome === "failed") return ["Failed on chain", "bad"];
+  const words = isPayment(ss) ? PAYMENT_STATES : STATES;
+  return [words[ss.status] ?? ss.status, TONES[ss.status] ?? "plain"];
+}
+function sessionRow(ss, waits) {
+  const intent = decodeIntent(ss.intent);
+  const [word, tone] = badgeOf(ss, waits);
+  return {
+    id: ss.id, t: Number(ss.createdAt) || 0, title: titleOf(ss), by: ss.by, word, tone,
+    amount: intent?.amount === undefined ? null : solText(intent.amount),
+    sign: PAYMENT_KINDS.has(intent?.kind) ? "out" : "",
+  };
+}
+const ADDED = { failed: ["Failed on chain", "bad"], unknown: ["Not confirmed yet", "info"] };
+function addedRow(a) {
+  const [word, tone] = ADDED[a.status] ?? ["Confirmed", "ok"];
+  const failed = a.status === "failed";
+  return {
+    id: "added", t: a.at ?? 0, title: failed ? "Add SOL" : "Received SOL", by: a.seat, word, tone,
+    amount: solText(a.amount), sign: failed ? "" : "in", slot: a.slot || null, added: true,
+  };
+}
+/**
+ * The Solana rows of the Activity list: the proposals that the section shows, then the last Add
+ * SOL of this tab (the only SOL that this page knows to have arrived). Each row has id, t (ms),
+ * title, by (a seat), word and tone (the badge), amount (SOL text or null), sign ("out", "in" or
+ * "") and, for the Add SOL row, added (true) and slot. Null until the proposals of the wallet
+ * arrived.
+ */
+export function activityRows(c) {
+  if (!c.loaded[SESSIONS]) return null;
+  const waiting = new Set(pendingList(c).map((ss) => ss.id));
+  const rows = shownWhere(c, () => true).map((ss) => sessionRow(ss, waiting.has(ss.id)));
+  return c.added ? [...rows, addedRow(c.added)] : rows;
+}
 
 function startCard(c, act, actions) {
   const { el, localSeats } = c.host,
