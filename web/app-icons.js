@@ -14,7 +14,8 @@ const PATHS = Object.freeze({
   phone: "M7 2h10v20H7zM10 5h4M12 19h.01",
   devices: "M3 4h14v11H3zM1 19h12M18 10h5v11h-5z",
   zec: "M7 6h10L7 18h10M12 3v3m0 12v3",
-  sol: "M5 6h14M4 12h14M5 18h14",
+  // ◎, the sign that wallets write before SOL amounts; it draws no part of the Solana mark.
+  sol: "M21 12a9 9 0 1 1-18 0 9 9 0 0 1 18 0ZM16 12a4 4 0 1 1-8 0 4 4 0 0 1 8 0Z",
 });
 const SVG = "http://www.w3.org/2000/svg";
 

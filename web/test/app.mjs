@@ -5148,9 +5148,13 @@ async function runAcctSync() {
   }
   const banner = new Rec("div"), bannerText = new Rec("span");
   const page = { focused: false, focus() { this.focused = true; } };
+  const menuButton = { focus() { document.activeElement = menuButton; } };
+  const lastItem = { focus() { document.activeElement = lastItem; } };
+  const nav = { querySelectorAll: () => [{}, lastItem] };
   globalThis.document = {
     activeElement: { dataset: { key: "send-ok" } },
-    getElementById: (id) => ({ banner, "banner-text": bannerText, app: page })[id] ?? null,
+    getElementById: (id) => ({ banner, "banner-text": bannerText, app: page,
+      "wallet-menu": menuButton, "side-nav": nav })[id] ?? null,
     createElement: (tag) => new Rec(tag), createElementNS: (ns, tag) => new Rec(tag),
     createTextNode: (text) => ({ text }),
   };
@@ -5184,9 +5188,38 @@ async function runAcctSync() {
     t.ui.menu = true;
     t.menuKey({ key: "x" });
     assert.equal(t.ui.menu, true, "another key keeps the Menu open");
+    // On a phone, Tab goes round in the open Menu: from the last item to Menu, and back.
+    let stops = 0;
+    const press = (shiftKey) =>
+      t.menuKey({ key: "Tab", shiftKey, preventDefault: () => { stops += 1; } });
+    const wide = globalThis.matchMedia, active = document.activeElement;
+    globalThis.matchMedia = () => ({ matches: true });
+    try {
+      document.activeElement = lastItem;
+      press(false);
+      assert.equal(document.activeElement, menuButton, "Tab on the last item goes to Menu");
+      press(true);
+      assert.equal(document.activeElement, lastItem, "Shift+Tab on Menu goes to the last item");
+      document.activeElement = {};
+      press(true);
+      press(false);
+      assert.equal(stops, 2, "Tab from another item moves as usual");
+      document.activeElement = lastItem;
+      globalThis.matchMedia = wide;
+      press(false);
+      assert.equal(stops, 2, "wider than a phone, Tab moves as usual");
+    } finally {
+      Object.assign(globalThis, { matchMedia: wide });
+      document.activeElement = active;
+    }
     t.menuKey({ key: "Escape" });
     assert.equal(t.ui.menu, false, "Escape closes the Menu");
     assert.deepEqual(t.wantFocus, { key: "menu", force: true }, "and the focus goes back to Menu");
+    t.ui.menu = true;
+    t.menuWidth({ matches: true });
+    assert.equal(t.ui.menu, true, "a phone width keeps the Menu open");
+    t.menuWidth({ matches: false });
+    assert.equal(t.ui.menu, false, "a wider window closes the Menu");
     t.ui.menu = true;
     t.menuOutside({ target: { closest: (sel) => (sel === ".side" ? {} : null) } });
     assert.equal(t.ui.menu, true, "a click in the side list keeps it open");

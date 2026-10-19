@@ -89,8 +89,15 @@ button { font: inherit; color: inherit; }
 .side-item:hover { background: var(--raised); color: var(--text); }
 .side-item.active { background: var(--raised); color: var(--text); box-shadow: inset 0 0 0 1px var(--line); }
 .side-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 500; }
-.side-meta { font: 400 11.5px/1 var(--mono); color: var(--faint); }
+.side-meta { flex: none; font: 400 11.5px/1 var(--mono); color: var(--faint); }
 .side-tail { display: inline-flex; align-items: center; gap: 6px; }
+/* The name of a wallet keeps its width: its rule ("2 of 3") goes under it on a short line. */
+.side-label {
+  display: flex; flex-wrap: wrap; align-items: baseline; justify-content: space-between;
+  gap: 4px 10px; min-width: 0;
+}
+.side-tail:empty { display: none; }
+.side-item:has(> .side-tail:empty) { grid-template-columns: 32px minmax(0, 1fr); }
 .side-unread { min-width: 20px; height: 20px; padding-inline: 5px; border-radius: 999px; border: 1px solid var(--info); color: var(--info); font: 600 11px/18px var(--sans); text-align: center; }
 .side-count { min-width: 20px; height: 20px; padding-inline: 6px; border-radius: 999px; background: var(--accent); color: var(--on-accent); font: 600 11px/20px var(--sans); text-align: center; }
 .side-empty { padding: 6px 8px; color: var(--faint); font-size: 13px; }
@@ -150,11 +157,16 @@ button { font: inherit; color: inherit; }
 .btn.ghost {
   background: transparent; border-color: transparent; box-shadow: none; color: var(--muted);
 }
-.btn.ghost:hover { color: var(--text); background: var(--raised); }
+.btn.ghost:hover:not(:disabled) { color: var(--text); background: var(--raised); }
 .btn.sm { min-height: 48px; padding: 10px 12px; font-size: 13px; border-radius: var(--r-sm); }
 .btn.lg { min-height: 54px; padding-inline: 24px; font-size: 15px; }
 .btn.block { width: 100%; }
-.btn:disabled { opacity: 0.58; cursor: not-allowed; filter: none; box-shadow: none; }
+/* A disabled button is flat, and its text still reads at 4.5:1 (faint on sunk, contrast.mjs). */
+.btn:disabled, .btn.primary:disabled {
+  background: var(--sunk); border-color: var(--line); color: var(--faint); cursor: not-allowed;
+  filter: none; box-shadow: none;
+}
+.btn.ghost:disabled { background: transparent; border-color: transparent; }
 .icon-btn {
   width: 48px; min-width: 48px; height: 48px; display: grid; place-items: center;
   border-radius: var(--r-control); border: 1px solid var(--line); box-shadow: var(--shadow-control);
@@ -492,8 +504,13 @@ body:has(.drawer-foot) #banner { bottom: calc(104px + env(safe-area-inset-bottom
   .side.menu-open #side-nav {
     display: grid; position: absolute; top: 100%; left: 12px; right: 12px; padding: 12px;
     max-height: calc(100dvh - 96px - env(safe-area-inset-top, 0px)); overflow: auto;
-    overscroll-behavior: contain; background: var(--sheet); border: 1px solid var(--line-2);
+    overscroll-behavior: contain; background: var(--panel); border: 1px solid var(--line-2);
     border-radius: 18px; box-shadow: var(--shadow);
+  }
+  /* The page behind the open Menu is dim and still; a tap on it closes the Menu. */
+  body:has(.side.menu-open) { overflow: hidden; }
+  body:has(.side.menu-open)::after {
+    content: ""; position: fixed; inset: 0; z-index: 34; background: var(--scrim);
   }
   #engine-text { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .app-foot { display: block; }

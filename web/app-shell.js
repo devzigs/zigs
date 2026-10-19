@@ -55,6 +55,11 @@ export function renderSide() {
   nav.onclick = (ev) => { if (ev.target.closest("button")) ui.menu = false; };
   document.querySelector(".side").classList.toggle("menu-open", !!ui.menu);
   document.getElementById("wallet-menu").setAttribute("aria-expanded", ui.menu ? "true" : "false");
+  lockPage(!!ui.menu && phone());
+}
+// The open Menu of a phone keeps the page, the skip link and the logo out of reach.
+function lockPage(on) {
+  for (const s of [".main", ".skip-link", ".logo"]) document.querySelector(s).inert = on;
 }
 
 const SECTION_ICONS = {
@@ -76,17 +81,38 @@ export function sectionNav(sections) {
     ...sections.map(item)];
 }
 
-// The Menu button of a phone opens the side list over the page. Escape or a click outside the
-// list closes it.
+// The Menu button of a phone opens the side list over the page, and the page takes no focus or
+// tap while it is open. Escape or a tap outside the list closes it.
+const PHONE = "(max-width: 760px)";
+const phone = () => matchMedia(PHONE).matches;
 function closeMenu(refocus) {
   ui.menu = false;
   if (refocus) focusAfter("menu", true);
   render();
 }
-/** Escape closes the open Menu and gives the focus back to the Menu button. */
+/** Escape closes the open Menu and gives the focus back to Menu; Tab stays in the Menu. */
 export function menuKey(ev) {
-  if (ev.key === "Escape" && ui.menu) closeMenu(true);
+  if (!ui.menu) return;
+  if (ev.key === "Escape") closeMenu(true);
+  else if (ev.key === "Tab" && phone()) tabRound(ev);
 }
+// Tab on the last item of the open Menu goes to Menu, and Shift+Tab on Menu to the last item.
+function tabRound(ev) {
+  const menu = document.getElementById("wallet-menu");
+  const items = document.getElementById("side-nav").querySelectorAll("button:not(:disabled)");
+  const last = items[items.length - 1];
+  const [from, to] = ev.shiftKey ? [menu, last] : [last, menu];
+  if (!to || document.activeElement !== from) return;
+  ev.preventDefault();
+  to.focus();
+}
+/** A window that grows past the phone width closes the open Menu: its button is gone there. */
+export function menuWidth(ev) {
+  if (!ev.matches && ui.menu) closeMenu(false);
+}
+// The query stays referenced, so its listener stays too.
+const phoneQuery = matchMedia(PHONE);
+phoneQuery.onchange = menuWidth;
 /** A click outside the side list closes the open Menu. */
 export function menuOutside(ev) {
   if (ui.menu && !ev.target.closest?.(".side")) closeMenu(false);
@@ -121,12 +147,12 @@ const sideEmpty = () => lockedVault ? "Locked." : dbReady ? "No wallets yet." : 
 function sideItem(g) {
   const n = toApprove(g.id).length + solPending(g.id);
   const u = unreadIn(g.id), here = g.id === state.gid;
-  const tail = n
+  const count = n
     ? el("span", { class: "side-count", role: "img", title: n + " to approve",
       "aria-label": n + " to approve" }, String(n))
-    : el("span", { class: "side-meta", title: ruleText(g.t, g.n) },
-      g.movedTo ? "Moved" : g.t + " of " + g.n);
-  const unread = unreadChip(u);
+    : null;
+  const rule = n ? null : el("span", { class: "side-meta", title: ruleText(g.t, g.n) },
+    g.movedTo ? "Moved" : g.t + " of " + g.n);
   return el("button", {
     class: "side-item" + (here ? " active" : ""), type: "button",
     // With its sections in the list, the section is the page and the wallet the current item.
@@ -138,7 +164,8 @@ function sideItem(g) {
       openGroup(g.id);
     },
   }, el("span", { class: "av" }, initials(g.name)),
-  el("span", { class: "side-name" }, g.name), el("span", { class: "side-tail" }, unread, tail));
+  el("span", { class: "side-label" }, el("span", { class: "side-name" }, g.name), rule),
+  el("span", { class: "side-tail" }, unreadChip(u), count));
 }
 
 export function forgetBox() {
