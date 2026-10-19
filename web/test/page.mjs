@@ -19,7 +19,7 @@ export const NAMES = [
   "copyFundingRequest", "createGroup",
   "createPersonal", "damagedCard", "deviceRead", "dmChoices", "docMemo", "ensureChain",
   "exclusive", "expired",
-  "expiryLine",
+  "ended", "expiryLine",
   "expiryAt", "expiryOf", "failSession", "fillFromRequest", "finalizeTx", "finishButtons",
   "flightNow",
   "forgetBox", "fundBlock", "fundFromWallet", "fundingUri", "getIdb", "gkeys", "groupName",

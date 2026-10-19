@@ -15,24 +15,26 @@ export const BUCKETS = [
 const UNDER_WAY = new Set(["collecting", "signing", "signed", "proving", "complete", "broadcast"]);
 
 /**
- * The bucket of one payment, or null when it is finished (the Activity list keeps it).
- * @param {object} f held: it has an error and an approval here still holds its notes (the S7
- *   card of the drawer); check: the signing started, it did not end, and the engine says it
- *   expired (the "Check" chip), or this browser refuses its send step (refusedSend); review: a
- *   seat here can approve it (needsMyApproval, the count of the badge); landed: a block holds
- *   it; ended: it ended (the "Expired" chip); error: cancelled, failed or refused (the drawer
- *   offers no step); step: the next step that a signer here can take (finishStep); status: the
- *   status of the payment document.
+ * The bucket of one payment, or null when it is finished (the Activity list keeps it). An
+ * approval here that still holds Send never maps to null: where the payment is finished or in
+ * the Check state, it lands in "attention". The Check state without a hold maps to null: no
+ * approval here can still land, the drawer offers no step, and the Activity chip says "Check".
+ * @param {object} f held: an approval here still holds Send (heldApprovals: the S7 card of the
+ *   drawer); check: the signing started, it did not end, and the engine says it expired (the
+ *   "Check" chip); review: a seat here can approve it (needsMyApproval, the count of the badge);
+ *   landed: a block holds it; ended: it ended (the "Expired" chip); error: cancelled, failed or
+ *   refused (the drawer offers no step); step: the next step that a signer here can take
+ *   (finishStep); status: the status of the payment document.
  * @returns {string | null}
  */
 export function bucketOf(f) {
-  if (stuck(f)) return "attention";
+  if (f.check) return holdBucket(f);
   if (f.review) return "review";
-  if (over(f)) return null;
+  if (over(f)) return holdBucket(f);
   if (f.step) return "ready";
   return UNDER_WAY.has(f.status) ? "waiting" : "attention";
 }
-const stuck = (f) => f.held || f.check;
+const holdBucket = (f) => (f.held ? "attention" : null);
 const over = (f) => f.landed || f.ended || f.error;
 
 /**

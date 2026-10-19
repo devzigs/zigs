@@ -474,9 +474,11 @@ function approvalsTab() {
 
 // Approvals that hold Send although the list has no record of their payment: the Overview counts
 // them, so the inbox names them.
-const lostNote = (ids) => ids.length ? el("p", { class: "row-note" }, (ids.length === 1
-  ? "A payment that you approved has" : ids.length + " payments that you approved have")
-  + " no record here any more. Send stays held until they can no longer go on chain.") : null;
+const lostNote = (ids) => ids.length ? el("p", { class: "row-note" }, ids.length === 1
+  ? "A payment that you approved has no record here any more. Send stays held until it can no "
+    + "longer go on chain."
+  : ids.length + " payments that you approved have no record here any more. Send stays held "
+    + "until they can no longer go on chain.") : null;
 
 const openSolanaButton = () => el("button", { class: "btn sm", type: "button",
   onclick: () => { ui.tab = "solana"; render(); } }, "Open Solana");
@@ -501,9 +503,9 @@ function inboxBucket(ss, held) {
   try {
     const end = ended(ss), step = finishStep(ss);
     return bucketOf({
-      landed: landed(ss), held: !!ss.error && held.has(ss.id),
-      check: refusedSend(ss, step) || (!end && signingSeen(ss) && expired(ss)),
-      review: needsMyApproval(state.gid, ss), step, ended: end,
+      landed: landed(ss), held: held.has(ss.id),
+      check: !end && signingSeen(ss) && expired(ss),
+      review: needsMyApproval(state.gid, ss), step: finishStep(ss), ended: end,
       error: !!ss.error, status: ss.status,
     });
   } catch (e) {
