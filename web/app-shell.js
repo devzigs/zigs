@@ -24,7 +24,7 @@ import { personal } from "./app-account.js";
 import { restore } from "./app-backups.js";
 import { contactItem, contactsCard, openContactDialog, personalCard } from "./app-account-view.js";
 import { focusAfter, once, render } from "./app-loop.js";
-import { currentSection, walletSections, walletShown } from "./app-wallet.js";
+import { currentSection, moveWord, SOL_STAYS, walletSections, walletShown } from "./app-wallet.js";
 import { icon } from "./app-icons.js";
 import { themeChoice } from "./app-theme.js";
 
@@ -157,7 +157,7 @@ function sideItem(g) {
       "aria-label": n + " to approve" }, String(n))
     : null;
   const rule = n ? null : el("span", { class: "side-meta", title: ruleText(g.t, g.n) },
-    g.movedTo ? "Moved" : g.t + " of " + g.n);
+    g.movedTo ? moveWord(g) : g.t + " of " + g.n);
   return el("button", {
     class: "side-item" + (here ? " active" : ""), type: "button",
     // With its sections in the list, the section is the page and the wallet the current item.
@@ -322,7 +322,7 @@ function walletRow(g) {
   const seats = mySeatSecrets(g.id).length, bal = balOf(g.id);
   const n = solPending(g.id) + toApprove(g.id).length;
   const unread = newBadge(unreadIn(g.id));
-  const status = g.movedTo ? el("span", { class: "badge plain" }, "Moved")
+  const status = g.movedTo ? el("span", { class: "badge plain" }, moveWord(g))
     : ready[g.id] === false ? el("span", { class: "badge info" }, "Setting up")
     : bal ? money(bal.total) : el("span", { class: "small faint" }, "Open to sync");
   return el("button", {
@@ -448,8 +448,7 @@ const moveParts = (from, nameParts, ruleParts) => [el("ol", { class: "small mute
 // The funds that move: Change devices moves the Zcash funds only, so a wallet with a Solana part
 // is told to check that part on its own.
 const moveFundsText = (from) => "This wallet sends all its Zcash funds to the new one. Like any "
-  + "payment, this needs " + from.t + " approvals." + (solOn() ? " If this wallet has a Solana "
-  + "part, it does not move this way: check it in its Solana section." : "");
+  + "payment, this needs " + from.t + " approvals." + (solOn() ? " " + SOL_STAYS : "");
 // What a rule means when devices are lost: how many can be missing, and how many can spend. With
 // every device needed, one lost device stops the wallet.
 export const marginText = (t, n) => (t === n ? "Each payment needs every device. When one "
@@ -658,7 +657,10 @@ function moveDialog(from) {
     ...moveParts(from, names(from), [counts(from.n, from.t, "margin-text"), lines.rule,
       lines.margin, lines.ack]),
     el("div", { class: "callout" }, "The new wallet gets a new address. Devices that you leave "
-      + "out can still see this old wallet's payments, but not the new wallet's."),
+      + "out cannot read the new wallet. They can still read each payment of this old wallet, "
+      + "later ones too, and the move payment: the new address, the amount, the note and the id "
+      + "of the new wallet. With that id, the group server sends them the sealed documents of the "
+      + "new wallet and takes their writes, so they can stop it with false documents."),
     el("div", { class: "dialog-actions" },
       el("button", { class: "btn", type: "button", onclick: closeCreate }, "Cancel"),
       el("button", { class: "btn primary", type: "submit", ...off.attrs }, "Create new wallet"),

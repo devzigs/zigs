@@ -210,7 +210,7 @@ How the app reads the registry:
 | App Worker | Your IP address and when your page downloads the registry. Not the name that you type |
 | Group server | Nothing new. The name is one more field of the sealed proposal |
 | Other signers of the wallet | The name and the address in the proposal, as for every recipient |
-| Chain observers | A normal shielded payment. Nothing shows that a name was used |
+| Chain observers | A shielded payment with the shape of a payment from a standard wallet, except for its one-day expiry and an optional priority fee, which can mark it as a Zigs payment. Nothing shows that a name was used |
 
 The timing of a download can still tell the Worker something:
 
@@ -547,9 +547,12 @@ the passkey guards the key share instead. The lock is opt-in.
   document again, and can write the progress marks that have no signature. The funds stay safe,
   because FROST and the device checks do not depend on the store. A wallet of version 1 or 2 has
   no signed writes.
-- Every signer holds the wallet's viewing key and sees every payment. A signer removed with
-  "Change signers" keeps the old wallet's history but gets no access to the new wallet: the old
-  wallet stores only the new wallet's id, never its secret.
+- Every signer holds the wallet's viewing key and sees every payment. A device that "Change
+  devices" leaves out keeps the viewing key of the old wallet. It sees every later payment of the
+  old wallet, and the move payment: the new address, the amount, the note and the id of the new
+  wallet. It cannot read the new wallet, because the old wallet stores the new wallet's id, never
+  its secret. The id alone still gives it what the group server sees of the new wallet, and
+  writes that can stop it (Group server, above).
 - A removed signer keeps the old wallet's message room and can read it. The new wallet has a new
   room that the removed signer cannot read.
 
@@ -566,7 +569,7 @@ the passkey guards the key share instead. The lock is opt-in.
   the key share. ZIP 2005 recommends that you move the funds to a post-quantum protocol as soon as
   one exists.
 - A version 1 wallet (made before ZIP 2005 support) has no `qsk`. It cannot be recovered under
-  ZIP 2005. Move its funds to a new wallet with Change signers.
+  ZIP 2005. Move its funds to a new wallet with Change devices.
 - The signers must compare the safety number of a version 2 or 3 wallet over a channel that an
   attacker does not control. A call or a meeting is such a channel. The number covers the wallet
   id, the threshold, the number of seats, the network and every seat key.

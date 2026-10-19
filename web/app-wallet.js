@@ -7,8 +7,8 @@ import { gkeys, sec } from "./app-keystore.js";
 import { keysDiffer, localSeats, seatIds, seatMine, seatStage, STAGE_LABEL } from "./app-seats.js";
 import { inviteLink, senderNote } from "./app-links.js";
 import {
-  addrHidden, atCap, balanceNow, capText, chain, curChain, curNet, explorerText, inFlight, netName,
-  readsMemos, runSync, setMemoReading, spanMs,
+  addrHidden, atCap, balanceNow, balOf, capText, chain, curChain, curNet, explorerText, inFlight,
+  netName, readsMemos, runSync, setMemoReading, spanMs,
 } from "./app-chain.js";
 import { canWriteAs, signedMode } from "./app-filter.js";
 import { needsMyApproval, openGroup, openSession, toApprove } from "./app-groups.js";
@@ -233,11 +233,24 @@ const receivedNote = (list) => list.some((a) => a.r) ? el("p", { class: "small m
   explorerText(curNet(), "A received payment in this list")) : null;
 
 // A move sends the Zcash funds only (proposeMove). solOn() says only that the wallet can have a
-// Solana part, so the text holds with or without one.
-const SOL_STAYS = "If this wallet has a Solana part, it does not move this way: check it in its "
-  + "Solana section.";
+// Solana part, so the text holds with or without one. The Solana key shares stay with the seats.
+export const SOL_STAYS = "If this wallet has a Solana part, it does not move this way: check it "
+  + "in its Solana section. A device that is left out keeps its key share of that part, so it can "
+  + "still read the Solana history and approve Solana payments.";
 const movePayment = () => state.sessions.find((x) => x.move === state.g.movedTo && !x.error
   && !ended(x));
+
+/**
+ * The word of a wallet that a new wallet replaces, for the wallet list and the side list:
+ * "Zcash funds moved" once the move is done as of the last sync, else "Moving". The open wallet
+ * reads its move payment (moveState). Another wallet reads the balance that this browser saved
+ * at its last sync: no Zcash left there counts as moved.
+ */
+export function moveWord(g) {
+  const done = g.id === state.gid && state.g ? moveState(curChain()).done
+    : balOf(g.id)?.total === 0;
+  return done ? "Zcash funds moved" : "Moving";
+}
 
 // The steps of a move, read from the old wallet: new wallet ready, payment proposed, funds gone.
 export function moveState(c) {
@@ -434,9 +447,9 @@ export const receiveWhat = () => curNet().cap ? "ZEC" : "testnet ZEC";
 export const receiveLimit = () => curNet().cap ? " Keep the total under " + capText(curNet().cap)
   + ". The app warns at that level and cannot block deposits." : "";
 
-/** The note of a wallet that moved: its senders must use the address of the new wallet. */
-export const movedNote = () => el("div", { class: "callout" }, "This wallet moved to "
-  + groupName(state.g.movedTo) + ". Ask senders to use the new wallet's address.");
+/** The note of a wallet that a new wallet replaces: its senders must use the new address. */
+export const movedNote = () => el("div", { class: "callout" }, "Change devices replaces this "
+  + "wallet with " + groupName(state.g.movedTo) + ". Ask senders to use the new wallet's address.");
 
 function receiveCard() {
   const w = state.wallet;

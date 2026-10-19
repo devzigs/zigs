@@ -1,7 +1,9 @@
 # How the Zigs protocol works
 
 Zigs is a shared wallet for shielded Zcash. Any *t* of its *n* signers approve each payment, and
-the chain sees one ordinary shielded transaction. Zigs uses re-randomized FROST threshold
+the chain sees one shielded transaction with the shape of a payment from a standard wallet, except
+for its one-day expiry (3,456 blocks of 25 seconds, against 40) and an optional priority fee, which
+can mark it as a Zigs payment (PRIVACY.md, On chain). Zigs uses re-randomized FROST threshold
 signatures ([ZIP 312](https://zips.z.cash/zip-0312)) on the Ironwood shielded pool (NU7, v6
 transactions).
 
@@ -16,7 +18,7 @@ app also has a Solana beta for testnet wallets (section 16).
 | **Signer device** | Runs the web, iPhone or Mac app around the engine | Its key share, the wallet secret, the viewing key, nonces, payment history |
 | **Group server** | A Cloudflare Worker with one Durable Object (SQLite) per wallet. Relays and stores sealed documents over a WebSocket. | Only ciphertext, plus wallet ids, document paths, timing and IP addresses |
 | **Light-wallet server** | lightwalletd over grpc-web. Serves compact blocks and full transactions, and accepts finished transactions. The public side of the Zigs testnet server answers the app Worker only (section 10.1). | Your IP address (on testnet, our server sees the app Worker), the blocks you download and the transactions you fetch |
-| **Zcash network** | NU7, Ironwood shielded pool | One normal shielded transaction per payment |
+| **Zcash network** | NU7, Ironwood shielded pool | One shielded transaction per payment, with the shape of a shielded payment from a standard wallet, except for its one-day expiry (3,456 blocks of 25 seconds, against 40) and an optional priority fee, which can mark it as a Zigs payment |
 
 ```mermaid
 flowchart LR
@@ -243,7 +245,7 @@ of section 15.5 to the payment documents. Its `version` is 3:
 The flow is the one before ZIP 2005 support: round 1, round 2 and round 3 without `confirm`,
 `commit` or `echo`. The creator makes the viewing key parts `nk` and `rivk`. A version 1 wallet
 shows a note in Settings: "This wallet was made before quantum recoverability (ZIP 2005). To get it,
-move the funds to a new wallet with Change signers." Section 8 describes that move.
+move the funds to a new wallet with Change devices." Section 8 describes that move.
 
 ## 5. The wallet key and the address
 
@@ -517,7 +519,9 @@ Each chosen device signs automatically, after these checks:
   it asks the signers to check an explorer before anyone proposes it again. The web app takes
   the id of the payment from the PCZT of the proposal (`txid` of `inspect`), never from the
   finished transaction, which one seat writes.
-- On chain, the payment is one normal Ironwood shielded transaction.
+- On chain, the payment is one Ironwood shielded transaction with the shape of a payment from a
+  standard wallet, except for its one-day expiry and an optional priority fee, which can mark it as
+  a Zigs payment.
 
 ### 7.7 Cancel
 
@@ -535,7 +539,7 @@ part of the wallet does not move this way.
 
 ```mermaid
 flowchart TD
-  OLD["Old wallet<br/>signers A, B, C, any 2 of 3"] -->|Change signers| NEW["New wallet<br/>signers A, B, D, any 2 of 3<br/>new key ceremony, new address"]
+  OLD["Old wallet<br/>signers A, B, C, any 2 of 3"] -->|Change devices| NEW["New wallet<br/>signers A, B, D, any 2 of 3<br/>new key ceremony, new address"]
   OLD -.->|stores the new wallet id, never its secret| NEW
   NEW --> PAY["The old wallet proposes one payment of its spendable Zcash balance to the new address"]
   PAY --> OK["2 of 3 old signers approve.<br/>Approvers who are in the new wallet check its address"]
@@ -723,7 +727,7 @@ the web, on iPhone and on Mac at the same time.
   - Receive: the checked address, a QR code and a copy button.
   - Payment drawer: the decoded transaction, the recipient check, the approval steps, and the
     buttons Approve, Build proof and Send to network.
-  - Change signers.
+  - Change devices.
   - Messages: the wallet thread, a discussion in each payment drawer, and unread counts (section 14).
 - **Device features.** Optional passkey lock, and encrypted backup and restore of key shares. The
   page also shows a message when the browser blocks WebAssembly (Tor Browser at the Safer level).
@@ -845,12 +849,12 @@ the web, on iPhone and on Mac at the same time.
   wallet secret can break X25519 with a quantum computer. That attacker then gets `sk` and `qsk`.
   Keep the invite link as private as the key share.
 - A version 1 wallet has no `qsk` and is not recoverable under ZIP 2005. Move its funds to a new
-  wallet with Change signers.
+  wallet with Change devices.
 - Malicious light-wallet servers are not handled. A false server can show a chain that does not
   exist, or hide transactions. The wallet follows real reorganisations of up to 100 blocks
   (section 6).
 - A memo on chain comes from the payer and is not authenticated. Every signer can read it, and a
-  signer who kept the viewing key can read it after "Change signers".
+  signer who kept the viewing key can read it after "Change devices".
 - A full session in Tor Browser is not tested yet.
 - `alpha` comes from the PCZT, as in the Zcash Foundation's `zcash-sign`. Compare this with the
   final ZIP 312 text before production use.

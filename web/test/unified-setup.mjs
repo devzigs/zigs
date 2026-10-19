@@ -551,7 +551,7 @@ function receiveTexts() {
     assert.match(t.banner?.text ?? "", /could not share the address\. Use Copy address\./);
     t.state.g = { ...g, movedTo: "elsewhere" };
     const moved = textOf(receiveDialog());
-    assert.match(moved, /This wallet moved to/, "a moved wallet says so");
+    assert.match(moved, /Change devices replaces this wallet with/, "a moved wallet says so");
     assert.doesNotMatch(moved, /Send only|Use this shielded address|Share address/,
       "and asks for no payment to the old address");
     t.state.g = g;
@@ -664,6 +664,39 @@ function hiddenLink(page, link, where) {
     else delete globalThis.navigator;
   }
   assert.deepEqual(copied, [link], say("Copy link copies the full invite link"));
+}
+// A wallet that a new wallet replaces reads "Moving" in the wallet list and in the side list,
+// until no Zcash is left there at its last sync in this browser: then "Zcash funds moved".
+function moveWords() {
+  const groups = t.state.groups, gid = "ab".repeat(10);
+  const old = { id: gid, name: "Old", t: 2, n: 3, network: "testnet", movedTo: "cd".repeat(10) };
+  const lobbyTree = () => {
+    const real = globalThis.document;
+    globalThis.document = { createElement: () => new Rec(), createElementNS: () => new Rec(),
+      createTextNode: (text) => ({ text }) };
+    try {
+      return lobby();
+    } finally {
+      globalThis.document = real;
+    }
+  };
+  const item = (tree, key) => textOf(findNode(tree, (n) => n.attrs?.["data-key"] === key));
+  const side = () => item(sideTree(), "wallet-" + gid);
+  const row = () => item(lobbyTree(), "wallet-row-" + gid);
+  t.state.groups = [...groups, old];
+  try {
+    assert.match(side(), /Moving/, "the side list says Moving");
+    assert.match(row(), /Moving/, "the wallet list says Moving");
+    t.balCache[gid] = { total: 0, at: 1 };
+    assert.match(side(), /Zcash funds moved/,
+      "a list wallet with no Zcash left reads Zcash funds moved");
+    assert.match(row(), /Zcash funds moved/, "in the wallet list too");
+    t.balCache[gid] = { total: 5, at: 1 };
+    assert.match(row(), /Moving/, "a wallet with Zcash left is still moving");
+  } finally {
+    t.state.groups = groups;
+    delete t.balCache[gid];
+  }
 }
 // The Devices section shows the invite link that way.
 function inviteTexts() {
@@ -1028,6 +1061,7 @@ async function approvalCount(ctl) {
     emptyInbox();
     receiveTexts();
     inviteTexts();
+    moveWords();
     activityList(ctl);
     sideMenu();
     await settingsSection();
@@ -1106,6 +1140,32 @@ const SENDER = new RegExp("asks for a user name and a password before Zigs opens
   + "link in Safari or Chrome\\. The browser of a chat app or a private window can delete the key");
 assert.match(pageText(), SENDER, "the invite card of a wallet");
 hiddenLink(pageTree(), inviteLink(gid), "the setup card");
+// A failed copy of a secret link opens its disclosure, so the person can select the link there.
+{
+  const { copyBtn } = await import("../app-dom.js");
+  const real = globalThis.document, nav = Object.getOwnPropertyDescriptor(globalThis, "navigator");
+  globalThis.document = { createElement: () => new Rec(), createElementNS: () => new Rec(),
+    createTextNode: (text) => ({ text }) };
+  let button;
+  try {
+    button = copyBtn(inviteLink(gid), "Copy link");
+  } finally {
+    globalThis.document = real;
+  }
+  const opened = [], disclosure = { setAttribute: (k) => opened.push(k) };
+  const section = { querySelector: (q) => (q === "details[data-link]" ? disclosure : null) };
+  const target = { textContent: "Copy link", closest: (q) => (q === "section" ? section : null) };
+  Object.defineProperty(globalThis, "navigator", { configurable: true,
+    value: { clipboard: { writeText: async () => { throw new Error("denied"); } } } });
+  try {
+    await button.on.click({ currentTarget: target });
+  } finally {
+    if (nav) Object.defineProperty(globalThis, "navigator", nav);
+    else delete globalThis.navigator;
+  }
+  assert.deepEqual(opened, ["open"], "a failed copy opens the link to select");
+  assert.equal(target.textContent, "Select and copy");
+}
 {
   const cid = "c0ffee00c0ffee00c0ff";
   chats.list[cid] = { key: "ab".repeat(32), member: "m", at: Date.now() };

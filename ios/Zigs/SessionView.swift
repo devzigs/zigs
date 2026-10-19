@@ -356,6 +356,8 @@ struct ChainView: View {
                 }
             }
             Text("The fee and the number of actions are public.").font(.caption).foregroundStyle(Color.mist)
+            Text("The expiry height is public too. Zigs sets it up to one day after the proposal, and a standard wallet sets it 40 blocks ahead. So the expiry height can show that Zigs made this payment. Few wallets pay a priority fee, so a priority fee can mark a payment too.")
+                .font(.caption).foregroundStyle(Color.mist)
         }
     }
 }

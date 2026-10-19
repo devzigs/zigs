@@ -1561,6 +1561,8 @@ const sealed = (gid, rel, seat, fields, key, names = ["by", "sig"]) =>
     t.setChain(chainOf(null));
     t.ui.pay = null;
     const blocked = t.sendDialog();
+    assert.match(textOf(blocked), new RegExp("Pay a priority fee: .*The fee and the expiry height "
+      + "are public and can show that Zigs made this payment\\."), "the priority fee label");
     assert.equal(named(blocked, "button", "Review payment").attrs.disabled, "");
     assert.match(textOf(blocked), /Wait for the first sync to finish\./);
     const reasonId = named(blocked, "button", "Review payment").attrs["aria-describedby"];
@@ -1733,17 +1735,19 @@ const sealed = (gid, rel, seat, fields, key, names = ["by", "sig"]) =>
         assert.match(textOf(shown), /decoded the transaction that it built/);
         assert.match(textOf(shown), /Network fee0/, "the decoded fee is the standard fee");
         assert.match(textOf(shown), new RegExp("The chain does not show the recipients, the "
-          + "amounts or the memos\\. Every device of this wallet can read them and the note, in "
-          + "the shared history of the wallet\\. So can anyone who has its invite "
-          + "link\\. A device that is left out when the devices change keeps the viewing key and "
-          + "the messages of this wallet\\. It can still read this history and each later payment "
-          + "of this wallet\\. It cannot read the new wallet\\. The move payment gives it the "
-          + "address, the amount and the note of that payment, and the id of the new "
-          + "wallet\\. With the id, the group server sends it the sealed documents of the new "
-          + "wallet and each later write\\. The server also accepts writes from it, so the device "
-          + "can stop the new wallet with false documents\\. A memo goes on chain with the "
-          + "payment, and its recipient can read it too\\."),
-        "the review says who can read the payment");
+          + "amounts or the memos\\. The fee and the expiry height are public and can show that "
+          + "Zigs made this payment\\. Every device of this wallet can read the recipients, the "
+          + "amounts, the memos and the note, in the shared history of the wallet\\. So can "
+          + "anyone who has its invite link\\. A memo goes on chain with the payment, and its "
+          + "recipient can read it too\\."), "the review says who can read the payment now");
+        assert.match(textOf(shown), new RegExp("A device that a later Change devices leaves out "
+          + "keeps the viewing key and the messages of this wallet\\. It can still read this "
+          + "history and each later payment of this wallet\\. It cannot read the new wallet\\. "
+          + "The move payment gives it the address, the amount and the note of that payment, and "
+          + "the id of the new wallet\\. With the id, the group server sends it the sealed "
+          + "documents of the new wallet and each later write\\. The server also accepts writes "
+          + "from it, so the device can stop the new wallet with false documents\\."),
+        "the review says what a device left out later keeps");
         assert.ok(named(shown, "button", "Propose payment"), "a match can be proposed");
         t.ui.sendReview = { prep: { ...prep, t: { ...prep.t, pczt: "REV3" } }, note: "x" };
         assert.match(textOf(drawn()), /Network fee \(priority\)/, "the fee as decoded");
@@ -2010,7 +2014,8 @@ const sealed = (gid, rel, seat, fields, key, names = ["by", "sig"]) =>
       return c;
     };
     const SOL_STAYS = new RegExp(" If this wallet has a Solana part, it does not move this way: "
-      + "check it in its Solana section\\.$");
+      + "check it in its Solana section\\. A device that is left out keeps its key share of that "
+      + "part, so it can still read the Solana history and approve Solana payments\\.$");
     const solKey = "confirmednet:" + t.state.gid, pinned = t.signPins[solKey];
     delete t.signPins[solKey];
     try {
@@ -2019,6 +2024,8 @@ const sealed = (gid, rel, seat, fields, key, names = ["by", "sig"]) =>
       assert.match(m.text, /^The Zcash funds moved to .+, as of the last sync\.$/,
         "the Zcash funds moved, as of the last sync");
       assert.equal(m.done, true);
+      assert.equal(t.moveWord(t.state.g), "Zcash funds moved",
+        "the open wallet reads its move payment");
       assert.match(textOf(moveCard()), /^The Zcash funds moved/,
         "the heading names the Zcash funds only");
       assert.doesNotMatch(textOf(moveCard()), /Closed|is closed/, "no Closed badge or text");
@@ -2030,6 +2037,7 @@ const sealed = (gid, rel, seat, fields, key, names = ["by", "sig"]) =>
       const more = () => tipAt(4500000, new Set(["realtx"]));
       assert.match(t.moveState(more()).text, /Move the Zcash funds to it\. Like any/,
         "more funds came in: move them too");
+      assert.equal(t.moveWord(t.state.g), "Moving", "and the open wallet is still moving");
       const devicesText = () => {
         t.ui.tab = "members";
         try { return textOf(t.walletView(null, null)); } finally { t.ui.tab = "overview"; }
@@ -2061,6 +2069,28 @@ const sealed = (gid, rel, seat, fields, key, names = ["by", "sig"]) =>
     t.state.sessions.splice(t.state.sessions.indexOf(sentMove), 1);
     t.state.g = group;
     delete t.ready.MV1;
+
+    {
+      // A redraw keeps an open secret link open by its link, and never opens the secret link of
+      // another card, whose summary reads the same (saveFormState, restoreFormState).
+      const box = (link, open) => {
+        const d = { open, dataset: link ? { link } : {} };
+        d.summary = { textContent: "Show link and QR code", parentElement: d };
+        return d;
+      };
+      const page = (boxes) => ({
+        querySelector: () => null,
+        querySelectorAll: (sel) => (sel === "details[open] > summary"
+          ? boxes.filter((b) => b.open).map((b) => b.summary)
+          : sel === "details > summary" ? boxes.map((b) => b.summary) : []),
+      });
+      const form = t.saveFormState(page([box("gidA", true), box(null, true)]));
+      const other = box("gidB", false), same = box("gidA", false), plain = box(null, false);
+      t.restoreFormState(page([other, same, plain]), form);
+      assert.equal(other.open, false, "a redraw does not open the secret link of another card");
+      assert.equal(same.open, true, "a redraw keeps the open link of the same card");
+      assert.equal(plain.open, true, "and a plain disclosure with the same summary");
+    }
 
     {
       // ── ZEC-13: after signing, "done", "expired" and "Propose again" come from the engine
