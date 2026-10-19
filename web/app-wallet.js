@@ -483,7 +483,8 @@ const openSolanaButton = () => el("button", { class: "btn sm", type: "button",
 
 // The payments of the open wallet by bucket. A payment whose facts cannot be read lands in
 // "attention", never out of the list. `lost`: the ids of approvals here that still hold Send
-// while the list has no record of their payment (dropped or rewritten).
+// while the list has no record of their payment (dropped or rewritten). Only a list that arrived
+// and passed its checks can lack a record.
 export function inboxRows() {
   const held = new Set(heldApprovals());
   const rows = Object.fromEntries(BUCKETS.map(([id]) => [id, []]));
@@ -492,7 +493,8 @@ export function inboxRows() {
     if (b) rows[b].push(ss);
   }
   const listed = new Set(state.sessions.map((ss) => ss.id));
-  return { ...rows, lost: [...held].filter((id) => !listed.has(id)) };
+  const known = state.sessionsLoaded && !state.sessionsFailed && !state.pending;
+  return { ...rows, lost: known ? [...held].filter((id) => !listed.has(id)) : [] };
 }
 
 function inboxBucket(ss, held) {

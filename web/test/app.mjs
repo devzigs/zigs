@@ -2177,7 +2177,26 @@ const sealed = (gid, rel, seat, fields, key, names = ["by", "sig"]) =>
       at(4500102);
       const askedFrom = asked.length;
       assert.ok(t.heldApprovals().includes("h1"), "a dropped document ends no hold");
+      const listState = { sessionsLoaded: true, sessionsFailed: false, pending: false };
+      const keptList = Object.fromEntries(Object.keys(listState).map((k) => [k, t.state[k]]));
+      Object.assign(t.state, listState);
+      for (const unknown of [{ sessionsLoaded: false }, { sessionsFailed: true },
+        { pending: true }]) {
+        Object.assign(t.state, unknown);
+        assert.deepEqual(t.inboxRows().lost, [], "no lost record while the list is unknown");
+        Object.assign(t.state, listState);
+      }
       assert.ok(t.inboxRows().lost.includes("h1"), "the inbox names a hold with no record");
+      const tab = t.ui.tab;
+      t.ui.tab = "approvals";
+      const page = t.groupView();
+      t.ui.tab = tab;
+      const attention = all(page, (x) => x.attrs?.["aria-label"] === "Needs attention")[0];
+      assert.ok(attention, "the lost note shows in Needs attention");
+      const count = t.inboxRows().attention.length + t.inboxRows().lost.length;
+      assert.ok(textOf(attention).startsWith("Needs attention" + count), "the count holds it");
+      assert.match(textOf(attention), /approved ha(s|ve) no record here any more/);
+      Object.assign(t.state, keptList);
       assert.ok(asked.slice(askedFrom).some((x) => S(x) === S(["PA", "", "aa"])),
         "the engine gets the kept PCZT and the approved sighash alone");
       // The hold ends when a block holds the approved transaction, when it expired, when another

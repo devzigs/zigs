@@ -187,6 +187,23 @@ function inboxWiring() {
     t.ui.tab = tab;
   }
 }
+// With nothing to list after the sync, the inbox speaks for Zcash alone: the Solana line below it
+// speaks for Solana.
+function emptyInbox() {
+  const { tab } = t.ui, chain = t.chain, sessions = t.state.sessions;
+  t.ui.tab = "approvals";
+  t.state.sessions = [];
+  t.setChain({ gid: t.state.gid, cw: {}, bal: { spendable: 0, pending: 0 }, sent: new Set(),
+    received: [] });
+  try {
+    assert.match(pageText(), /No Zcash payment waits for this browser.*No Solana proposal waits/,
+      "the empty inbox of a wallet with a Solana part");
+  } finally {
+    t.setChain(chain);
+    t.state.sessions = sessions;
+    t.ui.tab = tab;
+  }
+}
 // The phone Menu closes on a pick; the sections show for the formed wallet only; the switcher
 // shows with two or more wallets.
 function sideMenu() {
@@ -247,6 +264,7 @@ function approvalCount(ctl) {
     inboxWiring();
     Object.assign(ctl, { sessions: [], commits: {} });
     assert.ok(!labelled(sideTree(), "2 to approve"), "no count without a proposal");
+    emptyInbox();
     sideMenu();
   } finally {
     [ctl.sessions, ctl.commits, t.state.groups] = kept;
