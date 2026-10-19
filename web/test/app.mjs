@@ -3345,6 +3345,15 @@ const sealed = (gid, rel, seat, fields, key, names = ["by", "sig"]) =>
         typeIn(form, OTHER);
         assert.equal(t.ui.pay[0].name, null);
         assert.deepEqual(await submit(form), [[{ to: OTHER, amount: 5 }]], "no name key");
+        // A kept name on the address of this wallet: Review refuses it, so the note is red.
+        Object.assign(t.ui, { send: false, after: null });
+        await quiet(() => t.proposeAgain({ ...open("pa1", "PA"),
+          payees: [{ to: OWN, amount: 5, name: "alice" }] }));
+        form = t.sendDialog();
+        assert.deepEqual(shows(hintOf(form)), [OWN_REFUSAL, "hint bad"],
+          "a kept name on the address of this wallet reads as refused");
+        assert.equal(boxOf(form).attrs["aria-invalid"], "true",
+          "and marks the field as invalid, as Review refuses it");
         t.ui.send = false;
 
         // These stop the proposal with their text.
