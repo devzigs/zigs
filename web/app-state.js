@@ -44,6 +44,7 @@ export const ui = {
   createStep: 0, createDraft: null, marginAck: false,
   newChat: false, leave: false, backup: null, restore: null, menu: false,
   request: null, note: "", priority: false, sendFor: null, contactAdd: false,
+  joinBad: "", joinOpen: false,
   personal: { net: "testnet", ack: false, fund: "0.003", drop: false },
 };
 // A create dialog opens at its first step, with no values kept from an earlier one.

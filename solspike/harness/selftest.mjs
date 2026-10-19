@@ -126,7 +126,7 @@ async function helpers(page) {
   await page.navigate(`${ORIGIN}/`);
   await waitForText(page, "Crypto engine ready (WebAssembly)");
   assert.equal(csp(page), 0, "the app page raises no CSP violation");
-  await clickText(page, "Create wallet");
+  await clickText(page, "Set up a wallet");
   await waitForText(page, "New shared wallet");
   const focused = () => run(page, () => document.activeElement?.textContent.trim() ?? "");
   assert.equal(await focused(), "Set up my wallet", "the first step gives focus to its button");

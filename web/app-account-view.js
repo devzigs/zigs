@@ -57,7 +57,7 @@ function createCard(pickRestore) {
     el("div", { class: "callout" }, "Keep only a few cents here. Whoever controls this browser can "
       + "spend the account. Make a backup file right after you create it."),
     el("div", { class: "dialog-actions" },
-      el("button", { class: "btn", type: "button", onclick: pickRestore }, "Restore from backup"),
+      el("button", { class: "btn", type: "button", onclick: pickRestore }, "Recover access"),
       el("button", {
         class: "btn primary", type: "button", disabled: !Z,
         onclick: act(() => createPersonal(p.net)),

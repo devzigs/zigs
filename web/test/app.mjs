@@ -4898,7 +4898,7 @@ const sealed = (gid, rel, seat, fields, key, names = ["by", "sig"]) =>
     t.personal = null;
     const create = t.personalCard(() => {});
     assert.match(textOf(create), /Create account/);
-    assert.match(textOf(create), /Restore from backup/);
+    assert.match(textOf(create), /Recover access/);
     assert.equal(named(create, "button", "Create account").attrs.disabled, undefined);
     assert.equal(t.contactsCard(), null);
     t.personal = mine;
