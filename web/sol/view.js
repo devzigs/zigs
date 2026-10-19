@@ -3,15 +3,12 @@
 // restore, and (payview.js) the funding, the proposals and their approvals.
 // `data-sol` marks each value for the headless checks. `host.el` builds the elements, `act` wraps
 // a button action (act of app-dom.js).
-import { approvalClosed, showable } from "./approve.js";
 import { agreement, seatProgress, started, startBlock } from "./ceremony.js";
 import { base58 } from "./docs.js";
 import { checkLine, provesLocally } from "./localprove.js";
-import { payCards, titleOf } from "./payview.js";
+import { SHOWN, approveSeats, payCards, titleOf } from "./payview.js";
 import { feeMismatch, feeOf } from "./fee.js";
-import { writerSeats } from "./gate.js";
 import { holdsShare, remoteStop, solOf, stopOf } from "./secrets.js";
-import { beforeFee } from "./sessions.js";
 
 const ADD_TEXT =
   "A Solana program owns the funds of the group at a program address, which is public and links " +
@@ -73,20 +70,12 @@ export function setupSummary(c) {
 }
 
 /**
- * The open Solana proposals that a seat of this browser can still approve (S6): the section lists
- * them (the documents agree and the part is not stopped), they did not expire, the app can show
- * and sign them, and a seat that holds a share and a signing key gave no approval for them yet.
+ * The Solana proposals that wait for a seat of this browser (S6): the cards of the section that
+ * show an Approve button (approveSeats), while the documents agree and the part is not stopped.
  */
 function pendingList(c) {
   if (stopOf(c) || agreement(c).state !== "agree") return [];
-  const seats = writerSeats(c);
-  const open = (ss) =>
-    ss.status === "collecting" &&
-    !approvalClosed(ss) &&
-    showable(ss) &&
-    !beforeFee(ss) &&
-    seats.some((i) => !c.commits[ss.id]?.[i]);
-  return c.sessions.filter(open);
+  return (c.sessions ?? []).slice(0, SHOWN).filter((ss) => approveSeats(c, ss).length > 0);
 }
 export const pendingCount = (c) => pendingList(c).length;
 /** The same proposals as rows of the Approvals inbox: id, title and the proposing seat. */

@@ -184,6 +184,10 @@ function paymentReview(c, ss, seat, { spend, seen, intent }) {
   return { ok: true, intent, digest: said.digest, verdict, said, payer, by: ss.by };
 }
 
+/** True while seat `seat` waits for a read or a check of `ss`, as in reviewOf. No checker runs. */
+export const reviewWaits = (c, ss, seat) =>
+  reviewBlock(c, ss, seat, c.snaps?.[ss.id], c.seen?.[ss.id]).waiting === true;
+
 /**
  * What seat `seat` sees of the proposal: { ok: true, intent, digest, verdict, payer, by, ... }
  * when the checker accepts it on the snapshot of this device (and, for the move of the beta funds,

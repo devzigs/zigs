@@ -5,7 +5,7 @@
 // and the proof, never from the display fields of the proposer. Each screen of a payment says who
 // pays, what it costs and what it makes public (ZOLANA.md 7.2). `data-session` marks a session and
 // `data-sol` marks a control, for the headless checks.
-import { approvalClosed, reviewOf } from "./approve.js";
+import { approvalClosed, reviewOf, reviewWaits, showable } from "./approve.js";
 import { agreement } from "./ceremony.js";
 import { CLUSTER, base58 } from "./docs.js";
 import { EXECUTE_TRIES, endsAt } from "./execute.js";
@@ -25,7 +25,7 @@ import { usedDigest } from "./nonces.js";
 import { heldOf, reclaimRent, scanRent } from "./rent.js";
 import { holdsShare, solOf } from "./secrets.js";
 import { solText } from "./session.js";
-import { heldLamports, heldNotes, isPayment, spentLamports } from "./sessions.js";
+import { beforeFee, heldLamports, heldNotes, isPayment, spentLamports } from "./sessions.js";
 
 export const SHOWN = 12;
 const FAUCET = "https://faucet.solana.com/";
@@ -620,16 +620,17 @@ export function seatsOf(c, ss) {
 const SEAT_TEXT = {
   approved: (seat) => "Seat " + seat + " approved",
   used: (seat) => "Seat " + seat + " signed these bytes before",
+  nokey: (seat) => "This browser cannot sign for seat " + seat + ".",
 };
 
-// A seat that approved, or that signed these exact bytes, gets no approval screen and no button.
-// While the review waits (a wallet read, an account read, a check of the documents), no seat gets
-// a button: the review is not on the screen yet.
-function approveRow(c, ss, act, actions, waiting) {
+// A seat that approved, that signed these exact bytes, or that has no signing key here gets no
+// button. The other seats get a button when approveSeats names them.
+function approveRow(c, ss, act, actions, seats) {
   const { el } = c.host;
   return seatsOf(c, ss).map(({ seat, state }) => {
     if (state !== "open") return el("span", { class: "small" }, SEAT_TEXT[state](seat));
-    if (waiting) return null;
+    if (!c.host.canWriteAs(seat)) return el("span", { class: "small" }, SEAT_TEXT.nokey(seat));
+    if (!seats.includes(seat)) return null;
     const attrs = {
       class: "btn primary",
       type: "button",
@@ -684,14 +685,15 @@ const EXPIRED_TEXT = "This proposal expired, so no seat can approve it. The page
 const approvable = (ss) => ss.status === "collecting" && !approvalClosed(ss);
 
 /**
- * The seats of this browser that show an Approve button for `ss` now: the rules of approveRow.
- * A proposal that expired, or whose review still waits for a read, shows none. The S6 count of
- * the proposals that wait for this browser uses it, so the count and the buttons agree.
+ * The seats of this browser that show an Approve button for `ss` now: a seat with a share and a
+ * signing key that gave no approval yet. A proposal that expired, that the app cannot show, that
+ * is from before the fee keys, or whose review still waits for a read, shows none. The buttons,
+ * the S6 count and the Approvals inbox all use it, so they agree.
  */
 export function approveSeats(c, ss) {
-  if (!approvable(ss)) return [];
-  const open = seatsOf(c, ss).filter((s) => s.state === "open");
-  if (!open.length || reviewOf(c, ss, open[0].seat).waiting) return [];
+  if (!approvable(ss) || !showable(ss) || beforeFee(ss)) return [];
+  const open = seatsOf(c, ss).filter((s) => s.state === "open" && c.host.canWriteAs(s.seat));
+  if (!open.length || reviewWaits(c, ss, open[0].seat)) return [];
   return open.map((s) => s.seat);
 }
 
@@ -765,7 +767,7 @@ function sessionBody(c, ss, act, actions) {
     open = seatsOf(c, ss).find((s) => s.state === "open");
   const collecting = approvable(ss);
   const review = collecting && open ? reviewOf(c, ss, open.seat) : null;
-  const buttons = collecting ? approveRow(c, ss, act, actions, review?.waiting) : null;
+  const buttons = collecting ? approveRow(c, ss, act, actions, approveSeats(c, ss)) : null;
   return [
     stepsOf(c, ss),
     expiredLine(c, ss),

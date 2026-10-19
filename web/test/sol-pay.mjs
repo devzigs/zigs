@@ -321,6 +321,13 @@ step("propose creates the proposal account first; no screen before the reads of 
   chain.accounts.set(address, stored);
   await waitFor("the account read again", () => reviewOf(c, ssOf(id), 2).ok, 30000);
   assert.equal(buttons(), 1, "the Approve button comes with the review");
+  // A seat with a share but no signing key here gets no button, and the card says why.
+  const noKey = solView({ ...c, host: { ...c.host, el: node, canWriteAs: () => false } },
+    (fn) => fn, {});
+  const keyless = findAll(noKey, (n) => n.attrs["data-session"] === id)[0];
+  assert.equal(findAll(keyless, (n) => String(n.attrs["data-sol"]).startsWith("approve-")).length,
+    0, "a seat with no signing key gets no Approve button");
+  assert.match(textOf(keyless), /cannot sign for seat 2\./, "and the card says why");
   // A document that waits for its signature check is a wait too: no alert and no button.
   c.sessWait += 1;
   assert.equal(reviewOf(c, ssOf(id), 2).waiting, true, "a check of the documents is a wait");

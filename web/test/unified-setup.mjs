@@ -22,7 +22,8 @@ const { chatMessage } = await import("../app-links.js");
 const { chatInviteCard } = await import("../app-thread.js");
 const { chats } = await import("../app-keystore.js");
 const { backupWords } = await import("../sol/backup.js");
-const { pendingCount } = await import("../sol/view.js");
+const { pendingCount, pendingRows } = await import("../sol/view.js");
+const { SHOWN } = await import("../sol/payview.js");
 const { createDialog, lobby, renderSide } = await import("../app-shell.js");
 const { offReason } = await import("../util.js");
 const { intentHex } = await import("../sol/intent.js");
@@ -240,11 +241,17 @@ function sideMenu() {
   assert.ok(labelled(pageTree(), "Switch wallet"), "two wallets: a switcher");
 }
 function approvalCount(ctl) {
+  // The count follows approveSeats: the documents are checked (wait 0), so the cards show buttons.
   const count = (sessions, commits = {}, change = {}) =>
-    pendingCount({ ...ctl, ...change, sessions, commits });
+    pendingCount({ ...ctl, wait: 0, sessWait: 0, ...change, sessions, commits });
   const docs = (change) => ({ docs: { ...ctl.docs, ...change } });
   const two = [proposal("a"), proposal("b"), proposal("c", { status: "sent" })];
   assert.equal(count(two), 2, "two open proposals, a sent one does not count");
+  const rows = pendingRows({ ...ctl, wait: 0, sessWait: 0, sessions: two, commits: {} });
+  assert.deepEqual(rows.map((r) => r.id), ["a", "b"], "the inbox lists the same proposals");
+  assert.equal(count(two, {}, { wait: 1 }), 0, "while a document is checked: no button, no count");
+  const many = Array.from({ length: SHOWN + 1 }, (_, i) => proposal("m" + i));
+  assert.equal(count(many), SHOWN, "only the cards that the section shows count");
   assert.equal(count(two, { a: { 1: {} } }), 2, "seats 2 and 3 can still approve a");
   assert.equal(count(two, { a: { 1: {}, 2: {}, 3: {} } }), 1, "every seat approved a");
   assert.equal(count([proposal("d", { intent: "zz" })]), 0, "a proposal the app cannot show");
