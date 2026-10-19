@@ -100,17 +100,41 @@ export function parseHash(hash) {
 
 export const PASTE_EMPTY = "Paste the invite link first.";
 export const PASTE_CONTACT = "This is a contact link for a chat. Paste a wallet invite link here.";
+export const PASTE_OTHER = "This invite link is for another Zigs server. Open it there.";
 export const PASTE_BAD = "This is not a full wallet invite link. Ask for the full link again. "
   + "It has a long secret after the # sign.";
 
-// The wallet that pasted text names: the link itself or a message that holds it. The text of an
-// error is fixed: it never repeats the pasted text, which holds a secret.
-export function pastedInvite(text) {
+// The shape of a wallet link in a text: "#", the wallet id, ".", the secret. Nothing of the key
+// alphabet may follow. The same parts as ROOM_ID and ROOM_KEY.
+const part = (re) => re.source.slice(1, -1);
+const INVITE = new RegExp("#(" + part(ROOM_ID) + ")\\.(" + part(ROOM_KEY) + ")(?![\\w-])");
+
+// Does the text before the "#" of a link name `here`, the page that is open (origin and path)?
+// No text means a bare fragment, which is the page that is open.
+function pointsHere(before, here) {
+  const start = before.search(/https?:\/\//i);
+  const url = start < 0 ? before.replace(/^[^a-z\d/]+/i, "") : before.slice(start);
+  if (!url) return true;
+  try {
+    const page = new URL(/^[a-z][a-z\d+.-]*:/i.test(url) ? url : "https://" + url);
+    return page.origin + page.pathname === here;
+  } catch { return false; }
+}
+
+// The wallet that pasted text names: the link itself, or a message that holds it, also when a name
+// or a mark comes before or after the link. The first full wallet link counts. `here` is the
+// origin and path of the open page: a link of another page opens nothing. The text of an error
+// is fixed: it never repeats the pasted text, which holds a secret.
+export function pastedInvite(text, here) {
   const pasted = String(text ?? "").trim();
   if (!pasted) return { error: PASTE_EMPTY };
-  const { chat, id, key } = parseHash(pasted.match(/#\S*/)?.[0] ?? "");
-  if (chat) return { error: PASTE_CONTACT };
-  return validRoom({ id, key }) ? { id, key } : { error: PASTE_BAD };
+  const found = pasted.match(INVITE);
+  if (found) {
+    const before = pasted.slice(0, found.index).split(/\s/).pop();
+    return pointsHere(before, here) ? { id: found[1], key: found[2] } : { error: PASTE_OTHER };
+  }
+  const { chat } = parseHash(pasted.match(/#\S*/)?.[0] ?? "");
+  return { error: chat ? PASTE_CONTACT : PASTE_BAD };
 }
 
 export const pinnedMembers = (pins, cid) => Object.keys(pins)

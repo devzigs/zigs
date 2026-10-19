@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import {
   byTime, chatWarning, checkText, countUnread, dmText, joinBlock, keyState, newRoom, newSignKey,
   membersToPin, normChats, parseDm, parseHash, parseMsg, PASTE_BAD, PASTE_CONTACT, PASTE_EMPTY,
-  pastedInvite, pickRoom, pin, pinMember, pinnedMembers,
+  PASTE_OTHER, pastedInvite, pickRoom, pin, pinMember, pinnedMembers,
   signMsg,
   signPairMatches, signedText, validRoom, verifyMsg,
 } from "../chat.js";
@@ -207,41 +207,95 @@ for (const bad of ["__proto__", "constructor", "toString", "hasOwnProperty", "A"
 }
 assert.deepEqual(parseHash("#c"), { chat: true, id: "", key: "" });
 
-// A pasted invite link: the link, or a message that holds it. A text with no full wallet link gives
-// a fixed error that never repeats the text.
-const LINK = "https://app.zigs.app/#" + GID + "." + K;
-const found = { id: GID, key: K };
-assert.deepEqual(pastedInvite(LINK), found, "a full link");
-assert.deepEqual(pastedInvite("  \n" + LINK + "\n "), found, "space around the link");
-assert.deepEqual(pastedInvite("#" + GID + "." + K), found, "the fragment alone");
-assert.deepEqual(pastedInvite("Open this link: " + LINK + "\nThen take a seat."), found,
-  "a message with a line break after the link");
-assert.deepEqual(pastedInvite("Open " + LINK + ". Then take a seat."), found, "a full stop");
-assert.deepEqual(pastedInvite("Open " + LINK + " and wait"), found, "a space after the link");
+// A pasted invite link: the link, or a message that holds it. The first full wallet link counts,
+// whatever comes before or after it. A text with no full wallet link gives a fixed error that never
+// repeats the text. A link of another page than `here` opens nothing.
+const HERE = "https://app.zigs.app/";
+const LINK = HERE + "#" + GID + "." + K;
+const wanted = { id: GID, key: K };
+const invite = (name) => 'I made a shared wallet "' + name + '" on Zigs, a shared wallet for Zcash '
+  + "testnet and Solana Devnet. You are one of 3 signers, and 2 must approve each payment.\n\n"
+  + "1. Open this link on your phone or computer: " + LINK + "\nOpen the link in Safari or Chrome. "
+  + "Do not open it in a chat app browser or a private window: they can delete your key.\n"
+  + "2. The browser asks for a user name and a password. Any user name works.\n3. Take a seat.\n"
+  + "4. Keep the page open until the wallet is ready.\n\nThis link is a secret. Do not post it in "
+  + "a public place. About Zigs: https://zigs.app";
+const joins = {
+  "a full link": LINK,
+  "space around the link": "  \n" + LINK + "\n ",
+  "the fragment alone": "#" + GID + "." + K,
+  "a message with a line break after the link": "Open this link: " + LINK + "\nThen take a seat.",
+  "a full stop": "Open " + LINK + ". Then take a seat.",
+  "a space after the link": "Open " + LINK + " and wait",
+  "the invite message of the app": invite("Demo wallet"),
+  "the invite message, a # in the wallet name": invite("Team #2"),
+  "the invite message, a name that starts with #": invite("#1 wallet"),
+  "the invite message, a name with a # and a dot": invite("Team #a.b"),
+  "a comma after the link": "Open " + LINK + ", then wait",
+  "parentheses": "Open (" + LINK + ") now",
+  "angle brackets": "Open <" + LINK + "> now",
+  "a name with # before the link": "Wallet #1: <" + LINK + ">",
+  "a zero-width space after the link": LINK + "​",
+  "a link in a mark": "[Team](" + LINK + ")",
+  "a link in stars": "**" + LINK + "**",
+  "a link in quotes": '"' + LINK + '"',
+  "a host without a scheme": "app.zigs.app/#" + GID + "." + K,
+  "a host in capitals": "HTTPS://APP.ZIGS.APP/#" + GID + "." + K,
+  "a path without a slash": "https://app.zigs.app#" + GID + "." + K,
+  "a query before the fragment": HERE + "?from=chat#" + GID + "." + K,
+  "two wallet links: the first counts": LINK + " " + HERE + "#" + ROOM + "." + K,
+};
+for (const [what, text] of Object.entries(joins)) {
+  assert.deepEqual(pastedInvite(text, HERE), wanted, "a link is found: " + what);
+}
 for (const empty of ["", "   ", "\n\t", undefined, null]) {
-  assert.deepEqual(pastedInvite(empty), { error: PASTE_EMPTY }, "empty: " + JSON.stringify(empty));
+  const got = pastedInvite(empty, HERE);
+  assert.deepEqual(got, { error: PASTE_EMPTY }, "empty: " + JSON.stringify(empty));
 }
 const secret = "s".repeat(43);
 const bad = {
-  "no fragment": "https://app.zigs.app/",
-  "no secret": "https://app.zigs.app/#" + GID,
-  "a short secret": "https://app.zigs.app/#" + GID + "." + K.slice(1),
-  "a long secret": "https://app.zigs.app/#" + GID + "." + K + "x",
-  "a secret with a bad character": "https://app.zigs.app/#" + GID + "." + K.slice(1) + "!",
-  "a bad id": "https://app.zigs.app/#" + "z".repeat(20) + "." + K,
+  "no fragment": HERE,
+  "no secret": HERE + "#" + GID,
+  "a short secret": HERE + "#" + GID + "." + K.slice(1),
+  "a long secret": HERE + "#" + GID + "." + K + "x",
+  "a secret with a bad character": HERE + "#" + GID + "." + K.slice(1) + "!",
+  "a bad id": HERE + "#" + "z".repeat(20) + "." + K,
   "a word": "hello",
   "a fragment of a word": "see #hello",
-  "a secret before a space": "https://app.zigs.app/#" + GID + ". " + K,
+  "a secret before a space": HERE + "#" + GID + ". " + K,
+  "a name with # and no link": 'I made a shared wallet "Team #2" on Zigs.',
 };
 for (const [what, text] of Object.entries(bad)) {
-  assert.deepEqual(pastedInvite(text), { error: PASTE_BAD }, "bad link: " + what);
+  assert.deepEqual(pastedInvite(text, HERE), { error: PASTE_BAD }, "bad link: " + what);
 }
-const contact = "https://app.zigs.app/#c." + GID + "." + secret;
-assert.deepEqual(pastedInvite(contact), { error: PASTE_CONTACT }, "a contact link is no wallet");
-assert.deepEqual(pastedInvite("#c." + GID), { error: PASTE_CONTACT }, "a contact link without secret");
-for (const error of [PASTE_EMPTY, PASTE_BAD, PASTE_CONTACT]) {
+const elsewhere = {
+  "another site": "https://evil.example/#" + GID + "." + K,
+  "another path": HERE + "other/#" + GID + "." + K,
+  "another scheme": "http://app.zigs.app/#" + GID + "." + K,
+  "another port": "https://app.zigs.app:8443/#" + GID + "." + K,
+  "a longer host": "https://app.zigs.app.evil.example/#" + GID + "." + K,
+  "a script": "javascript:alert(1)//#" + GID + "." + K,
+  "a site in a message": "Open https://evil.example/#" + GID + "." + K + " now",
+  "a site in brackets": "<https://evil.example/#" + GID + "." + K + ">",
+};
+for (const [what, text] of Object.entries(elsewhere)) {
+  assert.deepEqual(pastedInvite(text, HERE), { error: PASTE_OTHER }, "another page: " + what);
+}
+assert.deepEqual(pastedInvite("http://localhost:8873/#" + GID + "." + K, "http://localhost:8873/"),
+  wanted, "the open page can be a test server");
+const contact = HERE + "#c." + GID + "." + secret;
+assert.deepEqual(pastedInvite(contact, HERE), { error: PASTE_CONTACT }, "a contact link is no wallet");
+assert.deepEqual(pastedInvite("#c." + GID, HERE), { error: PASTE_CONTACT },
+  "a contact link without secret");
+for (const error of [PASTE_EMPTY, PASTE_BAD, PASTE_CONTACT, PASTE_OTHER]) {
   assert.equal(error.includes(K) || error.includes(secret), false, "an error never holds a secret");
 }
+// A long paste ends at once: the link is found in one pass.
+const began = Date.now();
+for (const long of ["x".repeat(2000000), "#".repeat(2000000), "a b ".repeat(500000) + LINK]) {
+  pastedInvite(long, HERE);
+}
+assert.equal(Date.now() - began < 3000, true, "a long paste ends at once");
 
 // Joining: a full chat wins over a lease that someone else holds.
 const FULL = "This chat already has two people. Ask for a new contact link.";

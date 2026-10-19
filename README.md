@@ -67,7 +67,7 @@ coin. The runbook of a demo with three devices is in [docs/demo.md](docs/demo.md
 
 1. Open https://app.zigs.app. The browser asks for a user name and a password. Type any user name
    and the password that the Zigs team gave you.
-2. Click **New wallet**. The network is **Testnet**, the only choice. Set **Signers** to 2 and
+2. Click **Set up a wallet**. The network is **Testnet**, the only choice. Set **Signers** to 2 and
    **Approvals needed** to 2, then click **Create wallet**. You now hold seat 1.
 3. Open **Trying Zigs alone? Play the other seats in this browser** and click **Play seat 2**.
    The two seats create the key together. Within half a minute the wallet opens, and both seats

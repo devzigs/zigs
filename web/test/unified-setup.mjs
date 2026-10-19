@@ -1173,14 +1173,15 @@ assert.match(marginText(3, 3), /Each payment needs every signer/);
     }
   };
   const formOf = (tree) => findNode(tree, (n) => !!n.on?.submit && !!byId(n, "join-link"));
-  const { PASTE_BAD, PASTE_CONTACT, PASTE_EMPTY } = await import("../chat.js");
+  const { PASTE_BAD, PASTE_CONTACT, PASTE_EMPTY, PASTE_OTHER } = await import("../chat.js");
   const { LINK_CHAT_ID, LINK_NEW_SECRET } = await import("../util.js");
-  const { openGroup } = await import("../app-groups.js");
+  const { openGroup, roomKeys } = await import("../app-groups.js");
   const { joinLinks } = await import("../app-messages.js");
   const { focusAfter } = await import("../app-loop.js");
-  const gid = t.state.gid, known = t.gkeys[gid], cid = "c1".repeat(10);
+  const gid = t.state.gid, known = t.gkeys[gid], cid = "c1".repeat(10), rid = "d3".repeat(10);
   const fresh = "f1".repeat(10), other = "o".repeat(43), secret = "s".repeat(43);
-  const link = (id, key) => "https://app.zigs.app/#" + id + "." + key;
+  const page = new URL(location.href), base = page.origin + page.pathname;
+  const link = (id, key) => base + "#" + id + "." + key;
 
   const said = [], replaced = [], methods = ["log", "info", "warn", "error", "debug"];
   const real = Object.fromEntries(methods.map((m) => [m, console[m]]));
@@ -1217,10 +1218,23 @@ assert.match(marginText(3, 3), /Each payment needs every signer/);
     byText(closed, "Set up a wallet").on.click();
     assert.equal(ui.create, true, "Set up a wallet opens the create dialog");
     ui.create = false;
+    focusAfter(null);
     choice.on.click();
     assert.equal(ui.joinOpen, true, "the choice opens the form");
     assert.equal(t.wantFocus?.key, "join-link", "the choice moves focus to the field");
-    assert.equal(byText(lobbyTree(), "Join a shared wallet").attrs["aria-expanded"], "true");
+    assert.equal(byText(lobbyTree(), "Join a shared wallet").attrs["aria-expanded"], "true",
+      "the open form shows in the choice");
+    // A second press closes the form and its error.
+    ui.joinBad = PASTE_BAD;
+    byText(lobbyTree(), "Join a shared wallet").on.click();
+    assert.equal(ui.joinOpen, false, "a second press closes the form");
+    assert.equal(ui.joinBad, "", "closing the form ends its error");
+    const shut = lobbyTree();
+    assert.equal(byId(shut, "join-link"), null, "the closed form is gone");
+    assert.equal(byText(shut, "Join a shared wallet").attrs["aria-expanded"], "false",
+      "the closed form shows in the choice");
+    byText(shut, "Join a shared wallet").on.click();
+    assert.equal(ui.joinOpen, true, "a third press opens the form again");
     // The form: a field with no name, a label, a hint, and a Join button.
     const first = lobbyTree(), field = byId(first, "join-link"), form = formOf(first);
     assert.ok(field && form, "the wallet list has the join form");
@@ -1236,14 +1250,18 @@ assert.match(marginText(3, 3), /Each payment needs every signer/);
     const cases = [
       ["an empty paste", "", PASTE_EMPTY],
       ["a paste of spaces", "   ", PASTE_EMPTY],
-      ["a link without a secret", "https://app.zigs.app/#" + fresh, PASTE_BAD],
+      ["a link without a secret", base + "#" + fresh, PASTE_BAD],
       ["a short secret", link(fresh, secret.slice(1)), PASTE_BAD],
       ["a bad wallet id", link("z".repeat(20), secret), PASTE_BAD],
-      ["a contact link", "https://app.zigs.app/#c." + fresh + "." + secret, PASTE_CONTACT],
+      ["a contact link", base + "#c." + fresh + "." + secret, PASTE_CONTACT],
+      ["a link of another server", "https://evil.example/#" + fresh + "." + secret, PASTE_OTHER],
+      ["a link of another path", base + "other/#" + fresh + "." + secret, PASTE_OTHER],
       ["a different secret for a wallet you have", link(gid, other), LINK_NEW_SECRET],
       ["the id of a chat you have", link(cid, secret), LINK_CHAT_ID],
+      ["the id of a message room", link(rid, secret), LINK_CHAT_ID],
     ];
     t.chats.list[cid] = { key: "k".repeat(43), member: "dd".repeat(10), at: 1 };
+    roomKeys[rid] = "r".repeat(43);
     const keysBefore = JSON.stringify(t.gkeys);
     for (const [what, text, error] of cases) {
       focusAfter(null);
@@ -1262,6 +1280,7 @@ assert.match(marginText(3, 3), /Each payment needs every signer/);
       opensNothing(what, keysBefore);
     }
     delete t.chats.list[cid];
+    delete roomKeys[rid];
     assert.equal(stopped, cases.length, "the submit never leaves the page");
     for (const text of [secret, other, "#" + fresh]) {
       assert.equal(leaked(text), false, "a bad link goes to no log, banner, console or storage");
@@ -1283,7 +1302,8 @@ assert.match(marginText(3, 3), /Each payment needs every signer/);
     // A good link opens its wallet by the path of the address bar, and keeps its secret.
     replaced.length = 0;
     ui.tab = "details";
-    const joined = paste("Open this link: " + link(gid, known) + "\nThen take a seat.");
+    const joined = paste('I made a shared wallet "Team #2". 1. Open this link: ' + link(gid, known)
+      + ", then take a seat.");
     assert.equal(ui.joinBad, "", "a good link has no error");
     assert.equal(t.state.gid, gid, "a good link opens its wallet");
     assert.equal(ui.tab, "overview", "the wallet opens on its first tab");
@@ -1307,7 +1327,7 @@ assert.match(marginText(3, 3), /Each payment needs every signer/);
     const listed = t.state.groups;
     t.state.groups = [];
     const welcome = lobbyTree(), card = findNode(welcome, (n) => /\bwelcome\b/.test(n.className));
-    assert.match(textOf(card), /Create your first shared wallet/);
+    assert.match(textOf(card), /Start with Zigs/);
     assert.match(textOf(card), /any 2 of 3 devices must approve each payment/);
     assert.match(textOf(card), /New wallets use test networks only.*Zigs is not audited/s);
     assert.match(textOf(card), /Appearance/, "the welcome card has the theme choice");
@@ -1325,10 +1345,64 @@ assert.match(marginText(3, 3), /Each payment needs every signer/);
     for (const m of methods) console[m] = real[m];
     history.replaceState = realReplace;
     delete t.chats.list[cid];
+    delete roomKeys[rid];
     delete t.gkeys[fresh];
     ui.joinBad = "";
     ui.joinOpen = false;
     openGroup(null);
+  }
+}
+
+// ── An invite link in the address bar: the same refusals as the form ──
+// The hash path (adoptInviteKey, adoptWalletLink) stores a secret only for a new wallet or the same
+// secret again. Another secret for a wallet that this browser holds, and the id of a chat or a
+// message room, are refused with a banner. The address bar loses the secret in each case.
+{
+  const { adoptInviteKey } = await import("../app-links.js");
+  const { roomKeys } = await import("../app-groups.js");
+  const { LINK_CHAT_ID, LINK_NEW_SECRET } = await import("../util.js");
+  const held = "a1".repeat(10), fresh = "b1".repeat(10), chat = "c1".repeat(10);
+  const room = "d1".repeat(10), short = "e1".repeat(10);
+  const mine = "h".repeat(43), other = "o".repeat(43), secret = "s".repeat(43);
+  const replaced = [], realReplace = history.replaceState;
+  // Opens `hash` as a link in the address bar. Returns the text of the banner after it.
+  const open = (hash) => {
+    replaced.length = 0;
+    t.showBanner("ok", "RESET");
+    location.hash = hash;
+    adoptInviteKey();
+    location.hash = "";
+    return t.banner.text;
+  };
+  try {
+    history.replaceState = (...a) => { replaced.push(a[2]); };
+    t.gkeys[held] = mine;
+    t.chats.list[chat] = { key: "k".repeat(43), member: "dd".repeat(10), at: 1 };
+    roomKeys[room] = "r".repeat(43);
+    assert.equal(open("#" + fresh + "." + secret), "RESET", "a new wallet gives no banner");
+    assert.equal(t.gkeys[fresh], secret, "an address-bar link keeps the secret of a new wallet");
+    assert.deepEqual(replaced, ["#" + fresh], "the address bar loses the secret");
+    assert.equal(open("#" + held + "." + mine), "RESET", "the same secret gives no banner");
+    assert.equal(t.gkeys[held], mine, "the same secret stays");
+    assert.equal(open("#" + held + "." + other), LINK_NEW_SECRET,
+      "an address-bar link with another secret is refused");
+    assert.equal(t.gkeys[held], mine, "another secret does not replace the stored secret");
+    assert.deepEqual(replaced, ["#" + held], "the refused secret leaves the address bar");
+    assert.equal(open("#" + chat + "." + secret), LINK_CHAT_ID, "the id of a chat is refused");
+    assert.equal(t.gkeys[chat], undefined, "no wallet secret is stored under a chat id");
+    assert.deepEqual(replaced, ["#"], "a chat id leaves nothing in the address bar");
+    assert.equal(open("#" + room + "." + secret), LINK_CHAT_ID,
+      "the id of a message room is refused");
+    assert.equal(t.gkeys[room], undefined, "no wallet secret is stored under a room id");
+    assert.equal(open("#" + short + "." + secret.slice(1)), "RESET",
+      "a short secret gives no banner");
+    assert.equal(t.gkeys[short], undefined, "a short secret is not stored");
+  } finally {
+    history.replaceState = realReplace;
+    for (const id of [held, fresh, chat, room, short]) delete t.gkeys[id];
+    delete t.chats.list[chat];
+    delete roomKeys[room];
+    location.hash = "";
   }
 }
 

@@ -229,9 +229,9 @@ export function lobby() {
       if (file) restore(file);
     },
   });
-  const restoreBtn = (cls, label = "Restore from backup") => el("button", {
+  const restoreBtn = (cls) => el("button", {
     class: cls, type: "button", onclick: () => restoreInput.click(),
-  }, label);
+  }, "Recover access");
   const off = offOf({ db: !!db }, "why-new-wallet");
   const actions = lobbyActions(off, restoreBtn("btn"));
   const head = el("header", { class: "page-head" },
@@ -244,7 +244,7 @@ export function lobby() {
   const body = listed
     ? [el("section", { class: "card" }, el("div", { class: "list" }, rows)),
       el("section", { class: "card card-pad" }, joinWallet("h2"))]
-    : [welcome(offOf({ db: !!db }, "why-create"), restoreBtn("btn ghost lg", "Recover access"))];
+    : [welcome(offOf({ db: !!db }, "why-create"), restoreBtn("btn ghost lg"))];
   const joins = [...joinLinks.keys()].map((cid) => guard(chatJoinCard, cid));
   return el("div", { class: "page" }, ...joins, head, ...body, chatsCard(),
     guard(personalCard, () => restoreInput.click()), guard(contactsCard),
@@ -345,10 +345,10 @@ function welcome(off, restoreLink) {
   }, "Set up a wallet");
   const join = el("button", {
     class: "btn lg", type: "button", "aria-expanded": ui.joinOpen ? "true" : "false",
-    onclick: () => { ui.joinOpen = true; focusAfter("join-link", true); render(); },
+    onclick: toggleJoin,
   }, "Join a shared wallet");
   return el("section", { class: "card card-pad welcome" },
-    el("div", { style: "display:grid;gap:6px" }, el("h2", {}, "Create your first shared wallet"),
+    el("div", { style: "display:grid;gap:6px" }, el("h2", {}, "Start with Zigs"),
       el("p", { class: "muted" }, "Nobody ever holds the whole key, and nobody outside your team "
         + "can read the wallet.")),
     el("ol", { class: "how" }, steps.map(([t, d], i) => el("li", {},
@@ -388,6 +388,14 @@ function joinWallet(heading = "h3") {
       el("button", { class: "btn", type: "submit", ...off.attrs }, "Join wallet"),
       bad ? el("p", { class: "small bad", id: "join-error", role: "alert" }, bad) : null,
       off.note));
+}
+
+// The choice to join shows the form, and a second press hides it with its error.
+function toggleJoin() {
+  ui.joinOpen = !ui.joinOpen;
+  ui.joinBad = "";
+  if (ui.joinOpen) focusAfter("join-link", true);
+  render();
 }
 
 // A person who types ends the error. A redraw puts the text back with an input event that nobody

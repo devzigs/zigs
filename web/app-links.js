@@ -34,7 +34,8 @@ function adoptWalletLink(gid, key) {
 // does. It returns the reason when the text opens nothing. The secret goes nowhere else: not to
 // the address bar, a log or a banner.
 export function joinWalletLink(text) {
-  const link = pastedInvite(text);
+  const page = new URL(location.href);
+  const link = pastedInvite(text, page.origin + page.pathname);
   const refusal = link.error ?? takeWalletKey(link.id, link.key);
   if (refusal) return refusal;
   ui.tab = "overview";
