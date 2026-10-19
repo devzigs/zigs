@@ -297,7 +297,8 @@ const sealed = (gid, rel, seat, fields, key, names = ["by", "sig"]) =>
   assert.deepEqual([first.status, t.proposer(first)], ["collecting", "you"]);
   await t.cancelPayment(first);
   await waitFor("cancel", () => t.state.sessions[0].status === "cancelled");
-  assert.equal(t.state.sessions[0].error, "Cancelled by device 1.");
+  assert.equal(t.state.sessions[0].error, "Cancelled by device 1.",
+    "a cancel of a seat with no name says only the device");
 
   const second = await propose("second", 2);
   await t.failSession(gid, second, "Bad share.");
@@ -680,7 +681,14 @@ const sealed = (gid, rel, seat, fields, key, names = ["by", "sig"]) =>
     await waitFor("the kept share of mv2", () => !!(t.sec(gid, 1).unsent || {})[mv2.id]);
     downC = false;
     t.setDb({ doc: docRef, collection: colRef });
-    await t.cancelPayment(liveOf(mv2));
+    // A seat with a name signs the cancel with it; cancelNow reads the name when it starts.
+    const nameOf1 = t.state.seats[1].name;
+    t.state.seats[1].name = "Ana";
+    const asAna = t.cancelPayment(liveOf(mv2));
+    t.state.seats[1].name = nameOf1;
+    await asAna;
+    assert.equal(data.get(pathOf(mv2)).error, "Cancelled by Ana (device 1).",
+      "a cancel names the device with its name");
     assert.equal((t.sec(gid, 1).unsent || {})[mv2.id], undefined,
       "the cancel drops the kept share");
     await drop(pathOf(mv2));
@@ -1386,6 +1394,11 @@ const sealed = (gid, rel, seat, fields, key, names = ["by", "sig"]) =>
     t.ui.pay = null;
     const dialog = t.sendDialog();
     assert.equal(all(dialog, (x) => x.attrs.id === "s-note")[0].attrs.value, "Request from Alice");
+    // The invite link carries the key that seals the note, so the form does not say "only".
+    assert.match(textOf(dialog),
+      /Encrypted\. The devices of this wallet, and anyone else who has the invite link, can read/,
+      "the note hint names the holder of the invite link");
+    assert.doesNotMatch(textOf(dialog), /Only the devices of this wallet can read it/);
 
     // The request form: the open wallet in a room, a choice in a chat.
     t.state.groups = [t.state.g];

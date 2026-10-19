@@ -405,11 +405,11 @@ function sideMenu() {
   }
   const tab = t.ui.tab;
   t.ui.tab = "recovery";
-  assert.match(pageText(), /Your devices in this wallet.*file (saved here|not saved)/,
+  assert.match(pageText(), /Devices in this browser.*file (saved here|not saved)/,
     "the Recovery section shows the file state of each seat of this browser");
   assert.match(pageText(), /cannot see the files of the other devices/);
   assert.match(pageText(),
-    /covers your devices in this wallet only: each other wallet has its own/);
+    /covers the devices of this wallet in this browser only: each other wallet has its own/);
   assert.match(pageText(), /the personal account has its own backup file, and direct chats are/);
   recoveryFacts();
   t.ui.tab = tab;

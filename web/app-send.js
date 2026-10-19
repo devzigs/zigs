@@ -493,7 +493,8 @@ export function sendDialog() {
         placeholder: rows.length > 1 ? "October payroll" : "Pay the audit firm",
         autocomplete: "off", value: ui.note, oninput: (ev) => { ui.note = ev.target.value; },
       }),
-      el("span", { class: "hint" }, "Encrypted. Only the devices of this wallet can read it.")),
+      el("span", { class: "hint" }, "Encrypted. The devices of this wallet, and anyone else who "
+        + "has the invite link, can read it.")),
     el("p", { class: "small faint" }, "A memo goes on chain with the payment. Its recipient and "
       + "every device of this wallet can read it."),
     priorityBox(sumUp),

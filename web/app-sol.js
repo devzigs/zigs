@@ -87,7 +87,7 @@ export function solFile(i) {
 }
 // Null until the module follows this wallet and its Solana documents are read.
 const solMade = (i) => (solOpenHere() && collections
-  ? fromSol("seat part", (c) => madeOf(c, i), null) : null);
+  ? fromSol("device part", (c) => madeOf(c, i), null) : null);
 // The soldone document of the seat is enough. Its absence counts once every document is checked.
 function madeOf(c, i) {
   if (!collections.every((n) => c.loaded[n])) return null;
@@ -247,7 +247,7 @@ export const loadFail = (error, retry) => el("div", { style: "display:grid;gap:8
 export const solTab = () => sol ? guard(sol.view)
   : solError ? loadFail(solError, !importFailed)
   : (solLoad(), el("p", { class: "small" }, "Loading Solana…"));
-const NET_UNCONFIRMED = "This device does not know yet which network the people of this wallet "
+const NET_UNCONFIRMED = "This browser does not know yet which network the people of this wallet "
   + "confirmed. Open the wallet, wait until your device shows Address checked, then try again.";
 export async function solRestore(b, encrypted) {
   if (solGroup(b.group) && !solOn(b.group)) {

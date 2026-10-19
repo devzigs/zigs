@@ -655,7 +655,7 @@ function recoveryTab() {
       el("p", { class: "small muted" }, risk.detail),
       risk.here ? el("p", { class: "small" }, risk.here) : null),
     seats.some((x) => x.zec.has) ? el("section", { class: "card" },
-      el("div", { class: "card-head card-pad" }, el("h2", {}, "Your devices in this wallet")),
+      el("div", { class: "card-head card-pad" }, el("h2", {}, "Devices in this browser")),
       el("div", { class: "recovery-seats" },
         seats.filter((x) => x.zec.has).map((x) => guard(recoveryRow, x)))) : null,
     el("details", { class: "card card-pad recovery-lost" },
@@ -666,8 +666,9 @@ function recoveryTab() {
 const RECOVERY_LIMITS = "Zigs knows only the files that this browser saved. It cannot see the "
   + "files of the other devices: ask the person of each device to back it up. Zigs does not open a "
   + "saved file again: keep each file and its passphrase apart, and make sure that you can find "
-  + "both. This section covers your devices in this wallet only: each other wallet has its own, "
-  + "the personal account has its own backup file, and direct chats are in no backup file.";
+  + "both. This section covers the devices of this wallet in this browser only: each other "
+  + "wallet has its own, the personal account has its own backup file, and direct chats are in "
+  + "no backup file.";
 const lostText = (t, sol) => "Keep the devices that still work, and do not delete their data. "
   + "While " + t + " devices remain, they can move the Zcash funds to a new wallet (Devices, "
   + "Change devices)" + (sol ? "; a Solana part does not move this way" : "") + ". With fewer, "

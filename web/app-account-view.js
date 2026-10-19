@@ -81,8 +81,8 @@ export function accountCard() {
     el("div", { class: "card-head" }, el("h2", {}, "Personal account"),
       netBadge({ network: personal.network })),
     el("p", { class: "small muted" }, "This account pays the fee of your messages on chain. It is "
-      + "not a wallet, and no other device approves its payments. Whoever controls this browser "
-      + "can spend it."),
+      + "not a wallet, and its payments need no approval. Whoever controls this browser can "
+      + "spend it."),
     personal.backedUp ? null : accountBackupNote(),
     accountBalanceBlock(b),
     b ? balanceWarnings(b.total).map((t) => el("div", { class: "callout warn", role: "status" }, t))

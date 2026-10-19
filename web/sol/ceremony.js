@@ -2,7 +2,7 @@
 // exists. Each step writes a signed document (docs.js). The reactor runs the steps of the seats
 // that this browser holds. It never touches the Zcash key: the secret parts (`rSol`) are fresh,
 // and the boxes carry a curve label, so a Zcash box cannot open here.
-import { fitsPublished, samePackages } from "../util.js";
+import { deviceWords, fitsPublished, samePackages } from "../util.js";
 import { CLUSTER } from "./docs.js";
 import { feeUnpublished, publishFee } from "./fee.js";
 import { holdsShare, putSol, refuseStopped, solOf, stopOf } from "./secrets.js";
@@ -28,7 +28,7 @@ let holder = randomHex32();
 const pause = () => new Promise((ok) => setTimeout(ok, 3000));
 const stopText = (e) =>
   "Solana setup stopped: " +
-  String(e?.message ?? e).replace(/\.+$/, "") +
+  deviceWords(e?.message ?? e).replace(/\.+$/, "") +
   ". Do not use the Solana part of this wallet.";
 
 /** Why this wallet cannot get a Solana part, or null. Version 3 and testnet only. */

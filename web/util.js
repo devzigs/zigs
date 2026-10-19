@@ -71,11 +71,16 @@ export function confirmGate(number, mine, docs, ids) {
   return all && mine === number ? "ok" : "wait";
 }
 
+// The engine names a seat and its signers in a setup reason ("seat 2: …"); the page says device.
+const DEVICE_WORD = { seat: "device", seats: "devices", signer: "device", signers: "devices" };
+export const deviceWords = (text) => String(text).replace(/\b(seat|signer)s?\b/gi, (w) => {
+  const to = DEVICE_WORD[w.toLowerCase()];
+  return w[0] === w[0].toUpperCase() ? to[0].toUpperCase() + to.slice(1) : to;
+});
+
 // What a seat keeps when its setup ends: the reason as one sentence, then what to do.
 export function abortText(reason) {
-  // The engine names a seat in its reasons ("seat 2: …"); the page says device.
-  const msg = String(reason || "Setup failed").replace(/\.+$/, "")
-    .replace(/^seat (\d+):/i, "device $1:");
+  const msg = deviceWords(reason || "Setup failed").replace(/\.+$/, "");
   return msg.charAt(0).toUpperCase() + msg.slice(1)
     + ". Do not use this wallet. Create a new wallet.";
 }

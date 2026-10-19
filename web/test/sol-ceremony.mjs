@@ -1032,7 +1032,8 @@ assert.deepEqual(
   rig.hook.before = (_p, v) => v;
   for (const i of [1, 2, 3]) {
     const s = solOf(gid4, i);
-    assert.match(s.aborted, /seat 2: the secret part does not match its commitment/);
+    assert.match(s.aborted, /device 2: the secret part does not match its commitment/,
+      "the stop names the device");
     assert.match(s.aborted, /Do not use the Solana part/);
     assert.equal(s.keyPackage, undefined, "no key share without the check");
   }
@@ -1081,7 +1082,9 @@ assert.deepEqual(
   rig.hook.before = (_p, v) => v;
   for (const i of [1, 3]) {
     assert.equal(solOf(gidE, i).keyPackage, undefined, `seat ${i} made a key share`);
-    assert.match(solOf(gidE, i).aborted, /different setup data.*seat 2/, "seat " + i);
+    assert.match(solOf(gidE, i).aborted,
+      /the devices saw different setup data: the echo of device 2 differs/,
+      "the stop names the devices, seat " + i);
   }
 }
 

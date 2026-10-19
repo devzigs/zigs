@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import * as Z from "../pkg/zigs_engine.js";
 import {
-  abortText, backupName, boxPairMatches, canonical, checkNetwork, chunks, confirmGate,
+  abortText, backupName, deviceWords, boxPairMatches, canonical, checkNetwork, chunks, confirmGate,
   conflictReason, finite, fitsPublished, fmtInt, frostId, heldRefusal, keysOf, lateFields,
   LINK_CHAT_ID, LINK_NEW_SECRET, linkRefusal, makePassphrase, numberClash, passIssue, passLength,
   passNormal, restoredFields, restoredSecret, sameShare, samePackages, seatBackedUp, seatOwned,
@@ -58,6 +58,11 @@ assert.equal(abortText("The devices saw different setup data."),
 assert.equal(abortText("seat 2: the secret part does not match its commitment"),
   "Device 2: the secret part does not match its commitment. Do not use this wallet. Create a "
   + "new wallet.", "an engine reason names the device");
+assert.equal(abortText("the signers saw different setup data: the echo of seat 2 differs"),
+  "The devices saw different setup data: the echo of device 2 differs. Do not use this wallet. "
+  + "Create a new wallet.", "an engine word in the middle of a reason names the device");
+assert.equal(deviceWords("Seat 1, seats 2 and 3, a signer, signers"),
+  "Device 1, devices 2 and 3, a device, devices");
 assert.equal(abortText(""), "Setup failed. Do not use this wallet. Create a new wallet.");
 assert.doesNotThrow(() => checkNetwork({ network: "testnet" }, "testnet"));
 assert.throws(() => checkNetwork({ network: "mainnet" }, "testnet"), /another network/);
