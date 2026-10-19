@@ -222,7 +222,7 @@ export function nextAction(ss, ins, rc) {
 // and the headline "Your approval is needed" follow this one rule. The inbox cannot count the
 // approvals of each payment, so a seat here can still approve after t approvals.
 const canApprove = (ss, rc) => approvers(ss).length > 0 && rc.match === true
-  && rc.intoNew !== false;
+  && rc.intoNew !== false && !enoughApprovals();
 const enoughApprovals = () => Object.keys(state.commits).length >= state.g.t;
 
 const CANCEL_ASK = "Cancel this payment? No device can approve it after this. Anyone can propose "
@@ -425,11 +425,13 @@ const approverChips = () => el("div", {
 // What the signature step waits for. Each device does its step while this wallet is open there,
 // with the payment open or not.
 const WHERE = " while this wallet is open there.";
-function signatureText(ss, approvals, shared) {
+// `over`: the payment cannot go on (timeline), so a step that waits says nothing about now.
+function signatureText(ss, approvals, shared, over) {
   const t = state.g.t, signers = signersOf(ss);
   if (ss.signed) return "All signatures combined and verified.";
   if (landed(ss)) return ON_CHAIN;
   if (ss.error) return ss.error;
+  if (over) return NOT_DONE;
   if (!ss.package) {
     return approvals < t ? "Starts after " + t + " approvals."
       : "Waiting for the proposer's device to build the signing package. It does this" + WHERE;
@@ -452,11 +454,12 @@ function headline(ss, rejected, rc) {
 // here, the page cannot tell that no device sent it.
 const endFacts = (ss, rejected) => ({
   landed: landed(ss),
-  ended: ended(ss),
+  ended: ended(ss) && !signingSeen(ss),
+  endedSigned: ended(ss) && signingSeen(ss),
   check: signingSeen(ss) && expired(ss),
   held: !!ss.error && heldApprovals().includes(ss.id),
   sentStopped: !!ss.error && !!ss.broadcastTxid,
-  stopped: !!ss.error && !signingSeen(ss) && chainReady(curChain()),
+  stopped: !!ss.error && !signingSeen(ss) && syncedHere(),
   error: !!ss.error,
   rejected: !!rejected,
   refused: sendRefused(ss),
@@ -469,7 +472,7 @@ const endFacts = (ss, rejected) => ({
 const stepFacts = (ss, rc) => ({
   mismatch: !ss.package && rc.match === false,
   wrongMove: !ss.package && rc.intoNew === false,
-  sentUnsynced: !!ss.broadcastTxid && !chainReady(curChain()),
+  sentUnsynced: !!ss.broadcastTxid && !syncedHere(),
   resend: finishStep(ss) === "resend",
   sent: !!ss.broadcastTxid,
   late: tooLate(ss),
@@ -513,10 +516,10 @@ function timeline(ss, refused, rc) {
       tl(approvalsStep(ss, refused, rc), "Approvals · " + Math.min(approvals, g.t) + " of " + g.t
         + " needed", approverChips()),
       tl(signatureStep(ss), "Combined signature",
-        el("p", {}, signatureText(ss, approvals, shared))),
-      tl(proofStep(ss), "Proof", el("p", {}, proofText(ss))),
-      tl(sendStep(ss), "Sent to the network", sendBody(ss)),
-      tl(blockStep(ss), "In a block", el("p", {}, blockText(ss)))));
+        el("p", {}, signatureText(ss, approvals, shared, over))),
+      tl(proofStep(ss), "Proof", el("p", {}, proofText(ss, over))),
+      tl(sendStep(ss), "Sent to the network", sendBody(ss, over)),
+      tl(blockStep(ss), "In a block", el("p", {}, blockText(ss, over)))));
 }
 
 // The approvals step is done from the count of approvals only. Once signing started, or while a
@@ -542,10 +545,12 @@ function sendStep(ss) {
   return ss.final ? "now" : "";
 }
 const ON_CHAIN = "A synced block holds the payment.";
+const NOT_DONE = "Not done.";
 
-function proofText(ss) {
+function proofText(ss, over) {
   if (ss.final) return "Proof built and the whole transaction checked.";
   if (landed(ss)) return ON_CHAIN;
+  if (over) return NOT_DONE;
   if (ss.status === "proving" && !proofStalled(ss)) {
     return "A device is building the proof · " + elapsed(ss.provingAt) + " of about a minute.";
   }
@@ -553,32 +558,36 @@ function proofText(ss) {
     : "Any device can build the zero-knowledge proof once the payment is signed.";
 }
 
-function sendBody(ss) {
+function sendBody(ss, over) {
   const box = (...kids) => el("div", { style: "display:grid;gap:8px" }, ...kids);
   if (ss.broadcastTxid) {
     return box(el("p", {}, when(ss.broadcastAt) + " · ", el("a", { href: curNet().explorer
       + ss.broadcastTxid, target: "_blank", rel: "noopener" }, "View in explorer ↗")));
   }
   const failed = ss.broadcastError && !landed(ss);
-  return box(el("p", {}, sendText(ss)),
+  return box(el("p", {}, sendText(ss, over)),
     failed ? el("div", { class: "callout bad" }, ss.broadcastError) : null);
 }
 // What the send step says before a sent mark: a block, a refusal (its reason), the expiry or the
 // next step.
-function sendText(ss) {
+function sendText(ss, over) {
   if (landed(ss)) return ON_CHAIN;
   if (sendRefused(ss)) return sendRefusal(ss);
   if (tooLate(ss)) return "It can no longer go to the network.";
+  if (over) return NOT_DONE;
   return ss.final ? "Any device can send the finished transaction." : "Available after the proof.";
 }
 
 // The last step, from this browser's synced blocks only: a sent mark does not say that a block
-// holds the payment, and before a sync the page does not know.
+// holds the payment, and before a sync the page does not know. A state restored from storage is
+// ready (chainReady) before this page synced: only a sync of this page counts (balAt).
+const syncedHere = () => chainReady(curChain()) && !!curChain().balAt;
+const UNSYNCED = "This page has not synced the blocks since you opened this wallet.";
 const blockStep = (ss) => landed(ss) ? "done" : ss.broadcastTxid ? "now" : "";
-function blockText(ss) {
+function blockText(ss, over) {
   if (landed(ss)) return ON_CHAIN;
-  if (!ss.broadcastTxid) return "After the send.";
-  if (!chainReady(curChain())) return "This page has not read the synced blocks yet.";
+  if (!ss.broadcastTxid) return over ? NOT_DONE : "After the send.";
+  if (!syncedHere()) return UNSYNCED;
   return expiryOf(ss)?.expired ? "No synced block holds it." : "No synced block holds it yet.";
 }
 
@@ -610,6 +619,6 @@ function chainSees() {
     el("span", { class: "label" }, "What the chain sees"),
     el("p", { class: "small" }, "One shielded transaction."),
     el("dl", { class: "kv", style: "grid-template-columns:110px minmax(0,1fr)" },
-      ["Recipients", "Amounts", "Signers", "Approval rule"].flatMap(row)),
+      ["Recipients", "Amounts", "Devices", "Approval rule"].flatMap(row)),
     el("p", { class: "small faint" }, "The number of actions is public. So is the fee."));
 }

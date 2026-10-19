@@ -112,8 +112,9 @@ export function avatar(i, cls = "") {
 }
 
 const STATUS = {
-  collecting: ["Needs approval", "warn"], signing: ["Signing", "info"], signed: ["Ready to prove", "info"],
-  proving: ["Building proof", "info"], complete: ["Ready to send", "ok"], broadcast: ["Confirming", "info"], failed: ["Failed", "bad"],
+  collecting: ["Approvals open", "warn"], signing: ["Signing", "info"],
+  signed: ["Ready to prove", "info"], proving: ["Building proof", "info"],
+  complete: ["Ready to send", "ok"], broadcast: ["Confirming", "info"], failed: ["Failed", "bad"],
   cancelled: ["Cancelled", ""],
 };
 // After signing, only the engine can say that it expired (TICKETS.md ZEC-13). A finished
@@ -133,7 +134,10 @@ export function statusChip(s, approved = false) {
   if (approvedHold(s)) return el("span", { class: "badge info" }, "Confirming");
   return docStatus(s, approved);
 }
+// The status of the document. An error part next to a sent mark asks for a check, as its
+// headline does (sentStopped).
 function docStatus(s, approved) {
+  if (s.error && s.broadcastTxid) return el("span", { class: "badge warn" }, "Check");
   if (approved && s.status === "collecting") return el("span", { class: "badge info" }, "Approved");
   const [t, c] = Object.hasOwn(STATUS, s.status) ? STATUS[s.status] : [String(s.status), ""];
   return el("span", { class: "badge " + c }, t);

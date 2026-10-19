@@ -48,12 +48,19 @@ export function needsWork(ss) {
   const mine = ss.package ? isProposer(ss) || approvedHere(ss) : isProposer(ss);
   return mine && !expired(ss);
 }
-// ponytail: at most WATCH_MAX payments at once, those with a package first, then the newest.
-// More wait until the older ones end or expire.
+// ponytail: at most WATCH_MAX payments at once, those with a package first, then the newest,
+// then the open proposals whose approvals only the lists count (approvalsDone). More wait until
+// the older ones end or expire.
 const WATCH_MAX = 8;
 /** The payments of `list` that this browser watches (M5). */
-export const toWatch = (list) => list.filter(needsWork)
-  .sort((a, b) => Number(!!b.package) - Number(!!a.package)).slice(0, WATCH_MAX);
+export function toWatch(list) {
+  const work = list.filter(needsWork)
+    .sort((a, b) => Number(!!b.package) - Number(!!a.package));
+  const counted = list.filter((ss) => !needsWork(ss) && openToCount(ss));
+  return [...work, ...counted].slice(0, WATCH_MAX);
+}
+const openToCount = (ss) => ss.status === "collecting" && !ss.package && !ss.error
+  && isStr(ss.pczt) && !expired(ss);
 
 // An approval of a seat here: its mark, or what approvalKept says.
 const approvedHere = (ss) => !!markOf(state.gid, ss.id).approved

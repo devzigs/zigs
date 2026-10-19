@@ -56,6 +56,8 @@ const HEADLINES = [
   ["landed", "In a block", "A block that this browser synced holds the payment."],
   ["ended", "Payment expired", "No device can send it now. A new payment needs a new review and "
     + "new approvals."],
+  ["endedSigned", "Payment expired", "The transaction this browser approved expired. This page "
+    + "cannot tell whether a device sent another one. Check the wallet's activity first."],
   ["check", "Check the payment", "It may still go on chain. Check it before you make another "
     + "payment."],
   ["held", "Stopped, but it may still go on chain", "It was stopped after this browser approved "
@@ -63,7 +65,7 @@ const HEADLINES = [
   ["sentStopped", "Check the payment", "A device sent it, and the payment shows a stop too. It "
     + "may still go on chain. Check it before you make another payment."],
   ["stopped", "Payment stopped", "No device can approve, sign or send it. The reason is below."],
-  ["error", "Payment stopped", "This page cannot tell whether a device sent it. Check the "
+  ["error", "Check the payment", "This page cannot tell whether a device sent it. Check the "
     + "wallet's activity before you make another payment."],
   ["rejected", "Payment needs attention", "This browser refuses this payment. The reason is "
     + "below. Do not approve it."],
@@ -81,8 +83,8 @@ const HEADLINES = [
   ["wrongMove", "Payment needs attention", "The transaction does not move all the funds to the "
     + "address of the new wallet that this browser checked. Do not approve it. The reason is "
     + "below."],
-  ["sentUnsynced", "Waiting for a block", "A device sent it. This page has not read the synced "
-    + "blocks yet."],
+  ["sentUnsynced", "Waiting for a block", "A device sent it. This page has not synced the blocks "
+    + "since you opened this wallet."],
   ["resend", "Send it again", "No block that this browser synced holds it after "
     + RESEND_MS / 60000 + " minutes. Any device can send the same transaction again."],
   ["sent", "Waiting for a block", "A device sent it. No block that this browser synced holds it "
@@ -108,7 +110,8 @@ const WAITING = { title: "Waiting for approvals", detail: "The other devices app
 
 /**
  * The headline of a payment drawer, from facts that the drawer already reads.
- * @param {object} f true or false each: landed, ended, check (the engine cannot say that it
+ * @param {object} f true or false each: landed, ended (before signing), endedSigned (the engine
+ *   says that the approved transaction expired), check (the engine cannot say that it
  *   expired), held (stopped, but an approval here holds Send), sentStopped (an error part next
  *   to a sent mark), stopped (an error, no signing seen here, a synced chain), error, rejected
  *   (this browser refuses the transaction), refused (this browser does not send it),

@@ -59,7 +59,7 @@ assert.equal(title({ proved: true, refused: true }), "Payment needs attention",
 assert.equal(title({ sent: true, landed: true }), "In a block");
 assert.equal(title({ sent: true, check: true }), "Check the payment");
 assert.equal(title({ check: true, ended: true }), "Payment expired");
-assert.equal(title({ error: true, mine: true }), "Payment stopped");
+assert.equal(title({ error: true, mine: true }), "Check the payment");
 assert.equal(title({ rejected: true, mine: true }), "Payment needs attention",
   "a payment that this browser refuses asks for no approval");
 assert.equal(title({ landed: true, ended: true, error: true }), "In a block", "a block wins");
@@ -84,7 +84,11 @@ const detail = (f) => stageHeadline(f).detail;
 assert.match(detail({ stopped: true, error: true }), /^No device can approve, sign or send it\./);
 assert.match(detail({ error: true }), /^This page cannot tell whether a device sent it\./,
   "without the stopped fact, the page does not say that no device can send it");
-assert.equal(title({ error: true }), "Payment stopped");
+assert.equal(title({ error: true }), "Check the payment", "the page cannot tell: a check");
+assert.equal(title({ stopped: true }), "Payment stopped");
+assert.equal(title({ endedSigned: true, check: true }), "Payment expired");
+assert.match(detail({ endedSigned: true }), /^The transaction this browser approved expired\. /);
+assert.match(detail({ ended: true, endedSigned: true }), /^No device can send it now\./);
 assert.equal(title({ held: true, stopped: true }), "Stopped, but it may still go on chain");
 // A local reason wins over the steps, so Waiting for approvals shows only without one.
 assert.equal(title({ signingLost: true, approvalLost: true }), "Check the payment");
@@ -98,15 +102,15 @@ for (const f of ["approvalLost", "approvalChanged", "wrongMove"]) {
 assert.match(detail({ mismatch: true, wrongMove: true }), /does not pay what the proposer listed/);
 assert.match(detail({ wrongMove: true }), /address of the new wallet that this browser checked/);
 assert.match(detail({ sentUnsynced: true, resend: true, sent: true }),
-  /^A device sent it\. This page has not read the synced blocks yet\.$/);
+  /^A device sent it\. This page has not synced the blocks since you opened this wallet\.$/);
 assert.equal(title({ sentUnsynced: true }), "Waiting for a block");
 assert.match(detail({ sendHere: true, proved: true }), /This browser sends it only when the /);
 assert.doesNotMatch(detail({ proved: true }), /browser/, "no send of this browser without a seat");
 assert.match(detail({ approved: true, mine: true }), /^Enough devices approved\. Another /);
 assert.equal(RESEND_MS, 10 * 60 * 1000);
 assert.match(detail({ resend: true }), / after 10 minutes\. /, "the minutes come from RESEND_MS");
-const all = ["landed", "ended", "check", "held", "sentStopped", "stopped", "error", "rejected",
-  "refused", "signingLost", "approvalLost", "approvalChanged", "mismatch", "wrongMove",
+const all = ["landed", "ended", "endedSigned", "check", "held", "sentStopped", "stopped", "error",
+  "rejected", "refused", "signingLost", "approvalLost", "approvalChanged", "mismatch", "wrongMove",
   "sentUnsynced", "resend", "sent", "late", "sendFailed", "sendHere", "proved", "proving", "signed",
   "signing", "approved", "mine"].map((f) => stageHeadline({ [f]: true }));
 assert.equal(title({ held: true, sentStopped: true }), "Stopped, but it may still go on chain");

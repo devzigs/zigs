@@ -11,7 +11,9 @@ import {
   runSync, setMemoReading, spanMs,
 } from "./app-chain.js";
 import { canWriteAs, signedMode } from "./app-filter.js";
-import { needsMyApproval, openGroup, openSession, toApprove } from "./app-groups.js";
+import {
+  approvalsDone, needsMyApproval, openGroup, openSession, toApprove,
+} from "./app-groups.js";
 import {
   act, addrGroups, avatar, copyBtn, countBadge, el, groupName, guard, leavesOf, memoTexts, money,
   named, netBadge, payTitle, proposer, ruleText, seatTitle, secretQr, statusChip, unreadable,
@@ -524,7 +526,8 @@ function activityNote(pick) {
 
 function sentRow(ss, flying) {
   const chip = needsMyApproval(state.gid, ss) ? el("span", { class: "badge warn" }, "Your approval")
-    : flying.has(ss) ? el("span", { class: "badge info" }, "Confirming") : statusChip(ss);
+    : flying.has(ss) ? el("span", { class: "badge info" }, "Confirming")
+      : statusChip(ss, approvalsDone(ss) === true);
   return el("button", {
     class: "row-item", type: "button", "data-key": "pay-" + ss.id,
     "aria-current": ss.id === state.sid ? "true" : "false", onclick: () => openSession(ss.id),

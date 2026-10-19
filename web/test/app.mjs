@@ -965,6 +965,11 @@ const sealed = (gid, rel, seat, fields, key, names = ["by", "sig"]) =>
     const picked = t.toWatch([...bare, far("vp", { by: 1, package: "P" })]).map((x) => x.id);
     assert.deepEqual([picked.length, picked[0], picked.includes("v8")], [8, "vp", false],
       "at most 8, a package first, then the newest");
+    // An open proposal of another device is watched for its count, after the payments that need
+    // work here.
+    const counted = far("vo", { by: 99 });
+    assert.deepEqual([t.toWatch([counted]).map((x) => x.id), t.toWatch([...bare, counted])
+      .includes(counted)], [["vo"], false], "an open proposal is watched for its count");
     // The steps that failed above try again after 3 s, and each step draws when it ends. Those
     // end here, while the page can draw, and not under the recorder of the tests below.
     await sleep(3500);
@@ -1857,7 +1862,7 @@ const sealed = (gid, rel, seat, fields, key, names = ["by", "sig"]) =>
       payees: [{ to: "utest1x", amount: 5 }] };
     const labels = (list) => list.map(textOf);
     tipAt(4500000);
-    assert.equal(textOf(t.statusChip(proposal)), "Needs approval");
+    assert.equal(textOf(t.statusChip(proposal)), "Approvals open");
     assert.equal(textOf(t.statusChip({ ...proposal, checking: true })), "Checking",
       "a part of it waits for its check");
     assert.match(textOf(t.expiryLine(proposal)), /^Expires at block 4,503,456, in about 24 hours/);
@@ -2433,8 +2438,9 @@ const sealed = (gid, rel, seat, fields, key, names = ["by", "sig"]) =>
       assert.match(blockStep(landedA), /In a blockNo synced block holds it\./,
         "past its expiry it waits for no block");
       assert.match(headline(landedA), /^Check the payment/, "only the engine can say expired");
+      assert.deepEqual(current(landedA), [], "a checked payment has no step that waits");
       t.setChain({ ...t.chain, cw: null });
-      assert.match(blockStep(landedA), /In a blockThis page has not read the synced blocks yet\./,
+      assert.match(blockStep(landedA), /In a blockThis page has not synced the blocks since you /,
         "before a sync the page does not say that no block holds it");
       {
         // ── Each fact of the headline, in the drawer: the detail says which fact holds, and a
@@ -2468,11 +2474,17 @@ const sealed = (gid, rel, seat, fields, key, names = ["by", "sig"]) =>
         assert.match(oldOne.head, /^Payment expiredNo device can send it now\./,
           "headline: an expired proposal ends");
         assert.deepEqual(oldOne.now, [], "an expired payment has no step that waits");
+        // A payment that cannot go on says nothing about now in its waiting steps.
+        for (const [step, why] of [["Combined signature", "signature"], ["Proof", "proof"],
+          ["Sent to the network", "send"], ["In a block", "block"]]) {
+          assert.ok(textOf(oldOne.step(step)).endsWith("Not done."), "not done: the " + why);
+        }
         assert.deepEqual([oldOne.step("Approvals").className,
           textOf(all(oldOne.step("Approvals"), (x) => x.className === "tick")[0])], ["step ", "2"]);
         const endedA = look(okA);
-        assert.match(endedA.head, /^Payment expiredNo device can send it now\./,
-          "headline: the engine says that it expired");
+        assert.ok(endedA.head.startsWith("Payment expiredThe transaction this browser approved "
+          + "expired. This page cannot tell whether a device sent another one."),
+        "headline: the engine says that it expired");
         assert.deepEqual(endedA.now, [], "an ended payment has no step that waits");
         // Stopped: before any signing and after a sync, no device can send it. Else the page
         // cannot tell.
@@ -2484,12 +2496,14 @@ const sealed = (gid, rel, seat, fields, key, names = ["by", "sig"]) =>
         assert.deepEqual(stop.now, [], "a stopped payment has no step that waits");
         assert.ok(stop.step("Combined signature").className === "step bad"
           && textOf(stop.step("Combined signature")).startsWith("!"), "the stop mark stays");
-        const unsure = /^Payment stoppedThis page cannot tell whether a device sent it\. Check /;
+        const unsure = /^Check the paymentThis page cannot tell whether a device sent it\. Check /;
         const failedSigned = { ...okA, id: "hd3", status: "failed", error: "Failed." };
         assert.match(look(failedSigned).head, unsure,
           "headline: an error after the signing started");
         assert.deepEqual(look(failedSigned).now, [],
           "a stopped payment with a signed part has no step that waits");
+        assert.ok(textOf(look(failedSigned).step("Proof")).endsWith("Not done."),
+          "a stopped payment builds no proof now");
         // An approval here, then a cancel before the package: the hold of the approval ended
         // (this mark has no height), and still the page cannot tell.
         await t.putSec(t.state.gid, me, { marks: { ...t.sec(t.state.gid, me).marks,
@@ -2505,11 +2519,19 @@ const sealed = (gid, rel, seat, fields, key, names = ["by", "sig"]) =>
         "a later error part keeps the done steps");
         assert.match(errSent.head, /^Check the paymentA device sent it, and the payment shows a /,
           "headline: an error part after a sent mark");
+        assert.equal(textOf(t.statusChip({ ...lateSent(), id: "hde", error: "Failed." })), "Check",
+          "an error part next to a sent mark reads Check");
+        // A state restored from storage is no sync of this page.
+        at(4500100, new Set(), 0);
+        assert.match(look({ ...open("hd2", "PA"), status: "cancelled", error: "Cancelled." }).head,
+          unsure, "headline: a restored state is no sync of this page");
+        assert.match(look(lateSent()).head, /^Waiting for a blockA device sent it\. This page has /,
+          "headline: a restored state is no sync since the send");
         t.setChain({ ...t.chain, cw: null });
         assert.match(look({ ...open("hd2", "PA"), error: "Cancelled." }).head, unsure,
           "headline: an error before a sync");
         assert.match(look(lateSent()).head,
-          /^Waiting for a blockA device sent it\. This page has not read the synced blocks yet\./,
+          /^Waiting for a blockA device sent it\. This page has not synced the blocks since you /,
           "headline: no sync since the send");
         at(4500100);
         // The reasons of this browser: it refuses the transaction or the send.
@@ -2614,6 +2636,16 @@ const sealed = (gid, rel, seat, fields, key, names = ["by", "sig"]) =>
           "a payment too late to send reads Too late, not Ready to send");
         assert.deepEqual(late.now, [], "a payment too late to send has no step that waits");
         assert.match(textOf(late.step("Sent to the network")), /can no longer go to the network/);
+        // A sent mark with a false id waits for its block, under the false id note.
+        at(4500100);
+        const falseSent = look({ ...lateSent(), broadcastAt: Date.now(), broadcastTxid: "tx-b",
+          final: { txid: "tx-b", tx_hex: "00" } });
+        assert.deepEqual([falseSent.head.startsWith("Waiting for a blockA device sent it."),
+          falseSent.text.includes("names the id tx-b")], [true, true],
+        "a sent mark with a false id waits for its block, under the false id note");
+        assert.ok(falseSent.text.includes("RecipientsAmountsDevicesApproval rule"),
+          "the chain sees no device");
+        at(4503453);
         // A sent payment in the same window may still land: it is not too late.
         const sentNear = look(lateSent());
         assert.deepEqual([textOf(t.statusChip(lateSent())) === "Too late",
@@ -2674,19 +2706,32 @@ const sealed = (gid, rel, seat, fields, key, names = ["by", "sig"]) =>
           "a package alone does not mark the approvals done");
         assert.match(signing.now.join(), /^3Combined signature/,
           "a package without loaded approvals waits for its signature");
-        // Enough approvals: the headline says that no approval is needed. The inbox cannot count
-        // the approvals of each payment, so the Approve button of a seat here stays.
+        // Enough approvals: no device here approves any more, and the lists that count the
+        // approvals (the open payment, the watched ones) agree.
         await nonces(me, { hd5: ["n"] });
         await nonces(other, { hd5: ["n"] });
         t.state.commits = { [me]: {}, [other]: {} };
         const full = look(open("hd5", "PA"));
         assert.match(full.head, /^Approvals are completeEnough devices approved\. Another /,
           "headline: t approvals are in");
-        assert.deepEqual(full.buttons.filter((b) => b.startsWith("Approve")),
-          ["Approve as device " + third], "the inbox and the drawer agree: device 3 can approve");
+        assert.deepEqual(full.buttons.filter((b) => b.startsWith("Approve")), [],
+          "no Approve button after t approvals");
         assert.equal(full.step("Approvals").className, "step done");
         assert.deepEqual([full.chip, textOf(t.statusChip(open("hd5", "PA")))],
-          ["Approved", "Needs approval"], "the drawer chip says Approved after t approvals");
+          ["Approved", "Approvals open"], "the drawer chip says Approved after t approvals");
+        assert.equal(look({ ...okA, id: "hdk", signed: "" }).chip, "Signing",
+          "the Approved chip is only for a payment that collects approvals");
+        put(open("hd5", "PA", Date.now()));   // the newest row shows in the overview
+        t.state.sid = "hd5";
+        const row5 = () => textOf(all(t.walletView(null, null),
+          (x) => x.attrs?.["data-key"] === "pay-hd5")[0]);
+        assert.deepEqual([t.needsMyApproval(t.state.gid, open("hd5", "PA")),
+          t.toApprove(t.state.gid).some((x) => x.id === "hd5")], [false, false],
+        "the inbox follows the drawer after t approvals");
+        assert.match(row5(), /Approved/, "the Activity row says Approved after t approvals");
+        t.state.commits = { [me]: {} };
+        assert.match(row5(), /Your approval/, "below t a device here can approve");
+        t.state.sid = null;
         t.state.commits = { [me]: {} };
         assert.match(look(open("hd5", "PA")).head, /^Your approval is needed/);
         await nonces(me, { hd5: undefined });
