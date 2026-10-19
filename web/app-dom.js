@@ -32,6 +32,17 @@ export const el = (tag, attrs = {}, ...kids) => {
   for (const k of kids.flat()) if (k != null && k !== false) n.append(k instanceof Node ? k : document.createTextNode(String(k)));
   return n;
 };
+// The field of each note under a field. A red note marks its field as invalid.
+const fieldOf = new WeakMap();
+/** Ties the note `hint` to its field `input`, for setNote. */
+export const noteFor = (hint, input) => fieldOf.set(hint, input);
+/** Writes the note under a field. `cls` is the whole class: with "bad" and a text, the field of
+ * the note gets aria-invalid="true". */
+export function setNote(hint, text, cls) {
+  hint.textContent = text;
+  hint.className = cls;
+  fieldOf.get(hint)?.setAttribute("aria-invalid", String(text !== "" && /\bbad\b/.test(cls)));
+}
 // A success makes an earlier error message obsolete, so it is cleared.
 // A disabled button loses focus, so the key of the focused control is kept to give it back.
 export const act = (fn) => async (ev) => {

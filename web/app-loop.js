@@ -314,6 +314,37 @@ function buildLayers() {
 
 document.addEventListener("visibilitychange", render);
 window.addEventListener("focus", render);
+
+const OFFLINE = "No network connection. Network actions need a connection. "
+  + "The data on this page can be old.";
+/** The status line at the top of the page shows while the browser is offline. */
+export function showOffline() {
+  const box = document.getElementById("offline");
+  if (!box) return;
+  const offline = globalThis.navigator?.onLine === false;
+  box.replaceChildren(...(offline ? [el("div", { class: "callout warn" }, OFFLINE)] : []));
+}
+window.addEventListener("online", showOffline);
+window.addEventListener("offline", showOffline);
+showOffline();
+
+// A phone keyboard covers the lower part of the window. A dialog and the drawer end above it
+// (app.css reads these two values). A pinch zoom also shrinks the visual viewport, so it counts
+// only at scale 1.
+const visual = window.visualViewport;
+function fitKeyboard() {
+  if (!visual || !Number.isFinite(visual.height)) return;
+  const unzoomed = visual.scale === 1;
+  const inset = unzoomed ? Math.max(0, window.innerHeight - visual.height - visual.offsetTop) : 0;
+  const root = document.documentElement.style;
+  root.setProperty("--keyboard-inset", inset + "px");
+  root.setProperty("--visual-height", unzoomed ? visual.height + "px" : "100dvh");
+  const field = document.activeElement;
+  if (field?.closest?.(".dialog, .drawer")) field.scrollIntoView?.({ block: "nearest" });
+}
+visual?.addEventListener("resize", fitKeyboard);
+visual?.addEventListener("scroll", fitKeyboard);
+fitKeyboard();
 const endCompose = () => {
   if (!composing) return;
   composing = false; drawPending = false; render();
@@ -321,6 +352,25 @@ const endCompose = () => {
 document.addEventListener("compositionstart", () => { composing = true; });
 document.addEventListener("compositionend", endCompose);
 document.addEventListener("focusout", endCompose);
+// ponytail: an unchecked radio counts as a stop. That is wrong only when a radio group is the
+// last control of a layer.
+const STOPS = FOCUSABLE + ", [tabindex]";
+const tabStops = (layer) => [...layer.querySelectorAll(STOPS)]
+  .filter((n) => !n.disabled && n.tabIndex >= 0 && n.getClientRects().length > 0);
+/** Tab goes round in the open dialog or drawer: from its last control to its first, and Shift+Tab
+ * from its first to its last. Focus on the layer itself or outside it goes in. */
+export function layerTab(ev) {
+  const layer = document.querySelector(".dialog, .drawer");
+  if (ev.key !== "Tab" || !layer) return;
+  const stops = tabStops(layer), at = stops.indexOf(document.activeElement);
+  if (!stops.length) { ev.preventDefault(); layer.focus(); return; }
+  const last = stops.length - 1;
+  const edge = ev.shiftKey ? at <= 0 : at === -1 || at === last;
+  if (!edge) return;
+  ev.preventDefault();
+  stops[ev.shiftKey ? last : 0].focus();
+}
+document.addEventListener("keydown", layerTab);
 document.addEventListener("keydown", (ev) => {
   if (ev.key !== "Escape") return;
   if (state.sid) closeSession();

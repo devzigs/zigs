@@ -3181,9 +3181,14 @@ const sealed = (gid, rel, seat, fields, key, names = ["by", "sig"]) =>
         znsServes(znsOk());
         form = rowsOf([""]);
         assert.deepEqual(shows(typeIn(form, OWN)), ["Valid testnet address", "hint ok"]);
+        assert.equal(boxOf(form).attrs["aria-invalid"], "false", "a valid address is no error");
+        assert.equal(boxOf(form).attrs["aria-describedby"], hintOf(form).attrs.id,
+          "the field points at the note under it");
         const tAddress = "tmBsTi2xWTjUdEXnuTceL7fecEQKeWaPDJd";
         assert.deepEqual(shows(typeIn(form, tAddress)),
           ["Not a shielded Zcash testnet address. It starts with utest1.", "hint bad"]);
+        assert.equal(boxOf(form).attrs["aria-invalid"], "true",
+          "a red hint marks the recipient field as invalid");
         assert.equal(typeIn(form, "tex1" + "q".repeat(30)).className, "hint bad");
         typeIn(form, `zcash:${OWN}?amount=1`);
         assert.equal(t.ui.pay.length, 1);
@@ -4771,6 +4776,8 @@ const sealed = (gid, rel, seat, fields, key, names = ["by", "sig"]) =>
       ["0.02", true], ["x", false], ["", false]]) {
       amount0.on.input({ target: { value: typed } });
       assert.equal(warnOf(form0).textContent, warned ? HIGH : "", typed);
+      assert.equal(amount0.attrs["aria-invalid"], String(warned),
+        "the amount field is invalid exactly when the warning shows: " + typed);
     }
     t.ui.personal.fund = "0.02";
     assert.equal(warnOf(t.fundBlock()).textContent, HIGH, "the form shows it when it is drawn");
@@ -5240,6 +5247,140 @@ async function runAcctSync() {
     Object.assign(t.ui, { tab, leave, menu });
   }
   await sleep(200);
+}
+
+// ── The status line of an offline browser ──
+// It shows while navigator.onLine is false and goes away when the browser is online again. A
+// recorder stands in for the page, and the listeners are the ones that the page put on window.
+{
+  const realDocument = globalThis.document;
+  const realNavigator = Object.getOwnPropertyDescriptor(globalThis, "navigator");
+  class Rec extends Node {
+    constructor(tag) {
+      super();
+      Object.assign(this, { tag, attrs: {}, kids: [] });
+    }
+    setAttribute(k, v) { this.attrs[k] = String(v); }
+    addEventListener() {}
+    append(...x) { this.kids.push(...x); }
+  }
+  const textOf = (n) => n.text ?? n.kids.map(textOf).join("");
+  const box = { kids: [], replaceChildren(...x) { this.kids = x; } };
+  globalThis.document = {
+    getElementById: (id) => (id === "offline" ? box : null),
+    createElement: (tag) => new Rec(tag), createTextNode: (text) => ({ text }),
+  };
+  const browser = (value) => Object.defineProperty(globalThis, "navigator",
+    { configurable: true, value });
+  const fire = (type) => { for (const fn of windowOn[type] ?? []) fn(); };
+  try {
+    browser({ onLine: false });
+    fire("offline");
+    assert.match(box.kids.map(textOf).join(""),
+      /^No network connection\. Network actions need a connection\. .* can be old\.$/,
+      "offline, the line shows");
+    assert.equal(box.kids[0].className, "callout warn");
+    browser({ onLine: true });
+    fire("online");
+    assert.deepEqual(box.kids, [], "back online, the line goes away");
+    browser({});
+    t.showOffline();
+    assert.deepEqual(box.kids, [], "a browser that does not say its state is not offline");
+    delete globalThis.navigator;
+    t.showOffline();
+    assert.deepEqual(box.kids, [], "a page without navigator is not offline");
+  } finally {
+    globalThis.document = realDocument;
+    if (realNavigator) Object.defineProperty(globalThis, "navigator", realNavigator);
+    else delete globalThis.navigator;
+  }
+}
+
+// ── Tab in an open dialog or drawer goes round (layerTab) ──
+// A recorder stands in for the layer and its controls. The key goes through the listeners that
+// the page put on document, so the check covers the listener too.
+{
+  const realDocument = globalThis.document;
+  const control = (over = {}) => ({
+    tabIndex: 0, disabled: false, getClientRects: () => [{}],
+    focus() { document.activeElement = this; }, ...over,
+  });
+  let layer = null, stops = 0;
+  globalThis.document = {
+    activeElement: null,
+    querySelector: (selector) => (selector === ".dialog, .drawer" ? layer : null),
+  };
+  const open = (...controls) => {
+    layer = { querySelectorAll: () => controls, focus() { document.activeElement = layer; } };
+  };
+  const press = (shiftKey, key = "Tab") => {
+    const preventDefault = () => { stops += 1; };
+    for (const fn of documentOn.keydown) fn({ key, shiftKey, preventDefault });
+  };
+  const from = (control0) => { document.activeElement = control0; stops = 0; };
+  try {
+    const [a, b, c] = [control(), control(), control()];
+    open(a, b, c);
+    from(c);
+    press(false);
+    assert.equal(document.activeElement, a, "Tab on the last control goes to the first");
+    assert.equal(stops, 1, "and the page does not move the focus as well");
+    from(a);
+    press(true);
+    assert.equal(document.activeElement, c, "Shift+Tab on the first control goes to the last");
+    from(b);
+    press(false);
+    press(true);
+    assert.deepEqual([stops, document.activeElement], [0, b], "Tab in the middle moves as usual");
+    from({});
+    press(false);
+    assert.equal(document.activeElement, a, "Tab from outside the layer goes to the first one");
+    from({});
+    press(true);
+    assert.equal(document.activeElement, c, "Shift+Tab from outside goes to the last control");
+    from(layer);
+    press(true);
+    assert.equal(document.activeElement, c, "Shift+Tab on the layer itself goes to the last one");
+    from(c);
+    press(false, "Enter");
+    assert.equal(stops, 0, "another key moves nothing");
+    for (const [what, off] of [["a disabled control", control({ disabled: true })],
+      ["a control that is not shown", control({ getClientRects: () => [] })],
+      ["a control with tabindex -1", control({ tabIndex: -1 })]]) {
+      open(a, c, off);
+      from(c);
+      press(false);
+      assert.equal(document.activeElement, a, what + " is no stop at the end");
+      open(off, a, c);
+      from(a);
+      press(true);
+      assert.equal(document.activeElement, c, what + " is no stop at the start");
+    }
+    open(control({ disabled: true }));
+    from({});
+    assert.doesNotThrow(() => press(false), "Tab in a layer without controls keeps the focus");
+    assert.deepEqual([stops, document.activeElement], [1, layer], "in the layer itself");
+    layer = null;
+    from(a);
+    assert.doesNotThrow(() => press(false), "Tab with no open layer does nothing");
+    assert.equal(stops, 0, "and the page moves the focus as usual");
+  } finally {
+    globalThis.document = realDocument;
+  }
+}
+
+// ── The note under the passphrase fields is red only for a confirmation that is wrong ──
+{
+  const good = "abcdefghijklmnopqrstuvwxyz0123";
+  const [, weak] = t.passNote("short", "short".repeat(9));
+  assert.equal(weak, "hint ", "a weak first passphrase is not an error of the second field");
+  assert.equal(t.passNote(good, "")[1], "hint ", "no confirmation yet");
+  assert.equal(t.passNote(good, good.slice(0, 10))[1], "hint ",
+    "a confirmation that is still being typed is no error");
+  assert.equal(t.passNote(good, good.slice(0, 29) + "X")[1], "hint bad",
+    "a full confirmation that differs is an error");
+  assert.equal(t.passNote(good, good + "x")[1], "hint bad", "a longer confirmation is an error");
+  assert.deepEqual(t.passNote(good, good), ["The passphrases match.", "hint ok"]);
 }
 
 // ── Opening another wallet drops the notes of an expired payment of the open one ──

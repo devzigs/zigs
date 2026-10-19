@@ -10,7 +10,7 @@ import { initials, short, when } from "./app-kit.js";
 import { Z } from "./app-engine.js";
 import { netOf, NETWORKS } from "./app-chain.js";
 import {
-  act, copyBtn, el, guard, logBox, money, netBadge, networkPick, qrBox, skeleton,
+  act, copyBtn, el, guard, logBox, money, netBadge, networkPick, noteFor, qrBox, setNote, skeleton,
 } from "./app-dom.js";
 import { proposeWallets, requestCard, requestOf } from "./app-payreq.js";
 import {
@@ -128,13 +128,14 @@ export function fundBlock() {
   // The warning follows the typing, as the fee line of the composer does.
   const warn = el("span", { class: "hint bad", id: "fund-warn", role: "status" });
   const showWarn = () => {
-    warn.textContent = fundingWarning(toZat(ui.personal.fund), b ? b.total : 0);
+    setNote(warn, fundingWarning(toZat(ui.personal.fund), b ? b.total : 0), "hint bad");
   };
   const amount = el("input", {
     class: "input", id: "fund-amt", type: "text", inputmode: "decimal", autocomplete: "off",
     value: ui.personal.fund, "aria-describedby": "fund-hint fund-warn",
     oninput: (ev) => { ui.personal.fund = ev.target.value; showWarn(); },
   });
+  noteFor(warn, amount);
   showWarn();
   return el("div", { class: "to-box", style: "display:grid;gap:10px" },
     el("span", { class: "label" }, "Fund the account"),

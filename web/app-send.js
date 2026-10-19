@@ -10,7 +10,7 @@ import { gkeys } from "./app-keystore.js";
 import { DRAFT_MS, draftLive, draftOf, emptyForm, reviewFresh } from "./payment-model.js";
 import { addrHidden, atCap, curChain, curNet, netName } from "./app-chain.js";
 import {
-  act, addrGroups, copyBtn, el, memoRow, money, normalized, onNetwork, qrBox,
+  act, addrGroups, copyBtn, el, memoRow, money, normalized, noteFor, onNetwork, qrBox, setNote,
 } from "./app-dom.js";
 import {
   feeEstimate, inspectOf, newSpend, prepareSpend, PRIORITY_FACTOR, proposePrepared, recipientCheck,
@@ -82,9 +82,9 @@ const SHARE_FAILED = "This device could not share the address. Use Copy address.
 
 function addressHint(hint, to) {
   const v = to.trim(), ok = v ? onNetwork(v) : null, net = curNet().label.toLowerCase();
-  hint.textContent = !v ? "" : ok ? "Valid " + net + " address"
-    : "Not a shielded Zcash " + net + " address. It starts with " + curNet().prefix + ".";
-  hint.className = "hint " + (!v ? "" : ok ? "ok" : "bad");
+  setNote(hint, !v ? "" : ok ? "Valid " + net + " address"
+    : "Not a shielded Zcash " + net + " address. It starts with " + curNet().prefix + ".",
+  "hint " + (!v ? "" : ok ? "ok" : "bad"));
 }
 
 // A recipient field holds an address or, in a testnet wallet, a ZNS name. Text that is an address
@@ -94,10 +94,7 @@ const nameIn = (to) => (znsOn() && !onNetwork(to.trim()) ? nameOf(to) : null);
 const toLabel = () => (znsOn() ? "Recipient address or ZNS name" : "Recipient address");
 const toPlaceholder = () => curNet().prefix + (znsOn() ? "… or alice.zec" : "…");
 
-const showHint = (hint, text, cls = "") => {
-  hint.textContent = text;
-  hint.className = "hint " + cls;
-};
+const showHint = (hint, text, cls = "") => setNote(hint, text, "hint " + cls);
 
 // What the form shows for a name: its address, with the note of a recent change. The row keeps it
 // as `r.shown`, so that a submit pays only what the form showed. `seen` is false until a hint
@@ -148,22 +145,24 @@ function recipientHint(hint, r) {
 }
 
 function payRow(r, i, rows, sumUp) {
-  const c = curChain(), n = rows.length > 1 ? " " + (i + 1) : "";
-  const hint = el("span", { class: "hint", role: "status", style: "overflow-wrap:anywhere" });
+  const c = curChain(), n = rows.length > 1 ? " " + (i + 1) : "", hintId = "s-hint-" + r.k;
+  const hint = el("span", { class: "hint", id: hintId, role: "status",
+    style: "overflow-wrap:anywhere" });
   const amt = el("input", { class: "input", id: "s-amt-" + r.k, type: "text", inputmode: "decimal", placeholder: "0.00", required: true, autocomplete: "off", "aria-label": "Amount" + n, value: r.amt, oninput: (ev) => { r.amt = ev.target.value.trim(); sumUp(); } });
   const max = () => { r.amt = zatText(Math.max(0, c && c.bal ? c.bal.max_send : 0)); amt.value = r.amt; sumUp(); };
+  const to = el("input", {
+    class: "input mono", id: "s-to-" + r.k, type: "text", placeholder: toPlaceholder(),
+    required: true, autocomplete: "off", spellcheck: "false",
+    "aria-label": toLabel() + n, "aria-describedby": hintId, value: r.to,
+    oninput: (ev) => {
+      r.to = ev.target.value;
+      r.name = null;   // text that the person typed has no name from an earlier proposal
+      fillFromRequest(r, rows, hint) || recipientHint(hint, r);
+    },
+  });
+  noteFor(hint, to);
   recipientHint(hint, r);
-  return el("div", { class: "pay-row" },
-    el("input", {
-      class: "input mono", id: "s-to-" + r.k, type: "text", placeholder: toPlaceholder(),
-      required: true, autocomplete: "off", spellcheck: "false",
-      "aria-label": toLabel() + n, value: r.to,
-      oninput: (ev) => {
-        r.to = ev.target.value;
-        r.name = null;   // text that the person typed has no name from an earlier proposal
-        fillFromRequest(r, rows, hint) || recipientHint(hint, r);
-      },
-    }),
+  return el("div", { class: "pay-row" }, to,
     el("div", { class: "input-wrap" }, amt, rows.length === 1 ? el("button", { class: "btn sm", type: "button", onclick: max }, "Max") : null),
     rows.length > 1 ? el("button", { class: "icon-btn", type: "button", "aria-label": "Remove recipient" + n, onclick: () => { rows.splice(i, 1); render(); } }, "×") : null,
     hint, memoBox(r, n));
@@ -173,21 +172,21 @@ function payRow(r, i, rows, sumUp) {
 const MEMO_NEAR = 400;
 function memoHint(hint, memo) {
   const bad = memoError(memo), bytes = memoBytes(memo);
-  hint.textContent = bad || (bytes >= MEMO_NEAR ? bytes + " of " + MEMO_BYTES + " bytes" : "");
-  hint.className = "hint" + (bad ? " bad" : "");
+  setNote(hint, bad || (bytes >= MEMO_NEAR ? bytes + " of " + MEMO_BYTES + " bytes" : ""),
+    "hint" + (bad ? " bad" : ""));
 }
 
 // The optional memo of one recipient.
 function memoBox(r, n) {
-  const hint = el("span", { class: "hint" });
+  const hintId = "s-memo-hint-" + r.k, hint = el("span", { class: "hint", id: hintId });
+  const memo = el("input", {
+    class: "input", id: "s-memo-" + r.k, type: "text", placeholder: "Memo (optional)",
+    autocomplete: "off", "aria-label": "Memo" + n + " (optional)", "aria-describedby": hintId,
+    value: r.memo, oninput: (ev) => { r.memo = ev.target.value; memoHint(hint, r.memo); },
+  });
+  noteFor(hint, memo);
   memoHint(hint, r.memo);
-  return el("div", { class: "memo-row" },
-    el("input", {
-      class: "input", id: "s-memo-" + r.k, type: "text", placeholder: "Memo (optional)",
-      autocomplete: "off", "aria-label": "Memo" + n + " (optional)", value: r.memo,
-      oninput: (ev) => { r.memo = ev.target.value; memoHint(hint, r.memo); },
-    }),
-    hint);
+  return el("div", { class: "memo-row" }, memo, hint);
 }
 
 // A whole request pasted in a recipient field replaces that row with the rows of its payees. It
@@ -199,7 +198,7 @@ export function fillFromRequest(r, rows, hint) {
   const fresh = req.payees ? payeeRows(req.payees, () => ++ui.payKey) : [];
   const tooMany = rows.length - 1 + fresh.length > MAX_PAYEES;
   const error = req.error ? requestProblem(req.error) : tooMany ? TOO_MANY : "";
-  if (error) { hint.textContent = error; hint.className = "hint bad"; return true; }
+  if (error) { setNote(hint, error, "hint bad"); return true; }
   rows.splice(rows.indexOf(r), 1, ...fresh);
   render();
   return true;
@@ -303,13 +302,14 @@ function pasteList(net) {
   return el("details", { class: "paste" }, el("summary", { class: "btn sm" }, "Paste a list"),
     el("textarea", {
       class: "input mono", id: "s-list", rows: "5", spellcheck: "false",
-      "aria-label": "Payment list",
+      "aria-label": "Payment list", "aria-invalid": ui.listError ? "true" : null,
+      "aria-describedby": ui.listError ? "s-list-error" : null,
       placeholder: net.prefix + "…, 0.5, October rent\n" + net.prefix + "…, 1.25",
     }),
     el("span", { class: "hint" },
       "One " + (znsOn() ? "address or ZNS name" : "address") + " and amount per line, then an "
       + "optional memo. A spreadsheet copy works. A payment request (zcash:) works too."),
-    ui.listError ? el("span", { class: "hint bad" }, ui.listError) : null,
+    ui.listError ? el("span", { class: "hint bad", id: "s-list-error" }, ui.listError) : null,
     el("button", { class: "btn sm", type: "button", onclick: useList }, "Use this list"));
 }
 

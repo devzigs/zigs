@@ -11,8 +11,8 @@ import { curChain, curNet, netName, readsMemos, spanMs } from "./app-chain.js";
 import { changedSigners } from "./app-filter.js";
 import { canWrite, db, openSession } from "./app-groups.js";
 import {
-  act, avatar, coarse, copyBtn, el, guard, logBox, memoTexts, nameField, newBadge, payTitle,
-  proposer, secretQr, sender,
+  act, avatar, coarse, copyBtn, el, guard, logBox, memoTexts, nameField, newBadge, noteFor,
+  payTitle, proposer, secretQr, sender, setNote,
 } from "./app-dom.js";
 import {
   chat, chatMembers, chatPins, chatWhy, contactName, contactOf, createChat, dmTrust, leaveChat,
@@ -159,13 +159,14 @@ function sendOnEnter(ev) {
 
 // The line under a message box that follows the text as it changes: `plan(text)` gives { fine,
 // error }. A redraw gives the text back to the new box and fires an input event, which shows it.
-function planLine(plan, box) {
-  const line = el("p", { class: "hint", "aria-live": "polite" });
+function planLine(plan, box, id) {
+  const line = el("p", { class: "hint", id, "aria-live": "polite" });
   const show = () => {
     const got = plan(box.value);
-    line.textContent = got.error || got.fine;
-    line.className = "hint" + (got.error ? " bad" : "");
+    setNote(line, got.error || got.fine, "hint" + (got.error ? " bad" : ""));
   };
+  box.setAttribute("aria-describedby", id);
+  noteFor(line, box);
   box.addEventListener("input", show);
   show();
   return line;
@@ -196,7 +197,7 @@ export function composer(o) {
   const form = el("form", { class: "composer", onsubmit: act((ev) => submitMessage(ev.target, o)) },
     o.why ? el("p", { class: "hint" + (o.warn ? " bad" : "") }, o.why) : null,
     o.progress ? el("p", { class: "hint", role: "status" }, o.progress) : null,
-    box, o.plan ? planLine(o.plan, box) : null,
+    box, o.plan ? planLine(o.plan, box, "chat-plan-" + o.kind) : null,
     el("div", { class: "composer-row" }, seatPicker(o, "chat-as-" + o.kind), requestToggle(o),
       sendButton(o, sending)),
     el("p", { class: "small faint" }, o.fine));
