@@ -527,8 +527,8 @@ export function sendDialog() {
       }),
       el("span", { class: "hint" }, "Encrypted. The devices of this wallet, and anyone else who "
         + "has the invite link, can read it.")),
-    el("p", { class: "small faint" }, "A memo goes on chain with the payment. Its recipient and "
-      + "every device of this wallet can read it."),
+    el("p", { class: "small faint" }, "A memo goes on chain with the payment. Its recipient, "
+      + "the devices of this wallet, and anyone else who has the invite link can read it."),
     priorityBox(sumUp),
     el("div", { class: "summary" },
       el("div", {}, el("span", { class: "muted" }, "Available"), money(spendable)),

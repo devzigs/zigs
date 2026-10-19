@@ -13,9 +13,9 @@ is a bug: please report it.
   wallet, and when.
 - The light-wallet server sees your IP address and the blocks you download, as it does for every
   light wallet. On testnet, the app Worker relays the calls to the Zigs server, so that server
-  sees the Worker and not your device. It never receives a key. If a signer turns on memo
-  reading, the app also fetches the full transaction of each payment to the wallet. The server
-  then learns which transactions a device reads. Memo reading is off by default.
+  sees the Worker and not your IP address. It never receives a key. If a person turns on memo
+  reading in a browser, the app also fetches the full transaction of each payment to the wallet.
+  The server then learns which transactions that browser reads. Memo reading is off by default.
 - A memo on a payment is readable by its recipient and by every signer of the sending wallet.
   Every signer of the receiving wallet reads the memos that arrive there.
 - A testnet wallet that uses the Solana beta (web app only) also talks to the Helius Devnet host.

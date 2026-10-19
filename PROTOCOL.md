@@ -226,8 +226,9 @@ of section 15.5 to the payment documents. Its `version` is 3:
 - The store does not stop a holder of the wallet secret from overwriting `groups/<id>` or a seat
   document, because the server cannot read them. The seat secret holds the version and the box
   key, so the device finds such a change itself.
-- A seat on an old app writes a round-1 document without `commit`. The apps show "Seat N uses an
-  old version of Zigs and cannot join this wallet. Update it, or create a new wallet."
+- A seat on an old app writes a round-1 document without `commit`. The web app shows "Device N uses
+  an old version of Zigs and cannot join this wallet. Update it, or create a new wallet." The iOS
+  app says "Seat N" in the same text.
 
 ### 4.3 Version 1 wallets
 
@@ -281,8 +282,8 @@ wallet, the creator also cannot choose `nk` or `rivk`.
   scans again from the birthday.
 - **Memos.** A compact block holds only part of each note ciphertext, so it does not hold the
   memo. The full transaction holds it.
-  - Reading memos is off until a signer turns it on, for one wallet in one browser (section 14).
-  - With it on, the device asks the light-wallet server (`GetTransaction`, by transaction id) for
+  - Reading memos is off until a person turns it on, for one wallet in one browser (section 14).
+  - With it on, the browser asks the light-wallet server (`GetTransaction`, by transaction id) for
     the full transaction of each note that is not change. It decrypts the memo with the incoming
     viewing key and keeps the memo with the note.
   - This request tells the server which transactions pay the wallet. The server can link them to
@@ -902,14 +903,15 @@ received payments yet. The engine has the calls for them.
   the line an error. It could be a decimal comma or a field separator. The person writes the
   amount with a point, or puts a space after the comma.
 - **Receiving.** Section 6 gives the rules. Reading memos is a switch in Settings, under "This
-  browser". It is off for every wallet until a signer turns it on. The switch keeps its state in
-  the browser only (`zf-memos`, wallet id to true). Its text names the leak: the light-wallet
-  server learns which transactions pay the wallet. A payment whose memo is not read yet shows
-  "Memo not read yet" while the switch is on. A received memo shows on the Activity row of its
-  payment. It also shows as a message in the Messages tab of the wallet, with the label "On chain
-  · shared with all devices". It has no sender and no signature. The app never calls it verified
-  or private. The app shows control characters and bidirectional marks of the text as U+FFFD, and
-  it puts no memo text in a notification. Memos do not count as unread messages.
+  browser". It is off for every wallet until a person turns it on in that browser. The switch
+  keeps its state in the browser only (`zf-memos`, wallet id to true). Its text names the leak:
+  the light-wallet server learns which transactions pay the wallet. A payment whose memo is not
+  read yet shows "Memo not read yet" while the switch is on. A received memo shows on the
+  Activity row of its payment. It also shows as a message in the Messages tab of the wallet,
+  with the label "On chain · shared with all devices". It has no sender and no signature. The
+  app never calls it verified or private. The app shows control characters and bidirectional
+  marks of the text as U+FFFD, and it puts no memo text in a notification. Memos do not count as
+  unread messages.
 - **Engine interface** (web names; the native names have the prefix `wallet`):
   - `createSpend(payees, priority, after)` and `walletSpend(key, payees, tip)`: `payees` is
     `[{"to", "amount", "memo"?}]`. A row error names the row: `recipient 2: the memo is 513
@@ -1253,12 +1255,12 @@ Messages (section 14) were already signed.
   from the pin, never from a later value in the store. So a holder of the link cannot add a seat
   above `n`. If the store shows other values, the wallet page says so.
 - The web app takes the network of a wallet from the safety number, which covers it (section 4). A
-  seat of this device keeps the number that its person confirmed (`confirmed`). The stored confirm
-  document of the seat counts too, but only when the key in the seat secret of this device signed
-  it: a restore does not copy `confirmed`. The device keeps the network whose safety number matches,
-  and only when exactly one network matches, in `zf-signpins` under the key
-  `confirmednet:<wallet id>`. The confirm documents of other seats do not count: a device that opens
-  a wallet for the first time takes their keys from the store.
+  seat in this browser keeps the number that its person confirmed (`confirmed`). The stored confirm
+  document of the seat counts too, but only when the key in the seat secret of this browser signed
+  it: a restore does not copy `confirmed`. The browser keeps the network whose safety number
+  matches, and only when exactly one network matches, in `zf-signpins` under the key
+  `confirmednet:<wallet id>`. The confirm documents of other seats do not count: a browser that
+  opens a wallet for the first time takes their keys from the store.
 - Until then, the web app uses the first `network` that it sees for a wallet of any version, under
   the key `network:<wallet id>`. A name that is not `testnet` or `mainnet` is not kept. A holder of
   the link can change the network before a device opens the wallet for the first time. The confirmed

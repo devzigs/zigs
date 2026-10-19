@@ -203,7 +203,7 @@ Stage on app.zigs.app. The Solana tab of staging works only after D4 adds stagin
     - Run `sh solspike/demo-check.sh` again. It also checks the three fee balances.
     - With local proving on Demo A: check that the "pool program" line of demo-check shows the
       deploy slot that Zigs pins (508,538,476, deployed 7 October 2026 at 18:01 UTC). Make one
-      payment on Demo A, proved on the device. **[waits for SOL-4]**
+      payment on Demo A, proved in this browser. **[waits for SOL-4]**
     - Confirm the Zcash **Available** balance of Demo A in the app.
     - Cancel a Zcash payment that has no approval (**Cancel payment**). A Solana proposal ends
       only at its expiry. Confirm that no approval hold blocks Send on Demo A.
