@@ -768,6 +768,8 @@ const proposedWithdrawal = async (recipient = base58(TO)) => {
   const sentCard = findAll(solView({ ...c, host: { ...c.host, el: node } }, (fn) => fn, {}),
     (n) => n.attrs["data-session"] === id)[0];
   assert.deepEqual(stepsOf(sentCard), ["step done", "step done", "step done", "step done"]);
+  const sentSteps = findAll(sentCard, (x) => x.attrs["data-sol"] === "steps-" + id)[0];
+  assert.match(textOf(sentSteps), /Approvals · 2 of 2/, "a package counts t approvals");
   const landed = chain.landed.find((x) => x.signature === ssOf(id).txId);
   assert.ok(landed, "the execute of the withdrawal landed");
   assert.ok(landed.message.includes(TO), "the execute names the recipient");

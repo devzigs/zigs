@@ -336,6 +336,8 @@ a.row-item { text-decoration: none; }
 .step.done .tick { background: var(--ok); border-color: var(--ok); color: var(--panel); }
 .step.now .tick { border-color: var(--accent); color: var(--accent-text); box-shadow: 0 0 0 4px var(--accent-soft); }
 .step.bad .tick { background: var(--bad); border-color: var(--bad); color: var(--panel); }
+/* The Solana section: its ids and links (88 characters, no space) wrap on a phone. */
+.sol-view { min-width: 0; overflow-wrap: anywhere; }
 /* A Solana proposal: the same steps, smaller, and the amount above its approval screen. */
 .sol-steps .step { padding-bottom: 12px; }
 .step-text { display: grid; gap: 2px; min-width: 0; align-self: center; }

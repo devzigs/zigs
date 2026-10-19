@@ -328,7 +328,7 @@ export function solView(c, act, actions) {
   const stopped = !!stopOf(c);
   return el(
     "section",
-    { class: "card card-pad", style: "display:grid;gap:12px" },
+    { class: "card card-pad sol-view", style: "display:grid;gap:12px" },
     el(
       "div",
       { class: "card-head" },

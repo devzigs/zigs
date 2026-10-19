@@ -728,7 +728,8 @@ export const stepStates = (ss, count, t) => [
 function stepsOf(c, ss) {
   const { el } = c.host,
     t = c.host.state.g.t;
-  const count = Math.min(Object.keys(c.commits[ss.id] ?? {}).length, t);
+  // A package is made from t approvals, also when this page holds none of their records.
+  const count = ss.package ? t : Math.min(Object.keys(c.commits[ss.id] ?? {}).length, t);
   const [approvals, signed, last] = stepStates(ss, count, t);
   const step = (cls, title, text) =>
     el(
