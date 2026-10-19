@@ -43,9 +43,10 @@ export async function makeWallet(page, name, { solana = false } = {}) {
   await waitForText(page, "Review your wallet");
   // The welcome card behind the dialog has a "Create wallet" button too.
   await run(page, () => document.querySelector("form[role=dialog] button[type=submit]").click());
-  const shown = () => run(page, () => !!document.querySelector(".addr-box .hex"));
+  // The link text sits in the closed disclosure of its QR code: textContent reads it there.
+  const shown = () => run(page, () => !!document.querySelector(".qr-toggle .addr-full"));
   await waitFor(shown, 30000, () => "the invite link");
-  return run(page, () => document.querySelector(".addr-box .hex").textContent.trim());
+  return run(page, () => document.querySelector(".qr-toggle .addr-full").textContent.trim());
 }
 
 const hasTab = (page, id) => run(page, (name) => !!document.getElementById(name), id);
