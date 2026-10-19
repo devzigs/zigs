@@ -1,5 +1,5 @@
 {
-  "baseCommit": "12c3aa8dca76575879ccf9f15c9ed525029dca6f",
+  "baseCommit": "7a8bc354cce9b2d713e612422761738df3ee6659",
   "node": "v24.11.0",
   "tests": {
     "web/test/chat.mjs": {
@@ -105,6 +105,9 @@
       "exit": 0
     },
     "web/test/overview.mjs": {
+      "exit": 0
+    },
+    "web/test/setup-stage.mjs": {
       "exit": 0
     },
     "web/test/approvals.mjs": {
