@@ -9,15 +9,36 @@ export const solOf = (host, gid, seat) => host.sec(gid, seat)?.sol ?? {};
 /**
  * Merges `patch` into the sub-object and saves the seat secret. A null value deletes the field.
  * putSec replaces a field of the seat secret as a whole, so the merge happens here. Resolves
- * true once saved.
+ * true once saved. It runs under the lock of the secrets, after this tab took what storage holds
+ * now: each tab writes the whole record, so a write from an older copy would bring back the
+ * nonces that another tab spent (nonces.js).
  */
-export function putSol(host, gid, seat, patch) {
-  const next = { ...solOf(host, gid, seat) };
+export const putSol = (host, gid, seat, patch) =>
+  host.exclusive("secrets", async () => {
+    try {
+      await host.takeStored();
+    } catch (e) {
+      host.log?.("Solana save refused: storage did not read: " + String(e?.message ?? e));
+      return false;
+    }
+    return putSolHeld(host, gid, seat, patch);
+  });
+
+/**
+ * putSol for a step that holds the lock of the secrets already: the lock is not reentrant. putSec
+ * changes memory before it saves, so a failed save gives memory the old values back: no step acts
+ * on a change that storage does not hold, such as a spent nonce whose share would go out.
+ */
+export async function putSolHeld(host, gid, seat, patch) {
+  const before = host.sec(gid, seat)?.sol;
+  const next = { ...before };
   for (const [key, value] of Object.entries(patch)) {
     if (value === null) delete next[key];
     else next[key] = value;
   }
-  return host.putSec(gid, seat, { sol: next });
+  if (await host.putSec(gid, seat, { sol: next })) return true;
+  await host.putSec(gid, seat, { sol: before });
+  return false;
 }
 
 /** True when the seat holds a finished Solana key share. */

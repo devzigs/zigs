@@ -2,9 +2,9 @@
 import { walletVersion } from "./util.js";
 import { docFields } from "./signed.js";
 import { banner, clearBadBanner, log, showBanner, state, ui } from "./app-state.js";
-import { said } from "./app-kit.js";
+import { exclusive, said } from "./app-kit.js";
 import { Z } from "./app-engine.js";
-import { putSec, sec } from "./app-keystore.js";
+import { putSec, sec, takeStored } from "./app-keystore.js";
 import { localSeats, seatIds } from "./app-seats.js";
 import { netName } from "./app-chain.js";
 import {
@@ -85,6 +85,7 @@ let solWatched = null;    // the wallet whose start document is watched
 export function resetSolStart() { solStartDoc = null; solWatched = null; }
 const solHost = () => ({
   Z, sdb, state, el, act, log, once, render, refilter, showBanner, sec, putSec, signedDoc,
+  exclusive, takeStored,
   canWriteAs, localSeats, seatIds, checkIn, safetyNo, seatCheck, confirmedNo, openGroup, restore,
   groupVersion, sealAndSave, network: () => netName(state.g),
   askBackup: (words) => { ui.backup = { words, made: false, busy: false }; render(); },

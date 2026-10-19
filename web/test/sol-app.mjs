@@ -20,6 +20,9 @@ const KEY_NAME = "api-key";
 
 const rig = await loadRig();
 const { t, Z, W, data, waitFor } = rig;
+// Every Solana write takes the lock of the secrets of the page (web/sol/secrets.js).
+const { exclusive } = await import("../app-kit.js");
+const { takeStored } = await import("../app-keystore.js");
 const sha = (text) => createHash("sha256").update(text).digest("hex");
 const path = (gid, rel) => `groups/${gid}/${rel}`;
 const solOf = (gid, i) => t.sec(gid, i).sol ?? {};
@@ -52,6 +55,8 @@ const words = (gid, i) =>
         state: t.state,
         sec: t.sec,
         putSec: t.putSec,
+        exclusive,
+        takeStored,
         localSeats: t.localSeats,
         sealAndSave: t.sealAndSave,
       },
@@ -621,7 +626,7 @@ const syncState = (rpcUrl = RPC) => ({
 
 // ── SOL-4: the backup carries the pin of local proving; a restored seat proves here ──
 {
-  const host = { state: t.state, sec: t.sec, putSec: t.putSec };
+  const host = { state: t.state, sec: t.sec, putSec: t.putSec, exclusive, takeStored };
   // The switch was on for seat 3: its file carries the pin, and only the value true.
   await putSol(host, gid, 3, { proveLocal: true });
   const file3 = JSON.parse(solBackupText(host, gid, 3));

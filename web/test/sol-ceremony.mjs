@@ -1107,6 +1107,8 @@ assert.deepEqual(
   }
   const mine = t.secrets[gidA + ":1"].sol;
   for (const i of [2, 3]) delete t.secrets[gidA + ":" + i];
+  // Storage holds what memory holds: each Solana write takes the stored seats first.
+  localStorage.setItem("zf-secrets", JSON.stringify(t.secrets));
   t.refilter();
   await sleep(300);
   assert.deepEqual(t.localSeats(), [1], "this browser holds seat 1 only");
