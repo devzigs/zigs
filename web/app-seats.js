@@ -89,4 +89,5 @@ export function seatStage(i) {
   return 1;
 }
 // A seat publishes its first key message right after joining, so stage 2 still reads as joined.
-export const STAGE_LABEL = ["Open", "Joined", "Joined", "Creating key", "Key ready", "Address checked"];
+export const STAGE_LABEL = ["To join", "Joined", "Joined", "Creating key", "Key ready",
+  "Address checked"];

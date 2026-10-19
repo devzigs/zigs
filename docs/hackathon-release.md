@@ -408,7 +408,7 @@ Evidence marked "checked" was read in the repo during this synthesis. All other 
   - web/test/app.mjs:1495-1498 pins "an error part ends no hold".
   - A presenter who finds a typo after Approve cannot propose again for about a day.
   - In a 2-of-2 wallet where this seat never made a share, the text "can still go on chain" is wrong.
-  - "Play the other seats in this browser" puts every seat in one browser.
+  - "Play the other devices in this browser" puts every seat in one browser.
 - **Fix:**
   - End the hold when t = n and this seat burned its nonce without a share.
   - For t < n, keep the hold. Say why, show the time left, and offer a confirmed "I checked, release" button.
@@ -647,8 +647,8 @@ Devices: D1 (presenter, seat 1), D2 (seat 2), D3 (seat 3). Rule for the whole de
 | Time | Who | Step | Expected result | Needs |
 |---|---|---|---|---|
 | 0:00 | D1 | Open app.zigs.app and enter the preview password. Say: testnet and Devnet only. Click New wallet. | The picker shows Testnet only. | M1, D1 |
-| 0:45 | D1 | Name the wallet. Set Signers 3 and Approvals 2. Turn on Solana. Click Create wallet. Show the invite QR. | The invite card shows. | M3 |
-| 1:15 | D2, D3 | Scan the QR, type a name, click Take seat. | 3 of 3 seats taken. | S10 |
+| 0:45 | D1 | Click Set up my wallet. Keep the recommended 2 of 3 and click Next. Name the wallet. Turn on Solana. Click Review wallet, then Create wallet. Show the invite QR. | The invite card shows. | M3 |
+| 1:15 | D2, D3 | Scan the QR, type a label, click Join as device. | 3 of 3 devices joined. | S10 |
 | 1:45 | D1, D2, D3 | Read the safety number aloud. Each person presses It matches. Narrate the progress card: Zcash key, Solana key, fee address. | Both ceremonies run. Each seat shows Address checked and key ready. | M3, M4 |
 | 3:00 | D1 | Switch to Demo A. Show the Zcash address, the Available balance and the Solana tab. Press Sync Solana. | Both balances show. | S2 |
 | 3:30 | D1 | Receive: show the address and the faucet link. Do not use the faucet live. Click Send. Paste the Payee utest1 address. Enter 0.01. Click Review payment, then Propose payment. | A payment opens. | M2 |

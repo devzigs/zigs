@@ -25,7 +25,7 @@ export function setupView() {
   const top = !localSeats().length && open.length ? joinCard(open[0])
     : open.length ? inviteCard(open.length) : null;
   const split = keysDiffer() ? el("div", { class: "callout bad", role: "alert" },
-    "The signers made different wallet keys, so this wallet is not safe to use. "
+    "The devices made different wallet keys, so this wallet is not safe to use. "
     + "Do not send funds to it. Create a new wallet.") : null;
   const stopped = abortedText();
   return el("div", { class: "page", style: "gap:16px" }, stageBar(), split,
@@ -50,8 +50,8 @@ function stageBar() {
       : "Step " + (index + 1) + " of " + SETUP_STAGES.length + ": " + SETUP_STAGES[index]
         + ". " + STAGE_NOTE[index]));
 }
-const STAGE_NOTE = ["", "Every signer takes a seat with the invite link.",
-  "Every signer compares the safety number and confirms it.",
+const STAGE_NOTE = ["", "Every device joins with the invite link.",
+  "Compare the safety number on every device, then confirm it.",
   "The devices create the key together and check the address. Keep Zigs open."];
 // A wallet document with no birthday comes from an older version of Zigs: a stop too.
 function blockText(c) {
@@ -78,7 +78,8 @@ function safetyCard() {
   const no = safetyNo(), n = state.g.n;
   if (!no) {
     return el("div", { class: "callout bad", role: "alert" },
-      "A seat holds a key that this app cannot read. Do not use this wallet. Create a new wallet.");
+      "A device holds a key that this app cannot read. Do not use this wallet. Create a new "
+      + "wallet.");
   }
   const yes = confirmedBy(no).length, clash = numberClash(no, state.confirm, seatIds());
   const todo = confirmSeatsOf().filter((i) => sec(state.gid, i).confirmed !== no);
@@ -86,11 +87,11 @@ function safetyCard() {
     el("div", { class: "card-head" }, el("h2", {}, "Check the safety number"),
       el("span", { class: "badge " + (yes === n ? "ok" : "warn") }, yes + " of " + n + " confirmed")),
     el("div", { class: "safety" }, no),
-    el("p", { class: "small muted" }, "Compare this number with every signer, on a call or in "
-      + "person. If it is different, someone else took a seat. In that case, do not tap "
-      + "\"It matches\". Create a new wallet." + (bothParts() ? " " + BOTH_OPEN : "")),
-    clash.length ? el("div", { class: "callout bad", role: "alert" }, "Seat " + clash.join(", ")
-      + " confirmed another number. Someone else may have taken a seat. Do not continue. "
+    el("p", { class: "small muted" }, "Compare this number on every device, on a call or in "
+      + "person. If one device shows a different number, someone else joined. In that case, do "
+      + "not tap \"It matches\". Create a new wallet." + (bothParts() ? " " + BOTH_OPEN : "")),
+    clash.length ? el("div", { class: "callout bad", role: "alert" }, "Device " + clash.join(", ")
+      + " confirmed another number. Someone else may have joined. Do not continue. "
       + "Create a new wallet.") : null,
     todo.length ? confirmButton(todo, no) : null);
 }
@@ -103,7 +104,7 @@ function confirmButton(todo, no) {
 }
 
 const NOT_ZIP2005 = "This wallet is not built to ZIP 2005. Funds cannot be recovered if quantum "
-  + "computers break today's keys. Do you want to take a seat?";
+  + "computers break today's keys. Do you want to join with this device?";
 
 // The joiner passed the password already. A chat app browser or a private window can still lose
 // the key share, so the card says where to open the link before the seat is taken.
@@ -111,17 +112,17 @@ const OPEN_HERE = "Is this page in the browser of a chat app or in a private win
   + "link in Safari or Chrome first. A chat app browser or a private window can delete your key "
   + "share.";
 // A wallet with a Solana part has two key ceremonies, one after the other.
-const BOTH_OPEN = "Every signer keeps this wallet open until the Zcash and the Solana parts are "
+const BOTH_OPEN = "Every device keeps this wallet open until the Zcash and the Solana parts are "
   + "ready.";
 const bothParts = () => solPlanned() && !solError;
 export const joinText = () => solPlanned()
   ? "Zigs is a shared wallet for Zcash testnet and Solana Devnet. The Zcash part is shielded. Any "
     + state.g.t
-    + " of the " + state.g.n + " signers approve each payment. Take a seat to become a signer. "
-    + "Your device creates its own key shares, one for Zcash and one for Solana. They never leave "
+    + " of the " + state.g.n + " devices approve each payment. Join to add this device to it. "
+    + "This device creates its own key shares, one for Zcash and one for Solana. They never leave "
     + "this browser unless you save a backup. " + BOTH_OPEN
   : "Zigs is a shared wallet for shielded Zcash. Any " + state.g.t + " of the " + state.g.n
-    + " signers approve each payment. Take a seat to become a signer. Your device creates its own "
+    + " devices approve each payment. Join to add this device to it. This device creates its own "
     + "key share. It never leaves this browser unless you save a backup. Keep this page open until "
     + "the wallet is ready.";
 
@@ -130,7 +131,7 @@ function joinCard(seat) {
   const take = el("button", {
     class: "btn primary lg", type: "button", ...off.attrs,
     onclick: act(() => (usesV2(groupVersion()) || confirm(NOT_ZIP2005)) && takeSeat(seat)),
-  }, "Take seat " + seat);
+  }, "Join as device " + seat);
   return el("section", { class: "card card-pad hero-card" },
     el("div", { style: "display:grid;gap:4px" }, el("h2", {}, "Join " + state.g.name),
       el("p", { class: "small muted" }, joinText()),
@@ -144,9 +145,10 @@ function joinCard(seat) {
 export const inviteMessage = (link) => "I made a shared wallet \"" + state.g.name + "\" on Zigs, a "
   + (solPlanned() ? "shared wallet for Zcash testnet and Solana Devnet"
     : "private shared wallet for shielded Zcash")
-  + ". You are one of " + state.g.n + " signers, and " + state.g.t + " must approve each payment."
+  + ". It has " + state.g.n + " devices. Any " + state.g.t + " of them must approve each "
+  + "payment. Your device will be one of them."
   + "\n\n1. Open this link on your phone or computer: " + link + "\n" + BROWSER_NOTE + "\n2. "
-  + PASSWORD_NOTE + "\n3. Take a seat.\n4. Keep the page open until the "
+  + PASSWORD_NOTE + "\n3. Tap \"Join as device\".\n4. Keep the page open until the "
   + (solPlanned() ? "Zcash and the Solana parts are" : "wallet is") + " ready.\n\nThis link is a "
   + "secret. Do not post it in a public place. About Zigs: https://zigs.app";
 
@@ -158,12 +160,12 @@ function inviteCard(openCount) {
       .catch(() => {}),
   }, "Share") : null;
   return el("section", { class: "card card-pad hero-card" },
-    el("div", { class: "card-head" }, el("h2", {}, "Invite your signers"),
+    el("div", { class: "card-head" }, el("h2", {}, "Add the other devices"),
       el("span", { class: "badge plain" },
-        openCount === 1 ? "1 seat open" : openCount + " seats open")),
-    el("p", { class: "small muted" }, "Send this invite link to each signer through a private "
-      + "channel. It contains the wallet secret: anyone who has it can take an open seat. "
-      + senderNote("each signer")),
+        openCount === 1 ? "1 device to join" : openCount + " devices to join")),
+    el("p", { class: "small muted" }, "Send this invite link through a private channel. Open it "
+      + "on each device that joins. It holds the wallet secret: anyone who has it can join as one "
+      + "of the open devices. " + senderNote("each person who joins")),
     el("div", { class: "addr-box" }, el("span", { class: "hex nowrap" }, link),
       copyBtn(link, "Copy link", "btn sm primary"), copyBtn(message, "Copy invite message", "btn sm"),
       share),
@@ -193,17 +195,17 @@ const oldSeats = () => seatIds().filter((i) => state.dkg1[i] && !HEX64.test(stat
 // The states that stop the key step. The first check that holds decides.
 const KEY_BLOCKS = [
   (c) => c.stopped && ["bad", c.stopped],
-  (c) => c.aborts.length && ["bad", "Seat " + c.aborts[0] + " stopped setup. "
+  (c) => c.aborts.length && ["bad", "Device " + c.aborts[0] + " stopped setup. "
     + state.abort[c.aborts[0]].reason.slice(0, 200)],
-  (c) => c.mismatch && ["bad", "The signers made different wallet keys. Do not use this wallet. "
+  (c) => c.mismatch && ["bad", "The devices made different wallet keys. Do not use this wallet. "
     + "Create a new wallet."],
-  (c) => c.v2 && c.old.length && ["bad", "Seat " + c.old.join(", ") + " uses an old version of "
+  (c) => c.v2 && c.old.length && ["bad", "Device " + c.old.join(", ") + " uses an old version of "
     + "Zigs and cannot join this wallet. Update it, or create a new wallet."],
-  (c) => c.v2 && allSeated() && !c.no && ["bad", "A seat holds a key that this app cannot read. "
+  (c) => c.v2 && allSeated() && !c.no && ["bad", "A device holds a key that this app cannot read. "
     + "Do not use this wallet. Create a new wallet."],
-  (c) => c.clash.length && c.d < c.n && ["bad", "Seat " + c.clash.join(", ") + " confirmed "
+  (c) => c.clash.length && c.d < c.n && ["bad", "Device " + c.clash.join(", ") + " confirmed "
     + "another safety number. Do not continue. Create a new wallet."],
-  (c) => c.v2 && allSeated() && c.r1 < c.n && c.conf < c.n && ["", "Starts when every signer "
+  (c) => c.v2 && allSeated() && c.r1 < c.n && c.conf < c.n && ["", "Starts when every device "
     + "confirmed the safety number (" + c.conf + " of " + c.n + ")."],
 ];
 const keyBlock = (c) => KEY_BLOCKS.map((check) => check(c)).find(Boolean) || null;
@@ -211,8 +213,8 @@ const keyBlock = (c) => KEY_BLOCKS.map((check) => check(c)).find(Boolean) || nul
 function keyStep(c) {
   const blocked = keyBlock(c);
   if (blocked) return blocked;
-  if (c.d === c.n) return ["done", "Each signer holds one piece. The full key never existed."];
-  if (!allSeated()) return ["", "Starts when every seat is taken."];
+  if (c.d === c.n) return ["done", "Each device holds one piece. The full key never existed."];
+  if (!allSeated()) return ["", "Starts when every device has joined."];
   if (c.r2 === c.pairs) return ["now", "Each device is computing its piece of the key…"];
   if (c.r1 === c.n) {
     return ["now", "Devices are sharing encrypted parts of the key (" + c.r2 + " of " + c.pairs + ")…"];
@@ -229,20 +231,20 @@ function addrStage(c) {
 
 // Only the device of seat 1 builds the wallet document. The other seats wait for it (S11).
 const buildingText = () => localSeats().includes(1) ? "Building the shared address…"
-  : "Seat 1 builds the shared address on its device. If this takes more than a minute, ask the "
-    + "signer of seat 1 to open this wallet.";
+  : "Device 1 builds the shared address. If this takes more than a minute, open this wallet on "
+    + "device 1, or ask the person who has it.";
 
 function addrStep(c) {
   const stage = addrStage(c);
   if (c.rejected.length) {
     const seats = c.rejected.join(", ");
-    return [stage, "Seat " + seats + " rejected the address. Do not use this wallet."];
+    return [stage, "Device " + seats + " rejected the address. Do not use this wallet."];
   }
   if (!c.w) return [stage, c.d === c.n ? buildingText() : "Comes after the key."];
   if (!c.w.birthday) return [stage, "An older version of Zigs made this wallet. Create a new wallet."];
   const checked = c.ver + " of " + c.n;
   const wait = c.ver < c.n ? " Send funds only after all " + c.n + " checked." : "";
-  return [stage, checked + " signers checked the address against their own key share." + wait];
+  return [stage, checked + " devices checked the address against their own key share." + wait];
 }
 
 // One third each for seats, key ceremony and address checks.
@@ -261,16 +263,16 @@ function setupStep(cls, no, title, text) {
 // while the module is not open here: the key ceremony starts after the Zcash address check.
 const SOL_KEY = {
   "not started": () => ["", startText()],
-  running: (s) => ["now", s.keys + " of " + s.n + " seats hold their Solana key share…"],
-  ready: () => ["done", "Each signer holds one piece of the Solana key."],
+  running: (s) => ["now", s.keys + " of " + s.n + " devices hold their Solana key share…"],
+  ready: () => ["done", "Each device holds one piece of the Solana key."],
   stopped: () => ["bad", "The Solana setup stopped. The Zcash part still works."],
-  differs: () => ["bad", "The signers made different Solana keys. Do not use the Solana part."],
+  differs: () => ["bad", "The devices made different Solana keys. Do not use the Solana part."],
   unavailable: () => ["bad", "This wallet cannot get a Solana part."],
 };
 // Only seat 1 with the choice in its own secret starts by itself (planSolana). Seat 1 without it
 // (a restore, or a hint that someone else wrote) starts with Add Solana.
 function startText() {
-  if (!localSeats().includes(1)) return "Seat 1 starts it after the Zcash address check.";
+  if (!localSeats().includes(1)) return "Device 1 starts it after the Zcash address check.";
   if (sec(state.gid, 1)?.solAuto === true && !state.g.movedTo) {
     return "Starts when the Zcash address is checked.";
   }
@@ -285,7 +287,7 @@ const solKeyStep = (s) => s ? SOL_KEY[s.status](s)
 const funded = (f) => !!f.balance && f.balance !== "0 SOL";
 function solFeeStep(s) {
   if (!s || s.status !== "ready") return ["", "Comes after the Solana key."];
-  if (!s.fees.length) return ["", "Each seat funds its own fee address on its own device."];
+  if (!s.fees.length) return ["", "Each device funds its own fee address."];
   if (s.fees.every(funded)) return ["done", "Your fee address holds " + s.fees[0].balance + "."];
   return ["now", "Send Devnet SOL to your fee address in the Solana section, then check its "
     + "balance."];
@@ -333,7 +335,7 @@ export function solSetupCard() {
 }
 const SOL_STOP_NEXT = "The Zcash part of this wallet still works. To use Solana, create a new "
   + "wallet.";
-const FUND_TEXT = "Each signer funds the fee address of their seat on their own device.";
+const FUND_TEXT = "Each device funds its own fee address.";
 
 // The state of the link to the group server (web/shim.js, app-engine.js shows it under the engine
 // line). The setup card shows it while the link is not open (S1). A change of the wait does not
@@ -360,27 +362,27 @@ function progressCard() {
     el("div", { class: "progress" }, el("i", { style: "width:" + pct + "%" })),
     linkLine(),
     el("div", { class: "steps", style: "margin-top:6px" },
-      setupStep(allSeated() ? "done" : "now", 1, "Signers join",
-        c.seated + " of " + c.n + " seats taken."),
+      setupStep(allSeated() ? "done" : "now", 1, "Devices join",
+        c.seated + " of " + c.n + " devices joined."),
       setupStep(keyStage, 2, "Create the key together", keyText),
       setupStep(addrStage, 3, "Check the address", addrText),
       ...(solPlanned() ? solSteps(4) : [])),
     addrStage === "done" ? null : el("p", { class: "small muted" }, bothParts() ? BOTH_OPEN
-      : "Every signer must keep Zigs open until setup finishes."),
+      : "Every device must keep Zigs open until setup finishes."),
     activityLog());
 }
 
 function seatsCard(open) {
   const off = offOf({ pending: state.pending }, "why-play");
   const testing = localSeats().length && open.length
-    ? el("details", { class: "testing" }, el("summary", {}, "Trying Zigs alone? Play the other seats in this browser"),
-      el("p", { class: "small faint" }, "For a demo or a review only. In real use, each signer takes a seat on their own device."),
+    ? el("details", { class: "testing" }, el("summary", {}, "Trying Zigs alone? Play the other devices in this browser"),
+      el("p", { class: "small faint" }, "For a demo or a review only. In real use, each key share sits on its own device."),
       el("div", { style: "display:flex;gap:8px;flex-wrap:wrap" }, open.map((i) => el("button", {
         class: "btn sm", type: "button", ...off.attrs, onclick: act(() => takeSeat(i)),
-      }, "Play seat " + i)), off.note))
+      }, "Play device " + i)), off.note))
     : null;
   return el("section", { class: "card card-pad" },
-    el("div", { class: "card-head" }, el("h2", {}, "Seats"), el("span", { class: "small muted" }, state.g.t + " of " + state.g.n + " signers must approve")),
+    el("div", { class: "card-head" }, el("h2", {}, "Devices"), el("span", { class: "small muted" }, "Any " + state.g.t + " of " + state.g.n + " devices")),
     el("div", { class: "seat-grid" }, seatIds().map((i) => guard(seatTile, i))),
     testing);
 }
@@ -396,7 +398,10 @@ function seatTile(i) {
   const st = seatStage(i);
   return el("div", { class: "seat" + (mine ? " mine" : "") + (s ? "" : " open") },
     el("div", { style: "display:flex;align-items:center;gap:10px;min-width:0" }, avatar(i),
-      el("div", { style: "display:grid;min-width:0" }, el("span", { class: "ri-title nowrap" }, seatLabel(i)), el("span", { class: "ri-sub" }, "Seat " + i))),
+      el("div", { style: "display:grid;min-width:0" },
+        el("span", { class: "ri-title nowrap" }, seatLabel(i)),
+        // A device with no name reads "Device N" in its title already.
+        seatLabel(i) === "Device " + i ? null : el("span", { class: "ri-sub" }, "Device " + i))),
     el("span", { class: "badge " + (st === 5 ? "ok" : s ? "info" : "plain") }, STAGE_LABEL[st]),
     elsewhere ? el("span", { class: "small faint" }, "Yours, in another browser") : null);
 }

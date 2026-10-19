@@ -72,7 +72,7 @@ async function zcashPhase(rig) {
   const pages = [first];
   for (const seat of [2, 3]) {
     const page = await openApp(rig, "seat" + seat, link);
-    await clickText(page, "Take seat " + seat, { ms: 40000 });
+    await clickText(page, "Join as device " + seat, { ms: 40000 });
     pages.push(page);
   }
   for (const page of pages) await clickText(page, "It matches", { ms: 90000 });

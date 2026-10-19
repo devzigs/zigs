@@ -1,5 +1,5 @@
 {
-  "baseCommit": "84c17ae27fec7a704758f9306ad4162da66fe1a0",
+  "baseCommit": "22fe05d6c2c5e61ebfa62d33cf3515f17a8d9115",
   "node": "v24.11.0",
   "tests": {
     "web/test/chat.mjs": {
@@ -148,7 +148,7 @@
     "web/pkg/zigs_engine.js": "6b0542b1852f8f6fbd04b0fed8f35f557b8131d33825cc26831058d0558e1c3d",
     "web/pkg/zigs_engine_bg.wasm": "25a493dc65534357e8e0732036f09ef33ddae782167e70c3812f57cfb4662d08",
     "web/pkg/zigs_engine_bg.wasm.d.ts": "6e3a3844e487471c7db4da8877493c140648a522d6331f834f6303afbe2644df",
-    "web/signed.js": "c3dde5ce113b9defc7165cad211904080fb5a6ce6c31ec0689ab02212f160374"
+    "web/signed.js": "4c0e86199aa87ec619f399f1ccfe995afcfe662781b0fd804af685c97f0dd3bb"
   },
   "policy": {
     "sourceSha256": "f5079e635f53d4c116cdb03f3c23085e808015ee31883ac6cdeef5ff82ebfaf1",

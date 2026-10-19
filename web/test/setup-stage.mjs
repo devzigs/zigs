@@ -18,8 +18,8 @@ assert.equal(at({}), "Prepare", "the key ceremony and the address check; then th
 console.log("ok  the stages follow the counts");
 
 assert.equal(setupStage(base).blocked, null);
-const stop = setupStage({ ...base, blocked: "Seat 2 stopped setup." });
-assert.equal(stop.blocked, "Seat 2 stopped setup.", "the text of the stop");
+const stop = setupStage({ ...base, blocked: "Device 2 stopped setup." });
+assert.equal(stop.blocked, "Device 2 stopped setup.", "the text of the stop");
 assert.equal(SETUP_STAGES[stop.index], "Prepare", "at the stage where it stopped");
 assert.equal(SETUP_STAGES[setupStage({ ...base, confirmed: 1, blocked: "x" }).index], "Verify",
   "a stop before Prepare stays at its own stage");

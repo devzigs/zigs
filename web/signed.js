@@ -245,4 +245,5 @@ export function makeMemo(maxEntries = 4000, maxChars = 32e6) {
 }
 
 // The one line that the wallet page shows when it ignored a document.
-export const IGNORED_NOTE = "Some data in this wallet was not signed by a signer. Zigs ignored it.";
+export const IGNORED_NOTE = "Some data in this wallet was not signed by a device of this wallet. "
+  + "Zigs ignored it.";

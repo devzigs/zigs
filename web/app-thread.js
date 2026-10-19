@@ -24,15 +24,15 @@ import { lobby } from "./app-shell.js";
 import { focusAfter, render } from "./app-loop.js";
 import { ON_CHAIN } from "./app-wallet.js";
 
-const FINE = "Signers, and anyone else who has the invite link, can read these messages. The "
-  + "group server stores them sealed and sees only when they are sent.";
+const FINE = "Every device of this wallet, and anyone else who has the invite link, can read "
+  + "these messages. The group server stores them sealed and sees only when they are sent.";
 
 export function messagesCard() {
   const changed = changedSigners();
   return el("section", { class: "card card-pad chat" },
     el("div", { class: "card-head" }, el("h2", {}, "Messages"), notifyButton()),
     changed.length ? el("div", { class: "callout bad", role: "alert" }, "Signing key changed: "
-      + changed.map((i) => "seat " + i).join(", ") + ". Their messages are not verified.") : null,
+      + changed.map((i) => "device " + i).join(", ") + ". Their messages are not verified.") : null,
     chat[state.gid] || memoMessages().length ? chatLog("wallet") : null,
     readsMemos(state.gid) ? null : el("p", { class: "small faint" }, "Memos of payments to this "
       + "wallet are off. You can turn them on under Details."),
@@ -218,14 +218,14 @@ function requestToggle(o) {
 export function seatPicker(o, id) {
   return o.seats.length > 1 ? el("label", { class: "composer-as small muted" }, "Send as",
     el("select", { class: "input", id, name: "as" },
-      o.seats.map((i) => el("option", { value: String(i) }, "Seat " + i)))) : null;
+      o.seats.map((i) => el("option", { value: String(i) }, "Device " + i)))) : null;
 }
 
 function walletComposer(thread) {
   return composer({
     kind: (thread === "wallet" ? "wallet-" : "pay-") + state.gid, why: chatWhy(),
     warn: roomWarn.has(state.gid),
-    seats: sendSeats(), to: "Message to the signers", fine: FINE,
+    seats: sendSeats(), to: "Message to this wallet", fine: FINE,
     key: "chat:" + rooms[state.gid] + ":" + thread,
     send: (text, seat) => sendMessage(thread, text, seat),
     request: thread === "wallet" ? roomRequest() : null,

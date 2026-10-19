@@ -155,10 +155,12 @@ const sealed = (gid, rel, seat, fields, key, names = ["by", "sig"]) =>
   assert.equal(ss.status, "collecting", "made-up results are no status");
   assert.deepEqual([ss.final, ss.broadcastTxid], [undefined, undefined]);
   assert.deepEqual(t.state.commits, {}, "no approval of seat 1");
-  assert.equal(t.proposer(ss), "S1 (seat 1)", "a name comes with its seat number");
+  assert.equal(t.proposer(ss), "S1 (device 1)", "a name comes with its device number");
   const name1 = t.state.seats[1].name;
-  t.state.seats[1].name = "Ana (seat 2)";
-  assert.equal(t.named(1), "Ana (seat 2) (seat 1)", "a false seat number gets the real one");
+  t.state.seats[1].name = "Ana (device 2)";
+  assert.equal(t.named(1), "Ana (device 2) (device 1)", "a false device number gets the real one");
+  t.state.seats[1].name = "";
+  assert.equal(t.named(1), "Device 1", "an unnamed device reads Device N once");
   t.state.seats[1].name = name1;
 
   // Memo: the same length with the old signature is a new check.
@@ -1772,6 +1774,10 @@ const sealed = (gid, rel, seat, fields, key, names = ["by", "sig"]) =>
         Object.assign(t.ui, { send: true, sendReview: { prep, note: "x" } });
         for (const press of documentOn.keydown) press({ key: "Escape" });
         assert.deepEqual([t.ui.send, t.ui.sendReview], [false, null], "Escape drops it");
+        Object.assign(t.ui, { create: true, createStep: 2, createDraft: { n: 3, t: 2 } });
+        for (const press of documentOn.keydown) press({ key: "Escape" });
+        assert.deepEqual([t.ui.create, t.ui.createStep, t.ui.createDraft], [false, 0, null],
+          "Escape puts the create dialog back at its first step");
         Object.assign(t.ui, { send: true, pay: null, after: { pczt: "EXP1" } });
         const again = drawn();
         globalThis.document = realDocument;
@@ -5109,17 +5115,17 @@ const sealed = (gid, rel, seat, fields, key, names = ["by", "sig"]) =>
     t.state.dkg2 = { "1-2": { sealed, echo: "e" } };
     return t.sec(G, 2);
   };
-  const OTHER = /: The message of seat 1 was made by another version of Zigs$/;
+  const OTHER = /: The message of device 1 was made by another version of Zigs$/;
   assert.equal(Z.boxOpen(vecA, pkB, "g:1->2", box), text, "control: the vector opens");
   assert.throws(() => t.unboxFrom(1, 2, setUp(older)), OTHER, "version 2");
-  assert.throws(() => t.unboxFrom(1, 2, setUp(box)), /: Seat 1 sent an unreadable message$/,
+  assert.throws(() => t.unboxFrom(1, 2, setUp(box)), /: Device 1 sent an unreadable message$/,
     "a box that opens with no JSON in it is another fault");
-  assert.throws(() => t.unboxFrom(1, 2, setUp(5)), /: Seat 1 sent an unreadable message$/);
+  assert.throws(() => t.unboxFrom(1, 2, setUp(5)), /: Device 1 sent an unreadable message$/);
 
   // Version 1: the seat stops for good, and the text is the one of version 2.
   const s = setUp(older);
   await assert.rejects(t.round3V1(2), /another version of Zigs\. Do not use this wallet/);
-  assert.match(t.sec(G, 2).aborted, /^The message of seat 1 was made by another version of Zigs\./);
+  assert.match(t.sec(G, 2).aborted, /^The message of device 1 was made by another version of Zigs\./);
   assert.equal(t.sec(G, 2).keyPackage, undefined, "no key share was made");
   assert.equal(s.aborted, t.sec(G, 2).aborted);
   t.secrets = {};
@@ -5173,7 +5179,7 @@ async function runAcctSync() {
     await t.act(async () => { throw new Error("no"); })(ev);
     assert.deepEqual(t.banner, { kind: "bad", text: "no" }, "a failed action shows its error");
 
-    const sections = [["overview", "Overview"], ["activity", "Activity"], ["members", "Signers"]];
+    const sections = [["overview", "Overview"], ["activity", "Activity"], ["members", "Devices"]];
     const item = (id) => t.sectionNav(sections).find((n) => n.attrs.id === "tab-" + id);
     t.ui.tab = "solana";
     assert.equal(item("overview").attrs["aria-current"], "page",
