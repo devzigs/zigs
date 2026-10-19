@@ -31,9 +31,8 @@ import { render } from "./app-loop.js";
 import { setupView, solSetupCard, solUnfinished } from "./app-setup.js";
 import { themeChoice } from "./app-theme.js";
 import {
-  sol, solBackup, solBalance, solError, solLoading, solOn, solPending, solPendingRows, solSetup,
-  solSync, solTab,
-  solUnsaved,
+  sol, solBackup, solBalance, solError, solLoading, solLoadingCount, solOlderCount, solOn,
+  solPending, solPendingRows, solSetup, solSync, solTab, solUnsaved,
 } from "./app-sol.js";
 import { pendingShortcut, solRow, zecInProgress, zecTotal } from "./overview-model.js";
 import { icon } from "./app-icons.js";
@@ -532,7 +531,8 @@ function inboxBucket(ss, held) {
 }
 
 const solInbox = () => solLine({ on: solOn(), error: solError, loading: !!(sol || solLoading),
-  setup: solSetup(), toApprove: solPending() });
+  setup: solSetup(), toApprove: solPending(), reading: solLoadingCount(),
+  older: solOlderCount() });
 
 const INBOX_EMPTY = {
   failed: "The payments of this wallet could not be read. Reload the page.",

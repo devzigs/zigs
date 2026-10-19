@@ -6,7 +6,7 @@
 import { agreement, seatProgress, started, startBlock } from "./ceremony.js";
 import { base58 } from "./docs.js";
 import { checkLine, provesLocally } from "./localprove.js";
-import { SHOWN, approveSeats, payCards, titleOf } from "./payview.js";
+import { SHOWN, approveLater, approveSeats, payCards, titleOf } from "./payview.js";
 import { feeMismatch, feeOf } from "./fee.js";
 import { signingBlock } from "./gate.js";
 import { holdsShare, remoteStop, solOf, stopOf } from "./secrets.js";
@@ -70,17 +70,20 @@ export function setupSummary(c) {
   };
 }
 
-/**
- * The Solana proposals that wait for a seat of this browser (S6): the cards of the section that
- * show an Approve button (approveSeats), while the documents agree and the part is not stopped.
- */
-function pendingList(c) {
+// The cards of the section (the first SHOWN sessions) that `keep` takes, while the documents
+// agree and the part is not stopped. One signing check serves them all: it reads every document.
+function shownWhere(c, keep) {
   if (stopOf(c) || agreement(c).state !== "agree") return [];
-  // One signing check for all the sessions: it reads every document of the wallet.
   const block = signingBlock(c);
-  return (c.sessions ?? []).slice(0, SHOWN).filter((ss) => approveSeats(c, ss, block).length > 0);
+  return (c.sessions ?? []).slice(0, SHOWN).filter((ss) => keep(c, ss, block));
 }
+/** The Solana proposals that wait for a seat of this browser (S6): the cards with Approve. */
+const pendingList = (c) => shownWhere(c, (_, ss, block) => approveSeats(c, ss, block).length > 0);
 export const pendingCount = (c) => pendingList(c).length;
+/** The proposals that a seat here can approve once this device has read them (still loading). */
+export const loadingCount = (c) => shownWhere(c, approveLater).length;
+/** The proposals older than the cards that the section shows: no card and no count has them. */
+export const olderCount = (c) => Math.max(0, (c.sessions ?? []).length - SHOWN);
 /** The same proposals as rows of the Approvals inbox: id, title and the proposing seat. */
 export const pendingRows = (c) =>
   pendingList(c).map((ss) => ({ id: ss.id, title: titleOf(ss), by: ss.by }));

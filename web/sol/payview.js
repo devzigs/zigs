@@ -691,10 +691,21 @@ const approvable = (ss) => ss.status === "collecting" && !approvalClosed(ss);
  * the S6 count and the Approvals inbox all use it, so they agree.
  */
 export function approveSeats(c, ss, block) {
+  const open = openSeats(c, ss);
+  if (!open.length || reviewWaits(c, ss, open[0], block)) return [];
+  return open;
+}
+/** True when a seat of this browser can approve `ss` as soon as its review stops waiting. */
+export function approveLater(c, ss, block) {
+  const open = openSeats(c, ss);
+  return open.length > 0 && reviewWaits(c, ss, open[0], block);
+}
+// The seats that may approve `ss` before its review: a proposal that is collecting, that the app
+// can show and that is not from before the fee keys; a seat with a share and a signing key here.
+function openSeats(c, ss) {
   if (!approvable(ss) || !showable(ss) || beforeFee(ss)) return [];
-  const open = seatsOf(c, ss).filter((s) => s.state === "open" && c.host.canWriteAs(s.seat));
-  if (!open.length || reviewWaits(c, ss, open[0].seat, block)) return [];
-  return open.map((s) => s.seat);
+  return seatsOf(c, ss).filter((s) => s.state === "open" && c.host.canWriteAs(s.seat))
+    .map((s) => s.seat);
 }
 
 function expiredLine(c, ss) {
@@ -794,14 +805,17 @@ function sessionCard(c, ss, act, actions) {
 
 function sessionList(c, act, actions) {
   const { el } = c.host;
-  const shown = (c.sessions ?? []).slice(0, SHOWN);
+  const shown = (c.sessions ?? []).slice(0, SHOWN), older = (c.sessions ?? []).length - SHOWN;
   if (!shown.length) return el("p", { class: "small" }, "No Solana proposals yet.");
+  const olderNote = older > 0 ? el("p", { class: "small", "data-sol": "older" }, "Zigs shows the "
+    + "newest " + SHOWN + " proposals. " + older + " older " + (older === 1 ? "one is" : "ones are")
+    + " not shown.") : null;
   const list = el(
     "div",
     { class: "list" },
     shown.map((ss) => sessionCard(c, ss, act, actions)),
   );
-  return el("div", {}, explorerNote(c), list);
+  return el("div", {}, explorerNote(c), list, olderNote);
 }
 
 const RENT_TEXT =

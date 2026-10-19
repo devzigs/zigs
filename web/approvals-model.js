@@ -60,6 +60,13 @@ const SOL_STATE = { kind: "info",
   text: "The Solana part is not ready. Open Solana for its state." };
 const SOL_NONE = { kind: "info",
   text: "No Solana proposal waits for your approval. Open Solana to see all of its proposals." };
+const SOL_LOADING = { kind: "loading", text: "A Solana proposal is loading. Open Solana." };
+// Nothing to approve now: a proposal that this device still reads may come, so "none" waits.
+const noneYet = (reading) => (reading > 0 ? SOL_LOADING : SOL_NONE);
+// Zigs lists the newest Solana proposals only; the line says how many older ones it leaves out.
+const withOlder = (line, older) => (older > 0 ? { ...line, text: line.text + " " + (older === 1
+  ? "1 older Solana proposal is" : older + " older Solana proposals are")
+  + " not listed here or in Solana." } : line);
 const solReview = (n) => ({ kind: "review", text: n === 1
   ? "1 Solana proposal waits for your approval."
   : n + " Solana proposals wait for your approval." });
@@ -68,15 +75,17 @@ const solReview = (n) => ({ kind: "review", text: n === 1
  * The one line of the inbox for the Solana part, or null when the wallet has none. It counts
  * only what this browser can approve, so it never says that nothing else waits.
  * @param {object} s on: the wallet can have the part; error: the module did not load; loading:
- *   the module loads or runs; setup: its setup summary; toApprove: solPending().
+ *   the module loads or runs; setup: its setup summary; toApprove: solPending(); reading: the
+ *   proposals that this browser can approve once its read of them ends (solLoadingCount());
+ *   older: the proposals older than the newest that Zigs lists (solOlderCount()).
  * @returns {{kind: string, text: string} | null} kind: review, attention, loading, idle or info.
  */
-export function solLine({ on, error, loading, setup, toApprove }) {
+export function solLine({ on, error, loading, setup, toApprove, reading, older }) {
   if (!on) return null;
   if (error) return { kind: "attention", text: "Solana did not load, so its proposals are not "
     + "shown here: " + error };
   if (!setup) return loading ? SOL_READING : SOL_CLOSED;
   if (setup.status === "not started") return null;
   if (setup.status !== "ready") return SOL_STATE;
-  return toApprove > 0 ? solReview(toApprove) : SOL_NONE;
+  return withOlder(toApprove > 0 ? solReview(toApprove) : noneYet(reading), older);
 }
