@@ -30,7 +30,7 @@ const { offReason } = await import("../util.js");
 const { intentHex } = await import("../sol/intent.js");
 const { ui } = await import("../app-state.js");
 const appState = await import("../app-state.js");
-const { planSolana, solFile, solSetup, solUnsaved } = await import("../app-sol.js");
+const { planSolana, solFile, solOn, solSetup, solUnsaved } = await import("../app-sol.js");
 const { backupNote, walletReady, walletShown } = await import("../app-wallet.js");
 const { PUBLIC_TEXT } = await import("../sol/view.js");
 const { reactCeremony } = await import("../sol/ceremony.js");
@@ -1011,6 +1011,10 @@ async function walkSteps(fields, times, fresh = true) {
   assert.match(pageText(), NEXT);
   assert.match(pageText(), /Create a new wallet/);
   assert.ok(walletReady(), "the Zcash part is still ready");
+  assert.ok(solOn(), "this wallet has a Solana part");
+  assert.match(dialogText(t.state.g),
+    /all its Zcash funds.*If this wallet has a Solana part, it does not /s,
+    "Change devices says that the Solana part does not move");
   ui.tab = "solana";
   assert.match(pageText(), new RegExp(aborted.replace(/\./g, "\\.") + " " + NEXT.source));
   ui.tab = "overview";
@@ -1168,6 +1172,12 @@ async function walkSteps(fields, times, fresh = true) {
   assert.equal(ui.createStep, 1, "no tick: the rule step stays");
   assert.match(ui.createError ?? "", /Confirm that one lost device stops all payments/,
     "the error shows in the dialog");
+  const tree = dialogTree(), bar = findNode(tree, (n) => n.className === "dialog-actions");
+  assert.ok(byId(tree, "create-error"), "the error is in the dialog");
+  assert.equal(byId(bar, "create-error"), null, "and not in the button bar");
+  byText(dialogTree(), "Back").on.click({ detail: 0 });
+  assert.equal(ui.createError, null, "Back clears the error of a step");
+  await walkSteps(noMargin, 1, false);
   ui.marginAck = true;
   await walkSteps(noMargin, 1, false);
   assert.equal(ui.createStep, 2, "with the tick, Next goes on");
@@ -1195,7 +1205,8 @@ async function walkSteps(fields, times, fresh = true) {
       "g-sol": box };
     await walkSteps(fields, 3);
     storage.set("zf-name", "Bob");
-    await walkSteps({ ...fields, "g-name": { value: "Live" } }, 1, false);
+    await walkSteps({ ...fields, "g-name": { value: "Live" }, "my-name": { value: "Live label" } },
+      1, false);
     const gidN = t.state.gid;
     return { auto: t.sec(gidN, 1)?.solAuto === true, hint: data.get(groupPath(gidN)).solana };
   };
@@ -1210,12 +1221,15 @@ async function walkSteps(fields, times, fresh = true) {
       return { name: "Submitted", n: "3", t: "2", sol: "on" }[k] ?? null;
     }
   };
+  const gidOld = t.state.gid;
+  ui.move = true;
   try {
     await dialogTree(t.state.g).on.submit(EV);
   } finally {
     globalThis.FormData = real;
   }
   const gidN = t.state.gid;
+  assert.notEqual(gidN, gidOld, "Change devices makes the new wallet");
   const made = { auto: t.sec(gidN, 1)?.solAuto === true, hint: data.get(groupPath(gidN)).solana };
   assert.deepEqual(made, { auto: false, hint: undefined }, "Change devices");
   globalThis.FormData = class {
@@ -1224,6 +1238,7 @@ async function walkSteps(fields, times, fresh = true) {
     }
   };
   ui.marginAck = false;
+  ui.move = true;
   try {
     await dialogTree(t.state.g).on.submit(EV);
   } finally {
@@ -1320,7 +1335,10 @@ assert.match(marginText(3, 3), /Each payment needs every device/);
   assert.equal(ack.hidden, false, "3 of 3: the box shows");
   ui.marginAck = true;
   fields["g-margin-ack"] = { checked: true };
+  appState.showBanner("bad", "Confirm that one lost device stops all payments, or use the "
+    + "recommended 2 of 3.");
   withFields(fields, () => byText(ack, "Use recommended 2 of 3").on.click());
+  assert.equal(appState.banner, null, "the reset clears the message of the tick");
   assert.deepEqual([ui.marginAck, fields["g-margin-ack"].checked], [false, false],
     "the reset clears the tick");
   assert.deepEqual([fields["g-n"].value, fields["g-t"].value], ["3", "2"], "the reset: 2 of 3");
@@ -1363,6 +1381,88 @@ assert.match(marginText(3, 3), /Each payment needs every device/);
   assert.equal(field.attrs.placeholder, "For example: Ana's phone", "a short hint");
   assert.match(textOf(findNode(tree, (n) => (n.kids ?? []).includes(field))),
     /^This device's label/, "the label of the field");
+}
+
+{
+  // Change devices: the reset gives the focus to the number field, its only rule control.
+  const move = dialogTree(t.state.g);
+  const ack = findNode(move, (n) => n.className === "margin-ack");
+  const fields = { "g-n": { value: "3", focus() { fields.focused = true; } },
+    "g-t": { value: "3" }, "g-margin-ack": { checked: false }, "create-step-1": null };
+  byId(move, "rule-text").classList = { toggle() {} };
+  withFields(fields, () => byText(ack, "Use recommended 2 of 3").on.click());
+  assert.equal(fields.focused, true, "the reset of Change devices keeps the focus in the dialog");
+  assert.equal(/If this wallet has a Solana part/.test(dialogText(t.state.g)), solOn(),
+    "the Solana sentence only for a wallet with a Solana part");
+}
+
+// ── Two quick submits make one wallet: the review, Change devices and createGroup ──
+{
+  const wallets = () => [...data.keys()].filter((k) => /^groups\/[^/]+$/.test(k)).length;
+  const real = globalThis.FormData;
+  let before = wallets();
+  await walkSteps({ ...RULE_2_OF_3, "g-name": { value: "Twice" }, "my-name": { value: "" },
+    "g-sol": null }, 3);
+  const review = dialogTree();
+  await Promise.all([review.on.submit(EV), review.on.submit(EV)]);
+  assert.equal(wallets(), before + 1, "two submits of the review make one wallet");
+  before = wallets();
+  globalThis.FormData = class {
+    get(k) {
+      return { name: "Moved twice", n: "3", t: "2" }[k] ?? null;
+    }
+  };
+  ui.move = true;
+  try {
+    const move = dialogTree(t.state.g);
+    await Promise.all([move.on.submit(EV), move.on.submit(EV)]);
+    assert.equal(wallets(), before + 1, "two submits of Change devices make one wallet");
+    // A submit of the same form after the first one ended finds the dialog closed.
+    await move.on.submit(EV);
+  } finally {
+    globalThis.FormData = real;
+  }
+  assert.equal(wallets(), before + 1, "a stale Change devices form makes no second wallet");
+  before = wallets();
+  const made = await Promise.allSettled([t.createGroup("One", 3, 2), t.createGroup("Two", 3, 2)]);
+  assert.equal(wallets(), before + 1, "a second createGroup while one runs makes nothing");
+  assert.match(made.find((r) => r.status === "rejected")?.reason?.message ?? "",
+    /still creating a wallet/, "and says why");
+  // A failed create frees the guard: the next create makes its wallet.
+  const keepHook = rig.hook.before;
+  let fail = true;
+  rig.hook.before = (p, v) => {
+    if (fail && /^groups\/[^/]+$/.test(p)) { fail = false; throw new Error("A test failure."); }
+    return keepHook(p, v);
+  };
+  try {
+    await assert.rejects(t.createGroup("Fails", 3, 2), /A test failure/);
+  } finally {
+    rig.hook.before = keepHook;
+  }
+  before = wallets();
+  const after = await t.createGroup("After", 3, 2).catch(() => null);
+  assert.ok(after, "a create after a failed one makes a wallet");
+  assert.equal(wallets(), before + 1);
+  // A wallet that moved already moves no more.
+  globalThis.FormData = class {
+    get(k) {
+      return { name: "Again", n: "3", t: "2" }[k] ?? null;
+    }
+  };
+  const g = t.state.g;
+  t.state.g = { ...g, movedTo: "elsewhere" };
+  ui.move = true;
+  before = wallets();
+  try {
+    await dialogTree(t.state.g).on.submit(EV);
+  } finally {
+    globalThis.FormData = real;
+    t.state.g = g;
+  }
+  assert.equal(wallets(), before, "a wallet that moved already moves no more");
+  assert.match(appState.banner?.text ?? "", /moved already/);
+  ui.move = false;
 }
 
 console.log("unified-setup: ok");
