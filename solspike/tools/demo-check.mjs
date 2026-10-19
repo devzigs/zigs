@@ -3,8 +3,8 @@
 // here writes to a chain. Helius gets getVersion, getAccountInfo, getBalance and getSlot. Its
 // indexer gets reads of recorded rows and of random values, and its gateway gets three CORS
 // preflights per app (S20). The prover gets an empty body that it refuses. The light-wallet
-// servers get GetLatestBlock, GetLightdInfo and GetTaddressBalance. The group socket opens and
-// closes without a message.
+// servers get GetLatestBlock, GetLightdInfo, GetTreeState and GetTaddressBalance. The group socket
+// opens and closes without a message.
 // Usage: sh solspike/demo-check.sh [--dry-run] [--app-only] [--config FILE]
 // The config (default ~/.config/zigs/demo-check.json, outside the repo) is optional:
 //   { "apps": [
@@ -39,6 +39,10 @@ const KEYS = ["apps", "solFees", "zecTransparent"];
 const TIMEOUT = process.env.DEMO_CHECK_TIMEOUT_MS ?? "";
 const TIMEOUT_MS = /^[1-9]\d{0,6}$/.test(TIMEOUT) ? Number(TIMEOUT) : 10_000; // each call, socket
 const HEIGHT_GAP = 5n; // blocks between the light-wallet servers
+const TREE_DEPTH = 10n; // blocks below the lowest tip, so that every server has the block
+const BRANCH_ID = "77190ad9"; // NU7, the BRANCH_ID of live/zec-pay.mjs
+// The fields of a TreeState that must be the same on every server: the block hash and the trees.
+const TREE_STATE = { hash: 3, sapling: 5, orchard: 6, ironwood: 7 };
 const SOL_FLOOR = "0.003"; // docs/hackathon-release.md section 8, step 10
 // Each connect makes the group server keep one small row for this id, so it stays the same.
 const PROBE_GROUP = "0".repeat(20);
@@ -370,20 +374,71 @@ async function fallbackCheck() {
   const info = fields(await grpc(LWD, "GetLightdInfo", Buffer.alloc(0)));
   const [chain, branch] = [4, 6].map((n) => String(info.get(n) ?? ""));
   if (chain !== "test") throw new Error(`GetLightdInfo names the chain "${chain}", not test`);
+  if (branch !== BRANCH_ID) {
+    throw new Error(`GetLightdInfo names the branch id "${branch}", not ${BRANCH_ID} of NU7`);
+  }
   return `height ${height}, chain test, branch id ${branch}`;
 }
 
-async function heightsCheck(sources) {
+const nameOf = (base) => base.replace(/^https?:\/\//, "");
+const lowest = (list) => list.reduce((a, b) => (a < b ? a : b));
+
+/** The light-wallet servers whose tip is known, as [base, auth, tip]: at least two, else SKIP. */
+async function answered(sources) {
   const settled = await Promise.allSettled(sources.map(([base, auth]) => tipOf(base, auth)));
-  const known = sources.flatMap(([base], i) =>
-    settled[i].status === "fulfilled" ? [[base.replace(/^https?:\/\//, ""), settled[i].value]] : [],
+  const known = sources.flatMap(([base, auth], i) =>
+    settled[i].status === "fulfilled" ? [[base, auth, settled[i].value]] : [],
   );
   if (known.length < 2) skip("fewer than two light-wallet servers answered");
-  const heights = known.map(([, height]) => height);
-  const gap = heights.reduce((a, b) => (a > b ? a : b)) - heights.reduce((a, b) => (a < b ? a : b));
-  const list = known.map(([name, height]) => `${name} ${height}`).join(", ");
+  return known;
+}
+
+async function heightsCheck(sources) {
+  const known = await answered(sources);
+  const heights = known.map(([, , tip]) => tip);
+  const gap = heights.reduce((a, b) => (a > b ? a : b)) - lowest(heights);
+  const list = known.map(([base, , tip]) => `${nameOf(base)} ${tip}`).join(", ");
   if (gap > HEIGHT_GAP) throw new Error(`the heights differ by ${gap} blocks: ${list}`);
   return `within ${gap} blocks: ${list}`;
+}
+
+const varintOf = (n) => {
+  const out = [];
+  for (let v = n; v >= 0x80n; v >>= 7n) out.push(Number(v & 0x7fn) | 0x80);
+  return Buffer.from([...out, Number(n >> BigInt(7 * out.length))]);
+};
+
+/** The TreeState of one server at height h, as hex texts, after the checks on its own. */
+async function treeStateOf(base, auth, h) {
+  const request = Buffer.concat([Buffer.from([0x08]), varintOf(h)]); // BlockID.height
+  const state = fields(
+    await grpc(base, "GetTreeState", request, auth).catch((err) => {
+      throw new Error(`${nameOf(base)}: ${err.message}`, { cause: err.cause });
+    }),
+  );
+  const text = (n) => String(state.get(n) ?? "");
+  const problem = [
+    [text(1) === "test", `the network "${text(1)}", not test`],
+    [state.get(2) === h, `the height ${state.get(2)}, not ${h}`],
+    [/^[0-9a-f]{64}$/.test(text(3)), "a hash that is not 64 hex characters"],
+    [text(7) !== "", "an empty ironwood tree"],
+  ].find(([ok]) => !ok);
+  if (problem) throw new Error(`${nameOf(base)} gives ${problem[1]}`);
+  return Object.fromEntries(Object.entries(TREE_STATE).map(([key, n]) => [key, text(n)]));
+}
+
+async function treeStatesCheck(sources) {
+  const known = await answered(sources);
+  const h = lowest(known.map(([, , tip]) => tip)) - TREE_DEPTH;
+  const states = await Promise.all(known.map(([base, auth]) => treeStateOf(base, auth, h)));
+  const [first] = states;
+  const differs = Object.keys(TREE_STATE).find((key) => states.some((s) => s[key] !== first[key]));
+  if (differs) {
+    const list = known.map(([base], i) => `${nameOf(base)} ${short(states[i][differs])}`);
+    throw new Error(`the ${differs} at height ${h} differs: ${list.join(", ")}`);
+  }
+  const lengths = ["sapling", "orchard", "ironwood"].map((key) => `${key} ${first[key].length}`);
+  return `height ${h}, hash ${short(first.hash)}, tree lengths: ${lengths.join(", ")}`;
 }
 
 /** The SHA-256 of the ELF after the 45-byte header of ProgramData, cut at its section table end. */
@@ -633,10 +688,11 @@ async function solFeeCheck(fee) {
 
 function chainChecks(config, apps) {
   const lwds = [[LWD], ...apps.filter((a) => a.auth).map((a) => [`${a.origin}/lwd`, a.auth])];
-  const heights = { name: "lwd heights", run: () => heightsCheck(lwds) };
+  const target = lwds.map(([base]) => base).join(" ");
   return [
     { name: "fallback lwd", target: LWD, run: fallbackCheck },
-    { ...heights, target: lwds.map(([base]) => base).join(" ") },
+    { name: "lwd heights", target, run: () => heightsCheck(lwds) },
+    { name: "lwd tree state", target, run: () => treeStatesCheck(lwds) },
     ...PINS.map((pin) => ({ name: pin.name, target: pin.address, run: () => programCheck(pin) })),
     { name: "tree 0", target: TREE, run: treeCheck },
     { name: "indexer", target: "Helius /v1/zolana, 8 reads in the SDK client", run: shapeCheck },
