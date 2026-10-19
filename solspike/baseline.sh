@@ -42,7 +42,7 @@ trap stop_server EXIT
 
 TESTS=(chat signed app requests account personal payees vault util qr shim shim-status lwd zns
   sol-config sol-docs sol-ceremony sol-app sol-wasm sol-sessions sol-limits sol-pay sol-transfer
-  unified-setup
+  unified-setup help
   graph sol-fee sol-rent sol-errors sol-prove demo-check mainnet-off chain-fallback smoke
   contrast overview setup-stage approvals recovery payment-model sol-nonce-tabs)
 HELPERS=(sol-rig sol-setup sol-chain sol-vector sol-fixture page)

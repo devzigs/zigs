@@ -22,8 +22,8 @@ function refusalOf(run, seat) {
 
 /**
  * The first ready seat of this browser adds `args.amount` (SOL, as text) to the shielded balance
- * of the group. Resolves with { seat, amount, txId, status, slot } once the transaction is
- * confirmed or the wait ended (status "unknown").
+ * of the group. Resolves with { seat, amount, txId, status, slot, at } once the transaction is
+ * confirmed or the wait ended (status "unknown"). `at` is the time of the answer (ms).
  */
 export async function addSol(c, args) {
   const block = await settledBlock(c);
@@ -46,5 +46,5 @@ export async function addSol(c, args) {
   const txId = base58(signature);
   const { status, slot } = await worker.call("confirm", { signature: txId });
   c.host.log("device " + seat + ": added SOL, " + status);
-  return { seat, amount, txId, status, slot };
+  return { seat, amount, txId, status, slot, at: Date.now() };
 }

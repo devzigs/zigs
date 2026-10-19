@@ -1,7 +1,7 @@
 // Backup and restore: logic and dialogs.
 import {
   backupName, boxPairMatches, heldRefusal, keysOf, lateFields, makePassphrase, passIssue,
-  restoredSecret, settledFields, shareShape, skey, staleRestore, takenKeys, undoPlan,
+  passLength, restoredSecret, settledFields, shareShape, skey, staleRestore, takenKeys, undoPlan,
 } from "./util.js";
 import { signPairMatches, validId, validRoom } from "./chat.js";
 import {
@@ -14,7 +14,7 @@ import { gkeys, mySeatSecrets, persist, putKey, putSec, sec, secrets } from "./a
 import { fitState } from "./app-seats.js";
 import { isChatId } from "./app-links.js";
 import { downloads, openGroup } from "./app-groups.js";
-import { act, copyBtn, el } from "./app-dom.js";
+import { act, copyBtn, el, noteFor, setNote } from "./app-dom.js";
 import { groupVersion } from "./app-dkg.js";
 import {
   changePersonal, personal, personalDamaged, personalEnv, restoreAccount,
@@ -126,6 +126,15 @@ const ACCOUNT_BACKUP = {
   save: (pass) => saveAccountBackup(pass),
 };
 
+// The note under the passphrase fields. It is red when the second field is as long as a good first
+// one and still differs: that field is wrong. Before that, the note says what is still needed.
+export function passNote(pass, again) {
+  const issue = passIssue(pass, again);
+  if (!issue) return ["The passphrases match.", "hint ok"];
+  const wrong = passLength(again) >= passLength(pass) && passIssue(pass, pass) === "";
+  return [issue, wrong ? "hint bad" : "hint "];
+}
+
 export function backupDialog() {
   const b = ui.backup, words = b.words ?? (b.personal ? ACCOUNT_BACKUP : seatBackup(b.seat));
   const pass = el("input", {
@@ -139,11 +148,11 @@ export function backupDialog() {
   const hint = el("span", { class: "hint", id: "bk-hint" });
   const go = el("button", { class: "btn primary", type: "submit" },
     b.busy ? "Encrypting…" : "Encrypt and save");
+  noteFor(hint, again);
   const update = () => {
-    const issue = passIssue(pass.value, again.value);
-    hint.textContent = issue || "The passphrases match.";
-    hint.className = "hint " + (issue ? "" : "ok");
-    go.disabled = !!issue || b.busy || !Z;
+    const [text, cls] = passNote(pass.value, again.value);
+    setNote(hint, text, cls);
+    go.disabled = !!passIssue(pass.value, again.value) || b.busy || !Z;
   };
   // The new values are set on the inputs, because a redraw keeps what the inputs hold.
   const make = () => {
@@ -403,7 +412,8 @@ export function staleRestoreNote() {
     el("div", { class: "dialog-actions" },
       sure ? el("button", { class: "btn", type: "button", onclick: keep }, "Keep it") : null,
       el("button", {
-        class: "btn", type: "button", onclick: sure ? drop : () => { ui.dropStale = gid; render(); },
+        class: sure ? "btn danger" : "btn", type: "button",
+        onclick: sure ? drop : () => { ui.dropStale = gid; render(); },
       }, sure ? "Remove device " + stale.join(", ") + " from this browser"
         : "Remove from this browser")));
 }

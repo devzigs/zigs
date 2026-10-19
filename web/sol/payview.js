@@ -55,14 +55,14 @@ const LIFETIME = {
   createNonce: "About 1 to 2 minutes (a recent blockhash). Approve and sign now.",
   other: "Until the nonce account advances. It has no other expiry.",
 };
-const STATES = {
+export const STATES = {
   collecting: "Collecting approvals",
   signing: "Signing",
   signed: "Signed, sending",
   sent: "Sent",
   failed: "Failed",
 };
-const PAYMENT_STATES = { ...STATES, signed: "Approved, executing", sent: "Executed" };
+export const PAYMENT_STATES = { ...STATES, signed: "Approved, executing", sent: "Executed" };
 const short = (hex) => hex.slice(0, 8) + "…" + hex.slice(-6);
 /** The rent of a proposal account with one abort authority on Devnet (SOL-35, ZOLANA.md 6.10). */
 const PROPOSAL_RENT = 1_356_360n;

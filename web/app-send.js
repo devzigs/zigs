@@ -10,7 +10,7 @@ import { gkeys } from "./app-keystore.js";
 import { DRAFT_MS, draftLive, draftOf, emptyForm, reviewFresh } from "./payment-model.js";
 import { addrHidden, atCap, curChain, curNet, netName } from "./app-chain.js";
 import {
-  act, addrGroups, copyBtn, el, memoRow, money, normalized, onNetwork, qrBox,
+  act, addrGroups, copyBtn, el, memoRow, money, normalized, noteFor, onNetwork, qrBox, setNote,
 } from "./app-dom.js";
 import {
   feeEstimate, inspectOf, newSpend, prepareSpend, PRIORITY_FACTOR, proposePrepared, recipientCheck,
@@ -80,11 +80,25 @@ function shareBtn(address) {
 }
 const SHARE_FAILED = "This device could not share the address. Use Copy address.";
 
+// The address of the open wallet: Send refuses it, as it refuses an address of another network.
+const OWN_ADDRESS = "This is the address of this wallet. Enter the address of someone else.";
+const ownAddress = (to) => {
+  const address = normalized(to);
+  return !!address && address === normalized(state.wallet?.address);
+};
+
+// The note under a typed address, which reads valid only for an address that Send takes.
+function addressNote(v) {
+  const net = curNet(), name = net.label.toLowerCase();
+  if (!onNetwork(v)) {
+    return ["Not a shielded Zcash " + name + " address. It starts with " + net.prefix + ".", "bad"];
+  }
+  return ownAddress(v) ? [OWN_ADDRESS, "bad"] : ["Valid " + name + " address", "ok"];
+}
+
 function addressHint(hint, to) {
-  const v = to.trim(), ok = v ? onNetwork(v) : null, net = curNet().label.toLowerCase();
-  hint.textContent = !v ? "" : ok ? "Valid " + net + " address"
-    : "Not a shielded Zcash " + net + " address. It starts with " + curNet().prefix + ".";
-  hint.className = "hint " + (!v ? "" : ok ? "ok" : "bad");
+  const v = to.trim(), [text, cls] = v ? addressNote(v) : ["", ""];
+  setNote(hint, text, "hint " + cls);
 }
 
 // A recipient field holds an address or, in a testnet wallet, a ZNS name. Text that is an address
@@ -94,10 +108,7 @@ const nameIn = (to) => (znsOn() && !onNetwork(to.trim()) ? nameOf(to) : null);
 const toLabel = () => (znsOn() ? "Recipient address or ZNS name" : "Recipient address");
 const toPlaceholder = () => curNet().prefix + (znsOn() ? "… or alice.zec" : "…");
 
-const showHint = (hint, text, cls = "") => {
-  hint.textContent = text;
-  hint.className = "hint " + cls;
-};
+const showHint = (hint, text, cls = "") => setNote(hint, text, "hint " + cls);
 
 // What the form shows for a name: its address, with the note of a recent change. The row keeps it
 // as `r.shown`, so that a submit pays only what the form showed. `seen` is false until a hint
@@ -119,7 +130,9 @@ async function nameAnswer(typed) {
 // Draws the address of a name in a hint: from now on the person has seen it.
 function showShown(hint, shown) {
   shown.seen = true;
-  showHint(hint, shown.text, "ok");
+  const why = addressRefusal(shown.address, shown);
+  if (why) showHint(hint, why, "bad");
+  else showHint(hint, shown.text, "ok");
 }
 
 // An address that "Propose again" kept with the name of the first proposal (a testnet wallet).
@@ -148,22 +161,24 @@ function recipientHint(hint, r) {
 }
 
 function payRow(r, i, rows, sumUp) {
-  const c = curChain(), n = rows.length > 1 ? " " + (i + 1) : "";
-  const hint = el("span", { class: "hint", role: "status", style: "overflow-wrap:anywhere" });
+  const c = curChain(), n = rows.length > 1 ? " " + (i + 1) : "", hintId = "s-hint-" + r.k;
+  const hint = el("span", { class: "hint", id: hintId, role: "status",
+    style: "overflow-wrap:anywhere" });
   const amt = el("input", { class: "input", id: "s-amt-" + r.k, type: "text", inputmode: "decimal", placeholder: "0.00", required: true, autocomplete: "off", "aria-label": "Amount" + n, value: r.amt, oninput: (ev) => { r.amt = ev.target.value.trim(); sumUp(); } });
   const max = () => { r.amt = zatText(Math.max(0, c && c.bal ? c.bal.max_send : 0)); amt.value = r.amt; sumUp(); };
+  const to = el("input", {
+    class: "input mono", id: "s-to-" + r.k, type: "text", placeholder: toPlaceholder(),
+    required: true, autocomplete: "off", spellcheck: "false",
+    "aria-label": toLabel() + n, "aria-describedby": hintId, value: r.to,
+    oninput: (ev) => {
+      r.to = ev.target.value;
+      r.name = null;   // text that the person typed has no name from an earlier proposal
+      if (!fillFromRequest(r, rows, hint)) recipientHint(hint, r);
+    },
+  });
+  noteFor(hint, to);
   recipientHint(hint, r);
-  return el("div", { class: "pay-row" },
-    el("input", {
-      class: "input mono", id: "s-to-" + r.k, type: "text", placeholder: toPlaceholder(),
-      required: true, autocomplete: "off", spellcheck: "false",
-      "aria-label": toLabel() + n, value: r.to,
-      oninput: (ev) => {
-        r.to = ev.target.value;
-        r.name = null;   // text that the person typed has no name from an earlier proposal
-        fillFromRequest(r, rows, hint) || recipientHint(hint, r);
-      },
-    }),
+  return el("div", { class: "pay-row" }, to,
     el("div", { class: "input-wrap" }, amt, rows.length === 1 ? el("button", { class: "btn sm", type: "button", onclick: max }, "Max") : null),
     rows.length > 1 ? el("button", { class: "icon-btn", type: "button", "aria-label": "Remove recipient" + n, onclick: () => { rows.splice(i, 1); render(); } }, "×") : null,
     hint, memoBox(r, n));
@@ -173,21 +188,21 @@ function payRow(r, i, rows, sumUp) {
 const MEMO_NEAR = 400;
 function memoHint(hint, memo) {
   const bad = memoError(memo), bytes = memoBytes(memo);
-  hint.textContent = bad || (bytes >= MEMO_NEAR ? bytes + " of " + MEMO_BYTES + " bytes" : "");
-  hint.className = "hint" + (bad ? " bad" : "");
+  setNote(hint, bad || (bytes >= MEMO_NEAR ? bytes + " of " + MEMO_BYTES + " bytes" : ""),
+    "hint" + (bad ? " bad" : ""));
 }
 
 // The optional memo of one recipient.
 function memoBox(r, n) {
-  const hint = el("span", { class: "hint" });
+  const hintId = "s-memo-hint-" + r.k, hint = el("span", { class: "hint", id: hintId });
+  const memo = el("input", {
+    class: "input", id: "s-memo-" + r.k, type: "text", placeholder: "Memo (optional)",
+    autocomplete: "off", "aria-label": "Memo" + n + " (optional)", "aria-describedby": hintId,
+    value: r.memo, oninput: (ev) => { r.memo = ev.target.value; memoHint(hint, r.memo); },
+  });
+  noteFor(hint, memo);
   memoHint(hint, r.memo);
-  return el("div", { class: "memo-row" },
-    el("input", {
-      class: "input", id: "s-memo-" + r.k, type: "text", placeholder: "Memo (optional)",
-      autocomplete: "off", "aria-label": "Memo" + n + " (optional)", value: r.memo,
-      oninput: (ev) => { r.memo = ev.target.value; memoHint(hint, r.memo); },
-    }),
-    hint);
+  return el("div", { class: "memo-row" }, memo, hint);
 }
 
 // A whole request pasted in a recipient field replaces that row with the rows of its payees. It
@@ -199,7 +214,7 @@ export function fillFromRequest(r, rows, hint) {
   const fresh = req.payees ? payeeRows(req.payees, () => ++ui.payKey) : [];
   const tooMany = rows.length - 1 + fresh.length > MAX_PAYEES;
   const error = req.error ? requestProblem(req.error) : tooMany ? TOO_MANY : "";
-  if (error) { hint.textContent = error; hint.className = "hint bad"; return true; }
+  if (error) { setNote(hint, error, "hint bad"); return true; }
   rows.splice(rows.indexOf(r), 1, ...fresh);
   render();
   return true;
@@ -220,9 +235,13 @@ function listProblem(rows, errors) {
   return rows.length > MAX_PAYEES ? TOO_MANY : "";
 }
 
+// The text that the error of the pasted list is about. A redraw puts the same text back into the
+// box, and that is no edit.
+let listFor = "";
 function useList() {
   const box = document.getElementById("s-list"), { rows, errors } = pastedList(box.value);
   ui.listError = listProblem(rows, errors);
+  listFor = box.value;
   if (!ui.listError) {
     ui.pay = payeeRows(rows, () => ++ui.payKey);
     box.value = ""; box.closest("details").open = false;
@@ -269,6 +288,13 @@ const addressError = (net, hit) => (hit
   : "Enter a shielded Zcash " + net.label.toLowerCase() + " address. It starts with "
     + net.prefix + ".");
 
+// Why Send refuses the address of a row, or "". A name `hit` shows by its name. The hint of a name
+// asks the same, so that it reads valid only for an address that Send takes.
+function addressRefusal(to, hit) {
+  if (!onNetwork(to)) return addressError(curNet(), hit);
+  return ownAddress(to) ? OWN_ADDRESS : "";
+}
+
 // A payee has a memo only when it has text, and a name only when it is paid by name: the name of
 // a name row, or the name that "Propose again" kept with an address (a testnet wallet only).
 function payeeOf(to, amount, memo, name) {
@@ -282,15 +308,11 @@ const nameOfRow = (r, hit) => (hit ? hit.name : znsOn() && r.name);
 // Checks each row and returns the payees in zatoshis, or throws with the row number. `found` has
 // the registry answer of each name row: that row pays the address of the registry.
 function readPayees(rows, found) {
-  const net = curNet(), own = normalized(state.wallet.address);
   return rows.map((r, i) => {
     const hit = found.get(r), to = hit ? hit.address : r.to.trim(), amount = toZat(r.amt);
     const who = whoOf(rows, i), memo = String(r.memo || "").trim();
-    if (!onNetwork(to)) throw new Error(who + addressError(net, hit));
-    if (normalized(to) === own) {
-      throw new Error(who + "This is the address of this wallet. Enter the address of someone "
-        + "else.");
-    }
+    const refusal = addressRefusal(to, hit);
+    if (refusal) throw new Error(who + refusal);
     if (!amount) {
       throw new Error(who + "Enter an amount greater than zero, with at most 8 decimals.");
     }
@@ -300,16 +322,25 @@ function readPayees(rows, found) {
 }
 
 function pasteList(net) {
+  const note = el("span", { class: "hint bad", id: "s-list-error" });
+  const box = el("textarea", {
+    class: "input mono", id: "s-list", rows: "5", spellcheck: "false",
+    "aria-label": "Payment list", "aria-describedby": "s-list-error",
+    placeholder: net.prefix + "…, 0.5, October rent\n" + net.prefix + "…, 1.25",
+    oninput: (ev) => {
+      if (ev.target.value === listFor) return;
+      ui.listError = "";
+      setNote(note, "", "hint bad");
+    },
+  });
+  noteFor(note, box);
+  setNote(note, ui.listError, "hint bad");
   return el("details", { class: "paste" }, el("summary", { class: "btn sm" }, "Paste a list"),
-    el("textarea", {
-      class: "input mono", id: "s-list", rows: "5", spellcheck: "false",
-      "aria-label": "Payment list",
-      placeholder: net.prefix + "…, 0.5, October rent\n" + net.prefix + "…, 1.25",
-    }),
+    box,
     el("span", { class: "hint" },
       "One " + (znsOn() ? "address or ZNS name" : "address") + " and amount per line, then an "
       + "optional memo. A spreadsheet copy works. A payment request (zcash:) works too."),
-    ui.listError ? el("span", { class: "hint bad" }, ui.listError) : null,
+    note,
     el("button", { class: "btn sm", type: "button", onclick: useList }, "Use this list"));
 }
 
@@ -516,8 +547,9 @@ function sendFoot(why) {
       el("button", { class: "btn", type: "button", onclick: closeSend }, "Cancel"),
       el("button", {
         class: "btn primary", type: "submit", disabled: !Z || !!why,
-      }, ui.after ? "Propose payment" : "Review payment")),
-    why ? el("p", { class: "small faint" }, why) : null];
+        "aria-describedby": why ? "why-send" : null,
+      }, ui.after ? "Propose payment" : "Review payment"),
+      why ? el("span", { class: "off-why", id: "why-send" }, why) : null)];
 }
 
 // ── The review: what the engine decoded from the transaction that this browser built. The
