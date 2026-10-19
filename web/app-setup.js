@@ -87,9 +87,9 @@ function safetyCard() {
     el("div", { class: "card-head" }, el("h2", {}, "Check the safety number"),
       el("span", { class: "badge " + (yes === n ? "ok" : "warn") }, yes + " of " + n + " confirmed")),
     el("div", { class: "safety" }, no),
-    el("p", { class: "small muted" }, "Compare this number on every device of this wallet, on a "
-      + "call or in person. If it is different, someone else joined. In that case, do not tap "
-      + "\"It matches\". Create a new wallet." + (bothParts() ? " " + BOTH_OPEN : "")),
+    el("p", { class: "small muted" }, "Compare this number on every device, on a call or in "
+      + "person. If one device shows a different number, someone else joined. In that case, do "
+      + "not tap \"It matches\". Create a new wallet." + (bothParts() ? " " + BOTH_OPEN : "")),
     clash.length ? el("div", { class: "callout bad", role: "alert" }, "Device " + clash.join(", ")
       + " confirmed another number. Someone else may have joined. Do not continue. "
       + "Create a new wallet.") : null,
@@ -145,10 +145,10 @@ function joinCard(seat) {
 export const inviteMessage = (link) => "I made a shared wallet \"" + state.g.name + "\" on Zigs, a "
   + (solPlanned() ? "shared wallet for Zcash testnet and Solana Devnet"
     : "private shared wallet for shielded Zcash")
-  + ". Your device is one of " + state.g.n + ", and any " + state.g.t
-  + " of them approve each payment."
+  + ". It has " + state.g.n + " devices. Any " + state.g.t + " of them must approve each "
+  + "payment. Your device will be one of them."
   + "\n\n1. Open this link on your phone or computer: " + link + "\n" + BROWSER_NOTE + "\n2. "
-  + PASSWORD_NOTE + "\n3. Join with this device.\n4. Keep the page open until the "
+  + PASSWORD_NOTE + "\n3. Tap \"Join as device\".\n4. Keep the page open until the "
   + (solPlanned() ? "Zcash and the Solana parts are" : "wallet is") + " ready.\n\nThis link is a "
   + "secret. Do not post it in a public place. About Zigs: https://zigs.app";
 
@@ -160,13 +160,12 @@ function inviteCard(openCount) {
       .catch(() => {}),
   }, "Share") : null;
   return el("section", { class: "card card-pad hero-card" },
-    el("div", { class: "card-head" }, el("h2", {}, "Add your other devices"),
+    el("div", { class: "card-head" }, el("h2", {}, "Add the other devices"),
       el("span", { class: "badge plain" },
         openCount === 1 ? "1 device to join" : openCount + " devices to join")),
-    el("p", { class: "small muted" }, "Open this invite link on each of your other devices. "
-      + "Send it through a private channel. It holds the wallet secret: anyone who has it can "
-      + "join in place of a device. "
-      + senderNote("each person who joins")),
+    el("p", { class: "small muted" }, "Send this invite link through a private channel. Open it "
+      + "on each device that joins. It holds the wallet secret: anyone who has it can join as one "
+      + "of the open devices. " + senderNote("each person who joins")),
     el("div", { class: "addr-box" }, el("span", { class: "hex nowrap" }, link),
       copyBtn(link, "Copy link", "btn sm primary"), copyBtn(message, "Copy invite message", "btn sm"),
       share),
@@ -233,7 +232,7 @@ function addrStage(c) {
 // Only the device of seat 1 builds the wallet document. The other seats wait for it (S11).
 const buildingText = () => localSeats().includes(1) ? "Building the shared address…"
   : "Device 1 builds the shared address. If this takes more than a minute, open this wallet on "
-    + "device 1.";
+    + "device 1, or ask the person who has it.";
 
 function addrStep(c) {
   const stage = addrStage(c);
@@ -399,7 +398,10 @@ function seatTile(i) {
   const st = seatStage(i);
   return el("div", { class: "seat" + (mine ? " mine" : "") + (s ? "" : " open") },
     el("div", { style: "display:flex;align-items:center;gap:10px;min-width:0" }, avatar(i),
-      el("div", { style: "display:grid;min-width:0" }, el("span", { class: "ri-title nowrap" }, seatLabel(i)), el("span", { class: "ri-sub" }, "Device " + i))),
+      el("div", { style: "display:grid;min-width:0" },
+        el("span", { class: "ri-title nowrap" }, seatLabel(i)),
+        // A device with no name reads "Device N" in its title already.
+        seatLabel(i) === "Device " + i ? null : el("span", { class: "ri-sub" }, "Device " + i))),
     el("span", { class: "badge " + (st === 5 ? "ok" : s ? "info" : "plain") }, STAGE_LABEL[st]),
     elsewhere ? el("span", { class: "small faint" }, "Yours, in another browser") : null);
 }

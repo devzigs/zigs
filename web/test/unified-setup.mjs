@@ -441,8 +441,8 @@ for (const text of [inviteMessage(link), plain.invite, chatMessage(link)]) {
 }
 // The invite cards of a wallet and of a chat say the same to the sender.
 const SENDER = new RegExp("asks for a user name and a password before Zigs opens\\. Any user name "
-  + "works\\. Send the password apart from the link\\. Tell (each person who joins|your contact) "
-  + "to open the "
+  + "works\\. Send the password apart from the link\\. Tell "
+  + "(each person who joins|each person who opens it|your contact) to open the "
   + "link in Safari or Chrome\\. The browser of a chat app or a private window can delete the key");
 assert.match(pageText(), SENDER, "the invite card of a wallet");
 {
@@ -854,7 +854,7 @@ const byId = (node, id) =>
   assert.match(pageText(), /Solana is still setting up/, "one empty fee address keeps the card");
   t.sol.ctl.chain = {};
   ui.tab = "members";
-  assert.match(pageText(), SENDER, "the invite link of the Signers tab");
+  assert.match(pageText(), SENDER, "the invite link of the Devices tab");
   ui.tab = "overview";
   // A stopped Solana part: the Zcash part still works, and the next step is a new wallet.
   const kept = t.sec(gidH, 1).sol;

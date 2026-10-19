@@ -319,8 +319,8 @@ function walletRow(g) {
   },
   el("span", { class: "av lg" }, initials(g.name)),
   el("span", { class: "ri-main" }, el("span", { class: "ri-title" }, g.name),
-    el("span", { class: "ri-sub" }, netOf(g).label + " · " + g.t + " of " + g.n
-      + " devices must approve" + (seats ? "" : " · view only"))),
+    el("span", { class: "ri-sub" }, netOf(g).label + " · Any " + g.t + " of " + g.n
+      + " devices" + (seats ? "" : " · view only"))),
   el("span", { class: "ri-end" }, status,
     n ? el("span", { class: "badge warn" }, n + " to approve") : null, unread),
   el("span", { class: "chev" }, "›"));
@@ -423,8 +423,8 @@ export function createDialog(from = null) {
     el("div", { class: "callout" }, from
       ? "The new wallet gets a new address. Devices that you leave out can still see this old "
         + "wallet's payments, but not the new wallet's."
-      : "This device joins as device 1. Then open the invite link on your other devices. When "
-        + "every device has joined, they create the wallet key together."),
+      : "This device joins as device 1. Then share the invite link, so that the other devices "
+        + "can join. When every device has joined, they create the wallet key together."),
     el("div", { class: "dialog-actions" },
       el("button", { class: "btn", type: "button", onclick: close }, "Cancel"),
       el("button", { class: "btn primary", type: "submit", ...off.attrs },

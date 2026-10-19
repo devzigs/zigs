@@ -45,9 +45,9 @@ export const unreadIn = (gid, thread) => markId(gid)
 export const NO_SIGNING = "This browser cannot sign messages. "
   + "Use a current Chrome, Edge, Firefox or Safari.";
 const ROOM_CHANGED = "The message room of this wallet changed. Messages are paused. "
-  + "Ask your signers.";
+  + "Ask the other people who use this wallet.";
 const ROOM_MISSING = "The message room of this wallet is missing. Messages are paused. "
-  + "Ask your signers.";
+  + "Ask the other people who use this wallet.";
 const ROOM_WARN = { changed: ROOM_CHANGED, missing: ROOM_MISSING };
 
 // The reactor runs often, and each failed write counts against the server's rate limit.
@@ -164,7 +164,7 @@ export const sendSeats = () => localSeats().filter((i) => {
 export function chatWhy() {
   const gid = state.gid;
   if (roomWarn.has(gid)) return roomWarn.get(gid);
-  if (!localSeats().length) return "Take a seat to read and send messages.";
+  if (!localSeats().length) return "Join this wallet with this device to read and send messages.";
   if (!rooms[gid]) return "The message room is being set up.";
   if (signing === false) return NO_SIGNING;
   if (sendSeats().length) return null;

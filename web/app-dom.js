@@ -86,12 +86,14 @@ export function seatLabel(i) {
   if (!seatMine(i)) return s.name || "Device " + i;
   return localSeats().length > 1 ? "You (device " + i + ")" : "You";
 }
-// In a version 3 wallet a name comes with its seat number, because two seats can use one name.
-// A member picks the name, so a name can carry a false seat number: the real one goes after it.
+// In a version 3 wallet a name comes with its device number, because two devices can use one
+// name. A member picks the name, so a name can carry a false number: the real one goes after it.
+// A device with no name reads "Device N" already.
 export function named(i) {
   const label = seatLabel(i);
   const tag = " (device " + i + ")";
-  return signedMode(state.gid) && !label.endsWith(tag) ? label + tag : label;
+  const numbered = label.endsWith(tag) || label === "Device " + i;
+  return signedMode(state.gid) && !numbered ? label + tag : label;
 }
 export function avatar(i, cls = "") {
   const s = state.seats[i], mine = s && seatMine(i);
@@ -147,8 +149,8 @@ export const unreadChip = (u) => u ? el("span", { class: "side-unread", role: "i
 export function nameField(id, to = "") {
   let saved = ""; try { saved = localStorage.getItem("zf-name") || ""; } catch {}
   const save = (ev) => { try { localStorage.setItem("zf-name", ev.target.value.trim()); } catch {} };
-  const hint = to ? "Any nickname · shown to " + to : "For example: My phone. The other devices "
-    + "show it.";
+  const hint = to ? "Any nickname · shown to " + to : "For example: Ana's phone. The other "
+    + "devices show it.";
   return el("label", { class: "field" }, el("span", {}, to ? "Your name" : "This device's label"),
     el("input", { class: "input", id, value: saved, maxlength: "40", autocomplete: "nickname",
       placeholder: hint, oninput: save }));

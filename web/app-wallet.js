@@ -70,7 +70,7 @@ export const walletShown = () => !!state.g && !state.g.unreadable && !!groupVers
 // A note for any wallet version: the store shows another network than the first this device saw.
 const networkNote = () => state.g.networkMoved ? el("div", { class: "callout bad", role: "alert" },
   "The store shows another network than the first this browser saw. Zigs keeps the first. "
-  + "Ask your signers.") : null;
+  + "Ask the other people who use this wallet.") : null;
 
 const NO_SIGNING_WALLET = "This wallet needs signatures, and this browser cannot check them. "
   + "Use a current Chrome, Edge, Firefox or Safari.";
@@ -80,11 +80,11 @@ function signedNotes() {
   if (!signedMode(state.gid)) return null;
   const mute = localSeats().filter((i) => !canWriteAs(i));
   const lost = mute.length ? el("div", { class: "callout bad", role: "alert" },
-    "This browser has no signing key for seat " + mute.join(", ") + ", so it cannot write to "
-    + "this wallet. Restore a backup of the seat.") : null;
+    "This browser has no signing key for device " + mute.join(", ") + ", so it cannot write to "
+    + "this wallet. Restore the backup file of that device.") : null;
   const moved = state.g.shapeMoved ? el("div", { class: "callout bad", role: "alert" },
-    "The store shows another number of signers or approval rule than the first this browser saw. "
-    + "Zigs keeps the first. Ask your signers.") : null;
+    "The store shows another number of devices or approval rule than the first this browser "
+    + "saw. Zigs keeps the first. Ask the other people who use this wallet.") : null;
   const ignored = state.ignored ? el("p", { class: "small faint" }, IGNORED_NOTE) : null;
   return lost || moved || ignored
     ? el("div", { style: "display:grid;gap:8px" }, lost, moved, ignored) : null;
@@ -225,7 +225,10 @@ export function moveState(c) {
   const to = state.g.movedTo;
   const ss = state.sessions.find((x) => x.move === to && !x.error && !ended(x));
   const b = c && c.bal ? balanceNow(c.bal) : null;
-  if (!gkeys[to]) return { text: "A signer started moving this wallet to a new one. If you are one of its signers, ask them for its invite link." };
+  if (!gkeys[to]) {
+    return { text: "Someone started moving this wallet to a new one. If one of your devices is "
+      + "in the new wallet, ask its creator for its invite link." };
+  }
   if (!ready[to]) return { text: groupName(to) + " is still setting up. When its address is ready, move the funds here.", open: to };
   if (ss && !ss.broadcastTxid) return { text: "Moving the funds to " + groupName(to) + " is in progress. Open the payment to approve it or take the next step.", session: ss };
   if (ss && inFlight().includes(ss)) return { text: "The funds are on their way to " + groupName(to) + ". They arrive with the next block.", open: to };
@@ -375,7 +378,8 @@ function receiveCard() {
       : el("p", { class: "small muted" }, "Share this address to receive " + receiveWhat()
         + ". Payments to it are shielded." + receiveLimit()),
     addrHidden() ? null : el("div", { class: "addr-box" }, el("span", { class: "hex" }, short(w.address, 18)), copyBtn(w.address)),
-    el("p", { class: "small faint" }, verifiedCount() + " of " + state.g.n + " signers checked this address against their own key."));
+    el("p", { class: "small faint" }, verifiedCount() + " of " + state.g.n + " devices checked "
+      + "this address against their own key."));
 }
 
 export function syncLine(c) {
@@ -407,7 +411,7 @@ function activityRows(list) {
   if (!list.length) {
     return el("div", { class: "empty", style: line }, el("h3", {}, "No activity yet"),
       el("p", { class: "small" },
-        "Money you receive and payments your signers propose show up here."));
+        "Money you receive and payments that this wallet proposes show up here."));
   }
   // One list of sent payments for the whole draw: a row does not walk all sessions again.
   const flying = new Set(inFlight());
@@ -559,9 +563,10 @@ function membersTab() {
     changeSignersCard(),
     el("section", { class: "card card-pad" },
       el("h2", { style: "font-size:15px" }, "Invite link"),
-      el("p", { class: "small muted" }, "Open this wallet on another device with this invite "
-        + "link and the key share backup of that device. The link holds the wallet secret, so "
-        + "share it only with the people of this wallet. " + senderNote("each person who joins")),
+      el("p", { class: "small muted" }, "To use a device of this wallet in another browser, open "
+        + "this invite link there and restore the backup file of its key share. The link holds "
+        + "the wallet secret, so share it only with the people who use this wallet. "
+        + senderNote("each person who opens it")),
       el("div", { class: "addr-box" }, el("span", { class: "hex nowrap" }, inviteLink(state.gid)), copyBtn(inviteLink(state.gid), "Copy link")),
       secretQr(inviteLink(state.gid))));
 }
@@ -590,12 +595,18 @@ const keyBackupButton = (i) => el("button", {
   class: "btn sm", type: "button", onclick: () => openBackup(i),
 }, "Back up key share");
 
+// The line under a device: its number, unless its title is "Device N" already, and when it joined.
+function memberSub(i, s) {
+  const joined = s ? "joined " + when(s.at) : "";
+  if (seatTitle(i, s) !== "Device " + i) return "Device " + i + (joined && " · " + joined);
+  return joined && "J" + joined.slice(1);
+}
+
 function memberRow(i) {
   const s = state.seats[i], mine = s && seatMine(i) && sec(state.gid, i);
   const title = el("span", { class: "ri-title" }, seatTitle(i, s),
     mine ? el("span", { class: "you" }, "You") : null);
-  const sub = el("span", { class: "ri-sub" },
-    "Device " + i + (s ? " · joined " + when(s.at) : ""));
+  const sub = el("span", { class: "ri-sub" }, memberSub(i, s));
   const backup = mine && sec(state.gid, i).keyPackage ? keyBackupButton(i) : null;
   return el("div", { class: "member" }, avatar(i, "lg"), el("div", { class: "ri-main" }, title, sub),
     el("div", { class: "m-actions" }, seatBadge(i), backup));
@@ -686,7 +697,7 @@ function checkedBadge() {
     const text = "Device " + rejected.join(", ") + " rejected this wallet";
     return el("span", { class: "badge bad" }, text);
   }
-  return el("span", { class: "badge " + (ver === n ? "ok" : "") }, ver + " of " + n + " signers");
+  return el("span", { class: "badge " + (ver === n ? "ok" : "") }, ver + " of " + n + " devices");
 }
 
 function walletFacts() {
@@ -700,7 +711,7 @@ function walletFacts() {
     el("dl", { class: "kv" },
       el("dt", {}, "Address"), address,
       el("dt", {}, "Approval rule"),
-      el("dd", {}, "Any " + state.g.t + " of " + state.g.n + " signers"),
+      el("dd", {}, "Any " + state.g.t + " of " + state.g.n + " devices"),
       el("dt", {}, "Checked by"), el("dd", {}, checkedBadge()),
       el("dt", {}, "Network"), el("dd", {}, "Zcash " + net.label.toLowerCase()
         + (net.cap ? " · warning at " + capText(net.cap) : "")),
@@ -709,7 +720,7 @@ function walletFacts() {
       usesV2(groupVersion()) ? [el("dt", {}, "Key setup"),
         el("dd", {}, "Built to ZIP 2005 (Proposed) so that funds can be recovered if quantum "
           + "computers break today's keys.")] : null,
-      signedMode(state.gid) ? [el("dt", {}, "Signed writes"), el("dd", {}, "Each signer signs the "
+      signedMode(state.gid) ? [el("dt", {}, "Signed writes"), el("dd", {}, "Each device signs the "
         + "data it writes to this wallet. Zigs ignores data without a valid signature.")] : null),
     groupVersion() === 1 ? el("p", { class: "small muted", style: "margin-top:12px" },
       "This wallet was made before quantum recoverability (ZIP 2005). To get it, move the funds "

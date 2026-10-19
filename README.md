@@ -69,9 +69,9 @@ coin. The runbook of a demo with three devices is in [docs/demo.md](docs/demo.md
    and the password that the Zigs team gave you.
 2. Click **New wallet**. The network is **Testnet**, the only choice. Set **Devices** to 2 and
    **Approvals needed** to 2, then click **Create wallet**. This browser is now device 1.
-3. Open **Trying Zigs alone? Play the other devices in this browser** and click **Play device
-   2**. The two devices create the key together. Within half a minute the wallet opens, and both
-   devices show **Address checked**.
+3. Open **Trying Zigs alone? Play the other devices in this browser** and click
+   **Play device 2**. The two devices create the key together. Within half a minute the wallet
+   opens, and both devices show **Address checked**.
 4. Click **Receive** and copy the address. Then click **Get testnet ZEC**: it opens the Valar
    faucet, which pays 0.125 TAZ to a `utest1…` address, once for each IP address and once for
    each address every 24 hours. On a shared network, such as a venue or an office, only the first

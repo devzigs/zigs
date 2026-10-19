@@ -91,15 +91,15 @@ export function checkNetwork(wallet, network) {
 // and `seen` what the store shows: `sawV2` (data of the version 2 ceremony) and `number` (the
 // safety number now, or null).
 const versionMoved = (s, g) => s.version && s.version !== g
-  && "The setup version of this wallet changed after you took your seat";
+  && "The setup version of this wallet changed after this device joined";
 const newSetupSeen = (s, mode, seen) => mode === 1 && !s.keyPackage && seen.sawV2
-  && "Other signers use the new setup, but this seat does not";
+  && "Other devices use the new setup, but this device does not";
 const keyReplaced = (s, mode, seat) => usesV2(mode) && s.boxPk && seat && seat.boxPk !== s.boxPk
-  && "Your seat key was replaced";
+  && "The key of this device was replaced";
 const numberMoved = (s, mode, seen) => usesV2(mode) && !s.keyPackage
   && typeof s.confirmed === "string" && typeof seen.number === "string"
   && s.confirmed !== seen.number
-  && "The safety number changed after you confirmed it. Someone may have replaced a seat";
+  && "The safety number changed after you confirmed it. Someone may have replaced a device";
 export const conflictReason = (s, seat, g, mode, seen) =>
   versionMoved(s, g) || newSetupSeen(s, mode, seen) || keyReplaced(s, mode, seat)
   || numberMoved(s, mode, seen) || null;

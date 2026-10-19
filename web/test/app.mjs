@@ -159,6 +159,8 @@ const sealed = (gid, rel, seat, fields, key, names = ["by", "sig"]) =>
   const name1 = t.state.seats[1].name;
   t.state.seats[1].name = "Ana (device 2)";
   assert.equal(t.named(1), "Ana (device 2) (device 1)", "a false device number gets the real one");
+  t.state.seats[1].name = "";
+  assert.equal(t.named(1), "Device 1", "an unnamed device reads Device N once");
   t.state.seats[1].name = name1;
 
   // Memo: the same length with the old signature is a new check.
@@ -5173,7 +5175,7 @@ async function runAcctSync() {
     await t.act(async () => { throw new Error("no"); })(ev);
     assert.deepEqual(t.banner, { kind: "bad", text: "no" }, "a failed action shows its error");
 
-    const sections = [["overview", "Overview"], ["activity", "Activity"], ["members", "Signers"]];
+    const sections = [["overview", "Overview"], ["activity", "Activity"], ["members", "Devices"]];
     const item = (id) => t.sectionNav(sections).find((n) => n.attrs.id === "tab-" + id);
     t.ui.tab = "solana";
     assert.equal(item("overview").attrs["aria-current"], "page",
