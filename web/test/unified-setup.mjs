@@ -21,6 +21,7 @@ const { inviteMessage, joinText, onLink } = await import("../app-setup.js");
 const { chatMessage, inviteLink } = await import("../app-links.js");
 const { chatInviteCard } = await import("../app-thread.js");
 const { chats } = await import("../app-keystore.js");
+const { chat: roomChat } = await import("../app-messages.js");
 const { backupWords } = await import("../sol/backup.js");
 const { loadingCount, olderCount, pendingCount, pendingRows } = await import("../sol/view.js");
 const { SHOWN } = await import("../sol/payview.js");
@@ -395,9 +396,18 @@ function explorerTexts(chain) {
   t.setChain({ ...t.chain, received: [{ ...row, memos: [{ status: "text", text: "Rent" }] }] });
   assert.match(pageText(), /View payment opens testnet\.zecblock\.com in a new tab\. That site/,
     "a memo of a received payment says what the explorer sees");
-  t.setChain({ ...t.chain, received: [row] });
-  assert.doesNotMatch(pageText(), /View payment opens/, "no memo, no note");
-  t.setChain(chain);
+  // A message of the room shows the thread with no memo: no note then.
+  const room = roomChat[t.state.gid];
+  roomChat[t.state.gid] = [{ id: "m1", thread: "wallet", seat: 1, text: "Hello room", at: 1 }];
+  try {
+    t.setChain({ ...t.chain, received: [row] });
+    assert.match(pageText(), /Hello room/, "the room thread shows");
+    assert.doesNotMatch(pageText(), /View payment opens/, "no memo, no note");
+  } finally {
+    if (room) roomChat[t.state.gid] = room;
+    else delete roomChat[t.state.gid];
+    t.setChain(chain);
+  }
 }
 // The invite link sits in the disclosure of its QR code; Copy link stays on the page.
 function inviteTexts() {

@@ -2006,6 +2006,11 @@ const sealed = (gid, rel, seat, fields, key, names = ["by", "sig"]) =>
       const more = () => tipAt(4500000, new Set(["realtx"]));
       assert.match(t.moveState(more()).text, /Move the Zcash funds to it\. Like any/,
         "more funds came in: move them too");
+      const devicesText = () => {
+        t.ui.tab = "members";
+        try { return textOf(t.walletView(null, null)); } finally { t.ui.tab = "overview"; }
+      };
+      assert.doesNotMatch(devicesText(), /A Solana part/, "Devices: no Solana text without one");
       t.signPins[solKey] = "testnet";
       assert.equal(t.solOn(), true, "a wallet that can have a Solana part");
       m = t.moveState(emptied());
@@ -2015,6 +2020,8 @@ const sealed = (gid, rel, seat, fields, key, names = ["by", "sig"]) =>
       assert.match(textOf(moveCard()), /^Changing devices/);
       assert.equal(moveCard().className, "card card-pad attention");
       assert.match(t.moveState(more()).text, SOL_STAYS, "also in the other steps");
+      assert.match(devicesText(), /then move the Zcash funds to it\. A Solana part does not move/,
+        "Devices: a Solana part does not move");
     } finally {
       t.signPins[solKey] = pinned;
     }
