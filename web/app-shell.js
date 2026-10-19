@@ -1,6 +1,6 @@
 // Side navigation, lock screen, wallet list and create dialog.
 import {
-  busy, clearBadBanner, openCreate, ready, resetCreate, showBanner, state, ui,
+  busy, openCreate, ready, resetCreate, state, ui,
 } from "./app-state.js";
 import { initials } from "./app-kit.js";
 import { offReason } from "./util.js";
@@ -381,13 +381,20 @@ const moveParts = (from, nameParts, ruleParts) => [el("ol", { class: "small mute
   el("li", {}, "This wallet sends all its funds to the new one. Like any payment, this needs "
     + from.t + " approvals.")),
 ...nameParts, ...ruleParts];
-// With every signer needed, one lost device stops the wallet: the dialog says so.
+// What a rule means when devices are lost: how many can be missing, and how many can spend. With
+// every device needed, one lost device stops the wallet.
 export const marginText = (t, n) => (t === n ? "Each payment needs every device. When one "
   + "device is lost, the wallet cannot pay until its key share comes back from its backup file."
-  : "");
+  : lostText(n - t) + " Any " + t + " devices together can spend the funds, so keep each one "
+    + "safe.");
+const lostText = (m) => (m === 1 ? "1 device" : m + " devices")
+  + " can be lost or offline, and the wallet still pays.";
 const BAD_RULE = "Choose 2 to 7 devices, and at least 2 approvals but no more than the devices.";
 const ACK_FIRST = "Confirm that one lost device stops all payments, or use the recommended 2 of 3.";
 const fieldValue = (id) => document.getElementById(id)?.value ?? "";
+// The numbers of a rule that a wallet can have: 2.5 devices is no rule.
+const ruleOk = (n, t) => Number.isInteger(n) && Number.isInteger(t) && n >= 2 && n <= 7
+  && t >= 2 && t <= n;
 
 function checkRule(n, t) {
   if (!Number.isInteger(n) || n < 2 || n > 7) {
@@ -405,7 +412,7 @@ function ruleLines(n0, t0) {
     marginText(t0, n0));
   const update = () => {
     const n = Number(fieldValue("g-n")), t = Number(fieldValue("g-t"));
-    const ok = n >= 2 && n <= 7 && t >= 2 && t <= n;
+    const ok = ruleOk(n, t);
     rule.textContent = ok ? ruleText(t, n) : BAD_RULE;
     rule.classList.toggle("bad", !ok);
     margin.textContent = ok ? marginText(t, n) : "";
@@ -421,7 +428,8 @@ function marginAck(hidden, update) {
     document.getElementById("g-n").value = "3";
     document.getElementById("g-t").value = "2";
     document.getElementById("g-margin-ack").checked = false;
-    ui.marginAck = false;
+    document.getElementById("create-error")?.remove();
+    ui.marginAck = false; ui.createError = null;
     update();
     document.getElementById("create-step-1")?.focus();
   };
@@ -449,9 +457,10 @@ async function submitWallet({ name, n, t, sol }, from) {
   if (withSol) await planSolana(gid);
 }
 const moveSubmit = (from) => act(async (ev) => {
-  const fd = new FormData(ev.target);
-  await submitWallet({ name: String(fd.get("name") || "").trim() || from.name,
-    n: Number(fd.get("n")), t: Number(fd.get("t")), sol: fd.get("sol") === "on" }, from);
+  const fd = new FormData(ev.target), n = Number(fd.get("n")), t = Number(fd.get("t"));
+  if (t === n && !ui.marginAck) throw new Error(ACK_FIRST);
+  await submitWallet({ name: String(fd.get("name") || "").trim() || from.name, n, t,
+    sol: fd.get("sol") === "on" }, from);
 });
 
 // The steps of a new wallet: what it is, its rule, its names, the review. Enter submits the form
@@ -476,15 +485,19 @@ let stepAt = 0;
 const goStep = (i) => {
   ui.createStep = i; stepAt = Date.now(); focusAfter("create-step-" + i, true); render();
 };
+// The error of a step shows in the dialog, next to its buttons, not in the page banner.
 function nextStep(ev) {
   ev.preventDefault();
-  try { TAKE[ui.createStep](); } catch (e) { showBanner("bad", e.message); return; }
-  clearBadBanner();
+  try { TAKE[ui.createStep](); } catch (e) { ui.createError = e.message; render(); return; }
+  ui.createError = null;
   goStep(ui.createStep + 1);
 }
+// The seat takes its label from what this browser keeps: the label that the review showed, also
+// when another tab typed another one since.
 async function createFromDraft() {
   const d = ui.createDraft;
   if (d.t === d.n && !ui.marginAck) throw new Error(ACK_FIRST);
+  try { localStorage.setItem("zf-name", d.label ?? ""); } catch { /* no storage: as typed */ }
   await submitWallet({ ...d, name: d.name || "Treasury" }, null);
 }
 const stepSubmit = (ev) => (ui.createStep < STEPS.length - 1 ? nextStep(ev)
@@ -492,9 +505,9 @@ const stepSubmit = (ev) => (ui.createStep < STEPS.length - 1 ? nextStep(ev)
 // The second click of a double click lands on the button of the next step, which can be Create
 // wallet. A phone sends a double tap as two clicks of detail 1, so a click soon after a step
 // change does not count either. A click of a script or the Enter key has detail 0.
-const firstClick = (ev) => {
-  if (ev.detail > 1 || (ev.detail === 1 && Date.now() - stepAt < 400)) ev.preventDefault();
-};
+const freshClick = (ev) => !(ev.detail > 1 || (ev.detail === 1 && Date.now() - stepAt < 400));
+const firstClick = (ev) => { if (!freshClick(ev)) ev.preventDefault(); };
+const backClick = (s) => (ev) => { if (freshClick(ev)) goStep(s - 1); };
 
 const step = (i, ...kids) => el("section", { class: "guide-step", hidden: ui.createStep !== i,
   "aria-labelledby": "create-step-" + i },
@@ -512,18 +525,19 @@ const ruleStep = (lines) => step(1,
   el("details", {}, el("summary", {}, "Advanced approval rule"), counts(3, 2, "margin-text")),
   lines.margin, lines.ack,
   el("p", { class: "small muted" }, "To change the rule later, use Change devices. It makes a new "
-    + "wallet and moves the funds to it."));
+    + "wallet, and a payment with the approvals of this rule moves the funds to it."));
 const namesStep = () => step(2, ...names(null), networkPick(), solChoice());
 function reviewStep() {
   const d = ui.createDraft ?? { n: 3, t: 2 };
   const row = (k, v) => [el("dt", {}, k), el("dd", {}, v)];
-  const warn = marginText(d.t, d.n);
+  const full = d.t === d.n;
   return step(3,
     el("dl", { class: "kv" }, row("Wallet name", d.name || "Treasury"),
       row("This device's label", d.label || "None. The other devices show Device 1."),
       row("Approval rule", ruleText(d.t, d.n)),
+      full ? null : row("If devices are lost", marginText(d.t, d.n)),
       row("Networks", "Zcash " + curNetLabel() + (d.sol ? " and Solana Devnet" : ""))),
-    warn ? el("p", { class: "callout warn" }, warn) : null,
+    full ? el("p", { class: "callout warn" }, marginText(d.t, d.n)) : null,
     el("div", { class: "callout" }, "This device joins as device 1. Then share the invite link, "
       + "so that the other devices can join. When every device has joined, they create the "
       + "wallet key together."));
@@ -533,9 +547,10 @@ function stepActions() {
   const s = ui.createStep, last = s === STEPS.length - 1;
   const off = offOf({ db: !!db }, "why-create-submit");
   return el("div", { class: "dialog-actions" },
+    ui.createError ? el("p", { class: "callout bad", role: "alert", id: "create-error" },
+      ui.createError) : null,
     el("button", { class: "btn", type: "button", onclick: closeCreate }, "Cancel"),
-    s > 0 ? el("button", { class: "btn", type: "button", onclick: () => goStep(s - 1) }, "Back")
-      : null,
+    s > 0 ? el("button", { class: "btn", type: "button", onclick: backClick(s) }, "Back") : null,
     el("button", { class: "btn primary", type: "submit", "data-first-focus": s === 0,
       onclick: firstClick,
       ...(last ? off.attrs : {}) }, NEXT[s]),
@@ -548,9 +563,12 @@ el("div", { class: "card-head" }, el("h2", { id: "create-title" }, title),
   el("button", { class: "icon-btn", type: "button", "aria-label": "Close", onclick: closeCreate },
     "×")),
 ...kids);
+// A second Enter can reach the form of a step that the page did not draw again yet: a submit
+// counts only for the step that its form shows.
 function newDialog() {
-  const lines = ruleLines(3, 2);
-  return frame("New shared wallet", { oninput: lines.update, onsubmit: stepSubmit },
+  const lines = ruleLines(3, 2), at = ui.createStep;
+  const submit = (ev) => (at === ui.createStep ? stepSubmit(ev) : ev.preventDefault());
+  return frame("New shared wallet", { oninput: lines.update, onsubmit: submit },
     introStep(), ruleStep(lines), namesStep(), reviewStep(), stepActions());
 }
 // Change devices keeps one form: its steps first, then the names and the rule.
@@ -558,7 +576,8 @@ function moveDialog(from) {
   const lines = ruleLines(from.n, from.t);
   const off = offOf({ db: !!db }, "why-create-submit");
   return frame("Change devices", { oninput: lines.update, onsubmit: moveSubmit(from) },
-    ...moveParts(from, names(from), [counts(from.n, from.t), lines.rule]),
+    ...moveParts(from, names(from), [counts(from.n, from.t, "margin-text"), lines.rule,
+      lines.margin, lines.ack]),
     el("div", { class: "callout" }, "The new wallet gets a new address. Devices that you leave "
       + "out can still see this old wallet's payments, but not the new wallet's."),
     el("div", { class: "dialog-actions" },

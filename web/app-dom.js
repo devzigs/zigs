@@ -149,8 +149,7 @@ export const unreadChip = (u) => u ? el("span", { class: "side-unread", role: "i
 export function nameField(id, to = "") {
   let saved = ""; try { saved = localStorage.getItem("zf-name") || ""; } catch {}
   const save = (ev) => { try { localStorage.setItem("zf-name", ev.target.value.trim()); } catch {} };
-  const hint = to ? "Any nickname · shown to " + to : "For example: Ana's phone. The other "
-    + "devices show it.";
+  const hint = to ? "Any nickname · shown to " + to : "For example: Ana's phone";
   return el("label", { class: "field" }, el("span", {}, to ? "Your name" : "This device's label"),
     el("input", { class: "input", id, value: saved, maxlength: "40", autocomplete: "nickname",
       placeholder: hint, oninput: save }));

@@ -1775,7 +1775,9 @@ const sealed = (gid, rel, seat, fields, key, names = ["by", "sig"]) =>
         globalThis.document = recorderDoc;
         const [scrim] = t.layers();
         globalThis.document = realDocument;
-        scrim.on.click();
+        scrim.on.click({ detail: 2 });
+        assert.equal(t.ui.send, true, "a second click on the scrim closes nothing");
+        scrim.on.click({ detail: 1 });
         assert.deepEqual([t.ui.send, t.ui.sendReview], [false, null], "the scrim drops it");
         Object.assign(t.ui, { send: true, sendReview: { prep, note: "x" } });
         for (const press of documentOn.keydown) press({ key: "Escape" });
