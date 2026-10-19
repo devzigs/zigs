@@ -1,7 +1,9 @@
 // Networks, chain sync, the balance cache, memo reading and the 60 s refresh.
 import { finite } from "./util.js";
 import { log, state } from "./app-state.js";
-import { fmtZec, J, readLocal, S, short, withTimeout, writeLocal } from "./app-kit.js";
+import {
+  fmtZec, J, readLocal, release, S, short, track, withTimeout, writeLocal,
+} from "./app-kit.js";
 import { Z } from "./app-engine.js";
 import { gkeys, idb, loadSnapshot, saveSnapshot, snapId } from "./app-keystore.js";
 import { localSeats } from "./app-seats.js";
@@ -60,12 +62,10 @@ function saveBal(gid, bal) {
   try { balSealed[gid] = Z.secretSeal(gkeys[gid], "bal\n" + gid, S(balCache[gid])); localStorage.setItem("zf-bal", JSON.stringify(balSealed)); } catch {}
 }
 
-// The wallet object of a chain may be freed, unless the engine may still use it (a stalled sync).
-const freeable = (c) => !!c.cw && c.cw !== c.stalled;
 export function dropChain() {
   const c = chain;
   chain = null;
-  if (c && !c.syncing && freeable(c)) c.cw.free();
+  if (c && !c.syncing) release(c.cw);
 }
 
 export function ensureChain() {
@@ -120,11 +120,11 @@ async function connect(c) {
   if (c.cw && c.url === url) return;
   const next = await restored(c, url);
   // The new object first: when it cannot be made, the chain keeps its old one, stalled or not.
-  const cw = next || new Z.ChainWallet(c.ufvk, c.birthday, url);
-  if (freeable(c)) c.cw.free();
+  const cw = next || new Z.ChainWallet(c.ufvk, c.birthday, url), old = c.cw;
   c.stalled = null;
   c.cw = cw;
   c.url = url;
+  release(old);
   log("using " + new URL(url).host + (next ? ", continuing from saved state" : ""));
   if (next && !c.bal) {
     c.bal = J(c.cw.balance()); c.received = J(c.cw.received()); c.sent = new Set(J(c.cw.sent()));
@@ -164,9 +164,11 @@ export async function runSync(c) {
   catch (e) { await syncFailed(c, e); }
   finally {
     c.syncing = false;
-    if (!current(c) && freeable(c)) c.cw.free();
+    if (!current(c)) release(c.cw);
     render();
-    if (c.again) { c.again = false; runSync(c); }
+    const again = c.again && current(c);   // not for a wallet that closed meanwhile
+    c.again = false;
+    if (again) runSync(c);
   }
 }
 // A sync now, or one more after the sync that runs: a proposal stalled during it, and that sync can
@@ -180,6 +182,14 @@ async function syncFailed(c, e) {
   log("sync failed: " + c.error);
   if (e.stalled) dropStalled(c);
   else if (Z.isDeepReorg(c.error)) await rescanFromBirthday(c);
+  else if (c.url && c.error.startsWith("lightwalletd")) serverFailed(c);
+}
+// pickServer asks only GetLatestBlock, so a server that answers it but fails GetTreeState or
+// GetBlockRange would get each sync (ZEC-17). It goes last, and one more sync starts at once while
+// a server that did not fail remains, so two failing servers make no loop.
+function serverFailed(c) {
+  failedAt.set(c.url, Date.now());
+  if (preferredServers(c.net).some((u) => !failedNow(u))) c.again = true;
 }
 
 // A sync that gets no new blocks for SYNC_STALL_MS stopped: the stream of the server stalled
@@ -197,15 +207,15 @@ async function syncOrStall(c, cw) {
     wait();
     if (c.cw === cw && c.stalled !== cw) { c.prog = J(p); render(); }
   };
-  try { return await Promise.race([cw.sync(progress), stalled]); }
+  try { return await Promise.race([track(cw, cw.sync(progress)), stalled]); }
   finally { clearTimeout(timer); }
 }
-// The engine may still use the stalled wallet object, so it is never freed. It stays the wallet of
-// the chain until the next sync, so the balance stays. A proposal on it still asks the server that
-// stalled, so it can wait until spendOrStall stops it after 60 s (S9). The next sync starts a new
-// object from its state (with the batches before the stall) on the next server.
-// ponytail: each stall leaves one object, which wasm-bindgen frees when it is collected after its
-// stream ends; nothing stops that stream.
+// The engine may still use the stalled wallet object, so release frees it only after its call. It
+// stays the wallet of the chain until the next sync, so the balance stays. A proposal on it still
+// asks the server that stalled, so it can wait until spendOrStall stops it after 60 s (S9). The
+// next sync starts a new object from its state (with the batches before the stall) on the next
+// server.
+// ponytail: nothing stops the stream of a stalled sync, so its object stays until that stream ends.
 export function dropStalled(c) {
   if (c.url) failedAt.set(c.url, Date.now());
   c.stalled = c.cw;
@@ -219,7 +229,9 @@ async function rescanFromBirthday(c) {
     + "state of this wallet. Refresh to scan it again from the start.";
   try { await idb("readwrite", (st) => st.delete(snapId(c))); }
   catch (e) { log("could not delete wallet state: " + (e.message || e)); }
-  if (c.cw) { c.cw.free(); c.cw = null; }
+  const old = c.cw;
+  c.cw = null;
+  release(old);
   c.bal = null; c.received = []; c.sent = new Set(); c.prog = null;
 }
 

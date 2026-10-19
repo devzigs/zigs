@@ -34,7 +34,7 @@ const READS = new RegExp(
     "getNonInclusionProofs|getEncryptedUtxosByTags)|" +
     "OPTIONS /v1/zolana/(prove|getShieldedTransactionsByTags) POST|" +
     "rpc (getVersion|getAccountInfo|getBalance|getSlot)|" +
-    "lwd (GetLatestBlock|GetLightdInfo|GetTaddressBalance))$",
+    "lwd (GetLatestBlock|GetLightdInfo|GetTreeState|GetTaddressBalance))$",
 );
 const stub = { calls: [], values: [], faults: new Set(), ports: [] };
 const servers = [];
@@ -106,7 +106,38 @@ function rpc(req, res, body) {
 
 function lightdInfo() {
   if (has("lightd-status")) return [null, "grpc-status: 12\r\ngrpc-message: unimplemented\r\n"];
-  return [Buffer.concat([field(4, has("chain-main") ? "main" : "test"), field(6, "77190ad9")])];
+  const chain = field(4, has("chain-main") ? "main" : "test");
+  return [Buffer.concat([chain, field(6, has("branch-id") ? "77190ad8" : "77190ad9")])];
+}
+
+/** The height of a GetTreeState request: the varint after the frame header and the tag 0x08. */
+function heightAsked(body) {
+  let n = 0n;
+  for (const [i, byte] of [...Buffer.from(body, "latin1").subarray(6)].entries()) {
+    n |= BigInt(byte & 0x7f) << BigInt(7 * i);
+    if (byte < 0x80) break;
+  }
+  return n;
+}
+
+// Each fault changes the TreeState of the /lwd route only, so the two servers differ.
+const TREE_FAULTS = {
+  "tree-network": () => ({ 1: "main" }),
+  "tree-height": (h) => ({ 2: h + 1n }),
+  "tree-hash": () => ({ 3: "ab".repeat(32) }),
+  "tree-hash-short": () => ({ 3: "0".repeat(63) }),
+  "tree-orchard": () => ({ 6: "01bb01" }),
+  "tree-ironwood-empty": () => ({ 7: "" }),
+};
+
+function treeState(base, body) {
+  const h = heightAsked(body);
+  const state = { 1: "test", 2: h, 3: "0".repeat(64), 4: 1_792_372_260, 5: "01aa00" };
+  Object.assign(state, { 6: "01bb00", 7: "01cc00" });
+  for (const [fault, change] of Object.entries(TREE_FAULTS)) {
+    if (base === "lwd" && has(fault)) Object.assign(state, change(h));
+  }
+  return [Buffer.concat(Object.entries(state).map(([no, value]) => field(Number(no), value)))];
 }
 
 // The /lwd route is 5 blocks ahead of the fallback server: the largest gap that passes.
@@ -115,6 +146,7 @@ const zatOf = (body) => (!body.includes(TADDR) ? 0 : has("taz-low") ? 5_000_000 
 const LWD_REPLIES = {
   GetLatestBlock: (base) => [field(1, tipOf(base))],
   GetLightdInfo: lightdInfo,
+  GetTreeState: treeState,
   GetTaddressBalance: (base, body) => [field(1, zatOf(body))],
 };
 
@@ -380,7 +412,8 @@ const appWords = (changes = {}) => ({
 const cors = () => [0, 1].map((i) => `${host(i)} Helius CORS`);
 const allWords = (changes = {}) => ({
   ...appWords(),
-  ...marked("PASS", ["fallback lwd", "lwd heights", "tree 0", "prover", "Valar faucet"]),
+  ...marked("PASS", ["fallback lwd", "lwd heights", "lwd tree state", "tree 0", "prover"]),
+  ...marked("PASS", ["Valar faucet"]),
   ...marked("PASS", ["Solana faucet", `SOL fee ${short(FEE)}`, `TAZ ${short(TADDR)}`]),
   ...marked("PASS", ["indexer", "indexer canary", ...cors()]),
   ...marked("FAIL", ["approvals program", "pool program"]),
@@ -408,6 +441,8 @@ test("a full run fails only the pinned hashes, sends only reads and prints no se
   const elf = `Devnet runs ${ELF_SHA.slice(0, 8)}…, deployed at slot 0, not the version 5 ELF`;
   assert.ok(out.includes(`FAIL  approvals program: ${elf}`), out);
   assert.match(out, /PASS {2}lwd heights: within 5 blocks/);
+  const tree = "height 4499990, hash 000000…0000, tree lengths: sapling 6, orchard 6, ironwood 6";
+  assert.ok(out.includes(`PASS  lwd tree state: ${tree}\n`), out);
   assert.match(out, /PASS {2}TAZ tm1111…1111: 0\.2 TAZ, floor 0\.1/);
   assert.match(out, /PASS {2}SOL fee Fee111…1111: 0\.005 SOL, floor 0\.003/);
   assert.deepEqual(stub.calls.filter((call) => !READS.test(call)), []);
@@ -521,12 +556,35 @@ test("dead servers give a FAIL, and one light-wallet server alone is a SKIP", { 
     const app = [`${host(0)} gate`, `${host(1)} gate`, `${host(0)} pages`, `${host(0)} /lwd`];
     const chain = [`${host(0)} group socket`, "fallback lwd", "tree 0", "prover", "Solana faucet"];
     chain.push("indexer");
-    const changes = { ...marked("FAIL", [...app, ...chain]), "lwd heights": "SKIP" };
+    const changes = { ...marked("FAIL", [...app, ...chain]) };
+    Object.assign(changes, marked("SKIP", ["lwd heights", "lwd tree state"]));
     assert.deepEqual(words(out), allWords(changes));
     assert.match(out, /group socket: no init message within 0\.5 s/);
     assert.match(out, /fallback lwd: GetLightdInfo failed with gRPC status 12: unimplemented/);
     assert.match(out, /tree 0: tree 0 has 40080 bytes, not the layout/);
     assert.match(out, /indexer: CLIENT_REQUEST \(getNonInclusionProofs\)/);
+  });
+
+// The fallback server comes first in the tree state, then the /lwd route of host 0.
+const STATE = "lwd tree state";
+const TREE_CASES = [
+  ["tree-hash", STATE, /the hash at height 4499990 differs: \S+\/chain 000000…0000, \S+/],
+  ["tree-orchard", STATE, /the orchard at height 4499990 differs: \S+ 01bb00…bb00, /],
+  ["tree-ironwood-empty", STATE, /127\.0\.0\.1:\d+\/lwd gives an empty ironwood tree/],
+  ["tree-network", STATE, /\/lwd gives the network "main", not test/],
+  ["tree-height", STATE, /\/lwd gives the height 4499991, not 4499990/],
+  ["tree-hash-short", STATE, /\/lwd gives a hash that is not 64 hex characters/],
+  ["branch-id", "fallback lwd", /names the branch id "77190ad8", not 77190ad9 of NU7/],
+];
+
+test("the tree state fails when the servers differ or an answer is wrong; so does the branch id",
+  async () => {
+    for (const [fault, check, reason] of TREE_CASES) {
+      const { code, out } = await run(["--config", CONFIGS.good], [fault]);
+      assert.equal(code, 1, out);
+      assert.deepEqual(words(out), allWords(marked("FAIL", [check])), `${fault}\n${out}`);
+      assert.match(out, new RegExp(`FAIL {2}${check}: .*${reason.source}`), out);
+    }
   });
 
 test("a wrong tree owner and a refused Helius key of the app are a FAIL", async () => {
