@@ -2,7 +2,8 @@
 import { finite } from "./util.js";
 import { trustShape, validShape } from "./signed.js";
 import {
-  emptyRaw, inbox, inboxSubs, log, raw, rawInbox, rawReady, readySubs, showBanner, state, ui,
+  emptyRaw, inbox, inboxSubs, log, raw, rawInbox, rawReady, readySubs, resetCreate, showBanner,
+  state, ui,
 } from "./app-state.js";
 import { J, oldest, S, saveMerged } from "./app-kit.js";
 import { Z } from "./app-engine.js";
@@ -109,7 +110,7 @@ export async function boot() {
     showBanner("bad", "The group server is not available. Reload the page, or try again later.");
     return;
   }
-  if (!me) showBanner("bad", "This browser cannot tell who you are, so you cannot take a seat.");
+  if (!me) showBanner("bad", "This browser cannot tell who you are, so you cannot join.");
   if (canWrite === false) showBanner("bad", "This page is read-only here. You cannot take part.");
   if (!storageOk) showBanner("bad", "This browser does not let the page save your key share. Keep this tab open, and use Back up.");
   // The server keeps each wallet apart, so this browser opens the wallets it has keys for.
@@ -206,10 +207,13 @@ export function openGroup(gid) {
   // A form filled from a request belongs to the wallet it was made for, and a review to the
   // wallet that built it.
   if (ui.sendFor && ui.sendFor !== gid) { ui.send = false; ui.pay = null; ui.note = ""; }
+  // An open wallet hides the create dialog: it must not come back later at an old step.
+  if (gid) { ui.create = false; resetCreate(); }
   dropReview();
   ui.after = null;   // the notes of an expired payment of the wallet that was open
   ui.joinBad = "";   // the error of a pasted invite link belongs to the wallet list
   ui.backup = null;   // the dialog names a seat of the wallet that was open
+  ui.chainFilter = "all";   // the choice of the Activity list belongs to one wallet
   dropChain();
   Object.assign(state, {
     gid, cid: null, contact: null, g: null, seats: {}, seatsLoaded: false, seatsSettled: false,

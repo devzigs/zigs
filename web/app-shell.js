@@ -1,5 +1,7 @@
 // Side navigation, lock screen, wallet list and create dialog.
-import { busy, ready, state, ui } from "./app-state.js";
+import {
+  busy, clearBadBanner, openCreate, ready, resetCreate, state, ui,
+} from "./app-state.js";
 import { initials } from "./app-kit.js";
 import { offReason } from "./util.js";
 import { engineSettled, Z } from "./app-engine.js";
@@ -15,7 +17,9 @@ import {
 } from "./app-dom.js";
 import { contactName, contactOf, joinChat, joinLinks, unreadIn } from "./app-messages.js";
 import { createGroup } from "./app-dkg.js";
-import { newWallet, planSolana, SOL_DISCLOSURE, solPending, solServed } from "./app-sol.js";
+import {
+  newWallet, planSolana, SOL_DISCLOSURE, solOn, solPending, solServed,
+} from "./app-sol.js";
 import { personal } from "./app-account.js";
 import { restore } from "./app-backups.js";
 import { contactItem, contactsCard, openContactDialog, personalCard } from "./app-account-view.js";
@@ -66,7 +70,7 @@ function lockPage(on) {
 const SECTION_ICONS = {
   overview: "home", approvals: "approvals", activity: "activity", messages: "chat",
   members: "devices", recovery: "key",
-  details: "settings", solana: "sol",
+  settings: "settings", solana: "sol",
 };
 
 /** The side list of the wallet sections ([id, label, count] each); a pick focuses the section. */
@@ -173,14 +177,15 @@ export function forgetBox() {
   const cancel = () => { ui.forget = false; render(); };
   return el("div", { class: "callout bad" },
     el("p", {}, "Without the passkey, the key shares in this browser cannot be opened. Delete "
-      + "them, then restore each seat from its backup file. A seat with no backup is lost, but "
-      + "the wallet still works while enough other signers remain. Direct chats in this browser "
+      + "them, then restore each device from its backup file. A device with no backup is lost, "
+      + "but the wallet still works while enough other devices remain. Direct chats in this "
+      + "browser "
       + "are deleted too. They are not in backup files, and a chat with two people cannot be "
       + "joined again. The personal account is deleted as well. Only its backup file brings it "
       + "back, and without one its money is lost."),
     el("div", { class: "dialog-actions" },
       el("button", { class: "btn", type: "button", onclick: cancel }, "Cancel"),
-      el("button", { class: "btn", type: "button", onclick: forgetVault },
+      el("button", { class: "btn danger", type: "button", onclick: forgetVault },
         "Delete the locked keys")));
 }
 
@@ -190,12 +195,12 @@ export function lockView() {
     ? "The locked keys in this browser are damaged and cannot be opened."
     : "The key shares in this browser are encrypted with your passkey. "
       + "Unlock with Face ID, Touch ID or your security key.";
-  return el("div", { class: "card empty" }, el("h3", {}, "Zigs is locked"),
-    el("p", { class: "small" }, text),
+  return el("div", { class: "card empty lock-card" }, icon("lock"),
+    el("h1", {}, "Zigs is locked"), el("p", { class: "small" }, text),
     lockedVault.damaged ? null
       : el("button", {
         class: "btn primary", type: "button", disabled: !engineSettled, onclick: act(unlockVault),
-      }, "Unlock"),
+      }, icon("key"), "Unlock"),
     ui.forget ? forgetBox()
       : el("button", { class: "btn ghost sm", type: "button", onclick: ask }, "Lost the passkey?"));
 }
@@ -212,8 +217,9 @@ function lockButton() {
 }
 
 export function loadingView() {
-  return el("div", { class: "card empty" }, el("span", { class: "dot busy" }),
-    el("h3", {}, Z ? "Connecting to the group server" : "Loading the crypto engine"),
+  return el("div", { class: "card empty launch-card" }, icon("security"),
+    el("span", { class: "dot busy" }),
+    el("h1", {}, Z ? "Connecting to the group server" : "Loading the crypto engine"),
     el("p", { class: "small" }, "Your wallets appear in a moment."));
 }
 
@@ -305,7 +311,7 @@ function chatRow(cid) {
 function lobbyActions(off, restoreBtn) {
   const newBtn = el("button", {
     class: "btn primary", type: "button", ...off.attrs,
-    onclick: () => { ui.create = true; render(); },
+    onclick: () => { openCreate(); render(); },
   }, "New wallet");
   if (state.groups.length) return [lockButton(), restoreBtn, newBtn, off.note];
   return Object.keys(secrets).length || vault ? [lockButton()] : [];
@@ -325,8 +331,8 @@ function walletRow(g) {
   },
   el("span", { class: "av lg" }, initials(g.name)),
   el("span", { class: "ri-main" }, el("span", { class: "ri-title" }, g.name),
-    el("span", { class: "ri-sub" }, netOf(g).label + " · " + g.t + " of " + g.n
-      + " signers must approve" + (seats ? "" : " · view only"))),
+    el("span", { class: "ri-sub" }, netOf(g).label + " · Any " + g.t + " of " + g.n
+      + " devices" + (seats ? "" : " · view only"))),
   el("span", { class: "ri-end" }, status,
     n ? el("span", { class: "badge warn" }, n + " to approve") : null, unread),
   el("span", { class: "chev" }, "›"));
@@ -341,7 +347,7 @@ function welcome(off, restoreLink) {
   ];
   const create = el("button", {
     class: "btn primary lg", type: "button", ...off.attrs,
-    onclick: () => { ui.create = true; render(); },
+    onclick: () => { openCreate(); render(); },
   }, "Set up a wallet");
   const join = el("button", {
     class: "btn lg", type: "button", "aria-expanded": ui.joinOpen ? "true" : "false",
@@ -409,10 +415,11 @@ function joinTyped(ev) {
   document.getElementById("join-error")?.remove();
 }
 
+
 // A new testnet wallet can get its Solana Devnet part in the same setup, on a server that serves
 // Solana. The box is on by default: the demo shows one setup. `ui.sol` keeps a "no" through a
 // redraw, and the submit takes the choice only from a box that the person saw.
-const solChosen = (from, network, fd) => !from && network === "testnet" && fd.get("sol") === "on";
+const solChosen = (from, network, sol) => !from && network === "testnet" && sol === true;
 function solChoice() {
   if (ui.net !== "testnet" || !solServed()) return null;
   return el("label", { class: "ack" },
@@ -422,71 +429,240 @@ function solChoice() {
       el("span", { class: "small muted" }, SOL_DISCLOSURE)));
 }
 
-// The parts of the dialog. A new wallet shows them in numbered sections; a change of signers keeps
-// its steps first. The ids are the ones that the tests and the harness fill.
+// The parts of the dialog. The ids are the ones that the tests and the harness fill.
 const names = (from) => [nameField("my-name"),
   el("label", { class: "field" }, el("span", {}, from ? "New wallet name" : "Wallet name"),
     el("input", { class: "input", id: "g-name", name: "name", maxlength: "40",
-      placeholder: from ? from.name : "Team treasury", autocomplete: "off",
-      "data-first-focus": !from }))];
+      placeholder: from ? from.name : "Team treasury", autocomplete: "off" }))];
 // `note`: the id of the line that says what the numbers mean, for a screen reader.
 const number = (label, id, name, value, note) => el("label", { class: "field" },
   el("span", {}, label), el("input", { class: "input", id, name, type: "number", min: "2",
     max: "7", value: String(value), "aria-describedby": note ?? null }));
 const counts = (n0, t0, note) => el("div", { class: "two" },
-  number("Signers", "g-n", "n", n0, note), number("Approvals needed", "g-t", "t", t0, note));
+  number("Devices", "g-n", "n", n0, note), number("Approvals needed", "g-t", "t", t0, note));
 const moveParts = (from, nameParts, ruleParts) => [el("ol", { class: "small muted move-steps" },
-  el("li", {}, "You create a new wallet with the signers and rule you want."),
-  el("li", {}, "The new signers join it with an invite link."),
-  el("li", {}, "This wallet sends all its funds to the new one. Like any payment, this needs "
-    + from.t + " approvals.")),
+  el("li", {}, "You create a new wallet with the devices and rule you want."),
+  el("li", {}, "The new devices join it with an invite link."),
+  el("li", {}, moveFundsText(from))),
 ...nameParts, ...ruleParts];
-const guideStep = (title, ...kids) => el("fieldset", { class: "guide-step" },
-  el("legend", {}, title), ...kids);
-// With every signer needed, one lost device stops the wallet: the dialog says so.
-export const marginText = (t, n) => (t === n ? "Each payment needs every signer. When one "
-  + "device is lost, the wallet cannot pay until its seat comes back from its backup file." : "");
+// The funds that move: Change devices moves the Zcash funds only, so a wallet with a Solana part
+// is told to check that part on its own.
+const moveFundsText = (from) => "This wallet sends all its Zcash funds to the new one. Like any "
+  + "payment, this needs " + from.t + " approvals." + (solOn() ? " If this wallet has a Solana "
+  + "part, it does not move this way: check it in its Solana section." : "");
+// What a rule means when devices are lost: how many can be missing, and how many can spend. With
+// every device needed, one lost device stops the wallet.
+export const marginText = (t, n) => (t === n ? "Each payment needs every device. When one "
+  + "device is lost, the wallet cannot pay until its key share comes back from its backup file."
+  : lostText(n - t) + " Any " + t + " devices together can spend the funds, so keep each one "
+    + "safe.");
+const lostText = (m) => (m === 1 ? "1 device" : m + " devices")
+  + " can be lost or offline, and the wallet still pays.";
+const BAD_RULE = "Choose 2 to 7 devices, and at least 2 approvals but no more than the devices.";
+const ACK_FIRST = "Confirm that one lost device stops all payments, or use the recommended 2 of 3.";
+const fieldValue = (id) => document.getElementById(id)?.value ?? "";
+// The numbers of a rule that a wallet can have: 2.5 devices is no rule.
+const ruleOk = (n, t) => Number.isInteger(n) && Number.isInteger(t) && n >= 2 && n <= 7
+  && t >= 2 && t <= n;
 
-// With `from`, the dialog creates the wallet that replaces `from`, with new signers or a new rule.
-export function createDialog(from = null) {
-  const close = () => { ui.create = false; ui.move = false; ui.sol = undefined; render(); };
-  const n0 = from ? from.n : 3, t0 = from ? from.t : 2;
+function checkRule(n, t) {
+  if (!Number.isInteger(n) || n < 2 || n > 7) {
+    throw new Error("A wallet needs between 2 and 7 devices.");
+  }
+  if (!Number.isInteger(t) || t < 2 || t > n) {
+    throw new Error("Approvals needed must be at least 2 and at most the number of devices.");
+  }
+}
+
+// The line of the rule, the line of t = n and its box. `update` redraws them from the fields.
+function ruleLines(n0, t0) {
   const rule = el("p", { class: "rule", id: "rule-text" }, ruleText(t0, n0));
   const margin = el("p", { class: "small muted", id: "margin-text", role: "status" },
     marginText(t0, n0));
-  const off = offOf({ db: !!db }, "why-create-submit");
   const update = () => {
-    const n = Number(document.getElementById("g-n")?.value), t = Number(document.getElementById("g-t")?.value);
-    const ok = n >= 2 && n <= 7 && t >= 2 && t <= n;
-    rule.textContent = ok ? ruleText(t, n) : "Choose 2 to 7 signers, and at least 2 approvals but no more than the signers.";
+    const n = Number(fieldValue("g-n")), t = Number(fieldValue("g-t"));
+    const ok = ruleOk(n, t);
+    rule.textContent = ok ? ruleText(t, n) : BAD_RULE;
     rule.classList.toggle("bad", !ok);
     margin.textContent = ok ? marginText(t, n) : "";
+    ack.hidden = !(ok && t === n);
   };
-  const f = el("form", { class: "dialog", role: "dialog", "aria-modal": "true", "aria-labelledby": "create-title", oninput: update, onsubmit: act(async (ev) => {
-    const fd = new FormData(ev.target); const n = Number(fd.get("n")), t = Number(fd.get("t"));
-    if (!(n >= 2 && n <= 7)) throw new Error("A wallet needs between 2 and 7 signers.");
-    if (t < 2 || t > n) throw new Error("Approvals needed must be at least 2 and at most the number of signers.");
-    // A replacement wallet stays on its predecessor's network: funds cannot move between networks.
-    const network = from ? from.network || "testnet" : ui.net;
-    if (network === "mainnet" && !ui.ack) throw new Error("Confirm that you understand Zigs is not audited before you create a mainnet wallet.");
-    const withSol = solChosen(from, network, fd);
-    ui.create = false; ui.move = false; ui.net = "testnet"; ui.ack = false; ui.sol = undefined;
-    const name = String(fd.get("name") || "").trim() || (from ? from.name : "Treasury");
-    const gid = await createGroup(name, n, t, from && from.id, network);
-    if (withSol) await planSolana(gid);
-  }) },
-    el("div", { class: "card-head" }, el("h2", { id: "create-title" }, from ? "Change signers" : "New shared wallet"), el("button", { class: "icon-btn", type: "button", "aria-label": "Close", onclick: close }, "×")),
-    ...(from ? moveParts(from, names(from), [counts(n0, t0), rule])
-      : [guideStep("1. Approval rule", counts(n0, t0, "margin-text"), rule, margin),
-        guideStep("2. Names", ...names(from)),
-        guideStep("3. Networks", networkPick(), solChoice())]),
-    el("div", { class: "callout" }, from
-      ? "The new wallet gets a new address. Signers you leave out can still see this old wallet's payments, but not the new wallet's."
-      : "You take seat 1. Then share the invite link with your signers. When every seat is taken, your devices create the wallet key together."),
-    el("div", { class: "dialog-actions" },
-      el("button", { class: "btn", type: "button", onclick: close }, "Cancel"),
-      el("button", { class: "btn primary", type: "submit", ...off.attrs },
-        from ? "Create new wallet" : "Create wallet"),
-      off.note));
-  return f;
+  const ack = marginAck(t0 !== n0, update);
+  return { rule, margin, ack, update };
 }
+
+// A wallet without a margin needs a tick. The reset puts the recommended rule back.
+function marginAck(hidden, update) {
+  const reset = () => {
+    document.getElementById("g-n").value = "3";
+    document.getElementById("g-t").value = "2";
+    document.getElementById("g-margin-ack").checked = false;
+    document.getElementById("create-error")?.remove();
+    ui.marginAck = false; ui.createError = null;
+    update();
+    clearBadBanner(ACK_FIRST);
+    // The new-wallet steps have a step heading; Change devices has the number fields only.
+    (document.getElementById("create-step-1") ?? document.getElementById("g-n"))?.focus();
+  };
+  return el("div", { class: "margin-ack", hidden },
+    el("label", { class: "ack" },
+      el("input", { type: "checkbox", id: "g-margin-ack", checked: ui.marginAck === true,
+        onchange: (ev) => { ui.marginAck = ev.target.checked; } }),
+      el("span", { class: "small" }, "I understand that one lost device stops all payments "
+        + "until I restore its backup file.")),
+    el("button", { class: "btn sm", type: "button", onclick: reset }, "Use recommended 2 of 3"));
+}
+
+export function endCreate() { ui.create = false; ui.move = false; resetCreate(); }
+const closeCreate = () => { endCreate(); render(); };
+
+// A replacement wallet stays on its predecessor's network: funds cannot move between networks.
+async function submitWallet({ name, n, t, sol }, from) {
+  checkRule(n, t);
+  const network = from ? from.network || "testnet" : ui.net;
+  if (network === "mainnet" && !ui.ack) throw new Error("Confirm that you understand Zigs is "
+    + "not audited before you create a mainnet wallet.");
+  const withSol = solChosen(from, network, sol);
+  endCreate(); ui.net = "testnet"; ui.ack = false;
+  const gid = await createGroup(name, n, t, from && from.id, network);
+  if (withSol) await planSolana(gid);
+}
+const MOVED_ALREADY = "This wallet moved already. Open the wallet that it moved to.";
+// The first submit closes the dialog before it waits: a second submit of the same form is stale
+// and does nothing, not even through act. A wallet that moved already moves no more.
+function moveSubmit(from) {
+  const send = act(async (ev) => {
+    if (state.g?.movedTo) throw new Error(MOVED_ALREADY);
+    const fd = new FormData(ev.target), n = Number(fd.get("n")), t = Number(fd.get("t"));
+    if (t === n && !ui.marginAck) throw new Error(ACK_FIRST);
+    await submitWallet({ name: String(fd.get("name") || "").trim() || from.name, n, t,
+      sol: fd.get("sol") === "on" }, from);
+  });
+  return (ev) => (ui.move ? send(ev) : ev.preventDefault());
+}
+
+// The steps of a new wallet: what it is, its rule, its names, the review. Enter submits the form
+// at every step. Each Next keeps the values of its step in `ui.createDraft`; the review shows
+// them, and the last submit creates the wallet from them.
+const STEPS = ["Your wallet, protected together", "Choose your protection", "Name your wallet",
+  "Review your wallet"];
+const NEXT = ["Set up my wallet", "Next", "Review wallet", "Create wallet"];
+function takeRule() {
+  const n = Number(fieldValue("g-n")), t = Number(fieldValue("g-t"));
+  checkRule(n, t);
+  if (t === n && !ui.marginAck) throw new Error(ACK_FIRST);
+  ui.createDraft = { ...ui.createDraft, n, t };
+}
+function takeNames() {
+  const box = document.getElementById("g-sol");
+  ui.createDraft = { ...ui.createDraft, name: fieldValue("g-name").trim(),
+    label: fieldValue("my-name").trim(), sol: !!box && box.checked };
+}
+const TAKE = [() => {}, takeRule, takeNames];
+let stepAt = 0;
+const goStep = (i) => {
+  ui.createStep = i; ui.createError = null; stepAt = Date.now();
+  focusAfter("create-step-" + i, true); render();
+};
+// The error of a step shows in the dialog, next to its buttons, not in the page banner.
+function nextStep(ev) {
+  ev.preventDefault();
+  try { TAKE[ui.createStep](); } catch (e) { ui.createError = e.message; render(); return; }
+  goStep(ui.createStep + 1);
+}
+// The seat takes its label from what this browser keeps: the label that the review showed, also
+// when another tab typed another one since.
+async function createFromDraft() {
+  const d = ui.createDraft;
+  if (d.t === d.n && !ui.marginAck) throw new Error(ACK_FIRST);
+  try { localStorage.setItem("zf-name", d.label ?? ""); } catch { /* no storage: as typed */ }
+  await submitWallet({ ...d, name: d.name || "Treasury" }, null);
+}
+const stepSubmit = (ev) => (ui.createStep < STEPS.length - 1 ? nextStep(ev)
+  : act(createFromDraft)(ev));
+// The second click of a double click lands on the button of the next step, which can be Create
+// wallet. A phone sends a double tap as two clicks of detail 1, so a click soon after a step
+// change does not count either. A click of a script or the Enter key has detail 0.
+const freshClick = (ev) => !(ev.detail > 1 || (ev.detail === 1 && Date.now() - stepAt < 400));
+const firstClick = (ev) => { if (!freshClick(ev)) ev.preventDefault(); };
+const backClick = (s) => (ev) => { if (freshClick(ev)) goStep(s - 1); };
+
+const step = (i, ...kids) => el("section", { class: "guide-step", hidden: ui.createStep !== i,
+  "aria-labelledby": "create-step-" + i },
+el("h3", { id: "create-step-" + i, tabindex: "-1", "data-key": "create-step-" + i }, STEPS[i]),
+...kids);
+const introStep = () => step(0,
+  el("p", {}, "Each device of the wallet creates its own key share. No device ever holds the "
+    + "whole key."),
+  el("p", {}, "Every device joins once, during setup. After that, each payment needs the "
+    + "approvals of your rule, for example any 2 of 3 devices."));
+const ruleStep = (lines) => step(1,
+  el("p", {}, "Recommended: any 2 of 3 devices. When one device is lost, the other two can still "
+    + "approve payments."),
+  lines.rule,
+  el("details", {}, el("summary", {}, "Advanced approval rule"), counts(3, 2, "margin-text")),
+  lines.margin, lines.ack,
+  el("p", { class: "small muted" }, "To change the rule later, use Change devices. It makes a new "
+    + "wallet, and a payment with the approvals of this rule moves the funds to it."));
+const namesStep = () => step(2, ...names(null), networkPick(), solChoice());
+function reviewStep() {
+  const d = ui.createDraft ?? { n: 3, t: 2 };
+  const row = (k, v) => [el("dt", {}, k), el("dd", {}, v)];
+  const full = d.t === d.n;
+  return step(3,
+    el("dl", { class: "kv" }, row("Wallet name", d.name || "Treasury"),
+      row("This device's label", d.label || "None. The other devices show Device 1."),
+      row("Approval rule", ruleText(d.t, d.n)),
+      full ? null : row("If devices are lost", marginText(d.t, d.n)),
+      row("Networks", "Zcash " + curNetLabel() + (d.sol ? " and Solana Devnet" : ""))),
+    full ? el("p", { class: "callout warn" }, marginText(d.t, d.n)) : null,
+    el("div", { class: "callout" }, "This device joins as device 1. Then share the invite link, "
+      + "so that the other devices can join. When every device has joined, they create the "
+      + "wallet key together."));
+}
+const curNetLabel = () => (ui.net === "mainnet" ? "mainnet" : "testnet");
+// Above the buttons, not in their bar: on a phone the bar stays at the bottom of the sheet.
+const stepError = () => (ui.createError ? el("p", { class: "callout bad", role: "alert",
+  id: "create-error" }, ui.createError) : null);
+function stepActions() {
+  const s = ui.createStep, last = s === STEPS.length - 1;
+  const off = offOf({ db: !!db }, "why-create-submit");
+  return el("div", { class: "dialog-actions" },
+    el("button", { class: "btn", type: "button", onclick: closeCreate }, "Cancel"),
+    s > 0 ? el("button", { class: "btn", type: "button", onclick: backClick(s) }, "Back") : null,
+    el("button", { class: "btn primary", type: "submit", "data-first-focus": s === 0,
+      onclick: firstClick,
+      ...(last ? off.attrs : {}) }, NEXT[s]),
+    last ? off.note : null);
+}
+
+const frame = (title, attrs, ...kids) => el("form", { class: "dialog", role: "dialog",
+  "aria-modal": "true", "aria-labelledby": "create-title", novalidate: true, ...attrs },
+el("div", { class: "card-head" }, el("h2", { id: "create-title" }, title),
+  el("button", { class: "icon-btn", type: "button", "aria-label": "Close", onclick: closeCreate },
+    "×")),
+...kids);
+// A second Enter can reach the form of a step that the page did not draw again yet: a submit
+// counts only for the step that its form shows.
+function newDialog() {
+  const lines = ruleLines(3, 2), at = ui.createStep;
+  const submit = (ev) => (at === ui.createStep ? stepSubmit(ev) : ev.preventDefault());
+  return frame("New shared wallet", { oninput: lines.update, onsubmit: submit },
+    introStep(), ruleStep(lines), namesStep(), reviewStep(), stepError(), stepActions());
+}
+// Change devices keeps one form: its steps first, then the names and the rule.
+function moveDialog(from) {
+  const lines = ruleLines(from.n, from.t);
+  const off = offOf({ db: !!db }, "why-create-submit");
+  return frame("Change devices", { oninput: lines.update, onsubmit: moveSubmit(from) },
+    ...moveParts(from, names(from), [counts(from.n, from.t, "margin-text"), lines.rule,
+      lines.margin, lines.ack]),
+    el("div", { class: "callout" }, "The new wallet gets a new address. Devices that you leave "
+      + "out can still see this old wallet's payments, but not the new wallet's."),
+    el("div", { class: "dialog-actions" },
+      el("button", { class: "btn", type: "button", onclick: closeCreate }, "Cancel"),
+      el("button", { class: "btn primary", type: "submit", ...off.attrs }, "Create new wallet"),
+      off.note));
+}
+// With `from`, the dialog creates the wallet that replaces `from`, with new signers or a new rule.
+export const createDialog = (from = null) => (from ? moveDialog(from) : newDialog());

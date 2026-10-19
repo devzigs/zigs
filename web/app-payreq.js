@@ -189,7 +189,8 @@ export const roomRequest = () => ({
   choices: () => roomRequestWhy() ? []
     : [{ id: state.gid, name: state.g.name, address: state.wallet.address,
       net: netName(state.g) }],
-  fine: "Signers, and anyone else who has the invite link, can read the request.",
+  fine: "Every device of this wallet, and anyone else who has the invite link, can read the "
+    + "request.",
 });
 
 // In a direct chat, the person picks one of their wallets. The address is the one that this

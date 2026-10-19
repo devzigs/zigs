@@ -53,10 +53,11 @@ assert.equal(confirmGate(no, no, docs(no, 7, no), ids), "wait");             // 
 assert.equal(confirmGate(null, no, docs(no, no, no), ids), "wait");
 assert.deepEqual(numberClash(no, docs(no, other, other), ids), [2, 3]);
 assert.deepEqual(numberClash(no, docs(no, null, no), ids), []);
-assert.equal(abortText("Signers saw different setup data."),
-  "Signers saw different setup data. Do not use this wallet. Create a new wallet.");
+assert.equal(abortText("The devices saw different setup data."),
+  "The devices saw different setup data. Do not use this wallet. Create a new wallet.");
 assert.equal(abortText("seat 2: the secret part does not match its commitment"),
-  "Seat 2: the secret part does not match its commitment. Do not use this wallet. Create a new wallet.");
+  "Device 2: the secret part does not match its commitment. Do not use this wallet. Create a "
+  + "new wallet.", "an engine reason names the device");
 assert.equal(abortText(""), "Setup failed. Do not use this wallet. Create a new wallet.");
 assert.doesNotThrow(() => checkNetwork({ network: "testnet" }, "testnet"));
 assert.throws(() => checkNetwork({ network: "mainnet" }, "testnet"), /another network/);
@@ -69,7 +70,7 @@ const conflict = conflictReason;
 const none = { sawV2: false }, v2 = { sawV2: true };
 assert.equal(conflict(mine, { boxPk: "aa" }, 2, 2, none), null);
 assert.equal(conflict(mine, undefined, 2, 2, none), null);                 // seat not loaded yet
-assert.match(conflict(mine, { boxPk: "bb" }, 2, 2, none), /seat key was replaced/);
+assert.match(conflict(mine, { boxPk: "bb" }, 2, 2, none), /key of this device was replaced/);
 assert.match(conflict(mine, { boxPk: "aa" }, 1, 2, none), /version of this wallet changed/);
 assert.equal(conflict({ version: 1 }, { boxPk: "bb" }, 1, 1, none), null);  // version 1: no key check
 assert.match(conflict({ version: 1 }, {}, 1, 1, v2), /new setup/);
@@ -78,7 +79,7 @@ assert.equal(conflict({}, { boxPk: "bb" }, 2, 2, none), null);              // s
 // Version 3 runs the version 2 ceremony, so the same checks apply to its seats.
 const mine3 = { version: 3, boxPk: "aa", confirmed: no };
 assert.equal(conflict(mine3, { boxPk: "aa" }, 3, 3, none), null);
-assert.match(conflict(mine3, { boxPk: "bb" }, 3, 3, none), /seat key was replaced/);
+assert.match(conflict(mine3, { boxPk: "bb" }, 3, 3, none), /key of this device was replaced/);
 assert.match(conflict(mine3, { boxPk: "aa" }, 2, 3, none), /version of this wallet changed/);
 assert.match(conflict(mine3, { boxPk: "aa" }, 3, 3, { number: other }), /safety number changed/);
 
@@ -87,14 +88,14 @@ const confirmed = { ...mine, confirmed: no }, same = { boxPk: "aa" };
 const moved = conflict(confirmed, same, 2, 2, { sawV2: true, number: other });
 assert.match(moved, /safety number changed after you confirmed/);
 assert.equal(abortText(moved), "The safety number changed after you confirmed it. Someone may have "
-  + "replaced a seat. Do not use this wallet. Create a new wallet.");
+  + "replaced a device. Do not use this wallet. Create a new wallet.");
 assert.equal(conflict(confirmed, same, 2, 2, { sawV2: true, number: no }), null);   // same number
 assert.equal(conflict(mine, same, 2, 2, { sawV2: true, number: other }), null);     // not confirmed
 assert.equal(conflict(confirmed, same, 2, 2, { sawV2: true, number: null }), null); // no number now
 assert.equal(conflict({ ...confirmed, keyPackage: {} }, same, 2, 2, { number: other }), null);
 assert.equal(conflict({ ...confirmed, version: 1 }, same, 1, 1, { number: other }), null);
 assert.equal(conflict({ ...confirmed, confirmed: 7 }, same, 2, 2, { number: other }), null);
-assert.match(conflict(confirmed, { boxPk: "bb" }, 2, 2, { number: other }), /seat key was replaced/);
+assert.match(conflict(confirmed, { boxPk: "bb" }, 2, 2, { number: other }), /key of this device was replaced/);
 
 // Backup passphrases: normalized to NFC, counted in Unicode scalar values, never trimmed.
 const sixteen = "abcdefghijklmnop";

@@ -18,12 +18,17 @@ export async function openApp(rig, name, url) {
   return page;
 }
 
-// `solana`: the box "Also set up Solana Devnet" of the dialog. The page shows it once the server
-// answered /sol/config.json, and it is on by default. So on a server that serves Solana, the run
-// waits for the box before it sets it, also to clear it.
+// The dialog shows one step at a time: the run clicks through them by their button texts.
+// `solana`: the box "Also set up Solana Devnet" of the names step. The page shows it once the
+// server answered /sol/config.json, and it is on by default. So on a server that serves Solana,
+// the run waits for the box before it sets it, also to clear it.
 export async function makeWallet(page, name, { solana = false } = {}) {
   await clickText(page, "Set up a wallet");
   await waitForText(page, "New shared wallet");
+  await clickText(page, "Set up my wallet");
+  await waitForText(page, "Choose your protection");
+  await clickText(page, "Next", { exact: true });
+  await waitForText(page, "Name your wallet");
   await setInput(page, "#g-name", name);
   const box = () => run(page, () => !!document.getElementById("g-sol"));
   const served = () =>
@@ -34,6 +39,9 @@ export async function makeWallet(page, name, { solana = false } = {}) {
     const el = document.getElementById("g-sol");
     if (el && el.checked !== on) el.click();
   }, solana);
+  await clickText(page, "Review wallet");
+  await waitForText(page, "Review your wallet");
+  // The welcome card behind the dialog has a "Create wallet" button too.
   await run(page, () => document.querySelector("form[role=dialog] button[type=submit]").click());
   const shown = () => run(page, () => !!document.querySelector(".addr-box .hex"));
   await waitFor(shown, 30000, () => "the invite link");
@@ -52,7 +60,7 @@ export async function zcashWallet(rig, name, opts = {}) {
   const pages = [first];
   for (const seat of [2, 3]) {
     const page = await openApp(rig, "seat" + seat, link);
-    await clickText(page, "Take seat " + seat, { ms: 40000 });
+    await clickText(page, "Join as device " + seat, { ms: 40000 });
     pages.push(page);
   }
   for (const page of pages) await clickText(page, "It matches", { ms: 90000 });

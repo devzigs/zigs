@@ -18,7 +18,7 @@ import { personal } from "./app-account.js";
 import { chatView, newChatDialog } from "./app-thread.js";
 import { backupDialog, closeBackup, restoreDialog, settleRestore } from "./app-backups.js";
 import { contactDialog, contactView } from "./app-account-view.js";
-import { createDialog, loadingView, lobby, lockView, renderSide } from "./app-shell.js";
+import { createDialog, endCreate, loadingView, lobby, lockView, renderSide } from "./app-shell.js";
 import { sessionLayer } from "./app-drawer.js";
 import { solPending, solReact } from "./app-sol.js";
 import { groupView } from "./app-wallet.js";
@@ -153,10 +153,13 @@ function focusLayer(layer) {
   (layer.querySelector("[data-first-focus]") || layer.querySelector(pick) || layer).focus();
 }
 
-// The page behind a dialog or the drawer cannot take focus or clicks while the layer is open.
-function setModal(view, on) {
+// The page behind a dialog or the drawer cannot take focus or clicks while the layer is open. The
+// footer is part of the page: on a phone its link would take Tab out of the loop of the layer.
+export function setModal(view, on) {
   view.toggleAttribute("inert", on);
-  document.querySelector(".side").toggleAttribute("inert", on);
+  for (const part of [".side", ".app-foot"]) {
+    document.querySelector(part)?.toggleAttribute("inert", on);
+  }
 }
 
 const appFoot = () => el("footer", { class: "app-foot" }, "Beta · not audited · ",
@@ -177,8 +180,8 @@ function pageView() {
     }, "← Wallets");
     return el("div", { class: "page" }, back,
       el("div", { class: "card empty" }, el("h3", {}, "This wallet has data this app cannot read"),
-        el("p", { class: "small" }, "Another signer may use a newer version of Zigs. "
-          + "Reload the page, or ask them.")));
+        el("p", { class: "small" }, "A device of this wallet may run a newer version of Zigs. "
+          + "Reload the page, or ask the other people who use this wallet.")));
   }
 }
 
@@ -290,7 +293,12 @@ export function layers() {
   catch (e) { log("unreadable layer: " + (e && e.message ? e.message : e)); return []; }
 }
 
-const scrim = (close) => el("div", { class: "scrim", onclick: () => { close(); render(); } });
+// The second click of a double click on a button that moved can land on the scrim: it closes
+// nothing.
+const scrim = (close) => el("div", { class: "scrim", onclick: (ev) => {
+  if (ev?.detail > 1) return;
+  close(); render();
+} });
 
 // The dialogs, in the order that they take the screen: [is shown, close, build]. `open` is true in
 // an open wallet that has its wallet document. A restore starts in the wallet list.
@@ -299,9 +307,9 @@ const DIALOGS = [
   [(open) => ui.backup && (open || ui.backup.personal), closeBackup, () => backupDialog()],
   [(open) => ui.send && open, endSend, () => sendDialog()],
   [(open) => ui.receive && open, () => ui.receive = false, () => receiveDialog()],
-  [() => ui.create && !state.gid, () => ui.create = false, () => createDialog()],
+  [() => ui.create && !state.gid, endCreate, () => createDialog()],
   [() => ui.contactAdd && !!personal, () => ui.contactAdd = false, () => contactDialog()],
-  [(open) => ui.move && open, () => ui.move = false, () => createDialog(state.g)],
+  [(open) => ui.move && open, endCreate, () => createDialog(state.g)],
 ];
 
 function buildLayers() {
@@ -314,6 +322,50 @@ function buildLayers() {
 
 document.addEventListener("visibilitychange", render);
 window.addEventListener("focus", render);
+
+const OFFLINE = "No network connection. Network actions need a connection. "
+  + "The data on this page can be old.";
+/** The status line at the top of the page shows while the browser is offline. */
+export function showOffline() {
+  const box = document.getElementById("offline");
+  if (!box) return;
+  const offline = globalThis.navigator?.onLine === false;
+  box.replaceChildren(...(offline ? [el("div", { class: "callout warn" }, OFFLINE)] : []));
+}
+window.addEventListener("online", showOffline);
+window.addEventListener("offline", showOffline);
+showOffline();
+
+// A phone keyboard covers the lower part of the window. A dialog and the drawer end above it
+// (app.css reads the two values). A pinch zoom also shrinks the visual viewport, so only a scale
+// near 1 counts as a keyboard.
+const keyboardOf = (visual, height) => Math.abs(visual.scale - 1) < 0.01
+  ? { inset: Math.max(0, height - visual.height - visual.offsetTop), visible: visual.height + "px" }
+  : { inset: 0, visible: "100dvh" };
+// Scrolls the focused field of a layer into view, and the note under it.
+function showField(field) {
+  field.scrollIntoView?.({ block: "nearest" });
+  const note = field.getAttribute?.("aria-describedby")?.split(" ").at(-1);
+  document.getElementById(note)?.scrollIntoView?.({ block: "nearest" });
+}
+// The focused field scrolls into view only when the keyboard opens, so that a scroll of the person
+// is not undone.
+let lastInset = 0;
+export function fitKeyboard() {
+  const visual = window.visualViewport;
+  if (!visual || !Number.isFinite(visual.height)) return;
+  const { inset, visible } = keyboardOf(visual, window.innerHeight);
+  const opened = inset > lastInset;
+  lastInset = inset;
+  const root = document.documentElement.style;
+  root.setProperty("--keyboard-inset", inset + "px");
+  root.setProperty("--visual-height", visible);
+  const field = document.activeElement;
+  if (opened && field?.closest?.(".dialog, .drawer")) showField(field);
+}
+window.visualViewport?.addEventListener("resize", fitKeyboard);
+window.visualViewport?.addEventListener("scroll", fitKeyboard);
+fitKeyboard();
 const endCompose = () => {
   if (!composing) return;
   composing = false; drawPending = false; render();
@@ -321,11 +373,42 @@ const endCompose = () => {
 document.addEventListener("compositionstart", () => { composing = true; });
 document.addEventListener("compositionend", endCompose);
 document.addEventListener("focusout", endCompose);
+// ponytail: an unchecked radio counts as a stop. That is wrong only when a radio group is the
+// last control of a layer.
+const STOPS = FOCUSABLE + ", [tabindex]";
+// A control in a closed <details> has client rects in Chrome, so checkVisibility decides.
+const shown = (n) => n.getClientRects().length > 0 && (n.checkVisibility?.() ?? true);
+const tabStops = (root) => [...root.querySelectorAll(STOPS)]
+  .filter((n) => !n.disabled && n.tabIndex >= 0 && shown(n));
+// The stops of the layer, then the Close button of an open banner, which shows above the layer.
+function loopStops(layer) {
+  const banner = document.getElementById("banner");
+  return [...tabStops(layer), ...(banner ? tabStops(banner) : [])];
+}
+/** Tab goes round in the open dialog or drawer: from its last control to its first, and Shift+Tab
+ * from its first to its last. Focus on the layer itself or outside it goes in. */
+export function layerTab(ev) {
+  const layer = document.querySelector(".dialog, .drawer");
+  if (ev.key !== "Tab" || !layer) return;
+  const stops = loopStops(layer), at = stops.indexOf(document.activeElement);
+  if (!stops.length) {
+    ev.preventDefault();
+    layer.tabIndex = -1;
+    layer.focus();
+    return;
+  }
+  const last = stops.length - 1;
+  const edge = ev.shiftKey ? at <= 0 : at === -1 || at === last;
+  if (!edge) return;
+  ev.preventDefault();
+  stops[ev.shiftKey ? last : 0].focus();
+}
+document.addEventListener("keydown", layerTab);
 document.addEventListener("keydown", (ev) => {
   if (ev.key !== "Escape") return;
   if (state.sid) closeSession();
   else {
-    endSend(); ui.create = false; ui.receive = false; ui.move = false; ui.newChat = false;
+    endSend(); endCreate(); ui.receive = false; ui.newChat = false;
     ui.contactAdd = false;
     closeBackup();
   }

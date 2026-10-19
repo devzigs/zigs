@@ -46,7 +46,7 @@ export async function makeBackup(page, open) {
 /** The Zcash backup of the seat that this page holds (the button is on the Signers tab). */
 export const zcashBackup = (page) =>
   makeBackup(page, async () => {
-    await clickText(page, "Signers", { exact: true });
+    await clickText(page, "Devices", { exact: true });
     await clickText(page, "Back up key share", { exact: true });
   });
 

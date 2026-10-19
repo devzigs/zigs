@@ -32,6 +32,17 @@ export const el = (tag, attrs = {}, ...kids) => {
   for (const k of kids.flat()) if (k != null && k !== false) n.append(k instanceof Node ? k : document.createTextNode(String(k)));
   return n;
 };
+// The field of each note under a field. A red note marks its field as invalid.
+const fieldOf = new WeakMap();
+/** Ties the note `hint` to its field `input`, for setNote. */
+export const noteFor = (hint, input) => fieldOf.set(hint, input);
+/** Writes the note under a field. `cls` is the whole class: with "bad" and a text, the field of
+ * the note gets aria-invalid="true". */
+export function setNote(hint, text, cls) {
+  hint.textContent = text;
+  hint.className = cls;
+  fieldOf.get(hint)?.setAttribute("aria-invalid", String(text !== "" && /\bbad\b/.test(cls)));
+}
 // A success makes an earlier error message obsolete, so it is cleared.
 // A disabled button loses focus, so the key of the focused control is kept to give it back.
 export const act = (fn) => async (ev) => {
@@ -82,16 +93,18 @@ export function money(zat, size = "md", sign = "") {
 }
 export function seatLabel(i) {
   const s = state.seats[i];
-  if (!s) return "Open seat";
-  if (!seatMine(i)) return s.name || "Signer " + i;
-  return localSeats().length > 1 ? "You (seat " + i + ")" : "You";
+  if (!s) return "Not joined";
+  if (!seatMine(i)) return s.name || "Device " + i;
+  return localSeats().length > 1 ? "You (device " + i + ")" : "You";
 }
-// In a version 3 wallet a name comes with its seat number, because two seats can use one name.
-// A member picks the name, so a name can carry a false seat number: the real one goes after it.
+// In a version 3 wallet a name comes with its device number, because two devices can use one
+// name. A member picks the name, so a name can carry a false number: the real one goes after it.
+// A device with no name reads "Device N" already.
 export function named(i) {
   const label = seatLabel(i);
-  const tag = " (seat " + i + ")";
-  return signedMode(state.gid) && !label.endsWith(tag) ? label + tag : label;
+  const tag = " (device " + i + ")";
+  const numbered = label.endsWith(tag) || label === "Device " + i;
+  return signedMode(state.gid) && !numbered ? label + tag : label;
 }
 export function avatar(i, cls = "") {
   const s = state.seats[i], mine = s && seatMine(i);
@@ -129,7 +142,7 @@ export function payTitle(ss) {
 }
 // What the proposer says leaves the wallet: the payees plus the fee.
 export const leavesOf = (ss) => Number.isFinite(ss.amount) ? ss.amount + finite(ss.fee) : NaN;
-export const ruleText = (t, n) => "Any " + t + " of " + n + " signers must approve each payment.";
+export const ruleText = (t, n) => "Any " + t + " of " + n + " devices must approve each payment.";
 export const groupName = (gid) => (state.groups.find((x) => x.id === gid) || {}).name || "the new wallet";
 // In a version 3 wallet the proposer is the seat in `by`. Before, it is the identity in
 // `createdBy`.
@@ -142,13 +155,15 @@ export const onNetwork = (addr) => (normalized(addr) || "").startsWith(curNet().
 export const unreadChip = (u) => u ? el("span", { class: "side-unread", role: "img", title: u + " unread",
   "aria-label": u + " unread" }, String(u)) : null;
 
-// The name that `to` sees (your signers, or your contact); saved in this browser and read when you
-// take a seat or join a chat.
-export function nameField(id, to = "your signers") {
+// The label of this device in a wallet, or with `to` the name that a contact sees in a chat.
+// Saved in this browser and read when a device joins or a chat starts.
+export function nameField(id, to = "") {
   let saved = ""; try { saved = localStorage.getItem("zf-name") || ""; } catch {}
   const save = (ev) => { try { localStorage.setItem("zf-name", ev.target.value.trim()); } catch {} };
-  return el("label", { class: "field" }, el("span", {}, "Your name"),
-    el("input", { class: "input", id, value: saved, maxlength: "40", autocomplete: "nickname", placeholder: "Any nickname · shown to " + to, oninput: save }));
+  const hint = to ? "Any nickname · shown to " + to : "For example: Ana's phone";
+  return el("label", { class: "field" }, el("span", {}, to ? "Your name" : "This device's label"),
+    el("input", { class: "input", id, value: saved, maxlength: "40", autocomplete: "nickname",
+      placeholder: hint, oninput: save }));
 }
 
 // The choice lives in `sel` (`ui`, or `ui.personal`), so a redraw keeps it. `what` names the thing
@@ -194,7 +209,7 @@ export const skeleton = (cls = "") => el("span", { class: "skel " + cls, role: "
   "aria-label": "Loading balance" });
 
 export const seatTitle = (i, s) =>
-  s ? (seatMine(i) ? (s.name || "You") : s.name || "Signer " + i) : "Open seat";
+  s ? (seatMine(i) ? (s.name || "You") : s.name || "Device " + i) : "Not joined";
 
 // Groups of 5 characters help people compare an address by eye. Each group is its own span, so
 // the spaces are only layout and a copied address has none.

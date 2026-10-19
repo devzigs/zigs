@@ -96,7 +96,7 @@ async function publishDone(i) {
   const fields = { groupKey: s.groupKey, publicKeyPackage: S(s.publicKeyPackage), at: Date.now() };
   await sdb.doc("groups/" + gid + "/done/" + i).set(await signedDoc(gid, "done/" + i, i, fields));
   await putSec(gid, i, { doneSent: true });
-  log("seat " + i + ": key share ready, wallet key " + s.groupKey.slice(0, 12) + "…");
+  log("device " + i + ": key share ready, wallet key " + s.groupKey.slice(0, 12) + "…");
 }
 
 async function round1V1(i) {
@@ -104,7 +104,7 @@ async function round1V1(i) {
   let secret = s.r1secret, pkg = s.r1package;
   if (!secret) { const r = J(Z.dkgPart1(i, g.n, g.t)); secret = r.secret; pkg = r.package; putSec(gid, i, { r1secret: secret, r1package: pkg }); }
   await sdb.doc("groups/" + gid + "/dkg1/" + i).set({ package: pkg, at: Date.now() });
-  log("seat " + i + ": round 1 commitment published");
+  log("device " + i + ": round 1 commitment published");
 }
 
 async function round2V1(i) {
@@ -116,7 +116,7 @@ async function round2V1(i) {
     await sdb.doc("groups/" + gid + "/dkg2/" + i + "-" + to).set({ sealed, at: Date.now() });
   }
   putSec(gid, i, { r2secret: r.secret, r1secret: null });
-  log("seat " + i + ": " + Object.keys(r.outgoing).length + " encrypted shares sent");
+  log("device " + i + ": " + Object.keys(r.outgoing).length + " encrypted shares sent");
 }
 
 // Opens the box that seat j sent to seat i. A box that does not open comes from another version
@@ -125,8 +125,8 @@ function openBox(j, i, s, sealed) {
   const context = state.gid + ":" + j + "->" + i;
   let text;
   try { text = Z.boxOpen(s.boxSk, state.seats[j].boxPk, context, sealed); }
-  catch { throw new Error("The message of seat " + j + " was made by another version of Zigs"); }
-  try { return J(text); } catch { throw new Error("Seat " + j + " sent an unreadable message"); }
+  catch { throw new Error("The message of device " + j + " was made by another version of Zigs"); }
+  try { return J(text); } catch { throw new Error("Device " + j + " sent an unreadable message"); }
 }
 
 export async function round3V1(i) {
@@ -135,7 +135,7 @@ export async function round3V1(i) {
   for (const j of seatIds()) if (j !== i) {
     r1[j] = state.dkg1[j].package;
     const sealed = state.dkg2[j + "-" + i].sealed;
-    if (!isStr(sealed)) throw new Error("Seat " + j + " sent an unreadable message.");
+    if (!isStr(sealed)) throw new Error("Device " + j + " sent an unreadable message.");
     // A box that does not open ends this seat's setup, as in version 2: a retry cannot fix it.
     r2[j] = await ceremonyStep(i, () => openBox(j, i, s, sealed));
   }
@@ -155,7 +155,7 @@ function verifyStep(i, s) {
     const doc = await signedDoc(gid, "verify/" + i, i, { ok, error, at: Date.now() });
     await putSec(gid, i, ok ? { checkedWallet: wk, rejectedWallet: null } : { rejectedWallet: wk });
     await sdb.doc("groups/" + gid + "/verify/" + i).set(doc);
-    log("seat " + i + (ok ? ": wallet verified, ak equals my wallet key" : ": WALLET REJECTED: " + error));
+    log("device " + i + (ok ? ": wallet verified, ak equals my wallet key" : ": WALLET REJECTED: " + error));
   });
 }
 
@@ -171,7 +171,7 @@ function verifyWallet(s) {
   checkNetwork(state.wallet, netName(state.g));
   if (s.vaultSk) return Z.walletVerifyV2(S(state.wallet), S(s.publicKeyPackage), s.vaultSk);
   if (usesV2(groupVersion())) {
-    throw new Error("This seat holds no setup secret for a version 2 or 3 wallet. "
+    throw new Error("This device holds no setup secret for a version 2 or 3 wallet. "
       + "Do not use this wallet.");
   }
   return Z.walletVerify(S(state.wallet), S(s.publicKeyPackage));
@@ -272,10 +272,10 @@ export async function confirmSeats(ids, no) {
     await putSec(gid, i, { confirmed: no });
     await sdb.doc("groups/" + gid + "/confirm/" + i).set(doc);
   }
-  log("safety number confirmed for seat " + ids.join(", "));
+  log("safety number confirmed for device " + ids.join(", "));
 }
 
-const DIFFERENT = "Signers saw different setup data";
+const DIFFERENT = "The devices saw different setup data";
 // A failed check ends this seat's setup for good. The reason stays in the seat, so the reactor
 // does not retry it.
 async function abortSeat(i, text) {
@@ -318,7 +318,7 @@ async function round1V2(i) {
   const commit = Z.skCommit(gid, i, state.seats[i].boxPk, s.skPart);
   const fields = { package: s.r1package, commit, at: Date.now() };
   await sdb.doc("groups/" + gid + "/dkg1/" + i).set(await signedDoc(gid, "dkg1/" + i, i, fields));
-  log("seat " + i + ": round 1 commitment published");
+  log("device " + i + ": round 1 commitment published");
 }
 
 // The echo is one digest of every seat's round-1 document. Each seat puts it in its round-2
@@ -327,7 +327,9 @@ function echoNow() {
   const r1 = {};
   for (const j of seatIds()) {
     const d = state.dkg1[j];
-    if (!isStr(d.commit)) throw new Error("Seat " + j + " sent no commitment, so its app is too old for this wallet");
+    if (!isStr(d.commit)) {
+      throw new Error("Device " + j + " sent no commitment, so its app is too old for this wallet");
+    }
     r1[j] = { package: d.package, commit: d.commit };
   }
   return Z.dkgEcho(state.gid, S(r1));
@@ -354,14 +356,14 @@ async function round2V2(i) {
   }
   for (const [rel, doc] of docs) await sdb.doc("groups/" + gid + "/" + rel).set(doc);
   await putSec(gid, i, { r2secret: secret, r1secret: null });
-  log("seat " + i + ": " + Object.keys(boxes).length + " encrypted shares sent");
+  log("device " + i + ": " + Object.keys(boxes).length + " encrypted shares sent");
 }
 
 // Opens the box seat j sent to seat i: its round-2 package and its secret part of sk.
 export function unboxFrom(j, i, s) {
   const d = state.dkg2[j + "-" + i];
   if (d.echo !== s.echo) throw new Error(DIFFERENT);
-  const bad = new Error("Seat " + j + " sent an unreadable message");
+  const bad = new Error("Device " + j + " sent an unreadable message");
   if (!isStr(d.sealed)) throw bad;
   const box = openBox(j, i, s, d.sealed);
   if (!box || !isStr(box.r) || !box.package || typeof box.package !== "object") throw bad;
@@ -395,9 +397,17 @@ async function round3V2(i) {
   if (!saved) showBanner("bad", "This browser could not save your key share. Keep this tab open, and use Back up.");
 }
 
-// `from` is the wallet this one replaces. The old wallet gets only the new id, never its key:
-// signers left out of the new wallet must not get its viewing key.
+// One wallet at a time: a second call while one runs makes nothing, and says why.
+const STILL_CREATING = "Zigs is still creating a wallet. Wait for it, or reload the page.";
+let creating = false;
 export async function createGroup(name, n, t, from = null, network = "testnet") {
+  if (creating) throw new Error(STILL_CREATING);
+  creating = true;
+  try { return await makeGroup(name, n, t, from, network); } finally { creating = false; }
+}
+// `from` is the wallet this one replaces. The old wallet gets only the new id, never its key:
+// devices left out of the new wallet must not get its viewing key.
+async function makeGroup(name, n, t, from, network) {
   // Signed writes need a signing key for every seat, so check before anything is made.
   if (!(await canSign())) throw new Error(NO_SIGNING_SEAT);
   const ref = sdb.collection("groups").doc();
@@ -428,9 +438,15 @@ export async function takeSeat(i, version = groupVersion()) {
   const gid = state.gid, sign = await newSeatKey(version);
   const ref = sdb.doc("groups/" + gid + "/seats/" + i);
   const lease = await ref.acquire({ holder: crypto.randomUUID(), ttlMs: 5000 });
-  if (!lease.acquired) { showBanner("bad", "Someone else is taking seat " + i + " right now."); return; }
+  if (!lease.acquired) {
+    showBanner("bad", "Someone else is joining as device " + i + " right now.");
+    return;
+  }
   const cur = await ref.get();
-  if (cur.exists && cur.data().uid) { showBanner("bad", "Seat " + i + " is already taken."); return; }
+  if (cur.exists && cur.data().uid) {
+    showBanner("bad", "Device " + i + " has joined already.");
+    return;
+  }
   const kp = J(Z.boxKeypair());
   putSec(gid, i, { boxSk: kp.sk, version, uid: me, ...sign });
   const name = user ? (await user.me()).name : "";
@@ -444,7 +460,7 @@ export async function takeSeat(i, version = groupVersion()) {
   await ref.set(doc);
   // Saved only after the store holds the seat: a failed take must not look like a replaced key.
   await putSec(gid, i, { boxPk: kp.pk });
-  log("you took seat " + i);
+  log("you took device " + i);
 }
 const walletKey = () => state.wallet ? S(state.wallet) : "";
 // This browser's own result for its seats; other seats' results come from the store.
