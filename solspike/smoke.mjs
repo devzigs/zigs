@@ -129,8 +129,9 @@ export function readPassword(file) {
 // ── The live run (only when this file runs as the script) ──
 
 // The page scripts below run in the page: they must not use outer variables.
-// The "+" of the wallet list only opens the create dialog. The welcome card has a "Create wallet"
-// button too, but so has the dialog, and that one creates a wallet: the check never clicks it.
+// The "+" of the wallet list only opens the create dialog. The welcome card has a "Set up a wallet"
+// button too, and the dialog has a "Create wallet" button that creates a wallet: the check never
+// clicks that one.
 const OPEN_CREATE = () => {
   const plus = document.querySelector('button[aria-label="New wallet"]');
   if (!plus || plus.disabled) return false;
