@@ -697,13 +697,12 @@ body:has(.dialog), body:has(.drawer) { overflow: hidden; }
 }
 @media (max-width: 520px) { .stage-bar li { font-size: 11px; } }
 
-/* The numbered sections of the create dialog. */
-.guide-step { display: grid; gap: 12px; min-width: 0; margin: 0; padding: 0; border: 0; }
-.guide-step > legend { padding: 0 0 4px; font: 600 13px/1.4 var(--sans); color: var(--muted); }
-/* The section legend names the network choice; its own legend stays for screen readers. */
-.guide-step .net-pick > legend {
-  position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%);
-}
+/* The steps of the create dialog: one step shows at a time. */
+.guide-step { display: grid; gap: 12px; min-width: 0; }
+.guide-step[hidden] { display: none; }
+.guide-step > h3 { font-size: 18px; line-height: 1.3; }
+.margin-ack { display: grid; gap: 8px; justify-items: start; }
+.margin-ack[hidden] { display: none; }
 
 /* The welcome card of an empty wallet list. */
 .welcome h2 { font-size: clamp(24px, 3.2vw, 32px); line-height: 1.15; letter-spacing: -0.035em; }

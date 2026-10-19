@@ -702,7 +702,8 @@ the web, on iPhone and on Mac at the same time.
   ChainSafe.
 
 - **Main screens.**
-  - Wallet list, and a "Create wallet" form (name, *t*, *n*, network).
+  - Wallet list, and a "New shared wallet" dialog in steps: the rule (*t* of *n*), the names and
+    the network, then a review before the wallet is made.
   - Invite card with the link and a QR code.
   - Setup steps: signers join, create the key together, check the address. A version 2 or 3
     wallet shows a safety number card before the three steps.

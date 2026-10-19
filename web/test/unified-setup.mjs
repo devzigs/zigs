@@ -24,11 +24,12 @@ const { chats } = await import("../app-keystore.js");
 const { backupWords } = await import("../sol/backup.js");
 const { loadingCount, olderCount, pendingCount, pendingRows } = await import("../sol/view.js");
 const { SHOWN } = await import("../sol/payview.js");
-const { createDialog, lobby, marginText, renderSide } = await import("../app-shell.js");
+const { createDialog, endCreate, lobby, marginText, renderSide } = await import("../app-shell.js");
 const { receiveDialog } = await import("../app-send.js");
 const { offReason } = await import("../util.js");
 const { intentHex } = await import("../sol/intent.js");
 const { ui } = await import("../app-state.js");
+const appState = await import("../app-state.js");
 const { planSolana, solFile, solSetup, solUnsaved } = await import("../app-sol.js");
 const { backupNote, walletReady, walletShown } = await import("../app-wallet.js");
 const { PUBLIC_TEXT } = await import("../sol/view.js");
@@ -686,6 +687,40 @@ function dialogTree(from = null) {
 const dialogText = (from = null) => textOf(dialogTree(from));
 const byId = (node, id) =>
   node.attrs?.id === id ? node : (node.kids ?? []).map((k) => byId(k, id)).find(Boolean) ?? null;
+// The text that shows: a hidden step adds nothing.
+const shownText = (node) => node.text
+  ?? (node.attrs?.hidden === "" ? "" : node.kids.map(shownText).join(""));
+const atStep = (step, fn) => {
+  ui.createStep = step;
+  try {
+    return fn();
+  } finally {
+    ui.createStep = 0;
+  }
+};
+// `fields`: the elements by id that the dialog reads; other ids go to the stub page.
+const withFields = (fields, fn) => {
+  const real = globalThis.document;
+  const getElementById = (id) =>
+    (Object.hasOwn(fields, id) ? fields[id] : real.getElementById(id));
+  globalThis.document = new Proxy(real, { get: (o, k) => (k === "getElementById" ? getElementById
+    : real[k]) });
+  try {
+    return fn();
+  } finally {
+    globalThis.document = real;
+  }
+};
+const EV = { preventDefault() {}, currentTarget: null, target: {} };
+const RULE_2_OF_3 = { "g-n": { value: "3" }, "g-t": { value: "2" } };
+// Submits the new-wallet dialog `times` times, from the first step unless `fresh` is false.
+async function walkSteps(fields, times, fresh = true) {
+  if (fresh) ui.createStep = 0;
+  for (let i = 0; i < times; i++) {
+    const submit = dialogTree().on.submit;
+    await withFields(fields, () => submit(EV));
+  }
+}
 {
   const CHOICE = /Also set up Solana Devnet\..*public program address/s;
   ui.net = "testnet";
@@ -761,7 +796,7 @@ const byId = (node, id) =>
   const { busy } = await import("../app-state.js");
   const buttons = [
     ["Create wallet", "why-create", () => lobby()],
-    ["Create wallet", "why-create-submit", () => createDialog()],
+    ["Create wallet", "why-create-submit", () => atStep(3, () => createDialog())],
     ["New chat", "why-new-chat", () => lobby()],
     ["Join chat", "why-chat-join-cc", () => lobby()],
   ];
@@ -784,6 +819,10 @@ const byId = (node, id) =>
       assert.ok(!("disabled" in byText(tree, label).attrs), label + " is on");
       assert.equal(byId(tree, idFor), null, label + " has no reason");
     }
+    // Only the last step of a new wallet writes, so the steps before it stay on.
+    const offline = swap(() => createDialog(), { db: null });
+    assert.ok(!("disabled" in byText(offline, "Set up my wallet").attrs),
+      "the steps before the review stay on");
     // A join that runs also switches Join chat off.
     busy.add("chatjoin:" + cc);
     const tree = swap(() => lobby(), {});
@@ -976,9 +1015,12 @@ const byId = (node, id) =>
   assert.match(pageText(), new RegExp(aborted.replace(/\./g, "\\.") + " " + NEXT.source));
   ui.tab = "overview";
   // The button leaves the wallet for the wallet list, where the create dialog shows.
+  Object.assign(ui, { createStep: 2, createDraft: { n: 3, t: 2 }, marginAck: true });
   byText(pageTree(), "Create a new wallet").on.click();
   assert.equal(t.state.gid, null, "the wallet closed");
   assert.equal(ui.create, true, "the create dialog opens");
+  assert.deepEqual([ui.createStep, ui.createDraft, ui.marginAck], [0, null, false],
+    "a dialog opens at its first step");
   ui.create = false;
   t.openGroup(gidH);
   await waitFor("the wallet again", () => t.state.g?.solana === true && t.state.wallet);
@@ -1077,28 +1119,80 @@ const byId = (node, id) =>
   await waitFor("no Solana backup is asked", () => solButtons().length === 0);
 }
 
+// ── The steps of a new wallet: Next, Enter, Cancel, and the tick of a rule without margin
+{
+  // Each Next keeps the values of its step. Enter submits at every step, so a submit before the
+  // review only goes on. A rule without margin needs the tick, at Next and at the submit.
+  const groups = t.state.groups.length, gid = t.state.gid;
+  const fields = { ...RULE_2_OF_3, "g-name": { value: " Steps " }, "my-name": { value: "Ana" },
+    "g-sol": { checked: false } };
+  await walkSteps(fields, 3);
+  assert.equal(t.state.gid, gid, "a submit from the names step creates nothing");
+  assert.equal(t.state.groups.length, groups);
+  assert.equal(ui.createStep, 3, "the review");
+  assert.deepEqual(ui.createDraft, { n: 3, t: 2, name: "Steps", label: "Ana", sol: false },
+    "each Next keeps the values of its step");
+  let held = 0;
+  const click = (detail) => byText(dialogTree(), "Create wallet").on.click({ detail,
+    preventDefault: () => held++ });
+  click(1);
+  assert.equal(held, 1, "a tap soon after the step change does not submit");
+  click(0);
+  assert.equal(held, 1, "a script or the Enter key submits at once");
+  click(2);
+  assert.equal(held, 2, "the second click of a double click does not submit");
+  await sleep(450);
+  click(1);
+  assert.equal(held, 2, "a later click submits");
+  byText(dialogTree(), "Cancel").on.click();
+  assert.deepEqual([ui.createStep, ui.createDraft], [0, null], "Cancel puts back the first step");
+  const noMargin = { ...fields, "g-t": { value: "3" } };
+  await walkSteps(noMargin, 2);
+  assert.equal(ui.createStep, 1, "no tick: the rule step stays");
+  assert.match(appState.banner.text, /Confirm that one lost device stops all payments/);
+  ui.marginAck = true;
+  await walkSteps(noMargin, 1, false);
+  assert.equal(ui.createStep, 2, "with the tick, Next goes on");
+  assert.equal(appState.banner, null, "and clears the message");
+  Object.assign(ui, { createStep: 3, createDraft: { n: 3, t: 3, name: "x" }, marginAck: false });
+  await dialogTree().on.submit(EV);
+  assert.equal(t.state.gid, gid, "the submit checks the tick too");
+  assert.match(appState.banner.text, /Confirm that one lost device stops all payments/);
+  endCreate();
+  assert.deepEqual([ui.createStep, ui.createDraft, ui.marginAck], [0, null, false]);
+
+}
+
 // ── The submit: the choice reaches seat 1 only for a new wallet with the box on ──
 {
   const real = globalThis.FormData;
-  const submit = async (from, sol) => {
-    globalThis.FormData = class {
-      get(k) {
-        return { name: "Submitted", n: "3", t: "2", sol }[k] ?? null;
-      }
-    };
-    try {
-      ui.net = "testnet";
-      await dialogTree(from).on.submit({ preventDefault() {}, currentTarget: null, target: {} });
-    } finally {
-      globalThis.FormData = real;
-    }
+  const newWallet = async (sol) => {
+    const box = sol === null ? null : { checked: sol };
+    ui.net = "testnet";
+    const fields = { ...RULE_2_OF_3, "g-name": { value: "Submitted" }, "my-name": { value: "" },
+      "g-sol": box };
+    await walkSteps(fields, 4);
     const gidN = t.state.gid;
     return { auto: t.sec(gidN, 1)?.solAuto === true, hint: data.get(groupPath(gidN)).solana };
   };
-  assert.deepEqual(await submit(null, "on"), { auto: true, hint: true }, "the box on");
-  assert.deepEqual(await submit(null, null), { auto: false, hint: undefined }, "the box off");
-  const old = t.state.g;
-  assert.deepEqual(await submit(old, "on"), { auto: false, hint: undefined }, "Change devices");
+  assert.deepEqual(await newWallet(true), { auto: true, hint: true }, "the box on");
+  assert.equal(data.get(groupPath(t.state.gid)).name, "Submitted", "the name of the names step");
+  assert.deepEqual(await newWallet(false), { auto: false, hint: undefined }, "the box off");
+  assert.deepEqual(await newWallet(null), { auto: false, hint: undefined }, "no box");
+  assert.equal(ui.createStep, 0, "a created wallet puts the dialog back at its first step");
+  globalThis.FormData = class {
+    get(k) {
+      return { name: "Submitted", n: "3", t: "2", sol: "on" }[k] ?? null;
+    }
+  };
+  try {
+    await dialogTree(t.state.g).on.submit(EV);
+  } finally {
+    globalThis.FormData = real;
+  }
+  const gidN = t.state.gid;
+  const made = { auto: t.sec(gidN, 1)?.solAuto === true, hint: data.get(groupPath(gidN)).solana };
+  assert.deepEqual(made, { auto: false, hint: undefined }, "Change devices");
 }
 
 // ── The stepper: a stop shows its own text at its stage, never a stage on track ──
@@ -1128,29 +1222,63 @@ const byId = (node, id) =>
   }
 }
 
-// ── The create dialog: numbered sections for a new wallet, the old form for a change ──
-assert.match(dialogText(), /1\. Approval rule.*2\. Names.*3\. Networks/s);
-assert.doesNotMatch(dialogText(t.state.g), /1\. Approval rule/, "Change devices keeps its form");
+// ── The create dialog: one step at a time for a new wallet, one form for a change ──
+{
+  const shown = (step) => atStep(step, () => shownText(dialogTree()));
+  assert.match(shown(0),
+    /^New shared wallet×Your wallet, protected together.*CancelSet up my wallet$/s);
+  assert.match(shown(1),
+    /Choose your protection.*Any 2 of 3 devices must.*Advanced approval rule.*CancelBackNext$/s);
+  assert.match(shown(2),
+    /Name your wallet.*This device's label.*Wallet name.*Network.*BackReview wallet$/s);
+  ui.createDraft = { n: 4, t: 3, name: "Team", label: "Ana's phone", sol: true };
+  assert.match(shown(3), new RegExp("Review your wallet.*Wallet nameTeam.*This device's labelAna's "
+    + "phone.*Any 3 of 4 devices must approve each payment\\..*Zcash testnet and Solana Devnet.*"
+    + "BackCreate wallet", "s"));
+  ui.createDraft = { n: 3, t: 3, name: "", label: "", sol: false };
+  assert.match(shown(3), new RegExp("TreasuryThis device's labelNone\\. The other devices show "
+    + "Device 1\\..*NetworksZcash testnet[^ ]*Each payment", "s"),
+    "the defaults, and the warning of a rule without margin");
+  ui.createDraft = null;
+  assert.equal(shown(0).match(/Choose your protection|Name your wallet|Review your wallet/), null,
+    "the other steps are hidden");
+}
+assert.doesNotMatch(dialogText(t.state.g), /protected together/, "Change devices keeps its form");
+assert.match(shownText(dialogTree(t.state.g)),
+  /New wallet name.*Devices.*Approvals needed.*Create new wallet/s);
 assert.equal(marginText(2, 3), "", "a margin: no warning");
 assert.match(marginText(3, 3), /Each payment needs every device/);
 {
   // The line of t = n is in the dialog, a screen reader hears it change, and a change of the
-  // numbers updates it. The first focus goes to the wallet name.
+  // numbers updates it and shows the box. The first focus goes to the button of the first step.
   const dialog = dialogTree();
   const margin = byId(dialog, "margin-text");
   assert.equal(margin?.attrs.role, "status");
   assert.equal(byId(dialog, "g-t").attrs["aria-describedby"], "margin-text");
-  assert.equal(byId(dialog, "g-name").attrs["data-first-focus"], "");
+  assert.equal(byText(dialog, "Set up my wallet").attrs["data-first-focus"], "",
+    "the first step gives focus to its button");
+  assert.equal(atStep(1, () => byText(dialogTree(), "Next")).attrs["data-first-focus"], undefined,
+    "only the first step");
+  assert.equal(byId(dialog, "g-name").attrs["data-first-focus"], undefined);
   assert.equal(byId(dialogTree(t.state.g), "g-name").attrs["data-first-focus"], undefined);
   byId(dialog, "rule-text").classList = { toggle() {} };
-  const real = globalThis.document;
-  globalThis.document = { getElementById: (id) => ({ value: { "g-n": "3", "g-t": "3" }[id] }) };
-  try {
-    dialog.on.input();
-  } finally {
-    globalThis.document = real;
-  }
+  const ack = findNode(dialog, (n) => n.className === "margin-ack");
+  assert.equal(ack.attrs.hidden, "", "2 of 3: no box");
+  const fields = { "g-n": { value: "3" }, "g-t": { value: "3" }, "create-step-1": { focus() {
+    fields.focused = true;
+  } } };
+  withFields(fields, () => dialog.on.input());
   assert.match(margin.textContent, /Each payment needs every device/, "update() names the risk");
+  assert.equal(ack.hidden, false, "3 of 3: the box shows");
+  ui.marginAck = true;
+  fields["g-margin-ack"] = { checked: true };
+  withFields(fields, () => byText(ack, "Use recommended 2 of 3").on.click());
+  assert.deepEqual([ui.marginAck, fields["g-margin-ack"].checked], [false, false],
+    "the reset clears the tick");
+  assert.deepEqual([fields["g-n"].value, fields["g-t"].value], ["3", "2"], "the reset: 2 of 3");
+  assert.equal(margin.textContent, "", "the reset clears the warning");
+  assert.equal(ack.hidden, true, "and hides the box");
+  assert.equal(fields.focused, true, "the focus goes to the heading of the step");
 }
 
 console.log("unified-setup: ok");

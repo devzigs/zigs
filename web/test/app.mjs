@@ -1774,6 +1774,10 @@ const sealed = (gid, rel, seat, fields, key, names = ["by", "sig"]) =>
         Object.assign(t.ui, { send: true, sendReview: { prep, note: "x" } });
         for (const press of documentOn.keydown) press({ key: "Escape" });
         assert.deepEqual([t.ui.send, t.ui.sendReview], [false, null], "Escape drops it");
+        Object.assign(t.ui, { create: true, createStep: 2, createDraft: { n: 3, t: 2 } });
+        for (const press of documentOn.keydown) press({ key: "Escape" });
+        assert.deepEqual([t.ui.create, t.ui.createStep, t.ui.createDraft], [false, 0, null],
+          "Escape puts the create dialog back at its first step");
         Object.assign(t.ui, { send: true, pay: null, after: { pczt: "EXP1" } });
         const again = drawn();
         globalThis.document = realDocument;

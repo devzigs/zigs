@@ -1,7 +1,7 @@
 // Solana host glue: solHost() and the lazy load of web/sol.
 import { walletVersion } from "./util.js";
 import { docFields } from "./signed.js";
-import { banner, clearBadBanner, log, showBanner, state, ui } from "./app-state.js";
+import { banner, clearBadBanner, log, openCreate, showBanner, state, ui } from "./app-state.js";
 import { exclusive, said } from "./app-kit.js";
 import { Z } from "./app-engine.js";
 import { putSec, sec, takeStored } from "./app-keystore.js";
@@ -62,7 +62,7 @@ export const SOL_DISCLOSURE = "Solana Devnet: a program owns the funds of the gr
   + "the SOL. Every signer sees the whole Solana history of the wallet. The program has no audit, "
   + "and its upgrade key is outside the group.";
 // The wallet list with the create dialog open. Inside an open wallet the dialog does not show.
-export const newWallet = () => { openGroup(null); ui.create = true; render(); };
+export const newWallet = () => { openGroup(null); openCreate(); render(); };
 // The seats of this browser with a Solana key share whose backup file was not saved. A stopped
 // part gets no backup (web/sol/backup.js refuses it), also when another seat stopped it.
 const solStopped = () => solSetup()?.status === "stopped";

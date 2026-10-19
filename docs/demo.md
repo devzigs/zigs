@@ -220,8 +220,8 @@ says Sent (Zcash) or Executed (Solana).
 
 | Time | Who | Step | Expected result | Needs |
 |---|---|---|---|---|
-| 0:00 | L1 | Open app.zigs.app. Say: Zcash testnet and Solana Devnet only, not audited. Click **New wallet**. | The picker shows Testnet only. | M1 |
-| 0:45 | L1 | Type a name. Set **Devices** to 3 and **Approvals needed** to 2. Turn on Solana. Click **Create wallet**. | The invite card shows. | **[waits for M3]** |
+| 0:00 | L1 | Open app.zigs.app. Say: Zcash testnet and Solana Devnet only, not audited. Click **New wallet**, then **Set up my wallet**. | The rule step recommends any 2 of 3 devices. | |
+| 0:45 | L1 | Keep the recommended rule and click **Next**. Type a name. Turn on Solana. Click **Review wallet**, then **Create wallet**. | The picker shows Testnet only. The review shows any 2 of 3 devices, Zcash testnet and Solana Devnet. The invite card shows. | M1, **[waits for M3]** |
 | 1:15 | L1, L2, L3 | L1 clicks **Copy link** and sends the link to L2 and L3 through an end-to-end encrypted chat. L2 and L3 open it in Chrome or Safari, enter the password if the browser asks, type a label, then click **Join as device**. A phone scans the QR code instead. | 3 of 3 devices joined. | D1, S10 |
 | 1:45 | L1, L2, L3 | Read the safety number aloud. Each person clicks **It matches**. Narrate the progress card: Zcash key, Solana key, fee address. Keep L1 open until every seat shows its Solana key ready (D7). | Both ceremonies run. Each seat shows **Address checked** and its Solana key ready. | **[waits for M3]**, M4 |
 | 3:00 | L1 | Switch to Demo A. Show the Zcash address, the **Available** balance and the Solana tab. Click **Sync Solana**. | Both balances show. | S2 |
