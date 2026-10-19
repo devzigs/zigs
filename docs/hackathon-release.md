@@ -268,6 +268,17 @@ Evidence marked "checked" was read in the repo during this synthesis. All other 
 - **Files:** cf/src/index.js (the `/zns` route only), new web/zns.js, new web/test/zns.mjs,
   web/app-send.js (the Send form hook, after WP-Z), PRIVACY.md and README.md (ZNS parts).
 - **Package:** WP-ZN.
+- **Status:** done, on main in 8d7bc91 (the merge of claude/zns-hook 90f6731); the `/zns` route and
+  web/zns.js came before it. Live proof on main 8fedc58, 19 October 2026, with the owner's yes: a
+  2-of-2 testnet payment of 0.001 TAZ to `craftsoldier.zec`, typed as a name in the Send form.
+  `/zns` held 1 name at block 4,518,019 and gave `utest1v5p9lq…lqnpxg`. The form and the drawer
+  showed the name, both seats approved (each approving page checked the name again) and signed in
+  the background, and both pages show the payment as sent. txid
+  `5f47158cad0a3c5946757ba9abad8f7208f6eb38eb76cb9b4be2f6cd8cbc0969`, block 4,518,023, expiry
+  4,521,478, fee 10,000 zat (live/zns-name-pay.local.mjs, a copy of live/zec-pay.mjs that types
+  the name). QA: three rounds on the route and the module, three on the hook, and a cold read of
+  each. Open: the demo name (`zigsdemo`, see docs/demo.md step 6) has no record yet, so the demo
+  pays the address of Payee until it has one; `craftsoldier.zec` is the test name of ZcashMe.
 
 ## 5. SHOULD items
 
