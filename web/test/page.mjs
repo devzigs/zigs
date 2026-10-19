@@ -18,7 +18,7 @@ export const NAMES = [
   "composer", "confirmedNetwork", "contactDialog", "contactsCard", "contactView",
   "copyFundingRequest", "createGroup",
   "createPersonal", "damagedCard", "deviceRead", "dmChoices", "docMemo", "ensureChain",
-  "exclusive", "expired",
+  "exclusive", "expired", "fitKeyboard",
   "ended", "expiryLine",
   "expiryAt", "expiryOf", "failSession", "fillFromRequest", "finalizeTx", "finishButtons",
   "flightNow",

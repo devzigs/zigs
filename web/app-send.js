@@ -80,11 +80,25 @@ function shareBtn(address) {
 }
 const SHARE_FAILED = "This device could not share the address. Use Copy address.";
 
+// The address of the open wallet: Send refuses it, as it refuses an address of another network.
+const OWN_ADDRESS = "This is the address of this wallet. Enter the address of someone else.";
+const ownAddress = (to) => {
+  const address = normalized(to);
+  return !!address && address === normalized(state.wallet?.address);
+};
+
+// The note under a typed address, which reads valid only for an address that Send takes.
+function addressNote(v) {
+  const net = curNet(), name = net.label.toLowerCase();
+  if (!onNetwork(v)) {
+    return ["Not a shielded Zcash " + name + " address. It starts with " + net.prefix + ".", "bad"];
+  }
+  return ownAddress(v) ? [OWN_ADDRESS, "bad"] : ["Valid " + name + " address", "ok"];
+}
+
 function addressHint(hint, to) {
-  const v = to.trim(), ok = v ? onNetwork(v) : null, net = curNet().label.toLowerCase();
-  setNote(hint, !v ? "" : ok ? "Valid " + net + " address"
-    : "Not a shielded Zcash " + net + " address. It starts with " + curNet().prefix + ".",
-  "hint " + (!v ? "" : ok ? "ok" : "bad"));
+  const v = to.trim(), [text, cls] = v ? addressNote(v) : ["", ""];
+  setNote(hint, text, "hint " + cls);
 }
 
 // A recipient field holds an address or, in a testnet wallet, a ZNS name. Text that is an address
@@ -116,7 +130,9 @@ async function nameAnswer(typed) {
 // Draws the address of a name in a hint: from now on the person has seen it.
 function showShown(hint, shown) {
   shown.seen = true;
-  showHint(hint, shown.text, "ok");
+  const why = addressRefusal(shown.address, shown);
+  if (why) showHint(hint, why, "bad");
+  else showHint(hint, shown.text, "ok");
 }
 
 // An address that "Propose again" kept with the name of the first proposal (a testnet wallet).
@@ -157,7 +173,7 @@ function payRow(r, i, rows, sumUp) {
     oninput: (ev) => {
       r.to = ev.target.value;
       r.name = null;   // text that the person typed has no name from an earlier proposal
-      fillFromRequest(r, rows, hint) || recipientHint(hint, r);
+      if (!fillFromRequest(r, rows, hint)) recipientHint(hint, r);
     },
   });
   noteFor(hint, to);
@@ -219,9 +235,13 @@ function listProblem(rows, errors) {
   return rows.length > MAX_PAYEES ? TOO_MANY : "";
 }
 
+// The text that the error of the pasted list is about. A redraw puts the same text back into the
+// box, and that is no edit.
+let listFor = "";
 function useList() {
   const box = document.getElementById("s-list"), { rows, errors } = pastedList(box.value);
   ui.listError = listProblem(rows, errors);
+  listFor = box.value;
   if (!ui.listError) {
     ui.pay = payeeRows(rows, () => ++ui.payKey);
     box.value = ""; box.closest("details").open = false;
@@ -268,6 +288,13 @@ const addressError = (net, hit) => (hit
   : "Enter a shielded Zcash " + net.label.toLowerCase() + " address. It starts with "
     + net.prefix + ".");
 
+// Why Send refuses the address of a row, or "". A name `hit` shows by its name. The hint of a name
+// asks the same, so that it reads valid only for an address that Send takes.
+function addressRefusal(to, hit) {
+  if (!onNetwork(to)) return addressError(curNet(), hit);
+  return ownAddress(to) ? OWN_ADDRESS : "";
+}
+
 // A payee has a memo only when it has text, and a name only when it is paid by name: the name of
 // a name row, or the name that "Propose again" kept with an address (a testnet wallet only).
 function payeeOf(to, amount, memo, name) {
@@ -281,15 +308,11 @@ const nameOfRow = (r, hit) => (hit ? hit.name : znsOn() && r.name);
 // Checks each row and returns the payees in zatoshis, or throws with the row number. `found` has
 // the registry answer of each name row: that row pays the address of the registry.
 function readPayees(rows, found) {
-  const net = curNet(), own = normalized(state.wallet.address);
   return rows.map((r, i) => {
     const hit = found.get(r), to = hit ? hit.address : r.to.trim(), amount = toZat(r.amt);
     const who = whoOf(rows, i), memo = String(r.memo || "").trim();
-    if (!onNetwork(to)) throw new Error(who + addressError(net, hit));
-    if (normalized(to) === own) {
-      throw new Error(who + "This is the address of this wallet. Enter the address of someone "
-        + "else.");
-    }
+    const refusal = addressRefusal(to, hit);
+    if (refusal) throw new Error(who + refusal);
     if (!amount) {
       throw new Error(who + "Enter an amount greater than zero, with at most 8 decimals.");
     }
@@ -299,17 +322,25 @@ function readPayees(rows, found) {
 }
 
 function pasteList(net) {
+  const note = el("span", { class: "hint bad", id: "s-list-error" });
+  const box = el("textarea", {
+    class: "input mono", id: "s-list", rows: "5", spellcheck: "false",
+    "aria-label": "Payment list", "aria-describedby": "s-list-error",
+    placeholder: net.prefix + "…, 0.5, October rent\n" + net.prefix + "…, 1.25",
+    oninput: (ev) => {
+      if (ev.target.value === listFor) return;
+      ui.listError = "";
+      setNote(note, "", "hint bad");
+    },
+  });
+  noteFor(note, box);
+  setNote(note, ui.listError, "hint bad");
   return el("details", { class: "paste" }, el("summary", { class: "btn sm" }, "Paste a list"),
-    el("textarea", {
-      class: "input mono", id: "s-list", rows: "5", spellcheck: "false",
-      "aria-label": "Payment list", "aria-invalid": ui.listError ? "true" : null,
-      "aria-describedby": ui.listError ? "s-list-error" : null,
-      placeholder: net.prefix + "…, 0.5, October rent\n" + net.prefix + "…, 1.25",
-    }),
+    box,
     el("span", { class: "hint" },
       "One " + (znsOn() ? "address or ZNS name" : "address") + " and amount per line, then an "
       + "optional memo. A spreadsheet copy works. A payment request (zcash:) works too."),
-    ui.listError ? el("span", { class: "hint bad", id: "s-list-error" }, ui.listError) : null,
+    note,
     el("button", { class: "btn sm", type: "button", onclick: useList }, "Use this list"));
 }
 

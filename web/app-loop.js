@@ -329,27 +329,34 @@ window.addEventListener("offline", showOffline);
 showOffline();
 
 // A phone keyboard covers the lower part of the window. A dialog and the drawer end above it
-// (app.css reads these two values). A pinch zoom also shrinks the visual viewport, so it counts
-// only at scale 1. The focused field scrolls into view only when the keyboard opens, so that a
-// scroll of the person is not undone.
-const visual = window.visualViewport;
+// (app.css reads the two values). A pinch zoom also shrinks the visual viewport, so only a scale
+// near 1 counts as a keyboard.
+const keyboardOf = (visual, height) => Math.abs(visual.scale - 1) < 0.01
+  ? { inset: Math.max(0, height - visual.height - visual.offsetTop), visible: visual.height + "px" }
+  : { inset: 0, visible: "100dvh" };
+// Scrolls the focused field of a layer into view, and the note under it.
+function showField(field) {
+  field.scrollIntoView?.({ block: "nearest" });
+  const note = field.getAttribute?.("aria-describedby")?.split(" ").at(-1);
+  document.getElementById(note)?.scrollIntoView?.({ block: "nearest" });
+}
+// The focused field scrolls into view only when the keyboard opens, so that a scroll of the person
+// is not undone.
 let lastInset = 0;
-function fitKeyboard() {
+export function fitKeyboard() {
+  const visual = window.visualViewport;
   if (!visual || !Number.isFinite(visual.height)) return;
-  const unzoomed = visual.scale === 1;
-  const inset = unzoomed ? Math.max(0, window.innerHeight - visual.height - visual.offsetTop) : 0;
+  const { inset, visible } = keyboardOf(visual, window.innerHeight);
   const opened = inset > lastInset;
   lastInset = inset;
   const root = document.documentElement.style;
   root.setProperty("--keyboard-inset", inset + "px");
-  root.setProperty("--visual-height", unzoomed ? visual.height + "px" : "100dvh");
+  root.setProperty("--visual-height", visible);
   const field = document.activeElement;
-  if (opened && field?.closest?.(".dialog, .drawer")) {
-    field.scrollIntoView?.({ block: "nearest" });
-  }
+  if (opened && field?.closest?.(".dialog, .drawer")) showField(field);
 }
-visual?.addEventListener("resize", fitKeyboard);
-visual?.addEventListener("scroll", fitKeyboard);
+window.visualViewport?.addEventListener("resize", fitKeyboard);
+window.visualViewport?.addEventListener("scroll", fitKeyboard);
 fitKeyboard();
 const endCompose = () => {
   if (!composing) return;
@@ -361,15 +368,27 @@ document.addEventListener("focusout", endCompose);
 // ponytail: an unchecked radio counts as a stop. That is wrong only when a radio group is the
 // last control of a layer.
 const STOPS = FOCUSABLE + ", [tabindex]";
-const tabStops = (layer) => [...layer.querySelectorAll(STOPS)]
-  .filter((n) => !n.disabled && n.tabIndex >= 0 && n.getClientRects().length > 0);
+// A control in a closed <details> has client rects in Chrome, so checkVisibility decides.
+const shown = (n) => n.getClientRects().length > 0 && (n.checkVisibility?.() ?? true);
+const tabStops = (root) => [...root.querySelectorAll(STOPS)]
+  .filter((n) => !n.disabled && n.tabIndex >= 0 && shown(n));
+// The stops of the layer, then the Close button of an open banner, which shows above the layer.
+function loopStops(layer) {
+  const banner = document.getElementById("banner");
+  return [...tabStops(layer), ...(banner ? tabStops(banner) : [])];
+}
 /** Tab goes round in the open dialog or drawer: from its last control to its first, and Shift+Tab
  * from its first to its last. Focus on the layer itself or outside it goes in. */
 export function layerTab(ev) {
   const layer = document.querySelector(".dialog, .drawer");
   if (ev.key !== "Tab" || !layer) return;
-  const stops = tabStops(layer), at = stops.indexOf(document.activeElement);
-  if (!stops.length) { ev.preventDefault(); layer.focus(); return; }
+  const stops = loopStops(layer), at = stops.indexOf(document.activeElement);
+  if (!stops.length) {
+    ev.preventDefault();
+    layer.tabIndex = -1;
+    layer.focus();
+    return;
+  }
   const last = stops.length - 1;
   const edge = ev.shiftKey ? at <= 0 : at === -1 || at === last;
   if (!edge) return;
