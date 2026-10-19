@@ -665,8 +665,10 @@ function hiddenLink(page, link, where) {
   }
   assert.deepEqual(copied, [link], say("Copy link copies the full invite link"));
 }
-// A wallet that a new wallet replaces reads "Moving" in the wallet list and in the side list,
-// until no Zcash is left there at its last sync in this browser: then "Zcash funds moved".
+// A wallet that a new wallet replaces, in the wallet list and in the side list: "Replaced" while
+// this browser has no payments of it, "ZEC moved" once a move payment was sent and no Zcash is
+// left at its last sync here, else "Moving". A wallet that was empty before its move has no move
+// payment, so it does not read "ZEC moved".
 function moveWords() {
   const groups = t.state.groups, gid = "ab".repeat(10);
   const old = { id: gid, name: "Old", t: 2, n: 3, network: "testnet", movedTo: "cd".repeat(10) };
@@ -684,18 +686,28 @@ function moveWords() {
   const side = () => item(sideTree(), "wallet-" + gid);
   const row = () => item(lobbyTree(), "wallet-row-" + gid);
   t.state.groups = [...groups, old];
+  const { gid: openGid, g: openG } = t.state;
   try {
-    assert.match(side(), /Moving/, "the side list says Moving");
-    assert.match(row(), /Moving/, "the wallet list says Moving");
+    assert.match(side(), /Replaced/, "the side list says Replaced without the payments");
+    assert.match(row(), /Replaced/, "the wallet list says Replaced without the payments");
+    t.inbox[gid] = [];
     t.balCache[gid] = { total: 0, at: 1 };
-    assert.match(side(), /Zcash funds moved/,
-      "a list wallet with no Zcash left reads Zcash funds moved");
-    assert.match(row(), /Zcash funds moved/, "in the wallet list too");
+    assert.match(side(), /Moving/,
+      "a wallet that was empty before its move does not read ZEC moved");
+    t.inbox[gid] = [{ id: "mv", move: old.movedTo, broadcastTxid: "tx", status: "broadcast" }];
+    assert.match(side(), /ZEC moved/, "a sent move with no Zcash left reads ZEC moved");
+    assert.match(row(), /ZEC moved/, "in the wallet list too");
     t.balCache[gid] = { total: 5, at: 1 };
     assert.match(row(), /Moving/, "a wallet with Zcash left is still moving");
+    // An open wallet whose document still loads gets the word of a listed wallet.
+    Object.assign(t.state, { gid, g: null });
+    let word;
+    try { word = t.moveWord(old); } catch (e) { word = "threw " + e.message; }
+    assert.equal(word, "Moving", "an open wallet whose data still loads gets a list word");
   } finally {
-    t.state.groups = groups;
+    Object.assign(t.state, { gid: openGid, g: openG, groups });
     delete t.balCache[gid];
+    delete t.inbox[gid];
   }
 }
 // The Devices section shows the invite link that way.

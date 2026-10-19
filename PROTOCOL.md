@@ -2,7 +2,7 @@
 
 Zigs is a shared wallet for shielded Zcash. Any *t* of its *n* signers approve each payment, and
 the chain sees one shielded transaction with the shape of a payment from a standard wallet, except
-for its one-day expiry (3,456 blocks of 25 seconds, against 40) and an optional priority fee, which
+for its one-day expiry (where a standard wallet sets 40 blocks) and an optional priority fee, which
 can mark it as a Zigs payment (PRIVACY.md, On chain). Zigs uses re-randomized FROST threshold
 signatures ([ZIP 312](https://zips.z.cash/zip-0312)) on the Ironwood shielded pool (NU7, v6
 transactions).
@@ -18,7 +18,7 @@ app also has a Solana beta for testnet wallets (section 16).
 | **Signer device** | Runs the web, iPhone or Mac app around the engine | Its key share, the wallet secret, the viewing key, nonces, payment history |
 | **Group server** | A Cloudflare Worker with one Durable Object (SQLite) per wallet. Relays and stores sealed documents over a WebSocket. | Only ciphertext, plus wallet ids, document paths, timing and IP addresses |
 | **Light-wallet server** | lightwalletd over grpc-web. Serves compact blocks and full transactions, and accepts finished transactions. The public side of the Zigs testnet server answers the app Worker only (section 10.1). | Your IP address (on testnet, our server sees the app Worker), the blocks you download and the transactions you fetch |
-| **Zcash network** | NU7, Ironwood shielded pool | One shielded transaction per payment, with the shape of a shielded payment from a standard wallet, except for its one-day expiry (3,456 blocks of 25 seconds, against 40) and an optional priority fee, which can mark it as a Zigs payment |
+| **Zcash network** | NU7, Ironwood shielded pool | One shielded transaction per payment, with the shape of a shielded payment from a standard wallet, except for its one-day expiry (section 7.1; a standard wallet sets 40 blocks) and an optional priority fee, which can mark it as a Zigs payment |
 
 ```mermaid
 flowchart LR
@@ -71,13 +71,15 @@ flowchart LR
   and which IP addresses connect to which wallet. It keeps no logs.
 - **What a wallet id alone gives.** The server does not ask a client for the wallet secret. It
   checks the form of the id and its limits on connections and writes, behind the password gate of
-  the preview. So any client that knows a wallet id gets the sealed documents of that wallet, with
-  their paths, field names and padded sizes, and then each new write as it happens. It can also
-  write or replace documents of that wallet. It cannot read the values or seal new ones, because
-  that needs the wallet secret, but it can write back an old value that it saw. The timing, the
-  counts and the availability stay exposed: a replaced document stops the wallet (`groupSocket`
-  and `Store` in `cf/src/index.js`). The old wallet of a move holds the id of the new wallet
-  (section 8).
+  the preview. So any client that connects with a wallet id gets the documents that the server
+  stores for that wallet, sealed, with their paths, field names and padded sizes, and then each new
+  write as it happens. It can also write or replace documents of that wallet. It cannot read the
+  values or seal new ones, because that needs the wallet secret, but it can write back an old value
+  that it saw. The timing, the counts and the availability stay exposed: a replaced document stops
+  the wallet (`groupSocket` and `Store` in `cf/src/index.js`). A wallet id is in the old wallet of a
+  move (section 8), and the address bar and the browser history hold the id of an open wallet
+  (`#<id>`). A direct chat is a store of the same kind, and its id (`#c.<id>`) is in the address bar
+  in the same way.
 - **Abuse limits.** A message is at most 300,000 characters, a document at most 256,000, and a
   wallet at most 10 MB. Writes and new connections are rate-limited for each IPv4 address, or for
   each /64 of IPv6 addresses (users who share one share the limit).
@@ -543,7 +545,7 @@ flowchart TD
   OLD -.->|stores the new wallet id, never its secret| NEW
   NEW --> PAY["The old wallet proposes one payment of its spendable Zcash balance to the new address"]
   PAY --> OK["2 of 3 old signers approve.<br/>Approvers who are in the new wallet check its address"]
-  OK --> STAY["The old wallet stays, with its address and history.<br/>Signer C can still read the old wallet, but not the new one.<br/>The move payment gives signer C the new address, the amount,<br/>the note and the id of the new wallet. With the id, the group server<br/>sends signer C the sealed documents of the new wallet and each later write,<br/>and accepts writes from it, so signer C can stop the new wallet with false documents"]
+  OK --> STAY["The old wallet stays, with its address and history.<br/>Signer C can still read the old wallet, but not the new one.<br/>The move payment gives signer C the new address, the amount,<br/>the note and the id of the new wallet. With the id, signer C can get<br/>the sealed documents of the new wallet and each later write from the group server,<br/>which also accepts writes from it, so signer C can stop the new wallet with false documents"]
 ```
 
 ## 9. Keys on the device

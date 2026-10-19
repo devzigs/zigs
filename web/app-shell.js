@@ -659,8 +659,8 @@ function moveDialog(from) {
     el("div", { class: "callout" }, "The new wallet gets a new address. Devices that you leave "
       + "out cannot read the new wallet. They can still read each payment of this old wallet, "
       + "later ones too, and the move payment: the new address, the amount, the note and the id "
-      + "of the new wallet. With that id, the group server sends them the sealed documents of the "
-      + "new wallet and takes their writes, so they can stop it with false documents."),
+      + "of the new wallet. With that id, they can get the sealed documents of the new wallet from "
+      + "the group server, and it takes their writes, so they can stop it with false documents."),
     el("div", { class: "dialog-actions" },
       el("button", { class: "btn", type: "button", onclick: closeCreate }, "Cancel"),
       el("button", { class: "btn primary", type: "submit", ...off.attrs }, "Create new wallet"),
