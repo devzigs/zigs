@@ -52,16 +52,31 @@ const save = (c, seat, make, failure) => locked(c, () => put(c, seat, make, fail
  * goes out.
  */
 export const saveNonces = (c, seat, sid, entry) =>
-  save(
-    c,
-    seat,
-    () => ({
-      nonces: { ...part(c, seat, "nonces"), [sid]: entry },
-      ...(entry.spend ? { salts: { ...part(c, seat, "salts"), [sid]: entry.spend.pair } } : {}),
-      ...(entry.body ? { bodies: { ...part(c, seat, "bodies"), ...entry.body } } : {}),
-    }),
-    "Could not save the approval in this browser, so it was not sent.",
-  );
+  save(c, seat, withNonces(c, seat, sid, entry), SAVE_FAILED);
+const SAVE_FAILED = "Could not save the approval in this browser, so it was not sent.";
+const withNonces = (c, seat, sid, entry) => () => ({
+  nonces: { ...part(c, seat, "nonces"), [sid]: entry },
+  ...(entry.spend ? { salts: { ...part(c, seat, "salts"), [sid]: entry.spend.pair } } : {}),
+  ...(entry.body ? { bodies: { ...part(c, seat, "bodies"), ...entry.body } } : {}),
+});
+
+/**
+ * The nonces of the approval of seat `seat` for session `sid`, made once in this browser, also
+ * across its tabs. Under the lock, with what storage holds now: the saved entry comes back (a retry
+ * publishes the same commitment), a digest that made a share is refused (rule 4), else `make()`
+ * (no network) gives a new entry, saved before it returns.
+ */
+export const approvalOnce = (c, seat, sid, digest, make) =>
+  locked(c, async () => {
+    const saved = savedNonces(c, seat, sid);
+    if (saved) return saved;
+    if (usedDigest(c, seat, digest)) {
+      throw new Error("Seat " + seat + " signed these bytes before, so it will not approve again.");
+    }
+    const entry = await make();
+    await put(c, seat, withNonces(c, seat, sid, entry), SAVE_FAILED);
+    return entry;
+  });
 
 /**
  * The (commitment, SHA-256 of the body) of every payment that a seat of this browser approved.

@@ -26,7 +26,7 @@ import {
   readVerdict,
   snapshotHex,
 } from "./intent.js";
-import { approvedBodies, saveNonces, savedNonces, usedDigest } from "./nonces.js";
+import { approvalOnce, approvedBodies } from "./nonces.js";
 import { holdsShare, solOf } from "./secrets.js";
 import { ensureWorker } from "./session.js";
 import { SESSIONS, isPayment } from "./sessions.js";
@@ -280,17 +280,13 @@ export async function deviceSeen(c, ss) {
 const sha256Hex = async (hex) =>
   hexOf(new Uint8Array(await crypto.subtle.digest("SHA-256", bytesOf(hex))));
 
-/** Fresh nonces for this digest, saved before anything is published. */
-async function makeNonces(c, ss, seat, review) {
-  if (usedDigest(c, seat, review.digest)) {
-    throw new Error("Seat " + seat + " signed these bytes before, so it will not approve again.");
-  }
+/** Fresh nonces for this digest. approvalOnce saves them before anything is published. */
+async function makeEntry(c, ss, seat, review) {
   const s = solOf(c.host, c.gid, seat);
   const made = J(c.W.sol_nonces(S(s.keyPackage), review.digest));
   const entry = { digest: review.digest, nonces: made.nonces, commitments: made.commitments };
   if (isSpend(ss)) entry.spend = c.snaps[ss.id];
   if (isPayment(ss)) entry.body = { [review.said.commitment]: await sha256Hex(review.said.body) };
-  await saveNonces(c, seat, ss.id, entry);
   return entry;
 }
 
@@ -313,7 +309,8 @@ export async function approve(c, ss, seat) {
   const review = reviewOf(c, ss, seat);
   if (!review.ok) throw new Error(review.why);
   await checkNonce(c, review);
-  const entry = savedNonces(c, seat, ss.id) ?? (await makeNonces(c, ss, seat, review));
+  const make = () => makeEntry(c, ss, seat, review);
+  const entry = await approvalOnce(c, seat, ss.id, review.digest, make);
   if (entry.digest !== review.digest) throw new Error("The saved approval is for other bytes.");
   const rel = SESSIONS + "/" + ss.id + "/commits/" + seat;
   const fields = { commitments: entry.commitments, digest: entry.digest, at: Date.now() };

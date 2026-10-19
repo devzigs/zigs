@@ -5,7 +5,15 @@
 // one nonce, which breaks the once-only rule of FROST.
 // Run: node web/test/sol-nonce-tabs.mjs   (Node 24)
 import assert from "node:assert/strict";
-import { pendingShare, saveNonces, savedNonces, shareOnce } from "../sol/nonces.js";
+import {
+  approvalOnce,
+  clearPending,
+  dropNonces,
+  pendingShare,
+  saveNonces,
+  savedNonces,
+  shareOnce,
+} from "../sol/nonces.js";
 import { putSol } from "../sol/secrets.js";
 
 const tick = () => new Promise((done) => setTimeout(done, 1));
@@ -134,6 +142,76 @@ const signer = (made, pkg) => (e) => {
   assert.ok(store.sol.nonces.s3, "a failed save keeps the nonces in storage");
   assert.equal(pendingShare(full, 1, "s3"), undefined, "and memory keeps no share to send");
   assert.ok(savedNonces(full, 1, "s3"), "and memory keeps the nonces");
+}
+
+// ── A late tab that saves, deletes or clears another record keeps the spend ──
+for (const [what, late] of [
+  ["save", (b) => saveNonces(b, 1, "s2", { ...entry, digest: "d2" })],
+  ["drop", (b) => dropNonces(b, 1, "s2")],
+  ["clear", (b) => clearPending(b, 1, "s9")],
+]) {
+  const two = { ...entry, digest: "d2" };
+  const kept = { s9: { share: "x", digest: "d9" } };
+  const { store, tab } = browser({ nonces: { s1: entry, s2: two }, pending: kept });
+  const [a, b] = [tab(), tab()];
+  assert.ok(await shareOnce(a, 1, "s1", signer([], "P1")));
+  await late(b);
+  assert.equal(store.sol.nonces.s1, undefined, "a late " + what + " keeps the nonce spent");
+  assert.ok(store.sol.pending.s1 && store.sol.used.d1, "and keeps the share and the mark");
+}
+
+// ── After the publish the kept share is gone: a late tab still signs nothing ──
+{
+  const { store, tab } = browser({ nonces: { s1: entry } });
+  const [a, b] = [tab(), tab()];
+  assert.ok(await shareOnce(a, 1, "s1", signer([], "P1")));
+  await clearPending(a, 1, "s1");
+  const made = [];
+  assert.equal(await shareOnce(b, 1, "s1", signer(made, "P2")), null, "a published share");
+  assert.equal(made.length, 0, "signs nothing again");
+  assert.ok(store.sol.used.d1);
+}
+
+// ── Storage holds a share that waits, unknown to this tab: nothing is made ──
+{
+  const { store, tab } = browser({ nonces: { s1: entry } });
+  const b = tab();
+  store.sol.pending = { s1: { share: "x", digest: "d1" } };
+  const made = [];
+  assert.equal(await shareOnce(b, 1, "s1", signer(made, "P2")), null, "a kept share of storage");
+  assert.equal(made.length, 0);
+}
+
+// ── Storage that does not read: putSol is false, a share step throws and makes nothing ──
+{
+  const { tab } = browser({ nonces: { s1: entry } });
+  const b = tab();
+  b.host.takeStored = async () => {
+    throw new Error("unreadable");
+  };
+  assert.equal(await putSol(b.host, "G", 1, { backupSaved: true }), false, "putSol is false");
+  const made = [];
+  await assert.rejects(() => shareOnce(b, 1, "s1", signer(made, "P")), /unreadable/);
+  assert.equal(made.length, 0, "and no share is made");
+}
+
+// ── Approvals: one set of nonces per session across the tabs, none for a used digest ──
+{
+  const { store, tab } = browser({});
+  const [a, b] = [tab(), tab()];
+  let n = 0;
+  const make = (tag) => async () => ({ digest: "d1", nonces: "n" + ++n + tag, commitments: "c" });
+  const [x, y] = await Promise.all([
+    approvalOnce(a, 1, "s1", "d1", make("a")),
+    approvalOnce(b, 1, "s1", "d1", make("b")),
+  ]);
+  assert.equal(n, 1, "two tabs make one set of nonces");
+  assert.deepEqual(x, y, "and publish one commitment");
+  assert.deepEqual(store.sol.nonces.s1, x, "which storage holds");
+  assert.deepEqual(await approvalOnce(a, 1, "s1", "d1", make("c")), x, "a retry gets it again");
+  assert.ok(await shareOnce(a, 1, "s1", signer([], "P1")));
+  await assert.rejects(() => approvalOnce(b, 1, "s2", "d1", make("d")), /signed these bytes/);
+  assert.equal(n, 1, "a late tab approves no digest that made a share");
 }
 
 console.log("sol-nonce-tabs: ok");
