@@ -646,8 +646,8 @@ Devices: D1 (presenter, seat 1), D2 (seat 2), D3 (seat 3). Rule for the whole de
 
 | Time | Who | Step | Expected result | Needs |
 |---|---|---|---|---|
-| 0:00 | D1 | Open app.zigs.app and enter the preview password. Say: testnet and Devnet only. Click New wallet. | The picker shows Testnet only. | M1, D1 |
-| 0:45 | D1 | Click Set up my wallet. Keep the recommended 2 of 3 and click Next. Name the wallet. Turn on Solana. Click Review wallet, then Create wallet. Show the invite QR. | The invite card shows. | M3 |
+| 0:00 | D1 | Open app.zigs.app and enter the preview password. Say: testnet and Devnet only. Click Set up a wallet, then Set up my wallet. | The rule step recommends any 2 of 3 devices. | D1 |
+| 0:45 | D1 | Keep the recommended 2 of 3 and click Next. Name the wallet. Turn on Solana. The picker shows Testnet only. Click Review wallet, then Create wallet. Show the invite QR. | The invite card shows. | M1, M3 |
 | 1:15 | D2, D3 | Scan the QR, type a label, click Join as device. | 3 of 3 devices joined. | S10 |
 | 1:45 | D1, D2, D3 | Read the safety number aloud. Each person compares all 30 digits, ticks the box, and presses It matches. Narrate the progress card: Zcash key, Solana key, fee address. | Both ceremonies run. Each seat shows Address checked and key ready. | M3, M4 |
 | 3:00 | D1 | Switch to Demo A. Show the Zcash address, the Available balance and the Solana tab. Press Sync Solana. | Both balances show. | S2 |

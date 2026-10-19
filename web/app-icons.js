@@ -11,6 +11,7 @@ const PATHS = Object.freeze({
   send: "M7 17 17 7M7 7h10v10",
   receive: "M17 7 7 17M7 7v10h10",
   key: "M15 4a5 5 0 1 1-3 9l-7 7H2v-3l7-7a5 5 0 0 1 6-6ZM16 8h.01",
+  lock: "M5 11h14v10H5zM8 11V8a4 4 0 0 1 8 0v3",
   phone: "M7 2h10v20H7zM10 5h4M12 19h.01",
   devices: "M3 4h14v11H3zM1 19h12M18 10h5v11h-5z",
   zec: "M7 6h10L7 18h10M12 3v3m0 12v3",

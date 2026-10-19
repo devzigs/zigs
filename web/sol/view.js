@@ -6,10 +6,16 @@
 import { agreement, seatProgress, started, startBlock } from "./ceremony.js";
 import { base58 } from "./docs.js";
 import { checkLine, provesLocally } from "./localprove.js";
-import { SHOWN, approveLater, approveSeats, payCards, titleOf } from "./payview.js";
+import {
+  PAYMENT_STATES, SHOWN, STATES, approveLater, approveSeats, payCards, titleOf,
+} from "./payview.js";
 import { feeMismatch, feeOf } from "./fee.js";
 import { signingBlock } from "./gate.js";
+import { PAYMENT_KINDS, decodeIntent } from "./intent.js";
+import { approvalClosed } from "./approve.js";
 import { holdsShare, remoteStop, solOf, stopOf } from "./secrets.js";
+import { solText } from "./session.js";
+import { SESSIONS, isPayment } from "./sessions.js";
 
 const ADD_TEXT =
   "A Solana program owns the funds of the group at a program address, which is public and links " +
@@ -87,6 +93,59 @@ export const olderCount = (c) => Math.max(0, (c.sessions ?? []).length - SHOWN);
 /** The same proposals as rows of the Approvals inbox: id, title and the proposing seat. */
 export const pendingRows = (c) =>
   pendingList(c).map((ss) => ({ id: ss.id, title: titleOf(ss), by: ss.by }));
+
+const TONES = { collecting: "plain", signing: "info", signed: "info", sent: "ok", failed: "bad" };
+const SPECIAL = {
+  mine: ["Your approval", "warn"], expired: ["Expired", "plain"], chain: ["Failed on chain", "bad"],
+};
+function badgeKey(ss, waits) {
+  if (waits) return "mine";
+  if (ss.status === "collecting" && approvalClosed(ss)) return "expired";
+  if (ss.status === "sent" && ss.outcome === "failed") return "chain";
+  return ss.status;
+}
+// The badge of a proposal in the Activity list: the word of its card, in the tone of a Zcash row.
+function badgeOf(ss, waits) {
+  const key = badgeKey(ss, waits);
+  if (SPECIAL[key]) return SPECIAL[key];
+  const words = isPayment(ss) ? PAYMENT_STATES : STATES;
+  return [words[key] ?? key, TONES[key] ?? "plain"];
+}
+function sessionRow(ss, waits) {
+  const intent = decodeIntent(ss.intent);
+  const [word, tone] = badgeOf(ss, waits);
+  return {
+    id: ss.id, t: Number(ss.createdAt) || 0, title: titleOf(ss), by: ss.by, word, tone,
+    amount: intent?.amount === undefined ? null : solText(intent.amount),
+    sign: PAYMENT_KINDS.has(intent?.kind) ? "out" : "",
+  };
+}
+// Only a confirmed deposit is SOL that arrived. A deposit that is not confirmed yet, or that
+// failed, is an attempt: no sign, and the word of the Solana section.
+const RECEIVED = ["Received SOL", "in", "Confirmed", "ok", "Added"];
+const FAILED = ["Add SOL", "", "Failed on chain", "bad", "Tried"];
+const ADDED = { confirmed: RECEIVED, finalized: RECEIVED, failed: FAILED };
+const SENT = ["Add SOL", "", "Not confirmed yet", "info", "Sent"];
+function addedRow(a) {
+  const [title, sign, word, tone, added] = ADDED[a.status] ?? SENT;
+  return {
+    id: "added", t: a.at ?? 0, title, by: a.seat, word, tone, added, sign,
+    amount: solText(a.amount), slot: a.slot || null,
+  };
+}
+/**
+ * The Solana rows of the Activity list: the proposals that the section shows, then the last Add
+ * SOL of this tab (the only SOL that this page knows to have arrived). Each row has id, t (ms),
+ * title, by (a seat), word and tone (the badge), amount (SOL text or null), sign ("out", "in" or
+ * "") and, for the Add SOL row, added (the verb: Added, Sent or Tried) and slot. Null until the
+ * proposals of the wallet arrived.
+ */
+export function activityRows(c) {
+  if (!c.loaded[SESSIONS]) return null;
+  const waiting = new Set(pendingList(c).map((ss) => ss.id));
+  const rows = shownWhere(c, () => true).map((ss) => sessionRow(ss, waiting.has(ss.id)));
+  return c.added ? [...rows, addedRow(c.added)] : rows;
+}
 
 function startCard(c, act, actions) {
   const { el, localSeats } = c.host,
@@ -325,12 +384,7 @@ export function solView(c, act, actions) {
   return el(
     "section",
     { class: "card card-pad sol-view", style: "display:grid;gap:12px" },
-    el(
-      "div",
-      { class: "card-head" },
-      el("h2", {}, "Solana"),
-      el("span", { class: "badge plain" }, "Devnet only · beta"),
-    ),
+    el("div", { class: "card-head" }, el("span", { class: "badge plain" }, "Devnet only · beta")),
     // The word stays readable for the checks; a person reads the sentence.
     el("p", { class: "small" }, el("span", { "data-sol": "status", hidden: true }, status),
       STATUS_TEXT[status]),
