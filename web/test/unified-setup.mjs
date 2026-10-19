@@ -698,13 +698,21 @@ function moveWords() {
     assert.match(side(), /Replaced/, "the side list says Replaced without the payments");
     assert.match(row(), /Replaced/, "the wallet list says Replaced without the payments");
     t.inbox[gid] = [];
-    t.balCache[gid] = { total: 0, at: 1 };
+    t.balCache[gid] = { total: 0, at: 200 };
     assert.match(side(), /Moving/,
       "a wallet that was empty before its move does not read ZEC moved");
-    t.inbox[gid] = [{ id: "mv", move: old.movedTo, broadcastTxid: "tx", status: "broadcast" }];
+    const sent = (move) => [{ id: "mv", move, broadcastTxid: "tx", broadcastAt: 100,
+      status: "broadcast" }];
+    t.inbox[gid] = sent(old.movedTo);
     assert.match(side(), /ZEC moved/, "a sent move with no Zcash left reads ZEC moved");
     assert.match(row(), /ZEC moved/, "in the wallet list too");
-    t.balCache[gid] = { total: 5, at: 1 };
+    t.balCache[gid] = { total: 0, at: 50 };
+    assert.match(row(), /Moving/, "a balance saved before the send does not count");
+    t.balCache[gid] = { total: 0, at: 200 };
+    t.inbox[gid] = sent("ef".repeat(10));
+    assert.match(row(), /Moving/, "a move payment to another wallet does not count");
+    t.inbox[gid] = sent(old.movedTo);
+    t.balCache[gid] = { total: 5, at: 200 };
     assert.match(row(), /Moving/, "a wallet with Zcash left is still moving");
     // An open wallet whose document still loads gets the word of a listed wallet.
     Object.assign(t.state, { gid, g: null });

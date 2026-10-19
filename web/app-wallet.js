@@ -244,16 +244,23 @@ const movePayment = () => state.sessions.find((x) => x.move === state.g.movedTo 
  * The word of a wallet that a new wallet replaces, for the wallet list and the side list: "ZEC
  * moved" once the move is done as of the last sync, else "Moving". The open wallet reads its move
  * payment (moveState). Another wallet with a seat here reads its checked payments (inbox) and the
- * balance that this browser saved at its last sync: the move is done when a move payment was sent
- * and no Zcash is left. A wallet that was empty before its move has no move payment. Without the
- * payments of the wallet, the word is "Replaced".
+ * balance that this browser saved at its last sync (movedHere). Without the payments of the
+ * wallet, the word is "Replaced".
  */
 export function moveWord(g) {
   if (g.id === state.gid && state.g) return moveState(curChain()).done ? "ZEC moved" : "Moving";
   const list = inbox[g.id];
   if (!list) return "Replaced";
-  const sent = list.some((ss) => ss.move === g.movedTo && !!ss.broadcastTxid && !ss.error);
-  return sent && balOf(g.id)?.total === 0 ? "ZEC moved" : "Moving";
+  return movedHere(g, list) ? "ZEC moved" : "Moving";
+}
+
+// A move of a listed wallet is done: a move payment to its current new wallet was sent, and the
+// balance saved after that send holds no Zcash. A wallet that was empty before its move has no
+// move payment, and a balance saved before the send says nothing of the move.
+function movedHere(g, list) {
+  const sent = list.find((ss) => ss.move === g.movedTo && !!ss.broadcastTxid && !ss.error);
+  const bal = balOf(g.id);
+  return !!sent && !!bal && bal.total === 0 && bal.at > sent.broadcastAt;
 }
 
 // The steps of a move, read from the old wallet: new wallet ready, payment proposed, funds gone.
