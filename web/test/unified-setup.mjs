@@ -461,6 +461,11 @@ function activityOverview(ctl, at, solRows) {
 function activityStates(ctl, kept) {
   const { state } = t, { g } = state;
   const draw = (filter) => { t.ui.chainFilter = filter; return pageText(); };
+  const added = ctl.added;
+  ctl.added = { ...added, status: "failed" };
+  assert.match(draw("all"), /Add SOLSolana Devnet.*Tried by .*Failed on chain/,
+    "an Add SOL that failed is no received SOL");
+  ctl.added = added;
   ctl.loaded = { ...ctl.loaded, solsessions: false };
   const reading = draw("all");
   assert.match(reading, /Reading the Solana transactions/);
@@ -486,7 +491,7 @@ function activityStates(ctl, kept) {
   assert.match(pageText(), /Money you receive and payments your signers propose show up here/);
   state.g = g;
   Object.assign(ctl, { sessions: [], added: null });
-  assert.match(pageText(), /ZEC you receive, payments your signers propose and SOL that you add/);
+  assert.match(pageText(), /ZEC you receive and payments your signers propose show up here/);
 }
 // The phone Menu closes on a pick; the sections show for the formed wallet only; the switcher
 // shows with two or more wallets.

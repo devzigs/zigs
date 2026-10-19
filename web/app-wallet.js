@@ -415,8 +415,7 @@ function activity() {
 }
 
 const EMPTY_ACTIVITY = "Money you receive and payments your signers propose show up here.";
-const EMPTY_WITH_SOL = "ZEC you receive, payments your signers propose and SOL that you add "
-  + "show up here.";
+const EMPTY_WITH_SOL = "ZEC you receive and payments your signers propose show up here.";
 
 function activityRows(list) {
   const line = "border-top:1px solid var(--line)";
@@ -448,8 +447,9 @@ const chainSelect = (pick) => el("label", { class: "field activity-filter" },
     CHAIN_FILTERS.map(([value, label]) =>
       el("option", { value, selected: pick === value }, label))));
 
-const SOL_ACTIVITY_NOTE = "The Solana rows show the payments of this wallet and the last SOL "
-  + "that you added in this tab. SOL that other people send to the wallet does not show here.";
+const SOL_ACTIVITY_NOTE = "The Solana rows show the payments of this wallet. They also show the "
+  + "last SOL that you added, until you leave this wallet or reload the page. SOL that other "
+  + "people send to the wallet does not show here.";
 const noteRow = (text) => el("p", { class: "row-note" }, text);
 // What the list cannot show: Solana that did not load or is not read yet, and Solana that this
 // page never knows (a deposit by another person).
@@ -484,7 +484,7 @@ const SOL_ICONS = { out: "↗", in: "↙", "": "↔" };
 function solActivityRow(r) {
   const time = r.t ? " · " + when(r.t) : "", who = proposer({ by: r.by });
   const slot = r.slot ? " · slot\u00a0" + Number(r.slot).toLocaleString() : "";
-  const subs = r.added ? ["Solana Devnet" + slot, "Added by " + who + time]
+  const subs = r.added ? ["Solana Devnet" + slot, (r.sign ? "Added by " : "Tried by ") + who + time]
     : ["Solana Devnet · Proposed by " + who + time];
   return el("button", {
     class: "row-item", type: "button", "data-key": "sol-act-" + r.id, onclick: openSolana,
