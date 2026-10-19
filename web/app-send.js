@@ -135,8 +135,9 @@ function showShown(hint, shown) {
   else showHint(hint, shown.text, "ok");
 }
 
-// An address that "Propose again" kept with the name of the first proposal (a testnet wallet).
-const keptName = (r, typed) => znsOn() && r.name && onNetwork(typed.trim());
+// An address that "Propose again" kept with the name of the first proposal (a testnet wallet),
+// when Send still takes the address.
+const keptName = (r, typed) => znsOn() && r.name && !addressRefusal(typed.trim());
 const keptHint = (hint, name) => showHint(hint, "Kept from the first proposal: " + zecName(name)
   + ". Each approver in the web app checks the name again.", "ok");
 
