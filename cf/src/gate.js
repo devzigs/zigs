@@ -50,44 +50,59 @@ async function basicOk(req, password) {
   return sameText(pass, password);
 }
 
-/** The value of cookie `name` in the Cookie header, or null. */
-function cookieOf(req, name) {
+// A cookie of the same name from another place (a sibling host) can come first in the header, so
+// every value counts. A few are enough: a request with many is no session of ours.
+const MAX_VALUES = 4;
+
+/** The values of cookie `name` in the Cookie header, in order, at most MAX_VALUES. */
+function cookiesOf(req, name) {
+  const values = [];
   for (const part of (req.headers.get("Cookie") || "").split(";")) {
     const at = part.indexOf("=");
-    if (at > 0 && part.slice(0, at).trim() === name) return part.slice(at + 1).trim();
+    if (at > 0 && part.slice(0, at).trim() === name) values.push(part.slice(at + 1).trim());
   }
-  return null;
+  return values.slice(0, MAX_VALUES);
 }
 
-/** True when the request carries an unexpired session cookie that the key of `password` signed. */
-async function cookieOk(req, password, now) {
-  const [, expiry, mac] = VALUE.exec(cookieOf(req, COOKIE) ?? "") ?? [];
+/** True when `value` is an unexpired session cookie that `key` signed. */
+async function signedValue(value, key, now) {
+  const [, expiry, mac] = VALUE.exec(value) ?? [];
   if (!expiry || Number(expiry) * 1000 <= now) return false;
-  const key = await cookieKey(password);
   return crypto.subtle.verify("HMAC", key, fromB64url(mac), enc.encode(expiry));
 }
 
+/** True when the request carries a session cookie that the key of `password` signed. */
+async function cookieOk(req, password, now) {
+  const values = cookiesOf(req, COOKIE);
+  if (values.length === 0) return false;
+  const key = await cookieKey(password);
+  const checks = await Promise.all(values.map((value) => signedValue(value, key, now)));
+  return checks.includes(true);
+}
+
+// The hosts of the local dev server. Safari drops a Secure cookie on http://localhost.
+const LOCAL = new Set(["localhost", "127.0.0.1", "[::1]"]);
+
 /**
- * The Set-Cookie value of a new session: an expiry and its HMAC, never the password. Secure on an
- * https request, which every production request is after the redirect: Safari drops a Secure
- * cookie on http://localhost, where the local dev server runs.
+ * The Set-Cookie value of a new session: an expiry and its HMAC, never the password. It is Secure
+ * on every host but the local dev server.
  */
 export async function sessionCookie(req, password, now = Date.now()) {
   const expiry = String(Math.floor(now / 1000) + MAX_AGE_S);
   const mac = await crypto.subtle.sign("HMAC", await cookieKey(password), enc.encode(expiry));
-  const secure = new URL(req.url).protocol === "https:" ? "; Secure" : "";
+  const secure = LOCAL.has(new URL(req.url).hostname) ? "" : "; Secure";
   return `${COOKIE}=${expiry}.${b64url(mac)}; Max-Age=${MAX_AGE_S}; Path=/; HttpOnly${secure}` +
     "; SameSite=Strict";
 }
 
 /**
- * A navigation gets the Basic challenge. So does a request with no fetch metadata (curl, tools,
- * an old browser): it may be one. Every browser that sends the metadata marks its background
- * requests (websocket, cors, no-cors), and those get a plain 401 that no browser prompts on.
+ * Only a background request of a browser gets a plain 401: one with a Sec-Fetch-Dest other than
+ * document, and no navigation. A browser that sends fetch metadata sends Sec-Fetch-Dest on every
+ * request. A request without it (curl, Node fetch, an old browser) gets the Basic challenge.
  */
 function challenges(req) {
-  const mode = req.headers.get("Sec-Fetch-Mode");
-  return mode === null || mode === "navigate" || req.headers.get("Sec-Fetch-Dest") === "document";
+  const dest = req.headers.get("Sec-Fetch-Dest");
+  return dest === null || dest === "document" || req.headers.get("Sec-Fetch-Mode") === "navigate";
 }
 
 function refusal(req) {

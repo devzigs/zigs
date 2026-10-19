@@ -3,8 +3,17 @@
 // navigation only, so that iOS Safari, which sends no cached password on the group WebSocket,
 // never prompts again while the page runs.
 import assert from "node:assert/strict";
-import { createHmac, randomBytes } from "node:crypto";
+import { createHash, createHmac, randomBytes } from "node:crypto";
+import { readFileSync } from "node:fs";
 import { COOKIE, MAX_AGE_S, gate, sessionCookie, withCookie } from "../src/gate.js";
+
+// The real fetch handler of cf/src/index.js, as web/test/lwd.mjs loads it: a stub for the
+// Cloudflare import, and the file URL of the gate module, which a data: URL cannot resolve.
+const index = readFileSync(new URL("../src/index.js", import.meta.url), "utf8")
+  .replace('import { DurableObject } from "cloudflare:workers";', "const DurableObject = class {};")
+  .replace('from "./gate.js";', `from "${new URL("../src/gate.js", import.meta.url).href}";`);
+const { default: worker } = await import(
+  `data:text/javascript;base64,${Buffer.from(index).toString("base64")}`);
 
 const PASSWORD = `pw-${randomBytes(12).toString("hex")}`;
 const ENV = { APP_PASSWORD: PASSWORD };
@@ -51,8 +60,12 @@ let session = null;
   assert.equal(Number(session.split(".")[0]), NOW / 1000 + MAX_AGE_S, "the expiry is in the value");
   const any = await gate(request("/x", { Authorization: basic(PASSWORD, "anyone") }), ENV, NOW);
   assert.ok(any.cookie, "any user name");
-  const local = await sessionCookie(new Request("http://localhost:8795/"), PASSWORD, NOW);
-  assert.ok(!local.includes("Secure"), "Safari drops a Secure cookie on http://localhost");
+  const secureOn = async (url) => (await sessionCookie(new Request(url), PASSWORD, NOW))
+    .includes("; Secure");
+  for (const url of ["http://localhost:8795/", "http://127.0.0.1:8795/", "http://[::1]:8795/"]) {
+    assert.equal(await secureOn(url), false, `Safari drops a Secure cookie on ${url}`);
+  }
+  assert.equal(await secureOn("http://app.zigs.app/"), true, "Secure on every other host");
   console.log("ok  a valid password passes and gets a seven-day HttpOnly cookie with no password");
 }
 
@@ -64,6 +77,12 @@ let session = null;
   }
   const both = request("/", withSession(session, { Authorization: basic(PASSWORD) }));
   assert.deepEqual(await gate(both, ENV, NOW), {}, "a valid cookie gets no new one");
+  const shadowed = { Cookie: `${COOKIE}=junk; ${COOKIE}=1.x; other=2; ${COOKIE}=${session}` };
+  assert.deepEqual(await gate(request("/ws", { ...SOCKET, ...shadowed }), ENV, NOW), {},
+    "a cookie of the same name from a sibling host shadows no valid one");
+  const many = { Cookie: [...Array(4).fill(`${COOKIE}=junk`), `${COOKIE}=${session}`].join("; ") };
+  const capped = await gate(request("/ws", { ...SOCKET, ...many }), ENV, NOW);
+  assert.equal(capped.refused?.status, 401, "at most four values of the name count");
   const late = NOW + (MAX_AGE_S - 1) * 1000;
   assert.deepEqual(await gate(request("/ws", withSession(session, SOCKET)), ENV, late), {});
   console.log("ok  the cookie alone opens every route, the WebSocket too, until it expires");
@@ -111,6 +130,18 @@ let session = null;
   assert.equal(wrong.refused?.status, 401, "a wrong password");
   const broken = await gate(request("/", { Authorization: "Basic %%%" }), ENV, NOW);
   assert.equal(broken.refused?.status, 401, "credentials that are no base64");
+  const b64 = Buffer.from(`demo:${PASSWORD}`).toString("base64");
+  const bearer = await gate(request("/", { Authorization: `Bearer ${b64}` }), ENV, NOW);
+  assert.equal(bearer.refused?.status, 401, "only the Basic scheme");
+  const colon = { APP_PASSWORD: "a:b:c" };
+  const colons = await gate(request("/", { Authorization: basic("a:b:c") }), colon, NOW);
+  assert.ok(colons.cookie, "a password with colons: all after the first colon counts");
+  // A wrong password whose SHA-256 ends with the same byte: a compare of one byte would take it.
+  const last = (text) => createHash("sha256").update(text).digest().at(-1);
+  let twin = 0;
+  while (last(PASSWORD + twin) !== last(PASSWORD)) twin += 1;
+  const near = await gate(request("/", { Authorization: basic(PASSWORD + twin) }), ENV, NOW);
+  assert.equal(near.refused?.status, 401, "every byte of the digest counts");
   console.log("ok  without the secret nothing passes, and a wrong password fails");
 }
 
@@ -123,6 +154,10 @@ let session = null;
   assert.equal(await challenge({ "Sec-Fetch-Mode": "no-cors", "Sec-Fetch-Dest": "document" }),
     BASIC, "a document");
   assert.equal(await challenge({}), BASIC, "no fetch metadata: curl, a tool, an old browser");
+  assert.equal(await challenge({ "Sec-Fetch-Mode": "cors" }), BASIC,
+    "Node fetch: a mode but no Sec-Fetch-Dest, as demo-check sends it");
+  assert.equal(await challenge({ "Sec-Fetch-Mode": "navigate", "Sec-Fetch-Dest": "iframe" }),
+    BASIC, "a navigation of a frame");
   const quiet = [SOCKET, { "Sec-Fetch-Mode": "cors", "Sec-Fetch-Dest": "empty" },
     { "Sec-Fetch-Mode": "no-cors", "Sec-Fetch-Dest": "image" },
     { "Sec-Fetch-Mode": "same-origin", "Sec-Fetch-Dest": "worker" }];
@@ -148,5 +183,22 @@ let session = null;
   const none = new Response("x");
   assert.equal(withCookie(none, undefined), none);
   console.log("ok  the response carries the cookie; a WebSocket upgrade passes unchanged");
+}
+// ── The real handler sets the cookie, takes it alone, and prompts no background request ──
+{
+  const assets = { fetch: async () => new Response("asset body") };
+  const env = { ...ENV, ASSETS: assets };
+  const call = (headers) => worker.fetch(request("/app.js", headers), env);
+  const first = await call({ Authorization: basic(PASSWORD) });
+  assert.equal(first.status, 200);
+  const cookie = first.headers.get("Set-Cookie");
+  const attributes = "; Max-Age=604800; Path=/; HttpOnly; Secure; SameSite=Strict";
+  assert.ok(cookie.startsWith(`${COOKIE}=`) && cookie.endsWith(attributes), cookie);
+  assert.equal(await first.text(), "asset body");
+  const again = await call({ Cookie: cookie.split(";")[0], ...SOCKET });
+  assert.deepEqual([again.status, again.headers.get("Set-Cookie")], [200, null]);
+  const quiet = await call(SOCKET);
+  assert.deepEqual([quiet.status, quiet.headers.get("WWW-Authenticate")], [401, null]);
+  console.log("ok  the real handler sets the cookie, takes it alone, and prompts no socket");
 }
 console.log("gate: ok");
