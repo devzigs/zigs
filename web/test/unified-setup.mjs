@@ -490,7 +490,7 @@ function activityStates(ctl, kept) {
   const done = kept.docs.soldone;
   ctl.docs = { ...kept.docs, soldone: { ...done, 2: { ...done[2], groupKey: "00".repeat(32) } } };
   const differs = draw("sol");
-  assert.match(differs, /differ, or do not fit this device, so its payments do not show here/);
+  assert.match(differs, /differ, or do not fit this browser, so its payments do not show here/);
   assert.equal(select(), null, "no select for keys that differ");
   ctl.docs = { ...kept.docs, soldone: { 1: done[1], 2: done[2] } };
   const running = draw("all");

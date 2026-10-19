@@ -490,7 +490,7 @@ const SOL_ACTIVITY_NOTE = "The Solana rows show the payments of this wallet. The
 // share or PDA identity of this device does not fit the published ones.
 const SOL_LOST = {
   stopped: "The Solana part stopped, so its payments do not show here.",
-  differs: "The Solana keys of this wallet differ, or do not fit this device, so its payments "
+  differs: "The Solana keys of this wallet differ, or do not fit this browser, so its payments "
     + "do not show here. Open Solana to see why.",
   running: "The Solana part is not ready yet, so its payments do not show here.",
 };
