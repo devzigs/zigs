@@ -5412,6 +5412,22 @@ async function runAcctSync() {
     from(layer);
     press(true);
     assert.equal(document.activeElement, c, "Shift+Tab on the layer itself goes to the last one");
+    from(c);
+    press(false, "Enter");
+    assert.equal(stops, 0, "another key moves nothing");
+    for (const [what, off] of [["a disabled control", control({ disabled: true })],
+      ["a control that is not shown", control({ getClientRects: () => [] })],
+      ["a control in a closed details", control({ checkVisibility: () => false })],
+      ["a control with tabindex -1", control({ tabIndex: -1 })]]) {
+      open(a, c, off);
+      from(c);
+      press(false);
+      assert.equal(document.activeElement, a, what + " is no stop at the end");
+      open(off, a, c);
+      from(a);
+      press(true);
+      assert.equal(document.activeElement, c, what + " is no stop at the start");
+    }
     // A control of the layer that is no stop (tabindex -1) has the focus: Tab goes to the next
     // stop after it, and Shift+Tab to the stop before it.
     const quiet = control({ tabIndex: -1 });
@@ -5432,22 +5448,6 @@ async function runAcctSync() {
     press(true);
     assert.equal(document.activeElement, c,
       "Shift+Tab from it before the first stop goes to the last");
-    from(c);
-    press(false, "Enter");
-    assert.equal(stops, 0, "another key moves nothing");
-    for (const [what, off] of [["a disabled control", control({ disabled: true })],
-      ["a control that is not shown", control({ getClientRects: () => [] })],
-      ["a control in a closed details", control({ checkVisibility: () => false })],
-      ["a control with tabindex -1", control({ tabIndex: -1 })]]) {
-      open(a, c, off);
-      from(c);
-      press(false);
-      assert.equal(document.activeElement, a, what + " is no stop at the end");
-      open(off, a, c);
-      from(a);
-      press(true);
-      assert.equal(document.activeElement, c, what + " is no stop at the start");
-    }
     // The Close button of an open banner is a stop after the controls of the layer.
     const close = control();
     banner = { querySelectorAll: () => [close] };

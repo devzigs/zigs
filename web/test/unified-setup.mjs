@@ -687,6 +687,10 @@ function activityList(ctl) {
     activityOverview(ctl, at, solRows);
     activityStates(ctl, kept);
     activityBadges(ctl);
+    t.ui.tab = "activity";
+    activityRowsFor(ctl, state);
+    activityChecks(ctl, draw);
+    activityOlder(ctl, draw);
   } finally {
     state.g = g;
     Object.assign(ctl, kept);
@@ -723,8 +727,6 @@ function activityStates(ctl, kept) {
   assert.ok(select(), "the select shows while the rows load");
   assert.ok(gone(reading, [TITLES[0], TITLES[4]]), "no Solana row yet");
   ctl.loaded = kept.loaded;
-  activityChecks(ctl, draw);
-  activityOlder(ctl, draw);
   ctl.docs = { ...ctl.docs, solstart: {} };
   const idle = draw("sol");
   assert.equal(select(), null, "no select before the Solana part starts");
@@ -792,7 +794,7 @@ function activityChecks(ctl, draw) {
 // More proposals than the Solana section shows: the list has the newest SHOWN and says so.
 function activityOlder(ctl, draw) {
   const { sessions, added } = ctl;
-  const solRows = () => findAll(pageTree(), (n) => /^sol-act-m/.test(n.attrs?.["data-key"] ?? ""));
+  const solRows = () => findAll(pageTree(), (n) => n.attrs?.["data-key"]?.startsWith("sol-act-m"));
   const older = / Older Solana proposals are not listed\./;
   try {
     ctl.added = null;
