@@ -68,7 +68,8 @@ coin. The runbook of a demo with three devices is in [docs/demo.md](docs/demo.md
 1. Open https://app.zigs.app. The browser asks for a user name and a password. Type any user name
    and the password that the Zigs team gave you.
 2. Click **New wallet**. The network is **Testnet**, the only choice. Set **Signers** to 2 and
-   **Approvals needed** to 2, then click **Create wallet**. You now hold seat 1.
+   **Approvals needed** to 2. Keep **Also set up Solana Devnet** ticked (it is on by default),
+   then click **Create wallet**. You now hold seat 1.
 3. Open **Trying Zigs alone? Play the other seats in this browser** and click **Play seat 2**.
    The two seats create the key together. Within half a minute the wallet opens, and both seats
    show **Address checked**.
@@ -91,25 +92,30 @@ coin. The runbook of a demo with three devices is in [docs/demo.md](docs/demo.md
 
 **Solana Devnet** (beta, web app only)
 
-8. Open the **Solana** tab of the wallet and click **Add Solana**. The two seats of this browser
-   run a second key ceremony. Wait until the tab shows **Seat 1: key ready** and
-   **Seat 2: key ready**.
-9. Under **Fund the fee address**, each seat shows **Your fee address**. Send at least 0.03 SOL of
-   Devnet SOL to each of them (**Get Devnet SOL** opens the Solana faucet), then click **Check
-   balance**. Fund every seat: a seat with an empty fee address can take the execute and fail,
-   and the payment then waits.
+8. After the Zcash key, the page makes the Solana key by itself: the two seats of this browser
+   run a second key ceremony. The Overview shows **Solana is still setting up**, with the steps
+   **Create the Solana key** and **Fund your fee address**. Wait until the first step says "Each
+   signer holds one piece of the Solana key." If you turned the box off in step 2, open
+   **Solana** and click **Add Solana** to start it.
+9. Click **Open Solana** (or **Solana** in the side menu). Under **Fund the fee address**, each
+   seat shows **Your fee address**. Each device funds the fee address of its own seat; here this
+   browser holds both seats. Send at least 0.03 SOL of Devnet SOL to each of them (**Get Devnet
+   SOL** opens the Solana faucet), then click **Check balance**. A seat that proposes or executes
+   needs about 0.003 SOL, and the seat that adds SOL also needs the 0.02 SOL of the next step.
 10. Under **Add SOL**, keep 0.02 and click **Add SOL**. Then click **Sync Solana**. The **Private
     balance** shows the SOL. The first sync can take about 25 s.
-11. Under **Pay from the group**, choose one:
-    - **Send privately** pays the **Shielded address** of another group. Make a second wallet in
-      the same way, and copy the address from its Solana tab. The chain hides the amount.
-    - **Withdraw** pays a public Devnet address, for example the fee address of seat 2 (click
-      its **Copy** button). The chain shows the recipient and the amount.
-12. In the proposal, click **Approve as seat 1** and **Approve as seat 2**. If the screen says
-    "Zigs is reading your wallet to check this payment", wait until it shows the payment, then
-    click. After 2 approvals, a seat with a funded fee address executes the payment by itself. The
-    status goes from **Approved, executing** to **Executed**, with the transaction id. Click
-    **Sync Solana** to see the new balance.
+11. Under **Send SOL**, choose one:
+    - **Private payment**: paste the **Shielded address** of another group into **Payee (full
+      shielded address)**, enter an amount and click **Send privately**. Make a second wallet in
+      the same way, and copy the address from its Solana section. The chain hides the amount.
+    - **Public withdrawal**: paste a public Devnet address, for example the fee address of seat 2
+      (click its **Copy** button), enter an amount and click **Withdraw**. The chain shows the
+      recipient and the amount.
+12. In the proposal, wait until Zigs has checked it: the **Approve as seat 1** and **Approve as
+    seat 2** buttons appear then. Click both. After 2 approvals, a seat with a funded fee address
+    executes the payment by itself. The steps go to **Executed**, and the status goes from
+    **Approved, executing** to **Executed**, with a link to the transaction in the explorer.
+    Click **Sync Solana** to see the new balance.
 
 To see signer changes, open **Signers**, then **Change signers**. To see the privacy model, read
 [PRIVACY.md](PRIVACY.md).
@@ -118,7 +124,7 @@ To see signer changes, open **Signers**, then **Change signers**. To see the pri
 
 | Criterion | Evidence |
 |---|---|
-| **Privacy** | On chain, the transaction shape matches the standard wallet library: same builder, padding, standard fee and anchor depth. A group payment expires after one day instead of 40 blocks, because its approvals take hours, so the expiry marks it, and so does a priority fee ([comparison](PRIVACY.md#on-chain)). The server stores only encrypted values, padded so that even their length hides amounts. On the device, key shares can be locked with a passkey (web) or Face ID (iPhone) ([how](PRIVACY.md#lock-with-a-passkey-or-face-id)). Key share backups are encrypted with a passphrase (Argon2id and XChaCha20-Poly1305) and open on the web, iPhone and Mac ([how](PRIVACY.md#key-share-backups)). The page can connect only to its own host (the group server and the testnet light-wallet relay) and two ChainSafe light-wallet servers (Content-Security-Policy). For testnet wallets, the Solana Worker of the page also connects to the Helius Devnet host ([how](PRIVACY.md#solana-beta-helius-devnet)). It is prepared for Tor Browser, but not yet tested end to end ([how](PRIVACY.md#use-zigs-over-tor)). The Zigs server code keeps no logs; its host, Cloudflare, can see connection data. Every remaining leak is listed in [PRIVACY.md](PRIVACY.md). |
+| **Privacy** | On chain, the transaction shape matches the standard wallet library: same builder, padding, standard fee and anchor depth. A group payment expires after one day instead of 40 blocks, because its approvals take hours, so the expiry marks it, and so does a priority fee ([comparison](PRIVACY.md#on-chain)). The server stores only encrypted values, padded so that even their length hides amounts. On the device, key shares can be locked with a passkey (web) or Face ID (iPhone) ([how](PRIVACY.md#lock-with-a-passkey-or-face-id)). Key share backups are encrypted with a passphrase (Argon2id and XChaCha20-Poly1305) and open on the web, iPhone and Mac ([how](PRIVACY.md#key-share-backups)). The page can connect only to its own host (the group server and the testnet light-wallet relay) and two ChainSafe light-wallet servers (Content-Security-Policy). For testnet wallets, the Solana Worker of the page also connects to the Helius Devnet host ([how](PRIVACY.md#solana-beta-helius-devnet)). With local proving on, it also fetches the proving keys from one CloudFront folder (`d3gbdb0egjwcw9.cloudfront.net/proving-keys/3a1c88f90f609eb1/`, `SOL_KEYS` in `cf/src/index.js`). It is prepared for Tor Browser, but not yet tested end to end ([how](PRIVACY.md#use-zigs-over-tor)). The Zigs server code keeps no logs; its host, Cloudflare, can see connection data. Every remaining leak is listed in [PRIVACY.md](PRIVACY.md). |
 | **Usefulness** | Designed for team treasuries, DAOs and families. Usable today on Zcash testnet (web, iPhone and Mac) and Solana Devnet (web): invite links and QR codes; batch payments for payroll and grants (up to 20 recipients, one approval round, pasted from a spreadsheet); signer changes; encrypted key share backups. |
 | **Execution** | The live app works end to end. Seventeen testnet transactions made by the apps are [listed below](#proof-on-testnet). The engine has 127 tests, and a command-line suite runs adversarial cases. |
 | **Originality** | An end-user app for re-randomized FROST: no command line, no trusted dealer, and no server that can read the wallet. Each device decodes the PCZT and checks every output before it approves, and binds its approval to the transaction's sighash. Signer changes, batch payments and native iPhone and Mac apps are included. Built during the Zecathon window: the first commit is from October 10, 2026. |
