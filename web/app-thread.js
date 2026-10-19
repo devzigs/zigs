@@ -320,7 +320,7 @@ export function leaveBox(cid) {
     el("p", {}, "Leave this chat? It is removed from this browser only. The sealed messages stay "
       + "on the group server." + again),
     el("div", { class: "dialog-actions" }, btn("leave-no", "btn", ask(false), "Cancel"),
-      btn("leave-yes", "btn", act(() => leaveChat(cid)), "Leave chat")));
+      btn("leave-yes", "btn danger", act(() => leaveChat(cid)), "Leave chat")));
 }
 
 export function newChatDialog() {

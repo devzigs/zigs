@@ -160,6 +160,15 @@ button { font: inherit; color: inherit; }
   background: transparent; border-color: transparent; box-shadow: none; color: var(--muted);
 }
 .btn.ghost:hover:not(:disabled) { color: var(--text); background: var(--raised); }
+/* A button that deletes or removes something. It stays red when it is hovered. */
+.btn.danger {
+  background: var(--bad-soft); color: var(--bad); border-color: var(--bad); box-shadow: none;
+}
+.btn.danger:hover:not(:disabled) {
+  background: color-mix(in srgb, var(--bad) 18%, transparent); border-color: var(--bad);
+}
+.btn .symbol { width: 18px; height: 18px; }
+.btn.lg .symbol { width: 20px; height: 20px; }
 .btn.sm { min-height: 48px; padding: 10px 12px; font-size: 13px; border-radius: var(--r-sm); }
 .btn.lg { min-height: 54px; padding-inline: 24px; font-size: 15px; }
 .btn.block { width: 100%; }
@@ -294,6 +303,16 @@ a.row-item { text-decoration: none; }
 .chev { color: var(--faint); }
 .empty { padding: 36px 20px; text-align: center; display: grid; gap: 8px; justify-items: center; color: var(--muted); }
 .empty h3 { color: var(--text); font-size: 15px; }
+
+/* The lock card and the launch card: one symbol, a heading and a short text, in the middle. */
+.launch-card, .lock-card {
+  width: min(540px, 100%); margin: 8vh auto 0; padding: 48px 28px; gap: 12px;
+}
+.launch-card > .symbol, .lock-card > .symbol { width: 40px; height: 40px; color: var(--metal); }
+.launch-card h1, .lock-card h1 {
+  color: var(--text); font-size: 24px; line-height: 1.25; letter-spacing: -0.03em;
+}
+.lock-card .callout { text-align: left; }
 
 /* Messages */
 .chat { gap: 12px; }

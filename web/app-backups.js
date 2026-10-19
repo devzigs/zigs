@@ -412,7 +412,8 @@ export function staleRestoreNote() {
     el("div", { class: "dialog-actions" },
       sure ? el("button", { class: "btn", type: "button", onclick: keep }, "Keep it") : null,
       el("button", {
-        class: "btn", type: "button", onclick: sure ? drop : () => { ui.dropStale = gid; render(); },
+        class: sure ? "btn danger" : "btn", type: "button",
+        onclick: sure ? drop : () => { ui.dropStale = gid; render(); },
       }, sure ? "Remove seat " + stale.join(", ") + " from this browser" : "Remove from this browser")));
 }
 

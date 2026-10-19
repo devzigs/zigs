@@ -171,7 +171,7 @@ function accountActions(warning, canSave = true) {
         + "brings the account back." + (warning ? " " + warning : "")),
       el("div", { class: "dialog-actions" },
         el("button", { class: "btn", type: "button", onclick: ask(false) }, "Cancel"),
-        el("button", { class: "btn", type: "button", onclick: act(removeAccount) },
+        el("button", { class: "btn danger", type: "button", onclick: act(removeAccount) },
           "Remove the account"))) : null);
 }
 

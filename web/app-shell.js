@@ -179,7 +179,7 @@ export function forgetBox() {
       + "back, and without one its money is lost."),
     el("div", { class: "dialog-actions" },
       el("button", { class: "btn", type: "button", onclick: cancel }, "Cancel"),
-      el("button", { class: "btn", type: "button", onclick: forgetVault },
+      el("button", { class: "btn danger", type: "button", onclick: forgetVault },
         "Delete the locked keys")));
 }
 
@@ -189,12 +189,12 @@ export function lockView() {
     ? "The locked keys in this browser are damaged and cannot be opened."
     : "The key shares in this browser are encrypted with your passkey. "
       + "Unlock with Face ID, Touch ID or your security key.";
-  return el("div", { class: "card empty" }, el("h3", {}, "Zigs is locked"),
-    el("p", { class: "small" }, text),
+  return el("div", { class: "card empty lock-card" }, icon("lock"),
+    el("h1", {}, "Zigs is locked"), el("p", { class: "small" }, text),
     lockedVault.damaged ? null
       : el("button", {
         class: "btn primary", type: "button", disabled: !engineSettled, onclick: act(unlockVault),
-      }, "Unlock"),
+      }, icon("key"), "Unlock"),
     ui.forget ? forgetBox()
       : el("button", { class: "btn ghost sm", type: "button", onclick: ask }, "Lost the passkey?"));
 }
@@ -211,8 +211,9 @@ function lockButton() {
 }
 
 export function loadingView() {
-  return el("div", { class: "card empty" }, el("span", { class: "dot busy" }),
-    el("h3", {}, Z ? "Connecting to the group server" : "Loading the crypto engine"),
+  return el("div", { class: "card empty launch-card" }, icon("security"),
+    el("span", { class: "dot busy" }),
+    el("h1", {}, Z ? "Connecting to the group server" : "Loading the crypto engine"),
     el("p", { class: "small" }, "Your wallets appear in a moment."));
 }
 
