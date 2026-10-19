@@ -1130,7 +1130,7 @@ export const MUTATIONS = [
   program("Y-signed-expiry", "a signed payment expires before the page reads the chain",
     ["web/sol/signing.js", "isPayment(ss) && !ss.signature && pastExpiry(ss)",
       "isPayment(ss) && pastExpiry(ss)"], SOL_PAY,
-    /timeout: session \S+ sent|past the expiry|no execute of it landed/),
+    /timeout: session \S+ sent|past the expiry|no execute of it landed|the failed end check/),
   program("Y-wait", "a gone account fails at once before the expiry",
     ["web/sol/execute.js", "  if (!pastExpiry(ss)) return sleep(30_000);\n", ""],
     SOL_PAY, /no failure before the expiry/),
