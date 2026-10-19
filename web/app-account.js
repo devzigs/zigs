@@ -10,7 +10,7 @@ import {
 } from "./personal.js";
 import { REQUEST_NET, requestProblem } from "./requests.js";
 import { log, showBanner, state, ui } from "./app-state.js";
-import { exclusive, J, S, said } from "./app-kit.js";
+import { exclusive, J, release, S, said, track } from "./app-kit.js";
 import { engineOffThread, Z } from "./app-engine.js";
 import { idb, LOCKED_ELSEWHERE, lockedVault, persist, vault } from "./app-keystore.js";
 import {
@@ -211,7 +211,7 @@ export function startAccount() {
 function dropAccount() {
   const c = acct;
   acct = null;
-  if (c && !c.syncing && c.cw) c.cw.free();
+  if (c && !c.syncing) release(c.cw);
 }
 
 // Another tab removed or replaced the account: this tab's sync follows (the sync key is new then).
@@ -438,7 +438,8 @@ function messageOrStall(c, address, text) {
         + "the account is up to date."));
     }, MESSAGE_TIMEOUT_MS);
   });
-  return Promise.race([cw.createMessage(address, text), late]).finally(() => clearTimeout(timer));
+  return Promise.race([track(cw, cw.createMessage(address, text)), late])
+    .finally(() => clearTimeout(timer));
 }
 
 async function deliver(c, rec, txHex) {

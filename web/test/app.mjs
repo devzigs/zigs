@@ -311,12 +311,24 @@ const sealed = (gid, rel, seat, fields, key, names = ["by", "sig"]) =>
   await waitFor("complete", () => live().status === "complete");
   assert.equal(live().final.txid, "T1");
   assert.equal(typeof data.get(path3).finalSig, "string");
-  class Sent { async broadcast() { return JSON.stringify({ txid: "T1" }); } free() {} }
+  // The person opens the lobby while the transaction goes out: the payment still counts as sent.
+  let duringSend = () => t.setChain(null);
+  class Sent {
+    async broadcast() { duringSend(); return JSON.stringify({ txid: "T1" }); }
+    free() {}
+  }
   t.setZ({ ...fakeZ, ChainWallet: Sent });
   t.setChain({ gid, bal: {}, sent: new Set(), syncing: true, cw: null });
   await t.broadcastTx(live());
   await waitFor("sent", () => live().status === "broadcast");
   assert.deepEqual([live().broadcastTxid, data.get(path3).sentBy >= 1], ["T1", true]);
+  assert.equal(data.get(path3).broadcastError, null, "no sync error on a payment that went out");
+  // Another wallet is open by then: its chain gets no sync from this payment.
+  const otherChain = { gid: "ffffffffffffffffffff", syncing: false, error: "untouched" };
+  duringSend = () => { t.state.gid = otherChain.gid; t.setChain(otherChain); };
+  await t.broadcastTx(live());
+  t.state.gid = gid;
+  assert.deepEqual([otherChain.error, data.get(path3).broadcastError], ["untouched", null]);
   assert.equal(t.state.ignored, 0, "nothing of an honest wallet is ignored");
 
   let checkingSession = null;   // a payment that readSession marked "checking" (the M5 block)
@@ -2928,6 +2940,9 @@ const sealed = (gid, rel, seat, fields, key, names = ["by", "sig"]) =>
       const tipOf = async (url) => { if (url.includes("next")) await nextUp; return 4500001; };
       t.setZ({ ...z8, latestHeight: tipOf, ChainWallet: NextWallet });
       t.chain.net = { servers: ["https://lwd.test", "https://next.test"] };
+      let engineFreed = false;
+      const engineFree = engine.free;
+      engine.free = () => { engineFreed = true; };
       const stuck = propose9("stuck");
       assert.equal(t.ui.proposing, true, "Propose is off while the engine works");
       const stuckSaid = await stuck;
@@ -2980,6 +2995,8 @@ const sealed = (gid, rel, seat, fields, key, names = ["by", "sig"]) =>
       });
       assert.deepEqual([made, t.sendBlocker() === RECONNECT], [["https://next.test"], false],
         "a new wallet object on the next server, and Propose is free of the stall");
+      assert.equal(engineFreed, false, "the engine may still build that proposal: not freed");
+      engine.free = engineFree;
       // A sync that cannot make a new wallet object keeps the stall, and Propose stays off.
       t.setZ(z8);   // its ChainWallet throws
       Object.assign(t.chain, { stalled: t.chain.cw, url: null });
@@ -3932,7 +3949,13 @@ const sealed = (gid, rel, seat, fields, key, names = ["by", "sig"]) =>
   await assert.rejects(t.restoreAccount(payload, true), /keeps one account|already/);
   await assert.rejects(t.applyBackup(payload, true), /already/,
     "a backup goes to the account path");
-  await t.removeAccount();
+  // The account goes while a message builds: the engine still uses its object, so it is not freed.
+  assert.equal(t.messageWhy(), "");
+  const freedAtRemove = net.freed;
+  let removing = null;
+  await silentSend("removed", () => { removing = t.removeAccount(); });
+  await removing;
+  assert.equal(net.freed, freedAtRemove, "the busy object of the account is left to the finalizer");
   assert.deepEqual([t.personal, t.acct, [...idbMap.keys()].filter((k) => k.startsWith("personal"))],
     [null, null, []], "the seed, the key and the sync state are gone");
   await assert.rejects(t.applyBackup(payload, false), /not encrypted/);
