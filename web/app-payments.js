@@ -363,8 +363,10 @@ export async function broadcastAnywhere(txHex, where = {
   let refused = true;
   for (const url of preferredServers(where.net)) {
     const cw = new Z.ChainWallet(where.ufvk, where.birthday, url);
-    const sent = track(cw, cw.broadcast(txHex));
-    try { return J(await withTimeout(sent, SERVER_TIMEOUT_MS * 2, new URL(url).host)); }
+    try {
+      const sent = track(cw, cw.broadcast(txHex));   // the glue throws at once on a bad argument
+      return J(await withTimeout(sent, SERVER_TIMEOUT_MS * 2, new URL(url).host));
+    }
     catch (e) {
       refused = refused && Z.isNodeRefusal(said(e));
       errors.push(new URL(url).host + ": " + said(e));
@@ -482,6 +484,8 @@ async function freshTip() {
 // A sent payment that no block holds yet keeps the wallet's notes until it expires. A node can
 // drop it, so any signer can send the same transaction again. The sent mark stays as it is.
 export async function resendTx(ss) {
+  // A seat writes the final part: a value that is not text would trap in the engine.
+  if (!isStr(ss.final?.tx_hex)) throw new Error("The finished transaction cannot be read.");
   await broadcastAnywhere(ss.final.tx_hex);
   showBanner("ok", "Sent again. It confirms with the next block.");
 }

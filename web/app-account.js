@@ -460,7 +460,7 @@ async function deliver(c, rec, txHex) {
   await mark({ broadcast: true }).catch((err) => log("could not save the send: " + err.message));
   log("message sent: " + rec.txid);
   showBanner("ok", "Sent to the network. It arrives with the next block.");
-  runSync(c);
+  if (c === acct) runSync(c);   // not an account that was removed or replaced meanwhile
 }
 
 // The received memos of the account, joined and sorted into the chats of the contacts and the other

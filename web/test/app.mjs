@@ -329,6 +329,12 @@ const sealed = (gid, rel, seat, fields, key, names = ["by", "sig"]) =>
   await t.broadcastTx(live());
   t.state.gid = gid;
   assert.deepEqual([otherChain.error, data.get(path3).broadcastError], ["untouched", null]);
+  // The same wallet stays open: its chain syncs after the payment.
+  const ownChain = { gid, bal: {}, sent: new Set(), syncing: false, error: "untouched", cw: null };
+  duringSend = () => {};
+  t.setChain(ownChain);
+  await t.broadcastTx(live());
+  assert.notEqual(ownChain.error, "untouched", "the open wallet syncs after its payment");
   assert.equal(t.state.ignored, 0, "nothing of an honest wallet is ignored");
 
   let checkingSession = null;   // a payment that readSession marked "checking" (the M5 block)
@@ -3873,6 +3879,22 @@ const sealed = (gid, rel, seat, fields, key, names = ["by", "sig"]) =>
   };
   await builtIn(0, true);
   await builtIn(700, false);
+  // Another tab replaces the account while the message goes out: the old account gets no sync.
+  const realBroadcast = Wallet.prototype.broadcast;
+  let oldAcct = null;
+  Wallet.prototype.broadcast = function (hex) {
+    oldAcct = t.acct;
+    t.setAcct({ ...t.acct, progress: "", live: "" });
+    return realBroadcast.call(this, hex);
+  };
+  const oldBalAt = t.acct.balAt;
+  try { await t.sendOnChain(ana, "replaced while it goes out"); }
+  finally { Wallet.prototype.broadcast = realBroadcast; }
+  await sleep(100);
+  assert.deepEqual([oldAcct.balAt, oldAcct.syncing], [oldBalAt, false], "no sync of the old one");
+  net.sentIds.push(t.personal.sent.at(-1).txid);
+  await runAcctSync();
+  assert.equal(t.messageWhy(), "");
 
   // The sync follows the saved account. Another tab can leave a record that does not read, or an
   // account with another sync key. Then a send stops with a sentence, and the contact addresses
@@ -3888,9 +3910,11 @@ const sealed = (gid, rel, seat, fields, key, names = ["by", "sig"]) =>
   idbMap.set("personal:rec", goodRec);
   await t.rereadPersonal();
   await synced();
+  const freedAtSwap = net.freed;
   idbMap.set("personal:rec", await deviceSeal({ ...stored1, snapKey: "n".repeat(43) }));
   await t.rereadPersonal();
   assert.equal(t.acct.secret, "n".repeat(43), "the sync of the new key replaces the old one");
+  assert.equal(net.freed, freedAtSwap + 1, "the idle object of the old account is freed");
   idbMap.set("personal:rec", goodRec);
   await t.rereadPersonal();
   await synced();

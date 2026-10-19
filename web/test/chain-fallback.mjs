@@ -210,11 +210,13 @@ release(ended);
 assert.deepEqual([idle.frees, ended.frees], [1, 1], "an idle object is freed, and only once");
 const chainOf = (cw, url) => ({ gid: "freeaaaaaaaaaaaaaaaa", net, cw, url, account: true,
   syncing: false, bal: before, sent: new Set(), prog: null, error: null });
-// Another wallet opens while a proposal runs.
-const opened = new BusyWallet(LWD), endOpened = opened.call();
+// Another wallet opens while a proposal runs, or with no call.
+const opened = new BusyWallet(LWD), endOpened = opened.call(), quiet = new BusyWallet(LWD);
 t.setChain(chainOf(opened, LWD));
 chainMod.dropChain();
-assert.equal(opened.frees, 0, "dropChain leaves a busy object to the finalizer");
+t.setChain(chainOf(quiet, LWD));
+chainMod.dropChain();
+assert.deepEqual([opened.frees, quiet.frees], [0, 1], "dropChain leaves only a busy object");
 // A sync moves to another server while a proposal on the old object runs.
 answer = { [LWD]: "down" };
 const moved = new BusyWallet(LWD), endMoved = moved.call(), m = chainOf(moved, LWD);
@@ -228,6 +230,14 @@ dead.free = () => { throw new Error("null pointer passed to rust"); };
 t.setChain(dd);
 await runSync(dd);
 assert.deepEqual([dd.cw !== dead, dd.url], [true, CHAINSAFE], "connect sets the new object first");
+// A stalled object whose call ended is freed at the next connect.
+const late = new BusyWallet("https://gone.test"), lc = chainOf(late, late.url);
+late.call()();
+await sleep(0);
+lc.stalled = late;
+t.setChain(lc);
+await runSync(lc);
+assert.deepEqual([lc.url, lc.stalled, late.frees], [CHAINSAFE, null, 1], "freed after its call");
 // The sync of a wallet that closed ends while a proposal on it runs.
 const closed = new BusyWallet(CHAINSAFE), endClosed = closed.call();
 const cl = chainOf(closed, CHAINSAFE);
@@ -250,6 +260,7 @@ class SendWallet {
   constructor(_ufvk, _birthday, url) { Object.assign(this, { url, open: 0, frees: 0 }); }
   broadcast() {
     sentBy.push(this);
+    if (this.url.includes("throws")) throw new Error("bad input");   // as the glue does at once
     if (this.url.includes("silent")) { this.open++; return new Promise(() => {}); }
     return Promise.resolve(JSON.stringify({ txid: "T1" }));
   }
@@ -260,11 +271,12 @@ class SendWallet {
 }
 t.setZ({ ...rig.Z, ChainWallet: SendWallet });
 fast();
-const sent = await t.broadcastAnywhere("00", { net: { servers: ["https://silent.test",
-  "https://next.test"] }, ufvk: "u", birthday: 1 });
+const sent = await t.broadcastAnywhere("00", { net: { servers: ["https://throws.test",
+  "https://silent.test", "https://next.test"] }, ufvk: "u", birthday: 1 });
 slow();
-assert.deepEqual([sent.txid, sentBy.map((w) => [w.url, w.frees])],
-  ["T1", [["https://silent.test", 0], ["https://next.test", 1]]], "the next server sends it");
+assert.deepEqual([sent.txid, sentBy.map((w) => [w.url, w.frees])], ["T1", [["https://throws.test",
+  1], ["https://silent.test", 0], ["https://next.test", 1]]], "the next server sends it");
+await assert.rejects(t.resendTx({ final: { tx_hex: 5 } }), /The finished transaction cannot be/);
 t.setZ({ ...rig.Z, latestHeight: height, isDeepReorg: () => false, ChainWallet: FakeWallet });
 console.log("ok  a wallet object is freed only when no engine call on it runs");
 
@@ -288,8 +300,8 @@ let bc = chainOf(broken, LWD);
 t.setChain(bc);
 await runSync(bc);
 await synced();
-assert.deepEqual([bc.error, bc.url, preferredServers(net)], [null, CHAINSAFE, [CHAINSAFE, LWD]],
-  "the next sync, at once, on the other server");
+assert.deepEqual([bc.error, bc.url, preferredServers(net), broken.freed],
+  [null, CHAINSAFE, [CHAINSAFE, LWD], true], "the next sync, at once, on the other server");
 // Both servers fail the sync: one sync on each, then the page waits for the next refresh.
 later(180 * 60000);
 const tried = [], realRestore = FakeWallet.restore;
