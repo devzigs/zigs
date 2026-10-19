@@ -14,6 +14,7 @@ assert.deepEqual(IDS, ["review", "ready", "waiting", "attention"]);
 // Check state go to "attention" while an approval here holds Send, else out of the inbox.
 const hold = (f) => (f.held ? "attention" : null);
 const RULES = [
+  [(f) => f.sendRefused, () => "attention"],
   [(f) => f.check, hold],
   [(f) => f.review, () => "review"],
   [(f) => f.landed || f.ended || f.error, hold],
@@ -24,7 +25,7 @@ const expected = (f) => {
   const hit = RULES.find(([holds]) => holds(f));
   return hit ? hit[1](f) : "waiting";
 };
-const FLAGS = ["landed", "held", "check", "review", "ended", "error"];
+const FLAGS = ["landed", "held", "check", "review", "ended", "error", "sendRefused"];
 const STATUSES = ["collecting", "signing", "signed", "proving", "complete", "broadcast", "lost"];
 let n = 0;
 for (let bits = 0; bits < 1 << FLAGS.length; bits++) {
@@ -51,6 +52,8 @@ assert.equal(bucketOf({ check: true, held: true, status: "broadcast" }), "attent
 assert.equal(bucketOf({ check: true, status: "broadcast" }), null,
   "the Check state with no hold here: the Activity chip says Check");
 assert.equal(bucketOf({ status: "collecting" }), "waiting", "another seat must approve");
+assert.equal(bucketOf({ sendRefused: true, step: "send", status: "complete" }), "attention",
+  "a send that this browser refuses is no Ready row");
 assert.equal(bucketOf({ status: "proving" }), "waiting", "another browser builds the proof");
 assert.equal(bucketOf({ step: "proof", status: "signed" }), "ready");
 assert.equal(bucketOf({ step: "resend", status: "broadcast" }), "ready", "a lost send");

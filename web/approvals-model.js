@@ -19,15 +19,19 @@ const UNDER_WAY = new Set(["collecting", "signing", "signed", "proving", "comple
  * approval here that still holds Send never maps to null: where the payment is finished or in
  * the Check state, it lands in "attention". The Check state without a hold maps to null: no
  * approval here can still land, the drawer offers no step, and the Activity chip says "Check".
- * @param {object} f held: an approval here still holds Send (heldApprovals: the S7 card of the
- *   drawer); check: the signing started, it did not end, and the engine says it expired (the
- *   "Check" chip); review: a seat here can approve it (needsMyApproval, the count of the badge);
- *   landed: a block holds it; ended: it ended (the "Expired" chip); error: cancelled, failed or
- *   refused (the drawer offers no step); step: the next step that a signer here can take
- *   (finishStep); status: the status of the payment document.
+ * A send step that this browser refuses always lands in "attention".
+ * @param {object} f sendRefused: this browser refuses the send step (refusedSend: the finished
+ *   transaction is not the approved one); held: an approval here still holds Send
+ *   (heldApprovals: the S7 card of the drawer); check: the signing started, it did not end, and
+ *   the engine says it expired (the "Check" chip); review: a seat here can approve it
+ *   (needsMyApproval, the count of the badge); landed: a block holds it; ended: it ended (the
+ *   "Expired" chip); error: cancelled, failed or refused (the drawer offers no step); step: the
+ *   next step that a signer here can take (finishStep); status: the status of the payment
+ *   document.
  * @returns {string | null}
  */
 export function bucketOf(f) {
+  if (f.sendRefused) return "attention";
   if (f.check) return holdBucket(f);
   if (f.review) return "review";
   if (over(f)) return holdBucket(f);
