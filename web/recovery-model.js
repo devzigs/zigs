@@ -25,19 +25,26 @@ const marginDetail = (t, n, m) => (m <= 0
     + "the same seat count as one signer.");
 
 /**
- * The recovery state of your seats in the open wallet. A part with `missing` has no share here.
+ * The recovery state of your seats in the open wallet. A part with `missing` has no share here;
+ * a part with `unknown` is not read yet (`failed`: it could not be read).
  * @param {Array<{id: number, zec: {has: boolean, saved: boolean},
- *   sol: {has: boolean, saved: boolean} | null}>} seats
+ *   sol: {has: boolean, saved: boolean, unknown?: boolean, failed?: boolean} | null}>} seats
  * @returns {{state: string, label: string, missing: Array<[number, string]>}} state: none (no
- *   key share here), missing (a file is not saved) or saved; missing: [seat, "zec" | "sol"].
+ *   key share here), missing (a file is not saved), unknown (the Solana part is not read) or
+ *   saved; missing: [seat, "zec" | "sol"].
  */
 export function recoveryState(seats) {
   const missing = seats.flatMap((s) => [["zec", s.zec], ["sol", s.sol]]
     .filter(([, part]) => part?.has && !part.saved).map(([what]) => [s.id, what]));
+  const unread = seats.find((s) => s.sol?.unknown)?.sol;
   if (!seats.some((s) => s.zec.has)) {
     return { state: "none", label: "No seat of this wallet in this browser", missing };
   }
-  return missing.length
-    ? { state: "missing", label: "A file of your seats in this wallet is not saved", missing }
-    : { state: "saved", label: "The files of your seats in this wallet are saved", missing };
+  if (missing.length) {
+    return { state: "missing", label: "A file of your seats in this wallet is not saved", missing };
+  }
+  if (unread) return { state: "unknown", label: unreadLabel(unread.failed), missing };
+  return { state: "saved", label: "The files of your seats in this wallet are saved", missing };
 }
+const unreadLabel = (failed) => (failed ? "Zigs could not read the Solana part of your seats"
+  : "Zigs is still reading the Solana part of your seats");

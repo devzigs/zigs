@@ -1277,4 +1277,13 @@ export const MUTATIONS = [
   program("C-settlement", "the commitment of a withdrawal hashes no settlement accounts",
     ["web/sol/prepare.js", 'const settled = recipient === null ? "" : SOL_INTERFACE + recipient;',
       'const settled = "";'], PREPARE_TEST, /AssertionError/),
+  program("R-unsaved-missing", "the backup note asks for the file of a Solana part not held here",
+    ["web/app-sol.js", "return f?.saved === false && !f.missing;", "return f?.saved === false;"],
+    UNIFIED, /a missing part has no file to save/),
+  program("R-sol-unread", "Recovery takes a Solana part that is not read yet for no part",
+    ["web/app-sol.js", "  if (made === null) return { unknown: true, failed: !!solError };\n", ""],
+    UNIFIED, /Expected values to be strictly deep-equal/),
+  program("R-sol-restored", "a Solana part restored from its file shows as saved here",
+    ["web/app-sol.js", "return { saved: s.backupSaved === true, restored: s.restored === true };",
+      "return { saved: s.backupSaved === true };"], UNIFIED, /a part opened from its file/),
 ];

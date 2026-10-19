@@ -39,7 +39,14 @@ assert.equal(recoveryState([seat(1, true, { has: false, saved: false })]).state,
 const lost = recoveryState([seat(1, true, { has: true, saved: false, missing: true })]);
 assert.deepEqual([lost.state, lost.missing], ["missing", [[1, "sol"]]],
   "a Solana part that this browser does not hold is not saved");
-const texts = [recoveryState([]), recoveryState([seat(1, true, null)]),
+const unread = recoveryState([seat(1, true, { has: false, unknown: true, failed: false })]);
+assert.deepEqual(unread, { state: "unknown", missing: [],
+  label: "Zigs is still reading the Solana part of your seats" }, "not read yet is not saved");
+assert.equal(recoveryState([seat(1, true, { has: false, unknown: true, failed: true })]).label,
+  "Zigs could not read the Solana part of your seats", "a failed load says so");
+assert.equal(recoveryState([seat(1, true, { has: false, unknown: true }), seat(2, false, null)])
+  .state, "missing", "a file that is not saved shows first");
+const texts = [recoveryState([]), recoveryState([seat(1, true, null)]), unread,
   recoveryState([seat(1, false, null)]), protectionRisk(2, 3, 3), protectionRisk(3, 3),
   protectionRisk(2, 4)];
 assert.doesNotMatch(JSON.stringify(texts), /safe|protected|secure/i,

@@ -31,8 +31,8 @@ import { render } from "./app-loop.js";
 import { setupView, solSetupCard, solUnfinished } from "./app-setup.js";
 import { themeChoice } from "./app-theme.js";
 import {
-  sol, solBackup, solBalance, solError, solFile, solLoading, solOn, solPending, solSetup, solSync,
-  solTab, solUnsaved,
+  sol, solBackup, solBalance, solError, solFile, solLoad, solLoading, solOn, solPending, solSetup,
+  solSync, solTab, solUnsaved,
 } from "./app-sol.js";
 import { pendingShortcut, solRow, zecInProgress, zecTotal } from "./overview-model.js";
 import { protectionRisk, recoveryState } from "./recovery-model.js";
@@ -604,8 +604,10 @@ function recoveryTab() {
   const seats = localSeats().map((i) => {
     const s = sec(state.gid, i) || {}, sol = solFile(i);
     return { id: i, zec: { has: !!s.keyPackage, saved: seatBackedUp(s), restored: !!s.restored },
-      sol: sol && { has: true, saved: sol.saved, missing: !!sol.missing } };
+      sol: sol && { has: !sol.unknown, ...sol } };
   });
+  // The Solana part may not be read yet: the module loads here as in the Solana section.
+  if (seats.some((x) => x.sol?.unknown && !x.sol.failed)) solLoad();
   const r = recoveryState(seats);
   const risk = protectionRisk(state.g.t, state.g.n, seats.filter((x) => x.zec.has).length);
   return el("div", { class: "page", style: "gap:16px" },
@@ -639,12 +641,14 @@ const lostText = (t, sol) => "Keep the devices that still work, and do not delet
 // The badge of one file: saved here, restored from it, not saved, or a Solana part that this
 // browser does not hold (a seat restored from its Zcash file alone).
 function fileBadge(name, f) {
+  if (f.unknown) return el("span", { class: "badge" }, name + (f.failed ? " part could not be read"
+    : " part not read yet"));
   if (f.missing) return el("span", { class: "badge warn" }, name + " part missing");
   const said = !f.saved ? " file not saved" : f.restored ? " restored from its file"
     : " file saved here";
   return el("span", { class: "badge " + (f.saved ? "ok" : "warn") }, name + said);
 }
-const solAction = (x) => (x.sol.missing
+const solAction = (x) => (x.sol.unknown ? null : x.sol.missing
   ? el("span", { class: "small" }, "Restore it from its Solana file in the Solana section.")
   : el("button", { class: "btn sm", type: "button", onclick: act(() => solBackup(x.id)),
     "aria-label": "Back up the Solana part of seat " + x.id }, "Back up the Solana part"));
