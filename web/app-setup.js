@@ -83,29 +83,37 @@ function safetyCard() {
       + "wallet.");
   }
   const yes = confirmedBy(no).length, clash = numberClash(no, state.confirm, seatIds());
-  const todo = confirmSeatsOf().filter((i) => sec(state.gid, i).confirmed !== no);
-  const quick = quickCode(no), seated = mySeatSecrets(state.gid).length > 0;
+  const seated = mySeatSecrets(state.gid).length > 0;
   return el("section", { class: "card card-pad hero-card" },
     el("div", { class: "card-head" }, el("h2", {}, "Check that your devices match"),
       el("span", { class: "badge " + (yes === n ? "ok" : "warn") }, yes + " of " + n + " confirmed")),
     el("p", { class: "small" }, "Compare this safety number on every device, on a call or in "
       + "person. It shows that only your devices joined this wallet."),
     el("div", { class: "safety" }, no),
-    quick ? el("p", { class: "small muted" }, "The first digits, " + quick + ", help you find the "
-      + "number. They are not enough: compare all 30 digits.") : null,
-    el("p", { class: "small muted" }, "If one device shows a different number, someone else may "
-      + "have joined." + (seated ? " Then tap \"They don't match\"." : "")
-      + (bothParts() ? " " + BOTH_OPEN : "")),
+    ...safetyHelp(no, seated),
     clash.length ? el("div", { class: "callout bad", role: "alert" }, "Device " + clash.join(", ")
       + " confirmed another number. Someone else may have joined. Do not continue. "
       + "Create a new wallet.") : null,
-    todo.length ? confirmPart(todo, no) : doneHere(no),
-    seated ? mismatchPart() : null);
+    ...(seated ? safetyActions(no) : []));
+}
+// The quick code is an aid only. A browser without a seat is not told to tap a button.
+function safetyHelp(no, seated) {
+  const quick = quickCode(no);
+  return [quick ? el("p", { class: "small muted" }, "The first digits, " + quick + ", help you "
+    + "find the number. They are not enough: compare all 30 digits.") : null,
+  el("p", { class: "small muted" }, "If one device shows a different number, someone else may "
+    + "have joined." + (seated ? " Then tap \"They don't match\"." : "")
+    + (bothParts() ? " " + BOTH_OPEN : ""))];
+}
+function safetyActions(no) {
+  const todo = confirmSeatsOf().filter((i) => sec(state.gid, i).confirmed !== no);
+  return [todo.length ? confirmPart(todo, no) : doneHere(no), mismatchPart()];
 }
 const doneHere = (no) => {
   const mine = mySeatSecrets(state.gid);
-  return mine.length && mine.every(([, s]) => s.confirmed === no) ? el("p", { class: "small muted" },
-    "Confirmed on this device. Waiting for the other devices.") : null;
+  const done = mine.length > 0 && mine.every(([, s]) => s.confirmed === no);
+  return done ? el("p", { class: "small muted" }, "Confirmed on this device. Waiting for the "
+    + "other devices.") : null;
 };
 
 // The person confirms only after a tick for this number of this wallet: a new number or another

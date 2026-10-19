@@ -1488,7 +1488,7 @@ export const MUTATIONS = [
     ["web/app-dkg.js", "saved = (await putSec(gid, i, { aborted: text })) && saved;",
       "await putSec(gid, i, { aborted: text });"], UNIFIED, /a stop that is not saved says so/),
   program("V-view-only", "a browser without a seat offers They don't match",
-    ["web/app-setup.js", "    seated ? mismatchPart() : null);", "    mismatchPart());"], UNIFIED,
+    ["web/app-setup.js", "...(seated ? safetyActions(no) : [])", "...safetyActions(no)"], UNIFIED,
     /a browser without a seat cannot confirm or stop/),
   program("V-quick", "the quick code shows for a number that is not 30 digits",
     ["web/setup-model.js", "/^\\d{30}$/.test(digits)", "/^\\d{8,}$/.test(digits)"], UNIFIED,
