@@ -126,7 +126,7 @@ const program = (id, what, [file, from, to], run, detect) =>
 const fact = (name, line, detect) => program("S-fact-" + name, "the headline ignores " + name,
   ["web/app-drawer.js", line, line.slice(0, line.indexOf(":") + 1) + " false,"], APP_TEST, detect);
 const APPROVALS_DONE = '  if (enoughApprovals() || landed(ss)) return "done";';
-const OVER = "const over = expired(ss) || landed(ss) || tooLate(ss) || !!ss.error;";
+const OVER = "const over = expired(ss) || tooLate(ss) || !!ss.error;";
 const HELD = '  return ss.error || signingStarted(ss) || approvalsHeld(ss, rc) ? "" : "now";';
 const SIGNED_FIRST = '  if (ss.signed || landed(ss)) return "done";\n  if (ss.error) return "bad";';
 const SOL_PAY = ["node", "web/test/sol-pay.mjs"];
@@ -1451,9 +1451,6 @@ export const MUTATIONS = [
   program("S-step-over-late", "a payment too late to send has a step that waits",
     ["web/app-drawer.js", OVER, OVER.replace(" || tooLate(ss)", "")], APP_TEST,
     /a payment too late to send has no step that waits/),
-  program("S-step-over-landed", "a proposal that a block holds has a step that waits",
-    ["web/app-drawer.js", OVER, OVER.replace(" || landed(ss)", "")], APP_TEST,
-    /a proposal whose transaction a block holds has no step that waits/),
   program("S-stopped-seen", "a cancel after an approval here reads that no device can send it",
     ["web/app-drawer.js", "  stopped: !!ss.error && !signingSeen(ss) && chainReady(curChain()),",
       "  stopped: !!ss.error && !signingStarted(ss) && chainReady(curChain()),"], APP_TEST,

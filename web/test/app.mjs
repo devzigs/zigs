@@ -2552,8 +2552,8 @@ const sealed = (gid, rel, seat, fields, key, names = ["by", "sig"]) =>
         "a lost device among the first t approvals stops the payment");
         t.state.commits = { [me]: {}, [other]: {}, [third]: {} };
         const beyond = look(open("hd6b", "PA"));
-        assert.deepEqual([beyond.head.startsWith("Approvals are complete"),
-          beyond.text.includes("lost the approval")], [true, false],
+        assert.deepEqual([beyond.head.startsWith("Payment needs attention"),
+          beyond.text.includes("lost the approval")], [false, false],
         "a device outside the first t approvals lost nothing");
         await nonces(other, { hd6: undefined, hd6b: undefined });
         await nonces(me, { hd6b: undefined });

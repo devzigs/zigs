@@ -491,12 +491,12 @@ function stepItem(cls, n, title, body) {
 }
 
 // The numbered steps of a payment, under its headline. The step that waits now is the one of the
-// next action. A payment that expired, that a block holds, that is too late to send or that
-// stopped has none; its done and stopped marks stay.
+// next action. A payment that expired, that is too late to send or that stopped has none; its
+// done and stopped marks stay. A block marks each step done (the step functions below).
 function timeline(ss, refused, rc) {
   const g = state.g, approvals = Object.keys(state.commits).length;
   const signers = signersOf(ss), shared = signers.filter((i) => state.shares[i]).length;
-  const over = expired(ss) || landed(ss) || tooLate(ss) || !!ss.error;
+  const over = expired(ss) || tooLate(ss) || !!ss.error;
   let n = 0;
   const tl = (cls, title, body) => {
     n += 1;
