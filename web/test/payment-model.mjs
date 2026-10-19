@@ -3,7 +3,7 @@
 // Run: node web/test/payment-model.mjs   (Node 24)
 import assert from "node:assert/strict";
 import {
-  DRAFT_MS, draftLive, draftOf, emptyForm, REVIEW_MS, reviewFresh, stageHeadline,
+  DRAFT_MS, draftLive, draftOf, emptyForm, RESEND_MS, REVIEW_MS, reviewFresh, stageHeadline,
 } from "../payment-model.js";
 
 const at = 1_800_000_000_000;
@@ -64,8 +64,8 @@ assert.equal(title({ rejected: true, mine: true }), "Payment needs attention",
   "a payment that this browser refuses asks for no approval");
 assert.equal(title({ landed: true, ended: true, error: true }), "In a block", "a block wins");
 assert.equal(title({ mine: "yes" }), "Waiting for approvals", "only true counts");
-assert.match(stageHeadline({ mine: true }).detail,
-  /After enough approvals, any signer can send it\.$/);
+assert.ok(stageHeadline({ mine: true }).detail.endsWith("After enough approvals, the devices "
+  + "sign it, a device builds the proof, and any device can send it."));
 assert.equal(title({ held: true, error: true }), "Stopped, but it may still go on chain",
   "an approval here still holds Send");
 assert.equal(title({ check: true, error: true }), "Check the payment");
@@ -79,5 +79,34 @@ assert.equal(title({ proved: true, late: true }), "Too late to send", "a node re
 assert.equal(title({ proved: true, late: true, sendFailed: true }), "Too late to send");
 assert.equal(title({ rejected: true, refused: true }), "Payment needs attention");
 assert.equal(title({ refused: true, sent: true }), "Payment needs attention");
+// Two facts can share a title: the detail says which one holds.
+const detail = (f) => stageHeadline(f).detail;
+assert.match(detail({ stopped: true, error: true }), /^No device can approve, sign or send it\./);
+assert.match(detail({ error: true }), /^This page cannot tell whether a device sent it\./,
+  "without the stopped fact, the page does not say that no device can send it");
+assert.equal(title({ error: true }), "Payment stopped");
+assert.equal(title({ held: true, stopped: true }), "Stopped, but it may still go on chain");
+// A local reason wins over the steps, so Waiting for approvals shows only without one.
+assert.equal(title({ signingLost: true, approvalLost: true }), "Check the payment");
+assert.match(detail({ signingLost: true, mine: true }), /^One device reset this payment/);
+assert.match(detail({ approvalLost: true, approvalChanged: true }), /lost its approval/);
+assert.match(detail({ approvalChanged: true, mismatch: true }), /changed the proposal after/);
+assert.equal(title({ refused: true, signingLost: true }), "Payment needs attention");
+for (const f of ["approvalLost", "approvalChanged", "wrongMove"]) {
+  assert.equal(title({ [f]: true, mine: true }), "Payment needs attention", f);
+}
+assert.match(detail({ mismatch: true, wrongMove: true }), /does not pay what the proposer listed/);
+assert.match(detail({ wrongMove: true }), /address of the new wallet that this browser checked/);
+assert.match(detail({ sentUnsynced: true, resend: true, sent: true }),
+  /^A device sent it\. This browser has not checked the blocks since the send yet\.$/);
+assert.equal(title({ sentUnsynced: true }), "Waiting for a block");
+assert.equal(RESEND_MS, 10 * 60 * 1000);
+assert.match(detail({ resend: true }), / after 10 minutes\. /, "the minutes come from RESEND_MS");
+const all = ["landed", "ended", "check", "held", "stopped", "error", "rejected", "refused",
+  "signingLost", "approvalLost", "approvalChanged", "mismatch", "wrongMove", "sentUnsynced",
+  "resend", "sent", "late", "sendFailed", "proved", "proving", "signed", "signing", "approved",
+  "mine"].map((f) => stageHeadline({ [f]: true }));
+assert.equal(all.filter((h) => /signer/.test(h.title + h.detail)).length, 0, "device wording");
+assert.equal(new Set(all.map((h) => h.detail)).size, all.length, "each fact has its own detail");
 console.log("ok  the headline of a payment");
 console.log("payment-model: ok");
