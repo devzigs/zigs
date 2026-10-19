@@ -30,8 +30,9 @@ const FINE = "Signers, and anyone else who has the invite link, can read these m
 // The Messages section has its title in the heading block of the page: it passes `titled` false.
 export function messagesCard(titled = true) {
   const changed = changedSigners();
+  const head = [titled ? el("h2", {}, "Messages") : null, notifyButton()];
   return el("section", { class: "card card-pad chat" },
-    el("div", { class: "card-head" }, titled ? el("h2", {}, "Messages") : null, notifyButton()),
+    head.some(Boolean) ? el("div", { class: "card-head" }, ...head) : null,
     changed.length ? el("div", { class: "callout bad", role: "alert" }, "Signing key changed: "
       + changed.map((i) => "seat " + i).join(", ") + ". Their messages are not verified.") : null,
     chat[state.gid] || memoMessages().length ? chatLog("wallet") : null,

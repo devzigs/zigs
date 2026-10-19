@@ -5,7 +5,7 @@
 export const HELP = [
   ["What does a payment need?",
     "A payment needs approval from as many devices as the approval rule names, for example 2 of "
-    + "3. Each device approves in its own browser. After enough approvals, the devices sign "
+    + "3. Each device approves with its own key share. After enough approvals, the devices sign "
     + "together, and then the payment can be sent."],
   ["What if a device is lost?",
     "Keep the devices that still work, and do not delete their data. While enough devices "
