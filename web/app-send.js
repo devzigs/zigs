@@ -599,8 +599,10 @@ const REVIEW_READS = "The chain does not show the recipients, the amounts or the
   + "device of this wallet can read them and the note, in the shared history of the "
   + "wallet. So can anyone who has its invite link. A device that is left out when the devices "
   + "change keeps the viewing key and the messages of this wallet. It can still read this "
-  + "history and each later payment of this wallet, but nothing of the new wallet. A memo goes "
-  + "on chain with the payment, and its recipient can read it too.";
+  + "history and each later payment of this wallet. It cannot read the new wallet. It sees only "
+  + "the move payment: the address of the new wallet, the amount, and the note of the payment, "
+  + "which can name the new wallet. A memo goes on chain with the payment, and its recipient can "
+  + "read it too.";
 
 // The fee as the engine decoded it (none when the decode does not match), the approvals, the note.
 function reviewFacts(ins, note) {

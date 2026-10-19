@@ -530,7 +530,7 @@ flowchart TD
   A -.->|stores only the new wallet id, never its secret| B
   B --> C["The old wallet proposes one payment of its spendable Zcash balance to the new address"]
   C --> D["2 of 3 old signers approve.<br/>Approvers who are in the new wallet check its address"]
-  D --> E["The old wallet stays, with its address and history.<br/>C can still read it, but sees nothing of the new wallet"]
+  D --> E["The old wallet stays, with its address and history.<br/>C can still read it, and sees the move payment<br/>with the new address, the amount and its note,<br/>but cannot read the new wallet"]
 ```
 
 ## 9. Keys on the device

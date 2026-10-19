@@ -281,11 +281,14 @@ const sentStep = (to) => ({ text: "A device sent the Zcash funds to " + groupNam
 const proposeStep = (to) => ({ text: groupName(to) + " is ready. Move the Zcash funds to it. "
   + "Like any payment, this needs " + state.g.t + " approvals.", propose: true });
 
+// A wallet that can have a Solana part says only that its Zcash funds moved.
+const movedTitle = () => (solOn() ? "The Zcash funds moved" : "This wallet moved");
+
 function moveCard(c) {
   const m = moveState(c), why = m.propose ? sendBlocker() : null;
   return el("section", { class: "card card-pad " + (m.done ? "" : "attention") },
     el("div", { class: "card-head" },
-      el("h3", {}, m.done ? "This wallet moved" : "Changing devices")),
+      el("h3", {}, m.done ? movedTitle() : "Changing devices")),
     el("p", { class: "small muted" }, m.text),
     el("div", { style: "display:flex;gap:8px;flex-wrap:wrap" }, moveButtons(m, c, why)),
     why ? el("p", { class: "small faint" }, why) : null);

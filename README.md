@@ -267,18 +267,19 @@ the sighash saved when its user approved. The app and the engine both check this
 checks that its own nonce commitment was not replaced, and deletes its nonces after use. Any device can combine the shares;
 a bad share names its sender.
 
-## Changing signers
+## Changing devices
 
-The signers and the threshold are part of the wallet key, so they cannot change in place. Zigs
-creates a replacement wallet and moves the funds with one normal, approved payment.
+The devices and the approval rule are part of the wallet key, so they cannot change in place.
+Zigs creates a replacement wallet and moves the Zcash funds with one normal, approved payment. A
+Solana part of the wallet does not move this way.
 
 ```mermaid
 flowchart TD
-  A["Old wallet<br/>signers A, B, C, any 2 of 3"] -->|Change devices| B["New wallet<br/>signers A, B, D, any 2 of 3<br/>new key ceremony, new address"]
+  A["Old wallet<br/>devices A, B, C, any 2 of 3"] -->|Change devices| B["New wallet<br/>devices A, B, D, any 2 of 3<br/>new key ceremony, new address"]
   A -.->|stores only the new wallet id, never its secret| B
-  B --> C["The old wallet proposes one payment of its whole balance to the new address"]
-  C --> D["2 of 3 old signers approve.<br/>Approvers who are in the new wallet check its address"]
-  D --> E["Old wallet closed.<br/>C keeps the old history but sees nothing of the new wallet"]
+  B --> C["The old wallet proposes one payment of its spendable Zcash balance to the new address"]
+  C --> D["2 of 3 old devices approve.<br/>The approving devices that are in the new wallet check its address"]
+  D --> E["The old wallet stays, with its address and history.<br/>C can still read it, and sees the move payment<br/>with the new address, the amount and its note,<br/>but cannot read the new wallet"]
 ```
 
 ## Privacy

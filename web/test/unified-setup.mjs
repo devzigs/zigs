@@ -729,6 +729,8 @@ function activityList(ctl) {
     assert.equal(t.ui.chainFilter, "sol", "the choice stays in ui");
     const onlySol = pageText();
     assert.ok(sorted(order(onlySol, [TITLES[0], TITLES[2], TITLES[4]])), "Solana rows only");
+    assert.ok(all.includes(EXPLORER_NOTE), "the list of both chains has a received ZEC row");
+    assert.ok(!onlySol.includes(EXPLORER_NOTE), "a Solana-only list has no Zcash explorer note");
     assert.ok(gone(onlySol, [TITLES[1], TITLES[3]]), "no Zcash row");
     assert.equal(picked(), "Solana");
     const onlyZec = draw("zec");
