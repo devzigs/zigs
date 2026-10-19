@@ -138,8 +138,8 @@ function recipientBox(ss, rc) {
       nameLine(r), memoLines(r))),
     rc.rows.some((r) => r.memo) ? el("p", { class: "small faint" },
       "A memo goes on chain with the payment. Its recipient, every device of this wallet and "
-      + "anyone else who has the invite link can read it. A device that a later Change devices "
-      + "leaves out keeps reading it: it reads the history of this wallet.") : null,
+      + "anyone else who has the invite link can read it. A device that Change devices leaves "
+      + "out later can still read it.") : null,
     checkWarnings(rc),
     ss.move ? moveNote(ss, rc) : null);
 }
@@ -436,13 +436,13 @@ const approverChips = () => el("div", {
 // What the signature step waits for. Each device does its step while this wallet is open there,
 // with the payment open or not.
 const WHERE = " while this wallet is open there.";
-// `over`: the payment cannot go on (timeline), so a step that waits says nothing about now.
-function signatureText(ss, approvals, shared, over) {
+// `wait`: what a waiting step of a payment that cannot go on says (waitTexts), or null.
+function signatureText(ss, approvals, shared, wait) {
   const t = state.g.t, signers = signersOf(ss);
   if (ss.signed) return "All signatures combined and verified.";
   if (landed(ss)) return ON_CHAIN;
   if (ss.error) return ss.error;
-  if (over) return NOT_DONE;
+  if (wait) return wait;
   if (!ss.package) {
     return approvals < t ? "Starts after " + t + " approvals."
       : "Waiting for the proposer's device to build the signing package. It does this" + WHERE;
@@ -470,7 +470,7 @@ const endFacts = (ss, rejected) => ({
   check: signingSeen(ss) && expired(ss),
   held: !!ss.error && heldApprovals().includes(ss.id),
   sentStopped: !!ss.error && !!ss.broadcastTxid,
-  stopped: !!ss.error && !signingSeen(ss) && syncedHere(),
+  stopped: stoppedHere(ss),
   error: !!ss.error,
   rejected: !!rejected,
   refused: sendRefused(ss),
@@ -515,7 +515,7 @@ function stepItem(cls, n, title, body) {
 function timeline(ss, refused, rc) {
   const g = state.g, approvals = Object.keys(state.commits).length;
   const signers = signersOf(ss), shared = signers.filter((i) => state.shares[i]).length;
-  const over = expired(ss) || tooLate(ss) || !!ss.error;
+  const { over, wait, block } = waitTexts(ss);
   let n = 0;
   const tl = (cls, title, body) => {
     n += 1;
@@ -527,11 +527,24 @@ function timeline(ss, refused, rc) {
       tl(approvalsStep(ss, refused, rc), "Approvals · " + Math.min(approvals, g.t) + " of " + g.t
         + " needed", approverChips()),
       tl(signatureStep(ss), "Combined signature",
-        el("p", {}, signatureText(ss, approvals, shared, over))),
-      tl(proofStep(ss), "Proof", el("p", {}, proofText(ss, over))),
-      tl(sendStep(ss), "Sent to the network", sendBody(ss, over)),
-      tl(blockStep(ss), "In a block", el("p", {}, blockText(ss, over)))));
+        el("p", {}, signatureText(ss, approvals, shared, wait))),
+      tl(proofStep(ss), "Proof", el("p", {}, proofText(ss, wait))),
+      tl(sendStep(ss), "Sent to the network", sendBody(ss, wait)),
+      tl(blockStep(ss), "In a block", el("p", {}, blockText(ss, block)))));
 }
+
+// What the waiting steps of a payment that cannot go on (`over`) say: "Not done." where the page
+// knows that no device did them, else only that this page did not see them. The block step knows
+// it also when the engine says that the approved transaction expired (ended).
+function waitTexts(ss) {
+  const over = expired(ss) || tooLate(ss) || !!ss.error;
+  if (!over) return { over, wait: null, block: null };
+  const known = knownUndone(ss);
+  return { over, wait: known ? NOT_DONE : NOT_SEEN,
+    block: known || ended(ss) ? NOT_DONE : NOT_SEEN };
+}
+// An unsigned payment that expired, a stop after a sync of this page, or too late to send.
+const knownUndone = (ss) => (expired(ss) && !signingSeen(ss)) || stoppedHere(ss) || tooLate(ss);
 
 // The approvals step is done from the count of approvals only. Once signing started, or while a
 // reason of this browser (the headline) stops it, it waits no more.
@@ -557,11 +570,12 @@ function sendStep(ss) {
 }
 const ON_CHAIN = "A synced block holds the payment.";
 const NOT_DONE = "Not done.";
+const NOT_SEEN = "Not seen on this page.";
 
-function proofText(ss, over) {
+function proofText(ss, wait) {
   if (ss.final) return "Proof built and the whole transaction checked.";
   if (landed(ss)) return ON_CHAIN;
-  if (over) return NOT_DONE;
+  if (wait) return wait;
   if (ss.status === "proving" && !proofStalled(ss)) {
     return "A device is building the proof · " + elapsed(ss.provingAt) + " of about a minute.";
   }
@@ -569,23 +583,23 @@ function proofText(ss, over) {
     : "Any device can build the zero-knowledge proof once the payment is signed.";
 }
 
-function sendBody(ss, over) {
+function sendBody(ss, wait) {
   const box = (...kids) => el("div", { style: "display:grid;gap:8px" }, ...kids);
   if (ss.broadcastTxid) {
     return box(el("p", {}, when(ss.broadcastAt) + " · ", el("a", { href: curNet().explorer
       + ss.broadcastTxid, target: "_blank", rel: "noopener" }, "View in explorer ↗")));
   }
   const failed = ss.broadcastError && !landed(ss);
-  return box(el("p", {}, sendText(ss, over)),
+  return box(el("p", {}, sendText(ss, wait)),
     failed ? el("div", { class: "callout bad" }, ss.broadcastError) : null);
 }
 // What the send step says before a sent mark: a block, a refusal (its reason), the expiry or the
 // next step.
-function sendText(ss, over) {
+function sendText(ss, wait) {
   if (landed(ss)) return ON_CHAIN;
   if (sendRefused(ss)) return sendRefusal(ss);
   if (tooLate(ss)) return "It can no longer go to the network.";
-  if (over) return NOT_DONE;
+  if (wait) return wait;
   return ss.final ? "Any device can send the finished transaction." : "Available after the proof.";
 }
 
@@ -593,11 +607,13 @@ function sendText(ss, over) {
 // holds the payment, and before a sync the page does not know. A state restored from storage is
 // ready (chainReady) before this page synced: only a sync of this page counts (balAt).
 const syncedHere = () => chainReady(curChain()) && !!curChain().balAt;
+// An error before any signing here, after a sync of this page: no device can send it.
+const stoppedHere = (ss) => !!ss.error && !signingSeen(ss) && syncedHere();
 const UNSYNCED = "This page has not synced the blocks since you opened this wallet.";
 const blockStep = (ss) => landed(ss) ? "done" : ss.broadcastTxid ? "now" : "";
-function blockText(ss, over) {
+function blockText(ss, block) {
   if (landed(ss)) return ON_CHAIN;
-  if (!ss.broadcastTxid) return over ? NOT_DONE : "After the send.";
+  if (!ss.broadcastTxid) return block || "After the send.";
   if (!syncedHere()) return UNSYNCED;
   return expiryOf(ss)?.expired ? "No synced block holds it." : "No synced block holds it yet.";
 }

@@ -2439,6 +2439,11 @@ const sealed = (gid, rel, seat, fields, key, names = ["by", "sig"]) =>
         "past its expiry it waits for no block");
       assert.match(headline(landedA), /^Check the payment/, "only the engine can say expired");
       assert.deepEqual(current(landedA), [], "a checked payment has no step that waits");
+      // Under "It may still go on chain" a waiting step says only what this page saw.
+      const proofOf = (ss) => textOf(all(t.sessionLayer(ss), (x) => /^step /.test(x.className ?? "")
+        && textOf(x).includes("Proof"))[0]);
+      assert.ok(proofOf(signedA).endsWith("Not seen on this page."),
+        "a page that cannot tell says only what it saw");
       t.setChain({ ...t.chain, cw: null });
       assert.match(blockStep(landedA), /In a blockThis page has not synced the blocks since you /,
         "before a sync the page does not say that no block holds it");
@@ -2486,6 +2491,9 @@ const sealed = (gid, rel, seat, fields, key, names = ["by", "sig"]) =>
           + "expired. This page cannot tell whether a device sent another one."),
         "headline: the engine says that it expired");
         assert.deepEqual(endedA.now, [], "an ended payment has no step that waits");
+        assert.deepEqual([textOf(endedA.step("Proof")).endsWith("Not seen on this page."),
+          textOf(endedA.step("In a block")).endsWith("Not done.")], [true, true],
+        "the engine says that the approved transaction expired: no block");
         // Stopped: before any signing and after a sync, no device can send it. Else the page
         // cannot tell.
         answer = unknownA;
@@ -2496,14 +2504,18 @@ const sealed = (gid, rel, seat, fields, key, names = ["by", "sig"]) =>
         assert.deepEqual(stop.now, [], "a stopped payment has no step that waits");
         assert.ok(stop.step("Combined signature").className === "step bad"
           && textOf(stop.step("Combined signature")).startsWith("!"), "the stop mark stays");
+        assert.ok(textOf(stop.step("Combined signature")).endsWith("Cancelled."),
+          "the stop reason sits in the steps");
+        assert.ok(textOf(stop.step("Proof")).endsWith("Not done."),
+          "a stop after a sync here: not done");
         const unsure = /^Check the paymentThis page cannot tell whether a device sent it\. Check /;
         const failedSigned = { ...okA, id: "hd3", status: "failed", error: "Failed." };
         assert.match(look(failedSigned).head, unsure,
           "headline: an error after the signing started");
         assert.deepEqual(look(failedSigned).now, [],
           "a stopped payment with a signed part has no step that waits");
-        assert.ok(textOf(look(failedSigned).step("Proof")).endsWith("Not done."),
-          "a stopped payment builds no proof now");
+        assert.ok(textOf(look(failedSigned).step("Proof")).endsWith("Not seen on this page."),
+          "an error after signing: not seen on this page");
         // An approval here, then a cancel before the package: the hold of the approval ended
         // (this mark has no height), and still the page cannot tell.
         await t.putSec(t.state.gid, me, { marks: { ...t.sec(t.state.gid, me).marks,
@@ -2527,6 +2539,9 @@ const sealed = (gid, rel, seat, fields, key, names = ["by", "sig"]) =>
           unsure, "headline: a restored state is no sync of this page");
         assert.match(look(lateSent()).head, /^Waiting for a blockA device sent it\. This page has /,
           "headline: a restored state is no sync since the send");
+        assert.ok(textOf(look(lateSent()).step("In a block")).endsWith("This page has not synced "
+          + "the blocks since you opened this wallet."),
+        "a restored state: the block step says that this page has not synced");
         t.setChain({ ...t.chain, cw: null });
         assert.match(look({ ...open("hd2", "PA"), error: "Cancelled." }).head, unsure,
           "headline: an error before a sync");
@@ -2632,8 +2647,8 @@ const sealed = (gid, rel, seat, fields, key, names = ["by", "sig"]) =>
           memo: "rent" }] });
         assert.ok(memoOne.text.includes("A memo goes on chain with the payment. Its recipient, "
           + "every device of this wallet and anyone else who has the invite link can read it. A "
-          + "device that a later Change devices leaves out keeps reading it: it reads the history "
-          + "of this wallet."), "the readers of a memo");
+          + "device that Change devices leaves out later can still read it."),
+        "the readers of a memo");
         // Before the send, the drawer says what the chain will show, also the expiry height.
         assert.deepEqual([memoOne.text.includes("The expiry height is public too."),
           look(lateSent()).text.includes("The expiry height is public too.")], [true, false],
@@ -2651,6 +2666,8 @@ const sealed = (gid, rel, seat, fields, key, names = ["by", "sig"]) =>
         assert.equal(textOf(t.statusChip({ ...doneA, status: "complete" })), "Too late",
           "a payment too late to send reads Too late, not Ready to send");
         assert.deepEqual(late.now, [], "a payment too late to send has no step that waits");
+        assert.ok(textOf(late.step("In a block")).endsWith("Not done."),
+          "too late to send: not done in a block");
         assert.match(textOf(late.step("Sent to the network")), /can no longer go to the network/);
         // A sent mark with a false id waits for its block, under the false id note.
         at(4500100);
@@ -6023,10 +6040,16 @@ async function runAcctSync() {
   }
 }
 
-// ── Opening another wallet drops the notes of an expired payment of the open one ──
+// ── Opening another wallet drops the notes of an expired payment of the open one, and the
+// wallet list keeps no watch of it ──
 t.ui.after = "PA";
+let unwatched = 0;
+t.watched.set("wl", { gid: t.state.gid, raw: { commits: {}, shares: {} },
+  unsubs: [() => { unwatched += 1; }] });
 t.openGroup(null);
 assert.equal(t.ui.after, null);
+assert.deepEqual([t.watched.size, unwatched], [0, 1],
+  "the wallet list keeps no watch of the last wallet");
 
 console.log("app ok");
 process.exit(0);
