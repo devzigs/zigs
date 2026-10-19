@@ -56,7 +56,9 @@ function receiveLead(hidden, moved) {
   }
   return el("p", { class: "small muted" }, "Use this shielded address to receive "
     + receiveWhat() + ". Senders and the network cannot see the balance or who controls it. "
-    + "The devices of this wallet can see its balance and history." + receiveLimit());
+    + "The devices of this wallet and anyone who has the invite link can see its balance and "
+    + "history. A device that Change devices leaves out later can still see them."
+    + receiveLimit());
 }
 
 function sendOnly(net) {
@@ -528,7 +530,8 @@ export function sendDialog() {
       el("span", { class: "hint" }, "Encrypted. The devices of this wallet, and anyone else who "
         + "has the invite link, can read it.")),
     el("p", { class: "small faint" }, "A memo goes on chain with the payment. Its recipient, "
-      + "the devices of this wallet, and anyone else who has the invite link can read it."),
+      + "the devices of this wallet, and anyone else who has the invite link can read it. A "
+      + "device that Change devices leaves out later can still read it."),
     priorityBox(sumUp),
     el("div", { class: "summary" },
       el("div", {}, el("span", { class: "muted" }, "Available"), money(spendable)),

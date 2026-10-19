@@ -572,7 +572,9 @@ function receiveTexts() {
     assert.ok(byText(main, "Zcash Mainnet"), "a mainnet wallet reads Mainnet");
     assert.doesNotMatch(textOf(main), /testnet|faucet/i, "and claims no testnet");
     assert.match(textOf(main), /Send only ZEC on Zcash Mainnet to this address\./);
-    assert.match(textOf(main), /The devices of this wallet can see its balance and history\./);
+    assert.match(textOf(main), new RegExp("The devices of this wallet and anyone who has the "
+      + "invite link can see its balance and history\\. A device that Change devices leaves out "
+      + "later can still see them\\."));
     // At the cap of a mainnet wallet the dialog shows the cap note and no address.
     t.setChain({ gid: t.state.gid, cw: {}, bal: { spendable: 60000000, pending: 0,
       height: 4500100 }, sent: new Set(), received: [] });
