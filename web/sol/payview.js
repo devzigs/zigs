@@ -1,5 +1,5 @@
-// The payment part of the Solana tab: the fund card (the fee address of each seat of this browser),
-// Add SOL, the form of a private payment, the one-time move of the beta funds to the program
+// The payment part of the Solana section: the fund card (the fee address of each seat of this
+// browser), Add SOL, the forms of a payment, the one-time move of the beta funds to the program
 // address, and the signing sessions with their approval screens. An approval screen shows what
 // the checker of this device accepted (approve.js reviewOf): the values come from the intent bytes
 // and the proof, never from the display fields of the proposer. Each screen of a payment says who
@@ -32,9 +32,11 @@ const FAUCET = "https://faucet.solana.com/";
 const TITLES = {
   createNonce: "Create the nonce account for the move",
   transfer: "Move the beta funds to the program address",
-  approve: "Send privately",
-  withdraw: "Withdraw to a public address",
+  approve: "Private SOL payment",
+  withdraw: "Public SOL withdrawal",
 };
+/** The title of a proposal, from its intent bytes. */
+export const titleOf = (ss) => TITLES[decodeIntent(ss.intent)?.kind] ?? "Unknown proposal";
 const WHAT = {
   createNonce:
     "Creates the account that the move of the beta funds needs. The proposing seat pays its " +
@@ -124,7 +126,7 @@ const FEE_TEXT =
   "about 0.003 SOL. Seats that only approve need none. " +
   LINK_TEXT +
   " The page asks Helius for the balance of this address with your IP address, with no click. " +
-  "It asks when the Solana tab opens, after a payment or Add SOL, and again when such a read " +
+  "It asks when the Solana section opens, after a payment or Add SOL, and again when such a read " +
   "failed. It also asks every 30 s while a signed payment waits for a seat that can pay.";
 
 /** The fee address of one seat of this browser: the address, Copy and the balance. */
@@ -306,14 +308,19 @@ function intentCard(c, act, actions) {
   return el(
     "div",
     { style: "display:grid;gap:8px" },
-    el("h3", {}, "Pay from the group"),
+    el("h3", {}, "Send SOL"),
     availableLine(c),
     seatLine(c, "propose-seat", "proposes and pays the fees."),
-    el("p", { class: "small", "data-sol": "pay-cost" }, costLine(c)),
     el(
       "p",
       { class: "small", "data-sol": "pay-prover" },
       proverSays(provesLocally(c)),
+    ),
+    el(
+      "details",
+      { class: "small" },
+      el("summary", {}, "Fees and rent"),
+      el("p", { class: "small", "data-sol": "pay-cost" }, costLine(c)),
     ),
     sendForm(c, act, actions),
     withdrawForm(c, act, actions),
@@ -347,7 +354,7 @@ function withdrawForm(c, act, actions) {
   return el(
     "div",
     { style: "display:grid;gap:8px" },
-    el("h3", {}, "Withdraw to a public address"),
+    el("h4", {}, "Public withdrawal"),
     el("p", { class: "small", "data-sol": "withdraw-public" }, WITHDRAW_PUBLIC),
     el("label", { class: "field" }, el("span", {}, "Recipient (Solana address)"), to),
     el(
@@ -372,6 +379,7 @@ function sendForm(c, act, actions) {
   return el(
     "div",
     { style: "display:grid;gap:8px" },
+    el("h4", {}, "Private payment"),
     el("p", { class: "small", "data-sol": "send-public" }, SEND_PUBLIC),
     el("label", { class: "field" }, el("span", {}, "Payee (full shielded address)"), to),
     el(
@@ -438,7 +446,7 @@ function recipientRows(said) {
 
 // The Payee is the first part of the shielded address only: a typo in the rest still matches.
 const COMPARE =
-  "Compare the Payee with the program address on the Solana tab of the payee group. " +
+  "Compare the Payee with the program address in the Solana section of the payee group. " +
   "This checks only the first part of the shielded address.";
 
 /** The payee rows of a private spend, from the fingerprint that the checker answered. */
@@ -568,7 +576,23 @@ function reviewBlock(c, ss, review) {
     el("dt", {}, label),
     el("dd", { "data-sol": "review" }, value),
   ]);
-  return el("dl", { class: "kv", "data-sol": "review-" + ss.id }, rows);
+  const list = el("dl", { class: "kv", "data-sol": "review-" + ss.id }, rows);
+  return PAYMENT_KINDS.has(review.intent.kind) ? [reviewHero(c, review), list] : list;
+}
+
+// The amount of a payment as the checker of this device answered it, above its rows.
+function reviewHero(c, review) {
+  const { el } = c.host,
+    { said } = review,
+    withdraw = review.intent.kind === "withdraw";
+  const amount = withdraw ? said.withdrawn : sum(said.paid);
+  return el(
+    "div",
+    { class: "sol-hero", "data-sol": "review-amount" },
+    el("span", { class: "label" }, withdraw ? "Public withdrawal" : "Private payment"),
+    el("strong", { class: "sol-amount" }, solText(amount)),
+    el("span", { class: "small muted" }, "Solana Devnet: test SOL only. The fees are below."),
+  );
 }
 
 // The digest of the proposal, or null when it cannot be read.
@@ -676,16 +700,66 @@ function expiredLine(c, ss) {
   return c.host.el("p", { class: "small", "data-sol": "expired" }, EXPIRED_TEXT);
 }
 
+// The steps of a proposal, from what this page tracks: the parts of the session (a package comes
+// after t approvals), its status and the outcome of the sent transaction (resultLine gives its
+// slot). A session can fail at any step: the step that failed shows "!". No finality is tracked.
+function approvalsStep(ss, count, t) {
+  if (count >= t || ss.package) return "done";
+  if (ss.status === "collecting") return approvalClosed(ss) ? "bad" : "now";
+  return ss.status === "failed" ? "bad" : "";
+}
+function signedStep(ss) {
+  if (ss.signature) return "done";
+  if (ss.status === "signing") return "now";
+  return ss.status === "failed" && ss.package ? "bad" : "";
+}
+function lastStep(ss) {
+  if (ss.status === "sent") return ss.outcome === "failed" ? "bad" : "done";
+  if (ss.status === "failed") return ss.signature ? "bad" : "";
+  return ss.status === "signed" ? "now" : "";
+}
+/** The states of the steps after "Proposed": the approvals, the signature, the execute. */
+export const stepStates = (ss, count, t) => [
+  approvalsStep(ss, count, t),
+  signedStep(ss),
+  lastStep(ss),
+];
+
+function stepsOf(c, ss) {
+  const { el } = c.host,
+    t = c.host.state.g.t;
+  const count = Math.min(Object.keys(c.commits[ss.id] ?? {}).length, t);
+  const [approvals, signed, last] = stepStates(ss, count, t);
+  const step = (cls, title, text) =>
+    el(
+      "div",
+      { class: "step " + cls },
+      el("span", { class: "tick" }, { done: "✓", bad: "!" }[cls] ?? "•"),
+      el(
+        "div",
+        { class: "step-text" },
+        el("strong", {}, title),
+        text ? el("span", { class: "small" }, text) : null,
+      ),
+    );
+  return el(
+    "div",
+    { class: "steps sol-steps", "data-sol": "steps-" + ss.id },
+    step("done", "Proposed", "By seat " + ss.by + "."),
+    step(approvals, `Approvals · ${count} of ${t}`),
+    step(signed, "Signed"),
+    step(last, isPayment(ss) ? "Executed" : "Landed"),
+  );
+}
+
 function sessionBody(c, ss, act, actions) {
   const { el } = c.host,
     open = seatsOf(c, ss).find((s) => s.state === "open");
-  const count = Object.keys(c.commits[ss.id] ?? {}).length;
   const collecting = approvable(ss);
-  const proposer = `Proposed by seat ${ss.by}. Approvals: ${count} of ${c.host.state.g.t}.`;
   const review = collecting && open ? reviewOf(c, ss, open.seat) : null;
   const buttons = collecting ? approveRow(c, ss, act, actions, review?.waiting) : null;
   return [
-    el("p", { class: "small" }, proposer),
+    stepsOf(c, ss),
     expiredLine(c, ss),
     review ? reviewBlock(c, ss, review) : null,
     buttons ? el("div", { class: "row-actions" }, buttons) : null,

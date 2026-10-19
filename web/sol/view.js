@@ -7,7 +7,7 @@ import { showable } from "./approve.js";
 import { agreement, seatProgress, started, startBlock } from "./ceremony.js";
 import { base58 } from "./docs.js";
 import { checkLine, provesLocally } from "./localprove.js";
-import { payCards } from "./payview.js";
+import { payCards, titleOf } from "./payview.js";
 import { feeMismatch, feeOf } from "./fee.js";
 import { writerSeats } from "./gate.js";
 import { holdsShare, remoteStop, solOf, stopOf } from "./secrets.js";
@@ -77,16 +77,20 @@ export function setupSummary(c) {
  * them (the documents agree and the part is not stopped), the app can show and sign them, and
  * a seat that holds a share and a signing key gave no approval for them yet.
  */
-export function pendingCount(c) {
-  if (stopOf(c) || agreement(c).state !== "agree") return 0;
+function pendingList(c) {
+  if (stopOf(c) || agreement(c).state !== "agree") return [];
   const seats = writerSeats(c);
   const open = (ss) =>
     ss.status === "collecting" &&
     showable(ss) &&
     !beforeFee(ss) &&
     seats.some((i) => !c.commits[ss.id]?.[i]);
-  return c.sessions.filter(open).length;
+  return c.sessions.filter(open);
 }
+export const pendingCount = (c) => pendingList(c).length;
+/** The same proposals as rows of the Approvals inbox: id, title and the proposing seat. */
+export const pendingRows = (c) =>
+  pendingList(c).map((ss) => ({ id: ss.id, title: titleOf(ss), by: ss.by }));
 
 function startCard(c, act, actions) {
   const { el, localSeats } = c.host,

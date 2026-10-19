@@ -171,11 +171,17 @@ function inboxWiring() {
   const { tab } = t.ui, kept = { ...t.state };
   t.ui.tab = "approvals";
   try {
-    assert.match(pageText(), /Needs your approval.*2 Solana proposals wait for your approval/,
-      "the Solana line in the review bucket");
     const review = findNode(pageTree(), (n) => n.attrs?.["aria-label"] === "Needs your approval");
+    const rowOf = (id) => findNode(review, (n) => n.attrs?.["data-key"] === "sol-" + id);
+    const rows = ["a", "b"].map(rowOf);
+    assert.ok(rows.every(Boolean), "one row for each Solana proposal that waits here");
+    assert.match(textOf(rows[0]), /^↗Create the nonce account for the moveSolana Devnet/);
     assert.equal(textOf(findNode(review, (n) => n.className === "badge plain")), "2",
       "the review bucket counts each proposal");
+    assert.equal(t.solPendingRows().length, t.solPending(), "the rule of the count");
+    rows[0].on.click();
+    assert.equal(t.ui.tab, "solana", "a row opens the Solana section");
+    t.ui.tab = "approvals";
     assert.match(pageText(), /The wallet syncs\. .*Needs your approval/,
       "before the first sync of the chain, the note shows next to the rows");
     Object.assign(t.state, { sessions: [], sessionsFailed: true });

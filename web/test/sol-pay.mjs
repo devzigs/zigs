@@ -38,6 +38,7 @@ import {
   PROVER_TEXT,
   SHOWN,
   approveSeats,
+  stepStates,
 } from "../sol/payview.js";
 import {
   heldLamports,
@@ -731,7 +732,24 @@ const proposedWithdrawal = async (recipient = base58(TO)) => {
   });
   const one = (mark) => findAll(view, (n) => n.attrs["data-sol"] === mark)[0];
   const card = findAll(view, (n) => n.attrs["data-session"] === id)[0];
-  assert.match(textOf(card), /Withdraw to a public address/, "the card of the session");
+  assert.match(textOf(card), /Public SOL withdrawal/, "the card of the session");
+  const stepsOf = (n) => findAll(n, (x) => x.attrs["data-sol"] === "steps-" + id)[0]
+    .kids.map((x) => x.attrs.class);
+  assert.deepEqual(stepsOf(card), ["step done", "step now", "step ", "step "], "the steps");
+  assert.match(textOf(one("review-amount")), /^Public withdrawal 0\.002 SOL /,
+    "the amount that the checker bound, above the rows");
+  // The steps come from the parts of the session; a failure marks the step where it stopped.
+  const states = (patch, n = 0) => stepStates({ ...ssOf(id), ...patch }, n, 2);
+  const parts = { package: "P", signature: "S" };
+  assert.deepEqual(states({ status: "collecting" }, 1), ["now", "", ""]);
+  assert.deepEqual(states({ status: "collecting", expiry: 1 }), ["bad", "", ""], "expired");
+  assert.deepEqual(states({ status: "signing", package: "P" }, 2), ["done", "now", ""]);
+  assert.deepEqual(states({ status: "signed", ...parts }, 2), ["done", "done", "now"]);
+  assert.deepEqual(states({ status: "sent", ...parts, outcome: "failed" }, 2),
+    ["done", "done", "bad"], "failed on chain");
+  assert.deepEqual(states({ status: "failed" }), ["bad", "", ""], "failed before the package");
+  assert.deepEqual(states({ status: "failed", package: "P" }, 2), ["done", "bad", ""]);
+  assert.deepEqual(states({ status: "failed", ...parts }, 2), ["done", "done", "bad"]);
   const said = "Recipient, asset and amount are public.";
   assert.equal(textOf(one("withdraw-public")), said, "the text of ZOLANA.md section 2");
   Object.assign(one("withdraw-to"), { value: base58(TO) });
@@ -747,6 +765,9 @@ const proposedWithdrawal = async (recipient = base58(TO)) => {
   await approve(c, ssOf(id), 1);
   await approve(c, ssOf(id), 2);
   await waitStatus(id, "sent");
+  const sentCard = findAll(solView({ ...c, host: { ...c.host, el: node } }, (fn) => fn, {}),
+    (n) => n.attrs["data-session"] === id)[0];
+  assert.deepEqual(stepsOf(sentCard), ["step done", "step done", "step done", "step done"]);
   const landed = chain.landed.find((x) => x.signature === ssOf(id).txId);
   assert.ok(landed, "the execute of the withdrawal landed");
   assert.ok(landed.message.includes(TO), "the execute names the recipient");
