@@ -1868,10 +1868,10 @@ export const MUTATIONS = [
     ["web/app-loop.js", "  return at < 0 ? 0 : all.slice(0, at).filter(isStop).length;",
       "  return 0;"], APP_TEST,
     /Tab from a control of the layer that is no stop goes to the next stop/),
-  program("B-layer-inside-back", "Shift+Tab from no stop before the first stop stays at the first",
+  program("B-layer-inside-back", "Shift+Tab from a control that is no stop goes to the stop after",
     ["web/app-loop.js", "return stops[before > 0 ? before - 1 : last];",
-      "return stops[before > 0 ? before - 1 : 0];"], APP_TEST,
-    /Shift\+Tab from it before the first stop goes to the last/),
+      "return stops[before > 0 ? before : last];"], APP_TEST,
+    /Shift\+Tab from it goes to the stop before/),
   program("B-fund-label", "the notes of the funding amount are part of the name of the field",
     ["web/app-account-view.js", '    el("div", { class: "field" },\n'
       + '      el("label", { class: "field" }, el("span", {}, "Amount in ZEC"), amount),\n',
