@@ -1941,6 +1941,15 @@ assert.match(marginText(3, 3), /Each payment needs every device/);
   assert.equal(fields.focused, true, "the reset of Change devices keeps the focus in the dialog");
   assert.equal(/If this wallet has a Solana part/.test(dialogText(t.state.g)), solOn(),
     "the Solana sentence only for a wallet with a Solana part");
+  const g = t.state.g;
+  t.state.g = { ...g, network: "mainnet" };
+  try {
+    assert.equal(solOn(), false, "a mainnet wallet gets no Solana part");
+    assert.doesNotMatch(dialogText(t.state.g), /Solana/,
+      "Change devices says nothing of Solana for a wallet with no Solana part");
+  } finally {
+    t.state.g = g;
+  }
 }
 
 // ── Two quick submits make one wallet: the review, Change devices and createGroup ──

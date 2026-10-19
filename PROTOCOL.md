@@ -234,7 +234,7 @@ of section 15.5 to the payment documents. Its `version` is 3:
 The flow is the one before ZIP 2005 support: round 1, round 2 and round 3 without `confirm`,
 `commit` or `echo`. The creator makes the viewing key parts `nk` and `rivk`. A version 1 wallet
 shows a note in Settings: "This wallet was made before quantum recoverability (ZIP 2005). To get it,
-move the funds to a new wallet with Change signers." Section 8 describes that move.
+move the funds to a new wallet with Change devices." Section 8 describes that move.
 
 ## 5. The wallet key and the address
 
