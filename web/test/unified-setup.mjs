@@ -803,7 +803,8 @@ async function walkSteps(fields, times, fresh = true) {
   const WITH_SOL = "Nobody ever holds the whole key, and nobody outside your team can read the "
     + "Zcash part of the wallet. A Solana Devnet part is less private: a private payment hides its "
     + "amount, but the chain shows its payee and the wallet that pays. Helius, the Solana provider "
-    + "that Zigs uses, sees your IP address and the keys of the wallet.";
+    + "that Zigs uses, sees your IP address and the keys of the wallet. By default, its hosted "
+    + "prover also sees each payment.";
   const groups = t.state.groups;
   const welcomeText = () => {
     const real = globalThis.document;

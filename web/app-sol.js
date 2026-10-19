@@ -68,7 +68,8 @@ export function welcomeRead() {
   return ui.solServed === false ? "can read the wallet." : "can read the Zcash part of the "
     + "wallet. A Solana Devnet part is less private: a private payment hides its amount, but the "
     + "chain shows its payee and the wallet that pays. Helius, the Solana provider that Zigs "
-    + "uses, sees your IP address and the keys of the wallet.";
+    + "uses, sees your IP address and the keys of the wallet. By default, its hosted prover also "
+    + "sees each payment.";
 }
 // The wallet list with the create dialog open. Inside an open wallet the dialog does not show.
 export const newWallet = () => { openGroup(null); openCreate(); render(); };

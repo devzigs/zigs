@@ -563,7 +563,7 @@ function reviewDialog() {
 // Who can read the payment (PRIVACY.md, Signers and invite links). The memo sentence is the one
 // of the Send form.
 const REVIEW_READS = "The chain does not show the recipients, the amounts or the memos. Every "
-  + "device of this wallet can read them and the note for signers, in the shared history of the "
+  + "device of this wallet can read them and the note, in the shared history of the "
   + "wallet. So can anyone who has its invite link. A device that leaves the wallet later keeps "
   + "that history. A memo goes on chain with the payment, and its recipient can read it too.";
 
