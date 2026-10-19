@@ -581,7 +581,9 @@ function activityTab() {
 function membersTab() {
   return el("div", { class: "page", style: "gap:16px" },
     el("section", { class: "card" },
-      el("div", { class: "card-pad", style: "padding-bottom:14px" }, el("div", { class: "card-head" }, el("span", { class: "small muted" }, ruleText(state.g.t, state.g.n)))),
+      el("div", { class: "card-pad", style: "padding-bottom:14px" },
+        el("div", { class: "card-head" },
+          el("span", { class: "small muted" }, ruleText(state.g.t, state.g.n)))),
       el("div", { style: "border-top:1px solid var(--line)" },
         seatIds().map((i) => guard(memberRow, i)))),
     changeSignersCard(),
