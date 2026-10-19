@@ -454,9 +454,11 @@ async function submitWallet({ name, n, t, sol }, from) {
   const withSol = solChosen(from, network, sol);
   endCreate(); ui.net = "testnet"; ui.ack = false;
   const gid = await createGroup(name, n, t, from && from.id, network);
-  if (withSol) await planSolana(gid);
+  if (gid && withSol) await planSolana(gid);
 }
+// The first submit closes the dialog before it waits: a second submit of the same form is stale.
 const moveSubmit = (from) => act(async (ev) => {
+  if (!ui.move) return;
   const fd = new FormData(ev.target), n = Number(fd.get("n")), t = Number(fd.get("t"));
   if (t === n && !ui.marginAck) throw new Error(ACK_FIRST);
   await submitWallet({ name: String(fd.get("name") || "").trim() || from.name, n, t,

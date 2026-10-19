@@ -399,7 +399,14 @@ async function round3V2(i) {
 
 // `from` is the wallet this one replaces. The old wallet gets only the new id, never its key:
 // signers left out of the new wallet must not get its viewing key.
-export async function createGroup(name, n, t, from = null, network = "testnet") {
+// One wallet at a time: a second call while one runs (a double submit) makes nothing.
+let creating = false;
+export async function createGroup(...args) {
+  if (creating) return null;
+  creating = true;
+  try { return await makeGroup(...args); } finally { creating = false; }
+}
+async function makeGroup(name, n, t, from = null, network = "testnet") {
   // Signed writes need a signing key for every seat, so check before anything is made.
   if (!(await canSign())) throw new Error(NO_SIGNING_SEAT);
   const ref = sdb.collection("groups").doc();

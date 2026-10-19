@@ -1210,12 +1210,15 @@ async function walkSteps(fields, times, fresh = true) {
       return { name: "Submitted", n: "3", t: "2", sol: "on" }[k] ?? null;
     }
   };
+  const gidOld = t.state.gid;
+  ui.move = true;
   try {
     await dialogTree(t.state.g).on.submit(EV);
   } finally {
     globalThis.FormData = real;
   }
   const gidN = t.state.gid;
+  assert.notEqual(gidN, gidOld, "Change devices makes the new wallet");
   const made = { auto: t.sec(gidN, 1)?.solAuto === true, hint: data.get(groupPath(gidN)).solana };
   assert.deepEqual(made, { auto: false, hint: undefined }, "Change devices");
   globalThis.FormData = class {
@@ -1224,6 +1227,7 @@ async function walkSteps(fields, times, fresh = true) {
     }
   };
   ui.marginAck = false;
+  ui.move = true;
   try {
     await dialogTree(t.state.g).on.submit(EV);
   } finally {
@@ -1363,6 +1367,39 @@ assert.match(marginText(3, 3), /Each payment needs every device/);
   assert.equal(field.attrs.placeholder, "For example: Ana's phone", "a short hint");
   assert.match(textOf(findNode(tree, (n) => (n.kids ?? []).includes(field))),
     /^This device's label/, "the label of the field");
+}
+
+// ── Two quick submits make one wallet: the review, Change devices and createGroup ──
+{
+  const wallets = () => [...data.keys()].filter((k) => /^groups\/[^/]+$/.test(k)).length;
+  const real = globalThis.FormData;
+  let before = wallets();
+  await walkSteps({ ...RULE_2_OF_3, "g-name": { value: "Twice" }, "my-name": { value: "" },
+    "g-sol": null }, 3);
+  const review = dialogTree();
+  await Promise.all([review.on.submit(EV), review.on.submit(EV)]);
+  assert.equal(wallets(), before + 1, "two submits of the review make one wallet");
+  before = wallets();
+  globalThis.FormData = class {
+    get(k) {
+      return { name: "Moved twice", n: "3", t: "2" }[k] ?? null;
+    }
+  };
+  ui.move = true;
+  try {
+    const move = dialogTree(t.state.g);
+    await Promise.all([move.on.submit(EV), move.on.submit(EV)]);
+    assert.equal(wallets(), before + 1, "two submits of Change devices make one wallet");
+    // A submit of the same form after the first one ended finds the dialog closed.
+    await move.on.submit(EV);
+  } finally {
+    globalThis.FormData = real;
+  }
+  assert.equal(wallets(), before + 1, "a stale Change devices form makes no second wallet");
+  before = wallets();
+  const made = await Promise.all([t.createGroup("One", 3, 2), t.createGroup("Two", 3, 2)]);
+  assert.equal(wallets(), before + 1, "a second createGroup while one runs makes nothing");
+  assert.equal(made.filter((gid) => gid === null).length, 1, "and returns no wallet");
 }
 
 console.log("unified-setup: ok");
