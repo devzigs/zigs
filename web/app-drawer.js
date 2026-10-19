@@ -241,7 +241,7 @@ const lostApproval = (ss) => approvalLost(ss) ? el("div", { class: "callout bad"
 // One seat reset the document after this browser saw its signing start (signingLost).
 const resetNote = (ss) => signingLost(ss) ? el("div", { class: "callout bad" }, "This browser saw "
   + "the signing of this payment start, but the payment does not show it now: one device reset "
-  + "it. The devices may have signed it before the reset, so a device may still send it.") : null;
+  + "it. The devices may have signed it before the reset.") : null;
 
 // One seat rewrote the proposal after a seat of this browser approved it.
 const changedNote = (ss) => approvalChanged(ss) ? el("div", { class: "callout bad" },

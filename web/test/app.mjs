@@ -2498,6 +2498,7 @@ const sealed = (gid, rel, seat, fields, key, names = ["by", "sig"]) =>
           "headline: one device reset the signing seen here");
         assert.match(resetOne.text, /saw the signing of this payment start, but the payment does /,
           "the note that the headline points to");
+        assert.match(resetOne.text, /may have signed it before the reset\.(?!.*may still send)/s);
         t.state.commits = { [me]: {} };
         const lostOne = look(open("hd6", "PA"));
         assert.match(lostOne.head, /^Payment needs attentionThis browser lost its approval of /,
