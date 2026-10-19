@@ -490,8 +490,13 @@ function activityStates(ctl, kept) {
   const done = kept.docs.soldone;
   ctl.docs = { ...kept.docs, soldone: { ...done, 2: { ...done[2], groupKey: "00".repeat(32) } } };
   const differs = draw("sol");
-  assert.match(differs, /different Solana keys, so its payments do not show here/);
+  assert.match(differs, /differ, or do not fit this device, so its payments do not show here/);
   assert.equal(select(), null, "no select for keys that differ");
+  ctl.docs = { ...kept.docs, soldone: { 1: done[1], 2: done[2] } };
+  const running = draw("all");
+  assert.match(running, /The Solana part is not ready yet, so its payments do not show here/,
+    "a Solana part that is not ready yet says so");
+  assert.doesNotMatch(running, /The Solana rows show/, "and no note that says the rows show");
   ctl.docs = kept.docs;
   state.g = { ...g, network: "mainnet" };
   const main = draw("sol");
@@ -511,11 +516,11 @@ function activityStates(ctl, kept) {
   assert.match(draw("zec"), /ZEC you receive and Zcash payments that the devices of this wallet/);
   assert.match(draw("sol"), /Solana payments that the devices of this wallet propose show up/);
   assert.doesNotMatch(pageText(), /ZEC you receive/, "no ZEC under the Solana choice");
-  activityHistory(state, draw);
+  activityHistory(ctl, state, draw);
 }
 // The empty list says what the chain read is: finished (nothing there), not finished, or failed.
-function activityHistory(state, draw) {
-  const ready = t.chain;
+function activityHistory(ctl, state, draw) {
+  const ready = t.chain, loaded = ctl.loaded;
   assert.match(draw("all"), /No activity yet/, "a finished sync with nothing: the empty list");
   t.setChain({ gid: state.gid, cw: null, bal: null, sent: null, received: [], syncing: true });
   const syncing = draw("all");
@@ -535,7 +540,22 @@ function activityHistory(state, draw) {
   assert.match(draw("all"), /Late rent.*The sync failed\. This list can be incomplete/,
     "rows next to a failed sync: the list can lack received payments");
   state.sessions = [];
+  t.setChain({ gid: state.gid, cw: null, bal: null, sent: null, received: [],
+    error: "The server did not answer." });
+  const first = draw("all");
+  assert.match(first, /The sync failed/, "a first sync that fails says that it failed");
+  assert.doesNotMatch(first, /Reading the chain/, "a first sync that fails is no sync in progress");
   t.setChain(ready);
+  ctl.loaded = { ...loaded, solsessions: false };
+  for (const pick of ["sol", "all"]) {
+    const unread = draw(pick);
+    assert.match(unread, /Reading the Solana transactions.*show after the first read/,
+      "an unread Solana list says that it reads: " + pick);
+    assert.doesNotMatch(unread, /No activity yet/,
+      "an unread Solana list does not say that nothing is there: " + pick);
+  }
+  assert.match(draw("zec"), /No activity yet/, "the Zcash choice does not wait for Solana");
+  ctl.loaded = loaded;
 }
 const rowText = (id) => {
   const row = findNode(pageTree(), (n) => n.attrs?.["data-key"] === "sol-act-" + id);

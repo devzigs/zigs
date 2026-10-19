@@ -434,10 +434,15 @@ const HISTORY = {
   failed: ["The sync failed", "This list can be incomplete. Use Refresh in the ZEC card on the "
     + "Overview."],
 };
-// The heading and the text of an empty list. Only a finished sync can say that nothing is there.
+const SOL_READING = ["Reading the Solana transactions",
+  "Solana payments of this wallet show after the first read."];
+// The Solana rows of a wallet with a Solana part are not read yet.
+const solReading = (pick) => pick !== "zec" && solPart() && solActivity() === null;
+// The heading and the text of an empty list. Only a finished read can say that nothing is there.
 function emptyText(pick) {
   const state = pick === "sol" ? "ready" : historyState();
   if (state !== "ready") return HISTORY[state];
+  if (solReading(pick)) return SOL_READING;
   return ["No activity yet", EMPTY[pick === "all" && !solPart() ? "none" : pick]];
 }
 // Rows next to a history that is not read or not complete: the list may lack received payments.
@@ -481,17 +486,21 @@ const chainSelect = (pick) => el("label", { class: "field activity-filter" },
 const SOL_ACTIVITY_NOTE = "The Solana rows show the payments of this wallet. They also show the "
   + "last SOL that you added, until you leave this wallet or reload the page. SOL that other "
   + "people send to the wallet does not show here.";
+// The page knows two causes for keys that differ: the devices published other keys, or the key
+// share or PDA identity of this device does not fit the published ones.
 const SOL_LOST = {
   stopped: "The Solana part stopped, so its payments do not show here.",
-  differs: "The devices of this wallet published different Solana keys, so its payments do "
-    + "not show here.",
+  differs: "The Solana keys of this wallet differ, or do not fit this device, so its payments "
+    + "do not show here. Open Solana to see why.",
+  running: "The Solana part is not ready yet, so its payments do not show here.",
 };
 const noteRow = (text) => el("p", { class: "row-note" }, text);
 // What the list cannot show: Solana that did not load, stopped or is not read yet, and Solana that
 // this page never knows (a deposit by another person).
 function solNoteText() {
   if (solOn() && solError) return "Solana did not load, so its transactions are not shown here.";
-  if (!solPart()) return SOL_LOST[solSetup()?.status];
+  const status = solSetup()?.status;
+  if (!solPart() || status === "running") return SOL_LOST[status];
   if (solActivity() === null) return "Reading the Solana transactions…";
   return SOL_ACTIVITY_NOTE
     + (solOlderCount() > 0 ? " Older Solana proposals are not listed." : "");
