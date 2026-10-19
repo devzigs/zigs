@@ -10,6 +10,7 @@ import "./personal.js";
 import "./requests.js";
 import "./zns.js";
 import "./overview-model.js";
+import "./payment-model.js";
 import "./app-state.js";
 import "./app-kit.js";
 import "./app-engine.js";

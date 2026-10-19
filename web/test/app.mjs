@@ -1517,7 +1517,7 @@ const sealed = (gid, rel, seat, fields, key, names = ["by", "sig"]) =>
     t.setChain(chainOf(null));
     t.ui.pay = null;
     const blocked = t.sendDialog();
-    assert.equal(named(blocked, "button", "Propose payment").attrs.disabled, "");
+    assert.equal(named(blocked, "button", "Review payment").attrs.disabled, "");
     assert.match(textOf(blocked), /Wait for the first sync to finish\./);
     const sessions = () => [...data.keys()].filter((k) => k.includes("/sessions/")).join();
     const stored = sessions();
@@ -1530,11 +1530,113 @@ const sealed = (gid, rel, seat, fields, key, names = ["by", "sig"]) =>
     assert.deepEqual(t.banner, { kind: "bad", text: "Wait for the first sync to finish." });
     assert.equal(sessions(), stored, "a refused submit proposes nothing");
     t.setChain(chainOf({ spendable: 1e8, pending: 0 }));
-    assert.equal(named(t.sendDialog(), "button", "Propose payment").attrs.disabled, undefined);
+    assert.equal(named(t.sendDialog(), "button", "Review payment").attrs.disabled, undefined);
     t.ui.proposing = true;
-    assert.notEqual(named(t.sendDialog(), "button", "Propose payment").attrs.disabled, undefined,
+    assert.notEqual(named(t.sendDialog(), "button", "Review payment").attrs.disabled, undefined,
       "off while a proposal runs (S8)");
     t.ui.proposing = false;
+
+    // Drafts: the typed form, sealed with the wallet key on this device, for 24 hours. A restored
+    // name shows its address again; a locked key keeps the draft; an expired one goes without a
+    // key; Discard deletes it.
+    {
+      const gidNow = t.state.gid, book = () => JSON.parse(storage.get("zf-drafts") || "{}");
+      Object.assign(t.ui, { after: null, note: "rent", priority: true, pay: [{ k: 1,
+        to: "alice.zec", amt: "0.5", memo: "m", name: "alice", shown: { address: "utest1x" } }] });
+      t.keepDraft();
+      const entry = book()[gidNow];
+      assert.ok(Number.isSafeInteger(entry.at) && !/alice|rent/.test(entry.box), "sealed");
+      Object.assign(t.ui, { pay: null, note: "", priority: false });
+      const restored = t.sendDialog();
+      assert.deepEqual(t.ui.pay.map((r) => [r.to, r.amt, r.memo, r.shown ?? null, r.name]),
+        [["alice.zec", "0.5", "m", null, undefined]], "the typed text, no shown address");
+      assert.deepEqual([t.ui.note, t.ui.priority], ["rent", true]);
+      assert.match(textOf(restored), /Draft saved on this device for 24 hours\./);
+      const keys = t.gkeys;
+      t.gkeys = { ...keys, [gidNow]: undefined };
+      t.ui.pay = null;
+      t.sendDialog();
+      assert.equal(t.ui.pay[0].to, "", "a locked key restores nothing");
+      assert.ok(book()[gidNow], "and keeps the draft");
+      t.gkeys = keys;
+      storage.set("zf-drafts", JSON.stringify({ [gidNow]: { ...entry, at: entry.at - 86400001 },
+        other: { at: entry.at, box: "x" } }));
+      t.sweepDrafts();
+      assert.deepEqual(Object.keys(book()), ["other"], "an expired draft goes, a live one stays");
+      Object.assign(t.ui, { pay: [{ k: 2, to: "x", amt: "", memo: "" }], note: "", after: null });
+      t.keepDraft();
+      named(t.sendDialog(), "button", "Discard draft").on.click();
+      assert.equal(book()[gidNow], undefined, "Discard deletes it");
+      Object.assign(t.ui, { pay: [{ k: 3, to: "x", amt: "", memo: "" }],
+        after: { pczt: "EXP1" } });
+      t.keepDraft();
+      assert.equal(book()[gidNow], undefined, "no draft for Propose again");
+      // A draft for the review below, which must delete it.
+      Object.assign(t.ui, { pay: [{ k: 4, to: "utest1d", amt: "1", memo: "" }], after: null });
+      t.keepDraft();
+      assert.ok(book()[gidNow]);
+    }
+
+    // The Send review: prepareSpend builds the transaction, the review shows what the engine
+    // decoded from it, and Propose publishes that transaction as it is. A decode that does not
+    // match the payees offers no Propose; a stale review is built again.
+    {
+      let builds = 0;
+      const reviewed = { ...spend, pczt: "REV1", amount: 5, fee: 10000 };
+      // The approvals of the tests above hold Send until the engine says that they expired.
+      const expiredAll = () => JSON.stringify({ state: "expired", txid: "x", why: "t",
+        spent: false });
+      t.setChain({ ...chainOf({ spendable: 1e8, pending: 0 }),
+        cw: { createSpend: async () => { builds += 1; return JSON.stringify(reviewed); },
+          sessionState: expiredAll, free() {} } });
+      const decodes = { REV1: 5, REV2: 6 };
+      t.setZ({ ...fakeZ, inspect: (pczt, fvk) => {
+        if (!(pczt in decodes)) return fakeZ.inspect(pczt, fvk);
+        return JSON.stringify({ sighash: "rr", tx_version: "V6", spends: [], fee: 10000,
+          lines: [{ kind: "output", who, value: decodes[pczt], memo_status: "empty" }],
+          standard_fee: 10000, expiry_height: 4503456, txid: "revtx" });
+      } });
+      // Async steps draw the page later: they run with the page stub, the dialogs with the
+      // recorder.
+      const recorderDoc = globalThis.document;
+      const drawn = () => { globalThis.document = recorderDoc; return t.sendDialog(); };
+      globalThis.document = realDocument;
+      try {
+        const prep = await t.prepareSpend([{ to: addr, amount: 5 }], false);
+        assert.equal(builds, 1, "one build for the review");
+        t.ui.sendReview = { prep, note: "reviewed", priority: false };
+        const shown = drawn();
+        assert.match(textOf(shown), /decoded the transaction that it built/);
+        assert.ok(named(shown, "button", "Propose payment"), "a match can be proposed");
+        t.ui.sendReview = { prep: { ...prep, t: { ...prep.t, pczt: "REV2" } }, note: "x",
+          priority: false };
+        const odd = drawn();
+        globalThis.document = realDocument;
+        assert.match(textOf(odd), /does not match the form/, "a decode that differs");
+        assert.equal(named(odd, "button", "Propose payment"), undefined, "and no Propose");
+        await assert.rejects(t.proposeReviewed(t.ui.sendReview), /does not match the form/,
+          "nor a Propose by another path");
+        const before = t.state.sessions.length;
+        t.ui.sendReview = { prep: { ...prep, at: prep.at - 5 * 60 * 1000 }, note: "old",
+          priority: false };
+        await assert.rejects(t.proposeReviewed(t.ui.sendReview), /out of date/, "a stale review");
+        assert.equal(t.ui.sendReview, null, "the person reviews it again");
+        t.ui.sendReview = { prep, note: "reviewed", priority: false };
+        await t.proposeReviewed(t.ui.sendReview);
+        await waitFor("the reviewed proposal", () => t.state.sessions.length > before);
+        const made = t.state.sessions.find((x) => x.note === "reviewed");
+        assert.equal(made.pczt, "REV1", "the proposal is the reviewed transaction");
+        assert.equal(builds, 1, "with no second build");
+        assert.equal(t.ui.sendReview, null);
+        assert.equal(storage.has("zf-drafts") && JSON.parse(storage.get("zf-drafts"))[t.state.gid],
+          undefined, "a proposal deletes the draft of its wallet");
+      } finally {
+        await sleep(300);
+        globalThis.document = recorderDoc;
+        t.setZ(fakeZ);
+        t.ui.sendReview = null;
+      }
+    }
 
     // An expired payment: the chip and the drawer say so, the drawer offers "Propose again" and
     // no Cancel, and the page signs nothing for it. "Send again" comes 10 minutes after a send
@@ -2636,6 +2738,12 @@ const sealed = (gid, rel, seat, fields, key, names = ["by", "sig"]) =>
           t.state.sessions = [];
           return payees;
         };
+        // The form gives a review, or for "Propose again" a proposal: the payees of either.
+        const madeSince = async (before) => {
+          const review = t.ui.sendReview;
+          t.ui.sendReview = null;
+          return review ? [review.prep.payees] : proposedSince(before);
+        };
         // A submit with the stub page, as the page draws and reacts after it.
         const stubPage = () => ({ ...recorder, activeElement: { dataset: {} },
           getElementById: () => new Rec("div") });
@@ -2646,7 +2754,7 @@ const sealed = (gid, rel, seat, fields, key, names = ["by", "sig"]) =>
           globalThis.document = realDocument;
           await sleep(300);
           globalThis.document = recorder;
-          return proposedSince(before);
+          return madeSince(before);
         };
         // Two submits at once: `release()` runs when both wait for the registry.
         const submitTwice = async (dialog, release) => {
@@ -2659,7 +2767,7 @@ const sealed = (gid, rel, seat, fields, key, names = ["by", "sig"]) =>
           await Promise.all(both);
           await sleep(300);
           globalThis.document = recorder;
-          return proposedSince(before);
+          return madeSince(before);
         };
         const refused = async (dialog, text) => {
           asked.length = 0;
@@ -2735,7 +2843,7 @@ const sealed = (gid, rel, seat, fields, key, names = ["by", "sig"]) =>
         let sent = await submit(await settled(["alice.zec"]));
         assert.deepEqual(sent, [[{ to: NAMED, amount: 50000000, name: "alice" }]],
           "the string of the registry, not the form of the engine");
-        assert.equal(t.banner.kind, "ok");
+        assert.notEqual(t.banner?.kind, "bad", "the review opens with no error");
         assert.equal(gets >= 1, true, "the submit asks the registry");
         sent = await submit(await settled([OTHER, "0.1"], ["Bob", "0.2", "rent"]));
         assert.deepEqual(sent, [[{ to: OTHER, amount: 10000000 },

@@ -272,15 +272,14 @@ function keptPayee({ to, amount, memo, name }) {
   return p;
 }
 
-async function proposeNow(payees, note, move = null, priority = false, after) {
+// `prepared`: the transaction that the Send review showed (prepareSpend). It is proposed as it is.
+async function proposeNow(payees, note, move = null, priority = false, after, prepared) {
   const gid = state.gid, approvals = state.g.t;
-  if (!chain || chain.gid !== gid || !chain.bal) {
-    throw new Error("The wallet has not finished its first sync.");
-  }
-  if (!mayAct()) throw new Error(NO_SEAT_KEY);
+  readyToSpend(gid);
+  if (prepared && prepared.gid !== gid) throw new Error("The review belongs to another wallet.");
   payees = payees.map(keptPayee);
   // `after`: the approved PCZT of an expired payment. The engine spends all of its notes too.
-  const t = J(await spendOrStall(chain, payees, priority, after));
+  const t = prepared ? prepared.t : J(await spendOrStall(chain, payees, priority, after));
   const ref = sdb.collection("groups/" + gid + "/sessions").doc();
   const fields = proposalFields(payees, note, t, move, Date.now());
   const sig = await sigPart(gid, ref.id, "proposal", fields);
@@ -288,6 +287,32 @@ async function proposeNow(payees, note, move = null, priority = false, after) {
   log("new spend: " + fmtZec(t.amount));
   showBanner("ok", "Payment proposed. It needs " + approvals + " approvals.");
   if (state.gid === gid) openSession(ref.id);
+}
+
+function readyToSpend(gid) {
+  if (!chain || chain.gid !== gid || !chain.bal) {
+    throw new Error("The wallet has not finished its first sync.");
+  }
+  if (!mayAct()) throw new Error(NO_SEAT_KEY);
+}
+
+/**
+ * Builds the transaction of a new payment without proposing it, for the Send review: the same
+ * guards as a proposal (the Send holds, the first sync, a seat that can sign) and the same engine
+ * call. The review decodes `t.pczt`, and proposing it later needs no new build.
+ * @returns {Promise<{gid: string, payees: object[], t: object, at: number}>}
+ */
+export async function prepareSpend(payees, priority) {
+  const why = holdBlocker();
+  if (why) throw new Error(why);
+  const gid = state.gid;
+  readyToSpend(gid);
+  ui.proposing = true;
+  render();
+  try {
+    const kept = payees.map(keptPayee);
+    return { gid, payees: kept, t: J(await spendOrStall(chain, kept, priority)), at: Date.now() };
+  } finally { ui.proposing = false; }
 }
 
 // Only a PCZT text goes to the engine: a click event that a handler passes on is none.

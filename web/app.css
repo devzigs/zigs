@@ -637,3 +637,9 @@ body:has(.dialog), body:has(.drawer) { overflow: hidden; }
 }
 .asset-balance.unknown { font-size: 22px; color: var(--muted); letter-spacing: -0.02em; }
 .pending-shortcut .btn { margin-left: auto; }
+
+/* The review of a Send: the total as the largest number, then each recipient in full. */
+.review-hero {
+  display: grid; gap: 6px; padding-bottom: 16px; border-bottom: 1px solid var(--line);
+}
+.review-row { display: grid; gap: 8px; padding-bottom: 16px; border-bottom: 1px solid var(--line); }
