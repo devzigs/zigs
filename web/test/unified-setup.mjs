@@ -441,7 +441,8 @@ for (const text of [inviteMessage(link), plain.invite, chatMessage(link)]) {
 }
 // The invite cards of a wallet and of a chat say the same to the sender.
 const SENDER = new RegExp("asks for a user name and a password before Zigs opens\\. Any user name "
-  + "works\\. Send the password apart from the link\\. Tell (each person who joins|your contact) to open the "
+  + "works\\. Send the password apart from the link\\. Tell (each person who joins|your contact) "
+  + "to open the "
   + "link in Safari or Chrome\\. The browser of a chat app or a private window can delete the key");
 assert.match(pageText(), SENDER, "the invite card of a wallet");
 {
