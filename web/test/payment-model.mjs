@@ -2,7 +2,9 @@
 // person typed, within bounds, for 24 hours; a review older than 5 minutes is built again.
 // Run: node web/test/payment-model.mjs   (Node 24)
 import assert from "node:assert/strict";
-import { DRAFT_MS, draftLive, draftOf, REVIEW_MS, reviewFresh } from "../payment-model.js";
+import {
+  DRAFT_MS, draftLive, draftOf, emptyForm, REVIEW_MS, reviewFresh,
+} from "../payment-model.js";
 
 const at = 1_800_000_000_000;
 const typed = { k: 4, to: "alice.zec", amt: "0.5", memo: "rent", name: "alice",
@@ -18,6 +20,12 @@ assert.equal(draftOf({ rows: Array.from({ length: 21 }, () => ({ to: "x" })) }, 
   "more rows than a payment takes");
 assert.equal(draftOf({ rows: [null] }, at), null);
 assert.equal(draftOf({ rows: [{ to: "x" }], note: "n".repeat(81) }, at), null);
+assert.equal(emptyForm({ rows: [{ to: "", amt: "", memo: "" }], note: "" }), true);
+assert.equal(emptyForm({ rows: [{ to: "", amt: "", memo: "m" }], note: "" }), false, "a memo");
+assert.equal(emptyForm({ rows: [], note: "n" }), false, "a note");
+assert.equal(emptyForm({ rows: null }), true);
+assert.equal(emptyForm({ rows: [{ memo: "m".repeat(2049) }] }), false,
+  "a form too long for a draft is not empty: the page keeps the last draft");
 console.log("ok  a draft keeps the typed form only");
 
 assert.equal(draftLive(d, at), true);

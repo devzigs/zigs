@@ -503,7 +503,7 @@ function inboxBucket(ss, held) {
   try {
     const end = ended(ss), step = finishStep(ss);
     return bucketOf({
-      sendRefused: refusedSend(ss, step), landed: landed(ss), held: held.has(ss.id),
+      sendRefused: !end && refusedSend(ss, step), landed: landed(ss), held: held.has(ss.id),
       check: !end && signingSeen(ss) && expired(ss),
       review: needsMyApproval(state.gid, ss), step, ended: end,
       error: !!ss.error, status: ss.status,

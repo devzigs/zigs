@@ -5,11 +5,12 @@ import { state, ui } from "./app-state.js";
 import { fmtZec } from "./app-kit.js";
 import { Z } from "./app-engine.js";
 import { gkeys } from "./app-keystore.js";
-import { DRAFT_MS, draftLive, draftOf, reviewFresh } from "./payment-model.js";
+import { DRAFT_MS, draftLive, draftOf, emptyForm, reviewFresh } from "./payment-model.js";
 import { addrHidden, atCap, curChain, curNet, netName } from "./app-chain.js";
 import { act, addrGroups, copyBtn, el, money, normalized, onNetwork, qrBox } from "./app-dom.js";
 import {
-  feeEstimate, inspectOf, newSpend, prepareSpend, PRIORITY_FACTOR, recipientCheck, sendBlocker,
+  feeEstimate, inspectOf, newSpend, prepareSpend, PRIORITY_FACTOR, proposePrepared, recipientCheck,
+  sendBlocker,
 } from "./app-payments.js";
 import { requestOf } from "./app-payreq.js";
 import { nameOf, recentNote, registry, resolveRecipient, zecName } from "./zns.js";
@@ -312,12 +313,18 @@ function readDraft(gid) {
     return draftLive(d, Date.now()) ? d : null;
   } catch { return null; }
 }
-// Saves the form as it is now. A form with nothing typed deletes the draft.
+// Saves the form as it is now. A form with nothing typed deletes the draft; a form that does not
+// fit (a memo too long) keeps the last draft and says so.
 export function keepDraft() {
   const gid = state.gid, key = gkeys[gid];
   if (ui.after || !key || !Z) return;
-  const d = draftOf({ rows: ui.pay, note: ui.note, priority: ui.priority }, Date.now());
-  if (!d) { dropDraft(gid); ui.draftFailed = false; return; }
+  const form = { rows: ui.pay, note: ui.note, priority: ui.priority };
+  const d = draftOf(form, Date.now());
+  if (!d) {
+    ui.draftFailed = !emptyForm(form);
+    if (!ui.draftFailed) dropDraft(gid);
+    return;
+  }
   try {
     const book = draftBook();
     book[gid] = { at: d.at, box: Z.secretSeal(key, draftAad(gid), JSON.stringify(d)) };
@@ -337,7 +344,7 @@ function draftLine() {
   if (ui.after) return null;
   if (ui.draftFailed) return el("p", { class: "small faint" }, "This draft could not be saved on "
     + "this device. The form still works.");
-  if (!draftBook()[state.gid]) return null;
+  if (!readDraft(state.gid)) return null;
   const discard = () => {
     dropDraft(state.gid);
     Object.assign(ui, { pay: null, note: "", priority: false });
@@ -346,7 +353,9 @@ function draftLine() {
   return el("p", { class: "small faint" }, "Draft saved on this device for 24 hours. ",
     el("button", { class: "btn ghost sm", type: "button", onclick: discard }, "Discard draft"));
 }
-const closeSend = () => { Object.assign(ui, { send: false, sendReview: null }); render(); };
+/** Closes Send and drops its review: a review never comes back after its dialog closed. */
+export const endSend = () => Object.assign(ui, { send: false, sendReview: null });
+const closeSend = () => { endSend(); render(); };
 sweepDrafts();
 
 export function sendDialog() {
@@ -362,7 +371,7 @@ export function sendDialog() {
   };
   const why = sendBlocker();
   const f = el("form", { class: "dialog", role: "dialog", "aria-modal": "true",
-    "aria-labelledby": "send-title", oninput: keepDraft, onchange: keepDraft,
+    "aria-labelledby": "send-title", oninput: keepDraft, onchange: keepDraft, onclick: keepDraft,
     onsubmit: act(async (ev) => {
     if (why) throw new Error(why);
     const payees = readPayees(rows, await resolveNames(rows));
@@ -372,7 +381,8 @@ export function sendDialog() {
     // "Propose again" keeps its direct path: it spends the notes of the expired payment too.
     if (ui.after) {
       await newSpend(payees, note, null, ui.priority, ui.after);
-      ui.send = false; ui.after = null;
+      endSend();
+      ui.after = null;
       return;
     }
     ui.sendReview = { prep: await prepareSpend(payees, ui.priority), note, priority: ui.priority };
@@ -404,15 +414,20 @@ export function sendDialog() {
       el("div", { class: "total" }, el("span", {}, "Total leaving the wallet"), total),
       el("div", {}, el("span", { class: "muted" }, "Approvals needed"), el("span", {}, state.g.t + " of " + state.g.n))),
     el("p", { class: "small faint" }, EXPIRY_NOTE),
-    afterNote(), draftLine(),
+    sendFoot(why));
+  sumUp();
+  return f;
+}
+
+// The foot of the Send form: the note of "Propose again", the draft, the buttons, why Send is off.
+function sendFoot(why) {
+  return [afterNote(), draftLine(),
     el("div", { class: "dialog-actions" },
       el("button", { class: "btn", type: "button", onclick: closeSend }, "Cancel"),
       el("button", {
         class: "btn primary", type: "submit", disabled: !Z || !!why,
       }, ui.after ? "Propose payment" : "Review payment")),
-    why ? el("p", { class: "small faint" }, why) : null);
-  sumUp();
-  return f;
+    why ? el("p", { class: "small faint" }, why) : null];
 }
 
 // ── The review: what the engine decoded from the transaction that this browser built. The
@@ -431,25 +446,21 @@ function decodedMatch(prep) {
 }
 
 function reviewDialog() {
-  const { prep, note, priority } = ui.sendReview, t = prep.t;
+  const { prep, note } = ui.sendReview, t = prep.t;
   if (prep.gid !== state.gid) { ui.sendReview = null; return sendDialog(); }
   const ins = decodedMatch(prep), ok = !!ins;
-  const fee = ok ? ins.fee : t.fee;
   return el("section", { class: "dialog", role: "dialog", "aria-modal": "true",
     "aria-labelledby": "review-title" },
   el("div", { class: "card-head" }, el("h2", { id: "review-title" }, "Review the payment"),
     el("button", { class: "icon-btn", type: "button", "aria-label": "Close", onclick: closeSend },
       "×")),
-  el("div", { class: "review-hero" }, el("span", { class: "label" }, "Leaves the wallet"),
-    money(t.amount + fee, "lg"), el("span", { class: "small muted" }, "Zcash "
-      + netName(state.g) + ": the amounts and the network fee")),
+  ok ? el("div", { class: "review-hero" }, el("span", { class: "label" }, "Leaves the wallet"),
+    money(t.amount + ins.fee, "lg"), el("span", { class: "small muted" }, "Zcash "
+      + netName(state.g) + ": the amounts and the network fee")) : null,
   ok ? el("p", { class: "callout ok" }, REVIEW_OK)
     : el("p", { class: "callout bad", role: "alert" }, REVIEW_BAD),
   prep.payees.map((p, i) => reviewRow(p, i, prep.payees.length)),
-  el("dl", { class: "kv" }, el("dt", {}, priority ? "Network fee (priority)" : "Network fee"),
-    el("dd", {}, money(fee)), el("dt", {}, "Approvals needed"),
-    el("dd", {}, state.g.t + " of " + state.g.n),
-    note ? [el("dt", {}, "Note for signers"), el("dd", {}, note)] : null),
+  reviewFacts(ins, note),
   el("p", { class: "small faint" }, EXPIRY_NOTE + " Proposing asks the signers to approve; it "
     + "does not sign or send the payment."),
   el("div", { class: "dialog-actions" },
@@ -457,6 +468,15 @@ function reviewDialog() {
       onclick: () => { ui.sendReview = null; render(); } }, "Back to edit"),
     ok ? el("button", { class: "btn primary", type: "button", disabled: !!ui.proposing,
       onclick: act(() => proposeReviewed(ui.sendReview)) }, "Propose payment") : null));
+}
+
+// The fee as the engine decoded it (none when the decode does not match), the approvals, the note.
+function reviewFacts(ins, note) {
+  const fee = ins ? [el("dt", {}, ins.fee > ins.standard_fee ? "Network fee (priority)"
+    : "Network fee"), el("dd", {}, money(ins.fee))] : null;
+  return el("dl", { class: "kv" }, fee, el("dt", {}, "Approvals needed"),
+    el("dd", {}, state.g.t + " of " + state.g.n),
+    note ? [el("dt", {}, "Note for signers"), el("dd", {}, note)] : null);
 }
 
 function reviewRow(p, i, n) {
@@ -477,7 +497,7 @@ export async function proposeReviewed(r) {
     ui.sendReview = null;
     throw new Error("This review is out of date. Review the payment again.");
   }
-  await newSpend(r.prep.payees, r.note, null, r.priority, undefined, r.prep);
+  await proposePrepared(r.prep, r.note);
   dropDraft(gid);
   Object.assign(ui, { send: false, sendReview: null, pay: null, note: "", priority: false });
 }

@@ -28,8 +28,15 @@ const windowOn = {};
 const onWindow = (type, fn) => { (windowOn[type] ||= []).push(fn); };
 const storageEvent = (key) =>
   Promise.all((windowOn.storage || []).map((fn) => fn({ key, newValue: storage.get(key) })));
+// The listeners of the page on document, so that a test can press a real key.
+const documentOn = {};
+const pageDocument = new Proxy(stub(), {
+  get: (t, k) => (k === "addEventListener"
+    ? (type, fn) => { (documentOn[type] ||= []).push(fn); } : t[k]),
+});
 Object.assign(globalThis, {
-  Node: class {}, document: stub(), history: { replaceState() {} }, requestAnimationFrame: () => 0,
+  Node: class {}, document: pageDocument, history: { replaceState() {} },
+  requestAnimationFrame: () => 0,
   matchMedia: () => ({ matches: false }),
   location: { hash: "", href: "http://localhost/", origin: "http://localhost" },
   localStorage: {
@@ -1604,6 +1611,27 @@ const sealed = (gid, rel, seat, fields, key, names = ["by", "sig"]) =>
         after: { pczt: "EXP1" } });
       t.keepDraft();
       assert.equal(book()[gidNow], undefined, "no draft for Propose again");
+      // A form that does not fit (a memo too long) keeps the last draft and says so.
+      Object.assign(t.ui, { pay: [{ k: 5, to: "kept", amt: "", memo: "" }], after: null });
+      t.keepDraft();
+      const last = book()[gidNow];
+      t.ui.pay = [{ k: 6, to: "kept", amt: "", memo: "m".repeat(2049) }];
+      t.keepDraft();
+      assert.deepEqual(book()[gidNow], last, "the last draft stays");
+      const failed = t.sendDialog();
+      assert.match(textOf(failed), /draft could not be saved on this device/);
+      assert.equal(failed.on.click, t.keepDraft, "a click saves too: Remove, Max, Use this list");
+      // A draft that this browser cannot open shows no draft line and fills nothing, also when
+      // only its sealed time is old.
+      const aad = "draft\n" + gidNow, seal = (d) => Z.secretSeal(t.gkeys[gidNow], aad,
+        JSON.stringify(d));
+      const typed = { v: 1, rows: [{ to: "old", amt: "", memo: "" }], note: "", priority: false };
+      for (const box of ["not a box", seal({ ...typed, at: Date.now() - 86400001 })]) {
+        storage.set("zf-drafts", JSON.stringify({ [gidNow]: { at: Date.now(), box } }));
+        t.ui.pay = null;
+        assert.doesNotMatch(textOf(t.sendDialog()), /Draft saved/);
+        assert.equal(t.ui.pay[0].to, "", "nothing restored");
+      }
       // A draft for the review below, which must delete it.
       Object.assign(t.ui, { pay: [{ k: 4, to: "utest1d", amt: "1", memo: "" }], after: null });
       t.keepDraft();
@@ -1622,10 +1650,11 @@ const sealed = (gid, rel, seat, fields, key, names = ["by", "sig"]) =>
       t.setChain({ ...chainOf({ spendable: 1e8, pending: 0 }),
         cw: { createSpend: async () => { builds += 1; return JSON.stringify(reviewed); },
           sessionState: expiredAll, free() {} } });
-      const decodes = { REV1: 5, REV2: 6 };
+      const decodes = { REV1: 5, REV2: 6, REV3: 5 };
       t.setZ({ ...fakeZ, inspect: (pczt, fvk) => {
         if (!(pczt in decodes)) return fakeZ.inspect(pczt, fvk);
-        return JSON.stringify({ sighash: "rr", tx_version: "V6", spends: [], fee: 10000,
+        const fee = pczt === "REV3" ? 100000 : 10000;
+        return JSON.stringify({ sighash: "rr", tx_version: "V6", spends: [], fee,
           lines: [{ kind: "output", who, value: decodes[pczt], memo_status: "empty" }],
           standard_fee: 10000, expiry_height: 4503456, txid: "revtx" });
       } });
@@ -1640,12 +1669,43 @@ const sealed = (gid, rel, seat, fields, key, names = ["by", "sig"]) =>
         t.ui.sendReview = { prep, note: "reviewed", priority: false };
         const shown = drawn();
         assert.match(textOf(shown), /decoded the transaction that it built/);
+        assert.match(textOf(shown), /Network fee0/, "the decoded fee is the standard fee");
         assert.ok(named(shown, "button", "Propose payment"), "a match can be proposed");
+        t.ui.sendReview = { prep: { ...prep, t: { ...prep.t, pczt: "REV3" } }, note: "x" };
+        assert.match(textOf(drawn()), /Network fee \(priority\)/, "the fee as decoded");
+        globalThis.document = realDocument;
+        // Every close drops the review, so it never comes back over another payment: the scrim,
+        // Escape, and then "Propose again" opens its own form with a direct Propose.
+        t.closeSession();
+        Object.assign(t.ui, { send: true, sendReview: { prep, note: "x" } });
+        globalThis.document = recorderDoc;
+        const [scrim] = t.layers();
+        globalThis.document = realDocument;
+        scrim.on.click();
+        assert.deepEqual([t.ui.send, t.ui.sendReview], [false, null], "the scrim drops it");
+        Object.assign(t.ui, { send: true, sendReview: { prep, note: "x" } });
+        for (const press of documentOn.keydown) press({ key: "Escape" });
+        assert.deepEqual([t.ui.send, t.ui.sendReview], [false, null], "Escape drops it");
+        Object.assign(t.ui, { send: true, pay: null, after: { pczt: "EXP1" } });
+        const again = drawn();
+        globalThis.document = realDocument;
+        assert.ok(named(again, "button", "Propose payment"), "Propose again: the form");
+        Object.assign(t.ui, { send: false, pay: null, after: null });
+        // The checks of Send run again at Propose: here the funds went meanwhile. A review of
+        // another wallet goes nowhere either.
+        const funded = t.chain;
+        t.setChain({ ...funded, bal: { ...funded.bal, spendable: 0 } });
+        await assert.rejects(t.proposeReviewed({ prep, note: "x" }), /no funds/);
+        t.setChain(funded);
+        await assert.rejects(t.proposeReviewed({ prep: { ...prep, gid: "other" }, note: "x" }),
+          /another wallet/);
         t.ui.sendReview = { prep: { ...prep, t: { ...prep.t, pczt: "REV2" } }, note: "x",
           priority: false };
         const odd = drawn();
         globalThis.document = realDocument;
         assert.match(textOf(odd), /does not match the form/, "a decode that differs");
+        assert.doesNotMatch(textOf(odd), /Leaves the wallet|Network fee/,
+          "no total that the decode did not confirm");
         assert.equal(named(odd, "button", "Propose payment"), undefined, "and no Propose");
         await assert.rejects(t.proposeReviewed(t.ui.sendReview), /does not match the form/,
           "nor a Propose by another path");
@@ -1766,7 +1826,8 @@ const sealed = (gid, rel, seat, fields, key, names = ["by", "sig"]) =>
       assert.match(textOf(t.expiryLine(signedOne)), /cannot prove that the signers signed/);
     }
     const falseId = callouts(t.txDetails(unmarkedOne)).join(" ");
-    assert.match(falseId, /names the id f…f, but the proposal gives the id realtx…realtx/);
+    assert.match(falseId, /names the id f…f, but the approved proposal gives the id realtx…realtx/,
+      "the false id note");
     tipAt(4503459, new Set(["realtx"]));
     assert.equal(t.expired(sentOne), false);
     assert.equal(textOf(t.statusChip(unmarkedOne)), "Sent", "a block holds the approved one");
@@ -1894,6 +1955,8 @@ const sealed = (gid, rel, seat, fields, key, names = ["by", "sig"]) =>
       assert.match(callouts(t.txDetails(finished("tx-b"))).join(" "), /names the id tx-b/);
       assert.match(String(t.sendRefusal({ id: "zq", pczt: "PX", final: { txid: "tx-x" } })),
         /cannot read the approved transaction/, "nothing unreadable goes out");
+      assert.match(String(t.sendRefusal({ ...signedA, final: { tx_hex: "00" } })),
+        /finished transaction cannot be read/, "a finished transaction with no id");
       answer = (p, sg, a) => a === "aa" && p === "PA"
         ? { state: "expired", txid: "tx-a", why: "it expired and its notes are unspent" }
         : { state: "unknown", txid: null, why: "no" };
@@ -1905,6 +1968,18 @@ const sealed = (gid, rel, seat, fields, key, names = ["by", "sig"]) =>
       assert.match(line, /3 transactions of this wallet went on chain from block 4,496,544/,
         "the engine's list, from 2 days of blocks before the expiry, the first block included");
       assert.deepEqual(labels(t.nextAction(signedA, null, none)), ["Propose again"]);
+      // The engine says that it expired before its height does, and the finished id is not the
+      // approved one: the drawer offers Propose again, and the inbox lists no refused send.
+      const endedOther = { ...signedA, final: { txid: "tx-b", tx_hex: "00" } };
+      put(endedOther);
+      at(4500100);
+      assert.equal(t.refusedSend(endedOther), true);
+      assert.deepEqual(labels(t.nextAction(endedOther, null, none)), ["Propose again"]);
+      const zaBucket = Object.entries(t.inboxRows())
+        .find(([k, list]) => k !== "lost" && list.some((x) => x.id === "za"))?.[0] ?? null;
+      assert.equal(zaBucket, null, "the inbox agrees with the drawer");
+      put(signedA);
+      at(4503500);
       Object.assign(t.ui, { send: false, after: null });
       await quiet(() => t.proposeAgain(signedA));
       assert.deepEqual([t.ui.send, t.ui.after], [true, "PA"], "the new proposal spends its notes");
@@ -2179,11 +2254,19 @@ const sealed = (gid, rel, seat, fields, key, names = ["by", "sig"]) =>
       const landedA = { ...signedA, broadcastTxid: "tx-a", final: { txid: "tx-a", tx_hex: "00" },
         broadcastAt: 1 };
       const blockStep = (ss) => textOf(t.sessionLayer(ss));
+      const stepClass = (ss) => all(t.sessionLayer(ss), (x) => /^step /.test(x.className ?? "")
+        && textOf(x).includes("In a block"))[0].className;
       assert.match(blockStep(landedA), /In a blockA synced block holds the payment\./);
+      assert.equal(stepClass(landedA), "step done");
       answer = () => ({ state: "unknown", txid: "tx-a", why: "it may still land" });
       at(4500100);
       assert.match(blockStep(landedA), /In a blockNo synced block holds it yet\./);
+      assert.equal(stepClass(landedA), "step now", "a sent mark is no block");
       assert.match(blockStep(signedA), /In a blockAfter the send\./);
+      assert.equal(stepClass(signedA), "step ");
+      at(4503460);
+      assert.match(blockStep(landedA), /In a blockNo synced block holds it\./,
+        "past its expiry it waits for no block");
       t.setChain({ ...t.chain, cw: null });
       assert.match(blockStep(landedA), /In a blockThis browser has not checked the blocks since/,
         "before a sync the page does not say that no block holds it");

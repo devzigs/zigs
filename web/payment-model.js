@@ -34,6 +34,10 @@ export function draftOf({ rows, note, priority }, at) {
   return empty ? null : { v: 1, at, rows: kept, note: n, priority: priority === true };
 }
 
+/** True when the Send form holds nothing typed: no address, amount, memo or note. */
+export const emptyForm = ({ rows, note }) => !note
+  && (Array.isArray(rows) ? rows : []).every((r) => !r?.to && !r?.amt && !r?.memo);
+
 /** True when draft `d` has the shape of draftOf and is not older than DRAFT_MS at `now`. */
 export function draftLive(d, now) {
   if (d?.v !== 1 || !Number.isSafeInteger(d.at) || d.at > now + 300000) return false;

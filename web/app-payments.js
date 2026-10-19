@@ -254,12 +254,15 @@ export function isOpen(ss) {
 // document whose check still waits does not count as open yet, and neither does a proposal that
 // this browser sees from a sync far behind the chain.
 const PROPOSING = "The proposal of a payment is not complete yet. Wait a moment.";
-export async function newSpend(...args) {
+export const newSpend = (...args) => proposing(() => proposeNow(...args));
+/** Proposes the transaction that the Send review showed (prepareSpend), as it is. */
+export const proposePrepared = (prep, note) => proposing(() => proposeBuilt(prep, note));
+async function proposing(run) {
   const why = holdBlocker();
   if (why) throw new Error(why);
   ui.proposing = true;
   render();
-  try { return await proposeNow(...args); }
+  try { return await run(); }
   finally { ui.proposing = false; }
 }
 
@@ -272,21 +275,28 @@ function keptPayee({ to, amount, memo, name }) {
   return p;
 }
 
-// `prepared`: the transaction that the Send review showed (prepareSpend). It is proposed as it is.
-async function proposeNow(payees, note, move = null, priority = false, after, prepared) {
-  const gid = state.gid, approvals = state.g.t;
-  readyToSpend(gid);
-  if (prepared && prepared.gid !== gid) throw new Error("The review belongs to another wallet.");
+async function proposeNow(payees, note, move = null, priority = false, after) {
+  const at = { gid: state.gid, approvals: state.g.t };
+  readyToSpend(at.gid);
   payees = payees.map(keptPayee);
   // `after`: the approved PCZT of an expired payment. The engine spends all of its notes too.
-  const t = prepared ? prepared.t : J(await spendOrStall(chain, payees, priority, after));
-  const ref = sdb.collection("groups/" + gid + "/sessions").doc();
+  await publishSpend(at, payees, note, J(await spendOrStall(chain, payees, priority, after)), move);
+}
+async function proposeBuilt(prep, note) {
+  const at = { gid: state.gid, approvals: state.g.t };
+  readyToSpend(at.gid);
+  if (prep.gid !== at.gid) throw new Error("The review belongs to another wallet.");
+  await publishSpend(at, prep.payees, note, prep.t, null);
+}
+// The proposal document of transaction `t`, signed by a seat of this browser, in wallet `at.gid`.
+async function publishSpend(at, payees, note, t, move) {
+  const ref = sdb.collection("groups/" + at.gid + "/sessions").doc();
   const fields = proposalFields(payees, note, t, move, Date.now());
-  const sig = await sigPart(gid, ref.id, "proposal", fields);
+  const sig = await sigPart(at.gid, ref.id, "proposal", fields);
   await ref.set({ createdBy: myUid(), status: "collecting", ...fields, ...sig });
   log("new spend: " + fmtZec(t.amount));
-  showBanner("ok", "Payment proposed. It needs " + approvals + " approvals.");
-  if (state.gid === gid) openSession(ref.id);
+  showBanner("ok", "Payment proposed. It needs " + at.approvals + " approvals.");
+  if (state.gid === at.gid) openSession(ref.id);
 }
 
 function readyToSpend(gid) {
@@ -364,6 +374,7 @@ export const approvedTxid = (ss) => markOf(state.gid, ss.id).approved
 // ponytail: compares the `final.txid` that one seat wrote, not the bytes of `tx_hex`. The full
 // check needs an engine call that computes the id of a finished transaction from its bytes.
 export function sendRefusal(ss) {
+  if (!isStr(ss.final?.txid)) return "The finished transaction cannot be read.";
   const want = approvedTxid(ss);
   if (!want) return SEND_UNREAD;
   return ss.final?.txid === want ? null : SEND_OTHER;

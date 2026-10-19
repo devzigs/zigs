@@ -405,8 +405,9 @@ const blockStep = (ss) => landed(ss) ? "done" : ss.broadcastTxid ? "now" : "";
 function blockText(ss) {
   if (landed(ss)) return "A synced block holds the payment.";
   if (!ss.broadcastTxid) return "After the send.";
-  return chainReady(curChain()) ? "No synced block holds it yet. It waits for the next block."
-    : "This browser has not checked the blocks since the send yet.";
+  if (!chainReady(curChain())) return "This browser has not checked the blocks since the send yet.";
+  return expiryOf(ss)?.expired ? "No synced block holds it."
+    : "No synced block holds it yet. It waits for the next block.";
 }
 
 export function txDetails(ss) {
@@ -414,9 +415,9 @@ export function txDetails(ss) {
   // The id that the send step checks (sendRefusal), so a false id never sits next to a Send.
   const id = approvedTxid(ss);
   const falseId = id && id !== ss.final.txid ? el("div", { class: "callout bad" }, "The finished "
-    + "transaction names the id " + short(String(ss.final.txid), 12) + ", but the proposal gives "
-    + "the id " + short(id, 12) + ". One signer's device wrote one of them alone. Check the "
-    + "payment in an explorer.") : null;
+    + "transaction names the id " + short(String(ss.final.txid), 12) + ", but the approved "
+    + "proposal gives the id " + short(id, 12) + ". One signer's device wrote one of them alone. "
+    + "Check the payment in an explorer.") : null;
   return el("div", { style: "display:grid;gap:10px" },
     el("span", { class: "label" }, "Transaction"),
     falseId,
