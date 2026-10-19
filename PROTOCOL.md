@@ -772,7 +772,7 @@ the web, on iPhone and on Mac at the same time.
 - **Purpose.** The public landing page. It explains the product and collects early-access sign-ups.
   It does not link to the app before launch.
 - **Content.** The headline "The multisig the blockchain can't see", a view of what the team sees
-  next to what the chain sees, the stage label (beta, not audited), and "Open source (MIT) on
+  next to what the chain sees, the stage label (beta, not audited), and "Open source (AGPL-3.0) on
   October 28".
 - **Early access.** An email form.
   - The addresses go to a Cloudflare D1 database that only the Zigs team reads.
