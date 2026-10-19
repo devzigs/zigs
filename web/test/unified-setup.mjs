@@ -736,6 +736,7 @@ function activityList(ctl) {
     const onlyZec = draw("zec");
     assert.ok(sorted(order(onlyZec, [TITLES[1], TITLES[3]])), "Zcash rows only");
     assert.ok(gone(onlyZec, [TITLES[0], TITLES[2], TITLES[4]]), "no Solana row");
+    assert.ok(onlyZec.includes(EXPLORER_NOTE), "the Zcash-only list has the explorer note");
     activityOverview(ctl, at, solRows);
     activityStates(ctl, kept);
     activityBadges(ctl);

@@ -1737,10 +1737,12 @@ const sealed = (gid, rel, seat, fields, key, names = ["by", "sig"]) =>
           + "the shared history of the wallet\\. So can anyone who has its invite "
           + "link\\. A device that is left out when the devices change keeps the viewing key and "
           + "the messages of this wallet\\. It can still read this history and each later payment "
-          + "of this wallet\\. It cannot read the new wallet\\. It sees only the move payment: the "
-          + "address of the new wallet, the amount, and the note of the payment, which can name "
-          + "the new wallet\\. A memo goes on chain with the payment, and its recipient can read "
-          + "it too\\."),
+          + "of this wallet\\. It cannot read the new wallet\\. The move payment gives it the "
+          + "address, the amount and the note of that payment, and the id of the new "
+          + "wallet\\. With the id, the group server sends it the sealed documents of the new "
+          + "wallet and each later write\\. The server also accepts writes from it, so the device "
+          + "can stop the new wallet with false documents\\. A memo goes on chain with the "
+          + "payment, and its recipient can read it too\\."),
         "the review says who can read the payment");
         assert.ok(named(shown, "button", "Propose payment"), "a match can be proposed");
         t.ui.sendReview = { prep: { ...prep, t: { ...prep.t, pczt: "REV3" } }, note: "x" };
@@ -2017,7 +2019,8 @@ const sealed = (gid, rel, seat, fields, key, names = ["by", "sig"]) =>
       assert.match(m.text, /^The Zcash funds moved to .+, as of the last sync\.$/,
         "the Zcash funds moved, as of the last sync");
       assert.equal(m.done, true);
-      assert.match(textOf(moveCard()), /^This wallet moved/);
+      assert.match(textOf(moveCard()), /^The Zcash funds moved/,
+        "the heading names the Zcash funds only");
       assert.doesNotMatch(textOf(moveCard()), /Closed|is closed/, "no Closed badge or text");
       assert.equal(cancelIn(moveCard()).length, 0, "no Cancel once the move payment exists");
       const incoming = emptied();
@@ -2048,7 +2051,7 @@ const sealed = (gid, rel, seat, fields, key, names = ["by", "sig"]) =>
       assert.match(m.text, SOL_STAYS, "a move with a Solana part says that this part stays");
       assert.equal(m.done, true, "the Solana sentence does not keep the move open");
       assert.match(textOf(moveCard()), /^The Zcash funds moved/,
-        "with a Solana part the heading names the Zcash funds only");
+        "with a Solana part too, the heading names the Zcash funds only");
       assert.match(t.moveState(more()).text, SOL_STAYS, "also in the other steps");
       assert.match(devicesText(), /move the Zcash funds to it\. If this wallet has a Solana part,/,
         "Devices: a Solana part does not move");

@@ -67,6 +67,15 @@ flowchart LR
   wallet makes devices ignore the values that carry no valid signature (section 15).
 - **What the server sees.** Wallet ids, message room ids, document paths and field names, timing,
   and which IP addresses connect to which wallet. It keeps no logs.
+- **What a wallet id alone gives.** The server does not ask a client for the wallet secret. It
+  checks the form of the id and its limits on connections and writes, behind the password gate of
+  the preview. So any client that knows a wallet id gets the sealed documents of that wallet, with
+  their paths, field names and padded sizes, and then each new write as it happens. It can also
+  write or replace documents of that wallet. It cannot read the values or seal new ones, because
+  that needs the wallet secret, but it can write back an old value that it saw. The timing, the
+  counts and the availability stay exposed: a replaced document stops the wallet (`groupSocket`
+  and `Store` in `cf/src/index.js`). The old wallet of a move holds the id of the new wallet
+  (section 8).
 - **Abuse limits.** A message is at most 300,000 characters, a document at most 256,000, and a
   wallet at most 10 MB. Writes and new connections are rate-limited for each IPv4 address, or for
   each /64 of IPv6 addresses (users who share one share the limit).
@@ -526,11 +535,11 @@ part of the wallet does not move this way.
 
 ```mermaid
 flowchart TD
-  A["Old wallet<br/>signers A, B, C, any 2 of 3"] -->|Change signers| B["New wallet<br/>signers A, B, D, any 2 of 3<br/>new key ceremony, new address"]
-  A -.->|stores only the new wallet id, never its secret| B
-  B --> C["The old wallet proposes one payment of its spendable Zcash balance to the new address"]
-  C --> D["2 of 3 old signers approve.<br/>Approvers who are in the new wallet check its address"]
-  D --> E["The old wallet stays, with its address and history.<br/>C can still read it, and sees the move payment<br/>with the new address, the amount and its note,<br/>but cannot read the new wallet"]
+  OLD["Old wallet<br/>signers A, B, C, any 2 of 3"] -->|Change signers| NEW["New wallet<br/>signers A, B, D, any 2 of 3<br/>new key ceremony, new address"]
+  OLD -.->|stores the new wallet id, never its secret| NEW
+  NEW --> PAY["The old wallet proposes one payment of its spendable Zcash balance to the new address"]
+  PAY --> OK["2 of 3 old signers approve.<br/>Approvers who are in the new wallet check its address"]
+  OK --> STAY["The old wallet stays, with its address and history.<br/>Signer C can still read the old wallet, but not the new one.<br/>The move payment gives signer C the new address, the amount,<br/>the note and the id of the new wallet. With the id, the group server<br/>sends signer C the sealed documents of the new wallet and each later write,<br/>and accepts writes from it, so signer C can stop the new wallet with false documents"]
 ```
 
 ## 9. Keys on the device

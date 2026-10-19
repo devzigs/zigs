@@ -275,11 +275,11 @@ Solana part of the wallet does not move this way.
 
 ```mermaid
 flowchart TD
-  A["Old wallet<br/>devices A, B, C, any 2 of 3"] -->|Change devices| B["New wallet<br/>devices A, B, D, any 2 of 3<br/>new key ceremony, new address"]
-  A -.->|stores only the new wallet id, never its secret| B
-  B --> C["The old wallet proposes one payment of its spendable Zcash balance to the new address"]
-  C --> D["2 of 3 old devices approve.<br/>The approving devices that are in the new wallet check its address"]
-  D --> E["The old wallet stays, with its address and history.<br/>C can still read it, and sees the move payment<br/>with the new address, the amount and its note,<br/>but cannot read the new wallet"]
+  OLD["Old wallet<br/>devices A, B, C, any 2 of 3"] -->|Change devices| NEW["New wallet<br/>devices A, B, D, any 2 of 3<br/>new key ceremony, new address"]
+  OLD -.->|stores the new wallet id, never its secret| NEW
+  NEW --> PAY["The old wallet proposes one payment of its spendable Zcash balance to the new address"]
+  PAY --> OK["2 of 3 old devices approve.<br/>The approving devices that are in the new wallet check its address"]
+  OK --> STAY["The old wallet stays, with its address and history.<br/>Device C can still read the old wallet, but not the new one.<br/>The move payment gives device C the new address, the amount,<br/>the note and the id of the new wallet. With the id, the group server<br/>sends device C the sealed documents of the new wallet and each later write,<br/>and accepts writes from it, so device C can stop the new wallet with false documents"]
 ```
 
 ## Privacy
