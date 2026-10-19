@@ -1177,6 +1177,7 @@ assert.match(marginText(3, 3), /Each payment needs every signer/);
   const { LINK_CHAT_ID, LINK_NEW_SECRET } = await import("../util.js");
   const { openGroup } = await import("../app-groups.js");
   const { joinLinks } = await import("../app-messages.js");
+  const { focusAfter } = await import("../app-loop.js");
   const gid = t.state.gid, known = t.gkeys[gid], cid = "c1".repeat(10);
   const fresh = "f1".repeat(10), other = "o".repeat(43), secret = "s".repeat(43);
   const link = (id, key) => "https://app.zigs.app/#" + id + "." + key;
@@ -1245,6 +1246,7 @@ assert.match(marginText(3, 3), /Each payment needs every signer/);
     t.chats.list[cid] = { key: "k".repeat(43), member: "dd".repeat(10), at: 1 };
     const keysBefore = JSON.stringify(t.gkeys);
     for (const [what, text, error] of cases) {
+      focusAfter(null);
       const done = paste(text);
       assert.equal(ui.joinBad, error, what + " gives its error");
       assert.equal(t.wantFocus?.key, "join-link", what + ": the field gets focus back");
