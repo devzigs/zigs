@@ -385,8 +385,8 @@ const moveParts = (from, nameParts, ruleParts) => [el("ol", { class: "small mute
 // The funds that move: Change devices moves the Zcash funds only, so a wallet with a Solana part
 // is told to check that part on its own.
 const moveFundsText = (from) => "This wallet sends all its Zcash funds to the new one. Like any "
-  + "payment, this needs " + from.t + " approvals." + (solOn() ? " The Solana part of this wallet "
-  + "does not move this way: check it in its Solana section." : "");
+  + "payment, this needs " + from.t + " approvals." + (solOn() ? " If this wallet has a Solana "
+  + "part, it does not move this way: check it in its Solana section." : "");
 // What a rule means when devices are lost: how many can be missing, and how many can spend. With
 // every device needed, one lost device stops the wallet.
 export const marginText = (t, n) => (t === n ? "Each payment needs every device. When one "
@@ -462,16 +462,21 @@ async function submitWallet({ name, n, t, sol }, from) {
   const withSol = solChosen(from, network, sol);
   endCreate(); ui.net = "testnet"; ui.ack = false;
   const gid = await createGroup(name, n, t, from && from.id, network);
-  if (gid && withSol) await planSolana(gid);
+  if (withSol) await planSolana(gid);
 }
-// The first submit closes the dialog before it waits: a second submit of the same form is stale.
-const moveSubmit = (from) => act(async (ev) => {
-  if (!ui.move) return;
-  const fd = new FormData(ev.target), n = Number(fd.get("n")), t = Number(fd.get("t"));
-  if (t === n && !ui.marginAck) throw new Error(ACK_FIRST);
-  await submitWallet({ name: String(fd.get("name") || "").trim() || from.name, n, t,
-    sol: fd.get("sol") === "on" }, from);
-});
+const MOVED_ALREADY = "This wallet moved already. Open the wallet that it moved to.";
+// The first submit closes the dialog before it waits: a second submit of the same form is stale
+// and does nothing, not even through act. A wallet that moved already moves no more.
+function moveSubmit(from) {
+  const send = act(async (ev) => {
+    if (state.g?.movedTo) throw new Error(MOVED_ALREADY);
+    const fd = new FormData(ev.target), n = Number(fd.get("n")), t = Number(fd.get("t"));
+    if (t === n && !ui.marginAck) throw new Error(ACK_FIRST);
+    await submitWallet({ name: String(fd.get("name") || "").trim() || from.name, n, t,
+      sol: fd.get("sol") === "on" }, from);
+  });
+  return (ev) => (ui.move ? send(ev) : ev.preventDefault());
+}
 
 // The steps of a new wallet: what it is, its rule, its names, the review. Enter submits the form
 // at every step. Each Next keeps the values of its step in `ui.createDraft`; the review shows

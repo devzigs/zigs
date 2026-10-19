@@ -1012,7 +1012,8 @@ async function walkSteps(fields, times, fresh = true) {
   assert.match(pageText(), /Create a new wallet/);
   assert.ok(walletReady(), "the Zcash part is still ready");
   assert.ok(solOn(), "this wallet has a Solana part");
-  assert.match(dialogText(t.state.g), /all its Zcash funds.*The Solana part of this wallet does /s,
+  assert.match(dialogText(t.state.g),
+    /all its Zcash funds.*If this wallet has a Solana part, it does not /s,
     "Change devices says that the Solana part does not move");
   ui.tab = "solana";
   assert.match(pageText(), new RegExp(aborted.replace(/\./g, "\\.") + " " + NEXT.source));
@@ -1391,7 +1392,7 @@ assert.match(marginText(3, 3), /Each payment needs every device/);
   byId(move, "rule-text").classList = { toggle() {} };
   withFields(fields, () => byText(ack, "Use recommended 2 of 3").on.click());
   assert.equal(fields.focused, true, "the reset of Change devices keeps the focus in the dialog");
-  assert.equal(/The Solana part of this wallet does not move/.test(dialogText(t.state.g)), solOn(),
+  assert.equal(/If this wallet has a Solana part/.test(dialogText(t.state.g)), solOn(),
     "the Solana sentence only for a wallet with a Solana part");
 }
 
@@ -1423,9 +1424,45 @@ assert.match(marginText(3, 3), /Each payment needs every device/);
   }
   assert.equal(wallets(), before + 1, "a stale Change devices form makes no second wallet");
   before = wallets();
-  const made = await Promise.all([t.createGroup("One", 3, 2), t.createGroup("Two", 3, 2)]);
+  const made = await Promise.allSettled([t.createGroup("One", 3, 2), t.createGroup("Two", 3, 2)]);
   assert.equal(wallets(), before + 1, "a second createGroup while one runs makes nothing");
-  assert.equal(made.filter((gid) => gid === null).length, 1, "and returns no wallet");
+  assert.match(made.find((r) => r.status === "rejected")?.reason?.message ?? "",
+    /still creating a wallet/, "and says why");
+  // A failed create frees the guard: the next create makes its wallet.
+  const keepHook = rig.hook.before;
+  let fail = true;
+  rig.hook.before = (p, v) => {
+    if (fail && /^groups\/[^/]+$/.test(p)) { fail = false; throw new Error("A test failure."); }
+    return keepHook(p, v);
+  };
+  try {
+    await assert.rejects(t.createGroup("Fails", 3, 2), /A test failure/);
+  } finally {
+    rig.hook.before = keepHook;
+  }
+  before = wallets();
+  const after = await t.createGroup("After", 3, 2).catch(() => null);
+  assert.ok(after, "a create after a failed one makes a wallet");
+  assert.equal(wallets(), before + 1);
+  // A wallet that moved already moves no more.
+  globalThis.FormData = class {
+    get(k) {
+      return { name: "Again", n: "3", t: "2" }[k] ?? null;
+    }
+  };
+  const g = t.state.g;
+  t.state.g = { ...g, movedTo: "elsewhere" };
+  ui.move = true;
+  before = wallets();
+  try {
+    await dialogTree(t.state.g).on.submit(EV);
+  } finally {
+    globalThis.FormData = real;
+    t.state.g = g;
+  }
+  assert.equal(wallets(), before, "a wallet that moved already moves no more");
+  assert.match(appState.banner?.text ?? "", /moved already/);
+  ui.move = false;
 }
 
 console.log("unified-setup: ok");

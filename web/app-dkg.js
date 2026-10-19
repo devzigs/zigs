@@ -397,16 +397,17 @@ async function round3V2(i) {
   if (!saved) showBanner("bad", "This browser could not save your key share. Keep this tab open, and use Back up.");
 }
 
-// `from` is the wallet this one replaces. The old wallet gets only the new id, never its key:
-// signers left out of the new wallet must not get its viewing key.
-// One wallet at a time: a second call while one runs (a double submit) makes nothing.
+// One wallet at a time: a second call while one runs makes nothing, and says why.
+const STILL_CREATING = "Zigs is still creating a wallet. Wait for it, or reload the page.";
 let creating = false;
-export async function createGroup(...args) {
-  if (creating) return null;
+export async function createGroup(name, n, t, from = null, network = "testnet") {
+  if (creating) throw new Error(STILL_CREATING);
   creating = true;
-  try { return await makeGroup(...args); } finally { creating = false; }
+  try { return await makeGroup(name, n, t, from, network); } finally { creating = false; }
 }
-async function makeGroup(name, n, t, from = null, network = "testnet") {
+// `from` is the wallet this one replaces. The old wallet gets only the new id, never its key:
+// devices left out of the new wallet must not get its viewing key.
+async function makeGroup(name, n, t, from, network) {
   // Signed writes need a signing key for every seat, so check before anything is made.
   if (!(await canSign())) throw new Error(NO_SIGNING_SEAT);
   const ref = sdb.collection("groups").doc();
