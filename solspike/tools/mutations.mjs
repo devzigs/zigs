@@ -1517,7 +1517,8 @@ export const MUTATIONS = [
       'const solPart = () => ["running", "ready", "stopped", "differs"]\n'
       + '  .includes(solSetup()?.status);'], UNIFIED, /no select for a Solana part that stopped/),
   program("A-stopped-note", "the list says nothing of a Solana part that stopped",
-    ["web/app-wallet.js", "    return lost ? noteRow(lost) : null;\n", "    return null;\n"],
+    ["web/app-wallet.js", "  if (!solPart()) return SOL_LOST[solSetup()?.status];\n",
+      "  if (!solPart()) return undefined;\n"],
     UNIFIED, /The Solana part stopped, so its payments do not show here/),
   program("A-filter-reset", "the chain choice stays when another wallet opens",
     ["web/app-groups.js",

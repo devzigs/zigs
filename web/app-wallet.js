@@ -463,19 +463,18 @@ const SOL_LOST = {
     + "not show here.",
 };
 const noteRow = (text) => el("p", { class: "row-note" }, text);
-// What the list cannot show: Solana that did not load or is not read yet, and Solana that this
-// page never knows (a deposit by another person).
+// What the list cannot show: Solana that did not load, stopped or is not read yet, and Solana that
+// this page never knows (a deposit by another person).
+function solNoteText() {
+  if (solOn() && solError) return "Solana did not load, so its transactions are not shown here.";
+  if (!solPart()) return SOL_LOST[solSetup()?.status];
+  if (solActivity() === null) return "Reading the Solana transactions…";
+  return SOL_ACTIVITY_NOTE
+    + (solOlderCount() > 0 ? " Older Solana proposals are not listed." : "");
+}
 function activityNote(pick) {
-  if (pick === "zec") return null;
-  if (solOn() && solError) return noteRow("Solana did not load, so its transactions are not "
-    + "shown here.");
-  if (!solPart()) {
-    const lost = SOL_LOST[solSetup()?.status];
-    return lost ? noteRow(lost) : null;
-  }
-  if (solActivity() === null) return noteRow("Reading the Solana transactions…");
-  return noteRow(SOL_ACTIVITY_NOTE
-    + (solOlderCount() > 0 ? " Older Solana proposals are not listed." : ""));
+  const text = pick === "zec" ? null : solNoteText();
+  return text ? noteRow(text) : null;
 }
 
 function sentRow(ss, flying) {
