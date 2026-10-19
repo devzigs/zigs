@@ -10,7 +10,7 @@ import { capText, curNet, MAINNET_ON, netOf, NETWORKS } from "./app-chain.js";
 import { signedMode } from "./app-filter.js";
 import { closeSession } from "./app-groups.js";
 import {
-  approvedHold, ended, expired, landed, payeesOf, sendRefusal, signingSeen,
+  approvedHold, ended, expired, landed, payeesOf, sendRefusal, signingSeen, tooLate,
 } from "./app-payments.js";
 import { focusAfter, react, render } from "./app-loop.js";
 
@@ -114,6 +114,8 @@ export function statusChip(s) {
   if (landed(s)) return el("span", { class: "badge ok" }, "Sent");
   if (ended(s)) return el("span", { class: "badge" }, "Expired");
   if (asksCheck(s)) return el("span", { class: "badge warn" }, "Check");
+  // The headline "Too late to send": a node refuses the finished transaction now.
+  if (tooLate(s)) return el("span", { class: "badge warn" }, "Too late");
   // An error part that one seat wrote does not end a payment that this browser approved and sent.
   if (approvedHold(s)) return el("span", { class: "badge info" }, "Confirming");
   const [t, c] = Object.hasOwn(STATUS, s.status) ? STATUS[s.status] : [String(s.status), ""];

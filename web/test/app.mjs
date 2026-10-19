@@ -2523,9 +2523,14 @@ const sealed = (gid, rel, seat, fields, key, names = ["by", "sig"]) =>
         assert.match(resetOne.text, /may have signed it before the reset\.(?!.*may still send)/s);
         t.state.commits = { [me]: {} };
         const lostOne = look(open("hd6", "PA"));
-        assert.match(lostOne.head, /^Payment needs attentionThis browser lost its approval of /,
+        assert.match(lostOne.head, /^Payment needs attentionA device of this browser lost its /,
           "headline: this browser lost its approval");
-        assert.match(lostOne.text, /does not hold its approval for this payment any more/);
+        // Two other devices here can still approve: the note names the device that lost it.
+        assert.ok(lostOne.text.includes("This browser lost the approval of device " + me + " for "
+          + "this payment: the browser data that held it was deleted. The payment cannot finish "
+          + "with it."), "the note names the device that lost its approval");
+        assert.deepEqual(lostOne.buttons.filter((b) => b.startsWith("Approve")),
+          ["Approve as device " + other, "Approve as device " + third]);
         assert.deepEqual(lostOne.now, [], "a lost approval keeps no approvals step that waits");
         t.state.commits = {};
         const changed = look(signedA);
@@ -2574,6 +2579,8 @@ const sealed = (gid, rel, seat, fields, key, names = ["by", "sig"]) =>
         const late = look(doneA);
         assert.match(late.head, /^Too late to sendIt can no longer go to the network\./,
           "headline: a node refuses it now");
+        assert.equal(textOf(t.statusChip({ ...doneA, status: "complete" })), "Too late",
+          "a payment too late to send reads Too late, not Ready to send");
         assert.deepEqual(late.now, [], "a payment too late to send has no step that waits");
         assert.match(textOf(late.step("Sent to the network")), /can no longer go to the network/);
         at(4500100);

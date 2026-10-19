@@ -89,7 +89,7 @@ assert.equal(title({ held: true, stopped: true }), "Stopped, but it may still go
 // A local reason wins over the steps, so Waiting for approvals shows only without one.
 assert.equal(title({ signingLost: true, approvalLost: true }), "Check the payment");
 assert.match(detail({ signingLost: true, mine: true }), /^This browser saw the signing start/);
-assert.match(detail({ approvalLost: true, approvalChanged: true }), /lost its approval/);
+assert.match(detail({ approvalLost: true, approvalChanged: true }), /^A device of this browser /);
 assert.match(detail({ approvalChanged: true, mismatch: true }), /changed the proposal after/);
 assert.equal(title({ refused: true, signingLost: true }), "Payment needs attention");
 for (const f of ["approvalLost", "approvalChanged", "wrongMove"]) {

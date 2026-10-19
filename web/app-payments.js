@@ -727,6 +727,9 @@ export function onChain(ss) {
 // (a send that timed out after a server took it, or a mark that was not saved). So it counts as
 // gone only EXPIRY_MARGIN blocks after its expiry height, as a message does, because a
 // reorganisation of the last blocks can still bring it on chain.
+/** A finished transaction that no device sent, and that a node refuses now (expiryOf). */
+export const tooLate = (ss) => !!ss.final && !ss.broadcastTxid && expiryOf(ss)?.expired === true;
+
 export function expired(ss) {
   // A browser that approved takes the engine's word, also when the proposal does not decode.
   if (boundExpired(ss) || pastCeiling(ss)) return true;

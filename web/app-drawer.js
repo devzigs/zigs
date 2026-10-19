@@ -16,7 +16,7 @@ import {
   approvalKept, approve, broadcastTx, cancelPayment, ended, expired, expiryAt, expiryOf, finalizeTx,
   heldApprovals, holdEnd, inspectOf, landed, releaseHold,
   approvalChanged, noApproval, priorityTimes, proofStalled, proposeAgain, recipientCheck, resendTx,
-  sendRefusal, signingLost, signingSeen, signingStarted,
+  sendRefusal, signingLost, signingSeen, signingStarted, tooLate,
   approvedTxid, chainReady, markOf, sinceOf, verdict,
 } from "./app-payments.js";
 import { discussion } from "./app-thread.js";
@@ -185,8 +185,6 @@ export function finishStep(ss) {
 
 // No proof yet, or a node refuses it: it expires within EXPIRY_MARGIN blocks (see expiryLine).
 const unsendable = (ss) => !ss.final || expiryOf(ss)?.expired;
-// A finished transaction that no device sent, and that a node refuses now.
-const tooLate = (ss) => !!ss.final && !ss.broadcastTxid && expiryOf(ss)?.expired === true;
 
 // A send step that this browser refuses (sendRefusal): its button is off, and the inbox lists
 // the payment under "Needs attention".
@@ -236,19 +234,26 @@ export const cancelAction = (ss) => noCancel(ss) || !localSeats().length || !may
   el("button", { class: "btn lg", type: "button", onclick: act(() => confirm(CANCEL_ASK) && cancelPayment(ss)) }, "Cancel payment"),
 ];
 
-// An approval is a published commitment plus nonces kept here. Without the nonces the seat cannot
-// sign, and the payment waits forever: say so instead of stalling. A made share that did not go
-// out yet still counts.
-function approvalLost(ss) {
-  if (ss.signed || ss.error) return false;
+// The devices of this browser that lost their approval of the payment. An approval is a published
+// commitment plus nonces kept here. Without the nonces the device cannot sign, and the payment
+// waits forever: say so instead of stalling. A made share that did not go out yet still counts.
+function lostSeats(ss) {
+  if (ss.signed || ss.error) return [];
   const chosen = (i) => !ss.package || signersOf(ss).includes(i);
-  return localSeats().some((i) => state.commits[i] && !state.shares[i] && chosen(i)
+  return localSeats().filter((i) => state.commits[i] && !state.shares[i] && chosen(i)
     && !approvalKept(sec(state.gid, i), ss.id) && !busy.has("share:" + ss.id + ":" + i));
 }
-const lostApproval = (ss) => approvalLost(ss) ? el("div", { class: "callout bad" }, "This browser "
-  + "does not hold its approval for this payment any more: the browser data that held it was "
-  + "deleted. The payment cannot finish with this approval. Cancel it, then propose it again.")
-  : null;
+const approvalLost = (ss) => lostSeats(ss).length > 0;
+// It names the devices: another device of this browser can still have its approval.
+function lostApproval(ss) {
+  const lost = lostSeats(ss), one = lost.length === 1;
+  if (!lost.length) return null;
+  const them = one ? "it" : "them", what = one ? "approval" : "approvals";
+  return el("div", { class: "callout bad" }, "This browser lost the " + what + " of "
+    + lost.map((i) => "device " + i).join(", ") + " for this payment: the browser data "
+    + "that held " + them + " was deleted. The payment cannot finish with " + them + ". Cancel the "
+    + "payment, then propose it again.");
+}
 
 // The document lost the signing parts that this browser saw (signingLost).
 const resetNote = (ss) => signingLost(ss) ? el("div", { class: "callout bad" }, "This browser saw "

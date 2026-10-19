@@ -70,8 +70,8 @@ const HEADLINES = [
   ["signingLost", "Check the payment", "This browser saw the signing start, and the payment lost "
     + "its signing parts. Read the note below. Check the wallet's activity before you make another "
     + "payment."],
-  ["approvalLost", "Payment needs attention", "This browser lost its approval of this payment. "
-    + "Read the note below. Cancel the payment, then propose it again."],
+  ["approvalLost", "Payment needs attention", "A device of this browser lost its approval of this "
+    + "payment. Read the note below. Cancel the payment, then propose it again."],
   ["approvalChanged", "Payment needs attention", "One device changed the proposal after this "
     + "browser approved it. Read the note below. Check the payment with the other devices."],
   ["mismatch", "Payment needs attention", "The transaction does not pay what the proposer listed. "
