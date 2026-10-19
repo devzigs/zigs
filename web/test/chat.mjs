@@ -257,6 +257,22 @@ const joins = {
 for (const [what, text] of Object.entries(joins)) {
   assert.deepEqual(pastedInvite(text, HERE), wanted, "a link is found: " + what);
 }
+// Mark blocks before a link, with a letter at the end so that the marks fail: each ends within a
+// small time. Nested patterns took 2 to 15 seconds here.
+const worst = {
+  "mark blocks, 17 times": "[[](".repeat(17) + "a",
+  "mark blocks, 19 times": "[[](".repeat(19) + "a",
+  "mark blocks of 3 brackets, 15 times": "[[[](".repeat(15) + "a",
+  "label blocks, 15 times": "[a](".repeat(15) + "a",
+  "marks and labels mixed": "([[]()<[".repeat(9) + "a",
+  "marks, 80 characters": "[".repeat(79) + "a",
+  "only brackets": "[]".repeat(40),
+};
+for (const [what, prefix] of Object.entries(worst)) {
+  const at = performance.now();
+  pastedInvite(prefix + LINK, HERE);
+  assert.equal(performance.now() - at < 50, true, "marks end at once: " + what);
+}
 for (const empty of ["", "   ", "\n\t", undefined, null]) {
   const got = pastedInvite(empty, HERE);
   assert.deepEqual(got, { error: PASTE_EMPTY }, "empty: " + JSON.stringify(empty));
@@ -357,22 +373,6 @@ for (const long of ["x".repeat(2000000), "#".repeat(2000000), "a b ".repeat(5000
   pastedInvite(long, HERE);
 }
 assert.equal(Date.now() - began < 3000, true, "a long paste ends at once");
-// Mark blocks before a link, with a letter at the end so that the marks fail: each ends within a
-// small time. Nested patterns took 2 to 15 seconds here.
-const worst = {
-  "mark blocks, 17 times": "[[](".repeat(17) + "a",
-  "mark blocks, 19 times": "[[](".repeat(19) + "a",
-  "mark blocks of 3 brackets, 15 times": "[[[](".repeat(15) + "a",
-  "label blocks, 15 times": "[a](".repeat(15) + "a",
-  "marks and labels mixed": "([[]()<[".repeat(9) + "a",
-  "marks, 80 characters": "[".repeat(79) + "a",
-  "only brackets": "[]".repeat(40),
-};
-for (const [what, prefix] of Object.entries(worst)) {
-  const at = performance.now();
-  pastedInvite(prefix + LINK, HERE);
-  assert.equal(performance.now() - at < 50, true, "marks end at once: " + what);
-}
 
 // Joining: a full chat wins over a lease that someone else holds.
 const FULL = "This chat already has two people. Ask for a new contact link.";
