@@ -147,6 +147,9 @@ function overviewWiring(ctl) {
     ctl.sync = { balance: "1.25 SOL", text: "synced at slot 7, x", busy: false };
     assert.match(pageText(), /1\.25\s*SOL.*at the last sync\./, "the SOL row shows the balance");
     assert.match(pageText(), /2 Solana proposals wait for your approval\./, "the shortcut");
+    byText(pageTree(), "Review").on.click();
+    assert.equal(t.ui.tab, "approvals", "Review opens the Approvals inbox");
+    t.ui.tab = "overview";
     ctl.sync = { ...ctl.sync, text: "failed: offline" };
     assert.match(pageText(), /The last sync failed/, "an old balance says so");
     ctl.sync = { balance: null, text: "", busy: false };
@@ -168,6 +171,8 @@ function inboxWiring() {
   try {
     assert.match(pageText(), /Needs your approval2.*2 Solana proposals wait for your approval/,
       "the Solana line and its count in the review bucket");
+    assert.match(pageText(), /The wallet syncs\. .*Needs your approval/,
+      "before the first sync of the chain, the note shows next to the rows");
     Object.assign(t.state, { sessions: [], sessionsFailed: true });
     assert.match(pageText(), /could not be read/, "a failed read");
     Object.assign(t.state, { sessionsFailed: false, sessionsLoaded: false });

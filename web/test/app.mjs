@@ -1622,6 +1622,7 @@ const sealed = (gid, rel, seat, fields, key, names = ["by", "sig"]) =>
     tipAt(4503459, new Set(["realtx"]));
     assert.equal(t.expired(sentOne), false);
     assert.equal(textOf(t.statusChip(unmarkedOne)), "Sent", "a block holds the approved one");
+    assert.equal(bucket(sentOne), null, "the inbox: a sent payment in a block is finished");
     assert.equal(t.expiryLine(unmarkedOne), null);
     tipAt(4500000);
     assert.deepEqual(labels(t.finishButtons(unmarkedOne)), ["Send again"]);
@@ -2162,8 +2163,9 @@ const sealed = (gid, rel, seat, fields, key, names = ["by", "sig"]) =>
         /approved can still go on chain|waiting for its block|Finish or cancel the open payment/);
       // Path A of QA round 4: no sent mark ever comes, and one seat writes a failure part.
       const inboxOf = (id) => Object.entries(t.inboxRows())
-        .find(([, list]) => list.some((x) => x.id === id))?.[0] ?? null;
-      assert.notEqual(inboxOf("h1"), "attention",
+        .find(([k, list]) => k !== "lost" && list.some((x) => x.id === id))?.[0] ?? null;
+      put(h1);
+      assert.equal(inboxOf("h1"), t.needsMyApproval(t.state.gid, h1) ? "review" : "waiting",
         "the inbox: an approval with no error is no hold");
       put({ ...h1, package: "PK", signed: "SA", status: "failed", error: "Failed." });
       at(4500101);
@@ -2175,6 +2177,7 @@ const sealed = (gid, rel, seat, fields, key, names = ["by", "sig"]) =>
       at(4500102);
       const askedFrom = asked.length;
       assert.ok(t.heldApprovals().includes("h1"), "a dropped document ends no hold");
+      assert.ok(t.inboxRows().lost.includes("h1"), "the inbox names a hold with no record");
       assert.ok(asked.slice(askedFrom).some((x) => S(x) === S(["PA", "", "aa"])),
         "the engine gets the kept PCZT and the approved sighash alone");
       // The hold ends when a block holds the approved transaction, when it expired, when another
