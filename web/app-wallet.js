@@ -414,8 +414,8 @@ function activity() {
   return [...sent, ...got, ...onSol].sort((a, b) => b.t - a.t);
 }
 
-const EMPTY_ACTIVITY = "Money you receive and payments your signers propose show up here.";
-const EMPTY_WITH_SOL = "ZEC you receive and payments your signers propose show up here.";
+const EMPTY_ACTIVITY = "Money you receive and payments your devices propose show up here.";
+const EMPTY_WITH_SOL = "ZEC you receive and payments your devices propose show up here.";
 
 function activityRows(list) {
   const line = "border-top:1px solid var(--line)";
@@ -568,7 +568,7 @@ const solInboxRow = (r) => el("button", {
 },
 el("span", { class: "tx-ico out", "aria-hidden": "true" }, "↗"),
 el("span", { class: "ri-main" }, el("span", { class: "ri-title" }, r.title),
-  el("span", { class: "ri-sub" }, "Solana Devnet · Proposed by seat " + r.by)),
+  el("span", { class: "ri-sub" }, "Solana Devnet · Proposed by device " + r.by)),
 el("span", { class: "ri-end" }, el("span", { class: "badge warn" }, "Your approval")),
 el("span", { class: "chev" }, "›"));
 

@@ -488,10 +488,10 @@ function activityStates(ctl, kept) {
   assert.doesNotMatch(main, /Public SOL withdrawal|does not show here/);
   state.sessions = [];
   t.setChain({ ...t.chain, received: [] });
-  assert.match(pageText(), /Money you receive and payments your signers propose show up here/);
+  assert.match(pageText(), /Money you receive and payments your devices propose show up here/);
   state.g = g;
   Object.assign(ctl, { sessions: [], added: null });
-  assert.match(pageText(), /ZEC you receive and payments your signers propose show up here/);
+  assert.match(pageText(), /ZEC you receive and payments your devices propose show up here/);
 }
 // The phone Menu closes on a pick; the sections show for the formed wallet only; the switcher
 // shows with two or more wallets.
