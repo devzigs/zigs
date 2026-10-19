@@ -179,9 +179,11 @@ function verifyWallet(s) {
 
 const v2Secret = () => localSeats().map((i) => sec(state.gid, i))
   .find((s) => s.vaultSk && s.publicKeyPackage);
+// A stop of any seat ends the setup: seat 1 then builds no wallet, also when it holds its key
+// share already.
 export const canCreateWallet = () => isCreator() && !state.wallet && keysAgree()
   && (!usesV2(groupVersion()) || !!v2Secret())
-  && canWriteAs(1);
+  && canWriteAs(1) && !abortedText() && !remoteAborts().length;
 
 async function walletStands(gid) {
   const cur = await sdb.doc("groups/" + gid + "/meta/wallet").get();

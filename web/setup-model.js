@@ -2,13 +2,14 @@
 // card keeps the steps, their counts and their texts, and the stage comes from the same counts.
 
 /**
- * The first 8 digits of a safety number of 30 digits, as "1234 5678". They help a person find
- * the number on each device; they are not enough to compare (PROTOCOL.md, Safety number).
+ * The first 8 digits of a safety number of 30 digits, in the groups of the number ("12345 678").
+ * They help a person find the number on each device; they are not enough to compare
+ * (PROTOCOL.md, Safety number).
  * @returns {string | null} null for anything that is not 30 digits.
  */
 export function quickCode(no) {
   const digits = typeof no === "string" ? no.replace(/ /g, "") : "";
-  return /^\d{30}$/.test(digits) ? digits.slice(0, 4) + " " + digits.slice(4, 8) : null;
+  return /^\d{30}$/.test(digits) ? digits.slice(0, 5) + " " + digits.slice(5, 8) : null;
 }
 
 /** The stages in order. Plan is done once the wallet exists. */

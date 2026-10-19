@@ -17,7 +17,9 @@ import {
   named, netBadge, payTitle, proposer, ruleText, seatTitle, secretQr, statusChip, unreadable,
 } from "./app-dom.js";
 import { signing, unreadIn } from "./app-messages.js";
-import { groupVersion, rejectedSeats, seatCheck, verifiedCount } from "./app-dkg.js";
+import {
+  abortedText, groupVersion, rejectedSeats, seatCheck, verifiedCount,
+} from "./app-dkg.js";
 import {
   cancelMove, chainReady, ended, expired, heldApprovals, isOpen, landed, proposeMove, sendBlocker,
   signingSeen,
@@ -90,8 +92,10 @@ function signedNotes() {
     ? el("div", { style: "display:grid;gap:8px" }, lost, moved, ignored) : null;
 }
 
+// A seat of this browser that stopped its setup keeps the setup page and its stop, also when a
+// wallet document came.
 export const walletReady = () => !!(state.wallet && state.wallet.birthday)
-  && rejectedSeats().length === 0 && !keysDiffer();
+  && rejectedSeats().length === 0 && !keysDiffer() && !abortedText();
 
 /**
  * The sections of the open wallet: [id, label, count] each. The side menu lists them; the Solana
