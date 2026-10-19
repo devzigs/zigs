@@ -80,17 +80,15 @@ async function cookieOk(req, password, now) {
   return checks.includes(true);
 }
 
-// The hosts of the local dev server. Safari drops a Secure cookie on http://localhost.
-const LOCAL = new Set(["localhost", "127.0.0.1", "[::1]"]);
-
 /**
  * The Set-Cookie value of a new session: an expiry and its HMAC, never the password. It is Secure
- * on every host but the local dev server.
+ * on an https request, which every production request is after the redirect. wrangler dev gives
+ * the Worker the route host (app.zigs.app) over http, and Safari drops a Secure cookie there.
  */
 export async function sessionCookie(req, password, now = Date.now()) {
   const expiry = String(Math.floor(now / 1000) + MAX_AGE_S);
   const mac = await crypto.subtle.sign("HMAC", await cookieKey(password), enc.encode(expiry));
-  const secure = LOCAL.has(new URL(req.url).hostname) ? "" : "; Secure";
+  const secure = new URL(req.url).protocol === "https:" ? "; Secure" : "";
   return `${COOKIE}=${expiry}.${b64url(mac)}; Max-Age=${MAX_AGE_S}; Path=/; HttpOnly${secure}` +
     "; SameSite=Strict";
 }

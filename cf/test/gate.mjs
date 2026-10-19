@@ -62,10 +62,9 @@ let session = null;
   assert.ok(any.cookie, "any user name");
   const secureOn = async (url) => (await sessionCookie(new Request(url), PASSWORD, NOW))
     .includes("; Secure");
-  for (const url of ["http://localhost:8795/", "http://127.0.0.1:8795/", "http://[::1]:8795/"]) {
-    assert.equal(await secureOn(url), false, `Safari drops a Secure cookie on ${url}`);
-  }
-  assert.equal(await secureOn("http://app.zigs.app/"), true, "Secure on every other host");
+  // wrangler dev gives the Worker the route host over http, with no cf-visitor header.
+  assert.equal(await secureOn("http://app.zigs.app/"), false, "local dev: Safari drops Secure");
+  assert.equal(await secureOn("https://app.zigs.app/"), true, "production is https");
   console.log("ok  a valid password passes and gets a seven-day HttpOnly cookie with no password");
 }
 
@@ -80,7 +79,11 @@ let session = null;
   const shadowed = { Cookie: `${COOKIE}=junk; ${COOKIE}=1.x; other=2; ${COOKIE}=${session}` };
   assert.deepEqual(await gate(request("/ws", { ...SOCKET, ...shadowed }), ENV, NOW), {},
     "a cookie of the same name from a sibling host shadows no valid one");
-  const many = { Cookie: [...Array(4).fill(`${COOKIE}=junk`), `${COOKIE}=${session}`].join("; ") };
+  const junk = (n) => Array(n).fill(`${COOKIE}=junk`);
+  const fourth = { Cookie: [...junk(3), `${COOKIE}=${session}`].join("; ") };
+  assert.deepEqual(await gate(request("/ws", { ...SOCKET, ...fourth }), ENV, NOW), {},
+    "the fourth value still counts");
+  const many = { Cookie: [...junk(4), `${COOKIE}=${session}`].join("; ") };
   const capped = await gate(request("/ws", { ...SOCKET, ...many }), ENV, NOW);
   assert.equal(capped.refused?.status, 401, "at most four values of the name count");
   const late = NOW + (MAX_AGE_S - 1) * 1000;
@@ -96,6 +99,8 @@ let session = null;
     ["a forged mac", `${expiry}.${flipped}`],
     ["a longer life", `${Number(expiry) + 3600}.${mac}`],
     ["no mac", expiry],
+    ["a short mac", `${expiry}.${mac.slice(1)}`],
+    ["a long mac", `${expiry}.${mac}A`],
     ["junk", "x"],
     ["an empty value", ""],
   ];
