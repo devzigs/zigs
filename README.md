@@ -584,11 +584,14 @@ folder path.
   sessions, payments, Add SOL, backup and restore, the stop that holds everywhere, the gate (a
   mainnet wallet, a wallet before version 3, a stored network that changed, and a start document
   that no seat signed get no Solana tab and load nothing) and the config from the server.
-- `bash solspike/baseline.sh check`: the Zcash baseline gate. All `web/test/*.mjs`, the group
-  server limits, the hashes of the Zcash engine and `web/signed.js`, the page policy and the
+- `bash solspike/baseline.sh check`: the Zcash baseline gate. All `web/test/*.mjs`,
+  `cf/test/gate.mjs`, the group server limits, the hashes of the Zcash engine and `web/signed.js`, the page policy and the
   served headers must equal `solspike/baseline.json`. `node solspike/test/policy.test.mjs` checks
   the `/sol` routes of the Worker, `/sol/config.json` included.
 - `node cf/test/limits.mjs ws://localhost:8787`: the group server's size, rate and path limits.
+- `node cf/test/gate.mjs`: the password gate of the Worker, offline. The session cookie is set
+  once, opens every route alone and refuses a forged, expired or old-password value. Only a
+  navigation or a request without fetch metadata gets the Basic challenge.
 - `node web/test/payees.mjs`: the pasted payment list parser (the memo column, header, byte limit,
   and a comma directly between digits, which is an error), the memo rules, and the recipient
   check: address, amount and memo of every payee against the decoded outputs.

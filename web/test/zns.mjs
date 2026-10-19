@@ -1,18 +1,19 @@
 // The /zns route of cf/src/index.js and the page module web/zns.js. A fake resolver replaces
 // fetch and Date.now is stubbed: no network, no wait. Run: node web/test/zns.mjs   (Node 24)
 import assert from "node:assert/strict";
-import { timingSafeEqual } from "node:crypto";
 import { readFileSync } from "node:fs";
 import { ZNS_KEY, ZNS_MAX_LAG, ZNS_RECENT_BLOCKS, createRegistry, movedNote, nameOf, nameRefusal,
   recentNote, registry, resolveRecipient, zecName } from "../zns.js";
 
-crypto.subtle.timingSafeEqual ??= timingSafeEqual;
 const read = (path) => readFileSync(new URL(path, import.meta.url), "utf8");
 const workerSource = read("../../cf/src/index.js");
+// A data: URL module resolves no relative import, so the gate module gets its file URL.
+const GATE = new URL("../../cf/src/gate.js", import.meta.url).href;
 let copies = 0; // a copy of the Worker has its own snapshot: the comment makes a new data: URL
 const loadWorker = async () => {
   const code = workerSource.replace('import { DurableObject } from "cloudflare:workers";',
-    "const DurableObject = class {};") + `\n// copy ${copies++}`;
+    "const DurableObject = class {};").replace('from "./gate.js";', `from "${GATE}";`) +
+    `\n// copy ${copies++}`;
   return (await import("data:text/javascript," + encodeURIComponent(code))).default;
 };
 const step = (name) => console.log(`ok  ${name}`);

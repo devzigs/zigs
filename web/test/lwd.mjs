@@ -4,19 +4,18 @@
 // are stubs, so nothing here reaches a network.
 // Run: node web/test/lwd.mjs   (Node 24)
 import assert from "node:assert/strict";
-import { timingSafeEqual } from "node:crypto";
 import { readFileSync } from "node:fs";
 
+// A data: URL module resolves no relative import, so the gate module gets its file URL.
+const GATE = new URL("../../cf/src/gate.js", import.meta.url).href;
 const source = readFileSync(new URL("../../cf/src/index.js", import.meta.url), "utf8").replace(
   'import { DurableObject } from "cloudflare:workers";',
   "const DurableObject = class { constructor(ctx, env) { this.ctx = ctx; this.env = env; } };",
-);
+).replace('from "./gate.js";', `from "${GATE}";`);
 assert.ok(!source.includes("cloudflare:workers"), "the Cloudflare import is stubbed");
 const { default: worker, Store } = await import(
   `data:text/javascript;base64,${Buffer.from(source).toString("base64")}`
 );
-// timingSafeEqual on crypto.subtle is a Cloudflare extension: Node has it in node:crypto.
-crypto.subtle.timingSafeEqual ??= timingSafeEqual;
 
 const KEY = "0".repeat(64);
 const SERVICE = "/cash.z.wallet.sdk.rpc.CompactTxStreamer/";
