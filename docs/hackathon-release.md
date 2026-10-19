@@ -533,6 +533,11 @@ Evidence marked "checked" was read in the repo during this synthesis. All other 
   - Re-check the app text after SOL-11 and SOL-12 merge.
 - **Files:** zigs-site/index.html, zigs-site/note.html.
 - **Package:** WP-D.
+- **Status:** done, on zigs-site main e7d6d25 (fast-forward of the commits 386b0b5, a746870 and
+  e7d6d25), live on zigs.app and the preview since 19 October 2026. The mock has the caption
+  "Illustration" and shows ZEC and SOL amounts only: no USDC, Swap, USD prices or outside wallets.
+  Card 02 names the one setup (M3), card 03 uses the Solana wording of the app, og.png is a new
+  render, and the note says that local proving exists (SOL-4).
 
 ## 6. NICE items
 
