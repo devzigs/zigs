@@ -3,8 +3,8 @@
 // refuses everything, so a missing secret never opens it.
 //
 // iOS Safari sends no cached Basic password on the group WebSocket and on some other requests.
-// So a valid password also gets a session cookie, which those requests carry, and only a
-// navigation gets the Basic challenge: a background request can never pop a password prompt.
+// So a valid password also gets a session cookie, which those requests carry. A background
+// request of a browser gets a plain 401 with no Basic challenge, so it can never pop a prompt.
 
 export const COOKIE = "zigs_session";
 export const MAX_AGE_S = 7 * 24 * 3600;

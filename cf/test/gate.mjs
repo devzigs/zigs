@@ -1,7 +1,7 @@
 // Tests of the password gate (cf/src/gate.js), offline: node cf/test/gate.mjs   (Node 24)
-// The gate sets a session cookie after a valid password and gives the Basic challenge to a
-// navigation only, so that iOS Safari, which sends no cached password on the group WebSocket,
-// never prompts again while the page runs.
+// The gate sets a session cookie after a valid password and gives no Basic challenge to a
+// background request of a browser, so that iOS Safari, which sends no cached password on the
+// group WebSocket, never prompts again while the page runs.
 import assert from "node:assert/strict";
 import { createHash, createHmac, randomBytes } from "node:crypto";
 import { readFileSync } from "node:fs";
@@ -150,7 +150,7 @@ let session = null;
   console.log("ok  without the secret nothing passes, and a wrong password fails");
 }
 
-// ── Only a navigation gets the Basic challenge ──
+// ── Only a navigation or a request without fetch metadata gets the Basic challenge ──
 {
   const challenge = async (headers) =>
     (await gate(request("/", headers), ENV, NOW)).refused.headers.get("WWW-Authenticate");
@@ -172,7 +172,7 @@ let session = null;
   const plain = (await gate(request("/ws", SOCKET), ENV, NOW)).refused;
   assert.equal(plain.status, 401);
   assert.match(await plain.text(), /needs a password/);
-  console.log("ok  only a navigation gets the Basic challenge; a background request gets a 401");
+  console.log("ok  a navigation or a tool gets the Basic challenge; a background request does not");
 }
 
 // ── The cookie goes on the response, but not on a WebSocket upgrade ──
