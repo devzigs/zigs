@@ -135,17 +135,24 @@ function recipientBox(ss, rc) {
             r.got === undefined ? "Not in the transaction" : "Memo differs"))),
       nameLine(r), memoLines(r))),
     rc.rows.some((r) => r.memo) ? el("p", { class: "small faint" },
-      "A memo goes on chain with the payment. Its recipient and every device of this wallet can "
-      + "read it.") : null,
+      "A memo goes on chain with the payment. Its recipient, every device of this wallet and "
+      + "anyone else who has the invite link can read it.") : null,
     checkWarnings(rc),
     ss.move ? moveNote(ss, rc) : null);
 }
 
 function moveNote(ss, rc) {
   if (rc.intoNew === false) return el("div", { class: "callout bad" }, "This is not the address of " + groupName(ss.move) + ". Do not approve it.");
-  if (rc.intoNew) return el("div", { class: "callout" }, "This moves all funds to " + groupName(ss.move) + ", the wallet that replaces this one. Your browser checked its address.");
-  return el("div", { class: "callout" }, "This moves all funds to a new wallet that replaces this one. Your browser has no checked copy of its address, so it cannot check it.");
+  if (rc.intoNew) {
+    return el("div", { class: "callout" }, "This moves all Zcash funds to " + groupName(ss.move)
+      + ", the wallet that replaces this one. Your browser checked its address. " + SOL_MOVE);
+  }
+  return el("div", { class: "callout" }, "This moves all Zcash funds to a new wallet that replaces "
+    + "this one. Your browser has no checked copy of its address, so it cannot check it. "
+    + SOL_MOVE);
 }
+const SOL_MOVE = "If this wallet has a Solana part, it does not move this way: check it in its "
+  + "Solana section.";
 
 // The seats of this browser that can approve the payment now. None while the wallet's data is
 // being checked: an approval written twice would replace its own nonces.

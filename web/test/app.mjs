@@ -2546,9 +2546,24 @@ const sealed = (gid, rel, seat, fields, key, names = ["by", "sig"]) =>
           "a move that does not pay its list is a mismatch");
         assert.deepEqual(moveList.now, [], "a mismatch keeps no approvals step that waits");
         t.secrets["MVX:1"] = { checkedWallet: JSON.stringify({ address: "utest1x" }) };
-        assert.match(look({ ...open("hd8", "PA"), move: "MVX" }).head, /^Your approval is needed/,
+        const moveOk = look({ ...open("hd8", "PA"), move: "MVX" });
+        assert.match(moveOk.head, /^Your approval is needed/,
           "a move to the checked address asks for an approval");
+        const solMove = "If this wallet has a Solana part, it does not move this way: check it in "
+          + "its Solana section.";
+        assert.ok(moveOk.text.includes("This moves all Zcash funds to the new wallet, the wallet "
+          + "that replaces this one. Your browser checked its address. " + solMove),
+        "a move names the Zcash funds only");
         delete t.secrets["MVX:1"];
+        assert.ok(look({ ...open("hd8", "PA"), move: "MVX" }).text.includes("This moves all Zcash "
+          + "funds to a new wallet that replaces this one. Your browser has no checked copy of its "
+          + "address, so it cannot check it. " + solMove),
+        "and so does a move with no checked copy");
+        const memoOne = look({ ...open("hdm", "PA"), payees: [{ to: "utest1x", amount: 5,
+          memo: "rent" }] });
+        assert.ok(memoOne.text.includes("A memo goes on chain with the payment. Its recipient, "
+          + "every device of this wallet and anyone else who has the invite link can read it."),
+        "the readers of a memo");
         // The steps after the approvals.
         const lateA = lateSent();
         put(lateA);
