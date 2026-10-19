@@ -1,5 +1,7 @@
 // Receive and send dialogs.
-import { MEMO_BYTES, memoBytes, memoError, parsePayeeList, toZat, zatText } from "./payees.js";
+import {
+  MEMO_BYTES, memoBytes, memoError, memoShown, parsePayeeList, toZat, zatText,
+} from "./payees.js";
 import { payeeRows, requestProblem } from "./requests.js";
 import { state, ui } from "./app-state.js";
 import { fmtZec } from "./app-kit.js";
@@ -285,7 +287,9 @@ const draftAad = (gid) => "draft\n" + gid;
 function draftBook() {
   try { return JSON.parse(localStorage.getItem(DRAFTS) || "{}") || {}; } catch { return {}; }
 }
-const expiredAt = (at, now) => !Number.isSafeInteger(at) || now - at > DRAFT_MS;
+// A time from the future (a clock that was ahead) counts as expired too.
+const expiredAt = (at, now) => !Number.isSafeInteger(at) || now - at > DRAFT_MS
+  || at > now + 300000;
 
 /** Deletes the expired drafts of every wallet. */
 export function sweepDrafts(now = Date.now()) {
@@ -317,7 +321,8 @@ function readDraft(gid) {
 // the person, so it saves nothing. The draft line follows at once when a save starts to fail.
 export function keepDraft() {
   const gid = state.gid, key = gkeys[gid], was = ui.draftFailed;
-  if (ui.after || ui.sendFor || !key || !Z) return;
+  // The form of another wallet (a link changed the wallet) is no draft of this one.
+  if (ui.after || ui.sendFor || ui.draftGid !== gid || !key || !Z) return;
   ui.draftFailed = !saveDraft(gid, key);
   if (ui.draftFailed !== was) render();
 }
@@ -330,20 +335,27 @@ function saveDraft(gid, key) {
     if (emptyForm(form)) dropDraft(gid);
     return emptyForm(form);
   }
+  // A click with no change keeps the time of the draft: only typing gives it 24 hours more.
+  if (lastDraft === draftText(gid, d) && draftBook()[gid]) return true;
   try {
     const book = draftBook();
     book[gid] = { at: d.at, box: Z.secretSeal(key, draftAad(gid), JSON.stringify(d)) };
     localStorage.setItem(DRAFTS, JSON.stringify(book));
+    lastDraft = draftText(gid, d);
     return true;
   } catch { return false; }
 }
+// The draft that this tab saved or restored last, without its time.
+let lastDraft = null;
+const draftText = (gid, d) => gid + "\n" + JSON.stringify({ ...d, at: 0 });
 // A new form: the draft of this wallet when one lives, never for "Propose again".
 function freshForm() {
   const d = ui.after ? null : readDraft(state.gid);
   ui.pay = d ? d.rows.map((r) => ({ k: ++ui.payKey, ...r }))
     : [{ k: ++ui.payKey, to: "", amt: "", memo: "" }];
   if (d) Object.assign(ui, { note: d.note, priority: d.priority });
-  Object.assign(ui, { listError: "", draftFailed: false });
+  if (d) lastDraft = draftText(state.gid, d);
+  Object.assign(ui, { listError: "", draftFailed: false, draftGid: state.gid });
 }
 function draftLine() {
   if (ui.after || ui.sendFor) return null;
@@ -371,10 +383,19 @@ export function endSend() {
   dropReview();
   Object.assign(ui, { send: false, draftFailed: false });
 }
-/** Builds the transaction of the form and opens its review, unless Send closed meanwhile. */
-export async function openReview(payees, note) {
-  const run = sendRun, prep = await prepareSpend(payees, ui.priority);
-  if (run === sendRun) ui.sendReview = { prep, note };
+/** Opens Send with `fields`: a new run, so no review of an earlier Send comes back. */
+export function openSend(fields) {
+  dropReview();
+  Object.assign(ui, { ...fields, send: true });
+}
+/**
+ * Builds the transaction of the form and opens its review, unless Send closed or opened again
+ * since `run` (read when the person clicked, before the names were looked up). `own`: the form
+ * is the person's own, so a proposal deletes its draft; a request filled it otherwise.
+ */
+export async function openReview(payees, note, run = sendRun) {
+  const own = !ui.sendFor, prep = await prepareSpend(payees, ui.priority);
+  if (run === sendRun) ui.sendReview = { prep, note, own };
 }
 const closeSend = () => { endSend(); render(); };
 sweepDrafts();
@@ -395,7 +416,7 @@ export function sendDialog() {
     "aria-labelledby": "send-title", oninput: keepDraft, onchange: keepDraft, onclick: keepDraft,
     onsubmit: act(async (ev) => {
     if (why) throw new Error(why);
-    const payees = readPayees(rows, await resolveNames(rows));
+    const run = sendRun, payees = readPayees(rows, await resolveNames(rows));
     const need = payees.reduce((n, p) => n + p.amount, 0) + feeEstimate(payees.length, ui.priority);
     if (need > spendable) throw new Error("Not enough funds: " + fmtZec(spendable) + " available, " + fmtZec(need) + " needed (amounts + fee).");
     const note = String(new FormData(ev.target).get("note") || "").trim();
@@ -406,7 +427,7 @@ export function sendDialog() {
       ui.after = null;
       return;
     }
-    await openReview(payees, note);
+    await openReview(payees, note, run);
   }) },
     el("div", { class: "card-head" }, el("h2", { id: "send-title" }, "Send ZEC"),
       el("button", { class: "icon-btn", type: "button", "aria-label": "Close", onclick: closeSend },
@@ -505,7 +526,7 @@ function reviewRow(p, i, n) {
     el("span", { class: "label" }, n > 1 ? "Recipient " + (i + 1) : "Recipient"),
     p.name ? el("p", { class: "small" }, zecName(p.name) + " gives this address:") : null,
     el("div", { class: "addr-full" }, addrGroups(p.to)), money(p.amount),
-    el("p", { class: "small muted" }, p.memo ? "Memo: " + p.memo : "No memo"));
+    el("p", { class: "small muted" }, p.memo ? "Memo: " + memoShown(p.memo) : "No memo"));
 }
 
 // Proposes the reviewed transaction after the guards of a new one: Send is not held, the decode
@@ -519,7 +540,7 @@ export async function proposeReviewed(r) {
     throw new Error("This review is out of date. Review the payment again.");
   }
   await proposePrepared(r.prep, r.note);
-  dropDraft(gid);
+  if (r.own !== false) dropDraft(gid);
   Object.assign(ui, { send: false, sendReview: null, pay: null, note: "", priority: false });
 }
 

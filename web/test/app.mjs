@@ -337,7 +337,7 @@ const sealed = (gid, rel, seat, fields, key, names = ["by", "sig"]) =>
   // A finished transaction with another id goes nowhere, and the payment keeps no error of it.
   for (const send of [t.broadcastTx, t.resendTx]) {
     await assert.rejects(send({ ...live(), final: { ...live().final, txid: "T2" } }),
-      /another id than the approved one/);
+      /another id than the proposal/);
   }
   assert.deepEqual([sends, data.get(path3).broadcastError, data.get(path3).sentBy],
     [0, undefined, undefined], "no send, no error, no sent mark");
@@ -1583,6 +1583,7 @@ const sealed = (gid, rel, seat, fields, key, names = ["by", "sig"]) =>
     // key; Discard deletes it.
     {
       const gidNow = t.state.gid, book = () => JSON.parse(storage.get("zf-drafts") || "{}");
+      t.ui.draftGid = gidNow;
       Object.assign(t.ui, { after: null, sendFor: null, note: "rent", priority: true, pay: [{ k: 1,
         to: "alice.zec", amt: "0.5", memo: "m", name: "alice", shown: { address: "utest1x" } }] });
       t.keepDraft();
@@ -1635,6 +1636,24 @@ const sealed = (gid, rel, seat, fields, key, names = ["by", "sig"]) =>
       assert.deepEqual(book()[gidNow], last, "the draft of the person stays");
       assert.equal(named(t.sendDialog(), "button", "Discard draft"), undefined);
       t.ui.sendFor = null;
+      // A click with no change keeps the time of the draft; a draft from the future goes.
+      Object.assign(t.ui, { pay: [{ k: 11, to: "same", amt: "", memo: "" }], note: "",
+        priority: false });
+      t.keepDraft();
+      const timed = book()[gidNow].at;
+      await sleep(5);
+      t.keepDraft();
+      assert.equal(book()[gidNow].at, timed, "no new 24 hours without typing");
+      storage.set("zf-drafts", JSON.stringify({ ...book(), future: { at: Date.now() + 400000,
+        box: "x" } }));
+      t.sweepDrafts();
+      assert.equal(book().future, undefined, "a clock that was ahead");
+      // The form of another wallet is no draft of this one.
+      t.ui.draftGid = "another wallet";
+      t.ui.pay = [{ k: 10, to: "utest1other", amt: "", memo: "" }];
+      t.keepDraft();
+      assert.equal(book()[gidNow].at, timed, "the draft of this wallet stays");
+      t.ui.draftGid = gidNow;
       // A draft that this browser cannot open shows no draft line and fills nothing, also when
       // only its sealed time is old.
       const aad = "draft\n" + gidNow, seal = (d) => Z.secretSeal(t.gkeys[gidNow], aad,
@@ -1705,6 +1724,19 @@ const sealed = (gid, rel, seat, fields, key, names = ["by", "sig"]) =>
         await t.openReview([{ to: addr, amount: 5 }], "open");
         assert.equal(t.ui.sendReview?.note, "open", "control: an open Send gets its review");
         Object.assign(t.ui, { send: false, sendReview: null });
+        // Each opener starts a new run: no review of an earlier Send comes back.
+        t.ui.sendReview = { prep, note: "old" };
+        t.openSend({ pay: null, after: null });
+        assert.deepEqual([t.ui.send, t.ui.sendReview], [true, null], "the Send button");
+        await t.openReview([{ to: addr, amount: 5 }], "stale", -1);
+        assert.equal(t.ui.sendReview, null, "a build of an earlier run opens no review");
+        t.ui.send = false;
+        // The review shows a memo as the drawer does: a character that hides text is replaced.
+        t.ui.sendReview = { prep: { ...prep, payees: [{ ...prep.payees[0], memo: "a\u202eb" }] },
+          note: "m" };
+        assert.match(textOf(drawn()), /Memo: a\ufffdb/);
+        globalThis.document = realDocument;
+        t.ui.sendReview = null;
         // Every close drops the review, so it never comes back over another payment: the scrim,
         // Escape, and then "Propose again" opens its own form with a direct Propose.
         t.closeSession();
@@ -1755,6 +1787,18 @@ const sealed = (gid, rel, seat, fields, key, names = ["by", "sig"]) =>
         assert.equal(t.ui.sendReview, null);
         assert.equal(storage.has("zf-drafts") && JSON.parse(storage.get("zf-drafts"))[t.state.gid],
           undefined, "a proposal deletes the draft of its wallet");
+        // A review of a form that a request filled: its proposal keeps the person's draft.
+        Object.assign(t.ui, { draftGid: t.state.gid, sendFor: null, after: null,
+          pay: [{ k: 12, to: "mine", amt: "", memo: "" }], note: "", priority: false });
+        t.keepDraft();
+        t.ui.sendFor = t.state.gid;
+        await t.openReview([{ to: addr, amount: 5 }], "from a request");
+        assert.equal(t.ui.sendReview.own, false);
+        const count = t.state.sessions.length;
+        await t.proposeReviewed(t.ui.sendReview);
+        await waitFor("the request proposal", () => t.state.sessions.length > count);
+        assert.ok(JSON.parse(storage.get("zf-drafts"))[t.state.gid], "the draft stays");
+        t.ui.sendFor = null;
       } finally {
         await sleep(300);
         globalThis.document = recorderDoc;
@@ -1821,9 +1865,15 @@ const sealed = (gid, rel, seat, fields, key, names = ["by", "sig"]) =>
     t.state.sessions.push(otherId);
     const [again, why] = t.finishButtons(otherId);
     assert.deepEqual([textOf(again), again.attrs.disabled], ["Send again", ""]);
-    assert.match(textOf(why), /another id than the approved one/);
+    assert.match(textOf(why), /another id than the proposal/);
     assert.equal(t.refusedSend(otherId), true);
     assert.equal(bucket(otherId), "attention", "the inbox agrees with the drawer");
+    const cancelledOther = { ...otherId, id: "x2c", error: "Cancelled.", status: "cancelled",
+      broadcastTxid: undefined };
+    t.state.sessions.push(cancelledOther);
+    assert.equal(t.refusedSend(cancelledOther), true, "a send step that this browser refuses");
+    assert.equal(bucket(cancelledOther), null, "a cancelled payment offers no send step");
+    t.state.sessions.splice(t.state.sessions.indexOf(cancelledOther), 1);
     t.state.sessions.splice(t.state.sessions.indexOf(otherId), 1);
     tipAt(4503453);
     assert.deepEqual(t.finishButtons(sentOne), [], "a node refuses it now");
@@ -1858,7 +1908,7 @@ const sealed = (gid, rel, seat, fields, key, names = ["by", "sig"]) =>
       assert.match(textOf(t.expiryLine(signedOne)), /cannot prove that the signers signed/);
     }
     const falseId = callouts(t.txDetails(unmarkedOne)).join(" ");
-    assert.match(falseId, /names the id f…f, but the approved proposal gives the id realtx…realtx/,
+    assert.match(falseId, /names the id f…f, but the proposal gives the id realtx…realtx/,
       "the false id note");
     tipAt(4503459, new Set(["realtx"]));
     assert.equal(t.expired(sentOne), false);
@@ -1870,7 +1920,7 @@ const sealed = (gid, rel, seat, fields, key, names = ["by", "sig"]) =>
     // false id above sends nothing.
     const [resend, refused] = t.finishButtons(unmarkedOne);
     assert.deepEqual([textOf(resend), resend.attrs.disabled], ["Send again", ""]);
-    assert.match(textOf(refused), /another id than the approved one/);
+    assert.match(textOf(refused), /another id than the proposal/);
     assert.deepEqual(labels(t.finishButtons({ ...unmarkedOne,
       final: { txid: "realtx", tx_hex: "00" } })), ["Send again"]);
     tipAt(4500000, new Set(["realtx"]));
@@ -3156,6 +3206,22 @@ const sealed = (gid, rel, seat, fields, key, names = ["by", "sig"]) =>
           + "at block 4500090, less than a day ago. Check the address with the payee.");
         assert.deepEqual(await submit(form), [[{ to: MOVED, amount: 50000000, name: "alice" }]],
           "after the redraw one submit proposes it");
+        // A close of Send while the names are looked up: the build that follows opens no review.
+        znsServes(znsOk());
+        form = await settled(["alice"]);
+        const lookups = [];
+        registry.get = () => new Promise((ok) => { lookups.push(ok); });
+        const named0 = await createRegistry({ fetch: async () => znsOk()() }).get();
+        globalThis.document = stubPage();
+        const lateSubmit = form.on.submit({ preventDefault() {}, currentTarget: null });
+        globalThis.document = realDocument;
+        assert.equal(lookups.length, 1, "the submit waits for the registry");
+        t.endSend();
+        lookups.forEach((ok) => ok(named0));
+        await lateSubmit;
+        await sleep(300);
+        globalThis.document = recorder;
+        assert.equal(t.ui.sendReview, null, "no review after a close during the lookup");
         // Two submits at once, the answer of the registry held: the first refuses with the new
         // address, and the second does not pay it either.
         znsServes(znsOk());

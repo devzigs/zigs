@@ -19,6 +19,7 @@ import { closeSession, openSession, sdb } from "./app-groups.js";
 import { groupName, isPayee, normalized, payTitle } from "./app-dom.js";
 import { myVerified, seatCheck } from "./app-dkg.js";
 import { once, react, render } from "./app-loop.js";
+import { openSend } from "./app-send.js";
 import { nameRefusal, registry } from "./zns.js";
 
 const inspectCache = new Map();
@@ -377,11 +378,14 @@ export function sendRefusal(ss) {
   if (!isStr(ss.final?.txid)) return "The finished transaction cannot be read.";
   const want = approvedTxid(ss);
   if (!want) return SEND_UNREAD;
-  return ss.final?.txid === want ? null : SEND_OTHER;
+  if (ss.final.txid === want) return null;
+  return markOf(state.gid, ss.id).approved ? SEND_OTHER : SEND_NOT_PROPOSED;
 }
 const SEND_UNREAD = "This browser cannot read the approved transaction, so it does not send the "
   + "finished one.";
 const SEND_OTHER = "The finished transaction has another id than the approved one, so this "
+  + "browser does not send it. Check the payment with the other signers.";
+const SEND_NOT_PROPOSED = "The finished transaction has another id than the proposal, so this "
   + "browser does not send it. Check the payment with the other signers.";
 
 export async function broadcastTx(ss) {
@@ -1051,10 +1055,10 @@ export async function proposeAgain(ss) {
   }
   if (ss.move) { closeSession(); await proposeMove(after); return; }
   const payees = payeesOf(ss), ins = againFrom(ss, after);
-  Object.assign(ui, {
+  openSend({
     pay: payees.length ? payeeRows(payees, () => ++ui.payKey) : null, listError: "",
     note: typeof ss.note === "string" ? ss.note : "", priority: priorityTimes(ins) > 0,
-    send: true, sendFor: null, after,
+    sendFor: null, after,
   });
   closeSession();
   render();

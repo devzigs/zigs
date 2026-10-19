@@ -17,7 +17,7 @@ import {
   heldApprovals, holdEnd, inspectOf, landed, releaseHold,
   approvalChanged, noApproval, priorityTimes, proofStalled, proposeAgain, recipientCheck, resendTx,
   sendRefusal, signingLost, signingSeen,
-  approvedTxid, chainReady, sinceOf, verdict,
+  approvedTxid, chainReady, markOf, sinceOf, verdict,
 } from "./app-payments.js";
 import { discussion } from "./app-thread.js";
 import { nameOf, zecName } from "./zns.js";
@@ -406,17 +406,17 @@ function blockText(ss) {
   if (landed(ss)) return "A synced block holds the payment.";
   if (!ss.broadcastTxid) return "After the send.";
   if (!chainReady(curChain())) return "This browser has not checked the blocks since the send yet.";
-  return expiryOf(ss)?.expired ? "No synced block holds it."
-    : "No synced block holds it yet. It waits for the next block.";
+  return expiryOf(ss)?.expired ? "No synced block holds it." : "No synced block holds it yet.";
 }
 
 export function txDetails(ss) {
   const size = Number.isFinite(ss.final.size) ? fmtInt(ss.final.size) + " bytes" : "unknown";
   // The id that the send step checks (sendRefusal), so a false id never sits next to a Send.
   const id = approvedTxid(ss);
+  const source = markOf(state.gid, ss.id).approved ? "the approved proposal" : "the proposal";
   const falseId = id && id !== ss.final.txid ? el("div", { class: "callout bad" }, "The finished "
-    + "transaction names the id " + short(String(ss.final.txid), 12) + ", but the approved "
-    + "proposal gives the id " + short(id, 12) + ". One signer's device wrote one of them alone. "
+    + "transaction names the id " + short(String(ss.final.txid), 12) + ", but " + source
+    + " gives the id " + short(id, 12) + ". One signer's device wrote one of them alone. "
     + "Check the payment in an explorer.") : null;
   return el("div", { style: "display:grid;gap:10px" },
     el("span", { class: "label" }, "Transaction"),
