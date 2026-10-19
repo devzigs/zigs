@@ -131,7 +131,7 @@ async function helpers(page) {
   await setInput(page, "#g-name", "Harness wallet");
   await setInput(page, "#g-n", 4);
   await setInput(page, "#g-t", 3);
-  await waitForText(page, "Any 3 of 4 signers must approve each payment.");
+  await waitForText(page, "Any 3 of 4 devices must approve each payment.");
   await clickText(page, "Cancel", { exact: true });
   await run(page, () => {
     document.body.insertAdjacentHTML("beforeend",

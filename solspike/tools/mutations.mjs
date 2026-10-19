@@ -557,7 +557,7 @@ export const MUTATIONS = [
     "W-pw-wallet-card",
     "the invite card of a wallet has no note for the sender",
     ["web/app-setup.js",
-      "      + senderNote(\"each signer\")),",
+      "      + senderNote(\"each person who joins\")),",
       "      ),"],
     UNIFIED,
     /the invite card of a wallet/,

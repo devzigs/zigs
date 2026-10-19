@@ -33,7 +33,7 @@ const { PUBLIC_TEXT } = await import("../sol/view.js");
 const { reactCeremony } = await import("../sol/ceremony.js");
 const { t, data, waitFor } = rig;
 const groupPath = (gid) => `groups/${gid}`;
-const BOTH_OPEN = /Every signer keeps this wallet open until the Zcash and the Solana parts/;
+const BOTH_OPEN = /Every device keeps this wallet open until the Zcash and the Solana parts/;
 
 // The text of the open wallet page, with a recorder in place of the document.
 class Rec extends Node {
@@ -313,8 +313,8 @@ await waitFor("seat 1", () => t.state.seats[1]);
 const link = "https://example.test/#" + gid;
 const plain = { text: pageText(), join: joinText(), invite: inviteMessage(link) };
 assert.equal(t.solLoading, null, "a Zcash-only setup loads no Solana file");
-assert.match(plain.text, /Every signer must keep Zigs open until setup finishes/);
-assert.match(plain.text, /Step 2 of 5: Connect\. Every signer takes a seat/,
+assert.match(plain.text, /Every device must keep Zigs open until setup finishes/);
+assert.match(plain.text, /Step 2 of 5: Connect\. Every device joins with the invite link/,
   "the stepper of the setup page: seats are open");
 assert.doesNotMatch(plain.join + plain.invite, /Solana/, "no hint: Zcash only");
 data.set(groupPath(gid), { ...data.get(groupPath(gid)), solana: true });
@@ -340,7 +340,7 @@ for (const text of [inviteMessage(link), plain.invite, chatMessage(link)]) {
 }
 // The invite cards of a wallet and of a chat say the same to the sender.
 const SENDER = new RegExp("asks for a user name and a password before Zigs opens\\. Any user name "
-  + "works\\. Send the password apart from the link\\. Tell (each signer|your contact) to open the "
+  + "works\\. Send the password apart from the link\\. Tell (each person who joins|your contact) to open the "
   + "link in Safari or Chrome\\. The browser of a chat app or a private window can delete the key");
 assert.match(pageText(), SENDER, "the invite card of a wallet");
 {
@@ -367,7 +367,7 @@ assert.match(SOL_DISCLOSURE, /Every signer sees the whole Solana history/);
   delete t.secrets[gid + ":1"];
   const join = pageText();
   t.secrets[gid + ":1"] = kept;
-  assert.match(join, /Take seat 2/);
+  assert.match(join, /Join as device 2/);
   assert.ok(join.includes(SOL_DISCLOSURE), "the join card says what Solana makes public");
   assert.match(join, /Then open the link in Safari or Chrome first\./, "where to open the link");
 }
@@ -584,7 +584,7 @@ const byId = (node, id) =>
     joinLinks.delete(cc);
     busy.delete("chatjoin:" + cc);
   }
-  // The setup page: It matches, Take seat and Play seat.
+  // The setup page: It matches, Join as device and Play device.
   const setup = (change, pending = false) => {
     t.state.pending = pending;
     try {
@@ -593,16 +593,16 @@ const byId = (node, id) =>
       t.state.pending = false;
     }
   };
-  assert.equal(says(setup({ Z: null }), "why-play"), WHY.loading, "Play seat");
-  assert.equal(says(setup({}, true), "why-play"), WHY.pending, "Play seat waits");
-  assert.equal(byId(setup({}), "why-play"), null, "Play seat is on");
+  assert.equal(says(setup({ Z: null }), "why-play"), WHY.loading, "Play device");
+  assert.equal(says(setup({}, true), "why-play"), WHY.pending, "Play device waits");
+  assert.equal(byId(setup({}), "why-play"), null, "Play device is on");
   const kept = t.secrets[gid + ":1"];
   delete t.secrets[gid + ":1"];
   try {
     const join = (change, pending) => setup(change, pending);
-    assert.equal(says(join({ Z: null }), "why-take"), WHY.loading, "Take seat");
-    assert.equal(says(join({}, true), "why-take"), WHY.pending, "Take seat waits");
-    assert.equal(byId(join({}), "why-take"), null, "Take seat is on");
+    assert.equal(says(join({ Z: null }), "why-take"), WHY.loading, "Join as device");
+    assert.equal(says(join({}, true), "why-take"), WHY.pending, "Join as device waits");
+    assert.equal(byId(join({}), "why-take"), null, "Join as device is on");
   } finally {
     t.secrets[gid + ":1"] = kept;
   }
@@ -696,7 +696,7 @@ const byId = (node, id) =>
   delete t.secrets[gidW + ":1"];
   const other = pageText();
   t.secrets[gidW + ":1"] = seat1;
-  assert.match(other, /Seat 1 starts it after the Zcash address check\./, "a browser of seat 2");
+  assert.match(other, /Device 1 starts it after the Zcash address check\./, "a browser of seat 2");
   await t.putSec(gidW, 1, { checkedWallet: wallet, rejectedWallet: null });
   t.refilter();
   const done = (i) => data.has(`groups/${gidW}/soldone/${i}`);
@@ -744,7 +744,7 @@ const byId = (node, id) =>
   assert.doesNotMatch(broken, /cannot read/);
   assert.match(pageText(), /Send Devnet SOL to your fee address in the Solana section/);
   assert.match(pageText(), /Open Solana/);
-  assert.match(pageText(), /Each signer funds the fee address of their seat on their own device/);
+  assert.match(pageText(), /Each device funds its own fee address/);
   // The balances of the last read (refreshChain): every fee address of this browser holds SOL.
   t.sol.ctl.chain = { fees: { 1: "0.006 SOL", 2: "0.0025 SOL", 3: "0.0025 SOL" } };
   assert.doesNotMatch(pageText(), /Solana is still setting up/, "a funded part needs no card");
@@ -921,7 +921,7 @@ const byId = (node, id) =>
 assert.match(dialogText(), /1\. Approval rule.*2\. Names.*3\. Networks/s);
 assert.doesNotMatch(dialogText(t.state.g), /1\. Approval rule/, "Change signers keeps its form");
 assert.equal(marginText(2, 3), "", "a margin: no warning");
-assert.match(marginText(3, 3), /Each payment needs every signer/);
+assert.match(marginText(3, 3), /Each payment needs every device/);
 {
   // The line of t = n is in the dialog, a screen reader hears it change, and a change of the
   // numbers updates it. The first focus goes to the wallet name.
@@ -939,7 +939,7 @@ assert.match(marginText(3, 3), /Each payment needs every signer/);
   } finally {
     globalThis.document = real;
   }
-  assert.match(margin.textContent, /Each payment needs every signer/, "update() names the risk");
+  assert.match(margin.textContent, /Each payment needs every device/, "update() names the risk");
 }
 
 console.log("unified-setup: ok");

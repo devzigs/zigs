@@ -145,8 +145,9 @@ export function forgetBox() {
   const cancel = () => { ui.forget = false; render(); };
   return el("div", { class: "callout bad" },
     el("p", {}, "Without the passkey, the key shares in this browser cannot be opened. Delete "
-      + "them, then restore each seat from its backup file. A seat with no backup is lost, but "
-      + "the wallet still works while enough other signers remain. Direct chats in this browser "
+      + "them, then restore each device from its backup file. A device with no backup is lost, "
+      + "but the wallet still works while enough other devices remain. Direct chats in this "
+      + "browser "
       + "are deleted too. They are not in backup files, and a chat with two people cannot be "
       + "joined again. The personal account is deleted as well. Only its backup file brings it "
       + "back, and without one its money is lost."),
@@ -206,7 +207,7 @@ export function lobby() {
   const head = el("header", { class: "page-head" },
     el("div", { class: "ph-left" }, el("h1", {}, "Wallets"),
       el("p", { class: "muted" }, "Each wallet is a separate shared account, with its own address, "
-        + "signers and approval rule.")),
+        + "devices and approval rule.")),
     actions.length ? el("div", { class: "ph-actions" }, ...actions) : null);
   const rows = state.groups.map((g) => guard(walletRow, g));
   const body = state.groups.length
@@ -292,7 +293,7 @@ function walletRow(g) {
   el("span", { class: "av lg" }, initials(g.name)),
   el("span", { class: "ri-main" }, el("span", { class: "ri-title" }, g.name),
     el("span", { class: "ri-sub" }, netOf(g).label + " · " + g.t + " of " + g.n
-      + " signers must approve" + (seats ? "" : " · view only"))),
+      + " devices must approve" + (seats ? "" : " · view only"))),
   el("span", { class: "ri-end" }, status,
     n ? el("span", { class: "badge warn" }, n + " to approve") : null, unread),
   el("span", { class: "chev" }, "›"));
@@ -300,9 +301,9 @@ function walletRow(g) {
 
 function welcome(off, restoreLink) {
   const steps = [
-    ["Pick a rule", "For example, any 2 of 3 signers must approve each payment."],
-    ["Invite your signers", "Send one private invite link. Each device creates its own key share."],
-    ["Approve together", "A payment goes out only after enough signers approve. On chain it looks "
+    ["Pick a rule", "For example, any 2 of 3 devices must approve each payment."],
+    ["Add your devices", "Send one private invite link. Each device creates its own key share."],
+    ["Approve together", "A payment goes out only after enough devices approve. On chain it looks "
       + "like a shielded payment from a standard wallet."],
   ];
   const create = el("button", {
@@ -345,18 +346,19 @@ const number = (label, id, name, value, note) => el("label", { class: "field" },
   el("span", {}, label), el("input", { class: "input", id, name, type: "number", min: "2",
     max: "7", value: String(value), "aria-describedby": note ?? null }));
 const counts = (n0, t0, note) => el("div", { class: "two" },
-  number("Signers", "g-n", "n", n0, note), number("Approvals needed", "g-t", "t", t0, note));
+  number("Devices", "g-n", "n", n0, note), number("Approvals needed", "g-t", "t", t0, note));
 const moveParts = (from, nameParts, ruleParts) => [el("ol", { class: "small muted move-steps" },
-  el("li", {}, "You create a new wallet with the signers and rule you want."),
-  el("li", {}, "The new signers join it with an invite link."),
+  el("li", {}, "You create a new wallet with the devices and rule you want."),
+  el("li", {}, "The new devices join it with an invite link."),
   el("li", {}, "This wallet sends all its funds to the new one. Like any payment, this needs "
     + from.t + " approvals.")),
 ...nameParts, ...ruleParts];
 const guideStep = (title, ...kids) => el("fieldset", { class: "guide-step" },
   el("legend", {}, title), ...kids);
 // With every signer needed, one lost device stops the wallet: the dialog says so.
-export const marginText = (t, n) => (t === n ? "Each payment needs every signer. When one "
-  + "device is lost, the wallet cannot pay until its seat comes back from its backup file." : "");
+export const marginText = (t, n) => (t === n ? "Each payment needs every device. When one "
+  + "device is lost, the wallet cannot pay until its key share comes back from its backup file."
+  : "");
 
 // With `from`, the dialog creates the wallet that replaces `from`, with new signers or a new rule.
 export function createDialog(from = null) {
@@ -369,14 +371,14 @@ export function createDialog(from = null) {
   const update = () => {
     const n = Number(document.getElementById("g-n")?.value), t = Number(document.getElementById("g-t")?.value);
     const ok = n >= 2 && n <= 7 && t >= 2 && t <= n;
-    rule.textContent = ok ? ruleText(t, n) : "Choose 2 to 7 signers, and at least 2 approvals but no more than the signers.";
+    rule.textContent = ok ? ruleText(t, n) : "Choose 2 to 7 devices, and at least 2 approvals but no more than the devices.";
     rule.classList.toggle("bad", !ok);
     margin.textContent = ok ? marginText(t, n) : "";
   };
   const f = el("form", { class: "dialog", role: "dialog", "aria-modal": "true", "aria-labelledby": "create-title", oninput: update, onsubmit: act(async (ev) => {
     const fd = new FormData(ev.target); const n = Number(fd.get("n")), t = Number(fd.get("t"));
-    if (!(n >= 2 && n <= 7)) throw new Error("A wallet needs between 2 and 7 signers.");
-    if (t < 2 || t > n) throw new Error("Approvals needed must be at least 2 and at most the number of signers.");
+    if (!(n >= 2 && n <= 7)) throw new Error("A wallet needs between 2 and 7 devices.");
+    if (t < 2 || t > n) throw new Error("Approvals needed must be at least 2 and at most the number of devices.");
     // A replacement wallet stays on its predecessor's network: funds cannot move between networks.
     const network = from ? from.network || "testnet" : ui.net;
     if (network === "mainnet" && !ui.ack) throw new Error("Confirm that you understand Zigs is not audited before you create a mainnet wallet.");
@@ -386,14 +388,16 @@ export function createDialog(from = null) {
     const gid = await createGroup(name, n, t, from && from.id, network);
     if (withSol) await planSolana(gid);
   }) },
-    el("div", { class: "card-head" }, el("h2", { id: "create-title" }, from ? "Change signers" : "New shared wallet"), el("button", { class: "icon-btn", type: "button", "aria-label": "Close", onclick: close }, "×")),
+    el("div", { class: "card-head" }, el("h2", { id: "create-title" }, from ? "Change devices" : "New shared wallet"), el("button", { class: "icon-btn", type: "button", "aria-label": "Close", onclick: close }, "×")),
     ...(from ? moveParts(from, names(from), [counts(n0, t0), rule])
       : [guideStep("1. Approval rule", counts(n0, t0, "margin-text"), rule, margin),
         guideStep("2. Names", ...names(from)),
         guideStep("3. Networks", networkPick(), solChoice())]),
     el("div", { class: "callout" }, from
-      ? "The new wallet gets a new address. Signers you leave out can still see this old wallet's payments, but not the new wallet's."
-      : "You take seat 1. Then share the invite link with your signers. When every seat is taken, your devices create the wallet key together."),
+      ? "The new wallet gets a new address. Devices that you leave out can still see this old "
+        + "wallet's payments, but not the new wallet's."
+      : "This device joins as device 1. Then open the invite link on your other devices. When "
+        + "every device has joined, they create the wallet key together."),
     el("div", { class: "dialog-actions" },
       el("button", { class: "btn", type: "button", onclick: close }, "Cancel"),
       el("button", { class: "btn primary", type: "submit", ...off.attrs },

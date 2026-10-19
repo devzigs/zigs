@@ -125,8 +125,8 @@ function openBox(j, i, s, sealed) {
   const context = state.gid + ":" + j + "->" + i;
   let text;
   try { text = Z.boxOpen(s.boxSk, state.seats[j].boxPk, context, sealed); }
-  catch { throw new Error("The message of seat " + j + " was made by another version of Zigs"); }
-  try { return J(text); } catch { throw new Error("Seat " + j + " sent an unreadable message"); }
+  catch { throw new Error("The message of device " + j + " was made by another version of Zigs"); }
+  try { return J(text); } catch { throw new Error("Device " + j + " sent an unreadable message"); }
 }
 
 export async function round3V1(i) {
@@ -135,7 +135,7 @@ export async function round3V1(i) {
   for (const j of seatIds()) if (j !== i) {
     r1[j] = state.dkg1[j].package;
     const sealed = state.dkg2[j + "-" + i].sealed;
-    if (!isStr(sealed)) throw new Error("Seat " + j + " sent an unreadable message.");
+    if (!isStr(sealed)) throw new Error("Device " + j + " sent an unreadable message.");
     // A box that does not open ends this seat's setup, as in version 2: a retry cannot fix it.
     r2[j] = await ceremonyStep(i, () => openBox(j, i, s, sealed));
   }
@@ -171,7 +171,7 @@ function verifyWallet(s) {
   checkNetwork(state.wallet, netName(state.g));
   if (s.vaultSk) return Z.walletVerifyV2(S(state.wallet), S(s.publicKeyPackage), s.vaultSk);
   if (usesV2(groupVersion())) {
-    throw new Error("This seat holds no setup secret for a version 2 or 3 wallet. "
+    throw new Error("This device holds no setup secret for a version 2 or 3 wallet. "
       + "Do not use this wallet.");
   }
   return Z.walletVerify(S(state.wallet), S(s.publicKeyPackage));
@@ -275,7 +275,7 @@ export async function confirmSeats(ids, no) {
   log("safety number confirmed for seat " + ids.join(", "));
 }
 
-const DIFFERENT = "Signers saw different setup data";
+const DIFFERENT = "The devices saw different setup data";
 // A failed check ends this seat's setup for good. The reason stays in the seat, so the reactor
 // does not retry it.
 async function abortSeat(i, text) {
@@ -327,7 +327,9 @@ function echoNow() {
   const r1 = {};
   for (const j of seatIds()) {
     const d = state.dkg1[j];
-    if (!isStr(d.commit)) throw new Error("Seat " + j + " sent no commitment, so its app is too old for this wallet");
+    if (!isStr(d.commit)) {
+      throw new Error("Device " + j + " sent no commitment, so its app is too old for this wallet");
+    }
     r1[j] = { package: d.package, commit: d.commit };
   }
   return Z.dkgEcho(state.gid, S(r1));
@@ -361,7 +363,7 @@ async function round2V2(i) {
 export function unboxFrom(j, i, s) {
   const d = state.dkg2[j + "-" + i];
   if (d.echo !== s.echo) throw new Error(DIFFERENT);
-  const bad = new Error("Seat " + j + " sent an unreadable message");
+  const bad = new Error("Device " + j + " sent an unreadable message");
   if (!isStr(d.sealed)) throw bad;
   const box = openBox(j, i, s, d.sealed);
   if (!box || !isStr(box.r) || !box.package || typeof box.package !== "object") throw bad;
@@ -428,9 +430,15 @@ export async function takeSeat(i, version = groupVersion()) {
   const gid = state.gid, sign = await newSeatKey(version);
   const ref = sdb.doc("groups/" + gid + "/seats/" + i);
   const lease = await ref.acquire({ holder: crypto.randomUUID(), ttlMs: 5000 });
-  if (!lease.acquired) { showBanner("bad", "Someone else is taking seat " + i + " right now."); return; }
+  if (!lease.acquired) {
+    showBanner("bad", "Someone else is joining as device " + i + " right now.");
+    return;
+  }
   const cur = await ref.get();
-  if (cur.exists && cur.data().uid) { showBanner("bad", "Seat " + i + " is already taken."); return; }
+  if (cur.exists && cur.data().uid) {
+    showBanner("bad", "Device " + i + " has joined already.");
+    return;
+  }
   const kp = J(Z.boxKeypair());
   putSec(gid, i, { boxSk: kp.sk, version, uid: me, ...sign });
   const name = user ? (await user.me()).name : "";

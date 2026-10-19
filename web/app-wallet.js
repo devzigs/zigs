@@ -102,7 +102,7 @@ export function walletSections() {
       countBadge(toApprove(state.gid).length + solPending(), "to approve", "attn")],
     ["activity", "Activity"],
     ["messages", "Messages", countBadge(unreadIn(state.gid), "unread", "note")],
-    ["members", "Signers"], ["details", "Details"],
+    ["members", "Devices"], ["details", "Details"],
   ];
   if (solOn()) sections.push(["solana", "Solana", countBadge(solPending(), "to approve", "attn")]);
   return sections;
@@ -145,9 +145,9 @@ function groupHead(g, ready, why) {
       el("div", { class: "ph-meta" },
         netBadge(g),
         el("span", { class: "badge plain", title: ruleText(g.t, g.n) },
-          g.t + " of " + g.n + " signers must approve"),
+          "Any " + g.t + " of " + g.n + " devices"),
         el("span", { class: "stack" }, seatIds().map((i) => avatar(i))),
-        el("span", {}, seated + " of " + g.n + " signers joined"),
+        el("span", {}, seated + " of " + g.n + " devices joined"),
         g.movedFrom
           ? el("span", {}, "Replaces " + ((old || {}).name || "an older wallet")) : null)),
     ready ? el("div", { class: "ph-actions wallet-actions" }, ...walletActions(why)) : null);
@@ -246,7 +246,7 @@ function moveCard(c) {
 
 function signersCard() {
   return el("section", { class: "card card-pad" },
-    el("div", { class: "card-head" }, el("h2", {}, "Signers"),
+    el("div", { class: "card-head" }, el("h2", {}, "Devices"),
       el("button", { class: "btn ghost sm", type: "button", onclick: () => { ui.tab = "members"; render(); } }, "Manage")),
     el("p", { class: "small muted" }, ruleText(state.g.t, state.g.n)),
     el("div", { class: "signer-list" }, seatIds().map((i) => el("span", { class: "signer" },
@@ -547,15 +547,15 @@ function activityTab() {
 function membersTab() {
   return el("div", { class: "page", style: "gap:16px" },
     el("section", { class: "card" },
-      el("div", { class: "card-pad", style: "padding-bottom:14px" }, el("div", { class: "card-head" }, el("h2", {}, "Signers"), el("span", { class: "small muted" }, ruleText(state.g.t, state.g.n)))),
+      el("div", { class: "card-pad", style: "padding-bottom:14px" }, el("div", { class: "card-head" }, el("h2", {}, "Devices"), el("span", { class: "small muted" }, ruleText(state.g.t, state.g.n)))),
       el("div", { style: "border-top:1px solid var(--line)" },
         seatIds().map((i) => guard(memberRow, i)))),
     changeSignersCard(),
     el("section", { class: "card card-pad" },
       el("h2", { style: "font-size:15px" }, "Invite link"),
-      el("p", { class: "small muted" }, "Signers open this wallet on another device with this "
-        + "invite link and their key share backup. The link contains the wallet secret, so share "
-        + "it only with signers. " + senderNote("each signer")),
+      el("p", { class: "small muted" }, "Open this wallet on another device with this invite "
+        + "link and the key share backup of that device. The link holds the wallet secret, so "
+        + "share it only with the people of this wallet. " + senderNote("each person who joins")),
       el("div", { class: "addr-box" }, el("span", { class: "hex nowrap" }, inviteLink(state.gid)), copyBtn(inviteLink(state.gid), "Copy link")),
       secretQr(inviteLink(state.gid))));
 }
@@ -564,12 +564,13 @@ function membersTab() {
 function changeSignersCard() {
   const moving = !!state.g.movedTo;
   return el("section", { class: "card card-pad" },
-    el("h2", { style: "font-size:15px" }, "Add or remove signers"),
-    el("p", { class: "small muted" }, "The signers and the approval rule are part of the wallet key, so they cannot change in place. "
-      + "To change them, create a new wallet with the signers you want, then move the funds to it."),
+    el("h2", { style: "font-size:15px" }, "Add or remove devices"),
+    el("p", { class: "small muted" }, "The devices and the approval rule are part of the wallet "
+      + "key, so they cannot change in place. To change them, create a new wallet with the devices "
+      + "you want, then move the funds to it."),
     el("div", {}, moving
       ? el("button", { class: "btn", type: "button", onclick: () => { ui.tab = "overview"; render(); } }, "See the move")
-      : el("button", { class: "btn", type: "button", disabled: !localSeats().length, onclick: () => { ui.move = true; render(); } }, "Change signers")));
+      : el("button", { class: "btn", type: "button", disabled: !localSeats().length, onclick: () => { ui.move = true; render(); } }, "Change devices")));
 }
 
 function seatBadge(i) {
@@ -587,7 +588,8 @@ function memberRow(i) {
   const s = state.seats[i], mine = s && seatMine(i) && sec(state.gid, i);
   const title = el("span", { class: "ri-title" }, seatTitle(i, s),
     mine ? el("span", { class: "you" }, "You") : null);
-  const sub = el("span", { class: "ri-sub" }, "Seat " + i + (s ? " · joined " + when(s.at) : ""));
+  const sub = el("span", { class: "ri-sub" },
+    "Device " + i + (s ? " · joined " + when(s.at) : ""));
   const backup = mine && sec(state.gid, i).keyPackage ? keyBackupButton(i) : null;
   return el("div", { class: "member" }, avatar(i, "lg"), el("div", { class: "ri-main" }, title, sub),
     el("div", { class: "m-actions" }, seatBadge(i), backup));
@@ -609,7 +611,7 @@ function appearanceCard() {
 function checkedBadge() {
   const rejected = rejectedSeats(), ver = verifiedCount(), n = state.g.n;
   if (rejected.length) {
-    const text = "Seat " + rejected.join(", ") + " rejected this wallet";
+    const text = "Device " + rejected.join(", ") + " rejected this wallet";
     return el("span", { class: "badge bad" }, text);
   }
   return el("span", { class: "badge " + (ver === n ? "ok" : "") }, ver + " of " + n + " signers");
@@ -639,7 +641,7 @@ function walletFacts() {
         + "data it writes to this wallet. Zigs ignores data without a valid signature.")] : null),
     groupVersion() === 1 ? el("p", { class: "small muted", style: "margin-top:12px" },
       "This wallet was made before quantum recoverability (ZIP 2005). To get it, move the funds "
-      + "to a new wallet with Change signers.") : null);
+      + "to a new wallet with Change devices.") : null);
 }
 
 function privacyCard() {

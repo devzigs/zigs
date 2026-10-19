@@ -59,7 +59,7 @@ cannot block deposits.
 
 ## For judges: try it alone
 
-You can play every signer from one browser. Use a desktop browser with Zigs in one tab, not a
+You can play every device from one browser. Use a desktop browser with Zigs in one tab, not a
 private window. Zigs runs on Zcash testnet and Solana Devnet only, so every coin is a free test
 coin. The runbook of a demo with three devices is in [docs/demo.md](docs/demo.md).
 
@@ -67,11 +67,11 @@ coin. The runbook of a demo with three devices is in [docs/demo.md](docs/demo.md
 
 1. Open https://app.zigs.app. The browser asks for a user name and a password. Type any user name
    and the password that the Zigs team gave you.
-2. Click **New wallet**. The network is **Testnet**, the only choice. Set **Signers** to 2 and
-   **Approvals needed** to 2, then click **Create wallet**. You now hold seat 1.
-3. Open **Trying Zigs alone? Play the other seats in this browser** and click **Play seat 2**.
-   The two seats create the key together. Within half a minute the wallet opens, and both seats
-   show **Address checked**.
+2. Click **New wallet**. The network is **Testnet**, the only choice. Set **Devices** to 2 and
+   **Approvals needed** to 2, then click **Create wallet**. This browser is now device 1.
+3. Open **Trying Zigs alone? Play the other devices in this browser** and click **Play device
+   2**. The two devices create the key together. Within half a minute the wallet opens, and both
+   devices show **Address checked**.
 4. Click **Receive** and copy the address. Then click **Get testnet ZEC**: it opens the Valar
    faucet, which pays 0.125 TAZ to a `utest1…` address, once for each IP address and once for
    each address every 24 hours. On a shared network, such as a venue or an office, only the first
