@@ -209,6 +209,7 @@ export function openGroup(gid) {
   dropReview();
   ui.after = null;   // the notes of an expired payment of the wallet that was open
   ui.backup = null;   // the dialog names a seat of the wallet that was open
+  ui.chainFilter = "all";   // the choice of the Activity list belongs to one wallet
   dropChain();
   Object.assign(state, {
     gid, cid: null, contact: null, g: null, seats: {}, seatsLoaded: false, seatsSettled: false,

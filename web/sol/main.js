@@ -189,7 +189,7 @@ export async function attach(host) {
     /** Turns on local proving for the group, after the pool and device checks (SOL-4). */
     proveOn: async () => turnOnLocal(c, await ensureWorker(c)),
     async addSol(args) {
-      c.added = { ...(await addSol(c, args)), at: Date.now() };
+      c.added = await addSol(c, args);
       host.render();
       if (c.added.status !== "failed") pollBalances(c);
     },

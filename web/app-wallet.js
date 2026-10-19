@@ -414,14 +414,20 @@ function activity() {
   return [...sent, ...got, ...onSol].sort((a, b) => b.t - a.t);
 }
 
-const EMPTY_ACTIVITY = "Money you receive and payments your devices propose show up here.";
-const EMPTY_WITH_SOL = "ZEC you receive and payments your devices propose show up here.";
+// The empty text of each choice: "none" is a wallet with no Solana part.
+const DEVICES = "payments that the devices of this wallet propose";
+const EMPTY = {
+  none: "Money you receive and " + DEVICES + " show up here.",
+  all: "ZEC you receive and " + DEVICES + " show up here.",
+  zec: "ZEC you receive and Zcash " + DEVICES + " show up here.",
+  sol: "Solana " + DEVICES + " show up here.",
+};
 
-function activityRows(list) {
+function activityRows(list, pick = "all") {
   const line = "border-top:1px solid var(--line)";
   if (!list.length) {
     return el("div", { class: "empty", style: line }, el("h3", {}, "No activity yet"),
-      el("p", { class: "small" }, solPart() ? EMPTY_WITH_SOL : EMPTY_ACTIVITY));
+      el("p", { class: "small" }, EMPTY[pick === "all" && !solPart() ? "none" : pick]));
   }
   // One list of sent payments for the whole draw: a row does not walk all sessions again.
   const flying = new Set(inFlight());
@@ -433,8 +439,9 @@ function rowOf(a, flying) {
   return a.sol ? guard(solActivityRow, a.sol) : guard(receivedRow, a.r);
 }
 
-// The Solana part exists once its setup started (the setup summary says so).
-const solPart = () => !["not started", "unavailable", undefined].includes(solSetup()?.status);
+// The Solana part is there while it sets up or is ready. A stopped part, or one with keys that
+// differ, shows no rows and no select (activityNote says why).
+const solPart = () => ["running", "ready"].includes(solSetup()?.status);
 const CHAIN_FILTERS = [["all", "All"], ["zec", "Zcash"], ["sol", "Solana"]];
 const KEEP = { all: () => true, zec: (a) => !a.sol, sol: (a) => !!a.sol };
 // A wallet with no Solana part shows its Zcash rows, whatever ui.chainFilter says.
@@ -450,6 +457,11 @@ const chainSelect = (pick) => el("label", { class: "field activity-filter" },
 const SOL_ACTIVITY_NOTE = "The Solana rows show the payments of this wallet. They also show the "
   + "last SOL that you added, until you leave this wallet or reload the page. SOL that other "
   + "people send to the wallet does not show here.";
+const SOL_LOST = {
+  stopped: "The Solana part stopped, so its payments do not show here.",
+  differs: "The devices of this wallet published different Solana keys, so its payments do "
+    + "not show here.",
+};
 const noteRow = (text) => el("p", { class: "row-note" }, text);
 // What the list cannot show: Solana that did not load or is not read yet, and Solana that this
 // page never knows (a deposit by another person).
@@ -457,7 +469,10 @@ function activityNote(pick) {
   if (pick === "zec") return null;
   if (solOn() && solError) return noteRow("Solana did not load, so its transactions are not "
     + "shown here.");
-  if (!solPart()) return null;
+  if (!solPart()) {
+    const lost = SOL_LOST[solSetup()?.status];
+    return lost ? noteRow(lost) : null;
+  }
   if (solActivity() === null) return noteRow("Reading the Solana transactions…");
   return noteRow(SOL_ACTIVITY_NOTE
     + (solOlderCount() > 0 ? " Older Solana proposals are not listed." : ""));
@@ -484,7 +499,7 @@ const SOL_ICONS = { out: "↗", in: "↙", "": "↔" };
 function solActivityRow(r) {
   const time = r.t ? " · " + when(r.t) : "", who = proposer({ by: r.by });
   const slot = r.slot ? " · slot\u00a0" + Number(r.slot).toLocaleString() : "";
-  const subs = r.added ? ["Solana Devnet" + slot, (r.sign ? "Added by " : "Tried by ") + who + time]
+  const subs = r.added ? ["Solana Devnet" + slot, r.added + " by " + who + time]
     : ["Solana Devnet · Proposed by " + who + time];
   return el("button", {
     class: "row-item", type: "button", "data-key": "sol-act-" + r.id, onclick: openSolana,
@@ -568,7 +583,7 @@ const solInboxRow = (r) => el("button", {
 },
 el("span", { class: "tx-ico out", "aria-hidden": "true" }, "↗"),
 el("span", { class: "ri-main" }, el("span", { class: "ri-title" }, r.title),
-  el("span", { class: "ri-sub" }, "Solana Devnet · Proposed by device " + r.by)),
+  el("span", { class: "ri-sub" }, "Solana Devnet · Proposed by " + proposer({ by: r.by }))),
 el("span", { class: "ri-end" }, el("span", { class: "badge warn" }, "Your approval")),
 el("span", { class: "chev" }, "›"));
 
@@ -637,7 +652,7 @@ function activityTab() {
   return el("section", { class: "card" },
     el("div", { class: "card-head card-pad", style: "padding-bottom:12px" },
       el("h2", {}, "All activity"), solPart() ? chainSelect(pick) : null),
-    activityRows(activity().filter(KEEP[pick])), activityNote(pick));
+    activityRows(activity().filter(KEEP[pick]), pick), activityNote(pick));
 }
 
 function membersTab() {

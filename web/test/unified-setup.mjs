@@ -182,6 +182,7 @@ function inboxWiring() {
     const rows = ["a", "b"].map(rowOf);
     assert.ok(rows.every(Boolean), "one row for each Solana proposal that waits here");
     assert.match(textOf(rows[0]), /^↗Create the nonce account for the moveSolana Devnet/);
+    assert.match(textOf(rows[0]), /Proposed by you/, "a seat of this browser reads you");
     assert.equal(textOf(findNode(review, (n) => n.className === "badge plain")), "2",
       "the review bucket counts each proposal");
     assert.equal(t.solPendingRows().length, t.solPending(), "the rule of the count");
@@ -436,6 +437,7 @@ function activityList(ctl) {
     assert.ok(gone(onlyZec, [TITLES[0], TITLES[2], TITLES[4]]), "no Solana row");
     activityOverview(ctl, at, solRows);
     activityStates(ctl, kept);
+    activityBadges(ctl);
   } finally {
     state.g = g;
     Object.assign(ctl, kept);
@@ -478,6 +480,18 @@ function activityStates(ctl, kept) {
   assert.ok(sorted(order(idle, [TITLES[1], TITLES[3]])),
     "a wallet with no Solana part shows its Zcash rows, whatever the choice");
   assert.doesNotMatch(idle, /Solana rows show|Public SOL withdrawal/);
+  ctl.docs = { ...kept.docs, solabort: { 2: { reason: "A test stop." } } };
+  const stopped = draw("sol");
+  assert.equal(select(), null, "no select for a Solana part that stopped");
+  assert.match(stopped, /The Solana part stopped, so its payments do not show here/);
+  assert.doesNotMatch(stopped, /The Solana rows show/, "no note that says the rows show");
+  assert.ok(sorted(order(stopped, [TITLES[1], TITLES[3]])), "the Zcash rows of a stopped part");
+  assert.ok(gone(stopped, [TITLES[0], TITLES[2], TITLES[4]]), "no Solana row of a stopped part");
+  const done = kept.docs.soldone;
+  ctl.docs = { ...kept.docs, soldone: { ...done, 2: { ...done[2], groupKey: "00".repeat(32) } } };
+  const differs = draw("sol");
+  assert.match(differs, /different Solana keys, so its payments do not show here/);
+  assert.equal(select(), null, "no select for keys that differ");
   ctl.docs = kept.docs;
   state.g = { ...g, network: "mainnet" };
   const main = draw("sol");
@@ -488,10 +502,80 @@ function activityStates(ctl, kept) {
   assert.doesNotMatch(main, /Public SOL withdrawal|does not show here/);
   state.sessions = [];
   t.setChain({ ...t.chain, received: [] });
-  assert.match(pageText(), /Money you receive and payments your devices propose show up here/);
+  assert.match(pageText(),
+    /Money you receive and payments that the devices of this wallet propose show up here/);
   state.g = g;
   Object.assign(ctl, { sessions: [], added: null });
-  assert.match(pageText(), /ZEC you receive and payments your devices propose show up here/);
+  assert.match(draw("all"),
+    /ZEC you receive and payments that the devices of this wallet propose show up here/);
+  assert.match(draw("zec"), /ZEC you receive and Zcash payments that the devices of this wallet/);
+  assert.match(draw("sol"), /Solana payments that the devices of this wallet propose show up/);
+  assert.doesNotMatch(pageText(), /ZEC you receive/, "no ZEC under the Solana choice");
+}
+const rowText = (id) => {
+  const row = findNode(pageTree(), (n) => n.attrs?.["data-key"] === "sol-act-" + id);
+  return row ? textOf(row) : "";
+};
+// The money and the state of each kind of Solana row, and the text of its proposer.
+function activityBadges(ctl) {
+  const now = Date.now(), min = 60000;
+  const out = intentHex("withdraw", { expiry: 9999999999n, inputs: 1, outputs: 1,
+    recipient: "11".repeat(32), amount: 2_000_000n });
+  const move = intentHex("transfer", { nonce: "11".repeat(32), expiry: 9999999999n, inputs: 1,
+    outputs: 1, payee: "ab".repeat(99), amount: 3_000_000n });
+  const expiry = String(Math.floor(now / 1000) + 3600);
+  const pay = (id, change) =>
+    proposal(id, { intent: out, expiry, createdAt: now - min, ...change });
+  t.ui.tab = "activity";
+  t.ui.chainFilter = "all";
+  ctl.added = null;
+  ctl.commits = { pc: { 1: {}, 2: {}, 3: {} } };
+  ctl.sessions = [
+    proposal("pm", { createdAt: now }),
+    pay("ps", { status: "signed" }), pay("px", { status: "sent", outcome: "confirmed" }),
+    pay("pc", {}), pay("pe", { expiry: "1" }), pay("pd", { status: "failed" }),
+    proposal("pn", { createdAt: now - 10 * min }),
+    proposal("pv", { intent: move, status: "sent", outcome: "failed", createdAt: now - 2 * min }),
+    proposal("pg", { intent: move, status: "signed", createdAt: now - 3 * min }),
+  ];
+  const [mine, signed, done, open, late, failed] =
+    ["pm", "ps", "px", "pc", "pe", "pd"].map(rowText);
+  assert.match(mine, /Create the nonce account for the move.*Your approval›$/,
+    "a proposal that a seat here can approve says so");
+  assert.match(signed, /Approved, executing›$/, "a signed payment is not executed yet");
+  assert.match(done, /−0\.002SOLExecuted›$/, "an executed payment");
+  assert.match(open, /Collecting approvals›$/, "a payment that waits for approvals");
+  assert.match(late, /−0\.002SOLExpired›$/, "a payment past its expiry reads Expired");
+  assert.match(rowText("pn"), /Expired›$/, "so does a nonce proposal past its window");
+  assert.match(failed, /Failed›$/);
+  assert.match(rowText("pv"), /^↔Move the beta funds.*0\.003SOLFailed on chain›$/);
+  assert.doesNotMatch(rowText("pv") + rowText("pg"), /[−+]/, "the move of the funds has no sign");
+  assert.match(rowText("pg"), /Signed, sending›$/);
+  // An Add SOL is SOL that arrived only when it is confirmed.
+  const added = (status, slot) => {
+    ctl.added = { seat: 1, amount: 20_000_000n, txId: "tx", status, slot, at: now };
+    return rowText("added");
+  };
+  for (const status of ["confirmed", "finalized"]) {
+    assert.match(added(status, "4500123"),
+      /^↙Received SOLSolana Devnet · slot.*Added by .*\+0\.02SOLConfirmed›$/, status);
+  }
+  for (const status of ["unknown", "pending"]) {
+    const text = added(status, "");
+    assert.match(text, /^↔Add SOLSolana Devnet.*Sent by .*0\.02SOLNot confirmed yet›$/,
+      "an Add SOL that is not confirmed reads Sent: " + status);
+    assert.doesNotMatch(text, /Received|\+|slot/, status + " is no money that arrived");
+  }
+  const failedAdd = added("failed", "4500124");
+  assert.match(failedAdd, /^↔Add SOLSolana Devnet.*Tried by .*0\.02SOLFailed on chain›$/);
+  assert.doesNotMatch(failedAdd, /Received|\+/);
+  // One proposal has one proposer text, in the Approvals row and in the Activity row.
+  ctl.added = null;
+  ctl.sessions = [proposal("pq", { by: 7, createdAt: now })];
+  const who = "Proposed by " + t.proposer({ by: 7 });
+  assert.match(rowText("pq"), new RegExp("Solana Devnet · " + who.replace(/[()]/g, "\\$&")));
+  t.ui.tab = "approvals";
+  assert.ok(pageText().includes("Solana Devnet · " + who), "the Approvals row says it too");
 }
 // The phone Menu closes on a pick; the sections show for the formed wallet only; the switcher
 // shows with two or more wallets.
@@ -1232,7 +1316,9 @@ const byId = (node, id) =>
 
 // ── The stepper at each stage of a formed wallet; a stop stays at its stage ──
 {
+  ui.chainFilter = "sol";
   await rig.wallet({ name: "Stages" });
+  assert.equal(ui.chainFilter, "all", "another wallet opens with All");
   const keep = { wallet: t.state.wallet, confirm: t.state.confirm, done: t.state.done };
   try {
     Object.assign(t.state, { wallet: null, confirm: {} });

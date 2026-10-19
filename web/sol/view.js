@@ -12,6 +12,7 @@ import {
 import { feeMismatch, feeOf } from "./fee.js";
 import { signingBlock } from "./gate.js";
 import { PAYMENT_KINDS, decodeIntent } from "./intent.js";
+import { approvalClosed } from "./approve.js";
 import { holdsShare, remoteStop, solOf, stopOf } from "./secrets.js";
 import { solText } from "./session.js";
 import { SESSIONS, isPayment } from "./sessions.js";
@@ -94,12 +95,21 @@ export const pendingRows = (c) =>
   pendingList(c).map((ss) => ({ id: ss.id, title: titleOf(ss), by: ss.by }));
 
 const TONES = { collecting: "plain", signing: "info", signed: "info", sent: "ok", failed: "bad" };
+const SPECIAL = {
+  mine: ["Your approval", "warn"], expired: ["Expired", "plain"], chain: ["Failed on chain", "bad"],
+};
+function badgeKey(ss, waits) {
+  if (waits) return "mine";
+  if (ss.status === "collecting" && approvalClosed(ss)) return "expired";
+  if (ss.status === "sent" && ss.outcome === "failed") return "chain";
+  return ss.status;
+}
 // The badge of a proposal in the Activity list: the word of its card, in the tone of a Zcash row.
 function badgeOf(ss, waits) {
-  if (waits) return ["Your approval", "warn"];
-  if (ss.status === "sent" && ss.outcome === "failed") return ["Failed on chain", "bad"];
+  const key = badgeKey(ss, waits);
+  if (SPECIAL[key]) return SPECIAL[key];
   const words = isPayment(ss) ? PAYMENT_STATES : STATES;
-  return [words[ss.status] ?? ss.status, TONES[ss.status] ?? "plain"];
+  return [words[key] ?? key, TONES[key] ?? "plain"];
 }
 function sessionRow(ss, waits) {
   const intent = decodeIntent(ss.intent);
@@ -110,21 +120,25 @@ function sessionRow(ss, waits) {
     sign: PAYMENT_KINDS.has(intent?.kind) ? "out" : "",
   };
 }
-const ADDED = { failed: ["Failed on chain", "bad"], unknown: ["Not confirmed yet", "info"] };
+// Only a confirmed deposit is SOL that arrived. A deposit that is not confirmed yet, or that
+// failed, is an attempt: no sign, and the word of the Solana section.
+const RECEIVED = ["Received SOL", "in", "Confirmed", "ok", "Added"];
+const FAILED = ["Add SOL", "", "Failed on chain", "bad", "Tried"];
+const ADDED = { confirmed: RECEIVED, finalized: RECEIVED, failed: FAILED };
+const SENT = ["Add SOL", "", "Not confirmed yet", "info", "Sent"];
 function addedRow(a) {
-  const [word, tone] = ADDED[a.status] ?? ["Confirmed", "ok"];
-  const failed = a.status === "failed";
+  const [title, sign, word, tone, added] = ADDED[a.status] ?? SENT;
   return {
-    id: "added", t: a.at ?? 0, title: failed ? "Add SOL" : "Received SOL", by: a.seat, word, tone,
-    amount: solText(a.amount), sign: failed ? "" : "in", slot: a.slot || null, added: true,
+    id: "added", t: a.at ?? 0, title, by: a.seat, word, tone, added, sign,
+    amount: solText(a.amount), slot: a.slot || null,
   };
 }
 /**
  * The Solana rows of the Activity list: the proposals that the section shows, then the last Add
  * SOL of this tab (the only SOL that this page knows to have arrived). Each row has id, t (ms),
  * title, by (a seat), word and tone (the badge), amount (SOL text or null), sign ("out", "in" or
- * "") and, for the Add SOL row, added (true) and slot. Null until the proposals of the wallet
- * arrived.
+ * "") and, for the Add SOL row, added (the verb: Added, Sent or Tried) and slot. Null until the
+ * proposals of the wallet arrived.
  */
 export function activityRows(c) {
   if (!c.loaded[SESSIONS]) return null;
