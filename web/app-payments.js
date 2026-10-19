@@ -372,8 +372,8 @@ export const approvedTxid = (ss) => markOf(state.gid, ss.id).approved
 
 // Null when the finished transaction has the approved id, else why it does not go out. Nothing
 // that cannot be read goes out.
-// ponytail: compares the `final.txid` that one seat wrote, not the bytes of `tx_hex`. The full
-// check needs an engine call that computes the id of a finished transaction from its bytes.
+// ponytail: compares the `final.txid` that one seat wrote; it does not prove that `tx_hex` carries
+// it. The FROST signatures still bind the approved sighash. ZEC-18: an engine check of the bytes.
 export function sendRefusal(ss) {
   if (!isStr(ss.final?.txid)) return "The finished transaction cannot be read.";
   const bound = !!markOf(state.gid, ss.id).approved, want = approvedTxid(ss);
