@@ -136,6 +136,30 @@ Evidence marked "checked" was read in the repo during this synthesis. All other 
   - The harness JSON of the run was lost (the batch worktree was removed after the run). This
     record comes from the steps lines of the logs and from Devnet, read with getTransaction,
     getSignaturesForAddress and getAccountInfo only.
+- **Nonce lock, live (ZEC-12, the Solana part):** merged in main 18f2eb9. The Solana share step
+  (`shareOnce`), the approval step (`approvalOnce`) and every Solana write (`putSol`) run under the
+  lock of the secrets after `takeStored`, so one nonce makes one share in a browser, also across
+  its tabs. The live Devnet run, on 18f2eb9 on 19 October 2026, after the owner's yes, passed
+  `scenario-f.mjs`: ready, backups (6 files), fund-seat1 to fund-seat3, add-sol, pay-a, restore,
+  pay-b, withdraw (mock false, 0 problems). Each share of the three payments went through
+  `shareOnce`.
+  - The funder (`5PZseBHm…`) sent 6,000,000, 2,500,000 and 2,500,000 lamports to the fee
+    addresses of seats 1 to 3 (`64PaivCr…`, slot 512,757,014; `37mH7hk1…`, 512,757,024;
+    `3fSF6z8B…`, 512,757,035). Seat 1 added 3,000,000 lamports to the pool (`47iStcvu…`,
+    512,757,078).
+  - pay-a, 0.001 SOL private to key B: seat 1 created `4VxiDQaJ…` (`4NnYPsxe…`, 512,757,152), and
+    seat 2 executed it (`3YghrhX6…`, 512,757,366, 149,759 compute units). The payee got
+    1,000,000 lamports.
+  - All seats were restored from their backup files. Then pay-b, 0.001 SOL private to key B: seat
+    3 created `2JVMobQ8…` (`BQu5U83B…`, 512,757,494), and seat 2 executed it (`2HPJu6hu…`,
+    512,757,712, 159,615 compute units). The payee got 1,000,000 lamports.
+  - A withdrawal of 0.0005 SOL to the public fee address of seat 3: seat 2 created `6fMBzzYA…`
+    (`5baUfpox…`, 512,757,765) and executed it (`36ecC2L5…`, 512,757,984, 153,181 compute units).
+    The fee address of seat 3 got 500,000 lamports.
+  - Each execute cost 10,000 lamports, and each proposal rent went back to its proposer. The
+    program ELF (`b4bad24c…`, deploy slot 512,086,872) was the same before each payment.
+  - The record comes from the harness JSON and the logs of the run (kept outside the repo), and
+    the slots of the fundings and of add-sol from getTransaction (read only).
 
 ### M4 A restored seat must be able to join the Solana ceremony
 - **Why:** This is a dead end today. M3 step 2 needs the same gate, so it is a MUST for M3.
