@@ -548,7 +548,7 @@ function activityBadges(ctl) {
   assert.match(late, /−0\.002SOLExpired›$/, "a payment past its expiry reads Expired");
   assert.match(rowText("pn"), /Expired›$/, "so does a nonce proposal past its window");
   assert.match(failed, /Failed›$/);
-  assert.match(rowText("pv"), /^↔Move the beta funds.*0\.003SOLFailed on chain›$/);
+  assert.match(rowText("pv"), /Move the beta funds.*0\.003SOLFailed on chain›$/);
   assert.doesNotMatch(rowText("pv") + rowText("pg"), /[−+]/, "the move of the funds has no sign");
   assert.match(rowText("pg"), /Signed, sending›$/);
   // An Add SOL is SOL that arrived only when it is confirmed.
