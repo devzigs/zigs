@@ -146,6 +146,8 @@ export function activityRows(c) {
   const rows = shownWhere(c, () => true).map((ss) => sessionRow(ss, waiting.has(ss.id)));
   return c.added ? [...rows, addedRow(c.added)] : rows;
 }
+/** True while documents of the proposals wait for their signature check: more rows can come. */
+export const activityWaits = (c) => c.sessWait > 0;
 
 function startCard(c, act, actions) {
   const { el, localSeats } = c.host,

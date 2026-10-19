@@ -70,6 +70,8 @@ function pageTree() {
 const pageText = () => textOf(pageTree());
 const findNode = (node, pred) => pred(node) ? node
   : (node.kids ?? []).map((k) => findNode(k, pred)).find(Boolean) ?? null;
+const findAll = (node, pred) =>
+  [...(pred(node) ? [node] : []), ...(node.kids ?? []).flatMap((k) => findAll(k, pred))];
 const byText = (node, text) => node.text === undefined && textOf(node) === text ? node
   : (node.kids ?? []).map((k) => byText(k, text)).find(Boolean) ?? null;
 
@@ -685,6 +687,8 @@ function activityStates(ctl, kept) {
   assert.ok(select(), "the select shows while the rows load");
   assert.ok(gone(reading, [TITLES[0], TITLES[4]]), "no Solana row yet");
   ctl.loaded = kept.loaded;
+  activityChecks(ctl, draw);
+  activityOlder(ctl, draw);
   ctl.docs = { ...ctl.docs, solstart: {} };
   const idle = draw("sol");
   assert.equal(select(), null, "no select before the Solana part starts");
@@ -729,6 +733,43 @@ function activityStates(ctl, kept) {
   assert.doesNotMatch(pageText(), /ZEC you receive/, "no ZEC under the Solana choice");
   activityHistory(ctl, state, draw);
 }
+// Proposals that wait for their signature check: the rows that are read show, and the note says
+// that more can come. An empty list waits for the check.
+function activityChecks(ctl, draw) {
+  const { sessions, added } = ctl;
+  ctl.sessWait = 1;
+  try {
+    const checking = draw("all");
+    assert.ok(sorted(order(checking, TITLES)), "the rows that are read show while others wait");
+    assert.match(checking, /Zigs still reads some Solana proposals, so more rows can show\./,
+      "the note says that more rows can come");
+    Object.assign(ctl, { sessions: [], added: null });
+    const empty = draw("sol");
+    assert.match(empty, /Reading the Solana transactions/,
+      "an empty Solana list waits for the check");
+    assert.doesNotMatch(empty, /No activity yet/, "and does not say that nothing is there");
+  } finally {
+    Object.assign(ctl, { sessWait: 0, sessions, added });
+  }
+  assert.doesNotMatch(draw("all"), /Zigs still reads some Solana/, "no such note after the check");
+}
+// More proposals than the Solana section shows: the list has the newest SHOWN and says so.
+function activityOlder(ctl, draw) {
+  const { sessions, added } = ctl;
+  const solRows = () => findAll(pageTree(), (n) => /^sol-act-m/.test(n.attrs?.["data-key"] ?? ""));
+  const older = / Older Solana proposals are not listed\./;
+  try {
+    ctl.added = null;
+    ctl.sessions = Array.from({ length: SHOWN }, (_, i) => proposal("m" + i));
+    assert.equal(solRows().length, SHOWN, "the list shows each proposal that the section shows");
+    assert.doesNotMatch(draw("sol"), older, "and claims no older proposal");
+    ctl.sessions = Array.from({ length: SHOWN + 1 }, (_, i) => proposal("m" + i));
+    assert.equal(solRows().length, SHOWN, "the list shows the newest proposals only");
+    assert.match(draw("sol"), older, "a list with more proposals than the section says so");
+  } finally {
+    Object.assign(ctl, { sessions, added });
+  }
+}
 // The empty list says what the chain read is: finished (nothing there), not finished, or failed.
 function activityHistory(ctl, state, draw) {
   const ready = t.chain, loaded = ctl.loaded;
@@ -750,7 +791,15 @@ function activityHistory(ctl, state, draw) {
     createdAt: Date.now(), payees: [{ to: "utest1x", amount: 5000000 }], note: "Late rent" }];
   assert.match(draw("all"), /Late rent.*The sync failed\. This list can be incomplete/,
     "rows next to a failed sync: the list can lack received payments");
+  t.setChain(null);
+  assert.match(draw("all"), /Late rent.*Not synced yet\. Sync starts after this device checks/,
+    "rows before the sync starts: the note says when it starts");
   state.sessions = [];
+  const none = draw("all");
+  assert.match(none, /Not synced yet.*Sync starts after this device checks the address\./,
+    "an empty list before the sync starts says when it starts");
+  assert.doesNotMatch(none, /Reading the chain|No activity yet/,
+    "a sync that has not started is no sync in progress");
   t.setChain({ gid: state.gid, cw: null, bal: null, sent: null, received: [],
     error: "The server did not answer." });
   const first = draw("all");

@@ -121,7 +121,7 @@ const solHost = () => ({
 // mends it; Try again (the Solana tab) can mend a failure after the import.
 const SOL_DOWN = "Solana did not load. Check your connection, then reload the page.";
 let setupSummary = null, pendingCount = null, pendingRows = null, loadingCount = null;
-let olderCount = null, activityRows = null, collections = null;
+let olderCount = null, activityRows = null, activityWaits = null, collections = null;
 let importFailed = false;
 const SOL_RETRY = "Solana did not load. Check your connection, then press Try again.";
 /** The tab text of a failed load. `retry`: Try again can mend it (a failure after the import). */
@@ -135,7 +135,8 @@ export async function whyNotLoaded() {
 const solModule = () => Promise.all([import("./sol/main.js"), import("./sol/view.js"),
   import("./sol/docs.js"), import("./sol/wasm/sol_wasm.js")])
   .then(([m, v, d]) => {
-    ({ setupSummary, pendingCount, pendingRows, loadingCount, olderCount, activityRows } = v);
+    ({ setupSummary, pendingCount, pendingRows, loadingCount, olderCount, activityRows,
+      activityWaits } = v);
     collections = d.COLLECTIONS;
     return m;
   })
@@ -174,6 +175,9 @@ export const solPendingRows = () =>
 // or null while the module or the Solana proposals of the wallet are not read.
 export const solActivity = () =>
   solOpenHere() && activityRows ? fromSol("activity", activityRows, null) : null;
+// True while some Solana proposals of the open wallet still wait for their check.
+export const solActivityWaits = () =>
+  solOpenHere() && activityWaits ? fromSol("activity check", activityWaits, false) : false;
 // The proposals of the open wallet that this browser can approve once its read of them ends.
 export const solLoadingCount = () =>
   solOpenHere() && loadingCount ? fromSol("loading count", loadingCount, 0) : 0;
