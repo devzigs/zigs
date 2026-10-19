@@ -178,9 +178,10 @@ export function needsMyApproval(gid, ss) {
     && s.keyPackage && !(s.nonces && s.nonces[ss.id]) && !(s.marks || {})[ss.id]?.approved);
 }
 /**
- * Whether t approvals of payment `ss` of the open wallet are in: true or false, or null when
- * this page has not loaded them. Only the open payment and the watched ones (toWatch) load them;
- * the payments of other wallets never do.
+ * Whether t approvals of payment `ss` of the open wallet are in: true or false, or null when this
+ * page does not load them. Only the open payment and the watched ones (toWatch) load them, and
+ * they count 0 until their first snapshot; the payments of other wallets never load them. Only
+ * the parts that pass their check count.
  */
 export function approvalsDone(ss) {
   const w = watched.get(ss.id);

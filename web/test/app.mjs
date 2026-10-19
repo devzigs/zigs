@@ -2748,6 +2748,38 @@ const sealed = (gid, rel, seat, fields, key, names = ["by", "sig"]) =>
         t.state.commits = { [me]: {} };
         assert.match(row5(), /Your approval/, "below t a device here can approve");
         t.state.sid = null;
+        // A closed drawer: the inbox counts the approvals of a watched payment, from the parts
+        // that pass their check.
+        const hdw = open("hdw", "PA", Date.now());
+        await approved(me, hdw);
+        await approved(other, hdw);
+        t.state.commits = {};
+        const part = (seat) => data.get(`groups/${t.state.gid}/sessions/hdw/commits/${seat}`);
+        const watchW = (commits) => t.watched.set("hdw",
+          { gid: t.state.gid, raw: { commits, shares: {} }, unsubs: [] });
+        assert.equal(t.needsMyApproval(t.state.gid, hdw), true,
+          "a payment that this page does not watch keeps the old rule");
+        // The checks of the parts run in the background and draw when they end, and a redraw may
+        // change the watch: the test starts the checks, waits for their draw under the stub
+        // page, and watches again.
+        const checked = async (commits) => {
+          watchW(commits);
+          t.needsMyApproval(t.state.gid, hdw);
+          await quiet(() => sleep(500));
+          watchW(commits);
+        };
+        await checked({ [me]: part(me), [other]: part(other) });
+        assert.deepEqual([t.needsMyApproval(t.state.gid, hdw),
+          t.toApprove(t.state.gid).some((x) => x.id === "hdw")], [false, false],
+        "the inbox counts the approvals of a watched payment");
+        await checked({ [me]: part(me), [third]: { ...part(other), by: third } });
+        assert.equal(t.needsMyApproval(t.state.gid, hdw), true,
+          "a part that fails its check does not count");
+        t.watched.delete("hdw");
+        for (const seat of [me, other]) {
+          const { hdw: _hdw, ...marksW } = t.sec(t.state.gid, seat).marks;
+          await t.putSec(t.state.gid, seat, { marks: marksW });
+        }
         t.state.commits = { [me]: {} };
         assert.match(look(open("hd5", "PA")).head, /^Your approval is needed/);
         await nonces(me, { hd5: undefined });
