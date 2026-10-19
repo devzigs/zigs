@@ -690,10 +690,10 @@ const approvable = (ss) => ss.status === "collecting" && !approvalClosed(ss);
  * is from before the fee keys, or whose review still waits for a read, shows none. The buttons,
  * the S6 count and the Approvals inbox all use it, so they agree.
  */
-export function approveSeats(c, ss) {
+export function approveSeats(c, ss, block) {
   if (!approvable(ss) || !showable(ss) || beforeFee(ss)) return [];
   const open = seatsOf(c, ss).filter((s) => s.state === "open" && c.host.canWriteAs(s.seat));
-  if (!open.length || reviewWaits(c, ss, open[0].seat)) return [];
+  if (!open.length || reviewWaits(c, ss, open[0].seat, block)) return [];
   return open.map((s) => s.seat);
 }
 

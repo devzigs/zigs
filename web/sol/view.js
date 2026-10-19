@@ -8,6 +8,7 @@ import { base58 } from "./docs.js";
 import { checkLine, provesLocally } from "./localprove.js";
 import { SHOWN, approveSeats, payCards, titleOf } from "./payview.js";
 import { feeMismatch, feeOf } from "./fee.js";
+import { signingBlock } from "./gate.js";
 import { holdsShare, remoteStop, solOf, stopOf } from "./secrets.js";
 
 const ADD_TEXT =
@@ -75,7 +76,9 @@ export function setupSummary(c) {
  */
 function pendingList(c) {
   if (stopOf(c) || agreement(c).state !== "agree") return [];
-  return (c.sessions ?? []).slice(0, SHOWN).filter((ss) => approveSeats(c, ss).length > 0);
+  // One signing check for all the sessions: it reads every document of the wallet.
+  const block = signingBlock(c);
+  return (c.sessions ?? []).slice(0, SHOWN).filter((ss) => approveSeats(c, ss, block).length > 0);
 }
 export const pendingCount = (c) => pendingList(c).length;
 /** The same proposals as rows of the Approvals inbox: id, title and the proposing seat. */

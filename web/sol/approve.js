@@ -149,8 +149,7 @@ const waits = (ss, spend, seen) =>
   (isSpend(ss) && !spend) || (isPayment(ss) && (!seen || accountLate(seen)));
 
 /** The intent of `ss` and no reason, or the reason why seat `seat` cannot review it yet. */
-function reviewBlock(c, ss, seat, spend, seen) {
-  const block = signingBlock(c);
+function reviewBlock(c, ss, seat, { spend, seen, block = signingBlock(c) }) {
   if (block) return { why: block, waiting: isWait(block) };
   if (!showable(ss)) return { why: NOT_SHOWN };
   const intent = decodeIntent(ss.intent);
@@ -184,9 +183,12 @@ function paymentReview(c, ss, seat, { spend, seen, intent }) {
   return { ok: true, intent, digest: said.digest, verdict, said, payer, by: ss.by };
 }
 
-/** True while seat `seat` waits for a read or a check of `ss`, as in reviewOf. No checker runs. */
-export const reviewWaits = (c, ss, seat) =>
-  reviewBlock(c, ss, seat, c.snaps?.[ss.id], c.seen?.[ss.id]).waiting === true;
+/**
+ * True while seat `seat` waits for a read or a check of `ss`, as in reviewOf. No checker runs.
+ * `block`: the signingBlock of `c`, when the caller has it already (a count over many sessions).
+ */
+export const reviewWaits = (c, ss, seat, block) => reviewBlock(c, ss, seat,
+  { spend: c.snaps?.[ss.id], seen: c.seen?.[ss.id], block }).waiting === true;
 
 /**
  * What seat `seat` sees of the proposal: { ok: true, intent, digest, verdict, payer, by, ... }
@@ -196,7 +198,7 @@ export const reviewWaits = (c, ss, seat) =>
  * chain state `seen` (deviceSeen): the ones read for this session.
  */
 export function reviewOf(c, ss, seat, spend = c.snaps?.[ss.id], seen = c.seen?.[ss.id]) {
-  const early = reviewBlock(c, ss, seat, spend, seen);
+  const early = reviewBlock(c, ss, seat, { spend, seen });
   // `waiting`: a normal wait and no refusal. The device still reads its wallet or the account, or
   // a document of the wallet is still loaded or checked.
   if (early.why) return { ok: false, why: early.why, waiting: early.waiting === true };

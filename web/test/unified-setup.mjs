@@ -252,6 +252,8 @@ function approvalCount(ctl) {
   assert.equal(count(two, {}, { wait: 1 }), 0, "while a document is checked: no button, no count");
   const many = Array.from({ length: SHOWN + 1 }, (_, i) => proposal("m" + i));
   assert.equal(count(many), SHOWN, "only the cards that the section shows count");
+  const mixed = [proposal("s0", { status: "sent" }), ...many];
+  assert.equal(count(mixed), SHOWN - 1, "a proposal behind the shown cards does not count");
   assert.equal(count(two, { a: { 1: {} } }), 2, "seats 2 and 3 can still approve a");
   assert.equal(count(two, { a: { 1: {}, 2: {}, 3: {} } }), 1, "every seat approved a");
   assert.equal(count([proposal("d", { intent: "zz" })]), 0, "a proposal the app cannot show");
@@ -843,6 +845,8 @@ const byId = (node, id) =>
   ui.tab = "solana";
   await waitFor("the ready tab", () => /The Solana part is ready\./.test(pageText()));
   ui.tab = "overview";
+  // The side item and the inbox read the live documents: their checks end first.
+  await waitFor("the documents are checked", () => !t.sol.ctl.wait && !t.sol.ctl.sessWait);
   approvalCount(t.sol.ctl);
   // The first sentence names the file that is unsaved: a Zcash file, or only a Solana file.
   const note = (...args) => {
