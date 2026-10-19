@@ -32,7 +32,7 @@ export function messagesCard() {
   return el("section", { class: "card card-pad chat" },
     el("div", { class: "card-head" }, el("h2", {}, "Messages"), notifyButton()),
     changed.length ? el("div", { class: "callout bad", role: "alert" }, "Signing key changed: "
-      + changed.map((i) => "seat " + i).join(", ") + ". Their messages are not verified.") : null,
+      + changed.map((i) => "device " + i).join(", ") + ". Their messages are not verified.") : null,
     chat[state.gid] || memoMessages().length ? chatLog("wallet") : null,
     readsMemos(state.gid) ? null : el("p", { class: "small faint" }, "Memos of payments to this "
       + "wallet are off. You can turn them on under Details."),

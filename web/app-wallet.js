@@ -337,7 +337,7 @@ const SOL_NOTE = {
   idle: "Open Solana to load the Solana part of this wallet.",
   none: "This wallet has no Solana part yet. Open Solana to add it.",
   unavailable: "This wallet cannot have a Solana part. Open Solana to see why.",
-  differs: "The seats do not agree on one Solana key. Do not use the Solana part. Open Solana for "
+  differs: "The devices do not agree on one Solana key. Do not use the Solana part. Open Solana for "
     + "the details.",
   unknown: "Open Solana to see the state of its part.",
 };
@@ -383,7 +383,7 @@ function receiveCard() {
 }
 
 export function syncLine(c) {
-  if (!c) return el("div", { class: "sync" }, el("span", {}, el("span", { class: "dot" }), "Sync starts after your seat checks the address."));
+  if (!c) return el("div", { class: "sync" }, el("span", {}, el("span", { class: "dot" }), "Sync starts after this device checks the address."));
   const p = c.prog || c.bal;
   const span = p ? p.tip - c.birthday : 0;
   const pct = span > 0 ? Math.max(0, Math.min(100, ((p.height - c.birthday) / span) * 100)) : 0;
@@ -435,7 +435,7 @@ function sentRow(ss, flying) {
 }
 
 // The memos of a received payment, for display. A memo that is not text says so.
-export const ON_CHAIN = "On chain · shared with all signers";
+export const ON_CHAIN = "On chain · shared with all devices";
 
 function receivedRow(r) {
   const memos = memoTexts(r);
@@ -703,7 +703,7 @@ function checkedBadge() {
 function walletFacts() {
   const w = state.wallet, net = curNet();
   const address = addrHidden()
-    ? el("dd", {}, "Shown after your seat checks it against your key share.")
+    ? el("dd", {}, "Shown after this device checks it against its key share.")
     : el("dd", {}, el("div", { class: "addr-full" }, addrGroups(w.address)),
       el("div", { style: "margin-top:8px" }, copyBtn(w.address, "Copy address")));
   return el("section", { class: "card card-pad" },

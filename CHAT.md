@@ -81,7 +81,7 @@ Built in phase 3 (web):
   full in a transaction with the right id. It shows "Memo is not text", and the wallet does not
   ask for it again. An answer with another id, a bad size or a bad format changes nothing. A
   transaction that fails is listed after the others, so it cannot hold them up.
-- **Showing.** A memo shows with the label "On chain · shared with all signers". It has no sender
+- **Showing.** A memo shows with the label "On chain · shared with all devices". It has no sender
   and no signature, because anyone who pays the address can write any text. The app never marks it
   as verified, and a notification never carries its text. Change and empty memos show nothing. A
   memo that is not text shows "Memo is not text".

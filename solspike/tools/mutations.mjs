@@ -1367,4 +1367,7 @@ export const MUTATIONS = [
     ["web/app.css", "overscroll-behavior: contain; background: var(--panel);",
       "overscroll-behavior: contain; background: var(--sheet);"], UNIFIED,
     /the phone menu is opaque/),
+  program("D-abort-device", "a setup stop names a seat where the engine reason says seat N",
+    ["web/util.js", '\n    .replace(/^seat (\\d+):/i, "device $1:");', ";"],
+    ["node", "web/test/util.mjs"], /an engine reason names the device/),
 ];

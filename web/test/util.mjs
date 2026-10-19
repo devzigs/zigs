@@ -56,7 +56,8 @@ assert.deepEqual(numberClash(no, docs(no, null, no), ids), []);
 assert.equal(abortText("The devices saw different setup data."),
   "The devices saw different setup data. Do not use this wallet. Create a new wallet.");
 assert.equal(abortText("seat 2: the secret part does not match its commitment"),
-  "Seat 2: the secret part does not match its commitment. Do not use this wallet. Create a new wallet.");
+  "Device 2: the secret part does not match its commitment. Do not use this wallet. Create a "
+  + "new wallet.", "an engine reason names the device");
 assert.equal(abortText(""), "Setup failed. Do not use this wallet. Create a new wallet.");
 assert.doesNotThrow(() => checkNetwork({ network: "testnet" }, "testnet"));
 assert.throws(() => checkNetwork({ network: "mainnet" }, "testnet"), /another network/);

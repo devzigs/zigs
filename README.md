@@ -18,7 +18,7 @@ the wallet, and on chain each payment looks like a shielded payment from a stand
 - Memos: a payment can carry a memo for each recipient (up to 512 bytes). Approvers see it, and
   the app checks it against the transaction. The web, iPhone and Mac apps do this. A memo that
   arrives with a payment to the wallet shows in the Activity list and the Messages tab. Its label
-  is "On chain · shared with all signers". Reading it asks the light-wallet server for the
+  is "On chain · shared with all devices". Reading it asks the light-wallet server for the
   transaction, so a signer must turn it on first. It is off by default. The web app has it. The
   iPhone and Mac screens for received memos follow.
 - Payment requests: a message whose whole text is a ZIP 321 link (`zcash:…`) shows as a request

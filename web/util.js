@@ -73,7 +73,9 @@ export function confirmGate(number, mine, docs, ids) {
 
 // What a seat keeps when its setup ends: the reason as one sentence, then what to do.
 export function abortText(reason) {
-  const msg = String(reason || "Setup failed").replace(/\.+$/, "");
+  // The engine names a seat in its reasons ("seat 2: …"); the page says device.
+  const msg = String(reason || "Setup failed").replace(/\.+$/, "")
+    .replace(/^seat (\d+):/i, "device $1:");
   return msg.charAt(0).toUpperCase() + msg.slice(1)
     + ". Do not use this wallet. Create a new wallet.";
 }

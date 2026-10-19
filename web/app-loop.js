@@ -177,8 +177,8 @@ function pageView() {
     }, "← Wallets");
     return el("div", { class: "page" }, back,
       el("div", { class: "card empty" }, el("h3", {}, "This wallet has data this app cannot read"),
-        el("p", { class: "small" }, "Another signer may use a newer version of Zigs. "
-          + "Reload the page, or ask them.")));
+        el("p", { class: "small" }, "A device of this wallet may run a newer version of Zigs. "
+          + "Reload the page, or ask the other people who use this wallet.")));
   }
 }
 

@@ -96,7 +96,7 @@ async function publishDone(i) {
   const fields = { groupKey: s.groupKey, publicKeyPackage: S(s.publicKeyPackage), at: Date.now() };
   await sdb.doc("groups/" + gid + "/done/" + i).set(await signedDoc(gid, "done/" + i, i, fields));
   await putSec(gid, i, { doneSent: true });
-  log("seat " + i + ": key share ready, wallet key " + s.groupKey.slice(0, 12) + "…");
+  log("device " + i + ": key share ready, wallet key " + s.groupKey.slice(0, 12) + "…");
 }
 
 async function round1V1(i) {
@@ -104,7 +104,7 @@ async function round1V1(i) {
   let secret = s.r1secret, pkg = s.r1package;
   if (!secret) { const r = J(Z.dkgPart1(i, g.n, g.t)); secret = r.secret; pkg = r.package; putSec(gid, i, { r1secret: secret, r1package: pkg }); }
   await sdb.doc("groups/" + gid + "/dkg1/" + i).set({ package: pkg, at: Date.now() });
-  log("seat " + i + ": round 1 commitment published");
+  log("device " + i + ": round 1 commitment published");
 }
 
 async function round2V1(i) {
@@ -116,7 +116,7 @@ async function round2V1(i) {
     await sdb.doc("groups/" + gid + "/dkg2/" + i + "-" + to).set({ sealed, at: Date.now() });
   }
   putSec(gid, i, { r2secret: r.secret, r1secret: null });
-  log("seat " + i + ": " + Object.keys(r.outgoing).length + " encrypted shares sent");
+  log("device " + i + ": " + Object.keys(r.outgoing).length + " encrypted shares sent");
 }
 
 // Opens the box that seat j sent to seat i. A box that does not open comes from another version
@@ -155,7 +155,7 @@ function verifyStep(i, s) {
     const doc = await signedDoc(gid, "verify/" + i, i, { ok, error, at: Date.now() });
     await putSec(gid, i, ok ? { checkedWallet: wk, rejectedWallet: null } : { rejectedWallet: wk });
     await sdb.doc("groups/" + gid + "/verify/" + i).set(doc);
-    log("seat " + i + (ok ? ": wallet verified, ak equals my wallet key" : ": WALLET REJECTED: " + error));
+    log("device " + i + (ok ? ": wallet verified, ak equals my wallet key" : ": WALLET REJECTED: " + error));
   });
 }
 
@@ -272,7 +272,7 @@ export async function confirmSeats(ids, no) {
     await putSec(gid, i, { confirmed: no });
     await sdb.doc("groups/" + gid + "/confirm/" + i).set(doc);
   }
-  log("safety number confirmed for seat " + ids.join(", "));
+  log("safety number confirmed for device " + ids.join(", "));
 }
 
 const DIFFERENT = "The devices saw different setup data";
@@ -318,7 +318,7 @@ async function round1V2(i) {
   const commit = Z.skCommit(gid, i, state.seats[i].boxPk, s.skPart);
   const fields = { package: s.r1package, commit, at: Date.now() };
   await sdb.doc("groups/" + gid + "/dkg1/" + i).set(await signedDoc(gid, "dkg1/" + i, i, fields));
-  log("seat " + i + ": round 1 commitment published");
+  log("device " + i + ": round 1 commitment published");
 }
 
 // The echo is one digest of every seat's round-1 document. Each seat puts it in its round-2
@@ -356,7 +356,7 @@ async function round2V2(i) {
   }
   for (const [rel, doc] of docs) await sdb.doc("groups/" + gid + "/" + rel).set(doc);
   await putSec(gid, i, { r2secret: secret, r1secret: null });
-  log("seat " + i + ": " + Object.keys(boxes).length + " encrypted shares sent");
+  log("device " + i + ": " + Object.keys(boxes).length + " encrypted shares sent");
 }
 
 // Opens the box seat j sent to seat i: its round-2 package and its secret part of sk.
@@ -452,7 +452,7 @@ export async function takeSeat(i, version = groupVersion()) {
   await ref.set(doc);
   // Saved only after the store holds the seat: a failed take must not look like a replaced key.
   await putSec(gid, i, { boxPk: kp.pk });
-  log("you took seat " + i);
+  log("you took device " + i);
 }
 const walletKey = () => state.wallet ? S(state.wallet) : "";
 // This browser's own result for its seats; other seats' results come from the store.

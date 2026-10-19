@@ -169,8 +169,8 @@ export function chatWhy() {
   if (signing === false) return NO_SIGNING;
   if (sendSeats().length) return null;
   const making = localSeats().some((i) => !validPk(state.seats[i].signPk));
-  return making ? "Your seat key is being created."
-    : "This browser has no signing key for your seat, so it cannot send messages. "
+  return making ? "The signing key of this device is being created."
+    : "This browser has no signing key for this device, so it cannot send messages. "
       + "A backup file from before messages does not hold this key.";
 }
 
