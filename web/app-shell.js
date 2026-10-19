@@ -1,6 +1,6 @@
 // Side navigation, lock screen, wallet list and create dialog.
 import {
-  busy, openCreate, ready, resetCreate, state, ui,
+  busy, clearBadBanner, openCreate, ready, resetCreate, state, ui,
 } from "./app-state.js";
 import { initials } from "./app-kit.js";
 import { offReason } from "./util.js";
@@ -17,7 +17,9 @@ import {
 } from "./app-dom.js";
 import { contactName, contactOf, joinChat, joinLinks, unreadIn } from "./app-messages.js";
 import { createGroup } from "./app-dkg.js";
-import { newWallet, planSolana, SOL_DISCLOSURE, solPending, solServed } from "./app-sol.js";
+import {
+  newWallet, planSolana, SOL_DISCLOSURE, solOn, solPending, solServed,
+} from "./app-sol.js";
 import { personal } from "./app-account.js";
 import { restore } from "./app-backups.js";
 import { contactItem, contactsCard, openContactDialog, personalCard } from "./app-account-view.js";
@@ -378,9 +380,13 @@ const counts = (n0, t0, note) => el("div", { class: "two" },
 const moveParts = (from, nameParts, ruleParts) => [el("ol", { class: "small muted move-steps" },
   el("li", {}, "You create a new wallet with the devices and rule you want."),
   el("li", {}, "The new devices join it with an invite link."),
-  el("li", {}, "This wallet sends all its funds to the new one. Like any payment, this needs "
-    + from.t + " approvals.")),
+  el("li", {}, moveFundsText(from))),
 ...nameParts, ...ruleParts];
+// The funds that move: Change devices moves the Zcash funds only, so a wallet with a Solana part
+// is told to check that part on its own.
+const moveFundsText = (from) => "This wallet sends all its Zcash funds to the new one. Like any "
+  + "payment, this needs " + from.t + " approvals." + (solOn() ? " The Solana part of this wallet "
+  + "does not move this way: check it in its Solana section." : "");
 // What a rule means when devices are lost: how many can be missing, and how many can spend. With
 // every device needed, one lost device stops the wallet.
 export const marginText = (t, n) => (t === n ? "Each payment needs every device. When one "
@@ -431,7 +437,9 @@ function marginAck(hidden, update) {
     document.getElementById("create-error")?.remove();
     ui.marginAck = false; ui.createError = null;
     update();
-    document.getElementById("create-step-1")?.focus();
+    clearBadBanner(ACK_FIRST);
+    // The new-wallet steps have a step heading; Change devices has the number fields only.
+    (document.getElementById("create-step-1") ?? document.getElementById("g-n"))?.focus();
   };
   return el("div", { class: "margin-ack", hidden },
     el("label", { class: "ack" },
@@ -485,13 +493,13 @@ function takeNames() {
 const TAKE = [() => {}, takeRule, takeNames];
 let stepAt = 0;
 const goStep = (i) => {
-  ui.createStep = i; stepAt = Date.now(); focusAfter("create-step-" + i, true); render();
+  ui.createStep = i; ui.createError = null; stepAt = Date.now();
+  focusAfter("create-step-" + i, true); render();
 };
 // The error of a step shows in the dialog, next to its buttons, not in the page banner.
 function nextStep(ev) {
   ev.preventDefault();
   try { TAKE[ui.createStep](); } catch (e) { ui.createError = e.message; render(); return; }
-  ui.createError = null;
   goStep(ui.createStep + 1);
 }
 // The seat takes its label from what this browser keeps: the label that the review showed, also
@@ -545,12 +553,13 @@ function reviewStep() {
       + "wallet key together."));
 }
 const curNetLabel = () => (ui.net === "mainnet" ? "mainnet" : "testnet");
+// Above the buttons, not in their bar: on a phone the bar stays at the bottom of the sheet.
+const stepError = () => (ui.createError ? el("p", { class: "callout bad", role: "alert",
+  id: "create-error" }, ui.createError) : null);
 function stepActions() {
   const s = ui.createStep, last = s === STEPS.length - 1;
   const off = offOf({ db: !!db }, "why-create-submit");
   return el("div", { class: "dialog-actions" },
-    ui.createError ? el("p", { class: "callout bad", role: "alert", id: "create-error" },
-      ui.createError) : null,
     el("button", { class: "btn", type: "button", onclick: closeCreate }, "Cancel"),
     s > 0 ? el("button", { class: "btn", type: "button", onclick: backClick(s) }, "Back") : null,
     el("button", { class: "btn primary", type: "submit", "data-first-focus": s === 0,
@@ -571,7 +580,7 @@ function newDialog() {
   const lines = ruleLines(3, 2), at = ui.createStep;
   const submit = (ev) => (at === ui.createStep ? stepSubmit(ev) : ev.preventDefault());
   return frame("New shared wallet", { oninput: lines.update, onsubmit: submit },
-    introStep(), ruleStep(lines), namesStep(), reviewStep(), stepActions());
+    introStep(), ruleStep(lines), namesStep(), reviewStep(), stepError(), stepActions());
 }
 // Change devices keeps one form: its steps first, then the names and the rule.
 function moveDialog(from) {

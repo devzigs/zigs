@@ -30,7 +30,7 @@ const { offReason } = await import("../util.js");
 const { intentHex } = await import("../sol/intent.js");
 const { ui } = await import("../app-state.js");
 const appState = await import("../app-state.js");
-const { planSolana, solFile, solSetup, solUnsaved } = await import("../app-sol.js");
+const { planSolana, solFile, solOn, solSetup, solUnsaved } = await import("../app-sol.js");
 const { backupNote, walletReady, walletShown } = await import("../app-wallet.js");
 const { PUBLIC_TEXT } = await import("../sol/view.js");
 const { reactCeremony } = await import("../sol/ceremony.js");
@@ -1011,6 +1011,9 @@ async function walkSteps(fields, times, fresh = true) {
   assert.match(pageText(), NEXT);
   assert.match(pageText(), /Create a new wallet/);
   assert.ok(walletReady(), "the Zcash part is still ready");
+  assert.ok(solOn(), "this wallet has a Solana part");
+  assert.match(dialogText(t.state.g), /all its Zcash funds.*The Solana part of this wallet does /s,
+    "Change devices says that the Solana part does not move");
   ui.tab = "solana";
   assert.match(pageText(), new RegExp(aborted.replace(/\./g, "\\.") + " " + NEXT.source));
   ui.tab = "overview";
@@ -1168,6 +1171,12 @@ async function walkSteps(fields, times, fresh = true) {
   assert.equal(ui.createStep, 1, "no tick: the rule step stays");
   assert.match(ui.createError ?? "", /Confirm that one lost device stops all payments/,
     "the error shows in the dialog");
+  const tree = dialogTree(), bar = findNode(tree, (n) => n.className === "dialog-actions");
+  assert.ok(byId(tree, "create-error"), "the error is in the dialog");
+  assert.equal(byId(bar, "create-error"), null, "and not in the button bar");
+  byText(dialogTree(), "Back").on.click({ detail: 0 });
+  assert.equal(ui.createError, null, "Back clears the error of a step");
+  await walkSteps(noMargin, 1, false);
   ui.marginAck = true;
   await walkSteps(noMargin, 1, false);
   assert.equal(ui.createStep, 2, "with the tick, Next goes on");
@@ -1195,7 +1204,8 @@ async function walkSteps(fields, times, fresh = true) {
       "g-sol": box };
     await walkSteps(fields, 3);
     storage.set("zf-name", "Bob");
-    await walkSteps({ ...fields, "g-name": { value: "Live" } }, 1, false);
+    await walkSteps({ ...fields, "g-name": { value: "Live" }, "my-name": { value: "Live label" } },
+      1, false);
     const gidN = t.state.gid;
     return { auto: t.sec(gidN, 1)?.solAuto === true, hint: data.get(groupPath(gidN)).solana };
   };
@@ -1324,7 +1334,10 @@ assert.match(marginText(3, 3), /Each payment needs every device/);
   assert.equal(ack.hidden, false, "3 of 3: the box shows");
   ui.marginAck = true;
   fields["g-margin-ack"] = { checked: true };
+  appState.showBanner("bad", "Confirm that one lost device stops all payments, or use the "
+    + "recommended 2 of 3.");
   withFields(fields, () => byText(ack, "Use recommended 2 of 3").on.click());
+  assert.equal(appState.banner, null, "the reset clears the message of the tick");
   assert.deepEqual([ui.marginAck, fields["g-margin-ack"].checked], [false, false],
     "the reset clears the tick");
   assert.deepEqual([fields["g-n"].value, fields["g-t"].value], ["3", "2"], "the reset: 2 of 3");
@@ -1367,6 +1380,19 @@ assert.match(marginText(3, 3), /Each payment needs every device/);
   assert.equal(field.attrs.placeholder, "For example: Ana's phone", "a short hint");
   assert.match(textOf(findNode(tree, (n) => (n.kids ?? []).includes(field))),
     /^This device's label/, "the label of the field");
+}
+
+{
+  // Change devices: the reset gives the focus to the number field, its only rule control.
+  const move = dialogTree(t.state.g);
+  const ack = findNode(move, (n) => n.className === "margin-ack");
+  const fields = { "g-n": { value: "3", focus() { fields.focused = true; } },
+    "g-t": { value: "3" }, "g-margin-ack": { checked: false }, "create-step-1": null };
+  byId(move, "rule-text").classList = { toggle() {} };
+  withFields(fields, () => byText(ack, "Use recommended 2 of 3").on.click());
+  assert.equal(fields.focused, true, "the reset of Change devices keeps the focus in the dialog");
+  assert.equal(/The Solana part of this wallet does not move/.test(dialogText(t.state.g)), solOn(),
+    "the Solana sentence only for a wallet with a Solana part");
 }
 
 // ── Two quick submits make one wallet: the review, Change devices and createGroup ──
