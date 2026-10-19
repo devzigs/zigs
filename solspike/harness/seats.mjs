@@ -23,7 +23,7 @@ export async function openApp(rig, name, url) {
 // server answered /sol/config.json, and it is on by default. So on a server that serves Solana,
 // the run waits for the box before it sets it, also to clear it.
 export async function makeWallet(page, name, { solana = false } = {}) {
-  await clickText(page, "Create wallet");
+  await clickText(page, "Set up a wallet");
   await waitForText(page, "New shared wallet");
   await clickText(page, "Set up my wallet");
   await waitForText(page, "Choose your protection");
