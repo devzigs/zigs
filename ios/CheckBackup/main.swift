@@ -447,6 +447,10 @@ check(webSessions[webSid]?.str("package") == "PKG", "web package")
 check(webSessions[webSid]?.doc("final")?.str("txid") == "T1", "web final")
 check(webSessions[webSid]?.str("broadcastTxid") == "T1", "web sent mark")
 check(webSessions[webSid]?.str("createdBy") == "u1", "the proposer comes from the signing seat")
+// The proposal of this session has a payee with a `name` key, and the signature covers it.
+let webPayees = webSessions[webSid]?["payees"] as? [Doc] ?? []
+check(webPayees.count == 1 && webPayees[0].str("to") == "utest1x", "the payee of the web proposal")
+check(webPayees.first?.str("name") == "alice", "a payee paid by name keeps its name")
 check(webSessions[webId("5")]?.str("status") == "collecting", "a false cancel is no status")
 check(webSessions[webId("5")]?["error"] == nil, "a false cancel has no error")
 check(webSessions[webId("5")]?["cancelBy"] == nil, "a false cancel has no writer")
@@ -509,15 +513,17 @@ func part(_ sid: String, _ p: Signed.Part, _ seat: Int, _ fields: Doc) throws ->
 }
 let (sid1, sid2, sid3, sid4) = ("bb12cd34ef56bb12cd34", "bb12cd34ef56bb12cd35",
                                 "bb12cd34ef56bb12cd36", "bb12cd34ef56bb12cd37")
-func proposal(_ note: String) -> Doc {
-    let payee: Doc = ["to": "utest1x", "amount": 5]
+func proposal(_ note: String, name: String? = nil) -> Doc {
+    var payee: Doc = ["to": "utest1x", "amount": 5]
+    if let name { payee["name"] = name }
     return ["payees": [payee], "note": note, "pool": "ironwood", "amount": 5, "change": 1,
             "fee": 10000, "noteValue": 20, "pczt": "AAA", "move": NSNull(),
             "createdAt": 1760000000000]
 }
 var swiftSessions: Doc = [:]
 for (n, sid) in [sid1, sid2, sid3].enumerated() {
-    var doc = try part(sid, .proposal, n + 1, proposal("note \(n)"))
+    let name = n == 0 ? "alice" : nil
+    var doc = try part(sid, .proposal, n + 1, proposal("note \(n)", name: name))
     doc["createdBy"] = "x"
     doc["status"] = "collecting"
     swiftSessions[sid] = doc
@@ -593,6 +599,8 @@ let ownCancelled = ownState.sessions.first { $0.id == sid2 }?.doc ?? [:]
 check(Chat.cancelledAt(ownCancelled, created: 7) == cancelTime, "the time of a cancel is kept")
 check(ids(ownState.commits[sid1] ?? [:]) == ["3"], "own commits")
 check(ids(ownState.shares[sid1] ?? [:]) == ["2"], "own shares")
+let ownPayees = ownState.sessions.first { $0.id == sid1 }?.doc["payees"] as? [Doc] ?? []
+check(ownPayees.count == 1 && ownPayees[0].str("name") == "alice", "own payee keeps its name")
 // The memo answers for the same text only, so a changed field with the old signature fails.
 let pinMap = pinned.reduce(into: [Int: String]()) { $0[Int($1.key)!] = $1.value }
 let memoReader = SignedReader(gid: wid, n: 3, pins: pinMap)

@@ -13,7 +13,9 @@ import { log, showBanner, state, ui } from "./app-state.js";
 import { exclusive, J, S, said } from "./app-kit.js";
 import { engineOffThread, Z } from "./app-engine.js";
 import { idb, LOCKED_ELSEWHERE, lockedVault, persist, vault } from "./app-keystore.js";
-import { capText, NETWORKS, pickServer, runSync, spanMs } from "./app-chain.js";
+import {
+  capText, dropStalled, NETWORKS, runSync, serverHeight, spanMs, syncAgain,
+} from "./app-chain.js";
 import { boot, openGroup } from "./app-groups.js";
 import { normalized } from "./app-dom.js";
 import { broadcastAnywhere } from "./app-payments.js";
@@ -244,6 +246,10 @@ export function acctAddressWhy() {
 export function messageWhy(fee = feeFor(1)) {
   if (!acct || !acct.cw) return "Wait for the first sync to finish.";
   if (acct.progress) return "A message is being sent. Wait until it is done.";
+  // A message on the stalled object would wait on the same server (messageOrStall).
+  if (acct.stalled) {
+    return "The light-wallet server stopped answering. Wait until the account is up to date.";
+  }
   return sendGate(acctBalance(), flightNow(), fee);
 }
 
@@ -282,7 +288,7 @@ export async function createPersonal(network) {
       + "account.");
   }
   await claimAccount(async () => {
-    const birthday = await Z.latestHeight(await pickServer(NETWORKS[network]));
+    const { height: birthday } = await serverHeight(NETWORKS[network]);
     const made = J(Z.accountNew(network));
     return newPersonal({ seed: made.seed, network, birthday }, newRoom().key);
   }, "This browser could not save the account, so it was not made. Lock Zigs with a passkey, or "
@@ -396,7 +402,7 @@ async function sendLocked(contact, text) {
   const step = (words) => { c.progress = words; render(); };
   try {
     step("Building the message…");
-    const m = J(await c.cw.createMessage(contact.address, text));
+    const m = J(await messageOrStall(c, contact.address, text));
     const tip = J(c.cw.balance()).tip;
     step("Signing…");
     const signed = J(Z.accountSign(m.pczt, personal.seed, personal.network)).signed_pczt;
@@ -411,6 +417,28 @@ async function sendLocked(contact, text) {
     step("Sending to the network…");
     await deliver(c, rec, out.tx_hex);
   } finally { c.progress = ""; c.live = ""; render(); }
+}
+
+// A message with no answer in MESSAGE_TIMEOUT_MS stops, as a proposal does (spendOrStall), so
+// that one silent server does not hold the lock of the send, which the sends of every tab wait for.
+// The engine may still use the wallet object, so it counts as stalled until a sync connects to the
+// next server.
+// ponytail: the late answer of the engine is dropped; nothing stops the engine call.
+const MESSAGE_TIMEOUT_MS = 60000;
+function messageOrStall(c, address, text) {
+  const cw = c.cw;
+  let timer;
+  const late = new Promise((_, reject) => {
+    timer = setTimeout(() => {
+      if (c.cw === cw) {
+        dropStalled(c);
+        if (c === acct) syncAgain(c);   // not the account that another tab removed meanwhile
+      }
+      reject(new Error("The message got no answer in 60 s, so it stopped. Send it again when "
+        + "the account is up to date."));
+    }, MESSAGE_TIMEOUT_MS);
+  });
+  return Promise.race([cw.createMessage(address, text), late]).finally(() => clearTimeout(timer));
 }
 
 async function deliver(c, rec, txHex) {

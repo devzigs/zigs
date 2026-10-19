@@ -459,12 +459,14 @@ function approvalsTab() {
     " ", openSolanaButton()) : null;
   const sections = BUCKETS.map(([id, label]) => {
     const list = rows[id], extra = solNote(id);
-    if (!list.length && !extra) return null;
-    const count = list.length + (extra ? (id === "review" ? solPending() : 1) : 0);
+    const lost = id === "attention" ? lostNote(rows.lost) : null;
+    if (!list.length && !extra && !lost) return null;
+    const count = list.length + (extra ? (id === "review" ? solPending() : 1) : 0)
+      + (lost ? rows.lost.length : 0);
     return el("section", { class: "card inbox", "aria-label": label },
       el("div", { class: "card-head card-pad" }, el("h2", {}, label),
         el("span", { class: "badge plain" }, String(count))),
-      el("div", { class: "list" }, list.map((ss) => guard(sentRow, ss, flying)), extra));
+      el("div", { class: "list" }, list.map((ss) => guard(sentRow, ss, flying)), extra, lost));
   }).filter(Boolean);
   const other = sol && !["review", "attention"].includes(sol.kind)
     ? el("p", { class: "small muted" }, sol.text, " ", openSolanaButton()) : null;
@@ -474,11 +476,18 @@ function approvalsTab() {
     inboxNote(sections.length > 0), ...sections, other);
 }
 
+// Approvals that hold Send although the list has no record of their payment: the Overview counts
+// them, so the inbox names them.
+const lostNote = (ids) => ids.length ? el("p", { class: "row-note" }, (ids.length === 1
+  ? "A payment that you approved has" : ids.length + " payments that you approved have")
+  + " no record here any more. Send stays held until they can no longer go on chain.") : null;
+
 const openSolanaButton = () => el("button", { class: "btn sm", type: "button",
   onclick: () => { ui.tab = "solana"; render(); } }, "Open Solana");
 
 // The payments of the open wallet by bucket. A payment whose facts cannot be read lands in
-// "attention", never out of the list.
+// "attention", never out of the list. `lost`: the ids of approvals here that still hold Send
+// while the list has no record of their payment (dropped or rewritten).
 export function inboxRows() {
   const held = new Set(heldApprovals());
   const rows = Object.fromEntries(BUCKETS.map(([id]) => [id, []]));
@@ -486,7 +495,8 @@ export function inboxRows() {
     const b = inboxBucket(ss, held);
     if (b) rows[b].push(ss);
   }
-  return rows;
+  const listed = new Set(state.sessions.map((ss) => ss.id));
+  return { ...rows, lost: [...held].filter((id) => !listed.has(id)) };
 }
 
 function inboxBucket(ss, held) {

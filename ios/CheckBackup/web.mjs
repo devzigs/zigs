@@ -23,8 +23,11 @@ const pass = "correct horse é \u{1F600} battery";
 // Signed writes (PROTOCOL.md section 15). Both sides use the engine text of docPayload.
 const GID = "0123456789abcdef0123", SID = "ab12cd34ef56ab12cd34";
 const sidOf = (last) => SID.slice(0, -1) + last;
-const proposalOf = (note) => ({
-  payees: [{ to: "utest1x", amount: 5 }], note, pool: "ironwood", amount: 5, change: 1, fee: 10000,
+// A payee paid by name has a `name` key after `amount`, as the Send form writes it.
+const payeeOf = (name) => (name
+  ? { to: "utest1x", amount: 5, name } : { to: "utest1x", amount: 5 });
+const proposalOf = (note, name) => ({
+  payees: [payeeOf(name)], note, pool: "ironwood", amount: 5, change: 1, fee: 10000,
   noteValue: 20, pczt: "AAA", move: null, createdAt: 1760000000000,
 });
 
@@ -71,7 +74,7 @@ async function webWallet() {
       { network: "testnet", address: "utest1x", version: 2, birthday: 9, at: 1 }),
     sessions: {
       [SID]: {
-        ...head, ...(await sign(base, 1, proposalOf("one"))), ...(await chain()),
+        ...head, ...(await sign(base, 1, proposalOf("one", "alice"))), ...(await chain()),
         status: "broadcast",
       },
       [sidOf(5)]: {
@@ -338,6 +341,8 @@ if (mode === "make") {
   const chained = out.sessions.find((ss) => ss.id === f.sid);
   assert.deepEqual([chained.package, chained.signed, chained.final.txid, chained.broadcastTxid],
     ["PKG", "S", "T1", "T1"]);
+  // A payee paid by name keeps its `name` through the iOS code and its signature.
+  assert.deepEqual(chained.payees, [{ to: "utest1x", amount: 5, name: "alice" }]);
   // The secret key that the Swift code made is a key for WebCrypto, and makes its public key.
   assert.equal(await signPairMatches(f.key.signSk, f.key.signPk), true);
   console.log("web accepts the documents that Swift signed");

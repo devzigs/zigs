@@ -20,6 +20,7 @@ import {
   sinceOf, txidOf, verdict,
 } from "./app-payments.js";
 import { discussion } from "./app-thread.js";
+import { nameOf, zecName } from "./zns.js";
 import { render } from "./app-loop.js";
 
 // The expiry of an open payment, or why an expired one ends here. The engine counts from the
@@ -115,6 +116,12 @@ function checkHead(rc) {
     el("span", { class: "badge " + (rc.match ? "ok" : "bad") }, rc.match ? "Matches the transaction" : "Does not match the transaction"));
 }
 
+// A payee that was paid by name: the name of the proposal, which is text from the proposer. The
+// line shows only a name that is valid. An approving browser looks the name up again.
+const nameLine = (r) => typeof r.name === "string" && nameOf(r.name) === r.name
+  ? el("p", { class: "small muted" }, el("strong", {}, zecName(r.name)),
+    " This browser checks the name again when it approves.") : null;
+
 function recipientBox(ss, rc) {
   // Payments proposed before batch payments have no list; only one still open for approval needs
   // the check.
@@ -125,7 +132,7 @@ function recipientBox(ss, rc) {
         el("span", { class: "payee-end" }, money(r.amount), r.ok ? null
           : el("span", { class: "badge bad" },
             r.got === undefined ? "Not in the transaction" : "Memo differs"))),
-      memoLines(r))),
+      nameLine(r), memoLines(r))),
     rc.rows.some((r) => r.memo) ? el("p", { class: "small faint" },
       "A memo goes on chain with the payment. Its recipient and every signer can read it.") : null,
     checkWarnings(rc),

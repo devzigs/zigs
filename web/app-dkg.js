@@ -9,7 +9,7 @@ import { isStr, J, randomHex32, S } from "./app-kit.js";
 import { Z } from "./app-engine.js";
 import { mySeatSecrets, putKey, putSec, sec } from "./app-keystore.js";
 import { allR1, allSeated, isCreator, keysAgree, localSeats, r2For, seatIds } from "./app-seats.js";
-import { netName, netOf, NETWORKS, pickServer } from "./app-chain.js";
+import { netName, netOf, NETWORKS, serverHeight } from "./app-chain.js";
 import {
   canWriteAs, NO_SIGNING_SEAT, partNow, signedByMe, signedDoc, signedMode,
 } from "./app-filter.js";
@@ -197,7 +197,7 @@ export async function createWallet() {
   // The wallet snapshot can arrive after the DKG ones; never replace a published wallet. In a
   // version 3 wallet, a stored document that is not signed by seat 1 is no wallet.
   if (await walletStands(gid)) return;
-  const birthday = await Z.latestHeight(await pickServer(netOf(g)));
+  const { height: birthday } = await serverHeight(netOf(g));
   if (state.gid !== gid) return;   // the person opened another wallet while the server answered
   const net = g.network || "testnet", mine = usesV2(groupVersion()) ? v2Secret() : null;
   const w = J(mine ? Z.walletCreateV2(S(mine.publicKeyPackage), net, mine.vaultSk)

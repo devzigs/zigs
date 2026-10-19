@@ -3,8 +3,8 @@
 import assert from "node:assert/strict";
 import { timingSafeEqual } from "node:crypto";
 import { readFileSync } from "node:fs";
-import { ZNS_KEY, ZNS_MAX_LAG, createRegistry, movedNote, nameOf, nameRefusal, registry,
-  resolveRecipient, zecName } from "../zns.js";
+import { ZNS_KEY, ZNS_MAX_LAG, ZNS_RECENT_BLOCKS, createRegistry, movedNote, nameOf, nameRefusal,
+  recentNote, registry, resolveRecipient, zecName } from "../zns.js";
 
 crypto.subtle.timingSafeEqual ??= timingSafeEqual;
 const read = (path) => readFileSync(new URL(path, import.meta.url), "utf8");
@@ -365,6 +365,27 @@ step("nameOf: suffixes, case, 63 and 64 characters, t-addresses and TEX forms, n
   }
   step("a name that moved is refused after the TTL with a note of the block; a mismatch, a "
     + "released name and an invalid name are refused; a match and a plain payee pass");
+}
+{
+  const TIP2 = 5_000_000, at = (height, last = "claim") =>
+    ({ name: "alice", address: A, height, last_action: last });
+  const note = (height) => "This name got this address at block " + height + ", less than a day "
+    + "ago. Check the address with the payee.";
+  assert.equal(ZNS_RECENT_BLOCKS, 3456, "one day of 25 s blocks");
+  const edge = TIP2 - ZNS_RECENT_BLOCKS;
+  assert.equal(recentNote(at(edge + 1), TIP2), note(edge + 1), "one block inside the limit");
+  assert.equal(recentNote(at(edge), TIP2), null, "at the limit a claim has no note");
+  assert.equal(recentNote(at(edge - 1), TIP2), null, "one block over the limit");
+  assert.equal(recentNote(at(edge, "update"), TIP2), movedNote(at(edge, "update")),
+    "at the limit an update has the note of a moved name");
+  assert.equal(recentNote(at(1, "update"), TIP2),
+    "This name moved to a new address at block 1.", "an old update");
+  assert.equal(recentNote(at(TIP2), TIP2), note(TIP2), "a claim in the tip block");
+  assert.equal(recentNote(at(TIP2 - 5, "update"), TIP2), note(TIP2 - 5),
+    "a recent update, and a claim after a release, get the warning");
+  assert.equal(recentNote(at(TIP2 + 1), TIP2), note(TIP2 + 1), "a record above the tip");
+  step("a name that got its address less than a day ago has a warning; an old update has the "
+    + "note of a moved name");
 }
 const copy = (src, from) => [...src.slice(src.indexOf(from)).split(".join")[0]
   .matchAll(/"([^"]+)"/g)].map((m) => m[1]).join("");

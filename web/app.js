@@ -8,6 +8,7 @@ import "./signed.js";
 import "./chat.js";
 import "./personal.js";
 import "./requests.js";
+import "./zns.js";
 import "./overview-model.js";
 import "./approvals-model.js";
 import "./recovery-model.js";
