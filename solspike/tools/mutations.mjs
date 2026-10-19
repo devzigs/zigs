@@ -1286,4 +1286,8 @@ export const MUTATIONS = [
     [patch(PAYMENTS, "  return ss.final?.txid === want ? null : SEND_OTHER;",
       "  return ss.final?.txid !== want ? null : SEND_OTHER;")],
     { detect: /AssertionError/, ms: 300000 }),
+  mutant("Z-send-inbox", "the inbox lists a refused send as ready",
+    ["node", "web/test/approvals.mjs"],
+    [patch("web/approvals-model.js", '  if (f.sendRefused) return "attention";\n', "")],
+    /AssertionError/),
 ];
