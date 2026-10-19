@@ -17,7 +17,9 @@ import {
 } from "./app-dom.js";
 import { contactName, contactOf, joinChat, joinLinks, unreadIn } from "./app-messages.js";
 import { createGroup } from "./app-dkg.js";
-import { newWallet, planSolana, SOL_DISCLOSURE, solPending, solServed } from "./app-sol.js";
+import {
+  newWallet, planSolana, SOL_DISCLOSURE, solPending, solServed, welcomeRead,
+} from "./app-sol.js";
 import { personal } from "./app-account.js";
 import { restore } from "./app-backups.js";
 import { contactItem, contactsCard, openContactDialog, personalCard } from "./app-account-view.js";
@@ -342,7 +344,7 @@ function welcome(off, restoreLink) {
   return el("section", { class: "card card-pad welcome" },
     el("div", { style: "display:grid;gap:6px" }, el("h2", {}, "Create your first shared wallet"),
       el("p", { class: "muted" }, "Nobody ever holds the whole key, and nobody outside your team "
-        + "can read the wallet.")),
+        + welcomeRead())),
     el("ol", { class: "how" }, steps.map(([t, d], i) => el("li", {},
       el("span", { class: "how-no" }, String(i + 1)),
       el("div", { style: "display:grid;gap:2px" }, el("h3", {}, t), el("p", { class: "small muted" }, d))))),

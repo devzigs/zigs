@@ -8,7 +8,7 @@ import { REQUEST_NET } from "./requests.js";
 import { state, ui } from "./app-state.js";
 import { initials, short, when } from "./app-kit.js";
 import { Z } from "./app-engine.js";
-import { netOf, NETWORKS } from "./app-chain.js";
+import { explorerText, netOf, NETWORKS } from "./app-chain.js";
 import {
   act, copyBtn, el, guard, logBox, money, netBadge, networkPick, qrBox, skeleton,
 } from "./app-dom.js";
@@ -183,6 +183,7 @@ export function otherMessages() {
   return el("details", {}, el("summary", {}, "Other messages (not verified)"),
     el("p", { class: "small muted" }, items.length + " in all. Anyone who knows an address of "
       + "this account can write to it."),
+    el("p", { class: "small faint" }, explorerText(NETWORKS[personal.network], "View transaction")),
     el("div", { class: "chat-log" }, rows.map((r) =>
       guard(receivedBubble, r, "Unknown sender", "Not verified", otherWhere(r.index)))));
 }
@@ -309,7 +310,9 @@ function contactMessages(contact, name) {
       send: (text) => sendOnChain(contact, text), plan: (text) => messagePlan(text, splitParts),
       progress: acct ? acct.progress : "",
     }),
-    el("p", { class: "small faint" }, ON_CHAIN_LIMITS));
+    el("p", { class: "small faint" }, ON_CHAIN_LIMITS),
+    el("p", { class: "small faint" },
+      explorerText(NETWORKS[personal.network], "View transaction")));
 }
 
 function onChainRow(row, name) {

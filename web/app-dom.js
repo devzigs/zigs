@@ -213,8 +213,11 @@ export function qrBox(text, label) {
   return box;
 }
 // A link with the wallet secret stays hidden until asked for: cameras and people can read screens.
-export function secretQr(link, what = "wallet") {
-  return el("details", { class: "qr-toggle" }, el("summary", {}, "Show QR code"),
+// `text`: the disclosure holds the link as text too, and the page shows only its Copy button.
+export function secretQr(link, what = "wallet", text = false) {
+  return el("details", { class: "qr-toggle" },
+    el("summary", {}, text ? "Show link and QR code" : "Show QR code"),
+    text ? el("div", { class: "addr-full" }, link) : null,
     qrBox(link, what === "chat" ? "Contact link" : "Invite link"),
     el("p", { class: "small faint" }, "Scan with a phone camera to open the " + what + " there."));
 }

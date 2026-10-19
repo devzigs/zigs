@@ -7,8 +7,8 @@ import { gkeys, sec } from "./app-keystore.js";
 import { keysDiffer, localSeats, seatIds, seatMine, seatStage, STAGE_LABEL } from "./app-seats.js";
 import { inviteLink, senderNote } from "./app-links.js";
 import {
-  addrHidden, atCap, balanceNow, capText, chain, curChain, curNet, inFlight, netName, readsMemos,
-  runSync, setMemoReading, spanMs,
+  addrHidden, atCap, balanceNow, capText, chain, curChain, curNet, explorerText, inFlight, netName,
+  readsMemos, runSync, setMemoReading, spanMs,
 } from "./app-chain.js";
 import { canWriteAs, signedMode } from "./app-filter.js";
 import { needsMyApproval, openGroup, openSession, toApprove } from "./app-groups.js";
@@ -217,38 +217,81 @@ function overviewTab() {
     el("section", { class: "card" },
       el("div", { class: "card-head card-pad", style: "padding-bottom:12px" }, el("h2", {}, "Activity"),
         list.length > 6 ? el("button", { class: "btn ghost sm", type: "button", onclick: () => { ui.tab = "activity"; render(); } }, "View all") : null),
-      activityRows(list.slice(0, 6))));
+      activityRows(list.slice(0, 6)), receivedNote(list.slice(0, 6))));
 }
+// The row of a received payment opens the explorer: the note says what that site sees.
+const receivedNote = (list) => list.some((a) => a.r) ? el("p", { class: "small muted card-pad" },
+  explorerText(curNet(), "A received payment in this list")) : null;
+
+// A move sends the Zcash funds only (proposeMove): a Solana part stays with this wallet.
+const SOL_STAYS = "A Solana part does not move this way. Solana funds stay in this wallet, so "
+  + "check them in the Solana section.";
+const movePayment = () => state.sessions.find((x) => x.move === state.g.movedTo && !x.error
+  && !ended(x));
 
 // The steps of a move, read from the old wallet: new wallet ready, payment proposed, funds gone.
+// A wallet that can have a Solana part never shows the move as done.
 export function moveState(c) {
-  const to = state.g.movedTo;
-  const ss = state.sessions.find((x) => x.move === to && !x.error && !ended(x));
-  const b = c && c.bal ? balanceNow(c.bal) : null;
+  const m = moveStep(c, state.g.movedTo);
+  return solOn() ? { ...m, text: m.text + " " + SOL_STAYS, done: false } : m;
+}
+
+function moveStep(c, to) {
   if (!gkeys[to]) {
     return { text: "Someone started moving this wallet to a new one. If one of your devices is "
       + "in the new wallet, ask its creator for its invite link." };
   }
-  if (!ready[to]) return { text: groupName(to) + " is still setting up. When its address is ready, move the funds here.", open: to };
-  if (ss && !ss.broadcastTxid) return { text: "Moving the funds to " + groupName(to) + " is in progress. Open the payment to approve it or take the next step.", session: ss };
-  if (ss && inFlight().includes(ss)) return { text: "The funds are on their way to " + groupName(to) + ". They arrive with the next block.", open: to };
-  if (ss && b && b.spendable + b.pending === 0) return { text: "All funds moved to " + groupName(to) + ". This wallet is closed.", open: to, done: true };
-  return { text: groupName(to) + " is ready. Move all funds to it. Like any payment, this needs " + state.g.t + " approvals.", propose: true };
+  if (!ready[to]) {
+    return { text: groupName(to) + " is still setting up. When its address is ready, move the "
+      + "Zcash funds here.", open: to };
+  }
+  const ss = movePayment();
+  return ss ? paymentStep(c, ss, to) : proposeStep(to);
 }
+
+// The move payment exists. An empty balance counts as of the last sync only.
+function paymentStep(c, ss, to) {
+  if (!ss.broadcastTxid) {
+    return { text: "Moving the Zcash funds to " + groupName(to) + " is in progress. Open the "
+      + "payment to approve it or take the next step.", session: ss };
+  }
+  if (inFlight().includes(ss)) {
+    return { text: "The Zcash funds are on their way to " + groupName(to) + ". They arrive with "
+      + "the next block.", open: to };
+  }
+  const b = c && c.bal ? balanceNow(c.bal) : null;
+  if (!b || b.spendable + b.pending !== 0) return proposeStep(to);
+  return { text: "The Zcash funds moved to " + groupName(to) + ", as of the last sync.", open: to,
+    done: true };
+}
+
+const proposeStep = (to) => ({ text: groupName(to) + " is ready. Move the Zcash funds to it. "
+  + "Like any payment, this needs " + state.g.t + " approvals.", propose: true });
 
 function moveCard(c) {
   const m = moveState(c), why = m.propose ? sendBlocker() : null;
-  const started = state.sessions.some((x) => x.move === state.g.movedTo && !x.error && !ended(x));
   return el("section", { class: "card card-pad " + (m.done ? "" : "attention") },
-    el("div", { class: "card-head" }, el("h2", {}, m.done ? "This wallet moved" : "Changing devices"),
-      m.done ? el("span", { class: "badge plain" }, "Closed") : null),
+    el("div", { class: "card-head" },
+      el("h2", {}, m.done ? "This wallet moved" : "Changing devices")),
     el("p", { class: "small muted" }, m.text),
-    el("div", { style: "display:flex;gap:8px;flex-wrap:wrap" },
-      m.propose ? el("button", { class: "btn primary", type: "button", disabled: !!why, title: why, onclick: act(() => proposeMove()) }, "Move " + fmtZec(c && c.bal ? c.bal.max_send : 0)) : null,
-      m.session ? el("button", { class: "btn primary", type: "button", onclick: () => openSession(m.session.id) }, "Open the payment") : null,
-      m.open ? el("button", { class: "btn", type: "button", onclick: () => { ui.tab = "overview"; openGroup(m.open); } }, "Open " + groupName(m.open)) : null,
-      !started ? el("button", { class: "btn ghost", type: "button", onclick: act(cancelMove) }, "Cancel move") : null),
+    el("div", { style: "display:flex;gap:8px;flex-wrap:wrap" }, moveButtons(m, c, why)),
     why ? el("p", { class: "small faint" }, why) : null);
+}
+
+// Cancel stays until the move payment exists.
+function moveButtons(m, c, why) {
+  const amount = c && c.bal ? c.bal.max_send : 0;
+  const openNew = () => { ui.tab = "overview"; openGroup(m.open); };
+  return [
+    m.propose ? el("button", { class: "btn primary", type: "button", disabled: !!why, title: why,
+      onclick: act(() => proposeMove()) }, "Move " + fmtZec(amount)) : null,
+    m.session ? el("button", { class: "btn primary", type: "button",
+      onclick: () => openSession(m.session.id) }, "Open the payment") : null,
+    m.open ? el("button", { class: "btn", type: "button", onclick: openNew },
+      "Open " + groupName(m.open)) : null,
+    movePayment() ? null : el("button", { class: "btn ghost", type: "button",
+      onclick: act(cancelMove) }, "Cancel move"),
+  ];
 }
 
 function signersCard() {
@@ -313,12 +356,15 @@ function zecAsset(c) {
 const sendingLine = (zat) => el("div", { class: "sending" }, el("span", { class: "dot busy" }),
   "Sending ", money(zat, "md", "out"), el("span", { class: "faint" }, " · waiting for a block"));
 
+// The faucet is a site that is not Zigs (PRIVACY.md).
+export const FAUCET_TEXT = "That site is not Zigs: it sees the address that you paste and your "
+  + "IP address.";
 function emptyNote(b) {
   if (!b || b.spendable + b.pending + b.sending !== 0 || state.g.movedTo) return null;
   return el("div", { class: "callout" }, curNet().faucet
     ? el("span", {}, "This wallet is empty. Share its address to receive ZEC, or get free "
       + "testnet ZEC from a ", el("a", { href: curNet().faucet, target: "_blank",
-      rel: "noopener" }, "faucet ↗"), ".")
+      rel: "noopener" }, "faucet ↗"), ". " + FAUCET_TEXT)
     : el("span", {}, "This wallet is empty. Share its address to receive ZEC. Keep it under "
       + capText(curNet().cap) + ": the app warns at that level. It cannot block deposits."));
 }
@@ -573,7 +619,11 @@ function inboxNote(rows) {
 }
 
 function activityTab() {
-  return el("section", { class: "card" }, el("div", { class: "card-head card-pad", style: "padding-bottom:12px" }, el("h2", {}, "All activity")), activityRows(activity()));
+  const list = activity();
+  return el("section", { class: "card" },
+    el("div", { class: "card-head card-pad", style: "padding-bottom:12px" },
+      el("h2", {}, "All activity")),
+    activityRows(list), receivedNote(list));
 }
 
 function membersTab() {
@@ -589,8 +639,8 @@ function membersTab() {
         + "this invite link there and restore the backup file of its key share. The link holds "
         + "the wallet secret, so share it only with the people who use this wallet. "
         + senderNote("each person who opens it")),
-      el("div", { class: "addr-box" }, el("span", { class: "hex nowrap" }, inviteLink(state.gid)), copyBtn(inviteLink(state.gid), "Copy link")),
-      secretQr(inviteLink(state.gid))));
+      el("div", { class: "row-actions" }, copyBtn(inviteLink(state.gid), "Copy link")),
+      secretQr(inviteLink(state.gid), "wallet", true)));
 }
 
 // FROST fixes the signers when the key is made, so a change means a new wallet and one payment.
@@ -600,7 +650,7 @@ function changeSignersCard() {
     el("h2", { style: "font-size:15px" }, "Add or remove devices"),
     el("p", { class: "small muted" }, "The devices and the approval rule are part of the wallet "
       + "key, so they cannot change in place. To change them, create a new wallet with the devices "
-      + "you want, then move the funds to it."),
+      + "you want, then move the Zcash funds to it." + (solOn() ? " " + SOL_STAYS : "")),
     el("div", {}, moving
       ? el("button", { class: "btn", type: "button", onclick: () => { ui.tab = "overview"; render(); } }, "See the move")
       : el("button", { class: "btn", type: "button", disabled: !localSeats().length, onclick: () => { ui.move = true; render(); } }, "Change devices")));

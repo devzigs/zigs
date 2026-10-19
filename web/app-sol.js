@@ -61,6 +61,15 @@ export const SOL_DISCLOSURE = "Solana Devnet: a program owns the funds of the gr
   + "addresses by timing. Each seat funds its own fee address, and that funding shows who sent "
   + "the SOL. Every signer sees the whole Solana history of the wallet. The program has no audit, "
   + "and its upgrade key is outside the group.";
+// The end of the first line of the welcome card. Only the Zcash part is shielded, so a server
+// that serves Solana, or that has not answered yet, gets the text for a Solana part.
+export function welcomeRead() {
+  solServed();
+  return ui.solServed === false ? "can read the wallet." : "can read the Zcash part of the "
+    + "wallet. A Solana Devnet part is less private: a private payment hides its amount, but the "
+    + "chain shows its payee and the wallet that pays. Helius, the Solana provider that Zigs "
+    + "uses, sees your IP address and the keys of the wallet.";
+}
 // The wallet list with the create dialog open. Inside an open wallet the dialog does not show.
 export const newWallet = () => { openGroup(null); openCreate(); render(); };
 // The seats of this browser with a Solana key share whose backup file was not saved. A stopped

@@ -18,7 +18,7 @@ const rig = await loadRig();
 // The page modules need the stub page of the rig, so they load after it.
 const { SOL_DISCLOSURE, solPlanned, solServed } = await import("../app-sol.js");
 const { inviteMessage, joinText, onLink } = await import("../app-setup.js");
-const { chatMessage } = await import("../app-links.js");
+const { chatMessage, inviteLink } = await import("../app-links.js");
 const { chatInviteCard } = await import("../app-thread.js");
 const { chats } = await import("../app-keystore.js");
 const { backupWords } = await import("../sol/backup.js");
@@ -310,6 +310,8 @@ function receiveTexts() {
     assert.ok(byText(box, "Zcash Testnet"), "the badge names the network of the wallet");
     assert.match(textOf(box), /Send only ZEC on Zcash Testnet to this address\./);
     assert.match(textOf(box), /becomes spendable after 3 confirmations\. Get free testnet ZEC/);
+    assert.match(textOf(box), /faucet ↗\. That site is not Zigs: it sees the address that you paste/,
+      "the faucet note says what the faucet sees");
     assert.ok(!byText(box, "Share address"), "no Share button without Web Share");
     const first = findNode(box, (n) => n.attrs?.["data-first-focus"] !== undefined);
     assert.equal(first && textOf(first), "Copy address", "the dialog opens on Copy address");
@@ -370,8 +372,46 @@ function receiveTexts() {
   try {
     assert.match(pageText(), /Received ZECZcash Testnet · block\u00a04\D?500\D?000/,
       "a received row names the coin and the network");
+    explorerTexts(chain);
   } finally {
     t.setChain(chain);
+    t.ui.tab = tab;
+  }
+}
+// A received row opens the explorer, and the faucet link opens the faucet: the notes say what
+// these sites see. The Overview, the Activity section and the Messages of the wallet.
+const EXPLORER_NOTE = "A received payment in this list opens testnet.zecblock.com in a new tab. "
+  + "That site is not Zigs: it sees the transaction id that you open and your IP address.";
+function explorerTexts(chain) {
+  assert.ok(pageText().includes(EXPLORER_NOTE), "the Activity list says what the explorer sees");
+  t.ui.tab = "overview";
+  assert.ok(pageText().includes(EXPLORER_NOTE), "so does the Activity card of the Overview");
+  assert.match(pageText(), /faucet ↗\. That site is not Zigs: it sees the address that you paste/,
+    "the empty ZEC card says what the faucet sees");
+  const row = t.chain.received[0];
+  t.setChain({ ...t.chain, received: [] });
+  assert.ok(!pageText().includes(EXPLORER_NOTE), "no note without a received payment");
+  t.ui.tab = "messages";
+  t.setChain({ ...t.chain, received: [{ ...row, memos: [{ status: "text", text: "Rent" }] }] });
+  assert.match(pageText(), /View payment opens testnet\.zecblock\.com in a new tab\. That site/,
+    "a memo of a received payment says what the explorer sees");
+  t.setChain({ ...t.chain, received: [row] });
+  assert.doesNotMatch(pageText(), /View payment opens/, "no memo, no note");
+  t.setChain(chain);
+}
+// The invite link sits in the disclosure of its QR code; Copy link stays on the page.
+function inviteTexts() {
+  const tab = t.ui.tab, link = inviteLink(t.state.gid);
+  t.ui.tab = "members";
+  try {
+    const page = pageTree(), box = findNode(page, (n) => n.className === "qr-toggle");
+    assert.match(textOf(box), /^Show link and QR code/, "the summary names what it hides");
+    assert.ok(textOf(box).includes(link), "the link text sits inside the disclosure");
+    const outside = (n) => (n === box ? "" : n.text ?? n.kids.map(outside).join(""));
+    assert.ok(!outside(page).includes(link), "no link text outside the disclosure");
+    assert.ok(byText(page, "Copy link") && !byText(box, "Copy link"),
+      "Copy link stays on the page, outside the disclosure");
+  } finally {
     t.ui.tab = tab;
   }
 }
@@ -478,6 +518,7 @@ function approvalCount(ctl) {
     assert.ok(!labelled(sideTree(), "2 to approve"), "no count without a proposal");
     emptyInbox();
     receiveTexts();
+    inviteTexts();
     sideMenu();
   } finally {
     [ctl.sessions, ctl.commits, t.state.groups] = kept;
@@ -742,6 +783,43 @@ async function walkSteps(fields, times, fresh = true) {
   assert.doesNotMatch(dialogText(), CHOICE, "not on a server without Solana");
   config.down = false;
   delete ui.solServed;
+}
+
+// ── The welcome card: only the Zcash part is shielded ──
+// A server that serves Solana, or that has not answered yet, gets the text for a Solana part.
+{
+  const ZEC_ONLY = "Nobody ever holds the whole key, and nobody outside your team can read the "
+    + "wallet.";
+  const WITH_SOL = "Nobody ever holds the whole key, and nobody outside your team can read the "
+    + "Zcash part of the wallet. A Solana Devnet part is less private: a private payment hides its "
+    + "amount, but the chain shows its payee and the wallet that pays. Helius, the Solana provider "
+    + "that Zigs uses, sees your IP address and the keys of the wallet.";
+  const groups = t.state.groups;
+  const welcomeText = () => {
+    const real = globalThis.document;
+    globalThis.document = { createElement: () => new Rec(), createElementNS: () => new Rec(),
+      createTextNode: (text) => ({ text }) };
+    try {
+      return textOf(lobby());
+    } finally {
+      globalThis.document = real;
+    }
+  };
+  t.state.groups = [];
+  try {
+    delete ui.solServed;
+    assert.ok(welcomeText().includes(WITH_SOL),
+      "before the server answers, the welcome names the Solana part");
+    await waitFor("the answer", () => ui.solServed === true);
+    assert.ok(welcomeText().includes(WITH_SOL), "a server with Solana: the Solana part");
+    ui.solServed = false;
+    const plain = welcomeText();
+    assert.ok(plain.includes(ZEC_ONLY), "a server without Solana: the Zcash line");
+    assert.doesNotMatch(plain, /Solana/, "and no Solana text");
+  } finally {
+    t.state.groups = groups;
+    delete ui.solServed;
+  }
 }
 
 // ── S1: a button that is off shows why, as text next to it ──

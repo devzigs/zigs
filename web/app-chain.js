@@ -36,6 +36,11 @@ export const validNet = (x) => typeof x === "string" && Object.hasOwn(NETWORKS, 
 export const netName = (g) => g && validNet(g.network) ? g.network : "testnet";
 export const netOf = (g) => NETWORKS[netName(g)];
 export const curNet = () => netOf(state.g);
+// An explorer link opens a site that is not Zigs (PRIVACY.md). `link` names the link, and the
+// network gives the host of its explorer.
+export const explorerText = (net, link) => link + " opens " + new URL(net.explorer).host
+  + " in a new tab. That site is not Zigs: it sees the transaction id that you open and your IP "
+  + "address.";
 export const capText = (zat) => zat / 1e8 + " ZEC";
 export const SERVER_TIMEOUT_MS = 8000;
 const FIRST_TIMEOUT_MS = 3000, FAILED_MS = 5 * 60000, SYNC_STALL_MS = 60000;

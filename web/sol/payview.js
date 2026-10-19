@@ -29,6 +29,10 @@ import { beforeFee, heldLamports, heldNotes, isPayment, spentLamports } from "./
 
 export const SHOWN = 12;
 const FAUCET = "https://faucet.solana.com/";
+// The faucet is not Zigs: it sees the fee address that the person pastes (PRIVACY.md).
+const FAUCET_TEXT =
+  "Get Devnet SOL opens faucet.solana.com in a new tab. That site is not Zigs: it sees the fee " +
+  "address that you paste and your IP address.";
 const TITLES = {
   createNonce: "Create the nonce account for the move",
   transfer: "Move the beta funds to the program address",
@@ -183,6 +187,7 @@ function fundCard(c, act, actions) {
         "Check balance",
       ),
     ),
+    el("p", { class: "small", "data-sol": "faucet-text" }, FAUCET_TEXT),
   );
 }
 

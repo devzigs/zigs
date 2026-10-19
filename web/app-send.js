@@ -19,7 +19,7 @@ import {
 import { requestOf } from "./app-payreq.js";
 import { nameOf, recentNote, registry, resolveRecipient, zecName } from "./zns.js";
 import { focusAfter, render } from "./app-loop.js";
-import { capNote, movedNote, receiveLimit, receiveWhat } from "./app-wallet.js";
+import { capNote, FAUCET_TEXT, movedNote, receiveLimit, receiveWhat } from "./app-wallet.js";
 
 const MAX_PAYEES = 20;
 const TOO_MANY = "A payment can have at most " + MAX_PAYEES + " recipients.";
@@ -62,7 +62,7 @@ function receiveLead(hidden, moved) {
 function sendOnly(net) {
   const faucet = curNet().faucet ? [" Get free testnet ZEC from a ", el("a", {
     href: curNet().faucet, target: "_blank", rel: "noopener", style: "white-space:nowrap",
-  }, "faucet ↗"), "."] : [];
+  }, "faucet ↗"), ". " + FAUCET_TEXT] : [];
   return el("div", { class: "callout" }, el("span", {}, "Send only ZEC on " + net + " to this "
     + "address. A payment that arrives becomes spendable after 3 confirmations.", ...faucet));
 }
@@ -550,6 +550,7 @@ function reviewDialog() {
     : el("p", { class: "callout bad", role: "alert" }, REVIEW_BAD),
   prep.payees.map((p, i) => reviewRow(p, i, prep.payees.length)),
   reviewFacts(ins, note),
+  el("p", { class: "small muted" }, REVIEW_READS),
   el("p", { class: "small faint" }, EXPIRY_NOTE + " Proposing asks the signers to approve; it "
     + "does not sign or send the payment."),
   el("div", { class: "dialog-actions" },
@@ -558,6 +559,13 @@ function reviewDialog() {
     ok ? el("button", { class: "btn primary", type: "button", disabled: !!ui.proposing,
       onclick: act(() => proposeReviewed(ui.sendReview)) }, "Propose payment") : null));
 }
+
+// Who can read the payment (PRIVACY.md, Signers and invite links). The memo sentence is the one
+// of the Send form.
+const REVIEW_READS = "The chain does not show the recipients, the amounts or the memos. Every "
+  + "device of this wallet can read them and the note for signers, in the shared history of the "
+  + "wallet. So can anyone who has its invite link. A device that leaves the wallet later keeps "
+  + "that history. A memo goes on chain with the payment, and its recipient can read it too.";
 
 // The fee as the engine decoded it (none when the decode does not match), the approvals, the note.
 function reviewFacts(ins, note) {
