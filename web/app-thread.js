@@ -11,8 +11,8 @@ import { curChain, curNet, explorerText, netName, readsMemos, spanMs } from "./a
 import { changedSigners } from "./app-filter.js";
 import { canWrite, db, openSession } from "./app-groups.js";
 import {
-  act, avatar, coarse, copyBtn, el, guard, logBox, memoTexts, nameField, newBadge, payTitle,
-  proposer, secretQr, sender,
+  act, avatar, coarse, copyBtn, el, guard, logBox, memoTexts, nameField, newBadge, noteFor,
+  payTitle, proposer, secretQr, sender, setNote,
 } from "./app-dom.js";
 import {
   chat, chatMembers, chatPins, chatWhy, contactName, contactOf, createChat, dmTrust, leaveChat,
@@ -27,15 +27,17 @@ import { ON_CHAIN } from "./app-wallet.js";
 const FINE = "Every device of this wallet, and anyone else who has the invite link, can read "
   + "these messages. The group server stores them sealed and sees only when they are sent.";
 
-export function messagesCard() {
+// The Messages section has its title in the heading block of the page: it passes `titled` false.
+export function messagesCard(titled = true) {
   const changed = changedSigners();
+  const head = [titled ? el("h2", {}, "Messages") : null, notifyButton()];
   return el("section", { class: "card card-pad chat" },
-    el("div", { class: "card-head" }, el("h2", {}, "Messages"), notifyButton()),
+    head.some(Boolean) ? el("div", { class: "card-head" }, ...head) : null,
     changed.length ? el("div", { class: "callout bad", role: "alert" }, "Signing key changed: "
       + changed.map((i) => "device " + i).join(", ") + ". Their messages are not verified.") : null,
     chat[state.gid] || memoMessages().length ? chatLog("wallet") : null,
     readsMemos(state.gid) ? null : el("p", { class: "small faint" }, "Memos of payments to this "
-      + "wallet are off. You can turn them on under Details."),
+      + "wallet are off. You can turn them on in Settings."),
     walletComposer("wallet"));
 }
 
@@ -46,7 +48,7 @@ export function discussion(ss) {
     chat[state.gid] ? chatLog(thread) : null, walletComposer(thread));
 }
 
-function notifyButton() {
+export function notifyButton() {
   if (!("Notification" in window)) return null;
   return el("button", {
     class: "btn sm", type: "button", "aria-pressed": ui.notify ? "true" : "false",
@@ -161,13 +163,14 @@ function sendOnEnter(ev) {
 
 // The line under a message box that follows the text as it changes: `plan(text)` gives { fine,
 // error }. A redraw gives the text back to the new box and fires an input event, which shows it.
-function planLine(plan, box) {
-  const line = el("p", { class: "hint", "aria-live": "polite" });
+function planLine(plan, box, id) {
+  const line = el("p", { class: "hint", id, "aria-live": "polite" });
   const show = () => {
     const got = plan(box.value);
-    line.textContent = got.error || got.fine;
-    line.className = "hint" + (got.error ? " bad" : "");
+    setNote(line, got.error || got.fine, "hint" + (got.error ? " bad" : ""));
   };
+  box.setAttribute("aria-describedby", id);
+  noteFor(line, box);
   box.addEventListener("input", show);
   show();
   return line;
@@ -198,7 +201,7 @@ export function composer(o) {
   const form = el("form", { class: "composer", onsubmit: act((ev) => submitMessage(ev.target, o)) },
     o.why ? el("p", { class: "hint" + (o.warn ? " bad" : "") }, o.why) : null,
     o.progress ? el("p", { class: "hint", role: "status" }, o.progress) : null,
-    box, o.plan ? planLine(o.plan, box) : null,
+    box, o.plan ? planLine(o.plan, box, "chat-plan-" + o.kind) : null,
     el("div", { class: "composer-row" }, seatPicker(o, "chat-as-" + o.kind), requestToggle(o),
       sendButton(o, sending)),
     el("p", { class: "small faint" }, o.fine));
@@ -320,7 +323,7 @@ export function leaveBox(cid) {
     el("p", {}, "Leave this chat? It is removed from this browser only. The sealed messages stay "
       + "on the group server." + again),
     el("div", { class: "dialog-actions" }, btn("leave-no", "btn", ask(false), "Cancel"),
-      btn("leave-yes", "btn", act(() => leaveChat(cid)), "Leave chat")));
+      btn("leave-yes", "btn danger", act(() => leaveChat(cid)), "Leave chat")));
 }
 
 export function newChatDialog() {

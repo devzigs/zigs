@@ -1,8 +1,8 @@
 // The pages of the personal account and its contacts.
 import { memoShown, toZat, zatText } from "./payees.js";
 import {
-  balanceWarnings, chatTimeline, fundingWarning, holdsNotes, messagePlan, NAME_MAX, otherWhere,
-  removeWarning, salvageBackup, SENT_WORDS, sentNote,
+  balanceWarnings, chatTimeline, fundingPayees, fundingWarning, holdsNotes, messagePlan, NAME_MAX,
+  otherWhere, removeWarning, salvageBackup, SENT_WORDS, sentNote,
 } from "./personal.js";
 import { REQUEST_NET } from "./requests.js";
 import { state, ui } from "./app-state.js";
@@ -10,7 +10,7 @@ import { initials, short, when } from "./app-kit.js";
 import { Z } from "./app-engine.js";
 import { explorerText, netOf, NETWORKS } from "./app-chain.js";
 import {
-  act, copyBtn, el, guard, logBox, money, netBadge, networkPick, qrBox, skeleton,
+  act, copyBtn, el, guard, logBox, money, netBadge, networkPick, noteFor, qrBox, setNote, skeleton,
 } from "./app-dom.js";
 import { proposeWallets, requestCard, requestOf } from "./app-payreq.js";
 import {
@@ -125,23 +125,28 @@ export function fundBlock() {
     class: "input", id: "fund-wallet", "aria-label": "Fund from wallet",
   }, wallets.map((g) => el("option", { value: g.id },
     g.name + " (" + netOf(g).label + ")"))) : null;
-  // The warning follows the typing, as the fee line of the composer does.
+  // Both notes follow the typing, as the fee line of the composer does. The warning is advice for
+  // an amount that the request takes. Only the refusal marks the field as invalid.
   const warn = el("span", { class: "hint bad", id: "fund-warn", role: "status" });
+  const refusal = el("span", { class: "hint bad", id: "fund-error", role: "status" });
   const showWarn = () => {
-    warn.textContent = fundingWarning(toZat(ui.personal.fund), b ? b.total : 0);
+    const zat = toZat(ui.personal.fund);
+    warn.textContent = fundingWarning(zat, b ? b.total : 0);
+    setNote(refusal, fundingPayees("", zat).error ?? "", "hint bad");
   };
   const amount = el("input", {
     class: "input", id: "fund-amt", type: "text", inputmode: "decimal", autocomplete: "off",
-    value: ui.personal.fund, "aria-describedby": "fund-hint fund-warn",
+    value: ui.personal.fund, "aria-describedby": "fund-hint fund-warn fund-error",
     oninput: (ev) => { ui.personal.fund = ev.target.value; showWarn(); },
   });
+  noteFor(refusal, amount);
   showWarn();
   return el("div", { class: "to-box", style: "display:grid;gap:10px" },
     el("span", { class: "label" }, "Fund the account"),
     el("label", { class: "field" }, el("span", {}, "Amount in ZEC"), amount,
       el("span", { class: "hint", id: "fund-hint" }, "The request asks for 3 equal notes, so the "
         + "account can send a message after each block. A wallet pays it, and its signers "
-        + "approve it as they approve any payment."), warn),
+        + "approve it as they approve any payment."), warn, refusal),
     el("div", { class: "req-actions" }, pick,
       el("button", {
         class: "btn primary sm", type: "button", disabled: !wallets.length,
@@ -170,7 +175,7 @@ function accountActions(warning, canSave = true) {
         + "brings the account back." + (warning ? " " + warning : "")),
       el("div", { class: "dialog-actions" },
         el("button", { class: "btn", type: "button", onclick: ask(false) }, "Cancel"),
-        el("button", { class: "btn", type: "button", onclick: act(removeAccount) },
+        el("button", { class: "btn danger", type: "button", onclick: act(removeAccount) },
           "Remove the account"))) : null);
 }
 

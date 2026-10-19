@@ -326,7 +326,7 @@ export function solSetupCard() {
     onclick: () => { ui.tab = "solana"; render(); } }, "Open Solana");
   return el("section", { class: "card card-pad" },
     el("div", { class: "card-head" },
-      el("h2", {}, stopped ? "The Solana part stopped" : "Solana is still setting up")),
+      el("h3", {}, stopped ? "The Solana part stopped" : "Solana is still setting up")),
     el("div", { class: "steps" }, ...solSteps(1)),
     el("p", { class: "small muted" }, stopped ? SOL_STOP_NEXT
       : solSetup()?.status === "ready" ? FUND_TEXT : BOTH_OPEN),
