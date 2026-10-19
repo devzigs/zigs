@@ -1,5 +1,5 @@
 {
-  "baseCommit": "f27a56cc6246806bd2cfb3a5fa8c4ad1f382f2e5",
+  "baseCommit": "af81edd662a9418689c3532173b9a59f16c656e1",
   "node": "v24.11.0",
   "tests": {
     "web/test/chat.mjs": {
@@ -72,6 +72,9 @@
       "exit": 0
     },
     "web/test/unified-setup.mjs": {
+      "exit": 0
+    },
+    "web/test/help.mjs": {
       "exit": 0
     },
     "web/test/graph.mjs": {
