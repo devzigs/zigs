@@ -43,7 +43,8 @@ function stageBar() {
     confirmed: c.conf, keysDone: c.d, checked: c.w ? c.ver : 0, blocked: blockText(c),
     solPending: bothParts() });
   return el("nav", { class: "stage-bar", "aria-label": "Setup stages" },
-    el("ol", {}, SETUP_STAGES.map((name, i) => el("li", { class: i < index ? "done" : null,
+    el("ol", {}, SETUP_STAGES.map((name, i) => el("li", {
+      class: i < index ? "done" : i === index && blocked ? "stopped" : null,
       "aria-current": i === index ? "step" : null }, name))),
     el("p", { class: "small " + (blocked ? "bad" : "muted"), role: "status" }, blocked
       ? "Setup stopped at " + SETUP_STAGES[index] + ". " + blocked
@@ -54,10 +55,11 @@ const STAGE_NOTE = ["", "Every signer takes a seat with the invite link.",
   "Every signer compares the safety number and confirms it.",
   "The devices create the key together and check the address. Keep Zigs open.",
   "The wallet page asks each signer to back up the key share."];
+// A wallet document with no birthday comes from an older version of Zigs: a stop too.
 function blockText(c) {
   const key = keyBlock(c);
   if (key && key[0] === "bad") return key[1];
-  return c.rejected.length ? addrStep(c)[1] : null;
+  return c.rejected.length || (c.w && !c.w.birthday) ? addrStep(c)[1] : null;
 }
 
 // Version 2 wallets: the signers compare one number before the key ceremony starts. It stays

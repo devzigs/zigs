@@ -23,7 +23,7 @@ const { chatInviteCard } = await import("../app-thread.js");
 const { chats } = await import("../app-keystore.js");
 const { backupWords } = await import("../sol/backup.js");
 const { pendingCount } = await import("../sol/view.js");
-const { createDialog, lobby, renderSide } = await import("../app-shell.js");
+const { createDialog, lobby, marginText, renderSide } = await import("../app-shell.js");
 const { offReason } = await import("../util.js");
 const { intentHex } = await import("../sol/intent.js");
 const { ui } = await import("../app-state.js");
@@ -382,7 +382,7 @@ function dialogTree(from = null) {
     globalThis.document = real;
   }
 }
-const dialogText = () => textOf(dialogTree());
+const dialogText = (from = null) => textOf(dialogTree(from));
 const byId = (node, id) =>
   node.attrs?.id === id ? node : (node.kids ?? []).map((k) => byId(k, id)).find(Boolean) ?? null;
 {
@@ -794,6 +794,22 @@ const byId = (node, id) =>
   const old = t.state.g;
   assert.deepEqual(await submit(old, "on"), { auto: false, hint: undefined }, "Change signers");
 }
+
+// ── The stepper: a stop shows its own text at its stage, never a stage on track ──
+{
+  const gidS = t.state.gid;
+  assert.match(pageText(), /Step 2 of 5: Connect\./, "a new wallet waits for its seats");
+  await t.putSec(gidS, 1, { aborted: "A test stop of this device." });
+  assert.match(pageText(), /Setup stopped at Connect\. A test stop of this device\./,
+    "the stop and its text");
+  assert.doesNotMatch(pageText(), /Step 2 of 5/);
+}
+
+// ── The create dialog: numbered sections for a new wallet, the old form for a change ──
+assert.match(dialogText(), /1\. Approval rule.*2\. Names.*3\. Networks/s);
+assert.doesNotMatch(dialogText(t.state.g), /1\. Approval rule/, "Change signers keeps its form");
+assert.equal(marginText(2, 3), "", "a margin: no warning");
+assert.match(marginText(3, 3), /Each payment needs every signer/);
 
 console.log("unified-setup: ok");
 process.exit(0);

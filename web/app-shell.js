@@ -346,8 +346,8 @@ const moveParts = (from, nameParts, ruleParts) => [el("ol", { class: "small mute
 const guideStep = (title, ...kids) => el("fieldset", { class: "guide-step" },
   el("legend", {}, title), ...kids);
 // With every signer needed, one lost device stops the wallet: the dialog says so.
-const marginText = (t, n) => t === n ? "Each payment needs every signer. When one device is lost, "
-  + "the wallet cannot pay until its seat comes back from its backup file." : "";
+export const marginText = (t, n) => (t === n ? "Each payment needs every signer. When one "
+  + "device is lost, the wallet cannot pay until its seat comes back from its backup file." : "");
 
 // With `from`, the dialog creates the wallet that replaces `from`, with new signers or a new rule.
 export function createDialog(from = null) {
