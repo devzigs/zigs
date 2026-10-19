@@ -55,31 +55,43 @@ const HEADLINES = [
     + "new approvals."],
   ["check", "Check the payment", "It may still go on chain. Check it before you make another "
     + "payment."],
-  ["error", "Payment stopped", "This payment takes no more steps. The reason is below."],
+  ["held", "Stopped, but it may still go on chain", "It was stopped after this browser approved "
+    + "it. Another device can still send it, so Send stays off here. Read the note below."],
+  ["error", "Payment stopped", "No signer can approve, sign or send it. The reason is below."],
   ["rejected", "Payment needs attention", "This browser refuses this payment. The reason is "
-    + "above. Do not approve it."],
+    + "below. Do not approve it."],
   ["refused", "Payment needs attention", "This browser does not send this transaction. The reason "
     + "is below."],
-  ["sent", "Waiting for a block", "The payment went to the network. Check it here before you make "
-    + "another payment."],
-  ["sendFailed", "The send failed", "Read the error below, then send it again."],
+  ["mismatch", "Payment needs attention", "The transaction does not pay what the proposer listed. "
+    + "Do not approve it. The reason is below."],
+  ["resend", "Send it again", "No block that this browser synced holds it after 10 minutes. Any "
+    + "signer can send the same transaction again."],
+  ["sent", "Waiting for a block", "A signer sent it. No block that this browser synced holds it "
+    + "yet. Wait for it before you make another payment."],
+  ["late", "Too late to send", "It can no longer go to the network. A signer may have sent it. "
+    + "Check it before you make another payment."],
+  ["sendFailed", "The send failed", "Read the error below. A signer can send it again."],
   ["proved", "Ready to send", "Sending is a separate step. This browser checks the transaction "
     + "again before it sends it."],
   ["proving", "Building the proof", "A signer's browser builds the proof. It takes about a "
     + "minute."],
   ["signed", "Ready for the proof", "Any signer can build the proof now."],
-  ["signing", "Signing", "The devices that approved sign while this wallet is open on them."],
-  ["mine", "Your approval is needed", "Check the recipient, amount, network and fee before you "
-    + "approve. An approval sends nothing."],
+  ["signing", "Signing", "Each device that approved signs while this wallet is open on it."],
+  ["approved", "Approvals are complete", "The device that proposed it builds the signing package "
+    + "while this wallet is open there."],
+  ["mine", "Your approval is needed", "Check the recipient, amount, network and fee. Approve only "
+    + "if all are right. After enough approvals, any signer can send it."],
 ];
-const WAITING = { title: "Waiting for approvals",
-  detail: "You can close this and come back. Opening it makes no new payment." };
+const WAITING = { title: "Waiting for approvals", detail: "The other devices approve it while "
+  + "this wallet is open on them. You can close this page and come back." };
 
 /**
  * The headline of a payment drawer, from facts that the drawer already reads.
- * @param {object} f landed, ended, check (the engine cannot say that it expired), error, rejected
- *   (this browser refuses the transaction), refused (the send step refuses it), sent, sendFailed,
- *   proved, proving, signed, signing, mine (this browser can approve it): true or false each.
+ * @param {object} f true or false each: landed, ended, check (the engine cannot say that it
+ *   expired), held (stopped, but an approval here holds Send), error, rejected (this browser
+ *   refuses the transaction), refused (the send step refuses it), mismatch (it does not pay what
+ *   the proposer listed), resend, sent, late (too late to send), sendFailed, proved, proving,
+ *   signed, signing, approved (enough approvals), mine (this browser can approve it).
  * @returns {{title: string, detail: string}}
  */
 export function stageHeadline(f) {

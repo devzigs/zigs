@@ -2039,6 +2039,15 @@ const sealed = (gid, rel, seat, fields, key, names = ["by", "sig"]) =>
         await t.putSec(t.state.gid, seat, { nonces });
       };
       const approved = async (seat, ss) => { put(ss); await quiet(() => t.approve(ss, seat)); };
+      // The headline of the drawer follows the Approve buttons: a transaction that pays what the
+      // proposer listed asks for an approval here, one that pays another payee asks for none.
+      const headOf = (ss) =>
+        textOf(all(t.sessionLayer(ss), (x) => x.className === "pay-status")[0]);
+      at(4500000);
+      assert.match(headOf(open("zn")), /^Your approval is needed/);
+      assert.match(headOf({ ...open("zm"), payees: [{ to: "utest1other", amount: 5 }] }),
+        /^Payment needs attention.*does not pay what the proposer listed/,
+        "a payee that the transaction does not pay asks for no approval");
 
       // An approval keeps the sighash after the nonce burn, and the PCZT in its own store.
       at(4500000);
@@ -2392,6 +2401,13 @@ const sealed = (gid, rel, seat, fields, key, names = ["by", "sig"]) =>
       assert.match(headline(signedA), /^Ready for the proof/);
       assert.deepEqual(all(t.sessionLayer(signedA), (x) => x.className === "tick").map(textOf)
         .slice(3), ["4", "5", "6"], "the steps that wait show their number");
+      assert.ok(all(t.sessionLayer(signedA), (x) => x.className === "tick")
+        .every((x) => x.attrs["aria-hidden"] === "true"), "a screen reader skips the marks");
+      assert.match(current(signedA).join(), /^4Proof/, "signed: the proof is the step now");
+      assert.deepEqual(all(t.sessionLayer(signedA), (x) => x.className === "sr-only").map(textOf)
+        .slice(0, 1), ["Done: "], "and hears which steps are done");
+      assert.equal(all(t.sessionLayer(signedA), (x) => x.className === "pay-status")[0].attrs.role,
+        undefined, "the headline is no live region: the page draws it anew each time");
       at(4503460);
       assert.match(blockStep(landedA), /In a blockNo synced block holds it\./,
         "past its expiry it waits for no block");
@@ -2483,6 +2499,8 @@ const sealed = (gid, rel, seat, fields, key, names = ["by", "sig"]) =>
       at(4500101);
       assert.equal(t.inFlight().includes(failedA), true, "an error part frees nothing");
       assert.equal(textOf(t.statusChip(failedA)), "Confirming");
+      assert.match(headOf(failedA), /^Stopped, but it may still go on chain/,
+        "an approval here holds Send, so the stop is not the end");
       const resetA = open("za", "PB");
       put(resetA);
       at(4500102);

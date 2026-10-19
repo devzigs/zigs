@@ -64,6 +64,20 @@ assert.equal(title({ rejected: true, mine: true }), "Payment needs attention",
   "a payment that this browser refuses asks for no approval");
 assert.equal(title({ landed: true, ended: true, error: true }), "In a block", "a block wins");
 assert.equal(title({ mine: "yes" }), "Waiting for approvals", "only true counts");
-assert.match(stageHeadline({ mine: true }).detail, /An approval sends nothing\.$/);
+assert.match(stageHeadline({ mine: true }).detail,
+  /After enough approvals, any signer can send it\.$/);
+assert.equal(title({ held: true, error: true }), "Stopped, but it may still go on chain",
+  "an approval here still holds Send");
+assert.equal(title({ check: true, error: true }), "Check the payment");
+assert.equal(title({ ended: true, error: true }), "Payment expired");
+assert.equal(title({ mismatch: true, mine: true }), "Payment needs attention",
+  "a transaction that pays another payee asks for no approval");
+assert.equal(title({ approved: true, mine: true }), "Approvals are complete",
+  "enough approvals: no approval is needed");
+assert.equal(title({ sent: true, resend: true }), "Send it again");
+assert.equal(title({ proved: true, late: true }), "Too late to send", "a node refuses it now");
+assert.equal(title({ proved: true, late: true, sendFailed: true }), "Too late to send");
+assert.equal(title({ rejected: true, refused: true }), "Payment needs attention");
+assert.equal(title({ refused: true, sent: true }), "Payment needs attention");
 console.log("ok  the headline of a payment");
 console.log("payment-model: ok");

@@ -207,10 +207,12 @@ export function nextAction(ss, ins, rc) {
       ? [bigButton("Propose again", act(() => proposeAgain(ss)))] : [];
   }
   if (expired(ss)) return [];   // signing started, and the engine cannot say that it expired
-  const myPending = approvers(ss);
-  const canApprove = myPending.length && rc.match === true && rc.intoNew !== false;
-  return canApprove ? approveButtons(ss, myPending) : finishButtons(ss);
+  return canApprove(ss, rc) ? approveButtons(ss, approvers(ss)) : finishButtons(ss);
 }
+// A seat here can approve, and the transaction pays what the proposer listed: the Approve buttons
+// and the headline "Your approval is needed" follow this one rule.
+const canApprove = (ss, rc) => approvers(ss).length > 0 && rc.match === true
+  && rc.intoNew !== false;
 
 const CANCEL_ASK = "Cancel this payment? No signer can approve it after this. Anyone can propose it again.";
 // Until the signatures are combined, any signer can withdraw a payment, for example one that lost
@@ -284,13 +286,15 @@ function sessionDrawer(ss) {
       closeBtn()),
     el("div", { class: "drawer-body" },
       leavesHead(ss, ins && !refused ? ins : null),
+      guard(headline, ss, refused, rc),
+      // What the headline points to sits right under it, before the steps.
       refused ? el("div", { class: "callout bad" }, "Your browser refuses this payment: " + ins.error) : null,
-      guard(timeline, ss, refused),
       guard(expiryLine, ss),
       guard(recipientBox, ss, rc),
       lostApproval(ss),
       holdCard(ss),
       changedNote(ss),
+      guard(timeline, ss, refused),
       ins && !refused ? guard(breakdown, ins) : null,
       guard(discussion, ss),
       ss.final ? guard(txDetails, ss) : null,
@@ -379,19 +383,33 @@ function signatureText(ss, approvals, shared) {
   return "Signing · " + shared + " of " + signers.length + " shares. " + next + WHERE;
 }
 
-// The headline of the payment, from the facts that the steps below show. `rejected`: this
-// browser refuses the transaction itself (its decode).
-function headline(ss, rejected) {
-  const { title, detail } = stageHeadline({
-    landed: landed(ss), ended: ended(ss), check: signingSeen(ss) && expired(ss),
-    error: !!ss.error, rejected: !!rejected, refused: refusedSend(ss), sent: !!ss.broadcastTxid,
-    sendFailed: !!ss.broadcastError, proved: !!ss.final,
-    proving: ss.status === "proving" && !proofStalled(ss), signed: !!ss.signed,
-    signing: !!ss.package, mine: approvers(ss).length > 0,
-  });
-  return el("div", { class: "pay-status", role: "status" }, el("h3", {}, title),
+// The headline of the payment, from the facts that the notes and the steps below show.
+// `rejected`: this browser refuses the transaction itself (its decode). No live region: the page
+// draws it anew on each redraw.
+function headline(ss, rejected, rc) {
+  const { title, detail } = stageHeadline({ ...endFacts(ss, rejected), ...stepFacts(ss, rc) });
+  return el("div", { class: "pay-status" }, el("h3", {}, title),
     el("p", { class: "small muted" }, detail));
 }
+// The facts that end, stop or block a payment. A refused send counts also for a browser that has
+// no seat (the chip says Check then too).
+const endFacts = (ss, rejected) => ({
+  landed: landed(ss), ended: ended(ss), check: signingSeen(ss) && expired(ss),
+  held: !!ss.error && heldApprovals().includes(ss.id), error: !!ss.error, rejected: !!rejected,
+  refused: refusedSend(ss) || (ss.status === "complete" && !!sendRefusal(ss)),
+});
+// The facts of the steps. `late`: a node refuses the finished transaction now (expiryLine).
+const stepFacts = (ss, rc) => ({
+  mismatch: !ss.package && (rc.match === false || rc.intoNew === false),
+  resend: finishStep(ss) === "resend", sent: !!ss.broadcastTxid,
+  late: !!ss.final && !ss.broadcastTxid && expiryOf(ss)?.expired === true,
+  sendFailed: !!ss.broadcastError, proved: !!ss.final,
+  proving: ss.status === "proving" && !proofStalled(ss), signed: !!ss.signed,
+  signing: !!ss.package, approved: Object.keys(state.commits).length >= state.g.t,
+  mine: canApprove(ss, rc),
+});
+// What a screen reader hears before the title of a step that is done or stopped.
+const STEP_STATE = { done: "Done: ", bad: "Stopped: " };
 
 // The numbered steps of a payment, under its headline. The current step is the step of the list.
 function timeline(ss, refused) {
@@ -403,16 +421,20 @@ function timeline(ss, refused) {
     n += 1;
     return el("li", { class: "step " + cls, "aria-current": cls === "now" ? "step" : null },
       el("span", { class: "tick", "aria-hidden": "true" }, mark(cls)),
-      el("div", { style: "display:grid;gap:6px;min-width:0" }, el("h3", {}, title), body));
+      el("div", { style: "display:grid;gap:6px;min-width:0" },
+        el("h3", {}, STEP_STATE[cls] ? el("span", { class: "sr-only" }, STEP_STATE[cls]) : null,
+          title), body));
   };
+  // The step that waits now is the one of the next action: a stopped payment has none.
+  const enough = approvals >= g.t || !!ss.package;
   return el("section", { class: "stage-panel", "aria-label": "Steps of the payment" },
-    headline(ss, refused), el("ol", { class: "steps" },
+    el("ol", { class: "steps" },
     tl("done", "Proposed", el("p", {}, when(ss.createdAt))),
-    tl(approvals >= g.t ? "done" : refused ? "bad" : "now", "Approvals · " + Math.min(approvals, g.t) + " of " + g.t + " needed",
-      approverChips()),
-    tl(ss.error ? "bad" : ss.signed ? "done" : ss.package ? "now" : "", "Combined signature",
+    tl(enough ? "done" : refused ? "bad" : ss.error ? "" : "now",
+      "Approvals · " + Math.min(approvals, g.t) + " of " + g.t + " needed", approverChips()),
+    tl(ss.error ? "bad" : ss.signed ? "done" : enough ? "now" : "", "Combined signature",
       el("p", {}, signatureText(ss, approvals, shared))),
-    tl(ss.final ? "done" : ss.status === "proving" ? "now" : "", "Proof",
+    tl(ss.final ? "done" : ss.status === "proving" || ss.signed ? "now" : "", "Proof",
       el("p", {}, ss.final ? "Proof built and the whole transaction checked." : ss.status === "proving" && !proofStalled(ss) ? "A signer's browser is building the proof · " + elapsed(ss.provingAt) + " of about a minute." : "Any signer can build the zero-knowledge proof once the payment is signed.")),
     tl(ss.broadcastTxid ? "done" : ss.broadcastError ? "bad" : ss.final ? "now" : "", "Sent to the network",
       el("div", { style: "display:grid;gap:8px" },
