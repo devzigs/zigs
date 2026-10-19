@@ -584,11 +584,14 @@ folder path.
   sessions, payments, Add SOL, backup and restore, the stop that holds everywhere, the gate (a
   mainnet wallet, a wallet before version 3, a stored network that changed, and a start document
   that no seat signed get no Solana tab and load nothing) and the config from the server.
-- `bash solspike/baseline.sh check`: the Zcash baseline gate. All `web/test/*.mjs`, the group
-  server limits, the hashes of the Zcash engine and `web/signed.js`, the page policy and the
+- `bash solspike/baseline.sh check`: the Zcash baseline gate. All `web/test/*.mjs`,
+  `cf/test/gate.mjs`, the group server limits, the hashes of the Zcash engine and `web/signed.js`, the page policy and the
   served headers must equal `solspike/baseline.json`. `node solspike/test/policy.test.mjs` checks
   the `/sol` routes of the Worker, `/sol/config.json` included.
 - `node cf/test/limits.mjs ws://localhost:8787`: the group server's size, rate and path limits.
+- `node cf/test/gate.mjs`: the password gate of the Worker, offline. The session cookie is set
+  once, opens every route alone and refuses a forged, expired or old-password value. Only a
+  navigation or a request without fetch metadata gets the Basic challenge.
 - `node web/test/payees.mjs`: the pasted payment list parser (the memo column, header, byte limit,
   and a comma directly between digits, which is an error), the memo rules, and the recipient
   check: address, amount and memo of every payee against the decoded outputs.
@@ -783,5 +786,23 @@ folder path.
 
 ## License
 
-MIT, see [LICENSE](LICENSE). The apps serve the Geist fonts (SIL Open Font License 1.1) from
-`web/fonts/`, so users never contact Google.
+Copyright (C) 2026 the Zigs authors.
+
+Zigs is free software under the GNU Affero General Public License, version 3 only
+(`AGPL-3.0-only`), see [LICENSE](LICENSE). You may use, change and share it. If you share a
+changed version, or run it as a service that other people use over a network, you must publish
+the full source of your version under the same licence. Zigs comes with no warranty.
+
+The licence covers the code only. It gives no right to use the name "Zigs", its logo or the
+zigs.app domain for another product.
+
+Third-party parts keep their own licences:
+
+| Part | Licence |
+|---|---|
+| Zolana SDK bundle and prover (`web/sol/zolana.bundle.js`, `web/sol/prover/`) | Apache-2.0, see [web/sol/prover/LICENSE](web/sol/prover/LICENSE) |
+| `wasm-sol/vendor/light-poseidon`, `wasm-sol/vendor/zolana-hasher` | Apache-2.0, see each folder |
+| Rust crates compiled into the wasm engines (`wasm/Cargo.lock`, `wasm-sol/Cargo.lock`) | MIT or Apache-2.0, as each crate states |
+| Geist fonts in `web/fonts/` | SIL Open Font License 1.1 |
+
+The apps serve the fonts from `web/fonts/`, so users never contact Google.

@@ -441,13 +441,26 @@ Devnet key):
 
 - The RPC answers `getHealth` with `ok` and runs Agave `4.4.0-beta.0`. That meets the 4.2.2 minimum
   for v1.
-- Pool `sppU489…`: deployed at slot 508538476, the release slot. The SHA-256 of its ELF (cut at the
-  size in its ELF header) equals the release hash `3641ffe2…`. Registry `regyS5rk…`: deployed at
-  slot 503573056, and its ELF hash equals the release hash `2010baa2…`.
+- Pool `sppU489…`: since 18 October 2026 at 20:56 UTC (slot 512563584) the SHA-256 of its ELF (cut
+  at the size in its ELF header) equals the release hash `44238d6f…` of v0.4.1-alpha (`release/0.4`
+  at `43e396ac`), an in-place upgrade (SOL-37 T0). Before that it ran the v0.4.0-alpha ELF
+  `3641ffe2…` from slot 508538476, the release slot. v0.4.1-alpha adds batch appends of 4,999
+  nullifiers for new trees. It keeps the 40,080-byte tree layout, the 100 history slots, tree 0 at
+  its 250-batch parameters and all 124 earlier verifying keys, and its proving-key lock changes no
+  transfer key. Against our pin `c232da1b`, `programs/` is unchanged and `program-libs` changes only
+  that nullifier-tree support (checked on 19 October 2026). Registry `regyS5rk…`: deployed at slot
+  503573056, and its ELF hash equals the release hash `2010baa2…`.
 - Pool `sppXZU59…` also exists. It was deployed at slot 481005012, so it is the older deployment.
 - All three programs have the upgrade authority `2kgbLowv…`. That address is a point on Ed25519, so
   it is an ordinary key pair, not a program address of a multisig. On Devnet one key can replace the
   pool.
+- Tree 0 can run out of nullifier PDA rent (error 7044, `InsufficientNullifierPdaRent`) until the
+  forester closes the PDAs; on 19 October 2026 it held only its rent minimum (204,256,640
+  lamports). The demo-day check is a simulated transact.
+- On 19 October 2026 the funder sent tree 0 14,020,800 lamports (`2Yh9gcGe…LM7R`, finalized), so
+  it held 218,277,440 lamports at slot 512704703. A simulated key-B self-transfer of 1,000
+  lamports (one input, two outputs, SDK `c232da1b`) then had no error and used 137,461 compute
+  units, with the local proof and with the hosted proof. That is under the cap 217,000.
 
 **6.2 P1 result, 13 October 2026** (scratch crate outside the repo, `frost-ed25519 =2.2.0`):
 

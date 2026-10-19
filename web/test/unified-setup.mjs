@@ -323,6 +323,15 @@ function approvalCount(ctl) {
     const inbox = side.find((n) => n.attrs?.id === "tab-approvals");
     assert.ok(inbox && labelled(inbox, "2 to approve"), "the Approvals section counts them too");
     overviewWiring(ctl);
+    // A click on the open wallet shows its overview and keeps its chain: no second sync starts.
+    const open = { gid: t.state.gid, syncing: true };
+    t.setChain(open);
+    Object.assign(ui, { tab: "solana" });
+    t.state.sid = "zz";
+    wallet.on.click();
+    assert.deepEqual([t.chain, ui.tab, t.state.sid, t.state.gid],
+      [open, "overview", null, open.gid], "the same wallet, on its overview, with no payment open");
+    t.setChain(null);
     inboxWiring();
     Object.assign(ctl, { sessions: [], commits: {} });
     assert.ok(!labelled(sideTree(), "2 to approve"), "no count without a proposal");

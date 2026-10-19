@@ -13,10 +13,11 @@ case "$(node -v 2>/dev/null)" in
 esac
 FAST="payees vault chat lwd zns requests shim shim-status signed util account qr personal graph
   sol-docs sol-transfer sol-wasm sol-config sol-rent sol-errors demo-check mainnet-off
-  chain-fallback smoke contrast overview approvals recovery"
+  chain-fallback smoke contrast overview approvals recovery cf/test/gate"
 SLOW="app sol-fee sol-sessions sol-limits sol-ceremony sol-app sol-pay unified-setup sol-prove"
 HELPERS="sol-rig sol-setup sol-chain sol-vector sol-fixture page"
-# A new test file goes into FAST or SLOW here, and into TESTS of solspike/baseline.sh.
+# A new test file goes into FAST or SLOW here, and into TESTS of solspike/baseline.sh. A name is
+# a file of web/test; an entry with a slash is a path from the root (cf/test/gate).
 all=" $(echo $FAST $SLOW $HELPERS) "
 for f in web/test/*.mjs; do
   case "$all" in
@@ -33,9 +34,11 @@ for t in $FAST; do
     continue
   fi
   ran=$((ran + 1))
+  file="web/test/$t.mjs"
+  case "$t" in */*) file="$t.mjs" ;; esac
   # perl alarm: a portable time limit (macOS has no timeout command by default).
-  if ! perl -e 'alarm shift; exec @ARGV' 60 node "web/test/$t.mjs" >/dev/null 2>&1; then
-    echo "test-fast: $t FAILED or ran over 60 s (run: node web/test/$t.mjs)"
+  if ! perl -e 'alarm shift; exec @ARGV' 60 node "$file" >/dev/null 2>&1; then
+    echo "test-fast: $t FAILED or ran over 60 s (run: node $file)"
     failed="$failed $t"
   fi
 done

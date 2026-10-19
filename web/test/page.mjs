@@ -39,7 +39,7 @@ export const NAMES = [
   "proposeRequest", "proposeWallets", "putSec", "raw", "rawInbox",
   "reactSession", "readsMemos", "ready",
   "recipientCheck", "refilter", "releaseHold",
-  "removeAccount", "requestCard", "requestOf", "rereadPersonal",
+  "removeAccount", "requestCard", "requestOf", "rereadPersonal", "resendTx",
   "restore", "restoreAccount", "restoredFor", "restoreWatch", "roomRequest", "round3V1", "runMemos",
   "sawSigning",
   "runSync", "safetyNo", "saveAccountBackup", "saveBackup", "sealAndSave", "seatCheck", "seatIds",

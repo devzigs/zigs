@@ -19,9 +19,10 @@ Names in this file:
 
 ## 1. What the demo needs, and what to do without it
 
-On main 8e624ff (18 October 2026): M1, M2, M4, M6, M8 and S1. M10 is in part: the `/zns` route
-and the lookup on the device are on main, but the Send form does not take a name yet. The rows
-below that say "on main" need nothing more.
+On main 8e624ff (18 October 2026): M1, M2, M4, M6, M8 and S1. M10 is on main since 8d7bc91 (19
+October 2026): the Send form takes a ZNS name, and a live testnet payment to `craftsoldier.zec`
+landed in block 4,518,023 (hackathon-release.md, M10). The demo name still needs an access code
+(step 6). The rows below that say "on main" need nothing more.
 
 | Item | What the demo needs | Without it |
 |---|---|---|
@@ -33,7 +34,7 @@ below that say "on main" need nothing more.
 | M6 | The Solana approval screen says what is public | On main |
 | M8 | `solspike/demo-check.sh` | On main |
 | M9 | WS_PER_IP at 600 for the demo week (D6) | Use one network for each laptop, or the phone hotspot |
-| M10 | Pay to a ZNS name in the Send form | Paste the utest1 address of Payee |
+| M10 | Pay to a ZNS name in the Send form | On main. Until the demo name exists (step 6), paste the utest1 address of Payee |
 | S1 | The side bar says when the group server does not answer | On main |
 | S2 | The Solana balances refresh by themselves | Click **Sync Solana** after each Solana step |
 | S3 | Only a funded seat executes | Fund the fee address of all three seats |
@@ -95,8 +96,8 @@ The owner does every write: deploys, payments, faucet claims and name claims.
   Zcash payment as the flow stands, and the Solana private payment (propose, approve, prove,
   execute). The coordinator starts the live steps, after the owner says yes in the coordinator
   session; send the command, the amount and the wallets first.
-  - Write the pins of that day in the notes of the file: the pool ELF `3641ffe2…`, the
-    ProgramData slot 508538476, tree 0 of 40,080 bytes, the approvals ELF `b4bad24c…`.
+  - Write the pins of that day in the notes of the file: the pool ELF `44238d6f…`, the
+    ProgramData slot 512563584, tree 0 of 40,080 bytes, the approvals ELF `b4bad24c…`.
   - Record only the browser window, in a clean profile, with no menu bar, notifications, real
     names or password prompt (D1).
   - Keep the unedited original outside the repo, never in git, with a copy on a second device.
@@ -125,11 +126,13 @@ The owner does every write: deploys, payments, faucet claims and name claims.
    (M2). The faucet lists each payout in public: a short form of the address, the transaction id,
    the amount and the time.
 6. Claim a testnet name for the demo payee: one small testnet payment to the ZNS Mint.
-   **[waits for M10]** The name `zigsdemo` in this file is a placeholder: the owner chooses the
-   final name. While ZNS Early Access lasts, the Mint refuses a claim without a six-digit access
-   code and keeps the payment (docs/zns-spike.md 3.1). A test claim of `zigsdemo` on 18 October
-   2026 had no code and registered nothing. So get a code from ZcashMe first, or wait for open
-   registration. Open question for the owner: M10 decided "no names for groups while ZNS
+   **[waits for an access code]** M10 is on main. The name `zigsdemo` in this file is a
+   placeholder: the owner chooses the final name. While ZNS Early Access lasts, the Mint refuses a
+   claim without a six-digit access code and keeps the payment (docs/zns-spike.md 3.1). A test
+   claim of `zigsdemo` on 18 October 2026 had no code and registered nothing. A second claim, with
+   a code from ZcashMe, landed in block 4,515,884, and the registry still had no record of it 679
+   blocks later; the owner asked ZcashMe. So get a working code from ZcashMe first, or wait for
+   open registration. Open question for the owner: M10 decided "no names for groups while ZNS
    control is 1-of-n" (docs/zns-spike.md 3.3).
    - Option A: the name points to a single-signer testnet address of the owner. The 3:30 step
      then pays that address, not Payee.
@@ -206,7 +209,7 @@ Stage on app.zigs.app. The Solana tab of staging works only after D4 adds stagin
       only at its expiry. Confirm that no approval hold blocks Send on Demo A.
     - Type the ZNS name (placeholder `zigsdemo.zec`) in the Send form of Demo A, and compare
       the address with the note.
-      Close the form without a proposal. **[waits for M10]**
+      Close the form without a proposal. **[waits for the demo name, step 6]**
 19. Keep a phone hotspot as a backup network. Check that the recording plays offline on L1, and
     that its pins equal the demo-check output.
 
@@ -222,7 +225,7 @@ says Sent (Zcash) or Executed (Solana).
 | 1:15 | L1, L2, L3 | L1 clicks **Copy link** and sends the link to L2 and L3 through an end-to-end encrypted chat. L2 and L3 open it in Chrome or Safari, enter the password if the browser asks, type a name, then click **Take seat**. A phone scans the QR code instead. | 3 of 3 seats taken. | D1, S10 |
 | 1:45 | L1, L2, L3 | Read the safety number aloud. Each person clicks **It matches**. Narrate the progress card: Zcash key, Solana key, fee address. Keep L1 open until every seat shows its Solana key ready (D7). | Both ceremonies run. Each seat shows **Address checked** and its Solana key ready. | **[waits for M3]**, M4 |
 | 3:00 | L1 | Switch to Demo A. Show the Zcash address, the **Available** balance and the Solana tab. Click **Sync Solana**. | Both balances show. | S2 |
-| 3:30 | L1 | Click **Receive**: show the address and the faucet link. Do not use the faucet live. Click **Send**. Type the ZNS name of the demo payee (placeholder `zigsdemo.zec`, step 6). Enter 0.01. Click **Propose payment**. | The form shows the address that the name gives. A payment opens with the name and the address. | M2, **[waits for M10]**: paste the utest1 address of Payee instead |
+| 3:30 | L1 | Click **Receive**: show the address and the faucet link. Do not use the faucet live. Click **Send**. Type the ZNS name of the demo payee (placeholder `zigsdemo.zec`, step 6). Enter 0.01. Click **Propose payment**. | The form shows the address that the name gives. A payment opens with the name and the address. | M2, **[waits for the demo name, step 6]**: paste the utest1 address of Payee instead |
 | 4:00 | L2 | Open the payment. Read **What this payment does**. Click **Approve payment**. Keep the payment open. | One approval. With a name, L2 looks it up itself and gets the same address. | **[waits for M5]**, M10 |
 | 4:30 | L1 | Click **Approve payment**. Click **Build proof**. Narrate the privacy model during the proof (about 1 minute). | The proof builds. | **[waits for M5]** |
 | 5:45 | L1 | Click **Send to network**. Click **View in explorer**. | The status shows **Confirming**, then **Sent** after the next sync sees the block. The explorer shows the transaction. | S9 |
