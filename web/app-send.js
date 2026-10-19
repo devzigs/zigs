@@ -26,17 +26,20 @@ export function receiveDialog() {
     el("h2", { id: "recv-title" }, "Receive ZEC"), el("span", { class: "badge plain" }, net));
   const copy = copyBtn(w.address, "Copy address", "btn primary");
   copy.setAttribute("data-first-focus", "");
-  const address = hidden ? [] : [state.g.movedTo ? movedNote() : sendOnly(net),
+  // A moved wallet leads with its moved note: senders must use the address of the new wallet.
+  const moved = !!state.g.movedTo;
+  const address = hidden ? [] : [moved ? null : sendOnly(net),
     qrBox(w.address, "Wallet address"), el("div", { class: "addr-full" }, addrGroups(w.address))];
   return el("div", {
     class: "dialog", role: "dialog", "aria-modal": "true", "aria-labelledby": "recv-title",
-  }, el("div", { class: "card-head" }, title, close), receiveLead(hidden), ...address,
-  hidden ? null : el("div", { class: "dialog-actions" }, shareBtn(w.address), copy));
+  }, el("div", { class: "card-head" }, title, close), receiveLead(hidden, moved), ...address,
+  hidden ? null : el("div", { class: "dialog-actions" }, moved ? null : shareBtn(w.address), copy));
 }
 
-// What the dialog says above the address: the cap, why the address is not shown yet, or what the
-// address does.
-function receiveLead(hidden) {
+// What the dialog says above the address: the move, the cap, why the address is not shown yet,
+// or what the address does.
+function receiveLead(hidden, moved) {
+  if (moved) return movedNote();
   if (atCap()) return capNote();
   if (hidden) {
     return el("p", { class: "small muted" }, "The address shows here after your seat checks it "

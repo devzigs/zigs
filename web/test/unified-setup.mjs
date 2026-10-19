@@ -247,8 +247,23 @@ function receiveTexts() {
     click(shareButton());
     assert.match(t.banner?.text ?? "", /could not share the address\. Use Copy address\./);
     t.state.g = { ...g, movedTo: "elsewhere" };
-    assert.match(textOf(receiveDialog()), /This wallet moved to/, "a moved wallet says so");
-    assert.doesNotMatch(textOf(receiveDialog()), /Send only/, "and asks for no payment");
+    const moved = textOf(receiveDialog());
+    assert.match(moved, /This wallet moved to/, "a moved wallet says so");
+    assert.doesNotMatch(moved, /Send only|Use this shielded address|Share address/,
+      "and asks for no payment to the old address");
+    t.state.g = g;
+    // A browser whose seats did not check the address yet: the dialog says why, and shows none.
+    const secretsWere = t.secrets;
+    t.secrets = Object.fromEntries(Object.entries(secretsWere).map(([k, v]) =>
+      [k, k.startsWith(t.state.gid + ":") ? { ...v, checkedWallet: "another" } : v]));
+    try {
+      const hidden = textOf(receiveDialog());
+      assert.match(hidden, /The address shows here after your seat checks it against its own key\./,
+        "the dialog says why the address is not shown");
+      assert.doesNotMatch(hidden, /Copy address|Share address|Send only/, "and shows no address");
+    } finally {
+      t.secrets = secretsWere;
+    }
     t.state.g = { ...g, network: "mainnet" };
     const main = receiveDialog();
     assert.ok(byText(main, "Zcash Mainnet"), "a mainnet wallet reads Mainnet");

@@ -1293,6 +1293,14 @@ export const MUTATIONS = [
   program("R-share-fail", "a failed share shows nothing",
     ["web/app-send.js", '    if (e?.name !== "AbortError") showBanner("bad", SHARE_FAILED);\n', ""],
     UNIFIED, /could not share the address/),
+  program("R-hidden-lead", "Receive says nothing about an address that is not shown yet",
+    ["web/app-send.js", "  if (hidden) {\n    return el(\"p\", { class: \"small muted\" }, "
+      + "\"The address shows here after your seat checks it \"\n"
+      + "      + \"against its own key.\");\n"
+      + "  }\n", ""], UNIFIED, /the dialog says why the address is not shown/),
+  program("R-moved-lead", "a moved wallet leads with the text of a live address",
+    ["web/app-send.js", "  if (moved) return movedNote();\n", ""], UNIFIED,
+    /a moved wallet says so/),
   program("R-received-row", "a received row names neither the coin nor the network",
     ["web/app-wallet.js", '"Zcash " + curNet().label + " · block\\u00a0"', '"Block "'], UNIFIED,
     /a received row names the coin and the network/),
