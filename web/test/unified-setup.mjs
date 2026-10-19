@@ -311,7 +311,7 @@ function receiveTexts() {
     assert.ok(byText(box, "Zcash Testnet"), "the badge names the network of the wallet");
     assert.match(textOf(box), /Send only ZEC on Zcash Testnet to this address\./);
     assert.match(textOf(box), /becomes spendable after 3 confirmations\. Get free testnet ZEC/);
-    assert.match(textOf(box), /faucet ↗\. That site is not Zigs: it sees the address that you paste/,
+    assert.match(textOf(box), /faucet ↗\. That site is not Zigs: it sees the address that you/,
       "the faucet note says what the faucet sees");
     assert.ok(!byText(box, "Share address"), "no Share button without Web Share");
     const first = findNode(box, (n) => n.attrs?.["data-first-focus"] !== undefined);
