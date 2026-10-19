@@ -12,7 +12,7 @@
 // Run: node web/test/unified-setup.mjs   (Node 24)
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
-import { config, loadRig, sleep } from "./sol-rig.mjs";
+import { config, loadRig, sleep, storage } from "./sol-rig.mjs";
 
 const rig = await loadRig();
 // The page modules need the stub page of the rig, so they load after it.
@@ -45,6 +45,9 @@ class Rec extends Node {
   }
   setAttribute(k, v) {
     this.attrs[k] = v;
+  }
+  removeAttribute(k) {
+    delete this.attrs[k];
   }
   addEventListener(type, fn) {
     this.on[type] = fn;
@@ -744,7 +747,7 @@ const byId = (node, id) =>
     if ("db" in change) t.setDb(change.db);
     const real = globalThis.document;
     globalThis.document = { createElement: () => new Rec(), createElementNS: () => new Rec(),
-      createTextNode: (text) => ({ text }) };
+      createTextNode: (text) => ({ text }), documentElement: { dataset: {} } };
     try {
       return build();
     } finally {
@@ -761,6 +764,7 @@ const byId = (node, id) =>
   const buttons = [
     ["Create wallet", "why-create", () => lobby()],
     ["Create wallet", "why-create-submit", () => createDialog()],
+    ["Join wallet", "why-join-wallet", () => lobby()],
     ["New chat", "why-new-chat", () => lobby()],
     ["Join chat", "why-chat-join-cc", () => lobby()],
   ];
@@ -1150,6 +1154,163 @@ assert.match(marginText(3, 3), /Each payment needs every signer/);
     globalThis.document = real;
   }
   assert.match(margin.textContent, /Each payment needs every signer/, "update() names the risk");
+}
+
+// ── The wallet list: the welcome card, and the form that joins a wallet with a link ──
+// A good link goes the way of a link in the address bar. A bad one opens nothing and leaves its
+// text in the field. The secret of the link goes to no log, banner, console, address bar or
+// storage. A good link keeps its wallet secret: that is the join. The pasted text stays out of
+// the storage.
+{
+  const lobbyTree = () => {
+    const real = globalThis.document;
+    globalThis.document = { createElement: () => new Rec(), createElementNS: () => new Rec(),
+      createTextNode: (text) => ({ text }), documentElement: { dataset: {} } };
+    try {
+      return lobby();
+    } finally {
+      globalThis.document = real;
+    }
+  };
+  const formOf = (tree) => findNode(tree, (n) => !!n.on?.submit && !!byId(n, "join-link"));
+  const { PASTE_BAD, PASTE_CONTACT, PASTE_EMPTY } = await import("../chat.js");
+  const { LINK_CHAT_ID, LINK_NEW_SECRET } = await import("../util.js");
+  const { openGroup } = await import("../app-groups.js");
+  const { joinLinks } = await import("../app-messages.js");
+  const gid = t.state.gid, known = t.gkeys[gid], cid = "c1".repeat(10);
+  const fresh = "f1".repeat(10), other = "o".repeat(43), secret = "s".repeat(43);
+  const link = (id, key) => "https://app.zigs.app/#" + id + "." + key;
+
+  const said = [], replaced = [], methods = ["log", "info", "warn", "error", "debug"];
+  const real = Object.fromEntries(methods.map((m) => [m, console[m]]));
+  const realReplace = history.replaceState;
+  let stopped = 0;
+  // Pastes `text` into the form of a new page and submits it.
+  const paste = (text) => {
+    const tree = lobbyTree(), field = byId(tree, "join-link");
+    field.value = text;
+    formOf(tree).on.submit({ preventDefault() { stopped++; } });
+    return field;
+  };
+  const leaked = (text, { storageToo = true } = {}) => JSON.stringify([t.state.log, t.banner, said,
+    replaced, storageToo ? [...storage.values()] : []]).includes(text);
+  const opensNothing = (what, keysBefore) => {
+    assert.equal(t.state.gid, null, what + ": no wallet opens");
+    assert.equal(location.hash, "", what + ": the address bar stays");
+    assert.equal(JSON.stringify(t.gkeys), keysBefore, what + ": no secret is kept");
+    assert.equal(joinLinks.size, 0, what + ": no chat waits");
+  };
+  try {
+    for (const m of methods) console[m] = (...a) => said.push(a);
+    history.replaceState = (...a) => { replaced.push(a); };
+    openGroup(null);
+    ui.joinBad = "";
+    // The form: a field with no name, a label, a hint, and a Join button.
+    const first = lobbyTree(), field = byId(first, "join-link"), form = formOf(first);
+    assert.ok(field && form, "the wallet list has the join form");
+    assert.equal(field.attrs.name, undefined, "the join field has no name");
+    assert.equal(form.attrs.action, undefined, "the join form has no action");
+    assert.equal(field.attrs.autocomplete, "off", "the join field is not remembered");
+    assert.equal(field.attrs["aria-invalid"], undefined, "the field starts valid");
+    assert.equal(field.attrs["aria-describedby"], "join-help", "the field starts with its hint");
+    assert.match(textOf(byId(first, "join-help")), /invite link/);
+    assert.equal(byId(first, "join-error"), null, "no error before a paste");
+
+    // An empty or bad paste shows its error next to the field, and opens nothing.
+    const cases = [
+      ["an empty paste", "", PASTE_EMPTY],
+      ["a paste of spaces", "   ", PASTE_EMPTY],
+      ["a link without a secret", "https://app.zigs.app/#" + fresh, PASTE_BAD],
+      ["a short secret", link(fresh, secret.slice(1)), PASTE_BAD],
+      ["a bad wallet id", link("z".repeat(20), secret), PASTE_BAD],
+      ["a contact link", "https://app.zigs.app/#c." + fresh + "." + secret, PASTE_CONTACT],
+      ["a different secret for a wallet you have", link(gid, other), LINK_NEW_SECRET],
+      ["the id of a chat you have", link(cid, secret), LINK_CHAT_ID],
+    ];
+    t.chats.list[cid] = { key: "k".repeat(43), member: "dd".repeat(10), at: 1 };
+    const keysBefore = JSON.stringify(t.gkeys);
+    for (const [what, text, error] of cases) {
+      const done = paste(text);
+      assert.equal(ui.joinBad, error, what + " gives its error");
+      assert.equal(t.wantFocus?.key, "join-link", what + ": the field gets focus back");
+      const now = lobbyTree();
+      assert.equal(byId(now, "join-link").attrs["aria-invalid"], "true",
+        what + ": the field is marked invalid");
+      assert.equal(byId(now, "join-link").attrs["aria-describedby"], "join-help join-error",
+        what + ": the field points at its error");
+      const shown = byId(now, "join-error");
+      assert.equal(textOf(shown), error, what + ": the error shows next to the field");
+      assert.equal(shown.attrs.role, "alert", what + ": a screen reader hears the error");
+      assert.equal(done.value, text, what + ": the text stays in the field");
+      opensNothing(what, keysBefore);
+    }
+    delete t.chats.list[cid];
+    assert.equal(stopped, cases.length, "the submit never leaves the page");
+    for (const text of [secret, other, "#" + fresh]) {
+      assert.equal(leaked(text), false, "a bad link goes to no log, banner, console or storage");
+    }
+
+    // A redraw puts the text back with an input event that nobody typed: the error stays.
+    const typed = paste("");
+    typed.on.input({ isTrusted: false, target: typed });
+    assert.equal(ui.joinBad, PASTE_EMPTY, "a redraw does not end the error");
+    typed.setAttribute("aria-invalid", "true");
+    typed.on.input({ isTrusted: true, target: typed });
+    assert.equal(ui.joinBad, "", "typing ends the error");
+    assert.equal(typed.attrs["aria-invalid"], undefined, "typing clears the mark");
+    assert.equal(typed.attrs["aria-describedby"], "join-help", "typing clears the pointer");
+    ui.joinBad = PASTE_BAD;
+    openGroup(null);
+    assert.equal(ui.joinBad, "", "an error does not wait for the next visit");
+
+    // A good link opens its wallet by the path of the address bar, and keeps its secret.
+    replaced.length = 0;
+    ui.tab = "details";
+    const joined = paste("Open this link: " + link(gid, known) + "\nThen take a seat.");
+    assert.equal(ui.joinBad, "", "a good link has no error");
+    assert.equal(t.state.gid, gid, "a good link opens its wallet");
+    assert.equal(ui.tab, "overview", "the wallet opens on its first tab");
+    assert.equal(t.gkeys[gid], known, "the wallet secret stays");
+    assert.equal(joined.value, "", "the field is empty after a join");
+    assert.deepEqual(replaced.map((a) => a[2]), ["#" + gid],
+      "the address bar never holds a secret");
+    assert.equal(leaked(known, { storageToo: false }), false,
+      "a good link goes to no log or console");
+    for (const text of [link(gid, known), "#" + gid + "." + known, "Open this link"]) {
+      assert.equal(leaked(text), false, "the pasted text stays out of the storage");
+    }
+    openGroup(null);
+
+    // A link to a wallet that this browser does not have: the secret is kept, the wallet opens.
+    paste(link(fresh, secret));
+    assert.equal(t.state.gid, fresh, "a link to a new wallet opens it");
+    assert.equal(t.gkeys[fresh], secret, "the secret of a new wallet is kept");
+
+    // The welcome card, and the list with wallets.
+    const listed = t.state.groups;
+    t.state.groups = [];
+    const welcome = lobbyTree(), card = findNode(welcome, (n) => /\bwelcome\b/.test(n.className));
+    assert.match(textOf(card), /Create your first shared wallet/);
+    assert.match(textOf(card), /any 2 of 3 devices must approve each payment/);
+    assert.match(textOf(card), /New wallets use test networks only.*Zigs is not audited/s);
+    assert.match(textOf(card), /Appearance/, "the welcome card has the theme choice");
+    assert.doesNotMatch(textOf(card), /signer|seat|passkey|USD|Swap/i,
+      "device wording, owner scope");
+    assert.ok(byId(card, "join-link"), "the welcome card has the join form");
+    t.state.groups = [t.cleanGroup(gid, { name: "W", n: 3, t: 2, version: 3 })];
+    const list = lobbyTree();
+    assert.ok(byId(list, "join-link"), "a list with wallets has the join form");
+    assert.match(textOf(list), /New wallets use test networks only.*Zigs is not audited/s);
+    assert.doesNotMatch(textOf(list), /Appearance/, "the theme choice waits for Details");
+    t.state.groups = listed;
+  } finally {
+    for (const m of methods) console[m] = real[m];
+    history.replaceState = realReplace;
+    delete t.chats.list[cid];
+    delete t.gkeys[fresh];
+    ui.joinBad = "";
+    openGroup(null);
+  }
 }
 
 console.log("unified-setup: ok");

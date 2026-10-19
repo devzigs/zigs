@@ -2,7 +2,8 @@
 import assert from "node:assert/strict";
 import {
   byTime, chatWarning, checkText, countUnread, dmText, joinBlock, keyState, newRoom, newSignKey,
-  membersToPin, normChats, parseDm, parseHash, parseMsg, pickRoom, pin, pinMember, pinnedMembers,
+  membersToPin, normChats, parseDm, parseHash, parseMsg, PASTE_BAD, PASTE_CONTACT, PASTE_EMPTY,
+  pastedInvite, pickRoom, pin, pinMember, pinnedMembers,
   signMsg,
   signPairMatches, signedText, validRoom, verifyMsg,
 } from "../chat.js";
@@ -205,6 +206,42 @@ for (const bad of ["__proto__", "constructor", "toString", "hasOwnProperty", "A"
   assert.equal(parseHash("#c." + bad + "." + K).id, "", bad);
 }
 assert.deepEqual(parseHash("#c"), { chat: true, id: "", key: "" });
+
+// A pasted invite link: the link, or a message that holds it. A text with no full wallet link gives
+// a fixed error that never repeats the text.
+const LINK = "https://app.zigs.app/#" + GID + "." + K;
+const found = { id: GID, key: K };
+assert.deepEqual(pastedInvite(LINK), found, "a full link");
+assert.deepEqual(pastedInvite("  \n" + LINK + "\n "), found, "space around the link");
+assert.deepEqual(pastedInvite("#" + GID + "." + K), found, "the fragment alone");
+assert.deepEqual(pastedInvite("Open this link: " + LINK + "\nThen take a seat."), found,
+  "a message with a line break after the link");
+assert.deepEqual(pastedInvite("Open " + LINK + ". Then take a seat."), found, "a full stop");
+assert.deepEqual(pastedInvite("Open " + LINK + " and wait"), found, "a space after the link");
+for (const empty of ["", "   ", "\n\t", undefined, null]) {
+  assert.deepEqual(pastedInvite(empty), { error: PASTE_EMPTY }, "empty: " + JSON.stringify(empty));
+}
+const secret = "s".repeat(43);
+const bad = {
+  "no fragment": "https://app.zigs.app/",
+  "no secret": "https://app.zigs.app/#" + GID,
+  "a short secret": "https://app.zigs.app/#" + GID + "." + K.slice(1),
+  "a long secret": "https://app.zigs.app/#" + GID + "." + K + "x",
+  "a secret with a bad character": "https://app.zigs.app/#" + GID + "." + K.slice(1) + "!",
+  "a bad id": "https://app.zigs.app/#" + "z".repeat(20) + "." + K,
+  "a word": "hello",
+  "a fragment of a word": "see #hello",
+  "a secret before a space": "https://app.zigs.app/#" + GID + ". " + K,
+};
+for (const [what, text] of Object.entries(bad)) {
+  assert.deepEqual(pastedInvite(text), { error: PASTE_BAD }, "bad link: " + what);
+}
+const contact = "https://app.zigs.app/#c." + GID + "." + secret;
+assert.deepEqual(pastedInvite(contact), { error: PASTE_CONTACT }, "a contact link is no wallet");
+assert.deepEqual(pastedInvite("#c." + GID), { error: PASTE_CONTACT }, "a contact link without secret");
+for (const error of [PASTE_EMPTY, PASTE_BAD, PASTE_CONTACT]) {
+  assert.equal(error.includes(K) || error.includes(secret), false, "an error never holds a secret");
+}
 
 // Joining: a full chat wins over a lease that someone else holds.
 const FULL = "This chat already has two people. Ask for a new contact link.";

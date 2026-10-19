@@ -98,6 +98,21 @@ export function parseHash(hash) {
   return { chat, id: validId(id) ? id : "", key: (chat ? c : b) || "" };
 }
 
+export const PASTE_EMPTY = "Paste the invite link first.";
+export const PASTE_CONTACT = "This is a contact link for a chat. Paste a wallet invite link here.";
+export const PASTE_BAD = "This is not a full wallet invite link. Ask for the full link again. "
+  + "It has a long secret after the # sign.";
+
+// The wallet that pasted text names: the link itself or a message that holds it. The text of an
+// error is fixed: it never repeats the pasted text, which holds a secret.
+export function pastedInvite(text) {
+  const pasted = String(text ?? "").trim();
+  if (!pasted) return { error: PASTE_EMPTY };
+  const { chat, id, key } = parseHash(pasted.match(/#\S*/)?.[0] ?? "");
+  if (chat) return { error: PASTE_CONTACT };
+  return validRoom({ id, key }) ? { id, key } : { error: PASTE_BAD };
+}
+
 export const pinnedMembers = (pins, cid) => Object.keys(pins)
   .filter((k) => k.startsWith(cid + ":")).map((k) => k.slice(cid.length + 1));
 

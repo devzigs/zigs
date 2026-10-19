@@ -707,6 +707,26 @@ body:has(.dialog), body:has(.drawer) { overflow: hidden; }
 
 /* The welcome card of an empty wallet list. */
 .welcome h2 { font-size: clamp(24px, 3.2vw, 32px); line-height: 1.15; letter-spacing: -0.035em; }
+.welcome-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 12px; }
+/* The join form: the field and its button share a row; the error sits under the field. */
+.join { display: grid; gap: 10px; }
+.join h3 { font-size: 15px; }
+.join-row { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 6px 12px; align-items: end; }
+.join-row > .btn { min-height: 52px; }
+.join-row > .small.bad { grid-column: 1; }
+.join-row > .off-why { grid-column: 1 / -1; }
+.welcome > .join, .welcome-foot { padding-top: 22px; border-top: 1px solid var(--line); }
+.welcome-foot { display: flex; flex-wrap: wrap; align-items: end; justify-content: space-between; gap: 16px; }
+.welcome-foot > p { flex: 1 1 18rem; max-width: 52ch; }
+.welcome-foot > .field { flex: 0 1 240px; }
+@media (max-width: 520px) {
+  .join-row { grid-template-columns: minmax(0, 1fr); }
+  .join-row > .field { order: 1; }
+  .join-row > .small.bad { order: 2; }
+  .join-row > .btn { order: 3; }
+  .join-row > .off-why { order: 4; }
+  .welcome-foot > .field { flex-basis: 100%; }
+}
 
 /* On a narrow screen the actions of a seat row go under its name. */
 @media (max-width: 520px) {

@@ -208,6 +208,7 @@ export function openGroup(gid) {
   if (ui.sendFor && ui.sendFor !== gid) { ui.send = false; ui.pay = null; ui.note = ""; }
   dropReview();
   ui.after = null;   // the notes of an expired payment of the wallet that was open
+  ui.joinBad = "";   // the error of a pasted invite link belongs to the wallet list
   ui.backup = null;   // the dialog names a seat of the wallet that was open
   dropChain();
   Object.assign(state, {
