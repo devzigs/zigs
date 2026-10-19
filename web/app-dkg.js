@@ -288,7 +288,8 @@ export async function stopSetup() {
   for (const [i, s] of mySeatSecrets(gid)) {
     if (s.aborted) continue;
     const text = abortText("The person who uses device " + i + " saw a different safety number");
-    saved = (await putSec(gid, i, { aborted: text })) && saved;
+    // The stop also drops the address check of the seat, so the wallet page does not come back.
+    saved = (await putSec(gid, i, { aborted: text, checkedWallet: null })) && saved;
   }
   if (!saved) throw new Error(STOP_UNSAVED);
 }

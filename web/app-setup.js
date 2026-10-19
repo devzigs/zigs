@@ -290,8 +290,10 @@ function keyStep(c) {
   return ["now", "Each device is preparing its part of the key (" + c.r1 + " of " + c.n + ")…"];
 }
 
+// A stop before the wallet existed leaves no address to build.
+const noAddress = (c) => !c.w && (!!c.stopped || c.aborts.length > 0);
 function addrStage(c) {
-  if (c.rejected.length) return "bad";
+  if (c.rejected.length || noAddress(c)) return "bad";
   if (c.mismatch) return "";
   if (c.w && c.ver === c.n) return "done";
   return c.d === c.n ? "now" : "";

@@ -1353,6 +1353,7 @@ assert.match(marginText(3, 3), /Each payment needs every device/);
     const stopNote = findNode(view(), (n) => n.attrs?.["data-key"] === "stop-setup");
     assert.equal(stopNote?.attrs.tabindex, "-1", "the focus stays on the stop");
     assert.match(seen(), /Stopped: no address\./, "the address step says that the setup stopped");
+    assert.equal(t.secrets[k1].checkedWallet, null, "the stop drops the address check of the seat");
     await waitFor("the abort document", () => !!data.get(`groups/${gidV}/abort/1`));
     assert.equal(creates(), false, "a stopped seat 1 builds no wallet");
     t.state.wallet = keep.wallet;
