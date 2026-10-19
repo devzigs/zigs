@@ -223,17 +223,17 @@ function overviewTab() {
 const receivedNote = (list) => list.some((a) => a.r) ? el("p", { class: "small muted card-pad" },
   explorerText(curNet(), "A received payment in this list")) : null;
 
-// A move sends the Zcash funds only (proposeMove): a Solana part stays with this wallet.
-const SOL_STAYS = "A Solana part does not move this way. Solana funds stay in this wallet, so "
-  + "check them in the Solana section.";
+// A move sends the Zcash funds only (proposeMove). solOn() says only that the wallet can have a
+// Solana part, so the text holds with or without one.
+const SOL_STAYS = "If this wallet has a Solana part, it does not move this way: check it in its "
+  + "Solana section.";
 const movePayment = () => state.sessions.find((x) => x.move === state.g.movedTo && !x.error
   && !ended(x));
 
 // The steps of a move, read from the old wallet: new wallet ready, payment proposed, funds gone.
-// A wallet that can have a Solana part never shows the move as done.
 export function moveState(c) {
   const m = moveStep(c, state.g.movedTo);
-  return solOn() ? { ...m, text: m.text + " " + SOL_STAYS, done: false } : m;
+  return solOn() ? { ...m, text: m.text + " " + SOL_STAYS } : m;
 }
 
 function moveStep(c, to) {
@@ -249,7 +249,8 @@ function moveStep(c, to) {
   return ss ? paymentStep(c, ss, to) : proposeStep(to);
 }
 
-// The move payment exists. An empty balance counts as of the last sync only.
+// The move payment exists. An empty balance counts as of the last sync only, and before a sync
+// the page knows only that a device sent the payment.
 function paymentStep(c, ss, to) {
   if (!ss.broadcastTxid) {
     return { text: "Moving the Zcash funds to " + groupName(to) + " is in progress. Open the "
@@ -260,11 +261,14 @@ function paymentStep(c, ss, to) {
       + "the next block.", open: to };
   }
   const b = c && c.bal ? balanceNow(c.bal) : null;
-  if (!b || b.spendable + b.pending !== 0) return proposeStep(to);
+  if (!b) return sentStep(to);
+  if (b.spendable + b.pending !== 0) return proposeStep(to);
   return { text: "The Zcash funds moved to " + groupName(to) + ", as of the last sync.", open: to,
     done: true };
 }
 
+const sentStep = (to) => ({ text: "A device sent the Zcash funds to " + groupName(to) + ". This "
+  + "browser has not synced yet, so it cannot show if they arrived.", open: to });
 const proposeStep = (to) => ({ text: groupName(to) + " is ready. Move the Zcash funds to it. "
   + "Like any payment, this needs " + state.g.t + " approvals.", propose: true });
 
@@ -358,7 +362,8 @@ const sendingLine = (zat) => el("div", { class: "sending" }, el("span", { class:
 
 // The faucet is a site that is not Zigs (PRIVACY.md).
 export const FAUCET_TEXT = "That site is not Zigs: it sees the address that you paste and your "
-  + "IP address.";
+  + "IP address. Its public status lists each payout with a short form of the address, the "
+  + "transaction id, the amount and the time.";
 function emptyNote(b) {
   if (!b || b.spendable + b.pending + b.sending !== 0 || state.g.movedTo) return null;
   return el("div", { class: "callout" }, curNet().faucet

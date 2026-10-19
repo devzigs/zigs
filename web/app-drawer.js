@@ -450,4 +450,5 @@ function chainSees() {
 // wallet library (PRIVACY.md, On chain).
 const EXPIRY_PUBLIC = "The expiry height is public too. Zigs sets it up to one day after the "
   + "proposal, and a standard wallet sets it 40 blocks ahead. So the expiry height can show that "
-  + "Zigs made this payment.";
+  + "Zigs made this payment. Few wallets pay a priority fee, so a priority fee can mark a payment "
+  + "too.";

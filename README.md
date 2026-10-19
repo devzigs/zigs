@@ -1,8 +1,10 @@
 # Zigs
 
 **Shared wallets for shielded Zcash.** A team creates one private address together, and any *t* of
-its *n* signers must approve each payment. Nobody ever holds the whole key, the server cannot read
-the wallet, and on chain each payment looks like a shielded payment from a standard wallet.
+its *n* signers must approve each payment. Nobody ever holds the whole key, and the server cannot
+read the wallet. On chain a payment has the shape of a shielded payment from a standard wallet,
+except for its one-day expiry, which can mark it as a Zigs payment. So can a priority fee, when the
+proposer chooses one ([comparison](PRIVACY.md#on-chain)).
 
 - Web app: https://app.zigs.app (no install, no account). Until launch, the browser asks for a
   user name and a password. Any user name works. Ask the Zigs team for the password.

@@ -313,6 +313,8 @@ function receiveTexts() {
     assert.match(textOf(box), /becomes spendable after 3 confirmations\. Get free testnet ZEC/);
     assert.match(textOf(box), /faucet ↗\. That site is not Zigs: it sees the address that you/,
       "the faucet note says what the faucet sees");
+    assert.match(textOf(box), /Its public status lists each payout with a short form of the/,
+      "and that the faucet publishes each payout");
     assert.ok(!byText(box, "Share address"), "no Share button without Web Share");
     const first = findNode(box, (n) => n.attrs?.["data-first-focus"] !== undefined);
     assert.equal(first && textOf(first), "Copy address", "the dialog opens on Copy address");
@@ -409,19 +411,34 @@ function explorerTexts(chain) {
     t.setChain(chain);
   }
 }
-// The invite link sits in the disclosure of its QR code; Copy link stays on the page.
+// The invite link sits in the disclosure of its QR code, which starts closed. While it is closed,
+// neither its summary nor any attribute shows the wallet secret. Copy link stays on the page and
+// copies the whole link.
 function inviteTexts() {
-  const tab = t.ui.tab, link = inviteLink(t.state.gid);
+  const tab = t.ui.tab, link = inviteLink(t.state.gid), secret = link.split("#")[1];
+  const nav = Object.getOwnPropertyDescriptor(globalThis, "navigator");
   t.ui.tab = "members";
   try {
     const page = pageTree(), box = findNode(page, (n) => n.className === "qr-toggle");
-    assert.match(textOf(box), /^Show link and QR code/, "the summary names what it hides");
+    assert.ok(!("open" in box.attrs) && !box.open, "the disclosure is closed by default");
+    assert.equal(textOf(box.kids[0]), "Show link and QR code", "the summary shows no link");
     assert.ok(textOf(box).includes(link), "the link text sits inside the disclosure");
     const outside = (n) => (n === box ? "" : n.text ?? n.kids.map(outside).join(""));
     assert.ok(!outside(page).includes(link), "no link text outside the disclosure");
-    assert.ok(byText(page, "Copy link") && !byText(box, "Copy link"),
+    const leaks = (n) => [n.className, n.innerHTML, ...Object.values(n.attrs ?? {})]
+      .some((v) => String(v ?? "").includes(secret)) || (n.kids ?? []).some(leaks);
+    assert.ok(!leaks(page), "no attribute holds the wallet secret");
+    const copy = findNode(page, (n) => !!n.on?.click && textOf(n) === "Copy link");
+    assert.ok(copy && !byText(box, "Copy link"),
       "Copy link stays on the page, outside the disclosure");
+    const copied = [];
+    Object.defineProperty(globalThis, "navigator", { configurable: true,
+      value: { clipboard: { writeText: async (x) => { copied.push(x); } } } });
+    copy.on.click({ currentTarget: copy });   // the copy runs before the first await
+    assert.deepEqual(copied, [link], "Copy link copies the full invite link");
   } finally {
+    if (nav) Object.defineProperty(globalThis, "navigator", nav);
+    else delete globalThis.navigator;
     t.ui.tab = tab;
   }
 }

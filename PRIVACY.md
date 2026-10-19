@@ -6,8 +6,11 @@ is a bug: please report it.
 
 ## Summary
 
-- On chain, a Zigs payment looks like a payment from any standard Zcash wallet. Nothing shows that
-  a group signed it, who the signers are, or which of them approved.
+- On chain, a Zigs payment has the shape of a payment from the standard Zcash wallet library: the
+  same builder, padding, fee rule and anchor. Its expiry differs: up to one day after the
+  proposal, where the library sets 40 blocks. So the expiry can mark a Zigs payment, and so can a
+  priority fee when the proposer chooses one ([On chain](#on-chain)). The signature does not show
+  that a group signed, who the signers are, or which of them approved.
 - The group server relays and stores encrypted data. It cannot read wallet names, signer names,
   addresses, amounts, notes, recipients or transactions. It does see who connects, to which
   wallet, and when.
@@ -49,7 +52,7 @@ property:
 | Fee | ZIP 317 standard rule, or 10 times it when the proposer chooses a priority fee | ZIP 317 standard rule |
 | Anchor | Target height − 3 (3 confirmations) | Same (`ConfirmationsPolicy` trusted = 3) |
 | Change | One note to the wallet's internal address | Same |
-| Memos | Empty | Empty unless a signer writes one for a recipient |
+| Memos | Empty unless a signer writes one for a recipient | Empty unless the user writes one |
 | Transparent parts | None | None for a shielded payment |
 | Several recipients | One output per recipient, plus change | Same for a multi-recipient payment (ZIP 321) |
 

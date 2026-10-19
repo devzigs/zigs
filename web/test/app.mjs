@@ -1977,8 +1977,9 @@ const sealed = (gid, rel, seat, fields, key, names = ["by", "sig"]) =>
     t.state.sessions.push(move);
     assert.equal(t.moveState(tipAt(4500000)).session, move);
     assert.equal(t.moveState(tipAt(4503453)).propose, true, "the expired move goes again");
-    // The move sends the Zcash funds only. An empty Zcash balance counts as of the last sync,
-    // closes nothing, and a wallet that can have a Solana part says that this part stays.
+    // The move sends the Zcash funds only. An empty Zcash balance counts as of the last sync and
+    // closes nothing. Before a sync the page knows only that a device sent the move. A wallet that
+    // can have a Solana part says that such a part stays, and the move can still be done.
     const sentMove = { ...move, id: "x3s", broadcastTxid: "realtx", broadcastAt: 1,
       final: { txid: "realtx", tx_hex: "00" } };
     t.state.sessions.splice(t.state.sessions.indexOf(move), 1, sentMove);
@@ -1987,8 +1988,8 @@ const sealed = (gid, rel, seat, fields, key, names = ["by", "sig"]) =>
       c.bal.spendable = 0;
       return c;
     };
-    const SOL_STAYS = new RegExp(" A Solana part does not move this way\\. Solana funds stay in "
-      + "this wallet, so check them in the Solana section\\.$");
+    const SOL_STAYS = new RegExp(" If this wallet has a Solana part, it does not move this way: "
+      + "check it in its Solana section\\.$");
     const solKey = "confirmednet:" + t.state.gid, pinned = t.signPins[solKey];
     const moveCard = () => all(t.walletView(null, null),
       (x) => /^card card-pad/.test(x.className ?? "") && /Changing devices|This wallet moved/
@@ -2010,17 +2011,25 @@ const sealed = (gid, rel, seat, fields, key, names = ["by", "sig"]) =>
         t.ui.tab = "members";
         try { return textOf(t.walletView(null, null)); } finally { t.ui.tab = "overview"; }
       };
-      assert.doesNotMatch(devicesText(), /A Solana part/, "Devices: no Solana text without one");
+      assert.doesNotMatch(devicesText(), /Solana part/, "Devices: no Solana text without one");
+      const SENT = new RegExp("^A device sent the Zcash funds to .+\\. This browser has not "
+        + "synced yet, so it cannot show if they arrived\\.$");
+      for (const c of [null, { ...more(), bal: null }]) {
+        t.setChain(c);
+        const n = t.moveState(c);
+        assert.match(n.text, SENT, "a sent move before a sync says only what the page knows");
+        assert.deepEqual([n.propose, n.done, n.open], [undefined, undefined, "MV1"],
+          "no Move button and no done before a sync");
+      }
       t.signPins[solKey] = "testnet";
       assert.equal(t.solOn(), true, "a wallet that can have a Solana part");
       m = t.moveState(emptied());
       assert.match(m.text, /^The Zcash funds moved to .+, as of the last sync\./);
       assert.match(m.text, SOL_STAYS, "a move with a Solana part says that this part stays");
-      assert.ok(!m.done, "a Solana part keeps the move open");
-      assert.match(textOf(moveCard()), /^Changing devices/);
-      assert.equal(moveCard().className, "card card-pad attention");
+      assert.equal(m.done, true, "the Solana sentence does not keep the move open");
+      assert.match(textOf(moveCard()), /^This wallet moved/);
       assert.match(t.moveState(more()).text, SOL_STAYS, "also in the other steps");
-      assert.match(devicesText(), /then move the Zcash funds to it\. A Solana part does not move/,
+      assert.match(devicesText(), /move the Zcash funds to it\. If this wallet has a Solana part,/,
         "Devices: a Solana part does not move");
     } finally {
       t.signPins[solKey] = pinned;
@@ -2442,7 +2451,8 @@ const sealed = (gid, rel, seat, fields, key, names = ["by", "sig"]) =>
       assert.ok(named(headOf(landedA), "span", "Testnet"), "the drawer head names the network");
       assert.match(blockStep(landedA), new RegExp("The expiry height is public too\\. Zigs sets "
         + "it up to one day after the proposal, and a standard wallet sets it 40 blocks ahead\\. "
-        + "So the expiry height can show that Zigs made this payment\\."));
+        + "So the expiry height can show that Zigs made this payment\\. Few wallets pay a "
+        + "priority fee, so a priority fee can mark a payment too\\."));
       assert.match(blockStep(landedA), new RegExp("View in explorer opens testnet\\.zecblock\\.com "
         + "in a new tab\\. That site is not Zigs: it sees the transaction id that you open and "
         + "your IP address\\."));
