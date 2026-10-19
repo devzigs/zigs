@@ -1173,7 +1173,8 @@ assert.match(marginText(3, 3), /Each payment needs every signer/);
     }
   };
   const formOf = (tree) => findNode(tree, (n) => !!n.on?.submit && !!byId(n, "join-link"));
-  const { PASTE_BAD, PASTE_CONTACT, PASTE_EMPTY, PASTE_OTHER } = await import("../chat.js");
+  const { PASTE_BAD, PASTE_CONTACT, PASTE_EMPTY, PASTE_MANY, PASTE_OTHER } =
+    await import("../chat.js");
   const { LINK_CHAT_ID, LINK_NEW_SECRET } = await import("../util.js");
   const { openGroup, roomKeys } = await import("../app-groups.js");
   const { joinLinks } = await import("../app-messages.js");
@@ -1224,10 +1225,12 @@ assert.match(marginText(3, 3), /Each payment needs every signer/);
     assert.equal(t.wantFocus?.key, "join-link", "the choice moves focus to the field");
     assert.equal(byText(lobbyTree(), "Join a shared wallet").attrs["aria-expanded"], "true",
       "the open form shows in the choice");
-    // A second press closes the form and its error.
+    // A second press closes the form and its error. It asks for no focus on the field that is gone.
     ui.joinBad = PASTE_BAD;
+    focusAfter(null);
     byText(lobbyTree(), "Join a shared wallet").on.click();
     assert.equal(ui.joinOpen, false, "a second press closes the form");
+    assert.equal(t.wantFocus, null, "closing the form asks for no focus");
     assert.equal(ui.joinBad, "", "closing the form ends its error");
     const shut = lobbyTree();
     assert.equal(byId(shut, "join-link"), null, "the closed form is gone");
@@ -1256,6 +1259,7 @@ assert.match(marginText(3, 3), /Each payment needs every signer/);
       ["a contact link", base + "#c." + fresh + "." + secret, PASTE_CONTACT],
       ["a link of another server", "https://evil.example/#" + fresh + "." + secret, PASTE_OTHER],
       ["a link of another path", base + "other/#" + fresh + "." + secret, PASTE_OTHER],
+      ["two different wallet links", link(fresh, secret) + " " + link(rid, other), PASTE_MANY],
       ["a different secret for a wallet you have", link(gid, other), LINK_NEW_SECRET],
       ["the id of a chat you have", link(cid, secret), LINK_CHAT_ID],
       ["the id of a message room", link(rid, secret), LINK_CHAT_ID],
@@ -1322,6 +1326,34 @@ assert.match(marginText(3, 3), /Each payment needs every signer/);
     paste(link(fresh, secret));
     assert.equal(t.state.gid, fresh, "a link to a new wallet opens it");
     assert.equal(t.gkeys[fresh], secret, "the secret of a new wallet is kept");
+
+    delete t.gkeys[fresh];
+    openGroup(null);
+    // A contact link before a wallet link: the wallet opens, no chat waits.
+    paste(base + "#c." + cid + "." + secret + " and then " + link(fresh, secret));
+    assert.equal(t.state.gid, fresh, "a contact link and a wallet link open the wallet");
+    assert.equal(t.gkeys[fresh], secret, "the secret of that wallet is kept");
+    assert.equal(joinLinks.size, 0, "no chat waits after that paste");
+    delete t.gkeys[fresh];
+    openGroup(null);
+    // The server shows one page at / and at /index.html: a link of either opens on either.
+    const realHref = location.href;
+    try {
+      location.href = base + "index.html";
+      for (const text of [link(fresh, secret), base + "index.html#" + fresh + "." + secret]) {
+        paste(text);
+        assert.equal(t.state.gid, fresh, "a link opens on /index.html: " + text.slice(0, 30));
+        delete t.gkeys[fresh];
+        openGroup(null);
+      }
+      location.href = base;
+      paste(base + "index.html#" + fresh + "." + secret);
+      assert.equal(t.state.gid, fresh, "a link of /index.html opens on /");
+      delete t.gkeys[fresh];
+      openGroup(null);
+    } finally {
+      location.href = realHref;
+    }
 
     // The welcome card, and the list with wallets.
     const listed = t.state.groups;

@@ -1,6 +1,6 @@
 // Invite links and hash routing.
 import { LINK_CHAT_ID, linkRefusal } from "./util.js";
-import { parseHash, pastedInvite, validRoom } from "./chat.js";
+import { pageKey, parseHash, pastedInvite, validRoom } from "./chat.js";
 import { showBanner, state, ui } from "./app-state.js";
 import { chats, gkeys, lockedVault, putKey } from "./app-keystore.js";
 import { openGroup, roomKeys } from "./app-groups.js";
@@ -34,8 +34,7 @@ function adoptWalletLink(gid, key) {
 // does. It returns the reason when the text opens nothing. The secret goes nowhere else: not to
 // the address bar, a log or a banner.
 export function joinWalletLink(text) {
-  const page = new URL(location.href);
-  const link = pastedInvite(text, page.origin + page.pathname);
+  const link = pastedInvite(text, pageKey(new URL(location.href)));
   const refusal = link.error ?? takeWalletKey(link.id, link.key);
   if (refusal) return refusal;
   ui.tab = "overview";

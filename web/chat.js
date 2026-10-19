@@ -101,13 +101,18 @@ export function parseHash(hash) {
 export const PASTE_EMPTY = "Paste the invite link first.";
 export const PASTE_CONTACT = "This is a contact link for a chat. Paste a wallet invite link here.";
 export const PASTE_OTHER = "This invite link is for another Zigs server. Open it there.";
+export const PASTE_MANY = "This text holds more than one wallet invite link. Paste only the "
+  + "link of your wallet.";
 export const PASTE_BAD = "This is not a full wallet invite link. Ask for the full link again. "
   + "It has a long secret after the # sign.";
 
 // The shape of a wallet link in a text: "#", the wallet id, ".", the secret. Nothing of the key
 // alphabet may follow. The same parts as ROOM_ID and ROOM_KEY.
 const part = (re) => re.source.slice(1, -1);
-const INVITE = new RegExp("#(" + part(ROOM_ID) + ")\\.(" + part(ROOM_KEY) + ")(?![\\w-])");
+const INVITE = new RegExp("#(" + part(ROOM_ID) + ")\\.(" + part(ROOM_KEY) + ")(?![\\w-])", "g");
+
+// The origin and path of a page. The server shows one page at "/" and at "/index.html".
+export const pageKey = (url) => url.origin + url.pathname.replace(/\/index\.html$/, "/");
 
 // Does the text before the "#" of a link name `here`, the page that is open (origin and path)?
 // No text means a bare fragment, which is the page that is open.
@@ -117,22 +122,38 @@ function pointsHere(before, here) {
   if (!url) return true;
   try {
     const page = new URL(/^[a-z][a-z\d+.-]*:/i.test(url) ? url : "https://" + url);
-    return page.origin + page.pathname === here;
+    return pageKey(page) === here;
   } catch { return false; }
 }
 
+// The first full wallet link of a text, and whether the text holds another one. The same link
+// twice is one link. The wallet name of an invite message has no signature, so a link in it must
+// not win over the link that follows.
+function walletLinks(pasted) {
+  let first = null;
+  for (const link of pasted.matchAll(INVITE)) {
+    first ??= link;
+    if (link[1] !== first[1] || link[2] !== first[2]) return { first, many: true };
+  }
+  return { first, many: false };
+}
+
+// The wallet of the first link of a text, if the text before the link names the open page.
+function linkOf(first, pasted, here) {
+  const before = pasted.slice(0, first.index).split(/\s/).pop();
+  return pointsHere(before, here) ? { id: first[1], key: first[2] } : { error: PASTE_OTHER };
+}
+
 // The wallet that pasted text names: the link itself, or a message that holds it, also when a name
-// or a mark comes before or after the link. The first full wallet link counts. `here` is the
-// origin and path of the open page: a link of another page opens nothing. The text of an error
-// is fixed: it never repeats the pasted text, which holds a secret.
+// or a mark comes before or after the link. A text with two different wallet links names none.
+// `here` is the pageKey of the open page: a link of another page opens nothing. The text of an
+// error is fixed: it never repeats the pasted text, which holds a secret.
 export function pastedInvite(text, here) {
   const pasted = String(text ?? "").trim();
   if (!pasted) return { error: PASTE_EMPTY };
-  const found = pasted.match(INVITE);
-  if (found) {
-    const before = pasted.slice(0, found.index).split(/\s/).pop();
-    return pointsHere(before, here) ? { id: found[1], key: found[2] } : { error: PASTE_OTHER };
-  }
+  const { first, many } = walletLinks(pasted);
+  if (many) return { error: PASTE_MANY };
+  if (first) return linkOf(first, pasted, here);
   const { chat } = parseHash(pasted.match(/#\S*/)?.[0] ?? "");
   return { error: chat ? PASTE_CONTACT : PASTE_BAD };
 }

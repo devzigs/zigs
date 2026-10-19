@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import {
   byTime, chatWarning, checkText, countUnread, dmText, joinBlock, keyState, newRoom, newSignKey,
   membersToPin, normChats, parseDm, parseHash, parseMsg, PASTE_BAD, PASTE_CONTACT, PASTE_EMPTY,
-  PASTE_OTHER, pastedInvite, pickRoom, pin, pinMember, pinnedMembers,
+  PASTE_MANY, PASTE_OTHER, pageKey, pastedInvite, pickRoom, pin, pinMember, pinnedMembers,
   signMsg,
   signPairMatches, signedText, validRoom, verifyMsg,
 } from "../chat.js";
@@ -243,7 +243,13 @@ const joins = {
   "a host in capitals": "HTTPS://APP.ZIGS.APP/#" + GID + "." + K,
   "a path without a slash": "https://app.zigs.app#" + GID + "." + K,
   "a query before the fragment": HERE + "?from=chat#" + GID + "." + K,
-  "two wallet links: the first counts": LINK + " " + HERE + "#" + ROOM + "." + K,
+  "the same link twice": LINK + " and again " + LINK,
+  "a contact link, then a wallet link": HERE + "#c." + ROOM + "." + K + " and then " + LINK,
+  "a wallet link, then a contact link": LINK + " and then " + HERE + "#c." + ROOM + "." + K,
+  "a bare link in brackets": "Open (#" + GID + "." + K + ") now",
+  "a bare host in angle brackets": "Open <app.zigs.app/#" + GID + "." + K + ">",
+  "another address earlier in the message": "See https://zigs.app/about and open " + LINK,
+  "a page of this server at /index.html": "https://app.zigs.app/index.html#" + GID + "." + K,
 };
 for (const [what, text] of Object.entries(joins)) {
   assert.deepEqual(pastedInvite(text, HERE), wanted, "a link is found: " + what);
@@ -264,6 +270,7 @@ const bad = {
   "a fragment of a word": "see #hello",
   "a secret before a space": HERE + "#" + GID + ". " + K,
   "a name with # and no link": 'I made a shared wallet "Team #2" on Zigs.',
+  "capitals in the wallet id": HERE + "#" + GID.toUpperCase() + "." + K,
 };
 for (const [what, text] of Object.entries(bad)) {
   assert.deepEqual(pastedInvite(text, HERE), { error: PASTE_BAD }, "bad link: " + what);
@@ -277,10 +284,37 @@ const elsewhere = {
   "a script": "javascript:alert(1)//#" + GID + "." + K,
   "a site in a message": "Open https://evil.example/#" + GID + "." + K + " now",
   "a site in brackets": "<https://evil.example/#" + GID + "." + K + ">",
+  "a site that holds this page in its query":
+    "https://evil.example/?u=" + HERE + "#" + GID + "." + K,
 };
 for (const [what, text] of Object.entries(elsewhere)) {
   assert.deepEqual(pastedInvite(text, HERE), { error: PASTE_OTHER }, "another page: " + what);
 }
+// A text with two different wallet links names none: the wallet name of an invite message has no
+// signature, so a link in it must not win over the link that follows.
+const KEY2 = "k".repeat(43), many = {
+  "two wallets": LINK + " " + HERE + "#" + ROOM + "." + K,
+  "two secrets for one wallet": LINK + " " + HERE + "#" + GID + "." + KEY2,
+  "a link in the wallet name of an invite message":
+    invite("Team " + HERE + "#" + ROOM + "." + KEY2),
+  "a link of another server, then the link":
+    "https://staging.example/#" + ROOM + "." + K + " " + LINK,
+  "three links, the third differs": LINK + " " + LINK + " " + HERE + "#" + ROOM + "." + K,
+};
+for (const [what, text] of Object.entries(many)) {
+  assert.deepEqual(pastedInvite(text, HERE), { error: PASTE_MANY }, "more than one link: " + what);
+}
+// The server shows its page at "/" and at "/index.html": the page of a link and the open page
+// match.
+assert.equal(pageKey(new URL(HERE)), HERE);
+assert.equal(pageKey(new URL(HERE + "index.html")), HERE, "index.html is the root page");
+assert.equal(pageKey(new URL(HERE + "app/index.html")), HERE + "app/");
+assert.equal(pageKey(new URL(HERE + "index.htm")), HERE + "index.htm", "only index.html");
+assert.equal(pageKey(new URL(HERE + "xindex.html")), HERE + "xindex.html", "only a whole name");
+const atIndex = pageKey(new URL(HERE + "index.html"));
+assert.deepEqual(pastedInvite(HERE + "index.html#" + GID + "." + K, atIndex), wanted,
+  "a link of /index.html opens on /index.html");
+assert.deepEqual(pastedInvite(LINK, atIndex), wanted, "a link of / opens on /index.html");
 assert.deepEqual(pastedInvite("http://localhost:8873/#" + GID + "." + K, "http://localhost:8873/"),
   wanted, "the open page can be a test server");
 const contact = HERE + "#c." + GID + "." + secret;
@@ -288,7 +322,7 @@ assert.deepEqual(pastedInvite(contact, HERE), { error: PASTE_CONTACT },
   "a contact link is no wallet");
 assert.deepEqual(pastedInvite("#c." + GID, HERE), { error: PASTE_CONTACT },
   "a contact link without secret");
-for (const error of [PASTE_EMPTY, PASTE_BAD, PASTE_CONTACT, PASTE_OTHER]) {
+for (const error of [PASTE_EMPTY, PASTE_BAD, PASTE_CONTACT, PASTE_OTHER, PASTE_MANY]) {
   assert.equal(error.includes(K) || error.includes(secret), false, "an error never holds a secret");
 }
 // A long paste ends at once: the link is found in one pass.
