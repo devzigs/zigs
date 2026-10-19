@@ -1,7 +1,7 @@
 // Receive and send dialogs.
 import { MEMO_BYTES, memoBytes, memoError, parsePayeeList, toZat, zatText } from "./payees.js";
 import { payeeRows, requestProblem } from "./requests.js";
-import { state, ui } from "./app-state.js";
+import { showBanner, state, ui } from "./app-state.js";
 import { fmtZec } from "./app-kit.js";
 import { Z } from "./app-engine.js";
 import { addrHidden, atCap, curChain, curNet, netName } from "./app-chain.js";
@@ -10,30 +10,63 @@ import { feeEstimate, newSpend, PRIORITY_FACTOR, sendBlocker } from "./app-payme
 import { requestOf } from "./app-payreq.js";
 import { nameOf, recentNote, registry, resolveRecipient, zecName } from "./zns.js";
 import { render } from "./app-loop.js";
-import { capNote, receiveLimit, receiveWhat } from "./app-wallet.js";
+import { capNote, movedNote, receiveLimit, receiveWhat } from "./app-wallet.js";
 
 const MAX_PAYEES = 20;
 const TOO_MANY = "A payment can have at most " + MAX_PAYEES + " recipients.";
 
+// The network name comes from the open wallet, so a mainnet wallet still reads Mainnet (D3).
 export function receiveDialog() {
-  const w = state.wallet, hidden = addrHidden();
+  const w = state.wallet, hidden = addrHidden(), net = "Zcash " + curNet().label;
   const close = el("button", {
     class: "icon-btn", type: "button", "aria-label": "Close",
     onclick: () => { ui.receive = false; render(); },
   }, "×");
-  const faucet = curNet().faucet
-    ? el("a", { class: "btn ghost", href: curNet().faucet, target: "_blank", rel: "noopener" },
-      "Get testnet ZEC ↗") : el("span");
-  return el("div", { class: "dialog", role: "dialog", "aria-modal": "true", "aria-labelledby": "recv-title" },
-    el("div", { class: "card-head" }, el("h2", { id: "recv-title" }, "Receive ZEC"), close),
-    atCap() ? capNote() : el("p", { class: "small muted" }, "Send " + receiveWhat()
-      + " to this shielded address. Senders and the network cannot see the balance or who "
-      + "controls it." + receiveLimit()),
-    hidden ? null : qrBox(w.address, "Wallet address"),
-    hidden ? null : el("div", { class: "addr-full" }, addrGroups(w.address)),
-    el("div", { class: "dialog-actions", style: "justify-content:space-between" },
-      faucet, hidden ? null : copyBtn(w.address, "Copy address", "btn primary")));
+  const title = el("div", { style: "display:grid;gap:6px;justify-items:start" },
+    el("h2", { id: "recv-title" }, "Receive ZEC"), el("span", { class: "badge plain" }, net));
+  const copy = copyBtn(w.address, "Copy address", "btn primary");
+  copy.setAttribute("data-first-focus", "");
+  const address = hidden ? [] : [state.g.movedTo ? movedNote() : sendOnly(net),
+    qrBox(w.address, "Wallet address"), el("div", { class: "addr-full" }, addrGroups(w.address))];
+  return el("div", {
+    class: "dialog", role: "dialog", "aria-modal": "true", "aria-labelledby": "recv-title",
+  }, el("div", { class: "card-head" }, title, close), receiveLead(hidden), ...address,
+  hidden ? null : el("div", { class: "dialog-actions" }, shareBtn(w.address), copy));
 }
+
+// What the dialog says above the address: the cap, why the address is not shown yet, or what the
+// address does.
+function receiveLead(hidden) {
+  if (atCap()) return capNote();
+  if (hidden) {
+    return el("p", { class: "small muted" }, "The address shows here after your seat checks it "
+      + "against its own key.");
+  }
+  return el("p", { class: "small muted" }, "Use this shielded address to receive "
+    + receiveWhat() + ". Senders and the network cannot see the balance or who controls it. "
+    + "The signers of this wallet can see its balance and history." + receiveLimit());
+}
+
+function sendOnly(net) {
+  const faucet = curNet().faucet ? [" Get free testnet ZEC from a ", el("a", {
+    href: curNet().faucet, target: "_blank", rel: "noopener", style: "white-space:nowrap",
+  }, "faucet ↗"), "."] : [];
+  return el("div", { class: "callout" }, el("span", {}, "Send only ZEC on " + net + " to this "
+    + "address. A payment that arrives becomes spendable after 3 confirmations.", ...faucet));
+}
+
+// Web Share sends the address alone. A sheet that the person closes is no error.
+function shareBtn(address) {
+  if (!navigator.share) return null;
+  const failed = (e) => {
+    if (e?.name !== "AbortError") showBanner("bad", SHARE_FAILED);
+  };
+  return el("button", {
+    class: "btn", type: "button",
+    onclick: () => navigator.share({ text: address }).catch(failed),
+  }, "Share address");
+}
+const SHARE_FAILED = "This device could not share the address. Use Copy address.";
 
 function addressHint(hint, to) {
   const v = to.trim(), ok = v ? onNetwork(v) : null, net = curNet().label.toLowerCase();
