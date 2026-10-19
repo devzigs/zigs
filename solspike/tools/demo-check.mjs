@@ -72,8 +72,8 @@ const PINS = [
   {
     name: "pool program",
     address: POOL,
-    sha256: "3641ffe2b2e635a0ed5978416559944d8c1618fe49372f9082eefeb2ac322cab",
-    what: "the pool that the SDK pin reads (SOL-37)",
+    sha256: "44238d6fd9e0adc73abd79fe095f78dbe4a4ce5f179ed4f99c3468d1abccc72f",
+    what: "the v0.4.1-alpha pool, which keeps the layout that the SDK pin reads (SOL-37 T0)",
   },
 ];
 

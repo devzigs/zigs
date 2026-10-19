@@ -95,8 +95,8 @@ The owner does every write: deploys, payments, faucet claims and name claims.
   Zcash payment as the flow stands, and the Solana private payment (propose, approve, prove,
   execute). The coordinator starts the live steps, after the owner says yes in the coordinator
   session; send the command, the amount and the wallets first.
-  - Write the pins of that day in the notes of the file: the pool ELF `3641ffe2…`, the
-    ProgramData slot 508538476, tree 0 of 40,080 bytes, the approvals ELF `b4bad24c…`.
+  - Write the pins of that day in the notes of the file: the pool ELF `44238d6f…`, the
+    ProgramData slot 512563584, tree 0 of 40,080 bytes, the approvals ELF `b4bad24c…`.
   - Record only the browser window, in a clean profile, with no menu bar, notifications, real
     names or password prompt (D1).
   - Keep the unedited original outside the repo, never in git, with a copy on a second device.
