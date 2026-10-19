@@ -1583,7 +1583,7 @@ export const MUTATIONS = [
     ["web/chat.js", "return start <= 80 && MARKS", "return MARKS"], CHAT_TEST,
     /another page: a long run of marks before the link/),
   program("J-marks-old", "the mark pattern may match a bracket in two ways",
-    ["web/chat.js", "const MARKS = /^(?:[^a-z\\d:/.?=&#%@~+\\[-]|\\[[^\\][]*\\]\\()*$/i;",
+    ["web/chat.js", "const MARKS = /^(?:[^a-z\\d:/.?=&#%@~+[-]|\\[[^\\][]*\\]\\()*$/i;",
       "const MARKS = /^(?:[^a-z\\d:/.?=&#%@~+-]|\\[[^\\]]*\\]\\()*$/i;"], CHAT_TEST,
     /marks end at once: mark blocks, 17 times/),
   program("J-catch", "text before a link that is no address counts as this page",

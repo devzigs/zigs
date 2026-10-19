@@ -119,7 +119,7 @@ export const pageKey = (url) => url.origin + url.pathname.replace(/\/index\.html
 // Markdown label "[Team](". Anything with a letter, a digit or a sign of an address is text of
 // another URL, and the "http(s)://" after it is a part of that URL. A "[" only starts a label, and
 // a label holds no bracket: each character has one parse, so the time is linear.
-const MARKS = /^(?:[^a-z\d:/.?=&#%@~+\[-]|\[[^\][]*\]\()*$/i;
+const MARKS = /^(?:[^a-z\d:/.?=&#%@~+[-]|\[[^\][]*\]\()*$/i;
 
 // The URL before a link: from the first "http(s)://" on, or a host with no scheme. null when that
 // "http(s)://" sits inside other text that is no mark.
