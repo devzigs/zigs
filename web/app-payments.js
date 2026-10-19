@@ -892,7 +892,8 @@ export const approvedHold = (ss) => (sawSent(ss.id) || !!ss.broadcastTxid)
 // blocks deep, so it can no longer land.
 export const approvedSpent = (ss) => !!markOf(state.gid, ss.id).approved
   && verdict(ss)?.spent === true;
-const chainReady = (c) => !!(c && c.cw && c.bal && c.sent);
+/** The chain of the open wallet synced: before, no hold of an approval is known. */
+export const chainReady = (c) => !!(c && c.cw && c.bal && c.sent);
 const verdicts = new Map();
 
 // The state of a payment from the engine once its signing started (TICKETS.md ZEC-13): "done",

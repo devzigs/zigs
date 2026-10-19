@@ -49,15 +49,15 @@ function balanceRow(balance, { text = "", busy = false }) {
 export const zecInProgress = (open, flying, held) => new Set([...open, ...flying, ...held]).size;
 
 /**
- * The pending shortcut, or null when nothing is pending. zec: the ZEC payments in progress
- * (open, waiting for their block, or held by an approval here), each counted once; sol: the
- * Solana proposals that a seat of this browser can approve.
- * @returns {{count: number, text: string, to: string} | null} `to`: the section to open.
+ * The pending shortcut to the Approvals inbox, or null when nothing is pending. zec: the ZEC
+ * payments in progress (open, waiting for their block, or held by an approval here), each counted
+ * once; sol: the Solana proposals that a seat of this browser can approve.
+ * @returns {{count: number, text: string} | null}
  */
 export function pendingShortcut({ zec, sol }) {
   if (!(zec + sol > 0)) return null;
   const text = [zec && zecLine(zec), sol && solLine(sol)].filter(Boolean).join(" ");
-  return { count: zec + sol, text, to: zec > 0 ? "activity" : "solana" };
+  return { count: zec + sol, text };
 }
 const zecLine = (n) => (n === 1 ? "1 Zcash payment is in progress."
   : n + " Zcash payments are in progress.");
