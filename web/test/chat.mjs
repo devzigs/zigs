@@ -3,8 +3,8 @@ import assert from "node:assert/strict";
 import {
   byTime, chatWarning, checkText, countUnread, dmText, joinBlock, keyState, newRoom, newSignKey,
   membersToPin, normChats, parseDm, parseHash, parseMsg, PASTE_BAD, PASTE_CONTACT, PASTE_EMPTY,
-  PASTE_MANY, PASTE_OTHER, pageKey, pastedInvite, pickRoom, pin, pinMember, pinnedMembers,
-  signMsg,
+  PASTE_MANY, PASTE_OTHER, PASTE_PATH, pageKey, pastedInvite, pickRoom, pin, pinMember,
+  pinnedMembers, signMsg,
   signPairMatches, signedText, validRoom, verifyMsg,
 } from "../chat.js";
 
@@ -250,6 +250,8 @@ const joins = {
   "a bare host in angle brackets": "Open <app.zigs.app/#" + GID + "." + K + ">",
   "another address earlier in the message": "See https://zigs.app/about and open " + LINK,
   "a page of this server at /index.html": "https://app.zigs.app/index.html#" + GID + "." + K,
+  "a label with a dot in a Markdown link": "[evil.example](" + LINK + ")",
+  "stars and a label": "**[Team](" + LINK + ")**",
 };
 for (const [what, text] of Object.entries(joins)) {
   assert.deepEqual(pastedInvite(text, HERE), wanted, "a link is found: " + what);
@@ -277,7 +279,6 @@ for (const [what, text] of Object.entries(bad)) {
 }
 const elsewhere = {
   "another site": "https://evil.example/#" + GID + "." + K,
-  "another path": HERE + "other/#" + GID + "." + K,
   "another scheme": "http://app.zigs.app/#" + GID + "." + K,
   "another port": "https://app.zigs.app:8443/#" + GID + "." + K,
   "a longer host": "https://app.zigs.app.evil.example/#" + GID + "." + K,
@@ -286,10 +287,30 @@ const elsewhere = {
   "a site in brackets": "<https://evil.example/#" + GID + "." + K + ">",
   "a site that holds this page in its query":
     "https://evil.example/?u=" + HERE + "#" + GID + "." + K,
+  // This page behind an address of another origin: the "https://" of this page is a part of it.
+  "a prefix with no scheme": "evil.example/?u=" + LINK,
+  "a prefix with a host and a path": "evil.example/" + LINK,
+  "a prefix with a user name": "user@evil.example/" + LINK,
+  "a prefix with a non-http scheme": "ftp://evil.example/?u=" + LINK,
+  "a script before the link": "javascript:alert(1)//" + LINK,
+  "a data address before the link": "data:text/html," + LINK,
+  "a word and a colon before the link": "Link:" + LINK,
+  "a long run of marks before the link": "[".repeat(200) + LINK,
+  "a prefix of another origin in a message": "Open evil.example/?u=" + LINK + " now",
 };
 for (const [what, text] of Object.entries(elsewhere)) {
   assert.deepEqual(pastedInvite(text, HERE), { error: PASTE_OTHER }, "another page: " + what);
 }
+// This server, another path: the text says so, and it never says "another server".
+const wrongPath = {
+  "another path": HERE + "other/#" + GID + "." + K,
+  "a path in a message": "Open " + HERE + "other/#" + GID + "." + K + " now",
+  "a folder with index.html": HERE + "app/index.html#" + GID + "." + K,
+};
+for (const [what, text] of Object.entries(wrongPath)) {
+  assert.deepEqual(pastedInvite(text, HERE), { error: PASTE_PATH }, "another path: " + what);
+}
+assert.equal(PASTE_PATH.includes("another Zigs server"), false, "a wrong path is no other server");
 // A text with two different wallet links names none: the wallet name of an invite message has no
 // signature, so a link in it must not win over the link that follows.
 const KEY2 = "k".repeat(43), many = {
@@ -322,7 +343,7 @@ assert.deepEqual(pastedInvite(contact, HERE), { error: PASTE_CONTACT },
   "a contact link is no wallet");
 assert.deepEqual(pastedInvite("#c." + GID, HERE), { error: PASTE_CONTACT },
   "a contact link without secret");
-for (const error of [PASTE_EMPTY, PASTE_BAD, PASTE_CONTACT, PASTE_OTHER, PASTE_MANY]) {
+for (const error of [PASTE_EMPTY, PASTE_BAD, PASTE_CONTACT, PASTE_OTHER, PASTE_PATH, PASTE_MANY]) {
   assert.equal(error.includes(K) || error.includes(secret), false, "an error never holds a secret");
 }
 // A long paste ends at once: the link is found in one pass.

@@ -1173,7 +1173,7 @@ assert.match(marginText(3, 3), /Each payment needs every signer/);
     }
   };
   const formOf = (tree) => findNode(tree, (n) => !!n.on?.submit && !!byId(n, "join-link"));
-  const { PASTE_BAD, PASTE_CONTACT, PASTE_EMPTY, PASTE_MANY, PASTE_OTHER } =
+  const { PASTE_BAD, PASTE_CONTACT, PASTE_EMPTY, PASTE_MANY, PASTE_OTHER, PASTE_PATH } =
     await import("../chat.js");
   const { LINK_CHAT_ID, LINK_NEW_SECRET } = await import("../util.js");
   const { openGroup, roomKeys } = await import("../app-groups.js");
@@ -1258,7 +1258,7 @@ assert.match(marginText(3, 3), /Each payment needs every signer/);
       ["a bad wallet id", link("z".repeat(20), secret), PASTE_BAD],
       ["a contact link", base + "#c." + fresh + "." + secret, PASTE_CONTACT],
       ["a link of another server", "https://evil.example/#" + fresh + "." + secret, PASTE_OTHER],
-      ["a link of another path", base + "other/#" + fresh + "." + secret, PASTE_OTHER],
+      ["a link of another path", base + "other/#" + fresh + "." + secret, PASTE_PATH],
       ["two different wallet links", link(fresh, secret) + " " + link(rid, other), PASTE_MANY],
       ["a different secret for a wallet you have", link(gid, other), LINK_NEW_SECRET],
       ["the id of a chat you have", link(cid, secret), LINK_CHAT_ID],
@@ -1360,6 +1360,10 @@ assert.match(marginText(3, 3), /Each payment needs every signer/);
     t.state.groups = [];
     const welcome = lobbyTree(), card = findNode(welcome, (n) => /\bwelcome\b/.test(n.className));
     assert.match(textOf(card), /Start with Zigs/);
+    assert.ok(textOf(card).includes("Nobody ever holds the whole key. Zcash payments are shielded. "
+      + "On Solana Devnet, the payee and the group are public."), "the welcome text of the key");
+    assert.doesNotMatch(textOf(card), /outside your team|can read the wallet/,
+      "the welcome text claims no secrecy of the wallet");
     assert.match(textOf(card), /any 2 of 3 devices must approve each payment/);
     assert.match(textOf(card), /New wallets use test networks only.*Zigs is not audited/s);
     assert.match(textOf(card), /Appearance/, "the welcome card has the theme choice");
