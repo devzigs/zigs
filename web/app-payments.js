@@ -4,7 +4,7 @@ import { partFields, proposalFields } from "./signed.js";
 import { EXPIRY_MARGIN } from "./personal.js";
 import { payeeRows } from "./requests.js";
 import { busy, log, ready, showBanner, state, ui } from "./app-state.js";
-import { exclusive, fmtZec, isStr, J, S, said, withTimeout } from "./app-kit.js";
+import { exclusive, fmtZec, isStr, J, release, S, said, track, withTimeout } from "./app-kit.js";
 import { engineOffThread, Z } from "./app-engine.js";
 import { loadKept, mySeatSecrets, putSec, saveKept, sec, takeStored } from "./app-keystore.js";
 import { isMe, keysDiffer, localSeats, myUid, signersOf } from "./app-seats.js";
@@ -336,7 +336,7 @@ function spendOrStall(c, payees, priority, after) {
       reject(new Error("The proposal got no answer in 60 s, so it stopped. " + WHEN_SYNCED));
     }, SPEND_TIMEOUT_MS);
   });
-  return Promise.race([cw.createSpend(S(payees), priority, pcztOrNone(after)), late])
+  return Promise.race([track(cw, cw.createSpend(S(payees), priority, pcztOrNone(after))), late])
     .finally(() => clearTimeout(timer));
 }
 
@@ -390,7 +390,9 @@ export async function broadcastTx(ss) {
     await ref.update({ ...sent, ...sig, broadcastError: null, status: "broadcast" });
     log("transaction broadcast: " + ss.final.txid);
     showBanner("ok", "Sent to the network. It confirms with the next block.");
-    runSync(chain);
+    // The person may have opened the lobby or another wallet while the transaction went out.
+    const c = curChain();
+    if (c?.gid === gid) runSync(c);
   } catch (e) {
     await ref.update({ broadcastError: e.message || String(e) });
   }
@@ -408,12 +410,15 @@ export async function broadcastAnywhere(txHex, where = {
   let refused = true;
   for (const url of preferredServers(where.net)) {
     const cw = new Z.ChainWallet(where.ufvk, where.birthday, url);
-    try { return J(await withTimeout(cw.broadcast(txHex), SERVER_TIMEOUT_MS * 2, new URL(url).host)); }
+    try {
+      const sent = track(cw, cw.broadcast(txHex));   // the glue throws at once on a bad argument
+      return J(await withTimeout(sent, SERVER_TIMEOUT_MS * 2, new URL(url).host));
+    }
     catch (e) {
       refused = refused && Z.isNodeRefusal(said(e));
       errors.push(new URL(url).host + ": " + said(e));
     }
-    finally { cw.free(); }
+    finally { release(cw); }
   }
   throw Object.assign(new Error(errors.join("; ")), { refused });
 }
@@ -528,6 +533,8 @@ async function freshTip() {
 export async function resendTx(ss) {
   const why = sendRefusal(ss);
   if (why) throw new Error(why);
+  // A seat writes the final part: a value that is not text would trap in the engine.
+  if (!isStr(ss.final?.tx_hex)) throw new Error("The finished transaction cannot be read.");
   await broadcastAnywhere(ss.final.tx_hex);
   showBanner("ok", "Sent again. It confirms with the next block.");
 }

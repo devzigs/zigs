@@ -10,7 +10,7 @@ import {
 } from "./personal.js";
 import { REQUEST_NET, requestProblem } from "./requests.js";
 import { log, showBanner, state, ui } from "./app-state.js";
-import { exclusive, J, S, said } from "./app-kit.js";
+import { exclusive, J, release, S, said, track } from "./app-kit.js";
 import { engineOffThread, Z } from "./app-engine.js";
 import { idb, LOCKED_ELSEWHERE, lockedVault, persist, vault } from "./app-keystore.js";
 import {
@@ -211,7 +211,7 @@ export function startAccount() {
 function dropAccount() {
   const c = acct;
   acct = null;
-  if (c && !c.syncing && c.cw) c.cw.free();
+  if (c && !c.syncing) release(c.cw);
 }
 
 // Another tab removed or replaced the account: this tab's sync follows (the sync key is new then).
@@ -438,7 +438,8 @@ function messageOrStall(c, address, text) {
         + "the account is up to date."));
     }, MESSAGE_TIMEOUT_MS);
   });
-  return Promise.race([cw.createMessage(address, text), late]).finally(() => clearTimeout(timer));
+  return Promise.race([track(cw, cw.createMessage(address, text)), late])
+    .finally(() => clearTimeout(timer));
 }
 
 async function deliver(c, rec, txHex) {
@@ -459,7 +460,7 @@ async function deliver(c, rec, txHex) {
   await mark({ broadcast: true }).catch((err) => log("could not save the send: " + err.message));
   log("message sent: " + rec.txid);
   showBanner("ok", "Sent to the network. It arrives with the next block.");
-  runSync(c);
+  if (c === acct) runSync(c);   // not an account that was removed or replaced meanwhile
 }
 
 // The received memos of the account, joined and sorted into the chats of the contacts and the other
