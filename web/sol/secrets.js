@@ -9,9 +9,18 @@ export const solOf = (host, gid, seat) => host.sec(gid, seat)?.sol ?? {};
 /**
  * Merges `patch` into the sub-object and saves the seat secret. A null value deletes the field.
  * putSec replaces a field of the seat secret as a whole, so the merge happens here. Resolves
- * true once saved.
+ * true once saved. It runs under the lock of the secrets, after this tab took what storage holds
+ * now: each tab writes the whole record, so a write from an older copy would bring back the
+ * nonces that another tab spent (nonces.js).
  */
-export function putSol(host, gid, seat, patch) {
+export const putSol = (host, gid, seat, patch) =>
+  host.exclusive("secrets", async () => {
+    await host.takeStored();
+    return putSolHeld(host, gid, seat, patch);
+  });
+
+/** putSol for a step that holds the lock of the secrets already: the lock is not reentrant. */
+export function putSolHeld(host, gid, seat, patch) {
   const next = { ...solOf(host, gid, seat) };
   for (const [key, value] of Object.entries(patch)) {
     if (value === null) delete next[key];

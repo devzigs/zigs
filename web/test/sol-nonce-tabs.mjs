@@ -6,6 +6,7 @@
 // Run: node web/test/sol-nonce-tabs.mjs   (Node 24)
 import assert from "node:assert/strict";
 import { pendingShare, saveNonces, savedNonces, shareOnce } from "../sol/nonces.js";
+import { putSol } from "../sol/secrets.js";
 
 const tick = () => new Promise((done) => setTimeout(done, 1));
 const copy = (v) => structuredClone(v);
@@ -77,6 +78,17 @@ const signer = (made, pkg) => (e) => {
   assert.equal(store.sol.nonces.s1, undefined, "a late save does not bring the nonces back");
   assert.ok(store.sol.pending.s1 && store.sol.used.d1, "and keeps the made share and its mark");
   assert.ok(store.sol.nonces.s2, "and saves its own nonces");
+}
+
+// ── A late tab writes another Solana record after the other tab spent a nonce ──
+{
+  const { store, tab } = browser({ nonces: { s1: entry } });
+  const [a, b] = [tab(), tab()];
+  assert.ok(await shareOnce(a, 1, "s1", signer([], "P1")));
+  assert.equal(await putSol(b.host, "G", 1, { backupSaved: true }), true);
+  assert.equal(store.sol.nonces.s1, undefined, "a late write keeps the nonce spent");
+  assert.ok(store.sol.used.d1 && store.sol.pending.s1, "and keeps the used mark and the share");
+  assert.equal(store.sol.backupSaved, true, "and saves its own record");
 }
 
 // ── A share that waits, a share that is not ready, a refused share, a failed save ──

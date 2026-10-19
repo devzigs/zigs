@@ -13,7 +13,7 @@
 //     nonces), because the old nonces go when their session ends.
 // They sit in the seat secret under `sol`, so the passkey lock and the tab sync cover them, and
 // they stay out of every backup. A restored seat has none.
-import { putSol, solOf } from "./secrets.js";
+import { putSolHeld, solOf } from "./secrets.js";
 
 const part = (c, seat, name) => solOf(c.host, c.gid, seat)[name] ?? {};
 
@@ -27,9 +27,9 @@ export const pendingShare = (c, seat, sid) => part(c, seat, "pending")[sid];
 // Each change runs under the lock of the secrets, after this tab took what storage holds now, as
 // the Zcash nonces do (app-payments.js). The secrets are one record that each tab writes whole, so
 // two tabs that change it at once undo each other, and a nonce that one tab burned comes back.
-// ponytail: the other putSol writes (ceremony, backup, localprove) and the Zcash writes take no
-// lock, so a stale tab can still write old records back. Upgrade: send putSol through this lock,
-// with a held variant for the calls inside it.
+// Every other Solana write takes the same lock (putSol). ponytail: the Zcash writes of a backup,
+// a room, the ceremony and the account take no lock, so a stale tab can still write old Solana
+// records back through them (ZEC-12).
 const locked = (c, run) =>
   c.host.exclusive("secrets", async () => {
     await c.host.takeStored();
@@ -40,7 +40,7 @@ const without = (map, key) => Object.fromEntries(Object.entries(map).filter(([k]
 
 // Inside the lock only: the lock is not reentrant, so a step that holds it saves with `put`.
 async function put(c, seat, make, failure) {
-  if (!(await putSol(c.host, c.gid, seat, make()))) throw new Error(failure);
+  if (!(await putSolHeld(c.host, c.gid, seat, make()))) throw new Error(failure);
 }
 const save = (c, seat, make, failure) => locked(c, () => put(c, seat, make, failure));
 
