@@ -708,6 +708,10 @@ body:has(.dialog), body:has(.drawer) { overflow: hidden; }
 /* The welcome card of an empty wallet list. */
 .welcome h2 { font-size: clamp(24px, 3.2vw, 32px); line-height: 1.15; letter-spacing: -0.035em; }
 .welcome-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 12px; }
+@media (max-width: 520px) {
+  .welcome-actions { display: grid; }
+  .welcome-actions > .btn { width: 100%; }
+}
 /* The join form: the field and its button share a row; the error sits under the field. */
 .join { display: grid; gap: 10px; }
 .join h2, .join h3 { font-size: 15px; }

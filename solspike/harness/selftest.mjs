@@ -126,7 +126,7 @@ async function helpers(page) {
   await page.navigate(`${ORIGIN}/`);
   await waitForText(page, "Crypto engine ready (WebAssembly)");
   assert.equal(csp(page), 0, "the app page raises no CSP violation");
-  await clickText(page, "Create wallet");
+  await clickText(page, "Set up a wallet");
   await waitForText(page, "New shared wallet");
   await setInput(page, "#g-name", "Harness wallet");
   await setInput(page, "#g-n", 4);

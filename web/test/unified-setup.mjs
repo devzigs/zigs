@@ -762,9 +762,9 @@ const byId = (node, id) =>
   const { joinLinks } = await import("../app-messages.js");
   const { busy } = await import("../app-state.js");
   const buttons = [
-    ["Create wallet", "why-create", () => lobby()],
+    ["Set up a wallet", "why-create", () => lobby()],
     ["Create wallet", "why-create-submit", () => createDialog()],
-    ["Join wallet", "why-join-wallet", () => lobby()],
+    ["Join wallet", "why-join-wallet", () => { ui.joinOpen = true; return lobby(); }],
     ["New chat", "why-new-chat", () => lobby()],
     ["Join chat", "why-chat-join-cc", () => lobby()],
   ];
@@ -1205,6 +1205,21 @@ assert.match(marginText(3, 3), /Each payment needs every signer/);
     history.replaceState = (...a) => { replaced.push(a); };
     openGroup(null);
     ui.joinBad = "";
+    // The welcome card offers three choices. The form waits until the person picks to join.
+    ui.joinOpen = false;
+    const closed = lobbyTree(), choice = byText(closed, "Join a shared wallet");
+    for (const label of ["Set up a wallet", "Join a shared wallet", "Recover access"]) {
+      assert.ok(byText(closed, label), "the welcome card offers " + label);
+    }
+    assert.equal(byId(closed, "join-link"), null, "the form waits for the choice");
+    assert.equal(choice.attrs["aria-expanded"], "false", "the choice starts closed");
+    byText(closed, "Set up a wallet").on.click();
+    assert.equal(ui.create, true, "Set up a wallet opens the create dialog");
+    ui.create = false;
+    choice.on.click();
+    assert.equal(ui.joinOpen, true, "the choice opens the form");
+    assert.equal(t.wantFocus?.key, "join-link", "the choice moves focus to the field");
+    assert.equal(byText(lobbyTree(), "Join a shared wallet").attrs["aria-expanded"], "true");
     // The form: a field with no name, a label, a hint, and a Join button.
     const first = lobbyTree(), field = byId(first, "join-link"), form = formOf(first);
     assert.ok(field && form, "the wallet list has the join form");
@@ -1298,6 +1313,7 @@ assert.match(marginText(3, 3), /Each payment needs every signer/);
       "device wording, owner scope");
     assert.ok(byId(card, "join-link"), "the welcome card has the join form");
     t.state.groups = [t.cleanGroup(gid, { name: "W", n: 3, t: 2, version: 3 })];
+    ui.joinOpen = false;
     const list = lobbyTree();
     assert.ok(byId(list, "join-link"), "a list with wallets has the join form");
     assert.match(textOf(list), /New wallets use test networks only.*Zigs is not audited/s);
@@ -1309,6 +1325,7 @@ assert.match(marginText(3, 3), /Each payment needs every signer/);
     delete t.chats.list[cid];
     delete t.gkeys[fresh];
     ui.joinBad = "";
+    ui.joinOpen = false;
     openGroup(null);
   }
 }

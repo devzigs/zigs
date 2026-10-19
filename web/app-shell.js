@@ -229,9 +229,9 @@ export function lobby() {
       if (file) restore(file);
     },
   });
-  const restoreBtn = (cls) => el("button", {
+  const restoreBtn = (cls, label = "Restore from backup") => el("button", {
     class: cls, type: "button", onclick: () => restoreInput.click(),
-  }, "Restore from backup");
+  }, label);
   const off = offOf({ db: !!db }, "why-new-wallet");
   const actions = lobbyActions(off, restoreBtn("btn"));
   const head = el("header", { class: "page-head" },
@@ -244,7 +244,7 @@ export function lobby() {
   const body = listed
     ? [el("section", { class: "card" }, el("div", { class: "list" }, rows)),
       el("section", { class: "card card-pad" }, joinWallet("h2"))]
-    : [welcome(offOf({ db: !!db }, "why-create"), restoreBtn("btn ghost sm"))];
+    : [welcome(offOf({ db: !!db }, "why-create"), restoreBtn("btn ghost lg", "Recover access"))];
   const joins = [...joinLinks.keys()].map((cid) => guard(chatJoinCard, cid));
   return el("div", { class: "page" }, ...joins, head, ...body, chatsCard(),
     guard(personalCard, () => restoreInput.click()), guard(contactsCard),
@@ -342,16 +342,20 @@ function welcome(off, restoreLink) {
   const create = el("button", {
     class: "btn primary lg", type: "button", ...off.attrs,
     onclick: () => { ui.create = true; render(); },
-  }, "Create wallet");
+  }, "Set up a wallet");
+  const join = el("button", {
+    class: "btn lg", type: "button", "aria-expanded": ui.joinOpen ? "true" : "false",
+    onclick: () => { ui.joinOpen = true; focusAfter("join-link", true); render(); },
+  }, "Join a shared wallet");
   return el("section", { class: "card card-pad welcome" },
     el("div", { style: "display:grid;gap:6px" }, el("h2", {}, "Create your first shared wallet"),
-      el("p", { class: "muted" }, "No device ever holds the whole key. The group server stores "
-        + "encrypted data that it cannot read.")),
+      el("p", { class: "muted" }, "Nobody ever holds the whole key, and nobody outside your team "
+        + "can read the wallet.")),
     el("ol", { class: "how" }, steps.map(([t, d], i) => el("li", {},
       el("span", { class: "how-no" }, String(i + 1)),
       el("div", { style: "display:grid;gap:2px" }, el("h3", {}, t), el("p", { class: "small muted" }, d))))),
-    el("div", { class: "welcome-actions" }, create, restoreLink, off.note),
-    joinWallet(),
+    el("div", { class: "welcome-actions" }, create, join, restoreLink, off.note),
+    ui.joinOpen ? joinWallet() : null,
     el("div", { class: "welcome-foot" }, el("p", { class: "small muted" }, TEST_ONLY),
       themeChoice()));
 }
@@ -376,7 +380,7 @@ function joinWallet(heading = "h3") {
     focusAfter("join-link", true);
     render();
   };
-  return el("section", { class: "join" }, el(heading, {}, "Join a wallet"),
+  return el("section", { class: "join" }, el(heading, {}, "Join a shared wallet"),
     el("p", { class: "small muted", id: "join-help" },
       "Did someone send you an invite link? Paste it here to open the wallet."),
     el("form", { class: "join-row", onsubmit: submit },
