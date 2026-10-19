@@ -2236,16 +2236,21 @@ const sealed = (gid, rel, seat, fields, key, names = ["by", "sig"]) =>
       assert.ok(t.heldApprovals().includes("h1"), "held up to the expiry + 2");
       at(4503459);
       assert.equal(t.heldApprovals().includes("h1"), false, "free at the expiry + 3");
-      // A failed payment that no approval here holds any more leaves the inbox, also in the Check
-      // state (the Activity chip says Check), and so does one whose notes another payment spent.
-      put({ ...h1, package: "PK", signed: "SA", status: "failed", error: "Failed." });
+      // A failed payment that no approval here holds any more leaves the inbox: past its hold,
+      // after another payment spent its notes, and past the ceiling of the approval, where it is
+      // in the Check state.
+      const failedH1 = { ...h1, package: "PK", signed: "SA", status: "failed", error: "Failed." };
+      put(failedH1);
       at(4503460);
       assert.equal(inboxOf("h1"), null, "past its hold");
       answer = () => ({ state: "unknown", txid: "tx-a", why: "spent", spent: true });
       at(4503461);
       assert.equal(inboxOf("h1"), null, "another payment spent its notes");
-      t.state.sessions = t.state.sessions.filter((x) => x.id !== "h1");
       answer = () => ({ state: "unknown", txid: "tx-a", why: "it may still land", spent: false });
+      at(4506917);
+      assert.equal(t.expired(failedH1), true, "the Check state: past the ceiling");
+      assert.equal(inboxOf("h1"), null, "past the ceiling");
+      t.state.sessions = t.state.sessions.filter((x) => x.id !== "h1");
       // Without the kept PCZT the ceiling ends it: 4,500,001 + 1 + 6,912 + 3.
       await t.putSec(t.state.gid, me, { marks: { ...t.sec(t.state.gid, me).marks,
         h2: { approved: "zz", tip: 4500001 }, h3: { approved: "zz" } } });
