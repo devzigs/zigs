@@ -122,6 +122,7 @@ const payment = (id, what, [file, from, to], run, detect) =>
 const program = (id, what, [file, from, to], run, detect) =>
   mutant(id, what, run, [patch(file, from, to)], { detect, ms: 600000 });
 const SOL_PAY = ["node", "web/test/sol-pay.mjs"];
+const HELP_TEST = ["node", "web/test/help.mjs"];
 const WORKER_TEST = ["node", "solspike/test/worker.test.mjs"];
 const TRANSFER_TEST = ["node", "solspike/test/transfer.test.mjs"];
 const PREPARE_TEST = ["node", "solspike/test/prepare.test.mjs"];
@@ -1469,4 +1470,33 @@ export const MUTATIONS = [
     ["web/sol/payview.js",
       '  if (ss.status === "sent" && ss.outcome !== "failed") return "done";',
       '  if (ss.status === "sent") return "done";'], SOL_PAY, /failed on chain/),
+  program("H-redact-off", "the diagnostics keep every token of a log line",
+    ["web/help-model.js", '  token.length >= LONG || HEX_RUN.test(token) ? "[hidden]" : token);',
+      "  token);"], HELP_TEST, /the diagnostics hide a secret/),
+  program("H-redact-long", "the diagnostics keep a long token that is no hex run",
+    ["web/help-model.js", "token.length >= LONG ||", "token.length >= LONG * 100 ||"],
+    HELP_TEST, /the diagnostics hide a secret/),
+  program("H-redact-hex", "the diagnostics keep the 12 hex digits that a log line shows",
+    ["web/help-model.js", " || HEX_RUN.test(token)", ""], HELP_TEST,
+    /the diagnostics hide a part of a key/),
+  program("H-events-raw", "the diagnostics print the log lines as they are",
+    ["web/help-model.js", '"  " + redact(line)', '"  " + line'], HELP_TEST,
+    /the diagnostics hide a secret/),
+  program("H-events-limit", "the diagnostics print more than the newest 20 events",
+    ["web/help-model.js", "const EVENTS = 20;", "const EVENTS = 200;"], HELP_TEST,
+    /the newest 20 events show/),
+  program("H-facts-address", "the diagnostics name the address of the wallet",
+    ["web/app-help.js", '["Network", netName(state.g)]',
+      '["Network", netName(state.g) + " " + state.wallet.address]'], UNIFIED,
+    /the diagnostics of the text hide the address/),
+  program("H-technical-eager", "Technical details builds its content while it is closed",
+    ["web/app-wallet.js", 'el("summary", {}, "Technical details"), open ? technicalBody() : null);',
+      'el("summary", {}, "Technical details"), technicalBody());'], UNIFIED,
+    /the closed Technical details builds nothing/),
+  program("H-technical-flag", "a toggle of Technical details leaves no flag, so a redraw closes it",
+    ["web/app-wallet.js", "    ui.technical = ev.currentTarget.open ? state.gid : null;\n", ""],
+    UNIFIED, /a toggle opens Technical details/),
+  program("H-technical-wallet", "Technical details stays open in another wallet",
+    ["web/app-wallet.js", "const open = ui.technical === state.gid;",
+      "const open = !!ui.technical;"], UNIFIED, /the box of another wallet stays closed/),
 ];

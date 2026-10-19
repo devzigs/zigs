@@ -375,7 +375,7 @@ modules read it as a live import. `web/test/graph.mjs` checks the import graph, 
 | [`web/app-backups.js`](web/app-backups.js) | Backup and restore: logic and dialogs. |
 | [`web/app-sol.js`](web/app-sol.js) | Solana host glue: `solHost()` and the lazy load of `web/sol`. |
 | [`web/app-shell.js`](web/app-shell.js) | Side navigation, lock screen, wallet list and create dialog. |
-| [`web/app-wallet.js`](web/app-wallet.js) | The wallet page: tabs, overview, activity, signers and details. |
+| [`web/app-wallet.js`](web/app-wallet.js) | The wallet page: sections, overview, activity, signers and settings. |
 | [`web/app-thread.js`](web/app-thread.js) | The message card, composer and bubbles; the direct chat page. |
 | [`web/app-send.js`](web/app-send.js) | Receive and send dialogs. |
 | [`web/app-drawer.js`](web/app-drawer.js) | The payment drawer. |

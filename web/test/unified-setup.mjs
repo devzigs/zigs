@@ -18,7 +18,8 @@ const rig = await loadRig();
 // The page modules need the stub page of the rig, so they load after it.
 const { SOL_DISCLOSURE, solPlanned, solServed } = await import("../app-sol.js");
 const { inviteMessage, joinText, onLink } = await import("../app-setup.js");
-const { chatMessage } = await import("../app-links.js");
+const { chatMessage, inviteLink } = await import("../app-links.js");
+const { diagnostics } = await import("../app-help.js");
 const { chatInviteCard } = await import("../app-thread.js");
 const { chats } = await import("../app-keystore.js");
 const { backupWords } = await import("../sol/backup.js");
@@ -57,7 +58,7 @@ const textOf = (node) => node.text ?? node.kids.map(textOf).join("");
 function pageTree() {
   const real = globalThis.document;
   globalThis.document = { createElement: () => new Rec(), createElementNS: () => new Rec(),
-    createTextNode: (text) => ({ text }) };
+    createTextNode: (text) => ({ text }), documentElement: { dataset: {} } };
   try {
     return t.groupView();
   } finally {
@@ -275,6 +276,99 @@ function recoveryFacts() {
     globalThis.document = doc;
   }
 }
+// Each section starts with one heading block, and its panel keeps its focus target and name.
+const LEADS = { settings: "Wallet and app preferences", solana: "Solana Devnet" };
+function headingBlocks() {
+  const blocks = (node) => (node.className === "page-heading" ? 1 : 0)
+    + (node.kids ?? []).reduce((sum, kid) => sum + blocks(kid), 0);
+  const ids = t.walletSections().map(([id]) => id);
+  assert.deepEqual(ids.slice(-3), ["recovery", "settings", "solana"], "Details is now Settings");
+  for (const [id, label] of t.walletSections()) {
+    t.ui.tab = id;
+    const tree = pageTree();
+    assert.equal(blocks(tree), 1, id + ": one heading block");
+    const panel = findNode(tree, (n) => n.attrs?.id === "panel-" + id);
+    assert.equal(panel.attrs.tabindex, "-1", id + ": the panel keeps tabindex -1");
+    assert.equal(panel.attrs["aria-label"], label, id + ": and its name");
+    assert.equal(textOf(panel.kids[0]), (LEADS[id] ?? "This wallet") + label,
+      id + ": the heading comes first");
+  }
+}
+// Technical details builds its content only while it is open, and a redraw keeps it open.
+function technicalBox(w, gid) {
+  const box = () => findNode(pageTree(),
+    (n) => n.kids?.[0]?.kids?.[0]?.text === "Technical details");
+  const facts = [w.group_verifying_key, w.ufvk, "Created at block"];
+  t.ui.technical = null;
+  assert.ok(box(), "Settings has the Technical details box");
+  assert.equal(box().attrs.open, undefined, "closed by default");
+  for (const hidden of facts) {
+    assert.ok(!pageText().includes(hidden), "the closed Technical details builds nothing");
+  }
+  box().on.toggle({ currentTarget: { open: true } });
+  assert.equal(t.ui.technical, gid, "a toggle opens Technical details");
+  assert.equal(box().attrs.open, "", "a redraw keeps it open");
+  for (const shown of facts) {
+    assert.ok(pageText().includes(shown), "the open box shows " + shown.slice(0, 12));
+  }
+  t.ui.technical = "another-wallet";
+  assert.equal(box().attrs.open, undefined, "the box of another wallet stays closed");
+  t.ui.technical = gid;
+  box().on.toggle({ currentTarget: { open: false } });
+  assert.equal(t.ui.technical, null, "a second toggle closes it");
+  assert.ok(!pageText().includes(w.ufvk), "and its content goes");
+}
+// Settings: the parts, the wallet facts, Technical details, and Help with the network off.
+function settingsSection() {
+  const { tab, technical } = t.ui, { gid, wallet: w, g } = t.state;
+  const fetched = [], fetch = globalThis.fetch;
+  globalThis.fetch = (...args) => { fetched.push(args); throw new Error("no network"); };
+  try {
+    headingBlocks();
+    t.ui.tab = "settings";
+    const page = pageText();
+    for (const part of ["This wallet", "This app on this device", "Advanced", "Help"]) {
+      assert.ok(page.includes(part), "Settings has the part " + part);
+    }
+    assert.ok(page.includes("Any " + g.t + " of " + g.n + " devices"), "the rule says devices");
+    technicalBox(w, gid);
+    diagnosticsHide(w, gid);
+    assert.deepEqual(fetched, [], "Settings and Help ask for no network");
+  } finally {
+    globalThis.fetch = fetch;
+    Object.assign(t.ui, { tab, technical });
+  }
+}
+function diagnosticsHide(w, gid) {
+  const part = JSON.stringify(Object.values(t.secrets).find((s) => s.keyPackage).keyPackage);
+  const solana = "EvHCyEZUDBzWuuUDwSmXWrJ2vdtgVSr8ikduQfUAVr3r";
+  const seen = { address: w.address, "viewing key": w.ufvk, "wallet key": w.group_verifying_key,
+    "invite link": inviteLink(gid), "wallet secret": t.gkeys[gid], "key share": part,
+    "Solana address": solana, "wallet id": gid };
+  const lines = [
+    "wallet created: " + w.address.slice(0, 24) + "…",
+    "seat 1: key share ready, wallet key " + w.group_verifying_key.slice(0, 12) + "…",
+    "✗ react: " + inviteLink(gid) + " " + t.gkeys[gid] + " " + solana,
+    "bad data " + w.address + " " + w.ufvk + " " + part,
+    "ignored data without a valid signature (wallet " + gid.slice(0, 6) + "): groups/" + gid,
+  ];
+  const log = t.state.log;
+  t.state.log = [...lines, ...log];
+  try {
+    const shown = findNode(pageTree(), (n) => n.attrs?.["aria-label"] === "Diagnostics text");
+    for (const [what, text] of [["the text", diagnostics()], ["the page", textOf(shown)]]) {
+      for (const [name, value] of Object.entries(seen)) {
+        assert.ok(!text.includes(value) && !text.includes(value.slice(0, 20)),
+          "the diagnostics of " + what + " hide the " + name);
+      }
+      assert.ok(!text.includes(w.address.slice(0, 12)), "and the start of the address");
+      assert.match(text, /Approval rule: 2 of 3 devices/, "but they keep the facts");
+      assert.match(text, /Recent events \(long tokens hidden\):\n {2}.*\[hidden\]/);
+    }
+  } finally {
+    t.state.log = log;
+  }
+}
 // With nothing to list after the sync, the inbox speaks for Zcash alone: the Solana line below it
 // speaks for Solana.
 function emptyInbox() {
@@ -478,6 +572,7 @@ function approvalCount(ctl) {
     emptyInbox();
     receiveTexts();
     sideMenu();
+    settingsSection();
   } finally {
     [ctl.sessions, ctl.commits, t.state.groups] = kept;
   }
