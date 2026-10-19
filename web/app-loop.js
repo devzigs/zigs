@@ -146,10 +146,11 @@ function restoreSelection(n, sel) {
   try { n.setSelectionRange(...sel); } catch { /* not a text control */ }
 }
 
+// A layer can name its first field with data-first-focus; else the first input or button.
 function focusLayer(layer) {
   layer.tabIndex = -1;
   const pick = layer.classList.contains("drawer") ? ".icon-btn" : "input, button.btn";
-  (layer.querySelector(pick) || layer).focus();
+  (layer.querySelector("[data-first-focus]") || layer.querySelector(pick) || layer).focus();
 }
 
 // The page behind a dialog or the drawer cannot take focus or clicks while the layer is open.

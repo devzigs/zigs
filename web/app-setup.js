@@ -40,8 +40,7 @@ export function setupView() {
 function stageBar() {
   const c = setupCounts();
   const { index, blocked } = setupStage({ seated: c.seated, n: c.n, verify: c.v2,
-    confirmed: c.conf, keysDone: c.d, checked: c.w ? c.ver : 0, blocked: blockText(c),
-    solPending: bothParts() });
+    confirmed: c.conf, blocked: blockText(c) });
   return el("nav", { class: "stage-bar", "aria-label": "Setup stages" },
     el("ol", {}, SETUP_STAGES.map((name, i) => el("li", {
       class: i < index ? "done" : i === index && blocked ? "stopped" : null,
@@ -53,8 +52,7 @@ function stageBar() {
 }
 const STAGE_NOTE = ["", "Every signer takes a seat with the invite link.",
   "Every signer compares the safety number and confirms it.",
-  "The devices create the key together and check the address. Keep Zigs open.",
-  "The wallet page asks each signer to back up the key share."];
+  "The devices create the key together and check the address. Keep Zigs open."];
 // A wallet document with no birthday comes from an older version of Zigs: a stop too.
 function blockText(c) {
   const key = keyBlock(c);

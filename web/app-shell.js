@@ -331,12 +331,14 @@ function solChoice() {
 const names = (from) => [nameField("my-name"),
   el("label", { class: "field" }, el("span", {}, from ? "New wallet name" : "Wallet name"),
     el("input", { class: "input", id: "g-name", name: "name", maxlength: "40",
-      placeholder: from ? from.name : "Team treasury", autocomplete: "off" }))];
-const number = (label, id, name, value) => el("label", { class: "field" }, el("span", {}, label),
-  el("input", { class: "input", id, name, type: "number", min: "2", max: "7",
-    value: String(value) }));
-const counts = (n0, t0) => el("div", { class: "two" },
-  number("Signers", "g-n", "n", n0), number("Approvals needed", "g-t", "t", t0));
+      placeholder: from ? from.name : "Team treasury", autocomplete: "off",
+      "data-first-focus": !from }))];
+// `note`: the id of the line that says what the numbers mean, for a screen reader.
+const number = (label, id, name, value, note) => el("label", { class: "field" },
+  el("span", {}, label), el("input", { class: "input", id, name, type: "number", min: "2",
+    max: "7", value: String(value), "aria-describedby": note ?? null }));
+const counts = (n0, t0, note) => el("div", { class: "two" },
+  number("Signers", "g-n", "n", n0, note), number("Approvals needed", "g-t", "t", t0, note));
 const moveParts = (from, nameParts, ruleParts) => [el("ol", { class: "small muted move-steps" },
   el("li", {}, "You create a new wallet with the signers and rule you want."),
   el("li", {}, "The new signers join it with an invite link."),
@@ -354,7 +356,8 @@ export function createDialog(from = null) {
   const close = () => { ui.create = false; ui.move = false; ui.sol = undefined; render(); };
   const n0 = from ? from.n : 3, t0 = from ? from.t : 2;
   const rule = el("p", { class: "rule", id: "rule-text" }, ruleText(t0, n0));
-  const margin = el("p", { class: "small muted", id: "margin-text" }, marginText(t0, n0));
+  const margin = el("p", { class: "small muted", id: "margin-text", role: "status" },
+    marginText(t0, n0));
   const off = offOf({ db: !!db }, "why-create-submit");
   const update = () => {
     const n = Number(document.getElementById("g-n")?.value), t = Number(document.getElementById("g-t")?.value);
@@ -378,7 +381,7 @@ export function createDialog(from = null) {
   }) },
     el("div", { class: "card-head" }, el("h2", { id: "create-title" }, from ? "Change signers" : "New shared wallet"), el("button", { class: "icon-btn", type: "button", "aria-label": "Close", onclick: close }, "×")),
     ...(from ? moveParts(from, names(from), [counts(n0, t0), rule])
-      : [guideStep("1. Approval rule", counts(n0, t0), rule, margin),
+      : [guideStep("1. Approval rule", counts(n0, t0, "margin-text"), rule, margin),
         guideStep("2. Names", ...names(from)),
         guideStep("3. Networks", networkPick(), solChoice())]),
     el("div", { class: "callout" }, from

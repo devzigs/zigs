@@ -619,6 +619,7 @@ const byId = (node, id) =>
   Object.assign(seat, { checkedWallet: null, rejectedWallet: wallet });
   await planSolana(gidW);
   t.refilter();
+  assert.match(pageText(), /Setup stopped at Prepare\. /, "a seat that rejected the address");
   await sleep(3500);
   assert.equal(data.has(`groups/${gidW}/solstart/1`), false, "no start before Address checked");
   assert.doesNotMatch(t.banner?.text ?? "", /Seat 1 waits/, "and no refusal before it");
@@ -835,11 +836,47 @@ const byId = (node, id) =>
   assert.doesNotMatch(pageText(), /Step 2 of 5/);
 }
 
+// ── The stepper at each stage of a formed wallet; a stop stays at its stage ──
+{
+  await rig.wallet({ name: "Stages" });
+  const keep = { wallet: t.state.wallet, confirm: t.state.confirm, done: t.state.done };
+  try {
+    Object.assign(t.state, { wallet: null, confirm: {} });
+    assert.match(pageText(), /Step 3 of 5: Verify\. /, "every seat taken, no number confirmed");
+    Object.assign(t.state, { confirm: keep.confirm, done: {} });
+    assert.match(pageText(), /Step 4 of 5: Prepare\. /, "the key ceremony runs");
+    Object.assign(t.state, { done: keep.done, wallet: { ...keep.wallet, birthday: undefined } });
+    assert.match(pageText(), /Setup stopped at Prepare\. /, "a wallet with no birthday");
+    assert.doesNotMatch(pageText(), /stopped at Back up/);
+  } finally {
+    Object.assign(t.state, keep);
+  }
+}
+
 // ── The create dialog: numbered sections for a new wallet, the old form for a change ──
 assert.match(dialogText(), /1\. Approval rule.*2\. Names.*3\. Networks/s);
 assert.doesNotMatch(dialogText(t.state.g), /1\. Approval rule/, "Change signers keeps its form");
 assert.equal(marginText(2, 3), "", "a margin: no warning");
 assert.match(marginText(3, 3), /Each payment needs every signer/);
+{
+  // The line of t = n is in the dialog, a screen reader hears it change, and a change of the
+  // numbers updates it. The first focus goes to the wallet name.
+  const dialog = dialogTree();
+  const margin = byId(dialog, "margin-text");
+  assert.equal(margin?.attrs.role, "status");
+  assert.equal(byId(dialog, "g-t").attrs["aria-describedby"], "margin-text");
+  assert.equal(byId(dialog, "g-name").attrs["data-first-focus"], "");
+  assert.equal(byId(dialogTree(t.state.g), "g-name").attrs["data-first-focus"], undefined);
+  byId(dialog, "rule-text").classList = { toggle() {} };
+  const real = globalThis.document;
+  globalThis.document = { getElementById: (id) => ({ value: { "g-n": "3", "g-t": "3" }[id] }) };
+  try {
+    dialog.on.input();
+  } finally {
+    globalThis.document = real;
+  }
+  assert.match(margin.textContent, /Each payment needs every signer/, "update() names the risk");
+}
 
 console.log("unified-setup: ok");
 process.exit(0);
