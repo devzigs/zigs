@@ -284,7 +284,8 @@ for (const [what, text] of Object.entries(elsewhere)) {
 assert.deepEqual(pastedInvite("http://localhost:8873/#" + GID + "." + K, "http://localhost:8873/"),
   wanted, "the open page can be a test server");
 const contact = HERE + "#c." + GID + "." + secret;
-assert.deepEqual(pastedInvite(contact, HERE), { error: PASTE_CONTACT }, "a contact link is no wallet");
+assert.deepEqual(pastedInvite(contact, HERE), { error: PASTE_CONTACT },
+  "a contact link is no wallet");
 assert.deepEqual(pastedInvite("#c." + GID, HERE), { error: PASTE_CONTACT },
   "a contact link without secret");
 for (const error of [PASTE_EMPTY, PASTE_BAD, PASTE_CONTACT, PASTE_OTHER]) {

@@ -715,12 +715,16 @@ body:has(.dialog), body:has(.drawer) { overflow: hidden; }
 /* The join form: the field and its button share a row; the error sits under the field. */
 .join { display: grid; gap: 10px; }
 .join h2, .join h3 { font-size: 15px; }
-.join-row { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 6px 12px; align-items: end; }
+.join-row {
+  display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 6px 12px; align-items: end;
+}
 .join-row > .btn { min-height: 52px; }
 .join-row > .small.bad { grid-column: 1; }
 .join-row > .off-why { grid-column: 1 / -1; }
 .welcome > .join, .welcome-foot { padding-top: 22px; border-top: 1px solid var(--line); }
-.welcome-foot { display: flex; flex-wrap: wrap; align-items: end; justify-content: space-between; gap: 16px; }
+.welcome-foot {
+  display: flex; flex-wrap: wrap; align-items: end; justify-content: space-between; gap: 16px;
+}
 .welcome-foot > p { flex: 1 1 18rem; max-width: 52ch; }
 .welcome-foot > .field { flex: 0 1 240px; }
 @media (max-width: 520px) {
