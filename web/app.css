@@ -643,3 +643,10 @@ body:has(.dialog), body:has(.drawer) { overflow: hidden; }
   display: grid; gap: 6px; padding-bottom: 16px; border-bottom: 1px solid var(--line);
 }
 .review-row { display: grid; gap: 8px; padding-bottom: 16px; border-bottom: 1px solid var(--line); }
+
+/* Approvals inbox: one card per bucket that holds a payment. */
+.inbox .card-head { padding-bottom: 12px; }
+.row-note {
+  display: flex; flex-wrap: wrap; align-items: center; gap: 8px; padding: 12px 20px;
+  border-top: 1px solid var(--line); font-size: 13px; color: var(--muted);
+}

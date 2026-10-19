@@ -1679,16 +1679,36 @@ const sealed = (gid, rel, seat, fields, key, names = ["by", "sig"]) =>
     const sentOne = { id: "x2", pczt: "EXP1", status: "broadcast", signed: "s", broadcastTxid: "t5",
       final: { txid: "t5", tx_hex: "00" }, broadcastAt: Date.now() };
     t.state.sessions.push(sentOne);
+    // The bucket of the Approvals inbox that holds a payment, or null.
+    const bucket = (ss) =>
+      Object.entries(t.inboxRows()).find(([, list]) => list.includes(ss))?.[0] ?? null;
     tipAt(4500000);
     assert.deepEqual(t.finishButtons(sentOne), [], "no Send again before 10 minutes");
+    assert.equal(bucket(sentOne), "waiting", "the inbox: a sent payment waits for its block");
     sentOne.broadcastAt = Date.now() - 11 * 60 * 1000;
     assert.deepEqual(labels(t.finishButtons(sentOne)), ["Send again"]);
+    assert.equal(bucket(sentOne), "ready", "the inbox: Send again is the next step");
     tipAt(4503453);
     assert.deepEqual(t.finishButtons(sentOne), [], "a node refuses it now");
     assert.match(textOf(t.expiryLine(sentOne)), /can no longer go to the network/);
     tipAt(4503459);
     // After signing, only the engine can say "Expired" (TICKETS.md ZEC-13): the chip asks to check.
     assert.equal(textOf(t.statusChip(sentOne)), "Check");
+    assert.equal(bucket(sentOne), "attention", "the inbox: the Check state needs attention");
+    // The inbox for the other states: a proposal to approve, an expired one, a cancelled one, and
+    // a document whose facts cannot be read, which never drops out of the list.
+    tipAt(4500000);
+    const fresh = { ...proposal, id: "x9" }, cancelled = { ...proposal, id: "x8", error: "x" };
+    const odd = { id: "x7", get status() { throw new Error("unreadable"); } };
+    t.state.sessions.push(fresh, cancelled, odd);
+    assert.equal(t.needsMyApproval(t.state.gid, fresh), true, "a seat here can approve x9");
+    assert.equal(bucket(fresh), "review", "the inbox: a proposal to approve");
+    assert.equal(bucket(cancelled), null, "the inbox: a cancelled payment that holds nothing");
+    assert.equal(bucket(odd), "attention", "the inbox: a payment it cannot read");
+    tipAt(4503453);
+    assert.equal(bucket(fresh), null, "the inbox: an expired proposal is finished");
+    t.state.sessions.splice(t.state.sessions.indexOf(fresh), 3);
+    tipAt(4503459);
     const unmarkedOne = { ...proposal, id: "x5", signed: "s", final: { txid: "f", tx_hex: "00" },
       broadcastError: "timeout" };
     assert.equal(textOf(t.statusChip(unmarkedOne)), "Check");
@@ -1704,6 +1724,7 @@ const sealed = (gid, rel, seat, fields, key, names = ["by", "sig"]) =>
     tipAt(4503459, new Set(["realtx"]));
     assert.equal(t.expired(sentOne), false);
     assert.equal(textOf(t.statusChip(unmarkedOne)), "Sent", "a block holds the approved one");
+    assert.equal(bucket(sentOne), null, "the inbox: a sent payment in a block is finished");
     assert.equal(t.expiryLine(unmarkedOne), null);
     tipAt(4500000);
     assert.deepEqual(labels(t.finishButtons(unmarkedOne)), ["Send again"]);
@@ -2243,14 +2264,41 @@ const sealed = (gid, rel, seat, fields, key, names = ["by", "sig"]) =>
       assert.match(String(t.sendBlocker()),
         /approved can still go on chain|waiting for its block|Finish or cancel the open payment/);
       // Path A of QA round 4: no sent mark ever comes, and one seat writes a failure part.
+      const inboxOf = (id) => Object.entries(t.inboxRows())
+        .find(([k, list]) => k !== "lost" && list.some((x) => x.id === id))?.[0] ?? null;
+      put(h1);
+      assert.equal(inboxOf("h1"), t.needsMyApproval(t.state.gid, h1) ? "review" : "waiting",
+        "the inbox: an approval with no error is no hold");
       put({ ...h1, package: "PK", signed: "SA", status: "failed", error: "Failed." });
       at(4500101);
       assert.ok(t.heldApprovals().includes("h1"), "an error part ends no hold");
+      assert.equal(inboxOf("h1"), "attention",
+        "the inbox: a failed payment that an approval here still holds (S7)");
       // Path B: the document leaves the list (a rewrite that fails its check drops it).
       t.state.sessions = t.state.sessions.filter((x) => x.id !== "h1");
       at(4500102);
       const askedFrom = asked.length;
       assert.ok(t.heldApprovals().includes("h1"), "a dropped document ends no hold");
+      const listState = { sessionsLoaded: true, sessionsFailed: false, pending: false };
+      const keptList = Object.fromEntries(Object.keys(listState).map((k) => [k, t.state[k]]));
+      Object.assign(t.state, listState);
+      for (const unknown of [{ sessionsLoaded: false }, { sessionsFailed: true },
+        { pending: true }]) {
+        Object.assign(t.state, unknown);
+        assert.deepEqual(t.inboxRows().lost, [], "no lost record while the list is unknown");
+        Object.assign(t.state, listState);
+      }
+      assert.ok(t.inboxRows().lost.includes("h1"), "the inbox names a hold with no record");
+      const tab = t.ui.tab;
+      t.ui.tab = "approvals";
+      const page = t.groupView();
+      t.ui.tab = tab;
+      const attention = all(page, (x) => x.attrs?.["aria-label"] === "Needs attention")[0];
+      assert.ok(attention, "the lost note shows in Needs attention");
+      const count = t.inboxRows().attention.length + t.inboxRows().lost.length;
+      assert.ok(textOf(attention).startsWith("Needs attention" + count), "the count holds it");
+      assert.match(textOf(attention), /approved ha(s|ve) no record here any more/);
+      Object.assign(t.state, keptList);
       assert.ok(asked.slice(askedFrom).some((x) => S(x) === S(["PA", "", "aa"])),
         "the engine gets the kept PCZT and the approved sighash alone");
       // The hold ends when a block holds the approved transaction, when it expired, when another

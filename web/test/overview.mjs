@@ -46,13 +46,12 @@ console.log("ok  the SOL row");
 assert.equal(pendingShortcut({ zec: 0, sol: 0 }), null, "nothing pending, no shortcut");
 assert.equal(pendingShortcut({}), null, "no counts, no shortcut");
 assert.deepEqual(pendingShortcut({ zec: 1, sol: 0 }),
-  { count: 1, text: "1 Zcash payment is in progress.", to: "activity" });
+  { count: 1, text: "1 Zcash payment is in progress." });
 assert.deepEqual(pendingShortcut({ zec: 2, sol: 1 }), { count: 3,
-  text: "2 Zcash payments are in progress. 1 Solana proposal waits for your approval.",
-  to: "activity" }, "each chain says what it counts");
+  text: "2 Zcash payments are in progress. 1 Solana proposal waits for your approval." },
+  "each chain says what it counts");
 assert.deepEqual(pendingShortcut({ zec: 0, sol: 2 }),
-  { count: 2, text: "2 Solana proposals wait for your approval.", to: "solana" },
-  "only Solana: its section");
+  { count: 2, text: "2 Solana proposals wait for your approval." }, "only Solana");
 assert.equal(zecInProgress(["a", "b"], ["a"], ["c", "a"]), 3, "each payment once");
 assert.equal(zecInProgress([], [], ["h"]), 1, "a held approval alone counts");
 assert.equal(zecInProgress([], [], []), 0);
