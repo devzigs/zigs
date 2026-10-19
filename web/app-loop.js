@@ -297,7 +297,12 @@ export function layers() {
   catch (e) { log("unreadable layer: " + (e && e.message ? e.message : e)); return []; }
 }
 
-const scrim = (close) => el("div", { class: "scrim", onclick: () => { close(); render(); } });
+// The second click of a double click on a button that moved can land on the scrim: it closes
+// nothing.
+const scrim = (close) => el("div", { class: "scrim", onclick: (ev) => {
+  if (ev?.detail > 1) return;
+  close(); render();
+} });
 
 // The dialogs, in the order that they take the screen: [is shown, close, build]. `open` is true in
 // an open wallet that has its wallet document. A restore starts in the wallet list.

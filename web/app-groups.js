@@ -2,7 +2,8 @@
 import { finite } from "./util.js";
 import { trustShape, validShape } from "./signed.js";
 import {
-  emptyRaw, inbox, inboxSubs, log, raw, rawInbox, rawReady, readySubs, showBanner, state, ui,
+  emptyRaw, inbox, inboxSubs, log, raw, rawInbox, rawReady, readySubs, resetCreate, showBanner,
+  state, ui,
 } from "./app-state.js";
 import { J, oldest, S, saveMerged } from "./app-kit.js";
 import { Z } from "./app-engine.js";
@@ -206,6 +207,8 @@ export function openGroup(gid) {
   // A form filled from a request belongs to the wallet it was made for, and a review to the
   // wallet that built it.
   if (ui.sendFor && ui.sendFor !== gid) { ui.send = false; ui.pay = null; ui.note = ""; }
+  // An open wallet hides the create dialog: it must not come back later at an old step.
+  if (gid) { ui.create = false; resetCreate(); }
   dropReview();
   ui.after = null;   // the notes of an expired payment of the wallet that was open
   ui.backup = null;   // the dialog names a seat of the wallet that was open
