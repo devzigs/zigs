@@ -1233,7 +1233,8 @@ async function walkSteps(fields, times, fresh = true) {
     /Name your wallet.*This device's label.*Wallet name.*Network.*BackReview wallet$/s);
   ui.createDraft = { n: 4, t: 3, name: "Team", label: "Ana's phone", sol: true };
   assert.match(shown(3), new RegExp("Review your wallet.*Wallet nameTeam.*This device's labelAna's "
-    + "phone.*Any 3 of 4 devices must approve each payment\\..*Zcash testnet and Solana Devnet.*"
+    + "phone.*Any 3 of 4 devices must approve each payment\\..*If devices are lost1 device can "
+    + "be lost or offline.*Zcash testnet and Solana Devnet.*"
     + "BackCreate wallet", "s"));
   ui.createDraft = { n: 3, t: 3, name: "", label: "", sol: false };
   assert.match(shown(3), new RegExp("TreasuryThis device's labelNone\\. The other devices show "
@@ -1246,7 +1247,16 @@ async function walkSteps(fields, times, fresh = true) {
 assert.doesNotMatch(dialogText(t.state.g), /protected together/, "Change devices keeps its form");
 assert.match(shownText(dialogTree(t.state.g)),
   /New wallet name.*Devices.*Approvals needed.*Create new wallet/s);
-assert.equal(marginText(2, 3), "", "a margin: no warning");
+assert.equal(marginText(2, 3), "1 device can be lost or offline, and the wallet still pays. Any 2 "
+  + "devices together can spend the funds, so keep each one safe.", "the margin of 2 of 3");
+assert.match(marginText(3, 5), /^2 devices can be lost or offline.*Any 3 devices together/);
+{
+  // Change devices makes a wallet too, so it says what a lost device means.
+  const move = dialogTree(t.state.g);
+  assert.match(shownText(move), /can be lost or offline|Each payment needs every device/,
+    "Change devices shows what a lost device means");
+  assert.equal(byId(move, "g-t").attrs["aria-describedby"], "margin-text");
+}
 assert.match(marginText(3, 3), /Each payment needs every device/);
 {
   // The line of t = n is in the dialog, a screen reader hears it change, and a change of the
@@ -1276,7 +1286,8 @@ assert.match(marginText(3, 3), /Each payment needs every device/);
   assert.deepEqual([ui.marginAck, fields["g-margin-ack"].checked], [false, false],
     "the reset clears the tick");
   assert.deepEqual([fields["g-n"].value, fields["g-t"].value], ["3", "2"], "the reset: 2 of 3");
-  assert.equal(margin.textContent, "", "the reset clears the warning");
+  assert.match(margin.textContent, /^1 device can be lost or offline/,
+    "the reset: the 2 of 3 line");
   assert.equal(ack.hidden, true, "and hides the box");
   assert.equal(fields.focused, true, "the focus goes to the heading of the step");
 }

@@ -381,10 +381,13 @@ const moveParts = (from, nameParts, ruleParts) => [el("ol", { class: "small mute
   el("li", {}, "This wallet sends all its funds to the new one. Like any payment, this needs "
     + from.t + " approvals.")),
 ...nameParts, ...ruleParts];
-// With every signer needed, one lost device stops the wallet: the dialog says so.
+// What a rule means when devices are lost: how many can be missing, and how many can spend. With
+// every device needed, one lost device stops the wallet.
 export const marginText = (t, n) => (t === n ? "Each payment needs every device. When one "
   + "device is lost, the wallet cannot pay until its key share comes back from its backup file."
-  : "");
+  : lostText(n - t) + " Any " + t + " devices together can spend the funds, so keep each one safe.");
+const lostText = (m) => (m === 1 ? "1 device" : m + " devices")
+  + " can be lost or offline, and the wallet still pays.";
 const BAD_RULE = "Choose 2 to 7 devices, and at least 2 approvals but no more than the devices.";
 const ACK_FIRST = "Confirm that one lost device stops all payments, or use the recommended 2 of 3.";
 const fieldValue = (id) => document.getElementById(id)?.value ?? "";
@@ -517,13 +520,14 @@ const namesStep = () => step(2, ...names(null), networkPick(), solChoice());
 function reviewStep() {
   const d = ui.createDraft ?? { n: 3, t: 2 };
   const row = (k, v) => [el("dt", {}, k), el("dd", {}, v)];
-  const warn = marginText(d.t, d.n);
+  const full = d.t === d.n;
   return step(3,
     el("dl", { class: "kv" }, row("Wallet name", d.name || "Treasury"),
       row("This device's label", d.label || "None. The other devices show Device 1."),
       row("Approval rule", ruleText(d.t, d.n)),
+      full ? null : row("If devices are lost", marginText(d.t, d.n)),
       row("Networks", "Zcash " + curNetLabel() + (d.sol ? " and Solana Devnet" : ""))),
-    warn ? el("p", { class: "callout warn" }, warn) : null,
+    full ? el("p", { class: "callout warn" }, marginText(d.t, d.n)) : null,
     el("div", { class: "callout" }, "This device joins as device 1. Then share the invite link, "
       + "so that the other devices can join. When every device has joined, they create the "
       + "wallet key together."));
@@ -558,7 +562,8 @@ function moveDialog(from) {
   const lines = ruleLines(from.n, from.t);
   const off = offOf({ db: !!db }, "why-create-submit");
   return frame("Change devices", { oninput: lines.update, onsubmit: moveSubmit(from) },
-    ...moveParts(from, names(from), [counts(from.n, from.t), lines.rule]),
+    ...moveParts(from, names(from), [counts(from.n, from.t, "margin-text"), lines.rule,
+      lines.margin]),
     el("div", { class: "callout" }, "The new wallet gets a new address. Devices that you leave "
       + "out can still see this old wallet's payments, but not the new wallet's."),
     el("div", { class: "dialog-actions" },

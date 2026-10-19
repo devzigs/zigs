@@ -1524,4 +1524,10 @@ export const MUTATIONS = [
   program("C-escape", "Escape keeps the step of the create dialog",
     ["web/app-loop.js", "endSend(); endCreate();", "endSend(); ui.create = false;"], APP_TEST,
     /Escape puts the create dialog back at its first step/),
+  program("C-margin-move", "Change devices does not say what a lost device means",
+    ["web/app-shell.js", "lines.rule,\n      lines.margin]),", "lines.rule]),"], UNIFIED,
+    /Change devices shows what a lost device means/),
+  program("C-margin-count", "the margin line counts one device too many",
+    ["web/app-shell.js", ": lostText(n - t) +", ": lostText(n - t + 1) +"], UNIFIED,
+    /If devices are lost1 device can be lost/),
 ];
