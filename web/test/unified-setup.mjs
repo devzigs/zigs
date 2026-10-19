@@ -405,7 +405,7 @@ function sideMenu() {
   }
   const tab = t.ui.tab;
   t.ui.tab = "recovery";
-  assert.match(pageText(), /Devices in this browser.*file (saved here|not saved)/,
+  assert.match(pageText(), /This wallet's devices in this browser.*file (saved here|not saved)/,
     "the Recovery section shows the file state of each seat of this browser");
   assert.match(pageText(), /cannot see the files of the other devices/);
   assert.match(pageText(),

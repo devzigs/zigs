@@ -41,12 +41,13 @@ export function recoveryState(seats) {
     return { state: "none", label: "No device of this wallet in this browser", missing };
   }
   if (missing.length) {
-    const label = "A file of a device in this browser is not saved";
+    const label = "A file of this wallet's devices in this browser is not saved";
     return { state: "missing", label, missing };
   }
   if (unread) return { state: "unknown", label: unreadLabel(unread.failed), missing };
-  return { state: "saved", label: "The files of the devices in this browser are saved", missing };
+  return { state: "saved", label: "The files of this wallet's devices in this browser are saved",
+    missing };
 }
 const unreadLabel = (failed) => (failed
-  ? "Zigs could not read the Solana part of the devices in this browser"
-  : "Zigs is still reading the Solana part of the devices in this browser");
+  ? "Zigs could not read the Solana part of this wallet's devices in this browser"
+  : "Zigs is still reading the Solana part of this wallet's devices in this browser");

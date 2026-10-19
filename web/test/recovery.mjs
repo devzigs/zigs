@@ -29,9 +29,10 @@ assert.deepEqual(recoveryState([]), { state: "none", missing: [],
 assert.equal(recoveryState([{ id: 1, zec: { has: false, saved: false }, sol: null }]).state,
   "none", "a device whose share is not made yet");
 assert.deepEqual(recoveryState([seat(1, true, null)]),
-  { state: "saved", label: "The files of the devices in this browser are saved", missing: [] });
+  { state: "saved", label: "The files of this wallet's devices in this browser are saved",
+    missing: [] });
 assert.deepEqual(recoveryState([seat(1, false, null)]), { state: "missing", missing: [[1, "zec"]],
-  label: "A file of a device in this browser is not saved" });
+  label: "A file of this wallet's devices in this browser is not saved" });
 const both = recoveryState([seat(1, true, { has: true, saved: false }), seat(2, false, null)]);
 assert.equal(both.state, "missing");
 assert.deepEqual(both.missing, [[1, "sol"], [2, "zec"]], "each file that is not saved shows");
@@ -42,10 +43,11 @@ assert.deepEqual([lost.state, lost.missing], ["missing", [[1, "sol"]]],
   "a Solana part that this browser does not hold is not saved");
 const unread = recoveryState([seat(1, true, { has: false, unknown: true, failed: false })]);
 assert.deepEqual(unread, { state: "unknown", missing: [],
-  label: "Zigs is still reading the Solana part of the devices in this browser" },
+  label: "Zigs is still reading the Solana part of this wallet's devices in this browser" },
   "not read yet is not saved");
 assert.equal(recoveryState([seat(1, true, { has: false, unknown: true, failed: true })]).label,
-  "Zigs could not read the Solana part of the devices in this browser", "a failed load says so");
+  "Zigs could not read the Solana part of this wallet's devices in this browser",
+  "a failed load says so");
 assert.equal(recoveryState([seat(1, true, { has: false, unknown: true }), seat(2, false, null)])
   .state, "missing", "a file that is not saved shows first");
 const texts = [recoveryState([]), recoveryState([seat(1, true, null)]), unread,

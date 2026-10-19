@@ -63,6 +63,8 @@ assert.equal(abortText("the signers saw different setup data: the echo of seat 2
   + "Create a new wallet.", "an engine word in the middle of a reason names the device");
 assert.equal(deviceWords("Seat 1, seats 2 and 3, a signer, signers"),
   "Device 1, devices 2 and 3, a device, devices");
+assert.equal(deviceWords("seated unseat seat_id min_signers"), "seated unseat seat_id min_signers",
+  "a seat or signer inside another word stays");
 assert.equal(abortText(""), "Setup failed. Do not use this wallet. Create a new wallet.");
 assert.doesNotThrow(() => checkNetwork({ network: "testnet" }, "testnet"));
 assert.throws(() => checkNetwork({ network: "mainnet" }, "testnet"), /another network/);
