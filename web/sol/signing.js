@@ -13,7 +13,14 @@ import { agreement } from "./ceremony.js";
 import { CLUSTER, base58 } from "./docs.js";
 import { signingBlock, writerSeats } from "./gate.js";
 import { bytesOf, chainHex, decodeIntent, wireBase64 } from "./intent.js";
-import { approvedBodies, clearPending, pendingShare, savedNonces, shareOnce } from "./nonces.js";
+import {
+  approvedBodies,
+  clearPending,
+  dropNonces,
+  pendingShare,
+  savedNonces,
+  shareOnce,
+} from "./nonces.js";
 import { BLOCKHASH_MS, REREAD_MS, deviceSeen, inputsOf, showable, stampSeen } from "./approve.js";
 import { PAYMENT_EXPIRED, maybeExecute, pastExpiry } from "./execute.js";
 import { solOf, stopOf } from "./secrets.js";

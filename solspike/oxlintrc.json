@@ -6,6 +6,7 @@
     "max-lines-per-function": ["error", { "max": 100 }],
     "max-params": ["error", { "max": 5 }],
     "max-depth": ["error", { "max": 3 }],
-    "no-unused-vars": "error"
+    "no-unused-vars": "error",
+    "no-undef": "error"
   }
 }

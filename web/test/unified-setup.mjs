@@ -612,9 +612,9 @@ const byId = (node, id) =>
 // ── The start waits, with no refusal, until seat 1 shows Address checked ──
 {
   const gidW = await rig.wallet({ name: "Waits" });
-  const seat = t.sec(gidW, 1),
-    wallet = seat.checkedWallet;
-  Object.assign(seat, { checkedWallet: null, rejectedWallet: wallet });
+  const wallet = t.sec(gidW, 1).checkedWallet;
+  // Saved, not only in memory: each Solana write first takes what storage holds.
+  await t.putSec(gidW, 1, { checkedWallet: null, rejectedWallet: wallet });
   await planSolana(gidW);
   t.refilter();
   await sleep(3500);
@@ -630,7 +630,7 @@ const byId = (node, id) =>
   const other = pageText();
   t.secrets[gidW + ":1"] = seat1;
   assert.match(other, /Seat 1 starts it after the Zcash address check\./, "a browser of seat 2");
-  Object.assign(seat, { checkedWallet: wallet, rejectedWallet: null });
+  await t.putSec(gidW, 1, { checkedWallet: wallet, rejectedWallet: null });
   t.refilter();
   const done = (i) => data.has(`groups/${gidW}/soldone/${i}`);
   await waitFor("the start after Address checked", () => [1, 2, 3].every(done), 60000);
