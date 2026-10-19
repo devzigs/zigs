@@ -2725,6 +2725,13 @@ const sealed = (gid, rel, seat, fields, key, names = ["by", "sig"]) =>
       assert.equal(textOf(t.statusChip(h10)), "Ready to send");
       const row = all(t.walletView(null, null), (x) => x.attrs?.["data-key"] === "pay-h10")[0];
       assert.match(textOf(row), /Confirming/);
+      assert.match(textOf(row), /Zcash Testnet · Proposed by /, "a payment row names its chain");
+      // A wallet with no Solana part has no chain select on its Activity section.
+      const section = t.ui.tab;
+      t.ui.tab = "activity";
+      assert.equal(all(t.walletView(null, null), (x) => x.className === "field activity-filter")
+        .length, 0, "no chain select without a Solana part");
+      t.ui.tab = section;
       // The approval of another seat of this browser holds too. A stale restored seat whose
       // approval holds stays in this browser.
       const marks3 = t.sec(t.state.gid, third).marks;

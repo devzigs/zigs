@@ -691,6 +691,15 @@ body:has(.dialog), body:has(.drawer) { overflow: hidden; }
 
 /* Approvals inbox: one card per bucket that holds a payment. */
 .inbox .card-head { padding-bottom: 12px; }
+/* On a phone the amount and the state of a row go under its text, so the title keeps its width. */
+@media (max-width: 520px) {
+  .list.stacked .row-item { grid-template-columns: 36px minmax(0, 1fr); }
+  .list.stacked .ri-end {
+    grid-column: 2; grid-auto-flow: column; justify-content: start; align-items: center;
+    gap: 10px;
+  }
+}
+.activity-filter { min-width: 11rem; }
 .row-note {
   display: flex; flex-wrap: wrap; align-items: center; gap: 8px; padding: 12px 20px;
   border-top: 1px solid var(--line); font-size: 13px; color: var(--muted);

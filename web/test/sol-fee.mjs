@@ -517,6 +517,8 @@ step("a proposal from before the fee keys is read as it was and is never sent ag
   const fee2 = chain.balances.get(feeAddress(2));
   c.added = await addSol(c, { amount: "0.01" });
   assert.equal(c.added.seat, 2, "seat 2 added the SOL");
+  assert.ok(Number.isFinite(c.added.at) && c.added.at <= Date.now(),
+    "the Add SOL record has the time of its answer");
   assert.equal(chain.balances.get(feeAddress(2)) < fee2, true, "from its fee address");
   assert.match(textOf(mark("added")[0]), /^Added 0\.01 SOL, seat 2: /);
   // Seats 1 and 2 are in mismatch: seat 3 is the first ready seat.
