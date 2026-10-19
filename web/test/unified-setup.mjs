@@ -22,8 +22,10 @@ const { chatMessage } = await import("../app-links.js");
 const { chatInviteCard } = await import("../app-thread.js");
 const { chats } = await import("../app-keystore.js");
 const { backupWords } = await import("../sol/backup.js");
-const { pendingCount } = await import("../sol/view.js");
+const { loadingCount, olderCount, pendingCount, pendingRows } = await import("../sol/view.js");
+const { SHOWN } = await import("../sol/payview.js");
 const { createDialog, lobby, marginText, renderSide } = await import("../app-shell.js");
+const { receiveDialog } = await import("../app-send.js");
 const { offReason } = await import("../util.js");
 const { intentHex } = await import("../sol/intent.js");
 const { ui } = await import("../app-state.js");
@@ -118,6 +120,7 @@ const proposal = (id, change = {}) => ({
   status: "collecting",
   by: 1,
   intent: intentHex("createNonce", { blockhash: "11".repeat(32) }),
+  createdAt: Date.now(),
   message: "ab".repeat(8),
   feeSig: "00".repeat(64),
   ...change,
@@ -173,11 +176,17 @@ function inboxWiring() {
   const { tab } = t.ui, kept = { ...t.state };
   t.ui.tab = "approvals";
   try {
-    assert.match(pageText(), /Needs your approval.*2 Solana proposals wait for your approval/,
-      "the Solana line in the review bucket");
     const review = findNode(pageTree(), (n) => n.attrs?.["aria-label"] === "Needs your approval");
+    const rowOf = (id) => findNode(review, (n) => n.attrs?.["data-key"] === "sol-" + id);
+    const rows = ["a", "b"].map(rowOf);
+    assert.ok(rows.every(Boolean), "one row for each Solana proposal that waits here");
+    assert.match(textOf(rows[0]), /^↗Create the nonce account for the moveSolana Devnet/);
     assert.equal(textOf(findNode(review, (n) => n.className === "badge plain")), "2",
       "the review bucket counts each proposal");
+    assert.equal(t.solPendingRows().length, t.solPending(), "the rule of the count");
+    rows[0].on.click();
+    assert.equal(t.ui.tab, "solana", "a row opens the Solana section");
+    t.ui.tab = "approvals";
     assert.match(pageText(), /The wallet syncs\. .*Needs your approval/,
       "before the first sync of the chain, the note shows next to the rows");
     Object.assign(t.state, { sessions: [], sessionsFailed: true });
@@ -283,6 +292,88 @@ function emptyInbox() {
     t.ui.tab = tab;
   }
 }
+// Receive names the network of the open wallet (D3); a received row says what and where.
+function receiveTexts() {
+  const real = globalThis.document, { g } = t.state, chain = t.chain, { tab } = t.ui;
+  const share = Object.getOwnPropertyDescriptor(globalThis, "navigator");
+  const rec = { createElement: () => new Rec(), createElementNS: () => new Rec(),
+    createTextNode: (text) => ({ text }) };
+  // A click shows its banner on the page of the rig.
+  const click = (button) => {
+    globalThis.document = real;
+    try { button.on.click(); } finally { globalThis.document = rec; }
+  };
+  globalThis.document = rec;
+  try {
+    const box = receiveDialog();
+    assert.ok(byText(box, "Zcash Testnet"), "the badge names the network of the wallet");
+    assert.match(textOf(box), /Send only ZEC on Zcash Testnet to this address\./);
+    assert.match(textOf(box), /becomes spendable after 3 confirmations\. Get free testnet ZEC/);
+    assert.ok(!byText(box, "Share address"), "no Share button without Web Share");
+    const first = findNode(box, (n) => n.attrs?.["data-first-focus"] !== undefined);
+    assert.equal(first && textOf(first), "Copy address", "the dialog opens on Copy address");
+    // Web Share gets the address alone. A closed sheet is no error; a failure says so.
+    let shared = null, refusal = null;
+    const answer = { catch: (fn) => (refusal ? fn(refusal) : undefined) };
+    Object.defineProperty(globalThis, "navigator", { configurable: true,
+      value: { share: (d) => { shared = d; return answer; } } });
+    const shareButton = () => byText(receiveDialog(), "Share address");
+    assert.ok(shareButton(), "Web Share adds a Share button");
+    click(shareButton());
+    assert.deepEqual(shared, { text: t.state.wallet.address }, "it shares the address alone");
+    const before = t.banner;
+    refusal = { name: "AbortError" };
+    click(shareButton());
+    assert.equal(t.banner, before, "a closed share sheet shows nothing");
+    refusal = { name: "NotAllowedError" };
+    click(shareButton());
+    assert.match(t.banner?.text ?? "", /could not share the address\. Use Copy address\./);
+    t.state.g = { ...g, movedTo: "elsewhere" };
+    const moved = textOf(receiveDialog());
+    assert.match(moved, /This wallet moved to/, "a moved wallet says so");
+    assert.doesNotMatch(moved, /Send only|Use this shielded address|Share address/,
+      "and asks for no payment to the old address");
+    t.state.g = g;
+    // A browser whose seats did not check the address yet: the dialog says why, and shows none.
+    const secretsWere = t.secrets;
+    t.secrets = Object.fromEntries(Object.entries(secretsWere).map(([k, v]) =>
+      [k, k.startsWith(t.state.gid + ":") ? { ...v, checkedWallet: "another" } : v]));
+    try {
+      const hidden = textOf(receiveDialog());
+      assert.match(hidden, /The address shows here after your seat checks it against its own key\./,
+        "the dialog says why the address is not shown");
+      assert.doesNotMatch(hidden, /Copy address|Share address|Send only/, "and shows no address");
+    } finally {
+      t.secrets = secretsWere;
+    }
+    t.state.g = { ...g, network: "mainnet" };
+    const main = receiveDialog();
+    assert.ok(byText(main, "Zcash Mainnet"), "a mainnet wallet reads Mainnet");
+    assert.doesNotMatch(textOf(main), /testnet|faucet/i, "and claims no testnet");
+    assert.match(textOf(main), /Send only ZEC on Zcash Mainnet to this address\./);
+    assert.match(textOf(main), /The signers of this wallet can see its balance and history\./);
+    // At the cap of a mainnet wallet the dialog shows the cap note and no address.
+    t.setChain({ gid: t.state.gid, cw: {}, bal: { spendable: 60000000, pending: 0,
+      height: 4500100 }, sent: new Set(), received: [] });
+    const full = textOf(receiveDialog());
+    assert.doesNotMatch(full, /Copy address|Send only/, "no address at the cap");
+  } finally {
+    globalThis.document = real;
+    Object.defineProperty(globalThis, "navigator", share);
+    t.state.g = g;
+    t.setChain(chain);
+  }
+  t.ui.tab = "activity";
+  t.setChain({ gid: t.state.gid, cw: {}, bal: { spendable: 0, pending: 0, height: 4500100 },
+    sent: new Set(), received: [{ txid: "ab", height: 4500000, value: 100000, confirmed: true }] });
+  try {
+    assert.match(pageText(), /Received ZECZcash Testnet · block\u00a04\D?500\D?000/,
+      "a received row names the coin and the network");
+  } finally {
+    t.setChain(chain);
+    t.ui.tab = tab;
+  }
+}
 // The phone Menu closes on a pick; the sections show for the formed wallet only; the switcher
 // shows with two or more wallets.
 function sideMenu() {
@@ -324,14 +415,29 @@ function sideMenu() {
   assert.ok(labelled(pageTree(), "Switch wallet"), "two wallets: a switcher");
 }
 function approvalCount(ctl) {
+  // The count follows approveSeats: the documents are checked (wait 0), so the cards show buttons.
   const count = (sessions, commits = {}, change = {}) =>
-    pendingCount({ ...ctl, ...change, sessions, commits });
+    pendingCount({ ...ctl, wait: 0, sessWait: 0, ...change, sessions, commits });
   const docs = (change) => ({ docs: { ...ctl.docs, ...change } });
   const two = [proposal("a"), proposal("b"), proposal("c", { status: "sent" })];
   assert.equal(count(two), 2, "two open proposals, a sent one does not count");
+  const rows = pendingRows({ ...ctl, wait: 0, sessWait: 0, sessions: two, commits: {} });
+  assert.deepEqual(rows.map((r) => r.id), ["a", "b"], "the inbox lists the same proposals");
+  assert.equal(count(two, {}, { wait: 1 }), 0, "while a document is checked: no button, no count");
+  const loading = (sessions, change = {}) =>
+    loadingCount({ ...ctl, wait: 0, sessWait: 0, ...change, sessions, commits: {} });
+  assert.equal(loading(two, { wait: 1 }), 2, "a proposal that waits for the read is loading");
+  assert.equal(loading(two), 0, "a proposal with its Approve button is not loading");
+  const many = Array.from({ length: SHOWN + 1 }, (_, i) => proposal("m" + i));
+  assert.equal(count(many), SHOWN, "only the cards that the section shows count");
+  const mixed = [proposal("s0", { status: "sent" }), ...many];
+  assert.equal(count(mixed), SHOWN - 1, "a proposal behind the shown cards does not count");
+  assert.deepEqual([olderCount({ ...ctl, sessions: two }), olderCount({ ...ctl, sessions: mixed })],
+    [0, 2], "the proposals older than the shown cards");
   assert.equal(count(two, { a: { 1: {} } }), 2, "seats 2 and 3 can still approve a");
   assert.equal(count(two, { a: { 1: {}, 2: {}, 3: {} } }), 1, "every seat approved a");
   assert.equal(count([proposal("d", { intent: "zz" })]), 0, "a proposal the app cannot show");
+  assert.equal(count([proposal("x", { createdAt: 1 })]), 0, "an expired proposal: no Approve");
   const old = proposal("e", { feeSig: undefined });
   assert.equal(count([old]), 0, "a proposal from before the fee keys");
   const only3 = { host: { ...ctl.host, canWriteAs: (i) => i === 3 } };
@@ -370,6 +476,7 @@ function approvalCount(ctl) {
     Object.assign(ctl, { sessions: [], commits: {} });
     assert.ok(!labelled(sideTree(), "2 to approve"), "no count without a proposal");
     emptyInbox();
+    receiveTexts();
     sideMenu();
   } finally {
     [ctl.sessions, ctl.commits, t.state.groups] = kept;
@@ -933,6 +1040,8 @@ const byId = (node, id) =>
   ui.tab = "solana";
   await waitFor("the ready tab", () => /The Solana part is ready\./.test(pageText()));
   ui.tab = "overview";
+  // The side item and the inbox read the live documents: their checks end first.
+  await waitFor("the documents are checked", () => !t.sol.ctl.wait && !t.sol.ctl.sessWait);
   approvalCount(t.sol.ctl);
   // The first sentence names the file that is unsaved: a Zcash file, or only a Solana file.
   const note = (...args) => {

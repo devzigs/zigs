@@ -27,7 +27,7 @@ landed in block 4,518,023 (hackathon-release.md, M10). The demo name still needs
 | Item | What the demo needs | Without it |
 |---|---|---|
 | M1 | The network picker shows Testnet only | On main |
-| M2 | Get testnet ZEC opens the Valar faucet | On main |
+| M2 | The faucet link of Receive opens the Valar faucet | On main |
 | M3 | One setup for Zcash and Solana | Run two ceremonies: section 5 |
 | M4 | A restored seat can join the Solana ceremony | On main |
 | M5 | Zcash signing goes on when the payment drawer is closed | Keep the payment open on every approving laptop until it says Sent |

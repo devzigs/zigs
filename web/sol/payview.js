@@ -1,11 +1,11 @@
-// The payment part of the Solana tab: the fund card (the fee address of each seat of this browser),
-// Add SOL, the form of a private payment, the one-time move of the beta funds to the program
+// The payment part of the Solana section: the fund card (the fee address of each seat of this
+// browser), Add SOL, the forms of a payment, the one-time move of the beta funds to the program
 // address, and the signing sessions with their approval screens. An approval screen shows what
 // the checker of this device accepted (approve.js reviewOf): the values come from the intent bytes
 // and the proof, never from the display fields of the proposer. Each screen of a payment says who
 // pays, what it costs and what it makes public (ZOLANA.md 7.2). `data-session` marks a session and
 // `data-sol` marks a control, for the headless checks.
-import { approvalClosed, reviewOf } from "./approve.js";
+import { approvalClosed, reviewOf, reviewWaits, showable } from "./approve.js";
 import { agreement } from "./ceremony.js";
 import { CLUSTER, base58 } from "./docs.js";
 import { EXECUTE_TRIES, endsAt } from "./execute.js";
@@ -25,16 +25,18 @@ import { usedDigest } from "./nonces.js";
 import { heldOf, reclaimRent, scanRent } from "./rent.js";
 import { holdsShare, solOf } from "./secrets.js";
 import { solText } from "./session.js";
-import { heldLamports, heldNotes, isPayment, spentLamports } from "./sessions.js";
+import { beforeFee, heldLamports, heldNotes, isPayment, spentLamports } from "./sessions.js";
 
 export const SHOWN = 12;
 const FAUCET = "https://faucet.solana.com/";
 const TITLES = {
   createNonce: "Create the nonce account for the move",
   transfer: "Move the beta funds to the program address",
-  approve: "Send privately",
-  withdraw: "Withdraw to a public address",
+  approve: "Private SOL payment",
+  withdraw: "Public SOL withdrawal",
 };
+/** The title of a proposal, from its intent bytes. */
+export const titleOf = (ss) => TITLES[decodeIntent(ss.intent)?.kind] ?? "Unknown proposal";
 const WHAT = {
   createNonce:
     "Creates the account that the move of the beta funds needs. The proposing seat pays its " +
@@ -124,7 +126,7 @@ const FEE_TEXT =
   "about 0.003 SOL. Seats that only approve need none. " +
   LINK_TEXT +
   " The page asks Helius for the balance of this address with your IP address, with no click. " +
-  "It asks when the Solana tab opens, after a payment or Add SOL, and again when such a read " +
+  "It asks when the Solana section opens, after a payment or Add SOL, and again when such a read " +
   "failed. It also asks every 30 s while a signed payment waits for a seat that can pay.";
 
 /** The fee address of one seat of this browser: the address, Copy and the balance. */
@@ -306,14 +308,19 @@ function intentCard(c, act, actions) {
   return el(
     "div",
     { style: "display:grid;gap:8px" },
-    el("h3", {}, "Pay from the group"),
+    el("h3", {}, "Send SOL"),
     availableLine(c),
     seatLine(c, "propose-seat", "proposes and pays the fees."),
-    el("p", { class: "small", "data-sol": "pay-cost" }, costLine(c)),
     el(
       "p",
       { class: "small", "data-sol": "pay-prover" },
       proverSays(provesLocally(c)),
+    ),
+    el(
+      "details",
+      { class: "small" },
+      el("summary", {}, "Fees and rent"),
+      el("p", { class: "small", "data-sol": "pay-cost" }, costLine(c)),
     ),
     sendForm(c, act, actions),
     withdrawForm(c, act, actions),
@@ -347,7 +354,7 @@ function withdrawForm(c, act, actions) {
   return el(
     "div",
     { style: "display:grid;gap:8px" },
-    el("h3", {}, "Withdraw to a public address"),
+    el("h4", {}, "Public withdrawal"),
     el("p", { class: "small", "data-sol": "withdraw-public" }, WITHDRAW_PUBLIC),
     el("label", { class: "field" }, el("span", {}, "Recipient (Solana address)"), to),
     el(
@@ -372,6 +379,7 @@ function sendForm(c, act, actions) {
   return el(
     "div",
     { style: "display:grid;gap:8px" },
+    el("h4", {}, "Private payment"),
     el("p", { class: "small", "data-sol": "send-public" }, SEND_PUBLIC),
     el("label", { class: "field" }, el("span", {}, "Payee (full shielded address)"), to),
     el(
@@ -438,7 +446,7 @@ function recipientRows(said) {
 
 // The Payee is the first part of the shielded address only: a typo in the rest still matches.
 const COMPARE =
-  "Compare the Payee with the program address on the Solana tab of the payee group. " +
+  "Compare the Payee with the program address in the Solana section of the payee group. " +
   "This checks only the first part of the shielded address.";
 
 /** The payee rows of a private spend, from the fingerprint that the checker answered. */
@@ -568,7 +576,23 @@ function reviewBlock(c, ss, review) {
     el("dt", {}, label),
     el("dd", { "data-sol": "review" }, value),
   ]);
-  return el("dl", { class: "kv", "data-sol": "review-" + ss.id }, rows);
+  const list = el("dl", { class: "kv", "data-sol": "review-" + ss.id }, rows);
+  return PAYMENT_KINDS.has(review.intent.kind) ? [reviewHero(c, ss, review), list] : list;
+}
+
+// The amount of a payment as the checker of this device answered it, above its rows.
+function reviewHero(c, ss, review) {
+  const { el } = c.host,
+    { said } = review,
+    withdraw = review.intent.kind === "withdraw";
+  const amount = withdraw ? said.withdrawn : sum(said.paid);
+  return el(
+    "div",
+    { class: "sol-hero", "data-sol": "amount-" + ss.id },
+    el("span", { class: "label" }, withdraw ? "Public withdrawal" : "Private payment"),
+    el("strong", { class: "sol-amount" }, solText(amount)),
+    el("span", { class: "small muted" }, "Solana Devnet: test SOL only. The fees are below."),
+  );
 }
 
 // The digest of the proposal, or null when it cannot be read.
@@ -596,16 +620,17 @@ export function seatsOf(c, ss) {
 const SEAT_TEXT = {
   approved: (seat) => "Seat " + seat + " approved",
   used: (seat) => "Seat " + seat + " signed these bytes before",
+  nokey: (seat) => "This browser cannot sign for seat " + seat + ".",
 };
 
-// A seat that approved, or that signed these exact bytes, gets no approval screen and no button.
-// While the review waits (a wallet read, an account read, a check of the documents), no seat gets
-// a button: the review is not on the screen yet.
-function approveRow(c, ss, act, actions, waiting) {
+// A seat that approved, that signed these exact bytes, or that has no signing key here gets no
+// button. The other seats get a button when approveSeats names them.
+function approveRow(c, ss, act, actions, seats) {
   const { el } = c.host;
   return seatsOf(c, ss).map(({ seat, state }) => {
     if (state !== "open") return el("span", { class: "small" }, SEAT_TEXT[state](seat));
-    if (waiting) return null;
+    if (!c.host.canWriteAs(seat)) return el("span", { class: "small" }, SEAT_TEXT.nokey(seat));
+    if (!seats.includes(seat)) return null;
     const attrs = {
       class: "btn primary",
       type: "button",
@@ -660,15 +685,27 @@ const EXPIRED_TEXT = "This proposal expired, so no seat can approve it. The page
 const approvable = (ss) => ss.status === "collecting" && !approvalClosed(ss);
 
 /**
- * The seats of this browser that show an Approve button for `ss` now: the rules of approveRow.
- * A proposal that expired, or whose review still waits for a read, shows none. The S6 count of
- * the proposals that wait for this browser uses it, so the count and the buttons agree.
+ * The seats of this browser that show an Approve button for `ss` now: a seat with a share and a
+ * signing key that gave no approval yet. A proposal that expired, that the app cannot show, that
+ * is from before the fee keys, or whose review still waits for a read, shows none. The buttons,
+ * the S6 count and the Approvals inbox all use it, so they agree.
  */
-export function approveSeats(c, ss) {
-  if (!approvable(ss)) return [];
-  const open = seatsOf(c, ss).filter((s) => s.state === "open");
-  if (!open.length || reviewOf(c, ss, open[0].seat).waiting) return [];
-  return open.map((s) => s.seat);
+export function approveSeats(c, ss, block) {
+  const open = openSeats(c, ss);
+  if (!open.length || reviewWaits(c, ss, open[0], block)) return [];
+  return open;
+}
+/** True when a seat of this browser can approve `ss` as soon as its review stops waiting. */
+export function approveLater(c, ss, block) {
+  const open = openSeats(c, ss);
+  return open.length > 0 && reviewWaits(c, ss, open[0], block);
+}
+// The seats that may approve `ss` before its review: a proposal that is collecting, that the app
+// can show and that is not from before the fee keys; a seat with a share and a signing key here.
+function openSeats(c, ss) {
+  if (!approvable(ss) || !showable(ss) || beforeFee(ss)) return [];
+  return seatsOf(c, ss).filter((s) => s.state === "open" && c.host.canWriteAs(s.seat))
+    .map((s) => s.seat);
 }
 
 function expiredLine(c, ss) {
@@ -676,16 +713,74 @@ function expiredLine(c, ss) {
   return c.host.el("p", { class: "small", "data-sol": "expired" }, EXPIRED_TEXT);
 }
 
+// The steps of a proposal, from what this page tracks: the parts of the session (a package comes
+// after t approvals), its status and the outcome of the sent transaction (resultLine gives its
+// slot). A session that stopped (failed, failed on chain, or expired before its approvals) shows
+// "!" on the first step that is not done. No finality is tracked.
+function approvalsStep(ss, count, t) {
+  if (count >= t || ss.package) return "done";
+  return ss.status === "collecting" ? "now" : "";
+}
+function signedStep(ss) {
+  if (ss.signature) return "done";
+  return ss.status === "signing" ? "now" : "";
+}
+function lastStep(ss) {
+  if (ss.status === "sent" && ss.outcome !== "failed") return "done";
+  return ss.status === "signed" ? "now" : "";
+}
+const stopped = (ss) =>
+  ss.status === "failed" ||
+  (ss.status === "sent" && ss.outcome === "failed") ||
+  (ss.status === "collecting" && approvalClosed(ss));
+
+/**
+ * The states of the steps after "Proposed": the approvals, the signature, the execute. `out`:
+ * the automatic execute stopped after its tries, so the execute waits for a person.
+ */
+export function stepStates(ss, count, t, out = false) {
+  const states = [approvalsStep(ss, count, t), signedStep(ss), lastStep(ss)];
+  const at = out || stopped(ss) ? states.findIndex((s) => s !== "done") : -1;
+  return states.map((s, i) => (i === at ? "bad" : s));
+}
+
+function stepsOf(c, ss) {
+  const { el } = c.host,
+    t = c.host.state.g.t;
+  // A package is made from t approvals, also when this page holds none of their records.
+  const count = ss.package ? t : Math.min(Object.keys(c.commits[ss.id] ?? {}).length, t);
+  const out = ss.status === "signed" && (c.tries?.[ss.id] ?? 0) >= EXECUTE_TRIES;
+  const [approvals, signed, last] = stepStates(ss, count, t, out);
+  const step = (cls, title, text) =>
+    el(
+      "div",
+      { class: "step " + cls },
+      el("span", { class: "tick" }, { done: "✓", bad: "!" }[cls] ?? "•"),
+      el(
+        "div",
+        { class: "step-text" },
+        el("strong", {}, title),
+        text ? el("span", { class: "small" }, text) : null,
+      ),
+    );
+  return el(
+    "div",
+    { class: "steps sol-steps", "data-sol": "steps-" + ss.id },
+    step("done", "Proposed", "By seat " + ss.by + "."),
+    step(approvals, `Approvals · ${count} of ${t}`),
+    step(signed, "Signed"),
+    step(last, isPayment(ss) ? "Executed" : "Landed"),
+  );
+}
+
 function sessionBody(c, ss, act, actions) {
   const { el } = c.host,
     open = seatsOf(c, ss).find((s) => s.state === "open");
-  const count = Object.keys(c.commits[ss.id] ?? {}).length;
   const collecting = approvable(ss);
-  const proposer = `Proposed by seat ${ss.by}. Approvals: ${count} of ${c.host.state.g.t}.`;
   const review = collecting && open ? reviewOf(c, ss, open.seat) : null;
-  const buttons = collecting ? approveRow(c, ss, act, actions, review?.waiting) : null;
+  const buttons = collecting ? approveRow(c, ss, act, actions, approveSeats(c, ss)) : null;
   return [
-    el("p", { class: "small" }, proposer),
+    stepsOf(c, ss),
     expiredLine(c, ss),
     review ? reviewBlock(c, ss, review) : null,
     buttons ? el("div", { class: "row-actions" }, buttons) : null,
@@ -710,14 +805,17 @@ function sessionCard(c, ss, act, actions) {
 
 function sessionList(c, act, actions) {
   const { el } = c.host;
-  const shown = (c.sessions ?? []).slice(0, SHOWN);
+  const shown = (c.sessions ?? []).slice(0, SHOWN), older = (c.sessions ?? []).length - SHOWN;
   if (!shown.length) return el("p", { class: "small" }, "No Solana proposals yet.");
+  const olderNote = older > 0 ? el("p", { class: "small", "data-sol": "older" }, "Zigs shows the "
+    + "newest " + SHOWN + " proposals. " + older + " older " + (older === 1 ? "one is" : "ones are")
+    + " not shown.") : null;
   const list = el(
     "div",
     { class: "list" },
     shown.map((ss) => sessionCard(c, ss, act, actions)),
   );
-  return el("div", {}, explorerNote(c), list);
+  return el("div", {}, explorerNote(c), list, olderNote);
 }
 
 const RENT_TEXT =

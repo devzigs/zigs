@@ -32,8 +32,8 @@ import { openSend } from "./app-send.js";
 import { setupView, solSetupCard, solUnfinished } from "./app-setup.js";
 import { themeChoice } from "./app-theme.js";
 import {
-  sol, solBackup, solBalance, solError, solFile, solLoad, solLoading, solOn, solPending, solSetup,
-  solSync, solTab, solUnsaved,
+  sol, solBackup, solBalance, solError, solFile, solLoad, solLoading, solLoadingCount,
+  solOlderCount, solOn, solPending, solPendingRows, solSetup, solSync, solTab, solUnsaved,
 } from "./app-sol.js";
 import { pendingShortcut, solRow, zecInProgress, zecTotal } from "./overview-model.js";
 import { protectionRisk, recoveryState } from "./recovery-model.js";
@@ -369,11 +369,15 @@ export const receiveWhat = () => curNet().cap ? "ZEC" : "testnet ZEC";
 export const receiveLimit = () => curNet().cap ? " Keep the total under " + capText(curNet().cap)
   + ". The app warns at that level and cannot block deposits." : "";
 
+/** The note of a wallet that moved: its senders must use the address of the new wallet. */
+export const movedNote = () => el("div", { class: "callout" }, "This wallet moved to "
+  + groupName(state.g.movedTo) + ". Ask senders to use the new wallet's address.");
+
 function receiveCard() {
   const w = state.wallet;
   return el("section", { class: "card card-pad" },
     el("div", { class: "card-head" }, el("h2", {}, "Receive"), el("span", { class: "badge ok plain" }, "Private address")),
-    state.g.movedTo ? el("div", { class: "callout" }, "This wallet moved to " + groupName(state.g.movedTo) + ". Ask senders to use the new wallet's address.")
+    state.g.movedTo ? movedNote()
       : atCap() ? capNote()
       : el("p", { class: "small muted" }, "Share this address to receive " + receiveWhat()
         + ". Payments to it are shielded." + receiveLimit()),
@@ -442,8 +446,9 @@ function receivedRow(r) {
   return el("a", { class: "row-item", href: curNet().explorer + r.txid, target: "_blank", rel: "noopener", title: "View in explorer" },
     el("span", { class: "tx-ico in", "aria-hidden": "true" }, "↙"),
     el("span", { class: "ri-main" },
-      el("span", { class: "ri-title" }, "Received"),
-      el("span", { class: "ri-sub" }, "Block " + r.height.toLocaleString()),
+      el("span", { class: "ri-title" }, "Received ZEC"),
+      el("span", { class: "ri-sub" }, "Zcash " + curNet().label + " · block\u00a0"
+        + r.height.toLocaleString()),
       memos.map((m) => el("span", { class: "ri-memo" + (m === null ? " faint" : "") },
         m === null ? "Memo is not text" : m)),
       memos.length ? el("span", { class: "ri-sub" }, ON_CHAIN) : null,
@@ -458,14 +463,11 @@ function receivedRow(r) {
 // payment; the drawer keeps every action. Empty buckets do not show.
 function approvalsTab() {
   const rows = inboxRows(), sol = solInbox(), flying = new Set(inFlight());
-  // The Solana line joins a bucket as one row; for review it counts each proposal.
-  const solNote = (id) => sol && sol.kind === id ? el("p", { class: "row-note" }, sol.text,
-    " ", openSolanaButton()) : null;
   const sections = BUCKETS.map(([id, label]) => {
-    const list = rows[id], extra = solNote(id);
+    const list = rows[id], extra = solExtra(sol, id);
     const lost = id === "attention" ? lostNote(rows.lost) : null;
     if (!list.length && !extra && !lost) return null;
-    const count = list.length + (extra ? (id === "review" ? solPending() : 1) : 0)
+    const count = list.length + (Array.isArray(extra) ? extra.length : extra ? 1 : 0)
       + (lost ? rows.lost.length : 0);
     return el("section", { class: "card inbox", "aria-label": label },
       el("div", { class: "card-head card-pad" }, el("h2", {}, label),
@@ -488,8 +490,27 @@ const lostNote = (ids) => ids.length ? el("p", { class: "row-note" }, ids.length
   : ids.length + " payments that you approved have no record here any more. Send stays held "
     + "until they can no longer go on chain.") : null;
 
+const openSolana = () => { ui.tab = "solana"; render(); };
 const openSolanaButton = () => el("button", { class: "btn sm", type: "button",
-  onclick: () => { ui.tab = "solana"; render(); } }, "Open Solana");
+  onclick: openSolana }, "Open Solana");
+
+// The Solana part of a bucket: in review, one row for each proposal that waits for this browser
+// (the rule of the count); else, or while the list is empty, the one line of solLine. A row opens
+// the Solana section, which holds the Approve buttons, as a Zcash row opens its drawer.
+function solExtra(line, id) {
+  if (!line || line.kind !== id) return null;
+  const list = id === "review" ? solPendingRows() : [];
+  return list.length ? list.map(solInboxRow)
+    : el("p", { class: "row-note" }, line.text, " ", openSolanaButton());
+}
+const solInboxRow = (r) => el("button", {
+  class: "row-item", type: "button", "data-key": "sol-" + r.id, onclick: openSolana,
+},
+el("span", { class: "tx-ico out", "aria-hidden": "true" }, "↗"),
+el("span", { class: "ri-main" }, el("span", { class: "ri-title" }, r.title),
+  el("span", { class: "ri-sub" }, "Solana Devnet · proposed by seat " + r.by)),
+el("span", { class: "ri-end" }, el("span", { class: "badge warn" }, "Your approval")),
+el("span", { class: "chev" }, "›"));
 
 // The payments of the open wallet by bucket. A payment whose facts cannot be read lands in
 // "attention", never out of the list. `lost`: the ids of approvals here that still hold Send
@@ -525,7 +546,8 @@ function inboxBucket(ss, held) {
 }
 
 const solInbox = () => solLine({ on: solOn(), error: solError, loading: !!(sol || solLoading),
-  setup: solSetup(), toApprove: solPending() });
+  setup: solSetup(), toApprove: solPending(), reading: solLoadingCount(),
+  older: solOlderCount() });
 
 const INBOX_EMPTY = {
   failed: "The payments of this wallet could not be read. Reload the page.",
