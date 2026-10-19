@@ -128,7 +128,11 @@ async function helpers(page) {
   assert.equal(csp(page), 0, "the app page raises no CSP violation");
   await clickText(page, "Create wallet");
   await waitForText(page, "New shared wallet");
-  await setInput(page, "#g-name", "Harness wallet");
+  const focused = () => run(page, () => document.activeElement?.textContent.trim() ?? "");
+  assert.equal(await focused(), "Set up my wallet", "the first step gives focus to its button");
+  await clickText(page, "Set up my wallet");
+  await waitFor(async () => (await focused()) === "Choose your protection", 5000,
+    () => "the focus on the heading of the next step");
   await setInput(page, "#g-n", 4);
   await setInput(page, "#g-t", 3);
   await waitForText(page, "Any 3 of 4 devices must approve each payment.");
