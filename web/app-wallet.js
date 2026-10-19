@@ -598,13 +598,13 @@ function memberRow(i) {
     el("div", { class: "m-actions" }, seatBadge(i), backup));
 }
 
-// The Recovery section: the files of the seats of this browser, the margin of the wallet, and
+// The Recovery section: the files of your seats in this wallet, the margin of the wallet, and
 // what Zigs cannot know. A button opens the backup dialog of the seat.
 function recoveryTab() {
   const seats = localSeats().map((i) => {
     const s = sec(state.gid, i) || {}, sol = solFile(i);
-    return { id: i, zec: { has: !!s.keyPackage, saved: seatBackedUp(s) },
-      sol: sol && { has: true, saved: sol.saved } };
+    return { id: i, zec: { has: !!s.keyPackage, saved: seatBackedUp(s), restored: !!s.restored },
+      sol: sol && { has: true, saved: sol.saved, missing: !!sol.missing } };
   });
   const r = recoveryState(seats);
   const risk = protectionRisk(state.g.t, state.g.n, seats.filter((x) => x.zec.has).length);
@@ -617,34 +617,47 @@ function recoveryTab() {
       el("p", { class: "small muted" }, risk.detail),
       risk.here ? el("p", { class: "small" }, risk.here) : null),
     seats.some((x) => x.zec.has) ? el("section", { class: "card" },
-      el("div", { class: "card-head card-pad" }, el("h2", {}, "Seats in this browser")),
-      el("div", {}, seats.filter((x) => x.zec.has).map((x) => guard(recoveryRow, x)))) : null,
-    el("details", { class: "card card-pad" }, el("summary", {}, "If a device is lost"),
-      el("p", { class: "small muted" }, lostText(state.g.t))));
+      el("div", { class: "card-head card-pad" }, el("h2", {}, "Your seats in this wallet")),
+      el("div", { class: "recovery-seats" },
+        seats.filter((x) => x.zec.has).map((x) => guard(recoveryRow, x)))) : null,
+    el("details", { class: "card card-pad recovery-lost" },
+      el("summary", {}, "If a device is lost"),
+      el("p", { class: "small muted" }, lostText(state.g.t, solOn()))));
 }
 
 const RECOVERY_LIMITS = "Zigs knows only the files that this browser saved. It cannot see the "
   + "files of the other devices: ask each signer to back up their seat. Zigs does not open a "
   + "saved file again: keep each file and its passphrase apart, and make sure that you can find "
-  + "both.";
-const lostText = (t) => "Keep the devices that still work, and do not delete their data. While "
-  + t + " signers remain, they can move the Zcash funds to a new wallet (Signers, Change "
-  + "signers); a Solana part does not move this way. With fewer, first restore seats from their "
-  + "files. Zigs cannot go around the approval rule. A lost device can still hold its key share, "
-  + "so move the funds when you can.";
+  + "both. This section covers your seats in this wallet only: each other wallet has its own, "
+  + "the personal account has its own backup file, and direct chats are in no backup file.";
+const lostText = (t, sol) => "Keep the devices that still work, and do not delete their data. "
+  + "While " + t + " signers remain, they can move the Zcash funds to a new wallet (Signers, "
+  + "Change signers)" + (sol ? "; a Solana part does not move this way" : "") + ". With fewer, "
+  + "first restore seats from their files. Zigs cannot go around the approval rule. A lost "
+  + "device can still hold its key share, so move the funds when you can.";
+
+// The badge of one file: saved here, restored from it, not saved, or a Solana part that this
+// browser does not hold (a seat restored from its Zcash file alone).
+function fileBadge(name, f) {
+  if (f.missing) return el("span", { class: "badge warn" }, name + " part missing");
+  const said = !f.saved ? " file not saved" : f.restored ? " restored from its file"
+    : " file saved here";
+  return el("span", { class: "badge " + (f.saved ? "ok" : "warn") }, name + said);
+}
+const solAction = (x) => (x.sol.missing
+  ? el("span", { class: "small" }, "Restore it from its Solana file in the Solana section.")
+  : el("button", { class: "btn sm", type: "button", onclick: act(() => solBackup(x.id)),
+    "aria-label": "Back up the Solana part of seat " + x.id }, "Back up the Solana part"));
 
 function recoveryRow(x) {
-  const part = (name, f) => el("span", { class: "badge " + (f.saved ? "ok" : "warn") },
-    name + (f.saved ? " file saved here" : " file not saved"));
-  return el("div", { class: "member" }, avatar(x.id, "lg"),
+  return el("div", { class: "member recovery-row" }, avatar(x.id, "lg"),
     el("div", { class: "ri-main" }, el("span", { class: "ri-title" }, seatTitle(x.id,
       state.seats[x.id])), el("span", { class: "ri-sub" }, "Seat " + x.id)),
-    el("div", { class: "m-actions" }, part("Zcash", x.zec), x.sol ? part("Solana", x.sol) : null,
+    el("div", { class: "m-actions" }, fileBadge("Zcash", x.zec),
+      x.sol ? fileBadge("Solana", x.sol) : null,
       el("button", { class: "btn sm", type: "button", onclick: () => openBackup(x.id),
         "aria-label": "Back up the Zcash part of seat " + x.id }, "Back up the Zcash part"),
-      x.sol ? el("button", { class: "btn sm", type: "button", onclick: act(() => solBackup(x.id)),
-        "aria-label": "Back up the Solana part of seat " + x.id }, "Back up the Solana part")
-        : null));
+      x.sol ? solAction(x) : null));
 }
 
 function detailsTab() {

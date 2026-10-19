@@ -650,3 +650,12 @@ body:has(.dialog), body:has(.drawer) { overflow: hidden; }
   .member { grid-template-columns: 36px minmax(0, 1fr); }
   .member .m-actions { grid-column: 2; justify-content: flex-start; }
 }
+
+/* Recovery: the files and buttons of a seat go under its name at every width, so the name keeps
+   its column next to two parts. The cards keep the spacing of the other cards. */
+.recovery-row { grid-template-columns: 36px minmax(0, 1fr); padding-block: 12px; }
+.recovery-row .m-actions { grid-column: 2; justify-content: flex-start; }
+.recovery-seats > .recovery-row:first-child { border-top: 0; padding-top: 0; }
+.recovery-seats > .recovery-row:last-child { padding-bottom: 24px; }
+.card:has(> .recovery-seats) > .card-head { padding-bottom: 16px; }
+.recovery-lost { padding-block: 12px; }

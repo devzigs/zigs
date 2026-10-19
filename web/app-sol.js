@@ -66,13 +66,22 @@ export const newWallet = () => { openGroup(null); ui.create = true; render(); };
 // The seats of this browser with a Solana key share whose backup file was not saved. A stopped
 // part gets no backup (web/sol/backup.js refuses it), also when another seat stopped it.
 const solStopped = () => solSetup()?.status === "stopped";
-export const solUnsaved = () => localSeats().filter((i) => solFile(i)?.saved === false);
-/** The Solana file of seat i of this browser, or null when the seat holds no share to save. */
+export const solUnsaved = () => localSeats().filter((i) => {
+  const f = solFile(i);
+  return f?.saved === false && !f.missing;
+});
+/**
+ * The Solana file of seat i of this browser, or null when the seat has no Solana part here.
+ * `missing`: the Solana part of the wallet counts this seat (its soldone document), but this
+ * browser holds no share of it: a seat restored from its Zcash file alone (ZOLANA.md 4.3).
+ */
 export function solFile(i) {
   if (!solOn() || solStopped()) return null;
   const s = sec(state.gid, i)?.sol;
-  return solShare(s) ? { saved: s.backupSaved === true } : null;
+  if (solShare(s)) return { saved: s.backupSaved === true };
+  return solMade(i) ? { saved: false, missing: true } : null;
 }
+const solMade = (i) => solOpenHere() && fromSol("seat part", (c) => !!c.docs?.soldone?.[i], false);
 const solShare = (s) => !!(s?.keyPackage && s.solSeed && s.groupKey) && !s.aborted;
 // The backup dialog of the Solana part of seat i, from the backup note of the wallet.
 export async function solBackup(i) {

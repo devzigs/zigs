@@ -200,14 +200,32 @@ function recoveryFacts() {
     .find((key) => key.startsWith(t.state.gid + ":") && real[key].keyPackage);
   const seat = Number(k.split(":").pop());
   const with_ = (patch) => ({ ...real, [k]: { ...real[k], ...patch } });
+  // The row of the seat: its files, and the two buttons with their full names.
+  const row = () => findNode(pageTree(), (n) => n.className === "member recovery-row");
+  const labels = (n) => (n.kids ?? []).flatMap(labels)
+    .concat(n.attrs?.["aria-label"] ? [n.attrs["aria-label"]] : []);
   try {
     t.secrets = with_({ backupSaved: false });
-    assert.match(pageText(), /Zcash file not saved/, "a Zcash file that is not saved shows");
+    assert.match(textOf(row()), new RegExp("Seat " + seat + "Zcash file not saved"));
     t.secrets = with_({ backupSaved: true });
-    assert.doesNotMatch(pageText(), new RegExp("Seat " + seat + "Zcash file not saved"));
+    assert.match(textOf(row()), new RegExp("Seat " + seat + "Zcash file saved here"));
+    assert.ok(labels(row()).includes("Back up the Zcash part of seat " + seat));
+    t.secrets = with_({ backupSaved: true, restored: true });
+    assert.match(textOf(row()), /Zcash restored from its file/, "a seat opened from its file");
     if (real[k].sol) {
+      t.secrets = with_({ sol: { ...real[k].sol, backupSaved: false } });
+      assert.match(textOf(row()), /Solana file not saved/);
+      t.secrets = with_({ sol: { ...real[k].sol, backupSaved: true } });
+      assert.match(textOf(row()), /Solana file saved here/);
+      assert.ok(labels(row()).includes("Back up the Solana part of seat " + seat));
       t.secrets = with_({ sol: { ...real[k].sol, aborted: "A test stop." } });
       assert.equal(solFile(seat), null, "a stopped share has no file to save");
+      // Restored from its Zcash file alone: the Solana part counts the seat, this browser holds
+      // no share of it.
+      t.secrets = with_({ sol: undefined });
+      assert.deepEqual(solFile(seat), { saved: false, missing: true });
+      assert.match(textOf(row()), /Solana part missing.*Restore it from its Solana file/);
+      assert.doesNotMatch(pageText(), /are saved/, "the page does not say saved");
     }
   } finally {
     t.secrets = real;
@@ -260,9 +278,11 @@ function sideMenu() {
   }
   const tab = t.ui.tab;
   t.ui.tab = "recovery";
-  assert.match(pageText(), /Seats in this browser.*file (saved here|not saved)/,
+  assert.match(pageText(), /Your seats in this wallet.*file (saved here|not saved)/,
     "the Recovery section shows the file state of each seat of this browser");
   assert.match(pageText(), /cannot see the files of the other devices/);
+  assert.match(pageText(), /covers your seats in this wallet only: each other wallet has its own/);
+  assert.match(pageText(), /the personal account has its own backup file, and direct chats are/);
   recoveryFacts();
   t.ui.tab = tab;
   assert.ok(!labelled(pageTree(), "Switch wallet"), "one wallet: its name, no switcher");
