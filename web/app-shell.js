@@ -9,7 +9,7 @@ import {
 } from "./app-keystore.js";
 import { openChat } from "./app-links.js";
 import { balOf, netOf } from "./app-chain.js";
-import { canWrite, db, dbReady, openGroup, toApprove } from "./app-groups.js";
+import { canWrite, closeSession, db, dbReady, openGroup, toApprove } from "./app-groups.js";
 import {
   act, el, guard, money, nameField, networkPick, newBadge, ruleText, unreadable, unreadChip,
 } from "./app-dom.js";
@@ -130,7 +130,12 @@ function sideItem(g) {
     class: "side-item" + (here ? " active" : ""), type: "button",
     // With its sections in the list, the section is the page and the wallet the current item.
     "aria-current": here ? (walletShown() ? "true" : "page") : null, "data-key": "wallet-" + g.id,
-    onclick: () => { ui.tab = "overview"; openGroup(g.id); },
+    onclick: () => {
+      ui.tab = "overview";
+      // The open wallet keeps its chain: openGroup would start a second one beside its sync.
+      if (g.id === state.gid) { closeSession(); render(); return; }
+      openGroup(g.id);
+    },
   }, el("span", { class: "av" }, initials(g.name)),
   el("span", { class: "side-name" }, g.name), el("span", { class: "side-tail" }, unread, tail));
 }

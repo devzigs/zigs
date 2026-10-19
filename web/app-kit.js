@@ -20,6 +20,28 @@ export function withTimeout(promise, ms, what) {
 
 export const isObj = (x) => !!x && typeof x === "object";
 
+// The engine calls that run on each wallet object (ZEC-16). wasm-bindgen holds the object for the
+// time of an async call, and a free() at that time throws and leaves a dead wrapper.
+const callsOn = new WeakMap(), released = new WeakSet();
+/** Counts the engine call `p` on the wallet object `cw` until it settles. Returns `p`. */
+export function track(cw, p) {
+  callsOn.set(cw, (callsOn.get(cw) ?? 0) + 1);
+  const done = () => {
+    const n = callsOn.get(cw) - 1;
+    if (n) callsOn.set(cw, n); else callsOn.delete(cw);
+  };
+  Promise.resolve(p).then(done, done);
+  return p;
+}
+// Frees a wallet object that the page no longer uses, once. While a call on it runs, the page only
+// drops it, and the finalizer of wasm-bindgen frees it when it is collected after the call.
+// ponytail: an object whose call never settles (a stalled stream) is never collected.
+export function release(cw) {
+  if (!cw || released.has(cw)) return;
+  released.add(cw);
+  if (!callsOn.has(cw)) cw.free();
+}
+
 // Runs `fn` when no other step with this name runs, in this tab and, where the browser has Web
 // Locks, in every other tab. Web Locks are not reentrant: a step must not wait for its own name.
 // ponytail: without Web Locks, only the steps of this tab queue.
