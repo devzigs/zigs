@@ -195,7 +195,7 @@ async function saveBurn(gid, i, ss, patch, s) {
 
 // After the lock: sends the share, or fails the payment that changed. Then the kept copy goes.
 async function sendShare(ss, gid, i, out) {
-  if (out.changed) await failSession(gid, ss, "The payment changed after a signer approved it.");
+  if (out.changed) await failSession(gid, ss, "The payment changed after a device approved it.");
   else await sdb.doc("groups/" + gid + "/" + out.rel).set(out.doc);
   await withSecrets(() => dropUnsent(gid, i, ss.id));
   if (out.changed) {
@@ -385,9 +385,9 @@ export function sendRefusal(ss) {
 const unread = (what) => "This browser cannot read " + what + ", so it does not send the "
   + "finished one.";
 const SEND_OTHER = "The finished transaction has another id than the approved one, so this "
-  + "browser does not send it. Check the payment with the other signers.";
+  + "browser does not send it. Check the payment with the other devices.";
 const SEND_NOT_PROPOSED = "The finished transaction has another id than the proposal, so this "
-  + "browser does not send it. Check the payment with the other signers.";
+  + "browser does not send it. Check the payment with the other devices.";
 
 export async function broadcastTx(ss) {
   // Before the try: a refusal writes no error into the payment.
@@ -568,7 +568,8 @@ export async function cancelPayment(ss) {
 }
 async function cancelNow(ss) {
   const gid = state.gid, seat = writer(undefined, gid) ?? localSeats()[0];
-  const who = ((state.seats[seat] || {}).name || "a signer") + " (seat " + seat + ")";
+  const name = (state.seats[seat] || {}).name;
+  const who = name ? name + " (device " + seat + ")" : "device " + seat;
   const fields = { error: "Cancelled by " + who + "." };
   const sig = await sigPart(gid, ss.id, "cancel", fields);
   // The nonces go first, under the lock: a step of any tab that waits for the lock then signs

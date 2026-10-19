@@ -167,23 +167,26 @@ const needsProof = (ss) => ss.signed && !ss.final
 
 // The step after the approvals that a signer here can take: "proof", "send", "resend" or null.
 // The proof and the sent mark are signed writes, so they need a seat that can sign. The Approvals
-// inbox reads the same step, so the two never disagree.
+// inbox reads the same step, so the two never disagree. A block holds it: no step.
 export function finishStep(ss) {
-  if (!mayAct()) return null;
+  if (!mayAct() || landed(ss)) return null;
   if (needsProof(ss)) return "proof";
   if (unsendable(ss)) return null;
   if (!ss.broadcastTxid) return "send";
   return lateSend(ss) ? "resend" : null;
 }
 
-// No proof yet, a block holds it, or a node refuses it: it expires within EXPIRY_MARGIN blocks
-// (see expiryLine).
-const unsendable = (ss) => !ss.final || expiryOf(ss)?.expired || landed(ss);
+// No proof yet, or a node refuses it: it expires within EXPIRY_MARGIN blocks (see expiryLine).
+const unsendable = (ss) => !ss.final || expiryOf(ss)?.expired;
+// A finished transaction that no device sent, and that a node refuses now.
+const tooLate = (ss) => !!ss.final && !ss.broadcastTxid && expiryOf(ss)?.expired === true;
 
 // A send step that this browser refuses (sendRefusal): its button is off, and the inbox lists
 // the payment under "Needs attention".
 export const refusedSend = (ss, step = finishStep(ss)) => (step === "send" || step === "resend")
   && !!sendRefusal(ss);
+// A refused send counts also for a browser that has no seat (the chip says Check then too).
+const sendRefused = (ss) => refusedSend(ss) || (ss.status === "complete" && !!sendRefusal(ss));
 
 export function finishButtons(ss) {
   const step = finishStep(ss);
@@ -208,10 +211,11 @@ export function nextAction(ss, ins, rc) {
   if (expired(ss)) return [];   // signing started, and the engine cannot say that it expired
   return canApprove(ss, rc) ? approveButtons(ss, approvers(ss)) : finishButtons(ss);
 }
-// A seat here can approve, the transaction pays what the proposer listed, and it needs more
-// approvals: the Approve buttons and the headline "Your approval is needed" follow this one rule.
+// A seat here can approve, and the transaction pays what the proposer listed: the Approve buttons
+// and the headline "Your approval is needed" follow this one rule. The inbox cannot count the
+// approvals of each payment, so a seat here can still approve after t approvals.
 const canApprove = (ss, rc) => approvers(ss).length > 0 && rc.match === true
-  && rc.intoNew !== false && !enoughApprovals();
+  && rc.intoNew !== false;
 const enoughApprovals = () => Object.keys(state.commits).length >= state.g.t;
 
 const CANCEL_ASK = "Cancel this payment? No device can approve it after this. Anyone can propose "
@@ -219,8 +223,9 @@ const CANCEL_ASK = "Cancel this payment? No device can approve it after this. An
 // Until the signatures are combined, any signer can withdraw a payment, for example one that lost
 // an approval. A signature share alone cannot move funds.
 // A document that lost the signing parts that this browser saw gets no Cancel: one seat reset it.
-export const cancelAction = (ss) => ss.signed || signingLost(ss) || approvalChanged(ss)
-  || expired(ss) || !localSeats().length || !mayAct() ? [] : [
+const noCancel = (ss) => ss.signed || signingLost(ss) || approvalChanged(ss) || expired(ss)
+  || landed(ss);
+export const cancelAction = (ss) => noCancel(ss) || !localSeats().length || !mayAct() ? [] : [
   el("button", { class: "btn lg", type: "button", onclick: act(() => confirm(CANCEL_ASK) && cancelPayment(ss)) }, "Cancel payment"),
 ];
 
@@ -238,10 +243,10 @@ const lostApproval = (ss) => approvalLost(ss) ? el("div", { class: "callout bad"
   + "deleted. The payment cannot finish with this approval. Cancel it, then propose it again.")
   : null;
 
-// One seat reset the document after this browser saw its signing start (signingLost).
+// The document lost the signing parts that this browser saw (signingLost).
 const resetNote = (ss) => signingLost(ss) ? el("div", { class: "callout bad" }, "This browser saw "
-  + "the signing of this payment start, but the payment does not show it now: one device reset "
-  + "it. The devices may have signed it before the reset.") : null;
+  + "the signing of this payment start, but the payment does not show it now: a device or the "
+  + "server reset it. The devices may have signed it before the reset.") : null;
 
 // One seat rewrote the proposal after a seat of this browser approved it.
 const changedNote = (ss) => approvalChanged(ss) ? el("div", { class: "callout bad" },
@@ -293,7 +298,7 @@ function sessionDrawer(ss) {
       leavesHead(ss, read),
       guard(headline, ss, refused, rc),
       ...notes(ss, refused, rc),
-      guard(timeline, ss, refused),
+      guard(timeline, ss, refused, rc),
       read ? guard(breakdown, read) : null,
       guard(discussion, ss),
       ss.final ? guard(txDetails, ss) : null,
@@ -391,8 +396,9 @@ const approverChips = () => el("div", {
 const WHERE = " while this wallet is open there.";
 function signatureText(ss, approvals, shared) {
   const t = state.g.t, signers = signersOf(ss);
-  if (ss.error) return ss.error;
   if (ss.signed) return "All signatures combined and verified.";
+  if (landed(ss)) return ON_CHAIN;
+  if (ss.error) return ss.error;
   if (!ss.package) {
     return approvals < t ? "Starts after " + t + " approvals."
       : "Waiting for the proposer's device to build the signing package. It does this" + WHERE;
@@ -411,9 +417,8 @@ function headline(ss, rejected, rc) {
   return el("div", { class: "pay-status" }, el("h3", {}, title),
     el("p", { class: "small muted" }, detail));
 }
-// The facts that end, stop or block a payment. A refused send counts also for a browser that has
-// no seat (the chip says Check then too). `stopped`: before a sync, or once signing started here,
-// the page cannot tell that no device sent it.
+// The facts that end, stop or block a payment. `stopped`: before a sync, or once signing started
+// here, the page cannot tell that no device sent it.
 const endFacts = (ss, rejected) => ({
   landed: landed(ss),
   ended: ended(ss),
@@ -422,20 +427,22 @@ const endFacts = (ss, rejected) => ({
   stopped: !!ss.error && !signingSeen(ss) && chainReady(curChain()),
   error: !!ss.error,
   rejected: !!rejected,
-  refused: refusedSend(ss) || (ss.status === "complete" && !!sendRefusal(ss)),
+  refused: sendRefused(ss),
   signingLost: signingLost(ss),
   approvalLost: approvalLost(ss),
   approvalChanged: approvalChanged(ss),
 });
 // The facts of the steps. `late`: a node refuses the finished transaction now (expiryLine).
+// `sendHere`: this browser can send it.
 const stepFacts = (ss, rc) => ({
   mismatch: !ss.package && rc.match === false,
   wrongMove: !ss.package && rc.intoNew === false,
   sentUnsynced: !!ss.broadcastTxid && !chainReady(curChain()),
   resend: finishStep(ss) === "resend",
   sent: !!ss.broadcastTxid,
-  late: !!ss.final && !ss.broadcastTxid && expiryOf(ss)?.expired === true,
+  late: tooLate(ss),
   sendFailed: !!ss.broadcastError,
+  sendHere: finishStep(ss) === "send",
   proved: !!ss.final,
   proving: ss.status === "proving" && !proofStalled(ss),
   signed: !!ss.signed,
@@ -457,11 +464,12 @@ function stepItem(cls, n, title, body) {
 }
 
 // The numbered steps of a payment, under its headline. The step that waits now is the one of the
-// next action. An expired, ended or stopped payment has none; its done and stopped marks stay.
-function timeline(ss, refused) {
+// next action. A payment that expired, that a block holds, that is too late to send or that
+// stopped has none; its done and stopped marks stay.
+function timeline(ss, refused, rc) {
   const g = state.g, approvals = Object.keys(state.commits).length;
   const signers = signersOf(ss), shared = signers.filter((i) => state.shares[i]).length;
-  const over = expired(ss) || ended(ss) || !!ss.error;
+  const over = expired(ss) || landed(ss) || tooLate(ss) || !!ss.error;
   let n = 0;
   const tl = (cls, title, body) => {
     n += 1;
@@ -470,7 +478,7 @@ function timeline(ss, refused) {
   return el("section", { class: "stage-panel", "aria-label": "Steps of the payment" },
     el("ol", { class: "steps" },
       tl("done", "Proposed", el("p", {}, when(ss.createdAt))),
-      tl(approvalsStep(ss, refused), "Approvals · " + Math.min(approvals, g.t) + " of " + g.t
+      tl(approvalsStep(ss, refused, rc), "Approvals · " + Math.min(approvals, g.t) + " of " + g.t
         + " needed", approverChips()),
       tl(signatureStep(ss), "Combined signature",
         el("p", {}, signatureText(ss, approvals, shared))),
@@ -479,25 +487,33 @@ function timeline(ss, refused) {
       tl(blockStep(ss), "In a block", el("p", {}, blockText(ss)))));
 }
 
-// The approvals step is done from the count of approvals only. Once signing started, it waits no
-// more.
-function approvalsStep(ss, refused) {
+// The approvals step is done from the count of approvals only. Once signing started, or while a
+// reason of this browser (the headline) stops it, it waits no more.
+function approvalsStep(ss, refused, rc) {
   if (enoughApprovals()) return "done";
   if (refused) return "bad";
-  return ss.error || signingStarted(ss) ? "" : "now";
+  return ss.error || signingStarted(ss) || approvalsHeld(ss, rc) ? "" : "now";
 }
+const approvalsHeld = (ss, rc) => signingLost(ss) || approvalLost(ss) || approvalChanged(ss)
+  || rc.match === false || rc.intoNew === false;
+// A block holds the payment: each step before it is done, also when its part is missing.
 function signatureStep(ss) {
+  if (ss.signed || landed(ss)) return "done";
   if (ss.error) return "bad";
-  if (ss.signed) return "done";
   return enoughApprovals() || ss.package ? "now" : "";
 }
-const proofStep = (ss) => ss.final ? "done"
+const proofStep = (ss) => ss.final || landed(ss) ? "done"
   : ss.status === "proving" || ss.signed ? "now" : "";
-const sendStep = (ss) => ss.broadcastTxid ? "done" : ss.broadcastError ? "bad"
-  : ss.final ? "now" : "";
+function sendStep(ss) {
+  if (ss.broadcastTxid || landed(ss)) return "done";
+  if (ss.broadcastError || sendRefused(ss)) return "bad";
+  return ss.final ? "now" : "";
+}
+const ON_CHAIN = "A synced block holds the payment.";
 
 function proofText(ss) {
   if (ss.final) return "Proof built and the whole transaction checked.";
+  if (landed(ss)) return ON_CHAIN;
   if (ss.status === "proving" && !proofStalled(ss)) {
     return "A device is building the proof · " + elapsed(ss.provingAt) + " of about a minute.";
   }
@@ -506,22 +522,31 @@ function proofText(ss) {
 }
 
 function sendBody(ss) {
-  const explorer = () => el("a", { href: curNet().explorer + ss.broadcastTxid, target: "_blank",
-    rel: "noopener" }, "View in explorer ↗");
-  const line = ss.broadcastTxid ? el("p", {}, when(ss.broadcastAt) + " · ", explorer())
-    : el("p", {}, ss.final ? "Any device can send the finished transaction."
-      : "Available after the proof.");
-  return el("div", { style: "display:grid;gap:8px" }, line, ss.broadcastError && !ss.broadcastTxid
-    ? el("div", { class: "callout bad" }, ss.broadcastError) : null);
+  const box = (...kids) => el("div", { style: "display:grid;gap:8px" }, ...kids);
+  if (ss.broadcastTxid) {
+    return box(el("p", {}, when(ss.broadcastAt) + " · ", el("a", { href: curNet().explorer
+      + ss.broadcastTxid, target: "_blank", rel: "noopener" }, "View in explorer ↗")));
+  }
+  const failed = ss.broadcastError && !landed(ss);
+  return box(el("p", {}, sendText(ss)),
+    failed ? el("div", { class: "callout bad" }, ss.broadcastError) : null);
+}
+// What the send step says before a sent mark: a block, a refusal (its reason), the expiry or the
+// next step.
+function sendText(ss) {
+  if (landed(ss)) return ON_CHAIN;
+  if (sendRefused(ss)) return sendRefusal(ss);
+  if (tooLate(ss)) return "It can no longer go to the network.";
+  return ss.final ? "Any device can send the finished transaction." : "Available after the proof.";
 }
 
 // The last step, from this browser's synced blocks only: a sent mark does not say that a block
 // holds the payment, and before a sync the page does not know.
 const blockStep = (ss) => landed(ss) ? "done" : ss.broadcastTxid ? "now" : "";
 function blockText(ss) {
-  if (landed(ss)) return "A synced block holds the payment.";
+  if (landed(ss)) return ON_CHAIN;
   if (!ss.broadcastTxid) return "After the send.";
-  if (!chainReady(curChain())) return "This browser has not checked the blocks since the send yet.";
+  if (!chainReady(curChain())) return "This page has not read the synced blocks yet.";
   return expiryOf(ss)?.expired ? "No synced block holds it." : "No synced block holds it yet.";
 }
 

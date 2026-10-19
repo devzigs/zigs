@@ -88,7 +88,7 @@ assert.equal(title({ error: true }), "Payment stopped");
 assert.equal(title({ held: true, stopped: true }), "Stopped, but it may still go on chain");
 // A local reason wins over the steps, so Waiting for approvals shows only without one.
 assert.equal(title({ signingLost: true, approvalLost: true }), "Check the payment");
-assert.match(detail({ signingLost: true, mine: true }), /^One device reset this payment/);
+assert.match(detail({ signingLost: true, mine: true }), /^This browser saw the signing start/);
 assert.match(detail({ approvalLost: true, approvalChanged: true }), /lost its approval/);
 assert.match(detail({ approvalChanged: true, mismatch: true }), /changed the proposal after/);
 assert.equal(title({ refused: true, signingLost: true }), "Payment needs attention");
@@ -98,13 +98,17 @@ for (const f of ["approvalLost", "approvalChanged", "wrongMove"]) {
 assert.match(detail({ mismatch: true, wrongMove: true }), /does not pay what the proposer listed/);
 assert.match(detail({ wrongMove: true }), /address of the new wallet that this browser checked/);
 assert.match(detail({ sentUnsynced: true, resend: true, sent: true }),
-  /^A device sent it\. This browser has not checked the blocks since the send yet\.$/);
+  /^A device sent it\. This page has not read the synced blocks yet\.$/);
 assert.equal(title({ sentUnsynced: true }), "Waiting for a block");
+assert.match(detail({ sendHere: true, proved: true }), /This browser sends it only when the /);
+assert.doesNotMatch(detail({ proved: true }), /browser/, "no send of this browser without a seat");
+assert.match(detail({ approved: true, mine: true }), /^Enough devices approved\. Another /);
 assert.equal(RESEND_MS, 10 * 60 * 1000);
 assert.match(detail({ resend: true }), / after 10 minutes\. /, "the minutes come from RESEND_MS");
 const all = ["landed", "ended", "check", "held", "stopped", "error", "rejected", "refused",
   "signingLost", "approvalLost", "approvalChanged", "mismatch", "wrongMove", "sentUnsynced",
-  "resend", "sent", "late", "sendFailed", "proved", "proving", "signed", "signing", "approved",
+  "resend", "sent", "late", "sendFailed", "sendHere", "proved", "proving", "signed", "signing",
+  "approved",
   "mine"].map((f) => stageHeadline({ [f]: true }));
 assert.equal(all.filter((h) => /signer/.test(h.title + h.detail)).length, 0, "device wording");
 assert.equal(new Set(all.map((h) => h.detail)).size, all.length, "each fact has its own detail");

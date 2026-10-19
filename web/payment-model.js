@@ -67,8 +67,9 @@ const HEADLINES = [
     + "below. Do not approve it."],
   ["refused", "Payment needs attention", "This browser does not send this transaction. The reason "
     + "is below."],
-  ["signingLost", "Check the payment", "One device reset this payment after its signing started. "
-    + "Read the note below. Check the wallet's activity before you make another payment."],
+  ["signingLost", "Check the payment", "This browser saw the signing start, and the payment lost "
+    + "its signing parts. Read the note below. Check the wallet's activity before you make another "
+    + "payment."],
   ["approvalLost", "Payment needs attention", "This browser lost its approval of this payment. "
     + "Read the note below. Cancel the payment, then propose it again."],
   ["approvalChanged", "Payment needs attention", "One device changed the proposal after this "
@@ -78,8 +79,8 @@ const HEADLINES = [
   ["wrongMove", "Payment needs attention", "The transaction does not move all the funds to the "
     + "address of the new wallet that this browser checked. Do not approve it. The reason is "
     + "below."],
-  ["sentUnsynced", "Waiting for a block", "A device sent it. This browser has not checked the "
-    + "blocks since the send yet."],
+  ["sentUnsynced", "Waiting for a block", "A device sent it. This page has not read the synced "
+    + "blocks yet."],
   ["resend", "Send it again", "No block that this browser synced holds it after "
     + RESEND_MS / 60000 + " minutes. Any device can send the same transaction again."],
   ["sent", "Waiting for a block", "A device sent it. No block that this browser synced holds it "
@@ -87,14 +88,15 @@ const HEADLINES = [
   ["late", "Too late to send", "It can no longer go to the network. A device may have sent it. "
     + "Check it before you make another payment."],
   ["sendFailed", "The send failed", "Read the error below. A device can send it again."],
-  ["proved", "Ready to send", "Sending is a separate step. This browser checks that the finished "
-    + "transaction has the approved id before it sends it."],
+  ["sendHere", "Ready to send", "Sending is a separate step. This browser sends it only when the "
+    + "finished transaction names the approved id."],
+  ["proved", "Ready to send", "The proof is built. A device of this wallet can send it now."],
   ["proving", "Building the proof", "A device builds the proof. It takes about a minute."],
   ["signed", "Ready for the proof", "Any device can build the proof now."],
   ["signing", "Signing", "Each device that the signing package names signs while this wallet "
     + "is open on it."],
-  ["approved", "Approvals are complete", "The device that proposed it builds the signing package "
-    + "while this wallet is open there."],
+  ["approved", "Approvals are complete", "Enough devices approved. Another approval is not needed. "
+    + "The device that proposed it builds the signing package while this wallet is open there."],
   ["mine", "Your approval is needed", "Check the recipient, amount, network and fee. Approve only "
     + "if all are right. After enough approvals, the devices sign it, a device builds the proof, "
     + "and any device can send it."],
@@ -111,8 +113,9 @@ const WAITING = { title: "Waiting for approvals", detail: "The other devices app
  *   approvalLost (this browser lost its approval), approvalChanged (the proposal changed after
  *   an approval here), mismatch (it does not pay what the proposer listed), wrongMove (a move
  *   that does not pay the checked address of the new wallet), sentUnsynced (sent, and no sync
- *   since), resend, sent, late (too late to send), sendFailed, proved, proving, signed, signing,
- *   approved (enough approvals), mine (this browser can approve it).
+ *   since), resend, sent, late (too late to send), sendFailed, sendHere (this browser can send
+ *   it), proved, proving, signed, signing, approved (enough approvals), mine (this browser can
+ *   approve it).
  * @returns {{title: string, detail: string}}
  */
 export function stageHeadline(f) {
