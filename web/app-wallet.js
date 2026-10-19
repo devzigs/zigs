@@ -423,11 +423,35 @@ const EMPTY = {
   sol: "Solana " + DEVICES + " show up here.",
 };
 
+// The history of the Zcash side: "failed" after a failed sync, "syncing" before a sync finished.
+function historyState() {
+  const c = curChain();
+  if (c?.error) return "failed";
+  return chainReady(c) ? "ready" : "syncing";
+}
+const HISTORY = {
+  syncing: ["Reading the chain", "Payments you received show after the first sync."],
+  failed: ["The sync failed", "This list can be incomplete. Use Refresh in the ZEC card on the "
+    + "Overview."],
+};
+// The heading and the text of an empty list. Only a finished sync can say that nothing is there.
+function emptyText(pick) {
+  const state = pick === "sol" ? "ready" : historyState();
+  if (state !== "ready") return HISTORY[state];
+  return ["No activity yet", EMPTY[pick === "all" && !solPart() ? "none" : pick]];
+}
+// Rows next to a history that is not read or not complete: the list may lack received payments.
+const historyNote = (pick) => {
+  const state = pick === "sol" ? "ready" : historyState();
+  return state === "ready" ? null : noteRow(HISTORY[state].join(". "));
+};
+
 function activityRows(list, pick = "all") {
   const line = "border-top:1px solid var(--line)";
   if (!list.length) {
-    return el("div", { class: "empty", style: line }, el("h3", {}, "No activity yet"),
-      el("p", { class: "small" }, EMPTY[pick === "all" && !solPart() ? "none" : pick]));
+    const [head, text] = emptyText(pick);
+    return el("div", { class: "empty", style: line }, el("h3", {}, head),
+      el("p", { class: "small" }, text));
   }
   // One list of sent payments for the whole draw: a row does not walk all sessions again.
   const flying = new Set(inFlight());
@@ -647,11 +671,11 @@ function inboxNote(rows) {
 }
 
 function activityTab() {
-  const pick = chainPick();
+  const pick = chainPick(), list = activity().filter(KEEP[pick]);
   return el("section", { class: "card" },
     el("div", { class: "card-head card-pad", style: "padding-bottom:12px" },
       el("h2", {}, "All activity"), solPart() ? chainSelect(pick) : null),
-    activityRows(activity().filter(KEEP[pick]), pick), activityNote(pick));
+    activityRows(list, pick), list.length ? historyNote(pick) : null, activityNote(pick));
 }
 
 function membersTab() {
