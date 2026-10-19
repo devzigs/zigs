@@ -330,17 +330,23 @@ showOffline();
 
 // A phone keyboard covers the lower part of the window. A dialog and the drawer end above it
 // (app.css reads these two values). A pinch zoom also shrinks the visual viewport, so it counts
-// only at scale 1.
+// only at scale 1. The focused field scrolls into view only when the keyboard opens, so that a
+// scroll of the person is not undone.
 const visual = window.visualViewport;
+let lastInset = 0;
 function fitKeyboard() {
   if (!visual || !Number.isFinite(visual.height)) return;
   const unzoomed = visual.scale === 1;
   const inset = unzoomed ? Math.max(0, window.innerHeight - visual.height - visual.offsetTop) : 0;
+  const opened = inset > lastInset;
+  lastInset = inset;
   const root = document.documentElement.style;
   root.setProperty("--keyboard-inset", inset + "px");
   root.setProperty("--visual-height", unzoomed ? visual.height + "px" : "100dvh");
   const field = document.activeElement;
-  if (field?.closest?.(".dialog, .drawer")) field.scrollIntoView?.({ block: "nearest" });
+  if (opened && field?.closest?.(".dialog, .drawer")) {
+    field.scrollIntoView?.({ block: "nearest" });
+  }
 }
 visual?.addEventListener("resize", fitKeyboard);
 visual?.addEventListener("scroll", fitKeyboard);

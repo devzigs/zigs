@@ -515,8 +515,9 @@ function sendFoot(why) {
       el("button", { class: "btn", type: "button", onclick: closeSend }, "Cancel"),
       el("button", {
         class: "btn primary", type: "submit", disabled: !Z || !!why,
-      }, ui.after ? "Propose payment" : "Review payment")),
-    why ? el("p", { class: "small faint" }, why) : null];
+        "aria-describedby": why ? "why-send" : null,
+      }, ui.after ? "Propose payment" : "Review payment"),
+      why ? el("span", { class: "off-why", id: "why-send" }, why) : null)];
 }
 
 // ── The review: what the engine decoded from the transaction that this browser built. The
