@@ -276,6 +276,20 @@ export async function confirmSeats(ids, no) {
 }
 
 const DIFFERENT = "The devices saw different setup data";
+const STOP_UNSAVED = "This browser could not save the stop. Keep this page open, and do not "
+  + "confirm the safety number.";
+// "They don't match": every seat of this browser stops its setup. The page runs it through once(),
+// whose react() then publishes the stops, so the other devices stop too.
+export async function stopSetup() {
+  const gid = state.gid;
+  let saved = true;
+  for (const [i, s] of mySeatSecrets(gid)) {
+    if (s.aborted) continue;
+    const text = abortText("The person who uses device " + i + " saw a different safety number");
+    saved = (await putSec(gid, i, { aborted: text })) && saved;
+  }
+  if (!saved) throw new Error(STOP_UNSAVED);
+}
 // A failed check ends this seat's setup for good. The reason stays in the seat, so the reactor
 // does not retry it.
 async function abortSeat(i, text) {

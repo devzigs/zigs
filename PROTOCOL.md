@@ -150,8 +150,14 @@ sequenceDiagram
      the same number. So each device also compares the key in the store with the key that it
      made. It does this for every seat that it holds a secret for. If the keys differ, the device
      ends its setup: "Your seat key was replaced. Do not use this wallet. Create a new wallet."
-   - Each person taps "It matches". The device keeps the confirmed number in the seat secret
-     (`confirmed`) and writes `confirm/<seat> = { number }`.
+   - Each person ticks "I compared all 30 digits on every device", then taps "It matches". The
+     tick holds the wallet id and the number, so a new number needs a new tick. The device keeps
+     the confirmed number in the seat secret (`confirmed`) and writes
+     `confirm/<seat> = { number }`. The page also shows the first 8 digits to help a person find
+     the number; they are not enough to compare (see above).
+   - "They don't match" asks once more, then ends the setup of every seat that the browser holds
+     a secret for, with the reason "The person who uses device N saw a different safety number".
+     Each seat writes its `abort` document, so the other devices stop too.
    - After the tap, the device compares the number it computes now with the confirmed number each
      time the store changes. If they differ and the seat holds no key share, the device ends its
      setup: "The safety number changed after you confirmed it. Someone may have replaced a seat.

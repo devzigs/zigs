@@ -1,6 +1,16 @@
 // The five stages of a new wallet, for the stepper of the setup page. Display only: the progress
 // card keeps the steps, their counts and their texts, and the stage comes from the same counts.
 
+/**
+ * The first 8 digits of a safety number of 30 digits, as "1234 5678". They help a person find
+ * the number on each device; they are not enough to compare (PROTOCOL.md, Safety number).
+ * @returns {string | null} null for anything that is not 30 digits.
+ */
+export function quickCode(no) {
+  const digits = typeof no === "string" ? no.replace(/ /g, "") : "";
+  return /^\d{30}$/.test(digits) ? digits.slice(0, 4) + " " + digits.slice(4, 8) : null;
+}
+
 /** The stages in order. Plan is done once the wallet exists. */
 export const SETUP_STAGES = ["Plan", "Connect", "Verify", "Prepare", "Back up"];
 

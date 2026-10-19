@@ -12,7 +12,7 @@
 // Run: node web/test/unified-setup.mjs   (Node 24)
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
-import { config, loadRig, sleep } from "./sol-rig.mjs";
+import { config, loadRig, sleep, storage } from "./sol-rig.mjs";
 
 const rig = await loadRig();
 // The page modules need the stub page of the rig, so they load after it.
@@ -27,6 +27,7 @@ const { SHOWN } = await import("../sol/payview.js");
 const { createDialog, lobby, marginText, renderSide } = await import("../app-shell.js");
 const { receiveDialog } = await import("../app-send.js");
 const { offReason } = await import("../util.js");
+const { quickCode } = await import("../setup-model.js");
 const { intentHex } = await import("../sol/intent.js");
 const { ui } = await import("../app-state.js");
 const { planSolana, solFile, solSetup, solUnsaved } = await import("../app-sol.js");
@@ -1152,6 +1153,92 @@ assert.match(marginText(3, 3), /Each payment needs every device/);
   }
   assert.match(margin.textContent, /Each payment needs every device/, "update() names the risk");
 }
+
+// ── The safety card: all 30 digits, a tick for this number, and They don't match ──
+// This browser holds seat 1 only, with no key share yet, so the card asks it to confirm.
+{
+  await rig.wallet({ name: "Verify" });
+  const gidV = t.state.gid, no = t.safetyNo(), k1 = gidV + ":1";
+  const keep = { wallet: t.state.wallet, done: t.state.done };
+  const kept = { 1: t.secrets[k1], 2: t.secrets[gidV + ":2"], 3: t.secrets[gidV + ":3"] };
+  delete t.secrets[gidV + ":2"];
+  delete t.secrets[gidV + ":3"];
+  t.secrets[k1] = { ...kept[1], keyPackage: undefined, confirmed: undefined };
+  // The store brings the formed wallet back after each write, so each look holds the setup.
+  const view = () => {
+    Object.assign(t.state, { wallet: null, done: {} });
+    return pageTree();
+  };
+  const seen = () => textOf(view());
+  const button = (text) => findNode(view(),
+    (n) => n.attrs?.type === "button" && textOf(n) === text);
+  const EV = { preventDefault() {}, currentTarget: null };
+  try {
+    assert.match(seen(), new RegExp("Check that your devices match.*" + no + ".*The first "
+      + "digits, \\d{4} \\d{4}, help you find the number\\. They are not enough: compare all 30 "
+      + "digits\\.", "s"), "the full number, and the quick code as an aid");
+    assert.equal(button("It matches").attrs.disabled, "", "no tick: It matches is off");
+    assert.equal(button("It matches").attrs["aria-describedby"], "why-match-full");
+    assert.equal(textOf(byId(view(), "why-match-full")),
+      "Compare all 30 digits on every device, then tick the box.");
+    ui.safetyFull = gidV + ":" + "1".repeat(30);
+    assert.equal(button("It matches").attrs.disabled, "",
+      "a tick for another number does not count");
+    await button("It matches").on.click(EV);
+    assert.equal(t.secrets[k1].confirmed, undefined, "the click without the tick confirms nothing");
+    assert.match(t.banner?.text ?? "", /then tick the box/);
+    byId(view(), "safety-full").on.change({ target: { checked: true } });
+    assert.equal(ui.safetyFull, gidV + ":" + no, "the tick holds this wallet and this number");
+    assert.ok(!("disabled" in button("It matches").attrs), "with the tick, It matches is on");
+    await button("It matches").on.click(EV);
+    assert.equal(t.secrets[k1].confirmed, no, "the tick and the click confirm");
+    assert.match(seen(), /Confirmed on this device\. Waiting for the other devices\./);
+    // They don't match: a second question, then the stop of every seat of this browser.
+    button("They don't match").on.click();
+    assert.match(seen(), /Stop the setup on this device\?/);
+    button("Keep checking").on.click();
+    assert.doesNotMatch(seen(), /Stop the setup on this device/, "Keep checking goes back");
+    button("They don't match").on.click();
+    await button("Stop setup").on.click();
+    assert.equal(t.secrets[k1].aborted, "The person who uses device 1 saw a different safety "
+      + "number. Do not use this wallet. Create a new wallet.", "the seat stops");
+    assert.doesNotMatch(seen(), /Check that your devices match/, "the card goes");
+    await waitFor("the abort document", () => !!data.get(`groups/${gidV}/abort/1`));
+    // A stop that this browser cannot save says so.
+    t.secrets[k1] = { ...t.secrets[k1], aborted: undefined };
+    storage.set("zf-vault", "another tab locked the keys");
+    try {
+      await stopNow(gidV);
+    } finally {
+      storage.delete("zf-vault");
+    }
+    assert.match(t.banner?.text ?? "", /This browser could not save the stop\./,
+      "a stop that is not saved says so");
+    // A browser without a seat of this wallet only sees the number.
+    delete t.secrets[k1];
+    ui.mismatchAsk = null;
+    assert.match(seen(), /Check that your devices match/);
+    assert.deepEqual([button("It matches"), button("They don't match"), button("Stop setup")],
+      [null, null, null], "a browser without a seat cannot confirm or stop");
+    assert.doesNotMatch(seen(), /Confirmed on this device|tap "They don't match"/,
+      "and is not told to");
+  } finally {
+    Object.assign(t.secrets, { [k1]: kept[1], [gidV + ":2"]: kept[2], [gidV + ":3"]: kept[3] });
+    Object.assign(t.state, keep);
+    ui.safetyFull = null;
+    ui.mismatchAsk = null;
+  }
+}
+async function stopNow(gid) {
+  ui.mismatchAsk = gid;
+  Object.assign(t.state, { wallet: null, done: {} });
+  await findNode(pageTree(), (n) => n.attrs?.type === "button" && textOf(n) === "Stop setup")
+    .on.click();
+}
+assert.equal(quickCode("12345 67890 12345 67890 12345 67890"), "1234 5678");
+assert.equal(quickCode("12345 67890"), null, "a short number has no quick code");
+assert.equal(quickCode("12345 6789x 12345 67890 12345 67890"), null, "a number with a letter");
+assert.equal(quickCode(null), null);
 
 console.log("unified-setup: ok");
 process.exit(0);

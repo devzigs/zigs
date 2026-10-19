@@ -2,7 +2,7 @@
 import { numberClash, usesV2 } from "./util.js";
 import { state, ui } from "./app-state.js";
 import { linkView } from "./app-engine.js";
-import { sec } from "./app-keystore.js";
+import { mySeatSecrets, sec } from "./app-keystore.js";
 import {
   allDone, allSeated, keysDiffer, localSeats, seatIds, seatMine, seatStage, STAGE_LABEL,
 } from "./app-seats.js";
@@ -11,14 +11,15 @@ import { signedMode } from "./app-filter.js";
 import { act, avatar, copyBtn, el, guard, nameField, seatLabel, secretQr } from "./app-dom.js";
 import {
   abortedText, confirmedBy, confirmSeats, confirmSeatsOf, groupVersion, holdsAllSeats,
-  rejectedSeats, remoteAborts, safetyNo, SAVE_FAILED, saveFailed, takeSeat, verifiedCount,
+  rejectedSeats, remoteAborts, safetyNo, SAVE_FAILED, saveFailed, stopSetup, takeSeat,
+  verifiedCount,
 } from "./app-dkg.js";
 import { messagesCard } from "./app-thread.js";
-import { react, render } from "./app-loop.js";
+import { focusAfter, once, react, render } from "./app-loop.js";
 import { activityLog } from "./app-wallet.js";
 import { offOf } from "./app-shell.js";
 import { newWallet, SOL_DISCLOSURE, solError, solOn, solPlanned, solSetup } from "./app-sol.js";
-import { SETUP_STAGES, setupStage } from "./setup-model.js";
+import { quickCode, SETUP_STAGES, setupStage } from "./setup-model.js";
 
 export function setupView() {
   const open = seatIds().filter((i) => !state.seats[i]);
@@ -83,24 +84,72 @@ function safetyCard() {
   }
   const yes = confirmedBy(no).length, clash = numberClash(no, state.confirm, seatIds());
   const todo = confirmSeatsOf().filter((i) => sec(state.gid, i).confirmed !== no);
+  const quick = quickCode(no), seated = mySeatSecrets(state.gid).length > 0;
   return el("section", { class: "card card-pad hero-card" },
-    el("div", { class: "card-head" }, el("h2", {}, "Check the safety number"),
+    el("div", { class: "card-head" }, el("h2", {}, "Check that your devices match"),
       el("span", { class: "badge " + (yes === n ? "ok" : "warn") }, yes + " of " + n + " confirmed")),
+    el("p", { class: "small" }, "Compare this safety number on every device, on a call or in "
+      + "person. It shows that only your devices joined this wallet."),
     el("div", { class: "safety" }, no),
-    el("p", { class: "small muted" }, "Compare this number on every device, on a call or in "
-      + "person. If one device shows a different number, someone else joined. In that case, do "
-      + "not tap \"It matches\". Create a new wallet." + (bothParts() ? " " + BOTH_OPEN : "")),
+    quick ? el("p", { class: "small muted" }, "The first digits, " + quick + ", help you find the "
+      + "number. They are not enough: compare all 30 digits.") : null,
+    el("p", { class: "small muted" }, "If one device shows a different number, someone else may "
+      + "have joined." + (seated ? " Then tap \"They don't match\"." : "")
+      + (bothParts() ? " " + BOTH_OPEN : "")),
     clash.length ? el("div", { class: "callout bad", role: "alert" }, "Device " + clash.join(", ")
       + " confirmed another number. Someone else may have joined. Do not continue. "
       + "Create a new wallet.") : null,
-    todo.length ? confirmButton(todo, no) : null);
+    todo.length ? confirmPart(todo, no) : doneHere(no),
+    seated ? mismatchPart() : null);
+}
+const doneHere = (no) => {
+  const mine = mySeatSecrets(state.gid);
+  return mine.length && mine.every(([, s]) => s.confirmed === no) ? el("p", { class: "small muted" },
+    "Confirmed on this device. Waiting for the other devices.") : null;
+};
+
+// The person confirms only after a tick for this number of this wallet: a new number or another
+// wallet needs a new tick. The click checks the tick again.
+const fullKey = (no) => state.gid + ":" + no;
+const FULL_FIRST = "Compare all 30 digits on every device, then tick the box.";
+function confirmPart(todo, no) {
+  const ticked = ui.safetyFull === fullKey(no), off = offOf({}, "why-match");
+  const wait = !off.note && !ticked;
+  const attrs = wait ? { disabled: true, "aria-describedby": "why-match-full" } : off.attrs;
+  const confirm = () => {
+    if (ui.safetyFull !== fullKey(no)) throw new Error(FULL_FIRST);
+    return confirmSeats(todo, no);
+  };
+  return [el("label", { class: "ack" },
+    el("input", { type: "checkbox", id: "safety-full", checked: ticked,
+      onchange: (ev) => { ui.safetyFull = ev.target.checked ? fullKey(no) : null; render(); } }),
+    el("span", {}, "I compared all 30 digits on every device.")),
+  el("div", { class: "row-actions" }, el("button", {
+    class: "btn primary", type: "button", ...attrs, onclick: act(confirm),
+  }, "It matches"), off.note,
+  wait ? el("span", { class: "off-why", id: "why-match-full" }, FULL_FIRST) : null)];
 }
 
-function confirmButton(todo, no) {
-  const off = offOf({}, "why-match");
-  return el("div", { class: "row-actions" }, el("button", {
-    class: "btn primary", type: "button", ...off.attrs, onclick: act(() => confirmSeats(todo, no)),
-  }, "It matches"), off.note);
+// "They don't match" asks once more, then stops the setup of every seat of this browser through
+// the path of every other stop. A browser without a seat here has nothing to stop.
+function mismatchPart() {
+  const gid = state.gid;
+  const ask = (on) => () => {
+    ui.mismatchAsk = on ? gid : null;
+    focusAfter(on ? "stop-setup" : "they-differ", true);
+    render();
+  };
+  if (ui.mismatchAsk !== gid) {
+    return el("div", { class: "row-actions" }, el("button", { class: "btn", type: "button",
+      "data-key": "they-differ", onclick: ask(true) }, "They don't match"));
+  }
+  return el("div", { class: "callout bad", role: "alert" },
+    el("p", {}, "Stop the setup on this device? The other devices see the stop. Then create a "
+      + "new wallet."),
+    el("div", { class: "row-actions" },
+      el("button", { class: "btn danger", type: "button", "data-key": "stop-setup",
+        onclick: () => once("stop:" + gid, stopSetup) }, "Stop setup"),
+      el("button", { class: "btn", type: "button", onclick: ask(false) }, "Keep checking")));
 }
 
 const NOT_ZIP2005 = "This wallet is not built to ZIP 2005. Funds cannot be recovered if quantum "
