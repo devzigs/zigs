@@ -12,6 +12,7 @@ import {
 } from "./app-payments.js";
 import { acct } from "./app-account.js";
 import { render } from "./app-loop.js";
+import { registry } from "./zns.js";
 
 // This release is for Zcash testnet and Solana Devnet only (M1 of docs/hackathon-release.md): a new
 // wallet or account cannot pick mainnet, and a chat reads testnet requests only. A mainnet wallet
@@ -74,6 +75,9 @@ export function ensureChain() {
     gid: state.gid, secret: gkeys[state.gid], net: curNet(), ufvk: w.ufvk, birthday: w.birthday,
     cw: null, url: null, prog: null, bal: null, ms: 0, error: null, syncing: false,
   };
+  // A testnet wallet downloads the ZNS registry when it opens, so that the time of a download
+  // does not mark a payment (PRIVACY.md). The first name lookup retries a failed download.
+  if (netName(state.g) === "testnet") registry.get().catch(() => {});
   runSync(chain);
 }
 
@@ -84,15 +88,17 @@ const failedNow = (url) => Date.now() - (failedAt.get(url) ?? -Infinity) < FAILE
 export const preferredServers = (net) =>
   [...net.servers.filter((u) => !failedNow(u)), ...net.servers.filter(failedNow)];
 
-// Returns the first light-wallet server of `net` that answers. The first server of a list with a
-// fallback, in its own first place, waits FIRST_TIMEOUT_MS: our node answers in well under a
+// Returns the first light-wallet server of `net` that answers, with the chain height it gave. A
+// birthday takes that height, so no second call can wait for ever. The first server of a list with
+// a fallback, in its own first place, waits FIRST_TIMEOUT_MS: our node answers in well under a
 // second. A fallback and the only server of a network keep the full wait.
-export async function pickServer(net) {
+export async function serverHeight(net) {
   for (const [at, url] of preferredServers(net).entries()) {
     try {
-      await withTimeout(Z.latestHeight(url), serverWait(net, at, url), new URL(url).host);
+      const height = await withTimeout(Z.latestHeight(url), serverWait(net, at, url),
+        new URL(url).host);
       failedAt.delete(url);
-      return url;
+      return { url, height };
     } catch (e) {
       failedAt.set(url, Date.now());
       log(new URL(url).host + " unreachable: " + (e.message || e));
@@ -102,6 +108,7 @@ export async function pickServer(net) {
   throw Object.assign(new Error("No light-wallet server answers. Check your connection."),
     { noServer: true });
 }
+export const pickServer = async (net) => (await serverHeight(net)).url;
 
 /** How long `url`, at place `at` of a list of servers of `net`, may take to answer (pickServer). */
 export const serverWait = (net, at, url) => (at === 0 && url === net.servers[0]
@@ -243,11 +250,12 @@ const memoStale = (c, cw) => c.cw !== cw || !current(c) || !memosOn(c);
 
 // Reads the transactions that the engine lists. Three failures to reach the server in a row end
 // the pass: the server is the problem. An answer that the engine refuses does not count, because
-// the server answered. Returns how many notes got a memo.
+// the server answered. A stall drops the server (dropStalled), which also ends the pass. Returns
+// how many notes got a memo.
 async function memoPass(c, cw) {
   let got = 0, down = 0;
   for (const n of J(cw.memoNeeds())) {
-    if (memoStale(c, cw) || down >= 3) break;
+    if (memoStale(c, cw) || down >= 3 || !c.url) break;
     try { got += await readMemo(c, cw, n); down = 0; }
     catch (e) {
       down = e.network ? down + 1 : 0;

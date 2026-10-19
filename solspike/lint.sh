@@ -23,8 +23,8 @@ JS=(solspike/harness/*.mjs solspike/tools/*.mjs solspike/build.mjs solspike/buil
   web/test/sol-transfer.mjs web/test/sol-vector.mjs web/test/sol-pay.mjs web/test/sol-fee.mjs
   web/test/unified-setup.mjs web/sol/owned.js web/sol/rent.js web/test/sol-rent.mjs
   web/test/sol-errors.mjs web/sol/localprove.js web/sol/localprover.js web/test/sol-prove.mjs
-  web/app-icons.js web/app-theme.js web/test/contrast.mjs web/theme.js
-  web/setup-model.js web/test/setup-stage.mjs)
+  web/app-icons.js web/app-theme.js web/test/contrast.mjs web/theme.js web/overview-model.js
+  web/test/overview.mjs web/setup-model.js web/test/setup-stage.mjs)
 PY=(solspike/tools/*.py)
 # The page modules first: no unbound name, no assignment of an import, no missing named import.
 # This is the only check for an import that a function body needs and that no test runs. The full

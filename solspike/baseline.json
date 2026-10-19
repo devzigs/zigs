@@ -1,5 +1,11 @@
 {
+<<<<<<< HEAD
   "baseCommit": "888ab8e2d9be8640a1b3ceb64b3f12e0a3832e9a",
+||||||| fec32e3
+  "baseCommit": "52c0ac9f027408d2795f6feccb7f625aa40b1330",
+=======
+  "baseCommit": "61c44d445cf0f1ca448330d2f479382e4a9d204e",
+>>>>>>> origin/main
   "node": "v24.11.0",
   "tests": {
     "web/test/chat.mjs": {
@@ -104,9 +110,16 @@
     "web/test/contrast.mjs": {
       "exit": 0
     },
+<<<<<<< HEAD
     "web/test/setup-stage.mjs": {
       "exit": 0
     },
+||||||| fec32e3
+=======
+    "web/test/overview.mjs": {
+      "exit": 0
+    },
+>>>>>>> origin/main
     "cf/test/limits.mjs": {
       "exit": 0
     }

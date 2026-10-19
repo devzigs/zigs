@@ -18,14 +18,21 @@ import {
 } from "./app-dom.js";
 import { signing, unreadIn } from "./app-messages.js";
 import { groupVersion, rejectedSeats, seatCheck, verifiedCount } from "./app-dkg.js";
-import { cancelMove, ended, proposeMove, sendBlocker } from "./app-payments.js";
+import {
+  cancelMove, ended, heldApprovals, isOpen, proposeMove, sendBlocker,
+} from "./app-payments.js";
 import { messagesCard } from "./app-thread.js";
 import { openBackup, staleRestoreNote } from "./app-backups.js";
 import { loadingView } from "./app-shell.js";
 import { render } from "./app-loop.js";
 import { setupView, solSetupCard, solUnfinished } from "./app-setup.js";
 import { themeChoice } from "./app-theme.js";
-import { solBackup, solOn, solPending, solTab, solUnsaved } from "./app-sol.js";
+import {
+  sol, solBackup, solBalance, solError, solLoading, solOn, solPending, solSetup, solSync, solTab,
+  solUnsaved,
+} from "./app-sol.js";
+import { pendingShortcut, solRow, zecInProgress, zecTotal } from "./overview-model.js";
+import { icon } from "./app-icons.js";
 
 export function groupView() {
   const g = state.g;
@@ -192,10 +199,11 @@ function overviewTab() {
   const c = curChain(), list = activity(), pend = toApprove(state.gid);
   return el("div", { class: "page", style: "gap:16px" },
     state.g.movedTo ? moveCard(c) : null,
+    pendingCard(),
     pend.length ? approvalsCard(pend) : null,
     solUnfinished() ? solSetupCard() : null,
-    el("div", { class: "grid-ov" }, balanceCard(c), receiveCard()),
-    signersCard(),
+    el("div", { class: "assets-grid" }, zecAsset(c), solAsset()),
+    el("div", { class: "grid-ov" }, receiveCard(), signersCard()),
     el("section", { class: "card" },
       el("div", { class: "card-head card-pad", style: "padding-bottom:12px" }, el("h2", {}, "Activity"),
         list.length > 6 ? el("button", { class: "btn ghost sm", type: "button", onclick: () => { ui.tab = "activity"; render(); } }, "View all") : null),
@@ -258,25 +266,88 @@ function approvalRow(ss) {
   el("span", { class: "btn sm primary", "aria-hidden": "true" }, "Review"));
 }
 
-function balanceCard(c) {
-  const b = c && c.bal ? balanceNow(c.bal) : null, empty = b && b.spendable + b.pending + b.sending === 0 && !state.g.movedTo;
-  return el("section", { class: "card card-pad balance" },
-    el("span", { class: "label" }, "Balance"),
-    b ? money(b.spendable + b.pending, "xl")
+// The shortcut to the payments in progress. It counts each ZEC payment once: open, waiting for
+// its block, or held by an approval here (S7). For Solana it counts the proposals that a seat of
+// this browser can approve.
+function pendingCard() {
+  const zec = zecInProgress(state.sessions.filter(isOpen).map((ss) => ss.id),
+    inFlight().map((ss) => ss.id), heldApprovals());
+  const p = pendingShortcut({ zec, sol: solOn() ? solPending() : 0 });
+  if (!p) return null;
+  return el("section", { class: "callout pending-shortcut", role: "status" }, icon("activity"),
+    el("span", {}, p.text),
+    el("button", { class: "btn sm", type: "button",
+      onclick: () => { ui.tab = p.to; render(); } }, "Review"));
+}
+
+const assetHead = (id, symbol, network) => el("div", { class: "asset-title" },
+  el("span", { class: "coin-mark" }, icon(id)),
+  el("div", {}, el("h2", { id: "asset-" + id }, symbol), el("p", {}, network)));
+
+function zecAsset(c) {
+  const b = c && c.bal ? balanceNow(c.bal) : null;
+  const part = (label, zat) => el("div", {}, el("span", { class: "label" }, label),
+    b ? money(zat) : el("span", { class: "skel" }));
+  return el("section", { class: "card card-pad asset-card", "aria-labelledby": "asset-zec" },
+    assetHead("zec", "ZEC", "Zcash " + netName(state.g)),
+    b ? money(zecTotal(b), "xl")
       : el("span", { class: "skel xl", role: "img", "aria-label": "Loading balance" }),
-    el("div", { class: "stats" },
-      el("div", {}, el("span", { class: "label" }, "Available"), b ? money(b.spendable) : el("span", { class: "skel" })),
-      el("div", {}, el("span", { class: "label" }, "Incoming"), b ? money(b.pending) : el("span", { class: "skel" }))),
-    b && b.sending ? el("div", { class: "sending" }, el("span", { class: "dot busy" }), "Sending ", money(b.sending, "md", "out"), el("span", { class: "faint" }, " · waiting for a block")) : null,
-    empty ? el("div", { class: "callout" }, curNet().faucet
-      ? el("span", {}, "This wallet is empty. Share its address to receive ZEC, or get free testnet ZEC from a ",
-        el("a", { href: curNet().faucet, target: "_blank", rel: "noopener" }, "faucet ↗"), ".")
-      : el("span", {}, "This wallet is empty. Share its address to receive ZEC. Keep it under "
-        + capText(curNet().cap) + ": the app warns at that level. It cannot block deposits."))
-      : null,
-    atCap() ? capNote() : null,
+    el("div", { class: "stats" }, part("Available", b?.spendable), part("Incoming", b?.pending)),
+    b?.sending ? sendingLine(b.sending) : null, emptyNote(b), atCap() ? capNote() : null,
     syncLine(c));
 }
+
+const sendingLine = (zat) => el("div", { class: "sending" }, el("span", { class: "dot busy" }),
+  "Sending ", money(zat, "md", "out"), el("span", { class: "faint" }, " · waiting for a block"));
+
+function emptyNote(b) {
+  if (!b || b.spendable + b.pending + b.sending !== 0 || state.g.movedTo) return null;
+  return el("div", { class: "callout" }, curNet().faucet
+    ? el("span", {}, "This wallet is empty. Share its address to receive ZEC, or get free "
+      + "testnet ZEC from a ", el("a", { href: curNet().faucet, target: "_blank",
+      rel: "noopener" }, "faucet ↗"), ".")
+    : el("span", {}, "This wallet is empty. Share its address to receive ZEC. Keep it under "
+      + capText(curNet().cap) + ": the app warns at that level. It cannot block deposits."));
+}
+const SOL_NOTE = {
+  synced: "The private balance of the group at the last sync. Open Solana for payments, deposits "
+    + "and the fee addresses.",
+  saved: "The private balance of the group at the last saved sync. Open Solana to sync again.",
+  stale: "The last sync failed. This balance comes from an earlier sync. Open Solana to sync "
+    + "again.",
+  syncing: "The private balance of the group is syncing.",
+  resync: "A sync runs. This balance comes from an earlier sync.",
+  unsynced: "Open Solana to sync the private balance.",
+  setup: "The Solana part of this wallet is still setting up.",
+  stopped: "The Solana part stopped. The Zcash part still works.",
+  loading: "The Solana part loads.",
+  idle: "Open Solana to load the Solana part of this wallet.",
+  none: "This wallet has no Solana part yet. Open Solana to add it.",
+  unavailable: "This wallet cannot have a Solana part. Open Solana to see why.",
+  differs: "The seats do not agree on one Solana key. Do not use the Solana part. Open Solana for "
+    + "the details.",
+  unknown: "Open Solana to see the state of its part.",
+};
+
+// The SOL row: the private balance of the last sync, or the state of the Solana part.
+function solAsset() {
+  const row = solRow({ on: solOn(), error: solError, loading: !!(sol || solLoading),
+    setup: solSetup(), balance: solBalance(), sync: solSync() });
+  if (!row) return null;
+  const amount = /^[\d.]+ SOL$/.test(row.text) ? solAmount(row.text)
+    : el("p", { class: "asset-balance unknown" }, row.text);
+  return el("section", { class: "card card-pad asset-card", "aria-labelledby": "asset-sol" },
+    assetHead("sol", "SOL", "Solana Devnet"), amount,
+    el("p", { class: "small muted" }, row.state === "failed" ? solError : SOL_NOTE[row.state]),
+    el("div", { class: "row-actions" }, el("button", { class: "btn", type: "button",
+      onclick: () => { ui.tab = "solana"; render(); } }, "Open Solana")));
+}
+
+// An exact SOL text ("0.0025 SOL") in the size of the ZEC amount, with the unit as money()
+// shows it.
+const solAmount = (text) => el("span", { class: "money xl", role: "img", "aria-label": text },
+  text.slice(0, -4), el("span", { class: "cur" }, "SOL"));
+
 export const capNote = () => el("div", { class: "callout bad" },
   "This wallet holds " + capText(curNet().cap) + ", the warning level for unaudited mainnet "
   + "wallets. Do not send more to it. The app cannot block deposits. Payments out still work.");

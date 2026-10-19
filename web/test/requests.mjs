@@ -153,6 +153,13 @@ const list = parsePayeeList(`${A}, 0.5, October rent`);
 const listed = payeeRows(list.rows, key)[0];
 assert.deepEqual(listed, { k: n, to: A, amt: "0.5", memo: "October rent" },
   "rows of a pasted list use the same function");
+// A row keeps the name of a payee that was paid by name, when it is a valid bare name.
+const kept = payeeRows([{ to: A, amount: 1, name: "alice" }], key);
+assert.deepEqual(kept, [{ k: n, to: A, amt: "0.00000001", memo: "", name: "alice" }]);
+for (const name of ["Alice", "alice.zec", "", 5, null, "a b"]) {
+  assert.equal(Object.hasOwn(payeeRows([{ to: A, amount: 1, name }], key)[0], "name"), false,
+    "no name kept for " + JSON.stringify(name));
+}
 
 // ── The note: every approver reads it, so only a verified sender is named ──
 assert.equal(requestNote("Alice", "yes"), "Request from Alice");
