@@ -8,7 +8,7 @@ import { localSeats, seatIds } from "./app-seats.js";
 import { curChain, netName, readsMemos } from "./app-chain.js";
 import { toApprove } from "./app-groups.js";
 import { groupVersion, rejectedSeats, verifiedCount } from "./app-dkg.js";
-import { sol, solFile, solOn, solPending, solUnsaved } from "./app-sol.js";
+import { sol, solError, solFile, solOn, solPending, solUnsaved } from "./app-sol.js";
 import { copyBtn, el } from "./app-dom.js";
 import { HELP, diagnosticsText } from "./help-model.js";
 
@@ -25,9 +25,11 @@ function browserFacts() {
     ["Web Locks", !!navigator.locks?.request]];
 }
 
-// Zigs counts nothing of the Solana part until it has read it: a count then would say 0.
+// Zigs counts nothing of the Solana part until it has read it: a count then would say 0. Recovery
+// tells a read that is still going from one that failed, and so do these lines.
 const solUnread = () => solOn() && (!sol || localSeats().some((i) => solFile(i)?.unknown));
-const solCount = (count) => (solUnread() ? "not read yet" : count());
+const solUnreadWord = () => (solError ? "could not read" : "not read yet");
+const solCount = (count) => (solUnread() ? solUnreadWord() : count());
 
 function deviceFacts() {
   const here = localSeats();

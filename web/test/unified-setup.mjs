@@ -392,6 +392,7 @@ async function copiedText() {
 function solanaUnread(gid) {
   const real = t.secrets, loaded = t.sol.ctl.loaded;
   const k = Object.keys(real).find((key) => key.startsWith(gid + ":") && real[key].keyPackage);
+  assert.equal(t.solError, "", "no Solana load failed here");
   assert.match(diagnostics(), /^Solana backup files not saved: \d+$/m);
   assert.match(diagnostics(), /^Solana payments to approve: \d+$/m);
   t.secrets = { ...real, [k]: { ...real[k], sol: undefined } };
@@ -413,7 +414,8 @@ async function diagnosticsFacts(w, gid) {
   const solana = "EvHCyEZUDBzWuuUDwSmXWrJ2vdtgVSr8ikduQfUAVr3r";
   const seen = { address: w.address, "viewing key": w.ufvk, "wallet key": w.group_verifying_key,
     "invite link": inviteLink(gid), "wallet secret": t.gkeys[gid], "key share": part,
-    "Solana address": solana, "wallet id": gid, "payment note": "Rent for Maria Keller",
+    "Solana address": solana, "wallet id": gid, "wallet name": "Maria's Treasury",
+    "device name": "Keller Laptop", "payment note": "Rent for Maria Keller",
     "short transaction id": "9f3c2a7b", "short payee address": "q6r7s8",
     balance: "12.3456 ZEC" };
   const lines = [
@@ -427,8 +429,11 @@ async function diagnosticsFacts(w, gid) {
     "Payment to utest1qx…q6r7s8 failed",
     "synced to 4518757, spendable 12.3456 ZEC",
   ];
-  const log = t.state.log;
+  const { log, g, seats } = t.state;
   t.state.log = [...lines, ...log];
+  t.state.g = { ...g, name: seen["wallet name"] };
+  t.state.seats = Object.fromEntries(Object.entries(seats)
+    .map(([i, seat]) => [i, { ...seat, name: seen["device name"] }]));
   try {
     const box = offline(() => findNode(pageTree(),
       (n) => n.attrs?.["aria-label"] === "Diagnostics text"));
@@ -448,7 +453,7 @@ async function diagnosticsFacts(w, gid) {
     }
     solanaUnread(gid);
   } finally {
-    t.state.log = log;
+    Object.assign(t.state, { log, g, seats });
   }
 }
 // With nothing to list after the sync, the inbox speaks for Zcash alone: the Solana line below it

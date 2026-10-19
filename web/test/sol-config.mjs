@@ -2,6 +2,7 @@
 // the URL from the server answer only, keeps nothing in storage, says "not available" for a 503 or
 // a 404, and asks to check the connection for every other failure. When the server gives no
 // URL, the page loads nothing of Solana, says so once, and does not ask again at the next redraw.
+// Its diagnostics say that Zigs could not read the Solana part.
 // Run: node web/test/sol-config.mjs   (Node 24)
 import assert from "node:assert/strict";
 import { NOT_LOADED, UNAVAILABLE, fetchRpcUrl } from "../sol/session.js";
@@ -84,6 +85,12 @@ const json = (value, status = 200) => () => Response.json(value, { status });
     assert.equal(t.solError, UNAVAILABLE);
     assert.equal(t.sol, null, "nothing of Solana is attached");
     assert.match(t.banner.text, /Solana did not load: Solana is not available on this server/);
+    // The diagnostics tell a failed load from a read that is still going (unified-setup.mjs).
+    const { diagnostics } = await import("../app-help.js");
+    assert.match(diagnostics(), /^Solana backup files not saved: could not read$/m,
+      "a failed Solana load says could not read");
+    assert.match(diagnostics(), /^Solana payments to approve: could not read$/m,
+      "and so does the count of payments");
     for (let i = 0; i < 5; i++) tab();
     await t.solLoad();
     await sleep(100);
