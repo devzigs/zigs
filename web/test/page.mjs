@@ -52,7 +52,7 @@ export const NAMES = [
   "sec", "secrets", "sendBlocker", "sendDialog", "sendOnChain", "sentStateOf", "sessionLayer",
   "setAcct",
   "setChain", "setDb", "setDownloads", "setGkeys", "setIdb", "setIdbMs", "setLocked", "setMe",
-  "setMemoReading", "setPersonal", "setSecrets", "settleRestore", "setVault", "setZ",
+  "setMemoReading", "setModal", "setPersonal", "setSecrets", "settleRestore", "setVault", "setZ",
   "showBanner", "showOffline", "signedDoc", "signedMode", "signing", "signPins", "sigPart", "sol",
   "solError",
   "solLoad", "solLoading", "solOn", "solPending", "solPendingRows", "solTab", "staleRestoreNote",

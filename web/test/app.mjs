@@ -5415,6 +5415,8 @@ async function runAcctSync() {
     open(a, b, c);
     from(c);
     press(false);
+    // Native Tab goes from the last control of the layer to the banner only when nothing between
+    // them takes focus: the footer is inert while a layer is open (the next block).
     assert.deepEqual([stops, document.activeElement], [0, c],
       "Tab on the last control of the layer moves on to the banner as usual");
     from(close);
@@ -5437,6 +5439,26 @@ async function runAcctSync() {
     from(a);
     assert.doesNotThrow(() => press(false), "Tab with no open layer does nothing");
     assert.equal(stops, 0, "and the page moves the focus as usual");
+  } finally {
+    globalThis.document = realDocument;
+  }
+}
+
+// ── A layer takes the page, the side list and the footer out of reach (setModal) ──
+{
+  const realDocument = globalThis.document;
+  const marks = [];
+  const part = (name) => ({ toggleAttribute: (k, on) => marks.push(name + ":" + k + ":" + on) });
+  const parts = { ".side": part("side"), ".app-foot": part("foot") };
+  globalThis.document = { querySelector: (selector) => parts[selector] ?? null };
+  try {
+    t.setModal(part("view"), true);
+    assert.deepEqual(marks, ["view:inert:true", "side:inert:true", "foot:inert:true"],
+      "an open layer takes the footer out of reach, as the page and the side list");
+    marks.length = 0;
+    t.setModal(part("view"), false);
+    assert.deepEqual(marks, ["view:inert:false", "side:inert:false", "foot:inert:false"],
+      "a closed layer gives them back");
   } finally {
     globalThis.document = realDocument;
   }

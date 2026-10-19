@@ -153,10 +153,13 @@ function focusLayer(layer) {
   (layer.querySelector("[data-first-focus]") || layer.querySelector(pick) || layer).focus();
 }
 
-// The page behind a dialog or the drawer cannot take focus or clicks while the layer is open.
-function setModal(view, on) {
+// The page behind a dialog or the drawer cannot take focus or clicks while the layer is open. The
+// footer is part of the page: on a phone its link would take Tab out of the loop of the layer.
+export function setModal(view, on) {
   view.toggleAttribute("inert", on);
-  document.querySelector(".side").toggleAttribute("inert", on);
+  for (const part of [".side", ".app-foot"]) {
+    document.querySelector(part)?.toggleAttribute("inert", on);
+  }
 }
 
 const appFoot = () => el("footer", { class: "app-foot" }, "Beta · not audited · ",
