@@ -2641,18 +2641,18 @@ const sealed = (gid, rel, seat, fields, key, names = ["by", "sig"]) =>
         assert.match(textOf(landedNoMark.step("Sent to the network")), /A synced block holds/);
         assert.equal(landedNoMark.foot, 0, "a landed payment offers no step");
         const landedSigned = look(okA);
+        assert.equal(landedSigned.step("Proof").className, "step done",
+          "a block marks the proof done");
         assert.deepEqual([landedSigned.now, landedSigned.buttons.includes("Build proof")],
           [[], false], "a landed payment offers no Build proof");
         const landedPackage = look({ ...okA, signed: "" });
-        assert.deepEqual([landedPackage.now, landedPackage.buttons.includes("Cancel payment")],
-          [[], false], "a landed payment offers no Cancel");
-        assert.match(textOf(landedPackage.step("Combined signature")), /A synced block holds/);
         assert.equal(landedPackage.step("Approvals").className, "step done",
           "a block marks the approvals done");
         assert.equal(landedPackage.step("Combined signature").className, "step done",
           "a block marks the signature done");
-        assert.equal(landedPackage.step("Proof").className, "step done",
-          "a block marks the proof done");
+        assert.deepEqual([landedPackage.now, landedPackage.buttons.includes("Cancel payment")],
+          [[], false], "a landed payment offers no Cancel");
+        assert.match(textOf(landedPackage.step("Combined signature")), /A synced block holds/);
         assert.deepEqual(look(open("hdl", "PA")).now, [],
           "a proposal whose transaction a block holds has no step that waits");
         answer = unknownA;
