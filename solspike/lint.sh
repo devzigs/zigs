@@ -21,6 +21,7 @@ JS=(solspike/harness/*.mjs solspike/tools/*.mjs solspike/build.mjs solspike/buil
   web/test/sol-wasm.mjs web/test/sol-chain.mjs web/test/sol-sessions.mjs
   web/sol/spend.js web/sol/transfer.js web/test/sol-limits.mjs web/test/sol-setup.mjs
   web/test/sol-transfer.mjs web/test/sol-vector.mjs web/test/sol-pay.mjs web/test/sol-fee.mjs
+  web/help-model.js web/test/help.mjs
   web/test/unified-setup.mjs web/sol/owned.js web/sol/rent.js web/test/sol-rent.mjs
   web/test/sol-nonce-tabs.mjs
   web/test/sol-errors.mjs web/sol/localprove.js web/sol/localprover.js web/test/sol-prove.mjs

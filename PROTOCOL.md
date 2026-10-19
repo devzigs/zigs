@@ -233,7 +233,7 @@ of section 15.5 to the payment documents. Its `version` is 3:
 
 The flow is the one before ZIP 2005 support: round 1, round 2 and round 3 without `confirm`,
 `commit` or `echo`. The creator makes the viewing key parts `nk` and `rivk`. A version 1 wallet
-shows a note in Details: "This wallet was made before quantum recoverability (ZIP 2005). To get it,
+shows a note in Settings: "This wallet was made before quantum recoverability (ZIP 2005). To get it,
 move the funds to a new wallet with Change signers." Section 8 describes that move.
 
 ## 5. The wallet key and the address
@@ -707,7 +707,8 @@ the web, on iPhone and on Mac at the same time.
   - Invite card with the link and a QR code.
   - Setup steps: signers join, create the key together, check the address. A version 2 or 3
     wallet shows a safety number card before the three steps.
-  - Wallet view with the tabs Overview, Activity, Messages, Signers and Details.
+  - Wallet view with the sections Overview, Approvals, Activity, Messages, Signers, Recovery,
+    Settings and, for a wallet with a Solana part, Solana.
   - Send: one or more recipients, "Paste a list" from a spreadsheet, and a fee estimate.
   - Receive: the checked address, a QR code and a copy button.
   - Payment drawer: the decoded transaction, the recipient check, the approval steps, and the
@@ -900,8 +901,8 @@ received payments yet. The engine has the calls for them.
   accepts a third column in "Paste a list". In that list, a comma directly between digits makes
   the line an error. It could be a decimal comma or a field separator. The person writes the
   amount with a point, or puts a space after the comma.
-- **Receiving.** Section 6 gives the rules. Reading memos is a switch under Details, in "Privacy
-  and keys". It is off for every wallet until a signer turns it on. The switch keeps its state in
+- **Receiving.** Section 6 gives the rules. Reading memos is a switch in Settings, under "This app on
+  this device". It is off for every wallet until a signer turns it on. The switch keeps its state in
   the browser only (`zf-memos`, wallet id to true). Its text names the leak: the light-wallet
   server learns which transactions pay the wallet. A payment whose memo is not read yet shows
   "Memo not read yet" while the switch is on. A received memo shows on the Activity row of its

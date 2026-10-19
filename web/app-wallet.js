@@ -1,4 +1,4 @@
-// The wallet page: its sections (overview, activity, messages, signers, details, Solana).
+// The wallet page: its sections (overview, activity, messages, signers, settings, Solana).
 import { fmtInt, seatBackedUp, usesV2 } from "./util.js";
 import { IGNORED_NOTE } from "./signed.js";
 import { log, ready, state, ui } from "./app-state.js";
@@ -24,13 +24,14 @@ import {
 } from "./app-payments.js";
 import { finishStep, refusedSend } from "./app-drawer.js";
 import { BUCKETS, bucketOf, emptyState, solLine } from "./approvals-model.js";
-import { messagesCard } from "./app-thread.js";
+import { messagesCard, notifyButton } from "./app-thread.js";
 import { openBackup, staleRestoreNote } from "./app-backups.js";
 import { loadingView } from "./app-shell.js";
 import { render } from "./app-loop.js";
 import { openSend } from "./app-send.js";
 import { setupView, solSetupCard, solUnfinished } from "./app-setup.js";
 import { themeChoice } from "./app-theme.js";
+import { helpView } from "./app-help.js";
 import {
   sol, solBackup, solBalance, solError, solFile, solLoad, solLoading, solLoadingCount,
   solOlderCount, solOn, solPending, solPendingRows, solSetup, solSync, solTab, solUnsaved,
@@ -104,7 +105,7 @@ export function walletSections() {
       countBadge(toApprove(state.gid).length + solPending(), "to approve", "attn")],
     ["activity", "Activity"],
     ["messages", "Messages", countBadge(unreadIn(state.gid), "unread", "note")],
-    ["members", "Devices"], ["recovery", "Recovery"], ["details", "Details"],
+    ["members", "Devices"], ["recovery", "Recovery"], ["settings", "Settings"],
   ];
   if (solOn()) sections.push(["solana", "Solana", countBadge(solPending(), "to approve", "attn")]);
   return sections;
@@ -118,10 +119,15 @@ export function currentSection(sections) {
 
 const BODIES = {
   overview: () => overviewTab(), approvals: () => approvalsTab(), activity: () => activityTab(),
-  messages: () => messagesCard(),
-  members: () => membersTab(), recovery: () => recoveryTab(), details: () => detailsTab(),
+  messages: () => messagesCard(false),
+  members: () => membersTab(), recovery: () => recoveryTab(), settings: () => settingsTab(),
   solana: () => solTab(),
 };
+
+// The small line above the title of a section; the others read "This wallet".
+const LEAD = { settings: "Wallet and app preferences", solana: "Solana Devnet" };
+const pageHeading = (id, label) => el("div", { class: "page-heading" },
+  el("span", { class: "label" }, LEAD[id] ?? "This wallet"), el("h2", {}, label));
 
 export function walletView(head, why) {
   const unsaved = localSeats().filter((i) => {
@@ -134,7 +140,7 @@ export function walletView(head, why) {
     unsaved.length || solSeats.length
       ? backupNote(unsaved, solSeats, !unsaved.length && solUnfinished()) : null,
     el("section", { id: "panel-" + id, "data-key": "panel-" + id, tabindex: "-1",
-      "aria-label": label }, BODIES[id]()),
+      "aria-label": label, class: "panel" }, pageHeading(id, label), BODIES[id]()),
     el("div", { class: "action-bar" }, ...walletActions(why)));
 }
 
@@ -215,7 +221,7 @@ function overviewTab() {
     el("div", { class: "assets-grid" }, zecAsset(c), solAsset()),
     el("div", { class: "grid-ov" }, receiveCard(), signersCard()),
     el("section", { class: "card" },
-      el("div", { class: "card-head card-pad", style: "padding-bottom:12px" }, el("h2", {}, "Activity"),
+      el("div", { class: "card-head card-pad", style: "padding-bottom:12px" }, el("h3", {}, "Activity"),
         list.length > 6 ? el("button", { class: "btn ghost sm", type: "button", onclick: () => { ui.tab = "activity"; render(); } }, "View all") : null),
       activityRows(list.slice(0, 6))));
 }
@@ -240,7 +246,7 @@ function moveCard(c) {
   const m = moveState(c), why = m.propose ? sendBlocker() : null;
   const started = state.sessions.some((x) => x.move === state.g.movedTo && !x.error && !ended(x));
   return el("section", { class: "card card-pad " + (m.done ? "" : "attention") },
-    el("div", { class: "card-head" }, el("h2", {}, m.done ? "This wallet moved" : "Changing devices"),
+    el("div", { class: "card-head" }, el("h3", {}, m.done ? "This wallet moved" : "Changing devices"),
       m.done ? el("span", { class: "badge plain" }, "Closed") : null),
     el("p", { class: "small muted" }, m.text),
     el("div", { style: "display:flex;gap:8px;flex-wrap:wrap" },
@@ -253,7 +259,7 @@ function moveCard(c) {
 
 function signersCard() {
   return el("section", { class: "card card-pad" },
-    el("div", { class: "card-head" }, el("h2", {}, "Devices"),
+    el("div", { class: "card-head" }, el("h3", {}, "Devices"),
       el("button", { class: "btn ghost sm", type: "button", onclick: () => { ui.tab = "members"; render(); } }, "Manage")),
     el("p", { class: "small muted" }, ruleText(state.g.t, state.g.n)),
     el("div", { class: "signer-list" }, seatIds().map((i) => el("span", { class: "signer" },
@@ -263,7 +269,7 @@ function signersCard() {
 function approvalsCard(list) {
   return el("section", { class: "card attention" },
     el("div", { class: "card-head card-pad", style: "padding-bottom:12px" },
-      el("h2", {}, list.length === 1 ? "A payment needs your approval" : list.length + " payments need your approval")),
+      el("h3", {}, list.length === 1 ? "A payment needs your approval" : list.length + " payments need your approval")),
     el("div", { class: "list" }, list.map((ss) => guard(approvalRow, ss))));
 }
 
@@ -295,7 +301,7 @@ function pendingCard() {
 
 const assetHead = (id, symbol, network) => el("div", { class: "asset-title" },
   el("span", { class: "coin-mark" }, icon(id)),
-  el("div", {}, el("h2", { id: "asset-" + id }, symbol), el("p", {}, network)));
+  el("div", {}, el("h3", { id: "asset-" + id }, symbol), el("p", {}, network)));
 
 function zecAsset(c) {
   const b = c && c.bal ? balanceNow(c.bal) : null;
@@ -376,7 +382,7 @@ export const movedNote = () => el("div", { class: "callout" }, "This wallet move
 function receiveCard() {
   const w = state.wallet;
   return el("section", { class: "card card-pad" },
-    el("div", { class: "card-head" }, el("h2", {}, "Receive"), el("span", { class: "badge ok plain" }, "Private address")),
+    el("div", { class: "card-head" }, el("h3", {}, "Receive"), el("span", { class: "badge ok plain" }, "Private address")),
     state.g.movedTo ? movedNote()
       : atCap() ? capNote()
       : el("p", { class: "small muted" }, "Share this address to receive " + receiveWhat()
@@ -410,8 +416,8 @@ function activity() {
   return [...sent, ...got].sort((a, b) => b.t - a.t);
 }
 
-function activityRows(list) {
-  const line = "border-top:1px solid var(--line)";
+// `line` is the rule above the rows: the card of the Activity section has no head to separate.
+function activityRows(list, line = "border-top:1px solid var(--line)") {
   if (!list.length) {
     return el("div", { class: "empty", style: line }, el("h3", {}, "No activity yet"),
       el("p", { class: "small" },
@@ -470,7 +476,7 @@ function approvalsTab() {
     const count = list.length + (Array.isArray(extra) ? extra.length : extra ? 1 : 0)
       + (lost ? rows.lost.length : 0);
     return el("section", { class: "card inbox", "aria-label": label },
-      el("div", { class: "card-head card-pad" }, el("h2", {}, label),
+      el("div", { class: "card-head card-pad" }, el("h3", {}, label),
         el("span", { class: "badge plain" }, String(count))),
       el("div", { class: "list" }, list.map((ss) => guard(sentRow, ss, flying)), extra, lost));
   }).filter(Boolean);
@@ -573,18 +579,20 @@ function inboxNote(rows) {
 }
 
 function activityTab() {
-  return el("section", { class: "card" }, el("div", { class: "card-head card-pad", style: "padding-bottom:12px" }, el("h2", {}, "All activity")), activityRows(activity()));
+  return el("section", { class: "card", style: "overflow:hidden" }, activityRows(activity(), ""));
 }
 
 function membersTab() {
   return el("div", { class: "page", style: "gap:16px" },
     el("section", { class: "card" },
-      el("div", { class: "card-pad", style: "padding-bottom:14px" }, el("div", { class: "card-head" }, el("h2", {}, "Devices"), el("span", { class: "small muted" }, ruleText(state.g.t, state.g.n)))),
+      el("div", { class: "card-pad", style: "padding-bottom:14px" },
+        el("div", { class: "card-head" },
+          el("span", { class: "small muted" }, ruleText(state.g.t, state.g.n)))),
       el("div", { style: "border-top:1px solid var(--line)" },
         seatIds().map((i) => guard(memberRow, i)))),
     changeSignersCard(),
     el("section", { class: "card card-pad" },
-      el("h2", { style: "font-size:15px" }, "Invite link"),
+      el("h3", { style: "font-size:15px" }, "Invite link"),
       el("p", { class: "small muted" }, "To use a device of this wallet in another browser, open "
         + "this invite link there and restore the backup file of its key share. The link holds "
         + "the wallet secret, so share it only with the people who use this wallet. "
@@ -597,7 +605,7 @@ function membersTab() {
 function changeSignersCard() {
   const moving = !!state.g.movedTo;
   return el("section", { class: "card card-pad" },
-    el("h2", { style: "font-size:15px" }, "Add or remove devices"),
+    el("h3", { style: "font-size:15px" }, "Add or remove devices"),
     el("p", { class: "small muted" }, "The devices and the approval rule are part of the wallet "
       + "key, so they cannot change in place. To change them, create a new wallet with the devices "
       + "you want, then move the funds to it."),
@@ -648,14 +656,14 @@ function recoveryTab() {
   const risk = protectionRisk(state.g.t, state.g.n, seats.filter((x) => x.zec.has).length);
   return el("div", { class: "page", style: "gap:16px" },
     el("section", { class: "card card-pad" + (r.state === "missing" ? " attention" : "") },
-      el("div", { class: "card-head" }, el("h2", {}, r.label)),
+      el("div", { class: "card-head" }, el("h3", {}, r.label)),
       el("p", { class: "small muted" }, RECOVERY_LIMITS)),
     el("section", { class: "card card-pad" + (risk.here ? " attention" : "") },
-      el("div", { class: "card-head" }, el("h2", {}, risk.title)),
+      el("div", { class: "card-head" }, el("h3", {}, risk.title)),
       el("p", { class: "small muted" }, risk.detail),
       risk.here ? el("p", { class: "small" }, risk.here) : null),
     seats.some((x) => x.zec.has) ? el("section", { class: "card" },
-      el("div", { class: "card-head card-pad" }, el("h2", {}, "Your seats in this wallet")),
+      el("div", { class: "card-head card-pad" }, el("h3", {}, "Your seats in this wallet")),
       el("div", { class: "recovery-seats" },
         seats.filter((x) => x.zec.has).map((x) => guard(recoveryRow, x)))) : null,
     el("details", { class: "card card-pad recovery-lost" },
@@ -700,18 +708,31 @@ function recoveryRow(x) {
       x.sol ? solAction(x) : null));
 }
 
-function detailsTab() {
-  return el("div", { class: "page", style: "gap:16px" }, walletFacts(), privacyCard(),
-    appearanceCard());
+// A section of Settings: its title, then its controls.
+const settingsCard = (title, ...kids) =>
+  el("section", { class: "card card-pad settings-section" }, el("h3", {}, title), ...kids);
+
+function settingsTab() {
+  return el("div", { class: "page", style: "gap:16px" },
+    settingsCard("This wallet", walletFacts()),
+    settingsCard("This app on this device", appSettings()),
+    settingsCard("Advanced", technicalDetails()),
+    helpView());
 }
 
-function appearanceCard() {
-  return el("section", { class: "card card-pad" },
-    el("h2", { style: "font-size:15px" }, "This browser"),
-    el("p", { class: "small muted" }, "The appearance applies to this browser only. Device "
-      + "setting follows the light or dark mode of this device."),
-    themeChoice());
+function appSettings() {
+  const host = chain && chain.url ? new URL(chain.url).host : "a light-wallet server";
+  const notify = notifyButton();
+  return [privacyText(host), appearanceChoice(), memoSwitch(host),
+    notify ? el("div", { class: "setting" }, el("p", { class: "small muted" }, "A notification "
+      + "tells you about a new message while Zigs is open in this browser. The setting is for "
+      + "this browser."), notify) : null];
 }
+
+const appearanceChoice = () => el("div", { class: "setting" },
+  el("p", { class: "small muted" }, "The appearance applies to this browser only. Device "
+    + "setting follows the light or dark mode of this device."),
+  themeChoice());
 
 function checkedBadge() {
   const rejected = rejectedSeats(), ver = verifiedCount(), n = state.g.n;
@@ -722,44 +743,56 @@ function checkedBadge() {
   return el("span", { class: "badge " + (ver === n ? "ok" : "") }, ver + " of " + n + " devices");
 }
 
+// The facts that a person reads. The ones that only support reads are in technicalFacts.
 function walletFacts() {
   const w = state.wallet, net = curNet();
   const address = addrHidden()
     ? el("dd", {}, "Shown after this device checks it against its key share.")
     : el("dd", {}, el("div", { class: "addr-full" }, addrGroups(w.address)),
       el("div", { style: "margin-top:8px" }, copyBtn(w.address, "Copy address")));
-  return el("section", { class: "card card-pad" },
-    el("h2", { style: "font-size:15px" }, "Wallet"),
-    el("dl", { class: "kv" },
-      el("dt", {}, "Address"), address,
-      el("dt", {}, "Approval rule"),
-      el("dd", {}, "Any " + state.g.t + " of " + state.g.n + " devices"),
-      el("dt", {}, "Checked by"), el("dd", {}, checkedBadge()),
-      el("dt", {}, "Network"), el("dd", {}, "Zcash " + net.label.toLowerCase()
-        + (net.cap ? " · warning at " + capText(net.cap) : "")),
-      el("dt", {}, "Created at block"), el("dd", { class: "mono" }, fmtInt(w.birthday)),
-      el("dt", {}, "Wallet key"), el("dd", { class: "hex" }, w.group_verifying_key),
-      usesV2(groupVersion()) ? [el("dt", {}, "Key setup"),
-        el("dd", {}, "Built to ZIP 2005 (Proposed) so that funds can be recovered if quantum "
-          + "computers break today's keys.")] : null,
-      signedMode(state.gid) ? [el("dt", {}, "Signed writes"), el("dd", {}, "Each device signs the "
-        + "data it writes to this wallet. Zigs ignores data without a valid signature.")] : null),
-    groupVersion() === 1 ? el("p", { class: "small muted", style: "margin-top:12px" },
-      "This wallet was made before quantum recoverability (ZIP 2005). To get it, move the funds "
-      + "to a new wallet with Change devices.") : null);
+  return [el("dl", { class: "kv" },
+    el("dt", {}, "Address"), address,
+    el("dt", {}, "Approval rule"),
+    el("dd", {}, "Any " + state.g.t + " of " + state.g.n + " devices"),
+    el("dt", {}, "Checked by"), el("dd", {}, checkedBadge()),
+    el("dt", {}, "Network"), el("dd", {}, "Zcash " + net.label.toLowerCase()
+      + (net.cap ? " · warning at " + capText(net.cap) : ""))),
+  groupVersion() === 1 ? el("p", { class: "small muted" },
+    "This wallet was made before quantum recoverability (ZIP 2005). To get it, move the funds "
+    + "to a new wallet with Change devices.") : null];
 }
 
-function privacyCard() {
+function technicalFacts() {
   const w = state.wallet;
-  const host = chain && chain.url ? new URL(chain.url).host : "a light-wallet server";
-  return el("section", { class: "card card-pad" },
-    el("h2", { style: "font-size:15px" }, "Privacy and keys"),
-    el("p", { class: "small muted" }, "Your key share is created and used in this browser. "
-      + "It leaves this browser only if you save a backup. The group server stores encrypted "
-      + "data it cannot read. This page downloads blocks from " + host
-      + ", which sees your IP address but never a key. On each load, the wallet continues its "
-      + "sync from the state that this browser saved."),
-    memoSwitch(host),
+  return el("dl", { class: "kv" },
+    el("dt", {}, "Created at block"), el("dd", { class: "mono" }, fmtInt(w.birthday)),
+    el("dt", {}, "Wallet key"), el("dd", { class: "hex" }, w.group_verifying_key),
+    usesV2(groupVersion()) ? [el("dt", {}, "Key setup"),
+      el("dd", {}, "Built to ZIP 2005 (Proposed) so that funds can be recovered if quantum "
+        + "computers break today's keys.")] : null,
+    signedMode(state.gid) ? [el("dt", {}, "Signed writes"), el("dd", {}, "Each device signs the "
+      + "data that it writes to this wallet. Zigs ignores data without a valid signature.")] : null);
+}
+
+// The box builds its content only while it is open: `ui.technical` holds the wallet that has it
+// open, so a redraw keeps it open. A toggle that the flag already says changes nothing.
+function technicalDetails() {
+  const open = ui.technical === state.gid;
+  const toggle = (ev) => {
+    if (ev.currentTarget.open === (ui.technical === state.gid)) return;
+    ui.technical = ev.currentTarget.open ? state.gid : null;
+    render();
+  };
+  return el("details", { open: open || null, ontoggle: toggle },
+    el("summary", {}, "Technical details of this wallet"), open ? technicalBody() : null);
+}
+
+function technicalBody() {
+  const w = state.wallet;
+  return el("div", { class: "technical" },
+    el("p", { class: "small muted" }, "These facts are for people who check the wallet. Never "
+      + "share a backup file or an invite link."),
+    technicalFacts(),
     el("details", {}, el("summary", {}, "Viewing key"),
       el("div", { class: "addr-full", style: "margin-top:10px" }, w.ufvk),
       el("div", { style: "margin-top:8px" }, copyBtn(w.ufvk, "Copy viewing key"))),
@@ -768,11 +801,19 @@ function privacyCard() {
     activityLog());
 }
 
+function privacyText(host) {
+  return el("p", { class: "small muted" }, "Your key share is created and used in this browser. "
+    + "It leaves this browser only if you save a backup. The group server stores encrypted "
+    + "data it cannot read. This page downloads blocks from " + host
+    + ", which sees your IP address but never a key. On each load, the wallet continues its "
+    + "sync from the state that this browser saved.");
+}
+
 // The setting that lets this browser read memos. It names the leak: the light-wallet server learns
 // which transactions pay this wallet.
 function memoSwitch(host) {
   const gid = state.gid, on = readsMemos(gid);
-  return el("div", { class: "memo-switch" },
+  return el("div", { class: "setting memo-switch" },
     el("p", { class: "small muted" }, "A memo is only in the full transaction. To read it, this "
       + "browser asks " + host + " for each transaction that pays this wallet. That server then "
       + "learns which transactions pay this wallet, and it sees your IP address. This setting "

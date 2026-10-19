@@ -69,7 +69,7 @@ function lockPage(on) {
 const SECTION_ICONS = {
   overview: "home", approvals: "approvals", activity: "activity", messages: "chat",
   members: "devices", recovery: "key",
-  details: "settings", solana: "sol",
+  settings: "settings", solana: "sol",
 };
 
 /** The side list of the wallet sections ([id, label, count] each); a pick focuses the section. */

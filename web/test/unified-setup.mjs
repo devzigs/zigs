@@ -18,7 +18,8 @@ const rig = await loadRig();
 // The page modules need the stub page of the rig, so they load after it.
 const { SOL_DISCLOSURE, solPlanned, solServed } = await import("../app-sol.js");
 const { inviteMessage, joinText, onLink } = await import("../app-setup.js");
-const { chatMessage } = await import("../app-links.js");
+const { chatMessage, inviteLink } = await import("../app-links.js");
+const { diagnostics } = await import("../app-help.js");
 const { chatInviteCard } = await import("../app-thread.js");
 const { chats } = await import("../app-keystore.js");
 const { backupWords } = await import("../sol/backup.js");
@@ -40,9 +41,9 @@ const BOTH_OPEN = /Every device keeps this wallet open until the Zcash and the S
 
 // The text of the open wallet page, with a recorder in place of the document.
 class Rec extends Node {
-  constructor() {
+  constructor(tag) {
     super();
-    Object.assign(this, { kids: [], style: {}, attrs: {}, on: {} });
+    Object.assign(this, { tag, kids: [], style: {}, attrs: {}, on: {} });
   }
   setAttribute(k, v) {
     this.attrs[k] = v;
@@ -57,8 +58,8 @@ class Rec extends Node {
 const textOf = (node) => node.text ?? node.kids.map(textOf).join("");
 function pageTree() {
   const real = globalThis.document;
-  globalThis.document = { createElement: () => new Rec(), createElementNS: () => new Rec(),
-    createTextNode: (text) => ({ text }) };
+  globalThis.document = { createElement: (tag) => new Rec(tag), createElementNS: () => new Rec(),
+    createTextNode: (text) => ({ text }), documentElement: { dataset: {} } };
   try {
     return t.groupView();
   } finally {
@@ -276,6 +277,215 @@ function recoveryFacts() {
     globalThis.document = doc;
   }
 }
+// Each section starts with one heading block, and its panel keeps its focus target and name.
+const LEADS = { settings: "Wallet and app preferences", solana: "Solana Devnet" };
+function headingBlocks() {
+  const blocks = (node) => (node.className === "page-heading" ? 1 : 0)
+    + (node.kids ?? []).reduce((sum, kid) => sum + blocks(kid), 0);
+  const h2s = (node) => (node.tag === "h2" ? 1 : 0)
+    + (node.kids ?? []).reduce((sum, kid) => sum + h2s(kid), 0);
+  const ids = t.walletSections().map(([id]) => id);
+  assert.deepEqual(ids.slice(-3), ["recovery", "settings", "solana"], "Details is now Settings");
+  for (const [id, label] of t.walletSections()) {
+    t.ui.tab = id;
+    const tree = pageTree();
+    assert.equal(blocks(tree), 1, id + ": one heading block");
+    const panel = findNode(tree, (n) => n.attrs?.id === "panel-" + id);
+    assert.equal(panel.attrs.tabindex, "-1", id + ": the panel keeps tabindex -1");
+    assert.equal(panel.attrs["aria-label"], label, id + ": and its name");
+    assert.equal(textOf(panel.kids[0]), (LEADS[id] ?? "This wallet") + label,
+      id + ": the heading comes first");
+    assert.equal(h2s(panel), 1, id + ": the title is the only h2, the cards have h3");
+  }
+}
+// Technical details builds its content only while it is open, and a redraw keeps it open.
+const TECHNICAL = "Technical details of this wallet";
+async function technicalBox(w, gid) {
+  const box = () => findNode(pageTree(), (n) => n.kids?.[0]?.kids?.[0]?.text === TECHNICAL);
+  const facts = [w.group_verifying_key, w.ufvk, "Created at block"];
+  t.ui.technical = null;
+  assert.ok(box(), "Settings has the Technical details box");
+  assert.equal(box().attrs.open, undefined, "closed by default");
+  for (const hidden of facts) {
+    assert.ok(!pageText().includes(hidden), "the closed Technical details builds nothing");
+  }
+  box().on.toggle({ currentTarget: { open: true } });
+  assert.equal(t.ui.technical, gid, "a toggle opens Technical details");
+  assert.equal(box().attrs.open, "", "a redraw keeps it open");
+  for (const shown of facts) {
+    assert.ok(pageText().includes(shown), "the open box shows " + shown.slice(0, 12));
+  }
+  t.ui.technical = "another-wallet";
+  assert.equal(box().attrs.open, undefined, "the box of another wallet stays closed");
+  t.ui.technical = gid;
+  box().on.toggle({ currentTarget: { open: false } });
+  assert.equal(t.ui.technical, null, "a second toggle closes it");
+  assert.ok(!pageText().includes(w.ufvk), "and its content goes");
+  await redrawGuard(box, gid);
+}
+// A redraw makes a new open box, which fires a toggle of its own. A toggle that matches the flag
+// must ask for no redraw, or the page redraws at every frame. The test counts the frames that
+// render() asks for, after the redraws above have ended.
+async function redrawGuard(box, gid) {
+  await sleep(250);
+  const frames = [], raf = globalThis.requestAnimationFrame;
+  globalThis.requestAnimationFrame = (fn) => frames.push(fn);
+  try {
+    t.ui.technical = gid;
+    box().on.toggle({ currentTarget: { open: true } });
+    assert.deepEqual([frames.length, t.ui.technical], [0, gid],
+      "a toggle that matches the flag asks for no redraw");
+    t.ui.technical = null;
+    box().on.toggle({ currentTarget: { open: true } });
+    assert.equal(frames.length, 1, "a toggle that changes the flag asks for one redraw");
+  } finally {
+    globalThis.requestAnimationFrame = raf;
+  }
+  await sleep(250);
+}
+// The page builds Settings and Help with no network request. The background work of the page
+// runs while a test waits, so the trap covers a synchronous build only.
+function offline(build) {
+  const asked = [], real = globalThis.fetch;
+  globalThis.fetch = (...args) => { asked.push(args); throw new Error("no network"); };
+  try {
+    const out = build();
+    assert.deepEqual(asked, [], "Settings and Help ask for no network");
+    return out;
+  } finally {
+    globalThis.fetch = real;
+  }
+}
+// Settings: the parts, the wallet facts, Technical details, and the diagnostics.
+async function settingsSection() {
+  const { tab, technical } = t.ui, { gid, wallet: w, g } = t.state;
+  try {
+    const page = offline(() => {
+      headingBlocks();
+      t.ui.tab = "settings";
+      return pageText();
+    });
+    for (const part of ["This wallet", "This app on this device", "Advanced", "Help"]) {
+      assert.ok(page.includes(part), "Settings has the part " + part);
+    }
+    assert.ok(page.includes("Any " + g.t + " of " + g.n + " devices"), "the rule says devices");
+    await technicalBox(w, gid);
+    await diagnosticsFacts(w, gid);
+  } finally {
+    Object.assign(t.ui, { tab, technical });
+  }
+}
+// What "Copy diagnostics" copies: the click handler of the button, with a recording clipboard.
+async function copiedText() {
+  const button = findNode(pageTree(), (n) => n.on?.click && textOf(n) === "Copy diagnostics");
+  assert.ok(button, "the page has a Copy diagnostics button");
+  const copied = [], real = Object.getOwnPropertyDescriptor(globalThis, "navigator");
+  const { userAgent, onLine, locks } = globalThis.navigator;
+  const clipboard = { writeText: async (text) => { copied.push(text); } };
+  Object.defineProperty(globalThis, "navigator",
+    { configurable: true, value: { userAgent, onLine, locks, clipboard } });
+  try {
+    await button.on.click({ currentTarget: button });
+  } finally {
+    Object.defineProperty(globalThis, "navigator", real);
+  }
+  assert.equal(copied.length, 1, "the button copies once");
+  return copied[0];
+}
+// The Solana lines say "not read yet" while this browser has not read the Solana part.
+function solanaUnread(gid) {
+  const real = t.secrets, loaded = t.sol.ctl.loaded;
+  const k = Object.keys(real).find((key) => key.startsWith(gid + ":") && real[key].keyPackage);
+  assert.equal(t.solError, "", "no Solana load failed here");
+  assert.match(diagnostics(), /^Solana backup files not saved: \d+$/m);
+  assert.match(diagnostics(), /^Solana payments to approve: \d+$/m);
+  t.secrets = { ...real, [k]: { ...real[k], sol: undefined } };
+  t.sol.ctl.loaded = { ...loaded, soldone: false };
+  try {
+    const text = diagnostics();
+    assert.match(text, /^Solana backup files not saved: not read yet$/m,
+      "the Solana files say not read yet");
+    assert.match(text, /^Solana payments to approve: not read yet$/m);
+  } finally {
+    t.secrets = real;
+    t.sol.ctl.loaded = loaded;
+  }
+}
+// The sync line is one word of a fixed list, or the height of the last block. The error text of
+// a failed sync, which can hold any text, never shows.
+function syncWords(gid) {
+  const real = t.chain, error = "Maria Keller sent utest1qx7zk and the server said 9f3c2a7b";
+  const word = (chain) => {
+    t.setChain(chain);
+    return /^Zcash sync: (.*)$/m.exec(diagnostics())[1];
+  };
+  const bal = { height: 4500100 };
+  try {
+    for (const [what, chain, want] of [
+      ["no chain", null, "not started"],
+      ["another wallet", { gid: "other", bal }, "not started"],
+      ["a failed sync", { gid, error, syncing: false }, "failed"],
+      ["a failed sync that retries", { gid, error, syncing: true, bal }, "failed"],
+      ["a running sync", { gid, syncing: true, bal }, "syncing"],
+      ["a sync that ended", { gid, bal }, "synced to block 4500100"],
+      ["a chain with no balance", { gid }, "waiting"],
+    ]) assert.equal(word(chain), want, "the sync word of " + what);
+    t.setChain({ gid, error });
+    assert.ok(!diagnostics().includes("Maria Keller"), "the sync error text never shows");
+  } finally {
+    t.setChain(real);
+  }
+}
+// The diagnostics hold the facts and no line of the log: real log lines carry notes, short ids,
+// short addresses and balances. The page shows the text, and the button copies the same text.
+async function diagnosticsFacts(w, gid) {
+  const part = JSON.stringify(Object.values(t.secrets).find((s) => s.keyPackage).keyPackage);
+  const solana = "EvHCyEZUDBzWuuUDwSmXWrJ2vdtgVSr8ikduQfUAVr3r";
+  const seen = { address: w.address, "viewing key": w.ufvk, "wallet key": w.group_verifying_key,
+    "invite link": inviteLink(gid), "wallet secret": t.gkeys[gid], "key share": part,
+    "Solana address": solana, "wallet id": gid, "wallet name": "Maria's Treasury",
+    "device name": "Keller Laptop", "payment note": "Rent for Maria Keller",
+    "short transaction id": "9f3c2a7b", "short payee address": "q6r7s8",
+    balance: "12.3456 ZEC" };
+  const lines = [
+    "wallet created: " + w.address.slice(0, 24) + "…",
+    "seat 1: key share ready, wallet key " + w.group_verifying_key.slice(0, 12) + "…",
+    "✗ react: " + inviteLink(gid) + " " + t.gkeys[gid] + " " + solana,
+    "bad data " + w.address + " " + w.ufvk + " " + part,
+    "ignored data without a valid signature (wallet " + gid.slice(0, 6) + "): groups/" + gid,
+    '✗ step: "Rent for Maria Keller, flat 4B": write failed',
+    "could not read the memo of 9f3c2a7b…5c4b3a: server failed",
+    "Payment to utest1qx…q6r7s8 failed",
+    "synced to 4518757, spendable 12.3456 ZEC",
+  ];
+  const { log, g, seats } = t.state;
+  t.state.log = [...lines, ...log];
+  t.state.g = { ...g, name: seen["wallet name"] };
+  t.state.seats = Object.fromEntries(Object.entries(seats)
+    .map(([i, seat]) => [i, { ...seat, name: seen["device name"] }]));
+  try {
+    const box = offline(() => findNode(pageTree(),
+      (n) => n.attrs?.["aria-label"] === "Diagnostics text"));
+    const shown = offline(() => textOf(box));
+    const copied = await copiedText();
+    const noTime = (text) => text.replace(/^Time \(UTC\): .*\n/m, "");
+    assert.equal(noTime(copied), noTime(shown), "the copy button copies the shown text");
+    for (const [what, text] of [["the text", offline(diagnostics)], ["the page", shown],
+      ["the copy", copied]]) {
+      assert.ok(!lines.some((line) => text.includes(line)),
+        "the diagnostics of " + what + " hold no line of the log");
+      for (const [name, value] of Object.entries(seen)) {
+        assert.ok(!text.includes(value) && !text.includes(value.slice(0, 20)),
+          "the diagnostics of " + what + " hide the " + name);
+      }
+      assert.match(text, /Approval rule: 2 of 3 devices/, "but they keep the facts");
+    }
+    solanaUnread(gid);
+    syncWords(gid);
+  } finally {
+    Object.assign(t.state, { log, g, seats });
+  }
+}
 // With nothing to list after the sync, the inbox speaks for Zcash alone: the Solana line below it
 // speaks for Solana.
 function emptyInbox() {
@@ -415,7 +625,7 @@ function sideMenu() {
   t.state.groups = [t.state.g, { id: "other", name: "Other" }];
   assert.ok(labelled(pageTree(), "Switch wallet"), "two wallets: a switcher");
 }
-function approvalCount(ctl) {
+async function approvalCount(ctl) {
   // The count follows approveSeats: the documents are checked (wait 0), so the cards show buttons.
   const count = (sessions, commits = {}, change = {}) =>
     pendingCount({ ...ctl, wait: 0, sessWait: 0, ...change, sessions, commits });
@@ -479,6 +689,7 @@ function approvalCount(ctl) {
     emptyInbox();
     receiveTexts();
     sideMenu();
+    await settingsSection();
   } finally {
     [ctl.sessions, ctl.commits, t.state.groups] = kept;
   }
@@ -1088,7 +1299,7 @@ async function walkSteps(fields, times, fresh = true) {
   ui.tab = "overview";
   // The side item and the inbox read the live documents: their checks end first.
   await waitFor("the documents are checked", () => !t.sol.ctl.wait && !t.sol.ctl.sessWait);
-  approvalCount(t.sol.ctl);
+  await approvalCount(t.sol.ctl);
   // The first sentence names the file that is unsaved: a Zcash file, or only a Solana file.
   const note = (...args) => {
     const real = globalThis.document;

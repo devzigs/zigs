@@ -325,12 +325,7 @@ export function solView(c, act, actions) {
   return el(
     "section",
     { class: "card card-pad sol-view", style: "display:grid;gap:12px" },
-    el(
-      "div",
-      { class: "card-head" },
-      el("h2", {}, "Solana"),
-      el("span", { class: "badge plain" }, "Devnet only · beta"),
-    ),
+    el("div", { class: "card-head" }, el("span", { class: "badge plain" }, "Devnet only · beta")),
     // The word stays readable for the checks; a person reads the sentence.
     el("p", { class: "small" }, el("span", { "data-sol": "status", hidden: true }, status),
       STATUS_TEXT[status]),
