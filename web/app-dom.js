@@ -10,7 +10,7 @@ import { capText, curNet, MAINNET_ON, netOf, NETWORKS } from "./app-chain.js";
 import { signedMode } from "./app-filter.js";
 import { closeSession } from "./app-groups.js";
 import {
-  approvedHold, ended, expired, landed, payeesOf, sendRefusal, signingSeen, tooLate,
+  approvedHold, ended, expired, landed, payeesOf, refusedFinal, signingSeen, tooLate,
 } from "./app-payments.js";
 import { focusAfter, react, render } from "./app-loop.js";
 
@@ -106,10 +106,12 @@ const STATUS = {
   cancelled: ["Cancelled", ""],
 };
 // After signing, only the engine can say that it expired (TICKETS.md ZEC-13). A finished
-// transaction that the send step refuses is not ready to send either (sendRefusal).
+// transaction that the send step refuses is not ready to send either (refusedFinal).
 const asksCheck = (s) => (signingSeen(s) && expired(s))
-  || (s.status === "complete" && !!sendRefusal(s));
-export function statusChip(s) {
+  || refusedFinal(s);
+// `approved`: the drawer counted t approvals of this payment. The inbox and the Activity rows
+// cannot count them, so they show the status of the document.
+export function statusChip(s, approved = false) {
   if (s.checking) return el("span", { class: "badge" }, "Checking");
   if (landed(s)) return el("span", { class: "badge ok" }, "Sent");
   if (ended(s)) return el("span", { class: "badge" }, "Expired");
@@ -118,6 +120,10 @@ export function statusChip(s) {
   if (tooLate(s)) return el("span", { class: "badge warn" }, "Too late");
   // An error part that one seat wrote does not end a payment that this browser approved and sent.
   if (approvedHold(s)) return el("span", { class: "badge info" }, "Confirming");
+  return docStatus(s, approved);
+}
+function docStatus(s, approved) {
+  if (approved && s.status === "collecting") return el("span", { class: "badge info" }, "Approved");
   const [t, c] = Object.hasOwn(STATUS, s.status) ? STATUS[s.status] : [String(s.status), ""];
   return el("span", { class: "badge " + c }, t);
 }

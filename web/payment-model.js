@@ -60,6 +60,8 @@ const HEADLINES = [
     + "payment."],
   ["held", "Stopped, but it may still go on chain", "It was stopped after this browser approved "
     + "it. Another device can still send it, so Send stays off here. Read the note below."],
+  ["sentStopped", "Check the payment", "A device sent it, and the payment shows a stop too. It "
+    + "may still go on chain. Check it before you make another payment."],
   ["stopped", "Payment stopped", "No device can approve, sign or send it. The reason is below."],
   ["error", "Payment stopped", "This page cannot tell whether a device sent it. Check the "
     + "wallet's activity before you make another payment."],
@@ -71,7 +73,7 @@ const HEADLINES = [
     + "its signing parts. Read the note below. Check the wallet's activity before you make another "
     + "payment."],
   ["approvalLost", "Payment needs attention", "A device of this browser lost its approval of this "
-    + "payment. Read the note below. Cancel the payment, then propose it again."],
+    + "payment. Read the note below. Cancel the payment only when the note asks for it."],
   ["approvalChanged", "Payment needs attention", "One device changed the proposal after this "
     + "browser approved it. Read the note below. Check the payment with the other devices."],
   ["mismatch", "Payment needs attention", "The transaction does not pay what the proposer listed. "
@@ -107,15 +109,15 @@ const WAITING = { title: "Waiting for approvals", detail: "The other devices app
 /**
  * The headline of a payment drawer, from facts that the drawer already reads.
  * @param {object} f true or false each: landed, ended, check (the engine cannot say that it
- *   expired), held (stopped, but an approval here holds Send), stopped (an error, no signing
- *   seen here, a synced chain), error, rejected (this browser refuses the transaction), refused
- *   (the send step refuses it), signingLost (one device reset the signing seen here),
- *   approvalLost (this browser lost its approval), approvalChanged (the proposal changed after
- *   an approval here), mismatch (it does not pay what the proposer listed), wrongMove (a move
- *   that does not pay the checked address of the new wallet), sentUnsynced (sent, and no sync
- *   since), resend, sent, late (too late to send), sendFailed, sendHere (this browser can send
- *   it), proved, proving, signed, signing, approved (enough approvals), mine (this browser can
- *   approve it).
+ *   expired), held (stopped, but an approval here holds Send), sentStopped (an error part next
+ *   to a sent mark), stopped (an error, no signing seen here, a synced chain), error, rejected
+ *   (this browser refuses the transaction), refused (this browser does not send it),
+ *   signingLost (the signing parts seen here are gone), approvalLost (a device here lost its
+ *   approval), approvalChanged (the proposal changed after an approval here), mismatch (it does
+ *   not pay what the proposer listed), wrongMove (a move that does not pay the checked address
+ *   of the new wallet), sentUnsynced (sent, and no sync since), resend, sent, late (too late to
+ *   send), sendFailed, sendHere (this browser can send it), proved, proving, signed, signing,
+ *   approved (enough approvals), mine (this browser can approve it).
  * @returns {{title: string, detail: string}}
  */
 export function stageHeadline(f) {

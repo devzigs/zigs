@@ -108,10 +108,14 @@ const step = (key, ss, fn) => once(key, () => fn().catch((e) => {
   throw new Error("\"" + title + "\": " + said(e));
 }));
 
+/** The devices that a signing package names: the first `t` approvals by device number. */
+export const firstApprovers = (commits, t) => Object.keys(commits).map(Number)
+  .sort((a, b) => a - b).slice(0, t);
+
 // Coordinator: once t approvals are in, build the signing package.
 function buildPackage(ss, fvk, commits) {
   const gid = state.gid, t = state.g.t;
-  const ids = Object.keys(commits).map(Number).sort((a, b) => a - b).slice(0, t);
+  const ids = firstApprovers(commits, t);
   if (ids.length < t) return;
   step("pkg:" + ss.id, ss, async () => {
     const c = {}; for (const i of ids) c[i] = commits[i].commitments;
@@ -384,6 +388,9 @@ export function sendRefusal(ss) {
 }
 const unread = (what) => "This browser cannot read " + what + ", so it does not send the "
   + "finished one.";
+/** A finished transaction that no device sent, and that this browser does not send. One seat
+ * writes the status, so it does not count. */
+export const refusedFinal = (ss) => !!ss.final && !ss.broadcastTxid && !!sendRefusal(ss);
 const SEND_OTHER = "The finished transaction has another id than the approved one, so this "
   + "browser does not send it. Check the payment with the other devices.";
 const SEND_NOT_PROPOSED = "The finished transaction has another id than the proposal, so this "
@@ -722,14 +729,14 @@ export function onChain(ss) {
   return !!(c && c.sent && id && c.sent.has(id));
 }
 
+/** A finished transaction that no device sent, and that a node refuses now (expiryOf). */
+export const tooLate = (ss) => !!ss.final && !ss.broadcastTxid && expiryOf(ss)?.expired === true;
+
 // A payment that no signer can approve, sign or send any more, and that no block holds: its notes
 // are free again. A payment with a finished transaction can be on the network without a sent mark
 // (a send that timed out after a server took it, or a mark that was not saved). So it counts as
 // gone only EXPIRY_MARGIN blocks after its expiry height, as a message does, because a
 // reorganisation of the last blocks can still bring it on chain.
-/** A finished transaction that no device sent, and that a node refuses now (expiryOf). */
-export const tooLate = (ss) => !!ss.final && !ss.broadcastTxid && expiryOf(ss)?.expired === true;
-
 export function expired(ss) {
   // A browser that approved takes the engine's word, also when the proposal does not decode.
   if (boundExpired(ss) || pastCeiling(ss)) return true;

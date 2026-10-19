@@ -2444,8 +2444,12 @@ const sealed = (gid, rel, seat, fields, key, names = ["by", "sig"]) =>
             && textOf(x).includes(title))[0];
           return { head: textOf(all(layer, (x) => x.className === "pay-status")[0]), now, step,
             text: textOf(layer), buttons: all(layer, (x) => x.tag === "button").map(textOf),
-            foot: all(layer, (x) => x.className === "drawer-foot").length };
+            foot: all(layer, (x) => x.className === "drawer-foot").length,
+            chip: textOf(all(all(layer, (x) => x.className === "drawer-head")[0],
+              (x) => /^badge/.test(x.className ?? ""))[0]) };
         };
+        const nonces = (seat, patch) => t.putSec(t.state.gid, seat,
+          { nonces: { ...t.sec(t.state.gid, seat).nonces, ...patch } });
         const unknownA = () => ({ state: "unknown", txid: "tx-a", why: "it may still land" });
         const lateSent = () => ({ ...okA, status: "broadcast", broadcastTxid: "tx-a",
           final: { txid: "tx-a", tx_hex: "00" }, broadcastAt: 1 });
@@ -2493,6 +2497,8 @@ const sealed = (gid, rel, seat, fields, key, names = ["by", "sig"]) =>
         assert.deepEqual(["Combined signature", "Sent to the network"]
           .map((x) => errSent.step(x).className), ["step done", "step done"],
         "a later error part keeps the done steps");
+        assert.match(errSent.head, /^Check the paymentA device sent it, and the payment shows a /,
+          "headline: an error part after a sent mark");
         t.setChain({ ...t.chain, cw: null });
         assert.match(look({ ...open("hd2", "PA"), error: "Cancelled." }).head, unsure,
           "headline: an error before a sync");
@@ -2527,13 +2533,30 @@ const sealed = (gid, rel, seat, fields, key, names = ["by", "sig"]) =>
         const lostOne = look(open("hd6", "PA"));
         assert.match(lostOne.head, /^Payment needs attentionA device of this browser lost its /,
           "headline: this browser lost its approval");
-        // Two other devices here can still approve: the note names the device that lost it.
+        // Two other devices here can still approve: the note names the device that lost it. With
+        // fewer than t approvals, the page cannot tell which devices sign.
         assert.ok(lostOne.text.includes("This browser lost the approval of device " + me + " for "
-          + "this payment: the browser data that held it was deleted. The payment cannot finish "
-          + "with it."), "the note names the device that lost its approval");
+          + "this payment: the browser data that held it was deleted. If the signing package "
+          + "names that device, the payment cannot finish. Then cancel it, and propose it again."),
+        "the note names the device that lost its approval");
         assert.deepEqual(lostOne.buttons.filter((b) => b.startsWith("Approve")),
           ["Approve as device " + other, "Approve as device " + third]);
         assert.deepEqual(lostOne.now, [], "a lost approval keeps no approvals step that waits");
+        // t approvals: the package takes the first t by device number.
+        await nonces(other, { hd6: ["n"], hd6b: ["n"] });
+        await nonces(me, { hd6b: ["n"] });
+        t.state.commits = { [me]: {}, [other]: {} };
+        assert.ok(look(open("hd6", "PA")).text.includes("This browser lost the approval of device "
+          + me + " for this payment: the browser data that held it was deleted. The payment cannot "
+          + "finish with it. Cancel the payment, then propose it again."),
+        "a lost device among the first t approvals stops the payment");
+        t.state.commits = { [me]: {}, [other]: {}, [third]: {} };
+        const beyond = look(open("hd6b", "PA"));
+        assert.deepEqual([beyond.head.startsWith("Approvals are complete"),
+          beyond.text.includes("lost the approval")], [true, false],
+        "a device outside the first t approvals lost nothing");
+        await nonces(other, { hd6: undefined, hd6b: undefined });
+        await nonces(me, { hd6b: undefined });
         t.state.commits = {};
         const changed = look(signedA);
         assert.match(changed.head, /^Payment needs attentionOne device changed the proposal after /,
@@ -2585,6 +2608,11 @@ const sealed = (gid, rel, seat, fields, key, names = ["by", "sig"]) =>
           "a payment too late to send reads Too late, not Ready to send");
         assert.deepEqual(late.now, [], "a payment too late to send has no step that waits");
         assert.match(textOf(late.step("Sent to the network")), /can no longer go to the network/);
+        // A sent payment in the same window may still land: it is not too late.
+        const sentNear = look(lateSent());
+        assert.deepEqual([textOf(t.statusChip(lateSent())) === "Too late",
+          sentNear.now.join().includes("In a block")], [false, true],
+        "a sent payment near its expiry is not too late");
         at(4500100);
         assert.match(look({ ...doneA, broadcastError: "timeout" }).head,
           /^The send failedRead the error below\. A device can send it again\./,
@@ -2598,6 +2626,11 @@ const sealed = (gid, rel, seat, fields, key, names = ["by", "sig"]) =>
         t.secrets = {};
         assert.match(look(doneA).head, /^Ready to sendThe proof is built\. A device of this wallet/,
           "headline: the proof is built, and this browser has no seat");
+        // One seat can write any status: the refusal does not read it.
+        const falseId = { ...doneA, status: "signed", final: { txid: "tx-b", tx_hex: "00" } };
+        assert.deepEqual([look(falseId).head.startsWith("Payment needs attentionThis browser does "
+          + "not send"), textOf(t.statusChip(falseId))], [true, "Check"],
+        "a browser without a seat refuses a false id, whatever the status");
         t.secrets = seats13;
         // A block holds it, with parts missing: no step waits, and no step is offered.
         answer = () => ({ state: "done", txid: "tx-a", why: "a synced block holds it" });
@@ -2614,6 +2647,12 @@ const sealed = (gid, rel, seat, fields, key, names = ["by", "sig"]) =>
         assert.deepEqual([landedPackage.now, landedPackage.buttons.includes("Cancel payment")],
           [[], false], "a landed payment offers no Cancel");
         assert.match(textOf(landedPackage.step("Combined signature")), /A synced block holds/);
+        assert.equal(landedPackage.step("Approvals").className, "step done",
+          "a block marks the approvals done");
+        assert.equal(landedPackage.step("Combined signature").className, "step done",
+          "a block marks the signature done");
+        assert.equal(landedPackage.step("Proof").className, "step done",
+          "a block marks the proof done");
         assert.deepEqual(look(open("hdl", "PA")).now, [],
           "a proposal whose transaction a block holds has no step that waits");
         answer = unknownA;
@@ -2631,8 +2670,6 @@ const sealed = (gid, rel, seat, fields, key, names = ["by", "sig"]) =>
           "a package without loaded approvals waits for its signature");
         // Enough approvals: the headline says that no approval is needed. The inbox cannot count
         // the approvals of each payment, so the Approve button of a seat here stays.
-        const nonces = (seat, patch) => t.putSec(t.state.gid, seat,
-          { nonces: { ...t.sec(t.state.gid, seat).nonces, ...patch } });
         await nonces(me, { hd5: ["n"] });
         await nonces(other, { hd5: ["n"] });
         t.state.commits = { [me]: {}, [other]: {} };
@@ -2642,6 +2679,8 @@ const sealed = (gid, rel, seat, fields, key, names = ["by", "sig"]) =>
         assert.deepEqual(full.buttons.filter((b) => b.startsWith("Approve")),
           ["Approve as device " + third], "the inbox and the drawer agree: device 3 can approve");
         assert.equal(full.step("Approvals").className, "step done");
+        assert.deepEqual([full.chip, textOf(t.statusChip(open("hd5", "PA")))],
+          ["Approved", "Needs approval"], "the drawer chip says Approved after t approvals");
         t.state.commits = { [me]: {} };
         assert.match(look(open("hd5", "PA")).head, /^Your approval is needed/);
         await nonces(me, { hd5: undefined });

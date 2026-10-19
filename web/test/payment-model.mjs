@@ -105,11 +105,12 @@ assert.doesNotMatch(detail({ proved: true }), /browser/, "no send of this browse
 assert.match(detail({ approved: true, mine: true }), /^Enough devices approved\. Another /);
 assert.equal(RESEND_MS, 10 * 60 * 1000);
 assert.match(detail({ resend: true }), / after 10 minutes\. /, "the minutes come from RESEND_MS");
-const all = ["landed", "ended", "check", "held", "stopped", "error", "rejected", "refused",
-  "signingLost", "approvalLost", "approvalChanged", "mismatch", "wrongMove", "sentUnsynced",
-  "resend", "sent", "late", "sendFailed", "sendHere", "proved", "proving", "signed", "signing",
-  "approved",
-  "mine"].map((f) => stageHeadline({ [f]: true }));
+const all = ["landed", "ended", "check", "held", "sentStopped", "stopped", "error", "rejected",
+  "refused", "signingLost", "approvalLost", "approvalChanged", "mismatch", "wrongMove",
+  "sentUnsynced", "resend", "sent", "late", "sendFailed", "sendHere", "proved", "proving", "signed",
+  "signing", "approved", "mine"].map((f) => stageHeadline({ [f]: true }));
+assert.equal(title({ held: true, sentStopped: true }), "Stopped, but it may still go on chain");
+assert.match(detail({ sentStopped: true, error: true }), /^A device sent it, and the payment /);
 assert.equal(all.filter((h) => /signer/.test(h.title + h.detail)).length, 0, "device wording");
 assert.equal(new Set(all.map((h) => h.detail)).size, all.length, "each fact has its own detail");
 console.log("ok  the headline of a payment");
