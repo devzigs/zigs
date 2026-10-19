@@ -1,5 +1,5 @@
 {
-  "baseCommit": "c7335fdeb42fb723404380b91e6aa944d4e03ca1",
+  "baseCommit": "12c3aa8dca76575879ccf9f15c9ed525029dca6f",
   "node": "v24.11.0",
   "tests": {
     "web/test/chat.mjs": {
@@ -108,6 +108,9 @@
       "exit": 0
     },
     "web/test/approvals.mjs": {
+      "exit": 0
+    },
+    "cf/test/gate.mjs": {
       "exit": 0
     },
     "cf/test/limits.mjs": {

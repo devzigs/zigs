@@ -97,6 +97,8 @@ addresses, because one IPv6 user usually holds a whole /64. So users who share a
 a /64 (one home, one office, one VPN exit) also share a counter, and one of them can use up the
 limit of the others.
 Cloudflare, as the host, can see connection metadata.
+The password gate sets one first-party session cookie, `zigs_session`, for 7 days. It holds no
+personal data: only an expiry and a signature from a key of the preview password.
 
 ## Light-wallet server (lightwalletd)
 
