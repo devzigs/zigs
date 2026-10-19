@@ -40,9 +40,9 @@ const BOTH_OPEN = /Every signer keeps this wallet open until the Zcash and the S
 
 // The text of the open wallet page, with a recorder in place of the document.
 class Rec extends Node {
-  constructor() {
+  constructor(tag) {
     super();
-    Object.assign(this, { kids: [], style: {}, attrs: {}, on: {} });
+    Object.assign(this, { tag, kids: [], style: {}, attrs: {}, on: {} });
   }
   setAttribute(k, v) {
     this.attrs[k] = v;
@@ -57,7 +57,7 @@ class Rec extends Node {
 const textOf = (node) => node.text ?? node.kids.map(textOf).join("");
 function pageTree() {
   const real = globalThis.document;
-  globalThis.document = { createElement: () => new Rec(), createElementNS: () => new Rec(),
+  globalThis.document = { createElement: (tag) => new Rec(tag), createElementNS: () => new Rec(),
     createTextNode: (text) => ({ text }), documentElement: { dataset: {} } };
   try {
     return t.groupView();
@@ -281,6 +281,8 @@ const LEADS = { settings: "Wallet and app preferences", solana: "Solana Devnet" 
 function headingBlocks() {
   const blocks = (node) => (node.className === "page-heading" ? 1 : 0)
     + (node.kids ?? []).reduce((sum, kid) => sum + blocks(kid), 0);
+  const h2s = (node) => (node.tag === "h2" ? 1 : 0)
+    + (node.kids ?? []).reduce((sum, kid) => sum + h2s(kid), 0);
   const ids = t.walletSections().map(([id]) => id);
   assert.deepEqual(ids.slice(-3), ["recovery", "settings", "solana"], "Details is now Settings");
   for (const [id, label] of t.walletSections()) {
@@ -292,6 +294,7 @@ function headingBlocks() {
     assert.equal(panel.attrs["aria-label"], label, id + ": and its name");
     assert.equal(textOf(panel.kids[0]), (LEADS[id] ?? "This wallet") + label,
       id + ": the heading comes first");
+    assert.equal(h2s(panel), 1, id + ": the title is the only h2, the cards have h3");
   }
 }
 // Technical details builds its content only while it is open, and a redraw keeps it open.
@@ -407,6 +410,31 @@ function solanaUnread(gid) {
     t.sol.ctl.loaded = loaded;
   }
 }
+// The sync line is one word of a fixed list, or the height of the last block. The error text of
+// a failed sync, which can hold any text, never shows.
+function syncWords(gid) {
+  const real = t.chain, error = "Maria Keller sent utest1qx7zk and the server said 9f3c2a7b";
+  const word = (chain) => {
+    t.setChain(chain);
+    return /^Zcash sync: (.*)$/m.exec(diagnostics())[1];
+  };
+  const bal = { height: 4500100 };
+  try {
+    for (const [what, chain, want] of [
+      ["no chain", null, "not started"],
+      ["another wallet", { gid: "other", bal }, "not started"],
+      ["a failed sync", { gid, error, syncing: false }, "failed"],
+      ["a failed sync that retries", { gid, error, syncing: true, bal }, "failed"],
+      ["a running sync", { gid, syncing: true, bal }, "syncing"],
+      ["a sync that ended", { gid, bal }, "synced to block 4500100"],
+      ["a chain with no balance", { gid }, "waiting"],
+    ]) assert.equal(word(chain), want, "the sync word of " + what);
+    t.setChain({ gid, error });
+    assert.ok(!diagnostics().includes("Maria Keller"), "the sync error text never shows");
+  } finally {
+    t.setChain(real);
+  }
+}
 // The diagnostics hold the facts and no line of the log: real log lines carry notes, short ids,
 // short addresses and balances. The page shows the text, and the button copies the same text.
 async function diagnosticsFacts(w, gid) {
@@ -452,6 +480,7 @@ async function diagnosticsFacts(w, gid) {
       assert.match(text, /Approval rule: 2 of 3 devices/, "but they keep the facts");
     }
     solanaUnread(gid);
+    syncWords(gid);
   } finally {
     Object.assign(t.state, { log, g, seats });
   }

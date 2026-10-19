@@ -13,17 +13,21 @@ export const HELP = [
     + "part does not move this way. With fewer devices, first restore devices from their backup "
     + "files. Zigs cannot go around the approval rule. The Recovery section has more."],
   ["Where is my backup file?",
-    "A backup file holds the key share of one device. It is locked with a passphrase that you "
-    + "choose. Zigs cannot recover that passphrase. Keep the file and the passphrase apart, and "
-    + "make sure that you can find both. The Recovery section shows which files this browser "
-    + "saved."],
+    "A backup file holds the key share of one device. Your browser saves it as a download, "
+    + "usually in its download folder. Zigs does not know where. The file is locked with a "
+    + "passphrase that you choose. Zigs cannot recover that passphrase. A device with a Solana "
+    + "part has two files and two passphrases. Keep each file and its passphrase apart, and make "
+    + "sure that you can find both. The Recovery section shows which files this browser saved."],
   ["What do the servers see?",
-    "The group server keeps the encrypted data of the wallet. It cannot read the data, and it "
-    + "sees when data is sent. The light-wallet server sends the blocks to this page. It sees "
-    + "your IP address, and it never sees a secret key. The Solana part also asks Helius. Helius "
-    + "sees your IP address and the public keys of this wallet. Unless local proving is on, the "
-    + "hosted prover of Helius also sees each Solana payment. The Zigs server operator can link "
-    + "this wallet to its Solana addresses by timing."],
+    "The group server keeps the encrypted data of the wallet. It cannot read the data. It sees "
+    + "which IP addresses open which wallet, and when data is sent. The light-wallet server sends "
+    + "the blocks to this page. It sees the transactions that you send, and it never sees a "
+    + "secret key. It sees your IP address, except that on testnet the Zigs light-wallet server "
+    + "sees only the Zigs Worker. That Worker is also the group server, so one operator sees the "
+    + "traffic of both. The Solana part also asks Helius. Helius sees your IP address and the "
+    + "public keys of this wallet. Unless local proving is on, the hosted prover of Helius also "
+    + "sees each Solana payment. The Zigs server operator can link this wallet to its Solana "
+    + "addresses by timing."],
   ["How do I read the memos of payments to this wallet?",
     "Turn on Read memos of incoming payments, under This app on this device. A memo is only in "
     + "the full transaction, so this browser then asks the light-wallet server for each "

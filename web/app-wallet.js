@@ -221,7 +221,7 @@ function overviewTab() {
     el("div", { class: "assets-grid" }, zecAsset(c), solAsset()),
     el("div", { class: "grid-ov" }, receiveCard(), signersCard()),
     el("section", { class: "card" },
-      el("div", { class: "card-head card-pad", style: "padding-bottom:12px" }, el("h2", {}, "Activity"),
+      el("div", { class: "card-head card-pad", style: "padding-bottom:12px" }, el("h3", {}, "Activity"),
         list.length > 6 ? el("button", { class: "btn ghost sm", type: "button", onclick: () => { ui.tab = "activity"; render(); } }, "View all") : null),
       activityRows(list.slice(0, 6))));
 }
@@ -243,7 +243,7 @@ function moveCard(c) {
   const m = moveState(c), why = m.propose ? sendBlocker() : null;
   const started = state.sessions.some((x) => x.move === state.g.movedTo && !x.error && !ended(x));
   return el("section", { class: "card card-pad " + (m.done ? "" : "attention") },
-    el("div", { class: "card-head" }, el("h2", {}, m.done ? "This wallet moved" : "Changing signers"),
+    el("div", { class: "card-head" }, el("h3", {}, m.done ? "This wallet moved" : "Changing signers"),
       m.done ? el("span", { class: "badge plain" }, "Closed") : null),
     el("p", { class: "small muted" }, m.text),
     el("div", { style: "display:flex;gap:8px;flex-wrap:wrap" },
@@ -256,7 +256,7 @@ function moveCard(c) {
 
 function signersCard() {
   return el("section", { class: "card card-pad" },
-    el("div", { class: "card-head" }, el("h2", {}, "Signers"),
+    el("div", { class: "card-head" }, el("h3", {}, "Signers"),
       el("button", { class: "btn ghost sm", type: "button", onclick: () => { ui.tab = "members"; render(); } }, "Manage")),
     el("p", { class: "small muted" }, ruleText(state.g.t, state.g.n)),
     el("div", { class: "signer-list" }, seatIds().map((i) => el("span", { class: "signer" },
@@ -266,7 +266,7 @@ function signersCard() {
 function approvalsCard(list) {
   return el("section", { class: "card attention" },
     el("div", { class: "card-head card-pad", style: "padding-bottom:12px" },
-      el("h2", {}, list.length === 1 ? "A payment needs your approval" : list.length + " payments need your approval")),
+      el("h3", {}, list.length === 1 ? "A payment needs your approval" : list.length + " payments need your approval")),
     el("div", { class: "list" }, list.map((ss) => guard(approvalRow, ss))));
 }
 
@@ -298,7 +298,7 @@ function pendingCard() {
 
 const assetHead = (id, symbol, network) => el("div", { class: "asset-title" },
   el("span", { class: "coin-mark" }, icon(id)),
-  el("div", {}, el("h2", { id: "asset-" + id }, symbol), el("p", {}, network)));
+  el("div", {}, el("h3", { id: "asset-" + id }, symbol), el("p", {}, network)));
 
 function zecAsset(c) {
   const b = c && c.bal ? balanceNow(c.bal) : null;
@@ -379,7 +379,7 @@ export const movedNote = () => el("div", { class: "callout" }, "This wallet move
 function receiveCard() {
   const w = state.wallet;
   return el("section", { class: "card card-pad" },
-    el("div", { class: "card-head" }, el("h2", {}, "Receive"), el("span", { class: "badge ok plain" }, "Private address")),
+    el("div", { class: "card-head" }, el("h3", {}, "Receive"), el("span", { class: "badge ok plain" }, "Private address")),
     state.g.movedTo ? movedNote()
       : atCap() ? capNote()
       : el("p", { class: "small muted" }, "Share this address to receive " + receiveWhat()
@@ -412,8 +412,8 @@ function activity() {
   return [...sent, ...got].sort((a, b) => b.t - a.t);
 }
 
-function activityRows(list) {
-  const line = "border-top:1px solid var(--line)";
+// `line` is the rule above the rows: the card of the Activity section has no head to separate.
+function activityRows(list, line = "border-top:1px solid var(--line)") {
   if (!list.length) {
     return el("div", { class: "empty", style: line }, el("h3", {}, "No activity yet"),
       el("p", { class: "small" },
@@ -472,7 +472,7 @@ function approvalsTab() {
     const count = list.length + (Array.isArray(extra) ? extra.length : extra ? 1 : 0)
       + (lost ? rows.lost.length : 0);
     return el("section", { class: "card inbox", "aria-label": label },
-      el("div", { class: "card-head card-pad" }, el("h2", {}, label),
+      el("div", { class: "card-head card-pad" }, el("h3", {}, label),
         el("span", { class: "badge plain" }, String(count))),
       el("div", { class: "list" }, list.map((ss) => guard(sentRow, ss, flying)), extra, lost));
   }).filter(Boolean);
@@ -575,7 +575,7 @@ function inboxNote(rows) {
 }
 
 function activityTab() {
-  return el("section", { class: "card" }, el("div", { class: "card-head card-pad", style: "padding-bottom:12px" }, el("h2", {}, "All activity")), activityRows(activity()));
+  return el("section", { class: "card", style: "overflow:hidden" }, activityRows(activity(), ""));
 }
 
 function membersTab() {
@@ -588,7 +588,7 @@ function membersTab() {
         seatIds().map((i) => guard(memberRow, i)))),
     changeSignersCard(),
     el("section", { class: "card card-pad" },
-      el("h2", { style: "font-size:15px" }, "Invite link"),
+      el("h3", { style: "font-size:15px" }, "Invite link"),
       el("p", { class: "small muted" }, "Signers open this wallet on another device with this "
         + "invite link and their key share backup. The link contains the wallet secret, so share "
         + "it only with signers. " + senderNote("each signer")),
@@ -600,7 +600,7 @@ function membersTab() {
 function changeSignersCard() {
   const moving = !!state.g.movedTo;
   return el("section", { class: "card card-pad" },
-    el("h2", { style: "font-size:15px" }, "Add or remove signers"),
+    el("h3", { style: "font-size:15px" }, "Add or remove signers"),
     el("p", { class: "small muted" }, "The signers and the approval rule are part of the wallet key, so they cannot change in place. "
       + "To change them, create a new wallet with the signers you want, then move the funds to it."),
     el("div", {}, moving
@@ -643,14 +643,14 @@ function recoveryTab() {
   const risk = protectionRisk(state.g.t, state.g.n, seats.filter((x) => x.zec.has).length);
   return el("div", { class: "page", style: "gap:16px" },
     el("section", { class: "card card-pad" + (r.state === "missing" ? " attention" : "") },
-      el("div", { class: "card-head" }, el("h2", {}, r.label)),
+      el("div", { class: "card-head" }, el("h3", {}, r.label)),
       el("p", { class: "small muted" }, RECOVERY_LIMITS)),
     el("section", { class: "card card-pad" + (risk.here ? " attention" : "") },
-      el("div", { class: "card-head" }, el("h2", {}, risk.title)),
+      el("div", { class: "card-head" }, el("h3", {}, risk.title)),
       el("p", { class: "small muted" }, risk.detail),
       risk.here ? el("p", { class: "small" }, risk.here) : null),
     seats.some((x) => x.zec.has) ? el("section", { class: "card" },
-      el("div", { class: "card-head card-pad" }, el("h2", {}, "Your seats in this wallet")),
+      el("div", { class: "card-head card-pad" }, el("h3", {}, "Your seats in this wallet")),
       el("div", { class: "recovery-seats" },
         seats.filter((x) => x.zec.has).map((x) => guard(recoveryRow, x)))) : null,
     el("details", { class: "card card-pad recovery-lost" },
@@ -734,7 +734,7 @@ function checkedBadge() {
 function walletFacts() {
   const w = state.wallet, net = curNet();
   const address = addrHidden()
-    ? el("dd", {}, "Shown after your seat checks it against your key share.")
+    ? el("dd", {}, "Shown after your device checks it against its key share.")
     : el("dd", {}, el("div", { class: "addr-full" }, addrGroups(w.address)),
       el("div", { style: "margin-top:8px" }, copyBtn(w.address, "Copy address")));
   return [el("dl", { class: "kv" },
@@ -757,8 +757,8 @@ function technicalFacts() {
     usesV2(groupVersion()) ? [el("dt", {}, "Key setup"),
       el("dd", {}, "Built to ZIP 2005 (Proposed) so that funds can be recovered if quantum "
         + "computers break today's keys.")] : null,
-    signedMode(state.gid) ? [el("dt", {}, "Signed writes"), el("dd", {}, "Each signer signs the "
-      + "data it writes to this wallet. Zigs ignores data without a valid signature.")] : null);
+    signedMode(state.gid) ? [el("dt", {}, "Signed writes"), el("dd", {}, "Each device signs the "
+      + "data that it writes to this wallet. Zigs ignores data without a valid signature.")] : null);
 }
 
 // The box builds its content only while it is open: `ui.technical` holds the wallet that has it

@@ -21,6 +21,16 @@ assert.match(servers, /Unless local proving is on/, "and says when it sees them"
 assert.match(servers, /public keys of this wallet/, "Helius sees public keys");
 assert.match(servers, /never sees a secret key/, "no server sees a secret key");
 assert.doesNotMatch(servers, /never a key|the keys of this wallet/, "no loose word key");
+assert.match(servers, /sees which IP addresses open which wallet, and when data is sent/,
+  "the group server sees the IP addresses of each wallet and the time of each write");
+assert.match(servers, /sees the transactions that you send/, "the light-wallet server sees sends");
+assert.match(servers, /on testnet the Zigs light-wallet server sees only the Zigs Worker/,
+  "on testnet the Zigs node sees the Worker, not the device");
+assert.match(servers, /Worker is also the group server, so one operator sees the traffic of both/,
+  "one operator sees both");
+const backup = HELP.find(([question]) => /backup file/.test(question))[1];
+assert.match(backup, /download folder\. Zigs does not know where/, "the place is not known");
+assert.match(backup, /two files and two passphrases/, "a Solana part is a second file");
 console.log("ok  the answers");
 
 assert.equal(diagnosticsText([["Browser online", true], ["Devices joined", 3]]),

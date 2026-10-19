@@ -7,7 +7,7 @@ import { sec } from "./app-keystore.js";
 import { localSeats, seatIds } from "./app-seats.js";
 import { curChain, netName, readsMemos } from "./app-chain.js";
 import { toApprove } from "./app-groups.js";
-import { groupVersion, rejectedSeats, verifiedCount } from "./app-dkg.js";
+import { groupVersion, verifiedCount } from "./app-dkg.js";
 import { sol, solError, solFile, solOn, solPending, solUnsaved } from "./app-sol.js";
 import { copyBtn, el } from "./app-dom.js";
 import { HELP, diagnosticsText } from "./help-model.js";
@@ -41,7 +41,6 @@ function deviceFacts() {
     ["Devices joined", seatIds().filter((i) => state.seats[i]).length],
     ["Devices in this browser", here.length],
     ["Devices that checked the address", verifiedCount()],
-    ["Devices that rejected the wallet", rejectedSeats().length],
     ["Zcash backup files not saved", unsaved.length],
     ["Solana backup files not saved", solCount(() => solUnsaved().length)]];
 }
