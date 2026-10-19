@@ -243,7 +243,7 @@ export function lobby() {
   const listed = state.groups.length > 0;
   const body = listed
     ? [el("section", { class: "card" }, el("div", { class: "list" }, rows)),
-      el("section", { class: "card card-pad" }, joinWallet())]
+      el("section", { class: "card card-pad" }, joinWallet("h2"))]
     : [welcome(offOf({ db: !!db }, "why-create"), restoreBtn("btn ghost sm"))];
   const joins = [...joinLinks.keys()].map((cid) => guard(chatJoinCard, cid));
   return el("div", { class: "page" }, ...joins, head, ...body, chatsCard(),
@@ -359,7 +359,7 @@ function welcome(off, restoreLink) {
 // The form that opens a wallet from a pasted invite link. The field has no name and the handler
 // stops the submit first: the secret of the link never reaches a query string. The field has an
 // id, so a redraw keeps its text (saveFormState).
-function joinWallet() {
+function joinWallet(heading = "h3") {
   const bad = ui.joinBad, off = offOf({ db: !!db }, "why-join-wallet");
   const input = el("input", {
     class: "input", id: "join-link", "data-key": "join-link", type: "text", inputmode: "url",
@@ -376,7 +376,7 @@ function joinWallet() {
     focusAfter("join-link", true);
     render();
   };
-  return el("section", { class: "join" }, el("h3", {}, "Join a wallet"),
+  return el("section", { class: "join" }, el(heading, {}, "Join a wallet"),
     el("p", { class: "small muted", id: "join-help" },
       "Did someone send you an invite link? Paste it here to open the wallet."),
     el("form", { class: "join-row", onsubmit: submit },
