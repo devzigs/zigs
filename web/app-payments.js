@@ -255,6 +255,7 @@ export function isOpen(ss) {
 // document whose check still waits does not count as open yet, and neither does a proposal that
 // this browser sees from a sync far behind the chain.
 const PROPOSING = "The proposal of a payment is not complete yet. Wait a moment.";
+const REVIEWING = "This browser still builds the review of a payment. Wait a moment.";
 export const newSpend = (...args) => proposing(() => proposeNow(...args));
 /** Proposes the transaction that the Send review showed (prepareSpend), as it is. */
 export const proposePrepared = (prep, note) => proposing(() => proposeBuilt(prep, note));
@@ -318,7 +319,7 @@ export async function prepareSpend(payees, priority) {
   if (why) throw new Error(why);
   const gid = state.gid;
   readyToSpend(gid);
-  ui.proposing = true;
+  ui.proposing = "review";
   render();
   try {
     const kept = payees.map(keptPayee);
@@ -654,7 +655,7 @@ const OPEN_TEXT = "Finish or cancel the open payment, or wait until it expires."
 // a sync connects to the next server. A proposal on it would wait on the same server.
 const RECONNECT = "The light-wallet server stopped answering. " + WHEN_SYNCED;
 function holdBlocker() {
-  if (ui.proposing) return PROPOSING;
+  if (ui.proposing) return ui.proposing === "review" ? REVIEWING : PROPOSING;
   if (curChain()?.stalled) return RECONNECT;
   // ponytail: the engine does not know about unmined spends and would pick the same notes again.
   if (inFlight().length) return "A payment is waiting for its block. Send again in a minute.";

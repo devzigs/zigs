@@ -1,6 +1,6 @@
 // Receive and send dialogs.
 import {
-  MEMO_BYTES, memoBytes, memoError, memoShown, parsePayeeList, toZat, zatText,
+  MEMO_BYTES, memoBytes, memoError, parsePayeeList, toZat, zatText,
 } from "./payees.js";
 import { payeeRows, requestProblem } from "./requests.js";
 import { state, ui } from "./app-state.js";
@@ -9,14 +9,16 @@ import { Z } from "./app-engine.js";
 import { gkeys } from "./app-keystore.js";
 import { DRAFT_MS, draftLive, draftOf, emptyForm, reviewFresh } from "./payment-model.js";
 import { addrHidden, atCap, curChain, curNet, netName } from "./app-chain.js";
-import { act, addrGroups, copyBtn, el, money, normalized, onNetwork, qrBox } from "./app-dom.js";
+import {
+  act, addrGroups, copyBtn, el, memoRow, money, normalized, onNetwork, qrBox,
+} from "./app-dom.js";
 import {
   feeEstimate, inspectOf, newSpend, prepareSpend, PRIORITY_FACTOR, proposePrepared, recipientCheck,
   sendBlocker,
 } from "./app-payments.js";
 import { requestOf } from "./app-payreq.js";
 import { nameOf, recentNote, registry, resolveRecipient, zecName } from "./zns.js";
-import { render } from "./app-loop.js";
+import { focusAfter, render } from "./app-loop.js";
 import { capNote, receiveLimit, receiveWhat } from "./app-wallet.js";
 
 const MAX_PAYEES = 20;
@@ -362,13 +364,22 @@ function draftLine() {
   if (ui.draftFailed) return el("p", { class: "small faint" }, "This draft could not be saved on "
     + "this device. The form still works.");
   if (!readDraft(state.gid)) return null;
-  const discard = () => {
-    dropDraft(state.gid);
-    Object.assign(ui, { pay: null, note: "", priority: false });
-    render();
-  };
   return el("p", { class: "small faint" }, "Draft saved on this device for 24 hours. ",
-    el("button", { class: "btn ghost sm", type: "button", onclick: discard }, "Discard draft"));
+    el("button", { class: "btn ghost sm", type: "button",
+      onclick: (ev) => discardDraft(ev.currentTarget.form) }, "Discard draft"));
+}
+// Discard empties the typed fields too: a redraw keeps typed values (saveFormState), so they
+// would come back and the form would save them as a new draft. The focus goes to the first
+// recipient field.
+function discardDraft(form) {
+  dropDraft(state.gid);
+  for (const n of form.querySelectorAll("input[id]:not([type=checkbox]), textarea[id]")) {
+    n.value = "";
+  }
+  Object.assign(ui, { pay: null, note: "", priority: false });
+  freshForm();
+  focusAfter("INPUT:s-to-" + ui.pay[0].k + ":0", true);
+  render();
 }
 // Each close of Send and each change of wallet starts a new run: a build that ends after it
 // opens no review.
@@ -526,7 +537,7 @@ function reviewRow(p, i, n) {
     el("span", { class: "label" }, n > 1 ? "Recipient " + (i + 1) : "Recipient"),
     p.name ? el("p", { class: "small" }, zecName(p.name) + " gives this address:") : null,
     el("div", { class: "addr-full" }, addrGroups(p.to)), money(p.amount),
-    el("p", { class: "small muted" }, p.memo ? "Memo: " + memoShown(p.memo) : "No memo"));
+    memoRow("Memo", p.memo));
 }
 
 // Proposes the reviewed transaction after the guards of a new one: Send is not held, the decode

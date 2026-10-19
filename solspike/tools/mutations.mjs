@@ -1290,4 +1290,12 @@ export const MUTATIONS = [
     ["node", "web/test/approvals.mjs"],
     [patch("web/approvals-model.js", '  if (f.sendRefused) return "attention";\n', "")],
     /AssertionError/),
+  program("Z-discard-fields", "Discard draft leaves the typed fields, which come back",
+    ["web/app-send.js", "    n.value = \"\";\n", ""], APP_TEST, /and empties the typed fields/),
+  program("Z-chip-refused", "a refused send shows Ready to send",
+    ["web/app-dom.js", '  || (s.status === "complete" && !!sendRefusal(s));', ";"], APP_TEST,
+    /a refused send is not Ready to send/),
+  program("Z-reviewing", "the Send form says that a proposal runs while a review builds",
+    ["web/app-payments.js", '  ui.proposing = "review";', "  ui.proposing = true;"], APP_TEST,
+    /a review, no proposal/),
 ];

@@ -1576,6 +1576,7 @@ const sealed = (gid, rel, seat, fields, key, names = ["by", "sig"]) =>
     t.ui.proposing = true;
     assert.notEqual(named(t.sendDialog(), "button", "Review payment").attrs.disabled, undefined,
       "off while a proposal runs (S8)");
+    assert.match(t.sendBlocker(), /proposal of a payment is not complete yet/);
     t.ui.proposing = false;
 
     // Drafts: the typed form, sealed with the wallet key on this device, for 24 hours. A restored
@@ -1606,10 +1607,20 @@ const sealed = (gid, rel, seat, fields, key, names = ["by", "sig"]) =>
         other: { at: entry.at, box: "x" } }));
       t.sweepDrafts();
       assert.deepEqual(Object.keys(book()), ["other"], "an expired draft goes, a live one stays");
-      Object.assign(t.ui, { pay: [{ k: 2, to: "x", amt: "", memo: "" }], note: "", after: null });
+      Object.assign(t.ui, { pay: [{ k: 2, to: "x", amt: "", memo: "" }], note: "rent",
+        after: null });
       t.keepDraft();
-      named(t.sendDialog(), "button", "Discard draft").on.click();
+      // The page keeps typed values over a redraw (saveFormState), so Discard empties the fields.
+      const fields = [{ value: "x" }, { value: "rent" }];
+      named(t.sendDialog(), "button", "Discard draft").on.click({ currentTarget: { form: {
+        querySelectorAll: () => fields } } });
       assert.equal(book()[gidNow], undefined, "Discard deletes it");
+      assert.deepEqual(fields.map((f) => f.value), ["", ""], "and empties the typed fields");
+      assert.deepEqual([t.ui.note, t.ui.pay.map((r) => r.to)], ["", [""]], "a new form");
+      assert.deepEqual(t.wantFocus, { key: "INPUT:s-to-" + t.ui.pay[0].k + ":0", force: true },
+        "the focus goes to the first recipient field");
+      t.keepDraft();   // the click goes on to the form, which saves what it holds now
+      assert.equal(book()[gidNow], undefined, "the empty form saves no new draft");
       Object.assign(t.ui, { pay: [{ k: 3, to: "x", amt: "", memo: "" }],
         after: { pczt: "EXP1" } });
       t.keepDraft();
@@ -1665,6 +1676,16 @@ const sealed = (gid, rel, seat, fields, key, names = ["by", "sig"]) =>
         assert.doesNotMatch(textOf(t.sendDialog()), /Draft saved/);
         assert.equal(t.ui.pay[0].to, "", "nothing restored");
       }
+      // Forget deletes the drafts too: they are sealed with keys that go with the vault.
+      const vault = storage.get("zf-vault"), reload = location.reload;
+      location.reload = () => {};
+      try {
+        t.forgetVault();
+      } finally {
+        location.reload = reload;
+        if (vault !== undefined) storage.set("zf-vault", vault);
+      }
+      assert.equal(storage.has("zf-drafts"), false, "Forget deletes the sealed drafts");
       // A draft for the review below, which must delete it.
       Object.assign(t.ui, { pay: [{ k: 4, to: "utest1d", amt: "1", memo: "" }], after: null });
       t.keepDraft();
@@ -1715,6 +1736,8 @@ const sealed = (gid, rel, seat, fields, key, names = ["by", "sig"]) =>
         Object.assign(t.ui, { send: true, sendReview: null });
         const building = t.openReview([{ to: addr, amount: 5 }], "late");
         await sleep(20);
+        assert.match(t.sendBlocker(), /still builds the review of a payment/,
+          "while the review builds, Send says so: a review, no proposal");
         for (const press of documentOn.keydown) press({ key: "Escape" });
         release();
         await building;
@@ -1734,7 +1757,7 @@ const sealed = (gid, rel, seat, fields, key, names = ["by", "sig"]) =>
         // The review shows a memo as the drawer does: a character that hides text is replaced.
         t.ui.sendReview = { prep: { ...prep, payees: [{ ...prep.payees[0], memo: "a\u202eb" }] },
           note: "m" };
-        assert.match(textOf(drawn()), /Memo: a\ufffdb/);
+        assert.match(textOf(drawn()), /Memoa\ufffdb/);
         globalThis.document = realDocument;
         t.ui.sendReview = null;
         // Every close drops the review, so it never comes back over another payment: the scrim,
@@ -1868,6 +1891,8 @@ const sealed = (gid, rel, seat, fields, key, names = ["by", "sig"]) =>
     assert.match(textOf(why), /another id than the proposal/);
     assert.equal(t.refusedSend(otherId), true);
     assert.equal(bucket(otherId), "attention", "the inbox agrees with the drawer");
+    const unsent = { ...otherId, status: "complete", broadcastTxid: undefined };
+    assert.equal(textOf(t.statusChip(unsent)), "Check", "a refused send is not Ready to send");
     const cancelledOther = { ...otherId, id: "x2c", error: "Cancelled.", status: "cancelled",
       broadcastTxid: undefined };
     t.state.sessions.push(cancelledOther);
@@ -1883,6 +1908,11 @@ const sealed = (gid, rel, seat, fields, key, names = ["by", "sig"]) =>
     assert.equal(textOf(t.statusChip(sentOne)), "Check");
     assert.equal(bucket(sentOne), null,
       "the inbox: no approval here holds Send, so the Check state shows in Activity only");
+    const checkOther = { ...otherId, id: "x2d" };
+    t.state.sessions.push(checkOther);
+    assert.equal(textOf(t.statusChip(checkOther)), "Check");
+    assert.equal(bucket(checkOther), null, "a refused send in the Check state: no step, no row");
+    t.state.sessions.splice(t.state.sessions.indexOf(checkOther), 1);
     // The inbox for the other states: a proposal to approve, an expired one, a cancelled one, and
     // a document whose facts cannot be read, which never drops out of the list.
     tipAt(4500000);

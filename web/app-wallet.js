@@ -502,7 +502,8 @@ function inboxBucket(ss, held) {
   try {
     const end = ended(ss), step = finishStep(ss);
     return bucketOf({
-      sendRefused: !end && !ss.error && refusedSend(ss, step),
+      // In the Check state the drawer offers no step (nextAction): no row either.
+      sendRefused: !end && !ss.error && !expired(ss) && refusedSend(ss, step),
       landed: landed(ss), held: held.has(ss.id),
       check: !end && signingSeen(ss) && expired(ss),
       review: needsMyApproval(state.gid, ss), step, ended: end,
