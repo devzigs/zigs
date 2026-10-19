@@ -22,6 +22,7 @@ const patch = (file, from, to = "") => ({ file, from, to });
 const SOL_APP = ["node", "web/test/sol-app.mjs"];
 const SOL_CEREMONY = ["node", "web/test/sol-ceremony.mjs"];
 const UNIFIED = ["node", "web/test/unified-setup.mjs"];
+const APP_TEST = ["node", "web/test/app.mjs"];
 const AUTO_HINT = "  (c) => c.host.state.g?.solana === true && !c.host.state.g.movedTo,\n";
 const AUTO_DOCS = "(c) => !!c.loaded.solstart && !c.docs.solstart[1] && c.wait === 0,";
 const HINT_FIRST = '  await sdb.doc("groups/" + gid).update({ solana: true });\n' +
@@ -1277,4 +1278,24 @@ export const MUTATIONS = [
   program("C-settlement", "the commitment of a withdrawal hashes no settlement accounts",
     ["web/sol/prepare.js", 'const settled = recipient === null ? "" : SOL_INTERFACE + recipient;',
       'const settled = "";'], PREPARE_TEST, /AssertionError/),
+  program("P-menu-tab", "Tab leaves the open phone Menu",
+    ["web/app-shell.js", '  else if (ev.key === "Tab" && phone()) tabRound(ev);\n', ""], APP_TEST,
+    /Tab on the last item goes to Menu/),
+  program("P-menu-wide", "Tab goes round in the Menu also wider than a phone",
+    ["web/app-shell.js", 'else if (ev.key === "Tab" && phone()) tabRound(ev);',
+      'else if (ev.key === "Tab") tabRound(ev);'], APP_TEST, /wider than a phone, Tab moves/),
+  program("P-menu-inert", "the page behind the open phone Menu takes focus and taps",
+    ["web/app-shell.js",
+      '  for (const s of [".main", ".skip-link", ".logo"]) document.querySelector(s).inert = on;\n',
+      ""], UNIFIED, /keeps the page out of reach/),
+  program("P-menu-phone", "the open Menu keeps the page out of reach wider than a phone",
+    ["web/app-shell.js", "lockPage(!!ui.menu && phone());", "lockPage(!!ui.menu);"],
+    UNIFIED, /wider than a phone, the page stays in reach/),
+  program("P-menu-width", "the Menu stays open in a window wider than a phone",
+    ["web/app-shell.js", "  if (!ev.matches && ui.menu) closeMenu(false);\n", ""], APP_TEST,
+    /a wider window closes the Menu/),
+  program("P-menu-opaque", "the open phone Menu lets the page show through",
+    ["web/app.css", "overscroll-behavior: contain; background: var(--panel);",
+      "overscroll-behavior: contain; background: var(--sheet);"], UNIFIED,
+    /the phone menu is opaque/),
 ];

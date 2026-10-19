@@ -125,6 +125,7 @@ const proposal = (id, change = {}) => ({
 const labelled = (node, label) =>
   node.attrs?.["aria-label"] === label ||
   (node.kids ?? []).some((kid) => labelled(kid, label));
+const shellParts = { ".main": {}, ".skip-link": {}, ".logo": {} };
 function sideTree() {
   const real = globalThis.document;
   const nav = new Rec();
@@ -132,7 +133,8 @@ function sideTree() {
   const fake = { createElement: () => new Rec(), createElementNS: () => new Rec(),
     createTextNode: (text) => ({ text }) };
   const side = { classList: { toggle() {} } };
-  globalThis.document = { ...fake, getElementById: () => nav, querySelector: () => side };
+  globalThis.document = { ...fake, getElementById: () => nav,
+    querySelector: (sel) => shellParts[sel] ?? side };
   try {
     renderSide();
     return nav;
@@ -213,7 +215,15 @@ function emptyInbox() {
 // shows with two or more wallets.
 function sideMenu() {
   t.ui.menu = true;
-  sideTree().onclick({ target: { closest: () => ({}) } });
+  const wide = globalThis.matchMedia;
+  globalThis.matchMedia = () => ({ matches: true });
+  try { sideTree(); } finally { globalThis.matchMedia = wide; }
+  const out = () => [".main", ".skip-link", ".logo"].map((sel) => shellParts[sel].inert);
+  assert.deepEqual(out(), [true, true, true],
+    "the open Menu of a phone keeps the page out of reach");
+  const tree = sideTree();
+  assert.deepEqual(out(), [false, false, false], "wider than a phone, the page stays in reach");
+  tree.onclick({ target: { closest: () => ({}) } });
   assert.equal(t.ui.menu, false, "a pick in the side list closes the phone Menu");
   assert.ok(walletShown(), "the formed wallet shows its sections");
   assert.equal(t.state.sessionsLoaded, true, "the payments of the open wallet arrived");
@@ -294,6 +304,16 @@ function approvalCount(ctl) {
   assert.doesNotMatch(css, /^\.tabs? \{/m, "no tab bar comes back");
   assert.match(css, /^#side-nav \{[^}]*display: grid/m, "the sections stack");
   assert.match(css, /\.side\.menu-open #side-nav \{[^}]*overflow: auto/, "the phone menu scrolls");
+  assert.match(css, /\.side\.menu-open #side-nav \{[^}]*background: var\(--panel\)/,
+    "the phone menu is opaque");
+  assert.match(css, /body:has\(\.side\.menu-open\)::after \{[^}]*background: var\(--scrim\)/,
+    "and dims the page behind it");
+  assert.doesNotMatch(css, /\.btn:disabled[^{]*\{[^}]*opacity/,
+    "a disabled button keeps the contrast of its text");
+  const disabled = /\.btn:disabled, \.btn\.primary:disabled \{([^}]*)\}/.exec(css)?.[1] ?? "";
+  assert.match(disabled, /background: var\(--sunk\).*color: var\(--faint\)/s,
+    "faint on sunk, the pair that contrast.mjs checks");
+  assert.match(css, /\.btn\.ghost:hover:not\(:disabled\)/, "a disabled ghost button keeps still");
 }
 
 // ── The hint: version 3 testnet wallets only ──
