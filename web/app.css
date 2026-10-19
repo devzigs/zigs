@@ -672,3 +672,20 @@ body:has(.dialog), body:has(.drawer) { overflow: hidden; }
 
 /* The welcome card of an empty wallet list. */
 .welcome h2 { font-size: clamp(24px, 3.2vw, 32px); line-height: 1.15; letter-spacing: -0.035em; }
+
+/* On a narrow screen the actions of a seat row go under its name. */
+@media (max-width: 520px) {
+  .member { grid-template-columns: 36px minmax(0, 1fr); }
+  .member .m-actions { grid-column: 2; justify-content: flex-start; }
+}
+
+/* Recovery: the files and buttons of a seat go under its name at every width, so the name keeps
+   its column next to two parts. The cards keep the spacing of the other cards. */
+.recovery-row { grid-template-columns: 36px minmax(0, 1fr); padding-block: 12px; }
+.recovery-row .m-actions { grid-column: 2; justify-content: flex-start; }
+.recovery-seats > .recovery-row:first-child { border-top: 0; padding-top: 0; }
+.recovery-seats > .recovery-row:last-child { padding-bottom: 24px; }
+.card:has(> .recovery-seats) > .card-head { padding-bottom: 16px; }
+/* A closed details card would keep the grid gap of its hidden content. */
+.recovery-lost { display: block; padding-block: 12px; }
+.recovery-lost > p { margin-bottom: 12px; }

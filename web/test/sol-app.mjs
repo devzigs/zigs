@@ -117,7 +117,8 @@ assert.match(dialog.title, /Solana part of seat 1/);
 assert.equal(await dialog.save(PASS_S), true);
 assert.equal(solOf(gid, 1).backupSaved, true, "the saved file is marked, so the note stops asking");
 // A restored part came from a file, so it is marked as saved too.
-const restoredPart = { ...original, backupSaved: true };
+// A restore marks the part, so that Recovery says "restored from its file".
+const restoredPart = { ...original, backupSaved: true, restored: true };
 const solFile = saved.at(-1);
 assert.equal(solFile.filename, backupName("Backup solana", 1));
 assert.match(solFile.filename, /^zigs-Backup-solana-seat-1\.zigsbackup$/);
@@ -323,8 +324,9 @@ const zcashFile = saved.at(-1);
   await waitFor("the list", () => t.state.gid === null);
   await t.applyBackup(file3, true);
   assert.equal(t.state.gid, gid, "the restore opened the wallet");
-  const restored3 = { ...kept, backupSaved: true };
-  assert.deepEqual(solOf(gid, 3), restored3, "and restored the part of seat 3, marked as saved");
+  const restored3 = { ...kept, backupSaved: true, restored: true };
+  assert.deepEqual(solOf(gid, 3), restored3,
+    "and restored the part of seat 3, marked as saved and as restored");
 }
 
 // ── Leaving a wallet closes its Solana part: no watch of its documents stays open ──
