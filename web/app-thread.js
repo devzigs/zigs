@@ -294,10 +294,9 @@ export function chatInviteCard(cid) {
     el("p", { class: "small muted" }, "Send this link to one person through a private channel. "
       + "Until they open it, anyone who has the link can join the chat. "
       + senderNote("your contact")),
-    el("div", { class: "addr-box" }, el("span", { class: "hex nowrap" }, link),
-      copyBtn(link, "Copy link", "btn sm primary"),
+    el("div", { class: "row-actions" }, copyBtn(link, "Copy link", "btn sm primary"),
       copyBtn(chatMessage(link), "Copy message", "btn sm")),
-    secretQr(link, "chat"));
+    secretQr(link, "chat", true));
 }
 
 function dmItem(m, cid) {

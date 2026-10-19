@@ -1729,8 +1729,10 @@ const sealed = (gid, rel, seat, fields, key, names = ["by", "sig"]) =>
         assert.match(textOf(shown), new RegExp("The chain does not show the recipients, the "
           + "amounts or the memos\\. Every device of this wallet can read them and the note, in "
           + "the shared history of the wallet\\. So can anyone who has its invite "
-          + "link\\. A device that leaves the wallet later keeps that history\\. A memo goes on "
-          + "chain with the payment, and its recipient can read it too\\."),
+          + "link\\. A device that is left out when the devices change keeps the viewing key and "
+          + "the messages of this wallet\\. It can still read this history and each later payment "
+          + "of this wallet, but nothing of the new wallet\\. A memo goes on chain with the "
+          + "payment, and its recipient can read it too\\."),
         "the review says who can read the payment");
         assert.ok(named(shown, "button", "Propose payment"), "a match can be proposed");
         t.ui.sendReview = { prep: { ...prep, t: { ...prep.t, pczt: "REV3" } }, note: "x" };
@@ -1979,6 +1981,12 @@ const sealed = (gid, rel, seat, fields, key, names = ["by", "sig"]) =>
     t.state.sessions.push(move);
     assert.equal(t.moveState(tipAt(4500000)).session, move);
     assert.equal(t.moveState(tipAt(4503453)).propose, true, "the expired move goes again");
+    const moveCard = () => all(t.walletView(null, null),
+      (x) => /^card card-pad/.test(x.className ?? "") && /Changing devices|This wallet moved/
+        .test(textOf(x)))[0];
+    const cancelIn = (card) => all(card, (x) => x.tag === "button" && textOf(x) === "Cancel move");
+    t.ui.tab = "overview";
+    assert.equal(cancelIn(moveCard()).length, 1, "Cancel while no move payment is open");
     // The move sends the Zcash funds only. An empty Zcash balance counts as of the last sync and
     // closes nothing. Before a sync the page knows only that a device sent the move. A wallet that
     // can have a Solana part says that such a part stays, and the move can still be done.
@@ -1993,10 +2001,6 @@ const sealed = (gid, rel, seat, fields, key, names = ["by", "sig"]) =>
     const SOL_STAYS = new RegExp(" If this wallet has a Solana part, it does not move this way: "
       + "check it in its Solana section\\.$");
     const solKey = "confirmednet:" + t.state.gid, pinned = t.signPins[solKey];
-    const moveCard = () => all(t.walletView(null, null),
-      (x) => /^card card-pad/.test(x.className ?? "") && /Changing devices|This wallet moved/
-        .test(textOf(x)))[0];
-    t.ui.tab = "overview";
     delete t.signPins[solKey];
     try {
       assert.equal(t.solOn(), false, "no Solana part: the wallet is not confirmed on testnet");
@@ -2006,6 +2010,11 @@ const sealed = (gid, rel, seat, fields, key, names = ["by", "sig"]) =>
       assert.equal(m.done, true);
       assert.match(textOf(moveCard()), /^This wallet moved/);
       assert.doesNotMatch(textOf(moveCard()), /Closed|is closed/, "no Closed badge or text");
+      assert.equal(cancelIn(moveCard()).length, 0, "no Cancel once the move payment exists");
+      const incoming = emptied();
+      incoming.bal.pending = 5;
+      assert.match(t.moveState(incoming).text, /Move the Zcash funds to it\./,
+        "incoming funds keep the move open");
       const more = () => tipAt(4500000, new Set(["realtx"]));
       assert.match(t.moveState(more()).text, /Move the Zcash funds to it\. Like any/,
         "more funds came in: move them too");
@@ -2156,6 +2165,13 @@ const sealed = (gid, rel, seat, fields, key, names = ["by", "sig"]) =>
         "the engine's list, from 2 days of blocks before the expiry, the first block included");
       assert.match(line, /Each id opens testnet\.zecblock\.com in a new tab\. That site is not/,
         "the ids say what the explorer sees");
+      const sentBefore = history.splice(0);
+      at(4503500);
+      const noIds = textOf(t.expiryLine(signedA));
+      assert.match(noIds, /0 transactions of this wallet went on chain/);
+      assert.doesNotMatch(noIds, /Each id opens/, "no ids, no explorer note");
+      history.push(...sentBefore);
+      at(4503500);
       assert.deepEqual(labels(t.nextAction(signedA, null, none)), ["Propose again"]);
       // The engine says that it expired before its height does, and the finished id is not the
       // approved one: the drawer offers Propose again, and the inbox lists no refused send.
@@ -2455,9 +2471,16 @@ const sealed = (gid, rel, seat, fields, key, names = ["by", "sig"]) =>
         + "it up to one day after the proposal, and a standard wallet sets it 40 blocks ahead\\. "
         + "So the expiry height can show that Zigs made this payment\\. Few wallets pay a "
         + "priority fee, so a priority fee can mark a payment too\\."));
-      assert.match(blockStep(landedA), new RegExp("View in explorer opens testnet\\.zecblock\\.com "
-        + "in a new tab\\. That site is not Zigs: it sees the transaction id that you open and "
-        + "your IP address\\."));
+      const sendStepOf = (ss) => all(t.sessionLayer(ss), (x) => /^step /.test(x.className ?? "")
+        && textOf(x).includes("Sent to the network"))[0];
+      assert.match(textOf(sendStepOf(landedA)), new RegExp("View in explorer ↗View in explorer "
+        + "opens testnet\\.zecblock\\.com in a new tab\\. That site is not Zigs: it sees the "
+        + "transaction id that you open and your IP address\\."),
+      "the explorer note sits next to its link");
+      const seesOf = (ss) => all(t.sessionLayer(ss), (x) => x.tag === "div"
+        && textOf(x).startsWith("What the chain sees"))[0];
+      assert.doesNotMatch(textOf(seesOf(landedA)), /View in explorer opens/,
+        "What the chain sees does not repeat it");
       const testnetG = t.state.g;
       t.state.g = { ...testnetG, network: "mainnet" };
       try {
@@ -4762,6 +4785,19 @@ const sealed = (gid, rel, seat, fields, key, names = ["by", "sig"]) =>
     assert.match(text, /On chain · sent to the address you gave Ana/);
     assert.match(text, /View transaction opens testnet\.zecblock\.com in a new tab\. That site/,
       "the chat says what the explorer sees");
+    {
+      // A chat with no explorer link: no received message, and no sent one that a block holds.
+      const [received, sent] = [t.acct.received, t.personal.sent];
+      t.acct.received = [];
+      t.personal.sent = sent.filter((r) => r.txid === "S1");
+      try {
+        assert.doesNotMatch(textOf(t.contactView()), /View transaction opens/,
+          "no explorer link, no explorer note");
+      } finally {
+        t.acct.received = received;
+        t.personal.sent = sent;
+      }
+    }
     assert.equal(text.includes("✓"), false, "an on-chain message is never marked verified");
     assert.equal(marks(view).filter((m) => m.startsWith("On chain · sent")).length, 4);
     assert.match(text, /Payment request/);

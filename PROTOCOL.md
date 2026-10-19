@@ -521,15 +521,16 @@ Each chosen device signs automatically, after these checks:
 ## 8. Changing signers
 
 The signers and the threshold are part of the wallet key, so they cannot change in place. Zigs
-creates a replacement wallet and moves the funds with one normal, approved payment.
+creates a replacement wallet and moves the Zcash funds with one normal, approved payment. A Solana
+part of the wallet does not move this way.
 
 ```mermaid
 flowchart TD
   A["Old wallet<br/>signers A, B, C, any 2 of 3"] -->|Change signers| B["New wallet<br/>signers A, B, D, any 2 of 3<br/>new key ceremony, new address"]
   A -.->|stores only the new wallet id, never its secret| B
-  B --> C["The old wallet proposes one payment of its whole balance to the new address"]
+  B --> C["The old wallet proposes one payment of its spendable Zcash balance to the new address"]
   C --> D["2 of 3 old signers approve.<br/>Approvers who are in the new wallet check its address"]
-  D --> E["Old wallet closed.<br/>C keeps the old history but sees nothing of the new wallet"]
+  D --> E["The old wallet stays, with its address and history.<br/>C can still read it, but sees nothing of the new wallet"]
 ```
 
 ## 9. Keys on the device

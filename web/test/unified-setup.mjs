@@ -18,7 +18,7 @@ const rig = await loadRig();
 // The page modules need the stub page of the rig, so they load after it.
 const { SOL_DISCLOSURE, solPlanned, solServed } = await import("../app-sol.js");
 const { inviteMessage, joinText, onLink } = await import("../app-setup.js");
-const { chatMessage, inviteLink } = await import("../app-links.js");
+const { chatLink, chatMessage, inviteLink } = await import("../app-links.js");
 const { chatInviteCard } = await import("../app-thread.js");
 const { chats } = await import("../app-keystore.js");
 const { chat: roomChat } = await import("../app-messages.js");
@@ -391,6 +391,16 @@ function explorerTexts(chain) {
   assert.ok(pageText().includes(EXPLORER_NOTE), "so does the Activity card of the Overview");
   assert.match(pageText(), /faucet ↗\. That site is not Zigs: it sees the address that you paste/,
     "the empty ZEC card says what the faucet sees");
+  // Six newer payments push the received row out of the 6 rows of the Overview.
+  const sessions = t.state.sessions;
+  t.state.sessions = [1, 2, 3, 4, 5, 6].map((i) => ({ id: "x" + i, pczt: "x", amount: 1,
+    status: "cancelled", error: "Cancelled.", createdAt: Date.now() - i,
+    payees: [{ to: "utest1x", amount: 1 }] }));
+  try {
+    assert.ok(!pageText().includes(EXPLORER_NOTE), "the Overview note follows its 6 rows");
+  } finally {
+    t.state.sessions = sessions;
+  }
   const row = t.chain.received[0];
   t.setChain({ ...t.chain, received: [] });
   assert.ok(!pageText().includes(EXPLORER_NOTE), "no note without a received payment");
@@ -411,34 +421,42 @@ function explorerTexts(chain) {
     t.setChain(chain);
   }
 }
-// The invite link sits in the disclosure of its QR code, which starts closed. While it is closed,
-// neither its summary nor any attribute shows the wallet secret. Copy link stays on the page and
-// copies the whole link.
-function inviteTexts() {
-  const tab = t.ui.tab, link = inviteLink(t.state.gid), secret = link.split("#")[1];
+// A link with a secret sits in the disclosure of its QR code, which starts closed. While it is
+// closed, neither its summary nor any attribute shows the secret. Copy link stays outside the
+// disclosure and copies the whole link. `where` names the card in the messages.
+function hiddenLink(page, link, where) {
+  const secret = link.split("#")[1], say = (m) => where + ": " + m;
   const nav = Object.getOwnPropertyDescriptor(globalThis, "navigator");
-  t.ui.tab = "members";
+  const box = findNode(page, (n) => n.className === "qr-toggle");
+  assert.ok(!("open" in box.attrs) && !box.open, say("the disclosure is closed by default"));
+  assert.equal(textOf(box.kids[0]), "Show link and QR code", say("the summary shows no link"));
+  assert.ok(textOf(box).includes(link), say("the link text sits inside the disclosure"));
+  const outside = (n) => (n === box ? "" : n.text ?? n.kids.map(outside).join(""));
+  assert.ok(!outside(page).includes(link), say("no link text outside the disclosure"));
+  const leaks = (n) => [n.className, n.innerHTML, ...Object.values(n.attrs ?? {})]
+    .some((v) => String(v ?? "").includes(secret)) || (n.kids ?? []).some(leaks);
+  assert.ok(!leaks(page), say("no attribute holds the wallet secret"));
+  const copy = findNode(page, (n) => !!n.on?.click && textOf(n) === "Copy link");
+  assert.ok(copy && !byText(box, "Copy link"),
+    say("Copy link stays on the page, outside the disclosure"));
+  const copied = [];
   try {
-    const page = pageTree(), box = findNode(page, (n) => n.className === "qr-toggle");
-    assert.ok(!("open" in box.attrs) && !box.open, "the disclosure is closed by default");
-    assert.equal(textOf(box.kids[0]), "Show link and QR code", "the summary shows no link");
-    assert.ok(textOf(box).includes(link), "the link text sits inside the disclosure");
-    const outside = (n) => (n === box ? "" : n.text ?? n.kids.map(outside).join(""));
-    assert.ok(!outside(page).includes(link), "no link text outside the disclosure");
-    const leaks = (n) => [n.className, n.innerHTML, ...Object.values(n.attrs ?? {})]
-      .some((v) => String(v ?? "").includes(secret)) || (n.kids ?? []).some(leaks);
-    assert.ok(!leaks(page), "no attribute holds the wallet secret");
-    const copy = findNode(page, (n) => !!n.on?.click && textOf(n) === "Copy link");
-    assert.ok(copy && !byText(box, "Copy link"),
-      "Copy link stays on the page, outside the disclosure");
-    const copied = [];
     Object.defineProperty(globalThis, "navigator", { configurable: true,
       value: { clipboard: { writeText: async (x) => { copied.push(x); } } } });
     copy.on.click({ currentTarget: copy });   // the copy runs before the first await
-    assert.deepEqual(copied, [link], "Copy link copies the full invite link");
   } finally {
     if (nav) Object.defineProperty(globalThis, "navigator", nav);
     else delete globalThis.navigator;
+  }
+  assert.deepEqual(copied, [link], say("Copy link copies the full invite link"));
+}
+// The Devices section shows the invite link that way.
+function inviteTexts() {
+  const tab = t.ui.tab;
+  t.ui.tab = "members";
+  try {
+    hiddenLink(pageTree(), inviteLink(t.state.gid), "Devices");
+  } finally {
     t.ui.tab = tab;
   }
 }
@@ -621,6 +639,7 @@ const SENDER = new RegExp("asks for a user name and a password before Zigs opens
   + "(each person who joins|each person who opens it|your contact) to open the "
   + "link in Safari or Chrome\\. The browser of a chat app or a private window can delete the key");
 assert.match(pageText(), SENDER, "the invite card of a wallet");
+hiddenLink(pageTree(), inviteLink(gid), "the setup card");
 {
   const cid = "c0ffee00c0ffee00c0ff";
   chats.list[cid] = { key: "ab".repeat(32), member: "m", at: Date.now() };
@@ -630,6 +649,7 @@ assert.match(pageText(), SENDER, "the invite card of a wallet");
   try {
     const card = chatInviteCard(cid);
     assert.match(textOf(card), SENDER, "the invite card of a chat");
+    hiddenLink(card, chatLink(cid), "the chat card");
     assert.match(textOf(card), /The browser of your contact asks/);
   } finally {
     globalThis.document = real;

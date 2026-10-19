@@ -174,6 +174,11 @@ id that you open, and the time, so it can link them. The page sends no referrer.
   id of a transaction or an account there. The Solana tab links to it from the Add SOL line, the
   result of a proposal, the proposal account and the cancels of old proposals (S16 of
   [docs/hackathon-release.md](docs/hackathon-release.md)). A line next to these links says so.
+- **Zcash, the other links:** the ids of an expired payment in the payment panel, **View payment**
+  on a memo in Messages, and **View transaction** in a chat of the personal account open the same
+  Zcash explorer with the transaction id. The web app says what the explorer sees next to each
+  Zcash link, or under the list that holds it. It says what the faucet sees next to each faucet
+  link (Zcash and Solana).
 
 ## ZNS names (testnet)
 

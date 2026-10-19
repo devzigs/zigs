@@ -86,7 +86,7 @@ function sentSince({ from, txids }) {
   const link = (id) => el("a", { href: curNet().explorer + id, target: "_blank", rel: "noopener" },
     short(id, 10));
   return [el("p", { class: "small" }, head, ...txids.slice(0, 8).flatMap((id) => [" ", link(id)])),
-    el("p", { class: "small" }, explorerText(curNet(), "Each id"))];
+    txids.length ? el("p", { class: "small" }, explorerText(curNet(), "Each id")) : null];
 }
 
 function checkWarnings(rc) {
@@ -395,12 +395,18 @@ function timeline(ss, refused) {
       el("p", {}, ss.final ? "Proof built and the whole transaction checked." : ss.status === "proving" && !proofStalled(ss) ? "A signer's browser is building the proof · " + elapsed(ss.provingAt) + " of about a minute." : "Any signer can build the zero-knowledge proof once the payment is signed.")),
     tl(ss.broadcastTxid ? "done" : ss.broadcastError ? "bad" : ss.final ? "now" : "", "Sent to the network",
       el("div", { style: "display:grid;gap:8px" },
-        ss.broadcastTxid ? el("p", {}, when(ss.broadcastAt) + " · ", el("a", { href: curNet().explorer + ss.broadcastTxid, target: "_blank", rel: "noopener" }, "View in explorer ↗"))
+        ss.broadcastTxid ? sentLine(ss)
           : el("p", {}, ss.final ? "Any signer can send the finished transaction." : "Available after the proof."),
         ss.broadcastError && !ss.broadcastTxid
           ? el("div", { class: "callout bad" }, ss.broadcastError) : null)),
     tl(blockStep(ss), "In a block", el("p", {}, blockText(ss))));
 }
+
+// The time of the send and its explorer link, with what that site sees.
+const sentLine = (ss) => [el("p", {}, when(ss.broadcastAt) + " · ", el("a", {
+  href: curNet().explorer + ss.broadcastTxid, target: "_blank", rel: "noopener",
+}, "View in explorer ↗")),
+el("p", { class: "small" }, explorerText(curNet(), "View in explorer"))];
 
 // The last step, from this browser's synced blocks only: a sent mark does not say that a block
 // holds the payment, and before a sync the page does not know.
@@ -432,7 +438,7 @@ export function txDetails(ss) {
       el("div", { style: "margin-top:8px" }, copyBtn(ss.final.tx_hex, "Copy hex"))));
 }
 
-// What an observer of the chain learns from a sent payment, and what the explorer link shows.
+// What an observer of the chain learns from a sent payment.
 function chainSees() {
   const hidden = () => el("span", { class: "redact", role: "img", "aria-label": "Hidden" });
   const row = (name) => [el("dt", {}, name), el("dd", {}, hidden())];
@@ -442,8 +448,7 @@ function chainSees() {
     el("dl", { class: "kv", style: "grid-template-columns:110px minmax(0,1fr)" },
       ["Recipients", "Amounts", "Signers", "Approval rule"].flatMap(row)),
     el("p", { class: "small faint" }, "The number of actions is public. So is the fee."));
-  sees.append(el("p", { class: "small faint" }, EXPIRY_PUBLIC),
-    el("p", { class: "small" }, explorerText(curNet(), "View in explorer")));
+  sees.append(el("p", { class: "small faint" }, EXPIRY_PUBLIC));
   return sees;
 }
 // The expiry window of the engine (wasm/src/expiry.rs) against the 40 blocks of the standard

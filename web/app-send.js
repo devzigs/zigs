@@ -560,12 +560,14 @@ function reviewDialog() {
       onclick: act(() => proposeReviewed(ui.sendReview)) }, "Propose payment") : null));
 }
 
-// Who can read the payment (PRIVACY.md, Signers and invite links). The memo sentence is the one
-// of the Send form.
+// Who can read the payment (PRIVACY.md, Signers and invite links; PROTOCOL.md 8). The memo
+// sentence is the one of the Send form.
 const REVIEW_READS = "The chain does not show the recipients, the amounts or the memos. Every "
   + "device of this wallet can read them and the note, in the shared history of the "
-  + "wallet. So can anyone who has its invite link. A device that leaves the wallet later keeps "
-  + "that history. A memo goes on chain with the payment, and its recipient can read it too.";
+  + "wallet. So can anyone who has its invite link. A device that is left out when the devices "
+  + "change keeps the viewing key and the messages of this wallet. It can still read this "
+  + "history and each later payment of this wallet, but nothing of the new wallet. A memo goes "
+  + "on chain with the payment, and its recipient can read it too.";
 
 // The fee as the engine decoded it (none when the decode does not match), the approvals, the note.
 function reviewFacts(ins, note) {
