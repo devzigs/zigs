@@ -126,6 +126,9 @@ const SOL_PAY = ["node", "web/test/sol-pay.mjs"];
 const WORKER_TEST = ["node", "solspike/test/worker.test.mjs"];
 const TRANSFER_TEST = ["node", "solspike/test/transfer.test.mjs"];
 const PREPARE_TEST = ["node", "solspike/test/prepare.test.mjs"];
+// The watch of the Solana start documents in web/app-sol.js (solAttach).
+const START_WATCH = '  unsubGroup.push(sdb.collection(base + "/solstart").onSnapshot((snap) => {\n';
+const START_DOC = '    solStartDoc = snap.docs.find((d) => d.id === "1")?.data() ?? null;\n';
 const LIVE_LINE = "    .filter((ss) => !ENDED.has(ss.status) && SESSION_ID.test(ss.id))\n";
 const REJECTION = /Missing expected rejection/;
 const TRUTH = /true !== false|false !== true/;
@@ -2048,6 +2051,15 @@ export const MUTATIONS = [
   program("H-sol-none", "the diagnostics say not read yet for a wallet with no start document",
     ["web/app-sol.js", "    solStartRead = gid;\n", ""], ["node", "web/test/sol-config.mjs"],
     /a wallet with no start document has no Solana part/),
+  program("B-layer-inside-filter", "the Tab loop counts the controls before the focus",
+    ["web/app-loop.js", "  return at < 0 ? 0 : all.slice(0, at).filter(isStop).length;",
+      "  return at < 0 ? 0 : all.slice(0, at).length;"], APP_TEST,
+    /Tab from it after a disabled control goes to the next stop/),
+  program("H-sol-early", "the diagnostics say not added before the start documents arrive",
+    ["web/app-sol.js", START_WATCH + START_DOC + "    solStartRead = gid;\n",
+      "  solStartRead = gid;\n" + START_WATCH + START_DOC],
+    ["node", "web/test/sol-config.mjs"],
+    /before the start documents arrive, the diagnostics say not read yet/),
   program("L-move-sol-always", "Change devices names a Solana part for a wallet with none",
     ["web/app-shell.js", '+ from.t + " approvals." + (solOn() ?',
       '+ from.t + " approvals." + (true ?'], UNIFIED,

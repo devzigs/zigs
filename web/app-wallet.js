@@ -450,7 +450,7 @@ const HISTORY = {
     + "Overview."],
 };
 const SOL_READING = ["Reading the Solana transactions",
-  "Solana payments of this wallet show after the first read."];
+  "Solana payments of this wallet show after Zigs reads them."];
 // The Solana rows of a wallet with a Solana part are not read yet, or not all checked yet.
 const solReading = (pick) => pick !== "zec" && solPart()
   && (solActivity() === null || solActivityWaits());

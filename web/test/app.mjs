@@ -5457,6 +5457,20 @@ async function runAcctSync() {
     press(true);
     assert.equal(document.activeElement, c,
       "Shift+Tab from it before the first stop goes to the last");
+    // A control before it that is no stop does not count: Tab and Shift+Tab still reach the stops
+    // next to it.
+    for (const [what, off] of [["a disabled control", control({ disabled: true })],
+      ["a control that is not shown", control({ getClientRects: () => [] })]]) {
+      open(a, off, quiet, c);
+      from(quiet);
+      press(false);
+      assert.equal(document.activeElement, c,
+        "Tab from it after " + what + " goes to the next stop");
+      from(quiet);
+      press(true);
+      assert.equal(document.activeElement, a,
+        "Shift+Tab from it after " + what + " goes to the stop before");
+    }
     // The Close button of an open banner is a stop after the controls of the layer.
     const close = control();
     banner = { querySelectorAll: () => [close] };

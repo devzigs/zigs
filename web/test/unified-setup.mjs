@@ -850,7 +850,7 @@ function activityHistory(ctl, state, draw) {
   ctl.loaded = { ...loaded, solsessions: false };
   for (const pick of ["sol", "all"]) {
     const unread = draw(pick);
-    assert.match(unread, /Reading the Solana transactions.*show after the first read/,
+    assert.match(unread, /Reading the Solana transactions.*show after Zigs reads them/,
       "an unread Solana list says that it reads: " + pick);
     assert.doesNotMatch(unread, /No activity yet/,
       "an unread Solana list does not say that nothing is there: " + pick);

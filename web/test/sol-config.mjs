@@ -99,6 +99,20 @@ function pageText(t) {
   config.down = true;
   const rig = await loadRig();
   const { t, waitFor } = rig;
+  // The page gets the Solana start documents only after `startDocs` ends, so the test can read
+  // the diagnostics before they arrive.
+  let arrive;
+  const startDocs = new Promise((ok) => {
+    arrive = ok;
+  });
+  const collection = rig.db.collection;
+  rig.db.collection = (path) => {
+    const ref = collection(path);
+    if (!path.endsWith("/solstart")) return ref;
+    const onSnapshot = (next, onError) =>
+      ref.onSnapshot((snap) => startDocs.then(() => next(snap)), onError);
+    return { ...ref, onSnapshot };
+  };
   const gid = await rig.wallet({ name: "Down" });
   await waitFor("the wallet", () => t.state.gid === gid && t.state.g);
   assert.equal(t.solOn(), true, "a testnet wallet is on");
@@ -113,6 +127,10 @@ function pageText(t) {
     // no start, so the diagnostics name no Solana part and count nothing of it.
     const { diagnostics } = await import("../app-help.js");
     await waitFor("the start watch", () => rig.live("groups/" + gid + "/solstart") > 0);
+    await sleep(50);
+    assert.match(diagnostics(), /^Solana part: not read yet$/m,
+      "before the start documents arrive, the diagnostics say not read yet");
+    arrive();
     await sleep(50);
     assert.equal(t.sol, null, "the module is not loaded yet");
     const none = diagnostics();
