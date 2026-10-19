@@ -118,6 +118,7 @@ const proposal = (id, change = {}) => ({
   status: "collecting",
   by: 1,
   intent: intentHex("createNonce", { blockhash: "11".repeat(32) }),
+  createdAt: Date.now(),
   message: "ab".repeat(8),
   feeSig: "00".repeat(64),
   ...change,
@@ -247,6 +248,7 @@ function approvalCount(ctl) {
   assert.equal(count(two, { a: { 1: {} } }), 2, "seats 2 and 3 can still approve a");
   assert.equal(count(two, { a: { 1: {}, 2: {}, 3: {} } }), 1, "every seat approved a");
   assert.equal(count([proposal("d", { intent: "zz" })]), 0, "a proposal the app cannot show");
+  assert.equal(count([proposal("x", { createdAt: 1 })]), 0, "an expired proposal: no Approve");
   const old = proposal("e", { feeSig: undefined });
   assert.equal(count([old]), 0, "a proposal from before the fee keys");
   const only3 = { host: { ...ctl.host, canWriteAs: (i) => i === 3 } };

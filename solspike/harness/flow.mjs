@@ -30,7 +30,8 @@ export const sessions = (page) =>
       kind: el.dataset.kind,
       state: el.dataset.state,
       result: el.querySelector('[data-sol="result"]')?.textContent ?? null,
-      error: el.querySelector(".bad")?.textContent ?? null,
+      // The error line of the card: a failed step of the stepper is ".step.bad".
+      error: el.querySelector(".bad:not(.step)")?.textContent ?? null,
     })),
   );
 

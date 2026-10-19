@@ -1282,6 +1282,6 @@ export const MUTATIONS = [
     /the rule of the count/),
   program("W-steps-outcome", "a transaction that failed on chain shows as executed",
     ["web/sol/payview.js",
-      '  if (ss.status === "sent") return ss.outcome === "failed" ? "bad" : "done";',
+      '  if (ss.status === "sent" && ss.outcome !== "failed") return "done";',
       '  if (ss.status === "sent") return "done";'], SOL_PAY, /failed on chain/),
 ];

@@ -3,7 +3,7 @@
 // restore, and (payview.js) the funding, the proposals and their approvals.
 // `data-sol` marks each value for the headless checks. `host.el` builds the elements, `act` wraps
 // a button action (act of app-dom.js).
-import { showable } from "./approve.js";
+import { approvalClosed, showable } from "./approve.js";
 import { agreement, seatProgress, started, startBlock } from "./ceremony.js";
 import { base58 } from "./docs.js";
 import { checkLine, provesLocally } from "./localprove.js";
@@ -73,15 +73,16 @@ export function setupSummary(c) {
 }
 
 /**
- * The open Solana proposals that a seat of this browser can still approve (S6): the tab lists
- * them (the documents agree and the part is not stopped), the app can show and sign them, and
- * a seat that holds a share and a signing key gave no approval for them yet.
+ * The open Solana proposals that a seat of this browser can still approve (S6): the section lists
+ * them (the documents agree and the part is not stopped), they did not expire, the app can show
+ * and sign them, and a seat that holds a share and a signing key gave no approval for them yet.
  */
 function pendingList(c) {
   if (stopOf(c) || agreement(c).state !== "agree") return [];
   const seats = writerSeats(c);
   const open = (ss) =>
     ss.status === "collecting" &&
+    !approvalClosed(ss) &&
     showable(ss) &&
     !beforeFee(ss) &&
     seats.some((i) => !c.commits[ss.id]?.[i]);

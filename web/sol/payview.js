@@ -702,28 +702,31 @@ function expiredLine(c, ss) {
 
 // The steps of a proposal, from what this page tracks: the parts of the session (a package comes
 // after t approvals), its status and the outcome of the sent transaction (resultLine gives its
-// slot). A session can fail at any step: the step that failed shows "!". No finality is tracked.
+// slot). A session that stopped (failed, failed on chain, or expired before its approvals) shows
+// "!" on the first step that is not done. No finality is tracked.
 function approvalsStep(ss, count, t) {
   if (count >= t || ss.package) return "done";
-  if (ss.status === "collecting") return approvalClosed(ss) ? "bad" : "now";
-  return ss.status === "failed" ? "bad" : "";
+  return ss.status === "collecting" ? "now" : "";
 }
 function signedStep(ss) {
   if (ss.signature) return "done";
-  if (ss.status === "signing") return "now";
-  return ss.status === "failed" && ss.package ? "bad" : "";
+  return ss.status === "signing" ? "now" : "";
 }
 function lastStep(ss) {
-  if (ss.status === "sent") return ss.outcome === "failed" ? "bad" : "done";
-  if (ss.status === "failed") return ss.signature ? "bad" : "";
+  if (ss.status === "sent" && ss.outcome !== "failed") return "done";
   return ss.status === "signed" ? "now" : "";
 }
+const stopped = (ss) =>
+  ss.status === "failed" ||
+  (ss.status === "sent" && ss.outcome === "failed") ||
+  (ss.status === "collecting" && approvalClosed(ss));
+
 /** The states of the steps after "Proposed": the approvals, the signature, the execute. */
-export const stepStates = (ss, count, t) => [
-  approvalsStep(ss, count, t),
-  signedStep(ss),
-  lastStep(ss),
-];
+export function stepStates(ss, count, t) {
+  const states = [approvalsStep(ss, count, t), signedStep(ss), lastStep(ss)];
+  const at = stopped(ss) ? states.findIndex((s) => s !== "done") : -1;
+  return states.map((s, i) => (i === at ? "bad" : s));
+}
 
 function stepsOf(c, ss) {
   const { el } = c.host,

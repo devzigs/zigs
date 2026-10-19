@@ -750,6 +750,9 @@ const proposedWithdrawal = async (recipient = base58(TO)) => {
   assert.deepEqual(states({ status: "failed" }), ["bad", "", ""], "failed before the package");
   assert.deepEqual(states({ status: "failed", package: "P" }, 2), ["done", "bad", ""]);
   assert.deepEqual(states({ status: "failed", ...parts }, 2), ["done", "done", "bad"]);
+  assert.deepEqual(states({ status: "failed" }, 2), ["done", "bad", ""],
+    "t approvals and no package: the signing stopped");
+  assert.deepEqual(states({ status: "collecting", expiry: 1 }, 2), ["done", "bad", ""]);
   const said = "Recipient, asset and amount are public.";
   assert.equal(textOf(one("withdraw-public")), said, "the text of ZOLANA.md section 2");
   Object.assign(one("withdraw-to"), { value: base58(TO) });
