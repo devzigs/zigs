@@ -510,6 +510,8 @@ step("a read of a wallet that closed shows no banner and writes no count");
   assert.match(rows["What it does"], /hides the amount, but it shows the owner key of the payee/);
   assert.equal(rows["Program address of the group"], base58(G.group.pda));
   assert.equal(rows.Amount, "0.002 SOL");
+  assert.match(textOf(marked("amount-" + id)[0]), /^Private payment 0\.002 SOL /,
+    "the amount that the checker bound, above the rows");
   const fees = "0.000005 SOL at the proposal, 0.000010162 SOL at the execute.";
   assert.equal(rows["Network fees"], fees, "two signatures and the tree fee at the execute");
   const rent =
@@ -736,7 +738,8 @@ const proposedWithdrawal = async (recipient = base58(TO)) => {
   const stepsOf = (n) => findAll(n, (x) => x.attrs["data-sol"] === "steps-" + id)[0]
     .kids.map((x) => x.attrs.class);
   assert.deepEqual(stepsOf(card), ["step done", "step now", "step ", "step "], "the steps");
-  assert.match(textOf(one("review-amount")), /^Public withdrawal 0\.002 SOL /,
+  assert.match(textOf(findAll(card, (n) => n.attrs["data-sol"] === "amount-" + id)[0]),
+    /^Public withdrawal 0\.002 SOL /,
     "the amount that the checker bound, above the rows");
   // The steps come from the parts of the session; a failure marks the step where it stopped.
   const states = (patch, n = 0) => stepStates({ ...ssOf(id), ...patch }, n, 2);
@@ -753,6 +756,12 @@ const proposedWithdrawal = async (recipient = base58(TO)) => {
   assert.deepEqual(states({ status: "failed" }, 2), ["done", "bad", ""],
     "t approvals and no package: the signing stopped");
   assert.deepEqual(states({ status: "collecting", expiry: 1 }, 2), ["done", "bad", ""]);
+  assert.deepEqual(stepStates({ ...ssOf(id), status: "signed", ...parts }, 2, 2, true),
+    ["done", "done", "bad"], "the automatic execute stopped after its tries");
+  const outView = solView({ ...c, sessions: [{ ...ssOf(id), status: "signed", ...parts }],
+    tries: { [id]: EXECUTE_TRIES }, host: { ...c.host, el: node } }, (fn) => fn, {});
+  assert.deepEqual(stepsOf(outView), ["step done", "step done", "step done", "step bad"],
+    "the card: a person must press Try the execute again");
   const said = "Recipient, asset and amount are public.";
   assert.equal(textOf(one("withdraw-public")), said, "the text of ZOLANA.md section 2");
   Object.assign(one("withdraw-to"), { value: base58(TO) });
@@ -768,7 +777,9 @@ const proposedWithdrawal = async (recipient = base58(TO)) => {
   await approve(c, ssOf(id), 1);
   await approve(c, ssOf(id), 2);
   await waitStatus(id, "sent");
-  const sentCard = findAll(solView({ ...c, host: { ...c.host, el: node } }, (fn) => fn, {}),
+  // No approval record here: the package alone gives t approvals.
+  const sentCard = findAll(solView({ ...c, commits: {}, host: { ...c.host, el: node } },
+    (fn) => fn, {}),
     (n) => n.attrs["data-session"] === id)[0];
   assert.deepEqual(stepsOf(sentCard), ["step done", "step done", "step done", "step done"]);
   const sentSteps = findAll(sentCard, (x) => x.attrs["data-sol"] === "steps-" + id)[0];

@@ -577,18 +577,18 @@ function reviewBlock(c, ss, review) {
     el("dd", { "data-sol": "review" }, value),
   ]);
   const list = el("dl", { class: "kv", "data-sol": "review-" + ss.id }, rows);
-  return PAYMENT_KINDS.has(review.intent.kind) ? [reviewHero(c, review), list] : list;
+  return PAYMENT_KINDS.has(review.intent.kind) ? [reviewHero(c, ss, review), list] : list;
 }
 
 // The amount of a payment as the checker of this device answered it, above its rows.
-function reviewHero(c, review) {
+function reviewHero(c, ss, review) {
   const { el } = c.host,
     { said } = review,
     withdraw = review.intent.kind === "withdraw";
   const amount = withdraw ? said.withdrawn : sum(said.paid);
   return el(
     "div",
-    { class: "sol-hero", "data-sol": "review-amount" },
+    { class: "sol-hero", "data-sol": "amount-" + ss.id },
     el("span", { class: "label" }, withdraw ? "Public withdrawal" : "Private payment"),
     el("strong", { class: "sol-amount" }, solText(amount)),
     el("span", { class: "small muted" }, "Solana Devnet: test SOL only. The fees are below."),
@@ -721,10 +721,13 @@ const stopped = (ss) =>
   (ss.status === "sent" && ss.outcome === "failed") ||
   (ss.status === "collecting" && approvalClosed(ss));
 
-/** The states of the steps after "Proposed": the approvals, the signature, the execute. */
-export function stepStates(ss, count, t) {
+/**
+ * The states of the steps after "Proposed": the approvals, the signature, the execute. `out`:
+ * the automatic execute stopped after its tries, so the execute waits for a person.
+ */
+export function stepStates(ss, count, t, out = false) {
   const states = [approvalsStep(ss, count, t), signedStep(ss), lastStep(ss)];
-  const at = stopped(ss) ? states.findIndex((s) => s !== "done") : -1;
+  const at = out || stopped(ss) ? states.findIndex((s) => s !== "done") : -1;
   return states.map((s, i) => (i === at ? "bad" : s));
 }
 
@@ -733,7 +736,8 @@ function stepsOf(c, ss) {
     t = c.host.state.g.t;
   // A package is made from t approvals, also when this page holds none of their records.
   const count = ss.package ? t : Math.min(Object.keys(c.commits[ss.id] ?? {}).length, t);
-  const [approvals, signed, last] = stepStates(ss, count, t);
+  const out = ss.status === "signed" && (c.tries?.[ss.id] ?? 0) >= EXECUTE_TRIES;
+  const [approvals, signed, last] = stepStates(ss, count, t, out);
   const step = (cls, title, text) =>
     el(
       "div",

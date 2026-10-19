@@ -455,7 +455,7 @@ function approvalsTab() {
     const list = rows[id], extra = solExtra(sol, id);
     const lost = id === "attention" ? lostNote(rows.lost) : null;
     if (!list.length && !extra && !lost) return null;
-    const count = list.length + (extra ? (id === "review" ? solPending() : 1) : 0)
+    const count = list.length + (Array.isArray(extra) ? extra.length : extra ? 1 : 0)
       + (lost ? rows.lost.length : 0);
     return el("section", { class: "card inbox", "aria-label": label },
       el("div", { class: "card-head card-pad" }, el("h2", {}, label),
