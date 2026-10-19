@@ -38,6 +38,7 @@ import {
   PROVER_TEXT,
   SHOWN,
   approveSeats,
+  stepStates,
 } from "../sol/payview.js";
 import {
   heldLamports,
@@ -320,6 +321,13 @@ step("propose creates the proposal account first; no screen before the reads of 
   chain.accounts.set(address, stored);
   await waitFor("the account read again", () => reviewOf(c, ssOf(id), 2).ok, 30000);
   assert.equal(buttons(), 1, "the Approve button comes with the review");
+  // A seat with a share but no signing key here gets no button, and the card says why.
+  const noKey = solView({ ...c, host: { ...c.host, el: node, canWriteAs: () => false } },
+    (fn) => fn, {});
+  const keyless = findAll(noKey, (n) => n.attrs["data-session"] === id)[0];
+  assert.equal(findAll(keyless, (n) => String(n.attrs["data-sol"]).startsWith("approve-")).length,
+    0, "a seat with no signing key gets no Approve button");
+  assert.match(textOf(keyless), /cannot sign for seat 2\./, "and the card says why");
   // A document that waits for its signature check is a wait too: no alert and no button.
   c.sessWait += 1;
   assert.equal(reviewOf(c, ssOf(id), 2).waiting, true, "a check of the documents is a wait");
@@ -509,6 +517,8 @@ step("a read of a wallet that closed shows no banner and writes no count");
   assert.match(rows["What it does"], /hides the amount, but it shows the owner key of the payee/);
   assert.equal(rows["Program address of the group"], base58(G.group.pda));
   assert.equal(rows.Amount, "0.002 SOL");
+  assert.match(textOf(marked("amount-" + id)[0]), /^Private payment 0\.002 SOL /,
+    "the amount that the checker bound, above the rows");
   const fees = "0.000005 SOL at the proposal, 0.000010162 SOL at the execute.";
   assert.equal(rows["Network fees"], fees, "two signatures and the tree fee at the execute");
   const rent =
@@ -731,7 +741,34 @@ const proposedWithdrawal = async (recipient = base58(TO)) => {
   });
   const one = (mark) => findAll(view, (n) => n.attrs["data-sol"] === mark)[0];
   const card = findAll(view, (n) => n.attrs["data-session"] === id)[0];
-  assert.match(textOf(card), /Withdraw to a public address/, "the card of the session");
+  assert.match(textOf(card), /Public SOL withdrawal/, "the card of the session");
+  const stepsOf = (n) => findAll(n, (x) => x.attrs["data-sol"] === "steps-" + id)[0]
+    .kids.map((x) => x.attrs.class);
+  assert.deepEqual(stepsOf(card), ["step done", "step now", "step ", "step "], "the steps");
+  assert.match(textOf(findAll(card, (n) => n.attrs["data-sol"] === "amount-" + id)[0]),
+    /^Public withdrawal 0\.002 SOL /,
+    "the amount that the checker bound, above the rows");
+  // The steps come from the parts of the session; a failure marks the step where it stopped.
+  const states = (patch, n = 0) => stepStates({ ...ssOf(id), ...patch }, n, 2);
+  const parts = { package: "P", signature: "S" };
+  assert.deepEqual(states({ status: "collecting" }, 1), ["now", "", ""]);
+  assert.deepEqual(states({ status: "collecting", expiry: 1 }), ["bad", "", ""], "expired");
+  assert.deepEqual(states({ status: "signing", package: "P" }, 2), ["done", "now", ""]);
+  assert.deepEqual(states({ status: "signed", ...parts }, 2), ["done", "done", "now"]);
+  assert.deepEqual(states({ status: "sent", ...parts, outcome: "failed" }, 2),
+    ["done", "done", "bad"], "failed on chain");
+  assert.deepEqual(states({ status: "failed" }), ["bad", "", ""], "failed before the package");
+  assert.deepEqual(states({ status: "failed", package: "P" }, 2), ["done", "bad", ""]);
+  assert.deepEqual(states({ status: "failed", ...parts }, 2), ["done", "done", "bad"]);
+  assert.deepEqual(states({ status: "failed" }, 2), ["done", "bad", ""],
+    "t approvals and no package: the signing stopped");
+  assert.deepEqual(states({ status: "collecting", expiry: 1 }, 2), ["done", "bad", ""]);
+  assert.deepEqual(stepStates({ ...ssOf(id), status: "signed", ...parts }, 2, 2, true),
+    ["done", "done", "bad"], "the automatic execute stopped after its tries");
+  const outView = solView({ ...c, sessions: [{ ...ssOf(id), status: "signed", ...parts }],
+    tries: { [id]: EXECUTE_TRIES }, host: { ...c.host, el: node } }, (fn) => fn, {});
+  assert.deepEqual(stepsOf(outView), ["step done", "step done", "step done", "step bad"],
+    "the card: a person must press Try the execute again");
   const said = "Recipient, asset and amount are public.";
   assert.equal(textOf(one("withdraw-public")), said, "the text of ZOLANA.md section 2");
   Object.assign(one("withdraw-to"), { value: base58(TO) });
@@ -747,6 +784,13 @@ const proposedWithdrawal = async (recipient = base58(TO)) => {
   await approve(c, ssOf(id), 1);
   await approve(c, ssOf(id), 2);
   await waitStatus(id, "sent");
+  // No approval record here: the package alone gives t approvals.
+  const sentCard = findAll(solView({ ...c, commits: {}, host: { ...c.host, el: node } },
+    (fn) => fn, {}),
+    (n) => n.attrs["data-session"] === id)[0];
+  assert.deepEqual(stepsOf(sentCard), ["step done", "step done", "step done", "step done"]);
+  const sentSteps = findAll(sentCard, (x) => x.attrs["data-sol"] === "steps-" + id)[0];
+  assert.match(textOf(sentSteps), /Approvals · 2 of 2/, "a package counts t approvals");
   const landed = chain.landed.find((x) => x.signature === ssOf(id).txId);
   assert.ok(landed, "the execute of the withdrawal landed");
   assert.ok(landed.message.includes(TO), "the execute names the recipient");

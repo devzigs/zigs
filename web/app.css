@@ -350,6 +350,18 @@ a.row-item { text-decoration: none; }
 .step.done .tick { background: var(--ok); border-color: var(--ok); color: var(--panel); }
 .step.now .tick { border-color: var(--accent); color: var(--accent-text); box-shadow: 0 0 0 4px var(--accent-soft); }
 .step.bad .tick { background: var(--bad); border-color: var(--bad); color: var(--panel); }
+/* The Solana section: its ids and links (88 characters, no space) wrap on a phone. */
+.sol-view { min-width: 0; overflow-wrap: anywhere; }
+.sol-view h4 { margin: 4px 0 0; font-size: 14px; font-weight: 600; }
+/* A Solana proposal: the same steps, smaller, and the amount above its approval screen. */
+.sol-steps .step { padding-bottom: 12px; }
+.sol-steps .step:last-child { padding-bottom: 0; }
+.step-text { display: grid; gap: 2px; min-width: 0; align-self: center; }
+.sol-hero { display: grid; gap: 4px; padding-bottom: 12px; border-bottom: 1px solid var(--line); }
+.sol-amount {
+  font-size: 28px; font-weight: 600; letter-spacing: -0.02em; font-variant-numeric: tabular-nums;
+  overflow-wrap: anywhere;
+}
 .step h3 { font-size: 14.5px; letter-spacing: -0.01em; padding-top: 4px; }
 .step p { color: var(--muted); font-size: 13px; }
 .seat-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 10px; }

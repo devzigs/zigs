@@ -3,15 +3,13 @@
 // restore, and (payview.js) the funding, the proposals and their approvals.
 // `data-sol` marks each value for the headless checks. `host.el` builds the elements, `act` wraps
 // a button action (act of app-dom.js).
-import { showable } from "./approve.js";
 import { agreement, seatProgress, started, startBlock } from "./ceremony.js";
 import { base58 } from "./docs.js";
 import { checkLine, provesLocally } from "./localprove.js";
-import { payCards } from "./payview.js";
+import { SHOWN, approveLater, approveSeats, payCards, titleOf } from "./payview.js";
 import { feeMismatch, feeOf } from "./fee.js";
-import { writerSeats } from "./gate.js";
+import { signingBlock } from "./gate.js";
 import { holdsShare, remoteStop, solOf, stopOf } from "./secrets.js";
-import { beforeFee } from "./sessions.js";
 
 const ADD_TEXT =
   "A Solana program owns the funds of the group at a program address, which is public and links " +
@@ -72,21 +70,23 @@ export function setupSummary(c) {
   };
 }
 
-/**
- * The open Solana proposals that a seat of this browser can still approve (S6): the tab lists
- * them (the documents agree and the part is not stopped), the app can show and sign them, and
- * a seat that holds a share and a signing key gave no approval for them yet.
- */
-export function pendingCount(c) {
-  if (stopOf(c) || agreement(c).state !== "agree") return 0;
-  const seats = writerSeats(c);
-  const open = (ss) =>
-    ss.status === "collecting" &&
-    showable(ss) &&
-    !beforeFee(ss) &&
-    seats.some((i) => !c.commits[ss.id]?.[i]);
-  return c.sessions.filter(open).length;
+// The cards of the section (the first SHOWN sessions) that `keep` takes, while the documents
+// agree and the part is not stopped. One signing check serves them all: it reads every document.
+function shownWhere(c, keep) {
+  if (stopOf(c) || agreement(c).state !== "agree") return [];
+  const block = signingBlock(c);
+  return (c.sessions ?? []).slice(0, SHOWN).filter((ss) => keep(c, ss, block));
 }
+/** The Solana proposals that wait for a seat of this browser (S6): the cards with Approve. */
+const pendingList = (c) => shownWhere(c, (_, ss, block) => approveSeats(c, ss, block).length > 0);
+export const pendingCount = (c) => pendingList(c).length;
+/** The proposals that a seat here can approve once this device has read them (still loading). */
+export const loadingCount = (c) => shownWhere(c, approveLater).length;
+/** The proposals older than the cards that the section shows: no card and no count has them. */
+export const olderCount = (c) => Math.max(0, (c.sessions ?? []).length - SHOWN);
+/** The same proposals as rows of the Approvals inbox: id, title and the proposing seat. */
+export const pendingRows = (c) =>
+  pendingList(c).map((ss) => ({ id: ss.id, title: titleOf(ss), by: ss.by }));
 
 function startCard(c, act, actions) {
   const { el, localSeats } = c.host,
@@ -324,7 +324,7 @@ export function solView(c, act, actions) {
   const stopped = !!stopOf(c);
   return el(
     "section",
-    { class: "card card-pad", style: "display:grid;gap:12px" },
+    { class: "card card-pad sol-view", style: "display:grid;gap:12px" },
     el(
       "div",
       { class: "card-head" },
