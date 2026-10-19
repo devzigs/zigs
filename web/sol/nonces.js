@@ -4,6 +4,9 @@
 //  1. The nonces are saved with the digest of the message before the commit is published.
 //  2. When the share is made, the nonces are deleted, the digest is marked used and the share is
 //     kept, all in one save, before the share is published. If the save fails, nothing goes out.
+//     The read of the nonces, the share and that save run under one lock across the tabs of the
+//     browser (shareOnce): a nonce that signs two signing packages breaks the once-only rule of
+//     FROST.
 //  3. A made share that was not published is published again. The nonces are never used again.
 //  4. A digest that made a share is used: no second approval of it, whatever the session. A seat
 //     that approved and did not sign can approve the same bytes again in a new session (new
@@ -21,20 +24,25 @@ export const usedDigest = (c, seat, digest) => digest in part(c, seat, "used");
 /** The made share { share, digest } of seat `seat` that is not published yet, or undefined. */
 export const pendingShare = (c, seat, sid) => part(c, seat, "pending")[sid];
 
-// One save at a time: each change reads the object, changes one key and writes it whole.
-let chain = Promise.resolve();
-const serial = (run) => {
-  const next = chain.then(run, run);
-  chain = next.catch(() => {});
-  return next;
-};
+// Each change runs under the lock of the secrets, after this tab took what storage holds now, as
+// the Zcash nonces do (app-payments.js). The secrets are one record that each tab writes whole, so
+// two tabs that change it at once undo each other, and a nonce that one tab burned comes back.
+// ponytail: the other putSol writes (ceremony, backup, localprove) and the Zcash writes take no
+// lock, so a stale tab can still write old records back. Upgrade: send putSol through this lock,
+// with a held variant for the calls inside it.
+const locked = (c, run) =>
+  c.host.exclusive("secrets", async () => {
+    await c.host.takeStored();
+    return run();
+  });
 
 const without = (map, key) => Object.fromEntries(Object.entries(map).filter(([k]) => k !== key));
 
-async function save(c, seat, make, failure) {
-  const saved = await serial(() => putSol(c.host, c.gid, seat, make()));
-  if (!saved) throw new Error(failure);
+// Inside the lock only: the lock is not reentrant, so a step that holds it saves with `put`.
+async function put(c, seat, make, failure) {
+  if (!(await putSol(c.host, c.gid, seat, make()))) throw new Error(failure);
 }
+const save = (c, seat, make, failure) => locked(c, () => put(c, seat, make, failure));
 
 /**
  * Saves the nonces of an approval, and with them the (first nullifier, salt) pair of a private
@@ -70,18 +78,44 @@ export function approvedBodies(c) {
   return [...seen.values()];
 }
 
-/** The share is made: delete the nonces, mark the digest used, keep the share. One save. */
+const SPEND_FAILED = "Could not save the used nonce, so the signature share was not sent.";
+const DROP_FAILED = "Could not delete the nonces of an ended session.";
+// The share is made: delete the nonces, mark the digest used, keep the share. One save.
+const spent = (c, seat, sid, entry, share) => () => ({
+  nonces: without(part(c, seat, "nonces"), sid),
+  used: { ...part(c, seat, "used"), [entry.digest]: sid },
+  pending: { ...part(c, seat, "pending"), [sid]: { share, digest: entry.digest } },
+});
+const dropped = (c, seat, sid) => () => ({ nonces: without(part(c, seat, "nonces"), sid) });
+
+/** Saves a made share as spent (rule 2) on its own. shareOnce does it inside its lock. */
 export const spendNonces = (c, seat, sid, entry, share) =>
-  save(
-    c,
-    seat,
-    () => ({
-      nonces: without(part(c, seat, "nonces"), sid),
-      used: { ...part(c, seat, "used"), [entry.digest]: sid },
-      pending: { ...part(c, seat, "pending"), [sid]: { share, digest: entry.digest } },
-    }),
-    "Could not save the used nonce, so the signature share was not sent.",
-  );
+  save(c, seat, spent(c, seat, sid, entry, share), SPEND_FAILED);
+
+/**
+ * Makes the share of seat `seat` for session `sid` at most once in this browser, also across its
+ * tabs. Under the lock, with what storage holds now, it reads the nonces, calls `make(entry)` (no
+ * network) and saves the spend before it returns { share, digest } to publish. null: the nonces
+ * are used or gone, a made share waits (the reactor publishes it), or `make` is not ready (null).
+ * A throw of `make` deletes the nonces and returns { refused }. A failed save throws: nothing goes
+ * out.
+ */
+export const shareOnce = (c, seat, sid, make) =>
+  locked(c, async () => {
+    if (pendingShare(c, seat, sid)) return null;
+    const entry = savedNonces(c, seat, sid);
+    if (!entry) return null;
+    let made;
+    try {
+      made = make(entry);
+    } catch (refused) {
+      await put(c, seat, dropped(c, seat, sid), DROP_FAILED);
+      return { refused };
+    }
+    if (made === null) return null;
+    await put(c, seat, spent(c, seat, sid, entry, made.share), SPEND_FAILED);
+    return made;
+  });
 
 /** The share is in the store: forget it. */
 export const clearPending = (c, seat, sid) =>
@@ -93,10 +127,4 @@ export const clearPending = (c, seat, sid) =>
   );
 
 /** Deletes the nonces of session `sid` that were never used (the session ended without them). */
-export const dropNonces = (c, seat, sid) =>
-  save(
-    c,
-    seat,
-    () => ({ nonces: without(part(c, seat, "nonces"), sid) }),
-    "Could not delete the nonces of an ended session.",
-  );
+export const dropNonces = (c, seat, sid) => save(c, seat, dropped(c, seat, sid), DROP_FAILED);

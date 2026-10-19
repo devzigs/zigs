@@ -22,6 +22,7 @@ const patch = (file, from, to = "") => ({ file, from, to });
 const SOL_APP = ["node", "web/test/sol-app.mjs"];
 const SOL_CEREMONY = ["node", "web/test/sol-ceremony.mjs"];
 const UNIFIED = ["node", "web/test/unified-setup.mjs"];
+const NONCE_TABS = ["node", "web/test/sol-nonce-tabs.mjs"];
 const AUTO_HINT = "  (c) => c.host.state.g?.solana === true && !c.host.state.g.movedTo,\n";
 const AUTO_DOCS = "(c) => !!c.loaded.solstart && !c.docs.solstart[1] && c.wait === 0,";
 const HINT_FIRST = '  await sdb.doc("groups/" + gid).update({ solana: true });\n' +
@@ -758,8 +759,22 @@ export const MUTATIONS = [
     [patch(SOL_SESSION, "  stopOf(c) ? undefined : c.host.localSeats()", "  c.host.localSeats()")],
     /a stopped wallet has none/),
   sessions("S-nonces-kept", "the nonces stay after the share is made",
-    ["nonces", '      nonces: without(part(c, seat, "nonces"), sid),\n',
-      '      nonces: part(c, seat, "nonces"),\n'], /the nonces went before the publish/),
+    ["nonces", '  nonces: without(part(c, seat, "nonces"), sid),\n',
+      '  nonces: part(c, seat, "nonces"),\n'], /the nonces went before the publish/),
+  mutant("S-tabs-lock", "two tabs of one seat sign with one nonce at once", NONCE_TABS,
+    [patch("web/sol/nonces.js", '  c.host.exclusive("secrets", async () => {',
+      '  ((_name, run) => run())("secrets", async () => {')],
+    /one nonce makes one share across the tabs/),
+  mutant("S-tabs-take", "a tab signs from its own copy, not from what storage holds", NONCE_TABS,
+    [patch("web/sol/nonces.js", "    await c.host.takeStored();\n", "")],
+    /one nonce makes one share across the tabs/),
+  mutant("S-tabs-kept", "a share that waits is made again", NONCE_TABS,
+    [patch("web/sol/nonces.js", "    if (pendingShare(c, seat, sid)) return null;\n", "")],
+    /a kept share is not made/),
+  mutant("S-tabs-refused", "a refused share keeps its nonces", NONCE_TABS,
+    [patch("web/sol/nonces.js",
+      "      await put(c, seat, dropped(c, seat, sid), DROP_FAILED);\n", "")],
+    /and deletes the nonces/),
   sessions("S-digest-used", "the digest is not marked used when the share is made",
     ["nonces", 'used: { ...part(c, seat, "used"), [entry.digest]: sid },',
       'used: part(c, seat, "used"),'], /digest used|digest is used|true !== false|false !== true/),

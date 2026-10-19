@@ -13,7 +13,7 @@ import { agreement } from "./ceremony.js";
 import { CLUSTER, base58 } from "./docs.js";
 import { signingBlock, writerSeats } from "./gate.js";
 import { bytesOf, chainHex, decodeIntent, wireBase64 } from "./intent.js";
-import { clearPending, dropNonces, pendingShare, savedNonces, spendNonces } from "./nonces.js";
+import { clearPending, pendingShare, savedNonces, shareOnce } from "./nonces.js";
 import { BLOCKHASH_MS, REREAD_MS, deviceSeen, inputsOf, showable, stampSeen } from "./approve.js";
 import { PAYMENT_EXPIRED, maybeExecute, pastExpiry } from "./execute.js";
 import { solOf, stopOf } from "./secrets.js";
@@ -184,23 +184,20 @@ function shareAnswer(c, ss, i, { entry, round, seen }) {
   return c.W.sol_approval_share(wasm.intent, wasm.pins, wasm.snapshot, chain, text);
 }
 
+// The read of the chain comes before the lock of shareOnce, and the network writes after it, so a
+// slow server holds no other step of the secrets.
 async function makeShare(c, ss, i) {
-  const entry = savedNonces(c, i, ss.id);
   // A read that fails is tried again by the reactor; only a refusal ends the session.
   const seen = isPayment(ss) ? await deviceSeen(c, ss) : null;
-  let made;
-  try {
+  const made = await shareOnce(c, i, ss.id, (entry) => {
     const round = roundOf(c, ss, i, entry);
-    if (round === null) return;
-    made = J(shareAnswer(c, ss, i, { entry, round, seen }));
-  } catch (e) {
-    await dropNonces(c, i, ss.id);
-    await failSession(c, ss, "A signer did not sign: " + errorText(e));
-    throw e;
+    return round === null ? null : J(shareAnswer(c, ss, i, { entry, round, seen }));
+  });
+  if (made?.refused) {
+    await failSession(c, ss, "A signer did not sign: " + errorText(made.refused));
+    throw made.refused;
   }
-  // The nonces go in the same save that keeps the share. If it fails, nothing is published.
-  await spendNonces(c, i, ss.id, entry, made.share);
-  await publishShare(c, ss, i, { share: made.share, digest: made.digest });
+  if (made) await publishShare(c, ss, i, { share: made.share, digest: made.digest });
 }
 
 async function shareOf(c, ss, i) {
