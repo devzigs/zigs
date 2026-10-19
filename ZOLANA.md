@@ -454,6 +454,9 @@ Devnet key):
 - All three programs have the upgrade authority `2kgbLowv…`. That address is a point on Ed25519, so
   it is an ordinary key pair, not a program address of a multisig. On Devnet one key can replace the
   pool.
+- Tree 0 can run out of nullifier PDA rent (error 7044, `InsufficientNullifierPdaRent`) until the
+  forester closes the PDAs; on 19 October 2026 it held only its rent minimum (204,256,640
+  lamports). The demo-day check is a simulated transact.
 
 **6.2 P1 result, 13 October 2026** (scratch crate outside the repo, `frost-ed25519 =2.2.0`):
 
