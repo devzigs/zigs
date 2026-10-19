@@ -1471,7 +1471,7 @@ export const MUTATIONS = [
     APP_TEST, /a later error part keeps the done steps/),
   program("S-finish-landed", "a landed payment offers a step",
     ["web/app-drawer.js", "  if (!mayAct() || landed(ss)) return null;",
-      "  if (!mayAct()) return null;"], APP_TEST, /a landed payment offers no/),
+      "  if (!mayAct()) return null;"], APP_TEST, /no Send again for a payment on chain/),
   program("S-cancel-landed", "a landed payment offers Cancel",
     ["web/app-drawer.js", "expired(ss)\n  || landed(ss);", "expired(ss);"], APP_TEST,
     /a landed payment offers no Cancel/),
