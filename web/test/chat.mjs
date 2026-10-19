@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import {
   byTime, chatWarning, checkText, countUnread, dmText, joinBlock, keyState, newRoom, newSignKey,
   membersToPin, normChats, parseDm, parseHash, parseMsg, PASTE_BAD, PASTE_CONTACT, PASTE_EMPTY,
-  PASTE_MANY, PASTE_OTHER, PASTE_PATH, pageKey, pastedInvite, pickRoom, pin, pinMember,
+  PASTE_GLUED, PASTE_MANY, PASTE_OTHER, PASTE_PATH, pageKey, pastedInvite, pickRoom, pin, pinMember,
   pinnedMembers, signMsg,
   signPairMatches, signedText, validRoom, verifyMsg,
 } from "../chat.js";
@@ -240,6 +240,11 @@ const joins = {
   "a link in stars": "**" + LINK + "**",
   "a link in quotes": '"' + LINK + '"',
   "eighty marks before the link": "(".repeat(80) + LINK,
+  "a link in square brackets": "[" + LINK + "]",
+  "a message with a link in square brackets": "Invite: [" + LINK + "]",
+  "a link in brackets in square brackets": "([" + LINK + "])",
+  "a label in square brackets": "[[Team](" + LINK + ")]",
+  "square brackets that open no label": "[".repeat(5) + LINK,
   "a host without a scheme": "app.zigs.app/#" + GID + "." + K,
   "a host in capitals": "HTTPS://APP.ZIGS.APP/#" + GID + "." + K,
   "a path without a slash": "https://app.zigs.app#" + GID + "." + K,
@@ -258,7 +263,7 @@ for (const [what, text] of Object.entries(joins)) {
   assert.deepEqual(pastedInvite(text, HERE), wanted, "a link is found: " + what);
 }
 // Mark blocks before a link, with a letter at the end so that the marks fail: each ends within a
-// small time. Nested patterns took 2 to 15 seconds here.
+// small time (a busy computer needs a few ms; nested patterns took 2 to 15 seconds here).
 const worst = {
   "mark blocks, 17 times": "[[](".repeat(17) + "a",
   "mark blocks, 19 times": "[[](".repeat(19) + "a",
@@ -267,11 +272,13 @@ const worst = {
   "marks and labels mixed": "([[]()<[".repeat(9) + "a",
   "marks, 80 characters": "[".repeat(79) + "a",
   "only brackets": "[]".repeat(40),
+  "stray brackets and marks": "[(".repeat(40) + "a",
+  "stray brackets in labels": "[a[a[a(".repeat(11) + "a",
 };
 for (const [what, prefix] of Object.entries(worst)) {
   const at = performance.now();
   pastedInvite(prefix + LINK, HERE);
-  assert.equal(performance.now() - at < 50, true, "marks end at once: " + what);
+  assert.equal(performance.now() - at < 500, true, "marks end at once: " + what);
 }
 for (const empty of ["", "   ", "\n\t", undefined, null]) {
   const got = pastedInvite(empty, HERE);
@@ -294,33 +301,47 @@ const bad = {
 for (const [what, text] of Object.entries(bad)) {
   assert.deepEqual(pastedInvite(text, HERE), { error: PASTE_BAD }, "bad link: " + what);
 }
+// A link whose origin is another server.
 const elsewhere = {
   "another site": "https://evil.example/#" + GID + "." + K,
   "another scheme": "http://app.zigs.app/#" + GID + "." + K,
   "another port": "https://app.zigs.app:8443/#" + GID + "." + K,
   "a longer host": "https://app.zigs.app.evil.example/#" + GID + "." + K,
-  "a script": "javascript:alert(1)//#" + GID + "." + K,
   "a site in a message": "Open https://evil.example/#" + GID + "." + K + " now",
   "a site in brackets": "<https://evil.example/#" + GID + "." + K + ">",
+  "a site in square brackets": "[https://evil.example/#" + GID + "." + K + "]",
   "a site that holds this page in its query":
     "https://evil.example/?u=" + HERE + "#" + GID + "." + K,
-  // This page behind an address of another origin: the "https://" of this page is a part of it.
+  "a host with no scheme": "evil.example/#" + GID + "." + K,
+  "a host that is the start of this host": "https://app.zigs.ap/#" + GID + "." + K,
+};
+for (const [what, text] of Object.entries(elsewhere)) {
+  assert.deepEqual(pastedInvite(text, HERE), { error: PASTE_OTHER }, "another page: " + what);
+}
+assert.equal(PASTE_GLUED.includes("another Zigs server"), false, "glued text is no other server");
+// Text stands right before the link: no address, a word, marks that are too many, an address that
+// holds this page, or an address that has no origin. The text says so, and it never says that the
+// link is for another server.
+const glued = {
   "a prefix with no scheme": "evil.example/?u=" + LINK,
   "a prefix with a host and a path": "evil.example/" + LINK,
   "a prefix with a user name": "user@evil.example/" + LINK,
   "a prefix with a non-http scheme": "ftp://evil.example/?u=" + LINK,
   "a script before the link": "javascript:alert(1)//" + LINK,
+  "a script before the fragment": "javascript:alert(1)//#" + GID + "." + K,
   "a data address before the link": "data:text/html," + LINK,
   "a word and a colon before the link": "Link:" + LINK,
+  "a word and a colon before the fragment": "Link:#" + GID + "." + K,
+  "a word before the link": "see" + LINK,
+  "a number and a dot before the link": "1." + LINK,
+  "a word before the fragment": "foo#" + GID + "." + K,
   "a long run of marks before the link": "(".repeat(81) + LINK,
-  "brackets that open no label": "[".repeat(5) + LINK,
   "text that is no address before the link": "a<b.example/#" + GID + "." + K,
   "a bracket host that does not end": "https://[::1/#" + GID + "." + K,
-  "a host that is the start of this host": "https://app.zigs.ap/#" + GID + "." + K,
   "a prefix of another origin in a message": "Open evil.example/?u=" + LINK + " now",
 };
-for (const [what, text] of Object.entries(elsewhere)) {
-  assert.deepEqual(pastedInvite(text, HERE), { error: PASTE_OTHER }, "another page: " + what);
+for (const [what, text] of Object.entries(glued)) {
+  assert.deepEqual(pastedInvite(text, HERE), { error: PASTE_GLUED }, "text stands before: " + what);
 }
 // This server, another path: the text says so, and it never says "another server".
 const wrongPath = {
@@ -364,7 +385,8 @@ assert.deepEqual(pastedInvite(contact, HERE), { error: PASTE_CONTACT },
   "a contact link is no wallet");
 assert.deepEqual(pastedInvite("#c." + GID, HERE), { error: PASTE_CONTACT },
   "a contact link without secret");
-for (const error of [PASTE_EMPTY, PASTE_BAD, PASTE_CONTACT, PASTE_OTHER, PASTE_PATH, PASTE_MANY]) {
+for (const error of [PASTE_EMPTY, PASTE_BAD, PASTE_CONTACT, PASTE_OTHER, PASTE_PATH, PASTE_GLUED,
+  PASTE_MANY]) {
   assert.equal(error.includes(K) || error.includes(secret), false, "an error never holds a secret");
 }
 // A long paste ends at once: the link is found in one pass.

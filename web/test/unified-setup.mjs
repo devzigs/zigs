@@ -1173,8 +1173,8 @@ assert.match(marginText(3, 3), /Each payment needs every signer/);
     }
   };
   const formOf = (tree) => findNode(tree, (n) => !!n.on?.submit && !!byId(n, "join-link"));
-  const { PASTE_BAD, PASTE_CONTACT, PASTE_EMPTY, PASTE_MANY, PASTE_OTHER, PASTE_PATH } =
-    await import("../chat.js");
+  const { PASTE_BAD, PASTE_CONTACT, PASTE_EMPTY, PASTE_GLUED, PASTE_MANY, PASTE_OTHER,
+    PASTE_PATH } = await import("../chat.js");
   const { LINK_CHAT_ID, LINK_NEW_SECRET } = await import("../util.js");
   const { openGroup, roomKeys } = await import("../app-groups.js");
   const { joinLinks } = await import("../app-messages.js");
@@ -1258,6 +1258,7 @@ assert.match(marginText(3, 3), /Each payment needs every signer/);
       ["a bad wallet id", link("z".repeat(20), secret), PASTE_BAD],
       ["a contact link", base + "#c." + fresh + "." + secret, PASTE_CONTACT],
       ["a link of another server", "https://evil.example/#" + fresh + "." + secret, PASTE_OTHER],
+      ["text before the link", "Link:" + link(fresh, secret), PASTE_GLUED],
       ["a link of another path", base + "other/#" + fresh + "." + secret, PASTE_PATH],
       ["two different wallet links", link(fresh, secret) + " " + link(rid, other), PASTE_MANY],
       ["a different secret for a wallet you have", link(gid, other), LINK_NEW_SECRET],
