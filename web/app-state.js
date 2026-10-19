@@ -5,7 +5,7 @@ export const inbox = {}, inboxSubs = new Map();
 export const ready = {}, readySubs = new Map();
 export const state = {
   groups: [], gid: null, cid: null, contact: null, g: null, seats: {}, seatsLoaded: false,
-  seatsSettled: false,
+  seatsSettled: false, sessionsLoaded: false, sessionsFailed: false,
   dkg1: {}, dkg2: {}, confirm: {}, abort: {}, done: {}, verify: {}, wallet: null, sessions: [],
   sid: null, commits: {}, shares: {}, ignored: 0, pending: false, log: [],
 };

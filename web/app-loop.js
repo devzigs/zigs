@@ -20,7 +20,7 @@ import { backupDialog, closeBackup, restoreDialog, settleRestore } from "./app-b
 import { contactDialog, contactView } from "./app-account-view.js";
 import { createDialog, loadingView, lobby, lockView, renderSide } from "./app-shell.js";
 import { sessionLayer } from "./app-drawer.js";
-import { solReact } from "./app-sol.js";
+import { solPending, solReact } from "./app-sol.js";
 import { groupView } from "./app-wallet.js";
 import { receiveDialog, sendDialog } from "./app-send.js";
 
@@ -187,8 +187,8 @@ export function draw() {
   const snap = focusSnapshot(shell);
   markRead();
   renderSide();
-  const pending = state.groups.reduce((n, g) => n + toApprove(g.id).length + unreadIn(g.id), 0)
-    + Object.keys(chats.list).reduce((n, cid) => n + unreadIn(cid), 0);
+  const pending = state.groups.reduce((n, g) => n + toApprove(g.id).length + solPending(g.id)
+    + unreadIn(g.id), 0) + Object.keys(chats.list).reduce((n, cid) => n + unreadIn(cid), 0);
   document.title = pending ? "(" + pending + ") Zigs" : "Zigs";
   const form = saveFormState(app);
   const view = pageView(), top = lockedVault ? [] : layers();

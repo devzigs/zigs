@@ -12,7 +12,6 @@
 // The real fetch handler of cf/src/index.js runs in a vm with stubs for the Cloudflare parts.
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
-import { timingSafeEqual } from "node:crypto";
 import { readFileSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -57,13 +56,16 @@ class Rewriter {
 
 /** The default export of cf/src/index.js, with the Cloudflare imports replaced by stubs. */
 function loadWorker() {
+  // A vm script has no import: the gate module (cf/src/gate.js) goes in as text.
+  const gate = readFileSync(join(ROOT, "cf/src/gate.js"), "utf8").replace(/^export /gm, "");
   const code = readFileSync(join(ROOT, "cf/src/index.js"), "utf8")
     .replace('import { DurableObject } from "cloudflare:workers";', "class DurableObject {}")
+    .replace('import { gate, withCookie } from "./gate.js";', gate)
     .replace("export default {", "globalThis.worker = {")
     .replace("export class Store", "class Store");
-  // timingSafeEqual on crypto.subtle is a Cloudflare extension: Node has it in node:crypto.
-  const crypto = { subtle: { timingSafeEqual } };
-  const context = { Response, Request, URL, TextEncoder, crypto, atob, HTMLRewriter: Rewriter };
+  const context = {
+    Response, Request, URL, TextEncoder, crypto, atob, btoa, HTMLRewriter: Rewriter,
+  };
   runInNewContext(code, context, { timeout: 1000 });
   return context.worker;
 }

@@ -3,6 +3,7 @@
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import * as Z from "../pkg/zigs_engine.js";
+import { release, track } from "../app-kit.js";
 
 Z.initSync({ module: readFileSync(new URL("../pkg/zigs_engine_bg.wasm", import.meta.url)) });
 
@@ -60,4 +61,24 @@ refused(() => Z.joinMessage("{}"), "memo list");
 const wallet = new Z.ChainWallet(made.ufvk, 4500000, "http://localhost:1");
 await assert.rejects(wallet.createMessage("nope", "hi"), /must be a testnet unified address/);
 await assert.rejects(wallet.createMessage(made.address, ""), /The message is empty\./);
+
+// ── A free() during a call throws, and release waits for the call (ZEC-16) ──
+// fetch never answers, so no request leaves and each call stays open.
+const realFetch = globalThis.fetch;
+globalThis.fetch = () => new Promise(() => {});
+const live = () => new Z.ChainWallet(made.ufvk, 4500000, "https://silent.test");
+const busy = (cw) => cw.createMessage(made.address, "hi");
+const raw = live();
+busy(raw);
+await new Promise((r) => setTimeout(r, 20));
+assert.throws(() => raw.free(), /while it was borrowed/, "the engine refuses a free during a call");
+const kept = live();
+track(kept, busy(kept));
+await new Promise((r) => setTimeout(r, 20));
+release(kept);
+assert.equal(typeof kept.balance(), "string", "release leaves the busy object alive");
+const gone = live();
+release(gone);
+assert.throws(() => gone.balance(), /null pointer/, "release frees an idle object");
+globalThis.fetch = realFetch;
 console.log("account.mjs: ok");

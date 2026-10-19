@@ -1,6 +1,7 @@
 // The light-wallet fallback (S9 of docs/hackathon-release.md): a server that did not answer goes
 // to the end of the list for 5 minutes (preferredServers), the first try waits 3 s, a sync that
 // gets no blocks for 60 s stops and frees the busy flag, and a tab that comes back syncs at once.
+// A wallet object is freed only when no engine call on it runs (ZEC-16).
 // The engine is a fake. Timers of a second or more run 100 times faster.
 // Run: node web/test/chain-fallback.mjs   (Node 24)
 import assert from "node:assert/strict";
@@ -10,6 +11,7 @@ const rig = await loadRig();
 const { t } = rig;
 const chainMod = await import("../app-chain.js");
 const { NETWORKS, pickServer, preferredServers, runSync, syncOnReturn } = chainMod;
+const { release, track } = await import("../app-kit.js");
 const net = NETWORKS.testnet;
 const [LWD, CHAINSAFE] = net.servers;
 assert.ok(LWD.endsWith("/lwd") && CHAINSAFE.includes("chainsafe"), "the two testnet servers");
@@ -180,5 +182,152 @@ await sleep(20);
 assert.equal(steady.calls, calls + 1, "a hidden tab does not sync");
 globalThis.document = realDoc;
 console.log("ok  a tab that comes back syncs at once");
+
+// ── A wallet object is freed only when no engine call on it runs (ZEC-16) ──
+// As in wasm-bindgen, free() throws while an async call holds the object.
+const BORROWED = "attempted to take ownership of Rust value while it was borrowed";
+class BusyWallet extends FakeWallet {
+  constructor(url) { super(async () => BAL, url); Object.assign(this, { open: 0, frees: 0 }); }
+  // A proposal or a message on the object, as the page tracks it, until the test ends it.
+  call() {
+    this.open++;
+    let end;
+    track(this, new Promise((res) => { end = () => { this.open--; res("{}"); }; }));
+    return end;
+  }
+  free() {
+    if (this.open) throw new Error(BORROWED);
+    this.frees++;
+  }
+}
+const idle = new BusyWallet(LWD);
+release(idle);
+release(idle);
+const ended = new BusyWallet(LWD);
+ended.call()();
+await sleep(0);
+release(ended);
+assert.deepEqual([idle.frees, ended.frees], [1, 1], "an idle object is freed, and only once");
+const chainOf = (cw, url) => ({ gid: "freeaaaaaaaaaaaaaaaa", net, cw, url, account: true,
+  syncing: false, bal: before, sent: new Set(), prog: null, error: null });
+// Another wallet opens while a proposal runs, or with no call.
+const opened = new BusyWallet(LWD), endOpened = opened.call(), quiet = new BusyWallet(LWD);
+t.setChain(chainOf(opened, LWD));
+chainMod.dropChain();
+t.setChain(chainOf(quiet, LWD));
+chainMod.dropChain();
+assert.deepEqual([opened.frees, quiet.frees], [0, 1], "dropChain leaves only a busy object");
+// A sync moves to another server while a proposal on the old object runs.
+answer = { [LWD]: "down" };
+const moved = new BusyWallet(LWD), endMoved = moved.call(), m = chainOf(moved, LWD);
+t.setChain(m);
+await runSync(m);
+assert.deepEqual([m.error, m.url, m.cw !== moved, moved.frees], [null, CHAINSAFE, true, 0],
+  "connect moves on and leaves the busy object");
+// A free that throws still leaves the new object on the chain.
+const dead = new FakeWallet(async () => BAL, "https://gone.test"), dd = chainOf(dead, dead.url);
+dead.free = () => { throw new Error("null pointer passed to rust"); };
+t.setChain(dd);
+await runSync(dd);
+assert.deepEqual([dd.cw !== dead, dd.url], [true, CHAINSAFE], "connect sets the new object first");
+// A stalled object whose call ended is freed at the next connect.
+const late = new BusyWallet("https://gone.test"), lc = chainOf(late, late.url);
+late.call()();
+await sleep(0);
+lc.stalled = late;
+t.setChain(lc);
+await runSync(lc);
+assert.deepEqual([lc.url, lc.stalled, late.frees], [CHAINSAFE, null, 1], "freed after its call");
+// The sync of a wallet that closed ends while a proposal on it runs.
+const closed = new BusyWallet(CHAINSAFE), endClosed = closed.call();
+const cl = chainOf(closed, CHAINSAFE);
+t.setChain(null);
+await runSync(cl);
+assert.deepEqual([cl.error, closed.calls, closed.frees], [null, 1, 0], "the end of the sync too");
+// A deep reorganisation drops the object while a proposal on it runs.
+const deepZ = (e) => e === "deep";
+t.setZ({ ...rig.Z, latestHeight: height, isDeepReorg: deepZ, ChainWallet: FakeWallet });
+const deep = new BusyWallet(CHAINSAFE), endDeep = deep.call(), dc = chainOf(deep, CHAINSAFE);
+deep.script = async () => { throw new Error("deep"); };
+t.setChain(dc);
+await runSync(dc);
+assert.deepEqual([dc.cw, deep.frees], [null, 0], "the rescan drops the busy object");
+assert.match(dc.error, /reorganised by more than the wallet can undo/);
+for (const end of [endOpened, endMoved, endClosed, endDeep]) end();
+// A broadcast that gets no answer: the next server is asked, and its object is freed.
+const sentBy = [];
+class SendWallet {
+  constructor(_ufvk, _birthday, url) { Object.assign(this, { url, open: 0, frees: 0 }); }
+  broadcast() {
+    sentBy.push(this);
+    if (this.url.includes("throws")) throw new Error("bad input");   // as the glue does at once
+    if (this.url.includes("silent")) { this.open++; return new Promise(() => {}); }
+    return Promise.resolve(JSON.stringify({ txid: "T1" }));
+  }
+  free() {
+    if (this.open) throw new Error(BORROWED);
+    this.frees++;
+  }
+}
+t.setZ({ ...rig.Z, ChainWallet: SendWallet });
+fast();
+const sent = await t.broadcastAnywhere("00", { net: { servers: ["https://throws.test",
+  "https://silent.test", "https://next.test"] }, ufvk: "u", birthday: 1 });
+slow();
+assert.deepEqual([sent.txid, sentBy.map((w) => [w.url, w.frees])], ["T1", [["https://throws.test",
+  1], ["https://silent.test", 0], ["https://next.test", 1]]], "the next server sends it");
+await assert.rejects(t.resendTx({ final: { tx_hex: 5 } }), /The finished transaction cannot be/);
+t.setZ({ ...rig.Z, latestHeight: height, isDeepReorg: () => false, ChainWallet: FakeWallet });
+console.log("ok  a wallet object is freed only when no engine call on it runs");
+
+// ── A sync that a stall asked for again does not run for a wallet that closed meanwhile ──
+const shut = new FakeWallet(async () => BAL, CHAINSAFE), sc = chainOf(shut, CHAINSAFE);
+t.setChain(null);
+sc.again = true;
+await runSync(sc);
+await sleep(20);
+assert.deepEqual([shut.calls, sc.again, sc.syncing], [1, false, false], "one sync, then none");
+console.log("ok  no sync again for a wallet that closed");
+
+// ── A server that answers the height but fails the sync goes last (ZEC-17) ──
+later(90 * 60000);   // the marks above are older than 5 minutes now
+answer = {};
+const synced = () => rig.waitFor("the syncs end", () => !bc.syncing);   // also the one at once
+const broken = new FakeWallet(async () => {
+  throw new Error("lightwalletd: GetTreeState failed");
+}, LWD);
+let bc = chainOf(broken, LWD);
+t.setChain(bc);
+await runSync(bc);
+await synced();
+assert.deepEqual([bc.error, bc.url, preferredServers(net), broken.freed],
+  [null, CHAINSAFE, [CHAINSAFE, LWD], true], "the next sync, at once, on the other server");
+// Both servers fail the sync: one sync on each, then the page waits for the next refresh.
+later(180 * 60000);
+const tried = [], realRestore = FakeWallet.restore;
+const failing = (url) => new FakeWallet(async () => {
+  tried.push(url);
+  throw new Error("lightwalletd returned no blocks for the requested range");
+}, url);
+FakeWallet.restore = (_ufvk, _birthday, url) => failing(url);
+bc = chainOf(failing(LWD), LWD);
+t.setChain(bc);
+await runSync(bc);
+await synced();
+await sleep(50);
+FakeWallet.restore = realRestore;
+assert.deepEqual(tried, [LWD, CHAINSAFE], "no loop");
+assert.match(bc.error, /^lightwalletd returned no blocks/);
+// An error of the engine, not of the server, marks no server.
+later(270 * 60000);
+const own = new FakeWallet(async () => { throw new Error("the progress callback threw"); }, LWD);
+bc = chainOf(own, LWD);
+t.setChain(bc);
+await runSync(bc);
+await synced();
+assert.deepEqual([own.calls, preferredServers(net)], [1, [LWD, CHAINSAFE]], "no server is marked");
+t.setChain(null);
+now();
+console.log("ok  a server that fails the sync goes last, and the next server syncs at once");
 console.log("chain-fallback: ok");
 process.exit(0);

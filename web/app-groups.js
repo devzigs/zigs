@@ -175,11 +175,12 @@ export function needsMyApproval(gid, ss) {
 }
 export const toApprove = (gid) => (gid === state.gid ? state.sessions : inbox[gid] || []).filter((ss) => needsMyApproval(gid, ss));
 
-function sub(path, fn) {
+// `fail` runs when the subscription ends with an error: the page must not show old data as all.
+function sub(path, fn, fail) {
   return sdb.collection(path).onSnapshot((snap) => {
     const m = {}; for (const d of snap.docs) m[d.id] = d.data();
     fn(m); refilter();
-  }, (e) => log("subscription error on " + path + ": " + e.code));
+  }, (e) => { log("subscription error on " + path + ": " + e.code); fail?.(e); });
 }
 
 let groupDoc = null;   // the group document of the open wallet, as the store shows it
@@ -208,6 +209,7 @@ export function openGroup(gid) {
   dropChain();
   Object.assign(state, {
     gid, cid: null, contact: null, g: null, seats: {}, seatsLoaded: false, seatsSettled: false,
+    sessionsLoaded: false, sessionsFailed: false,
     dkg1: {}, dkg2: {},
     confirm: {}, abort: {}, done: {}, verify: {}, wallet: null, sessions: [], ignored: 0,
     pending: false, log: [],
@@ -225,9 +227,14 @@ export function openGroup(gid) {
     refilter();
   }));
   unsubGroup.push(sub(base + "/seats", (m) => { raw.seats = m; state.seatsLoaded = true; }));
-  for (const name of ["dkg1", "dkg2", "confirm", "abort", "done", "verify", "sessions"]) {
+  for (const name of ["dkg1", "dkg2", "confirm", "abort", "done", "verify"]) {
     unsubGroup.push(sub(base + "/" + name, (m) => { raw[name] = m; }));
   }
+  // The Approvals inbox says that nothing waits only once the payments arrived.
+  unsubGroup.push(sub(base + "/sessions", (m) => {
+    raw.sessions = m;
+    Object.assign(state, { sessionsLoaded: true, sessionsFailed: false });
+  }, () => { state.sessionsFailed = true; render(); }));
   unsubGroup.push(sdb.doc(base + "/meta/wallet").onSnapshot((d) => {
     raw.wallet = d.exists ? d.data() : null;
     refilter();

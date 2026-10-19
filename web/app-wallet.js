@@ -1,7 +1,7 @@
 // The wallet page: its sections (overview, activity, messages, signers, details, Solana).
 import { fmtInt, seatBackedUp, usesV2 } from "./util.js";
 import { IGNORED_NOTE } from "./signed.js";
-import { ready, state, ui } from "./app-state.js";
+import { log, ready, state, ui } from "./app-state.js";
 import { fmtZec, short, when } from "./app-kit.js";
 import { gkeys, sec } from "./app-keystore.js";
 import { keysDiffer, localSeats, seatIds, seatMine, seatStage, STAGE_LABEL } from "./app-seats.js";
@@ -19,8 +19,11 @@ import {
 import { signing, unreadIn } from "./app-messages.js";
 import { groupVersion, rejectedSeats, seatCheck, verifiedCount } from "./app-dkg.js";
 import {
-  cancelMove, ended, heldApprovals, isOpen, proposeMove, sendBlocker,
+  cancelMove, chainReady, ended, expired, heldApprovals, isOpen, landed, proposeMove, sendBlocker,
+  signingSeen,
 } from "./app-payments.js";
+import { finishStep } from "./app-drawer.js";
+import { BUCKETS, bucketOf, emptyState, solLine } from "./approvals-model.js";
 import { messagesCard } from "./app-thread.js";
 import { openBackup, staleRestoreNote } from "./app-backups.js";
 import { loadingView } from "./app-shell.js";
@@ -95,7 +98,9 @@ export const walletReady = () => !!(state.wallet && state.wallet.birthday)
 export function walletSections() {
   const sections = [
     ["overview", "Overview"],
-    ["activity", "Activity", countBadge(toApprove(state.gid).length, "to approve", "attn")],
+    ["approvals", "Approvals",
+      countBadge(toApprove(state.gid).length + solPending(), "to approve", "attn")],
+    ["activity", "Activity"],
     ["messages", "Messages", countBadge(unreadIn(state.gid), "unread", "note")],
     ["members", "Signers"], ["details", "Details"],
   ];
@@ -110,7 +115,8 @@ export function currentSection(sections) {
 }
 
 const BODIES = {
-  overview: () => overviewTab(), activity: () => activityTab(), messages: () => messagesCard(),
+  overview: () => overviewTab(), approvals: () => approvalsTab(), activity: () => activityTab(),
+  messages: () => messagesCard(),
   members: () => membersTab(), details: () => detailsTab(), solana: () => solTab(),
 };
 
@@ -277,7 +283,7 @@ function pendingCard() {
   return el("section", { class: "callout pending-shortcut", role: "status" }, icon("activity"),
     el("span", {}, p.text),
     el("button", { class: "btn sm", type: "button",
-      onclick: () => { ui.tab = p.to; render(); } }, "Review"));
+      onclick: () => { ui.tab = "approvals"; render(); } }, "Review"));
 }
 
 const assetHead = (id, symbol, network) => el("div", { class: "asset-title" },
@@ -437,6 +443,101 @@ function receivedRow(r) {
         ? el("span", { class: "ri-sub" }, "Memo not read yet") : null),
     el("span", { class: "ri-end" }, money(r.value, "md", "in"), el("span", { class: "badge " + (r.confirmed ? "ok" : "info") }, r.confirmed ? "Confirmed" : "Confirming")),
     el("span", { class: "chev" }, "↗"));
+}
+
+// The Approvals inbox: the payments that wait for this browser, for the other signers or for the
+// network, and those that need attention, then one line for the Solana part. A row opens its
+// payment; the drawer keeps every action. Empty buckets do not show.
+function approvalsTab() {
+  const rows = inboxRows(), sol = solInbox(), flying = new Set(inFlight());
+  // The Solana line joins a bucket as one row; for review it counts each proposal.
+  const solNote = (id) => sol && sol.kind === id ? el("p", { class: "row-note" }, sol.text,
+    " ", openSolanaButton()) : null;
+  const sections = BUCKETS.map(([id, label]) => {
+    const list = rows[id], extra = solNote(id);
+    const lost = id === "attention" ? lostNote(rows.lost) : null;
+    if (!list.length && !extra && !lost) return null;
+    const count = list.length + (extra ? (id === "review" ? solPending() : 1) : 0)
+      + (lost ? rows.lost.length : 0);
+    return el("section", { class: "card inbox", "aria-label": label },
+      el("div", { class: "card-head card-pad" }, el("h2", {}, label),
+        el("span", { class: "badge plain" }, String(count))),
+      el("div", { class: "list" }, list.map((ss) => guard(sentRow, ss, flying)), extra, lost));
+  }).filter(Boolean);
+  const other = sol && !["review", "attention"].includes(sol.kind)
+    ? el("p", { class: "small muted" }, sol.text, " ", openSolanaButton()) : null;
+  return el("div", { class: "page", style: "gap:16px" },
+    el("p", { class: "small muted" }, "Open a payment to approve, sign or send it. A payment "
+      + "needs " + state.g.t + " of " + state.g.n + " signers."),
+    inboxNote(sections.length > 0), ...sections, other);
+}
+
+// Approvals that hold Send although the list has no record of their payment: the Overview counts
+// them, so the inbox names them.
+const lostNote = (ids) => ids.length ? el("p", { class: "row-note" }, ids.length === 1
+  ? "A payment that you approved has no record here any more. Send stays held until it can no "
+    + "longer go on chain."
+  : ids.length + " payments that you approved have no record here any more. Send stays held "
+    + "until they can no longer go on chain.") : null;
+
+const openSolanaButton = () => el("button", { class: "btn sm", type: "button",
+  onclick: () => { ui.tab = "solana"; render(); } }, "Open Solana");
+
+// The payments of the open wallet by bucket. A payment whose facts cannot be read lands in
+// "attention", never out of the list. `lost`: the ids of approvals here that still hold Send
+// while the list has no record of their payment (dropped or rewritten). Only a list that arrived
+// and passed its checks can lack a record.
+export function inboxRows() {
+  const held = new Set(heldApprovals());
+  const rows = Object.fromEntries(BUCKETS.map(([id]) => [id, []]));
+  for (const ss of state.sessions) {
+    const b = inboxBucket(ss, held);
+    if (b) rows[b].push(ss);
+  }
+  const listed = new Set(state.sessions.map((ss) => ss.id));
+  const known = state.sessionsLoaded && !state.sessionsFailed && !state.pending;
+  return { ...rows, lost: known ? [...held].filter((id) => !listed.has(id)) : [] };
+}
+
+function inboxBucket(ss, held) {
+  try {
+    const end = ended(ss);
+    return bucketOf({
+      landed: landed(ss), held: held.has(ss.id),
+      check: !end && signingSeen(ss) && expired(ss),
+      review: needsMyApproval(state.gid, ss), step: finishStep(ss), ended: end,
+      error: !!ss.error, status: ss.status,
+    });
+  } catch (e) {
+    log("inbox: payment " + ss.id + " not sorted: " + (e && e.message ? e.message : e));
+    return "attention";
+  }
+}
+
+const solInbox = () => solLine({ on: solOn(), error: solError, loading: !!(sol || solLoading),
+  setup: solSetup(), toApprove: solPending() });
+
+const INBOX_EMPTY = {
+  failed: "The payments of this wallet could not be read. Reload the page.",
+  loading: "Checking the payments of this wallet…",
+  syncing: "The wallet syncs. A payment that you approved and that someone cancelled shows after "
+    + "the sync.",
+  ignored: "No payment shows here. " + IGNORED_NOTE,
+  zec: "No Zcash payment waits for this browser, the other signers or the network.",
+  empty: "No payment waits for this browser, the other signers or the network.",
+};
+// What the inbox says about its own state. A failed read, a check that runs and a chain that
+// syncs show also next to rows: the list may lack payments then. The rest shows only when no row
+// does.
+function inboxNote(rows) {
+  const why = emptyState({ loaded: state.sessionsLoaded, failed: state.sessionsFailed,
+    checking: state.pending, synced: chainReady(curChain()), ignored: state.ignored,
+    sol: solOn() });
+  if (why === "failed") return el("div", { class: "callout bad", role: "alert" }, INBOX_EMPTY[why]);
+  const partial = ["loading", "syncing"].includes(why);
+  if (rows && !partial) return null;
+  return el(rows ? "p" : "div", { class: rows ? "small muted" : "card empty", role: "status" },
+    INBOX_EMPTY[why]);
 }
 
 function activityTab() {
