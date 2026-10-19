@@ -350,7 +350,8 @@ function welcome(off, restoreLink) {
   return el("section", { class: "card card-pad welcome" },
     el("div", { style: "display:grid;gap:6px" }, el("h2", {}, "Start with Zigs"),
       el("p", { class: "muted" }, "Nobody ever holds the whole key. Zcash payments are shielded. "
-        + "On Solana Devnet, the payee and the group are public.")),
+        + "On Solana Devnet, the group, the payee and the fee address of each device that pays "
+        + "are public. A deposit or a withdrawal also shows its amount.")),
     el("ol", { class: "how" }, steps.map(([t, d], i) => el("li", {},
       el("span", { class: "how-no" }, String(i + 1)),
       el("div", { style: "display:grid;gap:2px" }, el("h3", {}, t), el("p", { class: "small muted" }, d))))),

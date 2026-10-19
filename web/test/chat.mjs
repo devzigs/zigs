@@ -239,6 +239,7 @@ const joins = {
   "a link in a mark": "[Team](" + LINK + ")",
   "a link in stars": "**" + LINK + "**",
   "a link in quotes": '"' + LINK + '"',
+  "eighty marks before the link": "(".repeat(80) + LINK,
   "a host without a scheme": "app.zigs.app/#" + GID + "." + K,
   "a host in capitals": "HTTPS://APP.ZIGS.APP/#" + GID + "." + K,
   "a path without a slash": "https://app.zigs.app#" + GID + "." + K,
@@ -295,7 +296,11 @@ const elsewhere = {
   "a script before the link": "javascript:alert(1)//" + LINK,
   "a data address before the link": "data:text/html," + LINK,
   "a word and a colon before the link": "Link:" + LINK,
-  "a long run of marks before the link": "[".repeat(200) + LINK,
+  "a long run of marks before the link": "(".repeat(81) + LINK,
+  "brackets that open no label": "[".repeat(5) + LINK,
+  "text that is no address before the link": "a<b.example/#" + GID + "." + K,
+  "a bracket host that does not end": "https://[::1/#" + GID + "." + K,
+  "a host that is the start of this host": "https://app.zigs.ap/#" + GID + "." + K,
   "a prefix of another origin in a message": "Open evil.example/?u=" + LINK + " now",
 };
 for (const [what, text] of Object.entries(elsewhere)) {
@@ -352,6 +357,22 @@ for (const long of ["x".repeat(2000000), "#".repeat(2000000), "a b ".repeat(5000
   pastedInvite(long, HERE);
 }
 assert.equal(Date.now() - began < 3000, true, "a long paste ends at once");
+// Mark blocks before a link, with a letter at the end so that the marks fail: each ends within a
+// small time. Nested patterns took 2 to 15 seconds here.
+const worst = {
+  "mark blocks, 17 times": "[[](".repeat(17) + "a",
+  "mark blocks, 19 times": "[[](".repeat(19) + "a",
+  "mark blocks of 3 brackets, 15 times": "[[[](".repeat(15) + "a",
+  "label blocks, 15 times": "[a](".repeat(15) + "a",
+  "marks and labels mixed": "([[]()<[".repeat(9) + "a",
+  "marks, 80 characters": "[".repeat(79) + "a",
+  "only brackets": "[]".repeat(40),
+};
+for (const [what, prefix] of Object.entries(worst)) {
+  const at = performance.now();
+  pastedInvite(prefix + LINK, HERE);
+  assert.equal(performance.now() - at < 50, true, "marks end at once: " + what);
+}
 
 // Joining: a full chat wins over a lease that someone else holds.
 const FULL = "This chat already has two people. Ask for a new contact link.";

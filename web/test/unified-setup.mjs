@@ -1361,7 +1361,9 @@ assert.match(marginText(3, 3), /Each payment needs every signer/);
     const welcome = lobbyTree(), card = findNode(welcome, (n) => /\bwelcome\b/.test(n.className));
     assert.match(textOf(card), /Start with Zigs/);
     assert.ok(textOf(card).includes("Nobody ever holds the whole key. Zcash payments are shielded. "
-      + "On Solana Devnet, the payee and the group are public."), "the welcome text of the key");
+      + "On Solana Devnet, the group, the payee and the fee address of each device that pays "
+      + "are public. A deposit or a withdrawal also shows its amount."),
+    "the welcome text of the key");
     assert.doesNotMatch(textOf(card), /outside your team|can read the wallet/,
       "the welcome text claims no secrecy of the wallet");
     assert.match(textOf(card), /any 2 of 3 devices must approve each payment/);
