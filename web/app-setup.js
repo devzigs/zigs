@@ -65,7 +65,10 @@ function blockText(c) {
 
 // Version 2 wallets: the signers compare one number before the key ceremony starts. It stays
 // visible until every seat holds its key share.
-const safetyOpen = () => usesV2(groupVersion()) && allSeated() && !allDone() && !holdsAllSeats();
+// A seat that checked the address ended its setup: hidden documents bring no stop back.
+const checkedHere = () => mySeatSecrets(state.gid).some(([, s]) => s.checkedWallet);
+const safetyOpen = () => usesV2(groupVersion()) && allSeated() && !allDone() && !holdsAllSeats()
+  && !checkedHere();
 
 // The person fixes the cause, then tries again. The reactor does not retry a failed save.
 function saveFailedCard() {

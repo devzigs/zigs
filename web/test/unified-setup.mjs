@@ -2012,13 +2012,16 @@ assert.match(marginText(3, 3), /Each payment needs every device/);
     assert.equal(creates(), false, "a stopped seat 1 builds no wallet");
     t.state.wallet = keep.wallet;
     assert.equal(walletReady(), false, "a stopped browser keeps its setup page and its stop");
-    // An abort with no stop of a person (a version flip, for example) keeps the wallet page.
-    t.secrets[k1] = { ...t.secrets[k1], stopped: undefined };
+    // An abort with no stop of a person (a version flip, for example) keeps the wallet page of a
+    // device with a key share. An aborted seat with no key share is not in that wallet.
+    t.secrets[k1] = { ...t.secrets[k1], stopped: undefined, keyPackage: kept[1].keyPackage };
     assert.equal(walletReady(), false, "a stop of the other seat of this browser keeps the setup");
     t.secrets[k2] = { ...t.secrets[k2], stopped: undefined };
+    assert.equal(walletReady(), false, "an aborted seat with no key share keeps the setup page");
+    t.secrets[k2] = { ...t.secrets[k2], keyPackage: kept[2].keyPackage };
     assert.equal(walletReady(), true, "an abort without a person's stop keeps the wallet page");
     // A stop of another device: the card goes, and seat 1 builds no wallet either.
-    t.secrets[k1] = { ...t.secrets[k1], aborted: undefined };
+    t.secrets[k1] = { ...t.secrets[k1], aborted: undefined, keyPackage: undefined };
     delete t.secrets[k2];
     const other = { 2: { reason: "A test stop." } };
     assert.doesNotMatch(seen(other), /Check that your devices match/,
@@ -2034,6 +2037,12 @@ assert.match(marginText(3, 3), /Each payment needs every device/);
     }
     assert.match(t.banner?.text ?? "", /This browser could not save the stop\./,
       "a stop that is not saved says so");
+    // A seat that checked the address ended its setup: two hidden documents bring no card back.
+    t.secrets[k1] = { ...t.secrets[k1], aborted: undefined, stopped: undefined };
+    assert.match(seen(), /Check that your devices match/);
+    t.secrets[k1] = { ...t.secrets[k1], checkedWallet: kept[1].checkedWallet };
+    assert.doesNotMatch(seen(), /Check that your devices match/,
+      "a seat that checked the address gets no safety card");
     // A browser without a seat of this wallet only sees the number.
     delete t.secrets[k1];
     ui.mismatchAsk = null;
@@ -2054,6 +2063,28 @@ async function stopNow(gid) {
   Object.assign(t.state, { wallet: null, done: {}, abort: {} });
   await findNode(pageTree(), (n) => n.attrs?.type === "button" && textOf(n) === "Stop setup")
     .on.click();
+}
+// A stop while seat 1 waits for the chain height: createWallet writes no wallet document.
+{
+  const engine = await import("../app-engine.js"), { stopSetup } = await import("../app-dkg.js");
+  const gid = await rig.wallet({ name: "Slow height" }), wpath = groupPath(gid) + "/meta/wallet";
+  const keepZ = engine.Z;
+  delete t.secrets[gid + ":2"];
+  delete t.secrets[gid + ":3"];
+  t.setZ({ ...keepZ, latestHeight: async () => { await sleep(600); return 1000; } });
+  try {
+    t.state.wallet = null;
+    data.delete(wpath);
+    rig.notify();
+    await sleep(150);
+    assert.equal(t.canCreateWallet(), true, "seat 1 may build the wallet before the stop");
+    await stopSetup();
+    rig.notify();
+    await sleep(1500);
+    assert.equal(data.has(wpath), false, "a stop during the wait writes no wallet document");
+  } finally {
+    t.setZ(keepZ);
+  }
 }
 assert.equal(quickCode("12345 67890 12345 67890 12345 67890"), "12345 678",
   "the quick code keeps the groups of the number");
