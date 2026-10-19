@@ -10,6 +10,8 @@ import { aesKey, open as openVault, parseVault } from "../vault.js";
 import { backupText as solBackupText, backupWords, KIND } from "../sol/backup.js";
 import { base58 } from "../sol/docs.js";
 import { feeMismatch, feeOf } from "../sol/fee.js";
+import { gateAnswer } from "../sol/localprove.js";
+import { putSol } from "../sol/secrets.js";
 import { loadSnap, saveSnap } from "../sol/store.js";
 import { shareSeat, showSaved, solText, syncSolana } from "../sol/session.js";
 import { loadRig, sleep, storage } from "./sol-rig.mjs";
@@ -423,7 +425,8 @@ const zcashFile = saved.at(-1);
 // ── The Worker starts only when its script carries the policy of its own ──
 const POLICY =
   "default-src 'none'; script-src 'self' 'wasm-unsafe-eval'; " +
-  "connect-src 'self' https://devnet.helius-rpc.com; base-uri 'none'";
+  "connect-src 'self' https://devnet.helius-rpc.com " +
+  "https://d3gbdb0egjwcw9.cloudfront.net/proving-keys/3a1c88f90f609eb1/; base-uri 'none'";
 const RPC = `https://devnet.helius-rpc.com/?${KEY_NAME}=not-a-real-key`;
 const realFetch = globalThis.fetch;
 const serve = (policy) => async (url) => {
@@ -614,6 +617,28 @@ const syncState = (rpcUrl = RPC) => ({
   const bare = await import("../sol/store.js?no-indexeddb");
   assert.equal(await bare.saveSnap(Z, roles.seal_key, gid, snap), false, "no snapshot is saved");
   assert.equal(await bare.loadSnap(Z, roles.seal_key, gid), null);
+}
+
+// ── SOL-4: the backup carries the pin of local proving; a restored seat proves here ──
+{
+  const host = { state: t.state, sec: t.sec, putSec: t.putSec };
+  // The switch was on for seat 3: its file carries the pin, and only the value true.
+  await putSol(host, gid, 3, { proveLocal: true });
+  const file3 = JSON.parse(solBackupText(host, gid, 3));
+  assert.equal(file3.proveLocal, true, "the file carries the pin");
+  for (const bad of ["yes", false, 1]) {
+    const odd = { ...file3, proveLocal: bad };
+    await assert.rejects(() => t.applyBackup(odd, true), /not a Zigs Solana backup/, String(bad));
+  }
+  // This browser forgets the switch, and the server holds no switch document.
+  for (const i of [1, 2, 3]) await putSol(host, gid, i, { proveLocal: null });
+  assert.equal([...data.keys()].some((k) => k.includes("/solprove/")), false, "no document");
+  delete t.sec(gid, 3).sol;
+  await t.putSec(gid, 3, {});
+  await t.applyBackup(file3, true);
+  assert.equal(solOf(gid, 3).proveLocal, true, "the restore brings the pin back");
+  const answer = await gateAnswer(t.sol.ctl);
+  assert.deepEqual(answer, { mode: "local" }, "a restored seat proves here, with no document");
 }
 
 console.log("sol-app: ok");

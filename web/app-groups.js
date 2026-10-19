@@ -231,8 +231,10 @@ export function openGroup(gid) {
     unsubGroup.push(sub(base + "/" + name, (m) => { raw[name] = m; }));
   }
   // The Approvals inbox says that nothing waits only once the payments arrived.
-  unsubGroup.push(sub(base + "/sessions", (m) => { raw.sessions = m; state.sessionsLoaded = true; },
-    () => { state.sessionsFailed = true; render(); }));
+  unsubGroup.push(sub(base + "/sessions", (m) => {
+    raw.sessions = m;
+    Object.assign(state, { sessionsLoaded: true, sessionsFailed: false });
+  }, () => { state.sessionsFailed = true; render(); }));
   unsubGroup.push(sdb.doc(base + "/meta/wallet").onSnapshot((d) => {
     raw.wallet = d.exists ? d.data() : null;
     refilter();

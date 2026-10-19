@@ -2,7 +2,7 @@
 // pending shortcut. An unknown amount is never zero, and nothing pending gives no shortcut.
 // Run: node web/test/overview.mjs   (Node 24)
 import assert from "node:assert/strict";
-import { pendingShortcut, solRow, zecTotal } from "../overview-model.js";
+import { pendingShortcut, solRow, zecInProgress, zecTotal } from "../overview-model.js";
 
 assert.equal(zecTotal(null), null, "no sync yet: unknown, not zero");
 assert.equal(zecTotal({ spendable: 0, pending: 0, sending: 0 }), 0, "an empty wallet is zero");
@@ -32,12 +32,28 @@ assert.deepEqual(solRow({ on: true, setup: ready, balance: "0 SOL" }),
   { state: "synced", text: "0 SOL" }, "a synced empty wallet is zero");
 assert.deepEqual(solRow({ on: true, setup: ready, balance: "0.0025 SOL" }),
   { state: "synced", text: "0.0025 SOL" }, "the exact text of the sync");
+const synced = (text, busy = false) => solRow({ on: true, setup: ready, balance: "1 SOL",
+  sync: { text, busy } }).state;
+assert.equal(synced("synced at slot 9, x"), "synced");
+assert.equal(synced("saved sync of slot 9"), "saved", "a balance of the saved sync says so");
+assert.equal(synced("failed: offline"), "stale", "a failed sync marks the old balance");
+assert.equal(synced("failed: offline", true), "resync", "a retry keeps the balance marked old");
+assert.equal(synced("saved sync of slot 9", true), "resync");
+assert.equal(solRow({ on: true, setup: ready, balance: null, sync: { text: "", busy: true } })
+  .state, "syncing", "a first sync runs");
 console.log("ok  the SOL row");
 
-assert.equal(pendingShortcut({}), null, "nothing pending, no shortcut");
-assert.equal(pendingShortcut({ zecOpen: 0, zecFlying: 0, solToApprove: 0 }), null);
-assert.deepEqual(pendingShortcut({ zecOpen: 1 }), { count: 1, text: "1 payment is in progress." });
-assert.deepEqual(pendingShortcut({ zecFlying: 1, solToApprove: 2 }),
-  { count: 3, text: "3 payments are in progress." }, "both chains count");
+assert.equal(pendingShortcut({ zec: 0, sol: 0 }), null, "nothing pending, no shortcut");
+assert.equal(pendingShortcut({}), null, "no counts, no shortcut");
+assert.deepEqual(pendingShortcut({ zec: 1, sol: 0 }),
+  { count: 1, text: "1 Zcash payment is in progress." });
+assert.deepEqual(pendingShortcut({ zec: 2, sol: 1 }), { count: 3,
+  text: "2 Zcash payments are in progress. 1 Solana proposal waits for your approval." },
+  "each chain says what it counts");
+assert.deepEqual(pendingShortcut({ zec: 0, sol: 2 }),
+  { count: 2, text: "2 Solana proposals wait for your approval." }, "only Solana");
+assert.equal(zecInProgress(["a", "b"], ["a"], ["c", "a"]), 3, "each payment once");
+assert.equal(zecInProgress([], [], ["h"]), 1, "a held approval alone counts");
+assert.equal(zecInProgress([], [], []), 0);
 console.log("ok  the pending shortcut");
 console.log("overview: ok");

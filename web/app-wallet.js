@@ -19,7 +19,8 @@ import {
 import { signing, unreadIn } from "./app-messages.js";
 import { groupVersion, rejectedSeats, seatCheck, verifiedCount } from "./app-dkg.js";
 import {
-  cancelMove, ended, expired, heldApprovals, isOpen, landed, proposeMove, sendBlocker, signingSeen,
+  cancelMove, chainReady, ended, expired, heldApprovals, isOpen, landed, proposeMove, sendBlocker,
+  signingSeen,
 } from "./app-payments.js";
 import { finishStep } from "./app-drawer.js";
 import { BUCKETS, bucketOf, emptyState, solLine } from "./approvals-model.js";
@@ -30,10 +31,11 @@ import { render } from "./app-loop.js";
 import { setupView, solSetupCard, solUnfinished } from "./app-setup.js";
 import { themeChoice } from "./app-theme.js";
 import {
-  sol, solBackup, solBalance, solError, solFile, solLoading, solOn, solPending, solSetup, solTab,
+  sol, solBackup, solBalance, solError, solFile, solLoading, solOn, solPending, solSetup, solSync,
+  solTab,
   solUnsaved,
 } from "./app-sol.js";
-import { pendingShortcut, solRow, zecTotal } from "./overview-model.js";
+import { pendingShortcut, solRow, zecInProgress, zecTotal } from "./overview-model.js";
 import { protectionRisk, recoveryState } from "./recovery-model.js";
 import { icon } from "./app-icons.js";
 
@@ -274,11 +276,13 @@ function approvalRow(ss) {
   el("span", { class: "btn sm primary", "aria-hidden": "true" }, "Review"));
 }
 
-// The shortcut to the payments in progress: open ZEC payments, ZEC payments that wait for their
-// block, and the Solana proposals that a seat of this browser can approve.
+// The shortcut to the payments in progress. It counts each ZEC payment once: open, waiting for
+// its block, or held by an approval here (S7). For Solana it counts the proposals that a seat of
+// this browser can approve.
 function pendingCard() {
-  const p = pendingShortcut({ zecOpen: state.sessions.filter(isOpen).length,
-    zecFlying: inFlight().length, solToApprove: solOn() ? solPending() : 0 });
+  const zec = zecInProgress(state.sessions.filter(isOpen).map((ss) => ss.id),
+    inFlight().map((ss) => ss.id), heldApprovals());
+  const p = pendingShortcut({ zec, sol: solOn() ? solPending() : 0 });
   if (!p) return null;
   return el("section", { class: "callout pending-shortcut", role: "status" }, icon("activity"),
     el("span", {}, p.text),
@@ -291,34 +295,45 @@ const assetHead = (id, symbol, network) => el("div", { class: "asset-title" },
   el("div", {}, el("h2", { id: "asset-" + id }, symbol), el("p", {}, network)));
 
 function zecAsset(c) {
-  const b = c && c.bal ? balanceNow(c.bal) : null, empty = b && b.spendable + b.pending + b.sending === 0 && !state.g.movedTo;
+  const b = c && c.bal ? balanceNow(c.bal) : null;
+  const part = (label, zat) => el("div", {}, el("span", { class: "label" }, label),
+    b ? money(zat) : el("span", { class: "skel" }));
   return el("section", { class: "card card-pad asset-card", "aria-labelledby": "asset-zec" },
     assetHead("zec", "ZEC", "Zcash " + netName(state.g)),
     b ? money(zecTotal(b), "xl")
       : el("span", { class: "skel xl", role: "img", "aria-label": "Loading balance" }),
-    el("div", { class: "stats" },
-      el("div", {}, el("span", { class: "label" }, "Available"), b ? money(b.spendable) : el("span", { class: "skel" })),
-      el("div", {}, el("span", { class: "label" }, "Incoming"), b ? money(b.pending) : el("span", { class: "skel" }))),
-    b && b.sending ? el("div", { class: "sending" }, el("span", { class: "dot busy" }), "Sending ", money(b.sending, "md", "out"), el("span", { class: "faint" }, " · waiting for a block")) : null,
-    empty ? el("div", { class: "callout" }, curNet().faucet
-      ? el("span", {}, "This wallet is empty. Share its address to receive ZEC, or get free testnet ZEC from a ",
-        el("a", { href: curNet().faucet, target: "_blank", rel: "noopener" }, "faucet ↗"), ".")
-      : el("span", {}, "This wallet is empty. Share its address to receive ZEC. Keep it under "
-        + capText(curNet().cap) + ": the app warns at that level. It cannot block deposits."))
-      : null,
-    atCap() ? capNote() : null,
+    el("div", { class: "stats" }, part("Available", b?.spendable), part("Incoming", b?.pending)),
+    b?.sending ? sendingLine(b.sending) : null, emptyNote(b), atCap() ? capNote() : null,
     syncLine(c));
+}
+
+const sendingLine = (zat) => el("div", { class: "sending" }, el("span", { class: "dot busy" }),
+  "Sending ", money(zat, "md", "out"), el("span", { class: "faint" }, " · waiting for a block"));
+
+function emptyNote(b) {
+  if (!b || b.spendable + b.pending + b.sending !== 0 || state.g.movedTo) return null;
+  return el("div", { class: "callout" }, curNet().faucet
+    ? el("span", {}, "This wallet is empty. Share its address to receive ZEC, or get free "
+      + "testnet ZEC from a ", el("a", { href: curNet().faucet, target: "_blank",
+      rel: "noopener" }, "faucet ↗"), ".")
+    : el("span", {}, "This wallet is empty. Share its address to receive ZEC. Keep it under "
+      + capText(curNet().cap) + ": the app warns at that level. It cannot block deposits."));
 }
 const SOL_NOTE = {
   synced: "The private balance of the group at the last sync. Open Solana for payments, deposits "
     + "and the fee addresses.",
+  saved: "The private balance of the group at the last saved sync. Open Solana to sync again.",
+  stale: "The last sync failed. This balance comes from an earlier sync. Open Solana to sync "
+    + "again.",
+  syncing: "The private balance of the group is syncing.",
+  resync: "A sync runs. This balance comes from an earlier sync.",
   unsynced: "Open Solana to sync the private balance.",
   setup: "The Solana part of this wallet is still setting up.",
   stopped: "The Solana part stopped. The Zcash part still works.",
   loading: "The Solana part loads.",
   idle: "Open Solana to load the Solana part of this wallet.",
   none: "This wallet has no Solana part yet. Open Solana to add it.",
-  unavailable: "This browser cannot use the Solana part of this wallet. Open Solana to see why.",
+  unavailable: "This wallet cannot have a Solana part. Open Solana to see why.",
   differs: "The seats do not agree on one Solana key. Do not use the Solana part. Open Solana for "
     + "the details.",
   unknown: "Open Solana to see the state of its part.",
@@ -327,15 +342,21 @@ const SOL_NOTE = {
 // The SOL row: the private balance of the last sync, or the state of the Solana part.
 function solAsset() {
   const row = solRow({ on: solOn(), error: solError, loading: !!(sol || solLoading),
-    setup: solSetup(), balance: solBalance() });
+    setup: solSetup(), balance: solBalance(), sync: solSync() });
   if (!row) return null;
+  const amount = /^[\d.]+ SOL$/.test(row.text) ? solAmount(row.text)
+    : el("p", { class: "asset-balance unknown" }, row.text);
   return el("section", { class: "card card-pad asset-card", "aria-labelledby": "asset-sol" },
-    assetHead("sol", "SOL", "Solana Devnet"),
-    el("p", { class: "asset-balance" + (row.state === "synced" ? "" : " unknown") }, row.text),
+    assetHead("sol", "SOL", "Solana Devnet"), amount,
     el("p", { class: "small muted" }, row.state === "failed" ? solError : SOL_NOTE[row.state]),
     el("div", { class: "row-actions" }, el("button", { class: "btn", type: "button",
       onclick: () => { ui.tab = "solana"; render(); } }, "Open Solana")));
 }
+
+// An exact SOL text ("0.0025 SOL") in the size of the ZEC amount, with the unit as money()
+// shows it.
+const solAmount = (text) => el("span", { class: "money xl", role: "img", "aria-label": text },
+  text.slice(0, -4), el("span", { class: "cur" }, "SOL"));
 
 export const capNote = () => el("div", { class: "callout bad" },
   "This wallet holds " + capText(curNet().cap) + ", the warning level for unaudited mainnet "
@@ -433,14 +454,16 @@ function receivedRow(r) {
 // payment; the drawer keeps every action. Empty buckets do not show.
 function approvalsTab() {
   const rows = inboxRows(), sol = solInbox(), flying = new Set(inFlight());
-  const solRow = (id) => sol && sol.kind === id ? el("p", { class: "row-note" }, sol.text,
+  // The Solana line joins a bucket as one row; for review it counts each proposal.
+  const solNote = (id) => sol && sol.kind === id ? el("p", { class: "row-note" }, sol.text,
     " ", openSolanaButton()) : null;
   const sections = BUCKETS.map(([id, label]) => {
-    const list = rows[id], extra = solRow(id);
+    const list = rows[id], extra = solNote(id);
     if (!list.length && !extra) return null;
+    const count = list.length + (extra ? (id === "review" ? solPending() : 1) : 0);
     return el("section", { class: "card inbox", "aria-label": label },
       el("div", { class: "card-head card-pad" }, el("h2", {}, label),
-        el("span", { class: "badge plain" }, String(list.length + (extra ? 1 : 0)))),
+        el("span", { class: "badge plain" }, String(count))),
       el("div", { class: "list" }, list.map((ss) => guard(sentRow, ss, flying)), extra));
   }).filter(Boolean);
   const other = sol && !["review", "attention"].includes(sol.kind)
@@ -448,9 +471,7 @@ function approvalsTab() {
   return el("div", { class: "page", style: "gap:16px" },
     el("p", { class: "small muted" }, "Open a payment to approve, sign or send it. A payment "
       + "needs " + state.g.t + " of " + state.g.n + " signers."),
-    state.sessionsFailed ? el("div", { class: "callout bad", role: "alert" }, INBOX_EMPTY.failed)
-      : sections.length ? null : inboxEmpty(),
-    ...sections, other);
+    inboxNote(sections.length > 0), ...sections, other);
 }
 
 const openSolanaButton = () => el("button", { class: "btn sm", type: "button",
@@ -472,7 +493,8 @@ function inboxBucket(ss, held) {
   try {
     const end = ended(ss);
     return bucketOf({
-      landed: landed(ss), held: held.has(ss.id), check: !end && signingSeen(ss) && expired(ss),
+      landed: landed(ss), held: !!ss.error && held.has(ss.id),
+      check: !end && signingSeen(ss) && expired(ss),
       review: needsMyApproval(state.gid, ss), step: finishStep(ss), ended: end,
       error: !!ss.error, status: ss.status,
     });
@@ -488,14 +510,24 @@ const solInbox = () => solLine({ on: solOn(), error: solError, loading: !!(sol |
 const INBOX_EMPTY = {
   failed: "The payments of this wallet could not be read. Reload the page.",
   loading: "Checking the payments of this wallet…",
+  syncing: "The wallet syncs. A payment that you approved and that someone cancelled shows after "
+    + "the sync.",
   ignored: "No payment shows here. " + IGNORED_NOTE,
   zec: "No Zcash payment waits for this browser, the other signers or the network.",
   empty: "No payment waits for this browser, the other signers or the network.",
 };
-function inboxEmpty() {
+// What the inbox says about its own state. A failed read, a check that runs and a chain that
+// syncs show also next to rows: the list may lack payments then. The rest shows only when no row
+// does.
+function inboxNote(rows) {
   const why = emptyState({ loaded: state.sessionsLoaded, failed: state.sessionsFailed,
-    checking: state.pending, ignored: state.ignored, sol: solOn() });
-  return el("div", { class: "card empty", role: "status" }, INBOX_EMPTY[why]);
+    checking: state.pending, synced: chainReady(curChain()), ignored: state.ignored,
+    sol: solOn() });
+  if (why === "failed") return el("div", { class: "callout bad", role: "alert" }, INBOX_EMPTY[why]);
+  const partial = ["loading", "syncing"].includes(why);
+  if (rows && !partial) return null;
+  return el(rows ? "p" : "div", { class: rows ? "small muted" : "card empty", role: "status" },
+    INBOX_EMPTY[why]);
 }
 
 function activityTab() {

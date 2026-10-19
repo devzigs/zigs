@@ -11,11 +11,10 @@ assert.deepEqual(IDS, ["review", "ready", "waiting", "attention"]);
 
 // The expected bucket: the first rule that holds, written as a table.
 const RULES = [
-  [(f) => f.landed, null],
   [(f) => f.held || f.check, "attention"],
   [(f) => f.review, "review"],
+  [(f) => f.landed || f.ended || f.error, null],
   [(f) => f.step, "ready"],
-  [(f) => f.ended || f.error, null],
   [(f) => f.status === "lost", "attention"],
 ];
 const expected = (f) => {
@@ -47,16 +46,23 @@ assert.equal(bucketOf({ status: "proving" }), "waiting", "another browser builds
 assert.equal(bucketOf({ step: "proof", status: "signed" }), "ready");
 assert.equal(bucketOf({ step: "resend", status: "broadcast" }), "ready", "a lost send");
 assert.equal(bucketOf({ status: "collecting", error: true }), null, "cancelled, nothing held");
+assert.equal(bucketOf({ step: "send", status: "complete", error: true }), null,
+  "a failed payment: the drawer offers no step, so no Ready row");
+assert.equal(bucketOf({ review: true, landed: true, status: "collecting" }), "review",
+  "the badge counts it, so the inbox lists it");
 assert.equal(bucketOf({ status: undefined }), "attention", "a document with no status");
 console.log("ok  the named cases");
 
-const known = { loaded: true, failed: false, checking: false, ignored: 0, sol: false };
+const known = { loaded: true, failed: false, checking: false, synced: true, ignored: 0,
+  sol: false };
 assert.equal(emptyState(known), "empty");
 assert.equal(emptyState({ ...known, loaded: false }), "loading", "the payments did not arrive");
 assert.equal(emptyState({ ...known, failed: true }), "failed", "their read failed");
 assert.equal(emptyState({ ...known, failed: true, loaded: false }), "failed");
 assert.equal(emptyState({ ...known, checking: true }), "loading", "a check is open");
 assert.equal(emptyState({ ...known, ignored: 2 }), "ignored", "records failed their check");
+assert.equal(emptyState({ ...known, synced: false }), "syncing",
+  "before the sync, the holds of approvals are not known");
 assert.equal(emptyState({ ...known, sol: true }), "zec",
   "with a Solana part, the empty text speaks of Zcash only");
 console.log("ok  the inbox says that nothing waits only when it knows");

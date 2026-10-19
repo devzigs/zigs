@@ -30,7 +30,7 @@ const APP_SOL = "web/app-sol.js";
 const APP_GROUPS = "web/app-groups.js";
 const INDEX_JS = "cf/src/index.js";
 const POLICY_TEST = ["node", "solspike/test/policy.test.mjs"];
-const STORE_URL = '  localStorage.setItem("u", body.rpcUrl);\n';
+const STORE_URL = '  localStorage.setItem("u", url);\n';
 const SOL_OFF = 'if (env.SOL !== "1") return new Response("Not found\\n", { status: 404 });\n  ';
 const CONFIG_ROUTE = "if (url.pathname === SOL_CONFIG) return solConfig(req, env);\n";
 const SOL_SECRETS = "web/sol/secrets.js";
@@ -113,8 +113,9 @@ const limits = (id, what, [file, from, to], detect) =>
     detect,
     ms: 400000,
   });
+// sol-pay.mjs runs for about 265 s since the Solana batch (100 s before it), more under load.
 const payment = (id, what, [file, from, to], run, detect) =>
-  mutant(id, what, run, [patch(file, from, to)], { detect, ms: 120000 });
+  mutant(id, what, run, [patch(file, from, to)], { detect, ms: 600000 });
 const program = (id, what, [file, from, to], run, detect) =>
   mutant(id, what, run, [patch(file, from, to)], { detect, ms: 600000 });
 const SOL_PAY = ["node", "web/test/sol-pay.mjs"];
@@ -734,11 +735,13 @@ export const MUTATIONS = [
     /a mainnet wallet leaves no watch of the last wallet/),
   mutant("sol-cfg-status", "the page takes a URL from an error answer of the server",
     ["node", "web/test/sol-config.mjs"],
-    [patch(SOL_SESSION, "    if (res.ok) body", "    body")],
-    /a rpcUrl in an error answer/),
+    [patch(SOL_SESSION,
+      "  const url = res?.ok ? (await res.json().catch(() => null))?.rpcUrl : undefined;",
+      "  const url = (await res?.json().catch(() => null))?.rpcUrl;")],
+    /a rpcUrl in a 500 answer/),
   mutant("sol-cfg-store", "the page stores the URL of the server",
     ["node", "web/test/sol-config.mjs"],
-    [patch(SOL_SESSION, "  return body.rpcUrl;\n}", `${STORE_URL}  return body.rpcUrl;\n}`)],
+    [patch(SOL_SESSION, "  return url;\n}", `${STORE_URL}  return url;\n}`)],
     /the URL is not stored/),
   mutant("sol-cfg-cache", "the config answer can be cached", POLICY_TEST,
     [patch(INDEX_JS, 'headers: { "Cache-Control": "no-store" }', "headers: {}")], /no-store/),
@@ -771,7 +774,7 @@ export const MUTATIONS = [
     ["web/sol/approve.js", "  await checkNonce(c, review);\n", ""],
     ["node", "web/test/sol-pay.mjs"], REJECTION),
   sessions("S-review-block", "reviewOf ignores a stop",
-    ["approve", "  if (block) return { why: block };\n", ""], TRUTH),
+    ["approve", "  if (block) return { why: block, waiting: isWait(block) };\n", ""], TRUTH),
   sessions("S-stop-gate", "a stopped wallet may propose",
     ["gate", "  if (stop) return stop;\n", ""], /operator: 'rejects'|expected: false/),
   sessions("S-abort-reason", "an abort document with no reason stops the wallet",
@@ -789,7 +792,8 @@ export const MUTATIONS = [
   sessions("S-package-differs", "a signer takes a package that differs from the commits",
     ["signing", "  " + PACKAGE_LINE, ""], /package differs from the commits|did not combine/),
   sessions("S-preflight", "the proposal skips the test run on the network",
-    ["propose", "  await preflight(worker, unsigned.message, seat);\n", ""], /one test run/),
+    ["propose", "  await preflight(worker, unsigned.message, seat).catch(async (e) => {\n" +
+      "    throw new Error(await poolNote(c, worker, e.message));\n  });\n", ""], /one test run/),
   sessions("S-drop-dead", "the nonces of an ended session stay",
     ["signing", "if (ended(sid)) launch(", "if (false) launch("],
     /timeout: the nonces of a stopped wallet go/),
@@ -861,7 +865,8 @@ export const MUTATIONS = [
     ["web/sol/approve.js", "(isSpend(ss) && !spend) || ", ""],
     ["node", "web/test/sol-pay.mjs"], /no review before the wallet read/),
   payment("A-seen", "a payment is checked before the device has read its proposal account",
-    ["web/sol/approve.js", " || (isPayment(ss) && !seen)", ""],
+    ["web/sol/approve.js", "(isPayment(ss) && (!seen || accountLate(seen)))",
+      "(isPayment(ss) && !!seen && accountLate(seen))"],
     ["node", "web/test/sol-pay.mjs"], /no review before the account read/),
   payment("W-7008", "error 7008 ends the session as an ordinary refusal",
     ["web/sol/signing.js", "STALE_ROOT.test(sim.err) ? PROOF_EXPIRED : refused", "refused"],
@@ -1251,8 +1256,10 @@ export const MUTATIONS = [
       '  withdraw: "Send privately",'], SOL_PAY, /the card of the session/),
   program("W-change-row", "the Change row of a withdrawal shows 0",
     ["web/sol/payview.js",
-      '["Change", solText(sum(said.change)) + " stays with the group."],\n  ];\n}\n\n/** The payee',
-      '["Change", solText(0n) + " stays with the group."],\n  ];\n}\n\n/** The payee'],
+      '    ["Amount (public)", solText(said.withdrawn)],\n' +
+        '    ["Change", solText(sum(said.change)) + " stays with the group."],',
+      '    ["Amount (public)", solText(said.withdrawn)],\n' +
+        '    ["Change", solText(0n) + " stays with the group."],'],
     SOL_PAY, /the change of the withdrawal/),
   program("W-amount", "a withdrawal takes an amount that is no SOL amount",
     ["web/sol/propose.js",
