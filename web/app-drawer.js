@@ -24,6 +24,7 @@ import { nameOf, zecName } from "./zns.js";
 import { render } from "./app-loop.js";
 import { RESEND_MS, stageHeadline } from "./payment-model.js";
 import { icon } from "./app-icons.js";
+import { solOn } from "./app-sol.js";
 
 // The expiry of an open payment, or why an expired one ends here. The engine counts from the
 // last sync, so the time since that sync comes off. A height from saved state gives no time.
@@ -137,7 +138,8 @@ function recipientBox(ss, rc) {
       nameLine(r), memoLines(r))),
     rc.rows.some((r) => r.memo) ? el("p", { class: "small faint" },
       "A memo goes on chain with the payment. Its recipient, every device of this wallet and "
-      + "anyone else who has the invite link can read it.") : null,
+      + "anyone else who has the invite link can read it. A device that a later Change devices "
+      + "leaves out keeps reading it: it reads the history of this wallet.") : null,
     checkWarnings(rc),
     ss.move ? moveNote(ss, rc) : null);
 }
@@ -145,15 +147,17 @@ function recipientBox(ss, rc) {
 function moveNote(ss, rc) {
   if (rc.intoNew === false) return el("div", { class: "callout bad" }, "This is not the address of " + groupName(ss.move) + ". Do not approve it.");
   if (rc.intoNew) {
-    return el("div", { class: "callout" }, "This moves all Zcash funds to " + groupName(ss.move)
-      + ", the wallet that replaces this one. Your browser checked its address. " + SOL_MOVE);
+    return el("div", { class: "callout" }, "This moves the confirmed Zcash funds to "
+      + groupName(ss.move) + ", the wallet that replaces this one. Your browser checked its "
+      + "address." + solPart());
   }
-  return el("div", { class: "callout" }, "This moves all Zcash funds to a new wallet that replaces "
-    + "this one. Your browser has no checked copy of its address, so it cannot check it. "
-    + SOL_MOVE);
+  return el("div", { class: "callout" }, "This moves the confirmed Zcash funds to a new wallet "
+    + "that replaces this one. Your browser has no checked copy of its address, so it cannot "
+    + "check it." + solPart());
 }
-const SOL_MOVE = "If this wallet has a Solana part, it does not move this way: check it in its "
-  + "Solana section.";
+// The move takes the Zcash funds only (proposeMove). The lead joins this text with SOL_STAYS.
+const solPart = () => (solOn() ? " If this wallet has a Solana part, it does not move this way: "
+  + "check it in its Solana section." : "");
 
 // The seats of this browser that can approve the payment now. None while the wallet's data is
 // being checked: an approval written twice would replace its own nonces.
@@ -330,7 +334,7 @@ function sessionDrawer(ss) {
       guard(headline, ss, refused, rc),
       ...notes(ss, refused, rc),
       guard(timeline, ss, refused, rc),
-      read ? guard(breakdown, read) : null,
+      read ? guard(breakdown, read, ss) : null,
       guard(discussion, ss),
       ss.final ? guard(txDetails, ss) : null,
       ss.broadcastTxid ? chainSees() : null,
@@ -396,7 +400,7 @@ function feeLabel(ins) {
   return times ? "Priority fee (" + times + " times the standard fee)" : "Network fee";
 }
 
-function breakdown(ins) {
+function breakdown(ins, ss) {
   const t = decodedTotals(ins);
   const row = (label, zat, cls = "") => el("div", {}, el("span", { class: cls }, label),
     el("span", { class: "mono " + cls }, zecText(zat)));
@@ -413,8 +417,15 @@ function breakdown(ins) {
       spent.map((l) => row("Spent from this wallet", l.value, "neg")),
       ins.lines.filter(own).map((l) => row("Change back to this wallet", l.value, "neg"))),
     el("p", { class: "small faint" }, "Your browser decoded this from the transaction itself, "
-      + "not from the proposer's description."));
+      + "not from the proposer's description."),
+    ss.broadcastTxid ? null : el("p", { class: "small faint" }, ON_CHAIN_PUBLIC));
 }
+// Before the send, so that a device sees it before it approves. The lead joins the second part
+// with EXPIRY_PUBLIC, which the chain summary shows after the send.
+const ON_CHAIN_PUBLIC = "On chain, the number of actions and the fee are public. The expiry "
+  + "height is public too. Zigs sets it up to one day after the proposal, and a standard wallet "
+  + "sets it 40 blocks ahead. So the expiry height can show that Zigs made this payment. Few "
+  + "wallets pay a priority fee, so a priority fee can mark a payment too.";
 
 // Each seat with its name and seat number, and a check mark when it approved.
 const approverChips = () => el("div", {

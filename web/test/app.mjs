@@ -2607,21 +2607,37 @@ const sealed = (gid, rel, seat, fields, key, names = ["by", "sig"]) =>
         const moveOk = look({ ...open("hd8", "PA"), move: "MVX" });
         assert.match(moveOk.head, /^Your approval is needed/,
           "a move to the checked address asks for an approval");
-        const solMove = "If this wallet has a Solana part, it does not move this way: check it in "
-          + "its Solana section.";
-        assert.ok(moveOk.text.includes("This moves all Zcash funds to the new wallet, the wallet "
-          + "that replaces this one. Your browser checked its address. " + solMove),
-        "a move names the Zcash funds only");
+        // The move takes the confirmed Zcash funds only. The Solana sentence shows only for a
+        // wallet that can have a Solana part (solOn).
+        const solMove = " If this wallet has a Solana part, it does not move this way: check it "
+          + "in its Solana section.";
+        const checkedMove = "This moves the confirmed Zcash funds to the new wallet, the wallet "
+          + "that replaces this one. Your browser checked its address.";
+        const blindMove = "This moves the confirmed Zcash funds to a new wallet that replaces this "
+          + "one. Your browser has no checked copy of its address, so it cannot check it.";
+        const moveIn = (text) => look({ ...open("hd8", "PA"), move: "MVX" }).text.includes(text);
+        const g13 = t.state.g;
+        assert.deepEqual([t.solOn(), moveOk.text.includes(checkedMove + solMove)], [true, true],
+          "a move names the confirmed Zcash funds and the Solana part");
+        t.state.g = { ...g13, version: 2 };
+        assert.deepEqual([t.solOn(), moveIn(checkedMove), moveIn("Solana part")],
+          [false, true, false], "a wallet without a Solana part reads no Solana sentence");
+        t.state.g = g13;
         delete t.secrets["MVX:1"];
-        assert.ok(look({ ...open("hd8", "PA"), move: "MVX" }).text.includes("This moves all Zcash "
-          + "funds to a new wallet that replaces this one. Your browser has no checked copy of its "
-          + "address, so it cannot check it. " + solMove),
-        "and so does a move with no checked copy");
+        assert.ok(moveIn(blindMove + solMove), "and so does a move with no checked copy");
+        t.state.g = { ...g13, version: 2 };
+        assert.deepEqual([moveIn(blindMove), moveIn("Solana part")], [true, false]);
+        t.state.g = g13;
         const memoOne = look({ ...open("hdm", "PA"), payees: [{ to: "utest1x", amount: 5,
           memo: "rent" }] });
         assert.ok(memoOne.text.includes("A memo goes on chain with the payment. Its recipient, "
-          + "every device of this wallet and anyone else who has the invite link can read it."),
-        "the readers of a memo");
+          + "every device of this wallet and anyone else who has the invite link can read it. A "
+          + "device that a later Change devices leaves out keeps reading it: it reads the history "
+          + "of this wallet."), "the readers of a memo");
+        // Before the send, the drawer says what the chain will show, also the expiry height.
+        assert.deepEqual([memoOne.text.includes("The expiry height is public too."),
+          look(lateSent()).text.includes("The expiry height is public too.")], [true, false],
+        "the drawer says before the send that the expiry height is public");
         // The steps after the approvals.
         const lateA = lateSent();
         put(lateA);
