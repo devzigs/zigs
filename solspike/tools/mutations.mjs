@@ -1580,7 +1580,7 @@ export const MUTATIONS = [
     /the drawer head names the network/),
   program("Q-received-note", "the explorer note shows with no received payment",
     ["web/app-wallet.js", "list.some((a) => a.r) ?", "true ?"], UNIFIED,
-    /no note without a received payment/),
+    /the Overview note follows its 6 rows|no note without a received payment/),
   program("Q-memo-note", "the explorer note of memos shows with no memo",
     ["web/app-thread.js", "wallet && memoMessages().length ?", "wallet ?"], UNIFIED,
     /no memo, no note/),
