@@ -2,8 +2,8 @@
 // the URL from the server answer only, keeps nothing in storage, says "not available" for a 503 or
 // a 404, and asks to check the connection for every other failure. When the server gives no
 // URL, the page loads nothing of Solana, says so once, and does not ask again at the next redraw.
-// Its diagnostics say that Zigs could not read the Solana part, and its Activity list says that
-// Solana did not load.
+// Before the load, its diagnostics name no Solana part. After the failed load, they say that Zigs
+// could not read the Solana part, and its Activity list says that Solana did not load.
 // Run: node web/test/sol-config.mjs   (Node 24)
 import assert from "node:assert/strict";
 import { NOT_LOADED, UNAVAILABLE, fetchRpcUrl } from "../sol/session.js";
@@ -109,6 +109,17 @@ function pageText(t) {
     return real(url, init);
   };
   try {
+    // Before the Solana tab draws, the module is not loaded. The start documents arrived and hold
+    // no start, so the diagnostics name no Solana part and count nothing of it.
+    const { diagnostics } = await import("../app-help.js");
+    await waitFor("the start watch", () => rig.live("groups/" + gid + "/solstart") > 0);
+    await sleep(50);
+    assert.equal(t.sol, null, "the module is not loaded yet");
+    const none = diagnostics();
+    assert.match(none, /^Solana part: not added$/m,
+      "a wallet with no start document has no Solana part");
+    assert.doesNotMatch(none, /^Solana (backup files|payments)/m,
+      "and the diagnostics count nothing of it");
     const tab = () => t.walletView([], null);
     t.ui.tab = "solana";
     tab();
@@ -117,7 +128,6 @@ function pageText(t) {
     assert.equal(t.sol, null, "nothing of Solana is attached");
     assert.match(t.banner.text, /Solana did not load: Solana is not available on this server/);
     // The diagnostics tell a failed load from a read that is still going (unified-setup.mjs).
-    const { diagnostics } = await import("../app-help.js");
     assert.match(diagnostics(), /^Solana backup files not saved: could not read$/m,
       "a failed Solana load says could not read");
     assert.match(diagnostics(), /^Solana payments to approve: could not read$/m,
@@ -127,6 +137,7 @@ function pageText(t) {
     t.ui.tab = "activity";
     assert.match(pageText(t), /Solana did not load, so its transactions are not shown here\./,
       "an Activity list says that Solana did not load");
+    t.ui.tab = "solana";
     for (let i = 0; i < 5; i++) tab();
     await t.solLoad();
     await sleep(100);

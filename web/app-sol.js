@@ -106,7 +106,8 @@ const SOL_OFF = "Solana is not available on this server";
 export let sol = null, solLoading = null, solError = "";
 let solStartDoc = null;   // the stored solstart/1 of the open wallet, whoever wrote it
 let solWatched = null;    // the wallet whose start document is watched
-export function resetSolStart() { solStartDoc = null; solWatched = null; }
+let solStartRead = null;  // the wallet whose start documents arrived
+export function resetSolStart() { solStartDoc = null; solWatched = null; solStartRead = null; }
 const solHost = () => ({
   Z, sdb, state, el, act, log, once, render, refilter, showBanner, sec, putSec, signedDoc,
   exclusive, takeStored,
@@ -229,9 +230,13 @@ export function solAttach(gid, base) {
   if (sol) { sol.open(gid, base); return; }
   unsubGroup.push(sdb.collection(base + "/solstart").onSnapshot((snap) => {
     solStartDoc = snap.docs.find((d) => d.id === "1")?.data() ?? null;
+    solStartRead = gid;
     refilter();
   }));
 }
+// Before the module loads: the start documents of the open wallet arrived and hold no start, so
+// the wallet has no Solana part yet.
+export const solNotAdded = () => !sol && !solError && solStartRead === state.gid && !solStartDoc;
 const solStartSigned = () => !!solStartDoc && checkIn(state.gid)("solstart/1", solStartDoc.by,
   solStartDoc.sig, docFields(solStartDoc), 1) === "yes";
 // A seat of a wallet with the Solana hint loads the module at the start of setup, so the key

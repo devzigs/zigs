@@ -8,7 +8,9 @@ import { localSeats, seatIds } from "./app-seats.js";
 import { curChain, netName, readsMemos } from "./app-chain.js";
 import { toApprove } from "./app-groups.js";
 import { groupVersion, verifiedCount } from "./app-dkg.js";
-import { sol, solError, solFile, solOn, solPending, solSetup, solUnsaved } from "./app-sol.js";
+import {
+  sol, solError, solFile, solNotAdded, solOn, solPending, solSetup, solUnsaved,
+} from "./app-sol.js";
 import { copyBtn, el } from "./app-dom.js";
 import { HELP, diagnosticsText } from "./help-model.js";
 
@@ -34,7 +36,10 @@ const solCount = (count) => (solUnread() ? solUnreadWord() : count());
 // read yet has no state.
 const SOL_PART = { "not started": "not added", running: "setting up", ready: "ready",
   stopped: "stopped", differs: "keys differ", unavailable: "unavailable" };
-const solStatus = () => (solOn() ? solSetup()?.status : "unavailable");
+function solStatus() {
+  if (!solOn()) return "unavailable";
+  return solNotAdded() ? "not started" : solSetup()?.status;
+}
 // The Solana counts show for a part that exists, and for one that is not read yet.
 const solFacts = (facts) => (["not started", "unavailable"].includes(solStatus()) ? [] : facts);
 
