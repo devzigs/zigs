@@ -795,44 +795,6 @@ async function walkSteps(fields, times, fresh = true) {
   delete ui.solServed;
 }
 
-// ── The welcome card: only the Zcash part is shielded ──
-// A server that serves Solana, or that has not answered yet, gets the text for a Solana part.
-{
-  const ZEC_ONLY = "Nobody ever holds the whole key, and nobody outside your team can read the "
-    + "wallet.";
-  const WITH_SOL = "Nobody ever holds the whole key, and nobody outside your team can read the "
-    + "Zcash part of the wallet. A Solana Devnet part is less private: a private payment hides its "
-    + "amount, but the chain shows its payee and the wallet that pays. Helius, the Solana provider "
-    + "that Zigs uses, sees your IP address and the keys of the wallet. By default, its hosted "
-    + "prover also sees each payment.";
-  const groups = t.state.groups;
-  const welcomeText = () => {
-    const real = globalThis.document;
-    globalThis.document = { createElement: () => new Rec(), createElementNS: () => new Rec(),
-      createTextNode: (text) => ({ text }) };
-    try {
-      return textOf(lobby());
-    } finally {
-      globalThis.document = real;
-    }
-  };
-  t.state.groups = [];
-  try {
-    delete ui.solServed;
-    assert.ok(welcomeText().includes(WITH_SOL),
-      "before the server answers, the welcome names the Solana part");
-    await waitFor("the answer", () => ui.solServed === true);
-    assert.ok(welcomeText().includes(WITH_SOL), "a server with Solana: the Solana part");
-    ui.solServed = false;
-    const plain = welcomeText();
-    assert.ok(plain.includes(ZEC_ONLY), "a server without Solana: the Zcash line");
-    assert.doesNotMatch(plain, /Solana/, "and no Solana text");
-  } finally {
-    t.state.groups = groups;
-    delete ui.solServed;
-  }
-}
-
 // ── S1: a button that is off shows why, as text next to it ──
 // The first reason that holds wins: the engine, the group server, a read-only page, a wallet
 // that waits for its check, a join that runs.

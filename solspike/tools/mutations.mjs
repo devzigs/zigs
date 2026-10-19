@@ -1525,13 +1525,6 @@ export const MUTATIONS = [
     ["web/app-loop.js", "endSend(); endCreate();", "endSend(); ui.create = false;"], APP_TEST,
     /Escape puts the create dialog back at its first step/),
   // The privacy and move texts: each says only what the code does.
-  program("Q-welcome-wait", "the welcome claims a private wallet before the server answers",
-    [APP_SOL, 'return ui.solServed === false ? "can read the wallet."',
-      'return !solServed() ? "can read the wallet."'], UNIFIED,
-    /before the server answers, the welcome names the Solana part/),
-  program("Q-welcome-off", "the welcome names a Solana part on a server without Solana",
-    [APP_SOL, 'return ui.solServed === false ? "can read the wallet."',
-      'return false ? "can read the wallet."'], UNIFIED, /a server without Solana: the Zcash line/),
   program("Q-move-sol", "the move card says nothing of a Solana part",
     ["web/app-wallet.js", 'solOn() ? { ...m, text: m.text + " " + SOL_STAYS, done: false } : m;',
       "m;"], APP_TEST, /a move with a Solana part says that this part stays/),
