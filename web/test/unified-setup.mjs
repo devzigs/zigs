@@ -331,12 +331,19 @@ async function technicalBox(w, gid) {
 }
 // A redraw makes a new open box, which fires a toggle of its own. A toggle that matches the flag
 // must ask for no redraw, or the page redraws at every frame. The test counts the frames that
-// render() asks for, after the redraws above have ended.
+// render() asks for, after the redraws above have ended. Background work can leave a draw
+// pending, and render() then asks for no frame: the test waits for one, and runs it first.
 async function redrawGuard(box, gid) {
-  await sleep(250);
+  const { render } = await import("../app-loop.js");
   const frames = [], raf = globalThis.requestAnimationFrame;
   globalThis.requestAnimationFrame = (fn) => frames.push(fn);
   try {
+    for (let i = 0; i < 50 && !frames.length; i++) {
+      render();
+      if (!frames.length) await sleep(130);
+    }
+    assert.equal(frames.length, 1, "a draw ends within the wait");
+    frames.splice(0).forEach((fn) => fn());
     t.ui.technical = gid;
     box().on.toggle({ currentTarget: { open: true } });
     assert.deepEqual([frames.length, t.ui.technical], [0, gid],
