@@ -79,9 +79,11 @@ coin. The runbook of a demo with three devices is in [docs/demo.md](docs/demo.md
    the transaction id. Paste the address there. The balance appears as **Incoming**, then as
    **Available** after 3 confirmations (about 75 s).
 5. Click **Send**, paste any testnet unified address (`utest1…`), enter an amount, and click
-   **Propose payment**. For a payroll, click **Add recipient** or **Paste a list**: up to 20
-   recipients go into one transaction with one approval round. A payment request (`zcash:…`) pasted
-   in the recipient field fills the rows.
+   **Review payment**. The review shows what your browser decoded from the transaction that it
+   built. Click **Propose payment**. For a payroll, click **Add recipient** or **Paste a list**: up
+   to 20 recipients go into one transaction with one approval round. A payment request (`zcash:…`)
+   pasted in the recipient field fills the rows. The form keeps what you typed as a draft on this
+   device for 24 hours.
 6. In the payment panel, click **Approve as seat 1** and **Approve as seat 2**. Read **What this
    payment does**: your browser decoded it from the transaction itself.
 7. Click **Build proof** (about one minute in the browser), then **Send to network**, then
@@ -109,7 +111,7 @@ coin. The runbook of a demo with three devices is in [docs/demo.md](docs/demo.md
     status goes from **Approved, executing** to **Executed**, with the transaction id. Click
     **Sync Solana** to see the new balance.
 
-To see signer changes, open **Signers**, then **Change signers**. To see the privacy model, read
+To see device changes, open **Devices**, then **Change devices**. To see the privacy model, read
 [PRIVACY.md](PRIVACY.md).
 
 ## How Zigs meets the judging criteria
@@ -262,7 +264,7 @@ creates a replacement wallet and moves the funds with one normal, approved payme
 
 ```mermaid
 flowchart TD
-  A["Old wallet<br/>signers A, B, C, any 2 of 3"] -->|Change signers| B["New wallet<br/>signers A, B, D, any 2 of 3<br/>new key ceremony, new address"]
+  A["Old wallet<br/>signers A, B, C, any 2 of 3"] -->|Change devices| B["New wallet<br/>signers A, B, D, any 2 of 3<br/>new key ceremony, new address"]
   A -.->|stores only the new wallet id, never its secret| B
   B --> C["The old wallet proposes one payment of its whole balance to the new address"]
   C --> D["2 of 3 old signers approve.<br/>Approvers who are in the new wallet check its address"]

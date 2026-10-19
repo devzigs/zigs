@@ -22,19 +22,21 @@ import {
   cancelMove, chainReady, ended, expired, heldApprovals, isOpen, landed, proposeMove, sendBlocker,
   signingSeen,
 } from "./app-payments.js";
-import { finishStep } from "./app-drawer.js";
+import { finishStep, refusedSend } from "./app-drawer.js";
 import { BUCKETS, bucketOf, emptyState, solLine } from "./approvals-model.js";
 import { messagesCard } from "./app-thread.js";
 import { openBackup, staleRestoreNote } from "./app-backups.js";
 import { loadingView } from "./app-shell.js";
 import { render } from "./app-loop.js";
+import { openSend } from "./app-send.js";
 import { setupView, solSetupCard, solUnfinished } from "./app-setup.js";
 import { themeChoice } from "./app-theme.js";
 import {
-  sol, solBackup, solBalance, solError, solLoading, solOn, solPending, solSetup, solSync, solTab,
-  solUnsaved,
+  sol, solBackup, solBalance, solError, solFile, solLoad, solLoading, solOn, solPending, solSetup,
+  solSync, solTab, solUnsaved,
 } from "./app-sol.js";
 import { pendingShortcut, solRow, zecInProgress, zecTotal } from "./overview-model.js";
+import { protectionRisk, recoveryState } from "./recovery-model.js";
 import { icon } from "./app-icons.js";
 
 export function groupView() {
@@ -102,7 +104,7 @@ export function walletSections() {
       countBadge(toApprove(state.gid).length + solPending(), "to approve", "attn")],
     ["activity", "Activity"],
     ["messages", "Messages", countBadge(unreadIn(state.gid), "unread", "note")],
-    ["members", "Devices"], ["details", "Details"],
+    ["members", "Devices"], ["recovery", "Recovery"], ["details", "Details"],
   ];
   if (solOn()) sections.push(["solana", "Solana", countBadge(solPending(), "to approve", "attn")]);
   return sections;
@@ -117,7 +119,8 @@ export function currentSection(sections) {
 const BODIES = {
   overview: () => overviewTab(), approvals: () => approvalsTab(), activity: () => activityTab(),
   messages: () => messagesCard(),
-  members: () => membersTab(), details: () => detailsTab(), solana: () => solTab(),
+  members: () => membersTab(), recovery: () => recoveryTab(), details: () => detailsTab(),
+  solana: () => solTab(),
 };
 
 export function walletView(head, why) {
@@ -128,7 +131,8 @@ export function walletView(head, why) {
   const solSeats = solUnsaved();
   const [id, label] = currentSection(walletSections());
   return el("div", { class: "page" }, head,
-    unsaved.length || solSeats.length ? backupNote(unsaved, solSeats) : null,
+    unsaved.length || solSeats.length
+      ? backupNote(unsaved, solSeats, !unsaved.length && solUnfinished()) : null,
     el("section", { id: "panel-" + id, "data-key": "panel-" + id, tabindex: "-1",
       "aria-label": label }, BODIES[id]()),
     el("div", { class: "action-bar" }, ...walletActions(why)));
@@ -165,7 +169,9 @@ function walletTitle(g) {
 
 // Private windows, Tor Browser and cleared site data delete the key share with the browser data.
 // `solSeats`: the seats whose Solana part has no saved file yet (solUnsaved, app-sol.js).
-export function backupNote(seats, solSeats = []) {
+// A note for the Solana file alone is plain while the Solana part still sets up; the amber one
+// comes after the setup. A Zcash file that is not saved is always amber.
+export function backupNote(seats, solSeats = [], settling = false) {
   const first = seats.length ? "Back up your key share."
     : "Back up the Solana part of your key share.";
   const text = first + " This browser can forget it: private windows and Tor "
@@ -173,7 +179,7 @@ export function backupNote(seats, solSeats = []) {
     + "Keep the file safe, and keep the passphrase apart from it."
     + (solSeats.length ? " " + SOL_FILE : "");
   const many = seats.length + solSeats.length > 1;
-  return el("div", { class: "callout warn", role: "status" },
+  return el("div", { class: settling ? "callout" : "callout warn", role: "status" },
     el("span", { style: "flex:1 1 16rem" }, text),
     seats.map((i) => el("button", {
       class: "btn sm", type: "button", onclick: () => openBackup(i),
@@ -191,9 +197,7 @@ function walletActions(why) {
     el("button", {
       class: "btn primary", type: "button", disabled: !!why, title: why,
       onclick: () => {
-        Object.assign(ui, {
-          send: true, pay: null, note: "", priority: false, sendFor: null, after: null,
-        });
+        openSend({ pay: null, note: "", priority: false, sendFor: null, after: null });
         render();
       },
     }, "Send"),
@@ -233,7 +237,7 @@ function moveCard(c) {
   const m = moveState(c), why = m.propose ? sendBlocker() : null;
   const started = state.sessions.some((x) => x.move === state.g.movedTo && !x.error && !ended(x));
   return el("section", { class: "card card-pad " + (m.done ? "" : "attention") },
-    el("div", { class: "card-head" }, el("h2", {}, m.done ? "This wallet moved" : "Changing signers"),
+    el("div", { class: "card-head" }, el("h2", {}, m.done ? "This wallet moved" : "Changing devices"),
       m.done ? el("span", { class: "badge plain" }, "Closed") : null),
     el("p", { class: "small muted" }, m.text),
     el("div", { style: "display:flex;gap:8px;flex-wrap:wrap" },
@@ -501,11 +505,13 @@ export function inboxRows() {
 
 function inboxBucket(ss, held) {
   try {
-    const end = ended(ss);
+    const end = ended(ss), step = finishStep(ss);
     return bucketOf({
+      // In the Check state the drawer offers no step (nextAction): no row either.
+      sendRefused: !end && !ss.error && !expired(ss) && refusedSend(ss, step),
       landed: landed(ss), held: held.has(ss.id),
       check: !end && signingSeen(ss) && expired(ss),
-      review: needsMyApproval(state.gid, ss), step: finishStep(ss), ended: end,
+      review: needsMyApproval(state.gid, ss), step, ended: end,
       error: !!ss.error, status: ss.status,
     });
   } catch (e) {
@@ -593,6 +599,72 @@ function memberRow(i) {
   const backup = mine && sec(state.gid, i).keyPackage ? keyBackupButton(i) : null;
   return el("div", { class: "member" }, avatar(i, "lg"), el("div", { class: "ri-main" }, title, sub),
     el("div", { class: "m-actions" }, seatBadge(i), backup));
+}
+
+// The Recovery section: the files of your seats in this wallet, the margin of the wallet, and
+// what Zigs cannot know. A button opens the backup dialog of the seat.
+function recoveryTab() {
+  const seats = localSeats().map((i) => {
+    const s = sec(state.gid, i) || {}, sol = solFile(i);
+    return { id: i, zec: { has: !!s.keyPackage, saved: seatBackedUp(s), restored: !!s.restored },
+      sol: sol && { has: !sol.unknown, ...sol } };
+  });
+  // The Solana part may not be read yet: the module loads here as in the Solana section.
+  if (seats.some((x) => x.sol?.unknown && !x.sol.failed)) solLoad();
+  const r = recoveryState(seats);
+  const risk = protectionRisk(state.g.t, state.g.n, seats.filter((x) => x.zec.has).length);
+  return el("div", { class: "page", style: "gap:16px" },
+    el("section", { class: "card card-pad" + (r.state === "missing" ? " attention" : "") },
+      el("div", { class: "card-head" }, el("h2", {}, r.label)),
+      el("p", { class: "small muted" }, RECOVERY_LIMITS)),
+    el("section", { class: "card card-pad" + (risk.here ? " attention" : "") },
+      el("div", { class: "card-head" }, el("h2", {}, risk.title)),
+      el("p", { class: "small muted" }, risk.detail),
+      risk.here ? el("p", { class: "small" }, risk.here) : null),
+    seats.some((x) => x.zec.has) ? el("section", { class: "card" },
+      el("div", { class: "card-head card-pad" }, el("h2", {}, "Your seats in this wallet")),
+      el("div", { class: "recovery-seats" },
+        seats.filter((x) => x.zec.has).map((x) => guard(recoveryRow, x)))) : null,
+    el("details", { class: "card card-pad recovery-lost" },
+      el("summary", {}, "If a device is lost"),
+      el("p", { class: "small muted" }, lostText(state.g.t, solOn()))));
+}
+
+const RECOVERY_LIMITS = "Zigs knows only the files that this browser saved. It cannot see the "
+  + "files of the other devices: ask each signer to back up their seat. Zigs does not open a "
+  + "saved file again: keep each file and its passphrase apart, and make sure that you can find "
+  + "both. This section covers your seats in this wallet only: each other wallet has its own, "
+  + "the personal account has its own backup file, and direct chats are in no backup file.";
+const lostText = (t, sol) => "Keep the devices that still work, and do not delete their data. "
+  + "While " + t + " devices remain, they can move the Zcash funds to a new wallet (Devices, "
+  + "Change devices)" + (sol ? "; a Solana part does not move this way" : "") + ". With fewer, "
+  + "first restore seats from their files. Zigs cannot go around the approval rule. A lost "
+  + "device can still hold its key share, so move the funds when you can.";
+
+// The badge of one file: saved here, restored from it, not saved, or a Solana part that this
+// browser does not hold (a seat restored from its Zcash file alone).
+function fileBadge(name, f) {
+  if (f.unknown) return el("span", { class: "badge" }, name + (f.failed ? " part could not be read"
+    : " part not read yet"));
+  if (f.missing) return el("span", { class: "badge warn" }, name + " part missing");
+  const said = !f.saved ? " file not saved" : f.restored ? " restored from its file"
+    : " file saved here";
+  return el("span", { class: "badge " + (f.saved ? "ok" : "warn") }, name + said);
+}
+const solAction = (x) => (x.sol.unknown ? null : x.sol.missing
+  ? el("span", { class: "small" }, "Restore it from its Solana file in the Solana section.")
+  : el("button", { class: "btn sm", type: "button", onclick: act(() => solBackup(x.id)),
+    "aria-label": "Back up the Solana part of seat " + x.id }, "Back up the Solana part"));
+
+function recoveryRow(x) {
+  return el("div", { class: "member recovery-row" }, avatar(x.id, "lg"),
+    el("div", { class: "ri-main" }, el("span", { class: "ri-title" }, seatTitle(x.id,
+      state.seats[x.id])), el("span", { class: "ri-sub" }, "Seat " + x.id)),
+    el("div", { class: "m-actions" }, fileBadge("Zcash", x.zec),
+      x.sol ? fileBadge("Solana", x.sol) : null,
+      el("button", { class: "btn sm", type: "button", onclick: () => openBackup(x.id),
+        "aria-label": "Back up the Zcash part of seat " + x.id }, "Back up the Zcash part"),
+      x.sol ? solAction(x) : null));
 }
 
 function detailsTab() {

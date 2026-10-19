@@ -165,6 +165,7 @@ export async function restoreSolana(c, b, encrypted) {
     doneSent: true,
     otherCopy: null,
     backupSaved: true,
+    restored: true,
     ...pinOf(f),
   };
   if (!(await putSol(host, f.group, f.seat, part))) {

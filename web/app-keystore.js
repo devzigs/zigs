@@ -144,6 +144,7 @@ export async function unlockVault() {
 
 export function forgetVault() {
   try { localStorage.removeItem("zf-vault"); } catch {}
+  try { localStorage.removeItem("zf-drafts"); } catch {}   // sealed with keys that go too
   location.reload();
 }
 

@@ -27,8 +27,8 @@ const { createDialog, lobby, marginText, renderSide } = await import("../app-she
 const { offReason } = await import("../util.js");
 const { intentHex } = await import("../sol/intent.js");
 const { ui } = await import("../app-state.js");
-const { planSolana, solSetup } = await import("../app-sol.js");
-const { walletReady, walletShown } = await import("../app-wallet.js");
+const { planSolana, solFile, solSetup, solUnsaved } = await import("../app-sol.js");
+const { backupNote, walletReady, walletShown } = await import("../app-wallet.js");
 const { PUBLIC_TEXT } = await import("../sol/view.js");
 const { reactCeremony } = await import("../sol/ceremony.js");
 const { t, data, waitFor } = rig;
@@ -125,6 +125,7 @@ const proposal = (id, change = {}) => ({
 const labelled = (node, label) =>
   node.attrs?.["aria-label"] === label ||
   (node.kids ?? []).some((kid) => labelled(kid, label));
+const shellParts = { ".main": {}, ".skip-link": {}, ".logo": {} };
 function sideTree() {
   const real = globalThis.document;
   const nav = new Rec();
@@ -132,7 +133,8 @@ function sideTree() {
   const fake = { createElement: () => new Rec(), createElementNS: () => new Rec(),
     createTextNode: (text) => ({ text }) };
   const side = { classList: { toggle() {} } };
-  globalThis.document = { ...fake, getElementById: () => nav, querySelector: () => side };
+  globalThis.document = { ...fake, getElementById: () => nav,
+    querySelector: (sel) => shellParts[sel] ?? side };
   try {
     renderSide();
     return nav;
@@ -192,6 +194,78 @@ function inboxWiring() {
     t.ui.tab = tab;
   }
 }
+// The Recovery section reads the saved flag of each seat, and the Solana file of a stopped share
+// is no file; a note for the Solana file alone is plain while the part sets up.
+function recoveryFacts() {
+  const real = t.secrets;
+  const k = Object.keys(real)
+    .find((key) => key.startsWith(t.state.gid + ":") && real[key].keyPackage);
+  const seat = Number(k.split(":").pop());
+  const with_ = (patch) => ({ ...real, [k]: { ...real[k], ...patch } });
+  // The row of the seat: its files, and the two buttons with their full names.
+  const row = () => findNode(pageTree(), (n) => n.className === "member recovery-row");
+  const labels = (n) => (n.kids ?? []).flatMap(labels)
+    .concat(n.attrs?.["aria-label"] ? [n.attrs["aria-label"]] : []);
+  try {
+    t.secrets = with_({ backupSaved: false });
+    assert.match(textOf(row()), new RegExp("Seat " + seat + "Zcash file not saved"));
+    t.secrets = with_({ backupSaved: true });
+    assert.match(textOf(row()), new RegExp("Seat " + seat + "Zcash file saved here"));
+    assert.ok(labels(row()).includes("Back up the Zcash part of seat " + seat));
+    t.secrets = with_({ backupSaved: true, restored: true });
+    assert.match(textOf(row()), /Zcash restored from its file/, "a seat opened from its file");
+    assert.ok(real[k].sol, "the seat holds a Solana part, so the checks below run");
+    {
+      t.secrets = with_({ sol: { ...real[k].sol, backupSaved: false } });
+      assert.match(textOf(row()), /Solana file not saved/);
+      assert.ok(solUnsaved().includes(seat), "an unsaved Solana file is in the backup note");
+      t.secrets = with_({ sol: { ...real[k].sol, backupSaved: true } });
+      assert.match(textOf(row()), /Solana file saved here/);
+      assert.ok(labels(row()).includes("Back up the Solana part of seat " + seat));
+      t.secrets = with_({ sol: { ...real[k].sol, backupSaved: true, restored: true } });
+      assert.match(textOf(row()), /Solana restored from its file/, "a part opened from its file");
+      t.secrets = with_({ sol: { ...real[k].sol, aborted: "A test stop." } });
+      assert.equal(solFile(seat), null, "a stopped share has no file to save");
+      // Restored from its Zcash file alone: the Solana part counts the seat, this browser holds
+      // no share of it.
+      t.secrets = with_({ sol: undefined });
+      assert.deepEqual(solFile(seat), { saved: false, missing: true });
+      assert.match(textOf(row()), /Solana part missing.*Restore it from its Solana file/);
+      assert.doesNotMatch(pageText(), /are saved/, "the page does not say saved");
+      assert.ok(!solUnsaved().includes(seat), "a missing part has no file to save");
+      // While the Solana documents load, this browser does not know yet.
+      const loaded = t.sol.ctl.loaded;
+      t.sol.ctl.loaded = { ...loaded, soldone: false };
+      try {
+        assert.deepEqual(solFile(seat), { unknown: true, failed: false });
+        assert.match(textOf(row()), /Solana part not read yet/);
+        assert.doesNotMatch(pageText(), /are saved/, "not read yet is not saved");
+      } finally {
+        t.sol.ctl.loaded = loaded;
+      }
+    }
+  } finally {
+    t.secrets = real;
+  }
+  // The lost-device text names the Solana part only for a wallet that has one.
+  assert.match(pageText(), /\(Devices, Change devices\); a Solana part does not move this way\./);
+  const { g } = t.state;
+  t.state.g = { ...g, network: "mainnet" };
+  try {
+    assert.match(pageText(), /\(Devices, Change devices\)\. With fewer/, "no Solana part");
+  } finally {
+    t.state.g = g;
+  }
+  const doc = globalThis.document;
+  globalThis.document = { createElement: () => new Rec(), createElementNS: () => new Rec(),
+    createTextNode: (text) => ({ text }) };
+  try {
+    assert.equal(backupNote([], [1], true).className, "callout", "plain while Solana sets up");
+    assert.equal(backupNote([], [1], false).className, "callout warn");
+  } finally {
+    globalThis.document = doc;
+  }
+}
 // With nothing to list after the sync, the inbox speaks for Zcash alone: the Solana line below it
 // speaks for Solana.
 function emptyInbox() {
@@ -213,7 +287,15 @@ function emptyInbox() {
 // shows with two or more wallets.
 function sideMenu() {
   t.ui.menu = true;
-  sideTree().onclick({ target: { closest: () => ({}) } });
+  const wide = globalThis.matchMedia;
+  globalThis.matchMedia = () => ({ matches: true });
+  try { sideTree(); } finally { globalThis.matchMedia = wide; }
+  const out = () => [".main", ".skip-link", ".logo"].map((sel) => shellParts[sel].inert);
+  assert.deepEqual(out(), [true, true, true],
+    "the open Menu of a phone keeps the page out of reach");
+  const tree = sideTree();
+  assert.deepEqual(out(), [false, false, false], "wider than a phone, the page stays in reach");
+  tree.onclick({ target: { closest: () => ({}) } });
   assert.equal(t.ui.menu, false, "a pick in the side list closes the phone Menu");
   assert.ok(walletShown(), "the formed wallet shows its sections");
   assert.equal(t.state.sessionsLoaded, true, "the payments of the open wallet arrived");
@@ -228,6 +310,15 @@ function sideMenu() {
   } finally {
     Object.assign(t.state, { g, wallet });
   }
+  const tab = t.ui.tab;
+  t.ui.tab = "recovery";
+  assert.match(pageText(), /Your seats in this wallet.*file (saved here|not saved)/,
+    "the Recovery section shows the file state of each seat of this browser");
+  assert.match(pageText(), /cannot see the files of the other devices/);
+  assert.match(pageText(), /covers your seats in this wallet only: each other wallet has its own/);
+  assert.match(pageText(), /the personal account has its own backup file, and direct chats are/);
+  recoveryFacts();
+  t.ui.tab = tab;
   assert.ok(!labelled(pageTree(), "Switch wallet"), "one wallet: its name, no switcher");
   t.state.groups = [t.state.g, { id: "other", name: "Other" }];
   assert.ok(labelled(pageTree(), "Switch wallet"), "two wallets: a switcher");
@@ -294,6 +385,16 @@ function approvalCount(ctl) {
   assert.doesNotMatch(css, /^\.tabs? \{/m, "no tab bar comes back");
   assert.match(css, /^#side-nav \{[^}]*display: grid/m, "the sections stack");
   assert.match(css, /\.side\.menu-open #side-nav \{[^}]*overflow: auto/, "the phone menu scrolls");
+  assert.match(css, /\.side\.menu-open #side-nav \{[^}]*background: var\(--panel\)/,
+    "the phone menu is opaque");
+  assert.match(css, /body:has\(\.side\.menu-open\)::after \{[^}]*background: var\(--scrim\)/,
+    "and dims the page behind it");
+  assert.doesNotMatch(css, /\.btn:disabled[^{]*\{[^}]*opacity/,
+    "a disabled button keeps the contrast of its text");
+  const disabled = /\.btn:disabled, \.btn\.primary:disabled \{([^}]*)\}/.exec(css)?.[1] ?? "";
+  assert.match(disabled, /background: var\(--sunk\).*color: var\(--faint\)/s,
+    "faint on sunk, the pair that contrast.mjs checks");
+  assert.match(css, /\.btn\.ghost:hover:not\(:disabled\)/, "a disabled ghost button keeps still");
 }
 
 // ── The hint: version 3 testnet wallets only ──
@@ -489,7 +590,7 @@ const byId = (node, id) =>
   assert.equal(ui.sol, false, "the box keeps the person's no");
   assert.ok(!("checked" in byId(dialogTree(), "g-sol").attrs), "a redraw keeps the person's no");
   ui.sol = undefined;
-  // The picker offers testnet only (mainnet-off.mjs). A Change signers dialog has no choice.
+  // The picker offers testnet only (mainnet-off.mjs). A Change devices dialog has no choice.
   assert.doesNotMatch(textOf(dialogTree({ ...g, network: "mainnet" })), CHOICE, "never for `from`");
   config.down = true;
   delete ui.solServed;
@@ -887,7 +988,7 @@ const byId = (node, id) =>
   assert.deepEqual(await submit(null, "on"), { auto: true, hint: true }, "the box on");
   assert.deepEqual(await submit(null, null), { auto: false, hint: undefined }, "the box off");
   const old = t.state.g;
-  assert.deepEqual(await submit(old, "on"), { auto: false, hint: undefined }, "Change signers");
+  assert.deepEqual(await submit(old, "on"), { auto: false, hint: undefined }, "Change devices");
 }
 
 // ── The stepper: a stop shows its own text at its stage, never a stage on track ──
@@ -919,7 +1020,7 @@ const byId = (node, id) =>
 
 // ── The create dialog: numbered sections for a new wallet, the old form for a change ──
 assert.match(dialogText(), /1\. Approval rule.*2\. Names.*3\. Networks/s);
-assert.doesNotMatch(dialogText(t.state.g), /1\. Approval rule/, "Change signers keeps its form");
+assert.doesNotMatch(dialogText(t.state.g), /1\. Approval rule/, "Change devices keeps its form");
 assert.equal(marginText(2, 3), "", "a margin: no warning");
 assert.match(marginText(3, 3), /Each payment needs every device/);
 {

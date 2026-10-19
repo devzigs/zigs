@@ -9,7 +9,9 @@ import { isMe, localSeats, seatMine, seatNameOf } from "./app-seats.js";
 import { capText, curNet, MAINNET_ON, netOf, NETWORKS } from "./app-chain.js";
 import { signedMode } from "./app-filter.js";
 import { closeSession } from "./app-groups.js";
-import { approvedHold, ended, expired, landed, payeesOf, signingSeen } from "./app-payments.js";
+import {
+  approvedHold, ended, expired, landed, payeesOf, sendRefusal, signingSeen,
+} from "./app-payments.js";
 import { focusAfter, react, render } from "./app-loop.js";
 
 export const netBadge = (g) => netOf(g).cap
@@ -101,12 +103,15 @@ const STATUS = {
   proving: ["Building proof", "info"], complete: ["Ready to send", "ok"], broadcast: ["Confirming", "info"], failed: ["Failed", "bad"],
   cancelled: ["Cancelled", ""],
 };
+// After signing, only the engine can say that it expired (TICKETS.md ZEC-13). A finished
+// transaction that the send step refuses is not ready to send either (sendRefusal).
+const asksCheck = (s) => (signingSeen(s) && expired(s))
+  || (s.status === "complete" && !!sendRefusal(s));
 export function statusChip(s) {
   if (s.checking) return el("span", { class: "badge" }, "Checking");
   if (landed(s)) return el("span", { class: "badge ok" }, "Sent");
   if (ended(s)) return el("span", { class: "badge" }, "Expired");
-  // After signing, only the engine can say that it expired (TICKETS.md ZEC-13).
-  if (signingSeen(s) && expired(s)) return el("span", { class: "badge warn" }, "Check");
+  if (asksCheck(s)) return el("span", { class: "badge warn" }, "Check");
   // An error part that one seat wrote does not end a payment that this browser approved and sent.
   if (approvedHold(s)) return el("span", { class: "badge info" }, "Confirming");
   const [t, c] = Object.hasOwn(STATUS, s.status) ? STATUS[s.status] : [String(s.status), ""];

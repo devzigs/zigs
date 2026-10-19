@@ -416,7 +416,9 @@ async function propose(page, address) {
   await setInput(page, '[id^="s-amt-"]', "0.001");
   if (PRIORITY) await setInput(page, "#s-priority", true);
   const tipBefore = await tipNow();
-  await press(page, "Propose payment");
+  // The form builds the transaction for a review first; the review proposes it.
+  await press(page, "Review payment");
+  await press(page, "Propose payment", SEND_MS);
   return tipBefore;
 }
 

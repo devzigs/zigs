@@ -22,7 +22,7 @@ import { createDialog, loadingView, lobby, lockView, renderSide } from "./app-sh
 import { sessionLayer } from "./app-drawer.js";
 import { solPending, solReact } from "./app-sol.js";
 import { groupView } from "./app-wallet.js";
-import { receiveDialog, sendDialog } from "./app-send.js";
+import { endSend, receiveDialog, sendDialog } from "./app-send.js";
 
 // Each browser advances the steps it can do for its own seats. Steps that
 // need a human decision (approving a spend) wait for a click.
@@ -297,7 +297,7 @@ const scrim = (close) => el("div", { class: "scrim", onclick: () => { close(); r
 const DIALOGS = [
   [() => ui.restore, closeBackup, () => restoreDialog()],
   [(open) => ui.backup && (open || ui.backup.personal), closeBackup, () => backupDialog()],
-  [(open) => ui.send && open, () => ui.send = false, () => sendDialog()],
+  [(open) => ui.send && open, endSend, () => sendDialog()],
   [(open) => ui.receive && open, () => ui.receive = false, () => receiveDialog()],
   [() => ui.create && !state.gid, () => ui.create = false, () => createDialog()],
   [() => ui.contactAdd && !!personal, () => ui.contactAdd = false, () => contactDialog()],
@@ -325,7 +325,7 @@ document.addEventListener("keydown", (ev) => {
   if (ev.key !== "Escape") return;
   if (state.sid) closeSession();
   else {
-    ui.send = false; ui.create = false; ui.receive = false; ui.move = false; ui.newChat = false;
+    endSend(); ui.create = false; ui.receive = false; ui.move = false; ui.newChat = false;
     ui.contactAdd = false;
     closeBackup();
   }

@@ -66,10 +66,34 @@ export const newWallet = () => { openGroup(null); ui.create = true; render(); };
 // The seats of this browser with a Solana key share whose backup file was not saved. A stopped
 // part gets no backup (web/sol/backup.js refuses it), also when another seat stopped it.
 const solStopped = () => solSetup()?.status === "stopped";
-export const solUnsaved = () => solOn() && !solStopped() ? localSeats().filter((i) => {
+export const solUnsaved = () => localSeats().filter((i) => {
+  const f = solFile(i);
+  return f?.saved === false && !f.missing;
+});
+/**
+ * The Solana file of seat i of this browser, or null when the seat has no Solana part here.
+ * `missing`: the Solana part of the wallet counts this seat (its soldone document), but this
+ * browser holds no share of it: a seat restored from its Zcash file alone (ZOLANA.md 4.3).
+ * `unknown`: this browser holds no share, and the Solana documents are not read yet (`failed`:
+ * the module did not load), so it does not know yet.
+ */
+export function solFile(i) {
+  if (!solOn() || solStopped()) return null;
   const s = sec(state.gid, i)?.sol;
-  return !!(s?.keyPackage && s.solSeed && s.groupKey) && !s.aborted && s.backupSaved !== true;
-}) : [];
+  if (solShare(s)) return { saved: s.backupSaved === true, restored: s.restored === true };
+  const made = solMade(i);
+  if (made === null) return { unknown: true, failed: !!solError };
+  return made ? { saved: false, missing: true } : null;
+}
+// Null until the module follows this wallet and its Solana documents are read.
+const solMade = (i) => (solOpenHere() && collections
+  ? fromSol("seat part", (c) => madeOf(c, i), null) : null);
+// The soldone document of the seat is enough. Its absence counts once every document is checked.
+function madeOf(c, i) {
+  if (!collections.every((n) => c.loaded[n])) return null;
+  return c.docs?.soldone?.[i] ? true : c.wait > 0 ? null : false;
+}
+const solShare = (s) => !!(s?.keyPackage && s.solSeed && s.groupKey) && !s.aborted;
 // The backup dialog of the Solana part of seat i, from the backup note of the wallet.
 export async function solBackup(i) {
   await solLoad();
