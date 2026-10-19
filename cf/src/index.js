@@ -1,6 +1,7 @@
 // Serves web/ and gives it a shared document store: one Durable Object (SQLite) per group that
 // pushes every change of that group to its connected members over a WebSocket.
 import { DurableObject } from "cloudflare:workers";
+import { gate, withCookie } from "./gate.js";
 
 const GROUP_ID = /^[0-9a-f]{20}$/;
 // The light-wallet servers in NETWORKS (web/app-chain.js) that the page calls itself. The page may
@@ -23,18 +24,6 @@ function policy(url) {
     "form-action 'none'",
     "frame-ancestors 'none'",
   ].join("; ");
-}
-
-// One shared password (secret APP_PASSWORD) for every request, any user name, until launch.
-// Without the secret the app refuses everything, so a missing secret never opens it.
-function authorized(req, env) {
-  const [scheme, b64] = (req.headers.get("Authorization") || "").split(" ");
-  if (scheme !== "Basic" || !b64 || !env.APP_PASSWORD) return false;
-  let pass;
-  try { pass = atob(b64).split(":").slice(1).join(":"); } catch { return false; }
-  const enc = new TextEncoder();
-  const a = enc.encode(pass), b = enc.encode(env.APP_PASSWORD);
-  return a.byteLength === b.byteLength && crypto.subtle.timingSafeEqual(a, b);
 }
 
 // The Solana Worker (web/sol/worker.js) owns all Helius traffic. A Worker takes the policy of its
@@ -462,48 +451,34 @@ async function groupSocket(req, env, url) {
   return env.STORE.get(env.STORE.idFromName("g:" + gid)).fetch(fwd);
 }
 
-// The https redirect and the password prompt: the Response to send, or null to let the request on.
-function gate(req, env) {
-  // Redirect before the password prompt, so a password never travels over plain http.
-  // The scheme comes from the edge headers: local dev also sees http URLs.
-  const http = (req.headers.get("cf-visitor") || "").includes('"http"')
-    || req.headers.get("x-forwarded-proto") === "http";
-  if (http) {
-    const to = new URL(req.url);
-    to.protocol = "https:";
-    return Response.redirect(to.toString(), 301);
+async function route(req, env, ctx) {
+  const url = new URL(req.url);
+  if (url.pathname === "/ws") return groupSocket(req, env, url);
+  if (url.pathname.startsWith("/lwd/")) return lwd(req, env, url);
+  if (url.pathname === "/zns") return zns(req, ctx);
+  if (url.pathname === "/" || url.pathname === "/index.html") {
+    const page = await env.ASSETS.fetch(new URL("/index.html", url));
+    const res = new HTMLRewriter()
+      .on("title", { element: (e) => e.before('<script src="/shim.js"></script>', { html: true }) })
+      .transform(page);
+    const out = new Response(res.body, res);
+    out.headers.set("Content-Security-Policy", policy(url));
+    out.headers.set("X-Content-Type-Options", "nosniff");
+    // web/_headers covers the assets served without this Worker; the page needs them here.
+    out.headers.set("Strict-Transport-Security", "max-age=31536000; includeSubDomains");
+    out.headers.set("Referrer-Policy", "no-referrer");
+    out.headers.set("Permissions-Policy", "camera=(), microphone=(), geolocation=(), interest-cohort=()");
+    return out;
   }
-  if (env.DEV_NO_AUTH === "1" || authorized(req, env)) return null;
-  const text = "Zigs is not open yet. This preview needs a password.\n"
-    + "Read about Zigs and get early access at https://zigs.app\n";
-  return new Response(text, {
-    status: 401, headers: { "WWW-Authenticate": 'Basic realm="Zigs preview", charset="UTF-8"' },
-  });
+  return assets(req, env, url);
 }
 
 export default {
+  // The gate (gate.js) runs before every route. A valid password also gets a session cookie.
   async fetch(req, env, ctx) {
-    const refused = gate(req, env);
+    const { refused, cookie } = await gate(req, env);
     if (refused) return refused;
-    const url = new URL(req.url);
-    if (url.pathname === "/ws") return groupSocket(req, env, url);
-    if (url.pathname.startsWith("/lwd/")) return lwd(req, env, url);
-    if (url.pathname === "/zns") return zns(req, ctx);
-    if (url.pathname === "/" || url.pathname === "/index.html") {
-      const page = await env.ASSETS.fetch(new URL("/index.html", url));
-      const res = new HTMLRewriter()
-        .on("title", { element: (e) => e.before('<script src="/shim.js"></script>', { html: true }) })
-        .transform(page);
-      const out = new Response(res.body, res);
-      out.headers.set("Content-Security-Policy", policy(url));
-      out.headers.set("X-Content-Type-Options", "nosniff");
-      // web/_headers covers the assets served without this Worker; the page needs them here.
-      out.headers.set("Strict-Transport-Security", "max-age=31536000; includeSubDomains");
-      out.headers.set("Referrer-Policy", "no-referrer");
-      out.headers.set("Permissions-Policy", "camera=(), microphone=(), geolocation=(), interest-cohort=()");
-      return out;
-    }
-    return assets(req, env, url);
+    return withCookie(await route(req, env, ctx), cookie);
   },
 };
 
