@@ -98,6 +98,94 @@ export function parseHash(hash) {
   return { chat, id: validId(id) ? id : "", key: (chat ? c : b) || "" };
 }
 
+export const PASTE_EMPTY = "Paste the invite link first.";
+export const PASTE_CONTACT = "This is a contact link for a chat. Paste a wallet invite link here.";
+export const PASTE_OTHER = "This invite link is for another Zigs server. Open it there.";
+export const PASTE_PATH = "This invite link is for another page of this server. Open it there.";
+export const PASTE_GLUED = "Text stands right before the link. Paste only the link.";
+export const PASTE_MANY = "This text holds more than one wallet invite link. Paste only the "
+  + "link of your wallet.";
+export const PASTE_BAD = "This is not a full wallet invite link. Ask for the full link again. "
+  + "It has a long secret after the # sign.";
+
+// The shape of a wallet link in a text: "#", the wallet id, ".", the secret. Nothing of the key
+// alphabet may follow. The same parts as ROOM_ID and ROOM_KEY.
+const part = (re) => re.source.slice(1, -1);
+const INVITE = new RegExp("#(" + part(ROOM_ID) + ")\\.(" + part(ROOM_KEY) + ")(?![\\w-])", "g");
+
+// The origin and path of a page. The server shows one page at "/" and at "/index.html".
+export const pageKey = (url) => url.origin + url.pathname.replace(/\/index\.html$/, "/");
+
+// What may stand before an "http(s)://" in the same word: marks, as in "(", "<", "**" or a
+// Markdown label "[Team](". Anything with a letter, a digit or a sign of an address is text of
+// another URL, and the "http(s)://" after it is a part of that URL. A "[" is a mark, unless a
+// label follows it. A label holds no bracket: each character has one parse, so the time is linear.
+const MARKS = /^(?:[^a-z\d:/.?=&#%@~+[-]|\[(?![^\][]*\]\()|\[[^\][]*\]\()*$/i;
+
+// The URL before a link: from the first "http(s)://" on, or a host with no scheme. null when that
+// "http(s)://" sits inside other text that is no mark.
+function urlBefore(before) {
+  const start = before.search(/https?:\/\//i);
+  if (start < 0) return before.replace(/^[^a-z\d/]+/i, "");
+  return start <= 80 && MARKS.test(before.slice(0, start)) ? before.slice(start) : null;
+}
+
+// The address that the text before a link holds, or null: a word that is no host, or text that is
+// no address. A text with no scheme counts as a host when it has a dot or a slash.
+const SCHEME = /^[a-z][a-z\d+.-]*:/i;
+function addressOf(url) {
+  if (!SCHEME.test(url) && !/[./]/.test(url)) return null;
+  try { return new URL(SCHEME.test(url) ? url : "https://" + url); } catch { return null; }
+}
+
+// The page that the text before the "#" of a link names, against `here`, the page that is open
+// (origin and path): "same" (no text means a bare fragment), "path" (this server, another path),
+// "other" (another origin) or "glued" (text stands right before the link: no address, a word, or
+// an address that has no origin).
+function pageOf(before, here) {
+  const url = urlBefore(before);
+  if (url === null) return "glued";
+  if (!url) return "same";
+  const page = addressOf(url);
+  if (!page || page.origin === "null") return "glued";
+  if (!here.startsWith(page.origin + "/")) return "other";
+  return pageKey(page) === here ? "same" : "path";
+}
+const PAGE_ERROR = { other: PASTE_OTHER, path: PASTE_PATH, glued: PASTE_GLUED };
+
+// The first full wallet link of a text, and whether the text holds another one. The same link
+// twice is one link. The wallet name of an invite message has no signature, so a link in it must
+// not win over the link that follows.
+function walletLinks(pasted) {
+  let first = null;
+  for (const link of pasted.matchAll(INVITE)) {
+    first ??= link;
+    if (link[1] !== first[1] || link[2] !== first[2]) return { first, many: true };
+  }
+  return { first, many: false };
+}
+
+// The wallet of the first link of a text, if the text before the link names the open page.
+function linkOf(first, pasted, here) {
+  const before = pasted.slice(0, first.index).split(/\s/).pop();
+  const page = pageOf(before, here);
+  return page === "same" ? { id: first[1], key: first[2] } : { error: PAGE_ERROR[page] };
+}
+
+// The wallet that pasted text names: the link itself, or a message that holds it, also when a name
+// or a mark comes before or after the link. A text with two different wallet links names none.
+// `here` is the pageKey of the open page: a link of another page opens nothing. The text of an
+// error is fixed: it never repeats the pasted text, which holds a secret.
+export function pastedInvite(text, here) {
+  const pasted = String(text ?? "").trim();
+  if (!pasted) return { error: PASTE_EMPTY };
+  const { first, many } = walletLinks(pasted);
+  if (many) return { error: PASTE_MANY };
+  if (first) return linkOf(first, pasted, here);
+  const { chat } = parseHash(pasted.match(/#\S*/)?.[0] ?? "");
+  return { error: chat ? PASTE_CONTACT : PASTE_BAD };
+}
+
 export const pinnedMembers = (pins, cid) => Object.keys(pins)
   .filter((k) => k.startsWith(cid + ":")).map((k) => k.slice(cid.length + 1));
 

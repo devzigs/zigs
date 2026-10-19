@@ -69,7 +69,7 @@ coin. The runbook of a demo with three devices is in [docs/demo.md](docs/demo.md
 
 1. Open https://app.zigs.app. The browser asks for a user name and a password. Type any user name
    and the password that the Zigs team gave you.
-2. Click **New wallet**, then **Set up my wallet**. Open **Advanced approval rule**, set
+2. Click **Set up a wallet**, then **Set up my wallet**. Open **Advanced approval rule**, set
    **Devices** to 2 and **Approvals needed** to 2, tick the box under the warning, and click
    **Next**. The network is **Testnet**, the only choice. Keep **Also set up Solana Devnet**
    ticked (it is on by default). Click **Review wallet**, then **Create wallet**. This browser

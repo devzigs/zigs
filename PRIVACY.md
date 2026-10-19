@@ -407,7 +407,7 @@ tested yet.
    Zigs needs it for its cryptography. The app says so if it is off.
 2. Tor Browser deletes all site data when it closes, including your key share. After the wallet
    is created, click **Back up key share** in the yellow note and choose a passphrase. At the start
-   of each session, click **Restore from backup** and enter the passphrase. Keep the file and the
+   of each session, click **Recover access** and enter the passphrase. Keep the file and the
    passphrase apart ([how backups work](#key-share-backups)).
 3. Finish each approval in one session. If Tor Browser closes between your approval and the group
    signature, the approval is lost. The payment shows this, and someone proposes it again.

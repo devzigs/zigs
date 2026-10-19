@@ -1,6 +1,6 @@
 // Invite links and hash routing.
 import { LINK_CHAT_ID, linkRefusal } from "./util.js";
-import { parseHash, validRoom } from "./chat.js";
+import { pageKey, parseHash, pastedInvite, validRoom } from "./chat.js";
 import { showBanner, state, ui } from "./app-state.js";
 import { chats, gkeys, lockedVault, putKey } from "./app-keystore.js";
 import { openGroup, roomKeys } from "./app-groups.js";
@@ -15,13 +15,31 @@ export function adoptInviteKey() {
   if (chat) adoptChatLink(id, key); else adoptWalletLink(id, key);
 }
 
+// Keeps the wallet secret of an invite link, or returns why the link is ignored.
+function takeWalletKey(gid, key) {
+  const refusal = linkRefusal(gkeys[gid], key, isChatId(gid));
+  if (!refusal && validRoom({ id: gid, key })) putKey(gid, key);
+  return refusal;
+}
+
 function adoptWalletLink(gid, key) {
   if (!key) return;
-  const refusal = linkRefusal(gkeys[gid], key, isChatId(gid));
+  const refusal = takeWalletKey(gid, key);
   if (refusal) showBanner("bad", refusal);
-  else if (validRoom({ id: gid, key })) putKey(gid, key);
   // The id of a chat opens no wallet: clear it, or the missing-secret banner hides the reason.
   setHash(refusal === LINK_CHAT_ID ? "#" : "#" + gid);
+}
+
+// The form of the wallet list: a pasted invite link opens its wallet as a link in the address bar
+// does. It returns the reason when the text opens nothing. The secret goes nowhere else: not to
+// the address bar, a log or a banner.
+export function joinWalletLink(text) {
+  const link = pastedInvite(text, pageKey(new URL(location.href)));
+  const refusal = link.error ?? takeWalletKey(link.id, link.key);
+  if (refusal) return refusal;
+  ui.tab = "overview";
+  openGroup(link.id);
+  return null;
 }
 
 // A chat and a wallet never share an id: a wallet key must not be stored under a chat id.

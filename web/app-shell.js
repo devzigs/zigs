@@ -9,7 +9,7 @@ import {
   chats, forgetVault, lockedVault, lockWithPasskey, mySeatSecrets, secrets, storageOk, unlockVault,
   vault,
 } from "./app-keystore.js";
-import { openChat } from "./app-links.js";
+import { joinWalletLink, openChat } from "./app-links.js";
 import { balOf, netOf } from "./app-chain.js";
 import { canWrite, closeSession, db, dbReady, openGroup, toApprove } from "./app-groups.js";
 import {
@@ -26,6 +26,7 @@ import { contactItem, contactsCard, openContactDialog, personalCard } from "./ap
 import { focusAfter, once, render } from "./app-loop.js";
 import { currentSection, walletSections, walletShown } from "./app-wallet.js";
 import { icon } from "./app-icons.js";
+import { themeChoice } from "./app-theme.js";
 
 /**
  * Why a button is off (S1): `attrs` go on the button, `note` goes next to it. `more` has the
@@ -222,6 +223,9 @@ export function loadingView() {
     el("p", { class: "small" }, "Your wallets appear in a moment."));
 }
 
+const TEST_ONLY = "New wallets use test networks only: Zcash testnet and Solana Devnet. Zigs is "
+  + "not audited.";
+
 export function lobby() {
   const restoreInput = el("input", {
     id: "restore", type: "file", accept: ".zigsbackup,.json,application/json", hidden: true,
@@ -233,7 +237,7 @@ export function lobby() {
   });
   const restoreBtn = (cls) => el("button", {
     class: cls, type: "button", onclick: () => restoreInput.click(),
-  }, "Restore from backup");
+  }, "Recover access");
   const off = offOf({ db: !!db }, "why-new-wallet");
   const actions = lobbyActions(off, restoreBtn("btn"));
   const head = el("header", { class: "page-head" },
@@ -242,12 +246,15 @@ export function lobby() {
         + "devices and approval rule.")),
     actions.length ? el("div", { class: "ph-actions" }, ...actions) : null);
   const rows = state.groups.map((g) => guard(walletRow, g));
-  const body = state.groups.length
-    ? el("section", { class: "card" }, el("div", { class: "list" }, rows))
-    : welcome(offOf({ db: !!db }, "why-create"), restoreBtn("btn ghost sm"));
+  const listed = state.groups.length > 0;
+  const body = listed
+    ? [el("section", { class: "card" }, el("div", { class: "list" }, rows)),
+      el("section", { class: "card card-pad" }, joinWallet("h2"))]
+    : [welcome(offOf({ db: !!db }, "why-create"), restoreBtn("btn ghost lg"))];
   const joins = [...joinLinks.keys()].map((cid) => guard(chatJoinCard, cid));
-  return el("div", { class: "page" }, ...joins, head, body, chatsCard(),
-    guard(personalCard, () => restoreInput.click()), guard(contactsCard), restoreInput);
+  return el("div", { class: "page" }, ...joins, head, ...body, chatsCard(),
+    guard(personalCard, () => restoreInput.click()), guard(contactsCard),
+    listed ? el("p", { class: "small faint" }, TEST_ONLY) : null, restoreInput);
 }
 
 // A contact link waits here until the person clicks Join. The link is kept after a failure.
@@ -334,23 +341,78 @@ function walletRow(g) {
 function welcome(off, restoreLink) {
   const steps = [
     ["Pick a rule", "For example, any 2 of 3 devices must approve each payment."],
-    ["Add your devices", "Send one private invite link. Each device creates its own key share."],
-    ["Approve together", "A payment goes out only after enough devices approve. On chain it looks "
-      + "like a shielded payment from a standard wallet."],
+    ["Invite the other devices", "Send one private invite link. Each device joins with the link "
+      + "and creates its own key share."],
+    ["Approve together", "A payment goes out only after enough devices approve."],
   ];
   const create = el("button", {
     class: "btn primary lg", type: "button", ...off.attrs,
     onclick: () => { openCreate(); render(); },
-  }, "Create wallet");
+  }, "Set up a wallet");
+  const join = el("button", {
+    class: "btn lg", type: "button", "aria-expanded": ui.joinOpen ? "true" : "false",
+    onclick: toggleJoin,
+  }, "Join a shared wallet");
   return el("section", { class: "card card-pad welcome" },
-    el("div", { style: "display:grid;gap:6px" }, el("h2", {}, "Create your first shared wallet"),
-      el("p", { class: "muted" }, "Nobody ever holds the whole key, and nobody outside your team "
-        + "can read the wallet.")),
+    el("div", { style: "display:grid;gap:6px" }, el("h2", {}, "Start with Zigs"),
+      el("p", { class: "muted" }, "Nobody ever holds the whole key. Zcash payments are shielded. "
+        + "On Solana Devnet, the group, the payee and the fee address of each device that pays "
+        + "are public. A deposit or a withdrawal also shows its amount.")),
     el("ol", { class: "how" }, steps.map(([t, d], i) => el("li", {},
       el("span", { class: "how-no" }, String(i + 1)),
       el("div", { style: "display:grid;gap:2px" }, el("h3", {}, t), el("p", { class: "small muted" }, d))))),
-    el("div", { style: "display:flex;align-items:center;gap:12px;flex-wrap:wrap" },
-      create, restoreLink, off.note));
+    el("div", { class: "welcome-actions" }, create, join, restoreLink, off.note),
+    ui.joinOpen ? joinWallet() : null,
+    el("div", { class: "welcome-foot" }, el("p", { class: "small muted" }, TEST_ONLY),
+      themeChoice()));
+}
+
+// The form that opens a wallet from a pasted invite link. The field has no name and the handler
+// stops the submit first: the secret of the link never reaches a query string. The field has an
+// id, so a redraw keeps its text (saveFormState).
+function joinWallet(heading = "h3") {
+  const bad = ui.joinBad, off = offOf({ db: !!db }, "why-join-wallet");
+  const input = el("input", {
+    class: "input", id: "join-link", "data-key": "join-link", type: "text", inputmode: "url",
+    autocomplete: "off", autocapitalize: "off", spellcheck: "false",
+    "aria-invalid": bad ? "true" : null,
+    "aria-describedby": "join-help" + (bad ? " join-error" : ""),
+    oninput: joinTyped,
+  });
+  const submit = (ev) => {
+    ev.preventDefault();
+    const error = joinWalletLink(input.value);
+    ui.joinBad = error ?? "";
+    if (!error) { input.value = ""; return; }
+    focusAfter("join-link", true);
+    render();
+  };
+  return el("section", { class: "join" }, el(heading, {}, "Join a shared wallet"),
+    el("p", { class: "small muted", id: "join-help" },
+      "Did someone send you an invite link? Paste it here to open the wallet."),
+    el("form", { class: "join-row", onsubmit: submit },
+      el("label", { class: "field" }, el("span", {}, "Invite link"), input),
+      el("button", { class: "btn", type: "submit", ...off.attrs }, "Join wallet"),
+      bad ? el("p", { class: "small bad", id: "join-error", role: "alert" }, bad) : null,
+      off.note));
+}
+
+// The choice to join shows the form, and a second press hides it with its error.
+function toggleJoin() {
+  ui.joinOpen = !ui.joinOpen;
+  ui.joinBad = "";
+  if (ui.joinOpen) focusAfter("join-link", true);
+  render();
+}
+
+// A person who types ends the error. A redraw puts the text back with an input event that nobody
+// typed: that one does not.
+function joinTyped(ev) {
+  if (!ev.isTrusted || !ui.joinBad) return;
+  ui.joinBad = "";
+  ev.target.removeAttribute("aria-invalid");
+  ev.target.setAttribute("aria-describedby", "join-help");
+  document.getElementById("join-error")?.remove();
 }
 
 
