@@ -2036,7 +2036,11 @@ const sealed = (gid, rel, seat, fields, key, names = ["by", "sig"]) =>
         "the drawer shows no false id next to a Send that goes out");
       assert.match(callouts(t.txDetails(finished("tx-b"))).join(" "), /names the id tx-b/);
       assert.match(String(t.sendRefusal({ id: "zq", pczt: "PX", final: { txid: "tx-x" } })),
-        /cannot read the approved transaction/, "nothing unreadable goes out");
+        /cannot read the proposal/, "nothing unreadable goes out");
+      await t.putSec(t.state.gid, me, { marks: { ...t.sec(t.state.gid, me).marks,
+        zq: { approved: "qq" } } });   // no height: it holds nothing
+      assert.match(String(t.sendRefusal({ id: "zq", pczt: "PX", final: { txid: "tx-x" } })),
+        /cannot read the approved transaction/, "nor without the approved one");
       assert.match(String(t.sendRefusal({ ...signedA, final: { tx_hex: "00" } })),
         /finished transaction cannot be read/, "a finished transaction with no id");
       answer = (p, sg, a) => a === "aa" && p === "PA"
@@ -3212,6 +3216,7 @@ const sealed = (gid, rel, seat, fields, key, names = ["by", "sig"]) =>
         const lookups = [];
         registry.get = () => new Promise((ok) => { lookups.push(ok); });
         const named0 = await createRegistry({ fetch: async () => znsOk()() }).get();
+        const bannerBefore = t.banner;
         globalThis.document = stubPage();
         const lateSubmit = form.on.submit({ preventDefault() {}, currentTarget: null });
         globalThis.document = realDocument;
@@ -3222,6 +3227,7 @@ const sealed = (gid, rel, seat, fields, key, names = ["by", "sig"]) =>
         await sleep(300);
         globalThis.document = recorder;
         assert.equal(t.ui.sendReview, null, "no review after a close during the lookup");
+        assert.ok(t.banner === bannerBefore || t.banner?.kind !== "bad", "the build ran");
         // Two submits at once, the answer of the registry held: the first refuses with the new
         // address, and the second does not pay it either.
         znsServes(znsOk());

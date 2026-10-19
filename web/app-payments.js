@@ -376,12 +376,12 @@ export const approvedTxid = (ss) => markOf(state.gid, ss.id).approved
 // check needs an engine call that computes the id of a finished transaction from its bytes.
 export function sendRefusal(ss) {
   if (!isStr(ss.final?.txid)) return "The finished transaction cannot be read.";
-  const want = approvedTxid(ss);
-  if (!want) return SEND_UNREAD;
+  const bound = !!markOf(state.gid, ss.id).approved, want = approvedTxid(ss);
+  if (!want) return unread(bound ? "the approved transaction" : "the proposal");
   if (ss.final.txid === want) return null;
-  return markOf(state.gid, ss.id).approved ? SEND_OTHER : SEND_NOT_PROPOSED;
+  return bound ? SEND_OTHER : SEND_NOT_PROPOSED;
 }
-const SEND_UNREAD = "This browser cannot read the approved transaction, so it does not send the "
+const unread = (what) => "This browser cannot read " + what + ", so it does not send the "
   + "finished one.";
 const SEND_OTHER = "The finished transaction has another id than the approved one, so this "
   + "browser does not send it. Check the payment with the other signers.";
