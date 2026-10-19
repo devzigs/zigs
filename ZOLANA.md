@@ -457,6 +457,10 @@ Devnet key):
 - Tree 0 can run out of nullifier PDA rent (error 7044, `InsufficientNullifierPdaRent`) until the
   forester closes the PDAs; on 19 October 2026 it held only its rent minimum (204,256,640
   lamports). The demo-day check is a simulated transact.
+- On 19 October 2026 the funder sent tree 0 14,020,800 lamports (`2Yh9gcGe…LM7R`, finalized), so
+  it held 218,277,440 lamports at slot 512704703. A simulated key-B self-transfer of 1,000
+  lamports (one input, two outputs, SDK `c232da1b`) then had no error and used 137,461 compute
+  units, with the local proof and with the hosted proof. That is under the cap 217,000.
 
 **6.2 P1 result, 13 October 2026** (scratch crate outside the repo, `frost-ed25519 =2.2.0`):
 

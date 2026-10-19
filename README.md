@@ -786,5 +786,23 @@ folder path.
 
 ## License
 
-MIT, see [LICENSE](LICENSE). The apps serve the Geist fonts (SIL Open Font License 1.1) from
-`web/fonts/`, so users never contact Google.
+Copyright (C) 2026 the Zigs authors.
+
+Zigs is free software under the GNU Affero General Public License, version 3 only
+(`AGPL-3.0-only`), see [LICENSE](LICENSE). You may use, change and share it. If you share a
+changed version, or run it as a service that other people use over a network, you must publish
+the full source of your version under the same licence. Zigs comes with no warranty.
+
+The licence covers the code only. It gives no right to use the name "Zigs", its logo or the
+zigs.app domain for another product.
+
+Third-party parts keep their own licences:
+
+| Part | Licence |
+|---|---|
+| Zolana SDK bundle and prover (`web/sol/zolana.bundle.js`, `web/sol/prover/`) | Apache-2.0, see [web/sol/prover/LICENSE](web/sol/prover/LICENSE) |
+| `wasm-sol/vendor/light-poseidon`, `wasm-sol/vendor/zolana-hasher` | Apache-2.0, see each folder |
+| Rust crates compiled into the wasm engines (`wasm/Cargo.lock`, `wasm-sol/Cargo.lock`) | MIT or Apache-2.0, as each crate states |
+| Geist fonts in `web/fonts/` | SIL Open Font License 1.1 |
+
+The apps serve the fonts from `web/fonts/`, so users never contact Google.
