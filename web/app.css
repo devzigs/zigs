@@ -658,4 +658,6 @@ body:has(.dialog), body:has(.drawer) { overflow: hidden; }
 .recovery-seats > .recovery-row:first-child { border-top: 0; padding-top: 0; }
 .recovery-seats > .recovery-row:last-child { padding-bottom: 24px; }
 .card:has(> .recovery-seats) > .card-head { padding-bottom: 16px; }
-.recovery-lost { padding-block: 12px; }
+/* A closed details card would keep the grid gap of its hidden content. */
+.recovery-lost { display: block; padding-block: 12px; }
+.recovery-lost > p { margin-bottom: 12px; }
