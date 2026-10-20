@@ -2649,8 +2649,9 @@ const sealed = (gid, rel, seat, fields, key, names = ["by", "sig"]) =>
         && textOf(x).includes("In a block"))[0]);
       assert.ok(blockOf(signedA).endsWith("Not seen on this page."),
         "under It may still go on chain, step 6 says only what this page saw");
-      assert.ok(blockOf({ ...okA, final: { txid: "tx-a", tx_hex: "00" } }).endsWith("Not done."),
-        "a finished transaction past its expiry + 3 is in no block");
+      assert.ok(blockOf({ ...okA, final: { txid: "tx-a", tx_hex: "00" } })
+        .endsWith("No synced block holds it."),
+      "a finished transaction past its expiry + 3: no synced block holds it");
       t.setChain({ ...t.chain, cw: null });
       assert.match(blockStep(landedA), /In a blockThis page has not synced the blocks since you /,
         "before a sync the page does not say that no block holds it");
@@ -2725,7 +2726,7 @@ const sealed = (gid, rel, seat, fields, key, names = ["by", "sig"]) =>
           "headline: an error after the signing started");
         assert.deepEqual(look(failedSigned).now, [],
           "a stopped payment with a signed part has no step that waits");
-        assert.ok(look(failedSigned).text.includes("A device stopped this payment: Failed."),
+        assert.ok(look(failedSigned).text.includes("The payment shows this stop: Failed."),
           "the stop reason shows next to a signed part");
         assert.ok(textOf(look(failedSigned).step("Proof")).endsWith("Not seen on this page."),
           "an error after signing: not seen on this page");
@@ -2889,8 +2890,8 @@ const sealed = (gid, rel, seat, fields, key, names = ["by", "sig"]) =>
         assert.equal(textOf(t.statusChip({ ...doneA, status: "complete" })), "Too late",
           "a payment too late to send reads Too late, not Ready to send");
         assert.deepEqual(late.now, [], "a payment too late to send has no step that waits");
-        assert.ok(textOf(late.step("In a block")).endsWith("No synced block holds it yet."),
-          "too late to send: no synced block holds it yet");
+        assert.ok(textOf(late.step("In a block")).endsWith("No synced block holds it."),
+          "too late to send: no synced block holds it");
         // The device wording of the drawer, on its callouts too.
         for (const [what, text] of [["an expired payment", oldOne.text],
           ["a payment too late to send", late.text], ["a stop", stop.text],
@@ -2953,6 +2954,8 @@ const sealed = (gid, rel, seat, fields, key, names = ["by", "sig"]) =>
         assert.match(textOf(landedNoMark.step("Sent to the network")), /A synced block holds/);
         assert.equal(landedNoMark.foot, 0, "a landed payment offers no step");
         const landedSigned = look(okA);
+        assert.equal(look({ ...okA, error: "Cancelled." }).text.includes("shows this stop"), false,
+          "a payment that a block holds shows no stop note");
         assert.equal(landedSigned.step("Proof").className, "step done",
           "a block marks the proof done");
         assert.deepEqual([landedSigned.now, landedSigned.buttons.includes("Build proof")],
@@ -2973,6 +2976,25 @@ const sealed = (gid, rel, seat, fields, key, names = ["by", "sig"]) =>
         assert.match(proving.head, /^Building the proofA device builds the proof\./,
           "headline: a device builds the proof");
         assert.match(proving.now.join(), /A device is building the proof/);
+        assert.ok(look({ ...open("hdb", "PA"), broadcastError: "timeout" }).head
+          .startsWith("Your approval is needed"),
+        "a send error on a document with no finished transaction is no failed send");
+        // The cancel question, as the person reads it.
+        const cancelOf = all(t.sessionLayer(open("hdc", "PA")),
+          (x) => x.tag === "button" && textOf(x).includes("Cancel payment"))[0];
+        let asked = null;
+        const realConfirm = globalThis.confirm;
+        globalThis.confirm = (text) => { asked = text; return false; };
+        try {
+          await quiet(async () => {
+            await cancelOf.on.click({ type: "click", preventDefault() {}, currentTarget: null });
+            await sleep(300);
+          });
+        } finally {
+          globalThis.confirm = realConfirm;
+        }
+        assert.equal(asked, "Cancel this payment? No device can approve it after this. Anyone "
+          + "can propose it again.", "the cancel question says device");
         // The status is no signed part: any holder of the invite link can write it.
         const spoofed = look({ ...open("hdp", "PA"), status: "proving", provingAt: Date.now() });
         assert.deepEqual([spoofed.head.startsWith("Your approval is needed"),
@@ -3048,6 +3070,9 @@ const sealed = (gid, rel, seat, fields, key, names = ["by", "sig"]) =>
           t.openSession("hdw");
           assert.equal(Object.keys(t.raw.commits).length, 2,
             "the drawer of a watched payment starts from its approvals");
+          await Promise.resolve();   // the filter of the page runs once
+          assert.equal(Object.keys(t.state.commits).length, 2,
+            "the drawer of a watched payment counts its approvals at once");
           t.closeSession();
           await sleep(300);
         });
@@ -3092,6 +3117,9 @@ const sealed = (gid, rel, seat, fields, key, names = ["by", "sig"]) =>
           layer("drawer"));
         assert.deepEqual(focused, ["drawer .icon-btn"],
           "a drawer gives the focus to its close button");
+        t.restoreFocus(noControl, { key: "BUTTON:x:0", inLayer: false }, layer("drawer"));
+        assert.deepEqual(focused, ["drawer .icon-btn"],
+          "a focus outside the drawer stays where it was");
         await nonces(me, { hd5: undefined });
         await nonces(other, { hd5: undefined });
         Object.assign(t.state, kept13);
