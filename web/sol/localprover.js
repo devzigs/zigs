@@ -9,11 +9,12 @@ import { KEY_BASE_URL, ZolanaWebProver } from "/sol/prover/prover.js";
 export const KEY_FOLDER = "https://d3gbdb0egjwcw9.cloudfront.net/proving-keys/3a1c88f90f609eb1/";
 /** The path of the prove call of the SDK on the Helius gateway. */
 export const PROVE_PATH = "/v1/zolana/prove";
-// The deployment of the pool that the prover was tested against (a local proof landed in a
-// simulation on 18 October 2026): the slot of the last deploy in the ProgramData account of the
-// pool, 7 October 2026 18:01 UTC. A pool upgrade changes it.
+// The deployment of the pool that the prover was tested against (a simulated transfer with a local
+// proof had no error on 19 October 2026, ZOLANA.md 6.1): the slot of the last deploy in the
+// ProgramData account of the pool, the in-place upgrade to v0.4.1-alpha on 18 October 2026 20:56
+// UTC. A pool upgrade changes it.
 export const POOL_DATA = "ACEAhi1f3WaD49cTN5yUAULmwytoQjp6MTVfaWaQAqKw";
-export const POOL_SLOT = "508538476";
+export const POOL_SLOT = "512563584";
 const LOADER = "BPFLoaderUpgradeab1e11111111111111111111111";
 // The circuits of our payments: N inputs to 2 outputs (transfer.js COUNTS).
 const KEY_FILE = /^transfer_confidential_[1-9]\d?_2\.key$/;

@@ -153,7 +153,7 @@ function proverChecks(run1, f) {
     ["the key host serves only GET of a pinned N x 2 key", keys.length > 0 && keys.every(keyOk)],
     ["no Worker call reaches the prove path of Helius", !f.workerOut.some(hosted)],
     is("poolSlot reads the deploy slot that the prover pins", run1.pool.slot, run1.pool.pinned),
-    is("the pinned deploy slot is the one of 7 October 2026", run1.pool.pinned, "508538476"),
+    is("the pinned deploy slot is the one of 18 October 2026", run1.pool.pinned, "512563584"),
     [
       "selftest makes a test proof on this device (nested prover Worker, Go only)",
       typeof run1.selftest.ms === "number",
