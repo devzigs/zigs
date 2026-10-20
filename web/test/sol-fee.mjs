@@ -544,5 +544,9 @@ step("Propose and Add SOL use the first seat of this browser that is ready, and 
 assert.equal(refusalText({ rule_list: () => "" }, "refused\nX-test\tseat 2 signed twice"),
   "This browser refused the proposal. X-test (device 2 signed twice)",
   "a refusal of the checker says device");
+assert.equal(refusalText({ rule_list: () => "" },
+  "refused\nX-test\tthe signers are the payer and the group key"),
+"This browser refused the proposal. X-test (the signers are the payer and the group key)",
+"a refusal keeps signer, the Solana key role");
 console.log("sol-fee: ok");
 process.exit(0);

@@ -2978,6 +2978,10 @@ const sealed = (gid, rel, seat, fields, key, names = ["by", "sig"]) =>
         assert.deepEqual([spoofed.head.startsWith("Your approval is needed"),
           spoofed.text.includes("A device is building the proof")], [true, false],
         "an unsigned status is no proof");
+        const packaged = look({ ...okA, signed: "", status: "proving", provingAt: Date.now() });
+        assert.deepEqual([packaged.head.startsWith("Building the proof"),
+          packaged.text.includes("A device is building the proof")], [false, false],
+        "a signing package with a written status is no proof");
         const signing = look({ ...okA, signed: "" });
         assert.match(signing.head, /^SigningEach device that the signing package names signs/,
           "headline: the devices sign");
