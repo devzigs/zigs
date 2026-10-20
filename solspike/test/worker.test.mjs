@@ -846,7 +846,7 @@ async function localFailureTexts() {
   await initialised();
   proverControl.reply = () =>
     new Response('{"code":"wasm_key_download_failed"}', { status: 500 });
-  poolData("508538476");
+  poolData("512563584");
   const down = await payWith({ mode: "local" });
   assert.equal(down.ok, false);
   assert.match(down.error, /could not load the proving key.*Nothing was sent to Helius\.$/);
@@ -934,12 +934,12 @@ async function deviceCheckAndPool() {
   const failed = await ask("selftest", {});
   assert.match(failed.error, /could not start the local prover.*Nothing was sent/);
   proverControl.proveRequest = async () => ({ proof: "{}" });
-  poolData("508538476");
+  poolData("512563584");
   const same = await ask("poolSlot", {});
-  assert.deepEqual(same.result, { slot: "508538476", pinned: "508538476", text: null });
+  assert.deepEqual(same.result, { slot: "512563584", pinned: "512563584", text: null });
   poolData("600000000");
   assert.match((await ask("poolSlot", {})).result.text, /Helius changed the pool/);
-  poolData("508538476", SYSTEM);
+  poolData("512563584", SYSTEM);
   assert.match((await ask("poolSlot", {})).error, /pool program data is missing/);
   step("SOL-4 selftest proves on the device; poolSlot reads the deploy slot of the pool");
 }
