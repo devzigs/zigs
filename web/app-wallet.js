@@ -11,7 +11,9 @@ import {
   netName, readsMemos, runSync, setMemoReading, spanMs,
 } from "./app-chain.js";
 import { canWriteAs, signedMode } from "./app-filter.js";
-import { needsMyApproval, openGroup, openSession, toApprove } from "./app-groups.js";
+import {
+  approvalsDone, needsMyApproval, openGroup, openSession, toApprove,
+} from "./app-groups.js";
 import {
   act, addrGroups, avatar, copyBtn, countBadge, el, groupName, guard, leavesOf, memoTexts, money,
   named, netBadge, payTitle, proposer, ruleText, seatTitle, secretQr, statusChip, unreadable,
@@ -35,7 +37,7 @@ import { helpView } from "./app-help.js";
 import {
   sol, solActivity, solBackup, solBalance, solError, solFile, solLoad, solLoading,
   solActivityWaits, solLoadingCount, solOlderCount, solOn, solPending, solPendingRows, solSetup,
-  solSync, solTab, solUnsaved,
+  solNotAdded, solSync, solTab, solUnsaved,
 } from "./app-sol.js";
 import { pendingShortcut, solRow, zecInProgress, zecTotal } from "./overview-model.js";
 import { protectionRisk, recoveryState, VIEWING_NOTE } from "./recovery-model.js";
@@ -242,6 +244,12 @@ const receivedNote = (list) => list.some((a) => a.r) ? el("p", { class: "small m
 export const SOL_STAYS = "If this wallet has a Solana part, it does not move this way: check it "
   + "in its Solana section. A device that is left out keeps its key share of that part, so it can "
   + "still read the Solana history and approve Solana payments.";
+/**
+ * SOL_STAYS after a space, for a wallet that can have a Solana part (solOn) unless its start
+ * documents say that it has none (solNotAdded). Before they arrive the sentence shows: it holds
+ * with or without a Solana part.
+ */
+export const solStays = () => (solOn() && !solNotAdded() ? " " + SOL_STAYS : "");
 const movePayment = () => state.sessions.find((x) => x.move === state.g.movedTo && !x.error
   && !ended(x));
 
@@ -271,7 +279,7 @@ function movedHere(g, list) {
 // The steps of a move, read from the old wallet: new wallet ready, payment proposed, funds gone.
 export function moveState(c) {
   const m = moveStep(c, state.g.movedTo);
-  return solOn() ? { ...m, text: m.text + " " + SOL_STAYS } : m;
+  return { ...m, text: m.text + solStays() };
 }
 
 function moveStep(c, to) {
@@ -610,7 +618,8 @@ function activityNote(pick) {
 
 function sentRow(ss, flying) {
   const chip = needsMyApproval(state.gid, ss) ? el("span", { class: "badge warn" }, "Your approval")
-    : flying.has(ss) ? el("span", { class: "badge info" }, "Confirming") : statusChip(ss);
+    : flying.has(ss) ? el("span", { class: "badge info" }, "Confirming")
+      : statusChip(ss, approvalsDone(ss) === true);
   return el("button", {
     class: "row-item", type: "button", "data-key": "pay-" + ss.id,
     "aria-current": ss.id === state.sid ? "true" : "false", onclick: () => openSession(ss.id),
@@ -812,7 +821,7 @@ function changeSignersCard() {
     el("h3", { style: "font-size:15px" }, "Add or remove devices"),
     el("p", { class: "small muted" }, "The devices and the approval rule are part of the wallet "
       + "key, so they cannot change in place. To change them, create a new wallet with the devices "
-      + "you want, then move the Zcash funds to it." + (solOn() ? " " + SOL_STAYS : "")),
+      + "you want, then move the Zcash funds to it." + solStays()),
     el("div", {}, moving
       ? el("button", { class: "btn", type: "button", onclick: () => { ui.tab = "overview"; render(); } }, "See the move")
       : el("button", { class: "btn", type: "button", disabled: !localSeats().length, onclick: () => { ui.move = true; render(); } }, "Change devices")));
@@ -874,7 +883,7 @@ function recoveryTab() {
         seats.filter((x) => x.zec.has).map((x) => guard(recoveryRow, x)))) : null,
     el("details", { class: "card card-pad recovery-lost" },
       el("summary", {}, "If a device is lost"),
-      el("p", { class: "small muted" }, lostText(state.g.t, solOn()))));
+      el("p", { class: "small muted" }, lostText(state.g.t, !!solStays()))));
 }
 
 const RECOVERY_LIMITS = "Zigs knows only the files that this browser saved. It cannot see the "

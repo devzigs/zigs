@@ -973,6 +973,11 @@ const sealed = (gid, rel, seat, fields, key, names = ["by", "sig"]) =>
     const picked = t.toWatch([...bare, far("vp", { by: 1, package: "P" })]).map((x) => x.id);
     assert.deepEqual([picked.length, picked[0], picked.includes("v8")], [8, "vp", false],
       "at most 8, a package first, then the newest");
+    // An open proposal of another device is watched for its count, after the payments that need
+    // work here.
+    const counted = far("vo", { by: 99 });
+    assert.deepEqual([t.toWatch([counted]).map((x) => x.id), t.toWatch([...bare, counted])
+      .includes(counted)], [["vo"], false], "an open proposal is watched for its count");
     // The steps that failed above try again after 3 s, and each step draws when it ends. Those
     // end here, while the page can draw, and not under the recorder of the tests below.
     await sleep(3500);
@@ -1889,7 +1894,7 @@ const sealed = (gid, rel, seat, fields, key, names = ["by", "sig"]) =>
       payees: [{ to: "utest1x", amount: 5 }] };
     const labels = (list) => list.map(textOf);
     tipAt(4500000);
-    assert.equal(textOf(t.statusChip(proposal)), "Needs approval");
+    assert.equal(textOf(t.statusChip(proposal)), "Approvals open");
     assert.equal(textOf(t.statusChip({ ...proposal, checking: true })), "Checking",
       "a part of it waits for its check");
     assert.match(textOf(t.expiryLine(proposal)), /^Expires at block 4,503,456, in about 24 hours/);
@@ -1981,7 +1986,7 @@ const sealed = (gid, rel, seat, fields, key, names = ["by", "sig"]) =>
     for (const signedOne of [sentOne, unmarkedOne]) {
       assert.equal(t.expired(signedOne), true);
       assert.deepEqual(t.nextAction(signedOne, null, { rows: [], extra: [] }), []);
-      assert.match(textOf(t.expiryLine(signedOne)), /cannot prove that the signers signed/);
+      assert.match(textOf(t.expiryLine(signedOne)), /cannot prove that the devices signed/);
     }
     const falseId = callouts(t.txDetails(unmarkedOne)).join(" ");
     assert.match(falseId, /names the id f…f, but the proposal gives the id realtx…realtx/,
@@ -2070,6 +2075,27 @@ const sealed = (gid, rel, seat, fields, key, names = ["by", "sig"]) =>
       }
       t.signPins[solKey] = "testnet";
       assert.equal(t.solOn(), true, "a wallet that can have a Solana part");
+      // Its start documents say that it never added Solana: no place names a Solana part.
+      // With no seat here, Recovery reads no Solana file, so it loads no Solana module.
+      const recoveryText = () => {
+        const seatsHere = t.secrets;
+        Object.assign(t, { secrets: {} });
+        t.ui.tab = "recovery";
+        try { return textOf(t.walletView(null, null)); } finally {
+          t.ui.tab = "overview";
+          Object.assign(t, { secrets: seatsHere });
+        }
+      };
+      const stays = /If this wallet has a Solana part, it does not move this way/;
+      const names = () => [stays.test(t.moveState(emptied()).text), stays.test(devicesText()),
+        /a Solana part does not move this way/.test(recoveryText()),
+        stays.test(textOf(t.createDialog(t.state.g)))];
+      assert.deepEqual([t.solNotAdded(), ...names()], [true, false, false, false, false],
+        "a wallet that never added Solana names no Solana part");
+      // Before its start documents are read, the sentence shows: it holds either way.
+      t.resetSolStart();
+      assert.deepEqual([t.solNotAdded(), ...names()], [false, true, true, true, true],
+        "a wallet that may have a Solana part names it everywhere");
       m = t.moveState(emptied());
       assert.match(m.text, /^The Zcash funds moved to .+, as of the last sync\./);
       assert.match(m.text, SOL_STAYS, "a move with a Solana part says that this part stays");
@@ -2085,6 +2111,19 @@ const sealed = (gid, rel, seat, fields, key, names = ["by", "sig"]) =>
     t.state.sessions.splice(t.state.sessions.indexOf(sentMove), 1);
     t.state.g = group;
     delete t.ready.MV1;
+    // The start documents of the wallet are read again: it never added Solana. The read draws
+    // the page, so it runs under the stub page.
+    {
+      const drawing = globalThis.document;
+      globalThis.document = realDocument;
+      try {
+        t.solAttach(t.state.gid, "groups/" + t.state.gid);
+        await waitFor("the start documents", () => t.solNotAdded());
+        await sleep(300);
+      } finally {
+        globalThis.document = drawing;
+      }
+    }
 
     {
       // A redraw keeps an open secret link open by its link, and never opens the secret link of
@@ -2178,6 +2217,16 @@ const sealed = (gid, rel, seat, fields, key, names = ["by", "sig"]) =>
         await t.putSec(t.state.gid, seat, { nonces });
       };
       const approved = async (seat, ss) => { put(ss); await quiet(() => t.approve(ss, seat)); };
+      // The headline of the drawer follows the Approve buttons: a transaction that pays what the
+      // proposer listed asks for an approval here, one that pays another payee asks for none.
+      const headOf = (ss) =>
+        textOf(all(t.sessionLayer(ss), (x) => x.className === "pay-status")[0]);
+      at(4500000);
+      assert.match(headOf(open("zn")), /^Your approval is needed/,
+        "a transaction that pays the listed payee asks for an approval here");
+      assert.match(headOf({ ...open("zm"), payees: [{ to: "utest1other", amount: 5 }] }),
+        /^Payment needs attention.*does not pay what the proposer listed/,
+        "a payee that the transaction does not pay asks for no approval");
 
       // An approval keeps the sighash after the nonce burn, and the PCZT in its own store.
       at(4500000);
@@ -2264,8 +2313,7 @@ const sealed = (gid, rel, seat, fields, key, names = ["by", "sig"]) =>
       await assert.rejects(quiet(() => t.proposeAgain(evilA)),
         /recipients of this payment changed/);
       assert.equal(t.ui.send, false);
-      assert.match(textOf(t.sessionLayer(evilA)),
-        /proposal changed after a device of this browser/);
+      assert.match(textOf(t.sessionLayer(evilA)), /proposal changed after this browser approved/);
       put(signedA);
       await settle();
 
@@ -2448,6 +2496,10 @@ const sealed = (gid, rel, seat, fields, key, names = ["by", "sig"]) =>
       at(4506917);
       assert.equal(t.expired(zj), true);
       assert.match(textOf(t.expiryLine(zj)), /can no longer go on chain/);
+      answer = () => ({ state: "unknown", txid: "tx-a", why: "seat 2 may still send it" });
+      at(4506917);
+      assert.match(textOf(t.expiryLine(zj)), /Why: device 2 may still send it\./,
+        "the engine reason of the check says device");
 
       // A verdict of "done" counts again after a sync without its txid (a reorganisation).
       answer = () => ({ state: "done", txid: "tx-a", why: "a synced block holds it" });
@@ -2523,10 +2575,18 @@ const sealed = (gid, rel, seat, fields, key, names = ["by", "sig"]) =>
         && textOf(x).includes("In a block"))[0].className;
       assert.match(blockStep(landedA), /In a blockA synced block holds the payment\./);
       assert.equal(stepClass(landedA), "step done");
+      // The headline above the steps names the state; the steps that wait show their number.
+      const headline = (ss) =>
+        textOf(all(t.sessionLayer(ss), (x) => x.className === "pay-status")[0]);
+      const current = (ss) => all(t.sessionLayer(ss), (x) => x.attrs?.["aria-current"] === "step")
+        .map(textOf);
+      assert.match(headline(landedA), /^In a blockA block that this browser synced holds/,
+        "a synced block holds it: the headline says so");
       // The head of the drawer names the network, as the wallet head does. What the chain sees
       // names the public expiry, and the explorer link says what that site sees.
-      const headOf = (ss) => all(t.sessionLayer(ss), (x) => x.className === "leaves")[0];
-      assert.ok(named(headOf(landedA), "span", "Testnet"), "the drawer head names the network");
+      const drawerHead = (ss) => all(t.sessionLayer(ss), (x) => x.className === "leaves")[0];
+      assert.ok(named(drawerHead(landedA), "span", "Testnet"),
+        "the drawer head names the network");
       assert.match(blockStep(landedA), new RegExp("The expiry height is public too\\. Zigs sets "
         + "it up to one day after the proposal, and a standard wallet sets it 40 blocks ahead\\. "
         + "So the expiry height can show that Zigs made this payment\\. Few wallets pay a "
@@ -2544,7 +2604,7 @@ const sealed = (gid, rel, seat, fields, key, names = ["by", "sig"]) =>
       const testnetG = t.state.g;
       t.state.g = { ...testnetG, network: "mainnet" };
       try {
-        assert.ok(named(headOf(landedA), "span", "Mainnet"), "a mainnet drawer reads Mainnet");
+        assert.ok(named(drawerHead(landedA), "span", "Mainnet"), "a mainnet drawer reads Mainnet");
         assert.match(blockStep(landedA), /View in explorer opens zecblock\.com in a new tab/,
           "the explorer host of a mainnet wallet");
       } finally {
@@ -2556,12 +2616,486 @@ const sealed = (gid, rel, seat, fields, key, names = ["by", "sig"]) =>
       assert.equal(stepClass(landedA), "step now", "a sent mark is no block");
       assert.match(blockStep(signedA), /In a blockAfter the send\./);
       assert.equal(stepClass(signedA), "step ");
+      // signedA shows a proposal that one seat rewrote after the approval here: okA does not.
+      const okA = { ...signedA, pczt: "PA" };
+      assert.match(headline({ ...landedA, pczt: "PA" }),
+        /^Waiting for a blockA device sent it\. No /, "sent, and no block holds it yet");
+      assert.match(current(landedA).join(), /In a blockNo synced block holds it yet/,
+        "the step that waits is the current step");
+      assert.match(headline(okA), /^Ready for the proofAny device can build the proof now\./,
+        "signed: the proof is next");
+      assert.deepEqual(all(t.sessionLayer(signedA), (x) => x.className === "tick").map(textOf)
+        .slice(3), ["4", "5", "6"], "the steps that wait show their number");
+      assert.ok(all(t.sessionLayer(signedA), (x) => x.className === "tick")
+        .every((x) => x.attrs["aria-hidden"] === "true"), "a screen reader skips the marks");
+      assert.match(current(signedA).join(), /^4Proof/, "signed: the proof is the step now");
+      assert.match(current(signedA).join(), /Any device can build the zero-knowledge proof now\./);
+      assert.deepEqual(all(t.sessionLayer(signedA), (x) => x.className === "sr-only").map(textOf)
+        .slice(0, 1), ["Done: "], "and hears which steps are done");
+      assert.equal(all(t.sessionLayer(signedA), (x) => x.className === "pay-status")[0].attrs.role,
+        undefined, "the headline is no live region: the page draws it anew each time");
       at(4503460);
       assert.match(blockStep(landedA), /In a blockNo synced block holds it\./,
         "past its expiry it waits for no block");
+      assert.match(headline(landedA), /^Check the payment/, "only the engine can say expired");
+      assert.deepEqual(current(landedA), [], "a checked payment has no step that waits");
+      // Under "It may still go on chain" a waiting step says only what this page saw.
+      const proofOf = (ss) => textOf(all(t.sessionLayer(ss), (x) => /^step /.test(x.className ?? "")
+        && textOf(x).includes("Proof"))[0]);
+      assert.ok(proofOf(signedA).endsWith("Not seen on this page."),
+        "a page that cannot tell says only what it saw");
+      // Step 6 there too, but a finished transaction past its expiry + 3 is in no synced block.
+      const blockOf = (ss) => textOf(all(t.sessionLayer(ss), (x) => /^step /.test(x.className ?? "")
+        && textOf(x).includes("In a block"))[0]);
+      assert.ok(blockOf(signedA).endsWith("Not seen on this page."),
+        "under It may still go on chain, step 6 says only what this page saw");
+      assert.ok(blockOf({ ...okA, final: { txid: "tx-a", tx_hex: "00" } }).endsWith("Not done."),
+        "a finished transaction past its expiry + 3 is in no block");
       t.setChain({ ...t.chain, cw: null });
-      assert.match(blockStep(landedA), /In a blockThis browser has not checked the blocks since/,
+      assert.match(blockStep(landedA), /In a blockThis page has not synced the blocks since you /,
         "before a sync the page does not say that no block holds it");
+      {
+        // ── Each fact of the headline, in the drawer: the detail says which fact holds, and a
+        // payment that cannot go on has no step that waits. Fresh session ids, no hold.
+        const kept13 = { sessions: t.state.sessions, commits: t.state.commits,
+          shares: t.state.shares };
+        Object.assign(t.state, { commits: {}, shares: {} });
+        const look = (ss) => {
+          const layer = t.sessionLayer(ss);
+          const now = all(layer, (x) => x.attrs?.["aria-current"] === "step").map(textOf);
+          assert.ok(now.length <= 1, "at most one step waits now");
+          const step = (title) => all(layer, (x) => /^step /.test(x.className ?? "")
+            && textOf(x).includes(title))[0];
+          return { head: textOf(all(layer, (x) => x.className === "pay-status")[0]), now, step,
+            text: textOf(layer), buttons: all(layer, (x) => x.tag === "button").map(textOf),
+            foot: all(layer, (x) => x.className === "drawer-foot").length,
+            chip: textOf(all(all(layer, (x) => x.className === "drawer-head")[0],
+              (x) => /^badge/.test(x.className ?? ""))[0]) };
+        };
+        const nonces = (seat, patch) => t.putSec(t.state.gid, seat,
+          { nonces: { ...t.sec(t.state.gid, seat).nonces, ...patch } });
+        const unknownA = () => ({ state: "unknown", txid: "tx-a", why: "it may still land" });
+        const lateSent = () => ({ ...okA, status: "broadcast", broadcastTxid: "tx-a",
+          final: { txid: "tx-a", tx_hex: "00" }, broadcastAt: 1 });
+        // An expired proposal: no step waits, and the steps keep their numbers.
+        answer = (p, sg, a) => a === "aa" && p === "PA"
+          ? { state: "expired", txid: "tx-a", why: "x" }
+          : { state: "unknown", txid: null, why: "no" };
+        at(4503500);
+        const oldOne = look(open("hd1", "PA"));
+        assert.match(oldOne.head, /^Payment expiredNo device can send it now\./,
+          "headline: an expired proposal ends");
+        assert.deepEqual(oldOne.now, [], "an expired payment has no step that waits");
+        // A payment that cannot go on says nothing about now in its waiting steps.
+        for (const [step, why] of [["Combined signature", "signature"], ["Proof", "proof"],
+          ["Sent to the network", "send"], ["In a block", "block"]]) {
+          assert.ok(textOf(oldOne.step(step)).endsWith("Not done."), "not done: the " + why);
+        }
+        assert.deepEqual([oldOne.step("Approvals").className,
+          textOf(all(oldOne.step("Approvals"), (x) => x.className === "tick")[0])], ["step ", "2"]);
+        const endedA = look(okA);
+        assert.ok(endedA.head.startsWith("Payment expiredThe transaction this browser approved "
+          + "expired. This page cannot tell whether a device sent another one."),
+        "headline: the engine says that it expired");
+        assert.deepEqual(endedA.now, [], "an ended payment has no step that waits");
+        assert.deepEqual([textOf(endedA.step("Proof")).endsWith("Not seen on this page."),
+          textOf(endedA.step("In a block")).endsWith("Not done.")], [true, true],
+        "the engine says that the approved transaction expired: no block");
+        // Stopped: before any signing and after a sync, no device can send it. Else the page
+        // cannot tell.
+        answer = unknownA;
+        at(4500100);
+        const stop = look({ ...open("hd2", "PA"), status: "cancelled", error: "Cancelled." });
+        assert.match(stop.head, /^Payment stoppedNo device can approve, sign or send it\./,
+          "headline: an error before any signing, after a sync");
+        assert.deepEqual(stop.now, [], "a stopped payment has no step that waits");
+        assert.ok(stop.step("Combined signature").className === "step bad"
+          && textOf(stop.step("Combined signature")).startsWith("!"), "the stop mark stays");
+        assert.ok(textOf(stop.step("Combined signature")).endsWith("Cancelled."),
+          "the stop reason sits in the steps");
+        assert.ok(textOf(stop.step("Proof")).endsWith("Not done."),
+          "a stop after a sync here: not done");
+        assert.ok(textOf(stop.step("In a block")).endsWith("Not done."),
+          "a stop after a sync here: no block");
+        assert.equal(textOf(t.statusChip({ ...open("hd2", "PA"), status: "cancelled",
+          error: "Cancelled." })), "Cancelled", "a synced stop keeps the chip of its status");
+        const unsure = /^Check the paymentThis page cannot tell whether a device sent it\. Check /;
+        const failedSigned = { ...okA, id: "hd3", status: "failed", error: "Failed." };
+        assert.match(look(failedSigned).head, unsure,
+          "headline: an error after the signing started");
+        assert.deepEqual(look(failedSigned).now, [],
+          "a stopped payment with a signed part has no step that waits");
+        assert.ok(look(failedSigned).text.includes("A device stopped this payment: Failed."),
+          "the stop reason shows next to a signed part");
+        assert.ok(textOf(look(failedSigned).step("Proof")).endsWith("Not seen on this page."),
+          "an error after signing: not seen on this page");
+        assert.deepEqual([look(failedSigned).chip, textOf(t.statusChip(failedSigned))],
+          ["Check", "Check"], "the chip asks for a check when the headline does");
+        // An approval here, then a cancel before the package: the hold of the approval ended
+        // (this mark has no height), and still the page cannot tell.
+        await t.putSec(t.state.gid, me, { marks: { ...t.sec(t.state.gid, me).marks,
+          hda: { approved: "aa" } } });
+        assert.match(look({ ...open("hda", "PA"), status: "cancelled", error: "Cancelled." }).head,
+          unsure, "headline: a cancel after an approval here, with no hold");
+        const { hda: _hda, ...marksNoHda } = t.sec(t.state.gid, me).marks;
+        await t.putSec(t.state.gid, me, { marks: marksNoHda });
+        // A sent payment with a later error part: the done steps stay done.
+        const errSent = look({ ...lateSent(), id: "hde", error: "Failed." });
+        assert.deepEqual(["Combined signature", "Sent to the network"]
+          .map((x) => errSent.step(x).className), ["step done", "step done"],
+        "a later error part keeps the done steps");
+        assert.match(errSent.head, /^Check the paymentA device sent it, and the payment shows a /,
+          "headline: an error part after a sent mark");
+        assert.equal(textOf(t.statusChip({ ...lateSent(), id: "hde", error: "Failed." })), "Check",
+          "an error part next to a sent mark reads Check");
+        // A state restored from storage is no sync of this page.
+        at(4500100, new Set(), 0);
+        assert.match(look({ ...open("hd2", "PA"), status: "cancelled", error: "Cancelled." }).head,
+          unsure, "headline: a restored state is no sync of this page");
+        assert.equal(textOf(t.statusChip({ ...open("hd2", "PA"), status: "cancelled",
+          error: "Cancelled." })), "Check", "a stop before a sync of this page reads Check");
+        assert.match(look(lateSent()).head, /^Waiting for a blockA device sent it\. This page has /,
+          "headline: a restored state is no sync since the send");
+        assert.ok(textOf(look(lateSent()).step("In a block")).endsWith("This page has not synced "
+          + "the blocks since you opened this wallet."),
+        "a restored state: the block step says that this page has not synced");
+        t.setChain({ ...t.chain, cw: null });
+        assert.match(look({ ...open("hd2", "PA"), error: "Cancelled." }).head, unsure,
+          "headline: an error before a sync");
+        assert.match(look(lateSent()).head,
+          /^Waiting for a blockA device sent it\. This page has not synced the blocks since you /,
+          "headline: no sync since the send");
+        at(4500100);
+        // The reasons of this browser: it refuses the transaction or the send.
+        assert.match(look(open("hd4", "PX")).head, /^Payment needs attentionThis browser refuses /,
+          "headline: a transaction that this browser cannot decode");
+        const doneA = { ...okA, final: { txid: "tx-a", tx_hex: "00" } };
+        const refusedB = look({ ...doneA, final: { txid: "tx-b", tx_hex: "00" } });
+        assert.match(refusedB.head,
+          /^Payment needs attentionThis browser does not send this transaction\./,
+          "headline: a finished transaction with another id");
+        assert.deepEqual([refusedB.now, refusedB.step("Sent to the network").className], [[],
+          "step bad"], "a refused send is no step that waits");
+        assert.match(textOf(refusedB.step("Sent to the network")), /another id than the approved/);
+        // The local reasons that WAITING must not hide.
+        const seenOne = { ...open("hd7", "PA"), package: "PK", status: "signing" };
+        put(seenOne);
+        t.noteSessions();
+        const resetOne = look(open("hd7", "PA"));
+        assert.match(resetOne.head, /^Check the paymentThis browser saw the signing start, and /,
+          "headline: one device reset the signing seen here");
+        assert.equal(resetOne.chip, "Check", "the chip of a lost signing asks for a check");
+        assert.deepEqual(resetOne.now, [], "a reset keeps no approvals step that waits");
+        assert.match(resetOne.text, /a device or the server reset it/);
+        assert.match(resetOne.text, /saw the signing of this payment start, but the payment does /,
+          "the note that the headline points to");
+        assert.match(resetOne.text, /may have signed it before the reset\.(?!.*may still send)/s);
+        t.state.commits = { [me]: {} };
+        const lostOne = look(open("hd6", "PA"));
+        assert.match(lostOne.head, /^Payment needs attentionA device of this browser lost its /,
+          "headline: this browser lost its approval");
+        // Two other devices here can still approve: the note names the device that lost it. With
+        // fewer than t approvals, the page cannot tell which devices sign.
+        assert.ok(lostOne.text.includes("This browser lost the approval of device " + me + " for "
+          + "this payment: the browser data that held it was deleted. If the signing package "
+          + "names that device, the payment cannot finish. Then cancel it, and propose it again."),
+        "the note names the device that lost its approval");
+        assert.deepEqual(lostOne.buttons.filter((b) => b.startsWith("Approve")),
+          ["Approve as device " + other, "Approve as device " + third]);
+        assert.deepEqual(lostOne.now, [], "a lost approval keeps no approvals step that waits");
+        // t approvals: the package takes the first t by device number.
+        await nonces(other, { hd6: ["n"], hd6b: ["n"] });
+        await nonces(me, { hd6b: ["n"] });
+        t.state.commits = { [me]: {}, [other]: {} };
+        assert.ok(look(open("hd6", "PA")).text.includes("This browser lost the approval of device "
+          + me + " for this payment: the browser data that held it was deleted. The payment cannot "
+          + "finish with it. Cancel the payment, then propose it again."),
+        "a lost device among the first t approvals stops the payment");
+        t.state.commits = { [me]: {}, [other]: {}, [third]: {} };
+        const beyond = look(open("hd6b", "PA"));
+        assert.deepEqual([beyond.head.startsWith("Payment needs attention"),
+          beyond.text.includes("lost the approval")], [false, false],
+        "a device outside the first t approvals lost nothing");
+        await nonces(other, { hd6: undefined, hd6b: undefined });
+        await nonces(me, { hd6b: undefined });
+        t.state.commits = {};
+        const changed = look(signedA);
+        assert.match(changed.head, /^Payment needs attentionOne device changed the proposal after /,
+          "headline: one device rewrote the proposal after the approval here");
+        assert.match(changed.text, /proposal changed after this browser approved it/);
+        // A move pays the address that the store names, not the one that this browser checked.
+        t.secrets["MVX:1"] = { checkedWallet: JSON.stringify({ address: "utest1other" }) };
+        const moveOff = look({ ...open("hd8", "PA"), move: "MVX" });
+        assert.match(moveOff.head, /^Payment needs attentionThe transaction does not pay only the /,
+          "headline: a move that does not pay the checked address");
+        assert.match(moveOff.text, /This is not the address of the new wallet\. Do not approve/);
+        assert.equal(moveOff.buttons.some((b) => b.startsWith("Approve")), false);
+        assert.deepEqual(moveOff.now, [], "a wrong move keeps no approvals step that waits");
+        const moveList = look({ ...open("hd9", "PA"), move: "MVX",
+          payees: [{ to: "utest1other", amount: 5 }] });
+        assert.match(moveList.head, /^Payment needs attentionThe transaction does not pay what /,
+          "a move that does not pay its list is a mismatch");
+        assert.deepEqual(moveList.now, [], "a mismatch keeps no approvals step that waits");
+        t.secrets["MVX:1"] = { checkedWallet: JSON.stringify({ address: "utest1x" }) };
+        assert.deepEqual([t.solOn(), t.solNotAdded(),
+          look({ ...open("hd8", "PA"), move: "MVX" }).text.includes("Solana part")],
+        [true, true, false], "a move of a wallet that never added Solana names no Solana part");
+        t.resetSolStart();   // the start documents are not read: the sentence shows
+        const moveOk = look({ ...open("hd8", "PA"), move: "MVX" });
+        assert.match(moveOk.head, /^Your approval is needed/,
+          "a move to the checked address asks for an approval");
+        // The move takes the confirmed Zcash funds only. The Solana sentence shows only for a
+        // wallet that can have a Solana part (solOn).
+        const solMove = " If this wallet has a Solana part, it does not move this way: check it "
+          + "in its Solana section.";
+        const checkedMove = "This moves the confirmed Zcash funds to the new wallet, the wallet "
+          + "that replaces this one. Your browser checked its address.";
+        const blindMove = "This moves the confirmed Zcash funds to a new wallet that replaces this "
+          + "one. Your browser has no checked copy of its address, so it cannot check it.";
+        const moveIn = (text) => look({ ...open("hd8", "PA"), move: "MVX" }).text.includes(text);
+        const g13 = t.state.g;
+        assert.deepEqual([t.solOn(), moveOk.text.includes(checkedMove + solMove)], [true, true],
+          "a move names the confirmed Zcash funds and the Solana part");
+        t.state.g = { ...g13, version: 2 };
+        assert.deepEqual([t.solOn(), moveIn(checkedMove), moveIn("Solana part")],
+          [false, true, false], "a wallet without a Solana part reads no Solana sentence");
+        t.state.g = g13;
+        delete t.secrets["MVX:1"];
+        assert.ok(moveIn(blindMove + solMove), "and so does a move with no checked copy");
+        t.state.g = { ...g13, version: 2 };
+        assert.deepEqual([moveIn(blindMove), moveIn("Solana part")], [true, false]);
+        t.state.g = g13;
+        const memoOne = look({ ...open("hdm", "PA"), payees: [{ to: "utest1x", amount: 5,
+          memo: "rent" }] });
+        assert.ok(memoOne.text.includes("A memo goes on chain with the payment. Its recipient, "
+          + "every device of this wallet and anyone else who has the invite link can read it. A "
+          + "device that Change devices leaves out later can still read it."),
+        "the readers of a memo");
+        // Before the send, the drawer says what the chain will show, also the expiry height.
+        // After the send, the chain summary says it, once.
+        const expiryNotes = (text) => text.split("The expiry height is public too.").length - 1;
+        assert.deepEqual([expiryNotes(memoOne.text), expiryNotes(look(lateSent()).text)], [1, 1],
+        "the drawer says before the send that the expiry height is public, and once after it");
+        // The steps after the approvals.
+        const lateA = lateSent();
+        put(lateA);
+        assert.match(look(lateA).head, /^Send it againNo block that this browser synced holds it/,
+          "headline: a sent payment that no block holds after 10 minutes");
+        assert.match(look(lateA).head, /after 10 minutes\. Any device can send/);
+        at(4503453);
+        const late = look(doneA);
+        assert.match(late.head, /^Too late to sendIt can no longer go to the network\./,
+          "headline: a node refuses it now");
+        assert.equal(textOf(t.statusChip({ ...doneA, status: "complete" })), "Too late",
+          "a payment too late to send reads Too late, not Ready to send");
+        assert.deepEqual(late.now, [], "a payment too late to send has no step that waits");
+        assert.ok(textOf(late.step("In a block")).endsWith("No synced block holds it yet."),
+          "too late to send: no synced block holds it yet");
+        // The device wording of the drawer, on its callouts too.
+        for (const [what, text] of [["an expired payment", oldOne.text],
+          ["a payment too late to send", late.text], ["a stop", stop.text],
+          ["a failure after signing", look(failedSigned).text]]) {
+          assert.doesNotMatch(text, /signer|seat|passkey|USD|Swap|USDC/i,
+            "the drawer says device: " + what);
+        }
+        at(4503453, new Set(), 0);
+        assert.ok(textOf(look(doneA).step("In a block")).endsWith("This page has not synced the "
+          + "blocks since you opened this wallet."),
+        "too late with a restored state: step 6 says that this page has not synced");
+        at(4503453);
+        assert.match(textOf(late.step("Sent to the network")), /can no longer go to the network/);
+        // A sent mark with a false id waits for its block, under the false id note.
+        at(4500100);
+        const falseSent = look({ ...lateSent(), broadcastAt: Date.now(), broadcastTxid: "tx-b",
+          final: { txid: "tx-b", tx_hex: "00" } });
+        assert.deepEqual([falseSent.head.startsWith("Waiting for a blockA device sent it."),
+          falseSent.text.includes("names the id tx-b")], [true, true],
+        "a sent mark with a false id waits for its block, under the false id note");
+        assert.ok(falseSent.text.includes("RecipientsAmountsDevicesApproval rule"),
+          "the chain sees no device");
+        at(4503453);
+        // A sent payment in the same window may still land: it is not too late.
+        const sentNear = look(lateSent());
+        assert.deepEqual([textOf(t.statusChip(lateSent())) === "Too late",
+          sentNear.now.join().includes("In a block")], [false, true],
+        "a sent payment near its expiry is not too late");
+        at(4500100);
+        assert.match(look({ ...doneA, broadcastError: "timeout" }).head,
+          /^The send did not finishA node may still have taken it\. Read the error below\. Check /,
+          "headline: the send did not finish");
+        const proved = look(doneA);
+        assert.match(proved.head, /^Ready to sendSending is a separate step\. This browser sends /,
+          "headline: this browser can send it");
+        assert.match(proved.head, /only when the finished transaction names the approved id\./);
+        assert.match(proved.now.join(), /Any device can send the finished transaction\./);
+        const seats13 = t.secrets;
+        t.secrets = {};
+        assert.match(look(doneA).head, /^Ready to sendThe proof is built\. A device of this wallet/,
+          "headline: the proof is built, and this browser has no seat");
+        assert.ok(look(open("hdz", "PA")).head.startsWith("Waiting for approvals"),
+          "a browser with no device here waits for approvals");
+        put(open("hdu", "PA", Date.now()));   // the newest row shows in the overview
+        assert.match(textOf(all(t.walletView(null, null),
+          (x) => x.attrs?.["data-key"] === "pay-hdu")[0]), /Approvals open/,
+        "a row of an unknown count reads Approvals open");
+        // One seat can write any status: the refusal does not read it.
+        const falseId = { ...doneA, status: "signed", final: { txid: "tx-b", tx_hex: "00" } };
+        assert.deepEqual([look(falseId).head.startsWith("Payment needs attentionThis browser does "
+          + "not send"), textOf(t.statusChip(falseId))], [true, "Check"],
+        "a browser without a seat refuses a false id, whatever the status");
+        t.secrets = seats13;
+        // A block holds it, with parts missing: no step waits, and no step is offered.
+        answer = () => ({ state: "done", txid: "tx-a", why: "a synced block holds it" });
+        at(4500100, new Set(["tx-a"]));
+        const landedNoMark = look(doneA);
+        assert.deepEqual([landedNoMark.now, landedNoMark.step("Sent to the network").className],
+          [[], "step done"], "a landed payment without a sent mark has no step that waits");
+        assert.match(textOf(landedNoMark.step("Sent to the network")), /A synced block holds/);
+        assert.equal(landedNoMark.foot, 0, "a landed payment offers no step");
+        const landedSigned = look(okA);
+        assert.equal(landedSigned.step("Proof").className, "step done",
+          "a block marks the proof done");
+        assert.deepEqual([landedSigned.now, landedSigned.buttons.includes("Build proof")],
+          [[], false], "a landed payment offers no Build proof");
+        const landedPackage = look({ ...okA, signed: "" });
+        assert.equal(landedPackage.step("Approvals").className, "step done",
+          "a block marks the approvals done");
+        assert.equal(landedPackage.step("Combined signature").className, "step done",
+          "a block marks the signature done");
+        assert.deepEqual([landedPackage.now, landedPackage.buttons.includes("Cancel payment")],
+          [[], false], "a landed payment offers no Cancel");
+        assert.match(textOf(landedPackage.step("Combined signature")), /A synced block holds/);
+        assert.deepEqual(look(open("hdl", "PA")).now, [],
+          "a proposal whose transaction a block holds has no step that waits");
+        answer = unknownA;
+        at(4500100);
+        const proving = look({ ...okA, status: "proving", provingAt: Date.now() });
+        assert.match(proving.head, /^Building the proofA device builds the proof\./,
+          "headline: a device builds the proof");
+        assert.match(proving.now.join(), /A device is building the proof/);
+        // The status is no signed part: any holder of the invite link can write it.
+        const spoofed = look({ ...open("hdp", "PA"), status: "proving", provingAt: Date.now() });
+        assert.deepEqual([spoofed.head.startsWith("Your approval is needed"),
+          spoofed.text.includes("A device is building the proof")], [true, false],
+        "an unsigned status is no proof");
+        const packaged = look({ ...okA, signed: "", status: "proving", provingAt: Date.now() });
+        assert.deepEqual([packaged.head.startsWith("Building the proof"),
+          packaged.text.includes("A device is building the proof")], [false, false],
+        "a signing package with a written status is no proof");
+        const signing = look({ ...okA, signed: "" });
+        assert.match(signing.head, /^SigningEach device that the signing package names signs/,
+          "headline: the devices sign");
+        assert.equal(signing.step("Approvals").className, "step ",
+          "a package alone does not mark the approvals done");
+        assert.match(signing.now.join(), /^3Combined signature/,
+          "a package without loaded approvals waits for its signature");
+        // Enough approvals: no device here approves any more, and the lists that count the
+        // approvals (the open payment, the watched ones) agree.
+        await nonces(me, { hd5: ["n"] });
+        await nonces(other, { hd5: ["n"] });
+        t.state.commits = { [me]: {}, [other]: {} };
+        const full = look(open("hd5", "PA"));
+        assert.match(full.head, /^Approvals are completeEnough devices approved\. Another /,
+          "headline: t approvals are in");
+        assert.deepEqual(full.buttons.filter((b) => b.startsWith("Approve")), [],
+          "no Approve button after t approvals");
+        assert.equal(full.step("Approvals").className, "step done");
+        assert.deepEqual([full.chip, textOf(t.statusChip(open("hd5", "PA")))],
+          ["Approved", "Approvals open"], "the drawer chip says Approved after t approvals");
+        assert.equal(look({ ...okA, id: "hdk", signed: "" }).chip, "Signing",
+          "the Approved chip is only for a payment that collects approvals");
+        assert.ok(look({ ...okA, id: "hdk", signed: "" }).head.startsWith("Signing"),
+          "a package with t approvals reads Signing");
+        put(open("hd5", "PA", Date.now()));   // the newest row shows in the overview
+        t.state.sid = "hd5";
+        const row5 = () => textOf(all(t.walletView(null, null),
+          (x) => x.attrs?.["data-key"] === "pay-hd5")[0]);
+        assert.deepEqual([t.needsMyApproval(t.state.gid, open("hd5", "PA")),
+          t.toApprove(t.state.gid).some((x) => x.id === "hd5")], [false, false],
+        "the inbox follows the drawer after t approvals");
+        assert.match(row5(), /Approved/, "the Activity row says Approved after t approvals");
+        t.state.commits = { [me]: {} };
+        assert.match(row5(), /Your approval/, "below t a device here can approve");
+        t.state.sid = null;
+        // A closed drawer: the inbox counts the approvals of a watched payment, from the parts
+        // that pass their check.
+        const hdw = open("hdw", "PA", Date.now());
+        await approved(me, hdw);
+        await approved(other, hdw);
+        t.state.commits = {};
+        const part = (seat) => data.get(`groups/${t.state.gid}/sessions/hdw/commits/${seat}`);
+        const watchW = (commits) => t.watched.set("hdw",
+          { gid: t.state.gid, raw: { commits, shares: {} }, unsubs: [] });
+        assert.equal(t.needsMyApproval(t.state.gid, hdw), true,
+          "a payment that this page does not watch keeps the old rule");
+        // The checks of the parts run in the background and draw when they end, and a redraw may
+        // change the watch: the test starts the checks, waits for their draw under the stub
+        // page, and watches again.
+        const checked = async (commits) => {
+          watchW(commits);
+          t.needsMyApproval(t.state.gid, hdw);
+          await quiet(() => sleep(500));
+          watchW(commits);
+        };
+        await checked({ [me]: part(me), [other]: part(other) });
+        assert.deepEqual([t.needsMyApproval(t.state.gid, hdw),
+          t.toApprove(t.state.gid).some((x) => x.id === "hdw")], [false, false],
+        "the inbox counts the approvals of a watched payment");
+        // Its drawer starts from those approvals, not from zero until its first snapshot: the
+        // open payment's parts are the watched ones before any snapshot arrives.
+        await quiet(async () => {
+          watchW({ [me]: part(me), [other]: part(other) });
+          t.openSession("hdw");
+          assert.equal(Object.keys(t.raw.commits).length, 2,
+            "the drawer of a watched payment starts from its approvals");
+          t.closeSession();
+          await sleep(300);
+        });
+        await checked({ [me]: part(me), [third]: { ...part(other), by: third } });
+        assert.equal(t.needsMyApproval(t.state.gid, hdw), true,
+          "a part that fails its check does not count");
+        t.watched.delete("hdw");
+        for (const seat of [me, other]) {
+          const { hdw: _hdw, ...marksW } = t.sec(t.state.gid, seat).marks;
+          await t.putSec(t.state.gid, seat, { marks: marksW });
+        }
+        t.state.commits = { [me]: {} };
+        assert.match(look(open("hd5", "PA")).head, /^Your approval is needed/);
+        // A device here that approved, while its part has not reached the list.
+        await nonces(me, { hdf: ["n"] });
+        t.state.commits = {};
+        assert.deepEqual(look(open("hdf", "PA")).buttons.filter((b) => b.startsWith("Approve")),
+          ["Approve as device " + other, "Approve as device " + third],
+        "a device that approved here gets no Approve button");
+        await nonces(me, { hdf: undefined });
+        // A wallet whose group document is gone counts no approval, and the page still draws.
+        const g4 = t.state.g, sid4 = t.state.sid;
+        Object.assign(t.state, { g: null, sid: "hdg", commits: {} });
+        let none;
+        assert.doesNotThrow(() => { none = t.approvalsDone({ id: "hdg" }); },
+          "a wallet with no group document counts no approval");
+        assert.equal(none, null);
+        Object.assign(t.state, { g: g4, sid: sid4 });
+        // The focus: a control that went away leaves it in the drawer, not in a dialog, whose
+        // first field would scroll it and open a phone keyboard.
+        const focused = [];
+        const layer = (cls) => ({ tabIndex: 0, classList: { contains: (c) => c === cls },
+          querySelector: (sel) => (sel.startsWith("[") ? null
+            : { focus: () => focused.push(cls + " " + sel) }),
+          focus: () => focused.push(cls) });
+        const noControl = { querySelectorAll: () => [] };
+        t.focusAfter(null);
+        t.restoreFocus(noControl, { key: "BUTTON:Remove recipient 3:0", inLayer: true },
+          layer("dialog"));
+        assert.deepEqual(focused, [], "a dialog keeps the focus where the page put it");
+        t.restoreFocus(noControl, { key: "BUTTON:Approve payment:0", inLayer: true },
+          layer("drawer"));
+        assert.deepEqual(focused, ["drawer .icon-btn"],
+          "a drawer gives the focus to its close button");
+        await nonces(me, { hd5: undefined });
+        await nonces(other, { hd5: undefined });
+        Object.assign(t.state, kept13);
+      }
       answer = () => ({ state: "done", txid: "tx-a", why: "a synced block holds it" });
       at(4500100, new Set(["tx-a"]));
 
@@ -2645,7 +3179,10 @@ const sealed = (gid, rel, seat, fields, key, names = ["by", "sig"]) =>
       put(failedA);
       at(4500101);
       assert.equal(t.inFlight().includes(failedA), true, "an error part frees nothing");
-      assert.equal(textOf(t.statusChip(failedA)), "Confirming");
+      assert.equal(textOf(t.statusChip(failedA)), "Confirming",
+        "an error part that an approval here holds reads Confirming");
+      assert.match(headOf(failedA), /^Stopped, but it may still go on chain/,
+        "an approval here holds Send, so the stop is not the end");
       const resetA = open("za", "PB");
       put(resetA);
       at(4500102);
@@ -2964,7 +3501,7 @@ const sealed = (gid, rel, seat, fields, key, names = ["by", "sig"]) =>
       assert.match(String(t.sendBlocker()), /After a cancel, open that payment to release it\./);
       t.state.sessions = kept7;
       const card = () => holdOf(gone);
-      assert.match(textOf(card()), new RegExp("other signers can still sign and send it\\. Send "
+      assert.match(textOf(card()), new RegExp("other devices can still sign and send it\\. Send "
         + "stays off until block 4,503,459, in about \\d+ hours\\. Release Send only"));
       const hours = () => Number(/in about (\d+) hours/.exec(textOf(card()))[1]);
       const fresh = hours();
@@ -3785,10 +4322,10 @@ const sealed = (gid, rel, seat, fields, key, names = ["by", "sig"]) =>
         return textOf(t.sessionLayer(ss));
       };
       assert.match(drawn(open("w5", "PA"), {}),
-        /Waiting for the proposer's browser to build the signing package/);
+        /Waiting for the proposer's device to build the signing package/);
       const w5 = { ...open("w5", "PA"), package: "PK", signers: [me, other], status: "signing" };
       assert.match(drawn(w5, { [me]: {} }),
-        /Signing · 1 of 2 shares\. Waiting for [^:,]+: each browser signs while this wallet/);
+        /Signing · 1 of 2 shares\. Waiting for [^:,]+: each device signs while this wallet/);
       Object.assign(t.state, { commits: {}, shares: {} });
       // ── The approval of a payment to a ZNS name: this browser looks the name up again.
       const znsIds = [];
@@ -5861,10 +6398,16 @@ async function runAcctSync() {
   }
 }
 
-// ── Opening another wallet drops the notes of an expired payment of the open one ──
+// ── Opening another wallet drops the notes of an expired payment of the open one, and the
+// wallet list keeps no watch of it ──
 t.ui.after = "PA";
+let unwatched = 0;
+t.watched.set("wl", { gid: t.state.gid, raw: { commits: {}, shares: {} },
+  unsubs: [() => { unwatched += 1; }] });
 t.openGroup(null);
 assert.equal(t.ui.after, null);
+assert.deepEqual([t.watched.size, unwatched], [0, 1],
+  "the wallet list keeps no watch of the last wallet");
 
 console.log("app ok");
 process.exit(0);

@@ -123,7 +123,7 @@ const controlByKey = (root, key) =>
 function focusSnapshot(root) {
   const a = document.activeElement;
   if (!a || !root.contains(a) || !a.dataset.key) return null;
-  const snap = { key: a.dataset.key };
+  const snap = { key: a.dataset.key, inLayer: !!a.closest(".dialog, .drawer") };
   try {
     snap.sel = [a.selectionStart, a.selectionEnd, a.selectionDirection];
   } catch { /* not a text control */ }
@@ -132,14 +132,24 @@ function focusSnapshot(root) {
 
 // `wantFocus.force` wins over the old focus (a pick in the side list, the opener of a closed
 // layer).
-function restoreFocus(root, snap) {
+function focusKey(snap) {
   const want = wantFocus; wantFocus = null;
-  const key = want && (want.force || !snap) ? want.key : snap && snap.key;
-  const n = key && controlByKey(root, key);
-  if (!n) return;
+  return want && (want.force || !snap) ? want.key : snap && snap.key;
+}
+// A control of the open drawer that went away (a step that another device took) leaves the focus
+// in the drawer. A dialog keeps it where the page put it: its first field would scroll the dialog
+// and open a phone keyboard.
+export function restoreFocus(root, snap, layer) {
+  const key = focusKey(snap), n = key && controlByKey(root, key);
+  if (!n) {
+    if (inDrawer(snap, layer)) focusLayer(layer);
+    return;
+  }
   n.focus({ preventScroll: true });
   if (snap && snap.key === key) restoreSelection(n, snap.sel);
 }
+
+const inDrawer = (snap, layer) => !!snap?.inLayer && !!layer?.classList.contains("drawer");
 
 function restoreSelection(n, sel) {
   if (!sel || sel[0] == null) return;
@@ -204,7 +214,7 @@ export function draw() {
   const ss = curSession();
   if (ss && ss.status === "proving") tickTimer = setTimeout(render, 1000);
   restoreFormState(app, form);
-  if (entered) focusLayer(top[1]); else restoreFocus(shell, snap);
+  if (entered) focusLayer(top[1]); else restoreFocus(shell, snap, top[1]);
 }
 
 // Rebuilding a focused text box closes a phone's keyboard. While a message box or a field of the

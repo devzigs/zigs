@@ -48,12 +48,19 @@ export function needsWork(ss) {
   const mine = ss.package ? isProposer(ss) || approvedHere(ss) : isProposer(ss);
   return mine && !expired(ss);
 }
-// ponytail: at most WATCH_MAX payments at once, those with a package first, then the newest.
-// More wait until the older ones end or expire.
+// ponytail: at most WATCH_MAX payments at once, those with a package first, then the newest,
+// then the open proposals whose approvals only the lists count (approvalsDone). More wait until
+// the older ones end or expire.
 const WATCH_MAX = 8;
 /** The payments of `list` that this browser watches (M5). */
-export const toWatch = (list) => list.filter(needsWork)
-  .sort((a, b) => Number(!!b.package) - Number(!!a.package)).slice(0, WATCH_MAX);
+export function toWatch(list) {
+  const work = list.filter(needsWork)
+    .sort((a, b) => Number(!!b.package) - Number(!!a.package));
+  const counted = list.filter((ss) => !needsWork(ss) && openToCount(ss));
+  return [...work, ...counted].slice(0, WATCH_MAX);
+}
+const openToCount = (ss) => ss.status === "collecting" && !ss.package && !ss.error
+  && isStr(ss.pczt) && !expired(ss);
 
 // An approval of a seat here: its mark, or what approvalKept says.
 const approvedHere = (ss) => !!markOf(state.gid, ss.id).approved
@@ -108,10 +115,14 @@ const step = (key, ss, fn) => once(key, () => fn().catch((e) => {
   throw new Error("\"" + title + "\": " + said(e));
 }));
 
+/** The devices that a signing package names: the first `t` approvals by device number. */
+export const firstApprovers = (commits, t) => Object.keys(commits).map(Number)
+  .sort((a, b) => a - b).slice(0, t);
+
 // Coordinator: once t approvals are in, build the signing package.
 function buildPackage(ss, fvk, commits) {
   const gid = state.gid, t = state.g.t;
-  const ids = Object.keys(commits).map(Number).sort((a, b) => a - b).slice(0, t);
+  const ids = firstApprovers(commits, t);
   if (ids.length < t) return;
   step("pkg:" + ss.id, ss, async () => {
     const c = {}; for (const i of ids) c[i] = commits[i].commitments;
@@ -384,6 +395,9 @@ export function sendRefusal(ss) {
 }
 const unread = (what) => "This browser cannot read " + what + ", so it does not send the "
   + "finished one.";
+/** A finished transaction that no device sent, and that this browser does not send. One seat
+ * writes the status, so it does not count. */
+export const refusedFinal = (ss) => !!ss.final && !ss.broadcastTxid && !!sendRefusal(ss);
 const SEND_OTHER = "The finished transaction has another id than the approved one, so this "
   + "browser does not send it. Check the payment with the other devices.";
 const SEND_NOT_PROPOSED = "The finished transaction has another id than the proposal, so this "
@@ -726,6 +740,9 @@ export function onChain(ss) {
   return !!(c && c.sent && id && c.sent.has(id));
 }
 
+/** A finished transaction that no device sent, and that a node refuses now (expiryOf). */
+export const tooLate = (ss) => !!ss.final && !ss.broadcastTxid && expiryOf(ss)?.expired === true;
+
 // A payment that no signer can approve, sign or send any more, and that no block holds: its notes
 // are free again. A payment with a finished transaction can be on the network without a sent mark
 // (a send that timed out after a server took it, or a mark that was not saved). So it counts as
@@ -964,6 +981,10 @@ export const approvedSpent = (ss) => !!markOf(state.gid, ss.id).approved
   && verdict(ss)?.spent === true;
 /** The chain of the open wallet synced: before, no hold of an approval is known. */
 export const chainReady = (c) => !!(c && c.cw && c.bal && c.sent);
+/** A sync of this page: a state restored from storage is ready (chainReady) before it. */
+export const syncedHere = () => chainReady(curChain()) && !!curChain().balAt;
+/** An error before any signing here, after a sync of this page: no device can send it. */
+export const stoppedHere = (ss) => !!ss.error && !signingSeen(ss) && syncedHere();
 const verdicts = new Map();
 
 // The state of a payment from the engine once its signing started (TICKETS.md ZEC-13): "done",

@@ -10,7 +10,8 @@ import { capText, curNet, MAINNET_ON, netOf, NETWORKS } from "./app-chain.js";
 import { signedMode } from "./app-filter.js";
 import { closeSession } from "./app-groups.js";
 import {
-  approvedHold, ended, expired, landed, payeesOf, sendRefusal, signingSeen,
+  approvedHold, ended, expired, heldApprovals, landed, payeesOf, refusedFinal, signingLost,
+  signingSeen, stoppedHere, tooLate,
 } from "./app-payments.js";
 import { focusAfter, react, render } from "./app-loop.js";
 
@@ -116,21 +117,36 @@ export function avatar(i, cls = "") {
 }
 
 const STATUS = {
-  collecting: ["Needs approval", "warn"], signing: ["Signing", "info"], signed: ["Ready to prove", "info"],
-  proving: ["Building proof", "info"], complete: ["Ready to send", "ok"], broadcast: ["Confirming", "info"], failed: ["Failed", "bad"],
+  collecting: ["Approvals open", "warn"], signing: ["Signing", "info"],
+  signed: ["Ready to prove", "info"], proving: ["Building proof", "info"],
+  complete: ["Ready to send", "ok"], broadcast: ["Confirming", "info"], failed: ["Failed", "bad"],
   cancelled: ["Cancelled", ""],
 };
-// After signing, only the engine can say that it expired (TICKETS.md ZEC-13). A finished
-// transaction that the send step refuses is not ready to send either (sendRefusal).
-const asksCheck = (s) => (signingSeen(s) && expired(s))
-  || (s.status === "complete" && !!sendRefusal(s));
-export function statusChip(s) {
+// The chip asks for a check where the headline does ("Check the payment"): after signing, only
+// the engine can say that it expired (TICKETS.md ZEC-13); an error part that the page cannot
+// judge; a signing that the document lost. A finished transaction that the send step refuses is
+// not ready to send either (refusedFinal).
+const asksCheck = (s) => (signingSeen(s) && expired(s)) || unsureStop(s) || signingLost(s)
+  || refusedFinal(s);
+// An error part after signing started here, or before a sync of this page (stoppedHere), that no
+// approval here holds (the headline `held` says more then).
+const unsureStop = (s) => !!s.error && !stoppedHere(s) && !heldApprovals().includes(s.id);
+// `approved`: the drawer counted t approvals of this payment. The inbox and the Activity rows
+// cannot count them, so they show the status of the document.
+export function statusChip(s, approved = false) {
   if (s.checking) return el("span", { class: "badge" }, "Checking");
   if (landed(s)) return el("span", { class: "badge ok" }, "Sent");
   if (ended(s)) return el("span", { class: "badge" }, "Expired");
   if (asksCheck(s)) return el("span", { class: "badge warn" }, "Check");
+  // The headline "Too late to send": a node refuses the finished transaction now.
+  if (tooLate(s)) return el("span", { class: "badge warn" }, "Too late");
   // An error part that one seat wrote does not end a payment that this browser approved and sent.
   if (approvedHold(s)) return el("span", { class: "badge info" }, "Confirming");
+  return docStatus(s, approved);
+}
+// The status of the document.
+function docStatus(s, approved) {
+  if (approved && s.status === "collecting") return el("span", { class: "badge info" }, "Approved");
   const [t, c] = Object.hasOwn(STATUS, s.status) ? STATUS[s.status] : [String(s.status), ""];
   return el("span", { class: "badge " + c }, t);
 }

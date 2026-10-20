@@ -261,7 +261,7 @@ async function backupPhase(first, gid) {
     () => "the backup file",
   );
   const [file] = await takeDownloads(first);
-  assert.match(file.name, /^zigs-.*-solana-seat-1\.zigsbackup$/);
+  assert.match(file.name, /^zigs-.*-solana-device-1\.zigsbackup$/);
   assert.equal(JSON.parse(file.text).kind, "zigs-backup");
   assert.ok(!/solSeed|signing_share/.test(file.text), "the file shows no secret");
   // Lose the Solana part of seat 1 (the Zcash seat stays) and reload.
