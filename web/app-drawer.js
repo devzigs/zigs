@@ -356,10 +356,11 @@ const notes = (ss, refused, rc) => [
   changedNote(ss),
   stopReason(ss),
 ];
-// The stop reason of a payment that also has a signed part or a sent mark: the signature step
-// shows the signed part then.
-const stopReason = (ss) => ss.error && (ss.signed || ss.broadcastTxid)
-  ? el("div", { class: "callout bad" }, "A device stopped this payment: " + ss.error) : null;
+// The stop part of a payment that also has a signed part: the signature step shows the signed
+// part then. A block that holds the payment says more, so the note goes then.
+const stopReason = (ss) => ss.error && ss.signed && !landed(ss)
+  ? el("div", { class: "callout bad" }, "The payment shows this stop: " + deviceWords(ss.error))
+  : null;
 
 const technical = (ins) => el("details", { class: "small faint" },
   el("summary", {}, "Technical details"),
@@ -490,7 +491,7 @@ const stepFacts = (ss, rc) => ({
   resend: finishStep(ss) === "resend",
   sent: !!ss.broadcastTxid,
   late: tooLate(ss),
-  sendFailed: !!ss.broadcastError,
+  sendFailed: !!ss.final && !!ss.broadcastError,
   sendHere: finishStep(ss) === "send",
   proved: !!ss.final,
   proving: !!ss.signed && ss.status === "proving" && !proofStalled(ss),
@@ -545,10 +546,10 @@ function waitTexts(ss) {
   const known = knownUndone(ss);
   return { over, wait: known ? NOT_DONE : NOT_SEEN, block: blockWait(ss, known) };
 }
-// Step 6 before a sent mark. A device may have sent a payment that is too late to send now, so a
-// block can still hold it until its expiry + 3 (expired): only the synced blocks speak.
+// Step 6 before a sent mark. A device may have sent a payment that is too late to send now, so
+// only the synced blocks speak.
 function blockWait(ss, known) {
-  if (tooLate(ss)) return !syncedHere() ? UNSYNCED : expired(ss) ? NOT_DONE : NOT_IN_BLOCK;
+  if (tooLate(ss)) return syncedHere() ? NO_BLOCK : UNSYNCED;
   return known || ended(ss) ? NOT_DONE : NOT_SEEN;
 }
 // An unsigned payment that expired, or a stop after a sync of this page.
@@ -573,13 +574,14 @@ const proofStep = (ss) => ss.final || landed(ss) ? "done"
   : ss.signed ? "now" : "";
 function sendStep(ss) {
   if (ss.broadcastTxid || landed(ss)) return "done";
-  if (ss.broadcastError || sendRefused(ss)) return "bad";
+  if ((ss.final && ss.broadcastError) || sendRefused(ss)) return "bad";
   return ss.final ? "now" : "";
 }
 const ON_CHAIN = "A synced block holds the payment.";
 const NOT_DONE = "Not done.";
 const NOT_SEEN = "Not seen on this page.";
 const NOT_IN_BLOCK = "No synced block holds it yet.";
+const NO_BLOCK = "No synced block holds it.";
 
 function proofText(ss, wait) {
   if (ss.final) return "Proof built and the whole transaction checked.";
@@ -595,7 +597,7 @@ function proofText(ss, wait) {
 function sendBody(ss, wait) {
   const box = (...kids) => el("div", { style: "display:grid;gap:8px" }, ...kids);
   if (ss.broadcastTxid) return box(...sentLine(ss));
-  const failed = ss.broadcastError && !landed(ss);
+  const failed = ss.final && ss.broadcastError && !landed(ss);
   return box(el("p", {}, sendText(ss, wait)),
     failed ? el("div", { class: "callout bad" }, ss.broadcastError) : null);
 }
@@ -623,7 +625,7 @@ function blockText(ss, block) {
   if (landed(ss)) return ON_CHAIN;
   if (!ss.broadcastTxid) return block || "After the send.";
   if (!syncedHere()) return UNSYNCED;
-  return expiryOf(ss)?.expired ? "No synced block holds it." : NOT_IN_BLOCK;
+  return expiryOf(ss)?.expired ? NO_BLOCK : NOT_IN_BLOCK;
 }
 
 export function txDetails(ss) {

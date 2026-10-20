@@ -147,7 +147,7 @@ const fact = (name, line, detect) => program("S-fact-" + name, "the headline ign
   ["web/app-drawer.js", line, line.slice(0, line.indexOf(":") + 1) + " false,"], APP_TEST, detect);
 const APPROVALS_DONE = '  if (enoughApprovals() || landed(ss)) return "done";';
 const REASON_FIRST = "  if (ss.error) return ss.error;\n  if (wait) return wait;\n";
-const LATE_BLOCK = "return !syncedHere() ? UNSYNCED : expired(ss) ? NOT_DONE : NOT_IN_BLOCK;";
+const LATE_BLOCK = "return syncedHere() ? NO_BLOCK : UNSYNCED;";
 const SIGNING_ROW = '  ["signing", "Signing", "Each device that the signing package names '
   + 'signs while this wallet "\n    + "is open on it."],\n';
 const APPROVED_ROW = '  ["approved", "Approvals are complete", "Enough devices approved. Another '
@@ -1468,7 +1468,12 @@ export const MUTATIONS = [
     /headline: a sent payment that no block holds after 10 minutes/),
   fact("sent", "  sent: !!ss.broadcastTxid,", /sent, and no block holds it yet/),
   fact("late", "  late: tooLate(ss),", /headline: a node refuses it now/),
-  fact("sendFailed", "  sendFailed: !!ss.broadcastError,", /headline: the send did not finish/),
+  fact("sendFailed", "  sendFailed: !!ss.final && !!ss.broadcastError,",
+    /headline: the send did not finish/),
+  program("S-sendfailed-final", "a send error with no finished transaction reads as a send",
+    ["web/app-drawer.js", "  sendFailed: !!ss.final && !!ss.broadcastError,",
+      "  sendFailed: !!ss.broadcastError,"], APP_TEST,
+    /a send error on a document with no finished transaction is no failed send/),
   fact("sendHere", '  sendHere: finishStep(ss) === "send",', /headline: this browser can send it/),
   fact("proved", "  proved: !!ss.final,", /headline: the proof is built/),
   fact("proving", '  proving: !!ss.signed && ss.status === "proving" && !proofStalled(ss),',
@@ -1522,14 +1527,11 @@ export const MUTATIONS = [
     ["web/app-drawer.js", BLOCK_WAIT, BLOCK_WAIT.replace("known || ", "")], APP_TEST,
     /a stop after a sync here: no block/),
   program("S-late-synced", "step 6 of a payment too late to send ignores the sync rule",
-    ["web/app-drawer.js", LATE_BLOCK, "return expired(ss) ? NOT_DONE : NOT_IN_BLOCK;"],
+    ["web/app-drawer.js", LATE_BLOCK, "return NO_BLOCK;"],
     APP_TEST, /too late with a restored state: step 6 says that this page has not synced/),
   program("S-late-yet", "step 6 of a payment too late to send says that no device sent it",
-    ["web/app-drawer.js", LATE_BLOCK, LATE_BLOCK.replace(": NOT_IN_BLOCK", ": NOT_DONE")],
-    APP_TEST, /too late to send: no synced block holds it yet/),
-  program("S-late-past", "step 6 of a finished transaction past its expiry waits for a block",
-    ["web/app-drawer.js", LATE_BLOCK, LATE_BLOCK.replace("expired(ss) ?", "false ?")],
-    APP_TEST, /a finished transaction past its expiry \+ 3 is in no block/),
+    ["web/app-drawer.js", LATE_BLOCK, LATE_BLOCK.replace("? NO_BLOCK", "? NOT_DONE")],
+    APP_TEST, /a finished transaction past its expiry \+ 3: no synced block holds it/),
   program("S-approve-here", "a device that approved here gets an Approve button",
     ["web/app-drawer.js", "  && !approvedHere(i, ss));", ");"], APP_TEST,
     /a device that approved here gets no Approve button/),
@@ -1537,6 +1539,19 @@ export const MUTATIONS = [
     ["web/app-drawer.js", "const stopReason = (ss) => ss.error &&",
       "const stopReason = (ss) => false &&"], APP_TEST,
     /the stop reason shows next to a signed part/),
+  program("S-stop-landed", "a payment that a block holds shows a stop note",
+    ["web/app-drawer.js", "ss.error && ss.signed && !landed(ss)", "ss.error && ss.signed"],
+    APP_TEST, /a payment that a block holds shows no stop note/),
+  program("S-cancel-ask", "the cancel question says signer",
+    ["web/app-drawer.js", '"Cancel this payment? No device can approve', '"Cancel this payment? '
+      + 'No signer can approve'], APP_TEST, /the cancel question says device/),
+  program("S-open-refilter", "the drawer of a watched payment counts after its first snapshot",
+    ["web/app-groups.js", "raw.shares = w.raw.shares;\n    refilter();\n",
+      "raw.shares = w.raw.shares;\n"], APP_TEST,
+    /the drawer of a watched payment counts its approvals at once/),
+  program("S-focus-inlayer", "a focus outside the drawer moves into it on each redraw",
+    ["web/app-loop.js", "!!snap?.inLayer && !!layer", "!!layer"], APP_TEST,
+    /a focus outside the drawer stays where it was/),
   program("S-count-nogroup", "a wallet with no group document breaks the count",
     ["web/app-groups.js", "commits && state.g ?", "commits ?"], APP_TEST,
     /a wallet with no group document counts no approval/),
@@ -1662,8 +1677,9 @@ export const MUTATIONS = [
     ["web/app-drawer.js", HELD, HELD.replace(" || approvalsHeld(ss, rc)", "")], APP_TEST,
     /a reset keeps no approvals step that waits/),
   program("S-step-send-refused", "a refused send is the step that waits",
-    ["web/app-drawer.js", "  if (ss.broadcastError || sendRefused(ss)) return \"bad\";",
-      "  if (ss.broadcastError) return \"bad\";"], APP_TEST,
+    ["web/app-drawer.js",
+      "  if ((ss.final && ss.broadcastError) || sendRefused(ss)) return \"bad\";",
+      "  if (ss.final && ss.broadcastError) return \"bad\";"], APP_TEST,
     /a refused send is no step that waits/),
   program("S-step-error-first", "a later error part stops a signed payment in the steps",
     ["web/app-drawer.js", SIGNED_FIRST, SIGNED_FIRST.split("\n").reverse().join("\n")],
