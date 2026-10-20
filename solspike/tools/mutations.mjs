@@ -24,6 +24,10 @@ const SOL_CEREMONY = ["node", "web/test/sol-ceremony.mjs"];
 const UNIFIED = ["node", "web/test/unified-setup.mjs"];
 const NONCE_TABS = ["node", "web/test/sol-nonce-tabs.mjs"];
 const APP_TEST = ["node", "web/test/app.mjs"];
+const NO_STORAGE = ["node", "web/test/no-storage.mjs"];
+// The line of takeFirstSeat (web/app-dkg.js) that names Cancel move.
+const MOVE_HINT = "      + (from ? ' To undo the link with the old wallet, open it and tap "
+  + '"Cancel move".\' : ""));';
 const CHAT_TEST = ["node", "web/test/chat.mjs"];
 const PAYMENTS = "web/app-payments.js";
 const AUTO_HINT = "  (c) => c.host.state.g?.solana === true && !c.host.state.g.movedTo,\n";
@@ -2360,7 +2364,7 @@ export const MUTATIONS = [
   program("W-key-ignored", "a wallet is made although its key was not saved",
     ["web/app-dkg.js", "  if (await putKey(gid, key)) return;\n",
       "  await putKey(gid, key);\n  return;\n"], UNIFIED,
-    /a wallet whose key cannot be saved is not made/),
+    /a wallet whose key cannot be saved is refused with the text of the lock/),
   program("W-key-late", "the wallet document is written before the key is saved",
     ["web/app-dkg.js", WALLET_KEY + WALLET_DOC, WALLET_DOC + WALLET_KEY], UNIFIED,
     /a wallet whose key cannot be saved is not made/),
@@ -2371,4 +2375,44 @@ export const MUTATIONS = [
     ["web/app-dkg.js", "  delete gkeys[gid];\n  await persist();\n  throw refused;",
       "  delete gkeys[gid];\n  throw refused;"], UNIFIED,
     /a refused wallet leaves no key in storage/),
+  program("X-mem-join", "a join goes on when the page keeps its secrets in memory only",
+    ["web/app-dkg.js", "  if (memoryOnly()) throw new Error(JOIN_MEMORY);\n", ""], NO_STORAGE,
+    /a join is refused in memory-only mode/),
+  program("X-mem-wallet", "a wallet is made when the page keeps its secrets in memory only",
+    ["web/app-dkg.js", "  if (memoryOnly()) throw new Error(WALLET_MEMORY);\n", ""], NO_STORAGE,
+    /a wallet is refused in memory-only mode/),
+  program("X-mem-saved", "a save in memory-only mode says that it failed",
+    ["web/app-keystore.js", "  if (secrets === mem) return true;",
+      "  if (secrets === mem) return false;"], NO_STORAGE,
+    /a save in memory-only mode still says saved/),
+  program("X-mem-mark", "a save in memory-only mode clears the mark of the storage",
+    ["web/app-keystore.js", "  if (secrets === mem) return true;",
+      "  if (secrets === mem) { storageOk = true; return true; }"], NO_STORAGE,
+    /and the storage stays marked/),
+  program("X-mark-sticky", "a failed save marks the storage for good",
+    ["web/app-keystore.js", "const wrote = (ok) => { writeFailed = !ok;",
+      "const wrote = (ok) => { writeFailed = writeFailed || !ok;"], UNIFIED,
+    /a save that works (leaves the storage unmarked|clears the mark of a failed save)/),
+  program("X-first-plain", "a refused first seat does not say that the wallet exists",
+    ["web/app-dkg.js", "  await takeFirstSeat(from);", "  await takeSeat(1, 3);"], UNIFIED,
+    /the first seat of a new wallet is refused too/),
+  program("X-first-nomove", "a refused first seat of a move does not name Cancel move",
+    ["web/app-dkg.js", MOVE_HINT, '      + "");'], UNIFIED,
+    /a refused first seat of a move names Cancel move/),
+  program("X-lease-save-only", "a failed seat write keeps the lease, so a retry waits",
+    ["web/app-dkg.js", "    await ref.acquire({ holder, ttlMs: 1 }).catch(() => {});\n",
+      "    if (/save/.test(e.message)) await ref.acquire({ holder, ttlMs: 1 }).catch(() => {});\n"],
+    UNIFIED, /a retry after a failed seat write joins/),
+  program("X-r1v1-unsaved", "a version 1 seat publishes its commitment without a saved secret",
+    ["web/app-dkg.js",
+      "    await saveRound1(gid, i, { r1secret: r.secret, r1package: r.package });\n",
+      "    putSec(gid, i, { r1secret: r.secret, r1package: r.package });\n"], UNIFIED,
+    /timeout: the stop of round 1/),
+  program("X-r1v1-retry", "a version 1 seat retries a failed save of round 1 at once",
+    ["web/app-dkg.js", "  if (needR1Open(i, s)) return launch(\"r1:\" + i, () => round1V1(i));",
+      "  if (needR1(i, s)) return launch(\"r1:\" + i, () => round1V1(i));"], UNIFIED,
+    /the reactor does not retry a failed save of round 1/),
+  program("X-vault-guard", "an unlocked vault with a failed write names another tab",
+    ["web/app-keystore.js", "  if (vault || lockedVault) return false;\n", ""], UNIFIED,
+    /an unlocked vault with a failing sealed write names storage/),
 ];

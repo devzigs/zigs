@@ -16,7 +16,12 @@ import { react, render } from "./app-loop.js";
 // passkey lock on, they are stored only as one sealed record (web/vault.js), and the page asks for
 // the passkey when it opens.
 const mem = {};
+// False while a read failed or a record was damaged (for good on this page), or while the last
+// write failed (a write that works clears it).
 export let storageOk = true;
+let readFailed = false, writeFailed = false;
+const setOk = () => { storageOk = !readFailed && !writeFailed; };
+const wrote = (ok) => { writeFailed = !ok; setOk(); return ok; };
 export let lockedVault = null;   // the sealed record until unlock; { damaged } if it does not parse
 export let vault = null;         // { rec, key } while unlocked
 export function setLocked(v) { lockedVault = v; }
@@ -27,9 +32,12 @@ try {
 } catch {}
 function readPlain(name) {
   try { return JSON.parse(localStorage.getItem(name) || "{}"); }
-  catch { storageOk = false; return name === "zf-secrets" ? mem : {}; }
+  catch { readFailed = true; setOk(); return name === "zf-secrets" ? mem : {}; }
 }
 export let secrets = lockedVault ? {} : readPlain("zf-secrets");
+// No storage that the page can read: the secrets live in this tab only. A damaged record may
+// still hold key shares, so nothing is written in this mode.
+export const memoryOnly = () => secrets === mem;
 export function setSecrets(v) { secrets = v; }
 export let chats = normChats(lockedVault ? null : readPlain("zf-chats"));
 let vaultWrite = Promise.resolve(true);
@@ -50,8 +58,8 @@ function persistPlain() {
     localStorage.setItem("zf-secrets", S(secrets));
     localStorage.setItem("zf-keys", S(gkeys));
     localStorage.setItem("zf-chats", S(chats));
-    return true;
-  } catch { storageOk = false; return false; }
+    return wrote(true);
+  } catch { return wrote(false); }
 }
 
 // Fields of the stored record that this page does not know stay in it. A page of another version
@@ -73,9 +81,9 @@ export async function persistSealed() {
     const rec = await seal(vault.key, vault.rec, { ...(await foreignFields()), secrets,
       keys: gkeys, chats, personal: personal || personalDamaged });
     localStorage.setItem("zf-vault", S(rec));
-    return true;
+    return wrote(true);
   } catch (e) {
-    storageOk = false;
+    wrote(false);
     showBanner("bad", "Could not save your key share (" + (e.message || e)
       + "). Keep this tab open, and use Back up.");
     return false;
