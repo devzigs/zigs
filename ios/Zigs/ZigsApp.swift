@@ -221,7 +221,7 @@ struct Welcome: View {
     private let steps = [
         ("Pick a rule", "For example, any 2 of 3 signers must approve each payment."),
         ("Invite your signers", "Send one private invite link. Each device creates its own key share."),
-        ("Approve together", "A payment goes out only after enough signers approve. On chain it looks like a shielded payment from a standard wallet."),
+        ("Approve together", "A payment goes out only after enough signers approve. On chain it has the shape of a shielded payment from a standard wallet, except for its one-day expiry and an optional priority fee, which can mark it as a Zigs payment."),
     ]
 }
 

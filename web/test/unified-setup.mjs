@@ -18,10 +18,11 @@ const rig = await loadRig();
 // The page modules need the stub page of the rig, so they load after it.
 const { SOL_DISCLOSURE, solPlanned, solServed } = await import("../app-sol.js");
 const { inviteMessage, joinText, onLink } = await import("../app-setup.js");
-const { chatMessage, inviteLink } = await import("../app-links.js");
+const { chatLink, chatMessage, inviteLink } = await import("../app-links.js");
 const { diagnostics } = await import("../app-help.js");
 const { chatInviteCard } = await import("../app-thread.js");
 const { chats } = await import("../app-keystore.js");
+const { chat: roomChat } = await import("../app-messages.js");
 const { backupWords } = await import("../sol/backup.js");
 const { loadingCount, olderCount, pendingCount, pendingRows } = await import("../sol/view.js");
 const { SHOWN } = await import("../sol/payview.js");
@@ -568,6 +569,10 @@ function receiveTexts() {
     assert.ok(byText(box, "Zcash Testnet"), "the badge names the network of the wallet");
     assert.match(textOf(box), /Send only ZEC on Zcash Testnet to this address\./);
     assert.match(textOf(box), /becomes spendable after 3 confirmations\. Get free testnet ZEC/);
+    assert.match(textOf(box), /faucet ↗\. That site is not Zigs: it sees the address that you/,
+      "the faucet note says what the faucet sees");
+    assert.match(textOf(box), /Its public status lists each payout with a short form of the/,
+      "and that the faucet publishes each payout");
     assert.ok(!byText(box, "Share address"), "no Share button without Web Share");
     const first = findNode(box, (n) => n.attrs?.["data-first-focus"] !== undefined);
     assert.equal(first && textOf(first), "Copy address", "the dialog opens on Copy address");
@@ -589,7 +594,7 @@ function receiveTexts() {
     assert.match(t.banner?.text ?? "", /could not share the address\. Use Copy address\./);
     t.state.g = { ...g, movedTo: "elsewhere" };
     const moved = textOf(receiveDialog());
-    assert.match(moved, /This wallet moved to/, "a moved wallet says so");
+    assert.match(moved, /Change devices replaces this wallet with/, "a moved wallet says so");
     assert.doesNotMatch(moved, /Send only|Use this shielded address|Share address/,
       "and asks for no payment to the old address");
     t.state.g = g;
@@ -631,8 +636,121 @@ function receiveTexts() {
   try {
     assert.match(pageText(), /Received ZECZcash Testnet · block\u00a04\D?500\D?000/,
       "a received row names the coin and the network");
+    explorerTexts(chain);
   } finally {
     t.setChain(chain);
+    t.ui.tab = tab;
+  }
+}
+// A received row opens the explorer, and the faucet link opens the faucet: the notes say what
+// these sites see. The Overview, the Activity section and the Messages of the wallet.
+const EXPLORER_NOTE = "A received payment in this list opens testnet.zecblock.com in a new tab. "
+  + "That site is not Zigs: it sees the transaction id that you open and your IP address.";
+function explorerTexts(chain) {
+  assert.ok(pageText().includes(EXPLORER_NOTE), "the Activity list says what the explorer sees");
+  t.ui.tab = "overview";
+  assert.ok(pageText().includes(EXPLORER_NOTE), "so does the Activity card of the Overview");
+  assert.match(pageText(), /faucet ↗\. That site is not Zigs: it sees the address that you paste/,
+    "the empty ZEC card says what the faucet sees");
+  // Six newer payments push the received row out of the 6 rows of the Overview.
+  const sessions = t.state.sessions;
+  t.state.sessions = [1, 2, 3, 4, 5, 6].map((i) => ({ id: "x" + i, pczt: "x", amount: 1,
+    status: "cancelled", error: "Cancelled.", createdAt: Date.now() - i,
+    payees: [{ to: "utest1x", amount: 1 }] }));
+  try {
+    assert.ok(!pageText().includes(EXPLORER_NOTE), "the Overview note follows its 6 rows");
+  } finally {
+    t.state.sessions = sessions;
+  }
+  const row = t.chain.received[0];
+  t.setChain({ ...t.chain, received: [] });
+  assert.ok(!pageText().includes(EXPLORER_NOTE), "no note without a received payment");
+  t.ui.tab = "messages";
+  t.setChain({ ...t.chain, received: [{ ...row, memos: [{ status: "text", text: "Rent" }] }] });
+  assert.match(pageText(), /View payment opens testnet\.zecblock\.com in a new tab\. That site/,
+    "a memo of a received payment says what the explorer sees");
+  // A message of the room shows the thread with no memo: no note then.
+  const room = roomChat[t.state.gid];
+  roomChat[t.state.gid] = [{ id: "m1", thread: "wallet", seat: 1, text: "Hello room", at: 1 }];
+  try {
+    t.setChain({ ...t.chain, received: [row] });
+    assert.match(pageText(), /Hello room/, "the room thread shows");
+    assert.doesNotMatch(pageText(), /View payment opens/, "no memo, no note");
+  } finally {
+    if (room) roomChat[t.state.gid] = room;
+    else delete roomChat[t.state.gid];
+    t.setChain(chain);
+  }
+}
+// A link with a secret sits in the disclosure of its QR code, which starts closed. While it is
+// closed, neither its summary nor any attribute shows the secret. Copy link stays outside the
+// disclosure and copies the whole link. `where` names the card in the messages.
+function hiddenLink(page, link, where) {
+  const secret = link.split("#")[1], say = (m) => where + ": " + m;
+  const nav = Object.getOwnPropertyDescriptor(globalThis, "navigator");
+  const box = findNode(page, (n) => n.className === "qr-toggle");
+  assert.ok(!("open" in box.attrs) && !box.open, say("the disclosure is closed by default"));
+  assert.equal(textOf(box.kids[0]), "Show link and QR code", say("the summary shows no link"));
+  assert.ok(textOf(box).includes(link), say("the link text sits inside the disclosure"));
+  const outside = (n) => (n === box ? "" : n.text ?? n.kids.map(outside).join(""));
+  assert.ok(!outside(page).includes(link), say("no link text outside the disclosure"));
+  const leaks = (n) => [n.className, n.innerHTML, ...Object.values(n.attrs ?? {})]
+    .some((v) => String(v ?? "").includes(secret)) || (n.kids ?? []).some(leaks);
+  assert.ok(!leaks(page), say("no attribute holds the wallet secret"));
+  const copy = findNode(page, (n) => !!n.on?.click && textOf(n) === "Copy link");
+  assert.ok(copy && !byText(box, "Copy link"),
+    say("Copy link stays on the page, outside the disclosure"));
+  const copied = [];
+  try {
+    Object.defineProperty(globalThis, "navigator", { configurable: true,
+      value: { clipboard: { writeText: async (x) => { copied.push(x); } } } });
+    copy.on.click({ currentTarget: copy });   // the copy runs before the first await
+  } finally {
+    if (nav) Object.defineProperty(globalThis, "navigator", nav);
+    else delete globalThis.navigator;
+  }
+  assert.deepEqual(copied, [link], say("Copy link copies the full invite link"));
+}
+// A wallet that a new wallet replaces reads "Moving" in the wallet list and in the side list,
+// until no Zcash is left there at its last sync in this browser: then "Zcash funds moved".
+function moveWords() {
+  const groups = t.state.groups, gid = "ab".repeat(10);
+  const old = { id: gid, name: "Old", t: 2, n: 3, network: "testnet", movedTo: "cd".repeat(10) };
+  const lobbyTree = () => {
+    const real = globalThis.document;
+    globalThis.document = { createElement: () => new Rec(), createElementNS: () => new Rec(),
+      createTextNode: (text) => ({ text }) };
+    try {
+      return lobby();
+    } finally {
+      globalThis.document = real;
+    }
+  };
+  const item = (tree, key) => textOf(findNode(tree, (n) => n.attrs?.["data-key"] === key));
+  const side = () => item(sideTree(), "wallet-" + gid);
+  const row = () => item(lobbyTree(), "wallet-row-" + gid);
+  t.state.groups = [...groups, old];
+  try {
+    assert.match(side(), /Moving/, "the side list says Moving");
+    assert.match(row(), /Moving/, "the wallet list says Moving");
+    t.balCache[gid] = { total: 0, at: 1 };
+    assert.match(side(), /Zcash funds moved/,
+      "a list wallet with no Zcash left reads Zcash funds moved");
+    assert.match(row(), /Zcash funds moved/, "in the wallet list too");
+    t.balCache[gid] = { total: 5, at: 1 };
+    assert.match(row(), /Moving/, "a wallet with Zcash left is still moving");
+  } finally {
+    t.state.groups = groups;
+    delete t.balCache[gid];
+  }
+}
+// The Devices section shows the invite link that way.
+function inviteTexts() {
+  const tab = t.ui.tab;
+  t.ui.tab = "members";
+  try {
+    hiddenLink(pageTree(), inviteLink(t.state.gid), "Devices");
+  } finally {
     t.ui.tab = tab;
   }
 }
@@ -690,11 +808,14 @@ function activityList(ctl) {
     assert.equal(t.ui.chainFilter, "sol", "the choice stays in ui");
     const onlySol = pageText();
     assert.ok(sorted(order(onlySol, [TITLES[0], TITLES[2], TITLES[4]])), "Solana rows only");
+    assert.ok(all.includes(EXPLORER_NOTE), "the list of both chains has a received ZEC row");
+    assert.ok(!onlySol.includes(EXPLORER_NOTE), "a Solana-only list has no Zcash explorer note");
     assert.ok(gone(onlySol, [TITLES[1], TITLES[3]]), "no Zcash row");
     assert.equal(picked(), "Solana");
     const onlyZec = draw("zec");
     assert.ok(sorted(order(onlyZec, [TITLES[1], TITLES[3]])), "Zcash rows only");
     assert.ok(gone(onlyZec, [TITLES[0], TITLES[2], TITLES[4]]), "no Solana row");
+    assert.ok(onlyZec.includes(EXPLORER_NOTE), "the Zcash-only list has the explorer note");
     activityOverview(ctl, at, solRows);
     activityStates(ctl, kept);
     activityBadges(ctl);
@@ -1035,6 +1156,8 @@ async function approvalCount(ctl) {
     assert.ok(!labelled(sideTree(), "2 to approve"), "no count without a proposal");
     emptyInbox();
     receiveTexts();
+    inviteTexts();
+    moveWords();
     activityList(ctl);
     sideMenu();
     await settingsSection();
@@ -1112,6 +1235,33 @@ const SENDER = new RegExp("asks for a user name and a password before Zigs opens
   + "(each person who joins|each person who opens it|your contact) to open the "
   + "link in Safari or Chrome\\. The browser of a chat app or a private window can delete the key");
 assert.match(pageText(), SENDER, "the invite card of a wallet");
+hiddenLink(pageTree(), inviteLink(gid), "the setup card");
+// A failed copy of a secret link opens its disclosure, so the person can select the link there.
+{
+  const { copyBtn } = await import("../app-dom.js");
+  const real = globalThis.document, nav = Object.getOwnPropertyDescriptor(globalThis, "navigator");
+  globalThis.document = { createElement: () => new Rec(), createElementNS: () => new Rec(),
+    createTextNode: (text) => ({ text }) };
+  let button;
+  try {
+    button = copyBtn(inviteLink(gid), "Copy link");
+  } finally {
+    globalThis.document = real;
+  }
+  const opened = [], disclosure = { setAttribute: (k) => opened.push(k) };
+  const section = { querySelector: (q) => (q === "details[data-link]" ? disclosure : null) };
+  const target = { textContent: "Copy link", closest: (q) => (q === "section" ? section : null) };
+  Object.defineProperty(globalThis, "navigator", { configurable: true,
+    value: { clipboard: { writeText: async () => { throw new Error("denied"); } } } });
+  try {
+    await button.on.click({ currentTarget: target });
+  } finally {
+    if (nav) Object.defineProperty(globalThis, "navigator", nav);
+    else delete globalThis.navigator;
+  }
+  assert.deepEqual(opened, ["open"], "a failed copy opens the link to select");
+  assert.equal(target.textContent, "Select and copy");
+}
 {
   const cid = "c0ffee00c0ffee00c0ff";
   chats.list[cid] = { key: "ab".repeat(32), member: "m", at: Date.now() };
@@ -1121,6 +1271,7 @@ assert.match(pageText(), SENDER, "the invite card of a wallet");
   try {
     const card = chatInviteCard(cid);
     assert.match(textOf(card), SENDER, "the invite card of a chat");
+    hiddenLink(card, chatLink(cid), "the chat card");
     assert.match(textOf(card), /The browser of your contact asks/);
   } finally {
     globalThis.document = real;

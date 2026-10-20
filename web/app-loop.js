@@ -229,13 +229,17 @@ export function typingMessage(app, parts) {
   return true;
 }
 
-// Keep what the viewer is typing, open <details>, and the drawer scroll across live updates.
-function saveFormState(app) {
+// Keep what the viewer is typing, open <details>, and the drawer scroll across live updates. A
+// disclosure of a secret link counts by its link, never by its summary, so a redraw never opens
+// the secret of another card.
+const openKey = (summary) => (summary.parentElement.dataset.link
+  ? "link:" + summary.parentElement.dataset.link : summary.textContent);
+export function saveFormState(app) {
   const values = {};
   for (const i of app.querySelectorAll("input[id], select[id], textarea[id]")) {
     if (i.type !== "file") values[i.id] = i.value;
   }
-  const open = new Set([...app.querySelectorAll("details[open] > summary")].map((x) => x.textContent));
+  const open = new Set([...app.querySelectorAll("details[open] > summary")].map(openKey));
   const scroll = app.querySelector(".drawer-body")?.scrollTop || 0;
   return { values, open, logs: saveLogs(app), scroll };
 }
@@ -249,7 +253,7 @@ function saveLogs(app) {
   return logs;
 }
 
-function restoreFormState(app, form) {
+export function restoreFormState(app, form) {
   for (const [id, v] of Object.entries(form.values)) {
     const i = document.getElementById(id);
     if (!i) continue;
@@ -257,7 +261,7 @@ function restoreFormState(app, form) {
     i.dispatchEvent(new Event("input", { bubbles: true }));
   }
   for (const x of app.querySelectorAll("details > summary")) {
-    if (form.open.has(x.textContent)) x.parentElement.open = true;
+    if (form.open.has(openKey(x))) x.parentElement.open = true;
   }
   restoreScroll(app, form);
 }

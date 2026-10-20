@@ -4,12 +4,12 @@ import { busy, log, showBanner, state, ui } from "./app-state.js";
 import { about, elapsed, fmtZec, J, short, when, zecText } from "./app-kit.js";
 import { sec } from "./app-keystore.js";
 import { localSeats, seatIds, signersOf } from "./app-seats.js";
-import { curChain, curNet, inFlight, netName } from "./app-chain.js";
+import { curChain, curNet, explorerText, inFlight, netName } from "./app-chain.js";
 import { Z } from "./app-engine.js";
 import { canWriteAs, mayAct } from "./app-filter.js";
 import {
   act, addrGroups, avatar, closeBtn, copyBtn, el, groupName, guard, isPayee, leavesOf, memoRow,
-  money, named, payTitle, proposer, statusChip, unreadable,
+  money, named, netBadge, payTitle, proposer, statusChip, unreadable,
 } from "./app-dom.js";
 import { seatCheck } from "./app-dkg.js";
 import {
@@ -86,7 +86,8 @@ function sentSince({ from, txids }) {
     + " of this wallet went on chain from block " + fmtInt(from) + ".";
   const link = (id) => el("a", { href: curNet().explorer + id, target: "_blank", rel: "noopener" },
     short(id, 10));
-  return el("p", { class: "small" }, head, ...txids.slice(0, 8).flatMap((id) => [" ", link(id)]));
+  return [el("p", { class: "small" }, head, ...txids.slice(0, 8).flatMap((id) => [" ", link(id)])),
+    txids.length ? el("p", { class: "small" }, explorerText(curNet(), "Each id")) : null];
 }
 
 function checkWarnings(rc) {
@@ -327,7 +328,9 @@ function decodedTotals(ins) {
 function leavesHead(ss, ins) {
   const t = ins ? decodedTotals(ins) : { leaves: leavesOf(ss), fee: finite(ss.fee) };
   return el("div", { class: "leaves" },
-    el("span", { class: "label" }, ins ? "Leaves the wallet" : "Proposed to leave the wallet"),
+    el("div", { style: "display:flex;align-items:center;gap:8px;flex-wrap:wrap" },
+      el("span", { class: "label" }, ins ? "Leaves the wallet" : "Proposed to leave the wallet"),
+      netBadge(state.g)),
     money(t.leaves, "lg"),
     el("span", { class: "small muted" }, "includes " + zecText(t.fee)
       + (priorityTimes(ins) ? " priority fee" : " fee")),
@@ -397,12 +400,18 @@ function timeline(ss, refused) {
       el("p", {}, ss.final ? "Proof built and the whole transaction checked." : ss.status === "proving" && !proofStalled(ss) ? "A signer's browser is building the proof · " + elapsed(ss.provingAt) + " of about a minute." : "Any signer can build the zero-knowledge proof once the payment is signed.")),
     tl(ss.broadcastTxid ? "done" : ss.broadcastError ? "bad" : ss.final ? "now" : "", "Sent to the network",
       el("div", { style: "display:grid;gap:8px" },
-        ss.broadcastTxid ? el("p", {}, when(ss.broadcastAt) + " · ", el("a", { href: curNet().explorer + ss.broadcastTxid, target: "_blank", rel: "noopener" }, "View in explorer ↗"))
+        ss.broadcastTxid ? sentLine(ss)
           : el("p", {}, ss.final ? "Any signer can send the finished transaction." : "Available after the proof."),
         ss.broadcastError && !ss.broadcastTxid
           ? el("div", { class: "callout bad" }, ss.broadcastError) : null)),
     tl(blockStep(ss), "In a block", el("p", {}, blockText(ss))));
 }
+
+// The time of the send and its explorer link, with what that site sees.
+const sentLine = (ss) => [el("p", {}, when(ss.broadcastAt) + " · ", el("a", {
+  href: curNet().explorer + ss.broadcastTxid, target: "_blank", rel: "noopener",
+}, "View in explorer ↗")),
+el("p", { class: "small" }, explorerText(curNet(), "View in explorer"))];
 
 // The last step, from this browser's synced blocks only: a sent mark does not say that a block
 // holds the payment, and before a sync the page does not know.
@@ -438,10 +447,18 @@ export function txDetails(ss) {
 function chainSees() {
   const hidden = () => el("span", { class: "redact", role: "img", "aria-label": "Hidden" });
   const row = (name) => [el("dt", {}, name), el("dd", {}, hidden())];
-  return el("div", { style: "display:grid;gap:10px" },
+  const sees = el("div", { style: "display:grid;gap:10px" },
     el("span", { class: "label" }, "What the chain sees"),
     el("p", { class: "small" }, "One shielded transaction."),
     el("dl", { class: "kv", style: "grid-template-columns:110px minmax(0,1fr)" },
       ["Recipients", "Amounts", "Signers", "Approval rule"].flatMap(row)),
     el("p", { class: "small faint" }, "The number of actions is public. So is the fee."));
+  sees.append(el("p", { class: "small faint" }, EXPIRY_PUBLIC));
+  return sees;
 }
+// The expiry window of the engine (wasm/src/expiry.rs) against the 40 blocks of the standard
+// wallet library (PRIVACY.md, On chain).
+const EXPIRY_PUBLIC = "The expiry height is public too. Zigs sets it up to one day after the "
+  + "proposal, and a standard wallet sets it 40 blocks ahead. So the expiry height can show that "
+  + "Zigs made this payment. Few wallets pay a priority fee, so a priority fee can mark a payment "
+  + "too.";

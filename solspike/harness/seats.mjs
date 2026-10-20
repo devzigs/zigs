@@ -44,9 +44,10 @@ export async function makeWallet(page, name, { solana = false } = {}) {
   await waitForText(page, "Review your wallet");
   // The last step has a "Create wallet" button. The run takes it from the dialog form.
   await run(page, () => document.querySelector("form[role=dialog] button[type=submit]").click());
-  const shown = () => run(page, () => !!document.querySelector(".addr-box .hex"));
+  // The link text sits in the closed disclosure of its QR code: textContent reads it there.
+  const shown = () => run(page, () => !!document.querySelector(".qr-toggle .addr-full"));
   await waitFor(shown, 30000, () => "the invite link");
-  return run(page, () => document.querySelector(".addr-box .hex").textContent.trim());
+  return run(page, () => document.querySelector(".qr-toggle .addr-full").textContent.trim());
 }
 
 // The person compares all 30 digits of the safety number, ticks the box, then confirms. The box

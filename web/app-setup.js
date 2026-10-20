@@ -237,10 +237,9 @@ function inviteCard(openCount) {
     el("p", { class: "small muted" }, "Send this invite link through a private channel. Open it "
       + "on each device that joins. It holds the wallet secret: anyone who has it can join as one "
       + "of the open devices. " + senderNote("each person who joins")),
-    el("div", { class: "addr-box" }, el("span", { class: "hex nowrap" }, link),
-      copyBtn(link, "Copy link", "btn sm primary"), copyBtn(message, "Copy invite message", "btn sm"),
-      share),
-    secretQr(link));
+    el("div", { class: "row-actions" }, copyBtn(link, "Copy link", "btn sm primary"),
+      copyBtn(message, "Copy invite message", "btn sm"), share),
+    secretQr(link, "wallet", true));
 }
 
 // Counts for the three setup steps.

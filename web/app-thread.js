@@ -7,7 +7,7 @@ import { Z } from "./app-engine.js";
 import { chats } from "./app-keystore.js";
 import { seatMine } from "./app-seats.js";
 import { chatLink, chatMessage, openChat, senderNote } from "./app-links.js";
-import { curChain, curNet, netName, readsMemos, spanMs } from "./app-chain.js";
+import { curChain, curNet, explorerText, netName, readsMemos, spanMs } from "./app-chain.js";
 import { changedSigners } from "./app-filter.js";
 import { canWrite, db, openSession } from "./app-groups.js";
 import {
@@ -63,7 +63,9 @@ function chatLog(thread) {
       el("p", { class: "small" }, FINE))
     : el("p", { class: "small faint" }, "No messages about this payment yet.");
   const id = (wallet ? "log-wallet-" : "log-pay-") + state.gid;
-  return logBox(id, wallet ? "Messages" : "Discussion", items, none);
+  return [logBox(id, wallet ? "Messages" : "Discussion", items, none),
+    wallet && memoMessages().length ? el("p", { class: "small faint" },
+      explorerText(curNet(), "View payment")) : null];
 }
 
 // Messages of one thread, with the payment events of the wallet thread, oldest first.
@@ -295,10 +297,9 @@ export function chatInviteCard(cid) {
     el("p", { class: "small muted" }, "Send this link to one person through a private channel. "
       + "Until they open it, anyone who has the link can join the chat. "
       + senderNote("your contact")),
-    el("div", { class: "addr-box" }, el("span", { class: "hex nowrap" }, link),
-      copyBtn(link, "Copy link", "btn sm primary"),
+    el("div", { class: "row-actions" }, copyBtn(link, "Copy link", "btn sm primary"),
       copyBtn(chatMessage(link), "Copy message", "btn sm")),
-    secretQr(link, "chat"));
+    secretQr(link, "chat", true));
 }
 
 function dmItem(m, cid) {

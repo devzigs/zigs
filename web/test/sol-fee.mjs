@@ -130,6 +130,11 @@ const mark = (name) => findAll(tabOf(), (n) => n.attrs["data-sol"] === name);
   assert.equal(mark("copy-owner").length, 0, "the group address is no funding address any more");
   const [faucet] = mark("faucet");
   assert.match(faucet.attrs.href, /^https:\/\/faucet\.solana\.com\//);
+  assert.match(
+    textOf(mark("faucet-text")[0]),
+    /opens faucet\.solana\.com.*not Zigs: it sees the fee address that you paste and your IP/,
+    "the faucet note says what the faucet sees",
+  );
   const [fund] = findAll(tabOf(), (n) => n.tag === "div" && /Fund the fee address/.test(textOf(n)));
   assert.match(textOf(fund), /Your fee address \(device 1\)/);
   assert.match(textOf(fund), /pays the fees and the rents of the proposals that this device makes/);

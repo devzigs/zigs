@@ -19,7 +19,7 @@ import {
 import { requestOf } from "./app-payreq.js";
 import { nameOf, recentNote, registry, resolveRecipient, zecName } from "./zns.js";
 import { focusAfter, render } from "./app-loop.js";
-import { capNote, movedNote, receiveLimit, receiveWhat } from "./app-wallet.js";
+import { capNote, FAUCET_TEXT, movedNote, receiveLimit, receiveWhat } from "./app-wallet.js";
 
 const MAX_PAYEES = 20;
 const TOO_MANY = "A payment can have at most " + MAX_PAYEES + " recipients.";
@@ -64,7 +64,7 @@ function receiveLead(hidden, moved) {
 function sendOnly(net) {
   const faucet = curNet().faucet ? [" Get free testnet ZEC from a ", el("a", {
     href: curNet().faucet, target: "_blank", rel: "noopener", style: "white-space:nowrap",
-  }, "faucet ↗"), "."] : [];
+  }, "faucet ↗"), ". " + FAUCET_TEXT] : [];
   return el("div", { class: "callout" }, el("span", {}, "Send only ZEC on " + net + " to this "
     + "address. A payment that arrives becomes spendable after 3 confirmations.", ...faucet));
 }
@@ -587,6 +587,7 @@ function reviewDialog() {
     : el("p", { class: "callout bad", role: "alert" }, REVIEW_BAD),
   prep.payees.map((p, i) => reviewRow(p, i, prep.payees.length)),
   reviewFacts(ins, note),
+  el("p", { class: "small muted" }, REVIEW_NOW), el("p", { class: "small muted" }, REVIEW_LATER),
   el("p", { class: "small faint" }, EXPIRY_NOTE + " Proposing asks the devices to approve; it "
     + "does not sign or send the payment."),
   el("div", { class: "dialog-actions" },
@@ -595,6 +596,21 @@ function reviewDialog() {
     ok ? el("button", { class: "btn primary", type: "button", disabled: !!ui.proposing,
       onclick: act(() => proposeReviewed(ui.sendReview)) }, "Propose payment") : null));
 }
+
+// Who can read the payment now, and what a device that a later Change devices leaves out keeps
+// (PRIVACY.md, On chain, Group server, Signers and invite links; PROTOCOL.md 3 and 8). The memo
+// sentence is the one of the Send form.
+const REVIEW_NOW = "The chain does not show the recipients, the amounts or the memos. The fee and "
+  + "the expiry height are public and can show that Zigs made this payment. Every device of this "
+  + "wallet can read the recipients, the amounts, the memos and the note, in the shared history "
+  + "of the wallet. So can anyone who has its invite link. A memo goes on chain with the "
+  + "payment, and its recipient can read it too.";
+const REVIEW_LATER = "A device that a later Change devices leaves out keeps the viewing key and "
+  + "the messages of this wallet. It can still read this history and each later payment of this "
+  + "wallet. It cannot read the new wallet. The move payment gives it the address, the amount and "
+  + "the note of that payment, and the id of the new wallet. With the id, the group server sends "
+  + "it the sealed documents of the new wallet and each later write. The server also accepts "
+  + "writes from it, so the device can stop the new wallet with false documents.";
 
 // The fee as the engine decoded it (none when the decode does not match), the approvals, the note.
 function reviewFacts(ins, note) {
@@ -641,5 +657,6 @@ function priorityBox(sumUp) {
       onchange: (ev) => { ui.priority = ev.target.checked; sumUp(); },
     }),
     el("span", { class: "small" }, "Pay a priority fee: " + PRIORITY_FACTOR + " times the "
-      + "standard fee, for a faster block when the network is busy. The fee is public on chain."));
+      + "standard fee, for a faster block when the network is busy. The fee and the expiry height "
+      + "are public and can show that Zigs made this payment."));
 }

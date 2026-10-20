@@ -65,7 +65,11 @@ export function copyBtn(text, label = "Copy", cls = "btn sm") {
     try {
       await navigator.clipboard.writeText(typeof text === "function" ? text() : text);
       b.textContent = "Copied";
-    } catch { b.textContent = "Select and copy"; }
+    } catch {
+      // A secret link to select sits in the closed disclosure of its card (secretQr): open it.
+      b.textContent = "Select and copy";
+      b.closest("section")?.querySelector("details[data-link]")?.setAttribute("open", "");
+    }
     setTimeout(() => b.textContent = label, 1500);
   };
   return el("button", { class: cls, type: "button", onclick: copy }, label);
@@ -223,11 +227,18 @@ export function qrBox(text, label) {
   return box;
 }
 // A link with the wallet secret stays hidden until asked for: cameras and people can read screens.
-export function secretQr(link, what = "wallet") {
-  return el("details", { class: "qr-toggle" }, el("summary", {}, "Show QR code"),
+// `text`: the disclosure holds the link as text too, and the page shows only its Copy button.
+export function secretQr(link, what = "wallet", text = false) {
+  return el("details", { class: "qr-toggle", "data-link": linkId(link) },
+    el("summary", {}, text ? "Show link and QR code" : "Show QR code"),
+    text ? el("div", { class: "addr-full" }, link) : null,
     qrBox(link, what === "chat" ? "Contact link" : "Invite link"),
     el("p", { class: "small faint" }, "Scan with a phone camera to open the " + what + " there."));
 }
+
+// The id part of a secret link (#<gid>.<key> or #c.<cid>.<key>), never its key. A redraw keeps
+// the disclosure of this link open, and opens no other one (restoreFormState in app-loop.js).
+const linkId = (link) => link.slice(link.indexOf("#") + 1, link.lastIndexOf("."));
 
 // A memo for display: "" is no memo and null is one that the engine could not read as text.
 const memoWords = (m) => m === null ? "Memo is not text" : m ? memoShown(m) : "No memo";

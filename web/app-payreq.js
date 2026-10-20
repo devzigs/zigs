@@ -173,7 +173,7 @@ const NO_BALANCE = "Wait for the first sync to finish. The app offers the addres
 function roomRequestWhy() {
   if (!state.wallet) return "The wallet address is not ready yet.";
   if (state.g.movedTo) {
-    return "This wallet moved to " + groupName(state.g.movedTo)
+    return "Change devices replaces this wallet with " + groupName(state.g.movedTo)
       + ". Ask for payments to the new wallet.";
   }
   const total = openTotal();
