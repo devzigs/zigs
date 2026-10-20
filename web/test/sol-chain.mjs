@@ -25,7 +25,7 @@ const POLICY =
   "https://d3gbdb0egjwcw9.cloudfront.net/proving-keys/3a1c88f90f609eb1/; base-uri 'none'";
 export const RPC = config.rpcUrl;
 // The deploy slot of the pool that web/sol/localprover.js pins.
-export const POOL_SLOT = "508538476";
+export const POOL_SLOT = "512563584";
 const SPKI = Buffer.from("302a300506032b6570032100", "hex");
 const hex = (bytes) => Buffer.from(bytes).toString("hex");
 
