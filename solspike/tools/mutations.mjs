@@ -24,6 +24,10 @@ const SOL_CEREMONY = ["node", "web/test/sol-ceremony.mjs"];
 const UNIFIED = ["node", "web/test/unified-setup.mjs"];
 const NONCE_TABS = ["node", "web/test/sol-nonce-tabs.mjs"];
 const APP_TEST = ["node", "web/test/app.mjs"];
+const NO_STORAGE = ["node", "web/test/no-storage.mjs"];
+// The line of takeFirstSeat (web/app-dkg.js) that names Cancel move.
+const MOVE_HINT = "      + (from ? ' To undo the link with the old wallet, open it and tap "
+  + '"Cancel move".\' : ""));';
 const CHAT_TEST = ["node", "web/test/chat.mjs"];
 const PAYMENTS = "web/app-payments.js";
 const AUTO_HINT = "  (c) => c.host.state.g?.solana === true && !c.host.state.g.movedTo,\n";
@@ -31,6 +35,21 @@ const AUTO_DOCS = "(c) => !!c.loaded.solstart && !c.docs.solstart[1] && c.wait =
 const HINT_FIRST = '  await sdb.doc("groups/" + gid).update({ solana: true });\n' +
   "  await putSec(gid, 1, { solAuto: true });";
 const APP_SOL = "web/app-sol.js";
+// The lines of takeSeat (web/app-dkg.js) from the save of the secret to the write of the seat.
+const SEAT_SAVE = "  await saveSeatSecret(gid, i, { boxSk: kp.sk, version, uid: me, ...sign });\n";
+const SEAT_DOC = '  const name = user ? (await user.me()).name : "";\n'
+  + "  const doc = { uid: me, name, boxPk: kp.pk, at: Date.now(), signPk: sign?.signPk };\n"
+  + "  // In a version 3 wallet the seat signs its own document with the new key. Readers pin the "
+  + "key\n  // only when this signature checks out.\n"
+  + "  if (version === 3) {\n"
+  + '    const text = Z.docPayload(gid, "seats/" + i, i, S(doc));\n'
+  + "    Object.assign(doc, { by: i, sig: await signMsg(sign.signSk, text) });\n"
+  + "  }\n";
+const SEAT_SET = "  await ref.set(doc);\n";
+// The lines of makeGroup (web/app-dkg.js) from the save of the wallet key to the wallet document.
+const WALLET_KEY = '  await saveWalletKey(ref.id, b64.replace(/=+$/, ""));\n';
+const WALLET_DOC = "  await ref.set({\n    name, n, t, network, version: 3, createdBy: me, "
+  + "createdAt: Date.now(),\n    movedFrom: from || undefined,\n  });\n";
 const APP_GROUPS = "web/app-groups.js";
 const INDEX_JS = "cf/src/index.js";
 const POLICY_TEST = ["node", "solspike/test/policy.test.mjs"];
@@ -2626,6 +2645,90 @@ export const MUTATIONS = [
     ["web/app-wallet.js", ' : ""), receivedNote(list),', ' : ""), receivedNote(activity()),'],
     UNIFIED,
     /a Solana-only list has no Zcash explorer note/),
+  program("J-save-promise", "the join checks the promise of the save, not its result",
+    ["web/app-dkg.js", "if (await putSec(gid, i, secret)) return;",
+      "if (putSec(gid, i, secret)) return;"], UNIFIED,
+    /a join that cannot save its key share is refused/),
+  program("J-save-ignored", "the join drops the result of the save",
+    ["web/app-dkg.js", "  if (await putSec(gid, i, secret)) return;\n",
+      "  await putSec(gid, i, secret);\n  return;\n"], UNIFIED,
+    /a join that cannot save its key share is refused/),
+  program("J-seat-first", "the join writes the seat document before it saves the secret",
+    ["web/app-dkg.js", SEAT_SAVE + SEAT_DOC + SEAT_SET, SEAT_DOC + SEAT_SET + SEAT_SAVE], UNIFIED,
+    /a refused join writes no seat document/),
+  program("J-keep-memory", "a refused join keeps its secret in memory",
+    ["web/app-dkg.js", "  if (before) secrets[k] = before; else delete secrets[k];\n", ""], UNIFIED,
+    /a refused join keeps no secret in memory/),
+  program("J-drop-earlier", "a refused join deletes the secret that was there before",
+    ["web/app-dkg.js", "if (before) secrets[k] = before; else delete secrets[k];",
+      "delete secrets[k];"], UNIFIED, /a refused join puts back the secret that was there/),
+  program("J-keep-storage", "a refused join leaves its secret in storage",
+    ["web/app-dkg.js", "else delete secrets[k];\n  await persist();\n  throw refused;",
+      "else delete secrets[k];\n  throw refused;"], UNIFIED,
+    /a refused join leaves no new secret in storage/),
+  program("J-keep-lease", "a refused join keeps its lease, so a retry waits",
+    ["web/app-dkg.js", "    await ref.acquire({ holder, ttlMs: 1 }).catch(() => {});\n", ""],
+    UNIFIED, /a retry right after the refusal joins/),
+  program("J-lock-hidden", "a refused save names storage when another tab holds the lock",
+    ["web/app-dkg.js", "new Error(lockedElsewhere() ? LOCKED_ELSEWHERE : text)", "new Error(text)"],
+    UNIFIED, /a join that cannot save its key share is refused with the text of the lock/),
+  program("J-lock-always", "a refused save names the lock for every cause",
+    ["web/app-dkg.js", "new Error(lockedElsewhere() ? LOCKED_ELSEWHERE : text)",
+      "new Error(LOCKED_ELSEWHERE)"], UNIFIED, /the first seat of a new wallet is refused too/),
+  program("W-key-ignored", "a wallet is made although its key was not saved",
+    ["web/app-dkg.js", "  if (await putKey(gid, key)) return;\n",
+      "  await putKey(gid, key);\n  return;\n"], UNIFIED,
+    /a wallet whose key cannot be saved is refused with the text of the lock/),
+  program("W-key-late", "the wallet document is written before the key is saved",
+    ["web/app-dkg.js", WALLET_KEY + WALLET_DOC, WALLET_DOC + WALLET_KEY], UNIFIED,
+    /a wallet whose key cannot be saved is not made/),
+  program("W-key-memory", "a refused wallet keeps its key in memory",
+    ["web/app-dkg.js", "  delete gkeys[gid];\n", ""], UNIFIED,
+    /a refused wallet opens nothing and keeps no key in memory/),
+  program("W-key-storage", "a refused wallet leaves its key in storage",
+    ["web/app-dkg.js", "  delete gkeys[gid];\n  await persist();\n  throw refused;",
+      "  delete gkeys[gid];\n  throw refused;"], UNIFIED,
+    /a refused wallet leaves no key in storage/),
+  program("X-mem-join", "a join goes on when the page keeps its secrets in memory only",
+    ["web/app-dkg.js", "  if (memoryOnly()) throw new Error(JOIN_MEMORY);\n", ""], NO_STORAGE,
+    /a join is refused in memory-only mode/),
+  program("X-mem-wallet", "a wallet is made when the page keeps its secrets in memory only",
+    ["web/app-dkg.js", "  if (memoryOnly()) throw new Error(WALLET_MEMORY);\n", ""], NO_STORAGE,
+    /a wallet is refused in memory-only mode/),
+  program("X-mem-saved", "a save in memory-only mode says that it failed",
+    ["web/app-keystore.js", "  if (secrets === mem) return true;",
+      "  if (secrets === mem) return false;"], NO_STORAGE,
+    /a save in memory-only mode still says saved/),
+  program("X-mem-mark", "a save in memory-only mode clears the mark of the storage",
+    ["web/app-keystore.js", "  if (secrets === mem) return true;",
+      "  if (secrets === mem) { storageOk = true; return true; }"], NO_STORAGE,
+    /and the storage stays marked/),
+  program("X-mark-sticky", "a failed save marks the storage for good",
+    ["web/app-keystore.js", "const wrote = (ok) => { writeFailed = !ok;",
+      "const wrote = (ok) => { writeFailed = writeFailed || !ok;"], UNIFIED,
+    /a save that works (leaves the storage unmarked|clears the mark of a failed save)/),
+  program("X-first-plain", "a refused first seat does not say that the wallet exists",
+    ["web/app-dkg.js", "  await takeFirstSeat(from);", "  await takeSeat(1, 3);"], UNIFIED,
+    /the first seat of a new wallet is refused too/),
+  program("X-first-nomove", "a refused first seat of a move does not name Cancel move",
+    ["web/app-dkg.js", MOVE_HINT, '      + "");'], UNIFIED,
+    /a refused first seat of a move names Cancel move/),
+  program("X-lease-save-only", "a failed seat write keeps the lease, so a retry waits",
+    ["web/app-dkg.js", "    await ref.acquire({ holder, ttlMs: 1 }).catch(() => {});\n",
+      "    if (/save/.test(e.message)) await ref.acquire({ holder, ttlMs: 1 }).catch(() => {});\n"],
+    UNIFIED, /a retry after a failed seat write joins/),
+  program("X-r1v1-unsaved", "a version 1 seat publishes its commitment without a saved secret",
+    ["web/app-dkg.js",
+      "    await saveRound1(gid, i, { r1secret: r.secret, r1package: r.package });\n",
+      "    putSec(gid, i, { r1secret: r.secret, r1package: r.package });\n"], UNIFIED,
+    /timeout: the stop of round 1/),
+  program("X-r1v1-retry", "a version 1 seat retries a failed save of round 1 at once",
+    ["web/app-dkg.js", "  if (needR1Open(i, s)) return launch(\"r1:\" + i, () => round1V1(i));",
+      "  if (needR1(i, s)) return launch(\"r1:\" + i, () => round1V1(i));"], UNIFIED,
+    /the reactor does not retry a failed save of round 1/),
+  program("X-vault-guard", "an unlocked vault with a failed write names another tab",
+    ["web/app-keystore.js", "  if (vault || lockedVault) return false;\n", ""], UNIFIED,
+    /an unlocked vault with a failing sealed write names storage/),
   program("T2-ov-sol-note", "the Overview list has no note about the Solana rows it lacks",
     ["web/app-wallet.js", 'list.length ? historyNote("all") : null, activityNote("all")));',
       'list.length ? historyNote("all") : null, null));'], UNIFIED,
