@@ -1,7 +1,7 @@
 # Zigs
 
 **Shared wallets for shielded Zcash.** A team creates one private address together, and any *t* of
-its *n* signers must approve each payment. Nobody ever holds the whole key, and the server cannot
+its *n* devices must approve each payment. Nobody ever holds the whole key, and the server cannot
 read the wallet. On chain a payment has the shape of a shielded payment from a standard wallet,
 except for its one-day expiry, which can mark it as a Zigs payment. So can a priority fee, when the
 proposer chooses one ([comparison](PRIVACY.md#on-chain)).
@@ -9,19 +9,22 @@ proposer chooses one ([comparison](PRIVACY.md#on-chain)).
 - Web app: https://app.zigs.app (no install, no account). Until launch, the browser asks for a
   user name and a password. Any user name works. Ask the Zigs team for the password.
 - iPhone and Mac apps: in [`ios/`](ios). They use the same Rust engine. Build them from source in Xcode.
+  They are not part of this release: the demo and the judge walkthrough use the web app.
 - Website: https://zigs.app
 - How it works, end to end: [PROTOCOL.md](PROTOCOL.md)
-- Signed writes: in a new wallet (version 3), each signer signs the documents it writes. The apps
-  ignore any document without a valid signature. So a holder of an invite link cannot make the
-  screen show a false approval ([how](PROTOCOL.md#15-signed-writes-version-3)).
-- Messages: each wallet has a private room for its signers, with a discussion thread on every
+- Signed writes: in a new wallet (version 3), each device signs the documents that matter, such as
+  its approvals, cancels and results, and the apps ignore such a document without a valid
+  signature. The wallet document and the progress marks are not signed. So a holder of an invite
+  link cannot make the screen show a false approval
+  ([how](PROTOCOL.md#15-signed-writes-version-3)).
+- Messages: each wallet has a private room for its devices, with a discussion thread on every
   payment. Two Zigs users can also chat directly through a contact link. Later phases are in
   [CHAT.md](CHAT.md).
 - Memos: a payment can carry a memo for each recipient (up to 512 bytes). Approvers see it, and
   the app checks it against the transaction. The web, iPhone and Mac apps do this. A memo that
   arrives with a payment to the wallet shows in the Activity list and the Messages tab. Its label
   is "On chain · shared with all devices". Reading it asks the light-wallet server for the
-  transaction, so a signer must turn it on first. It is off by default. The web app has it. The
+  transaction, so a device must turn it on first. It is off by default. The web app has it. The
   iPhone and Mac screens for received memos follow.
 - Payment requests: a message whose whole text is a ZIP 321 link (`zcash:…`) shows as a request
   card. The card shows the total, each payee and the check of the sender. **Propose this** opens
@@ -33,7 +36,7 @@ proposer chooses one ([comparison](PRIVACY.md#on-chain)).
   server learns which name you pay. Each approver in the web app looks the name up again and
   refuses a payment whose address the name no longer gives. The iPhone and Mac apps show the
   address only ([privacy](PRIVACY.md#zns-names-testnet)).
-- Personal account: the web app can hold a small single-signer account that pays the fee of
+- Personal account: the web app can hold a small single-key account that pays the fee of
   messages on chain. Add the shielded address of a contact, and write to them, also if they do not
   use Zigs. Each message is a payment of no value, and its text is the memo. Each contact gets an
   address of the account of their own, so the app shows which contact's address received a
@@ -46,7 +49,7 @@ proposer chooses one ([comparison](PRIVACY.md#on-chain)).
   apps do not have it. For such a wallet the page also connects to the Helius Devnet host. Helius
   sees more than the light-wallet server does: it builds the proofs, so it sees amounts and
   recipients of each spend. Each device pays fees and rents from its own fee address on Devnet, and
-  a member adds SOL to the group with Add SOL: the fee address shows on chain next to the group.
+  a device adds SOL to the group with Add SOL: the fee address shows on chain next to the group.
   Read [ZOLANA.md](ZOLANA.md) first, then [PRIVACY.md](PRIVACY.md#solana-beta-helius-devnet). The
   open work is in [TICKETS.md](TICKETS.md).
 - The wallet follows chain reorganisations of up to 100 blocks
@@ -128,10 +131,10 @@ To see device changes, open **Devices**, then **Change devices**. To see the pri
 
 | Criterion | Evidence |
 |---|---|
-| **Privacy** | On chain, the transaction shape matches the standard wallet library: same builder, padding, standard fee and anchor depth. A group payment expires after one day instead of 40 blocks, because its approvals take hours, so the expiry marks it, and so does a priority fee ([comparison](PRIVACY.md#on-chain)). The server stores only encrypted values, padded so that even their length hides amounts. On the device, key shares can be locked with a passkey (web) or Face ID (iPhone) ([how](PRIVACY.md#lock-with-a-passkey-or-face-id)). Key share backups are encrypted with a passphrase (Argon2id and XChaCha20-Poly1305) and open on the web, iPhone and Mac ([how](PRIVACY.md#key-share-backups)). The page can connect only to its own host (the group server and the testnet light-wallet relay) and two ChainSafe light-wallet servers (Content-Security-Policy). For testnet wallets, the Solana Worker of the page also connects to the Helius Devnet host ([how](PRIVACY.md#solana-beta-helius-devnet)). With local proving on, it also fetches the proving keys from one CloudFront folder (`d3gbdb0egjwcw9.cloudfront.net/proving-keys/3a1c88f90f609eb1/`, `SOL_KEYS` in `cf/src/index.js`). It is prepared for Tor Browser, but not yet tested end to end ([how](PRIVACY.md#use-zigs-over-tor)). The Zigs server code keeps no logs; its host, Cloudflare, can see connection data. Every remaining leak is listed in [PRIVACY.md](PRIVACY.md). |
-| **Usefulness** | Designed for team treasuries, DAOs and families. Usable today on Zcash testnet (web, iPhone and Mac) and Solana Devnet (web): invite links and QR codes; batch payments for payroll and grants (up to 20 recipients, one approval round, pasted from a spreadsheet); signer changes; encrypted key share backups. |
-| **Execution** | The live app works end to end. Seventeen testnet transactions made by the apps are [listed below](#proof-on-testnet). The engine has 127 tests, and a command-line suite runs adversarial cases. |
-| **Originality** | An end-user app for re-randomized FROST: no command line, no trusted dealer, and no server that can read the wallet. Each device decodes the PCZT and checks every output before it approves, and binds its approval to the transaction's sighash. Signer changes, batch payments and native iPhone and Mac apps are included. Built during the Zecathon window: the first commit is from October 10, 2026. |
+| **Privacy** | On chain, the transaction shape matches the standard wallet library: same builder, padding, standard fee and anchor depth. A group payment expires after one day instead of 40 blocks, because its approvals take hours, so the expiry marks it, and so does a priority fee ([comparison](PRIVACY.md#on-chain)). The server stores only encrypted values, padded so that even their length hides amounts. On the device, key shares can be locked with a passkey ([how](PRIVACY.md#lock-with-a-passkey-or-face-id)). Key share backups are encrypted with a passphrase (Argon2id and XChaCha20-Poly1305) ([how](PRIVACY.md#key-share-backups)). The page can connect only to its own host (the group server and the testnet light-wallet relay) and two ChainSafe light-wallet servers (Content-Security-Policy). For testnet wallets, the Solana Worker of the page also connects to the Helius Devnet host ([how](PRIVACY.md#solana-beta-helius-devnet)). With local proving on, it also fetches the proving keys from one CloudFront folder (`d3gbdb0egjwcw9.cloudfront.net/proving-keys/3a1c88f90f609eb1/`, `SOL_KEYS` in `cf/src/index.js`). It is prepared for Tor Browser, but not yet tested end to end ([how](PRIVACY.md#use-zigs-over-tor)). The Zigs server code keeps no logs; its host, Cloudflare, can see connection data. Every remaining leak is listed in [PRIVACY.md](PRIVACY.md). |
+| **Usefulness** | Designed for team treasuries, DAOs and families. Usable today in the web app, on Zcash testnet and Solana Devnet: invite links and QR codes; batch payments for payroll and grants (up to 20 recipients, one approval round, pasted from a spreadsheet); device changes; encrypted key share backups. |
+| **Execution** | The live app works end to end. The testnet and Devnet transactions that the apps made, a payment to a ZNS name among them, are [listed below](#proof-on-testnet-and-devnet). The engine has 127 tests, and a command-line suite runs adversarial cases. |
+| **Originality** | An end-user app for re-randomized FROST: no command line, no trusted dealer, and no server that can read the wallet. Each device decodes the PCZT and checks every output before it approves, and binds its approval to the transaction's sighash. Device changes and batch payments are included. The iPhone and Mac code in `ios/` is not part of this release. Built during the Zecathon window: the first commit is from October 10, 2026. |
 
 ## Architecture
 
@@ -306,7 +309,7 @@ How the group server is kept blind:
 - Key ceremony shares are also encrypted from one seat to another with X25519.
 - Cached balances and the saved sync state on the device are sealed with the wallet key too.
 
-## Proof on testnet
+## Proof on testnet and Devnet
 
 These transactions were made by the Zigs apps on the NU7 testnet (v6 transactions, Ironwood pool),
 with 2-of-2 wallets and one 2-of-3 wallet:
@@ -330,6 +333,13 @@ with 2-of-2 wallets and one 2-of-3 wallet:
 | [`2d72e9b1…f707`](https://testnet.zecblock.com/tx/2d72e9b173fb7f63a4101dcfcc26ade1a916e9a5678e0bb8b43d2c319661f707) | 4,497,745 | **Memo:** a wallet with one browser seat and one iPhone seat pays with a memo, and the memo shows in the receiving wallet's inbox |
 | [`0e2fc103…da7b`](https://testnet.zecblock.com/tx/0e2fc103d8be65dd12070f683b317a26a6c3f28638b0a25ea2b3d589c824da7b) | 4,498,021 | **Payment request:** a signer posts a ZIP 321 request in the wallet room, the other signer proposes it with **Propose this**, and both approve |
 | [`646e6edd…819e`](https://testnet.zecblock.com/tx/646e6edd0bc003b796f54f2fec4f748a5b65a15290d30d31eb73b4fe79d8819e) | 4,498,648 | **On-chain message:** a personal account sends a 3-part message (3 zero-value outputs with memos), and the recipient's account joins it under the right contact |
+| [`5f47158c…0969`](https://testnet.zecblock.com/tx/5f47158cad0a3c5946757ba9abad8f7208f6eb38eb76cb9b4be2f6cd8cbc0969) | 4,518,023 | **Pay to a ZNS name:** a 2-of-2 payment to `craftsoldier.zec`, typed as a name in the Send form. Each approving page looked the name up again |
+
+On Solana Devnet, through the Zigs approvals program:
+
+| Transaction | Slot | What |
+|---|---|---|
+| [`3ZytbWVs…7YPT`](https://explorer.solana.com/tx/3ZytbWVsua1GgmLVSG2ocervHPTRU2EqynfD4YJvGKj3sAem5Atuw9LYvAkm3b1dgykscg8EiBz5LwaE1ck17YPT?cluster=devnet) | 512,517,818 | **Private payment:** a 2-of-3 group pays 0.001 SOL to a shielded address. Device 1 proposed, devices 2 and 3 approved, and device 1 executed it |
 
 Before this release turned mainnet off in the web app, a 2-of-2 mainnet wallet was created and
 synced to the mainnet tip in the web app and on the iPhone.
