@@ -978,10 +978,12 @@ function technicalFacts() {
       el("dd", {}, "Built to ZIP 2005 (Proposed) so that funds can be recovered if quantum "
         + "computers break today's keys.")] : null,
     signedMode(state.gid) ? [el("dt", {}, "Signed writes"), el("dd", {}, "Each device signs the "
-      + "documents that matter, such as approvals and results. Zigs ignores such a document "
-      + "without a valid signature. The wallet record (the number of devices and the approval "
-      + "rule) and the progress marks have no signature. This device keeps the first record "
-      + "that it saw.")] : null);
+      + "documents that matter, such as approvals and results, and Zigs ignores such a document "
+      + "without a valid signature. The wallet document has no signature, so anyone who has the "
+      + "invite link can change it. This device keeps the first number of devices, approval rule, "
+      + "version, network and message room that it saw. Other fields can change, such as the "
+      + "name, the move to a new wallet and the Solana hint. Funds move only through a payment "
+      + "that the devices approve. The progress marks have no signature either.")] : null);
 }
 
 // The box builds its content only while it is open: `ui.technical` holds the wallet that has it

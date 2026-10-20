@@ -327,11 +327,15 @@ async function technicalBox(w, gid) {
     assert.ok(pageText().includes(shown), "the open box shows " + shown.slice(0, 12));
   }
   assert.match(pageText(), new RegExp("Each device signs the documents that matter, such as "
-    + "approvals and results\\. Zigs ignores such a document without a valid signature\\. The "
-    + "wallet record \\(the number of devices and the approval rule\\) and the progress marks "
-    + "have no signature\\."), "Technical details name what is signed and what is not");
-  assert.doesNotMatch(pageText(), /ignores data without a valid signature/,
-    "and do not claim that Zigs ignores all unsigned data");
+    + "approvals and results, and Zigs ignores such a document without a valid signature\\. The "
+    + "wallet document has no signature, so anyone who has the invite link can change it\\. This "
+    + "device keeps the first number of devices, approval rule, version, network and message room "
+    + "that it saw\\. Other fields can change, such as the name, the move to a new wallet and "
+    + "the Solana hint\\. Funds move only through a payment that the devices approve\\. The "
+    + "progress marks have no signature either\\."),
+  "Technical details name what is signed, what a device keeps and what can change");
+  assert.doesNotMatch(pageText(), /ignores data without a valid signature|wallet record/,
+    "and do not claim that Zigs ignores all unsigned data, or that two fields are all the rest");
   t.ui.technical = "another-wallet";
   assert.equal(box().attrs.open, undefined, "the box of another wallet stays closed");
   t.ui.technical = gid;
@@ -891,6 +895,8 @@ function activityOverview(ctl, at, solRows) {
   ctl.added = null;
   const none = pageText();
   assert.match(none, /ActivityNot synced yetSync starts after this device checks the address\./);
+  assert.match(none, /Sync starts after this device checks the address\.The Solana rows show the/,
+    "an empty Overview list still says what it lacks");
   assert.doesNotMatch(none, /Not synced yet\. Sync starts after/,
     "an empty Overview list shows its sync state once, not as a note");
   t.setChain(chain);
@@ -1302,9 +1308,10 @@ const SENDER = new RegExp("asks for a user name and a password before Zigs opens
   + "(each person who joins|each person who opens it|your contact) to open the "
   + "link in Safari or Chrome\\. The browser of a chat app or a private window can delete the key");
 assert.match(pageText(), SENDER, "the invite card of a wallet");
-assert.match(pageText(), new RegExp("anyone who has it can read the wallet and join as one of the "
-  + "open devices\\. A backup file of a device does not add a new device: it holds the same key "
-  + "share\\."), "the invite card: a link holder reads the wallet, a backup file adds no device");
+assert.match(pageText(), new RegExp("Anyone who has it can read the wallet, write documents that "
+  + "can stop it, and join as one of the open devices\\. A backup file of a device does not add "
+  + "a new device: it holds the same key share\\."),
+"the invite card: a link holder reads and can stop the wallet, a backup file adds no device");
 assert.match(pageText(), /Add the other devices2 devices to join/, "two open devices: plural");
 {
   const seats = t.state.seats;
