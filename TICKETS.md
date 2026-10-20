@@ -96,8 +96,10 @@ applies: stop the Solana part and show the recorded run.
   and no transact interface (read the diff). Example: a redeploy of `release/devnet-c` (#431 is
   not on that branch today). A redeploy from main is T2. Action: confirm with `git diff`. Update the
   pool hash in `solspike/tools/demo-check.mjs` and ZOLANA.md 6.1. Simulate one transact (read
-  only): its compute stays at or under the cap 217,000; `CU_FLOOR_TRANSACT` is a floor for the
-  limit, not for the use (`wasm-sol/src/template.rs`, `web/sol/worker.js`).
+  only), with a local proof too: its compute stays at or under the cap 217,000. Then move
+  `POOL_SLOT` in `web/sol/localprover.js` and its test copies to the new deploy slot.
+  `CU_FLOOR_TRANSACT` is a floor for the limit, not for the use (`wasm-sol/src/template.rs`,
+  `web/sol/worker.js`).
 - **T1:** the gateway takes key paths only. Signal: demo-check "prover" FAIL (it posts to the
   key-less `/v1/zolana/prove`) or a 404 there. Source: `cc7874855`, `d54d908c8` and `1b25b63fa` on
   the unmerged branch `sergei/prover-tee-crate`. No commit has both the key paths and the live tree
