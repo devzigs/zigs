@@ -30,6 +30,9 @@ No tool writes a secret into the repo. Keep these files outside the repo.
 | `SOLSPIKE_KEY_B` | A JSON file with the field `seedHex`: key B, a registered Devnet key | `mock/roles.mjs`, `tools/key-b.mjs` |
 | `SOLSPIKE_INTERIM` | A file for the backup passphrases of the test group of `scenario-f.mjs`, mode 600 | `harness/scenario-f.mjs` |
 
+`~/.config/zigs/live-env.sh` exports `ZOLANA_REPO`, `SOLSPIKE_FUNDER` and `SOLSPIKE_KEY_B` for the
+mock and live runs (the keys in `~/.config/zigs/sol`, mode 600).
+
 `tools/node_modules` must link to `node_modules` of the Zolana checkout (it gives `@solana/kit` to
 the Devnet tools). `solspike/node_modules` holds esbuild and oxlint: run `npm ci` here. `cf/node_modules` holds
 wrangler: run `npm ci` in `cf/`.
@@ -86,6 +89,7 @@ with `SOLSPIKE_ORIGIN=https://app.zigs.app`:
 | `harness/scenario-f.mjs` | A new group with the unified setup: the create dialog chooses Solana too, and the Solana part starts with no button. Then backups, the fee addresses, Add SOL, a payment to key B, a restore on blank pages, a second payment and a withdrawal to a public address. Ten transactions. `--resume` continues a run that stopped |
 | `harness/scenario-f.mjs --local` | SOL-4: a new group turns local proving on before its first spend (the device check of seat 1, then the switch; every page shows it on and its own device check), then the payment to key B with both proofs made on the devices. It checks that no page sent a request to the prove path of Helius. Six transactions, results in `logs/scenario-l.json`, backups in `.state/scenario-l` (set `SOLSPIKE_INTERIM` to a new file) |
 | `harness/scenario-g.mjs` | S3 and S4 on a new group where only the fee address of seat 1 has SOL: fund seat 1 (6,000,000 lamports), Add SOL (3,000,000), P1 create and execute (seats 2 and 3 approve, seat 1 executes), P2 create and execute (it holds the only note while taps of P3 and P4 are refused). Six transactions. Set `SOLSPIKE_INTERIM` to another file than for scenario-f. `--resume` continues a run that stopped. `--mock` writes `logs/mock-g.json` |
+| `live-batch.sh` | Runs `scenario-e.mjs`, `scenario-f.mjs` and `scenario-g.mjs` on Devnet from a clean checkout of one commit, for the coordinator only (see "The live batch" below) |
 | `harness/sol-live.mjs` | Read only: the Worker syncs an empty wallet and reads a nonce account and the tree fees, and the policy probes |
 | `harness/scenario-d.mjs`, `harness/sol-cors.mjs` | Checks of the spike. They have not run in this tree |
 
@@ -107,3 +111,44 @@ and the plan of the transactions go to `logs/mock-e.json` or `logs/mock-f.json`.
 ```bash
 SOLSPIKE_ORIGIN=https://app.zigs.app node solspike/harness/scenario-f.mjs --mock
 ```
+
+### The live batch (`live-batch.sh`)
+
+`live-batch.sh` runs `scenario-e.mjs`, `scenario-f.mjs` and `scenario-g.mjs` on Devnet from a
+clean checkout of one commit. Only the coordinator session runs it, after the owner's yes in its
+chat: a work session never runs a live chain write. A work session prepares the commit and the
+steps, and the coordinator asks the owner.
+
+```bash
+BATCH_COMMIT=<sha> solspike/live-batch.sh scenario-e scenario-f
+```
+
+- The script refuses a checkout that is not a clean copy of `BATCH_COMMIT`, before it does
+  anything else. It needs Node 24.
+- It reads the export lines `ZOLANA_REPO`, `SOLSPIKE_FUNDER` and `SOLSPIKE_KEY_B` of
+  `~/.config/zigs/live-env.sh`. The keys stay in `~/.config/zigs/sol`, never in a scratchpad.
+- It writes the Helius URL of `~/.config/zigs/helius-app.url` into `cf/.dev.vars`, never prints
+  it, and removes it at exit. A `cf/.dev.vars` that the checkout lacks is made with
+  `DEV_NO_AUTH=1` and removed at exit.
+- Ports: 8798 and 9400-9409 (`BATCH_PORT`, `BATCH_CHROME_PORTS`). No other run may use them at the
+  same time. `BATCH_ARGS=--resume` continues a step that stopped.
+- Each step writes `solspike/logs/live-<step>.log` and its results file
+  (`solspike/logs/scenario-<x>.json`), and keeps its backups in `solspike/logs/interim-<step>.json`
+  (mode 600). A new run refuses the interim file of an earlier group: move it away after a
+  finished run.
+- A pass prints `<step>: exit 0`, and the results file ends with `"mock":false` and the full list
+  of steps. Keep the checkout and its `solspike/logs` until the session that asked for the run has
+  read them, then copy the record into the docs (docs/hackathon-release.md holds the records of
+  M3, M4 and the nonce lock).
+
+What each step takes from the funder (Devnet only; each transfer also costs 5,000 lamports):
+
+| Step | Transactions | From the funder | Other movements |
+|---|---|---|---|
+| `scenario-e` | 2 | 3,000,000 lamports to the fee address of seat 1 | Add SOL 2,000,000 into the pool |
+| `scenario-f` | 10 | 6,000,000, 2,500,000 and 2,500,000 to the fee addresses of seats 1 to 3 | Add SOL 3,000,000; two private payments of 1,000,000 to key B; a withdrawal of 500,000 to the fee address of seat 3 |
+| `scenario-g` | 6 | 6,000,000 to the fee address of seat 1 only | Add SOL 3,000,000; P1 of 1,000,000 and P2 of 1,500,000 to key B; P3 and P4 must be refused and send nothing |
+
+Each proposal account costs its proposer 1,356,360 lamports of rent, which comes back at the
+execute. Each execute costs its fee address about 10,000 lamports. A payment needs nullifier PDA
+rent in the tree of the pool: a tree at its rent minimum refuses a spend (custom error 7044).
