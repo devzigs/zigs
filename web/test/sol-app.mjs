@@ -121,7 +121,7 @@ assert.equal(solOf(gid, 1).backupSaved, true, "the saved file is marked, so the 
 const restoredPart = { ...original, backupSaved: true, restored: true };
 const solFile = saved.at(-1);
 assert.equal(solFile.filename, backupName("Backup solana", 1));
-assert.match(solFile.filename, /^zigs-Backup-solana-seat-1\.zigsbackup$/);
+assert.match(solFile.filename, /^zigs-Backup-solana-device-1\.zigsbackup$/);
 {
   const shell = JSON.parse(solFile.data);
   assert.equal(shell.kind, "zigs-backup", "the outer file is the one of the Zcash engine");

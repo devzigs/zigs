@@ -60,6 +60,10 @@ const ruleTexts = (W) =>
       .map((line) => line.split("\t")),
   ));
 
+// In the checker's texts "signer" is a Solana key role; only its "seat" means a device.
+const seatWords = (text) => text.replace(/\b([Ss])eat(s?)\b/g,
+  (_, s, plural) => (s === "S" ? "Device" : "device") + plural);
+
 /** The refusal text of the checker: each broken rule, its statement and the detail. */
 export function refusalText(W, verdict) {
   const lines = verdict.split("\n").slice(1).filter(Boolean);
@@ -67,7 +71,7 @@ export function refusalText(W, verdict) {
     const [id, detail] = line.split("\t");
     return (ruleTexts(W).get(id) ?? id) + (detail ? " (" + detail + ")" : "");
   });
-  return REFUSED + (named.join("; ") || verdict.replace("\t", ": "));
+  return REFUSED + seatWords(named.join("; ") || verdict.replace("\t", ": "));
 }
 
 /**
