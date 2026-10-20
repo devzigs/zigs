@@ -83,6 +83,18 @@ const waitFor = async (what, ok, ms = 60000) => {
   }
 };
 const A = "aaaaaaaaaaaaaaaaaaaa", B = "bbbbbbbbbbbbbbbbbbbb";
+// The two privacy notes of a payment: the Send review, "Propose again" and the move show them.
+const NOW_NOTE = "The chain does not show the recipients, the amounts or the memos. The expiry "
+  + "height is public and can show that Zigs made this payment. So can a priority fee. Every "
+  + "device of this wallet can read the recipients, the amounts, the memos and the note, in the "
+  + "shared history of the wallet. So can anyone who has its invite link. A memo goes on chain "
+  + "with the payment, and its recipient can read it too.";
+const LATER_NOTE = "A device that a later Change devices leaves out keeps the viewing key and the "
+  + "messages of this wallet. It can still read this history and each later payment of this "
+  + "wallet. It cannot read the new wallet. The move payment gives it the address, the amount and "
+  + "the note of that payment, and the id of the new wallet. With the id, the device can get the "
+  + "sealed documents of the new wallet and each later write from the group server. The server "
+  + "also accepts writes from it, so the device can stop the new wallet with false documents.";
 const sealed = (gid, rel, seat, fields, key, names = ["by", "sig"]) =>
   signMsg(key.signSk, Z.docPayload(gid, rel, seat, JSON.stringify(fields)))
     .then((sig) => ({ ...fields, [names[0]]: seat, [names[1]]: sig }));
@@ -1588,12 +1600,25 @@ const sealed = (gid, rel, seat, fields, key, names = ["by", "sig"]) =>
     const stored = sessions();
     globalThis.document = { ...recorder, activeElement: { dataset: {} },
       getElementById: () => new Rec("div") };
+    const bannerBefore = t.banner;
     await blocked.on.submit({ preventDefault() {}, currentTarget: null });
+    const focusAfterError = t.wantFocus;
     globalThis.document = realDocument;
     await sleep(300);   // the submit asks the page to draw and react: let that end here
     globalThis.document = recorder;
-    assert.deepEqual(t.banner, { kind: "bad", text: "Wait for the first sync to finish." });
+    // The error shows in a notice of the dialog, not in the banner behind it, and the focus goes
+    // to the notice so that a screen reader reads it.
+    assert.equal(t.ui.sendError, "Wait for the first sync to finish.", "the dialog has the error");
+    assert.equal(t.banner, bannerBefore, "the banner shows nothing new");
+    const notices = all(t.sendDialog(), (x) => x.attrs?.role === "alert");
+    assert.deepEqual(notices.map(textOf), ["Wait for the first sync to finish."],
+      "the error is an alert of the dialog");
+    assert.deepEqual([notices[0].attrs.tabindex, notices[0].attrs["data-key"]],
+      ["-1", "send-error"], "the notice can take the focus");
+    assert.deepEqual(focusAfterError, { key: "send-error", force: true },
+      "the notice takes the focus");
     assert.equal(sessions(), stored, "a refused submit proposes nothing");
+    t.ui.sendError = "";
     t.setChain(chainOf({ spendable: 1e8, pending: 0 }));
     assert.equal(named(t.sendDialog(), "button", "Review payment").attrs.disabled, undefined);
     assert.equal(named(t.sendDialog(), "button", "Review payment").attrs["aria-describedby"],
@@ -1765,6 +1790,17 @@ const sealed = (gid, rel, seat, fields, key, names = ["by", "sig"]) =>
           + "writes from it, so the device can stop the new wallet with false documents\\."),
         "the review says what a device left out later keeps");
         assert.ok(named(shown, "button", "Propose payment"), "a match can be proposed");
+        const headOf = (d) => textOf(all(d, (x) => x.className === "card-head")[0].kids[0]);
+        const testnetG = t.state.g, testnetShown = [headOf(shown), textOf(shown)];
+        t.state.g = { ...testnetG, network: "mainnet" };
+        const mainShown = drawn(), mainTexts = [headOf(mainShown), textOf(mainShown)];
+        t.state.g = testnetG;
+        globalThis.document = realDocument;
+        assert.equal(testnetShown[0], "Review the paymentZcash Testnet", "the badge sits under it");
+        assert.match(testnetShown[1], /Zcash Testnet: the amounts and the network fee/);
+        assert.equal(mainTexts[0], "Review the paymentZcash Mainnet",
+          "the badge follows the open wallet");
+        assert.match(mainTexts[1], /Zcash Mainnet: the amounts and the network fee/);
         t.ui.sendReview = { prep: { ...prep, t: { ...prep.t, pczt: "REV3" } }, note: "x" };
         assert.match(textOf(drawn()), /Network fee \(priority\)/, "the fee as decoded");
         globalThis.document = realDocument;
@@ -1829,6 +1865,47 @@ const sealed = (gid, rel, seat, fields, key, names = ["by", "sig"]) =>
         t.setChain({ ...funded, bal: { ...funded.bal, spendable: 0 } });
         await assert.rejects(t.proposeReviewed({ prep, note: "x" }), /no funds/);
         t.setChain(funded);
+        // The error of Propose shows in the review, with the review kept. Back to edit clears it.
+        // A stale review goes back to the form, which shows the error. A closed dialog sends the
+        // error to the banner.
+        const press = async (button) => {
+          globalThis.document = realDocument;
+          await button.on.click({ preventDefault() {}, currentTarget: null });
+          const focus = t.wantFocus;
+          await sleep(300);
+          return focus;
+        };
+        const alertsIn = (d) => all(d, (x) => x.attrs?.role === "alert").map(textOf);
+        t.setChain({ ...funded, bal: { ...funded.bal, spendable: 0 } });
+        Object.assign(t.ui, { send: true, sendReview: { prep, note: "x" }, sendError: "" });
+        const bannerNow = t.banner;
+        assert.deepEqual(await press(named(drawn(), "button", "Propose payment")),
+          { key: "send-error", force: true }, "a failed Propose takes the focus to its notice");
+        assert.equal(t.banner, bannerNow, "the banner shows nothing new");
+        const failedReview = drawn();
+        assert.deepEqual(alertsIn(failedReview), ["This wallet has no funds yet."]);
+        assert.ok(named(failedReview, "button", "Propose payment"), "the review stays");
+        await press(named(failedReview, "button", "Back to edit"));
+        assert.deepEqual([t.ui.sendReview, t.ui.sendError], [null, ""], "Back to edit");
+        t.setChain(funded);
+        const stale = { prep: { ...prep, at: prep.at - 5 * 60 * 1000 }, note: "old" };
+        Object.assign(t.ui, { send: true, sendReview: stale, pay: null, sendError: "" });
+        await press(named(drawn(), "button", "Propose payment"));
+        assert.equal(t.ui.sendReview, null, "a stale review is dropped");
+        assert.deepEqual(alertsIn(drawn()),
+          ["This review is out of date. Review the payment again."],
+          "the form that follows shows the error");
+        Object.assign(t.ui, { send: true, sendReview: { prep, note: "x" } });
+        t.setChain({ ...funded, bal: { ...funded.bal, spendable: 0 } });
+        const reviewOpen = drawn();
+        t.ui.send = false;
+        const closedBanner = t.banner;
+        await press(named(reviewOpen, "button", "Propose payment"));
+        assert.notEqual(t.banner, closedBanner, "a closed dialog sends the error to the banner");
+        assert.equal(t.banner.kind, "bad");
+        assert.equal(t.ui.sendError, "", "and an action starts with no old error");
+        t.setChain(funded);
+        Object.assign(t.ui, { send: false, sendReview: null, sendError: "", pay: null });
         await assert.rejects(t.proposeReviewed({ prep: { ...prep, gid: "other" }, note: "x" }),
           /another wallet/);
         t.ui.sendReview = { prep: { ...prep, t: { ...prep.t, pczt: "REV2" } }, note: "x",
@@ -2252,6 +2329,34 @@ const sealed = (gid, rel, seat, fields, key, names = ["by", "sig"]) =>
       await quiet(() => t.newSpend(again, "again", null, false, t.ui.after));
       assert.equal(asked.find((x) => x[0] === "spend")[3], "PA", "createSpend gets the old PCZT");
       t.ui.after = null;
+      // "Propose again" on a move opens the dialog of the move, and the button of that dialog
+      // proposes with the old PCZT, so that the new move spends the notes of the expired one.
+      const groupBefore = t.state.g;
+      t.state.g = { ...groupBefore, movedTo: "MV1" };
+      t.ready.MV1 = { address: "utest1m" };
+      const moveAgain = { ...signedA, move: "MV1" };
+      put(moveAgain);
+      at(4503500).bal.max_send = 50000;
+      asked.length = 0;
+      const docsBefore = new Set(data.keys()), listBefore = t.state.sessions;
+      await quiet(() => t.proposeAgain(moveAgain));
+      assert.deepEqual([t.ui.send, t.ui.sendMove], [true, { gid: t.state.gid, after: "PA" }],
+        "the move opens its dialog");
+      assert.equal(asked.some((x) => x[0] === "spend"), false, "nothing is proposed yet");
+      const moveForm = t.sendDialog();
+      const moveTexts2 = all(moveForm, (x) => x.tag === "p").map(textOf);
+      assert.ok(moveTexts2.includes(NOW_NOTE) && moveTexts2.includes(LATER_NOTE),
+        "the move after an expired one says who can read the payment");
+      await quiet(() => named(moveForm, "button", "Propose the move").on.click(
+        { type: "click", preventDefault() {}, currentTarget: null }));
+      assert.equal(asked.find((x) => x[0] === "spend")?.[3], "PA",
+        "the move after an expired one spends its notes: createSpend gets the old PCZT");
+      Object.assign(t.ui, { send: false, sendMove: null, after: null });
+      for (const k of [...data.keys()]) if (!docsBefore.has(k)) data.delete(k);
+      t.closeSession();
+      t.state.sessions = listBefore;
+      t.state.g = groupBefore;
+      put(signedA);
       // The fee comes from the approved transaction, and rows that one seat rewrote are not
       // proposed again.
       const highA = { ...signedA, pczt: "PH" };
@@ -2611,9 +2716,26 @@ const sealed = (gid, rel, seat, fields, key, names = ["by", "sig"]) =>
       asked.length = 0;
       const click = { type: "click", preventDefault() {}, currentTarget: null };
       await quiet(() => moveBtn.on.click(click));
+      // The card button opens the dialog of the move, which says who can read the payment. The
+      // button of that dialog proposes.
+      assert.equal(asked.some((x) => x[0] === "spend"), false, "the card button proposes nothing");
+      assert.deepEqual([t.ui.send, t.ui.sendMove], [true, { gid: t.state.gid, after: null }]);
+      const confirm = t.sendDialog();
+      assert.equal(textOf(all(confirm, (x) => x.tag === "h2")[0]), "Move the Zcash funds");
+      assert.equal(textOf(all(confirm, (x) => x.className === "badge plain")[0]), "Zcash Testnet");
+      const moveTexts = all(confirm, (x) => x.tag === "p").map(textOf);
+      assert.ok(moveTexts.includes(NOW_NOTE), "the move says who can read the payment now");
+      assert.ok(moveTexts.includes(LATER_NOTE), "and what a device that is left out keeps");
+      await quiet(() => named(confirm, "button", "Propose the move").on.click(click));
       const moveCall = asked.find((x) => x[0] === "spend");
       assert.ok(moveCall, "the move is proposed");
       assert.equal(moveCall[3], undefined, "no PCZT of an expired payment");
+      assert.deepEqual([t.ui.send, t.ui.sendMove], [false, null], "the dialog closes");
+      // The dialog of a move belongs to its wallet: another wallet shows the Send form instead.
+      Object.assign(t.ui, { send: true, sendMove: { gid: "other wallet", after: null } });
+      assert.match(textOf(t.sendDialog()), /Send ZEC/, "another wallet: no move dialog");
+      assert.equal(t.ui.sendMove, null, "and the move is dropped");
+      Object.assign(t.ui, { send: false, pay: null });
       t.state.sessions = sessionsBefore;
       for (const [i, marks] of marksBefore) await t.putSec(t.state.gid, i, { marks });
       t.state.g = group;
@@ -3339,6 +3461,10 @@ const sealed = (gid, rel, seat, fields, key, names = ["by", "sig"]) =>
         let form = rowsOf([""]);
         assert.equal(boxOf(form).attrs.placeholder, "utest1… or alice.zec");
         assert.equal(boxOf(form).attrs["aria-label"], "Recipient address or ZNS name");
+        assert.deepEqual(all(form, (x) => x.className === "badge plain").map(textOf),
+          ["Zcash Testnet"], "the badge sits under the title");
+        assert.equal(textOf(all(form, (x) => x.className === "card-head")[0].kids[0]),
+          "Send ZECZcash Testnet");
         assert.match(textOf(form), /One address or ZNS name and amount per line, then an optional/);
         let hint = typeIn(form, "Alice.ZEC ");
         assert.equal(hint.attrs.role, "status", "a screen reader hears the hint");
@@ -3500,6 +3626,14 @@ const sealed = (gid, rel, seat, fields, key, names = ["by", "sig"]) =>
         assert.deepEqual(shows(hintOf(form)), ["Kept from the first proposal: alice.zec. Each "
           + "approver in the web app checks the name again.", "hint ok"]);
         assert.deepEqual([gets, fetches], [0, 0], "an address row asks no registry");
+        // "Propose again" has no review, so its form says who can read the payment. A new Send does
+        // not repeat the notes: its review shows them.
+        const notesIn = (d) => all(d, (x) => x.tag === "p").map(textOf)
+          .filter((x) => x === NOW_NOTE || x === LATER_NOTE).length;
+        t.ui.after = "PA";
+        assert.equal(notesIn(t.sendDialog()), 2, "Propose again: who can read it now, and later");
+        t.ui.after = null;
+        assert.equal(notesIn(form), 0, "a new Send shows them in its review");
         againPayees = (await submit(form))[0];
         assert.deepEqual(againPayees, [{ to: NAMED, amount: 5, name: "alice" }]);
         Object.assign(t.ui, { send: false, after: null });
@@ -3578,6 +3712,130 @@ const sealed = (gid, rel, seat, fields, key, names = ["by", "sig"]) =>
         listField.on.input({ target: { value: "0.5" } });
         assert.deepEqual([listField.attrs["aria-invalid"], listNote.textContent, t.ui.listError],
           ["false", "", ""], "an edit of the list clears its error");
+        // Each field has a visible label: the recipient keeps the label that names a ZNS name, the
+        // amount names its unit. The accessible name starts with the visible text, and a note
+        // stays outside its label.
+        const AMOUNT_BAD = "Enter an amount greater than zero, with at most 8 decimals.";
+        const captionOf = (d, id) => {
+          const label = all(d, (x) => x.tag === "label"
+            && all(x, (y) => y.attrs?.id === id).length > 0)[0];
+          assert.ok(label, id + " has a label around it");
+          assert.equal(all(label, (x) => /^hint/.test(x.className ?? "")).length, 0,
+            "no note in it");
+          return textOf(label.kids[0]);
+        };
+        const fieldIds = (d, n = 0) => [/^s-to-\d+$/, /^s-amt-\d+$/, /^s-memo-\d+$/]
+          .map((re) => idOf(re)(d, n).attrs.id);
+        form = rowsOf([OTHER, "0.1", "rent"], [OTHER, "0.2"]);
+        assert.deepEqual(fieldIds(form).map((id) => captionOf(form, id)),
+          ["Recipient address or ZNS name 1", "Amount · ZEC", "Memo (optional)"],
+          "each field of a recipient has its caption");
+        assert.deepEqual(fieldIds(form, 1).map((id) => idOf(new RegExp("^" + id + "$"))(form)
+          .attrs["aria-label"]), ["Recipient address or ZNS name 2", "Amount · ZEC 2",
+          "Memo (optional) 2"], "each recipient has its own name");
+        assert.match(textOf(form), /2 recipients, one transaction/);
+        form = rowsOf([""]);
+        assert.deepEqual(fieldIds(form).map((id) => [captionOf(form, id),
+          idOf(new RegExp("^" + id + "$"))(form).attrs["aria-label"]]),
+        [["Recipient address or ZNS name"], ["Amount · ZEC"], ["Memo (optional)"]]
+          .map(([c]) => [c, c]));
+        assert.doesNotMatch(textOf(form), /To and amount/, "the labels say it");
+
+        // The amount has a note: a wrong amount reads red and marks the field as invalid.
+        form = rowsOf([OTHER, ""]);
+        const amountBox = idOf(/^s-amt-\d/)(form), amountNote = idOf(/^s-amt-hint-/)(form);
+        assert.equal(amountBox.attrs["aria-describedby"], amountNote.attrs.id);
+        assert.deepEqual([amountBox.attrs["aria-invalid"] === "true", amountNote.textContent || ""],
+          [false, ""], "an empty amount is no error yet");
+        for (const bad of ["abc", "0", "0.000000001", "1,2,3"]) {
+          amountBox.on.input({ target: { value: bad } });
+          assert.deepEqual([amountBox.attrs["aria-invalid"], amountNote.textContent,
+            amountNote.className], ["true", AMOUNT_BAD, "hint bad"],
+          "a wrong amount marks its field as invalid: " + bad);
+        }
+        amountBox.on.input({ target: { value: "0,5" } });
+        assert.deepEqual([amountBox.attrs["aria-invalid"], amountNote.textContent, t.ui.pay[0].amt],
+          ["false", "", "0,5"], "a good amount clears the note");
+        form = rowsOf([OTHER, "abc"]);
+        assert.equal(idOf(/^s-amt-\d/)(form).attrs["aria-invalid"], "true",
+          "a form that comes back with a wrong amount shows it at once");
+
+        // Max leaves room for the priority fee. Three notes of 100000 zat: the standard fee of
+        // spending all of them is 15000, and a priority fee is 10 times that. The max_send of the
+        // engine leaves the standard fee only.
+        const fundsKept = t.chain;
+        const withFunds = (extra) => t.setChain({ ...fundsKept,
+          bal: { ...fundsKept.bal, spendable: 300000, pending: 0, notes: 3, max_send: 285000,
+            ...extra } });
+        const maxOf = (d) => named(d, "button", "Max");
+        const amountOf = (d) => idOf(/^s-amt-\d/)(d);
+        const priorityOf = (d) => idOf(/^s-priority$/)(d);
+        withFunds({});
+        Object.assign(t.ui, { priority: false });
+        form = rowsOf([OTHER, "abc"]);
+        maxOf(form).on.click();
+        assert.equal(amountOf(form).value, "0.00285", "Max: every note, less the standard fee");
+        assert.equal(amountOf(form).attrs["aria-invalid"], "false", "and a good amount");
+        t.ui.priority = true;
+        form = rowsOf([OTHER, ""]);
+        assert.equal(priorityOf(form).attrs.checked, "");
+        maxOf(form).on.click();
+        assert.equal(amountOf(form).value, "0.0015",
+          "with the priority box: less 10 times the standard fee of all three notes");
+        assert.deepEqual(await submit(form), [[{ to: OTHER, amount: 150000 }]],
+          "that Max amount passes the check of Send");
+        // The box moves an amount that is the maximum, in both directions, and only that one.
+        t.ui.priority = false;
+        form = rowsOf([OTHER, ""]);
+        maxOf(form).on.click();
+        priorityOf(form).on.change({ target: { checked: true } });
+        assert.equal(amountOf(form).value, "0.0015", "the box on: Max follows");
+        assert.equal(t.ui.pay[0].amt, "0.0015", "also in the row");
+        priorityOf(form).on.change({ target: { checked: false } });
+        assert.equal(amountOf(form).value, "0.00285", "the box off: Max follows back");
+        amountOf(form).on.input({ target: { value: "0.001" } });
+        priorityOf(form).on.change({ target: { checked: true } });
+        assert.equal(t.ui.pay[0].amt, "0.001", "an amount that the person typed stays");
+        t.ui.priority = false;
+        withFunds({ max_send: 0 });
+        form = rowsOf([OTHER, ""]);
+        maxOf(form).on.click();
+        assert.equal(amountOf(form).attrs["aria-invalid"], "true", "no funds, no amount");
+        t.setChain(fundsKept);
+
+        // The error of a submit shows in a notice of the dialog (role alert), and the person keeps
+        // the form. The notice takes the focus. The next action clears it. When the action closed
+        // the dialog, the banner shows the error.
+        const alertsOf = (d) => all(d, (x) => x.attrs?.role === "alert").map(textOf);
+        const fire = async (dialog) => {
+          globalThis.document = stubPage();
+          await dialog.on.submit({ preventDefault() {}, currentTarget: null });
+          const focus = t.wantFocus;
+          globalThis.document = realDocument;
+          await sleep(300);
+          globalThis.document = recorder;
+          return focus;
+        };
+        form = rowsOf([OTHER, "", "rent"]);
+        Object.assign(t.ui, { send: true, sendError: "" });
+        const shownBefore = t.banner;
+        assert.deepEqual(await fire(form), { key: "send-error", force: true },
+          "a failed submit takes the focus to its notice");
+        assert.equal(t.ui.sendError, AMOUNT_BAD, "the form submit puts its error in the dialog");
+        assert.equal(t.banner, shownBefore, "the banner shows nothing new");
+        assert.deepEqual(alertsOf(t.sendDialog()), [AMOUNT_BAD], "the form shows the notice");
+        assert.deepEqual(t.ui.pay.map((r) => [r.to, r.amt, r.memo]), [[OTHER, "", "rent"]],
+          "the form keeps what the person typed");
+        t.ui.pay[0].amt = "0.1";
+        assert.equal((await submit(form)).length, 1, "the next action goes on");
+        assert.equal(t.ui.sendError, "", "and starts with no old error");
+        assert.notDeepEqual(t.wantFocus, { key: "send-error", force: true });
+        t.ui.send = false;
+        const shownClosed = t.banner;
+        await refused(rowsOf([OTHER, ""]), AMOUNT_BAD);
+        assert.notEqual(t.banner, shownClosed, "a closed dialog sends the error to the banner");
+        assert.equal(t.ui.sendError, "", "and not to the dialog");
+
         // The wallet lost its sync between the draw and the submit.
         form = await settled(["alice"]);
         const keptChain = t.chain;
@@ -3592,6 +3850,8 @@ const sealed = (gid, rel, seat, fields, key, names = ["by", "sig"]) =>
         form = rowsOf([""]);
         assert.equal(boxOf(form).attrs.placeholder, "u1…");
         assert.equal(boxOf(form).attrs["aria-label"], "Recipient address");
+        assert.deepEqual(all(form, (x) => x.className === "badge plain").map(textOf),
+          ["Zcash Mainnet"], "the badge names the network of the open wallet");
         assert.match(textOf(form), /One address and amount per line, then an optional memo/);
         assert.deepEqual(shows(typeIn(form, "alice.zec")),
           ["Not a shielded Zcash mainnet address. It starts with u1.", "hint bad"]);
