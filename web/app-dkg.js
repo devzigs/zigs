@@ -7,7 +7,7 @@ import { canSign, newSignKey, signMsg } from "./chat.js";
 import { log, raw, showBanner, state } from "./app-state.js";
 import { isStr, J, randomHex32, S } from "./app-kit.js";
 import { Z } from "./app-engine.js";
-import { mySeatSecrets, putKey, putSec, sec } from "./app-keystore.js";
+import { mySeatSecrets, persist, putKey, putSec, sec, secrets } from "./app-keystore.js";
 import { allR1, allSeated, isCreator, keysAgree, localSeats, r2For, seatIds } from "./app-seats.js";
 import { netName, netOf, NETWORKS, serverHeight } from "./app-chain.js";
 import {
@@ -454,19 +454,39 @@ async function newSeatKey(version) {
 export async function takeSeat(i, version = groupVersion()) {
   if (!Z || !version) return;
   const gid = state.gid, sign = await newSeatKey(version);
-  const ref = sdb.doc("groups/" + gid + "/seats/" + i);
-  const lease = await ref.acquire({ holder: crypto.randomUUID(), ttlMs: 5000 });
+  const ref = sdb.doc("groups/" + gid + "/seats/" + i), holder = crypto.randomUUID();
+  const lease = await ref.acquire({ holder, ttlMs: 5000 });
   if (!lease.acquired) {
     showBanner("bad", "Someone else is joining as device " + i + " right now.");
     return;
   }
+  try { await joinSeat(ref, gid, i, version, sign); } catch (e) {
+    // The store has no release call: a lease of 1 ms ends at once, so a retry needs no wait.
+    await ref.acquire({ holder, ttlMs: 1 }).catch(() => {});
+    throw e;
+  }
+}
+
+const JOIN_UNSAVED = "This device could not save its key share, so it did not join. Free storage "
+  + "and try again.";
+// The secret of a new seat is saved before the store sees the seat. A save that fails leaves
+// nothing of the seat in this browser, and the join stops.
+async function saveSeatSecret(gid, i, secret) {
+  const k = skey(gid, i), before = secrets[k] && structuredClone(secrets[k]);
+  if (await putSec(gid, i, secret)) return;
+  if (before) secrets[k] = before; else delete secrets[k];
+  await persist();
+  throw new Error(JOIN_UNSAVED);
+}
+
+async function joinSeat(ref, gid, i, version, sign) {
   const cur = await ref.get();
   if (cur.exists && cur.data().uid) {
     showBanner("bad", "Device " + i + " has joined already.");
     return;
   }
   const kp = J(Z.boxKeypair());
-  putSec(gid, i, { boxSk: kp.sk, version, uid: me, ...sign });
+  await saveSeatSecret(gid, i, { boxSk: kp.sk, version, uid: me, ...sign });
   const name = user ? (await user.me()).name : "";
   const doc = { uid: me, name, boxPk: kp.pk, at: Date.now(), signPk: sign?.signPk };
   // In a version 3 wallet the seat signs its own document with the new key. Readers pin the key

@@ -2664,5 +2664,104 @@ assert.equal(quickCode(null), null);
   }
 }
 
+// ── A join that cannot save its key share is refused before the store sees the seat ──
+// takeSeat is the one place that takes a seat: Join as device, Play device and seat 1 of a new
+// wallet all pass it. This block comes last: a write that throws sets storageOk for good.
+{
+  const JOIN_REFUSED = "This device could not save its key share, so it did not join. Free "
+    + "storage and try again.";
+  const refused = (run) => run().then(() => "it joined", (e) => e.message);
+  const seatDoc = (gid, i) => groupPath(gid) + "/seats/" + i;
+  const stored = (gid, i) => JSON.parse(storage.get("zf-secrets") ?? "{}")[gid + ":" + i];
+  const button = (text) => findNode(pageTree(),
+    (n) => n.attrs?.type === "button" && textOf(n) === text);
+  // A person needs more than the 1 ms of a released lease to click again.
+  const retry = async (text) => {
+    await sleep(20);
+    await button(text).on.click(EV);
+  };
+  // The lease of the server: a holder keeps a path for ttlMs, and the same holder may renew it.
+  const leases = new Map();
+  const keepLease = rig.hook.lease;
+  rig.hook.lease = (p, o) => {
+    const cur = leases.get(p);
+    if (cur && cur.until > Date.now() && cur.holder !== o.holder) return false;
+    leases.set(p, { holder: o.holder, until: Date.now() + o.ttlMs });
+    return true;
+  };
+  const realSet = localStorage.setItem;
+  try {
+    // Another tab holds the lock: no write of this tab is saved.
+    await t.createGroup("Join save", 3, 2, null, "testnet");
+    const gidJ = t.state.gid;
+    await waitFor("seat 1", () => t.state.seats[1]);
+    storage.set("zf-vault", "another tab locked the keys");
+    await button("Play device 2").on.click(EV);
+    assert.equal(appState.banner?.text, JOIN_REFUSED,
+      "a join that cannot save its key share is refused");
+    assert.equal(data.has(seatDoc(gidJ, 2)), false, "a refused join writes no seat document");
+    assert.equal(t.secrets[gidJ + ":2"], undefined, "a refused join keeps no secret in memory");
+    storage.delete("zf-vault");
+    await retry("Play device 2");
+    assert.equal(data.has(seatDoc(gidJ, 2)), true, "a retry right after the refusal joins");
+    assert.equal(stored(gidJ, 2)?.boxSk, t.sec(gidJ, 2).boxSk, "and saves the secret first");
+    // A secret that was saved and a seat write that then fails: the retry still joins.
+    const keepBefore = rig.hook.before;
+    let fail = true;
+    rig.hook.before = (p, v) => {
+      if (fail && p === seatDoc(gidJ, 3)) { fail = false; throw new Error("A test failure."); }
+      return keepBefore(p, v);
+    };
+    try {
+      await button("Play device 3").on.click(EV);
+    } finally {
+      rig.hook.before = keepBefore;
+    }
+    assert.match(appState.banner?.text ?? "", /A test failure/);
+    assert.equal(t.sec(gidJ, 3).boxPk, undefined, "a failed seat write leaves no box key behind");
+    await retry("Play device 3");
+    assert.equal(t.sec(gidJ, 3).boxPk, data.get(seatDoc(gidJ, 3))?.boxPk,
+      "a retry after a failed seat write joins with the key that the store shows");
+
+    // Seat 1 of a new wallet: the wallet exists, the seat does not, and Join as device 1 works.
+    storage.set("zf-vault", "another tab locked the keys");
+    assert.equal(await refused(() => t.createGroup("No seat 1", 3, 2, null, "testnet")),
+      JOIN_REFUSED, "the first seat of a new wallet is refused too");
+    const gidC = t.state.gid;
+    await waitFor("the wallet document", () => t.state.g?.name === "No seat 1");
+    assert.equal(data.has(seatDoc(gidC, 1)), false, "a refused first seat writes no seat document");
+    assert.equal(t.secrets[gidC + ":1"], undefined, "and keeps no secret");
+    storage.delete("zf-vault");
+    await retry("Join as device 1");
+    assert.equal(data.has(seatDoc(gidC, 1)), true,
+      "Join as device 1 takes the seat once storage works");
+    assert.ok(JSON.parse(storage.get("zf-keys"))[gidC], "and saves the key of the wallet");
+
+    // A full disk: the write of the secrets goes through, then the write of the keys throws.
+    await t.createGroup("Join quota", 3, 2, null, "testnet");
+    const gidQ = t.state.gid;
+    await waitFor("seat 1 again", () => t.state.seats[1]);
+    localStorage.setItem = (k, v) => {
+      if (k === "zf-keys") throw new Error("QuotaExceededError");
+      realSet.call(localStorage, k, v);
+    };
+    t.secrets[gidQ + ":2"] = { note: "was here" };
+    await button("Play device 2").on.click(EV);
+    assert.equal(appState.banner?.text, JOIN_REFUSED, "a silent save failure says so");
+    assert.equal(data.has(seatDoc(gidQ, 2)), false);
+    assert.deepEqual(t.secrets[gidQ + ":2"], { note: "was here" },
+      "a refused join puts back the secret that was there");
+    assert.deepEqual(stored(gidQ, 2), { note: "was here" },
+      "a refused join leaves no new secret in storage");
+    localStorage.setItem = realSet;
+    await retry("Play device 2");
+    assert.equal(data.has(seatDoc(gidQ, 2)), true, "a retry after a full disk joins");
+  } finally {
+    localStorage.setItem = realSet;
+    storage.delete("zf-vault");
+    rig.hook.lease = keepLease;
+  }
+}
+
 console.log("unified-setup: ok");
 process.exit(0);

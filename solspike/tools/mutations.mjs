@@ -31,6 +31,17 @@ const AUTO_DOCS = "(c) => !!c.loaded.solstart && !c.docs.solstart[1] && c.wait =
 const HINT_FIRST = '  await sdb.doc("groups/" + gid).update({ solana: true });\n' +
   "  await putSec(gid, 1, { solAuto: true });";
 const APP_SOL = "web/app-sol.js";
+// The lines of takeSeat (web/app-dkg.js) from the save of the secret to the write of the seat.
+const SEAT_SAVE = "  await saveSeatSecret(gid, i, { boxSk: kp.sk, version, uid: me, ...sign });\n";
+const SEAT_DOC = '  const name = user ? (await user.me()).name : "";\n'
+  + "  const doc = { uid: me, name, boxPk: kp.pk, at: Date.now(), signPk: sign?.signPk };\n"
+  + "  // In a version 3 wallet the seat signs its own document with the new key. Readers pin the "
+  + "key\n  // only when this signature checks out.\n"
+  + "  if (version === 3) {\n"
+  + '    const text = Z.docPayload(gid, "seats/" + i, i, S(doc));\n'
+  + "    Object.assign(doc, { by: i, sig: await signMsg(sign.signSk, text) });\n"
+  + "  }\n";
+const SEAT_SET = "  await ref.set(doc);\n";
 const APP_GROUPS = "web/app-groups.js";
 const INDEX_JS = "cf/src/index.js";
 const POLICY_TEST = ["node", "solspike/test/policy.test.mjs"];
@@ -2312,4 +2323,28 @@ export const MUTATIONS = [
     ["web/app-wallet.js", ' : ""), receivedNote(list),', ' : ""), receivedNote(activity()),'],
     UNIFIED,
     /a Solana-only list has no Zcash explorer note/),
+  program("J-save-promise", "the join checks the promise of the save, not its result",
+    ["web/app-dkg.js", "if (await putSec(gid, i, secret)) return;",
+      "if (putSec(gid, i, secret)) return;"], UNIFIED,
+    /a join that cannot save its key share is refused/),
+  program("J-save-ignored", "the join drops the result of the save",
+    ["web/app-dkg.js", "  if (await putSec(gid, i, secret)) return;\n",
+      "  await putSec(gid, i, secret);\n  return;\n"], UNIFIED,
+    /a join that cannot save its key share is refused/),
+  program("J-seat-first", "the join writes the seat document before it saves the secret",
+    ["web/app-dkg.js", SEAT_SAVE + SEAT_DOC + SEAT_SET, SEAT_DOC + SEAT_SET + SEAT_SAVE], UNIFIED,
+    /a refused join writes no seat document/),
+  program("J-keep-memory", "a refused join keeps its secret in memory",
+    ["web/app-dkg.js", "  if (before) secrets[k] = before; else delete secrets[k];\n", ""], UNIFIED,
+    /a refused join keeps no secret in memory/),
+  program("J-drop-earlier", "a refused join deletes the secret that was there before",
+    ["web/app-dkg.js", "if (before) secrets[k] = before; else delete secrets[k];",
+      "delete secrets[k];"], UNIFIED, /a refused join puts back the secret that was there/),
+  program("J-keep-storage", "a refused join leaves its secret in storage",
+    ["web/app-dkg.js", "  await persist();\n  throw new Error(JOIN_UNSAVED);",
+      "  throw new Error(JOIN_UNSAVED);"], UNIFIED,
+    /a refused join leaves no new secret in storage/),
+  program("J-keep-lease", "a refused join keeps its lease, so a retry waits",
+    ["web/app-dkg.js", "    await ref.acquire({ holder, ttlMs: 1 }).catch(() => {});\n", ""],
+    UNIFIED, /a retry right after the refusal joins/),
 ];
