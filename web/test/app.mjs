@@ -1890,11 +1890,18 @@ const sealed = (gid, rel, seat, fields, key, names = ["by", "sig"]) =>
         t.setChain(funded);
         const stale = { prep: { ...prep, at: prep.at - 5 * 60 * 1000 }, note: "old" };
         Object.assign(t.ui, { send: true, sendReview: stale, pay: null, sendError: "" });
-        await press(named(drawn(), "button", "Propose payment"));
+        const staleFocus = await press(named(drawn(), "button", "Propose payment"));
         assert.equal(t.ui.sendReview, null, "a stale review is dropped");
-        assert.deepEqual(alertsIn(drawn()),
+        const staleForm = drawn();
+        assert.deepEqual(alertsIn(staleForm),
           ["This review is out of date. Review the payment again."],
           "the form that follows shows the error");
+        // The form is a new dialog: the page focuses its first-focus mark. A request for the
+        // focus would stay open and take it later, from a field that the person types in.
+        assert.equal(all(staleForm, (x) => x.attrs?.role === "alert")[0].attrs["data-first-focus"],
+          "", "the notice is the first focus of a new dialog");
+        assert.notDeepEqual(staleFocus, { key: "send-error", force: true },
+          "and the action asks for no focus of its own");
         Object.assign(t.ui, { send: true, sendReview: { prep, note: "x" } });
         t.setChain({ ...funded, bal: { ...funded.bal, spendable: 0 } });
         const reviewOpen = drawn();

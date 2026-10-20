@@ -548,12 +548,17 @@ const closeX = () => el("button", {
 sweepDrafts();
 
 // The error of Send, its review or the move shows in the dialog, where the person reads it.
-// The notice takes the focus after a failed action (inDialog).
+// The notice takes the focus after a failed action (inDialog). A dialog that is new takes it by
+// its first-focus mark.
 const sendNotice = () => (ui.sendError ? el("p", { class: "callout bad", role: "alert",
-  id: "send-error", tabindex: "-1", "data-key": "send-error" }, ui.sendError) : null);
+  id: "send-error", tabindex: "-1", "data-key": "send-error", "data-first-focus": true },
+ui.sendError) : null);
+
+const dialogKind = () => (ui.sendMove ? "move" : ui.sendReview ? "review" : "form");
 
 // An action of the Send dialogs. A failure shows in the notice and the form keeps its values. It
-// shows in the banner when the action closed the dialog, so that no error is lost.
+// shows in the banner when the action closed the dialog, so that no error is lost. A stale review
+// goes back to the form: that is a new dialog, and it focuses the notice itself.
 function inDialog(fn) {
   const run = act(async (ev) => {
     ui.sendError = "";
@@ -563,8 +568,9 @@ function inDialog(fn) {
     }
   });
   return async (ev) => {
+    const kind = dialogKind();
     await run(ev);
-    if (ui.sendError) focusAfter("send-error", true);
+    if (ui.sendError && dialogKind() === kind) focusAfter("send-error", true);
   };
 }
 
