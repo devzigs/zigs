@@ -99,7 +99,7 @@ async function publishSwitch(c, seat, w = walletOf(c)) {
   const fields = { local: true, cluster: CLUSTER, at: Date.now() };
   const doc = await c.host.signedDoc(w.gid, rel, seat, fields);
   await c.host.sdb.doc(w.base + "/" + rel).set(doc);
-  c.host.log("seat " + seat + ": local proving is on for the group");
+  c.host.log("device " + seat + ": local proving is on for the group");
 }
 
 const secs = (ms) => (ms / 1000).toFixed(1) + " s";
@@ -108,7 +108,7 @@ const POOL_MOVED =
   "cannot be turned on until Zigs is tested with the new pool.";
 const NOT_ON = " Local proving was not turned on.";
 export const turnOnAsk = (ms) =>
-  "This device made a test proof in " +
+  "This browser made a test proof in " +
   secs(ms) +
   ". Turn on local proving for every device of this group? It cannot be turned off.";
 
@@ -131,7 +131,7 @@ export async function turnOnLocal(c, worker) {
   need(c, w);
   if (pool.slot !== pool.pinned) throw new Error(POOL_MOVED);
   const test = await worker.call("selftest").catch((e) => {
-    throw new Error("This device could not make a test proof: " + e.message + NOT_ON);
+    throw new Error("This browser could not make a test proof: " + e.message + NOT_ON);
   });
   need(c, w);
   await keepCheck(c, { ok: true, ms: test.ms, at: Date.now() }, w);
@@ -188,9 +188,9 @@ function maybeCheck(c, seats, ensure) {
 export function checkLine(c, seat) {
   const check = solOf(c.host, c.gid, seat).proveCheck;
   if (!provesLocally(c) || !check) return null;
-  if (check.ok) return "Local proving: this device made a test proof in " + secs(check.ms) + ".";
+  if (check.ok) return "Local proving: this browser made a test proof in " + secs(check.ms) + ".";
   return (
-    "Local proving: this device could not make a test proof, so it cannot pay for this group. " +
+    "Local proving: this browser could not make a test proof, so it cannot pay for this group. " +
     check.why
   );
 }
@@ -217,7 +217,7 @@ export const SWITCH_TEXT = [
     "setting helps most when it is on before the first payment. Once on, it is on for the group " +
     "and cannot be turned off. After you turn it on, reload every open Zigs tab of the group and " +
     "make the Solana backups again. A tab that opened before this version of Zigs does not ask " +
-    "before it proves. A seat restored from an older backup learns the setting from the group " +
+    "before it proves. A device restored from an older backup learns the setting from the group " +
     "server. If a change of Helius breaks the local prover, the group cannot pay until a Zigs " +
     "update.",
 ];
@@ -246,7 +246,7 @@ export function switchCard(c, act, actions) {
             "data-sol": "prove-switch",
             onclick: act(actions.proveOn),
           },
-          "Test this device, then prove on our devices",
+          "Test this browser, then prove on our devices",
         ),
   );
 }

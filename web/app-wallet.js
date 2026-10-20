@@ -194,12 +194,12 @@ export function backupNote(seats, solSeats = [], settling = false) {
     el("span", { style: "flex:1 1 16rem" }, text),
     seats.map((i) => el("button", {
       class: "btn sm", type: "button", onclick: () => openBackup(i),
-    }, many ? "Back up seat " + i : "Back up key share")),
+    }, many ? "Back up device " + i : "Back up key share")),
     solSeats.map((i) => el("button", {
       class: "btn sm", type: "button", onclick: act(() => solBackup(i)),
-    }, "Back up Solana, seat " + i)));
+    }, "Back up Solana, device " + i)));
 }
-const SOL_FILE = "The Solana part of a seat is a second file, with its own passphrase.";
+const SOL_FILE = "The Solana part of a device is a second file, with its own passphrase.";
 
 // `why` is the reason Send is off, shown as text because touch screens have no tooltip.
 function walletActions(why) {
@@ -607,7 +607,7 @@ function approvalsTab() {
     ? el("p", { class: "small muted row-actions" }, sol.text, " ", openSolanaButton()) : null;
   return el("div", { class: "page", style: "gap:16px" },
     el("p", { class: "small muted" }, "Open a payment to approve, sign or send it. A payment "
-      + "needs " + state.g.t + " of " + state.g.n + " signers."),
+      + "needs " + state.g.t + " of " + state.g.n + " devices."),
     inboxNote(sections.length > 0), ...sections, other);
 }
 
@@ -684,8 +684,8 @@ const INBOX_EMPTY = {
   syncing: "The wallet syncs. A payment that you approved and that someone cancelled shows after "
     + "the sync.",
   ignored: "No payment shows here. " + IGNORED_NOTE,
-  zec: "No Zcash payment waits for this browser, the other signers or the network.",
-  empty: "No payment waits for this browser, the other signers or the network.",
+  zec: "No Zcash payment waits for this browser, the other devices or the network.",
+  empty: "No payment waits for this browser, the other devices or the network.",
 };
 // What the inbox says about its own state. A failed read, a check that runs and a chain that
 // syncs show also next to rows: the list may lack payments then. The rest shows only when no row
@@ -791,7 +791,8 @@ function recoveryTab() {
       el("p", { class: "small muted" }, risk.detail),
       risk.here ? el("p", { class: "small" }, risk.here) : null),
     seats.some((x) => x.zec.has) ? el("section", { class: "card" },
-      el("div", { class: "card-head card-pad" }, el("h3", {}, "Your seats in this wallet")),
+      el("div", { class: "card-head card-pad" },
+        el("h3", {}, "This wallet's devices in this browser")),
       el("div", { class: "recovery-seats" },
         seats.filter((x) => x.zec.has).map((x) => guard(recoveryRow, x)))) : null,
     el("details", { class: "card card-pad recovery-lost" },
@@ -800,14 +801,15 @@ function recoveryTab() {
 }
 
 const RECOVERY_LIMITS = "Zigs knows only the files that this browser saved. It cannot see the "
-  + "files of the other devices: ask each signer to back up their seat. Zigs does not open a "
+  + "files of the other devices: ask the person of each device to back it up. Zigs does not open a "
   + "saved file again: keep each file and its passphrase apart, and make sure that you can find "
-  + "both. This section covers your seats in this wallet only: each other wallet has its own, "
-  + "the personal account has its own backup file, and direct chats are in no backup file.";
+  + "both. This section covers the devices of this wallet in this browser only: each other "
+  + "wallet has its own, the personal account has its own backup file, and direct chats are in "
+  + "no backup file.";
 const lostText = (t, sol) => "Keep the devices that still work, and do not delete their data. "
   + "While " + t + " devices remain, they can move the Zcash funds to a new wallet (Devices, "
   + "Change devices)" + (sol ? "; a Solana part does not move this way" : "") + ". With fewer, "
-  + "first restore seats from their files. Zigs cannot go around the approval rule. A lost "
+  + "first restore devices from their files. Zigs cannot go around the approval rule. A lost "
   + "device can still hold its key share, so move the funds when you can.";
 
 // The badge of one file: saved here, restored from it, not saved, or a Solana part that this
@@ -823,16 +825,16 @@ function fileBadge(name, f) {
 const solAction = (x) => (x.sol.unknown ? null : x.sol.missing
   ? el("span", { class: "small" }, "Restore it from its Solana file in the Solana section.")
   : el("button", { class: "btn sm", type: "button", onclick: act(() => solBackup(x.id)),
-    "aria-label": "Back up the Solana part of seat " + x.id }, "Back up the Solana part"));
+    "aria-label": "Back up the Solana part of device " + x.id }, "Back up the Solana part"));
 
 function recoveryRow(x) {
   return el("div", { class: "member recovery-row" }, avatar(x.id, "lg"),
     el("div", { class: "ri-main" }, el("span", { class: "ri-title" }, seatTitle(x.id,
-      state.seats[x.id])), el("span", { class: "ri-sub" }, "Seat " + x.id)),
+      state.seats[x.id])), el("span", { class: "ri-sub" }, "Device " + x.id)),
     el("div", { class: "m-actions" }, fileBadge("Zcash", x.zec),
       x.sol ? fileBadge("Solana", x.sol) : null,
       el("button", { class: "btn sm", type: "button", onclick: () => openBackup(x.id),
-        "aria-label": "Back up the Zcash part of seat " + x.id }, "Back up the Zcash part"),
+        "aria-label": "Back up the Zcash part of device " + x.id }, "Back up the Zcash part"),
       x.sol ? solAction(x) : null));
 }
 
@@ -843,7 +845,7 @@ const settingsCard = (title, ...kids) =>
 function settingsTab() {
   return el("div", { class: "page", style: "gap:16px" },
     settingsCard("This wallet", walletFacts()),
-    settingsCard("This app on this device", appSettings()),
+    settingsCard("This browser", appSettings()),
     settingsCard("Advanced", technicalDetails()),
     helpView());
 }
@@ -858,8 +860,8 @@ function appSettings() {
 }
 
 const appearanceChoice = () => el("div", { class: "setting" },
-  el("p", { class: "small muted" }, "The appearance applies to this browser only. Device "
-    + "setting follows the light or dark mode of this device."),
+  el("p", { class: "small muted" }, "The appearance applies to this browser only. Browser "
+    + "setting follows the light or dark mode of this browser."),
   themeChoice());
 
 function checkedBadge() {

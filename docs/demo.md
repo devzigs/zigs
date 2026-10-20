@@ -11,8 +11,8 @@ is not audited.
 
 Names in this file:
 
-- **L1**, **L2**, **L3**: the three laptops. L1 is the presenter and holds seat 1. L2 holds seat 2,
-  L3 holds seat 3.
+- **L1**, **L2**, **L3**: the three laptops. L1 is the presenter and holds device 1. L2 holds
+  device 2, L3 holds device 3.
 - **D1** to **D7**: the owner decisions of section 3 of the checklist.
 - **Demo A**: the wallet that the owner prepares and funds before the demo.
 - **Payee**: a second group that receives the payments.
@@ -29,7 +29,7 @@ landed in block 4,518,023 (hackathon-release.md, M10). The demo name still needs
 | M1 | The network picker shows Testnet only | On main |
 | M2 | The faucet link of Receive opens the Valar faucet | On main |
 | M3 | One setup for Zcash and Solana | Run two ceremonies: section 5 |
-| M4 | A restored seat can join the Solana ceremony | On main |
+| M4 | A restored device can join the Solana ceremony | On main |
 | M5 | Zcash signing goes on when the payment drawer is closed | Keep the payment open on every approving laptop until it says Sent |
 | M6 | The Solana approval screen says what is public | On main |
 | M8 | `solspike/demo-check.sh` | On main |
@@ -37,7 +37,7 @@ landed in block 4,518,023 (hackathon-release.md, M10). The demo name still needs
 | M10 | Pay to a ZNS name in the Send form | On main. Until the demo name exists (step 6), paste the utest1 address of Payee |
 | S1 | The side bar says when the group server does not answer | On main |
 | S2 | The Solana balances refresh by themselves | Click **Sync Solana** after each Solana step |
-| S3 | Only a funded seat executes | Fund the fee address of all three seats |
+| S3 | Only a funded device executes | Fund the fee address of all three devices |
 | S4 | An open Solana proposal does not hold every note of the group | An open proposal holds its notes for 23 hours, and nothing can cancel it before then. Keep two notes in Demo A (step 12). Check the payee twice before **Send privately** |
 | S7 | The Send hold ends after Approve then Cancel | Never click Cancel after Approve. Keep a spare funded wallet |
 | S8 | One open Zcash proposal at a time | Make one proposal at a time |
@@ -66,8 +66,8 @@ Decided by the owner on 18 October 2026:
   the demo week.
 - **D6 Connection limit.** WS_PER_IP goes from 60 to 600 for the demo week, and back to 60 after
   it (M9).
-- **D7 Seat 1.** Step 9 of M3 is deferred. So the device of seat 1 must stay open on the wallet
-  until every seat shows its Solana key ready.
+- **D7 Device 1.** Step 9 of M3 is deferred. So the laptop of device 1 must stay open on the wallet
+  until every device shows its Solana key ready.
 
 ## 3. Preparation
 
@@ -149,18 +149,18 @@ Stage on app.zigs.app. The Solana tab of staging works only after D4 adds stagin
    closes.
 8. Create **Demo A**: a 2-of-3 wallet on L1, L2 and L3, with Zcash and Solana ready.
    - With M3: turn on Solana in the create dialog. **[waits for M3]**
-   - Without M3: after all three seats show **Address checked**, L1 opens the Solana tab and
-     clicks **Add Solana**. Keep L1, L2 and L3 open on the wallet until every seat shows its
+   - Without M3: after all three devices show **Address checked**, L1 opens the Solana tab and
+     clicks **Add Solana**. Keep L1, L2 and L3 open on the wallet until every device shows its
      Solana key ready.
    - With SOL-4, before the first spend of Demo A: on the Solana tab, in the card **Local
-     proving**, click **Test this device, then prove on our devices**. Confirm "Turn on local
+     proving**, click **Test this browser, then prove on our devices**. Confirm "Turn on local
      proving for every device of this group? It cannot be turned off." Then reload every open
      Zigs tab of the group, and make the Solana backups after this step (step 9), as the card
      says. **[waits for SOL-4]**
-     - Each seat then shows "Local proving: this device made a test proof in N s." On the test
+     - Each device then shows "Local proving: this browser made a test proof in N s." On the test
        Mac of 18 October 2026, a test proof took 6.3 to 6.6 s.
-     - A seat that shows "Local proving: this device could not make a test proof, so it cannot
-       pay for this group." cannot pay. Use another device for that seat.
+     - A device that shows "Local proving: this browser could not make a test proof, so it cannot
+       pay for this group." cannot pay. Use another laptop for that device.
      - If the card says "Helius changed the Solana pool after this version of Zigs was tested
        with it. Local proving cannot be turned on until Zigs is tested with the new pool.",
        Devnet moved: follow the "pool program" row of section 6.
@@ -168,18 +168,18 @@ Stage on app.zigs.app. The Solana tab of staging works only after D4 adds stagin
        never go back to the hosted prover. If a Devnet change breaks the web prover, Demo A
        cannot pay until a Zigs update brings a new prover. The spare wallet, with the hosted
        prover and Devnet SOL on its fee addresses, is then the fallback.
-9. Save the backups of each seat: the Zcash file (**Back up key share**) and the Solana file
-   (**Back up Solana part, seat N** on the Solana tab). Keep the two passphrases offline. Restore
-   one seat on a blank browser profile once.
+9. Save the backups of each device: the Zcash file (**Back up key share**) and the Solana file
+   (**Back up Solana part, device N** on the Solana tab). Keep the two passphrases offline.
+   Restore one device on a blank browser profile once.
 10. Fund Demo A with Zcash: one Valar drip (0.125 TAZ), plus coins from the permanent test wallet
     if needed. Wait for 3 confirmations (about 75 s at 25 s a block). Make a **spare wallet** in the
     same way as Demo A, with Solana, and fund it in the same way (steps 10 to 12). It is the
     fallback for a Send hold (S7) and for an open Solana proposal (S4).
-11. Fund the fee address of all three seats with Devnet SOL, at least 0.03 SOL each (S3), and at
-    least 0.05 SOL for the seat that adds SOL in step 12. A seat that proposes or executes needs
-    about 0.003 SOL. The **Get Devnet SOL** link opens faucet.solana.com. Click **Check balance** on
-    each seat.
-12. On one seat, use **Add SOL** twice (default 0.02 SOL each). The group then holds two notes,
+11. Fund the fee address of all three devices with Devnet SOL, at least 0.03 SOL each (S3), and at
+    least 0.05 SOL for the device that adds SOL in step 12. A device that proposes or executes
+    needs about 0.003 SOL. The **Get Devnet SOL** link opens faucet.solana.com. Click **Check
+    balance** on each device.
+12. On one device, use **Add SOL** twice (default 0.02 SOL each). The group then holds two notes,
     so one open proposal cannot hold all of them (S4). Click **Sync Solana** and read the private
     balance.
 13. Create **Payee**: a second wallet with Zcash and Solana. Save its Zcash address (`utest1…`) and
@@ -203,7 +203,7 @@ Stage on app.zigs.app. The Solana tab of staging works only after D4 adds stagin
     - Run `sh solspike/demo-check.sh` again. It also checks the three fee balances.
     - With local proving on Demo A: check that the "pool program" line of demo-check shows the
       deploy slot that Zigs pins (508,538,476, deployed 7 October 2026 at 18:01 UTC). Make one
-      payment on Demo A, proved on the device. **[waits for SOL-4]**
+      payment on Demo A, proved in this browser. **[waits for SOL-4]**
     - Confirm the Zcash **Available** balance of Demo A in the app.
     - Cancel a Zcash payment that has no approval (**Cancel payment**). A Solana proposal ends
       only at its expiry. Confirm that no approval hold blocks Send on Demo A.
@@ -223,16 +223,16 @@ says Sent (Zcash) or Executed (Solana).
 | 0:00 | L1 | Open app.zigs.app. Say: Zcash testnet and Solana Devnet only, not audited. Click **Set up a wallet**, then **Set up my wallet**. | The rule step recommends any 2 of 3 devices. | |
 | 0:45 | L1 | Keep the recommended rule and click **Next**. Type a name. Turn on Solana. Click **Review wallet**, then **Create wallet**. | The picker shows Testnet only. The review shows any 2 of 3 devices, Zcash testnet and Solana Devnet. The invite card shows. | M1, **[waits for M3]** |
 | 1:15 | L1, L2, L3 | L1 clicks **Copy link** and sends the link to L2 and L3 through an end-to-end encrypted chat. L2 and L3 open it in Chrome or Safari, enter the password if the browser asks, type a label, then click **Join as device**. A phone scans the QR code instead. | 3 of 3 devices joined. | D1, S10 |
-| 1:45 | L1, L2, L3 | Read the safety number aloud. Each person compares all 30 digits, ticks the box, and clicks **It matches**. Narrate the progress card: Zcash key, Solana key, fee address. Keep L1 open until every seat shows its Solana key ready (D7). | Both ceremonies run. Each seat shows **Address checked** and its Solana key ready. | **[waits for M3]**, M4 |
+| 1:45 | L1, L2, L3 | Read the safety number aloud. Each person compares all 30 digits, ticks the box, and clicks **It matches**. Narrate the progress card: Zcash key, Solana key, fee address. Keep L1 open until every device shows its Solana key ready (D7). | Both ceremonies run. Each device shows **Address checked** and its Solana key ready. | **[waits for M3]**, M4 |
 | 3:00 | L1 | Switch to Demo A. Show the Zcash address, the **Available** balance and the Solana tab. Click **Sync Solana**. | Both balances show. | S2 |
 | 3:30 | L1 | Click **Receive**: show the address and the faucet link. Do not use the faucet live. Click **Send**. Type the ZNS name of the demo payee (placeholder `zigsdemo.zec`, step 6). Enter 0.01. Click **Review payment**, show the review, then click **Propose payment**. | The form shows the address that the name gives. The review shows what the browser decoded. A payment opens with the name and the address. | M2, **[waits for the demo name, step 6]**: paste the utest1 address of Payee instead |
 | 4:00 | L2 | Open the payment. Read **What this payment does**. Click **Approve payment**. Keep the payment open. | One approval. With a name, L2 looks it up itself and gets the same address. | **[waits for M5]**, M10 |
 | 4:30 | L1 | Click **Approve payment**. Click **Build proof**. Narrate the privacy model during the proof (about 1 minute). | The proof builds. | **[waits for M5]** |
 | 5:45 | L1 | Click **Send to network**. Click **View in explorer**. | The status shows **Confirming**, then **Sent** after the next sync sees the block. The explorer shows the transaction. | S9 |
 | 6:15 | L1 | Open the Solana tab. Under **Pay from the group**, paste the 198-character shielded address of Payee into **Payee (full shielded address)**. Compare it with the note, character by character: a wrong payee holds the note for 23 hours, and nothing can cancel it (S4). Enter 0.01. Click **Send privately**. | A Solana proposal opens: **Collecting approvals**. | S15 |
-| 6:45 | L1 | When the screen shows the payment, click **Approve as seat 1**. | Approvals: 1 of 2. | S17 |
-| 7:00 | L2 | Open the Solana tab. Wait until the screen shows the payment, not "Zigs is reading your wallet" (up to about 25 s). Click **Approve as seat 2**. | Approvals: 2 of 2. The status says **Approved, executing**. | S6, S17 |
-| 7:30 | L1 | Wait for the execute: a seat with a funded fee address executes by itself. Click **Sync Solana**. | The status says **Executed**. The private balance drops. | S3, S2 |
+| 6:45 | L1 | When the screen shows the payment, click **Approve as device 1**. | Approvals: 1 of 2. | S17 |
+| 7:00 | L2 | Open the Solana tab. Wait until the screen shows the payment, not "Zigs is reading your wallet" (up to about 25 s). Click **Approve as device 2**. | Approvals: 2 of 2. The status says **Approved, executing**. | S6, S17 |
+| 7:30 | L1 | Wait for the execute: a device with a funded fee address executes by itself. Click **Sync Solana**. | The status says **Executed**. The private balance drops. | S3, S2 |
 | 8:15 | L1 | Open the transaction in the Devnet explorer. | The explorer shows it. | **[waits for S16]**: paste the id into the explorer |
 | 8:45 | L1 | Switch to the spare wallet. On its Solana tab, click **Look for rent** in the card **Rent of old proposals** (step 14). Do not click **Get it back**: it is a Devnet write. Show the backup buttons. Say what is public (section 7). | The words match ZOLANA.md and PRIVACY.md. | M6 |
 | 9:30 | L1 | Close: both chains are test networks, the web app makes no mainnet wallets, and the code is not audited. | | M1 |
@@ -241,9 +241,9 @@ says Sent (Zcash) or Executed (Solana).
 
 - At 0:45, create the wallet without the Solana choice.
 - At 1:45, run the Zcash ceremony.
-- When all three seats show **Address checked**, L1 opens the Solana tab and clicks
+- When all three devices show **Address checked**, L1 opens the Solana tab and clicks
   **Add Solana**.
-- Keep L1, L2 and L3 open on this wallet until all three seats show their Solana key ready (D7,
+- Keep L1, L2 and L3 open on this wallet until all three devices show their Solana key ready (D7,
   S14).
 - If this takes more than 3 minutes, stop and switch to Demo A.
 
@@ -262,7 +262,7 @@ Solana error, a server problem and a synced balance that is too low.
 | A hold blocks Send | Use the spare wallet (S7) |
 | Demo A, with local proving on, says "This group makes its proofs on its devices, and the local prover no longer fits the Solana pool" | Pay from the spare wallet, which uses the hosted prover. The page sent nothing to Helius for that payment, and the funds of Demo A stay in the pool until a Zigs update brings a new prover. **[waits for SOL-4]** |
 | Solana says "the synced balance does not cover the amount" | An open proposal holds the notes (S4). Use the spare wallet, or show the recorded run |
-| A seat laptop is lost | Restore the seat from its two backup files (M4) |
+| A laptop is lost | Restore its device from its two backup files (M4) |
 | L2 refuses the payment: the name gives another address | L1 has not approved yet, so L1 cancels the payment and proposes again with the pasted utest1 address. **[waits for M10]** |
 | The faucet refuses a claim | One claim for each IP address and for each address every 24 hours. Use coins from the permanent test wallet |
 

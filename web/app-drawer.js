@@ -158,7 +158,7 @@ const bigButton = (label, onclick, extra = {}, symbol = null) =>
 
 function approveButtons(ss, myPending) {
   const several = localSeats().length > 1;
-  return myPending.map((i) => bigButton(several ? "Approve as seat " + i : "Approve payment",
+  return myPending.map((i) => bigButton(several ? "Approve as device " + i : "Approve payment",
     act(() => approve(ss, i)), {}, "approvals"));
 }
 
@@ -241,8 +241,8 @@ function lostApproval(ss) {
 
 // One seat rewrote the proposal after a seat of this browser approved it.
 const changedNote = (ss) => approvalChanged(ss) ? el("div", { class: "callout bad" },
-  "The proposal changed after a seat of this browser approved it. The details below come from the "
-  + "changed proposal, not from what you approved.") : null;
+  "The proposal changed after a device of this browser approved it. The details below come from "
+  + "the changed proposal, not from what you approved.") : null;
 
 // After a cancel or a failure, the approval of this browser can still hold Send (ZEC-13). The
 // person can release it by hand, after a check and a second click (S7, the owner's decision D2).

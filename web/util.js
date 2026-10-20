@@ -71,11 +71,16 @@ export function confirmGate(number, mine, docs, ids) {
   return all && mine === number ? "ok" : "wait";
 }
 
+// The engine names a seat and its signers in a setup reason ("seat 2: …"); the page says device.
+const DEVICE_WORD = { seat: "device", seats: "devices", signer: "device", signers: "devices" };
+export const deviceWords = (text) => String(text).replace(/\b(seat|signer)s?\b/gi, (w) => {
+  const to = DEVICE_WORD[w.toLowerCase()];
+  return w[0] === w[0].toUpperCase() ? to[0].toUpperCase() + to.slice(1) : to;
+});
+
 // What a seat keeps when its setup ends: the reason as one sentence, then what to do.
 export function abortText(reason) {
-  // The engine names a seat in its reasons ("seat 2: …"); the page says device.
-  const msg = String(reason || "Setup failed").replace(/\.+$/, "")
-    .replace(/^seat (\d+):/i, "device $1:");
+  const msg = deviceWords(reason || "Setup failed").replace(/\.+$/, "");
   return msg.charAt(0).toUpperCase() + msg.slice(1)
     + ". Do not use this wallet. Create a new wallet.";
 }
@@ -251,8 +256,8 @@ export function boxPairMatches(Z, sk, pk) {
 // that held a secret without a key share takes no restore (heldRefusal).
 export const undoPlan = (before) => before ? "keep" : "remove";
 
-export const SETUP_HELD = "This seat is still being set up on this device. Finish setup, or "
-  + "remove the seat first.";
+export const SETUP_HELD = "This device is still being set up in this browser. Finish setup, or "
+  + "remove the device first.";
 
 // Why the seat secret `held` blocks a restore of the key share `file` for `seat`, or null. A seat
 // in setup holds secrets but no key share. A restore would take its data from the file at once.
@@ -260,7 +265,7 @@ export function heldRefusal(held, file, seat) {
   if (!held) return null;
   if (!shareShape(held.keyPackage)) return SETUP_HELD;
   return sameShare(held.keyPackage, file) ? null
-    : "This browser holds another key share for seat " + seat + " of this wallet, so the backup "
+    : "This browser holds another key share for device " + seat + " of this wallet, so the backup "
       + "was not restored.";
 }
 

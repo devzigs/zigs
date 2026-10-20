@@ -216,7 +216,7 @@ const created = await proposed("createNonce");
   const rows = rowsOf(created);
   assert.deepEqual(Object.keys(rows), [
     "What it does",
-    "Fees paid by seat 1",
+    "Fees paid by device 1",
     "Group address",
     "Rent kept by the nonce account",
     "Payee",
@@ -229,8 +229,9 @@ const created = await proposed("createNonce");
   assert.match(rows.Public, /Public link: this fee address pays in public SOL/);
   assert.equal(rows["Rent kept by the nonce account"], "0.00105664 SOL");
   assert.equal(rows["Network fee"], "0.00001 SOL", "two signatures");
-  assert.equal(rows["Fees paid by seat 1"], feeAddress(1), "the fee address of the proposing seat");
-  assert.notEqual(rows["Fees paid by seat 1"], rows["Group address"], "the group never pays");
+  assert.equal(rows["Fees paid by device 1"], feeAddress(1),
+    "the fee address of the proposing device");
+  assert.notEqual(rows["Fees paid by device 1"], rows["Group address"], "the group never pays");
   assert.equal(rows["Group address"], chain.group.owner);
   assert.match(rows.Lasts, /1 to 2 minutes/);
   assert.match(rows.Payee, /None/);
@@ -655,7 +656,7 @@ const tamper = async (label, { intent, message, by = 1, feeSig }, why) => {
   delete c.docs.solfee[3];
   const why = reviewOf(c, { ...sheet, feeSig: feeSign(3, good) }, 1).why;
   c.docs.solfee[3] = published;
-  assert.match(why, /Seat 3 has not published its fee address/);
+  assert.match(why, /Device 3 has not published its fee address/);
 }
 
 step("every bad message is refused");
@@ -701,7 +702,7 @@ chain.nonce = null;
 const again = await proposed("createNonce");
 {
   const rows = rowsOf(again);
-  assert.equal(rows["Fees paid by seat 1"], feeAddress(1));
+  assert.equal(rows["Fees paid by device 1"], feeAddress(1));
   assert.equal(rows["Network fee"], "0.00001 SOL");
   assert.match(rows.Lasts, /1 to 2 minutes/);
   assert.equal(decodeIntent(ssOf(again).intent).kind, "createNonce");
@@ -778,7 +779,7 @@ step("a third nonce account landed after a lost share publish");
   const mark = (name) => findAll(card, (n) => n.attrs["data-sol"] === name).length;
   for (const used of old.signers) {
     assert.equal(mark(`approve-same-bytes-${used}`), 0, `no button for seat ${used}`);
-    assert.match(textOf(card), new RegExp(`Seat ${used} signed these bytes before`));
+    assert.match(textOf(card), new RegExp(`Device ${used} signed these bytes before`));
   }
   const open = [1, 2, 3].find((i) => !old.signers.includes(i));
   assert.equal(
@@ -933,7 +934,8 @@ const stopOfParts = (sol, docs = {}) =>
     assert.equal(stopOfParts({ [seat]: { aborted: text } }), text, "seat " + seat + " alone stops");
   }
   const docs = { solabort: { 2: { reason: "Bad key." }, 3: { reason: "Other." }, 1: { at: 1 } } };
-  assert.match(stopOfParts({}, docs), /^Seat 2 stopped the Solana part of this wallet\. Bad key\./);
+  assert.match(stopOfParts({}, docs),
+    /^Device 2 stopped the Solana part of this wallet\. Bad key\./);
   assert.equal(remoteStop({ solabort: { 1: { reason: 7 } } }), undefined);
   assert.equal(remoteStop(undefined), undefined);
 }
@@ -978,17 +980,17 @@ const file = J(Z.backupOpen(PASS, backed.at(-1).data));
   notify();
   await sleep(200);
   assert.deepEqual(t.localSeats(), [1]);
-  assert.match(stopOf(c), /^Seat 2 stopped the Solana part of this wallet\./);
+  assert.match(stopOf(c), /^Device 2 stopped the Solana part of this wallet\./);
   assert.equal(solOf(gid, 1).aborted, undefined, "seat 1 itself did not stop");
   await waitFor("the nonces of a stopped wallet go", () => !savedNonces(c, 1, after));
-  await assert.rejects(() => propose(c, "createNonce"), /Seat 2 stopped/);
-  await assert.rejects(() => approve(c, ssOf(after), 1), /Seat 2 stopped/);
+  await assert.rejects(() => propose(c, "createNonce"), /Device 2 stopped/);
+  await assert.rejects(() => approve(c, ssOf(after), 1), /Device 2 stopped/);
   assert.equal(reviewOf(c, ssOf(after), 1).ok, false);
-  assert.match(textOf(tabOf()), /Seat 2 stopped/);
+  assert.match(textOf(tabOf()), /Device 2 stopped/);
   // A restore of seat 1 is refused while the document stands, though its browser never saw it.
   const sol = t.secrets[gid + ":1"].sol;
   delete t.secrets[gid + ":1"].sol;
-  await assert.rejects(() => t.applyBackup(file, true), /Seat 2 stopped/);
+  await assert.rejects(() => t.applyBackup(file, true), /Device 2 stopped/);
   assert.equal(t.secrets[gid + ":1"].sol, undefined, "nothing was restored");
   t.secrets[gid + ":1"].sol = sol;
   Object.assign(t.secrets, { [gid + ":2"]: away[2], [gid + ":3"]: away[3] });

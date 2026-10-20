@@ -39,7 +39,7 @@ const TITLES = {
 export const titleOf = (ss) => TITLES[decodeIntent(ss.intent)?.kind] ?? "Unknown proposal";
 const WHAT = {
   createNonce:
-    "Creates the account that the move of the beta funds needs. The proposing seat pays its " +
+    "Creates the account that the move of the beta funds needs. The proposing device pays its " +
     "rent, and the group key owns the account.",
   transfer:
     "Moves private SOL of the group key to the program address of the group, with a nonce. One " +
@@ -87,7 +87,7 @@ function copyButton(c, text, mark) {
 /** What a fee address costs in privacy (ZOLANA.md 7.2, SOL-36 condition 4). */
 export const LINK_TEXT =
   "Public link: this fee address pays in public SOL, and the chain shows it next to the program " +
-  "address of the group. So anyone can link this seat to the group. Its funding transfer links " +
+  "address of the group. So anyone can link this device to the group. Its funding transfer links " +
   "the sender of that SOL too.";
 
 /** What the hosted prover of Helius sees of a payment, a withdrawal or the move (ZOLANA.md 7.2). */
@@ -121,13 +121,13 @@ const proverSays = (local) => (local ? PROVER_LOCAL : PROVER_TEXT);
 const proverRow = (local) => (local ? PROVER_ROW_LOCAL : PROVER_TEXT);
 
 const FEE_TEXT =
-  "It pays the fees and the rents of the proposals that this seat makes, and the fee of each " +
-  "payment that this seat executes. Send Devnet SOL to it. Seats that propose or execute need " +
-  "about 0.003 SOL. Seats that only approve need none. " +
+  "It pays the fees and the rents of the proposals that this device makes, and the fee of each " +
+  "payment that this device executes. Send Devnet SOL to it. Devices that propose or execute " +
+  "need about 0.003 SOL. Devices that only approve need none. " +
   LINK_TEXT +
   " The page asks Helius for the balance of this address with your IP address, with no click. " +
   "It asks when the Solana section opens, after a payment or Add SOL, and again when such a read " +
-  "failed. It also asks every 30 s while a signed payment waits for a seat that can pay.";
+  "failed. It also asks every 30 s while a signed payment waits for a device that can pay.";
 
 /** The fee address of one seat of this browser: the address, Copy and the balance. */
 function feeRow(c, seat) {
@@ -139,7 +139,7 @@ function feeRow(c, seat) {
   return el(
     "div",
     { style: "display:grid;gap:4px", "data-sol": "fee-" + seat },
-    el("strong", {}, "Your fee address (seat " + seat + ")"),
+    el("strong", {}, "Your fee address (device " + seat + ")"),
     el(
       "div",
       { class: "row-actions" },
@@ -187,7 +187,7 @@ function fundCard(c, act, actions) {
 }
 
 const ADD_TEXT =
-  "Moves SOL from the fee address of your seat into the shielded balance of the group, at its " +
+  "Moves SOL from the fee address of your device into the shielded balance of the group, at its " +
   "program address. The amount and the sender are public. It needs no approval: it is your own " +
   "SOL. Helius sees your IP address with this deposit.";
 
@@ -195,7 +195,7 @@ const ADD_TEXT =
 function seatLine(c, mark, what) {
   const seat = readySeat(c);
   if (seat === undefined) return null;
-  const text = `Seat ${seat} of this browser ${what}`;
+  const text = `Device ${seat} of this browser ${what}`;
   return c.host.el("p", { class: "small", "data-sol": mark }, text);
 }
 
@@ -219,7 +219,7 @@ function addedLine(c) {
   if (!a) return null;
   const words = { unknown: "Sent, not confirmed yet", failed: "Failed on chain" };
   const word = words[a.status] ?? "Added " + solText(a.amount);
-  const said = `${word}, seat ${a.seat}: `;
+  const said = `${word}, device ${a.seat}: `;
   const link = explorerLink(c, "tx", a.txId);
   return [c.host.el("p", { class: "small", "data-sol": "added" }, said, link), explorerNote(c)];
 }
@@ -259,13 +259,13 @@ const rentOf = (c) => BigInt(c.chain?.proposalRent ?? PROPOSAL_RENT);
 
 /** What a payment costs its seats in public SOL, as a line. */
 const costLine = (c) =>
-  "The proposing seat pays " +
+  "The proposing device pays " +
   solText(BASE_FEE) +
   " to create the proposal account and holds " +
   solText(rentOf(c)) +
-  " in it as rent until it closes. The seat that executes pays " +
+  " in it as rent until it closes. The device that executes pays " +
   solText(EXECUTE_FEE) +
-  " and the tree fee. The rent goes back to the proposing seat at the execute. The rent of a " +
+  " and the tree fee. The rent goes back to the proposing device at the execute. The rent of a " +
   "proposal that expires comes back with the card \"Rent of old proposals\".";
 
 const button = (c, act, mark, text, run) =>
@@ -295,7 +295,7 @@ function availableLine(c) {
 function holderText(holders) {
   const [first] = holders;
   const end = utc(endsAt(first.expiry)) + " UTC";
-  const name = `of seat ${first.by} (${first.id})`;
+  const name = `of device ${first.by} (${first.id})`;
   const who =
     holders.length === 1
       ? `an open proposal ${name}. It ends at ${end}.`
@@ -396,9 +396,9 @@ const MOVE_PUBLIC =
 
 const MOVE_TEXT =
   "This wallet holds private SOL at the old address of the group key. Move it to the program " +
-  "address of the group. A move uses the nonce account: the seats approve and sign it as before. " +
-  "One move takes up to 8 notes, so many small notes need more than one move. The card shows " +
-  "again if a payer sends SOL to the old address.";
+  "address of the group. A move uses the nonce account: the devices approve and sign it as " +
+  "before. One move takes up to 8 notes, so many small notes need more than one move. The card " +
+  "shows again if a payer sends SOL to the old address.";
 
 /** The one-time move of the beta funds (SOL-36 condition 3). Null when the group key holds none. */
 function moveCard(c, act, actions) {
@@ -501,13 +501,13 @@ function paymentRows(c, review) {
     ["Program address of the group", pda ? base58(pda) : "?"],
     ...(withdraw ? recipientRows(said) : payeeRows(said)),
     ["Network fees", feesText(said)],
-    ["Proposal rent", solText(rentOf(c)) + ", back to seat " + review.by + " at the execute, " +
+    ["Proposal rent", solText(rentOf(c)) + ", back to device " + review.by + " at the execute, " +
       "or after the expiry with the card \"Rent of old proposals\"."],
     ["Proposal account", explorerLink(c, "address", base58(said.proposal))],
     ["Lasts", "Until " + utc(said.expiry) + " UTC. A new proof is made at the execute."],
     ["Public", lead + "The proposal account (the group key, the " +
-      "expiry, the fee address of seat " + review.by + ") is public, and the create transaction " +
-      "keeps it in the chain history. " + LINK_TEXT],
+      "expiry, the fee address of device " + review.by + ") is public, and the create " +
+      "transaction keeps it in the chain history. " + LINK_TEXT],
     ["Helius", proverRow(provesLocally(c))],
   ];
 }
@@ -547,7 +547,7 @@ function rowsOf(c, review) {
         : plainRows(intent, groupKey, fee);
   }
   // A payment: the proposing seat paid the create; the seat that executes pays the execute.
-  const label = payment ? "Create paid by seat " : "Fees paid by seat ";
+  const label = payment ? "Create paid by device " : "Fees paid by device ";
   rows.splice(1, 0, [label + review.by, base58(review.payer)]);
   return rows;
 }
@@ -618,9 +618,9 @@ export function seatsOf(c, ss) {
 }
 
 const SEAT_TEXT = {
-  approved: (seat) => "Seat " + seat + " approved",
-  used: (seat) => "Seat " + seat + " signed these bytes before",
-  nokey: (seat) => "This browser cannot sign for seat " + seat + ".",
+  approved: (seat) => "Device " + seat + " approved",
+  used: (seat) => "Device " + seat + " signed these bytes before",
+  nokey: (seat) => "This browser cannot sign for device " + seat + ".",
 };
 
 // A seat that approved, that signed these exact bytes, or that has no signing key here gets no
@@ -637,7 +637,7 @@ function approveRow(c, ss, act, actions, seats) {
       "data-sol": "approve-" + ss.id + "-" + seat,
       onclick: act(() => actions.approve(ss, seat)),
     };
-    return el("button", attrs, "Approve as seat " + seat);
+    return el("button", attrs, "Approve as device " + seat);
   });
 }
 
@@ -681,7 +681,7 @@ function resultLine(c, ss) {
 
 // After the expiry no seat can approve: the card says so until the page ends the proposal, a few
 // minutes later (the end waits for the clock margin of execute.js).
-const EXPIRED_TEXT = "This proposal expired, so no seat can approve it. The page closes it soon.";
+const EXPIRED_TEXT = "This proposal expired, so no device can approve it. The page closes it soon.";
 const approvable = (ss) => ss.status === "collecting" && !approvalClosed(ss);
 
 /**
@@ -766,7 +766,7 @@ function stepsOf(c, ss) {
   return el(
     "div",
     { class: "steps sol-steps", "data-sol": "steps-" + ss.id },
-    step("done", "Proposed", "By seat " + ss.by + "."),
+    step("done", "Proposed", "By device " + ss.by + "."),
     step(approvals, `Approvals · ${count} of ${t}`),
     step(signed, "Signed"),
     step(last, isPayment(ss) ? "Executed" : "Landed"),
@@ -819,8 +819,8 @@ function sessionList(c, act, actions) {
 }
 
 const RENT_TEXT =
-  "A proposal that expires still holds the rent of the seat that created it. The fee key of " +
-  "that seat cancels it and gets the rent back. The program accepts this cancel only after " +
+  "A proposal that expires still holds the rent of the device that created it. The fee key of " +
+  "that device cancels it and gets the rent back. The program accepts this cancel only after " +
   "the expiry. The cancel is public: the chain shows the fee address, the proposal account and " +
   "the rent. \"Look for rent\" asks Helius for the proposals of the group key and of the fee " +
   "addresses of this browser, with your IP address.";
@@ -835,7 +835,7 @@ function rentCard(c, act) {
       el(
         "div",
         { class: "row-actions", "data-sol": "rent-" + seat },
-        el("span", { class: "small" }, "Seat " + seat + ": " + solText(heldOf(c, seat))),
+        el("span", { class: "small" }, "Device " + seat + ": " + solText(heldOf(c, seat))),
         button(c, act, "reclaim-" + seat, "Get it back", () => reclaimRent(c, seat)),
       ),
     );
@@ -845,7 +845,7 @@ function rentCard(c, act) {
         el(
           "p",
           { class: "small", "data-sol": "rent-done" },
-          "Cancel transactions of seat " + c.rentDone.seat + ": ",
+          "Cancel transactions of device " + c.rentDone.seat + ": ",
           c.rentDone.txIds.flatMap((id, n) => [n ? ", " : "", explorerLink(c, "tx", id)]),
         ),
         explorerNote(c),

@@ -297,7 +297,8 @@ const sealed = (gid, rel, seat, fields, key, names = ["by", "sig"]) =>
   assert.deepEqual([first.status, t.proposer(first)], ["collecting", "you"]);
   await t.cancelPayment(first);
   await waitFor("cancel", () => t.state.sessions[0].status === "cancelled");
-  assert.match(t.state.sessions[0].error, /^Cancelled by .* \(seat \d\)\.$/);
+  assert.equal(t.state.sessions[0].error, "Cancelled by device 1.",
+    "a cancel of a seat with no name says only the device");
 
   const second = await propose("second", 2);
   await t.failSession(gid, second, "Bad share.");
@@ -608,7 +609,7 @@ const sealed = (gid, rel, seat, fields, key, names = ["by", "sig"]) =>
     notify();
     await waitFor("the error of mc", () => !!data.get(pathC)?.error);
     await sleep(300);
-    assert.equal(data.get(pathC).error, "The payment changed after a signer approved it.");
+    assert.equal(data.get(pathC).error, "The payment changed after a device approved it.");
     assert.equal((t.sec(gid, 1).nonces || {})[mc.id], undefined, "the nonce of seat 1 goes");
     assert.equal(data.has(pathC + "/shares/1"), false, "seat 1 signs nothing");
     assert.equal(t.banner.text, "\"mc " + "x".repeat(37)
@@ -651,7 +652,7 @@ const sealed = (gid, rel, seat, fields, key, names = ["by", "sig"]) =>
     // needs no approval. When the check ends, it is cancelled. The cards below show its chip.
     const mu = await propose("mu", 4);
     t.closeSession();
-    const cancelU = { error: "Cancelled by a signer (seat 2)." };
+    const cancelU = { error: "Cancelled by Ana (device 2)." };
     const sigU = await t.sigPart(gid, mu.id, "cancel", cancelU, 2);
     const subtleU = globalThis.crypto.subtle, verifyU = subtleU.verify.bind(subtleU);
     let openChecks;
@@ -680,7 +681,14 @@ const sealed = (gid, rel, seat, fields, key, names = ["by", "sig"]) =>
     await waitFor("the kept share of mv2", () => !!(t.sec(gid, 1).unsent || {})[mv2.id]);
     downC = false;
     t.setDb({ doc: docRef, collection: colRef });
-    await t.cancelPayment(liveOf(mv2));
+    // A seat with a name signs the cancel with it; cancelNow reads the name when it starts.
+    const nameOf1 = t.state.seats[1].name;
+    t.state.seats[1].name = "Ana";
+    const asAna = t.cancelPayment(liveOf(mv2));
+    t.state.seats[1].name = nameOf1;
+    await asAna;
+    assert.equal(data.get(pathOf(mv2)).error, "Cancelled by Ana (device 1).",
+      "a cancel names the device with its name");
     assert.equal((t.sec(gid, 1).unsent || {})[mv2.id], undefined,
       "the cancel drops the kept share");
     await drop(pathOf(mv2));
@@ -743,7 +751,7 @@ const sealed = (gid, rel, seat, fields, key, names = ["by", "sig"]) =>
     await waitFor("the failure after a retry", () => !!data.get(pathOf(mq))?.error, 10000);
     t.setDb({ doc: docRef, collection: colRef });
     assert.deepEqual([failUpdate, data.get(pathOf(mq)).error],
-      [false, "The payment changed after a signer approved it."]);
+      [false, "The payment changed after a device approved it."]);
     await drop(pathOf(mq));
     // The save of the burn fails: no share goes out, the nonce stays, and the next try signs.
     const mb = await propose("mb", 4);
@@ -791,7 +799,7 @@ const sealed = (gid, rel, seat, fields, key, names = ["by", "sig"]) =>
     notify();
     await waitFor("the kept share", () => !!(t.sec(gid, 1).unsent || {})[mp.id]);
     const signingP = { ...data.get(pathOf(mp)) };
-    const cancelP = { error: "Cancelled by a signer (seat 2)." };
+    const cancelP = { error: "Cancelled by Ana (device 2)." };
     const sigP = await t.sigPart(gid, mp.id, "cancel", cancelP, 2);
     data.set(pathOf(mp), { ...signingP, ...cancelP, status: "cancelled", ...sigP });
     notify();
@@ -883,7 +891,7 @@ const sealed = (gid, rel, seat, fields, key, names = ["by", "sig"]) =>
     await waitFor("the share of seat 2 (sealed)", () => data.has(pathV + "/shares/2"));
     await sleep(300);
     assert.deepEqual(engine, ["package", "share 2"], "seat 1 signs nothing");
-    const said = (x) => x.includes("seat 1: its nonce for this payment is used or gone");
+    const said = (x) => x.includes("device 1: its nonce for this payment is used or gone");
     assert.ok(t.state.log.some(said), "the log says why");
     assert.deepEqual([t.gkeys.m5probe, t.gkeys.m5sealed], ["kept", "k"], "both wallet keys");
     assert.equal(t.sec(gid, 3).m5Flag, 3, "the change that this tab did not save stays");
@@ -1186,28 +1194,28 @@ const sealed = (gid, rel, seat, fields, key, names = ["by", "sig"]) =>
   assert.equal(one.blocker, "");
   const saved = JSON.stringify([...data]);
   t.ui.send = false; t.ui.pay = null; t.ui.note = "";
-  t.proposeRequest(one, { name: "Alice (seat 2)", verdict: "yes" }, gid);
+  t.proposeRequest(one, { name: "Alice (device 2)", verdict: "yes" }, gid);
   assert.deepEqual([t.ui.send, t.ui.sendFor, t.ui.note],
-    [true, gid, "Request from Alice (seat 2)"]);
+    [true, gid, "Request from Alice (device 2)"]);
   // The note goes to every approver. A message of a sender that is not verified can carry any
   // name, so the name stays out of the note.
   for (const verdict of ["no", "changed", "unknown", "wait"]) {
-    t.proposeRequest(one, { name: "Alice (seat 2)", verdict }, gid);
+    t.proposeRequest(one, { name: "Alice (device 2)", verdict }, gid);
     assert.equal(t.ui.note, "Request from an unverified sender", verdict);
   }
   t.proposeRequest(one, { name: "a memo", verdict: "memo" }, gid);
   assert.equal(t.ui.note, "Request from a memo");
-  t.proposeRequest(one, { name: "Alice (seat 2)", verdict: "yes" }, gid);
+  t.proposeRequest(one, { name: "Alice (device 2)", verdict: "yes" }, gid);
   assert.deepEqual(t.ui.pay.map(({ to, amt, memo: m }) => ({ to, amt, m })),
     [{ to: other, amt: "1.5", m: "October rent" }]);
   assert.equal(JSON.stringify([...data]), saved, "Propose this writes nothing to the store");
-  t.proposeRequest(one, { name: "You (seat 1)", verdict: "yes", mine: true }, gid);
+  t.proposeRequest(one, { name: "You (device 1)", verdict: "yes", mine: true }, gid);
   assert.equal(t.ui.note, "Request from the proposer", "an approver is not \"You\"");
   const roomName = t.groupName(gid);
-  t.proposeRequest(one, { name: "Bob (seat 2)", verdict: "yes" }, B);
+  t.proposeRequest(one, { name: "Bob (device 2)", verdict: "yes" }, B);
   await waitFor("wallet B", () => t.state.gid === B);
   assert.deepEqual([t.ui.send, t.ui.note, t.ui.pay.length],
-    [true, "Request from Bob (seat 2) in " + roomName, 1],
+    [true, "Request from Bob (device 2) in " + roomName, 1],
     "the form stays for the wallet that it was made for, and the note names the room");
   t.openGroup(gid);
   assert.deepEqual([t.ui.send, t.ui.note, t.ui.pay], [false, "", null], "another wallet drops it");
@@ -1315,14 +1323,14 @@ const sealed = (gid, rel, seat, fields, key, names = ["by", "sig"]) =>
     setBal(1e8);
     const card = (req, verdict, dm = false, name = "Alice") =>
       t.requestCard(req, { id: "m1", name, verdict, dm });
-    let c = card(okReq, "yes", false, "Alice (seat 2)");
+    let c = card(okReq, "yes", false, "Alice (device 2)");
     assert.match(textOf(c), /^Payment request1\.00ZEC/);
-    assert.match(textOf(c), /FromAlice \(seat 2\) · ✓ Verified/);
+    assert.match(textOf(c), /FromAlice \(device 2\) · ✓ Verified/);
     assert.deepEqual(callouts(c), [], "a verified sender gets no warning");
     assert.equal(named(c, "button", "Propose this").attrs.disabled, undefined);
     named(c, "button", "Propose this").on.click();
     assert.deepEqual([t.ui.send, t.ui.note, t.ui.pay[0].amt],
-      [true, "Request from Alice (seat 2)", "1"]);
+      [true, "Request from Alice (device 2)", "1"]);
     for (const verdict of ["no", "changed", "unknown"]) {
       c = card(okReq, verdict);
       assert.match(callouts(c)[0], /Check this request with the sender before you pay\./, verdict);
@@ -1375,7 +1383,7 @@ const sealed = (gid, rel, seat, fields, key, names = ["by", "sig"]) =>
     assert.deepEqual([t.ui.send, t.ui.sendFor], [true, gid]);
     t.state.groups = [];
     c = card(chatReq, "yes", true);
-    assert.match(textOf(c), /You hold no seat in a testnet wallet\./);
+    assert.match(textOf(c), /This browser holds no device of a testnet wallet\./);
     assert.equal(named(c, "button", "Propose this").attrs.disabled, "");
     // Mainnet is off (M1): a chat reads a mainnet request as one for testnet, and refuses it.
     c = card(t.requestOf(`zcash:${mainAddr}`, true), "yes", true);
@@ -1386,6 +1394,11 @@ const sealed = (gid, rel, seat, fields, key, names = ["by", "sig"]) =>
     t.ui.pay = null;
     const dialog = t.sendDialog();
     assert.equal(all(dialog, (x) => x.attrs.id === "s-note")[0].attrs.value, "Request from Alice");
+    // The invite link carries the key that seals the note, so the form does not say "only".
+    assert.match(textOf(dialog),
+      /Encrypted\. The devices of this wallet, and anyone else who has the invite link, can read/,
+      "the note hint names the holder of the invite link");
+    assert.doesNotMatch(textOf(dialog), /Only the devices of this wallet can read it/);
 
     // The request form: the open wallet in a room, a choice in a chat.
     t.state.groups = [t.state.g];
@@ -1406,7 +1419,8 @@ const sealed = (gid, rel, seat, fields, key, names = ["by", "sig"]) =>
     assert.match(textOf(form), /anyone else who has the contact link, can read the address/);
     t.state.groups = [];
     form = composer(t.chatRequest());
-    assert.match(textOf(form), /You hold no seat in a wallet that can receive a request/);
+    assert.match(textOf(form),
+      /This browser holds no device of a wallet that can receive a request/);
     assert.equal(named(form, "button", "Send request").attrs.disabled, "");
 
     // Wallets for the next checks: Team (open), Savings and Treasury (mainnet).
@@ -1603,7 +1617,7 @@ const sealed = (gid, rel, seat, fields, key, names = ["by", "sig"]) =>
       assert.deepEqual(t.ui.pay.map((r) => [r.to, r.amt, r.memo, r.shown ?? null, r.name]),
         [["alice.zec", "0.5", "m", null, undefined]], "the typed text, no shown address");
       assert.deepEqual([t.ui.note, t.ui.priority], ["rent", true]);
-      assert.match(textOf(restored), /Draft saved on this device for 24 hours\./);
+      assert.match(textOf(restored), /Draft saved in this browser for 24 hours\./);
       const keys = t.gkeys;
       t.gkeys = { ...keys, [gidNow]: undefined };
       t.ui.pay = null;
@@ -1641,7 +1655,7 @@ const sealed = (gid, rel, seat, fields, key, names = ["by", "sig"]) =>
       t.keepDraft();
       assert.deepEqual(book()[gidNow], last, "the last draft stays");
       const failed = t.sendDialog();
-      assert.match(textOf(failed), /draft could not be saved on this device/);
+      assert.match(textOf(failed), /draft could not be saved in this browser/);
       assert.equal(failed.on.click, t.keepDraft, "a click saves too: Remove, Max, Use this list");
       t.endSend();
       assert.equal(t.ui.draftFailed, false, "a close forgets the failure of that form");
@@ -2130,7 +2144,8 @@ const sealed = (gid, rel, seat, fields, key, names = ["by", "sig"]) =>
       await assert.rejects(quiet(() => t.proposeAgain(evilA)),
         /recipients of this payment changed/);
       assert.equal(t.ui.send, false);
-      assert.match(textOf(t.sessionLayer(evilA)), /proposal changed after a seat of this browser/);
+      assert.match(textOf(t.sessionLayer(evilA)),
+        /proposal changed after a device of this browser/);
       put(signedA);
       await settle();
 
@@ -2372,7 +2387,7 @@ const sealed = (gid, rel, seat, fields, key, names = ["by", "sig"]) =>
       at(4503500, new Set(["tx-a"]));
       assert.equal(textOf(t.statusChip(copied)), "Sent");
       assert.equal(t.expiryLine(copied), null);
-      const cancelled = { ...copied, error: "Cancelled by a seat." };
+      const cancelled = { ...copied, error: "Cancelled by a device." };
       assert.equal(textOf(t.statusChip(cancelled)), "Sent");
       const rewrittenSent = { ...signedA, broadcastTxid: "tx-b", final: { txid: "tx-b",
         tx_hex: "00" }, broadcastAt: 1 };
@@ -2792,7 +2807,7 @@ const sealed = (gid, rel, seat, fields, key, names = ["by", "sig"]) =>
       t.closeSession();
       at(4500101);
       assert.ok(t.heldApprovals().includes("s7"), "t < n: one cancel does not stop the others");
-      const gone = { ...s7, status: "cancelled", error: "Cancelled by a signer." };
+      const gone = { ...s7, status: "cancelled", error: "Cancelled by a device." };
       const holdOf = (ss) => all(t.sessionLayer(ss),
         (x) => x.attrs?.["data-key"] === "hold-" + ss.id)[0];
       assert.equal(holdOf(s7), undefined, "a payment that can still finish offers no release");
@@ -2863,7 +2878,7 @@ const sealed = (gid, rel, seat, fields, key, names = ["by", "sig"]) =>
       storage.set("zf-vault", "{}");
       await quiet(() => releaseQ.on.click(click));
       storage.delete("zf-vault");
-      assert.match(t.banner.text, /could not save the change of seat/);
+      assert.match(t.banner.text, /could not save the change of device/);
       assert.ok(t.heldApprovals().includes("s7q"), "still held");
       assert.ok((t.sec(gid7, other).nonces || {}).s7q, "and the nonce is still there");
       // Two seats here approved. The save of the second burn fails: the first nonce is gone,
@@ -2884,7 +2899,7 @@ const sealed = (gid, rel, seat, fields, key, names = ["by", "sig"]) =>
       await quiet(() => releaseP.on.click(click));
       localStorage.setItem = setItem;
       storage.delete("zf-vault");
-      assert.match(t.banner.text, /could not save the change of seat/);
+      assert.match(t.banner.text, /could not save the change of device/);
       assert.deepEqual([markOf(me, "s7p").released, markOf(other, "s7p").released],
         [undefined, undefined], "nothing says released");
       assert.ok(t.heldApprovals().includes("s7p"), "the hold stays");
@@ -2923,7 +2938,8 @@ const sealed = (gid, rel, seat, fields, key, names = ["by", "sig"]) =>
       await quiet(() => releaseD.on.click(click));
       Object.assign(localStorage, { getItem, setItem: setItemD });
       assert.equal(refused, true, "one save refused");
-      assert.equal(t.banner.text, "This browser could not save the change of seat " + other + ".");
+      assert.equal(t.banner.text,
+        "This browser could not save the change of device " + other + ".");
       const nonceD = (seat) => !!(t.sec(gid7, seat).nonces || {}).s7d;
       assert.deepEqual([markOf(me, "s7d").released, markOf(other, "s7d").released, nonceD(me),
         nonceD(other)], [undefined, undefined, false, true], "no release next to a live nonce");
@@ -2941,7 +2957,7 @@ const sealed = (gid, rel, seat, fields, key, names = ["by", "sig"]) =>
       t.closeSession();
       assert.match(saidF, new RegExp("^The payment is cancelled, but this browser could not "
         + "change its saved keys, so its approval stays here\\. This browser could not save the "
-        + "change of seat " + me + "\\. To end the hold, release it in the payment\\.$"));
+        + "change of device " + me + "\\. To end the hold, release it in the payment\\.$"));
       assert.ok((t.sec(gid7, me).nonces || {}).s7f, "the nonce stays");
       // With t = n every seat must sign, so the cancel of a seat that made no share ends the
       // hold. Both seats of this browser that approved burn. Only a signed shape counts.
@@ -4819,7 +4835,7 @@ const sealed = (gid, rel, seat, fields, key, names = ["by", "sig"]) =>
     assert.match(textOf(c), /Back up the account\./);
     assert.match(textOf(c), /Public address/);
     assert.match(textOf(c), /Fund the account/);
-    assert.match(textOf(c), /You hold no seat in a testnet wallet\./);
+    assert.match(textOf(c), /This browser holds no device of a testnet wallet\./);
     assert.equal(named(c, "button", "Fund from a wallet").attrs.disabled, "");
     assert.equal(named(c, "button", "Copy request").attrs.disabled, undefined);
     // The question before a removal names the loss that is real. A new contact makes the file out
@@ -4927,7 +4943,7 @@ const sealed = (gid, rel, seat, fields, key, names = ["by", "sig"]) =>
     // The backup dialog serves a seat and the account, and the file note says what it holds.
     t.ui.backup = { seat: 2, made: false, busy: false };
     assert.match(textOf(t.backupDialog()),
-      /Back up seat 2.*opens your key share.*sign as this seat/);
+      /Back up device 2.*opens your key share.*sign as this device/);
     // S13: the seat dialog and the note no longer name the format change of 16 October 2026 or
     // the iPhone and Mac apps. Only the restore error of an old file names the change.
     const CHANGED = /backup format changed on 16 October 2026|iPhone and Mac apps/;
@@ -5117,7 +5133,7 @@ const sealed = (gid, rel, seat, fields, key, names = ["by", "sig"]) =>
   assert.equal("backedUp" in t.restoredFor(made, t.sec(A, 2)), false);
   const NEW = new RegExp("not a Zigs backup, or an older version of Zigs made it.*"
     + "changed on 16 October 2026.*older files no longer open.*"
-    + "new backup on a device that still holds the seat");
+    + "new backup in a browser that still holds the key share");
   // The kind of the files that older versions made. It is built here, so that the old name is
   // not in the source as one string. A kind from a file must not reach a method of Object either.
   const OLD_KIND = "zec" + "-frost-key-share";
@@ -5171,7 +5187,7 @@ const sealed = (gid, rel, seat, fields, key, names = ["by", "sig"]) =>
   assert.deepEqual([got.keyPackage, got.backupSaved, got.restored, got.nonces],
     [share, false, true, {}]);
   assert.equal(t.gkeys[A], "K".repeat(43));
-  assert.match(t.banner.text, /^Restored seat 2 of Team\./);
+  assert.match(t.banner.text, /^Restored device 2 of Team\./);
   assert.equal(unsaved(A, 2), true);
 }
 

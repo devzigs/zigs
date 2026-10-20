@@ -39,7 +39,7 @@ export const BLOCKHASH_MS = 120_000;
 const HEXTEXT = /^([0-9a-f]{2})+$/;
 const KEY = /^[0-9a-f]{64}$/;
 const FEE_SIG = /^[0-9a-f]{128}$/;
-const REFUSED = "This device refused the proposal. ";
+const REFUSED = "This browser refused the proposal. ";
 const READING = "Zigs is reading your wallet to check this payment. Try again in a moment.";
 // The intents of the PDA identity: a payment or a withdrawal, their messages, Add SOL and the
 // cancel that gets back the rent of an expired proposal.
@@ -154,10 +154,10 @@ function reviewBlock(c, ss, seat, { spend, seen, block = signingBlock(c) }) {
   if (!showable(ss)) return { why: NOT_SHOWN };
   const intent = decodeIntent(ss.intent);
   if (!holdsShare(solOf(c.host, c.gid, seat))) {
-    return { why: "Seat " + seat + " holds no Solana key share." };
+    return { why: "Device " + seat + " holds no Solana key share." };
   }
   if (!payerOf(c, ss)) {
-    const why = "Seat " + ss.by + " has not published its fee address, so the payer is unknown.";
+    const why = "Device " + ss.by + " has not published its fee address, so the payer is unknown.";
     return { why };
   }
   return waits(ss, spend, seen) ? { why: READING, waiting: true } : { intent };
@@ -213,7 +213,8 @@ function messageReview(c, ss, seat, { spend, intent }) {
   const wasm = inputsOf(c, ss, seat, spend),
     now = BigInt(Math.floor(Date.now() / 1000));
   if (!FEE_SIG.test(ss.feeSig) || !c.W.sol_fee_verify(payer, wasm.message, ss.feeSig)) {
-    return { ok: false, why: REFUSED + "The fee signature of seat " + ss.by + " does not fit it." };
+    const why = REFUSED + "The fee signature of device " + ss.by + " does not fit it.";
+    return { ok: false, why };
   }
   const verdict = c.W.check_message(wasm.message, wasm.intent, wasm.pins, wasm.snapshot, now);
   if (!verdict.startsWith("accepted")) return { ok: false, why: refusalText(c.W, verdict) };
@@ -233,10 +234,10 @@ export const approvalClosed = (ss) => {
 function approveBlock(c, ss, seat) {
   const { host } = c;
   if (!host.localSeats().includes(seat) || !host.canWriteAs(seat)) {
-    return "This browser cannot sign for seat " + seat + ".";
+    return "This browser cannot sign for device " + seat + ".";
   }
   if (ss.status !== "collecting") return "This proposal is not collecting approvals any more.";
-  if (c.commits[ss.id]?.[seat]) return "Seat " + seat + " approved this already.";
+  if (c.commits[ss.id]?.[seat]) return "Device " + seat + " approved this already.";
   return approvalClosed(ss) ? "This proposal expired. Propose it again." : null;
 }
 
@@ -322,5 +323,5 @@ export async function approve(c, ss, seat) {
   const fields = { commitments: entry.commitments, digest: entry.digest, at: Date.now() };
   const doc = await c.host.signedDoc(c.gid, rel, seat, fields);
   await c.host.sdb.doc(c.base + "/" + rel).set(doc);
-  c.host.log("seat " + seat + ": approved a Solana proposal, commitment published");
+  c.host.log("device " + seat + ": approved a Solana proposal, commitment published");
 }

@@ -163,24 +163,24 @@ for (const name of ["Alice", "alice.zec", "", 5, null, "a b"]) {
 
 // ── The note: every approver reads it, so only a verified sender is named ──
 assert.equal(requestNote("Alice", "yes"), "Request from Alice");
-assert.equal(requestNote("Alice (seat 2)", "yes"), "Request from Alice (seat 2)");
+assert.equal(requestNote("Alice (device 2)", "yes"), "Request from Alice (device 2)");
 assert.equal(requestNote("a".repeat(200), "yes").length, 80);
 assert.equal(requestNote("a".repeat(66) + "🙂🙂", "yes").length, 79,
   "a pair of surrogates is never cut");
 assert.equal(requestNote(`${"a".repeat(66)} `, "yes"), "Request from " + "a".repeat(66),
   "no trailing space");
 for (const verdict of ["no", "changed", "unknown", "wait", "bogus", undefined]) {
-  assert.equal(requestNote("Alice (seat 2)", verdict), "Request from an unverified sender",
+  assert.equal(requestNote("Alice (device 2)", verdict), "Request from an unverified sender",
     "a sender that is not verified is not named: " + verdict);
 }
 assert.equal(requestNote("a memo", "memo"), "Request from a memo");
 assert.equal(requestNote("Al\u202Eice\nBob", "yes"), "Request from Al\ufffdice Bob",
   "no bidirectional mark and no line break in a name");
 // The approvers do not read "You" as the sender, nor the seat numbers of another wallet.
-assert.equal(requestNote("You (seat 1)", "yes", { mine: true }), "Request from the proposer");
+assert.equal(requestNote("You (device 1)", "yes", { mine: true }), "Request from the proposer");
 assert.equal(requestNote("You", "no", { mine: true }), "Request from an unverified sender");
-assert.equal(requestNote("Ana (seat 2)", "yes", { room: "Rent" }),
-  "Request from Ana (seat 2) in Rent");
+assert.equal(requestNote("Ana (device 2)", "yes", { room: "Rent" }),
+  "Request from Ana (device 2) in Rent");
 assert.equal(requestNote("Ana", "yes", { room: "R\u202E\nx" }), "Request from Ana in R\ufffd x");
 
 // ── Text that the sender of a request wrote ──

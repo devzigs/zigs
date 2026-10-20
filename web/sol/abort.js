@@ -11,7 +11,7 @@ async function publishAbort(c, i, text) {
   const rel = "solabort/" + i;
   const doc = await c.host.signedDoc(c.gid, rel, i, { reason: text, at: Date.now() });
   await c.host.sdb.doc(c.base + "/" + rel).set(doc);
-  c.host.log("seat " + i + ": Solana stop published");
+  c.host.log("device " + i + ": Solana stop published");
 }
 
 /** Publishes the abort document of each local seat that stopped, until the store holds it. */

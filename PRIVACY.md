@@ -13,9 +13,9 @@ is a bug: please report it.
   wallet, and when.
 - The light-wallet server sees your IP address and the blocks you download, as it does for every
   light wallet. On testnet, the app Worker relays the calls to the Zigs server, so that server
-  sees the Worker and not your device. It never receives a key. If a signer turns on memo
-  reading, the app also fetches the full transaction of each payment to the wallet. The server
-  then learns which transactions a device reads. Memo reading is off by default.
+  sees the Worker and not your IP address. It never receives a key. If a person turns on memo
+  reading in a browser, the app also fetches the full transaction of each payment to the wallet.
+  The server then learns which transactions that browser reads. Memo reading is off by default.
 - A memo on a payment is readable by its recipient and by every signer of the sending wallet.
   Every signer of the receiving wallet reads the memos that arrive there.
 - A testnet wallet that uses the Solana beta (web app only) also talks to the Helius Devnet host.
@@ -264,9 +264,9 @@ they could also spend the SOL on that seat's fee address. Keep only the SOL for 
 The link **Get Devnet SOL** opens the Solana faucet (faucet.solana.com) in a new tab. That site is
 not Zigs. It sees your IP address and the fee address that you paste, so it can link the two.
 
-**Add SOL** moves SOL from the fee address of your seat into the shielded balance of the group.
-It is a pool deposit that only your seat signs, with no approval from the other seats. The amount
-and the sender (your fee address) are public on chain.
+**Add SOL** moves SOL from the fee address of your device into the shielded balance of the group.
+It is a pool deposit that only your device signs, with no approval from the other devices. The
+amount and the sender (your fee address) are public on chain.
 
 **Payments through the approvals program.** The funds of the group belong to an address of the
 Zigs approvals program, a program-derived address (PDA) of the group key. A payment has three
@@ -335,7 +335,7 @@ Each Solana screen says what is public and what Helius sees:
 - **The Solana tab, in each state** (also before Add Solana and while the setup runs): a deposit
   shows its sender and amount on chain, and a withdrawal its recipient and amount. A private payment
   hides its amount, but it shows the owner key of the payee. The program address, the group key and
-  the fee address of each seat that pays are public too. Helius sees that you use Zigs, your IP
+  the fee address of each device that pays are public too. Helius sees that you use Zigs, your IP
   address and the keys of the wallet, and its hosted prover sees each payment (with local proving
   on: the group makes its proofs on its devices, so they give Helius neither the amounts nor the
   nullifier secret). The Zigs server operator can link the wallet to these addresses by timing.
@@ -348,7 +348,7 @@ Each Solana screen says what is public and what Helius sees:
 - **The fund card:** the fee address appears on chain next to the group. The page asks Helius for
   the balance of each fee address of this browser with your IP address, with no click. It asks
   when the Solana tab opens, after a payment or Add SOL, and again when such a read failed. It
-  also asks every 30 s while a signed payment waits for a seat that can pay.
+  also asks every 30 s while a signed payment waits for a device that can pay.
 - **Add SOL:** the amount and the sender are public, and Helius sees your IP address with the
   deposit.
 - **Pay from the group:** the rent and the fees, and what the hosted prover sees: the owner keys,

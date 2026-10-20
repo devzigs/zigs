@@ -33,7 +33,8 @@ const same = (list) => list.every((u) => u.tree === list[0].tree);
 function inputsFound(sync, ids) {
   const found = ids.map((id) => sync.utxos.find((u) => u.hash === id));
   if (found.length === 0 || found.some((u) => u === undefined)) {
-    throw new Error("This device does not see every input of this payment in its own wallet yet.");
+    throw new Error("This browser does not see every input of this payment in its sync of this "
+      + "wallet yet.");
   }
   if (!same(found)) throw new Error("The inputs of this payment are in different trees.");
   return found;

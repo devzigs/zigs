@@ -153,7 +153,7 @@ Signal map (check names of demo-check):
 | Error 7001 alone | A tree account that the pool cannot read: run demo-check first |
 | Error 14101 | T3: the pool id differs between the bundle and the approvals ELF |
 | Error 6013 or 6014 | A wire or SOL interface change in the approvals program |
-| "Seat N stopped the Solana part of this wallet" | T3 without step 4, or another stop: read the reason after the text |
+| "Device N stopped the Solana part of this wallet" | T3 without step 4, or another stop: read the reason after the text |
 
 ## Zcash NU7
 

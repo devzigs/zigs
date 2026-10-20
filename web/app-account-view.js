@@ -81,7 +81,8 @@ export function accountCard() {
     el("div", { class: "card-head" }, el("h2", {}, "Personal account"),
       netBadge({ network: personal.network })),
     el("p", { class: "small muted" }, "This account pays the fee of your messages on chain. It is "
-      + "not a wallet and it has no signers. Whoever controls this browser can spend it."),
+      + "not a wallet, and its payments need no approval. Whoever controls this browser can "
+      + "spend it."),
     personal.backedUp ? null : accountBackupNote(),
     accountBalanceBlock(b),
     b ? balanceWarnings(b.total).map((t) => el("div", { class: "callout warn", role: "status" }, t))
@@ -147,7 +148,7 @@ export function fundBlock() {
     el("div", { class: "field" },
       el("label", { class: "field" }, el("span", {}, "Amount in ZEC"), amount),
       el("span", { class: "hint", id: "fund-hint" }, "The request asks for 3 equal notes, so the "
-        + "account can send a message after each block. A wallet pays it, and its signers "
+        + "account can send a message after each block. A wallet pays it, and its devices "
         + "approve it as they approve any payment."), warn, refusal),
     el("div", { class: "req-actions" }, pick,
       el("button", {
@@ -156,7 +157,7 @@ export function fundBlock() {
       }, "Fund from a wallet"),
       el("button", { class: "btn sm", type: "button", onclick: act(copyFundingRequest) },
         "Copy request")),
-    wallets.length ? null : el("p", { class: "small faint" }, "You hold no seat in a "
+    wallets.length ? null : el("p", { class: "small faint" }, "This browser holds no device of a "
       + personal.network + " wallet. Copy the request and pay it from any wallet."));
 }
 

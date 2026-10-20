@@ -38,7 +38,7 @@ export const changedSigners = () => seatIds().filter((i) => {
 // A document without a result yet counts as absent, and the reactor waits until all results are in.
 export const NO_SIGNING_SEAT = "This browser cannot sign, so it cannot take part in this wallet. "
   + "Use a current Chrome, Edge, Firefox or Safari.";
-export const NO_SEAT_KEY = "This browser has no signing key for a seat of this wallet, "
+export const NO_SEAT_KEY = "This browser has no signing key for a device of this wallet, "
   + "so it cannot write to this wallet.";
 
 // A device keeps the first version that it saw for a wallet, and the version of its own seats. A

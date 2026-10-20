@@ -131,8 +131,8 @@ const mark = (name) => findAll(tabOf(), (n) => n.attrs["data-sol"] === name);
   const [faucet] = mark("faucet");
   assert.match(faucet.attrs.href, /^https:\/\/faucet\.solana\.com\//);
   const [fund] = findAll(tabOf(), (n) => n.tag === "div" && /Fund the fee address/.test(textOf(n)));
-  assert.match(textOf(fund), /Your fee address \(seat 1\)/);
-  assert.match(textOf(fund), /pays the fees and the rents of the proposals that this seat makes/);
+  assert.match(textOf(fund), /Your fee address \(device 1\)/);
+  assert.match(textOf(fund), /pays the fees and the rents of the proposals that this device makes/);
   assert.match(textOf(fund), /the chain shows it next to the program address of the group/);
   // Add SOL says that the amount and the sender are public and that it needs no approval.
   assert.match(textOf(mark("add-sol-text")[0]), /amount and the sender are public.*no approval/);
@@ -151,7 +151,7 @@ step("the fund card shows the fee address of each seat with Copy, the faucet and
 await withNonceAccount();
 
 // ── A document with another key than the key share gives: an error, and no rewrite ──
-const ANOTHER = /fee document of seat 1 does not show the key of this seat/;
+const ANOTHER = /fee document of device 1 does not show the key of this device/;
 const rewrites = [];
 const saved = hook.before;
 hook.before = (p, value) => {
@@ -173,7 +173,7 @@ const doc1 = (key, cluster = "devnet") =>
   assert.equal(c.docs.solfee[1].key, other);
   assert.equal(mark("fee-address-1").length, 0, "no address to fund: this seat cannot pay");
   assert.match(textOf(mark("fee-mismatch-1")[0]), ANOTHER);
-  assert.match(textOf(mark("fee-mismatch-1")[0]), /can still approve and sign.*other seats can/);
+  assert.match(textOf(mark("fee-mismatch-1")[0]), /can still approve and sign.*other devices can/);
   assert.equal(mark("fee-address-2").length, 1, "the other seats show their address");
   assert.throws(() => readyFee(c, 1), ANOTHER, "no fee key for the seat while the document stands");
   data.set(path(gid, "solfee/1"), await doc1(mine));
@@ -217,7 +217,7 @@ step("a seat with no valid document publishes once");
   notify();
   await waitFor("no document", () => [1, 2, 3].every((i) => c.docs.solfee[i] === undefined));
   assert.equal(readySeat(c), undefined, "no seat is ready");
-  await assert.rejects(() => propose(c, "createNonce"), /fee address of seat 1 is not published/);
+  await assert.rejects(() => propose(c, "createNonce"), /fee address of device 1 is not published/);
   await assert.rejects(() => addSol(c, { amount: "0.01" }), /not published yet/);
   release();
   hook.before = saved;
@@ -302,7 +302,7 @@ step("a landed proposal costs the fee address of the proposing seat");
     chain.balances.set(feeAddress(1), held);
     await assert.rejects(
       () => propose(c, "createNonce"),
-      /fee address of seat 1 has too little Devnet SOL.*Fund it/,
+      /fee address of device 1 has too little Devnet SOL.*Fund it/,
       label,
     );
   }
@@ -501,12 +501,12 @@ step("a proposal from before the fee keys is read as it was and is never sent ag
     await waitFor("the forged documents", () => seats.every((i) => feeMismatch(c, i)));
   };
   assert.equal(readySeat(c), 1, "the control: seat 1 is the first ready seat");
-  assert.match(textOf(mark("propose-seat")[0]), /^Seat 1 of this browser proposes and pays/);
+  assert.match(textOf(mark("propose-seat")[0]), /^Device 1 of this browser proposes and pays/);
   // Seat 1 has a document with another key. Seat 2 pays, and the screen says so.
   await forge([1]);
   assert.equal(readySeat(c), 2, "the first ready seat is seat 2");
-  assert.match(textOf(mark("propose-seat")[0]), /^Seat 2 of this browser proposes and pays/);
-  assert.match(textOf(mark("add-sol-seat")[0]), /^Seat 2 of this browser adds this SOL/);
+  assert.match(textOf(mark("propose-seat")[0]), /^Device 2 of this browser proposes and pays/);
+  assert.match(textOf(mark("add-sol-seat")[0]), /^Device 2 of this browser adds this SOL/);
   chain.nonce = null;
   const id = await propose(c, "createNonce");
   await waitFor("the proposal", () => ssOf(id));
@@ -520,7 +520,7 @@ step("a proposal from before the fee keys is read as it was and is never sent ag
   assert.ok(Number.isFinite(c.added.at) && c.added.at <= Date.now(),
     "the Add SOL record has the time of its answer");
   assert.equal(chain.balances.get(feeAddress(2)) < fee2, true, "from its fee address");
-  assert.match(textOf(mark("added")[0]), /^Added 0\.01 SOL, seat 2: /);
+  assert.match(textOf(mark("added")[0]), /^Added 0\.01 SOL, device 2: /);
   // Seats 1 and 2 are in mismatch: seat 3 is the first ready seat.
   await forge([2]);
   assert.equal(readySeat(c), 3);

@@ -18,7 +18,7 @@ export function signingBlock(c) {
   if (start) return start;
   if (![...COLLECTIONS, SESSIONS].every((name) => c.loaded[name])) return LOADING;
   if (c.wait > 0 || c.sessWait > 0) return CHECKING;
-  if (agreement(c).state !== "agree") return "The seats have not agreed on one Solana key yet.";
+  if (agreement(c).state !== "agree") return "The devices have not agreed on one Solana key yet.";
   return null;
 }
 
@@ -55,6 +55,8 @@ export function payerSeat(c) {
   const seat = readySeat(c),
     first = writerSeats(c)[0];
   if (seat !== undefined) return seat;
-  if (first === undefined) throw new Error("This browser holds no seat that can sign for Solana.");
+  if (first === undefined) {
+    throw new Error("This browser holds no device that can sign for Solana.");
+  }
   throw new Error(feeProblem(c, first));
 }

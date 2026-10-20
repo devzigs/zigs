@@ -54,7 +54,7 @@ export const zcashBackup = (page) =>
 export const solanaBackup = (page, seat) =>
   makeBackup(page, async () => {
     await clickText(page, "Solana", { exact: true });
-    await clickText(page, "Back up Solana part, seat " + seat);
+    await clickText(page, "Back up Solana part, device " + seat);
   });
 
 /** Puts a file in the hidden file input `id`, as a person picks it. */

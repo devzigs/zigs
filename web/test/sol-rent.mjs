@@ -131,7 +131,7 @@ const findAll = (n, pick) =>
     : [];
 const view = solView({ ...c, host: { ...c.host, el: node } }, (fn) => fn, {});
 const [row] = findAll(view, (n) => n.attrs["data-sol"] === "rent-" + seat);
-assert.match(textOf(row), /Seat 1: 0\.00135636 SOL/);
+assert.match(textOf(row), /Device 1: 0\.00135636 SOL/);
 const held = chain.balances.get(feeAddress(seat));
 await reclaimRent(c, seat);
 assert.equal(chain.accounts.has(live), false);
@@ -142,7 +142,7 @@ const cancelId = chain.landed.at(-1).signature;
 assert.deepEqual(c.rentDone, { seat, txIds: [cancelId] });
 const after = solView({ ...c, host: { ...c.host, el: node } }, (fn) => fn, {});
 const [cancelled] = findAll(after, (n) => n.attrs["data-sol"] === "rent-done");
-assert.match(textOf(cancelled), new RegExp("Cancel transactions of seat 1:\\s+" + cancelId));
+assert.match(textOf(cancelled), new RegExp("Cancel transactions of device 1:\\s+" + cancelId));
 const href = findAll(cancelled, (n) => n.tag === "a")[0].attrs.href;
 assert.equal(href, "https://explorer.solana.com/tx/" + cancelId + "?cluster=devnet");
 const [note] = findAll(after, (n) => n.attrs["data-sol"] === "explorer-text");
@@ -169,7 +169,7 @@ chain.sendMode = null;
 const landed = chain.landed.at(-1).signature;
 assert.deepEqual(c.rentDone, { seat, txIds: [landed] }, "the failed cancel is not listed");
 assert.equal([third, fourth].filter((a) => chain.accounts.has(a)).length, 1, "one stays open");
-assert.match(rentDone()[0], new RegExp("Cancel transactions of seat 1:\\s+" + landed));
+assert.match(rentDone()[0], new RegExp("Cancel transactions of device 1:\\s+" + landed));
 // A first cancel that fails lists nothing: no line with no id.
 await scanRent(c);
 chain.sendMode = "fail";
