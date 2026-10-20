@@ -24,28 +24,28 @@ approval rule (any t of n devices) holds on both chains. Each chain keeps its ow
 privacy model, and the app says what each chain hides and what it shows. The live Devnet runs
 cover the setup, the restore of every device, private payments and a withdrawal.
 
-**Shielded Payments.** Zigs makes a shielded Zcash payment that a group approves look like a
-payment from a standard wallet, apart from its one-day expiry, with no trusted dealer and no server
-that can read the wallet.
+**Shielded Payments.** A shielded Zcash payment that a group approves has the shape of a payment
+from a standard Zcash wallet, except for its one-day expiry and an optional priority fee, which can
+mark it. Zigs needs no trusted dealer and no server that can read the wallet.
 Each device decodes the transaction itself before it approves, and payments can go to a ZNS name
 with no server learning which name. The Solana part is a second, weaker privacy rail, so the
 Zcash part carries the case.
 
 ## 3. Description
 
-Character count: 1,981 (the text between the two lines below, with its 14 line breaks; 1,995 if the
+Character count: 1,976 (the text between the two lines below, with its 14 line breaks; 1,990 if the
 form counts each line break as two characters).
 
 ---
-Zigs is a shared wallet for shielded Zcash and for private SOL in the Zolana pool on Solana Devnet. Each device of a group holds one key share of FROST threshold keys. Nobody holds the whole key. Any t of n devices approve each payment. One setup makes the Zcash key and the Solana key for the same devices.
+Zigs is a shared wallet for shielded Zcash and for private SOL in the Zolana pool on Solana Devnet. Each device of a group holds one key share of FROST threshold keys. Nobody holds the whole key. Any t of n devices approve each payment. One setup makes both keys on the same devices.
 
-Real and live in the web app, on Zcash testnet and Solana Devnet:
-- Zcash: re-randomized FROST (ZIP 312) on the Ironwood pool. Each device decodes the transaction itself and binds its approval to the sighash. On chain, a Zigs payment looks like a payment from any standard Zcash wallet. Nothing shows that a group signed it, who the signers are, or which of them approved. Its one-day expiry marks it, and so does a priority fee.
-- Pay to a ZNS name: a 2-of-2 testnet payment to craftsoldier.zec landed on 19 October 2026 (block 4,518,023), and each approving device checked the name again. No server learns which name you pay.
+Real and live (web app, testnet and Devnet):
+- Zcash: re-randomized FROST (ZIP 312) on the Ironwood pool. Each device decodes the transaction itself and binds its approval to the sighash. On chain, a Zigs payment has the shape of a payment from a standard Zcash wallet, except for its one-day expiry and an optional priority fee, which can mark it. Nothing shows that a group signed it, who the devices are, or which of them approved.
+- Pay to a ZNS name: a testnet payment to craftsoldier.zec landed on 19 October 2026 (block 4,518,023); each approving device checked the name again. No server learns which name you pay.
 - Solana: a Zigs program owns the funds of the group. Live Devnet runs on 18 and 19 October 2026 made a 3-device wallet in one setup, restored every device from backup files, and sent two private payments and a withdrawal. A device restored before the Solana setup still joined it.
-- The group server relays and stores encrypted data. It cannot read wallet names, signer names, addresses, amounts, notes, recipients or transactions.
+- The group server relays and stores encrypted data. It cannot read names, addresses, amounts, notes or transactions, but it sees which IP addresses open which wallet, and when.
 
-Not done, and not hidden:
+Not done or not hidden:
 - Testnet and Devnet only: the web app makes no mainnet wallets. Not audited.
 - On Solana, a private payment hides its amount, but the owner key of the payee is public. The chain also links the group key, the program address and the fee addresses in public.
 - The hosted prover of Helius sees the witness of each Solana spend: owners, assets, amounts, blindings and the nullifier secret. With local proving on, nobody: the proof runs on the device.
@@ -58,12 +58,12 @@ Sources of each claim:
 
 | Claim | Source |
 |---|---|
-| On chain, nothing shows a group; the expiry and a priority fee mark it | PRIVACY.md, Summary and On chain; README, judging criteria |
+| On chain, nothing shows a group; the expiry and an optional priority fee can mark it | PRIVACY.md, Summary and On chain; README, judging criteria |
 | Each device decodes the transaction and binds its approval to the sighash | README, judging criteria (Originality) |
 | The ZNS payment, block 4,518,023; no server learns the name | hackathon-release.md M10 status; PRIVACY.md, Summary |
 | The Devnet runs: one setup, restore of every device, two payments, a withdrawal | hackathon-release.md M3 and the nonce lock record (18 and 19 October) |
 | A device restored before the Solana setup joined it | hackathon-release.md M4 (`scenario-e.mjs`) |
-| The group server sentence | PRIVACY.md, Summary |
+| The group server sentence | PRIVACY.md, Summary and the table of the group server |
 | The Solana sentences and the hosted prover | PRIVACY.md, Solana beta: approvals program, the Zolana table, Local proving |
 | AGPL-3.0-only | LICENSE and README, License |
 
