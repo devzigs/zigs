@@ -416,6 +416,14 @@ a.row-item { text-decoration: none; }
 .pay-row .hint { grid-column: 1 / -1; }
 .pay-row > .icon-btn { align-self: end; }
 .pay-row > [id^="s-amt-hint-"]:empty { display: none; }
+.pay-row > [id^="s-hint-"], .pay-row > [id^="s-amt-hint-"] { align-self: start; }
+/* On a wide dialog each note stands under its own field. The note of the address keeps the whole
+   row while the amount has no note. The width of 0 keeps a long note from widening the column
+   of the remove button, and the minimum width gives it the room of its two columns. */
+@media (min-width: 521px) {
+  .pay-row > [id^="s-amt-hint-"] { grid-column: 2 / -1; width: 0; min-width: 100%; }
+  .pay-row:has(> [id^="s-amt-hint-"]:not(:empty)) > [id^="s-hint-"] { grid-column: 1; }
+}
 .pay-row .input-wrap .input { padding-right: 56px; }
 .row-actions { display: flex; flex-wrap: wrap; gap: 8px; align-items: flex-start; }
 .paste { display: grid; gap: 8px; justify-items: start; }

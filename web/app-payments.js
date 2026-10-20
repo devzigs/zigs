@@ -367,9 +367,15 @@ export async function proposeMove(after = null) {
   openSend({ sendMove: { gid: state.gid, after } });
 }
 
-/** Proposes every confirmed note to the wallet that replaces this one. */
-export async function proposeMoveNow(after = null) {
+/**
+ * Proposes every confirmed note to the wallet that replaces this one. `shown` is the wallet and
+ * the amount that the dialog of the move showed: a move of other funds is not proposed.
+ */
+export async function proposeMoveNow(after = null, shown = null) {
   const { to, payees } = moveSpend();
+  if (shown && (shown.to !== to || shown.amount !== payees[0].amount)) {
+    throw new Error("The funds to move changed. Check the new amount, then propose again.");
+  }
   await newSpend(payees, "Move to " + groupName(to), to, false, after);
 }
 

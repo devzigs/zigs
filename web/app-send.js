@@ -3,7 +3,7 @@ import {
   MEMO_BYTES, memoBytes, memoError, parsePayeeList, toZat, zatText,
 } from "./payees.js";
 import { payeeRows, requestProblem } from "./requests.js";
-import { showBanner, state, ui } from "./app-state.js";
+import { banner, showBanner, state, ui } from "./app-state.js";
 import { fmtZec } from "./app-kit.js";
 import { Z } from "./app-engine.js";
 import { gkeys } from "./app-keystore.js";
@@ -20,7 +20,10 @@ import {
 import { requestOf } from "./app-payreq.js";
 import { nameOf, recentNote, registry, resolveRecipient, zecName } from "./zns.js";
 import { focusAfter, render } from "./app-loop.js";
-import { capNote, FAUCET_TEXT, movedNote, receiveLimit, receiveWhat } from "./app-wallet.js";
+import {
+  capNote, FAUCET_TEXT, movedNote, receiveLimit, receiveWhat, SOL_STAYS,
+} from "./app-wallet.js";
+import { solOn } from "./app-sol.js";
 
 const MAX_PAYEES = 20;
 const TOO_MANY = "A payment can have at most " + MAX_PAYEES + " recipients.";
@@ -175,29 +178,37 @@ const labelled = (caption, input, extra = "") =>
 const AMOUNT_LABEL = "Amount · ZEC";
 const AMOUNT_BAD = "Enter an amount greater than zero, with at most 8 decimals.";
 
-// The note under an amount, which reads red for text that is no amount.
-function amountHint(hint, text) {
-  const bad = text !== "" && !toZat(text);
+// The amount can still become valid while the person types: "0." and ".5" are no error. Only text
+// that no continuation can fix reads red. `done`: the person left the field, or the form came
+// back, so zero and a dangling point count too.
+const AMOUNT_PARTIAL = /^\d{0,8}(?:[.,]\d{0,8})?$/;
+function amountHint(hint, text, done = false) {
+  const bad = text !== "" && (!AMOUNT_PARTIAL.test(text) || (done && !toZat(text)));
   setNote(hint, bad ? AMOUNT_BAD : "", "hint" + (bad ? " bad" : ""));
 }
 
-// The most that one payment can send. max_send leaves only the standard fee of spending every
-// note. A priority fee is PRIORITY_FACTOR times that fee, so Max leaves the extra as well.
+// The most that one payment can send, or a number of 0 or less when the fee takes it all.
+// max_send leaves only the standard fee of spending every note. A priority fee is
+// PRIORITY_FACTOR times that fee, so Max leaves the extra as well.
 function maxSend(bal, priority) {
   if (!bal || !(bal.max_send > 0)) return 0;
   const extra = priority ? (PRIORITY_FACTOR - 1) * (bal.spendable - bal.max_send) : 0;
-  return Math.max(0, bal.max_send - extra);
+  return bal.max_send - extra;
 }
+const noRoom = () => "The balance does not cover the " + (ui.priority ? "priority" : "network")
+  + " fee.";
 
-// What sets the amount of a row, for the priority box.
-const amountSetters = new WeakMap();
+// What sets and judges the amount of a row, for Max and the priority box.
+const amountFields = new WeakMap();
 
-// An amount that is the maximum stays the maximum when the priority box changes.
+// An amount that is the maximum stays the maximum when the priority box changes. Any other amount
+// stays, and its note is judged again.
 function followMax(rows) {
   const [r] = rows, bal = curChain()?.bal, was = maxSend(bal, !ui.priority);
-  if (rows.length === 1 && was > 0 && toZat(r.amt) === was) {
-    amountSetters.get(r)?.(maxSend(bal, ui.priority));
-  }
+  clearNotice();
+  const field = amountFields.get(r);
+  if (rows.length === 1 && was > 0 && toZat(r.amt) === was) field?.put(maxSend(bal, ui.priority));
+  else field?.show();
 }
 
 // The amount of one recipient and its note: [field, note].
@@ -208,19 +219,22 @@ function amountField(r, n, rows, sumUp) {
     required: true, autocomplete: "off", "aria-label": AMOUNT_LABEL + n,
     "aria-describedby": hintId, value: r.amt,
     oninput: (ev) => { r.amt = ev.target.value.trim(); amountHint(hint, r.amt); sumUp(); },
+    onchange: (ev) => amountHint(hint, ev.target.value.trim(), true),
   });
-  const setAmount = (zat) => {
+  // A Max of nothing leaves the amount as it is and says why: that is no amount to write.
+  const put = (zat) => {
+    if (!(zat > 0)) return setNote(hint, noRoom(), "hint bad");
     r.amt = zatText(zat);
     amt.value = r.amt;
-    amountHint(hint, r.amt);
+    amountHint(hint, r.amt, true);
   };
-  amountSetters.set(r, setAmount);
+  amountFields.set(r, { put, show: () => amountHint(hint, r.amt, true) });
   const max = rows.length === 1 ? el("button", {
     class: "btn sm", type: "button",
-    onclick: () => { setAmount(maxSend(curChain()?.bal, ui.priority)); sumUp(); },
+    onclick: () => { clearNotice(); put(maxSend(curChain()?.bal, ui.priority)); sumUp(); },
   }, "Max") : null;
   noteFor(hint, amt);
-  amountHint(hint, r.amt);
+  amountHint(hint, r.amt, true);
   return [labelled(AMOUNT_LABEL, el("div", { class: "input-wrap" }, amt, max), "pay-amt"), hint];
 }
 
@@ -242,7 +256,12 @@ function payRow(r, i, rows, sumUp) {
   recipientHint(hint, r);
   const remove = rows.length > 1 ? el("button", {
     class: "icon-btn", type: "button", "aria-label": "Remove recipient" + n,
-    onclick: () => { rows.splice(i, 1); render(); },
+    onclick: () => {
+      rows.splice(i, 1);
+      clearNotice();
+      focusAfter("INPUT:s-to-" + rows[Math.min(i, rows.length - 1)].k + ":0", true);
+      render();
+    },
   }, "×") : null;
   const [amount, amountNote] = amountField(r, n, rows, sumUp);
   return el("div", { class: "pay-row" }, labelled(toLabel() + n, to), amount, remove, hint,
@@ -282,6 +301,7 @@ export function fillFromRequest(r, rows, hint) {
   const error = req.error ? requestProblem(req.error) : tooMany ? TOO_MANY : "";
   if (error) { setNote(hint, error, "hint bad"); return true; }
   rows.splice(rows.indexOf(r), 1, ...fresh);
+  clearNotice();
   render();
   return true;
 }
@@ -311,6 +331,7 @@ function useList() {
   if (!ui.listError) {
     ui.pay = payeeRows(rows, () => ++ui.payKey);
     box.value = ""; box.closest("details").open = false;
+    clearNotice();
   }
   render();
 }
@@ -520,7 +541,9 @@ let sendRun = 0;
 /** Drops the review and any build in flight: their Send closed, or their wallet closed. */
 export function dropReview() {
   sendRun += 1;
-  Object.assign(ui, { sendReview: null, sendMove: null, sendError: "" });
+  // A move has no form behind it: its dialog closes with its wallet, not into an empty Send form.
+  if (ui.sendMove) ui.send = false;
+  Object.assign(ui, { sendReview: null, sendMove: null, sendError: "", sendNoticed: "" });
 }
 /** Closes Send and drops its review: a review never comes back after its dialog closed. */
 export function endSend() {
@@ -548,29 +571,76 @@ const closeX = () => el("button", {
 sweepDrafts();
 
 // The error of Send, its review or the move shows in the dialog, where the person reads it.
-// The notice takes the focus after a failed action (inDialog). A dialog that is new takes it by
-// its first-focus mark.
-const sendNotice = () => (ui.sendError ? el("p", { class: "callout bad", role: "alert",
-  id: "send-error", tabindex: "-1", "data-key": "send-error", "data-first-focus": true },
-ui.sendError) : null);
+// role alert reads the text when the node comes in, and a redraw builds the node again: only the
+// first build of an error has the role, and a new dialog takes the focus by its first-focus mark.
+const sendNotice = () => {
+  if (!ui.sendError) return null;
+  const fresh = ui.sendNoticed !== ui.sendError;
+  ui.sendNoticed = ui.sendError;
+  return el("p", { class: "callout bad", role: fresh ? "alert" : null, id: "send-error",
+    tabindex: "-1", "data-key": "send-error", "data-first-focus": fresh }, ui.sendError);
+};
+
+// An old failure goes, and the node goes at once: no redraw per key.
+function clearNotice() {
+  if (!ui.sendError) return;
+  Object.assign(ui, { sendError: "", sendNoticed: "" });
+  document.getElementById("send-error")?.remove();
+}
+
+// An edit of the person makes the notice obsolete. The redraw sends events of its own, and they
+// are not trusted: they change nothing.
+function typed(ev) {
+  if (ev.isTrusted) clearNotice();
+  keepDraft();
+}
 
 const dialogKind = () => (ui.sendMove ? "move" : ui.sendReview ? "review" : "form");
+const focusKey = () => document.activeElement?.dataset?.key ?? "";
 
-// An action of the Send dialogs. A failure shows in the notice and the form keeps its values. It
-// shows in the banner when the action closed the dialog, so that no error is lost. A stale review
-// goes back to the form: that is a new dialog, and it focuses the notice itself.
+// The engine says "not enough funds: N zat spendable, M zat needed". The dialog says it as the
+// check of the form does, in ZEC.
+const fundsText = (have, need) => "Not enough funds: " + fmtZec(have) + " available, "
+  + fmtZec(need) + " needed (amounts + fee).";
+const ENGINE_FUNDS = /not enough funds: (\d+) zat spendable, (\d+) zat needed/;
+function dialogText(e) {
+  const text = e?.message || String(e), m = ENGINE_FUNDS.exec(text);
+  return m ? fundsText(Number(m[1]), Number(m[2])) : text;
+}
+
+// The error of an action goes into the dialog. It goes to the banner when the dialog closed, or
+// closed and opened again, since the action began (`at` is the run of its start).
+function failed(e, at) {
+  if (!ui.send || at !== sendRun) throw e;
+  ui.sendError = dialogText(e);
+}
+
+// act clears a bad banner after a success, and a handled failure is no success: the banner of
+// another cause (a lost connection, a key share that was not saved) comes back.
+function keepBanner(shown) {
+  if (shown?.kind === "bad" && banner === null) showBanner("bad", shown.text);
+}
+
+// The run in which an action is in flight: a second click or Enter in that run does nothing.
+let actingRun = null;
+
+// An action of the Send dialogs. A failure shows in the notice and the form keeps its values. A
+// stale review goes back to the form: that is a new dialog, and it focuses the notice itself. The
+// focus goes to the notice only where the action began: a person who types elsewhere keeps it.
 function inDialog(fn) {
   const run = act(async (ev) => {
-    ui.sendError = "";
-    try { await fn(ev); } catch (e) {
-      if (!ui.send) throw e;
-      ui.sendError = e.message || String(e);
-    }
+    const at = sendRun;
+    clearNotice();
+    try { await fn(ev); clearNotice(); } catch (e) { failed(e, at); }
   });
   return async (ev) => {
-    const kind = dialogKind();
-    await run(ev);
-    if (ui.sendError && dialogKind() === kind) focusAfter("send-error", true);
+    if (actingRun === sendRun) { ev.preventDefault(); return; }
+    const mine = sendRun, kind = dialogKind(), shown = banner, started = focusKey();
+    actingRun = mine;
+    try { await run(ev); } finally { if (actingRun === mine) actingRun = null; }
+    if (!ui.sendError) return;
+    keepBanner(shown);
+    if (dialogKind() === kind) focusAfter("send-error", focusKey() === started);
   };
 }
 
@@ -580,10 +650,7 @@ async function submitSend(rows, spendable, why, ev) {
   if (why) throw new Error(why);
   const run = sendRun, payees = readPayees(rows, await resolveNames(rows));
   const need = payees.reduce((n, p) => n + p.amount, 0) + feeEstimate(payees.length, ui.priority);
-  if (need > spendable) {
-    throw new Error("Not enough funds: " + fmtZec(spendable) + " available, " + fmtZec(need)
-      + " needed (amounts + fee).");
-  }
+  if (need > spendable) throw new Error(fundsText(spendable, need));
   const note = String(new FormData(ev.target).get("note") || "").trim();
   if (!ui.after) return openReview(payees, note, run);
   await newSpend(payees, note, null, ui.priority, ui.after);
@@ -605,7 +672,7 @@ export function sendDialog() {
   };
   const why = sendBlocker();
   const f = el("form", { class: "dialog", role: "dialog", "aria-modal": "true",
-    "aria-labelledby": "send-title", oninput: keepDraft, onchange: keepDraft, onclick: keepDraft,
+    "aria-labelledby": "send-title", oninput: typed, onchange: typed, onclick: keepDraft,
     onsubmit: inDialog((ev) => submitSend(rows, spendable, why, ev)) },
     el("div", { class: "card-head" }, dialogTitle("send-title", "Send ZEC"), closeX()),
     sendNotice(),
@@ -615,7 +682,11 @@ export function sendDialog() {
       el("div", { class: "row-actions" },
         el("button", {
           class: "btn sm", type: "button", disabled: rows.length >= MAX_PAYEES,
-          onclick: () => { rows.push({ k: ++ui.payKey, to: "", amt: "", memo: "" }); render(); },
+          onclick: () => {
+            rows.push({ k: ++ui.payKey, to: "", amt: "", memo: "" });
+            clearNotice();
+            render();
+          },
         }, "Add recipient"),
         pasteList(net))),
     el("label", { class: "field" }, el("span", {}, "Note for the devices (optional)"),
@@ -633,7 +704,7 @@ export function sendDialog() {
     el("div", { class: "summary" },
       el("div", {}, el("span", { class: "muted" }, "Available"), money(spendable)),
       el("div", {}, el("span", { class: "muted" }, "Network fee (estimate)"), fee),
-      el("div", { class: "total" }, el("span", {}, "Total leaving the wallet"), total),
+      el("div", { class: "total" }, el("span", {}, "Total leaving the wallet (estimate)"), total),
       el("div", {}, el("span", { class: "muted" }, "Approvals needed"),
         el("span", {}, state.g.t + " of " + state.g.n))),
     el("p", { class: "small faint" }, EXPIRY_NOTE),
@@ -689,7 +760,7 @@ function reviewDialog() {
     + "does not sign or send the payment."),
   el("div", { class: "dialog-actions" },
     el("button", { class: "btn", type: "button",
-      onclick: () => { ui.sendReview = null; ui.sendError = ""; render(); } }, "Back to edit"),
+      onclick: () => { ui.sendReview = null; clearNotice(); render(); } }, "Back to edit"),
     ok ? el("button", { class: "btn primary", type: "button", disabled: !!ui.proposing,
       onclick: inDialog(() => proposeReviewed(ui.sendReview)) }, "Propose payment") : null));
 }
@@ -697,25 +768,29 @@ function reviewDialog() {
 const moveAmount = () => curChain()?.bal?.max_send ?? 0;
 
 // The move: every confirmed note goes to the wallet that replaces this one. The dialog shows who
-// can read the payment, as the review does, and proposes it with the button.
+// can read the payment, as the review does, and proposes it with the button. The button proposes
+// what the dialog shows: when the amount or the wallet changed, it says so and the dialog draws
+// again.
 function moveDialog() {
   const { gid, after } = ui.sendMove, to = state.g.movedTo, why = sendBlocker();
   if (gid !== state.gid || !to) { ui.sendMove = null; return sendDialog(); }
+  const shown = { to, amount: moveAmount() };
   return el("section", { class: "dialog", role: "dialog", "aria-modal": "true",
     "aria-labelledby": "move-title" },
   el("div", { class: "card-head" }, dialogTitle("move-title", "Move the Zcash funds"), closeX()),
   sendNotice(),
   el("div", { class: "review-hero" }, el("span", { class: "label" }, "Moves"),
-    money(moveAmount(), "lg"), el("span", { class: "small muted" },
+    money(shown.amount, "lg"), el("span", { class: "small muted" },
       "to " + groupName(to) + ", the wallet that replaces this one")),
-  el("p", { class: "small muted" }, "Like any payment, this needs " + state.g.t + " approvals."),
-  ...privacyNotes(),
+  el("p", { class: "small muted" }, "Like any payment, this needs " + state.g.t + " approvals."
+    + (solOn() ? " " + SOL_STAYS : "")),
+  ...privacyNotes(true),
   el("p", { class: "small faint" }, EXPIRY_NOTE),
   el("div", { class: "dialog-actions" },
     el("button", { class: "btn", type: "button", onclick: closeSend }, "Cancel"),
     el("button", { class: "btn primary", type: "button", disabled: !!why,
       "aria-describedby": why ? "why-move" : null,
-      onclick: inDialog(async () => { await proposeMoveNow(after); endSend(); }) },
+      onclick: inDialog(async () => { await proposeMoveNow(after, shown); endSend(); }) },
     "Propose the move"),
     why ? el("span", { class: "off-why", id: "why-move" }, why) : null));
 }
@@ -734,8 +809,18 @@ const REVIEW_LATER = "A device that a later Change devices leaves out keeps the 
   + "the note of that payment, and the id of the new wallet. With the id, the device can get the "
   + "sealed documents of the new wallet and each later write from the group server. The server "
   + "also accepts writes from it, so the device can stop the new wallet with false documents.";
-const privacyNotes = () => [REVIEW_NOW, REVIEW_LATER].map((text) =>
-  el("p", { class: "small muted" }, text));
+// A move has no memo and no priority fee, and its Change devices has begun: its notes say so.
+const MOVE_NOW = "The chain does not show the recipient or the amount. The expiry height is "
+  + "public and can show that Zigs made this payment. Every device of this wallet can read the "
+  + "recipient, the amount and the note, in the shared history of the wallet. So can anyone who "
+  + "has its invite link.";
+const MOVE_LATER = "If this Change devices leaves out a device, that device keeps the viewing key "
+  + "and the messages of this wallet. It can read this move payment: the address, the amount and "
+  + "the note, and the id of the new wallet. With the id, the device can get the sealed documents "
+  + "of the new wallet and each later write from the group server. The server also accepts "
+  + "writes from it, so the device can stop the new wallet with false documents.";
+const privacyNotes = (move = false) => (move ? [MOVE_NOW, MOVE_LATER]
+  : [REVIEW_NOW, REVIEW_LATER]).map((text) => el("p", { class: "small muted" }, text));
 
 // The fee as the engine decoded it (none when the decode does not match), the approvals, the note.
 function reviewFacts(ins, note) {
