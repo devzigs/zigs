@@ -363,13 +363,31 @@ function spendOrStall(c, payees, priority, after) {
     .finally(() => clearTimeout(timer));
 }
 
-// Sends every confirmed note to the wallet that replaces this one.
-export async function proposeMove(after = null) {
+// The move payment: every confirmed note to the wallet that replaces this one.
+function moveSpend() {
   const to = state.g.movedTo, tw = ready[to], c = curChain();
   if (!tw) throw new Error("The new wallet has no address yet.");
   const amount = c && c.bal ? c.bal.max_send : 0;
   if (!(amount > 0)) throw new Error("No confirmed funds to move yet.");
-  await newSpend([{ to: tw.address, amount }], "Move to " + groupName(to), to, false, after);
+  return { to, payees: [{ to: tw.address, amount }] };
+}
+
+/** Opens the dialog of the move, which shows who can read the payment. Its button proposes. */
+export async function proposeMove(after = null) {
+  moveSpend();
+  openSend({ sendMove: { gid: state.gid, after } });
+}
+
+/**
+ * Proposes every confirmed note to the wallet that replaces this one. `shown` is the wallet and
+ * the amount that the dialog of the move showed: a move of other funds is not proposed.
+ */
+export async function proposeMoveNow(after = null, shown = null) {
+  const { to, payees } = moveSpend();
+  if (shown && (shown.to !== to || shown.amount !== payees[0].amount)) {
+    throw new Error("The funds to move changed. Check the new amount, then propose again.");
+  }
+  await newSpend(payees, "Move to " + groupName(to), to, false, after);
 }
 
 export async function cancelMove() {

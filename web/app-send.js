@@ -3,36 +3,44 @@ import {
   MEMO_BYTES, memoBytes, memoError, parsePayeeList, toZat, zatText,
 } from "./payees.js";
 import { payeeRows, requestProblem } from "./requests.js";
-import { showBanner, state, ui } from "./app-state.js";
+import { banner, showBanner, state, ui } from "./app-state.js";
 import { fmtZec } from "./app-kit.js";
 import { Z } from "./app-engine.js";
 import { gkeys } from "./app-keystore.js";
 import { DRAFT_MS, draftLive, draftOf, emptyForm, reviewFresh } from "./payment-model.js";
 import { addrHidden, atCap, curChain, curNet, netName } from "./app-chain.js";
 import {
-  act, addrGroups, copyBtn, el, memoRow, money, normalized, noteFor, onNetwork, qrBox, setNote,
+  act, addrGroups, copyBtn, el, groupName, memoRow, money, normalized, noteFor, onNetwork, qrBox,
+  setNote,
 } from "./app-dom.js";
 import {
-  feeEstimate, inspectOf, newSpend, prepareSpend, PRIORITY_FACTOR, proposePrepared, recipientCheck,
-  sendBlocker,
+  feeEstimate, inspectOf, newSpend, prepareSpend, PRIORITY_FACTOR, proposeMoveNow, proposePrepared,
+  recipientCheck, sendBlocker,
 } from "./app-payments.js";
 import { requestOf } from "./app-payreq.js";
 import { nameOf, recentNote, registry, resolveRecipient, zecName } from "./zns.js";
 import { focusAfter, render } from "./app-loop.js";
-import { capNote, FAUCET_TEXT, movedNote, receiveLimit, receiveWhat } from "./app-wallet.js";
+import {
+  capNote, FAUCET_TEXT, movedNote, receiveLimit, receiveWhat, SOL_STAYS,
+} from "./app-wallet.js";
+import { solOn } from "./app-sol.js";
 
 const MAX_PAYEES = 20;
 const TOO_MANY = "A payment can have at most " + MAX_PAYEES + " recipients.";
 
-// The network name comes from the open wallet, so a mainnet wallet still reads Mainnet (D3).
+// The title of a dialog, with the network of the open wallet under it. The name comes from the
+// wallet, so a mainnet wallet still reads Mainnet (D3).
+const dialogTitle = (id, text, net = "Zcash " + curNet().label) =>
+  el("div", { style: "display:grid;gap:6px;justify-items:start" },
+    el("h2", { id }, text), el("span", { class: "badge plain" }, net));
+
 export function receiveDialog() {
   const w = state.wallet, hidden = addrHidden(), net = "Zcash " + curNet().label;
   const close = el("button", {
     class: "icon-btn", type: "button", "aria-label": "Close",
     onclick: () => { ui.receive = false; render(); },
   }, "×");
-  const title = el("div", { style: "display:grid;gap:6px;justify-items:start" },
-    el("h2", { id: "recv-title" }, "Receive ZEC"), el("span", { class: "badge plain" }, net));
+  const title = dialogTitle("recv-title", "Receive ZEC", net);
   const copy = copyBtn(w.address, "Copy address", "btn primary");
   copy.setAttribute("data-first-focus", "");
   // A moved wallet leads with its moved note: senders must use the address of the new wallet.
@@ -163,12 +171,77 @@ function recipientHint(hint, r) {
   });
 }
 
+// One caption over a field. The note of the field stays outside the label.
+const labelled = (caption, input, extra = "") =>
+  el("label", { class: ("field " + extra).trim() }, el("span", {}, caption), input);
+
+const AMOUNT_LABEL = "Amount · ZEC";
+const AMOUNT_BAD = "Enter an amount greater than zero, with at most 8 decimals.";
+
+// The amount can still become valid while the person types: "0." and ".5" are no error. Only text
+// that no continuation can fix reads red. `done`: the person left the field, or the form came
+// back, so zero and a dangling point count too.
+const AMOUNT_PARTIAL = /^\d{0,8}(?:[.,]\d{0,8})?$/;
+function amountHint(hint, text, done = false) {
+  const bad = text !== "" && (!AMOUNT_PARTIAL.test(text) || (done && !toZat(text)));
+  setNote(hint, bad ? AMOUNT_BAD : "", "hint" + (bad ? " bad" : ""));
+}
+
+// The most that one payment can send, or a number of 0 or less when the fee takes it all.
+// max_send leaves only the standard fee of spending every note. A priority fee is
+// PRIORITY_FACTOR times that fee, so Max leaves the extra as well.
+function maxSend(bal, priority) {
+  if (!bal || !(bal.max_send > 0)) return 0;
+  const extra = priority ? (PRIORITY_FACTOR - 1) * (bal.spendable - bal.max_send) : 0;
+  return bal.max_send - extra;
+}
+const noRoom = () => "The balance does not cover the " + (ui.priority ? "priority" : "network")
+  + " fee.";
+
+// What sets and judges the amount of a row, for Max and the priority box.
+const amountFields = new WeakMap();
+
+// An amount that is the maximum stays the maximum when the priority box changes. Any other amount
+// stays, and its note is judged again.
+function followMax(rows) {
+  const [r] = rows, bal = curChain()?.bal, was = maxSend(bal, !ui.priority);
+  clearNotice();
+  const field = amountFields.get(r);
+  if (rows.length === 1 && was > 0 && toZat(r.amt) === was) field?.put(maxSend(bal, ui.priority));
+  else field?.show();
+}
+
+// The amount of one recipient and its note: [field, note].
+function amountField(r, n, rows, sumUp) {
+  const hintId = "s-amt-hint-" + r.k, hint = el("span", { class: "hint", id: hintId });
+  const amt = el("input", {
+    class: "input", id: "s-amt-" + r.k, type: "text", inputmode: "decimal", placeholder: "0.00",
+    required: true, autocomplete: "off", "aria-label": AMOUNT_LABEL + n,
+    "aria-describedby": hintId, value: r.amt,
+    oninput: (ev) => { r.amt = ev.target.value.trim(); amountHint(hint, r.amt); sumUp(); },
+    onchange: (ev) => amountHint(hint, ev.target.value.trim(), true),
+  });
+  // A Max of nothing leaves the amount as it is and says why: that is no amount to write.
+  const put = (zat) => {
+    if (!(zat > 0)) return setNote(hint, noRoom(), "hint bad");
+    r.amt = zatText(zat);
+    amt.value = r.amt;
+    amountHint(hint, r.amt, true);
+  };
+  amountFields.set(r, { put, show: () => amountHint(hint, r.amt, true) });
+  const max = rows.length === 1 ? el("button", {
+    class: "btn sm", type: "button",
+    onclick: () => { clearNotice(); put(maxSend(curChain()?.bal, ui.priority)); sumUp(); },
+  }, "Max") : null;
+  noteFor(hint, amt);
+  amountHint(hint, r.amt, true);
+  return [labelled(AMOUNT_LABEL, el("div", { class: "input-wrap" }, amt, max), "pay-amt"), hint];
+}
+
 function payRow(r, i, rows, sumUp) {
-  const c = curChain(), n = rows.length > 1 ? " " + (i + 1) : "", hintId = "s-hint-" + r.k;
+  const n = rows.length > 1 ? " " + (i + 1) : "", hintId = "s-hint-" + r.k;
   const hint = el("span", { class: "hint", id: hintId, role: "status",
     style: "overflow-wrap:anywhere" });
-  const amt = el("input", { class: "input", id: "s-amt-" + r.k, type: "text", inputmode: "decimal", placeholder: "0.00", required: true, autocomplete: "off", "aria-label": "Amount" + n, value: r.amt, oninput: (ev) => { r.amt = ev.target.value.trim(); sumUp(); } });
-  const max = () => { r.amt = zatText(Math.max(0, c && c.bal ? c.bal.max_send : 0)); amt.value = r.amt; sumUp(); };
   const to = el("input", {
     class: "input mono", id: "s-to-" + r.k, type: "text", placeholder: toPlaceholder(),
     required: true, autocomplete: "off", spellcheck: "false",
@@ -181,10 +254,18 @@ function payRow(r, i, rows, sumUp) {
   });
   noteFor(hint, to);
   recipientHint(hint, r);
-  return el("div", { class: "pay-row" }, to,
-    el("div", { class: "input-wrap" }, amt, rows.length === 1 ? el("button", { class: "btn sm", type: "button", onclick: max }, "Max") : null),
-    rows.length > 1 ? el("button", { class: "icon-btn", type: "button", "aria-label": "Remove recipient" + n, onclick: () => { rows.splice(i, 1); render(); } }, "×") : null,
-    hint, memoBox(r, n));
+  const remove = rows.length > 1 ? el("button", {
+    class: "icon-btn", type: "button", "aria-label": "Remove recipient" + n,
+    onclick: () => {
+      rows.splice(i, 1);
+      clearNotice();
+      focusAfter("INPUT:s-to-" + rows[Math.min(i, rows.length - 1)].k + ":0", true);
+      render();
+    },
+  }, "×") : null;
+  const [amount, amountNote] = amountField(r, n, rows, sumUp);
+  return el("div", { class: "pay-row" }, labelled(toLabel() + n, to), amount, remove, hint,
+    amountNote, memoBox(r, n));
 }
 
 // Shows the bytes of a memo once it comes near the limit, and says why a memo cannot be sent.
@@ -196,16 +277,17 @@ function memoHint(hint, memo) {
 }
 
 // The optional memo of one recipient.
+const MEMO_LABEL = "Memo (optional)";
 function memoBox(r, n) {
   const hintId = "s-memo-hint-" + r.k, hint = el("span", { class: "hint", id: hintId });
   const memo = el("input", {
-    class: "input", id: "s-memo-" + r.k, type: "text", placeholder: "Memo (optional)",
-    autocomplete: "off", "aria-label": "Memo" + n + " (optional)", "aria-describedby": hintId,
-    value: r.memo, oninput: (ev) => { r.memo = ev.target.value; memoHint(hint, r.memo); },
+    class: "input", id: "s-memo-" + r.k, type: "text", autocomplete: "off",
+    "aria-label": MEMO_LABEL + n, "aria-describedby": hintId, value: r.memo,
+    oninput: (ev) => { r.memo = ev.target.value; memoHint(hint, r.memo); },
   });
   noteFor(hint, memo);
   memoHint(hint, r.memo);
-  return el("div", { class: "memo-row" }, memo, hint);
+  return el("div", { class: "memo-row" }, labelled(MEMO_LABEL, memo), hint);
 }
 
 // A whole request pasted in a recipient field replaces that row with the rows of its payees. It
@@ -219,6 +301,7 @@ export function fillFromRequest(r, rows, hint) {
   const error = req.error ? requestProblem(req.error) : tooMany ? TOO_MANY : "";
   if (error) { setNote(hint, error, "hint bad"); return true; }
   rows.splice(rows.indexOf(r), 1, ...fresh);
+  clearNotice();
   render();
   return true;
 }
@@ -248,6 +331,7 @@ function useList() {
   if (!ui.listError) {
     ui.pay = payeeRows(rows, () => ++ui.payKey);
     box.value = ""; box.closest("details").open = false;
+    clearNotice();
   }
   render();
 }
@@ -316,9 +400,7 @@ function readPayees(rows, found) {
     const who = whoOf(rows, i), memo = String(r.memo || "").trim();
     const refusal = addressRefusal(to, hit);
     if (refusal) throw new Error(who + refusal);
-    if (!amount) {
-      throw new Error(who + "Enter an amount greater than zero, with at most 8 decimals.");
-    }
+    if (!amount) throw new Error(who + AMOUNT_BAD);
     if (memoError(memo)) throw new Error(who + memoError(memo));
     return payeeOf(to, amount, memo, nameOfRow(r, hit));
   });
@@ -347,9 +429,11 @@ function pasteList(net) {
     el("button", { class: "btn sm", type: "button", onclick: useList }, "Use this list"));
 }
 
-// A payment proposed again after an expired one that was signed (TICKETS.md ZEC-13).
-const afterNote = () => ui.after ? el("p", { class: "small" }, "This payment also spends every "
-  + "note of the expired payment, so that at most one of them can go on chain.") : null;
+// A payment proposed again after an expired one that was signed (TICKETS.md ZEC-13). It has no
+// review, so the form shows who can read the payment.
+const afterNotes = () => (ui.after ? [el("p", { class: "small" }, "This payment also spends "
+  + "every note of the expired payment, so that at most one of them can go on chain."),
+...privacyNotes()] : []);
 
 // ── Drafts: the typed Send form, sealed with the wallet key on this device for 24 hours ──
 // `at` stays plain next to the sealed box, so an expired draft goes without a key, also while
@@ -457,7 +541,9 @@ let sendRun = 0;
 /** Drops the review and any build in flight: their Send closed, or their wallet closed. */
 export function dropReview() {
   sendRun += 1;
-  ui.sendReview = null;
+  // A move has no form behind it: its dialog closes with its wallet, not into an empty Send form.
+  if (ui.sendMove) ui.send = false;
+  Object.assign(ui, { sendReview: null, sendMove: null, sendError: "", sendNoticed: "" });
 }
 /** Closes Send and drops its review: a review never comes back after its dialog closed. */
 export function endSend() {
@@ -479,9 +565,101 @@ export async function openReview(payees, note, run = sendRun) {
   if (run === sendRun) ui.sendReview = { prep, note, own };
 }
 const closeSend = () => { endSend(); render(); };
+const closeX = () => el("button", {
+  class: "icon-btn", type: "button", "aria-label": "Close", onclick: closeSend,
+}, "×");
 sweepDrafts();
 
+// The error of Send, its review or the move shows in the dialog, where the person reads it.
+// role alert reads the text when the node comes in, and a redraw builds the node again: only the
+// first build of an error has the role, and a new dialog takes the focus by its first-focus mark.
+const sendNotice = () => {
+  if (!ui.sendError) return null;
+  const fresh = ui.sendNoticed !== ui.sendError;
+  ui.sendNoticed = ui.sendError;
+  return el("p", { class: "callout bad", role: fresh ? "alert" : null, id: "send-error",
+    tabindex: "-1", "data-key": "send-error", "data-first-focus": fresh }, ui.sendError);
+};
+
+// An old failure goes, and the node goes at once: no redraw per key.
+function clearNotice() {
+  if (!ui.sendError) return;
+  Object.assign(ui, { sendError: "", sendNoticed: "" });
+  document.getElementById("send-error")?.remove();
+}
+
+// An edit of the person makes the notice obsolete. The redraw sends events of its own, and they
+// are not trusted: they change nothing.
+function typed(ev) {
+  if (ev.isTrusted) clearNotice();
+  keepDraft();
+}
+
+const dialogKind = () => (ui.sendMove ? "move" : ui.sendReview ? "review" : "form");
+const focusKey = () => document.activeElement?.dataset?.key ?? "";
+
+// The engine says "not enough funds: N zat spendable, M zat needed". The dialog says it as the
+// check of the form does, in ZEC.
+const fundsText = (have, need) => "Not enough funds: " + fmtZec(have) + " available, "
+  + fmtZec(need) + " needed (amounts + fee).";
+const ENGINE_FUNDS = /not enough funds: (\d+) zat spendable, (\d+) zat needed/;
+function dialogText(e) {
+  const text = e?.message || String(e), m = ENGINE_FUNDS.exec(text);
+  return m ? fundsText(Number(m[1]), Number(m[2])) : text;
+}
+
+// The error of an action goes into the dialog. It goes to the banner when the dialog closed, or
+// closed and opened again, since the action began (`at` is the run of its start).
+function failed(e, at) {
+  if (!ui.send || at !== sendRun) throw e;
+  ui.sendError = dialogText(e);
+}
+
+// act clears a bad banner after a success, and a handled failure is no success: the banner of
+// another cause (a lost connection, a key share that was not saved) comes back.
+function keepBanner(shown) {
+  if (shown?.kind === "bad" && banner === null) showBanner("bad", shown.text);
+}
+
+// The run in which an action is in flight: a second click or Enter in that run does nothing.
+let actingRun = null;
+
+// An action of the Send dialogs. A failure shows in the notice and the form keeps its values. A
+// stale review goes back to the form: that is a new dialog, and it focuses the notice itself. The
+// focus goes to the notice only where the action began: a person who types elsewhere keeps it.
+function inDialog(fn) {
+  const run = act(async (ev) => {
+    const at = sendRun;
+    clearNotice();
+    try { await fn(ev); clearNotice(); } catch (e) { failed(e, at); }
+  });
+  return async (ev) => {
+    if (actingRun === sendRun) { ev.preventDefault(); return; }
+    const mine = sendRun, kind = dialogKind(), shown = banner, started = focusKey();
+    actingRun = mine;
+    try { await run(ev); } finally { if (actingRun === mine) actingRun = null; }
+    if (!ui.sendError) return;
+    keepBanner(shown);
+    if (dialogKind() === kind) focusAfter("send-error", focusKey() === started);
+  };
+}
+
+// The form checks, looks up the names, builds the transaction and opens the review. "Propose
+// again" keeps its direct path: it spends the notes of the expired payment too.
+async function submitSend(rows, spendable, why, ev) {
+  if (why) throw new Error(why);
+  const run = sendRun, payees = readPayees(rows, await resolveNames(rows));
+  const need = payees.reduce((n, p) => n + p.amount, 0) + feeEstimate(payees.length, ui.priority);
+  if (need > spendable) throw new Error(fundsText(spendable, need));
+  const note = String(new FormData(ev.target).get("note") || "").trim();
+  if (!ui.after) return openReview(payees, note, run);
+  await newSpend(payees, note, null, ui.priority, ui.after);
+  endSend();
+  ui.after = null;
+}
+
 export function sendDialog() {
+  if (ui.sendMove) return moveDialog();
   if (ui.sendReview) return reviewDialog();
   const c = curChain(), bal = c && c.bal, spendable = bal ? bal.spendable : 0, net = curNet();
   if (!ui.pay) freshForm();
@@ -494,31 +672,21 @@ export function sendDialog() {
   };
   const why = sendBlocker();
   const f = el("form", { class: "dialog", role: "dialog", "aria-modal": "true",
-    "aria-labelledby": "send-title", oninput: keepDraft, onchange: keepDraft, onclick: keepDraft,
-    onsubmit: act(async (ev) => {
-    if (why) throw new Error(why);
-    const run = sendRun, payees = readPayees(rows, await resolveNames(rows));
-    const need = payees.reduce((n, p) => n + p.amount, 0) + feeEstimate(payees.length, ui.priority);
-    if (need > spendable) throw new Error("Not enough funds: " + fmtZec(spendable) + " available, " + fmtZec(need) + " needed (amounts + fee).");
-    const note = String(new FormData(ev.target).get("note") || "").trim();
-    // "Propose again" keeps its direct path: it spends the notes of the expired payment too.
-    if (ui.after) {
-      await newSpend(payees, note, null, ui.priority, ui.after);
-      endSend();
-      ui.after = null;
-      return;
-    }
-    await openReview(payees, note, run);
-  }) },
-    el("div", { class: "card-head" }, el("h2", { id: "send-title" }, "Send ZEC"),
-      el("button", { class: "icon-btn", type: "button", "aria-label": "Close", onclick: closeSend },
-        "×")),
-    el("div", { class: "field" }, el("span", {}, rows.length > 1 ? rows.length + " recipients, one transaction" : "To and amount"),
+    "aria-labelledby": "send-title", oninput: typed, onchange: typed, onclick: keepDraft,
+    onsubmit: inDialog((ev) => submitSend(rows, spendable, why, ev)) },
+    el("div", { class: "card-head" }, dialogTitle("send-title", "Send ZEC"), closeX()),
+    sendNotice(),
+    el("div", { class: "field" },
+      rows.length > 1 ? el("span", {}, rows.length + " recipients, one transaction") : null,
       rows.map((r, i) => payRow(r, i, rows, sumUp)),
       el("div", { class: "row-actions" },
         el("button", {
           class: "btn sm", type: "button", disabled: rows.length >= MAX_PAYEES,
-          onclick: () => { rows.push({ k: ++ui.payKey, to: "", amt: "", memo: "" }); render(); },
+          onclick: () => {
+            rows.push({ k: ++ui.payKey, to: "", amt: "", memo: "" });
+            clearNotice();
+            render();
+          },
         }, "Add recipient"),
         pasteList(net))),
     el("label", { class: "field" }, el("span", {}, "Note for the devices (optional)"),
@@ -532,21 +700,22 @@ export function sendDialog() {
     el("p", { class: "small faint" }, "A memo goes on chain with the payment. Its recipient, "
       + "the devices of this wallet, and anyone else who has the invite link can read it. A "
       + "device that Change devices leaves out later can still read it."),
-    priorityBox(sumUp),
+    priorityBox(rows, sumUp),
     el("div", { class: "summary" },
       el("div", {}, el("span", { class: "muted" }, "Available"), money(spendable)),
       el("div", {}, el("span", { class: "muted" }, "Network fee (estimate)"), fee),
-      el("div", { class: "total" }, el("span", {}, "Total leaving the wallet"), total),
-      el("div", {}, el("span", { class: "muted" }, "Approvals needed"), el("span", {}, state.g.t + " of " + state.g.n))),
+      el("div", { class: "total" }, el("span", {}, "Total leaving the wallet (estimate)"), total),
+      el("div", {}, el("span", { class: "muted" }, "Approvals needed"),
+        el("span", {}, state.g.t + " of " + state.g.n))),
     el("p", { class: "small faint" }, EXPIRY_NOTE),
     sendFoot(why));
   sumUp();
   return f;
 }
 
-// The foot of the Send form: the note of "Propose again", the draft, the buttons, why Send is off.
+// The foot of the Send form: the notes of "Propose again", the draft, the buttons, why Send is off.
 function sendFoot(why) {
-  return [afterNote(), draftLine(),
+  return [...afterNotes(), draftLine(),
     el("div", { class: "dialog-actions" },
       el("button", { class: "btn", type: "button", onclick: closeSend }, "Cancel"),
       el("button", {
@@ -577,24 +746,53 @@ function reviewDialog() {
   const ins = decodedMatch(prep), ok = !!ins;
   return el("section", { class: "dialog", role: "dialog", "aria-modal": "true",
     "aria-labelledby": "review-title" },
-  el("div", { class: "card-head" }, el("h2", { id: "review-title" }, "Review the payment"),
-    el("button", { class: "icon-btn", type: "button", "aria-label": "Close", onclick: closeSend },
-      "×")),
+  el("div", { class: "card-head" }, dialogTitle("review-title", "Review the payment"), closeX()),
+  sendNotice(),
   ok ? el("div", { class: "review-hero" }, el("span", { class: "label" }, "Leaves the wallet"),
-    money(t.amount + ins.fee, "lg"), el("span", { class: "small muted" }, "Zcash "
-      + netName(state.g) + ": the amounts and the network fee")) : null,
+    money(t.amount + ins.fee, "lg"), el("span", { class: "small muted" },
+      "Zcash " + curNet().label + ": the amounts and the network fee")) : null,
   ok ? el("p", { class: "callout ok" }, REVIEW_OK)
     : el("p", { class: "callout bad", role: "alert" }, REVIEW_BAD),
   prep.payees.map((p, i) => reviewRow(p, i, prep.payees.length)),
   reviewFacts(ins, note),
-  el("p", { class: "small muted" }, REVIEW_NOW), el("p", { class: "small muted" }, REVIEW_LATER),
+  ...privacyNotes(),
   el("p", { class: "small faint" }, EXPIRY_NOTE + " Proposing asks the devices to approve; it "
     + "does not sign or send the payment."),
   el("div", { class: "dialog-actions" },
     el("button", { class: "btn", type: "button",
-      onclick: () => { ui.sendReview = null; render(); } }, "Back to edit"),
+      onclick: () => { ui.sendReview = null; clearNotice(); render(); } }, "Back to edit"),
     ok ? el("button", { class: "btn primary", type: "button", disabled: !!ui.proposing,
-      onclick: act(() => proposeReviewed(ui.sendReview)) }, "Propose payment") : null));
+      onclick: inDialog(() => proposeReviewed(ui.sendReview)) }, "Propose payment") : null));
+}
+
+const moveAmount = () => curChain()?.bal?.max_send ?? 0;
+
+// The move: every confirmed note goes to the wallet that replaces this one. The dialog shows who
+// can read the payment, as the review does, and proposes it with the button. The button proposes
+// what the dialog shows: when the amount or the wallet changed, it says so and the dialog draws
+// again.
+function moveDialog() {
+  const { gid, after } = ui.sendMove, to = state.g.movedTo, why = sendBlocker();
+  if (gid !== state.gid || !to) { ui.sendMove = null; return sendDialog(); }
+  const shown = { to, amount: moveAmount() };
+  return el("section", { class: "dialog", role: "dialog", "aria-modal": "true",
+    "aria-labelledby": "move-title" },
+  el("div", { class: "card-head" }, dialogTitle("move-title", "Move the Zcash funds"), closeX()),
+  sendNotice(),
+  el("div", { class: "review-hero" }, el("span", { class: "label" }, "Moves"),
+    money(shown.amount, "lg"), el("span", { class: "small muted" },
+      "to " + groupName(to) + ", the wallet that replaces this one")),
+  el("p", { class: "small muted" }, "Like any payment, this needs " + state.g.t + " approvals."
+    + (solOn() ? " " + SOL_STAYS : "")),
+  ...privacyNotes(true),
+  el("p", { class: "small faint" }, EXPIRY_NOTE),
+  el("div", { class: "dialog-actions" },
+    el("button", { class: "btn", type: "button", onclick: closeSend }, "Cancel"),
+    el("button", { class: "btn primary", type: "button", disabled: !!why,
+      "aria-describedby": why ? "why-move" : null,
+      onclick: inDialog(async () => { await proposeMoveNow(after, shown); endSend(); }) },
+    "Propose the move"),
+    why ? el("span", { class: "off-why", id: "why-move" }, why) : null));
 }
 
 // Who can read the payment now, and what a device that a later Change devices leaves out keeps
@@ -611,6 +809,18 @@ const REVIEW_LATER = "A device that a later Change devices leaves out keeps the 
   + "the note of that payment, and the id of the new wallet. With the id, the device can get the "
   + "sealed documents of the new wallet and each later write from the group server. The server "
   + "also accepts writes from it, so the device can stop the new wallet with false documents.";
+// A move has no memo and no priority fee, and its Change devices has begun: its notes say so.
+const MOVE_NOW = "The chain does not show the recipient or the amount. The expiry height is "
+  + "public and can show that Zigs made this payment. Every device of this wallet can read the "
+  + "recipient, the amount and the note, in the shared history of the wallet. So can anyone who "
+  + "has its invite link.";
+const MOVE_LATER = "If this Change devices leaves out a device, that device keeps the viewing key "
+  + "and the messages of this wallet. It can read this move payment: the address, the amount and "
+  + "the note, and the id of the new wallet. With the id, the device can get the sealed documents "
+  + "of the new wallet and each later write from the group server. The server also accepts "
+  + "writes from it, so the device can stop the new wallet with false documents.";
+const privacyNotes = (move = false) => (move ? [MOVE_NOW, MOVE_LATER]
+  : [REVIEW_NOW, REVIEW_LATER]).map((text) => el("p", { class: "small muted" }, text));
 
 // The fee as the engine decoded it (none when the decode does not match), the approvals, the note.
 function reviewFacts(ins, note) {
@@ -650,11 +860,11 @@ const EXPIRY_NOTE = "The approvals must finish within about 24 hours. After that
 
 // The priority fee: 10 times the standard fee, for a faster block when the network is busy. It
 // is public on chain, so it marks the payment. Older builds of the apps refuse it.
-function priorityBox(sumUp) {
+function priorityBox(rows, sumUp) {
   return el("label", { class: "ack" },
     el("input", {
       type: "checkbox", id: "s-priority", checked: ui.priority,
-      onchange: (ev) => { ui.priority = ev.target.checked; sumUp(); },
+      onchange: (ev) => { ui.priority = ev.target.checked; followMax(rows); sumUp(); },
     }),
     el("span", { class: "small" }, "Pay a priority fee: " + PRIORITY_FACTOR + " times the "
       + "standard fee, for a faster block when the network is busy. The fee is public. Few wallets "
