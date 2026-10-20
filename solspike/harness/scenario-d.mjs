@@ -31,7 +31,7 @@ import {
   waitForText,
 } from "./page.mjs";
 import { redact } from "./redact.mjs";
-import { makeWallet } from "./seats.mjs";
+import { confirmNumber, makeWallet } from "./seats.mjs";
 import { ORIGIN } from "./server.mjs";
 import { consoleProblems, isSolana, requests, responses, transfer } from "./sol-facts.mjs";
 import { withStack } from "./stack.mjs";
@@ -75,7 +75,7 @@ async function zcashPhase(rig) {
     await clickText(page, "Join as device " + seat, { ms: 40000 });
     pages.push(page);
   }
-  for (const page of pages) await clickText(page, "It matches", { ms: 90000 });
+  for (const page of pages) await confirmNumber(page);
   for (const [i, page] of pages.entries()) {
     const gone = () => hasTab("tab-overview")(page);
     await waitFor(gone, 240000, () => `the Zcash wallet of seat ${i + 1}`);

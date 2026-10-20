@@ -28,6 +28,7 @@ const { SHOWN } = await import("../sol/payview.js");
 const { createDialog, endCreate, lobby, marginText, renderSide } = await import("../app-shell.js");
 const { receiveDialog } = await import("../app-send.js");
 const { offReason } = await import("../util.js");
+const { quickCode } = await import("../setup-model.js");
 const { intentHex } = await import("../sol/intent.js");
 const { ui } = await import("../app-state.js");
 const appState = await import("../app-state.js");
@@ -1930,6 +1931,166 @@ assert.match(marginText(3, 3), /Each payment needs every device/);
   assert.match(appState.banner?.text ?? "", /moved already/);
   ui.move = false;
 }
+
+// ── The safety card: all 30 digits, a tick for this number, and They don't match ──
+// This browser holds seat 1 only, with no key share yet, so the card asks it to confirm.
+{
+  await rig.wallet({ name: "Verify" });
+  const gidV = t.state.gid, no = t.safetyNo(), k1 = gidV + ":1", k2 = gidV + ":2";
+  const keep = { wallet: t.state.wallet, done: t.state.done, abort: t.state.abort };
+  const kept = { 1: t.secrets[k1], 2: t.secrets[k2], 3: t.secrets[gidV + ":3"] };
+  delete t.secrets[k2];
+  delete t.secrets[gidV + ":3"];
+  // No key share and no checked address yet: the setup is before the key ceremony.
+  t.secrets[k1] = { ...kept[1], keyPackage: undefined, confirmed: undefined,
+    checkedWallet: undefined };
+  // The store brings the formed wallet back after each write, so each look holds the setup.
+  const view = (abort = {}) => {
+    Object.assign(t.state, { wallet: null, done: {}, abort });
+    return pageTree();
+  };
+  const seen = (abort) => textOf(view(abort));
+  const button = (text) => findNode(view(),
+    (n) => n.attrs?.type === "button" && textOf(n) === text);
+  const EV = { preventDefault() {}, currentTarget: null };
+  const creates = () => {
+    Object.assign(t.state, { wallet: null, done: keep.done });
+    return t.canCreateWallet();
+  };
+  try {
+    assert.match(seen(), new RegExp("Check that your devices match.*" + no + ".*The first "
+      + "digits, \\d{5} \\d{3}, help you find the number\\. They are not enough: compare all 30 "
+      + "digits\\.", "s"), "the full number, and the quick code as an aid");
+    assert.equal(button("It matches").attrs.disabled, "", "no tick: It matches is off");
+    assert.equal(button("It matches").attrs["aria-describedby"], "why-match-full");
+    assert.equal(textOf(byId(view(), "why-match-full")),
+      "Compare all 30 digits on every device, then tick the box.");
+    ui.safetyFull = gidV + ":" + "1".repeat(30);
+    assert.equal(button("It matches").attrs.disabled, "",
+      "a tick for another number does not count");
+    assert.match(seen(), /The safety number changed\. Compare all 30 digits again\./,
+      "a tick of an older number says that the number changed");
+    await button("It matches").on.click(EV);
+    assert.equal(t.secrets[k1].confirmed, undefined, "the click without the tick confirms nothing");
+    assert.match(t.banner?.text ?? "", /then tick the box/);
+    byId(view(), "safety-full").on.change({ target: { checked: true } });
+    assert.equal(ui.safetyFull, gidV + ":" + no, "the tick holds this wallet and this number");
+    assert.ok(!("disabled" in button("It matches").attrs), "with the tick, It matches is on");
+    byId(view(), "safety-full").on.change({ target: { checked: false } });
+    assert.equal(button("It matches").attrs.disabled, "", "no tick again: It matches is off");
+    byId(view(), "safety-full").on.change({ target: { checked: true } });
+    await button("It matches").on.click(EV);
+    assert.equal(t.secrets[k1].confirmed, no, "the tick and the click confirm");
+    assert.match(seen(), /Confirmed on this device\. Waiting for the other devices\./);
+    assert.equal(findNode(view(), (n) => n.attrs?.["data-key"] === "confirm-number")?.attrs
+      .tabindex, "-1", "the focus stays where It matches was");
+    // They don't match: a second question, then the stop of every seat of this browser.
+    assert.equal(creates(), true, "before a stop, seat 1 may build the wallet");
+    button("They don't match").on.click();
+    assert.match(seen(), /Stop the setup on this device\? Then ask the other people to tap/);
+    assert.equal(button("Keep checking").attrs["data-key"], "keep-checking",
+      "the question gives the focus to Keep checking");
+    button("Keep checking").on.click();
+    assert.doesNotMatch(seen(), /Stop the setup on this device/, "Keep checking goes back");
+    t.secrets[k2] = { ...kept[2], keyPackage: undefined, confirmed: undefined,
+      checkedWallet: undefined };
+    button("They don't match").on.click();
+    await button("Stop setup").on.click();
+    t.state.abort = {};
+    assert.equal(creates(), false,
+      "the own stop of seat 1 builds no wallet before any abort document");
+    assert.deepEqual([t.secrets[k1].aborted, t.secrets[k2].aborted], [1, 2].map((i) => "The "
+      + "person who uses device " + i + " saw a different safety number. Do not use this wallet. "
+      + "Create a new wallet."), "every seat of this browser stops");
+    assert.doesNotMatch(seen(), /Check that your devices match/, "the card goes");
+    const stopNote = findNode(view(), (n) => n.attrs?.["data-key"] === "stop-setup");
+    assert.equal(stopNote?.attrs.tabindex, "-1", "the focus stays on the stop");
+    assert.match(seen(), /Stopped: no address\./, "the address step says that the setup stopped");
+    assert.deepEqual([t.secrets[k1].stopped, t.secrets[k2].stopped], [true, true],
+      "the stop marks each seat as stopped by its person");
+    await waitFor("the abort document", () => !!data.get(`groups/${gidV}/abort/1`));
+    assert.equal(creates(), false, "a stopped seat 1 builds no wallet");
+    t.state.wallet = keep.wallet;
+    assert.equal(walletReady(), false, "a stopped browser keeps its setup page and its stop");
+    // An abort with no stop of a person (a version flip, for example) keeps the wallet page of a
+    // device with a key share. An aborted seat with no key share is not in that wallet.
+    t.secrets[k1] = { ...t.secrets[k1], stopped: undefined, keyPackage: kept[1].keyPackage };
+    assert.equal(walletReady(), false, "a stop of the other seat of this browser keeps the setup");
+    t.secrets[k2] = { ...t.secrets[k2], stopped: undefined };
+    assert.equal(walletReady(), false, "an aborted seat with no key share keeps the setup page");
+    t.secrets[k2] = { ...t.secrets[k2], keyPackage: kept[2].keyPackage };
+    assert.equal(walletReady(), true, "an abort without a person's stop keeps the wallet page");
+    // A stop of another device: the card goes, and seat 1 builds no wallet either.
+    t.secrets[k1] = { ...t.secrets[k1], aborted: undefined, keyPackage: undefined };
+    delete t.secrets[k2];
+    const other = { 2: { reason: "A test stop." } };
+    assert.doesNotMatch(seen(other), /Check that your devices match/,
+      "after another device stops, the card goes");
+    t.state.abort = other;
+    assert.equal(creates(), false, "a stop of another device builds no wallet");
+    // A stop that this browser cannot save says so.
+    storage.set("zf-vault", "another tab locked the keys");
+    try {
+      await stopNow(gidV);
+    } finally {
+      storage.delete("zf-vault");
+    }
+    assert.match(t.banner?.text ?? "", /This browser could not save the stop\./,
+      "a stop that is not saved says so");
+    // A seat that checked the address ended its setup: two hidden documents bring no card back.
+    t.secrets[k1] = { ...t.secrets[k1], aborted: undefined, stopped: undefined };
+    assert.match(seen(), /Check that your devices match/);
+    t.secrets[k1] = { ...t.secrets[k1], checkedWallet: kept[1].checkedWallet };
+    assert.doesNotMatch(seen(), /Check that your devices match/,
+      "a seat that checked the address gets no safety card");
+    // A browser without a seat of this wallet only sees the number.
+    delete t.secrets[k1];
+    ui.mismatchAsk = null;
+    assert.match(seen(), /Check that your devices match/);
+    assert.deepEqual([button("It matches"), button("They don't match"), button("Stop setup")],
+      [null, null, null], "a browser without a seat cannot confirm or stop");
+    assert.doesNotMatch(seen(), /Confirmed on this device|tap "They don't match"/,
+      "and is not told to");
+  } finally {
+    Object.assign(t.secrets, { [k1]: kept[1], [k2]: kept[2], [gidV + ":3"]: kept[3] });
+    Object.assign(t.state, keep);
+    ui.safetyFull = null;
+    ui.mismatchAsk = null;
+  }
+}
+async function stopNow(gid) {
+  ui.mismatchAsk = gid;
+  Object.assign(t.state, { wallet: null, done: {}, abort: {} });
+  await findNode(pageTree(), (n) => n.attrs?.type === "button" && textOf(n) === "Stop setup")
+    .on.click();
+}
+// A stop while seat 1 waits for the chain height: createWallet writes no wallet document.
+{
+  const engine = await import("../app-engine.js"), { stopSetup } = await import("../app-dkg.js");
+  const gid = await rig.wallet({ name: "Slow height" }), wpath = groupPath(gid) + "/meta/wallet";
+  const keepZ = engine.Z;
+  delete t.secrets[gid + ":2"];
+  delete t.secrets[gid + ":3"];
+  t.setZ({ ...keepZ, latestHeight: async () => { await sleep(600); return 1000; } });
+  try {
+    t.state.wallet = null;
+    data.delete(wpath);
+    rig.notify();
+    await sleep(150);
+    assert.equal(t.canCreateWallet(), true, "seat 1 may build the wallet before the stop");
+    await stopSetup();
+    rig.notify();
+    await sleep(1500);
+    assert.equal(data.has(wpath), false, "a stop during the wait writes no wallet document");
+  } finally {
+    t.setZ(keepZ);
+  }
+}
+assert.equal(quickCode("12345 67890 12345 67890 12345 67890"), "12345 678",
+  "the quick code keeps the groups of the number");
+assert.equal(quickCode("12345 67890"), null, "a short number has no quick code");
+assert.equal(quickCode("12345 6789x 12345 67890 12345 67890"), null, "a number with a letter");
+assert.equal(quickCode(null), null);
 
 // ── The wallet list: the welcome card, and the form that joins a wallet with a link ──
 // A good link goes the way of a link in the address bar. A bad one opens nothing and leaves its

@@ -3,7 +3,7 @@ import { fmtInt, seatBackedUp, usesV2 } from "./util.js";
 import { IGNORED_NOTE } from "./signed.js";
 import { log, ready, state, ui } from "./app-state.js";
 import { fmtZec, short, when } from "./app-kit.js";
-import { gkeys, sec } from "./app-keystore.js";
+import { gkeys, mySeatSecrets, sec } from "./app-keystore.js";
 import { keysDiffer, localSeats, seatIds, seatMine, seatStage, STAGE_LABEL } from "./app-seats.js";
 import { inviteLink, senderNote } from "./app-links.js";
 import {
@@ -92,8 +92,12 @@ function signedNotes() {
     ? el("div", { style: "display:grid;gap:8px" }, lost, moved, ignored) : null;
 }
 
+// A person's stop keeps the setup page, also when a wallet document came. Another abort (an
+// unsigned group document can trigger one) must not take the wallet from a device with a share.
+// An aborted seat with no key share is not in the wallet that formed: it keeps its reason.
 export const walletReady = () => !!(state.wallet && state.wallet.birthday)
-  && rejectedSeats().length === 0 && !keysDiffer();
+  && rejectedSeats().length === 0 && !keysDiffer()
+  && !mySeatSecrets(state.gid).some(([, s]) => s.stopped || (s.aborted && !s.keyPackage));
 
 /**
  * The sections of the open wallet: [id, label, count] each. The side menu lists them; the Solana

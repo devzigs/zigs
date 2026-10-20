@@ -48,6 +48,18 @@ export async function makeWallet(page, name, { solana = false } = {}) {
   return run(page, () => document.querySelector(".addr-box .hex").textContent.trim());
 }
 
+// The person compares all 30 digits of the safety number, ticks the box, then confirms. The box
+// shows once every seat has joined.
+export async function confirmNumber(page) {
+  const box = () => run(page, () => !!document.getElementById("safety-full"));
+  await waitFor(box, 90000, () => "the box of the safety number");
+  await run(page, () => {
+    const el = document.getElementById("safety-full");
+    if (!el.checked) el.click();
+  });
+  await clickText(page, "It matches", { ms: 90000 });
+}
+
 const hasTab = (page, id) => run(page, (name) => !!document.getElementById(name), id);
 
 /**
@@ -63,7 +75,7 @@ export async function zcashWallet(rig, name, opts = {}) {
     await clickText(page, "Join as device " + seat, { ms: 40000 });
     pages.push(page);
   }
-  for (const page of pages) await clickText(page, "It matches", { ms: 90000 });
+  for (const page of pages) await confirmNumber(page);
   for (const [i, page] of pages.entries()) {
     await waitFor(
       () => hasTab(page, "tab-overview"),
