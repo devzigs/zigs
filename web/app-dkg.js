@@ -7,7 +7,9 @@ import { canSign, newSignKey, signMsg } from "./chat.js";
 import { log, raw, showBanner, state } from "./app-state.js";
 import { isStr, J, randomHex32, S } from "./app-kit.js";
 import { Z } from "./app-engine.js";
-import { mySeatSecrets, persist, putKey, putSec, sec, secrets } from "./app-keystore.js";
+import {
+  gkeys, LOCKED_ELSEWHERE, lockedElsewhere, mySeatSecrets, persist, putKey, putSec, sec, secrets,
+} from "./app-keystore.js";
 import { allR1, allSeated, isCreator, keysAgree, localSeats, r2For, seatIds } from "./app-seats.js";
 import { netName, netOf, NETWORKS, serverHeight } from "./app-chain.js";
 import {
@@ -423,6 +425,17 @@ export async function createGroup(name, n, t, from = null, network = "testnet") 
   creating = true;
   try { return await makeGroup(name, n, t, from, network); } finally { creating = false; }
 }
+const WALLET_UNSAVED = "This device could not save the key of the wallet, so Zigs did not "
+  + "create it. Free storage and try again.";
+// The wallet key is saved before the store sees the wallet. This browser saves keys and seat
+// secrets in one write. If the key does not save, the secret of seat 1 does not save either.
+async function saveWalletKey(gid, key) {
+  if (await putKey(gid, key)) return;
+  const refused = refusal(WALLET_UNSAVED);
+  delete gkeys[gid];
+  await persist();
+  throw refused;
+}
 // `from` is the wallet this one replaces. The old wallet gets only the new id, never its key:
 // devices left out of the new wallet must not get its viewing key.
 async function makeGroup(name, n, t, from, network) {
@@ -430,7 +443,8 @@ async function makeGroup(name, n, t, from, network) {
   if (!(await canSign())) throw new Error(NO_SIGNING_SEAT);
   const ref = sdb.collection("groups").doc();
   const key = new Uint8Array(32); crypto.getRandomValues(key);
-  putKey(ref.id, btoa(String.fromCharCode(...key)).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, ""));
+  const b64 = btoa(String.fromCharCode(...key)).replace(/\+/g, "-").replace(/\//g, "_");
+  await saveWalletKey(ref.id, b64.replace(/=+$/, ""));
   await ref.set({
     name, n, t, network, version: 3, createdBy: me, createdAt: Date.now(),
     movedFrom: from || undefined,
@@ -469,14 +483,18 @@ export async function takeSeat(i, version = groupVersion()) {
 
 const JOIN_UNSAVED = "This device could not save its key share, so it did not join. Free storage "
   + "and try again.";
+// A save that failed because another tab holds the lock keeps the text of the lock. Any other
+// cause, and a cause that the page cannot tell, means storage.
+const refusal = (text) => new Error(lockedElsewhere() ? LOCKED_ELSEWHERE : text);
 // The secret of a new seat is saved before the store sees the seat. A save that fails leaves
 // nothing of the seat in this browser, and the join stops.
 async function saveSeatSecret(gid, i, secret) {
   const k = skey(gid, i), before = secrets[k] && structuredClone(secrets[k]);
   if (await putSec(gid, i, secret)) return;
+  const refused = refusal(JOIN_UNSAVED);
   if (before) secrets[k] = before; else delete secrets[k];
   await persist();
-  throw new Error(JOIN_UNSAVED);
+  throw refused;
 }
 
 async function joinSeat(ref, gid, i, version, sign) {

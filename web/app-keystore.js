@@ -36,12 +36,17 @@ let vaultWrite = Promise.resolve(true);
 export const LOCKED_ELSEWHERE = "Zigs was locked in another tab, so this tab cannot save. "
   + "Close it and continue in the locked tab.";
 
+// Another tab turned the lock on: a plain write here would put the keys back in clear.
+export function lockedElsewhere() {
+  if (vault || lockedVault) return false;
+  try { return !!localStorage.getItem("zf-vault"); } catch { return false; }
+}
+
 function persistPlain() {
   // With no storage at all, nothing can come back after a reload, so signing stays safe.
   if (secrets === mem) return true;
+  if (lockedElsewhere()) { showBanner("bad", LOCKED_ELSEWHERE); return false; }
   try {
-    // Another tab turned the lock on: a plain write here would put the keys back in clear.
-    if (localStorage.getItem("zf-vault")) { showBanner("bad", LOCKED_ELSEWHERE); return false; }
     localStorage.setItem("zf-secrets", S(secrets));
     localStorage.setItem("zf-keys", S(gkeys));
     localStorage.setItem("zf-chats", S(chats));
@@ -219,7 +224,7 @@ export function putSec(gid, seat, patch) {
 export let gkeys = {};
 export function setGkeys(v) { gkeys = v; }
 if (!lockedVault) gkeys = readPlain("zf-keys");
-export function putKey(gid, key) { gkeys[gid] = key; persist(); }
+export function putKey(gid, key) { gkeys[gid] = key; return persist(); }
 
 // Sync state, sealed with the group key (the account: with its own sync key), so a reload
 // continues from the last block. `c.id` and `c.secret` name the entry and its key; a wallet has

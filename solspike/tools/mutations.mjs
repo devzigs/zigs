@@ -42,6 +42,10 @@ const SEAT_DOC = '  const name = user ? (await user.me()).name : "";\n'
   + "    Object.assign(doc, { by: i, sig: await signMsg(sign.signSk, text) });\n"
   + "  }\n";
 const SEAT_SET = "  await ref.set(doc);\n";
+// The lines of makeGroup (web/app-dkg.js) from the save of the wallet key to the wallet document.
+const WALLET_KEY = '  await saveWalletKey(ref.id, b64.replace(/=+$/, ""));\n';
+const WALLET_DOC = "  await ref.set({\n    name, n, t, network, version: 3, createdBy: me, "
+  + "createdAt: Date.now(),\n    movedFrom: from || undefined,\n  });\n";
 const APP_GROUPS = "web/app-groups.js";
 const INDEX_JS = "cf/src/index.js";
 const POLICY_TEST = ["node", "solspike/test/policy.test.mjs"];
@@ -2341,10 +2345,30 @@ export const MUTATIONS = [
     ["web/app-dkg.js", "if (before) secrets[k] = before; else delete secrets[k];",
       "delete secrets[k];"], UNIFIED, /a refused join puts back the secret that was there/),
   program("J-keep-storage", "a refused join leaves its secret in storage",
-    ["web/app-dkg.js", "  await persist();\n  throw new Error(JOIN_UNSAVED);",
-      "  throw new Error(JOIN_UNSAVED);"], UNIFIED,
+    ["web/app-dkg.js", "else delete secrets[k];\n  await persist();\n  throw refused;",
+      "else delete secrets[k];\n  throw refused;"], UNIFIED,
     /a refused join leaves no new secret in storage/),
   program("J-keep-lease", "a refused join keeps its lease, so a retry waits",
     ["web/app-dkg.js", "    await ref.acquire({ holder, ttlMs: 1 }).catch(() => {});\n", ""],
     UNIFIED, /a retry right after the refusal joins/),
+  program("J-lock-hidden", "a refused save names storage when another tab holds the lock",
+    ["web/app-dkg.js", "new Error(lockedElsewhere() ? LOCKED_ELSEWHERE : text)", "new Error(text)"],
+    UNIFIED, /a join that cannot save its key share is refused with the text of the lock/),
+  program("J-lock-always", "a refused save names the lock for every cause",
+    ["web/app-dkg.js", "new Error(lockedElsewhere() ? LOCKED_ELSEWHERE : text)",
+      "new Error(LOCKED_ELSEWHERE)"], UNIFIED, /the first seat of a new wallet is refused too/),
+  program("W-key-ignored", "a wallet is made although its key was not saved",
+    ["web/app-dkg.js", "  if (await putKey(gid, key)) return;\n",
+      "  await putKey(gid, key);\n  return;\n"], UNIFIED,
+    /a wallet whose key cannot be saved is not made/),
+  program("W-key-late", "the wallet document is written before the key is saved",
+    ["web/app-dkg.js", WALLET_KEY + WALLET_DOC, WALLET_DOC + WALLET_KEY], UNIFIED,
+    /a wallet whose key cannot be saved is not made/),
+  program("W-key-memory", "a refused wallet keeps its key in memory",
+    ["web/app-dkg.js", "  delete gkeys[gid];\n", ""], UNIFIED,
+    /a refused wallet opens nothing and keeps no key in memory/),
+  program("W-key-storage", "a refused wallet leaves its key in storage",
+    ["web/app-dkg.js", "  delete gkeys[gid];\n  await persist();\n  throw refused;",
+      "  delete gkeys[gid];\n  throw refused;"], UNIFIED,
+    /a refused wallet leaves no key in storage/),
 ];
