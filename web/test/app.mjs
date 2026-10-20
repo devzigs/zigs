@@ -1580,8 +1580,9 @@ const sealed = (gid, rel, seat, fields, key, names = ["by", "sig"]) =>
     t.setChain(chainOf(null));
     t.ui.pay = null;
     const blocked = t.sendDialog();
-    assert.match(textOf(blocked), new RegExp("Pay a priority fee: .*The fee and the expiry height "
-      + "are public and can show that Zigs made this payment\\."), "the priority fee label");
+    assert.match(textOf(blocked), new RegExp("Pay a priority fee: .*The fee is public\\. Few "
+      + "wallets pay a priority fee, so it can show that Zigs made this payment, as the expiry "
+      + "height can\\."), "the priority fee label");
     assert.equal(named(blocked, "button", "Review payment").attrs.disabled, "");
     assert.match(textOf(blocked), /Wait for the first sync to finish\./);
     const reasonId = named(blocked, "button", "Review payment").attrs["aria-describedby"];
@@ -1754,8 +1755,9 @@ const sealed = (gid, rel, seat, fields, key, names = ["by", "sig"]) =>
         assert.match(textOf(shown), /decoded the transaction that it built/);
         assert.match(textOf(shown), /Network fee0/, "the decoded fee is the standard fee");
         assert.match(textOf(shown), new RegExp("The chain does not show the recipients, the "
-          + "amounts or the memos\\. The fee and the expiry height are public and can show that "
-          + "Zigs made this payment\\. Every device of this wallet can read the recipients, the "
+          + "amounts or the memos\\. The expiry height is public and can show that Zigs made "
+          + "this payment\\. So can a priority fee\\. Every device of this wallet can read the "
+          + "recipients, the "
           + "amounts, the memos and the note, in the shared history of the wallet\\. So can "
           + "anyone who has its invite link\\. A memo goes on chain with the payment, and its "
           + "recipient can read it too\\."), "the review says who can read the payment now");
@@ -1763,9 +1765,9 @@ const sealed = (gid, rel, seat, fields, key, names = ["by", "sig"]) =>
           + "keeps the viewing key and the messages of this wallet\\. It can still read this "
           + "history and each later payment of this wallet\\. It cannot read the new wallet\\. "
           + "The move payment gives it the address, the amount and the note of that payment, and "
-          + "the id of the new wallet\\. With the id, the group server sends it the sealed "
-          + "documents of the new wallet and each later write\\. The server also accepts writes "
-          + "from it, so the device can stop the new wallet with false documents\\."),
+          + "the id of the new wallet\\. With the id, the device can get the sealed documents of "
+          + "the new wallet and each later write from the group server\\. The server also accepts "
+          + "writes from it, so the device can stop the new wallet with false documents\\."),
         "the review says what a device left out later keeps");
         assert.ok(named(shown, "button", "Propose payment"), "a match can be proposed");
         t.ui.sendReview = { prep: { ...prep, t: { ...prep.t, pczt: "REV3" } }, note: "x" };
@@ -2043,7 +2045,7 @@ const sealed = (gid, rel, seat, fields, key, names = ["by", "sig"]) =>
       assert.match(m.text, /^The Zcash funds moved to .+, as of the last sync\.$/,
         "the Zcash funds moved, as of the last sync");
       assert.equal(m.done, true);
-      assert.equal(t.moveWord(t.state.g), "Zcash funds moved",
+      assert.equal(t.moveWord(t.state.g), "ZEC moved",
         "the open wallet reads its move payment");
       assert.match(textOf(moveCard()), /^The Zcash funds moved/,
         "the heading names the Zcash funds only");
