@@ -88,7 +88,7 @@ Move checklist (any bundle move):
   `wasm-sol/src/spend.rs`.
 - All checks pass. A Devnet payment lands.
 
-Triggers, before the demo. During the demo, the "pool program" row of docs/demo.md section 6
+Triggers, before the demo. During the demo, the "pool program" row of docs/demo.md section 5
 applies: stop the Solana part and show the recorded run.
 
 - **T0:** the pool hash changed, and the "tree 0" check still passes. The source of `programs`

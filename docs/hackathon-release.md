@@ -111,7 +111,7 @@ Evidence marked "checked" was read in the repo during this synthesis. All other 
   - S14
   - the Solana saved flag from step 6
   - the "every signer must open this wallet" sentence on the Add Solana card (web/sol/view.js:11-16)
-  - Run the demo with two ceremonies (section 9).
+  - Run the demo with two ceremonies. M3 landed, so docs/demo.md no longer has this fallback.
 - **Files:** web/app-shell.js, web/app-dkg.js, web/app-setup.js, web/app-wallet.js, web/app-sol.js, web/app-backups.js, web/sol/ceremony.js, web/sol/view.js, web/sol/backup.js, web/sol/secrets.js, web/test/sol-ceremony.mjs, new web/test/unified-setup.mjs, solspike/harness/scenario-e.mjs, solspike/harness/scenario-f.mjs.
 - **Package:** WP-U.
 - **Done:** merged in main 0ffd3ee (the M3 branch at 2a7527e, with M4). Step 9 stays deferred (D7)
@@ -351,7 +351,7 @@ Evidence marked "checked" was read in the repo during this synthesis. All other 
   - Add to the fund card: "Devices that propose or execute need about 0.003 SOL. Devices that only approve need none."
   - Add a test with one funded seat and two unfunded browsers.
 - **Scope:** the executor choice, the lease and the text.
-- **Mitigation:** fund all three fee addresses before the demo (section 8).
+- **Mitigation:** fund all three fee addresses before the demo (docs/demo.md section 3, step 11).
 - **Files:** web/sol/execute.js, web/sol/signing.js, web/sol/payview.js, web/test/sol-pay.mjs.
 - **Live check (passed, 18 October 2026):** `solspike/harness/scenario-g.mjs` at `dbd240e` on Devnet, with the owner's approval. Only the fee address of seat 1 had SOL; seats 2 and 3 held 0 lamports. Seat 1 proposed P1 (0.001 SOL to key B, create `d9fkHyUTEJNShdfjtXKufC1KQ3jn2MhLtTyoEpywmH9KNcrAbb8iZWNJkyxcw8PAHjPvGNMEWGoHzDLwMcxT5r2`, slot 512517250) and its page closed. Seats 2 and 3 approved, and for 90 s (18 polls) they showed no execute error and no red banner while the proposal account kept its body. A new page of seat 1 executed P1 (`3ZytbWVsua1GgmLVSG2ocervHPTRU2EqynfD4YJvGKj3sAem5Atuw9LYvAkm3b1dgykscg8EiBz5LwaE1ck17YPT`, slot 512517818, 150,254 compute units), paid the fee and got the rent back; key B received 1,000,000 lamports. The fee addresses of seats 2 and 3 have no transaction on Devnet. Not checked live: whether seats 2 and 3 take an execute lease (the run does not read the lease documents).
 - **Package:** WP-S.
@@ -614,67 +614,16 @@ Order and sessions (one session for each package; heavy commands go through heav
 - WP-S starts after SOL-11 and SOL-12 merge, because all three touch web/sol/payview.js. Otherwise put the M6 text fix on the SOL-12 branch first.
 - WP-D runs on the planning side. M7 needs the final flow, so finish it last.
 
-## 8. Owner preparation (the owner does every write)
+## 8. Owner preparation
 
-**T-7 days**
-1. Decide D1 to D7.
-2. Helius: add every demo origin to Allowed Domains, read the plan limits, set a usage alert (D4).
-3. Power on the lwd box, or accept the ChainSafe fallback (D5).
-4. Deploy the raised WS_PER_IP (M9). Revert after the demo.
-5. Run solspike/demo-check.sh (M8). Fix every FAIL. Also run it by hand at least every two days until the demo, and after any Helius release note (docs/demo.md section 3).
-6. Prove the faucet: send one Valar drip to a Zigs testnet address (M2).
+The preparation steps moved to [docs/demo.md](demo.md) section 3 (from now until the demo, T-7
+days, T-3 to T-1 days, T-1 day and T-1 hour). That file follows the page of main and the owner
+decisions of section 3.
 
-**T-3 to T-1 days: stage on production only** (staging has no working Solana tab until SOL-48 closes)
-7. Create "Demo A": a 2-of-3 wallet on three devices, with Zcash and Solana ready.
-8. Save both backup files for each device (a Zcash file and a Solana file, with two passphrases that stay offline). Restore one device on a blank profile once.
-9. Fund Demo A with Zcash: one Valar drip (0.125 TAZ), plus coins from the permanent test wallet if needed (one claim per IP per day). Wait for 3 confirmations. Fund a spare wallet in the same way.
-10. Fund the fee address of all three devices with Devnet SOL, at least 0.003 SOL each. Press Check balance on each device.
-11. Add SOL from a funded device (default 0.02). Press Sync Solana and read the private balance.
-12. Create a "Payee" group. Save its Zcash address (utest1…) and the 198-character shielded address from its Solana tab in a private note on the presenter device.
-13. Optional: make one Solana proposal 24 hours before the demo, so that its rent card shows after expiry.
+## 9. Demo script
 
-**T-1 day and T-1 hour**
-14. Use three laptops with desktop Chrome or Safari. No private window. No chat app browser. One tab for each wallet. A phone may approve. Build the proof on a laptop unless a phone run was rehearsed.
-15. Rehearse the whole script once on the real devices and network. Write down the time of the Zcash key ceremony, the Solana ceremony, the proof and the Solana execute. If the live setup takes more than 2.5 minutes, narrate it and switch to Demo A (section 9).
-16. Open both explorers once: testnet.zecblock.com and the Solana explorer on Devnet.
-17. T-1 h: run demo-check again (a PASS does not cover the hosted prover or the indexer). Confirm the Zcash Available balance and the three fee balances. Cancel old Zcash proposals: a Solana proposal ends only at its expiry. Confirm that no approval hold blocks Demo A.
-18. Keep a phone hotspot as a backup network. Keep a screen recording of a full run.
-
-## 9. Demo script: 10 minutes, 2-of-3 group, Zcash testnet and Solana Devnet
-
-Devices: D1 (presenter, device 1), D2 (device 2), D3 (device 3). Rule for the whole demo: do not press Cancel after Approve. Keep each payment open until the status says Sent.
-
-| Time | Who | Step | Expected result | Needs |
-|---|---|---|---|---|
-| 0:00 | D1 | Open app.zigs.app and enter the preview password. Say: testnet and Devnet only. Click Set up a wallet, then Set up my wallet. | The rule step recommends any 2 of 3 devices. | D1 |
-| 0:45 | D1 | Keep the recommended 2 of 3 and click Next. Name the wallet. Turn on Solana. The picker shows Testnet only. Click Review wallet, then Create wallet. Show the invite QR. | The invite card shows. | M1, M3 |
-| 1:15 | D2, D3 | Scan the QR, type a label, click Join as device. | 3 of 3 devices joined. | S10 |
-| 1:45 | D1, D2, D3 | Read the safety number aloud. Each person compares all 30 digits, ticks the box, and presses It matches. Narrate the progress card: Zcash key, Solana key, fee address. | Both ceremonies run. Each device shows Address checked and key ready. | M3, M4 |
-| 3:00 | D1 | Switch to Demo A. Show the Zcash address, the Available balance and the Solana tab. Press Sync Solana. | Both balances show. | S2 |
-| 3:30 | D1 | Receive: show the address and the faucet link. Do not use the faucet live. Click Send. Paste the Payee utest1 address. Enter 0.01. Click Review payment, then Propose payment. | A payment opens. | M2 |
-| 4:00 | D2 | Open the payment. Read "What this payment does". Click Approve. Keep the payment open. | One approval. | M5 |
-| 4:30 | D1 | Click Approve. Click Build proof. Narrate the privacy model during the proof (about 1 minute). | The proof builds. | M5 |
-| 5:45 | D1 | Click Send to network. Click View in explorer. | Status Sent. The explorer shows the transaction. | S9 |
-| 6:15 | D1 | Open the Solana tab. Click Send privately. Paste the 198-character payee address. Enter the amount. Click Propose. | A Solana proposal opens. | S15 |
-| 7:00 | D2 | Open the Solana tab. Wait for the Approve button. Click Approve. | One approval. The group signature forms. | S6, S17 |
-| 7:30 | D1 | Wait for the execute. A funded device executes by itself. Press Sync Solana. | The status says sent. The private balance drops. | S3, S2 |
-| 8:15 | D1 | Click the transaction link. | The Devnet explorer shows it. | S16 |
-| 8:45 | D1 | Show the rent card (old proposal) and the backup buttons. State what is public: the payee key tag, the fee address, the group. | Text matches ZOLANA.md. | M6 |
-| 9:30 | D1 | Close: both chains are test networks, no mainnet, the code is not audited. | | M1 |
-
-**Fallback if M3 slips (two ceremonies).**
-- At 0:45 create a Zcash-only wallet.
-- At 1:45 run the Zcash ceremony.
-- After "Address checked" on all three devices, D1 opens the Solana tab and presses Add Solana.
-- All three devices stay open on this wallet until all three devices show "key ready" (S14).
-- If this takes more than 3 minutes, stop and switch to Demo A.
-
-**Contingencies.**
-- The light-wallet server is slow: wait. The ChainSafe fallback works (S9).
-- Solana shows a Helius error: wait one minute, then show the Zcash part and the recorded run (S5).
-- The page shows "Connecting" for long: switch to the phone hotspot (S1).
-- Send is blocked by a hold: use the spare wallet (S7).
-- A device is lost: restore it from the two backup files (M4).
+The demo script moved to [docs/demo.md](demo.md) section 4 (10 minutes, a 2-of-3 group on Zcash
+testnet and Solana Devnet), with the contingencies in section 5 and the privacy words in section 6.
 
 ## 10. Checks and limits of this review
 
