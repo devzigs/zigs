@@ -600,17 +600,17 @@ function reviewDialog() {
 // Who can read the payment now, and what a device that a later Change devices leaves out keeps
 // (PRIVACY.md, On chain, Group server, Signers and invite links; PROTOCOL.md 3 and 8). The memo
 // sentence is the one of the Send form.
-const REVIEW_NOW = "The chain does not show the recipients, the amounts or the memos. The fee and "
-  + "the expiry height are public and can show that Zigs made this payment. Every device of this "
-  + "wallet can read the recipients, the amounts, the memos and the note, in the shared history "
-  + "of the wallet. So can anyone who has its invite link. A memo goes on chain with the "
-  + "payment, and its recipient can read it too.";
+const REVIEW_NOW = "The chain does not show the recipients, the amounts or the memos. The expiry "
+  + "height is public and can show that Zigs made this payment. So can a priority fee. Every "
+  + "device of this wallet can read the recipients, the amounts, the memos and the note, in the "
+  + "shared history of the wallet. So can anyone who has its invite link. A memo goes on chain "
+  + "with the payment, and its recipient can read it too.";
 const REVIEW_LATER = "A device that a later Change devices leaves out keeps the viewing key and "
   + "the messages of this wallet. It can still read this history and each later payment of this "
   + "wallet. It cannot read the new wallet. The move payment gives it the address, the amount and "
-  + "the note of that payment, and the id of the new wallet. With the id, the group server sends "
-  + "it the sealed documents of the new wallet and each later write. The server also accepts "
-  + "writes from it, so the device can stop the new wallet with false documents.";
+  + "the note of that payment, and the id of the new wallet. With the id, the device can get the "
+  + "sealed documents of the new wallet and each later write from the group server. The server "
+  + "also accepts writes from it, so the device can stop the new wallet with false documents.";
 
 // The fee as the engine decoded it (none when the decode does not match), the approvals, the note.
 function reviewFacts(ins, note) {
@@ -657,6 +657,7 @@ function priorityBox(sumUp) {
       onchange: (ev) => { ui.priority = ev.target.checked; sumUp(); },
     }),
     el("span", { class: "small" }, "Pay a priority fee: " + PRIORITY_FACTOR + " times the "
-      + "standard fee, for a faster block when the network is busy. The fee and the expiry height "
-      + "are public and can show that Zigs made this payment."));
+      + "standard fee, for a faster block when the network is busy. The fee is public. Few wallets "
+      + "pay a priority fee, so it can show that Zigs made this payment, as the expiry height "
+      + "can."));
 }

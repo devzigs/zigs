@@ -163,7 +163,7 @@ flowchart LR
 | Signer device | Its own key share, the wallet secret, the viewing key, all payments |
 | Group server | Wallet ids, document names, timing, IP addresses. Never keys, amounts, addresses or names |
 | Light-wallet server | IP address and the blocks requested, as for any light wallet. On testnet, the app Worker relays the requests, so our node sees the Worker and not the device. Where memo reading is on, it also sees which full transactions a device fetches to read memos. Never a key |
-| Zcash network | A shielded transaction with the shape of a shielded payment from a standard wallet, except for its one-day expiry (3,456 blocks of 25 seconds, against 40) and an optional priority fee, which can mark it as a Zigs payment |
+| Zcash network | A shielded transaction with the shape of a shielded payment from a standard wallet, except for its one-day expiry (a standard wallet sets 40 blocks) and an optional priority fee, which can mark it as a Zigs payment |
 | Helius (Solana beta, testnet wallets only) | IP address, the app origin, the owner key, and for each spend the amounts, recipients and the nullifier secret that its prover needs. Never a key share |
 | ZNS resolver (testnet names) | That the app Worker downloads the whole name registry. Never which name a person pays, never a key |
 
@@ -279,7 +279,7 @@ flowchart TD
   OLD -.->|stores the new wallet id, never its secret| NEW
   NEW --> PAY["The old wallet proposes one payment of its spendable Zcash balance to the new address"]
   PAY --> OK["2 of 3 old devices approve.<br/>The approving devices that are in the new wallet check its address"]
-  OK --> STAY["The old wallet stays, with its address and history.<br/>Device C can still read the old wallet, but not the new one.<br/>The move payment gives device C the new address, the amount,<br/>the note and the id of the new wallet. With the id, the group server<br/>sends device C the sealed documents of the new wallet and each later write,<br/>and accepts writes from it, so device C can stop the new wallet with false documents"]
+  OK --> STAY["The old wallet stays, with its address and history.<br/>Device C can still read the old wallet, but not the new one.<br/>The move payment gives device C the new address, the amount,<br/>the note and the id of the new wallet. With the id, device C can get<br/>the sealed documents of the new wallet and each later write from the group server,<br/>which also accepts writes from it, so device C can stop the new wallet with false documents"]
 ```
 
 ## Privacy
@@ -288,7 +288,7 @@ The full threat model is in [PRIVACY.md](PRIVACY.md). In short:
 
 | Party | Sees | Does not see |
 |---|---|---|
-| Chain observers | A shielded Ironwood transaction with the shape of a payment from a standard wallet. Its one-day expiry (3,456 blocks of 25 seconds, against 40) and an optional priority fee can mark it as a Zigs payment | The signers, amounts and addresses. The signature does not show that a group signed it |
+| Chain observers | A shielded Ironwood transaction with the shape of a payment from a standard wallet. Its one-day expiry (a standard wallet sets 40 blocks) and an optional priority fee can mark it as a Zigs payment | The signers, amounts and addresses. The signature does not show that a group signed it |
 | Group server | Wallet ids, document paths and field names, timing, which IP addresses connect to which wallet | Wallet and signer names, addresses, viewing key, amounts or their length, recipients, transactions, signing data |
 | Light-wallet server | Your IP address (on testnet, our server sees the app Worker), the wallet's birthday height, the blocks you download, the transactions you send, the full transactions you fetch to read memos (only where memo reading is on) | Which notes are yours while you download blocks (the memo fetches are the exception), any key |
 | Helius (Solana beta, testnet wallets only) | Your IP address, the app origin, the owner key of the wallet, and the witness of each spend: owners, assets, amounts and the nullifier secret. With local proving on (a group setting), no witness: the devices of the group make the proofs. The sender and the recipient of a transfer are public on chain | Any key share, the Ed25519 seed, the viewing key. It cannot sign |

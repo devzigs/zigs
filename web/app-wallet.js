@@ -1,7 +1,7 @@
 // The wallet page: its sections (overview, activity, messages, signers, settings, Solana).
 import { fmtInt, seatBackedUp, usesV2 } from "./util.js";
 import { IGNORED_NOTE } from "./signed.js";
-import { log, ready, state, ui } from "./app-state.js";
+import { inbox, log, ready, state, ui } from "./app-state.js";
 import { fmtZec, short, when } from "./app-kit.js";
 import { gkeys, mySeatSecrets, sec } from "./app-keystore.js";
 import { keysDiffer, localSeats, seatIds, seatMine, seatStage, STAGE_LABEL } from "./app-seats.js";
@@ -245,15 +245,26 @@ const movePayment = () => state.sessions.find((x) => x.move === state.g.movedTo 
   && !ended(x));
 
 /**
- * The word of a wallet that a new wallet replaces, for the wallet list and the side list:
- * "Zcash funds moved" once the move is done as of the last sync, else "Moving". The open wallet
- * reads its move payment (moveState). Another wallet reads the balance that this browser saved
- * at its last sync: no Zcash left there counts as moved.
+ * The word of a wallet that a new wallet replaces, for the wallet list and the side list: "ZEC
+ * moved" once the move is done as of the last sync, else "Moving". The open wallet reads its move
+ * payment (moveState). Another wallet with a seat here reads its checked payments (inbox) and the
+ * balance that this browser saved at its last sync (movedHere). Without the payments of the
+ * wallet, the word is "Replaced".
  */
 export function moveWord(g) {
-  const done = g.id === state.gid && state.g ? moveState(curChain()).done
-    : balOf(g.id)?.total === 0;
-  return done ? "Zcash funds moved" : "Moving";
+  if (g.id === state.gid && state.g) return moveState(curChain()).done ? "ZEC moved" : "Moving";
+  const list = inbox[g.id];
+  if (!list) return "Replaced";
+  return movedHere(g, list) ? "ZEC moved" : "Moving";
+}
+
+// A move of a listed wallet is done: a move payment to its current new wallet was sent, and the
+// balance saved after that send holds no Zcash. A wallet that was empty before its move has no
+// move payment, and a balance saved before the send says nothing of the move.
+function movedHere(g, list) {
+  const sent = list.find((ss) => ss.move === g.movedTo && !!ss.broadcastTxid && !ss.error);
+  const bal = balOf(g.id);
+  return !!sent && !!bal && bal.total === 0 && bal.at > sent.broadcastAt;
 }
 
 // The steps of a move, read from the old wallet: new wallet ready, payment proposed, funds gone.
