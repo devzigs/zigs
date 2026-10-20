@@ -38,7 +38,7 @@ import {
   solSync, solTab, solUnsaved,
 } from "./app-sol.js";
 import { pendingShortcut, solRow, zecInProgress, zecTotal } from "./overview-model.js";
-import { protectionRisk, recoveryState } from "./recovery-model.js";
+import { protectionRisk, recoveryState, VIEWING_NOTE } from "./recovery-model.js";
 import { icon } from "./app-icons.js";
 
 export function groupView() {
@@ -230,7 +230,8 @@ function overviewTab() {
     el("section", { class: "card" },
       el("div", { class: "card-head card-pad", style: "padding-bottom:12px" }, el("h3", {}, "Activity"),
         list.length > 6 ? el("button", { class: "btn ghost sm", type: "button", onclick: () => { ui.tab = "activity"; render(); } }, "View all") : null),
-      activityRows(list.slice(0, 6)), receivedNote(list.slice(0, 6))));
+      activityRows(list.slice(0, 6)), receivedNote(list.slice(0, 6)),
+      list.length ? historyNote("all") : null, activityNote("all")));
 }
 // The row of a received payment opens the explorer: the note says what that site sees.
 const receivedNote = (list) => list.some((a) => a.r) ? el("p", { class: "small muted card-pad" },
@@ -860,7 +861,8 @@ function recoveryTab() {
   return el("div", { class: "page", style: "gap:16px" },
     el("section", { class: "card card-pad" + (r.state === "missing" ? " attention" : "") },
       el("div", { class: "card-head" }, el("h3", {}, r.label)),
-      el("p", { class: "small muted" }, RECOVERY_LIMITS)),
+      el("p", { class: "small muted" }, RECOVERY_LIMITS),
+      el("p", { class: "small muted" }, VIEWING_NOTE)),
     el("section", { class: "card card-pad" + (risk.here ? " attention" : "") },
       el("div", { class: "card-head" }, el("h3", {}, risk.title)),
       el("p", { class: "small muted" }, risk.detail),
@@ -976,7 +978,10 @@ function technicalFacts() {
       el("dd", {}, "Built to ZIP 2005 (Proposed) so that funds can be recovered if quantum "
         + "computers break today's keys.")] : null,
     signedMode(state.gid) ? [el("dt", {}, "Signed writes"), el("dd", {}, "Each device signs the "
-      + "data that it writes to this wallet. Zigs ignores data without a valid signature.")] : null);
+      + "documents that matter, such as approvals and results. Zigs ignores such a document "
+      + "without a valid signature. The wallet record (the number of devices and the approval "
+      + "rule) and the progress marks have no signature. This device keeps the first record "
+      + "that it saw.")] : null);
 }
 
 // The box builds its content only while it is open: `ui.technical` holds the wallet that has it
