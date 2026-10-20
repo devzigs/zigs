@@ -3,7 +3,7 @@
 // and no state says more than "saved from this browser".
 // Run: node web/test/recovery.mjs   (Node 24)
 import assert from "node:assert/strict";
-import { protectionRisk, recoveryState } from "../recovery-model.js";
+import { protectionRisk, recoveryState, VIEWING_NOTE } from "../recovery-model.js";
 
 assert.equal(protectionRisk(2, 3).margin, 1);
 assert.equal(protectionRisk(2, 3).title, "1 key share can be lost");
@@ -50,7 +50,9 @@ assert.equal(recoveryState([seat(1, true, { has: false, unknown: true, failed: t
   "a failed load says so");
 assert.equal(recoveryState([seat(1, true, { has: false, unknown: true }), seat(2, false, null)])
   .state, "missing", "a file that is not saved shows first");
-const texts = [recoveryState([]), recoveryState([seat(1, true, null)]), unread,
+assert.equal(VIEWING_NOTE, "Every device with viewing access sees the balances and the history of "
+  + "this wallet, and a device label proves no identity.");
+const texts = [VIEWING_NOTE, recoveryState([]), recoveryState([seat(1, true, null)]), unread,
   recoveryState([seat(1, false, null)]), protectionRisk(2, 3, 3), protectionRisk(3, 3),
   protectionRisk(2, 4)];
 assert.doesNotMatch(JSON.stringify(texts), /safe|protected|secure/i,

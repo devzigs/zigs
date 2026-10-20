@@ -20,7 +20,7 @@ const { SOL_DISCLOSURE, solPlanned, solServed } = await import("../app-sol.js");
 const { inviteMessage, joinText, onLink } = await import("../app-setup.js");
 const { chatLink, chatMessage, inviteLink } = await import("../app-links.js");
 const { diagnostics } = await import("../app-help.js");
-const { chatInviteCard } = await import("../app-thread.js");
+const { chatInviteCard, chatView } = await import("../app-thread.js");
 const { chats } = await import("../app-keystore.js");
 const { chat: roomChat } = await import("../app-messages.js");
 const { backupWords } = await import("../sol/backup.js");
@@ -326,6 +326,16 @@ async function technicalBox(w, gid) {
   for (const shown of facts) {
     assert.ok(pageText().includes(shown), "the open box shows " + shown.slice(0, 12));
   }
+  assert.match(pageText(), new RegExp("Each device signs the documents that matter, such as "
+    + "approvals and results, and Zigs ignores such a document without a valid signature\\. The "
+    + "wallet document has no signature, so anyone who has the invite link can change it\\. This "
+    + "device keeps the first number of devices, approval rule, version, network and message room "
+    + "that it saw\\. Other fields can change, such as the name, the move to a new wallet and "
+    + "the Solana hint\\. Funds move only through a payment that the devices approve\\. The "
+    + "progress marks have no signature either\\."),
+  "Technical details name what is signed, what a device keeps and what can change");
+  assert.doesNotMatch(pageText(), /ignores data without a valid signature|wallet record/,
+    "and do not claim that Zigs ignores all unsigned data, or that two fields are all the rest");
   t.ui.technical = "another-wallet";
   assert.equal(box().attrs.open, undefined, "the box of another wallet stays closed");
   t.ui.technical = gid;
@@ -790,6 +800,15 @@ const sorted = (list) => list.every((n, i) => n >= 0 && (i === 0 || n > list[i -
 const gone = (text, titles) => order(text, titles).every((n) => n < 0);
 const select = () => findNode(pageTree(), (n) => typeof n.on?.change === "function");
 const picked = () => textOf(findNode(select(), (n) => n.attrs?.selected !== undefined));
+const overviewText = () => {
+  const tab = t.ui.tab;
+  t.ui.tab = "overview";
+  try {
+    return pageText();
+  } finally {
+    t.ui.tab = tab;
+  }
+};
 // Five rows, newest first: a Solana payment, a Zcash payment, a Solana move that failed, the
 // received ZEC and the SOL that was added. `at(m)` is m minutes after the received ZEC.
 function activityRowsFor(ctl, state) {
@@ -863,6 +882,26 @@ function activityOverview(ctl, at, solRows) {
   t.ui.tab = "overview";
   assert.match(pageText(), /Public SOL withdrawal.*Office rent.*Move the beta funds/,
     "the recent rows of the Overview have the Solana rows");
+  assert.match(pageText(),
+    /Move the beta funds.*SOL that other people send to the wallet does not show here/,
+    "the Overview list says what it lacks");
+  const { chain } = t, { sessions } = t.state, { sessions: solSessions, added } = ctl;
+  t.setChain({ ...chain, error: "The server did not answer." });
+  assert.match(pageText(), /Office rent.*The sync failed\. This list can be incomplete/,
+    "the Overview list says when the Zcash history can be incomplete");
+  t.setChain(null);
+  t.state.sessions = [];
+  ctl.sessions = [];
+  ctl.added = null;
+  const none = pageText();
+  assert.match(none, /ActivityNot synced yetSync starts after this device checks the address\./);
+  assert.match(none, /Sync starts after this device checks the address\.The Solana rows show the/,
+    "an empty Overview list still says what it lacks");
+  assert.doesNotMatch(none, /Not synced yet\. Sync starts after/,
+    "an empty Overview list shows its sync state once, not as a note");
+  t.setChain(chain);
+  t.state.sessions = sessions;
+  Object.assign(ctl, { sessions: solSessions, added });
   ctl.sessions = [...solRows, ...["sc", "sd", "se"].map((id, i) =>
     proposal(id, { createdAt: at(40 + i) }))];
   const recent = pageText();
@@ -892,11 +931,15 @@ function activityStates(ctl, kept) {
   assert.ok(sorted(order(idle, [TITLES[1], TITLES[3]])),
     "a wallet with no Solana part shows its Zcash rows, whatever the choice");
   assert.doesNotMatch(idle, /Solana rows show|Public SOL withdrawal/);
+  assert.doesNotMatch(overviewText(), /Solana rows show|does not show here/,
+    "a wallet with no Solana part has no Solana note on the Overview");
   ctl.docs = { ...kept.docs, solabort: { 2: { reason: "A test stop." } } };
   const stopped = draw("sol");
   assert.equal(select(), null, "no select for a Solana part that stopped");
   assert.match(stopped, /The Solana part stopped, so its payments do not show here/);
   assert.doesNotMatch(stopped, /The Solana rows show/, "no note that says the rows show");
+  assert.match(overviewText(), /The Solana part stopped, so its payments do not show here/,
+    "the Overview says that a stopped Solana part shows no rows");
   assert.ok(sorted(order(stopped, [TITLES[1], TITLES[3]])), "the Zcash rows of a stopped part");
   assert.ok(gone(stopped, [TITLES[0], TITLES[2], TITLES[4]]), "no Solana row of a stopped part");
   const done = kept.docs.soldone;
@@ -1111,6 +1154,9 @@ function sideMenu() {
   assert.match(pageText(), /This wallet's devices in this browser.*file (saved here|not saved)/,
     "the Recovery section shows the file state of each seat of this browser");
   assert.match(pageText(), /cannot see the files of the other devices/);
+  assert.match(pageText(), new RegExp("Every device with viewing access sees the balances and the "
+    + "history of this wallet, and a device label proves no identity\\."),
+  "the Recovery section says who sees the wallet and what a label proves");
   assert.match(pageText(),
     /covers the devices of this wallet in this browser only: each other wallet has its own/);
   assert.match(pageText(), /the personal account has its own backup file, and direct chats are/);
@@ -1262,6 +1308,25 @@ const SENDER = new RegExp("asks for a user name and a password before Zigs opens
   + "(each person who joins|each person who opens it|your contact) to open the "
   + "link in Safari or Chrome\\. The browser of a chat app or a private window can delete the key");
 assert.match(pageText(), SENDER, "the invite card of a wallet");
+assert.match(pageText(), new RegExp("Anyone who has it can read the wallet, write documents that "
+  + "can stop it, and join as one of the open devices\\. A backup file of a device does not add "
+  + "a new device: it holds the same key share\\."),
+"the invite card: a link holder reads and can stop the wallet, a backup file adds no device");
+assert.match(pageText(), /Add the other devices2 devices to join/, "two open devices: plural");
+{
+  const seats = t.state.seats;
+  t.state.seats = { ...seats, 2: seats[1] };
+  try {
+    assert.match(pageText(), /Add the other device1 device to join/, "one open device: singular");
+  } finally {
+    t.state.seats = seats;
+  }
+}
+// The note under the message box names what the group server sees, not "only" the time.
+assert.match(pageText(), new RegExp("The group server stores them sealed\\. It sees when each "
+  + "message is sent, how many there are, their padded sizes, and the IP addresses that "
+  + "connect\\."), "the Messages note names the time, the count, the sizes and the IP addresses");
+assert.doesNotMatch(pageText(), /sees only when/, "and does not say \"only\"");
 hiddenLink(pageTree(), inviteLink(gid), "the setup card");
 // A failed copy of a secret link opens its disclosure, so the person can select the link there.
 {
@@ -1300,6 +1365,16 @@ hiddenLink(pageTree(), inviteLink(gid), "the setup card");
     assert.match(textOf(card), SENDER, "the invite card of a chat");
     hiddenLink(card, chatLink(cid), "the chat card");
     assert.match(textOf(card), /The browser of your contact asks/);
+    const open = appState.state.cid;
+    appState.state.cid = cid;
+    try {
+      assert.match(textOf(chatView()), new RegExp("The group server stores them sealed\\. It sees "
+        + "when each message is sent, how many there are, their padded sizes, the IP addresses "
+        + "that connect, and that you and your contact use this chat\\."),
+      "the chat note names what the group server sees");
+    } finally {
+      appState.state.cid = open;
+    }
   } finally {
     globalThis.document = real;
     delete chats.list[cid];
