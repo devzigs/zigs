@@ -1,5 +1,5 @@
-// The Send drafts and the age of a review. Display and convenience only: a draft fills the form,
-// never the review, and nothing here proposes, approves or signs.
+// The Send drafts, the age of a review and the headline of a payment. Display and convenience
+// only: a draft fills the form, never the review, and nothing here proposes, approves or signs.
 
 /** A draft lives 24 hours; after that the next read deletes it. */
 export const DRAFT_MS = 24 * 60 * 60 * 1000;
@@ -47,3 +47,86 @@ export function draftLive(d, now) {
 /** True while a reviewed transaction, built at `at`, may still be proposed at `now`. */
 export const reviewFresh = (at, now) => Number.isSafeInteger(at) && now >= at
   && now - at < REVIEW_MS;
+
+/** A sent payment that no synced block holds after this long may be lost: send it again. */
+export const RESEND_MS = 10 * 60 * 1000;
+
+// The headline of a payment and its one sentence: the first rule that holds names the state.
+const HEADLINES = [
+  ["landed", "In a block", "A block that this browser synced holds the payment."],
+  ["ended", "Payment expired", "No device can send it now. A new payment needs a new review and "
+    + "new approvals."],
+  ["endedSigned", "Payment expired", "The transaction this browser approved expired. This page "
+    + "cannot tell whether a device sent another one. Check the wallet's activity first."],
+  ["check", "Check the payment", "It may still go on chain. Check it before you make another "
+    + "payment."],
+  ["held", "Stopped, but it may still go on chain", "It was stopped after this browser approved "
+    + "it. Another device can still send it, so Send stays off here. Read the note below."],
+  ["sentStopped", "Check the payment", "A device sent it, and the payment shows a stop too. It "
+    + "may still go on chain. Check it before you make another payment."],
+  ["stopped", "Payment stopped", "No device can approve, sign or send it. The reason is below."],
+  ["error", "Check the payment", "This page cannot tell whether a device sent it. Check the "
+    + "wallet's activity before you make another payment."],
+  ["rejected", "Payment needs attention", "This browser refuses this payment. The reason is "
+    + "below. Do not approve it."],
+  ["refused", "Payment needs attention", "This browser does not send this transaction. The reason "
+    + "is below."],
+  ["signingLost", "Check the payment", "This browser saw the signing start, and the payment lost "
+    + "its signing parts. Read the note below. Check the wallet's activity before you make another "
+    + "payment."],
+  ["approvalLost", "Payment needs attention", "A device of this browser lost its approval of this "
+    + "payment. Read the note below. Cancel the payment only when the note asks for it."],
+  ["approvalChanged", "Payment needs attention", "One device changed the proposal after this "
+    + "browser approved it. Read the note below. Check the payment with the other devices."],
+  ["mismatch", "Payment needs attention", "The transaction does not pay what the proposer listed. "
+    + "Do not approve it. The reason is below."],
+  ["wrongMove", "Payment needs attention", "The transaction does not pay only the address of the "
+    + "new wallet that this browser checked. Do not approve it. The reason is below."],
+  ["sentUnsynced", "Waiting for a block", "A device sent it. This page has not synced the blocks "
+    + "since you opened this wallet."],
+  ["resend", "Send it again", "No block that this browser synced holds it after "
+    + RESEND_MS / 60000 + " minutes. Any device can send the same transaction again."],
+  ["sent", "Waiting for a block", "A device sent it. No block that this browser synced holds it "
+    + "yet. Wait for it before you make another payment."],
+  ["late", "Too late to send", "It can no longer go to the network. A device may have sent it. "
+    + "Check it before you make another payment."],
+  ["sendFailed", "The send did not finish", "A node may still have taken it. Read the error "
+    + "below. Check the payment before you make another payment. A device can send the same "
+    + "transaction again."],
+  ["sendHere", "Ready to send", "Sending is a separate step. This browser sends it only when the "
+    + "finished transaction names the approved id."],
+  ["proved", "Ready to send", "The proof is built. A device of this wallet can send it now."],
+  ["proving", "Building the proof", "A device builds the proof. It takes about a minute."],
+  ["signed", "Ready for the proof", "Any device can build the proof now."],
+  ["signing", "Signing", "Each device that the signing package names signs while this wallet "
+    + "is open on it."],
+  ["approved", "Approvals are complete", "Enough devices approved. Another approval is not needed. "
+    + "The device that proposed it builds the signing package while this wallet is open there."],
+  ["mine", "Your approval is needed", "Check the recipient, amount, network and fee. Approve only "
+    + "if all are right. After enough approvals, the devices sign it, a device builds the proof, "
+    + "and any device can send it."],
+];
+/** The facts of the headline, first rule first. */
+export const headlineFacts = HEADLINES.map(([fact]) => fact);
+const WAITING = { title: "Waiting for approvals", detail: "The other devices approve it while "
+  + "this wallet is open on them. You can close this page and come back." };
+
+/**
+ * The headline of a payment drawer, from facts that the drawer already reads.
+ * @param {object} f true or false each: landed, ended (before signing), endedSigned (the engine
+ *   says that the approved transaction expired), check (the engine cannot say that it
+ *   expired), held (stopped, but an approval here holds Send), sentStopped (an error part next
+ *   to a sent mark), stopped (an error, no signing seen here, a synced chain), error, rejected
+ *   (this browser refuses the transaction), refused (this browser does not send it),
+ *   signingLost (the signing parts seen here are gone), approvalLost (a device here lost its
+ *   approval), approvalChanged (the proposal changed after an approval here), mismatch (it does
+ *   not pay what the proposer listed), wrongMove (a move that does not pay the checked address
+ *   of the new wallet), sentUnsynced (sent, and no sync since), resend, sent, late (too late to
+ *   send), sendFailed, sendHere (this browser can send it), proved, proving, signed, signing,
+ *   approved (enough approvals), mine (this browser can approve it).
+ * @returns {{title: string, detail: string}}
+ */
+export function stageHeadline(f) {
+  const hit = HEADLINES.find(([fact]) => f[fact] === true);
+  return hit ? { title: hit[1], detail: hit[2] } : WAITING;
+}

@@ -291,10 +291,10 @@ export function makePassphrase(bytes) {
   return chunks(Array.from(bytes, (b) => PASS_SYMBOLS[b & 31]).join(""), 5).join("-");
 }
 
-// "zigs-<wallet>-seat-<i>.zigsbackup", with any run of other characters in the name as one "-".
+// "zigs-<wallet>-device-<i>.zigsbackup", with any run of other characters in the name as one "-".
 export function backupName(wallet, seat) {
   const name = String(wallet ?? "").replace(/\W+/g, "-").replace(/^-+|-+$/g, "") || "wallet";
-  return "zigs-" + name + "-seat-" + seat + ".zigsbackup";
+  return "zigs-" + name + "-device-" + seat + ".zigsbackup";
 }
 
 // Engine calls that are slow enough to run in a worker (web/worker.js), or on the main thread when

@@ -25,7 +25,8 @@ import { focusAfter, render } from "./app-loop.js";
 import { ON_CHAIN } from "./app-wallet.js";
 
 const FINE = "Every device of this wallet, and anyone else who has the invite link, can read "
-  + "these messages. The group server stores them sealed and sees only when they are sent.";
+  + "these messages. The group server stores them sealed. It sees when each message is sent, how "
+  + "many there are, their padded sizes, and the IP addresses that connect.";
 
 // The Messages section has its title in the heading block of the page: it passes `titled` false.
 export function messagesCard(titled = true) {
@@ -253,8 +254,9 @@ export async function submitMessage(form, o) {
 }
 
 const DM_FINE = "Your contact, and anyone else who has the contact link, can read these messages. "
-  + "Keep the link private. The group server stores them sealed. It sees when you write, and that "
-  + "your two devices use this chat.";
+  + "Keep the link private. The group server stores them sealed. It sees when each message is "
+  + "sent, how many there are, their padded sizes, the IP addresses that connect, and that you "
+  + "and your contact use this chat.";
 
 export function chatView() {
   const cid = state.cid;

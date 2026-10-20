@@ -7,7 +7,10 @@ import { canSign, newSignKey, signMsg } from "./chat.js";
 import { log, raw, showBanner, state } from "./app-state.js";
 import { isStr, J, randomHex32, S } from "./app-kit.js";
 import { Z } from "./app-engine.js";
-import { mySeatSecrets, putKey, putSec, sec } from "./app-keystore.js";
+import {
+  gkeys, LOCKED_ELSEWHERE, lockedElsewhere, memoryOnly, mySeatSecrets, persist, putKey, putSec,
+  sec, secrets,
+} from "./app-keystore.js";
 import { allR1, allSeated, isCreator, keysAgree, localSeats, r2For, seatIds } from "./app-seats.js";
 import { netName, netOf, NETWORKS, serverHeight } from "./app-chain.js";
 import {
@@ -84,7 +87,7 @@ const needR3 = (i, s) => s.r2secret && !s.keyPackage && allR1() && r2For(i);
 const needDone = (i, s) => s.keyPackage && !s.doneSent && !state.done[i];
 
 function stepV1(i, s) {
-  if (needR1(i, s)) return launch("r1:" + i, () => round1V1(i));
+  if (needR1Open(i, s)) return launch("r1:" + i, () => round1V1(i));
   if (needR2(s)) return launch("r2:" + i, () => round2V1(i));
   if (needR3(i, s)) return launch("r3:" + i, () => round3V1(i));
   if (needDone(i, s)) return launch("done:" + i, () => publishDone(i));
@@ -101,8 +104,12 @@ async function publishDone(i) {
 
 async function round1V1(i) {
   const g = state.g, gid = state.gid, s = sec(gid, i);
-  let secret = s.r1secret, pkg = s.r1package;
-  if (!secret) { const r = J(Z.dkgPart1(i, g.n, g.t)); secret = r.secret; pkg = r.package; putSec(gid, i, { r1secret: secret, r1package: pkg }); }
+  let pkg = s.r1package;
+  if (!s.r1secret) {
+    const r = J(Z.dkgPart1(i, g.n, g.t));
+    await saveRound1(gid, i, { r1secret: r.secret, r1package: r.package });
+    pkg = r.package;
+  }
   await sdb.doc("groups/" + gid + "/dkg1/" + i).set({ package: pkg, at: Date.now() });
   log("device " + i + ": round 1 commitment published");
 }
@@ -307,11 +314,11 @@ async function ceremonyStep(i, compute) {
 
 // Seats whose setup secret this browser could not save. Another try waits for the person.
 export const saveFailed = new Set();
-const needR1V2 = (i, s) => needR1(i, s) && !saveFailed.has(skey(state.gid, i));
+const needR1Open = (i, s) => needR1(i, s) && !saveFailed.has(skey(state.gid, i));
 
 function stepV2(i, s) {
   const open = gateOf(s) === "ok";
-  if (open && needR1V2(i, s)) return launch("r1:" + i, () => round1V2(i));
+  if (open && needR1Open(i, s)) return launch("r1:" + i, () => round1V2(i));
   if (open && needR2(s)) return launch("r2:" + i, () => round2V2(i));
   if (needR3(i, s)) return launch("r3:" + i, () => round3V2(i));
   if (needDone(i, s)) return launch("done:" + i, () => publishDone(i));
@@ -320,17 +327,20 @@ function stepV2(i, s) {
 
 export const SAVE_FAILED = "This browser could not save your setup secret, so setup did not start.";
 
-// The secret part of sk is saved before its commitment goes out: a seat that loses it cannot finish.
+// The secret of round 1 (in version 2 and 3, with the secret part of sk) is saved before its
+// commitment goes out: a seat that loses it cannot finish.
+async function saveRound1(gid, i, made) {
+  if (await putSec(gid, i, made)) return;
+  putSec(gid, i, Object.fromEntries(Object.keys(made).map((k) => [k, null])));
+  saveFailed.add(skey(gid, i));
+  throw new Error(SAVE_FAILED);
+}
+
 async function round1V2(i) {
   const g = state.g, gid = state.gid;
   if (!sec(gid, i).r1secret) {
     const r = J(Z.dkgPart1(i, g.n, g.t));
-    const made = { r1secret: r.secret, r1package: r.package, skPart: randomHex32() };
-    if (!(await putSec(gid, i, made))) {
-      putSec(gid, i, { r1secret: null, r1package: null, skPart: null });
-      saveFailed.add(skey(gid, i));
-      throw new Error(SAVE_FAILED);
-    }
+    await saveRound1(gid, i, { r1secret: r.secret, r1package: r.package, skPart: randomHex32() });
   }
   const s = sec(gid, i);
   const commit = Z.skCommit(gid, i, state.seats[i].boxPk, s.skPart);
@@ -423,6 +433,20 @@ export async function createGroup(name, n, t, from = null, network = "testnet") 
   creating = true;
   try { return await makeGroup(name, n, t, from, network); } finally { creating = false; }
 }
+const WALLET_UNSAVED = "This device could not save the key of the wallet, so Zigs did not "
+  + "create it. Free storage and try again.";
+const WALLET_MEMORY = "This browser does not let the page save data, so Zigs did not create the "
+  + "wallet. Allow site data for this site and reload.";
+// The wallet key is saved before the store sees the wallet. This browser saves keys and seat
+// secrets in one write. If the key does not save, the secret of seat 1 does not save either.
+async function saveWalletKey(gid, key) {
+  if (memoryOnly()) throw new Error(WALLET_MEMORY);
+  if (await putKey(gid, key)) return;
+  const refused = refusal(WALLET_UNSAVED);
+  delete gkeys[gid];
+  await persist();
+  throw refused;
+}
 // `from` is the wallet this one replaces. The old wallet gets only the new id, never its key:
 // devices left out of the new wallet must not get its viewing key.
 async function makeGroup(name, n, t, from, network) {
@@ -430,15 +454,26 @@ async function makeGroup(name, n, t, from, network) {
   if (!(await canSign())) throw new Error(NO_SIGNING_SEAT);
   const ref = sdb.collection("groups").doc();
   const key = new Uint8Array(32); crypto.getRandomValues(key);
-  putKey(ref.id, btoa(String.fromCharCode(...key)).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, ""));
+  const b64 = btoa(String.fromCharCode(...key)).replace(/\+/g, "-").replace(/\//g, "_");
+  await saveWalletKey(ref.id, b64.replace(/=+$/, ""));
   await ref.set({
     name, n, t, network, version: 3, createdBy: me, createdAt: Date.now(),
     movedFrom: from || undefined,
   });
   if (from) await sdb.doc("groups/" + from).update({ movedTo: ref.id, movedAt: Date.now() });
   openGroup(ref.id);
-  await takeSeat(1, 3);
+  await takeFirstSeat(from);
   return ref.id;
+}
+
+// The wallet is in the store before seat 1 saves. If seat 1 fails, the person reads that the
+// wallet exists and what to do next.
+async function takeFirstSeat(from) {
+  try { await takeSeat(1, 3); } catch (e) {
+    throw new Error("Zigs made the wallet, but this device is not in it yet. " + (e.message || e)
+      + ' Then use "Join as device 1".'
+      + (from ? ' To undo the link with the old wallet, open it and tap "Cancel move".' : ""));
+  }
 }
 
 // The signing key of a new seat, or null where Ed25519 is missing (a seat then has no messages).
@@ -454,19 +489,46 @@ async function newSeatKey(version) {
 export async function takeSeat(i, version = groupVersion()) {
   if (!Z || !version) return;
   const gid = state.gid, sign = await newSeatKey(version);
-  const ref = sdb.doc("groups/" + gid + "/seats/" + i);
-  const lease = await ref.acquire({ holder: crypto.randomUUID(), ttlMs: 5000 });
+  const ref = sdb.doc("groups/" + gid + "/seats/" + i), holder = crypto.randomUUID();
+  const lease = await ref.acquire({ holder, ttlMs: 5000 });
   if (!lease.acquired) {
     showBanner("bad", "Someone else is joining as device " + i + " right now.");
     return;
   }
+  try { await joinSeat(ref, gid, i, version, sign); } catch (e) {
+    // The store has no release call: a lease of 1 ms ends at once, so a retry needs no wait.
+    await ref.acquire({ holder, ttlMs: 1 }).catch(() => {});
+    throw e;
+  }
+}
+
+const JOIN_UNSAVED = "This device could not save its key share, so it did not join. Free storage "
+  + "and try again.";
+const JOIN_MEMORY = "This browser does not let the page save data, so Zigs did not join. Allow "
+  + "site data for this site and reload.";
+// A save that failed because another tab holds the lock keeps the text of the lock. Any other
+// cause, and a cause that the page cannot tell, means storage.
+const refusal = (text) => new Error(lockedElsewhere() ? LOCKED_ELSEWHERE : text);
+// The secret of a new seat is saved before the store sees the seat. A save that fails leaves
+// nothing of the seat in this browser, and the join stops.
+async function saveSeatSecret(gid, i, secret) {
+  if (memoryOnly()) throw new Error(JOIN_MEMORY);
+  const k = skey(gid, i), before = secrets[k] && structuredClone(secrets[k]);
+  if (await putSec(gid, i, secret)) return;
+  const refused = refusal(JOIN_UNSAVED);
+  if (before) secrets[k] = before; else delete secrets[k];
+  await persist();
+  throw refused;
+}
+
+async function joinSeat(ref, gid, i, version, sign) {
   const cur = await ref.get();
   if (cur.exists && cur.data().uid) {
     showBanner("bad", "Device " + i + " has joined already.");
     return;
   }
   const kp = J(Z.boxKeypair());
-  putSec(gid, i, { boxSk: kp.sk, version, uid: me, ...sign });
+  await saveSeatSecret(gid, i, { boxSk: kp.sk, version, uid: me, ...sign });
   const name = user ? (await user.me()).name : "";
   const doc = { uid: me, name, boxPk: kp.pk, at: Date.now(), signPk: sign?.signPk };
   // In a version 3 wallet the seat signs its own document with the new key. Readers pin the key

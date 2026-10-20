@@ -14,7 +14,7 @@ esac
 FAST="payees vault chat lwd zns requests shim shim-status signed util account qr personal graph
   sol-docs sol-transfer sol-wasm sol-config sol-rent sol-errors demo-check mainnet-off
   chain-fallback smoke help contrast overview setup-stage approvals recovery payment-model
-  cf/test/gate sol-nonce-tabs"
+  cf/test/gate sol-nonce-tabs no-storage"
 SLOW="app sol-fee sol-sessions sol-limits sol-ceremony sol-app sol-pay unified-setup sol-prove"
 HELPERS="sol-rig sol-setup sol-chain sol-vector sol-fixture page"
 # A new test file goes into FAST or SLOW here, and into TESTS of solspike/baseline.sh. A name is

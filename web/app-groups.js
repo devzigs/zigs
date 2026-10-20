@@ -12,7 +12,8 @@ import { localSeats } from "./app-seats.js";
 import { followHash, setHash } from "./app-links.js";
 import { dropChain } from "./app-chain.js";
 import {
-  loggedIgnored, pinConfirmedNet, pinNetwork, pinVersion, refilter, signedMode, signPins,
+  loggedIgnored, pinConfirmedNet, pinNetwork, pinVersion, refilter, sessionParts, signedMode,
+  signPins,
 } from "./app-filter.js";
 import { syncRooms } from "./app-messages.js";
 import { expired, noApproval } from "./app-payments.js";
@@ -167,13 +168,26 @@ function watchInbox() {
 const openProposal = (ss) => ss.status === "collecting" && !ss.package && !ss.error && !ss.checking;
 export function needsMyApproval(gid, ss) {
   if (!openProposal(ss)) return false;
-  if (gid === state.gid && expired(ss)) return false;
+  // After t approvals no device here approves, as in the drawer (approvalsDone).
+  if (gid === state.gid && (expired(ss) || approvalsDone(ss))) return false;
   // Never again once this browser saw the signing start or a seat approved (TICKETS.md ZEC-9).
   if (noApproval(ss, gid)) return false;
   // In the open wallet only owned seats count; a restored seat that does not fit cannot approve.
   const owned = gid === state.gid ? localSeats() : null;
   return mySeatSecrets(gid).some(([i, s]) => (!owned || owned.includes(i))
     && s.keyPackage && !(s.nonces && s.nonces[ss.id]) && !(s.marks || {})[ss.id]?.approved);
+}
+/**
+ * Whether t approvals of payment `ss` of the open wallet are in: true or false, or null when this
+ * page does not load them. Only the open payment and the watched ones (toWatch) load them, and
+ * they count 0 until their first snapshot; the payments of other wallets never load them. Only
+ * the parts that pass their check count.
+ */
+export function approvalsDone(ss) {
+  const w = watched.get(ss.id);
+  const commits = ss.id === state.sid ? state.commits
+    : w && w.gid === state.gid ? sessionParts(ss.id, w.raw).commits : null;
+  return commits && state.g ? Object.keys(commits).length >= state.g.t : null;
 }
 export const toApprove = (gid) => (gid === state.gid ? state.sessions : inbox[gid] || []).filter((ss) => needsMyApproval(gid, ss));
 
@@ -254,6 +268,13 @@ export function openGroup(gid) {
 export function openSession(sid) {
   closeSession();
   state.sid = sid;
+  // A watched payment brings its approvals and shares, so the drawer does not count from zero
+  // until its first snapshot.
+  const w = watched.get(sid);
+  if (w && w.gid === state.gid) {
+    raw.commits = w.raw.commits; raw.shares = w.raw.shares;
+    refilter();
+  }
   const base = "groups/" + state.gid + "/sessions/" + sid;
   unsubSession.push(sub(base + "/commits", (m) => { raw.commits = m; }));
   unsubSession.push(sub(base + "/shares", (m) => { raw.shares = m; }));
