@@ -54,7 +54,7 @@ function createCard(pickRestore) {
       + "they do not use Zigs. A message is a small payment on chain, and this account pays its "
       + "fee. The account is apart from your wallets, and the group server never sees it."),
     networkPick(p, "account", "p"),
-    el("div", { class: "callout" }, "Keep only a few cents here. Whoever controls this browser can "
+    el("div", { class: "callout" }, "Use test funds here. Whoever controls this browser can "
       + "spend the account. Make a backup file right after you create it."),
     el("div", { class: "dialog-actions" },
       el("button", { class: "btn", type: "button", onclick: pickRestore }, "Recover access"),

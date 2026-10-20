@@ -3,6 +3,9 @@
 // devices, and it does not reopen a saved file, so no text here says that the wallet is safe.
 // Display only: nothing here makes or opens a file.
 
+export const VIEWING_NOTE = "Every device with viewing access sees the balances and the history of "
+  + "this wallet, and a device label proves no identity.";
+
 /**
  * How many key shares the wallet can lose and still pay, and what one browser that holds `here`
  * seats puts at risk: its loss loses all of them at once.

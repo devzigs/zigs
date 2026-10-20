@@ -5634,6 +5634,9 @@ const sealed = (gid, rel, seat, fields, key, names = ["by", "sig"]) =>
     const create = t.personalCard(() => {});
     assert.match(textOf(create), /Create account/);
     assert.match(textOf(create), /Recover access/);
+    assert.match(textOf(create), /Use test funds here\. Whoever controls this browser can spend/,
+      "the create card names test funds, not a few cents");
+    assert.doesNotMatch(textOf(create), /cents/, "the card claims no real money");
     assert.equal(named(create, "button", "Create account").attrs.disabled, undefined);
     assert.equal(t.contactsCard(), null);
     t.personal = mine;

@@ -78,6 +78,10 @@ const html = readFileSync(new URL("../index.html", import.meta.url), "utf8").rep
 assert.doesNotMatch(html, /mainnet|0\.5 ZEC/i, "index.html has no mainnet text");
 assert.equal(html.match(/Zcash testnet and Solana Devnet/g)?.length, 3,
   "the description, the Beta title and the side note name the release");
+assert.match(html, /A private Solana payment hides its amount, but its payee is public\./,
+  "the description says that a private Solana payment hides its amount");
+assert.equal(html.match(/hides its amount/g)?.length, 1, "and no other line makes the claim");
+assert.doesNotMatch(html, /A Solana payment hides/, "a Solana deposit shows its amount");
 console.log("ok  the page texts name Zcash testnet and Solana Devnet");
 console.log("mainnet-off: ok");
 process.exit(0);

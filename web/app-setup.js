@@ -231,12 +231,15 @@ function inviteCard(openCount) {
       .catch(() => {}),
   }, "Share") : null;
   return el("section", { class: "card card-pad hero-card" },
-    el("div", { class: "card-head" }, el("h2", {}, "Add the other devices"),
+    el("div", { class: "card-head" },
+      el("h2", {}, openCount === 1 ? "Add the other device" : "Add the other devices"),
       el("span", { class: "badge plain" },
         openCount === 1 ? "1 device to join" : openCount + " devices to join")),
     el("p", { class: "small muted" }, "Send this invite link through a private channel. Open it "
-      + "on each device that joins. It holds the wallet secret: anyone who has it can join as one "
-      + "of the open devices. " + senderNote("each person who joins")),
+      + "on each device that joins. It holds the wallet secret. Anyone who has it can read the "
+      + "wallet, write documents that can stop it, and join as one of the open devices. A backup "
+      + "file of a device does not add a new device: it holds the same key share. "
+      + senderNote("each person who joins")),
     el("div", { class: "row-actions" }, copyBtn(link, "Copy link", "btn sm primary"),
       copyBtn(message, "Copy invite message", "btn sm"), share),
     secretQr(link, "wallet", true));
