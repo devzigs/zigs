@@ -112,8 +112,12 @@ assert.equal(RESEND_MS, 10 * 60 * 1000);
 assert.match(detail({ resend: true }), / after 10 minutes\. /, "the minutes come from RESEND_MS");
 // Every row and the default, from the rows themselves, so that a new row cannot escape.
 const all = [...headlineFacts.map((f) => stageHeadline({ [f]: true })), stageHeadline({})];
-// The approved row sits below every row above it: a payment with a package also has t approvals.
-for (const f of headlineFacts.slice(0, headlineFacts.indexOf("approved"))) {
+// The approved row sits below every stage: a payment with a package also has t approvals. The
+// list is written here, so that a moved row in HEADLINES cannot move it too.
+for (const f of ["landed", "ended", "endedSigned", "check", "held", "sentStopped", "stopped",
+  "error", "rejected", "refused", "signingLost", "approvalLost", "approvalChanged", "mismatch",
+  "wrongMove", "sentUnsynced", "resend", "sent", "late", "sendFailed", "sendHere", "proved",
+  "proving", "signed", "signing"]) {
   assert.equal(detail({ [f]: true, approved: true }), detail({ [f]: true }),
     "approved stays below " + f);
 }
