@@ -187,7 +187,7 @@ export function approvalsDone(ss) {
   const w = watched.get(ss.id);
   const commits = ss.id === state.sid ? state.commits
     : w && w.gid === state.gid ? sessionParts(ss.id, w.raw).commits : null;
-  return commits ? Object.keys(commits).length >= state.g.t : null;
+  return commits && state.g ? Object.keys(commits).length >= state.g.t : null;
 }
 export const toApprove = (gid) => (gid === state.gid ? state.sessions : inbox[gid] || []).filter((ss) => needsMyApproval(gid, ss));
 
@@ -268,6 +268,13 @@ export function openGroup(gid) {
 export function openSession(sid) {
   closeSession();
   state.sid = sid;
+  // A watched payment brings its approvals and shares, so the drawer does not count from zero
+  // until its first snapshot.
+  const w = watched.get(sid);
+  if (w && w.gid === state.gid) {
+    raw.commits = w.raw.commits; raw.shares = w.raw.shares;
+    refilter();
+  }
   const base = "groups/" + state.gid + "/sessions/" + sid;
   unsubSession.push(sub(base + "/commits", (m) => { raw.commits = m; }));
   unsubSession.push(sub(base + "/shares", (m) => { raw.shares = m; }));

@@ -47,7 +47,8 @@ export const NAMES = [
   "reactSession", "readsMemos", "ready",
   "recipientCheck", "refilter", "releaseHold",
   "removeAccount", "requestCard", "requestOf", "rereadPersonal", "resendTx",
-  "resetSolStart", "restore", "restoreAccount", "restoredFor", "restoreWatch", "roomRequest",
+  "resetSolStart", "restore", "restoreAccount", "restoreFocus", "approvalsDone", "restoredFor",
+  "restoreWatch", "roomRequest",
   "round3V1", "runMemos",
   "sawSigning", "canCreateWallet",
   "runSync", "safetyNo", "saveAccountBackup", "saveBackup", "sealAndSave", "seatCheck", "seatIds",
@@ -68,7 +69,7 @@ export const NAMES = [
   "toApprove", "toWatch",
   "txDetails", "typingMessage", "ui", "unboxFrom", "undoRestore", "unlockVault", "verdict",
   "walletSections", "walletView",
-  "wantFocus", "watched", "writer",
+  "focusAfter", "wantFocus", "watched", "writer",
 ];
 
 // The tests assign these three names: each goes to the setter of its module.

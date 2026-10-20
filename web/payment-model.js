@@ -80,9 +80,8 @@ const HEADLINES = [
     + "browser approved it. Read the note below. Check the payment with the other devices."],
   ["mismatch", "Payment needs attention", "The transaction does not pay what the proposer listed. "
     + "Do not approve it. The reason is below."],
-  ["wrongMove", "Payment needs attention", "The transaction does not move all the funds to the "
-    + "address of the new wallet that this browser checked. Do not approve it. The reason is "
-    + "below."],
+  ["wrongMove", "Payment needs attention", "The transaction does not pay only the address of the "
+    + "new wallet that this browser checked. Do not approve it. The reason is below."],
   ["sentUnsynced", "Waiting for a block", "A device sent it. This page has not synced the blocks "
     + "since you opened this wallet."],
   ["resend", "Send it again", "No block that this browser synced holds it after "
@@ -91,7 +90,9 @@ const HEADLINES = [
     + "yet. Wait for it before you make another payment."],
   ["late", "Too late to send", "It can no longer go to the network. A device may have sent it. "
     + "Check it before you make another payment."],
-  ["sendFailed", "The send failed", "Read the error below. A device can send it again."],
+  ["sendFailed", "The send did not finish", "A node may still have taken it. Read the error "
+    + "below. Check the payment before you make another payment. A device can send the same "
+    + "transaction again."],
   ["sendHere", "Ready to send", "Sending is a separate step. This browser sends it only when the "
     + "finished transaction names the approved id."],
   ["proved", "Ready to send", "The proof is built. A device of this wallet can send it now."],
@@ -105,6 +106,8 @@ const HEADLINES = [
     + "if all are right. After enough approvals, the devices sign it, a device builds the proof, "
     + "and any device can send it."],
 ];
+/** The facts of the headline, first rule first. */
+export const headlineFacts = HEADLINES.map(([fact]) => fact);
 const WAITING = { title: "Waiting for approvals", detail: "The other devices approve it while "
   + "this wallet is open on them. You can close this page and come back." };
 

@@ -3,7 +3,8 @@
 // Run: node web/test/payment-model.mjs   (Node 24)
 import assert from "node:assert/strict";
 import {
-  DRAFT_MS, draftLive, draftOf, emptyForm, RESEND_MS, REVIEW_MS, reviewFresh, stageHeadline,
+  DRAFT_MS, draftLive, draftOf, emptyForm, headlineFacts, RESEND_MS, REVIEW_MS, reviewFresh,
+  stageHeadline,
 } from "../payment-model.js";
 
 const at = 1_800_000_000_000;
@@ -52,7 +53,7 @@ assert.equal(title({ mine: true, signing: true }), "Signing", "approved: the sig
 assert.equal(title({ signing: true, signed: true }), "Ready for the proof");
 assert.equal(title({ signed: true, proving: true }), "Building the proof");
 assert.equal(title({ proving: true, proved: true }), "Ready to send");
-assert.equal(title({ proved: true, sendFailed: true }), "The send failed");
+assert.equal(title({ proved: true, sendFailed: true }), "The send did not finish");
 assert.equal(title({ proved: true, sent: true, sendFailed: true }), "Waiting for a block");
 assert.equal(title({ proved: true, refused: true }), "Payment needs attention",
   "a send that this browser refuses is no Ready to send");
@@ -109,13 +110,17 @@ assert.doesNotMatch(detail({ proved: true }), /browser/, "no send of this browse
 assert.match(detail({ approved: true, mine: true }), /^Enough devices approved\. Another /);
 assert.equal(RESEND_MS, 10 * 60 * 1000);
 assert.match(detail({ resend: true }), / after 10 minutes\. /, "the minutes come from RESEND_MS");
-const all = ["landed", "ended", "endedSigned", "check", "held", "sentStopped", "stopped", "error",
-  "rejected", "refused", "signingLost", "approvalLost", "approvalChanged", "mismatch", "wrongMove",
-  "sentUnsynced", "resend", "sent", "late", "sendFailed", "sendHere", "proved", "proving", "signed",
-  "signing", "approved", "mine"].map((f) => stageHeadline({ [f]: true }));
+// Every row and the default, from the rows themselves, so that a new row cannot escape.
+const all = [...headlineFacts.map((f) => stageHeadline({ [f]: true })), stageHeadline({})];
+// The approved row sits below every row above it: a payment with a package also has t approvals.
+for (const f of headlineFacts.slice(0, headlineFacts.indexOf("approved"))) {
+  assert.equal(detail({ [f]: true, approved: true }), detail({ [f]: true }),
+    "approved stays below " + f);
+}
 assert.equal(title({ held: true, sentStopped: true }), "Stopped, but it may still go on chain");
 assert.match(detail({ sentStopped: true, error: true }), /^A device sent it, and the payment /);
-assert.equal(all.filter((h) => /signer/.test(h.title + h.detail)).length, 0, "device wording");
+assert.equal(all.filter((h) => /signer|seat|passkey|USD|Swap|USDC/i.test(h.title + h.detail))
+  .length, 0, "device wording");
 assert.equal(new Set(all.map((h) => h.detail)).size, all.length, "each fact has its own detail");
 console.log("ok  the headline of a payment");
 console.log("payment-model: ok");

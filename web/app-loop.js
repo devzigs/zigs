@@ -136,17 +136,20 @@ function focusKey(snap) {
   const want = wantFocus; wantFocus = null;
   return want && (want.force || !snap) ? want.key : snap && snap.key;
 }
-// A control of the open layer that went away (a step that another device took) leaves the focus
-// in that layer.
-function restoreFocus(root, snap, layer) {
+// A control of the open drawer that went away (a step that another device took) leaves the focus
+// in the drawer. A dialog keeps it where the page put it: its first field would scroll the dialog
+// and open a phone keyboard.
+export function restoreFocus(root, snap, layer) {
   const key = focusKey(snap), n = key && controlByKey(root, key);
   if (!n) {
-    if (snap?.inLayer && layer) focusLayer(layer);
+    if (inDrawer(snap, layer)) focusLayer(layer);
     return;
   }
   n.focus({ preventScroll: true });
   if (snap && snap.key === key) restoreSelection(n, snap.sel);
 }
+
+const inDrawer = (snap, layer) => !!snap?.inLayer && !!layer?.classList.contains("drawer");
 
 function restoreSelection(n, sel) {
   if (!sel || sel[0] == null) return;

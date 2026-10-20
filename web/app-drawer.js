@@ -159,9 +159,13 @@ function moveNote(ss, rc) {
 
 // The seats of this browser that can approve the payment now. None while the wallet's data is
 // being checked: an approval written twice would replace its own nonces.
-const approvers = (ss) => state.pending || noApproval(ss) ? []
+const approvers = (ss) => state.pending || noApproval(ss) || ss.package ? []
   : localSeats().filter((i) => canWriteAs(i)
-  && sec(state.gid, i).keyPackage && seatCheck(i) === true && !state.commits[i] && !ss.package);
+  && sec(state.gid, i).keyPackage && seatCheck(i) === true && !state.commits[i]
+  && !approvedHere(i, ss));
+// A device here that approved, also before its part reaches the list: approve() refuses it.
+const approvedHere = (i, ss) => approvalKept(sec(state.gid, i), ss.id)
+  || !!sec(state.gid, i).marks?.[ss.id]?.approved;
 
 const bigButton = (label, onclick, extra = {}, symbol = null) =>
   el("button", { class: "btn primary lg", type: "button", onclick, ...extra },
@@ -350,7 +354,12 @@ const notes = (ss, refused, rc) => [
   holdCard(ss),
   resetNote(ss),
   changedNote(ss),
+  stopReason(ss),
 ];
+// The stop reason of a payment that also has a signed part or a sent mark: the signature step
+// shows the signed part then.
+const stopReason = (ss) => ss.error && (ss.signed || ss.broadcastTxid)
+  ? el("div", { class: "callout bad" }, "A device stopped this payment: " + ss.error) : null;
 
 const technical = (ins) => el("details", { class: "small faint" },
   el("summary", {}, "Technical details"),
@@ -484,7 +493,7 @@ const stepFacts = (ss, rc) => ({
   sendFailed: !!ss.broadcastError,
   sendHere: finishStep(ss) === "send",
   proved: !!ss.final,
-  proving: ss.status === "proving" && !proofStalled(ss),
+  proving: !!ss.signed && ss.status === "proving" && !proofStalled(ss),
   signed: !!ss.signed,
   signing: !!ss.package,
   approved: enoughApprovals(),
@@ -536,14 +545,14 @@ function waitTexts(ss) {
   const known = knownUndone(ss);
   return { over, wait: known ? NOT_DONE : NOT_SEEN, block: blockWait(ss, known) };
 }
-// Step 6 before a sent mark. A device may have sent a payment that is too late to send now, so
-// only a sync of this page says that no block holds it.
+// Step 6 before a sent mark. A device may have sent a payment that is too late to send now, so a
+// block can still hold it until its expiry + 3 (expired): only the synced blocks speak.
 function blockWait(ss, known) {
-  if (tooLate(ss) && !syncedHere()) return UNSYNCED;
+  if (tooLate(ss)) return !syncedHere() ? UNSYNCED : expired(ss) ? NOT_DONE : NOT_IN_BLOCK;
   return known || ended(ss) ? NOT_DONE : NOT_SEEN;
 }
-// An unsigned payment that expired, a stop after a sync of this page, or too late to send.
-const knownUndone = (ss) => (expired(ss) && !signingSeen(ss)) || stoppedHere(ss) || tooLate(ss);
+// An unsigned payment that expired, or a stop after a sync of this page.
+const knownUndone = (ss) => (expired(ss) && !signingSeen(ss)) || stoppedHere(ss);
 
 // The approvals step is done from the count of approvals only. Once signing started, or while a
 // reason of this browser (the headline) stops it, it waits no more.
@@ -561,7 +570,7 @@ function signatureStep(ss) {
   return enoughApprovals() || ss.package ? "now" : "";
 }
 const proofStep = (ss) => ss.final || landed(ss) ? "done"
-  : ss.status === "proving" || ss.signed ? "now" : "";
+  : ss.signed ? "now" : "";
 function sendStep(ss) {
   if (ss.broadcastTxid || landed(ss)) return "done";
   if (ss.broadcastError || sendRefused(ss)) return "bad";
@@ -570,12 +579,13 @@ function sendStep(ss) {
 const ON_CHAIN = "A synced block holds the payment.";
 const NOT_DONE = "Not done.";
 const NOT_SEEN = "Not seen on this page.";
+const NOT_IN_BLOCK = "No synced block holds it yet.";
 
 function proofText(ss, wait) {
   if (ss.final) return "Proof built and the whole transaction checked.";
   if (landed(ss)) return ON_CHAIN;
   if (wait) return wait;
-  if (ss.status === "proving" && !proofStalled(ss)) {
+  if (ss.signed && ss.status === "proving" && !proofStalled(ss)) {
     return "A device is building the proof · " + elapsed(ss.provingAt) + " of about a minute.";
   }
   return ss.signed ? "Any device can build the zero-knowledge proof now."
@@ -613,7 +623,7 @@ function blockText(ss, block) {
   if (landed(ss)) return ON_CHAIN;
   if (!ss.broadcastTxid) return block || "After the send.";
   if (!syncedHere()) return UNSYNCED;
-  return expiryOf(ss)?.expired ? "No synced block holds it." : "No synced block holds it yet.";
+  return expiryOf(ss)?.expired ? "No synced block holds it." : NOT_IN_BLOCK;
 }
 
 export function txDetails(ss) {
