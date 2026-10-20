@@ -1,5 +1,5 @@
 {
-  "baseCommit": "3c0672f9ccb3877aabaf1192fdd11a035426404a",
+  "baseCommit": "5e0e6b19fe644b548e19032024be0ac08dab8189",
   "node": "v24.11.0",
   "tests": {
     "web/test/chat.mjs": {
