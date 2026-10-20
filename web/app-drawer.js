@@ -4,12 +4,12 @@ import { busy, log, showBanner, state, ui } from "./app-state.js";
 import { about, elapsed, fmtZec, J, short, when, zecText } from "./app-kit.js";
 import { sec } from "./app-keystore.js";
 import { localSeats, seatIds, signersOf } from "./app-seats.js";
-import { curChain, curNet, inFlight, netName } from "./app-chain.js";
+import { curChain, curNet, explorerText, inFlight, netName } from "./app-chain.js";
 import { Z } from "./app-engine.js";
 import { canWriteAs, mayAct } from "./app-filter.js";
 import {
   act, addrGroups, avatar, closeBtn, copyBtn, el, groupName, guard, isPayee, leavesOf, memoRow,
-  money, named, payTitle, proposer, statusChip, unreadable,
+  money, named, netBadge, payTitle, proposer, statusChip, unreadable,
 } from "./app-dom.js";
 import { seatCheck } from "./app-dkg.js";
 import {
@@ -25,6 +25,7 @@ import { render } from "./app-loop.js";
 import { RESEND_MS, stageHeadline } from "./payment-model.js";
 import { icon } from "./app-icons.js";
 import { solOn } from "./app-sol.js";
+import { SOL_STAYS } from "./app-wallet.js";
 
 // The expiry of an open payment, or why an expired one ends here. The engine counts from the
 // last sync, so the time since that sync comes off. A height from saved state gives no time.
@@ -88,7 +89,8 @@ function sentSince({ from, txids }) {
     + " of this wallet went on chain from block " + fmtInt(from) + ".";
   const link = (id) => el("a", { href: curNet().explorer + id, target: "_blank", rel: "noopener" },
     short(id, 10));
-  return el("p", { class: "small" }, head, ...txids.slice(0, 8).flatMap((id) => [" ", link(id)]));
+  return [el("p", { class: "small" }, head, ...txids.slice(0, 8).flatMap((id) => [" ", link(id)])),
+    txids.length ? el("p", { class: "small" }, explorerText(curNet(), "Each id")) : null];
 }
 
 function checkWarnings(rc) {
@@ -155,9 +157,8 @@ function moveNote(ss, rc) {
     + "that replaces this one. Your browser has no checked copy of its address, so it cannot "
     + "check it." + solPart());
 }
-// The move takes the Zcash funds only (proposeMove). The lead joins this text with SOL_STAYS.
-const solPart = () => (solOn() ? " If this wallet has a Solana part, it does not move this way: "
-  + "check it in its Solana section." : "");
+// The move takes the Zcash funds only (proposeMove).
+const solPart = () => (solOn() ? " " + SOL_STAYS : "");
 
 // The seats of this browser that can approve the payment now. None while the wallet's data is
 // being checked: an approval written twice would replace its own nonces.
@@ -387,7 +388,9 @@ function decodedTotals(ins) {
 function leavesHead(ss, ins) {
   const t = ins ? decodedTotals(ins) : { leaves: leavesOf(ss), fee: finite(ss.fee) };
   return el("div", { class: "leaves" },
-    el("span", { class: "label" }, ins ? "Leaves the wallet" : "Proposed to leave the wallet"),
+    el("div", { style: "display:flex;align-items:center;gap:8px;flex-wrap:wrap" },
+      el("span", { class: "label" }, ins ? "Leaves the wallet" : "Proposed to leave the wallet"),
+      netBadge(state.g)),
     money(t.leaves, "lg"),
     el("span", { class: "small muted" }, "includes " + zecText(t.fee)
       + (priorityTimes(ins) ? " priority fee" : " fee")),
@@ -420,12 +423,6 @@ function breakdown(ins, ss) {
       + "not from the proposer's description."),
     ss.broadcastTxid ? null : el("p", { class: "small faint" }, ON_CHAIN_PUBLIC));
 }
-// Before the send, so that a device sees it before it approves. The lead joins the second part
-// with EXPIRY_PUBLIC, which the chain summary shows after the send.
-const ON_CHAIN_PUBLIC = "On chain, the number of actions and the fee are public. The expiry "
-  + "height is public too. Zigs sets it up to one day after the proposal, and a standard wallet "
-  + "sets it 40 blocks ahead. So the expiry height can show that Zigs made this payment. Few "
-  + "wallets pay a priority fee, so a priority fee can mark a payment too.";
 
 // Each seat with its name and seat number, and a check mark when it approved.
 const approverChips = () => el("div", {
@@ -585,10 +582,7 @@ function proofText(ss, wait) {
 
 function sendBody(ss, wait) {
   const box = (...kids) => el("div", { style: "display:grid;gap:8px" }, ...kids);
-  if (ss.broadcastTxid) {
-    return box(el("p", {}, when(ss.broadcastAt) + " · ", el("a", { href: curNet().explorer
-      + ss.broadcastTxid, target: "_blank", rel: "noopener" }, "View in explorer ↗")));
-  }
+  if (ss.broadcastTxid) return box(...sentLine(ss));
   const failed = ss.broadcastError && !landed(ss);
   return box(el("p", {}, sendText(ss, wait)),
     failed ? el("div", { class: "callout bad" }, ss.broadcastError) : null);
@@ -602,6 +596,12 @@ function sendText(ss, wait) {
   if (wait) return wait;
   return ss.final ? "Any device can send the finished transaction." : "Available after the proof.";
 }
+
+// The time of the send and its explorer link, with what that site sees.
+const sentLine = (ss) => [el("p", {}, when(ss.broadcastAt) + " · ", el("a", {
+  href: curNet().explorer + ss.broadcastTxid, target: "_blank", rel: "noopener",
+}, "View in explorer ↗")),
+el("p", { class: "small" }, explorerText(curNet(), "View in explorer"))];
 
 // The last step, from this browser's synced blocks only: a sent mark does not say that a block
 // holds the payment, and before a sync the page does not know. A state restored from storage is
@@ -642,10 +642,20 @@ export function txDetails(ss) {
 function chainSees() {
   const hidden = () => el("span", { class: "redact", role: "img", "aria-label": "Hidden" });
   const row = (name) => [el("dt", {}, name), el("dd", {}, hidden())];
-  return el("div", { style: "display:grid;gap:10px" },
+  const sees = el("div", { style: "display:grid;gap:10px" },
     el("span", { class: "label" }, "What the chain sees"),
     el("p", { class: "small" }, "One shielded transaction."),
     el("dl", { class: "kv", style: "grid-template-columns:110px minmax(0,1fr)" },
       ["Recipients", "Amounts", "Devices", "Approval rule"].flatMap(row)),
     el("p", { class: "small faint" }, "The number of actions is public. So is the fee."));
+  sees.append(el("p", { class: "small faint" }, EXPIRY_PUBLIC));
+  return sees;
 }
+// The expiry window of the engine (wasm/src/expiry.rs) against the 40 blocks of the standard
+// wallet library (PRIVACY.md, On chain).
+const EXPIRY_PUBLIC = "The expiry height is public too. Zigs sets it up to one day after the "
+  + "proposal, and a standard wallet sets it 40 blocks ahead. So the expiry height can show that "
+  + "Zigs made this payment. Few wallets pay a priority fee, so a priority fee can mark a payment "
+  + "too.";
+// Before the send, so that a device sees it before it approves.
+const ON_CHAIN_PUBLIC = "On chain, the number of actions and the fee are public. " + EXPIRY_PUBLIC;

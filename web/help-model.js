@@ -29,7 +29,7 @@ export const HELP = [
     + "sees each Solana payment. The Zigs server operator can link this wallet to its Solana "
     + "addresses by timing."],
   ["How do I read the memos of payments to this wallet?",
-    "Turn on Read memos of incoming payments, under This app on this device. A memo is only in "
+    "Turn on Read memos of incoming payments, under This browser. A memo is only in "
     + "the full transaction, so this browser then asks the light-wallet server for each "
     + "transaction that pays this wallet. That server learns which transactions pay this wallet. "
     + "The setting is off until you turn it on."],

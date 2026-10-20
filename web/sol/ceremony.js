@@ -2,7 +2,7 @@
 // exists. Each step writes a signed document (docs.js). The reactor runs the steps of the seats
 // that this browser holds. It never touches the Zcash key: the secret parts (`rSol`) are fresh,
 // and the boxes carry a curve label, so a Zcash box cannot open here.
-import { fitsPublished, samePackages } from "../util.js";
+import { deviceWords, fitsPublished, samePackages } from "../util.js";
 import { CLUSTER } from "./docs.js";
 import { feeUnpublished, publishFee } from "./fee.js";
 import { holdsShare, putSol, refuseStopped, solOf, stopOf } from "./secrets.js";
@@ -28,7 +28,7 @@ let holder = randomHex32();
 const pause = () => new Promise((ok) => setTimeout(ok, 3000));
 const stopText = (e) =>
   "Solana setup stopped: " +
-  String(e?.message ?? e).replace(/\.+$/, "") +
+  deviceWords(e?.message ?? e).replace(/\.+$/, "") +
   ". Do not use the Solana part of this wallet.";
 
 /** Why this wallet cannot get a Solana part, or null. Version 3 and testnet only. */
@@ -50,18 +50,18 @@ const numberMoved = (host, i) => {
 // Why seat i of this browser cannot start yet, or null: its Zcash part is settled and its person
 // confirmed the safety number it has now (also a restored seat, by its own confirm document).
 const WAITS = [
-  [(i) => "Seat " + i + " waits: open its wallet.", (h, g) => g !== h.state.gid],
+  [(i) => "Device " + i + " waits: open its wallet.", (h, g) => g !== h.state.gid],
   [
-    (i) => "Seat " + i + " has no Zcash key share in this browser.",
+    (i) => "Device " + i + " has no Zcash key share in this browser.",
     (h, g, i) => !h.sec(g, i).keyPackage,
   ],
-  [(i) => "Seat " + i + " waits for Address checked.", (h, g, i) => h.seatCheck(i) !== true],
+  [(i) => "Device " + i + " waits for Address checked.", (h, g, i) => h.seatCheck(i) !== true],
   [
-    (i) => "Seat " + i + " waits: the safety number changed after this browser confirmed it.",
+    (i) => "Device " + i + " waits: the safety number changed after this browser confirmed it.",
     (h, g, i) => numberMoved(h, i),
   ],
   [
-    (i) => "Seat " + i + " waits: this browser has not confirmed the safety number.",
+    (i) => "Device " + i + " waits: this browser has not confirmed the safety number.",
     (h, g, i) => !h.safetyNo() || h.confirmedNo(i) !== h.safetyNo(),
   ],
 ];
@@ -156,7 +156,7 @@ async function round1(c, i) {
   const doc = await host.signedDoc(gid, "soldkg1/" + i, i, fields);
   if (c.docs.soldkg1[i]) return pause();
   await ref.set(doc);
-  host.log("seat " + i + ": Solana round 1 commitment published");
+  host.log("device " + i + ": Solana round 1 commitment published");
 }
 
 /** A round-1 secret whose package another copy of the seat did not publish goes. */
@@ -164,7 +164,7 @@ async function dropR1(c, i) {
   const gone = { r1secret: null, r1package: null, rSol: null, r2secret: null, cluster: null };
   Object.assign(gone, { otherCopy: true });
   await putSol(c.host, c.gid, i, gone);
-  c.host.log("seat " + i + ": another copy of this seat published its Solana round 1");
+  c.host.log("device " + i + ": another copy of this device published its Solana round 1");
 }
 
 function makeBoxes(c, i, s) {
@@ -202,23 +202,23 @@ async function round2(c, i) {
   }
   for (const [rel, doc] of docs) await host.sdb.doc(base + "/" + rel).set(doc);
   await putSol(host, gid, i, { r2secret: made.secret, r1secret: null });
-  host.log("seat " + i + ": " + docs.length + " Solana key shares sent, sealed");
+  host.log("device " + i + ": " + docs.length + " Solana key shares sent, sealed");
 }
 
 /** Opens the box that seat j sent to seat i: its round-2 package and its secret part. */
 function unboxFrom(c, j, i) {
   const { host, gid } = c,
     d = c.docs.soldkg2[j + "-" + i];
-  if (typeof d.sealed !== "string") throw new Error("Seat " + j + " sent an unreadable message");
+  if (typeof d.sealed !== "string") throw new Error("Device " + j + " sent an unreadable message");
   let box;
   const ctx = boxContext(gid, j, i);
   try {
     box = J(host.Z.boxOpen(host.sec(gid, i).boxSk, host.state.seats[j].boxPk, ctx, d.sealed));
   } catch {
-    throw new Error("Seat " + j + " sent a message that cannot be opened");
+    throw new Error("Device " + j + " sent a message that cannot be opened");
   }
   if (!box || !HEX(32)(box.r) || !box.package || typeof box.package !== "object") {
-    throw new Error("Seat " + j + " sent an unreadable message");
+    throw new Error("Device " + j + " sent an unreadable message");
   }
   return box;
 }
@@ -305,7 +305,8 @@ async function publishDone(c, i) {
   const doc = await host.signedDoc(gid, "soldone/" + i, i, doneFields(W, s));
   await host.sdb.doc(base + "/soldone/" + i).set(doc);
   await putSol(host, gid, i, { doneSent: true });
-  host.log("seat " + i + ": Solana key share ready, group key " + s.groupKey.slice(0, 12) + "…");
+  const key = s.groupKey.slice(0, 12);
+  host.log("device " + i + ": Solana key share ready, group key " + key + "…");
 }
 
 const launch = (c, key, run) => {
@@ -380,7 +381,7 @@ export async function addSolana(c) {
   const why = startBlock(host) ?? (c.docs.solstart[1] ? "Solana was added already." : null);
   if (why) throw new Error(why);
   if (!host.localSeats().includes(1) || !host.canWriteAs(1)) {
-    throw new Error("Only the signer of seat 1 can add Solana to this wallet.");
+    throw new Error("Only device 1 can add Solana to this wallet.");
   }
   const wait = waitOf(host, gid, 1);
   if (wait) throw new Error(wait);
@@ -396,30 +397,30 @@ function lostSecret(c, i) {
   );
 }
 
-const OTHER_COPY = ": another device of this seat runs its Solana setup. This browser takes no "
+const OTHER_COPY = ": another copy of this device runs its Solana setup. This browser takes no "
   + "part.";
-const LOST = ": this browser lost its setup secret. If another device of this seat does not "
+const LOST = ": this browser lost its setup secret. If another copy of this device does not "
   + "finish the Solana setup, create a new wallet to use Solana.";
 
 // No stop goes out for a seat with no secret: a restored copy of the seat looks the same while the
 // other copy finishes the ceremony.
 /** Seat i of this browser published round 1 but holds no secret now: why, or null. */
 function noSecretText(c, i) {
-  if (solOf(c.host, c.gid, i).otherCopy) return "Seat " + i + OTHER_COPY;
-  return lostSecret(c, i) ? "Seat " + i + LOST : null;
+  if (solOf(c.host, c.gid, i).otherCopy) return "Device " + i + OTHER_COPY;
+  return lostSecret(c, i) ? "Device " + i + LOST : null;
 }
 
 /** The text of the progress of seat i, from the documents in the store. */
 export function seatProgress(c, i) {
   const { docs } = c,
     others = c.host.seatIds().filter((j) => j !== i);
-  if (docs.soldone[i]) return "Seat " + i + ": key ready";
+  if (docs.soldone[i]) return "Device " + i + ": key ready";
   const gone = docs.soldkg1[i] ? noSecretText(c, i) : null;
   if (gone) return gone;
-  if (others.some((j) => docs.soldkg2[i + "-" + j])) return "Seat " + i + ": sharing keys";
-  if (docs.soldkg1[i]) return "Seat " + i + ": round 1 sent";
+  if (others.some((j) => docs.soldkg2[i + "-" + j])) return "Device " + i + ": sharing keys";
+  if (docs.soldkg1[i]) return "Device " + i + ": round 1 sent";
   const wait = c.host.localSeats().includes(i) ? waitOf(c.host, c.gid, i) : null;
-  return wait ?? "Seat " + i + " has not started";
+  return wait ?? "Device " + i + " has not started";
 }
 
 const PDA_SHAPES = {
@@ -487,7 +488,7 @@ function localMisfit(c, dones) {
   const { host, W, docs } = c;
   const mine = host.localSeats().filter((i) => solOf(host, c.gid, i).keyPackage);
   const bad = mine.find((i) => !fitsSolana(W, i, solOf(host, c.gid, i), docs.soldone[i]));
-  if (bad) return "The Solana key share of seat " + bad + " does not fit.";
+  if (bad) return "The Solana key share of device " + bad + " does not fit.";
   const named = dones.find(hasPda);
   const seat = mine.find((i) => holdsShare(solOf(host, c.gid, i)));
   if (!named || seat === undefined) return null;
@@ -509,7 +510,7 @@ export function agreement(c) {
     SAME.every((k) => dones.every((d) => d[k] === dones[0][k])) &&
     samePackages(dones.map((d) => d.publicKeyPackage));
   if (!same || !shaped(W, dones[0]) || !samePda(dones))
-    return { state: "differ", why: "The signers published different Solana keys." };
+    return { state: "differ", why: "The devices published different Solana keys." };
   const why = localMisfit(c, dones);
   if (why) return { state: "differ", why };
   return { state: "agree", done: { ...dones[0], ...pdaOf(c, dones) } };

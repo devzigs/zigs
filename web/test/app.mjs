@@ -297,7 +297,8 @@ const sealed = (gid, rel, seat, fields, key, names = ["by", "sig"]) =>
   assert.deepEqual([first.status, t.proposer(first)], ["collecting", "you"]);
   await t.cancelPayment(first);
   await waitFor("cancel", () => t.state.sessions[0].status === "cancelled");
-  assert.match(t.state.sessions[0].error, /^Cancelled by (.+ \(device \d\)|device \d)\.$/);
+  assert.equal(t.state.sessions[0].error, "Cancelled by device 1.",
+    "a cancel of a seat with no name says only the device");
 
   const second = await propose("second", 2);
   await t.failSession(gid, second, "Bad share.");
@@ -651,7 +652,7 @@ const sealed = (gid, rel, seat, fields, key, names = ["by", "sig"]) =>
     // needs no approval. When the check ends, it is cancelled. The cards below show its chip.
     const mu = await propose("mu", 4);
     t.closeSession();
-    const cancelU = { error: "Cancelled by a signer (seat 2)." };
+    const cancelU = { error: "Cancelled by Ana (device 2)." };
     const sigU = await t.sigPart(gid, mu.id, "cancel", cancelU, 2);
     const subtleU = globalThis.crypto.subtle, verifyU = subtleU.verify.bind(subtleU);
     let openChecks;
@@ -680,7 +681,14 @@ const sealed = (gid, rel, seat, fields, key, names = ["by", "sig"]) =>
     await waitFor("the kept share of mv2", () => !!(t.sec(gid, 1).unsent || {})[mv2.id]);
     downC = false;
     t.setDb({ doc: docRef, collection: colRef });
-    await t.cancelPayment(liveOf(mv2));
+    // A seat with a name signs the cancel with it; cancelNow reads the name when it starts.
+    const nameOf1 = t.state.seats[1].name;
+    t.state.seats[1].name = "Ana";
+    const asAna = t.cancelPayment(liveOf(mv2));
+    t.state.seats[1].name = nameOf1;
+    await asAna;
+    assert.equal(data.get(pathOf(mv2)).error, "Cancelled by Ana (device 1).",
+      "a cancel names the device with its name");
     assert.equal((t.sec(gid, 1).unsent || {})[mv2.id], undefined,
       "the cancel drops the kept share");
     await drop(pathOf(mv2));
@@ -791,7 +799,7 @@ const sealed = (gid, rel, seat, fields, key, names = ["by", "sig"]) =>
     notify();
     await waitFor("the kept share", () => !!(t.sec(gid, 1).unsent || {})[mp.id]);
     const signingP = { ...data.get(pathOf(mp)) };
-    const cancelP = { error: "Cancelled by a signer (seat 2)." };
+    const cancelP = { error: "Cancelled by Ana (device 2)." };
     const sigP = await t.sigPart(gid, mp.id, "cancel", cancelP, 2);
     data.set(pathOf(mp), { ...signingP, ...cancelP, status: "cancelled", ...sigP });
     notify();
@@ -883,7 +891,7 @@ const sealed = (gid, rel, seat, fields, key, names = ["by", "sig"]) =>
     await waitFor("the share of seat 2 (sealed)", () => data.has(pathV + "/shares/2"));
     await sleep(300);
     assert.deepEqual(engine, ["package", "share 2"], "seat 1 signs nothing");
-    const said = (x) => x.includes("seat 1: its nonce for this payment is used or gone");
+    const said = (x) => x.includes("device 1: its nonce for this payment is used or gone");
     assert.ok(t.state.log.some(said), "the log says why");
     assert.deepEqual([t.gkeys.m5probe, t.gkeys.m5sealed], ["kept", "k"], "both wallet keys");
     assert.equal(t.sec(gid, 3).m5Flag, 3, "the change that this tab did not save stays");
@@ -1191,28 +1199,28 @@ const sealed = (gid, rel, seat, fields, key, names = ["by", "sig"]) =>
   assert.equal(one.blocker, "");
   const saved = JSON.stringify([...data]);
   t.ui.send = false; t.ui.pay = null; t.ui.note = "";
-  t.proposeRequest(one, { name: "Alice (seat 2)", verdict: "yes" }, gid);
+  t.proposeRequest(one, { name: "Alice (device 2)", verdict: "yes" }, gid);
   assert.deepEqual([t.ui.send, t.ui.sendFor, t.ui.note],
-    [true, gid, "Request from Alice (seat 2)"]);
+    [true, gid, "Request from Alice (device 2)"]);
   // The note goes to every approver. A message of a sender that is not verified can carry any
   // name, so the name stays out of the note.
   for (const verdict of ["no", "changed", "unknown", "wait"]) {
-    t.proposeRequest(one, { name: "Alice (seat 2)", verdict }, gid);
+    t.proposeRequest(one, { name: "Alice (device 2)", verdict }, gid);
     assert.equal(t.ui.note, "Request from an unverified sender", verdict);
   }
   t.proposeRequest(one, { name: "a memo", verdict: "memo" }, gid);
   assert.equal(t.ui.note, "Request from a memo");
-  t.proposeRequest(one, { name: "Alice (seat 2)", verdict: "yes" }, gid);
+  t.proposeRequest(one, { name: "Alice (device 2)", verdict: "yes" }, gid);
   assert.deepEqual(t.ui.pay.map(({ to, amt, memo: m }) => ({ to, amt, m })),
     [{ to: other, amt: "1.5", m: "October rent" }]);
   assert.equal(JSON.stringify([...data]), saved, "Propose this writes nothing to the store");
-  t.proposeRequest(one, { name: "You (seat 1)", verdict: "yes", mine: true }, gid);
+  t.proposeRequest(one, { name: "You (device 1)", verdict: "yes", mine: true }, gid);
   assert.equal(t.ui.note, "Request from the proposer", "an approver is not \"You\"");
   const roomName = t.groupName(gid);
-  t.proposeRequest(one, { name: "Bob (seat 2)", verdict: "yes" }, B);
+  t.proposeRequest(one, { name: "Bob (device 2)", verdict: "yes" }, B);
   await waitFor("wallet B", () => t.state.gid === B);
   assert.deepEqual([t.ui.send, t.ui.note, t.ui.pay.length],
-    [true, "Request from Bob (seat 2) in " + roomName, 1],
+    [true, "Request from Bob (device 2) in " + roomName, 1],
     "the form stays for the wallet that it was made for, and the note names the room");
   t.openGroup(gid);
   assert.deepEqual([t.ui.send, t.ui.note, t.ui.pay], [false, "", null], "another wallet drops it");
@@ -1320,14 +1328,14 @@ const sealed = (gid, rel, seat, fields, key, names = ["by", "sig"]) =>
     setBal(1e8);
     const card = (req, verdict, dm = false, name = "Alice") =>
       t.requestCard(req, { id: "m1", name, verdict, dm });
-    let c = card(okReq, "yes", false, "Alice (seat 2)");
+    let c = card(okReq, "yes", false, "Alice (device 2)");
     assert.match(textOf(c), /^Payment request1\.00ZEC/);
-    assert.match(textOf(c), /FromAlice \(seat 2\) · ✓ Verified/);
+    assert.match(textOf(c), /FromAlice \(device 2\) · ✓ Verified/);
     assert.deepEqual(callouts(c), [], "a verified sender gets no warning");
     assert.equal(named(c, "button", "Propose this").attrs.disabled, undefined);
     named(c, "button", "Propose this").on.click();
     assert.deepEqual([t.ui.send, t.ui.note, t.ui.pay[0].amt],
-      [true, "Request from Alice (seat 2)", "1"]);
+      [true, "Request from Alice (device 2)", "1"]);
     for (const verdict of ["no", "changed", "unknown"]) {
       c = card(okReq, verdict);
       assert.match(callouts(c)[0], /Check this request with the sender before you pay\./, verdict);
@@ -1380,7 +1388,7 @@ const sealed = (gid, rel, seat, fields, key, names = ["by", "sig"]) =>
     assert.deepEqual([t.ui.send, t.ui.sendFor], [true, gid]);
     t.state.groups = [];
     c = card(chatReq, "yes", true);
-    assert.match(textOf(c), /You hold no seat in a testnet wallet\./);
+    assert.match(textOf(c), /This browser holds no device of a testnet wallet\./);
     assert.equal(named(c, "button", "Propose this").attrs.disabled, "");
     // Mainnet is off (M1): a chat reads a mainnet request as one for testnet, and refuses it.
     c = card(t.requestOf(`zcash:${mainAddr}`, true), "yes", true);
@@ -1391,6 +1399,11 @@ const sealed = (gid, rel, seat, fields, key, names = ["by", "sig"]) =>
     t.ui.pay = null;
     const dialog = t.sendDialog();
     assert.equal(all(dialog, (x) => x.attrs.id === "s-note")[0].attrs.value, "Request from Alice");
+    // The invite link carries the key that seals the note, so the form does not say "only".
+    assert.match(textOf(dialog),
+      /Encrypted\. The devices of this wallet, and anyone else who has the invite link, can read/,
+      "the note hint names the holder of the invite link");
+    assert.doesNotMatch(textOf(dialog), /Only the devices of this wallet can read it/);
 
     // The request form: the open wallet in a room, a choice in a chat.
     t.state.groups = [t.state.g];
@@ -1411,7 +1424,8 @@ const sealed = (gid, rel, seat, fields, key, names = ["by", "sig"]) =>
     assert.match(textOf(form), /anyone else who has the contact link, can read the address/);
     t.state.groups = [];
     form = composer(t.chatRequest());
-    assert.match(textOf(form), /You hold no seat in a wallet that can receive a request/);
+    assert.match(textOf(form),
+      /This browser holds no device of a wallet that can receive a request/);
     assert.equal(named(form, "button", "Send request").attrs.disabled, "");
 
     // Wallets for the next checks: Team (open), Savings and Treasury (mainnet).
@@ -1566,6 +1580,8 @@ const sealed = (gid, rel, seat, fields, key, names = ["by", "sig"]) =>
     t.setChain(chainOf(null));
     t.ui.pay = null;
     const blocked = t.sendDialog();
+    assert.match(textOf(blocked), new RegExp("Pay a priority fee: .*The fee and the expiry height "
+      + "are public and can show that Zigs made this payment\\."), "the priority fee label");
     assert.equal(named(blocked, "button", "Review payment").attrs.disabled, "");
     assert.match(textOf(blocked), /Wait for the first sync to finish\./);
     const reasonId = named(blocked, "button", "Review payment").attrs["aria-describedby"];
@@ -1608,7 +1624,7 @@ const sealed = (gid, rel, seat, fields, key, names = ["by", "sig"]) =>
       assert.deepEqual(t.ui.pay.map((r) => [r.to, r.amt, r.memo, r.shown ?? null, r.name]),
         [["alice.zec", "0.5", "m", null, undefined]], "the typed text, no shown address");
       assert.deepEqual([t.ui.note, t.ui.priority], ["rent", true]);
-      assert.match(textOf(restored), /Draft saved on this device for 24 hours\./);
+      assert.match(textOf(restored), /Draft saved in this browser for 24 hours\./);
       const keys = t.gkeys;
       t.gkeys = { ...keys, [gidNow]: undefined };
       t.ui.pay = null;
@@ -1646,7 +1662,7 @@ const sealed = (gid, rel, seat, fields, key, names = ["by", "sig"]) =>
       t.keepDraft();
       assert.deepEqual(book()[gidNow], last, "the last draft stays");
       const failed = t.sendDialog();
-      assert.match(textOf(failed), /draft could not be saved on this device/);
+      assert.match(textOf(failed), /draft could not be saved in this browser/);
       assert.equal(failed.on.click, t.keepDraft, "a click saves too: Remove, Max, Use this list");
       t.endSend();
       assert.equal(t.ui.draftFailed, false, "a close forgets the failure of that form");
@@ -1737,6 +1753,20 @@ const sealed = (gid, rel, seat, fields, key, names = ["by", "sig"]) =>
         const shown = drawn();
         assert.match(textOf(shown), /decoded the transaction that it built/);
         assert.match(textOf(shown), /Network fee0/, "the decoded fee is the standard fee");
+        assert.match(textOf(shown), new RegExp("The chain does not show the recipients, the "
+          + "amounts or the memos\\. The fee and the expiry height are public and can show that "
+          + "Zigs made this payment\\. Every device of this wallet can read the recipients, the "
+          + "amounts, the memos and the note, in the shared history of the wallet\\. So can "
+          + "anyone who has its invite link\\. A memo goes on chain with the payment, and its "
+          + "recipient can read it too\\."), "the review says who can read the payment now");
+        assert.match(textOf(shown), new RegExp("A device that a later Change devices leaves out "
+          + "keeps the viewing key and the messages of this wallet\\. It can still read this "
+          + "history and each later payment of this wallet\\. It cannot read the new wallet\\. "
+          + "The move payment gives it the address, the amount and the note of that payment, and "
+          + "the id of the new wallet\\. With the id, the group server sends it the sealed "
+          + "documents of the new wallet and each later write\\. The server also accepts writes "
+          + "from it, so the device can stop the new wallet with false documents\\."),
+        "the review says what a device left out later keeps");
         assert.ok(named(shown, "button", "Propose payment"), "a match can be proposed");
         t.ui.sendReview = { prep: { ...prep, t: { ...prep.t, pczt: "REV3" } }, note: "x" };
         assert.match(textOf(drawn()), /Network fee \(priority\)/, "the fee as decoded");
@@ -1984,9 +2014,102 @@ const sealed = (gid, rel, seat, fields, key, names = ["by", "sig"]) =>
     t.state.sessions.push(move);
     assert.equal(t.moveState(tipAt(4500000)).session, move);
     assert.equal(t.moveState(tipAt(4503453)).propose, true, "the expired move goes again");
-    t.state.sessions.splice(t.state.sessions.indexOf(move), 1);
+    const moveCard = () => all(t.walletView(null, null),
+      (x) => /^card card-pad/.test(x.className ?? "")
+        && /Changing devices|This wallet moved|The Zcash funds moved/
+        .test(textOf(x)))[0];
+    const cancelIn = (card) => all(card, (x) => x.tag === "button" && textOf(x) === "Cancel move");
+    t.ui.tab = "overview";
+    assert.equal(cancelIn(moveCard()).length, 1, "Cancel while no move payment is open");
+    // The move sends the Zcash funds only. An empty Zcash balance counts as of the last sync and
+    // closes nothing. Before a sync the page knows only that a device sent the move. A wallet that
+    // can have a Solana part says that such a part stays, and the move can still be done.
+    const sentMove = { ...move, id: "x3s", broadcastTxid: "realtx", broadcastAt: 1,
+      final: { txid: "realtx", tx_hex: "00" } };
+    t.state.sessions.splice(t.state.sessions.indexOf(move), 1, sentMove);
+    const emptied = () => {
+      const c = tipAt(4500000, new Set(["realtx"]));
+      c.bal.spendable = 0;
+      return c;
+    };
+    const SOL_STAYS = new RegExp(" If this wallet has a Solana part, it does not move this way: "
+      + "check it in its Solana section\\. A device that is left out keeps its key share of that "
+      + "part, so it can still read the Solana history and approve Solana payments\\.$");
+    const solKey = "confirmednet:" + t.state.gid, pinned = t.signPins[solKey];
+    delete t.signPins[solKey];
+    try {
+      assert.equal(t.solOn(), false, "no Solana part: the wallet is not confirmed on testnet");
+      let m = t.moveState(emptied());
+      assert.match(m.text, /^The Zcash funds moved to .+, as of the last sync\.$/,
+        "the Zcash funds moved, as of the last sync");
+      assert.equal(m.done, true);
+      assert.equal(t.moveWord(t.state.g), "Zcash funds moved",
+        "the open wallet reads its move payment");
+      assert.match(textOf(moveCard()), /^The Zcash funds moved/,
+        "the heading names the Zcash funds only");
+      assert.doesNotMatch(textOf(moveCard()), /Closed|is closed/, "no Closed badge or text");
+      assert.equal(cancelIn(moveCard()).length, 0, "no Cancel once the move payment exists");
+      const incoming = emptied();
+      incoming.bal.pending = 5;
+      assert.match(t.moveState(incoming).text, /Move the Zcash funds to it\./,
+        "incoming funds keep the move open");
+      const more = () => tipAt(4500000, new Set(["realtx"]));
+      assert.match(t.moveState(more()).text, /Move the Zcash funds to it\. Like any/,
+        "more funds came in: move them too");
+      assert.equal(t.moveWord(t.state.g), "Moving", "and the open wallet is still moving");
+      const devicesText = () => {
+        t.ui.tab = "members";
+        try { return textOf(t.walletView(null, null)); } finally { t.ui.tab = "overview"; }
+      };
+      assert.doesNotMatch(devicesText(), /Solana part/, "Devices: no Solana text without one");
+      const SENT = new RegExp("^A device sent the Zcash funds to .+\\. This browser has not "
+        + "synced yet, so it cannot show if they arrived\\.$");
+      for (const c of [null, { ...more(), bal: null }]) {
+        t.setChain(c);
+        const n = t.moveState(c);
+        assert.match(n.text, SENT, "a sent move before a sync says only what the page knows");
+        assert.deepEqual([n.propose, n.done, n.open], [undefined, undefined, "MV1"],
+          "no Move button and no done before a sync");
+      }
+      t.signPins[solKey] = "testnet";
+      assert.equal(t.solOn(), true, "a wallet that can have a Solana part");
+      m = t.moveState(emptied());
+      assert.match(m.text, /^The Zcash funds moved to .+, as of the last sync\./);
+      assert.match(m.text, SOL_STAYS, "a move with a Solana part says that this part stays");
+      assert.equal(m.done, true, "the Solana sentence does not keep the move open");
+      assert.match(textOf(moveCard()), /^The Zcash funds moved/,
+        "with a Solana part too, the heading names the Zcash funds only");
+      assert.match(t.moveState(more()).text, SOL_STAYS, "also in the other steps");
+      assert.match(devicesText(), /move the Zcash funds to it\. If this wallet has a Solana part,/,
+        "Devices: a Solana part does not move");
+    } finally {
+      t.signPins[solKey] = pinned;
+    }
+    t.state.sessions.splice(t.state.sessions.indexOf(sentMove), 1);
     t.state.g = group;
     delete t.ready.MV1;
+
+    {
+      // A redraw keeps an open secret link open by its link, and never opens the secret link of
+      // another card, whose summary reads the same (saveFormState, restoreFormState).
+      const box = (link, open) => {
+        const d = { open, dataset: link ? { link } : {} };
+        d.summary = { textContent: "Show link and QR code", parentElement: d };
+        return d;
+      };
+      const page = (boxes) => ({
+        querySelector: () => null,
+        querySelectorAll: (sel) => (sel === "details[open] > summary"
+          ? boxes.filter((b) => b.open).map((b) => b.summary)
+          : sel === "details > summary" ? boxes.map((b) => b.summary) : []),
+      });
+      const form = t.saveFormState(page([box("gidA", true), box(null, true)]));
+      const other = box("gidB", false), same = box("gidA", false), plain = box(null, false);
+      t.restoreFormState(page([other, same, plain]), form);
+      assert.equal(other.open, false, "a redraw does not open the secret link of another card");
+      assert.equal(same.open, true, "a redraw keeps the open link of the same card");
+      assert.equal(plain.open, true, "and a plain disclosure with the same summary");
+    }
 
     {
       // ── ZEC-13: after signing, "done", "expired" and "Propose again" come from the engine
@@ -2112,6 +2235,15 @@ const sealed = (gid, rel, seat, fields, key, names = ["by", "sig"]) =>
       assert.match(line, /none of its notes is spent/);
       assert.match(line, /3 transactions of this wallet went on chain from block 4,496,544/,
         "the engine's list, from 2 days of blocks before the expiry, the first block included");
+      assert.match(line, /Each id opens testnet\.zecblock\.com in a new tab\. That site is not/,
+        "the ids say what the explorer sees");
+      const sentBefore = history.splice(0);
+      at(4503500);
+      const noIds = textOf(t.expiryLine(signedA));
+      assert.match(noIds, /0 transactions of this wallet went on chain/);
+      assert.doesNotMatch(noIds, /Each id opens/, "no ids, no explorer note");
+      history.push(...sentBefore);
+      at(4503500);
       assert.deepEqual(labels(t.nextAction(signedA, null, none)), ["Propose again"]);
       // The engine says that it expired before its height does, and the finished id is not the
       // approved one: the drawer offers Propose again, and the inbox lists no refused send.
@@ -2387,7 +2519,7 @@ const sealed = (gid, rel, seat, fields, key, names = ["by", "sig"]) =>
       at(4503500, new Set(["tx-a"]));
       assert.equal(textOf(t.statusChip(copied)), "Sent");
       assert.equal(t.expiryLine(copied), null);
-      const cancelled = { ...copied, error: "Cancelled by a seat." };
+      const cancelled = { ...copied, error: "Cancelled by a device." };
       assert.equal(textOf(t.statusChip(cancelled)), "Sent");
       const rewrittenSent = { ...signedA, broadcastTxid: "tx-b", final: { txid: "tx-b",
         tx_hex: "00" }, broadcastAt: 1 };
@@ -2410,6 +2542,34 @@ const sealed = (gid, rel, seat, fields, key, names = ["by", "sig"]) =>
         .map(textOf);
       assert.match(headline(landedA), /^In a blockA block that this browser synced holds/,
         "a synced block holds it: the headline says so");
+      // The head of the drawer names the network, as the wallet head does. What the chain sees
+      // names the public expiry, and the explorer link says what that site sees.
+      const drawerHead = (ss) => all(t.sessionLayer(ss), (x) => x.className === "leaves")[0];
+      assert.ok(named(drawerHead(landedA), "span", "Testnet"),
+        "the drawer head names the network");
+      assert.match(blockStep(landedA), new RegExp("The expiry height is public too\\. Zigs sets "
+        + "it up to one day after the proposal, and a standard wallet sets it 40 blocks ahead\\. "
+        + "So the expiry height can show that Zigs made this payment\\. Few wallets pay a "
+        + "priority fee, so a priority fee can mark a payment too\\."));
+      const sendStepOf = (ss) => all(t.sessionLayer(ss), (x) => /^step /.test(x.className ?? "")
+        && textOf(x).includes("Sent to the network"))[0];
+      assert.match(textOf(sendStepOf(landedA)), new RegExp("View in explorer ↗View in explorer "
+        + "opens testnet\\.zecblock\\.com in a new tab\\. That site is not Zigs: it sees the "
+        + "transaction id that you open and your IP address\\."),
+      "the explorer note sits next to its link");
+      const seesOf = (ss) => all(t.sessionLayer(ss), (x) => x.tag === "div"
+        && textOf(x).startsWith("What the chain sees"))[0];
+      assert.doesNotMatch(textOf(seesOf(landedA)), /View in explorer opens/,
+        "What the chain sees does not repeat it");
+      const testnetG = t.state.g;
+      t.state.g = { ...testnetG, network: "mainnet" };
+      try {
+        assert.ok(named(drawerHead(landedA), "span", "Mainnet"), "a mainnet drawer reads Mainnet");
+        assert.match(blockStep(landedA), /View in explorer opens zecblock\.com in a new tab/,
+          "the explorer host of a mainnet wallet");
+      } finally {
+        t.state.g = testnetG;
+      }
       answer = () => ({ state: "unknown", txid: "tx-a", why: "it may still land" });
       at(4500100);
       assert.match(blockStep(landedA), /In a blockNo synced block holds it yet\./);
@@ -2650,9 +2810,10 @@ const sealed = (gid, rel, seat, fields, key, names = ["by", "sig"]) =>
           + "device that Change devices leaves out later can still read it."),
         "the readers of a memo");
         // Before the send, the drawer says what the chain will show, also the expiry height.
-        assert.deepEqual([memoOne.text.includes("The expiry height is public too."),
-          look(lateSent()).text.includes("The expiry height is public too.")], [true, false],
-        "the drawer says before the send that the expiry height is public");
+        // After the send, the chain summary says it, once.
+        const expiryNotes = (text) => text.split("The expiry height is public too.").length - 1;
+        assert.deepEqual([expiryNotes(memoOne.text), expiryNotes(look(lateSent()).text)], [1, 1],
+        "the drawer says before the send that the expiry height is public, and once after it");
         // The steps after the approvals.
         const lateA = lateSent();
         put(lateA);
@@ -3197,7 +3358,7 @@ const sealed = (gid, rel, seat, fields, key, names = ["by", "sig"]) =>
       t.closeSession();
       at(4500101);
       assert.ok(t.heldApprovals().includes("s7"), "t < n: one cancel does not stop the others");
-      const gone = { ...s7, status: "cancelled", error: "Cancelled by a signer." };
+      const gone = { ...s7, status: "cancelled", error: "Cancelled by a device." };
       const holdOf = (ss) => all(t.sessionLayer(ss),
         (x) => x.attrs?.["data-key"] === "hold-" + ss.id)[0];
       assert.equal(holdOf(s7), undefined, "a payment that can still finish offers no release");
@@ -3268,7 +3429,7 @@ const sealed = (gid, rel, seat, fields, key, names = ["by", "sig"]) =>
       storage.set("zf-vault", "{}");
       await quiet(() => releaseQ.on.click(click));
       storage.delete("zf-vault");
-      assert.match(t.banner.text, /could not save the change of seat/);
+      assert.match(t.banner.text, /could not save the change of device/);
       assert.ok(t.heldApprovals().includes("s7q"), "still held");
       assert.ok((t.sec(gid7, other).nonces || {}).s7q, "and the nonce is still there");
       // Two seats here approved. The save of the second burn fails: the first nonce is gone,
@@ -3289,7 +3450,7 @@ const sealed = (gid, rel, seat, fields, key, names = ["by", "sig"]) =>
       await quiet(() => releaseP.on.click(click));
       localStorage.setItem = setItem;
       storage.delete("zf-vault");
-      assert.match(t.banner.text, /could not save the change of seat/);
+      assert.match(t.banner.text, /could not save the change of device/);
       assert.deepEqual([markOf(me, "s7p").released, markOf(other, "s7p").released],
         [undefined, undefined], "nothing says released");
       assert.ok(t.heldApprovals().includes("s7p"), "the hold stays");
@@ -3328,7 +3489,8 @@ const sealed = (gid, rel, seat, fields, key, names = ["by", "sig"]) =>
       await quiet(() => releaseD.on.click(click));
       Object.assign(localStorage, { getItem, setItem: setItemD });
       assert.equal(refused, true, "one save refused");
-      assert.equal(t.banner.text, "This browser could not save the change of seat " + other + ".");
+      assert.equal(t.banner.text,
+        "This browser could not save the change of device " + other + ".");
       const nonceD = (seat) => !!(t.sec(gid7, seat).nonces || {}).s7d;
       assert.deepEqual([markOf(me, "s7d").released, markOf(other, "s7d").released, nonceD(me),
         nonceD(other)], [undefined, undefined, false, true], "no release next to a live nonce");
@@ -3346,7 +3508,7 @@ const sealed = (gid, rel, seat, fields, key, names = ["by", "sig"]) =>
       t.closeSession();
       assert.match(saidF, new RegExp("^The payment is cancelled, but this browser could not "
         + "change its saved keys, so its approval stays here\\. This browser could not save the "
-        + "change of seat " + me + "\\. To end the hold, release it in the payment\\.$"));
+        + "change of device " + me + "\\. To end the hold, release it in the payment\\.$"));
       assert.ok((t.sec(gid7, me).nonces || {}).s7f, "the nonce stays");
       // With t = n every seat must sign, so the cancel of a seat that made no share ends the
       // hold. Both seats of this browser that approved burn. Only a signed shape counts.
@@ -5144,6 +5306,27 @@ const sealed = (gid, rel, seat, fields, key, names = ["by", "sig"]) =>
     assert.match(text, /Joined from 3 parts/);
     assert.equal(text.includes("(1/3)"), false, "no marker is left in a joined message");
     assert.match(text, /On chain · sent to the address you gave Ana/);
+    assert.match(text, /View transaction opens testnet\.zecblock\.com in a new tab\. That site/,
+      "the chat says what the explorer sees");
+    {
+      // A chat with no explorer link: no received message, and no sent one that a block holds.
+      const [received, sent] = [t.acct.received, t.personal.sent];
+      t.acct.received = [];
+      t.personal.sent = sent.filter((r) => r.txid === "S1");
+      try {
+        assert.doesNotMatch(textOf(t.contactView()), /View transaction opens/,
+          "no explorer link, no explorer note");
+        // Its only explorer link is a sent message that a block holds (S2).
+        t.personal.sent = sent.filter((r) => r.txid === "S2");
+        const sentOnly = textOf(t.contactView());
+        assert.match(sentOnly, /View transaction ↗/);
+        assert.match(sentOnly, /View transaction opens testnet\.zecblock\.com/,
+          "a chat whose only links are sent messages has the explorer note");
+      } finally {
+        t.acct.received = received;
+        t.personal.sent = sent;
+      }
+    }
     assert.equal(text.includes("✓"), false, "an on-chain message is never marked verified");
     assert.equal(marks(view).filter((m) => m.startsWith("On chain · sent")).length, 4);
     assert.match(text, /Payment request/);
@@ -5170,6 +5353,7 @@ const sealed = (gid, rel, seat, fields, key, names = ["by", "sig"]) =>
     // The other messages: not verified, and not in the chat of a contact.
     const others = textOf(t.otherMessages());
     assert.match(others, /Other messages \(not verified\)/);
+    assert.match(others, /View transaction opens testnet\.zecblock\.com in a new tab\./);
     for (const shown of ["hello public", "who is this", "no index", "Unknown sender",
       "Sent to your public address", "Sent to an address of this account that no contact has",
       "Sent to an address that this app cannot place"]) {
@@ -5224,7 +5408,7 @@ const sealed = (gid, rel, seat, fields, key, names = ["by", "sig"]) =>
     assert.match(textOf(c), /Back up the account\./);
     assert.match(textOf(c), /Public address/);
     assert.match(textOf(c), /Fund the account/);
-    assert.match(textOf(c), /You hold no seat in a testnet wallet\./);
+    assert.match(textOf(c), /This browser holds no device of a testnet wallet\./);
     assert.equal(named(c, "button", "Fund from a wallet").attrs.disabled, "");
     assert.equal(named(c, "button", "Copy request").attrs.disabled, undefined);
     // The question before a removal names the loss that is real. A new contact makes the file out
@@ -5257,7 +5441,11 @@ const sealed = (gid, rel, seat, fields, key, names = ["by", "sig"]) =>
       assert.equal(amount0.attrs["aria-invalid"], String(refused),
         "the amount field is invalid exactly when the request refuses the amount: " + typed);
     }
-    assert.match(amount0.attrs["aria-describedby"], /fund-error/, "the field points at the note");
+    assert.equal(amount0.attrs["aria-describedby"], "fund-hint fund-warn fund-error",
+      "the field points at its notes");
+    // The label holds the caption and the field only: the notes are no part of its name.
+    const label0 = all(form0, (x) => x.tag === "label" && all(x, (y) => y === amount0).length)[0];
+    assert.equal(textOf(label0), "Amount in ZEC", "the name of the amount field is its caption");
     t.ui.personal.fund = "0.02";
     assert.equal(warnOf(t.fundBlock()).textContent, HIGH, "the form shows it when it is drawn");
     t.ui.personal.fund = "0.003";
@@ -5328,7 +5516,7 @@ const sealed = (gid, rel, seat, fields, key, names = ["by", "sig"]) =>
     // The backup dialog serves a seat and the account, and the file note says what it holds.
     t.ui.backup = { seat: 2, made: false, busy: false };
     assert.match(textOf(t.backupDialog()),
-      /Back up seat 2.*opens your key share.*sign as this seat/);
+      /Back up device 2.*opens your key share.*sign as this device/);
     // S13: the seat dialog and the note no longer name the format change of 16 October 2026 or
     // the iPhone and Mac apps. Only the restore error of an old file names the change.
     const CHANGED = /backup format changed on 16 October 2026|iPhone and Mac apps/;
@@ -5518,7 +5706,7 @@ const sealed = (gid, rel, seat, fields, key, names = ["by", "sig"]) =>
   assert.equal("backedUp" in t.restoredFor(made, t.sec(A, 2)), false);
   const NEW = new RegExp("not a Zigs backup, or an older version of Zigs made it.*"
     + "changed on 16 October 2026.*older files no longer open.*"
-    + "new backup on a device that still holds the seat");
+    + "new backup in a browser that still holds the key share");
   // The kind of the files that older versions made. It is built here, so that the old name is
   // not in the source as one string. A kind from a file must not reach a method of Object either.
   const OLD_KIND = "zec" + "-frost-key-share";
@@ -5572,7 +5760,7 @@ const sealed = (gid, rel, seat, fields, key, names = ["by", "sig"]) =>
   assert.deepEqual([got.keyPackage, got.backupSaved, got.restored, got.nonces],
     [share, false, true, {}]);
   assert.equal(t.gkeys[A], "K".repeat(43));
-  assert.match(t.banner.text, /^Restored seat 2 of Team\./);
+  assert.match(t.banner.text, /^Restored device 2 of Team\./);
   assert.equal(unsaved(A, 2), true);
 }
 
@@ -5837,6 +6025,40 @@ async function runAcctSync() {
       from(a);
       press(true);
       assert.equal(document.activeElement, c, what + " is no stop at the start");
+    }
+    // A control of the layer that is no stop (tabindex -1) has the focus: Tab goes to the next
+    // stop after it, and Shift+Tab to the stop before it.
+    const quiet = control({ tabIndex: -1 });
+    open(a, quiet, c);
+    from(quiet);
+    press(false);
+    assert.equal(document.activeElement, c,
+      "Tab from a control of the layer that is no stop goes to the next stop");
+    from(quiet);
+    press(true);
+    assert.equal(document.activeElement, a, "Shift+Tab from it goes to the stop before");
+    open(a, c, quiet);
+    from(quiet);
+    press(false);
+    assert.equal(document.activeElement, a, "Tab from it after the last stop goes to the first");
+    open(quiet, a, c);
+    from(quiet);
+    press(true);
+    assert.equal(document.activeElement, c,
+      "Shift+Tab from it before the first stop goes to the last");
+    // A control before it that is no stop does not count: Tab and Shift+Tab still reach the stops
+    // next to it.
+    for (const [what, off] of [["a disabled control", control({ disabled: true })],
+      ["a control that is not shown", control({ getClientRects: () => [] })]]) {
+      open(a, off, quiet, c);
+      from(quiet);
+      press(false);
+      assert.equal(document.activeElement, c,
+        "Tab from it after " + what + " goes to the next stop");
+      from(quiet);
+      press(true);
+      assert.equal(document.activeElement, a,
+        "Shift+Tab from it after " + what + " goes to the stop before");
     }
     // The Close button of an open banner is a stop after the controls of the layer.
     const close = control();

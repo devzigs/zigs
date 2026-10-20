@@ -71,7 +71,9 @@ export const approvalOnce = (c, seat, sid, digest, make) =>
     const saved = savedNonces(c, seat, sid);
     if (saved) return saved;
     if (usedDigest(c, seat, digest)) {
-      throw new Error("Seat " + seat + " signed these bytes before, so it will not approve again.");
+      throw new Error(
+        "Device " + seat + " signed these bytes before, so it will not approve again.",
+      );
     }
     const entry = await make();
     await put(c, seat, withNonces(c, seat, sid, entry), SAVE_FAILED);

@@ -18,16 +18,18 @@ const rig = await loadRig();
 // The page modules need the stub page of the rig, so they load after it.
 const { SOL_DISCLOSURE, solPlanned, solServed } = await import("../app-sol.js");
 const { inviteMessage, joinText, onLink } = await import("../app-setup.js");
-const { chatMessage, inviteLink } = await import("../app-links.js");
+const { chatLink, chatMessage, inviteLink } = await import("../app-links.js");
 const { diagnostics } = await import("../app-help.js");
 const { chatInviteCard } = await import("../app-thread.js");
 const { chats } = await import("../app-keystore.js");
+const { chat: roomChat } = await import("../app-messages.js");
 const { backupWords } = await import("../sol/backup.js");
 const { loadingCount, olderCount, pendingCount, pendingRows } = await import("../sol/view.js");
 const { SHOWN } = await import("../sol/payview.js");
 const { createDialog, endCreate, lobby, marginText, renderSide } = await import("../app-shell.js");
 const { receiveDialog } = await import("../app-send.js");
 const { offReason } = await import("../util.js");
+const { quickCode } = await import("../setup-model.js");
 const { intentHex } = await import("../sol/intent.js");
 const { ui } = await import("../app-state.js");
 const appState = await import("../app-state.js");
@@ -71,8 +73,12 @@ function pageTree() {
   }
 }
 const pageText = () => textOf(pageTree());
+const h3Texts = (node) => [...(node.tag === "h3" ? [textOf(node)] : []),
+  ...(node.kids ?? []).flatMap(h3Texts)];
 const findNode = (node, pred) => pred(node) ? node
   : (node.kids ?? []).map((k) => findNode(k, pred)).find(Boolean) ?? null;
+const findAll = (node, pred) =>
+  [...(pred(node) ? [node] : []), ...(node.kids ?? []).flatMap((k) => findAll(k, pred))];
 const byText = (node, text) => node.text === undefined && textOf(node) === text ? node
   : (node.kids ?? []).map((k) => byText(k, text)).find(Boolean) ?? null;
 
@@ -224,10 +230,10 @@ function recoveryFacts() {
     .concat(n.attrs?.["aria-label"] ? [n.attrs["aria-label"]] : []);
   try {
     t.secrets = with_({ backupSaved: false });
-    assert.match(textOf(row()), new RegExp("Seat " + seat + "Zcash file not saved"));
+    assert.match(textOf(row()), new RegExp("Device " + seat + "Zcash file not saved"));
     t.secrets = with_({ backupSaved: true });
-    assert.match(textOf(row()), new RegExp("Seat " + seat + "Zcash file saved here"));
-    assert.ok(labels(row()).includes("Back up the Zcash part of seat " + seat));
+    assert.match(textOf(row()), new RegExp("Device " + seat + "Zcash file saved here"));
+    assert.ok(labels(row()).includes("Back up the Zcash part of device " + seat));
     t.secrets = with_({ backupSaved: true, restored: true });
     assert.match(textOf(row()), /Zcash restored from its file/, "a seat opened from its file");
     assert.ok(real[k].sol, "the seat holds a Solana part, so the checks below run");
@@ -237,7 +243,7 @@ function recoveryFacts() {
       assert.ok(solUnsaved().includes(seat), "an unsaved Solana file is in the backup note");
       t.secrets = with_({ sol: { ...real[k].sol, backupSaved: true } });
       assert.match(textOf(row()), /Solana file saved here/);
-      assert.ok(labels(row()).includes("Back up the Solana part of seat " + seat));
+      assert.ok(labels(row()).includes("Back up the Solana part of device " + seat));
       t.secrets = with_({ sol: { ...real[k].sol, backupSaved: true, restored: true } });
       assert.match(textOf(row()), /Solana restored from its file/, "a part opened from its file");
       t.secrets = with_({ sol: { ...real[k].sol, aborted: "A test stop." } });
@@ -365,14 +371,16 @@ function offline(build) {
 async function settingsSection() {
   const { tab, technical } = t.ui, { gid, wallet: w, g } = t.state;
   try {
-    const page = offline(() => {
+    const { page, cards } = offline(() => {
       headingBlocks();
       t.ui.tab = "settings";
-      return pageText();
+      const heads = h3Texts(pageTree());
+      return { page: pageText(), cards: heads };
     });
-    for (const part of ["This wallet", "This app on this device", "Advanced", "Help"]) {
-      assert.ok(page.includes(part), "Settings has the part " + part);
+    for (const part of ["This wallet", "This browser", "Advanced", "Help"]) {
+      assert.ok(cards.includes(part), "Settings has the card " + part);
     }
+    assert.ok(!page.includes("This app on this device"), "the card is the browser, not a device");
     assert.ok(page.includes("Any " + g.t + " of " + g.n + " devices"), "the rule says devices");
     await technicalBox(w, gid);
     await diagnosticsFacts(w, gid);
@@ -408,12 +416,46 @@ function solanaUnread(gid) {
   t.sol.ctl.loaded = { ...loaded, soldone: false };
   try {
     const text = diagnostics();
+    assert.match(text, /^Solana part: not read yet$/m, "the Solana part says not read yet");
     assert.match(text, /^Solana backup files not saved: not read yet$/m,
       "the Solana files say not read yet");
     assert.match(text, /^Solana payments to approve: not read yet$/m);
   } finally {
     t.secrets = real;
     t.sol.ctl.loaded = loaded;
+  }
+}
+// The Solana part line is one word of the setup state. The Solana counts show only for a part.
+function solanaPart() {
+  const ctl = t.sol.ctl, docs = ctl.docs, done = docs.soldone, g = t.state.g;
+  const COUNTS = /^Solana (backup files not saved|payments to approve): /m;
+  const facts = (change) => {
+    ctl.docs = { ...docs, ...change };
+    return diagnostics();
+  };
+  try {
+    assert.match(facts({}), /^Solana part: ready$/m, "a ready Solana part says ready");
+    for (const [what, change, word] of [
+      ["a part that stopped", { solabort: { 2: { reason: "A test stop." } } }, "stopped"],
+      ["keys that differ", { soldone: { ...done, 2: { ...done[2], groupKey: "00".repeat(32) } } },
+        "keys differ"],
+      ["a part that sets up", { soldone: { 1: done[1], 2: done[2] } }, "setting up"],
+    ]) {
+      const text = facts(change);
+      assert.match(text, new RegExp("^Solana part: " + word + "$", "m"), "the word of " + what);
+      assert.match(text, COUNTS, "the Solana counts of " + what);
+    }
+    const none = facts({ solstart: {} });
+    assert.match(none, /^Solana part: not added$/m, "a part that never started says not added");
+    assert.doesNotMatch(none, COUNTS, "a wallet with no Solana part counts nothing of it");
+    ctl.docs = docs;
+    t.state.g = { ...g, network: "mainnet" };
+    const main = diagnostics();
+    assert.match(main, /^Solana part: unavailable$/m, "a mainnet wallet gets no Solana part");
+    assert.doesNotMatch(main, COUNTS, "and counts nothing of it");
+  } finally {
+    ctl.docs = docs;
+    t.state.g = g;
   }
 }
 // The sync line is one word of a fixed list, or the height of the last block. The error text of
@@ -485,7 +527,9 @@ async function diagnosticsFacts(w, gid) {
       }
       assert.match(text, /Approval rule: 2 of 3 devices/, "but they keep the facts");
     }
+    assert.equal(box.attrs["data-key"], "diagnostics", "the box keeps its focus through a redraw");
     solanaUnread(gid);
+    solanaPart();
     syncWords(gid);
   } finally {
     Object.assign(t.state, { log, g, seats });
@@ -525,6 +569,10 @@ function receiveTexts() {
     assert.ok(byText(box, "Zcash Testnet"), "the badge names the network of the wallet");
     assert.match(textOf(box), /Send only ZEC on Zcash Testnet to this address\./);
     assert.match(textOf(box), /becomes spendable after 3 confirmations\. Get free testnet ZEC/);
+    assert.match(textOf(box), /faucet ↗\. That site is not Zigs: it sees the address that you/,
+      "the faucet note says what the faucet sees");
+    assert.match(textOf(box), /Its public status lists each payout with a short form of the/,
+      "and that the faucet publishes each payout");
     assert.ok(!byText(box, "Share address"), "no Share button without Web Share");
     const first = findNode(box, (n) => n.attrs?.["data-first-focus"] !== undefined);
     assert.equal(first && textOf(first), "Copy address", "the dialog opens on Copy address");
@@ -546,7 +594,7 @@ function receiveTexts() {
     assert.match(t.banner?.text ?? "", /could not share the address\. Use Copy address\./);
     t.state.g = { ...g, movedTo: "elsewhere" };
     const moved = textOf(receiveDialog());
-    assert.match(moved, /This wallet moved to/, "a moved wallet says so");
+    assert.match(moved, /Change devices replaces this wallet with/, "a moved wallet says so");
     assert.doesNotMatch(moved, /Send only|Use this shielded address|Share address/,
       "and asks for no payment to the old address");
     t.state.g = g;
@@ -556,7 +604,8 @@ function receiveTexts() {
       [k, k.startsWith(t.state.gid + ":") ? { ...v, checkedWallet: "another" } : v]));
     try {
       const hidden = textOf(receiveDialog());
-      assert.match(hidden, /The address shows here after your seat checks it against its own key\./,
+      assert.match(hidden,
+        /The address shows here after your device checks it against its own key\./,
         "the dialog says why the address is not shown");
       assert.doesNotMatch(hidden, /Copy address|Share address|Send only/, "and shows no address");
     } finally {
@@ -567,7 +616,9 @@ function receiveTexts() {
     assert.ok(byText(main, "Zcash Mainnet"), "a mainnet wallet reads Mainnet");
     assert.doesNotMatch(textOf(main), /testnet|faucet/i, "and claims no testnet");
     assert.match(textOf(main), /Send only ZEC on Zcash Mainnet to this address\./);
-    assert.match(textOf(main), /The signers of this wallet can see its balance and history\./);
+    assert.match(textOf(main), new RegExp("The devices of this wallet and anyone who has the "
+      + "invite link can see its balance and history\\. A device that Change devices leaves out "
+      + "later can still see them\\."));
     // At the cap of a mainnet wallet the dialog shows the cap note and no address.
     t.setChain({ gid: t.state.gid, cw: {}, bal: { spendable: 60000000, pending: 0,
       height: 4500100 }, sent: new Set(), received: [] });
@@ -585,8 +636,121 @@ function receiveTexts() {
   try {
     assert.match(pageText(), /Received ZECZcash Testnet · block\u00a04\D?500\D?000/,
       "a received row names the coin and the network");
+    explorerTexts(chain);
   } finally {
     t.setChain(chain);
+    t.ui.tab = tab;
+  }
+}
+// A received row opens the explorer, and the faucet link opens the faucet: the notes say what
+// these sites see. The Overview, the Activity section and the Messages of the wallet.
+const EXPLORER_NOTE = "A received payment in this list opens testnet.zecblock.com in a new tab. "
+  + "That site is not Zigs: it sees the transaction id that you open and your IP address.";
+function explorerTexts(chain) {
+  assert.ok(pageText().includes(EXPLORER_NOTE), "the Activity list says what the explorer sees");
+  t.ui.tab = "overview";
+  assert.ok(pageText().includes(EXPLORER_NOTE), "so does the Activity card of the Overview");
+  assert.match(pageText(), /faucet ↗\. That site is not Zigs: it sees the address that you paste/,
+    "the empty ZEC card says what the faucet sees");
+  // Six newer payments push the received row out of the 6 rows of the Overview.
+  const sessions = t.state.sessions;
+  t.state.sessions = [1, 2, 3, 4, 5, 6].map((i) => ({ id: "x" + i, pczt: "x", amount: 1,
+    status: "cancelled", error: "Cancelled.", createdAt: Date.now() - i,
+    payees: [{ to: "utest1x", amount: 1 }] }));
+  try {
+    assert.ok(!pageText().includes(EXPLORER_NOTE), "the Overview note follows its 6 rows");
+  } finally {
+    t.state.sessions = sessions;
+  }
+  const row = t.chain.received[0];
+  t.setChain({ ...t.chain, received: [] });
+  assert.ok(!pageText().includes(EXPLORER_NOTE), "no note without a received payment");
+  t.ui.tab = "messages";
+  t.setChain({ ...t.chain, received: [{ ...row, memos: [{ status: "text", text: "Rent" }] }] });
+  assert.match(pageText(), /View payment opens testnet\.zecblock\.com in a new tab\. That site/,
+    "a memo of a received payment says what the explorer sees");
+  // A message of the room shows the thread with no memo: no note then.
+  const room = roomChat[t.state.gid];
+  roomChat[t.state.gid] = [{ id: "m1", thread: "wallet", seat: 1, text: "Hello room", at: 1 }];
+  try {
+    t.setChain({ ...t.chain, received: [row] });
+    assert.match(pageText(), /Hello room/, "the room thread shows");
+    assert.doesNotMatch(pageText(), /View payment opens/, "no memo, no note");
+  } finally {
+    if (room) roomChat[t.state.gid] = room;
+    else delete roomChat[t.state.gid];
+    t.setChain(chain);
+  }
+}
+// A link with a secret sits in the disclosure of its QR code, which starts closed. While it is
+// closed, neither its summary nor any attribute shows the secret. Copy link stays outside the
+// disclosure and copies the whole link. `where` names the card in the messages.
+function hiddenLink(page, link, where) {
+  const secret = link.split("#")[1], say = (m) => where + ": " + m;
+  const nav = Object.getOwnPropertyDescriptor(globalThis, "navigator");
+  const box = findNode(page, (n) => n.className === "qr-toggle");
+  assert.ok(!("open" in box.attrs) && !box.open, say("the disclosure is closed by default"));
+  assert.equal(textOf(box.kids[0]), "Show link and QR code", say("the summary shows no link"));
+  assert.ok(textOf(box).includes(link), say("the link text sits inside the disclosure"));
+  const outside = (n) => (n === box ? "" : n.text ?? n.kids.map(outside).join(""));
+  assert.ok(!outside(page).includes(link), say("no link text outside the disclosure"));
+  const leaks = (n) => [n.className, n.innerHTML, ...Object.values(n.attrs ?? {})]
+    .some((v) => String(v ?? "").includes(secret)) || (n.kids ?? []).some(leaks);
+  assert.ok(!leaks(page), say("no attribute holds the wallet secret"));
+  const copy = findNode(page, (n) => !!n.on?.click && textOf(n) === "Copy link");
+  assert.ok(copy && !byText(box, "Copy link"),
+    say("Copy link stays on the page, outside the disclosure"));
+  const copied = [];
+  try {
+    Object.defineProperty(globalThis, "navigator", { configurable: true,
+      value: { clipboard: { writeText: async (x) => { copied.push(x); } } } });
+    copy.on.click({ currentTarget: copy });   // the copy runs before the first await
+  } finally {
+    if (nav) Object.defineProperty(globalThis, "navigator", nav);
+    else delete globalThis.navigator;
+  }
+  assert.deepEqual(copied, [link], say("Copy link copies the full invite link"));
+}
+// A wallet that a new wallet replaces reads "Moving" in the wallet list and in the side list,
+// until no Zcash is left there at its last sync in this browser: then "Zcash funds moved".
+function moveWords() {
+  const groups = t.state.groups, gid = "ab".repeat(10);
+  const old = { id: gid, name: "Old", t: 2, n: 3, network: "testnet", movedTo: "cd".repeat(10) };
+  const lobbyTree = () => {
+    const real = globalThis.document;
+    globalThis.document = { createElement: () => new Rec(), createElementNS: () => new Rec(),
+      createTextNode: (text) => ({ text }) };
+    try {
+      return lobby();
+    } finally {
+      globalThis.document = real;
+    }
+  };
+  const item = (tree, key) => textOf(findNode(tree, (n) => n.attrs?.["data-key"] === key));
+  const side = () => item(sideTree(), "wallet-" + gid);
+  const row = () => item(lobbyTree(), "wallet-row-" + gid);
+  t.state.groups = [...groups, old];
+  try {
+    assert.match(side(), /Moving/, "the side list says Moving");
+    assert.match(row(), /Moving/, "the wallet list says Moving");
+    t.balCache[gid] = { total: 0, at: 1 };
+    assert.match(side(), /Zcash funds moved/,
+      "a list wallet with no Zcash left reads Zcash funds moved");
+    assert.match(row(), /Zcash funds moved/, "in the wallet list too");
+    t.balCache[gid] = { total: 5, at: 1 };
+    assert.match(row(), /Moving/, "a wallet with Zcash left is still moving");
+  } finally {
+    t.state.groups = groups;
+    delete t.balCache[gid];
+  }
+}
+// The Devices section shows the invite link that way.
+function inviteTexts() {
+  const tab = t.ui.tab;
+  t.ui.tab = "members";
+  try {
+    hiddenLink(pageTree(), inviteLink(t.state.gid), "Devices");
+  } finally {
     t.ui.tab = tab;
   }
 }
@@ -644,14 +808,21 @@ function activityList(ctl) {
     assert.equal(t.ui.chainFilter, "sol", "the choice stays in ui");
     const onlySol = pageText();
     assert.ok(sorted(order(onlySol, [TITLES[0], TITLES[2], TITLES[4]])), "Solana rows only");
+    assert.ok(all.includes(EXPLORER_NOTE), "the list of both chains has a received ZEC row");
+    assert.ok(!onlySol.includes(EXPLORER_NOTE), "a Solana-only list has no Zcash explorer note");
     assert.ok(gone(onlySol, [TITLES[1], TITLES[3]]), "no Zcash row");
     assert.equal(picked(), "Solana");
     const onlyZec = draw("zec");
     assert.ok(sorted(order(onlyZec, [TITLES[1], TITLES[3]])), "Zcash rows only");
     assert.ok(gone(onlyZec, [TITLES[0], TITLES[2], TITLES[4]]), "no Solana row");
+    assert.ok(onlyZec.includes(EXPLORER_NOTE), "the Zcash-only list has the explorer note");
     activityOverview(ctl, at, solRows);
     activityStates(ctl, kept);
     activityBadges(ctl);
+    t.ui.tab = "activity";
+    activityRowsFor(ctl, state);
+    activityChecks(ctl, draw);
+    activityOlder(ctl, draw);
   } finally {
     state.g = g;
     Object.assign(ctl, kept);
@@ -732,6 +903,43 @@ function activityStates(ctl, kept) {
   assert.doesNotMatch(pageText(), /ZEC you receive/, "no ZEC under the Solana choice");
   activityHistory(ctl, state, draw);
 }
+// Proposals that wait for their signature check: the rows that are read show, and the note says
+// that more can come. An empty list waits for the check.
+function activityChecks(ctl, draw) {
+  const { sessions, added } = ctl;
+  ctl.sessWait = 1;
+  try {
+    const checking = draw("all");
+    assert.ok(sorted(order(checking, TITLES)), "the rows that are read show while others wait");
+    assert.match(checking, /Zigs still reads some Solana proposals, so more rows can show\./,
+      "the note says that more rows can come");
+    Object.assign(ctl, { sessions: [], added: null });
+    const empty = draw("sol");
+    assert.match(empty, /Reading the Solana transactions/,
+      "an empty Solana list waits for the check");
+    assert.doesNotMatch(empty, /No activity yet/, "and does not say that nothing is there");
+  } finally {
+    Object.assign(ctl, { sessWait: 0, sessions, added });
+  }
+  assert.doesNotMatch(draw("all"), /Zigs still reads some Solana/, "no such note after the check");
+}
+// More proposals than the Solana section shows: the list has the newest SHOWN and says so.
+function activityOlder(ctl, draw) {
+  const { sessions, added } = ctl;
+  const solRows = () => findAll(pageTree(), (n) => n.attrs?.["data-key"]?.startsWith("sol-act-m"));
+  const older = / Older Solana proposals are not listed\./;
+  try {
+    ctl.added = null;
+    ctl.sessions = Array.from({ length: SHOWN }, (_, i) => proposal("m" + i));
+    assert.equal(solRows().length, SHOWN, "the list shows each proposal that the section shows");
+    assert.doesNotMatch(draw("sol"), older, "and claims no older proposal");
+    ctl.sessions = Array.from({ length: SHOWN + 1 }, (_, i) => proposal("m" + i));
+    assert.equal(solRows().length, SHOWN, "the list shows the newest proposals only");
+    assert.match(draw("sol"), older, "a list with more proposals than the section says so");
+  } finally {
+    Object.assign(ctl, { sessions, added });
+  }
+}
 // The empty list says what the chain read is: finished (nothing there), not finished, or failed.
 function activityHistory(ctl, state, draw) {
   const ready = t.chain, loaded = ctl.loaded;
@@ -753,7 +961,15 @@ function activityHistory(ctl, state, draw) {
     createdAt: Date.now(), payees: [{ to: "utest1x", amount: 5000000 }], note: "Late rent" }];
   assert.match(draw("all"), /Late rent.*The sync failed\. This list can be incomplete/,
     "rows next to a failed sync: the list can lack received payments");
+  t.setChain(null);
+  assert.match(draw("all"), /Late rent.*Not synced yet\. Sync starts after this device checks/,
+    "rows before the sync starts: the note says when it starts");
   state.sessions = [];
+  const none = draw("all");
+  assert.match(none, /Not synced yet.*Sync starts after this device checks the address\./,
+    "an empty list before the sync starts says when it starts");
+  assert.doesNotMatch(none, /Reading the chain|No activity yet/,
+    "a sync that has not started is no sync in progress");
   t.setChain({ gid: state.gid, cw: null, bal: null, sent: null, received: [],
     error: "The server did not answer." });
   const first = draw("all");
@@ -763,7 +979,7 @@ function activityHistory(ctl, state, draw) {
   ctl.loaded = { ...loaded, solsessions: false };
   for (const pick of ["sol", "all"]) {
     const unread = draw(pick);
-    assert.match(unread, /Reading the Solana transactions.*show after the first read/,
+    assert.match(unread, /Reading the Solana transactions.*show after Zigs reads them/,
       "an unread Solana list says that it reads: " + pick);
     assert.doesNotMatch(unread, /No activity yet/,
       "an unread Solana list does not say that nothing is there: " + pick);
@@ -865,10 +1081,11 @@ function sideMenu() {
   }
   const tab = t.ui.tab;
   t.ui.tab = "recovery";
-  assert.match(pageText(), /Your seats in this wallet.*file (saved here|not saved)/,
+  assert.match(pageText(), /This wallet's devices in this browser.*file (saved here|not saved)/,
     "the Recovery section shows the file state of each seat of this browser");
   assert.match(pageText(), /cannot see the files of the other devices/);
-  assert.match(pageText(), /covers your seats in this wallet only: each other wallet has its own/);
+  assert.match(pageText(),
+    /covers the devices of this wallet in this browser only: each other wallet has its own/);
   assert.match(pageText(), /the personal account has its own backup file, and direct chats are/);
   recoveryFacts();
   t.ui.tab = tab;
@@ -939,6 +1156,8 @@ async function approvalCount(ctl) {
     assert.ok(!labelled(sideTree(), "2 to approve"), "no count without a proposal");
     emptyInbox();
     receiveTexts();
+    inviteTexts();
+    moveWords();
     activityList(ctl);
     sideMenu();
     await settingsSection();
@@ -1016,6 +1235,33 @@ const SENDER = new RegExp("asks for a user name and a password before Zigs opens
   + "(each person who joins|each person who opens it|your contact) to open the "
   + "link in Safari or Chrome\\. The browser of a chat app or a private window can delete the key");
 assert.match(pageText(), SENDER, "the invite card of a wallet");
+hiddenLink(pageTree(), inviteLink(gid), "the setup card");
+// A failed copy of a secret link opens its disclosure, so the person can select the link there.
+{
+  const { copyBtn } = await import("../app-dom.js");
+  const real = globalThis.document, nav = Object.getOwnPropertyDescriptor(globalThis, "navigator");
+  globalThis.document = { createElement: () => new Rec(), createElementNS: () => new Rec(),
+    createTextNode: (text) => ({ text }) };
+  let button;
+  try {
+    button = copyBtn(inviteLink(gid), "Copy link");
+  } finally {
+    globalThis.document = real;
+  }
+  const opened = [], disclosure = { setAttribute: (k) => opened.push(k) };
+  const section = { querySelector: (q) => (q === "details[data-link]" ? disclosure : null) };
+  const target = { textContent: "Copy link", closest: (q) => (q === "section" ? section : null) };
+  Object.defineProperty(globalThis, "navigator", { configurable: true,
+    value: { clipboard: { writeText: async () => { throw new Error("denied"); } } } });
+  try {
+    await button.on.click({ currentTarget: target });
+  } finally {
+    if (nav) Object.defineProperty(globalThis, "navigator", nav);
+    else delete globalThis.navigator;
+  }
+  assert.deepEqual(opened, ["open"], "a failed copy opens the link to select");
+  assert.equal(target.textContent, "Select and copy");
+}
 {
   const cid = "c0ffee00c0ffee00c0ff";
   chats.list[cid] = { key: "ab".repeat(32), member: "m", at: Date.now() };
@@ -1025,6 +1271,7 @@ assert.match(pageText(), SENDER, "the invite card of a wallet");
   try {
     const card = chatInviteCard(cid);
     assert.match(textOf(card), SENDER, "the invite card of a chat");
+    hiddenLink(card, chatLink(cid), "the chat card");
     assert.match(textOf(card), /The browser of your contact asks/);
   } finally {
     globalThis.document = real;
@@ -1033,7 +1280,7 @@ assert.match(pageText(), SENDER, "the invite card of a wallet");
 }
 assert.match(SOL_DISCLOSURE, /public program address.*fee address.*Helius.*no audit/);
 assert.ok(SOL_DISCLOSURE.includes(PUBLIC_TEXT), "the choice says what the Solana tab says");
-assert.match(SOL_DISCLOSURE, /Every signer sees the whole Solana history/);
+assert.match(SOL_DISCLOSURE, /Every device sees the whole Solana history/);
 // A browser with no seat of the wallet gets the join card, with the disclosure before the seat.
 {
   const kept = t.secrets[gid + ":1"];
@@ -1376,7 +1623,8 @@ async function walkSteps(fields, times, fresh = true) {
   assert.equal(t.sec(gidC, 1).solAuto, true, "seat 1 keeps the choice");
   await sleep(1500);
   assert.equal(data.has(`groups/${gidC}/solstart/1`), false, "the start waits for every seat");
-  assert.doesNotMatch(t.banner?.text ?? "", /Seat 1 waits/, "and shows no refusal while it waits");
+  assert.doesNotMatch(t.banner?.text ?? "", /Device 1 waits/,
+    "and shows no refusal while it waits");
   assert.equal(data.get(groupPath(gidC)).solana, true, "and the group gets the hint");
   assert.ok(!t.backupText(1).includes("solAuto"), "the Zcash backup file does not carry it");
   for (const i of [2, 3]) await t.takeSeat(i, 3);
@@ -1398,7 +1646,7 @@ async function walkSteps(fields, times, fresh = true) {
   assert.match(pageText(), /Setup stopped at Prepare\. /, "a seat that rejected the address");
   await sleep(3500);
   assert.equal(data.has(`groups/${gidW}/solstart/1`), false, "no start before Address checked");
-  assert.doesNotMatch(t.banner?.text ?? "", /Seat 1 waits/, "and no refusal before it");
+  assert.doesNotMatch(t.banner?.text ?? "", /Device 1 waits/, "and no refusal before it");
   // Who starts the Solana part: seat 1 with the choice, seat 1 of a moved wallet, another seat.
   assert.match(pageText(), /Create the Solana key.*Starts when the Zcash address is checked\./s);
   t.state.g.movedTo = "elsewhere";
@@ -1568,9 +1816,9 @@ async function walkSteps(fields, times, fresh = true) {
   assert.match(note([], [1]), /^Back up the Solana part of your key share\. This browser can/);
   assert.match(note([], [1]), /second file, with its own passphrase/);
   assert.doesNotMatch(note([2], []), /Solana/);
-  const solButtons = () => pageText().match(/Back up Solana, seat \d/g) ?? [];
+  const solButtons = () => pageText().match(/Back up Solana, device \d/g) ?? [];
   await waitFor("the note", () => solButtons().length === 3);
-  assert.match(pageText(), /The Solana part of a seat is a second file, with its own passphrase/);
+  assert.match(pageText(), /The Solana part of a device is a second file, with its own passphrase/);
   // S13: a new wallet has no older file, so the note says nothing about an older format.
   assert.doesNotMatch(pageText(), /backup format changed|iPhone and Mac apps/);
   const saved = [];
@@ -1579,7 +1827,7 @@ async function walkSteps(fields, times, fresh = true) {
   assert.equal(await words.save("a long passphrase for the solana file"), true);
   assert.equal(saved.length, 1, "one file");
   assert.equal(t.sec(gidS, 2).sol.backupSaved, true);
-  assert.deepEqual(solButtons(), ["Back up Solana, seat 1", "Back up Solana, seat 3"]);
+  assert.deepEqual(solButtons(), ["Back up Solana, device 1", "Back up Solana, device 3"]);
   // A stop by another seat stops the Solana backups too.
   const stop = await t.signedDoc(gidS, "solabort/2", 2, { reason: "A test stop.", at: Date.now() });
   data.set(`groups/${gidS}/solabort/2`, stop);
@@ -1860,6 +2108,15 @@ assert.match(marginText(3, 3), /Each payment needs every device/);
   assert.equal(fields.focused, true, "the reset of Change devices keeps the focus in the dialog");
   assert.equal(/If this wallet has a Solana part/.test(dialogText(t.state.g)), solOn(),
     "the Solana sentence only for a wallet with a Solana part");
+  const g = t.state.g;
+  t.state.g = { ...g, network: "mainnet" };
+  try {
+    assert.equal(solOn(), false, "a mainnet wallet gets no Solana part");
+    assert.doesNotMatch(dialogText(t.state.g), /Solana/,
+      "Change devices says nothing of Solana for a wallet with no Solana part");
+  } finally {
+    t.state.g = g;
+  }
 }
 
 // ── Two quick submits make one wallet: the review, Change devices and createGroup ──
@@ -1930,6 +2187,166 @@ assert.match(marginText(3, 3), /Each payment needs every device/);
   assert.match(appState.banner?.text ?? "", /moved already/);
   ui.move = false;
 }
+
+// ── The safety card: all 30 digits, a tick for this number, and They don't match ──
+// This browser holds seat 1 only, with no key share yet, so the card asks it to confirm.
+{
+  await rig.wallet({ name: "Verify" });
+  const gidV = t.state.gid, no = t.safetyNo(), k1 = gidV + ":1", k2 = gidV + ":2";
+  const keep = { wallet: t.state.wallet, done: t.state.done, abort: t.state.abort };
+  const kept = { 1: t.secrets[k1], 2: t.secrets[k2], 3: t.secrets[gidV + ":3"] };
+  delete t.secrets[k2];
+  delete t.secrets[gidV + ":3"];
+  // No key share and no checked address yet: the setup is before the key ceremony.
+  t.secrets[k1] = { ...kept[1], keyPackage: undefined, confirmed: undefined,
+    checkedWallet: undefined };
+  // The store brings the formed wallet back after each write, so each look holds the setup.
+  const view = (abort = {}) => {
+    Object.assign(t.state, { wallet: null, done: {}, abort });
+    return pageTree();
+  };
+  const seen = (abort) => textOf(view(abort));
+  const button = (text) => findNode(view(),
+    (n) => n.attrs?.type === "button" && textOf(n) === text);
+  const EV = { preventDefault() {}, currentTarget: null };
+  const creates = () => {
+    Object.assign(t.state, { wallet: null, done: keep.done });
+    return t.canCreateWallet();
+  };
+  try {
+    assert.match(seen(), new RegExp("Check that your devices match.*" + no + ".*The first "
+      + "digits, \\d{5} \\d{3}, help you find the number\\. They are not enough: compare all 30 "
+      + "digits\\.", "s"), "the full number, and the quick code as an aid");
+    assert.equal(button("It matches").attrs.disabled, "", "no tick: It matches is off");
+    assert.equal(button("It matches").attrs["aria-describedby"], "why-match-full");
+    assert.equal(textOf(byId(view(), "why-match-full")),
+      "Compare all 30 digits on every device, then tick the box.");
+    ui.safetyFull = gidV + ":" + "1".repeat(30);
+    assert.equal(button("It matches").attrs.disabled, "",
+      "a tick for another number does not count");
+    assert.match(seen(), /The safety number changed\. Compare all 30 digits again\./,
+      "a tick of an older number says that the number changed");
+    await button("It matches").on.click(EV);
+    assert.equal(t.secrets[k1].confirmed, undefined, "the click without the tick confirms nothing");
+    assert.match(t.banner?.text ?? "", /then tick the box/);
+    byId(view(), "safety-full").on.change({ target: { checked: true } });
+    assert.equal(ui.safetyFull, gidV + ":" + no, "the tick holds this wallet and this number");
+    assert.ok(!("disabled" in button("It matches").attrs), "with the tick, It matches is on");
+    byId(view(), "safety-full").on.change({ target: { checked: false } });
+    assert.equal(button("It matches").attrs.disabled, "", "no tick again: It matches is off");
+    byId(view(), "safety-full").on.change({ target: { checked: true } });
+    await button("It matches").on.click(EV);
+    assert.equal(t.secrets[k1].confirmed, no, "the tick and the click confirm");
+    assert.match(seen(), /Confirmed on this device\. Waiting for the other devices\./);
+    assert.equal(findNode(view(), (n) => n.attrs?.["data-key"] === "confirm-number")?.attrs
+      .tabindex, "-1", "the focus stays where It matches was");
+    // They don't match: a second question, then the stop of every seat of this browser.
+    assert.equal(creates(), true, "before a stop, seat 1 may build the wallet");
+    button("They don't match").on.click();
+    assert.match(seen(), /Stop the setup on this device\? Then ask the other people to tap/);
+    assert.equal(button("Keep checking").attrs["data-key"], "keep-checking",
+      "the question gives the focus to Keep checking");
+    button("Keep checking").on.click();
+    assert.doesNotMatch(seen(), /Stop the setup on this device/, "Keep checking goes back");
+    t.secrets[k2] = { ...kept[2], keyPackage: undefined, confirmed: undefined,
+      checkedWallet: undefined };
+    button("They don't match").on.click();
+    await button("Stop setup").on.click();
+    t.state.abort = {};
+    assert.equal(creates(), false,
+      "the own stop of seat 1 builds no wallet before any abort document");
+    assert.deepEqual([t.secrets[k1].aborted, t.secrets[k2].aborted], [1, 2].map((i) => "The "
+      + "person who uses device " + i + " saw a different safety number. Do not use this wallet. "
+      + "Create a new wallet."), "every seat of this browser stops");
+    assert.doesNotMatch(seen(), /Check that your devices match/, "the card goes");
+    const stopNote = findNode(view(), (n) => n.attrs?.["data-key"] === "stop-setup");
+    assert.equal(stopNote?.attrs.tabindex, "-1", "the focus stays on the stop");
+    assert.match(seen(), /Stopped: no address\./, "the address step says that the setup stopped");
+    assert.deepEqual([t.secrets[k1].stopped, t.secrets[k2].stopped], [true, true],
+      "the stop marks each seat as stopped by its person");
+    await waitFor("the abort document", () => !!data.get(`groups/${gidV}/abort/1`));
+    assert.equal(creates(), false, "a stopped seat 1 builds no wallet");
+    t.state.wallet = keep.wallet;
+    assert.equal(walletReady(), false, "a stopped browser keeps its setup page and its stop");
+    // An abort with no stop of a person (a version flip, for example) keeps the wallet page of a
+    // device with a key share. An aborted seat with no key share is not in that wallet.
+    t.secrets[k1] = { ...t.secrets[k1], stopped: undefined, keyPackage: kept[1].keyPackage };
+    assert.equal(walletReady(), false, "a stop of the other seat of this browser keeps the setup");
+    t.secrets[k2] = { ...t.secrets[k2], stopped: undefined };
+    assert.equal(walletReady(), false, "an aborted seat with no key share keeps the setup page");
+    t.secrets[k2] = { ...t.secrets[k2], keyPackage: kept[2].keyPackage };
+    assert.equal(walletReady(), true, "an abort without a person's stop keeps the wallet page");
+    // A stop of another device: the card goes, and seat 1 builds no wallet either.
+    t.secrets[k1] = { ...t.secrets[k1], aborted: undefined, keyPackage: undefined };
+    delete t.secrets[k2];
+    const other = { 2: { reason: "A test stop." } };
+    assert.doesNotMatch(seen(other), /Check that your devices match/,
+      "after another device stops, the card goes");
+    t.state.abort = other;
+    assert.equal(creates(), false, "a stop of another device builds no wallet");
+    // A stop that this browser cannot save says so.
+    storage.set("zf-vault", "another tab locked the keys");
+    try {
+      await stopNow(gidV);
+    } finally {
+      storage.delete("zf-vault");
+    }
+    assert.match(t.banner?.text ?? "", /This browser could not save the stop\./,
+      "a stop that is not saved says so");
+    // A seat that checked the address ended its setup: two hidden documents bring no card back.
+    t.secrets[k1] = { ...t.secrets[k1], aborted: undefined, stopped: undefined };
+    assert.match(seen(), /Check that your devices match/);
+    t.secrets[k1] = { ...t.secrets[k1], checkedWallet: kept[1].checkedWallet };
+    assert.doesNotMatch(seen(), /Check that your devices match/,
+      "a seat that checked the address gets no safety card");
+    // A browser without a seat of this wallet only sees the number.
+    delete t.secrets[k1];
+    ui.mismatchAsk = null;
+    assert.match(seen(), /Check that your devices match/);
+    assert.deepEqual([button("It matches"), button("They don't match"), button("Stop setup")],
+      [null, null, null], "a browser without a seat cannot confirm or stop");
+    assert.doesNotMatch(seen(), /Confirmed on this device|tap "They don't match"/,
+      "and is not told to");
+  } finally {
+    Object.assign(t.secrets, { [k1]: kept[1], [k2]: kept[2], [gidV + ":3"]: kept[3] });
+    Object.assign(t.state, keep);
+    ui.safetyFull = null;
+    ui.mismatchAsk = null;
+  }
+}
+async function stopNow(gid) {
+  ui.mismatchAsk = gid;
+  Object.assign(t.state, { wallet: null, done: {}, abort: {} });
+  await findNode(pageTree(), (n) => n.attrs?.type === "button" && textOf(n) === "Stop setup")
+    .on.click();
+}
+// A stop while seat 1 waits for the chain height: createWallet writes no wallet document.
+{
+  const engine = await import("../app-engine.js"), { stopSetup } = await import("../app-dkg.js");
+  const gid = await rig.wallet({ name: "Slow height" }), wpath = groupPath(gid) + "/meta/wallet";
+  const keepZ = engine.Z;
+  delete t.secrets[gid + ":2"];
+  delete t.secrets[gid + ":3"];
+  t.setZ({ ...keepZ, latestHeight: async () => { await sleep(600); return 1000; } });
+  try {
+    t.state.wallet = null;
+    data.delete(wpath);
+    rig.notify();
+    await sleep(150);
+    assert.equal(t.canCreateWallet(), true, "seat 1 may build the wallet before the stop");
+    await stopSetup();
+    rig.notify();
+    await sleep(1500);
+    assert.equal(data.has(wpath), false, "a stop during the wait writes no wallet document");
+  } finally {
+    t.setZ(keepZ);
+  }
+}
+assert.equal(quickCode("12345 67890 12345 67890 12345 67890"), "12345 678",
+  "the quick code keeps the groups of the number");
+assert.equal(quickCode("12345 67890"), null, "a short number has no quick code");
+assert.equal(quickCode("12345 6789x 12345 67890 12345 67890"), null, "a number with a letter");
+assert.equal(quickCode(null), null);
 
 // ── The wallet list: the welcome card, and the form that joins a wallet with a link ──
 // A good link goes the way of a link in the address bar. A bad one opens nothing and leaves its

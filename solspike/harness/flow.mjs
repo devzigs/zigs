@@ -109,7 +109,7 @@ async function tapAddSol(page, amount) {
 /** Add SOL from the fee address of the seat of `page`. Returns the signature that it shows. */
 export async function addSol(page, amount) {
   await tapAddSol(page, amount);
-  const line = new RegExp(`^Added ${amount.replace(".", "\\.")} SOL, seat \\d: (\\w+)(?: ↗)?$`);
+  const line = new RegExp(`^Added ${amount.replace(".", "\\.")} SOL, device \\d: (\\w+)(?: ↗)?$`);
   let seen = "";
   await waitFor(
     async () => line.test((seen = (await solValues(page)).added ?? "")),

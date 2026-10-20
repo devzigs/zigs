@@ -599,7 +599,8 @@ body:has(.drawer-foot) #banner { bottom: calc(104px + env(safe-area-inset-bottom
     padding: 24px 20px calc(24px + env(safe-area-inset-bottom, 0px));
   }
   .drawer {
-    inset: 12px 0 var(--keyboard-inset, 0px); width: 100%;
+    top: auto; right: 0; bottom: var(--keyboard-inset, 0px); left: 0; width: 100%;
+    height: calc(var(--visual-height, 100dvh) - 12px);
     border-radius: var(--r-sheet) var(--r-sheet) 0 0;
   }
   .drawer-head, .drawer-body, .drawer-foot { padding-inline: 20px; }

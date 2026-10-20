@@ -236,13 +236,17 @@ export function typingMessage(app, parts) {
   return true;
 }
 
-// Keep what the viewer is typing, open <details>, and the drawer scroll across live updates.
-function saveFormState(app) {
+// Keep what the viewer is typing, open <details>, and the drawer scroll across live updates. A
+// disclosure of a secret link counts by its link, never by its summary, so a redraw never opens
+// the secret of another card.
+const openKey = (summary) => (summary.parentElement.dataset.link
+  ? "link:" + summary.parentElement.dataset.link : summary.textContent);
+export function saveFormState(app) {
   const values = {};
   for (const i of app.querySelectorAll("input[id], select[id], textarea[id]")) {
     if (i.type !== "file") values[i.id] = i.value;
   }
-  const open = new Set([...app.querySelectorAll("details[open] > summary")].map((x) => x.textContent));
+  const open = new Set([...app.querySelectorAll("details[open] > summary")].map(openKey));
   const scroll = app.querySelector(".drawer-body")?.scrollTop || 0;
   return { values, open, logs: saveLogs(app), scroll };
 }
@@ -256,7 +260,7 @@ function saveLogs(app) {
   return logs;
 }
 
-function restoreFormState(app, form) {
+export function restoreFormState(app, form) {
   for (const [id, v] of Object.entries(form.values)) {
     const i = document.getElementById(id);
     if (!i) continue;
@@ -264,7 +268,7 @@ function restoreFormState(app, form) {
     i.dispatchEvent(new Event("input", { bubbles: true }));
   }
   for (const x of app.querySelectorAll("details > summary")) {
-    if (form.open.has(x.textContent)) x.parentElement.open = true;
+    if (form.open.has(openKey(x))) x.parentElement.open = true;
   }
   restoreScroll(app, form);
 }
@@ -385,15 +389,31 @@ document.addEventListener("focusout", endCompose);
 const STOPS = FOCUSABLE + ", [tabindex]";
 // A control in a closed <details> has client rects in Chrome, so checkVisibility decides.
 const shown = (n) => n.getClientRects().length > 0 && (n.checkVisibility?.() ?? true);
-const tabStops = (root) => [...root.querySelectorAll(STOPS)]
-  .filter((n) => !n.disabled && n.tabIndex >= 0 && shown(n));
+const isStop = (n) => !n.disabled && n.tabIndex >= 0 && shown(n);
+const tabStops = (root) => [...root.querySelectorAll(STOPS)].filter(isStop);
 // The stops of the layer, then the Close button of an open banner, which shows above the layer.
 function loopStops(layer) {
   const banner = document.getElementById("banner");
   return [...tabStops(layer), ...(banner ? tabStops(banner) : [])];
 }
+// The stops of the layer before the focus, when the focus is on no stop. A focus outside the
+// layer, or on the layer itself, has none before it.
+function stopsBefore(layer) {
+  const all = [...layer.querySelectorAll(STOPS)], at = all.indexOf(document.activeElement);
+  return at < 0 ? 0 : all.slice(0, at).filter(isStop).length;
+}
+// Where Tab goes when the browser must not move the focus: round from an edge stop (`at`), or on
+// from a focus that is no stop (`at` -1). `back` is Shift+Tab.
+function loopTarget(layer, stops, at, back) {
+  const last = stops.length - 1;
+  if (at >= 0) return stops[back ? last : 0];
+  const before = stopsBefore(layer);
+  if (back) return stops[before > 0 ? before - 1 : last];
+  return stops[before <= last ? before : 0];
+}
 /** Tab goes round in the open dialog or drawer: from its last control to its first, and Shift+Tab
- * from its first to its last. Focus on the layer itself or outside it goes in. */
+ * from its first to its last. From a control of the layer that is no stop, Tab goes to the next
+ * stop and Shift+Tab to the stop before. Focus on the layer itself or outside it goes in. */
 export function layerTab(ev) {
   const layer = document.querySelector(".dialog, .drawer");
   if (ev.key !== "Tab" || !layer) return;
@@ -404,11 +424,9 @@ export function layerTab(ev) {
     layer.focus();
     return;
   }
-  const last = stops.length - 1;
-  const edge = ev.shiftKey ? at <= 0 : at === -1 || at === last;
-  if (!edge) return;
+  if (at >= 0 && (ev.shiftKey ? at > 0 : at < stops.length - 1)) return;
   ev.preventDefault();
-  stops[ev.shiftKey ? last : 0].focus();
+  loopTarget(layer, stops, at, ev.shiftKey).focus();
 }
 document.addEventListener("keydown", layerTab);
 document.addEventListener("keydown", (ev) => {

@@ -282,6 +282,6 @@ export async function propose(c, kind, args = {}) {
     : await betaFields(c, worker, seat, fee, await BETA[kind](c, worker, seat, fee));
   const id = newId();
   await writePart(c, id, "proposal", { ...fields, createdAt: Date.now() }, { seat, create: true });
-  c.host.log("seat " + seat + ": proposed " + kind);
+  c.host.log("device " + seat + ": proposed " + kind);
   return id;
 }

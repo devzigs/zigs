@@ -19,7 +19,7 @@ import {
 import { requestOf } from "./app-payreq.js";
 import { nameOf, recentNote, registry, resolveRecipient, zecName } from "./zns.js";
 import { focusAfter, render } from "./app-loop.js";
-import { capNote, movedNote, receiveLimit, receiveWhat } from "./app-wallet.js";
+import { capNote, FAUCET_TEXT, movedNote, receiveLimit, receiveWhat } from "./app-wallet.js";
 
 const MAX_PAYEES = 20;
 const TOO_MANY = "A payment can have at most " + MAX_PAYEES + " recipients.";
@@ -51,18 +51,20 @@ function receiveLead(hidden, moved) {
   if (moved) return movedNote();
   if (atCap()) return capNote();
   if (hidden) {
-    return el("p", { class: "small muted" }, "The address shows here after your seat checks it "
+    return el("p", { class: "small muted" }, "The address shows here after your device checks it "
       + "against its own key.");
   }
   return el("p", { class: "small muted" }, "Use this shielded address to receive "
     + receiveWhat() + ". Senders and the network cannot see the balance or who controls it. "
-    + "The signers of this wallet can see its balance and history." + receiveLimit());
+    + "The devices of this wallet and anyone who has the invite link can see its balance and "
+    + "history. A device that Change devices leaves out later can still see them."
+    + receiveLimit());
 }
 
 function sendOnly(net) {
   const faucet = curNet().faucet ? [" Get free testnet ZEC from a ", el("a", {
     href: curNet().faucet, target: "_blank", rel: "noopener", style: "white-space:nowrap",
-  }, "faucet ↗"), "."] : [];
+  }, "faucet ↗"), ". " + FAUCET_TEXT] : [];
   return el("div", { class: "callout" }, el("span", {}, "Send only ZEC on " + net + " to this "
     + "address. A payment that arrives becomes spendable after 3 confirmations.", ...faucet));
 }
@@ -78,7 +80,7 @@ function shareBtn(address) {
     onclick: () => navigator.share({ text: address }).catch(failed),
   }, "Share address");
 }
-const SHARE_FAILED = "This device could not share the address. Use Copy address.";
+const SHARE_FAILED = "This browser could not share the address. Use Copy address.";
 
 // The address of the open wallet: Send refuses it, as it refuses an address of another network.
 const OWN_ADDRESS = "This is the address of this wallet. Enter the address of someone else.";
@@ -429,10 +431,10 @@ function freshForm() {
 }
 function draftLine() {
   if (ui.after || ui.sendFor) return null;
-  if (ui.draftFailed) return el("p", { class: "small faint" }, "This draft could not be saved on "
-    + "this device. The form still works.");
+  if (ui.draftFailed) return el("p", { class: "small faint" }, "This draft could not be saved in "
+    + "this browser. The form still works.");
   if (!readDraft(state.gid)) return null;
-  return el("p", { class: "small faint" }, "Draft saved on this device for 24 hours. ",
+  return el("p", { class: "small faint" }, "Draft saved in this browser for 24 hours. ",
     el("button", { class: "btn ghost sm", type: "button",
       onclick: (ev) => discardDraft(ev.currentTarget.form) }, "Discard draft"));
 }
@@ -519,15 +521,17 @@ export function sendDialog() {
           onclick: () => { rows.push({ k: ++ui.payKey, to: "", amt: "", memo: "" }); render(); },
         }, "Add recipient"),
         pasteList(net))),
-    el("label", { class: "field" }, el("span", {}, "Note for signers (optional)"),
+    el("label", { class: "field" }, el("span", {}, "Note for the devices (optional)"),
       el("input", {
         class: "input", id: "s-note", name: "note", type: "text", maxlength: "80",
         placeholder: rows.length > 1 ? "October payroll" : "Pay the audit firm",
         autocomplete: "off", value: ui.note, oninput: (ev) => { ui.note = ev.target.value; },
       }),
-      el("span", { class: "hint" }, "Encrypted. Only signers of this wallet can read it.")),
-    el("p", { class: "small faint" }, "A memo goes on chain with the payment. Its recipient and "
-      + "every signer of this wallet can read it."),
+      el("span", { class: "hint" }, "Encrypted. The devices of this wallet, and anyone else who "
+        + "has the invite link, can read it.")),
+    el("p", { class: "small faint" }, "A memo goes on chain with the payment. Its recipient, "
+      + "the devices of this wallet, and anyone else who has the invite link can read it. A "
+      + "device that Change devices leaves out later can still read it."),
     priorityBox(sumUp),
     el("div", { class: "summary" },
       el("div", {}, el("span", { class: "muted" }, "Available"), money(spendable)),
@@ -583,7 +587,8 @@ function reviewDialog() {
     : el("p", { class: "callout bad", role: "alert" }, REVIEW_BAD),
   prep.payees.map((p, i) => reviewRow(p, i, prep.payees.length)),
   reviewFacts(ins, note),
-  el("p", { class: "small faint" }, EXPIRY_NOTE + " Proposing asks the signers to approve; it "
+  el("p", { class: "small muted" }, REVIEW_NOW), el("p", { class: "small muted" }, REVIEW_LATER),
+  el("p", { class: "small faint" }, EXPIRY_NOTE + " Proposing asks the devices to approve; it "
     + "does not sign or send the payment."),
   el("div", { class: "dialog-actions" },
     el("button", { class: "btn", type: "button",
@@ -592,13 +597,28 @@ function reviewDialog() {
       onclick: act(() => proposeReviewed(ui.sendReview)) }, "Propose payment") : null));
 }
 
+// Who can read the payment now, and what a device that a later Change devices leaves out keeps
+// (PRIVACY.md, On chain, Group server, Signers and invite links; PROTOCOL.md 3 and 8). The memo
+// sentence is the one of the Send form.
+const REVIEW_NOW = "The chain does not show the recipients, the amounts or the memos. The fee and "
+  + "the expiry height are public and can show that Zigs made this payment. Every device of this "
+  + "wallet can read the recipients, the amounts, the memos and the note, in the shared history "
+  + "of the wallet. So can anyone who has its invite link. A memo goes on chain with the "
+  + "payment, and its recipient can read it too.";
+const REVIEW_LATER = "A device that a later Change devices leaves out keeps the viewing key and "
+  + "the messages of this wallet. It can still read this history and each later payment of this "
+  + "wallet. It cannot read the new wallet. The move payment gives it the address, the amount and "
+  + "the note of that payment, and the id of the new wallet. With the id, the group server sends "
+  + "it the sealed documents of the new wallet and each later write. The server also accepts "
+  + "writes from it, so the device can stop the new wallet with false documents.";
+
 // The fee as the engine decoded it (none when the decode does not match), the approvals, the note.
 function reviewFacts(ins, note) {
   const fee = ins ? [el("dt", {}, ins.fee > ins.standard_fee ? "Network fee (priority)"
     : "Network fee"), el("dd", {}, money(ins.fee))] : null;
   return el("dl", { class: "kv" }, fee, el("dt", {}, "Approvals needed"),
     el("dd", {}, state.g.t + " of " + state.g.n),
-    note ? [el("dt", {}, "Note for signers"), el("dd", {}, note)] : null);
+    note ? [el("dt", {}, "Note for the devices"), el("dd", {}, note)] : null);
 }
 
 function reviewRow(p, i, n) {
@@ -626,7 +646,7 @@ export async function proposeReviewed(r) {
 
 // The expiry window of the engine (wasm/src/expiry.rs), in words.
 const EXPIRY_NOTE = "The approvals must finish within about 24 hours. After that the payment "
-  + "expires, and a signer proposes it again.";
+  + "expires, and a device proposes it again.";
 
 // The priority fee: 10 times the standard fee, for a faster block when the network is busy. It
 // is public on chain, so it marks the payment. Older builds of the apps refuse it.
@@ -637,5 +657,6 @@ function priorityBox(sumUp) {
       onchange: (ev) => { ui.priority = ev.target.checked; sumUp(); },
     }),
     el("span", { class: "small" }, "Pay a priority fee: " + PRIORITY_FACTOR + " times the "
-      + "standard fee, for a faster block when the network is busy. The fee is public on chain."));
+      + "standard fee, for a faster block when the network is busy. The fee and the expiry height "
+      + "are public and can show that Zigs made this payment."));
 }

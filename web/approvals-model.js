@@ -7,7 +7,7 @@
 export const BUCKETS = [
   ["review", "Needs your approval"],
   ["ready", "Ready to prove or send"],
-  ["waiting", "Waiting for the other signers or the network"],
+  ["waiting", "Waiting for the other devices or the network"],
   ["attention", "Needs attention"],
 ];
 

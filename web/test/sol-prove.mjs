@@ -69,7 +69,7 @@ step("SOL-4 off: the gate answers hosted after its round trip to the group serve
   await assert.rejects(() => turnOnLocal(c, worker), /Helius changed the Solana pool after/);
   assert.equal(selftests(), 0, "the device check ran on a moved pool");
   chain.poolSlot = POOL_SLOT;
-  const keyText = "This device could not load the proving key for this payment size.";
+  const keyText = "This browser could not load the proving key for this payment size.";
   chain.selftest = () => {
     throw new Error(keyText);
   };
@@ -146,7 +146,7 @@ step("SOL-4 a yes signs the switch of the seat and pins every seat of this brows
   for (const i of [1, 2, 3]) await putSol(c.host, gid, i, { proveCheck: null });
   const known = new Set(data.keys());
   chain.selftest = () => {
-    throw new Error("This device could not start the local prover. Nothing was sent to Helius.");
+    throw new Error("This browser could not start the local prover. Nothing was sent to Helius.");
   };
   Object.assign(c, { viewed: true, proveChecked: false });
   const before = selftests();

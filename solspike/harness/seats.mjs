@@ -1,8 +1,9 @@
 // Three seats in three in-memory contexts of one Chrome (the rig), up to a Solana part that every
 // page shows as ready: a 2-of-3 testnet wallet, the second DKG of web/sol, one group key. Used by
 // scenario-e.mjs. scenario-d.mjs keeps its own copy of the other first steps (it is the verified
-// P8d check), and takes makeWallet from here. Nothing here reads a secret: the pages show public
-// values only.
+// P8d check), and takes makeWallet from here. makeWallet reads the invite link, which holds the
+// wallet secret, from the text of the invite card, and zcashWallet opens the other seats with it.
+// No other function here reads a secret: the pages show public values only.
 import { sleep, waitFor } from "./chrome.mjs";
 import { clickText, run, setInput, waitForText } from "./page.mjs";
 import { ORIGIN } from "./server.mjs";
@@ -41,11 +42,24 @@ export async function makeWallet(page, name, { solana = false } = {}) {
   }, solana);
   await clickText(page, "Review wallet");
   await waitForText(page, "Review your wallet");
-  // The welcome card behind the dialog has a "Create wallet" button too.
+  // The last step has a "Create wallet" button. The run takes it from the dialog form.
   await run(page, () => document.querySelector("form[role=dialog] button[type=submit]").click());
-  const shown = () => run(page, () => !!document.querySelector(".addr-box .hex"));
+  // The link text sits in the closed disclosure of its QR code: textContent reads it there.
+  const shown = () => run(page, () => !!document.querySelector(".qr-toggle .addr-full"));
   await waitFor(shown, 30000, () => "the invite link");
-  return run(page, () => document.querySelector(".addr-box .hex").textContent.trim());
+  return run(page, () => document.querySelector(".qr-toggle .addr-full").textContent.trim());
+}
+
+// The person compares all 30 digits of the safety number, ticks the box, then confirms. The box
+// shows once every seat has joined.
+export async function confirmNumber(page) {
+  const box = () => run(page, () => !!document.getElementById("safety-full"));
+  await waitFor(box, 90000, () => "the box of the safety number");
+  await run(page, () => {
+    const el = document.getElementById("safety-full");
+    if (!el.checked) el.click();
+  });
+  await clickText(page, "It matches", { ms: 90000 });
 }
 
 const hasTab = (page, id) => run(page, (name) => !!document.getElementById(name), id);
@@ -63,7 +77,7 @@ export async function zcashWallet(rig, name, opts = {}) {
     await clickText(page, "Join as device " + seat, { ms: 40000 });
     pages.push(page);
   }
-  for (const page of pages) await clickText(page, "It matches", { ms: 90000 });
+  for (const page of pages) await confirmNumber(page);
   for (const [i, page] of pages.entries()) {
     await waitFor(
       () => hasTab(page, "tab-overview"),

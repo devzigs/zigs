@@ -19,16 +19,16 @@ import { SESSIONS, isPayment } from "./sessions.js";
 
 const ADD_TEXT =
   "A Solana program owns the funds of the group at a program address, which is public and links " +
-  "to the group key. Each seat also gets a fee address, which appears on chain next to the " +
-  "group when the seat pays. A fee address needs a public SOL funding trail. The program and its " +
-  "upgrade key are outside the group, and the beta has no audit.";
+  "to the group key. Each device also gets a fee address, which appears on chain next to the " +
+  "group when the device pays. A fee address needs a public SOL funding trail. The program and " +
+  "its upgrade key are outside the group, and the beta has no audit.";
 
 // What is public and what Helius sees (SOL-12). The tab shows it in each state, also while the
 // setup runs: the seats of this browser join the setup with no click.
 export const PUBLIC_TEXT =
   "A deposit shows its sender and amount on chain. A withdrawal shows its recipient and amount. " +
   "A private payment hides its amount, but it shows the owner key of the payee. The program " +
-  "address, the group key and the fee address of each seat that pays are public too. Helius " +
+  "address, the group key and the fee address of each device that pays are public too. Helius " +
   "sees that you use Zigs, your IP address and the keys of this wallet, and its hosted prover " +
   "sees each payment. The Zigs server operator can link this wallet to these addresses by timing.";
 // The same with local proving on (SOL-4): the amounts and the nullifier secret stay on the devices.
@@ -44,7 +44,7 @@ const STATUS_TEXT = {
   running: "The Solana setup is running. Keep this page open until it is ready.",
   ready: "The Solana part is ready.",
   stopped: "The Solana part stopped.",
-  differs: "The seats published different Solana keys. Do not use the Solana part.",
+  differs: "The devices published different Solana keys. Do not use the Solana part.",
 };
 
 function statusOf(c, ag) {
@@ -146,6 +146,8 @@ export function activityRows(c) {
   const rows = shownWhere(c, () => true).map((ss) => sessionRow(ss, waiting.has(ss.id)));
   return c.added ? [...rows, addedRow(c.added)] : rows;
 }
+/** True while documents of the proposals wait for their signature check: more rows can come. */
+export const activityWaits = (c) => c.sessWait > 0;
 
 function startCard(c, act, actions) {
   const { el, localSeats } = c.host,
@@ -167,7 +169,7 @@ function startCard(c, act, actions) {
           },
           "Add Solana",
         )
-      : el("p", { class: "small" }, "Seat 1 starts the Solana setup."),
+      : el("p", { class: "small" }, "Device 1 starts the Solana setup."),
   );
 }
 
@@ -205,12 +207,12 @@ const PAY_TO =
 const POOL_UPGRADE_KEY = "2kgbLowvCQuMWxDKbHUZAURycziuRrvmtTuDEYMGMRsj";
 const PROTOCOL_AUTHORITY = "263Kgjft9NezaYTspFquMbAhgRf7xfAiyusaweLowdXo";
 const CUSTODY_TEXT =
-  "Both keys sit outside the group: no seat holds them, no seat can stop them, and Zigs does not " +
-  "know who holds them. The upgrade key is a signing key, and it can replace the pool program. " +
-  "The protocol authority is an account that needs 2 of its 5 keys to act (a Squads account, by " +
-  "the Zolana spec). It can pause the trees, and then no payment can move the funds. It can also " +
-  "set the fees of the pool and change its other authorities, but not the upgrade key. Read " +
-  "from Devnet on 18 October 2026.";
+  "Both keys sit outside the group: no device holds them, no device can stop them, and Zigs " +
+  "does not know who holds them. The upgrade key is a signing key, and it can replace the pool " +
+  "program. The protocol authority is an account that needs 2 of its 5 keys to act (a Squads " +
+  "account, by the Zolana spec). It can pause the trees, and then no payment can move the funds. " +
+  "It can also set the fees of the pool and change its other authorities, but not the upgrade " +
+  "key. Read from Devnet on 18 October 2026.";
 
 /** Copy for an address (the fee address has its own in payview.js). `what` names the value. */
 function copyButton(c, text, mark, what) {
@@ -326,7 +328,7 @@ function backupCard(c, act, actions) {
           "data-sol": "backup-" + i,
           onclick: act(() => actions.backup(i)),
         },
-        "Back up Solana part, seat " + i,
+        "Back up Solana part, device " + i,
       ),
     ),
     el(

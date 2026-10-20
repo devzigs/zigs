@@ -55,11 +55,11 @@ export async function planSolana(gid) {
 export const SOL_DISCLOSURE = "Solana Devnet: a program owns the funds of the group at a public "
   + "program address. A deposit shows its sender and amount on chain. A withdrawal shows its "
   + "recipient and amount. A private payment hides its amount, but it shows the owner key of the "
-  + "payee. The program address, the group key and the fee address of each seat that pays are "
+  + "payee. The program address, the group key and the fee address of each device that pays are "
   + "public too. Helius sees that you use Zigs, your IP address and the keys of this wallet, and "
   + "its hosted prover sees each payment. The Zigs server operator can link this wallet to these "
-  + "addresses by timing. Each seat funds its own fee address, and that funding shows who sent "
-  + "the SOL. Every signer sees the whole Solana history of the wallet. The program has no audit, "
+  + "addresses by timing. Each device funds its own fee address, and that funding shows who sent "
+  + "the SOL. Every device sees the whole Solana history of the wallet. The program has no audit, "
   + "and its upgrade key is outside the group.";
 // The wallet list with the create dialog open. Inside an open wallet the dialog does not show.
 export const newWallet = () => { openGroup(null); openCreate(); render(); };
@@ -87,7 +87,7 @@ export function solFile(i) {
 }
 // Null until the module follows this wallet and its Solana documents are read.
 const solMade = (i) => (solOpenHere() && collections
-  ? fromSol("seat part", (c) => madeOf(c, i), null) : null);
+  ? fromSol("device part", (c) => madeOf(c, i), null) : null);
 // The soldone document of the seat is enough. Its absence counts once every document is checked.
 function madeOf(c, i) {
   if (!collections.every((n) => c.loaded[n])) return null;
@@ -106,7 +106,8 @@ const SOL_OFF = "Solana is not available on this server";
 export let sol = null, solLoading = null, solError = "";
 let solStartDoc = null;   // the stored solstart/1 of the open wallet, whoever wrote it
 let solWatched = null;    // the wallet whose start document is watched
-export function resetSolStart() { solStartDoc = null; solWatched = null; }
+let solStartRead = null;  // the wallet whose start documents arrived
+export function resetSolStart() { solStartDoc = null; solWatched = null; solStartRead = null; }
 const solHost = () => ({
   Z, sdb, state, el, act, log, once, render, refilter, showBanner, sec, putSec, signedDoc,
   exclusive, takeStored,
@@ -121,7 +122,7 @@ const solHost = () => ({
 // mends it; Try again (the Solana tab) can mend a failure after the import.
 const SOL_DOWN = "Solana did not load. Check your connection, then reload the page.";
 let setupSummary = null, pendingCount = null, pendingRows = null, loadingCount = null;
-let olderCount = null, activityRows = null, collections = null;
+let olderCount = null, activityRows = null, activityWaits = null, collections = null;
 let importFailed = false;
 const SOL_RETRY = "Solana did not load. Check your connection, then press Try again.";
 /** The tab text of a failed load. `retry`: Try again can mend it (a failure after the import). */
@@ -135,7 +136,8 @@ export async function whyNotLoaded() {
 const solModule = () => Promise.all([import("./sol/main.js"), import("./sol/view.js"),
   import("./sol/docs.js"), import("./sol/wasm/sol_wasm.js")])
   .then(([m, v, d]) => {
-    ({ setupSummary, pendingCount, pendingRows, loadingCount, olderCount, activityRows } = v);
+    ({ setupSummary, pendingCount, pendingRows, loadingCount, olderCount, activityRows,
+      activityWaits } = v);
     collections = d.COLLECTIONS;
     return m;
   })
@@ -174,6 +176,9 @@ export const solPendingRows = () =>
 // or null while the module or the Solana proposals of the wallet are not read.
 export const solActivity = () =>
   solOpenHere() && activityRows ? fromSol("activity", activityRows, null) : null;
+// True while some Solana proposals of the open wallet still wait for their check.
+export const solActivityWaits = () =>
+  solOpenHere() && activityWaits ? fromSol("activity check", activityWaits, false) : false;
 // The proposals of the open wallet that this browser can approve once its read of them ends.
 export const solLoadingCount = () =>
   solOpenHere() && loadingCount ? fromSol("loading count", loadingCount, 0) : 0;
@@ -225,9 +230,13 @@ export function solAttach(gid, base) {
   if (sol) { sol.open(gid, base); return; }
   unsubGroup.push(sdb.collection(base + "/solstart").onSnapshot((snap) => {
     solStartDoc = snap.docs.find((d) => d.id === "1")?.data() ?? null;
+    solStartRead = gid;
     refilter();
   }));
 }
+// Before the module loads: the start documents of the open wallet arrived and hold no start, so
+// the wallet has no Solana part yet.
+export const solNotAdded = () => !sol && !solError && solStartRead === state.gid && !solStartDoc;
 const solStartSigned = () => !!solStartDoc && checkIn(state.gid)("solstart/1", solStartDoc.by,
   solStartDoc.sig, docFields(solStartDoc), 1) === "yes";
 // A seat of a wallet with the Solana hint loads the module at the start of setup, so the key
@@ -251,8 +260,8 @@ export const loadFail = (error, retry) => el("div", { style: "display:grid;gap:8
 export const solTab = () => sol ? guard(sol.view)
   : solError ? loadFail(solError, !importFailed)
   : (solLoad(), el("p", { class: "small" }, "Loading Solana…"));
-const NET_UNCONFIRMED = "This device does not know yet which network the people of this wallet "
-  + "confirmed. Open the wallet, wait until its seat shows Address checked, then try again.";
+const NET_UNCONFIRMED = "This browser does not know yet which network the people of this wallet "
+  + "confirmed. Open the wallet, wait until your device shows Address checked, then try again.";
 export async function solRestore(b, encrypted) {
   if (solGroup(b.group) && !solOn(b.group)) {
     throw new Error(netConfirmed(b.group) ? "Solana runs on version 3 testnet wallets only."

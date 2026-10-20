@@ -1,7 +1,9 @@
 # How the Zigs protocol works
 
 Zigs is a shared wallet for shielded Zcash. Any *t* of its *n* signers approve each payment, and
-the chain sees one ordinary shielded transaction. Zigs uses re-randomized FROST threshold
+the chain sees one shielded transaction with the shape of a payment from a standard wallet, except
+for its one-day expiry (3,456 blocks of 25 seconds, against 40) and an optional priority fee, which
+can mark it as a Zigs payment (PRIVACY.md, On chain). Zigs uses re-randomized FROST threshold
 signatures ([ZIP 312](https://zips.z.cash/zip-0312)) on the Ironwood shielded pool (NU7, v6
 transactions).
 
@@ -16,7 +18,7 @@ app also has a Solana beta for testnet wallets (section 16).
 | **Signer device** | Runs the web, iPhone or Mac app around the engine | Its key share, the wallet secret, the viewing key, nonces, payment history |
 | **Group server** | A Cloudflare Worker with one Durable Object (SQLite) per wallet. Relays and stores sealed documents over a WebSocket. | Only ciphertext, plus wallet ids, document paths, timing and IP addresses |
 | **Light-wallet server** | lightwalletd over grpc-web. Serves compact blocks and full transactions, and accepts finished transactions. The public side of the Zigs testnet server answers the app Worker only (section 10.1). | Your IP address (on testnet, our server sees the app Worker), the blocks you download and the transactions you fetch |
-| **Zcash network** | NU7, Ironwood shielded pool | One normal shielded transaction per payment |
+| **Zcash network** | NU7, Ironwood shielded pool | One shielded transaction per payment, with the shape of a shielded payment from a standard wallet, except for its one-day expiry (3,456 blocks of 25 seconds, against 40) and an optional priority fee, which can mark it as a Zigs payment |
 
 ```mermaid
 flowchart LR
@@ -67,6 +69,15 @@ flowchart LR
   wallet makes devices ignore the values that carry no valid signature (section 15).
 - **What the server sees.** Wallet ids, message room ids, document paths and field names, timing,
   and which IP addresses connect to which wallet. It keeps no logs.
+- **What a wallet id alone gives.** The server does not ask a client for the wallet secret. It
+  checks the form of the id and its limits on connections and writes, behind the password gate of
+  the preview. So any client that knows a wallet id gets the sealed documents of that wallet, with
+  their paths, field names and padded sizes, and then each new write as it happens. It can also
+  write or replace documents of that wallet. It cannot read the values or seal new ones, because
+  that needs the wallet secret, but it can write back an old value that it saw. The timing, the
+  counts and the availability stay exposed: a replaced document stops the wallet (`groupSocket`
+  and `Store` in `cf/src/index.js`). The old wallet of a move holds the id of the new wallet
+  (section 8).
 - **Abuse limits.** A message is at most 300,000 characters, a document at most 256,000, and a
   wallet at most 10 MB. Writes and new connections are rate-limited for each IPv4 address, or for
   each /64 of IPv6 addresses (users who share one share the limit).
@@ -150,8 +161,18 @@ sequenceDiagram
      the same number. So each device also compares the key in the store with the key that it
      made. It does this for every seat that it holds a secret for. If the keys differ, the device
      ends its setup: "Your seat key was replaced. Do not use this wallet. Create a new wallet."
-   - Each person taps "It matches". The device keeps the confirmed number in the seat secret
-     (`confirmed`) and writes `confirm/<seat> = { number }`.
+   - In the web app each person ticks "I compared all 30 digits on every device", then taps "It
+     matches" (the iOS and Mac apps ask for no tick yet). The tick holds the wallet id and the
+     number, so a new number needs a new tick. The device keeps
+     the confirmed number in the seat secret (`confirmed`) and writes
+     `confirm/<seat> = { number }`. The page also shows the first 8 digits to help a person find
+     the number; they are not enough to compare (see above).
+   - "They don't match" asks once more, then ends the setup of every seat that the browser holds
+     a secret for, with the reason "The person who uses device N saw a different safety number".
+     Each seat that can write writes its `abort` document. A device whose seat holds no key share
+     yet stops when it reads one, and seat 1 then builds no wallet. A device whose seat holds its
+     key share already does not stop, so the page asks the person to tell the other people to
+     tap "They don't match" on their own devices too.
    - After the tap, the device compares the number it computes now with the confirmed number each
      time the store changes. If they differ and the seat holds no key share, the device ends its
      setup: "The safety number changed after you confirmed it. Someone may have replaced a seat.
@@ -226,15 +247,16 @@ of section 15.5 to the payment documents. Its `version` is 3:
 - The store does not stop a holder of the wallet secret from overwriting `groups/<id>` or a seat
   document, because the server cannot read them. The seat secret holds the version and the box
   key, so the device finds such a change itself.
-- A seat on an old app writes a round-1 document without `commit`. The apps show "Seat N uses an
-  old version of Zigs and cannot join this wallet. Update it, or create a new wallet."
+- A seat on an old app writes a round-1 document without `commit`. The web app shows "Device N uses
+  an old version of Zigs and cannot join this wallet. Update it, or create a new wallet." The iOS
+  app says "Seat N" in the same text.
 
 ### 4.3 Version 1 wallets
 
 The flow is the one before ZIP 2005 support: round 1, round 2 and round 3 without `confirm`,
 `commit` or `echo`. The creator makes the viewing key parts `nk` and `rivk`. A version 1 wallet
 shows a note in Settings: "This wallet was made before quantum recoverability (ZIP 2005). To get it,
-move the funds to a new wallet with Change signers." Section 8 describes that move.
+move the funds to a new wallet with Change devices." Section 8 describes that move.
 
 ## 5. The wallet key and the address
 
@@ -281,8 +303,8 @@ wallet, the creator also cannot choose `nk` or `rivk`.
   scans again from the birthday.
 - **Memos.** A compact block holds only part of each note ciphertext, so it does not hold the
   memo. The full transaction holds it.
-  - Reading memos is off until a signer turns it on, for one wallet in one browser (section 14).
-  - With it on, the device asks the light-wallet server (`GetTransaction`, by transaction id) for
+  - Reading memos is off until a person turns it on, for one wallet in one browser (section 14).
+  - With it on, the browser asks the light-wallet server (`GetTransaction`, by transaction id) for
     the full transaction of each note that is not change. It decrypts the memo with the incoming
     viewing key and keeps the memo with the note.
   - This request tells the server which transactions pay the wallet. The server can link them to
@@ -508,7 +530,9 @@ Each chosen device signs automatically, after these checks:
   it asks the signers to check an explorer before anyone proposes it again. The web app takes
   the id of the payment from the PCZT of the proposal (`txid` of `inspect`), never from the
   finished transaction, which one seat writes.
-- On chain, the payment is one normal Ironwood shielded transaction.
+- On chain, the payment is one Ironwood shielded transaction with the shape of a payment from a
+  standard wallet, except for its one-day expiry and an optional priority fee, which can mark it as
+  a Zigs payment.
 
 ### 7.7 Cancel
 
@@ -521,15 +545,16 @@ Each chosen device signs automatically, after these checks:
 ## 8. Changing signers
 
 The signers and the threshold are part of the wallet key, so they cannot change in place. Zigs
-creates a replacement wallet and moves the funds with one normal, approved payment.
+creates a replacement wallet and moves the Zcash funds with one normal, approved payment. A Solana
+part of the wallet does not move this way.
 
 ```mermaid
 flowchart TD
-  A["Old wallet<br/>signers A, B, C, any 2 of 3"] -->|Change signers| B["New wallet<br/>signers A, B, D, any 2 of 3<br/>new key ceremony, new address"]
-  A -.->|stores only the new wallet id, never its secret| B
-  B --> C["The old wallet proposes one payment of its whole balance to the new address"]
-  C --> D["2 of 3 old signers approve.<br/>Approvers who are in the new wallet check its address"]
-  D --> E["Old wallet closed.<br/>C keeps the old history but sees nothing of the new wallet"]
+  OLD["Old wallet<br/>signers A, B, C, any 2 of 3"] -->|Change devices| NEW["New wallet<br/>signers A, B, D, any 2 of 3<br/>new key ceremony, new address"]
+  OLD -.->|stores the new wallet id, never its secret| NEW
+  NEW --> PAY["The old wallet proposes one payment of its spendable Zcash balance to the new address"]
+  PAY --> OK["2 of 3 old signers approve.<br/>Approvers who are in the new wallet check its address"]
+  OK --> STAY["The old wallet stays, with its address and history.<br/>Signer C can still read the old wallet, but not the new one.<br/>The move payment gives signer C the new address, the amount,<br/>the note and the id of the new wallet. With the id, the group server<br/>sends signer C the sealed documents of the new wallet and each later write,<br/>and accepts writes from it, so signer C can stop the new wallet with false documents"]
 ```
 
 ## 9. Keys on the device
@@ -713,7 +738,7 @@ the web, on iPhone and on Mac at the same time.
   - Receive: the checked address, a QR code and a copy button.
   - Payment drawer: the decoded transaction, the recipient check, the approval steps, and the
     buttons Approve, Build proof and Send to network.
-  - Change signers.
+  - Change devices.
   - Messages: the wallet thread, a discussion in each payment drawer, and unread counts (section 14).
 - **Device features.** Optional passkey lock, and encrypted backup and restore of key shares. The
   page also shows a message when the browser blocks WebAssembly (Tor Browser at the Safer level).
@@ -835,12 +860,12 @@ the web, on iPhone and on Mac at the same time.
   wallet secret can break X25519 with a quantum computer. That attacker then gets `sk` and `qsk`.
   Keep the invite link as private as the key share.
 - A version 1 wallet has no `qsk` and is not recoverable under ZIP 2005. Move its funds to a new
-  wallet with Change signers.
+  wallet with Change devices.
 - Malicious light-wallet servers are not handled. A false server can show a chain that does not
   exist, or hide transactions. The wallet follows real reorganisations of up to 100 blocks
   (section 6).
 - A memo on chain comes from the payer and is not authenticated. Every signer can read it, and a
-  signer who kept the viewing key can read it after "Change signers".
+  signer who kept the viewing key can read it after "Change devices".
 - A full session in Tor Browser is not tested yet.
 - `alpha` comes from the PCZT, as in the Zcash Foundation's `zcash-sign`. Compare this with the
   final ZIP 312 text before production use.
@@ -901,15 +926,16 @@ received payments yet. The engine has the calls for them.
   accepts a third column in "Paste a list". In that list, a comma directly between digits makes
   the line an error. It could be a decimal comma or a field separator. The person writes the
   amount with a point, or puts a space after the comma.
-- **Receiving.** Section 6 gives the rules. Reading memos is a switch in Settings, under "This app on
-  this device". It is off for every wallet until a signer turns it on. The switch keeps its state in
-  the browser only (`zf-memos`, wallet id to true). Its text names the leak: the light-wallet
-  server learns which transactions pay the wallet. A payment whose memo is not read yet shows
-  "Memo not read yet" while the switch is on. A received memo shows on the Activity row of its
-  payment. It also shows as a message in the Messages tab of the wallet, with the label "On chain
-  · shared with all devices". It has no sender and no signature. The app never calls it verified
-  or private. The app shows control characters and bidirectional marks of the text as U+FFFD, and
-  it puts no memo text in a notification. Memos do not count as unread messages.
+- **Receiving.** Section 6 gives the rules. Reading memos is a switch in Settings, under "This
+  browser". It is off for every wallet until a person turns it on in that browser. The switch
+  keeps its state in the browser only (`zf-memos`, wallet id to true). Its text names the leak:
+  the light-wallet server learns which transactions pay the wallet. A payment whose memo is not
+  read yet shows "Memo not read yet" while the switch is on. A received memo shows on the
+  Activity row of its payment. It also shows as a message in the Messages tab of the wallet,
+  with the label "On chain · shared with all devices". It has no sender and no signature. The
+  app never calls it verified or private. The app shows control characters and bidirectional
+  marks of the text as U+FFFD, and it puts no memo text in a notification. Memos do not count as
+  unread messages.
 - **Engine interface** (web names; the native names have the prefix `wallet`):
   - `createSpend(payees, priority, after)` and `walletSpend(key, payees, tip)`: `payees` is
     `[{"to", "amount", "memo"?}]`. A row error names the row: `recipient 2: the memo is 513
@@ -1253,12 +1279,12 @@ Messages (section 14) were already signed.
   from the pin, never from a later value in the store. So a holder of the link cannot add a seat
   above `n`. If the store shows other values, the wallet page says so.
 - The web app takes the network of a wallet from the safety number, which covers it (section 4). A
-  seat of this device keeps the number that its person confirmed (`confirmed`). The stored confirm
-  document of the seat counts too, but only when the key in the seat secret of this device signed
-  it: a restore does not copy `confirmed`. The device keeps the network whose safety number matches,
-  and only when exactly one network matches, in `zf-signpins` under the key
-  `confirmednet:<wallet id>`. The confirm documents of other seats do not count: a device that opens
-  a wallet for the first time takes their keys from the store.
+  seat in this browser keeps the number that its person confirmed (`confirmed`). The stored confirm
+  document of the seat counts too, but only when the key in the seat secret of this browser signed
+  it: a restore does not copy `confirmed`. The browser keeps the network whose safety number
+  matches, and only when exactly one network matches, in `zf-signpins` under the key
+  `confirmednet:<wallet id>`. The confirm documents of other seats do not count: a browser that
+  opens a wallet for the first time takes their keys from the store.
 - Until then, the web app uses the first `network` that it sees for a wallet of any version, under
   the key `network:<wallet id>`. A name that is not `testnet` or `mainnet` is not kept. A holder of
   the link can change the network before a device opens the wallet for the first time. The confirmed

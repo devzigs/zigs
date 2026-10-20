@@ -1,8 +1,10 @@
 # Zigs
 
 **Shared wallets for shielded Zcash.** A team creates one private address together, and any *t* of
-its *n* signers must approve each payment. Nobody ever holds the whole key, the server cannot read
-the wallet, and on chain each payment looks like a shielded payment from a standard wallet.
+its *n* signers must approve each payment. Nobody ever holds the whole key, and the server cannot
+read the wallet. On chain a payment has the shape of a shielded payment from a standard wallet,
+except for its one-day expiry, which can mark it as a Zigs payment. So can a priority fee, when the
+proposer chooses one ([comparison](PRIVACY.md#on-chain)).
 
 - Web app: https://app.zigs.app (no install, no account). Until launch, the browser asks for a
   user name and a password. Any user name works. Ask the Zigs team for the password.
@@ -43,7 +45,7 @@ the wallet, and on chain each payment looks like a shielded payment from a stand
   the Helius shielded pool on Solana. It is a beta, off for mainnet wallets, and the iPhone and Mac
   apps do not have it. For such a wallet the page also connects to the Helius Devnet host. Helius
   sees more than the light-wallet server does: it builds the proofs, so it sees amounts and
-  recipients of each spend. Each seat pays fees and rents from its own fee address on Devnet, and
+  recipients of each spend. Each device pays fees and rents from its own fee address on Devnet, and
   a member adds SOL to the group with Add SOL: the fee address shows on chain next to the group.
   Read [ZOLANA.md](ZOLANA.md) first, then [PRIVACY.md](PRIVACY.md#solana-beta-helius-devnet). The
   open work is in [TICKETS.md](TICKETS.md).
@@ -85,8 +87,8 @@ coin. The runbook of a demo with three devices is in [docs/demo.md](docs/demo.md
    **Review payment**. The review shows what your browser decoded from the transaction that it
    built. Click **Propose payment**. For a payroll, click **Add recipient** or **Paste a list**: up
    to 20 recipients go into one transaction with one approval round. A payment request (`zcash:…`)
-   pasted in the recipient field fills the rows. The form keeps what you typed as a draft on this
-   device for 24 hours.
+   pasted in the recipient field fills the rows. The form keeps what you typed as a draft in this
+   browser for 24 hours.
 6. In the payment panel, click **Approve as device 1** and **Approve as device 2**. Read **What this
    payment does**: your browser decoded it from the transaction itself.
 7. Click **Build proof** (about one minute in the browser), then **Send to network**, then
@@ -94,28 +96,28 @@ coin. The runbook of a demo with three devices is in [docs/demo.md](docs/demo.md
 
 **Solana Devnet** (beta, web app only)
 
-8. After the Zcash key, the page makes the Solana key by itself: the two seats of this browser
+8. After the Zcash key, the page makes the Solana key by itself: the two devices of this browser
    run a second key ceremony. The Overview shows **Solana is still setting up**, with the steps
    **Create the Solana key** and **Fund your fee address**. Wait until the first step says "Each
-   signer holds one piece of the Solana key." If you turned the box off in step 2, open
+   device holds one piece of the Solana key." If you turned the box off in step 2, open
    **Solana** and click **Add Solana** to start it.
 9. Click **Open Solana** (or **Solana** in the side menu). Under **Fund the fee address**, each
-   seat shows **Your fee address**. Each device funds the fee address of its own seat; here this
-   browser holds both seats. Send at least 0.03 SOL of Devnet SOL to each of them (**Get Devnet
-   SOL** opens the Solana faucet), then click **Check balance**. A seat that proposes or executes
-   needs about 0.003 SOL, and the seat that adds SOL also needs the 0.02 SOL of the next step.
+   device shows **Your fee address**. Each device funds its own fee address; here this browser
+   holds both devices. Send at least 0.03 SOL of Devnet SOL to each of them (**Get Devnet SOL**
+   opens the Solana faucet), then click **Check balance**. A device that proposes or executes
+   needs about 0.003 SOL, and the device that adds SOL also needs the 0.02 SOL of the next step.
 10. Under **Add SOL**, keep 0.02 and click **Add SOL**. Then click **Sync Solana**. The **Private
     balance** shows the SOL. The first sync can take about 25 s.
 11. Under **Send SOL**, choose one:
     - **Private payment**: paste the **Shielded address** of another group into **Payee (full
       shielded address)**, enter an amount and click **Send privately**. Make a second wallet in
       the same way, and copy the address from its Solana section. The chain hides the amount.
-    - **Public withdrawal**: paste a public Devnet address, for example the fee address of seat 2
+    - **Public withdrawal**: paste a public Devnet address, for example the fee address of device 2
       (click its **Copy** button), enter an amount and click **Withdraw**. The chain shows the
       recipient and the amount.
-12. In the proposal, wait until Zigs has checked it: the **Approve as seat 1** and **Approve as
-    seat 2** buttons appear then. Click both. After 2 approvals, a seat with a funded fee address
-    executes the payment by itself. The steps go to **Executed**, and the status goes from
+12. In the proposal, wait until Zigs has checked it: the **Approve as device 1** and **Approve as
+    device 2** buttons appear then. Click both. After 2 approvals, a device with a funded fee
+    address executes the payment by itself. The steps go to **Executed**, and the status goes from
     **Approved, executing** to **Executed**, with a link to the transaction in the explorer.
     Click **Sync Solana** to see the new balance.
 
@@ -161,7 +163,7 @@ flowchart LR
 | Signer device | Its own key share, the wallet secret, the viewing key, all payments |
 | Group server | Wallet ids, document names, timing, IP addresses. Never keys, amounts, addresses or names |
 | Light-wallet server | IP address and the blocks requested, as for any light wallet. On testnet, the app Worker relays the requests, so our node sees the Worker and not the device. Where memo reading is on, it also sees which full transactions a device fetches to read memos. Never a key |
-| Zcash network | A normal shielded transaction |
+| Zcash network | A shielded transaction with the shape of a shielded payment from a standard wallet, except for its one-day expiry (3,456 blocks of 25 seconds, against 40) and an optional priority fee, which can mark it as a Zigs payment |
 | Helius (Solana beta, testnet wallets only) | IP address, the app origin, the owner key, and for each spend the amounts, recipients and the nullifier secret that its prover needs. Never a key share |
 | ZNS resolver (testnet names) | That the app Worker downloads the whole name registry. Never which name a person pays, never a key |
 
@@ -265,18 +267,19 @@ the sighash saved when its user approved. The app and the engine both check this
 checks that its own nonce commitment was not replaced, and deletes its nonces after use. Any device can combine the shares;
 a bad share names its sender.
 
-## Changing signers
+## Changing devices
 
-The signers and the threshold are part of the wallet key, so they cannot change in place. Zigs
-creates a replacement wallet and moves the funds with one normal, approved payment.
+The devices and the approval rule are part of the wallet key, so they cannot change in place.
+Zigs creates a replacement wallet and moves the Zcash funds with one normal, approved payment. A
+Solana part of the wallet does not move this way.
 
 ```mermaid
 flowchart TD
-  A["Old wallet<br/>signers A, B, C, any 2 of 3"] -->|Change devices| B["New wallet<br/>signers A, B, D, any 2 of 3<br/>new key ceremony, new address"]
-  A -.->|stores only the new wallet id, never its secret| B
-  B --> C["The old wallet proposes one payment of its whole balance to the new address"]
-  C --> D["2 of 3 old signers approve.<br/>Approvers who are in the new wallet check its address"]
-  D --> E["Old wallet closed.<br/>C keeps the old history but sees nothing of the new wallet"]
+  OLD["Old wallet<br/>devices A, B, C, any 2 of 3"] -->|Change devices| NEW["New wallet<br/>devices A, B, D, any 2 of 3<br/>new key ceremony, new address"]
+  OLD -.->|stores the new wallet id, never its secret| NEW
+  NEW --> PAY["The old wallet proposes one payment of its spendable Zcash balance to the new address"]
+  PAY --> OK["2 of 3 old devices approve.<br/>The approving devices that are in the new wallet check its address"]
+  OK --> STAY["The old wallet stays, with its address and history.<br/>Device C can still read the old wallet, but not the new one.<br/>The move payment gives device C the new address, the amount,<br/>the note and the id of the new wallet. With the id, the group server<br/>sends device C the sealed documents of the new wallet and each later write,<br/>and accepts writes from it, so device C can stop the new wallet with false documents"]
 ```
 
 ## Privacy
@@ -285,7 +288,7 @@ The full threat model is in [PRIVACY.md](PRIVACY.md). In short:
 
 | Party | Sees | Does not see |
 |---|---|---|
-| Chain observers | A normal shielded Ironwood transaction | That a group signed it, the signers, amounts, addresses |
+| Chain observers | A shielded Ironwood transaction with the shape of a payment from a standard wallet. Its one-day expiry (3,456 blocks of 25 seconds, against 40) and an optional priority fee can mark it as a Zigs payment | The signers, amounts and addresses. The signature does not show that a group signed it |
 | Group server | Wallet ids, document paths and field names, timing, which IP addresses connect to which wallet | Wallet and signer names, addresses, viewing key, amounts or their length, recipients, transactions, signing data |
 | Light-wallet server | Your IP address (on testnet, our server sees the app Worker), the wallet's birthday height, the blocks you download, the transactions you send, the full transactions you fetch to read memos (only where memo reading is on) | Which notes are yours while you download blocks (the memo fetches are the exception), any key |
 | Helius (Solana beta, testnet wallets only) | Your IP address, the app origin, the owner key of the wallet, and the witness of each spend: owners, assets, amounts and the nullifier secret. With local proving on (a group setting), no witness: the devices of the group make the proofs. The sender and the recipient of a transfer are public on chain | Any key share, the Ed25519 seed, the viewing key. It cannot sign |
@@ -313,7 +316,7 @@ with 2-of-2 wallets and one 2-of-3 wallet:
 | [`4838de4c…6612`](https://testnet.zecblock.com/tx/4838de4c250d85c82657a600bd9886b75080711c37723c7a07f311c96f046612) | 4,485,020 | First FROST spend from the web app |
 | [`86807799…45fd`](https://testnet.zecblock.com/tx/86807799c1393829e9de9b1158caa0285d198797c4194b2520f23a713b4f45fd) | 4,485,097 | Payment into a wallet with an encrypted group store |
 | [`9859c24b…2409`](https://testnet.zecblock.com/tx/9859c24b961bb196f9a1de74cc099c32d4f2c9812c12a2db47a504cb88ff2409) | 4,485,106 | Spend from that wallet |
-| [`d2fc7ad5…e72f`](https://testnet.zecblock.com/tx/d2fc7ad573342648dcdaef65256288e38189753f0087a06e7217cc7a3bb8e72f) | 4,488,891 | **Change signers:** whole balance moved to the replacement wallet |
+| [`d2fc7ad5…e72f`](https://testnet.zecblock.com/tx/d2fc7ad573342648dcdaef65256288e38189753f0087a06e7217cc7a3bb8e72f) | 4,488,891 | **Change devices:** whole balance moved to the replacement wallet |
 | [`6572ce88…80a8`](https://testnet.zecblock.com/tx/6572ce88c248350c71225889819c23eefd5e5f8df2af07e9cc216f87337380a8) | 4,488,977 | Web wallet pays a wallet created on an iPhone |
 | [`4dc4fd73…7049`](https://testnet.zecblock.com/tx/4dc4fd73274936b81b8ef1897490f0ffc17ec1ec6827f1e92715f7d8115a7049) | 4,488,995 | **iPhone:** proposed, approved, proved and sent from the phone |
 | [`b87248fa…3636`](https://testnet.zecblock.com/tx/b87248fa7a06b7a42f082e07c1c4f5da94d1673d7c0fc98d8be2745209f73636) | 4,489,104 | Payment with the padded store format |
@@ -443,14 +446,14 @@ tab shows for version 3 wallets on testnet only. Build the Solana wasm with
 `sh wasm-sol/build.sh`, and see [`solspike/README.md`](solspike/README.md) for the checks.
 
 To try the beta by hand, make a testnet wallet, add the Solana part, and open the Solana tab. Each
-seat that this browser holds shows **Your fee address**. Send Devnet SOL to it (the **Get Devnet
+device that this browser holds shows **Your fee address**. Send Devnet SOL to it (the **Get Devnet
 SOL** link opens the faucet), then press **Check balance**. The fee address pays the fees and the
-rents of the proposals of its seat, and the fee of each payment that its seat executes, so fund
-every seat. Then use **Add SOL** to put SOL from the fee address of the seat into the shielded
-balance of the group, at the program address of the group: only that seat signs it, and the amount
+rents of the proposals of its device, and the fee of each payment that its device executes, so fund
+every device. Then use **Add SOL** to put SOL from the fee address of the device into the shielded
+balance of the group, at the program address of the group: only that device signs it, and the amount
 and the sender are public. The group is never registered, and a new group needs no nonce account
 (ZOLANA.md 4.2 and 7.2). **Send privately** and **Withdraw** make a proposal. It needs the approval
-of `t` seats, and then a seat with a funded fee address executes it.
+of `t` devices, and then a device with a funded fee address executes it.
 
 Open http://localhost:8787. To act as a second person on the same computer, also open
 http://127.0.0.1:8787: it is a separate origin, so it has separate storage. Deploy production

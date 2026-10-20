@@ -86,7 +86,7 @@ async function saveOrUndo(gid, i, patch, s, failure) {
   const before = Object.fromEntries(Object.keys(patch).map((k) => [k, s[k]]));
   if (await putSec(gid, i, patch)) return;
   await putSec(gid, i, before);
-  throw new Error(failure ?? "This browser could not save the change of seat " + i + ".");
+  throw new Error(failure ?? "This browser could not save the change of device " + i + ".");
 }
 
 const sessionPath = (ss, gid = state.gid) => "groups/" + gid + "/sessions/" + ss.id;
@@ -135,7 +135,7 @@ function buildPackage(ss, fvk, commits) {
     const fields = { package: pkg, signers: ids };
     const sig = await sigPart(gid, ss.id, "package", fields, ss.by);
     await ref.update({ ...fields, status: "signing", ...sig });
-    log("signing package sent to signers " + ids.join(", "));
+    log("signing package sent to devices " + ids.join(", "));
   });
 }
 
@@ -161,7 +161,7 @@ function signShare(ss, fvk, i, gid) {
     const s = sec(gid, i) || {}, kept = (s.unsent || {})[ss.id], n = (s.nonces || {})[ss.id];
     if (kept) return kept;
     if (!n) {
-      log("seat " + i + ": its nonce for this payment is used or gone, so it signs nothing");
+      log("device " + i + ": its nonce for this payment is used or gone, so it signs nothing");
       return null;
     }
     return signShareNow(ss, fvk, i, n, gid);
@@ -212,7 +212,7 @@ async function sendShare(ss, gid, i, out) {
   if (out.changed) {
     throw new Error("This payment changed after you approved it, so this browser did not sign it.");
   }
-  log("seat " + i + ": signature share sent");
+  log("device " + i + ": signature share sent");
 }
 // ponytail: a kept copy whose removal does not save stays in the record until a later removal.
 async function dropUnsent(gid, i, sid) {
@@ -460,7 +460,7 @@ function approveRefusal(ss, i, ins) {
   if (state.pending) return "Zigs is still checking this wallet's data. Try again in a moment.";
   if (!ins || ins.error) return "This browser could not check the payment, so it did not approve.";
   if (seatCheck(i) !== true) {
-    return "Seat " + i + " has not checked this wallet against its key share, so it did not "
+    return "Device " + i + " has not checked this wallet against its key share, so it did not "
       + "approve.";
   }
   return markRefusal(ss, i, ins);
@@ -473,7 +473,9 @@ function markRefusal(ss, i, ins) {
   if (seenSigning(ss.id, true)) {
     return "The signing of this payment started before, so this browser does not approve it again.";
   }
-  if ((sec(gid, i).marks || {})[ss.id]?.approved) return "This seat already approved this payment.";
+  if ((sec(gid, i).marks || {})[ss.id]?.approved) {
+    return "This device already approved this payment.";
+  }
   if (m.approved && m.approved !== ins.sighash) {
     return "This payment changed after this browser approved it, so it was not approved again.";
   }
@@ -503,8 +505,8 @@ async function approveNow(ss, i) {
   const rel = "sessions/" + ss.id + "/commits/" + i;
   await keep(gid, ss.id, ss.pczt);
   await sdb.doc("groups/" + gid + "/" + rel).set(doc);
-  log("seat " + i + ": approved the spend, nonce commitment published");
-  showBanner("ok", "Approved" + (localSeats().length > 1 ? " as seat " + i : "") + ".");
+  log("device " + i + ": approved the spend, nonce commitment published");
+  showBanner("ok", "Approved" + (localSeats().length > 1 ? " as device " + i : "") + ".");
 }
 
 // A payee with a ZNS name (testnet only): this browser looks the name up again, in its own copy of
@@ -524,7 +526,9 @@ async function checkNames(ss, tip) {
 async function commitNow(ss, i, ins, tip, gid) {
   if (state.gid !== gid) throw new Error("Another wallet is open now. Open this one and approve.");
   if (stopped(ss)) throw new Error("This payment was cancelled or failed, so it was not approved.");
-  if ((sec(gid, i).nonces || {})[ss.id]) throw new Error("This seat already approved this payment.");
+  if ((sec(gid, i).nonces || {})[ss.id]) {
+    throw new Error("This device already approved this payment.");
+  }
   const late = markRefusal(ss, i, ins);
   if (late) throw new Error(late);
   const r = J(Z.signCommit(ss.pczt, state.wallet.orchard_fvk, S(sec(gid, i).keyPackage), tip));
@@ -659,9 +663,9 @@ export const sendBlocker = () => setupBlocker() || holdBlocker() || fundsBlocker
 
 function setupBlocker() {
   const c = curChain();
-  if (keysDiffer()) return "The signers hold different wallet keys. Do not use this wallet.";
-  if (!localSeats().length) return "You hold no seat in this wallet.";
-  if (!myVerified()) return "Your seat is still checking the wallet address.";
+  if (keysDiffer()) return "The devices hold different wallet keys. Do not use this wallet.";
+  if (!localSeats().length) return "This browser holds no device of this wallet.";
+  if (!myVerified()) return "Your device is still checking the wallet address.";
   return !c || !c.bal ? "Wait for the first sync to finish." : null;
 }
 

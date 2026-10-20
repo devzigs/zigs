@@ -6,16 +6,19 @@ is a bug: please report it.
 
 ## Summary
 
-- On chain, a Zigs payment looks like a payment from any standard Zcash wallet. Nothing shows that
-  a group signed it, who the signers are, or which of them approved.
+- On chain, a Zigs payment has the shape of a payment from the standard Zcash wallet library: the
+  same builder, padding, fee rule and anchor. Its expiry differs: up to one day after the
+  proposal, where the library sets 40 blocks. So the expiry can mark a Zigs payment, and so can a
+  priority fee when the proposer chooses one ([On chain](#on-chain)). The signature does not show
+  that a group signed, who the signers are, or which of them approved.
 - The group server relays and stores encrypted data. It cannot read wallet names, signer names,
   addresses, amounts, notes, recipients or transactions. It does see who connects, to which
   wallet, and when.
 - The light-wallet server sees your IP address and the blocks you download, as it does for every
   light wallet. On testnet, the app Worker relays the calls to the Zigs server, so that server
-  sees the Worker and not your device. It never receives a key. If a signer turns on memo
-  reading, the app also fetches the full transaction of each payment to the wallet. The server
-  then learns which transactions a device reads. Memo reading is off by default.
+  sees the Worker and not your IP address. It never receives a key. If a person turns on memo
+  reading in a browser, the app also fetches the full transaction of each payment to the wallet.
+  The server then learns which transactions that browser reads. Memo reading is off by default.
 - A memo on a payment is readable by its recipient and by every signer of the sending wallet.
   Every signer of the receiving wallet reads the memos that arrive there.
 - A testnet wallet that uses the Solana beta (web app only) also talks to the Helius Devnet host.
@@ -49,7 +52,7 @@ property:
 | Fee | ZIP 317 standard rule, or 10 times it when the proposer chooses a priority fee | ZIP 317 standard rule |
 | Anchor | Target height − 3 (3 confirmations) | Same (`ConfirmationsPolicy` trusted = 3) |
 | Change | One note to the wallet's internal address | Same |
-| Memos | Empty | Empty unless a signer writes one for a recipient |
+| Memos | Empty unless a signer writes one for a recipient | Empty unless the user writes one |
 | Transparent parts | None | None for a shielded payment |
 | Several recipients | One output per recipient, plus change | Same for a multi-recipient payment (ZIP 321) |
 
@@ -82,6 +85,7 @@ What the server can still see:
 | Timing of every write | Writes happen when people act | None |
 | Which IP addresses connect to which wallet | Each wallet has its own connection | Use Tor Browser, or a VPN, to hide your IP address |
 | Number of signers and payments | Count of documents | None |
+| Anyone who knows a wallet id, without its secret, gets what the server sees of that wallet: each sealed document with its path, field names and padded size, then each new write as it happens. Such a client can also write or replace documents of that wallet | The server does not ask for the wallet secret. It checks the form of the id and its limits on connections and writes, behind the password gate of the preview, then sends the documents of the wallet and each later write, and takes writes (`groupSocket` and `Store` in `cf/src/index.js`). The old wallet of a move holds the id of the new wallet | The values stay sealed under the wallet secret, which the server never receives. So such a client cannot read them or seal new ones, but it can write back an old value that it saw. The timing, the counts and the availability stay exposed: a replaced document stops the wallet (a denial of service) |
 | The id of each wallet's message room, when each message is sent, how many messages, their padded sizes, and which IP addresses connect to the room | A room is one more namespace with its own connection, and each message is one document | Use Tor Browser, or a VPN, to hide your IP address. Message text, thread and sender stay sealed. |
 | The id of each direct chat, its two member ids, when each message is sent, how many messages, their padded sizes, and which IP addresses connect to the chat | A chat is a namespace like a room. The server learns that two member ids talk to each other. | Use Tor Browser, or a VPN, to hide your IP address. Names, message text and signing keys stay sealed. The chat lives in the browser and is not in key share backups. |
 | Nothing more for a payment request | A request is the text of a message, so it is sealed like any message. The page reads it on the device and contacts no server for it. | None needed |
@@ -171,6 +175,11 @@ id that you open, and the time, so it can link them. The page sends no referrer.
   id of a transaction or an account there. The Solana tab links to it from the Add SOL line, the
   result of a proposal, the proposal account and the cancels of old proposals (S16 of
   [docs/hackathon-release.md](docs/hackathon-release.md)). A line next to these links says so.
+- **Zcash, the other links:** the ids of an expired payment in the payment panel, **View payment**
+  on a memo in Messages, and **View transaction** in a chat of the personal account open the same
+  Zcash explorer with the transaction id. The web app says what the explorer sees next to each
+  Zcash link, or under the list that holds it. It says what the faucet sees next to each faucet
+  link (Zcash and Solana).
 
 ## ZNS names (testnet)
 
@@ -201,7 +210,7 @@ How the app reads the registry:
 | App Worker | Your IP address and when your page downloads the registry. Not the name that you type |
 | Group server | Nothing new. The name is one more field of the sealed proposal |
 | Other signers of the wallet | The name and the address in the proposal, as for every recipient |
-| Chain observers | A normal shielded payment. Nothing shows that a name was used |
+| Chain observers | A shielded payment with the shape of a payment from a standard wallet, except for its one-day expiry and an optional priority fee, which can mark it as a Zigs payment. Nothing shows that a name was used |
 
 The timing of a download can still tell the Worker something:
 
@@ -264,9 +273,9 @@ they could also spend the SOL on that seat's fee address. Keep only the SOL for 
 The link **Get Devnet SOL** opens the Solana faucet (faucet.solana.com) in a new tab. That site is
 not Zigs. It sees your IP address and the fee address that you paste, so it can link the two.
 
-**Add SOL** moves SOL from the fee address of your seat into the shielded balance of the group.
-It is a pool deposit that only your seat signs, with no approval from the other seats. The amount
-and the sender (your fee address) are public on chain.
+**Add SOL** moves SOL from the fee address of your device into the shielded balance of the group.
+It is a pool deposit that only your device signs, with no approval from the other devices. The
+amount and the sender (your fee address) are public on chain.
 
 **Payments through the approvals program.** The funds of the group belong to an address of the
 Zigs approvals program, a program-derived address (PDA) of the group key. A payment has three
@@ -335,7 +344,7 @@ Each Solana screen says what is public and what Helius sees:
 - **The Solana tab, in each state** (also before Add Solana and while the setup runs): a deposit
   shows its sender and amount on chain, and a withdrawal its recipient and amount. A private payment
   hides its amount, but it shows the owner key of the payee. The program address, the group key and
-  the fee address of each seat that pays are public too. Helius sees that you use Zigs, your IP
+  the fee address of each device that pays are public too. Helius sees that you use Zigs, your IP
   address and the keys of the wallet, and its hosted prover sees each payment (with local proving
   on: the group makes its proofs on its devices, so they give Helius neither the amounts nor the
   nullifier secret). The Zigs server operator can link the wallet to these addresses by timing.
@@ -348,7 +357,7 @@ Each Solana screen says what is public and what Helius sees:
 - **The fund card:** the fee address appears on chain next to the group. The page asks Helius for
   the balance of each fee address of this browser with your IP address, with no click. It asks
   when the Solana tab opens, after a payment or Add SOL, and again when such a read failed. It
-  also asks every 30 s while a signed payment waits for a seat that can pay.
+  also asks every 30 s while a signed payment waits for a device that can pay.
 - **Add SOL:** the amount and the sender are public, and Helius sees your IP address with the
   deposit.
 - **Pay from the group:** the rent and the fees, and what the hosted prover sees: the owner keys,
@@ -538,9 +547,12 @@ the passkey guards the key share instead. The lock is opt-in.
   document again, and can write the progress marks that have no signature. The funds stay safe,
   because FROST and the device checks do not depend on the store. A wallet of version 1 or 2 has
   no signed writes.
-- Every signer holds the wallet's viewing key and sees every payment. A signer removed with
-  "Change signers" keeps the old wallet's history but gets no access to the new wallet: the old
-  wallet stores only the new wallet's id, never its secret.
+- Every signer holds the wallet's viewing key and sees every payment. A device that "Change
+  devices" leaves out keeps the viewing key of the old wallet. It sees every later payment of the
+  old wallet, and the move payment: the new address, the amount, the note and the id of the new
+  wallet. It cannot read the new wallet, because the old wallet stores the new wallet's id, never
+  its secret. The id alone still gives it what the group server sees of the new wallet, and
+  writes that can stop it (Group server, above).
 - A removed signer keeps the old wallet's message room and can read it. The new wallet has a new
   room that the removed signer cannot read.
 
@@ -557,7 +569,7 @@ the passkey guards the key share instead. The lock is opt-in.
   the key share. ZIP 2005 recommends that you move the funds to a post-quantum protocol as soon as
   one exists.
 - A version 1 wallet (made before ZIP 2005 support) has no `qsk`. It cannot be recovered under
-  ZIP 2005. Move its funds to a new wallet with Change signers.
+  ZIP 2005. Move its funds to a new wallet with Change devices.
 - The signers must compare the safety number of a version 2 or 3 wallet over a channel that an
   attacker does not control. A call or a meeting is such a channel. The number covers the wallet
   id, the threshold, the number of seats, the network and every seat key.

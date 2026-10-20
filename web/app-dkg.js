@@ -179,9 +179,11 @@ function verifyWallet(s) {
 
 const v2Secret = () => localSeats().map((i) => sec(state.gid, i))
   .find((s) => s.vaultSk && s.publicKeyPackage);
+// A stop of any seat ends the setup: seat 1 then builds no wallet, also when it holds its key
+// share already.
 export const canCreateWallet = () => isCreator() && !state.wallet && keysAgree()
   && (!usesV2(groupVersion()) || !!v2Secret())
-  && canWriteAs(1);
+  && canWriteAs(1) && !abortedText() && !remoteAborts().length;
 
 async function walletStands(gid) {
   const cur = await sdb.doc("groups/" + gid + "/meta/wallet").get();
@@ -203,6 +205,7 @@ export async function createWallet() {
   const w = J(mine ? Z.walletCreateV2(S(mine.publicKeyPackage), net, mine.vaultSk)
     : Z.walletCreate(state.done[1].publicKeyPackage, net));
   const doc = await signedDoc(gid, "meta/wallet", 1, { ...w, birthday, at: Date.now() });
+  if (abortedText() || remoteAborts().length) return;   // a stop came while the server answered
   await sdb.doc(base + "/meta/wallet").set(doc);
   log("wallet created: " + w.address.slice(0, 24) + "…");
 }
@@ -276,6 +279,21 @@ export async function confirmSeats(ids, no) {
 }
 
 const DIFFERENT = "The devices saw different setup data";
+const STOP_UNSAVED = "This browser could not save the stop. Keep this page open, and do not "
+  + "confirm the safety number.";
+// "They don't match": every seat of this browser stops its setup. The page runs it through once(),
+// whose react() then publishes the stops, so the other devices stop too.
+export async function stopSetup() {
+  const gid = state.gid;
+  let saved = true;
+  for (const [i, s] of mySeatSecrets(gid)) {
+    if (s.aborted) continue;
+    const text = abortText("The person who uses device " + i + " saw a different safety number");
+    // The stop mark keeps the setup page, also when a wallet document comes later.
+    saved = (await putSec(gid, i, { aborted: text, stopped: true })) && saved;
+  }
+  if (!saved) throw new Error(STOP_UNSAVED);
+}
 // A failed check ends this seat's setup for good. The reason stays in the seat, so the reactor
 // does not retry it.
 async function abortSeat(i, text) {

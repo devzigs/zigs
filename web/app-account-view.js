@@ -8,7 +8,7 @@ import { REQUEST_NET } from "./requests.js";
 import { state, ui } from "./app-state.js";
 import { initials, short, when } from "./app-kit.js";
 import { Z } from "./app-engine.js";
-import { netOf, NETWORKS } from "./app-chain.js";
+import { explorerText, netOf, NETWORKS } from "./app-chain.js";
 import {
   act, copyBtn, el, guard, logBox, money, netBadge, networkPick, noteFor, qrBox, setNote, skeleton,
 } from "./app-dom.js";
@@ -81,7 +81,8 @@ export function accountCard() {
     el("div", { class: "card-head" }, el("h2", {}, "Personal account"),
       netBadge({ network: personal.network })),
     el("p", { class: "small muted" }, "This account pays the fee of your messages on chain. It is "
-      + "not a wallet and it has no signers. Whoever controls this browser can spend it."),
+      + "not a wallet, and its payments need no approval. Whoever controls this browser can "
+      + "spend it."),
     personal.backedUp ? null : accountBackupNote(),
     accountBalanceBlock(b),
     b ? balanceWarnings(b.total).map((t) => el("div", { class: "callout warn", role: "status" }, t))
@@ -143,9 +144,11 @@ export function fundBlock() {
   showWarn();
   return el("div", { class: "to-box", style: "display:grid;gap:10px" },
     el("span", { class: "label" }, "Fund the account"),
-    el("label", { class: "field" }, el("span", {}, "Amount in ZEC"), amount,
+    // The notes stay out of the label, so that they are no part of the name of the field.
+    el("div", { class: "field" },
+      el("label", { class: "field" }, el("span", {}, "Amount in ZEC"), amount),
       el("span", { class: "hint", id: "fund-hint" }, "The request asks for 3 equal notes, so the "
-        + "account can send a message after each block. A wallet pays it, and its signers "
+        + "account can send a message after each block. A wallet pays it, and its devices "
         + "approve it as they approve any payment."), warn, refusal),
     el("div", { class: "req-actions" }, pick,
       el("button", {
@@ -154,7 +157,7 @@ export function fundBlock() {
       }, "Fund from a wallet"),
       el("button", { class: "btn sm", type: "button", onclick: act(copyFundingRequest) },
         "Copy request")),
-    wallets.length ? null : el("p", { class: "small faint" }, "You hold no seat in a "
+    wallets.length ? null : el("p", { class: "small faint" }, "This browser holds no device of a "
       + personal.network + " wallet. Copy the request and pay it from any wallet."));
 }
 
@@ -189,7 +192,9 @@ export function otherMessages() {
     el("p", { class: "small muted" }, items.length + " in all. Anyone who knows an address of "
       + "this account can write to it."),
     el("div", { class: "chat-log" }, rows.map((r) =>
-      guard(receivedBubble, r, "Unknown sender", "Not verified", otherWhere(r.index)))));
+      guard(receivedBubble, r, "Unknown sender", "Not verified", otherWhere(r.index)))),
+    el("p", { class: "small faint" },
+      explorerText(NETWORKS[personal.network], "View transaction")));
 }
 
 export function contactsCard() {
@@ -301,8 +306,11 @@ function contactAddress(contact, name) {
       qrBox(address, "Address for " + name)));
 }
 
+// A message with an explorer link: each received one, and each sent one that a block holds.
+const linked = (rows) => rows.some((r) => r.dir !== "out" || sentStateOf(r) === "chain");
+
 function contactMessages(contact, name) {
-  const items = contactRows(contact).map((r) => guard(onChainRow, r, name));
+  const rows = contactRows(contact), items = rows.map((r) => guard(onChainRow, r, name));
   const none = el("p", { class: "small faint" }, "No messages yet. A message to the address above "
     + "shows here after the next block.");
   return el("section", { class: "card card-pad chat" },
@@ -314,7 +322,9 @@ function contactMessages(contact, name) {
       send: (text) => sendOnChain(contact, text), plan: (text) => messagePlan(text, splitParts),
       progress: acct ? acct.progress : "",
     }),
-    el("p", { class: "small faint" }, ON_CHAIN_LIMITS));
+    el("p", { class: "small faint" }, ON_CHAIN_LIMITS),
+    linked(rows) ? el("p", { class: "small faint" },
+      explorerText(NETWORKS[personal.network], "View transaction")) : null);
 }
 
 function onChainRow(row, name) {

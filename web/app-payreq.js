@@ -106,7 +106,8 @@ const paidBy = (req) => new Set(req.payees.map((p) => normalized(p.to)));
 function walletPicker(req, id, paid) {
   const held = proposeWallets(req.net);
   if (!held.length) {
-    return { select: null, why: "You hold no seat in a " + WALLET_NET[req.net] + " wallet." };
+    return { select: null,
+      why: "This browser holds no device of a " + WALLET_NET[req.net] + " wallet." };
   }
   const wallets = held.filter((g) => !paid.has(normalized(moveAddress(g.id))));
   if (!wallets.length) return { select: null, why: PAYS_OWN };
@@ -172,7 +173,7 @@ const NO_BALANCE = "Wait for the first sync to finish. The app offers the addres
 function roomRequestWhy() {
   if (!state.wallet) return "The wallet address is not ready yet.";
   if (state.g.movedTo) {
-    return "This wallet moved to " + groupName(state.g.movedTo)
+    return "Change devices replaces this wallet with " + groupName(state.g.movedTo)
       + ". Ask for payments to the new wallet.";
   }
   const total = openTotal();
@@ -180,7 +181,7 @@ function roomRequestWhy() {
     return total === undefined ? NO_BALANCE : "This wallet holds " + capText(curNet().cap)
       + ", the warning level for unaudited mainnet wallets. Do not ask for more.";
   }
-  return myVerified() ? "" : "Your seat is still checking the wallet address.";
+  return myVerified() ? "" : "Your device is still checking the wallet address.";
 }
 
 // In a wallet room, the request pays the open wallet. Only the wallet thread offers it.
@@ -194,11 +195,11 @@ export const roomRequest = () => ({
 });
 
 // In a direct chat, the person picks one of their wallets. The address is the one that this
-// browser's own seat checked, never the store's copy.
+// browser's own device checked, never the store's copy.
 export const chatRequest = () => ({
-  why: () => dmChoices().length ? "" : "You hold no seat in a wallet that can receive a request. "
-    + "A wallet needs a checked address" + (MAINNET_ON ? " and, on mainnet, a known balance under "
-    + "the cap" : "") + ".",
+  why: () => dmChoices().length ? "" : "This browser holds no device of a wallet that can receive "
+    + "a request. A wallet needs a checked address" + (MAINNET_ON ? " and, on mainnet, a known "
+    + "balance under the cap" : "") + ".",
   choices: dmChoices,
   fine: "Your contact, and anyone else who has the contact link, can read the address, the "
     + "amount and the memo of this request.",

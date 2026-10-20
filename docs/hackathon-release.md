@@ -348,7 +348,7 @@ Evidence marked "checked" was read in the repo during this synthesis. All other 
   - Choose the executor among seats whose fee balance covers the execute fee. Read the balance with the Worker "balance" command before the lease.
   - A seat that cannot pay skips the execute with no banner.
   - Set LEASE_MS to 60000 and renew it before send().
-  - Add to the fund card: "Seats that propose or execute need about 0.003 SOL. Seats that only approve need none."
+  - Add to the fund card: "Devices that propose or execute need about 0.003 SOL. Devices that only approve need none."
   - Add a test with one funded seat and two unfunded browsers.
 - **Scope:** the executor choice, the lease and the text.
 - **Mitigation:** fund all three fee addresses before the demo (section 8).
@@ -511,7 +511,7 @@ Evidence marked "checked" was read in the repo during this synthesis. All other 
 - **Fix:**
   - Change the stop text: the Zcash part still works, and a new wallet is the way to a new Solana part.
   - Add a "Create a new wallet" button to both stop callouts.
-  - When lostSecret is true, publish no stop. A restored copy of a seat looks the same (no secret, round 1 in the store) while the other copy of that seat finishes the ceremony, and a stale copy drops its secret on purpose (M4). A stop from that copy would end a good ceremony. The seat itself shows "Seat N: this browser lost its setup secret. If another device of this seat does not finish the Solana setup, create a new wallet to use Solana." (or the other-copy text). The other seats show "Seat N: round 1 sent" for that seat and wait for its round 2.
+  - When lostSecret is true, publish no stop. A restored copy of a device looks the same (no secret, round 1 in the store) while the other copy of that device finishes the ceremony, and a stale copy drops its secret on purpose (M4). A stop from that copy would end a good ceremony. The device itself shows "Device N: this browser lost its setup secret. If another copy of this device does not finish the Solana setup, create a new wallet to use Solana." (or the other-copy text). The other devices show "Device N: round 1 sent" for that device and wait for its round 2.
   - A real restart (a new start document) belongs to M3 step 7.
 - **Files:** web/sol/ceremony.js, web/sol/abort.js, web/sol/view.js, web/app-setup.js, web/test/sol-ceremony.mjs.
 - **Package:** WP-U.
@@ -626,10 +626,10 @@ Order and sessions (one session for each package; heavy commands go through heav
 
 **T-3 to T-1 days: stage on production only** (staging has no working Solana tab until SOL-48 closes)
 7. Create "Demo A": a 2-of-3 wallet on three devices, with Zcash and Solana ready.
-8. Save both backup files for each seat (a Zcash file and a Solana file, with two passphrases that stay offline). Restore one seat on a blank profile once.
+8. Save both backup files for each device (a Zcash file and a Solana file, with two passphrases that stay offline). Restore one device on a blank profile once.
 9. Fund Demo A with Zcash: one Valar drip (0.125 TAZ), plus coins from the permanent test wallet if needed (one claim per IP per day). Wait for 3 confirmations. Fund a spare wallet in the same way.
-10. Fund the fee address of all three seats with Devnet SOL, at least 0.003 SOL each. Press Check balance on each seat.
-11. Add SOL from a funded seat (default 0.02). Press Sync Solana and read the private balance.
+10. Fund the fee address of all three devices with Devnet SOL, at least 0.003 SOL each. Press Check balance on each device.
+11. Add SOL from a funded device (default 0.02). Press Sync Solana and read the private balance.
 12. Create a "Payee" group. Save its Zcash address (utest1…) and the 198-character shielded address from its Solana tab in a private note on the presenter device.
 13. Optional: make one Solana proposal 24 hours before the demo, so that its rent card shows after expiry.
 
@@ -642,14 +642,14 @@ Order and sessions (one session for each package; heavy commands go through heav
 
 ## 9. Demo script: 10 minutes, 2-of-3 group, Zcash testnet and Solana Devnet
 
-Devices: D1 (presenter, seat 1), D2 (seat 2), D3 (seat 3). Rule for the whole demo: do not press Cancel after Approve. Keep each payment open until the status says Sent.
+Devices: D1 (presenter, device 1), D2 (device 2), D3 (device 3). Rule for the whole demo: do not press Cancel after Approve. Keep each payment open until the status says Sent.
 
 | Time | Who | Step | Expected result | Needs |
 |---|---|---|---|---|
 | 0:00 | D1 | Open app.zigs.app and enter the preview password. Say: testnet and Devnet only. Click Set up a wallet, then Set up my wallet. | The rule step recommends any 2 of 3 devices. | D1 |
 | 0:45 | D1 | Keep the recommended 2 of 3 and click Next. Name the wallet. Turn on Solana. The picker shows Testnet only. Click Review wallet, then Create wallet. Show the invite QR. | The invite card shows. | M1, M3 |
 | 1:15 | D2, D3 | Scan the QR, type a label, click Join as device. | 3 of 3 devices joined. | S10 |
-| 1:45 | D1, D2, D3 | Read the safety number aloud. Each person presses It matches. Narrate the progress card: Zcash key, Solana key, fee address. | Both ceremonies run. Each seat shows Address checked and key ready. | M3, M4 |
+| 1:45 | D1, D2, D3 | Read the safety number aloud. Each person compares all 30 digits, ticks the box, and presses It matches. Narrate the progress card: Zcash key, Solana key, fee address. | Both ceremonies run. Each device shows Address checked and key ready. | M3, M4 |
 | 3:00 | D1 | Switch to Demo A. Show the Zcash address, the Available balance and the Solana tab. Press Sync Solana. | Both balances show. | S2 |
 | 3:30 | D1 | Receive: show the address and the faucet link. Do not use the faucet live. Click Send. Paste the Payee utest1 address. Enter 0.01. Click Review payment, then Propose payment. | A payment opens. | M2 |
 | 4:00 | D2 | Open the payment. Read "What this payment does". Click Approve. Keep the payment open. | One approval. | M5 |
@@ -657,7 +657,7 @@ Devices: D1 (presenter, seat 1), D2 (seat 2), D3 (seat 3). Rule for the whole de
 | 5:45 | D1 | Click Send to network. Click View in explorer. | Status Sent. The explorer shows the transaction. | S9 |
 | 6:15 | D1 | Open the Solana tab. Click Send privately. Paste the 198-character payee address. Enter the amount. Click Propose. | A Solana proposal opens. | S15 |
 | 7:00 | D2 | Open the Solana tab. Wait for the Approve button. Click Approve. | One approval. The group signature forms. | S6, S17 |
-| 7:30 | D1 | Wait for the execute. A funded seat executes by itself. Press Sync Solana. | The status says sent. The private balance drops. | S3, S2 |
+| 7:30 | D1 | Wait for the execute. A funded device executes by itself. Press Sync Solana. | The status says sent. The private balance drops. | S3, S2 |
 | 8:15 | D1 | Click the transaction link. | The Devnet explorer shows it. | S16 |
 | 8:45 | D1 | Show the rent card (old proposal) and the backup buttons. State what is public: the payee key tag, the fee address, the group. | Text matches ZOLANA.md. | M6 |
 | 9:30 | D1 | Close: both chains are test networks, no mainnet, the code is not audited. | | M1 |
@@ -665,8 +665,8 @@ Devices: D1 (presenter, seat 1), D2 (seat 2), D3 (seat 3). Rule for the whole de
 **Fallback if M3 slips (two ceremonies).**
 - At 0:45 create a Zcash-only wallet.
 - At 1:45 run the Zcash ceremony.
-- After "Address checked" on all three seats, D1 opens the Solana tab and presses Add Solana.
-- All three devices stay open on this wallet until all three seats show "key ready" (S14).
+- After "Address checked" on all three devices, D1 opens the Solana tab and presses Add Solana.
+- All three devices stay open on this wallet until all three devices show "key ready" (S14).
 - If this takes more than 3 minutes, stop and switch to Demo A.
 
 **Contingencies.**
@@ -674,7 +674,7 @@ Devices: D1 (presenter, seat 1), D2 (seat 2), D3 (seat 3). Rule for the whole de
 - Solana shows a Helius error: wait one minute, then show the Zcash part and the recorded run (S5).
 - The page shows "Connecting" for long: switch to the phone hotspot (S1).
 - Send is blocked by a hold: use the spare wallet (S7).
-- A seat device is lost: restore from the two backup files (M4).
+- A device is lost: restore it from the two backup files (M4).
 
 ## 10. Checks and limits of this review
 
