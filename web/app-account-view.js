@@ -143,7 +143,9 @@ export function fundBlock() {
   showWarn();
   return el("div", { class: "to-box", style: "display:grid;gap:10px" },
     el("span", { class: "label" }, "Fund the account"),
-    el("label", { class: "field" }, el("span", {}, "Amount in ZEC"), amount,
+    // The notes stay out of the label, so that they are no part of the name of the field.
+    el("div", { class: "field" },
+      el("label", { class: "field" }, el("span", {}, "Amount in ZEC"), amount),
       el("span", { class: "hint", id: "fund-hint" }, "The request asks for 3 equal notes, so the "
         + "account can send a message after each block. A wallet pays it, and its signers "
         + "approve it as they approve any payment."), warn, refusal),

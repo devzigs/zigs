@@ -74,6 +74,8 @@ function pageTree() {
 const pageText = () => textOf(pageTree());
 const findNode = (node, pred) => pred(node) ? node
   : (node.kids ?? []).map((k) => findNode(k, pred)).find(Boolean) ?? null;
+const findAll = (node, pred) =>
+  [...(pred(node) ? [node] : []), ...(node.kids ?? []).flatMap((k) => findAll(k, pred))];
 const byText = (node, text) => node.text === undefined && textOf(node) === text ? node
   : (node.kids ?? []).map((k) => byText(k, text)).find(Boolean) ?? null;
 
@@ -409,12 +411,46 @@ function solanaUnread(gid) {
   t.sol.ctl.loaded = { ...loaded, soldone: false };
   try {
     const text = diagnostics();
+    assert.match(text, /^Solana part: not read yet$/m, "the Solana part says not read yet");
     assert.match(text, /^Solana backup files not saved: not read yet$/m,
       "the Solana files say not read yet");
     assert.match(text, /^Solana payments to approve: not read yet$/m);
   } finally {
     t.secrets = real;
     t.sol.ctl.loaded = loaded;
+  }
+}
+// The Solana part line is one word of the setup state. The Solana counts show only for a part.
+function solanaPart() {
+  const ctl = t.sol.ctl, docs = ctl.docs, done = docs.soldone, g = t.state.g;
+  const COUNTS = /^Solana (backup files not saved|payments to approve): /m;
+  const facts = (change) => {
+    ctl.docs = { ...docs, ...change };
+    return diagnostics();
+  };
+  try {
+    assert.match(facts({}), /^Solana part: ready$/m, "a ready Solana part says ready");
+    for (const [what, change, word] of [
+      ["a part that stopped", { solabort: { 2: { reason: "A test stop." } } }, "stopped"],
+      ["keys that differ", { soldone: { ...done, 2: { ...done[2], groupKey: "00".repeat(32) } } },
+        "keys differ"],
+      ["a part that sets up", { soldone: { 1: done[1], 2: done[2] } }, "setting up"],
+    ]) {
+      const text = facts(change);
+      assert.match(text, new RegExp("^Solana part: " + word + "$", "m"), "the word of " + what);
+      assert.match(text, COUNTS, "the Solana counts of " + what);
+    }
+    const none = facts({ solstart: {} });
+    assert.match(none, /^Solana part: not added$/m, "a part that never started says not added");
+    assert.doesNotMatch(none, COUNTS, "a wallet with no Solana part counts nothing of it");
+    ctl.docs = docs;
+    t.state.g = { ...g, network: "mainnet" };
+    const main = diagnostics();
+    assert.match(main, /^Solana part: unavailable$/m, "a mainnet wallet gets no Solana part");
+    assert.doesNotMatch(main, COUNTS, "and counts nothing of it");
+  } finally {
+    ctl.docs = docs;
+    t.state.g = g;
   }
 }
 // The sync line is one word of a fixed list, or the height of the last block. The error text of
@@ -486,7 +522,9 @@ async function diagnosticsFacts(w, gid) {
       }
       assert.match(text, /Approval rule: 2 of 3 devices/, "but they keep the facts");
     }
+    assert.equal(box.attrs["data-key"], "diagnostics", "the box keeps its focus through a redraw");
     solanaUnread(gid);
+    solanaPart();
     syncWords(gid);
   } finally {
     Object.assign(t.state, { log, g, seats });
@@ -653,6 +691,10 @@ function activityList(ctl) {
     activityOverview(ctl, at, solRows);
     activityStates(ctl, kept);
     activityBadges(ctl);
+    t.ui.tab = "activity";
+    activityRowsFor(ctl, state);
+    activityChecks(ctl, draw);
+    activityOlder(ctl, draw);
   } finally {
     state.g = g;
     Object.assign(ctl, kept);
@@ -733,6 +775,43 @@ function activityStates(ctl, kept) {
   assert.doesNotMatch(pageText(), /ZEC you receive/, "no ZEC under the Solana choice");
   activityHistory(ctl, state, draw);
 }
+// Proposals that wait for their signature check: the rows that are read show, and the note says
+// that more can come. An empty list waits for the check.
+function activityChecks(ctl, draw) {
+  const { sessions, added } = ctl;
+  ctl.sessWait = 1;
+  try {
+    const checking = draw("all");
+    assert.ok(sorted(order(checking, TITLES)), "the rows that are read show while others wait");
+    assert.match(checking, /Zigs still reads some Solana proposals, so more rows can show\./,
+      "the note says that more rows can come");
+    Object.assign(ctl, { sessions: [], added: null });
+    const empty = draw("sol");
+    assert.match(empty, /Reading the Solana transactions/,
+      "an empty Solana list waits for the check");
+    assert.doesNotMatch(empty, /No activity yet/, "and does not say that nothing is there");
+  } finally {
+    Object.assign(ctl, { sessWait: 0, sessions, added });
+  }
+  assert.doesNotMatch(draw("all"), /Zigs still reads some Solana/, "no such note after the check");
+}
+// More proposals than the Solana section shows: the list has the newest SHOWN and says so.
+function activityOlder(ctl, draw) {
+  const { sessions, added } = ctl;
+  const solRows = () => findAll(pageTree(), (n) => n.attrs?.["data-key"]?.startsWith("sol-act-m"));
+  const older = / Older Solana proposals are not listed\./;
+  try {
+    ctl.added = null;
+    ctl.sessions = Array.from({ length: SHOWN }, (_, i) => proposal("m" + i));
+    assert.equal(solRows().length, SHOWN, "the list shows each proposal that the section shows");
+    assert.doesNotMatch(draw("sol"), older, "and claims no older proposal");
+    ctl.sessions = Array.from({ length: SHOWN + 1 }, (_, i) => proposal("m" + i));
+    assert.equal(solRows().length, SHOWN, "the list shows the newest proposals only");
+    assert.match(draw("sol"), older, "a list with more proposals than the section says so");
+  } finally {
+    Object.assign(ctl, { sessions, added });
+  }
+}
 // The empty list says what the chain read is: finished (nothing there), not finished, or failed.
 function activityHistory(ctl, state, draw) {
   const ready = t.chain, loaded = ctl.loaded;
@@ -754,7 +833,15 @@ function activityHistory(ctl, state, draw) {
     createdAt: Date.now(), payees: [{ to: "utest1x", amount: 5000000 }], note: "Late rent" }];
   assert.match(draw("all"), /Late rent.*The sync failed\. This list can be incomplete/,
     "rows next to a failed sync: the list can lack received payments");
+  t.setChain(null);
+  assert.match(draw("all"), /Late rent.*Not synced yet\. Sync starts after this device checks/,
+    "rows before the sync starts: the note says when it starts");
   state.sessions = [];
+  const none = draw("all");
+  assert.match(none, /Not synced yet.*Sync starts after this device checks the address\./,
+    "an empty list before the sync starts says when it starts");
+  assert.doesNotMatch(none, /Reading the chain|No activity yet/,
+    "a sync that has not started is no sync in progress");
   t.setChain({ gid: state.gid, cw: null, bal: null, sent: null, received: [],
     error: "The server did not answer." });
   const first = draw("all");
@@ -764,7 +851,7 @@ function activityHistory(ctl, state, draw) {
   ctl.loaded = { ...loaded, solsessions: false };
   for (const pick of ["sol", "all"]) {
     const unread = draw(pick);
-    assert.match(unread, /Reading the Solana transactions.*show after the first read/,
+    assert.match(unread, /Reading the Solana transactions.*show after Zigs reads them/,
       "an unread Solana list says that it reads: " + pick);
     assert.doesNotMatch(unread, /No activity yet/,
       "an unread Solana list does not say that nothing is there: " + pick);
@@ -1861,6 +1948,15 @@ assert.match(marginText(3, 3), /Each payment needs every device/);
   assert.equal(fields.focused, true, "the reset of Change devices keeps the focus in the dialog");
   assert.equal(/If this wallet has a Solana part/.test(dialogText(t.state.g)), solOn(),
     "the Solana sentence only for a wallet with a Solana part");
+  const g = t.state.g;
+  t.state.g = { ...g, network: "mainnet" };
+  try {
+    assert.equal(solOn(), false, "a mainnet wallet gets no Solana part");
+    assert.doesNotMatch(dialogText(t.state.g), /Solana/,
+      "Change devices says nothing of Solana for a wallet with no Solana part");
+  } finally {
+    t.state.g = g;
+  }
 }
 
 // ── Two quick submits make one wallet: the review, Change devices and createGroup ──

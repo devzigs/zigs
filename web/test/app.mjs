@@ -4852,7 +4852,11 @@ const sealed = (gid, rel, seat, fields, key, names = ["by", "sig"]) =>
       assert.equal(amount0.attrs["aria-invalid"], String(refused),
         "the amount field is invalid exactly when the request refuses the amount: " + typed);
     }
-    assert.match(amount0.attrs["aria-describedby"], /fund-error/, "the field points at the note");
+    assert.equal(amount0.attrs["aria-describedby"], "fund-hint fund-warn fund-error",
+      "the field points at its notes");
+    // The label holds the caption and the field only: the notes are no part of its name.
+    const label0 = all(form0, (x) => x.tag === "label" && all(x, (y) => y === amount0).length)[0];
+    assert.equal(textOf(label0), "Amount in ZEC", "the name of the amount field is its caption");
     t.ui.personal.fund = "0.02";
     assert.equal(warnOf(t.fundBlock()).textContent, HIGH, "the form shows it when it is drawn");
     t.ui.personal.fund = "0.003";
@@ -5432,6 +5436,40 @@ async function runAcctSync() {
       from(a);
       press(true);
       assert.equal(document.activeElement, c, what + " is no stop at the start");
+    }
+    // A control of the layer that is no stop (tabindex -1) has the focus: Tab goes to the next
+    // stop after it, and Shift+Tab to the stop before it.
+    const quiet = control({ tabIndex: -1 });
+    open(a, quiet, c);
+    from(quiet);
+    press(false);
+    assert.equal(document.activeElement, c,
+      "Tab from a control of the layer that is no stop goes to the next stop");
+    from(quiet);
+    press(true);
+    assert.equal(document.activeElement, a, "Shift+Tab from it goes to the stop before");
+    open(a, c, quiet);
+    from(quiet);
+    press(false);
+    assert.equal(document.activeElement, a, "Tab from it after the last stop goes to the first");
+    open(quiet, a, c);
+    from(quiet);
+    press(true);
+    assert.equal(document.activeElement, c,
+      "Shift+Tab from it before the first stop goes to the last");
+    // A control before it that is no stop does not count: Tab and Shift+Tab still reach the stops
+    // next to it.
+    for (const [what, off] of [["a disabled control", control({ disabled: true })],
+      ["a control that is not shown", control({ getClientRects: () => [] })]]) {
+      open(a, off, quiet, c);
+      from(quiet);
+      press(false);
+      assert.equal(document.activeElement, c,
+        "Tab from it after " + what + " goes to the next stop");
+      from(quiet);
+      press(true);
+      assert.equal(document.activeElement, a,
+        "Shift+Tab from it after " + what + " goes to the stop before");
     }
     // The Close button of an open banner is a stop after the controls of the layer.
     const close = control();

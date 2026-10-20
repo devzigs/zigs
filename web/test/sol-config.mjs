@@ -2,7 +2,8 @@
 // the URL from the server answer only, keeps nothing in storage, says "not available" for a 503 or
 // a 404, and asks to check the connection for every other failure. When the server gives no
 // URL, the page loads nothing of Solana, says so once, and does not ask again at the next redraw.
-// Its diagnostics say that Zigs could not read the Solana part.
+// Before the load, its diagnostics name no Solana part. After the failed load, they say that Zigs
+// could not read the Solana part, and its Activity list says that Solana did not load.
 // Run: node web/test/sol-config.mjs   (Node 24)
 import assert from "node:assert/strict";
 import { NOT_LOADED, UNAVAILABLE, fetchRpcUrl } from "../sol/session.js";
@@ -26,6 +27,36 @@ const withFetch = async (make, body) => {
   }
 };
 const json = (value, status = 200) => () => Response.json(value, { status });
+
+// The text of the open wallet page, with a recorder in place of the stub page of the rig.
+class Rec extends Node {
+  constructor() {
+    super();
+    Object.assign(this, { kids: [], style: {}, attrs: {} });
+  }
+  setAttribute(k, v) {
+    this.attrs[k] = v;
+  }
+  addEventListener() {}
+  append(...nodes) {
+    this.kids.push(...nodes);
+  }
+}
+const textOf = (node) => node.text ?? node.kids.map(textOf).join("");
+function pageText(t) {
+  const real = globalThis.document;
+  globalThis.document = {
+    createElement: () => new Rec(),
+    createElementNS: () => new Rec(),
+    createTextNode: (text) => ({ text }),
+    documentElement: { dataset: {} },
+  };
+  try {
+    return textOf(t.groupView());
+  } finally {
+    globalThis.document = real;
+  }
+}
 
 // ── fetchRpcUrl ──
 {
@@ -68,6 +99,20 @@ const json = (value, status = 200) => () => Response.json(value, { status });
   config.down = true;
   const rig = await loadRig();
   const { t, waitFor } = rig;
+  // The page gets the Solana start documents only after `startDocs` ends, so the test can read
+  // the diagnostics before they arrive.
+  let arrive;
+  const startDocs = new Promise((ok) => {
+    arrive = ok;
+  });
+  const collection = rig.db.collection;
+  rig.db.collection = (path) => {
+    const ref = collection(path);
+    if (!path.endsWith("/solstart")) return ref;
+    const onSnapshot = (next, onError) =>
+      ref.onSnapshot((snap) => startDocs.then(() => next(snap)), onError);
+    return { ...ref, onSnapshot };
+  };
   const gid = await rig.wallet({ name: "Down" });
   await waitFor("the wallet", () => t.state.gid === gid && t.state.g);
   assert.equal(t.solOn(), true, "a testnet wallet is on");
@@ -78,6 +123,21 @@ const json = (value, status = 200) => () => Response.json(value, { status });
     return real(url, init);
   };
   try {
+    // Before the Solana tab draws, the module is not loaded. The start documents arrived and hold
+    // no start, so the diagnostics name no Solana part and count nothing of it.
+    const { diagnostics } = await import("../app-help.js");
+    await waitFor("the start watch", () => rig.live("groups/" + gid + "/solstart") > 0);
+    await sleep(50);
+    assert.match(diagnostics(), /^Solana part: not read yet$/m,
+      "before the start documents arrive, the diagnostics say not read yet");
+    arrive();
+    await sleep(50);
+    assert.equal(t.sol, null, "the module is not loaded yet");
+    const none = diagnostics();
+    assert.match(none, /^Solana part: not added$/m,
+      "a wallet with no start document has no Solana part");
+    assert.doesNotMatch(none, /^Solana (backup files|payments)/m,
+      "and the diagnostics count nothing of it");
     const tab = () => t.walletView([], null);
     t.ui.tab = "solana";
     tab();
@@ -86,11 +146,16 @@ const json = (value, status = 200) => () => Response.json(value, { status });
     assert.equal(t.sol, null, "nothing of Solana is attached");
     assert.match(t.banner.text, /Solana did not load: Solana is not available on this server/);
     // The diagnostics tell a failed load from a read that is still going (unified-setup.mjs).
-    const { diagnostics } = await import("../app-help.js");
     assert.match(diagnostics(), /^Solana backup files not saved: could not read$/m,
       "a failed Solana load says could not read");
     assert.match(diagnostics(), /^Solana payments to approve: could not read$/m,
       "and so does the count of payments");
+    assert.match(diagnostics(), /^Solana part: could not read$/m,
+      "the Solana part of a failed load says could not read");
+    t.ui.tab = "activity";
+    assert.match(pageText(t), /Solana did not load, so its transactions are not shown here\./,
+      "an Activity list says that Solana did not load");
+    t.ui.tab = "solana";
     for (let i = 0; i < 5; i++) tab();
     await t.solLoad();
     await sleep(100);

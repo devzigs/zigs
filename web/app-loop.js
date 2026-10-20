@@ -378,15 +378,31 @@ document.addEventListener("focusout", endCompose);
 const STOPS = FOCUSABLE + ", [tabindex]";
 // A control in a closed <details> has client rects in Chrome, so checkVisibility decides.
 const shown = (n) => n.getClientRects().length > 0 && (n.checkVisibility?.() ?? true);
-const tabStops = (root) => [...root.querySelectorAll(STOPS)]
-  .filter((n) => !n.disabled && n.tabIndex >= 0 && shown(n));
+const isStop = (n) => !n.disabled && n.tabIndex >= 0 && shown(n);
+const tabStops = (root) => [...root.querySelectorAll(STOPS)].filter(isStop);
 // The stops of the layer, then the Close button of an open banner, which shows above the layer.
 function loopStops(layer) {
   const banner = document.getElementById("banner");
   return [...tabStops(layer), ...(banner ? tabStops(banner) : [])];
 }
+// The stops of the layer before the focus, when the focus is on no stop. A focus outside the
+// layer, or on the layer itself, has none before it.
+function stopsBefore(layer) {
+  const all = [...layer.querySelectorAll(STOPS)], at = all.indexOf(document.activeElement);
+  return at < 0 ? 0 : all.slice(0, at).filter(isStop).length;
+}
+// Where Tab goes when the browser must not move the focus: round from an edge stop (`at`), or on
+// from a focus that is no stop (`at` -1). `back` is Shift+Tab.
+function loopTarget(layer, stops, at, back) {
+  const last = stops.length - 1;
+  if (at >= 0) return stops[back ? last : 0];
+  const before = stopsBefore(layer);
+  if (back) return stops[before > 0 ? before - 1 : last];
+  return stops[before <= last ? before : 0];
+}
 /** Tab goes round in the open dialog or drawer: from its last control to its first, and Shift+Tab
- * from its first to its last. Focus on the layer itself or outside it goes in. */
+ * from its first to its last. From a control of the layer that is no stop, Tab goes to the next
+ * stop and Shift+Tab to the stop before. Focus on the layer itself or outside it goes in. */
 export function layerTab(ev) {
   const layer = document.querySelector(".dialog, .drawer");
   if (ev.key !== "Tab" || !layer) return;
@@ -397,11 +413,9 @@ export function layerTab(ev) {
     layer.focus();
     return;
   }
-  const last = stops.length - 1;
-  const edge = ev.shiftKey ? at <= 0 : at === -1 || at === last;
-  if (!edge) return;
+  if (at >= 0 && (ev.shiftKey ? at > 0 : at < stops.length - 1)) return;
   ev.preventDefault();
-  stops[ev.shiftKey ? last : 0].focus();
+  loopTarget(layer, stops, at, ev.shiftKey).focus();
 }
 document.addEventListener("keydown", layerTab);
 document.addEventListener("keydown", (ev) => {

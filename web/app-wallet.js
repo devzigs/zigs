@@ -34,8 +34,8 @@ import { themeChoice } from "./app-theme.js";
 import { helpView } from "./app-help.js";
 import {
   sol, solActivity, solBackup, solBalance, solError, solFile, solLoad, solLoading,
-  solLoadingCount, solOlderCount, solOn, solPending, solPendingRows, solSetup, solSync, solTab,
-  solUnsaved,
+  solActivityWaits, solLoadingCount, solOlderCount, solOn, solPending, solPendingRows, solSetup,
+  solSync, solTab, solUnsaved,
 } from "./app-sol.js";
 import { pendingShortcut, solRow, zecInProgress, zecTotal } from "./overview-model.js";
 import { protectionRisk, recoveryState } from "./recovery-model.js";
@@ -439,21 +439,25 @@ const EMPTY = {
   sol: "Solana " + DEVICES + " show up here.",
 };
 
-// The history of the Zcash side: "failed" after a failed sync, "syncing" before a sync finished.
+// The history of the Zcash side: "waiting" before the sync of this wallet starts, "failed" after a
+// failed sync, "syncing" before a sync finished.
 function historyState() {
   const c = curChain();
-  if (c?.error) return "failed";
+  if (!c) return "waiting";
+  if (c.error) return "failed";
   return chainReady(c) ? "ready" : "syncing";
 }
 const HISTORY = {
+  waiting: ["Not synced yet", "Sync starts after this device checks the address."],
   syncing: ["Reading the chain", "Payments you received show after the first sync."],
   failed: ["The sync failed", "This list can be incomplete. Use Refresh in the ZEC card on the "
     + "Overview."],
 };
 const SOL_READING = ["Reading the Solana transactions",
-  "Solana payments of this wallet show after the first read."];
-// The Solana rows of a wallet with a Solana part are not read yet.
-const solReading = (pick) => pick !== "zec" && solPart() && solActivity() === null;
+  "Solana payments of this wallet show after Zigs reads them."];
+// The Solana rows of a wallet with a Solana part are not read yet, or not all checked yet.
+const solReading = (pick) => pick !== "zec" && solPart()
+  && (solActivity() === null || solActivityWaits());
 // The heading and the text of an empty list. Only a finished read can say that nothing is there.
 function emptyText(pick) {
   const state = pick === "sol" ? "ready" : historyState();
@@ -518,9 +522,11 @@ function solNoteText() {
   const status = solSetup()?.status;
   if (!solPart() || status === "running") return SOL_LOST[status];
   if (solActivity() === null) return "Reading the Solana transactions…";
-  return SOL_ACTIVITY_NOTE
-    + (solOlderCount() > 0 ? " Older Solana proposals are not listed." : "");
+  return SOL_ACTIVITY_NOTE + solLacks();
 }
+// The Solana rows that the list lacks: older proposals, and proposals that wait for their check.
+const solLacks = () => (solOlderCount() > 0 ? " Older Solana proposals are not listed." : "")
+  + (solActivityWaits() ? " Zigs still reads some Solana proposals, so more rows can show." : "");
 function activityNote(pick) {
   const text = pick === "zec" ? null : solNoteText();
   return text ? noteRow(text) : null;
