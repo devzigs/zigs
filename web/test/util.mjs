@@ -145,10 +145,10 @@ const made = makePassphrase(crypto.getRandomValues(new Uint8Array(30)));
 assert.match(made, /^([0-9a-hjkmnp-tv-z]{5}-){5}[0-9a-hjkmnp-tv-z]{5}$/);
 assert.equal(passIssue(made, made), "");
 
-assert.equal(backupName("Team treasury", 2), "zigs-Team-treasury-seat-2.zigsbackup");
-assert.equal(backupName("  Ops / 2026!  ", 1), "zigs-Ops-2026-seat-1.zigsbackup");
-assert.equal(backupName("\u65e5\u672c", 3), "zigs-wallet-seat-3.zigsbackup");
-assert.equal(backupName("", 1), "zigs-wallet-seat-1.zigsbackup");
+assert.equal(backupName("Team treasury", 2), "zigs-Team-treasury-device-2.zigsbackup");
+assert.equal(backupName("  Ops / 2026!  ", 1), "zigs-Ops-2026-device-1.zigsbackup");
+assert.equal(backupName("\u65e5\u672c", 3), "zigs-wallet-device-3.zigsbackup");
+assert.equal(backupName("", 1), "zigs-wallet-device-1.zigsbackup");
 
 // A restore takes only the allowed fields of a seat secret. Wallet checks, setup state, `uid` and
 // `nonces` of a file are dropped, and so is a name that could reach the prototype.
