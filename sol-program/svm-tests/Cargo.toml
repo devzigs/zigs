@@ -2,7 +2,7 @@
 name = "zigs-min-multisig-svm-tests"
 version = "0.1.0"
 edition = "2021"
-license = "MIT"
+license = "AGPL-3.0-only"
 publish = false
 
 # The tests run the SBF builds of the program and of the stub pool in LiteSVM, as the Zolana

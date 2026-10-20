@@ -85,10 +85,10 @@ Try it alone, from one desktop browser (the README has every step):
    Click **Review wallet**, then **Create wallet**.
 2. Open **Trying Zigs alone? Play the other devices in this browser** and click **Play device 2**.
    Within half a minute the wallet opens, and the Solana key follows by itself.
-3. Click **Receive** and get test coins from the faucet link, then click **Send**, **Review
-   payment** and **Propose payment**. Click **Approve as seat 1** and **Approve as seat 2**, then
-   **Build proof** and **Send to network**. For Solana, click **Open Solana** and follow steps 9 to
-   12 of the README.
+3. Click **Receive** and get test coins from the faucet link. Click **Send**, paste a `utest1`
+   address and an amount, then click **Review payment** and **Propose payment**. Click **Approve
+   as device 1** and **Approve as device 2**, then **Build proof** and **Send to network**. For
+   Solana, click **Open Solana** and follow steps 9 to 12 of the README.
 
 ## 5. Video script: 2 minutes
 
@@ -102,8 +102,8 @@ docs/demo.md section 3 (Demo A, Payee, the fee addresses and Add SOL) before the
 | 0:00 | The start screen of app.zigs.app | "Zigs is a shared wallet for shielded Zcash and private SOL. It runs on Zcash testnet and Solana Devnet, and it is not audited." | |
 | 0:10 | **Set up a wallet**, the rule any 2 of 3 devices, **Also set up Solana Devnet**, **Create wallet**. Cut to the other devices that join and click **It matches** | "Each device makes its own key share. One setup makes the Zcash key and the Solana key. Nobody holds the whole key." | |
 | 0:30 | Demo A: the Zcash balance. **Send**: type the demo name, or paste the Payee address. **Review payment** | "The review is what this device decoded from the transaction itself." | Yes |
-| 0:45 | **Propose payment**. A second device clicks **Approve payment**. **Build proof** (cut the wait) | "Any 2 of 3 devices approve. Each one checks the payee and the amount before it signs." | Yes |
-| 1:00 | **Send to network**, **View in explorer** | "On chain, this looks like a payment from a standard Zcash wallet. Nothing shows that a group signed it." | Yes |
+| 0:45 | **Propose payment**. Device 1 and a second device each click **Approve payment**. **Build proof** (cut the wait) | "Any 2 of 3 devices approve. Each one checks the payee and the amount before it signs." | Yes |
+| 1:00 | **Send to network**, **View in explorer** | "On chain, this has the shape of a payment from a standard Zcash wallet, except its one-day expiry and an optional priority fee, which can mark it. Nothing shows that a group signed it." | Yes |
 | 1:10 | **Open Solana** on Demo A: the private balance. **Send privately** to the Payee address. Two devices approve | "The same devices approve a private SOL payment in the Zolana pool." | Yes |
 | 1:30 | The status **Executed** and its explorer link | "The amount is hidden. The owner key of the payee, the group and the fee address that pays are public." | Yes |
 | 1:40 | The card **Local proving** | "By default the hosted prover of Helius sees each Solana spend. With local proving on, the proof runs on the device." | |
