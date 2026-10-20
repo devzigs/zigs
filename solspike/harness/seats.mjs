@@ -1,8 +1,9 @@
 // Three seats in three in-memory contexts of one Chrome (the rig), up to a Solana part that every
 // page shows as ready: a 2-of-3 testnet wallet, the second DKG of web/sol, one group key. Used by
 // scenario-e.mjs. scenario-d.mjs keeps its own copy of the other first steps (it is the verified
-// P8d check), and takes makeWallet from here. Nothing here reads a secret: the pages show public
-// values only.
+// P8d check), and takes makeWallet from here. makeWallet reads the invite link, which holds the
+// wallet secret, from the text of the invite card, and zcashWallet opens the other seats with it.
+// No other function here reads a secret: the pages show public values only.
 import { sleep, waitFor } from "./chrome.mjs";
 import { clickText, run, setInput, waitForText } from "./page.mjs";
 import { ORIGIN } from "./server.mjs";
@@ -41,7 +42,7 @@ export async function makeWallet(page, name, { solana = false } = {}) {
   }, solana);
   await clickText(page, "Review wallet");
   await waitForText(page, "Review your wallet");
-  // The welcome card behind the dialog has a "Create wallet" button too.
+  // The last step has a "Create wallet" button. The run takes it from the dialog form.
   await run(page, () => document.querySelector("form[role=dialog] button[type=submit]").click());
   const shown = () => run(page, () => !!document.querySelector(".addr-box .hex"));
   await waitFor(shown, 30000, () => "the invite link");
