@@ -29,8 +29,8 @@ is a bug: please report it.
   a shielded transaction. The account, its contacts and its messages never reach the group
   server. The light-wallet server sees the transactions that the account fetches and sends, and
   your IP address.
-- A testnet payment to a ZNS name (web app only, not finished), such as `alice.zec`, looks the
-  name up on the device, in a copy of the whole name registry that the app Worker downloads. No
+- A testnet payment to a ZNS name (web app only), such as `alice.zec`, looks the name up on the
+  device, in a copy of the whole name registry that the app Worker downloads. No
   server learns which name you pay. The registry itself is public: anyone can see which address a
   name gives. Read [ZNS names](#zns-names-testnet).
 
@@ -183,10 +183,10 @@ id that you open, and the time, so it can link them. The page sends no referrer.
 
 ## ZNS names (testnet)
 
-**Status on 18 October 2026:** the Send form takes a name and looks it up on the device
-(`web/zns.js`), in the copy that `/zns` serves. An approving web app checks the name again (M10 of
-[docs/hackathon-release.md](docs/hackathon-release.md)). A live testnet payment to a name is not
-done yet.
+**Status:** done (M10 of [docs/hackathon-release.md](docs/hackathon-release.md)). The Send form
+takes a name and looks it up on the device (`web/zns.js`), in the copy that `/zns` serves. An
+approving web app checks the name again. A live testnet payment to a name landed on 19 October
+2026.
 
 On testnet, the Send form of the web app accepts a ZNS name in place of an address: `alice`,
 `alice.zec` or `alice.zcash`. ZNS is the naming service of Zcash Names (zcashnames.com), which
