@@ -1,5 +1,5 @@
 {
-  "baseCommit": "23aae6bf55d290e3892cfe94982880c1d0532b28",
+  "baseCommit": "da3c03b7fb112dd071f9b5ddb41d35a72737b992",
   "node": "v24.11.0",
   "tests": {
     "web/test/chat.mjs": {
@@ -123,6 +123,9 @@
       "exit": 0
     },
     "web/test/sol-nonce-tabs.mjs": {
+      "exit": 0
+    },
+    "web/test/no-storage.mjs": {
       "exit": 0
     },
     "cf/test/gate.mjs": {
