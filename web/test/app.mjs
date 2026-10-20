@@ -2073,6 +2073,27 @@ const sealed = (gid, rel, seat, fields, key, names = ["by", "sig"]) =>
       }
       t.signPins[solKey] = "testnet";
       assert.equal(t.solOn(), true, "a wallet that can have a Solana part");
+      // Its start documents say that it never added Solana: no place names a Solana part.
+      // With no seat here, Recovery reads no Solana file, so it loads no Solana module.
+      const recoveryText = () => {
+        const seatsHere = t.secrets;
+        Object.assign(t, { secrets: {} });
+        t.ui.tab = "recovery";
+        try { return textOf(t.walletView(null, null)); } finally {
+          t.ui.tab = "overview";
+          Object.assign(t, { secrets: seatsHere });
+        }
+      };
+      const stays = /If this wallet has a Solana part, it does not move this way/;
+      const names = () => [stays.test(t.moveState(emptied()).text), stays.test(devicesText()),
+        /a Solana part does not move this way/.test(recoveryText()),
+        stays.test(textOf(t.createDialog(t.state.g)))];
+      assert.deepEqual([t.solNotAdded(), ...names()], [true, false, false, false, false],
+        "a wallet that never added Solana names no Solana part");
+      // Before its start documents are read, the sentence shows: it holds either way.
+      t.resetSolStart();
+      assert.deepEqual([t.solNotAdded(), ...names()], [false, true, true, true, true],
+        "a wallet that may have a Solana part names it everywhere");
       m = t.moveState(emptied());
       assert.match(m.text, /^The Zcash funds moved to .+, as of the last sync\./);
       assert.match(m.text, SOL_STAYS, "a move with a Solana part says that this part stays");
@@ -2088,6 +2109,19 @@ const sealed = (gid, rel, seat, fields, key, names = ["by", "sig"]) =>
     t.state.sessions.splice(t.state.sessions.indexOf(sentMove), 1);
     t.state.g = group;
     delete t.ready.MV1;
+    // The start documents of the wallet are read again: it never added Solana. The read draws
+    // the page, so it runs under the stub page.
+    {
+      const drawing = globalThis.document;
+      globalThis.document = realDocument;
+      try {
+        t.solAttach(t.state.gid, "groups/" + t.state.gid);
+        await waitFor("the start documents", () => t.solNotAdded());
+        await sleep(300);
+      } finally {
+        globalThis.document = drawing;
+      }
+    }
 
     {
       // A redraw keeps an open secret link open by its link, and never opens the secret link of
@@ -2604,6 +2638,13 @@ const sealed = (gid, rel, seat, fields, key, names = ["by", "sig"]) =>
         && textOf(x).includes("Proof"))[0]);
       assert.ok(proofOf(signedA).endsWith("Not seen on this page."),
         "a page that cannot tell says only what it saw");
+      // Step 6 there too, but a finished transaction past its expiry + 3 is in no synced block.
+      const blockOf = (ss) => textOf(all(t.sessionLayer(ss), (x) => /^step /.test(x.className ?? "")
+        && textOf(x).includes("In a block"))[0]);
+      assert.ok(blockOf(signedA).endsWith("Not seen on this page."),
+        "under It may still go on chain, step 6 says only what this page saw");
+      assert.ok(blockOf({ ...okA, final: { txid: "tx-a", tx_hex: "00" } }).endsWith("Not done."),
+        "a finished transaction past its expiry + 3 is in no block");
       t.setChain({ ...t.chain, cw: null });
       assert.match(blockStep(landedA), /In a blockThis page has not synced the blocks since you /,
         "before a sync the page does not say that no block holds it");
@@ -2668,6 +2709,8 @@ const sealed = (gid, rel, seat, fields, key, names = ["by", "sig"]) =>
           "the stop reason sits in the steps");
         assert.ok(textOf(stop.step("Proof")).endsWith("Not done."),
           "a stop after a sync here: not done");
+        assert.equal(textOf(t.statusChip({ ...open("hd2", "PA"), status: "cancelled",
+          error: "Cancelled." })), "Cancelled", "a synced stop keeps the chip of its status");
         const unsure = /^Check the paymentThis page cannot tell whether a device sent it\. Check /;
         const failedSigned = { ...okA, id: "hd3", status: "failed", error: "Failed." };
         assert.match(look(failedSigned).head, unsure,
@@ -2676,6 +2719,8 @@ const sealed = (gid, rel, seat, fields, key, names = ["by", "sig"]) =>
           "a stopped payment with a signed part has no step that waits");
         assert.ok(textOf(look(failedSigned).step("Proof")).endsWith("Not seen on this page."),
           "an error after signing: not seen on this page");
+        assert.deepEqual([look(failedSigned).chip, textOf(t.statusChip(failedSigned))],
+          ["Check", "Check"], "the chip asks for a check when the headline does");
         // An approval here, then a cancel before the package: the hold of the approval ended
         // (this mark has no height), and still the page cannot tell.
         await t.putSec(t.state.gid, me, { marks: { ...t.sec(t.state.gid, me).marks,
@@ -2697,6 +2742,8 @@ const sealed = (gid, rel, seat, fields, key, names = ["by", "sig"]) =>
         at(4500100, new Set(), 0);
         assert.match(look({ ...open("hd2", "PA"), status: "cancelled", error: "Cancelled." }).head,
           unsure, "headline: a restored state is no sync of this page");
+        assert.equal(textOf(t.statusChip({ ...open("hd2", "PA"), status: "cancelled",
+          error: "Cancelled." })), "Check", "a stop before a sync of this page reads Check");
         assert.match(look(lateSent()).head, /^Waiting for a blockA device sent it\. This page has /,
           "headline: a restored state is no sync since the send");
         assert.ok(textOf(look(lateSent()).step("In a block")).endsWith("This page has not synced "
@@ -2727,6 +2774,7 @@ const sealed = (gid, rel, seat, fields, key, names = ["by", "sig"]) =>
         const resetOne = look(open("hd7", "PA"));
         assert.match(resetOne.head, /^Check the paymentThis browser saw the signing start, and /,
           "headline: one device reset the signing seen here");
+        assert.equal(resetOne.chip, "Check", "the chip of a lost signing asks for a check");
         assert.deepEqual(resetOne.now, [], "a reset keeps no approvals step that waits");
         assert.match(resetOne.text, /a device or the server reset it/);
         assert.match(resetOne.text, /saw the signing of this payment start, but the payment does /,
@@ -2779,6 +2827,10 @@ const sealed = (gid, rel, seat, fields, key, names = ["by", "sig"]) =>
           "a move that does not pay its list is a mismatch");
         assert.deepEqual(moveList.now, [], "a mismatch keeps no approvals step that waits");
         t.secrets["MVX:1"] = { checkedWallet: JSON.stringify({ address: "utest1x" }) };
+        assert.deepEqual([t.solOn(), t.solNotAdded(),
+          look({ ...open("hd8", "PA"), move: "MVX" }).text.includes("Solana part")],
+        [true, true, false], "a move of a wallet that never added Solana names no Solana part");
+        t.resetSolStart();   // the start documents are not read: the sentence shows
         const moveOk = look({ ...open("hd8", "PA"), move: "MVX" });
         assert.match(moveOk.head, /^Your approval is needed/,
           "a move to the checked address asks for an approval");
@@ -2829,6 +2881,11 @@ const sealed = (gid, rel, seat, fields, key, names = ["by", "sig"]) =>
         assert.deepEqual(late.now, [], "a payment too late to send has no step that waits");
         assert.ok(textOf(late.step("In a block")).endsWith("Not done."),
           "too late to send: not done in a block");
+        at(4503453, new Set(), 0);
+        assert.ok(textOf(look(doneA).step("In a block")).endsWith("This page has not synced the "
+          + "blocks since you opened this wallet."),
+        "too late with a restored state: step 6 says that this page has not synced");
+        at(4503453);
         assert.match(textOf(late.step("Sent to the network")), /can no longer go to the network/);
         // A sent mark with a false id waits for its block, under the false id note.
         at(4500100);
@@ -3047,7 +3104,8 @@ const sealed = (gid, rel, seat, fields, key, names = ["by", "sig"]) =>
       put(failedA);
       at(4500101);
       assert.equal(t.inFlight().includes(failedA), true, "an error part frees nothing");
-      assert.equal(textOf(t.statusChip(failedA)), "Confirming");
+      assert.equal(textOf(t.statusChip(failedA)), "Confirming",
+        "an error part that an approval here holds reads Confirming");
       assert.match(headOf(failedA), /^Stopped, but it may still go on chain/,
         "an approval here holds Send, so the stop is not the end");
       const resetA = open("za", "PB");

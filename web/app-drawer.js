@@ -17,15 +17,14 @@ import {
   heldApprovals, holdEnd, inspectOf, landed, releaseHold,
   approvalChanged, noApproval, priorityTimes, proofStalled, proposeAgain, recipientCheck, resendTx,
   sendRefusal, signingLost, signingSeen, signingStarted, tooLate, firstApprovers, refusedFinal,
-  approvedTxid, chainReady, markOf, sinceOf, verdict,
+  approvedTxid, markOf, sinceOf, stoppedHere, syncedHere, verdict,
 } from "./app-payments.js";
 import { discussion } from "./app-thread.js";
 import { nameOf, zecName } from "./zns.js";
 import { render } from "./app-loop.js";
 import { RESEND_MS, stageHeadline } from "./payment-model.js";
 import { icon } from "./app-icons.js";
-import { solOn } from "./app-sol.js";
-import { SOL_STAYS } from "./app-wallet.js";
+import { solStays } from "./app-wallet.js";
 
 // The expiry of an open payment, or why an expired one ends here. The engine counts from the
 // last sync, so the time since that sync comes off. A height from saved state gives no time.
@@ -151,14 +150,12 @@ function moveNote(ss, rc) {
   if (rc.intoNew) {
     return el("div", { class: "callout" }, "This moves the confirmed Zcash funds to "
       + groupName(ss.move) + ", the wallet that replaces this one. Your browser checked its "
-      + "address." + solPart());
+      + "address." + solStays());
   }
   return el("div", { class: "callout" }, "This moves the confirmed Zcash funds to a new wallet "
     + "that replaces this one. Your browser has no checked copy of its address, so it cannot "
-    + "check it." + solPart());
+    + "check it." + solStays());
 }
-// The move takes the Zcash funds only (proposeMove).
-const solPart = () => (solOn() ? " " + SOL_STAYS : "");
 
 // The seats of this browser that can approve the payment now. None while the wallet's data is
 // being checked: an approval written twice would replace its own nonces.
@@ -537,8 +534,13 @@ function waitTexts(ss) {
   const over = expired(ss) || tooLate(ss) || !!ss.error;
   if (!over) return { over, wait: null, block: null };
   const known = knownUndone(ss);
-  return { over, wait: known ? NOT_DONE : NOT_SEEN,
-    block: known || ended(ss) ? NOT_DONE : NOT_SEEN };
+  return { over, wait: known ? NOT_DONE : NOT_SEEN, block: blockWait(ss, known) };
+}
+// Step 6 before a sent mark. A device may have sent a payment that is too late to send now, so
+// only a sync of this page says that no block holds it.
+function blockWait(ss, known) {
+  if (tooLate(ss) && !syncedHere()) return UNSYNCED;
+  return known || ended(ss) ? NOT_DONE : NOT_SEEN;
 }
 // An unsigned payment that expired, a stop after a sync of this page, or too late to send.
 const knownUndone = (ss) => (expired(ss) && !signingSeen(ss)) || stoppedHere(ss) || tooLate(ss);
@@ -604,11 +606,7 @@ const sentLine = (ss) => [el("p", {}, when(ss.broadcastAt) + " · ", el("a", {
 el("p", { class: "small" }, explorerText(curNet(), "View in explorer"))];
 
 // The last step, from this browser's synced blocks only: a sent mark does not say that a block
-// holds the payment, and before a sync the page does not know. A state restored from storage is
-// ready (chainReady) before this page synced: only a sync of this page counts (balAt).
-const syncedHere = () => chainReady(curChain()) && !!curChain().balAt;
-// An error before any signing here, after a sync of this page: no device can send it.
-const stoppedHere = (ss) => !!ss.error && !signingSeen(ss) && syncedHere();
+// holds the payment, and before a sync of this page (syncedHere) the page does not know.
 const UNSYNCED = "This page has not synced the blocks since you opened this wallet.";
 const blockStep = (ss) => landed(ss) ? "done" : ss.broadcastTxid ? "now" : "";
 function blockText(ss, block) {

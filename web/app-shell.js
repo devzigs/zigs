@@ -18,13 +18,13 @@ import {
 import { contactName, contactOf, joinChat, joinLinks, unreadIn } from "./app-messages.js";
 import { createGroup } from "./app-dkg.js";
 import {
-  newWallet, planSolana, SOL_DISCLOSURE, solOn, solPending, solServed,
+  newWallet, planSolana, SOL_DISCLOSURE, solPending, solServed,
 } from "./app-sol.js";
 import { personal } from "./app-account.js";
 import { restore } from "./app-backups.js";
 import { contactItem, contactsCard, openContactDialog, personalCard } from "./app-account-view.js";
 import { focusAfter, once, render } from "./app-loop.js";
-import { currentSection, moveWord, SOL_STAYS, walletSections, walletShown } from "./app-wallet.js";
+import { currentSection, moveWord, solStays, walletSections, walletShown } from "./app-wallet.js";
 import { icon } from "./app-icons.js";
 import { themeChoice } from "./app-theme.js";
 
@@ -448,7 +448,7 @@ const moveParts = (from, nameParts, ruleParts) => [el("ol", { class: "small mute
 // The funds that move: Change devices moves the Zcash funds only, so a wallet with a Solana part
 // is told to check that part on its own.
 const moveFundsText = (from) => "This wallet sends all its Zcash funds to the new one. Like any "
-  + "payment, this needs " + from.t + " approvals." + (solOn() ? " " + SOL_STAYS : "");
+  + "payment, this needs " + from.t + " approvals." + solStays();
 // What a rule means when devices are lost: how many can be missing, and how many can spend. With
 // every device needed, one lost device stops the wallet.
 export const marginText = (t, n) => (t === n ? "Each payment needs every device. When one "

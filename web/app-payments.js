@@ -981,6 +981,10 @@ export const approvedSpent = (ss) => !!markOf(state.gid, ss.id).approved
   && verdict(ss)?.spent === true;
 /** The chain of the open wallet synced: before, no hold of an approval is known. */
 export const chainReady = (c) => !!(c && c.cw && c.bal && c.sent);
+/** A sync of this page: a state restored from storage is ready (chainReady) before it. */
+export const syncedHere = () => chainReady(curChain()) && !!curChain().balAt;
+/** An error before any signing here, after a sync of this page: no device can send it. */
+export const stoppedHere = (ss) => !!ss.error && !signingSeen(ss) && syncedHere();
 const verdicts = new Map();
 
 // The state of a payment from the engine once its signing started (TICKETS.md ZEC-13): "done",
