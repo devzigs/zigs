@@ -1,5 +1,5 @@
 // The payment drawer.
-import { finite, fmtInt } from "./util.js";
+import { deviceWords, finite, fmtInt } from "./util.js";
 import { busy, log, showBanner, state, ui } from "./app-state.js";
 import { about, elapsed, fmtZec, J, short, when, zecText } from "./app-kit.js";
 import { sec } from "./app-keystore.js";
@@ -63,7 +63,7 @@ function heightLine(ss, v, e) {
 // The signing started, so only the engine can say that the payment expired, and it does not.
 // `at` is null when this browser approved but no longer has the approved transaction.
 function checkLine(at, v) {
-  const why = v ? el("p", { class: "small" }, "Why: " + v.why + ".") : null;
+  const why = v ? el("p", { class: "small" }, "Why: " + deviceWords(v.why) + ".") : null;
   const when = at ? "This payment expired at " + at : "The payment that this browser approved "
     + "can no longer go on chain";
   return el("div", { class: "callout bad" }, when + ", and no synced block holds the "

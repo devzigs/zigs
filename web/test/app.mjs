@@ -2496,6 +2496,10 @@ const sealed = (gid, rel, seat, fields, key, names = ["by", "sig"]) =>
       at(4506917);
       assert.equal(t.expired(zj), true);
       assert.match(textOf(t.expiryLine(zj)), /can no longer go on chain/);
+      answer = () => ({ state: "unknown", txid: "tx-a", why: "seat 2 may still send it" });
+      at(4506917);
+      assert.match(textOf(t.expiryLine(zj)), /Why: device 2 may still send it\./,
+        "the engine reason of the check says device");
 
       // A verdict of "done" counts again after a sync without its txid (a reorganisation).
       answer = () => ({ state: "done", txid: "tx-a", why: "a synced block holds it" });

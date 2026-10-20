@@ -8,7 +8,7 @@
 import assert from "node:assert/strict";
 import { createPrivateKey, createPublicKey, sign } from "node:crypto";
 import { addSol } from "../sol/addsol.js";
-import { feeSignature, reviewOf } from "../sol/approve.js";
+import { feeSignature, refusalText, reviewOf } from "../sol/approve.js";
 import { base58 } from "../sol/docs.js";
 import { feeMismatch, feeOf, readyFee } from "../sol/fee.js";
 import { readySeat } from "../sol/gate.js";
@@ -540,5 +540,9 @@ step("a proposal from before the fee keys is read as it was and is never sent ag
   assert.equal(sessions(), before, "nothing was proposed");
 }
 step("Propose and Add SOL use the first seat of this browser that is ready, and say which");
+// The checker names seats and signers in its rules and details; the page says device.
+assert.equal(refusalText({ rule_list: () => "" }, "refused\nX-test\tseat 2 signed twice"),
+  "This browser refused the proposal. X-test (device 2 signed twice)",
+  "a refusal of the checker says device");
 console.log("sol-fee: ok");
 process.exit(0);
