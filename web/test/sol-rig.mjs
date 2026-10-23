@@ -47,6 +47,7 @@ Object.assign(globalThis, {
   document: stub(),
   history: { replaceState() {} },
   requestAnimationFrame: () => 0,
+  cancelAnimationFrame: () => {},
   matchMedia: () => ({ matches: false }),
   location: { hash: "", href: "http://localhost/", origin: "http://localhost" },
   localStorage: {
