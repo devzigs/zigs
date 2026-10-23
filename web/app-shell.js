@@ -7,7 +7,7 @@ import { offReason } from "./util.js";
 import { engineSettled, Z } from "./app-engine.js";
 import {
   acknowledgeUnprotectedSetup, canSkipPasskeyProtection, chats, forgetVault, lockedVault,
-  lockWithPasskey, mySeatSecrets, passkeyProtected, requireSetupProtection,
+  lockWithPasskey, mySeatSecrets, passkeyProtected, protectionUnverified, requireSetupProtection,
   setupProtectionReady, storageOk, unlockVault, vault,
 } from "./app-keystore.js";
 import { joinWalletLink, openChat } from "./app-links.js";
@@ -78,7 +78,8 @@ export function renderSide() {
       el("button", { class: "icon-btn", type: "button", title: "New wallet", "aria-label": "New wallet", onclick: () => { ui.tab = "overview"; newWallet(); } }, "+")),
     ...testWalletEntry("sidebar"),
     ...(state.groups.length ? state.groups.map((g) => guard(sideItem, g))
-      : [el("p", { class: "side-empty" }, sideEmpty())]));
+      : [el("p", { class: "side-empty" }, sideEmpty())]),
+    el("p", { class: "side-note", "data-key": "release-note" }, BETA_NOTE));
   // Any pick in the list closes the phone menu; the button's own action runs first.
   nav.onclick = (ev) => { if (ev.target.closest("button")) ui.menu = false; };
   document.querySelector(".side").classList.toggle("menu-open", !!ui.menu);
@@ -172,6 +173,10 @@ function chatItem(cid) {
   el("span", { class: "side-tail" }, unreadChip(unreadIn(cid))));
 }
 
+// The release scope, on every page of the shell and on the welcome card.
+const BETA_NOTE = "Beta: Zcash testnet and Solana Devnet. Not audited.";
+const TEST_ONLY = "New wallets use test networks only: Zcash testnet and Solana Devnet. Zigs is "
+  + "not audited.";
 const sideEmpty = () => lockedVault ? "Locked." : dbReady ? "No wallets yet." : "Connecting…";
 
 function sideItem(g) {
@@ -254,7 +259,7 @@ function lockButton() {
 
 let protectionPending = false, protectionError = "", skipProtectionAsk = null;
 const protectionAvailable = () => storageOk && !!window.PublicKeyCredential
-  && !!navigator.credentials && !!navigator.locks?.request;
+  && !!navigator.credentials;
 const protectionAttrs = (context, value) => ({ class: "device-protection",
   "data-motion-watch": "passkey:" + context, "data-motion-value": value });
 const protectionMark = () => el("span", { class: "protection-status-mark",
@@ -325,7 +330,7 @@ export function deviceProtection(context = "setup", onReady = null) {
     el("p", { class: "small", role: "status" }, protectionMark(), "Protecting this device… Wait while the encrypted copy is checked."));
   if (vault && !passkeyProtected()) return el("div", protectionAttrs(context, "error"),
     el("p", { class: "callout bad", role: "alert" }, protectionMark(), protectionError || "Passkey protection has not finished."),
-    el("p", { class: "small muted" }, "Protection did not finish. Keep this tab open and save this device’s recovery files. Do not repeat locking over an incomplete saved copy; check the browser’s storage permissions before reopening Zigs."));
+    el("p", { class: "small muted" }, "Protection did not finish. Keep this tab open and save this device’s recovery files. Do not repeat locking over an incomplete saved copy; check the browser’s storage permissions before reopening Zigs. You can go on: new key shares are saved in the passkey-protected copy."));
   if (passkeyProtected()) return el("div", protectionAttrs(context, "verified"),
     el("p", { class: "small ok", role: "status" }, protectionMark(), "This browser’s shares are protected by its passkey."),
     el("p", { class: "small muted" }, "Unlocking this browser is separate from authorizing a payment with another device."));
@@ -614,7 +619,7 @@ function welcome(off, restoreLink) {
     "aria-labelledby": "welcome-title" },
     el("header", { class: "home-masthead" },
       el("span", { class: "label" }, "ZIGS · PRIVATE BY DESIGN"),
-      el("span", { class: "home-environment" }, "New wallets · Test networks")),
+      el("span", { class: "home-environment" }, "Beta · Not audited · Test networks")),
     el("div", { class: "welcome-main home-hero", "data-home-hero": "" },
       el("div", { class: "welcome-brand", "aria-hidden": "true" },
         el("img", { class: "home-hero-art", src: "/logo.png?v=e2a70c42", alt: "",
@@ -638,7 +643,8 @@ function welcome(off, restoreLink) {
         el("h3", {}, "Separate shares. ", el("span", {}, "Shared confidence.")),
         el("p", {}, "Each device holds a separate key share. Payments need the approvals set by your wallet’s rule.")) : null) : null,
     wallets ? entryPaths : null,
-    explanation);
+    explanation,
+    el("p", { class: "small faint home-release-note" }, TEST_ONLY));
 }
 
 // The form that opens a wallet from a pasted invite link. The field has no name and the handler
@@ -1008,8 +1014,7 @@ function reviewStep() {
         el("dl", { class: "kv" }, row("Wallet name", d.name || "Treasury"),
           d.description ? row("Private description", d.description) : null,
           row("This device's label", d.label || "None. The other devices show Device 1."),
-          row("Browser protection", passkeyProtected() ? "Passkey protected" : setupProtectionReady()
-            ? "Skipped · no passkey encryption" : "Protection choice needed")),
+          row("Browser protection", protectionLabel())),
         full ? el("p", { class: "callout warn" }, marginText(d.t, d.n))
           : el("p", { class: "small muted" }, marginText(d.t, d.n))),
       el("section", { class: "setup-review-configuration" },
@@ -1025,6 +1030,9 @@ function reviewStep() {
     ui.net === "testnet" ? el("div", { hidden: true }, solChoice()) : null);
 }
 const curNetLabel = () => (ui.net === "mainnet" ? "mainnet" : "testnet");
+const protectionLabel = () => passkeyProtected() ? "Passkey protected"
+  : protectionUnverified() ? "Passkey copy not fully checked"
+  : setupProtectionReady() ? "Skipped · no passkey encryption" : "Protection choice needed";
 // Above the buttons, not in their bar: on a phone the bar stays at the bottom of the sheet.
 const stepError = () => (ui.createError ? el("p", { class: "callout bad", role: "alert",
   id: "create-error" }, ui.createError) : null);

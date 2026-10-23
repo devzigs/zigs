@@ -237,11 +237,24 @@ function guidedPrepare(f) {
       el("p", {}, SOL_DISCLOSURE)) : null,
     unavailable ? el("p", { class: "small muted" }, "Keep this wallet and its existing keys. Retry when the service is available; do not recreate the wallet or reset its keys.") : null,
     unavailable ? el("button", { class: "btn", type: "button", onclick: () => location.reload() }, "Reload to retry connection") : null,
+    continueWithZcash(f),
     guidedSolConsent(f),
     earlyZcashBackups(f),
     el("p", { class: "small muted" }, "No fee funding is required to finish initial preparation. A public SOL fee address needs funds only when this device first performs a paid Solana operation."),
     el("details", { class: "card card-pad" }, el("summary", {}, "Technical setup details"),
       safetyCard(), progressCard(), seatsCard([])));
+}
+
+// Overview holds Send and Receive. A wallet whose Zcash part is checked must not wait for a
+// Solana part that is slow, stopped or out of service: Overview shows that part as it sets up.
+function continueWithZcash(f) {
+  if (f.blocked || !f.zecReady || !f.solWanted || f.solReady) return null;
+  return el("section", { class: "surface-quiet guided-zcash-only" },
+    el("h3", {}, "Use Zcash while Solana sets up"),
+    el("p", { class: "small muted" }, "Send and Receive for Zcash work now. Overview shows the Solana "
+      + "part while it sets up. " + BOTH_OPEN),
+    el("button", { class: "btn primary", type: "button", "data-key": "guided-zcash-only",
+      onclick: guideAct(() => finishSetupPresentation(true)) }, "Continue with Zcash"));
 }
 
 function earlyZcashBackups(f) {
@@ -344,9 +357,9 @@ function compactBackupRow(b, check = false) {
       check ? backupCheckButtons(b) : backupChains(b).map((chain) => backupSaveButton(b, chain, true))));
 }
 
-function finishSetupPresentation() {
+function finishSetupPresentation(zcashOnly = false) {
   // Only the creator is offered the one-time mock funding step. No protocol gate reads it.
-  completeGuided();
+  completeGuided(state.gid, { zcashOnly });
   ui.tab = "overview";
   if (localSeats().includes(1)) openFundingPreview(state.gid);
 }
@@ -597,7 +610,7 @@ function joinCard(seat, compact = false) {
     nameField("seat-name"),
     deviceProtection("join:" + state.gid,
       () => { focusAfter("join-device-" + seat, true); render(); }),
-    compact ? null : el("p", { class: "small muted" }, "A passkey unlocks the encrypted wallet data in this browser. It is not another signer and cannot restore a missing share. Recovery uses this device’s backup file and passphrase."),
+    compact ? null : el("p", { class: "small muted" }, "A passkey unlocks the encrypted wallet data in this browser. It is not another device and cannot restore a missing share. Recovery uses this device’s backup file and passphrase."),
     el("div", { style: "display:grid;gap:6px;justify-items:start" }, take, off.note));
 }
 

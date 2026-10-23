@@ -2868,6 +2868,17 @@ const sealed = (gid, rel, seat, fields, key, names = ["by", "sig"]) =>
         }
         assert.deepEqual([oldOne.step("Approvals").className,
           textOf(all(oldOne.step("Approvals"), (x) => x.className === "tick")[0])], ["step ", "2"]);
+        // A proposal that no device approved yet has the known count 0. Only a signature check
+        // that is still running leaves the count unknown.
+        assert.match(textOf(oldOne.step("Approvals")), /^2Approvals · 0 of 2 needed/,
+          "no approval record yet: 0 of 2 needed");
+        t.state.pending = true;
+        try {
+          assert.match(textOf(look(open("hd1", "PA")).step("Approvals")),
+            /^2Approvals · count unavailable/, "signature checks that run: the count is unknown");
+        } finally {
+          t.state.pending = false;
+        }
         const endedA = look(okA);
         assert.ok(endedA.head.startsWith("Payment expiredThe transaction this browser approved "
           + "expired. This page cannot tell whether a device sent another one."),

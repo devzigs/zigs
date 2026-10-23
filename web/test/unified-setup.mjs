@@ -192,6 +192,9 @@ function sideTree() {
       assert.doesNotMatch(links[0].className, /side-item/, "not a real wallet or section entry");
       assert.match(textOf(links[0]), /Test walletRead-only sample · 2 of 3 · opens in a new tab/);
     }
+    const note = findNode(sideTree(), (n) => n.attrs?.["data-key"] === "release-note");
+    assert.equal(note && textOf(note), "Beta: Zcash testnet and Solana Devnet. Not audited.",
+      "the side list of every page carries the release scope");
     for (const origin of ["https://wallet.example:8792/", "http://localhost:8794/",
       "http://localhost:8795/", "https://localhost/", "not a URL"]) {
       location.href = origin;
@@ -1407,8 +1410,8 @@ assert.equal(solPlanned(null), false);
 // page load. A pending probe is not an unavailable result, and this display intent starts no key.
 {
   const resumed = await rig.wallet({ name: "Resumed guide" });
-  const { beginGuided } = await import("../app-guided-setup.js");
-  beginGuided(resumed, { solExpected: true });
+  const guided = await import("../app-guided-setup.js");
+  guided.beginGuided(resumed, { solExpected: true });
   delete ui.solServed;
   const fetchBefore = globalThis.fetch;
   let answer;
@@ -1423,6 +1426,28 @@ assert.equal(solPlanned(null), false);
     answer(new Response("Service unavailable", { status: 503 }));
     await waitFor("the resumed service refusal", () => ui.solServed === false);
     assert.ok(pageText().includes(waiting), "a refusal shows saved Zcash and waiting Solana");
+    // The Zcash part is checked and Solana waits: Overview, with Send and Receive, is reachable.
+    const dataKey = (key) => findNode(pageTree(), (n) => n.attrs?.["data-key"] === key);
+    assert.ok(dataKey("guided-zcash-only"), "Prepare offers Continue with Zcash");
+    assert.equal(byText(pageTree(), "Open Overview"), null, "and the guide itself stays shut");
+    await dataKey("guided-zcash-only").on.click({ preventDefault() {} });
+    assert.equal(guided.guidedEnabled(resumed), false, "the guide ends");
+    assert.equal(t.sec(resumed, 1).solAuto, undefined, "ending it starts no Solana step");
+    const later = byText(pageTree(), "Finish later");
+    assert.ok(later, "device 1 meets the funding preview");
+    assert.match(pageText(), /This browser can forget it/, "the funding step asks for a file too");
+    await later.on.click({ preventDefault() {} });
+    const pickers = findAll(pageTree(), (n) => n.className === "overview-action-picker");
+    assert.equal(pickers.length, 2, "Overview shows Send and Receive");
+    const zecChoice = (picker) => findNode(picker,
+      (n) => n.className === "asset-choice" && textOf(n).startsWith("ZEC"));
+    assert.match(textOf(zecChoice(pickers[0])), /Wait for the first sync to finish/,
+      "Send for Zcash waits only for the first sync of the wallet");
+    ui.receive = false;
+    await zecChoice(pickers[1]).on.click({ preventDefault() {} });
+    assert.equal(ui.receive, true, "Receive for Zcash opens");
+    ui.receive = false;
+    assert.match(pageText(), /SOLSolana Devnet/, "Overview still shows the Solana row");
     assert.equal(t.solLoading, null, "the probe does not load or start the Solana controller");
     assert.equal(t.sec(resumed, 1).solAuto, undefined, "tutorial intent is not local consent");
     assert.equal(data.has(`groups/${resumed}/solstart/1`), false, "no signed start was written");
@@ -1572,6 +1597,18 @@ assert.match(SOL_DISCLOSURE, /Every device sees the whole Solana history/);
   assert.match(join,
     /Use a regular browser\. Chat-app browsers and private windows may delete your signing share\./,
     "where to open the link");
+}
+// The full setup page of a replacement wallet explains the passkey in terms of devices.
+{
+  const kept = t.secrets[gid + ":1"], held = t.state.g;
+  delete t.secrets[gid + ":1"];
+  t.state.g = { ...held, movedFrom: "0".repeat(20) };
+  try {
+    assert.match(pageText(), /It is not another device and cannot restore a missing share\./);
+  } finally {
+    t.state.g = held;
+    t.secrets[gid + ":1"] = kept;
+  }
 }
 // The preload: the module loads at the start of setup, and no Solana watch opens before the
 // people of the wallet confirmed the network.
@@ -2131,6 +2168,17 @@ async function walkSteps(fields, times, fresh = true) {
   assert.match(note([], [1]), /^Back up the Solana part of your key share\. This browser can/);
   assert.match(note([], [1]), /second file, with its own passphrase/);
   assert.doesNotMatch(note([2], []), /Solana/);
+  // The note stays on every wallet page until each file of this browser is saved.
+  const solNote = () => pageText().match(/Back up Solana, device \d/g) ?? [];
+  assert.deepEqual(solNote(), [1, 2, 3].map((i) => "Back up Solana, device " + i));
+  assert.match(pageText(), /^.*Back up your key share\. This browser can forget it/s);
+  assert.match(pageText(), /The Solana part of a device is a second file, with its own passphrase/);
+  for (const tab of ["approvals", "recovery", "settings"]) {
+    ui.tab = tab;
+    assert.match(pageText(), /Back up your key share\. This browser can forget it/,
+      "the note shows on " + tab);
+  }
+  ui.tab = "overview";
   const backupTab = ui.tab;
   ui.tab = "recovery"; // Optional backup controls live in Security.
   const solButtons = () => findAll(pageTree(), (n) => n.className === "security-signer")
@@ -2140,6 +2188,12 @@ async function walkSteps(fields, times, fresh = true) {
         .attrs.id.split("-").pop());
   await waitFor("the note", () => solButtons().length === 3);
   assert.match(pageText(), /Restore the Zcash file first, then its separate Solana file/);
+  assert.match(pageText(), /Keep the devices that still work/, "the Security text says device");
+  assert.doesNotMatch(pageText(), /Keep the signers|restore signers/);
+  assert.match(pageText(), /Device · 1/, "a device with no name reads Device");
+  assert.match(pageText(), /restore the existing device’s recovery file\. The link contains/,
+    "the invite text of Security says device");
+  assert.match(pageText(), /It does not create an independent device\./);
   // S13: a new wallet has no older file, so the note says nothing about an older format.
   assert.doesNotMatch(pageText(), /backup format changed|iPhone and Mac apps/);
   const saved = [];
@@ -2149,12 +2203,20 @@ async function walkSteps(fields, times, fresh = true) {
   assert.equal(saved.length, 1, "one file");
   assert.equal(t.sec(gidS, 2).sol.backupSaved, true);
   assert.deepEqual(solButtons(), ["Back up Solana, device 1", "Back up Solana, device 3"]);
+  ui.tab = backupTab;
+  assert.deepEqual(solNote(), ["Back up Solana, device 1", "Back up Solana, device 3"],
+    "a saved Solana file leaves the note");
+  ui.tab = "recovery";
   // A stop by another seat stops the Solana backups too.
   const stop = await t.signedDoc(gidS, "solabort/2", 2, { reason: "A test stop.", at: Date.now() });
   data.set(`groups/${gidS}/solabort/2`, stop);
   rig.notify();
   await waitFor("no Solana backup is asked", () => solButtons().length === 0);
   ui.tab = backupTab;
+  assert.deepEqual(solNote(), [], "a stopped Solana part has no file to ask for");
+  for (const i of [1, 2, 3]) await t.putSec(gidS, i, { backupSaved: true });
+  assert.doesNotMatch(pageText(), /This browser can forget it/,
+    "the note ends with the last file");
 }
 
 // ── The steps of a new wallet: Next, Enter, Cancel, and the tick of a rule without margin
@@ -2939,8 +3001,10 @@ assert.equal(quickCode(null), null);
       "the empty lobby has one primary heading rather than competing Wallets and welcome titles");
     assert.match(textOf(card),
       /Hold your assets privately\. Protect them with the people and devices/);
-    assert.doesNotMatch(textOf(card), /Beta · Not audited|New wallets use Zcash Testnet/,
-      "the landing entry omits the removed beta footer");
+    assert.match(textOf(card), /Beta · Not audited · Test networks/,
+      "the welcome card carries the Beta · Not audited label");
+    assert.match(textOf(card), /New wallets use test networks only: Zcash testnet and Solana/);
+    assert.match(textOf(card), /Zigs is not audited\./);
     assert.equal(findNode(card, (n) => n.className === "welcome-facts"), null,
       "key facts live in the product statement and explanation instead of a repeated label row");
     const { howZigsWorksDialog } = await import("../app-how-zigs-works.js");
@@ -2956,8 +3020,6 @@ assert.equal(quickCode(null), null);
       "only the chosen chapter is rendered");
     assert.equal(byId(guide, "hw-tab-shared-control").attrs["aria-selected"], "true");
     assert.match(textOf(byId(guide, "hw-chapter")), /One wallet\. Shared control\./);
-    assert.doesNotMatch(textOf(card), /New wallets use test networks only|Zigs is not audited/,
-      "entry content omits repetitive environment boilerplate");
     assert.doesNotMatch(textOf(card), /Appearance/,
       "appearance preferences stay in Settings instead of the welcome actions");
     const brand = findNode(card, (n) => n.className === "welcome-brand");
@@ -2993,6 +3055,8 @@ assert.equal(quickCode(null), null);
     t.state.groups = [t.cleanGroup(gid, { name: "W", n: 3, t: 2, version: 3 })];
     ui.joinOpen = false;
     const list = lobbyTree();
+    assert.match(textOf(list), /Beta · Not audited · Test networks/, "so does the wallet list");
+    assert.match(textOf(list), /New wallets use test networks only.*Zigs is not audited/s);
     const savedWallets = byId(list, "welcome-wallets");
     assert.equal(savedWallets.tag, "section", "saved wallets are directly discoverable");
     assert.equal(savedWallets.attrs["aria-label"], "Saved wallets");
@@ -3014,8 +3078,6 @@ assert.equal(quickCode(null), null);
       "keyboard and visual hierarchy reaches saved wallets before secondary setup actions");
     assert.equal(byId(list, "join-link"), null,
       "saved-wallet entry waits for the same explicit Join choice");
-    assert.doesNotMatch(textOf(list), /New wallets use test networks only|Zigs is not audited/,
-      "the saved-wallet entry omits repeated environment boilerplate");
     assert.doesNotMatch(textOf(list), /Appearance/, "the theme choice stays in Settings");
     try {
       location.href = "http://localhost:8792/";
@@ -3090,8 +3152,8 @@ assert.equal(quickCode(null), null);
 }
 
 // ── A join that cannot save its key share is refused before the store sees the seat ──
-// The legacy plaintext persistence path remains supported internally. Exercise takeSeat
-// directly for refusal/rollback assertions; no unprotected opt-out is accepted in this fixture.
+// The refusals and rollbacks below run through the real buttons of the page, after a real
+// Skip for now and Continue without protection.
 // This block comes last: it leaves a vault, a lease and wallets behind.
 {
   const JOIN_REFUSED = "This device could not save its key share, so it did not join. Free "
@@ -3106,7 +3168,16 @@ assert.equal(quickCode(null), null);
   const stored = (gid, i) => JSON.parse(storage.get("zf-secrets") ?? "{}")[gid + ":" + i];
   const button = (text) => findNode(pageTree(),
     (n) => n.attrs?.type === "button" && textOf(n) === text);
-  const takeCore = (seat) => t.act(() => t.takeSeat(seat))(EV);
+  // The real buttons: the person picks Skip for now and Continue without protection once, then
+  // presses Play device N (Join as device N where this browser holds no seat).
+  const choose = async () => {
+    await button("Skip for now").on.click(EV);
+    await button("Continue without protection").on.click(EV);
+  };
+  const takeCore = async (seat) => {
+    if (!keystore.setupProtectionReady() && button("Skip for now")) await choose();
+    return (button("Play device " + seat) ?? button("Join as device " + seat)).on.click(EV);
+  };
   // A person needs more than the 1 ms of a released lease to click again.
   const retry = async (seat) => {
     await sleep(20);
@@ -3327,6 +3398,25 @@ assert.equal(quickCode(null), null);
     assert.deepEqual(Object.keys(JSON.parse(storage.get("zf-keys"))).sort(),
       Object.keys(t.gkeys).sort(), "a refused wallet leaves no key in storage");
     localStorage.setItem = realSet;
+
+    // The join card has its own Skip for now, also with a damaged address book.
+    assert.equal(await keystore.persist(), true);
+    const gidK = await made("Join card");
+    storage.set(keystore.RECIPIENTS_KEY, '{"version":1,"entries":"damaged"}');
+    await keystore.takeFromTab(keystore.RECIPIENTS_KEY);
+    const keptSeat = t.secrets[gidK + ":1"];
+    delete t.secrets[gidK + ":1"];   // this browser holds no seat of the wallet: the join card
+    await keystore.lockWithPasskey().catch(() => {});   // a passkey step that fails: choose again
+    assert.equal(keystore.setupProtectionReady(), false, "the choice starts again");
+    assert.equal(button("Join as device 2").attrs.disabled, "", "Join waits for the choice");
+    assert.ok(button("Skip for now"), "the join card offers Skip for now");
+    await choose();
+    assert.equal(button("Join as device 2").attrs.disabled, undefined, "and goes on after it");
+    await button("Join as device 2").on.click(EV);
+    assert.equal(data.has(seatDoc(gidK, 2)), true, "the seat document is written");
+    t.secrets[gidK + ":1"] = keptSeat;
+    storage.delete(keystore.RECIPIENTS_KEY);
+    assert.equal(await keystore.persist(), true);
   } finally {
     localStorage.setItem = realSet;
     t.setVault(null);
