@@ -10,7 +10,7 @@
 //    read back; an expired payment ends;
 //  - the move of the beta funds: the last payment with a nonce, signed by the fee key and the
 //    group key.
-// Run: node web/test/sol-pay.mjs   (Node 24)
+// Run: node web/test/sol-pay.mjs   (Node 26)
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
 import { approve, deviceSeen, reviewOf } from "../sol/approve.js";

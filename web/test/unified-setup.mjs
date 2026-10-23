@@ -9,7 +9,7 @@
 // Solana part for a testnet wallet on a server that serves it. The choice puts solAuto into the
 // secret of seat 1, whose reactor starts the Solana ceremony after the Zcash address check. The
 // hint of the group document alone starts nothing.
-// Run: node web/test/unified-setup.mjs   (Node 24)
+// Run: node web/test/unified-setup.mjs   (Node 26)
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { config, loadRig, sleep, storage } from "./sol-rig.mjs";

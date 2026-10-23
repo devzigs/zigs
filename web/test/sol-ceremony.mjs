@@ -8,7 +8,7 @@
 // version 3, and a wallet whose stored network changed after this device saw it, are offered no
 // tab. A start document that no seat signed loads nothing. The page loads the module once and
 // never unloads it, so these blocks run before the first load.
-// Run: node web/test/sol-ceremony.mjs   (Node 24)
+// Run: node web/test/sol-ceremony.mjs   (Node 26)
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
 import { docFields } from "../signed.js";

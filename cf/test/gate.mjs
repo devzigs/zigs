@@ -1,4 +1,4 @@
-// Tests of the password gate (cf/src/gate.js), offline: node cf/test/gate.mjs   (Node 24)
+// Tests of the password gate (cf/src/gate.js), offline: node cf/test/gate.mjs   (Node 26)
 // The gate sets a session cookie after a valid password and gives no Basic challenge to a
 // background request of a browser, so that iOS Safari, which sends no cached password on the
 // group WebSocket, never prompts again while the page runs.

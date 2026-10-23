@@ -6,7 +6,7 @@
 //    (owned.js), on account data in the layout of the program;
 //  - the cancel carries no abort authority, so the program refuses it before the expiry; the
 //    expired proposal closes and its rent comes back to the fee address.
-// Run: node web/test/sol-rent.mjs   (Node 24)
+// Run: node web/test/sol-rent.mjs   (Node 26)
 import assert from "node:assert/strict";
 import { feeOf } from "../sol/fee.js";
 import { bytesOf, intentHex, pinsHex } from "../sol/intent.js";

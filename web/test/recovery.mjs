@@ -1,7 +1,7 @@
 // The Recovery model (web/recovery-model.js): the margin of devices that the wallet can lose,
 // and the recovery state of the devices of this browser. A file that is not saved always shows,
 // and no state says more than "saved from this browser".
-// Run: node web/test/recovery.mjs   (Node 24)
+// Run: node web/test/recovery.mjs   (Node 26)
 import assert from "node:assert/strict";
 import { protectionRisk, recoveryState, VIEWING_NOTE } from "../recovery-model.js";
 

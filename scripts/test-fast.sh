@@ -8,8 +8,8 @@
 # qr.mjs and says so. A test that runs longer than 60 s counts as failed.
 cd "$(dirname "$0")/.." || exit 2
 case "$(node -v 2>/dev/null)" in
-  v24.*) ;;
-  *) echo "test-fast: Node 24 is needed, found $(node -v 2>/dev/null || echo none)" >&2; exit 2 ;;
+  v26.*) ;;
+  *) echo "test-fast: Node 26 is needed, found $(node -v 2>/dev/null || echo none)" >&2; exit 2 ;;
 esac
 FAST="payees vault chat lwd zns requests shim shim-status signed util account qr personal graph
   sol-docs sol-transfer sol-wasm sol-config sol-rent sol-errors demo-check mainnet-off

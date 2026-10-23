@@ -1,7 +1,7 @@
 // The Solana documents (web/sol/docs.js): every path fits the group server, each document has one
 // writer, and the reader ignores a document that a seat did not sign. Signatures are real
 // (the Zcash engine builds the text, Web Crypto signs it), as in app.mjs.
-// Run: node web/test/sol-docs.mjs   (Node 24)
+// Run: node web/test/sol-docs.mjs   (Node 26)
 import assert from "node:assert/strict";
 import fs from "node:fs";
 import * as Z from "../pkg/zigs_engine.js";

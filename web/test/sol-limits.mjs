@@ -8,7 +8,7 @@
 //      signed documents alone (no RPC read, so a node that lags cannot kill a live session). The
 //      nonce payments left are the moves of the beta funds (sol-fixture.mjs), and the register
 //      sessions of the beta that a wallet may still hold.
-// Run: node web/test/sol-limits.mjs   (Node 24)
+// Run: node web/test/sol-limits.mjs   (Node 26)
 import assert from "node:assert/strict";
 import { approve } from "../sol/approve.js";
 import { base58 } from "../sol/docs.js";

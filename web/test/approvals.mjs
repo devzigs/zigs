@@ -3,7 +3,7 @@
 // payment that is not finished, or that an approval here still holds, never drops out. The inbox
 // says that nothing waits only when it knows it, and the Solana line never says that nothing else
 // waits.
-// Run: node web/test/approvals.mjs   (Node 24)
+// Run: node web/test/approvals.mjs   (Node 26)
 import assert from "node:assert/strict";
 import { BUCKETS, bucketOf, emptyState, solLine } from "../approvals-model.js";
 

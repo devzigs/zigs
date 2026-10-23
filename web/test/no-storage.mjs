@@ -3,7 +3,7 @@
 // must not write to the group store there, and the page must write nothing to storage: a damaged
 // record can still hold key shares. A save still says "saved", because signing in such a tab needs
 // it. The page modules load once per process, so this test has its own process.
-// Run: node web/test/no-storage.mjs   (Node 24)
+// Run: node web/test/no-storage.mjs   (Node 26)
 import assert from "node:assert/strict";
 import { loadRig } from "./sol-rig.mjs";
 

@@ -4,7 +4,7 @@
 // publishes the address in a signed document. The fund card shows the fee address of each seat of
 // this browser, a proposal fails with a clear text when its payer has no SOL, and Add SOL puts
 // the SOL of one member into the shielded balance of the group with that member's signature alone.
-// Run: node web/test/sol-fee.mjs   (Node 24)
+// Run: node web/test/sol-fee.mjs   (Node 26)
 import assert from "node:assert/strict";
 import { createPrivateKey, createPublicKey, sign } from "node:crypto";
 import { addSol } from "../sol/addsol.js";

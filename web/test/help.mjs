@@ -1,7 +1,7 @@
 // The Help words and the diagnostics text (web/help-model.js): the answers hold no link, use the
 // word device and name what each server sees, and the diagnostics text holds the facts that the
 // page gives and nothing else.
-// Run: node web/test/help.mjs   (Node 24)
+// Run: node web/test/help.mjs   (Node 26)
 import assert from "node:assert/strict";
 import { HELP, diagnosticsText } from "../help-model.js";
 

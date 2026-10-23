@@ -1,5 +1,5 @@
 // The /zns route of cf/src/index.js and the page module web/zns.js. A fake resolver replaces
-// fetch and Date.now is stubbed: no network, no wait. Run: node web/test/zns.mjs   (Node 24)
+// fetch and Date.now is stubbed: no network, no wait. Run: node web/test/zns.mjs   (Node 26)
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { ZNS_KEY, ZNS_MAX_LAG, ZNS_RECENT_BLOCKS, createRegistry, movedNote, nameOf, nameRefusal,

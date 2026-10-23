@@ -1,5 +1,5 @@
 // The live Devnet check of SOL-52: a new fee key gets back the rent of its expired proposal with
-// the cancel that the checker compiles and signs. Run from the repository root (Node 24):
+// the cancel that the checker compiles and signs. Run from the repository root (Node 26):
 //   node wasm-sol/tools/rent_live.mjs <funder keypair JSON file> [RPC URL]
 // It funds a new fee key of a new test group with 0.003 SOL and creates one proposal that expires
 // 60 s later. Before the expiry the network must refuse its cancel (NotAbortAuthority, 6017, a

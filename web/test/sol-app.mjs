@@ -2,7 +2,7 @@
 // backup carries no Solana field, the second file backs up and restores the Solana part of a
 // seat that settled and fits, and every refusal holds. It also pins what the Zcash restore does
 // with a seat that holds a Solana part, and checks the sealed snapshot store.
-// Run: node web/test/sol-app.mjs   (Node 24)
+// Run: node web/test/sol-app.mjs   (Node 26)
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
 import { backupName } from "../util.js";

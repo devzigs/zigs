@@ -3,7 +3,7 @@
 // gets no blocks for 60 s stops and frees the busy flag, and a tab that comes back syncs at once.
 // A wallet object is freed only when no engine call on it runs (ZEC-16).
 // The engine is a fake. Timers of a second or more run 100 times faster.
-// Run: node web/test/chain-fallback.mjs   (Node 24)
+// Run: node web/test/chain-fallback.mjs   (Node 26)
 import assert from "node:assert/strict";
 import { loadRig, sleep } from "./sol-rig.mjs";
 

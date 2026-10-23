@@ -2,7 +2,7 @@
 // with the HTTP status of a refusal, the wallet list that waits for each group, the error
 // callback, and the send timeout. A fake WebSocket, a fake fetch and a virtual clock stand in for
 // the browser. Also the text of the status line (linkWords in web/app-engine.js).
-// Run: node web/test/shim-status.mjs   (Node 24)
+// Run: node web/test/shim-status.mjs   (Node 26)
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { runInNewContext } from "node:vm";
