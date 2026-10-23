@@ -85,6 +85,7 @@ What the server can still see:
 | Timing of every write | Writes happen when people act | None |
 | Which IP addresses connect to which wallet | Each wallet has its own connection | Use Tor Browser, or a VPN, to hide your IP address |
 | Number of signers and payments | Count of documents | None |
+| When each device saves or checks a backup file, and whether it did | In a version 3 wallet each device publishes the document `setupstatus/<i>`: the safety number and four yes-or-no fields (`zecSaved`, `solSaved`, `zecChecked`, `solChecked`). The server sees its path, field names, padded size and the time of each write. A holder of the invite link can read it and can replace it, which only hides the progress display, because devices ignore a document without a valid signature. | None. The document holds no file, key or hash. |
 | Anyone who knows a wallet id, without its secret, can connect with it. Then that client gets the documents that the server stores for that wallet: each sealed document with its path, field names and padded size, then each new write as it happens. It can also write or replace documents of that wallet. It does not get the IP addresses or the connections of others | The server does not ask for the wallet secret. It checks the form of the id and its limits on connections and writes, behind the password gate of the preview. Then it sends the stored documents and each later write to that connection, and takes its writes (`groupSocket` and `Store` in `cf/src/index.js`). A wallet id is in the old wallet of a move, and the address bar and the browser history hold the id of an open wallet (`#<id>`). A direct chat is a store of the same kind, and its id (`#c.<id>`) is in the address bar too | The values stay sealed under the wallet secret, which the server never receives. So such a client cannot read them or seal new ones, but it can write back an old value that it saw. The timing, the counts and the availability stay exposed: a replaced document stops the wallet (a denial of service) |
 | The id of each wallet's message room, when each message is sent, how many messages, their padded sizes, and which IP addresses connect to the room | A room is one more namespace with its own connection, and each message is one document | Use Tor Browser, or a VPN, to hide your IP address. Message text, thread and sender stay sealed. |
 | The id of each direct chat, its two member ids, when each message is sent, how many messages, their padded sizes, and which IP addresses connect to the chat | A chat is a namespace like a room. The server learns that two member ids talk to each other. | Use Tor Browser, or a VPN, to hide your IP address. Names, message text and signing keys stay sealed. The chat lives in the browser and is not in key share backups. |
@@ -351,13 +352,14 @@ Each Solana screen says what is public and what Helius sees:
 - **Before Add Solana:** the program address links to the group key, a fee address needs a public
   SOL funding trail, and the program and its upgrade key are outside the group.
 - **The details of the wallet:** the two keys of the pool outside the group (below).
-- **The sync:** the page syncs with no click when the Solana tab opens and after a payment or a
-  deposit. Each sync shows Helius the keys of the wallet with your IP address, so Helius can list
-  every note of the wallet.
+- **The sync:** the page syncs with no click when Overview or the Solana tab opens, and after a
+  payment or a deposit. Overview shows the SOL balance, so a wallet with a Solana part contacts
+  Helius when it opens on Overview, before the Solana tab. Each sync shows Helius the keys of the
+  wallet with your IP address, so Helius can list every note of the wallet.
 - **The fund card:** the fee address appears on chain next to the group. The page asks Helius for
   the balance of each fee address of this browser with your IP address, with no click. It asks
-  when the Solana tab opens, after a payment or Add SOL, and again when such a read failed. It
-  also asks every 30 s while a signed payment waits for a device that can pay.
+  when Overview or the Solana tab opens, after a payment or Add SOL, and again when such a read
+  failed. It also asks every 30 s while a signed payment waits for a device that can pay.
 - **Add SOL:** the amount and the sender are public, and Helius sees your IP address with the
   deposit.
 - **Pay from the group:** the rent and the fees, and what the hosted prover sees: the owner keys,
@@ -404,6 +406,9 @@ The web app is prepared to run in Tor Browser, so that neither server sees your 
 testnet wallet with Solana adds a third host, Helius. A full session in Tor Browser has not been
 tested yet.
 
+The app has no Tor connection of its own. The "Tor demo" in the app (the pill "Tor · Demo" and
+Settings) is a demo: it routes no traffic and leaves your connection unchanged.
+
 1. Set the security level to **Standard**. The Safer and Safest levels turn off WebAssembly, and
    Zigs needs it for its cryptography. The app says so if it is off.
 2. Tor Browser deletes all site data when it closes, including your key share. After the wallet
@@ -447,6 +452,10 @@ the rate limits of the group server and of `/lwd`, which count each IPv4 address
 | Signing key of the seat (messages, and signed writes in a version 3 wallet) | With the key share (it is a field of the seat's secrets) | With the key share: Keychain, this device only. A seat gets it when the seat is taken |
 | Direct chats (chat secrets, member ids) and the personal signing key | With the key share: local storage, or the sealed record when the lock is on. Not in key share backups. | Keychain, this device only, or the sealed record when the Face ID lock is on. Not in key share backups |
 | The personal account: seed, contacts, sent messages, and the key of its saved sync state | With the lock on: a field of the sealed record. With the lock off: IndexedDB, sealed with an AES-GCM key that the browser cannot export. Local storage never holds the seed. | Not in the iPhone and Mac apps yet |
+| The address book: names and addresses of recipients | Local storage in plain text (`zf-recipients`); with the lock on, a field of the sealed record | Keychain record `zf-recipients`, this device only; with the Face ID lock on, a field of the sealed record |
+| Setup progress of a wallet: the step, the safety number, which backup files this browser checked, and SHA-256 hashes of the saved key shares (hashes only, never the shares) | Local storage, in plain text (`zf-guided-setup:<wallet id>`), also when the lock is on | Not in the iPhone and Mac apps |
+| A note that you write about a wallet (at most 280 characters), not shared with other devices | Local storage, in plain text (`zf-wallet-description:<wallet id>`), also when the lock is on | Not in the iPhone and Mac apps |
+| Pictures of wallet avatars, drawn from the public address of the wallet; the key is a hash of the address | IndexedDB `zigs-metal-orb-preview-v1`, at most 96 pictures, in plain. No secret in them. | Not in the iPhone and Mac apps |
 | Pinned room ids, pinned signing keys, pinned wallet versions and shapes, pinned chat members, read times, the memo reading switch | Local storage, in plain text. No secret in them. | Signing key, version and shape pins, room pins (`zf-rooms`), chat member pins (`zf-chatpins`) and read times (`zf-read`): settings (UserDefaults), in plain text, so device backups can copy them. No secret in them. There is no memo reading switch yet |
 
 Without the lock, anyone who controls your unlocked device can read your key share and wallet
@@ -524,7 +533,8 @@ the passkey guards the key share instead. The lock is opt-in.
   user-presence rule, so iOS gives it out only after Face ID or the passcode. The secrets are
   sealed with that key (AES-GCM). The app asks once each time it starts.
 - Signing steps that run without a click still work, because the lock opens once per session.
-- Someone who reads the browser storage or the Keychain gets only the sealed record.
+- Someone who reads the browser storage or the Keychain gets the sealed record and the plain
+  data that the table in "Your device" lists (pins, read times, setup progress, notes).
 - If the passkey is lost, the locked seats in that browser are lost. Restore them from a backup
   file, or rely on the other signers. On iPhone, turning off the device passcode deletes the key.
 - The Mac app does not offer the lock yet: its ad-hoc signature does not allow Keychain access
