@@ -74,8 +74,9 @@ async function matrixAssertions(p, { scene, width, theme, allowScroll, facts }) 
           const status = root.querySelector(".setup-wallet-status");
           const ordered = () => !!status && (innerWidth >= 900
             || status.getBoundingClientRect().bottom <= actions.getBoundingClientRect().top + 1);
-          return last.classList.contains("row-actions") && buttons.length === 1
-            && ["Continue to funding", "Open Overview"].includes(buttons[0].textContent)
+          return last.classList.contains("row-actions") && buttons.length <= 2
+            && buttons[0].textContent === "Open Overview"
+            && buttons.slice(1).every((b) => b.textContent === "See the funding demo (no payment)")
             && !!actions.querySelector(".setup-recovery-details")
             && !document.querySelector(".guided-footnote")
             && ordered();
@@ -97,7 +98,7 @@ async function matrix(p, scene, allowScroll = false) {
         const panels = [...document.querySelectorAll(".dialog,.guided-setup")].filter(visible);
         const action = [...document.querySelectorAll("button")].filter(visible).find((n) =>
           n.dataset.key === "create-continue" ||
-            new RegExp("^(Copy link|Join as device|Continue to funding|Open Overview|"
+            new RegExp("^(Copy link|Join as device|Open Overview|"
               + "Continue to backup options|Codes match)$").test(n.textContent));
         const r = action?.getBoundingClientRect();
         return { overflow: document.documentElement.scrollWidth > innerWidth + 1
@@ -113,7 +114,7 @@ async function matrix(p, scene, allowScroll = false) {
       await matrixAssertions(p, { scene, width, theme, allowScroll, facts });
       await capture(p, scene + "-" + width + "-" + theme);
       if (phase === "after" && scene.includes("completion") && width <= 390) {
-        await button(p, "Continue to funding").scrollIntoViewIfNeeded();
+        await button(p, "Open Overview").scrollIntoViewIfNeeded();
         await capture(p, scene + "-end-" + width + "-" + theme);
       }
     });
@@ -418,7 +419,7 @@ async function joinDevice(p, link, seat) {
 }
 
 async function savedBackupCheck(p) {
-  check(await button(p, "Continue to funding").isEnabled(),
+  check(await button(p, "Open Overview").isEnabled(),
     "zero backup files do not block Overview");
   await button(p, "Save ZEC backup").click();
   const passphrase = "synthetic local recovery check 4728 only";
@@ -454,26 +455,16 @@ async function savedBackupCheck(p) {
     "Saved and checked here")),
     "the completion view distinguishes a locally checked copy");
   await capture(p, "10-backup-checked");
-  await button(p, "Continue to funding").click();
-  await p.getByRole("heading", { name: "Fund your wallet.", exact: true }).waitFor();
+  await button(p, "See the funding demo (no payment)").click();
+  await p.getByRole("heading", { name: "Funding checkout demo.", exact: true }).waitFor();
   check(await p.locator("#funding-include-name").count() === 1,
     "optional naming shares the creator's funding checkout");
   await button(p, "Finish later").click();
   await p.getByRole("heading", { name: "Your assets", exact: true }).waitFor();
 }
 
-async function finishPrepared(p, creator) {
-  await button(p, creator ? "Continue to funding" : "Open Overview").click();
-  if (creator) {
-    check(await p.locator(".funding-preview .guided-progress li").count() === 6
-      && await p.locator(".funding-preview [aria-current=step]").textContent().then(
-        (text) => text.includes("Funding"))
-      && await button(p, "Save and exit").isVisible(), "funding uses the final shared wizard step");
-    await p.locator(".guided-stage-button").filter({ hasText: "Back up" }).click();
-    await p.getByRole("heading", { name: "Your wallet is prepared", exact: true }).waitFor();
-    await p.locator(".guided-stage-button").filter({ hasText: "Funding" }).click();
-    await button(p, "Finish later").click();
-  }
+async function finishPrepared(p) {
+  await button(p, "Open Overview").click();
   await p.getByRole("heading", { name: "Your assets", exact: true }).waitFor();
 }
 
@@ -647,9 +638,7 @@ async function threeDevices(first) {
   check(await first.locator(".setup-device-row").count() === 3
     && await first.locator(".setup-device-pending").count() === 0,
       "completion shows three actual devices and stops active pulses");
-  for (const [index, p] of pages.entries()) {
-    await finishPrepared(p, index === 0);
-  }
+  for (const p of pages) await finishPrepared(p);
   check(true, "real unfunded 2-of-3 formation opens Overview with zero backups on every device");
   check(artDigests[0] !== artDigests[1],
     "two actual wallets with the same name have different marbles");

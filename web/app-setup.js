@@ -20,7 +20,7 @@ import { deviceProtection, offOf } from "./app-shell.js";
 import { newWallet, SOL_DISCLOSURE, sol, solBackup, solError, solLoad, solLoading,
   solOn, solPlanned, solServed, solSetup } from "./app-sol.js";
 import { quickCode, SETUP_STAGES, setupStage } from "./setup-model.js";
-import { setupHeader, SETUP_FLOW_STAGES } from "./setup-wizard.js";
+import { setupHeader } from "./setup-wizard.js";
 import { securityExplanation, tutorialDiagram, tutorialProgress } from "./app-tutorial.js";
 import { beginGuided, completeGuided, guidedState, pauseGuided,
   retryGuidedReports, reviewGuided } from "./app-guided-setup.js";
@@ -28,7 +28,7 @@ import { openGroup } from "./app-groups.js";
 import { outcomeSeal } from "./outcome-seal.js";
 import { openBackup, openBackupCheck } from "./app-backups.js";
 import { icon } from "./app-icons.js";
-import { fundingSetupActive, openFundingPreview } from "./app-funding-preview.js";
+import { openFundingPreview } from "./app-funding-preview.js";
 import { walletMark, walletReveal } from "./app-wallet-art.js";
 
 // Only an open overlay's wallet id is kept in memory; never persist an invitation capability.
@@ -118,9 +118,7 @@ export function guidedSetupView(notices = []) {
     try { pauseGuided(); } catch (e) { showBanner("bad", e.message); }
     openGroup(null); render();
   };
-  const funding = f.complete && fundingSetupActive(state.gid);
-  const review = (i) => guideAct(() => i === 5 ? finishSetupPresentation()
-    : reviewGuided(i === f.index ? null : i))();
+  const review = (i) => guideAct(() => reviewGuided(i === f.index ? null : i))();
   if (reveal) return el("div", { class: "page guided-setup wallet-reveal-page" }, ...notices,
     el("header", { class: "wallet-reveal-nav" }, el("span", { class: "small muted" }, state.g.name),
       el("button", { class: "btn ghost", type: "button", onclick: exit }, "Save and exit")),
@@ -134,7 +132,7 @@ export function guidedSetupView(notices = []) {
     "data-motion-watch": "setup", "data-motion-value": f.protocolReady ? "on" : "off" },
     ...notices,
     setupHeader(el, state.g, f.solWanted, exit),
-    tutorialProgress(funding ? 5 : f.index, funding ? at : f.review, review, SETUP_FLOW_STAGES),
+    tutorialProgress(f.index, f.review, review),
     f.index === 1 || f.index === 2 ? linkLine() : null,
     f.storageIssue ? el("div", { class: "callout bad", role: "alert" }, f.storageIssue) : null,
     f.blocked ? el("div", { class: "callout bad", role: "alert", tabindex: "-1",
@@ -358,17 +356,20 @@ function compactBackupRow(b, check = false) {
 }
 
 function finishSetupPresentation(zcashOnly = false) {
-  // Only the creator is offered the one-time mock funding step. No protocol gate reads it.
   completeGuided(state.gid, { zcashOnly });
   ui.tab = "overview";
-  if (localSeats().includes(1)) openFundingPreview(state.gid);
 }
 
+// The funding demo is no step of the setup: only the creator device is offered it, as a labelled
+// extra, and no protocol gate reads it.
 function overviewAfterSetup(f) {
   return el("div", { class: "row-actions" },
     el("button", { class: "btn primary", type: "button", disabled: !f.protocolReady,
-      onclick: guideAct(finishSetupPresentation) },
-    localSeats().includes(1) ? "Continue to funding" : "Open Overview"));
+      onclick: guideAct(finishSetupPresentation) }, "Open Overview"),
+    localSeats().includes(1) ? el("button", { class: "btn ghost", type: "button",
+      disabled: !f.protocolReady, "data-key": "funding-demo-entry",
+      onclick: guideAct(() => { finishSetupPresentation(); openFundingPreview(state.gid); }) },
+    "See the funding demo (no payment)") : null);
 }
 
 function guidedReady(f) {

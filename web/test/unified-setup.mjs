@@ -1433,10 +1433,8 @@ assert.equal(solPlanned(null), false);
     await dataKey("guided-zcash-only").on.click({ preventDefault() {} });
     assert.equal(guided.guidedEnabled(resumed), false, "the guide ends");
     assert.equal(t.sec(resumed, 1).solAuto, undefined, "ending it starts no Solana step");
-    const later = byText(pageTree(), "Finish later");
-    assert.ok(later, "device 1 meets the funding preview");
-    assert.match(pageText(), /This browser can forget it/, "the funding step asks for a file too");
-    await later.on.click({ preventDefault() {} });
+    assert.equal(byText(pageTree(), "Finish later"), null,
+      "Continue with Zcash opens no funding demo");
     const pickers = findAll(pageTree(), (n) => n.className === "overview-action-picker");
     assert.equal(pickers.length, 2, "Overview shows Send and Receive");
     const zecChoice = (picker) => findNode(picker,
@@ -1458,6 +1456,57 @@ assert.equal(solPlanned(null), false);
   }
 }
 
+// The end of the guided setup. Open Overview leads to the wallet. The funding demo is no stage of
+// the setup: the creator device is offered it as a labelled extra, and no other device is.
+{
+  const guided = await import("../app-guided-setup.js");
+  const buttonOf = (label) =>
+    findNode(pageTree(), (n) => n.tag === "button" && textOf(n) === label);
+  const press = async (label) => {
+    const button = buttonOf(label);
+    assert.ok(button, "the page has " + label);
+    await button.on.click({ preventDefault() {} });
+  };
+  const finished = async (name) => {
+    const id = await rig.wallet({ name });
+    ui.tab = "overview";
+    guided.beginGuided(id);
+    await press("Continue to backup options");
+    return id;
+  };
+  const entry = () => findNode(pageTree(), (n) => n.attrs?.["data-key"] === "funding-demo-entry");
+  const demoOpen = () => findNode(pageTree(), (n) => n.attrs?.["data-funding-preview"] === "");
+  const one = await finished("Finish one");
+  assert.match(pageText(), /Step 5 of 5: Back up\./, "the setup has five steps");
+  assert.doesNotMatch(pageText(), /Funding|of 6/, "the funding demo is no stage of the setup");
+  assert.equal(buttonOf("Continue to funding"), null, "no button of the setup says funding");
+  assert.ok(entry(), "the creator device is offered the funding demo");
+  assert.equal(textOf(entry()), "See the funding demo (no payment)",
+    "the funding demo is a labelled extra");
+  await press("Open Overview");
+  assert.equal(guided.guidedEnabled(one), false, "Open Overview ends the guide");
+  assert.equal(demoOpen(), null, "and opens the wallet, not the funding demo");
+  assert.match(pageText(), /Your assets/, "Overview shows");
+  assert.doesNotMatch(pageText(), /Funding checkout demo/, "and no banner of the funding demo");
+  const two = await finished("Finish two");
+  await press("See the funding demo (no payment)");
+  assert.equal(guided.guidedEnabled(two), false, "the funding demo entry ends the guide too");
+  assert.match(pageText(), /Funding checkout demo\..*Demo, no payment/s, "the funding demo opens");
+  assert.match(pageText(), /This browser can forget it/, "the funding step asks for a file too");
+  assert.doesNotMatch(pageText(), /guided-progress|Step \d of/, "and draws no stage of the setup");
+  await press("Finish later");
+  assert.match(pageText(), /Funding checkout demo.*Your assets/s, "Finish later opens Overview");
+  const three = await finished("Finish three");
+  const held = t.secrets[three + ":1"];
+  delete t.secrets[three + ":1"];
+  try {
+    assert.ok(buttonOf("Open Overview"), "a device without seat 1 opens Overview");
+    assert.equal(entry(), null, "and is not offered the funding demo");
+  } finally {
+    t.secrets[three + ":1"] = held;
+  }
+}
+
 // ── The texts of a wallet in setup, with and without the hint ──
 await t.createGroup("Both", 3, 2, null, "testnet");
 const gid = t.state.gid;
@@ -1466,7 +1515,7 @@ const link = "https://example.test/#" + gid;
 const plain = { text: pageText(), join: joinText(), invite: inviteMessage(link) };
 assert.equal(t.solLoading, null, "a Zcash-only setup loads no Solana file");
 assert.match(plain.text, /Every device must keep Zigs open until setup finishes/);
-assert.match(plain.text, /Step 2 of 6: Connect\. Every device joins with the invite link/,
+assert.match(plain.text, /Step 2 of 5: Connect\. Every device joins with the invite link/,
   "the stepper of the setup page: seats are open");
 assert.doesNotMatch(plain.join + plain.invite, /Solana/, "no hint: Zcash only");
 data.set(groupPath(gid), { ...data.get(groupPath(gid)), solana: true });
@@ -2365,9 +2414,9 @@ async function walkSteps(fields, times, fresh = true) {
   const keep = { wallet: t.state.wallet, confirm: t.state.confirm, done: t.state.done };
   try {
     Object.assign(t.state, { wallet: null, confirm: {} });
-    assert.match(pageText(), /Step 3 of 6: Verify\./, "every seat taken, no number confirmed");
+    assert.match(pageText(), /Step 3 of 5: Verify\./, "every seat taken, no number confirmed");
     Object.assign(t.state, { confirm: keep.confirm, done: {} });
-    assert.match(pageText(), /Step 4 of 6: Prepare\./, "the key ceremony runs");
+    assert.match(pageText(), /Step 4 of 5: Prepare\./, "the key ceremony runs");
     Object.assign(t.state, { done: keep.done, wallet: { ...keep.wallet, birthday: undefined } });
     assert.match(pageText(), /Setup stopped at Prepare\. /, "a wallet with no birthday");
     assert.doesNotMatch(pageText(), /stopped at Back up/);

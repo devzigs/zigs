@@ -35,11 +35,11 @@ four simulated funding stages and a preview completion screen. The privacy expla
 describes the shared pool, proofs, relayer, public deposit/payout visibility, correlations
 and Zigs/provider visibility. No anonymity guarantee is made.
 
-Funding is step 6 in the existing wizard, after Back up. It shares the wizard's header,
-network/approval-rule subtitle, six-step progress navigation and
-Save and exit control. Completed progress steps reopen the existing educational review or
-backup options; Funding returns to the same tab-memory checkout with its name choice and
-total intact. Save and exit returns to the wallet list; Finish later opens Overview.
+Funding is a demo, not a step of the wizard. The wizard keeps its five steps, and its last
+screen leads to the wallet with the primary button Open Overview. The creator device also sees
+the optional button "See the funding demo (no payment)" there, which opens Overview and then the
+demo. The Overview banner "Funding checkout demo" returns to the same tab-memory checkout with
+its name choice and total intact. Finish later opens Overview.
 Its desktop content width is 1240px, with wider name and privacy columns and more space
 between them. The wallet sidebar and contextual Overview header remain absent. Every funding view
 uses the same card dimensions, adapting its height to the viewport. The full six-line cost
@@ -55,7 +55,6 @@ validation helpers, without invoking registry, wallet, signing or quote services
 Simulated progress never updates balances, funding records, actual payment history, wallet
 readiness, tutorial protocol facts, recovery files or any authorization gate. A page reload
 resets the demo. It cannot collect payments or enable USDC, bridging or Privacy Cash.
-Revisiting earlier wizard steps uses the existing separate tutorial review cursor only.
 
 The isolated `/dev/funding/` page renders the same component with the normal app themes,
 logo and a synthetic Overview. Its CSP disables all connections. It contains no real keys,

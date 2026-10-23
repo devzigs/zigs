@@ -135,8 +135,8 @@ try {
               box.height >= 48),
             visible: actions.every((box) => box.bottom <= innerHeight),
             final: document.querySelector(
-              ".setup-completion-actions").lastElementChild.lastElementChild.textContent ===
-                "Continue to funding" };
+              ".setup-completion-actions").lastElementChild.firstElementChild.textContent ===
+                "Open Overview" };
         });
         facts.push({ scene, width, theme, ...value });
         check(!value.overflow && value.operable && value.final, scene +

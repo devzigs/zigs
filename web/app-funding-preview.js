@@ -7,7 +7,6 @@ import { createFundingPreview, FUNDING_DEMO_LABEL } from "./funding-preview.js";
 
 const fundingPreviews = new Map();
 let fundingOpenFor = null;
-export const fundingSetupActive = (gid) => fundingOpenFor === gid;
 
 function leaveFundingPreview() {
   fundingOpenFor = null;
