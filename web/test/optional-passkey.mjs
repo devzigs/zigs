@@ -12,7 +12,8 @@ const names = ["default", "confirmed", "cancelled creation", "cancelled assertio
   "pending", "vault during confirmation", "damaged vault", "empty vault", "damaged plaintext",
   "damaged keys at load", "damaged chats at load", "unreadable storage",
   "memory only", "write failure", "damaged recipients", "damaged book at load", "damaged account",
-  "cleanup failure", "other tab vault message", "later protection", "reload"];
+  "cleanup failure", "outside copy", "held copy", "other tab vault message", "later protection",
+  "reload"];
 const DAMAGED_BOOK = '{"version":1,"entries":"damaged"}';
 const loaded = { "damaged book at load": { "zf-recipients": DAMAGED_BOOK },
   "damaged keys at load": { "zf-keys": "{ damaged" },
@@ -226,6 +227,42 @@ const cases = {
     };
     await assert.rejects(ks.lockWithPasskey, /deletion denied/);
     assert.ok(ks.vault && storage.has("zf-vault") && storage.has("zf-secrets"));
+    unverified();
+  },
+  // A plain copy that the open vault does not hold keeps setup shut, also after an unlock.
+  async "outside copy"() {
+    confirmed();
+    await ks.putSec("synthetic-wallet", 1, { keyPackage: marker });
+    await ks.lockWithPasskey();
+    storage.set("zf-secrets", '{"outside-wallet:1":{"keyPackage":"outside"}}');
+    assert.equal(ks.passkeyProtected(), false, "a plain copy ends the protection");
+    blocked();
+    passed(child("reloaded with outside copy", Object.fromEntries(storage)), "reloaded outside");
+  },
+  async "reloaded with outside copy"() {
+    cannotSkip();
+    await ks.unlockVault();
+    assert.equal(ks.passkeyProtected(), false);
+    blocked();
+    assert.match(storage.get("zf-secrets"), /outside-wallet:1/, "the copy is kept for review");
+  },
+  // A plain copy that the vault holds, and cannot be removed, does not shut setup.
+  async "held copy"() {
+    confirmed();
+    await ks.putSec("synthetic-wallet", 1, { keyPackage: marker });
+    await ks.lockWithPasskey();
+    storage.set("zf-secrets", JSON.stringify({ "synthetic-wallet:1": { keyPackage: marker } }));
+    unverified();
+    passed(child("reloaded with held copy", Object.fromEntries(storage)), "reloaded held");
+  },
+  async "reloaded with held copy"() {
+    cannotSkip();
+    localStorage.removeItem = (key) => {
+      if (key === "zf-secrets") throw new Error("deletion denied");
+      originalStorage.removeItem(key);
+    };
+    await ks.unlockVault();
+    assert.ok(storage.has("zf-secrets"), "the copy could not be removed");
     unverified();
   },
   "other tab vault message"() {

@@ -97,6 +97,13 @@ assert.equal("disabled" in continueOf(reviewTree()).attrs, false, "so does the c
 Object.assign(ui, { createStep: 3, createDraft: { n: 3, t: 2 } });
 assert.match(text(reviewTree()), /Browser protectionPasskey copy not fully checked/);
 Object.assign(ui, { createStep: 0 });
+// A plain copy with data outside the vault keeps both dialogs shut, as the unlock banner says.
+storage.set("zf-secrets", '{"outside-wallet:1":{"keyPackage":"outside"}}');
+assert.equal(isOff(createNew(reviewTree(move))), true, "Change devices waits for a review");
+assert.doesNotMatch(text(reviewTree(move)), /You can go on/, "and does not say that it can go on");
+assert.match(text(reviewTree(move)), /reviewed the unprotected copy/, "it says what to do");
+assert.equal(continueOf(reviewTree()).attrs.disabled, "", "so does the create dialog");
+storage.delete("zf-secrets");
 ks.setVault(null);
 // The lock of Settings needs no Web Locks, as on main.
 delete navigator.locks;

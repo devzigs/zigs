@@ -324,13 +324,18 @@ function skipProtectionConfirmation(context, onReady, allowed) {
       "data-key": "skip-confirm-" + context, "aria-describedby": description,
       onclick: accept }, "Continue without protection")));
 }
+const PROTECTION_UNFINISHED = "Protection did not finish. Keep this tab open and save this "
+  + "device’s recovery files. Do not repeat locking over an incomplete saved copy; check the "
+  + "browser’s storage permissions before reopening Zigs.";
 /** Only the verified vault reports protection. Explicit Skip grants setup entry, not encryption. */
 export function deviceProtection(context = "setup", onReady = null) {
   if (protectionPending) return el("div", protectionAttrs(context, "pending"),
     el("p", { class: "small", role: "status" }, protectionMark(), "Protecting this device… Wait while the encrypted copy is checked."));
   if (vault && !passkeyProtected()) return el("div", protectionAttrs(context, "error"),
     el("p", { class: "callout bad", role: "alert" }, protectionMark(), protectionError || "Passkey protection has not finished."),
-    el("p", { class: "small muted" }, "Protection did not finish. Keep this tab open and save this device’s recovery files. Do not repeat locking over an incomplete saved copy; check the browser’s storage permissions before reopening Zigs. You can go on: new key shares are saved in the passkey-protected copy."));
+    el("p", { class: "small muted" }, PROTECTION_UNFINISHED + (protectionUnverified()
+      ? " You can go on: new key shares are saved in the passkey-protected copy."
+      : " Do not set up another wallet until you have reviewed the unprotected copy.")));
   if (passkeyProtected()) return el("div", protectionAttrs(context, "verified"),
     el("p", { class: "small ok", role: "status" }, protectionMark(), "This browser’s shares are protected by its passkey."),
     el("p", { class: "small muted" }, "Unlocking this browser is separate from authorizing a payment with another device."));

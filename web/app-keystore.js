@@ -191,10 +191,17 @@ export function acknowledgeUnprotectedSetup() {
 }
 /**
  * An unlocked vault whose clean-up did not finish still seals every new share, so setup goes on.
- * The page keeps saying that the protection is incomplete.
+ * A plain copy with data outside the vault keeps setup shut, as the unlock banner says.
+ * ponytail: the copies are read again at each call, which happens only while a vault is unchecked.
  */
 export const protectionUnverified = () => !!vault && !lockedVault && !protectionPending
-  && !passkeyProtected();
+  && !passkeyProtected() && plainCopiesHeld();
+function plainCopiesHeld() {   // a copy that cannot be read or compared is not held
+  try {
+    checkPlainCopies({ secrets, keys: gkeys, chats, recipients: recipientsRaw });
+    return true;
+  } catch { return false; }
+}
 export function setupProtectionReady() {
   return passkeyProtected() || protectionUnverified()
     || (unprotectedSetupAcknowledged && canSkipPasskeyProtection());
