@@ -75,7 +75,8 @@ Object.assign(ui, { create: true, createStep: 3, net: "testnet", sol: true, solS
     n: 3, t: 2, sol: true, solExpected: true } });
 const form = reviewTree();
 assert.ok(!text(form).includes(SOL_DISCLOSURE), "the review omits the Solana disclosure");
-assert.doesNotMatch(text(form), /Create wallet confirms these service disclosures|Network options|Solana setup is waiting/);
+assert.doesNotMatch(text(form),
+  /Create wallet confirms these service disclosures|Network options|Solana setup is waiting/);
 const hiddenChoice = form.kids.flatMap((kid) => kid.kids ?? [])
   .find((kid) => kid.attrs?.hidden === "" && find(kid, "g-sol"));
 assert.ok(hiddenChoice, "the existing setup control stays hidden in the review");

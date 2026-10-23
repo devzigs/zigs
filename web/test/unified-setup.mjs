@@ -1759,7 +1759,8 @@ async function walkSteps(fields, times, fresh = true) {
   dialogText();
   await waitFor("the refusal", () => ui.solServed === false);
   assert.match(dialogText(), CHOICE, "service availability does not erase the disclosed choice");
-  const review = dialogTree().kids.find((kid) => kid.attrs?.["aria-labelledby"] === "create-step-3");
+  const review = dialogTree().kids
+    .find((kid) => kid.attrs?.["aria-labelledby"] === "create-step-3");
   assert.doesNotMatch(textOf(review), /Solana setup is waiting for service availability/,
     "the review omits the lower network status section");
   config.down = false;
