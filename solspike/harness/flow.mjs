@@ -61,8 +61,18 @@ export async function waitState(page, id, state, ms) {
 }
 
 // The text of the approval screen that this page shows for the session: public values only.
+// A payment screen keeps the account rows in a closed "Technical account details" block: the run
+// opens it, as a person does, before it reads the text.
 export const screenOf = (page, id) =>
-  run(page, (name) => document.querySelector(`[data-sol="review-${name}"]`)?.innerText ?? null, id);
+  run(
+    page,
+    (name) => {
+      const screen = document.querySelector(`[data-sol="review-${name}"]`);
+      screen?.querySelectorAll("details").forEach((d) => (d.open = true));
+      return screen?.innerText ?? null;
+    },
+    id,
+  );
 
 // True when the page shows no Approve control for the session (an approval is not offered twice).
 export const noApprove = (page, id) =>
@@ -216,12 +226,21 @@ export async function pay(pages, spec, proposalOpen) {
   return { id, proposal, signature: seen[3], screens, alive };
 }
 
-/** Taps "Sync Solana" until the shielded balance is `want`: the indexer may need a moment. */
+// "Check balance" ends in a pass of the reactor, which starts the automatic sync when it is due.
+// "Retry Solana sync" shows only after a failed sync.
+const nudgeSync = () => {
+  for (const mark of ["refresh", "sync"]) document.querySelector(`[data-sol="${mark}"]`)?.click();
+};
+
+/**
+ * Waits until the shielded balance is `want`. The page syncs by itself (the indexer may need a
+ * moment). Each round taps the controls that start or retry that sync (nudgeSync).
+ */
 export async function privateBalance(page, want) {
   let seen = "";
   await waitFor(
     async () => {
-      await clickMark(page, "sync");
+      await run(page, nudgeSync);
       await sleep(4000);
       seen = (await solValues(page))["balance-private"];
       return seen === want;

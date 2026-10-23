@@ -1,9 +1,12 @@
 // The read-only browser smoke check of staging (S19 of the hackathon release work). The demo goal
 // says "no console errors", and solspike/demo-check.sh checks HTTP answers only. This script opens
 // the app in headless Chrome, in a fresh browser context, and prints PASS or FAIL for each check:
-// - the page and the engine load;
-// - every network picker on the screen (the create dialog and the personal account form) shows
-//   Testnet only, with no tick (M1);
+// - the page and the engine load, and the Tor demo popup of a first visit is turned down the way
+//   a person does it (two clicks), so the rest runs on the page that a person uses;
+// - every network picker on the page (the create dialog "Set up your wallet", and the personal
+//   account form when it shows) shows Testnet only, with no tick (M1). The dialog draws all its
+//   steps at once and hides all but one, so the picker of its third step is in the page without a
+//   walk through the passkey step; the check opens the dialog and closes it with its × button;
 // - the Solana part loads: /sol/config.json answers, the Solana Worker of the page starts, and it
 //   answers a command that does not exist with "unknown command". The Solana tab itself needs a
 //   wallet, and a new wallet is a write, so the check stops there;
@@ -129,15 +132,16 @@ export function readPassword(file) {
 // ── The live run (only when this file runs as the script) ──
 
 // The page scripts below run in the page: they must not use outer variables.
-// The "+" of the wallet list only opens the create dialog. The welcome card has a "Set up a wallet"
-// button too, and the dialog has a "Create wallet" button that creates a wallet: the check never
-// clicks that one.
+// The "+" of the wallet list only opens the create dialog. The welcome card has a "Create wallet"
+// button too, and the last step of the dialog has a "Create wallet" button that creates a wallet:
+// the check never clicks that one.
 const OPEN_CREATE = () => {
   const plus = document.querySelector('button[aria-label="New wallet"]');
   if (!plus || plus.disabled) return false;
   plus.click();
   return true;
 };
+const CLOSE_DIALOG = 'form[role=dialog] button[aria-label="Close"]';
 const READ_PICKERS = () => [...document.querySelectorAll("fieldset.net-pick")].map((f) => ({
   where: f.querySelector('input[name="g-network"]') ? "create dialog"
     : f.querySelector('input[name="p-network"]') ? "personal account" : "a picker",
@@ -210,14 +214,15 @@ async function checks(page, origin, h) {
   };
   await step("the page and the engine load", async () => {
     await page.navigate(origin + "/");
-    await h.waitForText(page, READY, 30000);
+    await h.waitForEngine(page);
+    await h.closePrivacyPopup(page);
     return [true, READY];
   });
   await step("every network picker shows Testnet only (M1)", async () => {
     await h.waitFor(() => h.run(page, OPEN_CREATE), 15000, () => "the New wallet button");
-    await h.waitForText(page, "New shared wallet");
+    await h.waitForText(page, "Set up your wallet");
     const verdict = pickerVerdict(await h.run(page, READ_PICKERS));
-    await h.clickText(page, "Cancel", { exact: true });
+    await h.clickSelector(page, CLOSE_DIALOG);
     return verdict;
   });
   await step("the Solana part loads", async () => solVerdict(await h.run(page, READ_SOL)));
@@ -248,7 +253,7 @@ async function main() {
   redact.add(password, Buffer.from(`smoke:${password}`).toString("base64"));
   const { withStack } = await import("./harness/stack.mjs");
   const { connect, sleep, waitFor } = await import("./harness/chrome.mjs");
-  const { clickText, run, waitForText } = await import("./harness/page.mjs");
+  const pageTools = await import("./harness/page.mjs");
   let failed = 0;
   await withStack("smoke", async (rig) => {
     const offSignals = onSignals(rig);
@@ -256,7 +261,7 @@ async function main() {
     const page = await ctx.open();
     const cdp = await passwordSession(rig.chrome, page, origin, password, connect);
     try {
-      const done = await checks(page, origin, { clickText, run, sleep, waitFor, waitForText });
+      const done = await checks(page, origin, { ...pageTools, sleep, waitFor });
       await sleep(1000);
       const all = [...done, ...problemLines(pageProblems(page.records, origin), origin)];
       for (const [ok, text, name] of all) {

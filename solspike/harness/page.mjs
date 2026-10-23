@@ -54,6 +54,41 @@ function inPageSet(selector, value) {
   return true;
 }
 
+function inPageSelect(selector) {
+  const hit = [...document.querySelectorAll(selector)].find((e) => e.getClientRects().length > 0);
+  if (!hit) return "missing";
+  if (hit.disabled || hit.getAttribute("aria-disabled") === "true") return "disabled";
+  hit.scrollIntoView({ block: "center" });
+  hit.click();
+  return "clicked";
+}
+
+/** Clicks the first visible element that matches the CSS selector. Waits for it to be enabled. */
+export async function clickSelector(page, selector, { ms = 10000 } = {}) {
+  let last = "missing";
+  await waitFor(
+    async () => (last = await run(page, inPageSelect, selector)) === "clicked",
+    ms,
+    () => `a clickable ${selector} (${last})`,
+  );
+}
+
+/**
+ * Clicks the first of these visible buttons that is ready (exact text). Waits for one. Returns
+ * the text that it clicked.
+ */
+export async function clickAnyText(page, texts, { ms = 10000 } = {}) {
+  let hit = null;
+  const tryAll = async () => {
+    for (const text of texts) {
+      if ((await run(page, inPageClick, text, true, CLICKABLE)) === "clicked") return (hit = text);
+    }
+    return false;
+  };
+  await waitFor(tryAll, ms, () => `a clickable ${texts.map((t) => `"${t}"`).join(" or ")}`);
+  return hit;
+}
+
 /** Sets an input, textarea, select or checkbox and fires input and change. Waits for it. */
 export async function setInput(page, selector, value, ms = 10000) {
   await waitFor(() => run(page, inPageSet, selector, value), ms, () => `the field ${selector}`);
@@ -63,6 +98,32 @@ const hasText = (text) => document.body?.innerText.includes(text) ?? false;
 
 export async function waitForText(page, text, ms = 15000) {
   await waitFor(() => run(page, hasText, text), ms, () => `the text "${text}"`);
+}
+
+const ENGINE_READY = "Crypto engine ready (WebAssembly)";
+const engineLine = () => document.getElementById("engine-text")?.textContent ?? "";
+
+/**
+ * Waits until the engine line says that the engine is ready. The line sits in a closed
+ * <details> (Browser status), so innerText does not hold it: this reads its textContent.
+ */
+export async function waitForEngine(page, ms = 30000) {
+  const ready = async () => (await run(page, engineLine)) === ENGINE_READY;
+  await waitFor(ready, ms, () => `the engine line "${ENGINE_READY}"`);
+}
+
+const popupOpen = () => !!document.querySelector("#privacy-demo-popup[open]");
+
+/**
+ * The Tor demo popup opens on the first visit of a page. A person turns it down in two clicks:
+ * "Use Standard connection", then "Continue without Tor". Does nothing when it is not open.
+ */
+export async function closePrivacyPopup(page) {
+  if (!(await run(page, popupOpen))) return;
+  await clickText(page, "Use Standard connection", { exact: true });
+  await clickText(page, "Continue without Tor", { exact: true });
+  const closed = async () => !(await run(page, popupOpen));
+  await waitFor(closed, 10000, () => "the privacy popup to close");
 }
 
 function inPageSol() {
