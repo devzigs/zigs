@@ -3329,4 +3329,11 @@ export const MUTATIONS = [
     "guideAct(() => { finishSetupPresentation(); openFundingPreview(state.gid); })",
     "guideAct(() => { openFundingPreview(state.gid); })"],
     UNIFIED, /the funding demo entry ends the guide too/),
+  // The device wording of the files that feed the Security page.
+  program("N-word-wallet", "the blocked text of the Security page says signer",
+    ["web/app-wallet.js", 'for device " + muted', 'for signer " + muted'], WORDING,
+    /app-wallet\.js: visible text says device/),
+  program("N-word-setup", "the setup text says that browser windows are not independent signers",
+    ["web/app-setup.js", "are not independent signing devices.", "are not independent signers."],
+    WORDING, /app-setup\.js: visible text says device/),
 ];

@@ -118,8 +118,9 @@ assert.equal(JSON.stringify(frozen), before, "presentation derivation does not m
 // is visible text; a class name, a path or a key has no space. The guide may explain seats, so it
 // and its diagrams are held to "signer" only.
 const VISIBLE = ["app-security-dashboard.js", "security-dashboard-model.js", "app-tutorial.js",
-  "zns-setup-preview.js", "funding-preview.js", "app-funding-preview.js", "app-swap-preview.js",
-  "app-postquantum-swap-preview.js", "app-network-privacy.js", "network-privacy-popup.js"];
+  "app-wallet.js", "app-setup.js", "zns-setup-preview.js", "funding-preview.js",
+  "app-funding-preview.js", "app-swap-preview.js", "app-postquantum-swap-preview.js",
+  "app-network-privacy.js", "network-privacy-popup.js"];
 const QUOTED = /"(?:[^"\\\n]|\\.)*"|'(?:[^'\\\n]|\\.)*'|`(?:[^`\\]|\\.)*`/g;
 const SEAT_OR_SIGNER = /(?<![\w-])(signers?|seats?)(?![\w-])/i;
 const SIGNER = /(?<![\w-])signers?(?![\w-])/i;
