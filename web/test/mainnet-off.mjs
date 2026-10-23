@@ -1,7 +1,7 @@
 // Mainnet is off for this release (M1 of docs/hackathon-release.md), and the testnet faucet is the
 // Valar faucet (M2). The network picker of a new wallet and of the personal account shows Testnet
 // only and no tick, a chat reads testnet requests only, and the page texts name Zcash testnet and
-// Solana Devnet. Run: node web/test/mainnet-off.mjs   (Node 26)
+// Solana Devnet in metadata. Run: node web/test/mainnet-off.mjs   (Node 26)
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { loadRig } from "./sol-rig.mjs";
@@ -73,11 +73,13 @@ assert.equal(NETWORKS.testnet.faucet, "https://faucet.testnet.valargroup.dev/");
 assert.ok(NETWORKS.mainnet && NETWORKS.mainnet.servers.length > 0, "mainnet wallets still open");
 console.log("ok  the faucet is the Valar testnet faucet");
 
-// The page texts name the release.
+// Metadata names the actual networks; visible navigation omits repeated release boilerplate.
 const html = readFileSync(new URL("../index.html", import.meta.url), "utf8").replace(/\s+/g, " ");
 assert.doesNotMatch(html, /mainnet|0\.5 ZEC/i, "index.html has no mainnet text");
-assert.equal(html.match(/Zcash testnet and Solana Devnet/g)?.length, 3,
-  "the description, the Beta title and the side note name the release");
+assert.equal(html.match(/Zcash testnet and Solana Devnet/g)?.length, 1,
+  "the description keeps the actual networks without repeated navigation boilerplate");
+assert.doesNotMatch(html, /Beta:|>Beta<|Not audited\./,
+  "visible navigation omits repeated release warnings");
 assert.match(html, /A private Solana payment hides its amount, but its payee is public\./,
   "the description says that a private Solana payment hides its amount");
 assert.equal(html.match(/hides its amount/g)?.length, 1, "and no other line makes the claim");

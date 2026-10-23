@@ -1,0 +1,10 @@
+{
+  "name": "zigs-metal-orb-preview",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "node build.mjs",
+    "test": "node --test test/*.test.mjs"
+  },
+  "dependencies": { "three": "0.180.0" }
+}

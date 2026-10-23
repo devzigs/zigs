@@ -4,7 +4,7 @@
 import { el } from "./app-dom.js";
 
 const KEY = "zf-theme";
-const CHOICES = [["device", "Browser setting"], ["dark", "Dark"], ["light", "Light"]];
+const CHOICES = [["device", "System"], ["light", "Light"], ["dark", "Dark"]];
 
 function apply(theme) {
   const root = document.documentElement;
@@ -20,6 +20,6 @@ export function themeChoice() {
     try { localStorage.setItem(KEY, ev.target.value); } catch {}
   };
   return el("label", { class: "field" }, el("span", {}, "Appearance"),
-    el("select", { class: "input", onchange: change },
+    el("select", { class: "input", "aria-label": "Appearance", onchange: change },
       CHOICES.map(([value, label]) => el("option", { value, selected: now === value }, label))));
 }

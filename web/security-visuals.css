@@ -1,0 +1,61 @@
+/* Static distributed-security grammar. All colours inherit the supported theme tokens. */
+.distributed-security { display:grid; gap:20px; margin:0; padding:24px;
+  min-width:0; border:1px solid var(--line-2); border-radius:var(--r);
+  background:var(--panel); color:var(--text); box-shadow:inset 0 1px 0 var(--edge);
+  overflow-wrap:anywhere; }
+.distributed-security .security-caption { display:grid; gap:6px; min-width:0; }
+.distributed-security .label { line-height:1.6; }
+.security-caption>strong { font-size:18px; line-height:1.4; }
+.security-group { padding:18px 16px 24px; border:1px dashed var(--line-2);
+  border-radius:16px; background:var(--sunk); min-width:0; }
+.security-group-label { margin:0 0 20px; }
+.security-nodes { display:grid; grid-template-columns:repeat(auto-fit,minmax(min(100%,120px),1fr));
+  list-style:none; margin:0; padding:0; gap:20px 16px; }
+.security-node { position:relative; display:grid; align-content:start; justify-items:center;
+  gap:12px; min-width:0; text-align:center; }
+.security-node-mark { display:grid; place-items:center; width:56px; height:56px;
+  border:1px solid var(--metal); border-radius:50%; color:var(--metal);
+  background:linear-gradient(145deg,var(--control-hi),var(--control-lo));
+  box-shadow:inset 0 1px 0 var(--edge),0 2px 6px -4px var(--metal); }
+.security-node-mark>.symbol { width:24px; height:24px; }
+.security-node-copy { display:grid; gap:4px; min-width:0; }
+.security-node-copy>strong { font-size:14px; line-height:1.45; }
+.security-node-copy>.small { font-size:12px; line-height:1.5; }
+.security-rule { position:relative; display:flex; flex-wrap:wrap; align-items:center; gap:16px; min-width:0;
+  padding:20px 0 0; }
+.security-rule::before { content:""; position:absolute; top:-20px; left:30px;
+  height:26px; border-left:1px solid var(--metal); }
+.security-rule-ring { display:flex; align-items:center; justify-content:center; gap:3px;
+  flex:0 0 4em; width:4em; height:4em; font-size:16px; white-space:nowrap;
+  border:1.5px dashed var(--metal); border-radius:50%; color:var(--text);
+  font-variant-numeric:tabular-nums; }
+.security-rule-ring>strong { font-size:22px; line-height:1.2; }
+.security-rule-ring>span { font-size:13px; }
+.security-rule>div { display:grid; flex:1 1 180px; gap:5px; min-width:0; }
+.security-rule>div>strong { font-size:16px; line-height:1.45; }
+.distributed-security .security-rule p { margin:0; font-size:13px; line-height:1.5; }
+.security-meaning { display:grid; gap:6px; padding-top:18px; border-top:1px solid var(--line); }
+.security-meaning>p { margin:0; font-size:14px; line-height:1.6; }
+.security-meaning>p:first-child { font-weight:600; }
+.distributed-security>.security-footnote { margin:0; font-size:12px; line-height:1.6; text-align:start; }
+/* Setup retains its existing preview/update hooks; no approval example is selected. */
+.guided-plan .distributed-security { padding:20px; }
+.security-recovery-page>.distributed-security { max-width:none; }
+@media(max-width:600px) {
+  .distributed-security,.guided-plan .distributed-security { padding:18px 16px; gap:18px; }
+  .security-group { padding:16px; }
+  .security-nodes { grid-template-columns:minmax(0,1fr); gap:16px; }
+  .security-node { grid-template-columns:44px minmax(0,1fr); align-items:center;
+    justify-items:start; text-align:start; gap:12px; }
+  .security-node-mark { width:44px; height:44px; }
+  .security-node:not(:last-child)::after { content:""; position:absolute; left:21px;
+    top:calc(100% + 3px); height:10px; border-left:1px solid var(--metal); }
+  .security-rule { gap:12px; padding-top:12px; }
+  .security-rule::before { top:-18px; height:22px; left:25px; }
+  .security-rule-ring { font-size:13px; }
+}
+@media(forced-colors:active) {
+  .distributed-security,.security-group,.security-node-mark { background:Canvas; color:CanvasText;
+    border-color:CanvasText; box-shadow:none; }
+  .security-rule-ring,.security-meaning,.security-rule::before,.security-node::after { border-color:CanvasText; }
+}

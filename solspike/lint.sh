@@ -24,11 +24,20 @@ JS=(solspike/harness/*.mjs solspike/tools/*.mjs solspike/build.mjs solspike/buil
   web/help-model.js web/test/help.mjs
   web/test/unified-setup.mjs web/sol/owned.js web/sol/rent.js web/test/sol-rent.mjs
   web/test/sol-nonce-tabs.mjs
+  web/guided-setup-model.js web/backup-check.js
+  web/wallet-description.js web/test/wallet-description.mjs
+  web/test/guided-create.mjs web/test/passkey-setup.mjs web/test/optional-passkey.mjs
+  web/test/passkey-fixture.mjs
+  web/test/guided-setup.mjs web/test/backup-check.mjs
   web/test/sol-errors.mjs web/sol/localprove.js web/sol/localprover.js web/test/sol-prove.mjs
   web/app-icons.js web/app-theme.js web/test/contrast.mjs web/theme.js web/overview-model.js
+  web/app-motion.js web/test/premium-motion.mjs
+  web/homepage-motion.js web/homepage-scene.js web/test/homepage-motion.mjs
   web/test/overview.mjs web/setup-model.js web/test/setup-stage.mjs web/approvals-model.js
-  web/test/approvals.mjs web/recovery-model.js web/test/recovery.mjs web/payment-model.js
-  web/test/payment-model.mjs cf/src/gate.js cf/test/gate.mjs)
+  web/test/approvals.mjs web/recovery-model.js web/test/recovery.mjs
+  web/security-dashboard-model.js web/test/security-dashboard.mjs web/payment-model.js
+  web/test/payment-model.mjs web/wallet-identity.js web/wallet-avatar-svg.js
+  cf/src/gate.js cf/test/gate.mjs)
 PY=(solspike/tools/*.py)
 # The page modules first: no unbound name, no assignment of an import, no missing named import.
 # This is the only check for an import that a function body needs and that no test runs. The full

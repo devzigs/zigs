@@ -1,0 +1,67 @@
+/* Optional final setup step. All checkout content is a local, non-payable demo. */
+.guided-progress:has(li:nth-child(6)) ol { grid-template-columns:repeat(6,minmax(0,1fr)); }
+.guided-card.zns-setup { width:100%; max-width:780px; padding:16px 20px; gap:10px; }
+.zns-heading { display:flex; align-items:center; justify-content:space-between; gap:12px; flex-wrap:wrap; }
+.zns-title { display:grid; gap:3px; min-width:0; }
+.zns-title>.label { font-size:11px; }
+.zns-setup .zns-title>h2 { font-size:24px; line-height:1.2; }
+.zns-setup>.callout { padding:8px 12px; font-size:13px; }
+.zns-name-form { display:grid; grid-template-columns:minmax(0,1fr) 180px; gap:10px 12px; }
+.zns-name-form .field { grid-column:1/-1; margin:0; gap:4px; }
+.zns-name-form>p { grid-column:1/-1; }
+.zns-name-form>.btn { align-self:end; min-height:56px; }
+.zns-name-input { display:flex; align-items:center; gap:12px; border:1px solid var(--line-field);
+  border-radius:var(--r-control); padding-right:16px; background:var(--sunk); min-width:0; }
+.zns-name-input:focus-within { outline:2px solid var(--accent); outline-offset:2px; }
+.zns-name-input input { border:0; background:transparent; box-shadow:none; min-width:0; width:100%;
+  min-height:48px; padding:12px 14px; font-size:16px; color:var(--text); }
+.zns-name-input input:focus-visible { outline:0; }
+.zns-name-input>span { color:var(--muted); flex-shrink:0; }
+.zns-currencies { border:0; padding:0; margin:0; min-width:0; display:grid;
+  grid-template-columns:repeat(2,minmax(0,1fr)); gap:8px; }
+.zns-currencies legend { padding:0 0 6px; font-weight:600; font-size:14px; }
+.zns-currency { display:flex; align-items:center; gap:8px; padding:8px 10px; border:1px solid var(--line-field);
+  border-radius:var(--r-control); cursor:pointer; min-height:56px; min-width:0; }
+.zns-currency:has(:checked) { border-color:var(--accent); background:var(--accent-soft); }
+.zns-currency:has(:focus-visible) { outline:2px solid var(--accent); outline-offset:3px; }
+.zns-currency input { width:18px; height:18px; min-height:0; margin:0; accent-color:var(--accent); flex-shrink:0; }
+.zns-currency>span { display:grid; gap:0; }
+.zns-currency img { flex-shrink:0; width:24px; height:24px; }
+.zns-currency strong { font-size:16px; }
+.zns-footer { display:flex; align-items:center; justify-content:space-between; gap:12px;
+  border-top:1px solid var(--line); padding-top:8px; min-width:0; }
+.zns-details { flex:0 1 40%; min-width:0; }
+.zns-details>summary { min-height:48px; align-content:center; font-size:13px; }
+.zns-details[open] { display:grid; gap:12px; }
+.zns-footer:has(.zns-details[open]) { display:grid; }
+.zns-actions { justify-content:space-between; flex-wrap:nowrap; gap:8px; }
+.zns-actions>.btn { font-size:14px; }
+.zns-checkout { display:grid; grid-template-columns:192px minmax(0,1fr);
+  grid-template-areas:"qr name" "qr payment"; align-items:start; gap:10px 20px; padding:14px 16px; min-width:0; }
+.zns-order { grid-area:name; display:grid; gap:4px; min-width:0; width:100%; }
+.zns-selected-name { font-size:clamp(22px,3vw,28px); overflow-wrap:anywhere; line-height:1.2; }
+.zns-payment-details { grid-area:payment; display:grid; gap:8px; min-width:0; }
+.zns-payment-details>.btn { justify-self:start; }
+.zns-qr-figure { grid-area:qr; display:grid; justify-items:center; text-align:center; gap:8px; margin:0; }
+.zns-qr-figure>figcaption { font-size:12px; line-height:1.35; }
+.zns-demo-qr { padding:8px; background:#fff; border-radius:12px; max-width:100%; width:176px; }
+.zns-demo-qr svg { display:block; width:100%; height:auto; }
+.zns-amount { font-family:var(--font-mono,monospace); font-size:24px; font-weight:600; line-height:1.3; }
+.zns-checkout:focus-visible { outline:2px solid var(--accent); outline-offset:3px; }
+@media (max-width:600px) {
+  .guided-card.zns-setup { padding:16px; gap:10px; }
+  .zns-setup .zns-title>h2 { font-size:22px; }
+  .zns-name-form { grid-template-columns:minmax(0,1fr); }
+  .zns-name-form>.btn { min-height:48px; }
+  .zns-currencies { gap:8px; }
+  .zns-currency { padding:12px 8px; gap:8px; flex-wrap:wrap; }
+  .zns-currency img { width:24px; height:24px; }
+  .zns-currency>span { flex:1; }
+  .zns-checkout { grid-template-columns:minmax(0,1fr); grid-template-areas:"name" "qr" "payment";
+    padding:12px; gap:12px; }
+  .zns-demo-qr { width:168px; }
+  .zns-payment-details>.btn { justify-self:stretch; }
+  .zns-order { text-align:center; }
+  .zns-footer { display:grid; gap:4px; }
+  .zns-actions { display:grid; grid-template-columns:auto minmax(0,1fr); align-items:stretch; }
+}

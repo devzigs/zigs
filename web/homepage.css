@@ -1,0 +1,407 @@
+/* Homepage-only art direction. No decorative treatment represents wallet/security state. */
+.shell:has(.lobby-home) { grid-template-columns:216px minmax(0,1fr); }
+.main:has(.lobby-home) {
+  padding:32px clamp(24px,3.4vw,64px) 56px;
+  background:var(--bg);
+}
+.lobby-home {
+  --home-ink:#f5f6f8; --home-muted:#b7bec8; --home-warm:#f4b183;
+  --home-dark:#0d1014; --home-card-radius:20px;
+  --motion-hover:120ms; --motion-release:120ms; --motion-press:80ms;
+  max-width:1380px; width:100%; margin-inline:auto;
+}
+.lobby-home>.welcome {
+  display:grid; gap:28px; max-width:none; margin:0; padding:0;
+  border:0; border-radius:0; background:none; box-shadow:none;
+}
+.home-masthead { display:flex; align-items:center; justify-content:space-between; gap:16px; min-width:0; }
+.home-masthead>.label { color:var(--accent-text); font:600 10px/1.5 var(--sans); letter-spacing:.2em; }
+.home-environment {
+  display:inline-flex; align-items:center; gap:8px; padding:7px 11px; color:var(--muted);
+  border:1px solid var(--line); border-radius:999px; font:400 11px/1.4 var(--sans); background:var(--panel);
+}
+.home-environment::before {
+  content:""; width:5px; height:5px; border-radius:50%; background:var(--accent-text); flex:none;
+}
+/* One immersive scene. The source artwork stays anchored while light travels over its form. */
+.lobby-home .welcome .welcome-main {
+  display:block; position:relative; isolation:isolate; min-height:520px; min-width:0; padding:0;
+  overflow:hidden; border:1px solid #c3cfdf24; border-radius:28px; background:#090c10;
+  box-shadow:inset 0 1px 0 #e5edf706,0 22px 64px -48px #000b;
+}
+.home-hero::before {
+  content:""; display:block; position:absolute; inset:0; z-index:0; pointer-events:none;
+  background:radial-gradient(ellipse at 91% 14%,#bd895935,transparent 53%),
+    radial-gradient(ellipse at 66% 90%,#849db318,transparent 58%);
+  opacity:var(--home-atmosphere,.6);
+}
+.home-hero::after {
+  content:""; display:block; position:absolute; inset:0; z-index:1; pointer-events:none;
+  background:linear-gradient(90deg,#090c10 0%,#090c10f5 30%,#090c10bd 46%,#090c1033 66%,transparent 84%);
+}
+.lobby-home .welcome .welcome-brand {
+  position:absolute; inset:auto; top:-6px; right:-16px; z-index:0; display:grid; place-items:center;
+  grid-template: minmax(0,1fr) / minmax(0,1fr);
+  padding:0; min-height:0; width:640px; height:640px; max-width:none; margin:0;
+  border:0; background:none; border-radius:0; pointer-events:auto;
+  mask-image:linear-gradient(#000 0%,#000 72%,transparent 100%);
+}
+.lobby-home .welcome .welcome-brand::before { display:none; }
+.home-hero-art {
+  position:static; display:block; width:100%; height:100%; max-width:none;
+  object-fit:contain; object-position:center; border:0; background:none; opacity:1;
+  transform:none; translate:none; transition:none;
+}
+.home-hero-lighting { position:absolute; inset:0; width:100%; height:100%; pointer-events:none; }
+.home-scene-live .home-hero-art { opacity:0; }
+.lobby-home .welcome .welcome-intro {
+  position:relative; z-index:2; display:grid; justify-items:start; align-content:center;
+  gap:20px; width:100%; max-width:760px; padding:54px 50px; min-height:520px;
+  pointer-events:none;
+}
+.lobby-home .welcome .welcome-intro>* { pointer-events:auto; }
+.lobby-home .welcome .welcome-intro>.welcome-entry-paths { pointer-events:none; }
+.lobby-home .welcome-intro :is(button,a,input,label,.join) { pointer-events:auto; }
+.lobby-home .welcome .welcome-intro::before { display:none; }
+.lobby-home .home-hero .welcome-kicker { color:#c9a58b; font:600 10px/1.5 var(--sans); letter-spacing:.22em; }
+.lobby-home .home-hero h1 {
+  margin:0; max-width:100%; color:var(--home-ink);
+  font:600 clamp(42px,4.6vw,66px)/1.07 var(--sans); letter-spacing:-.045em;
+  text-wrap:balance; overflow-wrap:anywhere; animation:none;
+}
+.lobby-home .home-hero .welcome-title-accent { display:block; color:#bfc7d1; }
+.lobby-home .home-hero .welcome-summary {
+  max-width:370px; margin:0; color:var(--home-muted); font:400 16px/1.65 var(--sans); text-wrap:pretty;
+}
+.home-signature { display:flex; flex-wrap:wrap; align-items:center; gap:4px 8px; color:#c4cbd3; font:500 10px/1.5 var(--sans); margin-top:4px; }
+.home-signature>span:first-child { width:26px; height:1px; background:#a87451; }
+.home-signature>span:last-child { color:#929eae; font-weight:400; }
+/* Native controls retain their real loading/disabled conditions and handlers. */
+.lobby-home .welcome-entry-paths { display:grid; gap:9px; width:100%; min-width:0; }
+.lobby-home .welcome-actions { display:flex; flex-wrap:wrap; align-items:start; gap:10px; margin:4px 0 0; }
+.lobby-home .welcome-actions>.btn {
+  display:inline-flex; align-items:center; justify-content:center; gap:16px;
+  min-height:50px; min-width:0; max-width:100%; padding:13px 21px; border:1px solid #56616f;
+  border-radius:12px; background:#222932; color:#f0f3f7; font:600 13px/1.4 var(--sans); white-space:normal;
+  box-shadow:none;
+  transition:background-color 120ms var(--ease),border-color 120ms var(--ease),
+    color 120ms var(--ease),transform 120ms var(--ease);
+}
+.lobby-home .welcome-actions>.btn.primary {
+  background:#edac7e; border-color:#edac7e; color:#27190f; box-shadow:none;
+}
+.lobby-home .welcome-actions>.off-why { flex-basis:100%; max-width:52ch; color:var(--muted); font-size:13px; }
+.lobby-home .home-hero .welcome-actions>.off-why { color:#c6cfdb; }
+.home-action-arrow { display:inline-block; width:15px; height:18px; flex:none; }
+.home-action-arrow::before { content:"↗"; font:500 20px/18px var(--sans); }
+.home-arrow-forward::before { content:"→"; }
+.lobby-home .welcome-entry-meta { display:grid; gap:4px; min-width:0; }
+.lobby-home .welcome-secondary-actions { display:flex; flex-wrap:wrap; gap:0 16px; }
+.lobby-home .welcome-secondary-actions>.btn {
+  min-height:var(--control-height); min-width:0; max-width:100%; padding:8px 0; color:var(--muted);
+  border:0; border-radius:3px; background:none; box-shadow:none; font:400 12px/1.5 var(--sans);
+  text-decoration:underline; text-decoration-color:var(--line-2); text-underline-offset:4px;
+}
+.lobby-home .home-hero .welcome-secondary-actions>.btn { color:#b6c0cc; }
+.lobby-home .welcome-entry-meta>a { justify-self:start; max-width:100%; }
+.lobby-home .welcome :is(.btn,summary):focus-visible { outline:2px solid var(--focus); outline-offset:5px; }
+.lobby-home .home-hero .btn:focus-visible { outline-color:#ffd1ad; }
+.lobby-home .welcome-actions>.btn:disabled {
+  opacity:1; color:#9da6b2; border-color:#424c59; background:#20262e;
+  box-shadow:none; cursor:not-allowed; transform:none;
+}
+.lobby-home .welcome-entry-paths>.join { min-width:0; padding-top:16px; border-top:1px solid var(--line); scroll-margin:24px; }
+.lobby-home .home-hero .join {
+  padding:20px; width:100%; color:#f3f5f7; border:1px solid #45505f; border-radius:16px; background:#171e27;
+  --text:#f3f5f7; --muted:#bcc7d5; --line:#45505f; --bg:#11171f;
+  --sunk:#11171f; --raised:#26303d; --faint:#aeb9c8; --bad:#f5a1a9;
+}
+.lobby-home .home-hero .join .input { color:#f3f5f7; background:#0e151e; border-color:#6c7c90; }
+/* Clearly labelled policy illustration; never live authorization progress. */
+.home-threshold {
+  position:absolute; right:24px; bottom:24px; z-index:3; margin:0;
+  width:246px; max-width:calc(100% - 32px); padding:16px;
+  border:1px solid #68738266; border-radius:16px; background:#171d24; color:#b9c2cd;
+  box-shadow:inset 0 1px 0 #e6edf70a,0 10px 28px -14px #000b;
+}
+.home-threshold-title { margin:0; color:#c4cdd7; font:600 10px/1.5 var(--sans); letter-spacing:.1em; text-transform:uppercase; }
+.home-threshold-nodes { display:flex; gap:32px; align-items:center; margin:10px 0; }
+.home-threshold-node { position:relative; display:grid; place-items:center; width:28px; height:28px; border:1px solid #566272; border-radius:50%; background:#252d37; color:#c4cdd7; font:500 11px/1 var(--mono); }
+.home-threshold-node+.home-threshold-node::before { content:""; position:absolute; right:calc(100% + 8px); width:18px; height:1px; background:#7c695b; }
+.home-threshold-example { border-color:#ce9366; color:#f0b98f; background:#62452f; box-shadow:inset 0 0 0 2px #e4a16b12; }
+.home-threshold figcaption { font:400 10px/1.4 var(--sans); color:#bac3ce; }
+/* Returning visitors reach real wallet cards in the initial viewport. */
+.lobby-home .welcome-returning .welcome-main { min-height:260px; padding:0; }
+.lobby-home .welcome-returning .welcome-intro { min-height:260px; max-width:630px; padding:32px 40px; gap:14px; }
+.lobby-home .welcome-returning .home-hero h1 { font-size:56px; line-height:1.02; }
+.lobby-home .welcome-returning .home-hero .welcome-title-accent { display:inline; }
+.lobby-home .welcome-returning .welcome-summary { max-width:340px; font-size:15px; }
+.lobby-home .welcome-returning .welcome-brand { width:360px; height:360px; right:6px; top:-10px; }
+.lobby-home .welcome-collection { display:grid; gap:16px; max-width:none; width:100%; }
+.home-wallet-launcher { min-width:0; }
+.home-launcher-single { display:grid; grid-template-columns:minmax(0,1.4fr) minmax(0,1fr); gap:20px; }
+.home-wallet-note {
+  align-self:end; display:grid; gap:12px; min-height:164px; padding:24px;
+  border:1px solid var(--line); border-radius:var(--home-card-radius); background:var(--panel);
+}
+.home-wallet-note>.label { color:var(--accent-text); font-size:10px; letter-spacing:.12em; }
+.home-wallet-note h3 { font:500 20px/1.15 var(--sans); letter-spacing:-.035em; }
+.home-wallet-note h3>span { display:block; color:var(--muted); }
+.home-wallet-note>p:last-child { max-width:42ch; font:400 12px/1.6 var(--sans); color:var(--muted); }
+.lobby-home .welcome-collection-heading { align-items:center; gap:8px 16px; }
+.lobby-home .welcome-collection-heading h2 { font:500 21px/1.3 var(--sans); letter-spacing:-.04em; color:var(--text); }
+.lobby-home .welcome-collection-heading>.small { font:400 12px/1.5 var(--sans); }
+.lobby-home .welcome-collection .welcome-wallet-list { display:grid; grid-template-columns:repeat(auto-fit,minmax(min(100%,350px),1fr)); gap:16px; padding:0; border:0; min-width:0; align-items:stretch; }
+.lobby-home .welcome-wallet-list .wallet-vault-card {
+  grid-template-columns:64px minmax(0,1fr) auto; gap:8px 18px; min-height:164px; padding:25px;
+  border:1px solid var(--line-2); border-radius:var(--home-card-radius);
+  background:linear-gradient(125deg,#d6e5f709,transparent 60%),var(--panel);
+  box-shadow:inset 0 1px 0 var(--edge),0 12px 24px -24px #0008;
+  transition:background-color 120ms var(--ease),border-color 120ms var(--ease),
+    box-shadow 120ms var(--ease),transform 120ms var(--ease);
+}
+.lobby-home .wallet-vault-card>.vault-card-top { width:64px; height:64px; border-radius:18px; grid-column:1; grid-row:1/3; background:radial-gradient(circle at 30% 15%,#d0ddec26,transparent 65%),var(--sunk); box-shadow:inset 0 1px 0 var(--edge),0 7px 16px -14px #000; }
+.lobby-home .vault-card-top>.wallet-art { width:64px; height:64px; }
+.lobby-home .wallet-vault-card>.ri-main { gap:8px; grid-column:2; grid-row:1; }
+.lobby-home .wallet-vault-card .ri-title { font:600 19px/1.25 var(--sans); letter-spacing:-.025em; }
+.lobby-home .wallet-vault-card .ri-sub { font:400 12px/1.5 var(--sans); gap:4px 10px; }
+.lobby-home :is(.vault-network,.vault-rule) { color:var(--muted); }
+.lobby-home .wallet-vault-card>.ri-end { grid-column:2; grid-row:2; gap:4px 8px; }
+.lobby-home .wallet-vault-card .money { font:500 27px/1.2 var(--sans); letter-spacing:-.045em; }
+.lobby-home .wallet-vault-card .money .cur { font:500 12px/1.5 var(--sans); }
+.lobby-home .wallet-vault-card>.vault-card-entry { grid-column:3; grid-row:1/3; width:auto; gap:8px; align-self:end; font:500 12px/1.4 var(--sans); color:var(--accent-text); }
+.lobby-home .wallet-vault-card .vault-entry-label { position:static; width:auto; height:auto; overflow:visible; clip-path:none; white-space:normal; }
+.lobby-home .welcome-many .wallet-vault-card { grid-template-columns:64px minmax(0,1fr); }
+.lobby-home .welcome-many .wallet-vault-card>.vault-card-entry { grid-column:2; grid-row:3; justify-self:start; }
+.lobby-home .welcome-returning>.welcome-entry-paths { padding-top:4px; max-width:none; border:0; }
+.lobby-home .welcome-returning>.welcome-entry-paths .welcome-actions>.btn { border-color:var(--line-2); background:var(--panel); color:var(--text); }
+/* Product principles are education, not verified protection badges. */
+.home-principles { display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); min-width:0; border-block:1px solid var(--line); padding-block:28px; }
+.home-principles>article { display:flex; align-items:start; gap:16px; padding:0 24px; min-width:0; }
+.home-principles>article:first-child { padding-left:0; }
+.home-principles>article:last-child { padding-right:0; }
+.home-principles>article+article { border-left:1px solid var(--line); }
+.home-principle-number { color:var(--accent-text); font:400 10px/1.5 var(--mono); padding-top:3px; }
+.home-principles h3 { font:500 16px/1.4 var(--sans); letter-spacing:-.025em; }
+.home-principles p { max-width:32ch; color:var(--muted); font:400 12px/1.65 var(--sans); margin-top:6px; }
+.lobby-home .welcome .welcome-details { max-width:none; border:1px solid var(--line); border-radius:var(--home-card-radius); background:var(--panel); box-shadow:inset 0 1px 0 var(--edge); scroll-margin:24px; }
+.lobby-home .welcome .welcome-details>summary { min-height:84px; padding:22px 26px; }
+.lobby-home .welcome .welcome-details>summary>.symbol { color:var(--accent-text); }
+.lobby-home .welcome .welcome-details .welcome-security-copy>strong { font-size:16px; }
+.lobby-home .welcome .welcome-details .welcome-security-copy>.small { font-size:13px; }
+.lobby-home .welcome .welcome-details .welcome-steps { padding:8px 26px 28px; gap:28px; }
+.lobby-home .welcome .welcome-details .welcome-steps h3 { margin-bottom:8px; }
+.lobby-home .welcome .welcome-details .welcome-disclosures { padding:22px 26px 26px; }
+.home-footer-note { color:var(--faint); font:400 11px/1.6 var(--sans); }
+.home-footer-note>span { margin-inline:8px; color:var(--accent-text); }
+/* Navigation recedes without losing any destination or browser status control. */
+.shell:has(.lobby-home) .side { padding:28px 14px; gap:28px; }
+.shell:has(.lobby-home) .side-item { min-height:var(--control-height); font-size:12px; padding:10px 8px; gap:8px; }
+.shell:has(.lobby-home) .side-item>.symbol { width:18px; height:18px; }
+.shell:has(.lobby-home) .side-item.active { background:var(--nav-selected,var(--panel)); }
+.shell:has(.lobby-home) .side-name { font-weight:450; }
+.shell:has(.lobby-home) .side-note { font-size:11px; line-height:1.7; }
+.lobby-home .welcome :is(.btn,.wallet-vault-card,summary) { transition-duration:120ms; }
+@media(hover:hover) and (pointer:fine) {
+  .lobby-home .welcome-actions>.btn:not(:disabled):hover { border-color:#aab5c3; background:#303a47; }
+  .lobby-home .welcome-actions>.btn.primary:not(:disabled):hover { background:#f5bb90; border-color:#f5bb90; }
+  .lobby-home .welcome-wallet-list .wallet-vault-card:hover { border-color:var(--metal); }
+}
+.lobby-home .welcome :is(.btn,.wallet-vault-card,summary):active:not(:disabled) {
+  transform:translateY(1px); transition-duration:80ms;
+}
+.lobby-home .welcome :is(.btn,.wallet-vault-card,summary):focus-visible:active { transform:none; }
+@media(min-width:761px) and (max-width:1180px) {
+  .shell:has(.lobby-home) { grid-template-columns:196px minmax(0,1fr); }
+  .main:has(.lobby-home) { padding-inline:28px; }
+  .lobby-home .welcome .welcome-intro { padding:40px 32px; max-width:660px; }
+  .lobby-home .welcome .welcome-brand { width:580px; height:580px; right:-100px; top:8px; }
+  .lobby-home .home-hero h1 { font-size:clamp(42px,4.5vw,54px); }
+  .lobby-home .welcome-returning .welcome-main { min-height:248px; }
+  .lobby-home .welcome-returning .welcome-intro { min-height:248px; padding:28px 32px; max-width:530px; }
+  .lobby-home .welcome-returning .welcome-brand { width:340px; height:340px; right:-56px; top:-8px; }
+  .lobby-home .welcome-returning .home-hero h1 { font-size:48px; }
+  .home-principles>article { padding-inline:16px; gap:10px; }
+  .home-launcher-single { display:block; }
+  .home-wallet-note { display:none; }
+  .lobby-home .wallet-vault-card>.vault-card-entry { grid-column:2; grid-row:3; align-self:start; justify-self:start; }
+  .lobby-home .welcome-wallet-list .wallet-vault-card { grid-template-columns:64px minmax(0,1fr); }
+}
+@media(min-width:761px) and (max-width:1000px) {
+  .lobby-home .welcome-new .welcome-brand { width:480px; height:480px; right:0; top:-8px; }
+  .lobby-home .welcome-new .welcome-intro { max-width:none; }
+  .welcome-new .home-hero::after {
+    background:linear-gradient(180deg,transparent 170px,#090c1044 240px,#090c10 342px),
+      linear-gradient(90deg,#090c1077,transparent 70%);
+  }
+  .welcome-returning .home-threshold { position:relative; inset:auto; margin:0 24px 20px auto; }
+  .lobby-home .welcome-returning .home-hero h1 { font-size:40px; }
+}
+@media(hover:hover) and (pointer:fine) {
+  .lobby-home .welcome-returning>.welcome-entry-paths .welcome-actions>.btn:hover {
+    background:var(--control-hover); border-color:var(--metal); color:var(--text);
+  }
+}
+@media(max-width:760px) {
+  .shell:has(.lobby-home) { display:block; }
+  .main:has(.lobby-home) { padding:22px 18px 36px; }
+  .shell:has(.lobby-home) .side { padding:12px 18px; gap:12px; }
+  .shell:has(.lobby-home) .side-item { min-height:48px; font-size:14px; }
+  .lobby-home { --home-card-radius:18px; }
+  .lobby-home>.welcome { gap:22px; }
+  .home-masthead { gap:10px; flex-wrap:wrap; }
+  .home-masthead>.label { font-size:10px; letter-spacing:.1em; }
+  .home-environment { font-size:10px; padding:6px 8px; gap:5px; }
+  .lobby-home .welcome .welcome-main { min-height:0; padding:0; border-radius:24px; }
+  .lobby-home .welcome .welcome-intro { max-width:none; min-height:0; padding:294px 22px 28px; gap:16px; }
+  .lobby-home .welcome-new .welcome-brand { width:380px; height:380px; right:-18px; top:-4px; }
+  .home-hero::after {
+    background:linear-gradient(180deg,transparent 180px,#090c1033 238px,#090c10 342px),
+      linear-gradient(90deg,#090c1055,transparent 60%);
+  }
+  .lobby-home .home-hero .welcome-kicker { font-size:10px; letter-spacing:.13em; }
+  .lobby-home .home-hero h1 { font-size:clamp(30px,9.4vw,44px); letter-spacing:-.05em; }
+  .lobby-home .home-hero .welcome-summary { font-size:15px; line-height:1.6; max-width:36ch; }
+  .lobby-home .welcome-actions { display:flex; gap:8px; width:100%; margin:0; }
+  .lobby-home .welcome-actions>.btn { width:auto; flex:1 1 max-content; padding:12px 14px; font-size:12px; gap:10px; }
+  .lobby-home .welcome-secondary-actions { gap:0 16px; }
+  .lobby-home .welcome-secondary-actions>.btn { font-size:11px; }
+  .home-signature { font-size:9px; gap:4px 6px; margin-top:0; }
+  .home-signature>span:first-child { width:17px; }
+  .home-threshold { width:218px; padding:12px; border-radius:14px; }
+  .home-threshold-title { font-size:9px; }
+  .home-threshold-nodes { gap:24px; margin:7px 0; }
+  .home-threshold-node { width:21px; height:21px; font-size:9px; }
+  .home-threshold-node+.home-threshold-node::before { width:12px; right:calc(100% + 6px); }
+  .home-threshold figcaption { font-size:10px; }
+  /* Returning visitors keep a compact scene above their wallet launchers. */
+  .lobby-home .welcome-returning .welcome-main { min-height:190px; }
+  .lobby-home .welcome-returning .welcome-brand { width:220px; height:220px; right:-36px; top:0; }
+  .lobby-home .welcome-returning .welcome-intro { padding:24px 128px 24px 20px; min-height:190px; gap:12px; }
+  .welcome-returning .home-hero::after {
+    background:linear-gradient(90deg,#090c10 0%,#090c10f0 29%,#090c1044 66%,transparent);
+  }
+  .welcome-returning .home-threshold { position:relative; inset:auto; margin:0 16px 16px auto; }
+  .lobby-home .welcome-returning .welcome-kicker { display:none; }
+  .lobby-home .welcome-returning .home-hero h1 { font-size:clamp(28px,7.8vw,34px); line-height:1.07; }
+  .lobby-home .welcome-returning .home-hero .welcome-title-accent { display:block; }
+  .lobby-home .welcome-returning .welcome-summary { font-size:13px; line-height:1.6; max-width:22ch; }
+  .home-launcher-single { display:block; }
+  .home-wallet-note { display:none; }
+  .lobby-home .welcome-collection { gap:12px; }
+  .lobby-home .welcome-collection-heading h2 { font-size:19px; }
+  .lobby-home .welcome-collection-heading>.small { font-size:10px; }
+  .lobby-home .welcome-collection .welcome-wallet-list { grid-template-columns:minmax(0,1fr); gap:12px; }
+  .lobby-home .welcome-wallet-list .wallet-vault-card { grid-template-columns:48px minmax(0,1fr); padding:20px; gap:8px 14px; min-height:156px; }
+  .lobby-home .wallet-vault-card>.vault-card-top { width:48px; height:48px; border-radius:14px; }
+  .lobby-home .vault-card-top>.wallet-art { width:48px; height:48px; }
+  .lobby-home .wallet-vault-card .ri-title { font-size:17px; }
+  .lobby-home .wallet-vault-card .ri-sub { font-size:11px; }
+  .lobby-home .wallet-vault-card>.vault-card-entry { grid-column:2; grid-row:3; justify-self:start; }
+  .lobby-home .wallet-vault-card .money { font-size:25px; }
+  .lobby-home .welcome-returning>.welcome-entry-paths { padding:0; }
+  .home-principles { grid-template-columns:minmax(0,1fr); gap:20px; padding-block:24px; }
+  .home-principles>article { padding:0; gap:18px; }
+  .home-principles>article+article { border:0; }
+  .home-principles h3 { font-size:15px; }
+  .home-principles p { max-width:40ch; margin-top:3px; }
+  .lobby-home .welcome .welcome-details>summary { padding:20px; gap:12px; }
+  .lobby-home .welcome .welcome-details .welcome-steps { padding:4px 20px 24px; }
+  .lobby-home .welcome .welcome-details .welcome-disclosures { padding:20px; }
+  .home-footer-note { font-size:10px; }
+}
+@media(max-width:360px) {
+  .main:has(.lobby-home) { padding-inline:14px; }
+  .lobby-home .welcome-new .welcome-brand { width:340px; height:340px; right:-24px; top:0; }
+  .lobby-home .welcome-new .welcome-intro { padding:264px 18px 24px; }
+  .lobby-home .welcome-returning .welcome-intro { padding-right:112px; }
+  .lobby-home .welcome-wallet-list .wallet-vault-card { padding:18px; gap:8px 12px; }
+  .home-masthead { gap:8px; }
+}
+/* The card reserves its own height when artwork is stacked, including enlarged text. */
+@media(max-width:1000px) {
+  .lobby-home .welcome-new .welcome-main { display:grid; grid-template-columns:minmax(0,1fr); }
+  .lobby-home .welcome-new .welcome-intro { grid-area:2/1; min-height:0; padding-top:12px; }
+  .welcome-new .home-threshold {
+    position:relative; inset:auto; grid-area:1/1; justify-self:end; margin:208px 18px 0 16px;
+  }
+}
+@media(max-width:760px) {
+  .welcome-new .home-threshold { margin:184px 16px 0; }
+}
+@media(max-width:360px) {
+  .welcome-new .home-threshold { margin-top:154px; }
+}
+@media(prefers-reduced-motion:reduce), (update:slow) {
+  .lobby-home .home-hero-art { animation:none!important; opacity:1!important; }
+  .home-hero-lighting { display:none!important; }
+  .lobby-home .welcome :is(.btn,.wallet-vault-card,summary) { transform:none!important; transition:none!important; }
+}
+@media(forced-colors:active) {
+  .main:has(.lobby-home),.lobby-home .welcome .welcome-main,.lobby-home .welcome .welcome-details,
+  .lobby-home .welcome-wallet-list .wallet-vault-card,.lobby-home .welcome-actions>.btn,
+  .home-threshold,.home-environment,.lobby-home .home-hero .join {
+    color:CanvasText; background:Canvas; border-color:CanvasText; box-shadow:none;
+  }
+  .lobby-home .welcome .welcome-brand { display:none; }
+  .home-hero::before,.home-hero::after { display:none!important; }
+  .welcome .home-threshold { position:relative; inset:auto; margin:0 24px 24px auto; }
+  .lobby-home .welcome .welcome-main { min-height:0; }
+  .lobby-home .welcome .welcome-intro { min-height:0; max-width:none; padding:28px; }
+  .lobby-home .home-hero :is(h1,p,.welcome-title-accent),.home-threshold figcaption { color:CanvasText; }
+  .lobby-home .home-hero .btn,.lobby-home .welcome .btn { color:ButtonText; border:1px solid ButtonText; }
+  .home-threshold-node { color:CanvasText; background:Canvas; border-color:CanvasText; }
+  .home-threshold-example { border:2px solid Highlight; }
+  .home-threshold-node+.home-threshold-node::before { background:CanvasText; }
+  .lobby-home .home-hero .btn:focus-visible,.lobby-home .welcome .btn:focus-visible { outline-color:Highlight; }
+}
+
+/* Keep the initial landing view within the viewport; expanded forms retain natural scrolling. */
+.main:has(.lobby-empty) { padding-block:clamp(14px,2.8dvh,32px); }
+.lobby-empty>.welcome { gap:clamp(12px,2.5dvh,28px); }
+.lobby-empty .welcome-new .welcome-main { min-height:min(520px,calc(100dvh - 190px)); }
+.lobby-empty .welcome-new .welcome-intro {
+  min-height:min(518px,calc(100dvh - 192px));
+  padding-block:clamp(20px,3.2dvh,44px); gap:clamp(10px,1.8dvh,20px);
+}
+.lobby-empty .home-hero h1 { font-size:clamp(36px,min(4.6vw,6.6dvh),66px); }
+.lobby-empty .welcome-new .home-hero .welcome-summary { font-size:15px; line-height:1.5; }
+.lobby-home.lobby-empty .welcome .home-how-trigger { padding-block:14px; }
+@media (min-width:761px) and (max-width:1000px) {
+  .lobby-empty .welcome-new .welcome-main { display:block; }
+  .lobby-empty .welcome-new .welcome-intro { padding:32px 24px; min-height:500px; }
+  .lobby-empty .welcome-new .welcome-brand { right:-120px; top:0; }
+  .lobby-empty .welcome-new .home-threshold { position:absolute; inset:auto 16px 16px auto; margin:0; }
+  .lobby-empty .welcome-new .home-hero::after {
+    background:linear-gradient(90deg,#090c10 0%,#090c10e8 38%,#090c1077 66%,transparent);
+  }
+}
+@media (max-width:760px) {
+  .main:has(.lobby-empty) { padding:12px 16px; }
+  .lobby-empty>.welcome { gap:12px; }
+  .lobby-empty .welcome-new .welcome-main { min-height:0; gap:0; }
+  .lobby-empty .welcome-new .welcome-intro { padding:18px; min-height:0; gap:12px; }
+  .lobby-empty .welcome-new .welcome-brand { width:300px; height:300px; top:0; right:-100px; opacity:.4; }
+  .lobby-empty .welcome-new .home-threshold { position:relative; inset:auto; justify-self:start; margin:0 18px 14px; }
+  .lobby-empty .welcome-new .home-hero::after {
+    background:linear-gradient(90deg,#090c10ee,#090c1099 64%,#090c1066);
+  }
+  .lobby-empty .home-hero h1 { font-size:clamp(28px,7.7vw,38px); }
+  .lobby-empty .welcome-new .home-hero .welcome-summary { font-size:14px; }
+  .lobby-empty .welcome-new .welcome-actions>.btn { flex:1 1 0; padding-inline:10px; gap:8px; }
+  .lobby-empty .home-signature { font-size:9px; }
+  .lobby-home.lobby-empty .welcome .home-how-trigger { padding:12px 16px; gap:12px; }
+  .lobby-empty .welcome-security-copy { gap:2px; }
+  .lobby-empty .welcome .welcome-security-copy>strong { font-size:15px; }
+  .lobby-empty .welcome .welcome-security-copy>.small { font-size:12px; line-height:1.4; }
+  .main:has(.lobby-empty) #app { gap:12px; }
+  .main:has(.lobby-empty) .app-foot { margin-top:12px; font-size:12px; }
+}
+
+@media (max-width:360px) {
+  .lobby-empty .welcome-new .welcome-intro { padding:14px; gap:10px; }
+  .lobby-empty .welcome-new .home-threshold { margin-bottom:10px; }
+  .lobby-home.lobby-empty .welcome .home-how-trigger { padding-block:10px; }
+  .main:has(.lobby-empty) #app { gap:8px; }
+  .main:has(.lobby-empty) .app-foot { margin-top:0; line-height:1.4; }
+}

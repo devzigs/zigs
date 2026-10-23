@@ -1,0 +1,66 @@
+<!doctype html>
+<html lang="en" data-theme="dark">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="referrer" content="no-referrer">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'self'; style-src 'self'; font-src 'self'; img-src 'self'; connect-src 'none'; worker-src 'none'; object-src 'none'; base-uri 'none'; form-action 'none'">
+  <title>Network privacy · Zigs design preview</title>
+  <link rel="icon" href="/logo.png">
+  <link rel="stylesheet" href="/design-system.css">
+  <link rel="stylesheet" href="preview.css">
+  <script type="module" src="preview.js"></script>
+</head>
+<body>
+  <a class="skip" href="#content">Skip to preview</a>
+  <div class="preview-banner"><span class="preview-mark" aria-hidden="true"></span>Design preview · No Tor connection or wallet activity</div>
+  <header class="topbar">
+    <a class="brand" href="#content" aria-label="Zigs preview"><img src="/logo.png" alt="" width="40" height="40">zigs<span class="brand-caption">NETWORK PRIVACY</span></a>
+    <div class="header-actions">
+      <button id="connection-status" class="status-button" type="button" aria-haspopup="dialog"><span class="status-dot" aria-hidden="true"></span><span id="connection-label">Connection not selected</span></button>
+      <button id="theme" class="quiet-button" type="button" aria-label="Switch to light theme">Light theme</button>
+    </div>
+  </header>
+  <div class="workspace">
+    <main id="content" tabindex="-1"></main>
+    <aside class="lab" aria-labelledby="lab-title">
+      <div class="lab-heading"><span class="eyebrow">REVIEW TOOLS</span><h2 id="lab-title">Explore the experience</h2><p>Choose a scenario. Every connection state here is illustrative.</p></div>
+      <label for="scenario">Scenario</label>
+      <select id="scenario">
+        <option value="welcome">First visit · Welcome</option>
+        <option value="choice">First visit · Connection choice</option>
+        <option value="connecting">Private · Connecting</option>
+        <option value="validating">Private · Checking services</option>
+        <option value="connected">Private · Connected</option>
+        <option value="standard">Standard · Connected</option>
+        <option value="reconnecting">Private · Reconnecting</option>
+        <option value="interrupted">Private · Interrupted</option>
+        <option value="switching">Private · Switching</option>
+        <option value="offline">Private · Offline</option>
+        <option value="standard-offline">Standard · Offline</option>
+        <option value="unavailable">Private · Unavailable in browser</option>
+        <option value="return-private">Returning · Private preference</option>
+        <option value="return-standard">Returning · Standard preference</option>
+        <option value="no-preference">Returning · Preference unavailable</option>
+      </select>
+      <label for="activity">Wallet safety scenario</label>
+      <select id="activity">
+        <option value="idle">No operation in progress</option>
+        <option value="formation">Wallet formation in progress</option>
+        <option value="signing">FROST signing in progress</option>
+        <option value="broadcast">Transaction broadcast in progress</option>
+      </select>
+      <div id="scenario-actions"></div>
+      <p class="lab-note">No automatic progress. These controls advance the design; they do not observe a transport.</p>
+      <div class="lab-divider"></div>
+      <span class="eyebrow">DESIGN PRINCIPLE</span>
+      <p class="lab-principle">Your connection.<br>Your choice.</p>
+      <p>Private never falls back to Standard without your confirmation.</p>
+      <p class="lab-note">Preferences in this preview stay in tab memory. Returning-user scenarios do not read saved data.</p>
+      <a class="text-link" href="/dev/network-privacy/">Reset preview</a>
+    </aside>
+  </div>
+  <div id="announcement" class="sr-only" role="status" aria-live="polite" aria-atomic="true"></div>
+  <dialog id="connection-dialog" aria-labelledby="dialog-title" aria-describedby="dialog-preview"></dialog>
+</body>
+</html>

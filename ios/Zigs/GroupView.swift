@@ -3,103 +3,98 @@ import TipKit
 
 struct GroupView: View {
     @Environment(GroupModel.self) private var model
-    @State private var tab = Tab.overview
+    @Binding var workspace: NativeWorkspace
+    let home: () -> Void
     @State private var sheet: WalletSheet?
-
-    enum Tab: String, CaseIterable {
-        case overview = "Overview", activity = "Activity", messages = "Messages"
-        case signers = "Signers", details = "Details"
-    }
+    @State private var importing = false
+    @State private var restore: RestoreTarget?
     enum WalletSheet: String, Identifiable {
-        case send, receive, change
+        case send, receive, change, settings
         var id: String { rawValue }
+    }
+    private struct RestoreTarget: Identifiable {
+        let id = UUID()
+        let name: String
+        let text: String
     }
 
     var body: some View {
         let st = model.state
         ScrollView {
-            VStack(alignment: .leading, spacing: 16) {
-                Header()
+            VStack(alignment: .leading, spacing: 20) {
                 if model.hasStaleRestore { StaleRestoreNote() }
                 SignedNotes()
                 content(st)
             }
-            .padding(16)
+            .padding(20).frame(maxWidth: 1100).frame(maxWidth: .infinity)
         }
-        .background(Color.night)
-        .navigationTitle(st.name)
+        .instrumentScreen()
+        .navigationTitle(workspace.rawValue)
+        .inlineTitle()
+        .safeAreaInset(edge: .top, spacing: 0) {
+            NativeWalletHeader(name: st.name, network: st.net.label,
+                rule: "\(st.t) of \(st.n) approvals",
+                seed: model.addressHidden ? nil : st.wallet?.str("address"), home: home)
+        }
         .refreshable { await model.chain?.sync() }
-        .safeAreaInset(edge: .bottom) { actionBar(st) }
-        .sheet(item: $sheet) { sheetView($0) }
-        // New testnet blocks come about every 25 s: refresh the open wallet once a minute.
+        .sheet(item: $sheet) { s in
+            switch s {
+            case .send: SendSheet()
+            case .receive: ReceiveSheet()
+            case .change: CreateSheet(from: model.state)
+            case .settings: SettingsSheet()
+            }
+        }
+        .sheet(item: $restore) { RestoreSheet(name: $0.name, text: $0.text) }
+        .fileImporter(isPresented: $importing, allowedContentTypes: [.data]) { result in
+            do {
+                let url = try result.get()
+                let text = try readBackupFile(url)
+                if try model.receiveBackup(text) { restore = RestoreTarget(name: url.lastPathComponent, text: text) }
+            } catch { model.banner = error.localizedDescription }
+        }
+        // Preserve the existing once-a-minute open-wallet sync, including cancellation.
         .task(id: model.chain?.gid) {
             while !Task.isCancelled {
                 await model.chain?.sync()
                 do { try await Task.sleep(for: .seconds(60)) } catch { return }
             }
         }
-        .modifier(Banners())
     }
 
-    @ViewBuilder
-    private func content(_ st: GroupState) -> some View {
-        if st.g == nil {
-            ProgressView("Loading the wallet…").frame(maxWidth: .infinity).padding(.top, 40)
-        } else if st.version == 0 {
-            Card {
-                Text("A newer version of Zigs made this wallet. This version cannot set it up. Update Zigs.")
-                    .font(.subheadline).foregroundStyle(Color.bad)
-            }
-        } else if !st.ready {
-            SetupView()
-        } else {
-            tabs
-        }
-    }
-
-    @ViewBuilder
-    private var tabs: some View {
-        Picker("Section", selection: $tab) {
-            ForEach(Tab.allCases, id: \.self) { Text($0.rawValue).tag($0) }
-        }
-        .pickerStyle(.segmented)
-        switch tab {
-        case .overview:
-            OverviewTab(showSigners: { tab = .signers }, showActivity: { tab = .activity },
-                        showMessages: { tab = .messages })
-        case .activity: ActivityList(limit: nil)
-        case .messages: MessagesTab()
-        case .signers: SignersTab(change: { sheet = .change })
-        case .details: DetailsTab()
-        }
-    }
-
-    @ViewBuilder
-    private func actionBar(_ st: GroupState) -> some View {
-        // The messages tab gives the room to the keyboard.
-        if st.ready && tab != .messages {
-            VStack(spacing: 6) {
-                HStack(spacing: 12) {
-                    Button { sheet = .receive } label: { Label("Receive", systemImage: "arrow.down").frame(maxWidth: .infinity) }
-                        .buttonStyle(.bordered).controlSize(.large)
-                    Button { sheet = .send } label: { Label("Send", systemImage: "arrow.up").frame(maxWidth: .infinity) }
-                        .primaryButton().disabled(model.sendBlocker != nil)
-                }
-                if let why = model.sendBlocker {
-                    Text(why).font(.caption).foregroundStyle(Color.mist).frame(maxWidth: .infinity, alignment: .leading)
+    @ViewBuilder private func content(_ st: GroupState) -> some View {
+        switch workspace {
+        case .addressBook: RecipientBookView()
+        case .swap: UnavailableSwap()
+        case .chats: ChatsWorkspace()
+        case .settings: NativeSettingsView(openSettings: { sheet = .settings }, recover: { importing = true })
+        case .help: NativeHelpView()
+        default:
+            if st.g == nil {
+                ProgressView("Loading the wallet…").frame(maxWidth: .infinity).padding(.top, 40)
+            } else if st.version == 0 {
+                Card { Text("A newer version of Zigs made this wallet. This version cannot set it up. Update Zigs.").foregroundStyle(Color.bad) }
+            } else if workspace == .security {
+                NativeSecurityView(change: { sheet = .change })
+            } else if !st.ready {
+                Header()
+                SetupView()
+            } else {
+                switch workspace {
+                case .overview:
+                    OverviewTab(showSigners: { workspace = .security },
+                        showActivity: { workspace = .activity }, showApprovals: { workspace = .approvals },
+                        deposit: { sheet = .receive }, send: { sheet = .send })
+                case .approvals: NativeApprovalsView()
+                case .activity:
+                    InstrumentHeading(title: "Activity", detail: "Payments proposed by your signers and Zcash received by this wallet.")
+                    ActivityList(limit: nil)
+                    Text("Received payments open the network explorer, which sees your IP address and the requested transaction ID. Received entries have block heights; ordering against proposals uses estimated times.")
+                        .font(.nativeFootnote).foregroundStyle(Color.mist)
+                    SyncLine()
+                default: EmptyView()
                 }
             }
-            .padding(.horizontal, 16).padding(.vertical, 10)
-            .background(.ultraThinMaterial)
-        }
-    }
-
-    @ViewBuilder
-    private func sheetView(_ s: WalletSheet) -> some View {
-        switch s {
-        case .send: SendSheet()
-        case .receive: ReceiveSheet()
-        case .change: CreateSheet(from: model.state)
         }
     }
 }
@@ -110,7 +105,7 @@ struct Header: View {
     var body: some View {
         let st = model.state
         VStack(alignment: .leading, spacing: 8) {
-            HStack(spacing: 8) {
+            AdaptiveRow(spacing: 8) {
                 Badge(text: st.net.label, kind: st.net.cap == nil ? .plain : .bad)
                 Badge(text: "\(st.t) of \(st.n) signers must approve")
                 HStack(spacing: -8) {
@@ -119,7 +114,7 @@ struct Header: View {
             }
             Text("\(st.seatedCount) of \(st.n) signers joined"
                  + (st.movedFrom.map { " · Replaces \(model.groupName($0))" } ?? ""))
-                .font(.caption).foregroundStyle(Color.mist)
+                .font(.nativeCaption).foregroundStyle(Color.mist)
             // Inline: a popover tip is modal, so it swallows the first tap on any other control.
             TipView(RuleTip())
         }
@@ -148,7 +143,8 @@ struct SetupView: View {
     var body: some View {
         let st = model.state
         let open = st.seatIds.filter { st.seats["\($0)"] == nil }
-        VStack(spacing: 16) {
+        VStack(spacing: 24) {
+            DisclosureGroup("How shared wallets work") { SetupEducation().padding(.top, 12) }
             if model.localSeats.isEmpty, let first = open.first {
                 JoinCard(first: first)
             } else if !open.isEmpty, let gid = model.gid {
@@ -156,14 +152,15 @@ struct SetupView: View {
             }
             if model.setupSaveFailed {
                 Card {
-                    Text(model.saveFailedText).font(.subheadline).foregroundStyle(Color.bad)
+                    Text(model.saveFailedText).font(.nativeSubheadline).foregroundStyle(Color.bad)
                     Button("Try again") { model.retrySetup() }.primaryButton()
                 }
             }
             SafetyCard()
             ProgressCard()
             SeatsCard(open: open)
-            if !model.localSeats.isEmpty { MessagesTab() }
+            Text("Open Chats from the menu to coordinate with your signers. Payment discussions remain in each review.")
+                .font(.nativeFootnote).foregroundStyle(Color.mist)
         }
     }
 }
@@ -177,10 +174,10 @@ struct JoinCard: View {
         Card(highlight: true) {
             Text("Join \(st.name)").font(.title3.weight(.semibold))
             Text("Zigs is a shared wallet for shielded Zcash. Any \(st.t) of the \(st.n) signers approve each payment. Take a seat to become a signer. Your \(deviceName) creates its own key share, and the share never leaves this device. Keep Zigs open until the wallet is ready.")
-                .font(.subheadline).foregroundStyle(Color.mist)
+                .font(.nativeSubheadline).foregroundStyle(Color.mist)
             if st.version == 1 {
                 Text("This wallet is not built to ZIP 2005. Funds cannot be recovered if quantum computers break today's keys.")
-                    .font(.subheadline).foregroundStyle(Color.bad)
+                    .font(.nativeSubheadline).foregroundStyle(Color.bad)
             }
             Button(usesV2(st.version) ? "Take seat \(first)" : "Take seat \(first) anyway") {
                 model.takeSeat(first)
@@ -196,13 +193,13 @@ struct SeatsCard: View {
     var body: some View {
         let st = model.state
         Card {
-            HStack { Text("Seats").font(.headline); Spacer(); Text("\(st.t) of \(st.n) must approve").font(.caption).foregroundStyle(Color.mist) }
+            HStack { Text("Signers").font(.nativeHeadline); Spacer(); Text("\(st.t) of \(st.n) must approve").font(.nativeCaption).foregroundStyle(Color.mist) }
             ForEach(st.seatIds, id: \.self) { i in
                 HStack(spacing: 12) {
                     SeatAvatar(i: i)
                     VStack(alignment: .leading, spacing: 2) {
-                        Text(model.seatLabel(i)).font(.subheadline.weight(.medium))
-                        Text("Seat \(i)").font(.caption).foregroundStyle(Color.mist)
+                        Text(model.seatLabel(i)).font(.nativeSubheadline.weight(.medium))
+                        Text("Seat \(i)").font(.nativeCaption).foregroundStyle(Color.mist)
                     }
                     Spacer()
                     Badge(text: stageLabels[st.stage(i)], kind: st.stage(i) == 5 ? .ok : st.seats["\(i)"] == nil ? .plain : .info)
@@ -211,10 +208,10 @@ struct SeatsCard: View {
             if !model.localSeats.isEmpty && !open.isEmpty {
                 DisclosureGroup("Trying Zigs alone? Play the other seats here") {
                     Text("For a demo or a review only. In real use, each signer takes a seat on their own device.")
-                        .font(.caption).foregroundStyle(Color.mist)
+                        .font(.nativeCaption).foregroundStyle(Color.mist)
                     ForEach(open, id: \.self) { i in Button("Play seat \(i)") { model.takeSeat(i) } }
                 }
-                .font(.subheadline)
+                .font(.nativeSubheadline)
             }
         }
     }
@@ -242,17 +239,17 @@ struct SafetyCard: View {
                         .background(Color.night, in: RoundedRectangle(cornerRadius: 10))
                         .textSelection(.enabled)
                     Text("Compare this number with every signer, on a call or in person. If it is different, someone else took a seat. In that case, do not tap \"It matches\". Create a new wallet.")
-                        .font(.subheadline).foregroundStyle(Color.mist)
+                        .font(.nativeSubheadline).foregroundStyle(Color.mist)
                     if !clash.isEmpty {
                         Text("Seat \(clash.map(String.init).joined(separator: ", ")) confirmed another number. Someone else may have taken a seat. Do not continue. Create a new wallet.")
-                            .font(.subheadline).foregroundStyle(Color.bad)
+                            .font(.nativeSubheadline).foregroundStyle(Color.bad)
                     }
                     if !model.unconfirmedSeats.isEmpty {
                         Button("It matches") { model.confirmSafetyNumber(shown: no) }.primaryButton()
                     }
                 } else {
                     Text("A seat holds a key that this app cannot read. Do not use this wallet. Create a new wallet.")
-                        .font(.subheadline).foregroundStyle(Color.bad)
+                        .font(.nativeSubheadline).foregroundStyle(Color.bad)
                 }
             }
         }
@@ -279,16 +276,16 @@ struct InviteCard: View {
         Card(highlight: true) {
             HStack { Text("Invite your signers").font(.title3.weight(.semibold)); Spacer(); Badge(text: open == 1 ? "1 seat open" : "\(open) seats open", kind: .warn) }
             Text("Send this link to each signer through a private channel. It contains the wallet's secret: anyone who has it can take an open seat.")
-                .font(.subheadline).foregroundStyle(Color.mist)
-            Text(link).font(.caption.monospaced()).lineLimit(2).truncationMode(.middle)
+                .font(.nativeSubheadline).foregroundStyle(Color.mist)
+            Text(link).font(.nativeCaption.monospaced()).lineLimit(2).truncationMode(.middle)
             HStack {
                 ShareLink(item: message) { Label("Share", systemImage: "square.and.arrow.up") }.primaryButton()
-                CopyButton(text: link, label: "Copy link").buttonStyle(.bordered).controlSize(.large)
+                CopyButton(text: link, label: "Copy link").buttonStyle(InstrumentButtonStyle())
             }
             DisclosureGroup("Show QR code", isExpanded: $showQR) {
                 QRCode(text: link).frame(maxWidth: 240).frame(maxWidth: .infinity)
             }
-            .font(.subheadline)
+            .font(.nativeSubheadline)
         }
     }
 }
@@ -300,13 +297,13 @@ struct ProgressCard: View {
         let st = model.state
         let key = keyStep(st, model.keyBlock), addr = addrStep(st)
         Card {
-            Text("Setting up your wallet").font(.headline)
+            Text("Setting up your wallet").font(.nativeHeadline)
             Step(state: st.allSeated ? .done : .now, no: 1, title: "Signers join", text: "\(st.seatedCount) of \(st.n) seats taken.")
             Step(state: key.state, no: 2, title: "Create the key together", text: key.text)
             Step(state: addr.state, no: 3, title: "Check the address", text: addr.text)
             if st.wallet == nil || st.verifiedCount < st.n {
                 Text("Every signer must keep Zigs open until setup finishes.")
-                    .font(.caption).foregroundStyle(Color.mist)
+                    .font(.nativeCaption).foregroundStyle(Color.mist).fixedSize(horizontal: false, vertical: true)
             }
         }
     }
@@ -353,13 +350,13 @@ struct Step: View {
             ZStack {
                 Circle().fill(state == .done ? Color.good.opacity(0.2) : state == .bad ? Color.bad.opacity(0.2)
                               : state == .now ? Color.signal.opacity(0.2) : Color.white.opacity(0.06))
-                Text(state == .done ? "✓" : state == .bad ? "!" : "\(no)").font(.caption.weight(.bold))
+                Text(state == .done ? "✓" : state == .bad ? "!" : "\(no)").font(.nativeCaption.weight(.bold))
                     .foregroundStyle(state == .done ? Color.good : state == .bad ? Color.bad : state == .now ? Color.signal : Color.mist)
             }
             .frame(width: 26, height: 26)
             VStack(alignment: .leading, spacing: 2) {
-                Text(title).font(.subheadline.weight(.semibold))
-                Text(text).font(.caption).foregroundStyle(Color.mist)
+                Text(title).font(.nativeSubheadline.weight(.semibold)).fixedSize(horizontal: false, vertical: true)
+                Text(text).font(.nativeCaption).foregroundStyle(Color.mist).fixedSize(horizontal: false, vertical: true)
             }
         }
     }
@@ -371,46 +368,84 @@ struct OverviewTab: View {
     @Environment(GroupModel.self) private var model
     let showSigners: () -> Void
     let showActivity: () -> Void
-    let showMessages: () -> Void
+    let showApprovals: () -> Void
+    let deposit: () -> Void
+    let send: () -> Void
 
     var body: some View {
-        let gid = model.gid ?? ""
-        let pending = model.state.sessions.filter { model.needsMyApproval(gid, $0) }
-        let unread = model.unread(gid)
-        VStack(spacing: 16) {
+        VStack(alignment: .leading, spacing: 20) {
             if model.state.movedTo != nil { MoveCard() }
-            if !pending.isEmpty { ApprovalsCard(list: pending) }
-            if unread > 0 {
-                Card(highlight: true) {
-                    HStack {
-                        Text(unread == 1 ? "1 new message" : "\(unread) new messages")
-                            .font(.headline)
-                        Spacer()
-                        Button("Open", action: showMessages).font(.subheadline)
-                    }
+            BalancePanel {
+                NativePortfolioSummary()
+                AdaptiveRow {
+                    Button("Receive", systemImage: "arrow.down", action: deposit)
+                    Button("Send", systemImage: "arrow.up", action: send)
+                        .primaryButton().disabled(model.sendBlocker != nil)
+                    Button("Swap", systemImage: "arrow.triangle.swap") {}.disabled(true)
                 }
+                if let why = model.sendBlocker { Text(why).font(.nativeCaption).foregroundStyle(Color.mist) }
             }
-            BalanceCard()
-            if !model.unsavedSeats.isEmpty { BackupCard() }
-            SignersCard(manage: showSigners)
-            Card {
-                HStack {
-                    Text("Activity").font(.headline)
-                    Spacer()
-                    Button("View all", action: showActivity).font(.subheadline)
+            ViewThatFits(in: .horizontal) {
+                HStack(alignment: .top, spacing: 20) {
+                    assets.frame(minWidth: 400)
+                    transactions.frame(width: 300)
                 }
-                ActivityList(limit: 5, bare: true)
+                VStack(spacing: 20) { assets; transactions }
+            }
+            Card {
+                DisclosureGroup {
+                    Text(ruleText(model.state.t, model.state.n)).font(.nativeSubheadline).foregroundStyle(Color.mist)
+                    Text("\(model.state.seatedCount) signers joined. Joined does not mean online.")
+                        .font(.nativeCaption).foregroundStyle(Color.mist)
+                    if !model.unsavedSeats.isEmpty {
+                        Text("Some key shares on this device have no saved backup.").foregroundStyle(Color.signal).font(.nativeSubheadline)
+                    }
+                    Button("Open Security", systemImage: "shield.lefthalf.filled", action: showSigners)
+                } label: { Label("Shared control and recovery", systemImage: "person.2.badge.key").font(.nativeHeadline).frame(minHeight: 44) }
             }
         }
+    }
+    private var assets: some View {
+        VStack(spacing: 16) {
+            BalanceCard()
+            NativeUnavailableAsset(symbol: "◎", name: "Solana", detail: "Native Zigs supports Zcash. Solana setup, fees and shielded SOL are not implemented in this app.")
+            NativeUnavailableAsset(symbol: "$", name: "Shielded USDC", detail: "Shielded USDC payments are unsupported. No USDC balance or conversion rate is available.")
+        }.frame(maxWidth: .infinity)
+    }
+    private var transactions: some View {
+        let pending = model.state.sessions.filter { model.needsMyApproval(model.gid ?? "", $0) }
+        return VStack(spacing: 16) {
+            Card(highlight: !pending.isEmpty) {
+                HStack {
+                    Text("Pending").font(.nativeHeadline)
+                    Spacer()
+                    Button("View all", action: showApprovals).buttonStyle(.plain).foregroundStyle(Color.signal).frame(minHeight: 44)
+                }
+                if pending.isEmpty {
+                    InstrumentEmptyState(symbol: "checkmark.seal", title: "No approvals needed",
+                        detail: "New payment requests appear here.")
+                } else { ForEach(pending.prefix(3)) { SentRow(ss: $0) } }
+            }
+            Card {
+                HStack {
+                    Text("Recent activity").font(.nativeHeadline)
+                    Spacer()
+                    Button("View all", action: showActivity).buttonStyle(.plain).foregroundStyle(Color.signal).frame(minHeight: 44)
+                }
+                ActivityList(limit: 3, bare: true)
+            }
+        }.frame(maxWidth: .infinity)
     }
 }
 
 struct ApprovalsCard: View {
+    @Environment(GroupModel.self) private var model
     let list: [Session]
-
     var body: some View {
         Card(highlight: true) {
-            Text(list.count == 1 ? "A payment needs your approval" : "\(list.count) payments need your approval").font(.headline)
+            Text("Needs your approval").font(.nativeHeadline)
+            Text("Open each request to check recipients, amounts, memos and fees before approving.")
+                .font(.nativeFootnote).foregroundStyle(Color.mist)
             ForEach(list) { ss in SentRow(ss: ss) }
         }
     }
@@ -418,36 +453,39 @@ struct ApprovalsCard: View {
 
 struct BalanceCard: View {
     @Environment(GroupModel.self) private var model
-
+    @State private var expanded = false
     var body: some View {
         let b = model.balanceNow()
         Card {
-            SectionLabel(text: "Balance")
-            if let b {
-                Money(zat: b.spendable + b.pending, size: 40)
-            } else {
-                RoundedRectangle(cornerRadius: 8).fill(Color.white.opacity(0.06)).frame(width: 180, height: 44)
-                    .accessibilityLabel("Loading balance")
+            AdaptiveRow {
+                Label("Zcash", systemImage: "shield.lefthalf.filled").font(.nativeHeadline)
+                Badge(text: model.state.net.label)
+                Badge(text: "Shielded", kind: .ok)
             }
-            HStack(spacing: 24) {
-                VStack(alignment: .leading, spacing: 4) { SectionLabel(text: "Available"); Money(zat: b?.spendable ?? 0, size: 15) }
-                VStack(alignment: .leading, spacing: 4) { SectionLabel(text: "Incoming"); Money(zat: b?.pending ?? 0, size: 15) }
-            }
-            if let b, b.sending > 0 {
-                HStack(spacing: 6) {
-                    ProgressView().controlSize(.small)
-                    Text("Sending").font(.caption)
-                    Money(zat: b.sending, size: 13, sign: "out")
-                    Text("· waiting for a block").font(.caption).foregroundStyle(Color.mist)
-                }
-            }
-            if let b, b.spendable + b.pending + b.sending == 0, model.state.movedTo == nil {
-                Text(model.state.net.cap.map { "This wallet is empty. Share its address to receive ZEC. At \(capText($0)) the app warns and hides the address." }
-                     ?? "This wallet is empty. Share its address to receive ZEC, or get free testnet ZEC from a faucet.")
-                    .font(.caption).foregroundStyle(Color.mist)
-            }
-            if model.atCap { CapNote() }
+            if let b { Money(zat: b.spendable + b.pending, size: 30) }
+            else { Text("Balance unavailable").font(.title3).foregroundStyle(Color.mist) }
+            if let b, b.pending > 0 { Text("Incoming · " + zec(b.pending)).font(.nativeCaption).foregroundStyle(Color.mist) }
+            if let b, b.sending > 0 { Text("Sending · " + zec(b.sending) + " · waiting for a block").font(.nativeCaption).foregroundStyle(Color.mist) }
             SyncLine()
+            DisclosureGroup("Balance and privacy details", isExpanded: $expanded) {
+                VStack(alignment: .leading, spacing: 12) {
+                    if let b {
+                        Detail(label: "Available") { Money(zat: b.spendable, size: 17) }
+                        Detail(label: "Incoming") { Money(zat: b.pending, size: 17) }
+                    } else { Text("Sync the wallet to read its balance. An unavailable balance is not zero.") }
+                    Text("ZEC balances are shielded. This app has no transparent balance or Shield / Unshield transfer.")
+                        .font(.nativeCaption).foregroundStyle(Color.mist)
+                    if let b, b.spendable + b.pending + b.sending == 0, model.state.movedTo == nil {
+                        Text(model.state.net.cap.map { "This wallet is empty. Share its address to receive ZEC. At \(capText($0)) the app warns and hides the address." }
+                            ?? "This wallet is empty. Share its address to receive ZEC, or get free testnet ZEC from a faucet.")
+                            .font(.nativeCaption).foregroundStyle(Color.mist)
+                    }
+                    Button("Refresh balance", systemImage: "arrow.clockwise") { Task { await model.chain?.sync() } }
+                        .disabled(model.chain == nil || model.chain?.syncing == true)
+                    if let faucet = model.state.net.faucet { Link("Get testnet ZEC from a faucet", destination: faucet) }
+                }.padding(.top, 12)
+            }.font(.nativeSubheadline).tint(.mist)
+            if model.atCap { CapNote() }
         }
     }
 }
@@ -463,12 +501,12 @@ struct SyncLine: View {
                 if c.syncing, c.progress != nil { ProgressView(value: pct) }
                 HStack(spacing: 6) {
                     Circle().fill(status.color).frame(width: 7, height: 7)
-                    Text(status.text).font(.caption).foregroundStyle(Color.mist)
+                    Text(status.text).font(.nativeCaption).foregroundStyle(Color.mist)
                 }
-                if status.failed, let e = c.error { Text(e).font(.caption).foregroundStyle(Color.bad) }
+                if status.failed, let e = c.error { Text(e).font(.nativeCaption).foregroundStyle(Color.bad) }
             }
         } else {
-            Text("Sync starts after your seat checks the address.").font(.caption).foregroundStyle(Color.mist)
+            Text("Sync starts after your seat checks the address.").font(.nativeCaption).foregroundStyle(Color.mist)
         }
     }
 
@@ -498,11 +536,11 @@ struct SignersCard: View {
     var body: some View {
         let st = model.state
         Card {
-            HStack { Text("Signers").font(.headline); Spacer(); Button("Manage", action: manage).font(.subheadline) }
+            HStack { Text("Signers").font(.nativeHeadline); Spacer(); Button("Manage", action: manage).font(.nativeSubheadline) }
             TipView(SignersTip())
-            Text(ruleText(st.t, st.n)).font(.caption).foregroundStyle(Color.mist)
+            Text(ruleText(st.t, st.n)).font(.nativeCaption).foregroundStyle(Color.mist)
             FlowRow(items: st.seatIds) { i in
-                HStack(spacing: 6) { SeatAvatar(i: i, size: 26); Text(model.seatLabel(i)).font(.subheadline) }
+                HStack(spacing: 6) { SeatAvatar(i: i, size: 26); Text(model.seatLabel(i)).font(.nativeSubheadline) }
             }
         }
     }
@@ -531,21 +569,21 @@ struct MoveCard: View {
         let m = state()
         let started = model.state.sessions.contains { $0.doc.str("move") == model.state.movedTo && !has($0.doc["error"]) }
         Card(highlight: !m.done) {
-            HStack { Text(m.done ? "This wallet moved" : "Changing signers").font(.headline); Spacer(); if m.done { Badge(text: "Closed") } }
-            Text(m.text).font(.subheadline).foregroundStyle(Color.mist)
+            HStack { Text(m.done ? "This wallet moved" : "Changing signers").font(.nativeHeadline); Spacer(); if m.done { Badge(text: "Closed") } }
+            Text(m.text).font(.nativeSubheadline).foregroundStyle(Color.mist)
             if m.propose {
                 Button("Move \(zec(model.maxSend))") { run { try await model.proposeMove() } }
                     .primaryButton().disabled(model.sendBlocker != nil || working)
-                if let why = model.sendBlocker { Text(why).font(.caption).foregroundStyle(Color.mist) }
+                if let why = model.sendBlocker { Text(why).font(.nativeCaption).foregroundStyle(Color.mist) }
             }
             if let ss = m.session {
                 NavigationLink { SessionView(sid: ss.id) } label: { Text("Open the payment") }.primaryButton()
             }
             if let open = m.open {
-                Button("Open \(model.groupName(open))") { model.path = [open] }.buttonStyle(.bordered)
+                Button("Open \(model.groupName(open))") { model.path = [open] }.buttonStyle(InstrumentButtonStyle())
             }
             if !started {
-                Button("Cancel move", role: .destructive) { run { try await model.cancelMove() } }.font(.subheadline)
+                Button("Cancel move", role: .destructive) { run { try await model.cancelMove() } }.font(.nativeSubheadline)
             }
         }
     }
@@ -587,14 +625,14 @@ struct ActivityList: View {
         let shown = limit.map { Array(items.prefix($0)) } ?? items
         let list = VStack(spacing: 10) {
             if shown.isEmpty {
-                Text("Money you receive and payments that signers propose show up here.")
-                    .font(.subheadline).foregroundStyle(Color.mist).frame(maxWidth: .infinity, alignment: .leading)
+                InstrumentEmptyState(symbol: "arrow.down.left.arrow.up.right", title: "No activity yet",
+                    detail: "Money you receive and payments that signers propose show up here.")
             }
             ForEach(shown, id: \.id) { a in
                 if let ss = a.ss { SentRow(ss: ss) } else if let r = a.r { ReceivedRow(r: r) }
             }
         }
-        if bare { list } else { Card { Text("All activity").font(.headline); list } }
+        if bare { list } else { Card { Text("Transaction history").font(.nativeHeadline); list } }
     }
 
     /// Received payments carry only a block height; estimate a time so they sort among proposals.
@@ -665,28 +703,14 @@ struct SentRow: View {
     let ss: Session
 
     var body: some View {
+        let status = statusLabels[ss.status] ?? (ss.status, .plain)
+        let mine = model.gid.map { model.needsMyApproval($0, ss) } ?? false
+        let confirming = model.inFlight.contains(where: { $0.id == ss.id })
         NavigationLink { SessionView(sid: ss.id) } label: {
-            HStack(spacing: 12) {
-                Image(systemName: "arrow.up.right").frame(width: 34, height: 34)
-                    .background(Color.white.opacity(0.06), in: Circle()).foregroundStyle(Color.mist)
-                VStack(alignment: .leading, spacing: 2) {
-                    Text(payTitle(ss)).font(.subheadline.weight(.medium)).foregroundStyle(.white).lineLimit(1)
-                    Text(when(ss.doc.int("createdAt"))).font(.caption).foregroundStyle(Color.mist)
-                }
-                Spacer()
-                VStack(alignment: .trailing, spacing: 3) {
-                    Money(zat: ss.amount, size: 14, sign: "out")
-                    if let gid = model.gid, model.needsMyApproval(gid, ss) {
-                        Badge(text: "Your approval", kind: .warn)
-                    } else if model.inFlight.contains(where: { $0.id == ss.id }) {
-                        Badge(text: "Confirming", kind: .info)
-                    } else {
-                        let s = statusLabels[ss.status] ?? (ss.status, .plain)
-                        Badge(text: s.0, kind: s.1)
-                    }
-                }
-            }
-        }
+            NativeTransactionSummary(title: payTitle(ss), detail: when(ss.doc.int("createdAt")),
+                amount: ss.amount, status: mine ? "Your approval" : confirming ? "Confirming" : status.0,
+                kind: mine ? .warn : confirming ? .info : status.1)
+        }.buttonStyle(.plain)
     }
 }
 
@@ -698,20 +722,10 @@ struct ReceivedRow: View {
         let explorer = model.state.net.explorer
         let link = URL(string: explorer + (r.str("txid") ?? ""))
         Link(destination: link ?? URL(string: explorer)!) {
-            HStack(spacing: 12) {
-                Image(systemName: "arrow.down.left").frame(width: 34, height: 34)
-                    .background(Color.good.opacity(0.15), in: Circle()).foregroundStyle(Color.good)
-                VStack(alignment: .leading, spacing: 2) {
-                    Text("Received").font(.subheadline.weight(.medium)).foregroundStyle(.white)
-                    Text("Block \((r.int("height") ?? 0).formatted())").font(.caption).foregroundStyle(Color.mist)
-                }
-                Spacer()
-                VStack(alignment: .trailing, spacing: 3) {
-                    Money(zat: r.int("value") ?? 0, size: 14, sign: "in")
-                    Badge(text: has(r["confirmed"]) ? "Confirmed" : "Confirming", kind: has(r["confirmed"]) ? .ok : .info)
-                }
-            }
-        }
+            NativeTransactionSummary(title: "Received", detail: "Block \((r.int("height") ?? 0).formatted()) · opens explorer",
+                amount: r.int("value") ?? 0, incoming: true,
+                status: has(r["confirmed"]) ? "Confirmed" : "Confirming", kind: has(r["confirmed"]) ? .ok : .info)
+        }.buttonStyle(.plain)
     }
 }
 
@@ -726,16 +740,16 @@ struct SignersTab: View {
         let st = model.state
         VStack(spacing: 16) {
             Card {
-                Text("Signers").font(.headline)
-                Text(ruleText(st.t, st.n)).font(.caption).foregroundStyle(Color.mist)
+                Text("Signers").font(.nativeHeadline)
+                Text(ruleText(st.t, st.n)).font(.nativeCaption).foregroundStyle(Color.mist)
                 ForEach(st.seatIds, id: \.self) { i in
                     let v = st.verify["\(i)"]
                     HStack(spacing: 12) {
                         SeatAvatar(i: i, size: 38)
                         VStack(alignment: .leading, spacing: 2) {
-                            Text(model.seatLabel(i)).font(.subheadline.weight(.medium))
+                            Text(model.seatLabel(i)).font(.nativeSubheadline.weight(.medium))
                             Text("Seat \(i)" + (st.seats["\(i)"].map { " · joined \(when($0.int("at")))" } ?? ""))
-                                .font(.caption).foregroundStyle(Color.mist)
+                                .font(.nativeCaption).foregroundStyle(Color.mist)
                         }
                         Spacer()
                         if let v {
@@ -748,26 +762,26 @@ struct SignersTab: View {
             }
             BackupCard()
             Card {
-                Text("Add or remove signers").font(.headline)
+                Text("Add or remove signers").font(.nativeHeadline)
                 TipView(ChangeSignersTip())
                 Text("The signers and the approval rule are part of the wallet key, so they cannot change in place. To change them, create a new wallet with the signers you want, then move the funds to it.")
-                    .font(.subheadline).foregroundStyle(Color.mist)
+                    .font(.nativeSubheadline).foregroundStyle(Color.mist)
                 if st.movedTo != nil {
-                    Text("A move to a new wallet has started. See Overview.").font(.subheadline)
+                    Text("A move to a new wallet has started. See Overview.").font(.nativeSubheadline)
                 } else {
-                    Button("Change signers", action: change).buttonStyle(.bordered).disabled(model.localSeats.isEmpty)
+                    Button("Change signers", action: change).buttonStyle(InstrumentButtonStyle()).disabled(model.localSeats.isEmpty)
                 }
             }
             if let gid = model.gid {
                 Card {
-                    Text("Wallet link").font(.headline)
+                    Text("Wallet link").font(.nativeHeadline)
                     Text("Send this link to signers so they can open the wallet. The link contains the wallet secret, so share it only with signers.")
-                        .font(.subheadline).foregroundStyle(Color.mist)
-                    CopyButton(text: model.inviteLink(gid), label: "Copy link").buttonStyle(.bordered)
+                        .font(.nativeSubheadline).foregroundStyle(Color.mist)
+                    CopyButton(text: model.inviteLink(gid), label: "Copy link").buttonStyle(InstrumentButtonStyle())
                     DisclosureGroup("Show QR code", isExpanded: $showQR) {
                         QRCode(text: model.inviteLink(gid)).frame(maxWidth: 240).frame(maxWidth: .infinity)
                     }
-                    .font(.subheadline)
+                    .font(.nativeSubheadline)
                 }
             }
         }
@@ -783,21 +797,21 @@ struct DetailsTab: View {
         let st = model.state, w = st.wallet ?? [:]
         VStack(spacing: 16) {
             Card {
-                Text("Wallet").font(.headline)
+                Text("Wallet").font(.nativeHeadline)
                 Detail(label: "Address") {
                     if model.addressHidden {
                         Text("Shown after your seat checks it against your key share.")
-                            .font(.caption).foregroundStyle(Color.mist)
+                            .font(.nativeCaption).foregroundStyle(Color.mist)
                     } else {
-                        Text(grouped(w.str("address") ?? "")).font(.caption.monospaced())
-                        CopyButton(text: w.str("address") ?? "", label: "Copy address").font(.subheadline)
+                        Text(grouped(w.str("address") ?? "")).font(.nativeCaption.monospaced())
+                        CopyButton(text: w.str("address") ?? "", label: "Copy address").font(.nativeSubheadline)
                     }
                 }
                 Detail(label: "Approval rule") { Text("Any \(st.t) of \(st.n) signers") }
                 Detail(label: "Checked by") { Text("\(st.verifiedCount) of \(st.n) signers") }
                 Detail(label: "Network") { Text("Zcash \(st.net.label.lowercased())" + (st.net.cap.map { " · warning at \(capText($0))" } ?? "")) }
                 Detail(label: "Created at block") { Text((w.int("birthday") ?? 0).formatted()).monospacedDigit() }
-                Detail(label: "Wallet key") { Text(w.str("group_verifying_key") ?? "").font(.caption.monospaced()).textSelection(.enabled) }
+                Detail(label: "Wallet key") { Text(w.str("group_verifying_key") ?? "").font(.nativeCaption.monospaced()).textSelection(.enabled) }
                 if usesV2(st.version) {
                     Detail(label: "Key setup") {
                         Text("Built to ZIP 2005 (Proposed) so that funds can be recovered if quantum computers break today's keys.")
@@ -810,24 +824,24 @@ struct DetailsTab: View {
                     }
                 } else {
                     Text("This wallet was made before quantum recoverability (ZIP 2005). To get it, move the funds to a new wallet with Change signers.")
-                        .font(.caption).foregroundStyle(Color.mist)
+                        .font(.nativeCaption).foregroundStyle(Color.mist)
                 }
             }
             Card {
-                Text("Privacy and keys").font(.headline)
+                Text("Privacy and keys").font(.nativeHeadline)
                 Text("Your key share is created and used on this \(deviceName) only. The group server stores encrypted data it cannot read. This app downloads blocks from \(model.chain?.server?.host ?? "a light-wallet server"), which sees your IP address but never a key.")
-                    .font(.subheadline).foregroundStyle(Color.mist)
+                    .font(.nativeSubheadline).foregroundStyle(Color.mist)
                 DisclosureGroup("Viewing key") {
-                    Text(w.str("ufvk") ?? "").font(.caption.monospaced()).textSelection(.enabled)
-                    CopyButton(text: w.str("ufvk") ?? "", label: "Copy viewing key").font(.subheadline)
+                    Text(w.str("ufvk") ?? "").font(.nativeCaption.monospaced()).textSelection(.enabled)
+                    CopyButton(text: w.str("ufvk") ?? "", label: "Copy viewing key").font(.nativeSubheadline)
                 }
-                .font(.subheadline)
+                .font(.nativeSubheadline)
                 Text("The viewing key shows every payment of this wallet. Share it only with people who may see your balance.")
-                    .font(.caption).foregroundStyle(Color.mist)
+                    .font(.nativeCaption).foregroundStyle(Color.mist)
                 DisclosureGroup("Activity on this \(deviceName)") {
                     ForEach(model.log, id: \.self) { Text($0).font(.caption2.monospaced()).foregroundStyle(Color.mist) }
                 }
-                .font(.subheadline)
+                .font(.nativeSubheadline)
             }
         }
     }
@@ -838,7 +852,7 @@ struct CapNote: View {
 
     var body: some View {
         Text("This wallet has reached the \(capText(model.state.net.cap ?? 0)) warning level for unaudited mainnet wallets. Do not send more to it. Payments out still work.")
-            .font(.subheadline).foregroundStyle(Color.bad)
+            .font(.nativeSubheadline).foregroundStyle(Color.bad)
     }
 }
 
@@ -849,7 +863,7 @@ struct Detail<Content: View>: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 4) {
             SectionLabel(text: label)
-            content.font(.subheadline)
+            content.font(.nativeSubheadline)
         }
     }
 }
@@ -864,32 +878,34 @@ struct ReceiveSheet: View {
         let address = model.state.wallet?.str("address") ?? ""
         NavigationStack {
             ScrollView {
-                VStack(spacing: 16) {
+                VStack(spacing: 20) {
+                    Text(model.state.name).font(.nativeHeadline)
+                    Badge(text: model.state.net.label)
                     if let to = model.state.movedTo {
                         Text("This wallet moved to \(model.groupName(to)). Ask senders to use the new wallet's address.")
-                            .font(.subheadline).foregroundStyle(Color.signal)
+                            .font(.nativeSubheadline).foregroundStyle(Color.signal)
                     }
                     let net = model.state.net
                     if model.atCap {
                         CapNote()
                     } else if model.addressHidden {
                         Text("Your seat is still checking this address against your key share.")
-                            .font(.subheadline).foregroundStyle(Color.mist)
+                            .font(.nativeSubheadline).foregroundStyle(Color.mist)
                     } else {
                         Text("Send \(net.cap.map { "ZEC (the app warns at \(capText($0)))" } ?? "testnet ZEC") to this shielded address. Senders and the network cannot see the balance or who controls it.")
-                            .font(.subheadline).foregroundStyle(Color.mist)
+                            .font(.nativeSubheadline).foregroundStyle(Color.mist)
                         QRCode(text: address).frame(maxWidth: 260)
-                        Text(grouped(address)).font(.caption.monospaced())
-                        HStack {
+                        Text(grouped(address)).font(.nativeCaption.monospaced())
+                        AdaptiveRow {
                             CopyButton(text: address, label: "Copy address").primaryButton()
-                            ShareLink(item: address) { Label("Share", systemImage: "square.and.arrow.up") }.buttonStyle(.bordered).controlSize(.large)
+                            ShareLink(item: address) { Label("Share", systemImage: "square.and.arrow.up") }.buttonStyle(InstrumentButtonStyle())
                         }
                     }
-                    if let faucet = net.faucet { Link("Get testnet ZEC from a faucet", destination: faucet).font(.subheadline) }
+                    if let faucet = net.faucet { Link("Get testnet ZEC from a faucet", destination: faucet).font(.nativeSubheadline) }
                 }
-                .padding(16)
+                .padding(20).frame(maxWidth: 600).frame(maxWidth: .infinity)
             }
-            .background(Color.night)
+            .instrumentScreen().nativeSheetSizing()
             .navigationTitle("Receive ZEC")
             .inlineTitle()
             .toolbar { ToolbarItem(placement: .confirmationAction) { Button("Done") { dismiss() } } }
@@ -917,6 +933,10 @@ struct SendSheet: View {
         NavigationStack {
             Form {
                 Section {
+                    Text(model.state.name).font(.nativeHeadline)
+                    Badge(text: model.state.net.label)
+                }
+                Section {
                     ForEach($rows) { $r in
                         RecipientRow(row: $r, showMax: rows.count == 1).deleteDisabled(rows.count == 1)
                     }
@@ -938,12 +958,16 @@ struct SendSheet: View {
                     Text("Encrypted. Only signers of this wallet can read it.")
                 }
                 Section {
-                    LabeledContent("Available") { Money(zat: model.balanceNow()?.spendable ?? 0, size: 15) }
+                    LabeledContent("Available") {
+                        if let balance = model.balanceNow() { Money(zat: balance.spendable, size: 15) }
+                        else { Text("Unavailable").foregroundStyle(Color.mist) }
+                    }
                     LabeledContent("Network fee (estimate)") { Money(zat: feeEstimate(rows.count), size: 15) }
                     LabeledContent("Total leaving the wallet") { Money(zat: sum + feeEstimate(rows.count), size: 15) }
                     LabeledContent("Approvals needed", value: "\(model.state.t) of \(model.state.n)")
                 }
             }
+            .instrumentScreen().nativeSheetSizing()
             .navigationTitle("Send ZEC")
             .inlineTitle()
             .toolbar {
@@ -1004,28 +1028,38 @@ struct RecipientRow: View {
     @Environment(GroupModel.self) private var model
     @Binding var row: SendSheet.PayRow
     let showMax: Bool
+    @State private var choosingRecipient = false
 
     var body: some View {
         let net = model.state.net
         let to = row.to.trimmingCharacters(in: .whitespacesAndNewlines)
         VStack(alignment: .leading, spacing: 8) {
+            Button("Choose saved recipient", systemImage: "person.crop.rectangle.stack") { choosingRecipient = true }
+                .font(.nativeSubheadline)
             // One line: a wrapped field breaks the address with hyphens that look like part of it.
             TextField("\(net.prefix)…", text: $row.to)
-                .font(.body.monospaced()).codeEntry()
+                .font(.nativeBody.monospaced()).codeEntry()
+                .accessibilityLabel("Recipient address")
             HStack {
                 TextField("0.00", text: $row.amount).decimalEntry().font(.title3.monospacedDigit())
+                    .accessibilityLabel("Amount in ZEC")
                 Text("ZEC").foregroundStyle(Color.mist)
                 if showMax {
-                    Button("Max") { row.amount = zecText(model.maxSend) }.buttonStyle(.bordered)
+                    Button("Max") { row.amount = zecText(model.maxSend) }.buttonStyle(InstrumentButtonStyle())
                 }
             }
             if !to.isEmpty {
                 let ok = model.onNetwork(to)
                 Text(ok ? "Valid \(net.label.lowercased()) address" : "Not a shielded Zcash \(net.label.lowercased()) address. It starts with \(net.prefix).")
-                    .font(.caption).foregroundStyle(ok ? Color.good : Color.bad)
+                    .font(.nativeCaption).foregroundStyle(ok ? Color.good : Color.bad)
                 if ok {
-                    Text(grouped(to)).font(.caption.monospaced()).foregroundStyle(Color.mist).textSelection(.enabled)
+                    Text(grouped(to)).font(.nativeCaption.monospaced()).foregroundStyle(Color.mist).textSelection(.enabled)
                 }
+            }
+        }
+        .sheet(isPresented: $choosingRecipient) {
+            RecipientPicker(network: model.state.netName) { recipient in
+                row.to = recipient.address
             }
         }
     }
@@ -1041,15 +1075,15 @@ struct SignedNotes: View {
             let seats = muted.map(String.init).joined(separator: ", ")
             Text("This \(deviceName) has no signing key for seat \(seats), "
                  + "so it cannot write to this wallet. Restore a backup of the seat.")
-                .font(.subheadline).foregroundStyle(Color.bad)
+                .font(.nativeSubheadline).foregroundStyle(Color.bad)
         }
         if model.state.shapeMoved {
             Text("The store shows another number of signers or approval rule than the first this "
                  + "\(deviceName) saw. Zigs keeps the first. Ask your signers.")
-                .font(.subheadline).foregroundStyle(Color.bad)
+                .font(.nativeSubheadline).foregroundStyle(Color.bad)
         }
         if model.ignoredCount > 0 {
-            Text(Signed.ignoredNote).font(.caption).foregroundStyle(Color.mist)
+            Text(Signed.ignoredNote).font(.nativeCaption).foregroundStyle(Color.mist)
         }
     }
 }
@@ -1061,7 +1095,7 @@ struct StaleRestoreNote: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
-            Text(BackupText.staleRestore).font(.subheadline).foregroundStyle(Color.bad)
+            Text(BackupText.staleRestore).font(.nativeSubheadline).foregroundStyle(Color.bad)
             Button("Remove from this device", role: .destructive) { asking = true }
                 .confirmationDialog("Remove this seat from this device?", isPresented: $asking, titleVisibility: .visible) {
                     Button("Remove", role: .destructive) { model.dropStaleRestores() }

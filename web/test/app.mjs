@@ -13,6 +13,7 @@ import { seatBackedUp } from "../util.js";
 import { aesKey, open as openVault, seal } from "../vault.js";
 import { createRegistry, registry, ZNS_KEY } from "../zns.js";
 import { loadPage, stallFreeClock } from "./page.mjs";
+import { fakeLocks } from "./passkey-fixture.mjs";
 
 const web = new URL("../", import.meta.url);
 Z.initSync({ module: fs.readFileSync(new URL("pkg/zigs_engine_bg.wasm", web)) });
@@ -31,9 +32,12 @@ const storageEvent = (key) =>
   Promise.all((windowOn.storage || []).map((fn) => fn({ key, newValue: storage.get(key) })));
 // The listeners of the page on document, so that a test can press a real key.
 const documentOn = {};
+// The privacy overlay is unmounted; a generic stub would make Escape dismiss a phantom panel.
 const pageDocument = new Proxy(stub(), {
   get: (t, k) => (k === "addEventListener"
-    ? (type, fn) => { (documentOn[type] ||= []).push(fn); } : t[k]),
+    ? (type, fn) => { (documentOn[type] ||= []).push(fn); }
+    : k === "getElementById"
+      ? (id) => id === "network-privacy-panel" ? null : t[k](id) : t[k]),
 });
 Object.assign(globalThis, {
   Node: class {}, document: pageDocument, history: { replaceState() {} },
@@ -1359,7 +1363,7 @@ const sealed = (gid, rel, seat, fields, key, names = ["by", "sig"]) =>
       t.requestCard(req, { id: "m1", name, verdict, dm });
     let c = card(okReq, "yes", false, "Alice (device 2)");
     assert.match(textOf(c), /^Payment request1\.00ZEC/);
-    assert.match(textOf(c), /FromAlice \(device 2\) · ✓ Verified/);
+    assert.match(textOf(c), /FromAlice \(device 2\) · ✓ Device signature matches/);
     assert.deepEqual(callouts(c), [], "a verified sender gets no warning");
     assert.equal(named(c, "button", "Propose this").attrs.disabled, undefined);
     named(c, "button", "Propose this").on.click();
@@ -1832,10 +1836,11 @@ const sealed = (gid, rel, seat, fields, key, names = ["by", "sig"]) =>
         const mainShown = drawn(), mainTexts = [headOf(mainShown), textOf(mainShown)];
         t.state.g = testnetG;
         globalThis.document = realDocument;
-        assert.equal(testnetShown[0], "Review the paymentZcash Testnet", "the badge sits under it");
+        assert.equal(testnetShown[0], "Review the payment" + testnetG.name + "Zcash Testnet",
+          "the wallet name and network sit under the heading");
         assert.match(testnetShown[1], /Zcash Testnet: the amounts and the network fee/);
-        assert.equal(mainTexts[0], "Review the paymentZcash Mainnet",
-          "the badge follows the open wallet");
+        assert.equal(mainTexts[0], "Review the payment" + testnetG.name + "Zcash Mainnet",
+          "the wallet name and network follow the open wallet");
         assert.match(mainTexts[1], /Zcash Mainnet: the amounts and the network fee/);
         t.ui.sendReview = { prep: { ...prep, t: { ...prep.t, pczt: "REV3" } }, note: "x" };
         assert.match(textOf(drawn()), /Network fee \(priority\)/, "the fee as decoded");
@@ -2745,7 +2750,7 @@ const sealed = (gid, rel, seat, fields, key, names = ["by", "sig"]) =>
         textOf(all(t.sessionLayer(ss), (x) => x.className === "pay-status")[0]);
       const current = (ss) => all(t.sessionLayer(ss), (x) => x.attrs?.["aria-current"] === "step")
         .map(textOf);
-      assert.match(headline(landedA), /^In a blockA block that this browser synced holds/,
+      assert.match(headline(landedA), /^Transaction in a blockA block that this browser synced holds/,
         "a synced block holds it: the headline says so");
       // The head of the drawer names the network, as the wallet head does. What the chain sees
       // names the public expiry, and the explorer link says what that site sees.
@@ -2784,7 +2789,7 @@ const sealed = (gid, rel, seat, fields, key, names = ["by", "sig"]) =>
       // signedA shows a proposal that one seat rewrote after the approval here: okA does not.
       const okA = { ...signedA, pczt: "PA" };
       assert.match(headline({ ...landedA, pczt: "PA" }),
-        /^Waiting for a blockA device sent it\. No /, "sent, and no block holds it yet");
+        /^Transaction submittedA device sent it\. No /, "sent, and no block holds it yet");
       assert.match(current(landedA).join(), /In a blockNo synced block holds it yet/,
         "the step that waits is the current step");
       assert.match(headline(okA), /^Ready for the proofAny device can build the proof now\./,
@@ -2849,6 +2854,10 @@ const sealed = (gid, rel, seat, fields, key, names = ["by", "sig"]) =>
           : { state: "unknown", txid: null, why: "no" };
         at(4503500);
         const oldOne = look(open("hd1", "PA"));
+        const reviewOrder = all(t.sessionLayer(open("hd1", "PA")),
+          (x) => x.attrs?.["data-review"]).map((x) => x.attrs["data-review"]);
+        assert.deepEqual(reviewOrder.slice(0, 3), ["warnings", "context", "amount"],
+          "an expired payment explains the block before its wallet context and amount");
         assert.match(oldOne.head, /^Payment expiredNo device can send it now\./,
           "headline: an expired proposal ends");
         assert.deepEqual(oldOne.now, [], "an expired payment has no step that waits");
@@ -2920,7 +2929,7 @@ const sealed = (gid, rel, seat, fields, key, names = ["by", "sig"]) =>
           unsure, "headline: a restored state is no sync of this page");
         assert.equal(textOf(t.statusChip({ ...open("hd2", "PA"), status: "cancelled",
           error: "Cancelled." })), "Check", "a stop before a sync of this page reads Check");
-        assert.match(look(lateSent()).head, /^Waiting for a blockA device sent it\. This page has /,
+        assert.match(look(lateSent()).head, /^Transaction submittedA device sent it\. This page has /,
           "headline: a restored state is no sync since the send");
         assert.ok(textOf(look(lateSent()).step("In a block")).endsWith("This page has not synced "
           + "the blocks since you opened this wallet."),
@@ -2929,7 +2938,7 @@ const sealed = (gid, rel, seat, fields, key, names = ["by", "sig"]) =>
         assert.match(look({ ...open("hd2", "PA"), error: "Cancelled." }).head, unsure,
           "headline: an error before a sync");
         assert.match(look(lateSent()).head,
-          /^Waiting for a blockA device sent it\. This page has not synced the blocks since you /,
+          /^Transaction submittedA device sent it\. This page has not synced the blocks since you /,
           "headline: no sync since the send");
         at(4500100);
         // The reasons of this browser: it refuses the transaction or the send.
@@ -3074,7 +3083,7 @@ const sealed = (gid, rel, seat, fields, key, names = ["by", "sig"]) =>
         at(4500100);
         const falseSent = look({ ...lateSent(), broadcastAt: Date.now(), broadcastTxid: "tx-b",
           final: { txid: "tx-b", tx_hex: "00" } });
-        assert.deepEqual([falseSent.head.startsWith("Waiting for a blockA device sent it."),
+        assert.deepEqual([falseSent.head.startsWith("Transaction submittedA device sent it."),
           falseSent.text.includes("names the id tx-b")], [true, true],
         "a sent mark with a false id waits for its block, under the false id note");
         assert.ok(falseSent.text.includes("RecipientsAmountsDevicesApproval rule"),
@@ -3100,10 +3109,13 @@ const sealed = (gid, rel, seat, fields, key, names = ["by", "sig"]) =>
           "headline: the proof is built, and this browser has no seat");
         assert.ok(look(open("hdz", "PA")).head.startsWith("Waiting for approvals"),
           "a browser with no device here waits for approvals");
-        put(open("hdu", "PA", Date.now()));   // the newest row shows in the overview
+        put(open("hdu", "PA", Date.now()));   // the full inbox is in Approvals
+        const previousTab = t.ui.tab;
+        t.ui.tab = "approvals";
         assert.match(textOf(all(t.walletView(null, null),
           (x) => x.attrs?.["data-key"] === "pay-hdu")[0]), /Approvals open/,
         "a row of an unknown count reads Approvals open");
+        t.ui.tab = previousTab;
         // One seat can write any status: the refusal does not read it.
         const falseId = { ...doneA, status: "signed", final: { txid: "tx-b", tx_hex: "00" } };
         assert.deepEqual([look(falseId).head.startsWith("Payment needs attentionThis browser does "
@@ -3182,7 +3194,7 @@ const sealed = (gid, rel, seat, fields, key, names = ["by", "sig"]) =>
         await nonces(other, { hd5: ["n"] });
         t.state.commits = { [me]: {}, [other]: {} };
         const full = look(open("hd5", "PA"));
-        assert.match(full.head, /^Approvals are completeEnough devices approved\. Another /,
+        assert.match(full.head, /^Approval threshold reachedEnough devices approved\. Another /,
           "headline: t approvals are in");
         assert.deepEqual(full.buttons.filter((b) => b.startsWith("Approve")), [],
           "no Approve button after t approvals");
@@ -3193,16 +3205,21 @@ const sealed = (gid, rel, seat, fields, key, names = ["by", "sig"]) =>
           "the Approved chip is only for a payment that collects approvals");
         assert.ok(look({ ...okA, id: "hdk", signed: "" }).head.startsWith("Signing"),
           "a package with t approvals reads Signing");
-        put(open("hd5", "PA", Date.now()));   // the newest row shows in the overview
+        put(open("hd5", "PA", Date.now()));
         t.state.sid = "hd5";
-        const row5 = () => textOf(all(t.walletView(null, null),
-          (x) => x.attrs?.["data-key"] === "pay-hd5")[0]);
+        const row5 = () => {
+          const previous = t.ui.tab;
+          t.ui.tab = "approvals";
+          try { return textOf(all(t.walletView(null, null),
+            (x) => x.attrs?.["data-key"] === "pay-hd5")[0]); }
+          finally { t.ui.tab = previous; }
+        };
         assert.deepEqual([t.needsMyApproval(t.state.gid, open("hd5", "PA")),
           t.toApprove(t.state.gid).some((x) => x.id === "hd5")], [false, false],
         "the inbox follows the drawer after t approvals");
-        assert.match(row5(), /Approved/, "the Activity row says Approved after t approvals");
+        assert.match(row5(), /Approved/, "the inbox row says Approved after t approvals");
         t.state.commits = { [me]: {} };
-        assert.match(row5(), /Your approval/, "below t a device here can approve");
+        assert.match(row5(), /Awaiting your approval/, "below t a device here can approve");
         t.state.sid = null;
         // A closed drawer: the inbox counts the approvals of a watched payment, from the parts
         // that pass their check.
@@ -3582,7 +3599,7 @@ const sealed = (gid, rel, seat, fields, key, names = ["by", "sig"]) =>
       t.ui.tab = tab;
       const attention = all(page, (x) => x.attrs?.["aria-label"] === "Needs attention")[0];
       assert.ok(attention, "the lost note shows in Needs attention");
-      const badge = all(attention, (x) => x.className === "badge plain")[0];
+      const badge = all(attention, (x) => x.className === "approval-section-count")[0];
       const rows = t.inboxRows();
       assert.ok(rows.lost.length > 0);
       assert.equal(textOf(badge), String(rows.attention.length + rows.lost.length),
@@ -3711,9 +3728,12 @@ const sealed = (gid, rel, seat, fields, key, names = ["by", "sig"]) =>
         broadcastTxid: "tx-b", final: { txid: "tx-b", tx_hex: "00" } };
       put(h10);
       assert.equal(textOf(t.statusChip(h10)), "Ready to send");
+      const previousActivityTab = t.ui.tab;
+      t.ui.tab = "activity";
       const row = all(t.walletView(null, null), (x) => x.attrs?.["data-key"] === "pay-h10")[0];
       assert.match(textOf(row), /Confirming/);
       assert.match(textOf(row), /Zcash Testnet · Proposed by /, "a payment row names its chain");
+      t.ui.tab = previousActivityTab;
       // A wallet with no Solana part has no chain select on its Activity section.
       const section = t.ui.tab;
       t.ui.tab = "activity";
@@ -4165,7 +4185,7 @@ const sealed = (gid, rel, seat, fields, key, names = ["by", "sig"]) =>
         assert.deepEqual(all(form, (x) => x.className === "badge plain").map(textOf),
           ["Zcash Testnet"], "the badge sits under the title");
         assert.equal(textOf(all(form, (x) => x.className === "card-head")[0].kids[0]),
-          "Send ZECZcash Testnet");
+          "Send ZEC" + t.state.g.name + "Zcash Testnet");
         assert.match(textOf(form), /Total leaving the wallet \(estimate\)/,
           "the total is an estimate: the fee follows the notes that the engine picks");
         assert.match(textOf(form), /One address or ZNS name and amount per line, then an optional/);
@@ -6165,7 +6185,7 @@ const sealed = (gid, rel, seat, fields, key, names = ["by", "sig"]) =>
     assert.doesNotMatch(box.attrs.placeholder, /Enter sends/);
     assert.equal(named(form, "button", "Send on chain").attrs.disabled, undefined);
     const line = all(form, (x) => x.attrs && x.attrs["aria-live"] === "polite")[0];
-    assert.deepEqual([line.textContent, line.className], ["On chain · fee 0.0001 ZEC", "hint"]);
+    assert.deepEqual([line.textContent, line.className], ["On chain · fee 0.0001 ZEC · 1 memo part", "hint"]);
     for (const [value, fee, bad] of [["x".repeat(1200), "On chain · fee 0.0002 ZEC", false],
       ["x".repeat(2000), "On chain · fee 0.00025 ZEC", false],
       ["x".repeat(513), "On chain · fee 0.00015 ZEC", false],
@@ -6287,8 +6307,9 @@ const sealed = (gid, rel, seat, fields, key, names = ["by", "sig"]) =>
     const create = t.personalCard(() => {});
     assert.match(textOf(create), /Create account/);
     assert.match(textOf(create), /Recover access/);
-    assert.match(textOf(create), /Use test funds here\. Whoever controls this browser can spend/,
-      "the create card names test funds, not a few cents");
+    assert.match(textOf(create),
+      /Whoever controls this browser can spend the account\. Make a backup file right after/,
+      "the create card keeps browser custody and backup guidance");
     assert.doesNotMatch(textOf(create), /cents/, "the card claims no real money");
     assert.equal(named(create, "button", "Create account").attrs.disabled, undefined);
     assert.equal(t.contactsCard(), null);
@@ -6395,6 +6416,7 @@ const sealed = (gid, rel, seat, fields, key, names = ["by", "sig"]) =>
   // for a record that does not read: that one is sealed as it is. An unlock deletes a copy that an
   // earlier lock could not delete.
   {
+    nav.locks = fakeLocks();
     const damaged = JSON.parse(JSON.stringify(t.personal));
     damaged.contacts = [{ name: "Hi", address: Z.normalizeAddress(Z.addressAt(other.ufvk, 0)),
       index: 4294967295 }];
@@ -6789,7 +6811,8 @@ async function runAcctSync() {
     from(b);
     press(false);
     press(true);
-    assert.deepEqual([stops, document.activeElement], [0, b], "Tab in the middle moves as usual");
+    assert.deepEqual([stops, document.activeElement], [2, b],
+      "explicit Tab and Shift+Tab preserve the middle control order in every browser");
     from({});
     press(false);
     assert.equal(document.activeElement, a, "Tab from outside the layer goes to the first one");
@@ -6855,10 +6878,8 @@ async function runAcctSync() {
     open(a, b, c);
     from(c);
     press(false);
-    // Native Tab goes from the last control of the layer to the banner only when nothing between
-    // them takes focus: the footer is inert while a layer is open (the next block).
-    assert.deepEqual([stops, document.activeElement], [0, c],
-      "Tab on the last control of the layer moves on to the banner as usual");
+    assert.deepEqual([stops, document.activeElement], [1, close],
+      "Tab on the last control reaches the visible banner without relying on native Tab mode");
     from(close);
     press(false);
     assert.equal(document.activeElement, a, "Tab on the Close button of the banner goes round");
@@ -6870,6 +6891,22 @@ async function runAcctSync() {
     from(c);
     press(false);
     assert.equal(document.activeElement, a, "the Close button of a hidden banner is no stop");
+    banner = { querySelectorAll: () => [] };
+    const form = {}, otherForm = {};
+    const firstRadio = control({ type: "radio", name: "network", form, checked: false });
+    const chosenRadio = control({ type: "radio", name: "network", form, checked: true });
+    const otherRadio = control({ type: "radio", name: "network", form: otherForm, checked: true });
+    open(a, firstRadio, chosenRadio, otherRadio, c);
+    from(a); press(false);
+    assert.equal(document.activeElement, chosenRadio, "Tab enters a radio group at its selection");
+    press(false);
+    assert.equal(document.activeElement, otherRadio, "same-name radios in another form stay separate");
+    from(chosenRadio); press(false, "ArrowDown");
+    assert.equal(stops, 0, "arrow keys retain native radio-group behavior");
+    chosenRadio.checked = false;
+    from(a); press(false);
+    assert.equal(document.activeElement, firstRadio,
+      "a radio group without a selection has one initial Tab stop");
     open(control({ disabled: true }));
     from({});
     assert.doesNotThrow(() => press(false), "Tab in a layer without controls keeps the focus");

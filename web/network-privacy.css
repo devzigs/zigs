@@ -1,0 +1,28 @@
+/* Neutral connection information: no verified-protection mark or live-service claim. */
+.network-connection-control { min-height:44px; gap:8px; white-space:normal; text-align:start;
+  border:1px solid var(--control-line); color:var(--muted); background:var(--panel); }
+.network-connection-control .symbol { flex-shrink:0; }
+.network-privacy-panel { width:min(600px,calc(100% - 32px)); gap:20px; }
+.network-privacy-panel .card-head { align-items:start; }
+.network-privacy-panel .card-head p { margin:0 0 8px; }
+.network-privacy-panel h3 { font-size:15px; line-height:1.4; margin:0; }
+.network-privacy-panel p { margin:0; overflow-wrap:anywhere; }
+.network-privacy-modes { display:grid; gap:12px; }
+.network-privacy-mode { display:grid; gap:10px; padding:18px; border:1px solid var(--line-2);
+  border-radius:var(--r-control); background:var(--sunk); }
+.network-privacy-mode-heading { display:flex; align-items:center; flex-wrap:wrap; gap:8px 12px; }
+.network-privacy-mode .badge { font-size:11px; white-space:normal; }
+.network-privacy-limits { padding-top:4px; border-top:1px solid var(--line); }
+.network-privacy-limits>summary { cursor:pointer; min-height:48px; padding:12px 0;
+  font-size:13px; color:var(--text); }
+.network-privacy-limits>div { display:grid; gap:12px; padding-bottom:4px; }
+.network-privacy-preview { display:grid; gap:10px; padding-top:18px; border-top:1px solid var(--line); }
+.network-privacy-preview .btn { justify-self:start; min-height:44px; white-space:normal; }
+.home-network-privacy { padding:0 28px; }
+@media(max-width:760px) {
+  .network-connection-control { font-size:11px; padding:8px 12px; }
+  .network-privacy-panel { width:100%; border-radius:var(--r-sheet) var(--r-sheet) 0 0;
+    padding:20px 16px calc(20px + env(safe-area-inset-bottom,0px)); gap:16px; max-height:calc(100dvh - 24px); }
+  .network-privacy-mode { padding:16px; }
+  .home-network-privacy { padding:0 20px; }
+}

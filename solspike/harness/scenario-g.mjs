@@ -39,9 +39,9 @@ import * as bk from "./backups.mjs";
 import { sleep, waitFor } from "./chrome.mjs";
 import * as flow from "./flow.mjs";
 import { MOCK, heliusAnswers, withMockUrl } from "./mock.mjs";
-import { clickText, run } from "./page.mjs";
+import { run } from "./page.mjs";
 import { redact } from "./redact.mjs";
-import { openApp, reload, solValues, solanaReady, zcashWallet } from "./seats.mjs";
+import { openApp, openSolana, reload, solValues, solanaReady, zcashWallet } from "./seats.mjs";
 import { ORIGIN } from "./server.mjs";
 import { withStack } from "./stack.mjs";
 
@@ -182,9 +182,7 @@ async function restored(rig, saved) {
   }
   for (const [i, page] of pages.entries()) await bk.restoreZcash(page, saved.zcash[i], saved.gid);
   for (const [i, page] of pages.entries()) {
-    const tab = () => run(page, () => !!document.getElementById("tab-solana"));
-    await waitFor(tab, 60000, () => "the Solana tab");
-    await clickText(page, "Solana", { exact: true });
+    await openSolana(page);
     await bk.restoreSolana(page, saved.solana[i]);
   }
   for (const page of pages) {
@@ -251,9 +249,7 @@ async function reopen(old, { gid, keys, fees }) {
   const page = await old.context.open();
   page.context = old.context;
   await reload(page, gid);
-  const tab = () => run(page, () => !!document.getElementById("tab-solana"));
-  await waitFor(tab, 60000, () => "the Solana tab of the new page of seat 1");
-  await clickText(page, "Solana", { exact: true });
+  await openSolana(page);
   const ready = async () => (await solValues(page)).status === "ready";
   await waitFor(ready, 180000, () => "status ready on the new page of seat 1");
   assert.equal((await solValues(page))["group-key"], keys.groupKey, "the same group key");

@@ -1,0 +1,33 @@
+<!doctype html>
+<html lang="en" data-theme="light">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <meta name="referrer" content="no-referrer">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self'; connect-src 'none'; object-src 'none'; base-uri 'none'">
+  <title>Wallet funding preview · Zigs</title>
+  <link rel="icon" href="/logo.png">
+  <link rel="stylesheet" href="/design-system.css">
+  <link rel="stylesheet" href="/app.css">
+  <link rel="stylesheet" href="/brand-identity.css">
+  <link rel="stylesheet" href="/onboarding-refinement.css">
+  <link rel="stylesheet" href="/funding-preview.css">
+  <link rel="stylesheet" href="preview.css">
+  <script type="module" src="preview.js"></script>
+</head>
+<body>
+  <a class="skip-link" href="#funding-fixture">Skip to funding preview</a>
+  <div class="shell">
+    <aside class="side" aria-label="Preview navigation">
+      <a class="logo" href="/dev/funding/" aria-label="Restart funding preview">
+        <span class="nav-zebra"><img src="/logo.png" alt="" width="44" height="44"></span>Zigs
+      </a>
+      <div class="fixture-wallet"><span class="label">Example wallet</span><strong>Savings wallet</strong></div>
+      <nav><button class="btn ghost" id="fixture-overview" type="button">Overview</button></nav>
+      <div class="side-foot"><button type="button" class="btn sm" id="fixture-theme">Dark appearance</button>
+        <p class="small muted">Design preview · no real wallet</p></div>
+    </aside>
+    <main class="main"><div class="page" id="funding-fixture"></div></main>
+  </div>
+</body>
+</html>

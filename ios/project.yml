@@ -33,7 +33,6 @@ targets:
     info:
       path: Zigs/Info.plist
       properties:
-        UIUserInterfaceStyle: Dark
         NSAppTransportSecurity:
           NSAllowsLocalNetworking: true
         CFBundleURLTypes:

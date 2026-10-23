@@ -54,16 +54,17 @@ assert.equal(title({ signing: true, signed: true }), "Ready for the proof");
 assert.equal(title({ signed: true, proving: true }), "Building the proof");
 assert.equal(title({ proving: true, proved: true }), "Ready to send");
 assert.equal(title({ proved: true, sendFailed: true }), "The send did not finish");
-assert.equal(title({ proved: true, sent: true, sendFailed: true }), "Waiting for a block");
+assert.equal(title({ proved: true, sent: true, sendFailed: true }), "Transaction submitted");
 assert.equal(title({ proved: true, refused: true }), "Payment needs attention",
   "a send that this browser refuses is no Ready to send");
-assert.equal(title({ sent: true, landed: true }), "In a block");
+assert.equal(title({ sent: true, landed: true }), "Transaction in a block");
 assert.equal(title({ sent: true, check: true }), "Check the payment");
 assert.equal(title({ check: true, ended: true }), "Payment expired");
 assert.equal(title({ error: true, mine: true }), "Check the payment");
 assert.equal(title({ rejected: true, mine: true }), "Payment needs attention",
   "a payment that this browser refuses asks for no approval");
-assert.equal(title({ landed: true, ended: true, error: true }), "In a block", "a block wins");
+assert.equal(title({ landed: true, ended: true, error: true }), "Transaction in a block",
+  "a block wins");
 assert.equal(title({ mine: "yes" }), "Waiting for approvals", "only true counts");
 assert.ok(stageHeadline({ mine: true }).detail.endsWith("After enough approvals, the devices "
   + "sign it, a device builds the proof, and any device can send it."));
@@ -73,7 +74,7 @@ assert.equal(title({ check: true, error: true }), "Check the payment");
 assert.equal(title({ ended: true, error: true }), "Payment expired");
 assert.equal(title({ mismatch: true, mine: true }), "Payment needs attention",
   "a transaction that pays another payee asks for no approval");
-assert.equal(title({ approved: true, mine: true }), "Approvals are complete",
+assert.equal(title({ approved: true, mine: true }), "Approval threshold reached",
   "enough approvals: no approval is needed");
 assert.equal(title({ sent: true, resend: true }), "Send it again");
 assert.equal(title({ proved: true, late: true }), "Too late to send", "a node refuses it now");
@@ -104,7 +105,7 @@ assert.match(detail({ mismatch: true, wrongMove: true }), /does not pay what the
 assert.match(detail({ wrongMove: true }), /address of the new wallet that this browser checked/);
 assert.match(detail({ sentUnsynced: true, resend: true, sent: true }),
   /^A device sent it\. This page has not synced the blocks since you opened this wallet\.$/);
-assert.equal(title({ sentUnsynced: true }), "Waiting for a block");
+assert.equal(title({ sentUnsynced: true }), "Transaction submitted");
 assert.match(detail({ sendHere: true, proved: true }), /This browser sends it only when the /);
 assert.doesNotMatch(detail({ proved: true }), /browser/, "no send of this browser without a seat");
 assert.match(detail({ approved: true, mine: true }), /^Enough devices approved\. Another /);

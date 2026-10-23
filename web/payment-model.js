@@ -53,7 +53,7 @@ export const RESEND_MS = 10 * 60 * 1000;
 
 // The headline of a payment and its one sentence: the first rule that holds names the state.
 const HEADLINES = [
-  ["landed", "In a block", "A block that this browser synced holds the payment."],
+  ["landed", "Transaction in a block", "A block that this browser synced holds the payment."],
   ["ended", "Payment expired", "No device can send it now. A new payment needs a new review and "
     + "new approvals."],
   ["endedSigned", "Payment expired", "The transaction this browser approved expired. This page "
@@ -82,11 +82,11 @@ const HEADLINES = [
     + "Do not approve it. The reason is below."],
   ["wrongMove", "Payment needs attention", "The transaction does not pay only the address of the "
     + "new wallet that this browser checked. Do not approve it. The reason is below."],
-  ["sentUnsynced", "Waiting for a block", "A device sent it. This page has not synced the blocks "
+  ["sentUnsynced", "Transaction submitted", "A device sent it. This page has not synced the blocks "
     + "since you opened this wallet."],
   ["resend", "Send it again", "No block that this browser synced holds it after "
     + RESEND_MS / 60000 + " minutes. Any device can send the same transaction again."],
-  ["sent", "Waiting for a block", "A device sent it. No block that this browser synced holds it "
+  ["sent", "Transaction submitted", "A device sent it. No block that this browser synced holds it "
     + "yet. Wait for it before you make another payment."],
   ["late", "Too late to send", "It can no longer go to the network. A device may have sent it. "
     + "Check it before you make another payment."],
@@ -100,7 +100,8 @@ const HEADLINES = [
   ["signed", "Ready for the proof", "Any device can build the proof now."],
   ["signing", "Signing", "Each device that the signing package names signs while this wallet "
     + "is open on it."],
-  ["approved", "Approvals are complete", "Enough devices approved. Another approval is not needed. "
+  ["approved", "Approval threshold reached",
+    "Enough devices approved. Another approval is not needed. "
     + "The device that proposed it builds the signing package while this wallet is open there."],
   ["mine", "Your approval is needed", "Check the recipient, amount, network and fee. Approve only "
     + "if all are right. After enough approvals, the devices sign it, a device builds the proof, "
@@ -108,7 +109,8 @@ const HEADLINES = [
 ];
 /** The facts of the headline, first rule first. */
 export const headlineFacts = HEADLINES.map(([fact]) => fact);
-const WAITING = { title: "Waiting for approvals", detail: "The other devices approve it while "
+const WAITING = { stage: "waiting", title: "Waiting for approvals",
+  detail: "The other devices approve it while "
   + "this wallet is open on them. You can close this page and come back." };
 
 /**
@@ -124,9 +126,9 @@ const WAITING = { title: "Waiting for approvals", detail: "The other devices app
  *   of the new wallet), sentUnsynced (sent, and no sync since), resend, sent, late (too late to
  *   send), sendFailed, sendHere (this browser can send it), proved, proving, signed, signing,
  *   approved (enough approvals), mine (this browser can approve it).
- * @returns {{title: string, detail: string}}
+ * @returns {{stage: string, title: string, detail: string}} Selected display stage only.
  */
 export function stageHeadline(f) {
   const hit = HEADLINES.find(([fact]) => f[fact] === true);
-  return hit ? { title: hit[1], detail: hit[2] } : WAITING;
+  return hit ? { stage: hit[0], title: hit[1], detail: hit[2] } : WAITING;
 }

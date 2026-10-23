@@ -2,7 +2,39 @@
 // pending shortcut. An unknown amount is never zero, and nothing pending gives no shortcut.
 // Run: node web/test/overview.mjs   (Node 26)
 import assert from "node:assert/strict";
-import { pendingShortcut, solRow, zecInProgress, zecTotal } from "../overview-model.js";
+import { createHash } from "node:crypto";
+import {
+  formatUsdBalance, pendingShortcut, solRow, zecInProgress, zecTotal,
+} from "../overview-model.js";
+import { describeOrb } from "../wallet-identity.js";
+import { fallbackSvg } from "../wallet-avatar-svg.js";
+
+for (const unknown of [null, undefined, NaN, Infinity, -Infinity, "12", {}, false]) {
+  assert.deepEqual(formatUsdBalance(unknown), {
+    known: false, text: "$0.00", whole: "$0", fraction: ".00",
+  }, "only finite numbers are confirmed valuations");
+}
+assert.deepEqual(formatUsdBalance(0), {
+  known: true, text: "$0.00", whole: "$0", fraction: ".00",
+});
+assert.equal(formatUsdBalance(-0).text, "$0.00", "numeric zero has no negative sign");
+assert.equal(formatUsdBalance(1234567.89).text, "$1,234,567.89");
+assert.equal(formatUsdBalance(-42.5).text, "-$42.50");
+const source = Object.freeze({ valuation: null });
+formatUsdBalance(source.valuation);
+assert.equal(source.valuation, null, "presentation never overwrites an unknown valuation");
+
+const publicAddress = "utest1" + "q".repeat(180);
+const first = await describeOrb("zcash:testnet", publicAddress);
+const again = await describeOrb("zcash:testnet", publicAddress.toUpperCase());
+assert.equal(first.digest, again.digest, "canonical public address keeps one identity");
+assert.equal(fallbackSvg(first), fallbackSvg(again), "SVG geometry is deterministic");
+assert.equal(createHash("sha256").update(fallbackSvg(first)).digest("hex"),
+  "a4b39cc58f8a7282193e3c75447e3dff7c4a53ba3c618053782818beebd5f9f6",
+  "promoted SVG keeps the existing prototype projection byte-for-byte");
+assert.notEqual(first.digest, (await describeOrb("zcash:mainnet", publicAddress)).digest);
+assert.notEqual(first.digest, (await describeOrb("zcash:testnet", "utest1pppp")).digest);
+assert.doesNotMatch(fallbackSvg(first), /utest1|address|keyPackage|viewing/i);
 
 assert.equal(zecTotal(null), null, "no sync yet: unknown, not zero");
 assert.equal(zecTotal({ spendable: 0, pending: 0, sending: 0 }), 0, "an empty wallet is zero");

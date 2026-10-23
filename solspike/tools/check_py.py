@@ -11,13 +11,14 @@ import sys
 LIMITS = {"lines": 100, "params": 5, "complexity": 8, "depth": 3}
 BLOCKS = (ast.If, ast.For, ast.While, ast.Try, ast.With, ast.AsyncFor, ast.AsyncWith)
 FUNCS = (ast.FunctionDef, ast.AsyncFunctionDef)
+BRANCHES = (ast.comprehension,) + ((ast.match_case,) if hasattr(ast, "match_case") else ())
 
 
 def points(node):
     """Complexity points of one node, not counting nested functions."""
     if isinstance(node, (ast.If, ast.For, ast.While, ast.AsyncFor, ast.IfExp, ast.ExceptHandler)):
         return 1
-    if isinstance(node, (ast.comprehension, ast.match_case)):
+    if isinstance(node, BRANCHES):
         return 1
     return len(node.values) - 1 if isinstance(node, ast.BoolOp) else 0
 

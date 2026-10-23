@@ -1,53 +1,98 @@
 // Three seats in three in-memory contexts of one Chrome (the rig), up to a Solana part that every
 // page shows as ready: a 2-of-3 testnet wallet, the second DKG of web/sol, one group key. Used by
 // scenario-e.mjs. scenario-d.mjs keeps its own copy of the other first steps (it is the verified
-// P8d check), and takes makeWallet from here. makeWallet reads the invite link, which holds the
-// wallet secret, from the text of the invite card, and zcashWallet opens the other seats with it.
-// No other function here reads a secret: the pages show public values only.
+// P8d check), and takes makeWallet from here. Every seat takes the path of a person: the Tor
+// popup is turned down, the passkey step is skipped and confirmed, the guided setup runs to the
+// end and the funding demo is left with "Finish later". The invite link, which holds the wallet
+// secret, is read from the app module that builds it (the guided card shows the link only in a
+// dialog that depends on the clipboard). No other function here reads a secret: the pages show
+// public values only.
 import { sleep, waitFor } from "./chrome.mjs";
-import { clickText, run, setInput, waitForText } from "./page.mjs";
+import {
+  clickAnyText,
+  clickSelector,
+  clickText,
+  closePrivacyPopup,
+  run,
+  setInput,
+  waitForEngine,
+  waitForText,
+} from "./page.mjs";
 import { ORIGIN } from "./server.mjs";
-
-const READY = "Crypto engine ready (WebAssembly)";
 
 /** A new in-memory context with one page on `url`, ready. `page.context` can dispose it. */
 export async function openApp(rig, name, url) {
   const ctx = await rig.newContext(name);
   const page = await ctx.open(url);
   page.context = ctx;
-  await waitForText(page, READY, 30000);
+  await waitForEngine(page);
+  await closePrivacyPopup(page);
   return page;
 }
 
-// The dialog shows one step at a time: the run clicks through them by their button texts.
-// `solana`: the box "Also set up Solana Devnet" of the names step. The page shows it once the
-// server answered /sol/config.json, and it is on by default. So on a server that serves Solana,
-// the run waits for the box before it sets it, also to clear it.
-export async function makeWallet(page, name, { solana = false } = {}) {
-  await clickText(page, "Set up a wallet");
-  await waitForText(page, "New shared wallet");
-  await clickText(page, "Set up my wallet");
-  await waitForText(page, "Choose your protection");
-  await clickText(page, "Next", { exact: true });
-  await waitForText(page, "Name your wallet");
-  await setInput(page, "#g-name", name);
+/** The passkey step of the create dialog and of the join card: Skip for now, then confirm. */
+export async function skipProtection(page) {
+  await clickText(page, "Skip for now", { exact: true, ms: 40000 });
+  await clickText(page, "Continue without protection", { exact: true });
+}
+
+// The create dialog draws its four steps at once and hides three: a step shows when its section
+// is not hidden. A click before the redraw would reach a stale form, which ignores it.
+const stepShown = (n) => document.querySelector(`[aria-labelledby="create-step-${n}"]`)?.hidden
+  === false;
+const atStep = (page, n) =>
+  waitFor(() => run(page, stepShown, n), 15000, () => `step ${n} of the create dialog`);
+
+// The Solana box of the review step sits in a hidden block of the form: the app keeps the choice
+// there and offers no visible control. A click fires the change handler, so the page keeps the
+// choice through a redraw.
+async function chooseSolana(page, on) {
   const box = () => run(page, () => !!document.getElementById("g-sol"));
-  const served = () =>
-    run(page, async () => (await fetch("/sol/config.json", { cache: "no-store" })).ok);
-  if (solana || (await served())) await waitFor(box, 20000, () => "the Solana box of the dialog");
-  // A click fires the change handler, so the page keeps the choice through a redraw.
-  await run(page, (on) => {
+  await waitFor(box, 20000, () => "the Solana box of the dialog");
+  await run(page, (want) => {
     const el = document.getElementById("g-sol");
-    if (el && el.checked !== on) el.click();
-  }, solana);
-  await clickText(page, "Review wallet");
-  await waitForText(page, "Review your wallet");
-  // The last step has a "Create wallet" button. The run takes it from the dialog form.
-  await run(page, () => document.querySelector("form[role=dialog] button[type=submit]").click());
-  // The link text sits in the closed disclosure of its QR code: textContent reads it there.
-  const shown = () => run(page, () => !!document.querySelector(".qr-toggle .addr-full"));
-  await waitFor(shown, 30000, () => "the invite link");
-  return run(page, () => document.querySelector(".qr-toggle .addr-full").textContent.trim());
+    if (el.checked !== want) el.click();
+  }, on);
+}
+
+// The submit button of the review step reads "Create wallet" too, like the button of the welcome
+// card under the dialog: the run takes the one in the dialog form, when it is enabled.
+const submitCreate = () => {
+  const btn = document.querySelector("form[role=dialog] button[type=submit]");
+  if (!btn || btn.disabled || btn.textContent.trim() !== "Create wallet") return false;
+  btn.click();
+  return true;
+};
+
+const inviteOf = async () => {
+  const { state } = await import("/app-state.js");
+  return (await import("/app-links.js")).inviteLink(state.gid);
+};
+
+/**
+ * Seat 1 creates the wallet through the dialog (Skip for now at the passkey step) and returns the
+ * invite link. `solana`: the Solana box of the review step.
+ */
+export async function makeWallet(page, name, { solana = false } = {}) {
+  await clickText(page, "Create wallet");
+  await atStep(page, 0);
+  await skipProtection(page);
+  await atStep(page, 1);
+  await clickText(page, "Use this arrangement", { exact: true });
+  await atStep(page, 2);
+  await setInput(page, "#g-name", name);
+  await clickText(page, "Continue", { exact: true });
+  await atStep(page, 3);
+  await chooseSolana(page, solana);
+  await waitFor(() => run(page, submitCreate), 20000, () => "the Create wallet button");
+  await waitForText(page, "Private setup invitation", 60000);
+  return run(page, inviteOf);
+}
+
+/** A joiner skips the passkey step, then takes the next open seat. */
+export async function joinSeat(page, seat) {
+  await skipProtection(page);
+  await clickText(page, "Join as device " + seat, { ms: 40000 });
 }
 
 // The person compares all 30 digits of the safety number, ticks the box, then confirms. The box
@@ -59,14 +104,35 @@ export async function confirmNumber(page) {
     const el = document.getElementById("safety-full");
     if (!el.checked) el.click();
   });
-  await clickText(page, "It matches", { ms: 90000 });
+  await clickText(page, "Codes match", { exact: true, ms: 90000 });
 }
 
-const hasTab = (page, id) => run(page, (name) => !!document.getElementById(name), id);
+// The wallet page: its Overview panel. The side list is on every page, also on the welcome page.
+const walletPage = (page) => run(page, () => !!document.getElementById("panel-overview"));
+
+const REVEAL = "Continue to backup options";
+const FUNDING = "Continue to funding";
+const OPEN = "Open Overview";
+const SETUP_MS = 400000; // the Zcash ceremony, and the Solana one when the wallet asks for it
 
 /**
- * The Zcash wallet on three pages: seat 1 creates it, seats 2 and 3 join, all confirm. With
- * `{ solana: true }` the dialog also chooses the Solana part, which then starts by itself.
+ * The guided setup of one page, from the prepared wallet to the wallet page: the reveal, then
+ * Open Overview. Seat 1 gets the funding demo instead: it leaves it with "Finish later", so it
+ * pays nothing. Waits for the ceremonies to end, which enable these buttons.
+ */
+async function finishSetup(page) {
+  let label = await clickAnyText(page, [REVEAL, FUNDING, OPEN], { ms: SETUP_MS });
+  if (label === REVEAL) label = await clickAnyText(page, [FUNDING, OPEN], { ms: SETUP_MS });
+  if (label === FUNDING) await clickText(page, "Finish later", { exact: true, ms: 30000 });
+  const done = () =>
+    run(page, () => !document.querySelector("[data-key=guided-setup], [data-funding-preview]"));
+  await waitFor(done, 30000, () => "the end of the guided setup");
+}
+
+/**
+ * The Zcash wallet on three pages: seat 1 creates it, seats 2 and 3 join, all confirm and finish
+ * the guided setup. With `{ solana: true }` the dialog also chooses the Solana part, which then
+ * starts by itself, and the guided setup waits for it.
  */
 export async function zcashWallet(rig, name, opts = {}) {
   const first = await openApp(rig, "seat1", `${ORIGIN}/`);
@@ -74,16 +140,13 @@ export async function zcashWallet(rig, name, opts = {}) {
   const pages = [first];
   for (const seat of [2, 3]) {
     const page = await openApp(rig, "seat" + seat, link);
-    await clickText(page, "Join as device " + seat, { ms: 40000 });
+    await joinSeat(page, seat);
     pages.push(page);
   }
   for (const page of pages) await confirmNumber(page);
+  for (const page of pages) await finishSetup(page);
   for (const [i, page] of pages.entries()) {
-    await waitFor(
-      () => hasTab(page, "tab-overview"),
-      240000,
-      () => `the Zcash wallet of seat ${i + 1}`,
-    );
+    await waitFor(() => walletPage(page), 30000, () => `the Zcash wallet of seat ${i + 1}`);
   }
   const gid = await run(first, () => location.hash.slice(1).split(".")[0]);
   return { pages, gid };
@@ -94,7 +157,7 @@ let loads = 0;
 export async function reload(page, gid) {
   loads += 1;
   await page.navigate(`${ORIGIN}/?load=${loads}#${gid}`);
-  await waitForText(page, READY, 30000);
+  await waitForEngine(page);
 }
 
 /** The [data-sol] values of the tab, without the field that holds the Helius URL. */
@@ -129,9 +192,23 @@ async function labelsAligned(page) {
   if (off.length) throw new Error("labels off the row of their value: " + off.join(", "));
 }
 
-/** Seat 1 opens the Solana tab and taps Add Solana, unless the part starts by itself. */
+const solShown = (page) => run(page, () => !!document.querySelector('[data-sol="status"]'));
+
+/**
+ * Opens the Solana section like a person: Approvals in the side list, then "Open Solana" (the
+ * side list has no Solana entry; a wallet of a server that serves Solana offers that button).
+ * Does nothing when the section shows already.
+ */
+export async function openSolana(page) {
+  if (await solShown(page)) return;
+  await clickSelector(page, "#tab-approvals", { ms: 60000 });
+  await clickText(page, "Open Solana", { exact: true, ms: 60000 });
+  await waitFor(() => solShown(page), 60000, () => "the Solana section");
+}
+
+/** Seat 1 opens the Solana section and taps Add Solana, unless the part starts by itself. */
 async function startSolana(page, auto) {
-  await clickText(page, "Solana", { exact: true });
+  await openSolana(page);
   if (auto) return;
   await waitFor(async () => (await status(page)) === "not started", 30000, () => "the tab");
   await clickText(page, "Add Solana");
@@ -144,15 +221,11 @@ async function startSolana(page, auto) {
 export async function solanaReady(pages, gid, { auto = false } = {}) {
   for (const page of pages) {
     await reload(page, gid);
-    await waitFor(
-      () => hasTab(page, "tab-solana"),
-      60000,
-      () => "the Solana tab",
-    );
+    await waitFor(() => walletPage(page), 60000, () => "the wallet page");
   }
   await startSolana(pages[0], auto);
   for (const page of pages) {
-    if (!(await status(page))) await clickText(page, "Solana", { exact: true });
+    await openSolana(page);
     await waitFor(
       async () => (await status(page)) === "ready",
       180000,

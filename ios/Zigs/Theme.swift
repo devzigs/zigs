@@ -8,14 +8,35 @@ import UIKit
 import AppKit
 #endif
 
+private func palette(_ dark:UInt32,_ light:UInt32) -> Color {
+    #if os(iOS)
+    func color(_ hex:UInt32)->UIColor {UIColor(red:CGFloat((hex>>16)&255)/255,green:CGFloat((hex>>8)&255)/255,blue:CGFloat(hex&255)/255,alpha:1)}
+    return Color(UIColor {trait in color(trait.userInterfaceStyle == .dark ? dark:light)})
+    #else
+    func color(_ hex:UInt32)->NSColor {NSColor(srgbRed:CGFloat((hex>>16)&255)/255,green:CGFloat((hex>>8)&255)/255,blue:CGFloat(hex&255)/255,alpha:1)}
+    return Color(NSColor(name:nil){appearance in color(appearance.bestMatch(from:[.darkAqua,.aqua]) == .darkAqua ? dark:light)})
+    #endif
+}
 extension Color {
-    static let night = Color(red: 0.05, green: 0.047, blue: 0.078)
-    static let room = Color(red: 0.086, green: 0.082, blue: 0.122)
-    static let line = Color.white.opacity(0.08)
-    static let signal = Color(red: 0.957, green: 0.718, blue: 0.157)
-    static let mist = Color(red: 0.62, green: 0.6, blue: 0.68)
-    static let good = Color(red: 0.36, green: 0.82, blue: 0.56)
-    static let bad = Color(red: 0.98, green: 0.42, blue: 0.42)
+    static let night=palette(0x0d1014,0xf6f7f8)
+    static let room=palette(0x191e25,0xffffff)
+    static let raised=palette(0x272e38,0xffffff)
+    static let inset=palette(0x202630,0xf0f2f5)
+    static let smoke=palette(0x12161b,0xeceef1)
+    static let heroSurface=palette(0x1c2128,0xf7f8fa)
+    static let line=palette(0x303845,0xe2e5ea)
+    static let controlBoundary=palette(0x788697,0x606e80)
+    static let buttonBoundary=palette(0x8a96a8,0x606e80)
+    static let signal=palette(0xf3b186,0x9f481d)
+    static let actionOrange=Color(red:233.0/255,green:165.0/255,blue:111.0/255)
+    static let onAction=Color(red:36.0/255,green:23.0/255,blue:14.0/255)
+    static let information=palette(0xa8c7ef,0x305a8a)
+    static let mist=palette(0xb3bdca,0x5b6573)
+    static let controlTop=palette(0x343b45,0xffffff)
+    static let controlBottom=palette(0x242a32,0xe4e8ed)
+    static let metal=palette(0xd8dde5,0x455365)
+    static let good=palette(0x8bd5b5,0x176549)
+    static let bad=palette(0xf5a1a9,0xa52d37)
 }
 
 func zec(_ zat: Int?) -> String {
@@ -54,17 +75,219 @@ func when(_ ms: Int?) -> String {
     return Date(timeIntervalSince1970: Double(ms) / 1000).formatted(.dateTime.month().day().hour().minute())
 }
 
-/// A raised surface for one group of content.
+/// Shared proportions and motion. Custody and payment state never depend on these values.
+enum Instrument {
+    static let cardRadius: CGFloat = 20
+    static let controlRadius: CGFloat = 12
+    static let sheetRadius: CGFloat = 28
+    static let motion = Animation.spring(response: 0.26, dampingFraction: 0.94)
+}
+
+/// Opaque satin content avoids the changing contrast of glass behind financial information.
+struct SatinSurface: ViewModifier {
+    var radius: CGFloat = Instrument.cardRadius
+    var highlight = false
+    @Environment(\.colorScheme) private var scheme
+    func body(content: Content) -> some View {
+        content
+            .background {
+                RoundedRectangle(cornerRadius: radius, style: .continuous)
+                    .fill(Color.room)
+                    .overlay {
+                        RoundedRectangle(cornerRadius: radius, style: .continuous)
+                            .fill(LinearGradient(colors: [.white.opacity(scheme == .dark ? 0.045 : 0.6), .clear, .black.opacity(scheme == .dark ? 0.035 : 0.015)], startPoint: .topLeading, endPoint: .bottomTrailing))
+                    }
+            }
+            .overlay {
+                RoundedRectangle(cornerRadius: radius, style: .continuous)
+                    .strokeBorder(LinearGradient(colors: [highlight ? Color.controlBoundary : Color.metal.opacity(scheme == .dark ? 0.3 : 0.22), Color.line, Color.line.opacity(0.65)], startPoint: .topLeading, endPoint: .bottomTrailing), lineWidth: 1)
+                    .allowsHitTesting(false)
+            }
+            .shadow(color: .black.opacity(scheme == .dark ? 0.16 : 0.045), radius: 16, x: 0, y: 8)
+    }
+}
+
+/// The balance is the focal surface: opaque satin with a restrained titanium edge.
+struct BalancePanel<Content: View>: View {
+    @ViewBuilder let content: Content
+    @Environment(\.colorScheme) private var scheme
+    var body: some View {
+        VStack(alignment: .leading, spacing: 20) { content }
+            .padding(24).frame(maxWidth: .infinity, alignment: .leading)
+            .background {
+                RoundedRectangle(cornerRadius: Instrument.cardRadius, style: .continuous)
+                    .fill(Color(red: 0.094, green: 0.11, blue: 0.137))
+                    .overlay {
+                        RoundedRectangle(cornerRadius: Instrument.cardRadius, style: .continuous)
+                            .fill(LinearGradient(stops: [.init(color: Color.metal.opacity(scheme == .dark ? 0.1 : 0.14), location: 0), .init(color: .clear, location: 0.5), .init(color: .black.opacity(scheme == .dark ? 0.08 : 0.025), location: 1)], startPoint: .topLeading, endPoint: .bottomTrailing))
+                    }
+            }
+            .overlay {
+                RoundedRectangle(cornerRadius: Instrument.cardRadius, style: .continuous)
+                    .strokeBorder(LinearGradient(colors: [Color.metal.opacity(0.7), Color.line, Color.metal.opacity(0.22)], startPoint: .topLeading, endPoint: .bottomTrailing))
+                    .allowsHitTesting(false)
+            }
+            .shadow(color: .black.opacity(scheme == .dark ? 0.2 : 0.065), radius: 24, x: 0, y: 12)
+            .foregroundStyle(Color.white)
+            .environment(\.colorScheme, .dark)
+    }
+}
+
+/// Recessed information and message wells stay opaque and visually distinct from controls.
+struct InsetSurface: ViewModifier {
+    var radius: CGFloat = Instrument.controlRadius
+    func body(content: Content) -> some View {
+        content.background(Color.inset, in: RoundedRectangle(cornerRadius: radius, style: .continuous))
+            .overlay(RoundedRectangle(cornerRadius: radius, style: .continuous).strokeBorder(Color.line.opacity(0.8)).allowsHitTesting(false))
+    }
+}
+
+struct InstrumentHeading: View {
+    let title: String
+    let detail: String
+    var body: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            Text(title).font(.largeTitle.weight(.semibold)).tracking(-0.9)
+                .fixedSize(horizontal: false, vertical: true).accessibilityAddTraits(.isHeader)
+            Text(detail).font(.nativeBody).foregroundStyle(Color.mist)
+                .fixedSize(horizontal: false, vertical: true)
+        }
+    }
+}
+
+struct InstrumentEmptyState: View {
+    let symbol: String
+    let title: String
+    var detail: String? = nil
+    var body: some View {
+        VStack(alignment: .leading, spacing: 14) {
+            Image(systemName: symbol).font(.title2.weight(.light)).foregroundStyle(Color.metal)
+                .frame(width: 48, height: 48).modifier(InsetSurface()).accessibilityHidden(true)
+            Text(title).font(.nativeSubheadline.weight(.medium)).fixedSize(horizontal: false, vertical: true)
+            if let detail { Text(detail).font(.nativeFootnote).foregroundStyle(Color.mist).fixedSize(horizontal: false, vertical: true) }
+        }.padding(.vertical, 12).frame(maxWidth: .infinity, alignment: .leading)
+    }
+}
+
+struct AppBackdrop: View {
+    @Environment(\.colorScheme) private var scheme
+    var body: some View {
+        Color.night.overlay(alignment: .top) {
+            LinearGradient(stops: [.init(color: Color.metal.opacity(scheme == .dark ? 0.055 : 0.035), location: 0), .init(color: .clear, location: 0.45)], startPoint: .topLeading, endPoint: .bottomTrailing)
+        }.ignoresSafeArea()
+    }
+}
+
+struct GlassChrome: ViewModifier {
+    @Environment(\.accessibilityReduceTransparency) private var reduceTransparency
+    @Environment(\.colorScheme) private var scheme
+    func body(content: Content) -> some View {
+        content.background {
+            if reduceTransparency { Color.smoke }
+            else { Rectangle().fill(.ultraThinMaterial).overlay(Color.smoke.opacity(scheme == .dark ? 0.72 : 0.65)) }
+        }.overlay(alignment: .top) {
+            Rectangle().fill(LinearGradient(colors: [Color.metal.opacity(0.35), Color.line, Color.line.opacity(0.2)], startPoint: .leading, endPoint: .trailing)).frame(height: 1)
+        }
+    }
+}
+
+struct InstrumentScreen: ViewModifier {
+    func body(content: Content) -> some View {
+        content.scrollContentBackground(.hidden).background(AppBackdrop())
+            .environment(\.defaultMinListRowHeight,48)
+            .presentationBackground(Color.room)
+            .presentationCornerRadius(Instrument.sheetRadius)
+    }
+}
+
+struct InstrumentFieldStyle: TextFieldStyle {
+    func _body(configuration: TextField<Self._Label>) -> some View {
+        configuration.textFieldStyle(.plain).font(.nativeBody).padding(.horizontal, 14).padding(.vertical, 12)
+            .frame(minHeight: 48)
+            .background(Color.inset, in: RoundedRectangle(cornerRadius: Instrument.controlRadius, style: .continuous))
+            .overlay(RoundedRectangle(cornerRadius: Instrument.controlRadius, style: .continuous).strokeBorder(Color.controlBoundary))
+    }
+}
+
+/// Reflows the same controls and labels without changing their actions or state.
+struct AdaptiveRow<Content: View>: View {
+    var spacing: CGFloat = 12
+    @ViewBuilder let content: Content
+    @Environment(\.dynamicTypeSize) private var textSize
+    var body: some View {
+        if textSize.isAccessibilitySize {
+            VStack(alignment: .leading, spacing: spacing) { content }
+        } else {
+            ViewThatFits(in: .horizontal) {
+                HStack(alignment: .firstTextBaseline, spacing: spacing) { content }
+                    .fixedSize(horizontal: true, vertical: false)
+                VStack(alignment: .leading, spacing: spacing) { content }
+            }
+        }
+    }
+}
+
+struct WalletNavigationItem: View {
+    let title: String
+    let symbol: String
+    var selected = false
+    var count = 0
+    var body: some View {
+        HStack(spacing: 12) {
+            Image(systemName: symbol).font(.system(.body, design: .default).weight(selected ? .semibold : .regular))
+                .foregroundStyle(selected ? Color.metal : Color.mist).frame(width: 24).accessibilityHidden(true)
+            Text(title).font(.nativeSubheadline.weight(selected ? .semibold : .medium))
+                .fixedSize(horizontal: false, vertical: true)
+            Spacer(minLength: 4)
+            if count > 0 {
+                Text(String(count)).font(.nativeCaption.weight(.semibold)).monospacedDigit()
+                    .padding(.horizontal, 8).padding(.vertical, 4)
+                    .background(Color.metal.opacity(0.12), in: Capsule())
+                    .overlay(Capsule().strokeBorder(Color.line))
+            }
+        }
+        .foregroundStyle(selected ? Color.primary : Color.mist)
+        .padding(.horizontal, 14).padding(.vertical, 12)
+        .frame(maxWidth: .infinity, minHeight: 48, alignment: .leading)
+        .background {
+            if selected {
+                RoundedRectangle(cornerRadius: Instrument.controlRadius, style: .continuous)
+                    .fill(LinearGradient(colors: [.controlTop, .controlBottom], startPoint: .topLeading, endPoint: .bottomTrailing))
+            }
+        }
+        .overlay(RoundedRectangle(cornerRadius: Instrument.controlRadius)
+            .strokeBorder(selected ? Color.controlBoundary : Color.clear))
+        .contentShape(RoundedRectangle(cornerRadius: Instrument.controlRadius))
+    }
+}
+
+/// Keeps every digit together; very large text can scroll instead of splitting an amount.
+struct ExactValueText: View {
+    let value: String
+    var font: Font = .title2.weight(.medium)
+    var body: some View {
+        ViewThatFits(in: .horizontal) {
+            Text(value).font(font.monospacedDigit()).fixedSize()
+            Text(value).font(.nativeBody.weight(.semibold).monospacedDigit()).fixedSize()
+            VStack(alignment: .leading, spacing: 6) {
+                ScrollView(.horizontal) {
+                    Text(value).font(.nativeBody.weight(.semibold).monospacedDigit()).fixedSize()
+                }.scrollIndicators(.visible)
+                Label("Scroll to read the full amount",systemImage:"arrow.left.and.right")
+                    .font(.nativeCaption).foregroundStyle(Color.mist)
+            }
+        }.textSelection(.enabled)
+    }
+}
+
 struct Card<Content: View>: View {
     var highlight = false
     @ViewBuilder let content: Content
-
     var body: some View {
-        VStack(alignment: .leading, spacing: 12) { content }
-            .padding(16)
+        VStack(alignment: .leading, spacing: 18) { content }
+            .padding(20)
             .frame(maxWidth: .infinity, alignment: .leading)
-            .background(Color.room, in: RoundedRectangle(cornerRadius: 16))
-            .overlay(RoundedRectangle(cornerRadius: 16).stroke(highlight ? Color.signal.opacity(0.6) : Color.line))
+            .modifier(SatinSurface(highlight: highlight))
     }
 }
 
@@ -79,13 +302,15 @@ struct Badge: View {
         case .plain: .mist
         case .ok: .good
         case .warn: .signal
-        case .info: Color(red: 0.54, green: 0.71, blue: 1.0)
+        case .info: .information
         case .bad: .bad
         }
         Text(text)
-            .font(.caption.weight(.semibold))
-            .padding(.horizontal, 8).padding(.vertical, 3)
+            .font(.nativeCaption.weight(.semibold))
+            .fixedSize(horizontal: false, vertical: true)
+            .padding(.horizontal, 10).padding(.vertical, 5)
             .background(color.opacity(0.16), in: Capsule())
+            .overlay(Capsule().strokeBorder(color.opacity(0.25)).allowsHitTesting(false))
             .foregroundStyle(color)
     }
 }
@@ -99,8 +324,11 @@ struct Avatar: View {
         Text(text)
             .font(.system(size: size * 0.38, weight: .semibold))
             .frame(width: size, height: size)
-            .background(mine ? Color.signal.opacity(0.25) : Color.white.opacity(0.08), in: Circle())
-            .foregroundStyle(mine ? Color.signal : .white)
+            .background {
+                Circle().fill(LinearGradient(colors: mine ? [Color.signal.opacity(0.18), Color.signal.opacity(0.08)] : [Color.controlTop, Color.controlBottom], startPoint: .topLeading, endPoint: .bottomTrailing))
+            }
+            .overlay(Circle().strokeBorder(mine ? Color.signal.opacity(0.3) : Color.controlBoundary.opacity(0.6)))
+            .foregroundStyle(mine ? Color.signal : Color.primary)
     }
 }
 
@@ -115,19 +343,38 @@ struct Money: View {
     var body: some View {
         let pre = sign == "out" ? "−" : sign == "in" ? "+" : ""
         let v = (Double(zat) / 100_000_000).formatted(.number.precision(.fractionLength(2...8)))
-        HStack(alignment: .firstTextBaseline, spacing: 4) {
-            Text(pre + v).font(.system(size: size * scale, weight: .semibold).monospacedDigit())
-            Text("ZEC").font(.system(size: size * scale * 0.55, weight: .semibold)).foregroundStyle(Color.mist)
+        ViewThatFits(in: .horizontal) {
+            HStack(alignment: .firstTextBaseline, spacing: 4) {
+                Text(pre + v).font(.system(size: size * scale, weight: .semibold).monospacedDigit()).fixedSize()
+                Text("ZEC").font(.system(size: max(12, size * scale * 0.55), weight: .semibold)).foregroundStyle(Color.mist)
+            }
+            VStack(alignment: .leading, spacing: 4) {
+                Text(pre + v).font(.system(size: size * scale, weight: .semibold).monospacedDigit())
+                    .fixedSize()
+                Text("ZEC").font(.nativeBody.weight(.medium)).foregroundStyle(Color.mist)
+            }
+            VStack(alignment: .leading, spacing: 4) {
+                Text(pre + v).font(.nativeBody.weight(.semibold).monospacedDigit()).fixedSize()
+                Text("ZEC").font(.nativeBody.weight(.medium)).foregroundStyle(Color.mist)
+            }
+            VStack(alignment: .leading, spacing: 6) {
+                ScrollView(.horizontal) {
+                    Text(pre + v).font(.nativeBody.weight(.semibold).monospacedDigit()).fixedSize()
+                }.scrollIndicators(.visible)
+                Text("ZEC").font(.nativeBody.weight(.medium)).foregroundStyle(Color.mist)
+                Label("Scroll to read the full amount",systemImage:"arrow.left.and.right")
+                    .font(.nativeCaption).foregroundStyle(Color.mist)
+            }
         }
-        .foregroundStyle(sign == "in" ? Color.good : .white)
-        .accessibilityElement(children: .combine)
+        .foregroundStyle(sign == "in" ? Color.good : Color.primary)
+        .accessibilityElement(children: .ignore).accessibilityLabel(pre + v + " ZEC")
     }
 }
 
 struct SectionLabel: View {
     let text: String
     var body: some View {
-        Text(text.uppercased()).font(.caption2.weight(.semibold)).kerning(0.8).foregroundStyle(Color.mist)
+        Text(text.uppercased()).font(.caption2.weight(.semibold)).kerning(1.4).foregroundStyle(Color.mist)
     }
 }
 
@@ -197,38 +444,41 @@ func copyToClipboard(_ text: String, sensitive: Bool = false) {
     #endif
 }
 
-/// macOS greys out prominent buttons in inactive windows; the main action keeps its colour.
-struct MacPrimaryStyle: ButtonStyle {
-    func makeBody(configuration: Configuration) -> some View { PrimaryLabel(configuration: configuration) }
-
-    private struct PrimaryLabel: View {
-        let configuration: Configuration
-        @Environment(\.isEnabled) private var enabled
-
-        var body: some View {
-            configuration.label
-                .font(.body.weight(.semibold))
-                .padding(.horizontal, 18).padding(.vertical, 9)
-                .background(Color.signal.opacity(enabled ? (configuration.isPressed ? 0.8 : 1) : 0.35), in: Capsule())
-                .foregroundStyle(Color.night.opacity(enabled ? 1 : 0.6))
-        }
-    }
-}
-
-/// Dark text on the yellow fill; readable grey text when the button is disabled.
-private struct ProminentText: ViewModifier {
+/// The same tactile control on iPhone and Mac; never animate a live financial value.
+struct InstrumentButtonStyle: ButtonStyle {
+    var prominent = false
     @Environment(\.isEnabled) private var enabled
-    func body(content: Content) -> some View { content.foregroundStyle(enabled ? Color.night : Color.mist) }
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @Environment(\.colorScheme) private var scheme
+    func makeBody(configuration: Configuration) -> some View {
+        let destructive = configuration.role == .destructive
+        return configuration.label
+            .font(.nativeBody.weight(.semibold))
+            .multilineTextAlignment(.center)
+            .fixedSize(horizontal: false, vertical: true)
+            .padding(.horizontal, 16).padding(.vertical, 12)
+            .frame(minWidth: 44, minHeight: 48)
+            .foregroundStyle(enabled ? (prominent ? Color.onAction : destructive ? Color.bad : Color.primary) : Color.mist)
+            .background {
+                RoundedRectangle(cornerRadius: Instrument.controlRadius, style: .continuous)
+                    .fill(LinearGradient(colors: prominent ? [Color(red: 0.96, green: 0.73, blue: 0.55), .actionOrange] : [.controlTop, .controlBottom], startPoint: .topLeading, endPoint: .bottomTrailing))
+                    .opacity(enabled ? 1 : 0.22)
+            }
+            .overlay {
+                RoundedRectangle(cornerRadius: Instrument.controlRadius, style: .continuous)
+                    .strokeBorder(prominent && enabled ? (scheme == .dark ? Color.actionOrange : Color.signal) : Color.buttonBoundary.opacity(enabled ? 1 : 0.45))
+            }
+            .shadow(color: .black.opacity(enabled ? (scheme == .dark ? 0.16 : 0.06) : 0), radius: 4, x: 0, y: configuration.isPressed ? 1 : 3)
+            .contentShape(RoundedRectangle(cornerRadius: Instrument.controlRadius))
+            .brightness(configuration.isPressed && enabled ? -0.035 : 0)
+            .scaleEffect(configuration.isPressed && enabled ? 0.988 : 1)
+            .animation(reduceMotion ? nil : Instrument.motion, value: configuration.isPressed)
+    }
 }
 
 extension View {
-    func primaryButton() -> some View {
-        #if os(macOS)
-        buttonStyle(MacPrimaryStyle())
-        #else
-        buttonStyle(.borderedProminent).modifier(ProminentText()).controlSize(.large)
-        #endif
-    }
+    func primaryButton() -> some View { buttonStyle(InstrumentButtonStyle(prominent: true)) }
+    func instrumentScreen() -> some View { modifier(InstrumentScreen()) }
 
     // iPhone-only modifiers; the Mac has no title modes, keyboards or auto-capitalisation.
     func inlineTitle() -> some View {
@@ -274,4 +524,56 @@ struct ChangeSignersTip: Tip {
     var title: Text { Text("Add or remove signers") }
     var message: Text? { Text("Signers are part of the wallet key. To change them, create a new wallet and move the funds to it.") }
     var image: Image? { Image(systemName: "arrow.triangle.swap") }
+}
+
+/// Keep the existing spelling while letting SwiftUI install this style's environment values.
+typealias ConsumerButtonStyle = InstrumentButtonStyle
+
+extension View {
+    @ViewBuilder func nativeSheetSizing() -> some View {
+        #if os(macOS)
+        self.frame(minWidth: 480, minHeight: 560)
+        #else
+        self
+        #endif
+    }
+}
+
+/// Match the web's readable desktop scale while retaining native Dynamic Type on iPhone/iPad.
+extension Font {
+    static var nativeBody: Font {
+        #if os(macOS)
+        .system(size: 14)
+        #else
+        .body
+        #endif
+    }
+    static var nativeSubheadline: Font {
+        #if os(macOS)
+        .system(size: 14)
+        #else
+        .subheadline
+        #endif
+    }
+    static var nativeHeadline: Font {
+        #if os(macOS)
+        .system(size: 16, weight: .semibold)
+        #else
+        .headline
+        #endif
+    }
+    static var nativeCaption: Font {
+        #if os(macOS)
+        .system(size: 12)
+        #else
+        .caption
+        #endif
+    }
+    static var nativeFootnote: Font {
+        #if os(macOS)
+        .system(size: 12)
+        #else
+        .footnote
+        #endif
+    }
 }

@@ -39,7 +39,7 @@ const stub = () =>
     apply: () => stub(),
     construct: () => stub(),
     set: () => true,
-    has: () => true,
+    has: (_target, key) => key !== "Notification",
   });
 export const storage = new Map();
 Object.assign(globalThis, {
@@ -47,6 +47,7 @@ Object.assign(globalThis, {
   document: stub(),
   history: { replaceState() {} },
   requestAnimationFrame: () => 0,
+  cancelAnimationFrame: () => {},
   matchMedia: () => ({ matches: false }),
   location: { hash: "", href: "http://localhost/", origin: "http://localhost" },
   localStorage: {

@@ -1,0 +1,32 @@
+<!doctype html>
+<html lang="en" data-theme="dark">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <meta name="referrer" content="no-referrer">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data:; connect-src 'self'; object-src 'none'; base-uri 'none'">
+  <title>Your wallet, cast in metal · Zigs design lab</title>
+  <link rel="icon" href="../../logo.png">
+  <link rel="stylesheet" href="../../design-system.css">
+  <link rel="stylesheet" href="flow.css">
+  <script type="module" src="flow.js"></script>
+</head>
+<body>
+  <a class="skip-link" href="#experience">Skip to the wallet preview</a>
+  <header class="lab-header"><a class="lab-brand" href="./"><img src="../../logo.png" width="32" height="32" alt="">Zigs <span>Design lab</span></a><a class="gallery-link" href="./">Orb collection ↗</a></header>
+  <main>
+    <section class="lab-intro" aria-labelledby="lab-title"><div><p class="eyebrow">EXPERIMENT 02 / A WALLET IDENTITY</p><h1 id="lab-title">First, a reveal.<br>Then, a familiar face.</h1><p>A shared identity, from setup to everyday use.</p></div><div class="lab-label"><span class="lab-dot"></span>Interactive preview<span>Synthetic identities · no wallet operations</span></div></section>
+    <div class="lab-toolbar"><div class="fixture-controls" role="group" aria-label="Example identities"><span>EXAMPLES</span><button id="example-everyday" type="button" aria-pressed="true">Sculpted silver</button><button id="example-ember" type="button" aria-pressed="false">Ember inlay</button></div><button id="flow-svg" type="button" aria-pressed="false">SVG fallback</button></div>
+    <section class="experience" id="experience" aria-label="Simulated Zigs wallet">
+      <header class="app-bar"><a class="app-logo" href="./" aria-label="Zigs design lab"><img src="../../logo.png" width="30" height="30" alt="">Zigs</a><div id="wallet-switcher" class="wallet-switcher"></div><div id="device-label" class="device-label">This browser</div></header>
+      <nav class="view-tabs" aria-label="Preview screens"><button type="button" id="view-setup" aria-current="page">Setup completion</button><button type="button" id="view-overview">Overview</button><button type="button" id="view-receive">Receive</button></nav>
+      <div id="flow-page" class="flow-page" aria-busy="true"></div>
+      <p id="flow-error" role="status" aria-live="polite"></p>
+    </section>
+    <details class="lab-controls" id="preview-controls"><summary>Preview controls <span>Check identity consistency</span></summary><div class="controls-grid"><label>Wallet name<input id="flow-name" value="Studio wallet" maxlength="48" autocomplete="off"></label><label>Viewing device<select id="flow-device"><option value="This browser">This browser</option><option value="Second device">Second device</option></select></label><label class="check-control"><input id="flow-solana" type="checkbox" checked> Include Solana Devnet</label><label class="check-control"><input id="flow-verified" type="checkbox" checked> Zcash address verified (simulated)</label></div><p>Names, devices, and Solana do not change the orb. The verified Zcash address and network determine its identity.</p></details>
+    <section class="flow-notes"><div><span>01 / DISCOVERY</span><h2>A moment to make it yours.</h2><p>The reveal follows the wallet’s address checks. No extra setup task. No waiting for the image to continue.</p></div><div><span>02 / RECOGNITION</span><h2>One wallet. One identity.</h2><p>The same sculpture stays with the wallet when its name changes, another device joins, or Solana is added.</p></div><div><span>03 / A QUIET SURPRISE</span><h2>Sometimes, an Ember inlay.</h2><p>A pair of fine metallic seams. Determined by the address, with a small rarity detail at the reveal.</p></div></section>
+  </main>
+  <footer>Development preview only. Existing wallet screens, signer-device avatars, and wallet behavior are unchanged.</footer>
+  <noscript><p>This interactive preview needs JavaScript.</p></noscript>
+</body>
+</html>

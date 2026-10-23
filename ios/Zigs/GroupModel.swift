@@ -199,6 +199,32 @@ final class GroupModel {
     var warning: String?
     var notice: String?
     var path: [String] = []
+    /// Invalidates local address-book presentation after a successful Vault save.
+    private(set) var recipientRevision = 0
+
+    var paymentRecipients: [PaymentRecipient] {
+        _ = recipientRevision
+        return vault.recipients
+    }
+
+    func savePaymentRecipient(id: String? = nil, name: String, network: String, address: String) throws {
+        let value = try PaymentRecipient.make(id: id ?? UUID().uuidString.replacingOccurrences(of: "-", with: "").lowercased(),
+            label: name, network: network, address: address, normalize: normalized)
+        var rows = vault.recipients
+        if let id {
+            guard let i = rows.firstIndex(where: { $0.id == id }) else {
+                throw RecipientBookError("This recipient is no longer saved. Close the editor and try again.")
+            }
+            rows[i] = value
+        } else { rows.append(value) }
+        try vault.putRecipients(rows)
+        recipientRevision += 1
+    }
+
+    func deletePaymentRecipient(_ id: String) throws {
+        try vault.putRecipients(vault.recipients.filter { $0.id != id })
+        recipientRevision += 1
+    }
 
     @ObservationIgnored let store = Store()
     @ObservationIgnored let vault = Vault()

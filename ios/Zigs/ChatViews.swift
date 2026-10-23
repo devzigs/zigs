@@ -21,15 +21,15 @@ struct Bubble: View {
             Avatar(text: initials(info.name), mine: info.mine, size: 32)
             VStack(alignment: .leading, spacing: 3) {
                 HStack(spacing: 8) {
-                    Text(info.name).font(.subheadline.weight(.semibold)).lineLimit(1)
-                    Text(when(m.at)).font(.caption).foregroundStyle(Color.mist)
+                    Text(info.name).font(.nativeSubheadline.weight(.semibold)).lineLimit(1)
+                    Text(when(m.at)).font(.nativeCaption).foregroundStyle(Color.mist)
                     if info.trust == .yes {
                         Text("✓ Verified").font(.caption2.weight(.semibold))
                             .foregroundStyle(Color.good)
                     }
                 }
                 if let label = trustLabels[info.trust] { Badge(text: label, kind: .bad) }
-                Text(verbatim: m.text).font(.subheadline).textSelection(.enabled)
+                Text(verbatim: m.text).font(.nativeSubheadline).textSelection(.enabled)
             }
         }
     }
@@ -45,11 +45,11 @@ private struct EventRow: View {
     var body: some View {
         NavigationLink { SessionView(sid: sid) } label: {
             HStack(spacing: 8) {
-                Image(systemName: "arrow.up.right").font(.caption).foregroundStyle(Color.mist)
+                Image(systemName: "arrow.up.right").font(.nativeCaption).foregroundStyle(Color.mist)
                 VStack(alignment: .leading, spacing: 2) {
-                    Text(verbatim: text).font(.subheadline).foregroundStyle(.white)
+                    Text(verbatim: text).font(.nativeSubheadline).foregroundStyle(Color.primary)
                         .multilineTextAlignment(.leading)
-                    Text(when(at)).font(.caption).foregroundStyle(Color.mist)
+                    Text(when(at)).font(.nativeCaption).foregroundStyle(Color.mist)
                 }
                 Spacer()
                 if unread > 0 { Badge(text: "\(unread) new", kind: .info) }
@@ -74,10 +74,10 @@ struct MessageLog: View {
             ScrollView {
                 LazyVStack(alignment: .leading, spacing: 14) {
                     if items.count > shown {
-                        Button("Show earlier messages") { shown += 100 }.font(.caption)
+                        Button("Show earlier messages") { shown += 100 }.font(.nativeCaption)
                     }
                     if items.isEmpty {
-                        Text(empty).font(.subheadline).foregroundStyle(Color.mist)
+                        Text(empty).font(.nativeSubheadline).foregroundStyle(Color.mist)
                     }
                     ForEach(items.suffix(shown)) { row($0) }
                 }
@@ -91,7 +91,7 @@ struct MessageLog: View {
                 if let id { proxy.scrollTo(id, anchor: .bottom) }
             }
         }
-        .background(Color.night, in: RoundedRectangle(cornerRadius: 12))
+        .modifier(InsetSurface())
         .accessibilityLabel("Messages")
     }
 
@@ -121,7 +121,7 @@ struct Composer: View {
     var body: some View {
         let checked = Chat.checkText(text)
         VStack(alignment: .leading, spacing: 8) {
-            if let why { Text(why).font(.caption).foregroundStyle(Color.mist) }
+            if let why { Text(why).font(.nativeCaption).foregroundStyle(Color.mist) }
             if seats.count > 1 {
                 Picker("Send as", selection: Binding(get: { chosen ?? 0 }, set: { seat = $0 })) {
                     ForEach(seats, id: \.self) { Text("Seat \($0)").tag($0) }
@@ -133,7 +133,7 @@ struct Composer: View {
                     .textFieldStyle(.plain)
                     .onSubmit(submit)
                     .padding(10)
-                    .background(Color.night, in: RoundedRectangle(cornerRadius: 12))
+                    .modifier(InsetSurface())
                     .overlay(RoundedRectangle(cornerRadius: 12).stroke(Color.line))
                 Button("Send", systemImage: "arrow.up", action: submit)
                     .labelStyle(.iconOnly)
@@ -141,7 +141,7 @@ struct Composer: View {
                     .disabled(why != nil || sending || !isSendable(checked))
             }
             if case .failure(let e) = checked, !text.trimmingCharacters(in: .whitespaces).isEmpty {
-                Text(e.message).font(.caption).foregroundStyle(Color.bad)
+                Text(e.message).font(.nativeCaption).foregroundStyle(Color.bad)
             }
         }
     }
@@ -221,14 +221,14 @@ struct MessagesTab: View {
     var body: some View {
         let changed = model.changedSigners
         Card {
-            Text("Messages").font(.headline)
+            Text("Messages").font(.nativeHeadline)
             if !changed.isEmpty {
                 let seats = changed.map { "seat \($0)" }.joined(separator: ", ")
                 Text("Signing key changed: \(seats). Their messages are not verified.")
-                    .font(.subheadline).foregroundStyle(Color.bad)
+                    .font(.nativeSubheadline).foregroundStyle(Color.bad)
             }
             WalletThread(thread: "wallet", empty: roomFine)
-            Text(roomFine).font(.caption).foregroundStyle(Color.mist)
+            Text(roomFine).font(.nativeCaption).foregroundStyle(Color.mist)
         }
     }
 }
@@ -239,7 +239,7 @@ struct Discussion: View {
 
     var body: some View {
         Card {
-            Text("Discussion").font(.headline)
+            Text("Discussion").font(.nativeHeadline)
             WalletThread(thread: "pay:" + sid, empty: "No messages about this payment yet.")
         }
     }
@@ -256,12 +256,12 @@ private struct ChatRow: View {
         HStack(spacing: 12) {
             Avatar(text: initials(model.contactId(cid) == nil ? "" : name), size: 40)
             VStack(alignment: .leading, spacing: 3) {
-                Text(name).font(.headline).foregroundStyle(.white)
-                Text("Direct chat · group server").font(.caption).foregroundStyle(Color.mist)
+                Text(name).font(.nativeHeadline).foregroundStyle(Color.primary)
+                Text("Direct chat · group server").font(.nativeCaption).foregroundStyle(Color.mist)
             }
             Spacer()
             if n > 0 { Badge(text: "\(n) new", kind: .info) }
-            Image(systemName: "chevron.right").font(.caption).foregroundStyle(Color.mist)
+            Image(systemName: "chevron.right").font(.nativeCaption).foregroundStyle(Color.mist)
         }
         .padding(14)
         .contentShape(Rectangle())
@@ -278,22 +278,21 @@ struct ChatsCard: View {
         let ids = list.keys.sorted { (list[$0]?.at ?? 0, $0) < (list[$1]?.at ?? 0, $1) }
         VStack(alignment: .leading, spacing: 0) {
             HStack {
-                Text("Chats").font(.headline)
+                Text("Chats").font(.nativeHeadline)
                 Spacer()
-                Button("New chat", action: newChat).font(.subheadline)
+                Button("New chat", action: newChat).font(.nativeSubheadline)
             }
             .padding(14)
             if ids.isEmpty {
-                Text("Write to one person who uses Zigs.").font(.subheadline)
-                    .foregroundStyle(Color.mist).padding([.horizontal, .bottom], 14)
+                InstrumentEmptyState(symbol: "bubble.left.and.bubble.right", title: "Start a private conversation",
+                    detail: "Create a contact link and share it with one person who uses Zigs.").padding(16)
             }
             ForEach(ids, id: \.self) { cid in
                 Divider().overlay(Color.line)
                 NavigationLink(value: Chat.route(cid)) { ChatRow(cid: cid) }
             }
         }
-        .background(Color.room, in: RoundedRectangle(cornerRadius: 16))
-        .overlay(RoundedRectangle(cornerRadius: 16).stroke(Color.line))
+        .modifier(SatinSurface())
     }
 }
 
@@ -309,11 +308,11 @@ struct JoinChatCard: View {
             Text("Join a chat").font(.title3.weight(.semibold))
             Text("Someone sent you a contact link. A chat holds two people. "
                  + "Your contact sees the name below.")
-                .font(.subheadline).foregroundStyle(Color.mist)
+                .font(.nativeSubheadline).foregroundStyle(Color.mist)
             TextField("Any nickname · shown to your contact", text: $model.name)
                 .textFieldStyle(.roundedBorder)
             HStack {
-                Button("Cancel") { model.declineChat(cid) }.buttonStyle(.bordered)
+                Button("Cancel") { model.declineChat(cid) }.buttonStyle(InstrumentButtonStyle())
                     .controlSize(.large).disabled(joining)
                 Button(joining ? "Joining the chat…" : "Join chat", action: join)
                     .primaryButton().disabled(joining)
@@ -345,9 +344,10 @@ struct NewChatSheet: View {
                 Section {
                     Text("You get a contact link. Send it to one person. Then the two of you "
                          + "can write to each other.")
-                        .font(.footnote).foregroundStyle(Color.mist)
+                        .font(.nativeFootnote).foregroundStyle(Color.mist)
                 }
             }
+            .instrumentScreen().nativeSheetSizing()
             .navigationTitle("New chat")
             .inlineTitle()
             .toolbar {
@@ -389,19 +389,19 @@ private struct ChatInviteCard: View {
             Text("Invite your contact").font(.title3.weight(.semibold))
             Text("Send this link to one person through a private channel. Until they open it, "
                  + "anyone who has the link can join the chat.")
-                .font(.subheadline).foregroundStyle(Color.mist)
-            Text(link).font(.caption.monospaced()).lineLimit(2).truncationMode(.middle)
+                .font(.nativeSubheadline).foregroundStyle(Color.mist)
+            Text(link).font(.nativeCaption.monospaced()).lineLimit(2).truncationMode(.middle)
             HStack {
                 ShareLink(item: model.chatInvite(link)) {
                     Label("Share", systemImage: "square.and.arrow.up")
                 }.primaryButton()
-                CopyButton(text: link, label: "Copy link").buttonStyle(.bordered)
+                CopyButton(text: link, label: "Copy link").buttonStyle(InstrumentButtonStyle())
                     .controlSize(.large)
             }
             DisclosureGroup("Show QR code", isExpanded: $showQR) {
                 QRCode(text: link).frame(maxWidth: 240).frame(maxWidth: .infinity)
             }
-            .font(.subheadline)
+            .font(.nativeSubheadline)
         }
     }
 }
@@ -410,6 +410,7 @@ struct ChatScreen: View {
     @Environment(GroupModel.self) private var model
     let cid: String
     @State private var leaving = false
+    @Environment(\.nativeHome) private var home
 
     var body: some View {
         if model.chat.book.list[cid] == nil {
@@ -422,11 +423,18 @@ struct ChatScreen: View {
                     }
                     conversation
                     Button("Leave chat", role: .destructive) { leaving = true }
-                        .font(.subheadline)
+                        .font(.nativeSubheadline)
                 }
                 .padding(16)
             }
-            .background(Color.night)
+            .instrumentScreen()
+            .safeAreaInset(edge: .top, spacing: 0) {
+                if model.gid != nil {
+                    NativeWalletHeader(name: model.state.name, network: model.state.net.label,
+                        rule: "\(model.state.t) of \(model.state.n) approvals",
+                        seed: model.addressHidden ? nil : model.state.wallet?.str("address"), home: home)
+                }
+            }
             .navigationTitle(model.contactName(cid))
             .inlineTitle()
             .confirmationDialog("Leave this chat?", isPresented: $leaving,
@@ -451,8 +459,8 @@ struct ChatScreen: View {
         let warning = crowded ? Chat.crowded
             : Chat.chatWarning(model.chat.chatPins.all, cid, model.chat.members[cid], msgs ?? [])
         return Card {
-            Text("Messages").font(.headline)
-            if let warning { Text(warning).font(.subheadline).foregroundStyle(Color.bad) }
+            Text("Messages").font(.nativeHeadline)
+            if let warning { Text(warning).font(.nativeSubheadline).foregroundStyle(Color.bad) }
             MessageLog(empty: msgs == nil && !crowded ? "Loading messages…" : "No messages yet.",
                        items: (msgs ?? []).map(LogItem.message)) { m in
                 let mine = m.from == model.chat.book.list[cid]?.member
@@ -464,7 +472,7 @@ struct ChatScreen: View {
                      why: crowded ? Chat.crowded : nil) { text, _ in
                 try await model.sendDm(text, in: cid)
             }
-            Text(chatFine).font(.caption).foregroundStyle(Color.mist)
+            Text(chatFine).font(.nativeCaption).foregroundStyle(Color.mist)
         }
     }
 

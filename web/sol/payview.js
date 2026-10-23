@@ -23,6 +23,7 @@ import {
 import { provesLocally, switchCard } from "./localprove.js";
 import { usedDigest } from "./nonces.js";
 import { heldOf, reclaimRent, scanRent } from "./rent.js";
+import { privacyBadge, privacyNotice } from "../privacy-language.js";
 import { holdsShare, solOf } from "./secrets.js";
 import { solText } from "./session.js";
 import { beforeFee, heldLamports, heldNotes, isPayment, spentLamports } from "./sessions.js";
@@ -144,6 +145,7 @@ function feeRow(c, seat) {
     "div",
     { style: "display:grid;gap:4px", "data-sol": "fee-" + seat },
     el("strong", {}, "Your fee address (device " + seat + ")"),
+    privacyBadge(el, "public", "Public fee funds · Solana Devnet"),
     el(
       "div",
       { class: "row-actions" },
@@ -242,8 +244,13 @@ function addSolCard(c, act, actions) {
   const run = () => actions.addSol({ amount: amount.value });
   return el(
     "div",
-    { style: "display:grid;gap:8px" },
+    { class: "sol-send-fields" },
     el("h3", {}, "Add SOL"),
+    privacyNotice(el, "public", "Public deposit · Solana Devnet",
+      (
+        "The chain shows the sender and deposit amount, linking "
+        + "this device’s fee address to the group."
+      )),
     el("p", { class: "small", "data-sol": "add-sol-text" }, ADD_TEXT),
     seatLine(c, "add-sol-seat", "adds this SOL, from its fee address."),
     el(
@@ -351,17 +358,26 @@ const WITHDRAW_PUBLIC = "Recipient, asset and amount are public.";
  */
 function withdrawForm(c, act, actions) {
   const { el } = c.host;
-  const to = input(c, "withdraw-to", "sol-withdraw-to", "", { spellcheck: "false" });
+  const to = input(c, "withdraw-to", "sol-withdraw-to", "", {
+    spellcheck: "false", "aria-describedby": "sol-withdraw-privacy",
+  });
   const amount = input(c, "withdraw-amount", "sol-withdraw-amount", "0.005", {
     inputmode: "decimal",
   });
   const run = () => actions.propose("withdraw", { recipient: to.value, amount: amount.value });
   return el(
     "div",
-    { style: "display:grid;gap:8px" },
+    { class: "sol-send-fields" },
     el("h4", {}, "Public withdrawal"),
-    el("p", { class: "small", "data-sol": "withdraw-public" }, WITHDRAW_PUBLIC),
+    privacyNotice(el, "public", "Public withdrawal · Solana Devnet", WITHDRAW_PUBLIC,
+      { "data-sol": "withdraw-public", id: "sol-withdraw-privacy" }),
     el("label", { class: "field" }, el("span", {}, "Recipient (Solana address)"), to),
+    c.host.recipientSelect?.({ asset: "SOL", network: CLUSTER, type: "public",
+      id: "sol-withdraw-saved", onSelect: (address) => {
+        to.value = address;
+        to.dispatchEvent(new Event("input", { bubbles: true }));
+        to.focus();
+      } }),
     el(
       "div",
       { class: "row-actions" },
@@ -378,15 +394,24 @@ const SEND_PUBLIC =
 /** The form of a private payment: the full shielded address of the payee and an amount. */
 function sendForm(c, act, actions) {
   const { el } = c.host;
-  const to = input(c, "send-to", "sol-send-to", "", { spellcheck: "false" });
+  const to = input(c, "send-to", "sol-send-to", "", {
+    spellcheck: "false", "aria-describedby": "sol-send-privacy",
+  });
   const amount = input(c, "send-amount", "sol-send-amount", "0.005", { inputmode: "decimal" });
   const send = () => actions.propose("pay", { recipient: to.value, amount: amount.value });
   return el(
     "div",
-    { style: "display:grid;gap:8px" },
+    { class: "sol-send-fields" },
     el("h4", {}, "Private payment"),
-    el("p", { class: "small", "data-sol": "send-public" }, SEND_PUBLIC),
+    privacyNotice(el, "partial", "Amount hidden · payee public", SEND_PUBLIC,
+      { "data-sol": "send-public", id: "sol-send-privacy" }),
     el("label", { class: "field" }, el("span", {}, "Payee (full shielded address)"), to),
+    c.host.recipientSelect?.({ asset: "SOL", network: CLUSTER, type: "shielded",
+      id: "sol-send-saved", onSelect: (address) => {
+        to.value = address;
+        to.dispatchEvent(new Event("input", { bubbles: true }));
+        to.focus();
+      } }),
     el(
       "div",
       { class: "row-actions" },
@@ -577,12 +602,30 @@ function reviewBlock(c, ss, review) {
   if (!review.ok) {
     return el("div", { class: "callout bad", role: "alert", "data-sol": "refusal" }, review.why);
   }
-  const rows = rowsOf(c, review).flatMap(([label, value]) => [
+  const rows = rowsOf(c, review);
+  if (PAYMENT_KINDS.has(review.intent.kind)) return paymentReview(c, ss, review, rows);
+  return reviewList(c, rows, { "data-sol": "review-" + ss.id });
+}
+
+// Keep every checked value; separate account plumbing from the payment decision.
+function reviewList(c, rows, attrs = {}) {
+  const { el } = c.host;
+  return el("dl", { class: "kv review-values", ...attrs }, rows.flatMap(([label, value]) => [
     el("dt", {}, label),
     el("dd", { "data-sol": "review" }, value),
-  ]);
-  const list = el("dl", { class: "kv", "data-sol": "review-" + ss.id }, rows);
-  return PAYMENT_KINDS.has(review.intent.kind) ? [reviewHero(c, ss, review), list] : list;
+  ]));
+}
+
+function paymentReview(c, ss, review, rows) {
+  const { el } = c.host;
+  const technical = ([label]) => label === "Program address of the group"
+    || label === "Proposal account" || label.startsWith("Create paid by device ");
+  return [reviewHero(c, ss, review),
+    el("div", { class: "review-details", "data-sol": "review-" + ss.id },
+      reviewList(c, rows.filter((row) => !technical(row))),
+      el("details", { class: "review-technical" },
+        el("summary", {}, "Technical account details"),
+        reviewList(c, rows.filter(technical))))];
 }
 
 // The amount of a payment as the checker of this device answered it, above its rows.
@@ -591,11 +634,16 @@ function reviewHero(c, ss, review) {
     { said } = review,
     withdraw = review.intent.kind === "withdraw";
   const amount = withdraw ? said.withdrawn : sum(said.paid);
+  const shown = solText(amount);
   return el(
     "div",
-    { class: "sol-hero", "data-sol": "amount-" + ss.id },
+    { class: "sol-hero review-amount", "data-sol": "amount-" + ss.id },
     el("span", { class: "label" }, withdraw ? "Public withdrawal" : "Private payment"),
-    el("strong", { class: "sol-amount" }, solText(amount)),
+    el("strong", { class: "sol-amount money", role: "img", "aria-label": shown },
+      shown.slice(0, -4), el("span", { class: "cur", "aria-hidden": "true" }, "SOL")),
+    privacyNotice(el, withdraw ? "public" : "partial",
+      withdraw ? "Public · Solana Devnet" : "Amount hidden · payee public",
+      withdraw ? WITHDRAW_PUBLIC : SEND_PUBLIC),
     el("span", { class: "small muted" }, "Solana Devnet: test SOL only. The fees are below."),
   );
 }
@@ -749,6 +797,40 @@ export function stepStates(ss, count, t, out = false) {
   return states.map((s, i) => (i === at ? "bad" : s));
 }
 
+/** Loading a historical approval is not a new approval arrival. Display labels are unchanged. */
+export function approvalMotionValue(c, ss, approved) {
+  const snapshots = c.raw?.solcommits || {};
+  if (c.wait > 0 || c.sessWait > 0 || !Object.hasOwn(snapshots, ss.id)) return "unknown";
+  return approved ? "on" : "off";
+}
+
+function approvalNodes(c, ss) {
+  const { el } = c.host;
+  return el("div", { class: "approval-nodes" }, c.host.seatIds().map((seat) => {
+    const approved = !!c.commits[ss.id]?.[seat];
+    return el("span", { class: "approver" + (approved ? " yes" : ""),
+      "data-motion-watch": "approval:sol:" + ss.id + ":" + seat,
+      "data-motion-value": approvalMotionValue(c, ss, approved) },
+    el("span", { class: "av round", "data-motion-mark": "", "aria-hidden": "true" }, seat),
+    el("span", { class: "small" }, "Device " + seat
+      + (approved ? " · Approved" : " · Approval not shown")));
+  }));
+}
+
+function solStep(c, cls, title, body = null, attrs = {}) {
+  const { el } = c.host;
+  return el("div", { class: "step " + cls, ...attrs },
+    el("span", { class: "tick", "aria-hidden": "true", "data-motion-mark": "" },
+      { done: "✓", bad: "!" }[cls] ?? "•"),
+    el("div", { class: "step-text" }, el("strong", {}, title),
+      typeof body === "string" ? el("span", { class: "small" }, body) : body));
+}
+
+const thresholdMotion = (c, ss, ready) => ({
+  "data-motion-watch": "threshold:sol:" + ss.id,
+  "data-motion-value": approvalMotionValue(c, ss, ready),
+});
+
 function stepsOf(c, ss) {
   const { el } = c.host,
     t = c.host.state.g.t;
@@ -756,25 +838,14 @@ function stepsOf(c, ss) {
   const count = ss.package ? t : Math.min(Object.keys(c.commits[ss.id] ?? {}).length, t);
   const out = ss.status === "signed" && (c.tries?.[ss.id] ?? 0) >= EXECUTE_TRIES;
   const [approvals, signed, last] = stepStates(ss, count, t, out);
-  const step = (cls, title, text) =>
-    el(
-      "div",
-      { class: "step " + cls },
-      el("span", { class: "tick" }, { done: "✓", bad: "!" }[cls] ?? "•"),
-      el(
-        "div",
-        { class: "step-text" },
-        el("strong", {}, title),
-        text ? el("span", { class: "small" }, text) : null,
-      ),
-    );
   return el(
     "div",
     { class: "steps sol-steps", "data-sol": "steps-" + ss.id },
-    step("done", "Proposed", "By device " + ss.by + "."),
-    step(approvals, `Approvals · ${count} of ${t}`),
-    step(signed, "Signed"),
-    step(last, isPayment(ss) ? "Executed" : "Landed"),
+    solStep(c, "done", "Proposed", "By device " + ss.by + "."),
+    solStep(c, approvals, `Approvals · ${count} of ${t}`, approvalNodes(c, ss),
+      thresholdMotion(c, ss, count >= t)),
+    solStep(c, signed, "Signed"),
+    solStep(c, last, isPayment(ss) ? "Executed" : "Landed"),
   );
 }
 
@@ -785,25 +856,44 @@ function sessionBody(c, ss, act, actions) {
   const review = collecting && open ? reviewOf(c, ss, open.seat) : null;
   const buttons = collecting ? approveRow(c, ss, act, actions, approveSeats(c, ss)) : null;
   return [
-    stepsOf(c, ss),
     expiredLine(c, ss),
-    review ? reviewBlock(c, ss, review) : null,
-    buttons ? el("div", { class: "row-actions" }, buttons) : null,
     executeLine(c, ss, act, actions),
+    ...reviewLayout(c, ss, review),
+    buttons ? el("div", { class: "row-actions" }, buttons) : null,
+    stepsOf(c, ss),
     resultLine(c, ss),
   ];
+}
+
+function reviewLayout(c, ss, review) {
+  const { el } = c.host;
+  const blocked = review && (review.waiting || !review.ok);
+  return [blocked ? reviewBlock(c, ss, review) : null,
+    el("div", { class: "review-context" },
+      el("strong", {}, c.host.state.g?.name || "This wallet"),
+      el("span", { class: "badge plain" }, "Solana Devnet")),
+    review && !blocked ? reviewBlock(c, ss, review) : null];
+}
+
+function sessionBadge(c, ss) {
+  const { el } = c.host;
+  const states = isPayment(ss) ? PAYMENT_STATES : STATES;
+  // Reuse the result line's existing outcome; "sent" can also mean failed on chain.
+  const failedOnChain = ss.status === "sent" && ss.outcome === "failed";
+  return el("span", { class: "badge receipt-stage " + (failedOnChain || ss.status ===
+    "failed" ? "bad" : "plain") },
+      failedOnChain ? "Failed on chain" : states[ss.status] ?? ss.status);
 }
 
 function sessionCard(c, ss, act, actions) {
   const { el } = c.host,
     kind = decodeIntent(ss.intent)?.kind ?? "unknown";
-  const attrs = { class: "list-row", "data-session": ss.id, "data-kind": kind };
-  const states = isPayment(ss) ? PAYMENT_STATES : STATES;
+  const attrs = { class: "list-row sol-review", "data-session": ss.id, "data-kind": kind };
   return el(
     "div",
     { ...attrs, "data-state": ss.status },
     el("strong", {}, TITLES[kind] ?? "Unknown proposal"),
-    el("span", { class: "badge plain" }, states[ss.status] ?? ss.status),
+    sessionBadge(c, ss),
     ...sessionBody(c, ss, act, actions),
   );
 }

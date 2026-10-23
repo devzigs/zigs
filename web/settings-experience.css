@@ -1,0 +1,103 @@
+/* Compact, browser-local preferences. Existing theme tokens and application shell remain authoritative. */
+#panel-settings { width:100%; max-width:1120px; margin-inline:auto; min-width:0; }
+#panel-settings .preferences-heading { display:grid; gap:8px; margin:0 0 var(--section-gap); }
+#panel-settings .preferences-heading :is(h1,h2) { font:var(--font-page); letter-spacing:-.035em; margin:0; }
+#panel-settings .preferences-heading p { margin:0; font-size:14px; line-height:1.5; }
+#panel-settings .preferences-page { display:grid; grid-template-columns:minmax(0,1fr); gap:var(--page-gap); }
+#panel-settings.preferences-page { display:grid; grid-template-columns:minmax(0,1fr); gap:var(--page-gap); }
+#panel-settings.preferences-page>.preferences-heading { margin-bottom:0; }
+.preferences-group { display:grid; gap:10px; min-width:0; }
+.preferences-group>h3 { margin:0; padding-inline:4px; color:var(--muted); font-size:12px; font-weight:600;
+  line-height:1.5; letter-spacing:.065em; text-transform:uppercase; }
+.preferences-surface { border:1px solid var(--line); border-radius:16px; background:var(--panel);
+  box-shadow:inset 0 1px 0 var(--edge-quiet); overflow:clip; min-width:0; }
+.preferences-surface>*+* { border-top:1px solid var(--line); }
+.preferences-surface>[hidden] { display:none; }
+.preference-row { display:flex; align-items:center; gap:16px; min-height:64px; padding:12px 16px;
+  width:100%; text-align:start; min-width:0; margin:0; }
+.preference-label { display:grid; gap:4px; flex:1; min-width:0; }
+.preference-title { font-size:14px; line-height:1.4; font-weight:550; color:var(--text); letter-spacing:-.01em; }
+.preference-description { font-size:13px; line-height:1.45; color:var(--muted); font-weight:400; overflow-wrap:anywhere; }
+.preference-control { display:flex; align-items:center; justify-content:flex-end; gap:12px; flex:0 0 auto;
+  max-width:48%; min-width:0; font-size:14px; }
+.preference-control .btn { min-height:48px; white-space:normal; }
+.preference-control .field { margin:0; gap:0; min-width:144px; width:160px; }
+.preference-control .field>span { position:absolute; width:1px; height:1px; padding:0; margin:-1px;
+  overflow:hidden; clip-path:inset(50%); white-space:nowrap; }
+.preference-control .input { min-height:48px; padding:10px 34px 10px 12px; font-size:14px; }
+.preference-state { color:var(--muted); font-size:12px; line-height:1.5; }
+.preference-value { color:var(--text); font-size:14px; font-weight:500; text-align:end; }
+.preference-notifications { display:flex; align-items:center; justify-content:flex-end; flex-wrap:wrap; gap:8px 12px; }
+.preference-notifications>.preference-state { max-width:185px; text-align:end; }
+.preference-error { color:var(--bad); font-size:13px; line-height:1.5; }
+.preference-error:empty { display:none; }
+.preference-notifications>.preference-error { flex-basis:100%; margin:0; text-align:end; max-width:300px; }
+.preference-link { background:none; border:0; border-radius:0; color:var(--text); font:inherit; cursor:pointer; }
+.preference-disclosure { padding:0; border-radius:0; background:none; margin:0; min-width:0; }
+.preference-disclosure>summary { list-style:none; cursor:pointer; border:0; border-radius:0; }
+.preference-disclosure>summary::-webkit-details-marker { display:none; }
+.preference-disclosure>summary::before,.preference-disclosure>summary::after { display:none; }
+.preference-chevron { display:inline-grid; place-content:center; width:20px; flex:0 0 20px;
+  color:var(--muted); font-size:22px; line-height:1; transition:transform 160ms ease; }
+.preference-disclosure[open]>summary>.preference-chevron { transform:rotate(90deg); }
+.preference-disclosure[open]>summary { background:var(--edge-quiet); }
+.preference-detail { display:grid; gap:16px; padding:4px 20px 20px; min-width:0; }
+.preference-detail>p { margin:0; max-width:75ch; }
+.preference-detail :is(.addr-full,.hex,.log) { overflow-wrap:anywhere; min-width:0; max-width:100%; }
+.preference-detail .log { white-space:pre-wrap; word-break:break-word; }
+.preference-detail .technical { display:grid; gap:16px; min-width:0; }
+.preference-detail .technical p { margin:0; }
+.preference-detail .technical .kv { grid-template-columns:minmax(100px,160px) minmax(0,1fr); }
+.preference-detail .technical .kv dd { min-width:0; overflow-wrap:anywhere; }
+.preference-detail .card { background:none; padding:0; border:0; box-shadow:none; border-radius:0; }
+.preference-detail .card h2 { font-size:18px; }
+.preference-detail .dialog-actions { display:flex; flex-wrap:wrap; justify-content:flex-end; gap:12px; }
+.description-disclosure:not([open]) .preference-description { white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+.preference-action { color:var(--accent-text); font-size:13px; font-weight:500; }
+.wallet-description-editor { display:grid; gap:12px; min-width:0; }
+.wallet-description-editor>.field { gap:8px; }
+.wallet-description-editor .input { width:100%; min-height:100px; resize:vertical; }
+.wallet-description-editor p { margin:0; }
+.wallet-description-editor .row-actions { justify-content:flex-end; }
+.preferences-faq { display:grid; gap:24px; }
+.preferences-faq h4 { margin:0 0 8px; font-size:14px; }
+.preferences-faq p { margin:0; max-width:75ch; }
+.preference-address>.preference-disclosure>summary { padding-top:0; min-height:48px; padding-bottom:12px; }
+.preference-address>.preference-disclosure>summary .preference-title { font-size:12px; font-weight:400; color:var(--muted); }
+.preference-address>.preference-disclosure>summary>.preference-chevron { font-size:18px; }
+.preferences-surface>p { padding:16px 20px; margin:0; }
+@media(hover:hover) {
+  .preference-link:hover,.preference-disclosure>summary:hover { background:var(--edge-quiet); }
+}
+.preference-link:focus-visible,.preference-disclosure>summary:focus-visible { outline:2px solid var(--focus); outline-offset:-3px; }
+@media(max-width:600px) {
+  #panel-settings .preferences-page,#panel-settings.preferences-page { gap:var(--page-gap); }
+  .preference-row { padding:14px 16px; gap:16px; align-items:flex-start; }
+  .preference-control { max-width:46%; }
+  .preference-control .field { min-width:110px; width:120px; }
+  .preference-title { font-size:14px; }
+  .preference-description { font-size:12px; }
+  .preference-detail { padding:4px 16px 16px; }
+  .preference-notifications { flex-direction:column; align-items:flex-end; }
+  .preference-control .badge { white-space:normal; text-align:end; }
+  .preference-detail .technical .kv { grid-template-columns:minmax(0,1fr); gap:6px; }
+  .preference-detail .technical .kv dd { margin-bottom:12px; }
+  .preferences-surface { border-radius:14px; }
+  #panel-settings .preferences-heading :is(h1,h2) { font:var(--font-page); }
+}
+@media(max-width:374px) {
+  .preference-row:has(.preference-control) { flex-wrap:wrap; }
+  .preference-row:has(.preference-control)>.preference-label { flex-basis:100%; }
+  .preference-control { max-width:100%; width:100%; justify-content:flex-start; }
+  .preference-notifications { flex-direction:row; align-items:center; justify-content:flex-start; }
+  .preference-notifications>.preference-state { text-align:start; }
+  .preference-control .field { width:100%; }
+}
+@media(prefers-reduced-motion:reduce) {
+  .preference-chevron { transition:none; }
+}
+@media(forced-colors:active) {
+  .preferences-surface { border-color:CanvasText; }
+  .preferences-surface>*+* { border-color:CanvasText; }
+  .preference-action { color:LinkText; }
+}

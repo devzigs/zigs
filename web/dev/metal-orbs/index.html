@@ -1,0 +1,26 @@
+<!doctype html>
+<html lang="en" data-theme="dark">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <meta name="referrer" content="no-referrer">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data:; connect-src 'self'; object-src 'none'; base-uri 'none'">
+  <title>Metal Orbs · Zigs design lab</title>
+  <link rel="icon" href="../../logo.png">
+  <link rel="stylesheet" href="../../design-system.css">
+  <link rel="stylesheet" href="preview.css">
+  <script type="module" src="preview.js"></script>
+</head>
+<body>
+  <header class="masthead"><a class="brand" href="#top"><img src="../../logo.png" alt="" width="36" height="36">Zigs <span>Design lab</span></a><span class="review-tag">Preview / not integrated</span></header>
+  <main id="top">
+    <section class="intro"><div><p class="eyebrow">EXPERIMENT 01 / WALLET IDENTITY</p><h1>A signature.<br>Cast in metal.</h1><p class="lede">One public address. One sculpted identity.<br>Chrome, titanium, and silver under a shared studio light.</p><div class="intro-meta"><span>24 public address fixtures</span><span>6 sculptural families</span><span>Zero live scenes</span></div><a class="lab-cta" href="flow.html">Experience the wallet reveal ↗</a></div><div id="hero" class="hero" aria-label="Featured metallic wallet avatars"></div></section>
+    <section class="collection" aria-labelledby="collection-title">
+      <div class="collection-head"><div><p class="eyebrow">THE COLLECTION</p><h2 id="collection-title">Different by construction.</h2><p>Every address at 96, 64, 48, and 32 pixels. Select an orb to inspect its identity.</p></div><div class="controls"><button id="svg-toggle" type="button" aria-pressed="false">Compare SVG fallback</button><button id="repeat" type="button">Check repeatability</button></div></div>
+      <p id="status" role="status" aria-live="polite">Preparing public address fixtures…</p>
+      <div id="gallery" class="gallery"></div>
+    </section>
+    <section class="inspector" aria-labelledby="inspect-title"><div><p class="eyebrow">IDENTITY INSPECTOR</p><h2 id="inspect-title">Same address. Same sculpture.</h2><p>Try a public EVM or Solana address. Everything stays in this browser.</p></div><form id="identity-form"><label for="chain">Chain identifier</label><select id="chain"><option value="eip155:1">eip155:1 · Ethereum</option><option value="solana:devnet">solana:devnet</option><option value="solana:mainnet-beta">solana:mainnet-beta</option><option value="zcash:testnet">zcash:testnet</option></select><label for="address">Public wallet address</label><input id="address" autocomplete="off" spellcheck="false" required><button type="submit">Generate identity</button><p id="input-error" role="alert"></p></form><div id="inspection" class="inspection"></div></section>
+    <section class="notes"><div><span>01</span><h3>Shaped by the seed</h3><p>SHA-256 of a canonical chain/address tuple controls geometry, folds, facets, seams, finish, and accent.</p></div><div><span>02</span><h3>Rendered once</h3><p>One temporary studio. A fixed 192px PNG, reused at every size. Bounded browser-local caching.</p></div><div><span>03</span><h3>Built for a fallback</h3><p>A deterministic SVG shares the same identity and surface family when WebGL is unavailable.</p></div></section>
+  </main><footer>Development preview only. Existing wallet avatars and wallet behavior are unchanged.<br>Metal orbs are a visual aid, not address verification. Always check the full destination.</footer>
+</body></html>

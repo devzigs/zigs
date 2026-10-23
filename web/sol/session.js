@@ -224,8 +224,10 @@ const unsynced = (c) =>
   c.sessions.filter((ss) => ss.status === "sent" && isPayment(ss) && !c.syncedSent.has(ss.id));
 // Nothing to sync: the first sync is done, and no sent payment or deposit waits for a poll.
 const idle = (c, ids) => c.autoSynced && !ids.length && !c.pollWanted;
-// The Solana tab showed this wallet, its sessions are loaded and checked: a sync may call Helius.
-const shown = (c) => c.viewed && c.rpcUrl && c.loaded[SESSIONS] && c.sessWait === 0;
+// Overview or the Solana workspace showed this wallet and its sessions are loaded and checked.
+// Balance observation never opens the separate local-prover device-check gate (`viewed`).
+const shown = (c) => (c.viewed || c.balanceViewed)
+  && c.rpcUrl && c.loaded[SESSIONS] && c.sessWait === 0;
 // No sync runs, the retry time passed, and the tab of the browser is not hidden.
 const due = (c) =>
   !c.autoSyncBusy &&

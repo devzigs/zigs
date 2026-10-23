@@ -60,16 +60,17 @@ export const act = (fn) => async (ev) => {
     render(); react();
   }
 };
-export function copyBtn(text, label = "Copy", cls = "btn sm") {
+export function copyBtn(text, label = "Copy", cls = "btn sm", onFailure = null) {
   const copy = async (ev) => {
     const b = ev.currentTarget;
     try {
       await navigator.clipboard.writeText(typeof text === "function" ? text() : text);
       b.textContent = "Copied";
     } catch {
-      // A secret link to select sits in the closed disclosure of its card (secretQr): open it.
+      // A caller may open a private overlay; older cards keep their existing disclosure fallback.
       b.textContent = "Select and copy";
-      b.closest("section")?.querySelector("details[data-link]")?.setAttribute("open", "");
+      if (onFailure) onFailure();
+      else b.closest("section")?.querySelector("details[data-link]")?.setAttribute("open", "");
     }
     setTimeout(() => b.textContent = label, 1500);
   };
@@ -177,12 +178,12 @@ export const unreadChip = (u) => u ? el("span", { class: "side-unread", role: "i
 
 // The label of this device in a wallet, or with `to` the name that a contact sees in a chat.
 // Saved in this browser and read when a device joins or a chat starts.
-export function nameField(id, to = "") {
+export function nameField(id, to = "", initial = undefined) {
   let saved = ""; try { saved = localStorage.getItem("zf-name") || ""; } catch {}
   const save = (ev) => { try { localStorage.setItem("zf-name", ev.target.value.trim()); } catch {} };
   const hint = to ? "Any nickname · shown to " + to : "For example: Ana's phone";
   return el("label", { class: "field" }, el("span", {}, to ? "Your name" : "This device's label"),
-    el("input", { class: "input", id, value: saved, maxlength: "40", autocomplete: "nickname",
+    el("input", { class: "input", id, value: initial ?? saved, maxlength: "40", autocomplete: "nickname",
       placeholder: hint, oninput: save }));
 }
 
@@ -244,9 +245,9 @@ export function qrBox(text, label) {
 }
 // A link with the wallet secret stays hidden until asked for: cameras and people can read screens.
 // `text`: the disclosure holds the link as text too, and the page shows only its Copy button.
-export function secretQr(link, what = "wallet", text = false) {
+export function secretQr(link, what = "wallet", text = false, label = null) {
   return el("details", { class: "qr-toggle", "data-link": linkId(link) },
-    el("summary", {}, text ? "Show link and QR code" : "Show QR code"),
+    el("summary", {}, label ?? (text ? "Show link and QR code" : "Show QR code")),
     text ? el("div", { class: "addr-full" }, link) : null,
     qrBox(link, what === "chat" ? "Contact link" : "Invite link"),
     el("p", { class: "small faint" }, "Scan with a phone camera to open the " + what + " there."));

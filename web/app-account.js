@@ -67,9 +67,17 @@ function deviceClear() {
 }
 
 // The account is in the sealed record now (a damaged one as it is), so the device copy goes.
-export function dropDeviceCopy() {
-  if (!personal && !personalDamaged) return;
+export function dropDeviceCopy(strict = false) {
+  if (!personal && !personalDamaged) return strict ? Promise.resolve() : undefined;
+  if (strict) return clearDeviceCopy();
   deviceClear().catch((e) => log("could not delete the account copy: " + (e.message || e)));
+}
+async function clearDeviceCopy() {
+  await deviceClear();
+  const left = await Promise.all(["personal:key", "personal:rec"]
+    .map((name) => idb("readonly", (st) => st.get(name))));
+  if (left.some((value) => value != null)) throw new Error("The device account copy could not "
+    + "be removed. Keep this tab open and save recovery files; passkey protection is incomplete.");
 }
 
 // Reads a saved account. A record that does not read stays as it is, and no new account is made

@@ -86,9 +86,11 @@ const marked = (name) =>
     n.attrs["data-sol"] === name,
   );
 const rowsOf = (id) => {
-  const [dl] = marked("review-" + id);
+  const [review] = marked("review-" + id);
   const out = {};
-  for (let i = 0; i < dl.kids.length; i += 2) out[textOf(dl.kids[i])] = textOf(dl.kids[i + 1]);
+  for (const dl of findAll(review, (n) => n.tag === "dl")) {
+    for (let i = 0; i < dl.kids.length; i += 2) out[textOf(dl.kids[i])] = textOf(dl.kids[i + 1]);
+  }
   return out;
 };
 const input = (hash, tree, mint = SOL_MINT) => ({
@@ -521,6 +523,16 @@ step("a read of a wallet that closed shows no banner and writes no count");
     "the amount that the checker bound, above the rows");
   const fees = "0.000005 SOL at the proposal, 0.000010162 SOL at the execute.";
   assert.equal(rows["Network fees"], fees, "two signatures and the tree fee at the execute");
+  const card = findAll(solView({ ...c, host: { ...c.host, el: node } }, (fn) => fn, {}),
+    (n) => n.attrs["data-session"] === id)[0];
+  const order = findAll(card, (n) => n.attrs["data-sol"] === "amount-" + id
+    || n.attrs["data-sol"] === "review-" + id || n.attrs["data-sol"] === "steps-" + id)
+    .map((n) => n.attrs["data-sol"]);
+  assert.deepEqual(order, ["amount-" + id, "review-" + id, "steps-" + id],
+    "the verified amount and payment consequences precede lifecycle progress");
+  const mainRows = findAll(marked("review-" + id)[0], (n) => n.tag === "dl")[0];
+  assert.ok(textOf(mainRows).includes(fees) && textOf(mainRows).includes(LINK_TEXT),
+    "network costs and public-link consequences remain outside collapsed technical details");
   const rent =
     "0.00135636 SOL, back to device 1 at the execute, or after the expiry with the card " +
     '"Rent of old proposals".';

@@ -1,7 +1,49 @@
 {
-  "baseCommit": "7172e402d42216d7ecc753813c2df602e60b8bc1",
+  "baseCommit": "2b4858e15c30d876bfb3e4885acf841211071f00",
   "node": "v26.12.1",
   "tests": {
+    "web/test/messaging-presentation.mjs": {
+      "exit": 0
+    },
+    "web/test/messaging-cost-review.mjs": {
+      "exit": 0
+    },
+    "web/test/messaging-account-view.mjs": {
+      "exit": 0
+    },
+    "web/test/premium-motion.mjs": {
+      "exit": 0
+    },
+    "web/test/homepage-motion.mjs": {
+      "exit": 0
+    },
+    "web/test/outcome-seal.mjs": {
+      "exit": 0
+    },
+    "web/test/passkey-setup.mjs": {
+      "exit": 0
+    },
+    "web/test/optional-passkey.mjs": {
+      "exit": 0
+    },
+    "web/test/guided-create.mjs": {
+      "exit": 0
+    },
+    "web/test/wallet-description.mjs": {
+      "exit": 0
+    },
+    "web/test/backup-check.mjs": {
+      "exit": 0
+    },
+    "web/test/guided-setup.mjs": {
+      "exit": 0
+    },
+    "web/test/recipients.mjs": {
+      "exit": 0
+    },
+    "web/test/swap-preview.mjs": {
+      "exit": 0
+    },
     "web/test/chat.mjs": {
       "exit": 0
     },
@@ -117,6 +159,9 @@
       "exit": 0
     },
     "web/test/recovery.mjs": {
+      "exit": 0
+    },
+    "web/test/security-dashboard.mjs": {
       "exit": 0
     },
     "web/test/payment-model.mjs": {

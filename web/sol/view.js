@@ -16,6 +16,7 @@ import { approvalClosed } from "./approve.js";
 import { holdsShare, remoteStop, solOf, stopOf } from "./secrets.js";
 import { solText } from "./session.js";
 import { SESSIONS, isPayment } from "./sessions.js";
+import { privacyNotice, SOL_EXPOSURE } from "../privacy-language.js";
 
 const ADD_TEXT =
   "A Solana program owns the funds of the group at a program address, which is public and links " +
@@ -256,11 +257,19 @@ function keyBlock(c, done) {
   const owner = done.pda ? base58(done.pda) : null;
   return el(
     "dl",
-    { class: "kv" },
+    { class: "kv", "data-key": "sol-receive", tabindex: "-1",
+      "aria-label": "Receive SOL and wallet details" },
     copyRow("owner", "Program address of the group (Devnet)", owner, "copy-program", "program"),
     row("group-key", "Group key", done.groupKey),
-    copyRow("shielded", "Shielded address", done.pdaAddress, "copy-shielded", "shielded"),
-    el("dd", { class: "small", "data-sol": "pay-to" }, PAY_TO),
+    copyRow("shielded", "Shielded SOL address · Devnet", done.pdaAddress,
+      "copy-shielded", "shielded"),
+    el("dt", {}, "Privacy on Solana Devnet"),
+    el("dd", {}, privacyNotice(el, done.pdaAddress ? "partial" : "unknown",
+      done.pdaAddress ? "Amount hidden · payee public" : "Privacy unknown", SOL_EXPOSURE)),
+    el("dd", { class: "small", "data-sol": "pay-to" }, PAY_TO,
+      " Use a compatible shielded wallet. This is not a standard Solana "
+      + "account address for an ordinary wallet or faucet. To add public SOL, fund this device’s "
+      + "separate fee address and use Add SOL below."),
     row("balance-private", "Private balance", c.sync.balance ?? "not synced"),
     row(
       "balance-public",
@@ -279,13 +288,17 @@ const SYNC_TEXT =
 
 function syncCard(c, act, actions) {
   const { el } = c.host;
+  const failed = String(c.sync.text || "").startsWith("failed:");
   return el(
     "div",
     { style: "display:grid;gap:8px" },
     el(
-      "div",
-      { class: "row-actions" },
-      el(
+      "span", { class: "small", "data-sol": "worker" },
+      c.sync.text ?? "Balances sync automatically when this wallet is ready.",
+    ),
+    el("details", {}, el("summary", {}, "Technical sync details"),
+      el("p", { class: "small", "data-sol": "sync-text" }, SYNC_TEXT),
+      failed ? el(
         "button",
         {
           class: "btn",
@@ -294,11 +307,9 @@ function syncCard(c, act, actions) {
           disabled: c.sync.busy,
           onclick: act(actions.sync),
         },
-        c.sync.busy ? "Syncing…" : "Sync Solana",
-      ),
-      el("span", { class: "small", "data-sol": "worker" }, c.sync.text ?? "not started"),
+        "Retry Solana sync",
+      ) : null,
     ),
-    el("p", { class: "small", "data-sol": "sync-text" }, SYNC_TEXT),
   );
 }
 
@@ -386,15 +397,13 @@ export function solView(c, act, actions) {
   return el(
     "section",
     { class: "card card-pad sol-view", style: "display:grid;gap:12px" },
-    el("div", { class: "card-head" }, el("span", { class: "badge plain" }, "Devnet only · beta")),
+    el("div", { class: "card-head" }, el("span", { class: "badge plain" }, "Solana Devnet")),
     // The word stays readable for the checks; a person reads the sentence.
     el("p", { class: "small" }, el("span", { "data-sol": "status", hidden: true }, status),
       STATUS_TEXT[status]),
-    el(
-      "p",
-      { class: "small", "data-sol": "public-text" },
-      provesLocally(c) ? PUBLIC_LOCAL : PUBLIC_TEXT,
-    ),
+    privacyNotice(el, status === "ready" ? "partial" : "unknown",
+      status === "ready" ? "Partial privacy · Solana Devnet" : "Privacy unknown",
+      provesLocally(c) ? PUBLIC_LOCAL : PUBLIC_TEXT, { "data-sol": "public-text" }),
     ...stopCards(c),
     started(c.docs) ? seatList(c) : stopped ? null : startCard(c, act, actions),
     ag.state === "differ" ? el("div", { class: "callout bad", role: "alert" }, ag.why) : null,

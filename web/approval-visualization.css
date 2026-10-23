@@ -1,0 +1,55 @@
+/* Opaque theme surfaces: no glass dependency, image assets or idle animations. */
+.approval-visualization { display:grid; gap:20px; min-width:0; padding:20px;
+  border:1px solid var(--line-2); border-radius:var(--r); background:var(--panel);
+  box-shadow:inset 0 1px 0 var(--edge); color:var(--text); }
+.approval-policy { display:flex; flex-wrap:wrap; justify-content:space-between; gap:8px 16px;
+  color:var(--muted); font-size:.75rem; }
+.approval-policy strong { color:var(--text); font-weight:550; }
+.approval-stage { display:grid; gap:8px; padding-block:4px; }
+.approval-count { display:flex; flex-wrap:wrap; align-items:baseline; gap:6px 10px; }
+.approval-count strong { font-size:1.625rem; line-height:1.2; font-weight:550; letter-spacing:-.04em;
+  font-variant-numeric:tabular-nums; }
+.approval-count>span { font-size:.75rem; color:var(--muted); }
+.approval-current { margin:0; font-size:.8125rem; color:var(--accent-text); }
+.approval-visualization.attention .approval-current { color:var(--bad); }
+.approval-visualization.checking .approval-current { color:var(--muted); }
+.approval-constellation { display:flex; list-style:none; padding:0; margin:0; }
+.approval-device { position:relative; display:flex; flex:1; flex-direction:column;
+  align-items:center; gap:8px; min-width:0; padding:0 4px; text-align:center; }
+.approval-device:not(:last-child)::after { content:""; position:absolute; top:18px;
+  left:calc(50% + 19px); width:calc(100% - 38px); height:1px; background:var(--line-2); }
+.approval-node { display:grid; place-items:center; width:36px; height:36px; border-radius:50%;
+  border:1px solid var(--control-line); background:var(--raised); color:var(--muted);
+  box-shadow:inset 0 1px 0 var(--edge); font-size:18px; font-weight:650; }
+.approval-visualization.active .received .approval-node { border-color:var(--accent-text);
+  color:var(--accent-text); background:var(--panel); }
+.approval-device-name { max-width:100%; overflow-wrap:anywhere; font-size:.75rem; font-weight:550; }
+.approval-device-state { font-size:.6875rem; color:var(--muted); }
+.approval-legend { margin:0; padding-top:14px; border-top:1px solid var(--line);
+  font-size:.6875rem; line-height:1.6; color:var(--muted); }
+.approval-aggregate { display:grid; gap:6px; padding:12px; border:1px solid var(--line);
+  border-radius:var(--r-control); background:var(--sunk); font-size:.8125rem; }
+.approval-aggregate p { margin:0; }
+.approval-visualization .approval-node.motion-complete-enter,
+.step:has(.approval-visualization)>.tick.motion-complete-enter {
+  animation:approval-rim-resolve 240ms ease-out both; }
+@keyframes approval-rim-resolve { from { box-shadow:0 0 0 3px var(--accent-edge); }
+  to { box-shadow:inset 0 1px 0 var(--edge); } }
+@media (max-width:600px) {
+  .approval-visualization { padding:16px; gap:16px; }
+  .approval-constellation { flex-direction:column; gap:16px; }
+  .approval-device { display:grid; grid-template-columns:36px minmax(0,1fr); gap:2px 12px;
+    padding:0; text-align:left; align-items:start; }
+  .approval-node { grid-row:span 2; }
+  .approval-device-name { padding-top:2px; }
+  .approval-device:not(:last-child)::after { top:37px; left:18px; width:1px; height:15px; }
+}
+@media (prefers-reduced-motion:reduce) {
+  .approval-visualization .approval-node.motion-complete-enter,
+  .step:has(.approval-visualization)>.tick.motion-complete-enter { animation:none; }
+}
+@media (forced-colors:active) {
+  .approval-node,.approval-visualization.active .received .approval-node {
+    border-color:ButtonText; color:CanvasText; }
+  .approval-device:not(:last-child)::after { background:CanvasText; }
+}

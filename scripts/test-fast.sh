@@ -11,12 +11,18 @@ case "$(node -v 2>/dev/null)" in
   v26.*) ;;
   *) echo "test-fast: Node 26 is needed, found $(node -v 2>/dev/null || echo none)" >&2; exit 2 ;;
 esac
-FAST="payees vault chat lwd zns requests shim shim-status signed util account qr personal graph
+FAST="messaging-presentation messaging-cost-review messaging-account-view premium-motion homepage-motion
+  outcome-seal passkey-setup optional-passkey guided-create wallet-description backup-check guided-setup
+  recipients swap-preview
+  payees vault chat lwd zns
+  requests shim shim-status
+  signed util account qr personal graph
   sol-docs sol-transfer sol-wasm sol-config sol-rent sol-errors demo-check mainnet-off
-  chain-fallback smoke help contrast overview setup-stage approvals recovery payment-model
+  chain-fallback smoke help contrast overview setup-stage approvals recovery security-dashboard
+  payment-model
   cf/test/gate sol-nonce-tabs no-storage"
 SLOW="app sol-fee sol-sessions sol-limits sol-ceremony sol-app sol-pay unified-setup sol-prove"
-HELPERS="sol-rig sol-setup sol-chain sol-vector sol-fixture page"
+HELPERS="passkey-fixture sol-rig sol-setup sol-chain sol-vector sol-fixture page"
 # A new test file goes into FAST or SLOW here, and into TESTS of solspike/baseline.sh. A name is
 # a file of web/test; an entry with a slash is a path from the root (cf/test/gate).
 all=" $(echo $FAST $SLOW $HELPERS) "

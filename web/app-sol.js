@@ -1,5 +1,6 @@
 // Solana host glue: solHost() and the lazy load of web/sol.
 import { walletVersion } from "./util.js";
+import { recipientSelect } from "./app-recipients.js";
 import { docFields } from "./signed.js";
 import { banner, clearBadBanner, log, openCreate, showBanner, state, ui } from "./app-state.js";
 import { exclusive, said } from "./app-kit.js";
@@ -110,6 +111,7 @@ let solStartRead = null;  // the wallet whose start documents arrived
 export function resetSolStart() { solStartDoc = null; solWatched = null; solStartRead = null; }
 const solHost = () => ({
   Z, sdb, state, el, act, log, once, render, refilter, showBanner, sec, putSec, signedDoc,
+  recipientSelect,
   exclusive, takeStored,
   canWriteAs, localSeats, seatIds, checkIn, safetyNo, seatCheck, confirmedNo, openGroup, restore,
   groupVersion, sealAndSave, network: () => netName(state.g),
@@ -192,6 +194,11 @@ export const solBalance = (gid = state.gid) =>
 export const solSync = (gid = state.gid) => solOpenHere(gid)
   ? fromSol("sync", (c) => ({ text: String(c.sync?.text ?? ""), busy: !!c.sync?.busy }), null)
   : null;
+/** Overview starts the existing balance sync without opening Solana payment/prover tools. */
+export function solObserveOverview() {
+  if (globalThis.document?.visibilityState === "hidden" || !solOpenHere()) return;
+  sol.observe(state.gid);
+}
 // A failed load waits for Try again (solRetry): a retry on every redraw would loop.
 export function solRetry() {
   if (!solError) return;   // a second tap while the retry loads
