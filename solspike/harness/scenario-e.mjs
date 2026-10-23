@@ -21,7 +21,7 @@ import { assertBlank, restoreZcash, zcashBackup } from "./backups.mjs";
 import { MOCK, heliusAnswers, withMockUrl } from "./mock.mjs";
 import { run } from "./page.mjs";
 import { redact } from "./redact.mjs";
-import { openApp, solanaReady, zcashWallet } from "./seats.mjs";
+import { openApp, openSolana, reload, solanaReady, zcashWallet } from "./seats.mjs";
 import { ORIGIN } from "./server.mjs";
 import { withStack } from "./stack.mjs";
 
@@ -71,10 +71,20 @@ async function newGroup(rig) {
   const fees = await feeAddresses(pages);
   results.group = { owner: keys.owner, groupKey: keys.groupKey, fees };
   record("ready", {});
-  return { pages, fees };
+  return { pages, fees, gid };
 }
 
-async function steps(pages, fees, tools) {
+// The seat that adds the SOL syncs by itself. The page syncs the balance of a deposit of another
+// seat when it opens, not later: so the other seats load their page again.
+async function otherSeatsSync(pages, gid) {
+  for (const page of pages.slice(1)) {
+    await reload(page, gid);
+    await openSolana(page);
+    await privateBalance(page, `${ADD} SOL`);
+  }
+}
+
+async function steps(pages, fees, gid, tools) {
   const sent = await tools.fund({ to: fees[1], shown: fees[1], lamports: PLAN[0].lamports });
   record("fund-seat1", { signature: sent.signature, lamports: String(PLAN[0].lamports) });
   await feeFunded(pages[0], 1);
@@ -82,7 +92,8 @@ async function steps(pages, fees, tools) {
   await tools.confirmed(signature);
   assert.equal(await tools.payerOf(signature), fees[1], "the fee address of seat 1 pays Add SOL");
   record("add-sol", { signature });
-  for (const page of pages) await privateBalance(page, `${ADD} SOL`);
+  await privateBalance(pages[0], `${ADD} SOL`);
+  await otherSeatsSync(pages, gid);
   results.problems = pages.map((p) => problemsOf(p).length);
   assert.deepEqual(results.problems, [0, 0, 0], "no console problem or CSP violation");
   if (MOCK) assert.equal(heliusAnswers(pages), 0, "no answer from the Helius host");
@@ -91,8 +102,8 @@ async function steps(pages, fees, tools) {
 async function scenario(rig) {
   results.plan = PLAN.map((tx) => ({ ...tx, lamports: String(tx.lamports) }));
   const tools = MOCK ? (await import("./mock-chain.mjs")).mockTools(rig) : LIVE_TOOLS;
-  const { pages, fees } = await newGroup(rig);
-  await steps(pages, fees, tools);
+  const { pages, fees, gid } = await newGroup(rig);
+  await steps(pages, fees, gid, tools);
   console.log(redact(JSON.stringify({ mock: MOCK, steps: results.steps.map((s) => s.label) })));
 }
 

@@ -12,9 +12,11 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { sleep, waitFor } from "./chrome.mjs";
 import {
-  captureDownloads, clickText, readSol, run, setInput, takeDownloads, waitForText,
+  captureDownloads, clickSelector, clickText, closePrivacyPopup, readSol, run, setInput,
+  takeDownloads, waitForEngine, waitForText,
 } from "./page.mjs";
 import { loadNeedles, makeRedactor, MARK, redact } from "./redact.mjs";
+import { skipProtection } from "./seats.mjs";
 import { ORIGIN } from "./server.mjs";
 import { withStack } from "./stack.mjs";
 
@@ -124,19 +126,19 @@ const csp = (page) => page.records.filter((r) => r.kind === "csp").length;
 
 async function helpers(page) {
   await page.navigate(`${ORIGIN}/`);
-  await waitForText(page, "Crypto engine ready (WebAssembly)");
+  await waitForEngine(page);
+  await closePrivacyPopup(page);
   assert.equal(csp(page), 0, "the app page raises no CSP violation");
   await clickText(page, "Create wallet");
-  await waitForText(page, "New shared wallet");
+  await waitForText(page, "Set up your wallet");
   const focused = () => run(page, () => document.activeElement?.textContent.trim() ?? "");
-  assert.equal(await focused(), "Set up my wallet", "the first step gives focus to its button");
-  await clickText(page, "Set up my wallet");
-  await waitFor(async () => (await focused()) === "Choose your protection", 5000,
+  await skipProtection(page);
+  await waitFor(async () => (await focused()) === "Set the approval threshold", 5000,
     () => "the focus on the heading of the next step");
   await setInput(page, "#g-n", 4);
   await setInput(page, "#g-t", 3);
   await waitForText(page, "Any 3 of 4 devices must approve each payment.");
-  await clickText(page, "Cancel", { exact: true });
+  await clickSelector(page, 'form[role=dialog] button[aria-label="Close"]');
   await run(page, () => {
     document.body.insertAdjacentHTML("beforeend",
       '<span data-sol="probe"> 42 </span><input data-sol="field" value="x">');

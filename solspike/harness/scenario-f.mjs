@@ -43,9 +43,9 @@ import * as bk from "./backups.mjs";
 import { waitFor } from "./chrome.mjs";
 import * as flow from "./flow.mjs";
 import { MOCK, heliusAnswers, withMockUrl } from "./mock.mjs";
-import { clickText, run } from "./page.mjs";
+import { run } from "./page.mjs";
 import { redact } from "./redact.mjs";
-import { openApp, solValues, solanaReady, zcashWallet } from "./seats.mjs";
+import { openApp, openSolana, solValues, solanaReady, zcashWallet } from "./seats.mjs";
 import { ORIGIN } from "./server.mjs";
 import * as facts from "./sol-facts.mjs";
 import { withStack } from "./stack.mjs";
@@ -178,9 +178,7 @@ async function restored(rig, saved) {
   }
   for (const [i, page] of pages.entries()) await bk.restoreZcash(page, saved.zcash[i], saved.gid);
   for (const [i, page] of pages.entries()) {
-    const tab = () => run(page, () => !!document.getElementById("tab-solana"));
-    await waitFor(tab, 60000, () => "the Solana tab");
-    await clickText(page, "Solana", { exact: true });
+    await openSolana(page);
     await bk.restoreSolana(page, saved.solana[i]);
   }
   for (const page of pages) {

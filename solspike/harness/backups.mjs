@@ -7,13 +7,14 @@ import { sleep, waitFor } from "./chrome.mjs";
 import { banner } from "./flow.mjs";
 import {
   captureDownloads,
+  clickSelector,
   clickText,
   run,
   setInput,
   takeDownloads,
 } from "./page.mjs";
 import { redact } from "./redact.mjs";
-import { reload } from "./seats.mjs";
+import { openSolana, reload } from "./seats.mjs";
 import * as Z from "../../web/pkg/zigs_engine.js";
 
 const WASM = new URL("../../web/pkg/zigs_engine_bg.wasm", import.meta.url);
@@ -43,17 +44,29 @@ export async function makeBackup(page, open) {
   return { name: file.name, text: file.text, pass };
 }
 
-/** The Zcash backup of the seat that this page holds (the button is on the Signers tab). */
+// The signer row of this browser, in the Security section. Its details are closed: a tap on the
+// summary opens them, and shows the Back up button of the Zcash share.
+const openOwnSigner = () => {
+  const row = [...document.querySelectorAll(".security-signer")]
+    .find((el) => el.innerText.includes("This browser"));
+  const details = row?.querySelector("details");
+  if (!details) return false;
+  if (!details.open) details.querySelector("summary").click();
+  return true;
+};
+
+/** The Zcash backup of the seat that this page holds (Security, the row of this browser). */
 export const zcashBackup = (page) =>
   makeBackup(page, async () => {
-    await clickText(page, "Devices", { exact: true });
-    await clickText(page, "Back up key share", { exact: true });
+    await clickSelector(page, "#tab-recovery");
+    await waitFor(() => run(page, openOwnSigner), 30000, () => "the signer row of this browser");
+    await clickSelector(page, 'button[aria-label^="Back up Zcash share"]');
   });
 
 /** The Solana backup of seat `seat`: a second file, with its own passphrase. */
 export const solanaBackup = (page, seat) =>
   makeBackup(page, async () => {
-    await clickText(page, "Solana", { exact: true });
+    await openSolana(page);
     await clickText(page, "Back up Solana part, device " + seat);
   });
 
@@ -81,8 +94,9 @@ export async function openWithPass(page, input, file) {
   await run(page, SUBMIT);
 }
 
-// What the page itself writes when it starts on an empty context: an identity and a balance cache.
-const OWN_KEYS = new Set(["zf-uid", "zf-bal"]);
+// What the page itself writes when it starts on an empty context: an identity, a balance cache and
+// the answer to the Tor demo popup (a page choice, not wallet data).
+const OWN_KEYS = new Set(["zf-uid", "zf-bal", "zigs-privacy-popup-demo:v1"]);
 
 // The local storage keys and the record count of every store of every IndexedDB database.
 const holdings = async () => {
