@@ -1270,16 +1270,16 @@ function sideMenu() {
   const tab = t.ui.tab;
   t.ui.tab = "recovery";
   assert.match(pageText(), /Zcash key share(?:Saved · not checked|Not saved or checked)/,
-    "the Recovery section shows the file state of each signer of this browser");
+    "the Recovery section shows the file state of each device of this browser");
   assert.match(pageText(), /Backups and file checks are optional/);
   assert.match(pageText(),
     /Verification reopens a file without restoring shares or changing wallet keys/);
   assert.match(pageText(),
-    /Other signers’ signed reports are reported progress, not file checks performed here/);
+    /Other devices’ signed reports are reported progress, not file checks performed here/);
   assert.match(pageText(),
     /Devices with viewing access can see this wallet’s balances and history/);
   assert.match(pageText(),
-    /A signer label does not prove a person’s identity or a separate physical device/);
+    /A label does not prove a person’s identity or a separate physical device/);
   assert.match(pageText(), /Other wallets need their own files/);
   assert.match(pageText(), /The personal account has its own backup in Settings/);
   assert.match(pageText(), /direct chats are not included in recovery files/);

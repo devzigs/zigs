@@ -3,7 +3,7 @@ import { MockSwapProvider, SwapPreviewModel, SWAP_DEMO_ASSETS, SWAP_DEMO_STEPS,
   swapAtomic, swapDecimal } from '../swap-preview-model.js';
 import { readFileSync } from 'node:fs';
 import { NearIntentsSwapProvider } from '../near-intents-swap-provider.js';
-import { loadRig } from './sol-rig.mjs';
+import { loadRig, storage } from './sol-rig.mjs';
 
 const [zec, sol, usdcSol] = SWAP_DEMO_ASSETS;
 assert.deepEqual(SWAP_DEMO_ASSETS.map((a) => a.symbol), ['ZEC', 'SOL', 'USDC']);
@@ -69,7 +69,8 @@ const text = (n) => (n === null || n === undefined ? '' : n.text ?? n.kids.map(t
 const walk = (n, ok) => (n.kids
   ? [...(ok(n) ? [n] : []), ...n.kids.flatMap((k) => walk(k, ok))] : []);
 const matcher = (sel) => {
-  const [, tag = '', hash = '', cls = ''] = /^([a-z0-9]*)(?:#([\w-]+))?(?:\.([\w-]+))?$/.exec(sel) ?? [];
+  const shape = /^([a-z0-9]*)(?:#([\w-]+))?(?:\.([\w-]+))?$/;
+  const [, tag = '', hash = '', cls = ''] = shape.exec(sel) ?? [];
   if (!tag && !hash && !cls) return () => false;
   return (n) => (!tag || n.tag === tag) && (!hash || n.id === hash)
     && (!cls || n.className.split(' ').includes(cls));
@@ -113,7 +114,8 @@ const fakeDocument = { body, activeElement: null, createElement: (tag) => new Fa
 const fire = (node, type, event = {}) => (node.on[type] ?? [])
   .forEach((fn) => fn({ currentTarget: node, target: node, preventDefault() {},
     stopPropagation() {}, ...event }));
-const named = (root, label) => walk(root, (n) => n.tag === 'button' && text(n).startsWith(label))[0];
+const named = (root, label) => walk(root,
+  (n) => n.tag === 'button' && text(n).startsWith(label))[0];
 const press = (root, label) => {
   const b = named(root, label);
   assert.ok(b, 'a button "' + label + '" is on the page');
@@ -134,7 +136,8 @@ try {
   const head = new FakeNode('header');
   app.append(head);
   const page = { querySelector: (sel) => (sel === '#app' ? app : null) };
-  assert.equal(popup.hasPrivacyPopup(), false, 'no popup is installed before the entry installs it');
+  assert.equal(popup.hasPrivacyPopup(), false,
+    'no popup is installed before the entry installs it');
   popup.installPrivacyPopup();
   popup.presentPrivacyStatus(page);
   const pill = walk(head, (n) => n.className === 'pp-status')[0];
@@ -145,6 +148,7 @@ try {
     'the Tor pill never says protected');
   assert.match(pill.getAttribute('aria-label'), /Demo only: your connection is unchanged/,
     'the Tor pill says that the connection is unchanged');
+  assert.equal(dialog.open, false, 'the Tor demo does not open by itself');
   const screens = [];
   const look = () => { screens.push(text(dialog)); return text(dialog); };
   const open = () => fire(pill, 'click');
@@ -177,10 +181,13 @@ try {
     }
   }
   open();
-  assert.match(text(dialog), /Try the Tor demo/, 'the popup opens on the offer again after a close');
+  assert.match(text(dialog), /Try the Tor demo/,
+    'the popup opens on the offer again after a close');
   fire(dialog, 'close');
   dialog.open = false;
   assert.equal(popup.hasPrivacyPopup(), true, 'the entry can see that the popup is installed');
+  assert.deepEqual([...storage.keys()].filter((key) => /privacy/i.test(key)), [],
+    'the Tor demo stores no choice');
 } finally {
   [globalThis.setTimeout, globalThis.clearTimeout] = realTimers;
 }
@@ -197,7 +204,9 @@ try {
         else if (k === 'class') n.className = v;
         else n.setAttribute(k, v === true ? '' : v);
       }
-      for (const k of kids.flat()) if (k != null && k !== false) n.append(k instanceof Node ? k : { text: String(k) });
+      for (const k of kids.flat()) {
+        if (k != null && k !== false) n.append(k instanceof Node ? k : { text: String(k) });
+      }
       return n;
     },
     icon: () => null, walletName: 'Savings', onExit: () => exits.push('exit'),
@@ -206,7 +215,8 @@ try {
   const stages = [text(view)];
   assert.match(text(view), /Demo, no payment/, 'the funding stage says Demo, no payment');
   assert.match(text(view), /Funding checkout demo/, 'the funding stage is titled as a demo');
-  assert.match(text(view), /Zigs asks for no setup payment/, 'the funding stage says no payment is asked');
+  assert.match(text(view), /Zigs asks for no setup payment/,
+    'the funding stage says no payment is asked');
   assert.doesNotMatch(text(view), /Fund your wallet|Connect browser wallet|One setup payment/,
     'the funding stage does not read as a payment request');
   assert.equal(view.querySelector('.guided-progress'), null,
@@ -225,7 +235,8 @@ try {
   assert.match(funding.FUNDING_DEMO_QR_PAYLOAD, /No recipient address\. Do not send funds\./,
     'the funding QR holds no recipient');
   press(view, 'Pause');
-  assert.deepEqual(exits, ['exit'], 'a paused funding demo leaves at once and asks nothing of the wallet');
+  assert.deepEqual(exits, ['exit'],
+    'a paused funding demo leaves at once and asks nothing of the wallet');
 } finally {
   globalThis.document = realDocument;
 }
@@ -256,7 +267,8 @@ try {
   const panel = text(settings.networkPrivacyPanel());
   assert.match(panel, /Integrated Tor is not available in this version/,
     'the panel says that Tor is not available');
-  assert.doesNotMatch(panel, /\/\?demo=privacy|design preview/i, 'the panel has no dead preview link');
+  assert.doesNotMatch(panel, /\/\?demo=privacy|design preview/i,
+    'the panel has no dead preview link');
   press(settings.networkPrivacyPanel(), 'Open the Tor demo');
   assert.equal(settings.hasNetworkPrivacy(), false, 'the Tor demo button closes the panel');
   assert.equal(body.querySelector('dialog').open, true, 'the Tor demo button opens the demo');
@@ -278,15 +290,18 @@ try {
   assert.doesNotMatch(text(root), /Private Swaps?|Powered by/,
     'the swap page does not claim a private swap or a provider');
   assert.match(text(root), /Planned provider: NEAR Intents/, 'the provider is only planned');
+  assert.deepEqual(walk(root, (n) => /privacy options/i.test(n.attrs['aria-label'] ?? '')), [],
+    'the swap tabs are not named as privacy options');
   assert.match(ZEC_PRIVACY, /1Click handles ZEC only at transparent addresses/,
     'the ZEC line names the 1Click limit');
   assert.ok(text(root).includes(ZEC_PRIVACY), 'a swap with ZEC shows the 1Click limit');
   await swap.model.update({ amount: '1' });
   assert.match(text(root), /Demo quote, not a real price/, 'the quote is a demo quote');
   press(root, 'Review demo swap');
-  const modal = body.querySelector('dialog.swap-modal') ?? walk(body, (n) => n.tag === 'dialog').at(-1);
+  const modal = walk(body, (n) => n.tag === 'dialog').at(-1);
   assert.match(text(modal), /Demo · no funds/, 'the review dialog carries the demo tag');
-  assert.match(text(modal), /no real quote is used/, 'the review dialog says that no real quote is used');
+  assert.match(text(modal), /no real quote is used/,
+    'the review dialog says that no real quote is used');
   press(modal, 'Simulate swap flow');
   for (let i = 0; i < 5; i++) press(modal, 'Next demo step');
   assert.match(text(modal), /Demo complete\. No funds moved and no real quote was used\./,
@@ -302,7 +317,8 @@ try {
   assert.match(text(flow), /Demo result\. No funds moved and no real quote was used\./,
     'the post-quantum result says demo, no funds and no real quote');
   assert.match(text(root.querySelector('#swap-panel-quantum')),
-    /1Click handles ZEC only at transparent addresses/, 'the post-quantum page names the 1Click limit');
+    /1Click handles ZEC only at transparent addresses/,
+    'the post-quantum page names the 1Click limit');
 } finally {
   globalThis.document = realDocument;
 }
@@ -319,5 +335,5 @@ assert.match(entry, /try \{\s*installPrivacyPopup\(\);\s*\} catch/,
 assert.ok(entry.indexOf('catch') < entry.indexOf('import("./app.js")'),
   'the wallet loads after the Tor demo is installed or has failed');
 assert.doesNotMatch(entry, /theme\.js/, 'the entry does not load the theme after the first paint');
-console.log('swap-preview: exact amounts, validation, stale-response races, demo transitions, demo labels and live-adapter lock pass');
+console.log('swap-preview: amounts, races, demo transitions, demo labels and lock pass');
 process.exit(0);

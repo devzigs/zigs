@@ -134,4 +134,6 @@ const guide = prose("how-zigs-works-diagrams.js").concat(JSON.stringify(chapters
 assert.deepEqual(guide.filter((text) => SIGNER.test(text)), [],
   "the guide says device, not signer (it may explain seats)");
 assert.match(JSON.stringify(chapters), /"Seat"/, "the guide explains what a seat is");
+assert.match(JSON.stringify(chapters), /recipients, amounts, memos and notes, and access/,
+  "the guide says what a holder of the invite link reads");
 console.log("security-dashboard: recovery labels, counts, risks, thresholds, device wording ok");

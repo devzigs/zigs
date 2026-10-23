@@ -1373,8 +1373,9 @@ column "Writer". A document with another `by` is ignored.
   flags are JSON booleans. They tell the other devices which backup files seat `i` says that it
   saved or checked. A reader accepts a document only when the signature verifies, `by` is `i`,
   `safety` is the safety number that the reader computed, and a checked flag implies its saved
-  flag. The document is a claim of the seat. No payment, signing or setup step reads it. It holds
-  no file, key or hash.
+  flag. The document is a claim of the seat. No payment or signing step reads it, and it does not
+  decide whether the setup is complete. The guided setup shows it as the backup progress of seat
+  `i`. It holds no file, key or hash.
 - A reader takes names and identities only from a seat document that verifies. So a holder of the
   link cannot rename a seat or copy the identity of another.
 - A seat chooses its own name, and two seats can use one name. So the apps show the seat number

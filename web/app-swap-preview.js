@@ -105,7 +105,7 @@ export function createSwapPreview(context = {}, provider = new MockSwapProvider(
     el('h1', {}, 'Swap assets', el('span', { 'aria-hidden': 'true' }, '.')),
     text('swap-subtitle', 'A demo of swapping across networks. No funds move and no real quote is '
       + 'requested.')),
-  el('div', { class: 'swap-mode-tabs', role: 'tablist', 'aria-label': 'Swap privacy options' }, modeTabs),
+  el('div', { class: 'swap-mode-tabs', role: 'tablist', 'aria-label': 'Swap demos' }, modeTabs),
   el('div', { class: 'swap-panel', id: 'swap-panel-private', role: 'tabpanel',
     'aria-labelledby': 'swap-tab-private', tabindex: '0' },
   el('div', { class: 'swap-grid' },

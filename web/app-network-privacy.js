@@ -38,7 +38,8 @@ export function networkPrivacyPanel() {
       el("div", { class: "network-privacy-mode-heading" },
         el("h3", { id: "network-standard-title" }, "Standard connection"),
         el("span", { class: "badge plain" }, "Current app networking")),
-      el("p", { class: "small muted" }, "Connect directly for wallet synchronization. Wallet services may see your IP address. "
+      el("p", { class: "small muted" },
+        "Connect directly for wallet synchronization. Wallet services may see your IP address. "
         + "To hide it, use Tor Browser or a VPN.")),
     el("section", { class: "network-privacy-mode", "aria-labelledby": "network-private-title" },
       el("div", { class: "network-privacy-mode-heading" },
