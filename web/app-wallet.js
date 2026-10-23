@@ -299,22 +299,23 @@ function balanceOverview(valuation = null) {
     el("div", { class: "overview-wallet-summary" }, walletMark(state.g, 64),
     el("div", { class: "portfolio-summary" }, el("div", { class: "balance-heading" },
       el("h2", { id: "total-balance-title", class: "label" }, "Portfolio balance"),
-      el("span", { class: "portfolio-currency" }, "USD")),
+      el("span", { class: "portfolio-currency" }, "USD"), demoBadge()),
     el("p", { class: "portfolio-value", role: "img", "aria-label": value.text,
       "data-valuation-state": value.known ? "known" : "unknown",
       "aria-describedby": value.known ? null : "usd-placeholder" },
     el("span", { "aria-hidden": "true" }, value.whole),
     el("span", { class: "portfolio-decimals", "aria-hidden": "true" }, value.fraction)),
     !value.known ? el("p", { class: "portfolio-placeholder", id: "usd-placeholder" },
-      el("span", { class: "placeholder-indicator" }, "Placeholder"),
-      el("span", { class: "sr-only" }, "USD valuation is unknown. The displayed $0.00 is not a confirmed balance.")) : null,
+      el("span", { class: "placeholder-indicator" }, "Demo prices"),
+      el("span", { class: "sr-only" }, "The USD total is a demo. The displayed $0.00 is not a confirmed balance.")) : null,
     state.g.network === "testnet" ? el("p", { class: "portfolio-network-note" }, "Test funds have no cash value.") : null)),
     el("div", { class: "overview-actions" }, assetActionPicker("send"), assetActionPicker("receive"),
-      el("button", { class: "btn", type: "button", disabled: true,
-        title: "Swap unavailable", "aria-describedby": "overview-swap-unavailable" },
-        icon("swap"), "Swap")),
-    el("p", { class: "sr-only", id: "overview-swap-unavailable" }, "Swap is unavailable in this version."));
+      el("button", { class: "btn", type: "button", "data-key": "overview-swap",
+        title: "Open the Swap demo", onclick: () => { ui.tab = "swap"; render(); } },
+      icon("swap"), "Swap")));
 }
+
+const demoBadge = () => el("span", { class: "badge plain demo-badge" }, "Demo");
 
 // HTML disclosures keep their own keyboard and dismissal behavior. Asset choices open the
 // existing forms, with the same validation, blockers and payment handlers as the asset cards.
@@ -339,7 +340,7 @@ function assetActionPicker(action) {
       choose("sol", "SOL", solOn() ? "Solana Devnet · opens this wallet’s Solana tools"
         : "Unavailable for this wallet", !solOn(),
       () => sending ? openSolanaControl("sol-send-to") : openSolanaReceive()),
-      choose("usdc", "USDC", "Solana Devnet · unavailable; do not deposit", true, null)));
+      choose("usdc", "USDC", "Demo row · unavailable; do not deposit", true, null)));
 }
 
 function overviewTransactions() {
@@ -679,14 +680,14 @@ function usdcAsset() {
   return el("section", { class: "card card-pad asset-card asset-row asset-unavailable", "aria-labelledby": "asset-usdc" },
     el("div", { class: "asset-row-main" },
     el("div", { class: "asset-position" }, assetHead("usdc", "USDC", "Solana Devnet"),
-      privacyBadge(el, "unsupported")),
+      demoBadge(), privacyBadge(el, "unsupported")),
     el("div", { class: "asset-balance-block" }, el("span", { class: "label" }, "Wallet balance"),
       el("p", { class: "asset-balance unknown" }, "Unavailable"),
       el("p", { class: "asset-row-status small asset-row-warning" }, "Do not deposit USDC to this wallet.")),
     shieldingActions("usdc", false)),
     assetNote("usdc", "USDC details", [
       shieldingBreakdown("usdc"),
-      el("p", { id: "usdc-unavailable" }, "Shielded USDC is unavailable in this version. No balance is available. Do not deposit USDC to this wallet."),
+      el("p", { id: "usdc-unavailable" }, "This USDC row is a demo. Shielded USDC is unavailable in this version. No balance is available. Do not deposit USDC to this wallet."),
       el("p", { id: "usdc-shielding-note" }, "No shielded or unshielded USDC balance is available. Shield and Unshield are unavailable."),
     ]));
 }
@@ -1222,7 +1223,7 @@ function securityRecoveryTab(formed = true) {
     const progress = f.backups.find((b) => b.seat === id), part = local ? solFile(id) : null;
     const hasSol = !!part && !part.unknown && !part.missing;
     const checked = seatCheck(id);
-    return { id, label: s?.name || "Signer", local, joined: !!s, rosterUnknown: !rosterKnown,
+    return { id, label: s?.name || "Device", local, joined: !!s, rosterUnknown: !rosterKnown,
       joinedAt: s?.at ? when(s.at) : "",
       address: checked === true ? "Address checked" : checked === false ? "Rejected address"
         : STAGE_LABEL[seatStage(id)],
@@ -1248,8 +1249,8 @@ function securityRecoveryTab(formed = true) {
     } });
   const muted = signedMode(state.gid) && mine.find((i) => !canWriteAs(i));
   const facts = { n: state.g.n, t: state.g.t, formed, signers, solScope: scope, rosterKnown,
-    blocked: f.blocked || (muted ? "This browser has no signing key for signer " + muted
-      + ". Restore that signer’s recovery file." : ""),
+    blocked: f.blocked || (muted ? "This browser has no signing key for device " + muted
+      + ". Restore that device’s recovery file." : ""),
     storageIssue: f.storageIssue, reportIssue: f.reportIssue,
     openSolana: solOn() ? openWalletSection("solana") : null };
   return securityDashboard(facts, {
@@ -1260,20 +1261,20 @@ function securityRecoveryTab(formed = true) {
     restoreInput, restore: () => restoreInput.click(), settings: openWalletSection("settings"),
   }, {
     invite: el("details", { class: "security-explainer" }, el("summary", {}, "Private wallet invite link"),
-      el("section", {}, el("p", {}, "To open this wallet in another browser, use its private invite link there and restore the existing signer’s recovery file. "
-        + "The link contains the wallet secret. Share it only with people who use this wallet. It does not create an independent signer. "
+      el("section", {}, el("p", {}, "To open this wallet in another browser, use its private invite link there and restore the existing device’s recovery file. "
+        + "The link contains the wallet secret. Share it only with people who use this wallet. It does not create an independent device. "
         + senderNote("each person who opens it")),
       el("div", { class: "row-actions" }, copyBtn(inviteLink(state.gid), "Copy private invite link")),
       secretQr(inviteLink(state.gid), "wallet", true))),
-    management: formed ? changeSignersCard() : el("p", {}, "Finish the existing wallet setup before changing signers."),
+    management: formed ? changeSignersCard() : el("p", {}, "Finish the existing wallet setup before changing devices."),
     lost: lostText(state.g.t, !!solStays()),
   });
 }
 
-const lostText = (t, sol) => "Keep the signers that still work, and do not delete their data. "
+const lostText = (t, sol) => "Keep the devices that still work, and do not delete their data. "
   + "While " + t + " distinct shares remain usable, they can move the Zcash funds to a new wallet using Advanced wallet management"
   + (sol ? "; a Solana part does not move this way" : "") + ". With fewer, "
-  + "first restore signers from their files. Zigs cannot go around the approval rule. A lost "
+  + "first restore devices from their files. Zigs cannot go around the approval rule. A lost "
   + "device can still hold its key share, so move the funds when you can.";
 
 function settingsTab() {

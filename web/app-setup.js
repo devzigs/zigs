@@ -610,7 +610,7 @@ function joinCard(seat, compact = false) {
     nameField("seat-name"),
     deviceProtection("join:" + state.gid,
       () => { focusAfter("join-device-" + seat, true); render(); }),
-    compact ? null : el("p", { class: "small muted" }, "A passkey unlocks the encrypted wallet data in this browser. It is not another signer and cannot restore a missing share. Recovery uses this device’s backup file and passphrase."),
+    compact ? null : el("p", { class: "small muted" }, "A passkey unlocks the encrypted wallet data in this browser. It is not another device and cannot restore a missing share. Recovery uses this device’s backup file and passphrase."),
     el("div", { style: "display:grid;gap:6px;justify-items:start" }, take, off.note));
 }
 

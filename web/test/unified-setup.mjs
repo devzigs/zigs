@@ -192,6 +192,9 @@ function sideTree() {
       assert.doesNotMatch(links[0].className, /side-item/, "not a real wallet or section entry");
       assert.match(textOf(links[0]), /Test walletRead-only sample · 2 of 3 · opens in a new tab/);
     }
+    const note = findNode(sideTree(), (n) => n.attrs?.["data-key"] === "release-note");
+    assert.equal(note && textOf(note), "Beta: Zcash testnet and Solana Devnet. Not audited.",
+      "the side list of every page carries the release scope");
     for (const origin of ["https://wallet.example:8792/", "http://localhost:8794/",
       "http://localhost:8795/", "https://localhost/", "not a URL"]) {
       location.href = origin;
@@ -1593,6 +1596,18 @@ assert.match(SOL_DISCLOSURE, /Every device sees the whole Solana history/);
     /Use a regular browser\. Chat-app browsers and private windows may delete your signing share\./,
     "where to open the link");
 }
+// The full setup page of a replacement wallet explains the passkey in terms of devices.
+{
+  const kept = t.secrets[gid + ":1"], held = t.state.g;
+  delete t.secrets[gid + ":1"];
+  t.state.g = { ...held, movedFrom: "0".repeat(20) };
+  try {
+    assert.match(pageText(), /It is not another device and cannot restore a missing share\./);
+  } finally {
+    t.state.g = held;
+    t.secrets[gid + ":1"] = kept;
+  }
+}
 // The preload: the module loads at the start of setup, and no Solana watch opens before the
 // people of the wallet confirmed the network.
 // S12: a failed load says why and waits for Try again. The server first answers 503.
@@ -2171,6 +2186,12 @@ async function walkSteps(fields, times, fresh = true) {
         .attrs.id.split("-").pop());
   await waitFor("the note", () => solButtons().length === 3);
   assert.match(pageText(), /Restore the Zcash file first, then its separate Solana file/);
+  assert.match(pageText(), /Keep the devices that still work/, "the Security text says device");
+  assert.doesNotMatch(pageText(), /Keep the signers|restore signers/);
+  assert.match(pageText(), /Device · 1/, "a device with no name reads Device");
+  assert.match(pageText(), /restore the existing device’s recovery file\. The link contains/,
+    "the invite text of Security says device");
+  assert.match(pageText(), /It does not create an independent device\./);
   // S13: a new wallet has no older file, so the note says nothing about an older format.
   assert.doesNotMatch(pageText(), /backup format changed|iPhone and Mac apps/);
   const saved = [];
@@ -2978,8 +2999,10 @@ assert.equal(quickCode(null), null);
       "the empty lobby has one primary heading rather than competing Wallets and welcome titles");
     assert.match(textOf(card),
       /Hold your assets privately\. Protect them with the people and devices/);
-    assert.doesNotMatch(textOf(card), /Beta · Not audited|New wallets use Zcash Testnet/,
-      "the landing entry omits the removed beta footer");
+    assert.match(textOf(card), /Beta · Not audited · Test networks/,
+      "the welcome card carries the Beta · Not audited label");
+    assert.match(textOf(card), /New wallets use test networks only: Zcash testnet and Solana/);
+    assert.match(textOf(card), /Zigs is not audited\./);
     assert.equal(findNode(card, (n) => n.className === "welcome-facts"), null,
       "key facts live in the product statement and explanation instead of a repeated label row");
     const { howZigsWorksDialog } = await import("../app-how-zigs-works.js");
@@ -2995,8 +3018,6 @@ assert.equal(quickCode(null), null);
       "only the chosen chapter is rendered");
     assert.equal(byId(guide, "hw-tab-shared-control").attrs["aria-selected"], "true");
     assert.match(textOf(byId(guide, "hw-chapter")), /One wallet\. Shared control\./);
-    assert.doesNotMatch(textOf(card), /New wallets use test networks only|Zigs is not audited/,
-      "entry content omits repetitive environment boilerplate");
     assert.doesNotMatch(textOf(card), /Appearance/,
       "appearance preferences stay in Settings instead of the welcome actions");
     const brand = findNode(card, (n) => n.className === "welcome-brand");
@@ -3032,6 +3053,8 @@ assert.equal(quickCode(null), null);
     t.state.groups = [t.cleanGroup(gid, { name: "W", n: 3, t: 2, version: 3 })];
     ui.joinOpen = false;
     const list = lobbyTree();
+    assert.match(textOf(list), /Beta · Not audited · Test networks/, "so does the wallet list");
+    assert.match(textOf(list), /New wallets use test networks only.*Zigs is not audited/s);
     const savedWallets = byId(list, "welcome-wallets");
     assert.equal(savedWallets.tag, "section", "saved wallets are directly discoverable");
     assert.equal(savedWallets.attrs["aria-label"], "Saved wallets");
@@ -3053,8 +3076,6 @@ assert.equal(quickCode(null), null);
       "keyboard and visual hierarchy reaches saved wallets before secondary setup actions");
     assert.equal(byId(list, "join-link"), null,
       "saved-wallet entry waits for the same explicit Join choice");
-    assert.doesNotMatch(textOf(list), /New wallets use test networks only|Zigs is not audited/,
-      "the saved-wallet entry omits repeated environment boilerplate");
     assert.doesNotMatch(textOf(list), /Appearance/, "the theme choice stays in Settings");
     try {
       location.href = "http://localhost:8792/";
