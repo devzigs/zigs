@@ -62,7 +62,8 @@ export function renderSide() {
   const sections = [
     ["overview", "Overview"],
     ["approvals", "Approvals", countBadge(pending, "to approve across wallets", "attn")],
-    ["activity", "Activity"], ["recipients", "Address book"], ["swap", "Swap"],
+    ["activity", "Activity"], ["recipients", "Address book"],
+    ["swap", "Swap", el("span", { class: "badge plain" }, "Demo")],
     ["chats", "Messages", newBadge(state.groups.reduce((n, g) => n + unreadIn(g.id), 0)
       + Object.keys(chats.list).reduce((n, cid) => n + unreadIn(cid), 0))],
     ["recovery", "Security"],

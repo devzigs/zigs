@@ -335,5 +335,11 @@ assert.match(entry, /try \{\s*installPrivacyPopup\(\);\s*\} catch/,
 assert.ok(entry.indexOf('catch') < entry.indexOf('import("./app.js")'),
   'the wallet loads after the Tor demo is installed or has failed');
 assert.doesNotMatch(entry, /theme\.js/, 'the entry does not load the theme after the first paint');
+// The README names the brand marks as identifiers owned by others, and claims no licence for them.
+const readme = readFileSync(new URL('../../README.md', import.meta.url), 'utf8');
+assert.doesNotMatch(readme, /used under their brand terms/,
+  'the README claims no licence for the brand marks');
+assert.match(readme, /marks identify the assets\. The trademarks belong to their owners/,
+  'the README says that the marks identify the assets and belong to their owners');
 console.log('swap-preview: amounts, races, demo transitions, demo labels and lock pass');
 process.exit(0);

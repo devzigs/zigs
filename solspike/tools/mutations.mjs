@@ -44,6 +44,8 @@ const SWAP = "web/app-swap-preview.js";
 const PQ_SWAP = "web/app-postquantum-swap-preview.js";
 const DASHBOARD = "web/app-security-dashboard.js";
 const GUIDE = "web/how-zigs-works-content.js";
+const README_MARKS = "The marks identify the assets. The trademarks belong to their owners and are "
+  + "not under the AGPL";
 // The line of takeFirstSeat (web/app-dkg.js) that names Cancel move.
 const MOVE_HINT = "      + (from ? ' To undo the link with the old wallet, open it and tap "
   + '"Cancel move".\' : ""));';
@@ -3371,4 +3373,14 @@ export const MUTATIONS = [
     ["web/app-shell.js",
       '" Do not set up another wallet until you have reviewed the unprotected copy."', '""'],
     GUIDED_CREATE, /it says what to do/),
+  // Copy: the Swap item of the side list, and the README on the brand marks.
+  program("N-swap-demo", "the Swap item of the side list has no demo marker",
+    ["web/app-shell.js", '["swap", "Swap", el("span", { class: "badge plain" }, "Demo")],',
+      '["swap", "Swap"],'], UNIFIED, /the Swap item of the side list says Demo/),
+  program("N-readme-terms", "the README says that the marks are used under brand terms",
+    ["README.md", README_MARKS, "Trademarks of their owners, used under their brand terms and not "
+      + "under the AGPL"], DEMOS, /the README claims no licence for the brand marks/),
+  program("N-readme-owners", "the README does not say that the marks belong to their owners",
+    ["README.md", README_MARKS, "The marks are not under the AGPL"], DEMOS,
+    /the README says that the marks identify the assets and belong to their owners/),
 ];

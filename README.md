@@ -828,6 +828,6 @@ Third-party parts keep their own licences:
 | Rust crates compiled into the wasm engines (`wasm/Cargo.lock`, `wasm-sol/Cargo.lock`) | MIT or Apache-2.0, as each crate states |
 | Geist fonts in `web/fonts/` | SIL Open Font License 1.1 |
 | three.js 0.180.0, bundled in `web/dev/metal-orbs/vendor/three.js`, which the wallet avatars load | MIT, see [web/dev/metal-orbs/vendor/THREE-LICENSE.txt](web/dev/metal-orbs/vendor/THREE-LICENSE.txt) |
-| Zcash, Solana and USDC marks in `web/assets/` | Trademarks of their owners, used under their brand terms and not under the AGPL, see [web/assets/README.md](web/assets/README.md) |
+| Zcash, Solana and USDC marks in `web/assets/` | The marks identify the assets. The trademarks belong to their owners and are not under the AGPL, see [web/assets/README.md](web/assets/README.md) |
 
 The apps serve the fonts from `web/fonts/`, so users never contact Google.
