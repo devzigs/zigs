@@ -1407,8 +1407,8 @@ assert.equal(solPlanned(null), false);
 // page load. A pending probe is not an unavailable result, and this display intent starts no key.
 {
   const resumed = await rig.wallet({ name: "Resumed guide" });
-  const { beginGuided } = await import("../app-guided-setup.js");
-  beginGuided(resumed, { solExpected: true });
+  const guided = await import("../app-guided-setup.js");
+  guided.beginGuided(resumed, { solExpected: true });
   delete ui.solServed;
   const fetchBefore = globalThis.fetch;
   let answer;
@@ -1423,6 +1423,26 @@ assert.equal(solPlanned(null), false);
     answer(new Response("Service unavailable", { status: 503 }));
     await waitFor("the resumed service refusal", () => ui.solServed === false);
     assert.ok(pageText().includes(waiting), "a refusal shows saved Zcash and waiting Solana");
+    // The Zcash part is checked and Solana waits: Overview, with Send and Receive, is reachable.
+    const dataKey = (key) => findNode(pageTree(), (n) => n.attrs?.["data-key"] === key);
+    assert.ok(dataKey("guided-zcash-only"), "Prepare offers Continue with Zcash");
+    assert.equal(byText(pageTree(), "Open Overview"), null, "and the guide itself stays shut");
+    await dataKey("guided-zcash-only").on.click({ preventDefault() {} });
+    assert.equal(guided.guidedEnabled(resumed), false, "the guide ends");
+    assert.equal(t.sec(resumed, 1).solAuto, undefined, "ending it starts no Solana step");
+    const later = byText(pageTree(), "Finish later");
+    if (later) await later.on.click({ preventDefault() {} });
+    const pickers = findAll(pageTree(), (n) => n.className === "overview-action-picker");
+    assert.equal(pickers.length, 2, "Overview shows Send and Receive");
+    const zecChoice = (picker) => findNode(picker,
+      (n) => n.className === "asset-choice" && textOf(n).startsWith("ZEC"));
+    assert.match(textOf(zecChoice(pickers[0])), /Wait for the first sync to finish/,
+      "Send for Zcash waits only for the first sync of the wallet");
+    ui.receive = false;
+    await zecChoice(pickers[1]).on.click({ preventDefault() {} });
+    assert.equal(ui.receive, true, "Receive for Zcash opens");
+    ui.receive = false;
+    assert.match(pageText(), /SOLSolana Devnet/, "Overview still shows the Solana row");
     assert.equal(t.solLoading, null, "the probe does not load or start the Solana controller");
     assert.equal(t.sec(resumed, 1).solAuto, undefined, "tutorial intent is not local consent");
     assert.equal(data.has(`groups/${resumed}/solstart/1`), false, "no signed start was written");

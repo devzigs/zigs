@@ -28,6 +28,7 @@ const NO_STORAGE = ["node", "web/test/no-storage.mjs"];
 const GUIDED_CREATE = ["node", "web/test/guided-create.mjs"];
 const PASSKEY_SETUP = ["node", "web/test/passkey-setup.mjs"];
 const OPTIONAL_PASSKEY = ["node", "web/test/optional-passkey.mjs"];
+const GUIDED_SETUP = ["node", "web/test/guided-setup.mjs"];
 const SKIP_GATE = "  if (vault || lockedVault || protectionPending || memoryOnly()) "
   + "return clearSetupAcknowledgement();";
 const skipAlso = (extra) => SKIP_GATE.replace("memoryOnly()", "memoryOnly() || " + extra);
@@ -3024,4 +3025,19 @@ export const MUTATIONS = [
   program("R-unverified-note", "an unchecked vault says nothing about going on",
     ["web/app-shell.js", " You can go on: new key shares are saved in the passkey-protected copy.",
       ""], GUIDED_CREATE, /You can go on/),
+  program("R-zcash-button", "Prepare offers no way on while the Solana part waits",
+    ["web/app-setup.js", "    continueWithZcash(f),\n", ""], UNIFIED,
+    /Prepare offers Continue with Zcash/),
+  program("R-zcash-checked", "the guide ends before every device checked the Zcash address",
+    ["web/app-guided-setup.js", "zcashOnly && f.zecReady && f.index", "zcashOnly && f.index"],
+    GUIDED_SETUP, /the Zcash part alone must be checked on every device/),
+  program("R-zcash-confirmed", "the guide ends before every device confirmed the safety number",
+    ["web/app-guided-setup.js", "f.zecReady && f.index >= 3 && ", "f.zecReady && "],
+    GUIDED_SETUP, /every device must confirm the safety number before the guide ends/),
+  program("R-zcash-blocked", "a stopped setup leaves the guide through the Zcash part",
+    ["web/app-guided-setup.js", "f.index >= 3 && !f.blocked)", "f.index >= 3)"],
+    GUIDED_SETUP, /a stopped setup cannot leave the guide through the Zcash part/),
+  program("R-zcash-default", "the guide ends on the Zcash part alone by default",
+    ["web/app-guided-setup.js", "{ zcashOnly = false } = {}", "{ zcashOnly = true } = {}"],
+    GUIDED_SETUP, /optional backup rules do not bypass required Solana formation/),
 ];
