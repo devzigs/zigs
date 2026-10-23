@@ -275,10 +275,12 @@ export function openSession(sid) {
   const w = watched.get(sid);
   if (w && w.gid === state.gid) {
     raw.commits = w.raw.commits; raw.shares = w.raw.shares;
+    state.commitsLoaded = w.commitsSeen === true;
     refilter();
   }
   const base = "groups/" + state.gid + "/sessions/" + sid;
-  unsubSession.push(sub(base + "/commits", (m) => { raw.commits = m; }));
+  unsubSession.push(sub(base + "/commits", (m) => { raw.commits = m; state.commitsLoaded = true; },
+    () => { state.commitsLoaded = false; render(); }));
   unsubSession.push(sub(base + "/shares", (m) => { raw.shares = m; }));
   render();
 }
@@ -286,6 +288,7 @@ export function closeSession() {
   for (const u of unsubSession) u();
   unsubSession = []; state.sid = null; ui.release = null;
   state.commits = {}; state.shares = {}; raw.commits = {}; raw.shares = {};
+  state.commitsLoaded = false;
 }
 
 // The approvals and shares of the payments that this browser must act on while their drawer is
@@ -296,7 +299,9 @@ function watchSession(sid) {
   const gid = state.gid, base = "groups/" + gid + "/sessions/" + sid;
   const w = { gid, raw: { commits: {}, shares: {} }, unsubs: [] };
   const take = (name) => (m) => {
-    if (watched.get(sid) === w && state.gid === gid) w.raw[name] = m;
+    if (watched.get(sid) !== w || state.gid !== gid) return;
+    w.raw[name] = m;
+    if (name === "commits") w.commitsSeen = true;
   };
   watched.set(sid, w);
   w.unsubs.push(sub(base + "/commits", take("commits")), sub(base + "/shares", take("shares")));

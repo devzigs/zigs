@@ -277,8 +277,15 @@ export async function markBackupChecked(gid, seat, chain) {
   render();
 }
 
-export function completeGuided(gid = state.gid) {
-  if (gid !== state.gid || !guidedState().protocolReady) {
+/**
+ * Ends the guide. With `zcashOnly`, a wallet whose Zcash address every device checked may leave
+ * while the requested Solana part still sets up: Overview shows that part and the Zcash Send and
+ * Receive buttons work. Nothing here starts, stops or skips a Solana step.
+ */
+export function completeGuided(gid = state.gid, { zcashOnly = false } = {}) {
+  const f = guidedState();
+  const open = f.protocolReady || (zcashOnly && f.zecReady && f.index >= 3 && !f.blocked);
+  if (gid !== state.gid || !open) {
     throw new Error("Complete the remaining setup steps before opening Overview.");
   }
   return change(gid, (r) => ({ ...r, completed: true, paused: false, review: null }));

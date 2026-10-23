@@ -10,9 +10,14 @@ import { fakePasskey } from "./passkey-fixture.mjs";
 const names = ["default", "confirmed", "cancelled creation", "cancelled assertion", "unsupported",
   "missing PRF", "vault before confirmation", "vault after confirmation", "locked", "partial",
   "pending", "vault during confirmation", "damaged vault", "empty vault", "damaged plaintext",
-  "unreadable storage",
-  "memory only", "write failure", "damaged recipients", "damaged account", "cleanup failure",
-  "later protection", "reload"];
+  "damaged keys at load", "damaged chats at load", "unreadable storage",
+  "memory only", "write failure", "damaged recipients", "damaged book at load", "damaged account",
+  "cleanup failure", "outside copy", "held copy", "replaced vault", "removed vault", "failed save",
+  "other tab vault message", "later protection", "reload"];
+const DAMAGED_BOOK = '{"version":1,"entries":"damaged"}';
+const loaded = { "damaged book at load": { "zf-recipients": DAMAGED_BOOK },
+  "damaged keys at load": { "zf-keys": "{ damaged" },
+  "damaged chats at load": { "zf-chats": "[]" } };
 const child = (name, records = {}) => spawnSync(process.execPath,
   [fileURLToPath(import.meta.url), "case", name], { encoding: "utf8", timeout: 120000,
     input: JSON.stringify(records) });
@@ -20,7 +25,7 @@ function passed(result, name) {
   assert.equal(result.status, 0, name + "\n" + result.stdout + result.stderr);
 }
 if (process.argv[2] !== "case") {
-  for (const name of names) passed(child(name), name);
+  for (const name of names) passed(child(name, loaded[name]), name);
   console.log("optional-passkey: ok (" + names.length + " isolated policy and storage cases)");
   process.exit(0);
 }
@@ -43,13 +48,26 @@ const marker = "synthetic unprotected signing share";
 const strictBlocked = () => assert.throws(ks.requirePasskeyProtection, /Protect this browser/);
 function blocked() {
   assert.equal(ks.setupProtectionReady(), false);
-  assert.throws(ks.requireSetupProtection, /Protect this browser/);
+  assert.throws(ks.requireSetupProtection, /Protect this browser|locked in another tab/);
   strictBlocked();
 }
 function cannotSkip() {
   assert.equal(ks.canSkipPasskeyProtection(), false);
   assert.throws(ks.acknowledgeUnprotectedSetup, /cannot be skipped/);
   blocked();
+}
+function unverified() {
+  assert.equal(ks.passkeyProtected(), false, "an unchecked vault never reports protection");
+  assert.equal(ks.setupProtectionReady(), true, "an open vault seals every new share");
+  ks.requireSetupProtection();
+  strictBlocked();
+}
+async function heldCopy() {
+  confirmed();
+  await ks.putSec("synthetic-wallet", 1, { keyPackage: marker });
+  await ks.lockWithPasskey();
+  storage.set("zf-secrets", JSON.stringify({ "synthetic-wallet:1": { keyPackage: marker } }));
+  unverified();
 }
 function confirmed() {
   assert.equal(ks.canSkipPasskeyProtection(), true);
@@ -118,7 +136,11 @@ const cases = {
     confirmed();
   },
   locked() { ks.setLocked({ damaged: true }); cannotSkip(); },
-  partial() { ks.setVault({ rec: { cred: "YQ", salt: "Yg" }, key: null }); cannotSkip(); },
+  partial() {
+    storage.set("zf-vault", '{"v":1,"cred":"YQ","salt":"Yg","iv":"aQ","box":"Yg"}');
+    ks.setVault({ rec: { cred: "YQ", salt: "Yg" }, key: null });
+    unverified();
+  },
   async pending() {
     let release, entered;
     const waiting = new Promise((done) => { entered = done; });
@@ -138,7 +160,7 @@ const cases = {
   "vault during confirmation"() {
     let reads = 0;
     localStorage.getItem = (key) => {
-      if (key === "zf-vault" && ++reads === 2) storage.set(key, "other-tab vault");
+      if (key === "zf-vault" && ++reads === 1) storage.set(key, "other-tab vault");
       return originalStorage.getItem(key);
     };
     assert.throws(ks.acknowledgeUnprotectedSetup, /cannot be skipped/);
@@ -154,6 +176,17 @@ const cases = {
       cannotSkip();
       assert.equal(storage.get("zf-secrets"), value);
     }
+  },
+  "damaged keys at load"() {
+    cannotSkip();
+    // This page holds no keys, so a Skip and a save would erase what the other tab repaired.
+    storage.set("zf-keys", '{"g1":"saved by another tab"}');
+    cannotSkip();
+    assert.equal(storage.get("zf-keys"), '{"g1":"saved by another tab"}');
+  },
+  "damaged chats at load"() {
+    cannotSkip();
+    assert.equal(storage.get("zf-chats"), "[]");
   },
   "unreadable storage"() {
     confirmed();
@@ -173,15 +206,30 @@ const cases = {
     localStorage.setItem = () => { throw new Error("quota"); };
     assert.equal(await ks.persist(), false);
     assert.equal(ks.storageOk, false);
-    cannotSkip();
-  },
-  "damaged recipients"() {
     confirmed();
-    storage.set(ks.RECIPIENTS_KEY, '{"version":1,"entries":"damaged"}');
-    cannotSkip();
-    assert.equal(storage.get(ks.RECIPIENTS_KEY), '{"version":1,"entries":"damaged"}');
+    Object.assign(localStorage, originalStorage);
+    assert.equal(await ks.persist(), true, "the next save is what clears the mark");
+    assert.equal(ks.storageOk, true);
+    confirmed();
   },
-  "damaged account"() { t.adoptPersonal({ damaged: true }); cannotSkip(); },
+  async "damaged recipients"() {
+    storage.set(ks.RECIPIENTS_KEY, DAMAGED_BOOK);
+    confirmed();
+    await ks.putSec("synthetic-wallet", 1, { keyPackage: marker });
+    assert.equal(storage.get(ks.RECIPIENTS_KEY), DAMAGED_BOOK, "a save keeps the damaged book");
+  },
+  async "damaged book at load"() {
+    assert.ok(ks.recipientsError, "the page read the damaged book at load");
+    confirmed();
+    await ks.putSec("synthetic-wallet", 1, { keyPackage: marker });
+    assert.equal(storage.get(ks.RECIPIENTS_KEY), DAMAGED_BOOK, "a save keeps the damaged book");
+  },
+  async "damaged account"() {
+    t.adoptPersonal({ damaged: true });
+    confirmed();
+    await ks.putSec("synthetic-wallet", 1, { keyPackage: marker });
+    assert.equal(ks.sec("synthetic-wallet", 1).keyPackage, marker);
+  },
   async "cleanup failure"() {
     await ks.putSec("synthetic-wallet", 1, { keyPackage: marker });
     localStorage.removeItem = (key) => {
@@ -190,7 +238,62 @@ const cases = {
     };
     await assert.rejects(ks.lockWithPasskey, /deletion denied/);
     assert.ok(ks.vault && storage.has("zf-vault") && storage.has("zf-secrets"));
+    unverified();
+  },
+  // A plain copy that the open vault does not hold keeps setup shut, also after an unlock.
+  async "outside copy"() {
+    confirmed();
+    await ks.putSec("synthetic-wallet", 1, { keyPackage: marker });
+    await ks.lockWithPasskey();
+    storage.set("zf-secrets", '{"outside-wallet:1":{"keyPackage":"outside"}}');
+    assert.equal(ks.passkeyProtected(), false, "a plain copy ends the protection");
+    blocked();
+    passed(child("reloaded with outside copy", Object.fromEntries(storage)), "reloaded outside");
+  },
+  async "reloaded with outside copy"() {
     cannotSkip();
+    await ks.unlockVault();
+    assert.equal(ks.passkeyProtected(), false);
+    blocked();
+    assert.match(storage.get("zf-secrets"), /outside-wallet:1/, "the copy is kept for review");
+  },
+  // A plain copy that the vault holds, and cannot be removed, does not shut setup.
+  async "held copy"() {
+    await heldCopy();
+    passed(child("reloaded with held copy", Object.fromEntries(storage)), "reloaded held");
+  },
+  // The held copy opens setup only while the stored record is this vault and the page can save.
+  async "replaced vault"() {
+    await heldCopy();
+    storage.set("zf-vault", JSON.stringify({ ...parseVault(storage.get("zf-vault")), cred: "Yw" }));
+    blocked();
+  },
+  async "removed vault"() {
+    await heldCopy();
+    storage.delete("zf-vault");
+    blocked();
+  },
+  async "failed save"() {
+    await heldCopy();
+    localStorage.setItem = () => { throw new Error("quota"); };
+    assert.equal(await ks.persist(), false);
+    assert.equal(ks.storageOk, false);
+    blocked();
+  },
+  async "reloaded with held copy"() {
+    cannotSkip();
+    localStorage.removeItem = (key) => {
+      if (key === "zf-secrets") throw new Error("deletion denied");
+      originalStorage.removeItem(key);
+    };
+    await ks.unlockVault();
+    assert.ok(storage.has("zf-secrets"), "the copy could not be removed");
+    unverified();
+  },
+  "other tab vault message"() {
+    storage.set("zf-vault", "synthetic other-tab vault");
+    assert.throws(ks.requireSetupProtection, (e) => e.message === ks.LOCKED_ELSEWHERE,
+      "a tab that cannot save names the other tab, not the passkey");
   },
   async "later protection"() {
     confirmed();

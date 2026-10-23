@@ -39,8 +39,8 @@ async function check(name, run) {
   await reset();
   await run();
   cases += 1;
-  const completed = ["completed activation", "complete unlock", "legacy vault unlock",
-    "identical leftovers"].includes(name);
+  const completed = ["no Web Locks", "completed activation", "complete unlock",
+    "legacy vault unlock", "identical leftovers"].includes(name);
   assert.equal(ks.passkeyProtected(), completed,
     name + ": only a fully completed operation is ready for new setup");
 }
@@ -59,13 +59,13 @@ await check("no fake completion", async () => {
   blocked();
 });
 await check("no Web Locks", async () => {
-  let prompted = false;
   delete navigator.locks;
-  navigator.credentials.create = async () => { prompted = true; };
-  await assert.rejects(ks.lockWithPasskey, /Web Locks/);
-  assert.equal(prompted, false, "unsafe activation never starts the credential prompt");
-  assert.equal(storage.has("zf-vault"), false);
-  blocked();
+  await ks.lockWithPasskey();
+  ks.requirePasskeyProtection();
+  const got = await open(key, parseVault(storage.get("zf-vault")));
+  assert.equal(got.secrets["wallet:1"].keyPackage, marker, "the lock works without Web Locks");
+  assert.equal(storage.has("zf-secrets"), false);
+  assert.equal(storage.has("zf-keys"), false);
 });
 await check("unsupported browser", async () => {
   globalThis.window = {};

@@ -206,6 +206,27 @@ const store = {
 const stopReports = guide.watchGuidedReports(gid, store);
 assert.throws(() => guide.completeGuided(), /remaining setup steps/,
   "optional backup rules do not bypass required Solana formation");
+assert.equal(guide.guidedState().zecReady, true, "every device checked the Zcash address");
+assert.equal(guide.guidedState().protocolReady, false, "the requested Solana part is not ready");
+page.state.verify = { 2: { ok: true } };
+assert.throws(() => guide.completeGuided(gid, { zcashOnly: true }), /remaining setup steps/,
+  "the Zcash part alone must be checked on every device");
+page.state.verify = { 2: { ok: true }, 3: { ok: true } };
+delete page.state.confirm[3];
+assert.throws(() => guide.completeGuided(gid, { zcashOnly: true }), /remaining setup steps/,
+  "every device must confirm the safety number before the guide ends");
+page.state.confirm[3] = { number: "99999 99999 99999 99999 99999 99999" };
+assert.throws(() => guide.completeGuided(gid, { zcashOnly: true }), /remaining setup steps/,
+  "a mismatch of the safety number still stops the guide");
+page.state.confirm[3] = { number: actualNo };
+held.aborted = "Setup stopped: a test.";
+assert.throws(() => guide.completeGuided(gid, { zcashOnly: true }), /remaining setup steps/,
+  "a stopped setup cannot leave the guide through the Zcash part");
+delete held.aborted;
+guide.completeGuided(gid, { zcashOnly: true });
+assert.equal(guide.guidedRecord(gid).completed, true, "the Zcash part alone ends the guide");
+assert.equal(guide.guidedEnabled(gid), false);
+guide.beginGuided(gid, { solExpected: true });
 const zecOnly = guide.guidedRecord(gid);
 zecOnly.solExpected = false;
 storage.set(key, JSON.stringify(zecOnly));

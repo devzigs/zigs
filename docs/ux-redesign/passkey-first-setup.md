@@ -23,6 +23,10 @@ Native applications remain outside this branch. No merge or deployment is author
   state is exposed only after the encrypted record is saved, read back, opened successfully
   and its plaintext migration completes. Pending, cancelled, unsupported or incomplete attempts
   leave new-signer continuation blocked. Back, Save and exit, retry and recovery remain available.
+  One exception: an unlocked vault that holds every plain copy in storage, where only the
+  removal of those copies failed, seals each new share, so setup goes on and the page says that
+  the passkey copy is not fully checked. A plain copy with data outside the vault keeps setup shut.
+  So do a stored vault record that is not the open vault, a removed record and a failed save.
 - Existing wallets, payments, backup exports and recovery imports retain main's existing
   behavior. This change does not silently migrate, delete or block access to older unprotected
   wallets or retroactively stop their existing setup reactors.

@@ -9,7 +9,7 @@ import { setupProgress } from "./setup-wizard.js";
 // Contextual education only. These symbols and words never report or grant protection.
 const SECURITY_EXPLANATIONS = Object.freeze({
   passkey: ["fingerprint", "Protect your local signing share",
-    "A passkey unlocks encrypted wallet data in this browser. Your passkey provider may ask for a fingerprint, face, PIN or security key. It is not another signer or a recovery backup."],
+    "A passkey unlocks encrypted wallet data in this browser. Your passkey provider may ask for a fingerprint, face, PIN or security key. It is not another device or a recovery backup."],
   threshold: ["approvals", "Share approval across devices",
     "Separate physical devices each keep a signing share. Payments need your chosen number of approvals, reducing reliance on any one device."],
   device: ["key", "One device, one signing share",
@@ -188,7 +188,7 @@ export function browserProtectionExplanation() {
       ["key", "Recreate the encryption key", "A successful assertion supplies the PRF output for the same AES-GCM key. A different credential or unusable PRF result cannot open this saved vault."],
       ["lock", "Open the current vault", "Authenticated decryption makes the covered data available to this page in memory. Zigs rereads current browser storage so another tab’s saved changes are considered."],
       ["approvals", "Check protection boundaries", "Any separate unprotected copies must be covered by the verified vault before cleanup. Extra or unreadable data is kept for review; successful unlock alone is not proof that those copies are protected."],
-    ], "A passkey unlocks local data; it is not another signer, a payment approval or a recovery backup. Restoring a lost share still needs its recovery file and separate passphrase."),
+    ], "A passkey unlocks local data; it is not another device, a payment approval or a recovery backup. Restoring a lost share still needs its recovery file and separate passphrase."),
     el("p", { class: "small muted" }, "The vault protects covered data at rest, not against code running in an unlocked page or every kind of browser-profile access. Private descriptions and other data outside the vault are not encrypted by this mechanism. Explicitly confirmed Skip leaves new signing shares without Zigs’ passkey encryption; it cannot bypass a locked, damaged or incomplete vault."));
 }
 
@@ -206,7 +206,7 @@ export function thresholdExplanation(n = 3, t = 2) {
           el("span", { class: "small muted" }, "No group authorization. Wait for enough usable independent shares.")))) : null,
     el("p", { class: "small muted" }, "All chosen devices take part in a key-generation ceremony. Each creates and keeps an independent share; no device receives the whole wallet spending key. Zcash uses re-randomized FROST over RedPallas; Solana has a separate FROST-Ed25519 key and its own checks."),
     technicalDiagram("formation", "Initial setup · every chosen device participates", [
-      ["devices", "Join independent devices", "Each device takes a seat and keeps its own setup keys. The arrangement includes the participant count, approval threshold and network."],
+      ["devices", "Join independent devices", "Each device keeps its own setup keys. The arrangement includes the participant count, approval threshold and network."],
       ["approvals", "Compare all 30 digits", "The safety number binds the setup device keys, wallet id, rule and network. Compare the actual screens; each device still needs its existing acknowledgement."],
       ["key", "Commit setup material", "After the safety checks, each device saves its private setup material before publishing its round-one package and commitment. Each records a digest of the round-one view."],
       ["lock", "Exchange encrypted packages", "Round-two packages are encrypted for the individual receiving devices. The exchanged data includes the round-one digest, so inconsistent setup views can be detected."],

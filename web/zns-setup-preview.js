@@ -64,7 +64,7 @@ export function znsSetupPreview({ el, draft, onContinue, onBack,
       draft.checkout && name ? checkout(name, currency) : form,
       el("footer", { class: "zns-footer" },
       el("details", { class: "zns-details" }, el("summary", {}, "About names for shared wallets"),
-        el("p", { class: "small muted" }, "ZNS currently lets any signer who can read the wallet’s memos control its name. Name changes do not follow this wallet’s approval rule. Registration for shared wallets is not connected in this demo.")),
+        el("p", { class: "small muted" }, "ZNS currently lets any device that can read the wallet’s memos control its name. Name changes do not follow this wallet’s approval rule. Registration for shared wallets is not connected in this demo.")),
       actions));
   }
   function checkout(name, currency) {

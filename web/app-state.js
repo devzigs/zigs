@@ -7,7 +7,7 @@ export const state = {
   groups: [], gid: null, cid: null, contact: null, g: null, seats: {}, seatsLoaded: false,
   seatsSettled: false, sessionsLoaded: false, sessionsFailed: false,
   dkg1: {}, dkg2: {}, confirm: {}, abort: {}, done: {}, verify: {}, wallet: null, sessions: [],
-  sid: null, commits: {}, shares: {}, ignored: 0, pending: false, log: [],
+  sid: null, commits: {}, commitsLoaded: false, shares: {}, ignored: 0, pending: false, log: [],
 };
 // What the store holds, before signed writes are checked (in app-filter.js). `state` holds
 // what the page may use.

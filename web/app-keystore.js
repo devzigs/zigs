@@ -156,25 +156,30 @@ export function requirePasskeyProtection() {
   if (!passkeyProtected()) throw new Error("Protect this browser with a passkey before "
     + "creating or joining a wallet.");
 }
-/** Only an ordinary, readable unprotected store can take the explicit setup opt-out. */
+/**
+ * The explicit setup opt-out. Skip works whenever this tab holds no vault, no passkey step runs
+ * and the page read its key, secret and chat records. A damaged or unreadable one blocks it,
+ * because the next save would overwrite it. The optional address book and personal account never
+ * decide it: every save keeps both as they are. A save that failed before does not decide it
+ * either: the next save is what clears the mark.
+ */
 export function canSkipPasskeyProtection() {
-  if (vault || lockedVault || protectionPending || !storageOk || memoryOnly()
-    || recipientsReadFailed || recipientsError || personalDamaged !== null) {
+  if (vault || lockedVault || protectionPending || readFailed || memoryOnly()) {
     return clearSetupAcknowledgement();
   }
   try {
     // Read again even if no storage event arrived: another tab may have enabled protection.
     // Any existing record, including a damaged or empty one, must be kept for recovery.
     if (localStorage.getItem("zf-vault") !== null) return clearSetupAcknowledgement();
-    for (const name of PLAIN_KEYS) {
-      const text = localStorage.getItem(name);
-      if (text === null) continue;
-      if (name === RECIPIENTS_KEY) readRecipients(JSON.parse(text));
-      else plainCopy(name, text);
-    }
-    if (localStorage.getItem("zf-vault") !== null) return clearSetupAcknowledgement();
+    checkStateRecords();
     return true;
   } catch { return clearSetupAcknowledgement(); }
+}
+function checkStateRecords() {
+  for (const name of PLAIN_KEYS) {
+    const text = localStorage.getItem(name);
+    if (text !== null && name !== RECIPIENTS_KEY) plainCopy(name, text);
+  }
 }
 function clearSetupAcknowledgement() { unprotectedSetupAcknowledged = false; return false; }
 /** Called only by the explicit confirmation action, never by a cancelled credential prompt. */
@@ -184,12 +189,31 @@ export function acknowledgeUnprotectedSetup() {
     + "copy; keep recovery files before deleting anything.");
   unprotectedSetupAcknowledged = true;
 }
+/**
+ * An unlocked vault whose clean-up did not finish still seals every new share, so setup goes on.
+ * A plain copy with data outside the vault keeps setup shut, as the unlock banner says. So do a
+ * stored vault record that is not this vault, and a store that cannot save, as on main.
+ * ponytail: the copies are read again at each call, which happens only while a vault is unchecked.
+ */
+export const protectionUnverified = () => !!vault && !lockedVault && !protectionPending
+  && !passkeyProtected() && plainCopiesHeld();
+function plainCopiesHeld() {   // a copy that cannot be read or compared is not held
+  try {
+    if (!storageOk || !sameVault(vault.rec, parseVault(localStorage.getItem("zf-vault")))) {
+      return false;
+    }
+    checkPlainCopies({ secrets, keys: gkeys, chats, recipients: recipientsRaw });
+    return true;
+  } catch { return false; }
+}
 export function setupProtectionReady() {
-  return passkeyProtected() || (unprotectedSetupAcknowledged && canSkipPasskeyProtection());
+  return passkeyProtected() || protectionUnverified()
+    || (unprotectedSetupAcknowledged && canSkipPasskeyProtection());
 }
 export function requireSetupProtection() {
-  if (!setupProtectionReady()) throw new Error("Protect this browser with a passkey or explicitly "
-    + "confirm continuing without protection before creating or joining a wallet.");
+  if (setupProtectionReady()) return;
+  throw new Error(lockedElsewhere() ? LOCKED_ELSEWHERE : "Protect this browser with a passkey or "
+    + "explicitly confirm continuing without protection before creating or joining a wallet.");
 }
 function canEnableProtection() {
   if (!storageOk) throw new Error("This browser does not let the page save data.");
@@ -260,8 +284,6 @@ export async function lockWithPasskey() {
   if (protectionPending) throw new Error("Passkey protection is still being enabled. Wait for it.");
   if (passkeyProtected()) return;
   canEnableProtection();
-  if (!globalThis.navigator?.locks?.request) throw new Error("This browser cannot safely enable "
-    + "passkey protection across tabs. Use a browser with Web Locks support.");
   protectionPending = true; protectionVerified = false;
   try {
     // Account changes take only `account`; secret changes take only `secrets`. Neither takes

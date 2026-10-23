@@ -20,7 +20,7 @@ import { deviceProtection, offOf } from "./app-shell.js";
 import { newWallet, SOL_DISCLOSURE, sol, solBackup, solError, solLoad, solLoading,
   solOn, solPlanned, solServed, solSetup } from "./app-sol.js";
 import { quickCode, SETUP_STAGES, setupStage } from "./setup-model.js";
-import { setupHeader, SETUP_FLOW_STAGES } from "./setup-wizard.js";
+import { setupHeader } from "./setup-wizard.js";
 import { securityExplanation, tutorialDiagram, tutorialProgress } from "./app-tutorial.js";
 import { beginGuided, completeGuided, guidedState, pauseGuided,
   retryGuidedReports, reviewGuided } from "./app-guided-setup.js";
@@ -28,7 +28,7 @@ import { openGroup } from "./app-groups.js";
 import { outcomeSeal } from "./outcome-seal.js";
 import { openBackup, openBackupCheck } from "./app-backups.js";
 import { icon } from "./app-icons.js";
-import { fundingSetupActive, openFundingPreview } from "./app-funding-preview.js";
+import { openFundingPreview } from "./app-funding-preview.js";
 import { walletMark, walletReveal } from "./app-wallet-art.js";
 
 // Only an open overlay's wallet id is kept in memory; never persist an invitation capability.
@@ -118,9 +118,7 @@ export function guidedSetupView(notices = []) {
     try { pauseGuided(); } catch (e) { showBanner("bad", e.message); }
     openGroup(null); render();
   };
-  const funding = f.complete && fundingSetupActive(state.gid);
-  const review = (i) => guideAct(() => i === 5 ? finishSetupPresentation()
-    : reviewGuided(i === f.index ? null : i))();
+  const review = (i) => guideAct(() => reviewGuided(i === f.index ? null : i))();
   if (reveal) return el("div", { class: "page guided-setup wallet-reveal-page" }, ...notices,
     el("header", { class: "wallet-reveal-nav" }, el("span", { class: "small muted" }, state.g.name),
       el("button", { class: "btn ghost", type: "button", onclick: exit }, "Save and exit")),
@@ -134,7 +132,7 @@ export function guidedSetupView(notices = []) {
     "data-motion-watch": "setup", "data-motion-value": f.protocolReady ? "on" : "off" },
     ...notices,
     setupHeader(el, state.g, f.solWanted, exit),
-    tutorialProgress(funding ? 5 : f.index, funding ? at : f.review, review, SETUP_FLOW_STAGES),
+    tutorialProgress(f.index, f.review, review),
     f.index === 1 || f.index === 2 ? linkLine() : null,
     f.storageIssue ? el("div", { class: "callout bad", role: "alert" }, f.storageIssue) : null,
     f.blocked ? el("div", { class: "callout bad", role: "alert", tabindex: "-1",
@@ -237,11 +235,24 @@ function guidedPrepare(f) {
       el("p", {}, SOL_DISCLOSURE)) : null,
     unavailable ? el("p", { class: "small muted" }, "Keep this wallet and its existing keys. Retry when the service is available; do not recreate the wallet or reset its keys.") : null,
     unavailable ? el("button", { class: "btn", type: "button", onclick: () => location.reload() }, "Reload to retry connection") : null,
+    continueWithZcash(f),
     guidedSolConsent(f),
     earlyZcashBackups(f),
     el("p", { class: "small muted" }, "No fee funding is required to finish initial preparation. A public SOL fee address needs funds only when this device first performs a paid Solana operation."),
     el("details", { class: "card card-pad" }, el("summary", {}, "Technical setup details"),
       safetyCard(), progressCard(), seatsCard([])));
+}
+
+// Overview holds Send and Receive. A wallet whose Zcash part is checked must not wait for a
+// Solana part that is slow, stopped or out of service: Overview shows that part as it sets up.
+function continueWithZcash(f) {
+  if (f.blocked || !f.zecReady || !f.solWanted || f.solReady) return null;
+  return el("section", { class: "surface-quiet guided-zcash-only" },
+    el("h3", {}, "Use Zcash while Solana sets up"),
+    el("p", { class: "small muted" }, "Send and Receive for Zcash work now. Overview shows the Solana "
+      + "part while it sets up. " + BOTH_OPEN),
+    el("button", { class: "btn primary", type: "button", "data-key": "guided-zcash-only",
+      onclick: guideAct(() => finishSetupPresentation(true)) }, "Continue with Zcash"));
 }
 
 function earlyZcashBackups(f) {
@@ -344,18 +355,21 @@ function compactBackupRow(b, check = false) {
       check ? backupCheckButtons(b) : backupChains(b).map((chain) => backupSaveButton(b, chain, true))));
 }
 
-function finishSetupPresentation() {
-  // Only the creator is offered the one-time mock funding step. No protocol gate reads it.
-  completeGuided();
+function finishSetupPresentation(zcashOnly = false) {
+  completeGuided(state.gid, { zcashOnly });
   ui.tab = "overview";
-  if (localSeats().includes(1)) openFundingPreview(state.gid);
 }
 
+// The funding demo is no step of the setup: only the creator device is offered it, as a labelled
+// extra, and no protocol gate reads it.
 function overviewAfterSetup(f) {
   return el("div", { class: "row-actions" },
     el("button", { class: "btn primary", type: "button", disabled: !f.protocolReady,
-      onclick: guideAct(finishSetupPresentation) },
-    localSeats().includes(1) ? "Continue to funding" : "Open Overview"));
+      onclick: guideAct(finishSetupPresentation) }, "Open Overview"),
+    localSeats().includes(1) ? el("button", { class: "btn ghost", type: "button",
+      disabled: !f.protocolReady, "data-key": "funding-demo-entry",
+      onclick: guideAct(() => { finishSetupPresentation(); openFundingPreview(state.gid); }) },
+    "See the funding demo (no payment)") : null);
 }
 
 function guidedReady(f) {
@@ -597,7 +611,7 @@ function joinCard(seat, compact = false) {
     nameField("seat-name"),
     deviceProtection("join:" + state.gid,
       () => { focusAfter("join-device-" + seat, true); render(); }),
-    compact ? null : el("p", { class: "small muted" }, "A passkey unlocks the encrypted wallet data in this browser. It is not another signer and cannot restore a missing share. Recovery uses this device’s backup file and passphrase."),
+    compact ? null : el("p", { class: "small muted" }, "A passkey unlocks the encrypted wallet data in this browser. It is not another device and cannot restore a missing share. Recovery uses this device’s backup file and passphrase."),
     el("div", { style: "display:grid;gap:6px;justify-items:start" }, take, off.note));
 }
 

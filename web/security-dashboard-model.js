@@ -26,9 +26,9 @@ function recoveryCounts(f, valid, files, chains) {
 
 const missingMaterial = (f) => f.rosterKnown !== false && f.signers.find((s) => s.local
   && (f.formed && !s.zec.has || s.sol?.missing));
-const missingText = (s) => s ? "Signer " + s.id
+const missingText = (s) => s ? "Device " + s.id
   + " has signing material missing from this browser. Restore its matching recovery file; "
-  + "joining alone does not make a signer available." : "";
+  + "joining alone does not make a device available." : "";
 
 function securityStatus(critical, unavailable, allChecked, concentrated) {
   if (critical) return { label: "Action needed", tone: "bad" };
@@ -38,7 +38,7 @@ function securityStatus(critical, unavailable, allChecked, concentrated) {
 }
 
 function nextAction(critical, missing, files, allChecked) {
-  if (critical) return missing ? { kind: "restore", label: "Restore a signer" }
+  if (critical) return missing ? { kind: "restore", label: "Restore a device" }
     : { kind: "setup", label: "Review wallet setup" };
   const save = files.find(needsSave);
   if (save) return { ...save, kind: "backup", label: "Back up wallet" };
@@ -110,7 +110,7 @@ function remoteSignerStatus(files) {
 
 export function signerRecoveryStatus(s) {
   const files = [s.zec, s.sol].filter(Boolean);
-  if (s.rosterUnknown) return ["Reading signer…", "neutral"];
+  if (s.rosterUnknown) return ["Reading device…", "neutral"];
   if (files.some((f) => f.missing)) return ["Share missing", "bad"];
   return s.local ? localSignerStatus(files) : remoteSignerStatus(files);
 }

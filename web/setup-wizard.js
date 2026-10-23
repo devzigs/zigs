@@ -1,8 +1,6 @@
 // Shared presentation only. Progress never grants wallet readiness or payment authority.
 import { SETUP_STAGES } from "./setup-model.js";
 
-export const SETUP_FLOW_STAGES = [...SETUP_STAGES, "Funding"];
-
 export function setupHeader(el, wallet, solWanted, onExit) {
   return el("header", { class: "guided-header" },
     el("div", {}, el("span", { class: "label" }, "Zigs · guided wallet setup"),

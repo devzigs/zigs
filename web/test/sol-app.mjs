@@ -121,11 +121,17 @@ const hashes = [1, 2, 3].map((i) => sha(solOf(gid, i).solSeed));
     const hero = one(tree, (n) => n.className === "overview-hero");
     assert.equal(text(one(hero, (n) => n.className?.split(" ").includes("portfolio-value"))),
       "$0.00");
-    assert.match(text(hero), /Placeholder.*USD valuation is unknown/);
+    assert.match(text(hero), /Portfolio balanceUSDDemo\$0\.00Demo prices/,
+      "the USD total reads as a demo value");
+    assert.match(text(hero), /The USD total is a demo\. The displayed \$0\.00 is not a confirmed/);
     assert.equal(one(hero, (n) => n.attrs?.["data-valuation-state"])?.attrs["data-valuation-state"],
       "unknown", "displayed zero remains an unknown valuation");
     assert.match(text(hero), /Test funds have no cash value/);
-    assert.equal(button(hero, "Swap").attrs.disabled, "");
+    assert.equal("disabled" in button(hero, "Swap").attrs, false, "Swap is on");
+    t.ui.tab = "overview";
+    button(hero, "Swap").on.click();
+    assert.equal(t.ui.tab, "swap", "Swap opens the swap demo page");
+    t.ui.tab = "overview";
     const zec = asset(tree, "zec");
     const balance = one(zec, (n) => n.className === "asset-balance-block");
     assert.match(text(balance), /^Available1\.23456789ZECUp to dateIncoming 0\.00000009ZEC$/,
@@ -155,6 +161,8 @@ const hashes = [1, 2, 3].map((i) => sha(solOf(gid, i).solSeed));
       const track = one(asset(tree, id), (n) => n.className === "shielding-track is-unknown");
       assert.equal(track, undefined, "unknown holdings do not imply a measured allocation");
     }
+    assert.match(text(asset(tree, "usdc")), /^USDCSolana DevnetDemo/, "the USDC row is a demo");
+    assert.match(text(choice(tree, "Send", "usdc")), /Demo row · unavailable; do not deposit/);
     const usdcBalance = one(asset(tree, "usdc"), (n) => n.className === "asset-balance-block");
     assert.match(text(usdcBalance), /Unavailable.*Do not deposit USDC to this wallet/,
       "the unavailable asset and deposit warning remain outside collapsed details");

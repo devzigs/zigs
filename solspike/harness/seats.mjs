@@ -2,8 +2,8 @@
 // page shows as ready: a 2-of-3 testnet wallet, the second DKG of web/sol, one group key. Used by
 // scenario-e.mjs. scenario-d.mjs keeps its own copy of the other first steps (it is the verified
 // P8d check), and takes makeWallet from here. Every seat takes the path of a person: the Tor
-// popup is turned down, the passkey step is skipped and confirmed, the guided setup runs to the
-// end and the funding demo is left with "Finish later". The invite link, which holds the wallet
+// popup is turned down, the passkey step is skipped and confirmed, and the guided setup runs to
+// the end with Open Overview. The invite link, which holds the wallet
 // secret, is read from the app module that builds it (the guided card shows the link only in a
 // dialog that depends on the clipboard). No other function here reads a secret: the pages show
 // public values only.
@@ -111,19 +111,17 @@ export async function confirmNumber(page) {
 const walletPage = (page) => run(page, () => !!document.getElementById("panel-overview"));
 
 const REVEAL = "Continue to backup options";
-const FUNDING = "Continue to funding";
 const OPEN = "Open Overview";
 const SETUP_MS = 400000; // the Zcash ceremony, and the Solana one when the wallet asks for it
 
 /**
  * The guided setup of one page, from the prepared wallet to the wallet page: the reveal, then
- * Open Overview. Seat 1 gets the funding demo instead: it leaves it with "Finish later", so it
- * pays nothing. Waits for the ceremonies to end, which enable these buttons.
+ * Open Overview. Seat 1 is also offered the funding demo, which the harness leaves alone. Waits
+ * for the ceremonies to end, which enable these buttons.
  */
 async function finishSetup(page) {
-  let label = await clickAnyText(page, [REVEAL, FUNDING, OPEN], { ms: SETUP_MS });
-  if (label === REVEAL) label = await clickAnyText(page, [FUNDING, OPEN], { ms: SETUP_MS });
-  if (label === FUNDING) await clickText(page, "Finish later", { exact: true, ms: 30000 });
+  const label = await clickAnyText(page, [REVEAL, OPEN], { ms: SETUP_MS });
+  if (label === REVEAL) await clickText(page, OPEN, { exact: true, ms: SETUP_MS });
   const done = () =>
     run(page, () => !document.querySelector("[data-key=guided-setup], [data-funding-preview]"));
   await waitFor(done, 30000, () => "the end of the guided setup");
