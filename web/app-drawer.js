@@ -462,9 +462,13 @@ const approvalMotion = (ss, approved) => zecApprovalMotionValue({ pending: state
   snapshotKnown: Object.keys(state.commits).length > 0, status: ss.status,
   packaged: !!ss.package, error: !!ss.error, checking: !!ss.checking }, approved);
 
-// Display only. While the signatures of the records are being checked the count is unknown. A
-// proposal starts with no approval record, so an empty map is the known count 0 once they are.
-const displayedApprovalCount = () => state.pending ? null : Object.keys(state.commits).length;
+// Display only. The count is unknown while the signatures of the records are being checked, and
+// until the first snapshot of the approvals: an empty map also exists before it. A proposal starts
+// with no approval record, so an empty map is the known count 0 after that snapshot.
+const displayedApprovalCount = () => {
+  const n = Object.keys(state.commits).length;
+  return state.pending ? null : n || (state.commitsLoaded ? 0 : null);
+};
 
 const approvalConstellation = (ss, refused, rc) => ApprovalVisualization({
   required: state.g.t, total: state.g.n, confirmed: ss.checking ? null : displayedApprovalCount(),

@@ -428,6 +428,10 @@ const sealed = (gid, rel, seat, fields, key, names = ["by", "sig"]) =>
     assert.equal(t.watched.has(m5.id), true, "the open payment is watched");
     t.closeSession();
     assert.equal(t.watched.has(m5.id), true, "and stays watched when its drawer closes");
+    await waitFor("the snapshot of the watch", () => t.watched.get(m5.id)?.commitsSeen === true);
+    t.openSession(m5.id);
+    assert.equal(t.state.commitsLoaded, true, "a watched payment brings its snapshot of approvals");
+    t.closeSession();
     const path5 = `groups/${gid}/sessions/${m5.id}`;
     await approveAs(m5.id, [2, 3]);
     // A made-up approval of seat 1 (no signature) is no approval for the watch either.
@@ -446,6 +450,29 @@ const sealed = (gid, rel, seat, fields, key, names = ["by", "sig"]) =>
     t.closeSession();
     await waitFor("no watch", () => !t.watched.has(m5.id));
     assert.equal(subs.length, listeners, "the listeners of the watch end with it");
+    // A payment that no watch holds: the count of approvals is unknown until their first snapshot
+    // (the store answers in a microtask), and a subscription that fails leaves it unknown again.
+    assert.equal(t.watched.has(first.id), false, "a cancelled payment is not watched");
+    t.openSession(first.id);
+    assert.equal(t.state.commitsLoaded, false, "the first snapshot of the approvals is not in yet");
+    await waitFor("the first snapshot of the approvals", () => t.state.commitsLoaded);
+    t.closeSession();
+    assert.equal(t.state.commitsLoaded, false, "closing the drawer forgets the snapshot");
+    let commitsWatch = null;
+    t.setDb({ doc: docRef, collection: (p) => p.endsWith("/commits")
+      ? { onSnapshot: (ok, fail) => { commitsWatch = { ok, fail }; return () => {}; } }
+      : colRef(p) });
+    try {
+      t.openSession(first.id);
+      assert.equal(t.state.commitsLoaded, false, "a subscription that does not answer is unknown");
+      commitsWatch.ok({ docs: [] });
+      assert.equal(t.state.commitsLoaded, true, "an empty first snapshot is the known count 0");
+      commitsWatch.fail({ code: "unavailable" });
+      assert.equal(t.state.commitsLoaded, false, "a failed subscription is unknown again");
+    } finally {
+      t.closeSession();
+      t.setDb({ doc: docRef, collection: colRef });
+    }
     const drop = async (path) => {
       for (const k of [...data.keys()]) if (k.startsWith(path)) data.delete(k);
       notify();
@@ -2868,16 +2895,20 @@ const sealed = (gid, rel, seat, fields, key, names = ["by", "sig"]) =>
         }
         assert.deepEqual([oldOne.step("Approvals").className,
           textOf(all(oldOne.step("Approvals"), (x) => x.className === "tick")[0])], ["step ", "2"]);
-        // A proposal that no device approved yet has the known count 0. Only a signature check
-        // that is still running leaves the count unknown.
-        assert.match(textOf(oldOne.step("Approvals")), /^2Approvals · 0 of 2 needed/,
-          "no approval record yet: 0 of 2 needed");
+        // A proposal that no device approved yet has the known count 0 once the snapshot of its
+        // approvals is in. Before it, and while a signature check runs, the count is unknown.
+        assert.match(textOf(oldOne.step("Approvals")), /^2Approvals · count unavailable/,
+          "no snapshot of the approvals yet: the count is unknown");
+        t.state.commitsLoaded = true;
+        assert.match(textOf(look(open("hd1", "PA")).step("Approvals")),
+          /^2Approvals · 0 of 2 needed/, "no approval record yet: 0 of 2 needed");
         t.state.pending = true;
         try {
           assert.match(textOf(look(open("hd1", "PA")).step("Approvals")),
             /^2Approvals · count unavailable/, "signature checks that run: the count is unknown");
         } finally {
           t.state.pending = false;
+          t.state.commitsLoaded = false;
         }
         const endedA = look(okA);
         assert.ok(endedA.head.startsWith("Payment expiredThe transaction this browser approved "
