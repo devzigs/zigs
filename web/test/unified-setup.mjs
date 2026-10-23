@@ -2151,6 +2151,17 @@ async function walkSteps(fields, times, fresh = true) {
   assert.match(note([], [1]), /^Back up the Solana part of your key share\. This browser can/);
   assert.match(note([], [1]), /second file, with its own passphrase/);
   assert.doesNotMatch(note([2], []), /Solana/);
+  // The note stays on every wallet page until each file of this browser is saved.
+  const solNote = () => pageText().match(/Back up Solana, device \d/g) ?? [];
+  assert.deepEqual(solNote(), [1, 2, 3].map((i) => "Back up Solana, device " + i));
+  assert.match(pageText(), /^.*Back up your key share\. This browser can forget it/s);
+  assert.match(pageText(), /The Solana part of a device is a second file, with its own passphrase/);
+  for (const tab of ["approvals", "recovery", "settings"]) {
+    ui.tab = tab;
+    assert.match(pageText(), /Back up your key share\. This browser can forget it/,
+      "the note shows on " + tab);
+  }
+  ui.tab = "overview";
   const backupTab = ui.tab;
   ui.tab = "recovery"; // Optional backup controls live in Security.
   const solButtons = () => findAll(pageTree(), (n) => n.className === "security-signer")
@@ -2169,12 +2180,20 @@ async function walkSteps(fields, times, fresh = true) {
   assert.equal(saved.length, 1, "one file");
   assert.equal(t.sec(gidS, 2).sol.backupSaved, true);
   assert.deepEqual(solButtons(), ["Back up Solana, device 1", "Back up Solana, device 3"]);
+  ui.tab = backupTab;
+  assert.deepEqual(solNote(), ["Back up Solana, device 1", "Back up Solana, device 3"],
+    "a saved Solana file leaves the note");
+  ui.tab = "recovery";
   // A stop by another seat stops the Solana backups too.
   const stop = await t.signedDoc(gidS, "solabort/2", 2, { reason: "A test stop.", at: Date.now() });
   data.set(`groups/${gidS}/solabort/2`, stop);
   rig.notify();
   await waitFor("no Solana backup is asked", () => solButtons().length === 0);
   ui.tab = backupTab;
+  assert.deepEqual(solNote(), [], "a stopped Solana part has no file to ask for");
+  for (const i of [1, 2, 3]) await t.putSec(gidS, i, { backupSaved: true });
+  assert.doesNotMatch(pageText(), /This browser can forget it/,
+    "the note ends with the last file");
 }
 
 // ── The steps of a new wallet: Next, Enter, Cancel, and the tick of a rule without margin

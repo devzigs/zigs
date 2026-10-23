@@ -39,7 +39,7 @@ import { helpView } from "./app-help.js";
 import {
   sol, solActivity, solBackup, solBalance, solError, solFile, solLoad, solLoading,
   solActivityWaits, solLoadingCount, solOlderCount, solOn, solPending, solPendingRows, solSetup,
-  solNotAdded, solObserveOverview, solSync, solTab,
+  solNotAdded, solObserveOverview, solSync, solTab, solUnsaved,
 } from "./app-sol.js";
 import { formatUsdBalance, pendingShortcut, solRow, zecInProgress, zecTotal } from "./overview-model.js";
 import { icon } from "./app-icons.js";
@@ -197,9 +197,21 @@ const pageHeading = (id, label) => id === "settings"
   el("span", { class: "label" }, LEAD[id] ?? "This wallet"), el("h2", {}, label),
   securityExplanation(EXPLANATION[id] ?? id));
 
+// Every wallet page asks for a recovery file until each key share of this browser has one: a
+// browser can forget the share (private windows, Tor Browser), and setup may end with none.
+function backupReminder() {
+  const unsaved = localSeats().filter((i) => {
+    const s = sec(state.gid, i);
+    return s.keyPackage && !seatBackedUp(s);
+  });
+  const solSeats = solUnsaved();
+  return unsaved.length || solSeats.length
+    ? backupNote(unsaved, solSeats, !unsaved.length && solUnfinished()) : null;
+}
+
 export function walletView(head, why) {
   const [id, label] = currentSection(walletSections());
-  return el("div", { class: "page wallet-page" }, head,
+  return el("div", { class: "page wallet-page" }, head, backupReminder(),
     el("section", { id: "panel-" + id, "data-key": "panel-" + id, tabindex: "-1",
       "aria-label": label, class: "panel" }, id === "overview" ? null : pageHeading(id, label), BODIES[id]()));
 }
