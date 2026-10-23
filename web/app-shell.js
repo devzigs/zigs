@@ -7,7 +7,7 @@ import { offReason } from "./util.js";
 import { engineSettled, Z } from "./app-engine.js";
 import {
   acknowledgeUnprotectedSetup, canSkipPasskeyProtection, chats, forgetVault, lockedVault,
-  lockWithPasskey, mySeatSecrets, passkeyProtected, requireSetupProtection,
+  lockWithPasskey, mySeatSecrets, passkeyProtected, protectionUnverified, requireSetupProtection,
   setupProtectionReady, storageOk, unlockVault, vault,
 } from "./app-keystore.js";
 import { joinWalletLink, openChat } from "./app-links.js";
@@ -254,7 +254,7 @@ function lockButton() {
 
 let protectionPending = false, protectionError = "", skipProtectionAsk = null;
 const protectionAvailable = () => storageOk && !!window.PublicKeyCredential
-  && !!navigator.credentials && !!navigator.locks?.request;
+  && !!navigator.credentials;
 const protectionAttrs = (context, value) => ({ class: "device-protection",
   "data-motion-watch": "passkey:" + context, "data-motion-value": value });
 const protectionMark = () => el("span", { class: "protection-status-mark",
@@ -325,7 +325,7 @@ export function deviceProtection(context = "setup", onReady = null) {
     el("p", { class: "small", role: "status" }, protectionMark(), "Protecting this device… Wait while the encrypted copy is checked."));
   if (vault && !passkeyProtected()) return el("div", protectionAttrs(context, "error"),
     el("p", { class: "callout bad", role: "alert" }, protectionMark(), protectionError || "Passkey protection has not finished."),
-    el("p", { class: "small muted" }, "Protection did not finish. Keep this tab open and save this device’s recovery files. Do not repeat locking over an incomplete saved copy; check the browser’s storage permissions before reopening Zigs."));
+    el("p", { class: "small muted" }, "Protection did not finish. Keep this tab open and save this device’s recovery files. Do not repeat locking over an incomplete saved copy; check the browser’s storage permissions before reopening Zigs. You can go on: new key shares are saved in the passkey-protected copy."));
   if (passkeyProtected()) return el("div", protectionAttrs(context, "verified"),
     el("p", { class: "small ok", role: "status" }, protectionMark(), "This browser’s shares are protected by its passkey."),
     el("p", { class: "small muted" }, "Unlocking this browser is separate from authorizing a payment with another device."));
@@ -1008,8 +1008,7 @@ function reviewStep() {
         el("dl", { class: "kv" }, row("Wallet name", d.name || "Treasury"),
           d.description ? row("Private description", d.description) : null,
           row("This device's label", d.label || "None. The other devices show Device 1."),
-          row("Browser protection", passkeyProtected() ? "Passkey protected" : setupProtectionReady()
-            ? "Skipped · no passkey encryption" : "Protection choice needed")),
+          row("Browser protection", protectionLabel())),
         full ? el("p", { class: "callout warn" }, marginText(d.t, d.n))
           : el("p", { class: "small muted" }, marginText(d.t, d.n))),
       el("section", { class: "setup-review-configuration" },
@@ -1025,6 +1024,9 @@ function reviewStep() {
     ui.net === "testnet" ? el("div", { hidden: true }, solChoice()) : null);
 }
 const curNetLabel = () => (ui.net === "mainnet" ? "mainnet" : "testnet");
+const protectionLabel = () => passkeyProtected() ? "Passkey protected"
+  : protectionUnverified() ? "Passkey copy not fully checked"
+  : setupProtectionReady() ? "Skipped · no passkey encryption" : "Protection choice needed";
 // Above the buttons, not in their bar: on a phone the bar stays at the bottom of the sheet.
 const stepError = () => (ui.createError ? el("p", { class: "callout bad", role: "alert",
   id: "create-error" }, ui.createError) : null);

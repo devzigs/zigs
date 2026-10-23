@@ -25,6 +25,12 @@ const UNIFIED = ["node", "web/test/unified-setup.mjs"];
 const NONCE_TABS = ["node", "web/test/sol-nonce-tabs.mjs"];
 const APP_TEST = ["node", "web/test/app.mjs"];
 const NO_STORAGE = ["node", "web/test/no-storage.mjs"];
+const GUIDED_CREATE = ["node", "web/test/guided-create.mjs"];
+const PASSKEY_SETUP = ["node", "web/test/passkey-setup.mjs"];
+const OPTIONAL_PASSKEY = ["node", "web/test/optional-passkey.mjs"];
+const SKIP_GATE = "  if (vault || lockedVault || protectionPending || memoryOnly()) "
+  + "return clearSetupAcknowledgement();";
+const skipAlso = (extra) => SKIP_GATE.replace("memoryOnly()", "memoryOnly() || " + extra);
 // The line of takeFirstSeat (web/app-dkg.js) that names Cancel move.
 const MOVE_HINT = "      + (from ? ' To undo the link with the old wallet, open it and tap "
   + '"Cancel move".\' : ""));';
@@ -2988,4 +2994,34 @@ export const MUTATIONS = [
   program("T2-invite-many", "the invite card of several open devices is titled in the singular",
     ["web/app-setup.js", 'openCount === 1 ? "Add the other device" : "Add the other devices"',
       '"Add the other device"'], UNIFIED, /two open devices: plural/),
+  program("R-skip-book", "a damaged address book takes Skip for now away",
+    ["web/app-keystore.js", SKIP_GATE, skipAlso("recipientsError")],
+    GUIDED_CREATE, /the page has Skip for now in Change devices/),
+  program("R-skip-account", "a damaged messaging account takes Skip for now away",
+    ["web/app-keystore.js", SKIP_GATE, skipAlso("personalDamaged !== null")],
+    GUIDED_CREATE, /the page has Skip for now in Change devices/),
+  program("R-unverified-ready", "an open vault that was not checked blocks create, join and move",
+    ["web/app-keystore.js", "  return passkeyProtected() || protectionUnverified()\n",
+      "  return passkeyProtected()\n"],
+    GUIDED_CREATE, /Change devices goes on without a skip/),
+  program("R-locked-message", "a tab that cannot save names the passkey, not the other tab",
+    ["web/app-keystore.js", "throw new Error(lockedElsewhere() ? LOCKED_ELSEWHERE : ",
+      "throw new Error(false ? LOCKED_ELSEWHERE : "],
+    OPTIONAL_PASSKEY, /other tab vault message/),
+  program("R-locks-throw", "the lock with a passkey refuses a browser without Web Locks",
+    ["web/app-keystore.js", "  canEnableProtection();\n  protectionPending = true;",
+      "  canEnableProtection();\n  if (!globalThis.navigator?.locks?.request) throw new Error("
+      + '"This browser cannot safely enable passkey protection across tabs.");\n'
+      + "  protectionPending = true;"],
+    PASSKEY_SETUP, /cannot safely enable passkey protection/),
+  program("R-locks-button", "the Lock with a passkey button is off without Web Locks",
+    ["web/app-shell.js", "  && !!navigator.credentials;\n",
+      "  && !!navigator.credentials && !!navigator.locks?.request;\n"],
+    GUIDED_CREATE, /Lock with a passkey is on without Web Locks/),
+  program("R-review-unverified", "the review calls an unchecked vault a skipped protection",
+    ["web/app-shell.js", '  : protectionUnverified() ? "Passkey copy not fully checked"\n', ""],
+    GUIDED_CREATE, /Passkey copy not fully checked/),
+  program("R-unverified-note", "an unchecked vault says nothing about going on",
+    ["web/app-shell.js", " You can go on: new key shares are saved in the passkey-protected copy.",
+      ""], GUIDED_CREATE, /You can go on/),
 ];

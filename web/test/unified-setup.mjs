@@ -3090,8 +3090,8 @@ assert.equal(quickCode(null), null);
 }
 
 // ── A join that cannot save its key share is refused before the store sees the seat ──
-// The legacy plaintext persistence path remains supported internally. Exercise takeSeat
-// directly for refusal/rollback assertions; no unprotected opt-out is accepted in this fixture.
+// The refusals and rollbacks below run through the real buttons of the page, after a real
+// Skip for now and Continue without protection.
 // This block comes last: it leaves a vault, a lease and wallets behind.
 {
   const JOIN_REFUSED = "This device could not save its key share, so it did not join. Free "
@@ -3106,7 +3106,16 @@ assert.equal(quickCode(null), null);
   const stored = (gid, i) => JSON.parse(storage.get("zf-secrets") ?? "{}")[gid + ":" + i];
   const button = (text) => findNode(pageTree(),
     (n) => n.attrs?.type === "button" && textOf(n) === text);
-  const takeCore = (seat) => t.act(() => t.takeSeat(seat))(EV);
+  // The real buttons: the person picks Skip for now and Continue without protection once, then
+  // presses Play device N (Join as device N where this browser holds no seat).
+  const choose = async () => {
+    await button("Skip for now").on.click(EV);
+    await button("Continue without protection").on.click(EV);
+  };
+  const takeCore = async (seat) => {
+    if (!keystore.setupProtectionReady() && button("Skip for now")) await choose();
+    return (button("Play device " + seat) ?? button("Join as device " + seat)).on.click(EV);
+  };
   // A person needs more than the 1 ms of a released lease to click again.
   const retry = async (seat) => {
     await sleep(20);
