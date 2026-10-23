@@ -462,9 +462,9 @@ const approvalMotion = (ss, approved) => zecApprovalMotionValue({ pending: state
   snapshotKnown: Object.keys(state.commits).length > 0, status: ss.status,
   packaged: !!ss.package, error: !!ss.error, checking: !!ss.checking }, approved);
 
-// Display only: an empty map also exists before the first snapshot. Without a readiness
-// signal it cannot establish a verified zero. Positive, checked records can be counted.
-const displayedApprovalCount = () => state.pending ? null : Object.keys(state.commits).length || null;
+// Display only. While the signatures of the records are being checked the count is unknown. A
+// proposal starts with no approval record, so an empty map is the known count 0 once they are.
+const displayedApprovalCount = () => state.pending ? null : Object.keys(state.commits).length;
 
 const approvalConstellation = (ss, refused, rc) => ApprovalVisualization({
   required: state.g.t, total: state.g.n, confirmed: ss.checking ? null : displayedApprovalCount(),
@@ -570,8 +570,8 @@ function timeline(ss, refused, rc) {
   return el("section", { class: "stage-panel", "aria-label": "Steps of the payment" },
     el("ol", { class: "steps" },
       tl("done", "Proposed", el("p", {}, when(ss.createdAt))),
-      tl(approvalsStep(ss, refused, rc), "Approvals · " + (displayedApprovalCount() && !ss.checking
-        ? Math.min(approvals, g.t) + " of " + g.t + " needed" : "count unavailable"),
+      tl(approvalsStep(ss, refused, rc), "Approvals · " + (displayedApprovalCount() !== null
+        && !ss.checking ? Math.min(approvals, g.t) + " of " + g.t + " needed" : "count unavailable"),
       approvalConstellation(ss, refused, rc), watch("threshold:zec", enoughApprovals())),
       tl(signatureStep(ss), "Combined signature",
         el("p", {}, signatureText(ss, approvals, shared, wait))),
