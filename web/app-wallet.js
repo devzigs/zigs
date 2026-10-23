@@ -86,7 +86,7 @@ export function groupView({ showHeader = true } = {}) {
   const funding = ready && ui.tab === "overview" && localSeats().includes(1)
     ? fundingSetupView(state.gid, g.name) : null;
   if (funding) return el("div", { class: "page guided-setup funding-setup-page" },
-    staleRestoreNote(), signedNotes(), networkNote(), funding);
+    staleRestoreNote(), signedNotes(), networkNote(), backupReminder(), funding);
   const why = ready ? sendBlocker() : null;
   const head = [showHeader ? groupHead(g, ready, why) : null,
     staleRestoreNote(), signedNotes(), networkNote()];

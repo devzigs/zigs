@@ -1434,7 +1434,9 @@ assert.equal(solPlanned(null), false);
     assert.equal(guided.guidedEnabled(resumed), false, "the guide ends");
     assert.equal(t.sec(resumed, 1).solAuto, undefined, "ending it starts no Solana step");
     const later = byText(pageTree(), "Finish later");
-    if (later) await later.on.click({ preventDefault() {} });
+    assert.ok(later, "device 1 meets the funding preview");
+    assert.match(pageText(), /This browser can forget it/, "the funding step asks for a file too");
+    await later.on.click({ preventDefault() {} });
     const pickers = findAll(pageTree(), (n) => n.className === "overview-action-picker");
     assert.equal(pickers.length, 2, "Overview shows Send and Receive");
     const zecChoice = (picker) => findNode(picker,
@@ -3396,6 +3398,25 @@ assert.equal(quickCode(null), null);
     assert.deepEqual(Object.keys(JSON.parse(storage.get("zf-keys"))).sort(),
       Object.keys(t.gkeys).sort(), "a refused wallet leaves no key in storage");
     localStorage.setItem = realSet;
+
+    // The join card has its own Skip for now, also with a damaged address book.
+    assert.equal(await keystore.persist(), true);
+    const gidK = await made("Join card");
+    storage.set(keystore.RECIPIENTS_KEY, '{"version":1,"entries":"damaged"}');
+    await keystore.takeFromTab(keystore.RECIPIENTS_KEY);
+    const keptSeat = t.secrets[gidK + ":1"];
+    delete t.secrets[gidK + ":1"];   // this browser holds no seat of the wallet: the join card
+    await keystore.lockWithPasskey().catch(() => {});   // a passkey step that fails: choose again
+    assert.equal(keystore.setupProtectionReady(), false, "the choice starts again");
+    assert.equal(button("Join as device 2").attrs.disabled, "", "Join waits for the choice");
+    assert.ok(button("Skip for now"), "the join card offers Skip for now");
+    await choose();
+    assert.equal(button("Join as device 2").attrs.disabled, undefined, "and goes on after it");
+    await button("Join as device 2").on.click(EV);
+    assert.equal(data.has(seatDoc(gidK, 2)), true, "the seat document is written");
+    t.secrets[gidK + ":1"] = keptSeat;
+    storage.delete(keystore.RECIPIENTS_KEY);
+    assert.equal(await keystore.persist(), true);
   } finally {
     localStorage.setItem = realSet;
     t.setVault(null);
