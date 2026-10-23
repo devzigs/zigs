@@ -191,13 +191,17 @@ export function acknowledgeUnprotectedSetup() {
 }
 /**
  * An unlocked vault whose clean-up did not finish still seals every new share, so setup goes on.
- * A plain copy with data outside the vault keeps setup shut, as the unlock banner says.
+ * A plain copy with data outside the vault keeps setup shut, as the unlock banner says. So do a
+ * stored vault record that is not this vault, and a store that cannot save, as on main.
  * ponytail: the copies are read again at each call, which happens only while a vault is unchecked.
  */
 export const protectionUnverified = () => !!vault && !lockedVault && !protectionPending
   && !passkeyProtected() && plainCopiesHeld();
 function plainCopiesHeld() {   // a copy that cannot be read or compared is not held
   try {
+    if (!storageOk || !sameVault(vault.rec, parseVault(localStorage.getItem("zf-vault")))) {
+      return false;
+    }
     checkPlainCopies({ secrets, keys: gkeys, chats, recipients: recipientsRaw });
     return true;
   } catch { return false; }

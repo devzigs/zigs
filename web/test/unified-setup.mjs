@@ -3369,8 +3369,8 @@ assert.equal(quickCode(null), null);
 
     // The passkey lock is on in this tab and the sealed write fails: the cause is storage, not
     // another tab, although zf-vault is in storage (this tab wrote it).
-    t.setVault({ rec: {}, key: null });
-    storage.set("zf-vault", "sealed by this tab");
+    t.setVault({ rec: { cred: "YQ", salt: "Yg" }, key: null });
+    storage.set("zf-vault", '{"v":1,"cred":"YQ","salt":"Yg","iv":"aQ","box":"Yg"}');
     const countV = wallets();
     await takeCore(3);
     assert.equal(appState.banner?.text, JOIN_REFUSED,

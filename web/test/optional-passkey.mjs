@@ -12,8 +12,8 @@ const names = ["default", "confirmed", "cancelled creation", "cancelled assertio
   "pending", "vault during confirmation", "damaged vault", "empty vault", "damaged plaintext",
   "damaged keys at load", "damaged chats at load", "unreadable storage",
   "memory only", "write failure", "damaged recipients", "damaged book at load", "damaged account",
-  "cleanup failure", "outside copy", "held copy", "other tab vault message", "later protection",
-  "reload"];
+  "cleanup failure", "outside copy", "held copy", "replaced vault", "removed vault", "failed save",
+  "other tab vault message", "later protection", "reload"];
 const DAMAGED_BOOK = '{"version":1,"entries":"damaged"}';
 const loaded = { "damaged book at load": { "zf-recipients": DAMAGED_BOOK },
   "damaged keys at load": { "zf-keys": "{ damaged" },
@@ -61,6 +61,13 @@ function unverified() {
   assert.equal(ks.setupProtectionReady(), true, "an open vault seals every new share");
   ks.requireSetupProtection();
   strictBlocked();
+}
+async function heldCopy() {
+  confirmed();
+  await ks.putSec("synthetic-wallet", 1, { keyPackage: marker });
+  await ks.lockWithPasskey();
+  storage.set("zf-secrets", JSON.stringify({ "synthetic-wallet:1": { keyPackage: marker } }));
+  unverified();
 }
 function confirmed() {
   assert.equal(ks.canSkipPasskeyProtection(), true);
@@ -129,7 +136,11 @@ const cases = {
     confirmed();
   },
   locked() { ks.setLocked({ damaged: true }); cannotSkip(); },
-  partial() { ks.setVault({ rec: { cred: "YQ", salt: "Yg" }, key: null }); unverified(); },
+  partial() {
+    storage.set("zf-vault", '{"v":1,"cred":"YQ","salt":"Yg","iv":"aQ","box":"Yg"}');
+    ks.setVault({ rec: { cred: "YQ", salt: "Yg" }, key: null });
+    unverified();
+  },
   async pending() {
     let release, entered;
     const waiting = new Promise((done) => { entered = done; });
@@ -248,12 +259,26 @@ const cases = {
   },
   // A plain copy that the vault holds, and cannot be removed, does not shut setup.
   async "held copy"() {
-    confirmed();
-    await ks.putSec("synthetic-wallet", 1, { keyPackage: marker });
-    await ks.lockWithPasskey();
-    storage.set("zf-secrets", JSON.stringify({ "synthetic-wallet:1": { keyPackage: marker } }));
-    unverified();
+    await heldCopy();
     passed(child("reloaded with held copy", Object.fromEntries(storage)), "reloaded held");
+  },
+  // The held copy opens setup only while the stored record is this vault and the page can save.
+  async "replaced vault"() {
+    await heldCopy();
+    storage.set("zf-vault", JSON.stringify({ ...parseVault(storage.get("zf-vault")), cred: "Yw" }));
+    blocked();
+  },
+  async "removed vault"() {
+    await heldCopy();
+    storage.delete("zf-vault");
+    blocked();
+  },
+  async "failed save"() {
+    await heldCopy();
+    localStorage.setItem = () => { throw new Error("quota"); };
+    assert.equal(await ks.persist(), false);
+    assert.equal(ks.storageOk, false);
+    blocked();
   },
   async "reloaded with held copy"() {
     cannotSkip();

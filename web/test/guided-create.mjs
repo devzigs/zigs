@@ -89,6 +89,7 @@ t.adoptPersonal(null);
 storage.delete(ks.RECIPIENTS_KEY);
 await ks.takeFromTab(ks.RECIPIENTS_KEY);
 // A vault that stays unchecked seals the new shares: both dialogs go on, and say so.
+storage.set("zf-vault", '{"v":1,"cred":"YQ","salt":"Yg","iv":"aQ","box":"Yg"}');
 ks.setVault({ rec: { cred: "YQ", salt: "Yg" }, key: null });
 assert.equal(passkeyProtected(), false);
 assert.equal(isOff(createNew(reviewTree(move))), false, "Change devices goes on without a skip");
@@ -104,6 +105,7 @@ assert.doesNotMatch(text(reviewTree(move)), /You can go on/, "and does not say t
 assert.match(text(reviewTree(move)), /reviewed the unprotected copy/, "it says what to do");
 assert.equal(continueOf(reviewTree()).attrs.disabled, "", "so does the create dialog");
 storage.delete("zf-secrets");
+storage.delete("zf-vault");
 ks.setVault(null);
 // The lock of Settings needs no Web Locks, as on main.
 delete navigator.locks;

@@ -3373,6 +3373,13 @@ export const MUTATIONS = [
     ["web/app-shell.js",
       '" Do not set up another wallet until you have reviewed the unprotected copy."', '""'],
     GUIDED_CREATE, /it says what to do/),
+  program("N-held-stored", "an open vault opens setup after its stored record changed",
+    ["web/app-keystore.js", "!storageOk || !sameVault(vault.rec",
+      "!storageOk || !Boolean(vault.rec"],
+    OPTIONAL_PASSKEY, /replaced vault|removed vault/),
+  program("N-held-save", "an open vault opens setup after a failed save",
+    ["web/app-keystore.js", "!storageOk || !sameVault(vault.rec", "!sameVault(vault.rec"],
+    OPTIONAL_PASSKEY, /failed save/),
   // Copy: the Swap item of the side list, and the README on the brand marks.
   program("N-swap-demo", "the Swap item of the side list has no demo marker",
     ["web/app-shell.js", '["swap", "Swap", el("span", { class: "badge plain" }, "Demo")],',
