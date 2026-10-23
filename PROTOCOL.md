@@ -1359,7 +1359,7 @@ column "Writer". A document with another `by` is ignored.
 
 | Path below the wallet | Writer |
 |---|---|
-| `seats/<i>`, `confirm/<i>`, `abort/<i>`, `dkg1/<i>`, `done/<i>`, `verify/<i>` | seat `i` |
+| `seats/<i>`, `confirm/<i>`, `abort/<i>`, `dkg1/<i>`, `done/<i>`, `verify/<i>`, `setupstatus/<i>` | seat `i` |
 | `dkg2/<i>-<j>` | seat `i`, the sender |
 | `meta/wallet` | seat 1, the seat of the creator |
 | `sessions/<session id>/commits/<i>`, `sessions/<session id>/shares/<i>` | seat `i` |
@@ -1367,6 +1367,15 @@ column "Writer". A document with another `by` is ignored.
 - The seat document `seats/<i>` holds `uid`, `name`, `boxPk`, `signPk` and `at`. The seat signs it
   with the new key when it takes the seat. Until a key is pinned for the seat, a reader checks the
   document with the key that it names. Then it pins that key.
+- The setup status document `setupstatus/<i>` holds `v`, `safety`, `zecSaved`, `solSaved`,
+  `zecChecked` and `solChecked`. `v` is 2. In version 1, the fields `zec` and `sol` took the place
+  of the four flags. `safety` is the safety number of the wallet, 30 digits in 6 groups of 5. The
+  flags are JSON booleans. They tell the other devices which backup files seat `i` says that it
+  saved or checked. A reader accepts a document only when the signature verifies, `by` is `i`,
+  `safety` is the safety number that the reader computed, and a checked flag implies its saved
+  flag. The document is a claim of the seat. No payment or signing step reads it, and it does not
+  decide whether the setup is complete. The guided setup shows it as the backup progress of seat
+  `i`. It holds no file, key or hash.
 - A reader takes names and identities only from a seat document that verifies. So a holder of the
   link cannot rename a seat or copy the identity of another.
 - A seat chooses its own name, and two seats can use one name. So the apps show the seat number

@@ -1,5 +1,7 @@
 // These assertions protect the meaning of recovery labels, not just their markup.
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
+import { chapters } from "../how-zigs-works-content.js";
 import { deriveSecurityDashboard as derive, recoveryFileStatus, signerRecoveryStatus }
   from "../security-dashboard-model.js";
 
@@ -80,7 +82,11 @@ m = derive(facts({ signers: [
 ] }));
 assert.equal(m.label, "Action needed");
 assert.equal(m.next.kind, "restore");
-assert.match(m.critical, /signing material missing/);
+assert.match(m.critical, /^Device 1 has signing material missing/, "the lost device is a device");
+assert.equal(m.next.label, "Restore a device", "the restore action says device");
+assert.match(m.critical, /does not make a device available/);
+assert.deepEqual(signerRecoveryStatus({ ...signer(1), rosterUnknown: true }),
+  ["Reading device…", "neutral"], "the roster status says device");
 assert.equal(recoveryFileStatus({ missing: true }, true), "Share missing here");
 assert.equal(recoveryFileStatus({ unknown: true }, true), "Reading status…");
 assert.equal(recoveryFileStatus({ unknown: true, failed: true }, true), "Status unavailable");
@@ -107,4 +113,27 @@ const before = JSON.stringify(frozen);
 Object.freeze(frozen); frozen.signers.forEach(Object.freeze);
 derive(frozen);
 assert.equal(JSON.stringify(frozen), before, "presentation derivation does not mutate input facts");
-console.log("security-dashboard: recovery labels, counts, risks and supported thresholds passed");
+
+// Visible text says "device", never "signer" or "seat". A quoted string of prose in these modules
+// is visible text; a class name, a path or a key has no space. The guide may explain seats, so it
+// and its diagrams are held to "signer" only.
+const VISIBLE = ["app-security-dashboard.js", "security-dashboard-model.js", "app-tutorial.js",
+  "zns-setup-preview.js", "funding-preview.js", "app-funding-preview.js", "app-swap-preview.js",
+  "app-postquantum-swap-preview.js", "app-network-privacy.js", "network-privacy-popup.js"];
+const QUOTED = /"(?:[^"\\\n]|\\.)*"|'(?:[^'\\\n]|\\.)*'|`(?:[^`\\]|\\.)*`/g;
+const SEAT_OR_SIGNER = /(?<![\w-])(signers?|seats?)(?![\w-])/i;
+const SIGNER = /(?<![\w-])signers?(?![\w-])/i;
+const prose = (file) => readFileSync(new URL("../" + file, import.meta.url), "utf8").split("\n")
+  .filter((line) => !line.trimStart().startsWith("//"))
+  .flatMap((line) => line.match(QUOTED) ?? []).filter((text) => text.includes(" "));
+for (const file of VISIBLE) {
+  const hits = prose(file).filter((text) => SEAT_OR_SIGNER.test(text));
+  assert.deepEqual(hits, [], file + ": visible text says device, not signer or seat");
+}
+const guide = prose("how-zigs-works-diagrams.js").concat(JSON.stringify(chapters));
+assert.deepEqual(guide.filter((text) => SIGNER.test(text)), [],
+  "the guide says device, not signer (it may explain seats)");
+assert.match(JSON.stringify(chapters), /"Seat"/, "the guide explains what a seat is");
+assert.match(JSON.stringify(chapters), /recipients, amounts, memos and notes, and access/,
+  "the guide says what a holder of the invite link reads");
+console.log("security-dashboard: recovery labels, counts, risks, thresholds, device wording ok");

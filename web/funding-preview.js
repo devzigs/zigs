@@ -1,11 +1,14 @@
-// Presentation-only funding rehearsal. Uses local QR rendering and name validation only.
+// Funding checkout demo. Uses local QR rendering and name validation only. It asks for no
+// payment and no step of the wallet setup depends on it.
 import { qrSvg } from "./qr.js";
 import { nameOf, zecName } from "./zns.js";
-import { setupHeader, setupProgress, SETUP_FLOW_STAGES } from "./setup-wizard.js";
 
+export const FUNDING_DEMO_LABEL = "Demo, no payment";
+export const FUNDING_DEMO_NOTE = "No funds move and no balance changes. These amounts are "
+  + "examples: Zigs asks for no setup payment.";
 export const FUNDING_ALLOCATION = Object.freeze([
   { id: "activation", label: "Zigs activation", lamports: 50_000_000,
-    note: "One-time service fee", kind: "service" },
+    note: "Example only: Zigs charges no such fee", kind: "service" },
   { id: "privacy", label: "Privacy routing", lamports: 30_000_000,
     note: "Privacy pool entry and payouts", kind: "processing" },
   { id: "fee", label: "SOL & USDC fees and setup", lamports: 10_000_000,
@@ -25,7 +28,7 @@ const NAME_FEES = [["1", 10_000], ["2", 2_500], ["3", 800], ["4", 400], ["5", 10
 const usd = (amount) => "$" + amount.toLocaleString("en-US");
 const solAmount = (amount) => (amount / 1_000_000_000).toFixed(3);
 export function fundingDemoQrPayload(amount = FUNDING_TOTAL, zcashName = null) {
-  return "ZIGS FUNDING PREVIEW - NOT A PAYMENT\nExample amount: " + solAmount(amount)
+  return "ZIGS FUNDING DEMO - NOT A PAYMENT\nExample amount: " + solAmount(amount)
     + " SOL\nNo recipient address. Do not send funds."
     + (zcashName ? "\nOptional name: " + zecName(zcashName) + "\nNo name is registered." : "");
 }
@@ -39,15 +42,13 @@ const FUNDING_STEPS = [
 
 /** Only local demo state changes. Callbacks navigate the host presentation. */
 export function createFundingPreview({ el, icon, walletName = "Your wallet",
-  wallet = { n: 3, t: 2, network: "testnet" }, solWanted = true,
-  onExit = () => {}, onComplete = () => {}, onSaveExit = onExit,
-  onReviewStep = null, stepDelay = 800 }) {
+  onExit = () => {}, onComplete = () => {}, stepDelay = 800 }) {
   let stage = "allocation", pane = "costs", progress = 0, timer = null, name = walletName;
   let includeName = false, nameDraft = "";
   const setupTotal = () => FUNDING_TOTAL + (includeName ? FUNDING_NAME_ALLOCATION.lamports : 0);
   const nameNeeded = () => includeName && !nameOf(nameDraft);
   const root = el("section", { class: "funding-preview", "data-funding-preview": "",
-    "aria-label": "Wallet funding preview" });
+    "aria-label": "Funding demo" });
   const mark = (id) => icon ? icon(id) : null;
   const source = (label, href) => el("a", { href, target: "_blank", rel: "noopener noreferrer",
     referrerpolicy: "no-referrer" }, label, el("span", { "aria-hidden": "true" }, " ↗"));
@@ -86,7 +87,7 @@ export function createFundingPreview({ el, icon, walletName = "Your wallet",
   }
   function total() {
     return el("div", { class: "funding-total surface-quiet" },
-      el("span", { class: "small" }, "One setup payment"),
+      el("span", { class: "small" }, "Example setup amount (demo)"),
       el("div", {}, el("strong", { "data-funding-total": "" }, solAmount(setupTotal())), el("span", {}, "SOL")));
   }
   function fundingTabs() {
@@ -135,10 +136,10 @@ export function createFundingPreview({ el, icon, walletName = "Your wallet",
       "aria-labelledby": "funding-name-title" },
       el("header", {}, el("h2", { id: "funding-name-title" }, "Zcash name"),
         el("span", { class: "badge plain" }, "Optional")),
-      el("p", { class: "funding-name-intro muted" }, "Share a memorable .zec name that points to your Zcash address."),
+      el("p", { class: "funding-name-intro muted" }, "Share a memorable .zec name that points to your Zcash address. Demo: no name is registered."),
       el("p", { class: "funding-name-provider" },
         source("Zcash Names (ZNS)", "https://www.zcashnames.com/"), " · by ZcashMe"),
-      el("dl", { class: "funding-name-fees", "aria-label": "Zcash Names annual registration prices in USD" },
+      el("dl", { class: "funding-name-fees", "aria-label": "Zcash Names annual registration prices in USD (demo)" },
         NAME_FEES.slice(3).map(([length, amount]) => el("div", { "data-name-length": length },
           el("dt", {}, length + " characters"), el("dd", {}, usd(amount), el("span", {}, " / year"))))),
       el("p", { class: "funding-name-term muted" }, "USD prices · “Forever” costs 3× the yearly fee."),
@@ -175,18 +176,18 @@ export function createFundingPreview({ el, icon, walletName = "Your wallet",
       footer("Back to funding", () => show("allocation", "name"), "Finish later", exit));
   }
   function nameInfo() {
-    return frame("About your Zcash name.", "Optional · included in the same setup payment.",
+    return frame("About your Zcash name.", "Optional · demo only.",
       el("div", { class: "funding-body funding-name-info" },
         el("p", {}, "The name points to a Zcash address and makes it easier to share. Adding it can make the address more recognizable."),
-        el("p", {}, "ZNS currently lets any signer with access to wallet memos control the name. Name changes do not follow this wallet’s approval rule."),
-        el("p", { class: "muted" }, "The 0.020 SOL mock budget is not the Zcash Names registrar price. Availability is unchecked. This preview registers no name.")),
+        el("p", {}, "ZNS currently lets any device that can read the wallet memos control the name. Name changes do not follow this wallet’s approval rule. The name registry is public: anyone can read the name and its address."),
+        el("p", { class: "muted" }, "The 0.020 SOL mock budget is not the Zcash Names registrar price. Availability is unchecked. This demo registers no name.")),
       footer("Back to funding", () => show("allocation", "name"), "Finish later", exit));
   }
   function privateFunding() {
     return el("section", { class: "funding-private-panel", id: "funding-panel-privacy", role: "tabpanel",
       "aria-labelledby": "funding-private-title" },
-      el("h2", { id: "funding-private-title" }, mark("lock"), "How private funding works"),
-      el("ol", { class: "funding-private-steps", "aria-label": "Planned private funding flow" },
+      el("h2", { id: "funding-private-title" }, mark("lock"), "How private funding could work (demo)"),
+      el("ol", { class: "funding-private-steps", "aria-label": "Private funding flow (demo)" },
         el("li", {}, el("strong", {}, "Pool deposit. "),
           "SOL joins Privacy Cash’s shared pool instead of funding accounts directly."),
         el("li", {}, el("strong", {}, "Private payouts. "),
@@ -195,7 +196,8 @@ export function createFundingPreview({ el, icon, walletName = "Your wallet",
           "Zigs funds SOL fees and bridges messaging funds to shielded ZEC.")),
       el("p", { class: "funding-privacy-limits" },
         "Deposits, public payouts and timing stay visible; patterns can suggest links. "
-        + "Zigs knows your payment and destinations; providers see metadata. No anonymity guarantee."),
+        + "Zigs knows your payment and destinations; providers see metadata. No anonymity guarantee. "
+        + "Demo only: this funding flow is not available in this version and no provider is connected."),
       el("nav", { class: "funding-sources", "aria-label": "Privacy Cash protocol references" },
         source("Privacy Cash", "https://www.privacycash.org/"),
         source("Docs", "https://privacycash.mintlify.app/"),
@@ -225,8 +227,8 @@ export function createFundingPreview({ el, icon, walletName = "Your wallet",
       button(secondary, back, false, "funding-back"));
   }
   function allocationView() {
-    return frame("Fund your wallet.",
-      "One payment for activation, private routing and your starting balances.",
+    return frame("Funding checkout demo.",
+      "Demo, no payment. Try how a funding checkout could look; nothing is charged.",
       el("div", { class: "funding-body funding-checkout-body" }, fundingTabs(),
         el("section", { class: "funding-budget", id: "funding-panel-costs", role: "tabpanel",
           "aria-labelledby": "funding-tab-costs" },
@@ -235,42 +237,42 @@ export function createFundingPreview({ el, icon, walletName = "Your wallet",
             el("span", { class: "small muted" }, "Fixed allocation"))), nameOption(), privateFunding()),
       el("footer", { class: "funding-payment-footer" },
         el("div", { class: "funding-payment-methods" },
-          button("Connect browser wallet", () => show("wallet"), true, "funding-connect"),
-          button("Pay by QR code", () => show("qr"), false, "funding-qr")),
+          button("Try wallet approval (demo)", () => show("wallet"), true, "funding-connect"),
+          button("Show demo QR code", () => show("qr"), false, "funding-qr")),
         el("div", { class: "funding-payment-meta" },
-          el("p", { class: "small muted" }, "Your sending wallet may add a network fee."),
+          el("p", { class: "small muted" }, "Links open other websites, which see your IP address."),
           button("Finish later", exit, false, "funding-back"))),
       "funding-allocation-stage funding-checkout-stage");
   }
   function walletView() {
-    return frame("Approve in your wallet.", "A simulated confirmation. No wallet is connected.",
+    return frame("Wallet approval demo.", "A simulated screen. No wallet is connected and nothing is requested.",
       el("section", { class: "funding-body funding-wallet surface-quiet" },
         el("div", { class: "funding-wallet-mark" }, mark("wallet")),
-        el("h2", {}, "Zigs setup"),
-        el("strong", { class: "funding-wallet-amount" }, solAmount(setupTotal()) + " SOL"),
+        el("h2", {}, "Zigs funding demo"),
+        el("strong", { class: "funding-wallet-amount" }, "Example · " + solAmount(setupTotal()) + " SOL"),
         el("dl", { class: "funding-review-lines" },
           el("div", {}, el("dt", {}, "For"), el("dd", {}, name)),
           includeName ? el("div", {}, el("dt", {}, "Zcash name"), el("dd", {}, zecName(nameOf(nameDraft)))) : null,
-          el("div", {}, el("dt", {}, "Recipient"), el("dd", {}, "Preview only · no payment address"))),
+          el("div", {}, el("dt", {}, "Recipient"), el("dd", {}, "Demo · no payment address"))),
         el("p", { class: "small muted" },
-          "This preview makes no wallet connection or signing request.")),
+          "This demo makes no wallet connection or signing request.")),
       footer("Simulate approval", beginDemo, "Cancel", () => show("allocation")));
   }
   function qrView() {
     const qr = el("div", { class: "funding-demo-qr" });
     qr.innerHTML = qrSvg(fundingDemoQrPayload(setupTotal(), includeName ? nameOf(nameDraft) : null),
-      "Funding demo QR. Preview text only, not a payment request.");
-    return frame("Pay from another wallet.", "Scan the QR with a Solana wallet · preview only.",
+      "Funding demo QR. Demo text only, not a payment request.");
+    return frame("QR code demo.", "Demo, no payment. Do not scan this code with a wallet.",
       el("div", { class: "funding-body funding-qr-body" },
         el("figure", {}, qr, el("figcaption", {}, "Demo QR · no recipient or payment request")),
-        el("strong", { class: "funding-wallet-amount" }, solAmount(setupTotal()) + " SOL"),
+        el("strong", { class: "funding-wallet-amount" }, "Example · " + solAmount(setupTotal()) + " SOL"),
         el("p", { class: "small muted" }, includeName
-          ? "Includes " + zecName(nameOf(nameDraft)) + " · demo" : "Solana · one setup payment"),
-        el("p", { class: "small muted" }, "Scanning shows preview details. No funds can be sent.")),
+          ? "Includes " + zecName(nameOf(nameDraft)) + " · demo" : "Demo amount, not a payment request"),
+        el("p", { class: "small muted" }, "Scanning shows demo details. No funds can be sent.")),
       footer("Simulate payment", beginDemo, "Back", () => show("allocation")));
   }
   function progressView() {
-    return frame("Setting up your funding.", "Every status below is simulated.",
+    return frame("Funding demo in progress.", "Every status below is simulated.",
       el("ol", { class: "funding-body funding-progress", "aria-live": "polite" },
         FUNDING_STEPS.map(([title, copy], i) => el("li", {
           class: i < progress ? "is-complete" : i === progress ? "is-current" : "",
@@ -284,15 +286,15 @@ export function createFundingPreview({ el, icon, walletName = "Your wallet",
         button("Pause and finish later", exit, false, "funding-pause")));
   }
   function completeView() {
-    return frame("Funding preview complete.", "Your actual balances are unchanged.",
+    return frame("Funding demo complete.", "Your actual balances are unchanged.",
       el("div", { class: "funding-body funding-complete" },
         el("div", { class: "funding-complete-mark", "aria-hidden": "true" }, mark("approvals")),
         total(),
         el("p", { class: "small muted" }, "Primary fee account · approximately 10 short Zcash messages"),
-        includeName ? el("p", { class: "small muted" }, "Name request included: " + zecName(nameOf(nameDraft)) + " · preview only") : null,
-        el("p", { class: "small muted" }, "No payment was made. Real funding will be connected later.")),
+        includeName ? el("p", { class: "small muted" }, "Name request included: " + zecName(nameOf(nameDraft)) + " · demo only") : null,
+        el("p", { class: "small muted" }, "No payment was made, and none is needed to use your wallet.")),
       footer("Open Overview", () => { stop(); onComplete(); },
-        "Replay preview", () => { progress = 0; show("allocation"); }));
+        "Replay demo", () => { progress = 0; show("allocation"); }));
   }
   function paint() {
     root.dataset.fundingStage = stage;
@@ -302,20 +304,17 @@ export function createFundingPreview({ el, icon, walletName = "Your wallet",
       costs1: () => costDetails(0), costs2: () => costDetails(1),
       progress: progressView, complete: completeView };
     root.replaceChildren(
-      setupHeader(el, { ...wallet, name }, solWanted, () => { stop(); onSaveExit(); }),
-      setupProgress(el, 5, null, onReviewStep ? (index) => {
-        if (index === 5) return;
-        stop(); onReviewStep(index);
-      } : null, SETUP_FLOW_STAGES),
+      el("header", { class: "guided-header" },
+        el("div", {}, el("span", { class: "label" }, "Zigs · funding demo"), el("h1", {}, name),
+          el("p", { class: "small muted" }, "Your wallet is set up. This demo is optional."))),
       el("p", { class: "funding-preview-note small", role: "note" },
-        "Preview only · No funds move or balances change."),
+        el("strong", {}, FUNDING_DEMO_LABEL + ". "), FUNDING_DEMO_NOTE),
       views[stage]());
     if (stage === "allocation") syncNameForm();
   }
   paint();
   return { element: root, resume,
     get completed() { return stage === "complete"; },
-    get total() { return setupTotal(); },
     setName(value) { if (value !== name) { name = value; paint(); } },
   };
 }
