@@ -281,7 +281,7 @@ function recoveryFacts() {
     assert.match(textOf(row()), /Zcash key shareNot saved or checked/);
     t.secrets = with_({ backupSaved: true });
     assert.match(textOf(row()), /Zcash key shareSaved · not checked/);
-    assert.ok(labels(row()).includes("Back up Zcash share for signer " + seat));
+    assert.ok(labels(row()).includes("Back up Zcash share for device " + seat));
     t.secrets = with_({ backupSaved: true, restored: true });
     assert.match(textOf(row()), /Zcash key shareRestored · not checked/,
       "a seat opened from its file");
@@ -292,7 +292,7 @@ function recoveryFacts() {
       assert.ok(solUnsaved().includes(seat), "an unsaved Solana file is in the backup note");
       t.secrets = with_({ sol: { ...real[k].sol, backupSaved: true } });
       assert.match(textOf(row()), /Solana key shareSaved · not checked/);
-      assert.ok(labels(row()).includes("Back up Solana share for signer " + seat));
+      assert.ok(labels(row()).includes("Back up Solana share for device " + seat));
       t.secrets = with_({ sol: { ...real[k].sol, backupSaved: true, restored: true } });
       assert.match(textOf(row()), /Solana key shareRestored · not checked/,
         "a part opened from its file");

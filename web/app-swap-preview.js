@@ -5,8 +5,9 @@ import { createPostQuantumSwapPreview } from './app-postquantum-swap-preview.js'
 import { MockSwapProvider, SWAP_DEMO_ASSETS, SWAP_DEMO_STEPS, SwapPreviewModel,
   swapDecimal, swapDemoAsset, swapInputError } from './swap-preview-model.js';
 
+export const DEMO_TAG = 'Demo · no funds';
 const previewTag = () => el('span', { class: 'swap-preview-tag' },
-  el('span', { 'aria-hidden': 'true' }, '◌'), 'Preview mode');
+  el('span', { 'aria-hidden': 'true' }, '◌'), DEMO_TAG);
 const token = (asset) => el('img', { class: 'swap-token ' + asset.tone,
   src: asset.icon, alt: '', width: 32, height: 32, 'aria-hidden': 'true' });
 const text = (cls, value, tag = 'p') => el(tag, { class: cls }, value);
@@ -14,8 +15,11 @@ const button = (label, cls, onclick, attrs = {}) => el('button', {
   type: 'button', class: cls, onclick, ...attrs,
 }, label);
 const detail = (name, value) => el('div', { class: 'swap-detail-row' }, el('dt', {}, name), el('dd', {}, value));
+export const ZEC_PRIVACY = 'NEAR Intents 1Click handles ZEC only at transparent addresses, so a '
+  + 'swap with ZEC would leave the shielded pool. Transparent Zcash transfers can reveal '
+  + 'information.';
 const privacy = (zec) => zec
-  ? 'Ironwood routing is unverified. Transparent Zcash transfers can reveal information.'
+  ? ZEC_PRIVACY
   : 'Network visibility varies by route. Input, output and intermediate transfers may be publicly visible.';
 
 /** The optional provider argument is used only by the isolated development harness. */
@@ -37,17 +41,17 @@ export function createSwapPreview(context = {}, provider = new MockSwapProvider(
     { 'aria-label': 'Choose asset to receive', 'aria-haspopup': 'dialog', 'data-key': 'swap-to' });
   const fromNetwork = text('swap-network', ''), toNetwork = text('swap-network', '');
   const error = text('swap-error', ''); error.id = 'swap-error'; error.setAttribute('role', 'status');
-  const quoteStatus = text('swap-quote-status', 'Select a pair and enter an amount to preview a swap.');
+  const quoteStatus = text('swap-quote-status', 'Select a pair and enter an amount to see a demo quote.');
   quoteStatus.setAttribute('role', 'status');
   const quoteDetails = el('dl', { class: 'swap-quote-details' });
   const reverse = button(icon('swap'), 'swap-reverse', () => {
     rotation += 180; reverse.style.setProperty('--swap-rotation', rotation + 'deg');
     void model.reverse();
   }, { 'aria-label': 'Reverse swap direction', 'data-key': 'swap-reverse' });
-  const review = button(['Preview swap', el('span', { 'aria-hidden': 'true' }, '↗')],
+  const review = button(['Review demo swap', el('span', { 'aria-hidden': 'true' }, '↗')],
     'swap-primary', (ev) => {
       if (!model.review()) return;
-      openModal('Review swap preview', ev.currentTarget); drawReview();
+      openModal('Review demo swap', ev.currentTarget); drawReview();
     }, { disabled: true, 'data-key': 'swap-review', 'aria-haspopup': 'dialog' });
   const routeFrom = el('div', { class: 'swap-route-end' });
   const routeTo = el('div', { class: 'swap-route-end' });
@@ -63,7 +67,7 @@ export function createSwapPreview(context = {}, provider = new MockSwapProvider(
   }, { 'aria-pressed': bps === 50 ? 'true' : 'false' }));
   settings.append(el('summary', {}, icon('settings'), 'Slippage', settingValue),
     el('div', { class: 'swap-settings-panel' }, text('', 'Maximum slippage', 'strong'),
-      text('swap-caption', 'Illustrative setting'), el('div', { class: 'swap-presets' }, presets)));
+      text('swap-caption', 'Demo setting'), el('div', { class: 'swap-presets' }, presets)));
   const sourceLine = text('swap-source-context', '');
   const networkLine = text('', '');
   const quantumFlow = createPostQuantumSwapPreview(() => {
@@ -77,12 +81,12 @@ export function createSwapPreview(context = {}, provider = new MockSwapProvider(
     }, { 'aria-label': 'Continue to post-quantum swap demo' });
   let activeTab = 'private';
   const modes = [
-    { id: 'private', label: 'Private Swaps', status: 'Preview' },
-    { id: 'quantum', label: 'Post-Quantum Privacy', status: 'Planned' },
+    { id: 'private', label: 'Swap demo', status: 'Demo' },
+    { id: 'quantum', label: 'Post-quantum swap demo', status: 'Demo' },
   ];
   const modeTabs = modes.map((mode) => button([
     el('span', { class: 'swap-tab-label' }, mode.label),
-    el('span', { class: 'swap-tab-provider' }, 'Powered by NEAR Intents'),
+    el('span', { class: 'swap-tab-provider' }, 'Planned provider: NEAR Intents'),
     el('span', { class: 'swap-tab-status', id: 'swap-tab-' + mode.id + '-status' }, mode.status),
   ], 'swap-mode-tab', () => selectTab(mode.id), {
     role: 'tab', id: 'swap-tab-' + mode.id, 'aria-controls': 'swap-panel-' + mode.id,
@@ -99,7 +103,8 @@ export function createSwapPreview(context = {}, provider = new MockSwapProvider(
   root.append(el('header', { class: 'swap-heading' },
     el('div', { class: 'swap-topline' }, text('swap-eyebrow', 'EXCHANGE'), previewTag()),
     el('h1', {}, 'Swap assets', el('span', { 'aria-hidden': 'true' }, '.')),
-    text('swap-subtitle', 'Exchange across networks with a clear quote before you proceed.')),
+    text('swap-subtitle', 'A demo of swapping across networks. No funds move and no real quote is '
+      + 'requested.')),
   el('div', { class: 'swap-mode-tabs', role: 'tablist', 'aria-label': 'Swap privacy options' }, modeTabs),
   el('div', { class: 'swap-panel', id: 'swap-panel-private', role: 'tabpanel',
     'aria-labelledby': 'swap-tab-private', tabindex: '0' },
@@ -109,7 +114,7 @@ export function createSwapPreview(context = {}, provider = new MockSwapProvider(
         el('div', { class: 'swap-pane-label' }, el('label', { for: 'swap-amount' }, 'You pay'),
           button('Max', 'swap-max', null, { disabled: true, 'aria-describedby': 'swap-amount-help' })),
         el('div', { class: 'swap-amount-row' }, pay, fromButton), fromNetwork,
-        el('p', { class: 'swap-caption', id: 'swap-amount-help' }, 'Wallet balance unavailable in preview')),
+        el('p', { class: 'swap-caption', id: 'swap-amount-help' }, 'Demo: no wallet balance is used')),
       el('div', { class: 'swap-switch-row' }, reverse),
       el('div', { class: 'swap-pane swap-receive' },
         el('div', { class: 'swap-pane-label' }, el('span', {}, 'You receive'),
@@ -117,7 +122,7 @@ export function createSwapPreview(context = {}, provider = new MockSwapProvider(
         el('div', { class: 'swap-amount-row' }, receive, toButton), toNetwork),
       el('div', { class: 'swap-quote' }, quoteStatus, quoteDetails), error,
       el('div', { class: 'swap-composer-footer' }, review,
-        text('swap-caption swap-footer-note', 'No assets move. No quote is reserved.'))),
+        text('swap-caption swap-footer-note', 'Demo: no funds move and no real quote is requested.'))),
     el('aside', { class: 'swap-support', 'aria-label': 'Swap route and details' },
       el('section', { class: 'swap-detail-card' },
         el('div', { class: 'swap-detail-heading' }, el('h2', {},
@@ -134,7 +139,7 @@ export function createSwapPreview(context = {}, provider = new MockSwapProvider(
           (ev) => { openModal('Swap details', ev.currentTarget); drawDetails(); }, { 'aria-haspopup': 'dialog' })),
       el('section', { class: 'swap-privacy', 'aria-label': 'Route privacy' },
         icon('security'), el('div', {}, text('', 'Know the privacy boundary', 'h2'), privacyText)),
-      text('swap-caption swap-support-note', 'Example assets and rates illustrate the experience. Route support is not guaranteed.')))),
+      text('swap-caption swap-support-note', 'Example assets and rates only. No swap route is available in this version.')))),
   el('section', { class: 'swap-panel swap-quantum-panel', id: 'swap-panel-quantum', role: 'tabpanel',
     'aria-labelledby': 'swap-tab-quantum', tabindex: '0', hidden: true },
     el('div', { class: 'swap-quantum-intro' },
@@ -155,7 +160,8 @@ export function createSwapPreview(context = {}, provider = new MockSwapProvider(
         el('div', {}, text('', title, 'h3'), text('', description))))),
     el('div', { class: 'swap-quantum-boundary' },
       text('', 'What this would protect', 'strong'),
-      text('', 'The full swap is not quantum-secure. Provider and public-chain visibility remain.')),
+      text('', 'The full swap is not quantum-secure. Provider and public-chain visibility remain. '
+        + 'NEAR Intents 1Click handles ZEC only at transparent addresses.')),
     quantumFlow.element));
   update();
 
@@ -196,8 +202,8 @@ export function createSwapPreview(context = {}, provider = new MockSwapProvider(
     const ready = !!s.quote && ['MOCK_QUOTE_READY', 'REVIEW_CANCELLED'].includes(s.phase);
     if (s.phase === 'REVIEW_CANCELLED') model.resume();
     review.disabled = !ready;
-    quoteStatus.textContent = s.quote ? 'Illustrative quote · Preview mode' : s.phase === 'MOCK_QUOTING'
-      ? 'Calculating illustrative quote…' : 'Select a pair and enter an amount to preview a swap.';
+    quoteStatus.textContent = s.quote ? 'Demo quote, not a real price' : s.phase === 'MOCK_QUOTING'
+      ? 'Calculating demo quote…' : 'Select a pair and enter an amount to see a demo quote.';
     const rate = (from.basis / to.basis).toLocaleString('en-US', { maximumFractionDigits: 8 });
     quoteDetails.replaceChildren(
       detail('Illustrative rate', s.quote ? '1 ' + from.symbol + ' ≈ ' + rate + ' ' + to.symbol : '—'),
@@ -300,7 +306,7 @@ export function createSwapPreview(context = {}, provider = new MockSwapProvider(
       const value = ev.target.value; closeModal(false); void model.update({ destination: value });
     });
     modal.querySelector('.swap-modal-content').replaceChildren(
-      text('swap-caption', 'Illustrative route · no live quote reserved'),
+      text('swap-caption', 'Demo route · no real quote'),
       text('swap-details-route', from.network + ' → NEAR Intents (planned) → ' + to.network),
       quoteDetails.cloneNode(true),
       el('div', { class: 'swap-destination' }, el('label', { for: select.id }, 'Receive to'), select),
@@ -321,7 +327,7 @@ export function createSwapPreview(context = {}, provider = new MockSwapProvider(
         text('', privacy(swapDemoAsset(model.value.from).symbol === 'ZEC' || to.symbol === 'ZEC')),
         text('', (source.networks || 'Zcash Testnet · Solana Devnet')
           + ' execution is not integrated. No destination or refund address has been validated.')),
-      text('swap-simulation-note', 'No transaction will be signed or sent.'),
+      text('swap-simulation-note', 'Demo: no funds move, nothing is signed and no real quote is used.'),
       button(['Simulate swap flow', el('span', { 'aria-hidden': 'true' }, '→')], 'swap-primary', () => {
         modal.querySelector('h2').textContent = 'Swap flow simulation'; model.simulate();
         modal.querySelector('h2').focus();
@@ -330,14 +336,14 @@ export function createSwapPreview(context = {}, provider = new MockSwapProvider(
   function drawProgress() {
     const s = model.value, done = s.phase === 'DEMO_COMPLETE';
     modal.querySelector('.swap-modal-content').replaceChildren(
-      text('swap-simulation-note', 'Simulation only · no signing or transfers'),
+      text('swap-simulation-note', 'Demo only · no funds, no signing, no real quote'),
       el('ol', { class: 'swap-progress-list' }, SWAP_DEMO_STEPS.map((step, i) => el('li', {
         class: i < s.step ? 'is-demonstrated' : i === s.step ? 'is-current' : '',
         'aria-current': i === s.step ? 'step' : null,
       }, el('span', { class: 'swap-step-number', 'aria-hidden': 'true' }, i < s.step ? '✓' : i + 1),
       el('div', {}, text('', step, 'strong'), text('swap-caption', i < s.step ? 'Demonstrated · no real event'
         : i === s.step ? 'Next simulated step' : 'Illustrative step'))))),
-      el('p', { class: 'swap-demo-result', role: 'status' }, done ? 'Demo complete. No assets were moved.'
+      el('p', { class: 'swap-demo-result', role: 'status' }, done ? 'Demo complete. No funds moved and no real quote was used.'
         : 'Advance each example step yourself. Nothing is broadcast or signed.'),
       button(done ? 'Back to preview' : 'Next demo step →', 'swap-primary', () => {
         if (done) { closeModal(false); void model.update(); return; }

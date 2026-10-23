@@ -113,7 +113,7 @@ export function createPostQuantumSwapPreview(onExit) {
       el('div', { class: 'swap-modal-heading' },
         el('h2', { id: 'pq-details-title', tabindex: '-1' }, 'Swap details & privacy'),
         button('×', 'swap-close', closeDetails, { 'aria-label': 'Close swap details' })),
-      text('swap-simulation-note', 'Demo only · Powered by NEAR Intents · planned'),
+      text('swap-simulation-note', 'Demo only · no funds, no real quote · planned provider: NEAR Intents'),
       el('dl', { class: 'swap-review-details' },
         detail('Example wallet', '2 of 3 device approvals'),
         detail('Route', 'ZEC → ' + to.symbol + ' on Solana'),
@@ -121,10 +121,10 @@ export function createPostQuantumSwapPreview(onExit) {
         detail('Illustrative minimum', s.quote ? swapDecimal(s.quote.minimumOutputAtomic, to) + ' ' + to.symbol : 'Unavailable'),
         detail('Fees', 'Unquoted; not deducted in demo'),
         detail('Receive to', 'Example wallet · no real address'),
-        detail('Refund to', 'Dedicated Zcash address · mocked'),
+        detail('Refund to', 'Transparent Zcash address · example'),
         detail('Example reference', reference())),
       el('div', { class: 'pq-boundary' }, text('', 'Privacy boundary', 'strong'),
-        text('', 'A live swap would reserve its own refund viewing key before quoting, keeping your usual address out of those swap parameters. Provider and public-chain visibility still apply. The full swap is not quantum-secure.')),
+        text('', 'A live swap would reserve its own refund viewing key before quoting, keeping your usual address out of those swap parameters. NEAR Intents 1Click handles ZEC only at transparent addresses, so a live swap with ZEC would leave the shielded pool. Provider and public-chain visibility still apply. The full swap is not quantum-secure.')),
       text('swap-caption', 'No keys, addresses, transactions or recovery records are created. Live recovery must rediscover receipts and refunds after device loss; this demo does not verify it.'),
       button('Back to swap', 'swap-primary', closeDetails));
     detailsDialog.addEventListener('cancel', ev => { ev.preventDefault(); ev.stopPropagation(); closeDetails(); });
@@ -180,7 +180,7 @@ export function createPostQuantumSwapPreview(onExit) {
       detail('Example minimum', swapDecimal(reviewed.quote.minimumOutputAtomic, to) + ' ' + to.symbol),
       detail('Slippage', '0.5% · illustrative'),
       detail('Receive to', 'Example wallet'),
-      detail('Refund to', 'Dedicated · mocked'),
+      detail('Refund to', 'Transparent · example'),
       detail('Fees', 'Unquoted · excluded')),
     button('Continue to demo approvals', 'swap-primary', () => { approvals = 0; show('approvals'); }),
     el('div', { class: 'pq-secondary-actions' },
@@ -227,8 +227,8 @@ export function createPostQuantumSwapPreview(onExit) {
       text('swap-caption', refund ? 'EXAMPLE REFUND' : 'EXAMPLE DELIVERY'),
       text('', refund ? 'Refund to Zcash' : swapDecimal(reviewed.quote.outputAtomic, to) + ' ' + to.symbol, 'h3'),
       text('pq-body', refund
-        ? 'The refund amount and fees are not calculated.'
-        : 'Example delivery. Unquoted fees excluded.')),
+        ? 'Demo result. No funds moved and no real quote was used.'
+        : 'Demo result. No funds moved and no real quote was used. Unquoted fees excluded.')),
       el('dl', { class: 'swap-review-details' },
         detail('Outcome', refund ? 'Refund · simulated' : 'Delivery · simulated'),
         detail('Swap reference', 'DEMO-SWAP-' + String(run).padStart(3, '0')),
