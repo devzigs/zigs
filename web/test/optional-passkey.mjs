@@ -10,11 +10,13 @@ import { fakePasskey } from "./passkey-fixture.mjs";
 const names = ["default", "confirmed", "cancelled creation", "cancelled assertion", "unsupported",
   "missing PRF", "vault before confirmation", "vault after confirmation", "locked", "partial",
   "pending", "vault during confirmation", "damaged vault", "empty vault", "damaged plaintext",
-  "unreadable storage",
+  "damaged keys at load", "damaged chats at load", "unreadable storage",
   "memory only", "write failure", "damaged recipients", "damaged book at load", "damaged account",
   "cleanup failure", "other tab vault message", "later protection", "reload"];
 const DAMAGED_BOOK = '{"version":1,"entries":"damaged"}';
-const loaded = { "damaged book at load": { "zf-recipients": DAMAGED_BOOK } };
+const loaded = { "damaged book at load": { "zf-recipients": DAMAGED_BOOK },
+  "damaged keys at load": { "zf-keys": "{ damaged" },
+  "damaged chats at load": { "zf-chats": "[]" } };
 const child = (name, records = {}) => spawnSync(process.execPath,
   [fileURLToPath(import.meta.url), "case", name], { encoding: "utf8", timeout: 120000,
     input: JSON.stringify(records) });
@@ -159,9 +161,20 @@ const cases = {
     confirmed();
     for (const value of ["{ damaged", "[]", "null", "17"]) {
       storage.set("zf-secrets", value);
-      confirmed();
-      assert.equal(storage.get("zf-secrets"), value, "the choice itself writes nothing");
+      cannotSkip();
+      assert.equal(storage.get("zf-secrets"), value);
     }
+  },
+  "damaged keys at load"() {
+    cannotSkip();
+    // This page holds no keys, so a Skip and a save would erase what the other tab repaired.
+    storage.set("zf-keys", '{"g1":"saved by another tab"}');
+    cannotSkip();
+    assert.equal(storage.get("zf-keys"), '{"g1":"saved by another tab"}');
+  },
+  "damaged chats at load"() {
+    cannotSkip();
+    assert.equal(storage.get("zf-chats"), "[]");
   },
   "unreadable storage"() {
     confirmed();

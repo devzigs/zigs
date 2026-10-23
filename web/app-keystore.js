@@ -158,17 +158,28 @@ export function requirePasskeyProtection() {
 }
 /**
  * The explicit setup opt-out. Skip works whenever this tab holds no vault, no passkey step runs
- * and the page can read its storage. The optional address book and personal account never decide
- * it: every save keeps both as they are. A save that failed before does not decide it either:
- * the next save is what clears the mark.
+ * and the page read its key, secret and chat records. A damaged or unreadable one blocks it,
+ * because the next save would overwrite it. The optional address book and personal account never
+ * decide it: every save keeps both as they are. A save that failed before does not decide it
+ * either: the next save is what clears the mark.
  */
 export function canSkipPasskeyProtection() {
-  if (vault || lockedVault || protectionPending || memoryOnly()) return clearSetupAcknowledgement();
+  if (vault || lockedVault || protectionPending || readFailed || memoryOnly()) {
+    return clearSetupAcknowledgement();
+  }
   try {
     // Read again even if no storage event arrived: another tab may have enabled protection.
     // Any existing record, including a damaged or empty one, must be kept for recovery.
-    return localStorage.getItem("zf-vault") === null || clearSetupAcknowledgement();
+    if (localStorage.getItem("zf-vault") !== null) return clearSetupAcknowledgement();
+    checkStateRecords();
+    return true;
   } catch { return clearSetupAcknowledgement(); }
+}
+function checkStateRecords() {
+  for (const name of PLAIN_KEYS) {
+    const text = localStorage.getItem(name);
+    if (text !== null && name !== RECIPIENTS_KEY) plainCopy(name, text);
+  }
 }
 function clearSetupAcknowledgement() { unprotectedSetupAcknowledged = false; return false; }
 /** Called only by the explicit confirmation action, never by a cancelled credential prompt. */

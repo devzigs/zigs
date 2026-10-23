@@ -29,8 +29,8 @@ const GUIDED_CREATE = ["node", "web/test/guided-create.mjs"];
 const PASSKEY_SETUP = ["node", "web/test/passkey-setup.mjs"];
 const OPTIONAL_PASSKEY = ["node", "web/test/optional-passkey.mjs"];
 const GUIDED_SETUP = ["node", "web/test/guided-setup.mjs"];
-const SKIP_GATE = "  if (vault || lockedVault || protectionPending || memoryOnly()) "
-  + "return clearSetupAcknowledgement();";
+const SKIP_GATE = "  if (vault || lockedVault || protectionPending || readFailed || memoryOnly()) "
+  + "{\n    return clearSetupAcknowledgement();\n  }";
 const skipAlso = (extra) => SKIP_GATE.replace("memoryOnly()", "memoryOnly() || " + extra);
 // The line of takeFirstSeat (web/app-dkg.js) that names Cancel move.
 const MOVE_HINT = "      + (from ? ' To undo the link with the old wallet, open it and tap "
@@ -3112,4 +3112,14 @@ export const MUTATIONS = [
     ["web/app-wallet.js", "restore the existing device’s recovery file. ",
       "restore the existing signer’s recovery file. "], UNIFIED,
     /the invite text of Security says device/),
+  program("R-skip-read-failed", "a record that failed to read at load no longer blocks Skip",
+    ["web/app-keystore.js", SKIP_GATE, SKIP_GATE.replace(" readFailed ||", "")],
+    OPTIONAL_PASSKEY, /damaged keys at load/),
+  program("R-skip-records", "a damaged key, secret or chat record no longer blocks Skip",
+    ["web/app-keystore.js", "    checkStateRecords();\n", ""],
+    OPTIONAL_PASSKEY, /damaged plaintext/),
+  program("R-skip-chats", "a damaged chat record at load no longer blocks Skip",
+    ["web/app-keystore.js", "name !== RECIPIENTS_KEY) plainCopy(",
+      'name !== RECIPIENTS_KEY && name !== "zf-chats") plainCopy('],
+    OPTIONAL_PASSKEY, /damaged chats at load/),
 ];
