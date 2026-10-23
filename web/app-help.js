@@ -13,6 +13,8 @@ import {
 } from "./app-sol.js";
 import { copyBtn, el } from "./app-dom.js";
 import { HELP, diagnosticsText } from "./help-model.js";
+import { securityExplanation } from "./app-tutorial.js";
+import { settingsDisclosure, settingsGroup } from "./app-settings-ui.js";
 
 const DIAGNOSTICS_NOTE = "These lines are a fixed list of facts about this app in this browser. "
   + "They hold no key, no secret, no invite link, no address, no name, no amount and no message. "
@@ -70,16 +72,17 @@ function stateFacts() {
 export const diagnostics = () =>
   diagnosticsText([...browserFacts(), ...stateFacts(), ...deviceFacts()]);
 
-export function helpView() {
-  return el("section", { class: "card card-pad settings-section" },
-    el("h3", {}, "Help"),
-    el("p", { class: "small muted" }, "These answers work offline. They ask for no network."),
-    el("div", { class: "faq" },
-      HELP.map(([question, answer]) =>
-        el("details", {}, el("summary", {}, question), el("p", { class: "small" }, answer))),
-      el("details", {}, el("summary", {}, "Diagnostics"),
+export function helpView(setupRow = null) {
+  return settingsGroup("Help & Support", setupRow,
+    settingsDisclosure("Guides & frequently asked questions", "Payments, backups, privacy and troubleshooting. Available offline.",
+      securityExplanation("help"),
+      el("div", { class: "preferences-faq" }, HELP.map(([question, answer]) =>
+        el("section", {}, el("h4", {}, question), el("p", { class: "small" }, answer))))),
+    settingsDisclosure("Diagnostics", "Inspect and copy a fixed set of app facts. Nothing is uploaded.",
+      state.g ? [
         el("p", { class: "small muted" }, DIAGNOSTICS_NOTE),
         el("div", { class: "log", tabindex: "0", role: "region", "aria-label": "Diagnostics text",
           "data-key": "diagnostics" }, diagnostics()),
-        el("div", {}, copyBtn(diagnostics, "Copy diagnostics")))));
+        el("div", {}, copyBtn(diagnostics, "Copy diagnostics"))]
+        : el("p", { class: "small muted" }, "Open a wallet to view its diagnostics.")));
 }

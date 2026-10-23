@@ -614,20 +614,21 @@ struct BackupCard: View {
         if !seats.isEmpty {
             let unsaved = model.unsavedSeats
             Card(highlight: !unsaved.isEmpty) {
-                Text("Back up your key share").font(.headline)
-                Text("If you lose this \(deviceName), or delete Zigs, the key share is lost. "
+                Text("Recovery files").font(.nativeHeadline)
+                Text("Optional, but recommended. If you lose this \(deviceName), or delete Zigs, the key share is lost. "
                      + "The backup file is locked with a passphrase that you choose. "
                      + "Keep the file safe, and keep the passphrase apart from it. "
                      + BackupText.formatChanged)
-                    .font(.subheadline).foregroundStyle(Color.mist)
+                    .font(.nativeSubheadline).foregroundStyle(Color.mist)
+                Text("Each file restores one seat. Recovering a \(model.state.t)-of-\(model.state.n) wallet needs enough usable shares to meet that rule. Saved status is not a later file check.")
+                    .font(.nativeFootnote).foregroundStyle(Color.mist)
                 ForEach(seats, id: \.self) { i in
-                    HStack {
-                        Text("Seat \(i)").font(.subheadline.weight(.medium))
-                        Badge(text: unsaved.contains(i) ? "Not backed up" : "Backed up",
+                    AdaptiveRow {
+                        Text("Seat \(i)").font(.nativeSubheadline.weight(.medium))
+                        Badge(text: unsaved.contains(i) ? "No file saved" : "File saved",
                               kind: unsaved.contains(i) ? .warn : .ok)
-                        Spacer()
-                        Button("Back up seat \(i)") { seat = SeatRef(id: i) }
-                            .buttonStyle(.bordered)
+                        Button("Save seat \(i) file") { seat = SeatRef(id: i) }
+                            .buttonStyle(InstrumentButtonStyle())
                     }
                 }
             }
@@ -657,15 +658,15 @@ struct BackupSheet: View {
         NavigationStack {
             Form {
                 Section {
-                    Text(BackupText.note).font(.subheadline)
-                    Text(BackupText.formatChanged).font(.subheadline)
+                    Text(BackupText.note).font(.nativeSubheadline)
+                    Text(BackupText.formatChanged).font(.nativeSubheadline)
                 }
                 Section {
                     if shown {
-                        TextField("Passphrase", text: $pass).font(.body.monospaced()).codeEntry()
+                        TextField("Passphrase", text: $pass).font(.nativeBody.monospaced()).codeEntry()
                         CopyButton(text: pass, label: "Copy passphrase", sensitive: true)
                         Text("Copy keeps the passphrase for 2 minutes. Write it down.")
-                            .font(.footnote).foregroundStyle(Color.mist)
+                            .font(.nativeFootnote).foregroundStyle(Color.mist)
                     } else {
                         SecureField("Passphrase", text: $pass)
                     }
@@ -679,9 +680,10 @@ struct BackupSheet: View {
                 Section {
                     Text("The file holds your key share. Anyone who has the file and the "
                          + "passphrase can sign as this seat.")
-                        .font(.footnote).foregroundStyle(Color.mist)
+                        .font(.nativeFootnote).foregroundStyle(Color.mist)
                 }
             }
+            .instrumentScreen().nativeSheetSizing()
             .navigationTitle("Back up seat \(seat)")
             .inlineTitle()
             .toolbar {
@@ -779,14 +781,15 @@ struct RestoreSheet: View {
                     if let error { Text(error).foregroundStyle(Color.bad) }
                 }
             }
-            .navigationTitle("Open a backup")
+            .instrumentScreen().nativeSheetSizing()
+            .navigationTitle("Recover a signer")
             .inlineTitle()
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
                     Button("Cancel") { dismiss() }.disabled(busy)
                 }
                 ToolbarItem(placement: .confirmationAction) {
-                    Button(busy ? "Opening…" : "Open backup") { open() }
+                    Button(busy ? "Opening…" : "Recover this seat") { open() }
                         .disabled(pass.isEmpty || busy)
                 }
             }

@@ -46,6 +46,10 @@ import { loadRig, sleep } from "./sol-rig.mjs";
 
 const rig = await loadRig();
 const { t, Z, W, data, hook, notify, waitFor } = rig;
+// This signing fixture opens Activity until the fake chain is installed. Overview observation
+// is exercised explicitly below, so no real RPC is attempted while the fixture is being made.
+t.ui.tab = "activity";
+const { solObserveOverview } = await import("../app-sol.js");
 const path = (gid, rel) => `groups/${gid}/${rel}`;
 const solOf = (gid, i) => t.sec(gid, i).sol ?? {};
 const J = JSON.parse;
@@ -179,13 +183,67 @@ assert.deepEqual(
 );
 step("the fund card reads the balances of the fee addresses");
 
-// ── The Solana tab syncs with no click once it shows the loaded wallet (S2) ──
-t.sol.view();
-t.sol.react();
+// ── Overview observes balances without opening payment/prover tools (S2) ──
+{
+  assert.equal(c.viewed, false);
+  assert.equal(c.balanceViewed, false);
+  t.sol.observe("f".repeat(20));
+  assert.equal(c.balanceViewed, false, "a stale Overview cannot activate another wallet");
+  tab.state = "hidden";
+  solObserveOverview();
+  assert.equal(c.balanceViewed, false, "the hidden host does not begin observation");
+  tab.state = "visible";
+  let starts = 0;
+  const host = { ...c.host, once: () => { starts++; } };
+  const eligible = { ...c, host, balanceViewed: true };
+  autoSync(eligible);
+  assert.equal(starts, 1, "the existing automatic scheduler accepts balance observation");
+  const blocked = (change, why) => {
+    starts = 0;
+    autoSync({ ...eligible, ...change });
+    assert.equal(starts, 0, why);
+  };
+  blocked({ rpcUrl: "" }, "RPC configuration remains required");
+  blocked({ loaded: { ...c.loaded, solsessions: false } }, "sessions must be loaded");
+  blocked({ sessWait: 1 }, "session signatures must finish checking");
+  blocked({ autoSyncBusy: true }, "a running sync cannot be duplicated");
+  blocked({ autoSyncAfter: Date.now() + 60000 }, "existing retry back-off remains authoritative");
+  blocked({ host: { ...host, localSeats: () => [] } }, "a held share remains required");
+  const docs = { ...c.docs, soldone: { ...c.docs.soldone,
+    2: { ...c.docs.soldone[2], groupKey: "00".repeat(32) } } };
+  assert.equal(agreement({ ...eligible, docs }).state, "differ");
+  blocked({ docs }, "key disagreement cannot start a sync");
+  tab.state = "hidden";
+  blocked({}, "a hidden tab cannot start a sync");
+  tab.state = "visible";
+  solObserveOverview();
+}
 await waitFor("a sync with no click", () => c.autoSynced, 40000);
 assert.notEqual(c.sync.balance, undefined, "the private balance is shown");
 assert.ok(chain.commands.some((m) => m.cmd === "sync"), "the Worker synced the PDA identity");
-step("the Solana tab syncs by itself when it opens");
+assert.equal(c.viewed, false, "Overview does not open the local-prover selftest gate");
+assert.equal(c.proveChecked, false);
+assert.equal(chain.commands.some((m) => m.cmd === "selftest"), false);
+{
+  assert.equal(findAll(tabOf(), (n) => n.attrs["data-sol"] === "sync").length, 0,
+    "a healthy wallet has no routine manual-sync button");
+  const failed = solView({ ...c, sync: { text: "failed: synthetic connection error" },
+    host: { ...c.host, el: node } }, (fn) => fn, { sync() {} });
+  const details = findAll(failed, (n) => n.tag === "details")
+    .find((n) => textOf(n).includes("Technical sync details"));
+  assert.ok(details);
+  assert.equal(findAll(details, (n) => n.attrs["data-sol"] === "sync").length, 1);
+  assert.match(textOf(details), /Retry Solana sync/);
+  assert.match(textOf(details), /Helius.*IP address/);
+}
+// Opening the existing workspace afterwards retains its original behavior without another
+// initial job. Its separate `viewed` gate continues to control device-prover checks.
+const initialSyncs = chain.commands.filter((m) => m.cmd === "sync").length;
+t.sol.view();
+t.sol.react();
+assert.equal(c.viewed, true);
+assert.equal(chain.commands.filter((m) => m.cmd === "sync").length, initialSyncs);
+step("Overview syncs automatically with existing gates and no prover selftest activation");
 
 // ── The page keeps the hash and the amount of each synced note, not its blinding (S4) ──
 {

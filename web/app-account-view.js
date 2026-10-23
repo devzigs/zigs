@@ -5,7 +5,7 @@ import {
   otherWhere, removeWarning, salvageBackup, SENT_WORDS, sentNote,
 } from "./personal.js";
 import { REQUEST_NET } from "./requests.js";
-import { state, ui } from "./app-state.js";
+import { busy, state, ui } from "./app-state.js";
 import { initials, short, when } from "./app-kit.js";
 import { Z } from "./app-engine.js";
 import { explorerText, netOf, NETWORKS } from "./app-chain.js";
@@ -21,9 +21,10 @@ import {
 } from "./app-account.js";
 import { composer } from "./app-thread.js";
 import { openAccountBackup } from "./app-backups.js";
-import { lobby } from "./app-shell.js";
-import { render } from "./app-loop.js";
+import { chatsWorkspace } from "./app-shell.js";
+import { clearMessageDraft, focusAfter, messagingAccountScope, render } from "./app-loop.js";
 import { syncLine } from "./app-wallet.js";
+import { messagingCostReview } from "./messaging-cost-review.js";
 
 export function personalCard(pickRestore) {
   if (personalPending) {
@@ -32,6 +33,55 @@ export function personalCard(pickRestore) {
   }
   if (personalError) return damagedCard();
   return personal ? accountCard() : createCard(pickRestore);
+}
+
+// Setup lives beside Zcash conversations. These steps describe actual account state; they do
+// not add a spending gate or create a separate copy of account/backup progress.
+export function zcashAccountSetup(pickRestore) {
+  if (personalPending || personalError || !personal) return el("section", {
+    class: "messages-account-setup",
+  }, el("div", { class: "messages-setup-intro" },
+    el("span", { class: "label" }, "Zcash chat"),
+    el("h2", {}, "A small account for your messages"),
+    el("p", { class: "small muted" }, "Send text in shielded Zcash memos. Your separate personal "
+      + "account pays the network fee; your shared wallets keep their normal approval rules.")),
+  personalCard(pickRestore));
+  const c = acct, b = acctBalance(), funded = !!b && b.spendable > 0;
+  return el("section", { class: "messages-account-setup" },
+    el("div", { class: "messages-setup-intro" },
+      el("div", { class: "card-head" }, el("h2", {}, "Your messaging account"),
+        netBadge({ network: personal.network })),
+      el("p", { class: "small muted" }, "Separate from your shared wallets. Each message spends "
+        + "this account’s network fee without team approval. Whoever controls this browser can "
+        + "spend it.")),
+    accountBalanceBlock(b),
+    b ? balanceWarnings(b.total).map((text) =>
+      el("p", { class: "hint", role: "status" }, text)) : null,
+    el("ol", { class: "messages-setup-steps" },
+      el("li", {}, el("h3", {}, "Account created"),
+        el("p", { class: "small muted" }, "Your account stays in this browser. The group server "
+          + "does not hold its seed or messages.")),
+      el("li", {}, el("h3", {}, personal.backedUp ? "Backup saved" : "Back up your account"),
+        personal.backedUp
+          ? el("p", { class: "small muted" }, "The backup holds the account seed and contacts, "
+            + "not your sent-message history. Back up again after adding contacts.")
+          : accountBackupNote()),
+      el("li", {}, el("h3", {}, funded ? "Funds available" : "Add a little ZEC"),
+        el("p", { class: "small muted" }, b?.pending && !funded
+          ? "Incoming funds need 3 confirmations before they can pay a message fee."
+          : "A one-part message costs 0.0001 ZEC. Longer messages can cost more."),
+        c ? el("details", { class: "messages-account-funding", open: !funded,
+          "data-disclosure-key": messagingAccountScope() + ":funding" },
+          el("summary", {}, "Fund the account"), fundBlock()) : null),
+      el("li", {}, el("h3", {}, "Choose a contact"),
+        el("p", { class: "small muted" }, "Add their shielded address, then share the separate "
+          + "reply address Zigs makes for them. An address does not verify a person’s identity."),
+        el("button", { class: "btn primary", type: "button", disabled: !c || !c.bal,
+          onclick: openContactDialog }, "Add contact"))),
+    el("details", { class: "messages-account-details",
+      "data-disclosure-key": messagingAccountScope() + ":account-details" }, el("summary", {}, "Account details"),
+      c ? syncLine(c) : el("p", { class: "small faint" }, NOT_READY),
+      c ? addressBlock(c) : null, accountActions(removeWarning(personal))));
 }
 
 // A saved account that does not read. The record stays as it is. If it still holds a seed, the
@@ -54,7 +104,7 @@ function createCard(pickRestore) {
       + "they do not use Zigs. A message is a small payment on chain, and this account pays its "
       + "fee. The account is apart from your wallets, and the group server never sees it."),
     networkPick(p, "account", "p"),
-    el("div", { class: "callout" }, "Use test funds here. Whoever controls this browser can "
+    el("div", { class: "callout" }, "Whoever controls this browser can "
       + "spend the account. Make a backup file right after you create it."),
     el("div", { class: "dialog-actions" },
       el("button", { class: "btn", type: "button", onclick: pickRestore }, "Recover access"),
@@ -90,8 +140,7 @@ export function accountCard() {
     c ? syncLine(c) : el("p", { class: "small faint" }, NOT_READY),
     c ? addressBlock(c) : null,
     c ? fundBlock() : null,
-    accountActions(removeWarning(personal)),
-    otherMessages());
+    accountActions(removeWarning(personal)));
 }
 
 function accountBackupNote() {
@@ -110,7 +159,8 @@ export function addressBlock(c) {
     el("span", { class: "label" }, "Public address"),
     el("div", { class: "addr-box" }, el("span", { class: "hex" }, short(c.address, 18)),
       copyBtn(c.address)),
-    el("details", { class: "qr-toggle" }, el("summary", {}, "Show QR code"),
+    el("details", { class: "qr-toggle", "data-disclosure-key": messagingAccountScope() + ":public-qr" },
+      el("summary", {}, "Show QR code"),
       qrBox(c.address, "Account address")),
     el("p", { class: "small faint" }, "Anyone who has this address can pay it and write to it. "
       + "A message that reaches it shows under Other messages, marked not verified. Give each "
@@ -267,27 +317,48 @@ export function contactDialog() {
     el("button", { class: "btn primary", type: "submit", disabled: !Z || !acct }, "Add contact")));
 }
 
-const ON_CHAIN_FINE = "The message is a payment of no value, and your text is its memo. It is "
-  + "permanent, and only the memo encryption of Zcash protects its text. Sending takes about a "
-  + "minute, because this browser builds a proof. A wallet that hides payments of no value does "
-  + "not show it.";
+const ON_CHAIN_FINE = "On-chain text is permanent. This personal account pays the network fee; "
+  + "the recipient receives 0 ZEC. Only Zcash memo encryption protects the text.";
 const ON_CHAIN_LIMITS = "This browser keeps the text of the messages that you sent. It is not in "
   + "the backup file. Private windows and Tor Browser forget it when they close.";
 
 export function contactView() {
   const contact = personal && personal.contacts.find((c) => c.index === state.contact);
-  if (!contact) return lobby();
+  if (!contact) return chatsWorkspace();
   const name = memoShown(contact.name);
-  return el("div", { class: "page" },
-    el("header", { class: "page-head" }, el("div", { class: "ph-left" },
+  return el("section", { class: "messages-thread messages-zcash-thread", "aria-label": "Zcash chat with " + name },
+    el("header", { class: "messages-thread-header messages-conversation-head" },
       el("button", {
-        class: "btn ghost sm back", type: "button",
-        onclick: () => { state.contact = null; render(); },
-      }, "← Wallets"),
-      el("h1", {}, name),
-      el("div", { class: "ph-meta" },
-        el("span", { class: "badge plain" }, "On chain · Zcash memos")))),
-    contactAddress(contact, name),
+        class: "btn ghost sm messages-mobile-back", type: "button", "data-key": "contact-back",
+        onclick: () => { state.contact = null; ui.tab = "chats"; render(); },
+      }, "← Messages"),
+      el("span", { class: "av round", "aria-hidden": "true" }, initials(name)),
+      el("div", { class: "messages-thread-title messages-conversation-title" }, el("h2", { tabindex: "-1",
+        "data-key": "messages-thread-title" }, name),
+        el("p", { class: "messages-thread-meta" }, "On-chain · Shielded memo")),
+      el("span", { class: "badge plain" }, "Unverified contact"),
+      el("button", { class: "btn ghost sm", type: "button", onclick: () => {
+        state.contact = null; ui.tab = "chats"; focusAfter("messages-account-summary", true); render();
+      } }, "Account & funding")),
+    el("details", { class: "messages-details messages-conversation-details",
+      "data-disclosure-key": messagingAccountScope() + ":contact-" + contact.index + ":details" },
+      el("summary", {}, "Conversation details"),
+      el("p", { class: "small muted" }, "This label is your private contact name. A received memo "
+        + "has no sender address; anyone who knows your reply address can write here."),
+      el("div", { class: "messages-detail-row" }, el("span", { class: "label" }, "Send to"),
+        el("span", { class: "hex" }, contact.address), copyBtn(contact.address, "Copy contact address")),
+      contactAddress(contact, name),
+      el("p", { class: "small muted" }, "A message is a payment of no value. A wallet that hides "
+        + "payments of no value does not show it. Building the proof can take about a minute; "
+        + "incoming messages appear after a block is scanned."),
+      el("p", { class: "small muted" }, "The group server does not carry these messages. "
+        + "Network services can observe connections and transaction retrieval. There are no "
+        + "read receipts or advanced post-quantum encryption."),
+      el("p", { class: "small faint" }, ON_CHAIN_LIMITS),
+      personal.backedUp ? null : accountBackupNote()),
+    personal.backedUp ? null : el("div", { class: "messages-backup-reminder" },
+      el("span", { class: "small muted" }, "Keep a separate account backup."),
+      el("button", { class: "btn sm", type: "button", onclick: openAccountBackup }, "Back up account")),
     contactMessages(contact, name));
 }
 
@@ -295,14 +366,16 @@ function contactAddress(contact, name) {
   const why = acct ? acctAddressWhy() : NOT_READY;
   if (why) return el("div", { class: "callout" }, why);
   const address = addressFor(contact.index);
-  return el("section", { class: "card card-pad hero-card" },
-    el("div", { class: "card-head" }, el("h2", {}, "Your address for " + name)),
+  return el("section", { class: "messages-reply-address" },
+    el("h3", {}, "Your address for " + name),
     el("p", { class: "small muted" }, "Give this address to " + name + ". A message that reaches "
       + "it shows in this chat, marked as sent to the address you gave " + name + ". Anyone who "
       + "knows the address can write here."),
-    el("div", { class: "addr-box" }, el("span", { class: "hex nowrap" }, address),
+    el("div", { class: "addr-box" }, el("span", { class: "hex" }, address),
       copyBtn(address, "Copy address", "btn sm primary")),
-    el("details", { class: "qr-toggle" }, el("summary", {}, "Show QR code"),
+    el("details", { class: "qr-toggle",
+      "data-disclosure-key": messagingAccountScope() + ":contact-" + contact.index + ":qr" },
+      el("summary", {}, "Show QR code"),
       qrBox(address, "Address for " + name)));
 }
 
@@ -311,20 +384,123 @@ const linked = (rows) => rows.some((r) => r.dir !== "out" || sentStateOf(r) === 
 
 function contactMessages(contact, name) {
   const rows = contactRows(contact), items = rows.map((r) => guard(onChainRow, r, name));
-  const none = el("p", { class: "small faint" }, "No messages yet. A message to the address above "
-    + "shows here after the next block.");
-  return el("section", { class: "card card-pad chat" },
-    el("div", { class: "card-head" }, el("h2", {}, "Messages")),
-    logBox("log-oc-" + contact.index, "Messages with " + name, items, none),
-    composer({
+  const accountScope = messagingAccountScope();
+  const none = el("div", { class: "messages-empty-thread" }, el("h3", {}, "Start with a message"),
+    el("p", { class: "small muted" }, "Share your reply address in Conversation details. A "
+      + "message to that address shows here after the next block."));
+  const timeline = logBox("log-oc-" + contact.index, "Messages with " + name, items, none);
+  timeline.setAttribute("data-account-scope", accountScope);
+  return el("section", { class: "chat messages-conversation-body" },
+    timeline,
+    el("div", { class: "messages-composer" }, composer({
       kind: "oc-" + contact.index, why: messageWhy(), seats: [], to: "Message to " + name,
+      accountScope,
       fine: ON_CHAIN_FINE, label: "Send on chain", key: "chat:personal:" + contact.index,
-      send: (text) => sendOnChain(contact, text), plan: (text) => messagePlan(text, splitParts),
+      send: (text) => reviewOrSend(contact, text), plan: (text) => messagePlan(text, splitParts),
       progress: acct ? acct.progress : "",
-    }),
-    el("p", { class: "small faint" }, ON_CHAIN_LIMITS),
+    })),
     linked(rows) ? el("p", { class: "small faint" },
       explorerText(NETWORKS[personal.network], "View transaction")) : null);
+}
+
+const reviewedCosts = messagingCostReview();
+let pendingCostReview = null, costReviewEpoch = 0;
+
+export function clearMessagingCostReview() {
+  costReviewEpoch++;
+  pendingCostReview = null;
+  reviewedCosts.clear();
+}
+
+export function hasMessagingCostReview() {
+  if (pendingCostReview && (pendingCostReview.account !== acct || !personal
+    || pendingCostReview.network !== personal.network)) pendingCostReview = null;
+  return !!pendingCostReview;
+}
+
+export function closeMessagingCostReview() {
+  const index = pendingCostReview?.contact.index;
+  pendingCostReview = null;
+  if (index != null) focusAfter("TEXTAREA:chat-text-oc-" + index + ":0", true);
+  render();
+}
+
+function reviewOrSend(contact, text) {
+  const plan = messagePlan(text, splitParts);
+  if (plan.error) throw new Error(plan.error);
+  if (!reviewedCosts.needs(acct, contact, personal.network, plan)) return sendOnChain(contact, text);
+  pendingCostReview = { account: acct, contact: { ...contact }, network: personal.network,
+    text, plan, changed: false, epoch: costReviewEpoch };
+  focusAfter("messaging-review-cancel", true);
+  render();
+  return false;   // The existing composer keeps its draft while the review is open.
+}
+
+async function confirmMessagingCost() {
+  const review = pendingCostReview;
+  if (!review || !hasMessagingCostReview()) return;
+  const contact = personal.contacts.find((c) => c.index === review.contact.index);
+  if (!contact || contact.address !== review.contact.address || state.contact !== contact.index) {
+    closeMessagingCostReview();
+    throw new Error("The account or contact changed. Review the message again before sending.");
+  }
+  const boxId = "chat-text-oc-" + contact.index, box = document.getElementById(boxId);
+  const text = typeof box?.value === "string" ? box.value.trim() : review.text;
+  const plan = messagePlan(text, splitParts);
+  if (plan.error || !text) throw new Error(plan.error || "Write a message first.");
+  if (text !== review.text || plan.parts !== review.plan.parts || plan.fee !== review.plan.fee) {
+    Object.assign(review, { text, plan, changed: true });
+    render();
+    return;
+  }
+  const why = messageWhy(plan.fee);
+  if (why) throw new Error(why);
+  const key = "chat:personal:" + contact.index;
+  if (busy.has(key)) return;
+  busy.add(key);
+  pendingCostReview = null;
+  render();
+  try {
+    await sendOnChain(contact, text);
+    if (acct === review.account && review.epoch === costReviewEpoch) {
+      reviewedCosts.remember(acct, contact, review.network, plan);
+      clearMessageDraft(boxId, text, messagingAccountScope());
+      const live = document.getElementById(boxId);
+      if (typeof live?.value === "string" && live.value.trim() === text) live.value = "";
+    }
+  } finally { busy.delete(key); render(); }
+}
+
+export function messagingCostReviewDialog() {
+  if (!hasMessagingCostReview()) return null;
+  const { contact, network, text, plan, changed } = pendingCostReview;
+  const name = memoShown(contact.name), fee = zatText(plan.fee) + " ZEC";
+  const row = (label, value) => el("div", { class: "messages-cost-row" },
+    el("dt", {}, label), el("dd", {}, value));
+  return el("form", { class: "dialog messages-cost-review", role: "dialog", "aria-modal": "true",
+    "aria-labelledby": "messaging-cost-title", onsubmit: act(confirmMessagingCost) },
+  el("div", { class: "card-head" }, el("h2", { id: "messaging-cost-title", tabindex: "-1",
+    "data-key": "messaging-cost-title", "data-first-focus": "" }, "Review message cost"),
+    el("button", { class: "icon-btn", type: "button", "aria-label": "Close cost review",
+      onclick: closeMessagingCostReview }, "×")),
+  changed ? el("p", { class: "callout", role: "status" },
+    "The message changed. Check the updated cost before sending.") : null,
+  el("p", { class: "small muted" }, "This message is a permanent on-chain transaction. Your "
+    + "personal account pays its fee without team approval."),
+  el("dl", { class: "messages-cost-summary" },
+    row("From", "Personal messaging account · " + NETWORKS[network].label),
+    row("To", el("div", {}, name, el("p", { class: "hex" }, contact.address))),
+    row("Recipient receives", "0 ZEC"),
+    row("Message", plan.parts + (plan.parts === 1 ? " memo part" : " memo parts")),
+    row("Network fee", fee), row("Total debit", fee)),
+  el("details", {}, el("summary", {}, "Message text"), el("p", { class: "msg-text" }, text)),
+  el("p", { class: "small faint" }, "A wallet that hides zero-value payments may not show this "
+    + "message. Further messages at this cost use the explicit Send on chain button. A change "
+    + "in cost or memo parts needs another review in this tab."),
+  el("div", { class: "dialog-actions" },
+    el("button", { class: "btn", type: "button", "data-key": "messaging-review-cancel",
+      onclick: closeMessagingCostReview }, "Keep editing"),
+    el("button", { class: "btn primary", type: "submit" }, "Send for " + fee)));
 }
 
 function onChainRow(row, name) {
@@ -344,7 +520,7 @@ function memoBodyOf(key, text) {
 function receivedBubble(row, name, label, where) {
   const body = row.text === null ? el("p", { class: "msg-text faint" }, "Memo is not text")
     : memoBodyOf(row.key, memoShown(row.text));
-  return el("div", { class: "msg" },
+  return el("div", { class: "msg incoming" },
     el("span", { class: "av round", title: name }, initials(name)),
     el("div", { class: "msg-body" },
       el("div", { class: "msg-head" }, el("b", {}, name), el("time", {}, when(row.at)),
@@ -361,7 +537,7 @@ function receivedBubble(row, name, label, where) {
 function sentBubble(rec) {
   const st = sentStateOf(rec), note = sentNote(rec, st);
   const cls = st === "chain" ? " ok" : holdsNotes(st) ? "" : " bad";
-  return el("div", { class: "msg" },
+  return el("div", { class: "msg outgoing" },
     el("span", { class: "av round me", title: "You" }, "Y"),
     el("div", { class: "msg-body" },
       el("div", { class: "msg-head" }, el("b", {}, "You"), el("time", {}, when(rec.at)),

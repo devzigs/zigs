@@ -1,0 +1,61 @@
+/* Privacy grammar: closed = shielded, open = public, split = partial, dash = unknown.
+   Text carries the meaning in every palette, including forced colours. No state animation. */
+.privacy-badge {
+  display:inline-flex; align-items:center; gap:7px; width:fit-content; max-width:100%;
+  padding:5px 9px; border:1px solid currentColor; border-radius:6px;
+  background:var(--panel); color:var(--text); font:500 12px/1.5 var(--sans);
+  letter-spacing:0; vertical-align:middle; overflow-wrap:anywhere; text-align:left;
+}
+.privacy-badge>span:last-child { min-width:0; }
+.privacy-motif {
+  position:relative; display:inline-block; flex:0 0 14px; width:14px; height:14px;
+  border:1.5px solid currentColor; border-radius:50%;
+}
+.privacy-shielded { background:var(--text); color:var(--panel); }
+.privacy-shielded .privacy-motif { background:currentColor; }
+/* Three cuts are a brand engraving only. They never imply a percentage or proof. */
+.privacy-shielded .privacy-motif::after {
+  content:""; position:absolute; inset:2px 3px; border-inline:1px solid var(--text);
+  transform:skewX(-15deg);
+}
+.privacy-public { background:var(--bg); }
+.privacy-public .privacy-motif { border-right-color:transparent; }
+.privacy-partial { background:var(--sunk); }
+.privacy-partial .privacy-motif::after {
+  content:""; position:absolute; inset:1px; right:50%; border-radius:8px 0 0 8px;
+  background:currentColor;
+}
+.privacy-unknown,.privacy-unsupported { border-style:dashed; background:var(--panel); }
+.privacy-unknown .privacy-motif,.privacy-unsupported .privacy-motif { border:0; }
+.privacy-unknown .privacy-motif::after,.privacy-unsupported .privacy-motif::after {
+  content:""; position:absolute; left:1px; right:1px; top:6px; height:2px;
+  background:currentColor;
+}
+.privacy-notice {
+  display:grid; gap:9px; min-width:0; padding:14px; border:1px solid var(--line-2);
+  border-radius:var(--r-sm); background:var(--sunk); color:var(--text);
+  text-align:left; overflow-wrap:anywhere;
+}
+.privacy-notice>p { margin:0; color:var(--text); line-height:1.65; }
+.asset-position:has(>.privacy-badge) { align-items:flex-start; flex-wrap:wrap; gap:10px; }
+.asset-position>.privacy-badge { flex-shrink:1; }
+.ri-main>.privacy-badge { margin-top:5px; }
+.sol-hero>.privacy-notice { width:100%; }
+@media(max-width:760px) {
+  .assets-grid>.asset-card:has(.privacy-badge) { grid-template-columns:minmax(0,1fr); }
+  .assets-grid>.asset-card>.asset-position:has(>.privacy-badge) {
+    grid-column:1/-1; flex-direction:row;
+  }
+  .assets-grid>.asset-card:has(.privacy-badge)>.asset-balance-block {
+    display:grid; grid-column:1/-1; text-align:left;
+  }
+  .assets-grid>.asset-card:has(.privacy-badge) .asset-balance-block>:is(.label,.asset-balance) {
+    grid-column:auto; grid-row:auto; padding-top:0; text-align:left;
+  }
+  .assets-grid>.asset-card:has(.privacy-badge) .asset-incoming { justify-content:flex-start; }
+}
+@media(forced-colors:active) {
+  .privacy-badge,.privacy-notice { color:CanvasText; background:Canvas; border-color:CanvasText; }
+  .privacy-shielded { color:HighlightText; background:Highlight; }
+  .privacy-shielded .privacy-motif::after { border-color:Highlight; }
+}

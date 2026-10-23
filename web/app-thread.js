@@ -20,9 +20,11 @@ import {
   unreadIn,
 } from "./app-messages.js";
 import { chatRequest, requestCard, requestForm, requestOf, roomRequest } from "./app-payreq.js";
-import { lobby } from "./app-shell.js";
-import { focusAfter, render } from "./app-loop.js";
+import { chatsWorkspace } from "./app-shell.js";
+import { clearMessageDraft, focusAfter, render } from "./app-loop.js";
 import { ON_CHAIN } from "./app-wallet.js";
+import { messagingInboxBack, relayConnectionNotice, relayUnavailable } from "./app-messaging-workspace.js";
+import { icon } from "./app-icons.js";
 
 const FINE = "Every device of this wallet, and anyone else who has the invite link, can read "
   + "these messages. The group server stores them sealed. It sees when each message is sent, how "
@@ -31,15 +33,45 @@ const FINE = "Every device of this wallet, and anyone else who has the invite li
 // The Messages section has its title in the heading block of the page: it passes `titled` false.
 export function messagesCard(titled = true) {
   const changed = changedSigners();
-  const head = [titled ? el("h2", {}, "Messages") : null, notifyButton()];
+  const head = [titled ? el("h2", {}, "Messages") : null];
   return el("section", { class: "card card-pad chat" },
     head.some(Boolean) ? el("div", { class: "card-head" }, ...head) : null,
     changed.length ? el("div", { class: "callout bad", role: "alert" }, "Signing key changed: "
       + changed.map((i) => "device " + i).join(", ") + ". Their messages are not verified.") : null,
     chat[state.gid] || memoMessages().length ? chatLog("wallet") : null,
-    readsMemos(state.gid) ? null : el("p", { class: "small faint" }, "Memos of payments to this "
-      + "wallet are off. You can turn them on in Settings."),
-    walletComposer("wallet"));
+    el("div", { class: "messages-composer" }, walletComposer("wallet")));
+}
+
+export function teamConversation(notices = []) {
+  return el("section", { class: "messages-thread", "aria-label": "Wallet team conversation" },
+    conversationHeader((state.g?.name || "Wallet") + " team", "Team · Encrypted relay · "
+      + curNet().label + " · " + state.g.t + "-of-" + state.g.n),
+    el("div", { class: "messages-thread-tools" }, conversationDetails(FINE,
+      "Device signatures show continuity with a key this browser has seen. They do not verify a person’s identity.",
+      readsMemos(state.gid) ? null : el("p", { class: "small muted" },
+        "Reading payment memos is off. Manage this separately in Settings."))),
+    ...notices, relayConnectionNotice(rooms[state.gid]), messagesCard(false));
+}
+
+function conversationHeader(title, subtitle) {
+  return el("header", { class: "messages-thread-header" },
+    el("button", { class: "btn ghost messages-mobile-back", type: "button", "data-key": "messages-back",
+      onclick: messagingInboxBack, "aria-label": "Back to conversations" }, "←"),
+    el("span", { class: "messages-row-avatar", "aria-hidden": "true" }, icon("chat")),
+    el("div", { class: "messages-thread-title" },
+      el("h2", { tabindex: "-1", "data-key": "messages-thread-title" }, title),
+      el("p", { class: "messages-thread-meta" }, subtitle)));
+}
+
+function conversationDetails(audience, identity, extra = null) {
+  const scope = state.cid ? "direct:" + state.cid : "wallet:" + state.gid;
+  return el("details", { class: "messages-details", "data-disclosure-key": scope + ":privacy" },
+    el("summary", {}, "Privacy & conversation details"),
+    el("div", { class: "messages-details-body" },
+      el("h3", {}, "Who can read this?"), el("p", { class: "small muted" }, audience),
+      el("h3", {}, "Sender identity"), el("p", { class: "small muted" }, identity), extra,
+      notifyButton(), el("p", { class: "small faint" },
+        "Notifications apply to all relay chats while Zigs is open. Message text is never included.")));
 }
 
 // The thread of one payment, under the payment's steps.
@@ -61,9 +93,9 @@ function chatLog(thread) {
   const wallet = thread === "wallet", items = threadItems(thread, rooms[state.gid]);
   const none = wallet
     ? el("div", { class: "empty" }, el("h3", {}, "No messages yet"),
-      el("p", { class: "small" }, FINE))
+      el("p", { class: "small muted" }, "A shared space to plan, ask and keep everyone in the loop."))
     : el("p", { class: "small faint" }, "No messages about this payment yet.");
-  const id = (wallet ? "log-wallet-" : "log-pay-") + state.gid;
+  const id = (wallet ? "log-wallet-" + state.gid : "log-pay-" + state.gid + "-" + thread.slice(4));
   return [logBox(id, wallet ? "Messages" : "Discussion", items, none),
     wallet && memoMessages().length ? el("p", { class: "small faint" },
       explorerText(curNet(), "View payment")) : null];
@@ -133,7 +165,7 @@ function eventItem(e) {
 }
 
 export const TRUST = {
-  yes: ["ok", "✓ Verified"], wait: ["", "Checking…"], no: ["bad", "Not verified"],
+  yes: ["ok", "✓ Device signature matches"], wait: ["", "Checking…"], no: ["bad", "Not verified"],
   changed: ["bad", "Key changed. Not verified."], unknown: ["bad", "Unknown sender. Not verified."],
   memo: ["bad", "Not verified"],
 };
@@ -145,7 +177,7 @@ function msgItem(m, roomId) {
 function bubble(m, av, name, verdictKey, mine) {
   const [cls, label] = TRUST[verdictKey];
   const req = requestOf(m.text, m.thread === "dm");
-  return el("div", { class: "msg" }, av,
+  return el("div", { class: "msg " + (mine ? "outgoing" : "incoming") }, av,
     el("div", { class: "msg-body" },
       el("div", { class: "msg-head" }, el("b", {}, name), el("time", {}, when(m.at)),
         el("span", { class: "vmark " + cls }, label)),
@@ -168,7 +200,8 @@ function planLine(plan, box, id) {
   const line = el("p", { class: "hint", id, "aria-live": "polite" });
   const show = () => {
     const got = plan(box.value);
-    setNote(line, got.error || got.fine, "hint" + (got.error ? " bad" : ""));
+    const fine = got.fine + (got.parts ? " · " + got.parts + (got.parts === 1 ? " memo part" : " memo parts") : "");
+    setNote(line, got.error || fine, "hint" + (got.error ? " bad" : ""));
   };
   box.setAttribute("aria-describedby", id);
   noteFor(line, box);
@@ -186,6 +219,7 @@ function messageBox(o) {
   const quick = !o.plan && !coarse();
   return el("textarea", {
     class: "input", id: "chat-text-" + o.kind, name: "text", rows: "2", disabled: !!o.why,
+    "data-account-scope": o.accountScope,
     onkeydown: o.plan ? null : sendOnEnter, "aria-label": o.to,
     placeholder: o.to + (quick ? ". Enter sends, Shift+Enter adds a line" : ""),
   });
@@ -215,25 +249,34 @@ const asking = (o) => !!o.request && !o.why && ui.request === o.kind;
 function requestToggle(o) {
   if (!o.request) return null;
   const open = asking(o);
-  return el("button", {
+  const button = el("button", {
     class: "btn", type: "button", disabled: !!o.why, "aria-expanded": String(open),
     onclick: () => { ui.request = open ? null : o.kind; render(); },
   }, "Request a payment");
+  return el("details", { class: "messages-actions", "data-disclosure-key": "actions:" + o.kind },
+    el("summary", { "aria-label": "Conversation actions", title: "Conversation actions" }, "+"), button);
 }
 
 export function seatPicker(o, id) {
   return o.seats.length > 1 ? el("label", { class: "composer-as small muted" }, "Send as",
     el("select", { class: "input", id, name: "as" },
-      o.seats.map((i) => el("option", { value: String(i) }, "Device " + i)))) : null;
+      o.seats.map((i) => el("option", { value: String(i) }, "Device " + i))))
+    : o.seats.length === 1 ? el("span", { class: "small muted composer-as" }, "Sending from: This device") : null;
 }
 
 function walletComposer(thread) {
   return composer({
-    kind: (thread === "wallet" ? "wallet-" : "pay-") + state.gid, why: chatWhy(),
+    kind: thread === "wallet" ? "wallet-" + state.gid : "pay-" + state.gid + "-" + thread.slice(4),
+    why: chatWhy(),
     warn: roomWarn.has(state.gid),
-    seats: sendSeats(), to: "Message to this wallet", fine: FINE,
+    seats: sendSeats(), to: "Message to this wallet",
+    fine: "No blockchain fee · Messages do not approve payments.",
     key: "chat:" + rooms[state.gid] + ":" + thread,
-    send: (text, seat) => sendMessage(thread, text, seat),
+    send: (text, seat) => {
+      const why = relayUnavailable(rooms[state.gid]);
+      if (why) throw new Error(why);
+      return sendMessage(thread, text, seat);
+    },
     request: thread === "wallet" ? roomRequest() : null,
   });
 }
@@ -246,10 +289,13 @@ export async function submitMessage(form, o) {
   if (o.plan && box.blur) box.blur();
   busy.add(o.key); render();
   try {
-    await o.send(r.text, form.elements.as ? Number(form.elements.as.value) : o.seats[0]);
+    const sent = await o.send(r.text, form.elements.as ? Number(form.elements.as.value) : o.seats[0]);
+    if (sent === false) return;   // a cost review opened; the draft has not been sent
+    clearMessageDraft(box.id, draft, o.accountScope);
     // A redraw during the send replaced the form: clear the live box, but not new typing.
     const live = document.getElementById(box.id);
-    if (live && live.value === draft) live.value = "";
+    if (live && live.value === draft
+      && (!o.accountScope || live.getAttribute?.("data-account-scope") === o.accountScope)) live.value = "";
   } finally { busy.delete(o.key); }
 }
 
@@ -260,14 +306,14 @@ const DM_FINE = "Your contact, and anyone else who has the contact link, can rea
 
 export function chatView() {
   const cid = state.cid;
-  if (!chats.list[cid]) return lobby();
-  return el("div", { class: "page" },
-    el("header", { class: "page-head" }, el("div", { class: "ph-left" },
-      el("button", { class: "btn ghost sm back", type: "button", onclick: () => openChat(null) },
-        "← Wallets"),
-      el("h1", {}, contactName(cid)),
-      el("div", { class: "ph-meta" },
-        el("span", { class: "badge plain" }, "Direct chat · group server")))),
+  if (!chats.list[cid]) return chatsWorkspace();
+  return el("section", { class: "messages-thread", "aria-label": "Direct relay conversation" },
+    conversationHeader(contactName(cid), "Direct · Encrypted relay"),
+    el("div", { class: "messages-thread-tools" }, conversationDetails(DM_FINE,
+      "A matching signature belongs to the pinned device key. Contact names are self-chosen; verify the person through a separate trusted channel.",
+      [el("p", { class: "small faint" }, "This chat lives in this browser. Private windows and Tor "
+        + "Browser forget it when they close."), leaveBox(cid)])),
+    relayConnectionNotice(cid),
     chatMembers[cid] && !contactOf(cid) ? chatInviteCard(cid) : null,
     chatCard(cid));
 }
@@ -279,17 +325,17 @@ function chatCard(cid) {
   const none = el("p", { class: "small faint" }, msgs ? "No messages yet." : "Loading messages…");
   const alert = chatWarning(chatPins, cid, chatMembers[cid], msgs || []);
   return el("section", { class: "card card-pad chat" },
-    el("div", { class: "card-head" }, el("h2", {}, "Messages"), notifyButton()),
     alert ? el("div", { class: "callout bad", role: "alert" }, alert) : null,
     logBox("log-" + kind, "Messages", items, none),
-    composer({
+    el("div", { class: "messages-composer" }, composer({
       kind, why: signing === false ? NO_SIGNING : null, seats: [], key: "chat:" + cid + ":dm",
-      to: "Message to your contact", fine: DM_FINE, send: (text) => sendDm(cid, text),
+      to: "Message to your contact", fine: "No blockchain fee · Keep your contact link private.", send: (text) => {
+        const why = relayUnavailable(cid);
+        if (why) throw new Error(why);
+        return sendDm(cid, text);
+      },
       request: chatRequest(),
-    }),
-    el("p", { class: "small faint" }, "This chat lives in this browser. Private windows and Tor "
-      + "Browser forget it when they close."),
-    leaveBox(cid));
+    })));
 }
 
 export function chatInviteCard(cid) {

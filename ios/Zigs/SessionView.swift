@@ -4,6 +4,7 @@ import SwiftUI
 struct SessionView: View {
     @Environment(GroupModel.self) private var model
     let sid: String
+    @Environment(\.nativeHome) private var home
 
     var body: some View {
         content
@@ -17,17 +18,17 @@ struct SessionView: View {
             let rc = RecipientCheck(model: model, ss: ss, ins: try? ins.get())
             ScrollView {
                 VStack(alignment: .leading, spacing: 16) {
-                    VStack(alignment: .leading, spacing: 6) {
+                    BalancePanel {
                         let fee = (try? ins.get()).map(networkFee)
                         SectionLabel(text: fee == nil ? "Payment" : "Leaves the wallet")
                         Money(zat: ss.amount + (fee ?? 0), size: 34, sign: "out")
-                        if let fee { Text("Includes the \(zec(fee)) network fee").font(.caption).foregroundStyle(Color.mist) }
+                        if let fee { Text("Includes the \(zec(fee)) network fee").font(.nativeCaption).foregroundStyle(Color.mist) }
                         Text("Proposed by \(model.proposerName(ss)) · \(when(ss.doc.int("createdAt")))")
-                            .font(.caption).foregroundStyle(Color.mist)
+                            .font(.nativeCaption).foregroundStyle(Color.mist)
                     }
                     if case .failure(let e) = ins {
                         Label("This \(deviceName) refuses this payment: \(e.message)", systemImage: "xmark.octagon.fill")
-                            .font(.subheadline).foregroundStyle(Color.bad)
+                            .font(.nativeSubheadline).foregroundStyle(Color.bad)
                     }
                     RecipientBox(ss: ss, rc: rc)
                     if case .success(let d) = ins { Breakdown(ss: ss, ins: d) }
@@ -35,16 +36,21 @@ struct SessionView: View {
                     Discussion(sid: ss.id)
                     if let final = ss.doc.doc("final") {
                         Card {
-                            Text("Transaction").font(.headline)
-                            Detail(label: "ID") { Text(final.str("txid") ?? "").font(.caption.monospaced()).lineLimit(1).truncationMode(.middle).textSelection(.enabled) }
+                            Text("Transaction").font(.nativeHeadline)
+                            Detail(label: "ID") { Text(final.str("txid") ?? "").font(.nativeCaption.monospaced()).lineLimit(1).truncationMode(.middle).textSelection(.enabled) }
                             if let ms = final.int("ms") { Detail(label: "Proof time") { Text(String(format: "%.1f s", Double(ms) / 1000)) } }
                         }
                         if has(ss.doc["broadcastTxid"]) { ChainView() }
                     }
                 }
-                .padding(16)
+                .padding(20).frame(maxWidth: 840).frame(maxWidth: .infinity)
             }
-            .background(Color.night)
+            .safeAreaInset(edge: .top, spacing: 0) {
+                NativeWalletHeader(name: model.state.name, network: model.state.net.label,
+                    rule: "\(model.state.t) of \(model.state.n) approvals",
+                    seed: model.addressHidden ? nil : model.state.wallet?.str("address"), home: home)
+            }
+            .instrumentScreen()
             .navigationTitle(payTitle(ss))
             .inlineTitle()
             .toolbar {
@@ -221,9 +227,9 @@ struct RecipientBox: View {
                 if rc.rows.contains(where: { $0.memo?.isEmpty == false }) {
                     Text("A memo goes on chain with the payment. Its recipient and every signer can "
                          + "read it.")
-                        .font(.caption).foregroundStyle(Color.mist)
+                        .font(.nativeCaption).foregroundStyle(Color.mist)
                 }
-                ForEach(rc.warnings, id: \.self) { Text($0).font(.subheadline).foregroundStyle(Color.bad) }
+                ForEach(rc.warnings, id: \.self) { Text($0).font(.nativeSubheadline).foregroundStyle(Color.bad) }
                 if let move = ss.doc.str("move") { MoveNote(move: move, intoNew: rc.intoNew) }
             }
         }
@@ -265,9 +271,8 @@ struct PayeeLine: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 4) {
-            HStack(alignment: .firstTextBaseline) {
-                Text(grouped(row.to)).font(.caption.monospaced())
-                Spacer()
+            AdaptiveRow {
+                Text(grouped(row.to)).font(.nativeCaption.monospaced()).fixedSize(horizontal: false, vertical: true)
                 VStack(alignment: .trailing, spacing: 4) {
                     Money(zat: row.amount, size: 15)
                     if !row.ok { Badge(text: row.other ? "Memo differs" : "Not in the transaction", kind: .bad) }
@@ -275,9 +280,9 @@ struct PayeeLine: View {
             }
             ForEach(Array(memoLines.enumerated()), id: \.offset) { _, line in
                 HStack(alignment: .firstTextBaseline, spacing: 8) {
-                    Text(line.label).font(.caption).foregroundStyle(Color.mist)
-                    Text(memoWords(line.memo)).font(.caption)
-                        .foregroundStyle(line.bad ? Color.bad : line.memo?.isEmpty == false ? .white : Color.mist)
+                    Text(line.label).font(.nativeCaption).foregroundStyle(Color.mist)
+                    Text(memoWords(line.memo)).font(.nativeCaption)
+                        .foregroundStyle(line.bad ? Color.bad : line.memo?.isEmpty == false ? Color.primary : Color.mist)
                 }
             }
         }
@@ -293,7 +298,7 @@ struct MoveNote: View {
         Text(intoNew == false ? "This is not the address of \(model.groupName(move)). Do not approve it."
              : intoNew == true ? "This moves all funds to \(model.groupName(move)), the wallet that replaces this one. This device checked its address."
              : "This moves all funds to a new wallet that replaces this one. This device has no checked copy of its address, so it cannot check it.")
-            .font(.subheadline).foregroundStyle(intoNew == false ? Color.bad : Color.mist)
+            .font(.nativeSubheadline).foregroundStyle(intoNew == false ? Color.bad : Color.mist)
     }
 }
 
@@ -322,7 +327,7 @@ struct Breakdown: View {
                 Line(label: spend ? "Spent from this wallet" : "Change back to this wallet", zat: l.int("value") ?? 0, muted: true)
             }
             Text("This \(deviceName) decoded this from the transaction itself, not from the proposer's description.")
-                .font(.caption).foregroundStyle(Color.mist)
+                .font(.nativeCaption).foregroundStyle(Color.mist)
         }
     }
 
@@ -332,12 +337,11 @@ struct Breakdown: View {
         var muted = false
 
         var body: some View {
-            HStack {
-                Text(label).font(.subheadline)
-                Spacer()
-                Text(zec(zat)).font(.subheadline.monospacedDigit())
+            AdaptiveRow {
+                Text(label).font(.nativeSubheadline)
+                ExactValueText(value: zec(zat), font: .subheadline)
             }
-            .foregroundStyle(muted ? Color.mist : .white)
+            .foregroundStyle(muted ? Color.mist : Color.primary)
         }
     }
 }
@@ -347,17 +351,17 @@ struct ChainView: View {
     var body: some View {
         Card {
             SectionLabel(text: "What the chain sees")
-            Text("One shielded transaction.").font(.subheadline)
+            Text("One shielded transaction.").font(.nativeSubheadline)
             ForEach(["Recipients", "Amounts", "Signers", "Approval rule"], id: \.self) { item in
                 HStack {
-                    Text(item).font(.subheadline).foregroundStyle(Color.mist)
+                    Text(item).font(.nativeSubheadline).foregroundStyle(Color.mist)
                     Spacer()
-                    Text("Hidden").font(.subheadline.weight(.medium))
+                    Text("Hidden").font(.nativeSubheadline.weight(.medium))
                 }
             }
-            Text("The fee and the number of actions are public.").font(.caption).foregroundStyle(Color.mist)
+            Text("The fee and the number of actions are public.").font(.nativeCaption).foregroundStyle(Color.mist)
             Text("The expiry height is public too. Zigs sets it up to one day after the proposal, and a standard wallet sets it 40 blocks ahead. So the expiry height can show that Zigs made this payment. Few wallets pay a priority fee, so a priority fee can mark a payment too.")
-                .font(.caption).foregroundStyle(Color.mist)
+                .font(.nativeCaption).foregroundStyle(Color.mist)
         }
     }
 }
@@ -390,8 +394,10 @@ struct Timeline: View {
                  no: 5, title: "Sent to the network",
                  text: has(ss.doc["broadcastTxid"]) ? "Sent \(when(ss.doc.int("broadcastAt")))."
                      : ss.doc.str("broadcastError") ?? (ss.doc.doc("final") != nil ? "Any signer can send the finished transaction." : "Available after the proof."))
+            Text("Opening the explorer shares your IP address and this transaction ID with that service.")
+                .font(.nativeCaption).foregroundStyle(Color.mist)
             if let txid = ss.doc.str("broadcastTxid"), let url = URL(string: model.state.net.explorer + txid) {
-                Link(destination: url) { Label("View in explorer", systemImage: "arrow.up.right.square") }.font(.subheadline)
+                Link(destination: url) { Label("View in explorer", systemImage: "arrow.up.right.square") }.font(.nativeSubheadline)
             }
         }
     }
@@ -427,7 +433,7 @@ struct NextAction: View {
                 } else if send {
                     Button(has(ss.doc["broadcastError"]) ? "Send again" : "Send to network") { model.broadcast(ss) }.primaryButton()
                 } else if proving {
-                    ProgressView("Building the zero-knowledge proof…").font(.subheadline)
+                    ProgressView("Building the zero-knowledge proof…").font(.nativeSubheadline)
                 }
                 if cancel {
                     Button("Cancel payment", role: .destructive) { confirmCancel = true }
@@ -440,7 +446,7 @@ struct NextAction: View {
             }
             .frame(maxWidth: .infinity)
             .padding(.horizontal, 16).padding(.vertical, 10)
-            .background(.ultraThinMaterial)
+            .modifier(GlassChrome())
         }
     }
 }

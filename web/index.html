@@ -6,28 +6,50 @@
 <meta name="description" content="Zigs is a shared wallet for Zcash testnet and Solana Devnet. Any t of n devices approve each payment. A Zcash payment is shielded and has the shape of a standard wallet payment, except for its one-day expiry and an optional priority fee. A private Solana payment hides its amount, but its payee is public.">
 <link rel="modulepreload" href="/pkg/zigs_engine.js">
 <link rel="preload" href="/pkg/zigs_engine_bg.wasm" as="fetch" type="application/wasm" crossorigin>
-<link rel="icon" type="image/png" href="/favicon.png">
-<link rel="apple-touch-icon" href="/apple-touch-icon.png">
+<link rel="icon" type="image/png" href="/logo.png?v=e2a70c42">
+<link rel="apple-touch-icon" href="/logo.png?v=e2a70c42">
 <meta name="referrer" content="no-referrer">
-<script src="/theme.js"></script>
 <link rel="stylesheet" href="/design-system.css">
 <link rel="stylesheet" href="/app.css">
+<link rel="stylesheet" href="/zns-setup.css">
+<link rel="stylesheet" href="/funding-preview.css">
+<link rel="stylesheet" href="/wallet-switcher.css">
+<link rel="stylesheet" href="/transaction-receipts.css">
+<link rel="stylesheet" href="/privacy-language.css">
+<link rel="stylesheet" href="/brand-identity.css">
+<link rel="stylesheet" href="/overview-rows.css">
+<link rel="stylesheet" href="/approvals-experience.css">
+<link rel="stylesheet" href="/activity.css">
+<link rel="stylesheet" href="/onboarding-refinement.css">
+<link rel="stylesheet" href="/wallet-art.css">
+<link rel="stylesheet" href="/wallet-marble.css">
+
+<link rel="stylesheet" href="/security-dashboard.css">
+
+<link rel="stylesheet" href="/swap-preview.css">
+<link rel="stylesheet" href="/settings-experience.css">
+<link rel="stylesheet" href="/network-privacy.css">
+<link rel="stylesheet" href="/network-privacy-popup.css">
+<link rel="stylesheet" href="/messaging.css">
+<link rel="stylesheet" href="/homepage.css">
+<link rel="stylesheet" href="/how-zigs-works.css">
 
 <a class="skip-link" href="#app">Skip to the page</a>
 <div class="shell">
   <aside class="side" aria-label="Wallets">
     <a class="logo" href="#" aria-label="Zigs home">
-      <img src="/logo.png" alt="" width="28" height="28">
+      <span class="nav-zebra"><img src="/logo.png?v=e2a70c42" alt="" width="44" height="44"></span>
       Zigs
-      <span class="net" title="Beta: Zcash testnet and Solana Devnet. Not audited.">Beta</span>
     </a>
     <button class="btn wallet-menu" id="wallet-menu" type="button" data-key="menu"
       aria-controls="side-nav" aria-expanded="false">Menu</button>
-    <nav id="side-nav" aria-label="Your wallets and chats"></nav>
+    <nav id="side-nav" aria-label="Your wallets and messages"></nav>
     <div class="side-foot">
-      <div class="engine" id="engine"><span class="dot busy" id="engine-dot"></span><span id="engine-text">Loading crypto engine…</span></div>
-      <p class="side-note">Keys are made and used in this browser. Beta: Zcash testnet and Solana
-        Devnet. Not audited.
+      <details class="browser-status" id="engine">
+        <summary><span class="dot busy" id="engine-dot"></span>Browser status</summary>
+        <p id="engine-text">Loading crypto engine…</p>
+      </details>
+      <p class="side-note">Keys are made and used in this browser.
         <a href="https://zigs.app" target="_blank" rel="noopener">About Zigs</a></p>
     </div>
   </aside>
@@ -41,4 +63,4 @@
 <noscript><p class="notice bad">Zigs needs JavaScript and WebAssembly.
   In Tor Browser, set the security level to Standard.</p></noscript>
 
-<script type="module" src="/app.js"></script>
+<script type="module" src="/network-privacy-demo-entry.js"></script>

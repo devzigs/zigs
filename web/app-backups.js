@@ -15,13 +15,16 @@ import { fitState } from "./app-seats.js";
 import { isChatId } from "./app-links.js";
 import { downloads, openGroup } from "./app-groups.js";
 import { act, copyBtn, el, noteFor, setNote } from "./app-dom.js";
-import { groupVersion } from "./app-dkg.js";
+import { groupVersion, seatCheck } from "./app-dkg.js";
 import {
   changePersonal, personal, personalDamaged, personalEnv, restoreAccount,
 } from "./app-account.js";
 import { once, render } from "./app-loop.js";
-import { solRestore } from "./app-sol.js";
+import { solRestore, solSetup } from "./app-sol.js";
 import { heldApprovals } from "./app-payments.js";
+import { checkBackupPayload, checkSavedBackup } from "./backup-check.js";
+import { markBackupChecked, reportBackupSaved } from "./app-guided-setup.js";
+import { securityExplanation } from "./app-tutorial.js";
 
 const SOL_BACKUP_KIND = "zigs-sol-backup";
 
@@ -136,6 +139,7 @@ export function passNote(pass, again) {
 }
 
 export function backupDialog() {
+  if (ui.backup.check) return backupCheckDialog();
   const b = ui.backup, words = b.words ?? (b.personal ? ACCOUNT_BACKUP : seatBackup(b.seat));
   const pass = el("input", {
     class: "input mono", id: "bk-pass", type: b.made ? "text" : "password", autocomplete: "off",
@@ -164,9 +168,11 @@ export function backupDialog() {
   const submit = act(async () => {
     const p = pass.value;
     if (passIssue(p, again.value)) return;
+    const gid = state.gid, seats = mySeatSecrets(gid).map(([i]) => i);
     b.busy = true; render();
     try {
       if (!(await words.save(p))) return;
+      if (!b.personal) for (const i of seats) reportBackupSaved(gid, i);
       if (ui.backup === b) ui.backup = null;
       showBanner("ok", "Backup saved. Keep the passphrase apart from the file.");
     } finally { b.busy = false; }
@@ -180,6 +186,8 @@ export function backupDialog() {
       class: "icon-btn", type: "button", "aria-label": "Close", onclick: closeBackup,
     }, "×")),
   el("p", { class: "small" }, words.pass),
+  el("p", { class: "small muted" }, "This is an encrypted file backup. Its passphrase alone cannot recover the wallet; it is not a seed phrase. Keep both the file and its passphrase."),
+  securityExplanation(b.personal ? "account-backup" : "backup"),
   el("label", { class: "field" }, el("span", {}, "Passphrase"), pass),
   el("div", { class: "row-actions" },
     el("button", { class: "btn sm", type: "button", disabled: b.busy, onclick: make },
@@ -196,6 +204,79 @@ export function backupDialog() {
     go));
   update();
   return form;
+}
+
+// Verification is deliberately separate from restore: reopening a saved file cannot overwrite
+// a share, consume a nonce, replace a room key, or select another wallet.
+function backupCheckExpected(gid, seat, chain) {
+  if (gid !== state.gid || !localSeatReady(seat)) {
+    throw new Error("Open this wallet on the device that saved the file and finish its address check first.");
+  }
+  if (chain === "zec") return J(backupText(seat));
+  const s = sec(gid, seat)?.sol;
+  if (chain !== "sol" || solSetup()?.status !== "ready" || !s?.keyPackage
+      || !s.solSeed || !s.groupKey || s.aborted) {
+    throw new Error("Wait for this device’s Solana address checks before checking its Solana recovery file.");
+  }
+  return structuredClone({ kind: SOL_BACKUP_KIND, group: gid, seat, cluster: s.cluster ?? "devnet",
+    keyPackage: s.keyPackage, publicKeyPackage: s.publicKeyPackage,
+    groupKey: s.groupKey, solSeed: s.solSeed,
+    ...(s.proveLocal === true ? { proveLocal: true } : {}) });
+}
+const localSeatReady = (seat) => mySeatSecrets(state.gid).some(([i]) => i === seat)
+  && seatCheck(seat) === true;
+
+export function openBackupCheck(seat, chain = "zec") {
+  try {
+    backupCheckExpected(state.gid, seat, chain);
+    ui.backup = { check: true, gid: state.gid, seat, chain, busy: false, file: null, error: "" };
+    render();
+  } catch (e) { showBanner("bad", e.message); }
+}
+
+function backupCheckDialog() {
+  const b = ui.backup;
+  const pass = el("input", { class: "input mono", id: "bc-pass", type: "password",
+    autocomplete: "off", autocapitalize: "off", spellcheck: "false", disabled: b.busy,
+    "aria-describedby": "bc-help" });
+  const file = el("input", { class: "input", id: "bc-file", type: "file",
+    accept: ".zigsbackup,.json,application/json", disabled: b.busy,
+    onchange: (ev) => { b.file = ev.target.files[0] ?? null; b.error = ""; } });
+  const submit = async (ev) => {
+    ev.preventDefault();
+    if (b.busy || ui.backup !== b) return;
+    b.busy = true; b.error = "";
+    const p = pass.value, chosen = b.file;
+    pass.value = ""; render();
+    try {
+      const expected = backupCheckExpected(b.gid, b.seat, b.chain);
+      await checkSavedBackup(chosen, p, expected, (phrase, text) => engineOffThread("backupOpen", phrase, text));
+      // A changed or closed wallet during decryption cannot acknowledge another local share.
+      checkBackupPayload(expected, backupCheckExpected(b.gid, b.seat, b.chain));
+      await markBackupChecked(b.gid, b.seat, b.chain);
+      if (ui.backup === b) ui.backup = null;
+      showBanner("ok", (b.chain === "sol" ? "SOL" : "ZEC")
+        + " recovery file reopened and checked on this device. No key shares were changed.");
+    } catch (e) { b.error = e.message || "The recovery file could not be checked."; }
+    finally { b.busy = false; render(); }
+  };
+  return el("form", { class: "dialog", role: "dialog", "aria-modal": "true",
+    "aria-labelledby": "backup-title", onsubmit: submit },
+  el("div", { class: "card-head" }, el("h2", { id: "backup-title" },
+    "Check saved " + (b.chain === "sol" ? "SOL" : "ZEC") + " file"),
+  el("button", { class: "icon-btn", type: "button", "aria-label": "Close", disabled: b.busy,
+    onclick: closeBackup }, "×")),
+  el("p", { class: "small", id: "bc-help" }, "Choose the encrypted file you saved for device "
+    + b.seat + " of this wallet, then enter its separate passphrase. This check opens it without restoring or changing any key shares. File contents, filenames and passphrases are never sent to the other devices."),
+  securityExplanation("backup-check"),
+  el("label", { class: "field" }, el("span", {}, "Saved recovery file"), file),
+  b.file ? el("p", { class: "small muted" }, "A file is selected for this check.") : null,
+  el("label", { class: "field" }, el("span", {}, "Passphrase"), pass),
+  b.error ? el("p", { class: "callout bad", role: "alert" }, b.error) : null,
+  el("div", { class: "dialog-actions" },
+    el("button", { class: "btn", type: "button", disabled: b.busy, onclick: closeBackup }, "Cancel"),
+    el("button", { class: "btn primary", type: "submit", disabled: b.busy || !Z },
+      b.busy ? "Checking file…" : "Check saved file")));
 }
 
 export function restoreDialog() {
@@ -223,6 +304,7 @@ export function restoreDialog() {
       class: "icon-btn", type: "button", "aria-label": "Close", onclick: closeBackup,
     }, "×")),
   el("p", { class: "small" }, "Enter the passphrase you chose when you made " + r.name + "."),
+  securityExplanation("restore"),
   el("label", { class: "field" }, el("span", {}, "Passphrase"), pass),
   el("div", { class: "dialog-actions" },
     el("button", {

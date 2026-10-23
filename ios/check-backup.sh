@@ -4,15 +4,22 @@
 # documents that the web code made, and the web code accepts the ones that the iOS code made. It
 # compiles the app sources with a small test program, so it needs ZigsCore.xcframework (run
 # ios/build-core.sh) and node. It never touches the Keychain: the test program does not start the
-# app.
+# app. Set ZIGS_CORE_FRAMEWORK to reuse an existing local macos-arm64 framework directory.
 set -euo pipefail
 cd "$(dirname "$0")"
-fw=ZigsCore.xcframework/macos-arm64
+fw="${ZIGS_CORE_FRAMEWORK:-ZigsCore.xcframework/macos-arm64}"
 work=$(mktemp -d)
 trap 'rm -rf "$work"' EXIT
 sed 's/^@main$//' Zigs/ZigsApp.swift > "$work/ZigsApp.swift"
-swiftc -swift-version 5 -enable-bare-slash-regex -module-name Zigs -I "$fw/Headers" -L "$fw" \
-  -lzigs_engine -lc++ $(ls Zigs/*.swift | grep -v ZigsApp.swift) "$work/ZigsApp.swift" \
+sources=()
+for source in Zigs/*.swift; do
+  [[ "$source" == Zigs/ZigsApp.swift ]] || sources+=("$source")
+done
+swiftc -swift-version 5 -enable-bare-slash-regex -module-name Zigs \
+  -target arm64-apple-macos14 -module-cache-path "$work/module-cache" \
+  -file-prefix-map "$HOME=/build" -file-prefix-map "$work=/tests" \
+  -I "$fw/Headers" -L "$fw" \
+  -lzigs_engine -lc++ "${sources[@]}" "$work/ZigsApp.swift" \
   CheckBackup/main.swift -o "$work/check"
 node CheckBackup/web.mjs make "$work"
 "$work/check" "$work"

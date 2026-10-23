@@ -8,8 +8,8 @@ import { curChain, curNet, explorerText, inFlight, netName } from "./app-chain.j
 import { Z } from "./app-engine.js";
 import { canWriteAs, mayAct } from "./app-filter.js";
 import {
-  act, addrGroups, avatar, closeBtn, copyBtn, el, groupName, guard, isPayee, leavesOf, memoRow,
-  money, named, netBadge, payTitle, proposer, statusChip, unreadable,
+  act, addrGroups, closeBtn, copyBtn, el, groupName, guard, isPayee, leavesOf, memoRow,
+  money, named, netBadge, proposer, statusChip, unreadable,
 } from "./app-dom.js";
 import { seatCheck } from "./app-dkg.js";
 import {
@@ -23,8 +23,13 @@ import { discussion } from "./app-thread.js";
 import { nameOf, zecName } from "./zns.js";
 import { render } from "./app-loop.js";
 import { RESEND_MS, stageHeadline } from "./payment-model.js";
+import { outcomePanel } from "./outcome-seal.js";
+import { privacyNotice, ZEC_EXPOSURE } from "./privacy-language.js";
 import { icon } from "./app-icons.js";
 import { solStays } from "./app-wallet.js";
+import { zecApprovalMotionValue } from "./app-motion.js";
+import { ApprovalVisualization } from "./app-approval-visualization.js";
+import { walletAvatarFor } from "./app-wallet-identity.js";
 
 // The expiry of an open payment, or why an expired one ends here. The engine counts from the
 // last sync, so the time since that sync comes off. A height from saved state gives no time.
@@ -136,13 +141,13 @@ function recipientBox(ss, rc) {
         el("span", { class: "payee-end" }, money(r.amount), r.ok ? null
           : el("span", { class: "badge bad" },
             r.got === undefined ? "Not in the transaction" : "Memo differs"))),
+      copyBtn(r.to, "Copy recipient address"),
       nameLine(r), memoLines(r))),
     rc.rows.some((r) => r.memo) ? el("p", { class: "small faint" },
       "A memo goes on chain with the payment. Its recipient, every device of this wallet and "
       + "anyone else who has the invite link can read it. A device that Change devices leaves "
       + "out later can still read it.") : null,
-    checkWarnings(rc),
-    ss.move ? moveNote(ss, rc) : null);
+    ss.move && rc.intoNew !== false ? moveNote(ss, rc) : null);
 }
 
 function moveNote(ss, rc) {
@@ -325,18 +330,33 @@ function holdLeft(end) {
 function sessionDrawer(ss) {
   const ins = inspectOf(ss), refused = ins && ins.error, rc = recipientCheck(ss, ins);
   const read = refused ? null : ins;
-  return el("aside", { class: "drawer", role: "dialog", "aria-modal": "true", "aria-label": "Payment details" },
-    el("div", { class: "drawer-head" }, el("div", {
-      style: "display:flex;align-items:center;gap:10px;min-width:0",
-    }, el("h2", { class: "nowrap", style: "font-size:15px" }, payTitle(ss)),
+  return el("aside", { class: "drawer approval-review", role: "dialog", "aria-modal": "true", "aria-label": "Payment details" },
+    el("div", { class: "drawer-head" }, el("div", { class: "review-heading" },
+    el("span", { class: "label" }, "Transaction review"),
+    el("h2", {}, "Review payment"),
     statusChip(ss, enoughApprovals())),
       closeBtn()),
     el("div", { class: "drawer-body" },
+      el("div", { class: "review-warnings", "data-review": "warnings" },
+        ...notes(ss, refused, rc)),
+      el("section", { class: "transaction-receipt", "aria-label": "Transaction record" },
+      el("div", { class: "review-context", "data-review": "context" },
+        el("div", { class: "wallet-context-label" }, walletAvatarFor(state.g),
+          el("strong", {}, groupName(state.gid))), netBadge(state.g),
+        el("span", { class: "small muted" }, "Zcash payment")),
+      ui.tab === "activity" ? guard(headline, ss, refused, rc) : null,
       leavesHead(ss, read),
-      guard(headline, ss, refused, rc),
-      ...notes(ss, refused, rc),
-      guard(timeline, ss, refused, rc),
+      guard(recipientBox, ss, rc),
       read ? guard(breakdown, read, ss) : null,
+      privacyNotice(el, read && rc.match ? "shielded" : "unknown",
+        read && rc.match ? "Shielded · Zcash " + curNet().label : "Privacy not verified",
+        read && rc.match ? ZEC_EXPOSURE
+          : "Privacy is not verified until this device checks the transaction and recipients.")),
+      el("section", { class: "approval-verify", "aria-label": "Verify before signing" },
+        icon("approvals"), el("div", {}, el("h3", {}, "Verify before signing"),
+          el("p", {}, "Check the complete recipient address, amount, network and applicable fees. Only approve transactions you recognise."))),
+      ui.tab !== "activity" ? guard(headline, ss, refused, rc) : null,
+      guard(timeline, ss, refused, rc),
       guard(discussion, ss),
       ss.final ? guard(txDetails, ss) : null,
       ss.broadcastTxid ? chainSees() : null,
@@ -344,18 +364,23 @@ function sessionDrawer(ss) {
     drawerFoot(ss, ins, rc));
 }
 
-// What the headline points to sits right under it, before the steps.
+// Preserve every existing warning and condition, ahead of the financial decision.
 const notes = (ss, refused, rc) => [
   refused ? el("div", { class: "callout bad" }, "Your browser refuses this payment: " + refused)
     : null,
   guard(expiryLine, ss),
-  guard(recipientBox, ss, rc),
+  ...recipientWarnings(ss, rc),
   lostApproval(ss),
   holdCard(ss),
   resetNote(ss),
   changedNote(ss),
   stopReason(ss),
 ];
+
+function recipientWarnings(ss, rc) {
+  if (rc.match === null || (!rc.rows.length && ss.package)) return [];
+  return [...checkWarnings(rc), ss.move && rc.intoNew === false ? moveNote(ss, rc) : null];
+}
 // The stop part of a payment that also has a signed part: the signature step shows the signed
 // part then. A block that holds the payment says more, so the note goes then.
 const stopReason = (ss) => ss.error && ss.signed && !landed(ss)
@@ -394,7 +419,7 @@ function decodedTotals(ins) {
 
 function leavesHead(ss, ins) {
   const t = ins ? decodedTotals(ins) : { leaves: leavesOf(ss), fee: finite(ss.fee) };
-  return el("div", { class: "leaves" },
+  return el("div", { class: "leaves", "data-review": "amount" },
     el("div", { style: "display:flex;align-items:center;gap:8px;flex-wrap:wrap" },
       el("span", { class: "label" }, ins ? "Leaves the wallet" : "Proposed to leave the wallet"),
       netBadge(state.g)),
@@ -416,8 +441,9 @@ function breakdown(ins, ss) {
     el("span", { class: "mono " + cls }, zecText(zat)));
   const own = (l) => l.kind !== "spend" && !isPayee(l);
   const spent = ins.lines.filter((l) => l.kind === "spend");
-  return el("div", { style: "display:grid;gap:8px" },
-    el("span", { class: "label" }, "What this payment does"),
+  return el("section", { class: "review-costs", "aria-label": "Payment amounts and costs",
+    "data-review": "costs" },
+    el("h3", {}, "Amounts and network cost"),
     el("div", { class: "lines" },
       ins.lines.filter(isPayee).map((l) => row("To " + short(l.who, 10), l.value)),
       row(feeLabel(ins), t.fee, "neg"),
@@ -432,10 +458,24 @@ function breakdown(ins, ss) {
 }
 
 // Each seat with its name and seat number, and a check mark when it approved.
-const approverChips = () => el("div", {
-  style: "display:flex;align-items:center;gap:10px;flex-wrap:wrap",
-}, seatIds().map((i) => el("span", { class: "approver" + (state.commits[i] ? " yes" : "") },
-  avatar(i), el("span", { class: "small" }, named(i) + (state.commits[i] ? " ✓" : "")))));
+const approvalMotion = (ss, approved) => zecApprovalMotionValue({ pending: state.pending,
+  snapshotKnown: Object.keys(state.commits).length > 0, status: ss.status,
+  packaged: !!ss.package, error: !!ss.error, checking: !!ss.checking }, approved);
+
+// Display only: an empty map also exists before the first snapshot. Without a readiness
+// signal it cannot establish a verified zero. Positive, checked records can be counted.
+const displayedApprovalCount = () => state.pending ? null : Object.keys(state.commits).length || null;
+
+const approvalConstellation = (ss, refused, rc) => ApprovalVisualization({
+  required: state.g.t, total: state.g.n, confirmed: ss.checking ? null : displayedApprovalCount(),
+  stage: stageHeadline({ ...endFacts(ss, refused), ...stepFacts(ss, rc) }),
+  error: approvalsStep(ss, refused, rc) === "bad" || !!ss.error || expired(ss)
+    || tooLate(ss) || approvalsHeld(ss, rc) || sendRefused(ss),
+  isBusy: state.pending || !!ss.checking,
+  context: JSON.stringify([state.gid, ss.id]),
+  participants: seatIds().map((i) => ({ id: i, name: named(i),
+    confirmed: !!state.commits[i], motionValue: approvalMotion(ss, !!state.commits[i]) })),
+});
 
 // What the signature step waits for. Each device does its step while this wallet is open there,
 // with the payment open or not.
@@ -461,9 +501,7 @@ function signatureText(ss, approvals, shared, wait) {
 // `rejected`: this browser refuses the transaction itself (its decode). No live region: the page
 // draws it anew on each redraw.
 function headline(ss, rejected, rc) {
-  const { title, detail } = stageHeadline({ ...endFacts(ss, rejected), ...stepFacts(ss, rc) });
-  return el("div", { class: "pay-status" }, el("h3", {}, title),
-    el("p", { class: "small muted" }, detail));
+  return outcomePanel(stageHeadline({ ...endFacts(ss, rejected), ...stepFacts(ss, rc) }));
 }
 // The facts that end, stop or block a payment. `stopped`: before a sync, or once signing started
 // here, the page cannot tell that no device sent it.
@@ -505,9 +543,10 @@ const STEP_STATE = { done: "Done: ", bad: "Stopped: " };
 const mark = (cls, n) => (cls === "done" ? "✓" : cls === "bad" ? "!" : String(n));
 
 // One numbered step. Its class is "done", "bad", "now" (the step that waits now) or "".
-function stepItem(cls, n, title, body) {
-  return el("li", { class: "step " + cls, "aria-current": cls === "now" ? "step" : null },
-    el("span", { class: "tick", "aria-hidden": "true" }, mark(cls, n)),
+function stepItem(cls, n, title, body, attrs = {}) {
+  return el("li", { class: "step " + cls, "aria-current": cls === "now" ? "step" : null,
+    ...attrs },
+    el("span", { class: "tick", "aria-hidden": "true", "data-motion-mark": "" }, mark(cls, n)),
     el("div", { style: "display:grid;gap:6px;min-width:0" },
       el("h3", {}, STEP_STATE[cls] ? el("span", { class: "sr-only" }, STEP_STATE[cls]) : null,
         title), body));
@@ -521,20 +560,25 @@ function timeline(ss, refused, rc) {
   const signers = signersOf(ss), shared = signers.filter((i) => state.shares[i]).length;
   const { over, wait, block } = waitTexts(ss);
   let n = 0;
-  const tl = (cls, title, body) => {
+  const tl = (cls, title, body, attrs) => {
     n += 1;
-    return stepItem(over && cls === "now" ? "" : cls, n, title, body);
+    return stepItem(over && cls === "now" ? "" : cls, n, title, body, attrs);
   };
+  const watch = (key, value) => ({ "data-motion-watch": key,
+    "data-motion-value": key === "landed:zec"
+      ? state.pending ? "unknown" : value ? "on" : "off" : approvalMotion(ss, value) });
   return el("section", { class: "stage-panel", "aria-label": "Steps of the payment" },
     el("ol", { class: "steps" },
       tl("done", "Proposed", el("p", {}, when(ss.createdAt))),
-      tl(approvalsStep(ss, refused, rc), "Approvals · " + Math.min(approvals, g.t) + " of " + g.t
-        + " needed", approverChips()),
+      tl(approvalsStep(ss, refused, rc), "Approvals · " + (displayedApprovalCount() && !ss.checking
+        ? Math.min(approvals, g.t) + " of " + g.t + " needed" : "count unavailable"),
+      approvalConstellation(ss, refused, rc), watch("threshold:zec", enoughApprovals())),
       tl(signatureStep(ss), "Combined signature",
         el("p", {}, signatureText(ss, approvals, shared, wait))),
       tl(proofStep(ss), "Proof", el("p", {}, proofText(ss, wait))),
       tl(sendStep(ss), "Sent to the network", sendBody(ss, wait)),
-      tl(blockStep(ss), "In a block", el("p", {}, blockText(ss, block)))));
+      tl(blockStep(ss), "In a block", el("p", {}, blockText(ss, block)),
+        watch("landed:zec", landed(ss)))));
 }
 
 // What the waiting steps of a payment that cannot go on (`over`) say: "Not done." where the page
@@ -637,11 +681,13 @@ export function txDetails(ss) {
     + "transaction names the id " + short(String(ss.final.txid), 12) + ", but " + source
     + " gives the id " + short(id, 12) + ". One device wrote one of them alone. "
     + "Check the payment in an explorer.") : null;
-  return el("div", { style: "display:grid;gap:10px" },
+  return el("section", { class: "receipt-execution", "aria-label": "Transaction identifier and execution details" },
     el("span", { class: "label" }, "Transaction"),
     falseId,
     el("dl", { class: "kv", style: "grid-template-columns:110px minmax(0,1fr)" },
-      el("dt", {}, "ID"), el("dd", { class: "hex" }, id || ss.final.txid),
+      el("dt", {}, "ID"), el("dd", { class: "receipt-identifier" },
+        el("span", { class: "hex" }, id || ss.final.txid),
+        id || ss.final.txid ? copyBtn(id || ss.final.txid, "Copy transaction ID") : null),
       el("dt", {}, "Size"), el("dd", {}, size)),
     el("details", {}, el("summary", {}, "Raw transaction"),
       el("div", { class: "log" }, ss.final.tx_hex),

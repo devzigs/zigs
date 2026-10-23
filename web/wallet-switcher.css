@@ -1,0 +1,60 @@
+/* Wallet context: one floating smoke-glass surface; financial content stays opaque. */
+.wallet-picker { min-width:0; width:100%; border:0; background:transparent; }
+.wallet-picker-trigger { display:flex; align-items:center; gap:12px; min-height:48px;
+  --interaction-rest:var(--raised); --interaction-edge:var(--button-line);
+  --interaction-ink:var(--text);
+  padding:10px 14px; list-style:none; border:1px solid var(--button-line);
+  border-radius:var(--r-control); background:var(--raised);
+  box-shadow:var(--shadow-control); font:600 20px/1.3 var(--sans); letter-spacing:-.02em; }
+.wallet-picker-trigger::-webkit-details-marker { display:none; }
+.wallet-picker-trigger>.symbol { width:20px; height:20px; flex:none; color:var(--muted); }
+.wallet-picker-name { min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.wallet-picker-chevron { margin-left:auto; color:var(--muted); font-size:18px; flex:none; }
+.wallet-picker[open]>.wallet-picker-trigger { border-color:var(--metal); }
+.wallet-picker-trigger:focus-visible { outline-offset:3px; }
+.wallet-picker-panel { position:fixed; z-index:35; overflow:auto; overscroll-behavior:contain;
+  display:grid; gap:4px; padding:8px; margin:0; border:1px solid var(--floating-rim); border-radius:18px;
+  background:var(--glass-fallback); box-shadow:var(--shadow-floating); isolation:isolate; }
+.wallet-picker[open] .wallet-picker-enter { animation:wallet-picker-in var(--motion-dialog) var(--entrance); }
+.wallet-picker-label { padding:10px 12px; border-radius:var(--r-sm); background:var(--panel);
+  color:var(--muted); font:var(--font-caption); line-height:1.45; }
+.wallet-picker-row { display:flex; align-items:center; gap:12px; width:100%; min-height:64px;
+  padding:12px; border:1px solid transparent; border-radius:10px; background:var(--panel);
+  text-align:left; cursor:pointer; box-shadow:none; transition:var(--transition-surface); }
+.wallet-picker-row>.symbol { flex:none; width:20px; height:20px; color:var(--muted); }
+.wallet-picker-copy { display:grid; gap:4px; min-width:0; flex:1; }
+.wallet-picker-title { font:500 14px/1.45 var(--sans); overflow-wrap:anywhere; }
+.wallet-picker-meta { display:flex; flex-wrap:wrap; align-items:center; gap:4px 8px;
+  color:var(--muted); font:var(--font-caption); line-height:1.45; }
+.wallet-picker-meta .badge { border:0; padding:0; background:transparent; color:inherit; font:inherit; }
+.wallet-picker-meta .badge.bad { color:var(--bad); }
+.wallet-picker-row:focus-visible { background:var(--raised); }
+.wallet-picker-row:focus-visible { outline-offset:-3px; }
+.wallet-picker-row[aria-checked=true] { border-color:var(--line-2); background:var(--raised); }
+.wallet-picker-selected { align-self:flex-start; padding-top:1px; flex:none;
+  color:var(--accent-text); font:var(--font-caption); line-height:1.45; }
+@media(max-width:480px) {
+  .wallet-picker-row { display:grid; grid-template-columns:20px minmax(0,1fr); gap:6px 12px; }
+  .wallet-picker-selected { grid-column:2; }
+}
+@media(hover:hover) and (pointer:fine) {
+  .wallet-picker-trigger:hover { border-color:var(--metal); }
+  .wallet-picker-row:hover { background:var(--raised); }
+}
+@keyframes wallet-picker-in { from { translate:0 -4px; } to { translate:0 0; } }
+@supports (backdrop-filter:blur(1px)) or (-webkit-backdrop-filter:blur(1px)) {
+  .wallet-picker-panel { background:var(--floating-glass);
+    backdrop-filter:blur(var(--glass-blur)) saturate(var(--glass-saturation));
+    -webkit-backdrop-filter:blur(var(--glass-blur)) saturate(var(--glass-saturation)); }
+}
+@media(prefers-reduced-transparency:reduce),(prefers-reduced-motion:reduce) {
+  .wallet-picker-panel { background:var(--glass-fallback); backdrop-filter:none; -webkit-backdrop-filter:none; }
+  .wallet-picker[open] .wallet-picker-enter { animation:none; }
+}
+.motion-document-hidden .wallet-picker-panel { animation:none; }
+@media(forced-colors:active) {
+  .wallet-picker-panel { background:Canvas; border-color:CanvasText; backdrop-filter:none;
+    -webkit-backdrop-filter:none; box-shadow:none; }
+  .wallet-picker-row[aria-checked=true] { border-color:Highlight; }
+  .wallet-picker-selected { color:CanvasText; }
+}

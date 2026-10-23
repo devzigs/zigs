@@ -39,7 +39,7 @@ const stub = () =>
     apply: () => stub(),
     construct: () => stub(),
     set: () => true,
-    has: () => true,
+    has: (_target, key) => key !== "Notification",
   });
 export const storage = new Map();
 Object.assign(globalThis, {

@@ -1,0 +1,14 @@
+.fixture-wallet { display:grid; gap:8px; padding:20px 0; border-bottom:1px solid var(--line); }
+.fixture-overview { display:grid; gap:24px; max-width:1060px; }
+.fixture-overview h1 { margin:0; }
+.fixture-balance { display:grid; gap:12px; }
+.fixture-balance>strong { font-size:28px; }
+@media(max-width:800px) {
+  .side { display:flex; flex-wrap:wrap; position:static; width:100%; gap:14px; padding:16px; }
+  .fixture-wallet,.side nav { display:none; }
+  .side .logo { margin:0; }
+  .side .side-foot { margin-left:auto; padding:0; border:0; }
+  .side-foot p { display:none; }
+  .shell { display:block; }
+  .shell>.main { padding:20px 16px; }
+}

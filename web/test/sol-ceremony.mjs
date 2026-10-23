@@ -104,7 +104,7 @@ const tabState = (gid, hostSec) => ({
   wait: 0,
 });
 const noActions = { add() {}, sync() {}, backup() {}, restoreFile() {} };
-const KEY_MARKS = ["owner", "group-key", "shielded", "sync", "restore", "backup-1"];
+const KEY_MARKS = ["owner", "group-key", "shielded", "worker", "sync-text", "restore", "backup-1"];
 const STOP_TEXT = "Solana setup stopped: a test. Do not use the Solana part of this wallet.";
 const STOP = /Solana setup stopped: .*Do not use the Solana part of this wallet/;
 
@@ -154,7 +154,7 @@ async function stoppedEverywhere(gid, lost = 1) {
   const shown = marksOf(solView(c, (f) => f, noActions));
   assert.ok(shown.includes("status") && shown.includes("stopped"), "the stop is shown");
   assert.ok(shown.includes("public-text"), "a started wallet shows what is public too");
-  for (const mark of [...KEY_MARKS, "add", "backup-2", "backup-3", "balance-private"]) {
+  for (const mark of [...KEY_MARKS, "sync", "add", "backup-2", "backup-3", "balance-private"]) {
     assert.ok(!shown.includes(mark), "a stopped wallet shows no " + mark);
   }
   // Control: the same documents and secrets without the stop show them all.
@@ -165,6 +165,19 @@ async function stoppedEverywhere(gid, lost = 1) {
   const control = solView(tabState(gid, free), (f) => f, noActions);
   const open = marksOf(control);
   for (const mark of KEY_MARKS) assert.ok(open.includes(mark), "the control shows " + mark);
+  assert.ok(!open.includes("sync"), "a healthy wallet has no routine manual-sync control");
+  const failed = { text: "failed: synthetic connection error", busy: false };
+  const failedControl = solView({ ...tabState(gid, free), sync: failed }, (f) => f, noActions);
+  const retry = nodeOf(failedControl, "sync");
+  assert.ok(retry, "an unstopped wallet offers a failed-sync retry");
+  assert.equal(plain(retry), "Retry Solana sync");
+  assert.equal(retry.attrs.disabled, false);
+  const busyControl = solView({ ...tabState(gid, free), sync: { ...failed, busy: true } },
+    (f) => f, noActions);
+  assert.equal(nodeOf(busyControl, "sync").attrs.disabled, true,
+    "a retry cannot duplicate an in-flight sync");
+  const failedStop = solView({ ...c, sync: failed }, (f) => f, noActions);
+  assert.equal(nodeOf(failedStop, "sync"), null, "a stopped wallet offers no failed-sync retry");
   assert.deepEqual(
     faucetLink(control),
     ["a", "https://faucet.solana.com/", "_blank", "noopener"],

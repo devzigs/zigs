@@ -24,6 +24,11 @@ import {
   capNote, FAUCET_TEXT, movedNote, receiveLimit, receiveWhat, SOL_STAYS,
 } from "./app-wallet.js";
 import { solOn } from "./app-sol.js";
+import { recipientSelect } from "./app-recipients.js";
+import { securityExplanation } from "./app-tutorial.js";
+import { privacyNotice, ZEC_EXPOSURE } from "./privacy-language.js";
+import { walletAvatarFor } from "./app-wallet-identity.js";
+import { walletMark } from "./app-wallet-art.js";
 
 const MAX_PAYEES = 20;
 const TOO_MANY = "A payment can have at most " + MAX_PAYEES + " recipients.";
@@ -32,7 +37,10 @@ const TOO_MANY = "A payment can have at most " + MAX_PAYEES + " recipients.";
 // wallet, so a mainnet wallet still reads Mainnet (D3).
 const dialogTitle = (id, text, net = "Zcash " + curNet().label) =>
   el("div", { style: "display:grid;gap:6px;justify-items:start" },
-    el("h2", { id }, text), el("span", { class: "badge plain" }, net));
+    el("h2", { id }, text),
+    el("span", { class: "wallet-context-label small muted" }, walletAvatarFor(state.g),
+      el("span", {}, groupName(state.gid))),
+    el("span", { class: "badge plain" }, net));
 
 export function receiveDialog() {
   const w = state.wallet, hidden = addrHidden(), net = "Zcash " + curNet().label;
@@ -49,7 +57,12 @@ export function receiveDialog() {
     qrBox(w.address, "Wallet address"), el("div", { class: "addr-full" }, addrGroups(w.address))];
   return el("div", {
     class: "dialog", role: "dialog", "aria-modal": "true", "aria-labelledby": "recv-title",
-  }, el("div", { class: "card-head" }, title, close), receiveLead(hidden, moved), ...address,
+  }, el("div", { class: "card-head" }, title, close),
+  el("div", { class: "wallet-receive-art" }, walletMark(state.g, 96)), receiveLead(hidden, moved),
+  privacyNotice(el, hidden || moved ? "unknown" : "shielded",
+    hidden || moved ? "Address unavailable" : "Shielded · Zcash " + curNet().label,
+    ZEC_EXPOSURE), ...address,
+  securityExplanation("receive"),
   hidden ? null : el("div", { class: "dialog-actions" }, moved ? null : shareBtn(w.address), copy));
 }
 
@@ -264,7 +277,18 @@ function payRow(r, i, rows, sumUp) {
     },
   }, "×") : null;
   const [amount, amountNote] = amountField(r, n, rows, sumUp);
-  return el("div", { class: "pay-row" }, labelled(toLabel() + n, to), amount, remove, hint,
+  const saved = recipientSelect({ asset: "ZEC", network: netName(state.g), type: "shielded",
+    id: "s-saved-" + r.k, onSelect: (address) => {
+      // Start a fresh review run before changing the existing field. Its own input listener
+      // clears any prior ZNS association; amounts, memos and all other payees stay intact.
+      dropReview();
+      to.value = address;
+      to.dispatchEvent(new Event("input", { bubbles: true }));
+      keepDraft();
+      to.focus();
+    } });
+  return el("div", { class: "pay-row" }, el("div", { class: "pay-recipient-field" },
+    labelled(toLabel() + n, to), saved), amount, remove, hint,
     amountNote, memoBox(r, n));
 }
 
@@ -676,6 +700,7 @@ export function sendDialog() {
     onsubmit: inDialog((ev) => submitSend(rows, spendable, why, ev)) },
     el("div", { class: "card-head" }, dialogTitle("send-title", "Send ZEC"), closeX()),
     sendNotice(),
+    securityExplanation("send"),
     el("div", { class: "field" },
       rows.length > 1 ? el("span", {}, rows.length + " recipients, one transaction") : null,
       rows.map((r, i) => payRow(r, i, rows, sumUp)),
@@ -748,6 +773,9 @@ function reviewDialog() {
     "aria-labelledby": "review-title" },
   el("div", { class: "card-head" }, dialogTitle("review-title", "Review the payment"), closeX()),
   sendNotice(),
+  privacyNotice(el, ok ? "shielded" : "unknown",
+    ok ? "Shielded · Zcash " + curNet().label : "Privacy not verified",
+    ok ? ZEC_EXPOSURE : "Privacy cannot be verified because the transaction check did not pass."),
   ok ? el("div", { class: "review-hero" }, el("span", { class: "label" }, "Leaves the wallet"),
     money(t.amount + ins.fee, "lg"), el("span", { class: "small muted" },
       "Zcash " + curNet().label + ": the amounts and the network fee")) : null,
@@ -755,6 +783,7 @@ function reviewDialog() {
     : el("p", { class: "callout bad", role: "alert" }, REVIEW_BAD),
   prep.payees.map((p, i) => reviewRow(p, i, prep.payees.length)),
   reviewFacts(ins, note),
+  securityExplanation("payment-review"),
   ...privacyNotes(),
   el("p", { class: "small faint" }, EXPIRY_NOTE + " Proposing asks the devices to approve; it "
     + "does not sign or send the payment."),
@@ -784,6 +813,7 @@ function moveDialog() {
       "to " + groupName(to) + ", the wallet that replaces this one")),
   el("p", { class: "small muted" }, "Like any payment, this needs " + state.g.t + " approvals."
     + (solOn() ? " " + SOL_STAYS : "")),
+  securityExplanation("payment-review"),
   ...privacyNotes(true),
   el("p", { class: "small faint" }, EXPIRY_NOTE),
   el("div", { class: "dialog-actions" },

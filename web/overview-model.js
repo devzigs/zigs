@@ -1,6 +1,17 @@
 // The words and numbers of the Overview: the asset rows and the pending shortcut. Display only:
 // nothing here approves, signs or sends. An amount that is not known shows as unknown, never as
-// zero.
+// zero, except for the explicitly labelled presentation-only USD placeholder.
+
+const usd = new Intl.NumberFormat("en-US", {
+  style: "currency", currency: "USD", minimumFractionDigits: 2, maximumFractionDigits: 2,
+});
+
+/** Display only. Unknown remains distinct from a confirmed zero; never a valuation source. */
+export function formatUsdBalance(valuation) {
+  const known = typeof valuation === "number" && Number.isFinite(valuation);
+  const text = usd.format(known && valuation !== 0 ? valuation : 0);
+  return { known, text, whole: text.slice(0, -3), fraction: text.slice(-3) };
+}
 
 /** The ZEC of the asset row in zatoshi: spendable plus incoming, or null before the first sync. */
 export const zecTotal = (b) => (b ? b.spendable + b.pending : null);

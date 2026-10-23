@@ -8,12 +8,14 @@ import { createHash } from "node:crypto";
 import { backupName } from "../util.js";
 import { aesKey, open as openVault, parseVault } from "../vault.js";
 import { backupText as solBackupText, backupWords, KIND } from "../sol/backup.js";
+import { agreement } from "../sol/ceremony.js";
 import { base58 } from "../sol/docs.js";
 import { feeMismatch, feeOf } from "../sol/fee.js";
 import { gateAnswer } from "../sol/localprove.js";
 import { putSol } from "../sol/secrets.js";
 import { loadSnap, saveSnap } from "../sol/store.js";
 import { shareSeat, showSaved, solText, syncSolana } from "../sol/session.js";
+import { solView } from "../sol/view.js";
 import { loadRig, sleep, storage } from "./sol-rig.mjs";
 
 const KEY_NAME = "api-key";
@@ -77,6 +79,155 @@ const mainnet = await rig.wallet({ name: "Main", network: "mainnet" });
 const gid = await solanaWallet("Backup");
 const original = structuredClone(solOf(gid, 1));
 const hashes = [1, 2, 3].map((i) => sha(solOf(gid, i).solSeed));
+
+// ── Overview presents unknown valuations and launches only the existing asset workflows ──
+{
+  const c = t.sol.ctl;
+  await waitFor("Overview key agreement", () => agreement(c).state === "agree");
+  const before = { document: globalThis.document, chain: t.chain, group: t.state.g, tab: t.ui.tab,
+    sync: c.sync, public: c.chain, autoSyncBusy: c.autoSyncBusy, receive: t.ui.receive,
+    send: t.ui.send, focus: t.wantFocus };
+  const navigatorBefore = Object.getOwnPropertyDescriptor(globalThis, "navigator");
+  class Rec extends Node {
+    constructor(tag) {
+      super(); Object.assign(this, { tag, kids: [], attrs: {}, on: {}, style: {} });
+    }
+    setAttribute(k, v) { this.attrs[k] = String(v); }
+    addEventListener(k, v) { this.on[k] = v; }
+    append(...kids) { this.kids.push(...kids); }
+  }
+  const text = (n) => n.text ?? n.kids.map(text).join("");
+  const all = (n, test) => [ ...(test(n) ? [n] : []),
+    ...(n.kids ?? []).flatMap((k) => all(k, test)) ];
+  const one = (n, test) => all(n, test)[0];
+  const button = (n, label) => one(n, (x) => x.tag === "button" && text(x) === label);
+  const asset = (n, id) => one(n, (x) => x.attrs?.["aria-labelledby"] === "asset-" + id);
+  const picker = (n, action) => one(n, (x) => x.className === "overview-action-picker"
+    && text(x.kids[0]) === action);
+  const choice = (n, action, id) => one(picker(n, action), (x) => x.tag === "button"
+    && x.attrs?.["aria-describedby"] === "choose-" + action.toLowerCase() + "-" + id);
+  const draw = () => { t.ui.tab = "overview"; return t.walletView(null, null); };
+  c.autoSyncBusy = true; // This display-only test starts no network job.
+  c.sync = { balance: "0.123456789 SOL", text: "saved sync of slot 123" };
+  c.chain = { balance: "900 SOL", fees: { 1: "800 SOL" } };
+  t.setChain({ gid, cw: {}, received: [], sent: new Set(), birthday: 1000,
+    bal: { spendable: 123456789, pending: 9, height: 1000, tip: 1000 } });
+  globalThis.document = new Proxy(before.document, { get: (o, k) => ({
+    createElement: (tag) => new Rec(tag), createElementNS: (_ns, tag) => new Rec(tag),
+    createTextNode: (value) => ({ text: value }),
+  })[k] ?? o[k] });
+  try {
+    let tree = draw();
+    const hero = one(tree, (n) => n.className === "overview-hero");
+    assert.equal(text(one(hero, (n) => n.className?.split(" ").includes("portfolio-value"))),
+      "$0.00");
+    assert.match(text(hero), /Placeholder.*USD valuation is unknown/);
+    assert.equal(one(hero, (n) => n.attrs?.["data-valuation-state"])?.attrs["data-valuation-state"],
+      "unknown", "displayed zero remains an unknown valuation");
+    assert.match(text(hero), /Test funds have no cash value/);
+    assert.equal(button(hero, "Swap").attrs.disabled, "");
+    const zec = asset(tree, "zec");
+    const balance = one(zec, (n) => n.className === "asset-balance-block");
+    assert.match(text(balance), /^Available1\.23456789ZECUp to dateIncoming 0\.00000009ZEC$/,
+      "the compact primary value is exact spendable ZEC, with incoming separately labelled");
+    assert.equal(all(zec, (n) => n.className === "label" && text(n) === "Available").length, 1,
+      "the available balance label is not repeated");
+    const details = one(zec, (n) => n.tag === "details"
+      && n.attrs?.id === "zec-asset-details");
+    assert.equal(text(one(details, (n) => n.tag === "summary")), "Balance details");
+    assert.equal(details.attrs.open, undefined);
+    assert.match(text(details), /Total shielded balance 1\.23456798ZEC/,
+      "the exact total including incoming remains available in balance details");
+    const summaries = ["zec", "sol", "usdc"].map((id) => text(one(asset(tree, id),
+      (n) => n.tag === "summary")));
+    assert.equal(new Set(summaries).size, summaries.length,
+      "each asset disclosure keeps a distinct identity for the existing open-state restorer");
+    assert.match(text(asset(tree, "sol")), /0\.123456789SOL/);
+    assert.match(text(asset(tree, "sol")), /last saved sync/);
+    assert.doesNotMatch(text(asset(tree, "sol")), /900 SOL|800 SOL/,
+      "legacy group and device fee-account balances are not silently added to holdings");
+    for (const id of ["zec", "sol", "usdc"]) {
+      const privacy = one(asset(tree, id), (n) => n.className?.split(" ")
+        .includes("asset-shielding"));
+      assert.match(text(privacy), /Privacy breakdown unavailable/);
+      assert.doesNotMatch(text(privacy), /\d[\d.]*%/,
+        "unknown or incompatible balance scopes never fabricate a shielding percentage");
+      const track = one(asset(tree, id), (n) => n.className === "shielding-track is-unknown");
+      assert.equal(track, undefined, "unknown holdings do not imply a measured allocation");
+    }
+    const usdcBalance = one(asset(tree, "usdc"), (n) => n.className === "asset-balance-block");
+    assert.match(text(usdcBalance), /Unavailable.*Do not deposit USDC to this wallet/,
+      "the unavailable asset and deposit warning remain outside collapsed details");
+    for (const id of ["zec", "usdc"]) {
+      for (const action of ["Shield", "Unshield"]) {
+        assert.equal(button(asset(tree, id), action).attrs.disabled, "");
+      }
+    }
+    for (const action of ["Send", "Receive"]) {
+      assert.equal(choice(tree, action, "usdc").attrs.disabled, "");
+    }
+    button(asset(tree, "sol"), "Shield").on.click();
+    assert.deepEqual([t.ui.tab, t.wantFocus?.key], ["solana", "INPUT:sol-add-amount:0"]);
+    button(asset(tree, "sol"), "Unshield").on.click();
+    assert.deepEqual([t.ui.tab, t.wantFocus?.key], ["solana", "INPUT:sol-withdraw-to:0"]);
+    choice(tree, "Send", "sol").on.click();
+    assert.deepEqual([t.ui.tab, t.wantFocus?.key], ["solana", "INPUT:sol-send-to:0"]);
+    choice(tree, "Receive", "sol").on.click();
+    assert.deepEqual([t.ui.tab, t.wantFocus?.key], ["solana", "sol-receive"]);
+    choice(tree, "Receive", "zec").on.click();
+    assert.equal(t.ui.receive, true, "ZEC Receive reuses the existing guarded dialog");
+    t.setChain(null);
+    tree = draw();
+    const blocked = choice(tree, "Send", "zec");
+    assert.equal(blocked.attrs.disabled, "");
+    assert.match(text(blocked), /Wait for the first sync/,
+      "the new Send chooser retains the existing wallet blocker");
+    const eligible = t.state.g;
+    t.state.g = { ...eligible, network: "mainnet" };
+    const off = draw();
+    for (const action of ["Send", "Receive"]) {
+      assert.equal(choice(off, action, "sol").attrs.disabled, "");
+    }
+    const solOff = one(asset(off, "sol"), (n) => n.className === "asset-balance-block");
+    assert.match(text(solOff), /Unavailable.*Do not send SOL to the Zcash address/,
+      "the ineligible asset retains its address warning outside collapsed details");
+    const offSummaries = ["zec", "sol", "usdc"].map((id) => text(one(asset(off, id),
+      (n) => n.tag === "summary")));
+    assert.equal(new Set(offSummaries).size, offSummaries.length,
+      "unavailable assets also have distinct open-state identities");
+    t.state.g = eligible;
+    const receive = solView(c, (fn) => fn, {});
+    assert.ok(one(receive, (n) => n.attrs?.["data-key"] === "sol-receive"));
+    const address = one(receive, (n) => n.attrs?.["data-sol"] === "shielded");
+    assert.equal(text(address), agreement(c).done.pdaAddress);
+    assert.match(text(address), /^[0-9a-f]{198}$/);
+    assert.match(text(receive), /compatible shielded wallet.*not a standard Solana account/);
+    let copied = null;
+    Object.defineProperty(globalThis, "navigator", { configurable: true,
+      value: { clipboard: { writeText: async (value) => { copied = value; } } } });
+    const copy = one(receive, (n) => n.attrs?.["data-sol"] === "copy-shielded");
+    await copy.on.click({ currentTarget: {} });
+    assert.equal(copied, agreement(c).done.pdaAddress,
+      "Receive copies the protocol destination, never the program or fee account");
+    const differs = { ...c, docs: { ...c.docs, soldone: { ...c.docs.soldone,
+      2: { ...c.docs.soldone[2], groupKey: "00".repeat(32) } } } };
+    const mismatch = solView(differs, (fn) => fn, {});
+    assert.match(text(mismatch), /different Solana keys/);
+    assert.equal(one(mismatch, (n) => n.attrs?.["data-sol"] === "copy-shielded"), undefined);
+    assert.equal(one(mismatch, (n) => n.attrs?.id === "sol-send-to"), undefined);
+    await assert.rejects(() => syncSolana({ ...c, rpcUrl: "" }), /not available on this server/);
+  } finally {
+    globalThis.document = before.document;
+    t.state.g = before.group;
+    t.setChain(before.chain);
+    Object.assign(c, { sync: before.sync, chain: before.public,
+      autoSyncBusy: before.autoSyncBusy });
+    Object.assign(t.ui, { tab: before.tab, receive: before.receive, send: before.send });
+    t.focusAfter(before.focus?.key, before.focus?.force);
+    if (navigatorBefore) Object.defineProperty(globalThis, "navigator", navigatorBefore);
+    else delete globalThis.navigator;
+  }
+}
 
 // ── The Zcash backup has no Solana field ──
 {

@@ -7,8 +7,11 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 
 const css = readFileSync(new URL("../design-system.css", import.meta.url), "utf8");
+const appCss = readFileSync(new URL("../app.css", import.meta.url), "utf8");
 const MIN = 4.5, MIN_EDGE = 3;
 const TEXTS = ["text", "muted", "faint", "accent-text", "ok", "bad", "info", "warning"];
+const SURFACES = ["bg", "side", "panel", "raised", "sunk", "sheet"];
+const MARKS = ["text", "ok", "bad", "accent-text", "warning", "info"];
 const SOFT = { ok: "ok-soft", bad: "bad-soft", info: "info-soft", warning: "warning-soft",
   "accent-text": "accent-soft" };
 
@@ -59,6 +62,12 @@ function pairs(t) {
     out.push([text + " on " + soft, ratio(rgba(t[text]), over(rgba(t[soft]), panel))]);
   }
   out.push(["on-accent on accent", ratio(rgba(t["on-accent"]), rgba(t.accent))]);
+  for (const text of ["on-portfolio", "on-portfolio-muted"])
+    out.push([text + " on graphite", ratio(rgba(t[text]), rgba(t["portfolio-bg"]))]);
+  for (const base of ["#000000", "#ffffff", "#ee9d70", "#181c23"])
+    for (const text of TEXTS.slice(0, 3))
+      out.push([text + " on glass over " + base,
+        ratio(rgba(t[text]), over(rgba(t.glass), rgba(base)))]);
   return out;
 }
 
@@ -69,6 +78,41 @@ function edges(t) {
     ["line-field on " + s, ratio(rgba(t["line-field"]), over(rgba(t[s]), bg))]);
 }
 
+function buttonPairs(t) {
+  const result = [];
+  for (const surface of ["accent", "accent-hi", "accent-pressed", "raised", "control-hover"]) {
+    const text = surface.startsWith("accent") ? "on-accent" : "muted";
+    for (const overlay of ["button-sheen", "button-shade"])
+      result.push([surface + " " + overlay, ratio(rgba(t[text]),
+        over(rgba(t[overlay]), rgba(t[surface])))]);
+  }
+  return result;
+}
+
+// A heading or status mark must remain readable at the animation's least opaque first frame.
+function initialOpacity(name) {
+  const from = new RegExp("@keyframes " + name + "\\s*\\{\\s*(?:from|0%)\\s*\\{([^}]+)")
+    .exec(appCss);
+  assert.ok(from, "app.css has an initial frame for " + name);
+  const value = /\bopacity:\s*([\d.]+)\s*;/.exec(from[1]);
+  assert.ok(value, "the initial frame declares opacity for " + name);
+  const opacity = Number(value[1]);
+  assert.ok(Number.isFinite(opacity) && opacity >= 0 && opacity <= 1,
+    "the initial opacity is valid for " + name);
+  return opacity;
+}
+
+function transientPairs(t, colors, opacity) {
+  const bg = rgba(t.bg).slice(0, 3);
+  return colors.flatMap((color) => SURFACES.map((surface) => {
+    const under = over(rgba(t[surface]), bg), foreground = rgba(t[color]);
+    foreground[3] *= opacity;
+    return [color + " entering on " + surface, ratio(over(foreground, under), under)];
+  }));
+}
+
+const contentOpacity = initialOpacity("motion-content-in");
+const markOpacity = initialOpacity("motion-mark-in");
 const dark = tokens(":root");
 const light = tokens(':root[data-theme="light"]');
 assert.deepEqual(tokens(':root:not([data-theme="dark"])'), light,
@@ -80,6 +124,20 @@ for (const [name, palette] of [["dark", dark], ["light", { ...dark, ...light }]]
     name + ": every text colour reads at " + MIN + ":1 or more");
   assert.deepEqual(below(edges(palette), MIN_EDGE), [],
     name + ": the edge of a field shows at " + MIN_EDGE + ":1 or more");
+  assert.deepEqual(below(buttonPairs(palette), MIN), [],
+    name + ": bevel lighting keeps button labels above " + MIN + ":1 in every state");
+  const selected = over(rgba(palette["chrome-hi"]), rgba(palette.side));
+  assert.deepEqual(below(["text", "muted", "accent-text"].map((text) =>
+    [text + " on selected navigation", ratio(rgba(palette[text]), selected)]), MIN), [],
+  name + ": translucent navigation retains readable text");
+  const headings = transientPairs(palette, ["text"], contentOpacity);
+  const marks = transientPairs(palette, MARKS, markOpacity);
+  assert.deepEqual(below(headings, MIN), [],
+    name + ": entering headings retain " + MIN + ":1 at the CSS initial opacity");
+  assert.deepEqual(below(marks, MIN_EDGE), [],
+    name + ": entering status marks retain " + MIN_EDGE + ":1 at the CSS initial opacity");
   console.log("ok  " + name + ": " + pairs(palette).length + " text pairs, 4 field edges");
+  console.log("ok  " + name + ": " + headings.length + " transient heading pairs, "
+    + marks.length + " transient status-mark pairs");
 }
 console.log("contrast: ok");

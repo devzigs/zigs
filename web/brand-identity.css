@@ -1,0 +1,141 @@
+/* Decorative Zigs vocabulary. No colour, mark or motion in this file represents state. */
+:root {
+  --brand-cut:var(--metal);
+  --brand-rim:rgba(217,221,224,.24);
+  --brand-engraving:url("./assets/brand/engraving.svg");
+  --brand-fragments:url("./assets/brand/fragments.svg");
+  --brand-empty:url("./assets/brand/empty-plate.svg");
+  --brand-seal:url("./assets/brand/outcome-seal.svg");
+  --emblem-arrival:420ms;
+  --emblem-rim-hi:#d3d8db;
+  --emblem-rim-mid:#7d878e;
+  --emblem-rim-lo:#30383e;
+  --emblem-face-hi:#262c30;
+  --emblem-face-lo:#14181b;
+  --emblem-contact:rgba(0,0,0,.52);
+  --emblem-warm:rgba(239,161,111,.045);
+  --emblem-cool:rgba(193,207,219,.075);
+}
+
+/* One upper-left light source; solid colours remain when decorative backgrounds are absent.
+   The approved raster stays unfiltered. An extra engraving mask would obscure its detail. */
+.zigs-emblem {
+  --emblem-inset:3px;
+  position:relative; isolation:isolate; display:grid; place-items:center; flex:none;
+  width:272px; height:272px; overflow:hidden; border:1px solid #657077; border-radius:28px;
+  background-color:var(--emblem-rim-mid);
+  background-image:linear-gradient(132deg,var(--emblem-rim-hi),#9aa5ac 18%,
+    #4b555c 44%,var(--emblem-rim-lo) 66%,#829098 94%,#b5bfc5);
+  box-shadow:inset 1px 1px 0 rgba(255,255,255,.26),inset -1px -1px 0 rgba(0,0,0,.4),
+    0 2px 2px rgba(0,0,0,.4),3px 14px 18px -10px var(--emblem-contact),
+    5px 32px 30px -22px var(--emblem-contact);
+}
+.zigs-emblem::before {
+  content:""; position:absolute; inset:1px; width:auto; height:auto; border-radius:inherit;
+  border:1px solid rgba(213,222,227,.13); background:none; opacity:1;
+  pointer-events:none; mask:none; -webkit-mask:none;
+}
+.zigs-emblem-face {
+  position:absolute; inset:var(--emblem-inset); display:grid; place-items:center;
+  border-radius:calc(28px - var(--emblem-inset)); background-color:var(--emblem-face-lo);
+  background-image:radial-gradient(ellipse at 12% 0,rgba(215,226,233,.045),transparent 70%),
+    linear-gradient(145deg,var(--emblem-face-hi),#1b2024 48%,var(--emblem-face-lo));
+  box-shadow:inset 1px 1px 2px rgba(0,0,0,.8),inset -1px -1px 0 rgba(211,222,228,.1);
+}
+.zigs-emblem-logo { display:block; position:relative; width:79%; height:79%; object-fit:contain; }
+.zigs-emblem-face::before { content:""; position:absolute; inset:0; border-radius:inherit;
+  pointer-events:none; background:repeating-linear-gradient(0deg,transparent 0 2px,
+    rgba(223,231,236,.006) 2px 3px); }
+.lobby-home .zigs-emblem--hero { border-radius:24px; }
+.lobby-home .zigs-emblem--hero .zigs-emblem-face { border-radius:21px; }
+.zigs-emblem--small { --emblem-inset:2px; width:64px; height:64px; border-radius:12px; }
+.zigs-emblem--small .zigs-emblem-face { border-radius:10px; }
+.zigs-emblem::after { display:none; }
+.motion-document-hidden .zigs-emblem { transition:none; }
+@supports (mask-composite:exclude) {
+  .zigs-emblem--hero::after {
+    content:""; display:block; position:absolute; inset:0; width:auto; height:auto;
+    padding:var(--emblem-inset); border-radius:inherit; transform:none; pointer-events:none;
+    background:linear-gradient(110deg,transparent 44%,rgba(255,255,255,.5) 50%,transparent 56%);
+    background-size:250% 100%; background-position:-80% 0;
+    mask:linear-gradient(#fff 0 0) content-box,linear-gradient(#fff 0 0); mask-composite:exclude;
+  }
+}
+.lobby-home .welcome-new .welcome-intro { position:relative; isolation:isolate; }
+.welcome-new .welcome-intro::before {
+  content:""; position:absolute; inset:0; z-index:-1; pointer-events:none;
+  background:radial-gradient(ellipse 80% 90% at 12% 38%,var(--emblem-warm),transparent 90%);
+}
+.lobby-home .welcome-brand::before {
+  background:radial-gradient(ellipse 65% 70% at 48% 40%,var(--emblem-cool),transparent 92%);
+}
+:root[data-theme="light"] { --emblem-contact:rgba(0,0,0,.28); }
+@media(prefers-color-scheme:light) {
+  :root:not([data-theme="dark"]) { --emblem-contact:rgba(0,0,0,.28); }
+}
+@media(max-width:760px) {
+  .zigs-emblem--hero { --emblem-inset:2px;
+    box-shadow:inset 1px 1px 0 rgba(255,255,255,.26),inset -1px -1px 0 rgba(0,0,0,.4),
+      1px 2px 2px -1px rgba(0,0,0,.3),2px 6px 8px -5px var(--emblem-contact); }
+  .lobby-home .zigs-emblem--hero { border-radius:18px; }
+  .lobby-home .zigs-emblem--hero .zigs-emblem-face { border-radius:16px; }
+}
+@media(forced-colors:active) {
+  .zigs-emblem { border-color:CanvasText; background:Canvas; box-shadow:none; }
+  .zigs-emblem-face { background:Canvas; box-shadow:none; }
+  .zigs-emblem::before,.zigs-emblem::after,.zigs-emblem-face::before,.welcome-new .welcome-intro::before,
+  .lobby-home .welcome-brand::before { display:none; }
+}
+
+/* The title engraving takes its own inline space, never a layer behind a wallet's data.
+   Supports both the existing row and the separately developed vault-card presentation. */
+.welcome-wallet-list .row-item .ri-title::before {
+  content:""; display:inline-block; width:32px; height:16px; margin-inline-end:10px;
+  vertical-align:middle; background:var(--metal); pointer-events:none;
+  -webkit-mask:var(--brand-engraving) center/contain no-repeat;
+  mask:var(--brand-engraving) center/contain no-repeat;
+}
+.wallet-vault-card .vault-card-brand { display:inline-flex; align-items:center; gap:12px; }
+.wallet-vault-card .vault-card-brand::after {
+  content:""; display:block; width:40px; height:18px; background:currentColor;
+  pointer-events:none; opacity:.8;
+  -webkit-mask:var(--brand-engraving) center/contain no-repeat;
+  mask:var(--brand-engraving) center/contain no-repeat;
+}
+.welcome-wallet-list .wallet-vault-card .ri-title::before { display:none; }
+
+/* A static, separated-fragment header mark in an already labelled teaching illustration.
+   Never attach it to approvals, progress indicators, passkey status or real device nodes. */
+.tutorial-wallet-head>.symbol { position:relative; color:var(--brand-cut); }
+.tutorial-wallet-head>.symbol::before {
+  content:""; position:absolute; inset:0; background:currentColor; pointer-events:none;
+  -webkit-mask:var(--brand-fragments) center/contain no-repeat;
+  mask:var(--brand-fragments) center/contain no-repeat;
+}
+.tutorial-wallet-head>.symbol svg { visibility:hidden; }
+
+/* A neutral engraved object accompanies the existing empty/loading/error guidance. */
+.workflow-empty>.empty-illustration { position:relative; background:transparent;
+  border-color:transparent; box-shadow:none; color:var(--brand-cut); }
+.workflow-empty>.empty-illustration::before {
+  content:""; position:absolute; inset:0; background:currentColor; pointer-events:none;
+  -webkit-mask:var(--brand-empty) center/contain no-repeat;
+  mask:var(--brand-empty) center/contain no-repeat;
+}
+.workflow-empty>.empty-illustration>.symbol { visibility:hidden; }
+
+/* No animation is needed. Restore the original symbols if mask artwork is unavailable. */
+@supports not ((mask-image:url("")) or (-webkit-mask-image:url(""))) {
+  .welcome-brand-plate::before,.welcome-wallet-list .row-item .ri-title::before,
+  .wallet-vault-card .vault-card-brand::after,.tutorial-wallet-head>.symbol::before,
+  .workflow-empty>.empty-illustration::before { display:none; }
+  .tutorial-wallet-head>.symbol svg,.workflow-empty>.empty-illustration>.symbol { visibility:visible; }
+}
+@media(forced-colors:active) {
+  .welcome-brand-plate { box-shadow:none; }
+  .welcome-brand-plate::before,.welcome-wallet-list .row-item .ri-title::before,
+  .wallet-vault-card .vault-card-brand::after,.tutorial-wallet-head>.symbol::before,
+  .workflow-empty>.empty-illustration::before { display:none; }
+  .tutorial-wallet-head>.symbol svg,.workflow-empty>.empty-illustration>.symbol { visibility:visible; }
+  .tutorial-wallet-head>.symbol,.workflow-empty>.empty-illustration { color:CanvasText; }
+}

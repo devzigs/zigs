@@ -9,20 +9,39 @@ import {
   closeSession, db, dbReady, learnNetwork, openGroup, toApprove, watched, watchOnly,
 } from "./app-groups.js";
 import { el } from "./app-dom.js";
+import { presentMotion } from "./app-motion.js";
+import { presentWalletMarble } from "./wallet-marble.js";
+import { presentWalletReveal } from "./app-wallet-art.js";
+import { announceApprovalProgress } from "./app-approval-visualization.js";
 import { markRead, syncRooms, unreadIn } from "./app-messages.js";
 import {
   canCreateWallet, createWallet, groupVersion, myVerified, reactConfirm, reactSeat, reactStops,
 } from "./app-dkg.js";
 import { noteSessions, reactSession, toWatch } from "./app-payments.js";
-import { personal } from "./app-account.js";
-import { chatView, newChatDialog } from "./app-thread.js";
+import { acct, personal } from "./app-account.js";
+import { newChatDialog } from "./app-thread.js";
 import { backupDialog, closeBackup, restoreDialog, settleRestore } from "./app-backups.js";
-import { contactDialog, contactView } from "./app-account-view.js";
-import { createDialog, endCreate, loadingView, lobby, lockView, renderSide } from "./app-shell.js";
+import {
+  clearMessagingCostReview, closeMessagingCostReview, contactDialog,
+  hasMessagingCostReview, messagingCostReviewDialog,
+} from "./app-account-view.js";
+import {
+  closeMessagingTutorial, hasMessagingTutorial, messagingTutorialDialog,
+} from "./app-messaging-education.js";
+import {
+  activityWorkspace, approvalsWorkspace, chatsWorkspace, createDialog, endCreate, loadingView,
+  lobby, lockView, recoveryWorkspace, renderSide, settingsWorkspace, swapWorkspace,
+} from "./app-shell.js";
+import { recipientsView } from "./app-recipients.js";
 import { sessionLayer } from "./app-drawer.js";
 import { solPending, solReact } from "./app-sol.js";
-import { groupView } from "./app-wallet.js";
+import { groupView, walletHeader, walletShown } from "./app-wallet.js";
+import { closeSetupQr, setupQrDialog } from "./app-setup.js";
 import { endSend, receiveDialog, sendDialog } from "./app-send.js";
+import { closeNetworkPrivacy, hasNetworkPrivacy, networkPrivacyPanel } from "./app-network-privacy.js";
+import { presentPrivacyStatus } from "./network-privacy-popup.js";
+
+import { closeHowZigsWorks, hasHowZigsWorks, howZigsWorksDialog } from "./app-how-zigs-works.js";
 
 // Each browser advances the steps it can do for its own seats. Steps that
 // need a human decision (approving a spend) wait for a click.
@@ -167,22 +186,36 @@ function focusLayer(layer) {
 // footer is part of the page: on a phone its link would take Tab out of the loop of the layer.
 export function setModal(view, on) {
   view.toggleAttribute("inert", on);
-  for (const part of [".side", ".app-foot"]) {
+  for (const part of [".side", ".app-foot", ".wallet-context-header"]) {
     document.querySelector(part)?.toggleAttribute("inert", on);
   }
 }
 
-const appFoot = () => el("footer", { class: "app-foot" }, "Beta · not audited · ",
+const appFoot = () => el("footer", { class: "app-foot" },
   el("a", { href: "https://zigs.app", target: "_blank", rel: "noopener" }, "About Zigs"));
 
 // The page when no wallet is open: a direct chat, a contact on chain, or the wallet list.
-export const mainView = () => (state.cid ? chatView() : state.contact != null ? contactView() : lobby());
+export const mainView = () => (state.cid || state.contact != null ? chatsWorkspace()
+  : ui.tab === "chats" ? chatsWorkspace() : lobby());
 
 function pageView() {
   try {
-    if (lockedVault) return lockView();
+    if (lockedVault) {
+      clearMessagingCostReview();
+      clearMessagingPresentation();
+      if (hasMessagingTutorial()) closeMessagingTutorial();
+      return lockView();
+    }
     if (!dbReady) return loadingView();
-    return state.gid ? groupView() : mainView();
+    if (state.cid || state.contact != null) return chatsWorkspace();
+    if (ui.tab === "recipients") return recipientsView();
+    if (ui.tab === "swap") return swapWorkspace();
+    if (ui.tab === "chats") return chatsWorkspace();
+    if (ui.tab === "settings" && !walletShown()) return settingsWorkspace();
+    if (ui.tab === "activity" && !state.gid) return activityWorkspace();
+    if (ui.tab === "approvals" && !state.gid) return approvalsWorkspace();
+    if (ui.tab === "recovery" && !state.gid) return recoveryWorkspace();
+    return state.gid ? groupView({ showHeader: !walletShown() }) : mainView();
   } catch (e) {
     log("unreadable page: " + (e && e.message ? e.message : e));
     const back = el("button", {
@@ -195,6 +228,33 @@ function pageView() {
   }
 }
 
+// The global privacy status mounts independently and must not invalidate the wallet identity.
+const walletHeaderText = (header) => Array.from(
+  header.querySelectorAll(".wallet-identity,.wallet-meta,.wallet-home"),
+  (part) => part.textContent).join("\n");
+
+// A header is navigation context only. Direct chats keep their existing independent lifecycle.
+function selectedWalletHeader(app, view) {
+  if (lockedVault || !dbReady || view.classList.contains("guided-setup")) return null;
+  const previous = app.querySelector(".wallet-context-header");
+  const home = !state.gid && !state.cid && state.contact == null && ui.tab === "overview";
+  const g = walletShown() ? state.g : !state.gid && !home
+    ? state.groups.find((group) => group.id === previous?.dataset.walletContext) : null;
+  if (!g || g.unreadable) return null;
+  const next = walletHeader(g);
+  if (previous?.dataset.walletContext === g.id && walletHeaderText(previous) === walletHeaderText(next)
+    && previous.querySelector(".wallet-marble")?._walletMarbleEntry
+      === next.querySelector(".wallet-marble")?._walletMarbleEntry) return previous;
+  return next;
+}
+
+function placeWalletHeader(app, header) {
+  const previous = app.querySelector(".wallet-context-header");
+  if (previous === header) return;
+  previous?.remove();
+  if (header) app.prepend(header);
+}
+
 export function draw() {
   const shell = document.querySelector(".shell"), app = document.getElementById("app");
   const snap = focusSnapshot(shell);
@@ -204,17 +264,33 @@ export function draw() {
     + unreadIn(g.id), 0) + Object.keys(chats.list).reduce((n, cid) => n + unreadIn(cid), 0);
   document.title = pending ? "(" + pending + ") Zigs" : "Zigs";
   const form = saveFormState(app);
+  if (lockedVault) { closeSetupQr(); closeNetworkPrivacy(); closeHowZigsWorks(); }
   const view = pageView(), top = lockedVault ? [] : layers();
-  if (typingMessage(app, [view, ...top])) return;
-  app.replaceChildren(view, ...top, appFoot());
+  const header = selectedWalletHeader(app, view);
+  if (typingMessage(app, [view, ...top])) {
+    placeWalletHeader(app, header); presentWalletMarble(document); return;
+  }
+  // The Swap preview keeps its input nodes across wallet-status redraws (and phone keyboards).
+  const previousView = app.firstElementChild?.classList.contains("wallet-context-header")
+    ? app.firstElementChild.nextElementSibling : app.firstElementChild;
+  if (view !== previousView || top.length || app.querySelector(".scrim"))
+    app.replaceChildren(...(header ? [header] : []), view, ...top, appFoot());
+  else placeWalletHeader(app, header);
+  presentPrivacyStatus(document);
+  announceApprovalProgress(document);
   keyControls(shell);
   setModal(view, top.length > 0);
+  presentWalletMarble(document);
   const entered = trackLayer(top);
   clearTimeout(tickTimer);
   const ss = curSession();
   if (ss && ss.status === "proving") tickTimer = setTimeout(render, 1000);
   restoreFormState(app, form);
   if (entered) focusLayer(top[1]); else restoreFocus(shell, snap, top[1]);
+  presentMotion({ view, layer: top[1], identity: { wallet: state.gid, panel: ui.tab,
+    session: state.sid, chat: state.cid, contact: state.contact,
+    surface: view.id || view.className } });
+  presentWalletReveal(document);
 }
 
 // Rebuilding a focused text box closes a phone's keyboard. While a message box or a field of the
@@ -224,7 +300,8 @@ const typingIn = (box) => !!box && (box.id.startsWith("chat-text-") || box.id ==
   || (!!ui.request && /^req-(amt|memo)-/.test(box.id)));
 export function typingMessage(app, parts) {
   const box = document.activeElement;
-  if (!typingIn(box) || !app.contains(box)) return false;
+  if (lockedVault || !typingIn(box) || !app.contains(box) || !accountViewIsCurrent(box)
+    || parts.some((p) => p?.matches?.(".dialog, .drawer"))) return false;
   const logs = saveLogs(app);
   for (const old of app.querySelectorAll(".chat-log")) {
     const fresh = parts.map((p) => p && p.querySelector("#" + old.id)).find(Boolean);
@@ -239,34 +316,95 @@ export function typingMessage(app, parts) {
   return true;
 }
 
+// Drafts and scroll positions stay in this tab across conversation navigation. Limit both
+// caches; never put message text in local storage or a shared wallet record.
+const messageDrafts = new Map(), messageScroll = new Map();
+const MAX_MESSAGE_VIEWS = 100, MAX_DRAFT_CHARS = 200000;
+let draftAccount = null, accountPresentationId = 0;
+const rememberView = (cache, id, value) => {
+  cache.delete(id); cache.set(id, value);
+  while (cache.size > MAX_MESSAGE_VIEWS) cache.delete(cache.keys().next().value);
+};
+
+// A public, opaque DOM scope identifies this live account's lifetime. An old account's DOM
+// must not be captured under its replacement, even if both have contact index 1.
+export function messagingAccountScope() {
+  if (draftAccount !== acct) {
+    draftAccount = acct; accountPresentationId++;
+    for (const id of messageDrafts.keys()) if (id.startsWith("chat-text-oc-")) messageDrafts.delete(id);
+    for (const id of messageScroll.keys()) if (id.startsWith("log-oc-")) messageScroll.delete(id);
+  }
+  return "account-view-" + accountPresentationId;
+}
+
+export function clearMessagingPresentation() {
+  messageDrafts.clear(); messageScroll.clear();
+  accountPresentationId++;
+}
+
+export function clearMessageDraft(id, text, scope = null) {
+  if (scope && scope !== messagingAccountScope()) return;
+  const kept = messageDrafts.get(id);
+  if (typeof kept === "string" && kept.trim() === text.trim()) messageDrafts.delete(id);
+}
+
+const accountViewIsCurrent = (node) => !/^(chat-text-oc-|log-oc-)/.test(node.id)
+  || node.getAttribute?.("data-account-scope") === messagingAccountScope();
+
+function rememberDraft(node) {
+  messageDrafts.delete(node.id);
+  if (!node.value) return;
+  rememberView(messageDrafts, node.id, node.value);
+  let chars = [...messageDrafts.values()].reduce((n, value) => n + value.length, 0);
+  while (chars > MAX_DRAFT_CHARS && messageDrafts.size) {
+    const id = messageDrafts.keys().next().value;
+    chars -= messageDrafts.get(id).length; messageDrafts.delete(id);
+  }
+}
+
 // Keep what the viewer is typing, open <details>, and the drawer scroll across live updates. A
 // disclosure of a secret link counts by its link, never by its summary, so a redraw never opens
 // the secret of another card.
-const openKey = (summary) => (summary.parentElement.dataset.link
-  ? "link:" + summary.parentElement.dataset.link : summary.textContent);
+const openKey = (summary) => (summary.parentElement.dataset.disclosureKey
+  ? "view:" + summary.parentElement.dataset.disclosureKey : summary.parentElement.dataset.link
+    ? "link:" + summary.parentElement.dataset.link : summary.textContent);
 export function saveFormState(app) {
+  messagingAccountScope();
+  if (lockedVault) clearMessagingPresentation();
   const values = {};
   for (const i of app.querySelectorAll("input[id], select[id], textarea[id]")) {
-    if (i.type !== "file") values[i.id] = i.value;
+    if (i.type === "file" || !accountViewIsCurrent(i)) continue;
+    if (i.id.startsWith("chat-text-")) {
+      if (lockedVault) continue;
+      rememberDraft(i);
+    }
+    values[i.id] = i.value;
   }
   const open = new Set([...app.querySelectorAll("details[open] > summary")].map(openKey));
   const scroll = app.querySelector(".drawer-body")?.scrollTop || 0;
-  return { values, open, logs: saveLogs(app), scroll };
+  return { values, open, logs: saveLogs(app), scroll, accountScope: messagingAccountScope() };
 }
 
 // A message log that was at its end stays at its end; otherwise it keeps its place.
 function saveLogs(app) {
   const logs = {};
   for (const l of app.querySelectorAll(".chat-log")) {
+    if (lockedVault || !accountViewIsCurrent(l)) continue;
     logs[l.id] = l.scrollHeight - l.scrollTop - l.clientHeight < 24 ? null : l.scrollTop;
+    rememberView(messageScroll, l.id, logs[l.id]);
   }
   return logs;
 }
 
 export function restoreFormState(app, form) {
-  for (const [id, v] of Object.entries(form.values)) {
+  const oldValues = { ...form.values };
+  if (form.accountScope && form.accountScope !== messagingAccountScope()) {
+    for (const id of Object.keys(oldValues)) if (id.startsWith("chat-text-oc-")) delete oldValues[id];
+  }
+  const values = { ...Object.fromEntries(messageDrafts), ...oldValues };
+  for (const [id, v] of Object.entries(values)) {
     const i = document.getElementById(id);
-    if (!i) continue;
+    if (!i || !accountViewIsCurrent(i)) continue;
     i.value = v;
     i.dispatchEvent(new Event("input", { bubbles: true }));
   }
@@ -280,7 +418,11 @@ function restoreScroll(app, form) {
   const body = app.querySelector(".drawer-body");
   if (body) body.scrollTop = form.scroll;
   for (const l of app.querySelectorAll(".chat-log")) {
-    l.scrollTop = form.logs[l.id] ?? l.scrollHeight;
+    if (!accountViewIsCurrent(l)) continue;
+    const sameAccount = !l.id.startsWith("log-oc-") || !form.accountScope
+      || form.accountScope === messagingAccountScope();
+    const at = sameAccount && Object.hasOwn(form.logs, l.id) ? form.logs[l.id] : messageScroll.get(l.id);
+    l.scrollTop = at ?? l.scrollHeight;
   }
 }
 
@@ -290,7 +432,10 @@ function trackLayer(top) {
   const layer = top[1];
   const key = layer ? layer.getAttribute("aria-labelledby") || layer.getAttribute("aria-label") : "";
   if (key && !openLayer) { opener = lastTrigger; lastTrigger = ""; }
-  if (!key && openLayer && opener) { wantFocus = { key: opener, force: true }; opener = ""; }
+  if (!key && openLayer && opener) {
+    if (!wantFocus?.force) wantFocus = { key: opener, force: true };
+    opener = "";
+  }
   const entered = !!key && key !== openLayer;
   openLayer = key;
   return entered;
@@ -303,7 +448,11 @@ document.addEventListener("click", (ev) => {
 }, true);
 
 export function layers() {
-  try { return ui.newChat ? [scrim(() => ui.newChat = false), newChatDialog()] : buildLayers(); }
+  try {
+    const qr = setupQrDialog();
+    if (qr) return [scrim(closeSetupQr), qr];
+    return ui.newChat ? [scrim(() => ui.newChat = false), newChatDialog()] : buildLayers();
+  }
   catch (e) { log("unreadable layer: " + (e && e.message ? e.message : e)); return []; }
 }
 
@@ -317,6 +466,8 @@ const scrim = (close) => el("div", { class: "scrim", onclick: (ev) => {
 // The dialogs, in the order that they take the screen: [is shown, close, build]. `open` is true in
 // an open wallet that has its wallet document. A restore starts in the wallet list.
 const DIALOGS = [
+  [hasMessagingCostReview, closeMessagingCostReview, messagingCostReviewDialog],
+  [hasMessagingTutorial, closeMessagingTutorial, messagingTutorialDialog],
   [() => ui.restore, closeBackup, () => restoreDialog()],
   [(open) => ui.backup && (open || ui.backup.personal), closeBackup, () => backupDialog()],
   [(open) => ui.send && open, endSend, () => sendDialog()],
@@ -324,6 +475,8 @@ const DIALOGS = [
   [() => ui.create && !state.gid, endCreate, () => createDialog()],
   [() => ui.contactAdd && !!personal, () => ui.contactAdd = false, () => contactDialog()],
   [(open) => ui.move && open, endCreate, () => createDialog(state.g)],
+  [hasNetworkPrivacy, closeNetworkPrivacy, networkPrivacyPanel],
+  [hasHowZigsWorks, closeHowZigsWorks, howZigsWorksDialog],
 ];
 
 function buildLayers() {
@@ -387,13 +540,20 @@ const endCompose = () => {
 document.addEventListener("compositionstart", () => { composing = true; });
 document.addEventListener("compositionend", endCompose);
 document.addEventListener("focusout", endCompose);
-// ponytail: an unchecked radio counts as a stop. That is wrong only when a radio group is the
-// last control of a layer.
 const STOPS = FOCUSABLE + ", [tabindex]";
 // A control in a closed <details> has client rects in Chrome, so checkVisibility decides.
 const shown = (n) => n.getClientRects().length > 0 && (n.checkVisibility?.() ?? true);
 const isStop = (n) => !n.disabled && n.tabIndex >= 0 && shown(n);
-const tabStops = (root) => [...root.querySelectorAll(STOPS)].filter(isStop);
+function tabStops(root) {
+  const stops = [...root.querySelectorAll(STOPS)].filter(isStop);
+  // Native Tab visits one radio per named form group; arrows keep their native behavior.
+  return stops.filter((node) => {
+    if (node.type !== "radio" || !node.name) return true;
+    const group = stops.filter((other) => other.type === "radio"
+      && other.name === node.name && other.form === node.form);
+    return node === (group.find((other) => other.checked) || group[0]);
+  });
+}
 // The stops of the layer, then the Close button of an open banner, which shows above the layer.
 function loopStops(layer) {
   const banner = document.getElementById("banner");
@@ -403,13 +563,13 @@ function loopStops(layer) {
 // layer, or on the layer itself, has none before it.
 function stopsBefore(layer) {
   const all = [...layer.querySelectorAll(STOPS)], at = all.indexOf(document.activeElement);
-  return at < 0 ? 0 : all.slice(0, at).filter(isStop).length;
+  return at < 0 ? 0 : tabStops(layer).filter((node) => all.indexOf(node) < at).length;
 }
-// Where Tab goes when the browser must not move the focus: round from an edge stop (`at`), or on
-// from a focus that is no stop (`at` -1). `back` is Shift+Tab.
+// Advance each Tab in DOM order, wrapping at an edge. A focus that is no stop (`at` -1)
+// advances from its position in the layer. `back` is Shift+Tab.
 function loopTarget(layer, stops, at, back) {
   const last = stops.length - 1;
-  if (at >= 0) return stops[back ? last : 0];
+  if (at >= 0) return stops[(at + (back ? -1 : 1) + stops.length) % stops.length];
   const before = stopsBefore(layer);
   if (back) return stops[before > 0 ? before - 1 : last];
   return stops[before <= last ? before : 0];
@@ -427,13 +587,19 @@ export function layerTab(ev) {
     layer.focus();
     return;
   }
-  if (at >= 0 && (ev.shiftKey ? at > 0 : at < stops.length - 1)) return;
+  // WebKit can skip buttons in its native Tab mode. Own each step so an intermediate input
+  // cannot send focus out of the dialog before the edge of our visible-control list.
   ev.preventDefault();
   loopTarget(layer, stops, at, ev.shiftKey).focus();
 }
 document.addEventListener("keydown", layerTab);
 document.addEventListener("keydown", (ev) => {
   if (ev.key !== "Escape") return;
+  closeSetupQr();
+  if (hasMessagingCostReview()) { closeMessagingCostReview(); render(); return; }
+  if (document.getElementById("network-privacy-panel")) { closeNetworkPrivacy(); render(); return; }
+  if (hasMessagingTutorial()) { closeMessagingTutorial(); render(); return; }
+  if (hasHowZigsWorks()) { closeHowZigsWorks(); render(); return; }
   if (state.sid) closeSession();
   else {
     endSend(); endCreate(); ui.receive = false; ui.newChat = false;

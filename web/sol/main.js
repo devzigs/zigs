@@ -47,6 +47,7 @@ const blank = () => ({
   logged: new Set(),
   sync: {},
   viewed: false,
+  balanceViewed: false,
   autoSynced: false,
   autoSyncFails: 0,
   autoSyncAfter: 0,
@@ -198,6 +199,13 @@ export async function attach(host) {
     ctl: c, // the state of the controller, for the tests
     open: (gid, base) => openGroup(c, gid, base),
     close: () => teardown(c),
+    observe(gid) {
+      if (gid !== c.gid || c.gid !== host.state.gid) return;
+      // Overview observes balances without opening payment tools or local-prover selftests.
+      c.balanceViewed = true;
+      refresh(c);
+      autoSync(c);
+    },
     react() {
       if (c.gid !== host.state.gid) return;
       refresh(c);

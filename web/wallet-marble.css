@@ -1,0 +1,48 @@
+/* Geometry turns under fixed studio lights; the surrounding wallet header stays still. */
+.wallet-art { display:block; flex:none; object-fit:contain; max-width:100%; }
+.wallet-art[data-art-state=unavailable] { opacity:.35; }
+.wallet-marble { position:relative; isolation:isolate; display:block; flex:0 0 64px;
+  width:64px; height:64px; padding:0; margin:0; border:0; border-radius:50%;
+  background:transparent; color:var(--muted); cursor:pointer; touch-action:manipulation;
+  -webkit-tap-highlight-color:transparent; }
+.wallet-marble:disabled { opacity:1; cursor:default; }
+.wallet-marble>.wallet-art,.wallet-marble>canvas { position:absolute; inset:0;
+  display:block; width:100%; height:100%; pointer-events:none;
+  filter:drop-shadow(0 5px 4px #0003); }
+.wallet-marble-live>.wallet-art { visibility:hidden; }
+.wallet-marble-control { position:absolute; right:0; bottom:1px; display:grid;
+  place-items:center; width:18px; height:18px; border-radius:50%;
+  border:1px solid var(--line-2); background:var(--panel); color:var(--muted);
+  opacity:0; pointer-events:none; }
+.wallet-marble-control::after { content:""; width:5px; height:6px;
+  border-inline:2px solid currentColor; }
+.wallet-marble[data-motion=paused] .wallet-marble-control::after {
+  width:0; height:0; border:0; border-top:4px solid transparent;
+  border-bottom:4px solid transparent; border-left:6px solid currentColor;
+  margin-left:2px; }
+.wallet-marble:not(:disabled):is(:hover,:focus-visible) .wallet-marble-control,
+.wallet-marble[data-motion=paused] .wallet-marble-control { opacity:1; }
+.wallet-marble:focus-visible { outline:2px solid var(--accent); outline-offset:3px; }
+.wallet-topbar .wallet-identity { flex:1 1 300px; flex-wrap:nowrap; }
+.wallet-topbar .wallet-name-block { flex:1; min-width:0; }
+.overview-wallet-summary { display:flex; align-items:center; gap:16px; min-width:0; }
+.overview-wallet-summary>.wallet-art { width:64px; height:64px; }
+.overview-wallet-summary>.portfolio-summary { flex:1; min-width:0; }
+.wallet-picker-row>.wallet-art { width:32px; height:32px; }
+@media(max-width:600px) {
+  .wallet-marble { flex-basis:52px; width:52px; height:52px; }
+  .wallet-topbar .wallet-identity { display:flex; width:100%; gap:10px; }
+  .overview-wallet-summary { gap:12px; }
+  .overview-wallet-summary>.wallet-art { width:48px; height:48px; }
+}
+@media(hover:none) {
+  .wallet-marble:not(:disabled) .wallet-marble-control { opacity:1; }
+}
+@media(max-width:480px) {
+  .wallet-picker-row { grid-template-columns:32px minmax(0,1fr); }
+}
+@media(forced-colors:active) {
+  .wallet-marble>.wallet-art { forced-color-adjust:none; filter:none; }
+  .wallet-marble>canvas { display:none; }
+  .wallet-marble-live>.wallet-art { visibility:visible; }
+}

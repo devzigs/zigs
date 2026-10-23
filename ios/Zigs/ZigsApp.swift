@@ -4,6 +4,7 @@ import TipKit
 @main
 struct ZigsApp: App {
     @State private var model = GroupModel()
+    @AppStorage("zf-appearance") private var appearance = "system"
     @Environment(\.scenePhase) private var phase
 
     init() { try? Tips.configure() }
@@ -14,13 +15,16 @@ struct ZigsApp: App {
                 if model.locked { LockView() } else { RootView() }
             }
                 .environment(model)
+                .nativeSheetSizing()
                 .tint(.signal)
-                .preferredColorScheme(.dark)
+                .preferredColorScheme(appearance == "dark" ? .dark : appearance == "light" ? .light : nil)
+                .buttonStyle(InstrumentButtonStyle())
+                .textFieldStyle(InstrumentFieldStyle())
                 .onOpenURL { model.join($0.absoluteString) }
                 .onChange(of: phase) { model.setActive(phase == .active) }
         }
         #if os(macOS)
-        .defaultSize(width: 560, height: 860)
+        .defaultSize(width: 1200, height: 860)
         #endif
     }
 }
@@ -29,12 +33,14 @@ struct RootView: View {
     @Environment(GroupModel.self) private var model
     @State private var sheet: RootSheet?
     @State private var importing = false
+    @State private var workspace = NativeWorkspace.overview
+    @State private var columns = NavigationSplitViewVisibility.all
+    @State private var compactColumn = NavigationSplitViewColumn.detail
+    @State private var routeIntent: NativeWorkspace?
 
     enum RootSheet: Identifiable {
         case join, settings, create, chat
-        /// A sealed backup file that waits for its passphrase.
         case restore(name: String, text: String)
-
         var id: String {
             switch self {
             case .join: "join"
@@ -48,67 +54,160 @@ struct RootView: View {
 
     var body: some View {
         @Bindable var model = model
-        NavigationStack(path: $model.path) {
+        NavigationSplitView(columnVisibility: $columns, preferredCompactColumn: $compactColumn) {
             ScrollView {
-                VStack(alignment: .leading, spacing: 16) {
-                    Text("Each wallet is a separate shared account, with its own address, signers and approval rule.")
-                        .font(.subheadline).foregroundStyle(Color.mist)
-                    ForEach(model.chat.offers.keys.sorted(), id: \.self) { JoinChatCard(cid: $0) }
-                    if model.groups.isEmpty {
-                        Welcome(create: { sheet = .create }, join: { sheet = .join },
-                                restore: { importing = true })
-                    } else {
-                        VStack(spacing: 0) {
-                            ForEach(model.groups) { g in
-                                NavigationLink(value: g.id) { WalletRow(g: g) }
-                                if g.id != model.groups.last?.id { Divider().overlay(Color.line) }
-                            }
-                        }
-                        .background(Color.room, in: RoundedRectangle(cornerRadius: 16))
-                        .overlay(RoundedRectangle(cornerRadius: 16).stroke(Color.line))
-                    }
-                    ChatsCard(newChat: { sheet = .chat })
-                    ConnectionLine(connected: model.connected)
-                }
-                .padding(16)
-            }
-            .background(Color.night)
-            .navigationTitle("Wallets")
-            .navigationDestination(for: String.self) { id in
-                if let cid = Chat.chatId(ofRoute: id) {
-                    ChatScreen(cid: cid)
-                } else {
-                    GroupView().onAppear { model.select(id) }
-                }
-            }
-            .toolbar {
-                ToolbarItem(placement: .navigation) {
-                    Button("Settings", systemImage: "gearshape") { sheet = .settings }
-                }
-                ToolbarItem(placement: .primaryAction) {
-                    Menu("Add", systemImage: "plus") {
-                        Button("New wallet", systemImage: "plus.circle") { sheet = .create }
-                        Button("Join with an invite link", systemImage: "link") { sheet = .join }
-                        Button("New chat", systemImage: "bubble.left") { sheet = .chat }
-                        Button("Restore from backup", systemImage: "arrow.down.doc") {
-                            importing = true
+                VStack(alignment: .leading, spacing: 24) {
+                    Button(action: home) {
+                        HStack(spacing: 10) {
+                            Image("Logo").resizable().scaledToFit().frame(width: 36, height: 36)
+                            Text("Zigs").font(.title2.weight(.semibold))
+                            Spacer()
+                        }.padding(12)
+                    }.buttonStyle(.plain).accessibilityLabel("Zigs · Your wallets")
+                    NativeNavigation(selected: workspace,
+                        approvals: model.gid.flatMap { model.toApprove[$0] } ?? 0, choose: navigate)
+                    if !model.groups.isEmpty {
+                        SectionLabel(text: "Wallets").padding(.horizontal, 14)
+                        ForEach(model.groups) { g in
+                            Button {
+                                openWallet(g.id, in: .overview)
+                            } label: {
+                                HStack(spacing: 10) {
+                                    Avatar(text: initials(g.name), size: 28)
+                                    Text(g.name).font(.nativeSubheadline).multilineTextAlignment(.leading)
+                                        .fixedSize(horizontal: false, vertical: true)
+                                    Spacer(minLength: 0)
+                                    if model.gid == g.id && !model.path.isEmpty {
+                                        Image(systemName: "checkmark").font(.nativeCaption).foregroundStyle(Color.signal)
+                                    }
+                                }.padding(12).frame(maxWidth: .infinity, minHeight: 48, alignment: .leading)
+                            }.buttonStyle(.plain)
                         }
                     }
+                    ConnectionLine(connected: model.connected).padding(.horizontal, 14)
+                }.padding(12)
+            }
+            .modifier(GlassChrome())
+            .navigationTitle("Workspace")
+            .navigationSplitViewColumnWidth(min: 216, ideal: 240, max: 300)
+        } detail: {
+            NavigationStack(path: $model.path) {
+                ScrollView {
+                    VStack(alignment: .leading, spacing: 24) { workspaceContent }
+                        .padding(20).frame(maxWidth: 1100).frame(maxWidth: .infinity)
+                }
+                .instrumentScreen()
+                .navigationTitle(workspace == .overview ? "Your wallets" : workspace.rawValue)
+                .navigationDestination(for: String.self) { id in
+                    if let cid = Chat.chatId(ofRoute: id) { ChatScreen(cid: cid) }
+                    else {
+                        GroupView(workspace: $workspace, home: home)
+                            .onAppear { model.select(id) }
+                    }
+                }
+                .toolbar {
+                    #if os(iOS)
+                    ToolbarItem(placement: .topBarLeading) {
+                        Button("Menu", systemImage: "sidebar.left") {
+                            columns = .all
+                            compactColumn = .sidebar
+                        }.accessibilityLabel("Open navigation")
+                    }
+                    #endif
+                    ToolbarItem(placement: .primaryAction) {
+                        Menu("Add", systemImage: "plus") {
+                            Button("New wallet", systemImage: "plus.circle") { workspace = .overview; sheet = .create }
+                            Button("Join with an invite link", systemImage: "link") { workspace = .overview; sheet = .join }
+                            Button("New chat", systemImage: "bubble.left") { workspace = .chats; sheet = .chat }
+                            Button("Recover from backup", systemImage: "arrow.down.doc") { importing = true }
+                        }
+                    }
                 }
             }
-            .sheet(item: $sheet) { s in
-                switch s {
-                case .join: JoinSheet()
-                case .settings: SettingsSheet()
-                case .create: CreateSheet(from: nil)
-                case .chat: NewChatSheet()
-                case .restore(let name, let text): RestoreSheet(name: name, text: text)
-                }
+            .id(workspace)
+            .environment(\.nativeHome, { home() })
+        }
+        .sheet(item: $sheet) { s in
+            switch s {
+            case .join: JoinSheet()
+            case .settings: SettingsSheet()
+            case .create: CreateSheet(from: nil)
+            case .chat: NewChatSheet()
+            case .restore(let name, let text): RestoreSheet(name: name, text: text)
             }
-            .fileImporter(isPresented: $importing, allowedContentTypes: [.data]) {
-                importBackup($0)
+        }
+        .fileImporter(isPresented: $importing, allowedContentTypes: [.data]) { importBackup($0) }
+        .onChange(of: model.path, initial: true) { _, path in
+            if let requested = routeIntent {
+                routeIntent = nil
+                workspace = requested
+            } else if let route = path.last {
+                workspace = Chat.chatId(ofRoute: route) != nil ? .chats : .overview
             }
-            .modifier(Banners())
+            if !path.isEmpty { showDetail() }
+        }
+        .onChange(of: model.chat.offers.keys.sorted(), initial: true) { _, offers in
+            if !offers.isEmpty { workspace = .chats; showDetail() }
+        }
+        .modifier(Banners())
+    }
+
+    private func showDetail() {
+        #if os(iOS)
+        columns = .detailOnly
+        compactColumn = .detail
+        #endif
+    }
+
+    private func home() {
+        workspace = .overview
+        model.path = []
+        model.select(nil)
+        showDetail()
+    }
+
+    private func navigate(_ item: NativeWorkspace) {
+        workspace = item
+        let path = model.gid.map { [$0] } ?? []
+        if model.path != path { routeIntent = item; model.path = path }
+        showDetail()
+    }
+
+    private func openWallet(_ id: String, in item: NativeWorkspace) {
+        workspace = item
+        model.select(id)
+        if model.path != [id] { routeIntent = item; model.path = [id] }
+        showDetail()
+    }
+
+    @ViewBuilder private var workspaceContent: some View {
+        switch workspace {
+        case .overview:
+            NativeWelcome(create: { sheet = .create }, join: { sheet = .join },
+                restore: { importing = true }, learn: { workspace = .help }, returning: !model.groups.isEmpty)
+            if !model.groups.isEmpty {
+                SectionLabel(text: "Saved on this device")
+                VStack(spacing: 0) {
+                    ForEach(model.groups) { g in
+                        Button { openWallet(g.id, in: .overview) } label: { WalletRow(g: g) }.buttonStyle(.plain)
+                        if g.id != model.groups.last?.id { Divider().overlay(Color.line) }
+                    }
+                }.modifier(SatinSurface())
+            }
+        case .addressBook: RecipientBookView()
+        case .chats: ChatsWorkspace()
+        case .swap: UnavailableSwap()
+        case .help: NativeHelpView()
+        case .settings: NativeSettingsView(openSettings: { sheet = .settings }, recover: { importing = true })
+        case .activity, .approvals, .security:
+            InstrumentHeading(title: workspace.rawValue, detail: "Choose a wallet to see its " + workspace.rawValue.lowercased() + ".")
+            ForEach(model.groups) { g in
+                Button { openWallet(g.id, in: workspace) } label: { WalletRow(g: g) }.buttonStyle(.plain)
+            }
+            if model.groups.isEmpty {
+                InstrumentEmptyState(symbol: workspace.symbol, title: "No wallets on this device",
+                    detail: "Create a wallet, join with an invite, or recover an existing key share.")
+            }
         }
     }
 
@@ -131,28 +230,26 @@ struct LockView: View {
 
     var body: some View {
         VStack(spacing: 16) {
-            Image("Logo").resizable().frame(width: 80, height: 80)
-                .clipShape(RoundedRectangle(cornerRadius: 18))
-                .accessibilityHidden(true)
-            Text("Zigs is locked").font(.title2.weight(.semibold)).foregroundStyle(.white)
-            Text("The key shares on this device are encrypted. "
+            ZebraEmblem(size: 112)
+            Text("Zigs is locked").font(.title2.weight(.semibold)).foregroundStyle(Color.primary)
+            Text("The key shares and saved recipients on this device are encrypted. "
                  + "Unlock with \(lockName) or your passcode.")
-                .font(.subheadline).foregroundStyle(Color.mist).multilineTextAlignment(.center)
+                .font(.nativeSubheadline).foregroundStyle(Color.mist).multilineTextAlignment(.center)
             Button("Unlock") { Task { await model.unlock() } }
-                .buttonStyle(.borderedProminent)
+                .primaryButton()
             Button("Cannot unlock?") { forgetting = true }
-                .font(.footnote).foregroundStyle(Color.mist)
+                .font(.nativeFootnote).foregroundStyle(Color.mist)
         }
         .padding(32)
         .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .background(Color.night)
+        .instrumentScreen()
         .task { await model.unlock() }
         .modifier(Banners())
         .confirmationDialog("Delete the locked keys?", isPresented: $forgetting,
                             titleVisibility: .visible) {
             Button("Delete the locked keys", role: .destructive) { model.forgetLockedKeys() }
         } message: {
-            Text("Do this only if this device cannot unlock them. The seats on this device "
+            Text("Do this only if this device cannot unlock them. The seats and saved recipients on this device "
                  + "are lost, but each wallet still works while enough other signers remain.")
         }
     }
@@ -163,32 +260,11 @@ struct WalletRow: View {
     let g: GroupInfo
 
     var body: some View {
-        let mine = !model.vault.seats(in: g.id).isEmpty
-        let pending = model.toApprove[g.id] ?? 0
-        let unread = model.unread(g.id)
-        HStack(spacing: 12) {
-            Avatar(text: initials(g.name), size: 40)
-            VStack(alignment: .leading, spacing: 3) {
-                Text(g.name).font(.headline).foregroundStyle(.white).multilineTextAlignment(.leading)
-                Text("\(ZcashNetwork.of(g.network).label) · \(g.t) of \(g.n) signers must approve" + (mine ? "" : " · view only"))
-                    .font(.caption).foregroundStyle(Color.mist).multilineTextAlignment(.leading)
-            }
-            Spacer()
-            VStack(alignment: .trailing, spacing: 4) {
-                if g.movedTo != nil {
-                    Badge(text: "Moved")
-                } else if model.wallets[g.id] == nil {
-                    Badge(text: "Setting up", kind: .info)
-                } else if let b = model.balances[g.id] {
-                    Money(zat: b, size: 15)
-                }
-                if pending > 0 { Badge(text: "\(pending) to approve", kind: .warn) }
-                if unread > 0 { Badge(text: "\(unread) new", kind: .info) }
-            }
-            Image(systemName: "chevron.right").font(.caption).foregroundStyle(Color.mist)
-        }
-        .padding(14)
-        .contentShape(Rectangle())
+        NativeSavedWalletSummary(name: g.name, network: ZcashNetwork.of(g.network).label,
+            rule: "\(g.t) of \(g.n) approvals", viewOnly: model.vault.seats(in: g.id).isEmpty,
+            amount: g.movedTo == nil && model.wallets[g.id] != nil ? model.balances[g.id] : nil,
+            status: g.movedTo != nil ? "Moved" : model.wallets[g.id] == nil ? "Setting up" : nil,
+            pending: model.toApprove[g.id] ?? 0, unread: model.unread(g.id))
     }
 }
 
@@ -196,33 +272,16 @@ struct Welcome: View {
     let create: () -> Void
     let join: () -> Void
     let restore: () -> Void
-
+    @State private var help = false
     var body: some View {
-        Card {
-            Text("Create your first shared wallet").font(.title3.weight(.semibold))
-            Text("Nobody ever holds the whole key, and nobody outside your team can read the wallet.")
-                .font(.subheadline).foregroundStyle(Color.mist)
-            ForEach(Array(steps.enumerated()), id: \.offset) { i, s in
-                HStack(alignment: .top, spacing: 12) {
-                    Text("\(i + 1)").font(.caption.weight(.bold)).frame(width: 24, height: 24)
-                        .background(Color.signal.opacity(0.2), in: Circle()).foregroundStyle(Color.signal)
-                    VStack(alignment: .leading, spacing: 2) {
-                        Text(s.0).font(.subheadline.weight(.semibold))
-                        Text(s.1).font(.caption).foregroundStyle(Color.mist)
-                    }
+        NativeWelcome(create: create, join: join, restore: restore, learn: { help = true })
+            .sheet(isPresented: $help) {
+                NavigationStack {
+                    ScrollView { NativeHelpView().padding(20) }.instrumentScreen()
+                        .toolbar { ToolbarItem(placement: .confirmationAction) { Button("Done") { help = false } } }
                 }
             }
-            Button("Create wallet", action: create).primaryButton().frame(maxWidth: .infinity)
-            Button("Join with an invite link", action: join).frame(maxWidth: .infinity)
-            Button("Restore from backup", action: restore).frame(maxWidth: .infinity)
-        }
     }
-
-    private let steps = [
-        ("Pick a rule", "For example, any 2 of 3 signers must approve each payment."),
-        ("Invite your signers", "Send one private invite link. Each device creates its own key share."),
-        ("Approve together", "A payment goes out only after enough signers approve. On chain it has the shape of a shielded payment from a standard wallet, except for its one-day expiry and an optional priority fee, which can mark it as a Zigs payment."),
-    ]
 }
 
 struct ConnectionLine: View {
@@ -230,7 +289,7 @@ struct ConnectionLine: View {
     var body: some View {
         Label(connected ? "Connected to the group server" : "Connecting to the group server…",
               systemImage: connected ? "checkmark.circle.fill" : "arrow.triangle.2.circlepath")
-            .font(.caption)
+            .font(.nativeCaption)
             .foregroundStyle(connected ? Color.mist : Color.signal)
     }
 }
@@ -238,6 +297,7 @@ struct ConnectionLine: View {
 /// Errors as an alert, short confirmations as a toast at the bottom.
 struct Banners: ViewModifier {
     @Environment(GroupModel.self) private var model
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     func body(content: Content) -> some View {
         content
@@ -255,7 +315,7 @@ struct Banners: ViewModifier {
             }
             .overlay(alignment: .bottom) {
                 if let n = model.notice {
-                    Text(n).font(.subheadline.weight(.medium)).padding(.horizontal, 16).padding(.vertical, 10)
+                    Text(n).font(.nativeSubheadline.weight(.medium)).padding(.horizontal, 16).padding(.vertical, 10)
                         .background(Color.room, in: Capsule()).overlay(Capsule().stroke(Color.good.opacity(0.5)))
                         .padding(.bottom, 24)
                         .transition(.move(edge: .bottom).combined(with: .opacity))
@@ -265,7 +325,7 @@ struct Banners: ViewModifier {
                         }
                 }
             }
-            .animation(.default, value: model.notice)
+            .animation(reduceMotion ? nil : Instrument.motion, value: model.notice)
     }
 }
 
@@ -283,7 +343,7 @@ struct JoinSheet: View {
                 }
                 Section {
                     TextField("https://…/#wallet.key", text: $link)
-                        .font(.body.monospaced())
+                        .font(.nativeBody.monospaced())
                         .codeEntry()
                     PasteButton(payloadType: String.self) { s in Task { @MainActor in link = s.first ?? "" } }
                 } header: {
@@ -293,6 +353,7 @@ struct JoinSheet: View {
                          + "this \(deviceName). The server never sees it.")
                 }
             }
+            .instrumentScreen().nativeSheetSizing()
             .navigationTitle("Join a wallet")
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) { Button("Cancel") { dismiss() } }
@@ -316,65 +377,56 @@ struct CreateSheet: View {
     @State private var mainnet = false
     @State private var understood = false
 
+    @State private var step = 0
+    private let stepTitles = ["Name your wallet", "Choose shared control", "Choose the network", "Review your wallet"]
+
     var body: some View {
         @Bindable var model = model
         NavigationStack {
-            Form {
-                if let from {
-                    Section {
-                        Label("You create a new wallet with the signers and rule you want.", systemImage: "1.circle")
-                        Label("The new signers join it with an invite link.", systemImage: "2.circle")
-                        Label("This wallet sends all its funds to the new one. Like any payment, this needs \(from.t) approvals.",
-                              systemImage: "3.circle")
-                    }
-                    .font(.subheadline)
-                }
-                Section("Your name") { TextField("Any nickname · shown to your signers", text: $model.name) }
-                Section(from == nil ? "Wallet name" : "New wallet name") {
-                    TextField(from?.name ?? "Team treasury", text: $walletName)
-                }
-                Section {
-                    Stepper("Signers: \(n)", value: $n, in: 2...7).onChange(of: n) { if t > n { t = n } }
-                    Stepper("Approvals needed: \(t)", value: $t, in: 2...n)
-                } header: {
-                    Text("Approval rule")
-                } footer: {
-                    Text(ruleText(t, n))
-                }
-                if from == nil {
-                    Section {
-                        Picker("Network", selection: $mainnet) {
-                            Text("Testnet").tag(false)
-                            Text("Mainnet").tag(true)
+            ScrollView {
+                VStack(alignment: .leading, spacing: 20) {
+                    NativeCreationProgress(step: step, titles: stepTitles)
+                    InstrumentHeading(title: stepTitles[step], detail: from == nil
+                        ? "A private shared wallet. Each signer keeps a separate key share."
+                        : "Create a replacement wallet, then approve the move from your old wallet.")
+                    NativeCreationStepContent(step: step, from: from, nickname: $model.name,
+                        walletName: $walletName, n: $n, t: $t, mainnet: $mainnet, understood: $understood)
+                    if step == 0 {
+                        #if os(iOS)
+                        Card {
+                            Label(model.lockOn ? "This device is protected" : "Protect this device · recommended",
+                                systemImage: model.lockOn ? "lock.shield" : "lock.open").font(.nativeHeadline)
+                            Text("The existing device lock encrypts local key shares and asks for \(lockName) or your passcode at startup. It does not change the wallet's approval rule.")
+                                .font(.nativeFootnote).foregroundStyle(Color.mist)
+                            if !model.lockOn {
+                                Button("Protect with \(lockName)") { model.turnOnLock() }
+                                Text("Protection is optional. Continue to keep the current device-storage setting.")
+                                    .font(.nativeCaption).foregroundStyle(Color.mist)
+                            }
                         }
-                        .pickerStyle(.segmented)
-                        if mainnet {
-                            Toggle("I understand that Zigs is not audited and that I can lose the funds in this wallet.", isOn: $understood)
-                                .font(.subheadline)
-                        }
-                    } header: {
-                        Text("Network")
-                    } footer: {
-                        Text(mainnet ? "Real ZEC. Beta, not audited: the app warns at \(capText(ZcashNetwork.mainnet.cap ?? 0)) per wallet." : "Free test coins, for trying Zigs.")
+                        #endif
+                        DisclosureGroup("How shared wallets work") { SetupEducation().padding(.top, 12) }
                     }
-                }
-                Section {
-                    Text(from == nil
-                         ? "You take seat 1. Then share the invite link with your signers. When every seat is taken, your devices create the wallet key together."
-                         : "The new wallet gets a new address. Signers you leave out can still see this old wallet's payments, but not the new wallet's.")
-                        .font(.footnote).foregroundStyle(Color.mist)
-                }
+                }.padding(20).frame(maxWidth: 640).frame(maxWidth: .infinity)
             }
-            .navigationTitle(from == nil ? "New wallet" : "Change signers")
-            .inlineTitle()
-            .toolbar {
-                ToolbarItem(placement: .cancellationAction) { Button("Cancel") { dismiss() } }
-                ToolbarItem(placement: .confirmationAction) {
-                    Button(from == nil ? "Create" : "Create new wallet") { create() }.disabled(working || (from == nil && mainnet && !understood))
-                }
+            .instrumentScreen().nativeSheetSizing()
+            .navigationTitle(from == nil ? "Create wallet" : "Change signers").inlineTitle()
+            .safeAreaInset(edge: .bottom) {
+                HStack(spacing: 12) {
+                    if step > 0 { Button("Back") { step -= 1 }.disabled(working) }
+                    Spacer()
+                    if step < 3 {
+                        Button("Continue") { step += 1 }.primaryButton()
+                    } else {
+                        Button(working ? "Creating…" : (from == nil ? "Create wallet" : "Create new wallet")) { create() }
+                            .primaryButton().disabled(working || (from == nil && mainnet && !understood))
+                    }
+                }.padding(16).modifier(GlassChrome())
             }
+            .toolbar { ToolbarItem(placement: .cancellationAction) { Button("Cancel") { dismiss() }.disabled(working) } }
             .onAppear { if let from { n = from.n; t = from.t } }
         }
+        .interactiveDismissDisabled(working)
     }
 
     private func create() {
@@ -398,11 +450,19 @@ struct CreateSheet: View {
 struct SettingsSheet: View {
     @Environment(GroupModel.self) private var model
     @Environment(\.dismiss) private var dismiss
+    @AppStorage("zf-appearance") private var appearance = "system"
 
     var body: some View {
         @Bindable var model = model
         NavigationStack {
             Form {
+                Section("Appearance") {
+                    Picker("Theme", selection: $appearance) {
+                        Text("System").tag("system")
+                        Text("Dark").tag("dark")
+                        Text("Light").tag("light")
+                    }
+                }
                 Section("Your name") {
                     TextField("Any nickname · shown to your signers", text: $model.name)
                 }
@@ -432,6 +492,7 @@ struct SettingsSheet: View {
                     Text("The server relays sealed messages only. It cannot read your wallets.")
                 }
             }
+            .instrumentScreen().nativeSheetSizing()
             .navigationTitle("Settings")
             .toolbar {
                 ToolbarItem(placement: .confirmationAction) {

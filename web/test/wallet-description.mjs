@@ -1,0 +1,20 @@
+import assert from "node:assert/strict";
+import { descriptionOf, setWalletDescription } from "../wallet-description.js";
+const data = new Map();
+globalThis.localStorage = { getItem: (k) => data.get(k) ?? null,
+  setItem: (k, v) => data.set(k, v) };
+const gid = "a".repeat(20), other = "b".repeat(20), key = "zf-wallet-description:" + gid;
+setWalletDescription(gid, "  Shared travel expenses  ");
+assert.equal(descriptionOf(gid).text, "Shared travel expenses");
+assert.equal(descriptionOf(other).text, "");
+assert.throws(() => setWalletDescription(gid, "x".repeat(281)), /280/);
+assert.throws(() => setWalletDescription("invalid", "notes"), /Open a wallet/);
+data.set(key, JSON.stringify({ v: 2, text: "future" }));
+assert.ok(descriptionOf(gid).error);
+assert.throws(() => setWalletDescription(gid, "replacement"), /saved copy is kept/);
+assert.equal(JSON.parse(data.get(key)).v, 2);
+data.delete(key);
+localStorage.setItem = () => { throw Error("storage refused"); };
+assert.throws(() => setWalletDescription(gid, "description"), /could not save/);
+assert.equal(descriptionOf(gid).text, "");
+console.log("wallet-description: ok");

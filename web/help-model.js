@@ -11,13 +11,13 @@ export const HELP = [
     "Keep the devices that still work, and do not delete their data. While enough devices "
     + "remain to meet the approval rule, they can move the Zcash funds to a new wallet. A Solana "
     + "part does not move this way. With fewer devices, first restore devices from their backup "
-    + "files. Zigs cannot go around the approval rule. The Recovery section has more."],
+    + "files. Zigs cannot go around the approval rule. The Security section has more."],
   ["Where is my backup file?",
     "A backup file holds the key share of one device. Your browser saves it as a download, "
     + "usually in its download folder. Zigs does not know where. The file is locked with a "
     + "passphrase that you choose. Zigs cannot recover that passphrase. A device with a Solana "
     + "part has two files and two passphrases. Keep each file and its passphrase apart, and make "
-    + "sure that you can find both. The Recovery section shows which files this browser saved."],
+    + "sure that you can find both. The Security section shows which files this browser saved."],
   ["What do the servers see?",
     "The group server keeps the encrypted data of the wallet. It cannot read the data. It sees "
     + "which IP addresses open which wallet, and when data is sent. The light-wallet server sends "
@@ -29,7 +29,11 @@ export const HELP = [
     + "sees each Solana payment. The Zigs server operator can link this wallet to its Solana "
     + "addresses by timing."],
   ["How do I read the memos of payments to this wallet?",
-    "Turn on Read memos of incoming payments, under This browser. A memo is only in "
+    (
+      "Open Incoming payment memos under General in Settings, "
+      + "review the privacy disclosure and enable it. A memo is "
+      + "only in "
+    )
     + "the full transaction, so this browser then asks the light-wallet server for each "
     + "transaction that pays this wallet. That server learns which transactions pay this wallet. "
     + "The setting is off until you turn it on."],

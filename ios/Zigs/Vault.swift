@@ -18,6 +18,11 @@ final class Vault {
     private(set) var keys: [String: String] = [:]
     /// The direct chats, in the shape of ChatBook.doc.
     private(set) var chats: Doc = [:]
+    private(set) var recipients: [PaymentRecipient] = []
+    private(set) var recipientsUnavailable = false
+    private var recipientReadFailed = false
+    /// Preserve an unreadable sealed value while other wallet records continue to save.
+    private var recipientRecord: Any?
     /// The secrets are not loaded: the lock is on, or the Keychain could not answer yet.
     /// Nothing is written while locked, so a failed read cannot overwrite saved secrets.
     private(set) var locked = true
@@ -34,9 +39,21 @@ final class Vault {
         do {
             let s = try Self.read("zf-secrets"), k = try Self.read("zf-keys")
             let c = try Self.read("zf-chats")
+            let r: Data?
+            var bookReadFailed = false
+            do { r = try Self.read("zf-recipients") }
+            catch { r = nil; bookReadFailed = true }
             secrets = Self.parse(s) as? [String: Doc] ?? [:]
             keys = Self.parse(k) as? [String: String] ?? [:]
             chats = Self.parse(c) as? Doc ?? [:]
+            // A readable but damaged optional book must not prevent access to wallet keys.
+            // Keep its exact bytes if it needs to move into the sealed Vault later.
+            loadRecipients(r.map {
+                if let value = Self.parse($0), JSONSerialization.isValidJSONObject(value) { return value }
+                return ["unreadableData": $0.base64EncodedString()]
+            })
+            recipientReadFailed = bookReadFailed
+            if bookReadFailed { recipientsUnavailable = true }
             return true
         } catch {
             return false
@@ -73,6 +90,46 @@ final class Vault {
         return false
     }
 
+    private func loadRecipients(_ record: Any?) {
+        recipientRecord = record
+        recipientReadFailed = false
+        do {
+            recipients = try PaymentRecipient.decode(record)
+            guard recipients.allSatisfy({ (try? Engine.call("normalizeAddress", [$0.address])) == $0.address }) else {
+                throw RecipientBookError.damaged
+            }
+            recipientsUnavailable = false
+        } catch {
+            recipients = []
+            recipientsUnavailable = true
+        }
+    }
+
+    /// An atomic record update. On failure the UI continues to show the last saved book.
+    func putRecipients(_ rows: [PaymentRecipient]) throws {
+        guard !locked else { throw RecipientBookError("Unlock this device before changing the address book.") }
+        guard !recipientsUnavailable else { throw RecipientBookError.damaged }
+        guard rows.count <= 500 else { throw RecipientBookError("The address book can hold up to 500 recipients.") }
+        let destinations = rows.map { $0.network + ":" + $0.address }
+        guard Set(destinations).count == destinations.count else {
+            throw RecipientBookError("This address is already saved for this network. Edit its existing entry instead.")
+        }
+        let next = try PaymentRecipient.record(rows)
+        _ = try PaymentRecipient.decode(next)
+        let old = recipientRecord, oldRows = recipients
+        recipientRecord = next
+        recipients = rows
+        // Plain Keychain records are independent: saving a recipient must not partly succeed
+        // because an unrelated wallet-record write failed. A sealed Vault is one atomic item.
+        let saved = vaultKey == nil
+            ? Self.write("zf-recipients", Data(Engine.json(next).utf8)) : persist()
+        guard saved else {
+            recipientRecord = old
+            recipients = oldRows
+            throw RecipientBookError("The address book was not saved. Your previous recipients are unchanged. Try again after unlocking the device.")
+        }
+    }
+
     /// Seats this device holds secrets for in group `gid`.
     func seats(in gid: String) -> [Int] {
         secrets.keys.compactMap { k in
@@ -94,6 +151,9 @@ final class Vault {
 
     /// Seals the secrets with a new vault key that only Face ID or the passcode releases.
     func turnOn() throws {
+        guard !recipientReadFailed else {
+            throw VaultError("The Keychain could not read the address book. Its data has been preserved. Unlock the device, then try turning on the lock again.")
+        }
         var cfError: Unmanaged<CFError>?
         guard let access = SecAccessControlCreateWithFlags(
             nil, kSecAttrAccessibleWhenPasscodeSetThisDeviceOnly, .userPresence, &cfError) else {
@@ -112,7 +172,8 @@ final class Vault {
         vaultKey = key
         persist()
         // The sealed copy must open before the plain copy goes.
-        guard let box = try? Self.read("zf-vault"), (try? Self.open(box, key)) != nil else {
+        guard let box = try? Self.read("zf-vault"), let sealed = try? Self.open(box, key),
+              Self.recipientData(sealed["recipients"]) == Self.recipientData(recipientRecord) else {
             vaultKey = nil
             Self.delete("zf-vault")
             Self.delete("zf-vault-key")
@@ -121,6 +182,7 @@ final class Vault {
         Self.delete("zf-secrets")
         Self.delete("zf-keys")
         Self.delete("zf-chats")
+        Self.delete("zf-recipients")
     }
 
     /// Asks for Face ID or the passcode, then opens the sealed secrets.
@@ -139,6 +201,7 @@ final class Vault {
         secrets = doc["secrets"] as? [String: Doc] ?? [:]
         keys = doc["keys"] as? [String: String] ?? [:]
         chats = doc["chats"] as? Doc ?? [:]
+        loadRecipients(doc["recipients"])
         vaultKey = key
         locked = false
     }
@@ -149,7 +212,12 @@ final class Vault {
         guard (try? Self.exists("zf-vault")) == true else { return }
         Self.delete("zf-vault")
         Self.delete("zf-vault-key")
+        Self.delete("zf-recipients")
         secrets = [:]
+        recipients = []
+        recipientRecord = nil
+        recipientsUnavailable = false
+        recipientReadFailed = false
         locked = false
         persist()
     }
@@ -163,7 +231,8 @@ final class Vault {
             let keysSaved = Self.write("zf-keys", Data(Engine.json(keys).utf8))
             return keysSaved && secretsSaved && chatsSaved
         }
-        let all: Doc = ["secrets": secrets, "keys": keys, "chats": chats]
+        var all: Doc = ["secrets": secrets, "keys": keys, "chats": chats]
+        all["recipients"] = recipientRecord
         let plain = Data(Engine.json(all).utf8)
         guard let box = try? AES.GCM.seal(plain, using: vaultKey, authenticating: Self.aad).combined else {
             return false
@@ -213,6 +282,10 @@ final class Vault {
 
     private static func parse(_ data: Data?) -> Any? {
         data.flatMap { try? JSONSerialization.jsonObject(with: $0) }
+    }
+
+    private static func recipientData(_ record: Any?) -> Data? {
+        record.flatMap { try? JSONSerialization.data(withJSONObject: $0, options: [.sortedKeys, .fragmentsAllowed]) }
     }
 
     private static func exists(_ account: String) throws -> Bool { try read(account) != nil }

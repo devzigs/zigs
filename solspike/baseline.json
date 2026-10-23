@@ -133,6 +133,27 @@
     },
     "cf/test/limits.mjs": {
       "exit": 0
+    },
+    "web/test/backup-check.mjs": {
+      "exit": 0
+    },
+    "web/test/guided-setup.mjs": {
+      "exit": 0
+    },
+    "web/test/recipients.mjs": {
+      "exit": 0
+    },
+    "web/test/guided-create.mjs": {
+      "exit": 0
+    },
+    "web/test/wallet-description.mjs": {
+      "exit": 0
+    },
+    "web/test/passkey-setup.mjs": {
+      "exit": 0
+    },
+    "web/test/premium-motion.mjs": {
+      "exit": 0
     }
   },
   "hashes": {
