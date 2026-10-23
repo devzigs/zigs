@@ -1,6 +1,6 @@
 // The stage model of the setup page (web/setup-model.js): each stage follows from the counts of
 // the progress card, and a stop always shows as blocked, never as a stage on track.
-// Run: node web/test/setup-stage.mjs   (Node 24)
+// Run: node web/test/setup-stage.mjs   (Node 26)
 import assert from "node:assert/strict";
 import { SETUP_STAGES, setupStage } from "../setup-model.js";
 

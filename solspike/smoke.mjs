@@ -17,7 +17,7 @@
 // to Chrome over the debugging socket only, as the answer to the password prompt of SMOKE_ORIGIN
 // (default https://staging.zigs.app, which must be https). It is never printed, never in argv and
 // never sent to another host. Exit codes: 0 all pass, 1 a check failed, 2 the run could not start.
-// Usage: node solspike/smoke.mjs   (Node 24)
+// Usage: node solspike/smoke.mjs   (Node 26)
 import { readFileSync, realpathSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";

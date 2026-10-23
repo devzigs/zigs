@@ -19,8 +19,8 @@ if [ "$head" != "$(git rev-parse "$want^{commit}")" ] || [ -n "$(git status --po
   exit 1
 fi
 case "$(node -v 2>/dev/null)" in
-  v24.*) ;;
-  *) echo "live-batch: Node 24 is needed" >&2; exit 2 ;;
+  v26.*) ;;
+  *) echo "live-batch: Node 26 is needed" >&2; exit 2 ;;
 esac
 echo "live-batch: commit $(git rev-parse --short HEAD)"
 env_file=$HOME/.config/zigs/live-env.sh

@@ -5,7 +5,7 @@
 // gives (ZOLANA.md 7.2, option D). Then the refusals: a bad commitment names its seat, a
 // different echo ends the seat, a changed message gets no share, one share alone does not
 // aggregate, and a key written twice is refused. Then the share check and the program label.
-// Run: node web/test/sol-wasm.mjs   (Node 24)
+// Run: node web/test/sol-wasm.mjs   (Node 26)
 import assert from "node:assert/strict";
 import { createPrivateKey, createPublicKey, hkdfSync, randomBytes, verify } from "node:crypto";
 import fs from "node:fs";

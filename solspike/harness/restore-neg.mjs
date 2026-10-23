@@ -9,7 +9,7 @@
 // 3. The Zcash seat is restored and settles. The Solana file of seat 2 is refused there. With
 //    seat 1 marked as not settled, its own Solana file waits and is refused.
 // 4. The Solana file of seat 1 then restores, and the tab shows the group key again.
-// Run: node solspike/harness/restore-neg.mjs   (Node 24; set
+// Run: node solspike/harness/restore-neg.mjs   (Node 26; set
 // SOLSPIKE_PORT and SOLSPIKE_CHROME_PORTS to the ports of the track).
 import assert from "node:assert/strict";
 import * as B from "./backups.mjs";

@@ -8,7 +8,7 @@
 // the commit, delete before the share, a crash keeps or republishes, never reuses), a share under
 // another seat is ignored, and a signed abort document of any seat stops every seat and survives a
 // restore.
-// Run: node web/test/sol-sessions.mjs   (Node 24)
+// Run: node web/test/sol-sessions.mjs   (Node 26)
 import assert from "node:assert/strict";
 import { approve, feeSignature, reviewOf } from "../sol/approve.js";
 import { backupWords } from "../sol/backup.js";

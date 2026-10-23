@@ -5,7 +5,7 @@
 //  - a browser that sees the switch runs the device check once, in the background, with no write
 //    to the server, and a failed check shows on the tile of the seat and is not tried again.
 // The approvals path with the switch on is in sol-pay.mjs, the backup pin in sol-app.mjs.
-// Run: node web/test/sol-prove.mjs   (Node 24)
+// Run: node web/test/sol-prove.mjs   (Node 26)
 import assert from "node:assert/strict";
 import {
   UNREAD,

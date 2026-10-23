@@ -11,7 +11,7 @@
 //    address equals the wasm address. The snapshot is sealed. A reload shows it.
 // 5. Seat 1 backs up its Solana part, loses it, and restores it from the file.
 // 6. The group server holds only sealed documents (the persisted store is scanned).
-// Run: node solspike/harness/scenario-d.mjs   (Node 24, with
+// Run: node solspike/harness/scenario-d.mjs   (Node 26, with
 // SOLSPIKE_PORT=8798 SOLSPIKE_CHROME_PORTS=9390-9399 on this track). The Helius URL and the
 // secrets of the ceremony never leave the page: the checks read booleans, hashes and public values.
 import assert from "node:assert/strict";

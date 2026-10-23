@@ -4,7 +4,7 @@
 // URL, the page loads nothing of Solana, says so once, and does not ask again at the next redraw.
 // Before the load, its diagnostics name no Solana part. After the failed load, they say that Zigs
 // could not read the Solana part, and its Activity list says that Solana did not load.
-// Run: node web/test/sol-config.mjs   (Node 24)
+// Run: node web/test/sol-config.mjs   (Node 26)
 import assert from "node:assert/strict";
 import { NOT_LOADED, UNAVAILABLE, fetchRpcUrl } from "../sol/session.js";
 import { config, loadRig, sleep, storage } from "./sol-rig.mjs";

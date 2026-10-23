@@ -1,7 +1,7 @@
 # solspike: checks of the Solana beta
 
 This folder holds the checks that guard the Solana beta (ZOLANA.md). The name is from the spike
-that made them. Run every command from the root of the repo with Node 24.
+that made them. Run every command from the root of the repo with Node 26.
 
 ## What is here
 
@@ -124,7 +124,7 @@ BATCH_COMMIT=<sha> solspike/live-batch.sh scenario-e scenario-f
 ```
 
 - The script refuses a checkout that is not a clean copy of `BATCH_COMMIT`, before it does
-  anything else. It needs Node 24.
+  anything else. It needs Node 26.
 - It reads the export lines `ZOLANA_REPO`, `SOLSPIKE_FUNDER` and `SOLSPIKE_KEY_B` of
   `~/.config/zigs/live-env.sh`. The keys stay in `~/.config/zigs/sol`, never in a scratchpad.
 - It writes the Helius URL of `~/.config/zigs/helius-app.url` into `cf/.dev.vars`, never prints

@@ -7,7 +7,7 @@
 // screen. The real wasm must compile the message, and accept it on the snapshot of the device,
 // and refuse each change: a wrong payee, a wrong amount, an input that the device does not hold,
 // and a (first nullifier, salt) pair that the device used before.
-// Run: node web/test/sol-transfer.mjs   (Node 24)
+// Run: node web/test/sol-transfer.mjs   (Node 26)
 import assert from "node:assert/strict";
 import { base58 } from "../sol/docs.js";
 import {

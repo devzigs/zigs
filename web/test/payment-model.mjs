@@ -1,6 +1,6 @@
 // The Send drafts and the age of a review (web/payment-model.js): a draft keeps only what the
 // person typed, within bounds, for 24 hours; a review older than 5 minutes is built again.
-// Run: node web/test/payment-model.mjs   (Node 24)
+// Run: node web/test/payment-model.mjs   (Node 26)
 import assert from "node:assert/strict";
 import {
   DRAFT_MS, draftLive, draftOf, emptyForm, headlineFacts, RESEND_MS, REVIEW_MS, reviewFresh,

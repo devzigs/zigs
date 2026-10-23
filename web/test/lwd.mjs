@@ -2,7 +2,7 @@
 // testnet server, adds the secret key, and passes no credential of the user. Also the key of a
 // client for the limits per network (PRIV-9) at its three places. The Cloudflare import and fetch
 // are stubs, so nothing here reaches a network.
-// Run: node web/test/lwd.mjs   (Node 24)
+// Run: node web/test/lwd.mjs   (Node 26)
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 

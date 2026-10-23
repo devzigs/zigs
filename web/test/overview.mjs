@@ -1,6 +1,6 @@
 // The Overview model (web/overview-model.js): the ZEC total, the states of the SOL row and the
 // pending shortcut. An unknown amount is never zero, and nothing pending gives no shortcut.
-// Run: node web/test/overview.mjs   (Node 24)
+// Run: node web/test/overview.mjs   (Node 26)
 import assert from "node:assert/strict";
 import { pendingShortcut, solRow, zecInProgress, zecTotal } from "../overview-model.js";
 

@@ -5,7 +5,7 @@
 //  - a failed wallet read waits 3 s, twice as long each time up to 60 s, and shows its banner once
 //    for each text.
 // The real worker.js and the real SDK bundle run in Node with a fake network.
-// Run: node web/test/sol-errors.mjs   (Node 24)
+// Run: node web/test/sol-errors.mjs   (Node 26)
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { registerHooks } from "node:module";

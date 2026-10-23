@@ -3,7 +3,7 @@
 // comes late. A nonce must make one share across the tabs: under the lock of the secrets each step
 // first takes what storage holds now. Without that, two tabs could sign two signing packages with
 // one nonce, which breaks the once-only rule of FROST.
-// Run: node web/test/sol-nonce-tabs.mjs   (Node 24)
+// Run: node web/test/sol-nonce-tabs.mjs   (Node 26)
 import assert from "node:assert/strict";
 import {
   approvalOnce,

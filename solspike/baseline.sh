@@ -18,8 +18,8 @@ EXITS=$HERE/.state/baseline-exits.tsv
 HEADERS=$HERE/.state/served-headers.txt
 PORT=${SOLSPIKE_PORT:-8795}
 case "$(node -v)" in
-  v24.*) ;;
-  *) echo "baseline: Node 24 is needed, found $(node -v)" >&2; exit 2 ;;
+  v26.*) ;;
+  *) echo "baseline: Node 26 is needed, found $(node -v)" >&2; exit 2 ;;
 esac
 mkdir -p "$OUT"
 : >"$EXITS"

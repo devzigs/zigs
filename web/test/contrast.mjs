@@ -2,7 +2,7 @@
 // for normal text) on every surface, the edge of a field or a tick box at 3:1 or more (WCAG
 // 1.4.11), in the dark and in the light palette, and the two copies of the light palette stay the
 // same. Translucent colours are put over the surface below them.
-// Run: node web/test/contrast.mjs   (Node 24)
+// Run: node web/test/contrast.mjs   (Node 26)
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 

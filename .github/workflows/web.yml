@@ -1,4 +1,4 @@
-# The web tests under Node 24: every web/test/*.mjs except the helpers that solspike/baseline.sh
+# The web tests under Node 26: every web/test/*.mjs except the helpers that solspike/baseline.sh
 # names (VEL-5). They use the committed engine and Solana wasm files, the TS vectors of wasm-sol
 # and cf/src/index.js, and need no server.
 name: web
@@ -35,7 +35,7 @@ jobs:
           persist-credentials: false
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
-          node-version: 24
+          node-version: 26
       - name: qrencode for web/test/qr.mjs
         run: sudo apt-get update -qq && sudo apt-get install -y -qq qrencode
       - name: Tests

@@ -1,7 +1,7 @@
 // Mainnet is off for this release (M1 of docs/hackathon-release.md), and the testnet faucet is the
 // Valar faucet (M2). The network picker of a new wallet and of the personal account shows Testnet
 // only and no tick, a chat reads testnet requests only, and the page texts name Zcash testnet and
-// Solana Devnet. Run: node web/test/mainnet-off.mjs   (Node 24)
+// Solana Devnet. Run: node web/test/mainnet-off.mjs   (Node 26)
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { loadRig } from "./sol-rig.mjs";

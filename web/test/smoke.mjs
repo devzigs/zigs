@@ -1,6 +1,6 @@
 // The pure parts of solspike/smoke.mjs (S19): the problems of a page load, the answer to a
 // password prompt, and the verdicts of M1 and S1. The live run needs Chrome and staging; this
-// test needs neither. Run: node web/test/smoke.mjs   (Node 24)
+// test needs neither. Run: node web/test/smoke.mjs   (Node 26)
 import assert from "node:assert/strict";
 import { mkdtempSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
