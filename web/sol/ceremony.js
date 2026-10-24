@@ -271,7 +271,8 @@ async function round3(c, i) {
 
 // Each draw checks the Solana keys of this browser about twenty times (agreement), and each check
 // derived the same keys again in WASM: 50 to 65 ms per click. The public fields are kept per
-// key-share object; a new share or a lock gives a new object. Secret fields are never kept.
+// key-share object; a new share or a lock gives a new object. The cache copies no secret field: the
+// seed it compares with lives only as long as the share that holds it.
 const derived = new WeakMap();
 function publicKeys(W, s, name, fields) {
   const all = derived.get(s) ?? new Map();
