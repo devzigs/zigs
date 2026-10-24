@@ -1,6 +1,6 @@
 # The web tests under Node 26: every web/test/*.mjs except the helpers that solspike/baseline.sh
-# names (VEL-5). They use the committed engine and Solana wasm files, the TS vectors of wasm-sol
-# and cf/src/index.js, and need no server.
+# names (VEL-5), four at a time, the slowest first. They use the committed engine and Solana wasm
+# files, the TS vectors of wasm-sol and cf/src/index.js, and need no server.
 name: web
 
 on:
@@ -9,12 +9,14 @@ on:
       - web/**
       - cf/src/**
       - wasm-sol/vectors/ts/**
+      - solspike/baseline.sh
       - .github/workflows/web.yml
   pull_request:
     paths:
       - web/**
       - cf/src/**
       - wasm-sol/vectors/ts/**
+      - solspike/baseline.sh
       - .github/workflows/web.yml
 
 permissions:
@@ -40,15 +42,52 @@ jobs:
         run: sudo apt-get update -qq && sudo apt-get install -y -qq qrencode
       - name: Tests
         run: |
-          failed=""
-          helpers=" passkey-fixture sol-rig sol-setup sol-chain sol-vector sol-fixture sol-pay-rig page "
-          for f in web/test/*.mjs; do
-            case "$helpers" in *" $(basename "$f" .mjs) "*) continue ;; esac
-            echo "::group::$f"
-            if ! timeout 600 node "$f"; then failed="$failed $f"; fi
-            echo "::endgroup::"
+          # Four tests run at once, the slowest first. HELPERS and SLOW_FIRST come from
+          # solspike/baseline.sh. Each test has a log and a time limit of its own. A test with no
+          # .done file did not run (a lane of the pool stopped), and it counts as failed.
+          eval "$(sed -n '/^HELPERS=(/p;/^SLOW_FIRST=(/,/)$/p' solspike/baseline.sh)"
+          if [ "${#HELPERS[@]}" -eq 0 ]; then
+            echo "::error::HELPERS is not in solspike/baseline.sh"
+            exit 1
+          fi
+          if [ "${#SLOW_FIRST[@]}" -eq 0 ]; then
+            echo "::warning::SLOW_FIRST is not in solspike/baseline.sh, the tests run in file order"
+          fi
+          queue=()
+          for t in "${SLOW_FIRST[@]}" $(basename -a -s .mjs web/test/*.mjs); do
+            [ -f "web/test/$t.mjs" ] || continue
+            case " ${HELPERS[*]} ${queue[*]} " in *" $t "*) continue ;; esac
+            queue+=("$t")
           done
+          if [ "${#queue[@]}" -eq 0 ]; then
+            echo "::error::no test in web/test"
+            exit 1
+          fi
+          dir=$(mktemp -d)
+          export dir
+          start=$(date +%s)
+          printf '%s\n' "${queue[@]}" | xargs -P 4 -I{} sh -c '
+            began=$(date +%s)
+            timeout 600 node "web/test/$1.mjs" >"$dir/$1.log" 2>&1
+            code=$?
+            [ "$code" -eq 0 ] || echo "$code" >"$dir/$1.failed"
+            echo "$1: exit $code ($(($(date +%s) - began)) s)"
+            : >"$dir/$1.done"
+          ' sh {} || echo "the pool stopped (xargs exit $?): a lane was killed"
+          failed=""
+          for t in "${queue[@]}"; do
+            if [ ! -e "$dir/$t.done" ]; then
+              echo "$t did not run (a lane of the pool stopped)"
+              failed="$failed $t"
+            elif [ -e "$dir/$t.failed" ]; then
+              echo "::group::web/test/$t.mjs failed (exit $(cat "$dir/$t.failed"))"
+              cat "$dir/$t.log"
+              echo "::endgroup::"
+              failed="$failed $t"
+            fi
+          done
+          secs=$(($(date +%s) - start))
+          echo "web: ${#queue[@]} tests in $secs s, ${failed:+failed:}${failed:-all pass}"
           if [ -n "$failed" ]; then
-            echo "failed:$failed"
             exit 1
           fi
