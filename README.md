@@ -600,9 +600,11 @@ folder path.
   without them. Nine tests read the Zolana repo and are ignored: run them with
   `ZOLANA_REPO=<checkout at commit c232da1b> cargo test --release --test repo_pins -- --ignored`.
 - `node web/test/sol-config.mjs` and its ten siblings `sol-docs`, `sol-ceremony`, `sol-app`,
-  `sol-wasm`, `sol-sessions`, `sol-limits`, `sol-pay`, `sol-transfer`, `sol-fee` and `sol-rent`
-  (the files `sol-rig`, `sol-setup`, `sol-chain`, `sol-vector` and `sol-fixture` are helpers: do
-  not run them). They test the
+  `sol-wasm`, `sol-sessions`, `sol-limits`, `sol-pay` (with `sol-pay-exec`, `sol-pay-seats`,
+  `sol-pay-lease`, `sol-pay-look` and `sol-pay-end`, which are one test cut in six so that the
+  waits for the timers of the page run at the same time), `sol-transfer`, `sol-fee` and `sol-rent`
+  (the files `sol-rig`, `sol-setup`, `sol-chain`, `sol-vector`, `sol-fixture` and `sol-pay-rig`
+  are helpers: do not run them). They test the
   Solana part of the page on the real page modules: the ceremony, the fee key of each seat, signing
   sessions, payments, Add SOL, backup and restore, the stop that holds everywhere, the gate (a
   mainnet wallet, a wallet before version 3, a stored network that changed, and a start document

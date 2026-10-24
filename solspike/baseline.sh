@@ -3,9 +3,9 @@
 # It runs every web/test/*.mjs in TESTS, cf/test/gate.mjs, and cf/test/limits.mjs (against a dev
 # server that it starts on port 8795 and stops by PID), then tools/baseline.mjs hashes wasm/,
 # web/pkg/ and web/signed.js, extracts policy(), reads the headers that the server sent, and writes
-# baseline.json (record) or compares with it (check). SOLSPIKE_PORT moves the port. The ten
-# sol-* tests need no server. HELPERS are imported by the tests and are no test: sol-setup.mjs
-# runs a ceremony and never exits on its own. A web/test/*.mjs in neither list stops the gate.
+# baseline.json (record) or compares with it (check). SOLSPIKE_PORT moves the port. The sol-*
+# tests need no server. HELPERS are imported by the tests and are no test: sol-setup.mjs runs a
+# ceremony and never exits on its own. A web/test/*.mjs in neither list stops the gate.
 # Three tests run at once (JOBS), the slowest first (SLOW_FIRST): the tests share no port and no
 # file, and each keeps its own log in .state/baseline-logs. EXITS keeps the order of TESTS.
 # check runs no test when a passing run of the same files left a stamp (tools/baseline.mjs). It
@@ -86,14 +86,16 @@ TESTS=(messaging-presentation messaging-cost-review messaging-account-view premi
   requests account personal payees
   vault util qr shim shim-status
   lwd zns
-  sol-config sol-docs sol-ceremony sol-app sol-wasm sol-sessions sol-limits sol-pay sol-transfer
+  sol-config sol-docs sol-ceremony sol-app sol-wasm sol-sessions sol-limits sol-pay sol-pay-exec
+  sol-pay-seats sol-pay-lease sol-pay-look sol-pay-end sol-transfer
   unified-setup help
   graph sol-fee sol-rent sol-errors sol-prove demo-check mainnet-off chain-fallback smoke
   contrast overview setup-stage approvals recovery security-dashboard payment-model
   sol-nonce-tabs no-storage)
-HELPERS=(passkey-fixture sol-rig sol-setup sol-chain sol-vector sol-fixture page)
+HELPERS=(passkey-fixture sol-rig sol-setup sol-chain sol-vector sol-fixture sol-pay-rig page)
 # The tests that take more than 20 s, slowest first, then the server test. Each must be in TESTS.
-SLOW_FIRST=(sol-pay app sol-ceremony sol-app unified-setup sol-sessions sol-limits cf/test/limits)
+SLOW_FIRST=(sol-pay app sol-pay-seats sol-pay-exec sol-pay-lease sol-pay-look sol-ceremony sol-app
+  unified-setup sol-sessions sol-pay-end sol-limits cf/test/limits)
 for f in web/test/*.mjs; do
   name=$(basename "$f" .mjs)
   if [[ " ${TESTS[*]} ${HELPERS[*]} " != *" $name "* ]]; then
