@@ -608,7 +608,7 @@ const sendingLine = (zat) => el("div", { class: "sending" }, el("span", { class:
   "Sending ", money(zat, "md", "out"), el("span", { class: "faint" }, " · waiting for a block"));
 
 // The faucet is a site that is not Zigs (PRIVACY.md). It can pay nobody while its status says
-// ready (docs/hackathon-release.md M2, 24 October).
+// ready (docs/hackathon-release.md M2).
 export const FAUCET_TEXT = "That site is not Zigs: it sees the address that you paste and your "
   + "IP address. Its public status lists each payout with a short form of the address, the "
   + "transaction id, the amount and the time. The faucet can pause: then it lists no payout of "
