@@ -85,10 +85,11 @@ Try it alone, from one desktop browser (the README has every step):
    Click **Review wallet**, then **Create wallet**.
 2. Open **Trying Zigs alone? Play the other devices in this browser** and click **Play device 2**.
    Within half a minute the wallet opens, and the Solana key follows by itself.
-3. Click **Receive** and get test coins from the faucet link. Click **Send**, paste a `utest1`
-   address and an amount, then click **Review payment** and **Propose payment**. Click **Approve
-   as device 1** and **Approve as device 2**, then **Build proof** and **Send to network**. For
-   Solana, click **Open Solana** and follow steps 9 to 12 of the README.
+3. Click **Receive** and get test coins from the faucet link (if it does not pay, step 4 of the
+   README gives other ways). Click **Send**, paste a `utest1` address and an amount, then click
+   **Review payment** and **Propose payment**. Click **Approve as device 1** and **Approve as
+   device 2**, then **Build proof** and **Send to network**. For Solana, click **Open Solana** and
+   follow steps 9 to 12 of the README.
 
 ## 5. Video script: 2 minutes
 

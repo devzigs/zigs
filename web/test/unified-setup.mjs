@@ -705,6 +705,10 @@ function receiveTexts() {
       "the faucet note says what the faucet sees");
     assert.match(textOf(box), /Its public status lists each payout with a short form of the/,
       "and that the faucet publishes each payout");
+    assert.match(textOf(box), /The faucet can stop paying while its page says Online\. Then Paid/,
+      "and that the faucet can stop paying");
+    assert.match(textOf(box), /Try again later, or ask the Zigs team for test coins\./,
+      "and where else to get test coins");
     assert.ok(!byText(box, "Share address"), "no Share button without Web Share");
     const first = findNode(box, (n) => n.attrs?.["data-first-focus"] !== undefined);
     assert.equal(first && textOf(first), "Copy address", "the dialog opens on Copy address");
