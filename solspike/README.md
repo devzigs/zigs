@@ -61,7 +61,7 @@ ZOLANA_REPO=... node solspike/test/build.test.mjs
 ZOLANA_REPO=... SOLSPIKE_KEY_B=... node solspike/mock/run.mjs
 bash solspike/lint.sh                            # needs npm ci in solspike
 python3 -I solspike/tools/leak_scan.py           # counts secrets in the repo: needs the files above
-ZOLANA_REPO=... node solspike/tools/mutate.mjs   # every mutant must be killed (long)
+ZOLANA_REPO=... node solspike/tools/mutate.mjs   # every mutant must be killed (long; 3 at a time)
 ```
 
 `baseline.sh record` writes `baseline.json` again. Record it only on a commit without Solana
