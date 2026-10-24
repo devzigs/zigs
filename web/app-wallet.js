@@ -607,10 +607,12 @@ function shieldingActions(id, available) {
 const sendingLine = (zat) => el("div", { class: "sending" }, el("span", { class: "dot busy" }),
   "Sending ", money(zat, "md", "out"), el("span", { class: "faint" }, " · waiting for a block"));
 
-// The faucet is a site that is not Zigs (PRIVACY.md).
+// The faucet is a site that is not Zigs (PRIVACY.md). It can pay nobody while its status says
+// ready (docs/hackathon-release.md M2, 24 October).
 export const FAUCET_TEXT = "That site is not Zigs: it sees the address that you paste and your "
   + "IP address. Its public status lists each payout with a short form of the address, the "
-  + "transaction id, the amount and the time.";
+  + "transaction id, the amount and the time. The faucet can pause: then it lists no payout of "
+  + "the last 24 hours, and a claim ends with \"Not paid\". Try again later.";
 function emptyNote(b) {
   if (!b || b.spendable + b.pending + b.sending !== 0 || state.g.movedTo) return null;
   return el("div", { class: "callout" }, curNet().faucet

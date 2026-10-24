@@ -107,7 +107,10 @@ The owner does every write: deploys, payments, faucet claims and name claims.
 5. Prove the faucet: copy the address of a Zigs testnet wallet, then claim one Valar drip into it.
    The drip is 0.125 TAZ, once for each IP address and once for each address every 24 hours
    (M2). The faucet lists each payout in public: a short form of the address, the transaction id,
-   the amount and the time.
+   the amount and the time. First look at **Paid · 24h** and **Recent payouts**: `ready` in
+   `/api/status` stays true while the faucet pays nobody (24 October: no payout since
+   23 October 16:09 UTC). If it does not pay, prove one fauzec.com drip instead (1 TAZ for each
+   address every 24 hours, with a human check).
 6. Claim a testnet name for the demo payee: one small testnet payment to the ZNS Mint.
    **[waits for the owner: the name and an access code]** The name `zigsdemo` in this file is a
    placeholder: the owner chooses the final name. While ZNS Early Access lasts, the Mint refuses a
@@ -240,7 +243,7 @@ Solana error, a server problem and a synced balance that is too low.
 | Solana says "the notes that cover this amount are held by an open proposal", or the card **Send SOL** says "All your notes are held by …" | An open proposal holds the notes (S4). The card names it and the time it ends. Use the spare wallet, or show the recorded run |
 | A laptop is lost | Restore its device from its two backup files (M4) |
 | L2 refuses the payment: the name gives another address | L1 has not approved yet, so L1 cancels the payment and proposes again with the pasted utest1 address |
-| The faucet refuses a claim | One claim for each IP address and for each address every 24 hours. Use coins from the permanent test wallet |
+| The faucet refuses a claim | One claim for each IP address and for each address every 24 hours. "Not paid: the wallet cannot pay this address" with 0 in **Paid · 24h** means that the Valar faucet pays nobody now: try fauzec.com. Else use coins from the permanent test wallet |
 
 ## 6. What to say about privacy
 

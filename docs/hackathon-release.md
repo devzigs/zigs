@@ -84,6 +84,13 @@ Evidence marked "checked" was read in the repo during this synthesis. All other 
   - Change README step 3: copy the address first, 0.125 TAZ, one claim per IP per day, wait 3 confirmations (about 75 s).
   - Owner: prove one drip into a Zigs wallet before the demo. The audit could not do this, because it needs a write.
 - **Files:** web/app-chain.js, README.md.
+- **Finding, 24 Oct (read-only):** the Valar faucet is not ready in practice, though `/api/status` says `ready: true`.
+  - A claim for a fresh Zigs address ended with "Not paid: the wallet cannot pay this address".
+  - `/api/status` at 19:48 and 19:58 UTC: `paidCount` 0, the full `capRemaining` of 18.75 TAZ, a balance of 7,466 TAZ and 3 broadcast nodes. The last payout was on 23 Oct at 16:09 UTC. So the faucet paid nobody for more than 27 hours.
+  - The cause is not the form of the Zigs address. The faucet's own donation address, which its zecd wallet makes, also has one Orchard receiver. zecd sends to an Orchard receiver in the Ironwood pool after NU6.3.
+  - Its five listed payouts are v6 Ironwood transactions (branch 77190ad9): one to a `utest1` address, four to `t…` addresses. Zigs scans the Ironwood pool, so it would see such a payout. Nobody has proved this live yet.
+  - The jinolabs faucet still says that drips pause for NU7. fauzec.com reports ready and pays 1 TAZ to unified addresses, but it lists no payouts, so its pool is not checked.
+  - README step 4, docs/demo.md and the faucet notice now say that the faucet can pause and give the other routes. The faucet URL stays.
 
 ### M3 Unified setup: one flow for Zcash testnet and Solana Devnet
 - **Why:** The owner plans it, and the demo shows one setup, not two ceremonies.
@@ -245,7 +252,7 @@ Evidence marked "checked" was read in the repo during this synthesis. All other 
     - the app origins answer (the password comes from the environment and is never printed)
     - the group server socket opens
     - /lwd or ChainSafe answers, with the branch id
-    - the Valar faucet is ready
+    - the Valar faucet is ready (the check reads `ready` only, and `ready` stayed true on 24 Oct while the faucet paid nobody: see M2)
     - the approvals program hash is version 5
     - the pool program hash
     - the tree size and treeFees
@@ -639,7 +646,7 @@ testnet and Solana Devnet), with the contingencies in section 5 and the privacy 
   - the README judges steps (README.md:52-76)
 - **Audit read-only checks, 18 October (not repeated):**
   - the ChainSafe testnet answers
-  - the Valar faucet is ready, and the old faucet is paused
+  - the Valar faucet is ready, and the old faucet is paused (on 24 October the Valar faucet paid nobody: see M2)
   - lwd.zigs.app answered a keyless request with 404 in about 0.1 s while the box was off
   - the fast suite passed 17 of 17 on Node 24
   - the app, sol-fee, sol-ceremony, sol-app, sol-pay, sol-limits and sol-sessions suites exited 0
