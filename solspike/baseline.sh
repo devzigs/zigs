@@ -6,6 +6,8 @@
 # baseline.json (record) or compares with it (check). SOLSPIKE_PORT moves the port. The ten
 # sol-* tests need no server. HELPERS are imported by the tests and are no test: sol-setup.mjs
 # runs a ceremony and never exits on its own. A web/test/*.mjs in neither list stops the gate.
+# Three tests run at once (JOBS), the slowest first (SLOW_FIRST): the tests share no port and no
+# file, and each keeps its own log in .state/baseline-logs. EXITS keeps the order of TESTS.
 # check runs no test when a passing run of the same files left a stamp (tools/baseline.mjs). It
 # replays the exit codes of that run, starts the server again to read the headers, and compares
 # with baseline.json as always. A fresh checkout has no stamp.
@@ -20,6 +22,7 @@ OUT=$HERE/.state/baseline-logs
 EXITS=$HERE/.state/baseline-exits.tsv
 HEADERS=$HERE/.state/served-headers.txt
 PORT=${SOLSPIKE_PORT:-8795}
+JOBS=3
 case "$(node -v)" in
   v26.*) ;;
   *) echo "baseline: Node 26 is needed, found $(node -v)" >&2; exit 2 ;;
@@ -28,14 +31,14 @@ mkdir -p "$OUT"
 : >"$EXITS"
 cd "$ROOT" || exit 2
 
-# run NAME COMMAND...: runs a test, keeps its output in a log, adds one line to EXITS.
-run() {
+# run_test NAME COMMAND...: runs a test, keeps its output in a log and its exit code in a file.
+run_test() {
   local name=$1 start code
   shift
   start=$(date +%s)
   "$@" >"$OUT/$(basename "$name").log" 2>&1
   code=$?
-  printf '%s\t%s\n' "$name" "$code" >>"$EXITS"
+  echo "$code" >"$OUT/$(basename "$name").exit"
   echo "baseline: $name exit $code ($(($(date +%s) - start)) s)"
 }
 
@@ -48,6 +51,27 @@ read_headers() {
   # A curl that fails leaves the file empty, and baseline.mjs fails on it.
   curl -s -D "$HEADERS" -o /dev/null --max-time 10 "http://localhost:$PORT/" || true
 }
+
+# The dev server lives as long as the one test that needs it.
+limits_test() {
+  if ! read_headers; then
+    echo 1 >"$OUT/limits.mjs.exit"
+    return
+  fi
+  run_test cf/test/limits.mjs node cf/test/limits.mjs "ws://localhost:$PORT"
+  "$HERE/serve.sh" stop
+}
+
+# job NAME: one entry of the queue. A name with a slash is a test of cf/test.
+job() {
+  case "$1" in
+    cf/test/limits) limits_test ;;
+    cf/test/*) run_test "$1.mjs" node "$1.mjs" ;;
+    *) run_test "web/test/$1.mjs" node "web/test/$1.mjs" ;;
+  esac
+}
+export -f run_test read_headers limits_test job
+export OUT HERE PORT HEADERS
 
 stopped=0
 stop_server() { [ "$stopped" = 1 ] || "$HERE/serve.sh" stop; stopped=1; }
@@ -68,6 +92,8 @@ TESTS=(messaging-presentation messaging-cost-review messaging-account-view premi
   contrast overview setup-stage approvals recovery security-dashboard payment-model
   sol-nonce-tabs no-storage)
 HELPERS=(passkey-fixture sol-rig sol-setup sol-chain sol-vector sol-fixture page)
+# The tests that take more than 20 s, slowest first, then the server test. Each must be in TESTS.
+SLOW_FIRST=(sol-pay app sol-ceremony sol-app unified-setup sol-sessions sol-limits cf/test/limits)
 for f in web/test/*.mjs; do
   name=$(basename "$f" .mjs)
   if [[ " ${TESTS[*]} ${HELPERS[*]} " != *" $name "* ]]; then
@@ -75,6 +101,21 @@ for f in web/test/*.mjs; do
     exit 2
   fi
 done
+
+# The queue: the slow tests, then the others in the order of TESTS. qr needs qrencode.
+queue=("${SLOW_FIRST[@]}")
+for t in "${TESTS[@]}" cf/test/gate; do
+  [[ " ${SLOW_FIRST[*]} " == *" $t "* ]] && continue
+  [ "$t" = qr ] && ! command -v qrencode >/dev/null && continue
+  queue+=("$t")
+done
+for t in "${SLOW_FIRST[@]}"; do
+  if [[ " ${TESTS[*]} cf/test/limits " != *" $t "* ]]; then
+    echo "baseline: $t is in SLOW_FIRST and in no other list of baseline.sh" >&2
+    exit 2
+  fi
+done
+
 reused=no
 if [ "$MODE" = check ]; then
   note=$(node "$HERE/tools/baseline.mjs" reuse "$EXITS")
@@ -84,18 +125,21 @@ fi
 if [ "$reused" = no ]; then
   node "$HERE/tools/baseline.mjs" begin >/dev/null ||
     echo "baseline: begin failed, this run leaves no stamp" >&2
-  for t in "${TESTS[@]}"; do
+  rm -f "$OUT"/*.exit
+  printf '%s\0' "${queue[@]}" | xargs -0 -n 1 -P "$JOBS" "$BASH" -c 'job "$0"'
+  stopped=1 # limits_test stopped the server; the trap stops it if this run ends before
+  # The results in the order of TESTS, whatever test ended first.
+  for t in "${TESTS[@]}" cf/test/gate cf/test/limits; do
+    file=web/test/$t.mjs
+    case "$t" in cf/*) file=$t.mjs ;; esac
     if [ "$t" = qr ] && ! command -v qrencode >/dev/null; then
-      printf 'web/test/qr.mjs\tskipped\tqrencode is not installed\n' >>"$EXITS"
+      printf '%s\tskipped\tqrencode is not installed\n' "$file" >>"$EXITS"
       continue
     fi
-    run "web/test/$t.mjs" node "web/test/$t.mjs"
+    code=$(cat "$OUT/$(basename "$file").exit" 2>/dev/null)
+    [ -n "$code" ] || { echo "baseline: $file left no exit code" >&2; code=1; }
+    printf '%s\t%s\n' "$file" "$code" >>"$EXITS"
   done
-  # The password gate of the Worker, offline.
-  run cf/test/gate.mjs node cf/test/gate.mjs
-  read_headers || exit 1
-  run cf/test/limits.mjs node cf/test/limits.mjs "ws://localhost:$PORT"
-  stop_server
 else
   read_headers || exit 1
   stop_server

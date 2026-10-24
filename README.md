@@ -539,8 +539,8 @@ folder path.
 
 ## Tests
 
-- `sh scripts/test-fast.sh`: the fast suite, about 5 s, for every change: the web tests that end
-  in seconds, listed in `FAST` of the script (the pure modules, the engine calls through the wasm
+- `sh scripts/test-fast.sh`: the fast suite, about 10 s (three tests at a time), for every change:
+  the web tests that end in seconds, listed in `FAST` of the script (the pure modules, the engine calls through the wasm
   build, the short Solana tests and the link test). The long page tests and the browser and live
   checks run before a merge, with `bash solspike/baseline.sh check`. The page tests run on a test
   clock (`web/test/page.mjs`) that leaves out a stall such as a sleep of the computer, so a
@@ -607,7 +607,8 @@ folder path.
   sessions, payments, Add SOL, backup and restore, the stop that holds everywhere, the gate (a
   mainnet wallet, a wallet before version 3, a stored network that changed, and a start document
   that no seat signed get no Solana tab and load nothing) and the config from the server.
-- `bash solspike/baseline.sh check`: the Zcash baseline gate. All `web/test/*.mjs`,
+- `bash solspike/baseline.sh check`: the Zcash baseline gate, about 3.5 minutes (three tests at a
+  time). All `web/test/*.mjs`,
   `cf/test/gate.mjs`, the group server limits, the hashes of the Zcash engine and `web/signed.js`, the page policy and the
   served headers must equal `solspike/baseline.json`. `node solspike/test/policy.test.mjs` checks
   the `/sol` routes of the Worker, `/sol/config.json` included.

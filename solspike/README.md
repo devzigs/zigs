@@ -7,7 +7,7 @@ that made them. Run every command from the root of the repo with Node 26.
 
 | Path | Purpose |
 |---|---|
-| `baseline.sh`, `baseline.json`, `tools/baseline.mjs` | The Zcash baseline gate. It runs every `web/test/*.mjs` and `cf/test/limits.mjs`, hashes `wasm/`, `web/pkg/` and `web/signed.js`, and compares the page policy and the served headers with `baseline.json`. The Solana work must leave all of them equal. A passing run leaves a stamp in `.state`. While the working tree is clean and has the same files, Node version, `cf/.dev.vars` and `qrencode`, `check` runs no test: it replays the exit codes of the stamped run and reads the headers from the server again. A fresh checkout has no stamp |
+| `baseline.sh`, `baseline.json`, `tools/baseline.mjs` | The Zcash baseline gate. It runs every `web/test/*.mjs` and `cf/test/limits.mjs`, hashes `wasm/`, `web/pkg/` and `web/signed.js`, and compares the page policy and the served headers with `baseline.json`. The Solana work must leave all of them equal. Three tests run at a time. A passing run leaves a stamp in `.state`. While the working tree is clean and has the same files, Node version, `cf/.dev.vars` and `qrencode`, `check` runs no test: it replays the exit codes of the stamped run and reads the headers from the server again. A fresh checkout has no stamp |
 | `serve.sh` | The local `wrangler dev` server on port 8795, started and stopped by PID. It reads `cf/.dev.vars`. With an https `SOLSPIKE_ORIGIN` it serves https on 127.0.0.1 |
 | `test/` | Tests of the Worker routes (`policy.test.mjs`), the Solana Worker (`worker*.test.mjs`, `prepare.test.mjs`, `transfer.test.mjs`, `client.test.mjs`), the gate (`gate.test.mjs`), the funding tool (`fund.test.mjs`), the chain reader (`verify-chain.test.mjs`), the SDK bundle build (`build.test.mjs`) and the harness (`harness.test.mjs`) |
 | `mock/` | The mock run: the Solana Worker in headless Chrome against a replay of one real Devnet sync. No network and no key. It is the counterpart of `harness/sol-live.mjs` with no network |
@@ -51,7 +51,7 @@ back.
 Offline, with no key:
 
 ```bash
-bash solspike/baseline.sh check                  # the Zcash baseline gate (about 2 minutes)
+bash solspike/baseline.sh check                  # the Zcash baseline gate (about 3.5 minutes)
 node solspike/test/policy.test.mjs               # the /sol routes and /sol/config.json
 for t in client worker-schema worker prepare transfer fund verify-chain gate; do
   node solspike/test/$t.test.mjs
