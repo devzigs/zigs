@@ -184,8 +184,14 @@
   .asset-rows .asset-row .asset-balance-block>.money.xl { font-size:24px; line-height:32px; }
   .asset-rows .asset-row .shielding-actions { margin-right:0; }
 }
+/* The action buttons are about 85 px wide on phones and beside the balance from 1280 px, so the
+   label goes under the icon and a word such as "Receive" stays whole. */
+@media(max-width:420px),(min-width:1280px) {
+  .premium-overview-grid .overview-actions .btn { flex-direction:column; gap:5px; min-height:64px;
+    padding:9px 4px; }
+}
 @media(max-width:360px) {
-  .premium-overview-grid .overview-actions .btn { flex-direction:column; gap:5px; min-height:64px; padding:9px 4px; font-size:12px; }
+  .premium-overview-grid .overview-actions .btn { font-size:12px; }
 }
 .transaction-receipt .review-context>.wallet-context-label { flex-basis:100%; }
 .transaction-receipt .wallet-context-label>strong { flex:1; min-width:0; }
