@@ -4,9 +4,10 @@
 // not green without the mutant, exits 1.
 // Usage: lockf -k "$SOL/heavy.lock" node solspike/tools/mutate.mjs [ID ...]
 // Do not nest lockf: the subjects run under the lock of this process. Up to three run at once
-// (MUTATE_LANES=1 runs them one at a time). Each lane has a tree of its own, a server port
-// (SOLSPIKE_PORT plus the lane number) and its part of the Chrome ports (SOLSPIKE_CHROME_PORTS).
-// The lines come in the order of the list, as in a serial run.
+// (MUTATE_LANES=1 runs them one at a time), and never more lanes than mutants. Each lane has a
+// tree of its own, a server port (SOLSPIKE_PORT plus the lane number) and its part of the Chrome
+// ports (SOLSPIKE_CHROME_PORTS). The trees exist for the run only: main() removes them at its end,
+// also when a mutant fails. The lines come in the order of the list, as in a serial run.
 import { execFileSync } from "node:child_process";
 import {
   copyFileSync, existsSync, mkdirSync, readFileSync, rmSync, symlinkSync, writeFileSync,
@@ -104,13 +105,9 @@ async function runOne(m, lane) {
   }
 }
 
-async function main() {
-  const wanted = process.argv.slice(2);
-  const todo = MUTATIONS.filter((m) => !wanted.length || wanted.includes(m.id));
-  if (wanted.length && todo.length !== wanted.length) throw new Error("unknown mutant id");
-  if (!Number.isInteger(LANES) || LANES < 1 || LANES > 3) throw new Error("MUTATE_LANES is 1 to 3");
-  const lanes = Array.from({ length: LANES }, (_, n) => laneOf(n));
-  lanes.forEach((lane) => copyTree(lane.tree));
+/** Runs the mutants on the lanes and prints one line for each, in the order of the list. Returns
+ * the number of mutants that failed. */
+async function runLanes(todo, lanes) {
   const results = [];
   let [next, printed, failures] = [0, 0, 0];
   const flush = () => {
@@ -133,8 +130,35 @@ async function main() {
       }
     }),
   );
-  console.log(`mutants: ${todo.length}, failed: ${failures}`);
-  process.exitCode = failures ? 1 : 0;
+  return failures;
+}
+
+// A process that still writes into a lane tree can make the removal fail. The tree then stays,
+// and the next run replaces it (copyTree).
+function removeLanes(lanes) {
+  for (const lane of lanes) {
+    try {
+      rmSync(lane.tree, { recursive: true, force: true, maxRetries: 5, retryDelay: 200 });
+    } catch (err) {
+      console.log(`mutate: ${lane.tree} stays on disk (${err.message})`);
+    }
+  }
+}
+
+async function main() {
+  const wanted = process.argv.slice(2);
+  const todo = MUTATIONS.filter((m) => !wanted.length || wanted.includes(m.id));
+  if (wanted.length && todo.length !== wanted.length) throw new Error("unknown mutant id");
+  if (!Number.isInteger(LANES) || LANES < 1 || LANES > 3) throw new Error("MUTATE_LANES is 1 to 3");
+  const lanes = Array.from({ length: Math.min(LANES, todo.length) }, (_, n) => laneOf(n));
+  try {
+    lanes.forEach((lane) => copyTree(lane.tree));
+    const failures = await runLanes(todo, lanes);
+    console.log(`mutants: ${todo.length}, failed: ${failures}`);
+    process.exitCode = failures ? 1 : 0;
+  } finally {
+    removeLanes(lanes);
+  }
 }
 
 main();

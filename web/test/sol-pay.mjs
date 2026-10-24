@@ -441,6 +441,7 @@ step("a read of a wallet that closed shows no banner and writes no count");
     "the amount that the checker bound, above the rows");
   const fees = "0.000005 SOL at the proposal, 0.000010162 SOL at the execute.";
   assert.equal(rows["Network fees"], fees, "two signatures and the tree fee at the execute");
+  assert.ok(rows.Public.includes(LINK_TEXT), "the screen says that the fee address links");
   const card = findAll(solView({ ...c, host: { ...c.host, el: node } }, (fn) => fn, {}),
     (n) => n.attrs["data-session"] === id)[0];
   const order = findAll(card, (n) => n.attrs["data-sol"] === "amount-" + id
@@ -463,7 +464,6 @@ step("a read of a wallet that closed shows no banner and writes no count");
   assert.match(rows["Check the payee"], /^Compare the Payee with the program address/);
   const part = /This checks only the first part of the shielded address\.$/;
   assert.match(rows["Check the payee"], part, "the S15 limit is on the screen");
-  assert.ok(rows.Public.includes(LINK_TEXT), "the screen says that the fee address links");
   assert.equal(rows["Create paid by device 1"], feeAddress(1), "the proposer paid the create only");
   assert.match(textOf(marked("pay-cost")[0]), /pays 0\.000005 SOL .* holds 0\.00135636 SOL/);
   assert.ok(textOf(marked("fee-text")[0]).includes(LINK_TEXT), "the fund card says it too");
