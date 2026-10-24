@@ -55,10 +55,18 @@ done
 printf '%s\n' $queue | xargs -P 3 -I{} sh -c '
   file="web/test/$1.mjs"
   case "$1" in */*) file="$1.mjs" ;; esac
-  perl -e "alarm shift; exec @ARGV" 60 node "$file" >/dev/null 2>&1 && exit 0
-  echo "test-fast: $1 FAILED or ran over 60 s (run: node $file)"
-  echo "$1" >>"$dir/failed"
+  if ! perl -e "alarm shift; exec @ARGV" 60 node "$file" >/dev/null 2>&1; then
+    echo "test-fast: $1 FAILED or ran over 60 s (run: node $file)"
+    echo "$1" >>"$dir/failed"
+  fi
+  echo "$1" >>"$dir/done"
 ' sh {}
+# xargs stops the pool when a lane is killed, so a test with no line in done counts as failed.
+for t in $queue; do
+  grep -qxF "$t" "$dir/done" 2>/dev/null && continue
+  echo "test-fast: $t did not run (a lane of the pool stopped)"
+  echo "$t" >>"$dir/failed"
+done
 failed=$(sort "$dir/failed" 2>/dev/null | sed 's/^/ /' | tr -d '\n')
 echo "test-fast: $ran tests in $(($(date +%s) - start)) s, ${failed:+failed:}${failed:-all pass}"
 [ -z "$failed" ]
