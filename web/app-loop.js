@@ -130,6 +130,7 @@ document.addEventListener("pointerdown", () => { holdUntil = performance.now() +
 // A touch fires its click in a later task than pointerup, so the hold ends 100 ms after it.
 document.addEventListener("pointerup", () => {
   holdUntil = Math.min(holdUntil, performance.now() + 100);
+  setTimeout(flush, 100);
 }, true);
 document.addEventListener("pointercancel", endHold, true);
 document.addEventListener("click", endHold, true);

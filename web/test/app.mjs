@@ -7164,6 +7164,18 @@ assert.deepEqual([t.watched.size, unwatched], [0, 1],
   await sleep(1300);
   assert.equal(shellReads, before + 2, "a press with no release holds a draw for 1 s at most");
   fire("pointercancel");
+  fire("pointerdown");
+  t.render();
+  await sleep(300);
+  fire("pointerup");
+  await sleep(200);
+  assert.equal(shellReads, before + 3, "a release with no click holds a draw for 100 ms");
+  fire("pointerdown");
+  t.render();
+  await sleep(300);
+  fire("pointercancel");
+  await sleep(30);
+  assert.equal(shellReads, before + 4, "a cancelled press draws at once");
 }
 
 console.log("app ok");

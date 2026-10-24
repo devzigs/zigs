@@ -3400,6 +3400,13 @@ export const MUTATIONS = [
   program("N-press-click", "a held draw waits for the 1 s cap after the click",
     ["web/app-loop.js", 'document.addEventListener("click", endHold, true);\n', ""],
     APP_TEST, /and runs right after the click/),
+  program("N-press-up", "a release with no click holds a draw for the whole 1 s",
+    ["web/app-loop.js", "  setTimeout(flush, 100);\n", ""],
+    APP_TEST, /a release with no click holds a draw for 100 ms/),
+  program("N-press-cancel", "a cancelled press holds a draw for the whole 1 s",
+    ["web/app-loop.js", 'document.addEventListener("pointercancel", endHold, true);\n',
+      'document.addEventListener("pointercancel", () => {}, true);\n'],
+    APP_TEST, /a cancelled press draws at once/),
   program("N-readme-terms", "the README says that the marks are used under brand terms",
     ["README.md", README_MARKS, "Trademarks of their owners, used under their brand terms and not "
       + "under the AGPL"], DEMOS, /the README claims no licence for the brand marks/),
