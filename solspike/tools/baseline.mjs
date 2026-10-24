@@ -1,15 +1,21 @@
 // The Zcash baseline of the clone.
 // Usage: node tools/baseline.mjs record|check EXITS.tsv HEADERS.txt
+//        node tools/baseline.mjs begin | reuse EXITS.tsv
 // EXITS.tsv has one line per test: name, exit code or "skipped", reason. HEADERS.txt is the
 // response of the dev server for "/" (curl -D). baseline.sh writes both.
 // record writes solspike/baseline.json. check writes .state/baseline-now.json and compares it
 // with baseline.json: test results, sha256 of wasm/, web/pkg/ and web/signed.js, policy(), and
 // the security headers that the dev server really sent. Record on the base commit only: the
 // file names it, and policy.test.mjs reads the base policy from that commit.
-import { execFileSync } from "node:child_process";
+// A run with 0 problems on a clean tree leaves a stamp in .state (never in the repo). begin
+// starts a run: it removes the stamp. reuse writes EXITS.tsv from the stamp and exits 0 when the
+// working tree is clean and has the files, the Node version, cf/.dev.vars and qrencode of the
+// stamped run; baseline.sh then runs no test, but it still reads the headers from the server
+// and check compares as always.
+import { execFileSync, spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
 import {
-  mkdirSync, readdirSync, readFileSync, realpathSync, statSync, writeFileSync,
+  existsSync, mkdirSync, readdirSync, readFileSync, realpathSync, rmSync, statSync, writeFileSync,
 } from "node:fs";
 import { dirname, join, relative, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -19,6 +25,10 @@ const SPIKE = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const ROOT = resolve(SPIKE, "..");
 const BASELINE = join(SPIKE, "baseline.json");
 const NOW = join(SPIKE, ".state/baseline-now.json");
+const STAMP = join(SPIKE, ".state/baseline-stamp.json");
+const PENDING = join(SPIKE, ".state/baseline-pending.json");
+const DEV_VARS = join(ROOT, "cf/.dev.vars");
+const RECORD = "solspike/baseline.json";
 const HASHED = ["wasm", "web/pkg", "web/signed.js"];
 // Inputs of policy(), not the address of the dev server: they stay the same on every port.
 const URLS = ["http://localhost:8795/", "https://app.zigs.app/", "http://127.0.0.1:8795/"];
@@ -132,11 +142,88 @@ export const failed = (tests) =>
     .filter(([, t]) => t.exit !== null && t.exit !== 0)
     .map(([name]) => `failed: ${name}`);
 
-function main() {
-  const [mode, exits, headers] = process.argv.slice(2);
-  if (!["record", "check"].includes(mode) || !exits || !headers) {
-    throw new Error("usage: node tools/baseline.mjs record|check EXITS.tsv HEADERS.txt");
+const USAGE =
+  "usage: node tools/baseline.mjs record|check EXITS.tsv HEADERS.txt | reuse EXITS.tsv | begin";
+
+/** One hash of the files of HEAD without the record: a commit that only records the baseline, or
+ * a merge of the same files, keeps it. */
+function treeHash() {
+  const args = ["ls-tree", "-r", "-z", "HEAD"];
+  const list = execFileSync("git", args, { cwd: ROOT, maxBuffer: 1 << 28 });
+  const files = list.toString("latin1").split("\0").filter(Boolean);
+  return sha(files.filter((entry) => !entry.endsWith(`\t${RECORD}`)).join("\0"));
+}
+
+/** True when no file outside the ignored paths differs from HEAD, the record apart. */
+function isClean() {
+  const args = ["status", "--porcelain", "-z", "--untracked-files=all"];
+  const list = execFileSync("git", args, { cwd: ROOT, maxBuffer: 1 << 26 });
+  return list.toString("latin1").split("\0").filter(Boolean).every((e) => e.slice(3) === RECORD);
+}
+
+/** What a run depends on besides the tests: the files of HEAD, the Node version, the secrets file
+ * of the dev server (as a hash) and whether qrencode lets qr.mjs run. */
+const fingerprint = () => ({
+  tree: treeHash(),
+  node: process.version,
+  devVars: existsSync(DEV_VARS) ? sha(readFileSync(DEV_VARS)) : null,
+  qrencode: spawnSync("sh", ["-c", "command -v qrencode"]).status === 0,
+});
+const same = (a, b) => JSON.stringify(a) === JSON.stringify(b);
+
+/** Starts a full run: the old stamp goes, and the state of the tree is kept for its end. */
+function begin() {
+  rmSync(STAMP, { force: true });
+  mkdirSync(dirname(PENDING), { recursive: true });
+  writeFileSync(PENDING, JSON.stringify({ clean: isClean(), key: fingerprint() }));
+}
+
+/** Keeps a run with 0 problems if the tree was clean at its start and its end, and equal. */
+function stamp(exits) {
+  if (!existsSync(PENDING)) return;
+  const start = JSON.parse(readFileSync(PENDING, "utf8"));
+  rmSync(PENDING);
+  const key = fingerprint();
+  if (!start.clean || !isClean() || !same(start.key, key)) return;
+  const text = JSON.stringify({
+    key,
+    at: new Date().toISOString(),
+    exits: readFileSync(exits, "utf8"),
+  });
+  writeFileSync(STAMP, `${text}\n`);
+}
+
+/** The reason why the stamp `kept` cannot stand for a run now, or "" if it can. */
+function whyNot(kept) {
+  if (!kept) return "there is no stamp";
+  if (typeof kept.exits !== "string") return "the stamp is damaged";
+  if (!isClean()) return "the working tree has changes";
+  const key = fingerprint();
+  const differs = Object.keys(key).find((name) => !same(key[name], kept.key?.[name]));
+  return differs ? `${differs} is not the one of the stamped run` : "";
+}
+
+/** Writes the exit codes of the stamped run into the file. Returns the exit code. */
+function reuse(exits) {
+  rmSync(PENDING, { force: true });
+  let kept = null;
+  try {
+    kept = existsSync(STAMP) ? JSON.parse(readFileSync(STAMP, "utf8")) : null;
+  } catch (err) {
+    console.log(`reuse: no, the stamp is unreadable (${err.message})`);
+    return 1;
   }
+  const why = whyNot(kept);
+  if (why) {
+    console.log(`reuse: no, ${why}`);
+    return 1;
+  }
+  writeFileSync(exits, kept.exits);
+  console.log(`reuse: yes, the passing run of ${kept.at} on the same files`);
+  return 0;
+}
+
+function verify(mode, exits, headers) {
   const now = collect(exits, headers);
   const text = `${JSON.stringify(now, null, 2)}\n`;
   const problems = failed(now.tests);
@@ -149,7 +236,16 @@ function main() {
   const n = { tests: Object.keys(now.tests).length, hashes: Object.keys(now.hashes).length };
   console.log(`${mode}: ${n.tests} tests, ${n.hashes} hashed files, ${problems.length} problems`);
   problems.forEach((p) => console.log(`  ${p}`));
-  process.exit(problems.length ? 1 : 0);
+  if (!problems.length) stamp(exits);
+  return problems.length ? 1 : 0;
+}
+
+function main() {
+  const [mode, exits, headers] = process.argv.slice(2);
+  if (mode === "begin") return begin();
+  if (mode === "reuse" && exits) process.exit(reuse(exits));
+  if (!["record", "check"].includes(mode) || !exits || !headers) throw new Error(USAGE);
+  process.exit(verify(mode, exits, headers));
 }
 
 // True when node started this file, also through a symlink or a path in another case: node

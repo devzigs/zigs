@@ -6,6 +6,9 @@
 # baseline.json (record) or compares with it (check). SOLSPIKE_PORT moves the port. The ten
 # sol-* tests need no server. HELPERS are imported by the tests and are no test: sol-setup.mjs
 # runs a ceremony and never exits on its own. A web/test/*.mjs in neither list stops the gate.
+# check runs no test when a passing run of the same files left a stamp (tools/baseline.mjs). It
+# replays the exit codes of that run, starts the server again to read the headers, and compares
+# with baseline.json as always. A fresh checkout has no stamp.
 # The server runs with cf/.dev.vars: it must hold DEV_NO_AUTH=1 (see README.md). Run it as:
 #   bash solspike/baseline.sh check
 set -u
@@ -36,6 +39,16 @@ run() {
   echo "baseline: $name exit $code ($(($(date +%s) - start)) s)"
 }
 
+# read_headers: starts the dev server and keeps the headers that it sends for "/". They depend on
+# cf/node_modules and cf/.dev.vars, so a reused run reads them again.
+read_headers() {
+  # An empty file makes baseline.mjs fail, so an old answer is never read.
+  : >"$HEADERS"
+  "$HERE/serve.sh" start || return 1
+  # A curl that fails leaves the file empty, and baseline.mjs fails on it.
+  curl -s -D "$HEADERS" -o /dev/null --max-time 10 "http://localhost:$PORT/" || true
+}
+
 stopped=0
 stop_server() { [ "$stopped" = 1 ] || "$HERE/serve.sh" stop; stopped=1; }
 trap stop_server EXIT
@@ -62,21 +75,31 @@ for f in web/test/*.mjs; do
     exit 2
   fi
 done
-for t in "${TESTS[@]}"; do
-  if [ "$t" = qr ] && ! command -v qrencode >/dev/null; then
-    printf 'web/test/qr.mjs\tskipped\tqrencode is not installed\n' >>"$EXITS"
-    continue
-  fi
-  run "web/test/$t.mjs" node "web/test/$t.mjs"
-done
-# The password gate of the Worker, offline.
-run cf/test/gate.mjs node cf/test/gate.mjs
-"$HERE/serve.sh" start || exit 1
-# An empty file makes baseline.mjs fail, so an old answer is never read.
-: >"$HEADERS"
-curl -s -D "$HEADERS" -o /dev/null --max-time 10 "http://localhost:$PORT/"
-run cf/test/limits.mjs node cf/test/limits.mjs "ws://localhost:$PORT"
-stop_server
+reused=no
+if [ "$MODE" = check ]; then
+  note=$(node "$HERE/tools/baseline.mjs" reuse "$EXITS")
+  case "$note" in reuse:*) echo "baseline: $note" ;; esac
+  case "$note" in "reuse: yes"*) reused=yes ;; esac
+fi
+if [ "$reused" = no ]; then
+  node "$HERE/tools/baseline.mjs" begin >/dev/null ||
+    echo "baseline: begin failed, this run leaves no stamp" >&2
+  for t in "${TESTS[@]}"; do
+    if [ "$t" = qr ] && ! command -v qrencode >/dev/null; then
+      printf 'web/test/qr.mjs\tskipped\tqrencode is not installed\n' >>"$EXITS"
+      continue
+    fi
+    run "web/test/$t.mjs" node "web/test/$t.mjs"
+  done
+  # The password gate of the Worker, offline.
+  run cf/test/gate.mjs node cf/test/gate.mjs
+  read_headers || exit 1
+  run cf/test/limits.mjs node cf/test/limits.mjs "ws://localhost:$PORT"
+  stop_server
+else
+  read_headers || exit 1
+  stop_server
+fi
 # The tool must print its result line. A tool that ends with exit 0 and no line did not run the
 # gate, so that is a failure and not a pass.
 result=$(node "$HERE/tools/baseline.mjs" "$MODE" "$EXITS" "$HEADERS")
