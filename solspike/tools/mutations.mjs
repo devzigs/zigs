@@ -3385,6 +3385,13 @@ export const MUTATIONS = [
     ["web/app-shell.js", '["swap", "Swap", el("span", { class: "badge plain" },\n'
       + '      el("span", { class: "sr-only" }, ", "), "Demo")],', '["swap", "Swap"],'],
     UNIFIED, /the Swap item of the side list says Demo/),
+  // A draw waits for the click of a pressed pointer, so a redraw cannot take the click away.
+  program("N-press-hold", "a draw replaces the buttons while a pointer is pressed",
+    ["web/app-loop.js", "  if (left > 0) { setTimeout(flush, left); return; }\n", ""],
+    APP_TEST, /a draw waits while a pointer is pressed/),
+  program("N-press-click", "a held draw waits for the 1 s cap after the click",
+    ["web/app-loop.js", 'document.addEventListener("click", endHold, true);\n', ""],
+    APP_TEST, /and runs right after the click/),
   program("N-readme-terms", "the README says that the marks are used under brand terms",
     ["README.md", README_MARKS, "Trademarks of their owners, used under their brand terms and not "
       + "under the AGPL"], DEMOS, /the README claims no licence for the brand marks/),
