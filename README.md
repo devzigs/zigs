@@ -539,8 +539,8 @@ folder path.
 
 ## Tests
 
-- `sh scripts/test-fast.sh`: the fast suite, about 5 s, for every change: the web tests that end
-  in seconds, listed in `FAST` of the script (the pure modules, the engine calls through the wasm
+- `sh scripts/test-fast.sh`: the fast suite, about 10 s (three tests at a time), for every change:
+  the web tests that end in seconds, listed in `FAST` of the script (the pure modules, the engine calls through the wasm
   build, the short Solana tests and the link test). The long page tests and the browser and live
   checks run before a merge, with `bash solspike/baseline.sh check`. The page tests run on a test
   clock (`web/test/page.mjs`) that leaves out a stall such as a sleep of the computer, so a
@@ -600,14 +600,17 @@ folder path.
   without them. Nine tests read the Zolana repo and are ignored: run them with
   `ZOLANA_REPO=<checkout at commit c232da1b> cargo test --release --test repo_pins -- --ignored`.
 - `node web/test/sol-config.mjs` and its ten siblings `sol-docs`, `sol-ceremony`, `sol-app`,
-  `sol-wasm`, `sol-sessions`, `sol-limits`, `sol-pay`, `sol-transfer`, `sol-fee` and `sol-rent`
-  (the files `sol-rig`, `sol-setup`, `sol-chain`, `sol-vector` and `sol-fixture` are helpers: do
-  not run them). They test the
+  `sol-wasm`, `sol-sessions`, `sol-limits`, `sol-pay` (with `sol-pay-exec`, `sol-pay-seats`,
+  `sol-pay-lease`, `sol-pay-look` and `sol-pay-end`, which are one test cut in six so that the
+  waits for the timers of the page run at the same time), `sol-transfer`, `sol-fee` and `sol-rent`
+  (the files `sol-rig`, `sol-setup`, `sol-chain`, `sol-vector`, `sol-fixture` and `sol-pay-rig`
+  are helpers: do not run them). They test the
   Solana part of the page on the real page modules: the ceremony, the fee key of each seat, signing
   sessions, payments, Add SOL, backup and restore, the stop that holds everywhere, the gate (a
   mainnet wallet, a wallet before version 3, a stored network that changed, and a start document
   that no seat signed get no Solana tab and load nothing) and the config from the server.
-- `bash solspike/baseline.sh check`: the Zcash baseline gate. All `web/test/*.mjs`,
+- `bash solspike/baseline.sh check`: the Zcash baseline gate, about 3.5 minutes (three tests at a
+  time). All `web/test/*.mjs`,
   `cf/test/gate.mjs`, the group server limits, the hashes of the Zcash engine and `web/signed.js`, the page policy and the
   served headers must equal `solspike/baseline.json`. `node solspike/test/policy.test.mjs` checks
   the `/sol` routes of the Worker, `/sol/config.json` included.

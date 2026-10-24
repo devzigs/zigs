@@ -1,5 +1,5 @@
 {
-  "baseCommit": "612b071a0b835186f215312f4f6c232a446dcf04",
+  "baseCommit": "ccf828223354d72fce8cf5cd57338e412355f445",
   "node": "v26.12.1",
   "tests": {
     "web/test/messaging-presentation.mjs": {
@@ -108,6 +108,21 @@
       "exit": 0
     },
     "web/test/sol-pay.mjs": {
+      "exit": 0
+    },
+    "web/test/sol-pay-exec.mjs": {
+      "exit": 0
+    },
+    "web/test/sol-pay-seats.mjs": {
+      "exit": 0
+    },
+    "web/test/sol-pay-lease.mjs": {
+      "exit": 0
+    },
+    "web/test/sol-pay-look.mjs": {
+      "exit": 0
+    },
+    "web/test/sol-pay-end.mjs": {
       "exit": 0
     },
     "web/test/sol-transfer.mjs": {

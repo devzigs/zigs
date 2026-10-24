@@ -41,7 +41,7 @@ jobs:
       - name: Tests
         run: |
           failed=""
-          helpers=" passkey-fixture sol-rig sol-setup sol-chain sol-vector sol-fixture page "
+          helpers=" passkey-fixture sol-rig sol-setup sol-chain sol-vector sol-fixture sol-pay-rig page "
           for f in web/test/*.mjs; do
             case "$helpers" in *" $(basename "$f" .mjs) "*) continue ;; esac
             echo "::group::$f"

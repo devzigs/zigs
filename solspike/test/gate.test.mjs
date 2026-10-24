@@ -3,10 +3,12 @@
 // control changes one thing that the gate must see, and the gate must exit 1 and name it.
 // C0 is the clean state (exit 0), C1 to C17 are the changes, C18 to C21 run the tool by another
 // path to the same file, C22 to C24 run baseline.sh with a stand-in tool, D5 is a missing .state.
+// C26 to C33 are the stamp of a passing run (begin, reuse) and the use that baseline.sh makes
+// of it.
 import assert from "node:assert/strict";
 import { execFileSync, spawnSync } from "node:child_process";
 import {
-  copyFileSync, existsSync, lstatSync, mkdirSync, readFileSync, rmdirSync, symlinkSync,
+  copyFileSync, existsSync, lstatSync, mkdirSync, readFileSync, rmSync, symlinkSync,
   unlinkSync, writeFileSync,
 } from "node:fs";
 import { dirname, join, resolve } from "node:path";
@@ -53,6 +55,7 @@ function buildFixture() {
   copyFileSync(join(SPIKE, "tools/baseline.mjs"), join(FIX, "solspike/tools/baseline.mjs"));
   put("exits.tsv", EXITS);
   put("headers.txt", HEADERS);
+  put(".gitignore", "/solspike/.state\n/alt-*\n");
   git("init", "-q");
   git("add", "-A");
   const who = ["user.name=t", "user.email=t@example.invalid", "commit.gpgsign=false"];
@@ -237,7 +240,8 @@ for (const [name, tool] of PATHS) {
 }
 
 // baseline.sh in a fixture whose tool is a stand-in. The web tests and limits.mjs are empty
-// scripts, serve.sh does nothing, and curl finds no server: only the result line is under test.
+// scripts, serve.sh only writes its call in calls.log, and curl finds no server: only the result
+// line and the calls are under test.
 const WEB_TESTS = (
   "chat signed app requests account personal payees vault util qr shim graph " +
   "sol-docs sol-ceremony sol-app sol-wasm sol-sessions sol-limits sol-pay sol-transfer"
@@ -245,18 +249,21 @@ const WEB_TESTS = (
 // The helpers of baseline.sh: in the fixture too, so a gate that forgets one stops.
 const HELPERS = ["sol-rig", "sol-setup", "sol-chain", "sol-vector", "page"];
 
-function runBaselineSh(toolText) {
+function runBaselineSh(toolText, { extra = {}, mode = "check" } = {}) {
   const files = { "solspike/tools/baseline.mjs": toolText, "cf/test/limits.mjs": "" };
   for (const name of [...WEB_TESTS, ...HELPERS]) files[`web/test/${name}.mjs`] = "";
+  Object.assign(files, extra);
   mkdirSync(join(SH_FIX, "solspike/tools"), { recursive: true });
   mkdirSync(join(SH_FIX, "cf/test"), { recursive: true });
   mkdirSync(join(SH_FIX, "web/test"), { recursive: true });
   for (const [rel, text] of Object.entries(files)) writeFileSync(join(SH_FIX, rel), text);
-  writeFileSync(join(SH_FIX, "solspike/serve.sh"), "#!/bin/bash\nexit 0\n", { mode: 0o755 });
+  const serve = '#!/bin/bash\necho "serve $1" >>"$CALLS"\n';
+  writeFileSync(join(SH_FIX, "solspike/serve.sh"), serve, { mode: 0o755 });
   copyFileSync(join(SPIKE, "baseline.sh"), join(SH_FIX, "solspike/baseline.sh"));
   const sh = join(SH_FIX, "solspike/baseline.sh");
-  const env = { ...process.env, SOLSPIKE_PORT: process.env.SOLSPIKE_PORT ?? "8795" };
-  const run = spawnSync("bash", [sh, "check"], { env, encoding: "utf8", timeout: 60000 });
+  const calls = join(SH_FIX, "calls.log");
+  const env = { ...process.env, SOLSPIKE_PORT: process.env.SOLSPIKE_PORT ?? "8795", CALLS: calls };
+  const run = spawnSync("bash", [sh, mode], { env, encoding: "utf8", timeout: 60000 });
   return { code: run.status, out: `${run.stdout}${run.stderr}` };
 }
 
@@ -294,9 +301,7 @@ test("C25 baseline.sh stops on a web test that is neither a test nor a helper", 
 });
 
 test("D5 check creates the .state folder when it is missing", () => {
-  if (existsSync(NOW)) unlinkSync(NOW);
-  const state = dirname(NOW);
-  if (existsSync(state)) rmdirSync(state);
+  rmSync(dirname(NOW), { recursive: true, force: true });
   const res = gate("check");
   assert.equal(res.code, 0, res.out);
   assert.ok(existsSync(NOW), "baseline-now.json was not written");
@@ -340,4 +345,142 @@ test("M8 compare() reports an added, a removed and a changed entry of each kind"
 test("S1 servedHeaders keeps the listed headers and reads names in any case", () => {
   const got = servedHeaders(HEADERS);
   assert.deepEqual(got, { "content-security-policy": CSP, "x-content-type-options": "nosniff" });
+});
+
+// The stamp of a passing run. begin starts a run, a passing record or check keeps the stamp, and
+// reuse gives the exits back while the files, Node, .dev.vars and qrencode are the same and the
+// working tree is clean.
+const STAMP = join(FIX, "solspike/.state/baseline-stamp.json");
+const tool = (...args) => {
+  const run = spawnSync("node", [TOOL, ...args], { cwd: FIX, encoding: "utf8", timeout: 60000 });
+  return { code: run.status, out: `${run.stdout}${run.stderr}` };
+};
+const GOT = "solspike/.state/got.tsv";
+const reuse = () => tool("reuse", join(FIX, GOT));
+const stampedRun = () => {
+  assert.equal(tool("begin").code, 0);
+  const res = gate("check");
+  assert.equal(res.code, 0, res.out);
+  assert.ok(existsSync(STAMP), "the passing run left no stamp");
+};
+
+test("C26 reuse gives back the exits of a passing run", () => {
+  stampedRun();
+  const res = reuse();
+  assert.equal(res.code, 0, res.out);
+  assert.match(res.out, /^reuse: yes, the passing run of /);
+  assert.equal(read(GOT), EXITS);
+});
+
+test("C27 reuse says no for a changed file, a new file and a changed Node version", () => {
+  stampedRun();
+  const changed = swap("web/signed.js", "= 1", "= 2");
+  changed.edit();
+  assert.match(reuse().out, /^reuse: no, the working tree has changes/);
+  changed.undo();
+  const fresh = add("note.txt");
+  fresh.edit();
+  assert.match(reuse().out, /^reuse: no, the working tree has changes/);
+  fresh.undo();
+  assert.equal(reuse().code, 0, "control: the same files");
+  const old = JSON.parse(readFileSync(STAMP, "utf8"));
+  const stampWith = (key) => {
+    writeFileSync(STAMP, JSON.stringify({ ...old, key: { ...old.key, ...key } }));
+  };
+  stampWith({ node: "v1" });
+  assert.match(reuse().out, /^reuse: no, node is not the one of the stamped run/);
+  stampWith({ devVars: "x" });
+  assert.match(reuse().out, /^reuse: no, devVars is not the one/);
+  writeFileSync(STAMP, "{");
+  assert.match(reuse().out, /^reuse: no, the stamp is unreadable/);
+  unlinkSync(STAMP);
+  assert.match(reuse().out, /^reuse: no, there is no stamp/);
+});
+
+test("C28 begin removes the stamp; a run with a problem or on a dirty tree leaves none", () => {
+  stampedRun();
+  assert.equal(tool("begin").code, 0);
+  assert.ok(!existsSync(STAMP), "begin keeps no stamp");
+  put("solspike/.state/bad.tsv", EXITS.replace("a.mjs\t0", "a.mjs\t1"));
+  assert.equal(gate("check", { exits: "solspike/.state/bad.tsv" }).code, 1);
+  assert.ok(!existsSync(STAMP), "a failing run left a stamp");
+  const note = add("note.txt");
+  note.edit();
+  assert.equal(tool("begin").code, 0);
+  assert.equal(gate("check").code, 0, "the untracked file is no problem of the gate");
+  assert.ok(!existsSync(STAMP), "a run on a dirty tree left a stamp");
+  note.undo();
+});
+
+test("C29 a commit that only records the baseline keeps the stamp valid", () => {
+  stampedRun();
+  const text = read("solspike/baseline.json");
+  put("solspike/baseline.json", text.replace('"node"', '"node" '));
+  assert.equal(reuse().code, 0, "the record in the working tree is no change");
+  const who = ["user.name=t", "user.email=t@example.invalid", "commit.gpgsign=false"];
+  git("add", "-f", "solspike/baseline.json");
+  git(...who.flatMap((c) => ["-c", c]), "commit", "-q", "-m", "record");
+  const res = reuse();
+  assert.equal(res.code, 0, res.out);
+  assert.equal(gate("check").code, 0, "the base commit is an ancestor of the new HEAD");
+});
+
+const REUSING = (verdict) => `
+import { appendFileSync } from "node:fs";
+const [mode] = process.argv.slice(2);
+appendFileSync(process.env.CALLS, mode + "\\n");
+if (mode === "reuse") console.log("reuse: ${verdict}");
+if (mode === "check" || mode === "record") {
+  console.log(mode + ": 3 tests, 2 hashed files, 0 problems");
+}
+`;
+const MARK = () => join(SH_FIX, "ran.txt");
+const RAN = {
+  "web/test/chat.mjs": `import { writeFileSync } from "node:fs";
+writeFileSync(${JSON.stringify(MARK())}, "x");
+`,
+};
+
+function shRun(verdict, mode = "check") {
+  rmSync(MARK(), { force: true });
+  rmSync(join(SH_FIX, "calls.log"), { force: true });
+  const res = runBaselineSh(REUSING(verdict), { extra: RAN, mode });
+  const calls = readFileSync(join(SH_FIX, "calls.log"), "utf8");
+  return { ...res, ran: existsSync(MARK()), calls };
+}
+
+test("C30 baseline.sh check runs no test when the tool reuses a run", () => {
+  const res = shRun("yes, the run of today");
+  assert.equal(res.code, 0, res.out);
+  assert.match(res.out, /baseline: reuse: yes, the run of today/);
+  assert.match(res.out, /check: 3 tests, 2 hashed files, 0 problems/);
+  assert.equal(res.ran, false, "a test ran");
+  const again = "reuse\nserve start\nserve stop\ncheck\n";
+  assert.equal(res.calls, again, "the headers are read from the server again");
+});
+
+test("C31 baseline.sh check runs every test when the tool does not reuse a run", () => {
+  const res = shRun("no, there is no stamp");
+  assert.equal(res.code, 0, res.out);
+  assert.match(res.out, /baseline: reuse: no, there is no stamp/);
+  assert.equal(res.ran, true, "the test did not run");
+  assert.equal(res.calls, "reuse\nbegin\nserve start\nserve stop\ncheck\n");
+});
+
+test("C32 baseline.sh record never reuses a run", () => {
+  const res = shRun("yes, the run of today", "record");
+  assert.equal(res.code, 0, res.out);
+  assert.equal(res.ran, true, "the test did not run");
+  assert.equal(res.calls, "begin\nserve start\nserve stop\nrecord\n");
+});
+
+test("C33 baseline.sh writes one exits line for each test, in the order of TESTS", () => {
+  const res = shRun("no, there is no stamp");
+  assert.equal(res.code, 0, res.out);
+  const exits = readFileSync(join(SH_FIX, "solspike/.state/baseline-exits.tsv"), "utf8");
+  const names = exits.trim().split("\n").map((line) => line.split("\t")[0]);
+  assert.equal(new Set(names).size, names.length, "one line for each test");
+  assert.deepEqual(names.slice(-2), ["cf/test/gate.mjs", "cf/test/limits.mjs"]);
+  assert.ok(names.indexOf("web/test/chat.mjs") < names.indexOf("web/test/signed.mjs"));
+  assert.ok(names.indexOf("web/test/sol-ceremony.mjs") < names.indexOf("web/test/sol-pay.mjs"));
 });

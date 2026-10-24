@@ -1,34 +1,30 @@
 // Private payments of the program design (ZOLANA.md 7.2) against the fake chain, with the test
-// group of sol-group.json, for which the TS SDK built the payments (sol-fixture.mjs):
+// group of sol-group.json, for which the TS SDK built the payments (sol-fixture.mjs). This file
+// holds:
 //  - the snapshot that an approving device reads for itself (web/sol/spend.js), for a payment (the
 //    PDA identity, the pair of the first proof) and for the move of the beta funds (the group key,
 //    the pair of the message);
-//  - one payment through propose (the proposal account is created on chain first), approve by
-//    two seats, the approval digest signed with FROST, and the execute with a fresh proof that
-//    the fake chain accepts only with the approval signature over the digest of the stored body;
-//  - a stale proof at the execute is proved again; an account that another device executed is
-//    read back; an expired payment ends;
-//  - the move of the beta funds: the last payment with a nonce, signed by the fee key and the
-//    group key.
+//  - one payment through propose (the proposal account is created on chain first), the screens
+//    of the device while it reads, approve by two seats, the approval digest signed with FROST,
+//    and the execute with a fresh proof that the fake chain accepts only with the approval
+//    signature over the digest of the stored body;
+//  - SOL-4: the switch that makes the group prove on its devices.
+// The other payment tests are in sol-pay-exec.mjs (stale proofs, the funded seat, withdrawals,
+// failed and late executes, open proposals), sol-pay-seats.mjs (balance reads, seats that cannot
+// pay), sol-pay-lease.mjs (the lease, the end of a payment, the move of the beta funds),
+// sol-pay-look.mjs (account reads of a tab, an execute of another device) and sol-pay-end.mjs
+// (the end of a signed payment). They share sol-pay-rig.mjs. The waits for the timers of the
+// page make the payment tests long, so they run in six files at the same time.
 // Run: node web/test/sol-pay.mjs   (Node 26)
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
 import { approve, deviceSeen, reviewOf } from "../sol/approve.js";
-import { agreement } from "../sol/ceremony.js";
-import { base58, keyOfBase58 } from "../sol/docs.js";
-import { EXECUTE_TRIES, endsAt, executorsOf, forgetBalances, tryAgain } from "../sol/execute.js";
-import {
-  ZERO_KEY,
-  bytesOf,
-  decodeIntent,
-  intentHex,
-  planHex,
-  readVerdict,
-} from "../sol/intent.js";
+import { base58 } from "../sol/docs.js";
+import { executorsOf } from "../sol/execute.js";
+import { ZERO_KEY, bytesOf, decodeIntent, planHex, readVerdict } from "../sol/intent.js";
 import { savedNonces, saveNonces } from "../sol/nonces.js";
 import { feeOf } from "../sol/fee.js";
 import { putSol } from "../sol/secrets.js";
-import { solText, syncSolana } from "../sol/session.js";
 import { deviceSpend } from "../sol/spend.js";
 import { gateAnswer, provesLocally, UNREAD } from "../sol/localprove.js";
 import {
@@ -38,21 +34,12 @@ import {
   PROVER_TEXT,
   SHOWN,
   approveSeats,
-  stepStates,
 } from "../sol/payview.js";
-import {
-  heldLamports,
-  heldNotes,
-  partFields,
-  readSolSession,
-  writePart,
-} from "../sol/sessions.js";
-import { selectInputs } from "../sol/transfer.js";
+import { writePart } from "../sol/sessions.js";
 import { solView } from "../sol/view.js";
-import { FRONT_RUN, POOL_SLOT, verifies } from "./sol-chain.mjs";
-import { G, preparedOf, transactOf, useTestGroup, utxoOf } from "./sol-fixture.mjs";
+import { POOL_SLOT, verifies } from "./sol-chain.mjs";
+import { G, preparedOf, transactOf, utxoOf } from "./sol-fixture.mjs";
 import {
-  W,
   c,
   chain,
   data,
@@ -61,38 +48,29 @@ import {
   hook,
   notify,
   path,
-  proposed,
   solOf,
   ssOf,
   waitFor,
   waitStatus,
 } from "./sol-setup.mjs";
 import { step } from "./sol-vector.mjs";
+import {
+  cur,
+  dropSessions,
+  findAll,
+  forgetPairs,
+  installTestGroup,
+  later,
+  marked,
+  node,
+  preparedPay,
+  proposedPay,
+  realNow,
+  rowsOf,
+  textOf,
+} from "./sol-pay-rig.mjs";
 
 const SOL_MINT = "1".repeat(32);
-// The tab, as a tree of plain nodes, to read what the screens show.
-const node = (tag, attrs = {}, ...kids) => ({
-  tag,
-  attrs,
-  kids: kids.flat(Infinity).filter(Boolean),
-});
-const textOf = (n) => (typeof n === "object" ? n.kids.map(textOf).join(" ") : String(n));
-const findAll = (n, pick) =>
-  typeof n !== "object"
-    ? []
-    : [...(pick(n) ? [n] : []), ...n.kids.flatMap((kid) => findAll(kid, pick))];
-const marked = (name) =>
-  findAll(solView({ ...c, host: { ...c.host, el: node } }, (fn) => fn, {}), (n) =>
-    n.attrs["data-sol"] === name,
-  );
-const rowsOf = (id) => {
-  const [review] = marked("review-" + id);
-  const out = {};
-  for (const dl of findAll(review, (n) => n.tag === "dl")) {
-    for (let i = 0; i < dl.kids.length; i += 2) out[textOf(dl.kids[i])] = textOf(dl.kids[i + 1]);
-  }
-  return out;
-};
 const input = (hash, tree, mint = SOL_MINT) => ({
   hash,
   mint,
@@ -105,13 +83,6 @@ const HASH = "aa".repeat(32);
 const OTHER = "bb".repeat(32);
 const move = { id: "p1", intent: "03" + "00".repeat(181), inputIds: [HASH] };
 move.message = "00".repeat(16);
-const dropSessions = async (ids) => {
-  for (const key of data.keys()) {
-    if (ids.some((id) => key.includes("solsessions/" + id))) data.delete(key);
-  }
-  notify();
-  await waitFor("the sessions go", () => !c.sessions.some((x) => ids.includes(x.id)));
-};
 
 // ── The snapshot of the move is read from the wallet of the group key, matched by id ──
 chain.oldUtxos = [input(HASH, "TREE1"), input(OTHER, "TREE2")];
@@ -213,65 +184,12 @@ step("the earlier pairs come from the other sessions only");
 }
 step("the pairs of the group server count after a restore; the nonce account has none");
 
-// ── The test group, and its payment ──
-await useTestGroup(c, { gid, data, notify, waitFor, path, W, chain });
-for (const i of [1, 2, 3]) chain.balances.set(feeAddress(i), 50_000_000n);
-const PAID = G.pay.outputs.find((o) => o.role === "payee");
-const done = agreement(c).done;
-assert.equal(done.pda, G.group.pda, "the seats agree on the PDA identity");
-
-/** The answer of the Worker to prepare of a payment: it proves what the person typed. */
-function preparedPay(args) {
-  assert.equal(args.kind, "pay", "a payment spends the PDA identity");
-  assert.equal(args.recipient, G.payee.address, "the Worker proves for the typed payee");
-  assert.equal(args.amount, PAID.amount, "the Worker proves the typed amount");
-  assert.equal(args.payer, feeAddress(1), "the fee key of the proposing seat is the payer");
-  return preparedOf(G.pay, args);
-}
-let reproofs = 0;
-chain.utxos = [utxoOf(G.pay)];
-chain.prepared = preparedPay;
-chain.reproved = (args) => {
-  reproofs += 1;
-  assert.equal(args.recipient, G.payee.address);
-  const expiry = decodeIntent(ssOf(current).intent).expiry;
-  const proof = (reproofs % 256).toString(16).padStart(2, "0");
-  return { data: transactOf(G.pay, expiry, { proof, root: 200 + reproofs }) };
-};
-let current = null;
-// The fixture has one salt and one input, and a device refuses a pair that another proposal holds
-// on the group server or in its own history (rule salt-reused). The fixture has one input for
-// every payment too, so an ended payment over it would end the next one (another payment spent
-// its inputs). So each payment here starts as a browser with no salt history would, on a server
-// where the earlier payments and moves are gone.
-const forgetPairs = async () => {
-  for (const i of [1, 2, 3]) await putSol(c.host, gid, i, { salts: null });
-  const ended = c.sessions.filter((ss) => ["sent", "failed"].includes(ss.status));
-  const spends = c.sessions.filter((ss) => ss.transact !== undefined || ss.plan !== undefined);
-  await dropSessions([...new Set([...ended, ...spends].map((x) => x.id))]);
-};
-// The page and the program judge an expiry by the clock: `later` moves the clock of this test.
-const realNow = Date.now;
-const later = (ms) => (Date.now = () => realNow() + ms);
-const DAY = 24 * 3600 * 1000;
-// The Ed25519 instruction of the approval of `ss`, as an execute carries it.
-const APPROVAL_HEAD = "01003000ffff1000ffff70002000ffff";
-const approvalOf = (ss) => APPROVAL_HEAD + G.group.key + ss.signature + ss.digest;
-// Two payments of the fixture in one second have one expiry, so one body and one digest, and a
-// seat signs a digest once. Each payment here starts in a second of its own.
-let lastSecond = 0;
-const tick = () => new Promise((go) => setTimeout(go, 50));
-const proposedPay = async () => {
-  while (Math.floor(Date.now() / 1000) <= lastSecond) await tick();
-  const id = await proposed("pay", { recipient: G.payee.address, amount: "0.002" });
-  lastSecond = Math.floor(Date.now() / 1000); // the page took the expiry before this
-  return id;
-};
+await installTestGroup();
 
 // ── No screen and no approval before the device has read its wallet and the account ──
 {
   const id = await proposedPay();
-  current = id;
+  cur.id = id;
   const ss = ssOf(id);
   assert.equal(decodeIntent(ss.intent).kind, "approve", "a payment is approved once");
   assert.equal(ss.message, undefined, "a payment has no message");
@@ -300,7 +218,7 @@ step("propose creates the proposal account first; no screen before the reads of 
 
 // ── A node that shows the new account late: the device reads it again ──
 {
-  const id = current;
+  const id = cur.id;
   const address = base58(ssOf(id).account);
   const stored = chain.accounts.get(address);
   chain.accounts.delete(address);
@@ -346,7 +264,7 @@ step("a device that read no proposal account reads it again, with no click");
 
 // ── A missing account is a wait, a click keeps the re-read, an expired proposal has no button
 {
-  const id = current;
+  const id = cur.id;
   const address = base58(ssOf(id).account);
   const stored = chain.accounts.get(address);
   const marks = (name) => {
@@ -416,7 +334,7 @@ step("a missing account is a wait, a click keeps the re-read, and an expiry hide
 
 // ── S5: a failed wallet read waits 3 s, then 6 s, shows one banner; a success clears it ──
 {
-  const id = current;
+  const id = cur.id;
   const key = "snap:" + id;
   const address = base58(ssOf(id).account);
   const stamps = [];
@@ -459,7 +377,7 @@ step("a failed wallet read waits longer each time, shows one banner, and a succe
 
 // ── A read that fails because the wallet closed writes nothing into the next wallet ──
 {
-  const id = current;
+  const id = cur.id;
   const key = "snap:" + id;
   const banners = [];
   const banner = c.host.showBanner;
@@ -491,7 +409,7 @@ step("a read of a wallet that closed shows no banner and writes no count");
 
 // ── One payment: two approvals, the digest signed, the execute with a fresh proof ──
 {
-  const id = current;
+  const id = cur.id;
   await approve(c, ssOf(id), 1);
   const entry = savedNonces(c, 1, id);
   const [u] = G.pay.inputs;
@@ -587,7 +505,7 @@ step("a read of a wallet that closed shows no banner and writes no count");
   const fresh = transactOf(G.pay, decodeIntent(ss.intent).expiry, { proof: "01", root: 201 });
   assert.ok(landed.message.includes(fresh.slice(2)), "the execute carries the fresh proof");
   assert.equal(chain.accounts.has(base58(ss.account)), false, "the execute closed the account");
-  assert.equal(reproofs, 1, "one fresh proof");
+  assert.equal(cur.reproofs, 1, "one fresh proof");
   const [result] = marked("result").filter((n) => textOf(n).includes(ss.txId));
   const tx = findAll(result, (n) => n.tag === "a")[0].attrs.href;
   assert.equal(tx, "https://explorer.solana.com/tx/" + ss.txId + "?cluster=devnet");
@@ -605,917 +523,6 @@ step("a read of a wallet that closed shows no banner and writes no count");
 }
 step("two seats approve the digest once, and the proposing seat executes a fresh proof");
 
-// ── A reused salt of another proposal on the group server: refused, after a restore too ──
-{
-  await forgetPairs();
-  const id = await proposedPay();
-  current = id;
-  // A copy of the payment under another id holds the same first nullifier and salt.
-  const copy = { ...partFields("proposal", ssOf(id)), createdAt: Date.now() };
-  await writePart(c, "reused", "proposal", copy, { seat: 1, create: true });
-  await waitFor("the copy", () => ssOf("reused"));
-  // A restore: no seat of this browser has a salt history or an approved body.
-  for (const i of [1, 2, 3]) await putSol(c.host, gid, i, { salts: null, bodies: null });
-  const pair = { first: G.pay.inputs[0].nullifier, salt: G.pay.salt };
-  const spend = await deviceSpend(c, ssOf("reused"));
-  assert.deepEqual(spend.salts, [pair], "the pair of the other proposal on the group server");
-  const REUSED = /same first nullifier and salt/;
-  await assert.rejects(() => approve(c, ssOf("reused"), 2), REUSED, "a restored seat refuses it");
-  await assert.rejects(() => approve(c, ssOf(id), 3), REUSED, "the copy stops the open one too");
-  await assert.rejects(() => proposedPay(), REUSED, "the proposer refuses its own draft too");
-  // With the copy gone, no other proposal holds the pair: it passes, and the payment executes.
-  await dropSessions(["reused"]);
-  const own = await deviceSpend(c, ssOf(id));
-  assert.deepEqual(own.salts, [], "the pair of the session itself is no other proposal");
-  await approve(c, ssOf(id), 2);
-  await approve(c, ssOf(id), 3);
-  await waitStatus(id, "sent");
-}
-step("a seat refuses a salt of another proposal on the group server, also after a restore");
-
-// ── A stale proof at the execute is proved again, with the same approval ──
-{
-  chain.prepared = preparedPay;
-  await forgetPairs();
-  const id = await proposedPay();
-  current = id;
-  await approve(c, ssOf(id), 1);
-  chain.refuse = JSON.stringify({ InstructionError: [1, { Custom: 7008 }] });
-  const tries = reproofs;
-  await approve(c, ssOf(id), 3);
-  await waitFor("a stale try", () => (c.tries[id] ?? 0) >= 1);
-  assert.match(c.execErrors[id], /went stale/);
-  chain.refuse = null;
-  await waitStatus(id, "sent");
-  assert.ok(reproofs >= tries + 2, "proved again after the stale root");
-  assert.equal(ssOf(id).signature.length, 128, "with the one approval of the group");
-}
-step("a stale root at the execute is proved again, and the one approval still holds");
-
-// ── Only a seat whose fee address can pay executes (S3); the lease is renewed ──
-{
-  await forgetPairs();
-  const id = await proposedPay();
-  current = id;
-  const kept = [1, 2, 3].map((i) => chain.balances.get(feeAddress(i)));
-  const start = chain.commands.length;
-  const cmds = () => chain.commands.slice(start).map((m) => m.cmd);
-  // Every execute lease of this session (60 s; the publish of a FROST package takes 10 s), with
-  // the number of Worker commands before it. The second one (the renewal before the send of the
-  // funded try) is refused once.
-  const doc = c.host.sdb.doc;
-  const leases = [];
-  c.host.sdb.doc = (path) => {
-    const ref = doc(path);
-    if (!path.endsWith("/" + id)) return ref;
-    const spy = Object.create(ref);
-    spy.acquire = async (o) => {
-      if (o.ttlMs !== 60000) return ref.acquire(o);
-      leases.push({ at: cmds().length });
-      return leases.length === 2 ? { acquired: false } : ref.acquire(o);
-    };
-    return spy;
-  };
-  for (const i of [1, 2, 3]) chain.balances.set(feeAddress(i), 999_999n);
-  forgetBalances(); // the earlier payments read these addresses funded
-  await approve(c, ssOf(id), 1);
-  await approve(c, ssOf(id), 2);
-  await waitFor("the balance reads", () => cmds().includes("balance"));
-  await new Promise((go) => setTimeout(go, 1000));
-  assert.equal(ssOf(id).status, "signed", "no seat of this browser can pay: no execute");
-  assert.equal(c.tries[id] ?? 0, 0, "no try is counted");
-  assert.equal(c.execErrors[id], undefined, "and no banner shows");
-  assert.equal(leases.length, 0, "a tab with no funded seat takes no lease");
-  const reads = cmds().filter((x) => x === "balance").length;
-  assert.ok(reads <= 3, reads + " balance reads: one for each seat, then a wait");
-  chain.balances.set(feeAddress(3), 1_000_000n);
-  await waitStatus(id, "sent", 90000);
-  c.host.sdb.doc = doc;
-  const landed = chain.landed.find((x) => x.signature === ssOf(id).txId);
-  assert.ok(verifies(feeOf(c, 3).key, bytesOf(landed.message), bytesOf(landed.sigs[0])));
-  const all = cmds();
-  assert.equal(all.filter((x) => x === "send").length, 1, "one send");
-  const sendAt = all.indexOf("send");
-  const tests = all.flatMap((x, n) => (x === "simulate" ? [n] : []));
-  assert.ok(tests.length >= 2 && sendAt > tests[1], "the refused renewal sent nothing");
-  const renewed = leases.slice(2).filter((l) => l.at > tests.at(-1) && l.at <= sendAt);
-  assert.equal(renewed.length, 1, "the lease is taken again after the test run, before send");
-  assert.ok(leases.some((l) => l.at > sendAt), "and again after the send, for the confirm");
-  [1, 2, 3].forEach((i, n) => chain.balances.set(feeAddress(i), kept[n]));
-}
-step("only a funded seat executes: the others skip with no banner, and the lease is renewed");
-
-// ── A withdrawal to a public address (SOL-32): the leg goes back into every proof, the screen
-// shows the recipient and the amount that the checker bound, and the execute pays through the SOL
-// interface (the fake program checks the settlement accounts and the commitment) ──
-const TO = G.withdraw.withdraw.recipient;
-const proposedWithdrawal = async (recipient = base58(TO)) => {
-  while (Math.floor(Date.now() / 1000) <= lastSecond) await tick();
-  const id = await proposed("withdraw", { recipient, amount: "0.002" });
-  lastSecond = Math.floor(Date.now() / 1000);
-  return id;
-};
-{
-  await forgetPairs();
-  chain.utxos = [utxoOf(G.withdraw)];
-  chain.prepared = (args) => {
-    assert.equal(args.kind, "withdraw", "a withdrawal spends the PDA identity");
-    assert.equal(args.recipient, TO, "the Worker proves for the typed recipient");
-    assert.equal(args.amount, G.withdraw.withdraw.amount, "and the typed amount");
-    return preparedOf(G.withdraw, args);
-  };
-  const reprovedPay = chain.reproved;
-  chain.reproved = (args) => {
-    const leg = [args.recipient, args.withdraw];
-    assert.deepEqual(leg, [TO, G.withdraw.withdraw.amount], "the leg goes back into the proof");
-    const expiry = decodeIntent(ssOf(current).intent).expiry;
-    return { data: transactOf(G.withdraw, expiry, { proof: "05", root: 300 }) };
-  };
-  // The typed address may have spaces around it.
-  const id = await proposedWithdrawal(" " + base58(TO) + " ");
-  current = id;
-  const intent = decodeIntent(ssOf(id).intent);
-  assert.deepEqual([intent.kind, intent.recipient, intent.amount], ["withdraw", TO, 2_000_000n]);
-  // The device reads its wallet, the account and the recipient for the review, with no click.
-  await waitFor("the screen of seat 2", () => reviewOf(c, ssOf(id), 2).ok);
-  const rows = rowsOf(id);
-  assert.equal(rows["Recipient (public)"], base58(TO), "the recipient that the checker bound");
-  assert.equal(rows["Amount (public)"], "0.002 SOL", "the leg that the checker bound");
-  assert.match(rows["What it does"], /to a public Solana address/);
-  assert.match(rows.Public, /^Recipient, asset and amount are public\. /, "the text of section 2");
-  assert.equal(rows.Helius, PROVER_TEXT, "the screen of a withdrawal names the hosted prover");
-  assert.equal(rows["Create paid by device 1"], feeAddress(1));
-  assert.equal(rows.Change, "0.003 SOL stays with the group.", "the change of the withdrawal");
-  // The forms of the tab: each button proposes its kind with the typed address and amount.
-  const asked = [];
-  const view = solView({ ...c, host: { ...c.host, el: node } }, (fn) => fn, {
-    propose: (kind, args) => asked.push([kind, args]),
-  });
-  const one = (mark) => findAll(view, (n) => n.attrs["data-sol"] === mark)[0];
-  const card = findAll(view, (n) => n.attrs["data-session"] === id)[0];
-  assert.match(textOf(card), /Public SOL withdrawal/, "the card of the session");
-  const stepsOf = (n) => findAll(n, (x) => x.attrs["data-sol"] === "steps-" + id)[0]
-    .kids.map((x) => x.attrs.class);
-  assert.deepEqual(stepsOf(card), ["step done", "step now", "step ", "step "], "the steps");
-  assert.match(textOf(findAll(card, (n) => n.attrs["data-sol"] === "amount-" + id)[0]),
-    /^Public withdrawal 0\.002 SOL /,
-    "the amount that the checker bound, above the rows");
-  // The steps come from the parts of the session; a failure marks the step where it stopped.
-  const states = (patch, n = 0) => stepStates({ ...ssOf(id), ...patch }, n, 2);
-  const parts = { package: "P", signature: "S" };
-  assert.deepEqual(states({ status: "collecting" }, 1), ["now", "", ""]);
-  assert.deepEqual(states({ status: "collecting", expiry: 1 }), ["bad", "", ""], "expired");
-  assert.deepEqual(states({ status: "signing", package: "P" }, 2), ["done", "now", ""]);
-  assert.deepEqual(states({ status: "signed", ...parts }, 2), ["done", "done", "now"]);
-  assert.deepEqual(states({ status: "sent", ...parts, outcome: "failed" }, 2),
-    ["done", "done", "bad"], "failed on chain");
-  assert.deepEqual(states({ status: "failed" }), ["bad", "", ""], "failed before the package");
-  assert.deepEqual(states({ status: "failed", package: "P" }, 2), ["done", "bad", ""]);
-  assert.deepEqual(states({ status: "failed", ...parts }, 2), ["done", "done", "bad"]);
-  assert.deepEqual(states({ status: "failed" }, 2), ["done", "bad", ""],
-    "t approvals and no package: the signing stopped");
-  assert.deepEqual(states({ status: "collecting", expiry: 1 }, 2), ["done", "bad", ""]);
-  assert.deepEqual(stepStates({ ...ssOf(id), status: "signed", ...parts }, 2, 2, true),
-    ["done", "done", "bad"], "the automatic execute stopped after its tries");
-  const outView = solView({ ...c, sessions: [{ ...ssOf(id), status: "signed", ...parts }],
-    tries: { [id]: EXECUTE_TRIES }, host: { ...c.host, el: node } }, (fn) => fn, {});
-  assert.deepEqual(stepsOf(outView), ["step done", "step done", "step done", "step bad"],
-    "the card: a person must press Try the execute again");
-  const said = "Recipient, asset and amount are public.";
-  assert.equal(textOf(one("withdraw-public")), said, "the text of ZOLANA.md section 2");
-  Object.assign(one("withdraw-to"), { value: base58(TO) });
-  Object.assign(one("withdraw-amount"), { value: "0.002" });
-  one("withdraw").attrs.onclick();
-  Object.assign(one("send-to"), { value: G.payee.address });
-  Object.assign(one("send-amount"), { value: "0.001" });
-  one("send").attrs.onclick();
-  assert.deepEqual(asked, [
-    ["withdraw", { recipient: base58(TO), amount: "0.002" }],
-    ["pay", { recipient: G.payee.address, amount: "0.001" }],
-  ]);
-  await approve(c, ssOf(id), 1);
-  await approve(c, ssOf(id), 2);
-  await waitStatus(id, "sent");
-  // No approval record here: the package alone gives t approvals.
-  const sentCard = findAll(solView({ ...c, commits: {}, host: { ...c.host, el: node } },
-    (fn) => fn, {}),
-    (n) => n.attrs["data-session"] === id)[0];
-  assert.deepEqual(stepsOf(sentCard), ["step done", "step done", "step done", "step done"]);
-  const sentSteps = findAll(sentCard, (x) => x.attrs["data-sol"] === "steps-" + id)[0];
-  assert.match(textOf(sentSteps), /Approvals · 2 of 2/, "a package counts t approvals");
-  const landed = chain.landed.find((x) => x.signature === ssOf(id).txId);
-  assert.ok(landed, "the execute of the withdrawal landed");
-  assert.ok(landed.message.includes(TO), "the execute names the recipient");
-  assert.equal(chain.accounts.has(base58(ssOf(id).account)), false, "and closed the account");
-  chain.reproved = reprovedPay;
-}
-step("a withdrawal shows its public recipient and amount, and its execute pays via the pool");
-
-// ── A recipient that could never take the SOL: the proposer and the approvers refuse it ──
-{
-  await forgetPairs();
-  // The Worker proves for any typed key: the checker of the device is what refuses.
-  chain.prepared = (args) => preparedOf(G.withdraw, args);
-  await assert.rejects(() => proposedWithdrawal(base58(G.group.pda)), /no account of the pool/);
-  await assert.rejects(() => proposedWithdrawal("not an address"), /Solana address of the/);
-  assert.equal(keyOfBase58(base58(TO)), TO, "an address reads back as its key");
-  assert.equal(keyOfBase58("1".repeat(33)), null, "33 zero bytes are no key");
-  assert.equal(keyOfBase58("1".repeat(31)), null, "31 zero bytes are no key");
-  const odd = "0f" + "11".repeat(31); // an odd number of hex digits before the pad
-  assert.equal(keyOfBase58(base58(odd)), odd, "a key with a small first byte reads back");
-  const zero = { recipient: base58(TO), amount: "0" };
-  await assert.rejects(() => proposed("withdraw", zero), /Enter an amount of SOL/);
-  // The proposer reads the recipient account too, and refuses one of a program.
-  chain.accounts.set(base58(TO), { owner: "11".repeat(32), data: "" });
-  await assert.rejects(() => proposedWithdrawal(), /ordinary System account/);
-  // The checker gets the lamports, the executable flag and the rent minimum that the page read.
-  const system = (lamports, executable = false) => ({
-    owner: "00".repeat(32),
-    lamports,
-    executable,
-  });
-  chain.accounts.set(base58(TO), system("3000000", true));
-  await assert.rejects(() => proposedWithdrawal(), /ordinary System account/);
-  chain.rentFor = (space) => (space === "0" ? "3000000" : undefined);
-  chain.accounts.delete(base58(TO));
-  await assert.rejects(() => proposedWithdrawal(), /rent-exempt minimum/);
-  // 1,000,000 lamports and the 2,000,000 of the leg reach the minimum of 3,000,000.
-  chain.accounts.set(base58(TO), system("1000000"));
-  const id = await proposedWithdrawal();
-  chain.rentFor = undefined;
-  chain.accounts.delete(base58(TO));
-  current = id;
-  // Then the recipient account becomes an account of a program: no seat approves the payment.
-  chain.accounts.set(base58(TO), { owner: "11".repeat(32), data: "" });
-  await assert.rejects(() => approve(c, ssOf(id), 2), /ordinary System account/);
-  chain.accounts.delete(base58(TO));
-  chain.utxos = [utxoOf(G.pay)];
-  chain.prepared = preparedPay;
-}
-step("a withdrawal to an account of the group or of a program is refused by every device");
-
-const pause = (ms) => new Promise((go) => setTimeout(go, ms));
-const count = (cmd) => chain.commands.filter((m) => m.cmd === cmd).length;
-
-// ── An execute that fails on chain is a counted try, not a sent mark ──
-{
-  await forgetPairs();
-  const id = await proposedPay();
-  current = id;
-  chain.sendMode = "fail";
-  await approve(c, ssOf(id), 1);
-  await approve(c, ssOf(id), 2);
-  await waitFor("a failed execute", () => /failed on chain/.test(c.execErrors[id] ?? ""));
-  assert.equal(ssOf(id).status, "signed", "a failed execute is no sent mark");
-  assert.ok(chain.accounts.has(base58(ssOf(id).account)), "the account and the approval stay");
-  chain.sendMode = null;
-  await waitStatus(id, "sent");
-  const landed = chain.landed.some((x) => x.signature === ssOf(id).txId);
-  assert.ok(landed, "the mark names the execute that landed");
-}
-step("an execute that fails on chain is tried again, and only a landed execute is marked");
-
-// ── An execute that lands late: no second send while it may land, and the mark names it ──
-{
-  await forgetPairs();
-  const id = await proposedPay();
-  current = id;
-  chain.sendMode = "late";
-  const sent = count("send");
-  await approve(c, ssOf(id), 1);
-  await approve(c, ssOf(id), 2);
-  await waitFor("the late execute", () => chain.late.length === 1);
-  await pause(7000);
-  assert.equal(count("send"), sent + 1, "no second execute while the first one may land");
-  assert.equal(c.tries[id] ?? 0, 0, "an execute that may land is no counted try");
-  chain.sendMode = null;
-  chain.release();
-  await waitStatus(id, "sent");
-  assert.equal(ssOf(id).txId, chain.landed.at(-1).signature, "the execute that landed late");
-  assert.equal(count("send"), sent + 1, "one execute in all");
-}
-step("an execute that lands late is not sent twice, and the mark names it");
-
-// The fee addresses of the seats: all at `lamports`, or one amount for each seat.
-const fund = (amounts) => {
-  amounts.forEach((lamports, n) => chain.balances.set(feeAddress(n + 1), lamports));
-  forgetBalances();
-};
-const FUNDED = [50_000_000n, 50_000_000n, 50_000_000n];
-
-// ── A refused balance read is no empty seat: the card shows its text, and no try counts ──
-{
-  await forgetPairs();
-  const id = await proposedPay();
-  current = id;
-  const refused = "Too many Helius calls. Wait a minute.";
-  const card = () => textOf(solView({ ...c, host: { ...c.host, el: node } }, (fn) => fn, {}));
-  chain.balances.get = () => {
-    throw new Error(refused);
-  };
-  forgetBalances();
-  await approve(c, ssOf(id), 1);
-  await approve(c, ssOf(id), 2);
-  await waitFor("the text of the refused reads", () => c.execErrors[id] === refused);
-  assert.equal(ssOf(id).status, "signed", "no execute without a read of the balance");
-  assert.equal(c.tries[id] ?? 0, 0, "a refused read counts no try");
-  assert.ok(card().includes(refused), "the card shows the text of the Worker");
-  assert.equal(c.execWait[id], undefined, "a refused read is no seat that cannot pay");
-  assert.ok(!card().includes("No device of this browser can pay"), "and no line of the wait");
-  delete chain.balances.get; // the reads work again
-  await waitStatus(id, "sent", 90000);
-  assert.equal(c.execErrors[id], undefined, "the text goes with the next good read");
-  assert.equal(c.tries[id] ?? 0, 0, "and no try was counted");
-}
-step("a refused balance read shows its text, counts no try, and the next good read executes");
-
-// ── A retry after a dropped send uses the seat that sent, not the first seat ──
-{
-  await forgetPairs();
-  const id = await proposedPay();
-  current = id;
-  fund([0n, 0n, 5_000_000n]); // only seat 3 can pay
-  chain.sendMode = "late";
-  const sent = count("send");
-  await approve(c, ssOf(id), 1);
-  await approve(c, ssOf(id), 2);
-  await waitFor("the send of seat 3", () => c.sending[id] !== undefined, 60000);
-  assert.equal(c.sending[id].seat, 3, "the tab keeps the seat that sent");
-  const poor = [];
-  const watch = setInterval(() => poor.push(c.execErrors[id] ?? ""), 50);
-  chain.late.splice(0); // the send is dropped: it never lands
-  chain.sendMode = null;
-  c.sending[id].at -= 200_000; // past the send window: the retry runs
-  await waitStatus(id, "sent", 60000);
-  clearInterval(watch);
-  assert.ok(!poor.some((text) => /too little Devnet SOL/.test(text)), "no text of an empty seat");
-  assert.equal(c.tries[id] ?? 0, 0, "the retry is no counted try");
-  assert.equal(count("send"), sent + 2, "the dropped send, then the retry");
-  const landed = chain.landed.find((x) => x.signature === ssOf(id).txId);
-  assert.ok(verifies(feeOf(c, 3).key, bytesOf(landed.message), bytesOf(landed.sigs[0])));
-  fund(FUNDED);
-}
-step("a retry after a dropped send uses the seat that sent it");
-
-// ── A tab with no funded seat writes the mark of an execute that another device landed ──
-{
-  await forgetPairs();
-  const id = await proposedPay();
-  current = id;
-  fund([0n, 0n, 0n]);
-  const sent = count("send");
-  const reads = count("balance");
-  await approve(c, ssOf(id), 1);
-  await approve(c, ssOf(id), 2);
-  await waitFor("the look of the tab", () => count("balance") >= reads + 3);
-  assert.equal(ssOf(id).status, "signed", "the account is open: nothing to mark yet");
-  // Another device executed it: the account is a System account, the history holds the execute.
-  const address = base58(ssOf(id).account);
-  const executed = "3".repeat(88);
-  const tx = Buffer.from("aa" + approvalOf(ssOf(id)), "hex").toString("base64");
-  chain.accounts.set(address, { owner: "00".repeat(32), data: "" });
-  chain.history.set(address, [
-    { signature: executed, failed: false, slot: "14" },
-    ...(chain.history.get(address) ?? []),
-  ]);
-  chain.txs.set(executed, { found: true, failed: false, tx });
-  forgetBalances(); // the tab looks at the account once a minute: the next pass looks now
-  await waitStatus(id, "sent", 60000);
-  assert.equal(ssOf(id).txId, executed, "the transaction of the history");
-  assert.equal(count("send"), sent, "the tab sent nothing");
-  assert.equal(c.tries[id] ?? 0, 0, "and counted no try");
-  assert.equal(c.execWait[id], undefined, "the account that is gone clears the line of the wait");
-  fund(FUNDED);
-}
-step("a tab with no funded seat marks an execute that another device landed");
-
-// ── An unfunded tab: a refused account read shows its text, no try, one read a minute ──
-{
-  await forgetPairs();
-  const id = await proposedPay();
-  current = id;
-  fund([0n, 0n, 0n]);
-  await approve(c, ssOf(id), 1);
-  await approve(c, ssOf(id), 2);
-  await waitFor("signed", () => ssOf(id).status === "signed");
-  const refused = "Helius refused this website. Its key does not allow this domain.";
-  const address = base58(ssOf(id).account);
-  const get = chain.accounts.get;
-  chain.accounts.get = function (key) {
-    if (key === address) throw new Error(refused);
-    return get.call(this, key);
-  };
-  forgetBalances();
-  await waitFor("the text of the refused read", () => c.execErrors[id] === refused, 30000);
-  assert.equal(c.tries[id] ?? 0, 0, "a refused account read counts no try");
-  const reads = count("account");
-  await new Promise((done) => setTimeout(done, 16_000)); // one more pass of the tab
-  assert.equal(count("account"), reads, "no second account read within a minute");
-  assert.equal(c.execErrors[id], refused, "the text stays between the reads");
-  delete chain.accounts.get;
-  fund(FUNDED);
-  await waitStatus(id, "sent", 90000);
-}
-step("a tab with no funded seat shows a refused account read and reads once a minute");
-
-// ── The lease of another device holds the execute back; the last try waits for a click ──
-{
-  await forgetPairs();
-  const id = await proposedPay();
-  current = id;
-  // Another device holds the lease of the execute (the signing round has its own leases).
-  hook.lease = (p) => !(p.endsWith("/" + id) && ssOf(id)?.status === "signed");
-  const sims = count("simulate");
-  await approve(c, ssOf(id), 1);
-  await approve(c, ssOf(id), 2);
-  await waitStatus(id, "signed");
-  await pause(5000);
-  assert.equal(count("simulate"), sims, "no execute while another device holds the lease");
-  hook.lease = () => true;
-  chain.refuse = "Custom 9999";
-  await waitFor("the tries", () => (c.tries[id] ?? 0) >= EXECUTE_TRIES, 60000);
-  const tried = count("simulate");
-  await pause(5000);
-  assert.equal(count("simulate"), tried, "no try after the last one without a click");
-  assert.equal(marked("execute-" + id).length, 1, "the card offers to try again");
-  chain.refuse = null;
-  tryAgain(c, ssOf(id)); // the button of the card
-
-  await waitStatus(id, "sent");
-}
-step("an execute waits for the lease of another device, and stops after its tries");
-
-// ── No fee address of this browser can pay: a neutral line says why, and no try counts ──
-{
-  await forgetPairs();
-  const id = await proposedPay();
-  current = id;
-  fund([999_999n, 999_999n, 999_999n]); // the create needs seat 1 funded, so this comes after it
-  const sends = count("send");
-  await approve(c, ssOf(id), 1);
-  await approve(c, ssOf(id), 2);
-  await waitFor("the line of the wait", () => c.execWait[id] !== undefined);
-  const [line] = marked("exec-wait-" + id);
-  const NEEDS = /^No device of this browser can pay the execute\. A fee address needs 0\.001 SOL/;
-  assert.match(textOf(line), NEEDS);
-  assert.doesNotMatch(line.attrs.class, /\bbad\b/, "the line is no error");
-  assert.equal(c.execErrors[id], undefined, "no red text");
-  assert.equal(c.tries[id] ?? 0, 0, "no try");
-  assert.equal(count("send"), sends, "nothing sent");
-  // Seat 3 gets the exact minimum. Its execute lands late, so the card shows it while signed.
-  chain.sendMode = "late";
-  fund([999_999n, 999_999n, 1_000_000n]);
-  await waitFor("the send of seat 3", () => c.sending[id] !== undefined, 60000);
-  assert.equal(c.sending[id].seat, 3, "the funded seat executes");
-  assert.equal(ssOf(id).status, "signed", "the execute did not land yet");
-  assert.equal(marked("exec-wait-" + id).length, 0, "the funded seat clears the line");
-  assert.equal(c.execErrors[id], undefined, "and no red text shows");
-  chain.sendMode = null;
-  chain.release();
-  await waitStatus(id, "sent");
-  const landed = chain.landed.find((x) => x.signature === ssOf(id).txId);
-  assert.ok(verifies(feeOf(c, 3).key, bytesOf(landed.message), bytesOf(landed.sigs[0])));
-  fund(FUNDED);
-}
-step("a browser with no funded seat says why on the card; a funded seat clears it and executes");
-
-// ── A signed payment whose tries ran out still ends at its expiry, with no click ──
-{
-  await forgetPairs();
-  const id = await proposedPay();
-  current = id;
-  chain.refuse = "Custom 9999";
-  const delays = []; // a quiet tab: the step arms a pass of the reactor for the end of the payment
-  const setTimer = globalThis.setTimeout;
-  globalThis.setTimeout = (fn, ms, ...rest) => (delays.push(ms), setTimer(fn, ms, ...rest));
-  await approve(c, ssOf(id), 1);
-  await approve(c, ssOf(id), 2);
-  await waitFor("the tries", () => (c.tries[id] ?? 0) >= EXECUTE_TRIES, 60000);
-  const end = (Number(ssOf(id).expiry) + 600) * 1000 + 1000;
-  const armed = () => delays.some((ms) => Math.abs(Date.now() + ms - end) < 10_000);
-  notify();
-  await waitFor("the pass at the end of the payment", armed);
-  globalThis.setTimeout = setTimer;
-  assert.equal(marked("execute-" + id).length, 1, "before the expiry the card asks for a click");
-  chain.refuse = null;
-  const [sims, sends] = [count("simulate"), count("send")];
-  // First the node shows no account and a history with no create: the end check fails.
-  const address = base58(ssOf(id).account);
-  const [stored, history] = [chain.accounts.get(address), chain.history.get(address)];
-  chain.accounts.delete(address);
-  chain.history.set(address, []);
-  later(DAY);
-  notify(); // a pass of the reactor, with no click
-  const unread = () => /history of the proposal account is not complete/.test(c.execErrors[id]);
-  await waitFor("the failed end check", unread);
-  assert.equal(c.tries[id], EXECUTE_TRIES, "a failed end check is no new try");
-  // Then the node shows the open account: the end check reads again later, and the payment ends.
-  chain.accounts.set(address, stored);
-  chain.history.set(address, history);
-  await waitStatus(id, "failed", 60000);
-  Date.now = realNow;
-  assert.match(ssOf(id).error, /expired before it was executed/);
-  assert.equal(c.tries[id], EXECUTE_TRIES, "the end check is no new try");
-  assert.equal(count("simulate"), sims, "it tests no execute");
-  assert.equal(count("send"), sends, "and sends nothing");
-}
-step("a signed payment whose tries ran out ends at its expiry, with no click and no new try");
-
-// ── A signed payment past its expiry ends also when no seat of this browser can pay ──
-{
-  await forgetPairs();
-  const id = await proposedPay();
-  current = id;
-  fund([0n, 0n, 0n]);
-  const reads = count("balance");
-  await approve(c, ssOf(id), 1);
-  await approve(c, ssOf(id), 2);
-  await waitFor("the look of the tab", () => count("balance") >= reads + 3);
-  assert.equal(ssOf(id).status, "signed", "no seat can pay: no execute");
-  later(DAY); // past the expiry and the clock margin of 600 s
-  await waitStatus(id, "failed", 60000);
-  Date.now = realNow;
-  assert.match(ssOf(id).error, /expired before it was executed/);
-  fund(FUNDED);
-}
-step("a signed payment with no funded seat still ends at its expiry: its end pays no fee");
-
-// ── Someone created the same body first: the page reads the account and takes it ──
-{
-  await forgetPairs();
-  chain.frontRun = "other";
-  await assert.rejects(() => proposedPay(), /"Custom":0\}/, "another body is no create");
-  chain.frontRun = true;
-  const id = await proposedPay();
-  assert.equal(chain.frontRun, false, "the other create landed first");
-  assert.equal(ssOf(id).createTx, FRONT_RUN, "the create of the account is the other one");
-  assert.ok(chain.accounts.has(base58(ssOf(id).account)), "the account holds the body");
-  // The other create lands after the test run of the page passed: the create of the page fails.
-  // The next payment has the one salt of the fixture, so the open one goes first.
-  await dropSessions([id]);
-  chain.frontRun = "send";
-  const raced = await proposedPay();
-  assert.equal(chain.frontRun, false, "the other create landed at the send");
-  assert.equal(ssOf(raced).createTx, FRONT_RUN, "a create that lost the race takes the other one");
-}
-step("a create that meets the same body in its account takes it; another body fails it");
-
-// ── Two payments over one input: the second avoids it, an executed one ends the other ──
-{
-  await forgetPairs();
-  const open = await proposedPay();
-  // Two real payments over one input have two salts. The fixture has one, so the open payment
-  // gets another one here (no seat approves it: its ciphertexts do not fit that salt).
-  const other = transactOf({ ...G.pay, salt: "5a".repeat(16) }, ssOf(open).expiry);
-  const moved = { ...partFields("proposal", ssOf(open)), transact: other };
-  await writePart(c, open, "proposal", moved, { seat: 1 });
-  await waitFor("the other salt", () => ssOf(open)?.transact === other);
-  const id = await proposedPay();
-  const asked = chain.commands.filter((m) => m.cmd === "prepare").at(-1).args;
-  assert.deepEqual(asked.avoid, ssOf(open).inputIds, "the Worker avoids the open inputs");
-  // S4: the page can name the open payments that hold the notes, and the end of each.
-  const held = heldNotes(c.sessions, chain.utxos);
-  assert.deepEqual(held.map((h) => h.id).sort(), [open, id].sort(), "both hold the one note");
-  const note = BigInt(chain.utxos[0].amount);
-  assert.deepEqual(held.map((h) => h.lamports), [note, note], "the amount of the held note");
-  assert.equal(held[0].expiry, decodeIntent(ssOf(held[0].id).intent).expiry);
-  assert.equal(heldLamports(c.sessions, chain.utxos), note, "but the note is held once");
-  // The pay card says what a new payment can spend, or which proposals hold all of it.
-  const kept = { sync: c.sync, sessions: c.sessions };
-  const notes = chain.utxos.map(({ hash, amount }) => ({ hash, amount }));
-  const line = () => marked("available").map(textOf);
-  // The page ends a payment 600 s after its expiry (the clock margin of execute.js).
-  const at = new Date((Number(held[0].expiry) + 600) * 1000).toISOString().slice(0, 16);
-  const end = at.replace("T", " ") + " UTC";
-  assert.equal(endsAt(held[0].expiry), held[0].expiry + 600n, "the margin of the end");
-  const name = `of device ${ssOf(held[0].id).by} (${held[0].id})`;
-  c.sync = { ...kept.sync, lamports: String(note), notes };
-  const two = `All your notes are held by 2 open proposals. The one that ends first, ${name}, ends`;
-  assert.deepEqual(line(), [`${two} at ${end}. Add SOL or wait.`], "two holders");
-  c.sessions = kept.sessions.filter((ss) => ss.id !== held[1].id);
-  const one = `All your notes are held by an open proposal ${name}. It ends at ${end}.`;
-  assert.deepEqual(line(), [one + " Add SOL or wait."], "one holder");
-  c.sessions = kept.sessions;
-  const extra = { hash: "ee".repeat(32), amount: "1000" };
-  c.sync = { ...c.sync, lamports: String(note + 1000n), notes: [...notes, extra] };
-  const free = `Available for a new payment: ${solText(1000n)}. Open proposals hold `;
-  assert.deepEqual(line(), [free + solText(note) + " until they execute or end."]);
-  // A sent payment spent its notes: they are not available, also before the next sync.
-  const sentFields = { expiry: 1n, inputs: 1, outputs: 2, recipient: "11".repeat(32), amount: 1n };
-  const intent = intentHex("withdraw", sentFields);
-  const spent = { id: "spent-s4", by: 1, status: "sent", intent, inputIds: [extra.hash] };
-  c.sessions = [...kept.sessions, spent];
-  assert.deepEqual(line(), [`${two} at ${end}. Add SOL or wait.`], "the spent note is gone");
-  c.sessions = kept.sessions;
-  c.sync = { ...c.sync, notes: [] };
-  assert.deepEqual(line(), [], "no line while no open proposal holds a synced note");
-  c.sync = kept.sync;
-  current = id;
-  await approve(c, ssOf(id), 1);
-  await approve(c, ssOf(id), 2);
-  await waitStatus(id, "sent");
-  await waitStatus(open, "failed");
-  assert.match(ssOf(open).error, /Another payment spent the inputs of this one/);
-}
-step("a payment avoids the inputs of an open one, and an executed one ends the other");
-
-// ── S4: a payment that only held notes cover says so (transfer.js runs in the Worker) ──
-{
-  const note = (amount, n) => ({
-    spent: false,
-    utxo: { asset: "SOL", amount, data: { isEmpty: () => true } },
-    outputContext: { hash: Uint8Array.of(n), tree: "T" },
-  });
-  const wallet = { utxos: () => [note(70n, 1), note(30n, 2)] };
-  const pick = (amount, held) => () =>
-    selectInputs({ SOL_MINT: "SOL" }, wallet, "T", amount, new Set(held));
-  assert.throws(pick(80n, ["01"]), /held by an open proposal: wait until it ends or add SOL/);
-  assert.throws(pick(101n, ["01"]), /the synced balance does not cover the amount/);
-  assert.throws(pick(101n, []), /the synced balance does not cover the amount/);
-  assert.equal(pick(30n, ["01"])()[0].utxo.amount, 30n, "a free note still pays");
-  assert.throws(pick(100n, ["01"]), /held by an open proposal/, "all notes, to the lamport");
-  // Seven notes of 1: no proof takes 7, so a release would not help. The text says why.
-  const small = { utxos: () => [1, 2, 3, 4, 5, 6, 7].map((n) => note(1n, n)) };
-  const seven = () => selectInputs({ SOL_MINT: "SOL" }, small, "T", 7n, new Set(["01"]));
-  assert.throws(seven, /needs 7 UTXOs, and no proof takes that many/);
-  // A held note of 70 would pay alone, but the seven free notes of 10 need a proof of 7 inputs.
-  const mixed = { utxos: () => [note(70n, 1), ...[2, 3, 4, 5, 6, 7, 8].map((n) => note(10n, n))] };
-  const seventy = () => selectInputs({ SOL_MINT: "SOL" }, mixed, "T", 70n, new Set(["01"]));
-  assert.throws(seventy, /held by an open proposal: wait until it ends or add SOL/);
-  // heldNotes: the open payments only, each note once, synced notes only, the first to end first.
-  const utxos = [{ hash: "aa", amount: "100" }, { hash: "bb", amount: "40" }];
-  const pay = (id, status, expiry, inputIds) => {
-    const fields = { expiry, inputs: 1, outputs: 2, recipient: "11".repeat(32), amount: 1n };
-    return { id, status, intent: intentHex("withdraw", fields), inputIds };
-  };
-  const sessions = [
-    pay("late", "collecting", 20n, ["aa", "aa"]),
-    pay("early", "signed", 10n, ["bb", "cc"]),
-    pay("sent", "sent", 5n, ["aa"]),
-    pay("failed", "failed", 5n, ["bb"]),
-    pay("unsynced", "signing", 5n, ["cc"]),
-  ];
-  const list = heldNotes(sessions, utxos).map((h) => [h.id, h.expiry, h.lamports]);
-  assert.deepEqual(list, [["early", 10n, 40n], ["late", 20n, 100n]]);
-  assert.equal(heldLamports(sessions, utxos), 140n);
-}
-step("a payment that only held notes cover names the open proposal as the cause");
-
-// ── A create that fails writes no session; a create that lands late is waited for ──
-{
-  await forgetPairs();
-  const stored = () => [...data.keys()].filter((k) => k.includes("solsessions/")).length;
-  const before = stored();
-  chain.sendMode = "fail";
-  await assert.rejects(() => proposedPay(), /not confirmed yet \(failed\)/);
-  assert.equal(stored(), before, "no session for a create that failed");
-  chain.sendMode = "late";
-  setTimeout(() => {
-    chain.sendMode = null;
-    chain.release();
-  }, 5000);
-  const id = await proposedPay();
-  assert.ok(chain.accounts.has(base58(ssOf(id).account)), "the late create landed first");
-}
-step("a create that fails on chain writes no session, and a late create is waited for");
-
-// ── An account that another device executed is read back as sent ──
-{
-  await forgetPairs();
-  const id = await proposedPay();
-  current = id;
-  const ss = ssOf(id);
-  const elsewhere = "4".repeat(88);
-  const before = chain.refuse;
-  chain.refuse = "Custom 9999"; // this device cannot land it
-  await approve(c, ssOf(id), 1);
-  await approve(c, ssOf(id), 2);
-  await waitFor("a refused try", () => (c.tries[id] ?? 0) >= 1);
-  // Someone sent lamports to the open account, then the execute of another device closed it.
-  // Later, someone sent lamports to the address again (a System account now) and landed a
-  // transaction that names it. Only the execute carries the approval of this payment.
-  const address = base58(ss.account);
-  chain.accounts.set(address, { owner: "00".repeat(32), data: "" });
-  const [early, late] = ["6".repeat(88), "7".repeat(88)];
-  chain.history.set(address, [
-    { signature: late, failed: false, slot: "14" },
-    { signature: elsewhere, failed: false, slot: "12" },
-    { signature: "5".repeat(88), failed: true, slot: "11" },
-    { signature: early, failed: false, slot: "10" },
-    ...(chain.history.get(address) ?? []),
-  ]);
-  const base64 = (text) => Buffer.from(text, "hex").toString("base64");
-  const tx = (text) => ({ found: true, failed: false, tx: base64(text) });
-  chain.txs.set(elsewhere, tx("aa" + approvalOf(ssOf(id)) + "bb"));
-  // A failed execute of this payment by another device carries the approval too.
-  chain.txs.set("5".repeat(88), { ...tx("dd" + approvalOf(ssOf(id))), failed: true });
-  // An earlier memo with the approval signature alone, and a later copy of the whole approval.
-  chain.txs.set(early, tx("cc" + ssOf(id).signature));
-  chain.txs.set(late, tx("ee" + approvalOf(ssOf(id))));
-  chain.refuse = before;
-  await waitStatus(id, "sent");
-  assert.equal(ssOf(id).txId, elsewhere, "the transaction that holds the approval");
-}
-step("an execute that another device landed is read back from the history of the account");
-
-// ── An account that is gone with only its create in the history: the session ends ──
-{
-  await forgetPairs();
-  const id = await proposedPay();
-  current = id;
-  chain.refuse = "Custom 9999";
-  await approve(c, ssOf(id), 1);
-  await approve(c, ssOf(id), 2);
-  await waitFor("a refused try", () => (c.tries[id] ?? 0) >= 1);
-  chain.accounts.delete(base58(ssOf(id).account));
-  chain.refuse = null;
-  // Before the expiry a node may lag: the page reads the history again later, and fails nothing.
-  await pause(6000);
-  assert.equal(ssOf(id).status, "signed", "no failure before the expiry");
-  later(DAY);
-  await waitStatus(id, "failed", 60000);
-  Date.now = realNow;
-  assert.match(ssOf(id).error, /no execute of it landed/);
-}
-step("an account that is gone with no execute in its history ends the session at the expiry");
-
-// ── A signed payment past its expiry with its account still open ends ──
-{
-  await forgetPairs();
-  const id = await proposedPay();
-  current = id;
-  chain.refuse = "Custom 9999";
-  await approve(c, ssOf(id), 1);
-  await approve(c, ssOf(id), 2);
-  await waitFor("a refused try", () => (c.tries[id] ?? 0) >= 1);
-  chain.refuse = null;
-  later(DAY);
-  tryAgain(c, ssOf(id));
-  await waitStatus(id, "failed");
-  Date.now = realNow;
-  assert.match(ssOf(id).error, /expired before it was executed/);
-  assert.ok(chain.accounts.has(base58(ssOf(id).account)), "it read the open account first");
-}
-step("a signed payment past its expiry ends only after the page read its open account");
-
-// ── A history that the node does not give in full: the page reads it again, no failure ──
-{
-  await forgetPairs();
-  const id = await proposedPay();
-  current = id;
-  chain.refuse = "Custom 9999";
-  await approve(c, ssOf(id), 1);
-  await approve(c, ssOf(id), 2);
-  await waitFor("a refused try", () => (c.tries[id] ?? 0) >= 1);
-  const address = base58(ssOf(id).account);
-  const [create] = chain.history.get(address);
-  chain.accounts.delete(address);
-  chain.refuse = null;
-  const executed = "8".repeat(88);
-  const unread = () => /history of the proposal account is not complete/.test(c.execErrors[id]);
-  // Past the expiry the page reports an incomplete history (before it, it waits in silence).
-  later(DAY);
-  const readAgain = async (history, what) => {
-    chain.history.set(address, history);
-    delete c.execErrors[id];
-    tryAgain(c, ssOf(id));
-    await waitFor(what, unread);
-    assert.equal(ssOf(id).status, "signed", what + ": no failure");
-  };
-  // A history that does not reach back to the create, then one whose execute the node lacks.
-  const other = "9".repeat(88);
-  chain.txs.set(other, { found: true, failed: false, tx: Buffer.from([0xcc]).toString("base64") });
-  await readAgain([{ signature: other, failed: false, slot: "13" }], "no create");
-  chain.txs.set(executed, { found: false, failed: false, tx: "" });
-  const entry = { signature: executed, failed: false, slot: "12" };
-  await readAgain([entry, create], "an unread execute");
-  const signed = Buffer.from("aa" + approvalOf(ssOf(id)), "hex").toString("base64");
-  chain.txs.set(executed, { found: true, failed: false, tx: signed });
-  tryAgain(c, ssOf(id));
-  await waitStatus(id, "sent");
-  Date.now = realNow;
-  assert.equal(ssOf(id).txId, executed, "the execute, once the node gives it, past the expiry");
-}
-step("a history with no create or with an unread transaction is read again, not failed");
-
-// ── The sent mark of a payment needs the approval signature and a transaction id ──
-{
-  const ss = ssOf(current);
-  const PARTS = ["intent", "plan", "inputIds", "salt", "transact", "account", "body", "createTx"];
-  const d = Object.fromEntries([...PARTS, "expiry", "createdAt"].map((k) => [k, ss[k]]));
-  Object.assign(d, { package: "{}", signers: [1, 2], digest: "d".repeat(64) });
-  Object.assign(d, { signature: "55".repeat(64), slot: "1", outcome: "confirmed" });
-  const read = (txId) => readSolSession("x", { ...d, txId }, () => "yes").ss?.status;
-  assert.equal(read("4".repeat(88)), "sent", "the control");
-  assert.equal(read("short"), "signed", "a sent mark with no transaction id does not count");
-  const failedMark = { ...d, txId: "4".repeat(88), outcome: "failed" };
-  const status = readSolSession("x", failedMark, () => "yes").ss?.status;
-  assert.equal(status, "signed", "a failed execute does not count as sent");
-}
-step("the sent mark of a payment needs a transaction id");
-
-// ── The one-time move of the beta funds: the card shows while the group key holds SOL ──
-{
-  // The card counts only the notes that a move can take.
-  const stuck = { ...utxoOf(G.migrate), hash: "ef".repeat(32), movable: false };
-  chain.oldUtxos = [utxoOf(G.migrate), stuck];
-  await syncSolana(c);
-  assert.equal(c.sync.oldBalance, G.migrate.inputs[0].amount, "the movable SOL of the old address");
-
-  chain.oldUtxos = [];
-  const kept = { sync: c.sync, chain: c.chain };
-  c.sync = { ...c.sync, oldBalance: "5000000" };
-  c.chain = { ...c.chain, nonce: "missing" };
-  assert.equal(marked("move").length, 1, "the card of the move");
-  assert.match(textOf(marked("move")[0]), /links the old address .* in public\. Helius makes/);
-  assert.equal(marked("create-nonce").length, 1, "first the nonce account");
-  assert.equal(marked("move-funds").length, 0);
-  c.chain = { ...c.chain, nonce: "created" };
-  assert.equal(textOf(marked("move-funds")[0]), "Move to the program address");
-  assert.equal(textOf(marked("move-held")[0]), "Old address: 0.005 SOL", "the balance to move");
-  c.sync = { ...c.sync, oldBalance: "0" };
-  assert.equal(marked("move").length, 0, "no card once the funds moved");
-  Object.assign(c, kept);
-}
-step("the move of the beta funds shows as a one-time step");
-
-// ── A payment that expired ends, and an Approve gives way to the reason ──
-{
-  const id = "expired-pay";
-  const ss = ssOf(current);
-  const PARTS = ["intent", "plan", "inputIds", "salt", "transact", "account", "body", "createTx"];
-  const late = Object.fromEntries(PARTS.map((k) => [k, ss[k]]));
-  await forgetPairs();
-  // Inside the margin for the clock of the device (600 s): no end yet.
-  const fields = (secs) => ({ ...late, expiry: String(secs), createdAt: Date.now() });
-  const just = fields(Math.floor(Date.now() / 1000) - 100);
-  await writePart(c, "just-expired", "proposal", just, { seat: 1, create: true });
-  await waitFor("the session", () => ssOf("just-expired"));
-  await pause(1500);
-  assert.equal(ssOf("just-expired").status, "collecting", "the clock margin of the device");
-  late.expiry = String(Math.floor(Date.now() / 1000) - 700); // past the clock margin
-  await writePart(c, id, "proposal", { ...late, createdAt: Date.now() }, { seat: 1, create: true });
-  await waitStatus(id, "failed");
-  assert.match(ssOf(id).error, /expired before it was executed/);
-}
-step("a payment past its expiry ends with a clear text");
-
-// ── The move of the beta funds: the last payment with a nonce ──
-{
-  // A second old note that this move does not take: the Worker moves whole UTXOs, as many as one
-  // proof takes, and the intent names what it moves, not the old balance.
-  const extra = { ...utxoOf(G.migrate), hash: "ee".repeat(32), amount: "1000" };
-  chain.oldUtxos = [utxoOf(G.migrate), extra];
-  chain.inspected = { salt: G.migrate.salt, firstNullifier: G.migrate.inputs[0].nullifier };
-  const moved = BigInt(G.migrate.inputs[0].amount);
-  chain.prepared = (args) => {
-    assert.equal(args.kind, "migrate", "the move spends the group key");
-    assert.equal(args.recipient, G.group.pdaAddress, "to the PDA address of the group");
-    assert.equal(args.amount, String(moved + 1000n), "the old balance is the bound of the move");
-    return preparedOf(G.migrate, args);
-  };
-  const nonceRun = await proposed("createNonce");
-  await approve(c, ssOf(nonceRun), 1);
-  await approve(c, ssOf(nonceRun), 2);
-  await waitStatus(nonceRun, "sent");
-  const id = await proposed("migrate");
-  assert.equal(decodeIntent(ssOf(id).intent).kind, "transfer");
-  assert.equal(decodeIntent(ssOf(id).intent).amount, moved, "the intent names the moved amount");
-  await approve(c, ssOf(id), 1);
-  await approve(c, ssOf(id), 2);
-  await waitStatus(id, "sent");
-  const landed = chain.landed.find((x) => x.signature === ssOf(id).txId);
-  assert.equal(landed.sigs.length, 2, "the payer first, then the group key");
-  const message = Buffer.from(landed.message, "hex");
-  const [payerSig, groupSig] = landed.sigs.map((s) => Buffer.from(s, "hex"));
-  assert.ok(verifies(feeOf(c, 1).key, message, payerSig), "the fee key of seat 1 paid");
-  assert.ok(verifies(G.group.key, message, groupSig), "the group key signed the move");
-  assert.equal(ssOf(id).txId, base58(landed.sigs[0]), "the id is the first signature");
-  const dataHex = transactOf(G.migrate, decodeIntent(ssOf(id).intent).expiry);
-  assert.ok(landed.message.includes(dataHex), "the message holds the transact data of the move");
-}
-step("the beta funds move to the PDA address with the last nonce payment");
-
-// ── A move on a nonce that changed after the proposal: no approval, no nonces ──
-{
-  await forgetPairs();
-  chain.inspected = { salt: G.migrate2.salt, firstNullifier: G.migrate2.inputs[0].nullifier };
-  chain.prepared = (args) => preparedOf(G.migrate2, args);
-  const fresh = await proposed("migrate");
-  const kept = chain.nonce;
-  chain.nonce = "cd".repeat(32);
-  await assert.rejects(() => approve(c, ssOf(fresh), 1), /nonce changed/);
-  assert.equal(savedNonces(c, 1, fresh), undefined, "no nonces for a stale proposal");
-  chain.nonce = kept;
-  // The nonce holds again, but the proof of the move went stale before the send (error 7008).
-  chain.refuse = JSON.stringify({ InstructionError: [1, { Custom: 7008 }] });
-  await approve(c, ssOf(fresh), 1);
-  await approve(c, ssOf(fresh), 2);
-  await waitStatus(fresh, "failed");
-  chain.refuse = null;
-  assert.match(ssOf(fresh).error, /proof expired because the pool moved on/);
-}
-step("a move on a stale nonce is refused, and a stale proof at the send ends the move");
 // ── SOL-4: with the switch on, the approvals path proves on the device, and stays so ──
 {
   const shown = (mark) => textOf(marked(mark)[0]);
@@ -1539,14 +546,14 @@ step("a move on a stale nonce is refused, and a stale proof at the send ends the
   chain.prepared = preparedPay;
   chain.utxos = [utxoOf(G.pay)];
   chain.gates.length = 0;
-  current = await proposedPay();
-  await waitFor("the screen of seat 2", () => reviewOf(c, ssOf(current), 2).ok);
-  assert.equal(rowsOf(current).Helius, PROVER_ROW_LOCAL, "the screen of the payment says it too");
-  await approve(c, ssOf(current), 1);
-  await approve(c, ssOf(current), 2);
-  await waitStatus(current, "sent");
+  cur.id = await proposedPay();
+  await waitFor("the screen of seat 2", () => reviewOf(c, ssOf(cur.id), 2).ok);
+  assert.equal(rowsOf(cur.id).Helius, PROVER_ROW_LOCAL, "the screen of the payment says it too");
+  await approve(c, ssOf(cur.id), 1);
+  await approve(c, ssOf(cur.id), 2);
+  await waitStatus(cur.id, "sent");
   assert.deepEqual(chain.gates, ["local", "local"], "the proof and the fresh proof, here");
-  assert.ok(chain.landed.some((x) => x.signature === ssOf(current).txId), "the execute landed");
+  assert.ok(chain.landed.some((x) => x.signature === ssOf(cur.id).txId), "the execute landed");
 }
 step("SOL-4 with the switch on, prepare and the fresh proof of the execute run on the device");
 
@@ -1573,6 +580,7 @@ step("SOL-4 with the switch on, prepare and the fresh proof of the execute run o
   }
 }
 step("SOL-4 the gate answers local with the pin alone, and refuses when it cannot read the server");
+
 // ── SOL-4 after a pool upgrade: a local group names it first, and proves here ──
 {
   for (const i of [1, 2, 3]) await putSol(c.host, gid, i, { proveLocal: true });
@@ -1580,14 +588,14 @@ step("SOL-4 the gate answers local with the pin alone, and refuses when it canno
   chain.prepared = preparedPay;
   chain.utxos = [utxoOf(G.pay)];
   chain.gates.length = 0;
-  current = await proposedPay();
+  cur.id = await proposedPay();
   // Helius redeployed the pool: its verifier refuses the proof of the old keys.
   chain.poolSlot = "600000000";
   chain.refuse = JSON.stringify({ InstructionError: [1, { Custom: 6000 }] });
   try {
-    await approve(c, ssOf(current), 1);
-    await approve(c, ssOf(current), 2);
-    const said = () => c.execErrors[current] ?? "";
+    await approve(c, ssOf(cur.id), 1);
+    await approve(c, ssOf(cur.id), 2);
+    const said = () => c.execErrors[cur.id] ?? "";
     const moved = () => said().startsWith("Helius changed the pool. ");
     await waitFor("the text of the moved pool", moved);
     assert.match(said(), /The network refused the execute: .*6000/, "the refusal follows");
