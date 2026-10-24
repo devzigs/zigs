@@ -88,9 +88,9 @@ coin. The runbook of a demo with three devices is in [docs/demo.md](docs/demo.md
    **Available** after 3 confirmations (about 75 s).
    - The Valar faucet can pause. Then **Paid · 24h** shows 0 payouts, and a claim ends with "Not
      paid: the wallet cannot pay this address". Try again later, or use one of the routes below.
-   - Or paste the address at [fauzec.com](https://fauzec.com/), a second testnet faucet. It pays
-     1 TAZ to a `utest1…` address once every 24 hours, after a human check. That site is not Zigs
-     either: it sees the address and your IP address. Nobody has tested it with Zigs yet.
+   - Or paste the address at [fauzec.com](https://fauzec.com/), a second testnet faucet. The site
+     says it pays 1 TAZ to a `utest1…` address once every 24 hours, after a human check. It is
+     not Zigs either: it sees the address and your IP address. Nobody has tested it with Zigs yet.
    - Or ask the Zigs team for test coins, in the same way that you got the password.
    - A Zigs address has one shielded receiver and no transparent (`tm…`) or Sapling receiver. So a
      faucet that pays only `tm…` or Sapling addresses cannot fund it.

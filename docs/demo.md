@@ -243,7 +243,7 @@ Solana error, a server problem and a synced balance that is too low.
 | Solana says "the notes that cover this amount are held by an open proposal", or the card **Send SOL** says "All your notes are held by …" | An open proposal holds the notes (S4). The card names it and the time it ends. Use the spare wallet, or show the recorded run |
 | A laptop is lost | Restore its device from its two backup files (M4) |
 | L2 refuses the payment: the name gives another address | L1 has not approved yet, so L1 cancels the payment and proposes again with the pasted utest1 address |
-| The faucet refuses a claim | One claim for each IP address and for each address every 24 hours. "Not paid: the wallet cannot pay this address" with 0 in **Paid · 24h** means that the Valar faucet pays nobody now: try fauzec.com. Else use coins from the permanent test wallet |
+| The faucet refuses a claim | One claim for each IP address and for each address every 24 hours. "Not paid: the wallet cannot pay this address" with 0 in **Paid · 24h** may mean that the Valar faucet pays nobody now, if a second valid address ends the same way: try fauzec.com. Else use coins from the permanent test wallet |
 
 ## 6. What to say about privacy
 

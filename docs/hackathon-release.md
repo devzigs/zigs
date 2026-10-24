@@ -84,13 +84,18 @@ Evidence marked "checked" was read in the repo during this synthesis. All other 
   - Change README step 3: copy the address first, 0.125 TAZ, one claim per IP per day, wait 3 confirmations (about 75 s).
   - Owner: prove one drip into a Zigs wallet before the demo. The audit could not do this, because it needs a write.
 - **Files:** web/app-chain.js, README.md.
-- **Finding, 24 Oct (read-only):** the Valar faucet is not ready in practice, though `/api/status` says `ready: true`.
+- **Finding, 24 Oct (read-only):** one claim failed, and the Valar faucet made no payout since
+  23 Oct 16:09 UTC, though `/api/status` says `ready: true`.
   - A claim for a fresh Zigs address ended with "Not paid: the wallet cannot pay this address".
   - `/api/status` at 19:48 and 19:58 UTC: `paidCount` 0, the full `capRemaining` of 18.75 TAZ, a balance of 7,466 TAZ and 3 broadcast nodes. The last payout was on 23 Oct at 16:09 UTC. So the faucet paid nobody for more than 27 hours.
-  - The cause is not the form of the Zigs address. The faucet's own donation address, which its zecd wallet makes, also has one Orchard receiver. zecd sends to an Orchard receiver in the Ironwood pool after NU6.3.
+  - The cause is not known. The faucet gives "cannot pay this address" for the zecd codes of an
+    invalid address or parameter. But its own donation address has the same form as a Zigs
+    address (one Orchard receiver), and a payout to a `utest1` address worked on 23 Oct. So the
+    form of the Zigs address is probably not the cause.
   - Its five listed payouts are v6 Ironwood transactions (branch 77190ad9): one to a `utest1` address, four to `t…` addresses. Zigs scans the Ironwood pool, so it would see such a payout. Nobody has proved this live yet.
   - The jinolabs faucet still says that drips pause for NU7. fauzec.com reports ready and pays 1 TAZ to unified addresses, but it lists no payouts, so its pool is not checked.
-  - README step 4, docs/demo.md and the faucet notice now say that the faucet can pause and give the other routes. The faucet URL stays.
+  - README step 4 and docs/demo.md give the other routes. The faucet notice says that the
+    faucet can stop paying and to ask the Zigs team. The faucet URL stays.
 
 ### M3 Unified setup: one flow for Zcash testnet and Solana Devnet
 - **Why:** The owner plans it, and the demo shows one setup, not two ceremonies.
