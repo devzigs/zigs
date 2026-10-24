@@ -879,7 +879,7 @@ body { margin:0; background:var(--bg); color:var(--text); font:var(--font-body);
 .section-heading { display:grid; gap:10px; min-width:0; }
 .section-heading>h2 { font:var(--font-section); letter-spacing:0; }
 .section-heading>p { max-width:62ch; color:var(--muted); }
-.money { display:inline-block; max-width:100%; min-width:0; font-variant-numeric:tabular-nums; letter-spacing:-.025em; white-space:nowrap; overflow-x:auto; scrollbar-width:thin; vertical-align:baseline; }
+.money { display:inline-block; max-width:100%; min-width:0; font-variant-numeric:tabular-nums; letter-spacing:-.025em; white-space:nowrap; overflow-x:auto; overflow-y:hidden; scrollbar-width:thin; vertical-align:baseline; }
 .addr-full { font-family:var(--mono); font-size:13px; line-height:1.85; word-break:break-all; color:var(--text); padding:16px; border-radius:var(--r-control); background:var(--sunk); border:1px solid var(--line); box-shadow:none; }
 .asset-title { display:flex; align-items:center; gap:12px; }
 .asset-title h2 { font-size:18px; line-height:1.2; }
@@ -913,7 +913,7 @@ body { margin:0; background:var(--bg); color:var(--text); font:var(--font-body);
 
 .side { gap:16px; background:var(--side); box-shadow:none; backdrop-filter:none; -webkit-backdrop-filter:none; }
 .side-item { min-height:48px; }
-.side-name { white-space:normal; overflow-wrap:anywhere; }
+.side-name { white-space:normal; overflow-wrap:break-word; }
 .side-count { height:auto; }
 .coin-mark { width:44px; height:44px; border-color:var(--line-2); color:var(--metal); background:linear-gradient(140deg,var(--control-hi),var(--sunk)); box-shadow:var(--shadow-control); }
 .asset-card { padding:var(--panel-pad); gap:var(--section-gap); }
@@ -1023,7 +1023,7 @@ body { margin:0; background:var(--bg); color:var(--text); font:var(--font-body);
 .pay-recipient-field { display:grid; gap:12px; min-width:0; }
 /* Keep every financial digit reachable inside its own well at narrow and enlarged sizes. */
 .stats>div { min-width:0; }
-.stats .money { display:block; min-width:0; max-width:100%; white-space:nowrap; overflow-x:auto; scrollbar-width:thin; }
+.stats .money { display:block; min-width:0; max-width:100%; white-space:nowrap; overflow-x:auto; overflow-y:hidden; scrollbar-width:thin; }
 .asset-unavailable .badge { justify-self:start; align-self:start; width:max-content; max-width:100%; }
 @media(max-width:600px) { .stats { grid-template-columns:1fr; } .stats>div+div { border-left:0; border-top:1px solid var(--line); } }
 
@@ -1293,6 +1293,9 @@ body:has(.drawer,.dialog:is([aria-labelledby="send-title"],[aria-labelledby="rev
 .icon-btn .symbol { width:22px; height:22px; }
 .side-item { grid-template-columns:24px minmax(0,1fr) auto; gap:12px; }
 .side-item:has(>.side-tail:empty) { grid-template-columns:24px minmax(0,1fr); }
+/* A section name never breaks inside a word: "Swap" and its Demo badge share one line. */
+.side-item[id^="tab-"] { grid-template-columns:24px minmax(min-content,1fr) auto; }
+.side-tail .badge { min-height:0; padding:1px 7px; line-height:16px; white-space:nowrap; }
 .side-item .symbol { width:20px; height:20px; }
 .side-item .count,.side-count,.side-meta,.side-empty,.engine,.ri-sub,.sync,
 .ph-meta,.msg-head,.msg-head b,.msg-event time,.setup-review-summary span {

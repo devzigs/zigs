@@ -196,7 +196,7 @@ function sideTree() {
     assert.equal(note && textOf(note), "Beta: Zcash testnet and Solana Devnet. Not audited.",
       "the side list of every page carries the release scope");
     const swap = findNode(sideTree(), (n) => n.attrs?.["data-key"] === "tab-swap");
-    assert.equal(swap && textOf(swap), "SwapDemo", "the Swap item of the side list says Demo");
+    assert.equal(swap && textOf(swap), "Swap, Demo", "the Swap item of the side list says Demo");
     for (const origin of ["https://wallet.example:8792/", "http://localhost:8794/",
       "http://localhost:8795/", "https://localhost/", "not a URL"]) {
       location.href = origin;

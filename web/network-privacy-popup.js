@@ -57,7 +57,7 @@ function bodyFor(screen, step, go) {
   const bodies = {
     offer: () => [p(OFFER_LEAD, "pp-lead"),
       el("div", { class: "pp-route", "aria-hidden": "true" }, el("span", {}, "Your browser"),
-        el("i"), el("strong", {}, "Tor demo"), el("i"), el("span", {}, "Wallet services")),
+        el("i"), el("strong", {}, "Tor"), el("i"), el("span", {}, "Wallet services")),
       actions(button("Start the demo", go.begin, true), button("Close", go.close)), limits()],
     connecting: () => [p("Simulated steps. Nothing is connected.", "pp-lead"),
       el("ol", { class: "pp-steps" }, STEPS.map((name, index) => el("li", {

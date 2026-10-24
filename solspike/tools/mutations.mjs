@@ -3382,8 +3382,9 @@ export const MUTATIONS = [
     OPTIONAL_PASSKEY, /failed save/),
   // Copy: the Swap item of the side list, and the README on the brand marks.
   program("N-swap-demo", "the Swap item of the side list has no demo marker",
-    ["web/app-shell.js", '["swap", "Swap", el("span", { class: "badge plain" }, "Demo")],',
-      '["swap", "Swap"],'], UNIFIED, /the Swap item of the side list says Demo/),
+    ["web/app-shell.js", '["swap", "Swap", el("span", { class: "badge plain" },\n'
+      + '      el("span", { class: "sr-only" }, ", "), "Demo")],', '["swap", "Swap"],'],
+    UNIFIED, /the Swap item of the side list says Demo/),
   program("N-readme-terms", "the README says that the marks are used under brand terms",
     ["README.md", README_MARKS, "Trademarks of their owners, used under their brand terms and not "
       + "under the AGPL"], DEMOS, /the README claims no licence for the brand marks/),
