@@ -4,7 +4,8 @@
 // C0 is the clean state (exit 0), C1 to C17 are the changes, C18 to C21 run the tool by another
 // path to the same file, C22 to C24 run baseline.sh with a stand-in tool, D5 is a missing .state.
 // C26 to C33 are the stamp of a passing run (begin, reuse) and the use that baseline.sh makes
-// of it. C34 to C36 are the age, the installed packages and TZ in the key of the stamp.
+// of it. C34 to C36 are the age, the installed packages and TZ in the key of the stamp. C37 is a
+// lane of baseline.sh that is killed.
 import assert from "node:assert/strict";
 import { execFileSync, spawnSync } from "node:child_process";
 import {
@@ -258,7 +259,14 @@ function runBaselineSh(toolText, { extra = {}, mode = "check" } = {}) {
   mkdirSync(join(SH_FIX, "cf/test"), { recursive: true });
   mkdirSync(join(SH_FIX, "web/test"), { recursive: true });
   for (const [rel, text] of Object.entries(files)) writeFileSync(join(SH_FIX, rel), text);
-  const serve = '#!/bin/bash\necho "serve $1" >>"$CALLS"\n';
+  // Like the real serve.sh, start makes the pid file and stop removes it.
+  const serve = [
+    "#!/bin/bash",
+    'echo "serve $1" >>"$CALLS"',
+    'pid=$(dirname "$0")/.state/serve.pid',
+    'case "$1" in start) mkdir -p "${pid%/*}"; echo $$ >"$pid" ;; stop) rm -f "$pid" ;; esac',
+    "",
+  ].join("\n");
   writeFileSync(join(SH_FIX, "solspike/serve.sh"), serve, { mode: 0o755 });
   copyFileSync(join(SPIKE, "baseline.sh"), join(SH_FIX, "solspike/baseline.sh"));
   const sh = join(SH_FIX, "solspike/baseline.sh");
@@ -501,10 +509,10 @@ writeFileSync(${JSON.stringify(MARK())}, "x");
 `,
 };
 
-function shRun(verdict, mode = "check") {
+function shRun(verdict, mode = "check", extra = {}) {
   rmSync(MARK(), { force: true });
   rmSync(join(SH_FIX, "calls.log"), { force: true });
-  const res = runBaselineSh(REUSING(verdict), { extra: RAN, mode });
+  const res = runBaselineSh(REUSING(verdict), { extra: { ...RAN, ...extra }, mode });
   const calls = readFileSync(join(SH_FIX, "calls.log"), "utf8");
   return { ...res, ran: existsSync(MARK()), calls };
 }
@@ -543,4 +551,16 @@ test("C33 baseline.sh writes one exits line for each test, in the order of TESTS
   assert.deepEqual(names.slice(-2), ["cf/test/gate.mjs", "cf/test/limits.mjs"]);
   assert.ok(names.indexOf("web/test/chat.mjs") < names.indexOf("web/test/signed.mjs"));
   assert.ok(names.indexOf("web/test/sol-ceremony.mjs") < names.indexOf("web/test/sol-pay.mjs"));
+});
+
+// The lane of limits.mjs kills its own bash while the server runs: xargs stops the pool, and the
+// EXIT trap is the only one left to stop the server.
+test("C37 baseline.sh says that the pool stopped and stops the server of a killed lane", () => {
+  const res = shRun("no, there is no stamp", "check", {
+    "cf/test/limits.mjs": 'process.kill(process.ppid, "SIGKILL");\n',
+  });
+  assert.match(res.out, /^baseline: the pool stopped \(xargs exit \d+\)/m);
+  assert.match(res.out, /cf\/test\/limits\.mjs left no exit code/);
+  assert.equal(res.calls, "reuse\nbegin\nserve start\ncheck\nserve stop\n");
+  assert.ok(!existsSync(join(SH_FIX, "solspike/.state/serve.pid")), "the server still runs");
 });

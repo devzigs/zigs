@@ -12,6 +12,7 @@
 # installed packages left a stamp that is not older than 24 h (tools/baseline.mjs). It
 # replays the exit codes of that run, starts the server again to read the headers, and compares
 # with baseline.json as always. A fresh checkout has no stamp.
+# A lane that is killed stops the pool: baseline.sh says so, and its EXIT trap stops the server.
 # The server runs with cf/.dev.vars: it must hold DEV_NO_AUTH=1 (see README.md). Run it as:
 #   bash solspike/baseline.sh check
 set -u
@@ -74,8 +75,9 @@ job() {
 export -f run_test read_headers limits_test job
 export OUT HERE PORT HEADERS
 
-stopped=0
-stop_server() { [ "$stopped" = 1 ] || "$HERE/serve.sh" stop; stopped=1; }
+# A pid file at the end means that a lane was killed while the server ran. serve.sh stop works by
+# PID and first checks that the process is the dev server of this clone.
+stop_server() { [ ! -f "$HERE/.state/serve.pid" ] || "$HERE/serve.sh" stop; }
 trap stop_server EXIT
 
 TESTS=(messaging-presentation messaging-cost-review messaging-account-view premium-motion
@@ -129,8 +131,9 @@ if [ "$reused" = no ]; then
   node "$HERE/tools/baseline.mjs" begin >/dev/null ||
     echo "baseline: begin failed, this run leaves no stamp" >&2
   rm -f "$OUT"/*.exit
-  printf '%s\0' "${queue[@]}" | xargs -0 -n 1 -P "$JOBS" "$BASH" -c 'job "$0"'
-  stopped=1 # limits_test stopped the server; the trap stops it if this run ends before
+  printf '%s\0' "${queue[@]}" | xargs -0 -n 1 -P "$JOBS" "$BASH" -c 'job "$0"' ||
+    echo "baseline: the pool stopped (xargs exit $?): a lane was killed." \
+      "A test with no exit code counts as failed." >&2
   # The results in the order of TESTS, whatever test ended first.
   for t in "${TESTS[@]}" cf/test/gate cf/test/limits; do
     file=web/test/$t.mjs
@@ -145,7 +148,7 @@ if [ "$reused" = no ]; then
   done
 else
   read_headers || exit 1
-  stop_server
+  "$HERE/serve.sh" stop
 fi
 # The tool must print its result line. A tool that ends with exit 0 and no line did not run the
 # gate, so that is a failure and not a pass.
