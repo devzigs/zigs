@@ -8,7 +8,8 @@
 # ceremony and never exits on its own. A web/test/*.mjs in neither list stops the gate.
 # Three tests run at once (JOBS), the slowest first (SLOW_FIRST): the tests share no port and no
 # file, and each keeps its own log in .state/baseline-logs. EXITS keeps the order of TESTS.
-# check runs no test when a passing run of the same files left a stamp (tools/baseline.mjs). It
+# check runs no test when a passing run of the same files, Node version, .dev.vars, TZ and
+# installed packages left a stamp that is not older than 24 h (tools/baseline.mjs). It
 # replays the exit codes of that run, starts the server again to read the headers, and compares
 # with baseline.json as always. A fresh checkout has no stamp.
 # The server runs with cf/.dev.vars: it must hold DEV_NO_AUTH=1 (see README.md). Run it as:

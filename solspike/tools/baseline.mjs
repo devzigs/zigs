@@ -10,8 +10,10 @@
 // A run with 0 problems on a clean tree leaves a stamp in .state (never in the repo). begin
 // starts a run: it removes the stamp. A run with problems removes the pending file of begin.
 // reuse writes EXITS.tsv from the stamp and exits 0 when the working tree is clean and has the
-// files, the Node version, cf/.dev.vars and qrencode of the stamped run; baseline.sh then runs
-// no test, but it still reads the headers from the server and check compares as always.
+// files, the Node version, cf/.dev.vars, qrencode, TZ and installed packages (the hash of
+// node_modules/.package-lock.json of cf, solspike and solspike/tools) of the stamped run, and the
+// stamp is not older than 24 h. baseline.sh then runs no test, but it still reads the headers
+// from the server and check compares as always.
 import { execFileSync, spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
 import {
@@ -30,6 +32,8 @@ const PENDING = join(SPIKE, ".state/baseline-pending.json");
 const DEV_VARS = join(ROOT, "cf/.dev.vars");
 const RECORD = "solspike/baseline.json";
 const HASHED = ["wasm", "web/pkg", "web/signed.js"];
+const PACKAGE_DIRS = ["cf", "solspike", "solspike/tools"];
+const MAX_AGE_MS = 24 * 60 * 60 * 1000;
 // Inputs of policy(), not the address of the dev server: they stay the same on every port.
 const URLS = ["http://localhost:8795/", "https://app.zigs.app/", "http://127.0.0.1:8795/"];
 // The response headers that the gate compares. wrangler dev sends the route host in the policy
@@ -161,13 +165,26 @@ function isClean() {
   return list.toString("latin1").split("\0").filter(Boolean).every((e) => e.slice(3) === RECORD);
 }
 
+/** The hash of the file that npm writes for the installed packages of each folder. A missing file
+ * is null: it is its own value. */
+const packages = () =>
+  Object.fromEntries(
+    PACKAGE_DIRS.map((dir) => {
+      const file = join(ROOT, dir, "node_modules/.package-lock.json");
+      return [dir, existsSync(file) ? sha(readFileSync(file)) : null];
+    }),
+  );
+
 /** What a run depends on besides the tests: the files of HEAD, the Node version, the secrets file
- * of the dev server (as a hash) and whether qrencode lets qr.mjs run. */
+ * of the dev server (as a hash), whether qrencode lets qr.mjs run, TZ and the installed
+ * packages. */
 const fingerprint = () => ({
   tree: treeHash(),
   node: process.version,
   devVars: existsSync(DEV_VARS) ? sha(readFileSync(DEV_VARS)) : null,
   qrencode: spawnSync("sh", ["-c", "command -v qrencode"]).status === 0,
+  tz: process.env.TZ ?? null,
+  packages: packages(),
 });
 const same = (a, b) => JSON.stringify(a) === JSON.stringify(b);
 
@@ -197,6 +214,8 @@ function stamp(exits) {
 function whyNot(kept) {
   if (!kept) return "there is no stamp";
   if (typeof kept.exits !== "string") return "the stamp is damaged";
+  // A date that does not parse is NaN, and NaN is not within the limit.
+  if (!(Date.now() - Date.parse(kept.at) <= MAX_AGE_MS)) return "the stamp is older than 24 h";
   if (!isClean()) return "the working tree has changes";
   const key = fingerprint();
   const differs = Object.keys(key).find((name) => !same(key[name], kept.key?.[name]));

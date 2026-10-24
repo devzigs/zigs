@@ -4,7 +4,7 @@
 // C0 is the clean state (exit 0), C1 to C17 are the changes, C18 to C21 run the tool by another
 // path to the same file, C22 to C24 run baseline.sh with a stand-in tool, D5 is a missing .state.
 // C26 to C33 are the stamp of a passing run (begin, reuse) and the use that baseline.sh makes
-// of it.
+// of it. C34 to C36 are the age, the installed packages and TZ in the key of the stamp.
 import assert from "node:assert/strict";
 import { execFileSync, spawnSync } from "node:child_process";
 import {
@@ -55,7 +55,7 @@ function buildFixture() {
   copyFileSync(join(SPIKE, "tools/baseline.mjs"), join(FIX, "solspike/tools/baseline.mjs"));
   put("exits.tsv", EXITS);
   put("headers.txt", HEADERS);
-  put(".gitignore", "/solspike/.state\n/alt-*\n");
+  put(".gitignore", "/solspike/.state\n/alt-*\nnode_modules/\n");
   git("init", "-q");
   git("add", "-A");
   const who = ["user.name=t", "user.email=t@example.invalid", "commit.gpgsign=false"];
@@ -65,9 +65,10 @@ function buildFixture() {
 const TOOL = join(FIX, "solspike/tools/baseline.mjs");
 
 /** Runs the real tool in the fixture, by the path `tool` (it may be a link): { code, out }. */
-function gate(mode, { exits = "exits.tsv", headers = "headers.txt", tool = TOOL } = {}) {
+function gate(mode, { exits = "exits.tsv", headers = "headers.txt", tool = TOOL, env = {} } = {}) {
   const run = spawnSync("node", [tool, mode, join(FIX, exits), join(FIX, headers)], {
     cwd: FIX,
+    env: { ...process.env, ...env },
     encoding: "utf8",
     timeout: 60000,
   });
@@ -348,16 +349,18 @@ test("S1 servedHeaders keeps the listed headers and reads names in any case", ()
 });
 
 // The stamp of a passing run. begin starts a run, a passing record or check keeps the stamp, and
-// reuse gives the exits back while the files, Node, .dev.vars and qrencode are the same and the
-// working tree is clean.
+// reuse gives the exits back while the files, Node, .dev.vars, qrencode, TZ and the installed
+// packages are the same, the stamp is not older than 24 h and the working tree is clean.
 const STAMP = join(FIX, "solspike/.state/baseline-stamp.json");
 const PENDING = join(FIX, "solspike/.state/baseline-pending.json");
-const tool = (...args) => {
-  const run = spawnSync("node", [TOOL, ...args], { cwd: FIX, encoding: "utf8", timeout: 60000 });
+const tool = (...args) => toolEnv({}, ...args);
+const toolEnv = (env, ...args) => {
+  const opts = { cwd: FIX, env: { ...process.env, ...env }, encoding: "utf8", timeout: 60000 };
+  const run = spawnSync("node", [TOOL, ...args], opts);
   return { code: run.status, out: `${run.stdout}${run.stderr}` };
 };
 const GOT = "solspike/.state/got.tsv";
-const reuse = () => tool("reuse", join(FIX, GOT));
+const reuse = (env = {}) => toolEnv(env, "reuse", join(FIX, GOT));
 const stampedRun = () => {
   assert.equal(tool("begin").code, 0);
   const res = gate("check");
@@ -425,6 +428,61 @@ test("C29 a commit that only records the baseline keeps the stamp valid", () => 
   const res = reuse();
   assert.equal(res.code, 0, res.out);
   assert.equal(gate("check").code, 0, "the base commit is an ancestor of the new HEAD");
+});
+
+const HOUR = 3600 * 1000;
+const restamp = (change) => {
+  const old = JSON.parse(readFileSync(STAMP, "utf8"));
+  writeFileSync(STAMP, JSON.stringify({ ...old, ...change }));
+};
+
+test("C34 reuse says no for a stamp older than 24 h or with a date that is no date", () => {
+  stampedRun();
+  const ago = (hours) => new Date(Date.now() - hours * HOUR).toISOString();
+  const old = /^reuse: no, the stamp is older than 24 h/;
+  restamp({ at: ago(23) });
+  assert.equal(reuse().code, 0, "control: a stamp of 23 h");
+  restamp({ at: ago(25) });
+  assert.match(reuse().out, old);
+  restamp({ at: "yesterday" });
+  assert.match(reuse().out, old);
+  restamp({ at: undefined });
+  assert.match(reuse().out, old);
+});
+
+const MODULES = ["cf", "solspike", "solspike/tools"].map(
+  (dir) => `${dir}/node_modules/.package-lock.json`,
+);
+// The folders of node_modules are ignored by git, so a file that a failed run left stays.
+const clearLocks = () => MODULES.forEach((rel) => rmSync(join(FIX, rel), { force: true }));
+
+test("C35 reuse says no for a new, a changed and a removed .package-lock.json", () => {
+  const packages = /^reuse: no, packages is not the one of the stamped run/;
+  clearLocks();
+  try {
+    stampedRun();
+    assert.equal(reuse().code, 0, "control: the same packages");
+    for (const rel of MODULES) {
+      put(rel, "lock A\n");
+      assert.match(reuse().out, packages, `${rel}: a file where the stamped run had none`);
+      stampedRun();
+      assert.equal(reuse().code, 0, `${rel}: control: the same packages`);
+      put(rel, "lock B\n");
+      assert.match(reuse().out, packages, `${rel}: a changed file`);
+      unlinkSync(join(FIX, rel));
+      assert.match(reuse().out, packages, `${rel}: a removed file`);
+      stampedRun();
+    }
+  } finally {
+    clearLocks();
+  }
+});
+
+test("C36 reuse says no when TZ is not the TZ of the stamped run", () => {
+  assert.equal(toolEnv({ TZ: "UTC" }, "begin").code, 0);
+  assert.equal(gate("check", { env: { TZ: "UTC" } }).code, 0);
+  assert.equal(reuse({ TZ: "UTC" }).code, 0, "control: the same TZ");
+  assert.match(reuse({ TZ: "Asia/Tokyo" }).out, /^reuse: no, tz is not the one of the stamped/);
 });
 
 const REUSING = (verdict) => `
