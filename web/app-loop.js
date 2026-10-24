@@ -109,15 +109,31 @@ export function focusAfter(key, force) { wantFocus = key ? { key, force } : null
 
 // Draws once per frame, however many changes arrive together. A hidden tab gets no frames, so a
 // timer backs it up and the tab title still shows the approvals.
-let drawPending = false, composing = false;
+let drawPending = false, composing = false, holdUntil = 0;
+// A redraw replaces the text box and ends an IME composition, so it waits until the end. It also
+// replaces every button: one between a press and its click takes the click away (the first press
+// of a page focuses the window, which redraws). So it waits for the click, at most 1 s.
+function flush() {
+  if (!drawPending || composing) return;
+  const left = holdUntil - performance.now();
+  if (left > 0) { setTimeout(flush, left); return; }
+  drawPending = false; draw();
+}
 export function render() {
   if (drawPending) return;
   drawPending = true;
-  // A redraw replaces the text box and ends an IME composition, so it waits until the end.
-  const run = () => { if (drawPending && !composing) { drawPending = false; draw(); } };
-  requestAnimationFrame(run);
-  setTimeout(run, 120);
+  requestAnimationFrame(flush);
+  setTimeout(flush, 120);
 }
+const endHold = () => { holdUntil = 0; setTimeout(flush); };
+document.addEventListener("pointerdown", () => { holdUntil = performance.now() + 1000; }, true);
+// A touch fires its click in a later task than pointerup, so the hold ends 100 ms after it.
+document.addEventListener("pointerup", () => {
+  holdUntil = Math.min(holdUntil, performance.now() + 100);
+  setTimeout(flush, 100);
+}, true);
+document.addEventListener("pointercancel", endHold, true);
+document.addEventListener("click", endHold, true);
 
 const FOCUSABLE = "button, a[href], input, select, textarea, summary";
 // A rebuilt control is a new element. A key from its label (or an explicit data-key) lets focus
