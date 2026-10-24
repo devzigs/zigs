@@ -417,6 +417,10 @@ test("C28 begin removes the stamp; a run with a problem or on a dirty tree leave
   assert.equal(gate("check", { exits: "solspike/.state/bad.tsv" }).code, 1);
   assert.ok(!existsSync(STAMP), "a failing run left a stamp");
   assert.ok(!existsSync(PENDING), "a failing run left the pending file");
+  assert.equal(tool("begin").code, 0);
+  put("solspike/.state/empty.txt", "");
+  assert.notEqual(gate("check", { headers: "solspike/.state/empty.txt" }).code, 0);
+  assert.ok(!existsSync(PENDING), "a run that ends in an error left the pending file");
   const note = add("note.txt");
   note.edit();
   assert.equal(tool("begin").code, 0);
@@ -444,12 +448,16 @@ const restamp = (change) => {
   writeFileSync(STAMP, JSON.stringify({ ...old, ...change }));
 };
 
-test("C34 reuse says no for a stamp older than 24 h or with a date that is no date", () => {
+test("C34 reuse says no for a stamp older than 24 h, from the future or with no date", () => {
   stampedRun();
   const ago = (hours) => new Date(Date.now() - hours * HOUR).toISOString();
-  const old = /^reuse: no, the stamp is older than 24 h/;
-  restamp({ at: ago(23) });
+  const old = /^reuse: no, the stamp is not from the last 24 h/;
+  const day = ago(23);
+  restamp({ at: day });
   assert.equal(reuse().code, 0, "control: a stamp of 23 h");
+  assert.equal(JSON.parse(readFileSync(STAMP, "utf8")).at, day, "a reuse keeps the date");
+  restamp({ at: ago(-1) });
+  assert.match(reuse().out, old);
   restamp({ at: ago(25) });
   assert.match(reuse().out, old);
   restamp({ at: "yesterday" });

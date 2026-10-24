@@ -214,8 +214,9 @@ function stamp(exits) {
 function whyNot(kept) {
   if (!kept) return "there is no stamp";
   if (typeof kept.exits !== "string") return "the stamp is damaged";
-  // A date that does not parse is NaN, and NaN is not within the limit.
-  if (!(Date.now() - Date.parse(kept.at) <= MAX_AGE_MS)) return "the stamp is older than 24 h";
+  // A date that does not parse gives NaN, which is in no range. A date after now is no run.
+  const age = Date.now() - Date.parse(kept.at);
+  if (!(age >= 0 && age <= MAX_AGE_MS)) return "the stamp is not from the last 24 h";
   if (!isClean()) return "the working tree has changes";
   const key = fingerprint();
   const differs = Object.keys(key).find((name) => !same(key[name], kept.key?.[name]));
@@ -265,7 +266,12 @@ function main() {
   if (mode === "begin") return begin();
   if (mode === "reuse" && exits) process.exit(reuse(exits));
   if (!["record", "check"].includes(mode) || !exits || !headers) throw new Error(USAGE);
-  process.exit(verify(mode, exits, headers));
+  try {
+    process.exit(verify(mode, exits, headers));
+  } catch (err) {
+    rmSync(PENDING, { force: true });   // a run that ends in an error is no passing run
+    throw err;
+  }
 }
 
 // True when node started this file, also through a symlink or a path in another case: node
