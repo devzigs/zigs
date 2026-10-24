@@ -87,9 +87,7 @@ coin. The runbook of a demo with three devices is in [docs/demo.md](docs/demo.md
    the transaction id. Paste the address there. The balance appears as **Incoming**, then as
    **Available** after 3 confirmations (about 75 s).
    - The Valar faucet can pause. Then **Paid · 24h** shows 0 payouts, and a claim ends with "Not
-     paid: the wallet cannot pay this address". On 24 October 2026 it had paid nobody since
-     23 October 16:09 UTC. The cause is not the Zigs address: the faucet's own address has the
-     same form. Try again later.
+     paid: the wallet cannot pay this address". Try again later, or use one of the routes below.
    - Or paste the address at [fauzec.com](https://fauzec.com/), a second testnet faucet. It pays
      1 TAZ to a `utest1…` address once every 24 hours, after a human check. That site is not Zigs
      either: it sees the address and your IP address. Nobody has tested it with Zigs yet.
