@@ -133,6 +133,18 @@ async function runLanes(todo, lanes) {
   return failures;
 }
 
+// A process that still writes into a lane tree can make the removal fail. The tree then stays,
+// and the next run replaces it (copyTree).
+function removeLanes(lanes) {
+  for (const lane of lanes) {
+    try {
+      rmSync(lane.tree, { recursive: true, force: true, maxRetries: 5, retryDelay: 200 });
+    } catch (err) {
+      console.log(`mutate: ${lane.tree} stays on disk (${err.message})`);
+    }
+  }
+}
+
 async function main() {
   const wanted = process.argv.slice(2);
   const todo = MUTATIONS.filter((m) => !wanted.length || wanted.includes(m.id));
@@ -145,7 +157,7 @@ async function main() {
     console.log(`mutants: ${todo.length}, failed: ${failures}`);
     process.exitCode = failures ? 1 : 0;
   } finally {
-    lanes.forEach((lane) => rmSync(lane.tree, { recursive: true, force: true }));
+    removeLanes(lanes);
   }
 }
 
