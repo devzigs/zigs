@@ -33,11 +33,15 @@ const storageEvent = (key) =>
 // The listeners of the page on document, so that a test can press a real key.
 const documentOn = {};
 // The privacy overlay is unmounted; a generic stub would make Escape dismiss a phantom panel.
+// Each draw reads the shell first, so the reads of ".shell" count the draws.
+let shellReads = 0;
 const pageDocument = new Proxy(stub(), {
   get: (t, k) => (k === "addEventListener"
     ? (type, fn) => { (documentOn[type] ||= []).push(fn); }
     : k === "getElementById"
-      ? (id) => id === "network-privacy-panel" ? null : t[k](id) : t[k]),
+      ? (id) => id === "network-privacy-panel" ? null : t[k](id)
+      : k === "querySelector"
+        ? (q) => { if (q === ".shell") shellReads += 1; return t[k](q); } : t[k]),
 });
 Object.assign(globalThis, {
   Node: class {}, document: pageDocument, history: { replaceState() {} },
@@ -7140,6 +7144,39 @@ t.openGroup(null);
 assert.equal(t.ui.after, null);
 assert.deepEqual([t.watched.size, unwatched], [0, 1],
   "the wallet list keeps no watch of the last wallet");
+
+// ── A draw waits while a pointer is pressed: a redraw between the press and the click replaces
+// the button and takes the click away ──
+{
+  const fire = (type) => { for (const fn of documentOn[type]) fn({ target: {} }); };
+  await sleep(300);
+  const before = shellReads;
+  fire("pointerdown");
+  t.render();
+  await sleep(300);
+  assert.equal(shellReads, before, "a draw waits while a pointer is pressed");
+  fire("pointerup");
+  fire("click");
+  await sleep(30);
+  assert.equal(shellReads, before + 1, "and runs right after the click");
+  fire("pointerdown");
+  t.render();
+  await sleep(1300);
+  assert.equal(shellReads, before + 2, "a press with no release holds a draw for 1 s at most");
+  fire("pointercancel");
+  fire("pointerdown");
+  t.render();
+  await sleep(300);
+  fire("pointerup");
+  await sleep(200);
+  assert.equal(shellReads, before + 3, "a release with no click holds a draw for 100 ms");
+  fire("pointerdown");
+  t.render();
+  await sleep(300);
+  fire("pointercancel");
+  await sleep(30);
+  assert.equal(shellReads, before + 4, "a cancelled press draws at once");
+}
 
 console.log("app ok");
 process.exit(0);

@@ -3382,8 +3382,31 @@ export const MUTATIONS = [
     OPTIONAL_PASSKEY, /failed save/),
   // Copy: the Swap item of the side list, and the README on the brand marks.
   program("N-swap-demo", "the Swap item of the side list has no demo marker",
-    ["web/app-shell.js", '["swap", "Swap", el("span", { class: "badge plain" }, "Demo")],',
-      '["swap", "Swap"],'], UNIFIED, /the Swap item of the side list says Demo/),
+    ["web/app-shell.js", '["swap", "Swap", el("span", { class: "badge plain" },\n'
+      + '      el("span", { class: "sr-only" }, ", "), "Demo")],', '["swap", "Swap"],'],
+    UNIFIED, /the Swap item of the side list says Demo/),
+  // The Solana keys of a share are derived once, and again when its seed or group key changes.
+  program("N-keys-memo", "each check derives the Solana keys again",
+    ["web/sol/ceremony.js", "  if (hit && hit.W === W && hit.seed === s.solSeed",
+      "  if (false && hit"],
+    SOL_CEREMONY, /the keys are derived once/),
+  program("N-keys-seed", "a share with another seed keeps the old keys",
+    ["web/sol/ceremony.js", "hit.W === W && hit.seed === s.solSeed && ", "hit.W === W && "],
+    SOL_CEREMONY, /a share with another seed does not fit/),
+  // A draw waits for the click of a pressed pointer, so a redraw cannot take the click away.
+  program("N-press-hold", "a draw replaces the buttons while a pointer is pressed",
+    ["web/app-loop.js", "  if (left > 0) { setTimeout(flush, left); return; }\n", ""],
+    APP_TEST, /a draw waits while a pointer is pressed/),
+  program("N-press-click", "a held draw waits for the 1 s cap after the click",
+    ["web/app-loop.js", 'document.addEventListener("click", endHold, true);\n', ""],
+    APP_TEST, /and runs right after the click/),
+  program("N-press-up", "a release with no click holds a draw for the whole 1 s",
+    ["web/app-loop.js", "  setTimeout(flush, 100);\n", ""],
+    APP_TEST, /a release with no click holds a draw for 100 ms/),
+  program("N-press-cancel", "a cancelled press holds a draw for the whole 1 s",
+    ["web/app-loop.js", 'document.addEventListener("pointercancel", endHold, true);\n',
+      'document.addEventListener("pointercancel", () => {}, true);\n'],
+    APP_TEST, /a cancelled press draws at once/),
   program("N-readme-terms", "the README says that the marks are used under brand terms",
     ["README.md", README_MARKS, "Trademarks of their owners, used under their brand terms and not "
       + "under the AGPL"], DEMOS, /the README claims no licence for the brand marks/),

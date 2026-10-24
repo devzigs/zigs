@@ -44,7 +44,7 @@ export const NAMES = [
   "pickServer",
   "personalError", "personalPending", "priorityTimes", "proposalFields", "proposeAgain", "proposer",
   "proposeRequest", "proposeWallets", "putSec", "raw", "rawInbox",
-  "reactSession", "readsMemos", "ready",
+  "reactSession", "readsMemos", "ready", "render",
   "recipientCheck", "refilter", "releaseHold",
   "removeAccount", "requestCard", "requestOf", "rereadPersonal", "resendTx",
   "resetSolStart", "restore", "restoreAccount", "restoreFocus", "approvalsDone", "restoredFor",

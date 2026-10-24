@@ -1,5 +1,4 @@
 /* Homepage-only art direction. No decorative treatment represents wallet/security state. */
-.shell:has(.lobby-home) { grid-template-columns:216px minmax(0,1fr); }
 .main:has(.lobby-home) {
   padding:32px clamp(24px,3.4vw,64px) 56px;
   background:var(--bg);
@@ -194,13 +193,6 @@
 .lobby-home .welcome .welcome-details .welcome-disclosures { padding:22px 26px 26px; }
 .home-footer-note { color:var(--faint); font:400 11px/1.6 var(--sans); }
 .home-footer-note>span { margin-inline:8px; color:var(--accent-text); }
-/* Navigation recedes without losing any destination or browser status control. */
-.shell:has(.lobby-home) .side { padding:28px 14px; gap:28px; }
-.shell:has(.lobby-home) .side-item { min-height:var(--control-height); font-size:12px; padding:10px 8px; gap:8px; }
-.shell:has(.lobby-home) .side-item>.symbol { width:18px; height:18px; }
-.shell:has(.lobby-home) .side-item.active { background:var(--nav-selected,var(--panel)); }
-.shell:has(.lobby-home) .side-name { font-weight:450; }
-.shell:has(.lobby-home) .side-note { font-size:11px; line-height:1.7; }
 .lobby-home .welcome :is(.btn,.wallet-vault-card,summary) { transition-duration:120ms; }
 @media(hover:hover) and (pointer:fine) {
   .lobby-home .welcome-actions>.btn:not(:disabled):hover { border-color:#aab5c3; background:#303a47; }
@@ -212,7 +204,6 @@
 }
 .lobby-home .welcome :is(.btn,.wallet-vault-card,summary):focus-visible:active { transform:none; }
 @media(min-width:761px) and (max-width:1180px) {
-  .shell:has(.lobby-home) { grid-template-columns:196px minmax(0,1fr); }
   .main:has(.lobby-home) { padding-inline:28px; }
   .lobby-home .welcome .welcome-intro { padding:40px 32px; max-width:660px; }
   .lobby-home .welcome .welcome-brand { width:580px; height:580px; right:-100px; top:8px; }
@@ -245,8 +236,6 @@
 @media(max-width:760px) {
   .shell:has(.lobby-home) { display:block; }
   .main:has(.lobby-home) { padding:22px 18px 36px; }
-  .shell:has(.lobby-home) .side { padding:12px 18px; gap:12px; }
-  .shell:has(.lobby-home) .side-item { min-height:48px; font-size:14px; }
   .lobby-home { --home-card-radius:18px; }
   .lobby-home>.welcome { gap:22px; }
   .home-masthead { gap:10px; flex-wrap:wrap; }

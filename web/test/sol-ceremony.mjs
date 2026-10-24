@@ -652,6 +652,20 @@ const zcash = [1, 2, 3].map((i) => zcashOf(gid, i));
   }
   const bare = Object.fromEntries(Object.entries(docs[0]).filter(([k]) => !PDA_KEYS.includes(k)));
   assert.equal(fit(bare), true, "a soldone from before the program design fits");
+  // A draw checks the keys many times: the WASM derives them once per key share, and again for a
+  // new seed.
+  {
+    const calls = { sol_roles: 0, sol_pda_roles: 0 };
+    const counted = new Proxy(W, { get: (w, k) => (k in calls
+      ? (...a) => { calls[k] += 1; return w[k](...a); } : w[k]) });
+    const share = { ...s[0] };
+    const check = () => fitsSolana(counted, 1, share, docFields(docs[0]));
+    assert.equal(check() && check() && check(), true);
+    assert.deepEqual(calls, { sol_roles: 1, sol_pda_roles: 1 }, "the keys are derived once");
+    share.solSeed = s[0].solSeed.replace(/^./, (x) => (x === "a" ? "b" : "a"));
+    assert.equal(check(), false, "a share with another seed does not fit");
+    assert.deepEqual(calls, { sol_roles: 2, sol_pda_roles: 2 }, "and is derived again");
+  }
   // The round secrets are gone, and nothing but key data is left.
   for (const x of s) {
     assert.deepEqual(Object.keys(x).sort(), [

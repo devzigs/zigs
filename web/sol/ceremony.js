@@ -269,9 +269,25 @@ async function round3(c, i) {
     );
 }
 
+// Each draw checks the Solana keys of this browser about twenty times (agreement), and each check
+// derived the same keys again in WASM: 50 to 65 ms per click. The public fields are kept per
+// key-share object; a new share or a lock gives a new object. The cache copies no secret field: the
+// seed it compares with lives only as long as the share that holds it.
+const derived = new WeakMap();
+function publicKeys(W, s, name, fields) {
+  const all = derived.get(s) ?? new Map();
+  derived.set(s, all);
+  const hit = all.get(name);
+  if (hit && hit.W === W && hit.seed === s.solSeed && hit.key === s.groupKey) return hit.out;
+  const r = J(W[name](s.solSeed, s.groupKey));
+  const out = Object.fromEntries(fields.map((k) => [k, r[k]]));
+  all.set(name, { W, seed: s.solSeed, key: s.groupKey, out });
+  return out;
+}
+
 /** The PDA identity that a key share and solSeed give (ZOLANA.md 7.2), as soldone names it. */
 export function pdaFields(W, s) {
-  const pda = J(W.sol_pda_roles(s.solSeed, s.groupKey));
+  const pda = publicKeys(W, s, "sol_pda_roles", ["pda", "nullifier_pk", "owner_hash", "address"]);
   return {
     pda: pda.pda,
     pdaNullifierPk: pda.nullifier_pk,
@@ -441,7 +457,7 @@ const pdaShaped = (d) => Object.entries(PDA_SHAPES).every(([k, ok]) => ok(d[k]))
 export function fitsSolana(W, seat, s, done) {
   if (!done || !fitsPublished(seat, s, done)) return false;
   try {
-    const r = J(W.sol_roles(s.solSeed, s.groupKey));
+    const r = publicKeys(W, s, "sol_roles", ["nullifier_pk", "viewing_pk", "address"]);
     const same =
       r.nullifier_pk === done.nullifierPk &&
       r.viewing_pk === done.viewingPk &&
