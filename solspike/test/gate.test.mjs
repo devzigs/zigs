@@ -351,6 +351,7 @@ test("S1 servedHeaders keeps the listed headers and reads names in any case", ()
 // reuse gives the exits back while the files, Node, .dev.vars and qrencode are the same and the
 // working tree is clean.
 const STAMP = join(FIX, "solspike/.state/baseline-stamp.json");
+const PENDING = join(FIX, "solspike/.state/baseline-pending.json");
 const tool = (...args) => {
   const run = spawnSync("node", [TOOL, ...args], { cwd: FIX, encoding: "utf8", timeout: 60000 });
   return { code: run.status, out: `${run.stdout}${run.stderr}` };
@@ -404,6 +405,7 @@ test("C28 begin removes the stamp; a run with a problem or on a dirty tree leave
   put("solspike/.state/bad.tsv", EXITS.replace("a.mjs\t0", "a.mjs\t1"));
   assert.equal(gate("check", { exits: "solspike/.state/bad.tsv" }).code, 1);
   assert.ok(!existsSync(STAMP), "a failing run left a stamp");
+  assert.ok(!existsSync(PENDING), "a failing run left the pending file");
   const note = add("note.txt");
   note.edit();
   assert.equal(tool("begin").code, 0);

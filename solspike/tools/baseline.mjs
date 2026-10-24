@@ -8,10 +8,10 @@
 // the security headers that the dev server really sent. Record on the base commit only: the
 // file names it, and policy.test.mjs reads the base policy from that commit.
 // A run with 0 problems on a clean tree leaves a stamp in .state (never in the repo). begin
-// starts a run: it removes the stamp. reuse writes EXITS.tsv from the stamp and exits 0 when the
-// working tree is clean and has the files, the Node version, cf/.dev.vars and qrencode of the
-// stamped run; baseline.sh then runs no test, but it still reads the headers from the server
-// and check compares as always.
+// starts a run: it removes the stamp. A run with problems removes the pending file of begin.
+// reuse writes EXITS.tsv from the stamp and exits 0 when the working tree is clean and has the
+// files, the Node version, cf/.dev.vars and qrencode of the stamped run; baseline.sh then runs
+// no test, but it still reads the headers from the server and check compares as always.
 import { execFileSync, spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
 import {
@@ -237,6 +237,7 @@ function verify(mode, exits, headers) {
   console.log(`${mode}: ${n.tests} tests, ${n.hashes} hashed files, ${problems.length} problems`);
   problems.forEach((p) => console.log(`  ${p}`));
   if (!problems.length) stamp(exits);
+  else rmSync(PENDING, { force: true });
   return problems.length ? 1 : 0;
 }
 
