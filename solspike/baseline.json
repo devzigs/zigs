@@ -1,5 +1,5 @@
 {
-  "baseCommit": "06e4d50de2dadd7feb44e19ef3bac9a8207f039c",
+  "baseCommit": "fd272f5174f0c75c14b55aa11c2cb4addba174c5",
   "node": "v26.12.1",
   "tests": {
     "web/test/messaging-presentation.mjs": {
