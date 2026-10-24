@@ -3385,6 +3385,14 @@ export const MUTATIONS = [
     ["web/app-shell.js", '["swap", "Swap", el("span", { class: "badge plain" },\n'
       + '      el("span", { class: "sr-only" }, ", "), "Demo")],', '["swap", "Swap"],'],
     UNIFIED, /the Swap item of the side list says Demo/),
+  // The Solana keys of a share are derived once, and again when its seed or group key changes.
+  program("N-keys-memo", "each check derives the Solana keys again",
+    ["web/sol/ceremony.js", "  if (hit && hit.W === W && hit.seed === s.solSeed",
+      "  if (false && hit"],
+    SOL_CEREMONY, /the keys are derived once/),
+  program("N-keys-seed", "a share with another seed keeps the old keys",
+    ["web/sol/ceremony.js", "hit.W === W && hit.seed === s.solSeed && ", "hit.W === W && "],
+    SOL_CEREMONY, /a share with another seed does not fit/),
   // A draw waits for the click of a pressed pointer, so a redraw cannot take the click away.
   program("N-press-hold", "a draw replaces the buttons while a pointer is pressed",
     ["web/app-loop.js", "  if (left > 0) { setTimeout(flush, left); return; }\n", ""],
