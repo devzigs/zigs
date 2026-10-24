@@ -45,7 +45,8 @@ jobs:
           # Four tests run at once, the slowest first. HELPERS and SLOW_FIRST come from
           # solspike/baseline.sh. Each test has a log and a time limit of its own. A test with no
           # .done file did not run (a lane of the pool stopped), and it counts as failed.
-          eval "$(sed -n '/^HELPERS=(/p;/^SLOW_FIRST=(/,/)$/p' solspike/baseline.sh)"
+          eval "$(awk '/^(HELPERS|SLOW_FIRST)=\(/ { p = 1 } p { print } p && /\)$/ { p = 0 }' \
+            solspike/baseline.sh)"
           if [ "${#HELPERS[@]}" -eq 0 ]; then
             echo "::error::HELPERS is not in solspike/baseline.sh"
             exit 1
