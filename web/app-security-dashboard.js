@@ -1,6 +1,6 @@
 // Security presentation. All operations are supplied existing application handlers.
 import { el } from "./app-dom.js";
-import { icon } from "./app-icons.js";
+import { icon, sculptedIcon } from "./app-icons.js";
 import { deriveSecurityDashboard, recoveryFileStatus, signerRecoveryStatus } from "./security-dashboard-model.js";
 
 const CHAIN = { zec: "Zcash", sol: "Solana" };
@@ -59,7 +59,7 @@ function securityOverview(f, m, primary) {
   return el("section", { class: "security-overview", "aria-labelledby": "wallet-security-title" },
     el("div", { class: "security-overview-head" },
       el("div", { class: "security-overview-title" },
-        el("span", { class: "security-emblem", "aria-hidden": "true" }, icon("security")),
+        el("span", { class: "security-emblem", "aria-hidden": "true" }, sculptedIcon("security")),
         el("h3", { id: "wallet-security-title" }, "Wallet security")),
       badge(m.label, m.tone)),
     el("dl", { class: "security-metrics" },

@@ -3,6 +3,11 @@
 25 October 2026 · `gray-ui` · main baseline
 `c6860f6fef9351531bd3a9c3a221600c49651035`.
 
+This records the migration snapshot at `825bf96`. The subsequent motion and interaction
+refinement has a separate [page-by-page review and validation](gray-ui-premium-review.md).
+Its deliberate icon and resource additions extend that snapshot; the original source hashes
+remain provenance records rather than a claim of current byte-for-byte parity.
+
 ## Delivered web design
 
 Migrated the later **uncommitted design working copy** of `codex/ux-ui-final`, based on

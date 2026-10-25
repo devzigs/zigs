@@ -2,6 +2,10 @@
 
 25 October 2026 · implementation branch `gray-ui` · no merge or deployment.
 
+The migration below was delivered at `825bf96`. The later request to elevate motion,
+iconography and fluidity is implemented and specified in the
+[page-by-page premium review](gray-ui-premium-review.md), with its own scope and evidence audit.
+
 ## Goal and authoritative sources
 
 Apply the complete latest web design from the existing local `codex/ux-ui-final` working
@@ -38,7 +42,7 @@ that no web migration was required is superseded by this specification and valid
 | GW-08 | Motion and accessibility | Preserve document-local guide/journey selection and Pause/Resume through dismissal and redraws. Pause artwork offscreen, when closed and in hidden tabs; provide reduced-motion and forced-color alternatives. Preserve keyboard selection, focus restoration and reachable dismissal at 200% browser zoom. |
 | GW-09 | Resource integration | Add only presentation module imports, local styles/fonts, logo/icon references and hero asset reference. Keep main’s early `theme.js` initialization, CSP, service setup and normal application startup. |
 
-## Acceptance criteria
+## Migration acceptance criteria (snapshot at `825bf96`)
 
 1. All 24 design-source files are accounted for. Twenty match the source byte for byte;
    the license and guide-icon module only normalize whitespace for Git hygiene.

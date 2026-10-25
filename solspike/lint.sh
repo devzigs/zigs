@@ -33,7 +33,7 @@ JS=(solspike/harness/*.mjs solspike/tools/*.mjs solspike/build.mjs solspike/buil
   web/test/guided-setup.mjs web/test/backup-check.mjs
   web/test/sol-errors.mjs web/sol/localprove.js web/sol/localprover.js web/test/sol-prove.mjs
   web/app-icons.js web/app-theme.js web/test/contrast.mjs web/theme.js web/overview-model.js
-  web/app-motion.js web/test/premium-motion.mjs
+  web/app-motion.js web/premium-motion.js web/test/premium-motion.mjs
   web/homepage-motion.js web/homepage-scene.js web/test/homepage-motion.mjs
   web/test/overview.mjs web/setup-model.js web/test/setup-stage.mjs web/approvals-model.js
   web/test/approvals.mjs web/recovery-model.js web/test/recovery.mjs

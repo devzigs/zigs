@@ -11,7 +11,7 @@ import { openContact, personal } from "./app-account.js";
 import { contactView, openContactDialog, otherMessages, zcashAccountSetup } from "./app-account-view.js";
 import { chatView } from "./app-thread.js";
 import { act, el, guard, newBadge } from "./app-dom.js";
-import { icon } from "./app-icons.js";
+import { icon, sculptedIcon } from "./app-icons.js";
 import { messagingLearnButton } from "./app-messaging-education.js";
 import { focusAfter, render, wantFocus } from "./app-loop.js";
 import { restore } from "./app-backups.js";
@@ -130,7 +130,7 @@ function emptyConversation(newChatWhy) {
     class: "messages-thread messages-setup-thread", "aria-label": "Set up Zcash messages",
   }, guard(zcashAccountSetup, pickRestore));
   return el("section", { class: "messages-thread messages-empty", "aria-label": "Choose a conversation" },
-    el("div", { class: "messages-empty-art", "aria-hidden": "true" }, icon("chat")),
+    el("div", { class: "messages-empty-art", "aria-hidden": "true" }, sculptedIcon("chat")),
     el("span", { class: "label" }, transport === "relay" ? "Private coordination" : "Messages on Zcash"),
     el("h2", {}, "A little closer. A little more private."),
     el("p", {}, transport === "relay"

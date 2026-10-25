@@ -28,7 +28,6 @@ import { recipientSelect } from "./app-recipients.js";
 import { securityExplanation } from "./app-tutorial.js";
 import { privacyNotice, ZEC_EXPOSURE } from "./privacy-language.js";
 import { walletAvatarFor } from "./app-wallet-identity.js";
-import { walletMark } from "./app-wallet-art.js";
 
 const MAX_PAYEES = 20;
 const TOO_MANY = "A payment can have at most " + MAX_PAYEES + " recipients.";
@@ -46,11 +45,11 @@ export function receiveDialog() {
   const w = state.wallet, hidden = addrHidden(), net = "Zcash " + curNet().label;
   const close = el("button", {
     class: "icon-btn", type: "button", "aria-label": "Close",
+    "data-first-focus": "",
     onclick: () => { ui.receive = false; render(); },
   }, "×");
   const title = dialogTitle("recv-title", "Receive ZEC", net);
   const copy = copyBtn(w.address, "Copy address", "btn primary");
-  copy.setAttribute("data-first-focus", "");
   // A moved wallet leads with its moved note: senders must use the address of the new wallet.
   const moved = !!state.g.movedTo;
   const address = hidden ? [] : [moved ? null : sendOnly(net),
@@ -58,12 +57,12 @@ export function receiveDialog() {
   return el("div", {
     class: "dialog", role: "dialog", "aria-modal": "true", "aria-labelledby": "recv-title",
   }, el("div", { class: "card-head" }, title, close),
-  el("div", { class: "wallet-receive-art" }, walletMark(state.g, 96)), receiveLead(hidden, moved),
+  receiveLead(hidden, moved), ...address,
+  hidden ? null : el("div", { class: "dialog-actions" }, moved ? null : shareBtn(w.address), copy),
   privacyNotice(el, hidden || moved ? "unknown" : "shielded",
     hidden || moved ? "Address unavailable" : "Shielded · Zcash " + curNet().label,
-    ZEC_EXPOSURE), ...address,
-  securityExplanation("receive"),
-  hidden ? null : el("div", { class: "dialog-actions" }, moved ? null : shareBtn(w.address), copy));
+    ZEC_EXPOSURE),
+  securityExplanation("receive"));
 }
 
 // What the dialog says above the address: the move, the cap, why the address is not shown yet,

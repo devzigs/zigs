@@ -8,6 +8,7 @@ import {
 import { checkedRecipient, matchingRecipients } from "./recipients.js";
 import { focusAfter, render } from "./app-loop.js";
 import { securityExplanation } from "./app-tutorial.js";
+import { sculptedIcon } from "./app-icons.js";
 
 const destinations = [
   ["ZEC:testnet:shielded", "Shielded ZEC · Zcash Testnet"],
@@ -61,6 +62,7 @@ function recipientRows(search, why) {
   if (why) return [];
   const found = matchingRecipients(recipients, {}, search);
   if (!found.length) return [el("div", { class: "empty" },
+    el("span", { class: "recipient-empty-art", "aria-hidden": "true" }, sculptedIcon("addressBook")),
     el("h3", {}, search ? "No matching recipients" : "Your recipients, in one place"),
     el("p", { class: "small muted" }, search ? "Try a different name, address or network."
       : "Add a payment address to find it easily from Send in any of your wallets."))];

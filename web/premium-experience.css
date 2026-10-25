@@ -1,0 +1,264 @@
+/* App-scale expression of zigs-site's metal, studio light and deliberate motion.
+   Financial values, warnings, QR codes and addresses remain in their original document flow. */
+:root {
+  --premium-ease:cubic-bezier(.18,.8,.22,1);
+  --premium-settle:320ms;
+  --premium-quick:180ms;
+  --premium-rim:rgba(255,255,255,.12);
+  --premium-glow:rgba(243,177,134,.065);
+  --premium-reflection:rgba(255,255,255,.035);
+  --premium-depth:0 12px 28px -20px #0009,inset 0 1px var(--premium-rim);
+}
+:root[data-theme=light] {
+  --premium-rim:rgba(255,255,255,.95);
+  --premium-glow:rgba(159,72,29,.045);
+  --premium-reflection:rgba(159,72,29,.025);
+  --premium-depth:0 10px 28px -22px #29251c40,inset 0 1px var(--premium-rim);
+}
+@media(prefers-color-scheme:light) {
+  :root:not([data-theme=dark]) {
+    --premium-rim:rgba(255,255,255,.95);
+    --premium-glow:rgba(159,72,29,.045);
+    --premium-reflection:rgba(159,72,29,.025);
+    --premium-depth:0 10px 28px -22px #29251c40,inset 0 1px var(--premium-rim);
+  }
+}
+
+/* The glyph has an engraved edge, an intact body and a separately articulated detail. */
+.symbol svg { overflow:visible; }
+.symbol .icon-relief { stroke:#000; stroke-width:2.8; opacity:.4; translate:0 .8px; }
+.symbol .icon-body { stroke:currentColor; }
+.symbol .icon-detail {
+  stroke:currentColor; transform-box:fill-box; transform-origin:center;
+  transition:transform var(--premium-settle) var(--premium-ease),
+    translate var(--premium-settle) var(--premium-ease),
+    rotate var(--premium-settle) var(--premium-ease),
+    stroke var(--premium-quick),opacity var(--premium-quick);
+}
+:root[data-theme=light] .symbol .icon-relief { stroke:#fff; opacity:.85; }
+@media(prefers-color-scheme:light) {
+  :root:not([data-theme=dark]) .symbol .icon-relief { stroke:#fff; opacity:.85; }
+}
+.symbol-sculpted svg { width:100%; height:100%; }
+.symbol-sculpted .relief-face { filter:drop-shadow(0 1px 0 #ffffff15); }
+.symbol-sculpted .relief-part { transform-box:fill-box; transform-origin:center;
+  transition:translate 600ms var(--premium-ease),rotate 600ms var(--premium-ease); }
+.messages-empty-art,.recipient-empty-art {
+  background:radial-gradient(ellipse at 30% 0%,#ffffff0c,transparent 75%),
+    linear-gradient(145deg,#252422,#111110);
+  border-color:#54524e; box-shadow:inset 0 1px #ffffff20,0 14px 25px -20px #0009;
+}
+.messages-empty-art>.symbol-sculpted { width:52px; height:52px; }
+.recipient-empty-art { display:grid; place-items:center; width:68px; height:72px;
+  border:1px solid #54524e; border-radius:20px; margin-bottom:16px; }
+.recipient-empty-art>.symbol-sculpted { width:48px; height:48px; }
+.approval-empty-mark:has(.symbol-sculpted),.security-emblem:has(.symbol-sculpted) {
+  background:linear-gradient(145deg,#262523,#10100f); border-color:#54524e;
+}
+.approval-empty-mark .symbol-sculpted { width:34px; height:34px; }
+.security-emblem .symbol-sculpted { width:30px; height:30px; }
+.side-item[id^=tab-] { grid-template-columns:28px minmax(min-content,1fr) auto; }
+.side-item>.symbol {
+  display:grid; place-items:center; width:28px; height:30px; border-radius:9px;
+  border:1px solid transparent; background:transparent;
+  transition:background var(--premium-settle),border-color var(--premium-settle),
+    box-shadow var(--premium-settle),color var(--premium-quick);
+}
+.side-item>.symbol svg { width:19px; height:19px; }
+.side-item.active>.symbol {
+  background:linear-gradient(145deg,var(--raised),var(--sunk));
+  border-color:var(--accent-edge); box-shadow:inset 0 1px var(--premium-rim),0 2px 5px #0002;
+}
+.side-item { transition:background var(--premium-settle),border-color var(--premium-settle),
+  color var(--premium-quick),box-shadow var(--premium-settle); }
+.side-item.active { box-shadow:inset 2px 0 var(--accent-text),inset 0 1px var(--edge-quiet); }
+
+/* All hit areas stay still. Light and icon details respond rather than moving the button. */
+.btn,.icon-btn,.swap-primary,.hw-page-button {
+  transition:background-color var(--premium-quick),border-color var(--premium-quick),
+    color var(--premium-quick),box-shadow var(--premium-settle) var(--premium-ease),
+    transform 110ms var(--premium-ease);
+}
+.btn.primary,.swap-primary {
+  box-shadow:inset 0 1px #ffffff50,inset 0 -1px #7d3e1a25,0 3px 8px -5px #0008;
+}
+.input { transition:border-color var(--premium-quick),box-shadow var(--premium-settle),
+  background-color var(--premium-quick); }
+.input:focus { box-shadow:0 0 0 4px var(--accent-soft); }
+
+/* A transparent studio reflection adds depth without changing any financial data. */
+[data-premium-surface] { position:relative; isolation:isolate; }
+[data-premium-surface]::after {
+  content:""; position:absolute; inset:0; z-index:1; border-radius:inherit; pointer-events:none;
+  background:radial-gradient(360px circle at var(--premium-x,50%) var(--premium-y,0%),
+    var(--premium-reflection),transparent 75%);
+  opacity:0; transition:opacity 380ms var(--premium-ease);
+}
+[data-premium-surface].premium-lit::after { opacity:1; }
+.premium-surface-enter::after {
+  animation:premium-light-arrive 680ms var(--premium-ease);
+  animation-delay:calc(var(--premium-order,0)*35ms);
+}
+@keyframes premium-light-arrive { 0% { opacity:0; } 35% { opacity:1; } 100% { opacity:0; } }
+
+/* Home and saved wallets: quiet metal, fuller controls and an intentional invitation. */
+.wallet-vault-card,.home-how-trigger { transition:border-color var(--premium-settle),
+  background-color var(--premium-settle),box-shadow var(--premium-settle); }
+.wallet-vault-card { box-shadow:var(--premium-depth); }
+.home-how-trigger>.symbol {
+  display:grid; place-items:center; width:40px; height:44px; border-radius:13px;
+  border:1px solid var(--line-2); background:linear-gradient(145deg,var(--raised),var(--sunk));
+  box-shadow:inset 0 1px var(--premium-rim),0 5px 12px -8px #0009;
+}
+.home-how-trigger>.symbol svg { width:24px; height:24px; }
+.lobby-home .home-hero .welcome-actions .btn { min-height:52px; }
+.lobby-home .home-hero .welcome-actions .btn.primary {
+  box-shadow:inset 0 1px #ffffff55,0 6px 20px -12px #d89665aa;
+}
+
+/* Overview: reflective instrument surfaces; exact balances never count or roll. */
+.premium-overview-grid>.overview-hero {
+  box-shadow:inset 0 1px #ffffff18,0 20px 45px -35px #000b;
+  background:radial-gradient(ellipse at 6% 0%,#e8d8c80b,transparent 55%),
+    linear-gradient(135deg,#1b1a19,#101010 75%);
+}
+.asset-rows.assets-grid,.shared-control { box-shadow:var(--premium-depth); }
+.asset-row { transition:background-color var(--premium-settle); }
+.coin-mark { box-shadow:inset 0 1px #ffffff35,0 4px 9px -5px #0008; }
+.overview-actions .btn { box-shadow:inset 0 1px #ffffff16,0 3px 6px -4px #0008; }
+.transaction-views,.activity-filters,.messages-tabs {
+  box-shadow:inset 0 1px var(--edge-quiet); }
+.transaction-views>.btn,.activity-filter-chip,.messages-tabs button {
+  transition:background-color var(--premium-settle),color var(--premium-quick),
+    border-color var(--premium-settle),box-shadow var(--premium-settle); }
+
+/* Approvals and Activity: precise hierarchy and tactile reading surfaces, not fake progress. */
+.shared-control-nodes .signer-hardware,.security-device-avatar {
+  box-shadow:inset 0 1px var(--premium-rim),0 6px 12px -9px #0009;
+}
+.approval-empty-mark,.security-emblem,.security-access-icon,.tx-ico {
+  background:linear-gradient(145deg,var(--raised),var(--sunk));
+  box-shadow:inset 0 1px var(--premium-rim),0 5px 12px -9px #0009;
+}
+.activity-ledger .row-item,.recipient-card,.security-signer {
+  transition:border-color var(--premium-settle),background-color var(--premium-settle),
+    box-shadow var(--premium-settle);
+}
+.activity-ledger .ri-end { transition:color var(--premium-quick); }
+
+/* Address book, Messages, Security and Settings share the same physical control grammar. */
+.recipient-search:focus,.messages-search:focus-within {
+  border-color:var(--accent-text); box-shadow:0 0 0 4px var(--accent-soft);
+}
+.security-overview,.security-signer,.preferences-surface,.messages-layout {
+  box-shadow:var(--premium-depth);
+}
+.preference-row,.preference-action,.security-access-entry>summary {
+  transition:background-color var(--premium-settle),border-color var(--premium-settle);
+}
+.security-access-chevron,.preference-chevron {
+  transition:transform var(--premium-settle) var(--premium-ease); }
+.security-details-link,.preference-link { transition:color var(--premium-quick); }
+.messages-empty .symbol,.messaging-empty .symbol {
+  filter:drop-shadow(0 5px 6px #0003);
+}
+
+/* Setup, payment forms and reviews: stable inputs; depth lives in the framing and focus. */
+.guided-stage-button { transition:background-color var(--premium-settle),
+  border-color var(--premium-settle),color var(--premium-quick); }
+.guided-stage-button[aria-current=step] { box-shadow:inset 0 1px var(--edge); }
+.dialog:not(.home-how-dialog),.drawer {
+  box-shadow:0 32px 100px -26px #0009,inset 0 1px var(--premium-rim);
+}
+.pay-recipient:focus-within,.recipient-row:focus-within {
+  border-color:var(--accent-edge); box-shadow:0 0 0 4px var(--accent-soft);
+}
+.swap-composer,.swap-detail-card { box-shadow:var(--premium-depth); }
+.swap-pane,.swap-mode-tab { transition:border-color var(--premium-settle),
+  background-color var(--premium-settle),box-shadow var(--premium-settle); }
+.swap-pane:focus-within { border-color:var(--accent-text); }
+.swap-mode-tab[aria-selected=true] { box-shadow:inset 0 1px var(--premium-rim); }
+
+/* The guide can be expressive: these are fixed educational objects, not wallet evidence. */
+.hw-journey-choice,.hw-step-choice,.hw-tab,.hw-view-choices button {
+  transition:border-color var(--premium-settle),background-color var(--premium-settle),
+    color var(--premium-quick),box-shadow var(--premium-settle);
+}
+.hw-relief { transition:transform 420ms var(--premium-ease),filter 420ms var(--premium-ease); }
+.hw-journey-art-host>.hw-art { animation:premium-art-arrive 560ms var(--premium-ease); }
+.hw-step-copy>h4,.hw-chapter-heading>h3 {
+  animation:premium-copy-arrive 420ms var(--premium-ease);
+}
+@keyframes premium-art-arrive {
+  from { transform:perspective(1000px) translateY(12px) rotateX(3deg); }
+  to { transform:perspective(1000px) translateY(0) rotateX(0); }
+}
+@keyframes premium-copy-arrive { from { translate:0 6px; } to { translate:0 0; } }
+.premium-empty-art[data-premium-visible=true] {
+  animation:premium-object-arrive 1200ms var(--premium-ease) both;
+}
+@keyframes premium-object-arrive { from { translate:0 8px; } to { translate:0 0; } }
+
+@media(hover:hover) and (pointer:fine) {
+  .btn:not(:disabled,[aria-disabled=true]):hover,.icon-btn:not(:disabled):hover {
+    box-shadow:inset 0 1px var(--premium-rim),0 5px 14px -10px #0008;
+  }
+  .btn.primary:not(:disabled):hover {
+    box-shadow:inset 0 1px #ffffff65,0 6px 18px -10px #d8966570;
+  }
+  :is(button,a,summary):hover>.symbol .icon-detail { stroke:var(--accent-text); }
+  :is(button,a,summary):hover>.symbol[data-icon=send] .icon-detail { translate:1px -1px; }
+  :is(button,a,summary):hover>.symbol[data-icon=receive] .icon-detail { translate:-1px 1px; }
+  :is(button,a,summary):hover>.symbol[data-icon=activity] .icon-detail { rotate:22deg; }
+  :is(button,a,summary):hover>.symbol[data-icon=settings] .icon-detail { translate:0 -1px; }
+  .side-item:hover>.symbol { border-color:var(--line-2); background:var(--raised); }
+  .wallet-vault-card:hover,.home-how-trigger:hover { border-color:var(--control-line);
+    box-shadow:inset 0 1px var(--premium-rim),0 12px 28px -22px #0009; }
+  .asset-row:hover { background:var(--edge-quiet); }
+  .activity-ledger .row-item:hover,.recipient-card:hover,.security-signer:hover {
+    background:var(--raised); box-shadow:inset 0 1px var(--edge);
+  }
+  .preference-row:hover,.security-access-entry>summary:hover { background:var(--edge-quiet); }
+  .hw-journey-choice:hover .hw-relief { transform:translateY(-2px) rotate(-3deg);
+    filter:drop-shadow(0 4px 4px #0005); }
+  .messages-empty-art:hover .relief-face .relief-part-1 { translate:2px 1px; }
+  .recipient-empty-art:hover .relief-face .relief-part-1 { translate:0 -1px; }
+  .swap-reverse:hover .symbol { translate:0 -1px; }
+}
+.premium-paused *, .premium-paused *::before, .premium-paused *::after {
+  animation-play-state:paused!important;
+}
+.premium-paused .premium-empty-art { animation:none!important; }
+/* Keep the selected wallet and every network/demo disclosure in two compact mobile rows. */
+@media(max-width:760px) {
+  .wallet-topbar.wallet-context-header:has(>.pp-header-status) {
+    grid-template-columns:minmax(0,1fr) auto auto; gap:8px;
+  }
+  .wallet-context-header:has(>.pp-header-status)>.wallet-identity { grid-column:1/-1; }
+  .wallet-context-header:has(>.pp-header-status)>.ph-meta { grid-column:1; grid-row:2; }
+  .wallet-context-header:has(>.pp-header-status)>.wallet-home {
+    grid-column:2; grid-row:2; max-width:none; white-space:nowrap; padding-inline:8px;
+    gap:6px; font-size:12px;
+  }
+  .wallet-context-header>.pp-header-status { grid-column:3; grid-row:2; }
+}
+@media(prefers-reduced-motion:reduce),(update:slow) {
+  *,*::before,*::after { animation:none!important; transition:none!important; }
+  [data-premium-surface]::after { display:none; }
+  .hw-relief,.symbol .icon-detail { transform:none!important; translate:none!important;
+    rotate:none!important; }
+  .symbol-sculpted .relief-part { translate:none!important; rotate:none!important; }
+}
+@media(forced-colors:active) {
+  .motion-content-enter,.motion-dialog-enter { animation:none; }
+  [data-premium-surface]::after,.symbol .icon-relief { display:none; }
+  .symbol .icon-body,.symbol .icon-detail { stroke:currentColor; }
+  .symbol-sculpted .relief-shadow { display:none; }
+  .symbol-sculpted .relief-face { stroke:CanvasText; filter:none; }
+  .symbol-sculpted .relief-part { translate:none; rotate:none; }
+  .messages-empty-art,.recipient-empty-art,.approval-empty-mark:has(.symbol-sculpted),
+  .security-emblem:has(.symbol-sculpted) { background:Canvas; border-color:CanvasText; }
+  .side-item.active>.symbol { border-color:Highlight; box-shadow:none; }
+  .premium-overview-grid>.overview-hero { background:Canvas; }
+  .hw-relief,.symbol .icon-detail { transform:none; translate:none; rotate:none; }
+}

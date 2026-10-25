@@ -1,0 +1,63 @@
+{
+  "date": "2026-10-25",
+  "branch": "gray-ui",
+  "engineering_base": "c6860f6fef9351531bd3a9c3a221600c49651035",
+  "migration_snapshot": "825bf96ec5484b882aa3e953972dc62e965d2f69",
+  "marketing_reference": "876e3580a53988b81bf1c91ee4ed8ca6255e95ec",
+  "scope": "Web presentation, visual review tooling and evidence only. No merge or deployment.",
+  "files": {
+    "web/app-icons.js": "3183be9379698ab788527a8b69324b4e2061bbf275b13327a7b118657caa2a25",
+    "web/app-messaging-workspace.js": "d630711cb0a95fbc5fcffee08b06d7e49c117bdc5713919f2a9f8301d207ce16",
+    "web/app-motion.js": "2f33cf17553ec1d2445610206d8ae2ed783aba040f7e67e7abd5e7f8373180ce",
+    "web/app-recipients.js": "cc34add7ccdfcabb573bdeb7227f53b1ec91fe9378f7af2d25c0dfe4a8abdbc6",
+    "web/app-security-dashboard.js": "9eac9ac9c7e32c732e6dcb1130eca15811415b3c45424ff93f1bee3c41c334d2",
+    "web/app-send.js": "13c5c058a41557d6b5f02eda522b9229f07cc0f9e824b04e16077d25a1aa70d6",
+    "web/app-wallet.js": "fdbd0472d9d5780c32ec7c73ea1dd797400eb996efda0b7d26cfaf6250d1547e",
+    "web/app.js": "626b799fdca39e931813443e984af7912cfb41788e774cfa6da08d311caeccfa",
+    "web/index.html": "ce83ffef386060d4dce07e3d7f7680cfa49b95d70de6f30c94eb40503152c4f2",
+    "web/premium-experience.css": "69c01426b30bc050e0fc1d13f6d9e7d3ce33a5f22d66d70d65861b0144359139",
+    "web/premium-motion.js": "b6499fddae49f2b3e4f8ba290ecfe8193aa18ddca0e47a356fef5ddadbf687ed",
+    "solspike/lint.sh": "e416f33aec4fb955c46dd750b006a0c8408c070b9eb1ef27f44b745e90445708",
+    "solspike/tools/premium_ui_browser.mjs": "919fb8560ff90bcfff8f65ff77e14779c272de2f2ce243947851ece83f5ef183"
+  },
+  "mixed_view_edits": {
+    "web/app-send.js": "Receive DOM order, redundant decorative mark removal and initial focus only. Destination guards, privacy text and operation handlers unchanged.",
+    "web/app-wallet.js": "Decorative empty-inbox SVG only.",
+    "web/app-messaging-workspace.js": "Decorative empty-thread SVG only.",
+    "web/app-recipients.js": "Decorative empty-list SVG only.",
+    "web/app-security-dashboard.js": "Decorative emblem SVG only.",
+    "web/app-motion.js": "Import and one post-render presentation call only.",
+    "web/app.js": "Pure presentation module preload only.",
+    "web/index.html": "Stylesheet link only.",
+    "solspike/lint.sh": "Register new presentation module for existing strict rules."
+  },
+  "preserved": [
+    "backend and APIs",
+    "cryptography and authentication",
+    "wallet/state/persistence models",
+    "payment guards and calculations",
+    "render scheduling and IME protection",
+    "recovery formats and verification",
+    "native implementation",
+    "dependencies and lockfiles",
+    "main and source reference branches"
+  ],
+  "verification": {
+    "motion_interaction_checks": 194,
+    "responsive_page_theme_width_variants": 72,
+    "browser_errors": [],
+    "source_design_browser_checks": 511,
+    "real_browser_zoom_percent": [
+      100,
+      200
+    ],
+    "node26_fast_tests_passed": 48,
+    "fast_tests_skipped": [
+      "qr: qrencode not installed"
+    ],
+    "full_page_integration": "app ok",
+    "lint_javascript_files": 240,
+    "lint_python_files": 2
+  },
+  "fixture_limits": "Synthetic view-only wallet, blocked external requests, wallet boot and minute-based chain refresh held. Fresh synthetic sync age for visibility test. No funded operations or physical-device certification."
+}

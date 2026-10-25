@@ -42,7 +42,7 @@ import {
   solNotAdded, solObserveOverview, solSync, solTab, solUnsaved,
 } from "./app-sol.js";
 import { formatUsdBalance, pendingShortcut, solRow, zecInProgress, zecTotal } from "./overview-model.js";
-import { icon } from "./app-icons.js";
+import { icon, sculptedIcon } from "./app-icons.js";
 import { beginGuided, guidedEnabled, guidedState } from "./app-guided-setup.js";
 import { descriptionOf, setWalletDescription } from "./wallet-description.js";
 import { securityExplanation } from "./app-tutorial.js";
@@ -1082,7 +1082,7 @@ function inboxNote(rows) {
   if (rows) return el("p", { class: "small muted", role: "status" }, INBOX_EMPTY[why]);
   const empty = why === "empty" || why === "zec";
   return el("section", { class: "approval-empty", role: "status" },
-    el("span", { class: "approval-empty-mark", "aria-hidden": "true" }, icon("devices")),
+    el("span", { class: "approval-empty-mark", "aria-hidden": "true" }, sculptedIcon("devices")),
     el("div", {}, el("h3", {}, empty ? (why === "zec" ? "No Zcash approvals waiting" : "No approvals waiting")
       : why === "loading" ? "Checking payments" : why === "syncing" ? "Syncing this wallet" : "Some records could not be verified"),
     el("p", {}, empty ? "Payment requests and transactions in progress will appear here." : INBOX_EMPTY[why]),
