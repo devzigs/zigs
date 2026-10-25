@@ -1,4 +1,5 @@
 // Wallet context presentation only. Selection delegates to the existing application action.
+import { icon } from "./app-icons.js";
 import { el, netBadge, ruleText } from "./app-dom.js";
 import { walletMark } from "./app-wallet-art.js";
 
@@ -87,7 +88,7 @@ export function walletSwitcher(wallets, current, pick) {
   const summary = el("summary", { class: "wallet-picker-trigger", "aria-label": "Switch wallet",
     "aria-haspopup": "menu", "aria-describedby": "wallet-switch-name", "data-key": "wallet-switch-trigger" },
   walletMark(current, 32), el("span", { class: "wallet-picker-name", id: "wallet-switch-name" }, current.name),
-  el("span", { class: "wallet-picker-chevron", "aria-hidden": "true" }, "⌄"));
+  el("span", { class: "wallet-picker-chevron", "aria-hidden": "true" }, icon("chevronDown")));
   summary.addEventListener("click", () => {
     incoming(picker);
     // Native toggle events may arrive after the first paint. Position before that paint too.

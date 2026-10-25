@@ -115,7 +115,7 @@ function signerRow(s, f, actions) {
             : s.local ? "This browser" : s.joined ? "Location unknown" : "Not joined")),
           el("span", { class: "security-signer-chains" }, "Zcash" + (s.sol ? " · Solana" : ""))),
         el("span", { class: "security-details-link" }, el("span", { class: "security-details-closed" }, "View details"),
-          el("span", { class: "security-details-open" }, "Hide details"), el("span", { "aria-hidden": "true" }, "⌄"))),
+          el("span", { class: "security-details-open" }, "Hide details"), el("span", { "aria-hidden": "true" }, icon("chevronDown")))),
       el("div", { class: "security-signer-body" },
         el("dl", { class: "security-signer-facts" },
           fact("Device label", s.label || "No label supplied"),

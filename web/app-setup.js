@@ -52,7 +52,7 @@ export function setupQrDialog() {
     "aria-labelledby": "setup-qr-title", "aria-describedby": "setup-qr-warning" },
     el("div", { class: "card-head" }, el("h2", { id: "setup-qr-title" }, "Private setup invitation"),
       el("button", { class: "icon-btn", type: "button", "aria-label": "Close invitation QR code",
-        "data-first-focus": "", onclick: () => { closeSetupQr(); render(); } }, "×")),
+        "data-first-focus": "", onclick: () => { closeSetupQr(); render(); } }, icon("close"))),
     el("p", { class: "small muted", id: "setup-qr-warning" },
       "Scan on your intended device. This QR contains the private invitation: anyone with it can read wallet information and join an open device slot. Keep it out of photos and public screens."),
     qrBox(inviteLink(state.gid), "Private wallet invitation"),

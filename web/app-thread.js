@@ -56,7 +56,7 @@ export function teamConversation(notices = []) {
 function conversationHeader(title, subtitle) {
   return el("header", { class: "messages-thread-header" },
     el("button", { class: "btn ghost messages-mobile-back", type: "button", "data-key": "messages-back",
-      onclick: messagingInboxBack, "aria-label": "Back to conversations" }, "←"),
+      onclick: messagingInboxBack, "aria-label": "Back to conversations" }, icon("back")),
     el("span", { class: "messages-row-avatar", "aria-hidden": "true" }, icon("chat")),
     el("div", { class: "messages-thread-title" },
       el("h2", { tabindex: "-1", "data-key": "messages-thread-title" }, title),
@@ -125,7 +125,7 @@ function memoMessages() {
 
 function memoItem(m) {
   return el("div", { class: "msg memo-msg", "data-key": "memo-" + m.id },
-    el("span", { class: "tx-ico in", "aria-hidden": "true" }, "↙"),
+    el("span", { class: "tx-ico in", "aria-hidden": "true" }, icon("receive")),
     el("div", { class: "msg-body" },
       el("div", { class: "msg-head" }, el("b", {}, "Memo with a payment of " + fmtZec(m.value)),
         el("time", {}, when(m.at)), el("span", { class: "vmark" }, ON_CHAIN)),
@@ -382,7 +382,7 @@ export function newChatDialog() {
   },
   el("div", { class: "card-head" }, el("h2", { id: "chat-title" }, "New direct chat"),
     el("button", { class: "icon-btn", type: "button", "aria-label": "Close", onclick: close },
-      "×")),
+      icon("close"))),
   nameField("chat-name", "your contact"),
   el("div", { class: "callout", id: "chat-invite-help" },
     "Create an invite link, then share it privately with one person. "

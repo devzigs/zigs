@@ -1,9 +1,9 @@
 /* App-scale expression of zigs-site's metal, studio light and deliberate motion.
    Financial values, warnings, QR codes and addresses remain in their original document flow. */
 :root {
-  --premium-ease:cubic-bezier(.18,.8,.22,1);
-  --premium-settle:320ms;
-  --premium-quick:180ms;
+  --premium-ease:var(--ease);
+  --premium-settle:var(--motion-release);
+  --premium-quick:var(--motion-hover);
   --premium-rim:rgba(255,255,255,.12);
   --premium-glow:rgba(243,177,134,.065);
   --premium-reflection:rgba(255,255,255,.035);
@@ -27,7 +27,8 @@
 /* The glyph has an engraved edge, an intact body and a separately articulated detail. */
 .symbol svg { overflow:visible; }
 .symbol .icon-relief { stroke:#000; stroke-width:2.8; opacity:.4; translate:0 .8px; }
-.symbol .icon-body { stroke:currentColor; }
+.symbol .icon-body,.symbol .icon-face { stroke:currentColor; }
+.symbol { transition:scale var(--premium-settle) var(--premium-ease); }
 .symbol .icon-detail {
   stroke:currentColor; transform-box:fill-box; transform-origin:center;
   transition:transform var(--premium-settle) var(--premium-ease),
@@ -35,9 +36,38 @@
     rotate var(--premium-settle) var(--premium-ease),
     stroke var(--premium-quick),opacity var(--premium-quick);
 }
+/* The shadow belongs to the moving detail, so arrows never leave a ghost behind. */
+.symbol .icon-detail .icon-relief { stroke:#000; }
+.icon-btn>.symbol,.chev>.symbol,.preference-chevron>.symbol,
+.security-access-chevron>.symbol,.wallet-picker-chevron>.symbol {
+  width:18px; height:18px; display:inline-flex; align-items:center; justify-content:center;
+}
+.icon-btn>.symbol[data-icon=close] { width:22px; height:22px; }
+.swap-close>.symbol,.pp-close>.symbol { width:22px; height:22px; }
+/* The standalone Tor demo cannot import page modules. Its close mark uses the same geometry. */
+.pp-close { position:relative; width:48px; height:48px; }
+.pp-button { min-height:48px; }
+.pp-close::before,.pp-close::after { content:""; position:absolute; top:50%; left:50%;
+  width:14px; height:1.5px; border-radius:1px; background:currentColor;
+  translate:-50% -50%; rotate:45deg; pointer-events:none;
+}
+.pp-close::after { rotate:-45deg; }
+.swap-chevron { display:inline-flex; }
+.swap-chevron>.symbol { width:16px; height:16px; }
+.swap-asset-button .symbol,.swap-route-link>.symbol { width:18px; height:18px; }
+.chev,.preference-chevron,.wallet-picker-chevron,.security-access-chevron,
+.home-how-arrow { display:inline-flex; align-items:center; justify-content:center; }
+.home-how-arrow>.symbol { width:20px; height:20px; }
+.approval-request-action .symbol,.tx-ico .symbol,.hw-page-button .symbol {
+  width:18px; height:18px; vertical-align:middle;
+}
+.symbol[data-icon=chevronRight] svg,.symbol[data-icon=chevronDown] svg,
+.symbol[data-icon=close] svg { stroke-width:1.7; }
 :root[data-theme=light] .symbol .icon-relief { stroke:#fff; opacity:.85; }
+:root[data-theme=light] .symbol .icon-detail .icon-relief { stroke:#fff; }
 @media(prefers-color-scheme:light) {
   :root:not([data-theme=dark]) .symbol .icon-relief { stroke:#fff; opacity:.85; }
+  :root:not([data-theme=dark]) .symbol .icon-detail .icon-relief { stroke:#fff; }
 }
 .symbol-sculpted svg { width:100%; height:100%; }
 .symbol-sculpted .relief-face { filter:drop-shadow(0 1px 0 #ffffff15); }
@@ -72,19 +102,44 @@
 .side-item { transition:background var(--premium-settle),border-color var(--premium-settle),
   color var(--premium-quick),box-shadow var(--premium-settle); }
 .side-item.active { box-shadow:inset 2px 0 var(--accent-text),inset 0 1px var(--edge-quiet); }
+.side-item.active.premium-nav-enter:not(.wallet-context)::before {
+  animation:premium-selection-arrive var(--motion-dialog) var(--premium-ease);
+  transform-origin:center;
+}
+@keyframes premium-selection-arrive { from { scale:1 .55; } to { scale:1 1; } }
 
 /* All hit areas stay still. Light and icon details respond rather than moving the button. */
-.btn,.icon-btn,.swap-primary,.hw-page-button {
+.btn,.icon-btn,.swap-primary,.swap-secondary,.swap-asset-button,.swap-asset-choice,
+.swap-close,.pp-button,.pp-close,.hw-page-button {
   transition:background-color var(--premium-quick),border-color var(--premium-quick),
     color var(--premium-quick),box-shadow var(--premium-settle) var(--premium-ease),
-    transform 110ms var(--premium-ease);
+    transform var(--motion-press) var(--premium-ease);
 }
+/* Press changes the material. The button and its focus ring never shift under a finger. */
+:is(.btn,.icon-btn,.side-item,.row-item,.asset-choice,.guided-stage-button,
+  .wallet-select,.hw-page-button,.swap-primary,.swap-secondary,.swap-asset-button,
+  .swap-close,.pp-button,.pp-close,summary):active:not(:disabled):not([aria-disabled=true]) {
+  transform:none; box-shadow:var(--shadow-pressed);
+  transition-duration:var(--motion-press);
+}
+:is(button,a,summary):not(:disabled,[aria-disabled=true]):active .symbol:not(.symbol-sculpted) { scale:.95; }
 .btn.primary,.swap-primary {
   box-shadow:inset 0 1px #ffffff50,inset 0 -1px #7d3e1a25,0 3px 8px -5px #0008;
 }
 .input { transition:border-color var(--premium-quick),box-shadow var(--premium-settle),
   background-color var(--premium-quick); }
 .input:focus { box-shadow:0 0 0 4px var(--accent-soft); }
+.input[aria-invalid=true]:focus { box-shadow:0 0 0 4px var(--bad-soft),inset 3px 0 var(--bad); }
+
+/* Keyboard and pointer input share the finish; focus remains immediate and visible. */
+:is(button,a,summary):focus-visible .symbol .icon-detail { color:var(--accent-text); }
+.btn.primary:focus-visible .symbol .icon-detail { color:inherit; }
+.wallet-picker-chevron { transition:rotate var(--premium-settle) var(--premium-ease); }
+.wallet-picker[open] .wallet-picker-chevron { rotate:180deg; }
+:is(.transaction-views,.messages-tabs,.swap-mode-tabs) button,
+.activity-filter-chip,.hw-view-choices button,.hw-tab,.hw-step-choice {
+  transition-timing-function:var(--premium-ease);
+}
 
 /* A transparent studio reflection adds depth without changing any financial data. */
 [data-premium-surface] { position:relative; isolation:isolate; }
@@ -167,9 +222,25 @@
 .guided-stage-button { transition:background-color var(--premium-settle),
   border-color var(--premium-settle),color var(--premium-quick); }
 .guided-stage-button[aria-current=step] { box-shadow:inset 0 1px var(--edge); }
-.dialog:not(.home-how-dialog),.drawer {
+.dialog:not(.home-how-dialog),.drawer,.swap-modal,.privacy-demo-popup {
   box-shadow:0 32px 100px -26px #0009,inset 0 1px var(--premium-rim);
 }
+.premium-title:is(.motion-content-enter,.motion-dialog-enter) { animation:none; }
+/* A modal resolves through its rim and shadow; the form, address and QR stay still. */
+.premium-layer-enter:not(.home-how-dialog,.guided-plan) {
+  animation:premium-layer-arrive 440ms var(--premium-ease);
+}
+.swap-modal[open],.privacy-demo-popup[open] {
+  animation:premium-layer-arrive 440ms var(--premium-ease);
+}
+@keyframes premium-layer-arrive {
+  from { box-shadow:0 18px 50px -32px #0004,inset 0 1px transparent; }
+  to { box-shadow:0 32px 100px -26px #0009,inset 0 1px var(--premium-rim); }
+}
+.dialog.home-how-dialog.home-how-enter { animation:none; }
+.wallet-picker[open] .wallet-picker-enter,
+.welcome-wallets[open]>.wallet-popover { animation-duration:var(--motion-dialog);
+  animation-timing-function:var(--premium-ease); }
 .pay-recipient:focus-within,.recipient-row:focus-within {
   border-color:var(--accent-edge); box-shadow:0 0 0 4px var(--accent-soft);
 }
@@ -186,18 +257,22 @@
 }
 .hw-relief { transition:transform 420ms var(--premium-ease),filter 420ms var(--premium-ease); }
 .hw-journey-art-host>.hw-art { animation:premium-art-arrive 560ms var(--premium-ease); }
+.hw-step-copy { animation:none; }
 .hw-step-copy>h4,.hw-chapter-heading>h3 {
   animation:premium-copy-arrive 420ms var(--premium-ease);
 }
+.hw-step-copy>p { animation:premium-copy-arrive 460ms var(--premium-ease) 40ms backwards; }
 @keyframes premium-art-arrive {
-  from { transform:perspective(1000px) translateY(12px) rotateX(3deg); }
+  from { transform:perspective(1000px) translateY(8px) rotateX(1.5deg); }
   to { transform:perspective(1000px) translateY(0) rotateX(0); }
 }
 @keyframes premium-copy-arrive { from { translate:0 6px; } to { translate:0 0; } }
-.premium-empty-art[data-premium-visible=true] {
-  animation:premium-object-arrive 1200ms var(--premium-ease) both;
+.premium-empty-art.premium-art-enter {
+  animation:premium-object-arrive 760ms var(--premium-ease) both;
 }
-@keyframes premium-object-arrive { from { translate:0 8px; } to { translate:0 0; } }
+.premium-empty-art[data-premium-visible=false] { animation-play-state:paused; }
+.premium-empty-art.premium-art-settled { animation:none; }
+@keyframes premium-object-arrive { from { translate:0 5px; } to { translate:0 0; } }
 
 @media(hover:hover) and (pointer:fine) {
   .btn:not(:disabled,[aria-disabled=true]):hover,.icon-btn:not(:disabled):hover {
@@ -206,12 +281,36 @@
   .btn.primary:not(:disabled):hover {
     box-shadow:inset 0 1px #ffffff65,0 6px 18px -10px #d8966570;
   }
-  :is(button,a,summary):hover>.symbol .icon-detail { stroke:var(--accent-text); }
-  :is(button,a,summary):hover>.symbol[data-icon=send] .icon-detail { translate:1px -1px; }
-  :is(button,a,summary):hover>.symbol[data-icon=receive] .icon-detail { translate:-1px 1px; }
-  :is(button,a,summary):hover>.symbol[data-icon=activity] .icon-detail { rotate:22deg; }
-  :is(button,a,summary):hover>.symbol[data-icon=settings] .icon-detail { translate:0 -1px; }
-  .side-item:hover>.symbol { border-color:var(--line-2); background:var(--raised); }
+  :is(button,a,summary):not(:disabled,[aria-disabled=true]):hover .symbol .icon-detail {
+    color:var(--accent-text);
+  }
+  .btn.primary:not(:disabled):hover .symbol .icon-detail { color:inherit; }
+  :is(button,a,summary):not(:disabled,[aria-disabled=true]):hover .symbol {
+    --icon-forward:1px; --icon-back:-1px; --icon-lift:-.7px; --icon-turn:12deg;
+  }
+  .symbol[data-icon=send] .icon-detail { translate:var(--icon-forward,0) var(--icon-back,0); }
+  .symbol[data-icon=receive] .icon-detail { translate:var(--icon-back,0) var(--icon-forward,0); }
+  .symbol[data-icon=activity] .icon-detail { rotate:var(--icon-turn,0deg); }
+  .symbol:is([data-icon=settings],[data-icon=home],[data-icon=phone]) .icon-detail {
+    translate:0 var(--icon-lift,0);
+  }
+  .symbol:is([data-icon=chat],[data-icon=wallet],[data-icon=back]) .icon-detail {
+    translate:var(--icon-back,0) 0;
+  }
+  .symbol:is([data-icon=forward],[data-icon=search]) .icon-detail {
+    translate:var(--icon-forward,0) 0;
+  }
+  .symbol[data-icon=external] .icon-detail {
+    translate:var(--icon-forward,0) var(--icon-back,0);
+  }
+  /* Checks, locks and fingerprints keep their geometry: hover never implies verification. */
+  :is(.btn,.icon-btn):not(:disabled,[aria-disabled=true]):hover .symbol[data-icon=close] {
+    color:var(--text);
+  }
+  .chev,.home-how-arrow { transition:translate var(--premium-settle) var(--premium-ease); }
+  :is(button,a):not(:disabled,[aria-disabled=true]):hover .chev { translate:2px 0; }
+  .home-how-trigger:hover .home-how-arrow { translate:1px -1px; }
+  .side-item:hover .symbol { border-color:var(--line-2); background:var(--raised); }
   .wallet-vault-card:hover,.home-how-trigger:hover { border-color:var(--control-line);
     box-shadow:inset 0 1px var(--premium-rim),0 12px 28px -22px #0009; }
   .asset-row:hover { background:var(--edge-quiet); }
@@ -223,12 +322,14 @@
     filter:drop-shadow(0 4px 4px #0005); }
   .messages-empty-art:hover .relief-face .relief-part-1 { translate:2px 1px; }
   .recipient-empty-art:hover .relief-face .relief-part-1 { translate:0 -1px; }
-  .swap-reverse:hover .symbol { translate:0 -1px; }
+  .swap-reverse:hover .symbol .icon-detail { translate:1px 0; }
 }
 .premium-paused *, .premium-paused *::before, .premium-paused *::after {
-  animation-play-state:paused!important;
+  animation-play-state:paused!important; transition:none!important;
 }
 .premium-paused .premium-empty-art { animation:none!important; }
+.premium-paused .symbol { scale:none!important; }
+.premium-paused .icon-detail { translate:none!important; rotate:none!important; }
 /* Keep the selected wallet and every network/demo disclosure in two compact mobile rows. */
 @media(max-width:760px) {
   .wallet-topbar.wallet-context-header:has(>.pp-header-status) {
@@ -248,11 +349,14 @@
   .hw-relief,.symbol .icon-detail { transform:none!important; translate:none!important;
     rotate:none!important; }
   .symbol-sculpted .relief-part { translate:none!important; rotate:none!important; }
+  .symbol { scale:none!important; }
+  .chev,.home-how-arrow { translate:none!important; }
+  .wallet-picker-chevron { rotate:none; }
 }
 @media(forced-colors:active) {
   .motion-content-enter,.motion-dialog-enter { animation:none; }
   [data-premium-surface]::after,.symbol .icon-relief { display:none; }
-  .symbol .icon-body,.symbol .icon-detail { stroke:currentColor; }
+  .symbol .icon-body,.symbol .icon-face { stroke:currentColor; }
   .symbol-sculpted .relief-shadow { display:none; }
   .symbol-sculpted .relief-face { stroke:CanvasText; filter:none; }
   .symbol-sculpted .relief-part { translate:none; rotate:none; }

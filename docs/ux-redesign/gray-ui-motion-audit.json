@@ -1,0 +1,156 @@
+{
+  "baseline": "9437eca04024936b010e83fdd79584469925073b",
+  "branch": "gray-ui",
+  "main": "c6860f6fef9351531bd3a9c3a221600c49651035",
+  "reference": "78345496bb6438e22bfdbfbc484105df84c18c0d",
+  "scope": "Web presentation, interaction QA, exact glyph assertions and repository review evidence. No merge or deployment.",
+  "sha256": {
+    "solspike/tools/premium_ui_browser.mjs": "59367bed871b01c2e7c062ce0f34fe37bebadf6c0395dbfdd684ebec56a84622",
+    "web/app-account-view.js": "07fe2f199da686ea609c30e25013b452102cd2b4805e972244a8b6f0fb1e555f",
+    "web/app-backups.js": "29b48d8e73e96deb24c192a606dad9a556c97e25bbccc5d25f93dc1fa9d6b1bd",
+    "web/app-dom.js": "cddbd8e83cb3fd864409067e3d22a8729067d78a6b509d34f57a9684a38ad73f",
+    "web/app-drawer.js": "8af092f4243251e2ee7a86ce9f560fd1d3396125e5641cab327ce22d77151aee",
+    "web/app-how-zigs-works.js": "af0ac0d78380aa5ff9e1206cef17a188c19cb570a5af0c5d356467038d205d04",
+    "web/app-icons.js": "4fc87c6e92eb271dd6298e3f76de0f9606a075aaf124421ade582f3151765a7c",
+    "web/app-loop.js": "d9e2e69275586dde7eb63dc28036ff85b352f3b235f07c75c10120b660127817",
+    "web/app-messaging-education.js": "c87af1a4eabb7efdbb4957248c43e60711ad877bf319d4f10e38d3641471a81e",
+    "web/app-network-privacy.js": "a55bcb7c0291d0f148b2b6a01657ba1f1048f2dfeceb2d85d161c3b3eda9d8ff",
+    "web/app-postquantum-swap-preview.js": "4938df0ecb3583db97405a6b0ee4f8e932bb4f56ca837879b7a76de08c43ec8c",
+    "web/app-security-dashboard.js": "21557f47f740aa6e3702e32db614a133ad650668bccacd810feb99f2bb1b8dc8",
+    "web/app-send.js": "221fe51b06deae6bab14710d2c6493609a030823a6704a6f508644c009dff98c",
+    "web/app-settings-ui.js": "587b4a6b9a3bda3338592f21277c2a33f1886535eae49addc8a6bb804a288006",
+    "web/app-setup.js": "038ee79f89c4daf2b73e2728abdaa3564c3752e8eaa4039a4df4087ff57348d7",
+    "web/app-shared-control.js": "1149a1fa9a40b9d17ed73be0459946c30d308bdba695d4a1250aecc15e701575",
+    "web/app-shell.js": "26b95c2ca1041a822b755eff4a86102eb8337ec3032c11c969036d509cd9afac",
+    "web/app-swap-preview.js": "93fc86142a30619f7ce2218a6c41f16c5ecd386ea8cd980350e5ea0695485fa8",
+    "web/app-thread.js": "19ca97d93f0c5f669efcc3f9106c952424a204b1830c394213cf45c096698f0e",
+    "web/app-tutorial.js": "60c5764dccecb617fda14b9b6a03ce4d7f8d874ba1f0b93067710985cc5caa43",
+    "web/app-wallet-switcher.js": "4282c558ac326b4717f2b084bd63410cd54b2e0d327479576dd8f42fc8734feb",
+    "web/app-wallet.js": "0b68d99ae6e02d6897f66d13423ede6a78f2a2faa34bcc01c6293c7d104e732a",
+    "web/design-system.css": "34740104ccb1fec28ce93f7a1b084c28806e1a9faccf226dcc71df8577cd1557",
+    "web/network-privacy-popup.js": "9d6482ffb24644e34017f62188c32555f617a5ca0c5838209422c15af1bde8bf",
+    "web/premium-experience.css": "5f15e2c9d905f1dbf1598f66472ea608b2d50d0ad6833e4b8f977595b0c74234",
+    "web/premium-motion.js": "d1a5d327e42771f21b3bf475b38e57606e3a3b4ede4d0a798997fcde19a33052",
+    "web/test/app.mjs": "87bc0ed773aa2987c6a44a6bfc413ae7619e5d584e88c65dd7742f905c90fa84",
+    "web/test/swap-preview.mjs": "9af050250b30d5e7e64cbc931dc093fd050f1619585f130855961b66e05ba507",
+    "web/test/unified-setup.mjs": "84a30faabd5e238bd368dcfd602370976652ff506018354fcf983ad74c6e0e43"
+  },
+  "direct_dom_event_handlers": {
+    "web/app-account-view.js": {
+      "count": 23,
+      "unchanged": true
+    },
+    "web/app-backups.js": {
+      "count": 14,
+      "unchanged": true
+    },
+    "web/app-dom.js": {
+      "count": 5,
+      "unchanged": true
+    },
+    "web/app-drawer.js": {
+      "count": 3,
+      "unchanged": true
+    },
+    "web/app-how-zigs-works.js": {
+      "count": 8,
+      "unchanged": true
+    },
+    "web/app-loop.js": {
+      "count": 3,
+      "unchanged": true
+    },
+    "web/app-messaging-education.js": {
+      "count": 6,
+      "unchanged": true
+    },
+    "web/app-network-privacy.js": {
+      "count": 4,
+      "unchanged": true
+    },
+    "web/app-postquantum-swap-preview.js": {
+      "count": 4,
+      "unchanged": true
+    },
+    "web/app-security-dashboard.js": {
+      "count": 1,
+      "unchanged": true
+    },
+    "web/app-send.js": {
+      "count": 24,
+      "unchanged": true
+    },
+    "web/app-settings-ui.js": {
+      "count": 1,
+      "unchanged": true
+    },
+    "web/app-setup.js": {
+      "count": 26,
+      "unchanged": true
+    },
+    "web/app-shared-control.js": {
+      "count": 1,
+      "unchanged": true
+    },
+    "web/app-shell.js": {
+      "count": 47,
+      "unchanged": true
+    },
+    "web/app-swap-preview.js": {
+      "count": 5,
+      "unchanged": true
+    },
+    "web/app-thread.js": {
+      "count": 10,
+      "unchanged": true
+    },
+    "web/app-tutorial.js": {
+      "count": 0,
+      "unchanged": true
+    },
+    "web/app-wallet-switcher.js": {
+      "count": 1,
+      "unchanged": true
+    },
+    "web/app-wallet.js": {
+      "count": 39,
+      "unchanged": true
+    },
+    "web/network-privacy-popup.js": {
+      "count": 1,
+      "unchanged": true
+    }
+  },
+  "handler_expressions": 226,
+  "unchanged_sensitive_paths": [
+    "ios",
+    "macos",
+    "src",
+    "cf",
+    "web/sol",
+    "web/pkg",
+    "web/app-state.js",
+    "web/app-engine.js",
+    "web/app-chain.js",
+    "web/app-keystore.js",
+    "web/app-payments.js",
+    "web/vault.js",
+    "web/signed.js",
+    "web/logo.png",
+    "web/assets",
+    "web/fonts"
+  ],
+  "checks": {
+    "motion": 216,
+    "motion_layouts": 72,
+    "ux": 523,
+    "ux_states": 124,
+    "style": 511,
+    "fast": 48,
+    "app": "pass",
+    "unified_setup": "pass",
+    "lint_js": 241,
+    "lint_python": 2,
+    "qr_decoder": "skipped: qrencode absent"
+  }
+}

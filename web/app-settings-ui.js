@@ -1,4 +1,5 @@
 // Shared Settings presentation. Preferences still use their existing owners and persistence.
+import { icon } from "./app-icons.js";
 import { el } from "./app-dom.js";
 import { ui } from "./app-state.js";
 import { toggleNotify } from "./app-messages.js";
@@ -17,7 +18,7 @@ export const settingsRow = (title, description, control) => el("div", { class: "
 
 export const settingsDisclosure = (title, description, ...content) => el("details", {
   class: "preference-disclosure" }, el("summary", { class: "preference-row" },
-  settingsLabel(title, description), el("span", { class: "preference-chevron", "aria-hidden": "true" }, "›")),
+  settingsLabel(title, description), el("span", { class: "preference-chevron", "aria-hidden": "true" }, icon("chevronRight"))),
 el("div", { class: "preference-detail" }, ...content));
 
 let notificationPending = false, notificationError = "";

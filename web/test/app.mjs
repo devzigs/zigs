@@ -2795,10 +2795,13 @@ const sealed = (gid, rel, seat, fields, key, names = ["by", "sig"]) =>
         + "priority fee, so a priority fee can mark a payment too\\."));
       const sendStepOf = (ss) => all(t.sessionLayer(ss), (x) => /^step /.test(x.className ?? "")
         && textOf(x).includes("Sent to the network"))[0];
-      assert.match(textOf(sendStepOf(landedA)), new RegExp("View in explorer ↗View in explorer "
+      assert.match(textOf(sendStepOf(landedA)), new RegExp("View in explorerView in explorer "
         + "opens testnet\\.zecblock\\.com in a new tab\\. That site is not Zigs: it sees the "
         + "transaction id that you open and your IP address\\."),
       "the explorer note sits next to its link");
+      assert.ok(all(sendStepOf(landedA), (x) => x.attrs?.["data-icon"] === "external"
+        && x.attrs?.["aria-hidden"] === "true").length,
+      "the explorer link has a decorative SVG instead of a spoken arrow character");
       const seesOf = (ss) => all(t.sessionLayer(ss), (x) => x.tag === "div"
         && textOf(x).startsWith("What the chain sees"))[0];
       assert.doesNotMatch(textOf(seesOf(landedA)), /View in explorer opens/,
@@ -6172,7 +6175,7 @@ const sealed = (gid, rel, seat, fields, key, names = ["by", "sig"]) =>
         // Its only explorer link is a sent message that a block holds (S2).
         t.personal.sent = sent.filter((r) => r.txid === "S2");
         const sentOnly = textOf(t.contactView());
-        assert.match(sentOnly, /View transaction ↗/);
+        assert.match(sentOnly, /View transaction/);
         assert.match(sentOnly, /View transaction opens testnet\.zecblock\.com/,
           "a chat whose only links are sent messages has the explorer note");
       } finally {

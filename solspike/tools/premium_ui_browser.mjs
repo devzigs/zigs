@@ -110,6 +110,82 @@ async function artworkReview() {
   await page.screenshot({ path: resolve(out, "messages-relief.png") });
 }
 
+async function pressReview() {
+  await choose("overview"); await page.waitForTimeout(850);
+  const action = page.locator(".overview-actions .btn").first();
+  const before = await geometry(".overview-actions .btn");
+  await action.hover(); await page.waitForTimeout(350);
+  await page.mouse.down(); await page.waitForTimeout(120);
+  check(JSON.stringify(before) === JSON.stringify(await geometry(".overview-actions .btn")),
+    "pointer press keeps the complete button hit area stationary");
+  check(await action.locator(".symbol").evaluate((node) =>
+    Number(getComputedStyle(node).scale) < 1), "press compresses only the decorative icon");
+  await page.screenshot({ path: resolve(out, "overview-press.png") });
+  await page.mouse.move(230, 940); await page.mouse.up(); await page.waitForTimeout(400);
+  check(await action.locator(".icon-detail").evaluate((node) =>
+    getComputedStyle(node).translate === "0px"), "icon settles after pointer departure");
+  await action.focus(); await page.keyboard.down("Space"); await page.waitForTimeout(100);
+  check(JSON.stringify(before) === JSON.stringify(await geometry(".overview-actions .btn")),
+    "keyboard press leaves the focus ring and control geometry stationary");
+  check(await action.evaluate((node) => parseFloat(getComputedStyle(node).outlineWidth) >= 2),
+    "keyboard focus retains a visible outline during the press");
+  await action.evaluate((node) => node.blur()); await page.keyboard.up("Space");
+  await choose("swap");
+  const disabled = page.getByRole("button", { name: "Review demo swap", exact: true });
+  const idle = await disabled.locator(".icon-detail").evaluate((node) =>
+    getComputedStyle(node).translate);
+  await disabled.hover({ force: true }); await page.waitForTimeout(350);
+  check(idle === await disabled.locator(".icon-detail").evaluate((node) =>
+    getComputedStyle(node).translate), "disabled actions have no inviting icon gesture");
+}
+
+async function navigationReview() {
+  for (const tab of ["approvals", "activity", "chats", "settings"]) {
+    await choose(tab);
+    const fact = await page.locator("#side-nav .side-item[aria-current=page]").evaluate((node) => ({
+      title: node.textContent,
+      mark: node.querySelector(".symbol").getAnimations().some((a) =>
+        a.playState === "running" && a.effect.getTiming().duration === 360),
+      rail: getComputedStyle(node, "::before").animationName,
+    }));
+    check(fact.mark && fact.rail === "premium-selection-arrive",
+      tab + ": active navigation icon and selection rail settle together");
+  }
+  await page.waitForTimeout(850);
+  await page.evaluate(async () => (await import("/app-loop.js")).draw());
+  check(await page.locator("#side-nav .side-item[aria-current=page]").evaluate((node) =>
+    !node.querySelector(".symbol").getAnimations().length
+    && getComputedStyle(node, "::before").animationName === "none"),
+  "same-screen background redraw does not replay navigation choreography");
+  check(await page.evaluate(() => document.getAnimations().every((a) =>
+    a.effect?.target?.isConnected !== false)), "rapid navigation leaves no detached animation");
+}
+
+async function floatingReview() {
+  await choose("swap");
+  await page.getByRole("button", { name: "Choose asset to pay", exact: true }).click();
+  const swap = page.locator(".swap-modal[open]");
+  await swap.waitFor();
+  check(await swap.evaluate((node) => getComputedStyle(node).animationName
+    === "premium-layer-arrive"), "native swap picker uses the same framing entrance");
+  await page.getByRole("button", { name: "Close preview dialog", exact: true }).click();
+  check(await page.locator(".swap-modal[open]").count() === 0,
+    "native swap picker dismisses immediately through its existing close action");
+  await choose("overview");
+  await page.locator("#privacy-demo-status").click();
+  const popup = page.locator(".privacy-demo-popup[open]");
+  await popup.waitFor();
+  const close = page.getByRole("button", { name: "Close the Tor demo", exact: true });
+  check(await close.evaluate((node) => {
+    const r = node.getBoundingClientRect();
+    return r.width >= 48 && r.height >= 48
+      && getComputedStyle(node, "::before").content !== "none";
+  }), "standalone demo has a crisp close mark inside a 48 px target");
+  await close.click();
+  check(await page.locator(".privacy-demo-popup[open]").count() === 0,
+    "standalone demo close action is immediate");
+}
+
 async function dialogReview(kind) {
   await choose(kind === "create" ? "home" : "overview");
   await page.evaluate(async (kind) => {
@@ -117,6 +193,11 @@ async function dialogReview(kind) {
     (await import("/app-loop.js")).draw();
   }, kind);
   await page.getByRole("dialog").waitFor();
+  check(await page.getByRole("dialog").evaluate((node) => {
+    const moving = node.getAnimations().filter((a) => a.playState === "running");
+    return moving.every((a) => a.effect.getKeyframes().every((frame) =>
+      !frame.transform && !frame.translate && frame.opacity === undefined));
+  }), kind + ": dialog entrance animates framing without moving or fading its content");
   check(await page.evaluate(() => document.querySelector(".dialog")
     .contains(document.activeElement)), kind + ": existing initial focus stays inside the dialog");
   const stable = page.locator(".dialog .addr-full,.dialog .qr");
@@ -167,6 +248,11 @@ async function guideReview() {
   await page.waitForTimeout(650);
   check(await page.locator(".hw-journey-choice[aria-pressed=true]").count() === 1,
     "guide retains manual journey selection");
+  await page.getByRole("button", { name: "Pause illustrations", exact: true }).click();
+  check(await page.locator(".hw-art").first().evaluate((node) =>
+    getComputedStyle(node).animationPlayState === "paused"),
+  "guide pause also suspends the new artwork entrance");
+  await page.getByRole("button", { name: "Resume illustrations", exact: true }).click();
   await page.screenshot({ path: resolve(out, "guide-motion.png") });
   await page.keyboard.press("Escape");
   await page.getByRole("dialog").waitFor({ state: "hidden" });
@@ -230,6 +316,19 @@ async function accessibleMotionReview() {
   check(await page.evaluate(() => ![...document.querySelectorAll("#app h1,#app h2")]
     .some((node) => node.getAnimations().some((a) => a.playState === "running"))),
   "returning to the document does not replay the canceled page entrance");
+  await choose("chats"); await page.waitForTimeout(150);
+  await page.emulateMedia({ reducedMotion: "reduce" });
+  await settleOverview(page);
+  const running = await page.evaluate(() => document.getAnimations().filter((a) =>
+    a.playState === "running").map((a) => ({ target: a.effect?.target?.className,
+    name: a.animationName || "web-animation" })));
+  check(running.length === 0,
+    "enabling reduced motion cancels in-flight decorative motion: " + JSON.stringify(running));
+  await page.emulateMedia({ reducedMotion: "no-preference" });
+  await page.waitForTimeout(850);
+  check(await page.locator(".premium-empty-art").evaluate((node) =>
+    !node.getAnimations().some((a) => a.playState === "running")),
+  "turning motion back on does not replay settled artwork");
 }
 
 let video;
@@ -241,7 +340,8 @@ try {
   const before = await snapshot();
   for (const tab of ["overview", "approvals", "activity", "recipients", "swap", "chats",
     "recovery", "settings", "home"]) await reviewPage(tab);
-  await hoverReview(); await artworkReview();
+  await hoverReview(); await artworkReview(); await pressReview(); await navigationReview();
+  await floatingReview();
   for (const kind of ["receive", "send", "create"]) await dialogReview(kind);
   for (const kind of ["receive", "send", "create"]) await phoneDialogReview(kind);
   await page.setViewportSize({ width: 1440, height: 1000 });

@@ -165,7 +165,8 @@ try {
     assert.match(screen, /Demo only: your connection is unchanged/,
       'every popup screen says the connection is unchanged');
   }
-  const closers = { 'the X button': () => fire(named(dialog, '×'), 'click'),
+  const closers = { 'the X button': () => fire(walk(dialog,
+    node => node.attrs?.['aria-label'] === 'Close the Tor demo')[0], 'click'),
     'the Close button': () => press(dialog, 'Close'),
     Escape: () => fire(dialog, 'keydown', { key: 'Escape' }),
     'the backdrop': () => fire(dialog, 'click', { clientX: -5, clientY: -5 }) };

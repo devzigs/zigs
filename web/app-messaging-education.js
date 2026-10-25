@@ -140,7 +140,7 @@ export function messagingTutorialDialog() {
     el("div", {}, el("span", { class: "label", id: "messages-tutorial-label" }, "How messaging works"),
       el("p", { class: "small muted" }, "A quick guide · " + (step + 1) + " of " + PAGES.length)),
     el("button", { class: "icon-btn", type: "button", "aria-label": "Close messaging guide",
-      "data-key": "messages-tutorial-close", onclick: closeMessagingTutorial }, "×")),
+      "data-key": "messages-tutorial-close", onclick: closeMessagingTutorial }, icon("close"))),
   illustration(page.graphic),
   el("div", { class: "messages-tutorial-copy" },
     el("span", { class: "label messages-tutorial-eyebrow" }, page.eyebrow),

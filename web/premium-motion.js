@@ -3,8 +3,12 @@ const experiences = new WeakMap();
 const SURFACES = ".card,.overview-hero,.shared-control,.security-overview,.security-signer,"
   + ".preferences-surface,.wallet-vault-card,.swap-composer,.swap-detail-card,.messages-layout";
 const SENSITIVE = ".safety,.qr,.qr-toggle,.addr-full,.secret-link,.money,.portfolio-value,"
-  + "[role=alert],[role=status],.callout,.review-warnings,[data-motion-static]";
+  + "[role=alert],[role=status],.callout,.review-warnings,[data-motion-static],"
+  + ".security-metrics,.security-status,.badge,.balance,.amount,.memo-text";
 const EASE = "cubic-bezier(.18,.8,.22,1)";
+// Only fixed editorial copy may join a heading entrance. Never select operational rows.
+const EDITORIAL = ".workspace-heading .ph-left>p,.preferences-heading>p,"
+  + ".section-heading>p.small,.swap-subtitle";
 const layerIdentity = (layer, session) => (layer?.getAttribute("aria-labelledby") || "")
   + (layer?.querySelector("h1,h2")?.textContent || "") + (session || "");
 
@@ -12,6 +16,7 @@ class SurfaceExperience {
   constructor(doc) {
     this.doc = doc; this.win = doc.defaultView; this.scopes = new Map();
     this.animations = new Set(); this.art = new Set(); this.frame = 0; this.lit = null;
+    this.position = null; this.navKey = null;
     this.reduced = this.win.matchMedia("(prefers-reduced-motion:reduce),(update:slow)");
     this.forced = this.win.matchMedia("(forced-colors:active)");
     this.fine = this.win.matchMedia("(hover:hover) and (pointer:fine)");
@@ -22,6 +27,7 @@ class SurfaceExperience {
     this.observer = this.win.IntersectionObserver ? new this.win.IntersectionObserver(
       (entries) => entries.forEach(({ target, isIntersecting }) => {
         target.setAttribute("data-premium-visible", String(isIntersecting));
+        if (isIntersecting && this.allowed()) target.classList.add("premium-art-enter");
       }), { threshold: .05 }) : null;
     doc.addEventListener("visibilitychange", this.visibility);
     doc.addEventListener("pointermove", this.move, { passive: true });
@@ -42,24 +48,30 @@ class SurfaceExperience {
     if (this.allowed()) return;
     this.animations.forEach((animation) => animation.cancel());
     this.animations.clear(); this.clearLight();
+    this.art.forEach((node) => node.classList.add("premium-art-settled"));
+    this.doc.querySelectorAll(".premium-surface-enter,.premium-layer-enter,.premium-nav-enter")
+      .forEach((node) => node.classList.remove("premium-surface-enter", "premium-layer-enter",
+        "premium-nav-enter"));
   }
 
   clearLight() {
     this.win.cancelAnimationFrame(this.frame); this.frame = 0;
     this.lit?.classList.remove("premium-lit"); this.lit = null;
+    this.position = null;
   }
 
   pointer(event) {
     if (event.pointerType !== "mouse" || !this.allowed() || !this.fine.matches) return;
     const surface = event.target.closest?.("[data-premium-surface]");
     if (surface !== this.lit) { this.clearLight(); this.lit = surface; }
+    this.position = { x: event.clientX, y: event.clientY };
     if (!surface || this.frame) return;
     this.frame = this.win.requestAnimationFrame(() => {
       this.frame = 0;
       if (!this.allowed() || !surface.isConnected || surface !== this.lit) return;
       const rect = surface.getBoundingClientRect();
-      surface.style.setProperty("--premium-x", event.clientX - rect.left + "px");
-      surface.style.setProperty("--premium-y", event.clientY - rect.top + "px");
+      surface.style.setProperty("--premium-x", this.position.x - rect.left + "px");
+      surface.style.setProperty("--premium-y", this.position.y - rect.top + "px");
       surface.classList.add("premium-lit");
     });
   }
@@ -97,8 +109,15 @@ class SurfaceExperience {
     const headings = [...root.querySelectorAll("h1,h2")].filter((node) =>
       !node.closest("[hidden],.sr-only,[aria-hidden=true]," + SENSITIVE)
       && !node.querySelector("button,input,select,textarea"));
-    headings.slice(0, 2).forEach((node, index) => this.animate(node,
-      [{ transform: "translateY(8px)" }, { transform: "none" }], 440, index * 35));
+    headings.slice(0, 2).forEach((node, index) => {
+      // Replace the older CSS entrance rather than playing two animations on the same title.
+      if (node.animate) node.classList.add("premium-title");
+      this.animate(node, [{ transform: "translateY(6px)" }, { transform: "none" }],
+        480, index * 40);
+    });
+    root.querySelectorAll(EDITORIAL).forEach((node, index) => this.animate(node,
+      [{ transform: "translateY(4px)" }, { transform: "none" }], 420, 45 + index * 25));
+    if (name === "layer") root.classList.add("premium-layer-enter");
     root.querySelectorAll("[data-premium-surface]").forEach((node, index) => {
       node.style.setProperty("--premium-order", Math.min(index, 4));
       node.classList.add("premium-surface-enter");
@@ -107,13 +126,26 @@ class SurfaceExperience {
 
   present({ view, layer, identity = {} }) {
     this.sync();
+    for (const animation of this.animations) if (!animation.effect?.target?.isConnected) {
+      animation.cancel(); this.animations.delete(animation);
+    }
     const opening = layer && !this.scopes.has("layer");
     const key = JSON.stringify([identity.wallet, identity.panel, identity.chat, identity.contact,
       identity.surface]);
     this.scope("page", view, key);
     this.scope("layer", layer, key + layerIdentity(layer, identity.session));
+    this.navigation(identity.panel);
     if (opening) this.animate(this.doc.querySelector(".scrim"),
       [{ opacity: 0 }, { opacity: 1 }], 240);
+  }
+
+  navigation(key) {
+    if (this.navKey === key) return;
+    this.navKey = key;
+    const mark = this.doc.querySelector("#side-nav .side-item[aria-current=page]>.symbol");
+    if (this.allowed()) mark?.parentElement.classList.add("premium-nav-enter");
+    this.animate(mark, [{ transform: "translateX(-2px) scale(.96)" },
+      { transform: "none" }], 360);
   }
 
   destroy() {

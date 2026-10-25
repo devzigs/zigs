@@ -1,4 +1,5 @@
 // Presentation only: never selects a transport, stores a preference or gates a wallet.
+import { icon } from "./app-icons.js";
 import { el } from "./app-dom.js";
 import { render } from "./app-loop.js";
 import { settingsGroup, settingsRow } from "./app-settings-ui.js";
@@ -30,7 +31,7 @@ export function networkPrivacyPanel() {
     el("div", {}, el("p", { class: "label" }, "Your browser connection"),
       el("h2", { id: "network-privacy-title" }, "Privacy & Network")),
     el("button", { class: "icon-btn", type: "button", "data-first-focus": "",
-      "aria-label": "Close Privacy & Network", onclick: () => { closeNetworkPrivacy(); render(); } }, "×")),
+      "aria-label": "Close Privacy & Network", onclick: () => { closeNetworkPrivacy(); render(); } }, icon("close"))),
   el("p", { id: "network-privacy-summary", class: "small muted" },
     "Zigs uses a Standard connection in this version. This panel explains the current connection; it does not change how your wallet connects."),
   el("div", { class: "network-privacy-modes" },

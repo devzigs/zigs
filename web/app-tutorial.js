@@ -123,7 +123,7 @@ export function tutorialDiagram(kind, { number = null, devices = [], rule = null
   const nodes = d.nodes.map(([mark, title, detail], i) =>
       el("div", { class: "tutorial-node" }, icon(mark), el("strong", {}, title),
         el("span", { class: "small muted" + (kind === "verify" && number ? " tutorial-safety-number" : "") }, detail),
-        i < d.nodes.length - 1 ? el("span", { class: "tutorial-link", "aria-hidden": "true" }, "→") : null));
+        i < d.nodes.length - 1 ? el("span", { class: "tutorial-link", "aria-hidden": "true" }, icon("forward")) : null));
   const flow = el("div", { class: "tutorial-nodes" }, nodes);
   return el("figure", { class: "tutorial-diagram surface-quiet" },
     el("figcaption", { class: "label" }, d.caption),

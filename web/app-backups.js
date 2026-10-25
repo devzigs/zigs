@@ -1,4 +1,5 @@
 // Backup and restore: logic and dialogs.
+import { icon } from "./app-icons.js";
 import {
   backupName, boxPairMatches, heldRefusal, keysOf, lateFields, makePassphrase, passIssue,
   passLength, restoredSecret, settledFields, shareShape, skey, staleRestore, takenKeys, undoPlan,
@@ -183,7 +184,7 @@ export function backupDialog() {
   el("div", { class: "card-head" }, el("h2", { id: "backup-title" }, words.title),
     el("button", {
       class: "icon-btn", type: "button", "aria-label": "Close", onclick: closeBackup,
-    }, "×")),
+    }, icon("close"))),
   el("p", { class: "small" }, words.pass),
   el("p", { class: "small muted" }, "Recovery needs both the encrypted file and its passphrase. "
     + "The passphrase is not a seed phrase. " + (b.personal ? ""
@@ -265,7 +266,7 @@ function backupCheckDialog() {
   el("div", { class: "card-head" }, el("h2", { id: "backup-title" },
     "Check saved " + (b.chain === "sol" ? "SOL" : "ZEC") + " file"),
   el("button", { class: "icon-btn", type: "button", "aria-label": "Close", disabled: b.busy,
-    onclick: closeBackup }, "×")),
+    onclick: closeBackup }, icon("close"))),
   el("p", { class: "small", id: "bc-help" }, "Choose the encrypted file you saved for device "
     + b.seat + " of this wallet, then enter its separate passphrase. This check opens it without restoring or changing any key shares. File contents, filenames and passphrases are never sent to the other devices."),
   el("label", { class: "field" }, el("span", {}, "Saved recovery file"), file),
@@ -302,7 +303,7 @@ export function restoreDialog() {
   el("div", { class: "card-head" }, el("h2", { id: "restore-title" }, "Restore a backup"),
     el("button", {
       class: "icon-btn", type: "button", "aria-label": "Close", onclick: closeBackup,
-    }, "×")),
+    }, icon("close"))),
   el("p", { class: "small" }, "Selected file: " + r.name),
   el("p", { class: "small ux-flow-summary", id: "restore-file-help" },
     "Restores the signing share or messaging account in this file. "

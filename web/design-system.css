@@ -75,11 +75,11 @@
   --row-pad:16px 20px; --empty-pad:24px 20px; --hero-min-height:216px;
   --illustration-size:216px;
   --sidebar-width:216px; --content-width:1440px;
-  --motion-press:80ms; --motion-hover:140ms; --motion-release:140ms;
-  --motion-selection:180ms; --motion-dialog:200ms; --motion-content:220ms;
-  --motion-exit:140ms; --motion-completion:240ms; --motion-highlight:700ms;
+  --motion-press:90ms; --motion-hover:180ms; --motion-release:280ms;
+  --motion-selection:260ms; --motion-dialog:360ms; --motion-content:480ms;
+  --motion-exit:140ms; --motion-completion:420ms; --motion-highlight:680ms;
   --fast:var(--motion-hover); --settle:var(--motion-dialog); --arrive:var(--motion-content);
-  --ease:cubic-bezier(.2,0,0,1); --entrance:cubic-bezier(.2,0,0,1);
+  --ease:cubic-bezier(.18,.8,.22,1); --entrance:var(--ease);
   --exit:cubic-bezier(.4,0,1,1); --spring:var(--ease);
   --transition-surface:background-color var(--motion-hover) var(--ease),
     border-color var(--motion-hover) var(--ease),color var(--motion-hover) var(--ease);

@@ -1,3 +1,4 @@
+import { icon } from "./app-icons.js";
 import { el } from "./app-dom.js";
 import { render } from "./app-loop.js";
 import { chapters, GUIDE_SOURCE } from "./how-zigs-works-content.js";
@@ -29,7 +30,7 @@ export function howZigsWorksDialog() {
         el("h2", { id: "home-how-title" }, "How Zigs works"),
         el("button", { class: "icon-btn", type: "button", "data-first-focus": "",
           "data-key": "home-how-close", "aria-label": "Close How Zigs works",
-          onclick: () => { closeHowZigsWorks(); render(); } }, "×")),
+          onclick: () => { closeHowZigsWorks(); render(); } }, icon("close"))),
       el("div", { class: "home-how-content" }, howZigsWorks(el)));
   }
   return dialog;
@@ -47,7 +48,7 @@ export function howZigsWorks(el) {
   const nav = el("div", { class: "hw-tabs", role: "tablist", "aria-orientation": "vertical", "aria-label": "Guide chapters" });
   const chapterName = el("span", { class: "hw-menu-current" });
   const menu = el("details", { class: "hw-chapters" },
-    el("summary", {}, "Chapters", chapterName, el("span", { "aria-hidden": "true" }, "⌄")), nav);
+    el("summary", {}, "Chapters", chapterName, el("span", { "aria-hidden": "true" }, icon("chevronDown"))), nav);
   const mobile = () => typeof matchMedia === "function" && matchMedia("(max-width:900px)").matches;
   menu.open = !mobile();
   if (typeof matchMedia === "function") matchMedia("(max-width:900px)").addEventListener?.("change", event => {
@@ -126,12 +127,12 @@ export function howZigsWorks(el) {
     const next = el("div", { class: "hw-pagination", "aria-label": "Chapter navigation" },
       el("button", { type: "button", class: "hw-page-button", disabled: index === 0,
         "data-key": "hw-previous", onclick: () => choose(index - 1, { scroll: true }) },
-        el("span", { "aria-hidden": "true" }, "←"), "Previous"),
+        el("span", { "aria-hidden": "true" }, icon("back")), "Previous"),
       el("span", { class: "hw-page-count" }, number(index) + " / 10"),
       el("button", { type: "button", class: "hw-page-button hw-next", "data-key": "hw-next",
         onclick: () => choose(index === chapters.length - 1 ? 0 : index + 1, { scroll: true }) },
         index === chapters.length - 1 ? "Back to the basics" : "Next: " + chapters[index + 1].nav,
-        el("span", { "aria-hidden": "true" }, "→")));
+        el("span", { "aria-hidden": "true" }, icon("forward"))));
     return el("div", { class: "hw-layout" }, el("article", { class: "hw-article" },
         el("header", { class: "hw-chapter-heading" },
           el("p", { class: "hw-eyebrow" }, "Chapter " + number(index) + " · " + chapter.nav),

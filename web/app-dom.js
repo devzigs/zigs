@@ -1,4 +1,5 @@
 // el, act, widgets, wording and labels.
+import { icon } from "./app-icons.js";
 import { qrSvg } from "./qr.js";
 import { memoShown } from "./payees.js";
 import { chunks, finite } from "./util.js";
@@ -269,4 +270,4 @@ export const memoRow = (label, m, bad = false) => el("div", { class: "memo-line"
 export const closeBtn = () => el("button", {
   class: "icon-btn", type: "button", "aria-label": "Close",
   onclick: () => { closeSession(); render(); },
-}, "×");
+}, icon("close"));

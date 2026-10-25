@@ -1,4 +1,5 @@
 // Membership presentation only. No connectivity, payment approval or signature inference.
+import { icon } from "./app-icons.js";
 import { el } from "./app-dom.js";
 
 export function sharedControl({ required, total, participants, status, context, openSecurity,
@@ -26,5 +27,5 @@ export function sharedControl({ required, total, participants, status, context, 
     el("div", { class: "shared-control-footer" },
       el("p", {}, "Membership is separate from payment approvals."),
       el("button", { class: "btn ghost sm", type: "button", onclick: openSecurity },
-        "Security", el("span", { "aria-hidden": "true" }, "↗"))));
+        "Security", el("span", { "aria-hidden": "true" }, icon("external")))));
 }

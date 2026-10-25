@@ -32,7 +32,7 @@ export function createPostQuantumSwapPreview(onExit) {
   const destinationAsset = el('select', { id: 'pq-receive-asset', 'aria-label': 'Demo receive asset',
     onchange: () => { void model.update({ to: destinationAsset.value }); } },
   ...[SWAP_DEMO_ASSETS[2], SWAP_DEMO_ASSETS[1]].map(a => el('option', { value: a.id }, a.symbol + ' · ' + a.network)));
-  const next = button(['Review demo swap', el('span', { 'aria-hidden': 'true' }, '→')], 'swap-primary', () => {
+  const next = button(['Review demo swap', el('span', { 'aria-hidden': 'true' }, icon('forward'))], 'swap-primary', () => {
     if (!model.value.quote || model.value.phase !== 'MOCK_QUOTE_READY') return;
     reviewed = Object.freeze({ amount: model.value.amount, to: model.value.to, quote: model.value.quote });
     show('review');
@@ -53,9 +53,9 @@ export function createPostQuantumSwapPreview(onExit) {
   form.lastChild.id = 'pq-quote-note';
   form.append(error, next);
   root.append(el('header', { class: 'pq-flow-heading' },
-    button('← Back', 'pq-back', () => { reset(); onExit(); }, { 'aria-label': 'Back to introduction' }),
+    button([icon('back'), 'Back'], 'pq-back', () => { reset(); onExit(); }, { 'aria-label': 'Back to introduction' }),
     text('pq-demo-label', 'DEMO · NO FUNDS MOVE', 'span'),
-    button(['Details', el('span', { 'aria-hidden': 'true' }, '↗')], 'swap-secondary pq-details-button', ev => openDetails(ev.currentTarget),
+    button(['Details', el('span', { 'aria-hidden': 'true' }, icon('external'))], 'swap-secondary pq-details-button', ev => openDetails(ev.currentTarget),
       { 'aria-haspopup': 'dialog', 'aria-label': 'Swap details & privacy' })),
     steps, el('div', { class: 'pq-flow-title' }, title),
     el('div', { class: 'pq-layout' }, content, recap));
@@ -112,7 +112,7 @@ export function createPostQuantumSwapPreview(onExit) {
     detailsDialog = el('dialog', { class: 'swap-modal pq-details-dialog', 'aria-labelledby': 'pq-details-title' },
       el('div', { class: 'swap-modal-heading' },
         el('h2', { id: 'pq-details-title', tabindex: '-1' }, 'Swap details & privacy'),
-        button('×', 'swap-close', closeDetails, { 'aria-label': 'Close swap details' })),
+        button(icon('close'), 'swap-close', closeDetails, { 'aria-label': 'Close swap details' })),
       text('swap-simulation-note', 'Demo only · no funds, no real quote · planned provider: NEAR Intents'),
       el('dl', { class: 'swap-review-details' },
         detail('Example wallet', '2 of 3 device approvals'),
@@ -170,7 +170,7 @@ export function createPostQuantumSwapPreview(onExit) {
     const to = swapDemoAsset(reviewed.to), q = reviewed.quote;
     return el('div', { class: 'pq-swap-summary' },
       el('div', {}, token(SWAP_DEMO_ASSETS[0]), text('swap-caption', 'PAY'), text('', reviewed.amount + ' ZEC', 'strong')),
-      el('span', { 'aria-hidden': 'true' }, '→'),
+      el('span', { 'aria-hidden': 'true' }, icon('forward')),
       el('div', {}, token(to), text('swap-caption', 'EXAMPLE RECEIVE'), text('', swapDecimal(q.outputAtomic, to) + ' ' + to.symbol, 'strong')));
   }
   function expire() { approvals = 0; progress = 0; reviewed = null; show('expired'); }

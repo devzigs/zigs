@@ -160,7 +160,7 @@ export function installPrivacyPopup() {
       : null;
     dialog.replaceChildren(
       el("div", { class: "pp-popup-top" }, el("span", { class: "pp-eyebrow" }, "TOR DEMO"),
-        button("×", close, false, { class: "pp-close", "aria-label": "Close the Tor demo" })),
+        button("", close, false, { class: "pp-close", "aria-label": "Close the Tor demo" })),
       el("h2", { id: "pp-title", tabindex: "-1" }, TITLES[screen]),
       ...bodyFor(screen, step, { begin, reveal, complete, close }),
       el("p", { class: "pp-demo-note", id: "pp-demo-note" }, DEMO_NOTE));

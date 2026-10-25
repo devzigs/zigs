@@ -1,4 +1,5 @@
 // The pages of the personal account and its contacts.
+import { icon } from "./app-icons.js";
 import { memoShown, toZat, zatText } from "./payees.js";
 import {
   balanceWarnings, chatTimeline, fundingPayees, fundingWarning, holdsNotes, messagePlan, NAME_MAX,
@@ -274,7 +275,7 @@ function contactRow(c) {
   el("span", { class: "av lg" }, initials(name)),
   el("span", { class: "ri-main" }, el("span", { class: "ri-title" }, name),
     el("span", { class: "ri-sub" }, "On chain · " + (n === 1 ? "1 message" : n + " messages"))),
-  el("span", { class: "ri-end" }), el("span", { class: "chev" }, "›"));
+  el("span", { class: "ri-end" }), el("span", { class: "chev" }, icon("chevronRight")));
 }
 
 export function contactItem(c) {
@@ -301,7 +302,7 @@ export function contactDialog() {
   },
   el("div", { class: "card-head" }, el("h2", { id: "contact-title" }, "Add a contact"),
     el("button", { class: "icon-btn", type: "button", "aria-label": "Close", onclick: close },
-      "×")),
+      icon("close"))),
   el("label", { class: "field" }, el("span", {}, "Name"), el("input", {
     class: "input", id: "oc-name", name: "name", maxlength: String(NAME_MAX), autocomplete: "off",
     required: true,
@@ -332,7 +333,7 @@ export function contactView() {
       el("button", {
         class: "btn ghost sm messages-mobile-back", type: "button", "data-key": "contact-back",
         onclick: () => { state.contact = null; ui.tab = "chats"; render(); },
-      }, "← Messages"),
+      }, icon("back"), "Messages"),
       el("span", { class: "av round", "aria-hidden": "true" }, initials(name)),
       el("div", { class: "messages-thread-title messages-conversation-title" }, el("h2", { tabindex: "-1",
         "data-key": "messages-thread-title" }, name),
@@ -483,7 +484,7 @@ export function messagingCostReviewDialog() {
   el("div", { class: "card-head" }, el("h2", { id: "messaging-cost-title", tabindex: "-1",
     "data-key": "messaging-cost-title", "data-first-focus": "" }, "Review message cost"),
     el("button", { class: "icon-btn", type: "button", "aria-label": "Close cost review",
-      onclick: closeMessagingCostReview }, "×")),
+      onclick: closeMessagingCostReview }, icon("close"))),
   changed ? el("p", { class: "callout", role: "status" },
     "The message changed. Check the updated cost before sending.") : null,
   el("p", { class: "small muted" }, "This message is a permanent on-chain transaction. Your "
@@ -532,7 +533,7 @@ function receivedBubble(row, name, label, where) {
       el("a", {
         class: "small", href: NETWORKS[personal.network].explorer + row.txid, target: "_blank",
         rel: "noopener",
-      }, "View transaction ↗")));
+      }, "View transaction", icon("external"))));
 }
 
 function sentBubble(rec) {
@@ -550,5 +551,5 @@ function sentBubble(rec) {
       st === "chain" ? el("a", {
         class: "small", href: NETWORKS[personal.network].explorer + rec.txid, target: "_blank",
         rel: "noopener",
-      }, "View transaction ↗") : null));
+      }, "View transaction", icon("external")) : null));
 }

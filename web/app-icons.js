@@ -27,6 +27,10 @@ const PATHS = Object.freeze({
   laptop: "M4 4h16v12H4zM2 20h20l-2-4H4l-2 4Z",
   browser: "M3 4h18v16H3zM3 9h18M6 6.5h.01M9 6.5h.01",
   devices: "M3 4h14v11H3zM1 19h12M18 10h5v11h-5z",
+  close: "M6 6l12 12M18 6 6 18",
+  chevronRight: "m9 5 7 7-7 7", chevronDown: "m5 9 7 7 7-7",
+  forward: "M3 12h16M12 5l7 7-7 7",
+  external: "M14 4h6v6M20 4 10 14M10 4H4v16h16v-6",
 });
 const ASSETS = Object.freeze({
   zec: "/assets/zcash.svg",
@@ -86,7 +90,11 @@ const DETAILS = Object.freeze({
   security: "m8 12 3 3 5-6", addressBook: "M2 7h4M2 12h4M2 17h4",
   swap: "M3 7h17l-4-4m4 4-4 4", settings: "M9 4v6M15 14v6",
   send: "M7 7h10v10", receive: "M7 7v10h10", lock: "M8 11V8a4 4 0 0 1 8 0v3",
-  wallet: "M15 11h6v5h-6z", key: "M16 8h.01", browser: "M3 9h18",
+  wallet: "M15 11h6v5h-6zM17 13.5h.01", key: "M16 8h.01", browser: "M3 9h18",
+  back: "M15 5l-7 7 7 7", forward: "M12 5l7 7-7 7",
+  phone: "M10 5h4M12 19h.01", laptop: "M2 20h20l-2-4H4l-2 4Z",
+  devices: "M18 10h5v11h-5z", external: "M14 4h6v6M20 4 10 14",
+  fingerprint: "M12 11a2 2 0 0 0-2 2v2c0 2-1 4-2 5M14 13v2c0 3-1 5-2 7",
 });
 const BODIES = Object.freeze({
   home: "M5 9v12h5v-7h4v7h5V9",
@@ -97,7 +105,13 @@ const BODIES = Object.freeze({
   security: "m12 3 8 3v6c0 5-8 9-8 9s-8-4-8-9V6l8-3Z",
   settings: "M4 7h16M4 17h16", swap: "M21 17H4l4-4m-4 4 4 4",
   lock: "M5 11h14v10H5z", browser: "M3 4h18v16H3zM6 6.5h.01M9 6.5h.01",
-  wallet: "M4 6h15v14H4zM4 6V4h12v2M17 13.5h.01",
+  back: "M8 12h13", forward: "M3 12h16", phone: "M7 2h10v20H7z",
+  laptop: "M4 4h16v12H4z", devices: "M3 4h14v11H3zM1 19h12",
+  external: "M10 4H4v16h16v-6",
+  fingerprint: "M8 3a8 8 0 0 1 12 7v3c0 1.4-.1 2.8-.4 4M4 7a8 8 0 0 0-1 4v2"
+    + "M6 17c.7-1.2 1-2.6 1-4v-2a5 5 0 0 1 10 0v3c0 2-.4 4-1.1 6",
+  wallet: "M4 6h15v14H4zM4 6V4h12v2",
+  key: "M15 4a5 5 0 1 1-3 9l-7 7H2v-3l7-7a5 5 0 0 1 6-6Z",
   addressBook: "M5 3h15v18H5zM12 7a2 2 0 1 1 0 4 2 2 0 0 1 0-4Z"
     + "m-3 10v-1a3 3 0 0 1 6 0v1",
 });
@@ -160,9 +174,14 @@ export function icon(name) {
   for (const [k, v] of Object.entries(attrs)) svg.setAttribute(k, v);
   if (asset) svg.append(artwork(name));
   else {
-    svg.append(symbolPath(PATHS[name], "icon-relief"),
+    svg.append(symbolPath(BODIES[name] || PATHS[name], "icon-relief"),
       symbolPath(BODIES[name] || PATHS[name], "icon-body"));
-    if (DETAILS[name]) svg.append(symbolPath(DETAILS[name], "icon-detail"));
+    if (DETAILS[name]) {
+      const detail = svgNode("g", { class: "icon-detail" });
+      detail.append(symbolPath(DETAILS[name], "icon-relief"),
+        symbolPath(DETAILS[name], "icon-face"));
+      svg.append(detail);
+    }
   }
   span.append(svg);
   return span;

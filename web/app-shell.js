@@ -507,7 +507,7 @@ export function browserSettings() {
     onclick: () => { ui.tab = "recovery"; focusAfter("panel-recovery", true); render(); } },
   el("span", { class: "preference-label" }, el("span", { class: "preference-title" }, "Security"),
     el("span", { class: "preference-description" }, "Manage devices, approvals and wallet backups.")),
-  el("span", { class: "preference-chevron", "aria-hidden": "true" }, "›"));
+  el("span", { class: "preference-chevron", "aria-hidden": "true" }, icon("chevronRight")));
   const accountNote = personalPending ? "Loading the saved messaging account…" : personalError
     ? "Account needs attention. Review its saved data and recovery options." : personal
       ? (personal.backedUp ? "Account set up · separate funds and backup for message fees."
@@ -572,8 +572,8 @@ function walletRow(g, tab = "overview") {
     n ? el("span", { class: "badge warn" }, n + " to approve") : null, unread),
   tab === "overview" ? el("span", { class: "vault-card-entry" },
     el("span", { class: "vault-entry-label" }, guidedEnabled(g.id) ? "Continue setup" : "Open wallet"),
-    el("span", { "aria-hidden": "true" }, "↗")) : null,
-  el("span", { class: "chev" }, "›"));
+    el("span", { "aria-hidden": "true" }, icon("external"))) : null,
+  el("span", { class: "chev" }, icon("chevronRight")));
 }
 
 // This is an explicitly labelled policy example, never collected transaction authorizations.
@@ -595,7 +595,7 @@ function homeExplanation() {
     el("span", { class: "welcome-security-copy" },
       el("strong", {}, "How Zigs works"),
       el("span", { class: "small muted" }, "Keys, payments, messaging and privacy. The complete guide.")),
-    el("span", { class: "home-how-arrow", "aria-hidden": "true" }, "↗"));
+    el("span", { class: "home-how-arrow", "aria-hidden": "true" }, icon("external")));
 }
 
 function welcome(off, restoreLink) {
@@ -1070,7 +1070,7 @@ const frame = (title, attrs, ...kids) => el("form", { class: "dialog", role: "di
   "aria-modal": "true", "aria-labelledby": "create-title", novalidate: true, ...attrs },
 el("div", { class: "card-head" }, el("h2", { id: "create-title" }, title),
   el("button", { class: "icon-btn", type: "button", "aria-label": "Close", onclick: closeCreate },
-    "×")),
+    icon("close"))),
 ...kids);
 // A second Enter can reach the form of a step that the page did not draw again yet: a submit
 // counts only for the step that its form shows.

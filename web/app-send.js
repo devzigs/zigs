@@ -1,4 +1,5 @@
 // Receive and send dialogs.
+import { icon } from "./app-icons.js";
 import {
   MEMO_BYTES, memoBytes, memoError, parsePayeeList, toZat, zatText,
 } from "./payees.js";
@@ -47,7 +48,7 @@ export function receiveDialog() {
     class: "icon-btn", type: "button", "aria-label": "Close",
     "data-first-focus": "",
     onclick: () => { ui.receive = false; render(); },
-  }, "×");
+  }, icon("close"));
   const title = dialogTitle("recv-title", "Receive ZEC", net);
   const copy = copyBtn(w.address, "Copy address", "btn primary");
   // A moved wallet leads with its moved note: senders must use the address of the new wallet.
@@ -84,7 +85,7 @@ function receiveLead(hidden, moved) {
 function sendOnly(net) {
   const faucet = curNet().faucet ? [" Get free testnet ZEC from a ", el("a", {
     href: curNet().faucet, target: "_blank", rel: "noopener", style: "white-space:nowrap",
-  }, "faucet ↗"), ". " + FAUCET_TEXT] : [];
+  }, "faucet", icon("external")), ". " + FAUCET_TEXT] : [];
   return el("div", { class: "callout" }, el("span", {}, "Send only ZEC on " + net + " to this "
     + "address. A payment that arrives becomes spendable after 3 confirmations.", ...faucet));
 }
@@ -274,7 +275,7 @@ function payRow(r, i, rows, sumUp) {
       focusAfter("INPUT:s-to-" + rows[Math.min(i, rows.length - 1)].k + ":0", true);
       render();
     },
-  }, "×") : null;
+  }, icon("close")) : null;
   const [amount, amountNote] = amountField(r, n, rows, sumUp);
   const saved = recipientSelect({ asset: "ZEC", network: netName(state.g), type: "shielded",
     id: "s-saved-" + r.k, onSelect: (address) => {
@@ -590,7 +591,7 @@ export async function openReview(payees, note, run = sendRun) {
 const closeSend = () => { endSend(); render(); };
 const closeX = () => el("button", {
   class: "icon-btn", type: "button", "aria-label": "Close", onclick: closeSend,
-}, "×");
+}, icon("close"));
 sweepDrafts();
 
 // The error of Send, its review or the move shows in the dialog, where the person reads it.

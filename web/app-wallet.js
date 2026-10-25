@@ -58,7 +58,7 @@ export function groupView({ showHeader = true } = {}) {
   const g = state.g;
   const back = el("button", {
     class: "btn ghost sm", type: "button", onclick: () => openGroup(null),
-  }, "← Wallets");
+  }, icon("back"), "Wallets");
   if (!g) return el("div", { class: "page" }, back, loadingView());
   if (g.unreadable) {
     return el("div", { class: "page" }, back, el("div", { class: "card" }, unreadable()));
@@ -332,7 +332,7 @@ function assetActionPicker(action) {
   }, el("span", { class: "coin-mark" }, icon(id)),
   el("span", { class: "asset-choice-copy" }, el("strong", {}, title),
     el("span", { class: "small muted", id: "choose-" + action + "-" + id }, detail)),
-  el("span", { class: "chev", "aria-hidden": "true" }, "›"));
+  el("span", { class: "chev", "aria-hidden": "true" }, icon("chevronRight")));
   return el("details", { class: "overview-action-picker" },
     el("summary", { class: "btn" + (sending ? " primary" : "") }, icon(action), label),
     el("div", { class: "asset-choices" }, el("p", { class: "label" }, label + " · choose an asset"),
@@ -532,7 +532,7 @@ function approvalRow(ss) {
     class: "row-item", type: "button", "data-key": "pay-approve-" + ss.id,
     onclick: () => openSession(ss.id),
   },
-  el("span", { class: "tx-ico out", "aria-hidden": "true" }, "↗"),
+  el("span", { class: "tx-ico out", "aria-hidden": "true" }, icon("send")),
   el("span", { class: "ri-main" }, el("span", { class: "ri-title" }, payTitle(ss)),
     el("span", { class: "ri-sub" }, "Zcash " + curNet().label + " · Proposed by " + proposer(ss)
       + " · " + when(ss.createdAt))),
@@ -619,7 +619,7 @@ function emptyNote(b) {
   return el("div", { class: "callout" }, curNet().faucet
     ? el("span", {}, "This wallet is empty. Share its address to receive ZEC, or get free "
       + "testnet ZEC from a ", el("a", { href: curNet().faucet, target: "_blank",
-      rel: "noopener" }, "faucet ↗"), ". " + FAUCET_TEXT)
+      rel: "noopener" }, "faucet", icon("external")), ". " + FAUCET_TEXT)
     : el("span", {}, "This wallet is empty. Share its address to receive ZEC. Keep it under "
       + capText(curNet().cap) + ": the app warns at that level. It cannot block deposits."));
 }
@@ -867,15 +867,15 @@ function sentRow(ss, flying) {
     class: "row-item", type: "button", "data-key": "pay-" + ss.id,
     "aria-current": ss.id === state.sid ? "true" : "false", onclick: () => openSession(ss.id),
   },
-  el("span", { class: "tx-ico out", "aria-hidden": "true" }, "↗"),
+  el("span", { class: "tx-ico out", "aria-hidden": "true" }, icon("send")),
   el("span", { class: "ri-main" }, el("span", { class: "ri-title" }, payTitle(ss)),
     el("span", { class: "ri-sub" }, "Zcash " + curNet().label + " · Proposed by " + proposer(ss)
       + " · " + when(ss.createdAt))),
   el("span", { class: "ri-end" }, money(leavesOf(ss), "md", "out"), chip),
-  el("span", { class: "chev" }, "›"));
+  el("span", { class: "chev" }, icon("chevronRight")));
 }
 
-const SOL_ICONS = { out: "↗", in: "↙", "": "↔" };
+const SOL_ICONS = { out: "send", in: "receive", "": "swap" };
 // A Solana row opens the Solana section, which holds its proposal, as solInboxRow does. An Add
 // SOL row reads like a received ZEC row: the chain and the slot, then who added it.
 function solActivityRow(r) {
@@ -886,13 +886,14 @@ function solActivityRow(r) {
   return el("button", {
     class: "row-item", type: "button", "data-key": "sol-act-" + r.id, onclick: openSolana,
   },
-  el("span", { class: "tx-ico " + (r.sign || "out"), "aria-hidden": "true" }, SOL_ICONS[r.sign]),
+  el("span", { class: "tx-ico " + (r.sign || "out"), "aria-hidden": "true" },
+    SOL_ICONS[r.sign] ? icon(SOL_ICONS[r.sign]) : null),
   el("span", { class: "ri-main" }, el("span", { class: "ri-title" }, r.title),
     subs.map((text) => el("span", { class: "ri-sub" }, text)),
     privacyBadge(el, r.added ? "public" : "unknown", r.added ? "Public transfer" : "Privacy in details")),
   el("span", { class: "ri-end" }, r.amount ? solAmount(r.amount, "md", r.sign) : null,
     el("span", { class: "badge " + r.tone }, r.word)),
-  el("span", { class: "chev" }, "›"));
+  el("span", { class: "chev" }, icon("chevronRight")));
 }
 
 // The memos of a received payment, for display. A memo that is not text says so.
@@ -901,7 +902,7 @@ export const ON_CHAIN = "On chain · shared with all devices";
 function receivedRow(r) {
   const memos = memoTexts(r);
   return el("a", { class: "row-item", href: curNet().explorer + r.txid, target: "_blank", rel: "noopener", title: "View in explorer" },
-    el("span", { class: "tx-ico in", "aria-hidden": "true" }, "↙"),
+    el("span", { class: "tx-ico in", "aria-hidden": "true" }, icon("receive")),
     el("span", { class: "ri-main" },
       el("span", { class: "ri-title" }, "Received ZEC"),
       el("span", { class: "ri-sub" }, "Zcash " + curNet().label + " · block\u00a0"
@@ -913,7 +914,7 @@ function receivedRow(r) {
       r.memo_pending && readsMemos(state.gid)
         ? el("span", { class: "ri-sub" }, "Memo not read yet") : null),
     el("span", { class: "ri-end" }, money(r.value, "md", "in"), el("span", { class: "badge " + (r.confirmed ? "ok" : "info") }, r.confirmed ? "Confirmed" : "Confirming")),
-    el("span", { class: "chev" }, "↗"));
+    el("span", { class: "chev" }, icon("external")));
 }
 
 // The Approvals inbox: the payments that wait for this browser, for the other signers or for the
@@ -964,7 +965,7 @@ function approvalRequest(ss, bucket, flying) {
       el("span", { class: "approval-request-status" }, flying.has(ss) ? "Waiting for a block"
         : bucket === "review" ? "Awaiting your approval" : [bucket === "waiting" ? "Waiting · " : "",
           statusChip(ss, approvalsDone(ss) === true)]),
-      el("span", { class: "approval-request-action" }, "Review transaction", el("span", { "aria-hidden": "true" }, "↗"))),
+      el("span", { class: "approval-request-action" }, "Review transaction", el("span", { "aria-hidden": "true" }, icon("external")))),
     el("span", { class: "approval-request-disclosure" }, "Proposed amount · verify recipient and total cost in review"));
 }
 
@@ -1011,17 +1012,17 @@ function solApprovalRequest(r) {
     el("span", { class: "approval-request-meta" }, "Solana Devnet · Proposed by " + proposer({ by: r.by })),
     el("span", { class: "approval-request-bottom" },
       el("span", { class: "approval-request-status" }, "Awaiting your approval"),
-      el("span", { class: "approval-request-action" }, "Review in Solana", el("span", { "aria-hidden": "true" }, "↗"))),
+      el("span", { class: "approval-request-action" }, "Review in Solana", el("span", { "aria-hidden": "true" }, icon("external")))),
     el("span", { class: "approval-request-disclosure" }, "Open Solana to inspect the complete proposal before approving."));
 }
 const solInboxRow = (r) => el("button", {
   class: "row-item", type: "button", "data-key": "sol-" + r.id, onclick: openSolana,
 },
-el("span", { class: "tx-ico out", "aria-hidden": "true" }, "↗"),
+el("span", { class: "tx-ico out", "aria-hidden": "true" }, icon("send")),
 el("span", { class: "ri-main" }, el("span", { class: "ri-title" }, r.title),
   el("span", { class: "ri-sub" }, "Solana Devnet · Proposed by " + proposer({ by: r.by }))),
 el("span", { class: "ri-end" }, el("span", { class: "badge warn" }, "Your approval")),
-el("span", { class: "chev" }, "›"));
+el("span", { class: "chev" }, icon("chevronRight")));
 
 // The payments of the open wallet by bucket. A payment whose facts cannot be read lands in
 // "attention", never out of the list. `lost`: the ids of approvals here that still hold Send
@@ -1388,7 +1389,7 @@ function technicalDetails() {
   };
   return el("details", { class: "preference-disclosure", open: open || null, ontoggle: toggle },
     el("summary", { class: "preference-row" }, settingsLabel("Technical wallet details", "Keys, wallet structure and verification information."),
-      el("span", { class: "preference-chevron", "aria-hidden": "true" }, "›")),
+      el("span", { class: "preference-chevron", "aria-hidden": "true" }, icon("chevronRight"))),
     open ? el("div", { class: "preference-detail" }, technicalBody()) : null);
 }
 

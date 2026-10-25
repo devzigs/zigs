@@ -701,7 +701,7 @@ function receiveTexts() {
     assert.ok(byText(box, "Zcash Testnet"), "the badge names the network of the wallet");
     assert.match(textOf(box), /Send only ZEC on Zcash Testnet to this address\./);
     assert.match(textOf(box), /becomes spendable after 3 confirmations\. Get free testnet ZEC/);
-    assert.match(textOf(box), /faucet ↗\. That site is not Zigs: it sees the address that you/,
+    assert.match(textOf(box), /faucet\. That site is not Zigs: it sees the address that you/,
       "the faucet note says what the faucet sees");
     assert.match(textOf(box), /Its public status lists each payout with a short form of the/,
       "and that the faucet publishes each payout");
@@ -787,7 +787,7 @@ function explorerTexts(chain) {
   assert.ok(pageText().includes(EXPLORER_NOTE), "the Activity list says what the explorer sees");
   t.ui.tab = "overview";
   assert.ok(!pageText().includes(EXPLORER_NOTE), "Overview has no received-history list");
-  assert.match(pageText(), /faucet ↗\. That site is not Zigs: it sees the address that you paste/,
+  assert.match(pageText(), /faucet\. That site is not Zigs: it sees the address that you paste/,
     "the empty ZEC card says what the faucet sees");
   // The dedicated Activity page keeps the explorer disclosure beyond the former six-row preview.
   const sessions = t.state.sessions;
@@ -1213,17 +1213,20 @@ function activityBadges(ctl) {
   ];
   const [mine, signed, done, open, late, failed] =
     ["pm", "ps", "px", "pc", "pe", "pd"].map(rowText);
-  assert.match(mine, /Create the nonce account for the move.*Your approval›$/,
+  assert.match(mine, /Create the nonce account for the move.*Your approval$/,
     "a proposal that a seat here can approve says so");
-  assert.match(signed, /Approved, executing›$/, "a signed payment is not executed yet");
-  assert.match(done, /−0\.002SOLExecuted›$/, "an executed payment");
-  assert.match(open, /Collecting approvals›$/, "a payment that waits for approvals");
-  assert.match(late, /−0\.002SOLExpired›$/, "a payment past its expiry reads Expired");
-  assert.match(rowText("pn"), /Expired›$/, "so does a nonce proposal past its window");
-  assert.match(failed, /Failed›$/);
-  assert.match(rowText("pv"), /Move the beta funds.*0\.003SOLFailed on chain›$/);
+  const row = findNode(pageTree(), (n) => n.attrs?.["data-key"] === "sol-act-pm");
+  assert.ok(findNode(row, (n) => n.attrs?.["data-icon"] === "chevronRight"
+    && n.attrs?.["aria-hidden"] === "true"), "activity chevrons are decorative SVG icons");
+  assert.match(signed, /Approved, executing$/, "a signed payment is not executed yet");
+  assert.match(done, /−0\.002SOLExecuted$/, "an executed payment");
+  assert.match(open, /Collecting approvals$/, "a payment that waits for approvals");
+  assert.match(late, /−0\.002SOLExpired$/, "a payment past its expiry reads Expired");
+  assert.match(rowText("pn"), /Expired$/, "so does a nonce proposal past its window");
+  assert.match(failed, /Failed$/);
+  assert.match(rowText("pv"), /Move the beta funds.*0\.003SOLFailed on chain$/);
   assert.doesNotMatch(rowText("pv") + rowText("pg"), /[−+]/, "the move of the funds has no sign");
-  assert.match(rowText("pg"), /Signed, sending›$/);
+  assert.match(rowText("pg"), /Signed, sending$/);
   // An Add SOL is SOL that arrived only when it is confirmed.
   const added = (status, slot) => {
     ctl.added = { seat: 1, amount: 20_000_000n, txId: "tx", status, slot, at: now };
@@ -1231,16 +1234,16 @@ function activityBadges(ctl) {
   };
   for (const status of ["confirmed", "finalized"]) {
     assert.match(added(status, "4500123"),
-      /^↙Received SOLSolana Devnet · slot.*Added by .*\+0\.02SOLConfirmed›$/, status);
+      /^Received SOLSolana Devnet · slot.*Added by .*\+0\.02SOLConfirmed$/, status);
   }
   for (const status of ["unknown", "pending"]) {
     const text = added(status, "");
-    assert.match(text, /^↔Add SOLSolana Devnet.*Sent by .*0\.02SOLNot confirmed yet›$/,
+    assert.match(text, /^Add SOLSolana Devnet.*Sent by .*0\.02SOLNot confirmed yet$/,
       "an Add SOL that is not confirmed reads Sent: " + status);
     assert.doesNotMatch(text, /Received|\+|slot/, status + " is no money that arrived");
   }
   const failedAdd = added("failed", "4500124");
-  assert.match(failedAdd, /^↔Add SOLSolana Devnet.*Tried by .*0\.02SOLFailed on chain›$/);
+  assert.match(failedAdd, /^Add SOLSolana Devnet.*Tried by .*0\.02SOLFailed on chain$/);
   assert.doesNotMatch(failedAdd, /Received|\+/);
   // One proposal has one proposer text, in the Approvals row and in the Activity row.
   ctl.added = null;
@@ -2436,7 +2439,7 @@ async function walkSteps(fields, times, fresh = true) {
 {
   const shown = (step) => atStep(step, () => shownText(dialogTree()));
   assert.match(shown(0),
-    /^Set up your wallet×.*Protect this browser.*Pause planContinue to approval rule$/s);
+    /^Set up your wallet.*Protect this browser.*Pause planContinue to approval rule$/s);
   assert.match(shown(1),
     new RegExp("Set the approval threshold.*Devices.*Approvals needed.*Any 2 of 3 devices must.*"
       + "How the approval threshold works.*"
