@@ -1,5 +1,53 @@
 
 
+# Gray UI — deferred technical dependencies
+
+Reviewed on 25 October 2026 against main
+`c6860f6fef9351531bd3a9c3a221600c49651035` and UI reference
+`78345496bb6438e22bfdbfbc484105df84c18c0d`.
+
+The [Gray UI PRD](gray-ui-prd.md) governs this continuation. Historical approvals below
+do not authorize engineering changes in this UI-only request.
+
+## Native funding and Swap previews — GUI-D01 / GUI-D02
+
+The remaining native demo experience depends on new runtime infrastructure in the reference:
+
+- `ios/Zigs/NativePreviews.swift` adds an observable session store, `WKWebView`, custom
+  asset-scheme handling, script messages, navigation/link handling, zoom synchronization
+  and teardown when the app locks.
+- `ios/NativePreviews/**` contains generated HTML, JavaScript, styles, fonts and assets.
+- `ios/project.yml` adds resource packaging and a generation-check build step, supported
+  by `scripts/build-native-previews.py` and `ios/check-previews.sh`.
+- Funding cards, Help entry, full-area Swap workspace and Overview Swap shortcuts depend
+  on those runtime types and resources.
+
+Do not import the bridge, store, asset loader, resource/build changes or dependent wiring
+under this request. The independent SwiftUI messaging walkthrough and post-formation card
+do not require them. Keep native Swap unavailable. A future separately scoped review must
+assess asset/network isolation, script messages, wallet-context disclosure, lock teardown,
+external navigation and build/resource lifecycle. No live Swap, native Solana or native
+personal-account implementation is implied by the visual reference.
+
+## Funding as a wallet-setup stage — GUI-D03
+
+The reference adds Funding to `SETUP_FLOW_STAGES`, invokes it automatically for the creator,
+lets its controls revisit guided setup, and describes a setup/activation payment. Keep
+main's explicitly optional separate demo, Zcash-only continuation when Solana is unfinished,
+existing disclosures and gates. No payment, activation fee, name registration or provider
+connection is implemented in this pass.
+
+## Preserved main improvements
+
+Do not reverse main's protection/storage fixes, WebAuthn availability, loaded-approval state,
+redraw/click scheduling, Solana key cache, recovery reminders, theme startup or test-runner
+restructuring. Preserve current beta/test-network, USD/USDC demo, Tor/direct-network,
+transparent-Zcash swap, memo-viewing and faucet-outage disclosures.
+
+No merge, automatic merge or deployment is authorized in this chat.
+
+---
+
 # Deferred engineering review
 
 ## Landing-page privacy popup — 23 October 2026

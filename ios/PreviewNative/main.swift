@@ -42,7 +42,7 @@ struct NativeCaptureScene: View {
         case "activity": .activity
         case "approvals", "empty": .approvals
         case "recipients": .addressBook
-        case "chats": .chats
+        case "chats", "messaging-account", "messaging-backup", "messaging-funding", "messaging-contact": .chats
         case "help": .help
         case "settings": .settings
         case "swap": .swap
@@ -64,6 +64,11 @@ struct NativeCaptureScene: View {
         case "help": NativeHelpView()
         case "settings": NativeSettingsView(openSettings: {}, recover: {})
         case "swap": UnavailableSwap()
+        case "prepared": NativePreparedCard(security: {}, overview: {})
+        case "messaging-account": NativeMessagingPreview(initialStep: 0)
+        case "messaging-backup": NativeMessagingPreview(initialStep: 1)
+        case "messaging-funding": NativeMessagingPreview(initialStep: 2)
+        case "messaging-contact": NativeMessagingPreview(initialStep: 3)
         case "setup": SetupView()
         case "create-name", "rule", "create-network", "create-review":
             let step = scene == "create-name" ? 0 : scene == "rule" ? 1 : scene == "create-network" ? 2 : 3
@@ -126,7 +131,7 @@ struct NativeCaptureScene: View {
         for (theme, scheme) in [("dark", ColorScheme.dark), ("light", ColorScheme.light)] {
             NSApplication.shared.appearance = NSAppearance(named: scheme == .dark ? .darkAqua : .aqua)
             for width in [320, 390, 768, 1200] {
-                for scene in ["welcome", "overview", "approvals", "empty", "activity", "security", "recipients", "chats", "help", "settings", "swap", "setup", "create-name", "rule", "create-network", "create-review", "review", "long-name", "large-amount"] {
+                for scene in ["welcome", "overview", "approvals", "empty", "activity", "security", "recipients", "chats", "help", "settings", "swap", "prepared", "messaging-account", "messaging-backup", "messaging-funding", "messaging-contact", "setup", "create-name", "rule", "create-network", "create-review", "review", "long-name", "large-amount"] {
                     let model = GroupModel()
                     model.previewInstall(empty: scene == "empty", setup: scene == "setup", longName: scene == "long-name")
                     let png = try render( NativeCaptureScene(scene: scene, width: CGFloat(width), model: model)
@@ -139,7 +144,7 @@ struct NativeCaptureScene: View {
             }
         }
         // Enlarged text is rendered with the native Dynamic Type environment.
-        for scene in ["overview", "security", "large-amount"] {
+        for scene in ["overview", "security", "large-amount", "prepared", "messaging-account", "messaging-backup", "messaging-funding", "messaging-contact"] {
             let model = GroupModel(); model.previewInstall()
             let png = try render( NativeCaptureScene(scene: scene, width: 390, model: model)
                 .environment(\.colorScheme, .dark).environment(\.dynamicTypeSize, .accessibility3)
