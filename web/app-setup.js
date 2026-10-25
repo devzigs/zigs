@@ -557,13 +557,13 @@ function mismatchPart() {
       "data-key": "they-differ", onclick: ask(true) }, "Codes don’t match"));
   }
   return el("div", { class: "callout bad", role: "alert" },
-    el("p", {}, "Stop the setup on this device? Then ask the other people to tap \"They don't "
-      + "match\" on their own devices too, and create a new wallet."),
+    el("p", {}, "Stop setup on this device? Ask the other people to choose “Codes don’t match” "
+      + "on their devices too, then create a new wallet together."),
     el("div", { class: "row-actions" },
-      el("button", { class: "btn danger", type: "button", "data-key": "stop-setup",
-        onclick: () => once("stop:" + gid, stopSetup) }, "Stop setup"),
       el("button", { class: "btn", type: "button", "data-key": "keep-checking",
-        onclick: ask(false) }, "Keep checking")));
+        onclick: ask(false) }, "Keep checking"),
+      el("button", { class: "btn danger", type: "button", "data-key": "stop-setup",
+        onclick: () => once("stop:" + gid, stopSetup) }, "Stop setup")));
 }
 
 const NOT_ZIP2005 = "This wallet is not built to ZIP 2005. Funds cannot be recovered if quantum "

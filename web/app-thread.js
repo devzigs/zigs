@@ -345,8 +345,8 @@ export function chatInviteCard(cid) {
     el("p", { class: "small muted" }, "Send this link to one person through a private channel. "
       + "Until they open it, anyone who has the link can join the chat. "
       + senderNote("your contact")),
-    el("div", { class: "row-actions" }, copyBtn(link, "Copy link", "btn sm primary"),
-      copyBtn(chatMessage(link), "Copy message", "btn sm")),
+    el("div", { class: "row-actions" }, copyBtn(link, "Copy chat link", "btn sm primary"),
+      copyBtn(chatMessage(link), "Copy invitation", "btn sm")),
     secretQr(link, "chat", true));
 }
 
@@ -370,7 +370,7 @@ export function leaveBox(cid) {
   return el("div", { class: "callout bad", role: "alert" },
     el("p", {}, "Leave this chat? It is removed from this browser only. The sealed messages stay "
       + "on the group server." + again),
-    el("div", { class: "dialog-actions" }, btn("leave-no", "btn", ask(false), "Cancel"),
+    el("div", { class: "dialog-actions" }, btn("leave-no", "btn", ask(false), "Keep chat"),
       btn("leave-yes", "btn danger", act(() => leaveChat(cid)), "Leave chat")));
 }
 
@@ -380,14 +380,21 @@ export function newChatDialog() {
     class: "dialog", role: "dialog", "aria-modal": "true", "aria-labelledby": "chat-title",
     onsubmit: act(async () => { ui.newChat = false; await createChat(); }),
   },
-  el("div", { class: "card-head" }, el("h2", { id: "chat-title" }, "New chat"),
+  el("div", { class: "card-head" }, el("h2", { id: "chat-title" }, "New direct chat"),
     el("button", { class: "icon-btn", type: "button", "aria-label": "Close", onclick: close },
       "×")),
   nameField("chat-name", "your contact"),
-  el("div", { class: "callout" }, "You get a contact link. Send it to one person. Then the two of "
-    + "you can write to each other."),
+  el("div", { class: "callout", id: "chat-invite-help" },
+    "Create an invite link, then share it privately with one person. "
+      + "Anyone with the link can join until your contact opens it."),
+  el("p", { class: "hint", id: "chat-create-availability" }, !Z
+    ? "The crypto engine must be available before Zigs can create a link. Check Browser status."
+    : !db ? "The relay connection is unavailable. Wait for it to reconnect before creating a link."
+      : canWrite === false ? "This browser cannot create a chat with the current relay access."
+        : "Messages use the encrypted relay and have no blockchain fee."),
   el("div", { class: "dialog-actions" },
     el("button", { class: "btn", type: "button", onclick: close }, "Cancel"),
     el("button", { class: "btn primary", type: "submit",
-      disabled: !Z || !db || canWrite === false }, "Create")));
+      "aria-describedby": "chat-invite-help chat-create-availability",
+      disabled: !Z || !db || canWrite === false }, "Create invite link")));
 }

@@ -213,18 +213,21 @@ function sideItem(g) {
 export function forgetBox() {
   const cancel = () => { ui.forget = false; render(); };
   return el("div", { class: "callout bad" },
-    el("p", {}, "Without the passkey, the key shares in this browser cannot be opened. Delete "
-      + "them, then restore each device from its backup file. A device with no backup is lost, "
-      + "but the wallet still works while enough other devices remain. Direct chats in this "
-      + "browser "
-      + "are deleted too. They are not in backup files, and a chat with two people cannot be "
-      + "joined again. The personal account is deleted as well. Only its backup file brings it "
-      + "back, and without one its money is lost. Saved payment recipients are deleted too; "
-      + "they are not included in recovery files."),
+    el("h2", { class: "ux-confirm-title" }, "Delete locked Zigs data?"),
+    el("p", {}, "Without the passkey, the encrypted data in this browser cannot be opened. "
+      + "Deleting the locked copy has these consequences:"),
+    el("ul", { class: "ux-consequences" },
+      el("li", {}, "Restore each signing device from its backup file. A share with no backup is lost; "
+        + "the wallet can still work if enough other devices remain."),
+      el("li", {}, "Direct chats are removed from this browser. They are not in backup files, "
+        + "and you cannot rejoin a two-person chat."),
+      el("li", {}, "The personal account is deleted as well. Only its backup file can restore it; "
+        + "without one, its money is lost."),
+      el("li", {}, "Saved payment recipients are removed. Recovery files do not include them.")),
     el("div", { class: "dialog-actions" },
-      el("button", { class: "btn", type: "button", onclick: cancel }, "Cancel"),
+      el("button", { class: "btn", type: "button", onclick: cancel }, "Keep locked data"),
       el("button", { class: "btn danger", type: "button", onclick: forgetVault },
-        "Delete the locked keys")));
+        "Delete locked data")));
 }
 
 export function lockView() {
@@ -256,7 +259,7 @@ function lockButton() {
   const can = protectionAvailable();
   return el("button", { class: "btn", type: "button", disabled: !can, onclick: protectThisDevice,
     title: can ? "Encrypt the key shares, personal account and saved recipients in this browser with a passkey"
-      : "This browser cannot enable passkey protection" }, "Lock with a passkey");
+      : "This browser cannot enable passkey protection" }, "Enable passkey protection");
 }
 
 let protectionPending = false, protectionError = "", skipProtectionAsk = null;
@@ -309,7 +312,7 @@ function skipProtectionConfirmation(context, onReady, allowed) {
       ev.preventDefault(); ev.stopPropagation(); cancelSkipProtection(context);
     } },
   el("div", { class: "skip-protection-heading" }, icon("unshield"),
-    el("h4", { id: title }, "Are you sure?")),
+    el("h4", { id: title }, "Continue without passkey protection?")),
   el("p", { id: description }, "Without a passkey, new signing shares and other local wallet data "
     + "are saved in this browser without Zigs’ passkey encryption. Someone with access to this "
     + "browser profile or its saved site data may be able to use this device’s share without "
@@ -321,7 +324,7 @@ function skipProtectionConfirmation(context, onReady, allowed) {
   protectionError ? el("p", { class: "callout bad", role: "alert" }, protectionError) : null,
   el("div", { class: "row-actions" },
     el("button", { class: "btn primary", type: "button", "data-key": "skip-back-" + context,
-      onclick: () => cancelSkipProtection(context) }, "Go back"),
+      onclick: () => cancelSkipProtection(context) }, "Back to protection"),
     el("button", { class: "btn", type: "button", disabled: !allowed,
       "data-key": "skip-confirm-" + context, "aria-describedby": description,
       onclick: accept }, "Continue without protection")));
@@ -1048,8 +1051,11 @@ function stepActions() {
   if (s === 0 && skipProtectionAsk === "create-first") return null;
   const off = offOf({ db: !!db, newSigner: true }, "why-create-submit");
   const entryReady = setupProtectionReady();
-  return el("div", { class: "dialog-actions" },
-    el("button", { class: "btn", type: "button", onclick: savePlanAndExit }, "Save and exit"),
+  return el("div", { class: "dialog-actions", "aria-describedby": "setup-plan-lifetime" },
+    el("p", { class: "small muted ux-plan-lifetime", id: "setup-plan-lifetime" },
+      "Your unfinished plan stays in this tab. Closing or reloading it clears the plan."),
+    el("button", { class: "btn", type: "button", "aria-describedby": "setup-plan-lifetime",
+      onclick: savePlanAndExit }, "Pause plan"),
     s > 0 ? el("button", { class: "btn", type: "button", onclick: backClick(s) }, "Back") : null,
     el("button", { class: "btn primary", type: "submit", "data-key": "create-continue",
       "data-first-focus": s === 0 && entryReady,

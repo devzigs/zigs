@@ -306,10 +306,11 @@ export function contactDialog() {
     class: "input", id: "oc-name", name: "name", maxlength: String(NAME_MAX), autocomplete: "off",
     required: true,
   }), el("span", { class: "hint" }, "Only you see this name.")),
-  el("label", { class: "field" }, el("span", {}, "Shielded address"), el("input", {
+  el("label", { class: "field" }, el("span", {}, "Contact’s shielded address"), el("input", {
     class: "input mono", id: "oc-addr", name: "address", placeholder: net.prefix + "…",
-    autocomplete: "off", spellcheck: "false", required: true,
-  })),
+    autocomplete: "off", spellcheck: "false", required: true, "aria-describedby": "contact-address-help",
+  }), el("span", { class: "hint", id: "contact-address-help" },
+    "Use their full Zcash " + net.label + " shielded address. Confirm it with them first.")),
   el("div", { class: "callout" }, "Next, Zigs shows an address for this contact. Give it to them. "
     + "A message to that address shows in this chat."),
   el("div", { class: "dialog-actions" },

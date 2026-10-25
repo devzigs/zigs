@@ -483,7 +483,8 @@ step("a read of a wallet that closed shows no banner and writes no count");
   assert.match(PROVER_TEXT, /the secret that links each spend to its notes/);
   assert.match(shown("send-public"), /hides the amount, but it shows the owner key of the payee/);
   assert.match(shown("fee-text"), /asks Helius for the balance of this address with your IP/);
-  assert.match(shown("rent"), /The cancel is public.*"Look for rent" asks Helius .* your IP/);
+  assert.match(shown("rent"),
+    /The cancel is public.*"Find reclaimable rent" asks Helius .* your IP/);
   assert.match(shown("add-sol-text"), /amount and the sender are public.*IP address/);
   assert.equal(shown("pool-upgrade"), "2kgbLowvCQuMWxDKbHUZAURycziuRrvmtTuDEYMGMRsj");
   assert.equal(shown("pool-protocol"), "263Kgjft9NezaYTspFquMbAhgRf7xfAiyusaweLowdXo");

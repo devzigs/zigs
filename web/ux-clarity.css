@@ -1,0 +1,44 @@
+/* Action hierarchy and readable guidance; DOM order remains keyboard and visual order. */
+.ux-flow-summary { padding:12px 14px; border-inline-start:2px solid var(--accent-text);
+  border-radius:0 10px 10px 0; background:var(--accent-soft); line-height:1.65; }
+.ux-confirm-title { font:var(--font-section); margin:0; }
+.ux-consequences { display:grid; gap:10px; padding-inline-start:22px; margin:12px 0;
+  font:var(--font-notice); line-height:1.65; }
+.ux-plan-lifetime { flex-basis:100%; grid-column:1/-1; max-width:70ch; margin:0;
+  padding-inline:4px; line-height:1.5; }
+.dialog-actions>.btn,.ux-form-actions>.btn { min-height:48px; flex:0 1 auto; }
+.dialog-actions>.btn.primary,.ux-form-actions>.btn.primary { min-width:144px; }
+.ux-form-actions { justify-content:flex-end; padding-top:8px; }
+.dialog-actions>.off-why { text-align:start; }
+.dialog:not(.guided-plan,.home-how-dialog)>.card-head {
+  position:sticky; top:0; z-index:3; background:var(--sheet);
+}
+/* Keep form actions reachable while reading long fields; payment reviews stay in document flow. */
+form.dialog:not(.guided-plan)>.dialog-actions:last-child {
+  position:sticky; bottom:0; z-index:2; background:var(--sheet);
+  padding-block:14px; border-top:1px solid var(--line);
+}
+.dialog { scroll-padding-block:84px 120px; }
+.dialog :is(input,textarea,select) { scroll-margin-block:80px 120px; }
+.dialog .field>.hint { line-height:1.6; }
+
+@media(max-width:600px) {
+  .dialog-actions>.btn,.ux-form-actions>.btn { flex:1 1 120px; padding-inline:12px; }
+  .dialog-actions>.btn.primary,.ux-form-actions>.btn.primary { min-width:0; }
+  .guided-plan>.dialog-actions { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); }
+  .guided-plan>.dialog-actions>.btn { width:100%; min-width:0; }
+  .guided-plan>.dialog-actions:has(>button:nth-of-type(3))>.btn.primary { grid-column:1/-1; }
+  .guided-plan>.dialog-actions>.off-why { grid-column:1/-1; }
+  .ux-plan-lifetime { font-size:12px; }
+  form.dialog:not(.guided-plan)>.dialog-actions:last-child {
+    padding-bottom:calc(14px + env(safe-area-inset-bottom));
+  }
+}
+/* Short windows need scrolling room more than sticky chrome. */
+@media(max-height:520px) {
+  .dialog:not(.home-how-dialog)>.card-head,
+  form.dialog:not(.guided-plan)>.dialog-actions:last-child { position:static; }
+}
+@media(forced-colors:active) {
+  .ux-flow-summary { background:Canvas; color:CanvasText; border-color:Highlight; }
+}

@@ -72,12 +72,12 @@ t.adoptPersonal({ damaged: true });
 assert.ok(ks.recipientsError, "the address book is damaged");
 assert.equal(isOff(createNew(reviewTree(move))), true, "Change devices waits for a choice");
 tap(byKey(reviewTree(move), "skip-device-move"), "Skip for now in Change devices");
-assert.match(text(reviewTree(move)), /Are you sure\?/);
+assert.match(text(reviewTree(move)), /Continue without passkey protection\?/);
 tap(byKey(reviewTree(move), "skip-confirm-move"), "Continue without protection");
 assert.equal(isOff(createNew(reviewTree(move))), false, "Change devices goes on after Skip");
 await resetChoice();
 tap(byKey(reviewTree(), "skip-device-create-first"), "Skip for now in the create dialog");
-assert.match(text(reviewTree()), /Are you sure\?/);
+assert.match(text(reviewTree()), /Continue without passkey protection\?/);
 tap(byKey(reviewTree(), "skip-confirm-create-first"), "Continue without protection");
 assert.equal(ui.createStep, 1, "a damaged book and account do not stop Skip for now");
 assert.equal(storage.get(ks.RECIPIENTS_KEY), BOOK, "the damaged book stays as it is");
@@ -109,7 +109,7 @@ storage.delete("zf-vault");
 ks.setVault(null);
 // The lock of Settings needs no Web Locks, as on main.
 delete navigator.locks;
-const lock = withDocument(browserSettings).map((g) => button(g, "Lock with a passkey"))
+const lock = withDocument(browserSettings).map((g) => button(g, "Enable passkey protection"))
   .find(Boolean);
 assert.ok(lock && !isOff(lock), "Lock with a passkey is on without Web Locks");
 Object.defineProperty(globalThis, "navigator", { configurable: true, value: fakePasskey() });

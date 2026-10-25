@@ -711,7 +711,8 @@ function receiveTexts() {
       "and where else to get test coins");
     assert.ok(!byText(box, "Share address"), "no Share button without Web Share");
     const first = findNode(box, (n) => n.attrs?.["data-first-focus"] !== undefined);
-    assert.equal(first && textOf(first), "Copy address", "the dialog opens on Copy address");
+    assert.equal(first?.attrs["aria-label"], "Close",
+      "Receive starts at the top with Close, preserving initial QR visibility");
     // Web Share gets the address alone. A closed sheet is no error; a failure says so.
     let shared = null, refusal = null;
     const answer = { catch: (fn) => (refusal ? fn(refusal) : undefined) };
@@ -823,7 +824,7 @@ function explorerTexts(chain) {
 // A link with a secret sits in the disclosure of its QR code, which starts closed. While it is
 // closed, neither its summary nor any attribute shows the secret. Copy link stays outside the
 // disclosure and copies the whole link. `where` names the card in the messages.
-function hiddenLink(page, link, where, label = "Show link and QR code") {
+function hiddenLink(page, link, where, label = "Show link and QR code", copyLabel = "Copy link") {
   const secret = link.split("#")[1], say = (m) => where + ": " + m;
   const nav = Object.getOwnPropertyDescriptor(globalThis, "navigator");
   const box = findNode(page, (n) => n.className === "qr-toggle");
@@ -835,8 +836,8 @@ function hiddenLink(page, link, where, label = "Show link and QR code") {
   const leaks = (n) => [n.className, n.innerHTML, ...Object.values(n.attrs ?? {})]
     .some((v) => String(v ?? "").includes(secret)) || (n.kids ?? []).some(leaks);
   assert.ok(!leaks(page), say("no attribute holds the wallet secret"));
-  const copy = findNode(page, (n) => !!n.on?.click && textOf(n) === "Copy link");
-  assert.ok(copy && !byText(box, "Copy link"),
+  const copy = findNode(page, (n) => !!n.on?.click && textOf(n) === copyLabel);
+  assert.ok(copy && !byText(box, copyLabel),
     say("Copy link stays on the page, outside the disclosure"));
   const copied = [];
   try {
@@ -1621,7 +1622,7 @@ assert.match(pageText(), /Private setup invitation2 devices to join/, "two open 
   try {
     const card = chatInviteCard(cid);
     assert.match(textOf(card), SENDER, "the invite card of a chat");
-    hiddenLink(card, chatLink(cid), "the chat card");
+    hiddenLink(card, chatLink(cid), "the chat card", "Show link and QR code", "Copy chat link");
     assert.match(textOf(card), /The browser of your contact asks/);
     const open = appState.state.cid;
     appState.state.cid = cid;
@@ -2314,9 +2315,9 @@ async function walkSteps(fields, times, fresh = true) {
   assert.equal(t.state.gid, gid, "a second Enter on the names step creates nothing");
   assert.equal(ui.createStep, 3, "and leaves the review on screen");
   ui.sol = false;
-  byText(dialogTree(), "Save and exit").on.click();
+  byText(dialogTree(), "Pause plan").on.click();
   assert.deepEqual([ui.createStep, ui.createDraft], [0, null],
-    "Save and exit closes the active plan");
+    "Pause plan closes the active plan");
   assert.equal(ui.sol, undefined, "The closed form forgets its active Solana choice");
   await walkSteps({ ...fields, "g-n": { value: "9" } }, 2);
   assert.equal(ui.createStep, 1, "Next checks the rule");
@@ -2435,11 +2436,11 @@ async function walkSteps(fields, times, fresh = true) {
 {
   const shown = (step) => atStep(step, () => shownText(dialogTree()));
   assert.match(shown(0),
-    /^Set up your wallet×.*Protect this browser.*Save and exitContinue to approval rule$/s);
+    /^Set up your wallet×.*Protect this browser.*Pause planContinue to approval rule$/s);
   assert.match(shown(1),
     new RegExp("Set the approval threshold.*Devices.*Approvals needed.*Any 2 of 3 devices must.*"
       + "How the approval threshold works.*"
-      + "Save and exitBackUse this arrangement$", "s"));
+      + "Pause planBackUse this arrangement$", "s"));
   assert.match(shown(2),
     /Set up this device.*This device's label.*Wallet name.*Network.*BackContinue$/s);
   ui.createDraft = { n: 4, t: 3, name: "Team", label: "Ana's phone", sol: true };
@@ -2740,11 +2741,14 @@ await plainSetupBrowser();
     // They don't match: a second question, then the stop of every seat of this browser.
     assert.equal(creates(), true, "before a stop, seat 1 may build the wallet");
     button("Codes don’t match").on.click();
-    assert.match(seen(), /Stop the setup on this device\? Then ask the other people to tap/);
+    assert.match(seen(), new RegExp("Stop setup on this device\\? Ask the other people to "
+      + "choose “Codes don’t match”"));
     assert.equal(button("Keep checking").attrs["data-key"], "keep-checking",
       "the question gives the focus to Keep checking");
+    assert.ok(seen().lastIndexOf("Keep checking") < seen().lastIndexOf("Stop setup"),
+      "the safe return appears before the destructive confirmation");
     button("Keep checking").on.click();
-    assert.doesNotMatch(seen(), /Stop the setup on this device/, "Keep checking goes back");
+    assert.doesNotMatch(seen(), /Stop setup on this device/, "Keep checking goes back");
     t.secrets[k2] = { ...kept[2], keyPackage: undefined, confirmed: undefined,
       checkedWallet: undefined };
     button("Codes don’t match").on.click();
@@ -3080,7 +3084,8 @@ assert.equal(quickCode(null), null);
     const brand = findNode(card, (n) => n.className === "welcome-brand");
     const mark = findNode(brand, (n) => n.tag === "img");
     assert.equal(brand.attrs["aria-hidden"], "true", "the brand object adds no security claim");
-    assert.equal(mark.attrs.src, "/logo.png?v=e2a70c42", "the original zebra artwork is reused");
+    assert.equal(mark.attrs.src, "/assets/brand/hero-zebra.png?v=e2a70c42c377",
+      "the original zebra artwork is reused separately from the fingerprint header logo");
     assert.equal(mark.attrs.alt, "", "the repeated decorative logo has no spoken label");
     assert.equal(findNode(brand, (n) => n.className === "welcome-object-caption"), null,
       "the zebra stands alone without a repeated shared-wallet caption");

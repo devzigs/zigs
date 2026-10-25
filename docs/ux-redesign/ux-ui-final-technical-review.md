@@ -11,6 +11,11 @@ do not authorize engineering changes in this UI-only request.
 
 ## Latest web design working-copy migration — 25 October 2026
 
+The later [web flow UX audit](gray-ui-ux-audit.md) clarifies that a pre-creation plan lives only
+in its open tab. Surviving tab closure or reload would require a separately reviewed persistence
+and state-lifecycle change. This pass changes the action to Pause plan and explains its lifetime;
+it does not add durable plan storage or alter setup, recovery or authorization behavior.
+
 The actual local `codex/ux-ui-final` checkout contains a later uncommitted design pass not
 present in remote commit `78345496`: Manrope, new web branding/icons, neutral surfaces,
 refined controls and the five illustrated guide journeys. The Gray UI migration imports

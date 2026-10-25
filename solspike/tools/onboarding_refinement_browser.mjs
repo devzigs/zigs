@@ -424,7 +424,8 @@ async function savedBackupCheck(p) {
   await button(p, "Save ZEC backup").click();
   const passphrase = "synthetic local recovery check 4728 only";
   await p.locator("#bk-pass").fill(passphrase); await p.locator("#bk-again").fill(passphrase);
-  const pending = p.waitForEvent("download"); await button(p, "Encrypt and save").click();
+  const pending = p.waitForEvent("download");
+  await button(p, phase === "before" ? "Encrypt and save" : "Encrypt and save file").click();
   const file = await pending, path = await file.path();
   await p.locator(".dialog").waitFor({ state: "hidden" });
   check(await p.locator(".setup-completion-actions").innerText().then((t) => t.includes(

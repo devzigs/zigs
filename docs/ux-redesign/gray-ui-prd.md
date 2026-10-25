@@ -5,6 +5,8 @@
 The migration below was delivered at `825bf96`. The later request to elevate motion,
 iconography and fluidity is implemented and specified in the
 [page-by-page premium review](gray-ui-premium-review.md), with its own scope and evidence audit.
+The subsequent [complete web flow UX audit](gray-ui-ux-audit.md) implements clearer action
+language, button order and contextual explanations while preserving the same safeguards.
 
 ## Goal and authoritative sources
 

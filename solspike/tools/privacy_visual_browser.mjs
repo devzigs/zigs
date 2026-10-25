@@ -146,7 +146,8 @@ async function privacyChecks(scene) {
   }
   if (scene === "zec-review-mismatch") {
     assert.equal(await page.locator(".privacy-shielded").count(), 0);
-    assert.equal(await page.getByRole("button", { name: "Propose payment",
+    assert.equal(await page.getByRole("button", { name: phase === "before"
+      ? "Propose payment" : "Request approvals",
       exact: true }).count(), 0);
   }
   if (scene === "zec-review") assert.equal(await page.locator(".privacy-shielded").count(), 1);

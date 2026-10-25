@@ -300,7 +300,7 @@ function memoHint(hint, memo) {
 }
 
 // The optional memo of one recipient.
-const MEMO_LABEL = "Memo (optional)";
+const MEMO_LABEL = "Recipient memo (optional)";
 function memoBox(r, n) {
   const hintId = "s-memo-hint-" + r.k, hint = el("span", { class: "hint", id: hintId });
   const memo = el("input", {
@@ -713,14 +713,14 @@ export function sendDialog() {
           },
         }, "Add recipient"),
         pasteList(net))),
-    el("label", { class: "field" }, el("span", {}, "Note for the devices (optional)"),
+    el("label", { class: "field" }, el("span", {}, "Wallet note (optional)"),
       el("input", {
         class: "input", id: "s-note", name: "note", type: "text", maxlength: "80",
         placeholder: rows.length > 1 ? "October payroll" : "Pay the audit firm",
         autocomplete: "off", value: ui.note, oninput: (ev) => { ui.note = ev.target.value; },
       }),
-      el("span", { class: "hint" }, "Encrypted. The devices of this wallet, and anyone else who "
-        + "has the invite link, can read it.")),
+      el("span", { class: "hint" }, "Encrypted and separate from the recipient memo. "
+        + "This wallet’s devices and anyone with its invite link can read it.")),
     el("p", { class: "small faint" }, "A memo goes on chain with the payment. Its recipient, "
       + "the devices of this wallet, and anyone else who has the invite link can read it. A "
       + "device that Change devices leaves out later can still read it."),
@@ -745,7 +745,7 @@ function sendFoot(why) {
       el("button", {
         class: "btn primary", type: "submit", disabled: !Z || !!why,
         "aria-describedby": why ? "why-send" : null,
-      }, ui.after ? "Propose payment" : "Review payment"),
+      }, ui.after ? "Request approvals" : "Review payment"),
       why ? el("span", { class: "off-why", id: "why-send" }, why) : null)];
 }
 
@@ -784,13 +784,15 @@ function reviewDialog() {
   reviewFacts(ins, note),
   securityExplanation("payment-review"),
   ...privacyNotes(),
-  el("p", { class: "small faint" }, EXPIRY_NOTE + " Proposing asks the devices to approve; it "
-    + "does not sign or send the payment."),
+  el("p", { class: "small faint" }, EXPIRY_NOTE),
+  el("p", { class: "small ux-flow-summary", id: "proposal-help" },
+    "Requesting approvals shares this payment with the wallet’s devices. It does not sign or send it."),
   el("div", { class: "dialog-actions" },
     el("button", { class: "btn", type: "button",
       onclick: () => { ui.sendReview = null; clearNotice(); render(); } }, "Back to edit"),
     ok ? el("button", { class: "btn primary", type: "button", disabled: !!ui.proposing,
-      onclick: inDialog(() => proposeReviewed(ui.sendReview)) }, "Propose payment") : null));
+      "aria-describedby": "proposal-help",
+      onclick: inDialog(() => proposeReviewed(ui.sendReview)) }, "Request approvals") : null));
 }
 
 const moveAmount = () => curChain()?.bal?.max_send ?? 0;
@@ -810,7 +812,8 @@ function moveDialog() {
   el("div", { class: "review-hero" }, el("span", { class: "label" }, "Moves"),
     money(shown.amount, "lg"), el("span", { class: "small muted" },
       "to " + groupName(to) + ", the wallet that replaces this one")),
-  el("p", { class: "small muted" }, "Like any payment, this needs " + state.g.t + " approvals."
+  el("p", { class: "small muted" }, "This requests " + state.g.t
+    + " approvals; it does not move funds yet."
     + (solOn() ? " " + SOL_STAYS : "")),
   securityExplanation("payment-review"),
   ...privacyNotes(true),
@@ -820,7 +823,7 @@ function moveDialog() {
     el("button", { class: "btn primary", type: "button", disabled: !!why,
       "aria-describedby": why ? "why-move" : null,
       onclick: inDialog(async () => { await proposeMoveNow(after, shown); endSend(); }) },
-    "Propose the move"),
+    "Request move approvals"),
     why ? el("span", { class: "off-why", id: "why-move" }, why) : null));
 }
 
@@ -857,7 +860,7 @@ function reviewFacts(ins, note) {
     : "Network fee"), el("dd", {}, money(ins.fee))] : null;
   return el("dl", { class: "kv" }, fee, el("dt", {}, "Approvals needed"),
     el("dd", {}, state.g.t + " of " + state.g.n),
-    note ? [el("dt", {}, "Note for the devices"), el("dd", {}, note)] : null);
+    note ? [el("dt", {}, "Wallet note"), el("dd", {}, note)] : null);
 }
 
 function reviewRow(p, i, n) {

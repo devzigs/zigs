@@ -1,0 +1,2979 @@
+{
+  "checks": [
+    "setup-protection 320 dark: readable without horizontal overflow",
+    "setup-protection 320 dark: descriptions resolve: ",
+    "setup-protection 320 dark: actions retain usable touch targets",
+    "setup-protection 320 dark: CSS does not reverse keyboard action order",
+    "setup-rule 320 dark: readable without horizontal overflow",
+    "setup-rule 320 dark: descriptions resolve: ",
+    "setup-rule 320 dark: actions retain usable touch targets",
+    "setup-rule 320 dark: CSS does not reverse keyboard action order",
+    "setup-labels 320 dark: readable without horizontal overflow",
+    "setup-labels 320 dark: descriptions resolve: ",
+    "setup-labels 320 dark: actions retain usable touch targets",
+    "setup-labels 320 dark: CSS does not reverse keyboard action order",
+    "setup-review 320 dark: readable without horizontal overflow",
+    "setup-review 320 dark: descriptions resolve: ",
+    "setup-review 320 dark: actions retain usable touch targets",
+    "setup-review 320 dark: CSS does not reverse keyboard action order",
+    "replacement-wallet 320 dark: readable without horizontal overflow",
+    "replacement-wallet 320 dark: descriptions resolve: ",
+    "replacement-wallet 320 dark: actions retain usable touch targets",
+    "replacement-wallet 320 dark: CSS does not reverse keyboard action order",
+    "backup-save 320 dark: readable without horizontal overflow",
+    "backup-save 320 dark: descriptions resolve: ",
+    "backup-save 320 dark: actions retain usable touch targets",
+    "backup-save 320 dark: CSS does not reverse keyboard action order",
+    "backup-check 320 dark: readable without horizontal overflow",
+    "backup-check 320 dark: descriptions resolve: ",
+    "backup-check 320 dark: actions retain usable touch targets",
+    "backup-check 320 dark: CSS does not reverse keyboard action order",
+    "backup-restore 320 dark: readable without horizontal overflow",
+    "backup-restore 320 dark: descriptions resolve: ",
+    "backup-restore 320 dark: actions retain usable touch targets",
+    "backup-restore 320 dark: CSS does not reverse keyboard action order",
+    "direct-chat-create 320 dark: readable without horizontal overflow",
+    "direct-chat-create 320 dark: descriptions resolve: ",
+    "direct-chat-create 320 dark: actions retain usable touch targets",
+    "direct-chat-create 320 dark: CSS does not reverse keyboard action order",
+    "direct-chat-invite 320 dark: readable without horizontal overflow",
+    "direct-chat-invite 320 dark: descriptions resolve: ",
+    "direct-chat-invite 320 dark: actions retain usable touch targets",
+    "direct-chat-invite 320 dark: CSS does not reverse keyboard action order",
+    "direct-chat-leave 320 dark: readable without horizontal overflow",
+    "direct-chat-leave 320 dark: descriptions resolve: ",
+    "direct-chat-leave 320 dark: actions retain usable touch targets",
+    "direct-chat-leave 320 dark: CSS does not reverse keyboard action order",
+    "contact-create 320 dark: readable without horizontal overflow",
+    "contact-create 320 dark: descriptions resolve: ",
+    "contact-create 320 dark: actions retain usable touch targets",
+    "contact-create 320 dark: CSS does not reverse keyboard action order",
+    "locked-data-delete 320 dark: readable without horizontal overflow",
+    "locked-data-delete 320 dark: descriptions resolve: ",
+    "locked-data-delete 320 dark: actions retain usable touch targets",
+    "locked-data-delete 320 dark: CSS does not reverse keyboard action order",
+    "send-entry 320 dark: readable without horizontal overflow",
+    "send-entry 320 dark: descriptions resolve: ",
+    "send-entry 320 dark: actions retain usable touch targets",
+    "send-entry 320 dark: CSS does not reverse keyboard action order",
+    "payment-review 320 dark: readable without horizontal overflow",
+    "payment-review 320 dark: descriptions resolve: ",
+    "payment-review 320 dark: actions retain usable touch targets",
+    "payment-review 320 dark: CSS does not reverse keyboard action order",
+    "payment-mismatch 320 dark: readable without horizontal overflow",
+    "payment-mismatch 320 dark: descriptions resolve: ",
+    "payment-mismatch 320 dark: actions retain usable touch targets",
+    "payment-mismatch 320 dark: CSS does not reverse keyboard action order",
+    "receive 320 dark: readable without horizontal overflow",
+    "receive 320 dark: descriptions resolve: ",
+    "receive 320 dark: actions retain usable touch targets",
+    "receive 320 dark: CSS does not reverse keyboard action order",
+    "address-book 320 dark: readable without horizontal overflow",
+    "address-book 320 dark: descriptions resolve: ",
+    "address-book 320 dark: actions retain usable touch targets",
+    "address-book 320 dark: CSS does not reverse keyboard action order",
+    "settings 320 dark: readable without horizontal overflow",
+    "settings 320 dark: descriptions resolve: ",
+    "settings 320 dark: actions retain usable touch targets",
+    "settings 320 dark: CSS does not reverse keyboard action order",
+    "network-privacy 320 dark: readable without horizontal overflow",
+    "network-privacy 320 dark: descriptions resolve: ",
+    "network-privacy 320 dark: actions retain usable touch targets",
+    "network-privacy 320 dark: CSS does not reverse keyboard action order",
+    "setup-protection 390 dark: readable without horizontal overflow",
+    "setup-protection 390 dark: descriptions resolve: ",
+    "setup-protection 390 dark: actions retain usable touch targets",
+    "setup-protection 390 dark: CSS does not reverse keyboard action order",
+    "setup-rule 390 dark: readable without horizontal overflow",
+    "setup-rule 390 dark: descriptions resolve: ",
+    "setup-rule 390 dark: actions retain usable touch targets",
+    "setup-rule 390 dark: CSS does not reverse keyboard action order",
+    "setup-labels 390 dark: readable without horizontal overflow",
+    "setup-labels 390 dark: descriptions resolve: ",
+    "setup-labels 390 dark: actions retain usable touch targets",
+    "setup-labels 390 dark: CSS does not reverse keyboard action order",
+    "setup-review 390 dark: readable without horizontal overflow",
+    "setup-review 390 dark: descriptions resolve: ",
+    "setup-review 390 dark: actions retain usable touch targets",
+    "setup-review 390 dark: CSS does not reverse keyboard action order",
+    "replacement-wallet 390 dark: readable without horizontal overflow",
+    "replacement-wallet 390 dark: descriptions resolve: ",
+    "replacement-wallet 390 dark: actions retain usable touch targets",
+    "replacement-wallet 390 dark: CSS does not reverse keyboard action order",
+    "backup-save 390 dark: readable without horizontal overflow",
+    "backup-save 390 dark: descriptions resolve: ",
+    "backup-save 390 dark: actions retain usable touch targets",
+    "backup-save 390 dark: CSS does not reverse keyboard action order",
+    "backup-check 390 dark: readable without horizontal overflow",
+    "backup-check 390 dark: descriptions resolve: ",
+    "backup-check 390 dark: actions retain usable touch targets",
+    "backup-check 390 dark: CSS does not reverse keyboard action order",
+    "backup-restore 390 dark: readable without horizontal overflow",
+    "backup-restore 390 dark: descriptions resolve: ",
+    "backup-restore 390 dark: actions retain usable touch targets",
+    "backup-restore 390 dark: CSS does not reverse keyboard action order",
+    "direct-chat-create 390 dark: readable without horizontal overflow",
+    "direct-chat-create 390 dark: descriptions resolve: ",
+    "direct-chat-create 390 dark: actions retain usable touch targets",
+    "direct-chat-create 390 dark: CSS does not reverse keyboard action order",
+    "direct-chat-invite 390 dark: readable without horizontal overflow",
+    "direct-chat-invite 390 dark: descriptions resolve: ",
+    "direct-chat-invite 390 dark: actions retain usable touch targets",
+    "direct-chat-invite 390 dark: CSS does not reverse keyboard action order",
+    "direct-chat-leave 390 dark: readable without horizontal overflow",
+    "direct-chat-leave 390 dark: descriptions resolve: ",
+    "direct-chat-leave 390 dark: actions retain usable touch targets",
+    "direct-chat-leave 390 dark: CSS does not reverse keyboard action order",
+    "contact-create 390 dark: readable without horizontal overflow",
+    "contact-create 390 dark: descriptions resolve: ",
+    "contact-create 390 dark: actions retain usable touch targets",
+    "contact-create 390 dark: CSS does not reverse keyboard action order",
+    "locked-data-delete 390 dark: readable without horizontal overflow",
+    "locked-data-delete 390 dark: descriptions resolve: ",
+    "locked-data-delete 390 dark: actions retain usable touch targets",
+    "locked-data-delete 390 dark: CSS does not reverse keyboard action order",
+    "send-entry 390 dark: readable without horizontal overflow",
+    "send-entry 390 dark: descriptions resolve: ",
+    "send-entry 390 dark: actions retain usable touch targets",
+    "send-entry 390 dark: CSS does not reverse keyboard action order",
+    "payment-review 390 dark: readable without horizontal overflow",
+    "payment-review 390 dark: descriptions resolve: ",
+    "payment-review 390 dark: actions retain usable touch targets",
+    "payment-review 390 dark: CSS does not reverse keyboard action order",
+    "payment-mismatch 390 dark: readable without horizontal overflow",
+    "payment-mismatch 390 dark: descriptions resolve: ",
+    "payment-mismatch 390 dark: actions retain usable touch targets",
+    "payment-mismatch 390 dark: CSS does not reverse keyboard action order",
+    "receive 390 dark: readable without horizontal overflow",
+    "receive 390 dark: descriptions resolve: ",
+    "receive 390 dark: actions retain usable touch targets",
+    "receive 390 dark: CSS does not reverse keyboard action order",
+    "address-book 390 dark: readable without horizontal overflow",
+    "address-book 390 dark: descriptions resolve: ",
+    "address-book 390 dark: actions retain usable touch targets",
+    "address-book 390 dark: CSS does not reverse keyboard action order",
+    "settings 390 dark: readable without horizontal overflow",
+    "settings 390 dark: descriptions resolve: ",
+    "settings 390 dark: actions retain usable touch targets",
+    "settings 390 dark: CSS does not reverse keyboard action order",
+    "network-privacy 390 dark: readable without horizontal overflow",
+    "network-privacy 390 dark: descriptions resolve: ",
+    "network-privacy 390 dark: actions retain usable touch targets",
+    "network-privacy 390 dark: CSS does not reverse keyboard action order",
+    "setup-protection 1440 dark: readable without horizontal overflow",
+    "setup-protection 1440 dark: descriptions resolve: ",
+    "setup-protection 1440 dark: actions retain usable touch targets",
+    "setup-protection 1440 dark: CSS does not reverse keyboard action order",
+    "setup-rule 1440 dark: readable without horizontal overflow",
+    "setup-rule 1440 dark: descriptions resolve: ",
+    "setup-rule 1440 dark: actions retain usable touch targets",
+    "setup-rule 1440 dark: CSS does not reverse keyboard action order",
+    "setup-labels 1440 dark: readable without horizontal overflow",
+    "setup-labels 1440 dark: descriptions resolve: ",
+    "setup-labels 1440 dark: actions retain usable touch targets",
+    "setup-labels 1440 dark: CSS does not reverse keyboard action order",
+    "setup-review 1440 dark: readable without horizontal overflow",
+    "setup-review 1440 dark: descriptions resolve: ",
+    "setup-review 1440 dark: actions retain usable touch targets",
+    "setup-review 1440 dark: CSS does not reverse keyboard action order",
+    "replacement-wallet 1440 dark: readable without horizontal overflow",
+    "replacement-wallet 1440 dark: descriptions resolve: ",
+    "replacement-wallet 1440 dark: actions retain usable touch targets",
+    "replacement-wallet 1440 dark: CSS does not reverse keyboard action order",
+    "backup-save 1440 dark: readable without horizontal overflow",
+    "backup-save 1440 dark: descriptions resolve: ",
+    "backup-save 1440 dark: actions retain usable touch targets",
+    "backup-save 1440 dark: CSS does not reverse keyboard action order",
+    "backup-check 1440 dark: readable without horizontal overflow",
+    "backup-check 1440 dark: descriptions resolve: ",
+    "backup-check 1440 dark: actions retain usable touch targets",
+    "backup-check 1440 dark: CSS does not reverse keyboard action order",
+    "backup-restore 1440 dark: readable without horizontal overflow",
+    "backup-restore 1440 dark: descriptions resolve: ",
+    "backup-restore 1440 dark: actions retain usable touch targets",
+    "backup-restore 1440 dark: CSS does not reverse keyboard action order",
+    "direct-chat-create 1440 dark: readable without horizontal overflow",
+    "direct-chat-create 1440 dark: descriptions resolve: ",
+    "direct-chat-create 1440 dark: actions retain usable touch targets",
+    "direct-chat-create 1440 dark: CSS does not reverse keyboard action order",
+    "direct-chat-invite 1440 dark: readable without horizontal overflow",
+    "direct-chat-invite 1440 dark: descriptions resolve: ",
+    "direct-chat-invite 1440 dark: actions retain usable touch targets",
+    "direct-chat-invite 1440 dark: CSS does not reverse keyboard action order",
+    "direct-chat-leave 1440 dark: readable without horizontal overflow",
+    "direct-chat-leave 1440 dark: descriptions resolve: ",
+    "direct-chat-leave 1440 dark: actions retain usable touch targets",
+    "direct-chat-leave 1440 dark: CSS does not reverse keyboard action order",
+    "contact-create 1440 dark: readable without horizontal overflow",
+    "contact-create 1440 dark: descriptions resolve: ",
+    "contact-create 1440 dark: actions retain usable touch targets",
+    "contact-create 1440 dark: CSS does not reverse keyboard action order",
+    "locked-data-delete 1440 dark: readable without horizontal overflow",
+    "locked-data-delete 1440 dark: descriptions resolve: ",
+    "locked-data-delete 1440 dark: actions retain usable touch targets",
+    "locked-data-delete 1440 dark: CSS does not reverse keyboard action order",
+    "send-entry 1440 dark: readable without horizontal overflow",
+    "send-entry 1440 dark: descriptions resolve: ",
+    "send-entry 1440 dark: actions retain usable touch targets",
+    "send-entry 1440 dark: CSS does not reverse keyboard action order",
+    "payment-review 1440 dark: readable without horizontal overflow",
+    "payment-review 1440 dark: descriptions resolve: ",
+    "payment-review 1440 dark: actions retain usable touch targets",
+    "payment-review 1440 dark: CSS does not reverse keyboard action order",
+    "payment-mismatch 1440 dark: readable without horizontal overflow",
+    "payment-mismatch 1440 dark: descriptions resolve: ",
+    "payment-mismatch 1440 dark: actions retain usable touch targets",
+    "payment-mismatch 1440 dark: CSS does not reverse keyboard action order",
+    "receive 1440 dark: readable without horizontal overflow",
+    "receive 1440 dark: descriptions resolve: ",
+    "receive 1440 dark: actions retain usable touch targets",
+    "receive 1440 dark: CSS does not reverse keyboard action order",
+    "address-book 1440 dark: readable without horizontal overflow",
+    "address-book 1440 dark: descriptions resolve: ",
+    "address-book 1440 dark: actions retain usable touch targets",
+    "address-book 1440 dark: CSS does not reverse keyboard action order",
+    "settings 1440 dark: readable without horizontal overflow",
+    "settings 1440 dark: descriptions resolve: ",
+    "settings 1440 dark: actions retain usable touch targets",
+    "settings 1440 dark: CSS does not reverse keyboard action order",
+    "network-privacy 1440 dark: readable without horizontal overflow",
+    "network-privacy 1440 dark: descriptions resolve: ",
+    "network-privacy 1440 dark: actions retain usable touch targets",
+    "network-privacy 1440 dark: CSS does not reverse keyboard action order",
+    "setup-protection 320 light: readable without horizontal overflow",
+    "setup-protection 320 light: descriptions resolve: ",
+    "setup-protection 320 light: actions retain usable touch targets",
+    "setup-protection 320 light: CSS does not reverse keyboard action order",
+    "setup-rule 320 light: readable without horizontal overflow",
+    "setup-rule 320 light: descriptions resolve: ",
+    "setup-rule 320 light: actions retain usable touch targets",
+    "setup-rule 320 light: CSS does not reverse keyboard action order",
+    "setup-labels 320 light: readable without horizontal overflow",
+    "setup-labels 320 light: descriptions resolve: ",
+    "setup-labels 320 light: actions retain usable touch targets",
+    "setup-labels 320 light: CSS does not reverse keyboard action order",
+    "setup-review 320 light: readable without horizontal overflow",
+    "setup-review 320 light: descriptions resolve: ",
+    "setup-review 320 light: actions retain usable touch targets",
+    "setup-review 320 light: CSS does not reverse keyboard action order",
+    "replacement-wallet 320 light: readable without horizontal overflow",
+    "replacement-wallet 320 light: descriptions resolve: ",
+    "replacement-wallet 320 light: actions retain usable touch targets",
+    "replacement-wallet 320 light: CSS does not reverse keyboard action order",
+    "backup-save 320 light: readable without horizontal overflow",
+    "backup-save 320 light: descriptions resolve: ",
+    "backup-save 320 light: actions retain usable touch targets",
+    "backup-save 320 light: CSS does not reverse keyboard action order",
+    "backup-check 320 light: readable without horizontal overflow",
+    "backup-check 320 light: descriptions resolve: ",
+    "backup-check 320 light: actions retain usable touch targets",
+    "backup-check 320 light: CSS does not reverse keyboard action order",
+    "backup-restore 320 light: readable without horizontal overflow",
+    "backup-restore 320 light: descriptions resolve: ",
+    "backup-restore 320 light: actions retain usable touch targets",
+    "backup-restore 320 light: CSS does not reverse keyboard action order",
+    "direct-chat-create 320 light: readable without horizontal overflow",
+    "direct-chat-create 320 light: descriptions resolve: ",
+    "direct-chat-create 320 light: actions retain usable touch targets",
+    "direct-chat-create 320 light: CSS does not reverse keyboard action order",
+    "direct-chat-invite 320 light: readable without horizontal overflow",
+    "direct-chat-invite 320 light: descriptions resolve: ",
+    "direct-chat-invite 320 light: actions retain usable touch targets",
+    "direct-chat-invite 320 light: CSS does not reverse keyboard action order",
+    "direct-chat-leave 320 light: readable without horizontal overflow",
+    "direct-chat-leave 320 light: descriptions resolve: ",
+    "direct-chat-leave 320 light: actions retain usable touch targets",
+    "direct-chat-leave 320 light: CSS does not reverse keyboard action order",
+    "contact-create 320 light: readable without horizontal overflow",
+    "contact-create 320 light: descriptions resolve: ",
+    "contact-create 320 light: actions retain usable touch targets",
+    "contact-create 320 light: CSS does not reverse keyboard action order",
+    "locked-data-delete 320 light: readable without horizontal overflow",
+    "locked-data-delete 320 light: descriptions resolve: ",
+    "locked-data-delete 320 light: actions retain usable touch targets",
+    "locked-data-delete 320 light: CSS does not reverse keyboard action order",
+    "send-entry 320 light: readable without horizontal overflow",
+    "send-entry 320 light: descriptions resolve: ",
+    "send-entry 320 light: actions retain usable touch targets",
+    "send-entry 320 light: CSS does not reverse keyboard action order",
+    "payment-review 320 light: readable without horizontal overflow",
+    "payment-review 320 light: descriptions resolve: ",
+    "payment-review 320 light: actions retain usable touch targets",
+    "payment-review 320 light: CSS does not reverse keyboard action order",
+    "payment-mismatch 320 light: readable without horizontal overflow",
+    "payment-mismatch 320 light: descriptions resolve: ",
+    "payment-mismatch 320 light: actions retain usable touch targets",
+    "payment-mismatch 320 light: CSS does not reverse keyboard action order",
+    "receive 320 light: readable without horizontal overflow",
+    "receive 320 light: descriptions resolve: ",
+    "receive 320 light: actions retain usable touch targets",
+    "receive 320 light: CSS does not reverse keyboard action order",
+    "address-book 320 light: readable without horizontal overflow",
+    "address-book 320 light: descriptions resolve: ",
+    "address-book 320 light: actions retain usable touch targets",
+    "address-book 320 light: CSS does not reverse keyboard action order",
+    "settings 320 light: readable without horizontal overflow",
+    "settings 320 light: descriptions resolve: ",
+    "settings 320 light: actions retain usable touch targets",
+    "settings 320 light: CSS does not reverse keyboard action order",
+    "network-privacy 320 light: readable without horizontal overflow",
+    "network-privacy 320 light: descriptions resolve: ",
+    "network-privacy 320 light: actions retain usable touch targets",
+    "network-privacy 320 light: CSS does not reverse keyboard action order",
+    "setup-protection 390 light: readable without horizontal overflow",
+    "setup-protection 390 light: descriptions resolve: ",
+    "setup-protection 390 light: actions retain usable touch targets",
+    "setup-protection 390 light: CSS does not reverse keyboard action order",
+    "setup-rule 390 light: readable without horizontal overflow",
+    "setup-rule 390 light: descriptions resolve: ",
+    "setup-rule 390 light: actions retain usable touch targets",
+    "setup-rule 390 light: CSS does not reverse keyboard action order",
+    "setup-labels 390 light: readable without horizontal overflow",
+    "setup-labels 390 light: descriptions resolve: ",
+    "setup-labels 390 light: actions retain usable touch targets",
+    "setup-labels 390 light: CSS does not reverse keyboard action order",
+    "setup-review 390 light: readable without horizontal overflow",
+    "setup-review 390 light: descriptions resolve: ",
+    "setup-review 390 light: actions retain usable touch targets",
+    "setup-review 390 light: CSS does not reverse keyboard action order",
+    "replacement-wallet 390 light: readable without horizontal overflow",
+    "replacement-wallet 390 light: descriptions resolve: ",
+    "replacement-wallet 390 light: actions retain usable touch targets",
+    "replacement-wallet 390 light: CSS does not reverse keyboard action order",
+    "backup-save 390 light: readable without horizontal overflow",
+    "backup-save 390 light: descriptions resolve: ",
+    "backup-save 390 light: actions retain usable touch targets",
+    "backup-save 390 light: CSS does not reverse keyboard action order",
+    "backup-check 390 light: readable without horizontal overflow",
+    "backup-check 390 light: descriptions resolve: ",
+    "backup-check 390 light: actions retain usable touch targets",
+    "backup-check 390 light: CSS does not reverse keyboard action order",
+    "backup-restore 390 light: readable without horizontal overflow",
+    "backup-restore 390 light: descriptions resolve: ",
+    "backup-restore 390 light: actions retain usable touch targets",
+    "backup-restore 390 light: CSS does not reverse keyboard action order",
+    "direct-chat-create 390 light: readable without horizontal overflow",
+    "direct-chat-create 390 light: descriptions resolve: ",
+    "direct-chat-create 390 light: actions retain usable touch targets",
+    "direct-chat-create 390 light: CSS does not reverse keyboard action order",
+    "direct-chat-invite 390 light: readable without horizontal overflow",
+    "direct-chat-invite 390 light: descriptions resolve: ",
+    "direct-chat-invite 390 light: actions retain usable touch targets",
+    "direct-chat-invite 390 light: CSS does not reverse keyboard action order",
+    "direct-chat-leave 390 light: readable without horizontal overflow",
+    "direct-chat-leave 390 light: descriptions resolve: ",
+    "direct-chat-leave 390 light: actions retain usable touch targets",
+    "direct-chat-leave 390 light: CSS does not reverse keyboard action order",
+    "contact-create 390 light: readable without horizontal overflow",
+    "contact-create 390 light: descriptions resolve: ",
+    "contact-create 390 light: actions retain usable touch targets",
+    "contact-create 390 light: CSS does not reverse keyboard action order",
+    "locked-data-delete 390 light: readable without horizontal overflow",
+    "locked-data-delete 390 light: descriptions resolve: ",
+    "locked-data-delete 390 light: actions retain usable touch targets",
+    "locked-data-delete 390 light: CSS does not reverse keyboard action order",
+    "send-entry 390 light: readable without horizontal overflow",
+    "send-entry 390 light: descriptions resolve: ",
+    "send-entry 390 light: actions retain usable touch targets",
+    "send-entry 390 light: CSS does not reverse keyboard action order",
+    "payment-review 390 light: readable without horizontal overflow",
+    "payment-review 390 light: descriptions resolve: ",
+    "payment-review 390 light: actions retain usable touch targets",
+    "payment-review 390 light: CSS does not reverse keyboard action order",
+    "payment-mismatch 390 light: readable without horizontal overflow",
+    "payment-mismatch 390 light: descriptions resolve: ",
+    "payment-mismatch 390 light: actions retain usable touch targets",
+    "payment-mismatch 390 light: CSS does not reverse keyboard action order",
+    "receive 390 light: readable without horizontal overflow",
+    "receive 390 light: descriptions resolve: ",
+    "receive 390 light: actions retain usable touch targets",
+    "receive 390 light: CSS does not reverse keyboard action order",
+    "address-book 390 light: readable without horizontal overflow",
+    "address-book 390 light: descriptions resolve: ",
+    "address-book 390 light: actions retain usable touch targets",
+    "address-book 390 light: CSS does not reverse keyboard action order",
+    "settings 390 light: readable without horizontal overflow",
+    "settings 390 light: descriptions resolve: ",
+    "settings 390 light: actions retain usable touch targets",
+    "settings 390 light: CSS does not reverse keyboard action order",
+    "network-privacy 390 light: readable without horizontal overflow",
+    "network-privacy 390 light: descriptions resolve: ",
+    "network-privacy 390 light: actions retain usable touch targets",
+    "network-privacy 390 light: CSS does not reverse keyboard action order",
+    "setup-protection 1440 light: readable without horizontal overflow",
+    "setup-protection 1440 light: descriptions resolve: ",
+    "setup-protection 1440 light: actions retain usable touch targets",
+    "setup-protection 1440 light: CSS does not reverse keyboard action order",
+    "setup-rule 1440 light: readable without horizontal overflow",
+    "setup-rule 1440 light: descriptions resolve: ",
+    "setup-rule 1440 light: actions retain usable touch targets",
+    "setup-rule 1440 light: CSS does not reverse keyboard action order",
+    "setup-labels 1440 light: readable without horizontal overflow",
+    "setup-labels 1440 light: descriptions resolve: ",
+    "setup-labels 1440 light: actions retain usable touch targets",
+    "setup-labels 1440 light: CSS does not reverse keyboard action order",
+    "setup-review 1440 light: readable without horizontal overflow",
+    "setup-review 1440 light: descriptions resolve: ",
+    "setup-review 1440 light: actions retain usable touch targets",
+    "setup-review 1440 light: CSS does not reverse keyboard action order",
+    "replacement-wallet 1440 light: readable without horizontal overflow",
+    "replacement-wallet 1440 light: descriptions resolve: ",
+    "replacement-wallet 1440 light: actions retain usable touch targets",
+    "replacement-wallet 1440 light: CSS does not reverse keyboard action order",
+    "backup-save 1440 light: readable without horizontal overflow",
+    "backup-save 1440 light: descriptions resolve: ",
+    "backup-save 1440 light: actions retain usable touch targets",
+    "backup-save 1440 light: CSS does not reverse keyboard action order",
+    "backup-check 1440 light: readable without horizontal overflow",
+    "backup-check 1440 light: descriptions resolve: ",
+    "backup-check 1440 light: actions retain usable touch targets",
+    "backup-check 1440 light: CSS does not reverse keyboard action order",
+    "backup-restore 1440 light: readable without horizontal overflow",
+    "backup-restore 1440 light: descriptions resolve: ",
+    "backup-restore 1440 light: actions retain usable touch targets",
+    "backup-restore 1440 light: CSS does not reverse keyboard action order",
+    "direct-chat-create 1440 light: readable without horizontal overflow",
+    "direct-chat-create 1440 light: descriptions resolve: ",
+    "direct-chat-create 1440 light: actions retain usable touch targets",
+    "direct-chat-create 1440 light: CSS does not reverse keyboard action order",
+    "direct-chat-invite 1440 light: readable without horizontal overflow",
+    "direct-chat-invite 1440 light: descriptions resolve: ",
+    "direct-chat-invite 1440 light: actions retain usable touch targets",
+    "direct-chat-invite 1440 light: CSS does not reverse keyboard action order",
+    "direct-chat-leave 1440 light: readable without horizontal overflow",
+    "direct-chat-leave 1440 light: descriptions resolve: ",
+    "direct-chat-leave 1440 light: actions retain usable touch targets",
+    "direct-chat-leave 1440 light: CSS does not reverse keyboard action order",
+    "contact-create 1440 light: readable without horizontal overflow",
+    "contact-create 1440 light: descriptions resolve: ",
+    "contact-create 1440 light: actions retain usable touch targets",
+    "contact-create 1440 light: CSS does not reverse keyboard action order",
+    "locked-data-delete 1440 light: readable without horizontal overflow",
+    "locked-data-delete 1440 light: descriptions resolve: ",
+    "locked-data-delete 1440 light: actions retain usable touch targets",
+    "locked-data-delete 1440 light: CSS does not reverse keyboard action order",
+    "send-entry 1440 light: readable without horizontal overflow",
+    "send-entry 1440 light: descriptions resolve: ",
+    "send-entry 1440 light: actions retain usable touch targets",
+    "send-entry 1440 light: CSS does not reverse keyboard action order",
+    "payment-review 1440 light: readable without horizontal overflow",
+    "payment-review 1440 light: descriptions resolve: ",
+    "payment-review 1440 light: actions retain usable touch targets",
+    "payment-review 1440 light: CSS does not reverse keyboard action order",
+    "payment-mismatch 1440 light: readable without horizontal overflow",
+    "payment-mismatch 1440 light: descriptions resolve: ",
+    "payment-mismatch 1440 light: actions retain usable touch targets",
+    "payment-mismatch 1440 light: CSS does not reverse keyboard action order",
+    "receive 1440 light: readable without horizontal overflow",
+    "receive 1440 light: descriptions resolve: ",
+    "receive 1440 light: actions retain usable touch targets",
+    "receive 1440 light: CSS does not reverse keyboard action order",
+    "address-book 1440 light: readable without horizontal overflow",
+    "address-book 1440 light: descriptions resolve: ",
+    "address-book 1440 light: actions retain usable touch targets",
+    "address-book 1440 light: CSS does not reverse keyboard action order",
+    "settings 1440 light: readable without horizontal overflow",
+    "settings 1440 light: descriptions resolve: ",
+    "settings 1440 light: actions retain usable touch targets",
+    "settings 1440 light: CSS does not reverse keyboard action order",
+    "network-privacy 1440 light: readable without horizontal overflow",
+    "network-privacy 1440 light: descriptions resolve: ",
+    "network-privacy 1440 light: actions retain usable touch targets",
+    "network-privacy 1440 light: CSS does not reverse keyboard action order",
+    "unfinished setup says Pause plan",
+    "unfinished plan lifetime is stated beside the actions",
+    "Skip names the consequence and the safe return action",
+    "setup-skip 320 light: readable without horizontal overflow",
+    "setup-skip 320 light: descriptions resolve: ",
+    "setup-skip 320 light: actions retain usable touch targets",
+    "setup-skip 320 light: CSS does not reverse keyboard action order",
+    "Skip names the consequence and the safe return action",
+    "setup-skip 390 light: readable without horizontal overflow",
+    "setup-skip 390 light: descriptions resolve: ",
+    "setup-skip 390 light: actions retain usable touch targets",
+    "setup-skip 390 light: CSS does not reverse keyboard action order",
+    "Skip names the consequence and the safe return action",
+    "setup-skip 1440 light: readable without horizontal overflow",
+    "setup-skip 1440 light: descriptions resolve: ",
+    "setup-skip 1440 light: actions retain usable touch targets",
+    "setup-skip 1440 light: CSS does not reverse keyboard action order",
+    "verified review states the next action: Request approvals",
+    "requesting approvals is distinguished from signing or sending",
+    "mismatched transaction still offers no proposal action",
+    "restoring a share is labeled as a restore rather than opening a file",
+    "direct chat labels the created object and preserves unavailable-relay gating",
+    "disabled chat action has a visible explanation",
+    "locked-data deletion separately explains each lost data category",
+    "recipient editor uses Cancel then Save in DOM and visual order",
+    "full-address field is associated with its format guidance",
+    "send-entry: Close remains visible after scrolling a long dialog",
+    "send-entry: focused field 0 is clear of sticky header and actions",
+    "send-entry: focused field 4 is clear of sticky header and actions",
+    "backup-save: Close remains visible after scrolling a long dialog",
+    "backup-save: focused field 0 is clear of sticky header and actions",
+    "backup-save: focused field 1 is clear of sticky header and actions",
+    "backup-restore: Close remains visible after scrolling a long dialog",
+    "backup-restore: focused field 0 is clear of sticky header and actions",
+    "direct-chat-create: Close remains visible after scrolling a long dialog",
+    "direct-chat-create: focused field 0 is clear of sticky header and actions",
+    "short windows release sticky chrome to preserve reading space",
+    "backup-restore-short 740 light: readable without horizontal overflow",
+    "backup-restore-short 740 light: descriptions resolve: ",
+    "backup-restore-short 740 light: actions retain usable touch targets",
+    "backup-restore-short 740 light: CSS does not reverse keyboard action order",
+    "UX rendering and non-authorizing inspection leave browser wallet storage unchanged",
+    "no browser errors: "
+  ],
+  "layouts": [
+    {
+      "flow": "setup-protection",
+      "theme": "dark",
+      "width": 320,
+      "overflow": false,
+      "missing": [],
+      "actions": [
+        {
+          "text": "Pause plan",
+          "width": 139,
+          "height": 70,
+          "order": "0"
+        },
+        {
+          "text": "Continue to approval rule",
+          "width": 139,
+          "height": 70,
+          "order": "0"
+        }
+      ],
+      "inViewport": true
+    },
+    {
+      "flow": "setup-rule",
+      "theme": "dark",
+      "width": 320,
+      "overflow": false,
+      "missing": [],
+      "actions": [
+        {
+          "text": "Pause plan",
+          "width": 139,
+          "height": 48,
+          "order": "0"
+        },
+        {
+          "text": "Back",
+          "width": 139,
+          "height": 48,
+          "order": "0"
+        },
+        {
+          "text": "Use this arrangement",
+          "width": 286,
+          "height": 48,
+          "order": "0"
+        }
+      ],
+      "inViewport": true
+    },
+    {
+      "flow": "setup-labels",
+      "theme": "dark",
+      "width": 320,
+      "overflow": false,
+      "missing": [],
+      "actions": [
+        {
+          "text": "Pause plan",
+          "width": 139,
+          "height": 48,
+          "order": "0"
+        },
+        {
+          "text": "Back",
+          "width": 139,
+          "height": 48,
+          "order": "0"
+        },
+        {
+          "text": "Continue",
+          "width": 286,
+          "height": 48,
+          "order": "0"
+        }
+      ],
+      "inViewport": true
+    },
+    {
+      "flow": "setup-review",
+      "theme": "dark",
+      "width": 320,
+      "overflow": false,
+      "missing": [],
+      "actions": [
+        {
+          "text": "Pause plan",
+          "width": 139,
+          "height": 48,
+          "order": "0"
+        },
+        {
+          "text": "Back",
+          "width": 139,
+          "height": 48,
+          "order": "0"
+        },
+        {
+          "text": "Create wallet",
+          "width": 286,
+          "height": 48,
+          "order": "0"
+        }
+      ],
+      "inViewport": true
+    },
+    {
+      "flow": "replacement-wallet",
+      "theme": "dark",
+      "width": 320,
+      "overflow": false,
+      "missing": [],
+      "actions": [
+        {
+          "text": "Cancel",
+          "width": 137,
+          "height": 66,
+          "order": "0"
+        },
+        {
+          "text": "Create new wallet",
+          "width": 137,
+          "height": 66,
+          "order": "0"
+        }
+      ],
+      "inViewport": true
+    },
+    {
+      "flow": "backup-save",
+      "theme": "dark",
+      "width": 320,
+      "overflow": false,
+      "missing": [],
+      "actions": [
+        {
+          "text": "Cancel",
+          "width": 137,
+          "height": 66,
+          "order": "0"
+        },
+        {
+          "text": "Encrypt and save file",
+          "width": 137,
+          "height": 66,
+          "order": "0"
+        }
+      ],
+      "inViewport": true
+    },
+    {
+      "flow": "backup-check",
+      "theme": "dark",
+      "width": 320,
+      "overflow": false,
+      "missing": [],
+      "actions": [
+        {
+          "text": "Cancel",
+          "width": 137,
+          "height": 66,
+          "order": "0"
+        },
+        {
+          "text": "Check saved file",
+          "width": 137,
+          "height": 66,
+          "order": "0"
+        }
+      ],
+      "inViewport": true
+    },
+    {
+      "flow": "backup-restore",
+      "theme": "dark",
+      "width": 320,
+      "overflow": false,
+      "missing": [],
+      "actions": [
+        {
+          "text": "Cancel",
+          "width": 137,
+          "height": 66,
+          "order": "0"
+        },
+        {
+          "text": "Restore backup",
+          "width": 137,
+          "height": 66,
+          "order": "0"
+        }
+      ],
+      "inViewport": true
+    },
+    {
+      "flow": "direct-chat-create",
+      "theme": "dark",
+      "width": 320,
+      "overflow": false,
+      "missing": [],
+      "actions": [
+        {
+          "text": "Cancel",
+          "width": 137,
+          "height": 66,
+          "order": "0"
+        },
+        {
+          "text": "Create invite link",
+          "width": 137,
+          "height": 66,
+          "order": "0"
+        }
+      ],
+      "inViewport": true
+    },
+    {
+      "flow": "direct-chat-invite",
+      "theme": "dark",
+      "width": 320,
+      "overflow": false,
+      "missing": [],
+      "actions": [],
+      "inViewport": true
+    },
+    {
+      "flow": "direct-chat-leave",
+      "theme": "dark",
+      "width": 320,
+      "overflow": false,
+      "missing": [],
+      "actions": [
+        {
+          "text": "Keep chat",
+          "width": 211,
+          "height": 48,
+          "order": "0"
+        },
+        {
+          "text": "Leave chat",
+          "width": 211,
+          "height": 48,
+          "order": "0"
+        }
+      ],
+      "inViewport": true
+    },
+    {
+      "flow": "contact-create",
+      "theme": "dark",
+      "width": 320,
+      "overflow": false,
+      "missing": [],
+      "actions": [
+        {
+          "text": "Cancel",
+          "width": 137,
+          "height": 48,
+          "order": "0"
+        },
+        {
+          "text": "Add contact",
+          "width": 137,
+          "height": 48,
+          "order": "0"
+        }
+      ],
+      "inViewport": true
+    },
+    {
+      "flow": "locked-data-delete",
+      "theme": "dark",
+      "width": 320,
+      "overflow": false,
+      "missing": [],
+      "actions": [
+        {
+          "text": "Keep locked data",
+          "width": 250,
+          "height": 48,
+          "order": "0"
+        },
+        {
+          "text": "Delete locked data",
+          "width": 250,
+          "height": 48,
+          "order": "0"
+        }
+      ],
+      "inViewport": true
+    },
+    {
+      "flow": "send-entry",
+      "theme": "dark",
+      "width": 320,
+      "overflow": false,
+      "missing": [],
+      "actions": [
+        {
+          "text": "Cancel",
+          "width": 137,
+          "height": 66,
+          "order": "0"
+        },
+        {
+          "text": "Review payment",
+          "width": 137,
+          "height": 66,
+          "order": "0"
+        }
+      ],
+      "inViewport": true
+    },
+    {
+      "flow": "payment-review",
+      "theme": "dark",
+      "width": 320,
+      "overflow": false,
+      "missing": [],
+      "actions": [
+        {
+          "text": "Back to edit",
+          "width": 137,
+          "height": 66,
+          "order": "0"
+        },
+        {
+          "text": "Request approvals",
+          "width": 137,
+          "height": 66,
+          "order": "0"
+        }
+      ],
+      "inViewport": true
+    },
+    {
+      "flow": "payment-mismatch",
+      "theme": "dark",
+      "width": 320,
+      "overflow": false,
+      "missing": [],
+      "actions": [
+        {
+          "text": "Back to edit",
+          "width": 286,
+          "height": 48,
+          "order": "0"
+        }
+      ],
+      "inViewport": true
+    },
+    {
+      "flow": "receive",
+      "theme": "dark",
+      "width": 320,
+      "overflow": false,
+      "missing": [],
+      "actions": [
+        {
+          "text": "Share address",
+          "width": 137,
+          "height": 48,
+          "order": "0"
+        },
+        {
+          "text": "Copy address",
+          "width": 137,
+          "height": 48,
+          "order": "0"
+        }
+      ],
+      "inViewport": true
+    },
+    {
+      "flow": "address-book",
+      "theme": "dark",
+      "width": 320,
+      "overflow": false,
+      "missing": [],
+      "actions": [],
+      "inViewport": true
+    },
+    {
+      "flow": "settings",
+      "theme": "dark",
+      "width": 320,
+      "overflow": false,
+      "missing": [],
+      "actions": [],
+      "inViewport": true
+    },
+    {
+      "flow": "network-privacy",
+      "theme": "dark",
+      "width": 320,
+      "overflow": false,
+      "missing": [],
+      "actions": [],
+      "inViewport": true
+    },
+    {
+      "flow": "setup-protection",
+      "theme": "dark",
+      "width": 390,
+      "overflow": false,
+      "missing": [],
+      "actions": [
+        {
+          "text": "Pause plan",
+          "width": 174,
+          "height": 70,
+          "order": "0"
+        },
+        {
+          "text": "Continue to approval rule",
+          "width": 174,
+          "height": 70,
+          "order": "0"
+        }
+      ],
+      "inViewport": true
+    },
+    {
+      "flow": "setup-rule",
+      "theme": "dark",
+      "width": 390,
+      "overflow": false,
+      "missing": [],
+      "actions": [
+        {
+          "text": "Pause plan",
+          "width": 174,
+          "height": 48,
+          "order": "0"
+        },
+        {
+          "text": "Back",
+          "width": 174,
+          "height": 48,
+          "order": "0"
+        },
+        {
+          "text": "Use this arrangement",
+          "width": 356,
+          "height": 48,
+          "order": "0"
+        }
+      ],
+      "inViewport": true
+    },
+    {
+      "flow": "setup-labels",
+      "theme": "dark",
+      "width": 390,
+      "overflow": false,
+      "missing": [],
+      "actions": [
+        {
+          "text": "Pause plan",
+          "width": 174,
+          "height": 48,
+          "order": "0"
+        },
+        {
+          "text": "Back",
+          "width": 174,
+          "height": 48,
+          "order": "0"
+        },
+        {
+          "text": "Continue",
+          "width": 356,
+          "height": 48,
+          "order": "0"
+        }
+      ],
+      "inViewport": true
+    },
+    {
+      "flow": "setup-review",
+      "theme": "dark",
+      "width": 390,
+      "overflow": false,
+      "missing": [],
+      "actions": [
+        {
+          "text": "Pause plan",
+          "width": 174,
+          "height": 48,
+          "order": "0"
+        },
+        {
+          "text": "Back",
+          "width": 174,
+          "height": 48,
+          "order": "0"
+        },
+        {
+          "text": "Create wallet",
+          "width": 356,
+          "height": 48,
+          "order": "0"
+        }
+      ],
+      "inViewport": true
+    },
+    {
+      "flow": "replacement-wallet",
+      "theme": "dark",
+      "width": 390,
+      "overflow": false,
+      "missing": [],
+      "actions": [
+        {
+          "text": "Cancel",
+          "width": 168,
+          "height": 48,
+          "order": "0"
+        },
+        {
+          "text": "Create new wallet",
+          "width": 168,
+          "height": 48,
+          "order": "0"
+        }
+      ],
+      "inViewport": true
+    },
+    {
+      "flow": "backup-save",
+      "theme": "dark",
+      "width": 390,
+      "overflow": false,
+      "missing": [],
+      "actions": [
+        {
+          "text": "Cancel",
+          "width": 168,
+          "height": 66,
+          "order": "0"
+        },
+        {
+          "text": "Encrypt and save file",
+          "width": 168,
+          "height": 66,
+          "order": "0"
+        }
+      ],
+      "inViewport": true
+    },
+    {
+      "flow": "backup-check",
+      "theme": "dark",
+      "width": 390,
+      "overflow": false,
+      "missing": [],
+      "actions": [
+        {
+          "text": "Cancel",
+          "width": 168,
+          "height": 48,
+          "order": "0"
+        },
+        {
+          "text": "Check saved file",
+          "width": 168,
+          "height": 48,
+          "order": "0"
+        }
+      ],
+      "inViewport": true
+    },
+    {
+      "flow": "backup-restore",
+      "theme": "dark",
+      "width": 390,
+      "overflow": false,
+      "missing": [],
+      "actions": [
+        {
+          "text": "Cancel",
+          "width": 168,
+          "height": 48,
+          "order": "0"
+        },
+        {
+          "text": "Restore backup",
+          "width": 168,
+          "height": 48,
+          "order": "0"
+        }
+      ],
+      "inViewport": true
+    },
+    {
+      "flow": "direct-chat-create",
+      "theme": "dark",
+      "width": 390,
+      "overflow": false,
+      "missing": [],
+      "actions": [
+        {
+          "text": "Cancel",
+          "width": 168,
+          "height": 48,
+          "order": "0"
+        },
+        {
+          "text": "Create invite link",
+          "width": 168,
+          "height": 48,
+          "order": "0"
+        }
+      ],
+      "inViewport": true
+    },
+    {
+      "flow": "direct-chat-invite",
+      "theme": "dark",
+      "width": 390,
+      "overflow": false,
+      "missing": [],
+      "actions": [],
+      "inViewport": true
+    },
+    {
+      "flow": "direct-chat-leave",
+      "theme": "dark",
+      "width": 390,
+      "overflow": false,
+      "missing": [],
+      "actions": [
+        {
+          "text": "Keep chat",
+          "width": 211,
+          "height": 48,
+          "order": "0"
+        },
+        {
+          "text": "Leave chat",
+          "width": 211,
+          "height": 48,
+          "order": "0"
+        }
+      ],
+      "inViewport": true
+    },
+    {
+      "flow": "contact-create",
+      "theme": "dark",
+      "width": 390,
+      "overflow": false,
+      "missing": [],
+      "actions": [
+        {
+          "text": "Cancel",
+          "width": 168,
+          "height": 48,
+          "order": "0"
+        },
+        {
+          "text": "Add contact",
+          "width": 168,
+          "height": 48,
+          "order": "0"
+        }
+      ],
+      "inViewport": true
+    },
+    {
+      "flow": "locked-data-delete",
+      "theme": "dark",
+      "width": 390,
+      "overflow": false,
+      "missing": [],
+      "actions": [
+        {
+          "text": "Keep locked data",
+          "width": 152,
+          "height": 66,
+          "order": "0"
+        },
+        {
+          "text": "Delete locked data",
+          "width": 152,
+          "height": 66,
+          "order": "0"
+        }
+      ],
+      "inViewport": true
+    },
+    {
+      "flow": "send-entry",
+      "theme": "dark",
+      "width": 390,
+      "overflow": false,
+      "missing": [],
+      "actions": [
+        {
+          "text": "Cancel",
+          "width": 168,
+          "height": 48,
+          "order": "0"
+        },
+        {
+          "text": "Review payment",
+          "width": 168,
+          "height": 48,
+          "order": "0"
+        }
+      ],
+      "inViewport": true
+    },
+    {
+      "flow": "payment-review",
+      "theme": "dark",
+      "width": 390,
+      "overflow": false,
+      "missing": [],
+      "actions": [
+        {
+          "text": "Back to edit",
+          "width": 168,
+          "height": 48,
+          "order": "0"
+        },
+        {
+          "text": "Request approvals",
+          "width": 168,
+          "height": 48,
+          "order": "0"
+        }
+      ],
+      "inViewport": true
+    },
+    {
+      "flow": "payment-mismatch",
+      "theme": "dark",
+      "width": 390,
+      "overflow": false,
+      "missing": [],
+      "actions": [
+        {
+          "text": "Back to edit",
+          "width": 348,
+          "height": 48,
+          "order": "0"
+        }
+      ],
+      "inViewport": true
+    },
+    {
+      "flow": "receive",
+      "theme": "dark",
+      "width": 390,
+      "overflow": false,
+      "missing": [],
+      "actions": [
+        {
+          "text": "Share address",
+          "width": 168,
+          "height": 48,
+          "order": "0"
+        },
+        {
+          "text": "Copy address",
+          "width": 168,
+          "height": 48,
+          "order": "0"
+        }
+      ],
+      "inViewport": true
+    },
+    {
+      "flow": "address-book",
+      "theme": "dark",
+      "width": 390,
+      "overflow": false,
+      "missing": [],
+      "actions": [],
+      "inViewport": true
+    },
+    {
+      "flow": "settings",
+      "theme": "dark",
+      "width": 390,
+      "overflow": false,
+      "missing": [],
+      "actions": [],
+      "inViewport": true
+    },
+    {
+      "flow": "network-privacy",
+      "theme": "dark",
+      "width": 390,
+      "overflow": false,
+      "missing": [],
+      "actions": [],
+      "inViewport": true
+    },
+    {
+      "flow": "setup-protection",
+      "theme": "dark",
+      "width": 1440,
+      "overflow": false,
+      "missing": [],
+      "actions": [
+        {
+          "text": "Pause plan",
+          "width": 111,
+          "height": 48,
+          "order": "0"
+        },
+        {
+          "text": "Continue to approval rule",
+          "width": 214,
+          "height": 48,
+          "order": "0"
+        }
+      ],
+      "inViewport": true
+    },
+    {
+      "flow": "setup-rule",
+      "theme": "dark",
+      "width": 1440,
+      "overflow": false,
+      "missing": [],
+      "actions": [
+        {
+          "text": "Pause plan",
+          "width": 111,
+          "height": 48,
+          "order": "0"
+        },
+        {
+          "text": "Back",
+          "width": 68,
+          "height": 48,
+          "order": "0"
+        },
+        {
+          "text": "Use this arrangement",
+          "width": 188,
+          "height": 48,
+          "order": "0"
+        }
+      ],
+      "inViewport": true
+    },
+    {
+      "flow": "setup-labels",
+      "theme": "dark",
+      "width": 1440,
+      "overflow": false,
+      "missing": [],
+      "actions": [
+        {
+          "text": "Pause plan",
+          "width": 111,
+          "height": 48,
+          "order": "0"
+        },
+        {
+          "text": "Back",
+          "width": 68,
+          "height": 48,
+          "order": "0"
+        },
+        {
+          "text": "Continue",
+          "width": 144,
+          "height": 48,
+          "order": "0"
+        }
+      ],
+      "inViewport": true
+    },
+    {
+      "flow": "setup-review",
+      "theme": "dark",
+      "width": 1440,
+      "overflow": false,
+      "missing": [],
+      "actions": [
+        {
+          "text": "Pause plan",
+          "width": 111,
+          "height": 48,
+          "order": "0"
+        },
+        {
+          "text": "Back",
+          "width": 68,
+          "height": 48,
+          "order": "0"
+        },
+        {
+          "text": "Create wallet",
+          "width": 144,
+          "height": 48,
+          "order": "0"
+        }
+      ],
+      "inViewport": true
+    },
+    {
+      "flow": "replacement-wallet",
+      "theme": "dark",
+      "width": 1440,
+      "overflow": false,
+      "missing": [],
+      "actions": [
+        {
+          "text": "Cancel",
+          "width": 83,
+          "height": 48,
+          "order": "0"
+        },
+        {
+          "text": "Create new wallet",
+          "width": 162,
+          "height": 48,
+          "order": "0"
+        }
+      ],
+      "inViewport": true
+    },
+    {
+      "flow": "backup-save",
+      "theme": "dark",
+      "width": 1440,
+      "overflow": false,
+      "missing": [],
+      "actions": [
+        {
+          "text": "Cancel",
+          "width": 83,
+          "height": 48,
+          "order": "0"
+        },
+        {
+          "text": "Encrypt and save file",
+          "width": 181,
+          "height": 48,
+          "order": "0"
+        }
+      ],
+      "inViewport": true
+    },
+    {
+      "flow": "backup-check",
+      "theme": "dark",
+      "width": 1440,
+      "overflow": false,
+      "missing": [],
+      "actions": [
+        {
+          "text": "Cancel",
+          "width": 83,
+          "height": 48,
+          "order": "0"
+        },
+        {
+          "text": "Check saved file",
+          "width": 150,
+          "height": 48,
+          "order": "0"
+        }
+      ],
+      "inViewport": true
+    },
+    {
+      "flow": "backup-restore",
+      "theme": "dark",
+      "width": 1440,
+      "overflow": false,
+      "missing": [],
+      "actions": [
+        {
+          "text": "Cancel",
+          "width": 83,
+          "height": 48,
+          "order": "0"
+        },
+        {
+          "text": "Restore backup",
+          "width": 146,
+          "height": 48,
+          "order": "0"
+        }
+      ],
+      "inViewport": true
+    },
+    {
+      "flow": "direct-chat-create",
+      "theme": "dark",
+      "width": 1440,
+      "overflow": false,
+      "missing": [],
+      "actions": [
+        {
+          "text": "Cancel",
+          "width": 83,
+          "height": 48,
+          "order": "0"
+        },
+        {
+          "text": "Create invite link",
+          "width": 154,
+          "height": 48,
+          "order": "0"
+        }
+      ],
+      "inViewport": true
+    },
+    {
+      "flow": "direct-chat-invite",
+      "theme": "dark",
+      "width": 1440,
+      "overflow": false,
+      "missing": [],
+      "actions": [],
+      "inViewport": true
+    },
+    {
+      "flow": "direct-chat-leave",
+      "theme": "dark",
+      "width": 1440,
+      "overflow": false,
+      "missing": [],
+      "actions": [
+        {
+          "text": "Keep chat",
+          "width": 105,
+          "height": 48,
+          "order": "0"
+        },
+        {
+          "text": "Leave chat",
+          "width": 111,
+          "height": 48,
+          "order": "0"
+        }
+      ],
+      "inViewport": true
+    },
+    {
+      "flow": "contact-create",
+      "theme": "dark",
+      "width": 1440,
+      "overflow": false,
+      "missing": [],
+      "actions": [
+        {
+          "text": "Cancel",
+          "width": 83,
+          "height": 48,
+          "order": "0"
+        },
+        {
+          "text": "Add contact",
+          "width": 144,
+          "height": 48,
+          "order": "0"
+        }
+      ],
+      "inViewport": true
+    },
+    {
+      "flow": "locked-data-delete",
+      "theme": "dark",
+      "width": 1440,
+      "overflow": false,
+      "missing": [],
+      "actions": [
+        {
+          "text": "Keep locked data",
+          "width": 155,
+          "height": 48,
+          "order": "0"
+        },
+        {
+          "text": "Delete locked data",
+          "width": 166,
+          "height": 48,
+          "order": "0"
+        }
+      ],
+      "inViewport": true
+    },
+    {
+      "flow": "send-entry",
+      "theme": "dark",
+      "width": 1440,
+      "overflow": false,
+      "missing": [],
+      "actions": [
+        {
+          "text": "Cancel",
+          "width": 83,
+          "height": 48,
+          "order": "0"
+        },
+        {
+          "text": "Review payment",
+          "width": 151,
+          "height": 48,
+          "order": "0"
+        }
+      ],
+      "inViewport": true
+    },
+    {
+      "flow": "payment-review",
+      "theme": "dark",
+      "width": 1440,
+      "overflow": false,
+      "missing": [],
+      "actions": [
+        {
+          "text": "Back to edit",
+          "width": 117,
+          "height": 48,
+          "order": "0"
+        },
+        {
+          "text": "Request approvals",
+          "width": 167,
+          "height": 48,
+          "order": "0"
+        }
+      ],
+      "inViewport": true
+    },
+    {
+      "flow": "payment-mismatch",
+      "theme": "dark",
+      "width": 1440,
+      "overflow": false,
+      "missing": [],
+      "actions": [
+        {
+          "text": "Back to edit",
+          "width": 117,
+          "height": 48,
+          "order": "0"
+        }
+      ],
+      "inViewport": true
+    },
+    {
+      "flow": "receive",
+      "theme": "dark",
+      "width": 1440,
+      "overflow": false,
+      "missing": [],
+      "actions": [
+        {
+          "text": "Share address",
+          "width": 136,
+          "height": 48,
+          "order": "0"
+        },
+        {
+          "text": "Copy address",
+          "width": 144,
+          "height": 48,
+          "order": "0"
+        }
+      ],
+      "inViewport": true
+    },
+    {
+      "flow": "address-book",
+      "theme": "dark",
+      "width": 1440,
+      "overflow": false,
+      "missing": [],
+      "actions": [],
+      "inViewport": true
+    },
+    {
+      "flow": "settings",
+      "theme": "dark",
+      "width": 1440,
+      "overflow": false,
+      "missing": [],
+      "actions": [],
+      "inViewport": true
+    },
+    {
+      "flow": "network-privacy",
+      "theme": "dark",
+      "width": 1440,
+      "overflow": false,
+      "missing": [],
+      "actions": [],
+      "inViewport": true
+    },
+    {
+      "flow": "setup-protection",
+      "theme": "light",
+      "width": 320,
+      "overflow": false,
+      "missing": [],
+      "actions": [
+        {
+          "text": "Pause plan",
+          "width": 139,
+          "height": 70,
+          "order": "0"
+        },
+        {
+          "text": "Continue to approval rule",
+          "width": 139,
+          "height": 70,
+          "order": "0"
+        }
+      ],
+      "inViewport": true
+    },
+    {
+      "flow": "setup-rule",
+      "theme": "light",
+      "width": 320,
+      "overflow": false,
+      "missing": [],
+      "actions": [
+        {
+          "text": "Pause plan",
+          "width": 139,
+          "height": 48,
+          "order": "0"
+        },
+        {
+          "text": "Back",
+          "width": 139,
+          "height": 48,
+          "order": "0"
+        },
+        {
+          "text": "Use this arrangement",
+          "width": 286,
+          "height": 48,
+          "order": "0"
+        }
+      ],
+      "inViewport": true
+    },
+    {
+      "flow": "setup-labels",
+      "theme": "light",
+      "width": 320,
+      "overflow": false,
+      "missing": [],
+      "actions": [
+        {
+          "text": "Pause plan",
+          "width": 139,
+          "height": 48,
+          "order": "0"
+        },
+        {
+          "text": "Back",
+          "width": 139,
+          "height": 48,
+          "order": "0"
+        },
+        {
+          "text": "Continue",
+          "width": 286,
+          "height": 48,
+          "order": "0"
+        }
+      ],
+      "inViewport": true
+    },
+    {
+      "flow": "setup-review",
+      "theme": "light",
+      "width": 320,
+      "overflow": false,
+      "missing": [],
+      "actions": [
+        {
+          "text": "Pause plan",
+          "width": 139,
+          "height": 48,
+          "order": "0"
+        },
+        {
+          "text": "Back",
+          "width": 139,
+          "height": 48,
+          "order": "0"
+        },
+        {
+          "text": "Create wallet",
+          "width": 286,
+          "height": 48,
+          "order": "0"
+        }
+      ],
+      "inViewport": true
+    },
+    {
+      "flow": "replacement-wallet",
+      "theme": "light",
+      "width": 320,
+      "overflow": false,
+      "missing": [],
+      "actions": [
+        {
+          "text": "Cancel",
+          "width": 137,
+          "height": 66,
+          "order": "0"
+        },
+        {
+          "text": "Create new wallet",
+          "width": 137,
+          "height": 66,
+          "order": "0"
+        }
+      ],
+      "inViewport": true
+    },
+    {
+      "flow": "backup-save",
+      "theme": "light",
+      "width": 320,
+      "overflow": false,
+      "missing": [],
+      "actions": [
+        {
+          "text": "Cancel",
+          "width": 137,
+          "height": 66,
+          "order": "0"
+        },
+        {
+          "text": "Encrypt and save file",
+          "width": 137,
+          "height": 66,
+          "order": "0"
+        }
+      ],
+      "inViewport": true
+    },
+    {
+      "flow": "backup-check",
+      "theme": "light",
+      "width": 320,
+      "overflow": false,
+      "missing": [],
+      "actions": [
+        {
+          "text": "Cancel",
+          "width": 137,
+          "height": 66,
+          "order": "0"
+        },
+        {
+          "text": "Check saved file",
+          "width": 137,
+          "height": 66,
+          "order": "0"
+        }
+      ],
+      "inViewport": true
+    },
+    {
+      "flow": "backup-restore",
+      "theme": "light",
+      "width": 320,
+      "overflow": false,
+      "missing": [],
+      "actions": [
+        {
+          "text": "Cancel",
+          "width": 137,
+          "height": 66,
+          "order": "0"
+        },
+        {
+          "text": "Restore backup",
+          "width": 137,
+          "height": 66,
+          "order": "0"
+        }
+      ],
+      "inViewport": true
+    },
+    {
+      "flow": "direct-chat-create",
+      "theme": "light",
+      "width": 320,
+      "overflow": false,
+      "missing": [],
+      "actions": [
+        {
+          "text": "Cancel",
+          "width": 137,
+          "height": 66,
+          "order": "0"
+        },
+        {
+          "text": "Create invite link",
+          "width": 137,
+          "height": 66,
+          "order": "0"
+        }
+      ],
+      "inViewport": true
+    },
+    {
+      "flow": "direct-chat-invite",
+      "theme": "light",
+      "width": 320,
+      "overflow": false,
+      "missing": [],
+      "actions": [],
+      "inViewport": true
+    },
+    {
+      "flow": "direct-chat-leave",
+      "theme": "light",
+      "width": 320,
+      "overflow": false,
+      "missing": [],
+      "actions": [
+        {
+          "text": "Keep chat",
+          "width": 211,
+          "height": 48,
+          "order": "0"
+        },
+        {
+          "text": "Leave chat",
+          "width": 211,
+          "height": 48,
+          "order": "0"
+        }
+      ],
+      "inViewport": true
+    },
+    {
+      "flow": "contact-create",
+      "theme": "light",
+      "width": 320,
+      "overflow": false,
+      "missing": [],
+      "actions": [
+        {
+          "text": "Cancel",
+          "width": 137,
+          "height": 48,
+          "order": "0"
+        },
+        {
+          "text": "Add contact",
+          "width": 137,
+          "height": 48,
+          "order": "0"
+        }
+      ],
+      "inViewport": true
+    },
+    {
+      "flow": "locked-data-delete",
+      "theme": "light",
+      "width": 320,
+      "overflow": false,
+      "missing": [],
+      "actions": [
+        {
+          "text": "Keep locked data",
+          "width": 250,
+          "height": 48,
+          "order": "0"
+        },
+        {
+          "text": "Delete locked data",
+          "width": 250,
+          "height": 48,
+          "order": "0"
+        }
+      ],
+      "inViewport": true
+    },
+    {
+      "flow": "send-entry",
+      "theme": "light",
+      "width": 320,
+      "overflow": false,
+      "missing": [],
+      "actions": [
+        {
+          "text": "Cancel",
+          "width": 137,
+          "height": 66,
+          "order": "0"
+        },
+        {
+          "text": "Review payment",
+          "width": 137,
+          "height": 66,
+          "order": "0"
+        }
+      ],
+      "inViewport": true
+    },
+    {
+      "flow": "payment-review",
+      "theme": "light",
+      "width": 320,
+      "overflow": false,
+      "missing": [],
+      "actions": [
+        {
+          "text": "Back to edit",
+          "width": 137,
+          "height": 66,
+          "order": "0"
+        },
+        {
+          "text": "Request approvals",
+          "width": 137,
+          "height": 66,
+          "order": "0"
+        }
+      ],
+      "inViewport": true
+    },
+    {
+      "flow": "payment-mismatch",
+      "theme": "light",
+      "width": 320,
+      "overflow": false,
+      "missing": [],
+      "actions": [
+        {
+          "text": "Back to edit",
+          "width": 286,
+          "height": 48,
+          "order": "0"
+        }
+      ],
+      "inViewport": true
+    },
+    {
+      "flow": "receive",
+      "theme": "light",
+      "width": 320,
+      "overflow": false,
+      "missing": [],
+      "actions": [
+        {
+          "text": "Share address",
+          "width": 137,
+          "height": 48,
+          "order": "0"
+        },
+        {
+          "text": "Copy address",
+          "width": 137,
+          "height": 48,
+          "order": "0"
+        }
+      ],
+      "inViewport": true
+    },
+    {
+      "flow": "address-book",
+      "theme": "light",
+      "width": 320,
+      "overflow": false,
+      "missing": [],
+      "actions": [],
+      "inViewport": true
+    },
+    {
+      "flow": "settings",
+      "theme": "light",
+      "width": 320,
+      "overflow": false,
+      "missing": [],
+      "actions": [],
+      "inViewport": true
+    },
+    {
+      "flow": "network-privacy",
+      "theme": "light",
+      "width": 320,
+      "overflow": false,
+      "missing": [],
+      "actions": [],
+      "inViewport": true
+    },
+    {
+      "flow": "setup-protection",
+      "theme": "light",
+      "width": 390,
+      "overflow": false,
+      "missing": [],
+      "actions": [
+        {
+          "text": "Pause plan",
+          "width": 174,
+          "height": 70,
+          "order": "0"
+        },
+        {
+          "text": "Continue to approval rule",
+          "width": 174,
+          "height": 70,
+          "order": "0"
+        }
+      ],
+      "inViewport": true
+    },
+    {
+      "flow": "setup-rule",
+      "theme": "light",
+      "width": 390,
+      "overflow": false,
+      "missing": [],
+      "actions": [
+        {
+          "text": "Pause plan",
+          "width": 174,
+          "height": 48,
+          "order": "0"
+        },
+        {
+          "text": "Back",
+          "width": 174,
+          "height": 48,
+          "order": "0"
+        },
+        {
+          "text": "Use this arrangement",
+          "width": 356,
+          "height": 48,
+          "order": "0"
+        }
+      ],
+      "inViewport": true
+    },
+    {
+      "flow": "setup-labels",
+      "theme": "light",
+      "width": 390,
+      "overflow": false,
+      "missing": [],
+      "actions": [
+        {
+          "text": "Pause plan",
+          "width": 174,
+          "height": 48,
+          "order": "0"
+        },
+        {
+          "text": "Back",
+          "width": 174,
+          "height": 48,
+          "order": "0"
+        },
+        {
+          "text": "Continue",
+          "width": 356,
+          "height": 48,
+          "order": "0"
+        }
+      ],
+      "inViewport": true
+    },
+    {
+      "flow": "setup-review",
+      "theme": "light",
+      "width": 390,
+      "overflow": false,
+      "missing": [],
+      "actions": [
+        {
+          "text": "Pause plan",
+          "width": 174,
+          "height": 48,
+          "order": "0"
+        },
+        {
+          "text": "Back",
+          "width": 174,
+          "height": 48,
+          "order": "0"
+        },
+        {
+          "text": "Create wallet",
+          "width": 356,
+          "height": 48,
+          "order": "0"
+        }
+      ],
+      "inViewport": true
+    },
+    {
+      "flow": "replacement-wallet",
+      "theme": "light",
+      "width": 390,
+      "overflow": false,
+      "missing": [],
+      "actions": [
+        {
+          "text": "Cancel",
+          "width": 168,
+          "height": 48,
+          "order": "0"
+        },
+        {
+          "text": "Create new wallet",
+          "width": 168,
+          "height": 48,
+          "order": "0"
+        }
+      ],
+      "inViewport": true
+    },
+    {
+      "flow": "backup-save",
+      "theme": "light",
+      "width": 390,
+      "overflow": false,
+      "missing": [],
+      "actions": [
+        {
+          "text": "Cancel",
+          "width": 168,
+          "height": 66,
+          "order": "0"
+        },
+        {
+          "text": "Encrypt and save file",
+          "width": 168,
+          "height": 66,
+          "order": "0"
+        }
+      ],
+      "inViewport": true
+    },
+    {
+      "flow": "backup-check",
+      "theme": "light",
+      "width": 390,
+      "overflow": false,
+      "missing": [],
+      "actions": [
+        {
+          "text": "Cancel",
+          "width": 168,
+          "height": 48,
+          "order": "0"
+        },
+        {
+          "text": "Check saved file",
+          "width": 168,
+          "height": 48,
+          "order": "0"
+        }
+      ],
+      "inViewport": true
+    },
+    {
+      "flow": "backup-restore",
+      "theme": "light",
+      "width": 390,
+      "overflow": false,
+      "missing": [],
+      "actions": [
+        {
+          "text": "Cancel",
+          "width": 168,
+          "height": 48,
+          "order": "0"
+        },
+        {
+          "text": "Restore backup",
+          "width": 168,
+          "height": 48,
+          "order": "0"
+        }
+      ],
+      "inViewport": true
+    },
+    {
+      "flow": "direct-chat-create",
+      "theme": "light",
+      "width": 390,
+      "overflow": false,
+      "missing": [],
+      "actions": [
+        {
+          "text": "Cancel",
+          "width": 168,
+          "height": 48,
+          "order": "0"
+        },
+        {
+          "text": "Create invite link",
+          "width": 168,
+          "height": 48,
+          "order": "0"
+        }
+      ],
+      "inViewport": true
+    },
+    {
+      "flow": "direct-chat-invite",
+      "theme": "light",
+      "width": 390,
+      "overflow": false,
+      "missing": [],
+      "actions": [],
+      "inViewport": true
+    },
+    {
+      "flow": "direct-chat-leave",
+      "theme": "light",
+      "width": 390,
+      "overflow": false,
+      "missing": [],
+      "actions": [
+        {
+          "text": "Keep chat",
+          "width": 211,
+          "height": 48,
+          "order": "0"
+        },
+        {
+          "text": "Leave chat",
+          "width": 211,
+          "height": 48,
+          "order": "0"
+        }
+      ],
+      "inViewport": true
+    },
+    {
+      "flow": "contact-create",
+      "theme": "light",
+      "width": 390,
+      "overflow": false,
+      "missing": [],
+      "actions": [
+        {
+          "text": "Cancel",
+          "width": 168,
+          "height": 48,
+          "order": "0"
+        },
+        {
+          "text": "Add contact",
+          "width": 168,
+          "height": 48,
+          "order": "0"
+        }
+      ],
+      "inViewport": true
+    },
+    {
+      "flow": "locked-data-delete",
+      "theme": "light",
+      "width": 390,
+      "overflow": false,
+      "missing": [],
+      "actions": [
+        {
+          "text": "Keep locked data",
+          "width": 152,
+          "height": 66,
+          "order": "0"
+        },
+        {
+          "text": "Delete locked data",
+          "width": 152,
+          "height": 66,
+          "order": "0"
+        }
+      ],
+      "inViewport": true
+    },
+    {
+      "flow": "send-entry",
+      "theme": "light",
+      "width": 390,
+      "overflow": false,
+      "missing": [],
+      "actions": [
+        {
+          "text": "Cancel",
+          "width": 168,
+          "height": 48,
+          "order": "0"
+        },
+        {
+          "text": "Review payment",
+          "width": 168,
+          "height": 48,
+          "order": "0"
+        }
+      ],
+      "inViewport": true
+    },
+    {
+      "flow": "payment-review",
+      "theme": "light",
+      "width": 390,
+      "overflow": false,
+      "missing": [],
+      "actions": [
+        {
+          "text": "Back to edit",
+          "width": 168,
+          "height": 48,
+          "order": "0"
+        },
+        {
+          "text": "Request approvals",
+          "width": 168,
+          "height": 48,
+          "order": "0"
+        }
+      ],
+      "inViewport": true
+    },
+    {
+      "flow": "payment-mismatch",
+      "theme": "light",
+      "width": 390,
+      "overflow": false,
+      "missing": [],
+      "actions": [
+        {
+          "text": "Back to edit",
+          "width": 348,
+          "height": 48,
+          "order": "0"
+        }
+      ],
+      "inViewport": true
+    },
+    {
+      "flow": "receive",
+      "theme": "light",
+      "width": 390,
+      "overflow": false,
+      "missing": [],
+      "actions": [
+        {
+          "text": "Share address",
+          "width": 168,
+          "height": 48,
+          "order": "0"
+        },
+        {
+          "text": "Copy address",
+          "width": 168,
+          "height": 48,
+          "order": "0"
+        }
+      ],
+      "inViewport": true
+    },
+    {
+      "flow": "address-book",
+      "theme": "light",
+      "width": 390,
+      "overflow": false,
+      "missing": [],
+      "actions": [],
+      "inViewport": true
+    },
+    {
+      "flow": "settings",
+      "theme": "light",
+      "width": 390,
+      "overflow": false,
+      "missing": [],
+      "actions": [],
+      "inViewport": true
+    },
+    {
+      "flow": "network-privacy",
+      "theme": "light",
+      "width": 390,
+      "overflow": false,
+      "missing": [],
+      "actions": [],
+      "inViewport": true
+    },
+    {
+      "flow": "setup-protection",
+      "theme": "light",
+      "width": 1440,
+      "overflow": false,
+      "missing": [],
+      "actions": [
+        {
+          "text": "Pause plan",
+          "width": 111,
+          "height": 48,
+          "order": "0"
+        },
+        {
+          "text": "Continue to approval rule",
+          "width": 214,
+          "height": 48,
+          "order": "0"
+        }
+      ],
+      "inViewport": true
+    },
+    {
+      "flow": "setup-rule",
+      "theme": "light",
+      "width": 1440,
+      "overflow": false,
+      "missing": [],
+      "actions": [
+        {
+          "text": "Pause plan",
+          "width": 111,
+          "height": 48,
+          "order": "0"
+        },
+        {
+          "text": "Back",
+          "width": 68,
+          "height": 48,
+          "order": "0"
+        },
+        {
+          "text": "Use this arrangement",
+          "width": 188,
+          "height": 48,
+          "order": "0"
+        }
+      ],
+      "inViewport": true
+    },
+    {
+      "flow": "setup-labels",
+      "theme": "light",
+      "width": 1440,
+      "overflow": false,
+      "missing": [],
+      "actions": [
+        {
+          "text": "Pause plan",
+          "width": 111,
+          "height": 48,
+          "order": "0"
+        },
+        {
+          "text": "Back",
+          "width": 68,
+          "height": 48,
+          "order": "0"
+        },
+        {
+          "text": "Continue",
+          "width": 144,
+          "height": 48,
+          "order": "0"
+        }
+      ],
+      "inViewport": true
+    },
+    {
+      "flow": "setup-review",
+      "theme": "light",
+      "width": 1440,
+      "overflow": false,
+      "missing": [],
+      "actions": [
+        {
+          "text": "Pause plan",
+          "width": 111,
+          "height": 48,
+          "order": "0"
+        },
+        {
+          "text": "Back",
+          "width": 68,
+          "height": 48,
+          "order": "0"
+        },
+        {
+          "text": "Create wallet",
+          "width": 144,
+          "height": 48,
+          "order": "0"
+        }
+      ],
+      "inViewport": true
+    },
+    {
+      "flow": "replacement-wallet",
+      "theme": "light",
+      "width": 1440,
+      "overflow": false,
+      "missing": [],
+      "actions": [
+        {
+          "text": "Cancel",
+          "width": 83,
+          "height": 48,
+          "order": "0"
+        },
+        {
+          "text": "Create new wallet",
+          "width": 162,
+          "height": 48,
+          "order": "0"
+        }
+      ],
+      "inViewport": true
+    },
+    {
+      "flow": "backup-save",
+      "theme": "light",
+      "width": 1440,
+      "overflow": false,
+      "missing": [],
+      "actions": [
+        {
+          "text": "Cancel",
+          "width": 83,
+          "height": 48,
+          "order": "0"
+        },
+        {
+          "text": "Encrypt and save file",
+          "width": 181,
+          "height": 48,
+          "order": "0"
+        }
+      ],
+      "inViewport": true
+    },
+    {
+      "flow": "backup-check",
+      "theme": "light",
+      "width": 1440,
+      "overflow": false,
+      "missing": [],
+      "actions": [
+        {
+          "text": "Cancel",
+          "width": 83,
+          "height": 48,
+          "order": "0"
+        },
+        {
+          "text": "Check saved file",
+          "width": 150,
+          "height": 48,
+          "order": "0"
+        }
+      ],
+      "inViewport": true
+    },
+    {
+      "flow": "backup-restore",
+      "theme": "light",
+      "width": 1440,
+      "overflow": false,
+      "missing": [],
+      "actions": [
+        {
+          "text": "Cancel",
+          "width": 83,
+          "height": 48,
+          "order": "0"
+        },
+        {
+          "text": "Restore backup",
+          "width": 146,
+          "height": 48,
+          "order": "0"
+        }
+      ],
+      "inViewport": true
+    },
+    {
+      "flow": "direct-chat-create",
+      "theme": "light",
+      "width": 1440,
+      "overflow": false,
+      "missing": [],
+      "actions": [
+        {
+          "text": "Cancel",
+          "width": 83,
+          "height": 48,
+          "order": "0"
+        },
+        {
+          "text": "Create invite link",
+          "width": 154,
+          "height": 48,
+          "order": "0"
+        }
+      ],
+      "inViewport": true
+    },
+    {
+      "flow": "direct-chat-invite",
+      "theme": "light",
+      "width": 1440,
+      "overflow": false,
+      "missing": [],
+      "actions": [],
+      "inViewport": true
+    },
+    {
+      "flow": "direct-chat-leave",
+      "theme": "light",
+      "width": 1440,
+      "overflow": false,
+      "missing": [],
+      "actions": [
+        {
+          "text": "Keep chat",
+          "width": 105,
+          "height": 48,
+          "order": "0"
+        },
+        {
+          "text": "Leave chat",
+          "width": 111,
+          "height": 48,
+          "order": "0"
+        }
+      ],
+      "inViewport": true
+    },
+    {
+      "flow": "contact-create",
+      "theme": "light",
+      "width": 1440,
+      "overflow": false,
+      "missing": [],
+      "actions": [
+        {
+          "text": "Cancel",
+          "width": 83,
+          "height": 48,
+          "order": "0"
+        },
+        {
+          "text": "Add contact",
+          "width": 144,
+          "height": 48,
+          "order": "0"
+        }
+      ],
+      "inViewport": true
+    },
+    {
+      "flow": "locked-data-delete",
+      "theme": "light",
+      "width": 1440,
+      "overflow": false,
+      "missing": [],
+      "actions": [
+        {
+          "text": "Keep locked data",
+          "width": 155,
+          "height": 48,
+          "order": "0"
+        },
+        {
+          "text": "Delete locked data",
+          "width": 166,
+          "height": 48,
+          "order": "0"
+        }
+      ],
+      "inViewport": true
+    },
+    {
+      "flow": "send-entry",
+      "theme": "light",
+      "width": 1440,
+      "overflow": false,
+      "missing": [],
+      "actions": [
+        {
+          "text": "Cancel",
+          "width": 83,
+          "height": 48,
+          "order": "0"
+        },
+        {
+          "text": "Review payment",
+          "width": 151,
+          "height": 48,
+          "order": "0"
+        }
+      ],
+      "inViewport": true
+    },
+    {
+      "flow": "payment-review",
+      "theme": "light",
+      "width": 1440,
+      "overflow": false,
+      "missing": [],
+      "actions": [
+        {
+          "text": "Back to edit",
+          "width": 117,
+          "height": 48,
+          "order": "0"
+        },
+        {
+          "text": "Request approvals",
+          "width": 167,
+          "height": 48,
+          "order": "0"
+        }
+      ],
+      "inViewport": true
+    },
+    {
+      "flow": "payment-mismatch",
+      "theme": "light",
+      "width": 1440,
+      "overflow": false,
+      "missing": [],
+      "actions": [
+        {
+          "text": "Back to edit",
+          "width": 117,
+          "height": 48,
+          "order": "0"
+        }
+      ],
+      "inViewport": true
+    },
+    {
+      "flow": "receive",
+      "theme": "light",
+      "width": 1440,
+      "overflow": false,
+      "missing": [],
+      "actions": [
+        {
+          "text": "Share address",
+          "width": 136,
+          "height": 48,
+          "order": "0"
+        },
+        {
+          "text": "Copy address",
+          "width": 144,
+          "height": 48,
+          "order": "0"
+        }
+      ],
+      "inViewport": true
+    },
+    {
+      "flow": "address-book",
+      "theme": "light",
+      "width": 1440,
+      "overflow": false,
+      "missing": [],
+      "actions": [],
+      "inViewport": true
+    },
+    {
+      "flow": "settings",
+      "theme": "light",
+      "width": 1440,
+      "overflow": false,
+      "missing": [],
+      "actions": [],
+      "inViewport": true
+    },
+    {
+      "flow": "network-privacy",
+      "theme": "light",
+      "width": 1440,
+      "overflow": false,
+      "missing": [],
+      "actions": [],
+      "inViewport": true
+    },
+    {
+      "flow": "setup-skip",
+      "theme": "light",
+      "width": 320,
+      "overflow": false,
+      "missing": [],
+      "actions": [],
+      "inViewport": true
+    },
+    {
+      "flow": "setup-skip",
+      "theme": "light",
+      "width": 390,
+      "overflow": false,
+      "missing": [],
+      "actions": [],
+      "inViewport": true
+    },
+    {
+      "flow": "setup-skip",
+      "theme": "light",
+      "width": 1440,
+      "overflow": false,
+      "missing": [],
+      "actions": [],
+      "inViewport": true
+    },
+    {
+      "flow": "backup-restore-short",
+      "theme": "light",
+      "width": 740,
+      "overflow": false,
+      "missing": [],
+      "actions": [
+        {
+          "text": "Cancel",
+          "width": 83,
+          "height": 48,
+          "order": "0"
+        },
+        {
+          "text": "Restore backup",
+          "width": 146,
+          "height": 48,
+          "order": "0"
+        }
+      ],
+      "inViewport": true
+    }
+  ],
+  "errors": []
+}

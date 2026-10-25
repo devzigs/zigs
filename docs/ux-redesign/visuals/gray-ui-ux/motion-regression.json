@@ -1,0 +1,825 @@
+{
+  "checks": [
+    "overview: page title has a measured, finite entrance",
+    "overview: background redraw does not replay title entrances",
+    "approvals: page title has a measured, finite entrance",
+    "approvals: background redraw does not replay title entrances",
+    "activity: page title has a measured, finite entrance",
+    "activity: background redraw does not replay title entrances",
+    "recipients: page title has a measured, finite entrance",
+    "recipients: background redraw does not replay title entrances",
+    "swap: page title has a measured, finite entrance",
+    "swap: background redraw does not replay title entrances",
+    "chats: page title has a measured, finite entrance",
+    "chats: background redraw does not replay title entrances",
+    "recovery: page title has a measured, finite entrance",
+    "recovery: background redraw does not replay title entrances",
+    "settings: page title has a measured, finite entrance",
+    "settings: background redraw does not replay title entrances",
+    "home: page title has a measured, finite entrance",
+    "home: background redraw does not replay title entrances",
+    "hover keeps the full action hit area fixed",
+    "hover keeps the exact portfolio text and position fixed",
+    "Send arrow articulates separately from its stationary control",
+    "pointer light responds on the portfolio frame",
+    "financial value and its ancestors never transform or fade",
+    "Messages uses a layered 64-unit relief object",
+    "message relief separates its physical layers",
+    "new empty-state artwork has no endless idle animation",
+    "receive: existing initial focus stays inside the dialog",
+    "receive: address and QR stay stable throughout the entrance",
+    "receive: Tab remains in the existing focus loop",
+    "receive: Escape dismisses through the existing handler",
+    "send: existing initial focus stays inside the dialog",
+    "send: address and QR stay stable throughout the entrance",
+    "send: Tab remains in the existing focus loop",
+    "send: Escape dismisses through the existing handler",
+    "create: existing initial focus stays inside the dialog",
+    "create: address and QR stay stable throughout the entrance",
+    "create: Tab remains in the existing focus loop",
+    "create: Escape dismisses through the existing handler",
+    "receive: phone dialog content does not overflow",
+    "Receive: complete QR is visible in the initial phone viewport",
+    "send: phone dialog content does not overflow",
+    "create: phone dialog content does not overflow",
+    "guide retains manual journey selection",
+    "home dark 320: no horizontal overflow",
+    "home dark 320: unique SVG/control identifiers",
+    "overview dark 320: no horizontal overflow",
+    "overview dark 320: unique SVG/control identifiers",
+    "approvals dark 320: no horizontal overflow",
+    "approvals dark 320: unique SVG/control identifiers",
+    "activity dark 320: no horizontal overflow",
+    "activity dark 320: unique SVG/control identifiers",
+    "recipients dark 320: no horizontal overflow",
+    "recipients dark 320: unique SVG/control identifiers",
+    "swap dark 320: no horizontal overflow",
+    "swap dark 320: unique SVG/control identifiers",
+    "chats dark 320: no horizontal overflow",
+    "chats dark 320: unique SVG/control identifiers",
+    "recovery dark 320: no horizontal overflow",
+    "recovery dark 320: unique SVG/control identifiers",
+    "settings dark 320: no horizontal overflow",
+    "settings dark 320: unique SVG/control identifiers",
+    "home dark 390: no horizontal overflow",
+    "home dark 390: unique SVG/control identifiers",
+    "overview dark 390: no horizontal overflow",
+    "overview dark 390: unique SVG/control identifiers",
+    "approvals dark 390: no horizontal overflow",
+    "approvals dark 390: unique SVG/control identifiers",
+    "activity dark 390: no horizontal overflow",
+    "activity dark 390: unique SVG/control identifiers",
+    "recipients dark 390: no horizontal overflow",
+    "recipients dark 390: unique SVG/control identifiers",
+    "swap dark 390: no horizontal overflow",
+    "swap dark 390: unique SVG/control identifiers",
+    "chats dark 390: no horizontal overflow",
+    "chats dark 390: unique SVG/control identifiers",
+    "recovery dark 390: no horizontal overflow",
+    "recovery dark 390: unique SVG/control identifiers",
+    "settings dark 390: no horizontal overflow",
+    "settings dark 390: unique SVG/control identifiers",
+    "home dark 768: no horizontal overflow",
+    "home dark 768: unique SVG/control identifiers",
+    "overview dark 768: no horizontal overflow",
+    "overview dark 768: unique SVG/control identifiers",
+    "approvals dark 768: no horizontal overflow",
+    "approvals dark 768: unique SVG/control identifiers",
+    "activity dark 768: no horizontal overflow",
+    "activity dark 768: unique SVG/control identifiers",
+    "recipients dark 768: no horizontal overflow",
+    "recipients dark 768: unique SVG/control identifiers",
+    "swap dark 768: no horizontal overflow",
+    "swap dark 768: unique SVG/control identifiers",
+    "chats dark 768: no horizontal overflow",
+    "chats dark 768: unique SVG/control identifiers",
+    "recovery dark 768: no horizontal overflow",
+    "recovery dark 768: unique SVG/control identifiers",
+    "settings dark 768: no horizontal overflow",
+    "settings dark 768: unique SVG/control identifiers",
+    "home dark 1440: no horizontal overflow",
+    "home dark 1440: unique SVG/control identifiers",
+    "overview dark 1440: no horizontal overflow",
+    "overview dark 1440: unique SVG/control identifiers",
+    "approvals dark 1440: no horizontal overflow",
+    "approvals dark 1440: unique SVG/control identifiers",
+    "activity dark 1440: no horizontal overflow",
+    "activity dark 1440: unique SVG/control identifiers",
+    "recipients dark 1440: no horizontal overflow",
+    "recipients dark 1440: unique SVG/control identifiers",
+    "swap dark 1440: no horizontal overflow",
+    "swap dark 1440: unique SVG/control identifiers",
+    "chats dark 1440: no horizontal overflow",
+    "chats dark 1440: unique SVG/control identifiers",
+    "recovery dark 1440: no horizontal overflow",
+    "recovery dark 1440: unique SVG/control identifiers",
+    "settings dark 1440: no horizontal overflow",
+    "settings dark 1440: unique SVG/control identifiers",
+    "home light 320: no horizontal overflow",
+    "home light 320: unique SVG/control identifiers",
+    "overview light 320: no horizontal overflow",
+    "overview light 320: unique SVG/control identifiers",
+    "approvals light 320: no horizontal overflow",
+    "approvals light 320: unique SVG/control identifiers",
+    "activity light 320: no horizontal overflow",
+    "activity light 320: unique SVG/control identifiers",
+    "recipients light 320: no horizontal overflow",
+    "recipients light 320: unique SVG/control identifiers",
+    "swap light 320: no horizontal overflow",
+    "swap light 320: unique SVG/control identifiers",
+    "chats light 320: no horizontal overflow",
+    "chats light 320: unique SVG/control identifiers",
+    "recovery light 320: no horizontal overflow",
+    "recovery light 320: unique SVG/control identifiers",
+    "settings light 320: no horizontal overflow",
+    "settings light 320: unique SVG/control identifiers",
+    "home light 390: no horizontal overflow",
+    "home light 390: unique SVG/control identifiers",
+    "overview light 390: no horizontal overflow",
+    "overview light 390: unique SVG/control identifiers",
+    "approvals light 390: no horizontal overflow",
+    "approvals light 390: unique SVG/control identifiers",
+    "activity light 390: no horizontal overflow",
+    "activity light 390: unique SVG/control identifiers",
+    "recipients light 390: no horizontal overflow",
+    "recipients light 390: unique SVG/control identifiers",
+    "swap light 390: no horizontal overflow",
+    "swap light 390: unique SVG/control identifiers",
+    "chats light 390: no horizontal overflow",
+    "chats light 390: unique SVG/control identifiers",
+    "recovery light 390: no horizontal overflow",
+    "recovery light 390: unique SVG/control identifiers",
+    "settings light 390: no horizontal overflow",
+    "settings light 390: unique SVG/control identifiers",
+    "home light 768: no horizontal overflow",
+    "home light 768: unique SVG/control identifiers",
+    "overview light 768: no horizontal overflow",
+    "overview light 768: unique SVG/control identifiers",
+    "approvals light 768: no horizontal overflow",
+    "approvals light 768: unique SVG/control identifiers",
+    "activity light 768: no horizontal overflow",
+    "activity light 768: unique SVG/control identifiers",
+    "recipients light 768: no horizontal overflow",
+    "recipients light 768: unique SVG/control identifiers",
+    "swap light 768: no horizontal overflow",
+    "swap light 768: unique SVG/control identifiers",
+    "chats light 768: no horizontal overflow",
+    "chats light 768: unique SVG/control identifiers",
+    "recovery light 768: no horizontal overflow",
+    "recovery light 768: unique SVG/control identifiers",
+    "settings light 768: no horizontal overflow",
+    "settings light 768: unique SVG/control identifiers",
+    "home light 1440: no horizontal overflow",
+    "home light 1440: unique SVG/control identifiers",
+    "overview light 1440: no horizontal overflow",
+    "overview light 1440: unique SVG/control identifiers",
+    "approvals light 1440: no horizontal overflow",
+    "approvals light 1440: unique SVG/control identifiers",
+    "activity light 1440: no horizontal overflow",
+    "activity light 1440: unique SVG/control identifiers",
+    "recipients light 1440: no horizontal overflow",
+    "recipients light 1440: unique SVG/control identifiers",
+    "swap light 1440: no horizontal overflow",
+    "swap light 1440: unique SVG/control identifiers",
+    "chats light 1440: no horizontal overflow",
+    "chats light 1440: unique SVG/control identifiers",
+    "recovery light 1440: no horizontal overflow",
+    "recovery light 1440: unique SVG/control identifiers",
+    "settings light 1440: no horizontal overflow",
+    "settings light 1440: unique SVG/control identifiers",
+    "reduced motion leaves content available with no running app animations",
+    "forced colors replaces metallic gradients with system text color",
+    "forced colors disables the new ambient experience",
+    "hidden document cancels ambient animation and pointer light",
+    "returning to the document does not replay the canceled page entrance",
+    "presentation review leaves wallet facts and storage unchanged",
+    "no browser JavaScript errors: "
+  ],
+  "layouts": [
+    {
+      "tab": "home",
+      "theme": "dark",
+      "width": 320,
+      "overflow": false,
+      "distinctIds": true,
+      "headerHeight": 0
+    },
+    {
+      "tab": "overview",
+      "theme": "dark",
+      "width": 320,
+      "overflow": false,
+      "distinctIds": true,
+      "headerHeight": 129
+    },
+    {
+      "tab": "approvals",
+      "theme": "dark",
+      "width": 320,
+      "overflow": false,
+      "distinctIds": true,
+      "headerHeight": 129
+    },
+    {
+      "tab": "activity",
+      "theme": "dark",
+      "width": 320,
+      "overflow": false,
+      "distinctIds": true,
+      "headerHeight": 129
+    },
+    {
+      "tab": "recipients",
+      "theme": "dark",
+      "width": 320,
+      "overflow": false,
+      "distinctIds": true,
+      "headerHeight": 129
+    },
+    {
+      "tab": "swap",
+      "theme": "dark",
+      "width": 320,
+      "overflow": false,
+      "distinctIds": true,
+      "headerHeight": 129
+    },
+    {
+      "tab": "chats",
+      "theme": "dark",
+      "width": 320,
+      "overflow": false,
+      "distinctIds": true,
+      "headerHeight": 129
+    },
+    {
+      "tab": "recovery",
+      "theme": "dark",
+      "width": 320,
+      "overflow": false,
+      "distinctIds": true,
+      "headerHeight": 129
+    },
+    {
+      "tab": "settings",
+      "theme": "dark",
+      "width": 320,
+      "overflow": false,
+      "distinctIds": true,
+      "headerHeight": 129
+    },
+    {
+      "tab": "home",
+      "theme": "dark",
+      "width": 390,
+      "overflow": false,
+      "distinctIds": true,
+      "headerHeight": 0
+    },
+    {
+      "tab": "overview",
+      "theme": "dark",
+      "width": 390,
+      "overflow": false,
+      "distinctIds": true,
+      "headerHeight": 129
+    },
+    {
+      "tab": "approvals",
+      "theme": "dark",
+      "width": 390,
+      "overflow": false,
+      "distinctIds": true,
+      "headerHeight": 129
+    },
+    {
+      "tab": "activity",
+      "theme": "dark",
+      "width": 390,
+      "overflow": false,
+      "distinctIds": true,
+      "headerHeight": 129
+    },
+    {
+      "tab": "recipients",
+      "theme": "dark",
+      "width": 390,
+      "overflow": false,
+      "distinctIds": true,
+      "headerHeight": 129
+    },
+    {
+      "tab": "swap",
+      "theme": "dark",
+      "width": 390,
+      "overflow": false,
+      "distinctIds": true,
+      "headerHeight": 129
+    },
+    {
+      "tab": "chats",
+      "theme": "dark",
+      "width": 390,
+      "overflow": false,
+      "distinctIds": true,
+      "headerHeight": 129
+    },
+    {
+      "tab": "recovery",
+      "theme": "dark",
+      "width": 390,
+      "overflow": false,
+      "distinctIds": true,
+      "headerHeight": 129
+    },
+    {
+      "tab": "settings",
+      "theme": "dark",
+      "width": 390,
+      "overflow": false,
+      "distinctIds": true,
+      "headerHeight": 129
+    },
+    {
+      "tab": "home",
+      "theme": "dark",
+      "width": 768,
+      "overflow": false,
+      "distinctIds": true,
+      "headerHeight": 0
+    },
+    {
+      "tab": "overview",
+      "theme": "dark",
+      "width": 768,
+      "overflow": false,
+      "distinctIds": true,
+      "headerHeight": 145
+    },
+    {
+      "tab": "approvals",
+      "theme": "dark",
+      "width": 768,
+      "overflow": false,
+      "distinctIds": true,
+      "headerHeight": 145
+    },
+    {
+      "tab": "activity",
+      "theme": "dark",
+      "width": 768,
+      "overflow": false,
+      "distinctIds": true,
+      "headerHeight": 145
+    },
+    {
+      "tab": "recipients",
+      "theme": "dark",
+      "width": 768,
+      "overflow": false,
+      "distinctIds": true,
+      "headerHeight": 145
+    },
+    {
+      "tab": "swap",
+      "theme": "dark",
+      "width": 768,
+      "overflow": false,
+      "distinctIds": true,
+      "headerHeight": 145
+    },
+    {
+      "tab": "chats",
+      "theme": "dark",
+      "width": 768,
+      "overflow": false,
+      "distinctIds": true,
+      "headerHeight": 145
+    },
+    {
+      "tab": "recovery",
+      "theme": "dark",
+      "width": 768,
+      "overflow": false,
+      "distinctIds": true,
+      "headerHeight": 145
+    },
+    {
+      "tab": "settings",
+      "theme": "dark",
+      "width": 768,
+      "overflow": false,
+      "distinctIds": true,
+      "headerHeight": 145
+    },
+    {
+      "tab": "home",
+      "theme": "dark",
+      "width": 1440,
+      "overflow": false,
+      "distinctIds": true,
+      "headerHeight": 0
+    },
+    {
+      "tab": "overview",
+      "theme": "dark",
+      "width": 1440,
+      "overflow": false,
+      "distinctIds": true,
+      "headerHeight": 85
+    },
+    {
+      "tab": "approvals",
+      "theme": "dark",
+      "width": 1440,
+      "overflow": false,
+      "distinctIds": true,
+      "headerHeight": 85
+    },
+    {
+      "tab": "activity",
+      "theme": "dark",
+      "width": 1440,
+      "overflow": false,
+      "distinctIds": true,
+      "headerHeight": 85
+    },
+    {
+      "tab": "recipients",
+      "theme": "dark",
+      "width": 1440,
+      "overflow": false,
+      "distinctIds": true,
+      "headerHeight": 85
+    },
+    {
+      "tab": "swap",
+      "theme": "dark",
+      "width": 1440,
+      "overflow": false,
+      "distinctIds": true,
+      "headerHeight": 85
+    },
+    {
+      "tab": "chats",
+      "theme": "dark",
+      "width": 1440,
+      "overflow": false,
+      "distinctIds": true,
+      "headerHeight": 85
+    },
+    {
+      "tab": "recovery",
+      "theme": "dark",
+      "width": 1440,
+      "overflow": false,
+      "distinctIds": true,
+      "headerHeight": 85
+    },
+    {
+      "tab": "settings",
+      "theme": "dark",
+      "width": 1440,
+      "overflow": false,
+      "distinctIds": true,
+      "headerHeight": 85
+    },
+    {
+      "tab": "home",
+      "theme": "light",
+      "width": 320,
+      "overflow": false,
+      "distinctIds": true,
+      "headerHeight": 0
+    },
+    {
+      "tab": "overview",
+      "theme": "light",
+      "width": 320,
+      "overflow": false,
+      "distinctIds": true,
+      "headerHeight": 129
+    },
+    {
+      "tab": "approvals",
+      "theme": "light",
+      "width": 320,
+      "overflow": false,
+      "distinctIds": true,
+      "headerHeight": 129
+    },
+    {
+      "tab": "activity",
+      "theme": "light",
+      "width": 320,
+      "overflow": false,
+      "distinctIds": true,
+      "headerHeight": 129
+    },
+    {
+      "tab": "recipients",
+      "theme": "light",
+      "width": 320,
+      "overflow": false,
+      "distinctIds": true,
+      "headerHeight": 129
+    },
+    {
+      "tab": "swap",
+      "theme": "light",
+      "width": 320,
+      "overflow": false,
+      "distinctIds": true,
+      "headerHeight": 129
+    },
+    {
+      "tab": "chats",
+      "theme": "light",
+      "width": 320,
+      "overflow": false,
+      "distinctIds": true,
+      "headerHeight": 129
+    },
+    {
+      "tab": "recovery",
+      "theme": "light",
+      "width": 320,
+      "overflow": false,
+      "distinctIds": true,
+      "headerHeight": 129
+    },
+    {
+      "tab": "settings",
+      "theme": "light",
+      "width": 320,
+      "overflow": false,
+      "distinctIds": true,
+      "headerHeight": 129
+    },
+    {
+      "tab": "home",
+      "theme": "light",
+      "width": 390,
+      "overflow": false,
+      "distinctIds": true,
+      "headerHeight": 0
+    },
+    {
+      "tab": "overview",
+      "theme": "light",
+      "width": 390,
+      "overflow": false,
+      "distinctIds": true,
+      "headerHeight": 129
+    },
+    {
+      "tab": "approvals",
+      "theme": "light",
+      "width": 390,
+      "overflow": false,
+      "distinctIds": true,
+      "headerHeight": 129
+    },
+    {
+      "tab": "activity",
+      "theme": "light",
+      "width": 390,
+      "overflow": false,
+      "distinctIds": true,
+      "headerHeight": 129
+    },
+    {
+      "tab": "recipients",
+      "theme": "light",
+      "width": 390,
+      "overflow": false,
+      "distinctIds": true,
+      "headerHeight": 129
+    },
+    {
+      "tab": "swap",
+      "theme": "light",
+      "width": 390,
+      "overflow": false,
+      "distinctIds": true,
+      "headerHeight": 129
+    },
+    {
+      "tab": "chats",
+      "theme": "light",
+      "width": 390,
+      "overflow": false,
+      "distinctIds": true,
+      "headerHeight": 129
+    },
+    {
+      "tab": "recovery",
+      "theme": "light",
+      "width": 390,
+      "overflow": false,
+      "distinctIds": true,
+      "headerHeight": 129
+    },
+    {
+      "tab": "settings",
+      "theme": "light",
+      "width": 390,
+      "overflow": false,
+      "distinctIds": true,
+      "headerHeight": 129
+    },
+    {
+      "tab": "home",
+      "theme": "light",
+      "width": 768,
+      "overflow": false,
+      "distinctIds": true,
+      "headerHeight": 0
+    },
+    {
+      "tab": "overview",
+      "theme": "light",
+      "width": 768,
+      "overflow": false,
+      "distinctIds": true,
+      "headerHeight": 145
+    },
+    {
+      "tab": "approvals",
+      "theme": "light",
+      "width": 768,
+      "overflow": false,
+      "distinctIds": true,
+      "headerHeight": 145
+    },
+    {
+      "tab": "activity",
+      "theme": "light",
+      "width": 768,
+      "overflow": false,
+      "distinctIds": true,
+      "headerHeight": 145
+    },
+    {
+      "tab": "recipients",
+      "theme": "light",
+      "width": 768,
+      "overflow": false,
+      "distinctIds": true,
+      "headerHeight": 145
+    },
+    {
+      "tab": "swap",
+      "theme": "light",
+      "width": 768,
+      "overflow": false,
+      "distinctIds": true,
+      "headerHeight": 145
+    },
+    {
+      "tab": "chats",
+      "theme": "light",
+      "width": 768,
+      "overflow": false,
+      "distinctIds": true,
+      "headerHeight": 145
+    },
+    {
+      "tab": "recovery",
+      "theme": "light",
+      "width": 768,
+      "overflow": false,
+      "distinctIds": true,
+      "headerHeight": 145
+    },
+    {
+      "tab": "settings",
+      "theme": "light",
+      "width": 768,
+      "overflow": false,
+      "distinctIds": true,
+      "headerHeight": 145
+    },
+    {
+      "tab": "home",
+      "theme": "light",
+      "width": 1440,
+      "overflow": false,
+      "distinctIds": true,
+      "headerHeight": 0
+    },
+    {
+      "tab": "overview",
+      "theme": "light",
+      "width": 1440,
+      "overflow": false,
+      "distinctIds": true,
+      "headerHeight": 85
+    },
+    {
+      "tab": "approvals",
+      "theme": "light",
+      "width": 1440,
+      "overflow": false,
+      "distinctIds": true,
+      "headerHeight": 85
+    },
+    {
+      "tab": "activity",
+      "theme": "light",
+      "width": 1440,
+      "overflow": false,
+      "distinctIds": true,
+      "headerHeight": 85
+    },
+    {
+      "tab": "recipients",
+      "theme": "light",
+      "width": 1440,
+      "overflow": false,
+      "distinctIds": true,
+      "headerHeight": 85
+    },
+    {
+      "tab": "swap",
+      "theme": "light",
+      "width": 1440,
+      "overflow": false,
+      "distinctIds": true,
+      "headerHeight": 85
+    },
+    {
+      "tab": "chats",
+      "theme": "light",
+      "width": 1440,
+      "overflow": false,
+      "distinctIds": true,
+      "headerHeight": 85
+    },
+    {
+      "tab": "recovery",
+      "theme": "light",
+      "width": 1440,
+      "overflow": false,
+      "distinctIds": true,
+      "headerHeight": 85
+    },
+    {
+      "tab": "settings",
+      "theme": "light",
+      "width": 1440,
+      "overflow": false,
+      "distinctIds": true,
+      "headerHeight": 85
+    }
+  ],
+  "motion": [
+    {
+      "tab": "overview",
+      "moving": 2,
+      "surfaces": 6
+    },
+    {
+      "tab": "approvals",
+      "moving": 1,
+      "surfaces": 1
+    },
+    {
+      "tab": "activity",
+      "moving": 1,
+      "surfaces": 0
+    },
+    {
+      "tab": "recipients",
+      "moving": 2,
+      "surfaces": 1
+    },
+    {
+      "tab": "swap",
+      "moving": 2,
+      "surfaces": 2
+    },
+    {
+      "tab": "chats",
+      "moving": 2,
+      "surfaces": 1
+    },
+    {
+      "tab": "recovery",
+      "moving": 1,
+      "surfaces": 5
+    },
+    {
+      "tab": "settings",
+      "moving": 2,
+      "surfaces": 8
+    },
+    {
+      "tab": "home",
+      "moving": 2,
+      "surfaces": 3
+    }
+  ],
+  "errors": [],
+  "video": "video/page@997f62d4deaa1832c7495b54b12b4eb0.webm"
+}

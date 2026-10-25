@@ -712,7 +712,7 @@ function executeLine(c, ss, act, actions) {
   if (!error) return execWaitLine(c, ss);
   const out = (c.tries?.[ss.id] ?? 0) >= EXECUTE_TRIES;
   const again = () => actions.execute(ss);
-  const retry = out ? button(c, act, "execute-" + ss.id, "Try the execute again", again) : null;
+  const retry = out ? button(c, act, "execute-" + ss.id, "Retry execution", again) : null;
   return el("div", { class: "row-actions" }, el("span", { class: "small bad" }, error), retry);
 }
 
@@ -914,10 +914,12 @@ function sessionList(c, act, actions) {
 }
 
 const RENT_TEXT =
+  "Rent is the SOL balance held in a proposal’s on-chain account. " +
   "A proposal that expires still holds the rent of the device that created it. The fee key of " +
   "that device cancels it and gets the rent back. The program accepts this cancel only after " +
   "the expiry. The cancel is public: the chain shows the fee address, the proposal account and " +
-  "the rent. \"Look for rent\" asks Helius for the proposals of the group key and of the fee " +
+  "the rent. \"Find reclaimable rent\" asks Helius for the proposals of the group key and of " +
+  "the fee " +
   "addresses of this browser, with your IP address.";
 
 /** The rent of expired proposals that each seat of this browser can get back (SOL-52). */
@@ -931,10 +933,11 @@ function rentCard(c, act) {
         "div",
         { class: "row-actions", "data-sol": "rent-" + seat },
         el("span", { class: "small" }, "Device " + seat + ": " + solText(heldOf(c, seat))),
-        button(c, act, "reclaim-" + seat, "Get it back", () => reclaimRent(c, seat)),
+        button(c, act, "reclaim-" + seat, "Reclaim rent", () => reclaimRent(c, seat)),
       ),
     );
-  const none = c.rent && !rows.length ? el("p", { class: "small" }, "No rent to get back.") : null;
+  const none = c.rent && !rows.length
+    ? el("p", { class: "small" }, "No reclaimable rent found.") : null;
   const done = c.rentDone?.txIds.length
     ? [
         el(
@@ -954,7 +957,7 @@ function rentCard(c, act) {
     ...rows,
     none,
     done,
-    button(c, act, "rent-scan", "Look for rent", () => scanRent(c)),
+    button(c, act, "rent-scan", "Find reclaimable rent", () => scanRent(c)),
   );
 }
 

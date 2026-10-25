@@ -9,7 +9,7 @@ import { setupProgress } from "./setup-wizard.js";
 // Contextual education only. These symbols and words never report or grant protection.
 const SECURITY_EXPLANATIONS = Object.freeze({
   passkey: ["fingerprint", "Protect your local signing share",
-    "A passkey unlocks encrypted wallet data in this browser. Your passkey provider may ask for a fingerprint, face, PIN or security key. It is not another device or a recovery backup."],
+    "A passkey unlocks encrypted wallet data in this browser. Your passkey provider may ask for a fingerprint, face, PIN or security key. It does not add a signing device or replace a recovery file."],
   threshold: ["approvals", "Share approval across devices",
     "Separate physical devices each keep a signing share. Payments need your chosen number of approvals, reducing reliance on any one device."],
   device: ["key", "One device, one signing share",
