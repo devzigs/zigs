@@ -1,0 +1,38 @@
+[
+  {
+    "zoom": 1,
+    "mode": "Explore the journeys",
+    "innerWidth": 1440,
+    "innerHeight": 913,
+    "outerWidth": 1440,
+    "overflow": false,
+    "closeVisible": true
+  },
+  {
+    "zoom": 1,
+    "mode": "Complete guide",
+    "innerWidth": 1440,
+    "innerHeight": 913,
+    "outerWidth": 1440,
+    "overflow": false,
+    "closeVisible": true
+  },
+  {
+    "zoom": 2,
+    "mode": "Explore the journeys",
+    "innerWidth": 720,
+    "innerHeight": 456,
+    "outerWidth": 1440,
+    "overflow": false,
+    "closeVisible": true
+  },
+  {
+    "zoom": 2,
+    "mode": "Complete guide",
+    "innerWidth": 720,
+    "innerHeight": 456,
+    "outerWidth": 1440,
+    "overflow": false,
+    "closeVisible": true
+  }
+]

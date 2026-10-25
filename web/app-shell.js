@@ -629,7 +629,7 @@ function welcome(off, restoreLink) {
       el("span", { class: "home-environment" }, "Beta · Not audited · Test networks")),
     el("div", { class: "welcome-main home-hero", "data-home-hero": "" },
       el("div", { class: "welcome-brand", "aria-hidden": "true" },
-        el("img", { class: "home-hero-art", src: "/logo.png?v=e2a70c42", alt: "",
+        el("img", { class: "home-hero-art", src: "/assets/brand/hero-zebra.png?v=e2a70c42c377", alt: "",
           width: "1254", height: "1254", decoding: "async", draggable: "false" })),
       el("div", { class: "welcome-intro" },
         el("p", { class: "label welcome-kicker" }, "SHIELDED SELF-CUSTODY / ZIGS"),

@@ -1,4 +1,4 @@
-// Decorative lighting only. The sole texture is the unchanged canonical zebra image.
+// Decorative lighting only. The sole texture is the unchanged original hero zebra artwork.
 const VERTEX = `
 attribute vec2 a_position;
 varying vec2 v_uv;

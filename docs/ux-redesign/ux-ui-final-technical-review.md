@@ -9,6 +9,21 @@ Reviewed on 25 October 2026 against main
 The [Gray UI PRD](gray-ui-prd.md) governs this continuation. Historical approvals below
 do not authorize engineering changes in this UI-only request.
 
+## Latest web design working-copy migration — 25 October 2026
+
+The actual local `codex/ux-ui-final` checkout contains a later uncommitted design pass not
+present in remote commit `78345496`: Manrope, new web branding/icons, neutral surfaces,
+refined controls and the five illustrated guide journeys. The Gray UI migration imports
+those 24 presentation files; its source hashes are pinned in
+[gray-ui-design-source.json](gray-ui-design-source.json). The source checkout remains intact.
+
+The new guide consumes main’s existing complete-guide content. Its fixed educational
+examples, mode/chapter/step selection and animation lifecycle are document-local presentation;
+they do not read or mutate wallet records, browser wallet storage, URL fragments, setup
+readiness, authentication or spending authority. Preserve current main’s disclosures,
+known-versus-unknown facts and technical behavior. Branding updates apply to web only;
+the old native artwork remains unchanged. This web migration needs no deferred runtime below.
+
 ## Native funding and Swap previews — GUI-D01 / GUI-D02
 
 The remaining native demo experience depends on new runtime infrastructure in the reference:

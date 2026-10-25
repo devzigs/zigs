@@ -1,0 +1,584 @@
+{
+  "before": [
+    {
+      "name": "home-390-dark",
+      "font": "Geist, -apple-system, \"system-ui\", \"Segoe UI\", sans-serif",
+      "bg": "rgb(13, 16, 20)",
+      "overflow": false
+    },
+    {
+      "name": "overview-390-dark",
+      "font": "Geist, -apple-system, \"system-ui\", \"Segoe UI\", sans-serif",
+      "bg": "rgb(13, 16, 20)",
+      "overflow": false
+    },
+    {
+      "name": "approvals-390-dark",
+      "font": "Geist, -apple-system, \"system-ui\", \"Segoe UI\", sans-serif",
+      "bg": "rgb(13, 16, 20)",
+      "overflow": false
+    },
+    {
+      "name": "activity-390-dark",
+      "font": "Geist, -apple-system, \"system-ui\", \"Segoe UI\", sans-serif",
+      "bg": "rgb(13, 16, 20)",
+      "overflow": false
+    },
+    {
+      "name": "recipients-390-dark",
+      "font": "Geist, -apple-system, \"system-ui\", \"Segoe UI\", sans-serif",
+      "bg": "rgb(13, 16, 20)",
+      "overflow": false
+    },
+    {
+      "name": "chats-390-dark",
+      "font": "Geist, -apple-system, \"system-ui\", \"Segoe UI\", sans-serif",
+      "bg": "rgb(13, 16, 20)",
+      "overflow": false
+    },
+    {
+      "name": "recovery-390-dark",
+      "font": "Geist, -apple-system, \"system-ui\", \"Segoe UI\", sans-serif",
+      "bg": "rgb(13, 16, 20)",
+      "overflow": false
+    },
+    {
+      "name": "settings-390-dark",
+      "font": "Geist, -apple-system, \"system-ui\", \"Segoe UI\", sans-serif",
+      "bg": "rgb(13, 16, 20)",
+      "overflow": false
+    },
+    {
+      "name": "home-1440-dark",
+      "font": "Geist, -apple-system, \"system-ui\", \"Segoe UI\", sans-serif",
+      "bg": "rgb(13, 16, 20)",
+      "overflow": false
+    },
+    {
+      "name": "overview-1440-dark",
+      "font": "Geist, -apple-system, \"system-ui\", \"Segoe UI\", sans-serif",
+      "bg": "rgb(13, 16, 20)",
+      "overflow": false
+    },
+    {
+      "name": "approvals-1440-dark",
+      "font": "Geist, -apple-system, \"system-ui\", \"Segoe UI\", sans-serif",
+      "bg": "rgb(13, 16, 20)",
+      "overflow": false
+    },
+    {
+      "name": "activity-1440-dark",
+      "font": "Geist, -apple-system, \"system-ui\", \"Segoe UI\", sans-serif",
+      "bg": "rgb(13, 16, 20)",
+      "overflow": false
+    },
+    {
+      "name": "recipients-1440-dark",
+      "font": "Geist, -apple-system, \"system-ui\", \"Segoe UI\", sans-serif",
+      "bg": "rgb(13, 16, 20)",
+      "overflow": false
+    },
+    {
+      "name": "chats-1440-dark",
+      "font": "Geist, -apple-system, \"system-ui\", \"Segoe UI\", sans-serif",
+      "bg": "rgb(13, 16, 20)",
+      "overflow": false
+    },
+    {
+      "name": "recovery-1440-dark",
+      "font": "Geist, -apple-system, \"system-ui\", \"Segoe UI\", sans-serif",
+      "bg": "rgb(13, 16, 20)",
+      "overflow": false
+    },
+    {
+      "name": "settings-1440-dark",
+      "font": "Geist, -apple-system, \"system-ui\", \"Segoe UI\", sans-serif",
+      "bg": "rgb(13, 16, 20)",
+      "overflow": false
+    },
+    {
+      "name": "home-390-light",
+      "font": "Geist, -apple-system, \"system-ui\", \"Segoe UI\", sans-serif",
+      "bg": "rgb(246, 247, 248)",
+      "overflow": false
+    },
+    {
+      "name": "overview-390-light",
+      "font": "Geist, -apple-system, \"system-ui\", \"Segoe UI\", sans-serif",
+      "bg": "rgb(246, 247, 248)",
+      "overflow": false
+    },
+    {
+      "name": "approvals-390-light",
+      "font": "Geist, -apple-system, \"system-ui\", \"Segoe UI\", sans-serif",
+      "bg": "rgb(246, 247, 248)",
+      "overflow": false
+    },
+    {
+      "name": "activity-390-light",
+      "font": "Geist, -apple-system, \"system-ui\", \"Segoe UI\", sans-serif",
+      "bg": "rgb(246, 247, 248)",
+      "overflow": false
+    },
+    {
+      "name": "recipients-390-light",
+      "font": "Geist, -apple-system, \"system-ui\", \"Segoe UI\", sans-serif",
+      "bg": "rgb(246, 247, 248)",
+      "overflow": false
+    },
+    {
+      "name": "chats-390-light",
+      "font": "Geist, -apple-system, \"system-ui\", \"Segoe UI\", sans-serif",
+      "bg": "rgb(246, 247, 248)",
+      "overflow": false
+    },
+    {
+      "name": "recovery-390-light",
+      "font": "Geist, -apple-system, \"system-ui\", \"Segoe UI\", sans-serif",
+      "bg": "rgb(246, 247, 248)",
+      "overflow": false
+    },
+    {
+      "name": "settings-390-light",
+      "font": "Geist, -apple-system, \"system-ui\", \"Segoe UI\", sans-serif",
+      "bg": "rgb(246, 247, 248)",
+      "overflow": false
+    },
+    {
+      "name": "home-1440-light",
+      "font": "Geist, -apple-system, \"system-ui\", \"Segoe UI\", sans-serif",
+      "bg": "rgb(246, 247, 248)",
+      "overflow": false
+    },
+    {
+      "name": "overview-1440-light",
+      "font": "Geist, -apple-system, \"system-ui\", \"Segoe UI\", sans-serif",
+      "bg": "rgb(246, 247, 248)",
+      "overflow": false
+    },
+    {
+      "name": "approvals-1440-light",
+      "font": "Geist, -apple-system, \"system-ui\", \"Segoe UI\", sans-serif",
+      "bg": "rgb(246, 247, 248)",
+      "overflow": false
+    },
+    {
+      "name": "activity-1440-light",
+      "font": "Geist, -apple-system, \"system-ui\", \"Segoe UI\", sans-serif",
+      "bg": "rgb(246, 247, 248)",
+      "overflow": false
+    },
+    {
+      "name": "recipients-1440-light",
+      "font": "Geist, -apple-system, \"system-ui\", \"Segoe UI\", sans-serif",
+      "bg": "rgb(246, 247, 248)",
+      "overflow": false
+    },
+    {
+      "name": "chats-1440-light",
+      "font": "Geist, -apple-system, \"system-ui\", \"Segoe UI\", sans-serif",
+      "bg": "rgb(246, 247, 248)",
+      "overflow": false
+    },
+    {
+      "name": "recovery-1440-light",
+      "font": "Geist, -apple-system, \"system-ui\", \"Segoe UI\", sans-serif",
+      "bg": "rgb(246, 247, 248)",
+      "overflow": false
+    },
+    {
+      "name": "settings-1440-light",
+      "font": "Geist, -apple-system, \"system-ui\", \"Segoe UI\", sans-serif",
+      "bg": "rgb(246, 247, 248)",
+      "overflow": false
+    }
+  ],
+  "after": [
+    {
+      "name": "home-390-dark",
+      "font": "Manrope, -apple-system, \"system-ui\", \"Segoe UI\", sans-serif",
+      "bg": "rgb(8, 8, 8)",
+      "overflow": false
+    },
+    {
+      "name": "overview-390-dark",
+      "font": "Manrope, -apple-system, \"system-ui\", \"Segoe UI\", sans-serif",
+      "bg": "rgb(8, 8, 8)",
+      "overflow": false
+    },
+    {
+      "name": "approvals-390-dark",
+      "font": "Manrope, -apple-system, \"system-ui\", \"Segoe UI\", sans-serif",
+      "bg": "rgb(8, 8, 8)",
+      "overflow": false
+    },
+    {
+      "name": "activity-390-dark",
+      "font": "Manrope, -apple-system, \"system-ui\", \"Segoe UI\", sans-serif",
+      "bg": "rgb(8, 8, 8)",
+      "overflow": false
+    },
+    {
+      "name": "recipients-390-dark",
+      "font": "Manrope, -apple-system, \"system-ui\", \"Segoe UI\", sans-serif",
+      "bg": "rgb(8, 8, 8)",
+      "overflow": false
+    },
+    {
+      "name": "chats-390-dark",
+      "font": "Manrope, -apple-system, \"system-ui\", \"Segoe UI\", sans-serif",
+      "bg": "rgb(8, 8, 8)",
+      "overflow": false
+    },
+    {
+      "name": "recovery-390-dark",
+      "font": "Manrope, -apple-system, \"system-ui\", \"Segoe UI\", sans-serif",
+      "bg": "rgb(8, 8, 8)",
+      "overflow": false
+    },
+    {
+      "name": "settings-390-dark",
+      "font": "Manrope, -apple-system, \"system-ui\", \"Segoe UI\", sans-serif",
+      "bg": "rgb(8, 8, 8)",
+      "overflow": false
+    },
+    {
+      "name": "home-1440-dark",
+      "font": "Manrope, -apple-system, \"system-ui\", \"Segoe UI\", sans-serif",
+      "bg": "rgb(8, 8, 8)",
+      "overflow": false
+    },
+    {
+      "name": "overview-1440-dark",
+      "font": "Manrope, -apple-system, \"system-ui\", \"Segoe UI\", sans-serif",
+      "bg": "rgb(8, 8, 8)",
+      "overflow": false
+    },
+    {
+      "name": "approvals-1440-dark",
+      "font": "Manrope, -apple-system, \"system-ui\", \"Segoe UI\", sans-serif",
+      "bg": "rgb(8, 8, 8)",
+      "overflow": false
+    },
+    {
+      "name": "activity-1440-dark",
+      "font": "Manrope, -apple-system, \"system-ui\", \"Segoe UI\", sans-serif",
+      "bg": "rgb(8, 8, 8)",
+      "overflow": false
+    },
+    {
+      "name": "recipients-1440-dark",
+      "font": "Manrope, -apple-system, \"system-ui\", \"Segoe UI\", sans-serif",
+      "bg": "rgb(8, 8, 8)",
+      "overflow": false
+    },
+    {
+      "name": "chats-1440-dark",
+      "font": "Manrope, -apple-system, \"system-ui\", \"Segoe UI\", sans-serif",
+      "bg": "rgb(8, 8, 8)",
+      "overflow": false
+    },
+    {
+      "name": "recovery-1440-dark",
+      "font": "Manrope, -apple-system, \"system-ui\", \"Segoe UI\", sans-serif",
+      "bg": "rgb(8, 8, 8)",
+      "overflow": false
+    },
+    {
+      "name": "settings-1440-dark",
+      "font": "Manrope, -apple-system, \"system-ui\", \"Segoe UI\", sans-serif",
+      "bg": "rgb(8, 8, 8)",
+      "overflow": false
+    },
+    {
+      "name": "home-390-light",
+      "font": "Manrope, -apple-system, \"system-ui\", \"Segoe UI\", sans-serif",
+      "bg": "rgb(247, 247, 245)",
+      "overflow": false
+    },
+    {
+      "name": "overview-390-light",
+      "font": "Manrope, -apple-system, \"system-ui\", \"Segoe UI\", sans-serif",
+      "bg": "rgb(247, 247, 245)",
+      "overflow": false
+    },
+    {
+      "name": "approvals-390-light",
+      "font": "Manrope, -apple-system, \"system-ui\", \"Segoe UI\", sans-serif",
+      "bg": "rgb(247, 247, 245)",
+      "overflow": false
+    },
+    {
+      "name": "activity-390-light",
+      "font": "Manrope, -apple-system, \"system-ui\", \"Segoe UI\", sans-serif",
+      "bg": "rgb(247, 247, 245)",
+      "overflow": false
+    },
+    {
+      "name": "recipients-390-light",
+      "font": "Manrope, -apple-system, \"system-ui\", \"Segoe UI\", sans-serif",
+      "bg": "rgb(247, 247, 245)",
+      "overflow": false
+    },
+    {
+      "name": "chats-390-light",
+      "font": "Manrope, -apple-system, \"system-ui\", \"Segoe UI\", sans-serif",
+      "bg": "rgb(247, 247, 245)",
+      "overflow": false
+    },
+    {
+      "name": "recovery-390-light",
+      "font": "Manrope, -apple-system, \"system-ui\", \"Segoe UI\", sans-serif",
+      "bg": "rgb(247, 247, 245)",
+      "overflow": false
+    },
+    {
+      "name": "settings-390-light",
+      "font": "Manrope, -apple-system, \"system-ui\", \"Segoe UI\", sans-serif",
+      "bg": "rgb(247, 247, 245)",
+      "overflow": false
+    },
+    {
+      "name": "home-1440-light",
+      "font": "Manrope, -apple-system, \"system-ui\", \"Segoe UI\", sans-serif",
+      "bg": "rgb(247, 247, 245)",
+      "overflow": false
+    },
+    {
+      "name": "overview-1440-light",
+      "font": "Manrope, -apple-system, \"system-ui\", \"Segoe UI\", sans-serif",
+      "bg": "rgb(247, 247, 245)",
+      "overflow": false
+    },
+    {
+      "name": "approvals-1440-light",
+      "font": "Manrope, -apple-system, \"system-ui\", \"Segoe UI\", sans-serif",
+      "bg": "rgb(247, 247, 245)",
+      "overflow": false
+    },
+    {
+      "name": "activity-1440-light",
+      "font": "Manrope, -apple-system, \"system-ui\", \"Segoe UI\", sans-serif",
+      "bg": "rgb(247, 247, 245)",
+      "overflow": false
+    },
+    {
+      "name": "recipients-1440-light",
+      "font": "Manrope, -apple-system, \"system-ui\", \"Segoe UI\", sans-serif",
+      "bg": "rgb(247, 247, 245)",
+      "overflow": false
+    },
+    {
+      "name": "chats-1440-light",
+      "font": "Manrope, -apple-system, \"system-ui\", \"Segoe UI\", sans-serif",
+      "bg": "rgb(247, 247, 245)",
+      "overflow": false
+    },
+    {
+      "name": "recovery-1440-light",
+      "font": "Manrope, -apple-system, \"system-ui\", \"Segoe UI\", sans-serif",
+      "bg": "rgb(247, 247, 245)",
+      "overflow": false
+    },
+    {
+      "name": "settings-1440-light",
+      "font": "Manrope, -apple-system, \"system-ui\", \"Segoe UI\", sans-serif",
+      "bg": "rgb(247, 247, 245)",
+      "overflow": false
+    }
+  ],
+  "reference": [
+    {
+      "name": "home-390-dark",
+      "font": "Manrope, -apple-system, \"system-ui\", \"Segoe UI\", sans-serif",
+      "bg": "rgb(8, 8, 8)",
+      "overflow": false
+    },
+    {
+      "name": "overview-390-dark",
+      "font": "Manrope, -apple-system, \"system-ui\", \"Segoe UI\", sans-serif",
+      "bg": "rgb(8, 8, 8)",
+      "overflow": false
+    },
+    {
+      "name": "approvals-390-dark",
+      "font": "Manrope, -apple-system, \"system-ui\", \"Segoe UI\", sans-serif",
+      "bg": "rgb(8, 8, 8)",
+      "overflow": false
+    },
+    {
+      "name": "activity-390-dark",
+      "font": "Manrope, -apple-system, \"system-ui\", \"Segoe UI\", sans-serif",
+      "bg": "rgb(8, 8, 8)",
+      "overflow": false
+    },
+    {
+      "name": "recipients-390-dark",
+      "font": "Manrope, -apple-system, \"system-ui\", \"Segoe UI\", sans-serif",
+      "bg": "rgb(8, 8, 8)",
+      "overflow": false
+    },
+    {
+      "name": "chats-390-dark",
+      "font": "Manrope, -apple-system, \"system-ui\", \"Segoe UI\", sans-serif",
+      "bg": "rgb(8, 8, 8)",
+      "overflow": false
+    },
+    {
+      "name": "recovery-390-dark",
+      "font": "Manrope, -apple-system, \"system-ui\", \"Segoe UI\", sans-serif",
+      "bg": "rgb(8, 8, 8)",
+      "overflow": false
+    },
+    {
+      "name": "settings-390-dark",
+      "font": "Manrope, -apple-system, \"system-ui\", \"Segoe UI\", sans-serif",
+      "bg": "rgb(8, 8, 8)",
+      "overflow": false
+    },
+    {
+      "name": "home-1440-dark",
+      "font": "Manrope, -apple-system, \"system-ui\", \"Segoe UI\", sans-serif",
+      "bg": "rgb(8, 8, 8)",
+      "overflow": false
+    },
+    {
+      "name": "overview-1440-dark",
+      "font": "Manrope, -apple-system, \"system-ui\", \"Segoe UI\", sans-serif",
+      "bg": "rgb(8, 8, 8)",
+      "overflow": false
+    },
+    {
+      "name": "approvals-1440-dark",
+      "font": "Manrope, -apple-system, \"system-ui\", \"Segoe UI\", sans-serif",
+      "bg": "rgb(8, 8, 8)",
+      "overflow": false
+    },
+    {
+      "name": "activity-1440-dark",
+      "font": "Manrope, -apple-system, \"system-ui\", \"Segoe UI\", sans-serif",
+      "bg": "rgb(8, 8, 8)",
+      "overflow": false
+    },
+    {
+      "name": "recipients-1440-dark",
+      "font": "Manrope, -apple-system, \"system-ui\", \"Segoe UI\", sans-serif",
+      "bg": "rgb(8, 8, 8)",
+      "overflow": false
+    },
+    {
+      "name": "chats-1440-dark",
+      "font": "Manrope, -apple-system, \"system-ui\", \"Segoe UI\", sans-serif",
+      "bg": "rgb(8, 8, 8)",
+      "overflow": false
+    },
+    {
+      "name": "recovery-1440-dark",
+      "font": "Manrope, -apple-system, \"system-ui\", \"Segoe UI\", sans-serif",
+      "bg": "rgb(8, 8, 8)",
+      "overflow": false
+    },
+    {
+      "name": "settings-1440-dark",
+      "font": "Manrope, -apple-system, \"system-ui\", \"Segoe UI\", sans-serif",
+      "bg": "rgb(8, 8, 8)",
+      "overflow": false
+    },
+    {
+      "name": "home-390-light",
+      "font": "Manrope, -apple-system, \"system-ui\", \"Segoe UI\", sans-serif",
+      "bg": "rgb(247, 247, 245)",
+      "overflow": false
+    },
+    {
+      "name": "overview-390-light",
+      "font": "Manrope, -apple-system, \"system-ui\", \"Segoe UI\", sans-serif",
+      "bg": "rgb(247, 247, 245)",
+      "overflow": false
+    },
+    {
+      "name": "approvals-390-light",
+      "font": "Manrope, -apple-system, \"system-ui\", \"Segoe UI\", sans-serif",
+      "bg": "rgb(247, 247, 245)",
+      "overflow": false
+    },
+    {
+      "name": "activity-390-light",
+      "font": "Manrope, -apple-system, \"system-ui\", \"Segoe UI\", sans-serif",
+      "bg": "rgb(247, 247, 245)",
+      "overflow": false
+    },
+    {
+      "name": "recipients-390-light",
+      "font": "Manrope, -apple-system, \"system-ui\", \"Segoe UI\", sans-serif",
+      "bg": "rgb(247, 247, 245)",
+      "overflow": false
+    },
+    {
+      "name": "chats-390-light",
+      "font": "Manrope, -apple-system, \"system-ui\", \"Segoe UI\", sans-serif",
+      "bg": "rgb(247, 247, 245)",
+      "overflow": false
+    },
+    {
+      "name": "recovery-390-light",
+      "font": "Manrope, -apple-system, \"system-ui\", \"Segoe UI\", sans-serif",
+      "bg": "rgb(247, 247, 245)",
+      "overflow": false
+    },
+    {
+      "name": "settings-390-light",
+      "font": "Manrope, -apple-system, \"system-ui\", \"Segoe UI\", sans-serif",
+      "bg": "rgb(247, 247, 245)",
+      "overflow": false
+    },
+    {
+      "name": "home-1440-light",
+      "font": "Manrope, -apple-system, \"system-ui\", \"Segoe UI\", sans-serif",
+      "bg": "rgb(247, 247, 245)",
+      "overflow": false
+    },
+    {
+      "name": "overview-1440-light",
+      "font": "Manrope, -apple-system, \"system-ui\", \"Segoe UI\", sans-serif",
+      "bg": "rgb(247, 247, 245)",
+      "overflow": false
+    },
+    {
+      "name": "approvals-1440-light",
+      "font": "Manrope, -apple-system, \"system-ui\", \"Segoe UI\", sans-serif",
+      "bg": "rgb(247, 247, 245)",
+      "overflow": false
+    },
+    {
+      "name": "activity-1440-light",
+      "font": "Manrope, -apple-system, \"system-ui\", \"Segoe UI\", sans-serif",
+      "bg": "rgb(247, 247, 245)",
+      "overflow": false
+    },
+    {
+      "name": "recipients-1440-light",
+      "font": "Manrope, -apple-system, \"system-ui\", \"Segoe UI\", sans-serif",
+      "bg": "rgb(247, 247, 245)",
+      "overflow": false
+    },
+    {
+      "name": "chats-1440-light",
+      "font": "Manrope, -apple-system, \"system-ui\", \"Segoe UI\", sans-serif",
+      "bg": "rgb(247, 247, 245)",
+      "overflow": false
+    },
+    {
+      "name": "recovery-1440-light",
+      "font": "Manrope, -apple-system, \"system-ui\", \"Segoe UI\", sans-serif",
+      "bg": "rgb(247, 247, 245)",
+      "overflow": false
+    },
+    {
+      "name": "settings-1440-light",
+      "font": "Manrope, -apple-system, \"system-ui\", \"Segoe UI\", sans-serif",
+      "bg": "rgb(247, 247, 245)",
+      "overflow": false
+    }
+  ]
+}

@@ -61,12 +61,25 @@ claim permanent removal from those locations without confirmation from the hosti
 
 ## Web branding
 
-Use the user-supplied side-profile zebra artwork with the number texture, red eye and original
-transparency as the Zigs logo. `web/logo.png` is the canonical asset. Keep its artwork unchanged;
-do not substitute the older front-facing zebra or generate a replacement. Header, favicon and
-web shortcut references share this asset. The legacy web icon paths contain the same artwork.
-Strip identifying file metadata before committing supplied assets. The reviewed native adaptation also uses this canonical artwork. Further asset or
-native changes remain subject to the authorized scope above.
+The user explicitly replaced the web branding on 24 October 2026 with the supplied
+Fingerprint Zebra Emblem: the right-facing white fingerprint zebra with original transparency.
+`web/logo.png` is the canonical web artwork. Preserve its geometry, direction and colours;
+do not restore the older number-textured zebra or generate a replacement. Header and decorative emblem references use this asset. The user separately requested
+keeping the previous number-textured, red-eye zebra in the main homepage hero, now stored
+in `web/assets/brand/hero-zebra.png`. Preserve that hero artwork and its existing lighting
+and composition when updating the smaller fingerprint brand marks. `web/favicon.png`, `web/favicon.ico` and
+`web/apple-touch-icon.png` are proportional small-size variants on a dark square for contrast.
+Their source is the exact supplied artwork, also present in `devzigs/zigs-site` at main
+`876e358`. Strip identifying metadata from supplied assets. This request updates web branding
+only; preserve the existing native assets and code.
+
+
+## Web presentation palette
+
+The user requested retaining the original orange highlights and warm undertones after the
+main-site styling pass. Preserve warm orange primary actions, focus/selection accents,
+quiet copper hero lighting and educational highlights in both themes. Keep the new Manrope
+typography, layouts, guide and neutral surfaces. Semantic status colours remain distinct.
 
 ## UI/UX final branch scope
 

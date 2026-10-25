@@ -49,7 +49,7 @@ export function zigsEmblem(size = "hero") {
   face.className = "zigs-emblem-face";
   const image = document.createElement("img");
   image.className = "zigs-emblem-logo" + (hero ? " welcome-brand-logo" : "");
-  const attrs = { src: "/logo.png?v=e2a70c42", alt: "", width: "160", height: "160",
+  const attrs = { src: "/logo.png?v=fingerprint-17dbdecb64d0", alt: "", width: "160", height: "160",
     draggable: "false" };
   for (const [key, value] of Object.entries(attrs)) image.setAttribute(key, value);
   face.append(image);
