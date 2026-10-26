@@ -44,7 +44,7 @@ export function distributedSecurity({ n, t, devices = [], walletName = "This wal
       el("p", {}, "No single device holds the complete spending key for Zcash."),
       el("p", { class: "small muted" }, "Shares stay separate during signing. They contribute to an authorization, without assembling a complete spending key.")),
     el("p", { class: "security-footnote small muted" }, examples
-      ? "Orange outlines are examples, not real approvals. Any " + t
+      ? "Highlighted outlines are examples, not real approvals. Any " + t
         + " devices could sign together. All " + n + " join setup."
       : preview
       ? "Proposed device labels are examples, not connected devices or payment approvals. All chosen devices take part in setup."

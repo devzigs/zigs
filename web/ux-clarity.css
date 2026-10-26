@@ -4,8 +4,6 @@
 .ux-confirm-title { font:var(--font-section); margin:0; }
 .ux-consequences { display:grid; gap:10px; padding-inline-start:22px; margin:12px 0;
   font:var(--font-notice); line-height:1.65; }
-.ux-plan-lifetime { flex-basis:100%; grid-column:1/-1; max-width:70ch; margin:0;
-  padding-inline:4px; line-height:1.5; }
 .dialog-actions>.btn,.ux-form-actions>.btn { min-height:48px; flex:0 1 auto; }
 .dialog-actions>.btn.primary,.ux-form-actions>.btn.primary { min-width:144px; }
 .ux-form-actions { justify-content:flex-end; padding-top:8px; }
@@ -25,11 +23,6 @@ form.dialog:not(.guided-plan)>.dialog-actions:last-child {
 @media(max-width:600px) {
   .dialog-actions>.btn,.ux-form-actions>.btn { flex:1 1 120px; padding-inline:12px; }
   .dialog-actions>.btn.primary,.ux-form-actions>.btn.primary { min-width:0; }
-  .guided-plan>.dialog-actions { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); }
-  .guided-plan>.dialog-actions>.btn { width:100%; min-width:0; }
-  .guided-plan>.dialog-actions:has(>button:nth-of-type(3))>.btn.primary { grid-column:1/-1; }
-  .guided-plan>.dialog-actions>.off-why { grid-column:1/-1; }
-  .ux-plan-lifetime { font-size:12px; }
   form.dialog:not(.guided-plan)>.dialog-actions:last-child {
     padding-bottom:calc(14px + env(safe-area-inset-bottom));
   }

@@ -92,6 +92,13 @@ release notice or guide-overview environment notice. Keep network names in walle
 and network choices, contextual help, actual errors and existing risky-action confirmations.
 This presentation request does not change supported networks or authorization safeguards.
 
+The user subsequently removed the setup Pause plan/Resume setup presentation, its draft
+lifetime reminder and separate scrolling footer. Keep only inline Back/Continue navigation
+inside the active step. Show the first Continue only once the existing protection choice
+allows it; retain explicit Skip confirmation and all submission gates. Keep the four default
+setup steps within normal desktop viewports and avoid nested footer scrolling. Expanded help,
+small windows and enlarged text must remain reachable without clipping.
+
 ## UI/UX final branch scope
 
 On `codex/ux-ui-final` and branches continuing this UI/UX effort:

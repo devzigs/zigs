@@ -52,6 +52,15 @@ leading shield icon from the “How Zigs works” guide entry. Keep the guide te
 navigation arrow, keyboard access and existing dialog action. This supersedes the earlier
 homepage threshold-box presentation; setup and guide approval-rule education stay available.
 
+The subsequent setup cleanup removes Pause plan, Resume setup and the unfinished-plan
+reminder. There is no separate sticky or scrolling setup footer. Keep Back/Continue inside
+the active step; the first screen presents the existing protection choices and shows Continue
+when those choices permit it. Close keeps its existing reset behavior. Preserve Skip's explicit
+confirmation, all protection/creation gates, current-step errors and final submission semantics.
+Compact field spacing and one factual network-status paragraph keep the four collapsed steps
+within the checked desktop viewports. At phone sizes, preserve reachable form content without
+nested action scrolling; expanded education and enlarged text remain accessible.
+
 ## Goal and authoritative sources
 
 Apply the complete latest web design from the existing local `codex/ux-ui-final` working

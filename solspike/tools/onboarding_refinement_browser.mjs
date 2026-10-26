@@ -130,7 +130,7 @@ async function arrivalChecks(p) {
     a.animationName === "setup-arrival-pulse" && a.effect.getTiming().iterations === 1)),
   "protection arrival plays one finite fingerprint pulse");
   check(await p.locator("[data-protection-art=unprotected]").count() === 1
-    && await button(p, "Continue to approval rule").isDisabled(),
+    && await button(p, "Continue to approval rule").count() === 0,
   "arrival pulse leaves the browser unlocked and continuation gated");
   const restingColor = await fingerprint.evaluate((n) => getComputedStyle(n).color);
   await p.waitForTimeout(750);
@@ -231,7 +231,7 @@ async function protectionStates(p) {
   await button(p, "Protect this browser").waitFor();
   check(await p.locator("[data-protection-art=unprotected]").count() === 1,
     "cancelled authentication leaves the visual unlocked");
-  check(await button(p, "Continue to approval rule").isDisabled(),
+  check(await button(p, "Continue to approval rule").count() === 0,
     "cancellation never enables continuation");
   check(await p.locator(".motion-passkey-arrival").count() === 0,
     "cancellation never replays the arrival pulse");

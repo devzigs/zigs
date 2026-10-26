@@ -280,7 +280,7 @@ export async function protectThisDevice() {
       : e.name === "SecurityError"
         ? "This site address cannot create a passkey. Open Zigs directly at its secure site address, or use localhost for a local preview. Wallet data stays at the browser address where it was saved."
       : "Passkey protection was not enabled: " + (e.message || "this browser or authenticator could not complete it.")
-        + " Passkey protection has not been confirmed. Try again or save and exit. Keep any existing wallet tabs open.";
+        + " Passkey protection has not been confirmed. Try again or close setup. Keep any existing wallet tabs open.";
     showBanner("bad", protectionError);
     return false;
   } finally { protectionPending = false; render(); }
@@ -363,7 +363,7 @@ export function deviceProtection(context = "setup", onReady = null) {
       ? "Recommended: encrypt this browser’s signing shares with a passkey. A passkey is not an additional signing device."
       : !storageOk ? "Storage is unavailable. Keep this tab open, enable persistent browser storage, and retry before relying on it as a signing device."
         : "This browser cannot enable passkey protection. Use a supported browser or authenticator."
-          + (skippable ? " Or choose Skip for now to review unprotected storage." : " You can save and exit, or restore an existing device from its recovery file.")) : null,
+          + (skippable ? " Or choose Skip for now to review unprotected storage." : " You can close setup, or restore an existing device from its recovery file.")) : null,
     protectionError ? el("p", { class: "callout bad", role: "alert" }, protectionError) : null);
 }
 
@@ -408,9 +408,6 @@ export function lobby() {
       title: "Select a wallet to open its Chats", onclick: () => { ui.tab = "chats"; render(); } }, "Open Chats"))] : [];
   return el("div", { class: "page lobby-page lobby-home" + (listed ? "" : " lobby-empty"),
     "data-key": "home-page", tabindex: "-1" }, ...joins,
-    savedPlan ? el("section", { class: "callout", role: "status" },
-      el("span", {}, "Setup unfinished · your plan is kept in this open tab."),
-      el("button", { class: "btn", type: "button", onclick: resumePlan }, "Resume setup")) : null,
     welcome(offOf({ db: !!db }, "why-create"), restoreBtn("btn ghost")), restoreInput);
 }
 
@@ -712,9 +709,9 @@ function planningNetworks() {
   if (ui.net !== "testnet") return null;
   const served = solServed();
   return el("p", { class: "small muted" }, served
-    ? "One guided setup prepares Zcash first and then Solana Devnet with these same devices. Review the network and service disclosures before creating the wallet."
-    : ui.solServed === null ? "Checking Solana service availability. The review will show which networks can start now."
-      : "Zcash can start now. Solana setup is waiting for service availability; the same guide keeps your Zcash progress saved and resumes the existing setup when service returns.");
+    ? "When included, Solana Devnet starts after the Zcash address checks."
+    : ui.solServed === null ? "Checking Solana service availability; Zcash setup can continue."
+      : "Zcash can start now. If included, Solana setup resumes when service is available.");
 }
 
 // The parts of the dialog. The ids are the ones that the tests and the harness fill.
@@ -847,7 +844,6 @@ async function submitWallet({ name, n, t, sol, solExpected = false, description 
     try { setWalletDescription(gid, description); } catch (e) { showBanner("bad", e.message); }
   }
   if (!from) {
-    savedPlan = null;
     try { beginGuided(gid, { solExpected: network === "testnet" && solExpected }); }
     catch (e) { showBanner("bad", e.message); }
   }
@@ -874,24 +870,6 @@ function moveSubmit(from) {
 const STEPS = ["Protect this browser", "Set the approval threshold", "Set up this device",
   "Review your wallet"];
 const NEXT = ["Continue to approval rule", "Use this arrangement", "Continue", "Create wallet"];
-// An uncreated plan has no custody state to save. Keep this optional draft in the open tab;
-// names and Solana consent are never copied into a new plaintext persistence record.
-let savedPlan = null;
-function savePlanAndExit() {
-  if (ui.createStep === 1) { try { takeRule(); } catch { /* invalid fields remain educational */ } }
-  if (ui.createStep === 2) takeNames();
-  savedPlan = { draft: ui.createDraft ? structuredClone(ui.createDraft) : null,
-    step: ui.createStep, marginAck: ui.marginAck, net: ui.net, ack: ui.ack };
-  endCreate(); render();
-}
-function resumePlan() {
-  if (!savedPlan) return;
-  openCreate();
-  ui.createDraft = savedPlan.draft; ui.createStep = savedPlan.step;
-  ui.marginAck = savedPlan.marginAck; ui.net = savedPlan.net; ui.ack = savedPlan.ack;
-  ui.sol = savedPlan.draft?.sol;
-  focusAfter("create-step-" + ui.createStep, true); render();
-}
 function takeRule() {
   const n = Number(fieldValue("g-n")), t = Number(fieldValue("g-t"));
   checkRule(n, t);
@@ -949,7 +927,8 @@ el("h3", { id: "create-step-" + i, tabindex: "-1", "data-key": "create-step-" + 
   "data-first-focus": i === 0 && ui.createStep === 0 && !passkeyProtected() }, STEPS[i]),
 i < 3 ? null
   : securityExplanation(["passkey", "threshold", "device", "review"][i]),
-...kids);
+...kids, i === ui.createStep ? stepError() : null,
+i === ui.createStep ? stepActions() : null);
 const introStep = () => step(0,
   el("div", { class: "setup-protection-layout" },
     skipProtectionAsk === "create-first" ? null : el("div", { class: "setup-protection-intro" },
@@ -986,8 +965,7 @@ const namesStep = () => step(2,
   el("div", { class: "setup-network-choice" }, networkPick(), !MAINNET_ON
     ? el("div", { class: "net-opt setup-network-unavailable", "aria-disabled": "true" },
       el("strong", {}, "Mainnet"), el("span", { class: "small muted" }, "Unavailable in this release")) : null),
-  planningNetworks(),
-  el("p", { class: "small muted" }, "Solana Devnet is included by default. Unavailable services wait while your Zcash progress is saved."))));
+  planningNetworks())));
 function reviewStep() {
   const d = ui.createDraft ?? { n: 3, t: 2 };
   const includeSol = reviewSolIncluded(d);
@@ -1023,19 +1001,15 @@ const curNetLabel = () => (ui.net === "mainnet" ? "mainnet" : "testnet");
 const protectionLabel = () => passkeyProtected() ? "Passkey protected"
   : protectionUnverified() ? "Passkey copy not fully checked"
   : setupProtectionReady() ? "Skipped · no passkey encryption" : "Protection choice needed";
-// Above the buttons, not in their bar: on a phone the bar stays at the bottom of the sheet.
+// Errors stay with the current step, outside its compact navigation controls.
 const stepError = () => (ui.createError ? el("p", { class: "callout bad", role: "alert",
   id: "create-error" }, ui.createError) : null);
 function stepActions() {
   const s = ui.createStep, last = s === STEPS.length - 1;
-  if (s === 0 && skipProtectionAsk === "create-first") return null;
+  if (s === 0 && (skipProtectionAsk === "create-first" || !setupProtectionReady())) return null;
   const off = offOf({ db: !!db, newSigner: true }, "why-create-submit");
   const entryReady = setupProtectionReady();
-  return el("div", { class: "dialog-actions", "aria-describedby": "setup-plan-lifetime" },
-    el("p", { class: "small muted ux-plan-lifetime", id: "setup-plan-lifetime" },
-      "Your unfinished plan stays in this tab. Closing or reloading it clears the plan."),
-    el("button", { class: "btn", type: "button", "aria-describedby": "setup-plan-lifetime",
-      onclick: savePlanAndExit }, "Pause plan"),
+  return el("div", { class: "dialog-actions setup-plan-actions" },
     s > 0 ? el("button", { class: "btn", type: "button", onclick: backClick(s) }, "Back") : null,
     el("button", { class: "btn primary", type: "submit", "data-key": "create-continue",
       "data-first-focus": s === 0 && entryReady,
@@ -1066,7 +1040,7 @@ function newDialog() {
         class: i < at ? "done" : i === at ? "current" : "",
         "aria-current": i === at ? "step" : null,
       }, el("span", { "aria-hidden": "true" }, String(i + 1)), el("span", {}, label))))),
-    introStep(), ruleStep(lines), namesStep(), reviewStep(), stepError(), stepActions());
+    introStep(), ruleStep(lines), namesStep(), reviewStep());
   return form;
 }
 // Change devices keeps one form: its steps first, then the names and the rule.

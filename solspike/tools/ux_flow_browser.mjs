@@ -115,10 +115,12 @@ async function inspect(flow, theme, width) {
 
 async function copyChecks() {
   await mount("setup-protection");
-  check(await page.getByRole("button", { name: "Pause plan", exact: true }).count() === 1,
-    "unfinished setup says Pause plan");
-  check((await page.locator("#setup-plan-lifetime").textContent()).includes("Closing or reloading"),
-    "unfinished plan lifetime is stated beside the actions");
+  check(await page.getByRole("button", { name: "Pause plan", exact: true }).count() === 0,
+    "setup omits the removed pause control");
+  check(await page.locator("#setup-plan-lifetime,.guided-plan>.dialog-actions").count() === 0,
+    "setup has no plan reminder or separate footer bar");
+  check(await page.getByRole("button", { name: "Continue to approval rule", exact: true })
+    .count() === 0, "initial protection choices have no duplicate disabled continuation");
   for (const width of [320, 390, 1440]) {
     await page.setViewportSize({ width, height: width < 600 ? 844 : 1000 });
     await mount("setup-protection");
@@ -148,6 +150,46 @@ async function copyChecks() {
   await mount("locked-data-delete");
   check(await page.locator(".ux-consequences>li").count() === 4,
     "locked-data deletion separately explains each lost data category");
+}
+
+async function setupSpaceReview() {
+  for (const [width, height] of [[1366, 768], [1440, 900], [390, 844], [320, 844]]) {
+    await page.setViewportSize({ width, height });
+    for (const theme of ["dark", "light"]) {
+      await page.evaluate((value) => { document.documentElement.dataset.theme = value; }, theme);
+      for (const flow of ["setup-protection", "setup-rule", "setup-labels", "setup-review"]) {
+        await setupSpaceCase(flow, theme, width, height);
+      }
+    }
+  }
+  const desktop = layouts.filter((item) => item.extraHeight !== undefined && item.width >= 1000);
+  for (const item of desktop) check(item.extraHeight <= 1 && item.pageExtra <= 1,
+    `${item.flow} ${item.width}x${item.height} ${item.theme}: no setup scroll `
+      + JSON.stringify(item));
+}
+
+async function setupSpaceCase(flow, theme, width, height) {
+  await mount(flow);
+  const facts = await page.locator(".guided-plan").evaluate((dialog) => {
+    const panel = dialog.querySelector(".guide-step:not([hidden])");
+    const actions = panel.querySelector(".setup-plan-actions");
+    const scrolling = [...panel.querySelectorAll("*")].filter((node) => {
+      const style = getComputedStyle(node);
+      return ["auto", "scroll"].includes(style.overflowY)
+        && node.scrollHeight > node.clientHeight + 1;
+    });
+    return { extraHeight: dialog.scrollHeight - dialog.clientHeight,
+      pageExtra: document.documentElement.scrollHeight - innerHeight,
+      nestedScrolls: scrolling.length,
+      actionsInline: !actions || getComputedStyle(actions).position === "static",
+      separateFooter: !!dialog.querySelector(":scope>.dialog-actions") };
+  });
+  const label = `${flow} ${width}x${height} ${theme}`;
+  check(!facts.nestedScrolls && facts.actionsInline && !facts.separateFooter,
+    label + ": inline navigation creates no nested scrolling or footer");
+  layouts.push({ flow, width, height, theme, ...facts });
+  if (theme === "dark" && [390, 1366].includes(width)) await page.screenshot({
+    path: resolve(out, `${flow}-${width}x${height}.png`), animations: "disabled" });
 }
 
 async function recipientEditor() {
@@ -215,7 +257,8 @@ try {
     await page.evaluate((theme) => { document.documentElement.dataset.theme = theme; }, theme);
     for (const flow of flows) { await mount(flow); await inspect(flow, theme, width); }
   }
-  await copyChecks(); await recipientEditor(); await scrollAndShortWindow();
+  await copyChecks(); await setupSpaceReview();
+  await recipientEditor(); await scrollAndShortWindow();
   const storageAfter = await page.evaluate(() => JSON.stringify({ ...localStorage }));
   if (storageBefore !== storageAfter) writeFileSync(resolve(out, "fixture-storage.json"),
     JSON.stringify({ before: JSON.parse(storageBefore), after: JSON.parse(storageAfter) },

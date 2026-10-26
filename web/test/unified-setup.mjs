@@ -2291,9 +2291,9 @@ async function walkSteps(fields, times, fresh = true) {
   assert.equal(t.state.gid, gid, "a second Enter on the names step creates nothing");
   assert.equal(ui.createStep, 3, "and leaves the review on screen");
   ui.sol = false;
-  byText(dialogTree(), "Pause plan").on.click();
+  findNode(dialogTree(), (n) => n.attrs?.["aria-label"] === "Close").on.click();
   assert.deepEqual([ui.createStep, ui.createDraft], [0, null],
-    "Pause plan closes the active plan");
+    "Close clears the active setup draft");
   assert.equal(ui.sol, undefined, "The closed form forgets its active Solana choice");
   await walkSteps({ ...fields, "g-n": { value: "9" } }, 2);
   assert.equal(ui.createStep, 1, "Next checks the rule");
@@ -2303,7 +2303,8 @@ async function walkSteps(fields, times, fresh = true) {
   assert.equal(ui.createStep, 1, "no tick: the rule step stays");
   assert.match(ui.createError ?? "", /Confirm that one lost device stops all payments/,
     "the error shows in the dialog");
-  const tree = dialogTree(), bar = findNode(tree, (n) => n.className === "dialog-actions");
+  const tree = dialogTree(), bar = findNode(tree, (n) =>
+    n.className?.split(" ").includes("dialog-actions"));
   assert.ok(byId(tree, "create-error"), "the error is in the dialog");
   assert.equal(byId(bar, "create-error"), null, "and not in the button bar");
   byText(dialogTree(), "Back").on.click({ detail: 0 });
@@ -2412,11 +2413,11 @@ async function walkSteps(fields, times, fresh = true) {
 {
   const shown = (step) => atStep(step, () => shownText(dialogTree()));
   assert.match(shown(0),
-    /^Set up your wallet.*Protect this browser.*Pause planContinue to approval rule$/s);
+    /^Set up your wallet.*Protect this browser.*Continue to approval rule$/s);
   assert.match(shown(1),
     new RegExp("Set the approval threshold.*Devices.*Approvals needed.*Any 2 of 3 devices must.*"
       + "How the approval threshold works.*"
-      + "Pause planBackUse this arrangement$", "s"));
+      + "BackUse this arrangement$", "s"));
   assert.match(shown(2),
     /Set up this device.*This device's label.*Wallet name.*Network.*BackContinue$/s);
   ui.createDraft = { n: 4, t: 3, name: "Team", label: "Ana's phone", sol: true };

@@ -35,7 +35,8 @@ function withDocument(build) {
 const reviewTree = (from = null) => withDocument(() => createDialog(from));
 Object.assign(ui, { create: true, createStep: 0, net: "testnet", createDraft: { n: 3, t: 2 } });
 const unprotected = reviewTree();
-assert.equal(continueOf(unprotected).attrs.disabled, "");
+assert.equal(continueOf(unprotected), undefined,
+  "protection choices appear without a duplicate disabled continuation");
 unprotected.on.submit({ preventDefault() {}, target: {} });
 assert.equal(ui.createStep, 0,
   "submitting a stale form cannot bypass an explicit protection choice");
@@ -44,7 +45,8 @@ assert.equal(data.size, 0, "blocked setup creates no group or signing seat");
 navigator.credentials.create = () => { throw new DOMException("Cancelled", "NotAllowedError"); };
 assert.equal(await protectThisDevice(), false);
 assert.equal(passkeyProtected(), false, "cancellation never unlocks the setup flow");
-assert.equal(continueOf(reviewTree()).attrs.disabled, "");
+assert.equal(continueOf(reviewTree()), undefined,
+  "cancellation never exposes continuation");
 
 // The real buttons: Skip for now, then Continue without protection. A damaged address book or
 // messaging account, and a vault whose check did not finish, never leave the person without a way
@@ -103,7 +105,7 @@ storage.set("zf-secrets", '{"outside-wallet:1":{"keyPackage":"outside"}}');
 assert.equal(isOff(createNew(reviewTree(move))), true, "Change devices waits for a review");
 assert.doesNotMatch(text(reviewTree(move)), /You can go on/, "and does not say that it can go on");
 assert.match(text(reviewTree(move)), /reviewed the unprotected copy/, "it says what to do");
-assert.equal(continueOf(reviewTree()).attrs.disabled, "", "so does the create dialog");
+assert.equal(continueOf(reviewTree()), undefined, "the create dialog also withholds continuation");
 storage.delete("zf-secrets");
 storage.delete("zf-vault");
 ks.setVault(null);

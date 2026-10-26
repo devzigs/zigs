@@ -301,3 +301,37 @@ sidebar and guide header. The guide still opens and returns focus to its entry w
 [Live homepage](visuals/gray-ui-release-notices/home-dark.png) shows the resulting interface.
 Updated the PRD and repository instructions so future UI passes retain this preference.
 Saved on local `gray-ui`; no main-branch integration, merge or deployment is included.
+
+## Remove Pause plan and the setup footer — 26 October 2026
+
+Removed Pause plan, its unfinished-plan reminder, the corresponding Resume setup banner
+and the optional in-tab paused-draft presentation. Header Close retains its existing reset
+behavior. Back/Continue and current-step errors now sit inside the active setup panel.
+The initial protection screen shows its existing protection/Skip choices; its duplicate
+disabled Continue and repeated protection reminder are absent. Continuation still requires
+the same confirmed protection choice, including explicit Skip confirmation when available.
+
+Removed sticky/nested-scroll footer styling and its reserved reminder row. Kept field
+heights and type sizes, aligned label/name inputs to the top, shortened duplicate network
+copy, reduced oversized network cards and added compact spacing for short desktop windows.
+The proposed-rule explanation now calls its blue outlines “highlighted” rather than orange.
+No wallet creation, protection, approval, persistence, network choice or service-retry gate
+was relaxed. Existing stale-submit, cancellation and actual formation regressions remain.
+
+- All 48 Node 26 fast tests passed in 9 seconds; the independent QR decoder remains skipped
+  because `qrencode` is unavailable. Updated only the existing UI expectations for absent
+  pause/disabled-continuation controls; safeguard and real submission checks still pass.
+- The UX browser review passed 572 checks across 156 state variants. The added measurements
+  cover all four setup steps in both themes at 1366×768 and 1440×900: zero extra page/dialog
+  scroll height in all 16 desktop cases. At 320/390 phone widths, the initial protection
+  screen also fits; longer forms and expanded explanations retain accessible scrolling.
+  No setup navigation introduces a separate scrolling footer or nested scroll area.
+- Lint, identity and diff checks passed. Browser fixtures use synthetic data and block
+  external requests; no operations were submitted by the visual review.
+- [Live first screen](visuals/gray-ui-setup-no-pause/protection-live.png),
+  [device details at 1366×768](visuals/gray-ui-setup-no-pause/device-desktop.png) and
+  [phone first screen](visuals/gray-ui-setup-no-pause/protection-phone.png) show the cleanup.
+
+Refreshed the actual local preview without creating an account or changing protection.
+Updated repository instructions and the PRD to preserve the requested removal. Saved locally
+on `gray-ui`; no main-branch integration, merge or deployment is included.
