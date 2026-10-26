@@ -320,7 +320,7 @@ How the group server is kept blind:
 ## Proof on testnet and Devnet
 
 These transactions were made by the Zigs apps on the NU7 testnet (v6 transactions, Ironwood pool),
-with 2-of-2 wallets and one 2-of-3 wallet:
+with 2-of-2 wallets, two 2-of-3 wallets and a single-key personal account:
 
 | Transaction | Block | What |
 |---|---|---|
@@ -342,12 +342,14 @@ with 2-of-2 wallets and one 2-of-3 wallet:
 | [`0e2fc103…da7b`](https://testnet.zecblock.com/tx/0e2fc103d8be65dd12070f683b317a26a6c3f28638b0a25ea2b3d589c824da7b) | 4,498,021 | **Payment request:** a signer posts a ZIP 321 request in the wallet room, the other signer proposes it with **Propose this**, and both approve |
 | [`646e6edd…819e`](https://testnet.zecblock.com/tx/646e6edd0bc003b796f54f2fec4f748a5b65a15290d30d31eb73b4fe79d8819e) | 4,498,648 | **On-chain message:** a personal account sends a 3-part message (3 zero-value outputs with memos), and the recipient's account joins it under the right contact |
 | [`5f47158c…0969`](https://testnet.zecblock.com/tx/5f47158cad0a3c5946757ba9abad8f7208f6eb38eb76cb9b4be2f6cd8cbc0969) | 4,518,023 | **Pay to a ZNS name:** a 2-of-2 payment to `craftsoldier.zec`, typed as a name in the Send form. Each approving page looked the name up again |
+| [`485d71bc…b14e`](https://testnet.zecblock.com/tx/485d71bcb0fbd2e9546fe7217b424f7f67c3505f2177f5018b067572e20ab14e) | 4,539,698 | **Demo video:** a 2-of-3 wallet pays 0.01 TAZ to a second wallet. Devices 2 and 1 approve (three browser windows on one computer), and the second wallet shows the payment |
 
 On Solana Devnet, through the Zigs approvals program:
 
 | Transaction | Slot | What |
 |---|---|---|
 | [`3ZytbWVs…7YPT`](https://explorer.solana.com/tx/3ZytbWVsua1GgmLVSG2ocervHPTRU2EqynfD4YJvGKj3sAem5Atuw9LYvAkm3b1dgykscg8EiBz5LwaE1ck17YPT?cluster=devnet) | 512,517,818 | **Private payment:** a 2-of-3 group pays 0.001 SOL to a shielded address. Device 1 proposed, devices 2 and 3 approved, and device 1 executed it |
+| [`5n7U9CJv…L9ba`](https://explorer.solana.com/tx/5n7U9CJv1Qf3yeMBBKATgYhxMcw7hizZb4sV9vqjTrwyYz53T9H1hDidfH3a4YNmnnJm1gdkcre81PcGqYn5L9ba?cluster=devnet) | 514,915,452 | **Demo video, private payment:** a 2-of-3 group pays 0.005 SOL to the shielded address of a second group. Device 1 proposed, and devices 1 and 2 approved (three browser windows on one computer) |
 
 Before this release turned mainnet off in the web app, a 2-of-2 mainnet wallet was created and
 synced to the mainnet tip in the web app and on the iPhone.
