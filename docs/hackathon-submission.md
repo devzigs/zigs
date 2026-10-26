@@ -12,7 +12,7 @@ Sources: [hackathon-release.md](hackathon-release.md) (the live records),
 | Project name | Zigs |
 | Track | Cross-Chain or Shielded Payments: the owner chooses (section 2) |
 | Description | Section 3 (at most 2,000 characters) |
-| Public repository | https://github.com/devzigs/zigs (private today: public by 28 October, section 6) |
+| Public repository | https://github.com/devzigs/zigs (public since 26 October 2026) |
 | Demo URL | https://app.zigs.app |
 | Demo video | A two-minute video (section 5). The owner uploads it and pastes the URL |
 
@@ -116,8 +116,8 @@ Do not show the password prompt, a real name, the seed of an account or a backup
 
 1. Register on the Zecathon site. The form asks for a real-name profile that only the organisers
    and the judges see. Check it against the pseudonymous identity rule before you register.
-2. Make the repository public by 28 October 2026. The owner handles the history first (PRIV-3 in
-   TICKETS.md).
+2. Done on 26 October 2026: the repository is public (PRIV-3 in TICKETS.md). The website
+   repository stays private.
 3. Pick the track: Cross-Chain or Shielded Payments (section 2).
 4. Prepare the wallets of docs/demo.md section 3, record the video of section 5, upload it, and
    keep its URL.
