@@ -1,53 +1,13 @@
-/* Brand presentation from zigs-site main 876e358. Financial surfaces stay opaque. */
-@font-face{font-family:Manrope;src:url('/fonts/manrope-latin.woff2') format('woff2');font-style:normal;font-weight:200 800;font-display:swap}
-@font-face{font-family:Manrope;src:url('/fonts/manrope-latin-ext.woff2') format('woff2');font-style:normal;font-weight:200 800;font-display:swap;unicode-range:U+0100-02FF,U+0304,U+0308,U+0329,U+1E00-1E9F,U+1EF2-1EFF,U+2020,U+20A0-20AB,U+20AD-20C0,U+2113,U+2C60-2C7F,U+A720-A7FF}
+/* Current presentation: original steel-blue tokens and Geist type from design-system.css.
+   Retain the later layouts, controls, branding, guide and accessible interaction refinements. */
 :root{
- --sans:Manrope,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;
- --bg:#080808;--side:#0c0c0c;--panel:#121212;--sheet:#121212;--raised:#1c1c1c;--sunk:#0e0e0e;
- --line:#2b2b2b;--line-2:#484848;--control-line:#777;--button-line:#777;--line-field:#777;
- --text:#f4f4f4;--muted:#b6b6b6;--faint:#a2a2a2;
- --accent:#ee9d70;--accent-text:#f3b186;--on-accent:#21180f;--accent-hi:#f4ae86;--accent-pressed:#df8b5d;--accent-border:#ee9d70;
- --accent-soft:rgba(243,177,134,.07);--accent-edge:rgba(243,177,134,.35);--focus:#f3b186;--portfolio-focus:#f3b186;
- --control-hi:#222;--control-lo:#181818;--control-hover:#292929;--metal:#b8b8b8;
- --metal-light:#eee;--metal-mid:#999;--metal-dark:#383838;
- --portfolio-control:#222;--portfolio-control-hover:#303030;--portfolio-control-line:#777;--portfolio-disabled-line:#555;
- --portfolio-bg:#111;--portfolio-line:#3a3a3a;--portfolio-decor:#151515;--on-portfolio:#f4f4f4;--on-portfolio-muted:#b8b8b8;
- --hero-hi:#1d1916;--hero-lo:#11100f;--hero-edge:#3b3028;--ambient:rgba(238,157,112,.055);
- --glass:#181818f5;--glass-fallback:#1a1a1a;--floating-glass:#1a1a1af5;--nav-selected:#26221f;
- --light-surface:#ffffff03;--light-rail:#ffffff02;--light-portfolio:#ffffff04;--portfolio-rim:#ffffff12;
- --surface-rim:#ffffff12;--chrome-hi:#ffffff04;--chrome-lo:#ffffff00;
- --shadow-primary:inset 0 1px #ffffff50,0 1px 2px #0002;
- --font-page:450 1.875rem/2.25rem var(--sans);--font-section:500 1.25rem/1.75rem var(--sans);
- --font-welcome:400 2.75rem/3.1rem var(--sans);--font-body:400 .9375rem/1.5rem var(--sans);
  --ease:cubic-bezier(.22,.68,.18,1);--entrance:cubic-bezier(.22,.68,.18,1);
  --r-control:11px;--r:18px;--layout-gutter:clamp(20px,2.3vw,36px);
 }
-:root[data-theme=light]{
- --bg:#f7f7f5;--side:#f0f0ee;--panel:#fff;--sheet:#fff;--raised:#ebebe8;--sunk:#f1f1ee;
- --line:#d9d9d5;--line-2:#b8b8b2;--control-line:#787872;--button-line:#787872;--line-field:#787872;
- --text:#171716;--muted:#575753;--faint:#62625d;
- --accent:#ee9d70;--accent-text:#9f481d;--on-accent:#21180f;--accent-hi:#f4ae86;--accent-pressed:#df8b5d;--accent-border:#ee9d70;
- --accent-soft:rgba(159,72,29,.05);--accent-edge:rgba(159,72,29,.3);--focus:#9f481d;--portfolio-focus:#f3b186;
- --control-hi:#fff;--control-lo:#f5f5f2;--control-hover:#e8e8e4;--metal:#62625c;
- --glass:#fffffff5;--glass-fallback:#fff;--floating-glass:#fffffff5;--nav-selected:#eee5de;
- --ambient:rgba(238,157,112,.07);--surface-rim:#fff;--light-surface:#ffffff70;--light-rail:#ffffff55;
- --shadow-primary:inset 0 1px #ffffff20,0 1px 2px #0001;
-}
-@media(prefers-color-scheme:light){:root:not([data-theme=dark]){
- --bg:#f7f7f5;--side:#f0f0ee;--panel:#fff;--sheet:#fff;--raised:#ebebe8;--sunk:#f1f1ee;
- --line:#d9d9d5;--line-2:#b8b8b2;--control-line:#787872;--button-line:#787872;--line-field:#787872;
- --text:#171716;--muted:#575753;--faint:#62625d;
- --accent:#ee9d70;--accent-text:#9f481d;--on-accent:#21180f;--accent-hi:#f4ae86;--accent-pressed:#df8b5d;--accent-border:#ee9d70;
- --accent-soft:rgba(159,72,29,.05);--accent-edge:rgba(159,72,29,.3);--focus:#9f481d;--portfolio-focus:#f3b186;
- --control-hi:#fff;--control-lo:#f5f5f2;--control-hover:#e8e8e4;--metal:#62625c;
- --glass:#fffffff5;--glass-fallback:#fff;--floating-glass:#fffffff5;--nav-selected:#eee5de;
- --ambient:rgba(238,157,112,.07);--surface-rim:#fff;--light-surface:#ffffff70;--light-rail:#ffffff55;
- --shadow-primary:inset 0 1px #ffffff20,0 1px 2px #0001;
-}}
 body{-webkit-font-smoothing:antialiased}
 ::selection{background:var(--text);color:var(--bg)}
-h1,h2,h3,h4{letter-spacing:-.035em}
-.page :is(.page-head,.page-heading,.settings-heading) h1{font-weight:450;letter-spacing:-.045em}
+h1,h2,h3,h4{font-weight:600;letter-spacing:-.025em}
+.page :is(.page-head,.page-heading,.settings-heading) h1{font-weight:600;letter-spacing:-.035em}
 :is(.money,.asset-balance,.portfolio-usd,.metric-value,.receipt-value){font-variant-numeric:tabular-nums}
 .side{background:var(--side);border-right-color:var(--line)}
 .logo{font-size:24px;font-weight:600;letter-spacing:-.055em}
@@ -55,8 +15,8 @@ h1,h2,h3,h4{letter-spacing:-.035em}
 .side-item.active{background:var(--nav-selected);border-color:var(--line-2);box-shadow:inset 2px 0 var(--accent-text)}
 .side-item .symbol{color:inherit}
 .side-item.active .symbol{color:var(--accent-text)}
-.side-name{font-weight:450}
-.btn{font-weight:550;transition:var(--transition-control)}
+.side-name{font-weight:500}
+.btn{font-weight:600;transition:var(--transition-control)}
 .btn.primary{background:var(--accent);background-image:none;color:var(--on-accent);border-color:var(--accent-border);box-shadow:var(--shadow-primary)}
 .btn.primary:hover:not(:disabled){background:var(--accent-hi);border-color:var(--accent-hi)}
 .btn.primary:active:not(:disabled){background:var(--accent-pressed)}
@@ -66,40 +26,40 @@ h1,h2,h3,h4{letter-spacing:-.035em}
 .card,.panel,.surface{box-shadow:inset 0 1px var(--edge-quiet)}
 .row-item:hover:not(:disabled){background:var(--hw-soft,var(--raised))}
 .dialog:not(.home-how-dialog){background:var(--sheet);border-color:var(--line-2);box-shadow:0 30px 100px #0005,inset 0 1px var(--edge)}
-.dialog:not(.home-how-dialog)>h2{font-weight:450;letter-spacing:-.04em}
-/* Original hero artwork and warm undertones, with the refined typography and composition. */
-.lobby-home{--home-ink:#f4f4f4;--home-muted:#b8b8b8;--home-warm:#f4b183}
-.lobby-home .welcome .welcome-main{background:#090909;border-color:#333;box-shadow:inset 0 1px #ffffff06,0 24px 70px -50px #000b}
+.dialog:not(.home-how-dialog)>h2{font-weight:600;letter-spacing:-.025em}
+/* Original blue-black hero and stronger Geist hierarchy; artwork and layout stay intact. */
+.lobby-home{--home-ink:#f5f6f8;--home-muted:#b7bec8;--home-warm:#f4b183}
+.lobby-home .welcome .welcome-main{background:#090c10;border-color:#c3cfdf24;box-shadow:inset 0 1px #e5edf706,0 24px 70px -50px #000b}
 .home-hero::before{background:radial-gradient(ellipse at 91% 14%,#bd895935,transparent 53%),radial-gradient(ellipse at 66% 90%,#849db318,transparent 58%);opacity:var(--home-atmosphere,.6)}
-.home-hero::after{background:linear-gradient(90deg,#090909 0%,#090909f5 28%,#090909bd 48%,#09090922 72%,transparent 88%)}
+.home-hero::after{background:linear-gradient(90deg,#090c10 0%,#090c10f5 28%,#090c10bd 48%,#090c1022 72%,transparent 88%)}
 .lobby-home .home-hero .welcome-kicker{color:#c9a58b;font-weight:500;letter-spacing:.2em}
-.lobby-home .home-hero h1{font-weight:400;letter-spacing:-.06em;line-height:1.12}
-.lobby-home .home-hero .welcome-title-accent{color:#aaa}
-.lobby-home .home-hero .welcome-summary{color:#b8b8b8;line-height:1.85}
-.lobby-home .welcome-actions .btn{border-radius:999px;padding-inline:24px;font-weight:550}
+.lobby-home .home-hero h1{font-weight:600;letter-spacing:-.045em;line-height:1.07}
+.lobby-home .home-hero .welcome-title-accent{color:#bfc7d1}
+.lobby-home .home-hero .welcome-summary{color:var(--home-muted);line-height:1.65}
+.lobby-home .welcome-actions .btn{border-radius:999px;padding-inline:24px;font-weight:600}
 .lobby-home .welcome-actions .btn.primary{background:#edac7e;color:#27190f;border-color:#edac7e;box-shadow:none}
 .lobby-home .welcome-actions .btn.primary:hover:not(:disabled){background:#f4b88d;border-color:#f4b88d}
-.lobby-home .welcome-actions .btn:not(.primary){background:#141414;color:#eee;border-color:#666}
-.home-signature{color:#bbb}.home-signature>span:first-child{background:#a87451}.home-signature>span:last-child{color:#aaa}
-.home-threshold{background:#111;border-color:#444}.home-threshold-title{color:#bbb}.home-threshold-node{background:#191919;color:#bbb;border-color:#555}.home-threshold-node.home-threshold-example{color:#f0b98f;background:#62452f;border-color:#ce9366}.home-threshold figcaption{color:#aaa}
+.lobby-home .welcome-actions .btn:not(.primary){background:#222932;color:#f0f3f7;border-color:#56616f}
+.home-signature{color:#c4cbd3}.home-signature>span:first-child{background:#a87451}.home-signature>span:last-child{color:#929eae}
+
 .lobby-home .welcome .home-how-trigger{border-radius:16px;background:linear-gradient(125deg,var(--panel),var(--sunk));border-color:var(--line);box-shadow:inset 0 1px var(--edge)}
 .lobby-home .welcome .home-how-trigger:hover{border-color:var(--control-line)}
 .welcome-security-copy>strong{font-weight:500}
-/* Functional pages share one neutral surface hierarchy; all status tokens retain their meaning. */
-.premium-overview-grid>.overview-hero{background:linear-gradient(135deg,#191919,#101010 75%);border-color:#3b3b3b}
+/* Functional pages reuse the original blue-metal surfaces and semantic status tokens. */
+.premium-overview-grid>.overview-hero{background:linear-gradient(135deg,var(--hero-hi),var(--hero-lo) 75%);border-color:var(--portfolio-line)}
 .premium-overview-grid .overview-actions .btn{white-space:nowrap;overflow-wrap:normal;font-size:13px;gap:6px;padding-inline:8px}
-.overview-page .overview-actions .btn{background:#222;color:#eee;border-color:#666}
-.overview-page .overview-actions .btn:hover:not(:disabled){background:#303030;border-color:#999}
-.overview-page .overview-actions .btn:disabled{color:#aaa;border-color:#555;background:#1c1c1c}
-.overview-page .section-heading h2,.premium-overview-grid .shared-control h2{font-weight:450;letter-spacing:-.035em}
+.overview-page .overview-actions .btn{background:var(--portfolio-control);color:var(--on-portfolio);border-color:var(--portfolio-control-line)}
+.overview-page .overview-actions .btn:hover:not(:disabled){background:var(--portfolio-control-hover);border-color:var(--metal-mid)}
+.overview-page .overview-actions .btn:disabled{color:var(--on-portfolio-muted);border-color:var(--portfolio-disabled-line);background:var(--portfolio-decor)}
+.overview-page .section-heading h2,.premium-overview-grid .shared-control h2{font-weight:600;letter-spacing:-.025em}
 .asset-rows.assets-grid{background:var(--panel);border-color:var(--line);box-shadow:inset 0 1px var(--edge)}
-.asset-rows .asset-row .asset-title h3{font-weight:500;letter-spacing:-.025em}
-:is(.approvals-page,.activity-page,.security-page,.settings-page,.address-book-page,.messages-page,.recipients-page,.messages-workspace,#panel-recovery) h1{font-weight:450;letter-spacing:-.045em}
-:is(.approvals-page,.activity-page,.security-page,.settings-page,.address-book-page,.messages-page,.recipients-page,.messages-workspace,#panel-recovery) h2{font-weight:500;letter-spacing:-.035em}
+.asset-rows .asset-row .asset-title h3{font-weight:600;letter-spacing:-.025em}
+:is(.approvals-page,.activity-page,.security-page,.settings-page,.address-book-page,.messages-page,.recipients-page,.messages-workspace,#panel-recovery) h1{font-weight:600;letter-spacing:-.035em}
+:is(.approvals-page,.activity-page,.security-page,.settings-page,.address-book-page,.messages-page,.recipients-page,.messages-workspace,#panel-recovery) h2{font-weight:600;letter-spacing:-.025em}
 .settings-page .surface,.security-page .surface,.approvals-page .surface{background:var(--panel);border-color:var(--line)}
-:is(.setup-dialog,.create-dialog,.guided-setup,.onboarding) :is(h2,h3){font-weight:450;letter-spacing:-.035em}
-:is(.privacy-demo-popup,.network-privacy-dialog) :is(h2,h3){font-weight:450;letter-spacing:-.045em}
-@media(max-width:760px){.logo{font-size:22px}.lobby-home .welcome-actions .btn{padding-inline:18px}.lobby-home .home-hero h1{letter-spacing:-.055em}}
+:is(.setup-dialog,.create-dialog,.guided-setup,.onboarding) :is(h2,h3){font-weight:600;letter-spacing:-.025em}
+:is(.privacy-demo-popup,.network-privacy-dialog) :is(h2,h3){font-weight:600;letter-spacing:-.035em}
+@media(max-width:760px){.logo{font-size:22px}.lobby-home .welcome-actions .btn{padding-inline:18px}.lobby-home .home-hero h1{letter-spacing:-.045em}}
 @media(prefers-reduced-motion:reduce){.btn,.icon-btn,.side-item,.home-how-trigger{transition:none}}
 @media(forced-colors:active){.side-item.active{outline:2px solid Highlight;box-shadow:none}.btn.primary{background:ButtonFace;color:ButtonText;border-color:ButtonText}.lobby-home .welcome .welcome-main,.premium-overview-grid>.overview-hero{background:Canvas;color:CanvasText}.home-hero::before,.home-hero::after{display:none}.lobby-home .home-hero :is(h1,.welcome-title-accent,.welcome-summary,.welcome-kicker){color:CanvasText}.lobby-home .welcome-actions .btn{background:ButtonFace;color:ButtonText;border-color:ButtonText}}
 
@@ -117,7 +77,10 @@ h1,h2,h3,h4{letter-spacing:-.035em}
  .hw-experience :is(.hw-overview-intro,.hw-chapter-heading,.hw-step-copy)>.hw-eyebrow{color:var(--accent-text)}
  .hw-experience .hw-overview-intro>div>.hw-eyebrow{color:var(--accent-text)}
  .hw-experience .hw-read-more{color:var(--accent-text);text-decoration-color:var(--accent-edge)}
- .hw-figure,.hw-journey-figure{background:radial-gradient(ellipse at 80% 20%,#ee9d7009,transparent 65%),linear-gradient(135deg,#151310,#080808 70%)}
+ .hw-figure,.hw-journey-figure{background:radial-gradient(ellipse at 80% 20%,#ee9d7009,transparent 65%),linear-gradient(135deg,var(--hero-hi),var(--hero-lo) 70%)}
  .hw-art .dxa-flow{stroke:#f3b186}
  .hw-art .dxa-overline{fill:#c9a58b}
 }
+
+/* New guide layouts inherit the restored font family and stronger heading weights. */
+.hw-experience :is(h3,h4){font-weight:600;letter-spacing:-.035em}

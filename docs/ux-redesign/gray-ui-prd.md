@@ -26,6 +26,14 @@ homepage artwork must not track pointer position. Keep ordinary button/icon hove
 fixed surface lighting and the existing independent artwork motion; do not restore a cursor
 spotlight as part of a future premium styling pass.
 
+On 26 October the user preferred the earlier metallic steel-blue palette and fonts shown
+in their screenshot. Restore the existing `design-system.css` colour tokens, Geist and Geist
+Mono, and stronger headings throughout the application. Remove the later neutral-charcoal
+and Manrope overrides, including hard-coded warm-grey panel fills. Keep the current layouts,
+branding, guides, flow improvements, orange actions and motion refinements. The original
+Manrope migration specification below records the earlier delivered snapshot; this newer
+user preference supersedes its palette and typography choices.
+
 ## Goal and authoritative sources
 
 Apply the complete latest web design from the existing local `codex/ux-ui-final` working

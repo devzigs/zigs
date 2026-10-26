@@ -158,3 +158,25 @@ The 13 homepage motion checks and 216 browser checks across 72 page/theme/width 
 passed. Lint, anonymous identity and diff checks passed. Refreshed the actual local preview.
 Saved on local `gray-ui`; remote publication remains blocked by the repository's read-only
 access for the connected account. No main-branch integration or deployment is included.
+
+## Restore steel-blue palette and Geist — 26 October 2026
+
+Restored the original blue-black backgrounds, steel-blue surfaces and borders, silver-blue
+secondary text, Geist interface font and Geist Mono technical text. Restored stronger heading
+and control weights. The later neutral palette and Manrope overrides were removed; Geist is
+preloaded using the existing local asset. Updated the premium panel/icon backgrounds to use
+the shared palette tokens. The newer layouts, flow refinements, orange actions, canonical
+branding and absence of pointer-following lighting remain intact.
+
+- All 48 Node 26 fast tests passed in 8 seconds. QR decoder remains skipped because
+  `qrencode` is unavailable. Lint and diff checks passed.
+- Style review: 511 checks and 31 captures passed, including composed palette contrast,
+  guide content/interactions and responsive dark/light layouts.
+- Full UI review: 1,129 checks across 168 layouts and 50 composer focus variants passed.
+- Privacy preview: 218 checks across 26 layouts passed with the restored Geist family.
+- [Dark Overview](visuals/gray-ui-restored-blue/overview-dark.png) and
+  [light phone](visuals/gray-ui-restored-blue/overview-phone-light.png) show synthetic data.
+  Browser fixtures blocked external requests and submitted no wallet operations.
+- Recorded the user’s new preference in the PRD and repository instructions so future
+  styling passes retain the blue palette and earlier fonts. No engineering or native
+  changes, main-branch integration or deployment are included.
