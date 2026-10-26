@@ -180,3 +180,25 @@ branding and absence of pointer-following lighting remain intact.
 - Recorded the user’s new preference in the PRD and repository instructions so future
   styling passes retain the blue palette and earlier fonts. No engineering or native
   changes, main-branch integration or deployment are included.
+
+## Give Messages the available space — 26 October 2026
+
+Removed the fixed desktop chat-height subtraction and the extra workspace width cap.
+Existing headers and toolbars now determine the remaining conversation height. Account
+setup grows with the page; its complete form and actions are no longer confined to an
+internally scrolling chat frame. Before an account exists, hide the empty conversation
+column and let the setup use one full-width column. Preserve the inbox for existing accounts.
+An individual network choice also uses the available form width instead of half a row.
+
+The full browser review now explicitly selects Zcash for its setup scenario. It passed
+1,141 checks across 168 layouts and 50 composer focus variants, including new checks for
+unclipped setup/actions and keyboard reachability at 320, 390 and 1440 pixels in both themes.
+All 48 Node 26 fast tests passed in 9 seconds; the QR decoder remains skipped because
+`qrencode` is unavailable. Lint and diff checks passed. No account, funding or message was
+submitted by the isolated synthetic browser fixtures.
+
+[Desktop setup](visuals/gray-ui-messaging-space/setup-desktop.png) and
+[phone setup](visuals/gray-ui-messaging-space/setup-phone.png) record the resulting layout.
+The implementation changes presentation only. Account/network choices, safeguards, messages,
+drafts, transport and storage behavior are unchanged. Work remains on local `gray-ui`; no
+main-branch integration or deployment is included, and remote access remains read-only.

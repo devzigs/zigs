@@ -166,6 +166,7 @@ async function messagingReview() {
   for (const scene of ["team", "direct", "contact", "changed-key", "invite", "setup"]) {
     await page.goto(OVERVIEW_ORIGIN);
     await installMessagingFixture(page, scene, "after");
+    if (scene === "setup") await page.getByRole("tab", { name: "Zcash", exact: true }).click();
     const variants = [320, 390, 1440].flatMap((width) =>
       ["dark", "light"].map((theme) => ({ width, theme })));
     for (const { width, theme } of variants) await messagingVariant(scene, width, theme);
@@ -217,8 +218,32 @@ async function messagingVariant(scene, width, theme) {
   check(await page.locator(".messages-backup-reminder").count() === 0,
     `${scene} ${width} ${theme}: conversation omits the automatic backup reminder`);
   await composerReview(scene, width, theme);
+  if (scene === "setup") await setupSpaceReview(width, theme);
   if (scene === "contact" && width === 390) await backReview(theme);
   if (width === 390 && theme === "dark") await capture("messages-" + scene);
+}
+
+async function setupSpaceReview(width, theme) {
+  const facts = await page.locator(".messages-layout").evaluate((node) => {
+    const thread = node.querySelector(".messages-setup-thread");
+    const box = thread.getBoundingClientRect();
+    const form = thread.querySelector(".messages-account-setup").getBoundingClientRect();
+    const actions = [...thread.querySelectorAll(".dialog-actions button")]
+      .map((button) => button.getBoundingClientRect());
+    return { inboxHidden: !node.querySelector(".messages-inbox").checkVisibility(),
+      pageScroll: thread.scrollHeight <= thread.clientHeight + 1,
+      formFits: form.bottom <= box.bottom + 1,
+      actionsFit: actions.every((r) => r.top >= box.top && r.bottom <= box.bottom + 1) };
+  });
+  check(facts.inboxHidden && facts.pageScroll && facts.formFits && facts.actionsFit,
+    width + " " + theme + ": setup uses the page without an empty sidebar or clipped form/actions");
+  const action = page.getByRole("button", { name: "Recover access", exact: true });
+  await action.evaluate((node) => node.blur()); await action.focus();
+  check(await page.getByRole("button", { name: "Recover access", exact: true }).evaluate((node) => {
+    const r = node.getBoundingClientRect(); return r.top >= 0 && r.bottom <= innerHeight;
+  }), width + " " + theme + ": setup action is reachable by page scrolling");
+  await page.evaluate(() => window.scrollTo(0, 0)); await settleOverview(page);
+  if (width === 1440) await capture("messages-setup-" + theme + "-desktop");
 }
 
 async function backReview(theme) {

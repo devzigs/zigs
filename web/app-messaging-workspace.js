@@ -186,7 +186,9 @@ export function messagingWorkspace(teamContent = null) {
   el("div", { class: "messages-tabs", role: "tablist", "aria-label": "Message transport" },
     tab("relay", "Relay"), tab("zcash", "Zcash")),
   ...joins.map((cid) => guard(chatJoinCard, cid)),
-  el("div", { class: "messages-layout", id: "messages-layout", role: "tabpanel",
+  el("div", { class: "messages-layout"
+    + (transport === "zcash" && !personal ? " messages-onboarding" : ""),
+    id: "messages-layout", role: "tabpanel",
     "aria-labelledby": "messages-tab-" + transport }, inbox(),
   teamContent || (state.cid ? guard(chatView) : state.contact != null ? guard(contactView) : emptyConversation(newChatWhy))),
   el("input", { id: "messages-restore", type: "file", hidden: true, accept: ".zigsbackup,.json,application/json",

@@ -34,6 +34,13 @@ branding, guides, flow improvements, orange actions and motion refinements. The 
 Manrope migration specification below records the earlier delivered snapshot; this newer
 user preference supersedes its palette and typography choices.
 
+Messaging must use the available page space. Account creation uses one full-width column
+without an empty conversation sidebar or an internally scrolling, fixed-height setup frame.
+The form grows naturally and its actions remain reachable through page scrolling. Once an
+account exists, retain its conversations and account tools. Desktop conversations fill the
+space remaining after the actual wallet header and messaging toolbar; preserve the existing
+mobile history/composer behavior. Network choices and account-creation handlers stay unchanged.
+
 ## Goal and authoritative sources
 
 Apply the complete latest web design from the existing local `codex/ux-ui-final` working
