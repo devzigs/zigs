@@ -86,6 +86,12 @@ Preserve the charcoal surfaces, newer layouts, expanded messaging workspace, gui
 and usability improvements. Do not restore pointer-following glows or lighting. Semantic
 status colours, original branding artwork and deterministic wallet identities remain distinct.
 
+On 26 October 2026 the user also requested removing recurring general release warnings.
+Do not restore the homepage test-network/audit footer, homepage release badge, sidebar
+release notice or guide-overview environment notice. Keep network names in wallet details
+and network choices, contextual help, actual errors and existing risky-action confirmations.
+This presentation request does not change supported networks or authorization safeguards.
+
 ## UI/UX final branch scope
 
 On `codex/ux-ui-final` and branches continuing this UI/UX effort:

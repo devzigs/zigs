@@ -104,8 +104,7 @@ export function journeyView(el, openChapter) {
       el("h3", {}, "Shared control.", el("span", {}, "Step by step."))),
     el("div", {}, el("p", {}, "From your first signing share to a private conversation. Explore one journey at a time."),
       el("button", { type: "button", class: "hw-reference-link", "data-key": "hw-open-reference",
-        onclick: () => openChapter("shared-control") }, "Read the complete guide", el("span", { "aria-hidden": "true" }, "→")),
-      el("p", { class: "hw-environment" }, "Zcash Testnet · Solana Devnet · Not audited"))),
+        onclick: () => openChapter("shared-control") }, "Read the complete guide", el("span", { "aria-hidden": "true" }, "→")))),
     el("div", { class: "hw-explore-label" }, el("span", {}, "Explore the journeys"), position), track, panel);
   choose(0);
   return root;

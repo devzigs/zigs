@@ -80,8 +80,7 @@ export function renderSide() {
       el("button", { class: "icon-btn", type: "button", title: "New wallet", "aria-label": "New wallet", onclick: () => { ui.tab = "overview"; newWallet(); } }, "+")),
     ...testWalletEntry("sidebar"),
     ...(state.groups.length ? state.groups.map((g) => guard(sideItem, g))
-      : [el("p", { class: "side-empty" }, sideEmpty())]),
-    el("p", { class: "side-note", "data-key": "release-note" }, BETA_NOTE));
+      : [el("p", { class: "side-empty" }, sideEmpty())]));
   // Any pick in the list closes the phone menu; the button's own action runs first.
   nav.onclick = (ev) => { if (ev.target.closest("button")) ui.menu = false; };
   document.querySelector(".side").classList.toggle("menu-open", !!ui.menu);
@@ -175,10 +174,6 @@ function chatItem(cid) {
   el("span", { class: "side-tail" }, unreadChip(unreadIn(cid))));
 }
 
-// The release scope, on every page of the shell and on the welcome card.
-const BETA_NOTE = "Beta: Zcash testnet and Solana Devnet. Not audited.";
-const TEST_ONLY = "New wallets use test networks only: Zcash testnet and Solana Devnet. Zigs is "
-  + "not audited.";
 const sideEmpty = () => lockedVault ? "Locked." : dbReady ? "No wallets yet." : "Connecting…";
 
 function sideItem(g) {
@@ -616,8 +611,7 @@ function welcome(off, restoreLink) {
     ? " welcome-returning" + (wallets === 1 ? " welcome-single" : " welcome-many") : " welcome-new"),
     "aria-labelledby": "welcome-title" },
     el("header", { class: "home-masthead" },
-      el("span", { class: "label" }, "ZIGS · PRIVATE BY DESIGN"),
-      el("span", { class: "home-environment" }, "Beta · Not audited · Test networks")),
+      el("span", { class: "label" }, "ZIGS · PRIVATE BY DESIGN")),
     el("div", { class: "welcome-main home-hero", "data-home-hero": "" },
       el("div", { class: "welcome-brand", "aria-hidden": "true" },
         el("img", { class: "home-hero-art", src: "/assets/brand/hero-zebra.png?v=e2a70c42c377", alt: "",
@@ -640,8 +634,7 @@ function welcome(off, restoreLink) {
         el("h3", {}, "Separate shares. ", el("span", {}, "Shared confidence.")),
         el("p", {}, "Each device holds a separate key share. Payments need the approvals set by your wallet’s rule.")) : null) : null,
     wallets ? entryPaths : null,
-    explanation,
-    el("p", { class: "small faint home-release-note" }, TEST_ONLY));
+    explanation);
 }
 
 // The form that opens a wallet from a pasted invite link. The field has no name and the handler

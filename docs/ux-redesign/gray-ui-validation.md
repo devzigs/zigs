@@ -279,3 +279,25 @@ closed the guide from the simplified entry, and confirmed focus returned to that
 [Live homepage](visuals/gray-ui-home-cleanup/home-dark.png) shows both removals.
 
 Saved locally on `gray-ui`. No main-branch integration, merge or deployment is included.
+
+## Remove recurring release notices — 26 October 2026
+
+Removed the quoted “New wallets use test networks only”/“Zigs is not audited” homepage
+footer and its repeated homepage badge, sidebar notice and guide-overview environment line.
+The networks FAQ now gives the same network identities in neutral factual language.
+The remaining privacy-preview pill uses the available masthead space without the former
+release badge. Network labels and choices, supported networks, mainnet acknowledgements,
+transaction/recovery errors and other underlying safeguards remain unchanged.
+
+Updated the existing UI-copy expectations to verify that both empty and returning homepages,
+and the shared sidebar, omit these recurring notices. All 48 Node 26 fast tests passed in
+9 seconds; the independent QR decoder remains skipped because `qrencode` is unavailable.
+The full UI review passed 1,141 checks across 168 layouts and 50 composer focus variants.
+The style/guide review passed 511 checks with 31 captures. Lint, identity and diff checks
+passed. Fixtures used synthetic state, blocked external requests and submitted no operations.
+
+Refreshed the actual local app and confirmed the notices are absent from the homepage,
+sidebar and guide header. The guide still opens and returns focus to its entry when closed.
+[Live homepage](visuals/gray-ui-release-notices/home-dark.png) shows the resulting interface.
+Updated the PRD and repository instructions so future UI passes retain this preference.
+Saved on local `gray-ui`; no main-branch integration, merge or deployment is included.

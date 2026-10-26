@@ -193,8 +193,7 @@ function sideTree() {
       assert.match(textOf(links[0]), /Test walletRead-only sample · 2 of 3 · opens in a new tab/);
     }
     const note = findNode(sideTree(), (n) => n.attrs?.["data-key"] === "release-note");
-    assert.equal(note && textOf(note), "Beta: Zcash testnet and Solana Devnet. Not audited.",
-      "the side list of every page carries the release scope");
+    assert.equal(note, null, "the side list omits the recurring release warning");
     const swap = findNode(sideTree(), (n) => n.attrs?.["data-key"] === "tab-swap");
     assert.equal(swap && textOf(swap), "Swap, Demo", "the Swap item of the side list says Demo");
     for (const origin of ["https://wallet.example:8792/", "http://localhost:8794/",
@@ -3037,10 +3036,8 @@ assert.equal(quickCode(null), null);
       "the empty lobby has one primary heading rather than competing Wallets and welcome titles");
     assert.match(textOf(card),
       /Hold your assets privately\. Protect them with the people and devices/);
-    assert.match(textOf(card), /Beta · Not audited · Test networks/,
-      "the welcome card carries the Beta · Not audited label");
-    assert.match(textOf(card), /New wallets use test networks only: Zcash testnet and Solana/);
-    assert.match(textOf(card), /Zigs is not audited\./);
+    assert.doesNotMatch(textOf(card), /Beta ·|Not audited|New wallets use test networks only/i,
+      "the welcome card omits the recurring release badge and footer warning");
     assert.equal(findNode(card, (n) => n.className === "welcome-facts"), null,
       "key facts live in the product statement and explanation instead of a repeated label row");
     const { howZigsWorksDialog } = await import("../app-how-zigs-works.js");
@@ -3092,8 +3089,8 @@ assert.equal(quickCode(null), null);
     t.state.groups = [t.cleanGroup(gid, { name: "W", n: 3, t: 2, version: 3 })];
     ui.joinOpen = false;
     const list = lobbyTree();
-    assert.match(textOf(list), /Beta · Not audited · Test networks/, "so does the wallet list");
-    assert.match(textOf(list), /New wallets use test networks only.*Zigs is not audited/s);
+    assert.doesNotMatch(textOf(list), /Beta ·|Not audited|New wallets use test networks only/i,
+      "the returning wallet list also omits recurring release warnings");
     const savedWallets = byId(list, "welcome-wallets");
     assert.equal(savedWallets.tag, "section", "saved wallets are directly discoverable");
     assert.equal(savedWallets.attrs["aria-label"], "Saved wallets");

@@ -115,13 +115,21 @@ that no web migration was required is superseded by this specification and valid
 
 ## Main behavior and corrections to preserve
 
-Keep the actual readiness/protection/approval facts and current labels: beta and test-network
-warnings; explicit no-funds Swap/Tor/funding demos; unknown/demo USD and unavailable USDC;
+Keep the actual readiness/protection/approval facts and network labels; explicit no-funds
+Swap/Tor/funding demos; unknown/demo USD and unavailable USDC;
 contextual backup guidance and manual recovery actions; known-zero versus loading approval
 counts; full thirty-digit comparisons;
 Zcash-only continuation while Solana is unfinished; browser protection and recovery failure
 states; direct-network/privacy notices; current faucet guidance; and main’s click/render,
 sidebar, action-label and money-overflow fixes. Styling is not authority to remove them.
+
+On 26 October 2026 the user requested removing the general “New wallets use test networks
+only”/“Zigs is not audited” warning and similar repeated release notices. Remove the homepage
+footer and release badge, sidebar notice and guide-overview environment line. The networks
+FAQ uses neutral factual wording. Keep network identities in the relevant controls/details,
+contextual technical explanations, errors and existing confirmations before risky actions.
+This supersedes the earlier requirement for repeated beta/test-network warnings; supported
+networks, mainnet acknowledgement checks and other wallet behavior remain unchanged.
 
 On 25 October 2026 the user requested removing the large backup warning and similar recurring
 reminders. Wallet pages and on-chain conversations no longer show automatic backup banners.
