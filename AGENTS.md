@@ -16,8 +16,8 @@ The iPhone and Mac apps share the redesign. Native app work keeps the existing w
 and supported native wallet behavior.
 
 - The native apps support Zcash. Do not add native Solana, USDC, live swaps, prices, remote
-  backup reports or saved-file rechecking without an approved ticket (native Solana is SOL-14 in
-  `TICKETS.md`). Native authentication and recovery retain their existing platform mechanisms
+  backup reports or saved-file rechecking without an approved ticket (native Solana is ticket SOL-14).
+  Native authentication and recovery retain their existing platform mechanisms
   and safeguards.
 - The native address book is the previously approved device-private exception. Its
   reviewed Vault integration is not permission for broader storage or security changes.

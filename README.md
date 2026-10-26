@@ -50,8 +50,7 @@ proposer chooses one ([comparison](PRIVACY.md#on-chain)).
   sees more than the light-wallet server does: it builds the proofs, so it sees amounts and
   recipients of each spend. Each device pays fees and rents from its own fee address on Devnet, and
   a device adds SOL to the group with Add SOL: the fee address shows on chain next to the group.
-  Read [ZOLANA.md](ZOLANA.md) first, then [PRIVACY.md](PRIVACY.md#solana-beta-helius-devnet). The
-  open work is in [TICKETS.md](TICKETS.md).
+  Read [ZOLANA.md](ZOLANA.md) first, then [PRIVACY.md](PRIVACY.md#solana-beta-helius-devnet).
 - The wallet follows chain reorganisations of up to 100 blocks
   ([how](PROTOCOL.md#6-receiving-and-sync)). After a deeper one, the web, iPhone and Mac apps
   scan the wallet again from its birthday.
@@ -373,7 +372,7 @@ synced to the mainnet tip in the web app and on the iPhone.
 | [`wasm-sol/`](wasm-sol) | Solana engine in Rust: message checker, FROST-Ed25519 ceremony and signing, key roles. It has its own lockfile and builds to `web/sol/wasm/` |
 | [`sol-program/`](sol-program) | The Solana program that owns a group's funds at an address of the group key and settles an approved payment through the pool (ZOLANA.md 7.2). `build.sh` rebuilds it and checks the hash, `build.sh test` runs its tests. The beta uses version 5 of it on Devnet (SOL-36) |
 | [`solspike/`](solspike) | Checks of the Solana beta: the Zcash baseline gate, the headless Chrome harness, the mock run and the bundle build. See [`solspike/README.md`](solspike/README.md) |
-| [`ZOLANA.md`](ZOLANA.md), [`TICKETS.md`](TICKETS.md) | The Solana design, spike results and risks. The open work |
+| [`ZOLANA.md`](ZOLANA.md) | The Solana design, spike results and risks |
 | [`ios/Zigs/`](ios/Zigs) | SwiftUI app for iPhone and Mac |
 | [`src/`](src), [`tests/e2e.sh`](tests/e2e.sh) | Command-line version of the ceremony (version 1) and adversarial tests |
 | [`PRIVACY.md`](PRIVACY.md) | Threat model |
@@ -487,8 +486,8 @@ deploys `origin/main` there and checks it from outside. Deploy production only f
 that ran on staging. The staging password is in `~/.config/zigs/staging-password`, which the
 script makes on its first run.
 
-Group payments now expire after one day, and the web app can pay a priority fee (TICKETS.md,
-ZEC-2 and ZEC-4). The iPhone and Mac apps get these screens later (ZEC-8). Their payments also
+Group payments now expire after one day, and the web app can pay a priority fee (ZEC-2 and
+ZEC-4). The iPhone and Mac apps get these screens later (ZEC-8). Their payments also
 expire after one day, because the engine builds them, but they do not check the expiry when
 they approve. An app build made before this change refuses a priority fee.
 
@@ -556,7 +555,7 @@ folder path.
   clock (`web/test/page.mjs`) that leaves out a stall such as a sleep of the computer, so a
   lifetime that the page measures with `Date.now()` cannot run out in the middle of a test. Timers
   still count a stall.
-- `cargo test --release` in `wasm/` (127 tests, and 1 ignored test for ZEC-1 in TICKETS.md):
+- `cargo test --release` in `wasm/` (127 tests, and 1 ignored test for ZEC-1):
   - Signing: full 2-of-3 flows for Ironwood (paying 4 recipients in one transaction) and Orchard.
   - Expiry and fees: a group payment expires after one day of blocks (75 or 25 seconds each), at
     most up to the next upgrade. The approver refuses an expired payment and one that stays valid
@@ -818,7 +817,7 @@ folder path.
 - **Solana is a beta on Devnet.** Testnet wallets only, web app only, not audited. The hosted prover
   of Helius sees the witness of each spend unless the group turns on local proving (experimental,
   slower, not tested on phones), the pool has an upgrade key outside the group, and sender and
-  recipient of a transfer are public. [TICKETS.md](TICKETS.md) lists the open work.
+  recipient of a transfer are public.
 
 ## License
 
