@@ -238,11 +238,7 @@
 .messages-reply-address .addr-box { min-width:0; align-items:flex-start; }
 .messages-reply-address .hex { font-size:11px; line-height:19px; overflow-wrap:anywhere; word-break:break-all; }
 .messages-zcash-thread>.callout { flex:none; margin:12px 24px 0; font-size:12px; line-height:19px; }
-.messages-zcash-thread>.messages-backup-reminder { flex:none; display:flex; align-items:center;
-  justify-content:space-between; gap:12px; min-width:0; min-height:64px; padding:9px 24px;
-  border-bottom:1px solid var(--line); background:var(--messages-canvas); }
-.messages-backup-reminder>span { flex:1; min-width:0; font:400 12px/18px var(--sans); color:var(--muted); }
-.messages-backup-reminder>.btn { flex:none; min-height:48px; padding:8px 12px; font:500 12px/18px var(--sans); }
+.messages-account-backup-option { display:grid; justify-items:start; gap:10px; }
 .messages-workspace .messages-conversation-body>.composer { flex:none; margin:0 -24px -20px;
   padding:16px 24px 20px; border-top:1px solid var(--line); background:var(--messages-surface); }
 .messages-empty-thread { align-self:center; display:grid; justify-items:center; text-align:center;
@@ -418,9 +414,6 @@
   .messages-conversation-details { padding-inline:12px; }
   .messages-conversation-details[open] { max-height:240px; }
   .messages-zcash-thread>.callout { margin:10px 12px 0; }
-  .messages-zcash-thread>.messages-backup-reminder { gap:10px; padding:9px 12px; }
-  .messages-backup-reminder>span { font-size:11px; line-height:17px; }
-  .messages-backup-reminder>.btn { padding:8px 10px; font-size:11px; line-height:17px; }
   .messages-workspace .chat-log { gap:14px; padding-top:8px; padding-bottom:12px; }
   .messages-workspace .msg { max-width:94%; grid-template-columns:22px minmax(0,1fr); gap:6px; }
   .messages-workspace .msg.outgoing { max-width:91%; grid-template-columns:minmax(0,1fr) 22px; }

@@ -6261,7 +6261,8 @@ const sealed = (gid, rel, seat, fields, key, names = ["by", "sig"]) =>
     const card = () => t.accountCard();
     t.state.groups = [];
     let c = card();
-    assert.match(textOf(c), /Back up the account\./);
+    assert.doesNotMatch(textOf(c), /Back up the account\. This browser can forget it/);
+    assert.ok(named(c, "button", "Back up account"), "account actions retain manual backup");
     assert.match(textOf(c), /Public address/);
     assert.match(textOf(c), /Fund the account/);
     assert.match(textOf(c), /This browser holds no device of a testnet wallet\./);
@@ -6381,8 +6382,6 @@ const sealed = (gid, rel, seat, fields, key, names = ["by", "sig"]) =>
     // the iPhone and Mac apps. Only the restore error of an old file names the change.
     const CHANGED = /backup format changed on 16 October 2026|iPhone and Mac apps/;
     assert.doesNotMatch(textOf(t.backupDialog()), CHANGED);
-    assert.doesNotMatch(textOf(t.backupNote([2])), CHANGED);
-    assert.match(textOf(t.backupNote([2])), /Back up your key share/);
     t.ui.backup = { personal: true, made: false, busy: false };
     const backup = textOf(t.backupDialog());
     assert.match(backup, /Back up the personal account.*opens the backup of your personal account/);

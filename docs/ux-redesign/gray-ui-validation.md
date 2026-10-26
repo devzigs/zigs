@@ -92,3 +92,26 @@ skip remains explicit. The pre-existing native core/build limitations remain.
 
 No merge, automatic merge or deployment is part of this delivery. Work stays on `gray-ui`;
 the original design working copy is preserved.
+
+## Recurring backup reminder removal — 25 October 2026
+
+Removed the automatic key-share/Solana backup banner from wallet pages and the funding demo,
+and the account-backup reminder above account balances and on-chain conversations. Optional
+account setup and conversation details retain concise, neutral recovery guidance. Security,
+account actions, backup forms, error states and risky-action confirmations remain available.
+No recovery state or underlying wallet operation changed.
+
+- Node 26 fast suite: 48 tests passed; the independent QR decoder check remains skipped
+  because `qrencode` is unavailable. The application and unified-setup regressions passed.
+- Lint: 242 JavaScript files and 2 Python files passed; `git diff --check` and anonymous
+  identity checks passed. The long baseline and mutation suites were not rerun.
+- Browser review: 1,129 checks across 168 layouts and 50 composer focus variants passed,
+  with no browser errors. A dedicated fixture held two unsaved local shares throughout;
+  wallet pages had no automatic backup warning, manual Security exports remained present,
+  and rendering/navigation did not mark shares saved. Conversation reminders were absent.
+  External requests were blocked and no wallet operations were submitted.
+- [Desktop capture](visuals/gray-ui-backup-reminders/overview-desktop.png),
+  [phone capture](visuals/gray-ui-backup-reminders/overview-phone.png) and
+  [browser results](visuals/gray-ui-backup-reminders/browser-report.json) use synthetic data.
+- The existing local preview serves the updated wallet module. Work remains on `gray-ui`;
+  no merge or deployment is part of this change.

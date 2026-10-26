@@ -4,11 +4,11 @@
 // say that the wallet has a Zcash part and a Solana part, and that every signer keeps the page
 // open through both key ceremonies. A seat of such a wallet loads web/sol at the start of setup,
 // and opens no Solana watch before the confirmed network. The setup card and, after the Zcash part,
-// the Overview card show the Solana key and the fee address as steps. The backup note of the wallet
-// asks for the Solana file of each seat too, until that file is saved. The create dialog offers the
-// Solana part for a testnet wallet on a server that serves it. The choice puts solAuto into the
-// secret of seat 1, whose reactor starts the Solana ceremony after the Zcash address check. The
-// hint of the group document alone starts nothing.
+// the Overview card show the Solana key and the fee address as steps. Security offers the separate
+// Solana file for each seat, without repeating a backup banner on other pages. The create dialog
+// offers the Solana part for a testnet wallet on a server that serves it. The choice puts solAuto
+// into the secret of seat 1, whose reactor starts the Solana ceremony after the Zcash address
+// check. The hint of the group document alone starts nothing.
 // Run: node web/test/unified-setup.mjs   (Node 26)
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
@@ -39,7 +39,7 @@ const { intentHex } = await import("../sol/intent.js");
 const { ui } = await import("../app-state.js");
 const appState = await import("../app-state.js");
 const { planSolana, solFile, solOn, solSetup, solUnsaved } = await import("../app-sol.js");
-const { backupNote, walletReady, walletShown } = await import("../app-wallet.js");
+const { walletReady, walletShown } = await import("../app-wallet.js");
 const { PUBLIC_TEXT } = await import("../sol/view.js");
 const { reactCeremony } = await import("../sol/ceremony.js");
 const { netName, spanMs } = await import("../app-chain.js");
@@ -332,15 +332,6 @@ function recoveryFacts() {
     assert.match(pageText(), /Advanced wallet management\. With fewer/, "no Solana part");
   } finally {
     t.state.g = g;
-  }
-  const doc = globalThis.document;
-  globalThis.document = { createElement: () => new Rec(), createElementNS: () => new Rec(),
-    createTextNode: (text) => ({ text }) };
-  try {
-    assert.equal(backupNote([], [1], true).className, "callout", "plain while Solana sets up");
-    assert.equal(backupNote([], [1], false).className, "callout warn");
-  } finally {
-    globalThis.document = doc;
   }
 }
 // Each section starts with one heading block, and its panel keeps its focus target and name.
@@ -1502,7 +1493,8 @@ assert.equal(solPlanned(null), false);
   await press("See the funding demo (no payment)");
   assert.equal(guided.guidedEnabled(two), false, "the funding demo entry ends the guide too");
   assert.match(pageText(), /Funding checkout demo\..*Demo, no payment/s, "the funding demo opens");
-  assert.match(pageText(), /This browser can forget it/, "the funding step asks for a file too");
+  assert.doesNotMatch(pageText(), /Back up your key share|This browser can forget it/,
+    "the funding page omits the automatic backup warning");
   assert.doesNotMatch(pageText(), /guided-progress|Step \d of/, "and draws no stage of the setup");
   await press("Finish later");
   assert.match(pageText(), /Funding checkout demo.*Your assets/s, "Finish later opens Overview");
@@ -2212,30 +2204,11 @@ async function walkSteps(fields, times, fresh = true) {
   // The side item and the inbox read the live documents: their checks end first.
   await waitFor("the documents are checked", () => !t.sol.ctl.wait && !t.sol.ctl.sessWait);
   await approvalCount(t.sol.ctl);
-  // The first sentence names the file that is unsaved: a Zcash file, or only a Solana file.
-  const note = (...args) => {
-    const real = globalThis.document;
-    globalThis.document = { createElement: () => new Rec(), createElementNS: () => new Rec(),
-      createTextNode: (text) => ({ text }) };
-    try {
-      return textOf(t.backupNote(...args));
-    } finally {
-      globalThis.document = real;
-    }
-  };
-  assert.match(note([2], [1]), /^Back up your key share\. This browser can forget it/);
-  assert.match(note([], [1]), /^Back up the Solana part of your key share\. This browser can/);
-  assert.match(note([], [1]), /second file, with its own passphrase/);
-  assert.doesNotMatch(note([2], []), /Solana/);
-  // The note stays on every wallet page until each file of this browser is saved.
-  const solNote = () => pageText().match(/Back up Solana, device \d/g) ?? [];
-  assert.deepEqual(solNote(), [1, 2, 3].map((i) => "Back up Solana, device " + i));
-  assert.match(pageText(), /^.*Back up your key share\. This browser can forget it/s);
-  assert.match(pageText(), /The Solana part of a device is a second file, with its own passphrase/);
-  for (const tab of ["approvals", "recovery", "settings"]) {
+  // Backup actions stay in Security; unsaved files do not create page-wide reminders.
+  for (const tab of ["overview", "approvals", "recovery", "settings"]) {
     ui.tab = tab;
-    assert.match(pageText(), /Back up your key share\. This browser can forget it/,
-      "the note shows on " + tab);
+    assert.doesNotMatch(pageText(), /Back up your key share|This browser can forget it/,
+      "wallet pages omit automatic backup warnings: " + tab);
   }
   ui.tab = "overview";
   const backupTab = ui.tab;
@@ -2245,7 +2218,7 @@ async function walkSteps(fields, times, fresh = true) {
     .map((n) => "Back up Solana, device "
       + findNode(n, (x) => /^security-signer-[1-7]$/.test(x.attrs?.id))
         .attrs.id.split("-").pop());
-  await waitFor("the note", () => solButtons().length === 3);
+  await waitFor("Security backup controls", () => solButtons().length === 3);
   assert.match(pageText(), /Restore the Zcash file first, then its separate Solana file/);
   assert.match(pageText(), /Keep the devices that still work/, "the Security text says device");
   assert.doesNotMatch(pageText(), /Keep the signers|restore signers/);
@@ -2263,8 +2236,8 @@ async function walkSteps(fields, times, fresh = true) {
   assert.equal(t.sec(gidS, 2).sol.backupSaved, true);
   assert.deepEqual(solButtons(), ["Back up Solana, device 1", "Back up Solana, device 3"]);
   ui.tab = backupTab;
-  assert.deepEqual(solNote(), ["Back up Solana, device 1", "Back up Solana, device 3"],
-    "a saved Solana file leaves the note");
+  assert.doesNotMatch(pageText(), /Back up your key share|This browser can forget it/,
+    "saving a file does not bring back a dashboard reminder");
   ui.tab = "recovery";
   // A stop by another seat stops the Solana backups too.
   const stop = await t.signedDoc(gidS, "solabort/2", 2, { reason: "A test stop.", at: Date.now() });
@@ -2272,10 +2245,11 @@ async function walkSteps(fields, times, fresh = true) {
   rig.notify();
   await waitFor("no Solana backup is asked", () => solButtons().length === 0);
   ui.tab = backupTab;
-  assert.deepEqual(solNote(), [], "a stopped Solana part has no file to ask for");
+  assert.doesNotMatch(pageText(), /Back up your key share|This browser can forget it/,
+    "a stopped Solana part does not introduce a dashboard reminder");
   for (const i of [1, 2, 3]) await t.putSec(gidS, i, { backupSaved: true });
   assert.doesNotMatch(pageText(), /This browser can forget it/,
-    "the note ends with the last file");
+    "saved files do not introduce a dashboard reminder");
 }
 
 // ── The steps of a new wallet: Next, Enter, Cancel, and the tick of a rule without margin

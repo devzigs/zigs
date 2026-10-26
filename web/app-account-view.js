@@ -134,7 +134,6 @@ export function accountCard() {
     el("p", { class: "small muted" }, "This account pays the fee of your messages on chain. It is "
       + "not a wallet, and its payments need no approval. Whoever controls this browser can "
       + "spend it."),
-    personal.backedUp ? null : accountBackupNote(),
     accountBalanceBlock(b),
     b ? balanceWarnings(b.total).map((t) => el("div", { class: "callout warn", role: "status" }, t))
       : null,
@@ -145,10 +144,9 @@ export function accountCard() {
 }
 
 function accountBackupNote() {
-  return el("div", { class: "callout warn", role: "status" },
-    el("span", { style: "flex:1 1 16rem" }, "Back up the account. This browser can forget it: "
-      + "private windows and Tor Browser delete it when they close. The file holds the seed and "
-      + "your contacts. A passphrase that you choose locks it."),
+  return el("div", { class: "messages-account-backup-option" },
+    el("p", { class: "small muted" }, "Save a recovery file for the account seed and contacts. "
+      + "Keep its passphrase separately."),
     el("button", { class: "btn sm", type: "button", onclick: openAccountBackup },
       "Back up account"));
 }
@@ -359,9 +357,6 @@ export function contactView() {
         + "read receipts or advanced post-quantum encryption."),
       el("p", { class: "small faint" }, ON_CHAIN_LIMITS),
       personal.backedUp ? null : accountBackupNote()),
-    personal.backedUp ? null : el("div", { class: "messages-backup-reminder" },
-      el("span", { class: "small muted" }, "Keep a separate account backup."),
-      el("button", { class: "btn sm", type: "button", onclick: openAccountBackup }, "Back up account")),
     contactMessages(contact, name));
 }
 

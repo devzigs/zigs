@@ -78,10 +78,18 @@ that no web migration was required is superseded by this specification and valid
 
 Keep the actual readiness/protection/approval facts and current labels: beta and test-network
 warnings; explicit no-funds Swap/Tor/funding demos; unknown/demo USD and unavailable USDC;
-backup reminders; known-zero versus loading approval counts; full thirty-digit comparisons;
+contextual backup guidance and manual recovery actions; known-zero versus loading approval
+counts; full thirty-digit comparisons;
 Zcash-only continuation while Solana is unfinished; browser protection and recovery failure
 states; direct-network/privacy notices; current faucet guidance; and main’s click/render,
 sidebar, action-label and money-overflow fixes. Styling is not authority to remove them.
+
+On 25 October 2026 the user requested removing the large backup warning and similar recurring
+reminders. Wallet pages and on-chain conversations no longer show automatic backup banners.
+Manual backup actions and recovery status remain in Security and account management, with
+guidance in the relevant setup, details and backup forms. Actual errors and warnings before
+risky actions remain unchanged. This changes presentation only; it does not mark files saved
+or checked, dismiss errors, or change recovery, storage or authorization behavior.
 
 The new guide consumes the existing main content and uses only fixed educational examples.
 Its in-memory reading selection is presentation state, never setup, recovery or payment

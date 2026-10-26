@@ -39,7 +39,7 @@ import { helpView } from "./app-help.js";
 import {
   sol, solActivity, solBackup, solBalance, solError, solFile, solLoad, solLoading,
   solActivityWaits, solLoadingCount, solOlderCount, solOn, solPending, solPendingRows, solSetup,
-  solNotAdded, solObserveOverview, solSync, solTab, solUnsaved,
+  solNotAdded, solObserveOverview, solSync, solTab,
 } from "./app-sol.js";
 import { formatUsdBalance, pendingShortcut, solRow, zecInProgress, zecTotal } from "./overview-model.js";
 import { icon, sculptedIcon } from "./app-icons.js";
@@ -86,7 +86,7 @@ export function groupView({ showHeader = true } = {}) {
   const funding = ready && ui.tab === "overview" && localSeats().includes(1)
     ? fundingSetupView(state.gid, g.name) : null;
   if (funding) return el("div", { class: "page guided-setup funding-setup-page" },
-    staleRestoreNote(), signedNotes(), networkNote(), backupReminder(), funding);
+    staleRestoreNote(), signedNotes(), networkNote(), funding);
   const why = ready ? sendBlocker() : null;
   const head = [showHeader ? groupHead(g, ready, why) : null,
     staleRestoreNote(), signedNotes(), networkNote()];
@@ -197,21 +197,9 @@ const pageHeading = (id, label) => id === "settings"
   el("span", { class: "label" }, LEAD[id] ?? "This wallet"), el("h2", {}, label),
   securityExplanation(EXPLANATION[id] ?? id));
 
-// Every wallet page asks for a recovery file until each key share of this browser has one: a
-// browser can forget the share (private windows, Tor Browser), and setup may end with none.
-function backupReminder() {
-  const unsaved = localSeats().filter((i) => {
-    const s = sec(state.gid, i);
-    return s.keyPackage && !seatBackedUp(s);
-  });
-  const solSeats = solUnsaved();
-  return unsaved.length || solSeats.length
-    ? backupNote(unsaved, solSeats, !unsaved.length && solUnfinished()) : null;
-}
-
 export function walletView(head, why) {
   const [id, label] = currentSection(walletSections());
-  return el("div", { class: "page wallet-page" }, head, backupReminder(),
+  return el("div", { class: "page wallet-page" }, head,
     el("section", { id: "panel-" + id, "data-key": "panel-" + id, tabindex: "-1",
       "aria-label": label, class: "panel" }, id === "overview" ? null : pageHeading(id, label), BODIES[id]()));
 }
@@ -244,29 +232,6 @@ function groupHead(g, ready, why, persistent = false) {
         onclick: () => { ui.tab = "overview"; focusAfter("home-page", true); openGroup(null); } },
         icon("home"), "Return home"));
 }
-
-// Private windows, Tor Browser and cleared site data delete the key share with the browser data.
-// `solSeats`: the seats whose Solana part has no saved file yet (solUnsaved, app-sol.js).
-// A note for the Solana file alone is plain while the Solana part still sets up; the amber one
-// comes after the setup. A Zcash file that is not saved is always amber.
-export function backupNote(seats, solSeats = [], settling = false) {
-  const first = seats.length ? "Back up your key share."
-    : "Back up the Solana part of your key share.";
-  const text = first + " This browser can forget it: private windows and Tor "
-    + "Browser delete it when they close. The file is locked with a passphrase that you choose. "
-    + "Keep the file safe, and keep the passphrase apart from it."
-    + (solSeats.length ? " " + SOL_FILE : "");
-  const many = seats.length + solSeats.length > 1;
-  return el("div", { class: settling ? "callout" : "callout warn", role: "status" },
-    el("span", { style: "flex:1 1 16rem" }, text),
-    seats.map((i) => el("button", {
-      class: "btn sm", type: "button", onclick: () => openBackup(i),
-    }, many ? "Back up device " + i : "Back up key share")),
-    solSeats.map((i) => el("button", {
-      class: "btn sm", type: "button", onclick: act(() => solBackup(i)),
-    }, "Back up Solana, device " + i)));
-}
-const SOL_FILE = "The Solana part of a device is a second file, with its own passphrase.";
 
 function overviewTab() {
   solObserveOverview();

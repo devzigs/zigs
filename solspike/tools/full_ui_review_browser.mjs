@@ -172,11 +172,50 @@ async function messagingReview() {
   }
 }
 
+async function backupReminderReview() {
+  await page.goto(OVERVIEW_ORIGIN);
+  await installMessagingFixture(page, "team", "after");
+  const before = await page.evaluate(async () => {
+    const { state, keys, loop, gid } = globalThis.__messagingFixture;
+    const { localSeats } = await import("/app-seats.js");
+    const { walletView } = await import("/app-wallet.js");
+    state.wallet.address = "utest1" + "syntheticwallet".repeat(10);
+    await (await import("/app-sol.js")).overviewFixtureSol();
+    // Read-only renderer fixture, with two unsaved local shares; no wallet operations.
+    globalThis.__messagingView = () => walletView([], null);
+    loop.draw();
+    return { seats: localSeats(), unsaved: localSeats().every((i) =>
+      !keys.sec(gid, i).backupSaved), secrets: JSON.stringify(keys.secrets) };
+  });
+  check(before.seats.length === 2 && before.unsaved,
+    "backup presentation fixture holds two unsaved local shares");
+  const variants = [390, 1440].flatMap((width) =>
+    ["dark", "light"].map((theme) => ({ width, theme })));
+  for (const { width, theme } of variants) {
+    for (const tab of ["overview", "approvals", "activity", "recovery", "settings"]) {
+      await choose(tab, theme, width);
+      check(!/Back up your key share|This browser can forget it/.test(
+        await page.locator("#app").innerText()),
+      `${tab} ${width} ${theme}: unsaved shares do not create a page-wide backup warning`);
+      await inspect(`unsaved shares ${tab} ${width} ${theme}`);
+      if (tab === "recovery") check(await page.locator('[data-key="security-backup-1-zec"]')
+        .count() === 1 && await page.locator('[data-key="security-backup-3-zec"]').count() === 1,
+      `${width} ${theme}: Security retains manual backup for the unsaved share`);
+      if (tab === "overview" && theme === "dark") await capture(`no-backup-banner-${width}`);
+    }
+  }
+  check(before.secrets === await page.evaluate(() =>
+    JSON.stringify(globalThis.__messagingFixture.keys.secrets)),
+  "removing the visual reminders does not mark unsaved shares as saved");
+}
+
 async function messagingVariant(scene, width, theme) {
   await page.setViewportSize({ width, height: width < 600 ? 844 : 1000 });
   await page.evaluate((t) => { document.documentElement.dataset.theme = t;
     window.scrollTo(0, 0); }, theme);
   await settleOverview(page); await inspect(`messages ${scene} ${width} ${theme}`);
+  check(await page.locator(".messages-backup-reminder").count() === 0,
+    `${scene} ${width} ${theme}: conversation omits the automatic backup reminder`);
   await composerReview(scene, width, theme);
   if (scene === "contact" && width === 390) await backReview(theme);
   if (width === 390 && theme === "dark") await capture("messages-" + scene);
@@ -198,7 +237,7 @@ try {
   await pageMatrix(); await menuReview();
   check(before === await page.evaluate(() => JSON.stringify({ ...localStorage })),
     "page audit and navigation leave synthetic browser storage unchanged");
-  await stressReview(); await messagingReview();
+  await stressReview(); await backupReminderReview(); await messagingReview();
   check(!errors.length, "no browser errors: " + errors.join("; "));
   console.log(`full UI review: ${checks.length} checks, ${layouts.length} layouts, `
     + `${focus.length} composer focus variants`);
