@@ -151,12 +151,6 @@
 .wallet-vault-card,.home-how-trigger { transition:border-color var(--premium-settle),
   background-color var(--premium-settle),box-shadow var(--premium-settle); }
 .wallet-vault-card { box-shadow:var(--premium-depth); }
-.home-how-trigger>.symbol {
-  display:grid; place-items:center; width:40px; height:44px; border-radius:13px;
-  border:1px solid var(--line-2); background:linear-gradient(145deg,var(--raised),var(--sunk));
-  box-shadow:inset 0 1px var(--premium-rim),0 5px 12px -8px #0009;
-}
-.home-how-trigger>.symbol svg { width:24px; height:24px; }
 .lobby-home .home-hero .welcome-actions .btn { min-height:52px; }
 .lobby-home .home-hero .welcome-actions .btn.primary {
   box-shadow:inset 0 1px #ffffff55,0 6px 20px -12px var(--accent-edge);

@@ -576,22 +576,10 @@ function walletRow(g, tab = "overview") {
   el("span", { class: "chev" }, icon("chevronRight")));
 }
 
-// This is an explicitly labelled policy example, never collected transaction authorizations.
-function homeThreshold() {
-  return el("figure", { class: "home-threshold" },
-    el("p", { class: "home-threshold-title" }, "How shared control works"),
-    el("div", { class: "home-threshold-nodes", "aria-hidden": "true" },
-      [1, 2, 3].map((number) => el("span", {
-        class: "home-threshold-node" + (number < 3 ? " home-threshold-example" : ""),
-      }, String(number)))),
-    el("figcaption", {}, "Illustration · Any 2 of 3 approvals"));
-}
-
 function homeExplanation() {
   return el("button", { class: "welcome-details home-how-trigger", id: "home-how",
     "data-key": "home-how", type: "button", "aria-haspopup": "dialog",
     onclick: openHowZigsWorks },
-    icon("security"),
     el("span", { class: "welcome-security-copy" },
       el("strong", {}, "How Zigs works"),
       el("span", { class: "small muted" }, "Keys, payments, messaging and privacy. The complete guide.")),
@@ -644,8 +632,7 @@ function welcome(off, restoreLink) {
         wallets ? null : entryPaths,
         !wallets ? el("p", { class: "home-signature" },
           el("span", { "aria-hidden": "true" }), "Distributed ownership. ",
-          el("span", {}, "Designed for peace of mind.")) : null),
-      homeThreshold()),
+          el("span", {}, "Designed for peace of mind.")) : null)),
     wallets ? el("div", { class: "home-wallet-launcher" + (wallets === 1 ? " home-launcher-single" : "") },
       walletList,
       wallets === 1 ? el("aside", { class: "home-wallet-note" },

@@ -47,6 +47,11 @@ account exists, retain its conversations and account tools. Desktop conversation
 space remaining after the actual wallet header and messaging toolbar; preserve the existing
 mobile history/composer behavior. Network choices and account-creation handlers stay unchanged.
 
+The subsequent homepage cleanup removes the “How shared control works” hero box and the
+leading shield icon from the “How Zigs works” guide entry. Keep the guide text, trailing
+navigation arrow, keyboard access and existing dialog action. This supersedes the earlier
+homepage threshold-box presentation; setup and guide approval-rule education stay available.
+
 ## Goal and authoritative sources
 
 Apply the complete latest web design from the existing local `codex/ux-ui-final` working

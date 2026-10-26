@@ -1,6 +1,6 @@
 /* Editorial guide adapted to the app's own scrolling dialog and theme preferences. */
-.lobby-home .welcome .home-how-trigger{display:grid;grid-template-columns:28px minmax(0,1fr) 24px;align-items:center;gap:18px;width:100%;padding:24px 28px;color:var(--text);text-align:left;font:inherit;cursor:pointer}
-.home-how-trigger>.symbol,.home-how-arrow{color:var(--accent-text)}
+.lobby-home .welcome .home-how-trigger{display:grid;grid-template-columns:minmax(0,1fr) 24px;align-items:center;gap:18px;width:100%;padding:24px 28px;color:var(--text);text-align:left;font:inherit;cursor:pointer}
+.home-how-arrow{color:var(--accent-text)}
 .home-how-arrow{justify-self:end;font-size:24px}
 .home-how-trigger:hover{border-color:var(--accent-edge)}
 .dialog.home-how-dialog{inset:0;width:auto;height:auto;max-height:none;transform:none;padding:0;gap:0;display:flex;flex-direction:column;overflow:hidden;border:0;border-radius:0;background:var(--bg);animation:none}

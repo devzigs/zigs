@@ -263,3 +263,19 @@ No wallet behavior, account state, native code or assets changed.
 Updated the PRD and repository instructions to record this approved accent. Saved on local
 `gray-ui`; remote publication remains blocked by read-only repository access. No merge,
 main-branch integration or deployment is included.
+
+## Simplify the homepage — 26 October 2026
+
+Removed the “How shared control works” box from the homepage hero and the leading shield
+icon from its “How Zigs works” guide entry. The entry now uses a two-column text/arrow
+layout. Its label, explanatory text, dialog action, keyboard focus and trailing arrow remain.
+The original artwork, icy-blue accents and approval-rule education inside setup/the guide
+are unchanged.
+
+All 48 Node 26 fast tests passed in 9 seconds (independent QR decoder skipped because
+`qrencode` is unavailable). The existing style review passed 511 checks with 31 captures;
+lint, identity and diff checks passed. Refreshed the actual local application, opened and
+closed the guide from the simplified entry, and confirmed focus returned to that entry.
+[Live homepage](visuals/gray-ui-home-cleanup/home-dark.png) shows both removals.
+
+Saved locally on `gray-ui`. No main-branch integration, merge or deployment is included.
