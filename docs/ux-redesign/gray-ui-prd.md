@@ -26,13 +26,13 @@ homepage artwork must not track pointer position. Keep ordinary button/icon hove
 fixed surface lighting and the existing independent artwork motion; do not restore a cursor
 spotlight as part of a future premium styling pass.
 
-On 26 October the user preferred the earlier metallic steel-blue palette and fonts shown
-in their screenshot. Restore the existing `design-system.css` colour tokens, Geist and Geist
-Mono, and stronger headings throughout the application. Remove the later neutral-charcoal
-and Manrope overrides, including hard-coded warm-grey panel fills. Keep the current layouts,
-branding, guides, flow improvements, orange actions and motion refinements. The original
-Manrope migration specification below records the earlier delivered snapshot; this newer
-user preference supersedes its palette and typography choices.
+On 26 October the user changed their preference back to the darker neutral-charcoal
+palette and Manrope interface typography after briefly requesting metallic steel-blue and
+Geist. Restore the near-black/silver surfaces, warm neutral light theme, lighter editorial
+heading weights and local Manrope font preload. Keep Geist Mono for technical text and
+preserve the current layouts, expanded messaging workspace, branding, guides, orange actions
+and motion refinements. This latest preference supersedes the intervening blue restoration
+and agrees with the original palette and typography migration specification below.
 
 Messaging must use the available page space. Account creation uses one full-width column
 without an empty conversation sidebar or an internally scrolling, fixed-height setup frame.

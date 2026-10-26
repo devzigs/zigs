@@ -76,13 +76,13 @@ only; preserve the existing native assets and code.
 
 ## Web presentation palette
 
-On 26 October 2026 the user requested restoring the earlier metallic steel-blue palette
-and Geist/Geist Mono fonts shown in their reference screenshot. This supersedes the later
-Manrope and neutral-charcoal styling. Reuse the original design-system colour tokens and
-stronger heading weights across the app, preserving orange primary actions, focus/selection
-accents, quiet copper hero lighting and educational highlights in both themes. Keep the
-newer layouts, guide, icons and usability improvements. Do not restore pointer-following
-glows or lighting. Semantic status colours remain distinct.
+On 26 October 2026 the user changed their preference back to the darker neutral-charcoal
+palette and Manrope interface typography, superseding the intervening metallic steel-blue
+and Geist restoration. Keep Geist Mono for technical text, lighter editorial heading weights,
+orange primary actions, focus/selection accents, quiet copper hero lighting and educational
+highlights in both themes. Preserve the newer layouts, expanded messaging workspace, guide,
+icons and usability improvements. Do not restore pointer-following glows or lighting.
+Semantic status colours remain distinct.
 
 ## UI/UX final branch scope
 

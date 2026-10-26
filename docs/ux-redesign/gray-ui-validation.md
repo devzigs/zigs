@@ -202,3 +202,27 @@ submitted by the isolated synthetic browser fixtures.
 The implementation changes presentation only. Account/network choices, safeguards, messages,
 drafts, transport and storage behavior are unchanged. Work remains on local `gray-ui`; no
 main-branch integration or deployment is included, and remote access remains read-only.
+
+## Return to charcoal and Manrope — 26 October 2026
+
+The user's latest preference supersedes the intervening blue/Geist restoration. Restored
+exactly the previous charcoal/silver palette, warm neutral light theme, Manrope interface
+font, lighter heading weights and local Manrope preload. Geist Mono remains for technical
+text. The expanded messaging layout and removal of pointer-following light remain intact.
+Updated the PRD and repository instructions to preserve this latest preference.
+
+- All 48 Node 26 fast tests passed in 9 seconds. The QR decoder remains skipped because
+  `qrencode` is unavailable. Lint, anonymous identity and diff checks passed.
+- Style review: 511 checks and 31 captures passed, including composed palette contrast,
+  guide interactions and responsive layouts in both themes.
+- Full UI review: 1,141 checks across 168 layouts and 50 composer focus variants passed,
+  including the complete, unclipped messaging account setup and reachable actions.
+- Privacy preview: 218 checks across 26 layouts passed with Manrope typography.
+- [Dark Overview](visuals/gray-ui-charcoal-manrope/overview-dark.png) and
+  [expanded messaging setup](visuals/gray-ui-charcoal-manrope/messages-setup-dark.png)
+  use synthetic fixture data. External requests were blocked; no wallet operations were
+  submitted. Refreshed and visually checked the actual local preview as well.
+
+The application change restores presentation files only. Messaging behavior, branding,
+wallet logic and native code are unchanged. Work remains on local `gray-ui`; no merge or
+deployment is included. Remote publication remains blocked by read-only repository access.

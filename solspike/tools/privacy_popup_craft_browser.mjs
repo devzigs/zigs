@@ -58,7 +58,7 @@ async function inspect(label) {
   check(!facts.overflow, label + ": no horizontal overflow");
   check(facts.top >= -1 && facts.bottom <= facts.height + 1, label + ": dialog fits viewport");
   check(!facts.small.length && facts.named, label + ": named controls have 44 px targets");
-  check(facts.font.includes("Geist"), label + ": matches the restored app typography");
+  check(facts.font.includes("Manrope"), label + ": matches the app typography");
   check(!facts.duplicateClose && facts.pseudoClose === "none", label + ": one shared close icon");
   check(facts.note.includes("No Tor connection is created; traffic stays direct"),
     label + ": direct connection remains explicit");
