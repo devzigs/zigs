@@ -21,6 +21,11 @@ screen and the header identify the preview and unchanged direct connection. Keep
 existing four-stage timing, optional entry, one-step dismissal, timer cancellation, focus
 behavior and lack of persisted connection choices. Never display a protected connection.
 
+The user subsequently rejected the glow that followed the mouse. Panel reflections and
+homepage artwork must not track pointer position. Keep ordinary button/icon hover feedback,
+fixed surface lighting and the existing independent artwork motion; do not restore a cursor
+spotlight as part of a future premium styling pass.
+
 ## Goal and authoritative sources
 
 Apply the complete latest web design from the existing local `codex/ux-ui-final` working

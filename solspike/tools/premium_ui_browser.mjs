@@ -81,8 +81,11 @@ async function hoverReview() {
   }), "Send arrow articulates separately from its stationary control");
   await page.mouse.move(360, 165); await page.waitForTimeout(420);
   check(await page.locator(".overview-hero").evaluate((node) =>
-    Number(getComputedStyle(node, "::after").opacity) > .5),
-  "pointer light responds on the portfolio frame");
+    Number(getComputedStyle(node, "::after").opacity) === 0
+      && !node.style.getPropertyValue("--premium-x")
+      && !node.style.getPropertyValue("--premium-y")
+      && !node.classList.contains("premium-lit")),
+  "moving the pointer does not add a portfolio glow or light coordinates");
   check(await page.locator(".portfolio-value").evaluate((node) => {
     for (let n = node; n && n !== document.body; n = n.parentElement) {
       const s = getComputedStyle(n);
@@ -304,9 +307,8 @@ async function accessibleMotionReview() {
       configurable: true, get: () => "hidden" });
     document.dispatchEvent(new Event("visibilitychange"));
   });
-  check(await page.evaluate(() => document.documentElement.classList.contains("premium-paused")
-    && !document.querySelector(".premium-lit")),
-  "hidden document cancels ambient animation and pointer light");
+  check(await page.evaluate(() => document.documentElement.classList.contains("premium-paused")),
+    "hidden document cancels ambient animation");
   await page.evaluate(async () => {
     // A fresh synthetic sync age keeps main's real sync-on-return listener outside this QA.
     (await import("/app-chain.js")).curChain().balAt = Date.now();

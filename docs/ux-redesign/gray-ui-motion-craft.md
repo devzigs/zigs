@@ -18,7 +18,7 @@ baseline remains `c6860f6f`; remote main and the original UI reference were chec
 | Modal entrances | A 440 ms shadow/rim resolve for ordinary dialogs, native swap pickers and the standalone Tor demo. Fields, addresses, QR codes and payment contents do not translate or fade with the panel. Preserve Tab, Escape, initial focus and return focus. |
 | Menus and disclosures | Wallet-menu entrances share the easing and timing; the wallet chevron changes direction on opening. Existing native disclosure, selection and dismissal mechanisms remain. |
 | Educational objects | Shorten the empty-state arrival from 1200 to 760 ms and reduce displacement. Remove stacked guide-copy movement; reduce illustration perspective. Existing Pause/Resume remains effective. No new idle loops. |
-| Lifecycle | Cancel detached animations during rapid navigation. Use the latest pointer position in one event-driven frame. Pause offscreen artwork without restarting it; settle artwork after hidden/reduced-motion cancellation so it does not replay on return. |
+| Lifecycle | Cancel detached animations during rapid navigation. Lighting does not track the pointer. Pause offscreen artwork without restarting it; settle artwork after hidden/reduced-motion cancellation so it does not replay on return. |
 | Accessibility | Honor live reduced motion, slow displays, forced colors, Save-Data and document visibility. Keep visible keyboard focus, invalid-field treatment and fixed hit areas. The standalone demo's close and action targets are at least 48 px. |
 
 The standalone Tor demo keeps its existing dependency boundary: its close mark uses two

@@ -145,3 +145,16 @@ behavior remain unchanged. The existing camouflage artwork and duration are pres
   fixture with synthetic data and external requests blocked. No wallet operations were submitted.
 - Confirmed the local application serves the updated module and opened the refined offer
   for review. Anonymous identity and diff checks pass. No merge or deployment is included.
+
+## Remove pointer-following light — 26 October 2026
+
+Removed the panel spotlight handlers and cursor-responsive homepage lighting. Fixed surface
+lighting, independent hero motion and ordinary button/icon hover feedback remain. The homepage
+controller no longer attaches pointer listeners or samples cursor offsets. The existing
+browser hover check now verifies that moving the pointer adds no panel glow or coordinates.
+
+All 48 Node 26 fast tests passed in 9 seconds (QR decoder skipped: `qrencode` unavailable).
+The 13 homepage motion checks and 216 browser checks across 72 page/theme/width variants
+passed. Lint, anonymous identity and diff checks passed. Refreshed the actual local preview.
+Saved on local `gray-ui`; remote publication remains blocked by the repository's read-only
+access for the connected account. No main-branch integration or deployment is included.

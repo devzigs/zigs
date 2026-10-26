@@ -4,7 +4,6 @@ import { sceneSample } from "./homepage-scene.js";
 const documents = new WeakMap();
 const HERO = ".lobby-home [data-home-hero]";
 const loadScene = async () => (await import("./homepage-scene.js")).createHeroScene;
-const clamp = (n) => Math.max(-1, Math.min(1, n));
 
 function watchImage(image, done, failed) {
   let cancelled = false, decoding = false;
@@ -28,13 +27,11 @@ function observeScene(owner, hero) {
   const host = hero.querySelector(".welcome-brand"), art = hero.querySelector(".home-hero-art");
   if (!host || !art) return null;
   const current = { hero, host, art,
-    visible: false, ready: false, failed: false, loading: false, scene: null,
-    pointer: { x: 0, y: 0 }, target: { x: 0, y: 0 }, listeners: [] };
+    visible: false, ready: false, failed: false, loading: false, scene: null };
   current.intersection = new owner.win.IntersectionObserver((entries) => {
     const entry = entries.find((item) => item.target === host);
     if (owner.current !== current || !entry) return;
     current.visible = entry.isIntersecting && entry.intersectionRatio >= .01;
-    if (!current.visible) current.target = { x: 0, y: 0 };
     owner.refresh();
   }, { threshold: .01 });
   current.resize = new owner.win.ResizeObserver(() => owner.resize(current));
@@ -48,7 +45,6 @@ class HomepageMotion {
     this.frame = 0; this.destroyed = false; this.suspended = false;
     this.media = ["(prefers-reduced-motion: reduce)", "(update: slow)", "(forced-colors: active)"]
       .map((query) => this.win.matchMedia(query));
-    this.fine = this.win.matchMedia("(hover: hover) and (pointer: fine)");
     this.mutations = new this.win.MutationObserver(() => this.discover());
     this.preference = () => {
       this.elapsed = Math.max(1500, this.elapsed); this.refresh();
@@ -91,13 +87,6 @@ class HomepageMotion {
     this.current = current;
     if (!current) return;
     if (retained) this.adopt(current, retained);
-    const listen = (target, name, fn) => {
-      target?.addEventListener(name, fn, { passive: true });
-      current.listeners.push(() => target?.removeEventListener(name, fn));
-    };
-    listen(current.host, "pointermove", (event) => this.pointer(current, event));
-    listen(current.host, "pointerleave", () => { current.target = { x: 0, y: 0 }; });
-    listen(current.host, "pointercancel", () => { current.target = { x: 0, y: 0 }; });
     current.intersection.observe(current.host); current.resize.observe(current.host);
     current.cancelImage = watchImage(current.art, () => {
       if (this.current !== current) return;
@@ -113,7 +102,7 @@ class HomepageMotion {
   takeScene(art) {
     const previous = this.current;
     if (!this.reusable(previous, art)) return null;
-    const retained = { scene: previous.scene, pointer: previous.pointer, target: previous.target };
+    const retained = { scene: previous.scene };
     retained.scene.canvas.removeEventListener("webglcontextlost", previous.lost);
     previous.scene = null;
     return retained;
@@ -122,15 +111,6 @@ class HomepageMotion {
   adopt(current, retained) {
     Object.assign(current, retained); current.ready = true;
     this.mount(current);
-  }
-
-  pointer(current, event) {
-    if (this.current !== current || !this.fine.matches || event.pointerType !== "mouse") return;
-    if (!this.permitsMotion()) return;
-    const box = current.host.getBoundingClientRect();
-    if (!box.width || !box.height) return;
-    current.target = { x: clamp((event.clientX - box.left) / box.width * 2 - 1),
-      y: clamp((event.clientY - box.top) / box.height * 2 - 1) };
   }
 
   stop() {
@@ -146,7 +126,7 @@ class HomepageMotion {
   }
 
   draw(current) {
-    const sample = sceneSample(this.elapsed, current.pointer);
+    const sample = sceneSample(this.elapsed);
     current.scene.draw(sample);
     current.hero.style.setProperty("--home-atmosphere", sample.atmosphere.toFixed(3));
   }
@@ -166,13 +146,8 @@ class HomepageMotion {
     if (!this.canRun()) { this.settleRestricted(); return; }
     const delta = this.last ? Math.min(80, Math.max(0, now - this.last)) : 0;
     this.last = now; this.elapsed += delta;
-    const distance = Math.abs(current.target.x - current.pointer.x)
-      + Math.abs(current.target.y - current.pointer.y);
-    const response = 1 - Math.exp(-delta / 120);
-    current.pointer.x += (current.target.x - current.pointer.x) * response;
-    current.pointer.y += (current.target.y - current.pointer.y) * response;
-    // Thirty draws/second at rest; sixty only while the light responds to a pointer.
-    const interval = distance > .002 ? 1000 / 60 : 1000 / 30;
+    // Ambient artwork runs independently of pointer input, at thirty draws per second.
+    const interval = 1000 / 30;
     if (!this.painted || now - this.painted >= interval - 1) {
       try { this.draw(current); } catch { this.fail(current); return; }
       this.painted = now;
@@ -242,7 +217,7 @@ class HomepageMotion {
     if (!current) return;
     this.current = null;
     current.intersection.disconnect(); current.resize.disconnect(); current.cancelImage?.();
-    current.listeners.forEach((remove) => remove()); this.discard(current);
+    this.discard(current);
   }
 
   destroy() {

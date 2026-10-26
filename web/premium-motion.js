@@ -15,14 +15,10 @@ const layerIdentity = (layer, session) => (layer?.getAttribute("aria-labelledby"
 class SurfaceExperience {
   constructor(doc) {
     this.doc = doc; this.win = doc.defaultView; this.scopes = new Map();
-    this.animations = new Set(); this.art = new Set(); this.frame = 0; this.lit = null;
-    this.position = null; this.navKey = null;
+    this.animations = new Set(); this.art = new Set(); this.navKey = null;
     this.reduced = this.win.matchMedia("(prefers-reduced-motion:reduce),(update:slow)");
     this.forced = this.win.matchMedia("(forced-colors:active)");
-    this.fine = this.win.matchMedia("(hover:hover) and (pointer:fine)");
     this.visibility = () => this.sync();
-    this.move = (event) => this.pointer(event);
-    this.leave = (event) => { if (!event.relatedTarget) this.clearLight(); };
     this.hide = (event) => { if (!event.persisted) this.destroy(); };
     this.observer = this.win.IntersectionObserver ? new this.win.IntersectionObserver(
       (entries) => entries.forEach(({ target, isIntersecting }) => {
@@ -30,8 +26,6 @@ class SurfaceExperience {
         if (isIntersecting && this.allowed()) target.classList.add("premium-art-enter");
       }), { threshold: .05 }) : null;
     doc.addEventListener("visibilitychange", this.visibility);
-    doc.addEventListener("pointermove", this.move, { passive: true });
-    doc.addEventListener("pointerout", this.leave, { passive: true });
     this.reduced.addEventListener("change", this.visibility);
     this.forced.addEventListener("change", this.visibility);
     this.win.addEventListener("pagehide", this.hide);
@@ -47,33 +41,11 @@ class SurfaceExperience {
     this.doc.documentElement.classList.toggle("premium-paused", !this.allowed());
     if (this.allowed()) return;
     this.animations.forEach((animation) => animation.cancel());
-    this.animations.clear(); this.clearLight();
+    this.animations.clear();
     this.art.forEach((node) => node.classList.add("premium-art-settled"));
     this.doc.querySelectorAll(".premium-surface-enter,.premium-layer-enter,.premium-nav-enter")
       .forEach((node) => node.classList.remove("premium-surface-enter", "premium-layer-enter",
         "premium-nav-enter"));
-  }
-
-  clearLight() {
-    this.win.cancelAnimationFrame(this.frame); this.frame = 0;
-    this.lit?.classList.remove("premium-lit"); this.lit = null;
-    this.position = null;
-  }
-
-  pointer(event) {
-    if (event.pointerType !== "mouse" || !this.allowed() || !this.fine.matches) return;
-    const surface = event.target.closest?.("[data-premium-surface]");
-    if (surface !== this.lit) { this.clearLight(); this.lit = surface; }
-    this.position = { x: event.clientX, y: event.clientY };
-    if (!surface || this.frame) return;
-    this.frame = this.win.requestAnimationFrame(() => {
-      this.frame = 0;
-      if (!this.allowed() || !surface.isConnected || surface !== this.lit) return;
-      const rect = surface.getBoundingClientRect();
-      surface.style.setProperty("--premium-x", this.position.x - rect.left + "px");
-      surface.style.setProperty("--premium-y", this.position.y - rect.top + "px");
-      surface.classList.add("premium-lit");
-    });
   }
 
   animate(node, frames, duration, delay = 0) {
@@ -150,10 +122,8 @@ class SurfaceExperience {
 
   destroy() {
     this.animations.forEach((animation) => animation.cancel());
-    this.clearLight(); this.observer?.disconnect(); this.art.clear(); this.scopes.clear();
+    this.observer?.disconnect(); this.art.clear(); this.scopes.clear();
     this.doc.removeEventListener("visibilitychange", this.visibility);
-    this.doc.removeEventListener("pointermove", this.move);
-    this.doc.removeEventListener("pointerout", this.leave);
     this.reduced.removeEventListener("change", this.visibility);
     this.forced.removeEventListener("change", this.visibility);
     this.win.removeEventListener("pagehide", this.hide);

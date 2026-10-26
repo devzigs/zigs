@@ -132,18 +132,17 @@ test("the entrance advances into a continuing fourteen-second light cycle", asyn
   f.controller.destroy(); f.clean(item);
 });
 
-test("only a mouse over the artwork redirects bounded light", async () => {
+test("pointer movement does not redirect the artwork lighting", async () => {
   const item = hero(), f = fixture({ current: item }); await ready(f, item);
   item.node.emit("pointermove", { pointerType: "mouse", clientX: 640, clientY: 640 });
   item.host.emit("pointermove", { pointerType: "touch", clientX: 640, clientY: 640 });
-  assert.deepEqual(f.controller.current.target, { x: 0, y: 0 });
+  assert.equal(item.host.count(), 0, "the artwork has no pointer listeners");
   item.host.emit("pointermove", { pointerType: "mouse", clientX: 900, clientY: -100 });
-  assert.deepEqual(f.controller.current.target, { x: 1, y: -1 });
   for (let t = 10; t < 600; t += 17) f.frame(t);
-  assert.ok(f.scenes[0].samples.at(-1).x > .9); assert.ok(f.scenes[0].samples.at(-1).y < -.9);
   item.host.emit("pointerleave");
   for (let t = 600; t < 1400; t += 17) f.frame(t);
-  assert.ok(Math.abs(f.scenes[0].samples.at(-1).x) < .01);
+  assert.ok(f.scenes[0].samples.every((sample) => sample.x === 0 && sample.y === 0),
+    "ambient lighting never receives a cursor offset");
   f.controller.destroy(); f.clean(item);
 });
 

@@ -133,15 +133,14 @@
   transition-timing-function:var(--premium-ease);
 }
 
-/* A transparent studio reflection adds depth without changing any financial data. */
+/* A fixed entrance reflection; panel lighting never follows the pointer. */
 [data-premium-surface] { position:relative; isolation:isolate; }
 [data-premium-surface]::after {
   content:""; position:absolute; inset:0; z-index:1; border-radius:inherit; pointer-events:none;
-  background:radial-gradient(360px circle at var(--premium-x,50%) var(--premium-y,0%),
+  background:radial-gradient(360px circle at 15% 0%,
     var(--premium-reflection),transparent 75%);
   opacity:0; transition:opacity 380ms var(--premium-ease);
 }
-[data-premium-surface].premium-lit::after { opacity:1; }
 .premium-surface-enter::after {
   animation:premium-light-arrive 680ms var(--premium-ease);
   animation-delay:calc(var(--premium-order,0)*35ms);
