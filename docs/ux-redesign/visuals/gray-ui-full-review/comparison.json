@@ -1,0 +1,33 @@
+{
+  "baseline": "d82390c85fc9f4e4d35ae4470c5d75f7da74aad1",
+  "cases": [
+    {
+      "phase": "before",
+      "back": {
+        "name": "Messages",
+        "pseudo": "\"←\"",
+        "svg": 1
+      },
+      "composer": {
+        "top": 312,
+        "bottom": 382,
+        "height": 360,
+        "clear": false
+      }
+    },
+    {
+      "phase": "after",
+      "back": {
+        "name": "Back to conversations",
+        "pseudo": "none",
+        "svg": 1
+      },
+      "composer": {
+        "top": 156,
+        "bottom": 226,
+        "height": 360,
+        "clear": true
+      }
+    }
+  ]
+}

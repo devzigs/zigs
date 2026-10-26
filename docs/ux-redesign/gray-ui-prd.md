@@ -9,6 +9,9 @@ The subsequent [complete web flow UX audit](gray-ui-ux-audit.md) implements clea
 language, button order and contextual explanations while preserving the same safeguards.
 The subsequent [motion and icon refinement](gray-ui-motion-craft.md) unifies timing,
 utility icons, navigation, press feedback and modal framing throughout the web application.
+The [follow-up full UI/UX check](gray-ui-full-review.md) covers populated conversations,
+accessible names, touch targets, short viewports, long labels and large balances, and fixes
+the remaining mobile conversation clipping and icon regressions.
 
 ## Goal and authoritative sources
 

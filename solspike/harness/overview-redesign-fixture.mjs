@@ -18,19 +18,29 @@ const solFixture = (
   + "}};\n}\n"
 );
 
-function fixtureModule(relative, content) {
+function fixtureModule(relative, content, messaging) {
   if (relative === "app.js") return "// Isolated fixture; no wallet boot.";
   if (relative === "network-privacy-demo-entry.js") return content.replace(
     "installPrivacyPopup();", "installPrivacyPopup({ autoOpen: false });");
   if (relative === "app-sol.js") return content + solFixture;
   if (relative === "app-groups.js") return content.replace("dbReady = false;", "dbReady = true;");
-  if (relative === "app-loop.js") return content.replace(
-    "if (!dbReady) return loadingView();", "if (!dbReady && !state.g) return loadingView();");
+  if (relative === "app-loop.js") return fixtureLoop(content, messaging);
   if (relative === "app-wallet.js") return content + "\nexport { balanceOverview };";
   return content;
 }
 
-export async function overviewFixture(context, page) {
+function fixtureLoop(content, messaging) {
+  const source = content.replace("if (!dbReady) return loadingView();",
+    "if (!dbReady && !state.g) return loadingView();");
+  if (!messaging) return source;
+  // The existing synthetic conversation fixtures supply their renderer. Suppress background
+  // engine/relay work, as the standalone messaging harness does; no submissions are tested here.
+  return source.replace("export function react() {", "export function react() { return;")
+    .replace("function pageView() {", "function pageView() { "
+      + "if (globalThis.__messagingView) return globalThis.__messagingView();");
+}
+
+export async function overviewFixture(context, page, { messaging = false } = {}) {
   const web = resolve("web");
   await context.route("**/*", async (route) => {
     const url = new URL(route.request().url());
@@ -40,7 +50,8 @@ export async function overviewFixture(context, page) {
     if (!file.startsWith(web + "/") || !existsSync(file))
       return route.fulfill({ status: 404, body: "" });
     const bytes = readFileSync(file);
-    const body = relative.endsWith(".js") ? fixtureModule(relative, bytes.toString()) : bytes;
+    const body = relative.endsWith(".js")
+      ? fixtureModule(relative, bytes.toString(), messaging) : bytes;
     return route.fulfill({ body, contentType: types[extname(file)] || "application/octet-stream" });
   });
   await page.goto(OVERVIEW_ORIGIN);

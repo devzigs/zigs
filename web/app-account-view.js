@@ -332,6 +332,7 @@ export function contactView() {
     el("header", { class: "messages-thread-header messages-conversation-head" },
       el("button", {
         class: "btn ghost sm messages-mobile-back", type: "button", "data-key": "contact-back",
+        "aria-label": "Back to conversations",
         onclick: () => { state.contact = null; ui.tab = "chats"; render(); },
       }, icon("back"), "Messages"),
       el("span", { class: "av round", "aria-hidden": "true" }, initials(name)),

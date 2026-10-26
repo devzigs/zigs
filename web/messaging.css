@@ -372,9 +372,18 @@
   .messages-workspace.has-conversation>.messages-heading,
   .messages-workspace.has-conversation>.messages-tabs { display:none; }
   .messages-workspace.has-conversation .messages-inbox { display:none; }
-  .messages-workspace.has-conversation .messages-layout { height:calc(var(--visual-height,100dvh) - 168px);
-    min-height:min(300px,calc(var(--visual-height,100dvh) - 168px)); border-radius:16px; }
-  .messages-workspace.has-conversation .messages-thread { display:flex; height:100%; min-height:0; flex:1; }
+  /* Conversation forms grow with their content. A fixed viewport subtraction could clip the
+     composer below invite cards, safety notices or a short viewport. Only history scrolls. */
+  .messages-workspace.has-conversation .messages-layout { height:auto;
+    min-height:min(420px,calc(var(--visual-height,100dvh) - 168px)); border-radius:16px; }
+  .messages-workspace.has-conversation .messages-thread { display:flex; height:auto;
+    min-height:0; flex:1 0 auto; }
+  .messages-workspace.has-conversation :is(.messages-thread-body,.chat) {
+    flex:1 0 auto; overflow:visible;
+  }
+  .messages-workspace.has-conversation .chat-log {
+    flex:0 1 auto; min-height:120px; max-height:min(45dvh,420px);
+  }
   .messages-mobile-back { display:inline-flex; align-items:center; justify-content:center; flex:none;
     min-width:48px; min-height:48px; padding:8px; }
   .messages-thread-header { display:grid; grid-template-columns:48px 36px minmax(0,1fr);
@@ -396,7 +405,6 @@
   .messages-conversation-head { display:grid; grid-template-columns:44px 32px minmax(0,1fr);
     min-height:76px; padding:12px; gap:5px 8px; }
   .messages-conversation-head>.messages-mobile-back { width:44px; height:44px; padding:8px; font-size:0; }
-  .messages-conversation-head>.messages-mobile-back::before { content:"←"; font-size:18px; }
   .messages-conversation-head>.av { width:32px; height:32px; min-width:32px; min-height:32px; }
   .messages-conversation-title { grid-column:3; grid-row:1; }
   .messages-conversation-title h2 { font-size:16px; line-height:22px; overflow-wrap:break-word; word-break:normal; }
@@ -422,7 +430,7 @@
   .messages-workspace .msg-head { font-size:10px; gap:2px 7px; }
   .messages-workspace .msg-head b { font-size:11px; }
   .messages-workspace .msg-event { flex-wrap:wrap; gap:4px 8px; }
-  .messages-composer { position:sticky; bottom:0; z-index:2; padding:12px 12px calc(12px + env(safe-area-inset-bottom,0px)); }
+  .messages-composer { position:static; padding:12px 12px calc(12px + env(safe-area-inset-bottom,0px)); }
   .messages-workspace .composer textarea { min-height:60px; max-height:120px; resize:none; font-size:16px; line-height:22px;
     padding:12px; }
   .messages-workspace .composer-row { gap:6px; }
