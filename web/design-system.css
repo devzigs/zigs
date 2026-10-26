@@ -1,6 +1,6 @@
 @import url("./approval-visualization.css");
 
-/* Porcelain, graphite and restrained orange. Financial surfaces remain opaque in every theme. */
+/* Porcelain, graphite and restrained icy blue. Financial surfaces remain opaque in every theme. */
 :root {
   color-scheme: dark;
   --bg:#0d1014; --side:#12161b; --panel:#191e25;
@@ -9,10 +9,10 @@
   --button-line:#788596;
   --edge:rgba(245,244,239,.08); --edge-quiet:rgba(245,244,239,.04);
   --text:#f3f5f7; --muted:#b3bdca; --faint:#a0aaba;
-  --accent:#ee9d70; --accent-text:#f3b186; --on-accent:#21180f;
-  --accent-hi:#f4ae86; --accent-pressed:#df8b5d; --accent-border:#ee9d70;
-  --focus:#f3b186; --accent-soft:rgba(243,177,134,.07);
-  --accent-edge:rgba(243,177,134,.35);
+  --accent:#a8c7ea; --accent-text:#a8c7ea; --on-accent:#101821;
+  --accent-hi:#b9d4f1; --accent-pressed:#93b4dc; --accent-border:#a8c7ea;
+  --focus:#a8c7ea; --accent-soft:rgba(168,199,234,.07);
+  --accent-edge:rgba(168,199,234,.35);
   --ok:#8bd5b5; --ok-soft:rgba(139,213,181,.07);
   --bad:#f5a1a9; --bad-soft:rgba(245,161,169,.07);
   --info:#adc7eb; --info-soft:rgba(173,199,235,.07);
@@ -23,13 +23,13 @@
   --brand-face-hi:#24282b; --brand-face-lo:#141719;
   --portfolio-control:#303945; --portfolio-control-hover:#3c4755;
   --portfolio-control-line:#788596; --portfolio-disabled-line:#586575;
-  --portfolio-focus:#f3b186;
+  --portfolio-focus:#a8c7ea;
   --chrome-hi:rgba(245,244,239,.04); --chrome-lo:rgba(245,244,239,0);
   --hero-hi:#202731; --hero-lo:#191e25; --hero-edge:#303845;
   --on-portfolio:#f6f7f9; --on-portfolio-muted:#b4becc;
   --portfolio-bg:#202731; --portfolio-line:#3e4959; --portfolio-decor:#202731;
   --shielded:#8bd5b5; --unshielded:#adc7eb; --shielding-unknown:#788596;
-  --ambient:rgba(238,157,112,.055); --scrim:rgba(3,5,8,.64);
+  --ambient:rgba(168,199,234,.055); --scrim:rgba(3,5,8,.64);
   /* One soft upper-left studio light; financial backgrounds remain opaque. */
   --light-rail:rgba(245,244,239,.02); --light-surface:rgba(245,244,239,.018);
   --light-portfolio:rgba(245,244,239,.045); --portfolio-rim:rgba(245,244,239,.09);
@@ -47,7 +47,7 @@
   --button-sheen:rgba(255,255,255,.035);
   --button-shade:rgba(0,0,0,.02);
   --shadow-primary:inset 0 1px 0 rgba(255,255,255,.32),
-    inset 0 -1px 0 rgba(91,44,17,.12),0 1px 2px rgba(0,0,0,.1);
+    inset 0 -1px 0 rgba(35,60,91,.12),0 1px 2px rgba(0,0,0,.1);
   --shadow-floating:0 16px 32px -14px rgba(0,0,0,.45),0 3px 8px -3px rgba(0,0,0,.24),
     inset 0 1px 0 var(--glass-rim),inset 0 -1px 0 var(--edge-quiet);
   --shadow-selected:0 1px 3px rgba(0,0,0,.16);
@@ -93,8 +93,8 @@
   --button-line:#7b8592;
   --edge:rgba(255,255,255,.95); --edge-quiet:rgba(255,255,255,.75);
   --text:#171b21; --muted:#5b6573; --faint:#596575;
-  --accent-text:#9f481d; --accent-border:#ee9d70; --accent-soft:rgba(159,72,29,.05);
-  --accent-edge:rgba(159,72,29,.3); --focus:#9f481d;
+  --accent-text:#315d89; --accent-border:#6686aa; --accent-soft:rgba(49,93,137,.05);
+  --accent-edge:rgba(49,93,137,.3); --focus:#315d89;
   --ok:#176549; --ok-soft:rgba(23,101,73,.05);
   --bad:#a52d37; --bad-soft:rgba(165,45,55,.05);
   --info:#365c7e; --info-soft:rgba(54,92,126,.05);
@@ -106,7 +106,7 @@
   --on-portfolio:#f6f7f9; --on-portfolio-muted:#b4becc;
   --portfolio-bg:#181c23; --portfolio-line:#303845; --portfolio-decor:#181c23;
   --shielded:#176549; --unshielded:#365c7e; --shielding-unknown:#7b8592;
-  --ambient:rgba(238,157,112,.07); --scrim:rgba(27,36,49,.3);
+  --ambient:rgba(168,199,234,.07); --scrim:rgba(27,36,49,.3);
   --light-rail:rgba(255,255,255,.45); --light-surface:rgba(255,255,255,.6);
   --surface-rim:rgba(32,45,66,.065);
   --shadow-raised:inset 0 1px 0 var(--edge),0 6px 16px -10px rgba(32,45,66,.12);
@@ -130,8 +130,8 @@
     --button-line:#7b8592;
     --edge:rgba(255,255,255,.95); --edge-quiet:rgba(255,255,255,.75);
     --text:#171b21; --muted:#5b6573; --faint:#596575;
-    --accent-text:#9f481d; --accent-border:#ee9d70; --accent-soft:rgba(159,72,29,.05);
-    --accent-edge:rgba(159,72,29,.3); --focus:#9f481d;
+    --accent-text:#315d89; --accent-border:#6686aa; --accent-soft:rgba(49,93,137,.05);
+    --accent-edge:rgba(49,93,137,.3); --focus:#315d89;
     --ok:#176549; --ok-soft:rgba(23,101,73,.05);
     --bad:#a52d37; --bad-soft:rgba(165,45,55,.05);
     --info:#365c7e; --info-soft:rgba(54,92,126,.05);
@@ -143,7 +143,7 @@
     --on-portfolio:#f6f7f9; --on-portfolio-muted:#b4becc;
     --portfolio-bg:#181c23; --portfolio-line:#303845; --portfolio-decor:#181c23;
     --shielded:#176549; --unshielded:#365c7e; --shielding-unknown:#7b8592;
-    --ambient:rgba(238,157,112,.07); --scrim:rgba(27,36,49,.3);
+    --ambient:rgba(168,199,234,.07); --scrim:rgba(27,36,49,.3);
     --light-rail:rgba(255,255,255,.45); --light-surface:rgba(255,255,255,.6);
     --surface-rim:rgba(32,45,66,.065);
     --shadow-raised:inset 0 1px 0 var(--edge),0 6px 16px -10px rgba(32,45,66,.12);

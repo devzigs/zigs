@@ -226,3 +226,40 @@ Updated the PRD and repository instructions to preserve this latest preference.
 The application change restores presentation files only. Messaging behavior, branding,
 wallet logic and native code are unchanged. Work remains on local `gray-ui`; no merge or
 deployment is included. Remote publication remains blocked by read-only repository access.
+
+## Apply the approved icy-blue accent — 26 October 2026
+
+The user selected Ice blue from six accent mockups and requested it throughout the app.
+Applied `#A8C7EA` to the shared accent, primary actions, navigation, form selections, focus,
+guides and privacy preview. Hover uses `#B9D4F1`, pressed controls use `#93B4DC`, and filled
+accent labels use `#101821`. Light-surface links/focus use the readable darker `#315D89`,
+with `#6686AA` primary-control edges. Both explicit and system light-theme tokens agree.
+
+Replaced the separate orange homepage actions, threshold illustration, guide flow/overline,
+button shadows, decorative ambient lighting and copper hero illumination. Removed the warm
+chat surface tint; chats retain the neutral charcoal hierarchy and expanded layout. Preserved
+Manrope, technical monospace text, motion timing, the absence of cursor-following light,
+semantic status colours, original artwork/red eye and deterministic wallet identities.
+No wallet behavior, account state, native code or assets changed.
+
+- All 48 Node 26 fast tests passed in 9 seconds. The QR decoder remains skipped because
+  `qrencode` is unavailable. Contrast coverage additionally checks glass over the actual accent;
+  all existing stress backgrounds remain covered. Lint, identity and diff checks passed.
+- Style review: 511 checks and 31 captures passed, including composed text/button/field
+  contrast, guides and responsive layouts in both themes.
+- Full UI review: 1,141 checks across 168 layouts and 50 composer focus variants passed,
+  including expanded account setup, unclipped actions and keyboard reachability.
+- Privacy review: 218 checks across 26 layouts passed, including all four screens,
+  short windows, reduced motion, forced colours, focus, cancellation and unchanged storage.
+- Premium review: 216 checks across 72 page/theme/width variants passed, including hover,
+  fixed hit areas, relief icons and the absence of pointer-following portfolio light.
+- [Live homepage](visuals/gray-ui-icy-blue/home-dark.png) and
+  [live Messages](visuals/gray-ui-icy-blue/messages-dark.png) show the refreshed local app
+  with no wallets or messaging account created. The
+  [light setup](visuals/gray-ui-icy-blue/messages-light.png) and
+  [privacy preview](visuals/gray-ui-icy-blue/privacy-dark.png) use isolated synthetic fixtures;
+  external requests were blocked and no wallet operations were submitted.
+
+Updated the PRD and repository instructions to record this approved accent. Saved on local
+`gray-ui`; remote publication remains blocked by read-only repository access. No merge,
+main-branch integration or deployment is included.

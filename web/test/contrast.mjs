@@ -64,7 +64,7 @@ function pairs(t) {
   out.push(["on-accent on accent", ratio(rgba(t["on-accent"]), rgba(t.accent))]);
   for (const text of ["on-portfolio", "on-portfolio-muted"])
     out.push([text + " on graphite", ratio(rgba(t[text]), rgba(t["portfolio-bg"]))]);
-  for (const base of ["#000000", "#ffffff", "#ee9d70", "#181c23"])
+  for (const base of ["#000000", "#ffffff", "#ee9d70", "#181c23", t.accent])
     for (const text of TEXTS.slice(0, 3))
       out.push([text + " on glass over " + base,
         ratio(rgba(t[text]), over(rgba(t.glass), rgba(base)))]);

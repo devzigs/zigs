@@ -13,7 +13,7 @@
   --emblem-face-hi:#262c30;
   --emblem-face-lo:#14181b;
   --emblem-contact:rgba(0,0,0,.52);
-  --emblem-warm:rgba(239,161,111,.045);
+  --emblem-accent:rgba(168,199,234,.045);
   --emblem-cool:rgba(193,207,219,.075);
 }
 
@@ -64,7 +64,7 @@
 .lobby-home .welcome-new .welcome-intro { position:relative; isolation:isolate; }
 .welcome-new .welcome-intro::before {
   content:""; position:absolute; inset:0; z-index:-1; pointer-events:none;
-  background:radial-gradient(ellipse 80% 90% at 12% 38%,var(--emblem-warm),transparent 90%);
+  background:radial-gradient(ellipse 80% 90% at 12% 38%,var(--emblem-accent),transparent 90%);
 }
 .lobby-home .welcome-brand::before {
   background:radial-gradient(ellipse 65% 70% at 48% 40%,var(--emblem-cool),transparent 92%);

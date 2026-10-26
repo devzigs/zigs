@@ -1,9 +1,9 @@
 /* Messaging presentation only. Every status and action comes from the existing transports. */
 .messages-workspace {
-  --messages-canvas:color-mix(in srgb,var(--bg) 94%,#715d4b);
-  --messages-surface:color-mix(in srgb,var(--panel) 95%,#715d4b);
-  --messages-inset:color-mix(in srgb,var(--sunk) 96%,#715d4b);
-  --messages-hover:color-mix(in srgb,var(--raised) 96%,#715d4b);
+  --messages-canvas:var(--bg);
+  --messages-surface:var(--panel);
+  --messages-inset:var(--sunk);
+  --messages-hover:var(--raised);
   --messages-border:color-mix(in srgb,var(--line) 88%,var(--muted));
   width:100%; margin-inline:auto; min-width:0;
   display:grid; align-content:start; gap:20px; color:var(--text);

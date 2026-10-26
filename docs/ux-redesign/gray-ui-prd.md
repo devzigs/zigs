@@ -26,13 +26,19 @@ homepage artwork must not track pointer position. Keep ordinary button/icon hove
 fixed surface lighting and the existing independent artwork motion; do not restore a cursor
 spotlight as part of a future premium styling pass.
 
-On 26 October the user changed their preference back to the darker neutral-charcoal
-palette and Manrope interface typography after briefly requesting metallic steel-blue and
-Geist. Restore the near-black/silver surfaces, warm neutral light theme, lighter editorial
-heading weights and local Manrope font preload. Keep Geist Mono for technical text and
-preserve the current layouts, expanded messaging workspace, branding, guides, orange actions
-and motion refinements. This latest preference supersedes the intervening blue restoration
-and agrees with the original palette and typography migration specification below.
+On 26 October the user settled on darker neutral-charcoal surfaces and Manrope interface
+typography after briefly requesting metallic steel-blue and Geist. Keep the near-black/silver
+surfaces, warm neutral light theme, lighter editorial headings, local Manrope preload and
+Geist Mono for technical text. Preserve the expanded messaging workspace and flow refinements.
+
+The user then selected **icy blue (`#A8C7EA`)** from six accent mockups for use throughout.
+Replace orange/copper UI accents in primary actions, navigation, selections, form focus,
+guides, privacy previews and decorative lighting, including homepage button states and the
+independent hero illumination. Use `#B9D4F1` on hover, `#93B4DC` when pressed and `#101821`
+for text on the filled accent. Light-surface accent text and focus use `#315D89`, with
+`#6686AA` control edges. Keep the charcoal/neutral surfaces, fonts, artwork, motion timings,
+semantic status colours and deterministic wallet identities. Pointer-following light stays
+removed. This latest accent choice supersedes the original orange migration choices below.
 
 Messaging must use the available page space. Account creation uses one full-width column
 without an empty conversation sidebar or an internally scrolling, fixed-height setup frame.

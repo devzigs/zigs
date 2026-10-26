@@ -76,13 +76,15 @@ only; preserve the existing native assets and code.
 
 ## Web presentation palette
 
-On 26 October 2026 the user changed their preference back to the darker neutral-charcoal
-palette and Manrope interface typography, superseding the intervening metallic steel-blue
-and Geist restoration. Keep Geist Mono for technical text, lighter editorial heading weights,
-orange primary actions, focus/selection accents, quiet copper hero lighting and educational
-highlights in both themes. Preserve the newer layouts, expanded messaging workspace, guide,
-icons and usability improvements. Do not restore pointer-following glows or lighting.
-Semantic status colours remain distinct.
+On 26 October 2026 the user settled on the darker neutral-charcoal palette and Manrope
+interface typography, then selected icy blue (`#A8C7EA`) from six accent mockups for use
+throughout the web application. This supersedes the earlier orange/copper accent preference.
+Use icy blue for primary actions, selected navigation, form selections, focus, educational
+highlights and quiet decorative lighting. Use the darker blue `#315D89` for accent text and
+focus on light surfaces. Keep Geist Mono for technical text and lighter editorial headings.
+Preserve the charcoal surfaces, newer layouts, expanded messaging workspace, guide, icons
+and usability improvements. Do not restore pointer-following glows or lighting. Semantic
+status colours, original branding artwork and deterministic wallet identities remain distinct.
 
 ## UI/UX final branch scope
 
