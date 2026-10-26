@@ -44,14 +44,6 @@
 }
 .icon-btn>.symbol[data-icon=close] { width:22px; height:22px; }
 .swap-close>.symbol,.pp-close>.symbol { width:22px; height:22px; }
-/* The standalone Tor demo cannot import page modules. Its close mark uses the same geometry. */
-.pp-close { position:relative; width:48px; height:48px; }
-.pp-button { min-height:48px; }
-.pp-close::before,.pp-close::after { content:""; position:absolute; top:50%; left:50%;
-  width:14px; height:1.5px; border-radius:1px; background:currentColor;
-  translate:-50% -50%; rotate:45deg; pointer-events:none;
-}
-.pp-close::after { rotate:-45deg; }
 .swap-chevron { display:inline-flex; }
 .swap-chevron>.symbol { width:16px; height:16px; }
 .swap-asset-button .symbol,.swap-route-link>.symbol { width:18px; height:18px; }
@@ -230,7 +222,7 @@
 .premium-layer-enter:not(.home-how-dialog,.guided-plan) {
   animation:premium-layer-arrive 440ms var(--premium-ease);
 }
-.swap-modal[open],.privacy-demo-popup[open] {
+.swap-modal[open] {
   animation:premium-layer-arrive 440ms var(--premium-ease);
 }
 @keyframes premium-layer-arrive {

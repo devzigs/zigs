@@ -115,3 +115,33 @@ No recovery state or underlying wallet operation changed.
   [browser results](visuals/gray-ui-backup-reminders/browser-report.json) use synthetic data.
 - The existing local preview serves the updated wallet module. Work remains on `gray-ui`;
   no merge or deployment is part of this change.
+
+## Privacy preview craft — 26 October 2026
+
+Refined all four on-demand privacy-preview screens: offer, progress, camouflage and completion.
+Restored the earlier headline and calmer tone, with the same explicit direct-connection
+disclosure on every screen. The header identifies a preview throughout; it never claims
+protected traffic. Main’s controller, optional entry, timing, cancellation and storage
+behavior remain unchanged. The existing camouflage artwork and duration are preserved.
+
+- Node 26 fast suite: all 48 tests passed in 9 seconds. The independent QR decoder test
+  remains skipped because `qrencode` is unavailable. The first restricted run exposed an
+  invalid page-module import; fixed by keeping the small icon renderer within the leaf
+  module. Local stub-server checks passed on the subsequent permitted run.
+- Focused browser review: 218 checks across 26 layouts passed, covering all four screens
+  in both themes at 320, 390 and 1440 pixels; short windows, forced colors, reduced motion,
+  keyboard containment, focus return, one-step dismissal, timer cancellation and unchanged
+  storage. The normal-motion walkthrough retains the original four-step and camouflage timing.
+- Existing premium browser review: 216 checks across 72 page/theme/width variants passed,
+  including a single SVG close icon within a stationary 48-pixel target. Removed the former
+  duplicate CSS close mark. Lint passed for 243 JavaScript and 2 Python files.
+- [Focused results](visuals/gray-ui-privacy-craft/browser-report.json),
+  [motion regression](visuals/gray-ui-privacy-craft/premium-regression.json),
+  [offer](visuals/gray-ui-privacy-craft/offer-desktop.png),
+  [progress](visuals/gray-ui-privacy-craft/progress-desktop.png),
+  [camouflage](visuals/gray-ui-privacy-craft/camouflage-desktop.png),
+  [completion](visuals/gray-ui-privacy-craft/completion-desktop.png) and
+  [light phone](visuals/gray-ui-privacy-craft/offer-phone-light.png) use an isolated renderer
+  fixture with synthetic data and external requests blocked. No wallet operations were submitted.
+- Confirmed the local application serves the updated module and opened the refined offer
+  for review. Anonymous identity and diff checks pass. No merge or deployment is included.

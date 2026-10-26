@@ -175,11 +175,12 @@ async function floatingReview() {
   await page.locator("#privacy-demo-status").click();
   const popup = page.locator(".privacy-demo-popup[open]");
   await popup.waitFor();
-  const close = page.getByRole("button", { name: "Close the Tor demo", exact: true });
+  const close = page.getByRole("button", { name: "Close privacy preview", exact: true });
   check(await close.evaluate((node) => {
     const r = node.getBoundingClientRect();
     return r.width >= 48 && r.height >= 48
-      && getComputedStyle(node, "::before").content !== "none";
+      && node.querySelectorAll('[data-icon="close"]').length === 1
+      && getComputedStyle(node, "::before").content === "none";
   }), "standalone demo has a crisp close mark inside a 48 px target");
   await close.click();
   check(await page.locator(".privacy-demo-popup[open]").count() === 0,

@@ -1,5 +1,30 @@
 # Privacy popup on the existing landing page
 
+## Current Gray UI refinement — 26 October 2026
+
+The historical prototype described below predates main’s simplified, on-demand preview.
+Current behavior follows main: the header opens the preview, closing takes one action, and
+the controller stores no connection choice or protected state. It never opens on arrival.
+The current four stages and their original timing are preserved.
+
+This refinement restores the earlier “Make your connection private” headline and calmer
+benefit-led language. A visible Preview label and direct-connection disclosure accompany
+every screen. The primary action reads “Preview private connection”; completion explains
+that Tor routing is unavailable here and the connection has not changed. The header stays
+“Tor · Preview” throughout. Existing Settings still explains actual connection capabilities.
+
+The entire sequence now uses the application’s warm neutral surfaces, Manrope typography,
+relief icon geometry, rounded controls and restrained motion. The route illustration has
+separate browser, Tor and wallet-service nodes. Progress cards distinguish the active and
+upcoming illustrative steps. Decorative movement is disabled for reduced motion, while
+forced colors and short viewports retain readable content and reachable actions.
+
+The standalone popup duplicates only the small fixed icon paths it uses from `app-icons.js`;
+it does not import page modules across main’s enforced module boundary. No network, storage,
+wallet operation, authorization gate or underlying controller transition was changed.
+
+## Historical prototype
+
 23 October 2026 · `codex/privacy` · revision of `819486f`.
 
 The user requested a small popup immediately over the existing landing page, a mocked

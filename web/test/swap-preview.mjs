@@ -131,6 +131,8 @@ try {
   globalThis.setTimeout = () => 1;
   globalThis.clearTimeout = () => {};
   const popup = await import('../network-privacy-popup.js');
+  assert.match(popup.DEMO_NOTE, /No Tor connection is created; traffic stays direct/,
+    'the preview disclosure keeps direct traffic explicit');
   const app = new FakeNode('div');
   app.id = 'app';
   const head = new FakeNode('header');
@@ -146,7 +148,7 @@ try {
   assert.equal(text(pill), popup.PILL_TEXT, 'the Tor pill says the demo');
   assert.doesNotMatch(text(pill) + pill.getAttribute('aria-label'), /protect|private route/i,
     'the Tor pill never says protected');
-  assert.match(pill.getAttribute('aria-label'), /Demo only: your connection is unchanged/,
+  assert.ok(pill.getAttribute('aria-label').includes(popup.DEMO_NOTE),
     'the Tor pill says that the connection is unchanged');
   assert.equal(dialog.open, false, 'the Tor demo does not open by itself');
   const screens = [];
@@ -154,27 +156,27 @@ try {
   const open = () => fire(pill, 'click');
   open();
   assert.equal(dialog.open, true, 'the pill opens the Tor demo');
-  assert.match(look(), /Try the Tor demo/, 'the popup opens on the demo offer');
-  press(dialog, 'Start the demo'); look();
+  assert.ok(look().includes(popup.TITLES.offer), 'the popup opens on the preview offer');
+  press(dialog, 'Preview private connection'); look();
   press(dialog, 'Continue'); look();
   press(dialog, 'Skip animation');
-  assert.match(look(), /Demo finished/, 'the demo ends with a finished demo');
+  assert.ok(look().includes(popup.TITLES.success), 'the preview ends with its final screen');
   for (const screen of screens) {
     assert.doesNotMatch(screen, /protected|route is ready|private route is|Standard connection/i,
       'no popup screen says protected or ready: ' + screen.slice(0, 60));
-    assert.match(screen, /Demo only: your connection is unchanged/,
+    assert.ok(screen.includes(popup.DEMO_NOTE),
       'every popup screen says the connection is unchanged');
   }
   const closers = { 'the X button': () => fire(walk(dialog,
-    node => node.attrs?.['aria-label'] === 'Close the Tor demo')[0], 'click'),
-    'the Close button': () => press(dialog, 'Close'),
+    node => node.attrs?.['aria-label'] === 'Close privacy preview')[0], 'click'),
+    'the Not now button': () => press(dialog, 'Not now'),
     Escape: () => fire(dialog, 'keydown', { key: 'Escape' }),
     'the backdrop': () => fire(dialog, 'click', { clientX: -5, clientY: -5 }) };
   for (const stage of ['offer', 'connecting', 'camouflage', 'success']) {
     for (const [name, close] of Object.entries(closers)) {
-      if (name === 'the Close button' && stage !== 'offer') continue;
+      if (name === 'the Not now button' && stage !== 'offer') continue;
       open();
-      if (stage !== 'offer') press(dialog, 'Start the demo');
+      if (stage !== 'offer') press(dialog, 'Preview private connection');
       if (stage === 'camouflage' || stage === 'success') press(dialog, 'Continue');
       if (stage === 'success') press(dialog, 'Skip animation');
       close();
@@ -182,7 +184,7 @@ try {
     }
   }
   open();
-  assert.match(text(dialog), /Try the Tor demo/,
+  assert.ok(text(dialog).includes(popup.TITLES.offer),
     'the popup opens on the offer again after a close');
   fire(dialog, 'close');
   dialog.open = false;

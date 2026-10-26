@@ -13,6 +13,14 @@ The [follow-up full UI/UX check](gray-ui-full-review.md) covers populated conver
 accessible names, touch targets, short viewports, long labels and large balances, and fixes
 the remaining mobile conversation clipping and icon regressions.
 
+The 26 October privacy-flow refinement brings the on-demand Tor preview into the same visual
+system: warm studio lighting, Manrope hierarchy, fixed relief-icon geometry, a layered route
+illustration, rounded actions, four progress cards and restrained screen transitions. Restore
+the earlier “Make your connection private” headline and calmer explanatory tone, while every
+screen and the header identify the preview and unchanged direct connection. Keep main’s
+existing four-stage timing, optional entry, one-step dismissal, timer cancellation, focus
+behavior and lack of persisted connection choices. Never display a protected connection.
+
 ## Goal and authoritative sources
 
 Apply the complete latest web design from the existing local `codex/ux-ui-final` working
