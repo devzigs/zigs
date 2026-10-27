@@ -9,7 +9,8 @@
   "preview_urls": false,
   // The Solana beta: "1" serves web/sol (ZOLANA.md). The Helius Devnet URL is the secret
   // HELIUS_DEVNET_URL: set it with `wrangler secret put`, never here.
-  "vars": { "SOL": "1" },
+  // DEV_NO_AUTH "1": app.zigs.app asks no password (src/gate.js). Staging keeps its password.
+  "vars": { "SOL": "1", "DEV_NO_AUTH": "1" },
   "routes": [{ "pattern": "app.zigs.app", "custom_domain": true }],
   "assets": {
     "directory": "../web",
@@ -37,7 +38,7 @@
   "env": {
     "staging": {
       "name": "zec-frost-staging",
-      "vars": { "SOL": "1" },
+      "vars": { "SOL": "1", "DEV_NO_AUTH": "0" },
       "routes": [{ "pattern": "staging.zigs.app", "custom_domain": true }],
       "ratelimits": [
         { "name": "WS_PER_IP", "namespace_id": "1004", "simple": { "limit": 60, "period": 60 } },
