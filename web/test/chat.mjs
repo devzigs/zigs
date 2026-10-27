@@ -217,8 +217,8 @@ const invite = (name) => 'I made a shared wallet "' + name + '" on Zigs, a share
   + "testnet and Solana Devnet. You are one of 3 signers, and 2 must approve each payment.\n\n"
   + "1. Open this link on your phone or computer: " + LINK + "\nOpen the link in Safari or Chrome. "
   + "Do not open it in a chat app browser or a private window: they can delete your key.\n"
-  + "2. The browser asks for a user name and a password. Any user name works.\n3. Take a seat.\n"
-  + "4. Keep the page open until the wallet is ready.\n\nThis link is a secret. Do not post it in "
+  + "2. Take a seat.\n"
+  + "3. Keep the page open until the wallet is ready.\n\nThis link is a secret. Do not post it in "
   + "a public place. About Zigs: https://zigs.app";
 const joins = {
   "a full link": LINK,

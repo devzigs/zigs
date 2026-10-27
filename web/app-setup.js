@@ -6,7 +6,7 @@ import { mySeatSecrets, requireSetupProtection, sec } from "./app-keystore.js";
 import {
   allDone, allSeated, keysDiffer, localSeats, seatIds, seatMine, seatStage, STAGE_LABEL,
 } from "./app-seats.js";
-import { BROWSER_NOTE, inviteLink, PASSWORD_NOTE, senderNote } from "./app-links.js";
+import { BROWSER_NOTE, inviteLink, senderNote } from "./app-links.js";
 import { signedMode } from "./app-filter.js";
 import { act, avatar, copyBtn, el, guard, nameField, qrBox, seatLabel, secretQr } from "./app-dom.js";
 import {
@@ -569,8 +569,8 @@ function mismatchPart() {
 const NOT_ZIP2005 = "This wallet is not built to ZIP 2005. Funds cannot be recovered if quantum "
   + "computers break today's keys. Do you want to join with this device?";
 
-// The joiner passed the password already. A chat app browser or a private window can still lose
-// the key share, so the card says where to open the link before the seat is taken.
+// A chat app browser or a private window can lose the key share, so the card says where to open
+// the link before the seat is taken.
 const OPEN_HERE = "Is this page in the browser of a chat app or in a private window? Then open the "
   + "link in Safari or Chrome first. A chat app browser or a private window can delete your key "
   + "share.";
@@ -621,8 +621,9 @@ export const inviteMessage = (link) => "I made a shared wallet \"" + state.g.nam
     : "private shared wallet for shielded Zcash")
   + ". It has " + state.g.n + " devices. Any " + state.g.t + " of them must approve each "
   + "payment. Your device will be one of them."
-  + "\n\n1. Open this link on your phone or computer: " + link + "\n" + BROWSER_NOTE + "\n2. "
-  + PASSWORD_NOTE + "\n3. Protect this browser with a passkey (recommended), or choose Skip for now and confirm the warning. Then tap \"Join as device\".\n4. Keep the page open until the "
+  + "\n\n1. Open this link on your phone or computer: " + link + "\n" + BROWSER_NOTE
+  + "\n2. Protect this browser with a passkey (recommended), or choose Skip for now and confirm "
+  + "the warning. Then tap \"Join as device\".\n3. Keep the page open until the "
   + (solPlanned() ? "Zcash and the Solana parts are" : "wallet is") + " ready.\n\nThis link is a "
   + "secret. Do not post it in a public place. About Zigs: https://zigs.app";
 

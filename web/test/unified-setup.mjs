@@ -1531,18 +1531,15 @@ assert.match(inviteMessage(link), /a shared wallet for Zcash testnet and Solana 
 assert.doesNotMatch(inviteMessage(link), /shielded|private shared/, "Solana is not shielded");
 assert.match(inviteMessage(link), /until the Zcash and the Solana parts are ready/);
 assert.ok(inviteMessage(link).includes(link), "the invite still carries the link");
-// The password of the site and the browser (S10, owner decision D1), in every invite text. The
-// site asks for a user name too, and any user name works (cf/src/index.js).
-const PASSWORD = new RegExp("The browser asks for a user name and a password before Zigs opens\\. "
-  + "Use any user name\\. I send the password to you apart from this link\\.");
+// Every invite text says where to open the link. app.zigs.app asks no password, so no text
+// mentions one.
 const BROWSER = /Open the link in Safari or Chrome\. Do not open it in a chat app browser or a/;
 for (const text of [inviteMessage(link), plain.invite, chatMessage(link)]) {
-  assert.match(text, PASSWORD);
   assert.match(text, BROWSER);
+  assert.doesNotMatch(text, /password|user name/i);
 }
 // The invite cards of a wallet and of a chat say the same to the sender.
-const SENDER = new RegExp("asks for a user name and a password before Zigs opens\\. Any user name "
-  + "works\\. Send the password apart from the link\\. Tell "
+const SENDER = new RegExp("\\. Tell "
   + "(each person who joins|each person who opens it|your contact) to open the "
   + "link in Safari or Chrome\\. The browser of a chat app or a private window can delete the key");
 assert.match(pageText(), SENDER, "the invite card of a wallet");
@@ -1617,7 +1614,6 @@ assert.match(pageText(), /Private setup invitation2 devices to join/, "two open 
     const card = chatInviteCard(cid);
     assert.match(textOf(card), SENDER, "the invite card of a chat");
     hiddenLink(card, chatLink(cid), "the chat card", "Show link and QR code", "Copy chat link");
-    assert.match(textOf(card), /The browser of your contact asks/);
     const open = appState.state.cid;
     appState.state.cid = cid;
     try {

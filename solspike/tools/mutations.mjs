@@ -695,16 +695,17 @@ export const MUTATIONS = [
     /where to open the link/,
   ),
   program(
-    "W-pw-user",
-    "the invite message does not say that the site asks for a user name",
+    "W-no-password",
+    "the chat message asks for a password, which app.zigs.app does not ask",
     ["web/app-links.js",
-      "\"The browser asks for a user name and a password before Zigs opens. \"",
-      "\"The browser asks for a password before Zigs opens. \""],
+      "\" This link is a secret. Do not post it in a public place. \"",
+      "\" The browser asks for a password. This link is a secret. Do not post it in a public \""
+      + " + \"place. \""],
     UNIFIED,
-    /user name and a password before Zigs opens/,
+    /password\|user name/,
   ),
   program(
-    "W-pw-wallet-card",
+    "W-sender-wallet-card",
     "the invite card of a wallet has no note for the sender",
     ["web/app-setup.js",
       "\n      + senderNote(\"each person who joins\")",
@@ -713,7 +714,7 @@ export const MUTATIONS = [
     /the invite card of a wallet/,
   ),
   program(
-    "W-pw-chat-card",
+    "W-sender-chat-card",
     "the invite card of a chat has no note for the sender",
     ["web/app-thread.js",
       "      + senderNote(\"your contact\")),",

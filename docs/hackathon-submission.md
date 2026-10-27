@@ -69,17 +69,16 @@ Sources of each claim:
 
 ## 4. Judge access
 
-Put this in the sealed part of the form:
+Put this in the form:
 
 ```text
 Demo: https://app.zigs.app
-Password: <owner fills in>
-The browser asks for a user name and a password. Any user name works.
+No password and no account: the app opens in a desktop browser.
 ```
 
 Try it alone, from one desktop browser (the README has every step):
 
-1. Open https://app.zigs.app and enter the password. Click **Set up a wallet**, then **Set up my
+1. Open https://app.zigs.app. Click **Set up a wallet**, then **Set up my
    wallet**. Open **Advanced approval rule**, set **Devices** to 2 and **Approvals needed** to 2,
    tick the box under the warning and click **Next**. Keep **Also set up Solana Devnet** ticked.
    Click **Review wallet**, then **Create wallet**.
@@ -93,8 +92,8 @@ Try it alone, from one desktop browser (the README has every step):
 
 ## 5. Video script: 2 minutes
 
-Record only the browser window, in a clean profile, with no menu bar, notifications, real names or
-password prompt (docs/demo.md section 3, "First recording"). The scenes follow section 4 of
+Record only the browser window, in a clean profile, with no menu bar, notifications or real names
+(docs/demo.md section 3, "First recording"). The scenes follow section 4 of
 docs/demo.md, cut to 2:00. **Prepared** marks a scene that needs the funded wallets of
 docs/demo.md section 3 (Demo A, Payee, the fee addresses and Add SOL) before the recording.
 
@@ -110,7 +109,7 @@ docs/demo.md section 3 (Demo A, Payee, the fee addresses and Add SOL) before the
 | 1:40 | The card **Local proving** | "By default the hosted prover of Helius sees each Solana spend. With local proving on, the proof runs on the device." | |
 | 1:50 | The README and the repository | "Testnet and Devnet only, not audited, open source under AGPL-3.0." | |
 
-Do not show the password prompt, a real name, the seed of an account or a backup passphrase.
+Do not show a real name, the seed of an account or a backup passphrase.
 
 ## 6. Owner checklist
 
@@ -120,8 +119,7 @@ Do not show the password prompt, a real name, the seed of an account or a backup
 3. Pick the track: Cross-Chain or Shielded Payments (section 2).
 4. Prepare the wallets of docs/demo.md section 3, record the video of section 5, upload it, and
    keep its URL.
-5. Paste the description of section 3, the repository URL, the demo URL, the video URL and the
-   sealed password.
+5. Paste the description of section 3, the repository URL, the demo URL and the video URL.
 6. The day before the deadline, run `sh solspike/demo-check.sh` and fix every FAIL. The judges use
    app.zigs.app.
 7. Submit before 28 October 2026, 23:59 UTC.

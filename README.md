@@ -6,8 +6,7 @@ read the wallet. On chain a payment has the shape of a shielded payment from a s
 except for its one-day expiry, which can mark it as a Zigs payment. So can a priority fee, when the
 proposer chooses one ([comparison](PRIVACY.md#on-chain)).
 
-- Web app: https://app.zigs.app (no install, no account). Until launch, the browser asks for a
-  user name and a password. Any user name works. Ask the Zigs team for the password.
+- Web app: https://app.zigs.app (no install, no account, no password).
 - iPhone and Mac apps: in [`ios/`](ios). They use the same Rust engine. Build them from source in Xcode.
   They are not part of this release: the demo and the judge walkthrough use the web app.
 - Website: https://zigs.app
@@ -69,8 +68,7 @@ coin. The runbook of a demo with three devices is in [docs/demo.md](docs/demo.md
 
 **Zcash testnet**
 
-1. Open https://app.zigs.app. The browser asks for a user name and a password. Type any user name
-   and the password that the Zigs team gave you.
+1. Open https://app.zigs.app.
 2. Click **Set up a wallet**, then **Set up my wallet**. Open **Advanced approval rule**, set
    **Devices** to 2 and **Approvals needed** to 2, tick the box under the warning, and click
    **Next**. The network is **Testnet**, the only choice. Keep **Also set up Solana Devnet**
@@ -90,7 +88,7 @@ coin. The runbook of a demo with three devices is in [docs/demo.md](docs/demo.md
    - Or paste the address at [fauzec.com](https://fauzec.com/), a second testnet faucet. The site
      says it pays 1 TAZ to a `utest1…` address once every 24 hours, after a human check. It is
      not Zigs either: it sees the address and your IP address. Nobody has tested it with Zigs yet.
-   - Or ask the Zigs team for test coins, in the same way that you got the password.
+   - Or ask the Zigs team for test coins.
    - A Zigs address has one shielded receiver and no transparent (`tm…`) or Sapling receiver. So a
      faucet that pays only `tm…` or Sapling addresses cannot fund it.
 5. Click **Send**, paste any testnet unified address (`utest1…`), enter an amount, and click
@@ -455,7 +453,7 @@ key. For local development, add it to `cf/.dev.vars`, which Git ignores:
 echo 'HELIUS_DEVNET_URL=<your Helius Devnet URL>' >> .dev.vars
 ```
 
-The Worker gives this URL to the page at `/sol/config.json`, behind the password gate. Without it,
+The Worker gives this URL to the page at `/sol/config.json`. Without it,
 the Solana tab says "Solana is not available on this server". The key must accept the origin of the
 page (`http://localhost:8787` here, `https://app.zigs.app` on the server): set Allowed Domains at
 Helius for the deployed key. On the server, set the secret with
@@ -476,9 +474,8 @@ of `t` devices, and then a device with a funded fee address executes it.
 
 Open http://localhost:8787. To act as a second person on the same computer, also open
 http://127.0.0.1:8787: it is a separate origin, so it has separate storage. Deploy production
-with `npx wrangler deploy --env=""` in `cf/` (the top level of `cf/wrangler.jsonc`). Until launch,
-the live app asks for one shared password: set it with `npx wrangler secret put APP_PASSWORD
---env=""`. Without that secret, the app refuses every request.
+with `npx wrangler deploy --env=""` in `cf/` (the top level of `cf/wrangler.jsonc`). The live app
+asks no password: the top level sets `DEV_NO_AUTH` to `"1"`.
 
 A staging copy runs at https://staging.zigs.app, with its own Worker, Durable Object data and
 password (`env.staging` in `cf/wrangler.jsonc`). After each merge, `sh scripts/deploy-staging.sh`
@@ -539,7 +536,8 @@ open Zigs.xcodeproj
 ```
 
 Use the `Zigs` scheme for iPhone and `ZigsMac` for Mac (Apple silicon). The apps connect to
-`https://app.zigs.app`; change the server and enter its password in Settings. They join wallets
+`https://app.zigs.app`, which asks no password. To use another server, change it and enter its
+password in Settings. They join wallets
 from web invite links or `zigs://join#<wallet-id>.<secret>`, and they sit in the same wallets as
 browsers.
 
