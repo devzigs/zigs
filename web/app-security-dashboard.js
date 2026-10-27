@@ -1,6 +1,6 @@
 // Security presentation. All operations are supplied existing application handlers.
 import { el } from "./app-dom.js";
-import { icon } from "./app-icons.js";
+import { icon, sculptedIcon } from "./app-icons.js";
 import { deriveSecurityDashboard, recoveryFileStatus, signerRecoveryStatus } from "./security-dashboard-model.js";
 
 const CHAIN = { zec: "Zcash", sol: "Solana" };
@@ -59,7 +59,7 @@ function securityOverview(f, m, primary) {
   return el("section", { class: "security-overview", "aria-labelledby": "wallet-security-title" },
     el("div", { class: "security-overview-head" },
       el("div", { class: "security-overview-title" },
-        el("span", { class: "security-emblem", "aria-hidden": "true" }, icon("security")),
+        el("span", { class: "security-emblem", "aria-hidden": "true" }, sculptedIcon("security")),
         el("h3", { id: "wallet-security-title" }, "Wallet security")),
       badge(m.label, m.tone)),
     el("dl", { class: "security-metrics" },
@@ -115,7 +115,7 @@ function signerRow(s, f, actions) {
             : s.local ? "This browser" : s.joined ? "Location unknown" : "Not joined")),
           el("span", { class: "security-signer-chains" }, "Zcash" + (s.sol ? " · Solana" : ""))),
         el("span", { class: "security-details-link" }, el("span", { class: "security-details-closed" }, "View details"),
-          el("span", { class: "security-details-open" }, "Hide details"), el("span", { "aria-hidden": "true" }, "⌄"))),
+          el("span", { class: "security-details-open" }, "Hide details"), el("span", { "aria-hidden": "true" }, icon("chevronDown")))),
       el("div", { class: "security-signer-body" },
         el("dl", { class: "security-signer-facts" },
           fact("Device label", s.label || "No label supplied"),

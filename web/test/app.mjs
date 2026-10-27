@@ -1238,7 +1238,7 @@ const sealed = (gid, rel, seat, fields, key, names = ["by", "sig"]) =>
   assert.equal(Z.blockSpanSeconds("mainnet", 3500000, 3500010), 750, "75 seconds before NU7");
   assert.equal(Z.blockSpanSeconds("testnet", 4500000, 4500010), 250, "25 seconds after NU7");
 
-  // "Propose this" fills the Send form and writes nothing. A form made for one wallet is dropped
+  // "Review in Send" fills the Send form and writes nothing. A form made for one wallet is dropped
   // when another wallet opens.
   const other = "utest1m6h0x5p0ryej3e4raszk99rz3k3gxzj35j7ypw3mm98uxmxt3x7mnmu22cprpl7rls4cc5k"
     + "xzvhqxju6pp4rxsw6ajnkm0d4egf4yrjx";
@@ -1276,7 +1276,7 @@ const sealed = (gid, rel, seat, fields, key, names = ["by", "sig"]) =>
   t.proposeRequest(one, { name: "Alice (device 2)", verdict: "yes" }, gid);
   assert.deepEqual(t.ui.pay.map(({ to, amt, memo: m }) => ({ to, amt, m })),
     [{ to: other, amt: "1.5", m: "October rent" }]);
-  assert.equal(JSON.stringify([...data]), saved, "Propose this writes nothing to the store");
+  assert.equal(JSON.stringify([...data]), saved, "Review in Send writes nothing to the store");
   t.proposeRequest(one, { name: "You (device 1)", verdict: "yes", mine: true }, gid);
   assert.equal(t.ui.note, "Request from the proposer", "an approver is not \"You\"");
   const roomName = t.groupName(gid);
@@ -1396,25 +1396,25 @@ const sealed = (gid, rel, seat, fields, key, names = ["by", "sig"]) =>
     assert.match(textOf(c), /^Payment request1\.00ZEC/);
     assert.match(textOf(c), /FromAlice \(device 2\) · ✓ Device signature matches/);
     assert.deepEqual(callouts(c), [], "a verified sender gets no warning");
-    assert.equal(named(c, "button", "Propose this").attrs.disabled, undefined);
-    named(c, "button", "Propose this").on.click();
+    assert.equal(named(c, "button", "Review in Send").attrs.disabled, undefined);
+    named(c, "button", "Review in Send").on.click();
     assert.deepEqual([t.ui.send, t.ui.note, t.ui.pay[0].amt],
       [true, "Request from Alice (device 2)", "1"]);
     for (const verdict of ["no", "changed", "unknown"]) {
       c = card(okReq, verdict);
       assert.match(callouts(c)[0], /Check this request with the sender before you pay\./, verdict);
-      assert.equal(named(c, "button", "Propose this").attrs.disabled, undefined,
+      assert.equal(named(c, "button", "Review in Send").attrs.disabled, undefined,
         "the person decides");
-      named(c, "button", "Propose this").on.click();
+      named(c, "button", "Review in Send").on.click();
       assert.equal(t.ui.note, "Request from an unverified sender",
         "the name of a sender that is not verified stays out of the note: " + verdict);
     }
     c = card(okReq, "memo", false, "a memo");
-    named(c, "button", "Propose this").on.click();
+    named(c, "button", "Review in Send").on.click();
     assert.equal(t.ui.note, "Request from a memo");
     c = card(okReq, "wait");
     assert.deepEqual(callouts(c), []);
-    assert.equal(named(c, "button", "Propose this").attrs.disabled, "");
+    assert.equal(named(c, "button", "Review in Send").attrs.disabled, "");
     assert.match(textOf(c), /Wait until the app has checked the sender\./);
     c = card(okReq, "memo", false, "a memo");
     assert.match(textOf(c), /Froma memo · Not verified/);
@@ -1436,7 +1436,7 @@ const sealed = (gid, rel, seat, fields, key, names = ["by", "sig"]) =>
       .includes("not checked"), false, "no claim, no note");
     c = card(badReq, "yes");
     assert.match(textOf(c), /This request cannot be used\. This is not a valid ZIP 321 request\./);
-    assert.equal(named(c, "button", "Propose this"), undefined,
+    assert.equal(named(c, "button", "Review in Send"), undefined,
       "an unusable request has no button");
     // The warning of a refused request in a wallet that reads the other network.
     c = card(t.requestOf(`zcash:${mainAddr}`, false), "yes");
@@ -1448,12 +1448,12 @@ const sealed = (gid, rel, seat, fields, key, names = ["by", "sig"]) =>
     assert.equal(all(c, (x) => x.tag === "option").map(textOf).join(), "Team (Testnet)");
     assert.match(textOf(c), /Payment requestTestnet/, "a chat card names the network");
     t.ui.send = false;
-    named(c, "button", "Propose this").on.click();
+    named(c, "button", "Review in Send").on.click();
     assert.deepEqual([t.ui.send, t.ui.sendFor], [true, gid]);
     t.state.groups = [];
     c = card(chatReq, "yes", true);
     assert.match(textOf(c), /This browser holds no device of a testnet wallet\./);
-    assert.equal(named(c, "button", "Propose this").attrs.disabled, "");
+    assert.equal(named(c, "button", "Review in Send").attrs.disabled, "");
     // Mainnet is off (M1): a chat reads a mainnet request as one for testnet, and refuses it.
     c = card(t.requestOf(`zcash:${mainAddr}`, true), "yes", true);
     assert.match(textOf(c), /Payee 1: the address is not a testnet address\./);
@@ -1465,7 +1465,7 @@ const sealed = (gid, rel, seat, fields, key, names = ["by", "sig"]) =>
     assert.equal(all(dialog, (x) => x.attrs.id === "s-note")[0].attrs.value, "Request from Alice");
     // The invite link carries the key that seals the note, so the form does not say "only".
     assert.match(textOf(dialog),
-      /Encrypted\. The devices of this wallet, and anyone else who has the invite link, can read/,
+      /Encrypted and separate from the recipient memo\. This wallet’s devices and anyone with its invite link can read it/,
       "the note hint names the holder of the invite link");
     assert.doesNotMatch(textOf(dialog), /Only the devices of this wallet can read it/);
 
@@ -1542,7 +1542,7 @@ const sealed = (gid, rel, seat, fields, key, names = ["by", "sig"]) =>
     assert.deepEqual(optionsOf(c2), ["Savings (Testnet)"], "Team is paid by this request");
     c2 = picks(`zcash:${other}?amount=1`, true);
     assert.deepEqual(optionsOf(c2), ["Team (Testnet)", "Savings (Testnet)"]);
-    assert.equal(named(c2, "button", "Propose this").attrs.disabled, undefined);
+    assert.equal(named(c2, "button", "Review in Send").attrs.disabled, undefined);
     const both = `zcash:?address=${addr}&amount=1&address.1=${third}&amount.1=1`;
     for (const groups of [[team, savings, treasury], [team]]) {
       t.state.groups = groups;
@@ -1550,7 +1550,7 @@ const sealed = (gid, rel, seat, fields, key, names = ["by", "sig"]) =>
         if (groups.length === 3 && uri !== both) continue;
         c2 = picks(uri, true);
         assert.deepEqual(optionsOf(c2), [], "no wallet is left");
-        assert.equal(named(c2, "button", "Propose this").attrs.disabled, "");
+        assert.equal(named(c2, "button", "Review in Send").attrs.disabled, "");
         assert.match(textOf(c2), /A wallet cannot pay itself\./);
       }
     }
@@ -1558,13 +1558,13 @@ const sealed = (gid, rel, seat, fields, key, names = ["by", "sig"]) =>
     // In a room, the open wallet proposes, unless the request pays it.
     c2 = picks(`zcash:${other}?amount=1`, false);
     assert.deepEqual(optionsOf(c2), [], "no picker");
-    assert.equal(named(c2, "button", "Propose this").attrs.disabled, undefined);
+    assert.equal(named(c2, "button", "Review in Send").attrs.disabled, undefined);
     c2 = picks(`zcash:${addr}?amount=1`, false);
     assert.deepEqual(optionsOf(c2), ["Savings (Testnet)"], "another wallet proposes it");
-    assert.equal(named(c2, "button", "Propose this").attrs.disabled, undefined);
+    assert.equal(named(c2, "button", "Review in Send").attrs.disabled, undefined);
     t.state.groups = [team];
     c2 = picks(`zcash:${addr}?amount=1`, false);
-    assert.equal(named(c2, "button", "Propose this").attrs.disabled, "");
+    assert.equal(named(c2, "button", "Review in Send").attrs.disabled, "");
     assert.match(textOf(c2), /A wallet cannot pay itself\./);
     t.state.groups = [team, savings, treasury];
 
@@ -1860,7 +1860,7 @@ const sealed = (gid, rel, seat, fields, key, names = ["by", "sig"]) =>
           + "the new wallet and each later write from the group server\\. The server also accepts "
           + "writes from it, so the device can stop the new wallet with false documents\\."),
         "the review says what a device left out later keeps");
-        assert.ok(named(shown, "button", "Propose payment"), "a match can be proposed");
+        assert.ok(named(shown, "button", "Request approvals"), "a match can be proposed");
         const headOf = (d) => textOf(all(d, (x) => x.className === "card-head")[0].kids[0]);
         const testnetG = t.state.g, testnetShown = [headOf(shown), textOf(shown)];
         t.state.g = { ...testnetG, network: "mainnet" };
@@ -1932,7 +1932,7 @@ const sealed = (gid, rel, seat, fields, key, names = ["by", "sig"]) =>
         Object.assign(t.ui, { send: true, pay: null, after: { pczt: "EXP1" } });
         const again = drawn();
         globalThis.document = realDocument;
-        assert.ok(named(again, "button", "Propose payment"), "Propose again: the form");
+        assert.ok(named(again, "button", "Request approvals"), "Propose again: the form");
         Object.assign(t.ui, { send: false, pay: null, after: null });
         // The checks of Send run again at Propose: here the funds went meanwhile. A review of
         // another wallet goes nowhere either.
@@ -1959,7 +1959,7 @@ const sealed = (gid, rel, seat, fields, key, names = ["by", "sig"]) =>
         Object.assign(t.ui, { send: true, sendReview: { prep, note: "x" }, sendError: "",
           sendNoticed: "" });
         const bannerNow = t.banner;
-        const failedPress = await press(named(drawn(), "button", "Propose payment"), true);
+        const failedPress = await press(named(drawn(), "button", "Request approvals"), true);
         assert.deepEqual(failedPress.focus, { key: "send-error", force: true },
           "a failed Propose takes the focus to its notice");
         assert.equal(t.banner, bannerNow, "the banner shows nothing new");
@@ -1967,14 +1967,14 @@ const sealed = (gid, rel, seat, fields, key, names = ["by", "sig"]) =>
         assert.deepEqual(all(failedPress.dialog, (x) => x.attrs?.id === "send-error")
           .map((x) => x.attrs.role), ["alert"], "the notice of the review is an alert");
         const failedReview = drawn();
-        assert.ok(named(failedReview, "button", "Propose payment"), "the review stays");
+        assert.ok(named(failedReview, "button", "Request approvals"), "the review stays");
         await press(named(failedReview, "button", "Back to edit"));
         assert.deepEqual([t.ui.sendReview, t.ui.sendError], [null, ""], "Back to edit");
         t.setChain(funded);
         const stale = { prep: { ...prep, at: prep.at - 5 * 60 * 1000 }, note: "old" };
         Object.assign(t.ui, { send: true, sendReview: stale, pay: null, sendError: "",
           sendNoticed: "" });
-        const stalePress = await press(named(drawn(), "button", "Propose payment"), true);
+        const stalePress = await press(named(drawn(), "button", "Request approvals"), true);
         const staleFocus = stalePress.focus, staleForm = stalePress.dialog;
         assert.equal(t.ui.sendReview, null, "a stale review is dropped");
         assert.deepEqual(alertsIn(staleForm),
@@ -1991,7 +1991,7 @@ const sealed = (gid, rel, seat, fields, key, names = ["by", "sig"]) =>
         const reviewOpen = drawn();
         t.ui.send = false;
         const closedBanner = t.banner;
-        await press(named(reviewOpen, "button", "Propose payment"));
+        await press(named(reviewOpen, "button", "Request approvals"));
         assert.notEqual(t.banner, closedBanner, "a closed dialog sends the error to the banner");
         assert.equal(t.banner.kind, "bad");
         assert.equal(t.ui.sendError, "", "and an action starts with no old error");
@@ -2007,7 +2007,7 @@ const sealed = (gid, rel, seat, fields, key, names = ["by", "sig"]) =>
         assert.match(textOf(odd), /does not match the form/, "a decode that differs");
         assert.doesNotMatch(textOf(odd), /Leaves the wallet|Network fee/,
           "no total that the decode did not confirm");
-        assert.equal(named(odd, "button", "Propose payment"), undefined, "and no Propose");
+        assert.equal(named(odd, "button", "Request approvals"), undefined, "and no Propose");
         await assert.rejects(t.proposeReviewed(t.ui.sendReview), /does not match the form/,
           "nor a Propose by another path");
         const before = t.state.sessions.length;
@@ -2243,7 +2243,8 @@ const sealed = (gid, rel, seat, fields, key, names = ["by", "sig"]) =>
       assert.doesNotMatch(moveDialogText(), /Solana part/,
         "the move dialog has no Solana sentence without a Solana part");
       t.signPins[solKey] = "testnet";
-      assert.match(moveDialogText(), new RegExp("this needs \\d+ approvals\\. If this wallet has a "
+      assert.match(moveDialogText(), new RegExp("This requests \\d+ approvals; it does not move "
+        + "funds yet\\. If this wallet has a "
         + "Solana part, it does not move this way: check it in its Solana section\\."),
       "the move dialog says that a Solana part does not move this way");
       Object.assign(t.ui, { send: false, sendMove: null });
@@ -2492,7 +2493,7 @@ const sealed = (gid, rel, seat, fields, key, names = ["by", "sig"]) =>
       const moveTexts2 = all(moveForm, (x) => x.tag === "p").map(textOf);
       assert.ok(moveTexts2.includes(MOVE_NOW_NOTE) && moveTexts2.includes(MOVE_LATER_NOTE),
         "the move after an expired one says who can read the payment");
-      await quiet(() => named(moveForm, "button", "Propose the move").on.click(
+      await quiet(() => named(moveForm, "button", "Request move approvals").on.click(
         { type: "click", preventDefault() {}, currentTarget: null }));
       assert.equal(asked.find((x) => x[0] === "spend")?.[3], "PA",
         "the move after an expired one spends its notes: createSpend gets the old PCZT");
@@ -2794,10 +2795,13 @@ const sealed = (gid, rel, seat, fields, key, names = ["by", "sig"]) =>
         + "priority fee, so a priority fee can mark a payment too\\."));
       const sendStepOf = (ss) => all(t.sessionLayer(ss), (x) => /^step /.test(x.className ?? "")
         && textOf(x).includes("Sent to the network"))[0];
-      assert.match(textOf(sendStepOf(landedA)), new RegExp("View in explorer ↗View in explorer "
+      assert.match(textOf(sendStepOf(landedA)), new RegExp("View in explorerView in explorer "
         + "opens testnet\\.zecblock\\.com in a new tab\\. That site is not Zigs: it sees the "
         + "transaction id that you open and your IP address\\."),
       "the explorer note sits next to its link");
+      assert.ok(all(sendStepOf(landedA), (x) => x.attrs?.["data-icon"] === "external"
+        && x.attrs?.["aria-hidden"] === "true").length,
+      "the explorer link has a decorative SVG instead of a spoken arrow character");
       const seesOf = (ss) => all(t.sessionLayer(ss), (x) => x.tag === "div"
         && textOf(x).startsWith("What the chain sees"))[0];
       assert.doesNotMatch(textOf(seesOf(landedA)), /View in explorer opens/,
@@ -3443,19 +3447,19 @@ const sealed = (gid, rel, seat, fields, key, names = ["by", "sig"]) =>
         "a move has no priority fee and no memo");
       // The button is off with its reason while a proposal runs.
       t.ui.proposing = true;
-      const offMove = t.sendDialog(), offButton = named(offMove, "button", "Propose the move");
+      const offMove = t.sendDialog(), offButton = named(offMove, "button", "Request move approvals");
       assert.deepEqual([offButton.attrs.disabled, offButton.attrs["aria-describedby"],
         textOf(all(offMove, (x) => x.attrs?.id === "why-move")[0])],
       ["", "why-move", t.sendBlocker()], "the move button is off, and says why");
       t.ui.proposing = false;
-      assert.equal(named(t.sendDialog(), "button", "Propose the move").attrs.disabled, undefined,
+      assert.equal(named(t.sendDialog(), "button", "Request move approvals").attrs.disabled, undefined,
         "and on again after it");
       // A move that fails shows its error in the dialog, which stays open and takes the focus.
       const engineSpend = engine.createSpend;
       engine.createSpend = async () => { throw new Error("The engine refuses this move."); };
       Object.assign(t.ui, { sendError: "", sendNoticed: "" });
       const bannerMove = t.banner;
-      const refusedMove = await pressMove(named(confirm, "button", "Propose the move"));
+      const refusedMove = await pressMove(named(confirm, "button", "Request move approvals"));
       engine.createSpend = engineSpend;
       assert.deepEqual(refusedMove.focus, { key: "send-error", force: true },
         "a failed move takes the focus to its notice");
@@ -3466,7 +3470,7 @@ const sealed = (gid, rel, seat, fields, key, names = ["by", "sig"]) =>
       assert.equal(asked.some((x) => x[0] === "spend"), false, "nothing was proposed");
       // The funds change after the dialog drew: the move does not go out with another amount.
       mc.bal.max_send = 60000;
-      const changed = await pressMove(named(confirm, "button", "Propose the move"));
+      const changed = await pressMove(named(confirm, "button", "Request move approvals"));
       assert.equal(t.ui.sendError, "The funds to move changed. Check the new amount, then propose "
         + "again.", "a move of other funds than the dialog shows is not proposed");
       assert.equal(asked.some((x) => x[0] === "spend"), false, "the engine makes nothing then");
@@ -3475,7 +3479,7 @@ const sealed = (gid, rel, seat, fields, key, names = ["by", "sig"]) =>
       mc.bal.max_send = 50000;
       const moveDocsBefore = new Set(data.keys());
       const sureMove = t.sendDialog();
-      await quiet(() => named(sureMove, "button", "Propose the move").on.click(click));
+      await quiet(() => named(sureMove, "button", "Request move approvals").on.click(click));
       const moveCall = asked.find((x) => x[0] === "spend");
       assert.ok(moveCall, "the move is proposed");
       assert.deepEqual([JSON.parse(moveCall[1]), moveCall[2]], [[{ to: "utest1m", amount: 50000 }],
@@ -4500,16 +4504,16 @@ const sealed = (gid, rel, seat, fields, key, names = ["by", "sig"]) =>
           .map((re) => idOf(re)(d, n).attrs.id);
         form = rowsOf([OTHER, "0.1", "rent"], [OTHER, "0.2"]);
         assert.deepEqual(fieldIds(form).map((id) => captionOf(form, id)),
-          ["Recipient address or ZNS name 1", "Amount · ZEC", "Memo (optional)"],
+          ["Recipient address or ZNS name 1", "Amount · ZEC", "Recipient memo (optional)"],
           "each field of a recipient has its caption");
         assert.deepEqual(fieldIds(form, 1).map((id) => idOf(new RegExp("^" + id + "$"))(form)
           .attrs["aria-label"]), ["Recipient address or ZNS name 2", "Amount · ZEC 2",
-          "Memo (optional) 2"], "each recipient has its own name");
+          "Recipient memo (optional) 2"], "each recipient has its own name");
         assert.match(textOf(form), /2 recipients, one transaction/);
         form = rowsOf([""]);
         assert.deepEqual(fieldIds(form).map((id) => [captionOf(form, id),
           idOf(new RegExp("^" + id + "$"))(form).attrs["aria-label"]]),
-        [["Recipient address or ZNS name"], ["Amount · ZEC"], ["Memo (optional)"]]
+        [["Recipient address or ZNS name"], ["Amount · ZEC"], ["Recipient memo (optional)"]]
           .map(([c]) => [c, c]));
         assert.doesNotMatch(textOf(form), /To and amount/, "the labels say it");
 
@@ -6171,7 +6175,7 @@ const sealed = (gid, rel, seat, fields, key, names = ["by", "sig"]) =>
         // Its only explorer link is a sent message that a block holds (S2).
         t.personal.sent = sent.filter((r) => r.txid === "S2");
         const sentOnly = textOf(t.contactView());
-        assert.match(sentOnly, /View transaction ↗/);
+        assert.match(sentOnly, /View transaction/);
         assert.match(sentOnly, /View transaction opens testnet\.zecblock\.com/,
           "a chat whose only links are sent messages has the explorer note");
       } finally {
@@ -6257,7 +6261,8 @@ const sealed = (gid, rel, seat, fields, key, names = ["by", "sig"]) =>
     const card = () => t.accountCard();
     t.state.groups = [];
     let c = card();
-    assert.match(textOf(c), /Back up the account\./);
+    assert.doesNotMatch(textOf(c), /Back up the account\. This browser can forget it/);
+    assert.ok(named(c, "button", "Back up account"), "account actions retain manual backup");
     assert.match(textOf(c), /Public address/);
     assert.match(textOf(c), /Fund the account/);
     assert.match(textOf(c), /This browser holds no device of a testnet wallet\./);
@@ -6377,8 +6382,6 @@ const sealed = (gid, rel, seat, fields, key, names = ["by", "sig"]) =>
     // the iPhone and Mac apps. Only the restore error of an old file names the change.
     const CHANGED = /backup format changed on 16 October 2026|iPhone and Mac apps/;
     assert.doesNotMatch(textOf(t.backupDialog()), CHANGED);
-    assert.doesNotMatch(textOf(t.backupNote([2])), CHANGED);
-    assert.match(textOf(t.backupNote([2])), /Back up your key share/);
     t.ui.backup = { personal: true, made: false, busy: false };
     const backup = textOf(t.backupDialog());
     assert.match(backup, /Back up the personal account.*opens the backup of your personal account/);

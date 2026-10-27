@@ -8,10 +8,10 @@
 .setup-plan-progress { padding:0; border:0; }
 .setup-plan-progress>ol { gap:8px; }
 .setup-plan-progress li { min-height:44px; padding:6px 8px; }
-.guided-plan .guide-step { gap:12px; padding:16px; }
+.guided-plan .guide-step { gap:10px; padding:16px; }
 .guided-plan .guide-step>h3 { font:var(--font-page); line-height:1.25; }
-.guided-plan .dialog-actions { padding-block:12px; border:0; bottom:-20px;
-  max-height:40dvh; overflow-y:auto; }
+.guided-plan .setup-plan-actions { position:static; padding:8px 0 0; border:0;
+  background:transparent; max-height:none; overflow:visible; }
 .shell:has(.guided-setup)>.main { padding:16px 24px; }
 .guided-setup { max-width:1040px; gap:14px; }
 .guided-header { gap:12px; align-items:center; }
@@ -125,7 +125,7 @@
 .setup-device-visual .security-group-label { margin-bottom:8px; }
 .setup-device-visual .security-rule { padding-top:8px; }
 .setup-device-fields { gap:12px; }
-.setup-device-fields>.field { gap:4px; }
+.setup-device-fields>.field { gap:4px; align-content:start; }
 .setup-device-fields>p { line-height:1.45; }
 .setup-device-fields>p:last-child { margin:0; }
 .threshold-controls { gap:12px; }
@@ -148,7 +148,7 @@
 .setup-network-choice { align-items:stretch; }
 .setup-network-choice .net-pick { display:grid; grid-template-rows:auto 1fr; min-width:0; }
 .setup-network-choice .net-pick>.two { height:100%; }
-.setup-network-choice .net-opt { min-height:92px; height:100%; padding:12px; align-content:center;
+.setup-network-choice .net-opt { min-height:72px; height:100%; padding:12px; align-content:center;
   display:grid; gap:4px; }
 .setup-network-choice .net-opt>span { margin:0; }
 .setup-network-choice .net-opt b,.setup-network-choice .net-opt strong { font-size:14px; }
@@ -277,6 +277,12 @@
 .setup-recovery-details { border-top:1px solid var(--line); }
 .setup-recovery-details[open] { display:grid; gap:12px; }
 
+/* Short desktop windows keep the complete setup step and navigation in view. */
+@media(min-width:900px) and (max-height:800px) {
+  .dialog.guided-plan { padding-block:12px; }
+  .guided-plan .guide-step { padding-block:12px; }
+  .setup-device-fields { gap:8px; }
+}
 @media(max-width:899px) {
   .setup-two-columns,.setup-review-columns,.threshold-layout,.setup-protection-layout,
   .setup-device-layout { grid-template-columns:minmax(0,1fr); gap:16px; }
@@ -298,7 +304,6 @@
   .dialog.guided-plan { padding:12px 16px; gap:8px; }
   .guided-plan .guide-step { padding:16px; }
   .guided-plan .guide-step>h3 { font-size:24px; }
-  .guided-plan .dialog-actions { bottom:-12px; padding-bottom:calc(12px + env(safe-area-inset-bottom)); }
   .shell:has(.guided-setup)>.main { padding:16px; }
   .guided-header h1 { font-size:20px; }
   .guided-header .label { display:none; }

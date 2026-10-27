@@ -1,4 +1,5 @@
 // Receive and send dialogs.
+import { icon } from "./app-icons.js";
 import {
   MEMO_BYTES, memoBytes, memoError, parsePayeeList, toZat, zatText,
 } from "./payees.js";
@@ -28,7 +29,6 @@ import { recipientSelect } from "./app-recipients.js";
 import { securityExplanation } from "./app-tutorial.js";
 import { privacyNotice, ZEC_EXPOSURE } from "./privacy-language.js";
 import { walletAvatarFor } from "./app-wallet-identity.js";
-import { walletMark } from "./app-wallet-art.js";
 
 const MAX_PAYEES = 20;
 const TOO_MANY = "A payment can have at most " + MAX_PAYEES + " recipients.";
@@ -46,11 +46,11 @@ export function receiveDialog() {
   const w = state.wallet, hidden = addrHidden(), net = "Zcash " + curNet().label;
   const close = el("button", {
     class: "icon-btn", type: "button", "aria-label": "Close",
+    "data-first-focus": "",
     onclick: () => { ui.receive = false; render(); },
-  }, "×");
+  }, icon("close"));
   const title = dialogTitle("recv-title", "Receive ZEC", net);
   const copy = copyBtn(w.address, "Copy address", "btn primary");
-  copy.setAttribute("data-first-focus", "");
   // A moved wallet leads with its moved note: senders must use the address of the new wallet.
   const moved = !!state.g.movedTo;
   const address = hidden ? [] : [moved ? null : sendOnly(net),
@@ -58,12 +58,12 @@ export function receiveDialog() {
   return el("div", {
     class: "dialog", role: "dialog", "aria-modal": "true", "aria-labelledby": "recv-title",
   }, el("div", { class: "card-head" }, title, close),
-  el("div", { class: "wallet-receive-art" }, walletMark(state.g, 96)), receiveLead(hidden, moved),
+  receiveLead(hidden, moved), ...address,
+  hidden ? null : el("div", { class: "dialog-actions" }, moved ? null : shareBtn(w.address), copy),
   privacyNotice(el, hidden || moved ? "unknown" : "shielded",
     hidden || moved ? "Address unavailable" : "Shielded · Zcash " + curNet().label,
-    ZEC_EXPOSURE), ...address,
-  securityExplanation("receive"),
-  hidden ? null : el("div", { class: "dialog-actions" }, moved ? null : shareBtn(w.address), copy));
+    ZEC_EXPOSURE),
+  securityExplanation("receive"));
 }
 
 // What the dialog says above the address: the move, the cap, why the address is not shown yet,
@@ -85,7 +85,7 @@ function receiveLead(hidden, moved) {
 function sendOnly(net) {
   const faucet = curNet().faucet ? [" Get free testnet ZEC from a ", el("a", {
     href: curNet().faucet, target: "_blank", rel: "noopener", style: "white-space:nowrap",
-  }, "faucet ↗"), ". " + FAUCET_TEXT] : [];
+  }, "faucet", icon("external")), ". " + FAUCET_TEXT] : [];
   return el("div", { class: "callout" }, el("span", {}, "Send only ZEC on " + net + " to this "
     + "address. A payment that arrives becomes spendable after 3 confirmations.", ...faucet));
 }
@@ -275,7 +275,7 @@ function payRow(r, i, rows, sumUp) {
       focusAfter("INPUT:s-to-" + rows[Math.min(i, rows.length - 1)].k + ":0", true);
       render();
     },
-  }, "×") : null;
+  }, icon("close")) : null;
   const [amount, amountNote] = amountField(r, n, rows, sumUp);
   const saved = recipientSelect({ asset: "ZEC", network: netName(state.g), type: "shielded",
     id: "s-saved-" + r.k, onSelect: (address) => {
@@ -301,7 +301,7 @@ function memoHint(hint, memo) {
 }
 
 // The optional memo of one recipient.
-const MEMO_LABEL = "Memo (optional)";
+const MEMO_LABEL = "Recipient memo (optional)";
 function memoBox(r, n) {
   const hintId = "s-memo-hint-" + r.k, hint = el("span", { class: "hint", id: hintId });
   const memo = el("input", {
@@ -591,7 +591,7 @@ export async function openReview(payees, note, run = sendRun) {
 const closeSend = () => { endSend(); render(); };
 const closeX = () => el("button", {
   class: "icon-btn", type: "button", "aria-label": "Close", onclick: closeSend,
-}, "×");
+}, icon("close"));
 sweepDrafts();
 
 // The error of Send, its review or the move shows in the dialog, where the person reads it.
@@ -714,14 +714,14 @@ export function sendDialog() {
           },
         }, "Add recipient"),
         pasteList(net))),
-    el("label", { class: "field" }, el("span", {}, "Note for the devices (optional)"),
+    el("label", { class: "field" }, el("span", {}, "Wallet note (optional)"),
       el("input", {
         class: "input", id: "s-note", name: "note", type: "text", maxlength: "80",
         placeholder: rows.length > 1 ? "October payroll" : "Pay the audit firm",
         autocomplete: "off", value: ui.note, oninput: (ev) => { ui.note = ev.target.value; },
       }),
-      el("span", { class: "hint" }, "Encrypted. The devices of this wallet, and anyone else who "
-        + "has the invite link, can read it.")),
+      el("span", { class: "hint" }, "Encrypted and separate from the recipient memo. "
+        + "This wallet’s devices and anyone with its invite link can read it.")),
     el("p", { class: "small faint" }, "A memo goes on chain with the payment. Its recipient, "
       + "the devices of this wallet, and anyone else who has the invite link can read it. A "
       + "device that Change devices leaves out later can still read it."),
@@ -746,7 +746,7 @@ function sendFoot(why) {
       el("button", {
         class: "btn primary", type: "submit", disabled: !Z || !!why,
         "aria-describedby": why ? "why-send" : null,
-      }, ui.after ? "Propose payment" : "Review payment"),
+      }, ui.after ? "Request approvals" : "Review payment"),
       why ? el("span", { class: "off-why", id: "why-send" }, why) : null)];
 }
 
@@ -785,13 +785,15 @@ function reviewDialog() {
   reviewFacts(ins, note),
   securityExplanation("payment-review"),
   ...privacyNotes(),
-  el("p", { class: "small faint" }, EXPIRY_NOTE + " Proposing asks the devices to approve; it "
-    + "does not sign or send the payment."),
+  el("p", { class: "small faint" }, EXPIRY_NOTE),
+  el("p", { class: "small ux-flow-summary", id: "proposal-help" },
+    "Requesting approvals shares this payment with the wallet’s devices. It does not sign or send it."),
   el("div", { class: "dialog-actions" },
     el("button", { class: "btn", type: "button",
       onclick: () => { ui.sendReview = null; clearNotice(); render(); } }, "Back to edit"),
     ok ? el("button", { class: "btn primary", type: "button", disabled: !!ui.proposing,
-      onclick: inDialog(() => proposeReviewed(ui.sendReview)) }, "Propose payment") : null));
+      "aria-describedby": "proposal-help",
+      onclick: inDialog(() => proposeReviewed(ui.sendReview)) }, "Request approvals") : null));
 }
 
 const moveAmount = () => curChain()?.bal?.max_send ?? 0;
@@ -811,7 +813,8 @@ function moveDialog() {
   el("div", { class: "review-hero" }, el("span", { class: "label" }, "Moves"),
     money(shown.amount, "lg"), el("span", { class: "small muted" },
       "to " + groupName(to) + ", the wallet that replaces this one")),
-  el("p", { class: "small muted" }, "Like any payment, this needs " + state.g.t + " approvals."
+  el("p", { class: "small muted" }, "This requests " + state.g.t
+    + " approvals; it does not move funds yet."
     + (solOn() ? " " + SOL_STAYS : "")),
   securityExplanation("payment-review"),
   ...privacyNotes(true),
@@ -821,7 +824,7 @@ function moveDialog() {
     el("button", { class: "btn primary", type: "button", disabled: !!why,
       "aria-describedby": why ? "why-move" : null,
       onclick: inDialog(async () => { await proposeMoveNow(after, shown); endSend(); }) },
-    "Propose the move"),
+    "Request move approvals"),
     why ? el("span", { class: "off-why", id: "why-move" }, why) : null));
 }
 
@@ -858,7 +861,7 @@ function reviewFacts(ins, note) {
     : "Network fee"), el("dd", {}, money(ins.fee))] : null;
   return el("dl", { class: "kv" }, fee, el("dt", {}, "Approvals needed"),
     el("dd", {}, state.g.t + " of " + state.g.n),
-    note ? [el("dt", {}, "Note for the devices"), el("dd", {}, note)] : null);
+    note ? [el("dt", {}, "Wallet note"), el("dd", {}, note)] : null);
 }
 
 function reviewRow(p, i, n) {

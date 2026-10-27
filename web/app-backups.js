@@ -1,4 +1,5 @@
 // Backup and restore: logic and dialogs.
+import { icon } from "./app-icons.js";
 import {
   backupName, boxPairMatches, heldRefusal, keysOf, lateFields, makePassphrase, passIssue,
   passLength, restoredSecret, settledFields, shareShape, skey, staleRestore, takenKeys, undoPlan,
@@ -24,7 +25,6 @@ import { solRestore, solSetup } from "./app-sol.js";
 import { heldApprovals } from "./app-payments.js";
 import { checkBackupPayload, checkSavedBackup } from "./backup-check.js";
 import { markBackupChecked, reportBackupSaved } from "./app-guided-setup.js";
-import { securityExplanation } from "./app-tutorial.js";
 
 const SOL_BACKUP_KIND = "zigs-sol-backup";
 
@@ -151,7 +151,7 @@ export function backupDialog() {
   });
   const hint = el("span", { class: "hint", id: "bk-hint" });
   const go = el("button", { class: "btn primary", type: "submit" },
-    b.busy ? "Encrypting…" : "Encrypt and save");
+    b.busy ? "Encrypting…" : "Encrypt and save file");
   noteFor(hint, again);
   const update = () => {
     const [text, cls] = passNote(pass.value, again.value);
@@ -184,10 +184,11 @@ export function backupDialog() {
   el("div", { class: "card-head" }, el("h2", { id: "backup-title" }, words.title),
     el("button", {
       class: "icon-btn", type: "button", "aria-label": "Close", onclick: closeBackup,
-    }, "×")),
+    }, icon("close"))),
   el("p", { class: "small" }, words.pass),
-  el("p", { class: "small muted" }, "This is an encrypted file backup. Its passphrase alone cannot recover the wallet; it is not a seed phrase. Keep both the file and its passphrase."),
-  securityExplanation(b.personal ? "account-backup" : "backup"),
+  el("p", { class: "small muted" }, "Recovery needs both the encrypted file and its passphrase. "
+    + "The passphrase is not a seed phrase. " + (b.personal ? ""
+      : "A copy of this file is the same signing device, not an extra approval.")),
   el("label", { class: "field" }, el("span", {}, "Passphrase"), pass),
   el("div", { class: "row-actions" },
     el("button", { class: "btn sm", type: "button", disabled: b.busy, onclick: make },
@@ -195,7 +196,7 @@ export function backupDialog() {
     b.made ? copyBtn(() => pass.value, "Copy passphrase") : null),
   b.made ? el("p", { class: "small" }, "Copy keeps the passphrase on the clipboard until you copy "
     + "something else. Write it down, then clear the clipboard.") : null,
-  el("label", { class: "field" }, el("span", {}, "Type it again"), again, hint),
+  el("label", { class: "field" }, el("span", {}, "Confirm passphrase"), again, hint),
   el("div", { class: "callout" }, words.file),
   el("div", { class: "dialog-actions" },
     el("button", {
@@ -265,10 +266,9 @@ function backupCheckDialog() {
   el("div", { class: "card-head" }, el("h2", { id: "backup-title" },
     "Check saved " + (b.chain === "sol" ? "SOL" : "ZEC") + " file"),
   el("button", { class: "icon-btn", type: "button", "aria-label": "Close", disabled: b.busy,
-    onclick: closeBackup }, "×")),
+    onclick: closeBackup }, icon("close"))),
   el("p", { class: "small", id: "bc-help" }, "Choose the encrypted file you saved for device "
     + b.seat + " of this wallet, then enter its separate passphrase. This check opens it without restoring or changing any key shares. File contents, filenames and passphrases are never sent to the other devices."),
-  securityExplanation("backup-check"),
   el("label", { class: "field" }, el("span", {}, "Saved recovery file"), file),
   b.file ? el("p", { class: "small muted" }, "A file is selected for this check.") : null,
   el("label", { class: "field" }, el("span", {}, "Passphrase"), pass),
@@ -284,6 +284,7 @@ export function restoreDialog() {
   const pass = el("input", {
     class: "input mono", id: "rs-pass", type: "password", autocomplete: "off",
     spellcheck: "false", autocapitalize: "off", disabled: r.busy,
+    "aria-describedby": "restore-file-help",
   });
   const submit = act(async () => {
     const p = pass.value;
@@ -299,19 +300,23 @@ export function restoreDialog() {
     class: "dialog", role: "dialog", "aria-modal": "true", "aria-labelledby": "restore-title",
     onsubmit: submit,
   },
-  el("div", { class: "card-head" }, el("h2", { id: "restore-title" }, "Open a backup"),
+  el("div", { class: "card-head" }, el("h2", { id: "restore-title" }, "Restore a backup"),
     el("button", {
       class: "icon-btn", type: "button", "aria-label": "Close", onclick: closeBackup,
-    }, "×")),
-  el("p", { class: "small" }, "Enter the passphrase you chose when you made " + r.name + "."),
-  securityExplanation("restore"),
-  el("label", { class: "field" }, el("span", {}, "Passphrase"), pass),
+    }, icon("close"))),
+  el("p", { class: "small" }, "Selected file: " + r.name),
+  el("p", { class: "small ux-flow-summary", id: "restore-file-help" },
+    "Restores the signing share or messaging account in this file. "
+      + "Check that it belongs to the wallet or account you want to recover. "
+      + "Restoring a share does not add another independent device."),
+  el("label", { class: "field" }, el("span", {}, "Passphrase"), pass,
+    el("span", { class: "hint" }, "Use the passphrase you saved separately from this file.")),
   el("div", { class: "dialog-actions" },
     el("button", {
       class: "btn", type: "button", disabled: r.busy, onclick: closeBackup,
     }, "Cancel"),
     el("button", { class: "btn primary", type: "submit", disabled: r.busy || !Z },
-      r.busy ? "Opening…" : "Open backup")));
+      r.busy ? "Restoring…" : "Restore backup")));
 }
 
 function parseBackup(text) {

@@ -23,7 +23,7 @@ import { render } from "./app-loop.js";
 import { openSend } from "./app-send.js";
 
 // A message or a memo whose whole text is a ZIP 321 URI shows as a card (web/requests.js). The
-// engine reads the URI. "Propose this" fills the Send form and sends nothing.
+// engine reads the URI. "Review in Send" fills the Send form and sends nothing.
 const parsedRequests = new Map();   // "net\nuri" -> { out } or { err }; bounded
 
 function parseCached(uri, net) {
@@ -114,12 +114,12 @@ function walletPicker(req, id, paid) {
   const options = wallets.map((g) => el("option", { value: g.id },
     g.name + " (" + netOf(g).label + ")"));
   const select = el("select", {
-    class: "input", id: "req-wallet-" + id, "aria-label": "Propose from wallet",
+    class: "input", id: "req-wallet-" + id, "aria-label": "Wallet for this payment",
   }, options);
   return { select, why: "" };
 }
 
-// Where "Propose this" proposes from. In a room it is the open wallet, unless the request pays that
+// Which wallet "Review in Send" selects. In a room it is the open wallet, unless it pays that
 // wallet. In a chat, and for a request that pays the open wallet, the person picks a wallet.
 function proposeSource(req, o) {
   const paid = paidBy(req);
@@ -148,7 +148,7 @@ export function requestCard(req, o) {
       el("button", {
         class: "btn primary sm", type: "button", disabled: !!st.why,
         onclick: () => proposeRequest(req, o, select ? select.value : state.gid),
-      }, "Propose this"),
+      }, "Review in Send"),
       copyBtn(req.uri, "Copy request")),
     st.why ? el("p", { class: "small faint" }, st.why) : null);
 }
@@ -240,6 +240,8 @@ export function requestForm(o) {
     class: "composer req-form", onsubmit: act((ev) => submitRequest(ev.target, o)),
   },
   el("h3", {}, "Request a payment"), why ? el("p", { class: "hint bad" }, why) : null, to,
+  el("p", { class: "small muted" }, "This sends a request, not a payment. The payer reviews "
+    + "the details before deciding to pay."),
   field("Amount in ZEC (optional)", text("req-amt-", {
     name: "amt", inputmode: "decimal", placeholder: "The payer chooses the amount",
     "aria-label": "Amount",

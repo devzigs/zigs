@@ -130,7 +130,7 @@ async function arrivalChecks(p) {
     a.animationName === "setup-arrival-pulse" && a.effect.getTiming().iterations === 1)),
   "protection arrival plays one finite fingerprint pulse");
   check(await p.locator("[data-protection-art=unprotected]").count() === 1
-    && await button(p, "Continue to approval rule").isDisabled(),
+    && await button(p, "Continue to approval rule").count() === 0,
   "arrival pulse leaves the browser unlocked and continuation gated");
   const restingColor = await fingerprint.evaluate((n) => getComputedStyle(n).color);
   await p.waitForTimeout(750);
@@ -231,7 +231,7 @@ async function protectionStates(p) {
   await button(p, "Protect this browser").waitFor();
   check(await p.locator("[data-protection-art=unprotected]").count() === 1,
     "cancelled authentication leaves the visual unlocked");
-  check(await button(p, "Continue to approval rule").isDisabled(),
+  check(await button(p, "Continue to approval rule").count() === 0,
     "cancellation never enables continuation");
   check(await p.locator(".motion-passkey-arrival").count() === 0,
     "cancellation never replays the arrival pulse");
@@ -424,7 +424,8 @@ async function savedBackupCheck(p) {
   await button(p, "Save ZEC backup").click();
   const passphrase = "synthetic local recovery check 4728 only";
   await p.locator("#bk-pass").fill(passphrase); await p.locator("#bk-again").fill(passphrase);
-  const pending = p.waitForEvent("download"); await button(p, "Encrypt and save").click();
+  const pending = p.waitForEvent("download");
+  await button(p, phase === "before" ? "Encrypt and save" : "Encrypt and save file").click();
   const file = await pending, path = await file.path();
   await p.locator(".dialog").waitFor({ state: "hidden" });
   check(await p.locator(".setup-completion-actions").innerText().then((t) => t.includes(

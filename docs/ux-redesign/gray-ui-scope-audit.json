@@ -1,0 +1,128 @@
+{
+  "base_main": "c6860f6fef9351531bd3a9c3a221600c49651035",
+  "committed_reference": "78345496bb6438e22bfdbfbc484105df84c18c0d",
+  "latest_design_source": "uncommitted UI working-copy snapshot; see gray-ui-design-source.json",
+  "branch": "gray-ui",
+  "date": "2026-10-25",
+  "web_design_files": [
+    "web/app-how-zigs-works.js",
+    "web/app-icons.js",
+    "web/app-shell.js",
+    "web/app.js",
+    "web/apple-touch-icon.png",
+    "web/assets/brand/hero-zebra.png",
+    "web/favicon.ico",
+    "web/favicon.png",
+    "web/fonts/Manrope-OFL.txt",
+    "web/fonts/manrope-latin-ext.woff2",
+    "web/fonts/manrope-latin.woff2",
+    "web/homepage-scene.js",
+    "web/how-zigs-works-art.css",
+    "web/how-zigs-works-art.js",
+    "web/how-zigs-works-diagrams.js",
+    "web/how-zigs-works-flow-art.js",
+    "web/how-zigs-works-icons.js",
+    "web/how-zigs-works-journey-content.js",
+    "web/how-zigs-works-journeys.js",
+    "web/how-zigs-works-motion.js",
+    "web/how-zigs-works.css",
+    "web/index.html",
+    "web/logo.png",
+    "web/site-refinement.css"
+  ],
+  "exact_source_design_files": [
+    "web/app-how-zigs-works.js",
+    "web/app-icons.js",
+    "web/app.js",
+    "web/apple-touch-icon.png",
+    "web/assets/brand/hero-zebra.png",
+    "web/favicon.ico",
+    "web/favicon.png",
+    "web/fonts/manrope-latin-ext.woff2",
+    "web/fonts/manrope-latin.woff2",
+    "web/homepage-scene.js",
+    "web/how-zigs-works-art.css",
+    "web/how-zigs-works-art.js",
+    "web/how-zigs-works-diagrams.js",
+    "web/how-zigs-works-flow-art.js",
+    "web/how-zigs-works-journey-content.js",
+    "web/how-zigs-works-journeys.js",
+    "web/how-zigs-works-motion.js",
+    "web/how-zigs-works.css",
+    "web/logo.png",
+    "web/site-refinement.css"
+  ],
+  "adapted_design_files": {
+    "web/app-shell.js": "only original hero image reference changed; every main handler and disclosure retained",
+    "web/index.html": "source presentation references plus retained main early theme.js initialization"
+  },
+  "allowed_native_changes": [
+    "ios/PreviewNative/main.swift",
+    "ios/Zigs/GroupView.swift",
+    "ios/Zigs/NativeMessagingViews.swift",
+    "ios/Zigs/NativePreparedView.swift",
+    "ios/Zigs/RecipientViews.swift"
+  ],
+  "native_source_sha256": {
+    "ios/PreviewNative/main.swift": "26797dc020839b68c3dfc1a03fe01c02b6f1c34a4732b783f0fa56fe97dc59b0",
+    "ios/Zigs/GroupView.swift": "3ad7d6c45567e7fe772cd7cfa4b891f160b9e911b1d0f6ec37c01bfa2aee7294",
+    "ios/Zigs/NativeMessagingViews.swift": "5ae53e886c5ec38e95550625705d7310a47047ba7e114a3a62fc12b9d0395980",
+    "ios/Zigs/NativePreparedView.swift": "1dc68d2ae25da55dae9a32ada96d89ae624b6aa411985063d5b6b0dd77c939a3",
+    "ios/Zigs/RecipientViews.swift": "f51a276df5aa8a9ca661beffaf563ba09bd369a1d1033327b9adc6544d052767"
+  },
+  "qa_tools": [
+    "solspike/tools/site_style_browser.mjs",
+    "solspike/tools/site_style_zoom.mjs"
+  ],
+  "checks": {
+    "source_working_copy_preserved": true,
+    "24_design_files_accounted_for": true,
+    "all_changes_within_documented_ui_docs_branding_qa_scope": true,
+    "main_engineering_unchanged": true,
+    "main_guide_content_unchanged": true,
+    "main_theme_init_and_csp_preserved": true,
+    "native_initial_port_unchanged": true,
+    "32_reference_screen_metrics_equal": true,
+    "20_design_files_byte_identical": true,
+    "2_whitespace_only_normalizations": true
+  },
+  "validation": {
+    "fast_suite": {
+      "node": "26.12.1",
+      "passed": 48,
+      "seconds": 10,
+      "skipped": [
+        "qr: qrencode is not installed"
+      ]
+    },
+    "lint": {
+      "passed": true,
+      "javascript_files": 238,
+      "python_files": 2
+    },
+    "visual_browser": {
+      "checks_passed": 511,
+      "screenshots": 31,
+      "errors": []
+    },
+    "real_chrome_page_zoom": [
+      100,
+      200
+    ],
+    "functional_before_after_pairs": 32,
+    "reference_functional_variants": 32,
+    "native_capture": {
+      "passed": true,
+      "captures": 200,
+      "new_view_captures": 45,
+      "macos_swiftui_fixture_only": true,
+      "physical_device_or_live_wallet_certified": false
+    }
+  },
+  "normalized_design_files": {
+    "web/fonts/Manrope-OFL.txt": "trailing whitespace removed; license wording unchanged",
+    "web/how-zigs-works-icons.js": "extra final blank line removed; JavaScript unchanged"
+  },
+  "snapshot_commit": "825bf96ec5484b882aa3e953972dc62e965d2f69",
+  "continued_by": "gray-ui-premium-audit.json"
+}

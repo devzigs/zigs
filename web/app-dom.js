@@ -1,4 +1,5 @@
 // el, act, widgets, wording and labels.
+import { icon } from "./app-icons.js";
 import { qrSvg } from "./qr.js";
 import { memoShown } from "./payees.js";
 import { chunks, finite } from "./util.js";
@@ -184,7 +185,10 @@ export function nameField(id, to = "", initial = undefined) {
   const hint = to ? "Any nickname · shown to " + to : "For example: Ana's phone";
   return el("label", { class: "field" }, el("span", {}, to ? "Your name" : "This device's label"),
     el("input", { class: "input", id, value: initial ?? saved, maxlength: "40", autocomplete: "nickname",
-      placeholder: hint, oninput: save }));
+      placeholder: hint, "aria-describedby": id + "-help", oninput: save }),
+    el("span", { class: "hint", id: id + "-help" }, to
+      ? "Shown to " + to + ". A nickname is fine."
+      : "Use a label you’ll recognize, such as Everyday phone. A label does not verify identity."));
 }
 
 // The choice lives in `sel` (`ui`, or `ui.personal`), so a redraw keeps it. `what` names the thing
@@ -266,4 +270,4 @@ export const memoRow = (label, m, bad = false) => el("div", { class: "memo-line"
 export const closeBtn = () => el("button", {
   class: "icon-btn", type: "button", "aria-label": "Close",
   onclick: () => { closeSession(); render(); },
-}, "×");
+}, icon("close"));

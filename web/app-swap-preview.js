@@ -48,7 +48,7 @@ export function createSwapPreview(context = {}, provider = new MockSwapProvider(
     rotation += 180; reverse.style.setProperty('--swap-rotation', rotation + 'deg');
     void model.reverse();
   }, { 'aria-label': 'Reverse swap direction', 'data-key': 'swap-reverse' });
-  const review = button(['Review demo swap', el('span', { 'aria-hidden': 'true' }, '↗')],
+  const review = button(['Review demo swap', el('span', { 'aria-hidden': 'true' }, icon('external'))],
     'swap-primary', (ev) => {
       if (!model.review()) return;
       openModal('Review demo swap', ev.currentTarget); drawReview();
@@ -74,7 +74,7 @@ export function createSwapPreview(context = {}, provider = new MockSwapProvider(
     quantumIntroNodes().forEach(node => { node.hidden = false; });
     quantumContinue.focus();
   });
-  const quantumContinue = button(['Continue', el('span', { 'aria-hidden': 'true' }, '→')],
+  const quantumContinue = button(['Continue', el('span', { 'aria-hidden': 'true' }, icon('forward'))],
     'swap-primary pq-continue', () => {
       quantumIntroNodes().forEach(node => { node.hidden = true; });
       quantumFlow.start();
@@ -127,16 +127,16 @@ export function createSwapPreview(context = {}, provider = new MockSwapProvider(
     el('aside', { class: 'swap-support', 'aria-label': 'Swap route and details' },
       el('section', { class: 'swap-detail-card' },
         el('div', { class: 'swap-detail-heading' }, el('h2', {},
-          button(['Swap details', el('span', { 'aria-hidden': 'true' }, '↗')], 'swap-details-open',
+          button(['Swap details', el('span', { 'aria-hidden': 'true' }, icon('external'))], 'swap-details-open',
             (ev) => { openModal('Swap details', ev.currentTarget); drawDetails(); },
             { 'aria-haspopup': 'dialog', 'data-key': 'swap-details' })), settings),
         text('swap-caption', 'Conceptual route'),
         el('div', { class: 'swap-route' }, routeFrom,
-          el('span', { class: 'swap-route-link', 'aria-hidden': 'true' }, '→'), routeTo),
+          el('span', { class: 'swap-route-link', 'aria-hidden': 'true' }, icon('forward')), routeTo),
         el('div', { class: 'swap-provider' }, el('span', { class: 'swap-provider-mark', 'aria-hidden': 'true' }, 'N'),
           el('div', {}, text('', 'NEAR Intents', 'strong'), text('swap-caption', 'Planned provider · no live route'))),
         el('div', { class: 'swap-destination' }, el('label', { for: 'swap-destination' }, 'Receive to'), destination),
-        button('Execution & network context ↗', 'swap-disclosure',
+        button(['Execution & network context', icon('external')], 'swap-disclosure',
           (ev) => { openModal('Swap details', ev.currentTarget); drawDetails(); }, { 'aria-haspopup': 'dialog' })),
       el('section', { class: 'swap-privacy', 'aria-label': 'Route privacy' },
         icon('security'), el('div', {}, text('', 'Know the privacy boundary', 'h2'), privacyText)),
@@ -189,8 +189,8 @@ export function createSwapPreview(context = {}, provider = new MockSwapProvider(
   function update() {
     const s = model.value, from = swapDemoAsset(s.from), to = swapDemoAsset(s.to);
     root.dataset.swapPhase = s.phase;
-    fromButton.replaceChildren(token(from), el('span', {}, from.symbol), el('span', { class: 'swap-chevron', 'aria-hidden': 'true' }, '⌄'));
-    toButton.replaceChildren(token(to), el('span', {}, to.symbol), el('span', { class: 'swap-chevron', 'aria-hidden': 'true' }, '⌄'));
+    fromButton.replaceChildren(token(from), el('span', {}, from.symbol), el('span', { class: 'swap-chevron', 'aria-hidden': 'true' }, icon('chevronDown')));
+    toButton.replaceChildren(token(to), el('span', {}, to.symbol), el('span', { class: 'swap-chevron', 'aria-hidden': 'true' }, icon('chevronDown')));
     fromNetwork.textContent = from.network + ' · preview'; toNetwork.textContent = to.network + ' · preview';
     routeFrom.replaceChildren(token(from), text('swap-caption', 'FROM', 'span'), text('', from.network, 'strong'), text('swap-caption', from.symbol));
     routeTo.replaceChildren(token(to), text('swap-caption', 'TO', 'span'), text('', to.network, 'strong'), text('swap-caption', to.symbol));
@@ -255,7 +255,7 @@ export function createSwapPreview(context = {}, provider = new MockSwapProvider(
     } });
     modal.append(el('div', { class: 'swap-modal-heading' },
       el('div', {}, previewTag(), el('h2', { id: 'swap-modal-title', tabindex: '-1' }, title)),
-      button('×', 'swap-close', () => closeModal(), { 'aria-label': 'Close preview dialog' })),
+      button(icon('close'), 'swap-close', () => closeModal(), { 'aria-label': 'Close preview dialog' })),
     el('div', { class: 'swap-modal-content' }));
     document.body.append(modal); modal.showModal();
     modal.querySelector('h2').focus();
@@ -329,7 +329,7 @@ export function createSwapPreview(context = {}, provider = new MockSwapProvider(
         text('', (source.networks || 'Zcash Testnet · Solana Devnet')
           + ' execution is not integrated. No destination or refund address has been validated.')),
       text('swap-simulation-note', 'Demo: no funds move, nothing is signed and no real quote is used.'),
-      button(['Simulate swap flow', el('span', { 'aria-hidden': 'true' }, '→')], 'swap-primary', () => {
+      button(['Simulate swap flow', el('span', { 'aria-hidden': 'true' }, icon('forward'))], 'swap-primary', () => {
         modal.querySelector('h2').textContent = 'Swap flow simulation'; model.simulate();
         modal.querySelector('h2').focus();
       }), button('Back to preview', 'swap-secondary', () => closeModal()));

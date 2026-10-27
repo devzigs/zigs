@@ -8,6 +8,7 @@ import {
 import { checkedRecipient, matchingRecipients } from "./recipients.js";
 import { focusAfter, render } from "./app-loop.js";
 import { securityExplanation } from "./app-tutorial.js";
+import { sculptedIcon } from "./app-icons.js";
 
 const destinations = [
   ["ZEC:testnet:shielded", "Shielded ZEC · Zcash Testnet"],
@@ -32,7 +33,7 @@ export function recipientsView() {
   const fillList = () => list.replaceChildren(...recipientRows(query, why));
   const search = el("input", {
     class: "input recipient-search", id: "recipient-search", "data-key": "recipient-search", type: "search",
-    placeholder: "Search names, addresses or networks", "aria-label": "Search payment recipients",
+    placeholder: "Search by name, address or network", "aria-label": "Search payment recipients",
     autocomplete: "off", value: query, disabled: !!why,
     oninput: (ev) => { query = ev.target.value; fillList(); },
   });
@@ -61,6 +62,7 @@ function recipientRows(search, why) {
   if (why) return [];
   const found = matchingRecipients(recipients, {}, search);
   if (!found.length) return [el("div", { class: "empty" },
+    el("span", { class: "recipient-empty-art", "aria-hidden": "true" }, sculptedIcon("addressBook")),
     el("h3", {}, search ? "No matching recipients" : "Your recipients, in one place"),
     el("p", { class: "small muted" }, search ? "Try a different name, address or network."
       : "Add a payment address to find it easily from Send in any of your wallets."))];
@@ -84,7 +86,7 @@ function recipientRows(search, why) {
       el("button", { class: "btn sm", type: "button", "aria-label": "Edit " + entry.name,
         onclick: () => beginEdit(entry) }, "Edit"),
       el("button", { class: "btn ghost sm", type: "button", "aria-label": "Delete " + entry.name,
-        onclick: () => { deleting = { ...entry }; render(); } }, "Delete"))));
+        onclick: () => { deleting = { ...entry }; render(); } }, "Remove"))));
 }
 
 function editorForm() {
@@ -98,6 +100,7 @@ function editorForm() {
   destinations.map(([value, label]) => el("option", { value, selected: draft.kind === value }, label)));
   const address = el("textarea", { class: "input mono", id: key + "-address", required: true,
     rows: "3", maxlength: "2048", spellcheck: "false", autocomplete: "off", disabled: draft.saving,
+    "aria-describedby": key + "-help",
     "aria-describedby": key + "-help", oninput: (ev) => { draft.address = ev.target.value; } }, draft.address);
   return el("form", { class: "recipient-editor surface-quiet", "aria-busy": !!draft.saving,
     onsubmit: async (ev) => {
@@ -117,10 +120,11 @@ function editorForm() {
     "Paste the complete address, not a ZNS name or payment request. For Solana, shielded addresses "
       + "and public withdrawal addresses are different. Saving checks the format; Send still validates and reviews every payment."),
   draft.error ? el("p", { class: "callout bad", role: "alert" }, draft.error) : null,
-  el("div", { class: "row-actions" }, el("button", { class: "btn primary", type: "submit", disabled: draft.saving },
-    draft.saving ? "Saving…" : "Save recipient"),
+  el("div", { class: "row-actions ux-form-actions" },
     el("button", { class: "btn", type: "button", disabled: draft.saving,
-      onclick: () => { editor = null; focusAfter("recipient-search", true); render(); } }, "Cancel")));
+      onclick: () => { editor = null; focusAfter("recipient-search", true); render(); } }, "Cancel"),
+    el("button", { class: "btn primary", type: "submit", disabled: draft.saving },
+      draft.saving ? "Saving…" : "Save recipient")));
 }
 
 /** Inline picker for the existing Send field. It never chooses a wallet or submits a payment. */

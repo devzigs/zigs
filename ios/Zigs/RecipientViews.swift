@@ -182,18 +182,26 @@ struct ChatsWorkspace: View {
     @Environment(GroupModel.self) private var model
     @State private var creating = false
     @State private var walletChat = false
+    @State private var chatsView = "relay"
     var body: some View {
         VStack(alignment: .leading, spacing: 20) {
             InstrumentHeading(title: "Chats", detail: "Private conversations in their own space. Payment discussions stay in each payment review.")
             ForEach(model.chat.offers.keys.sorted(), id: \.self) { JoinChatCard(cid: $0) }
-            ChatsCard(newChat: { creating = true })
-            if model.gid != nil {
-                Card {
-                    DisclosureGroup("Wallet conversation · " + model.state.name, isExpanded: $walletChat) {
-                        MessagesTab().padding(.top, 12)
-                    }.font(.nativeSubheadline.weight(.medium))
+            Picker("Chats view", selection: $chatsView) {
+                Text("Relay").tag("relay")
+                Text("Zcash demo").tag("zcash")
+            }.pickerStyle(.segmented)
+            if chatsView == "relay" {
+                Text("Encrypted relay · no blockchain fee").font(.nativeCaption).foregroundStyle(Color.mist)
+                ChatsCard(newChat: { creating = true })
+                if model.gid != nil {
+                    Card {
+                        DisclosureGroup("Wallet conversation · " + model.state.name, isExpanded: $walletChat) {
+                            MessagesTab().padding(.top, 12)
+                        }.font(.nativeSubheadline.weight(.medium))
+                    }
                 }
-            }
+            } else { NativeMessagingPreview() }
             Text("A chat contact does not become a wallet signer or a payment recipient. Shared invite links and the server's metadata visibility still matter.")
                 .font(.nativeFootnote).foregroundStyle(Color.mist)
         }.sheet(isPresented: $creating) { NewChatSheet() }

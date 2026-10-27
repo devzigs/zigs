@@ -1,0 +1,60 @@
+{
+  "baseline": "d82390c85fc9f4e4d35ae4470c5d75f7da74aad1",
+  "branch": "gray-ui",
+  "main": "c6860f6fef9351531bd3a9c3a221600c49651035",
+  "original_ui": "78345496bb6438e22bfdbfbc484105df84c18c0d",
+  "scope": "Four web presentation files, isolated UI test support and review evidence. No merge or deployment.",
+  "sha256": {
+    "web/app-account-view.js": "e8b9eb458f7b998412a78862ebc05c4c8e36492208522b1fc182060bc49d72d2",
+    "web/messaging.css": "37891aeae82e730846a90672873ec5db6573999cd840705d56d3987766c218b6",
+    "web/network-privacy-popup.css": "348a454930d7cff5473253d3eef9dab82bf3fc95ff9bc60d44e7cc1e8f53bd34",
+    "web/swap-preview.css": "1005813e0f37e0edc5a9db095d95eedb630ff52a089268f8a299eb3c4d85b7af",
+    "solspike/harness/overview-redesign-fixture.mjs": "96f88d219bf603c103f39c35fa54a670e34abaa2688137c1a4aeb2e40148e3e8",
+    "solspike/tools/full_ui_review_browser.mjs": "c476f62381c9fc30a8c09c3a579a79a3483c3c322d185310bf52cc002012c997"
+  },
+  "direct_dom_event_handlers": {
+    "file": "web/app-account-view.js",
+    "expressions": 23,
+    "unchanged": true
+  },
+  "unchanged_sensitive_paths": [
+    "ios",
+    "macos",
+    "src",
+    "cf",
+    "web/sol",
+    "web/pkg",
+    "web/app-state.js",
+    "web/app-engine.js",
+    "web/app-chain.js",
+    "web/app-keystore.js",
+    "web/app-payments.js",
+    "web/app-loop.js",
+    "web/vault.js",
+    "web/signed.js",
+    "web/logo.png",
+    "web/assets",
+    "web/fonts"
+  ],
+  "validation": {
+    "full_ui": 947,
+    "layouts": 148,
+    "composer_focus": 50,
+    "flows": 523,
+    "flow_states": 124,
+    "motion": 216,
+    "style": 511,
+    "zoom": [
+      "100%",
+      "200%"
+    ],
+    "fast": 48,
+    "lint_js": 242,
+    "lint_python": 2,
+    "qr_decoder": "skipped: qrencode absent"
+  },
+  "limitations": [
+    "Synthetic browser fixtures; no real funds or message submissions.",
+    "No physical mobile keyboard, assistive-technology or Safari certification."
+  ]
+}

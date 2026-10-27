@@ -488,7 +488,7 @@ a.row-item { text-decoration: none; }
 .two { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
 .net-pick { border: 0; padding: 0; margin: 0; display: grid; gap: 8px; min-width: 0; }
 .net-opt { display: flex; gap: 10px; align-items: flex-start; padding: 12px; border: 1px solid var(--line); border-radius: 10px; cursor: pointer; transition:var(--transition-surface); }
-.net-opt.on { border-color: var(--accent, #f4b728); }
+.net-opt.on { border-color: var(--accent); }
 .net-opt input { margin-top: 3px; }
 .net-text { display: grid; gap: 2px; }
 .ack { display: flex; gap: 10px; align-items: flex-start; min-height: 48px; padding-block: 8px; }

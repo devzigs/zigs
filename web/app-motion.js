@@ -1,4 +1,5 @@
 // Presentation only. These short-lived observations never authorize or advance wallet work.
+import { presentExperience } from "./premium-motion.js";
 const BRAND_KEY = "zigs-ui-brand-arrived-v1";
 const PASSKEY_ARRIVAL_MS = 1800;
 const CLASSES = ["motion-content-enter", "motion-dialog-enter", "motion-complete-enter",
@@ -351,5 +352,6 @@ export function presentMotion(parts) {
       storage: browserStorage(), media: browserMedia() });
     controller.present(parts);
     walletPicker?.measure();
+    presentExperience(parts);
   } catch { /* A presentation effect must never interfere with the wallet render or its focus. */ }
 }

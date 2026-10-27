@@ -9,7 +9,7 @@ import { proposalFields } from "../signed.js";
 // setters of SETTERS, idb). Each one must stay exported. Another t.NAME throws.
 export const NAMES = [
   "accountCard", "accountInbox", "acct", "acctBalance", "act", "addPersonalContact", "addressBlock",
-  "addressFor", "adoptPersonal", "applyBackup", "approve", "backupDialog", "backupNote",
+  "addressFor", "adoptPersonal", "applyBackup", "approve", "backupDialog",
   "backupText", "balCache", "banner", "blockTime", "broadcastAnywhere", "broadcastTx", "busy",
   "cancelAction",
   "cancelPayment", "canWriteAs", "chain", "changePersonal", "chatRequest", "chats",

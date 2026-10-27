@@ -35,7 +35,8 @@ function withDocument(build) {
 const reviewTree = (from = null) => withDocument(() => createDialog(from));
 Object.assign(ui, { create: true, createStep: 0, net: "testnet", createDraft: { n: 3, t: 2 } });
 const unprotected = reviewTree();
-assert.equal(continueOf(unprotected).attrs.disabled, "");
+assert.equal(continueOf(unprotected), undefined,
+  "protection choices appear without a duplicate disabled continuation");
 unprotected.on.submit({ preventDefault() {}, target: {} });
 assert.equal(ui.createStep, 0,
   "submitting a stale form cannot bypass an explicit protection choice");
@@ -44,7 +45,8 @@ assert.equal(data.size, 0, "blocked setup creates no group or signing seat");
 navigator.credentials.create = () => { throw new DOMException("Cancelled", "NotAllowedError"); };
 assert.equal(await protectThisDevice(), false);
 assert.equal(passkeyProtected(), false, "cancellation never unlocks the setup flow");
-assert.equal(continueOf(reviewTree()).attrs.disabled, "");
+assert.equal(continueOf(reviewTree()), undefined,
+  "cancellation never exposes continuation");
 
 // The real buttons: Skip for now, then Continue without protection. A damaged address book or
 // messaging account, and a vault whose check did not finish, never leave the person without a way
@@ -72,12 +74,12 @@ t.adoptPersonal({ damaged: true });
 assert.ok(ks.recipientsError, "the address book is damaged");
 assert.equal(isOff(createNew(reviewTree(move))), true, "Change devices waits for a choice");
 tap(byKey(reviewTree(move), "skip-device-move"), "Skip for now in Change devices");
-assert.match(text(reviewTree(move)), /Are you sure\?/);
+assert.match(text(reviewTree(move)), /Continue without passkey protection\?/);
 tap(byKey(reviewTree(move), "skip-confirm-move"), "Continue without protection");
 assert.equal(isOff(createNew(reviewTree(move))), false, "Change devices goes on after Skip");
 await resetChoice();
 tap(byKey(reviewTree(), "skip-device-create-first"), "Skip for now in the create dialog");
-assert.match(text(reviewTree()), /Are you sure\?/);
+assert.match(text(reviewTree()), /Continue without passkey protection\?/);
 tap(byKey(reviewTree(), "skip-confirm-create-first"), "Continue without protection");
 assert.equal(ui.createStep, 1, "a damaged book and account do not stop Skip for now");
 assert.equal(storage.get(ks.RECIPIENTS_KEY), BOOK, "the damaged book stays as it is");
@@ -103,13 +105,13 @@ storage.set("zf-secrets", '{"outside-wallet:1":{"keyPackage":"outside"}}');
 assert.equal(isOff(createNew(reviewTree(move))), true, "Change devices waits for a review");
 assert.doesNotMatch(text(reviewTree(move)), /You can go on/, "and does not say that it can go on");
 assert.match(text(reviewTree(move)), /reviewed the unprotected copy/, "it says what to do");
-assert.equal(continueOf(reviewTree()).attrs.disabled, "", "so does the create dialog");
+assert.equal(continueOf(reviewTree()), undefined, "the create dialog also withholds continuation");
 storage.delete("zf-secrets");
 storage.delete("zf-vault");
 ks.setVault(null);
 // The lock of Settings needs no Web Locks, as on main.
 delete navigator.locks;
-const lock = withDocument(browserSettings).map((g) => button(g, "Lock with a passkey"))
+const lock = withDocument(browserSettings).map((g) => button(g, "Enable passkey protection"))
   .find(Boolean);
 assert.ok(lock && !isOff(lock), "Lock with a passkey is on without Web Locks");
 Object.defineProperty(globalThis, "navigator", { configurable: true, value: fakePasskey() });

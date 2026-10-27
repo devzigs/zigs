@@ -1,4 +1,4 @@
-// Decorative lighting only. The sole texture is the unchanged canonical zebra image.
+// Decorative lighting only. The sole texture is the unchanged original hero zebra artwork.
 const VERTEX = `
 attribute vec2 a_position;
 varying vec2 v_uv;
@@ -53,9 +53,9 @@ void main() {
   float sheen = reflection * (.20 + crest * .16 + cheek * .12 + shoulder * .09);
   float grain = dot(art.rgb, vec3(.2126, .7152, .0722));
   vec3 silver = vec3(.88, .94, 1.);
-  vec3 copper = vec3(1., .77, .57);
-  float warm = clamp(crest * .56 + shoulder * .22 + .12 * sin(cycle), 0., .65);
-  vec3 illumination = mix(silver, copper, warm);
+  vec3 ice = vec3(.659, .780, .918);
+  float tint = clamp(crest * .56 + shoulder * .22 + .12 * sin(cycle), 0., .65);
+  vec3 illumination = mix(silver, ice, tint);
   vec3 color = art.rgb * facing + illumination * (sheen + sweep) * grain;
   // The original red eye is an unlit identity detail, never a pulsing status light.
   float red = smoothstep(.07, .20, art.r - max(art.g, art.b));

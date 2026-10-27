@@ -11,7 +11,7 @@ import { openContact, personal } from "./app-account.js";
 import { contactView, openContactDialog, otherMessages, zcashAccountSetup } from "./app-account-view.js";
 import { chatView } from "./app-thread.js";
 import { act, el, guard, newBadge } from "./app-dom.js";
-import { icon } from "./app-icons.js";
+import { icon, sculptedIcon } from "./app-icons.js";
 import { messagingLearnButton } from "./app-messaging-education.js";
 import { focusAfter, render, wantFocus } from "./app-loop.js";
 import { restore } from "./app-backups.js";
@@ -130,7 +130,7 @@ function emptyConversation(newChatWhy) {
     class: "messages-thread messages-setup-thread", "aria-label": "Set up Zcash messages",
   }, guard(zcashAccountSetup, pickRestore));
   return el("section", { class: "messages-thread messages-empty", "aria-label": "Choose a conversation" },
-    el("div", { class: "messages-empty-art", "aria-hidden": "true" }, icon("chat")),
+    el("div", { class: "messages-empty-art", "aria-hidden": "true" }, sculptedIcon("chat")),
     el("span", { class: "label" }, transport === "relay" ? "Private coordination" : "Messages on Zcash"),
     el("h2", {}, "A little closer. A little more private."),
     el("p", {}, transport === "relay"
@@ -186,7 +186,9 @@ export function messagingWorkspace(teamContent = null) {
   el("div", { class: "messages-tabs", role: "tablist", "aria-label": "Message transport" },
     tab("relay", "Relay"), tab("zcash", "Zcash")),
   ...joins.map((cid) => guard(chatJoinCard, cid)),
-  el("div", { class: "messages-layout", id: "messages-layout", role: "tabpanel",
+  el("div", { class: "messages-layout"
+    + (transport === "zcash" && !personal ? " messages-onboarding" : ""),
+    id: "messages-layout", role: "tabpanel",
     "aria-labelledby": "messages-tab-" + transport }, inbox(),
   teamContent || (state.cid ? guard(chatView) : state.contact != null ? guard(contactView) : emptyConversation(newChatWhy))),
   el("input", { id: "messages-restore", type: "file", hidden: true, accept: ".zigsbackup,.json,application/json",

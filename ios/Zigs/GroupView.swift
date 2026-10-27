@@ -8,6 +8,8 @@ struct GroupView: View {
     @State private var sheet: WalletSheet?
     @State private var importing = false
     @State private var restore: RestoreTarget?
+    @State private var formingWallet: String?
+    @State private var preparedWallet: String?
     enum WalletSheet: String, Identifiable {
         case send, receive, change, settings
         var id: String { rawValue }
@@ -37,6 +39,16 @@ struct GroupView: View {
                 seed: model.addressHidden ? nil : st.wallet?.str("address"), home: home)
         }
         .refreshable { await model.chain?.sync() }
+        .onChange(of: model.gid) {
+            formingWallet = st.g != nil && !st.ready ? model.gid : nil
+            preparedWallet = nil
+        }
+        .onChange(of: st.ready) {
+            if st.ready, let id = model.gid, formingWallet == id {
+                preparedWallet = id
+                formingWallet = nil
+            }
+        }
         .sheet(item: $sheet) { s in
             switch s {
             case .send: SendSheet()
@@ -78,10 +90,14 @@ struct GroupView: View {
                 NativeSecurityView(change: { sheet = .change })
             } else if !st.ready {
                 Header()
-                SetupView()
+                SetupView().onAppear { formingWallet = model.gid }
             } else {
                 switch workspace {
                 case .overview:
+                    if preparedWallet == model.gid && preparedWallet != nil {
+                        NativePreparedCard(security: { preparedWallet = nil; workspace = .security },
+                                           overview: { preparedWallet = nil })
+                    }
                     OverviewTab(showSigners: { workspace = .security },
                         showActivity: { workspace = .activity }, showApprovals: { workspace = .approvals },
                         deposit: { sheet = .receive }, send: { sheet = .send })

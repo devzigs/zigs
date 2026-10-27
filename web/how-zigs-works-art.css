@@ -1,0 +1,64 @@
+/* Adapted from devzigs/zigs-site main 876e358; AGPL-3.0-only. */
+/* Sculpted documentation illustrations. All geometry is original SVG. */
+.dxa-art{display:block;width:100%;height:auto;max-width:650px;margin:auto;overflow:visible;isolation:isolate;fill:none;stroke:none;stroke-width:1}
+.dxa-art .dxa-label{fill:#aaa;stroke:none;font-family:var(--sans,Arial,sans-serif);font-size:12px;font-weight:400;letter-spacing:.01em}
+.dxa-art .dxa-small{fill:#b7b7b7;font-size:12px}
+.dxa-art .dxa-bright{fill:#e4e4e4;font-size:13px}
+.dxa-art .dxa-overline{fill:#969696;font-size:9px;letter-spacing:1.4px}
+.dxa-art .dxa-tiny{fill:#999;font-size:8px;letter-spacing:1.2px}
+.dxa-art .dxa-coin-type{fill:#dedede;font-size:17px;font-weight:500;letter-spacing:-.02em}
+.dxa-floor{fill:#000;opacity:.5}
+.dxa-wire{fill:none;stroke:#393939;stroke-width:1;stroke-linecap:round;stroke-linejoin:round}
+.dxa-wire-muted{stroke:#2c2c2c}
+.dxa-dashed{stroke-dasharray:3 5}
+.dxa-hairline{fill:none;stroke:#666;stroke-width:.6;stroke-linecap:round}
+.dxa-etch{fill:none;stroke:#555;stroke-width:1;stroke-linecap:round;stroke-linejoin:round}
+.dxa-specular{fill:none;stroke:#eee;stroke-width:.65;stroke-linecap:round;opacity:.54}
+.dxa-relief{fill:none;stroke-width:2.15;stroke-linecap:round;stroke-linejoin:round;filter:drop-shadow(0 2px 0 #020202)}
+.dxa-muted{opacity:.52}
+.dxa-flow{fill:none;stroke:#c5c5c5;stroke-width:1.3;stroke-linecap:round;stroke-linejoin:round;stroke-dasharray:3 97;stroke-dashoffset:0;opacity:.8;filter:drop-shadow(0 0 3px #ffffff26);animation:dxa-transit 12s cubic-bezier(.36,0,.2,1) infinite}
+.dxa-flow-b{animation-delay:-8s}
+.dxa-flow-c{animation-delay:-4s}
+.dxa-check circle{fill:#141414;stroke:#828282;stroke-width:.8}
+.dxa-check path,.dxa-check-stroke{fill:none;stroke:#e3e3e3;stroke-width:1.4;stroke-linecap:round;stroke-linejoin:round}
+.dxa-check path{stroke-dasharray:18;stroke-dashoffset:0;animation:dxa-checkmark 12s cubic-bezier(.3,.7,.2,1) infinite}
+.dxa-phase-a{animation:dxa-first-light 12s ease-in-out infinite}
+.dxa-phase-b{animation:dxa-second-light 12s ease-in-out infinite}
+.dxa-phase-c{animation:dxa-third-light 12s ease-in-out infinite}
+.dxa-muted.dxa-phase-c{animation:none}
+.dxa-phase-b .dxa-check path,.dxa-check.dxa-phase-b path{animation-delay:-8s}
+.dxa-phase-c .dxa-check path,.dxa-check.dxa-phase-c path{animation-delay:-4s}
+.dxa-vault-lid{animation:dxa-unseal 12s cubic-bezier(.24,.65,.2,1) infinite}
+.dxa-vault-middle{animation:dxa-vault-share 12s cubic-bezier(.24,.65,.2,1) infinite}
+.dxa-scan-beam{animation:dxa-scan 12s cubic-bezier(.4,0,.25,1) infinite}
+.dxa-scan-line{animation:dxa-scan-line 12s cubic-bezier(.4,0,.25,1) infinite}
+.dxa-recognized{animation:dxa-recognize 12s ease-in-out infinite}
+.dxa-pool-layer{animation:dxa-pool-seal 12s cubic-bezier(.24,.65,.2,1) infinite}
+.dxa-metadata circle{animation:dxa-observable 6s ease-in-out infinite}
+.dxa-metadata circle:last-child{animation-delay:-3s}
+
+/* Each sequence resolves, rests and resets; no perpetual floating geometry. */
+@keyframes dxa-transit{0%,8%{stroke-dashoffset:6;opacity:0}12%{opacity:.9}35%,70%{stroke-dashoffset:-97;opacity:.9}75%,100%{stroke-dashoffset:-97;opacity:0}}
+@keyframes dxa-first-light{0%,4%{opacity:.67}12%,34%{opacity:1}46%,100%{opacity:.78}}
+@keyframes dxa-second-light{0%,24%{opacity:.67}34%,59%{opacity:1}72%,100%{opacity:.78}}
+@keyframes dxa-third-light{0%,52%{opacity:.67}63%,88%{opacity:1}100%{opacity:.78}}
+@keyframes dxa-checkmark{0%,8%{stroke-dashoffset:18;opacity:.4}18%,88%{stroke-dashoffset:0;opacity:1}100%{stroke-dashoffset:0;opacity:.7}}
+@keyframes dxa-unseal{0%,18%{transform:translateY(0)}35%,66%{transform:translateY(-15px)}84%,100%{transform:translateY(0)}}
+@keyframes dxa-vault-share{0%,23%{transform:translateY(0)}39%,63%{transform:translateY(-5px)}82%,100%{transform:translateY(0)}}
+@keyframes dxa-scan{0%,19%{transform:translateX(-78px);opacity:0}24%{opacity:1}64%{transform:translateX(230px);opacity:1}69%,100%{transform:translateX(230px);opacity:0}}
+@keyframes dxa-scan-line{0%,19%{transform:translateX(-12px);opacity:0}25%{opacity:.4}64%{transform:translateX(215px);opacity:.4}69%,100%{transform:translateX(215px);opacity:0}}
+@keyframes dxa-recognize{0%,44%{opacity:.62}56%,88%{opacity:1}100%{opacity:.75}}
+@keyframes dxa-pool-seal{0%,22%{transform:translateY(-4px)}38%,80%{transform:translateY(0)}100%{transform:translateY(-4px)}}
+@keyframes dxa-observable{0%,100%{opacity:.45}50%{opacity:1}}
+
+[data-motion-suspended="true"] .dxa-art *{animation-play-state:paused!important}
+[data-motion-suspended="true"].dxa-art *{animation-play-state:paused!important}
+[data-guide]:not(.is-enhanced) .dxa-art *{animation:none!important}
+[data-guide]:not(.is-enhanced) .dxa-flow{stroke-dasharray:none;opacity:.45}
+[data-guide]:not(.is-enhanced) .dxa-check path{stroke-dashoffset:0}
+[data-guide]:not(.is-enhanced) :is(.dxa-scan-line,.dxa-scan-beam){display:none}
+[data-guide]:not(.is-enhanced) :is(.dxa-phase-a,.dxa-phase-b,.dxa-phase-c,.dxa-recognized){opacity:1}
+[data-guide]:not(.is-enhanced) .dxa-muted{opacity:.52}
+@media(prefers-reduced-motion:reduce){.dxa-art *{animation:none!important;transition:none!important}.dxa-flow{stroke-dasharray:none;opacity:.45}.dxa-check path{stroke-dashoffset:0}.dxa-scan-line,.dxa-scan-beam{display:none}.dxa-phase-a,.dxa-phase-b,.dxa-phase-c,.dxa-recognized{opacity:1}.dxa-muted{opacity:.52}}
+@media(forced-colors:active){.dxa-art{forced-color-adjust:auto}.dxa-art *{animation:none!important;filter:none!important}.dxa-art path,.dxa-art rect,.dxa-art ellipse,.dxa-art circle{fill:Canvas;stroke:CanvasText}.dxa-art text{fill:CanvasText}.dxa-art .dxa-wire,.dxa-art .dxa-flow,.dxa-art .dxa-relief path,.dxa-art .dxa-etch,.dxa-art .dxa-hairline,.dxa-art .dxa-specular,.dxa-art .dxa-check path,.dxa-art .dxa-check-stroke{fill:none}.dxa-art .dxa-floor,.dxa-art>ellipse,.dxa-scan-beam,.dxa-scan-line{display:none}.dxa-art .dxa-flow{stroke:Highlight;stroke-dasharray:none}.dxa-art .dxa-specular{stroke:CanvasText}.dxa-art .dxa-muted{opacity:.6}}
+@media print{.dxa-art *{animation:none!important}.dxa-scan-beam,.dxa-scan-line{display:none}}

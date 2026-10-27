@@ -1,4 +1,5 @@
 // Reactor, render loop, focus, layers and page listeners.
+import { icon } from "./app-icons.js";
 import { busy, clearBadBanner, log, showBanner, state, ui } from "./app-state.js";
 import { Z } from "./app-engine.js";
 import { chats, lockedVault } from "./app-keystore.js";
@@ -236,7 +237,7 @@ function pageView() {
     log("unreadable page: " + (e && e.message ? e.message : e));
     const back = el("button", {
       class: "btn ghost sm", type: "button", onclick: () => openGroup(null),
-    }, "← Wallets");
+    }, icon("back"), "Wallets");
     return el("div", { class: "page" }, back,
       el("div", { class: "card empty" }, el("h3", {}, "This wallet has data this app cannot read"),
         el("p", { class: "small" }, "A device of this wallet may run a newer version of Zigs. "

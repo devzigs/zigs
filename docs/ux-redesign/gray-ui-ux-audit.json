@@ -1,0 +1,95 @@
+{
+  "date": "2026-10-25",
+  "branch": "gray-ui",
+  "previous_ui_commit": "ee64572e4d429667de5974aba346009b0388e914",
+  "engineering_reference": "c6860f6fef9351531bd3a9c3a221600c49651035",
+  "scope": "UX language, explanation placement, button order and CSS only. No merge or deployment.",
+  "files": {
+    "web/app-account-view.js": "4241b3c722936d83a0517a75ffa839c9a15939f87198ffa6bd147d55d625a57f",
+    "web/app-backups.js": "cd4f3609a22de128dd2231cd06f5e48e9098a44a8ecc2b6773870964dc49fa5d",
+    "web/app-dom.js": "be4fbfdfdd17ce0432e36f58b5d9d5c6076145f6e2ac7c1baf8f983ccfe829b2",
+    "web/app-payreq.js": "265351bd79027bf01a63377b8b3c4c3dc2c589417ebe51a878d873918f8033a6",
+    "web/app-recipients.js": "dcb651a08c39240c309f5a4215a16d57c26c19cd0017949f0941821b743edffb",
+    "web/app-send.js": "fb24c4e3fd3cfa1b3aa79117add0f1b0262c2543a57a4ac187bad89c2b2df13c",
+    "web/app-setup.js": "5b806a202155de37a8546275d6980ca105279b85bb965a8e13218c0d16f7c5ff",
+    "web/app-shell.js": "77fa65d1d8f027960eb7581c96e0bef8d5d2b61a69ee325da0ff0289c340ad29",
+    "web/app-thread.js": "1c4094bb3396a4d3c76461f58394f47aa0a1d31a02712c6e9bac9a2794adf9f4",
+    "web/app-tutorial.js": "b9978cff4fa37fcd9eb10a332ba5cf677936398728e505b6ed86f8b94384c1a5",
+    "web/sol/payview.js": "18ddab73cff795e8319cdaefcbea2c56d03dedb982b4aa90bed6e6c767e0a176",
+    "web/ux-clarity.css": "fce289a564c17b47f4ebf70e8d7f116bd529fe23f8a936b087014e3e369d6ded",
+    "web/index.html": "8c51dce87e56267fb156283bf523d19499b636ccb9475f56f2871d9c67fc38d1",
+    "web/test/app.mjs": "13295ed9208c7cda638302de4e5bd8c344f8ff741dd2b5b9b45773bf1319403b",
+    "web/test/guided-create.mjs": "fa9f6ab4282bab5dbcc22d1a62f980cf917b4ecb8f396dd388c51f39d9b1fcb1",
+    "web/test/unified-setup.mjs": "0402a7fd4d1c915e581e6487526db0379c7680ea81b96764b27899b8d6114018",
+    "web/test/sol-pay.mjs": "f4e109eff943c1304cc4f9bd6bef47acdf9d9fd2986e9a7dd4517e9e605bea59",
+    "solspike/tools/ux_flow_browser.mjs": "231bc9ff49726c974c0445020560fd4d95fd81b8dda3a42ba74c7e649ff0b0cb",
+    "solspike/tools/onboarding_refinement_browser.mjs": "db576a129fcedd0a48290aeb994d801730f4281dda81336893d93b9dadd54334",
+    "solspike/tools/privacy_visual_browser.mjs": "e280945f65f6ddfb3cf58016901c515be23b0f588718ef9eaeaa8d8cc5f90275"
+  },
+  "direct_dom_event_handler_expressions": {
+    "web/app-account-view.js": {
+      "expressions": 23,
+      "unchanged": true
+    },
+    "web/app-backups.js": {
+      "expressions": 14,
+      "unchanged": true
+    },
+    "web/app-dom.js": {
+      "expressions": 5,
+      "unchanged": true
+    },
+    "web/app-payreq.js": {
+      "expressions": 3,
+      "unchanged": true
+    },
+    "web/app-recipients.js": {
+      "expressions": 12,
+      "unchanged": true
+    },
+    "web/app-send.js": {
+      "expressions": 24,
+      "unchanged": true
+    },
+    "web/app-setup.js": {
+      "expressions": 26,
+      "unchanged": true
+    },
+    "web/app-shell.js": {
+      "expressions": 47,
+      "unchanged": true
+    },
+    "web/app-thread.js": {
+      "expressions": 10,
+      "unchanged": true
+    },
+    "web/app-tutorial.js": {
+      "expressions": 0,
+      "unchanged": true
+    },
+    "web/sol/payview.js": {
+      "expressions": 5,
+      "unchanged": true
+    }
+  },
+  "backend_auth_models_state_and_dependencies_changed": false,
+  "test_changes": "Exact UI text/label expectations only; original assertions retained. Added safe-action ordering assertion. Two stale expectations from prior presentation work align with Close-first Receive and the preserved separate hero asset.",
+  "verification": {
+    "flow_browser_checks": 523,
+    "flow_state_variants": 124,
+    "premium_checks": 194,
+    "premium_variants": 72,
+    "fast_tests": 48,
+    "skipped": [
+      "qr decoder: qrencode unavailable"
+    ],
+    "setup_integration": "unified-setup: ok",
+    "solana_payment": "sol-pay: ok",
+    "solana_execution": "sol-pay-exec: ok",
+    "page_integration": "app ok",
+    "style_checks": 511,
+    "lint_js": 241,
+    "lint_python": 2
+  },
+  "findings_implemented": 18
+}

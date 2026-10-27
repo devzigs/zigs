@@ -662,7 +662,7 @@ function sendText(ss, wait) {
 // The time of the send and its explorer link, with what that site sees.
 const sentLine = (ss) => [el("p", {}, when(ss.broadcastAt) + " · ", el("a", {
   href: curNet().explorer + ss.broadcastTxid, target: "_blank", rel: "noopener",
-}, "View in explorer ↗")),
+}, "View in explorer", icon("external"))),
 el("p", { class: "small" }, explorerText(curNet(), "View in explorer"))];
 
 // The last step, from this browser's synced blocks only: a sent mark does not say that a block

@@ -1,4 +1,5 @@
 // The pages of the personal account and its contacts.
+import { icon } from "./app-icons.js";
 import { memoShown, toZat, zatText } from "./payees.js";
 import {
   balanceWarnings, chatTimeline, fundingPayees, fundingWarning, holdsNotes, messagePlan, NAME_MAX,
@@ -133,7 +134,6 @@ export function accountCard() {
     el("p", { class: "small muted" }, "This account pays the fee of your messages on chain. It is "
       + "not a wallet, and its payments need no approval. Whoever controls this browser can "
       + "spend it."),
-    personal.backedUp ? null : accountBackupNote(),
     accountBalanceBlock(b),
     b ? balanceWarnings(b.total).map((t) => el("div", { class: "callout warn", role: "status" }, t))
       : null,
@@ -144,10 +144,9 @@ export function accountCard() {
 }
 
 function accountBackupNote() {
-  return el("div", { class: "callout warn", role: "status" },
-    el("span", { style: "flex:1 1 16rem" }, "Back up the account. This browser can forget it: "
-      + "private windows and Tor Browser delete it when they close. The file holds the seed and "
-      + "your contacts. A passphrase that you choose locks it."),
+  return el("div", { class: "messages-account-backup-option" },
+    el("p", { class: "small muted" }, "Save a recovery file for the account seed and contacts. "
+      + "Keep its passphrase separately."),
     el("button", { class: "btn sm", type: "button", onclick: openAccountBackup },
       "Back up account"));
 }
@@ -274,7 +273,7 @@ function contactRow(c) {
   el("span", { class: "av lg" }, initials(name)),
   el("span", { class: "ri-main" }, el("span", { class: "ri-title" }, name),
     el("span", { class: "ri-sub" }, "On chain · " + (n === 1 ? "1 message" : n + " messages"))),
-  el("span", { class: "ri-end" }), el("span", { class: "chev" }, "›"));
+  el("span", { class: "ri-end" }), el("span", { class: "chev" }, icon("chevronRight")));
 }
 
 export function contactItem(c) {
@@ -301,15 +300,16 @@ export function contactDialog() {
   },
   el("div", { class: "card-head" }, el("h2", { id: "contact-title" }, "Add a contact"),
     el("button", { class: "icon-btn", type: "button", "aria-label": "Close", onclick: close },
-      "×")),
+      icon("close"))),
   el("label", { class: "field" }, el("span", {}, "Name"), el("input", {
     class: "input", id: "oc-name", name: "name", maxlength: String(NAME_MAX), autocomplete: "off",
     required: true,
   }), el("span", { class: "hint" }, "Only you see this name.")),
-  el("label", { class: "field" }, el("span", {}, "Shielded address"), el("input", {
+  el("label", { class: "field" }, el("span", {}, "Contact’s shielded address"), el("input", {
     class: "input mono", id: "oc-addr", name: "address", placeholder: net.prefix + "…",
-    autocomplete: "off", spellcheck: "false", required: true,
-  })),
+    autocomplete: "off", spellcheck: "false", required: true, "aria-describedby": "contact-address-help",
+  }), el("span", { class: "hint", id: "contact-address-help" },
+    "Use their full Zcash " + net.label + " shielded address. Confirm it with them first.")),
   el("div", { class: "callout" }, "Next, Zigs shows an address for this contact. Give it to them. "
     + "A message to that address shows in this chat."),
   el("div", { class: "dialog-actions" },
@@ -330,8 +330,9 @@ export function contactView() {
     el("header", { class: "messages-thread-header messages-conversation-head" },
       el("button", {
         class: "btn ghost sm messages-mobile-back", type: "button", "data-key": "contact-back",
+        "aria-label": "Back to conversations",
         onclick: () => { state.contact = null; ui.tab = "chats"; render(); },
-      }, "← Messages"),
+      }, icon("back"), "Messages"),
       el("span", { class: "av round", "aria-hidden": "true" }, initials(name)),
       el("div", { class: "messages-thread-title messages-conversation-title" }, el("h2", { tabindex: "-1",
         "data-key": "messages-thread-title" }, name),
@@ -356,9 +357,6 @@ export function contactView() {
         + "read receipts or advanced post-quantum encryption."),
       el("p", { class: "small faint" }, ON_CHAIN_LIMITS),
       personal.backedUp ? null : accountBackupNote()),
-    personal.backedUp ? null : el("div", { class: "messages-backup-reminder" },
-      el("span", { class: "small muted" }, "Keep a separate account backup."),
-      el("button", { class: "btn sm", type: "button", onclick: openAccountBackup }, "Back up account")),
     contactMessages(contact, name));
 }
 
@@ -482,7 +480,7 @@ export function messagingCostReviewDialog() {
   el("div", { class: "card-head" }, el("h2", { id: "messaging-cost-title", tabindex: "-1",
     "data-key": "messaging-cost-title", "data-first-focus": "" }, "Review message cost"),
     el("button", { class: "icon-btn", type: "button", "aria-label": "Close cost review",
-      onclick: closeMessagingCostReview }, "×")),
+      onclick: closeMessagingCostReview }, icon("close"))),
   changed ? el("p", { class: "callout", role: "status" },
     "The message changed. Check the updated cost before sending.") : null,
   el("p", { class: "small muted" }, "This message is a permanent on-chain transaction. Your "
@@ -531,7 +529,7 @@ function receivedBubble(row, name, label, where) {
       el("a", {
         class: "small", href: NETWORKS[personal.network].explorer + row.txid, target: "_blank",
         rel: "noopener",
-      }, "View transaction ↗")));
+      }, "View transaction", icon("external"))));
 }
 
 function sentBubble(rec) {
@@ -549,5 +547,5 @@ function sentBubble(rec) {
       st === "chain" ? el("a", {
         class: "small", href: NETWORKS[personal.network].explorer + rec.txid, target: "_blank",
         rel: "noopener",
-      }, "View transaction ↗") : null));
+      }, "View transaction", icon("external")) : null));
 }
