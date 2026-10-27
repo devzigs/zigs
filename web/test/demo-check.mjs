@@ -150,10 +150,13 @@ const LWD_REPLIES = {
   GetTaddressBalance: (base, body) => [field(1, zatOf(body))],
 };
 
+// The fault no-gate opens every route of the app, as the gate of app.zigs.app is open.
+const authed = (req) => has("no-gate") || req.headers.authorization === AUTH;
+
 function lwd(req, res, [, base, method], body) {
   stub.calls.push(`lwd ${method}`);
   const gated = base === "lwd";
-  if (gated && req.headers.authorization !== AUTH) return send(res, 401, "");
+  if (gated && !authed(req)) return send(res, 401, "");
   if (gated && has("lwd-503")) return send(res, 503, "");
   const [message, trailer = "grpc-status: 0\r\n"] = LWD_REPLIES[method](base, body);
   const frames = [message && frame(0, message), frame(0x80, Buffer.from(trailer))];
@@ -161,14 +164,14 @@ function lwd(req, res, [, base, method], body) {
 }
 
 function home(req, res) {
-  if (req.headers.authorization === AUTH) return send(res, has("page-500") ? 500 : 200, "<html>");
+  if (authed(req)) return send(res, has("page-500") ? 500 : 200, "<html>");
   if (has("gate-open")) return send(res, 200, "<html>");
   const prompt = has("gate-no-prompt") ? {} : { "www-authenticate": 'Basic realm="stub"' };
   send(res, 401, "password", prompt);
 }
 
 function solConfig(req, res) {
-  if (req.headers.authorization !== AUTH) return send(res, 401, "");
+  if (!authed(req)) return send(res, 401, "");
   if (has("config-503")) return send(res, 503, JSON.stringify({ error: "not set up" }));
   const rpcUrl = has("served-refused") ? `${origin(0)}/rpc?api-key=${OTHER_KEY}` : heliusUrl();
   send(res, 200, JSON.stringify({ rpcUrl }));
@@ -319,7 +322,7 @@ function route(req, res, body) {
 function upgrade(req, socket) {
   stub.calls.push("ws");
   socket.on("error", () => {});
-  if (req.headers.authorization !== AUTH) return socket.end("HTTP/1.1 401 No\r\n\r\n");
+  if (!authed(req)) return socket.end("HTTP/1.1 401 No\r\n\r\n");
   // A held upgrade leaves the socket in CONNECTING, where Node 22 fired error inside close().
   if (has("socket-hang")) return;
   const key = `${req.headers["sec-websocket-key"]}258EAFA5-E914-47DA-95CA-C5AB0DC85B11`;
@@ -432,6 +435,21 @@ test("the app part passes on good stubs, and a SKIP is no failure", async () => 
   assert.equal(code, 0, out);
   assert.deepEqual(words(out), appWords());
   assert.match(out, /demo-check: 7 pass, 0 fail, 3 skipped/);
+});
+
+test("an open app passes with no password, and an open gate of a closed app fails", async () => {
+  const apps = [{ origin: origin(0), open: true }, { origin: origin(1) }];
+  const config = writeConfig("open.json", { apps });
+  const open = await run(["--app-only", "--config", config], ["no-gate"]);
+  assert.equal(open.code, 1, open.out);
+  assert.deepEqual(words(open.out), appWords(marked("FAIL", [`${host(1)} gate`])));
+  assert.match(open.out, /gate: \/ answers 200 with no password\n/);
+  assert.match(open.out, /pages: \/ and \/sol\/config\.json answer 200 with no password/);
+  assert.match(open.out, /gate: \/ answered 200 with no password, not 401/);
+  const gated = await run(["--app-only", "--config", config]);
+  const failed = ["gate", "pages", "/lwd", "group socket"].map((check) => `${host(0)} ${check}`);
+  assert.deepEqual(words(gated.out), appWords(marked("FAIL", failed)));
+  assert.match(gated.out, /gate: \/ answered 401, not 200 with no password prompt/);
 });
 
 test("a full run fails only the pinned hashes, sends only reads and prints no secret", async () => {

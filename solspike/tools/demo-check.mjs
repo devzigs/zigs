@@ -8,12 +8,13 @@
 // Usage: sh solspike/demo-check.sh [--dry-run] [--app-only] [--config FILE]
 // The config (default ~/.config/zigs/demo-check.json, outside the repo) is optional:
 //   { "apps": [
-//       { "origin": "https://app.zigs.app", "passwordFile": "~/.config/zigs/app-password" },
+//       { "origin": "https://app.zigs.app", "open": true },
 //       { "origin": "https://staging.zigs.app",
 //         "passwordFile": "~/.config/zigs/staging-password" }],
 //     "solFees": [{ "address": "<fee address of a seat>", "min": "0.003" }],
 //     "zecTransparent": [{ "address": "tm...", "min": "0.1" }] }
-// - apps: without it, app.zigs.app and staging.zigs.app with no password. A password file has
+// - apps: without it, app.zigs.app open and staging.zigs.app with no password. An open app must
+//   answer with no password prompt, and its checks run with no password. A password file has
 //   mode 600; without one, the checks behind the password gate SKIP. The password is never printed.
 // - zecTransparent: transparent addresses only. A unified address needs a viewing key: read its
 //   Available balance in the app.
@@ -34,7 +35,9 @@ const LWD = process.env.DEMO_CHECK_LWD ?? "https://zcash-testnet.chainsafe.dev";
 const VALAR = process.env.DEMO_CHECK_VALAR ?? "https://faucet.testnet.valargroup.dev";
 const SOL_FAUCET = process.env.DEMO_CHECK_SOL_FAUCET ?? "https://faucet.solana.com";
 const CONFIG = join(homedir(), ".config", "zigs", "demo-check.json");
-const DEFAULT_APPS = [{ origin: "https://app.zigs.app" }, { origin: "https://staging.zigs.app" }];
+const DEFAULT_APPS = [
+  { origin: "https://app.zigs.app", open: true }, { origin: "https://staging.zigs.app" },
+];
 const KEYS = ["apps", "solFees", "zecTransparent"];
 const TIMEOUT = process.env.DEMO_CHECK_TIMEOUT_MS ?? "";
 const TIMEOUT_MS = /^[1-9]\d{0,6}$/.test(TIMEOUT) ? Number(TIMEOUT) : 10_000; // each call, socket
@@ -144,10 +147,10 @@ const amount = (n, decimals) => {
 };
 
 function appOf(value) {
-  const entry = objectOf(value, ["origin", "passwordFile"], "apps");
+  const entry = objectOf(value, ["origin", "passwordFile", "open"], "apps");
   const origin = String(entry.origin ?? "");
   if (!/^https?:\/\/[^/]+$/.test(origin)) bad(`apps: "${origin}" is no origin`);
-  const app = { origin, host: new URL(origin).host };
+  const app = { origin, host: new URL(origin).host, open: entry.open === true };
   if (!entry.passwordFile) return app;
   const file = home(String(entry.passwordFile));
   if (!existsSync(file) || (statSync(file).mode & 0o077) !== 0) {
@@ -307,6 +310,12 @@ const accountData = (reply) => Buffer.from(reply?.value?.data?.[0] ?? "", "base6
 async function gateCheck(app) {
   const res = await get(`${app.origin}/`);
   const prompt = /^Basic /i.test(res.headers.get("www-authenticate") ?? "");
+  if (app.open) {
+    if (res.status !== 200 || prompt) {
+      throw new Error(`/ answered ${res.status}, not 200 with no password prompt`);
+    }
+    return "/ answers 200 with no password";
+  }
   if (res.status !== 401 || !prompt) {
     throw new Error(`/ answered ${res.status} with no password, not 401 with a password prompt`);
   }
@@ -315,12 +324,13 @@ async function gateCheck(app) {
 
 async function pagesCheck(app) {
   const page = await get(`${app.origin}/`, app.auth);
-  if (page.status !== 200) throw new Error(`/ answered ${page.status} with the password`);
+  const how = app.auth ? "with the password" : "with no password";
+  if (page.status !== 200) throw new Error(`/ answered ${page.status} ${how}`);
   const config = await get(`${app.origin}/sol/config.json`, app.auth);
   const rpcUrl = config.status === 200 ? (await config.json()).rpcUrl : undefined;
   if (typeof rpcUrl !== "string") throw new Error(`/sol/config.json answered ${config.status}`);
   redact.add(rpcUrl);
-  const pages = "/ and /sol/config.json answer 200 with the password";
+  const pages = `/ and /sol/config.json answer 200 ${how}`;
   // The other Helius checks use the local key file: a server with another key gets its own read.
   if (rpcUrl === localHelius()) return pages;
   await rpc("getVersion", [], app.origin, rpcUrl).catch((err) => {
@@ -332,7 +342,7 @@ async function pagesCheck(app) {
 function socketCheck(app) {
   const url = `${app.origin.replace(/^http/, "ws")}/ws?g=${PROBE_GROUP}`;
   return new Promise((done, fail) => {
-    const ws = new WebSocket(url, { headers: { authorization: app.auth } });
+    const ws = new WebSocket(url, { headers: app.auth ? { authorization: app.auth } : {} });
     // Node 22 fires error again inside close() of a socket that is not open: run end() once.
     let ended = false;
     const end = (error) => {
@@ -359,7 +369,8 @@ async function originCheck(app) {
 const lwdRouteCheck = async (app) => `height ${await tipOf(`${app.origin}/lwd`, app.auth)}`;
 
 function appChecks(app) {
-  const gated = (run) => () => (app.auth ? run(app) : skip("no passwordFile for it in the config"));
+  const gated = (run) => () =>
+    (app.auth || app.open ? run(app) : skip("no passwordFile for it in the config"));
   return [
     { name: `${app.host} gate`, run: () => gateCheck(app) },
     { name: `${app.host} pages`, run: gated(pagesCheck) },
